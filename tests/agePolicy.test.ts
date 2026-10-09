@@ -9,6 +9,7 @@ import {
   withAge,
 } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { RecipeValidationError } from "../src/recipe/validate.ts";
 import { adultManifest, bodyManifest, loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets(true);
@@ -103,6 +104,36 @@ describe("age policy", () => {
         }
       }),
     );
+  });
+
+  it("rejects an age smuggled into a regional override (JSON can carry what the type forbids)", () => {
+    fc.assert(
+      fc.property(minorAge, fc.double({ min: 18, max: 90, noNaN: true }), (age, smuggled) => {
+        const r = createRecipe({ macros: { age } });
+        // An adult age in one region would apply adult anchors (e.g. the young-female
+        // ethnic anchor, which includes breast development) to a child's chest.
+        (r.regionalMacros as Record<string, Record<string, number>>).breastL = { age: smuggled };
+        expect(() => recipeContributions(r, assets.modifiers)).toThrow(RecipeValidationError);
+      }),
+    );
+  });
+
+  it("rejects a NaN age rather than guessing an age for it", () => {
+    expect(() =>
+      recipeContributions(
+        createRecipe({ macros: { age: Number.NaN, breastSize: 0.9 } }),
+        assets.modifiers,
+      ),
+    ).toThrow(RecipeValidationError);
+  });
+
+  it("rejects areola colour under 18 and resets it in withAge", () => {
+    expect(
+      agePolicyViolations(createRecipe({ macros: { age: 12 }, skin: { areola: 0.9 } })),
+    ).toContain("skin.areola is adult-only");
+    expect(
+      withAge(createRecipe({ macros: { age: 30 }, skin: { areola: 0.9 } }), 12).skin.areola,
+    ).toBe(0.5);
   });
 
   it("allows adult-only modifiers at 18 and over", () => {

@@ -1,7 +1,7 @@
 /**
- * A recipe is everything that defines a figure's shape: MakeHuman's macro
- * variables, optional per-region overrides of those macros, and fine shape
- * modifiers by id. It is plain JSON, versioned, and the only thing an
+ * A recipe is everything that defines a figure's appearance: MakeHuman's macro
+ * variables, optional per-region overrides of those macros, fine shape
+ * modifiers by id, and skin. It is plain JSON, versioned, and the only thing an
  * application needs to save to rebuild a figure.
  *
  * Regional macro overrides generalise MakeHuman's model: any macro except age
@@ -11,11 +11,39 @@
  */
 import { DEFAULT_MACROS, type MacroValues } from "../makehuman/macro.ts";
 import type { BodyRegion } from "../makehuman/regions.ts";
+import type { Rgb } from "../surface/skinTone.ts";
 
 export const RECIPE_VERSION = 1 as const;
 
 /** Macros a region may override. Age is a property of the whole figure. */
 export type RegionalMacroValues = Omit<MacroValues, "age">;
+
+export interface SkinRecipe {
+  /** 0 = very fair, 1 = very deep. */
+  melanin: number;
+  /** 0 = pale, 0.5 = typical, 1 = ruddy. */
+  haemoglobin: number;
+  /** -1 = cool/pink, 0 = neutral, 1 = warm/golden. */
+  undertone: number;
+  /** Linear-RGB albedo replacing the natural model (non-natural skin), or null. */
+  override: Rgb | null;
+  /** 0..1: flush on cheeks, nose and ears. */
+  flush: number;
+  /** 0..1: lip colour depth. */
+  lips: number;
+  /** 0..1: areola and nipple colour depth. Adult-only; ignored and rejected below 18. */
+  areola: number;
+}
+
+export const DEFAULT_SKIN: Readonly<SkinRecipe> = {
+  melanin: 0.35,
+  haemoglobin: 0.5,
+  undertone: 0,
+  override: null,
+  flush: 0.45,
+  lips: 0.55,
+  areola: 0.5,
+};
 
 export interface Recipe {
   version: typeof RECIPE_VERSION;
@@ -23,6 +51,7 @@ export interface Recipe {
   regionalMacros: Partial<Record<BodyRegion, Partial<RegionalMacroValues>>>;
   /** Shape modifier id → value in [-1, 1] (one-sided modifiers [0, 1]). Missing ids are 0. */
   modifiers: Record<string, number>;
+  skin: SkinRecipe;
 }
 
 export function createRecipe(
@@ -30,6 +59,7 @@ export function createRecipe(
     macros?: Partial<MacroValues>;
     regionalMacros?: Recipe["regionalMacros"];
     modifiers?: Record<string, number>;
+    skin?: Partial<SkinRecipe>;
   } = {},
 ): Recipe {
   return {
@@ -37,5 +67,6 @@ export function createRecipe(
     macros: { ...DEFAULT_MACROS, ...init.macros },
     regionalMacros: structuredClone(init.regionalMacros ?? {}),
     modifiers: { ...init.modifiers },
+    skin: { ...DEFAULT_SKIN, ...init.skin },
   };
 }

@@ -11,6 +11,7 @@ import type { ShapeModifierEntry } from "../format/assetFormat.ts";
 import { type Contribution, mergeRegionalWeights } from "../morph/evaluate.ts";
 import { assertAgePolicy, isAdult } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { assertValidRecipe } from "../recipe/validate.ts";
 import { macroTargetWeights } from "./macro.ts";
 import { BODY_REGIONS } from "./regions.ts";
 
@@ -22,9 +23,16 @@ export function recipeContributions(
   recipe: Recipe,
   modifiers: ReadonlyMap<string, ShapeModifierEntry>,
 ): Contribution[] {
+  assertValidRecipe(recipe);
   assertAgePolicy(recipe);
+  // Age is a whole-figure property: a regional override can never change it,
+  // even if a recipe loaded from JSON carries one (the type forbids it).
   const perRegion = BODY_REGIONS.map((region) =>
-    macroTargetWeights({ ...recipe.macros, ...recipe.regionalMacros[region] }),
+    macroTargetWeights({
+      ...recipe.macros,
+      ...recipe.regionalMacros[region],
+      age: recipe.macros.age,
+    }),
   );
   const contributions = mergeRegionalWeights(perRegion);
   for (const [id, value] of Object.entries(recipe.modifiers)) {

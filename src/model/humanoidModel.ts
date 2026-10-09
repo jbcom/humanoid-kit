@@ -14,9 +14,11 @@ import {
 } from "../format/assetFormat.ts";
 import { recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
+import { buildSkinMasks } from "../makehuman/skinMasks.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, type RegionField } from "../morph/evaluate.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { applyStencil } from "../subdiv/catmullClark.ts";
 
 export interface ModelOptions {
   /** Catmull–Clark levels for the body surface (0–2). Default 1. Attachments use at most 1. */
@@ -45,7 +47,10 @@ export interface AttachmentTopology extends SurfaceTopology {
 }
 
 export interface ModelTopology {
-  body: SurfaceTopology;
+  body: SurfaceTopology & {
+    /** Per render vertex: lips, flush and areola mask weights (see `buildSkinMasks`). */
+    skinMask: Float32Array;
+  };
   attachments: AttachmentTopology[];
 }
 
@@ -86,6 +91,7 @@ export class HumanoidModel {
   private readonly body: Part;
   private readonly bodyVertices: Uint32Array;
   private readonly attached: { asset: BoundAsset; part: Part; control: Float32Array }[];
+  private readonly skinMask: Float32Array;
 
   constructor(
     readonly assets: HumanoidAssets,
@@ -118,6 +124,17 @@ export class HumanoidModel {
     for (const f of bodyFaces)
       for (let k = 0; k < 4; k++) verts.add(assets.faceVerts[f * 4 + k] as number);
     this.bodyVertices = Uint32Array.from(verts);
+    // Skin masks are static: interpolate the base-vertex masks through the subdivision stencil once.
+    const surfaceMask = applyStencil(
+      this.body.mesh.stencil,
+      buildSkinMasks(assets),
+      new Float32Array(this.body.mesh.topology.vertexCount * 3),
+    );
+    const r2s = this.body.mesh.renderToSurface;
+    this.skinMask = new Float32Array(r2s.length * 3);
+    r2s.forEach((s, r) => {
+      this.skinMask.set(surfaceMask.subarray(s * 3, s * 3 + 3), r * 3);
+    });
 
     this.attached = wearing.map((asset) => {
       const skin = bindingSkin(asset, assets.skinIndex, assets.skinWeight);
@@ -139,7 +156,7 @@ export class HumanoidModel {
 
   topology(): ModelTopology {
     return {
-      body: topologyOf(this.body.mesh),
+      body: { ...topologyOf(this.body.mesh), skinMask: this.skinMask },
       attachments: this.attached.map(({ asset, part: p }) => ({
         ...topologyOf(p.mesh),
         id: asset.entry.id,

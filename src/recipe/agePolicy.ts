@@ -12,7 +12,7 @@
  * clamped, so a mistake cannot be hidden.
  */
 import { ADULT_AGE, DEFAULT_MACROS } from "../makehuman/macro.ts";
-import type { Recipe } from "./recipe.ts";
+import { DEFAULT_SKIN, type Recipe } from "./recipe.ts";
 
 export { ADULT_AGE };
 
@@ -47,6 +47,7 @@ export function agePolicyViolations(recipe: Recipe): string[] {
   for (const [id, v] of Object.entries(recipe.modifiers)) {
     if (v !== 0 && ADULT_ONLY_MODIFIER(id)) out.push(`modifier ${id} is adult-only`);
   }
+  if (recipe.skin.areola !== DEFAULT_SKIN.areola) out.push("skin.areola is adult-only");
   return out;
 }
 
@@ -76,5 +77,6 @@ export function withAge(recipe: Recipe, age: number): Recipe {
   }
   for (const id of Object.keys(next.modifiers))
     if (ADULT_ONLY_MODIFIER(id)) delete next.modifiers[id];
+  next.skin.areola = DEFAULT_SKIN.areola;
   return next;
 }
