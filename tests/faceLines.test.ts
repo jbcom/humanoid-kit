@@ -439,6 +439,61 @@ describe("the forehead's and the furrows' lines of colour", () => {
     expect(ng).toBeGreaterThan(4);
   });
 
+  it("stay straight across the base mesh's triangles: the interpolated coordinate is constant along a horizontal (forehead) or vertical (furrow) cut to within half a millimetre", () => {
+    // What the rasteriser does: interpolate the three vertices' coordinates across each
+    // triangle (a quad is two, whichever way it is split), then cut the surface by a plane.
+    const check = (id: string, axis: 0 | 1, from: number, span: number, cuts: number[]) => {
+      const l = index(id);
+      let crossings = 0;
+      let worst = 0;
+      for (let q = 0; q < assets.faceVerts.length / 4; q++) {
+        const [a, b, c, d] = [0, 1, 2, 3].map((k) => assets.faceVerts[q * 4 + k] as number) as [
+          number,
+          number,
+          number,
+          number,
+        ];
+        for (const tri of [
+          [a, b, c],
+          [a, c, d],
+          [a, b, d],
+          [b, c, d],
+        ] as const) {
+          if (tri.some((v) => v >= BODY || mask(l, v) <= 0.02)) continue;
+          for (const cut of cuts)
+            for (let e = 0; e < 3; e++) {
+              const u = tri[e] as number;
+              const w = tri[(e + 1) % 3] as number;
+              const pu = P[u * 3 + axis] as number;
+              const pw = P[w * 3 + axis] as number;
+              if ((pu - cut) * (pw - cut) >= 0) continue;
+              const t = (cut - pu) / (pw - pu);
+              const got = coord(l, u) + t * (coord(l, w) - coord(l, u));
+              worst = Math.max(worst, Math.abs(got - (cut - from) / span) * span);
+              crossings++;
+            }
+        }
+      }
+      expect(crossings, `${id} crossings`).toBeGreaterThan(5);
+      expect(worst, `${id}: worst departure from constant, metres`).toBeLessThan(0.0005);
+    };
+    const bandFrom = (brow[1] as number) + FOREHEAD_FROM;
+    check(
+      "lines.forehead",
+      1,
+      bandFrom,
+      FOREHEAD_SPAN,
+      FOREHEAD_STOPS.map((k) => bandFrom + (k / 7) * FOREHEAD_SPAN),
+    );
+    check(
+      "lines.glabella",
+      0,
+      -GLABELLA_HALF,
+      2 * GLABELLA_HALF,
+      GLABELLA_STOPS.map((k) => -GLABELLA_HALF + (k / 7) * 2 * GLABELLA_HALF),
+    );
+  });
+
   it("put the forehead's lines 2 to 6 cm above the brows, evenly, and the furrows 2 cm apart about the midline", () => {
     const heights = FOREHEAD_STOPS.map((k) => FOREHEAD_FROM + (k / 7) * FOREHEAD_SPAN);
     expect(FOREHEAD_STOPS.length).toBeGreaterThanOrEqual(3);
