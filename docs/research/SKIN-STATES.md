@@ -327,7 +327,8 @@ of `cold` moves the nipple's point target by 0.37 / 50, under a percent.
 ### C5. Hands (`src/surface/handTone.ts`, `src/surface/regions/hands.ts`)
 
 The hands are rest-state regional colour and relief, not a state; they sit
-before the state layers, so cold pallor and flush act on them (C2).
+before the state layers, so cold pallor and flush act on them (C2). Contact
+sheets: `docs/evidence/hands.md`.
 
 | Quantity | Value | Source |
 | --- | --- | --- |
