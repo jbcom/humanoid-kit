@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
+import { groupFaces } from "../src/format/assetFormat.ts";
 import { labFromLinear } from "../src/surface/cielab.ts";
 import { PALM_BINS, palmAlbedo, palmLab } from "../src/surface/handTone.ts";
 import { paintStopTable, STOP_TABLE_WIDTH } from "../src/surface/layers.ts";
-import { HAND_SKIN_LAYERS, handFrame } from "../src/surface/regions/hands.ts";
+import {
+  CREASE_GEOMETRY,
+  CREASE_PHASES,
+  CREASE_SLOTS,
+  HAND_SKIN_LAYERS,
+  handFrame,
+  PALM_CREASE_LINE_LAYER,
+  type PalmLandmarks,
+  palmCreaseCurves,
+  palmCreaseLine,
+  palmCreaseLineFields,
+  palmCreaseReliefFields,
+  sampleCreases,
+} from "../src/surface/regions/hands.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import { skinZones } from "../src/surface/regions/skinZones.ts";
 import { GOOSEBUMP_LAYER } from "../src/surface/regions/states.ts";
@@ -61,8 +75,58 @@ function toneAtLightness(L: number): SkinTone {
 }
 
 const assets = loadFixtureAssets();
+const P = assets.positions;
 const frame = handFrame(assets);
 const zones = skinZones(assets);
+
+/** The body's edges, each once. */
+const edges = (() => {
+  const seen = new Set<string>();
+  const out: [number, number][] = [];
+  for (const f of groupFaces(assets, "body"))
+    for (let k = 0; k < 4; k++) {
+      const a = assets.faceVerts[f * 4 + k] as number;
+      const b = assets.faceVerts[f * 4 + ((k + 1) % 4)] as number;
+      const key = a < b ? `${a},${b}` : `${b},${a}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push([a, b]);
+    }
+  return out;
+})();
+const dist = (a: number, b: number) =>
+  Math.hypot(
+    (P[a * 3] as number) - (P[b * 3] as number),
+    (P[a * 3 + 1] as number) - (P[b * 3 + 1] as number),
+    (P[a * 3 + 2] as number) - (P[b * 3 + 2] as number),
+  );
+
+/**
+ * The worst rate at which a coordinate changes along an edge, relative to
+ * `perMetre`, its rate across a crease, times the stronger of the edge's two
+ * masks (the most a false crease there could show). Across a crease the rate is
+ * about 1; above 1.5 the coordinate jumps between two creases where they show,
+ * and interpolation across that edge would draw a crease that is not there.
+ * Where the nearest digit changes, at the webs between fingers, the coordinate
+ * does jump, but under masks below a fifth.
+ */
+function worstJump(
+  mask: Float32Array,
+  coord: Float32Array | null,
+  scale: number,
+  perMetre: number,
+): number {
+  if (!coord) throw new Error("a crease layer needs a coordinate");
+  let worst = 0;
+  for (const [a, b] of edges) {
+    const shows = Math.max(mask[a] as number, mask[b] as number);
+    if (shows === 0) continue;
+    const rate =
+      (Math.abs((coord[a] as number) - (coord[b] as number)) * scale) / (dist(a, b) * perMetre);
+    worst = Math.max(worst, rate * shows);
+  }
+  return worst;
+}
 
 describe("the hands' frame", () => {
   it("puts every hand vertex on a digit, with the joints in order", () => {
@@ -121,6 +185,133 @@ describe("palm colour: measured against the archive's paired palms", () => {
     const green: Rgb = [0.1, 0.4, 0.1];
     const palm = palmAlbedo(tone(0.5, { override: green }));
     for (let k = 0; k < 3; k++) expect(palm[k]).toBeGreaterThan(green[k] as number);
+  });
+});
+
+describe("palmar creases", () => {
+  const line = palmCreaseLineFields(assets);
+  const relief = palmCreaseReliefFields(assets);
+
+  it("lie only on the palmar side", () => {
+    for (const f of [line, relief])
+      for (let v = 0; v < assets.manifest.vertexCount; v++)
+        if ((f.mask[v] as number) > 0) expect(zones.palm[v] as number).toBeGreaterThan(0);
+  });
+
+  it("never jump between two creases where they show", () => {
+    // Across a crease the line's coordinate runs at 1/band per metre, the
+    // fold's phase at 1/width; a faster change on a masked edge is a jump.
+    const band = 1 / Math.min(CREASE_GEOMETRY.palm.band, CREASE_GEOMETRY.finger.band);
+    const width = 1 / Math.min(CREASE_GEOMETRY.palm.width, CREASE_GEOMETRY.finger.width);
+    expect(worstJump(line.mask, line.coord, 1, band)).toBeLessThan(1.5);
+    expect(worstJump(relief.mask, relief.coord, CREASE_PHASES, width)).toBeLessThan(1.5);
+  });
+
+  it("draw no line where the nearest crease changes but none lies between", () => {
+    // Along an edge whose ends are nearest different creases, the line's
+    // coordinate passes the crease stop (3/7) only if one of those creases
+    // really lies between the ends: its signed distance changes sign along the
+    // edge. Otherwise interpolation would draw a line that is not there.
+    const s = sampleCreases(assets);
+    const slotOf = (id: number) => (id < 3 ? id : 3 + (id % 10));
+    let falseLines = 0;
+    const plateau = CREASE_GEOMETRY.finger.plateau;
+    for (const [a, b] of edges) {
+      const ia = s.id[a] as number;
+      const ib = s.id[b] as number;
+      if (ia < 0 || ib < 0 || ia === ib) continue;
+      // Neighbouring fingers' first creases run into the web between them: a
+      // line there is one finger's own, ending where the other's begins.
+      if (
+        frame.digit[a] !== frame.digit[b] &&
+        (Math.abs(s.ds[a] as number) < plateau || Math.abs(s.ds[b] as number) < plateau)
+      )
+        continue;
+      if (Math.max(line.mask[a] as number, line.mask[b] as number) < 0.05) continue;
+      const ca = (line.coord?.[a] as number) - 3 / 7;
+      const cb = (line.coord?.[b] as number) - 3 / 7;
+      if (ca * cb >= 0) continue;
+      const separates = (id: number) => {
+        if (id >= 10 && Math.floor(id / 10) !== frame.digit[a]) return false;
+        if (id >= 10 && Math.floor(id / 10) !== frame.digit[b]) return false;
+        const da = s.candidates[a * CREASE_SLOTS + slotOf(id)] as number;
+        const db = s.candidates[b * CREASE_SLOTS + slotOf(id)] as number;
+        return da * db < 0;
+      };
+      if (!separates(ia) && !separates(ib)) falseLines++;
+    }
+    expect(falseLines).toBe(0);
+  });
+
+  it("keep the palm's three creases apart, the two that share an origin parting from it", () => {
+    // Crossing creases would draw an X; the proximal transverse and thenar
+    // creases start together at the radial border and must only part.
+    for (const side of [0, 1]) {
+      const curves = palmCreaseCurves(
+        frame.landmarks[side] as PalmLandmarks,
+        frame.joints[side] as number[][],
+      );
+      const points = curves.map((c) =>
+        Array.from({ length: 101 }, (_, i) => {
+          const t = i / 100;
+          const s = 1 - t;
+          return [
+            s * s * c[0][0] + 2 * s * t * c[1][0] + t * t * c[2][0],
+            s * s * c[0][1] + 2 * s * t * c[1][1] + t * t * c[2][1],
+          ] as const;
+        }),
+      );
+      const near = (a: readonly (readonly [number, number])[], b: typeof a) => {
+        let closest = Number.POSITIVE_INFINITY;
+        // Past the first 5% of each (the shared origin), how close the two come.
+        for (const p of a.slice(5))
+          for (const q of b.slice(5))
+            closest = Math.min(closest, Math.hypot(p[0] - q[0], p[1] - q[1]));
+        return closest;
+      };
+      for (const [i, j] of [
+        [0, 1],
+        [0, 2],
+        [1, 2],
+      ] as const)
+        expect(
+          near(points[i] as never, points[j] as never),
+          `creases ${i} and ${j}`,
+        ).toBeGreaterThan(0.003);
+    }
+  });
+
+  it("are wider than the mesh, so each is interpolated exactly", () => {
+    // The fold spans a face and the line's linear band two, wherever a crease shows.
+    const lengths = edges
+      .filter(([a, b]) => (line.mask[a] as number) > 0.5 && (line.mask[b] as number) > 0.5)
+      .map(([a, b]) => dist(a, b))
+      .sort((x, y) => x - y);
+    const p90 = lengths[Math.floor(lengths.length * 0.9)] as number;
+    expect(lengths.length).toBeGreaterThan(100);
+    expect((CREASE_GEOMETRY.palm.band * 3) / 7).toBeGreaterThan(p90);
+    expect(CREASE_GEOMETRY.palm.width).toBeGreaterThan(p90);
+  });
+
+  it("darken toward the skin's own colour on deep skin and only shade fair skin", () => {
+    const deep = palmCreaseLine(tone(1));
+    const fair = palmCreaseLine(tone(0));
+    for (let k = 0; k < 3; k++) {
+      expect(deep[k] as number).toBeLessThan(fair[k] as number);
+      expect(fair[k] as number).toBeLessThan(1);
+    }
+    // The line's stop is the crease's (3/7); every other stop leaves the palm.
+    const p = PALM_CREASE_LINE_LAYER.paint({
+      tone: tone(1),
+      flush: 0,
+      lips: 0.5,
+      areola: 0.5,
+      signals: {},
+    });
+    expect(p.stops[3]).toEqual(deep);
+    p.stops.forEach((s, i) => {
+      if (i !== 3) expect(s).toEqual([1, 1, 1]);
+    });
   });
 });
 

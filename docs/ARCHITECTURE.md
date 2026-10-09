@@ -771,12 +771,36 @@ of the hand. Sources and choices: `docs/research/SKIN-STATES.md` C5.
   polyline from the wrist; every hand vertex takes the nearest segment and its
   distance along the digit and across it, blended across each joint so the
   coordinate runs on smoothly round a bend (the nearest segment alone jumps by
-  the radius times the bend at the bisector). The vertex normal against the
-  palm's facing tells palmar from dorsal; the palm's plane (from the wrist
-  toward the middle finger, and toward the thumb) places what lies on the palm.
+  the radius times the bend at the bisector, which drew a false crease there).
+  The vertex normal against the palm's facing tells palmar from dorsal; the
+  palm's plane (from the wrist toward the middle finger, and toward the thumb)
+  carries the palm's own creases.
+- *Creases finer than the mesh.* The palm's vertices are about 5 mm apart and a
+  crease about 1 mm wide, and a mask is interpolated between vertices, so a
+  crease cannot be a mask. Each is drawn from a signed distance to it instead,
+  which interpolates exactly across the face it crosses: as a line of colour
+  (the coordinate runs across a band wider than two faces, and the line is one
+  of the eight colour stops, a seventh of the band wide), and as a relief fold
+  a face wide. A signed distance to the nearest of several creases jumps where
+  the nearest changes; it passes the line's stop, drawing a false line, unless
+  the two sides that meet there carry the same sign. So the signs are chosen as
+  a chain (each finger's creases alternate from the base; the palm's three are
+  oriented to agree with each other and with the fingers'), and a test checks
+  every edge where the nearest crease changes for a line no crease explains,
+  and that the palm's creases never cross (the thenar crease, steeper than the
+  proximal transverse crease it starts beside, crossed it when it started
+  above it). The thumb's web is the one place three creases meet whose sides
+  no signs can all match; there the palm's creases taper in from the border.
+- *Where the creases are.* Measured offsets from the joints (the middle
+  digital crease about 2 mm proximal to its joint, the thumb's at and just
+  proximal to its joints) and measured lengths between a finger's creases. The
+  palm's creases are measured from the anatomical knuckles, which MakeHuman's
+  finger joints are not (they sit at the web), so each knuckle is placed the
+  measured distance proximal to its finger's first crease.
 - *Not done.* Age does not reach a layer's paint (`SkinPaintInput` has `adult`
-  only), so a child's hand gets the same layers at its own scale, the fields
-  scaling with the morphed mesh. Soles share the palm's suppressed melanin
+  only), so a child's hand gets the same creases at its own scale, the fields
+  scaling with the morphed mesh (creases form before birth, so their places
+  are set early). Soles share the palm's suppressed melanin
   (the same mechanism) but no sole colour was found measured; the feet's area
   owns them, and can take `palmAlbedo` if it decides to.
 

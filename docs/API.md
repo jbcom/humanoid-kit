@@ -373,6 +373,17 @@ compute what the renderer will do.
     (777 people) binned by the back of the hand's L\*: on deep skin the palm is
     about 16 L\* lighter and 6 to 8 b\* yellower than the back of the hand, on
     the lightest about the same.
+  - `PALM_CREASE_LINE_LAYER` (multiply: `palmCreaseLine(tone)`, the crease's
+    shade, and on deep skin a return toward the skin's own colour) and
+    `PALM_CREASE_LAYER` (a `creases` detail layer, `PALM_CREASE_DEPTH`): the
+    distal and proximal transverse and thenar creases of the palm
+    (`palmCreaseCurves(landmarks, joints)`) and each digit's flexion creases
+    (`digitCreases(joints, digit)`), placed by the measured `CREASE_TO_JOINT`,
+    `MIDDLE_CREASE_TO_JOINT`, `THUMB_CREASE_TO_JOINT` and `FINGER_CREASE_SPANS`.
+    Their fields (`palmCreaseLineFields`, `palmCreaseReliefFields`) carry a
+    signed distance to the nearest crease (`sampleCreases`), so a line finer
+    than the mesh is drawn where the crease is (`creaseLineCoordinate`,
+    `creasePhase`, `CREASE_GEOMETRY`).
   - `handFrame(assets)`: each hand vertex's digit, distance along it and across
     it, which way it faces, and its place in the palm's plane, measured from the
     skeleton's finger joints and the vertex normals and cached per set of
