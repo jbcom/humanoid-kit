@@ -125,6 +125,7 @@ createRecipe(init?: {
   skin?: Partial<SkinRecipe>;
   eyes?: Partial<EyesRecipe>;
   hair?: { style?: string | null; colour?: Partial<HairColour> };
+  bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
 }): Recipe
 ```
@@ -143,12 +144,20 @@ interface Recipe {
   skin: SkinRecipe;
   eyes: EyesRecipe;
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
+  bodyHair?: BodyHairRecipe; // optional: absent means the default for age and sex
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
 }
 
 interface HairRecipe {
   style: string | null; // a scalp style id of the hair pack, or null for none
   colour: HairColour;   // eumelanin, pheomelanin, grey (each 0..1) and override: Rgb | null
+}
+
+interface BodyHairRecipe {
+  // per BODY_HAIR_GROUPS entry, a multiplier on the default, 0..2 (1 = default);
+  // axillary and pubic are adult-only: any value but 0 under 18 is refused
+  density?: Partial<Record<BodyHairGroup, number>>;
+  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = stubble where the face carries terminal hair
 }
 
 type RegionalMacroValues = Omit<MacroValues, "age">;

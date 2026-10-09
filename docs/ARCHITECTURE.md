@@ -1119,6 +1119,14 @@ Old recipes evaluate and serialise as before.
   returns 0 for axillary and pubic hair unless the age is an adult's (`age >=
   ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
   scales the default, so no recipe value can add them under 18.
+- *The recipe holds multipliers, not densities.* `recipe.bodyHair` is optional
+  (the recipe schema grows only by optional fields): `density` is a multiplier
+  per group on the default for age and sex (0 shaves a region, 2 doubles it,
+  clamped to full coverage), and `beard` a style. A multiplier, not an absolute
+  value, keeps a saved recipe right as the figure ages: the same recipe at 12,
+  30 and 80 shows each age's hair. Absent fields are not filled in by
+  `createRecipe`, so a recipe that never set body hair serialises exactly as
+  before.
 
 ## Presence
 
