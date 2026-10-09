@@ -9,7 +9,7 @@
  * The cornea is the texture's transparent region; a clearcoat gives it a wet,
  * sharp highlight.
  */
-import { Color, LinearSRGBColorSpace, MeshPhysicalMaterial } from "three";
+import { Color, LinearSRGBColorSpace, MeshPhysicalMaterial, Vector3 } from "three";
 import type { Rgb } from "../surface/skinTone.ts";
 import { patchOcclusion } from "./occlusion.ts";
 
@@ -29,6 +29,8 @@ export const DEFAULT_EYE_APPEARANCE: Readonly<EyeAppearance> = {
 const ENV_SPECULAR = "0.06";
 
 export class EyeMaterial extends MeshPhysicalMaterial {
+  /** The figure's occlusion key weights (`occlusionKeyWeights`); rest is (0, 0, 0). */
+  occlusionKeys = new Vector3();
   readonly hkUniforms = {
     hkIris: { value: new Color() },
     hkSclera: { value: new Color() },
@@ -63,7 +65,7 @@ export class EyeMaterial extends MeshPhysicalMaterial {
   override onBeforeCompile: MeshPhysicalMaterial["onBeforeCompile"] = (shader) => {
     Object.assign(shader.uniforms, this.hkUniforms);
     // Lids shade the eyeball; without this the whites glow as if pasted on.
-    patchOcclusion(shader);
+    patchOcclusion(shader, this.occlusionKeys);
     for (const chunk of ["map_fragment", "lights_fragment_maps"]) {
       if (!shader.fragmentShader.includes(`#include <${chunk}>`)) {
         throw new Error(`EyeMaterial: three's ${chunk} chunk moved`);
@@ -108,6 +110,6 @@ export class EyeMaterial extends MeshPhysicalMaterial {
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-eye-3";
+    return "humanoid-kit-eye-4";
   }
 }

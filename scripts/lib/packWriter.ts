@@ -55,25 +55,29 @@ export async function writeAttachmentTextures(
 }
 
 /**
- * Packs attachment arrays and their baked occlusion (one byte per vertex,
- * 255 = open) into one 4-byte-aligned binary, gzipped. The occlusion is baked
- * from the packed figure, so the packer writes once with every vertex open,
- * bakes, and writes again; the layout is the same both times.
+ * Packs attachment arrays and their baked occlusion (one byte per vertex per
+ * bake, 255 = open: one bake per corner of the occlusion keys' cube) into one
+ * 4-byte-aligned binary, gzipped. The occlusion is baked from the packed
+ * figure, so the packer writes once with every vertex open, bakes, and writes
+ * again; the layout is the same both times.
  */
 export function writeAttachments(
   dataDir: string,
   file: string,
   assets: readonly CompiledAsset[],
   occlusion: readonly Uint8Array[] | null,
+  bakes: number,
 ) {
   const chunks: Uint8Array[] = [];
   let size = 0;
   const entries: AttachmentEntry[] = [];
   for (const [i, a] of assets.entries()) {
     const layout = {} as AttachmentEntry["layout"];
-    const baked = occlusion?.[i] ?? new Uint8Array(a.vertexCount).fill(255);
-    if (baked.length !== a.vertexCount)
-      throw new Error(`${a.id}: ${baked.length} occlusion values for ${a.vertexCount} vertices`);
+    const baked = occlusion?.[i] ?? new Uint8Array(a.vertexCount * bakes).fill(255);
+    if (baked.length !== a.vertexCount * bakes)
+      throw new Error(
+        `${a.id}: ${baked.length} occlusion values for ${a.vertexCount} vertices × ${bakes} bakes`,
+      );
     for (const [key, arr] of [...Object.entries(a.arrays), ["occlusion", baked]] as [
       keyof AttachmentEntry["layout"],
       ArrayBufferView,

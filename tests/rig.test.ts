@@ -3,6 +3,13 @@ import { jointPosition } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import {
+  OCCLUSION_KEYS,
+  occlusionCornerUnits,
+  occlusionCornerWeights,
+  occlusionKeyBasis,
+  occlusionKeyWeights,
+} from "../src/rig/occlusionKeys.ts";
+import {
   faceUnitRotations,
   IDENTITY_POSE,
   restBones,
@@ -121,5 +128,49 @@ describe("posing", () => {
     const b = faceUnitRotations(rig, { LipsKiss: 0.4, JawDrop: 0.7 });
     expect(Array.from(a)).toEqual(Array.from(b));
     expect(() => faceUnitRotations(rig, { NotAUnit: 1 })).toThrow(/NotAUnit/);
+  });
+});
+
+describe("occlusion key weights", () => {
+  const basis = occlusionKeyBasis(rig);
+  const weights = (units: Record<string, number>) =>
+    Array.from(occlusionKeyWeights(basis, faceUnitRotations(rig, units)));
+  const close = (got: number[], want: number[]) =>
+    want.forEach((w, i) => {
+      expect(got[i], `key ${OCCLUSION_KEYS[i]?.id}`).toBeCloseTo(w, 3);
+    });
+
+  it("are zero at rest and exactly one at each key", () => {
+    close(weights({}), [0, 0, 0]);
+    OCCLUSION_KEYS.forEach((k, i) => {
+      close(
+        weights(k.faceUnits),
+        OCCLUSION_KEYS.map((_, j) => (i === j ? 1 : 0)),
+      );
+    });
+  });
+
+  it("scale with a key and add across keys", () => {
+    close(weights({ JawDrop: 0.4 }), [0.4, 0, 0]);
+    close(weights({ JawDrop: 0.6, MouthLeftPullUp: 1, MouthRightPullUp: 1 }), [0.6, 0, 1]);
+  });
+
+  it("read a pose that is no key by what it shares with them, clamped to [0, 1]", () => {
+    const w = weights({ JawDropStretched: 1 });
+    expect(w[0]).toBeGreaterThan(0.3);
+    for (const x of w) expect(x >= 0 && x <= 1).toBe(true);
+  });
+});
+
+describe("occlusion corners", () => {
+  it("name each corner's keys by bit and blend multilinearly, exactly at corners", () => {
+    expect(occlusionCornerUnits(0)).toEqual({});
+    expect(occlusionCornerUnits(3)).toEqual({ JawDrop: 1, UpperLipUp: 1, lowerLipDown: 1 });
+    // At a corner, that corner alone.
+    expect(Array.from(occlusionCornerWeights([1, 0, 1]))).toEqual([0, 0, 0, 0, 0, 1, 0, 0]);
+    // Between corners the weights are products and sum to one.
+    const w = occlusionCornerWeights([0.3, 0.6, 0.1]);
+    expect(w.reduce((s, x) => s + x, 0)).toBeCloseTo(1, 6);
+    expect(w[3]).toBeCloseTo(0.3 * 0.6 * 0.9, 6);
   });
 });

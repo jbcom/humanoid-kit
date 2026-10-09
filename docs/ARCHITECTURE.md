@@ -244,8 +244,34 @@ opaque attachments always as their one-level surface. A model wearing the body
 pack's own attachments (in any order) uses the shipped bytes and casts no rays;
 a model wearing any other set bakes during construction of its topology, inside
 worker initialisation. A test re-bakes from the shipped pack and fails if the
-stored values drift from what the code computes. Expressions that open the
-mouth will re-bake at runtime with the same method.
+stored values drift from what the code computes.
+
+**Occlusion follows the pose** (2026-10-09). An open mouth exposes teeth that
+the rest bake calls enclosed, so they rendered black. Three key poses change
+what encloses the attachments (`OCCLUSION_KEYS`: jaw open, lips apart, smile),
+and their effects interact in both directions. Measured on the default figure
+(p90 openness of the front teeth): jaw 0.31 and smile 0.06 alone but 0.69
+together, since a smile uncovers the teeth only once the jaw is open; jaw 0.31
+and lips 0.53 alone but 0.69 together, since both uncover the same teeth. A sum
+of single-key changes misses both, so the packer bakes every corner of the key
+cube (eight bakes, each key absent or full, the body posed by `skinPositions`
+and the attachments bound to it) and the vertex shader blends them
+multilinearly. Each key's weight is how much of it the current pose holds,
+solved by least squares over the bones' rotation vectors
+(`occlusionKeyWeights`), so animation drives it as well as face units, and a
+corner pose is exact. The manifest names the keys it baked
+(`attachments.occlusionKeys`); a model whose keys differ re-bakes rather than
+misreading the bytes.
+
+Decision: corner bakes with multilinear blending, over re-baking per pose
+(rays every time an expression changes, impossible per frame for a crowd)
+and over summed single-key changes (wrong in both directions, above). Costs:
+eight bytes per attachment vertex in the pack, and eight bakes at worker start
+for an attachment set the pack did not bake. That start-up cost matters once
+clothing makes custom sets common (milestone 7). The keys are coarse: the lips
+key raises the upper and lowers the lower lip together, so a pose raising only
+the upper lip reads as half the key. Splitting it (four keys, sixteen corners)
+is the next refinement if expressions need it.
 
 ## Worker
 

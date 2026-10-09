@@ -34,6 +34,7 @@ import {
 } from "../src/format/assetFormat.ts";
 import { macroTargetAgeAnchor, macroTargetNames } from "../src/makehuman/macro.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
+import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
 import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { writeAttachments, writeAttachmentTextures, writePackEntry } from "./lib/packWriter.ts";
@@ -527,7 +528,8 @@ async function main() {
   fs.rmSync(path.join(BODY_OUT, "attachments.bin"), { force: true });
   await writeAttachmentTextures(BODY_OUT, compiled);
   // Written with every vertex open first; the bake below needs the packed figure.
-  let attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, null);
+  const occlusionBakes = occlusionCorners(OCCLUSION_KEYS.length);
+  let attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, null, occlusionBakes);
   const systemEvidence: Record<string, string> = {};
   for (const c of compiled) {
     for (const [file, ev] of Object.entries(c.evidence))
@@ -568,6 +570,7 @@ async function main() {
     attachments: {
       file: ATTACHMENTS_FILE,
       sha256: attachments.sha256,
+      occlusionKeys: OCCLUSION_KEYS.map((k) => k.id),
       entries: attachments.entries,
     },
     skeleton: {
@@ -604,7 +607,7 @@ async function main() {
   const occlusion = new HumanoidModel(packedFigure)
     .bakeAttachmentOcclusion()
     .map((o) => Uint8Array.from(o, (v) => Math.round(Math.min(1, Math.max(0, v)) * 255)));
-  attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, occlusion);
+  attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, occlusion, occlusionBakes);
   manifest.attachments.sha256 = attachments.sha256;
   fs.writeFileSync(path.join(BODY_OUT, "manifest.json"), `${JSON.stringify(manifest)}\n`);
 

@@ -6,13 +6,18 @@ import { defineConfig } from "vitest/config";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
-// Two projects:
-// - unit: the pure core in Node (tests/**/*.test.ts, outside tests/browser).
+// Three projects:
+// - unit: the pure core in Node (tests/**/*.test.ts, outside tests/browser
+//   and tests/bake).
 // - browser: real Chromium (tests/browser/): the creator's React components,
 //   driven by the real pack taxonomy and the real control logic, and the
 //   materials' shading measured against their models on an analytic sphere.
 //   The whole figure (the worker, the stage) is proven by the Playwright suite
 //   in e2e/ against the playground.
+// - bake: full ray-cast bakes of the figure checked against the shipped pack
+//   (tests/bake/). Coverage instrumentation slows their ray loops about tenfold
+//   and the unit tests already cover that code, so `pnpm coverage` runs them
+//   separately, uninstrumented.
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -37,7 +42,9 @@ export default defineConfig({
         "src/mhclo/**/*.ts",
         "src/model/**/*.ts",
         "src/morph/**/*.ts",
+        "src/presence/**/*.ts",
         "src/recipe/**/*.ts",
+        "src/rig/**/*.ts",
         "src/subdiv/**/*.ts",
         "src/surface/**/*.ts",
       ],
@@ -55,7 +62,15 @@ export default defineConfig({
         test: {
           name: "unit",
           include: ["tests/**/*.test.ts"],
-          exclude: ["tests/browser/**"],
+          exclude: ["tests/browser/**", "tests/bake/**"],
+          environment: "node",
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "bake",
+          include: ["tests/bake/**/*.test.ts"],
           environment: "node",
         },
       },

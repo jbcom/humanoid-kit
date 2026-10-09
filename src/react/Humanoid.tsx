@@ -41,8 +41,9 @@ import type {
 import type { Recipe } from "../recipe/recipe.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
-import { AttachmentStandardMaterial, OCCLUSION_ATTRIBUTE } from "../render/occlusion.ts";
+import { AttachmentStandardMaterial, setOcclusionAttributes } from "../render/occlusion.ts";
 import { CURVATURE_ATTRIBUTE, SkinMaterial } from "../render/skinMaterial.ts";
+import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations } from "../rig/pose.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 
@@ -188,20 +189,26 @@ function writeGeometry(g: BufferGeometry, s: SurfaceEvaluation): void {
  */
 function useAttachmentMaterial(
   t: AttachmentTopology,
+  occlusionKeys: Vector3,
   report: (e: Error) => void,
 ): MeshStandardMaterial {
   const material = useMemo(() => {
     const m = t.material;
-    if (t.kind === "eyes") return new EyeMaterial();
-    return new AttachmentStandardMaterial({
-      color: new Color(m.color[0], m.color[1], m.color[2]),
-      roughness: m.roughness,
-      metalness: 0,
-      transparent: m.transparent && !m.alphaToCoverage,
-      alphaToCoverage: m.alphaToCoverage,
-      side: m.backfaceCull ? FrontSide : DoubleSide,
-    });
-  }, [t]);
+    const material =
+      t.kind === "eyes"
+        ? new EyeMaterial()
+        : new AttachmentStandardMaterial({
+            color: new Color(m.color[0], m.color[1], m.color[2]),
+            roughness: m.roughness,
+            metalness: 0,
+            transparent: m.transparent && !m.alphaToCoverage,
+            alphaToCoverage: m.alphaToCoverage,
+            side: m.backfaceCull ? FrontSide : DoubleSide,
+          });
+    // The figure's key weights, shared, so a pose change reaches every attachment.
+    material.occlusionKeys = occlusionKeys;
+    return material;
+  }, [t, occlusionKeys]);
   const reportRef = useLatest(report);
   useEffect(() => {
     if (!t.textureUrl) return;
@@ -265,6 +272,7 @@ function AttachmentMesh({
   topology,
   geometry,
   skeleton,
+  occlusionKeys,
   visible,
   report,
   eyes,
@@ -273,11 +281,12 @@ function AttachmentMesh({
   topology: AttachmentTopology;
   geometry: BufferGeometry;
   skeleton: Skeleton;
+  occlusionKeys: Vector3;
   visible: boolean;
   report: (e: Error) => void;
   eyes: Recipe["eyes"];
 }) {
-  const material = useAttachmentMaterial(topology, report);
+  const material = useAttachmentMaterial(topology, occlusionKeys, report);
   useEffect(() => {
     if (material instanceof EyeMaterial) material.setAppearance(eyes);
   }, [material, eyes]);
@@ -347,23 +356,28 @@ export function Humanoid({
     );
     const attachments = ready.topology.attachments.map((t) => {
       const g = makeGeometry(t);
-      g.setAttribute(OCCLUSION_ATTRIBUTE, new BufferAttribute(t.occlusion, 1));
+      setOcclusionAttributes(g, t.occlusion);
       return g;
     });
     return { body, attachments };
   }, [ready]);
   const rig = useMemo(() => (ready ? makeSkeleton(ready.rig) : null), [ready]);
+  const keyBasis = useMemo(() => (ready ? occlusionKeyBasis(ready.rig) : null), [ready]);
+  // Shared by the attachments' materials: how much of each occlusion key the pose holds.
+  const occlusionKeys = useMemo(() => new Vector3(), []);
   const [shown, setShown] = useState(false);
 
-  // The pose: face units blended into bone rotations (rest when absent).
+  // The pose: face units blended into bone rotations (rest when absent), and
+  // the attachments' occlusion following it.
   const faceUnits = pose?.faceUnits;
   useEffect(() => {
-    if (!rig || !ready) return;
+    if (!rig || !ready || !keyBasis) return;
     const q = faceUnitRotations(ready.rig, faceUnits ?? {});
     rig.skeleton.bones.forEach((bone, i) => {
       bone.quaternion.fromArray(q, i * 4);
     });
-  }, [rig, ready, faceUnits]);
+    occlusionKeys.fromArray(occlusionKeyWeights(keyBasis, q));
+  }, [rig, ready, keyBasis, occlusionKeys, faceUnits]);
 
   useEffect(
     () => () => {
@@ -453,6 +467,7 @@ export function Humanoid({
                 topology={t}
                 geometry={g}
                 skeleton={rig.skeleton}
+                occlusionKeys={occlusionKeys}
                 visible={shown}
                 report={report}
                 eyes={recipe.eyes}

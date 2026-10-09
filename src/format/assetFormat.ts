@@ -157,7 +157,17 @@ export interface BodyManifest {
   targets: TargetFile[];
   modifiers: ShapeModifierEntry[];
   sliders: SliderTask[];
-  attachments: { file: string; sha256: string; entries: AttachmentEntry[] };
+  attachments: {
+    file: string;
+    sha256: string;
+    /**
+     * The key poses attachment occlusion was baked at (`OCCLUSION_KEYS` ids, in
+     * order); each attachment's `occlusion` holds one bake per corner of their
+     * cube.
+     */
+    occlusionKeys: string[];
+    entries: AttachmentEntry[];
+  };
   skeleton: { bones: BoneEntry[]; joints: Record<string, number[]> };
   faceUnits: { names: string[]; joints: BvhJoint[]; frames: number[][] };
 }
@@ -215,7 +225,9 @@ export interface BoundAsset {
   /**
    * Per vertex, how open it is to light (255) or enclosed by the figure (0),
    * baked at pack time with every body-pack attachment worn
-   * (`HumanoidModel.bakeAttachmentOcclusion`).
+   * (`HumanoidModel.bakeAttachmentOcclusion`): `vertexCount` values for each
+   * corner of the cube of the manifest's `attachments.occlusionKeys` (corner
+   * m has key i at full weight when bit i of m is set; corner 0 is rest).
    */
   occlusion: Uint8Array;
 }
@@ -397,7 +409,11 @@ function parseAttachments(manifest: BodyManifest, bin: ArrayBuffer): Map<string,
     expectLength(asset.offsets, entry.vertexCount * 3, what("offsets"));
     expectLength(asset.faceVerts, entry.faceCount * 4, what("faceVerts"));
     expectLength(asset.faceUvs, entry.faceCount * 4, what("faceUvs"));
-    expectLength(asset.occlusion, entry.vertexCount, what("occlusion"));
+    expectLength(
+      asset.occlusion,
+      entry.vertexCount * 2 ** manifest.attachments.occlusionKeys.length,
+      what("occlusion"),
+    );
     if (asset.uvs.length % 2 !== 0) throw new AssetFormatError(`${what("uvs")}: odd length`);
     expectIndices(asset.refVerts, manifest.vertexCount, what("refVerts"));
     expectIndices(asset.faceVerts, entry.vertexCount, what("faceVerts"));

@@ -325,6 +325,14 @@ and expressions"). Framework-free.
 - `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out)`: linear
   blend skinning on the CPU, exactly as the renderer skins, for tests, anchors
   and pose-dependent bakes.
+- Pose-keyed occlusion (ARCHITECTURE.md, "Attachment occlusion"):
+  `OCCLUSION_KEYS` (jaw open, lips apart, smile), `occlusionKeyBasis(rig)` and
+  `occlusionKeyWeights(basis, rotations)` (how much of each key a pose holds),
+  `occlusionCorners(keys)`, `occlusionCornerUnits(m)` and
+  `occlusionCornerWeights(w)` (the multilinear blend of the corner bakes).
+  `AttachmentTopology.occlusion` holds `occlusionCorners` values per render
+  vertex, rest first. `rotationVectors(rotations)` gives each bone's rotation
+  vector.
 
 ### Presence
 
@@ -413,14 +421,14 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 - Hidden until the first evaluation arrives.
 - Renders the body and the body pack's attachments (eyes with their own eye
   shader following `recipe.eyes`, teeth and tongue), each attachment shaded by
-  its baked occlusion.
+  its baked occlusion, which follows the pose (an open mouth lights the teeth
+  it uncovers).
 - Updates the geometry in place when `recipe` changes.
 - Stores the latest `groundOffset` on the group's `userData`.
 - Disposes its geometries, textures and built-in materials on unmount.
 - Skins the body and attachments to the skeleton fitted to each evaluation
   (linear blend skinning on the GPU) and poses it from `pose`; posing does not
-  re-evaluate the figure. Attachment occlusion is still baked at rest, so an
-  open mouth's interior is not yet darkened.
+  re-evaluate the figure.
 
 ### `<StudioStage background? intensity? />`
 

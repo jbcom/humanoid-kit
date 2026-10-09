@@ -173,6 +173,23 @@ export function faceUnitRotations(
   return out;
 }
 
+/** Each bone's rotation as a rotation vector (axis × angle): `bones * 3`. */
+export function rotationVectors(rotations: BoneRotations): Float32Array {
+  const n = rotations.length / 4;
+  const out = new Float32Array(n * 3);
+  for (let b = 0; b < n; b++)
+    out.set(
+      log([
+        rotations[b * 4] as number,
+        rotations[b * 4 + 1] as number,
+        rotations[b * 4 + 2] as number,
+        rotations[b * 4 + 3] as number,
+      ]),
+      b * 3,
+    );
+  return out;
+}
+
 /**
  * Linear blend skinning of `positions` (base-mesh vertices) by `rotations`,
  * exactly as the renderer's skinned mesh does: each bone's world transform is
