@@ -356,7 +356,8 @@ or the name of any of its targets or modifiers.
 
 ## Roadmap
 
-Planned, in order.
+Milestones, in the order each is proven (built in parallel lanes; see
+"Parallel work: the base contract").
 
 1. **Doll form and editor shell.** Implemented: `humanoid-kit/editor`, a
    tap-to-edit creator over the recipe (see Editor).
@@ -392,3 +393,46 @@ region masks:
 The rest-state colours (`lipAlbedo`, `areolaAlbedo`, the skin masks) are its
 layer zero, and every state is modelled along measured skin axes so that it
 holds at every skin tone.
+
+## Parallel work: the base contract
+
+Decision (2026-10-09, with the owner): the milestones are an order of
+proof, not of work. Areas of the body (face, hands, feet, torso) and
+grafts (adult anatomy, clothing, hair, anthro parts) are built in parallel,
+each on its own branch against the current base, and integrated back. A graft
+fitted to today's figure inherits every later improvement beneath it (rig,
+skin states, lighting) without being redone, because it depends only on
+the contract below, not on how the layers under it are solved.
+
+**Frozen (changes need every lane's agreement):**
+
+1. The hm08 base mesh: topology, vertex indices, UV layout, face groups.
+2. The pack format and the `.mhclo` binding (grafts reference base vertices
+   by index and weight, and hide skin with `delete_verts`).
+3. The recipe schema, extended only by adding optional fields.
+4. The region layer interface (next paragraph).
+
+**Region layers.** Every area or graft that colours or textures skin adds
+*layers* rather than editing the skin material. A layer declares:
+
+- its mask, as a per-base-vertex field (from MakeHuman targets, as the skin
+  masks are now, or from vertex groups shipped in its pack);
+- an internal coordinate across it (for example radial distance from the
+  nipple, or vermilion to inner lip), so its colour can be a gradient rather
+  than one value;
+- a colour function of the skin tone, the recipe's parameters and the state
+  signals, and optionally a detail-normal function (wrinkles, goosebumps,
+  nails);
+- the signals it reads.
+
+A GPU pass composes the layers in order into a per-figure albedo texture and a
+detail-normal texture in the body's UV space, rasterising base triangles so
+that per-vertex fields interpolate across UV seams. It re-runs only when an
+input changes. The skin material samples the composed textures in place of
+today's three fixed mask channels, which become the first three layers. Each
+area lives in its own files (`src/surface/regions/<area>.ts` and its tests)
+and registers its layers, so lanes add files rather than edit shared ones.
+
+**Per lane, before merging:** its own unit tests, and a contact sheet of its
+area at both ends of the tone range and at the extremes of each control.
+After merging, the colour-parity and e2e gates must stay green.
