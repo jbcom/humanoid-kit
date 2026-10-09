@@ -64,6 +64,9 @@ describe("the package entry's skin-state API", () => {
       "lips-state",
       "sweat-heat",
       "sweat-exertion",
+      // The joint creases follow the states.
+      ...kit.CREASE_LAYERS.map((l) => l.id),
     ]);
+    expect(kit.CREASE_LAYERS).toHaveLength(4);
   });
 });

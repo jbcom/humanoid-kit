@@ -21,6 +21,7 @@ import {
   SkinMaterial,
   UV_SCALE_ATTRIBUTE,
 } from "../../src/render/skinMaterial.ts";
+import { planAtlas } from "../../src/surface/atlasPlan.ts";
 import type { SkinLayer } from "../../src/surface/layers.ts";
 
 /** Pixels per side of the render. */
@@ -92,6 +93,7 @@ export function renderLayers(layers: readonly SkinLayer[], options: LayerRenderO
     vertexCount: uv.count,
     layerFields: new Float32Array(layers.length * uv.count * 2),
     layers: layers.map((l) => l.id),
+    plan: planAtlas(layers),
   };
   for (let v = 0; v < uv.count; v++)
     layers.forEach((_, l) => {
@@ -101,7 +103,7 @@ export function renderLayers(layers: readonly SkinLayer[], options: LayerRenderO
   const atlas = layers.length ? buildLayerAtlas(renderer, source, 256) : null;
   const material = new SkinMaterial(layers);
   material.setAppearance(options.appearance ?? { ...DEFAULT_SKIN_APPEARANCE, flush: 0 });
-  material.setLayerAtlas(atlas?.texture ?? null);
+  material.setLayerAtlas(atlas);
   material.normalMap = null; // the pore map would add its own relief
   options.tune?.(material);
   const scene = new Scene();

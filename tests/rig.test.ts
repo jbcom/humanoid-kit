@@ -225,6 +225,7 @@ describe("body poses", () => {
       "tpose",
       "benchmark",
       "abducted",
+      "bent",
       "flexed",
       "relaxed",
       "twisted",
@@ -274,6 +275,34 @@ describe("body poses", () => {
         bend(heads, `lowerarm02.${side}`, `wrist.${side}`, `finger3-1.${side}`),
       ).toBeGreaterThan(40);
     }
+  });
+
+  it("bends every hinge about half way in the bent pose, open enough to see each crook", () => {
+    const heads = posedBoneHeads(rest, bodyPoseRotations(rig, "bent"));
+    for (const side of ["L", "R"]) {
+      const elbow = bend(heads, `upperarm02.${side}`, `lowerarm01.${side}`, `wrist.${side}`);
+      const knee = bend(heads, `upperleg02.${side}`, `lowerleg01.${side}`, `foot.${side}`);
+      const wrist = bend(heads, `lowerarm02.${side}`, `wrist.${side}`, `finger3-1.${side}`);
+      expect(elbow).toBeGreaterThan(80);
+      expect(elbow).toBeLessThan(105);
+      expect(knee).toBeGreaterThan(70);
+      expect(knee).toBeLessThan(95);
+      expect(wrist).toBeGreaterThan(25);
+      expect(wrist).toBeLessThan(55);
+    }
+  });
+
+  it("keeps the soles as level as at rest in the bent pose, so the figure stands on its feet and not its toes", () => {
+    const pitch = (heads: Float32Array, side: string) => {
+      const at = (n: string, k: number) => heads[bone(n) * 3 + k] as number;
+      const dy = at(`toe3-1.${side}`, 1) - at(`foot.${side}`, 1);
+      const dz = at(`toe3-1.${side}`, 2) - at(`foot.${side}`, 2);
+      return (Math.atan2(dy, Math.abs(dz)) * 180) / Math.PI;
+    };
+    const standing = posedBoneHeads(rest, bodyPoseRotations(rig, "tpose"));
+    const bentHeads = posedBoneHeads(rest, bodyPoseRotations(rig, "bent"));
+    for (const side of ["L", "R"])
+      expect(Math.abs(pitch(bentHeads, side) - pitch(standing, side))).toBeLessThan(8);
   });
 
   it("twists each limb about its own axis in the twisted pose, the candy wrapper's check", () => {

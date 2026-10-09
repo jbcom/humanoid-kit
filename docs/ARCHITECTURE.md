@@ -730,8 +730,9 @@ mean what they meant there; everything must be testable in Node.
   they pose): BVH channel values in degrees per joint over a MakeHuman pose's
   joint layout, every other channel at rest, packed into the same entries. The
   first is `relaxed`, standing at ease with the arms at the sides, since the
-  rest A-pose holds them 42° out; `flexed`, `twisted` and `abducted` (the
-  thighs opened 40°) are the skinning's extremes (below), which the pack's benchmark does not reach: it bends no
+  rest A-pose holds them 42° out; `bent`, `flexed`, `twisted` and `abducted`
+  (the thighs opened 40°) are the joint extremes the skinning and the creases
+  are checked at (below), which the pack's benchmark does not reach: it bends no
   elbow, knee or wrist. An expression layers on top of a body pose bone by
   bone.
 - *Grounding follows the pose.* The rest ground offset comes with each
@@ -1266,6 +1267,81 @@ the first, calibrated against the measured one). `arousal` is refused under 18
 in every channel (AGE-POLICY.md). Area lanes then add states as they add
 regions.
 
+### Joint creases (2026-10-09)
+
+**Use cases.** A bent elbow or knee shows its fold; a game bends many figures at
+every frame, from any animation; every body type and skin tone gets them without
+painting.
+
+**Requirements.** Driven by the flexion signals the rig already computes
+(`flex.<joint>.<side>`, `src/rig/flexion.ts`), so any pose or animation drives
+them; relief at true scale, from the detail-layer channel above; fields from the
+base mesh alone, shared through the field atlas; a fold deepens with the strain
+the joint's skin takes, which is measured.
+
+**Decisions.**
+
+- *One layer per joint and side* (four in all: elbows and knees), on the
+  inside of the bend (the crook of the elbow, the back of the knee), which
+  folds as the joint flexes, as grooves across the limb. One
+  per side because a layer has one strength, and the left and right joints bend
+  independently. The outside of the bend (the elbow's point, the kneecap) has
+  none. The measured strain there is a stretch (+25 % over the forearm's
+  extension, over 60 % at the knee), which draws skin smooth; wrinkling when it
+  is loose has no measurement behind it, and the first version drew it, 0.5 mm
+  deep, as bands round the knee. It is dropped rather than tuned: nothing says
+  how deep or where. Twelve layers of this kind
+  were also twelve atlas masks.
+- *Fields from the rest mesh.* A layer's mask is a window along the limb about
+  the joint (the axis through the segments either side of it), on the limb
+  (within 9 to 12 cm of the axis, which keeps the torso and the other limb out),
+  on the side the skin faces (its normal against the joint's flex direction,
+  `FLEXION_JOINTS[].flexes`); its coordinate runs along the limb across the
+  window, so the grooves lie across it. Nothing is painted or packed.
+- *Strength* is `smoothstep(0.05, 0.85, flex)`: nothing straight, the whole
+  near the joint's limit; the rest A-pose's elbow (flexion 0.3) holds a quarter.
+- *Depth follows from the strain.* A crease of span `s` and depth `d` takes up
+  `PROFILE_STRETCH × d² ÷ s` of skin (the arc length of the groove the shader
+  draws, `sin⁶(πt)`, about 3.64 in those units), so a crease that must take up
+  `e` is `√(e·s ÷ 3.64)` deep. Each crease takes its share of the strain over
+  the window: `e = CREASE_ABSORBED × strain × s`, with `s` the window ÷ the
+  crease count (3 at the elbow and the knee). The strains are
+  measured (SKIN-STATES.md, B5); a tenth of the strain taken up by creases
+  (`CREASE_ABSORBED`, the rest going into the skin's compression and the flesh
+  bulging beside the fold) and the counts are art-directed, for no measurement of
+  crease depth or spacing against joint angle exists. That is 2.8 mm at the elbow
+  and 6.2 mm at the knee (`creaseDepth`), and a test
+  integrates the drawn profile to hold the formula to it. The first scale, a
+  flat `0.006 m × strain` (1.5 mm at the elbow), read as a faint line at viewing
+  distance; the strain-derived 2.8 mm is the same rule with a fold that has to
+  take up what the strain says.
+- *The groove profile.* The detail layer's crease profile was a raised cosine,
+  a soft ripple whose steepest slope at 1.5 mm over 3 cm is 3°, invisible. A
+  crease is a narrow cut in flat skin, so the profile is now the raised cosine
+  to the power 3, negated: a groove in the middle of each period and none at its
+  ends, so a window starts and ends flat (`CREASE_SHARPNESS`, `creaseHeight`;
+  the shader and its reference changed together, and the browser project holds
+  the shader's shading to the reference's slope).
+- *Wrists have none.* They were drawn at the same rules (2 creases across 6 cm,
+  the forearm's strain, 2.5 mm deep) and, once deep enough to see, read as a
+  pale bracelet round the palm side; a real wrist has a few fine lines a
+  fraction of a millimetre deep, which no strain measurement here places. The
+  wrist's flexion signal is still computed.
+
+**Cost.** Four more layers. They lie on four separate patches of the skin, so
+the field atlas (below, "Atlas packing") gives them, the flush layer and the
+areolae one channel pair between them: the whole stack of 20 layers is 27
+channels in 7 pages of 1024² (28 MB), where two layers a page would take 10
+(40 MB), and the 16 rest layers alone took 8 (32 MB). The creases make the
+atlas smaller. The detail loop does one field fetch per crease layer per
+pixel, only while the layer has strength, and the stop table has 4 more rows of
+a few bytes.
+
+**Not here.** Skin colour at the joint (darker and redder when extended, a
+colour term, SKIN-STATES.md A2); crease depth varying with age or body fat
+(the recipe's tone parameters reach the paint, but not age or weight); creases
+at the neck, knuckles and torso (no flexion signal exists for them).
+
 ## Parallel work: the base contract
 
 Decision (2026-10-09, with the owner): the milestones are an order of
@@ -1300,9 +1376,9 @@ the contract below, not on how the layers under it are solved.
 
 A layer splits into what depends on the base mesh and what depends on the
 figure. Its fields (mask and coordinate) come from the base mesh alone, so
-they are rasterised once into a **field atlas** in the body's UV space (two
-layers per RGBA texture, gutters dilated so filtering never reaches empty
-texels across a seam) and shared by every figure. Its colour depends on the
+they are rasterised once into a **field atlas** in the body's UV space (four
+channels to an RGBA page, laid out by `planAtlas`; gutters dilated so filtering
+never reaches empty texels across a seam) and shared by every figure. Its colour depends on the
 figure, so each figure carries only a small **stop table**: per layer, its
 strength, blend mode and colour stops along the coordinate, sampled with
 linear filtering so a gradient costs nothing extra. The skin shader evaluates
@@ -1319,6 +1395,45 @@ TypeScript, unit-tested in Node; the shader is fixed. Today's three mask
 channels become the first three layers with unchanged output. Each area lives
 in its own files (`src/surface/regions/<area>.ts` and its tests) and adds one
 entry to the layer list, so lanes add files rather than edit shared ones.
+
+**Atlas packing (2026-10-09).** A page holds four channels, not two layers, and
+layers whose supports lie apart share channels automatically, so an area lane
+that adds layers on its own patch of the body (hands, feet, torso) costs
+almost no atlas. `planAtlas` lays it out at build time, from the layers'
+fields as built:
+
+- A layer's *support* is the skin its mask reaches: the triangles with mask at
+  a corner, as the cells of a 64×64 grid over the UV plane they cover, and one
+  cell round them (a filter's reach and a gutter are less than a cell). Layers
+  are placed in order, each in the first group whose supports it does not touch,
+  or in a group of its own. A group has a value channel, a coordinate channel if
+  any member reads one (bumps and surface layers read none), and, with two or
+  more members, an owner map.
+- *Overlapping layers never share* (a test checks every shared pair of the
+  shipped stack vertex by vertex, and a synthetic one for adjacency). The broad
+  state layers (flush, heat, exertion, blush, the pallors, sweat) keep a channel
+  each, as do the lips and mouth. The flush layer, the areola and the four
+  creases are one group.
+- *The owner map* is how a shared channel is told apart: one id per cell,
+  `OWNER_GRID`² bytes, read with `texelFetch` (exactly, never filtered), and a
+  layer reads the channel only in cells whose id is its own. Four maps to a
+  page of a small array texture; the stack has one map (a few KB). A layer that
+  shares carries (channel, coordinate channel, map, id) in the shader's
+  `hkChannel` uniform. The atlas is rasterised from each vertex's owner
+  (`vertexOwners`), so a shared channel holds, at a vertex, its member's
+  mask and coordinate.
+- The adult layers are never shared: their fields arrive after the atlas
+  exists, so their support is unknown. Three layers of two channels each.
+- Alternatives set aside: sharing by banding the value (layer *k* of *K* in
+  `[k/K, (k+1)/K)`, which bilinear filtering between regions turns into other
+  layers' bands, and loses bits); sharing by UV island (nine islands: only the
+  head and the arms ever separate); a lower resolution for smooth layers
+  (a second sampler and no cut in the broad layers, which dominate).
+
+The atlas for the stack with the joint creases: 20 layers, 27 channels, 7 pages
+(28 MB); two layers a page took 10 pages (40 MB) for them, and 8 (32 MB) for
+the 16 layers without. A fresh area lane's layers on their own patch cost the
+channel pair of their group or less.
 
 **Per lane, before merging:** its own unit tests, and a contact sheet of its
 area at both ends of the tone range and at the extremes of each control.
