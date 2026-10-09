@@ -73,8 +73,11 @@ sibling file contradicts it, so the licence can be proved from the file):
 | `toigo_blunt_bob`, `toigo_curled_under_bob`, `toigo_inverted_bob` and their `_with_bangs` twins (six) | Sculpted bobs, 1,507 to 2,670 vertices, 3600 px textures, one colourway each | No: straight and curled-under bobs |
 | `faydaen_hair_1` | An opaque 512 x 1024 sculpt; licence line is the exporter's default (`author: unknown`), weak evidence | No: straight, and ranked last |
 
-The community styles that are coily or braided fail the gate: `o4saken_curly01` and the `elvs_*`
-braids are CC-BY or AGPL in the file (the asset page claiming CC0 does not count), and
-`culturalibre_hair_05/06` say CC0 in the `mhclo` and AGPL3 in the `obj`. **None passes.** Closing
-the gap needs an authored or procedural coily style: curl cards or strand clumps over the same
-growth, fade and scalp fields. It is not in this milestone and the creator offers none.
+The community styles that are coily or braided fail the gate **as it stands**: `o4saken_curly01`
+and the `elvs_*` braids are CC-BY or AGPL in the file (the asset page claiming CC0 does not
+count), and `culturalibre_hair_05/06` say CC0 in the `mhclo` and AGPL3 in the `obj`. A file's
+licence line can be stale after MakeHuman's cutover to CC0, and that is being re-verified with
+dated evidence (licence history), so these are **pending licence-history verification, not
+rejected**. Until one is proved, closing the gap needs an authored or procedural coily style:
+curl cards or strand clumps over the same growth, fade and scalp fields. It is not in this
+milestone and the creator offers none.

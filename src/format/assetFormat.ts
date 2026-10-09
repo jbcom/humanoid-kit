@@ -248,6 +248,10 @@ export interface BoundAsset {
   hair?: HairFieldData;
 }
 
+/** The kinds of entry the hair pack lists. */
+export const HAIR_KINDS = ["scalp", "brows", "lashes"] as const;
+export type HairKind = (typeof HAIR_KINDS)[number];
+
 /** The buffers a hair style's binary carries beyond an attachment's (`src/surface/hairFields.ts`). */
 export const HAIR_FIELD_KEYS = ["growth", "fade", "fin", "scalpVerts", "scalpWeights"] as const;
 
@@ -272,7 +276,12 @@ export interface HairFieldData {
  * The `material.texture` is a strand map (docs/ARCHITECTURE.md, "Hair"), and
  * `occlusion` is one baked value per control vertex, at rest.
  */
-export interface HairStyleEntry extends Omit<AttachmentEntry, "layout"> {
+export interface HairStyleEntry extends Omit<AttachmentEntry, "layout" | "kind"> {
+  /**
+   * What the entry is: `scalp` (head hair, what `recipe.hair.style` wears) or the
+   * `brows` or `lashes` that share the pack's loader, binding and colour model.
+   */
+  kind: HairKind;
   layout: AttachmentEntry["layout"] & Record<(typeof HAIR_FIELD_KEYS)[number], BufferRange>;
   /** What a picker shows. */
   label: string;
@@ -570,6 +579,8 @@ function parseHairPack(body: BodyManifest, pack: HairPackData): HairAssets {
   const styles = new Map<string, HairStyleEntry>();
   for (const s of m.styles) {
     if (styles.has(s.id)) throw new AssetFormatError(`duplicate hair style ${s.id}`);
+    if (!HAIR_KINDS.includes(s.kind))
+      throw new AssetFormatError(`hair style ${s.id}: unknown hair kind ${JSON.stringify(s.kind)}`);
     styles.set(s.id, s);
   }
   const hair: HairAssets = {

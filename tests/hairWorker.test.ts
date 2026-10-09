@@ -81,6 +81,7 @@ describe("the worker with hair", { timeout: 60_000 }, () => {
       id: "short02",
       label: expect.any(String),
       tags: expect.any(Array),
+      kind: "scalp",
     });
 
     const recipe = createRecipe({ hair: { style: "short02" } });

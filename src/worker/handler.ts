@@ -69,7 +69,12 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           presenceJoints: tryPresenceJoints(assets),
           adultAnatomyLoaded: assets.adultAnatomyLoaded,
           hair: assets.hair && {
-            styles: assets.hair.manifest.styles.map(({ id, label, tags }) => ({ id, label, tags })),
+            styles: assets.hair.manifest.styles.map(({ id, label, tags, kind }) => ({
+              id,
+              label,
+              tags,
+              kind,
+            })),
           },
           ...(assets.adultAnatomyManifest?.anatomy && {
             anatomy: assets.adultAnatomyManifest.anatomy,

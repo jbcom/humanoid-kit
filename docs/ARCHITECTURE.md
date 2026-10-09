@@ -584,13 +584,15 @@ The tier-2 candidates in the sourcing catalogue (`mhclo` and `obj` both carry
 (`toigo_blunt_bob`, `_curled_under_bob`, `_inverted_bob`, and their `_with_bangs`
 twins) are straight and curled-under bobs, and `faydaen_hair_1` is an opaque,
 straight 512 x 1024 sculpt with the exporter's default licence line as its only
-evidence. The community styles that are textured coily or braided fail the gate
-by contradiction (`o4saken_curly01` and the `elvs_*` braids are CC-BY or AGPL
-in the file; `culturalibre_hair_05/06` say CC0 in the `mhclo` and AGPL3 in the
-`obj`). None passes, so closing the gap needs an **authored or procedural coily
-style** (instanced curl cards or strand clumps over the same scalp and growth
-fields), which is a milestone of its own. Evidence and the audit are in
-`docs/evidence/hair.md`.
+evidence. The coily or braided community styles (`o4saken_curly01`, the `elvs_*`
+braids, `culturalibre_hair_05/06`) fail the *current* gate because their files say
+CC-BY or AGPL, or contradict a `license CC0` line. Whether a file's licence line
+can be stale after MakeHuman's move to CC0 is being re-verified with dated
+evidence (licence history), so those are **pending licence-history verification,
+not rejected**. Until one is proved, closing the gap needs an **authored or
+procedural coily style** (instanced curl cards or strand clumps over the same
+scalp and growth fields), which is a milestone of its own. Evidence and the
+audit are in `docs/evidence/hair.md`.
 
 ## Presence
 

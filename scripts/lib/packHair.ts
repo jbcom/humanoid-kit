@@ -22,6 +22,7 @@ import {
   type AttachmentEntry,
   type BodyManifest,
   type BoundAsset,
+  type HairKind,
   type HairManifest,
   type HairStyleEntry,
   parseHumanoidAssets,
@@ -36,6 +37,8 @@ export interface HairStyleSpec {
   id: string;
   label: string;
   tags: string[];
+  /** What the entry is; default `scalp`. */
+  kind?: HairKind;
   /**
    * `strandMapFromRgba`'s `flatten`, for an atlas whose painted-in shading reads as a
    * net or as dirt under the renderer's own lighting (afro01's cell pattern, braid01's
@@ -230,6 +233,7 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
     if (!entry) throw new Error(`${spec.id}: nothing written`);
     styles.push({
       ...entry,
+      kind: spec.kind ?? "scalp",
       label: spec.label,
       tags: spec.tags,
       file,

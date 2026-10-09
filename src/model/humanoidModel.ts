@@ -11,6 +11,7 @@ import {
   type AttachmentMaterial,
   type BoundAsset,
   groupFaces,
+  type HairKind,
   type HairStyleEntry,
   type HumanoidAssets,
   pendingTargetFiles,
@@ -603,8 +604,11 @@ export class HumanoidModel {
     return this.hairEntry(id) && this.assets.hair?.bound.has(id) ? null : id;
   }
 
-  /** The manifest entry of a style the loaded hair pack must have. */
-  private hairEntry(id: string): HairStyleEntry {
+  /**
+   * The manifest entry of a style the loaded hair pack must have, of the kind
+   * asked for: `recipe.hair.style` wears scalp hair, not the pack's brows or lashes.
+   */
+  private hairEntry(id: string, kind: HairKind = "scalp"): HairStyleEntry {
     const entry = this.assets.hair?.styles.get(id);
     if (!entry)
       throw new RecipeError(
@@ -612,6 +616,8 @@ export class HumanoidModel {
           ? `unknown hair style ${id}`
           : `the recipe wears hair style ${id}, but no hair pack is loaded`,
       );
+    if (entry.kind !== kind)
+      throw new RecipeError(`hair style ${id} is a ${entry.kind} style, not ${kind} hair`);
     return entry;
   }
 

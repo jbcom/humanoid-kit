@@ -1,6 +1,7 @@
 /** Messages between `HumanoidWorkerClient` and the evaluation worker. */
 import type {
   AdultAnatomySpec,
+  HairKind,
   LoadOptions,
   ShapeModifierEntry,
   SliderTask,
@@ -49,7 +50,7 @@ export interface ReadyInfo {
 
 /** What a picker needs of the hair pack before any style's geometry has loaded. */
 export interface HairInfo {
-  styles: { id: string; label: string; tags: string[] }[];
+  styles: { id: string; label: string; tags: string[]; kind: HairKind }[];
 }
 
 /** Which controls shape each rendered vertex: what a tap on the figure opens. */

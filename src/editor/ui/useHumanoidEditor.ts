@@ -59,7 +59,10 @@ export function useEditorState(ready: ReadyInfo | null, initial?: Recipe): Human
     [ready],
   );
   const recipe = history.present;
-  const hairStyles = useMemo(() => ready?.hair?.styles.map((s) => s.id), [ready]);
+  const hairStyles = useMemo(
+    () => ready?.hair?.styles.filter((s) => s.kind === "scalp").map((s) => s.id),
+    [ready],
+  );
 
   const update = useCallback(
     (change: (r: Recipe) => Recipe, gesture?: string) =>

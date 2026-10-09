@@ -49,9 +49,11 @@ type PackLocation =
   styles whose geometry has arrived) and `load(id)`, which resolves with a
   style's geometry, fetching its binary the first time and sharing a fetch that
   is already running (a failed fetch is forgotten, so the next wearer retries).
-  A `HairStyleEntry` is an attachment entry (`kind: "hair"`, no `deleteVerts`,
+  A `HairStyleEntry` is an attachment entry (no `deleteVerts`,
   one occlusion value per vertex) with a `label`, `tags` (`short`, `bob`,
-  `curly`...), its `file` and `sha256`, and the `strand` direction and
+  `curly`...), its `kind` (`scalp`, or `brows` or `lashes`, which share the pack's
+  loader; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
+  carries each entry's kind), its `file` and `sha256`, and the `strand` direction and
   `coherence` measured from its strand map.
 
 ```ts

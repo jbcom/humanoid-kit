@@ -5,6 +5,7 @@ import sharp from "sharp";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   addHairStyle,
+  type HairManifest,
   type HairStyleEntry,
   parseHumanoidAssets,
 } from "../src/format/assetFormat.ts";
@@ -45,7 +46,7 @@ describe("the hair pack's manifest", () => {
   it("lists the shortlisted styles, each with a label and tags", () => {
     expect(hairManifest.styles.map((s) => s.id)).toEqual(STYLES);
     for (const s of hairManifest.styles) {
-      expect(s.kind).toBe("hair");
+      expect(s.kind, s.id).toBe("scalp");
       expect(s.label.length, s.id).toBeGreaterThan(0);
       expect(s.tags.length, s.id).toBeGreaterThan(0);
     }
@@ -224,6 +225,21 @@ describe("loading the pack", () => {
     expect(() => parseHumanoidAssets(other, undefined, { manifest: hairManifest })).toThrow(
       /different body pack/,
     );
+  });
+
+  it("refuses a style of a kind it does not know, and accepts brows and lashes beside scalp hair", () => {
+    const body = bodyPackData(["core"]);
+    const withKind = (kind: string): HairManifest => ({
+      ...hairManifest,
+      styles: hairManifest.styles.map((s, i) => (i === 0 ? { ...s, kind: kind as never } : s)),
+    });
+    expect(() => parseHumanoidAssets(body, undefined, { manifest: withKind("beard") })).toThrow(
+      /unknown hair kind/,
+    );
+    for (const kind of ["brows", "lashes"]) {
+      const parsed = parseHumanoidAssets(body, undefined, { manifest: withKind(kind) });
+      expect(parsed.hair?.styles.get(STYLES[0] as string)?.kind).toBe(kind);
+    }
   });
 
   it("refuses a style whose bytes do not match its manifest", () => {

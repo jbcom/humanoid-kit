@@ -86,7 +86,7 @@ export function AppearancePanel({
   const body: FrameRequest = { part: "body", direction: "front" };
   const iris = css(recipe.eyes.iris);
   // Hair is offered when a hair pack is loaded; a recipe with no `hair` has none.
-  const hairStyles = editor.ready?.hair?.styles ?? null;
+  const hairStyles = editor.ready?.hair?.styles.filter((s) => s.kind === "scalp") ?? null;
   const style = recipe.hair?.style ?? null;
   const hairColour = recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR;
   const setHair = (patch: { style?: string | null }, gesture?: string) =>

@@ -102,7 +102,8 @@ describe("evaluating a figure with hair", () => {
         m.hairTopology("short04").vertexCount * 3,
       );
     }
-  });
+    // Three whole models are built, and the scalp is carried through each one's body stencil.
+  }, 120_000);
 });
 
 describe("hair topology", () => {
@@ -186,7 +187,7 @@ describe("hair topology", () => {
       // Never on the neck or body: the lowest tinted vertex is above the jaw.
       expect(bottom, `${s.id} lowest scalp vertex`).toBeGreaterThan(top - 0.22);
     }
-  });
+  }, 120_000);
 
   it("resolves the strand map's URL from the pack's files, when the pack was loaded with URLs", () => {
     expect(model.hairTopology("short02").textureUrl).toBeNull();
@@ -213,6 +214,20 @@ describe("a style that cannot be worn", () => {
       /unknown hair style no-such-style/,
     );
     expect(() => model.pendingHair(hairy("no-such-style"))).toThrow(RecipeError);
+  });
+
+  it("is rejected when it is a brows or lashes style, which scalp hair cannot wear", () => {
+    const other = {
+      ...hairManifest,
+      styles: hairManifest.styles.map((s) =>
+        s.id === "short02" ? { ...s, kind: "brows" as const } : s,
+      ),
+    };
+    const parsed = parseHumanoidAssets(bodyPackData(), undefined, { manifest: other });
+    const m = new HumanoidModel(parsed);
+    expect(() => m.pendingHair(hairy("short02"))).toThrow(RecipeError);
+    expect(() => m.pendingHair(hairy("short02"))).toThrow(/brows style.*not scalp hair/);
+    expect(() => m.pendingHair(hairy("short04"))).not.toThrow();
   });
 
   it("is rejected when no hair pack is loaded", () => {

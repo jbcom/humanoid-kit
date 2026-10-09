@@ -211,8 +211,10 @@ describe("AppearancePanel", () => {
   describe("hair", () => {
     const hair = {
       styles: [
-        { id: "short02", label: "Short, tousled", tags: ["short"] },
-        { id: "long01", label: "Long, straight", tags: ["long"] },
+        { id: "short02", label: "Short, tousled", tags: ["short"], kind: "scalp" as const },
+        { id: "long01", label: "Long, straight", tags: ["long"], kind: "scalp" as const },
+        // Brows and lashes share the pack but are not hair styles the creator offers.
+        { id: "brow01", label: "Brows, natural", tags: ["brows"], kind: "brows" as const },
       ],
     };
     const panel = async (info = readyInfo(false, hair)) => {
@@ -244,6 +246,9 @@ describe("AppearancePanel", () => {
         .element(screen.getByRole("button", { name: "Long, straight" }))
         .toHaveAttribute("aria-pressed", "true");
       expect(seen.editor?.recipe.hair?.style).toBe("long01");
+      await expect
+        .element(screen.getByRole("button", { name: "Brows, natural" }))
+        .not.toBeInTheDocument();
       // Choosing a style keeps the colour, and the default colour is the starting point.
       expect(seen.editor?.recipe.hair?.colour).toEqual(DEFAULT_HAIR_COLOUR);
       await screen.getByRole("button", { name: "None" }).click();
