@@ -23,7 +23,9 @@ class FakeWorker {
             type: "ready",
             id: msg.id,
             topology: { body: {} as never, attachments: [] },
-            modifierIds: [],
+            modifiers: [],
+            sliders: [],
+            bones: [],
             adultAnatomyLoaded: false,
           });
         return;

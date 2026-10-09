@@ -203,7 +203,10 @@ new HumanoidWorkerClient(load: LoadOptions, model?: ModelOptions, worker?: Worke
 The main-thread handle to an evaluation worker.
 
 - `client.ready: Promise<ReadyInfo>` resolves when the worker has loaded its
-  packs. `ReadyInfo` is `{ topology, modifierIds, adultAnatomyLoaded }`.
+  packs. `ReadyInfo` is `{ topology, modifiers, sliders, bones,
+  adultAnatomyLoaded }`: the render topology, every drivable shape modifier, the
+  merged slider taxonomy, the skeleton's bone names (the topology's skin indices
+  refer to them) and whether the adult anatomy pack is loaded.
 - `client.evaluate(recipe): Promise<Evaluation>` is latest-wins: a request
   replaced by a newer one before it starts rejects with an error named
   `AbortError`. Buffers are transferred from the worker.

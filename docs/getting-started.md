@@ -82,7 +82,7 @@ Create the client in an effect, or once at module scope, and call
 ## 3. Or evaluate without React
 
 ```ts
-const info = await client.ready; // { topology, modifierIds, adultAnatomyLoaded }
+const info = await client.ready; // { topology, modifiers, sliders, bones, adultAnatomyLoaded }
 const { positions, normals, groundOffset } = await client.evaluate(recipe);
 ```
 

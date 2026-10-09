@@ -119,7 +119,7 @@ Without React, use the client directly and build your own geometry from the
 result:
 
 ```ts
-const info = await client.ready; // topology, modifier ids, adult pack flag
+const info = await client.ready; // topology, modifiers, sliders, bones, adult pack flag
 const { positions, normals, groundOffset } = await client.evaluate(recipe);
 ```
 

@@ -8,15 +8,11 @@
  * Waiting keys are served in the order they were first queued.
  */
 import type { LoadOptions } from "../format/assetFormat.ts";
-import type { Evaluation, ModelOptions, ModelTopology } from "../model/humanoidModel.ts";
+import type { Evaluation, ModelOptions } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
+import type { ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
 
-export interface ReadyInfo {
-  topology: ModelTopology;
-  modifierIds: string[];
-  adultAnatomyLoaded: boolean;
-}
+export type { ReadyInfo };
 
 export class HumanoidWorkerError extends Error {
   override name = "HumanoidWorkerError";
@@ -65,11 +61,8 @@ export class HumanoidWorkerClient {
       this.failAll(new HumanoidWorkerError(e.message || "worker failed"));
     this.ready = this.request({ type: "init", id: 0, load, model }).then((r) => {
       if (r.type !== "ready") throw new HumanoidWorkerError(`unexpected ${r.type}`);
-      return {
-        topology: r.topology,
-        modifierIds: r.modifierIds,
-        adultAnatomyLoaded: r.adultAnatomyLoaded,
-      };
+      const { type: _type, id: _id, ...info } = r;
+      return info;
     });
     // Rejections reach every caller that awaits `ready`; this only marks the
     // promise observed so a client disposed during init is not reported twice.

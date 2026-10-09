@@ -24,7 +24,9 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         type: "ready",
         id: req.id,
         topology,
-        modifierIds: [...assets.modifiers.keys()],
+        modifiers: [...assets.modifiers.values()],
+        sliders: assets.sliders,
+        bones: assets.manifest.skeleton.bones.map((b) => b.name),
         adultAnatomyLoaded: assets.adultAnatomyLoaded,
       });
       return;
