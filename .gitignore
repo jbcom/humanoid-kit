@@ -4,6 +4,8 @@ dist-playground/
 coverage/
 test-results/
 playwright-report/
+# Lighthouse CI's served site and reports (lighthouserc.mjs).
+.lighthouse/
 # Vitest browser mode's screenshots and attachments from failed runs.
 .vitest/
 *.tgz
