@@ -456,7 +456,7 @@ export const TOE_CREASE_LAYER: DetailLayer = {
  * 6), as docs/research/SKIN-STATES.md C6 records: no measurement of toenail
  * proportions against the mesh's toes exists.
  */
-export const TOENAIL_REGION = [0.64, 0.5, 0.62, 0.68, 0.64] as const;
+export const TOENAIL_REGION = [0.82, 0.62, 0.72, 0.78, 0.72] as const;
 
 /** Where the fold, cuticle, lunula and free edge lie along that region (the hands' scheme: `NAIL_LAYOUT`). Only the big toe's lunula shows; a lesser toe's is hidden under the fold (a choice). */
 const TOENAIL_LAYOUT = [

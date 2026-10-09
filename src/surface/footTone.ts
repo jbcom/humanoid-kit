@@ -13,7 +13,7 @@ import { type Rgb, SKIN_F0, type SkinTone } from "./skinTone.ts";
  * and yellower, with less red (thick keratin passes less of the blood's colour
  * and scatters more). A CHOICE: no colorimetry of callus was found (C6).
  */
-export const CALLUS_LAB_SHIFT: Readonly<Lab> = [7, -2.5, 6];
+export const CALLUS_LAB_SHIFT: Readonly<Lab> = [9, -3, 8];
 
 /** A colour that is not skin has no keratin colour to change: callus is its sole lightened and yellowed by these factors (a CHOICE). */
 const CALLUS_OVERRIDE: Readonly<Rgb> = [1.1, 1.06, 0.9];

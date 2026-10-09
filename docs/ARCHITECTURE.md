@@ -1783,7 +1783,7 @@ anything when shoes are worn beyond the fields every figure shares.
   hands' `nailStops` and `nailCoordinate`, so the nail model has one owner), and
   a surface layer the plate's gloss, duller than a fingernail's. Each toe's nail
   region is a fraction of its distal flesh, from its last joint to the tip
-  (`TOENAIL_REGION`: 0.64 on the big toe, about half to two thirds on the lesser
+  (`TOENAIL_REGION`: 0.82 on the big toe, about two thirds to three quarters on the lesser
   toes, where the nail is most of the distal phalanx), its half-width a fraction
   of the toe's own radius, and it faces up and curls over at the tip. The bed
   and free edge yellow with age (`toenailAging`: toenails thicken and slow with
