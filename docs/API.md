@@ -234,8 +234,11 @@ new HumanoidWorkerClient(load: LoadOptions, model?: ModelOptions, worker?: Worke
 The main-thread handle to an evaluation worker.
 
 - `client.ready: Promise<ReadyInfo>` resolves when the worker can evaluate a
-  figure built from macros; the modifier targets may still be arriving, and an
-  evaluation that sets a modifier waits for them. `ReadyInfo` is `{ topology, modifiers, sliders, bones,
+  figure built from macros; the modifier targets may still be arriving.
+- `client.modifierTargets: Promise<void>` resolves when they have loaded, or
+  rejects with the error that stopped them. Until it settles, the client holds
+  back evaluations that set a modifier and serves macro-only ones ahead of them.
+- `ReadyInfo` is `{ topology, modifiers, sliders, bones,
   adultAnatomyLoaded }`: the render topology, every drivable shape modifier, the
   merged slider taxonomy, the skeleton's bone names (the topology's skin indices
   refer to them) and whether the adult anatomy pack is loaded.

@@ -227,8 +227,12 @@ re-bake at runtime with the same method.
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one
 `HumanoidModel`. The worker loads the packs in two stages, builds the model
 from the first and replies with the topology, the modifier ids and the slider
-taxonomy while the modifier targets are still arriving. A recipe that sets any
-modifier waits for them; one built from macros alone evaluates at once.
+taxonomy while the modifier targets are still arriving. The client asks the
+worker to report when they have loaded and until then holds back any
+evaluation that sets a modifier, sending macro-only ones past it, so dragging
+age or gender never waits on a download it does not need. Held evaluations go
+once the targets arrive; if they fail to load, the worker rejects each with the
+reason.
 Evaluations are latest-wins: while one runs,
 a newer request replaces any queued one, and the replaced request rejects with an
 `AbortError`, so dragging a slider never builds a backlog. Results are

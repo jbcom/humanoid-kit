@@ -10,14 +10,25 @@ class FakeWorker {
   evaluated: number[] = [];
   terminated = false;
   private readonly failInit: boolean;
-  constructor(failInit = false) {
+  /** Settles when the stand-in's modifier targets "arrive"; rejects to fail them. */
+  private readonly modifierTargets: Promise<void>;
+  constructor(failInit = false, modifierTargets: Promise<void> = Promise.resolve()) {
     this.failInit = failInit;
+    this.modifierTargets = modifierTargets;
   }
   postMessage(msg: WorkerRequest) {
+    const reply = (data: WorkerResponse) => {
+      if (!this.terminated) this.onmessage?.({ data } as MessageEvent<WorkerResponse>);
+    };
+    if (msg.type === "modifierTargets") {
+      this.modifierTargets.then(
+        () => reply({ type: "modifierTargetsLoaded", id: msg.id }),
+        (e: Error) => reply({ type: "error", id: msg.id, message: e.message, name: e.name }),
+      );
+      return;
+    }
     setTimeout(() => {
       if (this.terminated) return;
-      const reply = (data: WorkerResponse) =>
-        this.onmessage?.({ data } as MessageEvent<WorkerResponse>);
       if (msg.type === "init") {
         if (this.failInit)
           reply({ type: "error", id: msg.id, message: "no packs", name: "AssetFormatError" });
@@ -47,8 +58,8 @@ class FakeWorker {
   }
 }
 
-const make = (failInit = false) => {
-  const worker = new FakeWorker(failInit);
+const make = (failInit = false, modifierTargets?: Promise<void>) => {
+  const worker = new FakeWorker(failInit, modifierTargets);
   return {
     worker,
     client: new HumanoidWorkerClient({ body: "x" }, {}, worker as unknown as Worker),
@@ -88,9 +99,49 @@ describe("HumanoidWorkerClient", () => {
     await expect(client.evaluate(recipe(31), "a")).rejects.toBeInstanceOf(HumanoidWorkerError);
   });
 
+  it("serves macro-only figures while the modifier targets are still arriving", async () => {
+    let release = () => {};
+    const { client, worker } = make(
+      false,
+      new Promise<void>((r) => {
+        release = r;
+      }),
+    );
+    const shaped = createRecipe({ macros: { age: 50 }, modifiers: { "nose/a|b": 0.5 } });
+    const a = client.evaluate(shaped, "a");
+    const b = client.evaluate(recipe(30), "b");
+    // "a" was queued first, but waiting on the targets must not hold up "b".
+    await expect(b).resolves.toMatchObject({ age: 30 });
+    expect(worker.evaluated).toEqual([30]);
+    // A newer macro-only request for "a" replaces the held one and goes at once.
+    const a2 = client.evaluate(recipe(51), "a");
+    await expect(a).rejects.toMatchObject({ name: "AbortError" });
+    await expect(a2).resolves.toMatchObject({ age: 51 });
+    const a3 = client.evaluate(shaped, "a");
+    release();
+    await client.modifierTargets;
+    await expect(a3).resolves.toMatchObject({ age: 50 });
+    expect(worker.evaluated).toEqual([30, 51, 50]);
+  });
+
+  it("still sends modifier evaluations when the targets fail, so the worker reports why", async () => {
+    const failure = Object.assign(new Error("modifier-targets.bin.gz failed: 404"), {
+      name: "AssetFormatError",
+    });
+    const failed = Promise.reject(failure);
+    // Observed here; the stand-in only subscribes once the client asks.
+    failed.catch(() => {});
+    const { client, worker } = make(false, failed);
+    const shaped = createRecipe({ modifiers: { "nose/a|b": 0.5 } });
+    await expect(client.modifierTargets).rejects.toMatchObject({ name: "AssetFormatError" });
+    await client.evaluate(shaped);
+    expect(worker.evaluated).toHaveLength(1);
+  });
+
   it("fails queued evaluations when the worker cannot initialise", async () => {
     const { client } = make(true);
     await expect(client.evaluate(recipe(30))).rejects.toMatchObject({ message: "no packs" });
     await expect(client.ready).rejects.toMatchObject({ name: "AssetFormatError" });
+    await expect(client.modifierTargets).rejects.toMatchObject({ name: "AssetFormatError" });
   });
 });

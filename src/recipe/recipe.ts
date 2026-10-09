@@ -69,10 +69,18 @@ export interface Recipe {
 
 /**
  * Whether a recipe sets any shape modifier. A figure that sets none is built
- * from macro targets alone, which load before the modifier targets.
+ * from macro targets alone, which load before the modifier targets. Recipes
+ * often arrive as JSON, so a malformed one answers false here and is reported
+ * by validation when it is evaluated.
  */
-export const recipeSetsModifiers = (recipe: Recipe): boolean =>
-  Object.values(recipe.modifiers).some((v) => v !== 0);
+export const recipeSetsModifiers = (recipe: Recipe): boolean => {
+  const modifiers: unknown = (recipe as Partial<Recipe> | null)?.modifiers;
+  return (
+    typeof modifiers === "object" &&
+    modifiers !== null &&
+    Object.values(modifiers).some((v) => v !== 0)
+  );
+};
 
 export function createRecipe(
   init: {

@@ -3,9 +3,9 @@
  * thread. Results are transferred, not copied.
  *
  * Packs load in two stages: the worker replies `ready` once a figure built from
- * macros can be evaluated, while the modifier targets are still arriving. A
- * recipe that sets a shape modifier waits for them; one that does not
- * evaluates at once.
+ * macros can be evaluated, while the modifier targets are still arriving, and
+ * answers a `modifierTargets` request when they have. A recipe that sets a
+ * shape modifier waits for them; one that does not evaluates at once.
  */
 import { loadHumanoidAssetsStaged } from "../format/assetFormat.ts";
 import { HumanoidModel } from "../model/humanoidModel.ts";
@@ -42,7 +42,14 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       });
       return;
     }
-    if (!model) throw new Error("worker received evaluate before init");
+    if (!model) throw new Error(`worker received ${req.type} before init`);
+    if (req.type === "modifierTargets") {
+      await modifierTargets;
+      post({ type: "modifierTargetsLoaded", id: req.id });
+      return;
+    }
+    // The client holds these back until the targets arrive; a direct caller
+    // still gets a correct result, only later.
     if (recipeSetsModifiers(req.recipe)) await modifierTargets;
     const t0 = performance.now();
     const evaluation = model.evaluate(req.recipe);

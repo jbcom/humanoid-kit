@@ -5,11 +5,13 @@
  * passes its own key, and while a key has an evaluation waiting, a newer
  * request for the same key replaces it, so dragging a slider never builds a
  * backlog while several figures sharing one worker never cancel each other.
- * Waiting keys are served in the order they were first queued.
+ * Waiting keys are served in the order they were first queued, except that an
+ * evaluation setting shape modifiers is held back until the modifier targets
+ * have loaded, so it never keeps a macro-only figure waiting behind it.
  */
 import type { LoadOptions } from "../format/assetFormat.ts";
 import type { Evaluation, ModelOptions } from "../model/humanoidModel.ts";
-import type { Recipe } from "../recipe/recipe.ts";
+import { type Recipe, recipeSetsModifiers } from "../recipe/recipe.ts";
 import type { ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
 
 export type { ReadyInfo };
@@ -41,7 +43,15 @@ export class HumanoidWorkerClient {
   private disposed = false;
   /** Waiting evaluations by caller key; Map iteration order is first-queued order. */
   private readonly queue = new Map<string, Job>();
+  /** Whether the modifier targets have loaded or failed; either way, held jobs may go. */
+  private modifierTargetsSettled = false;
+  /** Resolves when the worker can evaluate a figure built from macros. */
   readonly ready: Promise<ReadyInfo>;
+  /**
+   * Resolves when the modifier targets have loaded as well, or rejects with
+   * the error that stopped them (macro-only figures keep working).
+   */
+  readonly modifierTargets: Promise<void>;
 
   constructor(load: LoadOptions, model: ModelOptions = {}, worker?: Worker) {
     // A runtime URL, not an import: it names the built worker module next to this file in dist/.
@@ -67,6 +77,17 @@ export class HumanoidWorkerClient {
     // Rejections reach every caller that awaits `ready`; this only marks the
     // promise observed so a client disposed during init is not reported twice.
     this.ready.catch(() => undefined);
+    this.modifierTargets = this.ready.then(async () => {
+      const r = await this.request({ type: "modifierTargets", id: 0 });
+      if (r.type !== "modifierTargetsLoaded") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+    });
+    // Held evaluations go once the targets settle: after a failure the worker
+    // rejects each with the reason.
+    const release = () => {
+      this.modifierTargetsSettled = true;
+      void this.pump();
+    };
+    this.modifierTargets.then(release, release);
   }
 
   private request(msg: WorkerRequest): Promise<WorkerResponse> {
@@ -108,12 +129,13 @@ export class HumanoidWorkerClient {
       this.failQueued(e instanceof Error ? e : new HumanoidWorkerError(String(e)));
       return;
     }
-    const next = this.queue.entries().next();
-    if (next.done) {
+    const next = this.nextSendable();
+    if (!next) {
+      // Everything waiting needs the modifier targets; their arrival pumps again.
       this.running = false;
       return;
     }
-    const [key, job] = next.value;
+    const [key, job] = next;
     this.queue.delete(key);
     try {
       const r = await this.request({ type: "evaluate", id: 0, recipe: job.recipe });
@@ -125,6 +147,13 @@ export class HumanoidWorkerClient {
       this.running = false;
       void this.pump();
     }
+  }
+
+  /** The first-queued job the worker can evaluate without waiting. */
+  private nextSendable(): [string, Job] | undefined {
+    for (const entry of this.queue)
+      if (this.modifierTargetsSettled || !recipeSetsModifiers(entry[1].recipe)) return entry;
+    return undefined;
   }
 
   private failQueued(err: Error): void {

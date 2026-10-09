@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe, recipeSetsModifiers } from "../src/recipe/recipe.ts";
+import { RecipeValidationError } from "../src/recipe/validate.ts";
 import { bodyPackData, loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(), { subdivision: 1 });
@@ -21,6 +22,9 @@ describe("HumanoidModel", () => {
       recipeSetsModifiers(createRecipe({ modifiers: { "nose/nose-scale-horiz-decr|incr": 0 } })),
     ).toBe(false);
     expect(() => early.evaluate(shaped)).toThrow(/modifier targets have not loaded/);
+    // A malformed recipe (from JSON, say) is still reported by validation.
+    const { modifiers: _m, ...noModifiers } = createRecipe();
+    expect(() => early.evaluate(noModifiers as never)).toThrow(RecipeValidationError);
   });
 
   it("evaluates the default recipe to finite, grounded geometry", () => {

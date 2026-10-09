@@ -17,9 +17,12 @@ export interface ReadyInfo {
 
 export type WorkerRequest =
   | { type: "init"; id: number; load: LoadOptions; model: ModelOptions }
+  /** Answered once the modifier targets have loaded, or with the error that stopped them. */
+  | { type: "modifierTargets"; id: number }
   | { type: "evaluate"; id: number; recipe: Recipe };
 
 export type WorkerResponse =
   | ({ type: "ready"; id: number } & ReadyInfo)
+  | { type: "modifierTargetsLoaded"; id: number }
   | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
   | { type: "error"; id: number; message: string; name: string };
