@@ -104,11 +104,16 @@ interface Group {
   members: number[];
   /** Cells any member covers; null for a group that takes no more (a layer that cannot be placed). */
   cells: Uint8Array | null;
+  /** Whether a member reads a coordinate, which gives the group a channel for it. */
+  reads: boolean;
 }
 
 /**
  * The layout: layers are placed in order, each in the first group whose layers
- * it lies apart from (or in a group of its own). A group has a value channel,
+ * it lies apart from and which costs it no channel, else the first it lies apart
+ * from (or in a group of its own). A layer that reads a coordinate costs a group
+ * that has no coordinate channel one more channel, so it goes first to a group that
+ * has one. A group has a value channel,
  * a coordinate channel if any member reads one, and, with two or more members,
  * an owner map. Without a surface, or for an adult layer (whose fields arrive
  * after the plan) or one that reaches nothing, a layer is its own group.
@@ -117,20 +122,27 @@ export function planAtlas(layers: readonly SkinLayer[], surface?: AtlasSurface):
   const groups: Group[] = [];
   layers.forEach((layer, l) => {
     const cells = surface && !layer.adult ? supportCells(surface, l) : null;
+    const reads = layerUsesCoordinate(layer);
     if (cells?.some((c) => c === 1)) {
-      for (const g of groups) {
+      const apart = groups.filter((g) => {
         const union = g.cells;
-        if (!union || cells.some((c, i) => c === 1 && union[i] === 1)) continue;
+        return union && !cells.some((c, i) => c === 1 && union[i] === 1);
+      });
+      // A group with what the layer reads costs nothing; otherwise the first one apart.
+      const g = apart.find((x) => x.reads || !reads) ?? apart[0];
+      if (g?.cells) {
+        const union = g.cells;
         g.members.push(l);
+        g.reads ||= reads;
         cells.forEach((c, i) => {
           if (c === 1) union[i] = 1;
         });
         return;
       }
-      groups.push({ members: [l], cells: Uint8Array.from(cells) });
+      groups.push({ members: [l], cells: Uint8Array.from(cells), reads });
       return;
     }
-    groups.push({ members: [l], cells: null });
+    groups.push({ members: [l], cells: null, reads });
   });
 
   const value = new Int16Array(layers.length);
@@ -141,8 +153,7 @@ export function planAtlas(layers: readonly SkinLayer[], surface?: AtlasSurface):
   let channels = 0;
   for (const g of groups) {
     const v = channels++;
-    const reads = g.members.some((l) => layerUsesCoordinate(layers[l] as SkinLayer));
-    const c = reads ? channels++ : -1;
+    const c = g.reads ? channels++ : -1;
     const shared = g.members.length > 1;
     const map = shared ? new Uint8Array(OWNER_GRID * OWNER_GRID).fill(NO_OWNER) : null;
     if (map) maps.push(map);

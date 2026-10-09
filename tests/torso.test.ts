@@ -10,6 +10,7 @@ import {
   STOP_TABLE_WIDTH,
 } from "../src/surface/layers.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
+import { bodySurface } from "../src/surface/regions/once.ts";
 import {
   AREOLA_EDGE_SOFTNESS,
   AREOLA_LAYER,
@@ -19,7 +20,12 @@ import {
   areolaZone,
   CLAVICLE_LAYER,
   CLAVICLE_PERIODS,
+  LINEA_ALBA_LAYER,
+  LINEA_NIGRA_LAYER,
   MONTGOMERY_LAYER,
+  NAVEL_LAYER,
+  NAVEL_REACH,
+  navelCentre,
   RIB_LAYER,
 } from "../src/surface/regions/torso.ts";
 import { areolaAlbedo, luminance, type Rgb, skinAlbedo } from "../src/surface/skinTone.ts";
@@ -525,5 +531,181 @@ describe("the areola's stretch on a figure", () => {
       const edge = areolaRadius(macros.age, b.gender, b.breastSize) / k;
       expect(edge * (1 + AREOLA_EDGE_SOFTNESS), JSON.stringify(macros)).toBeLessThan(AREOLA_REACH);
     }
+  });
+});
+
+describe("the navel and the midline", () => {
+  const assets = loadFixtureAssets();
+  const P = assets.positions;
+  const n = assets.manifest.vertexCount;
+  const onBody = bodySurface(assets);
+  const navel = navelCentre(assets);
+  const lean: FigureBuild = {
+    gender: 1,
+    age: 25,
+    weight: 0,
+    height: 0.5,
+    muscle: 0.8,
+    breastSize: 0.5,
+  };
+  const ratio = (layer: SkinLayer, input: SkinPaintInput) => {
+    const t = paintStopTable([layer], input);
+    return Array.from({ length: STOP_COUNT }, (_, k) => [
+      t[(k + 1) * 4] as number,
+      t[(k + 1) * 4 + 1] as number,
+      t[(k + 1) * 4 + 2] as number,
+    ]);
+  };
+
+  describe("the navel", () => {
+    const f = NAVEL_LAYER.fields(assets);
+
+    it("is found at the spine's third joint's height on the midline, in the dimple", () => {
+      const spine = new Float32Array(3);
+      jointPosition(assets, P, "spine03____head", spine, 0);
+      expect(navel[1]).toBeGreaterThan((spine[1] as number) - 0.02);
+      expect(navel[1]).toBeLessThan((spine[1] as number) + 0.02);
+      expect(Math.abs(navel[0])).toBeLessThan(0.006);
+      // In the dimple: the skin is deeper than the belly an inch above and below it.
+      const at = (y: number) => {
+        let best = Number.POSITIVE_INFINITY;
+        let z = 0;
+        for (let v = 0; v < n; v++) {
+          if (!onBody[v] || Math.abs(P[v * 3] as number) > 0.006 || (P[v * 3 + 2] as number) < 0.05)
+            continue;
+          const d = Math.abs((P[v * 3 + 1] as number) - y);
+          if (d < best) {
+            best = d;
+            z = P[v * 3 + 2] as number;
+          }
+        }
+        return z;
+      };
+      expect(navel[2]).toBeLessThan(at(navel[1] + 0.06));
+      expect(navel[2]).toBeLessThan(at(navel[1] - 0.04));
+    });
+
+    it("is a small disc round the navel and nowhere else, its coordinate the distance from the centre", () => {
+      let count = 0;
+      for (let v = 0; v < n; v++) {
+        const d = Math.hypot(
+          ...[0, 1, 2].map((k) => (P[v * 3 + k] as number) - (navel[k] as number)),
+        );
+        if ((f.mask[v] as number) > 0.05) {
+          count++;
+          expect(onBody[v], `vertex ${v}`).toBe(1);
+          expect(d, `vertex ${v}`).toBeLessThan(NAVEL_REACH * 1.2);
+        }
+        if (onBody[v] === 1 && d < 0.5 * NAVEL_REACH)
+          expect(f.mask[v], `vertex ${v} inside`).toBeGreaterThan(0.9);
+      }
+      expect(count).toBeGreaterThan(3);
+    });
+
+    it("multiplies the skin: the navel's hollow darker and pinker, the skin round it as it is", () => {
+      const s = ratio(NAVEL_LAYER, paint({ age: 30 }));
+      const t = paintStopTable([NAVEL_LAYER], paint({ age: 30 }));
+      expect(t[1]).toBe(1);
+      const centre = s[0] as number[];
+      const rim = s[STOP_COUNT - 1] as number[];
+      expect(rim).toEqual([1, 1, 1]);
+      // Darker, and redder than it is darker in the green: more blood in thin skin.
+      expect(luminance(centre as Rgb)).toBeLessThan(0.98);
+      expect((centre[0] as number) / (centre[1] as number)).toBeGreaterThan(1);
+      for (const c of centre) expect(c).toBeLessThanOrEqual(1);
+    });
+  });
+
+  describe("the linea nigra", () => {
+    const f = LINEA_NIGRA_LAYER.fields(assets);
+    const coord = f.coord as Float32Array;
+
+    it("runs up the midline from the pubic bone past the navel, a few centimetres wide", () => {
+      let lo = Number.POSITIVE_INFINITY;
+      let hi = Number.NEGATIVE_INFINITY;
+      let count = 0;
+      for (let v = 0; v < n; v++) {
+        if ((f.mask[v] as number) < 0.05) continue;
+        count++;
+        expect(onBody[v], `vertex ${v}`).toBe(1);
+        expect(Math.abs(P[v * 3] as number), `vertex ${v}`).toBeLessThan(0.04);
+        expect(P[v * 3 + 2] as number, `vertex ${v} front`).toBeGreaterThan(0.05);
+        lo = Math.min(lo, P[v * 3 + 1] as number);
+        hi = Math.max(hi, P[v * 3 + 1] as number);
+      }
+      expect(count).toBeGreaterThan(10);
+      expect(lo).toBeLessThan((navel[1] as number) - 0.1);
+      expect(hi).toBeGreaterThan((navel[1] as number) + 0.05);
+    });
+
+    it("runs its coordinate across the line, the middle at 0.5 and the same either side", () => {
+      for (let v = 0; v < n; v++) {
+        if ((f.mask[v] as number) < 0.3) continue;
+        const x = P[v * 3] as number;
+        if (x > 0.004) expect(coord[v], `vertex ${v}`).toBeGreaterThan(0.5);
+        if (x < -0.004) expect(coord[v], `vertex ${v}`).toBeLessThan(0.5);
+        if (Math.abs(x) < 0.002) expect(coord[v], `vertex ${v}`).toBeCloseTo(0.5, 1);
+      }
+    });
+
+    it("darkens the middle of the line and leaves its edges, as the skin's own melanin does", () => {
+      const s = ratio(LINEA_NIGRA_LAYER, paint({ age: 30 }));
+      expect(s[0]).toEqual([1, 1, 1]);
+      expect(s[STOP_COUNT - 1]).toEqual([1, 1, 1]);
+      const mid = s[(STOP_COUNT - 1) / 2 - 0.5 > 0 ? Math.floor(STOP_COUNT / 2) : 3] as number[];
+      for (const c of mid) expect(c).toBeLessThan(1);
+      // A deeper tone darkens by a visible amount too.
+      const deep = ratio(LINEA_NIGRA_LAYER, paint({ age: 30, tone: { ...tone, melanin: 0.9 } }));
+      for (const c of deep[3] as number[]) expect(c).toBeLessThan(1);
+    });
+
+    it("is faint at rest, a mix of strength by the stage, and absent before puberty", () => {
+      const adult = paintStopTable([LINEA_NIGRA_LAYER], paint({ age: 30 }));
+      const child = paintStopTable([LINEA_NIGRA_LAYER], paint({ age: 6 }));
+      expect(adult[1]).toBe(1);
+      expect(adult[0]).toBeGreaterThan(0);
+      expect(adult[0]).toBeLessThan(0.3);
+      expect(child[0]).toBe(0);
+    });
+  });
+
+  describe("the linea alba", () => {
+    const f = LINEA_ALBA_LAYER.fields(assets);
+
+    it("is a single furrow in a crease layer, down the midline from below the breastbone to the pubic bone", () => {
+      expect(LINEA_ALBA_LAYER.kind).toBe("detail");
+      expect(LINEA_ALBA_LAYER.pattern).toBe("creases");
+      const t = paintStopTable([LINEA_ALBA_LAYER], paint({ build: lean }));
+      expect(t[1]).toBe(3);
+      expect(t[3]).toBe(1);
+      expect(t[2]).toBeGreaterThan(0.0002);
+      expect(t[2]).toBeLessThan(0.001);
+      for (let v = 0; v < n; v++) {
+        if ((f.mask[v] as number) < 0.05) continue;
+        expect(Math.abs(P[v * 3] as number), `vertex ${v}`).toBeLessThan(0.03);
+      }
+    });
+
+    it("is gone across the navel", () => {
+      for (let v = 0; v < n; v++) {
+        const d = Math.hypot(
+          ...[0, 1, 2].map((k) => (P[v * 3 + k] as number) - (navel[k] as number)),
+        );
+        if (onBody[v] === 1 && d < 0.5 * NAVEL_REACH)
+          expect(f.mask[v], `vertex ${v}`).toBeLessThan(0.1);
+      }
+    });
+
+    it("shows by the figure's body fat and muscle", () => {
+      const thin = paintStopTable([LINEA_ALBA_LAYER], paint({ build: lean }));
+      const heavy = paintStopTable([LINEA_ALBA_LAYER], paint({ build: { ...lean, weight: 1 } }));
+      expect(thin[0]).toBeGreaterThan(0.9);
+      expect(heavy[0]).toBe(0);
+    });
+  });
+
+  it("are in the stack", () => {
+    const ids = SKIN_LAYERS.map((l) => l.id);
+    for (const id of ["navel", "linea-nigra", "linea-alba"]) expect(ids).toContain(id);
   });
 });

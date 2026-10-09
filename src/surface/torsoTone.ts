@@ -170,3 +170,31 @@ export const clavicleDefinition = (b: FigureBuild): number =>
 /** How plainly the ribs show on this figure, 0..1. */
 export const ribDefinition = (b: FigureBuild): number =>
   showsAt(figureBodyFat(b), b.gender, RIB_VISIBLE_FAT.female, RIB_VISIBLE_FAT.male);
+
+/** [none, full] body fat for the linea alba's furrow between the recti, percent: woman, man. */
+export const MIDLINE_VISIBLE_FAT = { female: [24, 14], male: [15, 8] } as const;
+
+/**
+ * How deeply the furrow of the linea alba (the tendinous midline between the
+ * two rectus muscles) shows: the body fat at which the abdomen's wall shows
+ * through (`MIDLINE_VISIBLE_FAT`, a choice like the ribs'), deepened by muscle
+ * (the muscle macro 0.5 is the default's: at 0 the furrow is half as deep, at 1
+ * it is as deep as the fat allows and no deeper).
+ */
+export const abdominalDefinition = (b: FigureBuild): number =>
+  clamp(
+    showsAt(figureBodyFat(b), b.gender, MIDLINE_VISIBLE_FAT.female, MIDLINE_VISIBLE_FAT.male) *
+      (0.5 + clamp(b.muscle)),
+  );
+
+/**
+ * The linea nigra's strength at rest, 0..1 of a full line: the dark midline of
+ * pregnancy appears in most pregnant women and is seen faintly in others and in
+ * men, so at rest a faint line after puberty. A CHOICE (no prevalence for the
+ * non-pregnant was found; the pregnancy state will raise it to 1).
+ */
+export const LINEA_NIGRA_BASELINE = 0.12;
+
+/** The linea nigra's strength for a figure: the baseline, on the puberty ramp. */
+export const lineaNigraStrength = (b: FigureBuild): number =>
+  LINEA_NIGRA_BASELINE * pubertyProgress(b.age, b.gender);

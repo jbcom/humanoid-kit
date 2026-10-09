@@ -6,11 +6,19 @@
  */
 import { AssetFormatError, type HumanoidAssets, jointPosition } from "../../format/assetFormat.ts";
 import type { ColourLayer, DetailLayer, SkinLayerFields, SkinPaintInput } from "../layers.ts";
-import { areolaAlbedo, type Rgb, skinAlbedo } from "../skinTone.ts";
 import {
+  areolaAlbedo,
+  haemoglobinRatio,
+  melaninDensityAlbedo,
+  type Rgb,
+  skinAlbedo,
+} from "../skinTone.ts";
+import {
+  abdominalDefinition,
   areolaRadius,
   clavicleDefinition,
   figureBuild,
+  lineaNigraStrength,
   nippleContrast,
   nippleRadius,
   pubertyProgress,
@@ -418,7 +426,7 @@ const RIB_SLOPE = 0.47;
 /** The second rib sits this far below the collarbone's inner end at the midline, metres. */
 const RIB_TOP_BELOW_CLAVICLE = 0.05;
 /** The relief of the grooves between ribs on a lean figure, metres (CHOICE). */
-export const RIB_RELIEF_HEIGHT = 0.001;
+export const RIB_RELIEF_HEIGHT = 0.0008;
 
 export function ribFields(assets: HumanoidAssets): SkinLayerFields {
   return once(assets, "ribs", () => {
@@ -440,10 +448,10 @@ export function ribFields(assets: HumanoidAssets): SkinLayerFields {
       if (t <= 0 || t >= 1) continue;
       const w =
         (zones.front[v] as number) *
-        smoothstep(0, 0.06, t) *
-        (1 - smoothstep(0.94, 1, t)) *
+        smoothstep(0, 0.12, t) *
+        (1 - smoothstep(0.88, 1, t)) *
         smoothstep(0.015, 0.04, x) *
-        (1 - smoothstep(0.15, 0.2, x)) *
+        (1 - smoothstep(0.13, 0.2, x)) *
         (1 - smoothstep(0.1, 0.5, breast[v] as number)) *
         (1 - smoothstep(0.1, 0.5, arm[v] as number));
       if (w > 0) {
@@ -468,6 +476,197 @@ export const RIB_LAYER: DetailLayer = {
   }),
 };
 
+/**
+ * The navel's centre on the base mesh: the deepest point of the midline's skin
+ * at the height of the spine's third joint (the navel lies at about the level of
+ * the third lumbar vertebra), where the mesh has its dimple.
+ */
+export function navelCentre(assets: HumanoidAssets): [number, number, number] {
+  return once(assets, "navel", () => {
+    const P = assets.positions;
+    const onBody = bodySurface(assets);
+    const level = joint(assets, "spine03____head")[1];
+    let best = -1;
+    for (let v = 0; v < assets.manifest.vertexCount; v++) {
+      if (onBody[v] !== 1 || Math.abs(P[v * 3] as number) > 0.006) continue;
+      if ((P[v * 3 + 2] as number) < 0.05 || Math.abs((P[v * 3 + 1] as number) - level) > 0.02)
+        continue;
+      if (best < 0 || (P[v * 3 + 2] as number) < (P[best * 3 + 2] as number)) best = v;
+    }
+    if (best < 0) throw new AssetFormatError("no navel on the base mesh's midline");
+    return [P[best * 3] as number, P[best * 3 + 1] as number, P[best * 3 + 2] as number];
+  });
+}
+
+/** How far from the navel's centre its skin reaches, in the base mesh's metres (CHOICE: a navel is 1 to 2 cm across, with the skin that folds into it). */
+export const NAVEL_REACH = 0.02;
+
+/** The navel: a disc round its centre, the coordinate the distance from it in reaches. */
+function navelFields(assets: HumanoidAssets): SkinLayerFields {
+  return once(assets, "navel-fields", () => {
+    const P = assets.positions;
+    const n = assets.manifest.vertexCount;
+    const onBody = bodySurface(assets);
+    const c = navelCentre(assets);
+    const mask = new Float32Array(n);
+    const coord = new Float32Array(n);
+    for (let v = 0; v < n; v++) {
+      if (onBody[v] !== 1) continue;
+      const d = Math.hypot(
+        (P[v * 3] as number) - c[0],
+        (P[v * 3 + 1] as number) - c[1],
+        (P[v * 3 + 2] as number) - c[2],
+      );
+      const w = 1 - smoothstep(0.85 * NAVEL_REACH, NAVEL_REACH, d);
+      if (w > 0) {
+        mask[v] = w;
+        coord[v] = Math.min(1, d / NAVEL_REACH);
+      }
+    }
+    return { mask, coord };
+  });
+}
+
+/** How much redder (more haemoglobin, in units of the measured axis) and how much darker the navel's hollow is than its skin (CHOICE: thin scar skin in shadow; none measured). */
+export const NAVEL_HAEMOGLOBIN = 0.4;
+export const NAVEL_DARKENING = 0.93;
+
+export const NAVEL_LAYER: ColourLayer = {
+  id: "navel",
+  blend: "multiply",
+  targets: [],
+  fields: navelFields,
+  paint: ({ tone }) => {
+    const pink = haemoglobinRatio(tone, NAVEL_HAEMOGLOBIN).map((c) => c * NAVEL_DARKENING) as Rgb;
+    return {
+      strength: 1,
+      stops: STOP_RADII.map((_, i) => {
+        // The hollow in the middle third, easing out to the skin at the edge.
+        const w = 1 - smoothstep(0.25, 0.8, i / 7);
+        return pink.map((c) => 1 + (c - 1) * w) as Rgb;
+      }),
+    };
+  },
+};
+
+/**
+ * Where the midline layers end above the navel's level, base metres (full, then none): a hand's
+ * breadth above it. The linea reaches the breastbone in life; here it stops below the
+ * breasts' skin, which the atlas has other layers' channels over (a layer shares channels
+ * only with layers that lie well apart from it, `docs/ARCHITECTURE.md`).
+ */
+const MIDLINE_TOP: [number, number] = [0.05, 0.08];
+
+/**
+ * A strip down the midline, `halfWidth` either side, from `below` the navel's
+ * level to `above` it, over the belly's front: the coordinate runs across it
+ * (0.5 on the midline, 0 and 1 at the edges). A strip of a few centimetres is
+ * what the base mesh's vertices can carry; the finer line is the layer's paint.
+ */
+function midlineFields(
+  assets: HumanoidAssets,
+  halfWidth: number,
+  below: [number, number],
+  above: [number, number],
+  clearNavel: boolean,
+): SkinLayerFields {
+  const P = assets.positions;
+  const n = assets.manifest.vertexCount;
+  const onBody = bodySurface(assets);
+  const front = skinZones(assets).front;
+  const c = navelCentre(assets);
+  const mask = new Float32Array(n);
+  const coord = new Float32Array(n);
+  for (let v = 0; v < n; v++) {
+    if (onBody[v] !== 1) continue;
+    const x = P[v * 3] as number;
+    const dy = (P[v * 3 + 1] as number) - c[1];
+    const across = 1 - smoothstep(0.7 * halfWidth, halfWidth, Math.abs(x));
+    const along = smoothstep(-below[1], -below[0], dy) * (1 - smoothstep(above[0], above[1], dy));
+    let w = across * along * (front[v] as number);
+    if (clearNavel) {
+      const d = Math.hypot(
+        x - c[0],
+        (P[v * 3 + 1] as number) - c[1],
+        (P[v * 3 + 2] as number) - c[2],
+      );
+      w *= smoothstep(0.5 * NAVEL_REACH, 0.9 * NAVEL_REACH, d);
+    }
+    if (w > 0) {
+      mask[v] = w;
+      coord[v] = Math.min(1, Math.max(0, 0.5 + x / (2 * halfWidth)));
+    }
+  }
+  return { mask, coord };
+}
+
+/** Half the width of the linea nigra's band, base metres (CHOICE: 0.5 to 1.5 cm wide in pregnancy; a base mesh's vertices cannot carry less than a few centimetres). */
+const LINEA_NIGRA_HALF_WIDTH = 0.015;
+/** How much more melanin the line holds than the skin (CHOICE: a factor on the skin's own optical density; deeper in pregnancy). */
+export const LINEA_NIGRA_DENSITY = 1.6;
+
+/**
+ * The linea nigra, the dark midline of the lower belly, from the pubic bone to
+ * above the navel: seen in most pregnant women and faintly in others, in both
+ * sexes. At rest a faint line (`lineaNigraStrength`), after puberty; the
+ * pregnancy state will raise its strength to full. Its colour is the skin's
+ * own melanin at `LINEA_NIGRA_DENSITY` times its density, as a ratio to the
+ * skin, bell-shaped across the strip.
+ */
+export const LINEA_NIGRA_LAYER: ColourLayer = {
+  id: "linea-nigra",
+  blend: "multiply",
+  targets: [],
+  fields: (assets) =>
+    once(assets, "linea-nigra", () =>
+      midlineFields(assets, LINEA_NIGRA_HALF_WIDTH, [0.13, 0.17], MIDLINE_TOP, false),
+    ),
+  paint: (input) => {
+    const { tone } = input;
+    const skin = skinAlbedo(tone);
+    const dark: Rgb = tone.override
+      ? [0.78, 0.7, 0.66]
+      : (melaninDensityAlbedo(tone, LINEA_NIGRA_DENSITY, tone.haemoglobin).map(
+          (c, k) => c / (skin[k] as number),
+        ) as Rgb);
+    return {
+      strength: lineaNigraStrength(figureBuild(input)),
+      stops: Array.from({ length: 8 }, (_, i) => {
+        const x = (2 * i) / 7 - 1;
+        const bell = 1 - x * x;
+        return dark.map((c) => 1 + (c - 1) * bell) as Rgb;
+      }),
+    };
+  },
+};
+
+/** Half the width of the linea alba's furrow window, base metres. */
+const LINEA_ALBA_HALF_WIDTH = 0.012;
+/** The furrow's depth on a lean, muscular figure, metres (CHOICE: a fraction of a millimetre, a shading cue). */
+export const LINEA_ALBA_DEPTH = 0.0005;
+
+/**
+ * The linea alba, the furrow between the rectus muscles from the breastbone
+ * to the pubic bone, broken at the navel: one groove of a crease layer across
+ * the strip, as deep as the figure's leanness and muscle make it
+ * (`abdominalDefinition`).
+ */
+export const LINEA_ALBA_LAYER: DetailLayer = {
+  id: "linea-alba",
+  kind: "detail",
+  pattern: "creases",
+  targets: [],
+  fields: (assets) =>
+    once(assets, "linea-alba", () =>
+      midlineFields(assets, LINEA_ALBA_HALF_WIDTH, [0.1, 0.13], MIDLINE_TOP, true),
+    ),
+  paint: (input) => ({
+    strength: abdominalDefinition(figureBuild(input)),
+    height: LINEA_ALBA_DEPTH,
+    size: 1,
+  }),
+};
+
 /** The torso's layers in stack order. */
 export const TORSO_SKIN_LAYERS: readonly (ColourLayer | DetailLayer)[] = [
   AREOLA_LAYER,
@@ -475,4 +674,7 @@ export const TORSO_SKIN_LAYERS: readonly (ColourLayer | DetailLayer)[] = [
   MONTGOMERY_LAYER,
   CLAVICLE_LAYER,
   RIB_LAYER,
+  NAVEL_LAYER,
+  LINEA_NIGRA_LAYER,
+  LINEA_ALBA_LAYER,
 ];

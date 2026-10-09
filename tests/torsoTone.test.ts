@@ -5,11 +5,13 @@ import { createRecipe } from "../src/recipe/recipe.ts";
 import {
   AREOLA_RADIUS_ADULT_FEMALE,
   AREOLA_RADIUS_ADULT_MALE,
+  abdominalDefinition,
   areolaRadius,
   bodyFatPercent,
   clavicleDefinition,
   type FigureBuild,
   figureBmi,
+  lineaNigraStrength,
   NIPPLE_CONTRAST_FEMALE,
   NIPPLE_CONTRAST_MALE,
   nippleContrast,
@@ -218,5 +220,40 @@ describe("how much the bones show", () => {
     expect(clavicleDefinition(build({ gender: 1, weight: 0.8 }))).toBeGreaterThan(
       clavicleDefinition(build({ weight: 0.8 })),
     );
+  });
+});
+
+describe("the midline of the abdomen", () => {
+  const build = (over: Partial<FigureBuild> = {}): FigureBuild => ({
+    gender: 0,
+    age: 25,
+    weight: 0.5,
+    height: 0.5,
+    muscle: 0.5,
+    breastSize: 0.5,
+    ...over,
+  });
+
+  it("shows the linea alba's furrow on a lean, muscular figure and not on a heavy one", () => {
+    expect(abdominalDefinition(build({ gender: 1, weight: 0, muscle: 0.8 }))).toBeGreaterThan(0.9);
+    expect(abdominalDefinition(build({ weight: 1 }))).toBe(0);
+    // Muscle deepens it.
+    expect(abdominalDefinition(build({ gender: 1, weight: 0.4, muscle: 1 }))).toBeGreaterThan(
+      abdominalDefinition(build({ gender: 1, weight: 0.4, muscle: 0 })),
+    );
+    for (let w = 0; w <= 1.001; w += 0.1) {
+      const d = abdominalDefinition(build({ weight: w }));
+      expect(d).toBeGreaterThanOrEqual(0);
+      expect(d).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("paints the linea nigra faintly at rest, after puberty only", () => {
+    expect(lineaNigraStrength(build({ age: 5 }))).toBe(0);
+    expect(lineaNigraStrength(build())).toBeGreaterThan(0);
+    expect(lineaNigraStrength(build())).toBeLessThan(0.3);
+    expect(lineaNigraStrength(build({ age: 12.5 }))).toBeLessThan(lineaNigraStrength(build()));
+    // The same line for either sex: it is found in men too.
+    expect(lineaNigraStrength(build({ gender: 1 }))).toBeGreaterThan(0);
   });
 });

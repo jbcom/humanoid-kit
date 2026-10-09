@@ -2209,10 +2209,30 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   periods down a window from the second rib to the tenth, along lines that fall
   25 degrees outward from the breastbone, and the breast, the arms and the
   breastbone's strip are left out.
-- *No channel was added.* The areola's colour keeps its two; the texture and the
-  tubercles overlap it on the surface, so each needs its own, but the atlas plan
-  puts them where the face's lines and the feet's and hands' layers are not
-  (`tests/atlasPlan.test.ts`: eight pages still).
+- *The navel and the midline.* The navel's centre is the deepest point of the
+  midline's skin at the height of the spine's third joint (`navelCentre`); its
+  layer multiplies the skin by a pinker, darker hollow (more haemoglobin in thin
+  scar skin, in shadow) over a disc of 2 cm. The linea nigra is a multiply layer
+  of the skin's own melanin at 1.6 times its density down a strip of the lower
+  belly, bell-shaped across; at rest it is faint (12% of a full line) and
+  after puberty only, in both sexes, and the pregnancy state will raise its
+  strength to full. The linea alba is one groove of a crease layer along the
+  strip, broken at the navel, as deep as the figure's leanness and muscle make it.
+  A strip a base vertex's width is as narrow as the fields can carry; the
+  finer line is the paint's.
+- *The atlas plan fills a coordinate channel before opening one.* Adding the
+  midline layers took the plan to 33 channels, nine pages: first fit had put a
+  layer that reads a coordinate into a group with a value channel alone, which
+  costs a channel. A layer now goes to the first group it lies apart from that has
+  what it reads, and to the first it lies apart from only if there is none
+  (`planAtlas`). The midline layers also stop a hand's breadth above the navel
+  (the breasts' skin has layers of its own, and a layer shares channels only with
+  those that lie apart from it, a cell of the 64 by 64 grid and a cell's margin
+  all round).
+- *No page was added.* The areola's colour keeps its two channels; the texture and
+  the tubercles overlap it on the surface, so each needs its own, but the atlas
+  plan puts them where the face's lines and the feet's and hands' layers are not
+  (`tests/atlasPlan.test.ts`: eight pages still, with every layer here).
 
 ## Parallel work: the base contract
 
