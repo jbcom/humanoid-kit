@@ -828,7 +828,15 @@ corner (`squint`, or 0.6 of `smile`), the nasolabial folds from the nose's wing
 past the mouth's corner (`nasolabial`, or 0.7 of `smile`) and the nose
 bridge's lines (`noseWrinkle`). Where each lies is read from the default
 figure's joints (the brows, the outer corners, the nose's wing), so it follows
-the mesh, and keeps off the lips and the eyeballs (a test holds it); the
+the mesh, and keeps off the lips and the eyeballs (a test holds it). The
+forehead's lines and the furrows are bounded by distance along the skin from
+the brows' band (`distanceFromBrows`: Dijkstra over the mesh's edges), not by
+height, since the mesh is coarse over the forehead and a mask built from heights
+leaked across big triangles up and over the crown on the first sheets: the
+forehead lines run from 1.4 to 5.8 cm along the skin above the brows, fading
+toward the temples, and the furrows reach 1 to 2.6 cm above them, between the
+brows (frontalis lines stop 5 to 7 cm above the brows, glabellar lines are 1 to
+2.5 cm long; a test holds every layer's mask to its extent). The
 crow's feet and the folds are each one layer for both sides, the coordinate
 being the angle about its own corner and the distance across its own fold, so
 the right is the left reflected and two layers' channels are saved. How many
