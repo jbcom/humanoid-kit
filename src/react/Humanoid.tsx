@@ -58,7 +58,11 @@ import type { Vec3 } from "../presence/presence.ts";
 import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import { createAttachmentMaterial, TeethMaterial } from "../render/attachmentLook.ts";
+import {
+  createAttachmentMaterial,
+  NAIL_EDGE_ATTRIBUTE,
+  TeethMaterial,
+} from "../render/attachmentLook.ts";
 import { type BodyArtImages, type BodyArtTexture, bakeBodyArt } from "../render/bodyArtTexture.ts";
 import { DecalMaterial } from "../render/decalMaterial.ts";
 import {
@@ -877,6 +881,7 @@ export function Humanoid({
     const attachments = ready.topology.attachments.map((t) => {
       const g = makeGeometry(t);
       setOcclusionAttributes(g, t.occlusion);
+      if (t.nailEdge) g.setAttribute(NAIL_EDGE_ATTRIBUTE, new BufferAttribute(t.nailEdge, 1));
       return g;
     });
     // Hair styles' geometries are made when a figure first wears the style.

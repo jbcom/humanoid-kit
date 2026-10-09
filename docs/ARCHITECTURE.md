@@ -2001,12 +2001,28 @@ C5; contact sheets, before and after, at four tones, adult and child:
   a face short of halfway to the next joint, where the coordinate turns to that
   joint's (on the little finger's short middle phalanx the bands nearly met and
   drew a false wrinkle).
-- *Nails.* No separate nail geometry: the base mesh sculpts each nail, and a
-  coordinate along the last segment carries fold, lunula, bed and free edge as
-  the colour stops, with sharp changes between them, and a surface layer the
-  plate's gloss. The bed is measured nail colour whose lightness follows the
-  skin's far less than skin does (the nail bed has about 5% of skin's
-  melanocytes), so on deep skin the nails are much lighter than the fingers.
+- *Nails: a painted bed under a real plate.* A coordinate along the last
+  segment paints fold, lunula, bed and free edge on the skin as colour stops,
+  with sharp changes between them. The bed is measured nail colour whose
+  lightness follows the skin's far less than skin does (the nail bed has about
+  5% of skin's melanocytes), so on deep skin the nails are much lighter than
+  the fingers, and brownish.
+
+  Over the paint lies the plate: CC0 community nail meshes (MakeHuman's
+  bodyparts04, Mindfront's short fingernails and toenails), vendored and packed
+  as body attachments (`fingernails`, `toenails`) and bound like any MHCLO
+  asset. The plate gives the nail its thickness, curvature and free edge
+  overhang, which paint on a mesh 5 mm between vertices could not.
+
+  The plate's material (`NailPlateMaterial`) is clear keratin over the bed, so
+  the bed's colour shows through at every tone, and nearly opaque, white
+  keratin along its free edge, the last 1.5 mm of each nail toward the tip.
+  That edge is found per nail on the plate at rest, along the direction in
+  which the skin's nail coordinate grows. The sheets showed painted nails as
+  opaque plates with a wide white tip (a French manicure).
+
+  The assets' own textures paint one pink nail and are not used; the packer
+  compiles their geometry only.
 - *Soles.* Soles share the palm's suppressed melanocytes (the same
   mechanism), but no sole colour was found measured, so the sole takes the
   palm's measured colour (`PALMOPLANTAR_LAYER` paints both, a choice). One owner for the

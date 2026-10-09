@@ -350,6 +350,7 @@ sheets: `docs/evidence/hands.md`.
 | Free edge | keratin white, linear (0.62, 0.58, 0.50) | CHOICE: not found measured. |
 | Nail fold | 1.15 times the skin's melanin density, haemoglobin +0.1 | CHOICE. |
 | Nail gloss | roughness −0.28, specular +0.35 | CHOICE: no nail gloss found measured; keratin's index (1.47) is above skin's (1.4), so the plate reflects more. |
+| Nail plate | CC0 plate meshes (bodyparts04, Mindfront 2018) over the paint: keratin (0.62, 0.58, 0.50) at opacity 0.18 over the bed, 0.85 along the free edge (the last 1.5 mm, eased over ±0.5 mm), roughness 0.15 | CHOICES: the plate is clear keratin that transmits most light, so the bed shows; the free edge, with air under it, scatters white. No plate transmittance or free-edge width was found measured. |
 | Longitudinal melanonychia | not drawn | A6: common in darker skin, increasing with age (secondary). A later choice for the figure, not a default. |
 
 ### C6. Feet (`src/surface/regions/feet.ts`)

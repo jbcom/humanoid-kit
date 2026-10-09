@@ -61,6 +61,7 @@ import {
   uvScale,
 } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
+import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/regions/hands/index.ts";
 import { SKIN_LAYERS } from "../surface/regions/index.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 import { tuckDepths } from "./tuck.ts";
@@ -97,6 +98,11 @@ export interface AttachmentTopology extends SurfaceTopology {
    * blend (`occlusionCornerWeights` of `occlusionKeyWeights`).
    */
   occlusion: Float32Array;
+  /**
+   * A nail plate's (`NAIL_PLATE_KINDS`): per render vertex, how much of the
+   * free edge it is (0 over the bed, 1 past it), for its translucency.
+   */
+  nailEdge?: Float32Array;
 }
 
 /**
@@ -361,6 +367,19 @@ const part = (mesh: SurfaceMesh): Part => {
   const n = mesh.topology.vertexCount * 3;
   return { mesh, scratch: { surface: new Float32Array(n), normals: new Float32Array(n) } };
 };
+
+/** A per-control-vertex scalar, carried to a mesh's render vertices through its stencil. */
+function carryToRender(
+  mesh: SurfaceMesh,
+  controlCount: number,
+  value: (v: number) => number,
+): Float32Array {
+  const field = new Float32Array(controlCount * 3);
+  for (let v = 0; v < controlCount; v++) field[v * 3] = value(v);
+  const surface = new Float32Array(mesh.topology.vertexCount * 3);
+  applyStencil(mesh.stencil, field, surface);
+  return Float32Array.from(mesh.renderToSurface, (s) => surface[s * 3] as number);
+}
 
 const topologyOf = (m: SurfaceMesh): SurfaceTopology => ({
   index: m.index,
@@ -999,16 +1018,8 @@ export class HumanoidModel {
     const { asset, part: p } = this.hairPart(id, entry?.kind ?? "scalp");
     if (!entry) throw new RecipeError(`unknown hair style ${id}`);
     // The per-control-vertex bake, one value at a time through the stencil like any field.
-    const n = asset.entry.vertexCount;
-    const r2s = p.mesh.renderToSurface;
-    const surface = new Float32Array(p.mesh.topology.vertexCount * 3);
-    /** A per-control-vertex scalar, carried to the render vertices through the style's stencil. */
-    const carry = (value: (v: number) => number): Float32Array => {
-      const field = new Float32Array(n * 3);
-      for (let v = 0; v < n; v++) field[v * 3] = value(v);
-      applyStencil(p.mesh.stencil, field, surface);
-      return Float32Array.from(r2s, (s) => surface[s * 3] as number);
-    };
+    const carry = (value: (v: number) => number): Float32Array =>
+      carryToRender(p.mesh, asset.entry.vertexCount, value);
     const fields = asset.hair;
     if (entry.kind === "scalp" && !fields)
       throw new MorphError(`hair style ${id} carries no measured fields`);
@@ -1153,8 +1164,34 @@ export class HumanoidModel {
         textureUrl: asset.entry.material.texture
           ? (this.assets.fileUrls.get(asset.entry.material.texture) ?? null)
           : null,
+        ...(NAIL_PLATE_KINDS.includes(asset.entry.kind) && {
+          nailEdge: this.nailPlateEdges(asset, p.mesh),
+        }),
       })),
     };
+  }
+
+  /**
+   * How much of a nail plate's free edge each of its render vertices is
+   * (`nailPlateEdges`), measured on the plate at rest on the base figure, with
+   * each vertex taking the knuckles' and nails' coordinate of the skin it is
+   * bound to.
+   */
+  private nailPlateEdges(asset: BoundAsset, mesh: SurfaceMesh): Float32Array {
+    const digits = SKIN_LAYERS.find((l) => l.id === DIGIT_LAYER.id);
+    const skin = digits?.fields(this.assets).coord;
+    if (!skin) throw new MorphError("the skin stack has no knuckles-and-nails coordinate");
+    const n = asset.entry.vertexCount;
+    const along = new Float32Array(n);
+    for (let v = 0; v < n; v++)
+      for (let k = 0; k < 3; k++)
+        along[v] =
+          (along[v] as number) +
+          (asset.weights[v * 3 + k] as number) *
+            (skin[asset.refVerts[v * 3 + k] as number] as number);
+    const rest = evaluateBinding(asset, this.assets.positions, new Float32Array(n * 3));
+    const edges = nailPlateEdges(rest, asset.faceVerts, along);
+    return carryToRender(mesh, n, (v) => edges[v] as number);
   }
 
   /**

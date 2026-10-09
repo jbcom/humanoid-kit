@@ -724,9 +724,17 @@ compute what the renderer will do.
     through, from `nailColours(tone)`: fold, lunula, bed and free edge along each
     nail, the bed from `nailLab(tone)`, measured nail CIELAB at a lightness that
     follows the skin's far less than skin does). It paints within 1 ΔE\*ab of
-    the nail layered over the knuckle. `NAIL_GLOSS_LAYER` is the plate
-    (`NAIL_ROUGHNESS` and `NAIL_SPECULAR`); fields from `knuckleFields(assets)`
-    and `nailFields(assets)`, proportions in `NAIL_LAYOUT`.
+    the nail layered over the knuckle. `NAIL_GLOSS_LAYER` is the plate's gloss
+    on the skin (`NAIL_ROUGHNESS` and `NAIL_SPECULAR`); fields from
+    `knuckleFields(assets)` and `nailFields(assets)`, proportions in
+    `NAIL_LAYOUT`.
+  - The nail plates: body attachments of `NAIL_PLATE_KINDS` (`fingernails`,
+    `toenails`; CC0 meshes, see NOTICE.md) whose `AttachmentTopology.nailEdge`
+    is, per render vertex, how much of the free edge it is
+    (`nailPlateEdges(positions, faceVerts, along)`: each nail's last
+    `NAIL_FREE_EDGE_LENGTH` toward its tip). `<Humanoid>` draws them with a
+    `NailPlateMaterial`: keratin at `NAIL_PLATE_OPACITY` over the bed, so the
+    painted bed shows through, and `NAIL_FREE_EDGE_OPACITY` along the free edge.
   - `HAND_RELIEF_LAYER` (`"hand-relief"`, a `creases` detail layer, fields
     `handReliefFields(assets)`): the palm's crease folds and the knuckles'
     wrinkle arcs (over the back of each finger joint, `KNUCKLE_WRINKLE_SPACING`
@@ -1115,7 +1123,8 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 
 - Hidden until the first evaluation arrives.
 - Renders the body and the body pack's attachments (eyes with their own eye
-  shader following `recipe.eyes`, teeth and tongue), each attachment shaded by
+  shader following `recipe.eyes`, teeth, tongue, and the nail plates as
+  translucent keratin over the painted beds), each attachment shaded by
   its baked occlusion, which follows the pose (an open mouth lights the teeth
   it uncovers). The body's own cavities (mouth, nostrils, ear canals, eye
   sockets) are darkened the same way, so a mouth without a tongue is dim inside.
