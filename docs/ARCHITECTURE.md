@@ -500,8 +500,9 @@ upper segment and to the way the joint flexes; MakeHuman's roll planes would
 not do, because in the A-pose the arm lies in the frontal plane and the
 elbow's roll-plane normal points forward. The library maps signals to
 appearance; how a signal evolves over time belongs to the application, with a
-small first-order attack and decay helper for the measured time courses.
-Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
+small first-order attack and decay helper for the measured time courses
+(`SkinStateFilter`, below). Signals reach every layer's `paint`
+(`SkinPaintInput.signals`) already.
 
 **Four channels, one per kind of change:**
 
@@ -580,6 +581,22 @@ sheets are in `docs/evidence/states.md`.
   paper finds, so a figure that exerts shines over its whole body where one
   that is only hot shines on its forehead and back. Rate becomes wetness by
   `rate / (rate + 0.5)`, a choice. The two signals share one sweat drive.
+
+- *Time* (`SkinStateFilter`, `useSkinStateFilter`). An application sets a
+  signal as a step (a stimulus on or off); a body answers over time. Each
+  signal follows its target by a first-order response with one time constant
+  to rise (`attack`) and one to fall (`decay`), integrated exactly so any frame
+  rate gives the same curve, and snapped to the target within a thousandth so a
+  settled state stops changing. `cold` and `fear` are calibrated to the
+  measured piloerection episode: a 3 s trigger stays visible for 11 to 12 s,
+  where McPhetres et al. measured 9 to 13. A blush rises in seconds and falls
+  in tens, exertion in tens of seconds and over a minute, heat over minutes
+  (choices). The hook keeps one filter per component, re-renders each frame
+  while a signal moves and not once they settle, and starts at the first
+  target so a figure that mounts in a state is not seen easing into it. A shape
+  signal re-evaluates the figure, so `<Humanoid>` rounds those to 50 steps
+  (`quantiseShapeSignal`): an easing cold signal evaluates a few dozen times,
+  not every frame, each a change under 1% of the nipple's target.
 
 **Adult-pack layers (design, 2026-10-09; built with the milestone 3 graft
 lane).** Genital-region colour, relief and state layers draw their masks from

@@ -36,6 +36,19 @@ export const STATE_MORPH_TARGETS: readonly string[] = [
   ...new Set(STATE_MORPHS.flatMap((m) => m.targets.map((t) => t.name))),
 ];
 
+/**
+ * How many steps a shape signal moves in, 0 to 1. A shape state re-evaluates the
+ * figure, so a signal easing at the frame rate (`useSkinStateFilter`) would
+ * evaluate it every frame; in 50 steps it evaluates it a few dozen times,
+ * each a change under 1% of the nipple's point target.
+ */
+export const SHAPE_SIGNAL_STEPS = 50;
+
+/** A shape signal rounded to its step, inside 0..1. */
+export function quantiseShapeSignal(signal: number): number {
+  return Math.round(Math.min(1, Math.max(0, signal)) * SHAPE_SIGNAL_STEPS) / SHAPE_SIGNAL_STEPS;
+}
+
 /** The target weights the signals add to an evaluation (signals are 0..1). */
 export function stateContributions(signals: Readonly<Record<string, number>>): Contribution[] {
   const out: Contribution[] = [];

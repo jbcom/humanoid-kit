@@ -268,6 +268,19 @@ bounded by the axis.
 | Heat and exertion together | one drive, 1 − (1 − heat)(1 − exertion), split between the two maps by their shares | CHOICE: a person exerting in heat sweats from one thermal drive, and the paper finds the distribution shifts toward the exercise map as the drive rises. |
 | Albedo darkening of wet skin | not drawn | B6 notes it as optical reasoning only; no magnitude. |
 
+### C4. Time (`STATE_TIME_CONSTANTS`, seconds to cover 63% of the way)
+
+| Signal | Attack, decay | Source |
+| --- | --- | --- |
+| `cold`, `fear` | 1.5 and 4; 0.8 and 4 | Calibrated so a 3 s trigger leaves the intensity above a tenth for 11 to 12 s, in the measured episode of 9 to 13 s (mean 10.1 s; small 9.0, large 13.2; McPhetres et al. 2024, B1). Kim 2014 saw 3.5 s on one forearm. |
+| `blush` | 2 and 15 | CHOICE: a blush comes in seconds and goes in tens of them. |
+| `exertion` | 20 and 60 | CHOICE: skin blood flow follows exercise over tens of seconds and recovers more slowly. |
+| `heat` | 40 and 90 | CHOICE: sweating and cutaneous vasodilation follow body temperature over minutes. |
+| any other signal | 2 and 5 | CHOICE. |
+
+A shape signal is rounded to 50 steps before it re-evaluates the figure: a step
+of `cold` moves the nipple's point target by 0.37 / 50, under a percent.
+
 ## ITEMS I COULD NOT VERIFY / PRIMARY NOT OPENED
 
 - Masters & Johnson 1966 magnitudes; Maravilla MRI clitoral volume percentages; Veale full text; Charkoudian 2003 numbers; Hermanns 2000 primary; Otberg 2004 follicle densities (secondary only); Malaysian periorbital study (search-summary only); NIST dataset details (search-summary only); Kim 2014 volume/issue/page (APL 105, article number guessed as 013504 - treat as unverified; DOI 10.1063/1.4881888 is verified via Crossref); per-site numbers in Korean and Chinese body-map papers (figures only); any deep-skin (V-VI) erythema/a* magnitude for flush, exercise or blush.

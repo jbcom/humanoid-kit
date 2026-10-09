@@ -26,5 +26,6 @@ export * from "./surface/preintegration.ts";
 export * from "./surface/regions/index.ts";
 export * from "./surface/scatter.ts";
 export * from "./surface/scatterTable.ts";
+export * from "./surface/skinStateFilter.ts";
 export * from "./surface/skinTone.ts";
 export * from "./worker/client.ts";

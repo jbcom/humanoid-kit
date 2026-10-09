@@ -32,7 +32,7 @@ import {
   TextureLoader,
   Vector3,
 } from "three";
-import { STATE_MORPHS } from "../makehuman/stateMorphs.ts";
+import { quantiseShapeSignal, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import type {
   AttachmentTopology,
   Evaluation,
@@ -549,7 +549,8 @@ export function Humanoid({
   // Only the signals that change the shape re-evaluate the figure; a stable
   // key keeps a colour-only change (or a new object with the same values) from
   // re-evaluating it.
-  const shapeKey = STATE_MORPHS.map((m) => signals?.[m.signal] ?? 0).join(",");
+  // Rounded to steps (`quantiseShapeSignal`), so a signal that eases does not evaluate every frame.
+  const shapeKey = STATE_MORPHS.map((m) => quantiseShapeSignal(signals?.[m.signal] ?? 0)).join(",");
   const shapeSignals = useMemo(
     () =>
       Object.fromEntries(STATE_MORPHS.map((m, i) => [m.signal, Number(shapeKey.split(",")[i])])),

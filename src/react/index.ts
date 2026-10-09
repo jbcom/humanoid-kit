@@ -13,3 +13,4 @@ export {
   StudioStage,
   type StudioStageProps,
 } from "./StudioStage.tsx";
+export { type SkinStateFilterOptions, useSkinStateFilter } from "./useSkinStateFilter.ts";

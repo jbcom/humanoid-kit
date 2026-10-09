@@ -372,6 +372,19 @@ compute what the renderer will do.
 - `bakeOcclusion(occluders, targets, options?)`: per-vertex ambient occlusion
   by cosine-weighted ray casts (`hemisphereDirections(n)`), as used for
   attachments.
+- Skin-state time (ARCHITECTURE.md, "Skin states"): `stepSkinState(current,
+  target, dt, rates?)`, a pure step of every signal toward its target (0..1
+  each; a missing one is 0) by the exact first-order response, with one time
+  constant to rise (`attack`) and one to fall (`decay`), in seconds, from
+  `STATE_TIME_CONSTANTS` (`cold`, `fear`, `blush`, `exertion`, `heat`; any other
+  signal moves at `DEFAULT_STATE_RATE`). `new SkinStateFilter(rates?, initial?)`
+  keeps the state between frames: `step(target, dt)` returns the new signals
+  (a copy), `value` the current ones, `settled(target)` whether there is
+  nothing left to animate, `reset(state?)` jumps. `cold` and `fear` are
+  calibrated to the measured goosebump episode (a 3 s trigger shows for 11 to
+  12 s); the others are choices (research/SKIN-STATES.md C4).
+  `quantiseShapeSignal(s)` and `SHAPE_SIGNAL_STEPS` (50) round the signals
+  that reshape the figure, so an easing one does not evaluate every frame.
 
 ### Rig and poses
 
@@ -490,6 +503,17 @@ Returns the provided client. Throws outside a `HumanoidProvider`.
 
 Returns `null` until the worker has loaded its packs, then its `ReadyInfo`.
 
+### `useSkinStateFilter(target, options?): Record<string, number>`
+
+Follows `target`, the signals an application wants (each 0..1), at the time
+constants of `STATE_TIME_CONSTANTS`, and returns the signals to give
+`<Humanoid signals>`: `const signals = useSkinStateFilter({ cold: chilled ? 1 :
+0 })`. It starts at the first `target`, so a figure that mounts in a state does
+not ease into it (`initial: "rest"` starts at rest instead); `rates` replaces
+the time constants (pass a stable object). The component re-renders each frame
+while a signal moves and not once they have settled, and a new `target` object
+with the same entries changes nothing.
+
 ### `<Humanoid recipe />`
 
 Renders a recipe as a mesh inside a React Three Fiber canvas.
@@ -501,7 +525,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
 | `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
-| `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers; those with state morphs also reshape the figure (a re-evaluation). Never part of the recipe |
+| `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | other props | Passed to the wrapping `<group>` |

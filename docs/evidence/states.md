@@ -75,3 +75,12 @@ legs more evenly, as the paper finds. The first version of this sheet had white
 speckle on the upper back under exertion, where a roughness of 0.22 let the
 pore map's micro-normals catch the key light; the change is now −0.2 (roughness
 0.32).
+
+## Time
+
+A state does not appear at once. `useSkinStateFilter` (`humanoid-kit/react`) and
+`SkinStateFilter` ease each signal toward its target at the pace of a body:
+`cold` and `fear` so that a 3 s trigger shows goosebumps for 11 to 12 s (measured
+episodes last 9 to 13 s), a blush in seconds and tens of seconds, exertion and
+heat over tens of seconds to minutes (`docs/research/SKIN-STATES.md` C4). The
+curves are asserted in `tests/skinStateFilter.test.ts` rather than shown here.
