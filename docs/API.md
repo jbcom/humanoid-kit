@@ -256,11 +256,14 @@ compute what the renderer will do.
   `DEFAULT_SKIN_TONE`, `luminance`, `srgbToLinear` and `linearToSrgb`.
 - The scatter model `SkinMaterial` renders (it is generated from these and
   tested against them): `scatterDistance(albedo, mfp?, slope?, pigmentDepth?,
-  substrate?)` gives each channel's scatter width in metres;
-  `wrapFromScatter(d · curvature)` the wrap; `wrappedDiffuse(nDotL, w)` the
-  diffuse response relative to the albedo, which integrates to Lambert's over
-  the sphere at every `w`. `SKIN_SCATTER` holds natural skin's parameters, and
-  `singleScatterAlbedo`, `profileScale` and `WAVELENGTH_RATIO` the steps.
+  substrate?)` gives each channel's scatter width in metres, and
+  `scatterTableDiffuse(nDotL, d · curvature)` the diffuse response relative to
+  the albedo, sampled from `SCATTER_TABLE` exactly as the shader samples it.
+  `preintegratedDiffuse(nDotL, x)` is the exact integral the table is built
+  from (Penner's pre-integration of Burley's profile over a sphere): it dims
+  the lit side, carries light past the terminator, and keeps Lambert's
+  integral over the sphere. `SKIN_SCATTER` holds natural skin's parameters,
+  and `singleScatterAlbedo`, `profileScale` and `WAVELENGTH_RATIO` the steps.
 - `bakeOcclusion(occluders, targets, options?)`: per-vertex ambient occlusion
   by cosine-weighted ray casts (`hemisphereDirections(n)`), as used for
   attachments.

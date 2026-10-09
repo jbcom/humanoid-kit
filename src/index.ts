@@ -16,6 +16,8 @@ export * from "./recipe/recipe.ts";
 export * from "./recipe/validate.ts";
 export * from "./subdiv/catmullClark.ts";
 export * from "./surface/occlusion.ts";
+export * from "./surface/preintegration.ts";
 export * from "./surface/scatter.ts";
+export * from "./surface/scatterTable.ts";
 export * from "./surface/skinTone.ts";
 export * from "./worker/client.ts";

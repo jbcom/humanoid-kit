@@ -6,18 +6,23 @@
  *   fur, scales, fantasy) scatters plausibly with no per-colour tuning: each
  *   channel's scatter distance follows from its albedo (Chiang, Kutz & Burley
  *   2016; Christensen & Burley 2015), and how much light it carries round a
- *   curve follows from that distance and the surface's curvature through an
- *   energy-conserving wrap fitted to Penner-style pre-integration
+ *   curve follows from that distance and the surface's curvature through
+ *   Penner's pre-integration of Burley's profile, tabulated
  *   (docs/research/ALGORITHMIC-APPEARANCE.md §2);
  * - regional colour from the figure's skin masks (lips, flush, areola), carried
  *   as a vertex attribute so they follow every shape change;
  * - a fine tiling pore normal map and a low sheen for vellus hair.
  */
 import {
+  ClampToEdgeWrapping,
   Color,
   DataTexture,
+  HalfFloatType,
+  LinearFilter,
   LinearSRGBColorSpace,
   MeshPhysicalMaterial,
+  NoColorSpace,
+  RedFormat,
   RepeatWrapping,
   RGBAFormat,
   ShaderChunk,
@@ -25,6 +30,7 @@ import {
   Vector3,
 } from "three";
 import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
+import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import {
   luminance,
   MELANIN_ANCHORS,
@@ -59,6 +65,9 @@ const DIRECT_DIFFUSE =
 /** Name of the per-vertex curvature attribute (mean curvature magnitude, m⁻¹). */
 export const CURVATURE_ATTRIBUTE = "hkCurvature";
 
+/** A GLSL float literal. */
+const glslFloat = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
+
 /**
  * Scatter functions, defined before three's lighting code uses them: the
  * shader form of `src/surface/scatter.ts`, which the sphere parity test checks
@@ -88,20 +97,51 @@ vec3 hkScatterDistance( vec3 albedo ) {
 	vec3 ls = hkScatterMfp * pow( vec3( ${WAVELENGTH_RATIO.map((r) => r.toFixed(6)).join(", ")} ), vec3( hkScatterSlope ) );
 	return hkSingleScatterAlbedo( A ) * ls / hkProfileScale( A );
 }
-// Energy-conserving wrap fitted to pre-integration of Burley's profile over a sphere.
-vec3 hkWrapFromScatter( vec3 d, float curvature ) {
-	vec3 y = pow( max( d * curvature, vec3( 0.0 ) ), vec3( 1.2997 ) );
-	return 2.0246 * y / ( 1.0 + 1.3543 * y );
+// Penner's pre-integrated diffusion of Burley's profile over a sphere, for profile
+// width x in sphere radii: Lambert plus the tabulated residual (SCATTER_TABLE),
+// sampled between texel centres exactly as scatterTableDiffuse does.
+uniform sampler2D hkScatterTable;
+float hkPreintegrated( float nDotL, float x ) {
+	float u = max( x, 0.0 ) / ( max( x, 0.0 ) + ${glslFloat(SCATTER_TABLE.knee)} );
+	vec2 uv = vec2(
+		( ( clamp( nDotL, -1.0, 1.0 ) * 0.5 + 0.5 ) * ${glslFloat(SCATTER_TABLE.cosSteps - 1)} + 0.5 ) / ${glslFloat(SCATTER_TABLE.cosSteps)},
+		( u * ${glslFloat(SCATTER_TABLE.uSteps - 1)} + 0.5 ) / ${glslFloat(SCATTER_TABLE.uSteps)}
+	);
+	return max( nDotL, 0.0 ) + texture2D( hkScatterTable, uv ).r;
 }
 `;
 
 const SUBSURFACE_DIFFUSE = `
-	// humanoid-kit: scatter carries light round curves (McAuley's energy-conserving wrap).
+	// humanoid-kit: scatter dims the lit side and carries light past the terminator,
+	// each channel by its own profile width times the surface's curvature.
 	float hkNdotL = dot( geometryNormal, directLight.direction );
-	vec3 hkW = hkWrapFromScatter( hkScatterDistance( material.diffuseContribution ), vHkCurvature );
-	vec3 hkWrapped = max( vec3( hkNdotL ) + hkW, vec3( 0.0 ) ) / ( ( 1.0 + hkW ) * ( 1.0 + hkW ) );
-	reflectedLight.directDiffuse += hkWrapped * directLight.color * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );
+	vec3 hkX = hkScatterDistance( material.diffuseContribution ) * vHkCurvature;
+	vec3 hkDiffuse = vec3( hkPreintegrated( hkNdotL, hkX.r ), hkPreintegrated( hkNdotL, hkX.g ), hkPreintegrated( hkNdotL, hkX.b ) );
+	reflectedLight.directDiffuse += hkDiffuse * directLight.color * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );
 `;
+
+let scatterTexture: DataTexture | null = null;
+
+/** The pre-integrated scatter table as a single-channel half-float texture, built once. */
+function scatterTableTexture(): DataTexture {
+  if (scatterTexture) return scatterTexture;
+  const bytes = Uint8Array.from(atob(SCATTER_TABLE.data), (ch) => ch.charCodeAt(0));
+  scatterTexture = new DataTexture(
+    new Uint16Array(bytes.buffer),
+    SCATTER_TABLE.cosSteps,
+    SCATTER_TABLE.uSteps,
+    RedFormat,
+    HalfFloatType,
+  );
+  scatterTexture.magFilter = LinearFilter;
+  scatterTexture.minFilter = LinearFilter;
+  scatterTexture.wrapS = ClampToEdgeWrapping;
+  scatterTexture.wrapT = ClampToEdgeWrapping;
+  scatterTexture.generateMipmaps = false;
+  scatterTexture.colorSpace = NoColorSpace;
+  scatterTexture.needsUpdate = true;
+  return scatterTexture;
+}
 
 let poreTexture: DataTexture | null = null;
 
@@ -179,6 +219,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkPigmentDepth: { value: SKIN_SCATTER.pigmentDepth as number },
     /** The unpigmented layer's albedo (linear), used when pigment depth > 0. */
     hkSubstrate: { value: new Vector3(...(MELANIN_ANCHORS[0] as Rgb)) },
+    hkScatterTable: { value: scatterTableTexture() },
     hkMaskStrength: { value: new Vector3(0.55, 0.45, 0) },
     hkLipColor: { value: new Color() },
     hkFlushTint: { value: new Color(1.1, 0.84, 0.84) },
@@ -280,6 +321,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-skin-2";
+    return "humanoid-kit-skin-3";
   }
 }

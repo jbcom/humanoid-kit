@@ -40,12 +40,7 @@ import {
   SKIN_MASK_ATTRIBUTE,
   SkinMaterial,
 } from "../../src/render/skinMaterial.ts";
-import {
-  SKIN_SCATTER,
-  scatterDistance,
-  wrapFromScatter,
-  wrappedDiffuse,
-} from "../../src/surface/scatter.ts";
+import { SKIN_SCATTER, scatterDistance, scatterTableDiffuse } from "../../src/surface/scatter.ts";
 import type { Rgb, SkinTone } from "../../src/surface/skinTone.ts";
 
 interface Swatch {
@@ -255,17 +250,19 @@ function measure(angle: number, expect: (nDotL: number) => Rgb, path: Path = "li
 const lab = (c: Rgb): Lab => labFromLinear(c);
 const albedoOf = (): Rgb => [material.color.r, material.color.g, material.color.b];
 
-/** The per-channel wrap the material's own model predicts for the current swatch. */
-function modelWrap(): Rgb {
+/** The material's own model for the current swatch: radiance at N·L, per channel. */
+function modelRadiance(): (nDotL: number) => Rgb {
   const u = material.hkUniforms;
+  const A = albedoOf();
   const d = scatterDistance(
-    albedoOf(),
+    A,
     u.hkScatterMfp.value,
     u.hkScatterSlope.value,
     u.hkPigmentDepth.value,
     [u.hkSubstrate.value.x, u.hkSubstrate.value.y, u.hkSubstrate.value.z],
   );
-  return d.map((dc) => wrapFromScatter(dc / FEATURE_RADIUS)) as Rgb;
+  return (n) =>
+    A.map((c, k) => c * scatterTableDiffuse(n, (d[k] as number) / FEATURE_RADIUS)) as Rgb;
 }
 
 describe("skin material on an analytic sphere", () => {
@@ -289,13 +286,9 @@ describe("skin material on an analytic sphere", () => {
     const failures: string[] = [];
     for (const s of PALETTE) {
       configure(s, "scatter");
-      const A = albedoOf();
-      const w = modelWrap();
+      const model = modelRadiance();
       for (const angle of ANGLES) {
-        const m = measure(
-          angle,
-          (n) => A.map((c, k) => c * wrappedDiffuse(n, w[k] as number)) as Rgb,
-        );
+        const m = measure(angle, model);
         for (const { name: bin } of BINS) {
           const de = deltaE2000(lab(m.rendered[bin]), lab(m.expected[bin]));
           if (!(de <= 0.5)) failures.push(`${s.name} ${angle}° ${bin}: ΔE00 ${de.toFixed(2)}`);
@@ -334,14 +327,9 @@ describe("skin material on an analytic sphere", () => {
     const failures: string[] = [];
     for (const s of PALETTE) {
       configure(s, "scatter");
-      const A = albedoOf();
-      const w = modelWrap();
+      const model = modelRadiance();
       for (const angle of ANGLES) {
-        const m = measure(
-          angle,
-          (n) => A.map((c, k) => c * wrappedDiffuse(n, w[k] as number)) as Rgb,
-          "display",
-        );
+        const m = measure(angle, model, "display");
         for (const bin of ["lit", "shoulder"] as const) {
           const de = deltaE2000(labFromSrgb8(...m.rendered[bin]), labFromSrgb8(...m.expected[bin]));
           if (!(de <= 1)) failures.push(`${s.name} ${angle}° ${bin}: ΔE00 ${de.toFixed(2)}`);

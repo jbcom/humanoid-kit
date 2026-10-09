@@ -50,7 +50,10 @@ describe("attachment occlusion on the figure", () => {
     expect(median("teeth/base")).toBeLessThan(median("eyes/high-poly"));
   });
 
-  it("ships the occlusion the code bakes, whatever the subdivision level", () => {
+  // Two full bakes (~1 s alone); CPU-bound, so it gets room when other heavy tests share the machine.
+  it("ships the occlusion the code bakes, whatever the subdivision level", {
+    timeout: 60_000,
+  }, () => {
     const assets = loadFixtureAssets();
     for (const level of [0, 1]) {
       const baked = new HumanoidModel(assets, { subdivision: level }).bakeAttachmentOcclusion();
