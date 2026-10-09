@@ -11,7 +11,10 @@ import { gzipSync } from "node:zlib";
 import sharp from "sharp";
 import type { CompiledAsset } from "./compileAsset.ts";
 
-export interface AttachmentEntry {
+type Range = { offset: number; byteLength: number };
+
+/** A garment's entry: an attachment's without the occlusion bytes. */
+export interface GarmentEntry {
   id: string;
   kind: string;
   name: string;
@@ -20,13 +23,23 @@ export interface AttachmentEntry {
   faceCount: number;
   scale: CompiledAsset["scale"];
   material: CompiledAsset["material"];
-  layout: Record<
-    keyof CompiledAsset["arrays"] | "occlusion",
-    { offset: number; byteLength: number }
-  >;
+  layout: Record<keyof CompiledAsset["arrays"], Range>;
+}
+
+export interface AttachmentEntry extends Omit<GarmentEntry, "layout"> {
+  layout: GarmentEntry["layout"] & { occlusion: Range };
 }
 
 export const sha256 = (buf: Uint8Array) => createHash("sha256").update(buf).digest("hex");
+
+export interface TextureOptions {
+  /** Longest edge shipped; larger sources are scaled down, smaller ones are kept. */
+  max?: number;
+  /** WebP quality, 1-100. */
+  quality?: number;
+  /** WebP quality of normal maps (files whose name ends `_normal.webp`), default `quality`. */
+  normalQuality?: number;
+}
 
 /** Longest texture edge shipped. On-screen, an eye or a mouth never needs more. */
 const TEXTURE_MAX = 1024;
@@ -36,10 +49,16 @@ const TEXTURE_MAX = 1024;
  * eye's cornea is cut by its alpha, which must not blur), at most
  * TEXTURE_MAX pixels on a side. Output is deterministic for a sharp version.
  */
-async function writeTexture(src: string, dest: string): Promise<void> {
+async function writeTexture(src: string, dest: string, options: TextureOptions): Promise<void> {
+  const max = options.max ?? TEXTURE_MAX;
+  const quality = options.quality ?? 88;
   await sharp(src)
-    .resize({ width: TEXTURE_MAX, height: TEXTURE_MAX, fit: "inside", withoutEnlargement: true })
-    .webp({ quality: 88, alphaQuality: 100, effort: 6 })
+    .resize({ width: max, height: max, fit: "inside", withoutEnlargement: true })
+    .webp({
+      quality: dest.endsWith("_normal.webp") ? (options.normalQuality ?? quality) : quality,
+      alphaQuality: 100,
+      effort: 6,
+    })
     .toFile(dest);
 }
 
@@ -47,11 +66,13 @@ async function writeTexture(src: string, dest: string): Promise<void> {
 export async function writeAttachmentTextures(
   dataDir: string,
   assets: readonly CompiledAsset[],
+  options: TextureOptions = {},
 ): Promise<void> {
   for (const f of fs.readdirSync(dataDir))
     if (/\.(png|jpe?g|webp)$/i.test(f)) fs.rmSync(path.join(dataDir, f));
   for (const a of assets)
-    for (const [src, name] of a.textures) await writeTexture(src, path.join(dataDir, name));
+    for (const [src, name] of a.textures)
+      await writeTexture(src, path.join(dataDir, name), options);
 }
 
 /**
@@ -68,18 +89,34 @@ export function writeAttachments(
   occlusion: readonly Uint8Array[] | null,
   bakes: number,
 ) {
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  const entries: AttachmentEntry[] = [];
-  for (const [i, a] of assets.entries()) {
-    const layout = {} as AttachmentEntry["layout"];
+  return writePacked<AttachmentEntry>(dataDir, file, assets, (a, i) => {
     const baked = occlusion?.[i] ?? new Uint8Array(a.vertexCount * bakes).fill(255);
     if (baked.length !== a.vertexCount * bakes)
       throw new Error(
         `${a.id}: ${baked.length} occlusion values for ${a.vertexCount} vertices × ${bakes} bakes`,
       );
-    for (const [key, arr] of [...Object.entries(a.arrays), ["occlusion", baked]] as [
-      keyof AttachmentEntry["layout"],
+    return [["occlusion", baked]];
+  });
+}
+
+/** Packs garments: attachments without occlusion, which a garment does not carry. */
+export function writeGarments(dataDir: string, file: string, assets: readonly CompiledAsset[]) {
+  return writePacked<GarmentEntry>(dataDir, file, assets, () => []);
+}
+
+function writePacked<E extends GarmentEntry>(
+  dataDir: string,
+  file: string,
+  assets: readonly CompiledAsset[],
+  extra: (asset: CompiledAsset, index: number) => [string, ArrayBufferView][],
+) {
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const entries: E[] = [];
+  for (const [i, a] of assets.entries()) {
+    const layout: Record<string, Range> = {};
+    for (const [key, arr] of [...Object.entries(a.arrays), ...extra(a, i)] as [
+      string,
       ArrayBufferView,
     ][]) {
       size = Math.ceil(size / 4) * 4;
@@ -98,7 +135,7 @@ export function writeAttachments(
       scale: a.scale,
       material: a.material,
       layout,
-    });
+    } as E);
   }
   const bin = new Uint8Array(size);
   let o = 0;

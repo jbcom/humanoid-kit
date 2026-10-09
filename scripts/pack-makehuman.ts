@@ -606,7 +606,9 @@ async function main() {
 
   // Essential attachments (eyes, teeth, tongue) from the system assets pack.
   const compiled = ESSENTIALS.map(([id, kind, mhclo, mat]) =>
-    compileAsset(path.join(SYSTEM, mhclo), id, kind, mat ? path.join(SYSTEM, mat) : undefined),
+    compileAsset(path.join(SYSTEM, mhclo), id, kind, {
+      ...(mat && { materialFile: path.join(SYSTEM, mat) }),
+    }),
   );
   fs.rmSync(path.join(BODY_OUT, "attachments.bin"), { force: true });
   await writeAttachmentTextures(BODY_OUT, compiled);

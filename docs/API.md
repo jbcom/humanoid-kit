@@ -25,6 +25,7 @@ Fetches and parses the packs.
 interface LoadOptions {
   body: PackLocation;           // e.g. bodyPack from humanoid-kit-body
   adultAnatomy?: PackLocation;  // e.g. adultAnatomyPack
+  clothing?: PackLocation;      // e.g. clothingPack from humanoid-kit-clothing
   firstFigureAge?: number;      // whose targets a staged load brings first; default 25
 }
 
@@ -36,14 +37,18 @@ type PackLocation =
 - Rejects with `AssetFormatError` when a request answers with an error status
   (a network failure rejects with the platform's `TypeError`), a buffer range exceeds
   its file, a target is duplicated, or the adult pack was built for a different
-  body pack (`topology` or `bodySha256` mismatch).
+  body pack (`topology` or `bodySha256` mismatch), as is the clothing pack, or
+  when a garment shares an id with an attachment.
 - Returns `HumanoidAssets`: the `manifest`, typed-array views of `positions`,
   `uvs`, `faceVerts`, `faceUvs`, `skinIndex` and `skinWeight`, a `targets` map
   (`SparseTarget`: `indices`, `deltas`, `scale`), a `modifiers` map
   (`ShapeModifierEntry`), `adultAnatomyLoaded`, `adultAnatomyManifest`,
   `targetFilesPending` (ids of target files not loaded yet) and `targetFileOf`
   (target name to file id). With the adult pack loaded, `targets` and
-  `modifiers` include its entries.
+  `modifiers` include its entries. With the clothing pack loaded,
+  `clothingManifest` lists its garments from the start; `garments` (a map of
+  `BoundGarment` by id) fills once the garments binary has arrived, and
+  `garmentsPending` is true until then.
 
 ```ts
 loadHumanoidAssetsStaged(options: LoadOptions): Promise<StagedHumanoidAssets>
@@ -57,6 +62,7 @@ interface StagedHumanoidAssets {
 
 Loads in stages over one link, in `targetLoadOrder(firstFigureAge)`: the first
 figure's age anchors with the core, then the body's modifier targets, then the
+clothing pack's garments (`GARMENTS_FILE`, only with a clothing pack), then the
 other age anchors, neighbours first, then the adult pack's targets on their
 own. All modifiers and sliders are listed from the start. Each later stage is
 fetched once the previous one has settled and is added to the same `assets`.
@@ -68,10 +74,15 @@ stage still loads, and `complete` rejects with the first failure.
 
 Also exported:
 
-- `parseHumanoidAssets(pack, adultAnatomy?)`: the same parsing from
+- `parseHumanoidAssets(pack, adultAnatomy?, clothing?)`: the same parsing from
   already-fetched, decompressed buffers. Pure; usable in workers and tests.
   `pack.targets` maps file ids (`BODY_TARGET_FILES`) to buffers; `core` is
-  required and any others may come later.
+  required and any others may come later. `clothing` is `{ manifest, garments? }`;
+  without `garments` they are pending.
+- `addGarments(assets, bin)`: adds the clothing pack's decompressed garments
+  binary. Throws `AssetFormatError` when no clothing pack is loaded, the
+  garments are already loaded, or one fails to check, and then leaves `assets`
+  unchanged.
 - `addTargetFiles(assets, files)`: adds target files by id as they arrive (the
   adult pack's under `ADULT_TARGET_FILE`). Throws `AssetFormatError` for a file
   the loaded packs do not have, one already loaded, or one that fails to
@@ -83,6 +94,7 @@ Also exported:
 - `jointPosition(assets, positions, joint, out, offset?)`: writes a skeleton
   joint's centroid over the given positions.
 - Types: `BodyManifest`, `AdultAnatomyManifest`, `AdultAnatomyData`,
+  `ClothingManifest`, `ClothingPackData`, `GarmentEntry`, `BoundGarment`,
   `TargetEntry`, `ShapeModifierEntry`, `BoneEntry`, `BvhJoint`, `FaceGroup`,
   `BufferRange`, `PackSource`.
 - `AssetFormatError`.
@@ -590,6 +602,20 @@ import { adultAnatomyPack } from "humanoid-kit-adult-anatomy";
 `adultAnatomyPack` is `{ manifest, files: { "targets.bin.gz" } }`. Pass it as
 `adultAnatomy`. Its targets and modifiers evaluate only for figures aged 18 or
 over, and loading it fails unless it was built against the exact body pack.
+
+## `humanoid-kit-clothing`
+
+```ts
+import { clothingPack } from "humanoid-kit-clothing";
+```
+
+`clothingPack` is `{ manifest, files: { "garments.bin.gz", ...WebP textures } }`.
+Pass it as `clothing`. It ships nineteen CC0 garments from MakeHuman's system
+assets, bound to the base mesh: ten casual, sport and work suits (`suits/…`,
+category `clothes`), two elegant suits (category `jacket`), six pairs of shoes
+(`shoes/shoes01` to `06`) and a fedora (`hats/fedora01`). Loading it fails unless
+it was built against the exact body pack. A figure wears garments by id in
+`recipe.outfit`.
 
 ## Errors
 

@@ -34,6 +34,7 @@ lossless). All lengths are in metres.
 | --- | --- | --- |
 | `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, and the eyes, teeth and tongue |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
+| `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 19 garments from MakeHuman's system assets (suits, shoes, a hat), each bound to the base mesh with the vertices it hides |
 
 A target is stored sparsely: the indices of the vertices it moves (`uint16`),
 then their `int16` xyz deltas, plus a per-target scale in metres per step.
@@ -89,7 +90,24 @@ already-fetched buffers.
 
 The adult manifest records `topology` and `bodySha256`. The parser refuses it
 unless both match the body pack it is combined with, so adult targets can never
-be applied to a body they were not built for. Each pack's `data/PROVENANCE.md`
+be applied to a body they were not built for. The clothing manifest records the
+same two keys and is refused the same way: a garment's bindings are indices into
+one specific base mesh.
+
+The clothing pack's garments binary is large next to the first figure (2.3 MB
+of bindings and meshes), and a figure that wears nothing never needs it, so it
+loads as a stage of its own, after the body's modifier targets
+(`GARMENTS_FILE`); its manifest, which lists the garments and names their
+textures, arrives with the first stage. A garment is an attachment without
+baked occlusion: the same bindings (three base vertices, weights and an offset
+per vertex, per-axis scale references) and mesh, plus `delete_verts`, a
+category (`kind`, below) and the asset's tags. The packer
+(`scripts/pack-clothing.ts`) packs diffuse and normal maps as WebP at most
+1024 px on a side (2.1 MB for all nineteen), and reads the same `.mhclo`
+syntax as the attachments: the system shoes write `material` and
+`vertexboneweights_file` between `verts` and its data, so a keyword line does
+not end a vertex or `delete_verts` block, and only the other section keyword
+switches one. Each pack's `data/PROVENANCE.md`
 records the upstream commit, the CC0 evidence per source file and the SHA-256 of
 every output. The packer's licence gate refuses any source file that does not
 prove CC0 from its own content; see `NOTICE.md`.

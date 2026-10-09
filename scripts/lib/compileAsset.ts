@@ -48,6 +48,8 @@ export interface AssetMaterial {
   /** 0..1, derived from MakeHuman's shininess. */
   roughness: number;
   texture: string | null;
+  /** Packed tangent-space normal map; present only when `compileAsset` was asked for normal maps. */
+  normalTexture?: string | null;
   transparent: boolean;
   alphaToCoverage: boolean;
   backfaceCull: boolean;
@@ -93,7 +95,13 @@ function parseObjAsset(text: string) {
   return { vertexCount, uvs, faceVerts, faceUvs };
 }
 
-function parseMhmat(text: string, dir: string, evidence: Record<string, string>, matFile: string) {
+function parseMhmat(
+  text: string,
+  dir: string,
+  evidence: Record<string, string>,
+  matFile: string,
+  normalMap: boolean,
+) {
   const get = (key: string) =>
     text
       .split(/\r?\n/)
@@ -105,39 +113,53 @@ function parseMhmat(text: string, dir: string, evidence: Record<string, string>,
     number,
   ];
   const shininess = Number(get("shininess")?.[1] ?? 0.5);
-  const textureName = get("diffuseTexture")?.slice(1).join(" ") ?? null;
   const flag = (k: string, def: boolean) => {
     const v = get(k)?.[1];
     return v === undefined ? def : v.toLowerCase() === "true";
   };
-  let texture: string | null = null;
-  if (textureName) {
-    texture = path.resolve(dir, textureName);
-    if (!fs.existsSync(texture)) throw new Error(`${matFile}: texture ${textureName} not found`);
-    evidence[texture] = `texture referenced by ${path.basename(matFile)}, which proves CC0`;
-  }
+  // A texture has no header of its own: it inherits the licence of the material
+  // that names it, which has just proved CC0.
+  const textureOf = (key: string): string | null => {
+    const name = get(key)?.slice(1).join(" ");
+    if (!name) return null;
+    const file = path.resolve(dir, name);
+    if (!fs.existsSync(file)) throw new Error(`${matFile}: texture ${name} not found`);
+    evidence[file] = `texture referenced by ${path.basename(matFile)}, which proves CC0`;
+    return file;
+  };
   return {
     color,
     roughness: Math.min(1, Math.max(0.05, 1 - shininess)),
-    texture,
+    texture: textureOf("diffuseTexture"),
+    normalTexture: normalMap ? textureOf("normalmapTexture") : null,
     transparent: flag("transparent", false),
     alphaToCoverage: flag("alphaToCoverage", false),
     backfaceCull: flag("backfaceCull", true),
   };
 }
 
+export interface CompileOptions {
+  /** The material (.mhmat) to use in place of the one the .mhclo names. */
+  materialFile?: string;
+  /**
+   * Also pack the material's tangent-space normal map (`AssetMaterial.normalTexture`).
+   * Off by default, so the body pack's attachments are packed exactly as before.
+   */
+  normalMap?: boolean;
+}
+
 /**
  * @param mhcloFile path to the .mhclo
  * @param id stable asset id within its pack, e.g. `eyes/high-poly`
  * @param kind attachment kind, e.g. `eyes`
- * @param materialFile optional override for the material (.mhmat) to use
  */
 export function compileAsset(
   mhcloFile: string,
   id: string,
   kind: string,
-  materialFile?: string,
+  options: CompileOptions = {},
 ): CompiledAsset {
+  const { materialFile, normalMap = false } = options;
   const evidence: Record<string, string> = {};
   const dir = path.dirname(mhcloFile);
   const binding = parseMhclo(readProven(mhcloFile, evidence));
@@ -158,18 +180,29 @@ export function compileAsset(
     backfaceCull: true,
   };
   if (matPath) {
-    const { texture: textureSource, ...rest } = parseMhmat(
+    const {
+      texture: textureSource,
+      normalTexture: normalSource,
+      ...rest
+    } = parseMhmat(
       readProven(matPath, evidence),
       path.dirname(matPath),
       evidence,
       matPath,
+      normalMap,
     );
     // Textures ship as WebP (see writeAttachments), named after the asset and source file.
-    const packedName = textureSource
-      ? `${id.replace(/\//g, "_")}_${path.basename(textureSource, path.extname(textureSource))}.webp`
-      : null;
-    if (textureSource && packedName) textures.set(textureSource, packedName);
-    material = { ...rest, texture: packedName };
+    const packed = (source: string | null) => {
+      if (!source) return null;
+      const name = `${id.replace(/\//g, "_")}_${path.basename(source, path.extname(source))}.webp`;
+      textures.set(source, name);
+      return name;
+    };
+    material = {
+      ...rest,
+      texture: packed(textureSource),
+      ...(normalMap && { normalTexture: packed(normalSource) }),
+    };
   }
   const s = binding.scale;
   return {
