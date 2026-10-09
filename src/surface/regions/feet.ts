@@ -9,7 +9,7 @@
  * as a choice.
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
-import { jointPosition } from "../../format/assetFormat.ts";
+import { groupFaces, jointPosition } from "../../format/assetFormat.ts";
 import type { DetailLayer, SkinLayer, SkinLayerFields, SurfaceLayer } from "../layers.ts";
 import { type DigitFrame, digitFrame, type Vec3 } from "./digitFrame.ts";
 import { skinZones } from "./skinZones.ts";
@@ -42,6 +42,9 @@ export interface FootFrame {
   across: Float32Array;
   /** Per side: the heel-to-second-toe length, metres. */
   length: readonly [number, number];
+  /** Per side: the foot's axis (heel to second toe) and its outward direction across it, as unit (x, z) pairs. */
+  axis: readonly [readonly [number, number], readonly [number, number]];
+  lateral: readonly [readonly [number, number], readonly [number, number]];
   landmarks: readonly [FootLandmarks, FootLandmarks];
 }
 
@@ -65,6 +68,8 @@ export function footFrame(assets: HumanoidAssets): FootFrame {
   const along = new Float32Array(n);
   const across = new Float32Array(n);
   const length: number[] = [];
+  const axes: [number, number][] = [];
+  const laterals: [number, number][] = [];
   const landmarks: FootLandmarks[] = [];
   const at = (joint: string): [number, number, number] => {
     const p = new Float32Array(3);
@@ -110,6 +115,8 @@ export function footFrame(assets: HumanoidAssets): FootFrame {
       across[v] = p.across;
     }
     length.push(L);
+    axes.push(axis);
+    laterals.push(lateral);
     const proximal = (p: FootPoint, by: number): FootPoint => ({ ...p, along: p.along - by / L });
     const metatarsals = [1, 2, 3, 4, 5].map((t) => {
       const j = at(`toe${t}-1.${name}____head`);
@@ -127,6 +134,8 @@ export function footFrame(assets: HumanoidAssets): FootFrame {
     along,
     across,
     length: [length[0] as number, length[1] as number],
+    axis: [axes[0] as [number, number], axes[1] as [number, number]],
+    lateral: [laterals[0] as [number, number], laterals[1] as [number, number]],
     landmarks: [landmarks[0] as FootLandmarks, landmarks[1] as FootLandmarks],
   };
   frames.set(assets, frame);
@@ -418,10 +427,206 @@ export const TOE_CREASE_LAYER: DetailLayer = {
   paint: () => ({ strength: 1, height: TOE_CREASE_DEPTH, size: 1 }),
 };
 
+/* ------------------------------------------------------- friction ridges */
+
+/** The ridges' spacing on a grown foot, metres (a choice inside the 0.4 to 0.6 mm the fingerprint literature gives: C6). */
+export const RIDGE_SPACING = 0.00045;
+/** The ridges' peak-to-peak relief, metres (a choice: about a fifth of the spacing; C6). */
+export const RIDGE_RELIEF = 0.0001;
+
+/**
+ * Spacing by age: a child's ridges are finer, in proportion to the growth of
+ * the foot between two years and eighteen (a choice: the ridges are laid down
+ * before birth, so they widen as the skin grows).
+ */
+export function ridgeSpacing(age: number | undefined): number {
+  const a = age ?? 30;
+  const t = Math.min(1, Math.max(0, (a - 2) / 16));
+  return RIDGE_SPACING * (0.65 + 0.35 * t);
+}
+
+/** Relief by age: ridges flatten as the skin thins (direction from the forensic literature; the curve is a choice). */
+export function ridgeRelief(age: number | undefined): number {
+  const a = age ?? 30;
+  return RIDGE_RELIEF * (1 - 0.5 * smooth(40, 85, a));
+}
+
+/** How much the ridges bow round the foot's width: a wave direction turns by this × the offset from the axis, per metre (a choice). */
+const FOOT_ARCH = 3;
+/** The same round a toe's pad: the loops and arches of a fingertip's pattern, in the toe's own width (a choice). */
+const TOE_ARCH = 60;
+
+/**
+ * Each vertex's ridge wave direction in 3D (a unit vector across the ridges, in
+ * the horizontal plane at rest): along the foot at the heel, the arch and the
+ * ball, bowed by the offset from the axis, and over a toe's pad bowed more, so
+ * its ridges arch as a fingertip's do.
+ */
+function waveDirections(assets: HumanoidAssets): Float32Array {
+  const frame = footFrame(assets);
+  const toes = toeFrame(assets);
+  const P = assets.positions;
+  const n = assets.manifest.vertexCount;
+  const out = new Float32Array(n * 3);
+  for (let v = 0; v < n; v++) {
+    const side = frame.side[v] as number;
+    if (side === 255) continue;
+    const a = frame.axis[side as 0 | 1];
+    const l = frame.lateral[side as 0 | 1];
+    // Bowed round the foot's width.
+    const u = frame.across[v] as number;
+    let wx = a[0] - 2 * FOOT_ARCH * u * l[0];
+    let wz = a[1] - 2 * FOOT_ARCH * u * l[1];
+    const d = toes.digit[v] as number;
+    if (d > 0) {
+      const t = smooth(-0.004, 0.006, toes.along[v] as number);
+      // A toe's `across` runs along (axis × down): +x, so outward on the left foot, inward on the right.
+      const c = (toes.across[v] as number) * ((P[v * 3] as number) >= 0 ? 1 : -1);
+      const tx = a[0] - 2 * TOE_ARCH * c * l[0];
+      const tz = a[1] - 2 * TOE_ARCH * c * l[1];
+      wx = (1 - t) * wx + t * tx;
+      wz = (1 - t) * wz + t * tz;
+    }
+    const len = Math.hypot(wx, wz) || 1;
+    out[v * 3] = wx / len;
+    out[v * 3 + 2] = wz / len;
+  }
+  return out;
+}
+
+/**
+ * The ridge wave directions in the UV plane, as the two coordinates of the
+ * doubled angle (`ridgeOrientationCoordinates`): per face, the wave direction
+ * of each corner, taken into the face's plane and carried through the face's UV
+ * map, then averaged over the faces round a vertex by their area. The relief is
+ * drawn in the UV plane (p = uv × metres per UV), so its orientation has to be
+ * measured there.
+ */
+function ridgeOrientationFields(assets: HumanoidAssets): {
+  mask: Float32Array;
+  cos: Float32Array;
+  sin: Float32Array;
+} {
+  const n = assets.manifest.vertexCount;
+  const sole = skinZones(assets).sole;
+  const wave = waveDirections(assets);
+  const P = assets.positions;
+  const cx = new Float64Array(n);
+  const cy = new Float64Array(n);
+  for (const f of groupFaces(assets, "body")) {
+    const q = [0, 1, 2, 3].map((k) => assets.faceVerts[f * 4 + k] as number);
+    if (!q.some((v) => (sole[v] as number) > 0)) continue;
+    const at = (v: number): [number, number, number] => [
+      P[v * 3] as number,
+      P[v * 3 + 1] as number,
+      P[v * 3 + 2] as number,
+    ];
+    const uv = [0, 1, 2, 3].map((k) => [
+      assets.uvs[(assets.faceUvs[f * 4 + k] as number) * 2] as number,
+      assets.uvs[(assets.faceUvs[f * 4 + k] as number) * 2 + 1] as number,
+    ]) as [number, number][];
+    const p0 = at(q[0] as number);
+    const sub3 = (
+      a: [number, number, number],
+      b: [number, number, number],
+    ): [number, number, number] => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    const dot3 = (a: [number, number, number], b: [number, number, number]) =>
+      a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const e1 = sub3(at(q[1] as number), p0);
+    const e2 = sub3(at(q[3] as number), p0);
+    const b1 = [
+      (uv[1] as [number, number])[0] - (uv[0] as [number, number])[0],
+      (uv[1] as [number, number])[1] - (uv[0] as [number, number])[1],
+    ];
+    const b2 = [
+      (uv[3] as [number, number])[0] - (uv[0] as [number, number])[0],
+      (uv[3] as [number, number])[1] - (uv[0] as [number, number])[1],
+    ];
+    const g11 = dot3(e1, e1);
+    const g12 = dot3(e1, e2);
+    const g22 = dot3(e2, e2);
+    const det = g11 * g22 - g12 * g12;
+    if (det < 1e-18) continue;
+    const area = Math.sqrt(det);
+    for (const v of q) {
+      if ((sole[v] as number) <= 0) continue;
+      const w: [number, number, number] = [
+        wave[v * 3] as number,
+        wave[v * 3 + 1] as number,
+        wave[v * 3 + 2] as number,
+      ];
+      // w = alpha e1 + beta e2 (its part in the face's plane), by least squares.
+      const r1 = dot3(w, e1);
+      const r2 = dot3(w, e2);
+      const alpha = (r1 * g22 - r2 * g12) / det;
+      const beta = (r2 * g11 - r1 * g12) / det;
+      const du = alpha * (b1[0] as number) + beta * (b2[0] as number);
+      const dv = alpha * (b1[1] as number) + beta * (b2[1] as number);
+      const len = Math.hypot(du, dv);
+      if (len < 1e-12) continue;
+      // The doubled angle's unit vector, weighted by the face's area.
+      const c2 = (du * du - dv * dv) / (len * len);
+      const s2 = (2 * du * dv) / (len * len);
+      cx[v] = (cx[v] as number) + area * c2;
+      cy[v] = (cy[v] as number) + area * s2;
+    }
+  }
+  const mask = new Float32Array(n);
+  const cos = new Float32Array(n).fill(0.5);
+  const sin = new Float32Array(n).fill(0.5);
+  for (let v = 0; v < n; v++) {
+    const len = Math.hypot(cx[v] as number, cy[v] as number);
+    if ((sole[v] as number) <= 0 || len < 1e-18) continue;
+    mask[v] = sole[v] as number;
+    // Unit vector back to 0..1 coordinates.
+    cos[v] = 0.5 + (0.5 * (cx[v] as number)) / len;
+    sin[v] = 0.5 + (0.5 * (cy[v] as number)) / len;
+  }
+  return { mask, cos, sin };
+}
+
+const ridgeCache = new WeakMap<HumanoidAssets, ReturnType<typeof ridgeOrientationFields>>();
+const ridgeFieldsOf = (assets: HumanoidAssets) => {
+  let f = ridgeCache.get(assets);
+  if (!f) {
+    f = ridgeOrientationFields(assets);
+    ridgeCache.set(assets, f);
+  }
+  return f;
+};
+
+/** The sole's friction ridges (`src/surface/ridges.ts`): the layer's coordinate is the first coordinate of the ridges' orientation. */
+export const RIDGE_LAYER: DetailLayer = {
+  id: "sole-ridges",
+  kind: "detail",
+  pattern: "ridges",
+  targets: [],
+  fields: (assets) => {
+    const f = ridgeFieldsOf(assets);
+    return { mask: f.mask, coord: f.cos };
+  },
+  paint: ({ age }) => ({ strength: 1, height: ridgeRelief(age), size: ridgeSpacing(age) }),
+};
+
+/** The second coordinate of the ridges' orientation; draws nothing itself. It follows `RIDGE_LAYER`. */
+export const RIDGE_ORIENTATION_LAYER: DetailLayer = {
+  id: "sole-ridge-orientation",
+  kind: "detail",
+  pattern: "ridge-orientation",
+  targets: [],
+  fields: (assets) => {
+    const f = ridgeFieldsOf(assets);
+    return { mask: f.mask, coord: f.sin };
+  },
+  paint: () => ({ strength: 1, height: 0, size: 1 }),
+};
+
 /** The feet's layers, in the order they are applied. */
 export const FOOT_SKIN_LAYERS: readonly SkinLayer[] = [
   CALLUS_LAYER,
   CALLUS_SURFACE_LAYER,
   TOE_WRINKLE_LAYER,
   TOE_CREASE_LAYER,
+  RIDGE_LAYER,
+  RIDGE_ORIENTATION_LAYER,
 ];

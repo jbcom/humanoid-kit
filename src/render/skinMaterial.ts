@@ -42,6 +42,14 @@ import {
   STOP_TABLE_WIDTH,
 } from "../surface/layers.ts";
 import { SKIN_LAYERS } from "../surface/regions/index.ts";
+import {
+  RIDGE_ACROSS,
+  RIDGE_ALONG,
+  RIDGE_CELL_PERIODS,
+  RIDGE_CONTRAST,
+  RIDGE_KERNELS,
+  RIDGE_SIGMA,
+} from "../surface/ridges.ts";
 import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import { luminance, MELANIN_ANCHORS, type Rgb, skinAlbedo } from "../surface/skinTone.ts";
@@ -150,6 +158,40 @@ float hkBumps( vec2 p ) {
 		}
 	return h;
 }
+// Friction ridges: sparse Gabor noise, the shader form of ridgeHeight (src/surface/ridges.ts).
+uvec2 hkRidgeHash( uvec2 v ) {
+	v = v * 1664525u + 1013904223u;
+	v.x += v.y * 1664525u;
+	v.y += v.x * 1664525u;
+	v = v ^ ( v >> 16u );
+	v.x += v.y * 1664525u;
+	v.y += v.x * 1664525u;
+	v = v ^ ( v >> 16u );
+	return v;
+}
+float hkRidges( vec2 p, float theta, float spacing ) {
+	float cell = ${glslFloat(RIDGE_CELL_PERIODS)} * spacing;
+	ivec2 i = ivec2( floor( p / cell ) );
+	vec2 w = vec2( cos( theta ), sin( theta ) );
+	float sa = ${glslFloat(RIDGE_ALONG)} * spacing;
+	float sc = ${glslFloat(RIDGE_ACROSS)} * spacing;
+	float sum = 0.0;
+	for ( int j = -1; j <= 1; j ++ )
+		for ( int k = -1; k <= 1; k ++ ) {
+			ivec2 c = i + ivec2( k, j );
+			for ( int n = 0; n < ${RIDGE_KERNELS}; n ++ ) {
+				uvec2 h = hkRidgeHash( uvec2( uint( c.x + 32768 ), uint( c.y * ${RIDGE_KERNELS} + n + 32768 ) ) );
+				float phase = float( hkRidgeHash( uvec2( uint( c.x + 16384 ), uint( c.y * ${RIDGE_KERNELS} + n + 16384 ) ) ).x ) * 2.3283064365386963e-10;
+				vec2 centre = ( vec2( c ) + vec2( h ) * 2.3283064365386963e-10 ) * cell;
+				vec2 d = p - centre;
+				float across = dot( d, w );
+				float along = - d.x * w.y + d.y * w.x;
+				float env = exp( - 0.5 * ( along * along / ( sa * sa ) + across * across / ( sc * sc ) ) );
+				sum += env * cos( 6.28318530718 * ( across / spacing + phase ) );
+			}
+		}
+	return clamp( 0.5 + ${glslFloat(RIDGE_CONTRAST / RIDGE_SIGMA)} * sum, 0.0, 1.0 );
+}
 // The detail layers' relief at this pixel, metres. Relief finer than a pixel
 // fades out rather than aliasing.
 float hkDetailHeight( vec2 uv ) {
@@ -157,7 +199,7 @@ float hkDetailHeight( vec2 uv ) {
 	for ( int l = 0; l < ${count}; l ++ ) {
 		vec4 head = hkHeader( l );
 		int kind = hkKind( head );
-		if ( kind != 2 && kind != 3 ) continue;
+		if ( kind != 2 && kind != 3 && kind != 5 ) continue;
 		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
 		if ( head.x <= 0.0 ) continue;
 		vec2 f = hkFields( l, uv );
@@ -166,6 +208,17 @@ float hkDetailHeight( vec2 uv ) {
 			vec2 p = uv * vHkUvScale / head.w;
 			float fade = 1.0 - smoothstep( 0.25, 0.75, length( fwidth( p ) ) );
 			H += a * head.z * fade * hkBumps( p );
+		} else if ( kind == 5 ) {
+			// The ridges' direction is stored as two coordinates of the doubled angle, in this layer and the next.
+			vec2 p = uv * vHkUvScale;
+			vec2 g = hkFields( l + 1, uv );
+			// Ridges within a pixel of one another blur to a flat; fade them out before they alias.
+			float fade = 1.0 - smoothstep( 0.2, 0.45, length( fwidth( p ) ) / head.w );
+			// The derivatives above are taken in uniform flow; only the pattern is skipped off the sole.
+			if ( a > 0.002 && fade > 0.0 ) {
+				float theta = 0.5 * atan( 2.0 * g.y - 1.0, 2.0 * f.y - 1.0 );
+				H += a * head.z * fade * ( hkRidges( p, theta, head.w ) - 0.5 );
+			}
 		} else {
 			float phase = f.y * head.w;
 			float fade = 1.0 - smoothstep( 0.25, 0.75, fwidth( phase ) );

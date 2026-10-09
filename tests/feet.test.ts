@@ -1,16 +1,77 @@
 import { describe, expect, it } from "vitest";
+import { groupFaces } from "../src/format/assetFormat.ts";
 import {
   CALLUS_LAYER,
   callusAmount,
+  FOOT_SKIN_LAYERS,
   footFrame,
+  RIDGE_LAYER,
+  RIDGE_ORIENTATION_LAYER,
+  RIDGE_SPACING,
   TOE_CREASE_LAYER,
   TOE_WRINKLE_LAYER,
   toeFrame,
 } from "../src/surface/regions/feet.ts";
 import { skinZones } from "../src/surface/regions/skinZones.ts";
+import { ridgeOrientation } from "../src/surface/ridges.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets();
+
+/**
+ * The 3D tangent direction a vertex's stored ridge orientation stands for: the
+ * UV angle (from the two coordinates) carried back to the surface through the
+ * inverse of the UV Jacobian of the faces round the vertex, averaged. Null for
+ * a vertex no face of the body reaches.
+ */
+function waveDirection3D(
+  a: typeof assets,
+  vertex: number,
+  c: number,
+  s: number,
+): [number, number, number] | null {
+  const theta = ridgeOrientation(c, s);
+  const duv = [Math.cos(theta), Math.sin(theta)] as const;
+  const P = a.positions;
+  const acc = [0, 0, 0];
+  let count = 0;
+  for (const f of groupFaces(a, "body")) {
+    const q = [0, 1, 2, 3].map((k) => a.faceVerts[f * 4 + k] as number);
+    if (!q.includes(vertex)) continue;
+    const uv = [0, 1, 2, 3].map((k) => [
+      a.uvs[(a.faceUvs[f * 4 + k] as number) * 2] as number,
+      a.uvs[(a.faceUvs[f * 4 + k] as number) * 2 + 1] as number,
+    ]);
+    const at = (v: number) => [P[v * 3], P[v * 3 + 1], P[v * 3 + 2]] as [number, number, number];
+    const p0 = at(q[0] as number);
+    const e1 = at(q[1] as number).map((x, i) => x - (p0[i] as number)) as [number, number, number];
+    const e2 = at(q[3] as number).map((x, i) => x - (p0[i] as number)) as [number, number, number];
+    const [u0, u1, , u3] = uv as [number[], number[], number[], number[]];
+    const b1 = [(u1[0] as number) - (u0[0] as number), (u1[1] as number) - (u0[1] as number)];
+    const b2 = [(u3[0] as number) - (u0[0] as number), (u3[1] as number) - (u0[1] as number)];
+    // Solve duv = alpha b1 + beta b2, then the 3D direction is alpha e1 + beta e2.
+    const det = (b1[0] as number) * (b2[1] as number) - (b1[1] as number) * (b2[0] as number);
+    if (Math.abs(det) < 1e-12) continue;
+    const alpha = (duv[0] * (b2[1] as number) - duv[1] * (b2[0] as number)) / det;
+    const beta = (-duv[0] * (b1[1] as number) + duv[1] * (b1[0] as number)) / det;
+    const d = [0, 1, 2].map((i) => alpha * (e1[i] as number) + beta * (e2[i] as number));
+    const len = Math.hypot(...(d as [number, number, number])) || 1;
+    // Direction modulo a half turn: orient all the faces' contributions the same way before averaging.
+    const sign =
+      count > 0 &&
+      (d[0] as number) * (acc[0] as number) +
+        (d[1] as number) * (acc[1] as number) +
+        (d[2] as number) * (acc[2] as number) <
+        0
+        ? -1
+        : 1;
+    for (let i = 0; i < 3; i++) acc[i] = (acc[i] as number) + (sign * (d[i] as number)) / len;
+    count++;
+  }
+  if (count === 0) return null;
+  const l = Math.hypot(...(acc as [number, number, number])) || 1;
+  return acc.map((x) => x / l) as [number, number, number];
+}
 const P = assets.positions;
 const n = assets.manifest.vertexCount;
 
@@ -289,5 +350,83 @@ describe("toe joint creases", () => {
     expect(sole.height).toBeGreaterThan(top(30).height);
     expect(top(80).strength).toBeGreaterThan(top(30).strength);
     expect(top(5).strength).toBeLessThan(top(30).strength);
+  });
+});
+
+describe("friction ridges on the sole", () => {
+  const ridge = RIDGE_LAYER.fields(assets);
+  const orient = RIDGE_ORIENTATION_LAYER.fields(assets);
+  const foot = footFrame(assets);
+  const sole = skinZones(assets).sole;
+
+  it("covers the sole and nothing else, with the orientation layer's mask the same", () => {
+    for (let v = 0; v < n; v++) {
+      // Ignoring the faint tails of the sole's weight a vertex off the sole's faces may carry.
+      if ((sole[v] as number) > 0.01)
+        expect(ridge.mask[v], `vertex ${v}`).toBeCloseTo(sole[v] as number, 6);
+      expect(ridge.mask[v]).toBeLessThanOrEqual(sole[v] as number);
+      expect(orient.mask[v]).toBe(ridge.mask[v]);
+    }
+  });
+
+  it("stores the orientation as two coordinates in 0..1, the doubled angle on the unit circle", () => {
+    for (let v = 0; v < n; v++) {
+      if ((ridge.mask[v] as number) <= 0.5) continue;
+      const c = (ridge.coord as Float32Array)[v] as number;
+      const s = (orient.coord as Float32Array)[v] as number;
+      expect(c).toBeGreaterThanOrEqual(0);
+      expect(c).toBeLessThanOrEqual(1);
+      expect(s).toBeGreaterThanOrEqual(0);
+      expect(s).toBeLessThanOrEqual(1);
+      // A unit vector (up to the quantisation the atlas will add): a vertex with a real direction.
+      expect(Math.hypot(2 * c - 1, 2 * s - 1)).toBeGreaterThan(0.85);
+    }
+  });
+
+  it("runs the ridges across the foot at the heel, as a stripe across the sole's length", () => {
+    // Where UV space is conformal enough, the stored UV angle maps back to the wave direction in 3D;
+    // the ridges' waves run along the foot at the heel and arch, so the ridges cross it.
+    const heel = foot.landmarks[0].heel;
+    let checked = 0;
+    for (let v = 0; v < n; v++) {
+      if (foot.side[v] !== 0 || (ridge.mask[v] as number) < 0.5) continue;
+      // The flat of the sole, where the face's plane holds the foot's axis (the heel's back curves up).
+      if ((skinZones(assets).normals[v * 3 + 1] as number) > -0.85) continue;
+      if (Math.abs((foot.along[v] as number) - heel.along) > 0.35) continue;
+      const wave = waveDirection3D(
+        assets,
+        v,
+        (ridge.coord as Float32Array)[v] as number,
+        (orient.coord as Float32Array)[v] as number,
+      );
+      if (!wave) continue;
+      // Along the foot's axis (z at rest), within 35 degrees either way (the ridges bow with the offset from the axis).
+      expect(Math.abs(wave[2]), `vertex ${v}`).toBeGreaterThan(Math.cos((35 * Math.PI) / 180));
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(10);
+  });
+
+  it("is finer and shallower on a child than the ridges of a grown foot, and flattens with age", () => {
+    const input = (age: number) => ({
+      tone: { melanin: 0.5, haemoglobin: 0.5, undertone: 0, override: null },
+      flush: 0.4,
+      lips: 0.5,
+      areola: 0.5,
+      signals: {},
+      age,
+    });
+    const paint = (age: number) =>
+      RIDGE_LAYER.paint(input(age)) as { height: number; size: number };
+    expect(paint(3).size).toBeLessThan(paint(30).size);
+    expect(paint(30).size).toBeCloseTo(RIDGE_SPACING, 6);
+    expect(paint(80).height).toBeLessThan(paint(30).height);
+    expect(paint(30).height).toBeLessThan(paint(3).height * 1.01 + 1e-9);
+  });
+
+  it("is a ridge layer immediately followed by its orientation layer", () => {
+    const i = FOOT_SKIN_LAYERS.indexOf(RIDGE_LAYER);
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(FOOT_SKIN_LAYERS[i + 1]).toBe(RIDGE_ORIENTATION_LAYER);
   });
 });

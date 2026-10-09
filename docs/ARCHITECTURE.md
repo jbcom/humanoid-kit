@@ -1387,6 +1387,35 @@ anything when shoes are worn beyond the fields every figure shares.
   runs 0 to 1 across the band, so a fold starts and ends flat, and the bands
   stay a bone's fraction apart so the nearest joint never flips inside one.
   Depths and counts are choices (C6): no measurement of crease depth was found.
+- *Friction ridges are a function, not a field.* The ridges are 0.4 to 0.6 mm
+  apart on a mesh whose faces are 5 mm, and a field atlas texel is far coarser
+  than a ridge, so no mask, coordinate or phase can carry them: a phase stored
+  at texel resolution would stair-step by whole ridges. The shader evaluates
+  them per pixel instead (`hkRidges`, the mirror of `ridgeHeight` in
+  `src/surface/ridges.ts`), as sparse Gabor noise (Lagae et al. 2009): in each
+  cell of a jittered grid a couple of kernels, each a plane wave across the
+  ridges under an envelope elongated along them with a random phase. The sum is
+  stripes of the given spacing and orientation that run for a few millimetres
+  and then end, split and join where kernels overlap, which is what a
+  fingerprint's minutiae are. No global phase is needed, so no seam in the UV
+  layout can break it. The atlas carries only the orientation, which turns
+  slowly: stored as the two coordinates of the doubled angle (½ + ½ cos 2θ,
+  ½ + ½ sin 2θ), so that bilinear filtering between two neighbouring angles
+  passes through the angles between them, across the 0 / π seam too (a plain
+  angle in one coordinate would interpolate 0.05 and π − 0.05 through π / 2,
+  perpendicular to both). A layer holds one coordinate, so `RIDGE_LAYER` (pattern
+  `ridges`, kind 5) is followed by `RIDGE_ORIENTATION_LAYER` (kind 6, draws
+  nothing) with the same mask, and the shader reads the second from layer l + 1.
+  The orientation is measured in the UV plane (the relief is drawn at p = uv ×
+  metres per UV): per face, each corner's 3D wave direction is taken into the
+  face's plane and through its UV map, and a vertex averages those by area. The
+  wave runs along the foot, bowed by the offset from the foot's axis, and
+  over a toe's pad bowed more so its ridges arch as a fingertip's do. Spacing
+  and relief follow age (a child's finer; relief halves between 40 and 85 as
+  the skin thins). They fade out where finer than a pixel, as every relief
+  does, so they show only close up. Tested: the function's statistics and
+  orientation in node, and in a browser the shader against it (the shading
+  follows the reference's slope at correlation below −0.9).
 
 ## Parallel work: the base contract
 
