@@ -1,7 +1,11 @@
 /**
- * Main-thread handle to the evaluation worker. Evaluations are latest-wins:
- * while one is running, newer requests replace any queued one, so dragging a
- * slider never builds a backlog.
+ * Main-thread handle to the evaluation worker.
+ *
+ * Evaluations are latest-wins per key: each caller (one `<Humanoid>`, say)
+ * passes its own key, and while a key has an evaluation waiting, a newer
+ * request for the same key replaces it, so dragging a slider never builds a
+ * backlog while several figures sharing one worker never cancel each other.
+ * Waiting keys are served in the order they were first queued.
  */
 import type { LoadOptions } from "../format/assetFormat.ts";
 import type { Evaluation, ModelOptions, ModelTopology } from "../model/humanoidModel.ts";
@@ -18,6 +22,18 @@ export class HumanoidWorkerError extends Error {
   override name = "HumanoidWorkerError";
 }
 
+interface Job {
+  recipe: Recipe;
+  resolve: (e: Evaluation) => void;
+  reject: (e: Error) => void;
+}
+
+const abortError = () => {
+  const e = new Error("superseded by a newer evaluation");
+  e.name = "AbortError";
+  return e;
+};
+
 export class HumanoidWorkerClient {
   private readonly worker: Worker;
   private nextId = 1;
@@ -26,11 +42,9 @@ export class HumanoidWorkerClient {
     { resolve: (v: WorkerResponse) => void; reject: (e: Error) => void }
   >();
   private running = false;
-  private queued: {
-    recipe: Recipe;
-    resolve: (e: Evaluation) => void;
-    reject: (e: Error) => void;
-  } | null = null;
+  private disposed = false;
+  /** Waiting evaluations by caller key; Map iteration order is first-queued order. */
+  private readonly queue = new Map<string, Job>();
   readonly ready: Promise<ReadyInfo>;
 
   constructor(load: LoadOptions, model: ModelOptions = {}, worker?: Worker) {
@@ -47,11 +61,8 @@ export class HumanoidWorkerClient {
         p.reject(err);
       } else p.resolve(e.data);
     };
-    this.worker.onerror = (e) => {
-      const err = new HumanoidWorkerError(e.message || "worker failed");
-      for (const p of this.pending.values()) p.reject(err);
-      this.pending.clear();
-    };
+    this.worker.onerror = (e) =>
+      this.failAll(new HumanoidWorkerError(e.message || "worker failed"));
     this.ready = this.request({ type: "init", id: 0, load, model }).then((r) => {
       if (r.type !== "ready") throw new HumanoidWorkerError(`unexpected ${r.type}`);
       return {
@@ -60,54 +71,85 @@ export class HumanoidWorkerClient {
         adultAnatomyLoaded: r.adultAnatomyLoaded,
       };
     });
-    // A client disposed before it is ready rejects `ready`; mark that observed so
-    // it is not reported as unhandled. Callers awaiting `ready` still see the error.
+    // Rejections reach every caller that awaits `ready`; this only marks the
+    // promise observed so a client disposed during init is not reported twice.
     this.ready.catch(() => undefined);
   }
 
   private request(msg: WorkerRequest): Promise<WorkerResponse> {
+    if (this.disposed) return Promise.reject(new HumanoidWorkerError("disposed"));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      this.worker.postMessage({ ...msg, id });
+      try {
+        this.worker.postMessage({ ...msg, id });
+      } catch (e) {
+        this.pending.delete(id);
+        reject(e instanceof Error ? e : new HumanoidWorkerError(String(e)));
+      }
     });
   }
 
-  /** Evaluates a recipe. A request superseded by a newer one before it starts rejects with an AbortError. */
-  evaluate(recipe: Recipe): Promise<Evaluation> {
+  /**
+   * Evaluates a recipe. `key` identifies the caller; a waiting request for the
+   * same key is superseded and rejects with an `AbortError`.
+   */
+  evaluate(recipe: Recipe, key = "default"): Promise<Evaluation> {
+    if (this.disposed) return Promise.reject(new HumanoidWorkerError("disposed"));
     return new Promise((resolve, reject) => {
-      if (this.queued) {
-        const abort = new Error("superseded by a newer evaluation");
-        abort.name = "AbortError";
-        this.queued.reject(abort);
-      }
-      this.queued = { recipe, resolve, reject };
+      this.queue.get(key)?.reject(abortError());
+      // Map.set on an existing key keeps its position, so a superseding
+      // request keeps its caller's place in line.
+      this.queue.set(key, { recipe, resolve, reject });
       void this.pump();
     });
   }
 
   private async pump(): Promise<void> {
-    if (this.running || !this.queued) return;
-    await this.ready;
-    const job = this.queued;
-    if (!job || this.running) return;
-    this.queued = null;
+    if (this.running || this.queue.size === 0 || this.disposed) return;
     this.running = true;
+    try {
+      await this.ready;
+    } catch (e) {
+      this.running = false;
+      this.failQueued(e instanceof Error ? e : new HumanoidWorkerError(String(e)));
+      return;
+    }
+    const next = this.queue.entries().next();
+    if (next.done) {
+      this.running = false;
+      return;
+    }
+    const [key, job] = next.value;
+    this.queue.delete(key);
     try {
       const r = await this.request({ type: "evaluate", id: 0, recipe: job.recipe });
       if (r.type !== "evaluated") throw new HumanoidWorkerError(`unexpected ${r.type}`);
       job.resolve(r.evaluation);
     } catch (e) {
-      job.reject(e instanceof Error ? e : new Error(String(e)));
+      job.reject(e instanceof Error ? e : new HumanoidWorkerError(String(e)));
     } finally {
       this.running = false;
       void this.pump();
     }
   }
 
-  dispose(): void {
-    this.worker.terminate();
-    for (const p of this.pending.values()) p.reject(new HumanoidWorkerError("disposed"));
+  private failQueued(err: Error): void {
+    for (const job of this.queue.values()) job.reject(err);
+    this.queue.clear();
+  }
+
+  private failAll(err: Error): void {
+    for (const p of this.pending.values()) p.reject(err);
     this.pending.clear();
+    this.failQueued(err);
+  }
+
+  /** Terminates the worker; every waiting and in-flight evaluation rejects. Safe to call twice. */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.worker.terminate();
+    this.failAll(new HumanoidWorkerError("disposed"));
   }
 }

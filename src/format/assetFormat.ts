@@ -190,7 +190,27 @@ function view<T extends Float32Array | Uint32Array | Uint8Array>(
       `buffer range ${range.offset}+${range.byteLength} exceeds ${buffer.byteLength}`,
     );
   }
+  if (
+    range.byteLength % Ctor.BYTES_PER_ELEMENT !== 0 ||
+    range.offset % Ctor.BYTES_PER_ELEMENT !== 0
+  ) {
+    throw new AssetFormatError(
+      `buffer range ${range.offset}+${range.byteLength} is misaligned for its element type`,
+    );
+  }
   return new Ctor(buffer, range.offset, range.byteLength / Ctor.BYTES_PER_ELEMENT);
+}
+
+function expectLength(arr: ArrayLike<number>, expected: number, what: string): void {
+  if (arr.length !== expected)
+    throw new AssetFormatError(`${what}: expected ${expected} values, got ${arr.length}`);
+}
+
+function expectIndices(arr: ArrayLike<number>, limit: number, what: string): void {
+  for (let i = 0; i < arr.length; i++) {
+    if ((arr[i] as number) >= limit)
+      throw new AssetFormatError(`${what}: index ${arr[i]} is out of range (< ${limit})`);
+  }
 }
 
 function addTargets(
@@ -241,15 +261,20 @@ function parseAttachments(manifest: BodyManifest, bin: ArrayBuffer): Map<string,
       uvs: view(Float32Array, bin, l.uvs),
       deleteVerts: view(Uint32Array, bin, l.deleteVerts),
     };
-    if (
-      asset.weights.length !== entry.vertexCount * 3 ||
-      asset.faceVerts.length !== entry.faceCount * 4
-    ) {
-      throw new AssetFormatError(`attachment ${entry.id} has inconsistent array sizes`);
-    }
-    for (const v of asset.refVerts) {
-      if (v >= manifest.vertexCount)
-        throw new AssetFormatError(`attachment ${entry.id} binds to missing vertex ${v}`);
+    const what = (field: string) => `attachment ${entry.id} ${field}`;
+    expectLength(asset.refVerts, entry.vertexCount * 3, what("refVerts"));
+    expectLength(asset.weights, entry.vertexCount * 3, what("weights"));
+    expectLength(asset.offsets, entry.vertexCount * 3, what("offsets"));
+    expectLength(asset.faceVerts, entry.faceCount * 4, what("faceVerts"));
+    expectLength(asset.faceUvs, entry.faceCount * 4, what("faceUvs"));
+    if (asset.uvs.length % 2 !== 0) throw new AssetFormatError(`${what("uvs")}: odd length`);
+    expectIndices(asset.refVerts, manifest.vertexCount, what("refVerts"));
+    expectIndices(asset.faceVerts, entry.vertexCount, what("faceVerts"));
+    expectIndices(asset.faceUvs, asset.uvs.length / 2, what("faceUvs"));
+    expectIndices(asset.deleteVerts, manifest.vertexCount, what("deleteVerts"));
+    if (entry.scale) {
+      for (const axis of ["x", "y", "z"] as const)
+        expectIndices(entry.scale[axis].slice(0, 2), manifest.vertexCount, what(`${axis}_scale`));
     }
     out.set(entry.id, asset);
   }
@@ -284,14 +309,28 @@ export function parseHumanoidAssets(
     addTargets(map, a.targets.entries, adultAnatomy.targets, "the adult anatomy pack");
     for (const m of a.modifiers) modifiers.set(m.id, m);
   }
+  const uvs = view(Float32Array, body, layout.uvs);
+  const faceVerts = view(Uint32Array, body, layout.faceVerts);
+  const faceUvs = view(Uint32Array, body, layout.faceUvs);
+  const skinIndex = view(Uint8Array, body, layout.skinIndex);
+  const skinWeight = view(Float32Array, body, layout.skinWeight);
+  expectLength(uvs, manifest.uvCount * 2, "body uvs");
+  expectLength(faceVerts, manifest.faceCount * 4, "body faceVerts");
+  expectLength(faceUvs, manifest.faceCount * 4, "body faceUvs");
+  expectLength(skinIndex, manifest.vertexCount * 4, "body skinIndex");
+  expectLength(skinWeight, manifest.vertexCount * 4, "body skinWeight");
+  expectIndices(faceVerts, manifest.vertexCount, "body faceVerts");
+  expectIndices(faceUvs, manifest.uvCount, "body faceUvs");
+  expectIndices(skinIndex, manifest.skeleton.bones.length, "body skinIndex");
+  for (const t of map.values()) expectIndices(t.indices, manifest.vertexCount, `target ${t.name}`);
   return {
     manifest,
     positions,
-    uvs: view(Float32Array, body, layout.uvs),
-    faceVerts: view(Uint32Array, body, layout.faceVerts),
-    faceUvs: view(Uint32Array, body, layout.faceUvs),
-    skinIndex: view(Uint8Array, body, layout.skinIndex),
-    skinWeight: view(Float32Array, body, layout.skinWeight),
+    uvs,
+    faceVerts,
+    faceUvs,
+    skinIndex,
+    skinWeight,
     targets: map,
     modifiers,
     attachments: parseAttachments(manifest, pack.attachments),

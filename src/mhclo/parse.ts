@@ -11,10 +11,11 @@
  *
  * Section rules follow the format's documented behaviour (a blank line or a
  * non-numeric line ends a section; `material` and comments may appear inside
- * the vertex block). Two known defects of one existing reader are deliberately
+ * the vertex block). Three behaviours of one existing reader are deliberately
  * not reproduced: licence comments are recorded verbatim rather than
- * classified by substring, and multi-word names, tags and authors are kept
- * whole.
+ * classified by substring; multi-word names, tags and authors are kept whole;
+ * and the line that ends a section is still read as a keyword, so a
+ * `delete_verts` written without a blank line before it is not lost.
  */
 
 export interface AxisScale {
@@ -83,12 +84,18 @@ export function parseMhclo(text: string): MhcloBinding {
       continue;
     }
     if (section !== "none") {
-      if (line === "" || !isNumeric(key)) {
+      if (line === "") {
         section = "none";
-        if (line === "") continue;
-        // The terminating line is consumed, as the format specifies.
         continue;
       }
+      if (!isNumeric(key)) {
+        // A non-numeric line ends the section. One reader discards it, which loses
+        // a `delete_verts` written straight after the vertex block; reading it as a
+        // keyword below cannot break a valid file and keeps the author's intent.
+        section = "none";
+      }
+    }
+    if (section !== "none") {
       if (section === "verts") {
         const nums = words.map(Number);
         if (nums.length === 1) {
