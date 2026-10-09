@@ -78,6 +78,14 @@ try {
       sheet.width = w * Math.min(columns, images.length);
       sheet.height = h * Math.ceil(images.length / columns);
       const ctx = sheet.getContext("2d");
+      // A sheet with cells to spare (nine figures in five columns) leaves the
+      // last row short: its empty cells take the stage's background, read from
+      // a corner of the first shot, not the canvas default.
+      const probe = new OffscreenCanvas(1, 1).getContext("2d");
+      probe.drawImage(images[0], 2, 2, 1, 1, 0, 0, 1, 1);
+      const [r, g, b] = probe.getImageData(0, 0, 1, 1).data;
+      ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      ctx.fillRect(0, 0, sheet.width, sheet.height);
       for (const [i, im] of images.entries())
         ctx.drawImage(im, (i % columns) * w, Math.floor(i / columns) * h);
       return sheet.toDataURL("image/png").split(",")[1];

@@ -97,6 +97,15 @@ file that does not prove CC0 from its own content and writes each pack's
 gives byte-identical files. Do not edit the data by hand; change
 `scripts/pack-makehuman.ts` and regenerate. See `NOTICE.md` for provenance.
 
+`packs/clothing/data` comes from the same system assets pack, against the body
+pack already committed:
+
+```sh
+pnpm pack:clothing <makehuman-system-assets-dir>
+```
+
+It refuses any garment file that does not prove CC0 from its own header.
+
 ## Releases
 
 Releases are automated. Merging a conventional commit to `main` opens a release

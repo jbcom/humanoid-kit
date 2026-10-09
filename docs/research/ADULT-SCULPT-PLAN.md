@@ -281,6 +281,22 @@ gates were.
   never in `ready`'s topology; the adult-layer and state-morph gates of phase 1
   still hold. A property test over ages and signals, as `agePolicy.test.ts`
   does for modifiers.
+- **Permutations.** The figures this library must hold are a cross, not a list
+  of presets: every adult age (18 to 90), every gender position (0 to 1 in
+  quarters), every combination of the shape features each absent, reduced or
+  enlarged (so a female-macro figure with a penis, a male-macro one with a
+  mound only, testes with no penis, and every in-between that
+  hermaphroditic and intersex variation needs), the weight and muscle
+  extremes, skin tones across the range, and both states, flaccid and aroused,
+  for the male anatomy now and the vulvar anatomy as it lands.
+  `tests/adultPermutations.test.ts` evaluates the full cross at the control
+  level and a representative slice on the refined surface (all finite, the age
+  gate held, exactly the anatomy the modifiers name), and checks the state
+  monotonically in the shaft for every gender position and at every shaft
+  size. A new feature is added to the pack's list and joins the cross with no
+  test edit. The female state is pinned as absent until the vulva sculpt
+  exists (its target, its magnitude from the primary text in
+  `ADULT-ANATOMY-DATA.md`, section C); that test then becomes a measurement.
 - **Pages.** `scripts/check-pages-build.mjs` learns the new pack files (by
   SHA-256) and the feature, target and graft names, and still fails the build
   on any of them; the mutation check is adding one to a built site.

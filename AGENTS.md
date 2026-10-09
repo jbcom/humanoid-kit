@@ -11,10 +11,10 @@ covers what isn't obvious from reading the code alone.
   (`allowImportingTsExtensions`); `rewriteRelativeImportExtensions` makes
   `tsc -p tsconfig.build.json` emit `.js` specifiers into `dist/`. The published
   `files` of the root package are `dist`, `README.md`, `LICENSE` and `NOTICE.md`.
-- This is a pnpm workspace with four members: `.` (the `humanoid-kit` library,
+- This is a pnpm workspace with five members: `.` (the `humanoid-kit` library,
   plus the playground and its tests), `packs/body` (`humanoid-kit-body`),
-  `packs/adult-anatomy` (`humanoid-kit-adult-anatomy`) and `docs/` (the private
-  Sourcey site). Root scripts operate on the library; `pnpm docs:*` delegate to
+  `packs/adult-anatomy` (`humanoid-kit-adult-anatomy`), `packs/clothing`
+  (`humanoid-kit-clothing`) and `docs/` (the private Sourcey site). Root scripts operate on the library; `pnpm docs:*` delegate to
   `docs/`.
 - `pnpm verify` is the gate CI runs: Biome lint, markdownlint (`pnpm lint:docs`),
   strict TypeScript over `src`, `tests`, `scripts`, `e2e` and `playground`, the
@@ -29,6 +29,8 @@ covers what isn't obvious from reading the code alone.
 - `playground/` is the library's own demo, not a consumer. It aliases
   `humanoid-kit` and its subpaths to `../src`, so it needs no build step, and it
   loads the body pack only.
+- `pnpm pack:clothing <system-assets-dir>` regenerates `packs/clothing` from the
+  extracted MakeHuman system assets pack, against the committed body pack.
 - `pnpm pack:data <makehuman-data-dir>` regenerates both packs from a checkout of
   the upstream project; see `NOTICE.md`.
 
