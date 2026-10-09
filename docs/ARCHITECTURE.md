@@ -1660,8 +1660,23 @@ front leg is already straight in the clip, and a pin ahead of it cannot be reach
 A hand-keyed clip is the limit, not the solver: a clip that planted its feet would
 leave nothing to hold.
 
-**Not here yet:** playing it in `<Humanoid>`, the Quaternius breadth set (retargeted
-through a T-pose), and the no-interpenetration check at a clip's extremes.
+**In the renderer.** `<Humanoid animation={{ library, clip }}>` plays a clip
+(`useFigureAnimation`, `src/react`): each frame the animator's pose, with
+`pose.faceUnits` laid over it, goes to the skeleton, the attachments' occlusion
+keys, the skin's dual quaternions, the figure's lift onto the ground (from its soles
+for a clip that stands on the ground, from its lowest vertex for one that does not),
+its presence (derived again every third frame) and, for a clip that carries it, the
+group (moved forward in its own frame by the root motion of each frame, so a parent's
+transform and a new `position` still compose). None of it goes through React state,
+so a figure animates without re-rendering, and while it plays the figure lifts itself
+and `onGroundOffset` is not called. `time` puts the figure at a time in the clip
+(held, with `paused`), which the QA shots and sheets use (`?anim=walk_normal&t=0.4`).
+`e2e/animation.spec.ts` proves it in a browser: the feet are where the clip has them
+at a time, a walking figure is carried forward on its feet, and the planted ball's
+world position holds.
+
+**Not here yet:** the Quaternius breadth set (retargeted through a T-pose) and the
+no-interpenetration check at a clip's extremes.
 
 ## Layers
 

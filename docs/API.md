@@ -1437,6 +1437,14 @@ animator.root;                // how far the figure has been carried: [x across,
   held where they land (`FootLock`: `PLANT_LAND`, `PLANT_FULL`, `PLANT_NONE`,
   `PLANT_SWITCH`). `contactPoints` and `CONTACT_BONES` are the points on the soles
   they work from.
+- `<Humanoid animation={{ library, clip, speed, fade, paused, time, rootMotion, onStart }}>`
+  (`HumanoidAnimation`, from `humanoid-kit/react`) plays a clip on the figure, frame by
+  frame without React state: the body follows it with `pose.faceUnits` laid over,
+  `pose.body` standing aside; the figure lifts itself onto the ground (do not lift the
+  group; `onGroundOffset` is not called while a clip plays); a clip that carries the
+  figure (`rootMotion`, default true) moves the group forward in its own frame; and the
+  figure's presence follows. `time` puts it at a time in the clip. `onStart(clip)` is
+  called once the figure follows the clip, and again for a new figure or `time`.
 - `frameRotations(rig, joints, frame)` (from `src/rig/pose.ts`) is a BVH frame's
   rotations in the figure's axes, which the packer and `bodyPoseRotations` share.
 
