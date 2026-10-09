@@ -12,6 +12,7 @@ import {
 } from "../src/surface/layers.ts";
 import { CREASE_LAYERS } from "../src/surface/regions/creases.ts";
 import {
+  distanceFromBrows,
   EXPRESSION_COUNT,
   EXPRESSION_DEPTH,
   EXPRESSION_LINE_LAYERS,
@@ -367,6 +368,46 @@ describe("the expression lines' paint", () => {
     };
     expect(paint.height).toBe(EXPRESSION_DEPTH.crowsFeet);
     expect(paint.size).toBe(EXPRESSION_COUNT.crowsFeet);
+  });
+});
+
+describe("the distance along the skin from the brows", () => {
+  it("is a metric: no edge between two reached vertices changes it by more than the edge's length", () => {
+    // Stored in single precision it was not: a vertex's stored distance rounded below the
+    // distance it was queued with, so it never relaxed its neighbours, and the forehead's
+    // midline (and with it the centre of its lines) was never reached.
+    const d = distanceFromBrows(assets);
+    let reached = 0;
+    for (let q = 0; q < assets.faceVerts.length / 4; q++)
+      for (let k = 0; k < 4; k++) {
+        const a = assets.faceVerts[q * 4 + k] as number;
+        const b = assets.faceVerts[q * 4 + ((k + 1) % 4)] as number;
+        if (a >= BODY || b >= BODY || !Number.isFinite(d[a] as number)) continue;
+        const edge = Math.hypot(
+          (P[a * 3] as number) - (P[b * 3] as number),
+          (P[a * 3 + 1] as number) - (P[b * 3 + 1] as number),
+          (P[a * 3 + 2] as number) - (P[b * 3 + 2] as number),
+        );
+        reached++;
+        // A neighbour of a reached vertex is reached too, when it is skin of the face.
+        if (Number.isFinite(d[b] as number))
+          expect(Math.abs((d[a] as number) - (d[b] as number))).toBeLessThanOrEqual(edge + 1e-9);
+      }
+    expect(reached).toBeGreaterThan(100);
+  });
+
+  it("reaches the forehead's midline, up to the top of the forehead's lines", () => {
+    const d = distanceFromBrows(assets);
+    const top = (brow[1] as number) + FOREHEAD_FROM + FOREHEAD_SPAN;
+    let n = 0;
+    for (let v = 0; v < BODY; v++) {
+      const [x, y, z] = pos(v) as [number, number, number];
+      if (Math.abs(x) > 0.001 || y < (brow[1] as number) + 0.01 || y > top - 0.01 || z < 0.1)
+        continue;
+      expect(d[v], `midline vertex ${v} at y ${y.toFixed(3)}`).toBeLessThan(0.1);
+      n++;
+    }
+    expect(n).toBeGreaterThan(5);
   });
 });
 

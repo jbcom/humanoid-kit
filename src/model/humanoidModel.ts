@@ -12,6 +12,7 @@ import {
   buildRefinedSurfaceMesh,
   buildSurfaceMesh,
   evaluateSurface,
+  type LatticePolygons,
   latticeNormals,
   type SurfaceDetail,
   type SurfaceMesh,
@@ -242,12 +243,35 @@ export interface AdultSurfaceTopology extends SurfaceTopology {
 export interface AdultDetailLattice {
   /** Names the refinement; `AdultDetailSpec.surfaceKey` of targets authored on it. */
   key: string;
-  /** Vertices of the refined region; detail targets index them, 0 to this minus 1. */
+  /**
+   * Vertices a detail target indexes, 0 to this minus 1: the refined region's
+   * (`regionCount` of them), then each reservoir's rings.
+   */
   vertexCount: number;
-  /** The region's vertices on one figure, xyz, metres, before the ground lift. */
+  /** Vertices of the refined region, the first of the detail's. */
+  regionCount: number;
+  /** The detail's vertices on one figure, xyz, metres, before the ground lift (a ring's, at rest, are its loop's). */
   positions: Float32Array;
   /** Their outward unit normals (the base surface's, carried to the lattice), xyz. */
   normals: Float32Array;
+  /** The refinement mesh's vertex id of each region vertex. */
+  regionIds: Uint32Array;
+  /** The region's polygons, in the refinement mesh's vertex ids, for placing reservoirs. */
+  polygons: LatticePolygons;
+  /** Every refinement-mesh vertex's position, xyz, by its id. */
+  latticePositions: Float32Array;
+  /** The reservoirs: where each one's rings begin among the detail's vertices, and its loop and ring counts. */
+  reservoirs: { id: string; base: number; loop: number; rings: number }[];
+}
+
+/** An adult figure's control mesh as features are authored on it (`HumanoidModel.controlShape`). */
+export interface ControlShape {
+  /** The base mesh's vertices on this figure, xyz, metres. */
+  control: Float32Array;
+  /** Their unit normals. */
+  normals: Float32Array;
+  /** The vertices the drawn body uses. */
+  body: Uint32Array;
 }
 
 /** Per render vertex, an index into a `FeatureMap`'s features (or `NO_FEATURE`). */
@@ -1367,13 +1391,51 @@ export class HumanoidModel {
     const control = this.evaluateControl(recipe, {});
     const all = applyStencil(lattice.stencil, control, new Float32Array(lattice.vertexCount * 3));
     const allNormals = latticeNormals(mesh, control);
-    const positions = new Float32Array(lattice.region.length * 3);
-    const normals = new Float32Array(lattice.region.length * 3);
+    const positions = new Float32Array(lattice.detailCount * 3);
+    const normals = new Float32Array(lattice.detailCount * 3);
     lattice.region.forEach((v, i) => {
       positions.set(all.subarray(v * 3, v * 3 + 3), i * 3);
       normals.set(allNormals.subarray(v * 3, v * 3 + 3), i * 3);
     });
-    return { key: lattice.key, vertexCount: lattice.region.length, positions, normals };
+    // A reservoir's rings lie, at rest, on its loop's vertices.
+    const specs = this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? [];
+    const reservoirs = lattice.reservoirs.map((r, s) => {
+      for (let j = 0; j < r.rings; j++)
+        r.loop.forEach((v, i) => {
+          const at = (r.base + j * r.loop.length + i) * 3;
+          positions.set(all.subarray(v * 3, v * 3 + 3), at);
+          normals.set(allNormals.subarray(v * 3, v * 3 + 3), at);
+        });
+      return { id: specs[s]?.id ?? `${s}`, base: r.base, loop: r.loop.length, rings: r.rings };
+    });
+    return {
+      key: lattice.key,
+      vertexCount: lattice.detailCount,
+      regionCount: lattice.region.length,
+      positions,
+      normals,
+      regionIds: lattice.region,
+      polygons: lattice.polygons,
+      latticePositions: all,
+      reservoirs,
+    };
+  }
+
+  /**
+   * The control mesh of an adult figure for authoring control-level features
+   * (targets on the base's own vertices, which the surface smooths): the control
+   * vertices, their unit normals and the ids of those the drawn body uses.
+   * Refused under 18.
+   */
+  controlShape(recipe: Recipe): ControlShape {
+    if (!isAdult(recipe))
+      throw new AgePolicyError("the adult control shape is for figures aged 18 or over");
+    const control = this.evaluateControl(recipe, {});
+    return {
+      control,
+      normals: unitNormals(quadVertexNormals(control, this.assets.faceVerts)),
+      body: this.bodyVertices,
+    };
   }
 
   /**
@@ -1402,6 +1464,7 @@ export class HumanoidModel {
       this.bodyFaces,
       spec,
       this.level,
+      this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? [],
     );
     this.checkDetail(mesh);
     const n = this.assets.manifest.vertexCount;
@@ -1449,9 +1512,9 @@ export class HumanoidModel {
       const t = this.assets.targets.get(name);
       if (!t) continue;
       for (const v of t.indices)
-        if (v >= lattice.region.length)
+        if (v >= lattice.detailCount)
           throw new AssetFormatError(
-            `detail target ${name}: vertex ${v} is out of range (< ${lattice.region.length})`,
+            `detail target ${name}: vertex ${v} is out of range (< ${lattice.detailCount})`,
           );
     }
   }

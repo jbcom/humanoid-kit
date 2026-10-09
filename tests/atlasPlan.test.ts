@@ -197,13 +197,15 @@ describe("the atlas plan of the shipped stack", () => {
     }
   });
 
-  it("keeps the whole stack, creases, hands, expression lines and feet included, to eight pages", () => {
+  it("keeps the whole stack, creases, hands, expression lines, feet and body hair included, to eight pages", () => {
     // Two layers a page was 11 pages (44 MB) for these layers; the crease layers alone,
     // twelve of them, took 6 more. The hands' layers are budgeted one page
     // (docs/ARCHITECTURE.md, "Hands"): 7 pages before them, 8 with them. The face's
     // five expression lines, whose masks lie apart from most layers', share channels
     // and add none. The feet's skin is painted by the hands' layers (`areas.ts`) and adds
-    // the ridges' two channels (docs/ARCHITECTURE.md, "Feet").
+    // the ridges' two channels (docs/ARCHITECTURE.md, "Feet"). Body hair's layers fit
+    // the same 8: vellus takes no channel, and the rest share (docs/ARCHITECTURE.md,
+    // "Body hair").
     expect(plan.pages).toBeLessThanOrEqual(8);
     expect(plan.pages).toBeLessThan(densePlan(SKIN_LAYERS.length).pages);
   });

@@ -23,8 +23,10 @@ export interface VitiligoPatch {
 
 /**
  * The sites, each the skin within a band of distances of a joint (metres),
- * facing a direction, with how often a patch is placed there. Weights and
- * bands are CHOICES following where non-segmental vitiligo is reported most.
+ * facing a direction, with how often a patch is placed there and how large
+ * patches are there (a share of `VITILIGO_SIZE`: the face's are smaller than
+ * a knee's). Weights, bands and sizes are CHOICES following where
+ * non-segmental vitiligo is reported most.
  */
 const SITES: readonly {
   name: string;
@@ -32,6 +34,7 @@ const SITES: readonly {
   band: [number, number];
   facing: [number, number, number] | null;
   weight: number;
+  scale: number;
 }[] = [
   {
     name: "eyes",
@@ -39,6 +42,7 @@ const SITES: readonly {
     band: [0.016, 0.035],
     facing: [0, 0, 1],
     weight: 0.15,
+    scale: 0.4,
   },
   {
     name: "mouth",
@@ -46,14 +50,23 @@ const SITES: readonly {
     band: [0.012, 0.035],
     facing: [0, 0, 1],
     weight: 0.15,
+    scale: 0.4,
   },
-  { name: "wrists", joints: ["wrist.L____head"], band: [0, 0.035], facing: null, weight: 0.1 },
+  {
+    name: "wrists",
+    joints: ["wrist.L____head"],
+    band: [0, 0.035],
+    facing: null,
+    weight: 0.1,
+    scale: 0.7,
+  },
   {
     name: "elbows",
     joints: ["lowerarm01.L____head"],
     band: [0, 0.045],
     facing: [0, 0, -1],
     weight: 0.1,
+    scale: 1,
   },
   {
     name: "knees",
@@ -61,11 +74,20 @@ const SITES: readonly {
     band: [0, 0.055],
     facing: [0, 0, 1],
     weight: 0.1,
+    scale: 1,
   },
-  { name: "feet", joints: ["foot.L____tail"], band: [0, 0.06], facing: [0, 1, 0], weight: 0.1 },
+  {
+    name: "feet",
+    joints: ["foot.L____tail"],
+    band: [0, 0.06],
+    facing: [0, 1, 0],
+    weight: 0.1,
+    scale: 0.8,
+  },
 ];
-/** The backs of the hands: the hand frame's dorsal skin. */
+/** The backs of the hands: the hand frame's dorsal skin, and its patches' size. */
 const HANDS_WEIGHT = 0.3;
+const HANDS_SCALE = 0.7;
 
 /** Patches at extent 0 and 1 (pairs), and their size across at those extents, metres: CHOICES. */
 export const VITILIGO_PATCHES: [number, number] = [2, 14];
@@ -73,7 +95,7 @@ export const VITILIGO_SIZE: [number, number] = [0.015, 0.06];
 
 const cache = new WeakMap<
   HumanoidAssets,
-  { regions: number[][]; weights: number[]; mirror: Int32Array }
+  { regions: number[][]; weights: number[]; scales: number[]; mirror: Int32Array }
 >();
 
 /** The left-side skin vertices of each site, and each vertex's mirror image. */
@@ -132,14 +154,19 @@ function sites(assets: HumanoidAssets) {
     mirror[v] =
       byPosition.get(key(-(P[v * 3] as number), P[v * 3 + 1] as number, P[v * 3 + 2] as number)) ??
       -1;
-  const out = { regions, weights: [...SITES.map((s) => s.weight), HANDS_WEIGHT], mirror };
+  const out = {
+    regions,
+    weights: [...SITES.map((s) => s.weight), HANDS_WEIGHT],
+    scales: [...SITES.map((s) => s.scale), HANDS_SCALE],
+    mirror,
+  };
   cache.set(assets, out);
   return out;
 }
 
 /** Vitiligo's patches for these assets, the same for the same `extent` and seed. */
 export function vitiligoPatches(assets: HumanoidAssets, vitiligo: Vitiligo): VitiligoPatch[] {
-  const { regions, weights, mirror } = sites(assets);
+  const { regions, weights, scales, mirror } = sites(assets);
   const rand = seededRandom(vitiligo.seed);
   const e = Math.min(1, Math.max(0, vitiligo.extent));
   const count = Math.round(VITILIGO_PATCHES[0] + e * (VITILIGO_PATCHES[1] - VITILIGO_PATCHES[0]));
@@ -157,7 +184,7 @@ export function vitiligoPatches(assets: HumanoidAssets, vitiligo: Vitiligo): Vit
     if (m < 0) continue;
     out.push({
       vertices: [v, m],
-      size: size * (0.6 + 0.8 * rand()),
+      size: size * (scales[r] as number) * (0.6 + 0.8 * rand()),
       seed: Math.floor(rand() * 2 ** 31),
     });
   }
