@@ -281,6 +281,21 @@ bounded by the axis.
 A shape signal is rounded to 50 steps before it re-evaluates the figure: a step
 of `cold` moves the nipple's point target by 0.37 / 50, under a percent.
 
+### C6. Feet (`src/surface/regions/feet.ts`)
+
+What the feet's own layers use, 2026-10-09. A search for each quantity found a
+measurement for some and none for others; the table says which.
+
+| Quantity | Value | Source |
+| --- | --- | --- |
+| Palmoplantar skin is thicker | the epidermis is significantly thicker on the palms and soles than at any other site; the pooled palm value is about 172 µm against 70 to 95 µm on the face | Lintzeri et al., J Eur Acad Dermatol Venereol 2022 (systematic review and meta-analysis). A skin-biomechanics atlas quotes up to 1.4 mm for the plantar epidermis from one reference that could not be traced here; not used. |
+| Callus is thicker still | 2 to 3 times the normal plantar stratum corneum (123 ± 12 cell layers normal, 349 ± 67 in callus) | Thomas et al. 1985, as cited in C. Wright's PhD thesis on plantar callus (Salford). |
+| Where callus forms | under the heel, the first to third metatarsal heads and the big toe, where the peak plantar pressure is; the lesser toes and the fifth head less | The standard plantar pressure maps (a general finding; the weights `CALLUS_SITE_WEIGHT` are a CHOICE, not measured). |
+| Heel against forefoot | the plantar soft tissue is hardest at the rearfoot (about 34 Shore) and softer at the midfoot and forefoot (28 to 30) | An ultrasound-and-durometer study of 59 healthy adults aged 20 to 82 (PMC8241530, 2021). |
+| Age | the forefoot's hardness increases with age across 20 to 82 | The same study. The curve `callusAmount` (0.05 at birth, 0.15 at 6, 0.4 at 18, 0.55 at 30, 0.75 at 50, 1 at 80) is a CHOICE through that direction, and through the plain fact that a small child's sole is soft. |
+| Callus colour | a yellower, paler tint (multiply 1.04, 0.97, 0.86) and a drier, duller surface (roughness +0.2, specular −0.12) | CHOICE. No colorimetry of callus was found. The reasoning is optical: thick keratin passes less of the blood's red and scatters more, and dry keratin does not mirror light. Unlike the palm's colour, which is measured (C5), this tint is not. |
+| Where the sites are on the foot | the heel pad 0.13 of the foot's length from the rear; each metatarsal head a centimetre proximal of its toe's base joint; the big toe's pad 8 mm proximal of its tip | CHOICE, placed from the skeleton's joints; the offsets are anatomical judgement. |
+
 ## ITEMS I COULD NOT VERIFY / PRIMARY NOT OPENED
 
 - Masters & Johnson 1966 magnitudes; Maravilla MRI clitoral volume percentages; Veale full text; Charkoudian 2003 numbers; Hermanns 2000 primary; Otberg 2004 follicle densities (secondary only); Malaysian periorbital study (search-summary only); NIST dataset details (search-summary only); Kim 2014 volume/issue/page (APL 105, article number guessed as 013504 - treat as unverified; DOI 10.1063/1.4881888 is verified via Crossref); per-site numbers in Korean and Chinese body-map papers (figures only); any deep-skin (V-VI) erythema/a* magnitude for flush, exercise or blush.

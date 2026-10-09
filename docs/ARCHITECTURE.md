@@ -1342,6 +1342,36 @@ colour term, SKIN-STATES.md A2); crease depth varying with age or body fat
 (the recipe's tone parameters reach the paint, but not age or weight); creases
 at the neck, knuckles and torso (no flexion signal exists for them).
 
+### Feet (2026-10-09)
+
+The feet's own skin is one area's layers (`src/surface/regions/feet.ts`), with
+the rest layers before the state layers, so a state acts on them. Sources and
+choices: `docs/research/SKIN-STATES.md` C6.
+
+**Use cases.** A barefoot figure seen from above (toenails, the toes' joints),
+kneeling or seated with the sole turned to the camera, and in a close-up of a
+heel, at every tone and age, a child's to an old person's. The sole is a
+fairness item as the palm is: its colour must not be the back of the foot's
+darkened or lightened by a rule. Shoes hide all of it, so none of it may cost
+anything when shoes are worn beyond the fields every figure shares.
+
+**Decisions.**
+
+- *A frame per foot, from the base mesh.* As for the hands, nothing is added to
+  the frozen mesh. Each foot's frame is its extent (the rearmost point is the
+  heel) and the second toe's tip: `along` runs 0 to 1 from heel to tip, `across`
+  is metres from the axis, positive outward, so the two feet agree. The heel
+  pad, the five metatarsal heads and the big toe's pad are landmarks in it,
+  placed from the skeleton's toe joints. The sole is `skinZones(...).sole`, the
+  foot skin that faces down.
+- *Callus is a layer over the pressure sites, scaled by age.* Gaussian sites
+  weighted as the pressure maps say, a yellower, paler multiply tint and a
+  matte surface layer on the sole only (`callusAmount(age)`; a small child's
+  sole is soft and the forefoot hardens with age). The age reaches the layer
+  through `SkinPaintInput.age`, which `<Humanoid>` sets from the recipe. The
+  tint and the age curve are choices and say so in C6: no callus colorimetry
+  was found.
+
 ## Parallel work: the base contract
 
 Decision (2026-10-09, with the owner): the milestones are an order of
