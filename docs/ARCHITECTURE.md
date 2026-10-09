@@ -1728,8 +1728,27 @@ pack's, and is adult-only by construction (`ADULT_ONLY_PIERCING`): the core
 fails closed without naming any adult site. Tattoos and marks apply at every
 age.
 
-**Landed so far:** the recipe field, its validation, the age policy and the
-sites. The texture, the marks and the piercings follow in their own commits.
+**Tattoos, as built.**
+
+- The worker places the body art on each evaluation (`Evaluation.bodyArt`,
+  frames on the morphed control mesh), since only it has the assets that
+  name the sites.
+- `<Humanoid>` bakes the texture from that placement and the evaluated
+  surface (`bakeBodyArt`, `src/render/bodyArtTexture.ts`) with the images the
+  application passes (`bodyArtImages`).
+- A new evaluation rebakes into a new texture that replaces the old in the
+  same uniform, so only a figure gaining or losing body art rebuilds its
+  shader.
+- The projection reaches 30% of the tattoo's longer side off the skin's plane
+  (at least 1 cm) and skips skin facing away from it, so a tattoo on a
+  forearm never lands on the hip behind it.
+- The ink's colour is stored sRGB-encoded so dark inks keep their precision
+  in eight bits.
+- The browser tests hold the bake to its frame (orientation, the seam, facing
+  and reach, a later tattoo over an earlier one) and the shader to `inkSeen`.
+
+**Landed so far:** the recipe field, its validation, the age policy, the
+sites, and tattoos. The marks and the piercings follow in their own commits.
 
 ### Joint creases (2026-10-09)
 

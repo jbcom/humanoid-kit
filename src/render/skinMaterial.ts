@@ -32,6 +32,7 @@ import {
   Vector3,
   Vector4,
 } from "three";
+import { inkOptics } from "../bodyArt/ink.ts";
 import { type AtlasPlan, OWNER_GRID, planAtlas } from "../surface/atlasPlan.ts";
 import {
   CREASE_SHARPNESS,
@@ -243,6 +244,32 @@ float hkPreintegrated( float nDotL, float x ) {
 }
 `;
 
+/**
+ * Body art (`bakeBodyArt`, src/bodyArt/ink.ts), under `HK_BODY_ART` only: the
+ * ink page's colour seen through this skin, mixed in by its coverage, after
+ * the layer stack and before scattering, as ink lies in the dermis.
+ */
+const BODY_ART_FUNCTIONS = `
+#ifdef HK_BODY_ART
+uniform sampler2DArray hkBodyArt;
+uniform vec3 hkInkThrough;
+uniform vec3 hkInkVeil;
+uniform vec3 hkInkKeep;
+vec3 hkSrgbToLinear( vec3 c ) {
+	return mix( c / 12.92, pow( ( c + 0.055 ) / 1.055, vec3( 2.4 ) ), step( vec3( 0.04045 ), c ) );
+}
+vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
+	vec4 ink = texture( hkBodyArt, vec3( uv, 0.0 ) );
+	return mix( c, hkInkThrough * ( hkInkVeil + hkInkKeep * hkSrgbToLinear( ink.rgb ) ), ink.a );
+}
+#endif
+`;
+
+const BODY_ART_COLOUR = `
+	#ifdef HK_BODY_ART
+		diffuseColor.rgb = hkApplyBodyArt( diffuseColor.rgb, vHkUv );
+	#endif`;
+
 const SUBSURFACE_DIFFUSE = `
 	// humanoid-kit: scatter dims the lit side and carries light past the terminator,
 	// each channel by its own profile width times the surface's curvature.
@@ -416,6 +443,12 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkScalpStrength: { value: number };
     /** Per layer, its atlas channels, owner map and id in it (the atlas's plan). */
     hkChannel: { value: Vector4[] };
+    /** The figure's body-art texture (`bakeBodyArt`); read only while one is set (`setBodyArt`). */
+    hkBodyArt: { value: Texture | null };
+    /** How ink looks through this figure's skin (`inkOptics`). */
+    hkInkThrough: { value: Vector3 };
+    hkInkVeil: { value: Vector3 };
+    hkInkKeep: { value: Vector3 };
   };
   private readonly stopTable: Float32Array;
   private dualBones: DualBones | null = null;
@@ -471,6 +504,25 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     setChannels(this.hkUniforms.hkChannel.value, plan);
   }
 
+  /**
+   * Draws the figure's body art from `texture` (`bakeBodyArt`), or none. The
+   * shader reads it only while one is set, so a figure without body art pays
+   * nothing for it; setting or clearing it rebuilds the shader once, and
+   * replacing one texture with another does not.
+   */
+  setBodyArt(texture: Texture | null): void {
+    const had = this.hkUniforms.hkBodyArt.value !== null;
+    this.hkUniforms.hkBodyArt.value = texture;
+    if (had !== (texture !== null)) {
+      if (texture) this.defines = { ...this.defines, HK_BODY_ART: "" };
+      else {
+        const { HK_BODY_ART: _, ...rest } = this.defines ?? {};
+        this.defines = rest;
+      }
+      this.needsUpdate = true;
+    }
+  }
+
   constructor(layers: readonly SkinLayer[] = SKIN_LAYERS) {
     super({
       // Measured skin: roughness ≈ 0.5 (Weyrich et al. 2006) and an index of
@@ -498,6 +550,10 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkScalpStrength: { value: 0 },
       // A GLSL array has at least one element, so a stack with no layers still gets one.
       hkChannel: { value: Array.from({ length: Math.max(1, layers.length) }, () => new Vector4()) },
+      hkBodyArt: { value: null },
+      hkInkThrough: { value: new Vector3() },
+      hkInkVeil: { value: new Vector3() },
+      hkInkKeep: { value: new Vector3() },
     };
     setChannels(this.hkUniforms.hkChannel.value, plan);
     this.normalMap = poreNormalMap();
@@ -526,6 +582,10 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     const y = luminance(albedo);
     const t = Math.min(1, Math.max(0, (y - 0.05) / (0.355 - 0.05)));
     this.sheen = 0.12 + 0.13 * t * t * (3 - 2 * t);
+    const ink = inkOptics(a.tone);
+    this.hkUniforms.hkInkThrough.value.fromArray(ink.through);
+    this.hkUniforms.hkInkVeil.value.fromArray(ink.veil);
+    this.hkUniforms.hkInkKeep.value.fromArray(ink.keep);
     // Regional colour: each layer's paint from its own model (measured for lips),
     // blended in by the atlas's soft-edged masks.
     paintStopTable(this.layers, { ...a, signals: a.signals ?? {} }, this.stopTable);
@@ -563,11 +623,11 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
+        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${BODY_ART_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
       )
       .replace(
         "#include <color_fragment>",
-        "#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, hkScalpColour, clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );",
+        `#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n${BODY_ART_COLOUR}\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, hkScalpColour, clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );`,
       )
       // Surface layers: roughness here, specular once the material is set up.
       .replace(
@@ -602,6 +662,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-9-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}`;
+    return `humanoid-kit-skin-9-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}${this.hkUniforms.hkBodyArt.value ? "-art" : ""}`;
   }
 }

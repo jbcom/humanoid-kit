@@ -322,6 +322,20 @@ interface BodyArtRecipe {
 - Validation (`recipeProblems`) checks body art's structure and ranges and
   rejects unknown fields, clamping nothing. Whether an anchor exists is checked
   when the figure is evaluated, against the loaded assets.
+- `placeBodyArt(assets, art, control): BodyArtPlacement`: the body art on a
+  morphed control mesh, each tattoo and mark a `DecalFrame` (`centre`, outward
+  `normal`, and the decal's `right` and `up` in the skin's plane) with its own
+  values; `Evaluation.bodyArt` is this for the evaluated figure.
+  `decalFrame(centre, normal, rotation)`: a frame whose up is the body's up
+  laid into the skin's plane (the body's forward where the skin faces up or
+  down), turned counter-clockwise.
+- Ink (research/BODY-ART.md C1): `inkOptics(tone): { through, veil, keep }`
+  and `inkSeen(tone, ink)` = through × (veil + keep × ink), the colour of an ink
+  (linear albedo) in skin of that tone. `through` is the epidermis's two-way
+  melanin transmittance (the skin's albedo over `melaninFreeAlbedo(tone)`),
+  `veil` what the dermis above the ink (`INK_DEPTH`) scatters back, bluer than
+  red (`dermalVeil()`), and `keep` the light that crosses it twice. The same
+  ink darkens with every step of tone and reads cooler than the skin round it.
 
 ### Evaluation
 
@@ -393,6 +407,7 @@ interface Evaluation {
   control: Float32Array;    // morphed positions in the base topology
   curvature: Float32Array;  // per body render vertex, mean curvature (1/m)
   boneHeads: Float32Array;  // the skeleton fitted to this figure: each bone's rest head, xyz
+  bodyArt: BodyArtPlacement | null; // the recipe's body art placed on this shape (placeBodyArt); null without
   surface: "base" | "adult"; // which topology the render arrays are in
   attachments: SurfaceEvaluation[]; // eyes, teeth, tongue: positions and normals each
   garments: SurfaceEvaluation[];    // the outfit's garments, in outfit.order
@@ -977,6 +992,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
+| `bodyArtImages?` | `BodyArtImages`: the decoded images (`ImageBitmap`, loaded `HTMLImageElement`, canvas) the recipe's tattoos name by key. Keep the object stable: a new one bakes the figure's body art again. A tattoo whose image is missing is reported through `onError`, and the figure is drawn without its body art |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |
 | other props | Passed to the wrapping `<group>` |
