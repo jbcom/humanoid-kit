@@ -27,10 +27,14 @@ read by `src/format/assetFormat.ts`. Every binary ships gzipped (`*.bin.gz`),
 because GitHub Pages and many hosts serve `.bin` files uncompressed; the loader
 decodes them with the platform's `DecompressionStream`. Decoded, they are
 little-endian, and `body.bin` and `attachments.bin` are 4-byte aligned, so
-typed-array views need no copies. Textures ship as WebP (at most 1024 px, alpha
-lossless; the hair strand maps use lossy alpha, since a strand's edge moving by a
-level is invisible and lossless alpha is most of a curly style's size). All
-lengths are in metres.
+typed-array views need no copies. Textures ship as WebP (alpha lossless; the
+hair strand maps use lossy alpha, since a strand's edge moving by a level is
+invisible and lossless alpha is most of a curly style's size). Each is sized
+by the texel density its closest QA framing needs on the figure
+(`scripts/lib/textureSizing.ts`, docs/evidence/upscale-inventory.md): its
+pack's default (1024 px, or the source's own size if smaller), more where it
+needs more, up to its source's size and at most 2048 px, and never upscaled
+(docs/evidence/upscale.md). All lengths are in metres.
 
 | Pack | Files | Contents |
 | --- | --- | --- |
@@ -107,8 +111,9 @@ textures, arrives with the first stage. A garment is an attachment without
 baked occlusion: the same bindings (three base vertices, weights and an offset
 per vertex, per-axis scale references) and mesh, plus `delete_verts`, a
 category (`kind`, below) and the asset's tags. The packer
-(`scripts/pack-clothing.ts`) packs diffuse and normal maps as WebP at most
-1024 px on a side (2.1 MB for all nineteen), and reads the same `.mhclo`
+(`scripts/pack-clothing.ts`) packs diffuse and normal maps as WebP, each sized
+by what a clothed figure's framing needs (1024 to 2048 px on a side; 3.5 MB
+for all nineteen), and reads the same `.mhclo`
 syntax as the attachments: the system shoes write `material` and
 `vertexboneweights_file` between `verts` and its data, so a keyword line does
 not end a vertex or `delete_verts` block, and only the other section keyword

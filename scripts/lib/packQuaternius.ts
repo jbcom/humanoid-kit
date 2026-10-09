@@ -14,8 +14,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { type BodyManifest, jointPosition } from "../../src/format/assetFormat.ts";
 import { frameRotations } from "../../src/rig/pose.ts";
+import { readBodyPack } from "./bodyPack.ts";
 import { readRig } from "./gltf.ts";
-import { readBody } from "./packHair.ts";
 import { type RetargetTarget, retarget } from "./retarget.ts";
 import { readZip } from "./zip.ts";
 
@@ -63,7 +63,7 @@ const CARRIES = /^(Walk|Jog|Sprint|Crouch_Fwd|Zombie_Walk)/i;
 
 /** The target rig the retarget fills: the body pack's skeleton at the default figure, and its T-pose. */
 export function retargetTarget(bodyDir: string): RetargetTarget {
-  const { manifest, assets } = readBody(bodyDir);
+  const { manifest, assets } = readBodyPack(bodyDir);
   const bones = (manifest as BodyManifest).skeleton.bones;
   const names = bones.map((b) => b.name);
   const index = new Map(names.map((n, i) => [n, i]));

@@ -4,6 +4,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { beforeAll, describe, expect, it } from "vitest";
 import { AUTHORED_STYLES, DERIVED_STYLES } from "../scripts/lib/hairCards/index.ts";
+import { TEXTURE_CEILING } from "../scripts/lib/texelBudget.ts";
 import {
   addHairStyle,
   type HairManifest,
@@ -163,10 +164,19 @@ describe("a style's strand map", () => {
     }
   }, 120_000);
 
-  it("is grey and sized for the web", () => {
+  it("is grey, and as large as its closest framing needs and its source has, as PROVENANCE.md records", () => {
+    const provenance = fs.readFileSync(path.join(hairDir, "PROVENANCE.md"), "utf8");
     for (const s of scalpStyles) {
       const m = measured.get(s.id);
-      expect(m?.size, s.id).toBeLessThanOrEqual(1024);
+      // The "Texture sizes" row: | texture | source | source edge | framing | needs | ships | from |
+      const row = provenance
+        .split("\n")
+        .find((l) => l.startsWith(`| ${s.material.texture} |`))
+        ?.split("|")
+        .map((c) => c.trim());
+      expect(row, s.id).toBeDefined();
+      expect(m?.size, s.id).toBe(Number(row?.[6]));
+      expect(m?.size, s.id).toBeLessThanOrEqual(TEXTURE_CEILING);
       // Lossy WebP leaves a rounding of a few levels between channels.
       expect(m?.maxChannelGap, s.id).toBeLessThanOrEqual(8);
     }
@@ -204,13 +214,16 @@ describe("the pack's size", () => {
     fs.statSync(path.join(hairDir, s.file)).size +
     fs.statSync(path.join(hairDir, s.material.texture as string)).size;
 
-  it("keeps each style under 800 kilobytes, since a figure loads one", () => {
-    for (const s of scalpStyles) expect(sizeOf(s), s.id).toBeLessThan(800 * KB);
+  // The strand maps ship at the texels the face's closest QA framing needs, up
+  // to their 2048² sources (docs/evidence/upscale-inventory.md): the afro, the
+  // largest, is about 2 MB.
+  it("keeps each style under two and a half megabytes, since a figure loads one", () => {
+    for (const s of scalpStyles) expect(sizeOf(s), s.id).toBeLessThan(2560 * KB);
   });
 
-  it("keeps the MakeHuman styles under four megabytes, and each authored style under 700 KB", () => {
+  it("keeps the MakeHuman styles under eight megabytes, and each authored style under 700 KB", () => {
     const total = scalpStyles.filter((s) => !AUTHORED.has(s.id)).reduce((t, s) => t + sizeOf(s), 0);
-    expect(total).toBeLessThan(4 * 1024 * KB);
+    expect(total).toBeLessThan(8 * 1024 * KB);
     // A style is fetched when first worn, so what each costs matters beyond the total.
     for (const s of scalpStyles.filter((x) => AUTHORED.has(x.id)))
       expect(sizeOf(s), s.id).toBeLessThan(700 * KB);

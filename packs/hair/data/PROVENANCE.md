@@ -38,30 +38,73 @@ hairline fade, fin and scalp (`src/surface/hairFields.ts`).
 The body hair cards (kind `beard`) come from no source file: `scripts/lib/bodyHairCards.ts` generates them over the body pack's
 base mesh from a seed, with their strand map, so they are this project's own work under its licence.
 
+## Texture sizes
+
+Each texture ships at the edge its closest QA framing needs, re-sourced from the original wherever the original
+has those texels; where it has fewer, at the original's size, since no upscale measured closer to a larger
+original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/evidence/upscale.md).
+
+| Texture | Source | Source edge | Framing | Needs | Ships | From |
+| --- | --- | --- | --- | --- | --- | --- |
+| short02.webp | hair/short02/short02_diffuse.png | 2048 | face | 1664 | 1664 | the source, downsampled |
+| bob02.webp | hair/bob02/bob02_diffuse.png | 2048 | face | 3968 | 2048 | the source |
+| long01.webp | hair/long01/long01_diffuse.png | 2048 | face | 4608 | 2048 | the source |
+| afro01.webp | hair/afro01/afro_diffuse.png | 2048 | face | 1920 | 1920 | the source, downsampled |
+| short04.webp | hair/short04/short04_diffuse.png | 2048 | face | 1664 | 1664 | the source, downsampled |
+| short03.webp | hair/short03/short03_diffuse.png | 2048 | face | 1920 | 1920 | the source, downsampled |
+| ponytail01.webp | hair/ponytail01/ponytail01_diffuse.png | 2048 | face | 2176 | 2048 | the source |
+| short01.webp | hair/short01/short01_diffuse.png | 2048 | face | 2048 | 2048 | the source |
+| bob01.webp | hair/bob01/bob01_diffuse.png | 2048 | face | 2048 | 2048 | the source |
+| braid01.webp | hair/braid01/braid01_diffuse.png | 2048 | face | 2816 | 2048 | the source |
+| crop01.webp | drawn in the cut-out of hair/short04/short04_diffuse.png | 2048 | face | 1664 | 1664 | the source, downsampled |
+| braids01.webp | authored by the packer | 1024 | face | 1152 | 1024 | the source, 128 texels short; not upscaled |
+| cornrows01.webp | authored by the packer | 1024 | face | 1024 | 1024 | the source |
+| twists01.webp | authored by the packer | 1024 | face | 896 | 1024 | the source |
+| locs01.webp | authored by the packer | 1024 | face | 1280 | 1024 | the source, 256 texels short; not upscaled |
+| bantu01.webp | authored by the packer | 1024 | face | 1024 | 1024 | the source |
+| eyebrow001.webp | eyebrows/eyebrow001/eyebrow001.png | 512 | face | 384 | 512 | the source |
+| eyebrow002.webp | eyebrows/eyebrow002/eyebrow002.png | 512 | face | 384 | 512 | the source |
+| eyebrow003.webp | eyebrows/eyebrow003/eyebrow003.png | 512 | face | 384 | 512 | the source |
+| eyebrow004.webp | eyebrows/eyebrow004/eyebrow004.png | 512 | face | 384 | 512 | the source |
+| eyebrow005.webp | eyebrows/eyebrow005/eyebrow005.png | 512 | face | 384 | 512 | the source |
+| eyebrow006.webp | eyebrows/eyebrow006/eyebrow006.png | 512 | face | 512 | 512 | the source |
+| eyebrow007.webp | eyebrows/eyebrow007/eyebrow007.png | 512 | face | 512 | 512 | the source |
+| eyebrow008.webp | eyebrows/eyebrow008/eyebrow008.png | 512 | face | 384 | 512 | the source |
+| eyebrow009.webp | eyebrows/eyebrow009/eyebrow009.png | 512 | face | 384 | 512 | the source |
+| eyebrow010.webp | eyebrows/eyebrow010/eyebrow010.png | 512 | face | 256 | 512 | the source |
+| eyebrow011.webp | eyebrows/eyebrow011/eyebrow011.png | 512 | face | 256 | 512 | the source |
+| eyebrow012.webp | eyebrows/eyebrow012/eyebrow012.png | 512 | face | 256 | 512 | the source |
+| eyelashes01.webp | eyelashes/eyelashes01/eyelashes01.png | 512 | face | 256 | 512 | the source |
+| eyelashes02.webp | eyelashes/eyelashes02/eyelashes02.png | 512 | face | 256 | 512 | the source |
+| eyelashes03.webp | eyelashes/eyelashes03/eyelashes03.png | 512 | face | 384 | 512 | the source |
+| eyelashes04.webp | eyelashes/eyelashes04/eyelashes04.png | 512 | face | 256 | 512 | the source |
+
+## Outputs
+
 | Output | SHA-256 |
 | --- | --- |
-| short02.bin.gz | `aa7a311ada7b0a968cd08214326ff122d8b8907aa3195eeb9792a2109603ca81` |
-| short02.webp | `e8336d9ed64c67cec17dc96d830988de09c98374c9765075180d9d1237cdcc00` |
-| bob02.bin.gz | `0363855c09c645e42808eb8bcda9fe6e4631e39ffd7ed3b3db02bd0d8f2ad10c` |
-| bob02.webp | `18d29c2407d03abaf9cf92262ac705100891d3ed619b7cd336ce1221c0bae7bc` |
-| long01.bin.gz | `cfdf62d64002584fb456e9d0826dfa3077250138cf2fab05e9505157f1c9379f` |
-| long01.webp | `f4f3f2259a380c1ef5d8a8ec5c73a94971db58606a417ac1996517c785486d6e` |
-| afro01.bin.gz | `e72be649f461ce7c7ea9d0bf35cc805811ce66dcf467c8849dc10f6c06b520d1` |
-| afro01.webp | `7cd73dac3195a38d886d15c936e73af6a81377196d0db4f89fd5f9d590607205` |
-| short04.bin.gz | `df0fbf9e699d4c10dccab67dedd0a09e5fd91c4f1bd8bfa3db50af96eca8a8bf` |
-| short04.webp | `1114db8ded14167fbf72f997435a7d61c467aad56ed8526bdac11abac4ab75e9` |
-| short03.bin.gz | `422aac0295e1e593f55969e2dbe0c4c8a7aa6a5d428184b27b8fd5ca4f7e0d86` |
-| short03.webp | `2a5ebfeb7e6bc7dccc5ff6297d4e3c9d5017a4a971e463b0fa5f22141372b593` |
-| ponytail01.bin.gz | `b712add3b31a15ca611c8944091079fd46276cd6e0fa1cb0bf2ffe250019c5cc` |
-| ponytail01.webp | `b72d7410ddd6503b24b56a7260b4667caa838f2a6efd532c6b163fe697002a88` |
-| short01.bin.gz | `df2d075cfc952b4fea0f689782c119ef5e73e8c709ccc9e9d8ff56a4287e5ff8` |
-| short01.webp | `44a159b43f88432fca378a1bfbe4c3ab31349dd4587aee35372377b5582bd685` |
-| bob01.bin.gz | `05cea745d9d5eecb2d3e39ee4cb5f23a8835e8d781433ebf74b5b16f8b812d24` |
-| bob01.webp | `f8651d5958922af9ba4c3d84b6bcadfb452baed3d50d67e56b05f7a762478887` |
+| short02.bin.gz | `1cbefb5bfdeda6a33382a674b88f7c22dee408d0ace27e0bec0ad0d0a68e1d0f` |
+| short02.webp | `c2daac87a280ad0f338e7a9746db09db65754fc0920418d15cf67af21f99dde3` |
+| bob02.bin.gz | `6041af41729d27dccadc290982024316bead33ad375ebc3f0ec7f5c296bc2212` |
+| bob02.webp | `a6f5d7f354affdc06b350a18e10034e37a8dec0e051668b12ab54209091c5dbc` |
+| long01.bin.gz | `0fab624bb438fa93eee624a251feada7ebd2a6ad5590ff5a6f8728678e1faefe` |
+| long01.webp | `e76eeaf139ea427a5b04f3e112ff3f4f57d325f50c1c8614de87ac5eed9fa89d` |
+| afro01.bin.gz | `ae1dcdcbcae3500f5eefd5733183b5ef5e92fc39edd418cd4ee555bbf1af0f81` |
+| afro01.webp | `7d2362636b7ac87b5d80e56850408cc7d5485df8e41cd0df05ac799a486668e2` |
+| short04.bin.gz | `bf093d5d71a843d1c9270edfbd4953db91e47d1a3f59bc21360ab54bf476fc22` |
+| short04.webp | `d7f31ea66c1a36748308906692a53f047bcebb9a6af0fc3f56eb9347eaa1f5c1` |
+| short03.bin.gz | `99f51813238493b689134e384db0a40817388c7ec068350f652d5301f01f0cf3` |
+| short03.webp | `ad1d11936a189258fb33f9e181a78e78f9d0787b8f7e22f53f87e43b8246c14b` |
+| ponytail01.bin.gz | `9eedd9b19a5752fcf6cf7e3a116f7aff803269d0dbcb7a21e8f5fc03b41dc99a` |
+| ponytail01.webp | `d5fa35852ad651c46080fbce0ea0c48ba19781ee64a3edba75149147bf090fa3` |
+| short01.bin.gz | `b4282757a96861009c282375c48baa2e1d8437707c72fcc7a5d6a9d01b203831` |
+| short01.webp | `191ae454e137adfc89244c9c7a1fd4bf7ef6af0e80d25eb550c22d7469c7d24f` |
+| bob01.bin.gz | `384a8d39b61848a17f7dbc90089ff552c070ee290e37e5a1fb385ea6e096fb79` |
+| bob01.webp | `0e23599e846f170e14c51cc2af63a472af34fae346c1137ca9c402ec44290001` |
 | braid01.bin.gz | `128b547c9accc81570053bc1244b28f6d0da6cfddff25bc8e78fe16c7b6f6298` |
-| braid01.webp | `48e40f8e71e74e58933a6135ee0121591e399ef0627ce7021264cf26a326d662` |
-| crop01.bin.gz | `c9573475672cb91d0b38e6f3ea9c81da66fea2e54ae4372f9919c2193432976a` |
-| crop01.webp | `7f858f4ab396ec187ea3ff3f9574674a92597e8cab0b06447061f36e3175e293` |
+| braid01.webp | `27266249661a1e01ef64503173475bc7848bb2a29c1b9aa5ddf4d0bbd23d6cd5` |
+| crop01.bin.gz | `09b0cf3d310add9c9a9df9ab20eb2bce5215b6ed9beb39e4770bbc7246452ea4` |
+| crop01.webp | `9aea68b712b58448cf3571cc0f47f09b0abcd8c7811bf1d3437499580116b3a6` |
 | braids01.bin.gz | `6547e228ee121ef1db4e09c58eda2e81aee16c20bc506d829604a52ce6c66b8a` |
 | braids01.webp | `35de9774062d8fe7b48bb82a33eea917acc198307f16acf85fb61f1192509c65` |
 | cornrows01.bin.gz | `66c787e9e097a2be6e77df75ee912811c9fbb7cc8ae738dd6d14baa142cd0122` |
