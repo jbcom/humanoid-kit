@@ -61,6 +61,18 @@ export const HAIR_UVSCALE_ATTRIBUTE = "hkHairUvScale";
 export const HAIR_GROWTH_ATTRIBUTE = "hkHairGrowth";
 
 /**
+ * One float per vertex, body hair cards only: its card's rank, 0..1. A card is
+ * drawn while its rank is under the material's density (`setDensity`); absent
+ * (scalp hair), it reads 0.
+ */
+export const HAIR_RANK_ATTRIBUTE = "hkHairRank";
+
+/** Gives a body hair card entry's geometry its cards' ranks (`HairTopology.rank`). */
+export function setHairRankAttribute(geometry: BufferGeometry, rank: Float32Array): void {
+  geometry.setAttribute(HAIR_RANK_ATTRIBUTE, new Float32BufferAttribute(rank, 1));
+}
+
+/**
  * Light that still reaches the deepest hair, as a fraction. Far higher than
  * the eyes' and teeth's floor: the bake treats cards as solid, so the inside of
  * a sparse style reads darker than strands with air between them would be.
@@ -223,7 +235,11 @@ export class HairMaterial extends MeshPhysicalMaterial {
    * highlight (x, lower for fluffy styles), the white lobe's strength (y) and
    * both exponents (z, w).
    */
-  readonly hkUniforms: { hkLobes: { value: Vector4 }; hkAcross: { value: Vector2 } };
+  readonly hkUniforms: {
+    hkLobes: { value: Vector4 };
+    hkAcross: { value: Vector2 };
+    hkDensity: { value: number };
+  };
 
   constructor() {
     super({
@@ -249,7 +265,17 @@ export class HairMaterial extends MeshPhysicalMaterial {
       },
       // Across the strands in texture space (strands along V give U).
       hkAcross: { value: new Vector2(1, 0) },
+      hkDensity: { value: 1 },
     };
+  }
+
+  /**
+   * How much of a body hair card entry is drawn, 0..1 (the figure's coverage):
+   * the cards whose rank is under it. Scalp hair carries no ranks (all 0) and is
+   * drawn whole at the default of 1.
+   */
+  setDensity(density: number): void {
+    this.hkUniforms.hkDensity.value = Math.min(1, Math.max(0, density));
   }
 
   /** Colours the hair: the strand map is multiplied by this pigment colour's tint. */
@@ -299,11 +325,14 @@ varying float vHkFin;
 attribute float ${HAIR_GROWTH_ATTRIBUTE};
 varying float vHkGrowth;
 attribute float ${HAIR_UVSCALE_ATTRIBUTE};
-varying float vHkUvScale;`,
+varying float vHkUvScale;
+attribute float ${HAIR_RANK_ATTRIBUTE};
+varying float vHkRank;`,
       )
       .replace(
         "#include <begin_vertex>",
         `#include <begin_vertex>
+	vHkRank = ${HAIR_RANK_ATTRIBUTE};
 	vHkOcclusion = ${HAIR_OCCLUSION_ATTRIBUTE};
 	vHkFade = ${HAIR_FADE_ATTRIBUTE};
 	vHkFin = ${HAIR_FIN_ATTRIBUTE};
@@ -324,6 +353,8 @@ varying float vHkFade;
 varying float vHkFin;
 varying float vHkGrowth;
 varying float vHkUvScale;
+varying float vHkRank;
+uniform float hkDensity;
 uniform vec4 hkLobes;
 vec3 hkT = vec3( 0.0 );
 float hkTStrength = 0.0;
@@ -347,6 +378,9 @@ ${NOISE}`,
       .replace(
         "#include <alphatest_fragment>",
         `{
+		// Body hair cards: a card is drawn while its rank is under the figure's
+		// coverage, whole or not at all (scalp hair has rank 0 and density 1).
+		if ( vHkRank >= hkDensity ) discard;
 		// A card seen edge-on is a dark line, not hair: it thins out as it turns away.
 		vec3 hkFlat = normalize( cross( dFdx( vViewPosition ), dFdy( vViewPosition ) ) );
 		float hkFacing = abs( dot( hkFlat, normalize( vViewPosition ) ) );
@@ -391,7 +425,7 @@ ${NOISE}`,
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-hair-4";
+    return "humanoid-kit-hair-5";
   }
 }
 

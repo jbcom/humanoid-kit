@@ -1539,12 +1539,36 @@ and a full beard each change the face, the full beard more than the goatee,
 chest hair shows against the same chest bare, and a child asked for a full beard
 grows none.
 
+**A grown beard's length is cards, on the hair pack's machinery (2026-10-09).**
+Past the coat's few centimetres, hair is cards. The hair pack gains a kind,
+`beard`, whose entries the packer generates (`scripts/lib/bodyHairCards.ts`)
+rather than packs from a MakeHuman file: narrow strips rooted on the beard's
+area, running along the coat's comb, lifting off the skin, bound to the base
+mesh's triangles as MakeHuman binds hair, with a generated strand map. They are
+the project's own bytes, so the licence gate (which proves MakeHuman files CC0)
+has nothing to prove; `PROVENANCE.md` says so. An entry is tagged with the
+beard style it serves; today `beard-full` (a full beard; a moustache and a
+goatee are the coat's alone). Each card carries a rank, a byte per vertex
+(`CARD_FIELD_KEYS`); `HairMaterial` discards a card whose rank is at or over
+its density (`setDensity`, the face's coverage), whole, beside the hairline
+test and outside the alpha-to-coverage term, so the beard thins with age, sex
+and the recipe with the same geometry, and scalp hair, with no ranks (0) and
+the default density (1), is untouched. The model wears a style's cards
+(`wornBeardCards`) only where the face grows terminal hair, so a child's figure
+loads none; they ride the scalp hair's chain (`Evaluation.beard`, sent once like
+the brows' and lashes' topology) and are coloured by the face's body hair
+colour. Their scalp fields are neutral (no hairline fade, no scalp tint: the
+coat shades the skin under them). Rebuilding the hair pack with them leaves
+every scalp, brow and lash file byte-identical; only the manifest gains the
+entry.
+
 **Costs.** The coat costs nothing where nothing is painted (no triangles, no
-draw). A full beard with doubled chest, abdomen and back hair at 360 × 420
-measured 8.33 ms a frame against 8.29 ms without (`e2e/bodyhair.spec.ts`,
-recorded): both are the display's frame interval, so at this size the coat
-fits within a frame and the true GPU cost is below what this measures. A GPU
-timer measurement on a phone is the open item.
+draw). A full beard (its coat and its cards) with doubled chest, abdomen and
+back hair at 360 × 420 measured 10.52 ms a frame against 9.91 ms without
+(`e2e/bodyhair.spec.ts`, recorded; the coat alone, before the cards, measured
+8.33 against 8.29). These are frame intervals on a desktop browser near its
+display's rate, so they bound the cost rather than measure it. A GPU timer
+measurement on a phone is the open item.
 
 ## Presence
 

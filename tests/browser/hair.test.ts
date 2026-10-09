@@ -46,6 +46,7 @@ import {
   HIGHLIGHT_OVER_DIFFUSE,
   isMultisampled,
   setHairOcclusionAttribute,
+  setHairRankAttribute,
   setHairStrandAttributes,
 } from "../../src/render/hairMaterial.ts";
 import { SCALP_ATTRIBUTE, SkinMaterial } from "../../src/render/skinMaterial.ts";
@@ -559,6 +560,32 @@ describe("the scalp under the hair", () => {
     expect(dark.left).toBeCloseTo(none.left, 2);
     // (Specular and sheen are not tinted, so the drop is less than the diffuse's.)
     expect(dark.right).toBeLessThan(dark.left * 0.85);
+  });
+});
+
+describe("body hair cards' ranks", () => {
+  const ranked = (rank: number | null, density?: number) => {
+    const { mesh, material } = card();
+    if (rank !== null)
+      setHairRankAttribute(
+        mesh.geometry,
+        new Float32Array(mesh.geometry.getAttribute("position").count).fill(rank),
+      );
+    if (density !== undefined) material.setDensity(density);
+    const px = render(mesh);
+    material.dispose();
+    return centre(px, 1);
+  };
+
+  it("draw a card while its rank is under the density, and none at or over it", () => {
+    expect(ranked(0.3, 0.5)).toBeGreaterThan(0.01);
+    expect(ranked(0.7, 0.5)).toBe(0);
+    expect(ranked(0.5, 0.5)).toBe(0);
+  });
+
+  it("leave hair with no ranks (scalp hair) whole at the default density", () => {
+    expect(ranked(null)).toBeGreaterThan(0.01);
+    expect(ranked(null)).toBeCloseTo(ranked(0, 1), 5);
   });
 });
 
