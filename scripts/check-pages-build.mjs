@@ -1,12 +1,14 @@
 /**
  * Fails when a built public site contains any part of the adult anatomy pack.
  *
- *   node scripts/check-pages-build.mjs [dir ...]   (default: dist-playground docs/dist)
+ *   node scripts/check-pages-build.mjs [app-dir ...]   (default: dist-playground, plus docs/dist)
  *
- * The public demo is built from the body pack only. This gate checks every
- * built file for the adult pack's binary (by SHA-256), its package name, and
- * the names of its targets and modifiers, so neither an import nor a copied
- * data file can slip through.
+ * The public demo is built from the body pack only. Every built file is checked
+ * for the adult pack's data files (by SHA-256), so no copy of the pack can
+ * ship. App builds are also checked for the pack's package name and the names
+ * of its targets and modifiers, so no import or bundled table can slip
+ * through. The documentation site is checked for data only: its prose
+ * legitimately names the package and documents its modifiers.
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -27,23 +29,25 @@ const forbiddenStrings = [
   ...manifest.modifiers.map((m) => m.id),
 ];
 
-const dirs = process.argv.slice(2).length
-  ? process.argv.slice(2)
-  : ["dist-playground", "docs/dist"];
+const args = process.argv.slice(2);
+const dirs = [
+  ...(args.length ? args : ["dist-playground"]).map((d) => ({ d, app: true })),
+  ...(args.length ? [] : [{ d: "docs/dist", app: false }]),
+];
 const problems = [];
 let scanned = 0;
 
-function walk(dir) {
+function walk(dir, app) {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = path.join(dir, ent.name);
     if (ent.isDirectory()) {
-      walk(file);
+      walk(file, app);
       continue;
     }
     scanned++;
     const buf = fs.readFileSync(file);
     if (forbiddenHashes.has(hash(buf))) problems.push(`${file}: is an adult anatomy pack file`);
-    if (/\.(js|mjs|html|json|css|map|txt|md)$/.test(file)) {
+    if (app && /\.(js|mjs|html|json|css|map|txt|md)$/.test(file)) {
       const text = buf.toString("utf8");
       for (const s of forbiddenStrings)
         if (text.includes(s)) problems.push(`${file}: contains "${s}"`);
@@ -51,13 +55,13 @@ function walk(dir) {
   }
 }
 
-for (const d of dirs) {
+for (const { d, app } of dirs) {
   const abs = path.resolve(root, d);
   if (!fs.existsSync(abs)) {
     problems.push(`${d}: build output not found (build it before running this check)`);
     continue;
   }
-  walk(abs);
+  walk(abs, app);
 }
 
 if (problems.length) {
