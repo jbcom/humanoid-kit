@@ -33,7 +33,8 @@ type PackLocation =
   | { manifest: string; files: Record<string, string> }; // what the packs export
 ```
 
-- Rejects with `AssetFormatError` when a request fails, a buffer range exceeds
+- Rejects with `AssetFormatError` when a request answers with an error status
+  (a network failure rejects with the platform's `TypeError`), a buffer range exceeds
   its file, a target is duplicated, or the adult pack was built for a different
   body pack (`topology` or `bodySha256` mismatch).
 - Returns `HumanoidAssets`: the `manifest`, typed-array views of `positions`,
@@ -55,12 +56,15 @@ interface StagedHumanoidAssets {
 ```
 
 Loads in stages over one link, in `targetLoadOrder(firstFigureAge)`: the first
-figure's age anchors with the core, then the other age anchors, neighbours
-first, then the modifier targets with the adult pack's. All modifiers and
-sliders are listed from the start. Each later stage is fetched once the
-previous one's bytes have arrived and is added to the same `assets`; its
-`loaded` promise resolves, or rejects with `AssetFormatError`, leaving earlier
-stages usable. `loadHumanoidAssets` is this with `complete` awaited.
+figure's age anchors with the core, then the body's modifier targets, then the
+other age anchors, neighbours first, then the adult pack's targets on their
+own. All modifiers and sliders are listed from the start. Each later stage is
+fetched once the previous one has settled and is added to the same `assets`.
+Its `loaded` promise resolves, or rejects with the failure (an
+`AssetFormatError` for an HTTP or format error, the platform's `TypeError` for
+a network error or corrupt gzip). A failed stage fails only itself: every other
+stage still loads, and `complete` rejects with the first failure.
+`loadHumanoidAssets` is this with `complete` awaited.
 
 Also exported:
 

@@ -621,7 +621,7 @@ export interface LoadStage {
 export interface StagedHumanoidAssets {
   /** The first stage: the body, attachments, core targets and the first figure's age anchors. */
   assets: HumanoidAssets;
-  /** The rest, in load order: the other age anchors, neighbours first, then the modifier targets. */
+  /** The rest, in load order (`targetLoadOrder`); a failed stage fails only itself. */
   stages: LoadStage[];
   /** Resolves once every stage has loaded, or rejects with the first failure. */
   complete: Promise<HumanoidAssets>;
@@ -639,8 +639,10 @@ const fetchGzip = (url: string) =>
 
 /**
  * The order target files load in for a first figure of `age` years: its own
- * age anchors with the core, then the other anchors, neighbours first, then the
- * modifier targets (with the adult pack's, which are all modifiers).
+ * age anchors with the core; then the body's modifier targets, which every
+ * shape slider, randomised or saved figure needs; then the other age anchors,
+ * neighbours first; then the adult pack's targets, last and alone, so a
+ * failure there never costs the body anything.
  */
 export function targetLoadOrder(age: number): string[][] {
   const own = ageAnchorsOf(age);
@@ -654,7 +656,7 @@ export function targetLoadOrder(age: number): string[][] {
   const rest = anchors
     .filter((a) => !own.includes(a as never))
     .sort((p, q) => steps(p) - steps(q) || years(p) - years(q));
-  return [["core", ...own], ...rest.map((a) => [a]), ["modifiers", ADULT_TARGET_FILE]];
+  return [["core", ...own], ["modifiers"], ...rest.map((a) => [a]), [ADULT_TARGET_FILE]];
 }
 
 /**
@@ -702,12 +704,13 @@ export async function loadHumanoidAssetsStaged(
     { manifest, body: bodyBin, targets: firstTargets, attachments, fileUrls },
     adultManifest && { manifest: adultManifest },
   );
-  // Each stage's bytes are fetched after the previous stage's arrived; each is
-  // added to the assets as soon as its own bytes are in.
+  // Each stage's bytes are fetched after the previous stage's settled; each is
+  // added to the assets as soon as its own bytes are in. A failed stage fails
+  // only itself: the next one still fetches.
   let bytesBefore: Promise<unknown> = Promise.resolve();
   const stages = later.map((files) => {
     const bytes = bytesBefore.then(() => fetchFiles(files));
-    bytesBefore = bytes;
+    bytesBefore = bytes.catch(() => {});
     const loaded = bytes.then((data) => {
       addTargetFiles(assets, data);
       return assets;

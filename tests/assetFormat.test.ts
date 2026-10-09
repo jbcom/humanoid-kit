@@ -222,19 +222,21 @@ describe("the target files", () => {
 });
 
 describe("targetLoadOrder", () => {
-  it("brings the first figure's anchors first, then the others nearest first, then the modifiers", () => {
+  it("brings the first figure's anchors, then the modifiers, then the other anchors nearest first", () => {
     expect(targetLoadOrder(25)).toEqual([
       ["core", "young"],
+      ["modifiers"],
       ["child"],
       ["old"],
       ["baby"],
-      ["modifiers", "adult"],
+      ["adult"],
     ]);
     expect(targetLoadOrder(60)).toEqual([
       ["core", "young", "old"],
+      ["modifiers"],
       ["child"],
       ["baby"],
-      ["modifiers", "adult"],
+      ["adult"],
     ]);
     expect(targetLoadOrder(5)[0]).toEqual(["core", "baby", "child"]);
   });

@@ -67,14 +67,18 @@ years) needs only the young file: about 1.9 MB with the body and attachments,
 against 5.1 MB for everything.
 
 `loadHumanoidAssetsStaged(options)` loads in stages over one link, each
-starting when the previous one's bytes have arrived (`targetLoadOrder`): first
-the body, the attachments, the core file and the age anchors a figure of
+starting when the previous one has settled (`targetLoadOrder`): first the body,
+the attachments, the core file and the age anchors a figure of
 `options.firstFigureAge` needs (default: the default figure's, 25); then the
-other anchors, neighbours first (from 25, child and old, which any drag of the
-age slider needs, before baby); then the modifier targets with the adult
-pack's, which are all modifiers. It resolves with the first stage and exposes
-a promise per later stage and one for the whole load. `loadHumanoidAssets`
-waits for all of them.
+body's modifier targets, which every shape slider and every randomised or saved
+figure needs; then the other anchors, neighbours first (from 25, child and old,
+which any drag of the age slider needs, before baby); then the adult pack's
+targets alone, so a failure there costs the body nothing. A failed stage fails
+only itself. It resolves with the first stage and exposes a promise per later
+stage and one for the whole load. `loadHumanoidAssets` waits for all of them.
+The worker waits for the stages each request needs, including the default
+figure's anchors before baking occlusion for a partial attachment set
+(`occlusionBakeRecipe`), so a child or very old first figure still starts.
 
 Each pack exports its file URLs (`bodyPack`, `adultAnatomyPack`) as literal
 `new URL(..., import.meta.url)` expressions so bundlers emit the data files
