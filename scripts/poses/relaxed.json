@@ -1,0 +1,12 @@
+{
+  "name": "relaxed",
+  "title": "Relaxed",
+  "description": "Standing at ease: arms down at the sides about 9° from the body, elbows bent about 17°, forearms a little forward, hands beside the thighs.",
+  "base": "tpose",
+  "rotations": {
+    "upperarm01.L": { "Yrotation": 33 },
+    "upperarm01.R": { "Yrotation": -33 },
+    "lowerarm01.L": { "Xrotation": 36 },
+    "lowerarm01.R": { "Xrotation": 36 }
+  }
+}

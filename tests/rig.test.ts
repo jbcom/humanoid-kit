@@ -218,9 +218,41 @@ describe("body poses", () => {
       new Float32Array(control.length),
     );
 
-  it("ships MakeHuman's CC0 T-pose and rigging benchmark", () => {
-    expect(rig.poses.map((p) => p.name)).toEqual(["tpose", "benchmark"]);
+  it("ships MakeHuman's CC0 T-pose and rigging benchmark, and the authored relaxed pose", () => {
+    expect(rig.poses.map((p) => p.name)).toEqual(["tpose", "benchmark", "relaxed"]);
     expect(() => bodyPoseRotations(rig, "dab")).toThrow(/dab/);
+  });
+
+  it("lets the arms hang beside the thighs in the relaxed pose", () => {
+    const r = posedBoneHeads(rest, bodyPoseRotations(rig, "relaxed"));
+    const head = (h: Float32Array, name: string) =>
+      Array.from(h.slice(bone(name) * 3, bone(name) * 3 + 3)) as [number, number, number];
+    for (const side of ["L", "R"]) {
+      const shoulder = head(r, `upperarm01.${side}`);
+      const elbow = head(r, `lowerarm01.${side}`);
+      const wrist = head(r, `wrist.${side}`);
+      const hip = head(r, `upperleg01.${side}`);
+      // The upper arm hangs within 12° of vertical (the rest A-pose is about 42°).
+      const up = [elbow[0] - shoulder[0], elbow[1] - shoulder[1], elbow[2] - shoulder[2]];
+      const fromVertical = Math.acos(-(up[1] as number) / Math.hypot(...up));
+      expect(fromVertical).toBeLessThan((12 * Math.PI) / 180);
+      // The elbow bends a little (about 17°), as a relaxed arm does.
+      const fore = [wrist[0] - elbow[0], wrist[1] - elbow[1], wrist[2] - elbow[2]];
+      const bend = Math.acos(
+        ((up[0] as number) * (fore[0] as number) +
+          (up[1] as number) * (fore[1] as number) +
+          (up[2] as number) * (fore[2] as number)) /
+          (Math.hypot(...up) * Math.hypot(...fore)),
+      );
+      expect(bend).toBeGreaterThan((10 * Math.PI) / 180);
+      expect(bend).toBeLessThan((25 * Math.PI) / 180);
+      // The wrist ends near hip height, just outside the hip joint, a little in front.
+      expect(Math.abs(wrist[1] - hip[1])).toBeLessThan(0.06);
+      expect(Math.abs(wrist[0]) - Math.abs(hip[0])).toBeGreaterThan(0.05);
+      expect(Math.abs(wrist[0]) - Math.abs(hip[0])).toBeLessThan(0.15);
+      expect(wrist[2]).toBeGreaterThan(0.03);
+      expect(wrist[2]).toBeLessThan(0.12);
+    }
   });
 
   it("raises the arms level with the shoulders in the T-pose", () => {
