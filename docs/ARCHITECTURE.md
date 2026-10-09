@@ -1954,16 +1954,26 @@ topology and the field atlas exist. Decisions:
   load and an eager one. The packer refuses a body layer that measures an adult
   target, and an adult layer whose target the adult pack does not ship.
 
-**What phase 1 can show.** The CC0 `genitals/penis-*` targets deform MakeHuman's
-`helper-genital` group (200 vertices), which the render surface leaves out
-(only the `body` group is drawn, and none of those vertices is in it); only
-`pelvis/bulge-incr` moves drawn skin (57 body vertices). So the penis and testes
-layers resolve to masks on vertices that are not drawn and paint nothing yet,
-and the mound layer is the one that shows. Putting adult geometry on the render
-surface is the sculpt phase's first job, and cannot be done by drawing
-`helper-genital` for every figure: the surface is shared across ages, and a
-static surface cannot be gated by age (docs/research/ADULT-SCULPT-PLAN.md).
-`tests/adultStack.test.ts` records the limit so that change fails it.
+**Where the penis and testes skin is.** The CC0 `genitals/penis-*` targets deform
+MakeHuman's `helper-genital` group (200 vertices), which the render surface leaves
+out (only the `body` group is drawn), so layers measured from them would paint
+nothing. The sculpt draws the organ and the sacs out of reservoirs instead
+(docs/research/ADULT-SCULPT-PLAN.md, sections 6b and 6c), and a reservoir's skin
+gets an **island** of its own in free space of the body's UV layout
+(`AdultReservoirSpec.island`: the tube's wall as a grid, chain position along one
+axis and ring along the other, and the cap as a disc), with the skin layer that
+colours it (`layer`). `applyReservoirs` lays the wall and cap out on those UVs
+(the cap's corners by their polar place in the disc of skin they replace, the
+strips as a grid whose last column is the seam), so the tube is no longer
+collapsed in UV and can be told from the skin round its root. The model derives
+the layer's fields on the island's triangles (`HumanoidModel.adultLayerFields`,
+`LayerFieldsUpdate.extra`: mask 1, coordinate from the loop at 0 along the rings
+to the tip at 1, the cap at the tip) and the atlas rasterises them with the
+body's (`LayerAtlas.refresh`; `withExtra`), so the penis layer's shaft-to-glans
+stops run along the organ. The packer places islands at the root skin's own scale
+in the largest free rectangles (`scripts/lib/uvIslands.ts`), for the largest tube
+the detail draws, so a smaller tube shows its texture compressed along its length.
+Only the mound's layer is still measured from a target.
 
 ### The adult surface (sculpt phase 2, refined pelvic topology)
 

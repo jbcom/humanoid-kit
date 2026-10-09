@@ -76,7 +76,7 @@ const withOrgan = (extra: Record<string, number> = {}, macros = base().macros) =
 // seconds unloaded, minutes on a busy machine.
 describe("the adult permutation matrix", { timeout: 600_000 }, () => {
   it("covers every feature the pack names, so a new feature extends the matrix by itself", () => {
-    expect(features.map((f) => f.id)).toEqual(["penis", "testes", "phallus", "scrotum", "mound"]);
+    expect(features.map((f) => f.id)).toEqual(["phallus", "scrotum", "mound"]);
     expect(COMBINATIONS.length).toBe(
       features.reduce((n, f) => n * levelsOf(f.modifiers[0] as string).length, 1),
     );
