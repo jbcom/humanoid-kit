@@ -157,5 +157,8 @@
     "subdivision",
     "rigging",
     "character-creator"
-  ]
+  ],
+  "dependencies": {
+    "three-mesh-bvh": "^0.9.16"
+  }
 }

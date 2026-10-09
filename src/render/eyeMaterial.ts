@@ -11,6 +11,7 @@
  */
 import { Color, LinearSRGBColorSpace, MeshPhysicalMaterial } from "three";
 import type { Rgb } from "../surface/skinTone.ts";
+import { patchOcclusion } from "./occlusion.ts";
 
 export interface EyeAppearance {
   /** Linear-RGB iris colour. */
@@ -61,6 +62,8 @@ export class EyeMaterial extends MeshPhysicalMaterial {
 
   override onBeforeCompile: MeshPhysicalMaterial["onBeforeCompile"] = (shader) => {
     Object.assign(shader.uniforms, this.hkUniforms);
+    // Lids shade the eyeball; without this the whites glow as if pasted on.
+    patchOcclusion(shader);
     for (const chunk of ["map_fragment", "lights_fragment_maps"]) {
       if (!shader.fragmentShader.includes(`#include <${chunk}>`)) {
         throw new Error(`EyeMaterial: three's ${chunk} chunk moved`);
@@ -105,6 +108,6 @@ export class EyeMaterial extends MeshPhysicalMaterial {
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-eye-2";
+    return "humanoid-kit-eye-3";
   }
 }

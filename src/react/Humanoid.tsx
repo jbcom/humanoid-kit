@@ -22,7 +22,7 @@ import {
   FrontSide,
   type Group,
   type Material,
-  MeshStandardMaterial,
+  type MeshStandardMaterial,
   SRGBColorSpace,
   TextureLoader,
 } from "three";
@@ -34,6 +34,7 @@ import type {
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
+import { AttachmentStandardMaterial, OCCLUSION_ATTRIBUTE } from "../render/occlusion.ts";
 import { SKIN_MASK_ATTRIBUTE, SkinMaterial } from "../render/skinMaterial.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 
@@ -124,7 +125,7 @@ function useAttachmentMaterial(
   const material = useMemo(() => {
     const m = t.material;
     if (t.kind === "eyes") return new EyeMaterial();
-    return new MeshStandardMaterial({
+    return new AttachmentStandardMaterial({
       color: new Color(m.color[0], m.color[1], m.color[2]),
       roughness: m.roughness,
       metalness: 0,
@@ -207,7 +208,12 @@ export function Humanoid({ recipe, material, onEvaluated, onError, ...group }: H
     if (!ready) return null;
     const body = makeGeometry(ready.topology.body);
     body.setAttribute(SKIN_MASK_ATTRIBUTE, new BufferAttribute(ready.topology.body.skinMask, 3));
-    return { body, attachments: ready.topology.attachments.map(makeGeometry) };
+    const attachments = ready.topology.attachments.map((t) => {
+      const g = makeGeometry(t);
+      g.setAttribute(OCCLUSION_ATTRIBUTE, new BufferAttribute(t.occlusion, 1));
+      return g;
+    });
+    return { body, attachments };
   }, [ready]);
   const [shown, setShown] = useState(false);
 

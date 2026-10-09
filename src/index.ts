@@ -15,5 +15,6 @@ export * from "./recipe/agePolicy.ts";
 export * from "./recipe/recipe.ts";
 export * from "./recipe/validate.ts";
 export * from "./subdiv/catmullClark.ts";
+export * from "./surface/occlusion.ts";
 export * from "./surface/skinTone.ts";
 export * from "./worker/client.ts";

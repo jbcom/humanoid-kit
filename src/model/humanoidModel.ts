@@ -17,8 +17,9 @@ import { buildRegionField } from "../makehuman/regions.ts";
 import { buildSkinMasks } from "../makehuman/skinMasks.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, type RegionField } from "../morph/evaluate.ts";
-import type { Recipe } from "../recipe/recipe.ts";
+import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { applyStencil } from "../subdiv/catmullClark.ts";
+import { bakeOcclusion } from "../surface/occlusion.ts";
 
 export interface ModelOptions {
   /** Catmull–Clark levels for the body surface (0–2). Default 1. Attachments use at most 1. */
@@ -44,6 +45,11 @@ export interface AttachmentTopology extends SurfaceTopology {
   material: AttachmentMaterial;
   /** Resolved URL of the diffuse texture, or null when untextured or loaded without URLs. */
   textureUrl: string | null;
+  /**
+   * Per render vertex: how open it is to light (1) or enclosed by the figure (0),
+   * baked against the default figure (lids over eyes, lips over teeth).
+   */
+  occlusion: Float32Array;
 }
 
 export interface ModelTopology {
@@ -78,6 +84,32 @@ const part = (mesh: SurfaceMesh): Part => {
   return { mesh, scratch: { surface: new Float32Array(n), normals: new Float32Array(n) } };
 };
 
+/** Area-weighted vertex normals of a quad mesh (each quad split along one diagonal). */
+function quadVertexNormals(positions: Float32Array, faceVerts: Uint32Array): Float32Array {
+  const out = new Float32Array(positions.length);
+  const p = (i: number, k: number) => positions[i * 3 + k] as number;
+  for (let f = 0; f < faceVerts.length; f += 4) {
+    const q = [0, 1, 2, 3].map((k) => faceVerts[f + k] as number) as [
+      number,
+      number,
+      number,
+      number,
+    ];
+    // Cross product of the diagonals: twice the quad's vector area.
+    const d1 = [0, 1, 2].map((k) => p(q[2], k) - p(q[0], k));
+    const d2 = [0, 1, 2].map((k) => p(q[3], k) - p(q[1], k));
+    const nx = (d1[1] as number) * (d2[2] as number) - (d1[2] as number) * (d2[1] as number);
+    const ny = (d1[2] as number) * (d2[0] as number) - (d1[0] as number) * (d2[2] as number);
+    const nz = (d1[0] as number) * (d2[1] as number) - (d1[1] as number) * (d2[0] as number);
+    for (const v of q) {
+      out[v * 3] = (out[v * 3] as number) + nx;
+      out[v * 3 + 1] = (out[v * 3 + 1] as number) + ny;
+      out[v * 3 + 2] = (out[v * 3 + 2] as number) + nz;
+    }
+  }
+  return out;
+}
+
 const topologyOf = (m: SurfaceMesh): SurfaceTopology => ({
   index: m.index,
   uvs: m.uvs,
@@ -90,6 +122,7 @@ export class HumanoidModel {
   readonly regions: RegionField;
   private readonly body: Part;
   private readonly bodyVertices: Uint32Array;
+  private readonly bodyControlTriangles: Uint32Array;
   private readonly attached: { asset: BoundAsset; part: Part; control: Float32Array }[];
   private readonly skinMask: Float32Array;
 
@@ -124,6 +157,12 @@ export class HumanoidModel {
     for (const f of bodyFaces)
       for (let k = 0; k < 4; k++) verts.add(assets.faceVerts[f * 4 + k] as number);
     this.bodyVertices = Uint32Array.from(verts);
+    // The unsubdivided body as triangles: a cheap occluder for baking attachment occlusion.
+    this.bodyControlTriangles = new Uint32Array(bodyFaces.length * 6);
+    bodyFaces.forEach((f, i) => {
+      const q = [0, 1, 2, 3].map((k) => assets.faceVerts[f * 4 + k] as number);
+      this.bodyControlTriangles.set([q[0], q[1], q[2], q[0], q[2], q[3]] as number[], i * 6);
+    });
     // Skin masks are static: interpolate the base-vertex masks through the subdivision stencil once.
     const surfaceMask = applyStencil(
       this.body.mesh.stencil,
@@ -155,9 +194,51 @@ export class HumanoidModel {
   }
 
   topology(): ModelTopology {
+    // Occlusion is geometry the figure creates around its attachments; baked once
+    // against the default figure, where lids and lips sit as on most figures.
+    // Rays start from each attachment's control vertices (a quarter of the render
+    // vertices) and the result is carried to the render surface by the subdivision
+    // stencil, like any other per-vertex field.
+    const rest = this.evaluate(createRecipe());
+    const baked = bakeOcclusion(
+      [
+        { positions: rest.control, index: this.bodyControlTriangles },
+        // Transparent attachments (the eyes, whose cornea dome is cut away by the
+        // texture's alpha) would block light they do not block when rendered.
+        ...this.attached.flatMap((a, i) =>
+          a.asset.entry.material.transparent
+            ? []
+            : [
+                {
+                  positions: (rest.attachments[i] as SurfaceEvaluation).positions,
+                  index: a.part.mesh.index,
+                },
+              ],
+        ),
+      ],
+      this.attached.map((a) => ({
+        positions: a.control,
+        normals: quadVertexNormals(a.control, a.asset.faceVerts),
+      })),
+      { rays: 32 },
+    );
+    const occlusion = this.attached.map(({ part: p }, i) => {
+      const control = baked[i] as Float32Array;
+      const field = new Float32Array(control.length * 3);
+      control.forEach((o, v) => {
+        field.fill(o, v * 3, v * 3 + 3);
+      });
+      const surface = applyStencil(
+        p.mesh.stencil,
+        field,
+        new Float32Array(p.mesh.topology.vertexCount * 3),
+      );
+      return Float32Array.from(p.mesh.renderToSurface, (s) => surface[s * 3] as number);
+    });
     return {
       body: { ...topologyOf(this.body.mesh), skinMask: this.skinMask },
-      attachments: this.attached.map(({ asset, part: p }) => ({
+      attachments: this.attached.map(({ asset, part: p }, i) => ({
+        occlusion: occlusion[i] as Float32Array,
         ...topologyOf(p.mesh),
         id: asset.entry.id,
         kind: asset.entry.kind,
