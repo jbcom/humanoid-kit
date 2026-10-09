@@ -117,7 +117,13 @@ const SUBSURFACE_DIFFUSE = `
 	float hkNdotL = dot( geometryNormal, directLight.direction );
 	vec3 hkX = hkScatterDistance( material.diffuseContribution ) * vHkCurvature;
 	vec3 hkDiffuse = vec3( hkPreintegrated( hkNdotL, hkX.r ), hkPreintegrated( hkNdotL, hkX.g ), hkPreintegrated( hkNdotL, hkX.b ) );
-	reflectedLight.directDiffuse += hkDiffuse * directLight.color * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );
+	// The light the sheen layer reflects is not available below it, as in three's own line.
+	#ifdef USE_SHEEN
+		vec3 hkLight = directLight.color * sheenEnergyComp;
+	#else
+		vec3 hkLight = directLight.color;
+	#endif
+	reflectedLight.directDiffuse += hkDiffuse * hkLight * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );
 `;
 
 let scatterTexture: DataTexture | null = null;
@@ -321,6 +327,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-skin-3";
+    return "humanoid-kit-skin-4";
   }
 }

@@ -375,7 +375,8 @@ Notes on the design:
   the albedo per fragment in `color_fragment`, so d must follow
   `material.diffuseContribution`. The cost is three `exp` and two `pow` per
   channel group, once per fragment if hoisted out of the light loop.
-- **A lookup table is the higher-quality variant.** The table in §2.4 can ship
+- **A lookup table is the higher-quality variant** (implemented, at a different
+  size and layout; see the note below). The table in §2.4 can ship
   as a 64 × 32 single-channel half-float `DataTexture` (θ by x, generated
   offline by a deterministic script) and be sampled three times, at x_r, x_g
   and x_b. That keeps the exact pre-integrated shape, including the dimmed lit
@@ -783,17 +784,35 @@ The last check is the colour-agnostic invariant in its simplest form. It would
 catch any future code that tints the specular or sheen from the albedo by
 accident.
 
-**As implemented (`tests/browser/sphereParity.test.ts`), and one correction.**
+**As implemented (`tests/browser/sphereParity.test.ts`), with corrections.**
 The render target is `FloatType` rather than half-float, so readback adds no
-quantisation, and the curvature attribute stands for a 2 cm feature (a nose
-tip), where scatter is strong enough to measure. Against the TypeScript model
-(`src/surface/scatter.ts`, from which the shader's constants are generated) the
-scatter material renders within ΔE00 0.5 in every bin, terminator included, for
-all 49 swatches at 0°, 45° and 70°. That replaces the energy and terminator-order
-rows: both are properties of the model, proven on it in `tests/scatter.test.ts`
-(the wrap integrates to Lambert over the sphere at every w), and a single view
-of the sphere cannot measure the energy anyway, because at a frontal light the
-wrapped light falls behind the silhouette.
+quantisation. The curvature attribute stands for a 2 cm feature (a nose tip)
+and, for the exact-model check, also a 3 mm one (an ear rim), where the table's
+gradient is steep. Against the TypeScript model (`src/surface/scatter.ts`; the
+shader's wavelength ratios, default uniforms and table come from it, its
+Chiang and Christensen–Burley polynomials are copied, and this test holds the
+copy to it) the scatter material renders within ΔE00 0.5 in every bin for all
+49 swatches at 0°, 45° and 70°, and no pixel strays by more than 0.3% of the
+swatch's peak albedo; a half-texel error in the table lookup breaks that at
+3 mm. (At 0° the light is on the view axis, so the terminator bin holds only a
+thin ring; 45° and 70° are where the terminator is exercised.) That replaces
+the energy and terminator-order rows: both are properties of the model, proven
+on it in `tests/scatter.test.ts` (the pre-integrated response and its table
+keep Lambert's integral over the sphere), and a single view of the sphere
+cannot measure the energy anyway, because at a frontal light the scattered
+light falls behind the silhouette.
+
+The specular-only row, as specified, cannot catch a shader that reads the
+albedo into the specular: with the base colour black there is no albedo to
+read. It is kept for what it does catch (a specular or sheen colour derived
+from the swatch in `setAppearance`), and a stronger contract covers the
+shader: with scatter off, the skin material with the creator's own settings
+(sheen, specular, the pore normal map) renders exactly as three's
+`MeshPhysicalMaterial` with the same settings, within 0.002 per pixel. That
+contract found a real fault: the replaced diffuse line had dropped three's
+sheen energy compensation (the light the sheen layer reflects is not
+available below it), so skin with its sheen on was lit up to 0.011 brighter
+than three's accounting allows.
 
 The "spread ≤ 0.5" row was wrong. How far a colour carries light follows from
 its albedo by design (§2), so the lit peak of white dims more than black's:
@@ -804,8 +823,9 @@ property for skin, that pigment sits above a shared scattering layer so the
 deepest measured skin keeps more than half the fairest's scatter distance
 (about a tenth if the pigment were mixed through), is asserted on the model.
 Each of these checks was seen to fail under a planted fault: the old
-(1 + w) wrap, a specular tinted by the albedo, a tenfold mean free path, and
-pigment mixed through the medium.
+(1 + w) wrap, a specular tinted by the albedo in `setAppearance`, a tenfold
+mean free path, pigment mixed through the medium, the sheen compensation
+removed, and the table sampled half a texel off.
 
 ### 5.3 Stage 2: the display path
 

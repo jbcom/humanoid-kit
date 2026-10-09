@@ -254,8 +254,8 @@ compute what the renderer will do.
   Archive, ITA 62° to −75°), then shifts hue for `haemoglobin` and `undertone`
   at constant luminance; `override` returns that colour as given. Also
   `DEFAULT_SKIN_TONE`, `luminance`, `srgbToLinear` and `linearToSrgb`.
-- The scatter model `SkinMaterial` renders (it is generated from these and
-  tested against them): `scatterDistance(albedo, mfp?, slope?, pigmentDepth?,
+- The scatter model `SkinMaterial` renders (its constants and table come from
+  these, and the browser tests hold the shader to them): `scatterDistance(albedo, mfp?, slope?, pigmentDepth?,
   substrate?)` gives each channel's scatter width in metres, and
   `scatterTableDiffuse(nDotL, d · curvature)` the diffuse response relative to
   the albedo, sampled from `SCATTER_TABLE` exactly as the shader samples it.

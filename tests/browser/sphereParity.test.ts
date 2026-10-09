@@ -18,6 +18,7 @@ import {
   DirectionalLight,
   FloatType,
   Mesh,
+  MeshPhysicalMaterial,
   NoToneMapping,
   OrthographicCamera,
   Scene,
@@ -109,6 +110,8 @@ const SIZE = 256;
 const ANGLES = [0, 45, 70];
 /** Radius of the feature the curvature stands for, metres: about a nose tip. */
 const FEATURE_RADIUS = 0.02;
+/** An ear rim or nostril: tight enough that scatter changes the shading steeply. */
+const TIGHT_RADIUS = 0.003;
 const BINS = [
   { name: "lit", lo: 0.7, hi: 1.01 },
   { name: "shoulder", lo: 0.3, hi: 0.7 },
@@ -130,13 +133,18 @@ geometry.setAttribute(
   SKIN_MASK_ATTRIBUTE,
   new BufferAttribute(new Float32Array(vertexCount * 3), 3),
 );
-geometry.setAttribute(
-  CURVATURE_ATTRIBUTE,
-  new BufferAttribute(new Float32Array(vertexCount).fill(1 / FEATURE_RADIUS), 1),
-);
+const curvature = new BufferAttribute(new Float32Array(vertexCount), 1);
+geometry.setAttribute(CURVATURE_ATTRIBUTE, curvature);
+/** Makes the sphere's curvature attribute stand for a feature of this radius. */
+function setFeatureRadius(radius: number): void {
+  (curvature.array as Float32Array).fill(1 / radius);
+  curvature.needsUpdate = true;
+}
+setFeatureRadius(FEATURE_RADIUS);
 const material = new SkinMaterial();
 const scene = new Scene();
-scene.add(new Mesh(geometry, material));
+const mesh = new Mesh<SphereGeometry, MeshPhysicalMaterial>(geometry, material);
+scene.add(mesh);
 const light = new DirectionalLight(0xffffff, Math.PI);
 scene.add(light, light.target);
 const pixels = new Float32Array(SIZE * SIZE * 4);
@@ -149,18 +157,53 @@ afterAll(() => {
   renderer.dispose();
 });
 
-type Mode = "lambert" | "scatter" | "specular";
+type Mode = "lambert" | "scatter" | "specular" | "production";
 
-/** Puts the material in a measurement mode: everything but the term under test is off. */
+const PRODUCTION = new SkinMaterial();
+
+/**
+ * Puts the material in a measurement mode: everything but the term under test
+ * is off, except in `production`, which keeps every setting the creator uses
+ * (sheen, specular, the pore normal map) and turns off only the scatter.
+ */
 function configure(s: Swatch, mode: Mode): void {
+  mesh.material = material;
   material.setAppearance({ tone: s.tone, flush: 0, lips: 0, areola: 0 });
-  material.sheen = 0;
+  if (mode === "production") {
+    material.sheen = PRODUCTION.sheen;
+    material.specularIntensity = PRODUCTION.specularIntensity;
+    material.normalMap = PRODUCTION.normalMap;
+    material.hkUniforms.hkScatterMfp.value = 0;
+  } else {
+    material.sheen = 0;
+    material.normalMap = null;
+    material.specularIntensity = mode === "specular" ? 1 : 0;
+    material.hkUniforms.hkScatterMfp.value = mode === "lambert" ? 0 : SKIN_SCATTER.mfp;
+    if (mode === "specular") material.color.setRGB(0, 0, 0);
+  }
   material.clearcoat = 0;
-  material.normalMap = null;
-  material.specularIntensity = mode === "specular" ? 1 : 0;
-  material.hkUniforms.hkScatterMfp.value = mode === "lambert" ? 0 : SKIN_SCATTER.mfp;
-  if (mode === "specular") material.color.setRGB(0, 0, 0);
   material.needsUpdate = true;
+}
+
+/** three's own physical material with every setting of the skin material. */
+function threeReference(): MeshPhysicalMaterial {
+  const m = new MeshPhysicalMaterial();
+  for (const key of [
+    "roughness",
+    "metalness",
+    "ior",
+    "sheen",
+    "sheenRoughness",
+    "specularIntensity",
+    "clearcoat",
+  ] as const)
+    m[key] = material[key];
+  m.color.copy(material.color);
+  m.sheenColor.copy(material.sheenColor);
+  m.specularColor.copy(material.specularColor);
+  m.normalMap = material.normalMap;
+  m.normalScale.copy(material.normalScale);
+  return m;
 }
 
 interface Measured {
@@ -169,7 +212,12 @@ interface Measured {
   expected: Record<BinName, Rgb>;
   /** Mean rendered value over the whole lit disc. */
   disc: Rgb;
+  /** Largest per-pixel, per-channel difference from the expectation over the binned pixels. */
+  worst: number;
 }
+
+/** What a pixel should be: from its N·L, or from a reference render at the same pixel offset. */
+type Expectation = (nDotL: number, offset: number) => Rgb;
 
 /**
  * Where the render is read: `linear` from the float target (shading only), or
@@ -201,11 +249,11 @@ function render(path: Path): ArrayLike<number> {
 }
 
 /** Renders the sphere lit from `angle` degrees off the view axis and bins it by N·L. */
-function measure(angle: number, expect: (nDotL: number) => Rgb, path: Path = "linear"): Measured {
+function measure(angle: number, expect: Expectation, path: Path = "linear"): Measured {
+  const pixels = renderAt(angle, path);
   const a = (angle * Math.PI) / 180;
   const l = [Math.sin(a), 0, Math.cos(a)] as const;
-  light.position.set(l[0] * 10, l[1] * 10, l[2] * 10);
-  const pixels = render(path);
+  let worst = 0;
   const shown = (e: Rgb): Rgb =>
     path === "linear" ? e : (neutralToneMap(e, STUDIO_EXPOSURE).map(srgb8FromLinear) as Rgb);
   const sums = Object.fromEntries(
@@ -227,10 +275,11 @@ function measure(angle: number, expect: (nDotL: number) => Rgb, path: Path = "li
       const bin = BINS.find((b) => nDotL >= b.lo && nDotL < b.hi);
       if (!bin) continue;
       const s = sums[bin.name];
-      const e = shown(expect(nDotL));
+      const e = shown(expect(nDotL, o));
       for (let k = 0; k < 3; k++) {
         s.r[k] = (s.r[k] as number) + (pixels[o + k] as number);
         s.e[k] = (s.e[k] as number) + (e[k] as number);
+        worst = Math.max(worst, Math.abs((pixels[o + k] as number) - (e[k] as number)));
       }
       s.n++;
     }
@@ -244,14 +293,22 @@ function measure(angle: number, expect: (nDotL: number) => Rgb, path: Path = "li
       BINS.map((b) => [b.name, mean(sums[b.name].e, sums[b.name].n)]),
     ) as Record<BinName, Rgb>,
     disc: mean(disc, discN),
+    worst,
   };
+}
+
+/** Lights the sphere from `angle` degrees off the view axis and renders it. */
+function renderAt(angle: number, path: Path): ArrayLike<number> {
+  const a = (angle * Math.PI) / 180;
+  light.position.set(Math.sin(a) * 10, 0, Math.cos(a) * 10);
+  return render(path);
 }
 
 const lab = (c: Rgb): Lab => labFromLinear(c);
 const albedoOf = (): Rgb => [material.color.r, material.color.g, material.color.b];
 
-/** The material's own model for the current swatch: radiance at N·L, per channel. */
-function modelRadiance(): (nDotL: number) => Rgb {
+/** The material's own model for the current swatch on a feature of `radius`: radiance at N·L, per channel. */
+function modelRadiance(radius = FEATURE_RADIUS): (nDotL: number) => Rgb {
   const u = material.hkUniforms;
   const A = albedoOf();
   const d = scatterDistance(
@@ -261,8 +318,7 @@ function modelRadiance(): (nDotL: number) => Rgb {
     u.hkPigmentDepth.value,
     [u.hkSubstrate.value.x, u.hkSubstrate.value.y, u.hkSubstrate.value.z],
   );
-  return (n) =>
-    A.map((c, k) => c * scatterTableDiffuse(n, (d[k] as number) / FEATURE_RADIUS)) as Rgb;
+  return (n) => A.map((c, k) => c * scatterTableDiffuse(n, (d[k] as number) / radius)) as Rgb;
 }
 
 describe("skin material on an analytic sphere", () => {
@@ -282,18 +338,56 @@ describe("skin material on an analytic sphere", () => {
     expect(failures).toEqual([]);
   });
 
-  it("renders exactly its scatter model, in every bin, for every colour", () => {
+  it("renders exactly its scatter model, in every bin, for every colour, on broad and tight curves", () => {
     const failures: string[] = [];
-    for (const s of PALETTE) {
-      configure(s, "scatter");
-      const model = modelRadiance();
-      for (const angle of ANGLES) {
-        const m = measure(angle, model);
-        for (const { name: bin } of BINS) {
-          const de = deltaE2000(lab(m.rendered[bin]), lab(m.expected[bin]));
-          if (!(de <= 0.5)) failures.push(`${s.name} ${angle}° ${bin}: ΔE00 ${de.toFixed(2)}`);
+    for (const radius of [FEATURE_RADIUS, TIGHT_RADIUS]) {
+      setFeatureRadius(radius);
+      for (const s of PALETTE) {
+        configure(s, "scatter");
+        const model = modelRadiance(radius);
+        const peak = Math.max(...albedoOf(), 1e-3);
+        for (const angle of ANGLES) {
+          const m = measure(angle, model);
+          for (const { name: bin } of BINS) {
+            const de = deltaE2000(lab(m.rendered[bin]), lab(m.expected[bin]));
+            if (!(de <= 0.5))
+              failures.push(`${s.name} r ${radius} ${angle}° ${bin}: ΔE00 ${de.toFixed(2)}`);
+          }
+          // Bin means can hide a small systematic error (half a texel, say); no
+          // single pixel may stray by more than 0.3% of the swatch's peak albedo.
+          if (!(m.worst / peak <= 3e-3))
+            failures.push(
+              `${s.name} r ${radius} ${angle}°: a pixel is off by ${(m.worst / peak).toExponential(1)}`,
+            );
         }
       }
+    }
+    setFeatureRadius(FEATURE_RADIUS);
+    expect(failures).toEqual([]);
+  });
+
+  // The skin material changes one term of three's physical material, the direct
+  // diffuse; with scatter off it must be that material exactly, sheen, specular
+  // and the pore normal map included, so three's energy accounting (the sheen
+  // layer taking its share of the light, the specular its Fresnel share) is kept.
+  it("with scatter off, renders exactly as three's physical material with the creator's settings", () => {
+    const failures: string[] = [];
+    for (const s of PALETTE) {
+      configure(s, "production");
+      expect(material.sheen).toBeGreaterThan(0.1);
+      const reference = threeReference();
+      for (const angle of [0, 45, 70]) {
+        mesh.material = reference;
+        const ref = Float32Array.from(renderAt(angle, "linear"));
+        mesh.material = material;
+        const m = measure(angle, (_n, o) => [ref[o], ref[o + 1], ref[o + 2]] as Rgb);
+        for (const { name: bin } of BINS) {
+          const de = deltaE2000(lab(m.rendered[bin]), lab(m.expected[bin]));
+          if (!(de <= 0.2)) failures.push(`${s.name} ${angle}° ${bin}: ΔE00 ${de.toFixed(2)}`);
+        }
+        if (!(m.worst <= 2e-3)) failures.push(`${s.name} ${angle}°: a pixel is off by ${m.worst}`);
+      }
+      reference.dispose();
     }
     expect(failures).toEqual([]);
   });
@@ -339,7 +433,12 @@ describe("skin material on an analytic sphere", () => {
     expect(failures).toEqual([]);
   });
 
-  it("reflects the same specular from every base colour", () => {
+  // With the base colour black and everything else left as each swatch sets it,
+  // nothing the swatch configured may reach the specular: a specular or sheen
+  // colour derived from the albedo in setAppearance fails here. (A shader that
+  // read the albedo into its specular would not; the reference test above holds
+  // the shader to three's own physical material for that.)
+  it("derives no specular tint from the base colour", () => {
     const labs: { name: string; lab: Lab }[] = [];
     for (const s of PALETTE) {
       configure(s, "specular");
