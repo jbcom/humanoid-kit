@@ -45,7 +45,12 @@ describe("the package entry's skin-state API", () => {
   });
 
   it("lists the state layers in the stack after the rest layers", () => {
-    const ids = kit.SKIN_LAYERS.map((l) => l.id);
+    // The adult anatomy's layers follow every body layer.
+    const all = kit.SKIN_LAYERS.map((l) => l.id);
+    expect(all.slice(-kit.ADULT_SKIN_LAYERS.length)).toEqual(
+      kit.ADULT_SKIN_LAYERS.map((l) => l.id),
+    );
+    const ids = kit.SKIN_LAYERS.filter((l) => !kit.isAdultLayer(l)).map((l) => l.id);
     expect(ids.slice(0, 3)).toEqual(["flush", "lips", "areola"]);
     expect(ids.slice(3)).toEqual([
       "goosebumps",
