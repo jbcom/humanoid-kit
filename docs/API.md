@@ -333,9 +333,9 @@ compute what the renderer will do.
   red-gold) and the `grey` fraction of unpigmented fibres; `override` returns
   that colour as given. The pigments' per-channel absorption
   (`EUMELANIN_ABSORPTION`, `PHEOMELANIN_ABSORPTION`) is pbrt-v4's, and the
-  albedo follows Chiang et al.'s `exp(-g·√σ)` form with `PATH_GAIN` fitted to
-  measured tresses (research/HAIR-COLOUR.md says which colours are measured
-  and which modelled). `HAIR_COLOURS` names twelve natural colours as pigment
+  albedo follows Chiang et al.'s `exp(-g·σ^p)` form with `PATH_GAIN` and
+  `PATH_EXPONENT` fitted to measured tresses (research/HAIR-COLOUR.md says which
+  colours are measured and which modelled). `HAIR_COLOURS` names twelve natural colours as pigment
   values (`black` to `white`), `DEFAULT_HAIR_COLOUR` is `brown`, and
   `hairTint(colour)` is the material colour that makes a packed strand map
   (mean `HAIR_STRAND_MEAN`) render as that albedo.

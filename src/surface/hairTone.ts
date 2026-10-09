@@ -12,16 +12,18 @@
  * What the eye sees of a head of hair is not one fibre's absorption: light
  * scatters between fibres before it leaves, which flattens how fast colour
  * falls with absorption. Chiang et al. 2016 fit that for production hair
- * rendering as albedo = exp(−g·√σ), with σ the absorption coefficient; this
- * model uses that form for the forward direction, so doubling a pigment does
- * not halve the light. Its two constants are not taken from the literature:
- * `PATH_GAIN` is fitted to measured tresses (black L* 17.3 a* 1.8 b* 1.6, dark
- * brown 22 / 4 / 4.5, light brown 32.6 / 6.9 / 14.4, within about 2.5 ΔE), and
- * `UNPIGMENTED_ALBEDO` is a modelled stand-in for white hair, which no source
- * here measures. Blond, red and white are therefore modelled, not measured, and
- * red hair's chroma is limited by the pheomelanin spectrum (docs/research/
- * HAIR-COLOUR.md). A colour outside natural hair (blue, green, a bright dye) is
- * an explicit override instead, as for skin.
+ * rendering as albedo = exp(−g·σ^½), with σ the absorption coefficient; this
+ * model keeps that form for the forward direction, so doubling a pigment does
+ * not halve the light, but fits its exponent as well as its gain
+ * (`PATH_EXPONENT` 0.7, `PATH_GAIN` 2.7) to measured tresses (black L* 17.3
+ * a* 1.8 b* 1.6, dark brown 22 / 4 / 4.5, light brown 32.6 / 6.9 / 14.4, within
+ * about 3 ΔE). The three tresses fit exponents of 0.5 to 0.7 equally well; only
+ * the upper end lets pheomelanin reach a red (a* about 11 rather than 7), so it
+ * is the one used. `UNPIGMENTED_ALBEDO` is a modelled stand-in for white hair,
+ * which no source here measures. Blond, red and white are therefore modelled,
+ * not measured, and red hair's chroma is still limited by the pheomelanin
+ * spectrum (docs/research/HAIR-COLOUR.md). A colour outside natural hair (blue,
+ * green, a bright dye) is an explicit override instead, as for skin.
  */
 import type { Rgb } from "./skinTone.ts";
 
@@ -53,8 +55,13 @@ export const PHEOMELANIN_ABSORPTION: Readonly<Rgb> = [0.187, 0.4, 1.05];
  */
 const CONCENTRATION_AT_FULL = 8;
 
-/** Multiple scattering's flattening of absorption (Chiang et al. 2016's form), fitted to measured tresses. */
-export const PATH_GAIN = 2.2;
+/**
+ * Multiple scattering's flattening of absorption, albedo = W · exp(−gain · σ^exponent)
+ * (Chiang et al. 2016's form, with their exponent ½ fitted rather than assumed),
+ * both fitted to measured tresses.
+ */
+export const PATH_GAIN = 2.7;
+export const PATH_EXPONENT = 0.7;
 /** Albedo of hair with no pigment, a modelled stand-in for white hair (unmeasured). */
 export const UNPIGMENTED_ALBEDO = 0.55;
 
@@ -69,7 +76,7 @@ export function hairAlbedo(colour: HairColour): Rgb {
   return [0, 1, 2].map((k) => {
     const sigma =
       eu * (EUMELANIN_ABSORPTION[k] as number) + ph * (PHEOMELANIN_ABSORPTION[k] as number);
-    const pigmented = UNPIGMENTED_ALBEDO * Math.exp(-PATH_GAIN * Math.sqrt(sigma));
+    const pigmented = UNPIGMENTED_ALBEDO * Math.exp(-PATH_GAIN * sigma ** PATH_EXPONENT);
     // Grey fibres are unpigmented; the head's colour is the mix of the two kinds.
     return (1 - grey) * pigmented + grey * UNPIGMENTED_ALBEDO;
   }) as Rgb;
@@ -100,17 +107,17 @@ const natural = (eumelanin: number, pheomelanin: number, grey = 0): Readonly<Hai
  * sit on the measured tresses; the rest are modelled.
  */
 export const HAIR_COLOURS: Readonly<Record<string, Readonly<HairColour>>> = {
-  black: natural(1, 0),
-  "dark-brown": natural(0.8, 0),
-  brown: natural(0.6, 0.3),
-  "light-brown": natural(0.4, 0.4),
-  auburn: natural(0.3, 0.75),
-  red: natural(0.1, 0.7),
-  ginger: natural(0.05, 0.5),
+  black: natural(0.9, 0),
+  "dark-brown": natural(0.62, 0.05),
+  brown: natural(0.5, 0.15),
+  "light-brown": natural(0.42, 0.05),
+  auburn: natural(0.3, 0.5),
+  red: natural(0.1, 0.55),
+  ginger: natural(0.02, 0.45),
   blonde: natural(0.22, 0.2),
   "light-blonde": natural(0.14, 0.12),
   platinum: natural(0.08, 0.03),
-  grey: natural(0.8, 0, 0.6),
+  grey: natural(0.62, 0.05, 0.6),
   white: natural(0, 0),
 };
 

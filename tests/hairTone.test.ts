@@ -55,13 +55,31 @@ describe("hairAlbedo", () => {
     }
   });
 
-  it("is warmer with pheomelanin: more red than green, and a yellower CIELAB b*", () => {
-    const plain = measured(colour(0.3, 0));
-    const warm = measured(colour(0.3, 0.6));
-    expect(warm[2]).toBeGreaterThan(plain[2]);
+  it("is redder with pheomelanin: a larger red-to-green ratio at any eumelanin, and a higher a* where the hair is light enough to show it", () => {
+    for (const e of [0, 0.15, 0.3, 0.5, 0.8]) {
+      // Dark hair loses chroma as it darkens, so a* only rises with pheomelanin in lighter hair.
+      if (e <= 0.3)
+        expect(measured(colour(e, 0.5))[1], `eumelanin ${e}`).toBeGreaterThan(
+          measured(colour(e, 0))[1],
+        );
+      const [r0, g0] = hairAlbedo(colour(e, 0));
+      const [r1, g1] = hairAlbedo(colour(e, 0.5));
+      expect(r1 / g1, `eumelanin ${e}`).toBeGreaterThan(r0 / g0);
+    }
     const a = hairAlbedo(colour(0.3, 0.6));
     expect(a[0]).toBeGreaterThan(a[1]);
     expect(a[1]).toBeGreaterThan(a[2]);
+  });
+
+  it("lets pheomelanin reach a red: the reddest pigment-only hair is well past brown in a*", () => {
+    // Measured light brown has a* 6.9. A red needs more.
+    let reddest = 0;
+    for (let e = 0; e <= 0.3; e += 0.02)
+      for (let p = 0; p <= 1; p += 0.02) {
+        const lab = measured(colour(e, p));
+        if (lab[0] >= 30) reddest = Math.max(reddest, lab[1]);
+      }
+    expect(reddest).toBeGreaterThan(10);
   });
 
   it("stays inside [0, 1] for every input, including out-of-range ones", () => {

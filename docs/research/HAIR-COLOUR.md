@@ -29,17 +29,22 @@ Hair colour is two pigments plus the fraction of unpigmented (grey) fibres.
    `HairBxDF::SigmaAFromReflectance`, not against the paper PDF, which was not
    read). Inverting it gives α = exp(−D·√σ): the square root is what flattens
    how fast colour falls as pigment rises. The model keeps that form,
-   `albedo = W · exp(−g · √σ)`, per channel.
+   `albedo = W · exp(−g · σ^p)`, per channel, with Chiang's p = ½ fitted rather
+   than assumed.
 4. **Grey.** A grey fraction *g* of fibres has no pigment: the colour is
    `(1 − g) · pigmented + g · W` in linear light.
 
-Two constants are this package's, not the literature's:
+Three constants are this package's, not the literature's:
 
-- `g` (`PATH_GAIN`, 2.2) is fitted to measured tresses (below). Chiang's D is
-  about 5.9 at β = 0.3; the two differ because pbrt's concentration units and
-  Chiang's σ are not the same scale (the pbrt brown and Chiang's inversion do
-  not agree on a single albedo, so no constant is borrowed from one into the
-  other).
+- `g` (`PATH_GAIN`, 2.7) and `p` (`PATH_EXPONENT`, 0.7) are fitted to measured
+  tresses (below). Chiang's D is about 5.9 at β = 0.3; the two differ because
+  pbrt's concentration units and Chiang's σ are not the same scale (the pbrt
+  brown and Chiang's inversion do not agree on a single albedo, so no constant
+  is borrowed from one into the other). The three tresses fit p from 0.5 to 0.7
+  about equally (worst ΔE 2.3 at ½ with g = 2.45, 3.2 at 0.7 with g = 2.7);
+  only the upper end lets pheomelanin reach a red (the reddest hair of
+  CIELAB lightness 32 or more has a\* 7.2 at p = ½ and 11.5 at 0.7), and a creator whose
+  red hair reads as brown is a worse model of what people ask it for, so 0.7.
 - `W` (`UNPIGMENTED_ALBEDO`, 0.55, L* ≈ 80) is a modelled stand-in for white
   hair. No source reached here measures white hair.
 
@@ -55,9 +60,10 @@ tests add 0.02 of gloss to the albedo before comparing):
 | dark brown | 20.8 to 23.4 | 3.7 to 4.0 | 3.2 to 5.5 | same journal, v051n05, three tresses |
 | light brown | 32.6 | 6.9 | 14.4 | same journal, v046n04 |
 
-With `g` = 2.2 each is reached within about 2.5 ΔE by some pigment values
-(`tests/hairTone.test.ts` allows 3.5, single tresses being the evidence). The
-page text of these papers was seen through search summaries, not read in full.
+With the constants above each is reached within about 3 ΔE by some pigment
+values (`tests/hairTone.test.ts` allows 3.5, single tresses being the
+evidence). The page text of these papers was seen through search summaries, not
+read in full.
 
 ## Not measured
 
@@ -67,9 +73,11 @@ page text of these papers was seen through search summaries, not read in full.
   European-ancestry people by hair colour, mostly along b\*, but the cluster
   centres are behind the full text.
 - Red hair's chroma. With pbrt's pheomelanin spectrum the model's a* tops out
-  near 8 at a lightness of about 25, where real red hair is more saturated.
-  Pheomelanin (the red-gold pigment) has too small an absorption contrast
-  between green and red here; `override` is the way to a saturated copper.
+  near 11 at a lightness of about 32, where real red hair may be more saturated
+  (no measurement was reached). Pheomelanin (the red-gold pigment) has a
+  modest absorption contrast between green and red in that spectrum, and
+  scattering between fibres flattens it further; `override` is the way to a
+  saturated copper.
 - How a bundle's colour changes with length and thickness: one value per head.
 
 ## Why one albedo and a strand map
