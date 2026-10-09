@@ -569,6 +569,18 @@ sheets are in `docs/evidence/states.md`.
   have a mix layer of their own (`lipStateAlbedo`): bluer in the cold, paler
   in fright.
 
+- *Sweat sheen* (`heat`, `exertion`). Two surface layers lower roughness and
+  raise specular where the local sweat rate says, from Taylor and
+  Machado-Moreira's regional rates for 13 regions (head, chest, abdomen, back,
+  buttocks, upper arm, forearm, palm, back of hand, thigh, shin, sole, top of
+  foot), taken per vertex from the zones (front from back by the vertex normal,
+  palm from back of hand, sole from top of foot as for goosebumps), with the
+  forehead at twice the head's rate. A passive-heating map serves `heat` and an
+  exercise map `exertion`: the exercise map is wetter and more even, as the
+  paper finds, so a figure that exerts shines over its whole body where one
+  that is only hot shines on its forehead and back. Rate becomes wetness by
+  `rate / (rate + 0.5)`, a choice. The two signals share one sweat drive.
+
 **Adult-pack layers (design, 2026-10-09; built with the milestone 3 graft
 lane).** Genital-region colour, relief and state layers draw their masks from
 the adult pack's targets, which arrive in the last load stage, after the

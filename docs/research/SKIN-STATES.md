@@ -257,6 +257,17 @@ bounded by the axis.
 | Lips, `fear` | chroma × 0.55, lightness +3 | CHOICE: blood drawn away. |
 | Colour that is not skin | no change | No haemoglobin to move. |
 
+### C3. Sweat sheen (`heat`, `exertion`)
+
+| Quantity | Value | Source |
+| --- | --- | --- |
+| Regional sweat rate, rest and exercise | Per region, mg/cm²/min: head 0.489 / 2.450, chest 0.393 / 1.403, abdomen 0.346 / 1.053, back 0.564 / 1.658, buttocks 0.400 / 0.553, upper arm 0.250 / 0.606, forearm 0.370 / 0.927, palm 0.312 / 1.461, back of hand 0.495 / 1.851, thigh 0.179 / 0.706, shin 0.189 / 0.886, sole 0.240 / 0.464, top of foot 0.372 / 0.932 (`SWEAT_RATE`) | Taylor and Machado-Moreira 2013, Table 4: passive heating to a core temperature 0.6 °C up (0.4 L/h), exercise at 125 W to 2.2 °C up (1.0 L/h). The axilla is not separable by the skin weights and is left out. Neck: the head's rate (CHOICE). |
+| Forehead | 0.99 at rest, about twice the head's 0.489 | The same paper's abstract. The same factor for exercise is a CHOICE: the paper has no forehead rate for exercise. |
+| Wetness from rate | rate / (rate + 0.5) | CHOICE: no measurement of how wet or glossy sweating skin looks was found (B6). 0.5 is about the head's rate at rest. |
+| Roughness, specular at full wetness | roughness −0.20, specular +0.6 | CHOICE, from the optical reasoning in B6 (a water film raises the surface specular) and tuned on the contact sheets. A lower roughness (−0.30) left white speckle on the back where the pore map's micro-normals caught the key light. |
+| Heat and exertion together | one drive, 1 − (1 − heat)(1 − exertion), split between the two maps by their shares | CHOICE: a person exerting in heat sweats from one thermal drive, and the paper finds the distribution shifts toward the exercise map as the drive rises. |
+| Albedo darkening of wet skin | not drawn | B6 notes it as optical reasoning only; no magnitude. |
+
 ## ITEMS I COULD NOT VERIFY / PRIMARY NOT OPENED
 
 - Masters & Johnson 1966 magnitudes; Maravilla MRI clitoral volume percentages; Veale full text; Charkoudian 2003 numbers; Hermanns 2000 primary; Otberg 2004 follicle densities (secondary only); Malaysian periorbital study (search-summary only); NIST dataset details (search-summary only); Kim 2014 volume/issue/page (APL 105, article number guessed as 013504 - treat as unverified; DOI 10.1063/1.4881888 is verified via Crossref); per-site numbers in Korean and Chinese body-map papers (figures only); any deep-skin (V-VI) erythema/a* magnitude for flush, exercise or blush.

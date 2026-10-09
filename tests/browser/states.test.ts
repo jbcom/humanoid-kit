@@ -5,8 +5,12 @@
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { DEFAULT_SKIN_APPEARANCE } from "../../src/render/skinMaterial.ts";
-import { GOOSEBUMP_DENSITY_PER_CM2, GOOSEBUMP_LAYER } from "../../src/surface/regions/states.ts";
-import { disposeLayerRender, renderLayers, variance } from "./layerRender.ts";
+import {
+  GOOSEBUMP_DENSITY_PER_CM2,
+  GOOSEBUMP_LAYER,
+  SWEAT_REST_LAYER,
+} from "../../src/surface/regions/states.ts";
+import { disposeLayerRender, mean, renderLayers, variance } from "./layerRender.ts";
 
 afterAll(disposeLayerRender);
 
@@ -87,5 +91,27 @@ describe("goosebumps through the skin shader", () => {
     expect(full / half).toBeGreaterThan(3);
     expect(full / half).toBeLessThan(5);
     expect(variance(patch({ fear: 1 }))).toBeCloseTo(full, 6);
+  });
+});
+
+describe("sweat sheen through the skin shader", () => {
+  // A light mirrored to the camera, so the highlight fills the frame.
+  const sheen = (signals: Record<string, number>) =>
+    mean(
+      renderLayers([SWEAT_REST_LAYER], {
+        light: [0, 0, 1],
+        appearance: { ...DEFAULT_SKIN_APPEARANCE, flush: 0, signals },
+      }),
+    );
+
+  it("brightens the highlight with heat, in proportion to the signal", () => {
+    const dry = sheen({});
+    const half = sheen({ heat: 0.5 });
+    const wet = sheen({ heat: 1 });
+    expect(wet).toBeGreaterThan(dry * 1.1);
+    expect(half).toBeGreaterThan(dry);
+    expect(half).toBeLessThan(wet);
+    // Exertion draws the other map: this layer stays dry.
+    expect(sheen({ exertion: 1 })).toBeCloseTo(dry, 6);
   });
 });

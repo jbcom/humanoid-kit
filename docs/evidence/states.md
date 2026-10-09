@@ -56,3 +56,22 @@ body, exertion on the face, neck and chest. The first version of these deltas
 
 Top: rest; bottom: `cold` 1, at melanin 0.1, 0.4, 0.7 and 0.92. Hands blanch
 more than the forearm, and rise in goosebumps.
+
+## Sweat sheen (`heat`, `exertion`)
+
+![Faces at four tones: rest, heat 0.5, heat 1, exertion 1](./states-sweat-face.webp)
+
+Rows: melanin 0.08, 0.35, 0.65, 0.92. Columns: rest, `heat` 0.5, `heat` 1,
+`exertion` 1. The forehead and nose shine first, as the forehead sweats most
+(0.99 mg/cm²/min against the head's 0.489); exertion wets the whole face. The
+sheen reads at every tone, most on deep skin, where there is least diffuse
+light to compete with it.
+
+![Backs at four tones, in the same columns](./states-sweat-back.webp)
+
+The same states from behind. Heat shines the upper back (the second wettest
+site at rest, 0.564) and the buttocks (0.4); exertion wets the back, arms and
+legs more evenly, as the paper finds. The first version of this sheet had white
+speckle on the upper back under exertion, where a roughness of 0.22 let the
+pore map's micro-normals catch the key light; the change is now −0.2 (roughness
+0.32).

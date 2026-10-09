@@ -12,6 +12,8 @@ import {
   GOOSEBUMP_LAYER,
   HEAT_FLUSH_LAYER,
   LIP_STATE_LAYER,
+  SWEAT_EXERCISE_LAYER,
+  SWEAT_REST_LAYER,
 } from "./states.ts";
 
 export const SKIN_LAYERS: readonly SkinLayer[] = [
@@ -25,6 +27,8 @@ export const SKIN_LAYERS: readonly SkinLayer[] = [
   COLD_PALLOR_LAYER,
   FEAR_PALLOR_LAYER,
   LIP_STATE_LAYER,
+  SWEAT_REST_LAYER,
+  SWEAT_EXERCISE_LAYER,
 ];
 
 /** Every target the stack's fields are measured from; the packer puts them in the core file. */
@@ -43,4 +47,6 @@ export {
   HEAT_FLUSH_LAYER,
   LIP_STATE_LAYER,
   LIPS_LAYER,
+  SWEAT_EXERCISE_LAYER,
+  SWEAT_REST_LAYER,
 };

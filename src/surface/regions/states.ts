@@ -8,7 +8,7 @@
  * skin model's haemoglobin axis, by region.
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
-import type { ColourLayer, DetailLayer } from "../layers.ts";
+import type { ColourLayer, DetailLayer, SurfaceLayer } from "../layers.ts";
 import { diskMask, targetMask } from "../layers.ts";
 import { haemoglobinRatio, lipStateAlbedo } from "../skinTone.ts";
 import { LIPS_LAYER } from "./rest.ts";
@@ -228,3 +228,128 @@ export const LIP_STATE_LAYER: ColourLayer = {
     };
   },
 };
+
+/**
+ * Local sweat rate, mg per cm² per minute, by region, for passive heating (a
+ * whole-body rate of 0.4 L/h at a core temperature 0.6 °C up) and for exercise
+ * (1.0 L/h at 2.2 °C up): the `[rest, exercise]` pairs of Taylor and
+ * Machado-Moreira 2013, Table 4 (Extrem Physiol Med 2:4, CC BY; B6). The axilla,
+ * which the skin weights do not separate, is left out.
+ */
+export const SWEAT_RATE = {
+  head: [0.489, 2.45],
+  chest: [0.393, 1.403],
+  abdomen: [0.346, 1.053],
+  back: [0.564, 1.658],
+  buttocks: [0.4, 0.553],
+  upperArm: [0.25, 0.606],
+  forearm: [0.37, 0.927],
+  handPalm: [0.312, 1.461],
+  handDorsal: [0.495, 1.851],
+  thigh: [0.179, 0.706],
+  shin: [0.189, 0.886],
+  footSole: [0.24, 0.464],
+  footDorsal: [0.372, 0.932],
+} as const;
+
+/**
+ * The forehead sweats about twice as much as the head as a whole at rest (0.99
+ * against 0.489 mg/cm²/min, the abstract of the same paper); the same factor is
+ * carried to exercise, where the paper has no forehead rate (CHOICE).
+ */
+const FOREHEAD_FACTOR = 0.99 / SWEAT_RATE.head[0];
+
+/**
+ * The rate at which sweat covers half the skin's surface, mg/cm²/min. CHOICE:
+ * no measurement of the visible wetness or gloss of sweating skin was found
+ * (SKIN-STATES.md B6). The sweat rate the paper reports for the whole head at
+ * rest is about this.
+ */
+const WETNESS_HALF_RATE = 0.5;
+
+/** How wet the surface is at a local rate: 0 dry, saturating toward 1. */
+export const wetness = (rate: number) => rate / (rate + WETNESS_HALF_RATE);
+
+/**
+ * Roughness change at full wetness. A water film smooths the stratum corneum's
+ * microrelief and fills its valleys (index matching); no measurement of the
+ * size was found (SKIN-STATES.md B6), so it is a CHOICE tuned on the contact
+ * sheets: well short of the 0.03 floor the shader clamps to.
+ */
+export const SWEAT_ROUGHNESS = -0.2;
+
+/** Specular intensity added at full wetness (a film of water over skin): a CHOICE, as above. */
+export const SWEAT_SPECULAR = 0.6;
+
+/** Each zone's sweat rate at `column` (0 rest, 1 exercise), per base vertex, blended across the zones. */
+function sweatRate(assets: HumanoidAssets, column: 0 | 1): Float32Array {
+  const zones = skinZones(assets);
+  const r = (name: keyof typeof SWEAT_RATE) => SWEAT_RATE[name][column];
+  const n = assets.manifest.vertexCount;
+  const zone = zones.zone;
+  const head = zone("head");
+  const neck = zone("neck");
+  const breast = zone("breast");
+  const upperTrunk = zone("upperTrunk");
+  const lowerTrunk = zone("lowerTrunk");
+  const pelvis = zone("pelvis");
+  const upperArm = zone("upperArm");
+  const forearm = zone("forearm");
+  const hand = zone("hand");
+  const thigh = zone("thigh");
+  const shin = zone("shin");
+  const foot = zone("foot");
+  const out = new Float32Array(n);
+  for (let v = 0; v < n; v++) {
+    const front = zones.front[v] as number;
+    const palm = zones.palm[v] as number;
+    const sole = zones.sole[v] as number;
+    const toward = (a: number, b: number, t: number) => b + (a - b) * t;
+    const handRate = hand[v] as number;
+    out[v] =
+      ((head[v] as number) + (neck[v] as number)) *
+        r("head") *
+        (1 + (FOREHEAD_FACTOR - 1) * (zones.forehead[v] as number)) +
+      ((breast[v] as number) + (upperTrunk[v] as number)) * toward(r("chest"), r("back"), front) +
+      (lowerTrunk[v] as number) * toward(r("abdomen"), r("back"), front) +
+      (pelvis[v] as number) * toward(r("abdomen"), r("buttocks"), front) +
+      (upperArm[v] as number) * r("upperArm") +
+      (forearm[v] as number) * r("forearm") +
+      handRate * toward(r("handPalm"), r("handDorsal"), palm) +
+      (thigh[v] as number) * r("thigh") +
+      (shin[v] as number) * r("shin") +
+      (foot[v] as number) * toward(r("footSole"), r("footDorsal"), sole);
+  }
+  return out;
+}
+
+/** A surface layer, wet where the sweat rate at `column` says. */
+function sweatLayer(id: string, column: 0 | 1): SurfaceLayer {
+  return {
+    id,
+    kind: "surface",
+    targets: [],
+    fields: (assets) => ({
+      mask: sweatRate(assets, column).map(wetness),
+      coord: null,
+    }),
+    paint: ({ signals }) => {
+      const heat = unit(signals.heat ?? 0);
+      const exertion = unit(signals.exertion ?? 0);
+      // One sweat drive; the passive-heating map carries heat's share of it, the exercise map exertion's.
+      const drive = 1 - (1 - heat) * (1 - exertion);
+      const share = heat + exertion > 0 ? exertion / (heat + exertion) : 0;
+      return {
+        strength: drive * (column === 0 ? 1 - share : share),
+        roughness: SWEAT_ROUGHNESS,
+        specular: SWEAT_SPECULAR,
+      };
+    },
+  };
+}
+
+/** Sweat sheen from `heat`, by the passive-heating sweat map. */
+export const SWEAT_REST_LAYER = sweatLayer("sweat-heat", 0);
+
+/** Sweat sheen from `exertion`, by the exercise sweat map, which is wetter and more even. */
+export const SWEAT_EXERCISE_LAYER = sweatLayer("sweat-exertion", 1);

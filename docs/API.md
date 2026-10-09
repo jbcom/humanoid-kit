@@ -343,6 +343,14 @@ compute what the renderer will do.
     spread people have); melanin attenuates it as it does the resting spread, and
     a colour that is not human skin (`tone.override`) has none to move. No state
     layer changes lightness.
+  - Sweat sheen, two `SurfaceLayer`s over regional sweat maps: `SWEAT_REST_LAYER`
+    (`heat`: the passive-heating map) and `SWEAT_EXERCISE_LAYER` (`exertion`: the
+    exercise map, wetter and more even). `SWEAT_RATE` is Taylor and
+    Machado-Moreira's regional rates (mg/cm²/min, `[rest, exercise]`),
+    `wetness(rate)` turns a rate into 0..1 wetness, and `SWEAT_ROUGHNESS` and
+    `SWEAT_SPECULAR` are the change at full wetness. The two signals share one
+    sweat drive, `1 - (1 - heat)(1 - exertion)`, split between the maps by
+    their shares, so both at 1 is half of each map.
   - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones
     (head, hand, thigh, …) as soft per-vertex masks from the skin weights, plus
     its `front`, `palm`, `sole`, `forehead` and `neck` fields from the vertex
