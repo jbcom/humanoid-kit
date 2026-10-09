@@ -10,12 +10,15 @@
 import {
   applyStencil,
   catmullClarkLevel,
+  catmullClarkPolygons,
   composeStencils,
   type QuadTopology,
   type Stencil,
   selectionStencil,
   subdivideUvLinear,
+  subdivideUvLinearPolygons,
 } from "../subdiv/catmullClark.ts";
+import { type Refinement, refineGraded } from "../subdiv/gradedRefine.ts";
 
 export interface SurfaceMesh {
   /** Control (base) vertices → surface positions. */
@@ -84,7 +87,96 @@ export function buildSurfaceMesh(
     uvs = uvLevel.uvs;
     faceUvs = uvLevel.faceUvs;
   }
+  return finishSurface(source, stencil, topology, uvs, faceUvs);
+}
 
+/**
+ * Like `buildSurfaceMesh`, with some faces refined locally first
+ * (`refineGraded`): the surface of a body with finer geometry where `refinement`
+ * asks for it, evaluated from the same control vertices (the stencil starts at
+ * the source's, so `evaluateSurface` takes the same control positions). The
+ * refined control mesh has pentagon and hexagon transitions, so level 0 draws
+ * each polygon as a fan of triangles and level 1 or more is quads throughout.
+ */
+export function buildRefinedSurfaceMesh(
+  source: QuadSource,
+  faces: Uint32Array | null,
+  refinement: Refinement,
+  levels: number,
+): SurfaceMesh {
+  const selected = faces ?? Uint32Array.from({ length: source.faceVerts.length / 4 }, (_, i) => i);
+  const fine = refineGraded(source, selected, refinement);
+  // Compact the refined mesh to the vertices its polygons use.
+  const used = new Int32Array(fine.vertexCount).fill(-1);
+  const verts: number[] = [];
+  const polygons = new Uint32Array(fine.faces.length);
+  fine.faces.forEach((v, i) => {
+    let c = used[v] as number;
+    if (c === -1) {
+      c = verts.length;
+      used[v] = c;
+      verts.push(v);
+    }
+    polygons[i] = c;
+  });
+  let stencil = composeStencils(fine.stencil, selectionStencil(fine.vertexCount, verts));
+  let topology: QuadTopology;
+  let uvs: Float32Array = fine.uvs;
+  let faceUvs: Uint32Array;
+  if (levels === 0) {
+    // The control polygons as they are: each fanned into triangles, drawn as
+    // quads with a repeated corner (a triangle's normal and area come out right).
+    const quads: number[] = [];
+    const quadUvs: number[] = [];
+    for (let f = 0; f + 1 < fine.faceStart.length; f++) {
+      const s = fine.faceStart[f] as number;
+      const n = (fine.faceStart[f + 1] as number) - s;
+      if (n === 4) {
+        for (let k = 0; k < 4; k++) {
+          quads.push(polygons[s + k] as number);
+          quadUvs.push(fine.faceUvs[s + k] as number);
+        }
+        continue;
+      }
+      for (let i = 1; i + 1 < n; i++)
+        for (const k of [0, i, i + 1, i + 1]) {
+          quads.push(polygons[s + k] as number);
+          quadUvs.push(fine.faceUvs[s + k] as number);
+        }
+    }
+    topology = { vertexCount: verts.length, faces: Uint32Array.from(quads) };
+    faceUvs = Uint32Array.from(quadUvs);
+  } else {
+    const first = catmullClarkPolygons({
+      vertexCount: verts.length,
+      faceStart: fine.faceStart,
+      faces: polygons,
+    });
+    stencil = composeStencils(stencil, first.stencil);
+    topology = first.topology;
+    const uvLevel = subdivideUvLinearPolygons(uvs, fine.faceStart, fine.faceUvs);
+    uvs = uvLevel.uvs;
+    faceUvs = uvLevel.faceUvs;
+    for (let l = 1; l < levels; l++) {
+      const level = catmullClarkLevel(topology);
+      stencil = composeStencils(stencil, level.stencil);
+      topology = level.topology;
+      const next = subdivideUvLinear(uvs, faceUvs);
+      uvs = next.uvs;
+      faceUvs = next.faceUvs;
+    }
+  }
+  return finishSurface(source, stencil, topology, uvs, faceUvs);
+}
+
+/** Render vertices, triangles and skin weights for a subdivided surface. */
+function finishSurface(
+  source: Pick<QuadSource, "skinIndex" | "skinWeight">,
+  stencil: Stencil,
+  topology: QuadTopology,
+  uvs: Float32Array,
+  faceUvs: Uint32Array,
+): SurfaceMesh {
   // Render vertices: unique (surface vertex, uv) pairs, in order of first use,
   // found through a chain of the render vertices made for each surface vertex.
   const corners = topology.faces.length;
