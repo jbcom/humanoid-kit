@@ -48,6 +48,17 @@ describe("the clothing pack", () => {
     for (const id of assets.garments.keys()) expect(assets.attachments.has(id)).toBe(false);
   });
 
+  it("labels every garment for a person, distinctly, without saying whom it is for", () => {
+    // A wardrobe is browsed by what a garment is. The asset names (`male_casualsuit01`)
+    // carry a sex a body does not need, and the garments bind to any figure.
+    const labels = [...assets.garments.values()].map((g) => g.entry.label);
+    expect(new Set(labels).size).toBe(labels.length);
+    for (const label of labels) {
+      expect(label.length, label).toBeGreaterThan(3);
+      expect(label, label).not.toMatch(/\b(fe)?male\b|_|\d{2}$/i);
+    }
+  });
+
   it("binds every garment, so no mesh is left floating at the origin", () => {
     // A reader that mistook a keyword line for the end of the vertex block bound
     // none of shoes02, 03, 05 and 06.

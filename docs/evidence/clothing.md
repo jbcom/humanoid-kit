@@ -10,10 +10,13 @@ body; what it found is listed under each.
 
 ![The twelve suits, each with a pair of shoes, and a hat](./clothing-garments.webp)
 
-Left to right, top to bottom: `male_casualsuit01` to `06`,
-`female_casualsuit01` and `02`, `female_sportsuit01`, `male_worksuit01`,
-`female_elegantsuit01`, and `male_elegantsuit01` with `fedora01`. The shoes
-cycle through `shoes01` to `06`, so every pair is shown too.
+Left to right, top to bottom: navy shirt, blue sweater, striped shirt, blue
+T-shirt, field jacket and white T-shirt (each with jeans), fitted T-shirt and
+jeans, T-shirt and denim shorts, sports top and leggings, overalls, striped
+blouse and skirt, and suit and tie with the grey fedora. The shoes cycle through
+all six pairs, so every pair is shown too. (The assets are named `male_…` and
+`female_…` after the figure they were drawn on; the pack labels them by what
+they are, since every garment binds to any figure.)
 
 Each suit is a complete outfit (shirt, trousers, and for the elegant ones a
 jacket in one mesh). The sports top ends above the waist by design, and the pink
@@ -76,9 +79,19 @@ only left out of the draw.
 
 ## The wardrobe
 
-![The creator's Wardrobe tab with an elegant suit, shoes and a hat worn](./clothing-wardrobe.webp)
+![The creator's Wardrobe tab with a suit, shoes and a hat worn](./clothing-wardrobe.webp)
 
 The creator offers a Wardrobe tab when the client loaded a clothing pack: the
-garments by kind, one worn per kind, layered across kinds, each change one undo
-step. Picking a garment changes the outfit without rebuilding the body, so a
-slider drag over a dressed figure stays as smooth as over a bare one.
+garments by kind, named by what they are ("Brown oxfords", "Overalls"), one worn
+per kind, layered across kinds, each change one undo step. Picking a garment
+changes the outfit without rebuilding the body, so a slider drag over a dressed
+figure stays as smooth as over a bare one. The creator's title shows whole above
+its actions at this panel width.
+
+## On the public demo
+
+The clothing pack is CC0 and is published with the playground: the Pages build
+carries its files, and `/playground/?clothing` opens the demo with the pack
+loaded and the Wardrobe tab in the creator. A visit without `?clothing` never
+requests a byte of it (a Playwright test checks that). Only the adult anatomy
+pack is kept off Pages (`pnpm check:pages`).

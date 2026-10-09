@@ -12,8 +12,10 @@ import type { Recipe } from "../recipe/recipe.ts";
 /** What a wardrobe lists of a garment, before its geometry has loaded. */
 export interface WardrobeEntry {
   id: string;
-  /** The asset's own name. */
+  /** The asset's own name (a file name). */
   name: string;
+  /** What to call it in a list: "Brown oxfords". */
+  label: string;
   /** The category it stacks as (`GARMENT_LAYERS`). */
   kind: string;
   tags: string[];
@@ -43,6 +45,7 @@ export function wardrobeOf(manifest: ClothingManifest | null): WardrobeEntry[] {
   return (manifest?.garments.entries ?? []).map((g) => ({
     id: g.id,
     name: g.name,
+    label: g.label,
     kind: g.kind,
     tags: g.tags,
   }));

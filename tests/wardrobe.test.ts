@@ -10,10 +10,10 @@ import { createRecipe } from "../src/recipe/recipe.ts";
 import { clothingManifest } from "./fixtures.ts";
 
 const wardrobe: WardrobeEntry[] = [
-  { id: "suits/a", name: "a", kind: "clothes", tags: ["Casual"] },
-  { id: "suits/b", name: "b", kind: "clothes", tags: [] },
-  { id: "suits/j", name: "j", kind: "jacket", tags: ["Elegant"] },
-  { id: "shoes/s", name: "s", kind: "shoes", tags: [] },
+  { id: "suits/a", name: "a", label: "A", kind: "clothes", tags: ["Casual"] },
+  { id: "suits/b", name: "b", label: "B", kind: "clothes", tags: [] },
+  { id: "suits/j", name: "j", label: "J", kind: "jacket", tags: ["Elegant"] },
+  { id: "shoes/s", name: "s", label: "S", kind: "shoes", tags: [] },
 ];
 const [a, b, j, s] = wardrobe as [WardrobeEntry, WardrobeEntry, WardrobeEntry, WardrobeEntry];
 
@@ -24,6 +24,7 @@ describe("the wardrobe", () => {
     expect(list.find((g) => g.id === "shoes/shoes01")).toMatchObject({
       kind: "shoes",
       name: "shoes01",
+      label: "Brown oxfords",
     });
     expect(wardrobeOf(null)).toEqual([]);
   });

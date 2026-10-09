@@ -503,7 +503,9 @@ The main-thread handle to an evaluation worker.
   whether the adult anatomy pack is loaded and, with it, its `anatomy`
   (`AdultAnatomySpec`: the features `appliedAnatomy` reads and the state morphs
   the shape signals include), and the garments the clothing pack offers
-  (`WardrobeEntry[]`: `id`, `name`, `kind`, `tags`; empty without that pack).
+  (`WardrobeEntry[]`: `id`, `name`, `label`, `kind`, `tags`; empty without that
+  pack). `label` is what to call a garment in a list ("Brown oxfords"); `name`
+  is the asset's file name, which says whom it was drawn for.
 - `client.evaluate(recipe, key?, signals?, haveOutfit?): Promise<Evaluation>`
   (signals as for `model.evaluate`) is latest-wins per key:
   each key has at most one evaluation in the worker and one waiting, and a

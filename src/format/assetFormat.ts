@@ -261,7 +261,12 @@ export interface GarmentEntry extends Omit<AttachmentEntry, "layout"> {
    * `hat`, ...), in place of an attachment's kind.
    */
   kind: string;
-  /** The asset's own tags (`Casual`, `Male`, ...), for browsing. */
+  /**
+   * What a person would call it ("Brown oxfords"), for browsing; the asset's
+   * own name (`name`) is a file name that also says whom it was drawn for.
+   */
+  label: string;
+  /** The asset's own tags (`Casual`, `Male`, ...). */
   tags: string[];
   layout: Omit<AttachmentEntry["layout"], "occlusion">;
 }

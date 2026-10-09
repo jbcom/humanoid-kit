@@ -57,26 +57,26 @@ const SYSTEM_ASSETS_ZIP = {
  * two stacks two pairs of trousers, and one is worn at a time. The shoes' own
  * `z_depth` 5 puts them under every suit's 50. The id is `<group>/<directory>`.
  */
-const GARMENTS: readonly [string, keyof typeof GARMENT_LAYERS][] = [
-  ["male_casualsuit01", "clothes"],
-  ["male_casualsuit02", "clothes"],
-  ["male_casualsuit03", "clothes"],
-  ["male_casualsuit04", "clothes"],
-  ["male_casualsuit05", "clothes"],
-  ["male_casualsuit06", "clothes"],
-  ["female_casualsuit01", "clothes"],
-  ["female_casualsuit02", "clothes"],
-  ["female_sportsuit01", "clothes"],
-  ["male_worksuit01", "clothes"],
-  ["female_elegantsuit01", "clothes"],
-  ["male_elegantsuit01", "clothes"],
-  ["shoes01", "shoes"],
-  ["shoes02", "shoes"],
-  ["shoes03", "shoes"],
-  ["shoes04", "shoes"],
-  ["shoes05", "shoes"],
-  ["shoes06", "shoes"],
-  ["fedora01", "hat"],
+const GARMENTS: readonly [string, keyof typeof GARMENT_LAYERS, string][] = [
+  ["male_casualsuit01", "clothes", "Navy shirt and jeans"],
+  ["male_casualsuit02", "clothes", "Blue sweater and jeans"],
+  ["male_casualsuit03", "clothes", "Striped shirt and jeans"],
+  ["male_casualsuit04", "clothes", "Blue T-shirt and jeans"],
+  ["male_casualsuit05", "clothes", "Field jacket and jeans"],
+  ["male_casualsuit06", "clothes", "White T-shirt and jeans"],
+  ["female_casualsuit01", "clothes", "Fitted T-shirt and jeans"],
+  ["female_casualsuit02", "clothes", "T-shirt and denim shorts"],
+  ["female_sportsuit01", "clothes", "Sports top and leggings"],
+  ["male_worksuit01", "clothes", "Overalls"],
+  ["female_elegantsuit01", "clothes", "Striped blouse and skirt"],
+  ["male_elegantsuit01", "clothes", "Suit and tie"],
+  ["shoes01", "shoes", "Brown oxfords"],
+  ["shoes02", "shoes", "Camouflage trainers"],
+  ["shoes03", "shoes", "Black dress shoes"],
+  ["shoes04", "shoes", "Black plimsolls"],
+  ["shoes05", "shoes", "White trainers"],
+  ["shoes06", "shoes", "Blue trainers"],
+  ["fedora01", "hat", "Grey fedora"],
 ];
 const GROUP: Record<keyof typeof GARMENT_LAYERS, string> = {
   underwear: "underwear",
@@ -95,8 +95,8 @@ const TEXTURES = { max: 1024, quality: 86, normalQuality: 78 };
 
 const sha = (file: string) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 
-function compile(): { asset: CompiledAsset; tags: string[]; source: string }[] {
-  return GARMENTS.map(([dir, kind]) => {
+function compile(): { asset: CompiledAsset; label: string; tags: string[]; source: string }[] {
+  return GARMENTS.map(([dir, kind, label]) => {
     const folder = path.join(SYSTEM, "clothes", dir);
     const mhclo = fs.readdirSync(folder).find((f) => f.endsWith(".mhclo"));
     if (!mhclo) throw new Error(`${folder} has no .mhclo`);
@@ -109,7 +109,7 @@ function compile(): { asset: CompiledAsset; tags: string[]; source: string }[] {
       .map((l) => l.slice(4).trim())
       // The project's own mark, on every asset, tells a browser nothing.
       .filter((t) => !t.includes("MakeHuman"));
-    return { asset, tags, source: path.relative(SYSTEM, file) };
+    return { asset, label, tags, source: path.relative(SYSTEM, file) };
   });
 }
 
@@ -138,6 +138,7 @@ function main(): Promise<void> {
     const packed = writeGarments(OUT, GARMENTS_FILE, assets);
     const entries: GarmentEntry[] = packed.entries.map((e, i) => ({
       ...e,
+      label: (compiled[i] as (typeof compiled)[number]).label,
       tags: (compiled[i] as (typeof compiled)[number]).tags,
     }));
     const manifest: ClothingManifest = {

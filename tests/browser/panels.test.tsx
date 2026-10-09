@@ -204,16 +204,16 @@ describe("WardrobePanel", () => {
     // Garments are listed by kind, with readable names.
     await expect.element(screen.getByText("Outfits").first()).toBeVisible();
     await expect.element(screen.getByText("Shoes").first()).toBeVisible();
-    const one = screen.getByRole("button", { name: "Male casualsuit 01" });
+    const one = screen.getByRole("button", { name: "Navy shirt and jeans" });
     await one.click();
     await expect.element(one).toHaveAttribute("aria-pressed", "true");
     expect(latest?.recipe.outfit).toEqual(["suits/male_casualsuit01"]);
     // A second outfit replaces the first; shoes layer over it.
-    await screen.getByRole("button", { name: "Male casualsuit 02" }).click();
-    await screen.getByRole("button", { name: "Shoes 01" }).click();
+    await screen.getByRole("button", { name: "Blue sweater and jeans" }).click();
+    await screen.getByRole("button", { name: "Brown oxfords" }).click();
     expect(latest?.recipe.outfit).toEqual(["suits/male_casualsuit02", "shoes/shoes01"]);
     await expect.element(one).toHaveAttribute("aria-pressed", "false");
-    await screen.getByRole("button", { name: "Shoes 01" }).click();
+    await screen.getByRole("button", { name: "Brown oxfords" }).click();
     expect(latest?.recipe.outfit).toEqual(["suits/male_casualsuit02"]);
     // Wearing is one undoable step.
     latest?.undo();
