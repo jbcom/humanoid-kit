@@ -132,11 +132,13 @@ createRecipe(init?: {
   };
   bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
+  bodyArt?: BodyArtInit;
 }): Recipe
 ```
 
 Builds a recipe over the defaults (`DEFAULT_MACROS`, `DEFAULT_SKIN`,
-`DEFAULT_EYES`, and `DEFAULT_HAIR_COLOUR` when `hair` is given). It copies its
+`DEFAULT_EYES`, `DEFAULT_HAIR_COLOUR` when `hair` is given, and
+`createBodyArt`'s defaults when `bodyArt` is given). It copies its
 input and does not validate it; validation happens at evaluation.
 `RECIPE_VERSION` is `1`.
 
@@ -151,6 +153,7 @@ interface Recipe {
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
   bodyHair?: BodyHairRecipe; // optional: absent means the default for age and sex
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
+  bodyArt?: BodyArtRecipe; // optional: absent means none, as in recipes saved before body art
 }
 
 interface HairRecipe {
@@ -274,8 +277,56 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 
 Under 18, a recipe is invalid if `breastSize` or `breastFirmness` differs from
 its default, if any region override contains either key, if an adult-only
-modifier is non-zero, or if `bodyHair.density.axillary` or `.pubic` is non-zero
-(`ADULT_ONLY_BODY_HAIR`). Refused, never clamped.
+modifier is non-zero, if `bodyHair.density.axillary` or `.pubic` is non-zero
+(`ADULT_ONLY_BODY_HAIR`), or if a piercing is at an adult-only site. Refused,
+never clamped.
+
+- `ADULT_ONLY_PIERCING(site): boolean`: true for every site that is not one of
+  the body's own (`PIERCING_SITES`). Those are the adult anatomy pack's, which
+  the core never names, so an unknown site fails closed. `withAge` below 18
+  removes those piercings and keeps the rest.
+
+### Body art
+
+The recipe's optional `bodyArt` (ARCHITECTURE.md, "Body art"; sources and
+choices in research/BODY-ART.md). Everything is placed by a `BodyAnchor`, a
+named site or a base-mesh vertex index, so it follows every shape and pose.
+Sizes are metres on the skin, angles degrees counter-clockwise looking at the
+skin from the body's up.
+
+```ts
+type BodyAnchor = string | number; // a PIERCING_SITES name, or a base-mesh vertex
+
+interface BodyArtRecipe {
+  tattoos: Tattoo[];      // { image, at, size, rotation = 0, density = 1 }
+  piercings: Piercing[];  // { site, jewellery = "stud", metal = "steel", size = JEWELLERY_SIZE[jewellery] }
+  scars: Scar[];          // { at, length, width = SCAR_WIDTH, rotation = 0, maturity = 1, raised = 0 }
+  birthmarks: Birthmark[]; // { kind, at, size, rotation = 0, seed = 0 }
+  vitiligo?: Vitiligo;    // { extent = 0.3, seed = 0 }; absent means none
+}
+```
+
+- `createBodyArt(init: BodyArtInit): BodyArtRecipe`: fills each item's
+  defaults; `createRecipe` calls it.
+- A tattoo's `image` is a key the application resolves to an image when it
+  renders, so the recipe stays plain JSON. `density` is how much ink the dermis
+  holds (1 fresh, lower faded).
+- `PIERCING_SITES`: `ear-lobe.L/R`, `ear-helix.L/R`, `nostril.L/R`, `septum`,
+  `brow.L/R`, `lower-lip`, `navel`. A recipe pierces a site at most once.
+  `JEWELLERY` (`stud`, `ring`, `barbell`), `METALS` (`steel`, `titanium`,
+  `gold`, `rose-gold`, `silver`), `JEWELLERY_SIZE`.
+- `BIRTHMARKS`: `cafe-au-lait`, `naevus`, `port-wine`, `dermal-melanocytosis`.
+  A scar's `maturity` runs from 0 (fresh: red, raised) to 1 (mature: pale,
+  flat); `raised` is how hypertrophic it is.
+- `bodySites(assets): Record<PiercingSite, BodySite>`: each site's base-mesh
+  vertex, found from the target that shapes its feature (the vertex it moves
+  most), and its `channel` (`"normal"`, `"across"` or `"vertical"`): which way a
+  piercing runs through the skin there.
+- `resolveAnchor(assets, at): number`: the vertex an anchor names. An unknown
+  site or a vertex past the mesh throws `RangeError`.
+- Validation (`recipeProblems`) checks body art's structure and ranges and
+  rejects unknown fields, clamping nothing. Whether an anchor exists is checked
+  when the figure is evaluated, against the loaded assets.
 
 ### Evaluation
 
@@ -304,9 +355,9 @@ and throws `RangeError` for anything else.
   outfit key the caller already holds the masks of.
 - `model.adultDetailLattice(recipe): AdultDetailLattice | null`: the vertex
   space the adult pack's detail targets are authored on (`{ key, vertexCount,
-  positions }`): the vertices of the refined region, which a detail target
-  indexes from 0, with their positions on this figure and the key that names
-  the refinement. Null without an adult surface; throws `AgePolicyError` for a
+  positions, normals }`): the vertices of the refined region, which a detail
+  target indexes from 0, with their positions and outward unit normals on this
+  figure and the key that names the refinement. Null without an adult surface; throws `AgePolicyError` for a
   figure under 18. The packer uses it to place authored forms.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
@@ -627,6 +678,15 @@ compute what the renderer will do.
     `creaseDepth(joint)` the fold's depth in metres that follows from them, and
     `CREASE_HALF_WIDTH` how far either side of the joint each joint's creases
     reach.
+  - Expression lines (ARCHITECTURE.md, "Facial wrinkles"):
+    `EXPRESSION_LINE_LAYERS`, five `creases` `DetailLayer`s (`lines.forehead`,
+    `lines.crows-feet`, `lines.glabella`, `lines.nasolabial`, `lines.nose`) driven
+    by the `face.*` signals and the figure's `age`: forehead lines on
+    `browRaise`, furrows between the brows on `browFurrow`, crow's feet on
+    `squint` (or a smile), the folds on `nasolabial` (or a smile), nose lines on
+    `noseWrinkle`. `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
+    `EXPRESSION_COUNT` are art-directed, `expressionAgeFactor(age)` scales the
+    depth by age (0.2 at 6, 1 at 40, 1.4 at 70).
   - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones
     (head, hand, thigh, …) as soft per-vertex masks from the skin weights, plus
     its `front`, `palm`, `sole`, `forehead` and `neck` fields from the vertex

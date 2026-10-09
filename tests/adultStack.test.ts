@@ -33,7 +33,10 @@ describe("the adult anatomy spec in the pack's manifest", () => {
   it("is exactly what the packer writes", () => {
     // The core names no adult target or modifier, so the pack's manifest does;
     // the packer writes `adultAnatomySpec(base body)` into it, and this holds the two together.
-    expect(spec).toEqual(adultAnatomySpec(core));
+    // Its detail (the generated targets' pin to the refinement) is checked against
+    // the generator in moundPack.test.ts; the rest is the packer's spec for this body.
+    const { detail: _detail, ...rest } = spec ?? { detail: undefined };
+    expect(rest).toEqual(adultAnatomySpec(core));
     expect(spec).toMatchObject(ADULT_ANATOMY_SPEC);
   });
 

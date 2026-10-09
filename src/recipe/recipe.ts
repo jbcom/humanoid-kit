@@ -14,6 +14,7 @@ import type { BodyRegion } from "../makehuman/regions.ts";
 import type { BodyHairRecipe } from "../surface/bodyHair.ts";
 import { DEFAULT_HAIR_COLOUR, type HairColour } from "../surface/hairTone.ts";
 import type { Rgb } from "../surface/skinTone.ts";
+import { type BodyArtInit, type BodyArtRecipe, createBodyArt } from "./bodyArt.ts";
 
 export const RECIPE_VERSION = 1 as const;
 
@@ -103,6 +104,11 @@ export interface Recipe {
    * nothing worn.
    */
   outfit?: readonly string[];
+  /**
+   * Tattoos, piercings, scars, birthmarks and vitiligo (`./bodyArt.ts`).
+   * Absent means none, and recipes saved before body art existed are unchanged.
+   */
+  bodyArt?: BodyArtRecipe;
 }
 
 export function createRecipe(
@@ -120,6 +126,7 @@ export function createRecipe(
     };
     bodyHair?: BodyHairRecipe;
     outfit?: readonly string[];
+    bodyArt?: BodyArtInit;
   } = {},
 ): Recipe {
   return {
@@ -151,5 +158,6 @@ export function createRecipe(
       },
     }),
     ...(init.outfit && { outfit: [...init.outfit] }),
+    ...(init.bodyArt && { bodyArt: createBodyArt(init.bodyArt) }),
   };
 }

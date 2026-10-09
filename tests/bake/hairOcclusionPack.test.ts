@@ -4,6 +4,7 @@
  * uninstrumented `bake` project (vitest.config.ts).
  */
 import { describe, expect, it } from "vitest";
+import { HAIR_STYLES } from "../../scripts/lib/packHair.ts";
 import { HumanoidModel } from "../../src/model/humanoidModel.ts";
 import { hairManifest, loadHairFixtureAssets } from "../hairFixtures.ts";
 
@@ -36,7 +37,8 @@ describe("the shipped hair occlusion", { timeout: 300_000 }, () => {
     )) {
       const asset = assets.hair?.bound.get(s.id);
       if (!asset?.hair) throw new Error(`${s.id} not loaded`);
-      const fresh = model.bakeHairFields(asset);
+      const feather = HAIR_STYLES.find((x) => x.id === s.id)?.feather;
+      const fresh = model.bakeHairFields(asset, feather === undefined ? {} : { feather });
       expect(fresh.growth, `${s.id} growth`).toEqual(asset.hair.growth);
       expect(fresh.fade, `${s.id} fade`).toEqual(asset.hair.fade);
       expect(fresh.fin, `${s.id} fin`).toEqual(asset.hair.fin);

@@ -48,7 +48,7 @@ export const FADE_LENGTH = 0.012;
 export const SCALP_FULL = 0.003;
 
 /** Metres beyond `SCALP_FULL` over which the density falls to zero. */
-export const SCALP_FALLOFF = 0.005;
+export const SCALP_FALLOFF = 0.008;
 
 /** A card vertex nearer the scalp than this (metres) is too close to tell which way it faces. */
 const FIN_MIN_DISTANCE = 0.001;
@@ -60,6 +60,35 @@ const FIN_MIN_DISTANCE = 0.001;
 const FIN_ALIGNED_FROM = 0.35;
 const FIN_ALIGNED_TO = 0.75;
 
+/** Metres above the scalp over which hair brightens from the shade at its roots to open light. */
+export const SCALP_DEPTH = 0.025;
+
+/**
+ * How open to light each point is by its height above the scalp alone: 0 at the
+ * skin, rising smoothly to 1 at `SCALP_DEPTH`. Hair is darkest at its roots and
+ * brightens along its length; unlike the ray bake, which treats cards as solid
+ * and darkens whichever cards happen to overlap, this has no patches.
+ */
+export function scalpShade(
+  positions: Float32Array,
+  body: { positions: Float32Array; triangles: Uint32Array },
+): Float32Array {
+  const bvh = new MeshBVH(geometry(body.positions, body.triangles), { verbose: false });
+  const target = { point: new Vector3(), distance: 0, faceIndex: 0 };
+  const p = new Vector3();
+  const out = new Float32Array(positions.length / 3);
+  for (let v = 0; v < out.length; v++) {
+    p.set(
+      positions[v * 3] as number,
+      positions[v * 3 + 1] as number,
+      positions[v * 3 + 2] as number,
+    );
+    const d = bvh.closestPointToPoint(p, target)?.distance ?? Number.POSITIVE_INFINITY;
+    out[v] = smoothstep(0, SCALP_DEPTH, d);
+  }
+  return out;
+}
+
 export interface HairFieldsInput {
   /** The style's control vertices at rest (metres), three per vertex. */
   positions: Float32Array;
@@ -69,6 +98,11 @@ export interface HairFieldsInput {
   body: { positions: Float32Array; triangles: Uint32Array };
   /** One per body control vertex: 1 where the skin may be tinted as scalp (the head), else 0. */
   scalpEligible: Uint8Array;
+  /**
+   * Whether a hairline thins out (default true). Dense curls have no cut edge to
+   * soften: faded, their roots show the dark inside of the volume as a band.
+   */
+  feather?: boolean;
 }
 
 export interface HairFields {
@@ -338,9 +372,12 @@ export function hairFields(input: HairFieldsInput): HairFields {
     (v) => (nearBody[v] as number) < HAIRLINE_NEAR && !coveredByAnother(v),
   );
   const along = distanceAlong(adjacency, hairline);
-  const fade = Uint8Array.from(along, (d) =>
-    Number.isFinite(d) ? Math.round(255 * smoothstep(0, FADE_LENGTH, d)) : 255,
-  );
+  const fade =
+    input.feather === false
+      ? new Uint8Array(n).fill(255)
+      : Uint8Array.from(along, (d) =>
+          Number.isFinite(d) ? Math.round(255 * smoothstep(0, FADE_LENGTH, d)) : 255,
+        );
 
   // Scalp: eligible body vertices near a card.
   const cards = new Uint32Array(faces * 6);

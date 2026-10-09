@@ -36,7 +36,9 @@ describe("age policy", () => {
     const body = new Set(bodyManifest.targets.flatMap((f) => f.entries.map((e) => e.name)));
     for (const e of adultManifest.targets.entries) expect(body.has(e.name), e.name).toBe(false);
     for (const name of body)
-      expect(name).not.toMatch(/^(genitals\/|pelvis\/bulge-|stomach\/stomach-pregnant-)/);
+      expect(name).not.toMatch(
+        /^(genitals\/|pelvis\/bulge-|pelvis\/mound-|stomach\/stomach-pregnant-)/,
+      );
   });
 
   it("rejects any adult anatomy modifier on a figure under 18", () => {

@@ -40,6 +40,12 @@ export interface HairStyleSpec {
   id: string;
   label: string;
   tags: string[];
+  /**
+   * Whether the hairline thins out (default true). `afro01`'s dense curls end in a
+   * fuzzy edge of their own; thinned, its roots show the dark inside of the
+   * volume as a band.
+   */
+  feather?: boolean;
   /** What the entry is; default `scalp`. */
   kind?: HairKind;
   /**
@@ -60,7 +66,7 @@ export const HAIR_STYLES: readonly HairStyleSpec[] = [
   { id: "short02", label: "Short, tousled", tags: ["short", "tousled"] },
   { id: "bob02", label: "Bob with a side fringe", tags: ["bob", "straight", "fringe"] },
   { id: "long01", label: "Long, straight", tags: ["long", "straight"] },
-  { id: "afro01", label: "Afro", tags: ["short", "curly", "afro"], flatten: 0.007 },
+  { id: "afro01", label: "Afro", tags: ["short", "curly", "afro"], flatten: 0.007, feather: false },
   { id: "short04", label: "Short, slicked back", tags: ["short", "slicked"] },
   { id: "short03", label: "Short, side-swept", tags: ["short", "swept", "fringe"] },
   { id: "ponytail01", label: "Ponytail", tags: ["long", "ponytail", "tied"] },
@@ -299,7 +305,12 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
             Math.round(Math.min(1, Math.max(0, v)) * 255),
           )
         : new Uint8Array(compiled.vertexCount).fill(255);
-    const fields = kind === "scalp" ? model.bakeHairFields(boundFrom(compiled)) : {};
+    const fields =
+      kind === "scalp"
+        ? model.bakeHairFields(boundFrom(compiled), {
+            ...(spec.feather !== undefined && { feather: spec.feather }),
+          })
+        : {};
     const file = `${spec.id}.bin.gz`;
     const written = writeAttachments(outDir, file, [compiled], [occlusion], 1, [fields]);
     const [entry] = written.entries;
