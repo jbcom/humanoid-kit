@@ -5,8 +5,7 @@ description: The public surface of every humanoid-kit entry point and data pack 
 
 > **Pre-release, API in development.** This page documents the exports in the
 > repository today. Signatures, option names and defaults will change before
-> `0.1.0`. `humanoid-kit/editor` is declared in `package.json` but is **not
-> implemented**, so it has no API here.
+> `0.1.0`.
 
 All entry points are ESM-only and ship TypeScript declarations.
 
@@ -86,11 +85,14 @@ createRecipe(init?: {
   macros?: Partial<MacroValues>;
   regionalMacros?: Recipe["regionalMacros"];
   modifiers?: Record<string, number>;
+  skin?: Partial<SkinRecipe>;
+  eyes?: Partial<EyesRecipe>;
 }): Recipe
 ```
 
-Builds a recipe over the defaults. It copies its input and does not validate it;
-validation happens at evaluation. `RECIPE_VERSION` is `1`.
+Builds a recipe over the defaults (`DEFAULT_MACROS`, `DEFAULT_SKIN`,
+`DEFAULT_EYES`). It copies its input and does not validate it; validation
+happens at evaluation. `RECIPE_VERSION` is `1`.
 
 ```ts
 interface Recipe {
@@ -98,9 +100,26 @@ interface Recipe {
   macros: MacroValues;
   regionalMacros: Partial<Record<BodyRegion, Partial<RegionalMacroValues>>>;
   modifiers: Record<string, number>; // id -> [-1, 1]; one-sided [0, 1]; missing = 0
+  skin: SkinRecipe;
+  eyes: EyesRecipe;
 }
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
+
+interface SkinRecipe {
+  melanin: number;      // 0 very fair .. 1 very deep
+  haemoglobin: number;  // 0 pale, 0.5 typical, 1 ruddy
+  undertone: number;    // -1 cool/pink .. 0 neutral .. 1 warm/golden
+  override: Rgb | null; // linear-RGB albedo replacing the natural model (fur, scales, fantasy)
+  flush: number;        // 0..1 on cheeks, nose and ears
+  lips: number;         // 0..1 lip colour depth
+  areola: number;       // 0..1 areola and nipple colour depth
+}
+
+interface EyesRecipe {
+  iris: Rgb;            // linear RGB
+  scleraWarmth: number; // 0 clinical white .. 1 warm ivory
+}
 ```
 
 A recipe is plain data, so `JSON.stringify` round-trips it.
@@ -274,16 +293,96 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | Prop | Meaning |
 | --- | --- |
 | `recipe` | The `Recipe` to render |
-| `material?` | A three.js `Material`; defaults to neutral clay |
+| `material?` | A three.js `Material` replacing the built-in skin material, which follows `recipe.skin` |
 | `onEvaluated?` | Called with each `Evaluation` |
-| `onError?` | Called with evaluation errors other than a superseded request |
+| `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
 | other props | Passed to the wrapping `<group>` |
 
 - Hidden until the first evaluation arrives.
+- Renders the body and the body pack's attachments (eyes with their own eye
+  shader following `recipe.eyes`, teeth and tongue), each attachment shaded by
+  its baked occlusion.
 - Updates the geometry in place when `recipe` changes.
 - Stores the latest `groundOffset` on the group's `userData`.
-- Disposes its geometry and default material on unmount.
-- Renders a static mesh; it does not build a skeleton or play animation.
+- Disposes its geometries, textures and built-in materials on unmount.
+- Renders static meshes; it does not build a skeleton or play animation.
+
+### `<StudioStage background? intensity? />`
+
+A neutral studio for showing figures: a procedural room environment
+(three.js `RoomEnvironment`, prefiltered once, no network request), a key light
+casting shadows, fill and rim lights, and a soft hemisphere light. Pair it with
+the canvas settings it was measured with: `STUDIO_TONE_MAPPING`
+(`NeutralToneMapping`) and `STUDIO_EXPOSURE` (1.15). `background` is a CSS
+colour (`null` leaves the canvas background alone); `intensity` scales every
+light together. It restores the scene environment it replaced on unmount.
+
+## `humanoid-kit/editor`
+
+A complete character creator built on `humanoid-kit/react`, and the hooks it
+is made from. Requires the same peers.
+
+### `<HumanoidCreator />`
+
+Render it inside a `HumanoidProvider`; it brings its own canvas, studio stage
+and camera.
+
+| Prop | Meaning |
+| --- | --- |
+| `initialRecipe?` | The figure to start from; defaults to `createRecipe()` |
+| `onChange?` | Called with every new recipe, including undo, redo and loads |
+| `title?` | Heading shown above the controls |
+| `className?` | Added to the root element |
+| `children?` | Extra scene content rendered beside the figure |
+
+- One tab per MakeHuman modelling task (Main, Gender, Face, Torso, ...,
+  Measure), in upstream order, with MakeHuman's groups and slider labels, plus
+  Appearance (skin, iris, sclera) and Regions (per-region macro overrides).
+- Focusing a slider frames the body part it shapes, from MakeHuman's camera
+  hint for that slider.
+- Undo and redo (dragging a slider is one step), random figure, reset, and
+  save and load of the recipe as JSON. A loaded recipe is validated and checked
+  against the loaded packs and the age policy before it replaces the figure.
+- Adult-only sliders are disabled, with the reason, under 18.
+- On narrow screens the controls become a bottom sheet over the figure.
+- Styles are scoped under `.hk-creator` and themed by `--hk-*` CSS variables.
+
+### `useHumanoidEditor(initial?): HumanoidEditor`
+
+The creator's state for the provided client, for building your own editor UI.
+`useEditorState(ready, initial?)` is the same over any `ReadyInfo`, without a
+worker.
+
+```ts
+interface HumanoidEditor {
+  ready: ReadyInfo | null;  // null while the packs load
+  recipe: Recipe;
+  tasks: SliderTask[];      // the slider taxonomy
+  modifiers: ModifierTable; // id -> ShapeModifierEntry
+  canUndo: boolean;
+  canRedo: boolean;
+  setSlider(entry: SliderEntry, value: number, gesture?: string): void;
+  update(change: (recipe: Recipe) => Recipe, gesture?: string): void;
+  settle(): void;           // ends the current gesture
+  undo(): void;
+  redo(): void;
+  randomize(seed: number, options?: RandomizeOptions): void;
+  resetAll(): void;
+  load(value: unknown): string[]; // problems that stopped it; [] once loaded
+}
+```
+
+Changes that share a `gesture` key form one undo step. `randomize` is
+deterministic for a seed and never sets adult-only modifiers unless
+`options.includeAdultAnatomy` is true and the figure is 18 or over. Every
+change is undoable.
+
+### `<SliderRow />`
+
+The creator's slider: label, value readout, a reset button and an accessible
+range input sized for touch. `onChange(value, gesture)` fires while dragging and
+`onSettle()` when the gesture ends; `disabledReason` disables it and says why;
+`track` replaces the fill with a CSS background (the skin-tone ramp uses it).
 
 ## `humanoid-kit/worker`
 
