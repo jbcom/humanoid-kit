@@ -53,7 +53,7 @@ export function buildFeatureMap(assets: HumanoidAssets): FeatureMap {
         const m = s.kind === "modifier" ? assets.modifiers.get(s.id) : undefined;
         // Adult-only controls never place a feature: a tap must not open them.
         if (!m || m.adultOnly || ARCHETYPE_MODIFIER_GROUPS.has(m.group)) continue;
-        targets.add(m.hi);
+        if (m.hi) targets.add(m.hi);
         if (m.lo) targets.add(m.lo);
       }
       if (targets.size === 0) continue;

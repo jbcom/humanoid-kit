@@ -227,6 +227,9 @@ importers:
       humanoid-kit-adult-anatomy:
         specifier: workspace:*
         version: link:packs/adult-anatomy
+      humanoid-kit-animations:
+        specifier: workspace:*
+        version: link:packs/animations
       humanoid-kit-body:
         specifier: workspace:*
         version: link:packs/body
@@ -283,6 +286,8 @@ importers:
         version: 3.6.12(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@26.6.4)(supports-color@7.2.0)(yaml@2.9.1)
 
   packs/adult-anatomy: {}
+
+  packs/animations: {}
 
   packs/body: {}
 

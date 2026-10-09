@@ -48,6 +48,14 @@ and writes:
   derived work of CC0 data, also CC0. The manifest records the SHA-256 of the
   body pack it binds to.
 
+The body pack's nail plates are two CC0 community meshes from MakeHuman's
+bodyparts04 pack, "Mind nails 01 short" and "Mind nails toes 01" by Mindfront
+(2018), whose files say `license CC0` and whose asset pages say "CC0 - Creative
+Commons Zero". Their geometry and binding are vendored in
+`vendor/makehuman-bodyparts04/`, with the provenance of each file in its
+`PROVENANCE.md`, and pass the licence rule's clause B (a community asset with
+its captured page). Credit to Mindfront for them.
+
 Height and proportion targets are kept for average muscle and weight only. The
 universal muscle and weight targets already carry that variation, and the dense
 variants would roughly triple the size of the package.
@@ -70,15 +78,13 @@ each of a style's `.mhclo`, `.obj` and `.mhmat` must carry the header, and a
 bare `license CC0` line, which community exporters write by default and which a
 sibling file can contradict, is refused.
 
-An asset from the community repositories on makehumancommunity.org can pass
-only with its asset page captured beside it, under the rule in
-`scripts/lib/licenceRule.ts`: the page must say CC0, every licence line in its
-files must be CC0 or MakeClothes 1's default written under the uploader's own
-name, no file may name the MakeHuman team, Bastioni or Larsson as author, and
-everything it derives from must itself be CC0. MakeHuman's September 2020 CC0
-release covered the assets it bundled, not community uploads, so no upload date
-makes an asset CC0. `docs/licence-history.md` gives the history, the evidence
-and the verdict on every community asset checked so far.
+An asset from the community repositories on makehumancommunity.org is CC0 when
+its asset page says so: the page's stated licence governs (owner ruling,
+2026-10-09: "If the website says cc0 then it's cc0"). The packer accepts such an
+asset only with the page captured beside it (`scripts/lib/licenceRule.ts`) and
+records the page and its submission date as the evidence for every file. A page
+that says CC-BY or AGPL is refused. `docs/licence-history.md` gives the rule, the
+history behind it and the verdict on every community asset checked so far.
 
 `packs/clothing/data` is derived from MakeHuman's system assets pack
 (`makehuman_system_assets_cc0.zip`), whose clothes, meshes and materials each
@@ -86,8 +92,8 @@ open with the same header, "This asset was explicitly released as CC0 in
 september 2020", naming the same copyright holders. `scripts/pack-clothing.ts`
 accepts a garment's `.mhclo`, `.obj` and `.mhmat` only on that statement in the
 file itself (a bare `license CC0` line is refused), and a texture only through a material
-that passes. Only the tier of assets that proves CC0 this way is packed; assets
-whose page says CC0 but whose files do not are not.
+that passes. The clothing pack holds only these system assets; a community
+garment would enter it on its page licence, as above.
 
 Each pack's `data/PROVENANCE.md` is written by the packer. It records the
 upstream commit, how many files were accepted on which evidence, and the SHA-256

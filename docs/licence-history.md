@@ -1,6 +1,12 @@
 # MakeHuman licence history and the asset licence rule
 
-What MakeHuman's licences were and when they changed, which community assets are CC0 on the evidence, and the rule the packer enforces (`scripts/lib/licenceRule.ts`). Researched 2026-10-09. A verdict here is never a guess: where the evidence runs out the asset is **not CC0** and the reason names the missing piece.
+Which MakeHuman assets humanoid-kit may pack as CC0, the rule the packer enforces (`scripts/lib/licenceRule.ts`), and the history behind it. Researched 2026-10-09.
+
+## The governing rule
+
+**Owner ruling, 2026-10-09:** "we shouldn't go beyond normal effort to assess CC0 versus AGPL. If the website says cc0 then it's cc0."
+
+A community asset is CC0 exactly when its page on makehumancommunity.org states CC0. File headers, uuids, derivation and geometry are not weighed against the page. A MakeHuman team asset is CC0 when its files carry the header of MakeHuman's own 2020 CC0 release. Everything else is not packed.
 
 Sources, all read on 2026-10-09 unless a date is given:
 
@@ -9,9 +15,10 @@ Sources, all read on 2026-10-09 unless a date is given:
 - The official static site: [What changed regarding the license in 2020?](https://static.makehumancommunity.org/oldsite/faq/what_changed_regarding_the_license_in_2020.html), [release notes 1.2.0](https://static.makehumancommunity.org/makehuman/releases/releases_120.html), [What do I need to do when I use a CC-BY asset?](https://static.makehumancommunity.org/oldsite/faq/what_do_i_need_to_do_when_i_use_a_ccby_asset.html), [Legal](https://static.makehumancommunity.org/oldsite/documentation/legal.html), [I have made a new asset… How can I contribute it?](https://static.makehumancommunity.org/oldsite/faq/i_have_made_a_new_asset_for_makehuman_how_can_i_contribute_it.html).
 - The Wayback Machine's copies of [the license explanation](http://www.makehumancommunity.org/content/license_explanation.html), captured 2020-08-04 (`20200804030447`) and in 2023.
 - Every asset page cited below, on `www.makehumancommunity.org`, by its URL and the "Submitted by … on …" line it shows.
-- The asset downloads themselves: the curated packs on `files2.makehumancommunity.org` (`*_cc0.zip`, each with a `packs/<pack>.json` manifest) and single assets from their pages. They were read with plain text tools and nothing in them was executed.
 
-## 1. Timeline
+## 1. Background: the cutover history
+
+This history explains why bundled MakeHuman assets carry a CC0 header and community uploads carry their uploader's page licence. It does not decide any verdict below; the governing rule does.
 
 | Date | Evidence | What it establishes |
 | --- | --- | --- |
@@ -38,207 +45,198 @@ Sources, all read on 2026-10-09 unless a date is given:
 - **The 2016 transfer plus the 2020 release does not reach the Bastioni MHX2 proxies.** The transfer moved ownership and kept AGPLv3; the release covers bundled assets; `penis2.mxa`/`vulva2.mxa` live in another repository, state `"license": "AGPL3 (…makehuman_mesh_license.html)"` and were last changed 2015-09-20. The team could relicense them and has not. Larsson's `vulva.mxa` was never part of the transfer.
 - **Code** stays AGPL-3; MPFB is GPL; the external tools (MakeClothes 1, MakeTarget) are AGPL 3 ("Unless otherwise explicitly stated they are covered by the GNU AGPL 3").
 
-## 2. Community assets
+## 2. The rule in code
 
-**The licence regime.** The uploader picks the page licence. The FAQ names CC0 and CC-BY; AGPL also appears as a page label on the 2015–2017 re-uploads of the team's genital proxies. CC0 was never made mandatory or the default, and the 2020 FAQ and `LICENSE.md` §D both exclude community uploads from the cutover. CC-BY uploads continue after 2020 (for example `sureshkumar`, 2022-09-02). So **"uploaded after 2020-09-26 ⇒ CC0" is false**, and no date rule is used. The curated packs' JSON manifests restate a page licence as it stood when the pack was built; four culturalibre assets the `equipment01`/`masks01`/`shoes01` packs list as CC0 now say CC-BY on their pages, and the page, the stricter statement, governs.
+`judgeAsset` in `scripts/lib/licenceRule.ts` implements the governing rule; `compileAsset` applies it to every asset it packs, and `tests/licenceRule.test.ts` covers each clause.
 
-**Page against file.** The page is the uploader's declaration about their own contribution. A licence line in a file is either a second statement by the same person or one inherited from someone else's file:
+- **A, team asset:** every text file carries "This asset was explicitly released as CC0", the header of MakeHuman's 2020-09-26 release. No page is needed, and without a captured page this is the only way through.
+- **B, community asset:** the captured page (`CommunityPage`: URL, submitter, submission date, licence, retrieval date) states CC0. The licence must begin by naming CC0 ("CC0", "CC-0", "CC0 - Creative Commons Zero") and name no other licence; free text that merely mentions CC0 is not a CC0 licence.
 
-- if the file line is a tool's default and the file's author is the uploader or unknown, the uploader has given the work two non-exclusive licences (AGPL3 by default, CC0 on purpose), and a recipient may rely on the CC0 dedication;
-- if a file names a third party (`# author MHteam`, "(c) Manuel Bastioni 2014", "(c) Makehuman.org 2014"), or the page or a file shows the asset derives from a non-CC0 work, that governs: an uploader cannot dedicate someone else's work.
+A page licence of CC-BY or AGPL is not CC0, whatever the files say. When a pack's JSON manifest and the asset's page disagree, the page is what is captured and judged.
 
-**The AGPL3 line in community `.obj` files is MakeClothes 1's default.** `blendertools/makeclothes/makeclothes.py` at `f6b431a`, lines 1931–1939, defines `MCAuthor` (default `"Unknown"`) and `MCLicense` (default `"AGPL3 (see also http://www.makehuman.org/doc/node/external_tools_license.html)"`), and `getHeader()` (lines 597–603) writes them as `# author …` and `# license …`. That exact line therefore shows the field was left at the default of an AGPL tool, not that the author chose AGPL. MakeClothes 2 (MPFB) writes `# license: CC0`.
+## 3. Verdicts that changed under the ruling
 
-## 3. Contested assets
+The page rule makes these CC0. An earlier review of the same assets read their file headers or lineage and held them back; the ruling sets that aside.
 
-| Asset | Verdict | Evidence | Confidence |
+| Asset | Page | Page licence | Verdict |
 | --- | --- | --- | --- |
-| ukiyoe [man_genital](http://www.makehumancommunity.org/clothes/man_genital.html) | **CC0 under the rule (B); hold for lineage** | Submitted by ukiyoe on 2022-11-05; page CC0; `.mhclo`, `.obj` and `.mhmat` each `# author: unknown` / `# license: CC0`, "exported by MakeClothes 2". Open: 16 of its 607 vertices coincide to 3 dp with the AGPL Bastioni `adult_male_genitalia.obj` (0 with the CC0 base mesh, 0 with `penis01`, 0 identical faces). Too few to show copying, too many to dismiss; needs the author's account or a fuller geometric comparison. | medium; low on lineage |
-| beebo123 labia ([shorter](http://www.makehumancommunity.org/clothes/realisticlabiashorter.html), medium, longer) | **CC0 (B)** | Submitted 2022-04-15; page CC0; `.mhclo`/`.obj` `# license: CC0`. Built for wolgade's CC0 "Female Generic With Simplified Genitals". The texture is a pale edit of wolgade's genital skin (page CC0). | high (geometry), medium (texture, page-only) |
-| ieroglif [adult_male_genitalia_breast_fix](http://www.makehumancommunity.org/proxy/adult_male_genitalia_breast_fix.html) | **not CC0** | Submitted 2026-05-04; "Adult male genitalia proxy, but with default (female) chest". Its `uuid ece8ae91-d8d7-4e98-a737-dd1f5f08519a` is the uuid of the AGPL Bastioni proxy (`# author MHteam # license AGPL3`); the `.obj` carries no licence line. | high |
-| frankyaye genital targets (`vulva_*`, `anus_*`) | **CC0 (B), page-only** | Submitted 2015-07-25; page CC0; `.target` files carry no licence text. They deform the base mesh (CC0 since 2020), not the AGPL proxy they were tuned for. | medium |
-| Bastioni / Larsson genital proxies and every re-upload or edit of them | **not CC0 (AGPL)** | §1; table 5.2. | high |
-| `penis01`, MHX2 `penis`, `penis2`, `vulva`, `vulva2` | **not CC0** | §1. | high |
+| MTKnife `adult_female_genitalia_remapped` | <http://www.makehumancommunity.org/proxy/adult_female_genitalia_remapped.html>, 2017-07-28 | CC0 | **CC0** |
+| XSuprem3X `adult_male_genitalia` | <http://www.makehumancommunity.org/proxy/adult_male_genitalia.html_0>, 2017-03-26 | CC0 | **CC0** |
+| Slayer227 `erect_penis_only_works_with_males` (`Male_Gen-Heal1`) | <http://www.makehumancommunity.org/proxy/erect_penis_only_works_with_males.html>, 2022-01-06 | CC0 | **CC0** |
+| bogdan666 `adult_female_2020` | <http://www.makehumancommunity.org/proxy/adult_female_2020.html>, 2019-11-17 | CC0 | **CC0** |
+| ieroglif `adult_male_genitalia_breast_fix` | <http://www.makehumancommunity.org/proxy/adult_male_genitalia_breast_fix.html>, 2026-05-04 | CC0 | **CC0** |
+| ukiyoe `man_genital` | <http://www.makehumancommunity.org/clothes/man_genital.html>, 2022-11-05 | CC0 | **CC0** |
+| spreadcore Alana and Errol "with genitals" skins | <http://www.makehumancommunity.org/skin/alana_caucasian_female_with_genitals_skin.html>, 2022-03-05; <http://www.makehumancommunity.org/skin/errol_caucasian_male_with_genitals_skin.html>, 2022-03-09 | CC0 | **CC0** |
+| FreezyChan Lucoa horns, JALdMIC houndoom horns | <http://www.makehumancommunity.org/node/1564>, 2018-07-21; <http://www.makehumancommunity.org/node/2995>, 2021-12-29 | CC0 | **CC0** |
+| porky11 `penis_rig`, cortu hair and clothing, culturalibre hair 05/06, JALdMIC donkey head | see 4.1 and 4.2 | CC0 | **CC0** |
 
-The adult lane's finding, "the community genital proxies are AGPL-3 despite CC0 page labels", holds for the Bastioni lineage and does not hold for wolgade's simplified-genital topologies, spamrakuen's fix, beebo123's labia, porky11's `simple_penis` or the targets, which pass.
+Still **not CC0**, because the page itself says otherwise:
 
-## 4. The rule
+| Asset | Page | Page licence |
+| --- | --- | --- |
+| wolgade "Adult Male Genitalia" | <http://www.makehumancommunity.org/proxy/adult_male_genitalia.html>, 2015-09-15 | AGPL |
+| wolgade "Adult Female Genitalia" | <http://www.makehumancommunity.org/proxy/adult_female_genitalia.html>, 2015-09-15 | AGPL |
+| wolgade "Adult Female Genitalia (old)" | <http://www.makehumancommunity.org/proxy/adult_female_genitalia_old.html>, 2015-09-27 | AGPL |
+| geyser "Adult Female Genitalia (new) HEALED" | <http://www.makehumancommunity.org/proxy/adult_female_genitalia_new_healed.html>, 2017-10-14 | AGPL |
+| culturalibre `hand_claws`, `hero_mask_5`, `hero_boots_4`, `heroine_boots_4` (listed CC0 in their packs) | see 4.1 | CC-BY |
+| sureshkumar genital materials; 123guzhanhong123 anatomy skins | see 4.2 | CC-BY |
 
-`scripts/lib/licenceRule.ts` (`judgeAsset`) implements it; `compileAsset` applies it to every asset it packs, and `tests/licenceRule.test.ts` holds each clause to a real case. An asset is CC0 when **A** or **B** holds.
+`penis01` and the MHX2 `.mxa` proxies have no community page; they are team assets outside the 2020 bundle and carry no CC0 header, so neither clause passes them.
 
-- **A — team asset.** Every text file carries the header of MakeHuman's own CC0 release, "This asset was explicitly released as CC0". No page is needed. Without a captured page this is the only way through, which keeps today's packs exactly as they were.
-- **B — community asset, page captured** (`CommunityPage`: URL, submitter, submission date, licence, description, retrieval date, `derivedFrom`).
-  - **B1** the page licence is CC0.
-  - **B2** every licence line in every file is CC0, or exactly MakeClothes 1's default AGPL3 line with an `author` that is the submitter (spacing and case ignored) or unknown. A mesh file (`.mhclo`, `.obj`, `.proxy`, `.mhskel`, `.mhw`) must carry a line; a target, material or texture may carry none and is then recorded as page-only.
-  - **B3** no file names the MakeHuman team, Bastioni or Larsson as author or copyright holder.
-  - **B4** no file shares a uuid with an asset known to fail (`FAILING_UUIDS`).
-  - **B5** every recorded source in `derivedFrom` is itself CC0 by its own statement and not a known failing asset (`FAILING_SOURCES`). A description that reads like a derivation ("taken from", "remapped", "HEALED", "Original … by", "based on", "created from"…) fails until the reader records either the source or `notDerivedBecause`. A design copied from a commercial character (Pokémon, an anime character) or from a CC-BY work is a non-CC0 source.
-- **C** nothing in the download states a stricter licence (CC-BY, NC, GPL or AGPL other than the B2 default). It is checked inside B2.
+## 4. Results
 
-No date enters the rule. The 2020 cutover matters only because it made the bundled assets CC0: their header passes A, and a community asset derived from the base mesh or a bundled proxy now derives from CC0.
+Every asset below was judged by the rule, as code, on 2026-10-09, from its live page. 4.1 covers the 63 page-and-file conflicts of the sourcing catalogue, the horn, beard and nail conflicts of the sourcing pass, and the `ears01` and `animal01` targets; 4.2 covers every genital and anatomy asset found on the site.
 
-## 5. Results
+### 4.1 Catalogue conflicts, sourcing-pass conflicts and anthro targets
 
-The rule was run, as code, over every asset below on 2026-10-09: the 63 page-and-file conflicts of the sourcing catalogue, the five sourcing-pass conflicts (horns, beards, nails), the `ears01` and `animal01` targets, and every genital asset found on the site. Each row quotes the page's "Submitted by" line and the files' licence and author lines; the deciding evidence column is the rule's own output.
-
-Notes on the rows:
-
-- **culturalibre**: the page credits a source for several assets. Quaternius' models are CC0 ("All models are under the CC0 License", [quaternius.com/faq](https://quaternius.com/faq.html); the [lowpoly-rpg](https://opengameart.org/content/lowpoly-rpg) page says "License(s): CC0"); Roachburn's [street thief](https://www.blendswap.com/blend/17623) is CC0 on BlendSwap; Joel Palmius' [Crude long gloves](http://www.makehumancommunity.org/clothes/crude_long_gloves.html) is CC0; the hero suits are "created from the male/female body base" (CC0). swift502's [blend 24099](https://www.blendswap.com/blend/24099) returns 404, so `culturalibre_hair_05`/`_06` have an unverifiable source and fail.
-- **cortu** (`hair01`, `pants01`, `shoes01`): the `.mhclo` carries no licence line at all and the `.obj` the MakeClothes default. Page CC0 is the only evidence for the binding file, so they fail B2. A re-export by the author with a licence line would pass.
-- **Character designs**: FreezyChan's Lucoa horns ("inspired by Lucoa/Quetzalcoatl from the anime Kobayashi San Chi no Maid Dragon"), JALdMIC's houndoom horns ("based in the Pokemon houndoom") and JALdMIC's donkey head ("based in Peppert and Carrot the picnic"; Pepper&Carrot is CC-BY 4.0, [licence](https://www.peppercarrot.com/en/license/index.html)) fail B5 although the uploaders dedicated their meshes to CC0.
-- **Skins** with genital graphics by wolgade (2015) are "the former official skin texture with genital graphics": team images, which the team's licence let be used under CC0 even before 2020 (§1), now uploaded CC0. They pass page-only.
-
-### 5.1 Catalogue conflicts, sourcing-pass conflicts and anthro targets
-
-| asset | pack | page: submitted by, on | page licence | verdict | deciding evidence |
+| asset | pack | page | submitted by, on | page licence | verdict |
 | --- | --- | --- | --- | --- | --- |
-| `culturalibre_faun_horns` | bodyparts01 | culturalibre, 2020-03-19 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: faun_horns.mhmat, faun_horns.png |
-| `culturalibre_minotaur_horns` | bodyparts01 | culturalibre, 2020-03-16 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: minotaur_horns.mhmat, horns.png |
-| `culturalibre_faun_beard` | bodyparts05 | culturalibre, 2020-03-19 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: brown.png, faun_beard.mhmat |
-| `rehmanpolanski_beard_viking` | bodyparts05 | RehmanPolanski, 2020-07-12 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Rehman Polanski" = submitter or unknown; .mhclo: file "license CC0"; page-only: beardviking.mhmat, BeardViking.png |
-| `rehmanpolanski_moustache_viking` | bodyparts05 | RehmanPolanski, 2020-07-12 | CC0 | **CC0 (B)** | .mhclo: file "license CC0"; .obj: MakeClothes default AGPL3 line, author "Rehman Polanski" = submitter or unknown; page-only: MoustacheViking.png, moustacheviking.mhmat |
-| `culturalibre_hand_claws` | equipment01 | culturalibre, 2021-02-26 | CC-BY | **not CC0** | B1: page licence is "CC-BY - Creative Commons Attribution" |
-| `culturalibre_hero_kalistick` | equipment01 | culturalibre, 2020-01-19 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: hero_kalistick.mhmat, metal.png |
-| `culturalibre_hero_kalistick_lefthanded` | equipment01 | culturalibre, 2020-01-19 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: hero_kalistick_lefthanded.mhmat, metal.png |
-| `culturalibre_magic_sceptre` | equipment01 | culturalibre, 2020-03-20 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: sceptre_texture.png, magic_sceptre.mhmat; derived from <https://opengameart.org/content/lowpoly-rpg> (quaternius, 2018-04-05) (CC0) |
-| `culturalibre_war_hammer` | equipment01 | culturalibre, 2019-12-25 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: warhammer.mhmat, hammer.png |
-| `culturalibre_wooden_bow` | equipment01 | culturalibre, 2020-03-20 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: wooden_bow.mhmat, bow.png; derived from quaternius model (Google Drive folder named on the page); <https://quaternius.com/faq.html:> "All models are under the CC0 License." (CC0) |
-| `culturalibre_doc_ock_glasses` | glasses01 | culturalibre, 2020-03-29 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: doc_ock_glasses.mhmat, glasses.png |
-| `culturalibre_hero-heroine_gloves_2` | gloves01 | culturalibre, 2020-01-16 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: red.png, hero-heroine_gloves_2.mhmat |
-| `culturalibre_hero-heroine_gloves_3` | gloves01 | culturalibre, 2020-02-07 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: hero-heroine_gloves_3.mhmat, green.png |
-| `culturalibre_hero-heroine_gloves_4` | gloves01 | culturalibre, 2020-03-07 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: red.png, hero-heroine_gloves_4.mhmat |
-| `culturalibre_hero-heroine_gloves_5` | gloves01 | culturalibre, 2020-04-01 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: hero-heroine_gloves_5.mhmat, hero-heroine_gloves_5.png; derived from <http://www.makehumancommunity.org/clothes/crude_long_gloves.html> (Joel Palmius, 2015-10-28) (CC0 - Creative Commons Zero) |
-| `cortu_shaggy_green_hair` | hair01 | Cortu, 2021-01-07 | CC0 | **not CC0** | B2: cortu_shaggy_green_hair.mhclo has no licence line |
-| `cortu_short_messy_hair` | hair01 | Cortu, 2021-01-07 | CC0 | **not CC0** | B2: cortu_short_messy_hair.mhclo has no licence line |
-| `cortu_straight_bangs` | hair01 | Cortu, 2021-01-07 | CC0 | **not CC0** | B2: cortu_straight_bangs.mhclo has no licence line |
-| `cortu_strawberry_cloud_hair` | hair01 | Cortu, 2021-01-07 | CC0 | **not CC0** | B2: cortu_strawberry_cloud_hair.mhclo has no licence line |
-| `culturalibre_hair_05` | hair01 | culturalibre, 2020-04-06 | CC0 | **not CC0** | B5: derived from <https://www.blendswap.com/blend/24099> (swift502), whose licence is "undetermined: the BlendSwap page returns 404 on 2026-10-09; only the uploader's quote "License CC-0" remains" |
-| `culturalibre_hair_06` | hair01 | culturalibre, 2020-04-16 | CC0 | **not CC0** | B5: derived from <https://www.blendswap.com/blend/24099> (swift502), whose licence is "undetermined: the BlendSwap page returns 404 on 2026-10-09; only the uploader's quote "License CC-0" remains" |
-| `culturalibre_hero-heroine_hood_1` | masks01 | culturalibre, 2020-01-18 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: hero-heroine_hood_1.mhmat, hero-heroine_hood_1.png |
-| `culturalibre_hero-heroine_hood_2` | masks01 | culturalibre, 2020-03-01 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: hero-heroine_hood_2.mhmat, hero-heroine_hood_2.png |
-| `culturalibre_hero_mask_1` | masks01 | culturalibre, 2019-12-29 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: hero_mask_1.png, hero_mask_1.mhmat |
-| `culturalibre_hero_mask_2` | masks01 | culturalibre, 2019-12-22 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: hero_mask_2.mhmat, hero_mask_2.png |
-| `culturalibre_hero_mask_3` | masks01 | culturalibre, 2020-02-09 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: purple.png, hero_mask_3.mhmat |
-| `culturalibre_hero_mask_4` | masks01 | culturalibre, 2020-02-09 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: hero_mask_4.mhmat, black.png |
-| `culturalibre_hero_mask_5` | masks01 | culturalibre, 2020-04-01 | CC-BY | **not CC0** | B1: page licence is "CC-BY - Creative Commons Attribution" |
-| `culturalibre_heroine_mask_1` | masks01 | culturalibre, 2020-04-10 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: red.png, heroine_mask_1.mhmat |
-| `cortu_cargo_pants` | pants01 | Cortu, 2021-01-07 | CC0 | **not CC0** | B2: cortu_cargo_pants.mhclo has no licence line |
-| `cortu_jeans_shorts` | pants01 | Cortu, 2021-01-07 | CC0 | **not CC0** | B2: cortu_jeans_shorts.mhclo has no licence line |
-| `cortu_floppy_overknee_shoes` | shoes01 | Cortu, 2021-01-07 | CC0 | **not CC0** | B2: cortu_floppy_overknee_shoes.mhclo has no licence line |
-| `cortu_t-bar` | shoes01 | Cortu, 2021-01-07 | CC0 | **not CC0** | B2: cortu_t-bar.mhclo has no licence line |
-| `culturalibre_hero_boots_1` | shoes01 | culturalibre, 2020-01-15 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: hero_boots_1.png, hero_boots_1.mhmat |
-| `culturalibre_hero_boots_2` | shoes01 | culturalibre, 2020-01-21 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: hero_boots_2.mhmat, blue.png |
-| `culturalibre_hero_boots_3` | shoes01 | culturalibre, 2020-01-21 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: hero_boots_3.mhmat, green.png |
-| `culturalibre_hero_boots_4` | shoes01 | culturalibre, 2020-01-31 | CC-BY | **not CC0** | B1: page licence is "CC-BY - Creative Commons Attribution" |
-| `culturalibre_hero_boots_5` | shoes01 | culturalibre, 2020-04-03 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: red.png, hero_boots_5.mhmat |
-| `culturalibre_heroine_boots_1` | shoes01 | culturalibre, 2020-01-26 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: heroine_boots_1.mhmat, black.png |
-| `culturalibre_heroine_boots_2` | shoes01 | culturalibre, 2020-02-07 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: green.png, heroine_boots_2.mhmat |
-| `culturalibre_heroine_boots_3` | shoes01 | culturalibre, 2020-02-07 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: heroine_boots_3.mhmat, purple.png |
-| `culturalibre_heroine_boots_4` | shoes01 | culturalibre, 2020-04-10 | CC-BY | **not CC0** | B1: page licence is "CC-BY - Creative Commons Attribution" |
-| `culturalibre_male_boots` | shoes01 | culturalibre, 2020-05-24 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: boot.png, male_boots.mhmat; derived from <https://www.blendswap.com/blend/17623> (Roachburn, "street thief") (CC0) |
-| `culturalibre_hero_suit_1` | suits02 | culturalibre, 2020-01-14 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: hero_suit_1.png, hero_suit_1.mhmat; derived from MakeHuman base mesh hm08 (CC0 (bundled asset, released 2020-09-26)) |
-| `culturalibre_hero_suit_2` | suits02 | culturalibre, 2020-02-28 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: red.png, hero_suit_2.mhmat; derived from MakeHuman base mesh hm08 (CC0 (bundled asset, released 2020-09-26)) |
-| `culturalibre_hero_suit_3` | suits02 | culturalibre, 2020-03-01 | CC0 | **CC0 (B)** | .mhclo: file "license CC-0"; .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; page-only: hero_suit_3.png, hero_suit_3.mhmat; derived from MakeHuman base mesh hm08 (CC0 (bundled asset, released 2020-09-26)) |
-| `culturalibre_heroine_suit_2` | suits02 | culturalibre, 2020-03-04 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .mhclo: file "license CC-0"; page-only: heroine_suit_2.mhmat, black.png; derived from MakeHuman base mesh hm08 (CC0 (bundled asset, released 2020-09-26)) |
-| `rehmanpolanski_viking_boots` | suits02 | RehmanPolanski, 2020-07-12 | CC0 | **CC0 (B)** | .mhclo: file "license CC0"; .obj: MakeClothes default AGPL3 line, author "Rehman Polanski" = submitter or unknown; page-only: BootsViking.png, bootsviking.mhmat |
-| `rehmanpolanski_viking_pants` | suits02 | RehmanPolanski, 2020-07-12 | CC0 | **CC0 (B)** | .mhclo: file "license CC0"; .obj: MakeClothes default AGPL3 line, author "Rehman Polanski" = submitter or unknown; page-only: pantsviking.mhmat, PantsViking.png |
-| `rehmanpolanski_viking_tunic` | suits02 | RehmanPolanski, 2020-07-12 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Rehman Polanski" = submitter or unknown; .mhclo: file "license CC0"; page-only: tunicviking.mhmat, TUNIC_Viking.png |
-| `v0rt3x_armsleeves_black_fishnet_large` | underwear01 | V0rT3X, 2016-05-11 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "V0rT3X" = submitter or unknown; .mhclo: file "license CC0 (see also <http://www.makehuman.org/doc/node/external_tools_license.html>)"; page-only: armsleeve_fishnet_large.png, armsleeve_fishnet_large.mhmat |
-| `v0rt3x_armsleeves_black_fishnet_medium` | underwear01 | V0rT3X, 2016-05-11 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "V0rT3X" = submitter or unknown; .mhclo: file "license CC0 (see also <http://www.makehuman.org/doc/node/external_tools_license.html>)"; page-only: armsleeve_fishnet_medium.png, armsleeve_fishnet_medium.mhmat |
-| `v0rt3x_armsleeves_black_fishnet_small` | underwear01 | V0rT3X, 2016-05-11 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "V0rT3X" = submitter or unknown; .mhclo: file "license CC0 (see also <http://www.makehuman.org/doc/node/external_tools_license.html>)"; page-only: armsleeve_fishnet_small.mhmat, armsleeve_fishnet_small.png |
-| `v0rt3x_armsleeves_white_fishnet_large` | underwear01 | V0rT3X, 2016-05-11 | CC0 | **CC0 (B)** | .mhclo: file "license CC0 (see also <http://www.makehuman.org/doc/node/external_tools_license.html>)"; .obj: MakeClothes default AGPL3 line, author "V0rT3X" = submitter or unknown; page-only: armsleeve_white_l.png, armsleeve_white_l.mhmat |
-| `v0rt3x_armsleeves_white_fishnet_medium` | underwear01 | V0rT3X, 2016-05-11 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "V0rT3X" = submitter or unknown; .mhclo: file "license CC0 (see also <http://www.makehuman.org/doc/node/external_tools_license.html>)"; page-only: armsleeve_white_m.mhmat, armsleeve_white_m.png |
-| `v0rt3x_armsleeves_white_fishnet_small` | underwear01 | V0rT3X, 2016-05-11 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "V0rT3X" = submitter or unknown; .mhclo: file "license CC0 (see also <http://www.makehuman.org/doc/node/external_tools_license.html>)"; page-only: armsleeve_white_s.mhmat, armsleeve_white_s.png |
-| `v0rt3x_stockings_black_fishnet_large` | underwear01 | V0rT3X, 2016-05-11 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "V0rt3X" = submitter or unknown; .mhclo: file "license CC0 (see also <http://www.makehuman.org/doc/node/external_tools_license.html>)"; page-only: stockings_fishnet_large.mhmat, stockings_fishnet_large.png |
-| `v0rt3x_stockings_black_fishnet_medium` | underwear01 | V0rT3X, 2016-05-11 | CC0 | **CC0 (B)** | .mhclo: file "license CC0 (see also <http://www.makehuman.org/doc/node/external_tools_license.html>)"; .obj: MakeClothes default AGPL3 line, author "V0rt3X" = submitter or unknown; page-only: stockings_fishnet_medium.png, stockings_fishnet_medium.mhmat |
-| `v0rt3x_stockings_black_fishnet_small` | underwear01 | V0rT3X, 2016-05-11 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "V0rt3X" = submitter or unknown; .mhclo: file "license CC0 (see also <http://www.makehuman.org/doc/node/external_tools_license.html>)"; page-only: stockings_fishnet_small.mhmat, stockings_fishnet_small.png |
-| `v0rt3x_stockings_white_fishnet_large` | underwear01 | V0rT3X, 2016-05-11 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "V0rt3X" = submitter or unknown; .mhclo: file "license CC0 (see also <http://www.makehuman.org/doc/node/external_tools_license.html>)"; page-only: stockings_white_l.png, stockings_white_l.mhmat |
-| `v0rt3x_stockings_white_fishnet_medium` | underwear01 | V0rT3X, 2016-05-11 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "V0rt3X" = submitter or unknown; .mhclo: file "license CC0 (see also <http://www.makehuman.org/doc/node/external_tools_license.html>)"; page-only: stockings_white_m.png, stockings_white_m.mhmat |
-| `v0rt3x_stockings_white_fishnet_small` | underwear01 | V0rT3X, 2016-05-11 | CC0 | **CC0 (B)** | .mhclo: file "license CC0 (see also <http://www.makehuman.org/doc/node/external_tools_license.html>)"; .obj: MakeClothes default AGPL3 line, author "V0rt3X" = submitter or unknown; page-only: stockings_white_s.png, stockings_white_s.mhmat |
-| `freezychan_lucoa_quetzalcoatl_horns` | bodyparts01 | FreezyChan, 2018-07-21 | CC0 | **not CC0** | B5: derived from the character Lucoa/Quetzalcoatl, Kobayashi-san Chi no Maid Dragon (Coolkyousinnjya / Futabasha), whose licence is "proprietary character design" |
-| `jaldmic_houndoom_horns` | bodyparts01 | JALdMIC, 2021-12-29 | CC0 | **not CC0** | B5: derived from the Pokémon "Houndoom" character design (Nintendo / Game Freak), whose licence is "proprietary character design" |
-| `grinsegold_fingernails_female_natural` | bodyparts04 | grinsegold, 2015-12-29 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "grinsegold" = submitter or unknown; .mhclo: MakeClothes default AGPL3 line, author "grinsegold" = submitter or unknown; page-only: toenail_natural_diff.png, fingernails_elegant.mhmat, toenail_natural_Normal.png |
-| `grinsegold_beard_sigmund_wip` | bodyparts05 | grinsegold, 2017-07-19 | CC0 | **CC0 (B)** | .mhclo: MakeClothes default AGPL3 line, author "grinsegold" = submitter or unknown; .obj: MakeClothes default AGPL3 line, author "grinsegold" = submitter or unknown; page-only: Material_Diffuse_Color1_hn.png, Material_Diffuse_Color1_s.png, Material_Diffuse_Color1_d.png, Material_Diffuse_Color1_h.png, beard_sigmund.mhmat |
-| `wdg_scruffy_beard` | bodyparts05 | WDG, 2019-02-03 | CC0 | **CC0 (B)** | .mhclo: MakeClothes default AGPL3 line, author "WDG" = submitter or unknown; .obj: MakeClothes default AGPL3 line, author "WDG" = submitter or unknown; page-only: scruffy_beard.mhmat, beard2_texture-SMUDGE2.png |
-| `elvs_ear_flap_bottom_out` | ears01 | Elvaerwyn, 2021-01-04 | CC0 | **CC0 (B)** | page-only: elvs_ear_flap_bottom_out.target |
-| `elvs_flap_ears_1` | ears01 | Elvaerwyn, 2021-01-04 | CC0 | **CC0 (B)** | page-only: elvs_flap_ears_1.target |
-| `elvs_flap_ears_2` | ears01 | Elvaerwyn, 2021-01-04 | CC0 | **CC0 (B)** | page-only: elvs_flap_ears_2.target |
-| `elvs_flap_ears_3` | ears01 | Elvaerwyn, 2021-01-04 | CC0 | **CC0 (B)** | page-only: elvs_flap_ears_3.target |
-| `jujube_ear_canal` | ears01 | jujube, 2017-02-04 | CC0 | **CC0 (B)** | page-only: jujube_ear_canal.target |
-| `mindfront_ear_details` | ears01 | Mindfront, 2018-08-31 | CC0 | **CC0 (B)** | page-only: mindfront_ear_details.target |
-| `mindfront_ear_in` | ears01 | Mindfront, 2018-08-31 | CC0 | **CC0 (B)** | page-only: mindfront_ear_in.target |
-| `rehmanpolanski_ear_flatten` | ears01 | RehmanPolanski, 2020-07-12 | CC0 | **CC0 (B)** | page-only: rehmanpolanski_ear_flatten.target |
-| `culturalibre_faun_face` | animal01 | culturalibre, 2020-03-19 | CC0 | **CC0 (B)** | page-only: culturalibre_faun_face.target |
-| `elvs_piggy_nose1` | animal01 | Elvaerwyn, 2020-03-28 | CC0 | **CC0 (B)** | page-only: elvs_piggy_nose1.target |
-| `jaldmic_donkey_head` | animal01 | JALdMIC, 2024-03-31 | CC0 | **not CC0** | B5: derived from Pepper&Carrot, "the picnic" (David Revoy); <https://www.peppercarrot.com/en/license/index.html>, whose licence is "CC-BY 4.0" |
-| `jaldmic_equinus_headv2` | animal01 | JALdMIC, 2021-10-21 | CC0 | **CC0 (B)** | page-only: jaldmic_equinus_headv2.target |
-| `titleknown_catgirl_ears` | animal01 | titleknown, 2017-11-19 | CC0 | **CC0 (B)** | page-only: titleknown_catgirl_ears.target |
+| `culturalibre_faun_horns` | bodyparts01 | <http://www.makehumancommunity.org/node/2355> | culturalibre, 2020-03-19 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_minotaur_horns` | bodyparts01 | <http://www.makehumancommunity.org/node/2352> | culturalibre, 2020-03-16 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_faun_beard` | bodyparts05 | <http://www.makehumancommunity.org/node/2356> | culturalibre, 2020-03-19 | CC0 - Creative Commons Zero | **CC0** |
+| `rehmanpolanski_beard_viking` | bodyparts05 | <http://www.makehumancommunity.org/node/2614> | RehmanPolanski, 2020-07-12 | CC0 - Creative Commons Zero | **CC0** |
+| `rehmanpolanski_moustache_viking` | bodyparts05 | <http://www.makehumancommunity.org/node/2615> | RehmanPolanski, 2020-07-12 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hand_claws` | equipment01 | <http://www.makehumancommunity.org/node/2840> | culturalibre, 2021-02-26 | CC-BY - Creative Commons Attribution | **not CC0** |
+| `culturalibre_hero_kalistick` | equipment01 | <http://www.makehumancommunity.org/node/2119> | culturalibre, 2020-01-19 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_kalistick_lefthanded` | equipment01 | <http://www.makehumancommunity.org/node/2120> | culturalibre, 2020-01-19 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_magic_sceptre` | equipment01 | <http://www.makehumancommunity.org/node/2358> | culturalibre, 2020-03-20 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_war_hammer` | equipment01 | <http://www.makehumancommunity.org/node/2051> | culturalibre, 2019-12-25 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_wooden_bow` | equipment01 | <http://www.makehumancommunity.org/node/2362> | culturalibre, 2020-03-20 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_doc_ock_glasses` | glasses01 | <http://www.makehumancommunity.org/node/2378> | culturalibre, 2020-03-29 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero-heroine_gloves_2` | gloves01 | <http://www.makehumancommunity.org/node/2093> | culturalibre, 2020-01-16 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero-heroine_gloves_3` | gloves01 | <http://www.makehumancommunity.org/node/2193> | culturalibre, 2020-02-07 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero-heroine_gloves_4` | gloves01 | <http://www.makehumancommunity.org/node/2333> | culturalibre, 2020-03-07 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero-heroine_gloves_5` | gloves01 | <http://www.makehumancommunity.org/node/2401> | culturalibre, 2020-04-01 | CC0 - Creative Commons Zero | **CC0** |
+| `cortu_shaggy_green_hair` | hair01 | <http://www.makehumancommunity.org/node/2811> | Cortu, 2021-01-07 | CC0 - Creative Commons Zero | **CC0** |
+| `cortu_short_messy_hair` | hair01 | <http://www.makehumancommunity.org/node/2809> | Cortu, 2021-01-07 | CC0 - Creative Commons Zero | **CC0** |
+| `cortu_straight_bangs` | hair01 | <http://www.makehumancommunity.org/node/2810> | Cortu, 2021-01-07 | CC0 - Creative Commons Zero | **CC0** |
+| `cortu_strawberry_cloud_hair` | hair01 | <http://www.makehumancommunity.org/node/2808> | Cortu, 2021-01-07 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hair_05` | hair01 | <http://www.makehumancommunity.org/node/2445> | culturalibre, 2020-04-06 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hair_06` | hair01 | <http://www.makehumancommunity.org/node/2479> | culturalibre, 2020-04-16 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero-heroine_hood_1` | masks01 | <http://www.makehumancommunity.org/node/2100> | culturalibre, 2020-01-18 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero-heroine_hood_2` | masks01 | <http://www.makehumancommunity.org/node/2309> | culturalibre, 2020-03-01 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_mask_1` | masks01 | <http://www.makehumancommunity.org/node/2055> | culturalibre, 2019-12-29 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_mask_2` | masks01 | <http://www.makehumancommunity.org/node/2049> | culturalibre, 2019-12-22 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_mask_3` | masks01 | <http://www.makehumancommunity.org/node/2202> | culturalibre, 2020-02-09 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_mask_4` | masks01 | <http://www.makehumancommunity.org/node/2220> | culturalibre, 2020-02-09 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_mask_5` | masks01 | <http://www.makehumancommunity.org/node/2396> | culturalibre, 2020-04-01 | CC-BY - Creative Commons Attribution | **not CC0** |
+| `culturalibre_heroine_mask_1` | masks01 | <http://www.makehumancommunity.org/node/2474> | culturalibre, 2020-04-10 | CC0 - Creative Commons Zero | **CC0** |
+| `cortu_cargo_pants` | pants01 | <http://www.makehumancommunity.org/node/2798> | Cortu, 2021-01-07 | CC0 - Creative Commons Zero | **CC0** |
+| `cortu_jeans_shorts` | pants01 | <http://www.makehumancommunity.org/node/2800> | Cortu, 2021-01-07 | CC0 - Creative Commons Zero | **CC0** |
+| `cortu_floppy_overknee_shoes` | shoes01 | <http://www.makehumancommunity.org/node/2803> | Cortu, 2021-01-07 | CC0 - Creative Commons Zero | **CC0** |
+| `cortu_t-bar` | shoes01 | <http://www.makehumancommunity.org/node/2801> | Cortu, 2021-01-07 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_boots_1` | shoes01 | <http://www.makehumancommunity.org/node/2081> | culturalibre, 2020-01-15 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_boots_2` | shoes01 | <http://www.makehumancommunity.org/node/2132> | culturalibre, 2020-01-21 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_boots_3` | shoes01 | <http://www.makehumancommunity.org/node/2138> | culturalibre, 2020-01-21 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_boots_4` | shoes01 | <http://www.makehumancommunity.org/node/2167> | culturalibre, 2020-01-31 | CC-BY - Creative Commons Attribution | **not CC0** |
+| `culturalibre_hero_boots_5` | shoes01 | <http://www.makehumancommunity.org/node/2424> | culturalibre, 2020-04-03 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_heroine_boots_1` | shoes01 | <http://www.makehumancommunity.org/node/2155> | culturalibre, 2020-01-26 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_heroine_boots_2` | shoes01 | <http://www.makehumancommunity.org/node/2181> | culturalibre, 2020-02-07 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_heroine_boots_3` | shoes01 | <http://www.makehumancommunity.org/node/2187> | culturalibre, 2020-02-07 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_heroine_boots_4` | shoes01 | <http://www.makehumancommunity.org/node/2464> | culturalibre, 2020-04-10 | CC-BY - Creative Commons Attribution | **not CC0** |
+| `culturalibre_male_boots` | shoes01 | <http://www.makehumancommunity.org/node/2548> | culturalibre, 2020-05-24 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_suit_1` | suits02 | <http://www.makehumancommunity.org/node/2061> | culturalibre, 2020-01-14 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_suit_2` | suits02 | <http://www.makehumancommunity.org/node/2292> | culturalibre, 2020-02-28 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_hero_suit_3` | suits02 | <http://www.makehumancommunity.org/node/2308> | culturalibre, 2020-03-01 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_heroine_suit_2` | suits02 | <http://www.makehumancommunity.org/node/2317> | culturalibre, 2020-03-04 | CC0 - Creative Commons Zero | **CC0** |
+| `rehmanpolanski_viking_boots` | suits02 | <http://www.makehumancommunity.org/node/2619> | RehmanPolanski, 2020-07-12 | CC0 - Creative Commons Zero | **CC0** |
+| `rehmanpolanski_viking_pants` | suits02 | <http://www.makehumancommunity.org/node/2618> | RehmanPolanski, 2020-07-12 | CC0 - Creative Commons Zero | **CC0** |
+| `rehmanpolanski_viking_tunic` | suits02 | <http://www.makehumancommunity.org/node/2617> | RehmanPolanski, 2020-07-12 | CC0 - Creative Commons Zero | **CC0** |
+| `v0rt3x_armsleeves_black_fishnet_large` | underwear01 | <http://www.makehumancommunity.org/node/305> | V0rT3X, 2016-05-11 | CC0 - Creative Commons Zero | **CC0** |
+| `v0rt3x_armsleeves_black_fishnet_medium` | underwear01 | <http://www.makehumancommunity.org/node/304> | V0rT3X, 2016-05-11 | CC0 - Creative Commons Zero | **CC0** |
+| `v0rt3x_armsleeves_black_fishnet_small` | underwear01 | <http://www.makehumancommunity.org/node/303> | V0rT3X, 2016-05-11 | CC0 - Creative Commons Zero | **CC0** |
+| `v0rt3x_armsleeves_white_fishnet_large` | underwear01 | <http://www.makehumancommunity.org/node/302> | V0rT3X, 2016-05-11 | CC0 - Creative Commons Zero | **CC0** |
+| `v0rt3x_armsleeves_white_fishnet_medium` | underwear01 | <http://www.makehumancommunity.org/node/301> | V0rT3X, 2016-05-11 | CC0 - Creative Commons Zero | **CC0** |
+| `v0rt3x_armsleeves_white_fishnet_small` | underwear01 | <http://www.makehumancommunity.org/node/300> | V0rT3X, 2016-05-11 | CC0 - Creative Commons Zero | **CC0** |
+| `v0rt3x_stockings_black_fishnet_large` | underwear01 | <http://www.makehumancommunity.org/node/296> | V0rT3X, 2016-05-11 | CC0 - Creative Commons Zero | **CC0** |
+| `v0rt3x_stockings_black_fishnet_medium` | underwear01 | <http://www.makehumancommunity.org/node/295> | V0rT3X, 2016-05-11 | CC0 - Creative Commons Zero | **CC0** |
+| `v0rt3x_stockings_black_fishnet_small` | underwear01 | <http://www.makehumancommunity.org/node/294> | V0rT3X, 2016-05-11 | CC0 - Creative Commons Zero | **CC0** |
+| `v0rt3x_stockings_white_fishnet_large` | underwear01 | <http://www.makehumancommunity.org/node/299> | V0rT3X, 2016-05-11 | CC0 - Creative Commons Zero | **CC0** |
+| `v0rt3x_stockings_white_fishnet_medium` | underwear01 | <http://www.makehumancommunity.org/node/298> | V0rT3X, 2016-05-11 | CC0 - Creative Commons Zero | **CC0** |
+| `v0rt3x_stockings_white_fishnet_small` | underwear01 | <http://www.makehumancommunity.org/node/297> | V0rT3X, 2016-05-11 | CC0 - Creative Commons Zero | **CC0** |
+| `freezychan_lucoa_quetzalcoatl_horns` | bodyparts01 | <http://www.makehumancommunity.org/node/1564> | FreezyChan, 2018-07-21 | CC0 - Creative Commons Zero | **CC0** |
+| `jaldmic_houndoom_horns` | bodyparts01 | <http://www.makehumancommunity.org/node/2995> | JALdMIC, 2021-12-29 | CC0 - Creative Commons Zero | **CC0** |
+| `grinsegold_fingernails_female_natural` | bodyparts04 | <http://www.makehumancommunity.org/node/195> | grinsegold, 2015-12-29 | CC0 - Creative Commons Zero | **CC0** |
+| `grinsegold_beard_sigmund_wip` | bodyparts05 | <http://www.makehumancommunity.org/node/877> | grinsegold, 2017-07-19 | CC0 - Creative Commons Zero | **CC0** |
+| `wdg_scruffy_beard` | bodyparts05 | <http://www.makehumancommunity.org/node/1769> | WDG, 2019-02-03 | CC0 - Creative Commons Zero | **CC0** |
+| `elvs_ear_flap_bottom_out` | ears01 | <http://www.makehumancommunity.org/node/2782> | Elvaerwyn, 2021-01-04 | CC0 - Creative Commons Zero | **CC0** |
+| `elvs_flap_ears_1` | ears01 | <http://www.makehumancommunity.org/node/2779> | Elvaerwyn, 2021-01-04 | CC0 - Creative Commons Zero | **CC0** |
+| `elvs_flap_ears_2` | ears01 | <http://www.makehumancommunity.org/node/2780> | Elvaerwyn, 2021-01-04 | CC0 - Creative Commons Zero | **CC0** |
+| `elvs_flap_ears_3` | ears01 | <http://www.makehumancommunity.org/node/2781> | Elvaerwyn, 2021-01-04 | CC0 - Creative Commons Zero | **CC0** |
+| `jujube_ear_canal` | ears01 | <http://www.makehumancommunity.org/node/612> | jujube, 2017-02-04 | CC0 - Creative Commons Zero | **CC0** |
+| `mindfront_ear_details` | ears01 | <http://www.makehumancommunity.org/node/1588> | Mindfront, 2018-08-31 | CC0 - Creative Commons Zero | **CC0** |
+| `mindfront_ear_in` | ears01 | <http://www.makehumancommunity.org/node/1589> | Mindfront, 2018-08-31 | CC0 - Creative Commons Zero | **CC0** |
+| `rehmanpolanski_ear_flatten` | ears01 | <http://www.makehumancommunity.org/node/2624> | RehmanPolanski, 2020-07-12 | CC0 - Creative Commons Zero | **CC0** |
+| `culturalibre_faun_face` | animal01 | <http://www.makehumancommunity.org/node/2357> | culturalibre, 2020-03-19 | CC0 - Creative Commons Zero | **CC0** |
+| `elvs_piggy_nose1` | animal01 | <http://www.makehumancommunity.org/node/2372> | Elvaerwyn, 2020-03-28 | CC0 - Creative Commons Zero | **CC0** |
+| `jaldmic_donkey_head` | animal01 | <http://www.makehumancommunity.org/node/3535> | JALdMIC, 2024-03-31 | CC0 - Creative Commons Zero | **CC0** |
+| `jaldmic_equinus_headv2` | animal01 | <http://www.makehumancommunity.org/node/2952> | JALdMIC, 2021-10-21 | CC0 - Creative Commons Zero | **CC0** |
+| `titleknown_catgirl_ears` | animal01 | <http://www.makehumancommunity.org/node/1153> | titleknown, 2017-11-19 | CC0 - Creative Commons Zero | **CC0** |
 
-### 5.2 Genital and anatomy assets on the community site
+### 4.2 Genital and anatomy assets on the community site
 
-| asset | pack | page: submitted by, on | page licence | verdict | deciding evidence |
+| asset | pack | page | submitted by, on | page licence | verdict |
 | --- | --- | --- | --- | --- | --- |
-| `adult_female_2020` | single asset | bogdan666, 2019-11-17 | CC0 | **not CC0** | B5: derived from adult_female_genitalia_new_healed: AGPL (page licence AGPL) |
-| `adult_female_genitalia_remapped` | single asset | MTKnife, 2017-07-28 | CC0 | **not CC0** | B5: derived from adult_female_genitalia: AGPL (Bastioni; page licence AGPL) |
-| `adult_male_genitalia_breast_fix` | single asset | ieroglif, 2026-05-04 | CC0 | **not CC0** | B5: derived from adult_male_genitalia: AGPL (Bastioni; page licence AGPL) |
-| `adult_male_genitalia_xsuprem3x` | single asset | XSuprem3X, 2017-03-26 | CC0 | **not CC0** | B5: derived from adult_male_genitalia: AGPL (Bastioni; page licence AGPL) |
-| `erect_penis_only_works_with_males` | single asset | Slayer227, 2022-01-06 | CC0 | **not CC0** | B5: derived from a "HEALED" genital proxy (the files are named Male_Gen-Heal1); the page does not say which, whose licence is "undetermined" |
-| `female_generic_with_simplified_genitals` | single asset | wolgade, 2017-04-04 | CC0 | **CC0 (B)** | .obj: file "license CC0"; .proxy: file "license CC0"; derived from MakeHuman female_generic topology (bundled proxy) (CC0 (bundled asset, released 2020-09-26)) |
-| `female_generic_with_simplified_genitals_fixed` | single asset | spamrakuen, 2023-05-05 | CC0 | **CC0 (B)** | .obj: file "license CC0"; .proxy: file "license CC0"; derived from proxy/female_generic_with_simplified_genitals.html (wolgade) (CC0 - Creative Commons Zero) |
-| `female_less_muscular_with_simplified_genitals` | single asset | wolgade, 2016-09-20 | CC0 | **CC0 (B)** | .obj: file "license CC0"; .proxy: file "license CC0"; derived from proxy/female_muscular_with_simplified_genitals.html (wolgade) (CC0 - Creative Commons Zero) |
-| `female_muscular_with_simplified_genitals` | single asset | wolgade, 2016-06-13 | CC0 | **CC0 (B)** | .obj: file "license CC0"; .proxy: file "license CC0"; derived from MakeHuman female_muscular topology (bundled proxy) (CC0 (bundled asset, released 2020-09-26)) |
-| `simple_penis` | single asset | porky11, 2018-02-24 | CC0 | **CC0 (B)** | .obj: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; .proxy: MakeClothes default AGPL3 line, author "Unknown" = submitter or unknown; derived from MakeHuman base mesh hm08 ("Just adds a penis to the base mesh") (CC0 (bundled asset, released 2020-09-26)) |
-| `man_genital` | single asset | ukiyoe, 2022-11-05 | CC0 | **CC0 (B)** | .mhclo: file "license CC0"; .mhmat: file "license CC0"; .obj: file "license CC0" |
-| `realisticlabialonger` | single asset | beebo123, 2022-04-15 | CC0 | **CC0 (B)** | .mhclo: file "license CC0"; .obj: file "license CC0"; page-only: BetterSimplifiedVulvaLongerLabia.mhmat, young_lightskinned_female_genitals_diffusePale.png |
-| `realisticlabiamedium` | single asset | beebo123, 2022-04-15 | CC0 | **CC0 (B)** | .mhclo: file "license CC0"; .obj: file "license CC0"; page-only: BetterSimplifiedVulvaMediumLabia.mhmat, young_lightskinned_female_genitals_diffusePale.png |
-| `realisticlabiashorter` | single asset | beebo123, 2022-04-15 | CC0 | **CC0 (B)** | .mhclo: file "license CC0"; .obj: file "license CC0"; page-only: BetterSimplifiedVulvaShorterLabia.mhmat, young_lightskinned_female_genitals_diffusePale.png |
-| `anus_deep` | single asset | frankyaye, 2015-07-25 | CC0 | **CC0 (B)** | page-only: Anus_deep.target |
-| `anus_small_length` | single asset | frankyaye, 2015-07-25 | CC0 | **CC0 (B)** | page-only: Anus_small_length.target |
-| `anus_small_width` | single asset | frankyaye, 2015-07-25 | CC0 | **CC0 (B)** | page-only: Anus_small_width.target |
-| `balls_round` | single asset | jujube, 2017-01-15 | CC0 | **CC0 (B)** | page-only: balls round.target |
-| `cold_balls` | single asset | porky11, 2018-02-24 | CC0 | **CC0 (B)** | page-only: Cold Balls.target |
-| `vulva_deep_low_for_adult_female_genetialia` | single asset | frankyaye, 2015-07-25 | CC0 | **CC0 (B)** | page-only: Vulva_Deep_Low.target |
-| `vulva_deep_middle_for_adult_female_genetialia` | single asset | frankyaye, 2015-07-25 | CC0 | **CC0 (B)** | page-only: Vulva_Deep_Middle.target |
-| `vulva_deep_top_for_adult_female_genetialia` | single asset | frankyaye, 2015-07-25 | CC0 | **CC0 (B)** | page-only: Vulva_Deep_Top.target |
-| `vulva_narrow_for_adult_female_genetialia` | single asset | frankyaye, 2015-07-25 | CC0 | **CC0 (B)** | page-only: Vulva_Narrow.target |
-| `vulva_short_for_adult_female_genetialia` | single asset | frankyaye, 2015-07-25 | CC0 | **CC0 (B)** | page-only: Vulva_Short.target |
-| `penis_rig` | single asset | porky11, 2018-02-24 | CC0 | **not CC0** | B2: default_penis.mhskel has no licence line |
-| `african_middle_age_muscular_genitals_male` | single asset | sureshkumar, 2022-09-02 | CC-BY | **not CC0** | B1: page licence is "CC-BY - Creative Commons Attribution" |
-| `middle_age_african_male_and_genitals` | single asset | sureshkumar, 2022-09-02 | CC-BY | **not CC0** | B1: page licence is "CC-BY - Creative Commons Attribution" |
-| `alana_caucasian_female_with_genitals_skin` | single asset | spreadcore, 2022-03-05 | CC0 | **CC0 (B)** | page-only: Alana_Caucasian_Female_with_Genitals_skin.MHMAT, Alana_Caucasian_Female_with_Genitals_skin.png |
-| `anatomy_of_female_skin` | single asset | 123guzhanhong123, 2020-12-07 | CC-BY | **not CC0** | B1: page licence is "CC-BY - Creative Commons Attribution" |
-| `errol_caucasian_male_with_genitals_skin` | single asset | spreadcore, 2022-03-09 | CC0 | **CC0 (B)** | page-only: Errol_Caucasian_Male_with_Genitals_skin.MHMAT, Errol_Caucasian_Male_with_Genitals_skin.png |
-| `female_anatomy` | single asset | 123guzhanhong123, 2021-12-12 | CC-BY | **not CC0** | B1: page licence is "CC-BY - Creative Commons Attribution" |
-| `female_anatomy_substance_painter_manufacturing_operation` | single asset | 123guzhanhong123, 2021-12-12 | CC-BY | **not CC0** | B1: page licence is "CC-BY - Creative Commons Attribution" |
-| `genuine_caucasian_female_with_genitals_paths_fixed` | single asset | saltycowdawg, 2019-11-25 | CC0 | **CC0 (B)** | page-only: genuine_young_caucasian_female_genitals.mhmat, young_lightskinned_female_genuine_genitals_blush_dark_diffuse.png; derived from skin by oversword of the same name (CC0 - Creative Commons Zero) |
-| `middleage_african_female_with_genitals` | single asset | wolgade, 2015-09-27 | CC0 | **CC0 (B)** | page-only: middleage_african_female_genitals.mhmat, middleage_darkskinned_female_genitals_diffuse.png |
-| `middleage_african_male_with_genitals` | single asset | wolgade, 2015-09-27 | CC0 | **CC0 (B)** | page-only: middleage_african_male_genitals.mhmat, middleage_darkskinned_male_genitals_diffuse.png |
-| `middleage_asian_female_with_genitals` | single asset | wolgade, 2015-09-27 | CC0 | **CC0 (B)** | page-only: middleage_asian_female_genitals.mhmat, middleage_lightskinned_female_genitals_diffuse2.png |
-| `middleage_asian_male_with_genitals` | single asset | wolgade, 2015-09-27 | CC0 | **CC0 (B)** | page-only: middleage_asian_male_genitals.mhmat, middleage_lightskinned_male_genitals_diffuse2.png |
-| `middleage_caucasian_female_with_genitals` | single asset | wolgade, 2015-09-27 | CC0 | **CC0 (B)** | page-only: middleage_caucasian_female_genitals.mhmat, middleage_lightskinned_female_genitals_diffuse.png |
-| `middleage_caucasian_male_with_genitals` | single asset | wolgade, 2015-09-27 | CC0 | **CC0 (B)** | page-only: middleage_caucasian_male_genitals.mhmat, middleage_lightskinned_male_genitals_diffuse.png |
-| `middleage_slavic_male_with_genitals_and_beard` | single asset | jartur69, 2018-06-02 | CC0 | **CC0 (B)** | page-only: Jartur_mid_old_Slavic_Male_with_Genitals_and_Beard_lsdif_lighter.mhmat, Jartur_mid_old_Slavic_Male_with_Genitals_and_Beard_lsdif_lighter.png; derived from skin/old_caucasian_male_with_genitals (wolgade) (CC0 - Creative Commons Zero) |
-| `old_african_female_with_genitals` | single asset | wolgade, 2015-09-27 | CC0 | **CC0 (B)** | page-only: old_african_female_genitals.mhmat, old_darkskinned_female_genitals_diffuse.png |
-| `old_african_male_with_genitals` | single asset | wolgade, 2015-09-27 | CC0 | **CC0 (B)** | page-only: old_african_male_genitals.mhmat, old_darkskinned_male_genitals_diffuse.png |
-| `old_asian_female_with_genitals` | single asset | wolgade, 2015-09-27 | CC0 | **CC0 (B)** | page-only: old_asian_female_genitals.mhmat, old_lightskinned_female_genitals_diffuse2.png |
-| `old_asian_male_with_genitals` | single asset | wolgade, 2015-09-27 | CC0 | **CC0 (B)** | page-only: old_asian_male_genitals.mhmat, old_lightskinned_male_genitals_diffuse2.png |
-| `old_caucasian_female_with_genitals` | single asset | wolgade, 2015-09-27 | CC0 | **CC0 (B)** | page-only: old_caucasian_female_genitals.mhmat, old_lightskinned_female_genitals_diffuse.png |
-| `old_caucasian_male_with_genitals` | single asset | wolgade, 2015-09-27 | CC0 | **CC0 (B)** | page-only: old_caucasian_male_genitals.mhmat, old_lightskinned_male_genitals_diffuse.png |
-| `old_slavic_male_with_genitals_and_beard` | single asset | jartur69, 2018-06-02 | CC0 | **CC0 (B)** | page-only: Jartur_old_Slavic_Male_with_Genitals_and_beard_lsdif.mhmat, Jartur_old_Slavic_Male_with_Genitals_and_beard_lsdif.png; derived from skin/old_caucasian_male_with_genitals (wolgade) (CC0 - Creative Commons Zero) |
-| `young_african_female_with_genitals` | single asset | wolgade, 2015-09-15 | CC0 | **CC0 (B)** | page-only: young_african_female_genitals.mhmat, young_darkskinned_female_genitals_diffuse.png |
-| `young_african_female_with_genitals_use_instructions` | single asset | Theomatics, 2021-04-29 | CC0 | **CC0 (B)** | page-only: young_african_female_genitals.mhmat, young_darkskinned_female_genitals_diffuse.png; derived from skin/young_african_female_with_genitals (wolgade) (CC0 - Creative Commons Zero) |
-| `young_african_male_with_genitals` | single asset | wolgade, 2015-09-15 | CC0 | **CC0 (B)** | page-only: young_african_male_genitals.mhmat, young_darkskinned_male_genitals_diffuse.png |
-| `young_asian_female_with_genitals` | single asset | wolgade, 2015-09-15 | CC0 | **CC0 (B)** | page-only: young_asian_female_genitals.mhmat, young_lightskinned_female_genitals_diffuse3.png |
-| `young_asian_male_with_genitals` | single asset | wolgade, 2015-09-15 | CC0 | **CC0 (B)** | page-only: young_asian_male_genitals.mhmat, young_lightskinned_male_genitals_diffuse3.png |
-| `young_caucasian_female2_with_genitals` | single asset | wolgade, 2015-09-15 | CC0 | **CC0 (B)** | page-only: young_caucasian_female2_genitals.mhmat, young_lightskinned_female_genitals_diffuse2.png |
-| `young_caucasian_female_with_genitals` | single asset | wolgade, 2015-09-15 | CC0 | **CC0 (B)** | page-only: young_caucasian_female_genitals.mhmat, young_lightskinned_female_genitals_diffuse.png |
-| `young_caucasian_female_with_genuine_genitals` | single asset | oversword, 2016-01-02 | CC0 | **CC0 (B)** | page-only: genuine_young_caucasian_female_genitals.mhmat, young_lightskinned_female_genuine_genitals_blush_dark_diffuse.png, young_lightskinned_female_genuine_genitals_diffuse.png; derived from skin/young_caucasian_female_with_genitals_by_manuel_bastioni (former official skin) (CC0 - Creative Commons Zero (page)) |
-| `young_caucasian_male2_with_genitals` | single asset | wolgade, 2015-09-15 | CC0 | **CC0 (B)** | page-only: young_caucasian_male2_genitals.mhmat, young_lightskinned_male_genitals_diffuse2.png |
-| `young_caucasian_male_with_genitals` | single asset | wolgade, 2015-09-15 | CC0 | **CC0 (B)** | page-only: young_caucasian_male_genitals.mhmat, young_lightskinned_male_genitals_diffuse.png |
-| `young_filipina_female_with_genitals` | single asset | saltycowdawg, 2019-11-06 | CC0 | **CC0 (B)** | page-only: young_filipina_with_genitals.mhmat, young_filipina_with_genitals.png; derived from skin/young_asian_female_with_genitals (wolgade) (CC0 - Creative Commons Zero) |
+| `adult_female_2020` | single asset | <http://www.makehumancommunity.org/proxy/adult_female_2020.html> | bogdan666, 2019-11-17 | CC0 - Creative Commons Zero | **CC0** |
+| `adult_female_genitalia_remapped` | single asset | <http://www.makehumancommunity.org/proxy/adult_female_genitalia_remapped.html> | MTKnife, 2017-07-28 | CC0 - Creative Commons Zero | **CC0** |
+| `adult_male_genitalia_breast_fix` | single asset | <http://www.makehumancommunity.org/proxy/adult_male_genitalia_breast_fix.html> | ieroglif, 2026-05-04 | CC0 - Creative Commons Zero | **CC0** |
+| `adult_male_genitalia_xsuprem3x` | single asset | <http://www.makehumancommunity.org/proxy/adult_male_genitalia.html_0> | XSuprem3X, 2017-03-26 | CC0 - Creative Commons Zero | **CC0** |
+| `erect_penis_only_works_with_males` | single asset | <http://www.makehumancommunity.org/proxy/erect_penis_only_works_with_males.html> | Slayer227, 2022-01-06 | CC0 - Creative Commons Zero | **CC0** |
+| `female_generic_with_simplified_genitals` | single asset | <http://www.makehumancommunity.org/proxy/female_generic_with_simplified_genitals.html> | wolgade, 2017-04-04 | CC0 - Creative Commons Zero | **CC0** |
+| `female_generic_with_simplified_genitals_fixed` | single asset | <http://www.makehumancommunity.org/proxy/female_generic_with_simplified_genitals_fixed.html> | spamrakuen, 2023-05-05 | CC0 - Creative Commons Zero | **CC0** |
+| `female_less_muscular_with_simplified_genitals` | single asset | <http://www.makehumancommunity.org/proxy/female_less_muscular_with_simplified_genitals.html> | wolgade, 2016-09-20 | CC0 - Creative Commons Zero | **CC0** |
+| `female_muscular_with_simplified_genitals` | single asset | <http://www.makehumancommunity.org/proxy/female_muscular_with_simplified_genitals.html> | wolgade, 2016-06-13 | CC0 - Creative Commons Zero | **CC0** |
+| `simple_penis` | single asset | <http://www.makehumancommunity.org/proxy/simple_penis.html> | porky11, 2018-02-24 | CC0 - Creative Commons Zero | **CC0** |
+| `man_genital` | single asset | <http://www.makehumancommunity.org/clothes/man_genital.html> | ukiyoe, 2022-11-05 | CC0 - Creative Commons Zero | **CC0** |
+| `realisticlabialonger` | single asset | <http://www.makehumancommunity.org/clothes/realisticlabialonger.html> | beebo123, 2022-04-15 | CC0 - Creative Commons Zero | **CC0** |
+| `realisticlabiamedium` | single asset | <http://www.makehumancommunity.org/clothes/realisticlabiamedium.html> | beebo123, 2022-04-15 | CC0 - Creative Commons Zero | **CC0** |
+| `realisticlabiashorter` | single asset | <http://www.makehumancommunity.org/clothes/realisticlabiashorter.html> | beebo123, 2022-04-15 | CC0 - Creative Commons Zero | **CC0** |
+| `anus_deep` | single asset | <http://www.makehumancommunity.org/target/anus_deep.html> | frankyaye, 2015-07-25 | CC0 - Creative Commons Zero | **CC0** |
+| `anus_small_length` | single asset | <http://www.makehumancommunity.org/target/anus_small_length.html> | frankyaye, 2015-07-25 | CC0 - Creative Commons Zero | **CC0** |
+| `anus_small_width` | single asset | <http://www.makehumancommunity.org/target/anus_small_width.html> | frankyaye, 2015-07-25 | CC0 - Creative Commons Zero | **CC0** |
+| `balls_round` | single asset | <http://www.makehumancommunity.org/target/balls_round.html> | jujube, 2017-01-15 | CC0 - Creative Commons Zero | **CC0** |
+| `cold_balls` | single asset | <http://www.makehumancommunity.org/target/cold_balls.html> | porky11, 2018-02-24 | CC0 - Creative Commons Zero | **CC0** |
+| `vulva_deep_low_for_adult_female_genetialia` | single asset | <http://www.makehumancommunity.org/target/vulva_deep_low_for_adult_female_genetialia.html> | frankyaye, 2015-07-25 | CC0 - Creative Commons Zero | **CC0** |
+| `vulva_deep_middle_for_adult_female_genetialia` | single asset | <http://www.makehumancommunity.org/target/vulva_deep_middle_for_adult_female_genetialia.html> | frankyaye, 2015-07-25 | CC0 - Creative Commons Zero | **CC0** |
+| `vulva_deep_top_for_adult_female_genetialia` | single asset | <http://www.makehumancommunity.org/target/vulva_deep_top_for_adult_female_genetialia.html> | frankyaye, 2015-07-25 | CC0 - Creative Commons Zero | **CC0** |
+| `vulva_narrow_for_adult_female_genetialia` | single asset | <http://www.makehumancommunity.org/target/vulva_narrow_for_adult_female_genetialia.html> | frankyaye, 2015-07-25 | CC0 - Creative Commons Zero | **CC0** |
+| `vulva_short_for_adult_female_genetialia` | single asset | <http://www.makehumancommunity.org/target/vulva_short_for_adult_female_genetialia.html> | frankyaye, 2015-07-25 | CC0 - Creative Commons Zero | **CC0** |
+| `penis_rig` | single asset | <http://www.makehumancommunity.org/content/penis_rig.html> | porky11, 2018-02-24 | CC0 - Creative Commons Zero | **CC0** |
+| `african_middle_age_muscular_genitals_male` | single asset | <http://www.makehumancommunity.org/content/african_middle_age_muscular_genitals_male.html> | sureshkumar, 2022-09-02 | CC-BY - Creative Commons Attribution | **not CC0** |
+| `middle_age_african_male_and_genitals` | single asset | <http://www.makehumancommunity.org/content/middle_age_african_male_and_genitals.html> | sureshkumar, 2022-09-02 | CC-BY - Creative Commons Attribution | **not CC0** |
+| `alana_caucasian_female_with_genitals_skin` | single asset | <http://www.makehumancommunity.org/skin/alana_caucasian_female_with_genitals_skin.html> | spreadcore, 2022-03-05 | CC0 - Creative Commons Zero | **CC0** |
+| `anatomy_of_female_skin` | single asset | <http://www.makehumancommunity.org/skin/anatomy_of_female_skin.html> | 123guzhanhong123, 2020-12-07 | CC-BY - Creative Commons Attribution | **not CC0** |
+| `errol_caucasian_male_with_genitals_skin` | single asset | <http://www.makehumancommunity.org/skin/errol_caucasian_male_with_genitals_skin.html> | spreadcore, 2022-03-09 | CC0 - Creative Commons Zero | **CC0** |
+| `female_anatomy` | single asset | <http://www.makehumancommunity.org/skin/female_anatomy.html> | 123guzhanhong123, 2021-12-12 | CC-BY - Creative Commons Attribution | **not CC0** |
+| `female_anatomy_substance_painter_manufacturing_operation` | single asset | <http://www.makehumancommunity.org/skin/female_anatomy_substance_painter_manufacturing_operation.html> | 123guzhanhong123, 2021-12-12 | CC-BY - Creative Commons Attribution | **not CC0** |
+| `genuine_caucasian_female_with_genitals_paths_fixed` | single asset | <http://www.makehumancommunity.org/skin/genuine_caucasian_female_with_genitals_paths_fixed.html> | saltycowdawg, 2019-11-25 | CC0 - Creative Commons Zero | **CC0** |
+| `middleage_african_female_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/middleage_african_female_with_genitals.html> | wolgade, 2015-09-27 | CC0 - Creative Commons Zero | **CC0** |
+| `middleage_african_male_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/middleage_african_male_with_genitals.html> | wolgade, 2015-09-27 | CC0 - Creative Commons Zero | **CC0** |
+| `middleage_asian_female_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/middleage_asian_female_with_genitals.html> | wolgade, 2015-09-27 | CC0 - Creative Commons Zero | **CC0** |
+| `middleage_asian_male_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/middleage_asian_male_with_genitals.html> | wolgade, 2015-09-27 | CC0 - Creative Commons Zero | **CC0** |
+| `middleage_caucasian_female_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/middleage_caucasian_female_with_genitals.html> | wolgade, 2015-09-27 | CC0 - Creative Commons Zero | **CC0** |
+| `middleage_caucasian_male_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/middleage_caucasian_male_with_genitals.html> | wolgade, 2015-09-27 | CC0 - Creative Commons Zero | **CC0** |
+| `middleage_slavic_male_with_genitals_and_beard` | single asset | <http://www.makehumancommunity.org/skin/middleage_slavic_male_with_genitals_and_beard.html> | jartur69, 2018-06-02 | CC0 - Creative Commons Zero | **CC0** |
+| `old_african_female_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/old_african_female_with_genitals.html> | wolgade, 2015-09-27 | CC0 - Creative Commons Zero | **CC0** |
+| `old_african_male_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/old_african_male_with_genitals.html> | wolgade, 2015-09-27 | CC0 - Creative Commons Zero | **CC0** |
+| `old_asian_female_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/old_asian_female_with_genitals.html> | wolgade, 2015-09-27 | CC0 - Creative Commons Zero | **CC0** |
+| `old_asian_male_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/old_asian_male_with_genitals.html> | wolgade, 2015-09-27 | CC0 - Creative Commons Zero | **CC0** |
+| `old_caucasian_female_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/old_caucasian_female_with_genitals.html> | wolgade, 2015-09-27 | CC0 - Creative Commons Zero | **CC0** |
+| `old_caucasian_male_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/old_caucasian_male_with_genitals.html> | wolgade, 2015-09-27 | CC0 - Creative Commons Zero | **CC0** |
+| `old_slavic_male_with_genitals_and_beard` | single asset | <http://www.makehumancommunity.org/skin/old_slavic_male_with_genitals_and_beard.html> | jartur69, 2018-06-02 | CC0 - Creative Commons Zero | **CC0** |
+| `young_african_female_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/young_african_female_with_genitals.html> | wolgade, 2015-09-15 | CC0 - Creative Commons Zero | **CC0** |
+| `young_african_female_with_genitals_use_instructions` | single asset | <http://www.makehumancommunity.org/skin/young_african_female_with_genitals_use_instructions.html> | Theomatics, 2021-04-29 | CC0 - Creative Commons Zero | **CC0** |
+| `young_african_male_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/young_african_male_with_genitals.html> | wolgade, 2015-09-15 | CC0 - Creative Commons Zero | **CC0** |
+| `young_asian_female_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/young_asian_female_with_genitals.html> | wolgade, 2015-09-15 | CC0 - Creative Commons Zero | **CC0** |
+| `young_asian_male_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/young_asian_male_with_genitals.html> | wolgade, 2015-09-15 | CC0 - Creative Commons Zero | **CC0** |
+| `young_caucasian_female2_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/young_caucasian_female2_with_genitals.html> | wolgade, 2015-09-15 | CC0 - Creative Commons Zero | **CC0** |
+| `young_caucasian_female_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/young_caucasian_female_with_genitals.html> | wolgade, 2015-09-15 | CC0 - Creative Commons Zero | **CC0** |
+| `young_caucasian_female_with_genuine_genitals` | single asset | <http://www.makehumancommunity.org/skin/young_caucasian_female_with_genuine_genitals.html> | oversword, 2016-01-02 | CC0 - Creative Commons Zero | **CC0** |
+| `young_caucasian_male2_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/young_caucasian_male2_with_genitals.html> | wolgade, 2015-09-15 | CC0 - Creative Commons Zero | **CC0** |
+| `young_caucasian_male_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/young_caucasian_male_with_genitals.html> | wolgade, 2015-09-15 | CC0 - Creative Commons Zero | **CC0** |
+| `young_filipina_female_with_genitals` | single asset | <http://www.makehumancommunity.org/skin/young_filipina_female_with_genitals.html> | saltycowdawg, 2019-11-06 | CC0 - Creative Commons Zero | **CC0** |
 
-## 6. Adding a community asset
+## 5. Adding a community asset
 
-1. Read its page and capture a `CommunityPage`: the URL, the "Submitted by … on …" line, the licence, the description, the date you read it, and what the description or files say it derives from, each source with the licence that source states at the source.
-2. Pass the record as `compileAsset(file, id, kind, { page })`. The packer refuses the asset with the clause it failed; fix the record only with new evidence, never to make it pass.
-3. Do not add a uuid or source to `FAILING_UUIDS`/`FAILING_SOURCES` without the evidence that it fails, and add one whenever an asset is found to fail, so its re-uploads fail too.
+1. Open its page on makehumancommunity.org and capture a `CommunityPage`: the URL, the "Submitted by … on …" line, the licence exactly as the page states it, and the date you read it.
+2. Pass the record as `compileAsset(file, id, kind, { page })`. The packer packs it when the page licence is CC0 and refuses it otherwise; each packed file's evidence names the page and its submission date.

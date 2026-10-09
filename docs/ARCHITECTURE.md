@@ -36,6 +36,7 @@ lengths are in metres.
 | --- | --- | --- |
 | `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, and the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion") |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
+| `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | Walk, idle and swim clips as local bone rotations per frame, on the default skeleton (see "Animation") |
 | `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | Ten scalp hair styles bound to the base mesh, each with its baked occlusion and a strand map (see "Scalp hair") |
 | `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 19 garments from MakeHuman's system assets (suits, shoes, a hat), each bound to the base mesh with the vertices it hides |
 
@@ -832,9 +833,10 @@ Five layers draw the lines (`EXPRESSION_LINE_LAYERS`,
 (`browRaise`), the furrows between the brows (`browFurrow`), crow's feet
 fanning from each eye's outer corner (`squint`, or 0.6 of `smile`), the
 nasolabial folds from the nose's wing past the mouth's corner (`nasolabial`, or
-0.7 of `smile`) and the nose bridge's lines (`noseWrinkle`). The crow's feet,
-folds and nose lines are the elbow and knee's `creases` relief; the forehead's
-lines and the furrows are thin lines of colour instead. A thin line cannot be a
+0.7 of `smile`) and the nose bridge's lines (`noseWrinkle`). The nose's lines are
+the elbow and knee's `creases` relief; the others (the forehead's, the furrows',
+the crow's feet and the folds) are thin lines of colour with a groove cut at the
+same stops. A thin line cannot be a
 mask or a relief phase on this mesh: the forehead's triangles are about 2 cm
 across and a field is interpolated between their vertices, so any coordinate
 that is not exactly linear in position bends a line into a squiggle (the first
@@ -1487,6 +1489,82 @@ Old recipes evaluate and serialise as before.
   hands' layers in the UV layout, took two channels of their own; the coat
   replaces them).
 
+### The coat (design, 2026-10-09)
+
+Short, dense hair standing off the skin (stubble, a dense chest, an animal's
+pelt) is one module shared by body hair and the anthro fur
+(`ANTHRO-DESIGN.md` §2.7): shells, the body surface drawn N times, each
+offset outward a little further and cut to strands by a density texture
+(Lengyel et al. 2001).
+
+**Use cases.** A man's stubble and a dense chest on the creator, at every tone
+and colour, under a moving pose; a furred anthro figure with a patterned pelt;
+a phone drawing a crowd of either. **Requirements.** The coat follows the skin
+exactly (shape, pose, outfit hiding); costs nothing where it does not grow;
+colour from the hair pigment model; the core holds its fields and colour
+models, Node-tested; and fur can add regions and patterns without changing the
+module.
+
+**Decisions.**
+
+- *Fields from the base mesh, static, in the topology.* A coat has up to eight
+  **regions** (`CoatRegion`: an id and a per-base-vertex mask, registered like
+  skin layers, `COAT_REGIONS`), carried through the subdivision stencil to the
+  render vertices as eight bytes a vertex; and one **comb field**, the
+  direction hair lies, a rest-space tangent per base vertex: along each limb
+  bone from proximal to distal, down the trunk, neck and face, projected to the
+  tangent plane and smoothed by neighbour averaging, carried the same way.
+  Rejected: atlas channels for the masks (the atlas is full, and a vertex
+  attribute is exact where the shells need it, at their vertices).
+- *Per figure, a paint per region*: coverage (the share of follicles that grow
+  a hair), length, follicle density, how far the hair lies along the comb, and
+  the pigment albedo, as uniforms. Body hair paints its regions from the body
+  hair model; fur paints its own, and a pattern is a further region or a
+  pigment rule on the same fields.
+- *Drawn where it grows.* The coat's index buffer is the body's current
+  (outfit-masked) index cut to the triangles whose corners carry a painted
+  region; built when the outfit or the set of painted regions changes, so a
+  figure without a coat draws nothing and stubble draws only the face.
+- *One instanced draw.* The coat is a skinned mesh on the body's own geometry
+  and skeleton, instanced N times; shell `i` is the skin offset along the rest
+  normal by `(i + 1) / N` of the hair's length, leaning along the comb, before
+  skinning (so the skin's own skinning, dual quaternions included, carries it).
+  N scales with the figure's size on screen (`coatShellCount`), so a figure
+  far away draws few shells.
+- *Strands from a tileable density texture* at true scale (`uv × uvScale`
+  over the follicle spacing), generated from a seed: per cell a strand's
+  length, its radius profile and an id; a shell keeps a fragment inside a
+  strand that reaches its height and whose id is under the coverage, so
+  coverage thins the hair rather than fading it.
+- *Shading is Kajiya-Kay along the skinned comb*, two lobes as the hair cards
+  use, with the pigment albedo, darker toward the root (self-shadow).
+- *A far LOD by dither.* Where a follicle cell is finer than a pixel the shells
+  cannot resolve strands; a fragment is then kept by an interleaved-gradient
+  dither of the strands' mean cover at its height.
+
+**Built (2026-10-09).** `src/surface/coat.ts` (fields, paint, triangles, shell
+count), `src/render/coat.ts` (`CoatMaterial`, `coatGeometry`) and
+`src/react/CoatMesh.tsx`, which `<Humanoid>` mounts on whichever body surface
+is drawn. Body hair's regions (`BODY_HAIR_COAT`, `src/surface/regions/bodyHairCoat.ts`)
+are the beard's three parts and the trunk's chest, abdomen and back, which
+moved from strand layers to the coat: their hair stands off the skin and is
+dense. The beard's masks follow the face's lines, measured from the lips, chin,
+eyes and ears; under the jaw the mesh's edges run to 15 mm, so its lines ease
+over two to four centimetres, and a unit test requires that no part of the
+beard change fully in under a centimetre anywhere on the face away from the
+lips' border (the first version's straight cuts fail it). An e2e spec
+(`e2e/bodyhair.spec.ts`) draws the styles on a real figure: stubble, a goatee
+and a full beard each change the face, the full beard more than the goatee,
+chest hair shows against the same chest bare, and a child asked for a full beard
+grows none.
+
+**Costs.** The coat costs nothing where nothing is painted (no triangles, no
+draw). A full beard with doubled chest, abdomen and back hair at 360 × 420
+measured 8.33 ms a frame against 8.29 ms without (`e2e/bodyhair.spec.ts`,
+recorded): both are the display's frame interval, so at this size the coat
+fits within a frame and the true GPU cost is below what this measures. A GPU
+timer measurement on a phone is the open item.
+
 ## Presence
 
 `src/presence` is what a figure publishes about itself for the scene around it
@@ -1535,6 +1613,74 @@ pixels with `sampleGroundOcclusion`; the Playwright spec `e2e/presence.spec.ts`
 does the same on the playground's `?scene=walk` (two figures walking, parting
 and overlapping), measuring the canvas against the model.
 
+## Animation (milestone 8, 2026-10-09)
+
+**Use cases.** A figure walks, idles and swims, whatever its size, shape or age.
+Several figures play the same clip at once, each carried by its own legs. A figure
+changes clips without a pop, and an expression plays over the body. A game, a
+sheet and a test can ask for a figure at a time in a clip, not only at a rate. A
+clip is loaded when first played, and the pack is optional, like the hair pack.
+
+**Requirements.** A clip says nothing about one body's proportions, so it plays on
+every body. A planted foot stays planted on any body: no skating. Nothing is
+allocated per frame once a figure is playing. Only clips whose licence is proven
+are packed, by the repository's licence rule. The adult animations are a separate
+later package that refuses participants under 18, and are not here.
+
+**Decisions.**
+
+- *A pack of its own, outside `HumanoidAssets`.* `humanoid-kit-animations` holds a
+  manifest and one small binary per clip; `loadAnimationLibrary` fetches the
+  manifest and a figure's first play of a clip fetches its binary
+  (`AnimationLibrary.load`). A clip is figure independent, so one library serves
+  every figure; coupling it to `HumanoidAssets` would have tied each figure's
+  assets to a pack they do not need. A clip binds to a rig by bone name.
+- *Clips are rotation deltas.* A clip stores, per frame, a local rotation (a
+  quaternion in the figure's axes) for each bone it moves, which is a delta from the
+  rest pose, since the rest frames have no rotation. It stores no translation: the
+  BVH's root translation is the source figure's. The bones a clip never moves are not
+  stored (the walk moves 73 of the rig's 163). Quaternions are kept in one hemisphere
+  from frame to frame, so a blend takes the short way.
+- *The source is MakeHuman's own CC0 clips.* punkduck's walk, idle and swim clips in
+  `makehuman2_additional_assets_cc0.zip` are on the default skeleton, so a BVH joint
+  is a rig bone by name and nothing is retargeted. Each clip is judged by
+  `judgeAsset` (docs/licence-history.md, clause B) with the asset pack listing that
+  calls the archive CC0; the packer also requires the clip's own `.meta` to state
+  `license CC0` (a BVH has no place for a licence line), and the archive is pinned by
+  its SHA-256 (`packs/animations/data/PROVENANCE.md`). MakeHuman's own `walk.bvh` and
+  `zombie.bvh` are AGPL3 and are not used.
+- *Where a clip carries a figure is derived from the figure's feet.* The walk's BVH
+  keeps its root in place, and a translation authored for one skeleton slides the
+  feet of another. `planRootMotion` moves the figure, frame to frame, backwards by
+  what the contact points on the ground (six, on the soles under the ankles and the
+  balls of the feet, weighted by how close each is to the lowest) move forwards in
+  the pose. A child's stride is shorter than an adult's by their legs
+  (about 0.33 against 0.65 m a cycle), by construction.
+- *Planted feet are held by a two-bone solve* (`FootLock`). A hand-keyed clip's feet
+  do not agree with their body's pace to the centimetre (the walk's heel slides 50
+  mm a frame at heel strike against a body moving 28), so a foot that lands pins its
+  place in the world and its leg is turned (hip and knee, in the plane the knee
+  bends in, the foot's orientation kept, the ankle's height kept) to hold it as the
+  figure is carried past. As the foot rolls the pin hands over to the point that is
+  lowest, taking the place it has in the held foot, so the hand-over is seamless; a
+  point that lifts is let go.
+- *Pure and allocation-free.* `Animator` owns its buffers: `update(dt)` advances time,
+  crossfades and root motion and writes the body's rotations. Face units and other
+  poses are laid over by the caller (`composeRotations`).
+
+**What the numbers are.** Measured by `tests/animation.test.ts` over nine figures
+(slim, average and heavy bodies at 6, 25 and 75): in the walk, the largest a planted
+heel or ball moves while on the ground is 2 to 12 mm (median 5), against well over 20
+mm with root motion alone (the test holds both); in the hip-swaying walk 3 to 29 mm,
+since its hand-keyed feet scissor against each other in double support; in the three
+idles under 10 mm. The tolerance in the walk is the leg's reach: at heel strike the
+front leg is already straight in the clip, and a pin ahead of it cannot be reached.
+A hand-keyed clip is the limit, not the solver: a clip that planted its feet would
+leave nothing to hold.
+
+**Not here yet:** playing it in `<Humanoid>`, the Quaternius breadth set (retargeted
+through a T-pose), and the no-interpenetration check at a clip's extremes.
+
 ## Layers
 
 | Folder | Role | React or DOM |
@@ -1548,6 +1694,7 @@ and overlapping), measuring the canvas against the model.
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
 | `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking, the body's cavity occlusion | no |
 | `src/model` | `HumanoidModel`, the evaluation pipeline; `outfit.ts`, the layering and masking of garments | no |
+| `src/animation` | Clips (`AnimationClip`), the library that fetches them, the `Animator` that plays and crossfades them, root motion from the figure's feet and the foot lock | no |
 | `src/presence` | Presence registry, helpers, and presence derived from an evaluation | no |
 | `src/editor` | The creator's logic: controls, history, randomisation, framing, the wardrobe | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
@@ -1908,19 +2055,21 @@ subdivided linearly (`linearSubdivisionStencil`), positions smoothly, because
 smoothing the cap's displacement leaked it into the loop and overshot the tube by
 up to 22% at level 2.
 
-**Arousal.** The adult manifest adds an `arousal` state morph
-(`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by
-`assertSignalPolicy` before any target is named), driving the adult pack's
-`penis-circ-incr` (0.44) and `penis-length-incr` (0.25), calibrated so that full
-arousal gives the measured erect against flaccid: circumference +25% and length
-+43% (research/SKIN-STATES.md, B4; `tests/arousal.test.ts` measures it on the
-length target's own vertices). Only targets that exist are driven: the testes'
-response is unmeasured and the vulva and clitoris have no targets (their volume
-change has no verified magnitude), so those wait for the sculpt phase.
-`stateContributions` skips targets no loaded pack knows, so without the adult
-pack the figure is simply unchanged, and a target of the adult pack that has not
-arrived yet is named as pending, so an evaluation waits for the adult stage as
-it does for any other. Colour deepening is the layers' own: `genitalAlbedo` moves
+**Arousal.** Adult-only, refused under 18 by `assertSignalPolicy` before any
+target is named. Its shape response is the adult pack's detail targets reading
+the signal (`AdultDetailSpec.drives`, `sramp:arousal:…`; the core's `STATE_MORPHS`
+stays without it and the pack's `stateMorphs` is empty). The organ is drawn at
+three states (flaccid, midway, erect) so that it swings from hanging to rising
+instead of shortening on the way (a morph moves each vertex in a straight line);
+its erect state is the measured growth over flaccid, circumference +25% and
+length +43% (research/SKIN-STATES.md, B4; research/ADULT-ANATOMY-DATA.md, F;
+`tests/phallus.test.ts` measures the authored shapes against those numbers and
+holds the surface to them). The testes' response is unmeasured and the vulva and
+clitoris have no verified magnitude (their volume change), so those wait for the
+sculpt. A derived weight is an adult's alone, and a target of the adult pack that
+has not arrived yet is named as pending, so an evaluation waits for the adult
+stage as it does for any other; without the adult pack the figure is simply
+unchanged. Colour deepening is the layers' own: `genitalAlbedo` moves
 haemoglobin a fraction of the way to its ceiling with the signal, so it stays
 inside the skin model's measured haemoglobin axis (about 0.4 to 1.3 CIELAB a\*
 units, smaller on deep skin) and is **uncalibrated**: no measured colour change
@@ -1962,6 +2111,18 @@ C5; contact sheets, before and after, at four tones, adult and child:
   hand readings, binned by the back's lightness), not a ratio: a lighter-skin
   rule scaled down would leave deep palms nearly the colour of the hand's back,
   which is the error this item exists to prevent.
+- *Where palmar skin ends, as distances.* The skin states' palm zone is a ramp
+  of the normal, which on the coarse, curved palm turns from 1 to 0 within a
+  face and drew the palm's colour as a polygon. The palm's mask
+  (`palmarMask`) is built from distances instead, which interpolate smoothly
+  across a face:
+  - the signed distance over the skin (Dijkstra along the mesh's edges, from
+    where the facing crosses 0 on each edge) to the palmar-dorsal border, eased
+    over 1.6 cm;
+  - a ramp at the wrist.
+
+  A test bounds the mask's change per metre across every edge of the hand. The
+  creases ease in from the same border, so none reaches the back of the hand.
 - *A frame per hand, from the base mesh.* As with the skin-state zones, nothing
   is added to the frozen mesh. The skeleton's finger joints give each digit a
   polyline from the wrist; every hand vertex takes the nearest segment and its
@@ -1987,6 +2148,12 @@ C5; contact sheets, before and after, at four tones, adult and child:
   proximal transverse crease it starts beside, crossed it when it started
   above it). The thumb's web is the one place three creases meet whose sides
   no signs can all match; there the palm's creases taper in from the border.
+  A crease reads mostly through its relief: the line is a faint shade between
+  slightly lighter lips, each crease's strength varies along it (deepest at
+  its middle, a finger's toward the digit's midline), and the palm's three
+  major lines are stronger than the fingers' (uniform dark lines read as
+  drawn on). A test holds every edge that crosses a crease to both ends
+  inside the line's and the fold's linear reach.
 - *Where the creases are.* Measured offsets from the joints (the middle
   digital crease about 2 mm proximal to its joint, the thumb's at and just
   proximal to its joints) and measured lengths between a finger's creases. The
@@ -2001,12 +2168,28 @@ C5; contact sheets, before and after, at four tones, adult and child:
   a face short of halfway to the next joint, where the coordinate turns to that
   joint's (on the little finger's short middle phalanx the bands nearly met and
   drew a false wrinkle).
-- *Nails.* No separate nail geometry: the base mesh sculpts each nail, and a
-  coordinate along the last segment carries fold, lunula, bed and free edge as
-  the colour stops, with sharp changes between them, and a surface layer the
-  plate's gloss. The bed is measured nail colour whose lightness follows the
-  skin's far less than skin does (the nail bed has about 5% of skin's
-  melanocytes), so on deep skin the nails are much lighter than the fingers.
+- *Nails: a painted bed under a real plate.* A coordinate along the last
+  segment paints fold, lunula, bed and free edge on the skin as colour stops,
+  with sharp changes between them. The bed is measured nail colour whose
+  lightness follows the skin's far less than skin does (the nail bed has about
+  5% of skin's melanocytes), so on deep skin the nails are much lighter than
+  the fingers, and brownish.
+
+  Over the paint lies the plate: CC0 community nail meshes (MakeHuman's
+  bodyparts04, Mindfront's short fingernails and toenails), vendored and packed
+  as body attachments (`fingernails`, `toenails`) and bound like any MHCLO
+  asset. The plate gives the nail its thickness, curvature and free edge
+  overhang, which paint on a mesh 5 mm between vertices could not.
+
+  The plate's material (`NailPlateMaterial`) is clear keratin over the bed, so
+  the bed's colour shows through at every tone, and nearly opaque, white
+  keratin along its free edge, the last 1.5 mm of each nail toward the tip.
+  That edge is found per nail on the plate at rest, along the direction in
+  which the skin's nail coordinate grows. The sheets showed painted nails as
+  opaque plates with a wide white tip (a French manicure).
+
+  The assets' own textures paint one pink nail and are not used; the packer
+  compiles their geometry only.
 - *Soles.* Soles share the palm's suppressed melanocytes (the same
   mechanism), but no sole colour was found measured, so the sole takes the
   palm's measured colour (`PALMOPLANTAR_LAYER` paints both, a choice). One owner for the

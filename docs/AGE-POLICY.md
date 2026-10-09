@@ -213,9 +213,11 @@ reach (colour, relief and shape): `assertSignalPolicy` in
 `src/recipe/agePolicy.ts` throws `AgePolicyError` for an `arousal` signal on a
 figure under 18, before evaluation and before any paint, and never clamps it.
 Shape responses to arousal, such as engorgement, belong to the adult pack: the
-`arousal` state morph drives only that pack's penis targets, and a figure under
-18 never reaches them, because the signal is refused first and no target is
-named. Without the adult pack the signal changes nothing. Its colour response
+pack's detail targets read the `arousal` signal (`AdultDetailSpec.drives`), and
+a figure under 18 never reaches them, because the signal is refused first, the
+weights the pack derives are an adult's alone, and the adult surface they
+displace is only evaluated for an adult. Without the adult pack the signal
+changes nothing. Its colour response
 lives in the adult skin layers, which paint nothing under 18 (below), and is
 not calibrated: no measured colour change with arousal exists.
 

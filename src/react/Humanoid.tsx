@@ -44,6 +44,7 @@ import {
   type PlacedPiercing,
 } from "../bodyArt/jewellery.ts";
 import { quantisedShapeSignals, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
+import { shapeSignalNames } from "../model/detailFactors.ts";
 import type {
   AdultSurfaceTopology,
   AttachmentTopology,
@@ -58,7 +59,11 @@ import type { Vec3 } from "../presence/presence.ts";
 import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import { createAttachmentMaterial, TeethMaterial } from "../render/attachmentLook.ts";
+import {
+  createAttachmentMaterial,
+  NAIL_EDGE_ATTRIBUTE,
+  TeethMaterial,
+} from "../render/attachmentLook.ts";
 import { type BodyArtImages, type BodyArtTexture, bakeBodyArt } from "../render/bodyArtTexture.ts";
 import { DecalMaterial } from "../render/decalMaterial.ts";
 import {
@@ -97,6 +102,7 @@ import { skinDualShare } from "../rig/skinShare.ts";
 import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
 import { DEFAULT_HAIR_COLOUR, type HairColour, hairAlbedo } from "../surface/hairTone.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
+import { CoatMesh } from "./CoatMesh.tsx";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 import { sameEntries } from "./sameEntries.ts";
 import { Settle, SettleContext, useSettle } from "./settle.ts";
@@ -877,6 +883,7 @@ export function Humanoid({
     const attachments = ready.topology.attachments.map((t) => {
       const g = makeGeometry(t);
       setOcclusionAttributes(g, t.occlusion);
+      if (t.nailEdge) g.setAttribute(NAIL_EDGE_ATTRIBUTE, new BufferAttribute(t.nailEdge, 1));
       return g;
     });
     // Hair styles' geometries are made when a figure first wears the style.
@@ -1186,12 +1193,7 @@ export function Humanoid({
   // re-evaluating it. The adult pack's state morphs (arousal) count with the
   // body's once it is loaded. Rounded to steps (`quantiseShapeSignal`), so a
   // signal that eases does not evaluate every frame.
-  const shapeNames = useMemo(
-    () => [
-      ...new Set([...STATE_MORPHS, ...(ready?.anatomy?.stateMorphs ?? [])].map((m) => m.signal)),
-    ],
-    [ready],
-  );
+  const shapeNames = useMemo(() => shapeSignalNames(STATE_MORPHS, ready?.anatomy), [ready]);
   // The age policy judges the signals before they are rounded; a refused one
   // is reported rather than evaluated.
   const { shapeKey, signalPolicyError } = useMemo(() => {
@@ -1395,6 +1397,20 @@ export function Humanoid({
                 part="adultBody"
                 shape={shape}
                 dual={material ? null : dual}
+              />
+            )}
+            {/* The coat (stubble, a dense chest): shells on whichever body surface is drawn. */}
+            {!material && (
+              <CoatMesh
+                body={surface === "adult" && adultGeometry ? adultGeometry : geometries.body}
+                fields={
+                  surface === "adult" && adultSurface ? adultSurface.coat : ready.topology.body.coat
+                }
+                recipe={recipe}
+                skeleton={rig.skeleton}
+                dual={dual}
+                visible={shown}
+                shape={shape}
               />
             )}
             {ready.topology.attachments.map((t, i) => {

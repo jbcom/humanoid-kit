@@ -10,6 +10,13 @@ Every packed source file was checked for CC0 from its own content before packing
 
 - 10 file(s) — file header: "This asset was explicitly released as CC0"
 
+Authored for this pack by code from the base mesh and published measurements, not read from any source file;
+dedicated to the public domain under CC0 1.0 with the rest of the pack. No third-party model, image,
+texture or target was opened, traced or copied for any of it:
+
+- `pelvis/mound-decr`, `pelvis/mound-incr` (control targets): authored by `scripts/lib/control/mound.ts` on the CC0 hm08 base mesh; sized from published soft-tissue measurements (docs/research/ADULT-ANATOMY-DATA.md, section E).
+- `genitals/phallus-k*` (detail targets) and the modifiers `genitals/phallus-size`, `-length-decr|incr`, `-girth-decr|incr`: authored by `scripts/lib/detail/phallus.ts` out of the phallic reservoir, whose loop and cap `scripts/lib/adultReservoirs.ts` places on the base mesh's own refinement. The inputs are the base body's vertices and published measurements (length, girth, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F); the glans' shape, the hang and the erect angle are modelled and labelled so there.
+
 | Output | SHA-256 |
 | --- | --- |
-| targets.bin.gz | `5074cb7afd570c48ddf9287a9dc714ca72e3252e3907a4f01dfe26ffb912c0aa` |
+| targets.bin.gz | `de10bbd80c7e3e85b0abf25febab6f9c7cd18082af689c671e8e6b59b4f1c30e` |
