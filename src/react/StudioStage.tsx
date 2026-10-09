@@ -46,14 +46,19 @@ function RoomLighting({ intensity }: { intensity: number }) {
     const previous = { environment: scene.environment, intensity: scene.environmentIntensity };
     scene.environment = target.texture;
     return () => {
-      scene.environment = previous.environment;
-      scene.environmentIntensity = previous.intensity;
+      // Leave alone an environment someone else set after us.
+      if (scene.environment === target.texture) {
+        scene.environment = previous.environment;
+        scene.environmentIntensity = previous.intensity;
+      }
       target.dispose();
     };
   }, [gl, scene]);
+  // Re-applied whenever the environment above is rebuilt (same deps plus intensity).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: gl is a deliberate trigger: a new renderer rebuilds the environment, whose cleanup resets the intensity
   useEffect(() => {
     scene.environmentIntensity = intensity;
-  }, [scene, intensity]);
+  }, [gl, scene, intensity]);
   return null;
 }
 
