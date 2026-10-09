@@ -402,6 +402,35 @@ from each file.
   (`posedGroundOffset`) takes the worn garments' render vertices too and skins
   them with the pose, so a kneeling figure rests on its knee or its shoe,
   whichever is lower.
+- *Skin at a garment's edge is sunk under the cloth.* MakeHuman hides only the
+  body faces a garment covers whole and keeps the ring round its edge (above),
+  so no gap opens. That ring sits a centimetre or two under the cloth, and a
+  joint moves cloth and skin by different amounts: in a raised-arm pose, skin
+  came through the yoke on either side of a shirt's collar (and, less, at a cuff
+  and a hem). Found by posing the body and the suit the way the renderer does
+  and finding body vertices that were under the cloth at rest and outside it
+  posed: at the shoulder top, where the clavicle, shoulder, spine and neck bones
+  meet with near-equal weights, cloth bound a centimetre or two off the skin
+  ends up 2–9 mm inside it. Ruled out: the blend shortening the cloth's offset
+  (skinning the offset by the vertex's dual quaternion rotation, which keeps its
+  length, changed nothing), and skin weights (cloth is bound through MakeHuman's
+  helper-tights proxy, whose weights differ from the body's by 0.13 on average;
+  transferring the body's weights at the nearest point left as much skin
+  showing, 26 against 17 vertices in the benchmark pose, and was dropped).
+  Fixed in the geometry: for the visible body vertices within three edges of
+  what the outfit hides, `edgeTuck` casts a ray along the rest normal to the
+  garments' rest surface and sinks the vertex by that clearance (at most 3 cm,
+  the outermost garment's), along its normal in the posed figure's rest shape.
+  Only the body surface sinks; the garments stay bound to the unsunk shape, so
+  nothing the cloth covers moves and the visible skin begins where it did. It is
+  worked out once per outfit (a function of the garments, like the masks) and
+  applied per evaluation. Measured on skin that is covered at rest and outside
+  the cloth posed, within 15 mm, at the shoulder top: benchmark 107 → 26 mm of
+  summed depth (17 → 3 vertices), twisted 10 → 4 mm; a T-pose and `flexed` none.
+  Rejected: hiding the ring (a pose that lifts the cloth would show the empty
+  body under it), a shader depth bias on garments (it would also draw cloth over
+  skin that is truly in front of it, such as a hand at a cuff), and a fixed
+  offset of the garments (cloth floating off the skin at rest).
 - *Garments skin as the body does.* Their material takes the figure's dual
   quaternion bones (`applyDualSkinning`, as for any material the library does
   not make), and so do their shadow materials and the mesh's bounds and
