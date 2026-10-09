@@ -195,7 +195,10 @@ sets any adult-only modifier throws `AgePolicyError`. It is never silently
 clamped, so a mistake cannot be hidden. `withAge` removes adult-only values
 explicitly when a recipe is moved below 18. The loader refuses an adult pack not
 built against the exact body pack in use (`bodySha256`). A planned genital
-sculpt will ship in the same pack under the same rule.
+sculpt will ship in the same pack under the same rule; its design keeps adult
+geometry out of any minor's evaluation structurally (a minor's evaluation has
+exactly the base surface's vertices), not by hiding it
+(docs/research/ADULT-SCULPT-PLAN.md).
 
 **Skin states follow the same rule.** A figure's skin responds to named
 signals (docs/ARCHITECTURE.md, "Skin states"). Cold, heat, exertion, blush and
@@ -205,7 +208,21 @@ is a reflex, not sexual. Sexual arousal is adult-only in every channel it could
 reach (colour, relief and shape): `assertSignalPolicy` in
 `src/recipe/agePolicy.ts` throws `AgePolicyError` for an `arousal` signal on a
 figure under 18, before evaluation and before any paint, and never clamps it.
-Shape responses to arousal, such as engorgement, belong to the adult pack.
+Shape responses to arousal, such as engorgement, belong to the adult pack: the
+`arousal` state morph drives only that pack's penis targets, and a figure under
+18 never reaches them, because the signal is refused first and no target is
+named. Without the adult pack the signal changes nothing. Its colour response
+lives in the adult skin layers, which paint nothing under 18 (below), and is
+not calibrated: no measured colour change with arousal exists.
+
+**Adult skin layers follow the same rule, once, in one place.** The colour code
+of the adult anatomy's layers is in the core (so the skin shader is compiled
+once with every layer), its data is in the adult pack. `paintStopTable` in
+`src/surface/layers.ts` writes a layer marked `adult` as zero strength, without
+calling its paint, unless the paint input says the figure is an adult
+(`SkinPaintInput.adult`, from `isAdult`; absent counts as not adult) and its
+recipe applies the layer's anatomy (`appliedAnatomy`, which is empty under 18).
+No layer implements the gate itself, so none can omit it.
 
 **Planned animation packages follow the same rule.** `humanoid-kit-adult-animations`
 (sexual and intimate animations) will refuse any participant under 18. The
@@ -217,7 +234,10 @@ rather than skip.
 `scripts/check-pages-build.mjs` (`pnpm check:pages`) fails if any built site
 file matches the adult pack's data files by SHA-256, or if the demo app's build
 names the pack's package, targets or modifiers. The Pages deploy runs it before
-upload.
+upload. For the same reason the core's source names no adult target or modifier
+(`tests/adultStack.test.ts` scans it): the anatomy features, the masks of the
+adult skin layers and the arousal state morph are data of the adult pack's
+manifest, so a build without the pack has nothing of them to find.
 
 **A recipe's age is a floor, not a verdict on how a figure looks.** The adult
 pack checks the recipe's age macro, which drives every age-dependent shape. It

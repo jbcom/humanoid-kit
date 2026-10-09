@@ -1,5 +1,10 @@
 /** Messages between `HumanoidWorkerClient` and the evaluation worker. */
-import type { LoadOptions, ShapeModifierEntry, SliderTask } from "../format/assetFormat.ts";
+import type {
+  AdultAnatomySpec,
+  LoadOptions,
+  ShapeModifierEntry,
+  SliderTask,
+} from "../format/assetFormat.ts";
 import type { FeatureRef } from "../makehuman/features.ts";
 import type {
   Evaluation,
@@ -10,6 +15,7 @@ import type {
 import type { PresenceJoints } from "../presence/fromEvaluation.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import type { RigData, RigSkin } from "../rig/pose.ts";
+import type { LayerFieldsUpdate } from "../surface/layers.ts";
 
 /** What the worker reports once the packs are loaded and the model is built. */
 export interface ReadyInfo {
@@ -31,6 +37,11 @@ export interface ReadyInfo {
    */
   presenceJoints: PresenceJoints | null;
   adultAnatomyLoaded: boolean;
+  /**
+   * The adult anatomy pack's features and state morphs (`AdultAnatomySpec`),
+   * which the skin paint and the shape signals read; absent without the pack.
+   */
+  anatomy?: AdultAnatomySpec;
 }
 
 /** Which controls shape each rendered vertex: what a tap on the figure opens. */
@@ -48,6 +59,11 @@ export type WorkerRequest =
   | { type: "pickMap"; id: number }
   /** Answered with `HumanoidModel.bakePosedOcclusion`'s result, baked between evaluations. */
   | { type: "posedOcclusion"; id: number }
+  /**
+   * Answered with the adult anatomy layers' fields (`HumanoidModel.adultLayerFields`)
+   * once the adult pack's stage has loaded, or null without an adult pack.
+   */
+  | { type: "adultLayers"; id: number }
   | {
       type: "evaluate";
       id: number;
@@ -62,5 +78,6 @@ export type WorkerResponse =
   | ({ type: "pickMap"; id: number } & PickMap)
   /** Per worn attachment, its render vertices' occlusion at every corner; null when `ready`'s already was. */
   | { type: "posedOcclusion"; id: number; attachments: Float32Array[] | null }
+  | { type: "adultLayers"; id: number; update: LayerFieldsUpdate | null }
   | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
   | { type: "error"; id: number; message: string; name: string };

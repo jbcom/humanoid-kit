@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { presenceJoints } from "../src/presence/fromEvaluation.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { ADULT_SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import { createWorkerHandler } from "../src/worker/handler.ts";
 import type { WorkerResponse } from "../src/worker/protocol.ts";
 import { stubFetch } from "./fetchStub.ts";
@@ -76,6 +77,72 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
     release();
     await init;
     expect(replies.get(1)).toMatchObject({ type: "ready" });
+  });
+
+  it("has no adult layer fields to post without an adult pack", async () => {
+    stubFetch();
+    const { handle, replies } = start();
+    await handle({
+      type: "init",
+      id: 1,
+      load: { body: "http://packs/body" },
+      model: { subdivision: 0 },
+    });
+    await handle({ type: "adultLayers", id: 2 });
+    expect(replies.get(2)).toEqual({ type: "adultLayers", id: 2, update: null });
+    // No adult pack, so ready carries no anatomy: no features, no state morphs.
+    expect(replies.get(1)).not.toHaveProperty("anatomy");
+  });
+
+  it("posts the adult layer fields once the adult stage has loaded, without holding up evaluations", async () => {
+    let release = () => {};
+    const adult = new Promise<void>((r) => {
+      release = r;
+    });
+    stubFetch({ hold: { file: "targets.bin.gz", until: adult } });
+    const { handle, replies } = start();
+    await handle({
+      type: "init",
+      id: 1,
+      load: { body: "http://packs/body", adultAnatomy: "http://packs/adult" },
+      model: { subdivision: 0 },
+    });
+    // The pack's manifest arrives with the first stage: ready already names its features.
+    const ready = replies.get(1);
+    if (ready?.type !== "ready") throw new Error("not ready");
+    expect(ready.anatomy?.features.map((f) => f.id)).toEqual(["penis", "testes", "mound"]);
+    expect(ready.anatomy?.stateMorphs.map((m) => m.signal)).toEqual(["arousal"]);
+    const layers = handle({ type: "adultLayers", id: 2 });
+    await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
+    expect(replies.get(3)?.type).toBe("evaluated");
+    await settle();
+    expect(replies.has(2)).toBe(false);
+
+    release();
+    await layers;
+    const reply = replies.get(2);
+    if (reply?.type !== "adultLayers" || !reply.update) throw new Error("no adult layer fields");
+    expect(reply.update.layers).toEqual(ADULT_SKIN_LAYERS.map((l) => l.id));
+    expect(reply.update.layerFields.length).toBeGreaterThan(0);
+    expect(reply.update.layerFields.some((x) => x > 0)).toBe(true);
+  });
+
+  it("rejects the adult layer fields when the adult stage fails, and keeps serving others", async () => {
+    stubFetch({ missing: "targets.bin.gz" });
+    const { handle, replies } = start();
+    await handle({
+      type: "init",
+      id: 1,
+      load: { body: "http://packs/body", adultAnatomy: "http://packs/adult" },
+      model: { subdivision: 0 },
+    });
+    await handle({ type: "adultLayers", id: 2 });
+    expect(replies.get(2)).toMatchObject({
+      type: "error",
+      message: expect.stringMatching(/targets\.bin\.gz failed/),
+    });
+    await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
+    expect(replies.get(3)?.type).toBe("evaluated");
   });
 
   it("rejects an evaluation whose stage fails, with the reason, and keeps serving others", async () => {
