@@ -22,6 +22,8 @@
  * absorption dominates), undertone moves b* by about ±3 at constant luminance.
  */
 
+import { labFromLch, labFromLinear, linearFromLab } from "./cielab.ts";
+
 export type Rgb = [number, number, number];
 
 export interface SkinTone {
@@ -103,3 +105,52 @@ export function skinAlbedo(tone: SkinTone): Rgb {
 
 /** Relative luminance of a linear-RGB colour. */
 export const luminance = ([r, g, b]: Rgb) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+const scale = (rgb: Rgb, k: Rgb): Rgb => [rgb[0] * k[0], rgb[1] * k[1], rgb[2] * k[2]];
+
+/**
+ * Lip albedo for a skin tone; `depth` 0..1 moves it within the measured
+ * within-group spread (0.5 is the population mean; higher is darker and more
+ * saturated).
+ *
+ * Natural skin follows measured lip colour (Vergnaud 2024, Charton 2026: lips
+ * of 514 women by cross-polarised hyperspectral imaging) paired with the same
+ * populations' facial skin in ISSA, fitted in CIELAB: lips are well below the
+ * skin's lightness on fair skin and reach it on the deepest, and lose chroma
+ * and turn slightly yellower as they darken (docs/research/SKIN-RENDERING.md
+ * §5.6). A non-natural colour has no human data, so its lips are the override
+ * darkened and reddened by fixed factors.
+ */
+export function lipAlbedo(tone: SkinTone, depth: number): Rgb {
+  const d = clamp(depth, 0, 1);
+  const skin = skinAlbedo(tone);
+  if (tone.override) return scale(skin, [0.74 - 0.2 * d, 0.42 - 0.12 * d, 0.44 - 0.1 * d]);
+  const skinL = labFromLinear(skin)[0];
+  const meanL = skinL - Math.max(0, (skinL - 30) / 2);
+  const L = meanL - (d - 0.5) * 8;
+  const C = Math.max(0, 0.81 * meanL - 10.8 + (d - 0.5) * 8);
+  const h = 31.9 - 0.375 * (meanL - 46);
+  return linearFromLab(labFromLch(Math.min(L, skinL), C, h)).map((c) => clamp(c, 0, 1)) as Rgb;
+}
+
+/**
+ * Areola and nipple albedo for a skin tone; `depth` 0..1 sets how much darker.
+ *
+ * No colour measurement against the surrounding skin exists at any tone. The
+ * areola carries about twice the melanin of breast skin (Dean et al. 2005), so
+ * natural skin moves along the measured melanin axis (by 0.3 × depth, capped at
+ * the deepest anchor) with a little more haemoglobin; that converges on the
+ * skin at the deep end because the skin already absorbs most of what more
+ * melanin would. The size of the shift is a choice, not a measurement. A
+ * non-natural colour is darkened and reddened by fixed factors.
+ */
+export function areolaAlbedo(tone: SkinTone, depth: number): Rgb {
+  const d = clamp(depth, 0, 1);
+  if (tone.override)
+    return scale(skinAlbedo(tone), [0.62 - 0.22 * d, 0.44 - 0.18 * d, 0.42 - 0.16 * d]);
+  return skinAlbedo({
+    ...tone,
+    melanin: Math.min(1, clamp(tone.melanin, 0, 1) + 0.3 * d),
+    haemoglobin: Math.min(1, clamp(tone.haemoglobin, 0, 1) + 0.25),
+  });
+}

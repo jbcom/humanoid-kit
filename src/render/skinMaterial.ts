@@ -32,6 +32,8 @@ import {
 import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import {
+  areolaAlbedo,
+  lipAlbedo,
   luminance,
   MELANIN_ANCHORS,
   type Rgb,
@@ -213,8 +215,6 @@ function poreNormalMap(): DataTexture {
   return poreTexture;
 }
 
-const mul = (a: Rgb, k: Rgb): Rgb => [a[0] * k[0], a[1] * k[1], a[2] * k[2]];
-
 export class SkinMaterial extends MeshPhysicalMaterial {
   readonly hkUniforms = {
     /** Scattering mean free path, metres; 0 disables scatter. */
@@ -269,20 +269,18 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     const y = luminance(albedo);
     const t = Math.min(1, Math.max(0, (y - 0.05) / (0.355 - 0.05)));
     this.sheen = 0.12 + 0.13 * t * t * (3 - 2 * t);
-    const lip = mul(albedo, [0.74 - 0.2 * a.lips, 0.42 - 0.12 * a.lips, 0.44 - 0.1 * a.lips]);
+    // Lip and areola colours come from their own models (measured for lips);
+    // the sliders set the colour, and the masks' soft edges blend it in.
+    const lip = lipAlbedo(a.tone, a.lips);
     this.hkUniforms.hkLipColor.value.setRGB(lip[0], lip[1], lip[2], LinearSRGBColorSpace);
-    const areola = mul(albedo, [
-      0.62 - 0.22 * a.areola,
-      0.44 - 0.18 * a.areola,
-      0.42 - 0.16 * a.areola,
-    ]);
+    const areola = areolaAlbedo(a.tone, a.areola);
     this.hkUniforms.hkAreolaColor.value.setRGB(
       areola[0],
       areola[1],
       areola[2],
       LinearSRGBColorSpace,
     );
-    this.hkUniforms.hkMaskStrength.value.set(0.35 + 0.55 * a.lips, a.flush, 0.4 + 0.55 * a.areola);
+    this.hkUniforms.hkMaskStrength.value.set(0.9, a.flush, 0.9);
   }
 
   override onBeforeCompile: MeshPhysicalMaterial["onBeforeCompile"] = (shader) => {

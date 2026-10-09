@@ -1,19 +1,12 @@
-/** CIELAB (D65) from 8-bit sRGB or linear RGB, for comparing renders with albedos. */
-export type Lab = [number, number, number];
+/** Colour measurement for tests: CIELAB (D65) from renders, CIEDE2000, tone-curve ports. */
+import { type Lab, labFromLinear } from "../../src/surface/cielab.ts";
+
+export { type Lab, labFromLinear };
 
 const toLinear = (c: number) => {
   const s = c / 255;
   return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
 };
-
-export function labFromLinear([r, g, b]: readonly [number, number, number]): Lab {
-  const x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
-  const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  const z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
-  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
-  const [fx, fy, fz] = [f(x), f(y), f(z)];
-  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
-}
 
 export const labFromSrgb8 = (r: number, g: number, b: number): Lab =>
   labFromLinear([toLinear(r), toLinear(g), toLinear(b)]);

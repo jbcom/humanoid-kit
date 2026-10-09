@@ -455,11 +455,63 @@ in the playground:
 
 - **Cause:** the fixed `hkScatter (0.42, 0.20, 0.12)`. **Fix:** the per-melanin
   `hkScatter(m)` in §3.2.
-- **Related:** lips and areola are computed as albedo × fixed multipliers
-  (`0.74 − 0.2·lips`, and so on). On the deepest anchor that puts lip red near
-  0.06. No measured source on lip colour across skin tones was found. Validate
-  lip and areola colour at the deep end against reference photography before
-  tuning the multipliers.
+- **Related:** lips and areola were computed as albedo × fixed multipliers
+  (`0.74 − 0.2·lips`, and so on). That was about right on fair skin and much
+  too dark at the deep end. §5.6 replaces it with measured lip colour.
+
+### 5.6 Lip and areola colour across the range (2026-10-09)
+
+**What was measured.** The largest lip-colour studies measured the darker part
+of the lower lip with a cross-polarised hyperspectral imager (SpectraFace, D65,
+10° observer), so the values are diffuse colour, comparable with albedo:
+Vergnaud et al. 2024 (*Skin Res Technol* 30:e13583, 410 women) and Charton et
+al. 2026 (*Int J Cosmet Sci* 48:161, the same 410 plus 104 Chinese women). Group
+means: Caucasian (French and American) L\* 46.0, C\* 26.6, h 31.9°; Asian
+Chinese L\* 42.4, C\* 25.0, h 35.5°; African American L\* 33.1, C\* 16.2, h
+36.8°. The darkest clusters reach L\* 28.5 with C\* 10. In the authors' words,
+"darker lips tend to be less saturated and more yellow, while lighter lips are
+more saturated and redder." Those papers measured no skin. A L'Oréal study of
+914 women (Baras et al., reported 2008) found lips "always darker than the
+perioral skin, except in African American women", and Porcheron et al. 2017
+(*Front Psychol* 8:1208, CC BY 4.0) found lips redder than the surrounding skin
+in every Caucasian, Chinese and Latin American face but not in every black
+South African one.
+
+**Pairing.** ISSA records each subject's group, so the same source as the skin
+anchors gives each group's facial skin: median L\* 61.9 for its Caucasian
+subjects, 59.5 for its Chinese subjects and 39.6 for its African subjects
+(computed here from the CC BY 4.0 workbook; forehead and cheek). Pairing the lip
+means with these is population-level: different people, same populations.
+
+**Model** (`lipAlbedo`, computed here by fitting the three pairs):
+
+```text
+lip L* = skin L* − max(0, (skin L* − 30) / 2)
+lip C* = max(0, 0.81 · lip L* − 10.8)
+lip h  = 31.9° − 0.375° · (lip L* − 46)
+```
+
+It reproduces lip L\* 46.0, 44.8 and 34.8 at the three groups' skin (measured
+46.0, 42.4 and 33.1, all within one within-group SD), and at the deepest
+measured skin (L\* about 30) the lip has the skin's lightness, as the L'Oréal
+report found, with the chroma of the darkest measured lips. The lip slider
+moves the colour within the measured within-group spread: ±4 L\* and ±4 C\*
+around the mean, darker and more saturated as it rises. The old multipliers put
+the deepest lip at about L\* 17 to 21, 12 to 16 L\* below anything measured.
+
+**Areola.** No colour measurement of the areola against surrounding skin was
+found at any skin tone. The one quantitative source is histological: 2.14 times
+the melanin per basement-membrane length of breast skin (Dean et al. 2005,
+N = 20). The model therefore darkens the areola along the measured melanin axis
+(`skinAlbedo` with melanin raised by 0.3 × the slider, capped at the deepest
+anchor) and raises haemoglobin a little. Because it moves along measured skin,
+it converges on the skin at the deep end for the same physical reason lips do:
+the skin already absorbs most of what more melanin would. The size of the shift
+is a choice, not a measurement, and is documented as one.
+
+**Non-natural colours** (fur, scales, fantasy overrides) keep a stylised rule
+(the override darkened and reddened by fixed factors): no human lip data
+applies to them.
 
 ### 5.4 A parity test (recommended)
 
