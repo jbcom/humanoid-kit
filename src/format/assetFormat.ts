@@ -280,6 +280,89 @@ export interface BoundAsset {
    * m has key i at full weight when bit i of m is set; corner 0 is rest).
    */
   occlusion: Uint8Array;
+  /** A hair style's measured fields (`HairFieldData`); absent on every other attachment. */
+  hair?: HairFieldData;
+}
+
+/** The kinds of entry the hair pack lists. */
+export const HAIR_KINDS = ["scalp", "brows", "lashes"] as const;
+export type HairKind = (typeof HAIR_KINDS)[number];
+
+/** The buffers a hair style's binary carries beyond an attachment's (`src/surface/hairFields.ts`). */
+export const HAIR_FIELD_KEYS = ["growth", "fade", "fin", "scalpVerts", "scalpWeights"] as const;
+
+/**
+ * What the packer measured of a hair style against the body at rest: per card
+ * vertex its growth (distance from the root, 1e-4 m steps), fade (255 = all
+ * there, 0 = dithered away, at a hairline) and fin (255 = stands out of the scalp), and the body vertices the style
+ * grows from with their density (1..255).
+ */
+export interface HairFieldData {
+  growth: Uint16Array;
+  fade: Uint8Array;
+  fin: Uint8Array;
+  scalpVerts: Uint16Array;
+  scalpWeights: Uint8Array;
+}
+
+/**
+ * One scalp hair style of the hair pack: an attachment bound to the base mesh
+ * (`kind` is `"hair"`, `deleteVerts` is empty, since MakeHuman's hair hides no
+ * body face) with its own binary, so a figure loads only the style it wears.
+ * The `material.texture` is a strand map (docs/ARCHITECTURE.md, "Hair"), and
+ * `occlusion` is one baked value per control vertex, at rest.
+ */
+export interface HairStyleEntry extends Omit<AttachmentEntry, "layout" | "kind"> {
+  /**
+   * What the entry is: `scalp` (head hair, what `recipe.hair.style` wears) or the
+   * `brows` or `lashes` that share the pack's loader, binding and colour model.
+   */
+  kind: HairKind;
+  layout: AttachmentEntry["layout"] & Record<(typeof HAIR_FIELD_KEYS)[number], BufferRange>;
+  /** What a picker shows. */
+  label: string;
+  /** What the style is: length, texture, shape (`short`, `curly`, `ponytail`...). */
+  tags: string[];
+  /** The style's binary, gzipped, within the hair pack. */
+  file: string;
+  /** SHA-256 of `file` as shipped (compressed). */
+  sha256: string;
+  /**
+   * Which way the strands run in the strand map's texture space, measured when
+   * packed: `angle` in radians from U toward V, `coherence` 0 (fluffy, curly)
+   * to 1 (parallel strands).
+   */
+  strand: { angle: number; coherence: number };
+}
+
+/** The hair pack's manifest. Styles are listed in the order a picker offers them. */
+export interface HairManifest {
+  format: 1;
+  kind: "hair";
+  topology: string;
+  /** `body.sha256` of the body pack this pack was built against. */
+  bodySha256: string;
+  source: PackSource;
+  styles: HairStyleEntry[];
+}
+
+/** The loaded hair pack: every style is known from the manifest, its geometry arrives on demand. */
+export interface HairAssets {
+  manifest: HairManifest;
+  /** Every style of the manifest, by id. */
+  styles: Map<string, HairStyleEntry>;
+  /** The styles whose geometry has arrived. */
+  bound: Map<string, BoundAsset>;
+  /**
+   * Resolves with a style's geometry, fetching it if it has not arrived. Styles
+   * loaded without URLs (parsed from buffers) only resolve once added
+   * (`addHairStyle`).
+   */
+  load(id: string): Promise<BoundAsset>;
+}
+
+export interface HairPackData {
+  manifest: HairManifest;
 }
 
 /**
@@ -342,6 +425,33 @@ export interface AdultAnatomySpec {
    * anatomy to be shaped in. Absent, an adult figure keeps the base surface.
    */
   surface?: AdultSurfaceSpec;
+  /**
+   * Targets on the adult surface's own vertices (docs/research/ADULT-SCULPT-PLAN.md,
+   * section 6a). Absent, the pack has only control targets.
+   */
+  detail?: AdultDetailSpec;
+}
+
+/**
+ * Detail targets: entries of the adult target file whose indices name vertices
+ * of the refined surface's region (`HumanoidModel.adultDetailLattice`), not of
+ * the base body. They are driven by modifiers like any target, and added to the
+ * adult surface after it is evaluated, so no figure under 18 reaches them.
+ */
+export interface AdultDetailSpec {
+  /** Names of the adult file's targets that are detail targets. */
+  targets: string[];
+  /**
+   * The lattice these targets were authored on (`AdultDetailLattice.key`); the
+   * model refuses them against any other refinement.
+   */
+  surfaceKey: string;
+  /**
+   * The figure's scale for a detail: two control vertices and their distance
+   * (metres) on the figure the targets were authored against. A detail is
+   * scaled by the ratio of the figure's own distance to `rest`. Absent: none.
+   */
+  scale?: { a: number; b: number; rest: number };
 }
 
 /** Faces of the base body to refine and by how much: `levels[i]` for face `faces[i]`. */
@@ -406,6 +516,8 @@ export interface HumanoidAssets {
   /** The slider taxonomy of every loaded pack, merged in MakeHuman's order. */
   sliders: SliderTask[];
   attachments: Map<string, BoundAsset>;
+  /** The hair pack, when one was loaded. */
+  hair: HairAssets | null;
   /**
    * The clothing pack's garments by id; empty without that pack and until its
    * binary has arrived (`garmentsPending`). The manifest lists them earlier.
@@ -435,7 +547,7 @@ export class AssetFormatError extends Error {
   override name = "AssetFormatError";
 }
 
-function view<T extends Float32Array | Uint32Array | Uint8Array>(
+function view<T extends Float32Array | Uint32Array | Uint16Array | Uint8Array>(
   Ctor: { new (buffer: ArrayBuffer, offset: number, length: number): T; BYTES_PER_ELEMENT: number },
   buffer: ArrayBuffer,
   range: BufferRange | undefined,
@@ -485,6 +597,8 @@ function addTargets(
   what: string,
   vertexCount: number,
   existing: ReadonlyMap<string, SparseTarget> = map,
+  /** Detail targets, whose indices are the adult surface's, checked when that is built. */
+  detail: ReadonlySet<string> = new Set(),
 ): void {
   if (file.encoding !== TARGET_ENCODING)
     throw new AssetFormatError(`${what}: unsupported target encoding ${String(file.encoding)}`);
@@ -505,7 +619,7 @@ function addTargets(
       for (let k = 0; k < 3; k++)
         deltas[i * 3 + k] = view.getInt16(e.offset + n * 2 + (k * n + i) * 2, true);
     }
-    expectIndices(indices, vertexCount, `target ${e.name}`);
+    if (!detail.has(e.name)) expectIndices(indices, vertexCount, `target ${e.name}`);
     map.set(e.name, { name: e.name, indices, deltas, scale: e.scale });
   }
 }
@@ -642,6 +756,76 @@ function parseGarments(
   return out;
 }
 
+/** The hair pack beside its body pack: every style is known, none has its geometry yet. */
+function parseHairPack(body: BodyManifest, pack: HairPackData): HairAssets {
+  const m = pack.manifest;
+  if (m.format !== 1 || m.kind !== "hair")
+    throw new AssetFormatError("not a format-1 hair manifest");
+  if (m.topology !== body.topology || m.bodySha256 !== body.body.sha256)
+    throw new AssetFormatError("the hair pack was built for a different body pack");
+  const styles = new Map<string, HairStyleEntry>();
+  for (const s of m.styles) {
+    if (styles.has(s.id)) throw new AssetFormatError(`duplicate hair style ${s.id}`);
+    if (!HAIR_KINDS.includes(s.kind))
+      throw new AssetFormatError(`hair style ${s.id}: unknown hair kind ${JSON.stringify(s.kind)}`);
+    styles.set(s.id, s);
+  }
+  const hair: HairAssets = {
+    manifest: m,
+    styles,
+    bound: new Map(),
+    load: (id) => {
+      const have = hair.bound.get(id);
+      if (have) return Promise.resolve(have);
+      return Promise.reject(
+        new AssetFormatError(
+          styles.has(id)
+            ? `hair style ${id} was loaded without a way to fetch it (addHairStyle adds its bytes)`
+            : `no hair style ${id}`,
+        ),
+      );
+    },
+  };
+  return hair;
+}
+
+/**
+ * Adds one hair style's geometry (its binary, decompressed) to assets that
+ * have a hair pack. The assets change only if the bytes parse, so a failed add
+ * can be retried.
+ */
+export function addHairStyle(assets: HumanoidAssets, id: string, bin: ArrayBuffer): BoundAsset {
+  const entry = assets.hair?.styles.get(id);
+  if (!assets.hair || !entry) throw new AssetFormatError(`no hair style ${id} in the loaded packs`);
+  const have = assets.hair.bound.get(id);
+  if (have) return have;
+  const what = (field: string) => `hair style ${id} ${field}`;
+  const l = entry.layout;
+  // One occlusion value per control vertex, at rest, rather than a body attachment's eight corners.
+  const occlusion = view(Uint8Array, bin, l.occlusion, what("occlusion"));
+  expectLength(occlusion, entry.vertexCount, what("occlusion"));
+  const base: BoundAsset = {
+    entry,
+    ...readBinding(entry, bin, assets.manifest.vertexCount, what),
+    occlusion,
+  };
+  const hair: HairFieldData = {
+    growth: view(Uint16Array, bin, l.growth, what("growth")),
+    fade: view(Uint8Array, bin, l.fade, what("fade")),
+    fin: view(Uint8Array, bin, l.fin, what("fin")),
+    scalpVerts: view(Uint16Array, bin, l.scalpVerts, what("scalpVerts")),
+    scalpWeights: view(Uint8Array, bin, l.scalpWeights, what("scalpWeights")),
+  };
+  expectLength(hair.growth, entry.vertexCount, what("growth"));
+  expectLength(hair.fade, entry.vertexCount, what("fade"));
+  expectLength(hair.fin, entry.vertexCount, what("fin"));
+  expectLength(hair.scalpWeights, hair.scalpVerts.length, what("scalpWeights"));
+  expectIndices(hair.scalpVerts, assets.manifest.vertexCount, what("scalpVerts"));
+  const asset: BoundAsset = { ...base, hair };
+  assets.hair.bound.set(id, asset);
+  return asset;
+}
+
 /**
  * Merges slider taxonomies: tasks and groups are matched by id, and every
  * group's sliders, every task's groups and the tasks themselves end up in
@@ -680,6 +864,7 @@ export function parseHumanoidAssets(
   pack: BodyPackData,
   adultAnatomy?: AdultAnatomyData,
   clothing?: ClothingPackData,
+  hair?: HairPackData,
 ): HumanoidAssets {
   const { manifest, body, targets } = pack;
   if (manifest.format !== 1 || manifest.kind !== "body")
@@ -747,6 +932,7 @@ export function parseHumanoidAssets(
     modifiers,
     sliders,
     attachments: parseAttachments(manifest, pack.attachments),
+    hair: hair ? parseHairPack(manifest, hair) : null,
     garments: new Map(),
     clothingManifest: clothing?.manifest ?? null,
     garmentsPending: clothing !== undefined,
@@ -811,13 +997,14 @@ export function addTargetFiles(assets: HumanoidAssets, files: TargetFileData): v
   const all = targetFiles(manifest, assets.adultAnatomyManifest ?? undefined);
   const added = new Map<string, SparseTarget>();
   const ids: string[] = [];
+  const detail = new Set(assets.adultAnatomyManifest?.anatomy?.detail?.targets);
   for (const [id, bin] of Object.entries(files)) {
     if (!bin) continue;
     const file = all.find((f) => f.id === id);
     if (!file) throw new AssetFormatError(`no target file ${id} in the loaded packs`);
     if (!assets.targetFilesPending.has(id))
       throw new AssetFormatError(`target file ${id} is already loaded`);
-    addTargets(added, file, bin, `target file ${id}`, manifest.vertexCount, targets);
+    addTargets(added, file, bin, `target file ${id}`, manifest.vertexCount, targets, detail);
     ids.push(id);
   }
   for (const [name, t] of added) targets.set(name, t);
@@ -879,6 +1066,11 @@ export interface LoadOptions {
    * figure that wears nothing is never held up by it.
    */
   clothing?: PackLocation;
+  /**
+   * The hair pack. Only its manifest loads up front; each style's geometry and
+   * texture are fetched when a figure first wears it (`HairAssets.load`).
+   */
+  hair?: PackLocation;
   /**
    * The age of the first figure to show, so a staged load brings its targets
    * first (`targetLoadOrder`). Default: the default figure's.
@@ -947,10 +1139,12 @@ export async function loadHumanoidAssetsStaged(
   const body = packResolver(options.body);
   const adult = options.adultAnatomy === undefined ? undefined : packResolver(options.adultAnatomy);
   const clothing = options.clothing === undefined ? undefined : packResolver(options.clothing);
-  const [manifest, adultManifest, clothingManifest] = await Promise.all([
+  const hairPack = options.hair === undefined ? undefined : packResolver(options.hair);
+  const [manifest, adultManifest, clothingManifest, hairManifest] = await Promise.all([
     fetchOk(body.manifest).then((r) => r.json() as Promise<BodyManifest>),
     adult && fetchOk(adult.manifest).then((r) => r.json() as Promise<AdultAnatomyManifest>),
     clothing && fetchOk(clothing.manifest).then((r) => r.json() as Promise<ClothingManifest>),
+    hairPack && fetchOk(hairPack.manifest).then((r) => r.json() as Promise<HairManifest>),
   ]);
   const urlOf = (id: string): string | null => {
     if (id === GARMENTS_FILE)
@@ -990,6 +1184,10 @@ export async function loadHumanoidAssetsStaged(
     for (const t of [g.material.texture, g.material.normalTexture])
       if (t) fileUrls.set(t, (clothing as ReturnType<typeof packResolver>).file(t));
   }
+  if (hairPack && hairManifest) {
+    for (const s of hairManifest.styles)
+      if (s.material.texture) fileUrls.set(s.material.texture, hairPack.file(s.material.texture));
+  }
   const assets = parseHumanoidAssets(
     {
       manifest,
@@ -1001,7 +1199,26 @@ export async function loadHumanoidAssetsStaged(
     },
     adultManifest && { manifest: adultManifest },
     clothingManifest && { manifest: clothingManifest },
+    hairManifest && { manifest: hairManifest },
   );
+  if (assets.hair && hairPack) {
+    const hair = assets.hair;
+    const fetching = new Map<string, Promise<BoundAsset>>();
+    // Each style is fetched once; a failed fetch is forgotten, so a later wearer retries.
+    hair.load = (id) => {
+      const have = hair.bound.get(id);
+      if (have) return Promise.resolve(have);
+      const entry = hair.styles.get(id);
+      if (!entry) return Promise.reject(new AssetFormatError(`no hair style ${id}`));
+      let p = fetching.get(id);
+      if (!p) {
+        p = fetchGzip(hairPack.file(entry.file)).then((bin) => addHairStyle(assets, id, bin));
+        fetching.set(id, p);
+        p.catch(() => fetching.delete(id));
+      }
+      return p;
+    };
+  }
   // Each stage's bytes are fetched after the previous stage's settled; each is
   // added to the assets as soon as its own bytes are in. A failed stage fails
   // only itself: the next one still fetches.

@@ -11,6 +11,7 @@ import {
   StudioStage,
 } from "humanoid-kit/react";
 import { bodyPack } from "humanoid-kit-body";
+import { hairPack } from "humanoid-kit-hair";
 import { useEffect, useState } from "react";
 import {
   ACESFilmicToneMapping,
@@ -44,6 +45,8 @@ async function createClient(): Promise<HumanoidWorkerClient> {
   return new HumanoidWorkerClient(
     {
       body: bodyPack,
+      // Only the hair manifest loads up front; a style's files load when a figure wears it.
+      hair: hairPack,
       ...(adultAnatomy && { adultAnatomy }),
       ...(clothing && { clothing }),
       firstFigureAge: initialRecipe().macros.age,

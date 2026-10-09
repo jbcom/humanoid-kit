@@ -11,7 +11,8 @@ The universal base body for [humanoid-kit](https://github.com/jbcom/humanoid-kit
 - facial pose units for expressions.
 
 Adult-only targets are not in this package; they live in
-`humanoid-kit-adult-anatomy`.
+`humanoid-kit-adult-anatomy`. Scalp hair is the optional `humanoid-kit-hair`
+pack, built against this pack's hash.
 
 ```ts
 import { loadHumanoidAssets } from "humanoid-kit";

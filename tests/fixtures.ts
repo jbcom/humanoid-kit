@@ -12,14 +12,25 @@ import {
 const root = path.resolve(import.meta.dirname, "..");
 export const bodyDir = path.join(root, "packs/body/data");
 export const adultDir = path.join(root, "packs/adult-anatomy/data");
+export const hairDir = path.join(root, "packs/hair/data");
 
 const arrayBuffer = (b: Uint8Array): ArrayBuffer =>
   b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 /** A pack file's bytes as shipped. */
 export const readPackFile = (file: string): ArrayBuffer => arrayBuffer(fs.readFileSync(file));
-/** A gzipped pack file, decompressed (tests are synchronous; the runtime uses `gunzip`). */
-export const readGzipPackFile = (file: string): ArrayBuffer =>
-  arrayBuffer(gunzipSync(fs.readFileSync(file)));
+const decompressed = new Map<string, ArrayBuffer>();
+/**
+ * A gzipped pack file, decompressed (tests are synchronous; the runtime uses
+ * `gunzip`). Decoded once per test file: the parsed assets only read it.
+ */
+export const readGzipPackFile = (file: string): ArrayBuffer => {
+  let bytes = decompressed.get(file);
+  if (!bytes) {
+    bytes = arrayBuffer(gunzipSync(fs.readFileSync(file)));
+    decompressed.set(file, bytes);
+  }
+  return bytes;
+};
 
 export const bodyManifest = JSON.parse(
   fs.readFileSync(path.join(bodyDir, "manifest.json"), "utf8"),

@@ -185,7 +185,7 @@ function CreatorBody({
   const tabs = [
     ...tasks.map((t) => ({ id: t.id, label: t.label })),
     { id: REGIONS_TAB, label: "Regions" },
-    { id: APPEARANCE_TAB, label: "Skin & eyes" },
+    { id: APPEARANCE_TAB, label: ready?.hair ? "Skin, eyes & hair" : "Skin & eyes" },
     // Only with a clothing pack: without one there is nothing to wear.
     ...(ready?.wardrobe.length ? [{ id: WARDROBE_TAB, label: "Wardrobe" }] : []),
   ];
@@ -218,6 +218,12 @@ function CreatorBody({
 
   /** Opens the controls of the tapped part of the figure and frames it. */
   const onPick = (p: HumanoidPick) => {
+    // Hair has no shape controls to open; its colour and style are with the skin and eyes.
+    if (p.part === "hair") {
+      setQuery("");
+      setTab(APPEARANCE_TAB);
+      return;
+    }
     // A tapped garment opens nothing: the pick map describes the body and the
     // attachments, not what is worn over them.
     if (p.part === "garment") return;

@@ -43,6 +43,39 @@ export interface SurfaceMesh {
    * its shading normals come from the coarser surface's, not from its own faces.
    */
   smoothNormals?: SmoothNormals;
+  /** Set for a refined surface: the lattice detail targets are authored on (`SurfaceLattice`). */
+  lattice?: SurfaceLattice;
+}
+
+/**
+ * The refinement's own mesh (before any smoothing beyond level 1): the same
+ * vertex numbering at every subdivision level, which is why features are
+ * authored on it (docs/research/ADULT-SCULPT-PLAN.md, section 6a).
+ */
+export interface SurfaceLattice {
+  /** Vertices of the whole refinement mesh. */
+  vertexCount: number;
+  /**
+   * The refinement mesh's vertices that the refined faces use, ascending: the
+   * region detail targets address, by position in this list (so an index fits
+   * the targets' 16 bits, and a detail cannot reach beyond the refined patch
+   * and its border).
+   */
+  region: Uint32Array;
+  /** Names this refinement (`latticeKey`): detail built on another is refused. */
+  key: string;
+  /** Lattice vertices → the final surface's; null at level 1, where they are the same. */
+  smooth: Stencil | null;
+  /** Control vertices → lattice positions. */
+  stencil: Stencil;
+}
+
+/** Displacement of lattice vertices (metres), added to a refined surface after it is evaluated. */
+export interface SurfaceDetail {
+  /** Indices into `SurfaceLattice.region`. */
+  indices: ArrayLike<number>;
+  /** xyz per index. */
+  xyz: Float32Array;
 }
 
 /**
@@ -151,6 +184,10 @@ function buildSubdividedQuads(
  * Vertex numbering of the refined mesh is the same at every level 1 or more,
  * which is what features authored against it need.
  *
+ * @param faces the source faces the surface is built over, as for
+ *   `buildSurfaceMesh` (null: all). The same set always gives the same vertex
+ *   numbering, which features authored on the lattice depend on; the model
+ *   passes the whole body group and hides what is worn by a mask over triangles.
  * @param refinement source face indices and how many extra levels each gets
  *   over the level-1 surface (a source face's four children share its level)
  * @param levels Catmull–Clark levels of the whole surface, at least 1
@@ -192,7 +229,8 @@ export function buildRefinedSurfaceMesh(
     Uint32Array.from({ length: base.topology.faces.length / 4 }, (_, i) => i),
     { faces: children, levels: childLevels },
   );
-  let stencil = composeStencils(base.stencil, fine.stencil);
+  const lattice = composeStencils(base.stencil, fine.stencil);
+  let stencil = lattice;
   let topology: QuadTopology;
   let uvs: Float32Array = fine.uvs;
   let faceUvs: Uint32Array;
@@ -244,7 +282,59 @@ export function buildRefinedSurfaceMesh(
       interpolate: fine.stencil,
       smooth,
     },
+    lattice: {
+      vertexCount: fine.vertexCount,
+      region: refinedRegion(
+        fine,
+        Array.from(refinement.faces, (f) => position.get(f) as number),
+      ),
+      key: latticeKey(fine),
+      smooth,
+      stencil: lattice,
+    },
   };
+}
+
+/**
+ * The vertices of the faces descended from the refined base faces, ascending.
+ * The most a detail target may address is 65536 of them (its index width).
+ */
+function refinedRegion(
+  fine: { faceStart: Uint32Array; faces: Uint32Array; sourceFace: Uint32Array },
+  /** The refined faces, by place among the faces the surface is built over. */
+  places: readonly number[],
+): Uint32Array {
+  const refined = new Set(places);
+  const vertices = new Set<number>();
+  for (let f = 0; f + 1 < fine.faceStart.length; f++) {
+    if (!refined.has(Math.floor((fine.sourceFace[f] as number) / 4))) continue;
+    for (let c = fine.faceStart[f] as number; c < (fine.faceStart[f + 1] as number); c++)
+      vertices.add(fine.faces[c] as number);
+  }
+  if (vertices.size > 0x10000)
+    throw new RangeError(
+      `the refined region has ${vertices.size} vertices; detail addresses 65536`,
+    );
+  return Uint32Array.from([...vertices].sort((a, b) => a - b));
+}
+
+/**
+ * A 64-bit name for a refinement's lattice (its polygons), as 16 hex digits:
+ * two FNV-1a lanes over the polygon mesh's integers. Not a security hash; it
+ * names which refinement detail targets were authored on.
+ */
+function latticeKey(fine: { vertexCount: number; faceStart: Uint32Array; faces: Uint32Array }) {
+  let a = 0x811c9dc5;
+  let b = 0x01000193 ^ 0xdeadbeef;
+  const mix = (x: number) => {
+    a = Math.imul(a ^ x, 0x01000193) >>> 0;
+    b = Math.imul(b ^ x, 0x85ebca6b) >>> 0;
+    b ^= b >>> 13;
+  };
+  mix(fine.vertexCount);
+  for (const x of fine.faceStart) mix(x);
+  for (const x of fine.faces) mix(x);
+  return a.toString(16).padStart(8, "0") + (b >>> 0).toString(16).padStart(8, "0");
 }
 
 /**
@@ -429,6 +519,54 @@ function smoothNormals(plan: SmoothNormals, control: Float32Array, count: number
   return plan.smooth ? applyStencil(plan.smooth, refined, new Float32Array(count * 3)) : refined;
 }
 
+/** Adds a detail displacement of the lattice to the final surface's positions. */
+function displace(mesh: SurfaceMesh, surface: Float32Array, detail: SurfaceDetail): void {
+  const lattice = mesh.lattice;
+  if (!lattice) throw new Error("detail displacement needs a refined surface (internal)");
+  const d = new Float32Array(lattice.vertexCount * 3);
+  for (let i = 0; i < detail.indices.length; i++) {
+    const v = detail.indices[i] as number;
+    if (!Number.isInteger(v) || v < 0 || v >= lattice.region.length)
+      throw new RangeError(
+        `detail vertex ${v} is out of range for a region of ${lattice.region.length}`,
+      );
+    const at = (lattice.region[v] as number) * 3;
+    d[at] = (d[at] as number) + (detail.xyz[i * 3] as number);
+    d[at + 1] = (d[at + 1] as number) + (detail.xyz[i * 3 + 1] as number);
+    d[at + 2] = (d[at + 2] as number) + (detail.xyz[i * 3 + 2] as number);
+  }
+  const final = lattice.smooth
+    ? applyStencil(lattice.smooth, d, new Float32Array(surface.length))
+    : d;
+  for (let i = 0; i < surface.length; i++)
+    surface[i] = (surface[i] as number) + (final[i] as number);
+}
+
+/**
+ * Adds to `sn` the change in each vertex's face-derived unit normal between two
+ * positions of the same surface (`before`, `after`). Vertices no moved face
+ * touches get exactly zero.
+ */
+function reshade(faces: Uint32Array, before: Float32Array, after: Float32Array, sn: Float32Array) {
+  const unit = (positions: Float32Array) => {
+    const n = new Float32Array(positions.length);
+    addQuadNormals(faces, positions, n);
+    for (let v = 0; v < n.length; v += 3) {
+      const l = Math.hypot(n[v] as number, n[v + 1] as number, n[v + 2] as number);
+      if (l > 0) {
+        n[v] = (n[v] as number) / l;
+        n[v + 1] = (n[v + 1] as number) / l;
+        n[v + 2] = (n[v + 2] as number) / l;
+      }
+    }
+    return n;
+  };
+  const a = unit(before);
+  const b = unit(after);
+  for (let i = 0; i < sn.length; i++)
+    sn[i] = (sn[i] as number) + (b[i] as number) - (a[i] as number);
+}
+
 /** Morphed control positions → render positions and smooth normals (normals shared across UV seams). */
 export function evaluateSurface(
   mesh: SurfaceMesh,
@@ -436,13 +574,22 @@ export function evaluateSurface(
   outPositions: Float32Array,
   outNormals: Float32Array,
   scratch?: { surface: Float32Array; normals: Float32Array },
+  detail?: SurfaceDetail,
 ): void {
   const sCount = mesh.topology.vertexCount;
   const surface = scratch?.surface ?? new Float32Array(sCount * 3);
   let sn = scratch?.normals ?? new Float32Array(sCount * 3);
   applyStencil(mesh.stencil, control, surface);
+  let undisplaced: Float32Array | null = null;
+  if (detail && detail.indices.length > 0) {
+    undisplaced = surface.slice();
+    displace(mesh, surface, detail);
+  }
   if (mesh.smoothNormals) {
     sn = smoothNormals(mesh.smoothNormals, control, sCount);
+    // The new form turns the normals it touches: add the change in the faces' own
+    // normals, which is zero wherever nothing moved, so no seam appears at its edge.
+    if (undisplaced) reshade(mesh.topology.faces, undisplaced, surface, sn);
   } else {
     sn.fill(0);
     addQuadNormals(mesh.topology.faces, surface, sn);

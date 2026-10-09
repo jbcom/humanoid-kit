@@ -55,13 +55,17 @@ export interface AssetMaterial {
   backfaceCull: boolean;
 }
 
-function proveCc0(file: string, text: string): string {
-  const head = text.slice(0, 3000);
-  if (/released as CC0/.test(head))
+/**
+ * The evidence that a text asset is CC0, from the asset's own head: the header
+ * MakeHuman wrote into every file of its CC0 release ("This asset was
+ * explicitly released as CC0 in september 2020"). A bare `license CC0` line
+ * proves nothing: community exporters write it by default, and a file in the
+ * same download can contradict it (the sibling `.obj` of a "CC0" garment often
+ * says AGPL3). Throws when the head does not carry the header.
+ */
+export function proveCc0(file: string, text: string): string {
+  if (/released as CC0/.test(text.slice(0, 3000)))
     return 'file header: "This asset was explicitly released as CC0"';
-  const line = head.split(/\r?\n/).find((l) => /^#\s*license\b/i.test(l) || /^license\b/i.test(l));
-  if (line && /\bCC0\b/i.test(line) && !/AGPL|GPL|BY/i.test(line))
-    return `file header: "${line.trim()}"`;
   throw new Error(`licence gate: ${file} does not prove CC0`);
 }
 
