@@ -47,8 +47,8 @@ export const EXPRESSIONS: readonly FaceExpression[] = [
     // Mouth corners up and back, cheeks raised and the lower lids with them (the
     // eyes crinkle in a real smile), the fold from nose to mouth deepened.
     faceUnits: {
-      ...mouth("PullUp", 0.8),
-      ...both("CheekUp", 0.5),
+      ...mouth("PullUp", 1),
+      ...both("CheekUp", 0.6),
       ...both("LowerLidUp", 0.3),
       NasolabialDeepener: 0.4,
     },
@@ -97,7 +97,7 @@ export const EXPRESSIONS: readonly FaceExpression[] = [
     // upper lip raised off the teeth, the corners drawn down.
     faceUnits: {
       ...both("BrowDown", 1),
-      ...both("LowerLidUp", 0.6),
+      ...both("LowerLidUp", 0.35),
       NoseWrinkler: 0.4,
       NasolabialDeepener: 0.6,
       UpperLipUp: 0.5,

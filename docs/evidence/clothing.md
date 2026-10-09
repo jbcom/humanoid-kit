@@ -59,9 +59,34 @@ with linear cloth, then with dual quaternions:
 Left to right on the second sheet: flexed, twisted, the elegant suit in the
 benchmark pose, and an adult (the refined surface) flexed. Linear, the twisted
 upper arms narrow to a wrapper and skin shows at the shoulder tops. Dual, the
-sleeves stay full and the skin at the shoulders shrinks to two small patches,
-which remain in this pose only (it turns the arms beyond their range; the
-relaxed, T-pose and benchmark sheets show none).
+sleeves stay full, but skin still showed at the shoulder tops in the benchmark
+pose (arms overhead) as well as the twisted one; the next section is why, and
+the fix.
+
+### Skin at a garment's edge
+
+![Casual suit in relaxed, T-pose, benchmark and twisted poses, the elegant suit flexed, and an adult flexed, with the skin at the garment edge sunk under the cloth](./clothing-skinning-edge.webp)
+
+Left to right, top row: relaxed, T-pose, benchmark (arms overhead, kneeling);
+bottom row: the elegant suit flexed, the casual suit twisted, an adult flexed.
+The skin-coloured patches either side of the collar in the benchmark pose were
+not the open collar. They were the ring of body faces MakeHuman keeps at a
+garment's edge so no gap opens: it sits a centimetre or two under the cloth, and
+with the arms raised the cloth at the shoulder top ends up 2–9 mm inside the
+skin (clavicle, shoulder, spine and neck bones meet there at near-equal
+weights). The model now sinks that ring under the cloth by its own clearance
+(docs/ARCHITECTURE.md, "Clothing", "Skin at a garment's edge"); the patches are
+gone from the benchmark sheet. The orange at the forward knee in the benchmark
+cell is the rear foot's shoe (`shoes01` is orange-brown), not skin: every knee
+face lies under the jeans' deleted vertices.
+
+**Limit.** The twisted pose turns the upper arms 135°, past the roughly 90° a
+body reaches, and a faint mark remains at the shoulders there. Measured on body
+vertices covered at rest and outside the cloth posed, within 15 mm, at the
+shoulder top, the summed depth is 4 mm in twisted (10 mm before), 26 mm over
+three neck-base vertices in the benchmark pose (107 mm before), and none in the
+T-pose or flexed. That is the accepted bound: past a joint's range the cloth and
+skin separate by more than the tucked clearance.
 
 ## Layering at the feet: the fault, and the fix
 

@@ -35,6 +35,7 @@ import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
+import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
 import { GROWTH_SCALE, type HairFields, hairFields } from "../surface/hairFields.ts";
 import {
@@ -178,6 +179,8 @@ export interface ModelTopology {
     layerFields: Float32Array;
     /** Ids of the layers `layerFields` holds, in order. */
     layers: string[];
+    /** Which channel of the field atlas holds each layer's mask and coordinate. */
+    plan: AtlasPlan;
     /** Per render vertex, metres of skin per UV unit (`uvScale`), for relief at true size. */
     uvScale: Float32Array;
     /**
@@ -990,6 +993,24 @@ export class HumanoidModel {
     return this.wearsPackedSet() ? null : occlusionFigure();
   }
 
+  private planned: AtlasPlan | undefined;
+
+  /**
+   * Where the skin layers' fields lie in the atlas (`planAtlas`): layers whose
+   * support on the body's UV layout lies apart share channels. Laid out once, from
+   * the whole body's triangles and the layers' fields as built (the adult layers'
+   * arrive later and are never shared).
+   */
+  private atlasPlan(): AtlasPlan {
+    this.planned ??= planAtlas(SKIN_LAYERS, {
+      uvs: this.body.mesh.uvs,
+      index: this.body.mesh.index,
+      vertexCount: this.body.mesh.uvs.length / 2,
+      layerFields: this.layerFields,
+    });
+    return this.planned;
+  }
+
   topology(): ModelTopology {
     const corners = occlusionCorners(OCCLUSION_KEYS.length);
     const baked = this.wearsPackedSet()
@@ -1007,6 +1028,7 @@ export class HumanoidModel {
         index: this.mountedBodyIndex,
         layerFields: this.layerFields,
         layers: SKIN_LAYERS.map((l) => l.id),
+        plan: this.atlasPlan(),
         uvScale: this.uvScale,
         occlusion: this.bodyOcclusionField(),
       },
