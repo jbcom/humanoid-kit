@@ -10,9 +10,11 @@
  * name against the targets and modifiers it packed; a test holds the shipped
  * manifest to this file.
  */
-import type { AdultAnatomySpec } from "../../src/format/assetFormat.ts";
+import type { AdultAnatomySpec, HumanoidAssets } from "../../src/format/assetFormat.ts";
+import { pelvicRefinement } from "./pelvicRegion.ts";
 
-export const ADULT_ANATOMY_SPEC: AdultAnatomySpec = {
+/** The part of the spec that does not depend on the base mesh. */
+export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface"> = {
   features: [
     {
       id: "penis",
@@ -44,6 +46,14 @@ export const ADULT_ANATOMY_SPEC: AdultAnatomySpec = {
     },
   ],
 };
+
+/**
+ * The whole spec for a base body: the fixed part and the surface refinement
+ * round the pelvis (`pelvicRefinement`), which is a choice of that body's faces.
+ */
+export function adultAnatomySpec(base: HumanoidAssets): AdultAnatomySpec {
+  return { ...ADULT_ANATOMY_SPEC, surface: pelvicRefinement(base) };
+}
 
 /** Every target the spec names, for the packer to check against what it packed. */
 export const ADULT_SPEC_TARGETS: readonly string[] = [

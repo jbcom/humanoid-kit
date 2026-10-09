@@ -116,6 +116,40 @@ test.describe("grounding", () => {
     expect(Math.abs(standing - 0.5)).toBeLessThan(0.015);
     expect(Math.abs(kneeling - 0.5)).toBeLessThan(0.015);
   });
+
+  test("the skinning's extreme poses draw cleanly and rest on the ground the reference puts them on", async ({
+    page,
+  }) => {
+    // The same horizon trick, in the poses that bend every hinge and twist every
+    // limb: the shader's dual quaternion skinning must land the feet where the
+    // CPU reference grounded the figure, and compile without a warning.
+    const errors: string[] = [];
+    page.on("console", (m) => {
+      if (m.type() === "error" || m.type() === "warning") errors.push(m.text());
+    });
+    page.on("pageerror", (e) => errors.push(e.message));
+    await openSilentGame(page, "./", { cam: "0,0,4.2,0,0,0", bg: "ff00ff" });
+    await page.locator('[data-figure="ready"]').waitFor({ timeout: 120_000 });
+    for (const body of ["flexed", "twisted"]) {
+      const generation = await page.evaluate((name) => {
+        const next =
+          Number(document.querySelector("[data-generation]")?.getAttribute("data-generation")) + 1;
+        window.hkSetRecipe?.({}, { body: name });
+        return next;
+      }, body);
+      await page
+        .locator(`[data-figure="ready"][data-generation="${generation}"]`)
+        .waitFor({ timeout: 60_000 });
+      await page.evaluate(
+        () =>
+          new Promise<void>((done) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => done())),
+          ),
+      );
+      expect(Math.abs((await lowestFigureRow(page)) - 0.5), body).toBeLessThan(0.015);
+    }
+    expect(errors.filter((e) => !/THREE.Clock/.test(e))).toEqual([]);
+  });
 });
 
 test.describe("posing", () => {

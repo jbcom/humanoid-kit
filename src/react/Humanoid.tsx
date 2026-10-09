@@ -10,6 +10,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -31,6 +32,7 @@ import {
 } from "three";
 import { quantisedShapeSignals, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import type {
+  AdultSurfaceTopology,
   AttachmentTopology,
   Evaluation,
   SurfaceEvaluation,
@@ -42,6 +44,7 @@ import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { createAttachmentMaterial } from "../render/attachmentLook.ts";
+import { DualBones, dualShadowMaterials, followDualSkinning } from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
 import { setBodyOcclusionAttributes, setOcclusionAttributes } from "../render/occlusion.ts";
@@ -55,6 +58,7 @@ import {
   IDENTITY_POSE,
   restBonesFrom,
 } from "../rig/pose.ts";
+import { skinDualShare } from "../rig/skinShare.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 import { sameEntries } from "./sameEntries.ts";
@@ -181,12 +185,28 @@ export interface HumanoidPose {
 
 /** Where a tap on the figure landed. */
 export interface HumanoidPick {
-  /** `"body"`, or the attachment's index in `ModelTopology.attachments`. */
-  part: "body" | number;
+  /**
+   * `"body"`, `"adultBody"` (the adult surface, for a figure aged 18 or over when
+   * the adult pack refines the body), or the attachment's index in
+   * `ModelTopology.attachments`. Look the vertex up in the pick map's
+   * `render.body` or `render.adultBody` accordingly.
+   */
+  part: "body" | "adultBody" | number;
   /** The render vertex of that mesh nearest the tap. */
   vertex: number;
   /** The tapped point, in world space. */
   point: Vector3;
+}
+
+/** A body surface's geometry: the skinned mesh plus the curvature and UV-scale attributes the skin reads. */
+function makeBodyGeometry(
+  t: SurfaceTopology & { uvScale: Float32Array; occlusion: Uint8Array },
+): BufferGeometry {
+  const g = makeGeometry(t);
+  g.setAttribute(CURVATURE_ATTRIBUTE, new BufferAttribute(new Float32Array(t.vertexCount), 1));
+  g.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(t.uvScale, 1));
+  setBodyOcclusionAttributes(g, t.occlusion);
+  return g;
 }
 
 function makeGeometry(t: SurfaceTopology): BufferGeometry {
@@ -295,6 +315,7 @@ function SkinnedPart({
   part,
   renderOrder,
   shape,
+  dual,
 }: {
   geometry: BufferGeometry;
   material: Material;
@@ -304,6 +325,8 @@ function SkinnedPart({
   renderOrder?: number;
   /** Changes whenever the figure is re-evaluated or re-posed. */
   shape: object;
+  /** Set when the material skins by dual quaternions: shadows and bounds then follow it. */
+  dual?: DualBones | null;
 }) {
   const mesh = useMemo(() => {
     const m = new SkinnedMesh(geometry, material);
@@ -312,6 +335,23 @@ function SkinnedPart({
     m.receiveShadow = true;
     return m;
   }, [geometry, material, skeleton]);
+  // Shadows are cast by a depth material, which would skin linearly alone; and
+  // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
+  useEffect(() => {
+    if (!dual) return;
+    const shadows = dualShadowMaterials(dual);
+    mesh.customDepthMaterial = shadows.depth;
+    mesh.customDistanceMaterial = shadows.distance;
+    const applyBoneTransform = mesh.applyBoneTransform;
+    followDualSkinning(mesh, dual);
+    return () => {
+      mesh.customDepthMaterial = undefined as never;
+      mesh.customDistanceMaterial = undefined as never;
+      mesh.applyBoneTransform = applyBoneTransform;
+      shadows.depth.dispose();
+      shadows.distance.dispose();
+    };
+  }, [mesh, dual]);
   // A skinned mesh caches its own (posed) bounds: three computes them once and
   // never again, so a new pose or a re-evaluated (say, taller) figure would
   // keep the old ones, and picking and culling would miss whatever lies
@@ -449,13 +489,7 @@ export function Humanoid({
   }, [lacksPresenceJoints, report]);
   const geometries = useMemo(() => {
     if (!ready) return null;
-    const body = makeGeometry(ready.topology.body);
-    body.setAttribute(
-      CURVATURE_ATTRIBUTE,
-      new BufferAttribute(new Float32Array(ready.topology.body.vertexCount), 1),
-    );
-    body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(ready.topology.body.uvScale, 1));
-    setBodyOcclusionAttributes(body, ready.topology.body.occlusion);
+    const body = makeBodyGeometry(ready.topology.body);
     const attachments = ready.topology.attachments.map((t) => {
       const g = makeGeometry(t);
       setOcclusionAttributes(g, t.occlusion);
@@ -483,8 +517,57 @@ export function Humanoid({
     };
   }, [client, geometries, report]);
   const rig = useMemo(() => (ready ? makeSkeleton(ready.rig) : null), [ready]);
+  // The bones as dual quaternions, which the skin skins by on the GPU (mixed
+  // with three's linear skinning by each bone's share, `SKIN_DUAL_SHARE`).
+  const dual = useMemo(
+    () => (ready ? new DualBones(ready.rig.bones.length, skinDualShare(ready.rig.bones)) : null),
+    [ready],
+  );
+  useEffect(() => () => dual?.dispose(), [dual]);
+  // A custom material skins as it chooses; ours follows the dual quaternions.
+  useLayoutEffect(() => {
+    if (material) return;
+    skin.setDualBones(dual);
+    return () => skin.setDualBones(null);
+  }, [skin, dual, material]);
+  // Whatever else skins to this figure (clothing, a custom material) follows its
+  // joints by `applyDualSkinning(material, group.userData.dualBones)`.
+  useLayoutEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    group.userData.dualBones = dual;
+    return () => {
+      group.userData.dualBones = null;
+    };
+  }, [dual]);
   const keyBasis = useMemo(() => (ready ? occlusionKeyBasis(ready.rig) : null), [ready]);
   const [shown, setShown] = useState(false);
+  // The adult surface (the base body with the adult pack's finer pelvis), for a
+  // figure aged 18 or over. It arrives on its own request, never with the
+  // base's topology, and is drawn only while the figure shown is an adult's.
+  const [adultSurface, setAdultSurface] = useState<AdultSurfaceTopology | null>(null);
+  const refinesBody = ready?.anatomy?.surface !== undefined;
+  useEffect(() => {
+    if (!ready || !refinesBody) {
+      setAdultSurface(null);
+      return;
+    }
+    let live = true;
+    client.adultSurface().then(
+      (t) => live && setAdultSurface(t),
+      (e: Error) => live && report(e),
+    );
+    return () => {
+      live = false;
+    };
+  }, [client, ready, refinesBody, report]);
+  const adultGeometry = useMemo(
+    () => (adultSurface ? makeBodyGeometry(adultSurface) : null),
+    [adultSurface],
+  );
+  useEffect(() => () => adultGeometry?.dispose(), [adultGeometry]);
+  /** Which body surface the geometry last written is for. */
+  const [surface, setSurface] = useState<"base" | "adult">("base");
 
   // The pose: face units blended into bone rotations (rest when absent), and
   // the attachments' occlusion following it.
@@ -507,6 +590,14 @@ export function Humanoid({
   // Where the posed figure's lowest body point is: a crouch or a kneel comes
   // down to the ground rather than hanging where the standing feet were.
   const [figure, setFigure] = useState<Evaluation | null>(null);
+  // The same pose, as dual quaternions over the evaluated figure's rest skeleton.
+  useEffect(() => {
+    if (!dual || !ready || !figure) return;
+    dual.update(
+      restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads),
+      rotations ?? IDENTITY_POSE(ready.rig.bones.length),
+    );
+  }, [dual, ready, figure, rotations]);
   // A new identity whenever the figure or its pose changes: the meshes' bounds follow it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: figure and rotations are the triggers
   const shape = useMemo(() => ({}), [figure, rotations]);
@@ -636,11 +727,16 @@ export function Humanoid({
     client.evaluate(recipe, key, shapeSignals).then(
       (ev) => {
         if (!live) return;
+        // An adult's evaluation is for the adult surface: wait for its geometry
+        // (this effect runs again when it arrives) rather than write it to the base's.
+        const target = ev.surface === "adult" ? adultGeometry : geometries.body;
+        if (!target) return;
         if (rig && ready) fitSkeleton(rig.skeleton, ready.rig.parents, ev.boneHeads);
-        writeGeometry(geometries.body, ev);
-        (geometries.body.getAttribute(CURVATURE_ATTRIBUTE) as BufferAttribute).copyArray(
+        writeGeometry(target, ev);
+        (target.getAttribute(CURVATURE_ATTRIBUTE) as BufferAttribute).copyArray(
           ev.curvature,
         ).needsUpdate = true;
+        setSurface(ev.surface);
         ev.attachments.forEach((a, i) => {
           const g = geometries.attachments[i];
           if (g) writeGeometry(g, a);
@@ -670,6 +766,7 @@ export function Humanoid({
   }, [
     client,
     geometries,
+    adultGeometry,
     rig,
     ready,
     recipe,
@@ -702,10 +799,21 @@ export function Humanoid({
             geometry={geometries.body}
             material={material ?? skin}
             skeleton={rig.skeleton}
-            visible={shown}
+            visible={shown && surface === "base"}
             part="body"
             shape={shape}
+            dual={material ? null : dual}
           />
+          {adultGeometry && (
+            <SkinnedPart
+              geometry={adultGeometry}
+              material={material ?? skin}
+              skeleton={rig.skeleton}
+              visible={shown && surface === "adult"}
+              part="adultBody"
+              shape={shape}
+            />
+          )}
           {ready.topology.attachments.map((t, i) => {
             const g = geometries.attachments[i];
             return g ? (

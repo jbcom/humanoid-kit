@@ -13,7 +13,7 @@ Every packed source file was checked for CC0 from its own content before packing
 - 9 file(s) — upstream LICENSE.md: "Targets and modifiers" listed under "These assets have been released under CC0 1.0 Universal."
 - 1 file(s) — upstream LICENSE.md: "Poses and expressions" listed under "These assets have been released under CC0 1.0 Universal.": poseunits/face-poseunits.bvh
 - 2 file(s) — sibling .meta: "license CC0": poses/tpose.bvh, poses/benchmark.bvh
-- 1 file(s) — authored for humanoid-kit and dedicated to the public domain under CC0 1.0: humanoid-kit:scripts/poses/relaxed.json
+- 3 file(s) — authored for humanoid-kit and dedicated to the public domain under CC0 1.0: humanoid-kit:scripts/poses/flexed.json, humanoid-kit:scripts/poses/relaxed.json, humanoid-kit:scripts/poses/twisted.json
 
 Attachments come from the MakeHuman system assets pack (makehuman_system_assets_cc0.zip, listed as
 "System assets, shared under CC0" on the MakeHuman community asset packs page). Each file was checked the same way:

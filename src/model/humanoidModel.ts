@@ -6,7 +6,12 @@
  * Framework-free; runs in a worker or on the main thread.
  */
 import { meanCurvature, triangleEdges } from "../build/curvature.ts";
-import { buildSurfaceMesh, evaluateSurface, type SurfaceMesh } from "../build/surfaceMesh.ts";
+import {
+  buildRefinedSurfaceMesh,
+  buildSurfaceMesh,
+  evaluateSurface,
+  type SurfaceMesh,
+} from "../build/surfaceMesh.ts";
 import {
   AssetFormatError,
   type AttachmentMaterial,
@@ -22,7 +27,7 @@ import { buildRegionField } from "../makehuman/regions.ts";
 import { STATE_MORPHS, type StateMorph, stateContributions } from "../makehuman/stateMorphs.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
-import { assertSignalPolicy } from "../recipe/agePolicy.ts";
+import { assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
@@ -94,9 +99,29 @@ export interface ModelTopology {
   attachments: AttachmentTopology[];
 }
 
+/**
+ * The body surface of an adult figure when the adult pack refines the base's
+ * (`AdultSurfaceSpec`): finer geometry round the pelvis, with the same UV layout,
+ * skinning and skin layers (the field atlas is in UV space, so it serves both).
+ * Delivered on request once the adult pack is loaded (`HumanoidModel.adultSurface`),
+ * never in `ModelTopology`: the static topology is every figure's.
+ */
+export interface AdultSurfaceTopology extends SurfaceTopology {
+  /** Per render vertex, metres of skin per UV unit (`uvScale`), as for the base body. */
+  uvScale: Float32Array;
+  /**
+   * The body's cavity occlusion at these render vertices, laid out as the base
+   * body's (`ModelTopology.body.occlusion`): the same control-vertex bake,
+   * refined through this surface's stencil, so the face darkens as on the base.
+   */
+  occlusion: Uint8Array;
+}
+
 /** Per render vertex, an index into a `FeatureMap`'s features (or `NO_FEATURE`). */
 export interface RenderFeatures {
   body: Uint8Array;
+  /** The adult surface's render vertices, when the adult pack has one (`adultSurface`). */
+  adultBody?: Uint8Array;
   /** In `ModelTopology.attachments` order. */
   attachments: Uint8Array[];
 }
@@ -124,6 +149,13 @@ function dominantInput(stencil: Stencil, surfaceVertex: number): number {
 }
 
 export interface Evaluation extends SurfaceEvaluation {
+  /**
+   * Which body surface `positions`, `normals` and `curvature` are for: the base
+   * body's (`ModelTopology.body`) or, for a figure aged 18 or over when the adult
+   * pack refines the pelvis, the adult surface's (`HumanoidModel.adultSurface`).
+   * A figure under 18 is always `"base"`, with exactly the base body's vertices.
+   */
+  surface: "base" | "adult";
   /** One entry per attachment, in `ModelTopology.attachments` order. */
   attachments: SurfaceEvaluation[];
   /** Lift (metres) that puts the lowest body point on y = 0. */
@@ -194,6 +226,14 @@ export class HumanoidModel {
   private readonly attachmentLevel: number;
   private readonly layerFields: Float32Array;
   private readonly uvScale: Float32Array;
+  /** Subdivision level of the body, and the faces it is built from. */
+  private readonly level: number;
+  private readonly bodyFaces: Uint32Array;
+  /** The adult surface, built on first use (undefined: not yet; null: this pack has none). */
+  private adultBody:
+    | { part: Part; edges: Uint32Array; topology: AdultSurfaceTopology }
+    | null
+    | undefined;
   /** The body's state morphs and, with the adult pack, its own (`AdultAnatomySpec.stateMorphs`). */
   private readonly stateMorphs: readonly StateMorph[];
   /** The rest bake of the worn set, kept for the corner bakes to reuse. */
@@ -239,6 +279,8 @@ export class HumanoidModel {
         if (!hidden.has(assets.faceVerts[f * 4 + k] as number)) return true;
       return false;
     });
+    this.level = level;
+    this.bodyFaces = bodyFaces;
     this.body = part(
       buildSurfaceMesh({ ...assets, vertexCount: assets.manifest.vertexCount }, bodyFaces, level),
     );
@@ -445,10 +487,14 @@ export class HumanoidModel {
     return selectCavity(candidates, bakes);
   }
 
-  /** The body's cavity occlusion at the render vertices, `occlusion` of `ModelTopology.body`. */
-  private bodyOcclusionField(): Uint8Array {
+  /**
+   * The body's cavity occlusion at the render vertices of `mesh`, a surface
+   * built from the body's control vertices (the base body, or the adult
+   * surface): `occlusion` of `ModelTopology.body` and `AdultSurfaceTopology`.
+   */
+  private bodyOcclusionField(mesh: Part["mesh"] = this.body.mesh): Uint8Array {
     const corners = occlusionCorners(OCCLUSION_KEYS.length);
-    const { stencil, renderToSurface, topology } = this.body.mesh;
+    const { stencil, renderToSurface, topology } = mesh;
     const out = new Uint8Array(renderToSurface.length * corners).fill(255);
     const occlusion = this.assets.bodyOcclusion;
     if (!occlusion) return out;
@@ -477,7 +523,7 @@ export class HumanoidModel {
   /** The worn set's bake at rest, made once and kept for the corners. */
   private occlusionAtRest(): NonNullable<HumanoidModel["restOcclusion"]> {
     if (!this.restOcclusion) {
-      const rest = this.evaluate(occlusionFigure()).control;
+      const rest = this.evaluateControl(occlusionFigure(), {});
       // Occluding attachments at one subdivision level, whatever this model's.
       const surfaces = this.attached.map((a) =>
         this.attachmentLevel === 1 ? a.part : part(this.attachmentSurface(a.asset, 1)),
@@ -553,8 +599,14 @@ export class HumanoidModel {
   renderFeatures(vertexFeature: Uint8Array): RenderFeatures {
     const of = (base: number) => vertexFeature[base] ?? NO_FEATURE;
     const { stencil, renderToSurface } = this.body.mesh;
+    const adult = this.adultBodySurface();
     return {
       body: Uint8Array.from(renderToSurface, (s) => of(dominantInput(stencil, s))),
+      ...(adult && {
+        adultBody: Uint8Array.from(adult.part.mesh.renderToSurface, (s) =>
+          of(dominantInput(adult.part.mesh.stencil, s)),
+        ),
+      }),
       attachments: this.attached.map(({ asset, part: p }) =>
         Uint8Array.from(p.mesh.renderToSurface, (s) =>
           of(asset.refVerts[dominantInput(p.mesh.stencil, s) * 3] as number),
@@ -702,6 +754,36 @@ export class HumanoidModel {
    * never part of the recipe; adult-only signals are refused under 18.
    */
   evaluate(recipe: Recipe, signals: Readonly<Record<string, number>> = {}): Evaluation {
+    const control = this.evaluateControl(recipe, signals);
+    let minY = Number.POSITIVE_INFINITY;
+    for (const v of this.bodyVertices) minY = Math.min(minY, control[v * 3 + 1] as number);
+    // The adult surface only for a figure aged 18 or over, decided here and nowhere
+    // else: a minor's evaluation is the base body's, and never builds the other.
+    const adult = isAdult(recipe) ? this.adultBodySurface() : null;
+    const body = this.evaluatePart(adult ? adult.part : this.body, control);
+    const attachments = this.attached.map((a) =>
+      this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
+    );
+    const curvature = meanCurvature(
+      body.positions,
+      body.normals,
+      adult ? adult.edges : this.bodyEdges,
+      new Float32Array(body.positions.length / 3),
+    );
+    const boneHeads = restBones(this.assets, control).heads;
+    return {
+      ...body,
+      surface: adult ? "adult" : "base",
+      attachments,
+      groundOffset: -minY,
+      control,
+      curvature,
+      boneHeads,
+    };
+  }
+
+  /** The morphed control positions of a recipe in a skin state: the shape, before any surface is built. */
+  private evaluateControl(recipe: Recipe, signals: Readonly<Record<string, number>>): Float32Array {
     const contributions = this.contributions(recipe, signals);
     const pending = this.pendingFor(contributions);
     if (pending.size)
@@ -711,20 +793,56 @@ export class HumanoidModel {
       );
     const control = new Float32Array(this.assets.positions.length);
     evaluateMorph(this.assets.positions, this.assets.targets, contributions, control, this.regions);
-    let minY = Number.POSITIVE_INFINITY;
-    for (const v of this.bodyVertices) minY = Math.min(minY, control[v * 3 + 1] as number);
-    const body = this.evaluatePart(this.body, control);
-    const attachments = this.attached.map((a) =>
-      this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
+    return control;
+  }
+
+  /**
+   * The body surface of an adult figure, when the adult pack refines the base's
+   * (`AdultSurfaceSpec`), else null. The face list and levels are the pack's
+   * data; this refines what it names, evaluated from the same control vertices
+   * as the base surface, so a figure's shape is the same on either.
+   */
+  adultSurface(): AdultSurfaceTopology | null {
+    return this.adultBodySurface()?.topology ?? null;
+  }
+
+  private adultBodySurface() {
+    if (this.adultBody !== undefined) return this.adultBody;
+    const spec = this.assets.adultAnatomyManifest?.anatomy?.surface;
+    // The refinement is of the level-1 surface: a model drawing the control mesh has none.
+    if (!spec || this.level < 1) {
+      this.adultBody = null;
+      return null;
+    }
+    // Faces a worn attachment hides are not in this body, so they are not refined.
+    const present = new Set(this.bodyFaces);
+    const keep = spec.faces.flatMap((f, i) => (present.has(f) ? [i] : []));
+    const mesh = buildRefinedSurfaceMesh(
+      { ...this.assets, vertexCount: this.assets.manifest.vertexCount },
+      this.bodyFaces,
+      {
+        faces: keep.map((i) => spec.faces[i] as number),
+        levels: keep.map((i) => spec.levels[i] as number),
+      },
+      this.level,
     );
-    const curvature = meanCurvature(
-      body.positions,
-      body.normals,
-      this.bodyEdges,
-      new Float32Array(body.positions.length / 3),
-    );
-    const boneHeads = restBones(this.assets, control).heads;
-    return { ...body, attachments, groundOffset: -minY, control, curvature, boneHeads };
+    const n = this.assets.manifest.vertexCount;
+    const scaleField = new Float32Array(n * 3);
+    uvScale(this.assets, this.bodyFaces).forEach((s, v) => {
+      scaleField[v * 3] = s;
+    });
+    const surface = new Float32Array(mesh.topology.vertexCount * 3);
+    applyStencil(mesh.stencil, scaleField, surface);
+    this.adultBody = {
+      part: part(mesh),
+      edges: triangleEdges(mesh.index),
+      topology: {
+        ...topologyOf(mesh),
+        uvScale: Float32Array.from(mesh.renderToSurface, (s) => surface[s * 3] as number),
+        occlusion: this.bodyOcclusionField(mesh),
+      },
+    };
+    return this.adultBody;
   }
 
   private evaluatePart(p: Part, control: Float32Array): SurfaceEvaluation {

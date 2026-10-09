@@ -459,17 +459,17 @@ mean what they meant there; everything must be testable in Node.
   are kept for exporting to tools with bone-local frames; posing does not need
   them. Rotations from MakeHuman's BVH files apply unchanged, in each joint's
   channel order.
-- *Linear blend skinning on the GPU* (three's `SkinnedMesh`) with the pack's
-  weights, which MakeHuman authored for linear blending. The worker returns
-  the bone heads with each evaluation; the main thread binds the skeleton at
-  that rest and poses it per frame. Dual-quaternion skinning and corrective
-  shapes, for elbows, knees and shoulders, are a later area lane on the same
-  rig.
+- *Skinning on the GPU* (three's `SkinnedMesh`) with the pack's weights, which
+  MakeHuman authored for linear blending. The worker returns the bone heads with
+  each evaluation; the main thread binds the skeleton at that rest and poses it
+  per frame. Linear blending alone loses volume and collapses twisted limbs, so
+  the skin mixes it with dual quaternion skinning (below, "Skinning artefacts").
 - *Expressions blend face units in log space*: each unit's per-bone rotation
   is a rotation vector, an expression is the weighted sum per bone, and the sum
   is exponentiated. Blending is order-independent and exact for one unit.
 - *A CPU reference* (`skinPositions`) poses control vertices exactly as the
-  shader does, for tests, presence anchors and pose-keyed occlusion bakes.
+  shader does, for tests, presence anchors, grounding and pose-keyed occlusion
+  bakes. The browser project holds the shader to it.
 - *MakeHuman's BVH files are Z-up, facing -Y*; the figure is Y-up, facing +Z.
   Every rotation channel is mapped into the figure's axes (X stays X, Y becomes
   -Z, Z becomes Y). An X rotation (the jaw, the lids) means the same either
@@ -482,13 +482,117 @@ mean what they meant there; everything must be testable in Node.
   they pose): BVH channel values in degrees per joint over a MakeHuman pose's
   joint layout, every other channel at rest, packed into the same entries. The
   first is `relaxed`, standing at ease with the arms at the sides, since the
-  rest A-pose holds them 42° out. An expression layers on top of a body pose
-  bone by bone.
+  rest A-pose holds them 42° out; `flexed` and `twisted` are the skinning's
+  extremes (below), which the pack's benchmark does not reach: it bends no
+  elbow, knee or wrist. An expression layers on top of a body pose bone by
+  bone.
 - *Grounding follows the pose.* The rest ground offset comes with each
   evaluation; a posed figure's comes from skinning its control mesh on the
   main thread (`posedGroundOffset`, with the pack's skin sent once), so a
   kneeling figure rests on the floor instead of hanging where its standing
   feet were.
+
+### Skinning artefacts (2026-10-09)
+
+Linear blend skinning averages bone matrices, and the average of two rotations
+is not a rotation. A vertex between a bone and one turned against it about the
+limb's axis is pulled toward that axis (the candy wrapper), and a bent joint
+loses the volume it should wrap round the bend. Both are worst at the extremes
+a game reaches: a forearm turned by retargeted animation, an arm raised
+overhead, a crouch.
+
+**Measured** (`scripts/lib/skinBench.ts`, run by
+`node scripts/research/skinning-artefacts.ts`). Each case turns one bone of the
+packed figure about a world axis and measures the body with two numbers, over
+five body types (an average adult, a tall lean and a muscular man, a short full
+woman and a child). *Girth*: for the body's vertices at the joint, the distance
+to the limb's centreline (the joints' polyline) posed over at rest; 1 is clean,
+below it is a pinch, 0 the collapsed neck of a candy wrapper. *ΔV*: the change
+in the whole body's volume in thousandths of it (an adult is 55 L, so 1‰ is
+55 mL), which is that joint's alone since nothing else moves (the body mesh is
+one closed surface, wound consistently, so the volume is exact). Worst body for
+ΔV and for the 5th percentile of girth `p5`; mean girth is over the bodies:
+
+| Case | Linear: mean / p5 / ΔV | Dual quaternion: mean / p5 / ΔV | Shipped: mean / p5 / ΔV |
+| --- | --- | --- | --- |
+| forearm twisted 135° | 0.98 / 0.87 / −1.2‰ | 1.00 / 1.00 / −0.1‰ | 0.99 / 0.94 / −0.6‰ |
+| upper arm twisted 135° | 0.93 / 0.52 / −13.8‰ | 1.00 / 1.00 / −5.5‰ | 0.99 / 0.88 / −6.8‰ |
+| thigh twisted 90° | 0.93 / 0.72 / −34.1‰ | 1.00 / 1.00 / −8.9‰ | 1.00 / 0.97 / −12.2‰ |
+| arm raised forward 130° | 0.81 / 0.41 / −19.4‰ | 0.97 / 0.57 / −2.3‰ | 0.94 / 0.53 / −10.5‰ |
+| arm raised sideways 130° | 0.87 / 0.48 / −9.6‰ | 0.97 / 0.67 / −12.5‰ | 0.96 / 0.67 / −4.6‰ |
+| hip flexed 120° | 0.80 / 0.30 / −35.2‰ | 0.97 / 0.47 / −17.4‰ | 0.95 / 0.42 / −19.8‰ |
+| hip abducted 45° | 0.98 / 0.70 / −17.1‰ | 1.00 / 0.74 / −15.2‰ | 0.99 / 0.73 / −15.4‰ |
+| knee flexed 120° | 0.81 / 0.22 / −6.4‰ | 0.93 / 0.26 / −2.5‰ | 0.88 / 0.25 / −4.1‰ |
+| elbow flexed 120° | 0.84 / 0.33 / −3.8‰ | 0.91 / 0.31 / −3.9‰ | 0.90 / 0.31 / −3.9‰ |
+
+The pack's benchmark pose bends no elbow, knee or wrist, so `flexed` (every
+hinge near its limit) and `twisted` (each limb turned past what a body can) are
+authored for the check (`scripts/poses/`; their rotations are pure turns about
+the limb's hinge or axis, which a test holds them to). Their sheets, and the
+numbers, are what the lane checked against.
+
+**Options, by total fit.**
+
+1. *Dual quaternion skinning everywhere* (Kavan et al. 2008; three has none, so
+   a patch of its skinning chunks). It removes the twist collapse and most of
+   the shaft's lost volume outright (above). It bulges bent joints, though: the
+   95th percentile of girth at a bent knee reaches 1.66 (linear: 1.23) and at a
+   flexed hip 1.39 (linear: 1.13), and it leaves the elbow and the hips'
+   abduction where they were, because their loss is the weights' own geometry.
+2. *Twist bones.* MakeHuman's skeleton has helper bones along each limb
+   (`upperarm02`, `lowerarm02`, `upperleg02`, `lowerleg02`) that its poses drive
+   by hand and a BVH from elsewhere leaves at rest. Distributing a child's twist
+   to them is a kinematic fix, free on the GPU and exact in the CPU reference.
+   But only where a helper lies between the two bones (not at the shoulder or
+   hip, where the twist meets the torso), and it does nothing for the volume a
+   bend loses. Dual quaternions do the same for every pair of bones at once.
+3. *Pose-space correctives* driven by the flexion signals. No CC0 correctives
+   exist for this mesh, and deriving them needs a reference deformation per
+   joint and body type (a corrective per morph, or one that follows the morphs);
+   their data, and a second system next to the skinning, are what dual
+   quaternions avoid. They are the next step for what remains (below), derived
+   against the skinning that ships.
+4. *Per-vertex centres of rotation* (Le & Hodgins 2016) fit best of all, but
+   each figure's morph moves the centres, and finding them costs a pass over
+   the mesh per figure. Not now.
+5. *A blend of 1 with linear skinning, by bone* (shipped). The bulge comes from
+   dual quaternions and the collapse from linear blending, so each bone says how
+   much of each it takes, and a vertex mixes the two results by the mean of its
+   bones' shares. The table is 13 numbers (`SKIN_DUAL_SHARE`, left and right
+   alike); the rest of the skeleton (spine, neck, face, fingers, toes) stays
+   linear, as before.
+
+**The table** is searched, not painted: `scripts/research/tune-skin-share.ts`
+walks each limb's bones, one at a time over 0, ¼, ½, ¾ and 1, for the lowest
+cost over the bench's joint cases at four body types, where a case costs what
+it does wrong: mean girth below 1 (pinch), `p5` below 0.85 (collapse), the 95th
+percentile above 1.08 (bulge) and volume lost. The fifth body type (the child)
+is held out of the search: the table costs it less than linear skinning too
+(arm 7.4 → 2.8, leg 25.9 → 7.2). It came out as dual quaternions for the whole
+arm but the elbow's two bones (½), and for the pelvis, the thigh and the foot,
+and linear for the shin: the knee is where a bend's bulge outweighs the volume
+dual quaternions save. Re-run it if the pack's skin weights change.
+
+**How it runs.** `DualBones` (`src/render/dualSkinning.ts`) holds each bone's
+dual quaternion and share as a float texture, written from the same bone
+rotations as the CPU reference whenever the pose or the figure changes. A patch
+of three's `skinning_vertex` and `skinnormal_vertex` chunks (on the skin
+material, the shadow depth materials and, for materials this library does not
+make, `applyDualSkinning`) blends the vertex's bones' dual quaternions, skins by
+the result and mixes it with three's own linear skinning by the vertex's share.
+Three's bounds and ray picking skin on the CPU, linearly, so the mesh's
+`applyBoneTransform` follows the blend too. `skinPositions` *is* the blend, for
+grounding, anchors and occlusion bakes, so they follow what is drawn;
+`skinPositionsLinear` is the old scheme. The shader is held to the reference in
+the browser project (the dual quaternion blend and share vertex by vertex to
+2·10⁻⁵, and a whole skinned mesh against the reference's image).
+
+**What remains.** The elbow loses about 4‰ and the hips 15 to 20‰ in every
+scheme (the weights' geometry: the inside of a fold, and the groin). The blend
+bulges a flexed hip's front (95th percentile 1.37 at 120°, against linear
+skinning's 1.13) for the 15‰ of volume it keeps, and a bent knee's (1.32 against
+1.23). Those are for a corrective lane, against this skinning; the crease detail
+layers (`flex.*` signals) paint the fold's skin on top of it.
 
 ## Presence
 
@@ -811,6 +915,43 @@ surface is the sculpt phase's first job, and cannot be done by drawing
 `helper-genital` for every figure: the surface is shared across ages, and a
 static surface cannot be gated by age (docs/research/ADULT-SCULPT-PLAN.md).
 `tests/adultStack.test.ts` records the limit so that change fails it.
+
+### The adult surface (sculpt phase 2, refined pelvic topology)
+
+The sculpt needs more vertices in the pelvis than the base has, for an adult
+only. So the adult pack's `anatomy.surface` names a region of the base body (a
+core of faces and a one-face ring around it) and `buildRefinedSurfaceMesh`
+refines it: it takes the base's own level-1 surface, splits each selected face
+into 2^l by 2^l cells (core +2 levels, ring +1, giving 2.3 mm cells in the core),
+joins the levels with conforming transition polygons (a hanging point becomes a
+polygon vertex, so there are no cracks; neighbouring faces differ by at most one
+level), and from level 2 on smooths with polygon Catmull-Clark. The base's
+vertices keep their indices and positions, UVs stay face-varying with their
+seams, and the vertex normals interpolate the base's, so the refined surface
+shades like the base. All-quad local refinement is impossible without refining
+whole chains of faces across the body (the dual chords through the pelvis run
+156 to 900 faces), which is why the transition is polygonal.
+
+It is a second topology, gated by age structurally rather than by being hidden:
+
+- `HumanoidModel.adultSurface()` builds it only with the adult pack's spec and
+  subdivision of 1 or more, and the worker delivers it on its own request
+  (`adultSurface`), never inside `ready`'s topology.
+- `evaluate(recipe)` uses it only when `isAdult(recipe)`; a figure under 18 is
+  evaluated on the base surface and has exactly the base's vertices, with or
+  without the adult pack (`tests/adultSurfaceModel.test.ts`, at ages 1, 11, 15
+  and 17.99). There is no adult vertex in a minor's evaluation to hide.
+- The control vertices are the base's either way, so every target, binding,
+  weight and layer works on both; the layer atlas serves both because it lives in
+  UV space, which refinement preserves.
+
+The refined region is empty of anatomy today: it is the base shape in finer
+cells, proven by the geometry tests and by a render within 11 pixels over 8
+levels of the base's (adult against base contact sheet, local only). The
+features (mound, penis, testes, vulva) land on it one at a time
+(docs/research/ADULT-SCULPT-PLAN.md, section 10), and
+`tests/adultPermutations.test.ts` holds the matrix of ages, genders, feature
+combinations and states every one of them joins.
 
 **Arousal.** The adult manifest adds an `arousal` state morph
 (`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by

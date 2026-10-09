@@ -127,6 +127,56 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
     expect(reply.update.layerFields.some((x) => x > 0)).toBe(true);
   });
 
+  it("has no adult surface without an adult pack, and the base surface for every figure", async () => {
+    stubFetch();
+    const { handle, replies } = start();
+    await handle({
+      type: "init",
+      id: 1,
+      load: { body: "http://packs/body" },
+      model: { subdivision: 0 },
+    });
+    await handle({ type: "adultSurface", id: 2 });
+    expect(replies.get(2)).toEqual({ type: "adultSurface", id: 2, topology: null });
+    await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
+    const ev = replies.get(3);
+    if (ev?.type !== "evaluated") throw new Error("not evaluated");
+    expect(ev.evaluation.surface).toBe("base");
+  });
+
+  it("serves the adult surface at once and evaluates an adult on it and a minor on the base", async () => {
+    stubFetch();
+    const { handle, replies } = start();
+    await handle({
+      type: "init",
+      id: 1,
+      load: { body: "http://packs/body", adultAnatomy: "http://packs/adult", firstFigureAge: 15 },
+      model: { subdivision: 1 },
+    });
+    // The surface needs only the pack's manifest, not its targets: no waiting for the adult stage.
+    await handle({ type: "adultSurface", id: 2 });
+    const reply = replies.get(2);
+    if (reply?.type !== "adultSurface" || !reply.topology) throw new Error("no adult surface");
+    const { topology } = reply;
+    await handle({ type: "evaluate", id: 3, recipe: createRecipe({ macros: { age: 30 } }) });
+    await handle({ type: "evaluate", id: 4, recipe: createRecipe({ macros: { age: 15 } }) });
+    const adult = replies.get(3);
+    const minor = replies.get(4);
+    if (adult?.type !== "evaluated" || minor?.type !== "evaluated")
+      throw new Error("no evaluation");
+    expect(adult.evaluation.surface).toBe("adult");
+    expect(adult.evaluation.positions.length).toBe(topology.vertexCount * 3);
+    expect(minor.evaluation.surface).toBe("base");
+    const ready = replies.get(1);
+    if (ready?.type !== "ready") throw new Error("not ready");
+    expect(minor.evaluation.positions.length).toBe(ready.topology.body.vertexCount * 3);
+    // The pick map covers the adult surface's vertices too.
+    await handle({ type: "pickMap", id: 5 });
+    const pick = replies.get(5);
+    if (pick?.type !== "pickMap") throw new Error("no pick map");
+    expect(pick.render.adultBody?.length).toBe(topology.vertexCount);
+  });
+
   it("rejects the adult layer fields when the adult stage fails, and keeps serving others", async () => {
     stubFetch({ missing: "targets.bin.gz" });
     const { handle, replies } = start();
