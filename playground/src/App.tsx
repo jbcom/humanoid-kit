@@ -20,6 +20,7 @@ import {
   NeutralToneMapping,
   type ToneMapping,
 } from "three";
+import { tattooImages } from "./tattooImages";
 import { Walk } from "./Walk";
 
 async function createClient(): Promise<HumanoidWorkerClient> {
@@ -264,6 +265,7 @@ function Shot() {
           position={[0, lift, 0]}
           onGroundOffset={setLift}
           onSettled={() => setReady(true)}
+          bodyArtImages={tattooImages()}
         />
         <OrbitControls makeDefault target={target} />
       </Canvas>

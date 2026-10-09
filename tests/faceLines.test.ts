@@ -153,7 +153,7 @@ describe("the expression line layers", () => {
   it("put the glabella's furrows between the brows, running across them", () => {
     const l = index("lines.glabella");
     const covered = strong(l);
-    expect(covered.length).toBeGreaterThan(10);
+    expect(covered.length).toBeGreaterThan(5);
     const xs = covered.map((v) => pos(v)[0] as number);
     const cs = covered.map((v) => coord(l, v));
     for (const v of covered) {

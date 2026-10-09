@@ -51,6 +51,7 @@ import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { createAttachmentMaterial, TeethMaterial } from "../render/attachmentLook.ts";
+import { type BodyArtImages, type BodyArtTexture, bakeBodyArt } from "../render/bodyArtTexture.ts";
 import { DecalMaterial } from "../render/decalMaterial.ts";
 import {
   applyDualSkinning,
@@ -201,6 +202,14 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
    * this height to stand, crouch or kneel on y = 0.
    */
   onGroundOffset?: (offset: number) => void;
+  /**
+   * The images the recipe's tattoos name (`Tattoo.image`), decoded (an
+   * `ImageBitmap`, a loaded `HTMLImageElement`, a canvas). Keep the object
+   * stable (memoise it): a new one bakes the figure's body art again. A tattoo
+   * whose image is missing is reported through `onError` and the figure is
+   * drawn without its body art.
+   */
+  bodyArtImages?: BodyArtImages;
 };
 
 export interface HumanoidPresenceProps {
@@ -756,6 +765,7 @@ export function Humanoid({
   pose,
   signals,
   onGroundOffset,
+  bodyArtImages,
   ...group
 }: HumanoidProps) {
   const client = useHumanoidClient();
@@ -1031,6 +1041,45 @@ export function Humanoid({
       atlas.release();
     };
   }, [client, gl, ready, skin, report]);
+  // The figure's body art, baked into a texture of its own from each evaluation
+  // that brings some (the placement follows the shape). A new bake replaces the
+  // last without rebuilding the shader; only a figure gaining or losing body art does.
+  const bodyArt = useRef<BodyArtTexture | null>(null);
+  useEffect(() => {
+    if (!figure) return;
+    const placement = figure.bodyArt;
+    const topology = figure.surface === "adult" ? adultSurface : ready?.topology.body;
+    // An adult's evaluation waits for the adult surface's topology.
+    if (placement && !topology) return;
+    let next: BodyArtTexture | null = null;
+    if (placement?.tattoos.length && topology)
+      try {
+        next = bakeBodyArt(
+          gl,
+          {
+            uvs: topology.uvs,
+            index: topology.index,
+            vertexCount: topology.vertexCount,
+            positions: figure.positions,
+            normals: figure.normals,
+          },
+          placement,
+          bodyArtImages ?? {},
+        );
+      } catch (e) {
+        report(e as Error);
+      }
+    skin.setBodyArt(next?.texture ?? null);
+    bodyArt.current?.dispose();
+    bodyArt.current = next;
+  }, [figure, ready, adultSurface, gl, skin, bodyArtImages, report]);
+  useEffect(
+    () => () => {
+      bodyArt.current?.dispose();
+      bodyArt.current = null;
+    },
+    [],
+  );
   // The joints' flexion in the current pose joins the skin's signals
   // (`flex.elbow.L`, …), so crease layers follow any pose or animation.
   const flexion = useMemo(() => {
