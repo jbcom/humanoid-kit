@@ -15,6 +15,7 @@ class FakeWorker {
   evaluated: number[] = [];
   pickMaps = 0;
   posedOcclusions = 0;
+  adultLayerRequests = 0;
   terminated = false;
   private readonly failInit: boolean;
   private readonly later: Promise<void>;
@@ -51,6 +52,19 @@ class FakeWorker {
       setTimeout(
         () => reply({ type: "posedOcclusion", id: msg.id, attachments: [Float32Array.of(0.5)] }),
         1,
+      );
+      return;
+    }
+    if (msg.type === "adultLayers") {
+      this.adultLayerRequests++;
+      this.later.then(
+        () =>
+          reply({
+            type: "adultLayers",
+            id: msg.id,
+            update: { layers: ["penis-skin"], layerFields: Float32Array.of(0.25, 0.5) },
+          }),
+        fail,
       );
       return;
     }
@@ -189,6 +203,25 @@ describe("HumanoidWorkerClient", () => {
     expect(client.posedOcclusion()).toBe(first);
     expect([...((await first)?.[0] ?? [])]).toEqual([0.5]);
     expect(worker.posedOcclusions).toBe(1);
+  });
+
+  it("asks the worker for the adult layer fields once, and shares the answer", async () => {
+    const later = gate();
+    const { client, worker } = make(false, later.promise);
+    const first = client.adultLayers();
+    expect(client.adultLayers()).toBe(first);
+    let settled = false;
+    void first.then(() => {
+      settled = true;
+    });
+    await client.ready;
+    await new Promise((r) => setTimeout(r, 5));
+    expect(settled).toBe(false);
+    later.release();
+    const update = await first;
+    expect(update?.layers).toEqual(["penis-skin"]);
+    expect([...(update?.layerFields ?? [])]).toEqual([0.25, 0.5]);
+    expect(worker.adultLayerRequests).toBe(1);
   });
 
   it("fails queued evaluations when the worker cannot initialise", async () => {

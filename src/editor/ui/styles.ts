@@ -42,13 +42,15 @@ export const CREATOR_CSS = /* css */ `
   backdrop-filter: blur(18px);
 }
 .hk-toolbar {
-  display: flex; align-items: center; gap: 4px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
   padding: 10px 10px 6px 16px;
 }
+/* The title keeps its whole name; the actions wrap below it when both do not fit. */
 .hk-title {
-  flex: 1; min-width: 0; margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0.01em;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 1 0 auto; max-width: 100%; margin: 0; font-size: 15px; font-weight: 600;
+  letter-spacing: 0.01em; overflow-wrap: anywhere;
 }
+.hk-actions { display: flex; gap: 4px; margin-left: auto; }
 .hk-icon-button {
   display: inline-grid; place-items: center;
   width: var(--hk-touch); height: var(--hk-touch);
@@ -72,13 +74,15 @@ export const CREATOR_CSS = /* css */ `
   background: var(--hk-raised); color: var(--hk-text); font: inherit;
 }
 .hk-search::placeholder { color: var(--hk-muted); }
+/* The strip scrolls sideways; its trailing edge fades so the tabs beyond it are seen to be there. */
 .hk-tabs {
   display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;
-  padding: 2px 12px 10px; border-bottom: 1px solid var(--hk-border);
+  padding: 2px 32px 10px 12px; border-bottom: 1px solid var(--hk-border);
+  mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
 }
 .hk-tabs::-webkit-scrollbar { display: none; }
 .hk-tab {
-  flex: none; min-height: 36px; padding: 0 14px;
+  flex: none; min-height: var(--hk-touch); padding: 0 14px;
   border: 0; border-radius: 999px;
   background: transparent; color: var(--hk-muted);
   font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap;

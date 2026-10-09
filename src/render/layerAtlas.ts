@@ -30,13 +30,24 @@ import {
   type WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
+import type { LayerFieldsUpdate } from "../surface/layers.ts";
 
 /** Texels of gutter filled around each UV island. */
 export const GUTTER = 4;
 
 export interface LayerAtlas {
+  /** Stays the same object for the atlas's life, refreshes included. */
   texture: Texture;
   pages: number;
+  /**
+   * Replaces some layers' fields in place and re-rasterises only the pages
+   * that hold them (the other layers on those pages keep the source's fields):
+   * no new texture, so no shader recompile, and nothing is re-evaluated. This
+   * is how the adult anatomy's fields, which arrive after the atlas exists,
+   * reach it. The source's `layerFields` are updated too. Throws `RangeError`
+   * for a layer the atlas does not hold or fields of the wrong length.
+   */
+  refresh(update: LayerFieldsUpdate): void;
   dispose(): void;
 }
 
@@ -100,20 +111,18 @@ void main() {
     }
 }`;
 
-/** Rasterises the fields; the caller owns the result and disposes it. */
-export function buildLayerAtlas(
+/**
+ * Rasterises the given pages of the atlas from the source's fields (each page
+ * holds two layers; the others are not touched). Its scratch targets, cover
+ * mask and materials live for this call only.
+ */
+function rasterisePages(
   renderer: WebGLRenderer,
   source: LayerAtlasSource,
-  size = 1024,
-): LayerAtlas {
-  const pages = atlasPages(source.layers.length);
-  const atlas = new WebGLArrayRenderTarget(size, size, pages, {
-    type: UnsignedByteType,
-    minFilter: LinearFilter,
-    magFilter: LinearFilter,
-    generateMipmaps: false,
-    depthBuffer: false,
-  });
+  atlas: WebGLArrayRenderTarget,
+  pageList: readonly number[],
+  size: number,
+): void {
   const scratch = new WebGLRenderTarget(size, size, {
     type: UnsignedByteType,
     minFilter: NearestFilter,
@@ -189,7 +198,7 @@ export function buildLayerAtlas(
     renderer.clear();
     renderer.render(scene, camera);
     mesh.material = raster;
-    for (let p = 0; p < pages; p++) {
+    for (const p of pageList) {
       fields.fill(0);
       for (let k = 0; k < 2; k++) {
         const l = p * 2 + k;
@@ -218,23 +227,71 @@ export function buildLayerAtlas(
     scratch.dispose();
     cover.dispose();
   }
-  return { texture: atlas.texture, pages, dispose: () => atlas.dispose() };
+}
+
+/** Rasterises the fields; the caller owns the result and disposes it. */
+export function buildLayerAtlas(
+  renderer: WebGLRenderer,
+  source: LayerAtlasSource,
+  size = 1024,
+): LayerAtlas {
+  const pages = atlasPages(source.layers.length);
+  const atlas = new WebGLArrayRenderTarget(size, size, pages, {
+    type: UnsignedByteType,
+    minFilter: LinearFilter,
+    magFilter: LinearFilter,
+    generateMipmaps: false,
+    depthBuffer: false,
+  });
+  rasterisePages(
+    renderer,
+    source,
+    atlas,
+    Array.from({ length: pages }, (_, p) => p),
+    size,
+  );
+  return {
+    texture: atlas.texture,
+    pages,
+    refresh(update) {
+      const n = source.vertexCount;
+      const at = update.layers.map((id) => {
+        const l = source.layers.indexOf(id);
+        if (l < 0) throw new RangeError(`layer atlas: no layer ${id}`);
+        return l;
+      });
+      if (update.layerFields.length !== at.length * n * 2)
+        throw new RangeError(
+          `layer atlas: fields for ${at.length} layers need ${at.length * n * 2} values, got ${update.layerFields.length}`,
+        );
+      // The source keeps the new fields, so an atlas built from it later agrees.
+      at.forEach((l, k) => {
+        source.layerFields.set(update.layerFields.subarray(k * n * 2, (k + 1) * n * 2), l * n * 2);
+      });
+      rasterisePages(renderer, source, atlas, [...new Set(at.map((l) => l >> 1))], size);
+    },
+    dispose: () => atlas.dispose(),
+  };
 }
 
 const shared = new WeakMap<
   WebGLRenderer,
-  WeakMap<LayerAtlasSource, { atlas: LayerAtlas; users: number }>
+  WeakMap<
+    LayerAtlasSource,
+    { atlas: LayerAtlas; users: number; applied: WeakSet<LayerFieldsUpdate> }
+  >
 >();
 
 /**
  * The atlas for `source` on `renderer`, built on first use and shared by every
  * figure drawing the same body; call `release` when done with it, and the last
- * release disposes it.
+ * release disposes it. `refresh` applies an update to the shared atlas once,
+ * however many figures hand over the same one (the worker's answer is shared).
  */
 export function acquireLayerAtlas(
   renderer: WebGLRenderer,
   source: LayerAtlasSource,
-): { texture: Texture; release(): void } {
+): { texture: Texture; refresh(update: LayerFieldsUpdate): void; release(): void } {
   let byBody = shared.get(renderer);
   if (!byBody) {
     byBody = new WeakMap();
@@ -242,7 +299,7 @@ export function acquireLayerAtlas(
   }
   let entry = byBody.get(source);
   if (!entry) {
-    entry = { atlas: buildLayerAtlas(renderer, source), users: 0 };
+    entry = { atlas: buildLayerAtlas(renderer, source), users: 0, applied: new WeakSet() };
     byBody.set(source, entry);
   }
   entry.users++;
@@ -250,6 +307,11 @@ export function acquireLayerAtlas(
   let released = false;
   return {
     texture: held.atlas.texture,
+    refresh(update) {
+      if (released || held.applied.has(update)) return;
+      held.applied.add(update);
+      held.atlas.refresh(update);
+    },
     release() {
       if (released) return;
       released = true;

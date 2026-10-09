@@ -45,6 +45,8 @@ export function authoredPose(
       values.set(`${joint}/${c}`, v as number);
     }
   }
+  // An empty file would pack as the rest pose under a name promising another.
+  if (![...values.values()].some((v) => v !== 0)) fail("rotates nothing");
   return {
     name,
     title,
