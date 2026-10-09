@@ -57,6 +57,32 @@ describe("recipe validation", () => {
     expect(p).toContain("macros.size is not a macro");
   });
 
+  it("rejects structurally broken recipes, listing every problem", () => {
+    expect(recipeProblems(null)).toEqual(["recipe is not an object"]);
+    expect(recipeProblems("recipe")).toEqual(["recipe is not an object"]);
+    expect(recipeProblems({})).toEqual([
+      "version must be 1",
+      "macros missing",
+      "regionalMacros missing",
+      "modifiers missing",
+      "skin missing",
+      "eyes missing",
+    ]);
+    const r = createRecipe() as unknown as Record<string, unknown> & {
+      regionalMacros: Record<string, unknown>;
+      eyes: Record<string, unknown>;
+    };
+    r.regionalMacros.head = 3;
+    r.regionalMacros.legs = { muscle: Number.NaN };
+    r.eyes.iris = [0.1, 2, 0.1];
+    r.eyes.scleraWarmth = "warm";
+    const p = recipeProblems(r);
+    expect(p).toContain("regionalMacros.head must be an object");
+    expect(p).toContain("regionalMacros.legs.muscle must be a finite number");
+    expect(p).toContain("eyes.iris must be three numbers in [0, 1]");
+    expect(p).toContain("eyes.scleraWarmth must be a finite number");
+  });
+
   it("rejects a malformed skin override", () => {
     expect(recipeProblems(createRecipe({ skin: { override: [0.2, 0.3] as never } }))).toContain(
       "skin.override must be null or three numbers in [0, 1]",
