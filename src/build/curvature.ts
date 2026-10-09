@@ -10,22 +10,35 @@
 
 /** Unique undirected edges of a triangle index, as pairs. Build once per topology. */
 export function triangleEdges(index: Uint32Array): Uint32Array {
-  const seen = new Set<number>();
-  const out: number[] = [];
   let max = 0;
   for (const v of index) max = Math.max(max, v);
-  const n = max + 1;
+  // Edges seen so far, as a linked list per lower vertex of its higher ends: a
+  // vertex has a handful of edges, so the duplicate check is a short walk, and
+  // there is no hash of millions of numbers (which cost tens of seconds on the
+  // 250 000-vertex adult surface at level 2).
+  const head = new Int32Array(max + 1).fill(-1);
+  const next = new Int32Array(index.length);
+  const high = new Uint32Array(index.length);
+  const out = new Uint32Array(index.length * 2);
+  let edges = 0;
   for (let t = 0; t < index.length; t += 3) {
     for (let k = 0; k < 3; k++) {
       const a = index[t + k] as number;
       const b = index[t + ((k + 1) % 3)] as number;
-      const key = a < b ? a * n + b : b * n + a;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(a, b);
+      const lo = a < b ? a : b;
+      const hi = a < b ? b : a;
+      let e = head[lo] as number;
+      while (e !== -1 && high[e] !== hi) e = next[e] as number;
+      if (e !== -1) continue;
+      high[edges] = hi;
+      next[edges] = head[lo] as number;
+      head[lo] = edges;
+      out[edges * 2] = a;
+      out[edges * 2 + 1] = b;
+      edges++;
     }
   }
-  return Uint32Array.from(out);
+  return out.slice(0, edges * 2);
 }
 
 export function meanCurvature(

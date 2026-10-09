@@ -10,6 +10,7 @@ import {
   buildRefinedSurfaceMesh,
   buildSurfaceMesh,
   evaluateSurface,
+  type SurfaceDetail,
   type SurfaceMesh,
 } from "../build/surfaceMesh.ts";
 import {
@@ -19,22 +20,30 @@ import {
   type BoundAsset,
   type BoundGarment,
   groupFaces,
+  type HairKind,
+  type HairStyleEntry,
   type HumanoidAssets,
   pendingTargetFiles,
 } from "../format/assetFormat.ts";
 import { NO_FEATURE } from "../makehuman/features.ts";
-import { recipeContributions } from "../makehuman/recipeMorph.ts";
+import { RecipeError, recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
 import { STATE_MORPHS, type StateMorph, stateContributions } from "../makehuman/stateMorphs.ts";
 import { type Bound, bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
-import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
-import { assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
+import {
+  type Contribution,
+  evaluateMorph,
+  MorphError,
+  type RegionField,
+} from "../morph/evaluate.ts";
+import { AgePolicyError, assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
+import { GROWTH_SCALE, type HairFields, hairFields } from "../surface/hairFields.ts";
 import {
   buildLayerFields,
   isAdultLayer,
@@ -78,6 +87,44 @@ export interface AttachmentTopology extends SurfaceTopology {
    * blend (`occlusionCornerWeights` of `occlusionKeyWeights`).
    */
   occlusion: Float32Array;
+}
+
+/**
+ * Static render data of a hair style: sent once per style, when a figure first
+ * wears it. A hair style is an alpha-card attachment (`AttachmentTopology`'s
+ * mesh and material) with one occlusion value per vertex, since hair is lit
+ * from outside and the pose never opens it up as it does a mouth.
+ */
+export interface HairTopology extends SurfaceTopology {
+  id: string;
+  label: string;
+  tags: string[];
+  /** Render order hint from the asset (MakeHuman `z_depth`). */
+  zDepth: number;
+  material: AttachmentMaterial;
+  /** Resolved URL of the strand map, or null when loaded without URLs. */
+  textureUrl: string | null;
+  /** Per render vertex, how open it is to light (1) or buried in the hair or against the scalp (0), at rest. */
+  occlusion: Float32Array;
+  /** Per render vertex, 0 where the hair is dithered away (a hairline against the scalp) to 1 where it is all there. */
+  fade: Float32Array;
+  /** Per render vertex, 1 on a card standing out of the scalp (dithered away when seen edge-on), 0 on one lying along it. */
+  fin: Float32Array;
+  /**
+   * Per render vertex, metres along its card from where the hair roots. Its
+   * gradient across the screen is the strand's direction (the highlight's tangent).
+   */
+  growth: Float32Array;
+  /**
+   * Per body render vertex (`ModelTopology.body`'s), how densely this style
+   * grows from the skin there: 1 under it, falling to 0 beyond its edge.
+   * The skin is tinted by the hair's colour in proportion (stubble).
+   */
+  scalp: Float32Array;
+  /** The same on the adult surface's render vertices, when the figure can have one (`adultSurface()`), else null. */
+  adultScalp: Float32Array | null;
+  /** Which way strands run in the strand map, and how consistently (`HairStyleEntry.strand`). */
+  strand: { angle: number; coherence: number };
 }
 
 /**
@@ -172,6 +219,19 @@ export interface AdultSurfaceTopology extends SurfaceTopology {
   occlusion: Uint8Array;
 }
 
+/**
+ * The lattice the adult pack's detail targets are authored on
+ * (`HumanoidModel.adultDetailLattice`): the refined surface's own vertex space.
+ */
+export interface AdultDetailLattice {
+  /** Names the refinement; `AdultDetailSpec.surfaceKey` of targets authored on it. */
+  key: string;
+  /** Vertices of the refined region; detail targets index them, 0 to this minus 1. */
+  vertexCount: number;
+  /** The region's vertices on one figure, xyz, metres, before the ground lift. */
+  positions: Float32Array;
+}
+
 /** Per render vertex, an index into a `FeatureMap`'s features (or `NO_FEATURE`). */
 export interface RenderFeatures {
   body: Uint8Array;
@@ -203,6 +263,11 @@ function dominantInput(stencil: Stencil, surfaceVertex: number): number {
   return best;
 }
 
+/** The worn hair style's evaluated surface; its static data is `HairTopology`, by `id`. */
+export interface HairEvaluation extends SurfaceEvaluation {
+  id: string;
+}
+
 export interface Evaluation extends SurfaceEvaluation {
   /**
    * Which body surface `positions`, `normals` and `curvature` are for: the base
@@ -213,6 +278,8 @@ export interface Evaluation extends SurfaceEvaluation {
   surface: "base" | "adult";
   /** One entry per attachment, in `ModelTopology.attachments` order. */
   attachments: SurfaceEvaluation[];
+  /** The recipe's hair, or null when it has none. */
+  hair: HairEvaluation | null;
   /** One entry per garment worn, in `outfit.order`. */
   garments: SurfaceEvaluation[];
   /**
@@ -296,6 +363,9 @@ function unitNormals(normals: Float32Array): Float32Array {
 /** The figure attachment occlusion is baked against (and the pack's bake was): the default one. */
 const occlusionFigure = (): Recipe => createRecipe();
 
+/** Share of a body vertex's skin weight the head bone must hold for it to take a scalp tint. */
+const HEAD_WEIGHT = 0.5;
+
 export class HumanoidModel {
   readonly regions: RegionField;
   private readonly body: Part;
@@ -308,6 +378,11 @@ export class HumanoidModel {
   private readonly bodyControlTriangles: Uint32Array;
   private readonly bodyEdges: Uint32Array;
   private readonly attached: { asset: BoundAsset; part: Part; control: Float32Array }[];
+  /** Hair styles worn so far, built on first use. */
+  private readonly hairParts = new Map<
+    string,
+    { asset: BoundAsset; part: Part; control: Float32Array }
+  >();
   /** Subdivision level of the attachments and garments: the body's, at most 1. */
   private readonly attachmentLevel: number;
   /** Garments built so far, on first use. */
@@ -334,6 +409,8 @@ export class HumanoidModel {
     | undefined;
   /** The body's state morphs and, with the adult pack, its own (`AdultAnatomySpec.stateMorphs`). */
   private readonly stateMorphs: readonly StateMorph[];
+  /** The adult pack's detail targets (`AdultDetailSpec`): displacements of the adult surface, not morphs. */
+  private readonly detailTargets: ReadonlySet<string>;
   /** The body's vertex adjacency, on first use (`bodyAdjacency`). */
   private adjacency: { start: Uint32Array; items: Uint32Array } | undefined;
   /** The rest bake of the worn set, kept for the corner bakes to reuse. */
@@ -362,6 +439,7 @@ export class HumanoidModel {
       ...STATE_MORPHS,
       ...(assets.adultAnatomyManifest?.anatomy?.stateMorphs ?? []),
     ];
+    this.detailTargets = new Set(assets.adultAnatomyManifest?.anatomy?.detail?.targets);
     const ids = options.attachments ?? [...assets.attachments.keys()];
     const wearing = ids.map((id) => {
       const a = assets.attachments.get(id);
@@ -704,6 +782,72 @@ export class HumanoidModel {
   }
 
   /**
+   * Bakes a hair style's occlusion per control vertex, at rest, against the
+   * default figure: how open each card vertex is to light. Hair is lit from
+   * outside, so a card under others, or against the scalp and neck, is darker
+   * than one on the outside of the volume. Cards are two-sided and their
+   * normals say nothing about which side faces out, so each vertex takes the
+   * more open of its two sides, and the rays meet the body and the style's own
+   * cards (as solid triangles: the cards' cut-outs are not modelled, which
+   * darkens the interior of sparse styles somewhat, and the floor in
+   * `OCCLUSION_FLOOR` keeps it from going black). The result depends only on
+   * the packs, so the packer bakes it once. Needs the default figure's target
+   * files.
+   */
+  bakeHairOcclusion(asset: BoundAsset): Float32Array {
+    const rest = this.evaluate(occlusionFigure()).control;
+    const control = evaluateBinding(asset, rest, new Float32Array(asset.entry.vertexCount * 3));
+    const normals = quadVertexNormals(control, asset.faceVerts);
+    const cards = new Uint32Array(asset.entry.faceCount * 6);
+    for (let f = 0; f < asset.entry.faceCount; f++) {
+      const q = [0, 1, 2, 3].map((k) => asset.faceVerts[f * 4 + k] as number);
+      cards.set([q[0], q[1], q[2], q[0], q[2], q[3]] as number[], f * 6);
+    }
+    const occluders = [
+      { positions: rest, index: this.bodyControlTriangles },
+      { positions: control, index: cards },
+    ];
+    const outward = bakeOcclusion(occluders, [{ positions: control, normals }], { rays: 32 })[0];
+    const inward = bakeOcclusion(
+      occluders,
+      [{ positions: control, normals: normals.map((x) => -x) }],
+      { rays: 32 },
+    )[0];
+    return Float32Array.from(outward as Float32Array, (o, v) =>
+      Math.max(o, (inward as Float32Array)[v] as number),
+    );
+  }
+
+  /**
+   * Measures a hair style's growth, hairline fade and scalp against the default
+   * figure at rest (`hairFields`). The scalp may carry hair only on the head:
+   * a body vertex the head bone moves most (the neck, shoulders and jaw's
+   * beard line are never tinted). Depends only on the packs, so the packer
+   * bakes it once. Needs the default figure's target files.
+   */
+  bakeHairFields(asset: BoundAsset): HairFields {
+    const rest = this.evaluate(occlusionFigure()).control;
+    const control = evaluateBinding(asset, rest, new Float32Array(asset.entry.vertexCount * 3));
+    const head = this.assets.manifest.skeleton.bones.findIndex((b) => b.name === "head");
+    if (head < 0) throw new MorphError("the body pack's skeleton has no head bone");
+    const { skinIndex, skinWeight } = this.assets;
+    const eligible = new Uint8Array(this.assets.manifest.vertexCount);
+    for (let v = 0; v < eligible.length; v++) {
+      let onHead = 0;
+      for (let k = 0; k < 4; k++)
+        if (skinIndex[v * 4 + k] === head) onHead += skinWeight[v * 4 + k] as number;
+      eligible[v] = onHead >= HEAD_WEIGHT ? 1 : 0;
+    }
+    const cards = asset.faceVerts;
+    return hairFields({
+      positions: control,
+      faceVerts: cards,
+      body: { positions: rest, triangles: this.bodyControlTriangles },
+      scalpEligible: eligible,
+    });
+  }
+
+  /**
    * Carries a per-base-vertex feature map (`buildFeatureMap`) to the render
    * vertices: a body vertex takes the feature of the base vertex its
    * subdivision stencil weights most, an attachment vertex the feature of the
@@ -742,6 +886,109 @@ export class HumanoidModel {
       keys.length === OCCLUSION_KEYS.length &&
       keys.every((k, i) => k === OCCLUSION_KEYS[i]?.id)
     );
+  }
+
+  /**
+   * The hair style a recipe wears that has not arrived yet (`HairAssets.load`
+   * brings it), or null when it has none or has what it needs. An unknown
+   * style id is an error, as an unknown modifier is.
+   */
+  pendingHair(recipe: Recipe): string | null {
+    const id = recipe.hair?.style ?? null;
+    if (id === null) return null;
+    return this.hairEntry(id) && this.assets.hair?.bound.has(id) ? null : id;
+  }
+
+  /**
+   * The manifest entry of a style the loaded hair pack must have, of the kind
+   * asked for: `recipe.hair.style` wears scalp hair, not the pack's brows or lashes.
+   */
+  private hairEntry(id: string, kind: HairKind = "scalp"): HairStyleEntry {
+    const entry = this.assets.hair?.styles.get(id);
+    if (!entry)
+      throw new RecipeError(
+        this.assets.hair
+          ? `unknown hair style ${id}`
+          : `the recipe wears hair style ${id}, but no hair pack is loaded`,
+      );
+    if (entry.kind !== kind)
+      throw new RecipeError(`hair style ${id} is a ${entry.kind} style, not ${kind} hair`);
+    return entry;
+  }
+
+  /** A hair style's mesh, built the first time it is worn. Its geometry must have arrived. */
+  private hairPart(id: string): { asset: BoundAsset; part: Part; control: Float32Array } {
+    let h = this.hairParts.get(id);
+    if (!h) {
+      this.hairEntry(id);
+      const asset = this.assets.hair?.bound.get(id);
+      if (!asset)
+        throw new MorphError(
+          `hair style ${id} has not loaded yet (await assets.hair.load(${JSON.stringify(id)}))`,
+        );
+      h = {
+        asset,
+        part: part(this.attachmentSurface(asset, this.attachmentLevel)),
+        control: new Float32Array(asset.entry.vertexCount * 3),
+      };
+      this.hairParts.set(id, h);
+    }
+    return h;
+  }
+
+  /** A hair style's static render data, carried to the render vertices. Needs its geometry loaded. */
+  hairTopology(id: string): HairTopology {
+    const { asset, part: p } = this.hairPart(id);
+    const entry = this.hairEntry(id);
+    // The per-control-vertex bake, one value at a time through the stencil like any field.
+    const n = asset.entry.vertexCount;
+    const r2s = p.mesh.renderToSurface;
+    const surface = new Float32Array(p.mesh.topology.vertexCount * 3);
+    /** A per-control-vertex scalar, carried to the render vertices through the style's stencil. */
+    const carry = (value: (v: number) => number): Float32Array => {
+      const field = new Float32Array(n * 3);
+      for (let v = 0; v < n; v++) field[v * 3] = value(v);
+      applyStencil(p.mesh.stencil, field, surface);
+      return Float32Array.from(r2s, (s) => surface[s * 3] as number);
+    };
+    const fields = asset.hair;
+    if (!fields) throw new MorphError(`hair style ${id} carries no measured fields`);
+    // The scalp lives on the body: its base vertices' density through the body's stencil.
+    const bodyBase = this.assets.manifest.vertexCount;
+    const scalpField = new Float32Array(bodyBase * 3);
+    fields.scalpVerts.forEach((v, i) => {
+      scalpField[v * 3] = (fields.scalpWeights[i] as number) / 255;
+    });
+    const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+    /** The scalp on one body surface's render vertices (the base's, or the adult one's). */
+    const scalpOn = (mesh: SurfaceMesh): Float32Array => {
+      const out = new Float32Array(mesh.topology.vertexCount * 3);
+      applyStencil(mesh.stencil, scalpField, out);
+      return Float32Array.from(mesh.renderToSurface, (s) => clamp01(out[s * 3] as number));
+    };
+    return {
+      ...topologyOf(p.mesh),
+      id,
+      label: entry.label,
+      tags: entry.tags,
+      zDepth: asset.entry.zDepth,
+      material: asset.entry.material,
+      textureUrl: asset.entry.material.texture
+        ? (this.assets.fileUrls.get(asset.entry.material.texture) ?? null)
+        : null,
+      occlusion: carry((v) => (asset.occlusion[v] as number) / 255).map(clamp01),
+      fade: carry((v) => (fields.fade[v] as number) / 255).map(clamp01),
+      fin: carry((v) => (fields.fin[v] as number) / 255).map(clamp01),
+      growth: carry((v) => (fields.growth[v] as number) / GROWTH_SCALE),
+      scalp: scalpOn(this.body.mesh),
+      adultScalp: this.adultBodySurface()
+        ? scalpOn(
+            (this.adultBodySurface() as NonNullable<ReturnType<HumanoidModel["adultBodySurface"]>>)
+              .part.mesh,
+          )
+        : null,
+      strand: entry.strand,
+    };
   }
 
   /** Each bone's parent index in skin-weight order (-1 for the root). */
@@ -893,15 +1140,20 @@ export class HumanoidModel {
   ): Evaluation {
     // Before any geometry: a recipe naming a garment that cannot be worn fails whole.
     const outfit = this.outfit(recipe.outfit ?? []);
-    const control = this.evaluateControl(recipe, signals);
+    const { control, detail } = this.evaluateShape(recipe, signals);
+    // The recipe is validated by now; an unknown or unloaded hair style fails before any surface is built.
+    const hairId = recipe.hair?.style ?? null;
+    const worn = hairId === null ? null : { id: hairId, h: this.hairPart(hairId) };
     let minY = Number.POSITIVE_INFINITY;
     for (const v of this.bodyVertices) minY = Math.min(minY, control[v * 3 + 1] as number);
     // The adult surface only for a figure aged 18 or over, decided here and nowhere
     // else: a minor's evaluation is the base body's, and never builds the other.
+    // Detail targets displace that surface alone; the base has nothing to apply them to.
     const adult = isAdult(recipe) ? this.adultBodySurface() : null;
     const body = this.evaluatePart(
       adult ? adult.part : this.body,
       outfit.bodyTuck ? this.tucked(control, outfit.bodyTuck) : control,
+      adult && detail.length ? this.detailDisplacement(detail, control) : undefined,
     );
     const attachments = this.attached.map((a) =>
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
@@ -913,6 +1165,16 @@ export class HumanoidModel {
       for (let i = 1; i < placed.length; i += 3) minY = Math.min(minY, placed[i] as number);
       return this.evaluatePart(g.part, placed);
     });
+    const hair =
+      worn === null
+        ? null
+        : {
+            id: worn.id,
+            ...this.evaluatePart(
+              worn.h.part,
+              evaluateBinding(worn.h.asset, control, worn.h.control),
+            ),
+          };
     const curvature = meanCurvature(
       body.positions,
       body.normals,
@@ -926,6 +1188,7 @@ export class HumanoidModel {
       ...body,
       surface: adult ? "adult" : "base",
       attachments,
+      hair,
       garments,
       outfit: {
         key,
@@ -947,16 +1210,86 @@ export class HumanoidModel {
 
   /** The morphed control positions of a recipe in a skin state: the shape, before any surface is built. */
   private evaluateControl(recipe: Recipe, signals: Readonly<Record<string, number>>): Float32Array {
-    const contributions = this.contributions(recipe, signals);
-    const pending = this.pendingFor(contributions);
+    return this.evaluateShape(recipe, signals).control;
+  }
+
+  /**
+   * The control vertices of a recipe in a skin state, and the contributions that
+   * are detail targets (`AdultDetailSpec`), which are not morphs of the control
+   * mesh but displacements of the adult surface, applied by `evaluate`.
+   */
+  private evaluateShape(recipe: Recipe, signals: Readonly<Record<string, number>>) {
+    const all = this.contributions(recipe, signals);
+    const pending = this.pendingFor(all);
     if (pending.size)
       throw new MorphError(
         `the recipe needs target files that have not loaded yet: ${[...pending].join(", ")} ` +
           "(await their stage of loadHumanoidAssetsStaged)",
       );
+    const detail = all.filter((c) => this.detailTargets.has(c.target));
+    const contributions = detail.length
+      ? all.filter((c) => !this.detailTargets.has(c.target))
+      : all;
     const control = new Float32Array(this.assets.positions.length);
     evaluateMorph(this.assets.positions, this.assets.targets, contributions, control, this.regions);
-    return control;
+    return { control, detail };
+  }
+
+  /**
+   * The displacement of the adult surface's lattice a figure's detail
+   * contributions make: each target's deltas times its weight, times the figure's
+   * scale (`AdultDetailSpec.scale`).
+   */
+  private detailDisplacement(
+    detail: readonly Contribution[],
+    control: Float32Array,
+  ): SurfaceDetail | undefined {
+    const scale = this.assets.adultAnatomyManifest?.anatomy?.detail?.scale;
+    let figure = 1;
+    if (scale) {
+      const d = (k: number) =>
+        (control[scale.a * 3 + k] as number) - (control[scale.b * 3 + k] as number);
+      figure = Math.hypot(d(0), d(1), d(2)) / scale.rest;
+    }
+    const indices: number[] = [];
+    const xyz: number[] = [];
+    for (const c of detail) {
+      if (typeof c.weight !== "number")
+        throw new MorphError(`detail target ${c.target} cannot be weighted by region`);
+      const t = this.assets.targets.get(c.target);
+      if (!t) throw new MorphError(`unknown detail target ${c.target}`);
+      const w = c.weight * t.scale * figure;
+      for (let i = 0; i < t.indices.length; i++) {
+        indices.push(t.indices[i] as number);
+        xyz.push(
+          (t.deltas[i * 3] as number) * w,
+          (t.deltas[i * 3 + 1] as number) * w,
+          (t.deltas[i * 3 + 2] as number) * w,
+        );
+      }
+    }
+    return indices.length ? { indices, xyz: Float32Array.from(xyz) } : undefined;
+  }
+
+  /**
+   * The lattice detail targets are authored on, for an adult figure: the adult
+   * surface's refinement before smoothing, its vertex count, its key and its
+   * vertex positions on this figure. Null without an adult surface. Refused
+   * under 18.
+   */
+  adultDetailLattice(recipe: Recipe): AdultDetailLattice | null {
+    if (!isAdult(recipe))
+      throw new AgePolicyError("the adult detail lattice is for figures aged 18 or over");
+    const surface = this.adultBodySurface();
+    const lattice = surface?.part.mesh.lattice;
+    if (!lattice) return null;
+    const control = this.evaluateControl(recipe, {});
+    const all = applyStencil(lattice.stencil, control, new Float32Array(lattice.vertexCount * 3));
+    const positions = new Float32Array(lattice.region.length * 3);
+    lattice.region.forEach((v, i) => {
+      positions.set(all.subarray(v * 3, v * 3 + 3), i * 3);
+    });
+    return { key: lattice.key, vertexCount: lattice.region.length, positions };
   }
 
   /**
@@ -978,13 +1311,15 @@ export class HumanoidModel {
       return null;
     }
     // Built from every body face like the base surface, so what a worn thing
-    // hides is a mask over its triangles here too (`adultBodyIndex`).
+    // hides is a mask over its triangles here too (`adultBodyIndex`), and the
+    // lattice's numbering is the same whatever is worn.
     const mesh = buildRefinedSurfaceMesh(
       { ...this.assets, vertexCount: this.assets.manifest.vertexCount },
       this.bodyFaces,
       spec,
       this.level,
     );
+    this.checkDetail(mesh);
     const n = this.assets.manifest.vertexCount;
     const scaleField = new Float32Array(n * 3);
     uvScale(this.assets, this.bodyFaces).forEach((s, v) => {
@@ -1010,6 +1345,31 @@ export class HumanoidModel {
       },
     };
     return this.adultBody;
+  }
+
+  /**
+   * Refuses detail targets built against another refinement, or naming a vertex
+   * the lattice does not have, once the surface they apply to exists. Targets
+   * not yet loaded are checked by `evaluateSurface` when they are applied.
+   */
+  private checkDetail(mesh: SurfaceMesh): void {
+    const spec = this.assets.adultAnatomyManifest?.anatomy?.detail;
+    const lattice = mesh.lattice;
+    if (!spec || !lattice) return;
+    if (spec.surfaceKey !== lattice.key)
+      throw new AssetFormatError(
+        `the detail targets were built for a different refinement of the adult surface ` +
+          `(key ${spec.surfaceKey}, this surface is ${lattice.key}); rebuild the adult pack`,
+      );
+    for (const name of spec.targets) {
+      const t = this.assets.targets.get(name);
+      if (!t) continue;
+      for (const v of t.indices)
+        if (v >= lattice.region.length)
+          throw new AssetFormatError(
+            `detail target ${name}: vertex ${v} is out of range (< ${lattice.region.length})`,
+          );
+    }
   }
 
   /**
@@ -1225,11 +1585,11 @@ export class HumanoidModel {
     return out;
   }
 
-  private evaluatePart(p: Part, control: Float32Array): SurfaceEvaluation {
+  private evaluatePart(p: Part, control: Float32Array, detail?: SurfaceDetail): SurfaceEvaluation {
     const n = p.mesh.renderToSurface.length * 3;
     const positions = new Float32Array(n);
     const normals = new Float32Array(n);
-    evaluateSurface(p.mesh, control, positions, normals, p.scratch);
+    evaluateSurface(p.mesh, control, positions, normals, p.scratch, detail);
     return { positions, normals };
   }
 }

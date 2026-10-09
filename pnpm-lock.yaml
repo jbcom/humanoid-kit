@@ -233,6 +233,9 @@ importers:
       humanoid-kit-clothing:
         specifier: workspace:*
         version: link:packs/clothing
+      humanoid-kit-hair:
+        specifier: workspace:*
+        version: link:packs/hair
       lint-staged:
         specifier: ^17.6.0
         version: 17.6.0
@@ -284,6 +287,8 @@ importers:
   packs/body: {}
 
   packs/clothing: {}
+
+  packs/hair: {}
 
 packages:
 

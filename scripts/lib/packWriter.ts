@@ -27,8 +27,9 @@ export interface GarmentEntry {
   layout: Record<keyof CompiledAsset["arrays"], Range>;
 }
 
-export interface AttachmentEntry extends Omit<GarmentEntry, "layout"> {
-  layout: GarmentEntry["layout"] & { occlusion: Range };
+export interface AttachmentEntry<Extra extends string = never>
+  extends Omit<GarmentEntry, "layout"> {
+  layout: GarmentEntry["layout"] & { occlusion: Range } & Record<Extra, Range>;
 }
 
 export const sha256 = (buf: Uint8Array) => createHash("sha256").update(buf).digest("hex");
@@ -81,22 +82,24 @@ export async function writeAttachmentTextures(
  * bake, 255 = open: one bake per corner of the occlusion keys' cube) into one
  * 4-byte-aligned binary, gzipped. The occlusion is baked from the packed
  * figure, so the packer writes once with every vertex open, bakes, and writes
- * again; the layout is the same both times.
+ * again; the layout is the same both times. `extras` adds named buffers per asset
+ * (the hair pack's measured fields) after the standard ones, under their names.
  */
-export function writeAttachments(
+export function writeAttachments<Extra extends string = never>(
   dataDir: string,
   file: string,
   assets: readonly CompiledAsset[],
   occlusion: readonly Uint8Array[] | null,
   bakes: number,
+  extras: readonly Record<Extra, ArrayBufferView>[] = [],
 ) {
-  return writePacked<AttachmentEntry>(dataDir, file, assets, (a, i) => {
+  return writePacked<AttachmentEntry<Extra>>(dataDir, file, assets, (a, i) => {
     const baked = occlusion?.[i] ?? new Uint8Array(a.vertexCount * bakes).fill(255);
     if (baked.length !== a.vertexCount * bakes)
       throw new Error(
         `${a.id}: ${baked.length} occlusion values for ${a.vertexCount} vertices × ${bakes} bakes`,
       );
-    return [["occlusion", baked]];
+    return [["occlusion", baked], ...Object.entries<ArrayBufferView>(extras[i] ?? {})];
   });
 }
 

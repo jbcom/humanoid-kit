@@ -45,7 +45,7 @@ describe("the package entry's skin-state API", () => {
       expect(typeof (kit as Record<string, unknown>)[name], name).toBe("number");
   });
 
-  it("lists the state layers in the stack after the rest layers", () => {
+  it("lists the hands' layers after the rest layers and the state layers after both", () => {
     // The adult anatomy's layers follow every body layer.
     const all = kit.SKIN_LAYERS.map((l) => l.id);
     expect(all.slice(-kit.ADULT_SKIN_LAYERS.length)).toEqual(
@@ -53,10 +53,21 @@ describe("the package entry's skin-state API", () => {
     );
     const ids = kit.SKIN_LAYERS.filter((l) => !kit.isAdultLayer(l)).map((l) => l.id);
     expect(ids.slice(0, 3)).toEqual(["flush", "lips", "areola"]);
-    expect(ids.slice(3)).toEqual([
+    // The mouth's lining is a rest layer; a state (cold pallor on the hands, a
+    // flush) acts on the areas' colour too.
+    expect(ids.slice(3, 9)).toEqual([
       "mouth-interior",
-      // The feet's own skin follows the rest layers.
-      ...kit.FOOT_SKIN_LAYERS.map((l) => l.id),
+      "palmoplantar",
+      "palm-crease-lines",
+      "knuckles-nails",
+      "hand-relief",
+      "nail-gloss",
+    ]);
+    // The feet's own skin follows the hands'.
+    expect(ids.slice(9, 9 + kit.FOOT_SKIN_LAYERS.length)).toEqual(
+      kit.FOOT_SKIN_LAYERS.map((l) => l.id),
+    );
+    expect(ids.slice(9 + kit.FOOT_SKIN_LAYERS.length)).toEqual([
       "goosebumps",
       "heat-flush",
       "exertion-flush",

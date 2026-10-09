@@ -75,6 +75,18 @@ const DIRECT_DIFFUSE =
 /** Name of the per-vertex curvature attribute (mean curvature magnitude, m⁻¹). */
 export const CURVATURE_ATTRIBUTE = "hkCurvature";
 
+/**
+ * Name of the per-vertex attribute holding how densely the worn hair style grows
+ * from the skin there (`HairTopology.scalp`): 0 on a figure with none.
+ */
+export const SCALP_ATTRIBUTE = "hkScalp";
+
+/** How far the skin goes toward the scalp colour where hair grows at full density. */
+export const SCALP_STRENGTH = 0.6;
+
+/** What fraction of the hair's albedo the scalp shows: the skin under hair is in its shade. */
+export const SCALP_DARKEN = 0.7;
+
 /** A GLSL float literal. */
 const glslFloat = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
 
@@ -449,6 +461,10 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkLayerOwners: { value: Texture };
     /** This figure's stop table (`paintStopTable`). */
     hkLayerStops: { value: DataTexture };
+    /** The colour (linear) the skin goes toward where hair grows from it. */
+    hkScalpColour: { value: Vector3 };
+    /** 0 without hair on the figure, else `SCALP_STRENGTH`. */
+    hkScalpStrength: { value: number };
     /** Per layer, its atlas channels, owner map and id in it (the atlas's plan). */
     hkChannel: { value: Vector4[] };
   };
@@ -473,6 +489,22 @@ export class SkinMaterial extends MeshPhysicalMaterial {
    * geometry is open.
    */
   occlusionKeys = new Vector3();
+
+  /**
+   * Tints the skin where the worn hair style grows (the geometry's `SCALP_ATTRIBUTE`)
+   * toward this hair's albedo, so a hairline that thins out shows scalp rather than
+   * bare skin. `null`: the figure wears no hair.
+   */
+  setScalp(hairAlbedo: Rgb | null): void {
+    const u = this.hkUniforms;
+    u.hkScalpStrength.value = hairAlbedo ? SCALP_STRENGTH : 0;
+    if (hairAlbedo)
+      u.hkScalpColour.value.set(
+        hairAlbedo[0] * SCALP_DARKEN,
+        hairAlbedo[1] * SCALP_DARKEN,
+        hairAlbedo[2] * SCALP_DARKEN,
+      );
+  }
 
   /**
    * Uses the shared field atlas built for the body this material draws, with
@@ -513,6 +545,8 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkLayerAtlas: { value: noLayersFor(plan.pages) },
       hkLayerOwners: { value: noOwners() },
       hkLayerStops: { value: stopTexture(layers.length) },
+      hkScalpColour: { value: new Vector3() },
+      hkScalpStrength: { value: 0 },
       // A GLSL array has at least one element, so a stack with no layers still gets one.
       hkChannel: { value: Array.from({ length: Math.max(1, layers.length) }, () => new Vector4()) },
     };
@@ -559,11 +593,11 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
-        `#include <common>\nvarying vec2 vHkUv;\nattribute float ${UV_SCALE_ATTRIBUTE};\nvarying float vHkUvScale;`,
+        `#include <common>\nvarying vec2 vHkUv;\nattribute float ${UV_SCALE_ATTRIBUTE};\nvarying float vHkUvScale;\nattribute float ${SCALP_ATTRIBUTE};\nvarying float vHkScalp;`,
       )
       .replace(
         "#include <color_vertex>",
-        `#include <color_vertex>\n\tvHkUv = uv;\n\tvHkUvScale = ${UV_SCALE_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};`,
+        `#include <color_vertex>\n\tvHkUv = uv;\n\tvHkUvScale = ${UV_SCALE_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};\n\tvHkScalp = ${SCALP_ATTRIBUTE};`,
       )
       .replace(
         "#include <common>",
@@ -580,11 +614,11 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}`,
+        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
       )
       .replace(
         "#include <color_fragment>",
-        "#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );",
+        "#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, hkScalpColour, clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );",
       )
       // Surface layers: roughness here, specular once the material is set up.
       .replace(
