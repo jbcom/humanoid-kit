@@ -13,6 +13,7 @@
  * it is rejected, never silently clamped, so a mistake cannot be hidden.
  */
 import { ADULT_AGE } from "../makehuman/macro.ts";
+import { isBodyPiercingSite } from "./bodyArt.ts";
 import type { Recipe } from "./recipe.ts";
 
 export { ADULT_AGE };
@@ -40,8 +41,18 @@ export function agePolicyViolations(recipe: Recipe): string[] {
   for (const [id, v] of Object.entries(recipe.modifiers)) {
     if (v !== 0 && ADULT_ONLY_MODIFIER(id)) out.push(`modifier ${id} is adult-only`);
   }
+  for (const p of recipe.bodyArt?.piercings ?? [])
+    if (ADULT_ONLY_PIERCING(p.site)) out.push(`piercing site ${p.site} is adult-only`);
   return out;
 }
+
+/**
+ * Piercing sites that only apply to adults: every site that is not one of the
+ * body's own (`PIERCING_SITES`). Those are the adult anatomy pack's, which the
+ * core never names, so an unknown site fails closed: it is refused under 18
+ * whether or not the pack is loaded.
+ */
+export const ADULT_ONLY_PIERCING = (site: string): boolean => !isBodyPiercingSite(site);
 
 export function assertAgePolicy(recipe: Recipe): void {
   const v = agePolicyViolations(recipe);
@@ -73,7 +84,7 @@ export function assertSignalPolicy(
 
 /**
  * Returns a copy at a new age. Moving an adult recipe below 18 removes the
- * adult-only modifiers explicitly (the caller sees the result); nothing is
+ * adult-only modifiers and piercings explicitly (the caller sees the result); nothing is
  * removed when the target age is adult.
  */
 export function withAge(recipe: Recipe, age: number): Recipe {
@@ -82,5 +93,7 @@ export function withAge(recipe: Recipe, age: number): Recipe {
   if (age >= ADULT_AGE) return next;
   for (const id of Object.keys(next.modifiers))
     if (ADULT_ONLY_MODIFIER(id)) delete next.modifiers[id];
+  if (next.bodyArt)
+    next.bodyArt.piercings = next.bodyArt.piercings.filter((p) => !ADULT_ONLY_PIERCING(p.site));
   return next;
 }

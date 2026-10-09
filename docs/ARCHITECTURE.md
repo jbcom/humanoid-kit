@@ -193,7 +193,10 @@ Under 18:
 - the breast macro targets are never weighted (`macroTargetWeights`), although
   their files ship in the body pack;
 - adult-only targets are not in the body pack at all; the adult anatomy pack's
-  modifiers are adult-only, so a recipe under 18 that sets one is rejected.
+  modifiers are adult-only, so a recipe under 18 that sets one is rejected;
+- a piercing may only be at one of the body's own sites (`PIERCING_SITES`):
+  any other is the adult pack's and adult-only (`ADULT_ONLY_PIERCING`, "Body
+  art").
 
 The policy is enforced inside `recipeContributions`, so no caller can evaluate
 an invalid recipe by skipping validation. `withAge(recipe, age)` returns a copy
@@ -1610,6 +1613,71 @@ C5; contact sheets, before and after, at four tones, adult and child:
   morphed mesh (creases form before birth, so their places are set early). No
   finger flexion is measured by the rig yet (`FLEXION_JOINTS` has wrists,
   elbows and knees), so knuckle wrinkles are at rest.
+
+### Body art (2026-10-09)
+
+**Use cases.**
+
+- A player puts their own image on a forearm, sized and turned, and it stays
+  there through every shape, age and pose.
+- Piercings follow the ear, nose, brow, lip or navel as the figure moves.
+- A scar, birthmark or vitiligo reads right at every skin tone.
+- A crowd where most figures have none of this pays nothing for it.
+
+**Requirements.**
+
+- Placement is per figure; the field atlas is shared by every figure on one mesh.
+- Ink lies in the dermis (research/BODY-ART.md A1), so it must be coloured
+  before the skin's scattering and be covered by hair and garments as skin is.
+- Genital piercings are adult-only, yet the core names no adult anatomy.
+- Recipes stay plain JSON, and are unchanged when there is no body art.
+
+**Placement: anchors on the base mesh.** A tattoo, scar or birthmark sits at
+a `BodyAnchor`, a named site or a base-mesh vertex. A vertex is what a game's
+pick on the body returns, and it is stable because the base mesh is frozen.
+The named sites (`bodySites`) are found, not stored: the mesh has no ear, nose,
+lip or navel groups, but each feature's MakeHuman target moves that feature
+most at its most prominent point (the lobe, the helix's top, the nostril's
+wing, the brow's lateral end, the lower lip's middle, the navel's upper lip).
+The septum is the midline nose vertex nearest the point between the nostrils.
+
+**Paint: a per-figure texture, not the field atlas.** Three options were
+weighed:
+
+1. Body-art layers in the shared field atlas: impossible, since every figure
+   on a mesh shares it.
+2. Per-figure fields per base vertex: the palm is 5 mm between vertices, too
+   coarse for an image.
+3. A per-figure texture in UV space.
+
+The third is used. Tattoos, scars, birthmarks and vitiligo bake into a
+two-page RGBA8 texture array per figure that has any:
+
+- page 0 is ink (linear colour and coverage);
+- page 1 is what the marks change in the skin (melanin removed, scar,
+  melanin added, haemoglobin added).
+
+It is baked on the GPU the way the field atlas is rasterised: the morphed body
+is drawn in UV space, and each decal is projected from the tangent frame at
+its anchor, so a decal crosses UV seams without a gap. The skin shader reads
+it only under a define, so a figure without body art keeps the program it had
+and pays no texture fetch. Ink is applied after the layer stack, before
+scattering: seen through the epidermis (its melanin transmittance, squared,
+which is the ratio of the skin's albedo to the melanin-free albedo), with the
+dermis above it scattering blue back.
+
+**Piercings: generated attachments.** Each piercing is a small mesh bound
+like an MHCLO attachment, to the triangle at its site, and skinned with the
+body's bones, so it follows the posed surface with the existing occlusion. A
+site's `channel` orients the jewellery.
+
+**Age.** A piercing at any site that is not the body's own is the adult
+pack's, and is adult-only by construction (`ADULT_ONLY_PIERCING`): the core
+fails closed without naming any adult site. Tattoos and marks apply at every
+age.
+
+**Landed so far:** the recipe field, its validation, the age policy and the
+sites. The texture, the marks and the piercings follow in their own commits.
 
 ### Joint creases (2026-10-09)
 

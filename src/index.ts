@@ -1,3 +1,4 @@
+export * from "./bodyArt/sites.ts";
 export * from "./build/surfaceMesh.ts";
 export * from "./editor/controls.ts";
 export * from "./editor/framing.ts";
@@ -18,6 +19,7 @@ export * from "./presence/fromEvaluation.ts";
 export * from "./presence/presence.ts";
 export * from "./recipe/agePolicy.ts";
 export * from "./recipe/anatomy.ts";
+export * from "./recipe/bodyArt.ts";
 export * from "./recipe/recipe.ts";
 export * from "./recipe/validate.ts";
 export * from "./rig/dual.ts";
