@@ -43,8 +43,16 @@ export interface HumanoidEditor {
 
 const EMPTY_TASKS: SliderTask[] = [];
 
+/** Editor state for the `HumanoidProvider`'s client. */
 export function useHumanoidEditor(initial?: Recipe): HumanoidEditor {
-  const ready = useHumanoidReady();
+  return useEditorState(useHumanoidReady(), initial);
+}
+
+/**
+ * Editor state over any ready info: what `useHumanoidEditor` does, without
+ * needing a worker (tests, or an application that loads packs itself).
+ */
+export function useEditorState(ready: ReadyInfo | null, initial?: Recipe): HumanoidEditor {
   const [history, dispatch] = useReducer(historyReducer, initial ?? createRecipe(), createHistory);
   const modifiers = useMemo<ModifierTable>(
     () => new Map((ready?.modifiers ?? []).map((m) => [m.id, m] as const)),

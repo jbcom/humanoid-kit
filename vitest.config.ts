@@ -1,23 +1,43 @@
+import { fileURLToPath } from "node:url";
+import react from "@vitejs/plugin-react";
+import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 
-// Coverage is scoped to the pure core folders. src/react, src/editor and
-// src/worker need a real browser and WebGL context; the Playwright suite in
-// e2e/ proves them against the playground.
+const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
+
+// Two projects:
+// - unit: the pure core in Node (tests/**/*.test.ts).
+// - browser: the creator's React components in real Chromium
+//   (tests/browser/**/*.test.tsx), driven by the real pack taxonomy and the real
+//   control logic. Rendering itself (WebGL, the worker) is proven by the
+//   Playwright suite in e2e/ against the playground.
 export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: [
+      { find: /^humanoid-kit\/react$/, replacement: here("src/react/index.ts") },
+      { find: /^humanoid-kit\/editor$/, replacement: here("src/editor/ui/index.ts") },
+      { find: /^humanoid-kit$/, replacement: here("src/index.ts") },
+    ],
+  },
   test: {
-    include: ["tests/**/*.test.ts"],
-    environment: "node",
-    globals: false,
     reporters: ["default"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html", "lcov"],
+      // The framework-free core. src/react, src/render, src/editor/ui and
+      // src/worker are proven in the browser project and the Playwright suite.
       include: [
+        "src/build/**/*.ts",
+        "src/editor/*.ts",
         "src/format/**/*.ts",
+        "src/makehuman/**/*.ts",
+        "src/mhclo/**/*.ts",
+        "src/model/**/*.ts",
         "src/morph/**/*.ts",
-        "src/subdiv/**/*.ts",
         "src/recipe/**/*.ts",
-        "src/rig/**/*.ts",
+        "src/subdiv/**/*.ts",
+        "src/surface/**/*.ts",
       ],
       exclude: ["src/**/*.d.ts"],
       thresholds: {
@@ -27,5 +47,28 @@ export default defineConfig({
         branches: 85,
       },
     },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          include: ["tests/**/*.test.ts"],
+          environment: "node",
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "browser",
+          include: ["tests/browser/**/*.test.tsx"],
+          browser: {
+            enabled: true,
+            headless: true,
+            provider: playwright({ launchOptions: { args: ["--mute-audio"] } }),
+            instances: [{ browser: "chromium" }],
+          },
+        },
+      },
+    ],
   },
 });
