@@ -70,22 +70,25 @@ describe("a figure wearing garments", { timeout: 120_000 }, () => {
     it("orders garments innermost first and keys the set, whatever order they are named in", () => {
       const a = model.outfit([SHOES, SUIT]);
       const b = model.outfit([SUIT, SHOES]);
-      expect(a.order).toEqual([SUIT, SHOES]);
+      // The shoes declare z_depth 5 and the suits 50: the trousers hang over the shoes.
+      expect(a.order).toEqual([SHOES, SUIT]);
       expect(a.key).toBe(b.key);
       expect(a.key).not.toBe(model.outfit([SUIT]).key);
       expect(model.outfit([]).key).toBe("");
-      expect(model.outfit([COAT, SHOES, SUIT, HAT]).order).toEqual([SUIT, COAT, SHOES, HAT]);
+      // Equal depth stacks by category: a jacket over clothes, a hat outside both.
+      expect(model.outfit([COAT, SHOES, SUIT, HAT]).order).toEqual([SHOES, SUIT, COAT, HAT]);
     });
 
     it("masks a garment by the garments over it and by no other", () => {
-      const suitAlone = model.outfit([SUIT]).masks.garmentIndex[0] as Uint32Array;
+      const shoesAlone = model.outfit([SHOES]).masks.garmentIndex[0] as Uint32Array;
       const both = model.outfit([SUIT, SHOES]).masks;
-      const [suit, shoes] = both.garmentIndex as [Uint32Array, Uint32Array];
-      // The shoes cover the suit's trouser hems and ankles.
-      expect(suit.length).toBeLessThan(suitAlone.length);
-      // Nothing is over the shoes, and the suit does not mask them.
-      expect(shoes.length).toBe(model.outfit([SHOES]).masks.garmentIndex[0]?.length);
-      // Wearing a coat over the suit masks the suit and leaves the coat whole.
+      const [shoes, suit] = both.garmentIndex as [Uint32Array, Uint32Array];
+      // The trousers' deletions cover the ankle the shoes' sock rises into.
+      expect(shoes.length).toBeLessThan(shoesAlone.length);
+      // Nothing is over the suit, and the shoes do not mask it.
+      expect(suit.length).toBe(model.outfit([SUIT]).masks.garmentIndex[0]?.length);
+      // Wearing a jacket over the suit masks the suit and leaves the jacket whole.
+      const suitAlone = model.outfit([SUIT]).masks.garmentIndex[0] as Uint32Array;
       const coated = model.outfit([SUIT, COAT]).masks.garmentIndex as [Uint32Array, Uint32Array];
       expect(coated[0].length).toBeLessThan(suitAlone.length);
       expect(coated[1].length).toBe(model.outfit([COAT]).masks.garmentIndex[0]?.length);
@@ -132,7 +135,7 @@ describe("a figure wearing garments", { timeout: 120_000 }, () => {
 
     it("evaluates each garment on the morphed body, in outfit order", () => {
       const ev = model.evaluate(recipe);
-      expect(ev.outfit.order).toEqual([SUIT, SHOES]);
+      expect(ev.outfit.order).toEqual([SHOES, SUIT]);
       expect(ev.garments).toHaveLength(2);
       for (const [i, id] of ev.outfit.order.entries()) {
         const n = model.garmentTopology(id).vertexCount;

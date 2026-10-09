@@ -90,7 +90,8 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
       await handle({ type: "init", id: 1, load, model: { subdivision: 0 } });
       await handle({ type: "evaluate", id: 2, recipe: createRecipe({ outfit }) });
       const ev = evaluated(replies, 2);
-      expect(ev.outfit.order).toEqual(outfit);
+      // Innermost first: the shoes' own z_depth is below the suit's.
+      expect(ev.outfit.order).toEqual(["shoes/shoes01", "suits/male_casualsuit01"]);
       expect(ev.garments).toHaveLength(2);
       expect(ev.outfit.masks?.bodyIndex.length).toBeGreaterThan(0);
       // Buffers are transferred, so what the model caches must not be among them.

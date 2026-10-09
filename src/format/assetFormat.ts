@@ -255,7 +255,7 @@ export interface BoundAsset {
  */
 export interface GarmentEntry extends Omit<AttachmentEntry, "layout"> {
   /**
-   * The category it stacks as (`GARMENT_LAYERS`: `clothes`, `jacket`, `shoes`,
+   * The category it stacks as among garments of equal `zDepth` (`GARMENT_LAYERS`: `clothes`, `jacket`, `shoes`,
    * `hat`, ...), in place of an attachment's kind.
    */
   kind: string;

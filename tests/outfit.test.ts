@@ -24,14 +24,35 @@ const garment = (
 });
 
 describe("layerOrder", () => {
-  it("orders by the category table, innermost first", () => {
+  it("orders by the asset's own z_depth first, innermost (lowest) first", () => {
+    // The system shoes declare z_depth 5, the system suits 50: the trousers hang
+    // over the shoes, which is what MakeHuman shows and what a hem does.
+    const ids = layerOrder([
+      { id: "suit", kind: "clothes", zDepth: 50 },
+      { id: "shoes", kind: "shoes", zDepth: 5 },
+    ]);
+    expect(ids).toEqual(["shoes", "suit"]);
+    // The category does not override what a file says.
+    expect(
+      layerOrder([
+        { id: "coat", kind: "coat", zDepth: 40 },
+        { id: "shirt", kind: "clothes", zDepth: 60 },
+      ]),
+    ).toEqual(["coat", "shirt"]);
+  });
+
+  it("breaks a z_depth tie by the category table, then by id", () => {
+    // MakeHuman ties on a random uuid; a category says which of two equally deep garments is over.
     const ids = layerOrder([
       { id: "coat", kind: "coat", zDepth: 50 },
-      { id: "shoes", kind: "shoes", zDepth: 5 },
       { id: "shirt", kind: "clothes", zDepth: 50 },
       { id: "underwear", kind: "underwear", zDepth: 50 },
+      { id: "jacket", kind: "jacket", zDepth: 50 },
     ]);
-    expect(ids).toEqual(["underwear", "shirt", "shoes", "coat"]);
+    expect(ids).toEqual(["underwear", "shirt", "jacket", "coat"]);
+    const a = { id: "a", kind: "clothes", zDepth: 50 };
+    const b = { id: "b", kind: "clothes", zDepth: 50 };
+    expect(layerOrder([b, a])).toEqual(["a", "b"]);
   });
 
   it("follows MakeHuman's convention for the categories it names", () => {
@@ -47,7 +68,7 @@ describe("layerOrder", () => {
     });
   });
 
-  it("breaks a category tie by z_depth, then by id, whatever order they arrive in", () => {
+  it("gives the same order whatever order the garments arrive in", () => {
     const a = { id: "a", kind: "clothes", zDepth: 50 };
     const b = { id: "b", kind: "clothes", zDepth: 50 };
     const deep = { id: "z", kind: "clothes", zDepth: 60 };

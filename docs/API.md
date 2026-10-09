@@ -294,7 +294,7 @@ surface is never rebuilt for it: a worn set only changes which triangles of the
 body and of each garment are drawn.
 
 - `model.outfit(ids): Outfit`: `{ key, order, masks }` for a set of garment
-  ids in any order. `order` is innermost first (by category, then `z_depth`,
+  ids in any order. `order` is innermost first (by `z_depth`, then category,
   then id) and `masks` is `{ bodyIndex, garmentIndex }`: the triangle indices to
   draw in place of `topology().body.index` and each garment's
   `GarmentTopology.index`. Garments stack as MakeHuman does: processed from the
@@ -403,9 +403,11 @@ and expressions"). Framework-free.
   stress pose, and `relaxed`, standing at ease with the arms at the sides); `composeRotations(a, b)` layers `b` (an expression) over `a`.
 - `restBonesFrom(names, parents, heads)` rebuilds the rest skeleton from an
   evaluation's `boneHeads` without the packs, and
-  `posedGroundOffset(rest, rotations, control, skin)` is the lift that puts a
-  posed figure's lowest body point on the ground (`RigSkin`: the pack's skin
-  and the visible body's base vertices, sent in `ReadyInfo.rig.skin`).
+  `posedGroundOffset(rest, rotations, control, skin, worn?)` is the lift that
+  puts a posed figure's lowest point on the ground: the body's, or that of the
+  garments in `worn` (`SkinnedPoints`: render positions at rest with their skin
+  indices and weights; `RigSkin` is the pack's skin and the body's base
+  vertices, sent in `ReadyInfo.rig.skin`).
 - Joint flexion as skin signals: `FLEXION_JOINTS` (elbows, knees, wrists),
   `flexionRig(rest)` (each joint's hinge, perpendicular to the upper segment
   and its flex direction) and `jointFlexion(rig, rest, rotations)`, giving
@@ -454,10 +456,11 @@ The main-thread handle to an evaluation worker.
 - `client.complete: Promise<void>` resolves when every target file has
   loaded, or rejects with the error that stopped one.
 - `ReadyInfo` is `{ topology, modifiers, sliders, rig,
-  adultAnatomyLoaded }`: the render topology, every drivable shape modifier, the
-  merged slider taxonomy, the rig (`RigData` plus each bone's `parents` index;
-  the topology's skin indices refer to `rig.bones`) and whether the adult
-  anatomy pack is loaded.
+  adultAnatomyLoaded, wardrobe }`: the render topology, every drivable shape
+  modifier, the merged slider taxonomy, the rig (`RigData` plus each bone's
+  `parents` index; the topology's skin indices refer to `rig.bones`), whether
+  the adult anatomy pack is loaded, and the garments the clothing pack offers
+  (`WardrobeEntry[]`: `id`, `name`, `kind`, `tags`; empty without that pack).
 - `client.evaluate(recipe, key?, signals?, haveOutfit?): Promise<Evaluation>`
   (signals as for `model.evaluate`) is latest-wins per key:
   each key has at most one evaluation in the worker and one waiting, and a
@@ -517,7 +520,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers; those with state morphs also reshape the figure (a re-evaluation). Never part of the recipe |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
-| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
+| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"garment"` with the garment's `garment` id, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | other props | Passed to the wrapping `<group>` |
 
 - Hidden until the first evaluation arrives.
@@ -525,6 +528,10 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   shader following `recipe.eyes`, teeth and tongue), each attachment shaded by
   its baked occlusion, which follows the pose (an open mouth lights the teeth
   it uncovers).
+- Renders the garments `recipe.outfit` names, once the client loaded a
+  clothing pack: skinned to the same skeleton, so they follow the pose, with
+  their diffuse and normal maps. The body keeps its geometry whatever is worn;
+  only the triangles it draws change.
 - Updates the geometry in place when `recipe` changes.
 - Stores the latest ground offset (posed when posed) on the group's `userData.groundOffset`.
 - Disposes its geometries, textures and built-in materials on unmount.
@@ -562,7 +569,9 @@ and camera.
 
 - One tab per MakeHuman modelling task (Main, Gender, Face, Torso, ...,
   Measure), in upstream order, with MakeHuman's groups and slider labels, plus
-  Appearance (skin, iris, sclera) and Regions (per-region macro overrides).
+  Appearance (skin, iris, sclera), Regions (per-region macro overrides) and,
+  when the client loaded a clothing pack, a Wardrobe: the garments by kind,
+  one worn at a time per kind, layered across kinds.
 - Tapping the figure opens the controls that shape the tapped part (its tab,
   with the group opened and scrolled into view) and frames that part from the
   front; see `buildFeatureMap`. Dragging orbits the view instead.
@@ -605,6 +614,20 @@ deterministic for a seed and never sets adult-only modifiers unless
 `options.includeAdultAnatomy` is true and the figure is 18 or over. Every
 change is undoable.
 
+### Wardrobe helpers
+
+Pure functions behind the Wardrobe tab, also exported from `humanoid-kit`:
+
+- `wardrobeOf(manifest): WardrobeEntry[]`: the garments a `ClothingManifest`
+  lists (none for null).
+- `wardrobeGroups(wardrobe): WardrobeGroup[]`: by kind, in the order people
+  dress, each with a heading.
+- `wearGarment(recipe, garment, wardrobe): Recipe`: the recipe wearing the
+  garment in place of any other of its kind, or without it when it is worn
+  already. An empty outfit is left out of the recipe. The input is not
+  modified.
+- `wornIn(recipe): readonly string[]`: the garment ids a recipe wears.
+
 ### `<SliderRow />`
 
 The creator's slider: label, value readout, a reset button and an accessible
@@ -615,15 +638,16 @@ range input sized for touch. `onChange(value, gesture)` fires while dragging and
 ## `humanoid-kit/worker`
 
 The worker module that `HumanoidWorkerClient` starts by default. It owns one
-`HumanoidModel` and answers five messages: `init` (replied to with `ready`
+`HumanoidModel` and answers six messages: `init` (replied to with `ready`
 once the first figure can be evaluated), `complete` (replied to once every
 target file has loaded, or with the error that stopped one), `pickMap`
 (replied to with the pick map once everything has loaded), `posedOcclusion`
 (replied to once the corner bake, made a corner at a time between other
 requests, is done) and `evaluate`, which
 waits for exactly the load stages its recipe needs without holding up other
-requests. Result buffers are transferred. Applications use it through the
-client, not directly.
+requests, and `garment` (replied to with a garment's static render data once
+the garments have loaded). Result buffers are transferred. Applications use it
+through the client, not directly.
 
 ## `humanoid-kit-body`
 

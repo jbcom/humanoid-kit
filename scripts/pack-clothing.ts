@@ -51,8 +51,9 @@ const SYSTEM_ASSETS_ZIP = {
 
 /**
  * Garments in the pack: [directory in the system assets' `clothes/`, category].
- * The category is where a garment stacks (`GARMENT_LAYERS`): a suit is shirt
- * and trousers, an elegant suit carries a jacket, shoes go over trousers.
+ * The category decides the stacking of garments whose `z_depth` is equal
+ * (`GARMENT_LAYERS`): a suit is shirt and trousers, an elegant suit carries a
+ * jacket over it. (The shoes' own `z_depth` 5 puts them under every suit's 50.)
  * The id is `<group>/<directory>`.
  */
 const GARMENTS: readonly [string, keyof typeof GARMENT_LAYERS][] = [

@@ -345,17 +345,24 @@ from each file.
   ring at every garment edge; a garment's `delete_verts` list the vertices it
   covers, and the quads on its boundary still have visible corners under the
   cloth's edge. The garment's own faces follow the same rule.
-- *Layering is by category, then `z_depth`, then id.* MakeHuman orders by
-  `z_depth` and breaks ties by uuid, but nearly every system asset has
-  `z_depth` 50 (shoes 5), so the file value alone stacks shoes under trousers
-  and ties arbitrarily. Each garment instead declares a category (`kind`,
-  `GARMENT_LAYERS`, whose order is MakeHuman's own table of conventional
-  values: underwear 39, socks 43, shirt and trousers 47, sweater 50, indoor
-  jacket 53, shoes 57, coat 61, backpack 69), then `z_depth`, then id, so an
-  outfit always stacks the same way. The stack is processed from the
-  outermost in; each garment is masked by the deletions of the garments over it
-  only, then adds its own. A coat's `delete_verts` therefore hide the shirt
-  under it and never the coat, and the shoes hide the trouser hems they cover.
+- *Layering is by `z_depth`, then category, then id.* MakeHuman orders by the
+  asset's `z_depth` and breaks ties by uuid, which is random. Nearly every
+  system asset has `z_depth` 50, so the tie decides almost everything; each
+  garment therefore also declares a category (`kind`, `GARMENT_LAYERS`, whose
+  order is MakeHuman's own table of conventional values: underwear 39, socks
+  43, shirt and trousers 47, sweater 50, indoor jacket 53, shoes 57, coat 61,
+  backpack 69), which decides between garments of equal `z_depth`, and the id
+  decides what is left, so an outfit always stacks the same way. The
+  stack is processed from the outermost in; each garment is masked by the
+  deletions of the garments over it only, then adds its own. A jacket's
+  `delete_verts` therefore hide the shirt under it and never the jacket.
+  *The category does not come first, which was the first version*: the table
+  puts shoes (57) over trousers (47), but the system shoes declare `z_depth` 5
+  against the suits' 50, and ordered by category the shoes' deletions cut the
+  trousers off at the ankle with a torn staircase edge. With the asset's own
+  depth leading, the hem hangs over the shoe, as it does on a person. An
+  asset's author said which of two garments is nearer the skin; the category
+  table is for the garments that did not.
 - *A mask reaches a garment through its references.* A garment vertex bound
   exactly to one base vertex copies that vertex's visibility; any other is
   visible when at least two of its three references are. This is MakeHuman's
@@ -369,11 +376,18 @@ from each file.
   the bake to run again, and `wearsPackedSet` stays true. Whether garments
   should shade skin (the neck under a collar) is open; the skin layer stack
   (`src/surface/layers.ts`) is where it would go, as a layer whose mask is the
-  rim of the covered region.
+  rim of the covered region. It is not done, for a reason of design rather than
+  effort: the field atlas is rasterised once for the base mesh and shared by every
+  figure, and the rim of what a garment covers changes with the outfit, so each
+  outfit would need its own field. The light does the work meanwhile: garments
+  cast and receive shadows like the body, which darkens the skin at a cuff or
+  collar the way contact does.
 - *The figure stands on what it wears.* `groundOffset` counts the garments'
   lowest control point as well as the body's, so soles that reach 2 cm below
   the foot rest on the ground instead of sinking. A posed figure's grounding
-  (`posedGroundOffset`) still reads the body alone.
+  (`posedGroundOffset`) takes the worn garments' render vertices too and skins
+  them with the pose, so a kneeling figure rests on its knee or its shoe,
+  whichever is lower.
 - *Garments load as a stage of their own* (see "Packs and the binary format")
   and are evaluated lazily: the model builds a garment's surface the first time
   an outfit names it.
@@ -513,8 +527,8 @@ mean what they meant there; everything must be testable in Node.
 | `src/subdiv` | Catmull-Clark stencils | no |
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
 | `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking | no |
-| `src/model` | `HumanoidModel`, the evaluation pipeline | no |
-| `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
+| `src/model` | `HumanoidModel`, the evaluation pipeline; `outfit.ts`, the layering and masking of garments | no |
+| `src/editor` | The creator's logic: controls, history, randomisation, framing, the wardrobe | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
 | `src/render` | The skin and eye materials, the layer field atlas | three.js, no React |
 | `src/react` | `HumanoidProvider`, `Humanoid`, `StudioStage` and hooks | yes |

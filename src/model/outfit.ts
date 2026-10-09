@@ -6,7 +6,7 @@
  * The behaviour is MakeHuman's, reimplemented here from its documented
  * description (docs/ARCHITECTURE.md, "Clothing"):
  *
- * - Garments are layered by category (`GARMENT_LAYERS`), then by `z_depth`,
+ * - Garments are layered by `z_depth`, then by category (`GARMENT_LAYERS`),
  *   then by id, so the same outfit always stacks the same way. The stack is
  *   processed from the outermost garment in. Each garment is masked by the
  *   deletions of the garments above it only, then adds its own, so a garment's
@@ -20,11 +20,12 @@
  */
 
 /**
- * The order garments stack in, innermost first, by the category an asset
- * declares as its `kind`. The values are MakeHuman's own (its API's table: body
- * 31, underwear 39, socks 43, shirt and trousers 47, sweater 50, indoor jacket
- * 53, shoes 57, coat 61, backpack 69); only their order matters here. Hats sit
- * outside everything: they hide no skin, and nothing sits over them.
+ * The order garments of equal `z_depth` stack in, innermost first, by the
+ * category an asset declares as its `kind`. The values are MakeHuman's own (its
+ * API's table: body 31, underwear 39, socks 43, shirt and trousers 47, sweater
+ * 50, indoor jacket 53, shoes 57, coat 61, backpack 69); only their order
+ * matters here. Hats sit outside everything: they hide no skin, and nothing
+ * sits over them.
  */
 export const GARMENT_LAYERS = {
   underwear: 39,
@@ -48,7 +49,7 @@ export class OutfitError extends Error {
 export interface LayerEntry {
   id: string;
   kind: string;
-  /** MakeHuman's `z_depth`: breaks a tie between garments of one category. */
+  /** MakeHuman's `z_depth`, the asset's own say in where it layers: lower is nearer the skin. */
   zDepth: number;
 }
 
@@ -71,7 +72,15 @@ const layerOf = (e: LayerEntry): number => {
   return layer;
 };
 
-/** Garment ids innermost first: by category, then `z_depth`, then id. */
+/**
+ * Garment ids innermost first: by `z_depth`, then category, then id. The
+ * asset's own `z_depth` comes first because it is what its author said:
+ * MakeHuman's system shoes declare 5 and its suits 50, so trousers hang over
+ * shoes, where a category table that put shoes over trousers would cut the
+ * hem off at the ankle. The category decides only between garments of equal
+ * depth (a coat over a shirt, both 50), where MakeHuman's own tiebreak is a
+ * random uuid.
+ */
 export function layerOrder(entries: readonly LayerEntry[]): string[] {
   const seen = new Set<string>();
   for (const e of entries) {
@@ -82,8 +91,8 @@ export function layerOrder(entries: readonly LayerEntry[]): string[] {
     .map((e) => ({ e, layer: layerOf(e) }))
     .sort(
       (a, b) =>
-        a.layer - b.layer ||
         a.e.zDepth - b.e.zDepth ||
+        a.layer - b.layer ||
         (a.e.id < b.e.id ? -1 : a.e.id > b.e.id ? 1 : 0),
     )
     .map((x) => x.e.id);
