@@ -381,7 +381,10 @@ describe("the skin shader's layer stack", () => {
   it("paints the skin-state layers as applyLayers does, at every signal at once", () => {
     // Haemoglobin ratios near 1 and a lip colour mixed over the lips: the half-float
     // stop table must keep them. Masks rise and fall across the quad so every layer shows.
-    const stack = SKIN_LAYERS.filter((l) => l.kind !== "detail" && l.kind !== "surface");
+    // Strand layers draw a pattern pixel by pixel; strands.test.ts holds their mean.
+    const stack = SKIN_LAYERS.filter(
+      (l) => l.kind !== "detail" && l.kind !== "surface" && l.kind !== "strands",
+    );
     const everything: SkinPaintInput = {
       ...appearance,
       signals: { blush: 1, exertion: 0.7, heat: 0.5, fear: 0.4, cold: 0.8 },

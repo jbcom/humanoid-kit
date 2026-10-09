@@ -1002,6 +1002,10 @@ export function Humanoid({
       // (the adult pack's own list of features; none without the pack).
       adult: isAdult(recipe),
       anatomy: appliedAnatomy(recipe, ready?.anatomy?.features ?? []),
+      // Body hair: its amount from the androgen axis and age, its colour from the hair's.
+      gender: recipe.macros.gender,
+      ...(recipe.hair && { hairColour: recipe.hair.colour }),
+      ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     });
   }, [skin, recipe, signals, flexion, face, ready]);
 

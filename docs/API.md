@@ -498,7 +498,17 @@ compute what the renderer will do.
   `height` in metres and `size`: bump spacing in metres, or crease count across
   the coordinate) drawn at true scale and faded where finer than a pixel, or a
   `SurfaceLayer` (`kind: "surface"`, `paint` giving `strength`, a `roughness`
-  change and a `specular` change). `surfaceChange` and `creaseHeight` (a
+  change and a `specular` change), or a `StrandLayer` (`kind: "strands"`,
+  `paint` giving a `StrandPaint`: `strength` (coverage, the share of follicles
+  carrying hair), the hair's `colour`, `density` in follicles per cm²,
+  `length`, `width` and relief `height` in metres, and `inSkinAlbedo` for hair
+  the measured skin colour already holds) drawn as strands at true scale along
+  the body's hair flow, and as their mean cover where finer than a pixel
+  (`strandCover(paint)`, at most `MAX_STRAND_COVER`, what `applyLayers` applies;
+  none for `inSkinAlbedo`). A layer may set `everywhere` (on all the skin: no
+  atlas channel, `planAtlas` gives it `value` -1 and the shader reads its mask
+  as 1) or `adultOnly` (a body layer `paintStopTable` paints at zero unless
+  `SkinPaintInput.adult` is true; absent fails closed). `surfaceChange` and `creaseHeight` (a
   groove, so negative: `size` of them across the coordinate, each the raised
   cosine to the power `CREASE_SHARPNESS`, flat at the coordinate's ends) are the
   shader's references; `uvScale(assets, faces)` gives metres of skin per UV
@@ -520,6 +530,17 @@ compute what the renderer will do.
   `SkinPaintInput.age` is the figure's age in years (`recipe.macros.age`;
   `<Humanoid>` sets it), for layers that change with it: a layer that reads it
   must paint sensibly without it, since an input built without one has none.
+  `SkinPaintInput.gender` (the gender macro, default 0.5), `hairColour`
+  (`recipe.hair.colour`, default `DEFAULT_HAIR_COLOUR`) and `bodyHair`
+  (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
+  Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
+  hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
+  `VELLUS`), `BEARD_LAYERS` (moustache, chin, and cheeks with sideburns and
+  neck; the parts each `BeardStyle` grows and how long are `BEARD_LENGTHS`) and
+  `TERMINAL_HAIR_LAYERS` (chest, abdomen, back, buttocks, arms, legs, and the
+  `adultOnly` axillary and pubic), with follicle densities `BODY_HAIR_DENSITY`.
+  `bodyHairMasks(assets)` gives the masks per base vertex and
+  `bodyHairInput(paintInput)` the body hair model's input.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).
