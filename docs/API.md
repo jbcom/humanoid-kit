@@ -201,8 +201,8 @@ interface MacroValues {
   african: number;         // ethnic anchors, normalised to sum to 1
   asian: number;
   caucasian: number;
-  breastSize: number;      // 0..1; adult-only
-  breastFirmness: number;  // 0..1; adult-only
+  breastSize: number;      // 0..1
+  breastFirmness: number;  // 0..1
 }
 ```
 
@@ -257,10 +257,12 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 - `agePolicyViolations(recipe): string[]`: every reason the recipe breaks the
   policy; empty when valid.
 - `assertAgePolicy(recipe)`: throws `AgePolicyError` listing the violations.
-- `withAge(recipe, age): Recipe`: a copy at a new age. Moving below 18 resets
-  `breastSize` and `breastFirmness` to their defaults, deletes regional breast
-  values and deletes adult-only modifiers and the axillary and pubic body hair
-  densities. The input is not modified.
+- `withAge(recipe, age): Recipe`: a copy at a new age. Moving below 18 deletes
+  the adult anatomy pack's modifiers, the axillary and pubic body hair densities
+  and the adult-only piercings. The breast macros and the body pack's `breast/*`
+  modifiers stay: the body follows MakeHuman at every age, breast development
+  through adolescence included (owner direction, `docs/AGE-POLICY.md`). The input
+  is not modified.
 - `ADULT_ONLY_MODIFIER(id): boolean`: true for ids starting `genitals/`,
   `pelvis/bulge` or `stomach/stomach-pregnant`.
 - `AgePolicyError`.
@@ -275,11 +277,11 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
   rather than a point on one axis. Always `{}` under 18. Skin layers take it as
   `SkinPaintInput.anatomy`.
 
-Under 18, a recipe is invalid if `breastSize` or `breastFirmness` differs from
-its default, if any region override contains either key, if an adult-only
-modifier is non-zero, if `bodyHair.density.axillary` or `.pubic` is non-zero
-(`ADULT_ONLY_BODY_HAIR`), or if a piercing is at an adult-only site. Refused,
-never clamped.
+Under 18, a recipe is invalid if an adult-only modifier is non-zero, if
+`bodyHair.density.axillary` or `.pubic` is non-zero (`ADULT_ONLY_BODY_HAIR`), or
+if a piercing is at an adult-only site. Refused, never clamped. The breast macros
+(`breastSize`, `breastFirmness`, and the regional overrides of them) are not
+gated: they follow MakeHuman at every age, as its breast targets do.
 
 - `ADULT_ONLY_PIERCING(site): boolean`: true for every site that is not one of
   the body's own (`PIERCING_SITES`). Those are the adult anatomy pack's, which

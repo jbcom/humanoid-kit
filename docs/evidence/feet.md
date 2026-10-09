@@ -34,6 +34,18 @@ palm's is (sole L\* minus skin L\*: −1.7 at melanin 0, +1.0, +3.6, +7.9, +13.3
 and +18.2 at 0.15, 0.3, 0.5, 0.7, 0.85 and 1: the hands' measured palm against the
 back of the hand).
 
+## Friction ridges
+
+![The left heel from 14 cm below at 1200 px, ages 30 and 70](./feet-ridges.webp)
+
+A heel macro, 14 cm from the sole at 1200 px (a pixel is about 0.06 mm), age 30
+then 70, lit by the studio from above. The ridges (0.45 mm apart, sparse Gabor
+noise: they run a few millimetres, then end, split and join, as minutiae do) show
+as fine parallel lines across the heel pad, flatter at 70 (the relief halves
+between 40 and 85). This sheet predates the shared screen-footprint fade
+(`hkFootprintFade`), which now removes the sparkle where a period is under about
+three pixels.
+
 ## Not drawn, and limits
 
 - A matte surface on callus, yellowing of old toenails and age scaling of the

@@ -113,12 +113,12 @@ export const HIGHLIGHT_OVER_DIFFUSE = 3;
  * length by up to `wander` + `slow` of the fade (two slow noises, so no hairline is a
  * ruled straight line: a wander and a recession). `strands` is strands per metre
  * across the strand direction (1.5 mm); `wisp` bounds the hash so a card well in is
- * never thinned (1 - wander - slow stays above it); `wanderScale` and `slowScale`
+ * never thinned (`wisp + taper + wander + slow` is at most 1, so a card at full fade is whole at every strand); `wanderScale` and `slowScale`
  * are the noises' cycles per metre.
  */
 export const HAIR_HAIRLINE = {
   strands: 660,
-  wisp: 0.6,
+  wisp: 0.45,
   wander: 0.2,
   wanderScale: 25,
   slow: 0.15,

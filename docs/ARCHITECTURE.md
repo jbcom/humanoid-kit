@@ -178,20 +178,27 @@ face and the hips blends across the neck and waist instead of tearing.
 
 ## Age policy
 
-`src/recipe/agePolicy.ts` supports all ages. The line is anatomy, not nudity:
-under `ADULT_AGE` (18) a figure is MakeHuman's smooth doll form, which may be
+`src/recipe/agePolicy.ts` supports all ages. The body follows MakeHuman at every
+age it models (1 to 90), breast development through adolescence included (owner
+direction, 2026-10-08, c0c6ae2: humanoid-kit adds no judgement of its own to the
+body). The one boundary is the adult anatomy pack, which mirrors MakeHuman
+keeping genital assets out of its core. Under `ADULT_AGE` (18) a figure may be
 shown with or without clothing.
+
+The breast macros (`breastSize`, `breastFirmness`, and their regional overrides)
+are not gated: the breast targets are weighted from age 1 up as MakeHuman's are
+(none at the baby anchor, then the child, young and old anchors interpolated), so
+a minor's breasts follow the age and the sliders as upstream's do. An earlier
+version of this document and of `docs/API.md` said they had to equal their
+defaults under 18 and that `withAge` reset them; no code did either, and
+`tests/agePolicy.test.ts` now holds the code to this.
 
 Under 18:
 
-- `breastSize` and `breastFirmness` must equal their defaults, in `macros` and in
-  every regional override (the keys may not appear at all in a region);
 - adult-only modifiers (ids starting `genitals/`, `pelvis/bulge` or
   `stomach/stomach-pregnant`) must be 0;
 - a violation throws `AgePolicyError`. Values are rejected, never silently
   clamped, so a mistake cannot be hidden;
-- the breast macro targets are never weighted (`macroTargetWeights`), although
-  their files ship in the body pack;
 - adult-only targets are not in the body pack at all; the adult anatomy pack's
   modifiers are adult-only, so a recipe under 18 that sets one is rejected;
 - axillary and pubic hair are adult-only: a recipe under 18 whose
