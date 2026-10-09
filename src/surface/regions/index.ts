@@ -5,7 +5,7 @@
  */
 import { isAdultLayer, type SkinLayer } from "../layers.ts";
 import { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER } from "./adult.ts";
-import { HAND_SKIN_LAYERS } from "./hands.ts";
+import { HAND_SKIN_LAYERS } from "./hands/index.ts";
 import { AREOLA_LAYER, FLUSH_LAYER, LIPS_LAYER } from "./rest.ts";
 import {
   BLUSH_LAYER,
@@ -61,7 +61,7 @@ export const SKIN_LAYER_TARGETS: readonly string[] = targetsOf(
   SKIN_LAYERS.filter((l) => !isAdultLayer(l)),
 );
 
-export * from "./hands.ts";
+export * from "./hands/index.ts";
 export * from "./rest.ts";
 export * from "./skinZones.ts";
 export * from "./states.ts";

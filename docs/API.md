@@ -363,7 +363,7 @@ compute what the renderer will do.
   `factor` times the tone's melanin optical density, found on the measured
   melanin axis (extrapolated past the deepest anchor); the same factor darkens
   deep skin far more than fair. `areolaAlbedo` uses it.
-- The hands (`src/surface/regions/hands.ts`, colour in `src/surface/handTone.ts`;
+- The hands (`src/surface/regions/hands/`, colour in `src/surface/handTone.ts`;
   ARCHITECTURE.md, "Hands"; every magnitude cited, or marked as a choice, in
   research/SKIN-STATES.md C5). `HAND_SKIN_LAYERS`, in stack order after the rest
   layers and before the state layers (so cold pallor and flush act on them):

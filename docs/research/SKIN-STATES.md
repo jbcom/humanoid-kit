@@ -324,7 +324,7 @@ bounded by the axis.
 A shape signal is rounded to 50 steps before it re-evaluates the figure: a step
 of `cold` moves the nipple's point target by 0.37 / 50, under a percent.
 
-### C5. Hands (`src/surface/handTone.ts`, `src/surface/regions/hands.ts`)
+### C5. Hands (`src/surface/handTone.ts`, `src/surface/regions/hands/`)
 
 The hands are rest-state regional colour and relief, not a state; they sit
 before the state layers, so cold pallor and flush act on them (C2). Contact

@@ -1,6 +1,6 @@
 /**
  * The colours of the hand's own skin: the palm, the knuckles and the nail.
- * The colour code of the hand layers (src/surface/regions/hands.ts).
+ * The colour code of the hand layers (src/surface/regions/hands/).
  *
  * The palm and the nail are measured in CIELAB against the skin around them
  * and placed by the skin's own measured lightness, so they hold at every tone

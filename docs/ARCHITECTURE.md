@@ -753,8 +753,9 @@ regions.
 
 ### Hands (2026-10-09)
 
-The hands' own skin is one area's layers (`src/surface/regions/hands.ts`,
-colour in `src/surface/handTone.ts`), between the rest layers and the state
+The hands' own skin is one area's layers (`src/surface/regions/hands/`: the
+frame, the creases, the knuckles and the nails each in a file of its own, and
+the palm and the stack order in `index.ts`; colour in `src/surface/handTone.ts`), between the rest layers and the state
 layers, so a state acts on them: cold blanches the nail beds and palms as it
 does the rest of the hand. Sources and choices: `docs/research/SKIN-STATES.md`
 C5; contact sheets, before and after, at four tones, adult and child:

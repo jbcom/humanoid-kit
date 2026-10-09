@@ -28,7 +28,7 @@ import {
   palmCreaseLineFields,
   palmCreaseReliefFields,
   sampleCreases,
-} from "../src/surface/regions/hands.ts";
+} from "../src/surface/regions/hands/index.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import { skinZones } from "../src/surface/regions/skinZones.ts";
 import { GOOSEBUMP_LAYER } from "../src/surface/regions/states.ts";
