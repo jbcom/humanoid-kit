@@ -63,10 +63,11 @@ import {
   STRIA_THRESHOLD_SLOPE,
   STRIAE_ORIENTATION_SEAM,
 } from "../surface/striae.ts";
-import { MARK_NEUTRAL } from "./bodyArtTexture.ts";
+import { type BodyArtTexture, MARK_NEUTRAL } from "./bodyArtTexture.ts";
 import { DUAL_SKINNING_KEY, type DualBones, patchDualSkinning } from "./dualSkinning.ts";
 import { emptyLayerAtlas, emptyOwners, type SkinLayerAtlas } from "./layerAtlas.ts";
 import { BODY_OCCLUSION_FLOOR, BODY_OCCLUSION_POWER, patchOcclusion } from "./occlusion.ts";
+import { TATTOO_FUNCTIONS } from "./tattooDecals.ts";
 
 /** What the skin material is painted from: the recipe's skin and the figure's state signals. */
 export type SkinAppearance = Omit<SkinPaintInput, "signals"> & {
@@ -519,7 +520,8 @@ float hkPreintegrated( float nDotL, float x ) {
  * Body art (`bakeBodyArt`, src/bodyArt/), under `HK_BODY_ART` only, after the
  * layer stack and before scattering: the marks page's melanin and haemoglobin
  * multiply the skin by this tone's ratios raised to them (`markedAlbedo`), and
- * the ink page's colour, seen through this skin (`inkSeen`), mixes in by its
+ * the ink (the ink page's dermal pigment with the tattoos' decals over it,
+ * `hkTattooInk`), seen through this skin (`inkSeen`), mixes in by its
  * coverage, as ink lies in the dermis. A scar's smoothness and raise
  * (`hkMarkSurface`) go to the roughness and the relief; they are 0 without
  * body art.
@@ -537,6 +539,7 @@ uniform vec3 hkMarkBlood;
 vec3 hkSrgbToLinear( vec3 c ) {
 	return mix( c / 12.92, pow( ( c + 0.055 ) / 1.055, vec3( 2.4 ) ), step( vec3( 0.04045 ), c ) );
 }
+${TATTOO_FUNCTIONS}
 vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
 	// The nail plate is not skin: no mark or ink acts on it.
 	#ifdef HK_NAIL_PLATE
@@ -548,8 +551,13 @@ vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
 	hkMarkSurface = mark.ba * skin;
 	float melanin = skin * ( mark.r * 255.0 - ${MARK_NEUTRAL.toFixed(1)} ) / 127.0;
 	c *= pow( hkMarkLight, vec3( max( - melanin, 0.0 ) ) ) * pow( hkMarkDark, vec3( max( melanin, 0.0 ) ) ) * pow( hkMarkBlood, vec3( mark.g * skin ) );
-	vec4 ink = texture( hkBodyArt, vec3( uv, 0.0 ) );
-	return mix( c, hkInkThrough * ( hkInkVeil + hkInkKeep * hkSrgbToLinear( ink.rgb ) ), ink.a * skin );
+	vec4 pigment = texture( hkBodyArt, vec3( uv, 0.0 ) );
+	vec4 ink = vec4( hkSrgbToLinear( pigment.rgb ) * pigment.a, pigment.a );
+	#ifdef HK_TATTOO_LAYERS
+		ink = hkTattooInk( uv, ink );
+	#endif
+	vec3 colour = ink.a > 0.0 ? ink.rgb / ink.a : vec3( 0.0 );
+	return mix( c, hkInkThrough * ( hkInkVeil + hkInkKeep * colour ), ink.a * skin );
 }
 #endif
 `;
@@ -740,6 +748,10 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkChannel: { value: Vector4[] };
     /** The figure's body-art texture (`bakeBodyArt`); read only while one is set (`setBodyArt`). */
     hkBodyArt: { value: Texture | null };
+    /** Its tattoos' decals (`TattooDecals`); read only while it has some. */
+    hkTattooDecals: { value: Texture | null };
+    hkTattooImages: { value: Texture | null };
+    hkTattooTable: { value: Texture | null };
     /** How ink looks through this figure's skin (`inkOptics`). */
     hkInkThrough: { value: Vector3 };
     hkInkVeil: { value: Vector3 };
@@ -798,23 +810,32 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     setChannels(this.hkUniforms.hkChannel.value, plan);
   }
 
+  /** The decal layers of the figure's tattoos the shader is built for (0 without). */
+  private tattooLayers = 0;
+
   /**
-   * Draws the figure's body art from `texture` (`bakeBodyArt`), or none. The
-   * shader reads it only while one is set, so a figure without body art pays
-   * nothing for it; setting or clearing it rebuilds the shader once, and
-   * replacing one texture with another does not.
+   * Draws the figure's body art (`bakeBodyArt`), or none. The shader reads it
+   * only while one is set, so a figure without body art pays nothing for it,
+   * and reads tattoo decals only for the layers it has; a change in either
+   * rebuilds the shader once, and replacing one bake with another like it
+   * does not.
    */
-  setBodyArt(texture: Texture | null): void {
-    const had = this.hkUniforms.hkBodyArt.value !== null;
-    this.hkUniforms.hkBodyArt.value = texture;
-    if (had !== (texture !== null)) {
-      if (texture) this.defines = { ...this.defines, HK_BODY_ART: "" };
-      else {
-        const { HK_BODY_ART: _, ...rest } = this.defines ?? {};
-        this.defines = rest;
-      }
-      this.needsUpdate = true;
-    }
+  setBodyArt(art: Pick<BodyArtTexture, "texture" | "tattoos"> | null): void {
+    const u = this.hkUniforms;
+    const had = [u.hkBodyArt.value !== null, this.tattooLayers] as const;
+    u.hkBodyArt.value = art?.texture ?? null;
+    u.hkTattooDecals.value = art?.tattoos?.coordinates ?? null;
+    u.hkTattooImages.value = art?.tattoos?.images ?? null;
+    u.hkTattooTable.value = art?.tattoos?.table ?? null;
+    this.tattooLayers = art?.tattoos?.layers ?? 0;
+    if (had[0] === (art !== null) && had[1] === this.tattooLayers) return;
+    const { HK_BODY_ART: _, HK_TATTOO_LAYERS: __, ...rest } = this.defines ?? {};
+    this.defines = {
+      ...rest,
+      ...(art && { HK_BODY_ART: "" }),
+      ...(this.tattooLayers && { HK_TATTOO_LAYERS: String(this.tattooLayers) }),
+    };
+    this.needsUpdate = true;
   }
 
   constructor(layers: readonly SkinLayer[] = SKIN_LAYERS) {
@@ -845,6 +866,9 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       // A GLSL array has at least one element, so a stack with no layers still gets one.
       hkChannel: { value: Array.from({ length: Math.max(1, layers.length) }, () => new Vector4()) },
       hkBodyArt: { value: null },
+      hkTattooDecals: { value: null },
+      hkTattooImages: { value: null },
+      hkTattooTable: { value: null },
       hkInkThrough: { value: new Vector3() },
       hkInkVeil: { value: new Vector3() },
       hkInkKeep: { value: new Vector3() },
@@ -969,6 +993,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-10-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}${this.hkUniforms.hkBodyArt.value ? "-art" : ""}`;
+    const art = this.hkUniforms.hkBodyArt.value ? `-art${this.tattooLayers}` : "";
+    return `humanoid-kit-skin-10-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}${art}`;
   }
 }

@@ -1170,7 +1170,8 @@ export function Humanoid({
   }, [client, gl, ready, skin, report]);
   // The figure's body art, baked into a texture of its own from each evaluation
   // that brings some (the placement follows the shape). A new bake replaces the
-  // last without rebuilding the shader; only a figure gaining or losing body art does.
+  // last without rebuilding the shader; only a figure gaining or losing body art,
+  // or a layer of overlapping tattoos, does.
   const bodyArt = useRef<BodyArtTexture | null>(null);
   useEffect(() => {
     if (!figure) return;
@@ -1196,7 +1197,7 @@ export function Humanoid({
       } catch (e) {
         report(e as Error);
       }
-    skin.setBodyArt(next?.texture ?? null);
+    skin.setBodyArt(next);
     bodyArt.current?.dispose();
     bodyArt.current = next;
   }, [figure, ready, adultSurface, gl, skin, bodyArtImages, report]);
