@@ -317,6 +317,28 @@ describe("the UV scale and the relief coordinate built from it", () => {
     }
   });
 
+  it("gives a seam vertex the plain mean of its islands, however many faces each has there", () => {
+    const of = new Map<number, Set<number>>();
+    for (const f of faces)
+      for (let k = 0; k < 4; k++) {
+        const v = assets.faceVerts[f * 4 + k] as number;
+        if (!of.has(v)) of.set(v, new Set());
+        of.get(v)?.add(islands.get(f) as number);
+      }
+    // An island's own scale: the value at any of its vertices in no other island.
+    const own = new Map<number, number>();
+    for (const [v, set] of of)
+      if (set.size === 1) own.set([...set][0] as number, scale[v] as number);
+    let seams = 0;
+    for (const [v, set] of of) {
+      if (set.size < 2 || ![...set].every((id) => own.has(id))) continue;
+      const mean = [...set].reduce((s, id) => s + (own.get(id) as number), 0) / set.size;
+      expect(scale[v] as number, `vertex ${v}`).toBeCloseTo(mean, 4);
+      seams++;
+    }
+    expect(seams).toBeGreaterThan(20);
+  });
+
   it("makes the relief coordinate uv × scale an undistorted map of the skin", () => {
     // Relief is drawn at p = uv × scale (metres), interpolated over each face. If the
     // scale varied across a face, uv × scale would stretch and shear p against the

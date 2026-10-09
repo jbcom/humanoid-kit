@@ -281,8 +281,9 @@ export function diskMask(
  * the faces around the vertex. Detail layers draw relief at p = uv × scale, so
  * the scale must be one value across an island: a scale that varies face by
  * face (a ratio per face) makes p's derivative uv × d(scale) off from the
- * surface's, and stretches relief into streaks. A seam vertex, in two islands,
- * takes their mean. Vertices on no listed face get 0.
+ * surface's, and stretches relief into streaks. A seam vertex takes the plain
+ * mean of its islands' scales, each island once whatever its number of faces
+ * there. Vertices on no listed face get 0.
  */
 export function uvScale(assets: HumanoidAssets, faces: ArrayLike<number>): Float32Array {
   const n = assets.manifest.vertexCount;
@@ -341,13 +342,18 @@ export function uvScale(assets: HumanoidAssets, faces: ArrayLike<number>): Float
       area2(t[0] as number, t[2] as number, t[3] as number);
     areas.set(island(f), a);
   }
+  // Each island counts once at a vertex, however many of its faces meet there.
+  const counted = new Set<number>();
   for (let i = 0; i < faces.length; i++) {
     const f = faces[i] as number;
-    const a = areas.get(island(f));
+    const id = island(f);
+    const a = areas.get(id);
     if (!a || a.uv <= 0) continue;
     const s = Math.sqrt(a.surface / a.uv);
     for (let k = 0; k < 4; k++) {
       const v = assets.faceVerts[f * 4 + k] as number;
+      if (counted.has(id * n + v)) continue;
+      counted.add(id * n + v);
       sum[v] = (sum[v] as number) + s;
       count[v] = (count[v] as number) + 1;
     }
