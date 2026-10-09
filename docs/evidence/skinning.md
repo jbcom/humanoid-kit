@@ -47,6 +47,21 @@ is slight: the front of the hip is a little fuller in the short full woman
 least in the pictures, as in the numbers. The dark streaks on the belly in both
 rows are the fingers' shadows.
 
+## Arms overhead and the trunk bowed
+
+![The benchmark pose: arms overhead on four bodies](./skinning-shoulder-overhead.webp)
+
+The benchmark pose sends the arms overhead past 150°. The shoulders and upper
+arms keep their fullness on all four bodies, with no pinch or candy-wrapper at the
+armpit (girth 5th percentile 0.41 at 170°, linear skinning's 0.17).
+
+![The bowed pose: the trunk folded forward 60° along the spine, four bodies](./skinning-spine-bowed.webp)
+
+The `bowed` pose folds the trunk forward 60° along the spine. The belly, chest and
+back keep their shape and no seam shows. The whole-body volume lost (48‰) is not
+visible as a hollow: it is spread over the trunk and is the same under every
+scheme, so it stays a recorded remainder.
+
 ## Hip tucked
 
 ![The tucked pose before the thigh's share falls as it swings](./skinning-hip-tucked-before.webp)
