@@ -1214,7 +1214,14 @@ deterministic for a seed and never sets adult-only modifiers unless
 pack loaded, a random figure also wears one of its styles (or none, one time
 in ten) in a natural colour that runs darker on deeper skin; `randomRecipe`
 takes the styles as `options.hairStyles`, and without them keeps the base
-recipe's hair. Every change is undoable.
+recipe's hair. It also draws one of the pack's brows and one of its lashes
+(`options.browStyles`, `options.lashStyles`; after the hair, so a seed's hair and
+shape are the same without them), and a new head of hair keeps the brows and
+lashes the figure had. `withHair(recipe, patch)` changes the scalp style, colour,
+brows or lashes of a recipe (`null` takes one away) and keeps whatever the patch
+leaves out; the Appearance panel uses it, offering the brows and lashes in
+groups of their own, and `load` refuses a saved figure whose brows or lashes the
+loaded pack lacks. Every change is undoable.
 
 ### Wardrobe helpers
 
