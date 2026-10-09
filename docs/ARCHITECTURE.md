@@ -598,7 +598,8 @@ surface is the sculpt phase's first job, and cannot be done by drawing
 static surface cannot be gated by age (docs/research/ADULT-SCULPT-PLAN.md).
 `tests/adultStack.test.ts` records the limit so that change fails it.
 
-**Arousal.** `STATE_MORPHS` gains `arousal` (adult-only, refused under 18 by
+**Arousal.** The adult manifest adds an `arousal` state morph
+(`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by
 `assertSignalPolicy` before any target is named), driving the adult pack's
 `penis-circ-incr` (0.44) and `penis-length-incr` (0.25), calibrated so that full
 arousal gives the measured erect against flaccid: circumference +25% and length
