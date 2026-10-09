@@ -1207,7 +1207,8 @@ a coloured texture; everything in the pure core is testable in Node.
   a shared atlas, and a scalp differs by style. A fin card seen edge-on is a
   hairline-thin dark sliver, and the afro stands 340 loose curl cards out of its
   cap, which read as a lattice of them; fins thin out as they turn from the eye
-  (|cos| 0.3 to 0.8), cards of the shell never do (a head's shell is seen at a
+  (|cos| 0.5 to 0.95: the afro's cap showed a lattice of dark lines where fins
+  still showed at 0.3), cards of the shell never do (a head's shell is seen at a
   grazing angle over much of its area).
 - *Two atlases are flattened in the packer.* afro01's and braid01's atlases carry
   painted-in dark cells and blotches that read as a net or as dirt under the

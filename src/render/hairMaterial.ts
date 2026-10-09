@@ -95,7 +95,7 @@ export const HAIR_LOBES = {
  * slivers across the head. A card lying along the scalp is never faded this way:
  * a head's shell is seen at a grazing angle over much of its area.
  */
-export const HAIR_EDGE_ON = { from: 0.3, to: 0.8 } as const;
+export const HAIR_EDGE_ON = { from: 0.5, to: 0.95 } as const;
 
 /**
  * The most a hair pixel may exceed its diffuse by (the base specular, the fibre
