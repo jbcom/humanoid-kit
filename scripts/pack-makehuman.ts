@@ -28,6 +28,7 @@ import { gzipSync } from "node:zlib";
 import {
   BODY_TARGET_FILES,
   type BodyManifest,
+  type BvhJoint,
   parseHumanoidAssets,
   type ShapeModifierEntry,
   TARGET_ENCODING,
@@ -72,6 +73,21 @@ const UNIT = 0.1;
 const MODIFIER_TABLES = ["modeling", "measurement", "bodyshapes"] as const;
 /** Whole-body poses from MakeHuman's data/poses, each CC0 by its .meta. */
 const BODY_POSES = ["tpose", "benchmark"] as const;
+/**
+ * Whole-body poses authored for this package (dedicated to the public domain
+ * under CC0 1.0, like the data they pose): one JSON file each, giving BVH
+ * channel values in degrees per joint over the joint layout of a MakeHuman
+ * pose (`base`). Every other channel is zero, the rest pose.
+ */
+const AUTHORED_POSES_DIR = path.resolve(import.meta.dirname, "poses");
+
+interface AuthoredPose {
+  name: string;
+  title: string;
+  description: string;
+  base: (typeof BODY_POSES)[number];
+  rotations: Record<string, Record<string, number>>;
+}
 
 interface TargetEntry {
   name: string;
@@ -356,6 +372,42 @@ function parseBvh(text: string) {
   return { joints, frames: data };
 }
 
+/** The authored poses (`AUTHORED_POSES_DIR`) as pack entries, each checked against its base's joints. */
+function authoredPoses(
+  shipped: readonly { name: string; joints: { name: string; channels: string[] }[] }[],
+): { name: string; title: string; description: string; joints: BvhJoint[]; frame: number[] }[] {
+  return fs
+    .readdirSync(AUTHORED_POSES_DIR)
+    .filter((f) => f.endsWith(".json"))
+    .sort()
+    .map((file) => {
+      const spec = JSON.parse(
+        fs.readFileSync(path.join(AUTHORED_POSES_DIR, file), "utf8"),
+      ) as AuthoredPose;
+      if (`${spec.name}.json` !== file) throw new Error(`poses/${file}: name ${spec.name}`);
+      if (shipped.some((p) => p.name === spec.name))
+        throw new Error(`poses/${file}: ${spec.name} is a MakeHuman pose's name`);
+      const base = shipped.find((p) => p.name === spec.base);
+      if (!base) throw new Error(`poses/${file}: unknown base ${spec.base}`);
+      for (const [joint, channels] of Object.entries(spec.rotations)) {
+        const j = base.joints.find((b) => b.name === joint);
+        if (!j) throw new Error(`poses/${file}: ${spec.base} has no joint ${joint}`);
+        for (const c of Object.keys(channels))
+          if (!j.channels.includes(c) || !c.endsWith("rotation"))
+            throw new Error(`poses/${file}: ${joint} has no rotation channel ${c}`);
+      }
+      licenseEvidence[`humanoid-kit:scripts/poses/${file}`] =
+        "authored for humanoid-kit and dedicated to the public domain under CC0 1.0";
+      return {
+        name: spec.name,
+        title: spec.title,
+        description: spec.description,
+        joints: base.joints,
+        frame: base.joints.flatMap((j) => j.channels.map((c) => spec.rotations[j.name]?.[c] ?? 0)),
+      };
+    });
+}
+
 // ---------------------------------------------------------------- provenance
 /** One line per licence-evidence kind with its file count; repo-level evidence names its files. */
 function writeProvenance(
@@ -519,7 +571,7 @@ async function main() {
   const faceBvh = parseBvh(read("poseunits/face-poseunits.bvh"));
   // Whole-body poses MakeHuman ships as CC0 (each proven by its .meta): the
   // T-pose, and the rigging benchmark, which bends every joint to an extreme.
-  const poses = BODY_POSES.map((name) => {
+  const shipped = BODY_POSES.map((name) => {
     const bvh = parseBvh(read(`poses/${name}.bvh`));
     const meta = fs.readFileSync(path.join(DATA, `poses/${name}.meta`), "utf8");
     const field = (key: string) =>
@@ -532,6 +584,7 @@ async function main() {
       frame: (bvh.frames[0] ?? []).map((x) => Math.round(x * 1000) / 1000),
     };
   });
+  const poses = [...shipped, ...authoredPoses(shipped)];
   const sliders = buildSliders(
     MODIFIER_TABLES.map((table) => ({
       table,

@@ -380,7 +380,12 @@ mean what they meant there; everything must be testable in Node.
   mouth sideways.
 - *Body poses* come from the pack: MakeHuman's CC0 T-pose and its rigging
   benchmark, which bends every joint to an extreme and is the joint-extreme
-  check. An expression layers on top of a body pose bone by bone.
+  check, and poses authored here (`scripts/poses/*.json`, CC0 like the data
+  they pose): BVH channel values in degrees per joint over a MakeHuman pose's
+  joint layout, every other channel at rest, packed into the same entries. The
+  first is `relaxed`, standing at ease with the arms at the sides, since the
+  rest A-pose holds them 42° out. An expression layers on top of a body pose
+  bone by bone.
 - *Grounding follows the pose.* The rest ground offset comes with each
   evaluation; a posed figure's comes from skinning its control mesh on the
   main thread (`posedGroundOffset`, with the pack's skin sent once), so a
