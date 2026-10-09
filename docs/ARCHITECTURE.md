@@ -402,6 +402,35 @@ from each file.
   (`posedGroundOffset`) takes the worn garments' render vertices too and skins
   them with the pose, so a kneeling figure rests on its knee or its shoe,
   whichever is lower.
+- *Skin at a garment's edge is sunk under the cloth.* MakeHuman hides only the
+  body faces a garment covers whole and keeps the ring round its edge (above),
+  so no gap opens. That ring sits a centimetre or two under the cloth, and a
+  joint moves cloth and skin by different amounts: in a raised-arm pose, skin
+  came through the yoke on either side of a shirt's collar (and, less, at a cuff
+  and a hem). Found by posing the body and the suit the way the renderer does
+  and finding body vertices that were under the cloth at rest and outside it
+  posed: at the shoulder top, where the clavicle, shoulder, spine and neck bones
+  meet with near-equal weights, cloth bound a centimetre or two off the skin
+  ends up 2–9 mm inside it. Ruled out: the blend shortening the cloth's offset
+  (skinning the offset by the vertex's dual quaternion rotation, which keeps its
+  length, changed nothing), and skin weights (cloth is bound through MakeHuman's
+  helper-tights proxy, whose weights differ from the body's by 0.13 on average;
+  transferring the body's weights at the nearest point left as much skin
+  showing, 26 against 17 vertices in the benchmark pose, and was dropped).
+  Fixed in the geometry: for the visible body vertices within three edges of
+  what the outfit hides, `edgeTuck` casts a ray along the rest normal to the
+  garments' rest surface and sinks the vertex by that clearance (at most 3 cm,
+  the outermost garment's), along its normal in the posed figure's rest shape.
+  Only the body surface sinks; the garments stay bound to the unsunk shape, so
+  nothing the cloth covers moves and the visible skin begins where it did. It is
+  worked out once per outfit (a function of the garments, like the masks) and
+  applied per evaluation. Measured on skin that is covered at rest and outside
+  the cloth posed, within 15 mm, at the shoulder top: benchmark 107 → 26 mm of
+  summed depth (17 → 3 vertices), twisted 10 → 4 mm; a T-pose and `flexed` none.
+  Rejected: hiding the ring (a pose that lifts the cloth would show the empty
+  body under it), a shader depth bias on garments (it would also draw cloth over
+  skin that is truly in front of it, such as a hand at a cuff), and a fixed
+  offset of the garments (cloth floating off the skin at rest).
 - *Garments skin as the body does.* Their material takes the figure's dual
   quaternion bones (`applyDualSkinning`, as for any material the library does
   not make), and so do their shadow materials and the mesh's bounds and
@@ -535,6 +564,40 @@ stays MakeHuman's data as it is and the correction is a statement about this
 renderer's colour pipeline. A test re-measures the texture and fails if the
 constant drifts; evidence in `docs/evidence/teeth.md`.
 
+### The gums
+
+The same lift reached the texture's gum texels, which are MakeHuman's dark
+saturated red (mean linear 0.195 / 0.039 / 0.045), and made the ring round the
+teeth an almost pure red. Real gingiva is a paler coral pink, and on deeper skin
+carries physiological melanin pigmentation, brown and patchy. Teeth therefore
+get a `TeethMaterial` (a `AttachmentStandardMaterial` whose fragment shader
+recolours the gum): a texel is gum where more than about half of its linear
+red is not green (`GUM_SATURATION`; the texture's texels fall into two groups,
+the tooth under 0.3 and the gum over 0.5, so a bright or stained tooth texel is
+never taken for gum, as it was when the test was a difference in red and green
+and left pink specks on the teeth), and a gum texel keeps its luminance
+(the creases painted into the texture) and takes the hue of `GUM_LAB`, mixed
+toward `GUM_PIGMENT_LAB` by `gumPigmentAmount(melanin)` (none up to melanin
+0.25, 0.85 at 1) in patches of a two-octave value noise over the texture's UVs
+(about a fifth of the pigment between patches). The tints are divided by
+`GUM_TEXTURE_MEAN_LUMINANCE`, measured from the shipped texture, so an average
+gum texel lands on the albedo and a test re-measures the texture. Tooth texels
+are untouched. `Humanoid` passes `recipe.skin.melanin` to the teeth, as it does
+the eye appearance to the eyes.
+
+**Choice, not measurement.** "Coral pink" and "brown, patchy melanosis on
+deeper complexions" are the periodontology descriptors of healthy gingiva (the
+pigmentation is graded clinically from none to heavy on the Dummett oral
+pigmentation index), but no table of CIELAB values from them is in this
+repository, so `GUM_LAB` (L\* 70, a\* 24, b\* 16, lifted above the 55 to 65 of a lit gum
+because the mouth's occlusion shades the ring round the teeth to about half), `GUM_PIGMENT_LAB` (L\* 35,
+a\* 12, b\* 13) and the pigmentation curve are picked to read right beside the
+lip and skin colours and tuned by eye against `docs/evidence/gums.md`. Decision:
+a recolour in the teeth's own shader over a second gum mesh or an edited pack
+texture, because the gum is part of the teeth texture's UV layout, the pack
+stays MakeHuman's data, and the tone must reach the gum without baking one
+texture per tone.
+
 ## Worker
 
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one
@@ -636,6 +699,22 @@ mean what they meant there; everything must be testable in Node.
 - *Expressions blend face units in log space*: each unit's per-bone rotation
   is a rotation vector, an expression is the weighted sum per bone, and the sum
   is exponentiated. Blending is order-independent and exact for one unit.
+- *The face units are packed mirror-symmetric* (2026-10-09, an audit of every
+  unit's skin displacement against its partner's, reflected). MakeHuman authored
+  them by hand and a few are uneven: `NasolabialDeepener` turns one nose-wing
+  bone 7.8° about an axis its other side leaves alone (2.7 mm of 5.6 mm at age
+  45, so a figure's right fold deepened half as much again as its left), and
+  `MouthLeftPullUp` and `MouthRightPullUp` differ in a lip-corner bone and in a
+  sideways turn of the midline lip bone, so a smile pulled 0.45 mm to one side.
+  The packer makes each unit the mean of its authored frame and the reflection of
+  its partner's (`scripts/lib/faceUnits.ts`: `Left` and `Right` swapped in the
+  unit's name, `.L` and `.R` in the joint's, an X rotation kept and a Y or Z
+  rotation and X position negated), which favours neither side and leaves a
+  symmetric unit exactly as it was; a central unit's sideways turns go. A test
+  holds every shipped unit to the mirror of its partner. Decision: the
+  correction is the packer's, since the data is MakeHuman's and the asymmetry is
+  in it, over a runtime fix that every consumer would have to repeat. Averaging
+  over choosing a side, because nothing says which side was the intended one.
 - *A CPU reference* (`skinPositions`) poses control vertices exactly as the
   shader does, for tests, presence anchors, grounding and pose-keyed occlusion
   bakes. The browser project holds the shader to it.
@@ -661,6 +740,28 @@ mean what they meant there; everything must be testable in Node.
   main thread (`posedGroundOffset`, with the pack's skin sent once), so a
   kneeling figure rests on the floor instead of hanging where its standing
   feet were.
+
+### Named expressions (2026-10-09)
+
+The pack's 60 units are muscles, not faces; what people ask for is a smile or
+a look of surprise. `EXPRESSIONS` (`src/rig/expressions.ts`) names ten as
+weights of units (smile, grin, frown, surprise, anger, disgust, fear, sadness,
+blink, squint), `expressionUnits(id, intensity)` scales one for a pose's
+`faceUnits`, and the caller blends them as any other units. They follow the
+facial action coding system's description of each emotion (a smile is the lip
+corner puller with the cheek raiser; surprise the brow raisers with the upper
+lid raiser and a dropped jaw), but a MakeHuman unit is a bone-driven shape,
+not an action unit, so every weight is a **choice** judged against the sheets
+in `docs/evidence/expressions.md`, to be tuned rather than cited. Each holds a
+left unit at the weight of its right (a test checks the pairing, and that the
+posed skin is the mirror of itself to 0.1 mm), so an expression never reads as
+a smirk; a one-sided face is composed from units by the caller.
+
+Audit of the rig under them (age 6, 14, 45 and 75, from `skinPositions` and
+rays against the posed body, no rendering): a blink leaves under 2 % of rays
+from the eye centre open, so the lids close fully at every age; a squint keeps
+the eye narrowed, not shut; no unit moves the skin nearer the eyeball's centre
+than 0.6 mm from where it rests. The one defect was the asymmetry above.
 
 ### Skinning artefacts (2026-10-09)
 

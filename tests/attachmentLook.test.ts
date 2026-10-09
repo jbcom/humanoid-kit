@@ -8,8 +8,10 @@ import {
   createAttachmentMaterial,
   ENAMEL_LAB,
   TEETH_TEXTURE_MEAN,
+  TeethMaterial,
 } from "../src/render/attachmentLook.ts";
 import { labFromLinear, linearFromLab } from "../src/surface/cielab.ts";
+import { gumAppearance } from "../src/surface/gumTone.ts";
 import { luminance, type Rgb } from "../src/surface/skinTone.ts";
 import { bodyDir, bodyManifest } from "./fixtures.ts";
 
@@ -45,6 +47,20 @@ describe("the material an attachment is drawn with", () => {
     expect(
       createAttachmentMaterial("hair", { ...described([1, 1, 1]), backfaceCull: false }).side,
     ).toBe(DoubleSide);
+  });
+
+  it("recolours the gums of the teeth by the figure's skin, and only the teeth's", () => {
+    const teeth = createAttachmentMaterial("teeth", described(mhmat));
+    expect(teeth).toBeInstanceOf(TeethMaterial);
+    expect(createAttachmentMaterial("tongue", described(mhmat))).not.toBeInstanceOf(TeethMaterial);
+    const material = teeth as TeethMaterial;
+    for (const melanin of [0, 0.5, 1]) {
+      material.setSkin({ melanin });
+      const want = gumAppearance({ melanin });
+      expect(material.hkUniforms.hkGumAmount.value).toBe(want.amount);
+      expect(material.hkUniforms.hkGum.value.toArray()).toEqual(want.base);
+      expect(material.hkUniforms.hkGumPigment.value.toArray()).toEqual(want.pigment);
+    }
   });
 });
 

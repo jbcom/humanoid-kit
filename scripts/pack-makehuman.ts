@@ -44,6 +44,7 @@ import {
 } from "./lib/adultAnatomySpec.ts";
 import { authoredPoses } from "./lib/authoredPoses.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
+import { symmetrizeFaceUnits } from "./lib/faceUnits.ts";
 import {
   writeAttachments,
   writeAttachmentTextures,
@@ -661,7 +662,11 @@ async function main() {
     faceUnits: {
       names: faceUnits.framemapping,
       joints: faceBvh.joints,
-      frames: faceBvh.frames.map((row) => row.map((x) => Math.round(x * 1000) / 1000)),
+      // MakeHuman's units are not all the mirror of their partners (a smile and the
+      // nasolabial fold come out uneven): packed symmetric, scripts/lib/faceUnits.ts.
+      frames: symmetrizeFaceUnits(faceUnits.framemapping, faceBvh.joints, faceBvh.frames).map(
+        (row) => row.map((x) => Math.round(x * 1000) / 1000),
+      ),
     },
     poses,
   };
