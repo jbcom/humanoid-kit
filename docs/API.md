@@ -315,7 +315,8 @@ compute what the renderer will do.
   `SurfaceLayer` (`kind: "surface"`, `paint` giving `strength`, a `roughness`
   change and a `specular` change). `surfaceChange` and `creaseHeight` are the
   shader's references; `uvScale(assets, faces)` gives metres of skin per UV
-  unit (carried as `body.uvScale` in the topology).
+  unit, one value for each UV island (carried as `body.uvScale` in the
+  topology).
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).

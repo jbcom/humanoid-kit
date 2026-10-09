@@ -519,7 +519,12 @@ Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
    flexion and folding on the compressed side while flattening on the
    stretched side, as measured. Their depth and spacing are art-directed
    parameters, and documented as such. A per-vertex field of world length per
-   UV unit keeps procedural detail at true scale across the atlas.
+   UV unit keeps procedural detail at true scale across the atlas. It is one
+   value for each UV island, never a ratio per face: the shader draws relief at
+   p = uv × scale, and a scale that varies across a face adds uv × d(scale) to
+   p's derivative, which stretched bumps into streaks five to twenty times
+   longer than wide on the thighs (`tests/layers.test.ts` holds the map to a
+   median stretch under 1.6).
 3. *Surface sheen*, through a surface layer that lowers roughness and raises
    specular where sweat flows, weighted by the regional sweat map and the
    `exertion` and `heat` signals.
