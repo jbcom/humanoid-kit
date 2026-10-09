@@ -385,8 +385,8 @@ mean what they meant there; everything must be testable in Node.
   they pose): BVH channel values in degrees per joint over a MakeHuman pose's
   joint layout, every other channel at rest, packed into the same entries. The
   first is `relaxed`, standing at ease with the arms at the sides, since the
-  rest A-pose holds them 42° out; `flexed` and `twisted` are the skinning's
-  extremes (below), which the pack's benchmark does not reach: it bends no
+  rest A-pose holds them 42° out; `flexed`, `twisted` and `abducted` (the
+  thighs opened 40°) are the skinning's extremes (below), which the pack's benchmark does not reach: it bends no
   elbow, knee or wrist. An expression layers on top of a body pose bone by
   bone.
 - *Grounding follows the pose.* The rest ground offset comes with each
@@ -491,11 +491,18 @@ the browser project (the dual quaternion blend and share vertex by vertex to
 2·10⁻⁵, and a whole skinned mesh against the reference's image).
 
 **What remains.** The elbow loses about 4‰ and the hips 15 to 20‰ in every
-scheme (the weights' geometry: the inside of a fold, and the groin). The blend
-bulges a flexed hip's front (95th percentile 1.37 at 120°, against linear
-skinning's 1.13) for the 15‰ of volume it keeps, and a bent knee's (1.32 against
-1.23). Those are for a corrective lane, against this skinning; the crease detail
-layers (`flex.*` signals) paint the fold's skin on top of it.
+scheme (the weights' geometry: the inside of a fold, and the groin).
+**Decision (2026-10-09): no corrective for the elbow or the hip's abduction.**
+Rendered at their extremes in four bodies (`docs/evidence/skinning.md`) neither
+shows a fault: the elbow's 4‰ is about 0.2 L and the smallest loss measured, the
+abducted groin is skin stretched rather than lost, and a corrective shape
+authored for either would add data and a per-pose evaluation for a change the
+sheets cannot show. The gate (never worse than linear in girth, within a
+thousandth in volume) holds both. The blend bulges a flexed hip's front (95th
+percentile 1.37 at 120°, against linear skinning's 1.13) for the 15‰ of volume
+it keeps, and a bent knee's (1.32 against 1.23); that is the remainder a
+pose-space corrective would address, if figures are posed there often. The
+crease detail layers (`flex.*` signals) paint the fold's skin on top of it.
 
 ## Presence
 
