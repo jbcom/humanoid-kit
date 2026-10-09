@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jointPosition } from "../src/format/assetFormat.ts";
+import { groupFaces, jointPosition } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import {
@@ -11,6 +11,7 @@ import {
 } from "../src/surface/layers.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import { bodySurface } from "../src/surface/regions/once.ts";
+import { skinZones } from "../src/surface/regions/skinZones.ts";
 import {
   AREOLA_EDGE_SOFTNESS,
   AREOLA_LAYER,
@@ -27,8 +28,18 @@ import {
   NAVEL_REACH,
   navelCentre,
   RIB_LAYER,
+  RIB_PERIODS,
+  STRIAE_LAYER,
 } from "../src/surface/regions/torso.ts";
+import { orientationAtCoordinate } from "../src/surface/ridges.ts";
 import { areolaAlbedo, luminance, type Rgb, skinAlbedo } from "../src/surface/skinTone.ts";
+import {
+  STRIA_SPACING,
+  STRIAE_ORIENTATION_SEAM,
+  striaeAmount,
+  striaeColour,
+  striaeMaturity,
+} from "../src/surface/striae.ts";
 import { areolaRadius, type FigureBuild, nippleContrast } from "../src/surface/torsoTone.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
@@ -482,10 +493,10 @@ describe("the areola's stretch on a figure", () => {
   it("is 1 on the base mesh itself and what the morph makes of the skin round the nipple elsewhere", () => {
     expect(areolaStretch(assets, assets.positions)).toBeCloseTo(1, 6);
     // Measured on the evaluated control mesh (the probe in the commit that added it):
-    // a small child's skin is a little over half the base mesh's size, a large breast's twice.
-    expect(stretch({ age: 7, gender: 0 })).toBeCloseTo(0.65, 1);
-    expect(stretch({ gender: 0, breastSize: 1 })).toBeCloseTo(1.96, 1);
-    expect(stretch({ gender: 0, breastSize: 0 })).toBeCloseTo(1.14, 1);
+    // a small child's skin is two thirds of the base mesh's size, a large breast's twice.
+    expect(stretch({ age: 7, gender: 0 })).toBeCloseTo(0.68, 1);
+    expect(stretch({ gender: 0, breastSize: 1 })).toBeCloseTo(2.09, 1);
+    expect(stretch({ gender: 0, breastSize: 0 })).toBeCloseTo(1.25, 1);
   });
 
   it("is what a model evaluation reports", () => {
@@ -708,4 +719,194 @@ describe("the navel and the midline", () => {
     const ids = SKIN_LAYERS.map((l) => l.id);
     for (const id of ["navel", "linea-nigra", "linea-alba"]) expect(ids).toContain(id);
   });
+});
+
+describe("the stretch marks", () => {
+  const assets = loadFixtureAssets();
+  const P = assets.positions;
+  const n = assets.manifest.vertexCount;
+  const onBody = bodySurface(assets);
+  const zones = skinZones(assets);
+  const f = STRIAE_LAYER.fields(assets);
+  const coord = f.coord as Float32Array;
+  const heavy: FigureBuild = {
+    gender: 0,
+    age: 25,
+    weight: 1,
+    height: 0.5,
+    muscle: 0.5,
+    breastSize: 0.5,
+  };
+
+  it("is a striae layer with the figure's amount and the colour of marks of its age", () => {
+    expect(STRIAE_LAYER.kind).toBe("detail");
+    expect(STRIAE_LAYER.pattern).toBe("striae");
+    const t = paintStopTable([STRIAE_LAYER], paint({ age: 25, build: heavy }));
+    expect(t[1]).toBe(8);
+    expect(t[2]).toBeGreaterThan(0.00005);
+    expect(t[2]).toBeLessThan(0.0004);
+    expect(t[3]).toBeCloseTo(STRIA_SPACING, 9);
+    // The amount is the figure's.
+    expect(t[8]).toBeCloseTo(striaeAmount({ ...heavy }), 6);
+    // The ratio is the marks' colour at that age and tone.
+    const ratio = striaeColour(tone, striaeMaturity(25));
+    for (let c = 0; c < 3; c++) expect(t[4 + c]).toBeCloseTo(ratio[c] as number, 6);
+    // None on the default figure.
+    expect(paintStopTable([STRIAE_LAYER], paint({ age: 25 }))[8]).toBe(0);
+  });
+
+  it("lies on the lower trunk, hips, buttocks and outer thighs, and nowhere else", () => {
+    let count = 0;
+    for (let v = 0; v < n; v++) {
+      if ((f.mask[v] as number) < 0.2) continue;
+      count++;
+      expect(onBody[v], `vertex ${v}`).toBe(1);
+      const sites =
+        (zones.zone("lowerTrunk")[v] as number) +
+        (zones.zone("pelvis")[v] as number) +
+        (zones.zone("thigh")[v] as number);
+      expect(sites, `vertex ${v} zone`).toBeGreaterThan(0.2);
+      // Never on the breast.
+      expect(zones.zone("breast")[v] as number, `vertex ${v} breast`).toBeLessThan(0.5);
+    }
+    expect(count).toBeGreaterThan(100);
+  });
+
+  it("leaves out the groin, the inner thigh and any skin that faces up or down", () => {
+    for (let v = 0; v < n; v++) {
+      if (!onBody[v]) continue;
+      const x = P[v * 3] as number;
+      const y = P[v * 3 + 1] as number;
+      const z = P[v * 3 + 2] as number;
+      // The pubic region, central and low in front.
+      if (Math.abs(x) < 0.03 && y < 0.05 && z > 0.1)
+        expect(f.mask[v], `vertex ${v} groin`).toBeLessThan(0.1);
+      const ny = zones.normals[v * 3 + 1] as number;
+      if (Math.abs(ny) > 0.9) expect(f.mask[v], `vertex ${v} faces ${ny}`).toBeLessThan(0.1);
+      // Inner thigh: a thigh vertex that faces the other leg.
+      if ((zones.zone("thigh")[v] as number) > 0.8 && Math.abs(x) > 0.02) {
+        const inner = -Math.sign(x) * (zones.normals[v * 3] as number);
+        if (inner > 0.6) expect(f.mask[v], `vertex ${v} inner thigh`).toBeLessThan(0.1);
+      }
+    }
+  });
+
+  it("is the same on both sides of the body", () => {
+    const left = [...Array(n).keys()].filter(
+      (v) => (f.mask[v] as number) > 0.05 && (P[v * 3] as number) > 0.01,
+    ).length;
+    const right = [...Array(n).keys()].filter(
+      (v) => (f.mask[v] as number) > 0.05 && (P[v * 3] as number) < -0.01,
+    ).length;
+    expect(Math.abs(left - right) / (left + right)).toBeLessThan(0.05);
+  });
+
+  it("orients the marks round the body: horizontal on the skin, whatever way its UV map turns", () => {
+    // Carry each marked vertex's stored UV angle back through one of its faces' UV maps to the
+    // skin: the direction should be horizontal (marks run across the stretch, round the body).
+    const faces = groupFaces(assets, "body");
+    const faceOf = new Map<number, number>();
+    for (const q of faces)
+      for (let k = 0; k < 4; k++) faceOf.set(assets.faceVerts[q * 4 + k] as number, q);
+    let checked = 0;
+    for (let v = 0; v < n; v++) {
+      if ((f.mask[v] as number) < 0.5) continue;
+      const q = faceOf.get(v);
+      if (q === undefined) continue;
+      const corner = [0, 1, 2, 3].map((k) => assets.faceVerts[q * 4 + k] as number);
+      const at = (w: number) => [0, 1, 2].map((k) => P[w * 3 + k] as number);
+      const uvOf = (k: number) => [
+        assets.uvs[(assets.faceUvs[q * 4 + k] as number) * 2] as number,
+        assets.uvs[(assets.faceUvs[q * 4 + k] as number) * 2 + 1] as number,
+      ];
+      const p0 = at(corner[0] as number);
+      const e1 = at(corner[1] as number).map((x, k) => x - (p0[k] as number));
+      const e2 = at(corner[3] as number).map((x, k) => x - (p0[k] as number));
+      const b1 = uvOf(1).map((x, k) => x - (uvOf(0)[k] as number));
+      const b2 = uvOf(3).map((x, k) => x - (uvOf(0)[k] as number));
+      const det = (b1[0] as number) * (b2[1] as number) - (b1[1] as number) * (b2[0] as number);
+      if (Math.abs(det) < 1e-12) continue;
+      const theta = orientationAtCoordinate(coord[v] as number, STRIAE_ORIENTATION_SEAM);
+      const d = [Math.cos(theta), Math.sin(theta)];
+      // d = alpha b1 + beta b2, then the same combination of the edges.
+      const alpha =
+        ((d[0] as number) * (b2[1] as number) - (d[1] as number) * (b2[0] as number)) / det;
+      const beta =
+        ((b1[0] as number) * (d[1] as number) - (b1[1] as number) * (d[0] as number)) / det;
+      const dir = [0, 1, 2].map((k) => alpha * (e1[k] as number) + beta * (e2[k] as number));
+      const len = Math.hypot(...dir);
+      if (len < 1e-9) continue;
+      expect(Math.abs((dir[1] as number) / len), `vertex ${v}`).toBeLessThan(0.45);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(100);
+  });
+
+  it("stores its orientation so that neighbours straddle the seam rarely", () => {
+    // Bilinear filtering between two stored angles either side of the seam passes through every
+    // angle between them the long way round: the seam sits where the fewest marks point.
+    let pairs = 0;
+    let wraps = 0;
+    for (const q of groupFaces(assets, "body"))
+      for (let k = 0; k < 4; k++) {
+        const a = assets.faceVerts[q * 4 + k] as number;
+        const b = assets.faceVerts[q * 4 + ((k + 1) % 4)] as number;
+        if ((f.mask[a] as number) < 0.3 || (f.mask[b] as number) < 0.3) continue;
+        pairs++;
+        if (Math.abs((coord[a] as number) - (coord[b] as number)) > 0.5) wraps++;
+      }
+    expect(pairs).toBeGreaterThan(200);
+    expect(wraps / pairs).toBeLessThan(0.03);
+  });
+
+  it("is in the stack", () => {
+    expect(SKIN_LAYERS.map((l) => l.id)).toContain("striae");
+  });
+});
+
+describe("the relief layers' coordinates are continuous", () => {
+  // A crease layer draws a groove at every period of its coordinate, so a coordinate that jumps
+  // between neighbouring vertices (zero outside a window, say) sweeps every groove it skips through
+  // the triangles between them. Each is a linear function of position (clamped at its ends), so
+  // across any edge it changes by no more than its gradient times the edge's length.
+  const assets = loadFixtureAssets();
+  const P = assets.positions;
+  const faces = groupFaces(assets, "body");
+  const edges: [number, number][] = [];
+  for (const q of faces)
+    for (let k = 0; k < 4; k++)
+      edges.push([
+        assets.faceVerts[q * 4 + k] as number,
+        assets.faceVerts[q * 4 + ((k + 1) % 4)] as number,
+      ]);
+
+  /** Per layer, the steepest the coordinate runs, per metre. */
+  const GRADIENT = [
+    // Up the bone's cross-section, one period of 16 mm per period of the coordinate.
+    [CLAVICLE_LAYER, 1 / (CLAVICLE_PERIODS * 0.016)],
+    // Down the window of nine periods of 3 cm, along a line that falls 0.47 per metre outward.
+    [RIB_LAYER, Math.hypot(1, 0.47) / (RIB_PERIODS * 0.03)],
+    // Across the strip, its width.
+    [LINEA_ALBA_LAYER, 1 / (2 * 0.012)],
+  ] as const;
+
+  for (const [layer, gradient] of GRADIENT) {
+    it(`${layer.id}: no edge changes it faster than its gradient where it shows`, () => {
+      const f = layer.fields(assets);
+      const coord = f.coord as Float32Array;
+      let checked = 0;
+      for (const [a, b] of edges) {
+        if ((f.mask[a] as number) < 0.02 && (f.mask[b] as number) < 0.02) continue;
+        checked++;
+        const length = Math.hypot(
+          ...[0, 1, 2].map((k) => (P[a * 3 + k] as number) - (P[b * 3 + k] as number)),
+        );
+        expect(
+          Math.abs((coord[a] as number) - (coord[b] as number)),
+          `edge ${a}-${b}`,
+        ).toBeLessThanOrEqual(1.02 * gradient * length + 1e-6);
+      }
+      expect(checked).toBeGreaterThan(20);
+    });
+  }
 });

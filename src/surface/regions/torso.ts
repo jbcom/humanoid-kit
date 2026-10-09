@@ -14,6 +14,13 @@ import {
   skinAlbedo,
 } from "../skinTone.ts";
 import {
+  STRIA_SPACING,
+  STRIAE_ORIENTATION_SEAM,
+  striaeAmount,
+  striaeColour,
+  striaeMaturity,
+} from "../striae.ts";
+import {
   abdominalDefinition,
   areolaRadius,
   clavicleDefinition,
@@ -26,6 +33,7 @@ import {
 } from "../torsoTone.ts";
 import { bodySurface, once } from "./once.ts";
 import { skinZones } from "./skinZones.ts";
+import { uvOrientation } from "./uvOrientation.ts";
 
 const smoothstep = (lo: number, hi: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
@@ -42,8 +50,8 @@ const AREOLA_EDGE_MIN = 0.0015;
 /**
  * How far from a nipple's centre the areola's fields reach, in the base mesh's
  * metres: past the largest areola any figure paints on that mesh (its own
- * radius over its `areolaStretch`: a small-breasted woman's 16 mm over 1.14 is
- * 14, a short man's 14 over 0.83 is 17, with the soft edge 19) and no further,
+ * radius over its `areolaStretch`: a small-breasted woman's 16 mm over 1.25 is
+ * 13, a short man's 14 over 0.83 is 17, with the soft edge 19) and no further,
  * so the eight stops across it are as fine as they can be. A static bound of
  * the field: the paint (`AREOLA_LAYER`) puts the figure's own edge inside it.
  */
@@ -268,15 +276,15 @@ export const MONTGOMERY_LAYER: DetailLayer = {
 };
 
 /** The vertices the stretch is measured on: the body's, from this far to this far (base metres) of a nipple's centre. */
-const STRETCH_RING = [0.008, 0.03] as const;
+const STRETCH_RING = [0.008, 0.02] as const;
 
 /**
  * How much larger the skin round the nipples is on a figure than on the base
  * mesh: the median, over the body's vertices in a ring round each nipple's
  * centre, of their distance from it on the figure (`control`, the morphed
  * control mesh) over their distance on the base mesh. The fields are measured
- * on the base mesh, and the figure's mesh is that mesh morphed: 0.65 on a
- * seven year old, 1.96 on the largest breast. 1 on the base mesh itself.
+ * on the base mesh, and the figure's mesh is that mesh morphed: 0.68 on a
+ * seven year old, 2.09 on the largest breast. 1 on the base mesh itself.
  */
 export function areolaStretch(assets: HumanoidAssets, control: Float32Array): number {
   const rings = once(assets, "areola-ring", () => {
@@ -375,20 +383,20 @@ export function clavicleFields(assets: HumanoidAssets): SkinLayerFields {
         if ((P[v * 3] as number) >= 0 !== (side === "L")) continue;
         const p = [0, 1, 2].map((k) => (P[v * 3 + k] as number) - (head[k] as number));
         const t = p.reduce((a, x, k) => a + x * (axis[k] as number), 0) / len2;
+        const d = p.reduce((a, x, k) => a + x * (across[k] as number), 0);
+        // The coordinate is the height over the bone's own line, held at 0 and 1 (a flat) far above
+        // and below it, so no triangle on the mask's edge sweeps through grooves it skips.
+        coord[v] = Math.min(1, Math.max(0, 0.5 + d / (CLAVICLE_PERIODS * CLAVICLE_PERIOD)));
         if (t < 0 || t > 1) continue;
         const height = p.reduce((a, x, k) => a + x * (out[k] as number), 0);
         // Over the bone, not behind it: the skin is a few millimetres to three centimetres out.
         const over = smoothstep(0, 0.008, height) * (1 - smoothstep(0.03, 0.045, height));
-        const d = p.reduce((a, x, k) => a + x * (across[k] as number), 0);
         const w =
           smoothstep(0.04, 0.18, t) *
           (1 - smoothstep(0.78, 0.96, t)) *
           (1 - smoothstep(0.75 * CLAVICLE_PERIOD, CLAVICLE_PERIOD, Math.abs(d))) *
           over;
-        if (w > (mask[v] as number)) {
-          mask[v] = w;
-          coord[v] = 0.5 + d / (CLAVICLE_PERIODS * CLAVICLE_PERIOD);
-        }
+        if (w > (mask[v] as number)) mask[v] = w;
       }
     }
     return { mask, coord };
@@ -445,6 +453,9 @@ export function ribFields(assets: HumanoidAssets): SkinLayerFields {
       const x = Math.abs(P[v * 3] as number);
       const y = P[v * 3 + 1] as number;
       const t = (top - (y + RIB_SLOPE * x)) / window;
+      // Past the window the coordinate holds its end value (a flat of the grooves), so no
+      // triangle on its edge sweeps through the ribs it skips.
+      coord[v] = Math.min(1, Math.max(0, t));
       if (t <= 0 || t >= 1) continue;
       const w =
         (zones.front[v] as number) *
@@ -454,10 +465,7 @@ export function ribFields(assets: HumanoidAssets): SkinLayerFields {
         (1 - smoothstep(0.13, 0.2, x)) *
         (1 - smoothstep(0.1, 0.5, breast[v] as number)) *
         (1 - smoothstep(0.1, 0.5, arm[v] as number));
-      if (w > 0) {
-        mask[v] = w;
-        coord[v] = t;
-      }
+      if (w > 0) mask[v] = w;
     }
     return { mask, coord };
   });
@@ -592,10 +600,10 @@ function midlineFields(
       );
       w *= smoothstep(0.5 * NAVEL_REACH, 0.9 * NAVEL_REACH, d);
     }
-    if (w > 0) {
-      mask[v] = w;
-      coord[v] = Math.min(1, Math.max(0, 0.5 + x / (2 * halfWidth)));
-    }
+    // Across the strip the coordinate runs on past its edges, held at 0 and 1, so the triangles on
+    // the mask's edge sweep no coordinate between the two.
+    coord[v] = Math.min(1, Math.max(0, 0.5 + x / (2 * halfWidth)));
+    if (w > 0) mask[v] = w;
   }
   return { mask, coord };
 }
@@ -667,6 +675,116 @@ export const LINEA_ALBA_LAYER: DetailLayer = {
   }),
 };
 
+/**
+ * Where stretch marks form: the skin that stretches with growth and weight, the
+ * lower trunk (flanks, lumbar back and the belly's lower part), the hips and
+ * buttocks, and the outer and back of the thigh; each site's weight is how much
+ * of its amount shows (the density the layer's threshold takes). Left out: the
+ * breasts (which have a growth of their own and are not painted here), the
+ * groin, the inner thigh, and skin that faces up or down, where the marks'
+ * direction (round the body, across the stretch) has no meaning.
+ */
+export const STRIAE_SITE_WEIGHT = { flank: 1, belly: 0.7, hip: 1, thigh: 0.8 } as const;
+
+/** The marks' direction at each vertex: the horizontal in the skin's plane (up × normal), three floats a vertex. */
+function striaeDirections(assets: HumanoidAssets): {
+  direction: Float32Array;
+  weight: Float32Array;
+} {
+  const P = assets.positions;
+  const n = assets.manifest.vertexCount;
+  const zones = skinZones(assets);
+  const onBody = bodySurface(assets);
+  const trunk = zones.zone("lowerTrunk");
+  const pelvis = zones.zone("pelvis");
+  const thigh = zones.zone("thigh");
+  const breast = zones.zone("breast");
+  const hip = joint(assets, "upperleg01.L____head")[1];
+  const knee = joint(assets, "lowerleg01.L____head")[1];
+  const direction = new Float32Array(n * 3);
+  const weight = new Float32Array(n);
+  for (let v = 0; v < n; v++) {
+    if (onBody[v] !== 1) continue;
+    const nx = zones.normals[v * 3] as number;
+    const nz = zones.normals[v * 3 + 2] as number;
+    // up × normal = (nz, 0, -nx): horizontal, in the skin's plane; short where the skin faces up or down.
+    const tx = nz;
+    const tz = -nx;
+    const len = Math.hypot(tx, tz);
+    const x = P[v * 3] as number;
+    const y = P[v * 3 + 1] as number;
+    const front = zones.front[v] as number;
+    const facing = smoothstep(0.45, 0.75, len);
+    // The belly, in front on the lower trunk; the flanks and back are the rest of it.
+    const trunkWeight =
+      (trunk[v] as number) *
+      (STRIAE_SITE_WEIGHT.flank + (STRIAE_SITE_WEIGHT.belly - STRIAE_SITE_WEIGHT.flank) * front);
+    const hipWeight = (pelvis[v] as number) * STRIAE_SITE_WEIGHT.hip;
+    // Skin that faces the other leg is the inner thigh and groin's; the thigh's marks stop a half of the way to the knee.
+    const inner = -Math.sign(x) * nx;
+    const thighWeight =
+      (thigh[v] as number) *
+      STRIAE_SITE_WEIGHT.thigh *
+      (1 - smoothstep(0.35, 0.6, (hip - y) / (hip - knee)));
+    // Not the groin, in front, central and low.
+    const groin =
+      front * (1 - smoothstep(0.03, 0.06, Math.abs(x))) * (1 - smoothstep(0.05, 0.08, y));
+    const w =
+      Math.max(trunkWeight, hipWeight, thighWeight) *
+      (1 - smoothstep(0.2, 0.6, inner)) *
+      facing *
+      (1 - groin) *
+      (1 - smoothstep(0.2, 0.5, breast[v] as number));
+    if (w <= 0 || len < 1e-6) continue;
+    weight[v] = w;
+    direction[v * 3] = tx / len;
+    direction[v * 3 + 2] = tz / len;
+  }
+  return { direction, weight };
+}
+
+function striaeFields(assets: HumanoidAssets): SkinLayerFields {
+  return once(assets, "striae", () => {
+    const { direction, weight } = striaeDirections(assets);
+    const { coord, valid } = uvOrientation(assets, direction, weight, STRIAE_ORIENTATION_SEAM);
+    const mask = Float32Array.from(weight, (w, v) => (valid[v] === 1 ? w : 0));
+    return { mask, coord };
+  });
+}
+
+/** How deep a mark is, metres (CHOICE: atrophic, a fraction of a millimetre; none measured on the skin's surface). */
+export const STRIAE_DEPTH = 0.00015;
+/** How opaque a mark's colour is where it lies (CHOICE). */
+export const STRIAE_OPACITY = 0.9;
+
+/**
+ * Stretch marks: parallel streaks round the lower trunk, hips and thighs, red
+ * and then silver on light skin and violet-brown and then pale on deep skin,
+ * slightly sunk, as many as the figure's weight, height and age make
+ * (`striaeAmount`), of the colour their age gives (`striaeColour`). Drawn in
+ * the shader as the sole's friction ridges are: sparse Gabor noise past a
+ * threshold, its orientation stored in the layer's coordinate.
+ */
+export const STRIAE_LAYER: DetailLayer = {
+  id: "striae",
+  kind: "detail",
+  pattern: "striae",
+  targets: [],
+  fields: striaeFields,
+  paint: (input) => {
+    const b = figureBuild(input);
+    return {
+      strength: STRIAE_OPACITY,
+      height: STRIAE_DEPTH,
+      size: STRIA_SPACING,
+      striae: {
+        amount: striaeAmount(b),
+        ratio: striaeColour(input.tone, striaeMaturity(b.age)),
+      },
+    };
+  },
+};
+
 /** The torso's layers in stack order. */
 export const TORSO_SKIN_LAYERS: readonly (ColourLayer | DetailLayer)[] = [
   AREOLA_LAYER,
@@ -677,4 +795,5 @@ export const TORSO_SKIN_LAYERS: readonly (ColourLayer | DetailLayer)[] = [
   NAVEL_LAYER,
   LINEA_NIGRA_LAYER,
   LINEA_ALBA_LAYER,
+  STRIAE_LAYER,
 ];

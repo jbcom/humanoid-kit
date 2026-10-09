@@ -6,10 +6,11 @@
  * the face's plane and carried through the face's UV map, then averaged over the
  * faces round a vertex by their area, as a doubled angle so opposite
  * directions agree (an orientation is a direction modulo a half turn). It is
- * stored as the ridge orientation coordinate (`ridgeOrientationCoordinate`).
+ * stored as an orientation coordinate about a seam (`orientationCoordinate`):
+ * the ridges' own by default.
  */
 import { groupFaces, type HumanoidAssets } from "../../format/assetFormat.ts";
-import { ridgeOrientationCoordinate } from "../ridges.ts";
+import { orientationCoordinate, RIDGE_ORIENTATION_SEAM } from "../ridges.ts";
 
 export interface UvOrientation {
   /** The stored orientation, 0..1, where `valid` is 1. */
@@ -27,6 +28,7 @@ export function uvOrientation(
   assets: HumanoidAssets,
   direction: Float32Array,
   weight: Float32Array,
+  seam: number = RIDGE_ORIENTATION_SEAM,
 ): UvOrientation {
   const n = assets.manifest.vertexCount;
   const P = assets.positions;
@@ -96,7 +98,7 @@ export function uvOrientation(
     const len = Math.hypot(cx[v] as number, cy[v] as number);
     if ((weight[v] as number) <= 0 || len < 1e-18) continue;
     valid[v] = 1;
-    coord[v] = ridgeOrientationCoordinate(0.5 * Math.atan2(cy[v] as number, cx[v] as number));
+    coord[v] = orientationCoordinate(0.5 * Math.atan2(cy[v] as number, cx[v] as number), seam);
   }
   return { coord, valid };
 }

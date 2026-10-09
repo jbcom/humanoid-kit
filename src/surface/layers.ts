@@ -85,6 +85,12 @@ export interface DetailPaint {
    * areola's, which grows with age) takes its window from the paint.
    */
   profile?: readonly number[];
+  /**
+   * For a `striae` layer, and only for one: the share of the skin marked (0..1,
+   * `striaeAmount`) and the colour of a mark as a ratio to the skin it is on
+   * (`striaeColour`): stretch marks colour the skin where they are as well as cut it.
+   */
+  striae?: { amount: number; ratio: Rgb };
 }
 
 /** How a layer changes the surface's reflection where its mask lies. */
@@ -164,7 +170,7 @@ export interface ColourLayer extends LayerBase {
  */
 export interface DetailLayer extends LayerBase {
   kind: "detail";
-  pattern: "bumps" | "creases" | "ridges" | "tubercles";
+  pattern: "bumps" | "creases" | "ridges" | "tubercles" | "striae";
   /**
    * The layer's coordinate carries an amplitude profile (`DetailPaint.profile`):
    * `bumps` only, as `tubercles` always do. A profiled layer's `paint` must
@@ -195,7 +201,9 @@ export const STOP_COUNT = 8;
  * follow), 2 bumps and 3 creases (detail; a height, b size), 4 surface
  * (a roughness, b specular), 5 ridges (detail; a height, b spacing), 6 bumps
  * with a profile and 7 tubercles (detail; a height, b spacing; the stops' red
- * channel is the amplitude profile along the coordinate).
+ * channel is the amplitude profile along the coordinate), 8 striae (detail; a
+ * depth, b spacing; stop 0 is the mark's colour ratio, stop 1's red its amount;
+ * the coordinate is the marks' orientation).
  */
 export const STOP_TABLE_WIDTH = STOP_COUNT + 1;
 
@@ -204,6 +212,7 @@ export function layerKindCode(layer: SkinLayer): number {
   if (layer.kind === "detail") {
     if (layer.pattern === "bumps") return layer.profiled ? 6 : 2;
     if (layer.pattern === "tubercles") return 7;
+    if (layer.pattern === "striae") return 8;
     if (layer.pattern === "ridges") return 5;
     return 3;
   }
@@ -489,6 +498,25 @@ function writeProfile(
   }
 }
 
+/** A striae layer's mark colour (stop 0) and amount (stop 1, red). */
+function writeStriae(
+  layer: DetailLayer,
+  striae: { amount: number; ratio: Rgb } | undefined,
+  out: Float32Array,
+  row: number,
+): void {
+  if (
+    !striae ||
+    !(striae.amount >= 0 && striae.amount <= 1) ||
+    !striae.ratio.every((c) => c > 0 && Number.isFinite(c))
+  )
+    throw new RangeError(
+      `skin layer ${layer.id}: striae need an amount in 0..1 and a positive colour ratio`,
+    );
+  out.set([striae.ratio[0], striae.ratio[1], striae.ratio[2], 1], row + 4);
+  out.set([striae.amount, 0, 0, 1], row + 8);
+}
+
 /**
  * The figure's stop table: `layers.length` rows of `STOP_TABLE_WIDTH` RGBA
  * texels. Texel 0 is the header (`STOP_TABLE_WIDTH`); for a colour layer,
@@ -521,6 +549,11 @@ export function paintStopTable(
       else if (p.profile)
         throw new RangeError(
           `skin layer ${layer.id}: a profile on a layer that did not declare one`,
+        );
+      if (layer.pattern === "striae") writeStriae(layer, p.striae, out, row);
+      else if (p.striae)
+        throw new RangeError(
+          `skin layer ${layer.id}: striae on a layer that is not a striae layer`,
         );
       return;
     }

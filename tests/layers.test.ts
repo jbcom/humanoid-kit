@@ -303,6 +303,60 @@ describe("detail and surface layers", () => {
     expect(() => paintStopTable([missing], input())).toThrow(/profile/);
   });
 
+  it("carry a mark's colour ratio and amount in the stops, for a striae layer", () => {
+    const striae: SkinLayer = {
+      id: "striae",
+      kind: "detail",
+      pattern: "striae",
+      targets: [],
+      fields: none,
+      paint: () => ({
+        strength: 0.9,
+        height: 0.00015,
+        size: 0.005,
+        striae: { amount: 0.6, ratio: [0.9, 0.7, 0.75] },
+      }),
+    };
+    const table = paintStopTable([striae], input());
+    const head = Array.from(table.slice(0, 4)).map((x) => Number(x.toFixed(6)));
+    expect(head).toEqual([0.9, 8, 0.00015, 0.005]);
+    // Stop 0 is the ratio, stop 1 the amount.
+    expect(Array.from(table.slice(4, 8)).map((x) => Number(x.toFixed(6)))).toEqual([
+      0.9, 0.7, 0.75, 1,
+    ]);
+    expect(Array.from(table.slice(8, 12)).map((x) => Number(x.toFixed(6)))).toEqual([0.6, 0, 0, 1]);
+    expect(layerUsesCoordinate(striae)).toBe(true);
+    const bad = (striaePaint: object | undefined): SkinLayer => ({
+      ...striae,
+      paint: () => ({
+        strength: 1,
+        height: 0.0001,
+        size: 0.005,
+        ...(striaePaint && {
+          striae: striaePaint as { amount: number; ratio: [number, number, number] },
+        }),
+      }),
+    });
+    expect(() => paintStopTable([bad(undefined)], input())).toThrow(/striae/);
+    expect(() => paintStopTable([bad({ amount: 1.5, ratio: [1, 1, 1] })], input())).toThrow(
+      /striae/,
+    );
+    expect(() => paintStopTable([bad({ amount: 0.5, ratio: [1, -1, 1] })], input())).toThrow(
+      /striae/,
+    );
+    // Another pattern may not carry one.
+    const stray: SkinLayer = {
+      ...bumps,
+      paint: () => ({
+        strength: 1,
+        height: 0.001,
+        size: 0.002,
+        striae: { amount: 1, ratio: [1, 1, 1] as [number, number, number] },
+      }),
+    };
+    expect(() => paintStopTable([stray], input())).toThrow(/striae/);
+  });
+
   it("leave the colour alone, and surface changes add by mask and strength", () => {
     const table = paintStopTable(stack, input({ signals: { exertion: 0.5 } }));
     const fields: [number, number][] = [

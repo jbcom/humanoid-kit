@@ -2158,8 +2158,8 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   continuous, its softness is not finer than that.
 - *Sizes in metres are put on the base mesh by the measured stretch.* The fields
   are measured on the base mesh and the figure's mesh is that mesh morphed, so a
-  nipple's surroundings are 0.65 times as big on a seven year old and 1.96 on the
-  largest breast (`areolaStretch`: the median over the vertices in a ring round
+  nipple's surroundings are 0.68 times as big on a seven year old and 2.09 on the
+  largest breast (`areolaStretch`: the median over the vertices in a ring (8 to 20 mm of the base mesh) round
   each nipple of their distance from its centre on the evaluated control mesh
   over their distance on the base mesh). An evaluation reports it
   (`Evaluation.areolaScale`), the component rounds it to a hundredth and puts it
@@ -2229,6 +2229,28 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   (the breasts' skin has layers of its own, and a layer shares channels only with
   those that lie apart from it, a cell of the 64 by 64 grid and a cell's margin
   all round).
+- *Stretch marks are a detail layer that also colours.* Kind 8 in the stop table
+  (`pattern: "striae"`): the sole's friction ridges' noise (`ridgeHeight`, one
+  function in TypeScript and in the shader) past a threshold the figure's
+  amount sets (`striaMark`: coverage 5% of the sites' skin at an amount of a
+  quarter, 10% at half, 22% at 1), as streaks 5 mm apart that run for
+  centimetres and end, in groups. A mark multiplies the skin by the layer's
+  colour ratio and sinks it a fifth of a millimetre; the header carries the
+  depth and the spacing, stop 0 the ratio and stop 1 the amount, and the
+  coordinate the streaks' direction. The mask is the site's weight and scales the
+  amount, so the belly, flank, hip and thigh differ in density; a mark is never
+  more opaque than the layer's strength. *Where:* the lower trunk, hips,
+  buttocks and the outer and back of the thigh, not the breast, groin, inner thigh
+  or skin that faces up or down. *Direction:* round the body, horizontal in the
+  skin's plane, across the stretch; the UV angle that gives it comes from
+  `uvOrientation`, the code the feet's ridges use, stored about a seam
+  (`STRIAE_ORIENTATION_SEAM`) at the angle the fewest neighbours straddle. *How much:*
+  `striaeAmount` of the figure's weight above the middle, its height in the years
+  of growth, its age on the puberty ramp and its sex; none on the default figure
+  and none in a child. *Colour:* by the marks' age (`striaeMaturity`: new to 13
+  years, old from 35) and the tone: red when new on light skin and violet-brown
+  and darker on deep skin, pale when old, which on the deepest skin is 13
+  CIELAB lightness points lighter than the skin and on the lightest 1.
 - *No page was added.* The areola's colour keeps its two channels; the texture and
   the tubercles overlap it on the surface, so each needs its own, but the atlas
   plan puts them where the face's lines and the feet's and hands' layers are not
