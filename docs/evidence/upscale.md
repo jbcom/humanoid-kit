@@ -168,6 +168,26 @@ The fedora's failure is visible. Its normal map has one-texel stripes and an
 aliased diagonal line, and any reconstruction sharper than bilinear redraws
 that aliasing as a dotted stipple along the line.
 
+## What it costs
+
+Re-sourcing adds texels where the closest framing needs them (31 textures grow;
+none shrinks):
+
+| | Before | After | Change |
+| --- | --- | --- | --- |
+| Field atlas | 7 pages, 28 MB | the same | 0: no texture here is in it |
+| Hair pack download | 4.39 MB | 8.05 MB | +3.66 MB across ten styles |
+| Clothing pack download | 4.43 MB | 5.78 MB | +1.35 MB across 19 garments |
+| Body pack download | 7.01 MB | 7.01 MB | +1 KB (PROVENANCE.md) |
+| One worn hair style on the GPU | 5.3 MB | 14.1–21.3 MB | +8.8 to +16.0 MB |
+| One worn suit on the GPU, diffuse and normal | 10.7 MB | 16.6–42.7 MB | +5.9 to +32.0 MB |
+
+GPU sizes are RGBA8 with mipmaps (the edge squared × 4 bytes × 4/3). A figure
+fetches only the hair style and garments it wears, so the download a figure
+pays is one style (the largest, the afro, 0.74 → 2.05 MB; a short style
+0.25 → 0.47 MB) and its outfit. A crowd shares each texture across every figure
+wearing it.
+
 ## Reproducing
 
 - `node scripts/research/texel-density.ts <system-assets-dir>`: what every

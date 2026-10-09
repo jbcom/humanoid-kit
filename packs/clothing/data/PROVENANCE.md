@@ -36,10 +36,54 @@ Every packed source file was checked for CC0 from its own content before packing
 | shoes/shoes06 | shoes | clothes/shoes06/shoes06.mhclo | `c39144d8d9073474fb00a098954e6c4d8cc68c95ff6404eb3a984dd7870be3fd` |
 | hats/fedora01 | hat | clothes/fedora01/fedora01.mhclo | `c3af725d316d7003d2d00fc3d79750edc431f71af9ef539051217a3d308d3b15` |
 
+## Texture sizes
+
+Each texture ships at the edge its closest QA framing needs, re-sourced from the original wherever the original
+has those texels; where it has fewer, at the original's size, since no upscale measured closer to a larger
+original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/evidence/upscale.md).
+
+| Texture | Source | Source edge | Framing | Needs | Ships | From |
+| --- | --- | --- | --- | --- | --- | --- |
+| suits_male_casualsuit01_male_casualsuit01_diffuse.webp | clothes/male_casualsuit01/male_casualsuit01_diffuse.png | 2048 | clothed | 1920 | 1920 | the source, downsampled |
+| suits_male_casualsuit01_male_casualsuit01_normal.webp | clothes/male_casualsuit01/male_casualsuit01_normal.png | 2048 | clothed | 1920 | 1920 | the source, downsampled |
+| suits_male_casualsuit02_male_casualsuit02_diffuse.webp | clothes/male_casualsuit02/male_casualsuit02_diffuse.png | 2048 | clothed | 1408 | 1408 | the source, downsampled |
+| suits_male_casualsuit02_male_casualsuit02_normal.webp | clothes/male_casualsuit02/male_casualsuit02_normal.png | 4096 | clothed | 1408 | 1408 | the source, downsampled |
+| suits_male_casualsuit03_male_casualsuit03_diffuse.webp | clothes/male_casualsuit03/male_casualsuit03_diffuse.png | 2048 | clothed | 1408 | 1408 | the source, downsampled |
+| suits_male_casualsuit03_male_casualsuit03_normal.webp | clothes/male_casualsuit03/male_casualsuit03_normal.png | 4096 | clothed | 1408 | 1408 | the source, downsampled |
+| suits_male_casualsuit04_male_casualsuit04_diffuse.webp | clothes/male_casualsuit04/male_casualsuit04_diffuse.png | 2048 | clothed | 1408 | 1408 | the source, downsampled |
+| suits_male_casualsuit04_male_casualsuit04_normal.webp | clothes/male_casualsuit04/male_casualsuit04_normal.png | 4096 | clothed | 1408 | 1408 | the source, downsampled |
+| suits_male_casualsuit05_male_casualsuit05_diffuse.webp | clothes/male_casualsuit05/male_casualsuit05_diffuse.png | 2048 | clothed | 1920 | 1920 | the source, downsampled |
+| suits_male_casualsuit05_male_casualsuit05_normal.webp | clothes/male_casualsuit05/male_casualsuit05_normal.png | 4096 | clothed | 1920 | 1920 | the source, downsampled |
+| suits_male_casualsuit06_male_casualsuit06_diffuse.webp | clothes/male_casualsuit06/male_casualsuit06_diffuse.png | 2048 | clothed | 1536 | 1536 | the source, downsampled |
+| suits_male_casualsuit06_male_casualsuit06_normal.webp | clothes/male_casualsuit06/male_casualsuit06_normal.png | 2048 | clothed | 1536 | 1536 | the source, downsampled |
+| suits_female_casualsuit01_female_casualsuit01_diffuse.webp | clothes/female_casualsuit01/female_casualsuit01_diffuse.png | 2048 | clothed | 1536 | 1536 | the source, downsampled |
+| suits_female_casualsuit01_female_casualsuit01_normal.webp | clothes/female_casualsuit01/female_casualsuit01_normal.png | 4096 | clothed | 1536 | 1536 | the source, downsampled |
+| suits_female_casualsuit02_female_casualsuit02_diffuse.webp | clothes/female_casualsuit02/female_casualsuit02_diffuse.png | 2048 | clothed | 1024 | 1024 | the source, downsampled |
+| suits_female_casualsuit02_female_casualsuit02_normal.webp | clothes/female_casualsuit02/female_casualsuit02_normal.png | 4096 | clothed | 1024 | 1024 | the source, downsampled |
+| suits_female_sportsuit01_female_sportsuit01_diffuse.webp | clothes/female_sportsuit01/female_sportsuit01_diffuse.png | 2048 | clothed | 1536 | 1536 | the source, downsampled |
+| suits_female_sportsuit01_female_sportsuit01_normal.webp | clothes/female_sportsuit01/female_sportsuit01_normal.png | 1024 | clothed | 1536 | 1024 | the source, 512 texels short; not upscaled |
+| suits_male_worksuit01_male_worksuit01_diffuse.webp | clothes/male_worksuit01/male_worksuit01_diffuse.png | 2048 | clothed | 2048 | 2048 | the source |
+| suits_male_worksuit01_male_worksuit01_normal.webp | clothes/male_worksuit01/male_worksuit01_normal.png | 4096 | clothed | 2048 | 2048 | the source, downsampled |
+| suits_female_elegantsuit01_female_elegantsuit01_diffuse.webp | clothes/female_elegantsuit01/female_elegantsuit01_diffuse.png | 2048 | clothed | 1280 | 1280 | the source, downsampled |
+| suits_female_elegantsuit01_female_elegantsuit01_normal.webp | clothes/female_elegantsuit01/female_elegantsuit01_normal.png | 2048 | clothed | 1280 | 1280 | the source, downsampled |
+| suits_male_elegantsuit01_male_elegantsuit01_diffuse.webp | clothes/male_elegantsuit01/male_elegantsuit01_diffuse.png | 2048 | clothed | 1664 | 1664 | the source, downsampled |
+| shoes_shoes01_shoes01_diffuse.webp | clothes/shoes01/shoes01_diffuse.png | 1024 | clothed | 896 | 1024 | the source |
+| shoes_shoes01_shoes01_normal.webp | clothes/shoes01/shoes01_normal.png | 1024 | clothed | 896 | 1024 | the source |
+| shoes_shoes02_shoes02_diffuse.webp | clothes/shoes02/shoes02_diffuse.png | 1024 | clothed | 1024 | 1024 | the source |
+| shoes_shoes03_shoes03_diffuse.webp | clothes/shoes03/shoes03_diffuse.png | 1024 | clothed | 768 | 1024 | the source |
+| shoes_shoes04_shoes04_diffuse.webp | clothes/shoes04/shoes04_diffuse.png | 1024 | clothed | 896 | 1024 | the source |
+| shoes_shoes04_shoes04_normal.webp | clothes/shoes04/shoes04_normal.png | 1024 | clothed | 896 | 1024 | the source |
+| shoes_shoes05_shoes05_diffuse.webp | clothes/shoes05/shoes05_diffuse.png | 1024 | clothed | 1024 | 1024 | the source |
+| shoes_shoes06_shoes06_diffuse.webp | clothes/shoes06/shoes06_diffuse.png | 1024 | clothed | 1024 | 1024 | the source |
+| hats_fedora01_fedora_diffuse.webp | clothes/fedora01/fedora_diffuse.png | 2048 | face | 1408 | 1408 | the source, downsampled |
+| hats_fedora01_fedora_normal.webp | clothes/fedora01/fedora_normal.png | 512 | face | 1408 | 512 | the source, 896 texels short; not upscaled |
+
+## Outputs
+
 | Output | SHA-256 |
 | --- | --- |
 | garments.bin.gz | `bfacc4264d5c542a801f473316bef3b0fc28fa2872a0a126b67773a9ed7e6561` |
-| hats_fedora01_fedora_diffuse.webp | `0155cc219cd57a752f1e55d771dd2412f4e9b59fed4b7ad89db110a78c956fad` |
+| hats_fedora01_fedora_diffuse.webp | `5f4f9c6be13d1ee1f6caf29994e122a7489b58093bbc69d1135352e0599e663e` |
 | hats_fedora01_fedora_normal.webp | `0fe3bbe3881b4513a037fa9432a73a2ca0d6972b22e38022de6ebe6b51c6322f` |
 | shoes_shoes01_shoes01_diffuse.webp | `8d7baff433905ca93fdb9b45147f8c51b6b698e8ee0c826417bd78f09ddf514b` |
 | shoes_shoes01_shoes01_normal.webp | `efa0845aea37af0c617d226bbfd813467a896b36fb7085fc5a9f3a6a03ef3d4e` |
@@ -49,26 +93,26 @@ Every packed source file was checked for CC0 from its own content before packing
 | shoes_shoes04_shoes04_normal.webp | `efa0845aea37af0c617d226bbfd813467a896b36fb7085fc5a9f3a6a03ef3d4e` |
 | shoes_shoes05_shoes05_diffuse.webp | `6e4d46747f79b55b8f7f202c115226a01e5bd6d3edf36edb3da875c6ddd47398` |
 | shoes_shoes06_shoes06_diffuse.webp | `a52fcc8c774f659bd6e18b53f1c08e4096c2639b27bcdf53a1725451f60b9a1e` |
-| suits_female_casualsuit01_female_casualsuit01_diffuse.webp | `ca59e2fa7994ce0c4231c05bd502ceb33cbdb0a47dc8675618768809543224d3` |
-| suits_female_casualsuit01_female_casualsuit01_normal.webp | `ddf3df190131db75e689446c2ed18ff73c434a0e8e20bb9e5d65492267d1525a` |
+| suits_female_casualsuit01_female_casualsuit01_diffuse.webp | `13bf65e6369f088265b7d7fb225a6dc816d6d93958e99bc304666da8e786c051` |
+| suits_female_casualsuit01_female_casualsuit01_normal.webp | `cab2deb7d9a19bd63071de27b6a2b003fc2be8db8d9108fd6499e2bbb19dc5fe` |
 | suits_female_casualsuit02_female_casualsuit02_diffuse.webp | `3730963de5a178b054ab302a2f7e0387ec041d43e03238fec17857d101ef5a88` |
 | suits_female_casualsuit02_female_casualsuit02_normal.webp | `8736d3b6badee89e4ae8bca2de066cff17d2db4b14f3c7431e316be842e6540e` |
-| suits_female_elegantsuit01_female_elegantsuit01_diffuse.webp | `52791db9e332630f6e89240f0e3ffae230f158b216c1a1746a15490fc81023ea` |
-| suits_female_elegantsuit01_female_elegantsuit01_normal.webp | `9d141cbb61f3192f11807e94470ce4b597a3882905ea1e5b3e77e514e7dc28a1` |
-| suits_female_sportsuit01_female_sportsuit01_diffuse.webp | `c3e67f08e21dd6f223ff872c1c04d040cca0bebc687c6849452426d576cd9728` |
+| suits_female_elegantsuit01_female_elegantsuit01_diffuse.webp | `998871e9a7d7f2b2b7ec20b0f5f5781bf6a6f32c6ef0d1c9a358d5c551936534` |
+| suits_female_elegantsuit01_female_elegantsuit01_normal.webp | `8220e2fc709c262457a626927b35ccce4742e2d15c1d7a086b2daa2515e378a8` |
+| suits_female_sportsuit01_female_sportsuit01_diffuse.webp | `4ea2c2c9dde5b81dac55ae21cb0ad33f9eca249a344b5aa046284bce9f5b9d0e` |
 | suits_female_sportsuit01_female_sportsuit01_normal.webp | `f4d7857fec2fc0771e3c4c4d4d1e5438796cad479e6fc3bb30c73c3c196b767b` |
-| suits_male_casualsuit01_male_casualsuit01_diffuse.webp | `d830500540f943dfba82595b29cb357f36dab2c089c75069e7a926f0bee7a1bd` |
-| suits_male_casualsuit01_male_casualsuit01_normal.webp | `c203da8231028979cfc55c30b6ebca634fd6c78434add3720623f0c1bb5353d7` |
-| suits_male_casualsuit02_male_casualsuit02_diffuse.webp | `e5681d8100a16191575d4ece80e2a9d4f25ea4dc36f176b4a19775d119cd0518` |
-| suits_male_casualsuit02_male_casualsuit02_normal.webp | `43fd6260354259f6aef228bc9e80cd725224cb56dd8b60ab515f5e6b9296921e` |
-| suits_male_casualsuit03_male_casualsuit03_diffuse.webp | `1f01117a7b3e03cda4c52513e52097a0309e304ffa887fa25d75c8ae46e5fff2` |
-| suits_male_casualsuit03_male_casualsuit03_normal.webp | `9f4096555dcb5d41b0475474972a267a83e02ab40ae3ff4f6f50a2c512ac9302` |
-| suits_male_casualsuit04_male_casualsuit04_diffuse.webp | `d09b53a15ed8ceee60516bd633e0c10c04166ccd62a14789ffdaa58a74e9a9c7` |
-| suits_male_casualsuit04_male_casualsuit04_normal.webp | `a77a942d70972dc73c530986078e96c1e7c37e1fd79ffc695d40b3251daeccb8` |
-| suits_male_casualsuit05_male_casualsuit05_diffuse.webp | `8d2ad9d915a37014ed2c854eaf297c47a740eb51f66ddf654d13b1a5f8e0b19a` |
-| suits_male_casualsuit05_male_casualsuit05_normal.webp | `d927985d8a72e49ac65c50505e12c4110fece0ce636857c7c3654e4b6d1f0eb8` |
-| suits_male_casualsuit06_male_casualsuit06_diffuse.webp | `d6910a3d0f7a708a1e57b40ce6a29cf1edc00cd5068e4f63e84877abf66436bb` |
-| suits_male_casualsuit06_male_casualsuit06_normal.webp | `49313da9d698c872dc18526031e5809f5133326c08cc00a473c3504ebfb7b559` |
-| suits_male_elegantsuit01_male_elegantsuit01_diffuse.webp | `374a7e6c89476ceeed2a1121baee8dfd4afcf6222d89ea90b178899a929b0fc7` |
-| suits_male_worksuit01_male_worksuit01_diffuse.webp | `77150aaf50f7e348ceb6910054e3677c521409e22313919379475826c3c2b37d` |
-| suits_male_worksuit01_male_worksuit01_normal.webp | `384ae41fd596c1a8bba5e22f8560a708567a35395e2c3382824840b5172fce11` |
+| suits_male_casualsuit01_male_casualsuit01_diffuse.webp | `8abf7f033d22c8d344b2fc26aebef62e6c98dfa5685213699a85bfff132e4aa3` |
+| suits_male_casualsuit01_male_casualsuit01_normal.webp | `5c602041dfcfdc121afdf6188363087d131109553d849fb0bbaf2bfdc04dc105` |
+| suits_male_casualsuit02_male_casualsuit02_diffuse.webp | `c25bcb466b8308308f859c612ca50c57b30e33fd2cc62103be620991ea9ed776` |
+| suits_male_casualsuit02_male_casualsuit02_normal.webp | `270e94fea152307707abf241f90a3141292f38956d96bb0a10aae051aca8e33e` |
+| suits_male_casualsuit03_male_casualsuit03_diffuse.webp | `3b8a6e664b558a787bac24d56ab1657a5ea3604ed407465b8ed84cd00dcce9dc` |
+| suits_male_casualsuit03_male_casualsuit03_normal.webp | `5a5a3eceecab3b038938146cf9c49b947a129bb71c990e254d946024f5d982fc` |
+| suits_male_casualsuit04_male_casualsuit04_diffuse.webp | `f1e53cf43e955ce2dcc9c83e068051246c4a93861c1751151cc4cc82aa48f67f` |
+| suits_male_casualsuit04_male_casualsuit04_normal.webp | `132ed6678c0076973b0725320b0ee24f26abfc286b002e7baf61e9e65a93acf6` |
+| suits_male_casualsuit05_male_casualsuit05_diffuse.webp | `8b4a0d0707265fb490c3ad16e8fc43899694411952f756a997c50b6c1ccb6854` |
+| suits_male_casualsuit05_male_casualsuit05_normal.webp | `e77546929eedd677077066e40012f3fcf4b228ff2fd3bd4966247230752b7b4a` |
+| suits_male_casualsuit06_male_casualsuit06_diffuse.webp | `2ae89a7bac3e3722aca71c4d2deb2ca5d93911d296ea61e6a6fbd879f2677984` |
+| suits_male_casualsuit06_male_casualsuit06_normal.webp | `ff8c799b4c8d2c46623e9a51212e6df09d1a5b30a2df2dc8115ed7f660bc774d` |
+| suits_male_elegantsuit01_male_elegantsuit01_diffuse.webp | `3ba8d83cfc345d90da60277e4099e03714a0847e5a3fc23454ab90b73318ddb0` |
+| suits_male_worksuit01_male_worksuit01_diffuse.webp | `b716056d4b32fafa379fdc6a980ca1c8bd1b8981df4d5376552b46bd85f64b9b` |
+| suits_male_worksuit01_male_worksuit01_normal.webp | `122092f82c1b71665d2455db8e6c6d91c3b66b7a6f95cb239e8fe2e8902f36d8` |

@@ -38,6 +38,13 @@ covers what isn't obvious from reading the code alone.
   hair pack last, since it binds to the body pack by hash); `pnpm pack:hair
   <system-assets-dir>` regenerates only the hair against the committed body pack.
   See `NOTICE.md`.
+- Every packer sizes its textures by `scripts/lib/textureSizing.ts`: each ships
+  at the edge its closest QA framing needs, re-sourced from the original, never
+  upscaled (docs/evidence/upscale.md). `node scripts/research/texel-density.ts
+  <system-assets-dir>` reports what every texture needs; `pnpm upscale
+  <system-assets-dir> <out-dir>` upscales the ones whose original falls short,
+  judged by the gates in `scripts/lib/upscale/gates.ts`, outside the
+  repository for inspection.
 
 ## Core invariants: do not violate these when editing `src/` or `packs/`
 

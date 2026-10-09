@@ -52,46 +52,52 @@ These are the rasters that do ship, with each texture's surface-area-weighted
 median texel density and the density 90% of its area meets. A bracketed figure
 is that same density at the source's own resolution.
 
-| Surface | Channels | Shipped | Source | Framing | Median | 90% covered | Needs |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| field atlas, body-art bake | per-figure, body UV | 1024² | — | forearm | 0.44 | 0.42 | 16384 |
-| ″ | ″ | ″ | — | face | 1.09 | 0.71 | 8192 |
-| ″ | ″ | ″ | — | hand | 0.63 | 0.56 | 16384 |
-| eye (brown) | sRGB albedo, cornea alpha | 1024² | 1024² | face | 3.56 | **2.12** [2.12] | 2048 |
-| teeth | sRGB albedo, alpha | 1024² | 2048² | face | 4.57 | 4.20 [8.40] | 1024 |
-| tongue | sRGB albedo | 1024² | 1024² | face | 6.86 | 5.22 | 1024 |
-| scalp hair, 10 styles | strand luminance, card alpha | 1024² | 2048² | face | 1.00–16.6 | **0.64–1.79** [1.28–3.58] | 2048–8192 |
-| eyebrows, 12 | coverage alpha | 512² | 512² | face | 5.45–9.02 | 3.80–6.91 | 256–512 |
-| eyelashes, 4 | coverage alpha | 512² | 512² | face | 8.24–10.0 | 4.91–9.88 | 256–512 |
-| suits, 11 | sRGB albedo | 1024² | 2048² | clothed | 0.44–0.85 | **0.36–0.69** [0.73–1.39] | 1024–2048 |
-| suits, 10 | tangent-space normal | 1024² | 2048²–4096² | clothed | 0.44–0.85 | **0.36–0.69** [0.96–2.78] | 1024–2048 |
-| female sportsuit | tangent-space normal | 1024² | **1024²** | clothed | 0.66 | **0.48** [0.48] | 2048 |
-| shoes, 6 | albedo, 2 normals | 1024² | 1024² | clothed | 1.89–2.83 | 0.75–1.01 | 1024 |
-| fedora | sRGB albedo | 1024² | 2048² | face | 2.65 | **2.25** [4.51] | 2048 |
-| fedora | tangent-space normal | 512² | **512²** | face | 1.32 | **1.13** [1.13] | 2048 |
+| Surface | Channels | Shipped before | Source | Framing | Median | 90% covered | Needs | Ships now |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| field atlas, body-art bake | per-figure, body UV | 1024² | — | forearm | 0.44 | 0.42 | 8448 | 1024² |
+| ″ | ″ | ″ | — | face | 1.09 | 0.71 | 4224 | ″ |
+| ″ | ″ | ″ | — | hand | 0.63 | 0.56 | 16128 | ″ |
+| eye (brown) | sRGB albedo, cornea alpha | 1024² | 1024² | face | 3.56 | **2.12** [2.12] | 1408 | 1024² (short) |
+| teeth | sRGB albedo, alpha | 1024² | 2048² | face | 4.57 | 4.20 [8.40] | 768 | 1024² |
+| tongue | sRGB albedo | 1024² | 1024² | face | 6.86 | 5.22 | 640 | 1024² |
+| scalp hair, 10 styles | strand luminance, card alpha | 1024² | 2048² | face | 1.00–16.6 | **0.64–1.79** [1.28–3.58] | 1664–4608 | 1664²–2048² |
+| eyebrows, 12 | coverage alpha | 512² | 512² | face | 5.45–9.02 | 3.80–6.91 | 256–512 | 512² |
+| eyelashes, 4 | coverage alpha | 512² | 512² | face | 8.24–10.0 | 4.91–9.88 | 256–384 | 512² |
+| suits, 11 | sRGB albedo | 1024² | 2048² | clothed | 0.44–0.85 | **0.36–0.69** [0.73–1.39] | 1024–2048 | 1024²–2048² |
+| suits, 10 | tangent-space normal | 1024² | 2048²–4096² | clothed | 0.44–0.85 | **0.36–0.69** [0.96–2.78] | 1024–2048 | 1024²–2048² |
+| female sportsuit | tangent-space normal | 1024² | **1024²** | clothed | 0.66 | **0.48** [0.48] | 1536 | 1024² (short) |
+| shoes, 6 | albedo, 2 normals | 1024² | 1024² | clothed | 1.89–2.83 | 0.75–1.01 | 768–1024 | 1024² |
+| fedora | sRGB albedo | 1024² | 2048² | face | 2.65 | **2.25** [4.51] | 1408 | 1408² |
+| fedora | tangent-space normal | 512² | **512²** | face | 1.32 | **1.13** [1.13] | 1408 | 512² (short) |
 
-Bold marks a texture that does not resolve at its framing.
+Bold marks a texture that did not resolve at its framing. "Needs" is the
+smallest edge, rounded up to a multiple of 128 (WebGL2 mipmaps any size), at
+which 90% of the area resolves. "Ships now" is the packers' policy
+(`scripts/lib/textureSizing.ts`): the need, never below the pack's default nor
+above the source or 2048.
 
 ## What is low-resolution, and why
 
 1. **Almost nothing at the source.** Every scalp-hair strand map, every suit
-   and the fedora's albedo are packed at half or a quarter of the original's
-   resolution, because the packers cap every texture at 1024
-   (`TEXTURE_MAX` in `scripts/lib/packWriter.ts` and `scripts/lib/packHair.ts`).
+   and the fedora's albedo were packed at half or a quarter of the original's
+   resolution, because the packers capped every texture at 1024 (a
+   `TEXTURE_MAX` in `scripts/lib/packWriter.ts` and `scripts/lib/packHair.ts`).
    At the originals' own resolution, 8 of the 10 hair styles and every suit
    resolve. This is a matter of re-sourcing, not upscaling. A higher-resolution
-   original exists: it is the file the packer already reads.
+   original exists: it is the file the packer already reads. The packers now
+   size each texture by its need (`scripts/lib/textureSizing.ts`).
 2. **The originals fall short in only three places:** the eye's albedo (1024²,
-   needs 2048), the female sportsuit's normal map (1024², needs 2048) and the
-   fedora's normal map (512², needs 2048). These are the only candidates for an
-   upscale. All three are MakeHuman CC0 assets with no higher-resolution
+   needs 1408), the female sportsuit's normal map (1024², needs 1536) and the
+   fedora's normal map (512², needs 1408). These are the only candidates for an
+   upscale, and none is upscaled ([upscale.md](./upscale.md)). All three are MakeHuman CC0 assets with no higher-resolution
    release, so there is nothing to re-source them from. The fabrics are baked
    to each garment's UV layout, so a tiling ambientCG or Poly Haven material
    cannot replace them without re-texturing the garment, which would be new
    art rather than a resample.
-3. **Two hair styles (bob02, long01) and the ponytail and braid need 4096 to
-   8192.** Their cards stretch a 2048² atlas over a long fall of hair. They stay
-   at 2048 (see the ceiling below).
+3. **Four hair styles (bob02, long01, the ponytail and the braid) need 2176 to
+   4608.** Their cards stretch a 2048² atlas over a long fall of hair. They ship
+   at their full 2048²: a texture never exceeds 2048 (16 MB on the GPU, 21 MB
+   with mipmaps).
 4. **The body-UV bakes are the coarsest surfaces on the figure.** These are
    the field atlas and the body-art texture, at 0.4–1.1 texels/mm. The field
    atlas holds smooth fields (masks and coordinates that the shader
@@ -111,18 +117,18 @@ resolution it already has.
 
 The fixes, in the body-art owner's code (`src/render/bodyArtTexture.ts`), are:
 
-- **Raising the bake's size is not one.** Resolving the forearm needs 8192²
-  (two RGBA8 pages, 512 MB per figure). At 2048² (32 MB per figure) each texel
+- **Raising the bake's size is not one.** Resolving the forearm needs 8448²
+  (two RGBA8 pages, 571 MB per figure). At 2048² (32 MB per figure) each texel
   still covers four screen pixels.
 - **Bake each tattoo into a UV window of its own.** Keep the projection, the
   seam handling and the ink spread exactly as they are. Draw each tattoo
   through an orthographic camera fitted to the UV bounding box of the
   triangles it covers, instead of the whole 0–1 square. The skin shader then
   maps a texel's UV into that window. A 10 cm forearm tattoo spans about 0.043
-  of the UV square (44 of 1024 texels), so a 512² window gives it 5.1 texels/mm, which resolves the
-  forearm framing at 2 MB per tattoo (two RGBA8 pages). That is a quarter of
-  today's 8 MB per figure. A tattoo that crosses a UV seam gets one window per
-  island it covers.
+  of the UV square (44 of 1024 texels), so a 512² window gives it 5.1
+  texels/mm, which resolves the forearm framing at 2 MB per tattoo (two RGBA8
+  pages). That is a quarter of today's 8 MB per figure. A tattoo that crosses a
+  UV seam gets one window per island it covers.
 - **Or sample the image in the skin shader.** Project the fragment's rest-space
   position into the decal frame, with no bake for ink. This resolves at the
   image's own density, but it adds a rest-position vertex attribute and moves

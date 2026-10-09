@@ -23,6 +23,20 @@ Attachments come from the MakeHuman system assets pack (makehuman_system_assets_
 - 1 file(s) — texture referenced by teeth.mhmat, which proves CC0: teeth/teeth_base/teeth.png
 - 1 file(s) — texture referenced by tongue01.mhmat, which proves CC0: tongue/tongue01/tongue01_diffuse.png
 
+## Texture sizes
+
+Each texture ships at the edge its closest QA framing needs, re-sourced from the original wherever the original
+has those texels; where it has fewer, at the original's size, since no upscale measured closer to a larger
+original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/evidence/upscale.md).
+
+| Texture | Source | Source edge | Framing | Needs | Ships | From |
+| --- | --- | --- | --- | --- | --- | --- |
+| eyes_high-poly_brown_eye.webp | eyes/materials/brown_eye.png | 1024 | face | 1408 | 1024 | the source, 384 texels short; not upscaled |
+| teeth_base_teeth.webp | teeth/teeth_base/teeth.png | 2048 | face | 768 | 1024 | the source, downsampled |
+| tongue_base_tongue01_diffuse.webp | tongue/tongue01/tongue01_diffuse.png | 1024 | face | 640 | 1024 | the source |
+
+## Outputs
+
 | Output | SHA-256 |
 | --- | --- |
 | body.bin.gz | `33e8502236f56d532abbaa2d0adbffb28af56a3f5313763feb9881c9ede668df` |
@@ -34,3 +48,6 @@ Attachments come from the MakeHuman system assets pack (makehuman_system_assets_
 | targets-modifiers.bin.gz | `6c2c5713c5c1d3b52dfbe30e15de8e0bc6d3920cd906ea32072a9160152ea581` |
 | attachments.bin.gz | `96200315808ade378412a2bdda0b8e9dc009d56b2704d0f746b71cdcab024843` |
 | body-occlusion.bin.gz | `c9a5b960fc63fe1808f845d41c19ee983c0d70a99b4c7abc5c94ff86866b274f` |
+| eyes_high-poly_brown_eye.webp | `82343d661e02db8c6fd8e4ea526c8f8c5fdcdf74f96107f9af3401af86ac5b53` |
+| teeth_base_teeth.webp | `90f929b92d2e1a92716a87e646d92cdc97be7e407899835cc6c64e7f0e8e502a` |
+| tongue_base_tongue01_diffuse.webp | `45fa5424bd0039d17abc6f4d26cf0acdf27e0e15ad37c794f3a165ee7f3e0c9f` |

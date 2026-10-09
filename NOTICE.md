@@ -83,6 +83,11 @@ Each pack's `data/PROVENANCE.md` is written by the packer. It records the
 upstream commit, how many files were accepted on which evidence, and the SHA-256
 of every output file. Do not edit it by hand.
 
+Textures are resized from their CC0 sources (`scripts/lib/textureSizing.ts`):
+kept at the source's size or downsampled, never upscaled, and never passed
+through a learned model. Each pack's `PROVENANCE.md` lists every texture's
+source, the size it needs and the size it ships at.
+
 ## Skin colour data (CC BY 4.0)
 
 The melanin anchors in `src/surface/skinTone.ts` are eleven median diffuse
