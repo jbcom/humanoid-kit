@@ -63,6 +63,14 @@ export function useEditorState(ready: ReadyInfo | null, initial?: Recipe): Human
     () => ready?.hair?.styles.filter((s) => s.kind === "scalp").map((s) => s.id),
     [ready],
   );
+  const browStyles = useMemo(
+    () => ready?.hair?.styles.filter((s) => s.kind === "brows").map((s) => s.id),
+    [ready],
+  );
+  const lashStyles = useMemo(
+    () => ready?.hair?.styles.filter((s) => s.kind === "lashes").map((s) => s.id),
+    [ready],
+  );
 
   const update = useCallback(
     (change: (r: Recipe) => Recipe, gesture?: string) =>
@@ -94,6 +102,8 @@ export function useEditorState(ready: ReadyInfo | null, initial?: Recipe): Human
           // A random figure wears hair from the pack when there is one.
           randomRecipe(r, seed, modifiers, {
             ...(hairStyles && { hairStyles }),
+            ...(browStyles?.length && { browStyles }),
+            ...(lashStyles?.length && { lashStyles }),
             ...options,
           }),
       }),
@@ -107,10 +117,16 @@ export function useEditorState(ready: ReadyInfo | null, initial?: Recipe): Human
       // A saved figure's hair must be a style the loaded hair pack has.
       const style = loaded.hair?.style ?? null;
       const noStyle = style !== null && !hairStyles?.includes(style);
-      if (unknown.length || policy.length || noStyle)
+      const brows = loaded.hair?.brows;
+      const lashes = loaded.hair?.lashes;
+      const noBrows = brows !== undefined && !browStyles?.includes(brows);
+      const noLashes = lashes !== undefined && !lashStyles?.includes(lashes);
+      if (unknown.length || policy.length || noStyle || noBrows || noLashes)
         return [
           ...unknown.map((id) => `modifier ${id} is not in the loaded packs`),
           ...(noStyle ? [`hair style ${style} is not in the loaded packs`] : []),
+          ...(noBrows ? [`eyebrows ${brows} are not in the loaded packs`] : []),
+          ...(noLashes ? [`eyelashes ${lashes} are not in the loaded packs`] : []),
           ...policy,
         ];
       dispatch({ type: "set", recipe: structuredClone(loaded) });

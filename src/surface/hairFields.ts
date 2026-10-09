@@ -20,7 +20,7 @@
  *
  * All three depend only on the packs, so they are measured once, here.
  */
-import { BufferAttribute, BufferGeometry, Line3, Vector3 } from "three";
+import { BufferAttribute, BufferGeometry, Line3, Triangle, Vector3 } from "three";
 import { MeshBVH } from "three-mesh-bvh";
 
 /** Growth is stored as unsigned 16-bit steps of 1 / `GROWTH_SCALE` metre (6.5 m of hair at most). */
@@ -103,6 +103,19 @@ export interface HairFieldsInput {
    * soften: faded, their roots show the dark inside of the volume as a band.
    */
   feather?: boolean;
+  /**
+   * The cards' texture cut-out: where it is clear there is no hair, so no scalp
+   * tint (a card's mesh extends past the hair painted on it, and the skin beyond the
+   * visible hairline must stay bare). `faceUvs` (four per quad) index `uvs`; `alpha`
+   * is the cut-out, row-major, top row first.
+   */
+  cutout?: {
+    faceUvs: Uint32Array;
+    uvs: Float32Array;
+    width: number;
+    height: number;
+    alpha: Uint8Array;
+  };
 }
 
 export interface HairFields {
@@ -217,6 +230,45 @@ function connectedPieces(adjacency: readonly (readonly [number, number][])[]): I
     }
   }
   return piece;
+}
+
+const TRI_A = new Vector3();
+const TRI_B = new Vector3();
+const TRI_C = new Vector3();
+const BARY = new Vector3();
+
+/**
+ * 1 where the card's texture is opaque at a hit's closest point on the cards, 0
+ * where it is clear (a smoothstep between a quarter and three quarters).
+ */
+function hairUnder(
+  hit: { point: Vector3; faceIndex: number },
+  cutout: NonNullable<HairFieldsInput["cutout"]>,
+  faceVerts: Uint32Array,
+  positions: Float32Array,
+): number {
+  const f = hit.faceIndex >> 1;
+  // Triangle 2f is the quad's corners (0, 1, 2); 2f + 1 is (0, 2, 3).
+  const corners = hit.faceIndex % 2 === 0 ? [0, 1, 2] : [0, 2, 3];
+  const vert = (k: number) => faceVerts[f * 4 + (corners[k] as number)] as number;
+  const set = (t: Vector3, v: number) =>
+    t.set(
+      positions[v * 3] as number,
+      positions[v * 3 + 1] as number,
+      positions[v * 3 + 2] as number,
+    );
+  set(TRI_A, vert(0));
+  set(TRI_B, vert(1));
+  set(TRI_C, vert(2));
+  Triangle.getBarycoord(hit.point, TRI_A, TRI_B, TRI_C, BARY);
+  const uv = (k: number, axis: number) =>
+    cutout.uvs[(cutout.faceUvs[f * 4 + (corners[k] as number)] as number) * 2 + axis] as number;
+  const u = BARY.x * uv(0, 0) + BARY.y * uv(1, 0) + BARY.z * uv(2, 0);
+  const v = BARY.x * uv(0, 1) + BARY.y * uv(1, 1) + BARY.z * uv(2, 1);
+  const col = Math.min(cutout.width - 1, Math.max(0, Math.floor(u * cutout.width)));
+  const row = Math.min(cutout.height - 1, Math.max(0, Math.floor((1 - v) * cutout.height)));
+  const alpha = (cutout.alpha[row * cutout.width + col] as number) / 255;
+  return smoothstep(0.25, 0.75, alpha);
 }
 
 export function hairFields(input: HairFieldsInput): HairFields {
@@ -396,8 +448,12 @@ export function hairFields(input: HairFieldsInput): HairFields {
       body.positions[v * 3 + 1] as number,
       body.positions[v * 3 + 2] as number,
     );
-    const d = cardBvh.closestPointToPoint(p, target)?.distance ?? Number.POSITIVE_INFINITY;
-    const w = Math.round(255 * (1 - smoothstep(SCALP_FULL, SCALP_FULL + SCALP_FALLOFF, d)));
+    const hit = cardBvh.closestPointToPoint(p, target);
+    const d = hit?.distance ?? Number.POSITIVE_INFINITY;
+    let density = 1 - smoothstep(SCALP_FULL, SCALP_FULL + SCALP_FALLOFF, d);
+    if (hit && density > 0 && input.cutout)
+      density *= hairUnder(hit, input.cutout, faceVerts, positions);
+    const w = Math.round(255 * density);
     if (w > 0) {
       scalpVerts.push(v);
       scalpWeights.push(w);

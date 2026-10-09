@@ -248,6 +248,37 @@ describe("hairFields", () => {
       expect(weightAt(half)).toBeLessThan(165);
     });
 
+    it("tints only under the hair the cut-out leaves: where the card's texture is clear there is no hair, so no tint", () => {
+      // A sheet 1 mm over the scalp, its texture opaque on the left half (u < 0.5), clear on the right.
+      const card = sheet(0.001, 0.4);
+      const cutout = {
+        faceUvs: new Uint32Array([0, 1, 2, 3]),
+        // Corners (-x,-z), (+x,-z), (+x,+z), (-x,+z) -> u from 0 to 1 across x.
+        uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
+        width: 2,
+        height: 1,
+        alpha: new Uint8Array([255, 0]),
+      };
+      const { scalpVerts } = hairFields({
+        positions: card.positions,
+        faceVerts: card.faceVerts,
+        body: { positions: body.positions, triangles: body.triangles },
+        scalpEligible: eligibleAll,
+        cutout,
+      });
+      const xOf = (v: number) => body.positions[v * 3] as number;
+      expect(scalpVerts.length).toBeGreaterThan(0);
+      for (const v of scalpVerts) expect(xOf(v), `vertex ${v}`).toBeLessThanOrEqual(0.0501);
+      // And without a cut-out the whole sheet's footprint is tinted, both halves.
+      const all = hairFields({
+        positions: card.positions,
+        faceVerts: card.faceVerts,
+        body: { positions: body.positions, triangles: body.triangles },
+        scalpEligible: eligibleAll,
+      });
+      expect(all.scalpVerts.some((v) => xOf(v) > 0.1)).toBe(true);
+    });
+
     it("skips ineligible body vertices: a neck or a face is never tinted", () => {
       const none = new Uint8Array(body.count);
       const { scalpVerts } = run(strip(5, 0.002, 0.1, 0.1), none);

@@ -63,7 +63,11 @@ describe("the package entry's skin-state API", () => {
       "hand-relief",
       "nail-gloss",
     ]);
-    expect(ids.slice(9)).toEqual([
+    // The feet's own skin follows the hands'.
+    expect(ids.slice(9, 9 + kit.FOOT_SKIN_LAYERS.length)).toEqual(
+      kit.FOOT_SKIN_LAYERS.map((l) => l.id),
+    );
+    expect(ids.slice(9 + kit.FOOT_SKIN_LAYERS.length)).toEqual([
       "goosebumps",
       "heat-flush",
       "exertion-flush",

@@ -48,6 +48,10 @@ The afro's net had two causes, and neither was the source texture alone:
    gradient the ray bake only modulates, and the afro opts out of the hairline fade (its roots
    showed the dark inside of the volume as a band).
 
+The scalp tint is also limited to under the hair the texture leaves (it had painted a flat
+patch over the temple and cheek past the visible hairline) and is built from the skin's own
+colour, so white hair paints no pale patch on deep skin.
+
 Left: before. Middle: after. Right: after, closer. A few darker curl clumps remain in the
 afro's texture.
 

@@ -124,7 +124,12 @@ createRecipe(init?: {
   modifiers?: Record<string, number>;
   skin?: Partial<SkinRecipe>;
   eyes?: Partial<EyesRecipe>;
-  hair?: { style?: string | null; colour?: Partial<HairColour> };
+  hair?: {
+    style?: string | null;
+    colour?: Partial<HairColour>;
+    brows?: string; // a brows style id of the hair pack (`eyebrow001`…); absent = none
+    lashes?: string; // a lashes style id (`eyelashes01`…); absent = none
+  };
   bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
   bodyArt?: BodyArtInit;
@@ -381,7 +386,16 @@ and throws `RangeError` for anything else.
   (`hairFields`, `src/surface/hairFields.ts`). `evaluate` fills `Evaluation.hair` from
   `recipe.hair.style` and throws `MorphError` for a style whose geometry has
   not arrived (`assets.hair.load(id)` brings it); the style never changes the
-  body, which keeps every face (hair has no `delete_verts`).
+  body, which keeps every face (hair has no `delete_verts`). `Evaluation.brows` and
+  `Evaluation.lashes` are the worn `recipe.hair.brows` and `lashes` the same way
+  (an id of the wrong kind is a `RecipeError`: `hair.style` wears scalp styles,
+  `brows` brows, `lashes` lashes); a brow is lifted `DECAL_LIFT` (2 mm) off the
+  skin along its normal, since the smooth body surface can swallow a decal bound to
+  the coarse mesh by up to 1.8 mm at the brow ridge (a test holds it clear at ages
+  6 to 75). `model.pendingHairStyles(recipe)` lists every worn style not yet loaded,
+  and the worker's `evaluated` reply carries `decalTopologies` for the brows' and
+  lashes' static data (`HairTopology.kind` is `scalp`, `brows` or `lashes`; a
+  decal's fade is all 1, fin and growth 0, scalp none).
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
@@ -1011,6 +1025,11 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   (`GUM_LAB`), pigmented browner and patchier with `recipe.skin.melanin`
   (`TeethMaterial.setSkin`, `gumAppearance`; ARCHITECTURE.md, "The gums";
   `docs/evidence/gums.md`).
+- Renders `recipe.hair.brows` and `recipe.hair.lashes` as decals on the skin
+  (`DecalMaterial`, alpha-blended): the hair pack's white alpha masks, in the hair
+  colour lifted a little (`browColour`) and, for lashes, darker by `LASH_DARKEN`
+  (`lashColour`), thinner on a child (`decalOpacity(kind, age)`: 0.45 for brows and 0.7 for lashes at
+  birth, full by 14).
 - Renders `recipe.hair` when the client loaded a hair pack: alpha cards
   skinned to the figure and coloured by `recipe.hair.colour` (`HairMaterial`:
   the strand map times the pigment colour's tint, two Kajiya-Kay highlight
@@ -1195,7 +1214,14 @@ deterministic for a seed and never sets adult-only modifiers unless
 pack loaded, a random figure also wears one of its styles (or none, one time
 in ten) in a natural colour that runs darker on deeper skin; `randomRecipe`
 takes the styles as `options.hairStyles`, and without them keeps the base
-recipe's hair. Every change is undoable.
+recipe's hair. It also draws one of the pack's brows and one of its lashes
+(`options.browStyles`, `options.lashStyles`; after the hair, so a seed's hair and
+shape are the same without them), and a new head of hair keeps the brows and
+lashes the figure had. `withHair(recipe, patch)` changes the scalp style, colour,
+brows or lashes of a recipe (`null` takes one away) and keeps whatever the patch
+leaves out; the Appearance panel uses it, offering the brows and lashes in
+groups of their own, and `load` refuses a saved figure whose brows or lashes the
+loaded pack lacks. Every change is undoable.
 
 ### Wardrobe helpers
 
@@ -1265,6 +1291,14 @@ styles are MakeHuman's own CC0 scalp hair: `short02`, `bob02`, `long01`,
 `afro01`, `short04`, `short03`, `ponytail01`, `short01`, `bob01` and `braid01`.
 Its manifest records the hash of the body pack it binds to, and the loader
 refuses any other.
+
+The pack also lists MakeHuman's twelve eyebrows (`eyebrow001` to `eyebrow012`,
+kind `brows`) and four eyelashes (`eyelashes01` to `eyelashes04`, kind `lashes`),
+the same CC0 system assets bound to the same body, each one `<id>.bin.gz` and a
+`<id>.webp` that is a white alpha mask for the hair colour to tint (14 to 67 kB
+the pair). They are decals: no hairline, growth or scalp, so their entries carry
+none of those buffers (`HairStyleEntry.layout` has them for `scalp` only), and
+`recipe.hair.style` wears only scalp styles.
 
 ## `humanoid-kit-adult-anatomy`
 

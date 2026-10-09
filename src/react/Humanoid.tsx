@@ -51,6 +51,7 @@ import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { createAttachmentMaterial, TeethMaterial } from "../render/attachmentLook.ts";
+import { DecalMaterial } from "../render/decalMaterial.ts";
 import {
   applyDualSkinning,
   DualBones,
@@ -84,6 +85,7 @@ import {
   wornGroundOffset,
 } from "../rig/pose.ts";
 import { skinDualShare } from "../rig/skinShare.ts";
+import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
 import { DEFAULT_HAIR_COLOUR, type HairColour, hairAlbedo } from "../surface/hairTone.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
@@ -620,6 +622,54 @@ function HairMesh({
   );
 }
 
+/**
+ * A worn eyebrow or eyelash: a decal on the skin, cut out by its mask and
+ * coloured by the recipe's hair colour (the lashes darker), thinner on a child.
+ */
+function DecalMesh({
+  topology,
+  geometry,
+  skeleton,
+  colour,
+  age,
+  visible,
+  report,
+  shape,
+}: {
+  topology: HairTopology;
+  geometry: BufferGeometry;
+  skeleton: Skeleton;
+  colour: HairColour;
+  age: number;
+  visible: boolean;
+  report: (e: Error) => void;
+  shape: object;
+}) {
+  const material = useMemo(() => new DecalMaterial(), []);
+  useDiffuseTexture(material, topology.textureUrl, report);
+  const kind = topology.kind as DecalKind;
+  const { eumelanin, pheomelanin, grey, override } = colour;
+  const overrideKey = override?.join(",") ?? "";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: overrideKey stands for override's values
+  useEffect(() => {
+    const c = { eumelanin, pheomelanin, grey, override };
+    material.setColour(kind === "lashes" ? lashColour(c) : browColour(c));
+  }, [material, kind, eumelanin, pheomelanin, grey, overrideKey]);
+  useEffect(() => material.setOpacity(decalOpacity(kind, age)), [material, kind, age]);
+  useEffect(() => () => material.dispose(), [material]);
+  return (
+    <SkinnedPart
+      geometry={geometry}
+      material={material}
+      skeleton={skeleton}
+      visible={visible}
+      part="hair"
+      renderOrder={topology.zDepth}
+      shape={shape}
+    />
+  );
+}
+
 function GarmentMesh({
   topology,
   geometry,
@@ -832,6 +882,8 @@ export function Humanoid({
   const [hair, setHair] = useState<{ topology: HairTopology; geometry: BufferGeometry } | null>(
     null,
   );
+  /** The worn brows and lashes, each with its static data and geometry. */
+  const [decals, setDecals] = useState<{ topology: HairTopology; geometry: BufferGeometry }[]>([]);
   // Alpha-to-coverage needs a multisampled framebuffer; hair falls back to a plain alpha test.
   const multisampled = useThree((s) => isMultisampled(s.gl.getContext()));
   /** Which style's scalp each body geometry holds (null: none), so it is written when it changes. */
@@ -1084,6 +1136,20 @@ export function Humanoid({
           writeGeometry(g, ev.hair);
           setHair({ topology: hairTopology, geometry: g });
         } else setHair(null);
+        // The brows and lashes: decals, which need nothing of a style's strands.
+        setDecals(
+          [ev.brows, ev.lashes].flatMap((d) => {
+            const t = d ? client.hairTopology(d.id) : undefined;
+            if (!d || !t) return [];
+            let g = geometries.hair.get(d.id);
+            if (!g) {
+              g = makeGeometry(t);
+              geometries.hair.set(d.id, g);
+            }
+            writeGeometry(g, d);
+            return [{ topology: t, geometry: g }];
+          }),
+        );
         // The skin under the worn style takes the scalp tint; a figure with none has no scalp.
         const style = ev.hair && hairTopology ? ev.hair.id : null;
         if (!scalpOf.current.has(target) || scalpOf.current.get(target) !== style) {
@@ -1232,6 +1298,19 @@ export function Humanoid({
                 shape={shape}
               />
             )}
+            {decals.map((d) => (
+              <DecalMesh
+                key={d.topology.id}
+                topology={d.topology}
+                geometry={d.geometry}
+                skeleton={rig.skeleton}
+                colour={recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR}
+                age={recipe.macros.age}
+                visible={shown}
+                report={report}
+                shape={shape}
+              />
+            ))}
             {worn?.topologies.map((t, i) => {
               const g = worn.geometries[i];
               return g ? (
