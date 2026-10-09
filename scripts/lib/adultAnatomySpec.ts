@@ -18,6 +18,7 @@ import type {
 } from "../../src/format/assetFormat.ts";
 import { AUTHORED_MODIFIERS } from "./adultAuthored.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE } from "./detail/phallus.ts";
+import { TESTES_SIZE } from "./detail/scrotum.ts";
 import { pelvicRefinement } from "./pelvicRegion.ts";
 
 /** The part of the spec that does not depend on the base mesh. */
@@ -34,6 +35,8 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "
       id: "phallus",
       modifiers: [PHALLUS_SIZE, PHALLUS_LENGTH, PHALLUS_GIRTH],
     },
+    // The sacs and testes drawn out of the labioscrotal pair (scripts/lib/detail/scrotum.ts); no layer yet either.
+    { id: "scrotum", modifiers: [TESTES_SIZE] },
     // The mound has MakeHuman's one control (the body's bulge, a control target) and this
     // pack's own (a generated control target, scripts/lib/control/mound.ts).
     { id: "mound", modifiers: ["pelvis/bulge-decr|incr", "pelvis/mound-decr|incr"] },
