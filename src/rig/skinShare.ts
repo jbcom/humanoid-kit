@@ -16,7 +16,11 @@
  * The arm is dual quaternion nearly throughout, since that is what removes the
  * forearm's and upper arm's candy wrapper and the shoulder's lost volume. The
  * elbow's two bones are halfway, and the shin's stay linear, because there a
- * bend's bulge outweighs what dual quaternions save.
+ * bend's bulge outweighs what dual quaternions save. So does the thigh's lower
+ * half (`upperleg02`, the skin just above the knee): at 1 the bent knee's sides
+ * bulge past linear skinning's (girth 95th percentile 1.32 against 1.23 at 90°),
+ * where at 0 they do not; it costs the thigh's twist some of its volume (girth
+ * 5th percentile 0.83 against 0.97, linear 0.72), a motion made far less often.
  */
 export const SKIN_DUAL_SHARE: Readonly<Record<string, number>> = {
   clavicle: 1,
@@ -28,7 +32,7 @@ export const SKIN_DUAL_SHARE: Readonly<Record<string, number>> = {
   wrist: 1,
   pelvis: 1,
   upperleg01: 1,
-  upperleg02: 1,
+  upperleg02: 0,
   lowerleg01: 0,
   lowerleg02: 0,
   foot: 1,

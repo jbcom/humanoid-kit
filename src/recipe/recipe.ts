@@ -11,6 +11,7 @@
  */
 import { DEFAULT_MACROS, type MacroValues } from "../makehuman/macro.ts";
 import type { BodyRegion } from "../makehuman/regions.ts";
+import type { BodyHairRecipe } from "../surface/bodyHair.ts";
 import { DEFAULT_HAIR_COLOUR, type HairColour } from "../surface/hairTone.ts";
 import type { Rgb } from "../surface/skinTone.ts";
 
@@ -82,6 +83,14 @@ export interface Recipe {
    */
   hair?: HairRecipe;
   /**
+   * Body hair: per region group a multiplier on the default for the figure's age
+   * and sex, and a beard style. Optional: absent is the default for age and sex
+   * (`bodyHairCoverage`, `beardStyle`), so recipes saved before body hair
+   * existed are unchanged. Axillary and pubic densities are adult-only (the age
+   * policy refuses them under 18).
+   */
+  bodyHair?: BodyHairRecipe;
+  /**
    * Ids of the garments the figure wears (`humanoid-kit-clothing`), in any
    * order: how they stack comes from each garment's category. Absent means
    * nothing worn.
@@ -97,6 +106,7 @@ export function createRecipe(
     skin?: Partial<SkinRecipe>;
     eyes?: Partial<EyesRecipe>;
     hair?: { style?: string | null; colour?: Partial<HairColour> };
+    bodyHair?: BodyHairRecipe;
     outfit?: readonly string[];
   } = {},
 ): Recipe {
@@ -118,6 +128,12 @@ export function createRecipe(
           ...init.hair.colour,
           override: init.hair.colour?.override ? ([...init.hair.colour.override] as Rgb) : null,
         },
+      },
+    }),
+    ...(init.bodyHair && {
+      bodyHair: {
+        ...(init.bodyHair.density && { density: { ...init.bodyHair.density } }),
+        ...(init.bodyHair.beard && { beard: init.bodyHair.beard }),
       },
     }),
     ...(init.outfit && { outfit: [...init.outfit] }),

@@ -227,10 +227,33 @@ export function areolaAlbedo(tone: SkinTone, depth: number): Rgb {
   const d = clamp(depth, 0, 1);
   if (tone.override)
     return scale(skinAlbedo(tone), [0.62 - 0.22 * d, 0.44 - 0.18 * d, 0.42 - 0.16 * d]);
-  const haemoglobin = Math.min(1, clamp(tone.haemoglobin, 0, 1) + 0.25);
+  return melaninDensityAlbedo(tone, 1 + 2 * d, Math.min(1, clamp(tone.haemoglobin, 0, 1) + 0.25));
+}
+
+/**
+ * Natural skin carrying `factor` times the tone's melanin optical density (red
+ * channel, above `MELANIN_FREE_RED_REFLECTANCE`), at `haemoglobin`: the tone
+ * on the measured melanin axis that has that density, extrapolated per channel
+ * past the deepest anchor as `areolaAlbedo` describes. A factor of 1 is the
+ * skin itself; a factor below 1 finds a lighter tone. Because density is
+ * multiplied, not added, the same factor darkens deep skin far more than fair
+ * skin, which carries little melanin to multiply.
+ */
+export function melaninDensityAlbedo(tone: SkinTone, factor: number, haemoglobin: number): Rgb {
   const at = (melanin: number) => skinAlbedo({ ...tone, melanin, haemoglobin });
   const density = (rgb: Rgb) => -log10(rgb[0]) + log10(MELANIN_FREE_RED_REFLECTANCE);
-  const target = density(at(clamp(tone.melanin, 0, 1))) * (1 + 2 * d);
+  const target = density(at(clamp(tone.melanin, 0, 1))) * Math.max(0, factor);
+  if (factor < 1) {
+    // Lighter than the tone: bisect below it, down to the lightest anchor.
+    let lo = 0;
+    let hi = clamp(tone.melanin, 0, 1);
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      if (density(at(mid)) < target) lo = mid;
+      else hi = mid;
+    }
+    return at((lo + hi) / 2);
+  }
   const deepest = at(1);
   const excess = target - density(deepest);
   if (excess > 0) {

@@ -87,6 +87,36 @@ describe("detail layers", () => {
     expect(Math.sqrt(residual / energy)).toBeLessThan(0.12);
   });
 
+  it("fades creases where a period is a few pixels, so a bent limb seen end-on shows no dotted ring", () => {
+    // 8 creases over 128 px are 16 px each; 40 are 3 px each.
+    const coarse = render([creases(0.01, 8)]);
+    const fine = render([creases(0.01, 40)]);
+    const none = render([]);
+    expect(variance(coarse)).toBeGreaterThan(100 * Math.max(variance(none), 1e-8));
+    expect(variance(fine)).toBeLessThan(variance(coarse) / 50);
+  });
+
+  it("keeps a groove from aliasing at a grazing view: its pixel variance stays under a bound", () => {
+    // The same eight creases (deep, to make aliasing show), face-on (16 px each) and with the
+    // plane turned 80° away, which foreshortens each to about 3 px: a groove that thin must
+    // have faded to the averaged shading, not stand as a dotted line. The turned plane's own
+    // shading is the baseline.
+    const tilt = (80 * Math.PI) / 180;
+    const faceOn = render([creases(0.04, 8)]);
+    const none = render([], { tilt });
+    const grazing = render([creases(0.04, 8)], { tilt });
+    // The turned plane is a strip down the middle; measure over it alone.
+    const half = Math.floor((SIZE / 2) * Math.cos(tilt)) - 1;
+    const strip = (image: ArrayLike<number>) => {
+      const values: number[] = [];
+      for (let y = 0; y < SIZE; y++)
+        for (let x = SIZE / 2 - half; x < SIZE / 2 + half; x++)
+          values.push(image[y * SIZE + x] as number);
+      return variance(Float32Array.from(values));
+    };
+    expect(strip(grazing) - strip(none)).toBeLessThan(variance(faceOn) / 100);
+  });
+
   it("draws nothing for a layer with no strength, as for none at all", () => {
     const off = (pattern: "bumps" | "creases"): SkinLayer => ({
       id: "off",

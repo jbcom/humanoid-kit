@@ -27,7 +27,7 @@ describe("the shipped skinning at the joint extremes", () => {
     const twists: [string, number, number][] = [
       ["forearm twist", 180, 0.88],
       ["upper arm twist", 135, 0.8],
-      ["thigh twist", 90, 0.9],
+      ["thigh twist", 90, 0.8],
     ];
     for (const [joint, angle, floor] of twists) {
       const got = worstP5(at(shipped, joint, angle));
@@ -62,6 +62,15 @@ describe("the shipped skinning at the joint extremes", () => {
       expect(s.mean, name).toBeGreaterThanOrEqual(l.mean - 0.005);
       expect(s.dV, name).toBeGreaterThan(l.dV - 1);
       expect(s.p5, name).toBeGreaterThan(l.p5 - 0.05);
+    });
+  });
+
+  it("bulges a bent knee no more than linear skinning does, at the angles a body bends it", () => {
+    // A knee is bent far more often than a thigh is twisted: its sides must not balloon.
+    linear.forEach((l, i) => {
+      if (l.joint !== "knee flexion" || l.angle > 90) return;
+      const s = shipped[i] as Reading;
+      expect(s.p95, `${l.figure}, knee ${l.angle}°`).toBeLessThanOrEqual(l.p95 + 0.02);
     });
   });
 

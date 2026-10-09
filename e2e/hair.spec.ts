@@ -60,8 +60,7 @@ async function shoot(page: Page, name: string, init: Record<string, unknown>): P
   await page
     .locator(`[data-figure="ready"][data-generation="${generation}"]`)
     .waitFor({ timeout: 90_000 });
-  // Hair evaluates with the figure, but its strand map streams in after: let it land.
-  await page.waitForTimeout(400);
+  // No wait for the strand map to land: "ready" means everything the recipe wears is drawn.
   await page.evaluate(
     (key) =>
       new Promise<void>((done) => {
@@ -150,6 +149,74 @@ test.describe("hair in the playground", () => {
     await shoot(page, "white", { hair: { style: "long01", colour: COLOURS.white } });
     expect((await compare(page, "bald", "black")).luma).toBeLessThan(60);
     expect((await compare(page, "bald", "white")).luma).toBeGreaterThan(170);
+    expect(errors).toEqual([]);
+  });
+
+  test("is drawn, with its strand map, the moment the figure says it is ready", async ({
+    page,
+  }) => {
+    test.setTimeout(budget(5 * 60_000));
+    const errors: string[] = [];
+    page.on("console", (m) => {
+      if (m.type() === "error") errors.push(m.text());
+    });
+    page.on("pageerror", (e) => errors.push(e.message));
+    await openSilentGame(page, "./", { cam: CAMERA, bg: KEY });
+    await page.locator('[data-figure="ready"]').waitFor({ timeout: 120_000 });
+    await shoot(page, "bald", {});
+
+    // The first wear of a style loads its files and then its strand map. Capture on the very
+    // next frame after "ready", and again after the strand map has had ample time to land.
+    for (const style of ["bob02", "afro01"]) {
+      const generation = await page.evaluate(
+        (recipe) => {
+          const next =
+            Number(document.querySelector("[data-generation]")?.getAttribute("data-generation")) +
+            1;
+          window.hkSetRecipe?.(recipe);
+          return next;
+        },
+        { hair: { style } },
+      );
+      await page
+        .locator(`[data-figure="ready"][data-generation="${generation}"]`)
+        .waitFor({ timeout: 90_000 });
+      await page.evaluate(
+        (key) =>
+          new Promise<void>((done) =>
+            requestAnimationFrame(() => {
+              const c = document.querySelector("canvas") as HTMLCanvasElement;
+              const copy = document.createElement("canvas");
+              copy.width = c.width;
+              copy.height = c.height;
+              (copy.getContext("2d") as CanvasRenderingContext2D).drawImage(c, 0, 0);
+              const data = (copy.getContext("2d") as CanvasRenderingContext2D).getImageData(
+                0,
+                0,
+                c.width,
+                c.height,
+              ).data;
+              window.hkShots ??= {};
+              window.hkShots[key] = data;
+              done();
+            }),
+          ),
+        `${style} at ready`,
+      );
+      await page.waitForTimeout(2_000);
+      await shoot(page, `${style} later`, { hair: { style } });
+      const now = await compare(page, "bald", `${style} at ready`);
+      const later = await compare(page, "bald", `${style} later`);
+      // Hair covers the same pixels at "ready" as it does long after (a late strand map or a
+      // style still loading would show as a bald or solid head here).
+      expect(later.changed, `${style} draws`).toBeGreaterThan(1500);
+      expect(now.changed, `${style} at ready covers what it does later`).toBeGreaterThan(
+        0.9 * later.changed,
+      );
+      expect(now.changed, `${style} at ready covers what it does later`).toBeLessThan(
+        1.1 * later.changed,
+      );
+    }
     expect(errors).toEqual([]);
   });
 
