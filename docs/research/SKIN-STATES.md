@@ -370,6 +370,22 @@ measurement for some and none for others; the table says which.
 | Toenail size and place | the nail's region 0.82, 0.62, 0.72, 0.78, 0.72 of each toe's distal flesh (big toe to little); half-width 0.72 to 0.58 of the toe's radius; a lunula only on the big toe (22% of the region's length); a nail about 19 × 15 mm on the big toe, about 9 × 7 on the lesser toes and under 6 on the little toe | CHOICE from the proportions of an adult foot (no measurement of toenail proportions was found), fitted to the base mesh's toes (`tests/feet.test.ts`). The nail model (colour stops, free edge, fold, gloss) is the hands' (C5). |
 | Where the sites are on the foot | the heel pad 0.13 of the foot's length from the rear; each metatarsal head a centimetre proximal of its toe's base joint; the big toe's pad 8 mm proximal of its tip | CHOICE, placed from the skeleton's joints; the offsets are anatomical judgement. |
 
+### C7. Torso (`src/surface/torsoTone.ts`, `src/surface/regions/torso.ts`)
+
+What the trunk's own layers use, 2026-10-09. Measured against CHOICE is said in
+each row: where no measurement of a quantity was found, the value is a choice
+bounded by what was found.
+
+| Quantity | Value | Source |
+| --- | --- | --- |
+| Areola size | 38.1 mm across in a sexually mature woman, 28.0 mm in a man (men's range about 10 to 43 mm); a woman's can exceed 100 mm. The figures paint the adult values at the default breast, ±15% across the breast-size macro in women (`AREOLA_BREAST_SCALE`, CHOICE) | Wikipedia "Areola", summarising the literature (secondary; sources disagree by a few mm: 30 mm and 40 mm are also quoted). The primary papers were not opened. |
+| Areola before puberty | 13 mm across (`AREOLA_RADIUS_CHILD`) | CHOICE. Women usually have larger areolae and nipples than girls who have not reached puberty; no prepubertal diameter was found. |
+| How growth runs | smoothstep from 8.5 to 16 years in girls, 10.5 to 17.5 in boys (`pubertyProgress`) | CHOICE of ramp across the measured stage ages: Tanner stage B2 near 10 years in recent samples, B5 near 15. At B3 the areola enlarges without a separate contour, at B4 it forms a secondary mound, at B5 it recedes again (Tanner scale descriptions; the mound is the mesh's, not painted). |
+| Nipple size | diameter 1.8 mm at B1, 4.2 at B2, 5.9 at B3, 7.1 at B4 (n = 230 girls, 11 to 17 years); the adult woman's 8 mm and the man's 5 mm across are CHOICES past what the study reached | Hacettepe study of 230 girls, Turk J Pediatr (the areola means in it, and B5, were not retrieved). |
+| Nipple colour against the areola | in 30 nulliparous women the nipple is darker than the areola by 29.4 to 31.9 grey levels of 255, in 30 men lighter by 3.8 to 7.8; the figures take ratios 0.84 and 1.03 of the areola's colour (`NIPPLE_CONTRAST_*`) on an areola near 170 grey, none in a child | Motosko et al., Plast Reconstr Surg 2019 (A4): uncalibrated grey levels, so the ratios are a conversion by assumption, not a measurement of colour. |
+| Areola colour with age | the recipe's areola setting is shown at 0.3 of its depth in a child and in full from the end of puberty (`AREOLA_CHILD_DEPTH`) | CHOICE: the areola darkens with puberty and pregnancy under hormones; no curve was found. |
+| An areola's edge | soft by 14% of its radius either side, at least 1.5 mm | CHOICE; real borders are gradual, none were measured. |
+
 ## ITEMS I COULD NOT VERIFY / PRIMARY NOT OPENED
 
 - Masters & Johnson 1966 magnitudes; Maravilla MRI clitoral volume percentages; Veale full text; Charkoudian 2003 numbers; Hermanns 2000 primary; Otberg 2004 follicle densities (secondary only); Malaysian periorbital study (search-summary only); NIST dataset details (search-summary only); Kim 2014 volume/issue/page (APL 105, article number guessed as 013504 - treat as unverified; DOI 10.1063/1.4881888 is verified via Crossref); per-site numbers in Korean and Chinese body-map papers (figures only); any deep-skin (V-VI) erythema/a* magnitude for flush, exercise or blush.

@@ -15,6 +15,7 @@
  */
 import { AssetFormatError, type HumanoidAssets, type SparseTarget } from "../format/assetFormat.ts";
 import type { Rgb, SkinTone } from "./skinTone.ts";
+import type { FigureBuild } from "./torsoTone.ts";
 
 /** What a layer's paint is computed from. */
 export interface SkinPaintInput {
@@ -26,6 +27,12 @@ export interface SkinPaintInput {
    * without it still paints.
    */
   age?: number;
+  /**
+   * The figure's other macros the torso's layers read (`FigureBuild`): sex,
+   * weight, height, muscle and breast size. Absent entries are the default
+   * macros, so an input built without them still paints.
+   */
+  build?: Partial<Omit<FigureBuild, "age">>;
   /** The recipe's regional skin parameters (0..1 each). */
   flush: number;
   lips: number;

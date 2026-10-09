@@ -2125,6 +2125,42 @@ anything when shoes are worn beyond the fields every figure shares.
   lesser toe's nail has only a vertex or
   two inside it on a 5 mm mesh, so its edge is as coarse as the hands' is.
 
+### Torso (2026-10-09)
+
+The trunk's own skin is one area's layers (`src/surface/regions/torso.ts`, its
+figure-dependent quantities in `src/surface/torsoTone.ts`). Sources and
+choices: `docs/research/SKIN-STATES.md` C7.
+
+**Use cases.** A close-up of a chest at any tone and age, a child's to an
+adult's, a man's or a woman's: the nipple and areola must have structure, not
+be one flat disc. A figure of any build, lean to heavy: the ribs, the
+collarbones and the navel read as the body fat says they should. A body whose
+skin has marked it (stretch marks, a dark midline). None of it adult-gated:
+breast and nipple structure follow MakeHuman at every age, as the age policy
+says; nothing here is sexualised, and the adult anatomy's own layers
+(`adult.ts`) are untouched.
+
+**Decisions.**
+
+- *The paint input carries the figure's build.* `SkinPaintInput.build` holds
+  the macros the trunk's layers read beyond the age (sex, weight, height,
+  muscle, breast size); `figureBuild` fills the default macros where an input
+  gives none, so every existing caller still paints. `Humanoid.tsx` sets it
+  from the recipe.
+- *The areola is a distance field round the nipple, and the figure's own edge
+  is paint.* The fields are the disc `AREOLA_REACH` round each nipple's centre
+  (the centroid of the nipple-size target's vertices, on each side) with the
+  distance in reaches as the coordinate; the paint puts the figure's nipple,
+  areola and skin on that coordinate (`areolaRadius`, `nippleRadius`, a soft
+  edge), so one set of fields serves a child's 13 mm areola and a woman's 38,
+  and a puberty that grows it, without a field per age. The resolution is the
+  eight stops across the reach (a stop every 3.9 mm); the edge position is
+  continuous, its softness is not finer than that.
+- *The areola mix ends in the skin's colour,* so the layer fades into the skin
+  it sits on rather than ending at the mask; goosebumps leave the whole zone
+  out, as the areola's smooth muscle wrinkles it (the cold state morph draws
+  that).
+
 ## Parallel work: the base contract
 
 Decision (2026-10-09, with the owner): the milestones are an order of

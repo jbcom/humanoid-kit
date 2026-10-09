@@ -13,7 +13,8 @@ import {
   uvScale,
 } from "../src/surface/layers.ts";
 import { SKIN_LAYER_TARGETS, SKIN_LAYERS } from "../src/surface/regions/index.ts";
-import { areolaAlbedo, lipAlbedo, type Rgb } from "../src/surface/skinTone.ts";
+import { AREOLA_REACH } from "../src/surface/regions/torso.ts";
+import { areolaAlbedo, lipAlbedo, type Rgb, skinAlbedo } from "../src/surface/skinTone.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const input = (over: Partial<SkinPaintInput> = {}): SkinPaintInput => ({
@@ -82,7 +83,8 @@ describe("the rest layers' fields", () => {
       // Everything well inside the outline is fully coloured; far outside, nothing.
       for (let v = 0; v < n; v++) {
         if (dist(v) < r * 0.6) expect(mask(v), `vertex ${v} inside`).toBeGreaterThan(0.95);
-        if (dist(v) > r * 1.6 && dist(v) < r * 4) expect(mask(v), `vertex ${v} outside`).toBe(0);
+        if (dist(v) > AREOLA_REACH && dist(v) < r * 4)
+          expect(mask(v), `vertex ${v} outside`).toBe(0);
       }
     }
   });
@@ -119,14 +121,14 @@ describe("the stop table", () => {
     const row = (id: string) => SKIN_LAYERS.findIndex((l) => l.id === id) * STOP_TABLE_WIDTH * 4;
     const stop = (id: string, k: number) =>
       Array.from(table.slice(row(id) + (k + 1) * 4, row(id) + (k + 1) * 4 + 3));
-    // One colour, so every stop carries it.
     const close = (got: number[], want: Rgb) => {
       for (let j = 0; j < 3; j++) expect(got[j]).toBeCloseTo(want[j] as number, 6);
     };
-    for (const k of [0, STOP_COUNT - 1]) {
-      close(stop("lips", k), lipAlbedo(i.tone, i.lips));
-      close(stop("areola", k), areolaAlbedo(i.tone, i.areola));
-    }
+    // The lips are one colour, so every stop carries it; the areola's body is its own colour
+    // (its radial profile is tested in torso.test.ts) and its outer stop the skin's.
+    for (const k of [0, STOP_COUNT - 1]) close(stop("lips", k), lipAlbedo(i.tone, i.lips));
+    close(stop("areola", 2), areolaAlbedo(i.tone, i.areola));
+    close(stop("areola", STOP_COUNT - 1), skinAlbedo(i.tone));
     expect(table[row("flush")]).toBeCloseTo(0.4, 6);
     expect(table[row("flush") + 1]).toBe(1); // multiply
     expect(table[row("lips") + 1]).toBe(0); // mix
@@ -171,10 +173,11 @@ describe("applyLayers", () => {
       x = mix(x, lip[k] as number, ml * 0.9);
       return mix(x, areola[k] as number, ma * 0.9);
     });
+    // The areola's coordinate 0.4 is its body, 11 mm from the nipple's centre.
     const got = applyLayers(base, table, [
       [mf, 0],
       [ml, 0],
-      [ma, 0],
+      [ma, 0.4],
     ]);
     for (let k = 0; k < 3; k++) expect(got[k]).toBeCloseTo(expected[k] as number, 6);
   });

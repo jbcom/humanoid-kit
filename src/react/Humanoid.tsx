@@ -1107,6 +1107,13 @@ export function Humanoid({
       areola: s.areola,
       signals: { ...signals, ...flexion, ...face },
       age: recipe.macros.age,
+      build: {
+        gender: recipe.macros.gender,
+        weight: recipe.macros.weight,
+        height: recipe.macros.height,
+        muscle: recipe.macros.muscle,
+        breastSize: recipe.macros.breastSize,
+      },
       // Which adult layers paint: only for an adult, only for the anatomy applied
       // (the adult pack's own list of features; none without the pack).
       adult: isAdult(recipe),
