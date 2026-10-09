@@ -45,7 +45,13 @@ import {
   ADULT_SPEC_UPSTREAM_MODIFIERS,
   adultAnatomySpec,
 } from "./lib/adultAnatomySpec.ts";
-import { AUTHORED_MODIFIERS, addAuthoredSliders, authorControl } from "./lib/adultAuthored.ts";
+import {
+  AUTHORED_MODIFIERS,
+  AUTHORED_PROVENANCE,
+  addAuthoredSliders,
+  authorControl,
+  authorDetail,
+} from "./lib/adultAuthored.ts";
 import { reservoirSpecs } from "./lib/adultReservoirs.ts";
 import { authoredPoses } from "./lib/authoredPoses.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
@@ -364,6 +370,7 @@ function writeProvenance(
   include: (file: string) => boolean,
   outputs: [string, string][],
   systemEvidence: Record<string, string> = {},
+  authored: readonly string[] = [],
 ): void {
   const group = (evidence: Record<string, string>, keep: (f: string) => boolean) => {
     const byKind = new Map<string, string[]>();
@@ -398,6 +405,16 @@ function writeProvenance(
     "",
     ...group(licenseEvidence, include),
     ...system,
+    ...(authored.length
+      ? [
+          "",
+          "Authored for this pack by code from the base mesh and published measurements, not read from any source file;",
+          "dedicated to the public domain under CC0 1.0 with the rest of the pack. No third-party model, image,",
+          "texture or target was opened, traced or copied for any of it:",
+          "",
+          ...authored,
+        ]
+      : []),
     "",
     "| Output | SHA-256 |",
     "| --- | --- |",
@@ -714,9 +731,14 @@ async function main() {
   if (!surfaceOnly) throw new Error("the adult pack has no refined surface to place reservoirs on");
   const reservoirs = reservoirSpecs(surfaceOnly);
   // The control targets the pack authors (the mound) are generated on the
-  // authoring figure's control mesh, then written with the others.
-  const generated = authorControl(interim(reservoirs).controlShape(AUTHORING_FIGURE));
-  const adult = writeTargetFile([...adultControl, ...generated]);
+  // authoring figure's control mesh, and its detail targets (the phallic organ) on
+  // the lattice of the surface with the reservoirs, then written with the others.
+  const withReservoirs = interim(reservoirs);
+  const generated = authorControl(withReservoirs.controlShape(AUTHORING_FIGURE));
+  const latticeWith = withReservoirs.adultDetailLattice(AUTHORING_FIGURE);
+  if (!latticeWith) throw new Error("the adult pack has no refined surface to draw detail on");
+  const organ = authorDetail(latticeWith, reservoirs);
+  const adult = writeTargetFile([...adultControl, ...generated, ...organ.targets]);
   fs.writeFileSync(path.join(ADULT_OUT, TARGETS_FILE), adult.bin);
   addAuthoredSliders(sliders.adult);
 
@@ -752,7 +774,7 @@ async function main() {
     modifiers: [...modifiers.filter((m) => isAdultPackTarget(m.hi)), ...AUTHORED_MODIFIERS],
     sliders: sliders.adult,
     /** Features, skin-layer measurements and shape states: the core names none of these. */
-    anatomy: adultAnatomySpec(packedFigure, undefined, reservoirs),
+    anatomy: adultAnatomySpec(packedFigure, organ.detail, reservoirs),
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 
@@ -776,6 +798,8 @@ async function main() {
     upstreamCommit,
     (f) => adultFiles.has(f),
     [[TARGETS_FILE, sha(adult.bin)]],
+    {},
+    AUTHORED_PROVENANCE,
   );
   writePackEntry(
     path.dirname(BODY_OUT),

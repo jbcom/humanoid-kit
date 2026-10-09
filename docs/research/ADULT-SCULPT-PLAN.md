@@ -331,6 +331,50 @@ Rejected: creases on the strip edges (a crease changes the limit surface at rest
 a faint ridge along the loop at level 2), and reservoirs only at level 1 (the
 renderer offers level 2, and the cap's edges must match the strips' there).
 
+## 6c. Decision 6: the phallic organ (keys, factors and states)
+
+The organ is a tube drawn out of the phallic reservoir (`scripts/lib/detail/phallus.ts`):
+its rings leave the loop on the skin, bend from the skin's normal toward the way the
+organ lies, and close in a rounded glans on the cap. Authored by us from the loop and
+the measured numbers (ADULT-ANATOMY-DATA.md, F); nothing third-party is read.
+
+**Size is a blend of baked shapes, not a scale.** The root's loop is 1.3 cm in
+radius whatever is drawn from it, so a small organ is not a scaled-down large one
+(a clitoral glans cannot be a 0.1 homothety of a penis). The organ is baked at
+four sizes (a clitoral glans, a small organ, the pooled mean, a large one), and a
+size modifier between them blends its two neighbours by a hat. The pooled mean is
+exact at its key: flaccid 9.16 cm along the top and 9.31 cm round (Veale 2015).
+
+**The factor language.** The engine does not know any of this. The pack's manifest
+gives each detail target a weight as a product of factors (`src/model/detailFactors.ts`):
+`mod:`/`mod-:` (a modifier's positive or negative part), `signal:`, `ramp:` (a
+piecewise-linear function of a modifier, the hat) and `sramp:` (the same of a
+signal). `AdultDetailSpec.drives` gives a target a weight from factors alone;
+`gates` multiplies a modifier's own target by factors. A modifier end named ""
+is virtual: legal, no target, read by factors (the size, length and girth are such).
+
+**Variations are targets too.** Length and girth are two-sided modifiers whose full
+step is two standard deviations of the pooled values. A variation's shape depends
+on the size (a longer small organ is not a longer large one), so each key has its
+own length and girth targets, and the product of size and length is exact at the keys.
+
+**Arousal is drawn at three states**, not two. A morph moves each vertex in a straight
+line, so a tube swinging from hanging (about 70 degrees below forward, modelled) to
+rising (30 degrees above, provisional) would shorten at its middle (arousal 0.5 shorter
+than flaccid, found in the first build). Drawn at a midpoint too, it swings, and each
+pair is short enough to stay a tube. The signal's hats (`sramp:arousal`) are 1 at one
+state and fall to 0 at its neighbours. A key too small to be a penis (the clitoral
+glans) has no erect state: no verified magnitude exists for it.
+
+**Cost.** Each key has base, length and girth targets (five), and each state it erects
+through adds five again, so the organ is 50 targets of about 1,500 vertices (0.31 MB gzipped
+with the rest of the adult file). A cross term of length with girth is left out: it is
+second order and the keys carry the first.
+
+Measured, in `tests/phallus.test.ts`: the dorsal length and circumference of the
+default key against the literature, erect against flaccid (+43%, +25%), the monotone
+growth through the keys, and the surface against the authored shape for every variation.
+
 ## 7. How the patch stays bound to hm08
 
 - **Position.** Every new vertex is bound to base vertices exactly as an
@@ -436,8 +480,10 @@ gates were.
    level suits it and detail is for what needs finer cells). The rest draw on reservoirs (section 6b),
    which are built: the engine (`src/build/reservoir.ts`), linear detail
    subdivision, and a phallic and a labioscrotal pair placed in the pack
-   (`scripts/lib/adultReservoirs.ts`); the shaft, glans, scrotum and labia
-   targets generated on them are next.
+   (`scripts/lib/adultReservoirs.ts`); the phallic organ is drawn on the phallic
+   one (section 6c; the CC0 `genitals/penis-*` sliders are hidden and the engorgement
+   state morph is replaced by the detail's own arousal drives); the scrotum and
+   testes on the labioscrotal pair, then the labia, are next.
 4. **Skin fields on the patch** and the layers' remap, so the phase 1 layers
    show.
 5. **State morphs on the patch** (engorgement moves from `helper-genital`).

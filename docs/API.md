@@ -382,17 +382,21 @@ and throws `RangeError` for anything else.
 - `model.evaluate(recipe, signals?, haveOutfit?): Evaluation`: `signals` (0..1 each) set the
   skin's state; those with a state morph add their targets: `cold` (the nipple
   rises and the areola contracts; `STATE_MORPHS`) and `arousal` (engorgement:
-  the shaft's circumference +25% and length +43% at full arousal, the measured
-  erect against flaccid; the adult pack's own, from its manifest's
-  `anatomy.stateMorphs`), each calibrated to its measured response.
+  the organ's circumference +25% and length +43% at full arousal, the measured
+  erect against flaccid; the adult pack's own, read by its detail targets'
+  `anatomy.detail.drives` as `sramp:arousal:…` factors, drawn at flaccid, a
+  midpoint and erect so the tube swings rather than shortens), each calibrated
+  to its measured response. `shapeSignalNames(STATE_MORPHS, anatomy?)` lists the
+  signals that change the shape: the state morphs' and those the detail's gates
+  and drives read, for a caller that re-evaluates the figure only when one changes.
   `stateContributions(signals, morphs?, exists?)` gives those target weights for
   the morphs in force, limited to targets `exists` accepts; the model passes
   the body's and the adult pack's morphs and the loaded packs' targets, so a
   state of the adult anatomy does nothing, rather than fails, without the adult
   pack. `ADULT_ONLY_SIGNALS` (`arousal`) throw `AgePolicyError` under 18
-  (`assertSignalPolicy`), before any target is named. Today the penis targets
-  deform `helper-genital`, which the surface does not draw, so engorgement
-  moves `Evaluation.control` and no drawn vertex until the sculpt phase.
+  (`assertSignalPolicy`), before any target is named. The organ is detail on the
+  adult surface (drawn out of a reservoir), so engorgement moves drawn vertices
+  of an adult figure with an organ and nothing in one without.
   `recipe.outfit` adds the garments (see "Clothing"); `haveOutfit` is the
   outfit key the caller already holds the masks of.
 - `model.controlShape(recipe): ControlShape`: an adult figure's control mesh for

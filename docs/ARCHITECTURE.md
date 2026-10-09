@@ -1774,19 +1774,21 @@ subdivided linearly (`linearSubdivisionStencil`), positions smoothly, because
 smoothing the cap's displacement leaked it into the loop and overshot the tube by
 up to 22% at level 2.
 
-**Arousal.** The adult manifest adds an `arousal` state morph
-(`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by
-`assertSignalPolicy` before any target is named), driving the adult pack's
-`penis-circ-incr` (0.44) and `penis-length-incr` (0.25), calibrated so that full
-arousal gives the measured erect against flaccid: circumference +25% and length
-+43% (research/SKIN-STATES.md, B4; `tests/arousal.test.ts` measures it on the
-length target's own vertices). Only targets that exist are driven: the testes'
-response is unmeasured and the vulva and clitoris have no targets (their volume
-change has no verified magnitude), so those wait for the sculpt phase.
-`stateContributions` skips targets no loaded pack knows, so without the adult
-pack the figure is simply unchanged, and a target of the adult pack that has not
-arrived yet is named as pending, so an evaluation waits for the adult stage as
-it does for any other. Colour deepening is the layers' own: `genitalAlbedo` moves
+**Arousal.** Adult-only, refused under 18 by `assertSignalPolicy` before any
+target is named. Its shape response is the adult pack's detail targets reading
+the signal (`AdultDetailSpec.drives`, `sramp:arousal:…`; the core's `STATE_MORPHS`
+stays without it and the pack's `stateMorphs` is empty). The organ is drawn at
+three states (flaccid, midway, erect) so that it swings from hanging to rising
+instead of shortening on the way (a morph moves each vertex in a straight line);
+its erect state is the measured growth over flaccid, circumference +25% and
+length +43% (research/SKIN-STATES.md, B4; research/ADULT-ANATOMY-DATA.md, F;
+`tests/phallus.test.ts` measures the authored shapes against those numbers and
+holds the surface to them). The testes' response is unmeasured and the vulva and
+clitoris have no verified magnitude (their volume change), so those wait for the
+sculpt. A derived weight is an adult's alone, and a target of the adult pack that
+has not arrived yet is named as pending, so an evaluation waits for the adult
+stage as it does for any other; without the adult pack the figure is simply
+unchanged. Colour deepening is the layers' own: `genitalAlbedo` moves
 haemoglobin a fraction of the way to its ceiling with the signal, so it stays
 inside the skin model's measured haemoglobin axis (about 0.4 to 1.3 CIELAB a\*
 units, smaller on deep skin) and is **uncalibrated**: no measured colour change
