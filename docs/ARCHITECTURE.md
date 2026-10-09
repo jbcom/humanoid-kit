@@ -193,12 +193,15 @@ Under 18:
 - the breast macro targets are never weighted (`macroTargetWeights`), although
   their files ship in the body pack;
 - adult-only targets are not in the body pack at all; the adult anatomy pack's
-  modifiers are adult-only, so a recipe under 18 that sets one is rejected.
+  modifiers are adult-only, so a recipe under 18 that sets one is rejected;
+- axillary and pubic hair are adult-only: a recipe under 18 whose
+  `bodyHair.density` sets either to anything but 0 is rejected, and the body
+  hair model draws neither for a figure that is not an adult (see "Body hair").
 
 The policy is enforced inside `recipeContributions`, so no caller can evaluate
 an invalid recipe by skipping validation. `withAge(recipe, age)` returns a copy
-at a new age; moving below 18 explicitly removes the adult-only values and leaves
-the input untouched.
+at a new age; moving below 18 explicitly removes the adult-only values (adult
+modifiers, and axillary and pubic densities) and leaves the input untouched.
 
 An adult-only modifier id that is not loaded (the adult pack is absent) fails
 with `RecipeError`. Fine shape modifiers such as the `breast/*` group ship in
@@ -1104,6 +1107,44 @@ procedural coily style** (instanced curl cards or strand clumps over the same
 scalp and growth fields), which is a milestone of its own. Evidence and the
 audit are in `docs/evidence/hair.md`.
 
+## Body hair
+
+**Use cases.** Every figure carries the body hair of its age and sex, at every
+skin tone, without a choice being made: vellus everywhere from infancy, and
+terminal hair coming in through adolescence and thinning and greying in old
+age. A creator can thin, thicken or shave a region and pick a beard. Axillary
+and pubic hair exist for adults only.
+
+**Requirements.** It reuses what exists: the skin layer stack for what lies on
+the skin, the hair pack's cards and material for what stands off it, and the
+hair colour model for its colour. No second hair system. Densities and timing
+cite measurements or are marked as choices (`docs/research/BODY-HAIR.md`).
+Old recipes evaluate and serialise as before.
+
+**Decisions (2026-10-09).**
+
+- *One pure model, two ways of drawing.* `src/surface/bodyHair.ts` says how
+  much terminal hair each region group carries (coverage 0..1, the
+  Ferriman-Gallwey grade over 4), from the gender macro read as the androgen
+  level, the age (a ramp per group on the Tanner ages, a thinning after 55) and
+  the recipe's multipliers; and what colour (the figure's hair pigments, darker
+  on the face and pubis, lighter on the limbs, greyed with age later on the
+  body than the beard). The groups follow the modified FG regions, merged to
+  what a picker offers: face, chest, abdomen, back, buttocks, arms, legs, and the
+  adult-only axillary and pubic.
+- *Adult-only groups are gated in the model itself.* `defaultBodyHairCoverage`
+  returns 0 for axillary and pubic hair unless the age is an adult's (`age >=
+  ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
+  scales the default, so no recipe value can add them under 18.
+- *The recipe holds multipliers, not densities.* `recipe.bodyHair` is optional
+  (the recipe schema grows only by optional fields): `density` is a multiplier
+  per group on the default for age and sex (0 shaves a region, 2 doubles it,
+  clamped to full coverage), and `beard` a style. A multiplier, not an absolute
+  value, keeps a saved recipe right as the figure ages: the same recipe at 12,
+  30 and 80 shows each age's hair. Absent fields are not filled in by
+  `createRecipe`, so a recipe that never set body hair serialises exactly as
+  before.
+
 ## Presence
 
 `src/presence` is what a figure publishes about itself for the scene around it
@@ -1519,6 +1560,97 @@ evaluation input beside the recipe (`STATE_MORPHS`, with the cold response as
 the first, calibrated against the measured one). `arousal` is refused under 18
 in every channel (AGE-POLICY.md). Area lanes then add states as they add
 regions.
+
+### Hands (2026-10-09)
+
+The hands' own skin is one area's layers (`src/surface/regions/hands/`: the
+frame, the creases, the knuckles and the nails each in a file of its own, and
+the palm and the stack order in `index.ts`; colour in `src/surface/handTone.ts`), between the rest layers and the state
+layers, so a state acts on them: cold blanches the nail beds and palms as it
+does the rest of the hand. Sources and choices: `docs/research/SKIN-STATES.md`
+C5; contact sheets, before and after, at four tones, adult and child:
+`docs/evidence/hands.md`.
+
+- *Palm colour, a fairness item.* Palmoplantar skin has few active
+  melanocytes at every tone, so the palm barely follows the body's
+  lightness: on the deepest backs of hands it is about 16 L\* lighter and
+  6 to 8 b\* yellower, on the lightest about the same. The colour is read from
+  the archive the skin model already uses (ISSA's 777 paired palm and back-of-
+  hand readings, binned by the back's lightness), not a ratio: a lighter-skin
+  rule scaled down would leave deep palms nearly the colour of the hand's back,
+  which is the error this item exists to prevent.
+- *A frame per hand, from the base mesh.* As with the skin-state zones, nothing
+  is added to the frozen mesh. The skeleton's finger joints give each digit a
+  polyline from the wrist; every hand vertex takes the nearest segment and its
+  distance along the digit and across it, blended across each joint so the
+  coordinate runs on smoothly round a bend (the nearest segment alone jumps by
+  the radius times the bend at the bisector, which drew a false crease there).
+  The vertex normal against the palm's facing tells palmar from dorsal; the
+  palm's plane (from the wrist toward the middle finger, and toward the thumb)
+  carries the palm's own creases.
+- *Creases finer than the mesh.* The palm's vertices are about 5 mm apart and a
+  crease about 1 mm wide, and a mask is interpolated between vertices, so a
+  crease cannot be a mask. Each is drawn from a signed distance to it instead,
+  which interpolates exactly across the face it crosses: as a line of colour
+  (the coordinate runs across a band wider than two faces, and the line is one
+  of the eight colour stops, a seventh of the band wide), and as a relief fold
+  a face wide. A signed distance to the nearest of several creases jumps where
+  the nearest changes; it passes the line's stop, drawing a false line, unless
+  the two sides that meet there carry the same sign. So the signs are chosen as
+  a chain (each finger's creases alternate from the base; the palm's three are
+  oriented to agree with each other and with the fingers'), and a test checks
+  every edge where the nearest crease changes for a line no crease explains,
+  and that the palm's creases never cross (the thenar crease, steeper than the
+  proximal transverse crease it starts beside, crossed it when it started
+  above it). The thumb's web is the one place three creases meet whose sides
+  no signs can all match; there the palm's creases taper in from the border.
+- *Where the creases are.* Measured offsets from the joints (the middle
+  digital crease about 2 mm proximal to its joint, the thumb's at and just
+  proximal to its joints) and measured lengths between a finger's creases. The
+  palm's creases are measured from the anatomical knuckles, which MakeHuman's
+  finger joints are not (they sit at the web), so each knuckle is placed the
+  measured distance proximal to its finger's first crease.
+- *Knuckles.* More melanin, multiplied rather than added, so fair knuckles
+  mostly redden and deep ones darken; and wrinkle arcs over each joint. No
+  knuckle colour or fold count was found measured at any tone: these are
+  choices, bounded by the measured exposed-to-protected melanin ratio. The
+  wrinkles' phase runs on unclamped past each joint's band, and each band ends
+  a face short of halfway to the next joint, where the coordinate turns to that
+  joint's (on the little finger's short middle phalanx the bands nearly met and
+  drew a false wrinkle).
+- *Nails.* No separate nail geometry: the base mesh sculpts each nail, and a
+  coordinate along the last segment carries fold, lunula, bed and free edge as
+  the colour stops, with sharp changes between them, and a surface layer the
+  plate's gloss. The bed is measured nail colour whose lightness follows the
+  skin's far less than skin does (the nail bed has about 5% of skin's
+  melanocytes), so on deep skin the nails are much lighter than the fingers.
+- *Soles.* Soles share the palm's suppressed melanocytes (the same
+  mechanism), but no sole colour was found measured, so the sole takes the
+  palm's measured colour (`PALMOPLANTAR_LAYER` paints both, a choice). One owner for the
+  palmoplantar colour: the feet's area adds the sole's relief, calluses and
+  toenails over it (`nailStops` paints any nail whose coordinate follows the
+  fingernail's).
+- *One atlas page for all of it.* Every layer costs field-atlas channels (a
+  colour layer two: mask and coordinate), and the atlas planner shares a
+  channel only between layers whose masks lie in disjoint cells of the UV
+  layout. The hand's features lie too close together in that layout to share
+  that way: as nine layers of their own the hands took 9 pages (36 channels).
+  So features that never meet on the mesh share a layer: the palm and the sole
+  one colour (`PALMOPLANTAR_LAYER`); the knuckles and the nails one colour
+  whose coordinate is 0 at the knuckles and the nail's own from its fold
+  (`DIGIT_LAYER`, within 1 ΔE\*ab of the nail layered over the knuckle, a test
+  checks); the palm's creases and the knuckles' wrinkles one relief, palmar
+  and dorsal (`HAND_RELIEF_LAYER`). Five layers, and the
+  palmoplantar colour and the crease lines share channels with the flush,
+  areola and joint creases, so the stack goes from 27 channels on 7 pages
+  (28 MiB at 1024², RGBA8) to 30 on 8 (32 MiB): one page. The palmoplantar
+  mask drops the zones' tails below what the atlas rounds to 0, which reached
+  the knees' creases. The adult layers keep their pages.
+- *Not done.* The hands' layers do not vary with age: a child's hand gets the
+  same creases and knuckles at its own scale, the fields scaling with the
+  morphed mesh (creases form before birth, so their places are set early). No
+  finger flexion is measured by the rig yet (`FLEXION_JOINTS` has wrists,
+  elbows and knees), so knuckle wrinkles are at rest.
 
 ### Joint creases (2026-10-09)
 

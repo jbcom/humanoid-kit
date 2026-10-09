@@ -125,6 +125,7 @@ createRecipe(init?: {
   skin?: Partial<SkinRecipe>;
   eyes?: Partial<EyesRecipe>;
   hair?: { style?: string | null; colour?: Partial<HairColour> };
+  bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
 }): Recipe
 ```
@@ -143,12 +144,20 @@ interface Recipe {
   skin: SkinRecipe;
   eyes: EyesRecipe;
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
+  bodyHair?: BodyHairRecipe; // optional: absent means the default for age and sex
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
 }
 
 interface HairRecipe {
   style: string | null; // a scalp style id of the hair pack, or null for none
   colour: HairColour;   // eumelanin, pheomelanin, grey (each 0..1) and override: Rgb | null
+}
+
+interface BodyHairRecipe {
+  // per BODY_HAIR_GROUPS entry, a multiplier on the default, 0..2 (1 = default);
+  // axillary and pubic are adult-only: any value but 0 under 18 is refused
+  density?: Partial<Record<BodyHairGroup, number>>;
+  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = stubble where the face carries terminal hair
 }
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
@@ -242,7 +251,8 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 - `assertAgePolicy(recipe)`: throws `AgePolicyError` listing the violations.
 - `withAge(recipe, age): Recipe`: a copy at a new age. Moving below 18 resets
   `breastSize` and `breastFirmness` to their defaults, deletes regional breast
-  values and deletes adult-only modifiers. The input is not modified.
+  values and deletes adult-only modifiers and the axillary and pubic body hair
+  densities. The input is not modified.
 - `ADULT_ONLY_MODIFIER(id): boolean`: true for ids starting `genitals/`,
   `pelvis/bulge` or `stomach/stomach-pregnant`.
 - `AgePolicyError`.
@@ -258,8 +268,9 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
   `SkinPaintInput.anatomy`.
 
 Under 18, a recipe is invalid if `breastSize` or `breastFirmness` differs from
-its default, if any region override contains either key, or if an adult-only
-modifier is non-zero.
+its default, if any region override contains either key, if an adult-only
+modifier is non-zero, or if `bodyHair.density.axillary` or `.pubic` is non-zero
+(`ADULT_ONLY_BODY_HAIR`). Refused, never clamped.
 
 ### Evaluation
 
@@ -444,12 +455,32 @@ compute what the renderer will do.
   values (`black` to `white`), `DEFAULT_HAIR_COLOUR` is `brown`, and
   `hairTint(colour)` is the material colour that makes a packed strand map
   (mean `HAIR_STRAND_MEAN`) render as that albedo.
+- Body hair (research/BODY-HAIR.md): `BODY_HAIR_GROUPS` (`face`, `chest`,
+  `abdomen`, `back`, `buttocks`, `arms`, `legs`, and the adult-only `axillary`
+  and `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`),
+  `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
+  `defaultBodyHairCoverage(group, age, gender)` is a group's terminal-hair
+  coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years and
+  the gender macro read as the androgen level: 0 before puberty, rising through
+  adolescence (`BODY_HAIR_MATURITY`), thinning in old age
+  (`BODY_HAIR_SENESCENCE`), between `BODY_HAIR_COVERAGE`'s female and male
+  ends. An adult-only group is 0 under 18 and for an age that is not a number.
+  `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's density
+  multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage; it never
+  adds hair where the default has none). `beardStyle(input)` is the recipe's
+  style, or `stubble` where the face's coverage is a quarter or more and `none`
+  elsewhere. `bodyHairColour(group, input)` is the figure's hair pigments
+  darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
+  fibre diameter and drawn length) and at least as grey as ageing makes them
+  (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an
+  override as given.
 - CIELAB conversions: `labFromLinear`, `linearFromLab`, `lchFromLab`,
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
   `SkinLayer` (`id`, `blend`, `targets`, `fields(assets)`, `paint(input)`),
-  `SKIN_LAYERS` (the stack, in order: flush, lips, areola, the state layers
-  below, then `ADULT_SKIN_LAYERS`: penis, testes, mound), `SKIN_LAYER_TARGETS`
+  `SKIN_LAYERS` (the stack, in order: flush, lips, areola, the hands' layers
+  below, the state layers below, then `ADULT_SKIN_LAYERS`: penis, testes,
+  mound), `SKIN_LAYER_TARGETS`
   (the body layers' only: an adult layer names none, the adult pack's manifest
   does),
   `targetMask(assets, targets, lo, hi)` for masks measured from targets,
@@ -492,6 +523,56 @@ compute what the renderer will do.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).
+- `melaninDensityAlbedo(tone, factor, haemoglobin)`: natural skin carrying
+  `factor` times the tone's melanin optical density, found on the measured
+  melanin axis (extrapolated past the deepest anchor); the same factor darkens
+  deep skin far more than fair. `areolaAlbedo` uses it.
+- The hands (`src/surface/regions/hands/`, colour in `src/surface/handTone.ts`;
+  ARCHITECTURE.md, "Hands"; every magnitude cited, or marked as a choice, in
+  research/SKIN-STATES.md C5). `HAND_SKIN_LAYERS`, in stack order after the rest
+  layers and before the state layers (so cold pallor and flush act on them).
+  Features whose masks never meet share a layer, to hold the hands to one atlas
+  page:
+  - `PALMOPLANTAR_LAYER` (`"palmoplantar"`): `palmAlbedo(tone)` over
+    `skinZones().palm` and `skinZones().sole` (palmoplantar skin; no sole colour
+    was found measured), less than `PALMOPLANTAR_FLOOR`, which the 8-bit atlas
+    rounds to 0, dropped. `palmLab(tone)` is
+    the palm's CIELAB (surface reflection included) from `PALM_BINS`, the
+    International Skin Spectra Archive's paired palm and back-of-hand readings
+    (777 people) binned by the back of the hand's L\*: on deep skin the palm is
+    about 16 L\* lighter and 6 to 8 b\* yellower than the back of the hand, on
+    the lightest about the same.
+  - `PALM_CREASE_LINE_LAYER` (multiply: `palmCreaseLine(tone)`, the crease's
+    shade, and on deep skin a return toward the skin's own colour) and, in
+    `HAND_RELIEF_LAYER`, folds `PALM_CREASE_DEPTH` deep: the
+    distal and proximal transverse and thenar creases of the palm
+    (`palmCreaseCurves(landmarks, joints)`) and each digit's flexion creases
+    (`digitCreases(joints, digit)`), placed by the measured `CREASE_TO_JOINT`,
+    `MIDDLE_CREASE_TO_JOINT`, `THUMB_CREASE_TO_JOINT` and `FINGER_CREASE_SPANS`.
+    Their fields (`palmCreaseLineFields`, `palmCreaseReliefFields`) carry a
+    signed distance to the nearest crease (`sampleCreases`), so a line finer
+    than the mesh is drawn where the crease is (`creaseLineCoordinate`,
+    `creasePhase`, `CREASE_GEOMETRY`).
+  - `DIGIT_LAYER` (`"knuckles-nails"`, fields `digitFields(assets)`): the
+    knuckles' colour at its coordinate's 0 (`knuckleAlbedo(tone)`:
+    `KNUCKLE_MELANIN_FACTOR` times the skin's melanin density and
+    `KNUCKLE_HAEMOGLOBIN` more blood), then the nail's along it
+    (`nailStops(tone)` after its first, the eight stops a nail coordinate runs
+    through, from `nailColours(tone)`: fold, lunula, bed and free edge along each
+    nail, the bed from `nailLab(tone)`, measured nail CIELAB at a lightness that
+    follows the skin's far less than skin does). It paints within 1 ΔE\*ab of
+    the nail layered over the knuckle. `NAIL_GLOSS_LAYER` is the plate
+    (`NAIL_ROUGHNESS` and `NAIL_SPECULAR`); fields from `knuckleFields(assets)`
+    and `nailFields(assets)`, proportions in `NAIL_LAYOUT`.
+  - `HAND_RELIEF_LAYER` (`"hand-relief"`, a `creases` detail layer, fields
+    `handReliefFields(assets)`): the palm's crease folds and the knuckles'
+    wrinkle arcs (over the back of each finger joint, `KNUCKLE_WRINKLE_SPACING`
+    apart, `KNUCKLE_WRINKLE_DEPTH` deep, the depth carried in the mask), on a
+    coordinate of `HAND_RELIEF_PHASES` phases.
+  - `handFrame(assets)`: each hand vertex's digit, distance along it and across
+    it, which way it faces, and its place in the palm's plane, measured from the
+    skeleton's finger joints and the vertex normals and cached per set of
+    assets; `palmDirection(assets, side)` is the way a palm faces.
 - Skin-state layers (`src/surface/regions/states.ts`), driven by the signals in
   `SkinPaintInput.signals`; every magnitude is cited, or marked as a choice, in
   research/SKIN-STATES.md Part C:
@@ -839,7 +920,8 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | --- | --- |
 | `recipe` | The `Recipe` to render |
 | `material?` | A three.js `Material` replacing the built-in skin material, which follows `recipe.skin` |
-| `onEvaluated?` | Called with each `Evaluation` |
+| `onEvaluated?` | Called with each `Evaluation`, as its geometry is written |
+| `onSettled?` | Called with an `Evaluation` once everything the recipe wears is drawn: the geometry is written and the hair style's strand map, the attachments' and garments' textures and the attachments' posed occlusion have loaded (then two frames). Wait for this, not `onEvaluated`, before a screenshot. The playground's `data-figure="ready"` is this |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
 | `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |

@@ -203,7 +203,9 @@ function Shot() {
   const [pose, setPose] = useState<HumanoidPose>(initialPose);
   const [signals, setSignals] = useState<Record<string, number>>(initialSignals);
   const [lift, setLift] = useState(0);
-  // Tests wait for data-figure="ready": the figure is evaluated and placed.
+  // Tests wait for data-figure="ready": the figure is evaluated and placed, and
+  // everything its recipe wears (hair style, textures, garments, posed occlusion)
+  // is loaded and drawn (`Humanoid`'s `onSettled`, not `onEvaluated`).
   // data-generation counts recipes swapped in through window.hkSetRecipe, so a
   // test can render many figures from one page load.
   const [ready, setReady] = useState(false);
@@ -261,7 +263,7 @@ function Shot() {
           signals={signals}
           position={[0, lift, 0]}
           onGroundOffset={setLift}
-          onEvaluated={() => setReady(true)}
+          onSettled={() => setReady(true)}
         />
         <OrbitControls makeDefault target={target} />
       </Canvas>
