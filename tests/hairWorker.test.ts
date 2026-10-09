@@ -4,6 +4,7 @@ import { createRecipe } from "../src/recipe/recipe.ts";
 import { createWorkerHandler } from "../src/worker/handler.ts";
 import type { WorkerResponse } from "../src/worker/protocol.ts";
 import { stubFetch } from "./fetchStub.ts";
+import { hairManifest } from "./hairFixtures.ts";
 
 const LOAD = { body: "http://packs/body", hair: "http://packs/hair" };
 
@@ -24,7 +25,7 @@ describe("loading the hair pack", { timeout: 60_000 }, () => {
     await complete;
     const hairRequests = () => requested.filter((u) => u.startsWith("http://packs/hair/"));
     expect(hairRequests()).toEqual(["http://packs/hair/manifest.json"]);
-    expect(assets.hair?.styles.size).toBe(10);
+    expect(assets.hair?.styles.size).toBe(hairManifest.styles.length);
     expect(assets.hair?.bound.size).toBe(0);
 
     const a = assets.hair?.load("short02");

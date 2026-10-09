@@ -1107,6 +1107,25 @@ procedural coily style** (instanced curl cards or strand clumps over the same
 scalp and growth fields), which is a milestone of its own. Evidence and the
 audit are in `docs/evidence/hair.md`.
 
+### Eyebrows and eyelashes (the hair pack)
+
+MakeHuman's system assets also hold twelve eyebrows and four eyelashes
+(`eyebrows/eyebrow001`…`012`, `eyelashes/eyelashes01`…`04`), every file of
+which proves CC0 in its own header (`compileAsset` refuses any that does not,
+as it does for scalp hair). Each is an alpha-mask decal (124 vertices for a
+brow, about 250 for lashes; a 512² texture covering 4 to 30 % of it) bound to
+the body (the lashes to the base mesh's lash helper), whose colour is near black
+in the source. They share the hair pack: the same lazily fetched
+binary-and-texture per style, the same manifest, `kind` `brows` or `lashes` beside
+`scalp`. A decal skips what only a scalp style has: no growth, hairline fade or
+fin and no scalp (so those buffers are optional by kind in the format), no
+strand map (its texture is the source's alpha with the colour replaced by white,
+so the figure's hair colour is the only colour it takes), and no occlusion bake
+(open: the skin's own shade is the lid's or the brow ridge's). Decision: one pack
+over a pack of their own, since they bind to the same body, load lazily the same
+way and take the same colour; and kinds in one manifest over a second manifest,
+so a loader, a picker and the recipe validation know one list.
+
 ## Body hair
 
 **Use cases.** Every figure carries the body hair of its age and sex, at every

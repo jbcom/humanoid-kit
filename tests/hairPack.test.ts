@@ -11,7 +11,13 @@ import {
 } from "../src/format/assetFormat.ts";
 import { HAIR_STRAND_MEAN } from "../src/surface/hairTone.ts";
 import { bodyManifest, bodyPackData } from "./fixtures.ts";
-import { hairDir, hairManifest, hairStyleBin, loadHairFixtureAssets } from "./hairFixtures.ts";
+import {
+  hairDir,
+  hairManifest,
+  hairStyleBin,
+  loadHairFixtureAssets,
+  scalpStyles,
+} from "./hairFixtures.ts";
 
 const sha = (file: string) =>
   createHash("sha256")
@@ -44,8 +50,8 @@ describe("the hair pack's manifest", () => {
   });
 
   it("lists the shortlisted styles, each with a label and tags", () => {
-    expect(hairManifest.styles.map((s) => s.id)).toEqual(STYLES);
-    for (const s of hairManifest.styles) {
+    expect(scalpStyles.map((s) => s.id)).toEqual(STYLES);
+    for (const s of scalpStyles) {
       expect(s.kind, s.id).toBe("scalp");
       expect(s.label.length, s.id).toBeGreaterThan(0);
       expect(s.tags.length, s.id).toBeGreaterThan(0);
@@ -53,7 +59,7 @@ describe("the hair pack's manifest", () => {
   });
 
   it("records each style's file hash, which is the hash of the file as shipped", () => {
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       expect(s.sha256, s.id).toBe(sha(s.file));
       expect(fs.existsSync(path.join(hairDir, s.material.texture as string)), s.id).toBe(true);
     }
@@ -65,7 +71,7 @@ describe("a style's binding", () => {
   const n = bodyManifest.vertexCount;
 
   it("binds every vertex to base-mesh vertices that exist, with weights that sum to one", () => {
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       const a = assets.hair?.bound.get(s.id);
       expect(a, s.id).toBeDefined();
       if (!a) continue;
@@ -84,13 +90,13 @@ describe("a style's binding", () => {
   });
 
   it("hides no body vertex: MakeHuman's hair has no delete_verts, so the scalp stays", () => {
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       expect(assets.hair?.bound.get(s.id)?.deleteVerts.length, s.id).toBe(0);
     }
   });
 
   it("bakes one occlusion value per control vertex: open outside the hair, shut deep in it", () => {
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       const o = assets.hair?.bound.get(s.id)?.occlusion as Uint8Array;
       expect(o.length, s.id).toBe(s.vertexCount);
       const mean = o.reduce((t, x) => t + x, 0) / o.length / 255;
@@ -118,7 +124,7 @@ describe("a style's strand map", () => {
     { size: number; maxChannelGap: number; mean: number; clearShare: number }
   >();
   beforeAll(async () => {
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       const { data, info } = await sharp(path.join(hairDir, s.material.texture as string))
         .ensureAlpha()
         .raw()
@@ -145,7 +151,7 @@ describe("a style's strand map", () => {
   }, 120_000);
 
   it("is grey and sized for the web", () => {
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       const m = measured.get(s.id);
       expect(m?.size, s.id).toBeLessThanOrEqual(1024);
       // Lossy WebP leaves a rounding of a few levels between channels.
@@ -154,7 +160,7 @@ describe("a style's strand map", () => {
   });
 
   it("averages HAIR_STRAND_MEAN in linear light, so the recipe's colour is the albedo", () => {
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       const mean = measured.get(s.id)?.mean as number;
       expect(mean, s.id).toBeGreaterThan(HAIR_STRAND_MEAN * 0.9);
       expect(mean, s.id).toBeLessThan(HAIR_STRAND_MEAN * 1.1);
@@ -162,7 +168,7 @@ describe("a style's strand map", () => {
   });
 
   it("keeps the cards' cut-out: every style but the solid braid has clear texels", () => {
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       const share = measured.get(s.id)?.clearShare as number;
       if (s.id === "braid01") expect(share, s.id).toBeLessThan(0.01);
       else expect(share, s.id).toBeGreaterThan(0.15);
@@ -170,7 +176,7 @@ describe("a style's strand map", () => {
   });
 
   it("reports the strand direction and how consistent it is", () => {
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       expect(s.strand.angle, s.id).toBeGreaterThanOrEqual(0);
       expect(s.strand.angle, s.id).toBeLessThan(Math.PI);
       expect(s.strand.coherence, s.id).toBeGreaterThanOrEqual(0);
@@ -185,11 +191,11 @@ describe("the pack's size", () => {
     fs.statSync(path.join(hairDir, s.material.texture as string)).size;
 
   it("keeps each style under 800 kilobytes, since a figure loads one", () => {
-    for (const s of hairManifest.styles) expect(sizeOf(s), s.id).toBeLessThan(800 * KB);
+    for (const s of scalpStyles) expect(sizeOf(s), s.id).toBeLessThan(800 * KB);
   });
 
   it("keeps the whole pack under four megabytes", () => {
-    const total = hairManifest.styles.reduce((t, s) => t + sizeOf(s), 0);
+    const total = scalpStyles.reduce((t, s) => t + sizeOf(s), 0);
     expect(total).toBeLessThan(4 * 1024 * KB);
   });
 });
@@ -201,7 +207,7 @@ describe("provenance", () => {
     expect(text).toMatch(/makehuman_system_assets_cc0\.zip/);
     expect(text).toMatch(/explicitly released as CC0/);
     // Per style: the .mhclo, the .obj and the .mhmat each proved their own header.
-    expect(text).toMatch(new RegExp(`${STYLES.length * 3} file\\(s\\) — file header`));
+    expect(text).toMatch(new RegExp(`${hairManifest.styles.length * 3} file\\(s\\) — file header`));
   });
 
   it("lists the hash of every shipped file", () => {
@@ -216,7 +222,7 @@ describe("loading the pack", () => {
   it("parses beside the body pack, and refuses a body pack it was not built for", () => {
     const body = bodyPackData(["core"]);
     const parsed = parseHumanoidAssets(body, undefined, undefined, { manifest: hairManifest });
-    expect(parsed.hair?.styles.size).toBe(STYLES.length);
+    expect(parsed.hair?.styles.size).toBe(hairManifest.styles.length);
     expect(parsed.hair?.bound.size).toBe(0);
     const other = {
       ...body,

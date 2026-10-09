@@ -1201,6 +1201,14 @@ styles are MakeHuman's own CC0 scalp hair: `short02`, `bob02`, `long01`,
 Its manifest records the hash of the body pack it binds to, and the loader
 refuses any other.
 
+The pack also lists MakeHuman's twelve eyebrows (`eyebrow001` to `eyebrow012`,
+kind `brows`) and four eyelashes (`eyelashes01` to `eyelashes04`, kind `lashes`),
+the same CC0 system assets bound to the same body, each one `<id>.bin.gz` and a
+`<id>.webp` that is a white alpha mask for the hair colour to tint (14 to 67 kB
+the pair). They are decals: no hairline, growth or scalp, so their entries carry
+none of those buffers (`HairStyleEntry.layout` has them for `scalp` only), and
+`recipe.hair.style` wears only scalp styles.
+
 ## `humanoid-kit-adult-anatomy`
 
 ```ts
