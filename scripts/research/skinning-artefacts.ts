@@ -10,7 +10,7 @@
 import fs from "node:fs";
 import { skinPositionsBlended, skinPositionsDual } from "../../src/rig/dual.ts";
 import { rigData, skinPositionsLinear } from "../../src/rig/pose.ts";
-import { skinDualShare } from "../../src/rig/skinShare.ts";
+import { poseShare, skinDualShare } from "../../src/rig/skinShare.ts";
 import { loadFixtureAssets } from "../../tests/fixtures.ts";
 import { type Reading, type Scheme, SkinBench, table } from "../lib/skinBench.ts";
 
@@ -21,7 +21,15 @@ const ALL: Record<string, Scheme> = {
   LBS: skinPositionsLinear,
   DQS: skinPositionsDual,
   "LBS+DQS": (rest, rotations, positions, skinIndex, skinWeight, out) =>
-    skinPositionsBlended(rest, rotations, positions, skinIndex, skinWeight, out, share),
+    skinPositionsBlended(
+      rest,
+      rotations,
+      positions,
+      skinIndex,
+      skinWeight,
+      out,
+      poseShare(rest, rotations, share),
+    ),
 };
 const only = process.env.HK_SCHEMES?.split(",");
 const schemes = only
