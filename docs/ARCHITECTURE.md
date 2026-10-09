@@ -310,6 +310,20 @@ a joint's centroid over any set of positions. The runtime does not yet build a
 three.js skeleton, pose a figure or play expressions, and `<Humanoid>` renders a
 static mesh.
 
+## Presence
+
+`src/presence` is what a figure publishes about itself for the scene around it
+(`docs/PRESENCE.md`). `presenceFromEvaluation` reads an `Evaluation`: anchors
+are the centroids of the joints' vertex lists (`presenceJoints`) over the
+morphed control mesh lifted by `groundOffset`, the footprint is the extent of
+the rendered body's soles, bounds cover every surface point, appearance is
+`skinAlbedo` of the recipe's skin, and `adult` is the age policy's verdict.
+The evaluation is in the figure's own frame; `placePresence` turns it about its
+ground position and moves it onto a `Placement`, so a moving figure re-places
+one rest presence each frame instead of being re-derived. The registry, the
+helpers (`groundOcclusion`, `faceMetering`, `presenceGroups`) are pure; React
+only publishes into and reads from the registry.
+
 ## Layers
 
 | Folder | Role | React or DOM |
@@ -323,6 +337,7 @@ static mesh.
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
 | `src/surface` | Skin albedo, the scatter model and table, occlusion baking | no |
 | `src/model` | `HumanoidModel`, the evaluation pipeline | no |
+| `src/presence` | Presence registry, helpers, and presence derived from an evaluation | no |
 | `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
 | `src/render` | The skin and eye materials | three.js, no React |

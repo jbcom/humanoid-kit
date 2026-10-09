@@ -1,8 +1,9 @@
 # Presence: what a figure tells the world
 
-Status: being implemented (`src/presence`). It is the shared foundation for the
-milestone 8 animation work (awareness and interactions) and for
-environment-driven lighting and shadows.
+Status: being implemented (`src/presence`). The registry, the helpers and
+`presenceFromEvaluation` (presence derived from a figure's evaluation) are
+done and tested. It is the shared foundation for the milestone 8 animation work
+(awareness and interactions) and for environment-driven lighting and shadows.
 
 ## Why
 
@@ -104,5 +105,16 @@ In React, `<Humanoid presence>` registers the figure; `usePresence()` and
   0.18)`), weighted by apparent size, and names the deepest face. A scene
   exposes for grey and adds light where a face falls short; it never pulls every
   face to one luminance.
+- **Anchors are joint centroids; the footprint is the soles.** Head is the
+  middle of the head bone, face the middle of the eyes and mouth, chest the top
+  of the spine bone, hands the middle of wrist and middle-finger knuckle, feet
+  the middle of ankle and toe. The footprint is not the foot joints but the
+  extent of the rendered body within 3 cm of the lowest point on each side: its
+  centre, with half the longer side as the radius, so it is a real foot length
+  and follows a morphed foot.
+- **Placement is a pure transform of one rest presence.** The evaluation is in
+  the figure's own frame; `placePresence` rotates about the ground position by
+  the heading and translates. A walking figure re-places its rest presence each
+  frame (cheap), and is re-derived only when its recipe is re-evaluated.
 - **Presence carries placement, not a full matrix**, for now: ground position,
   facing and bounds. A transform matrix arrives with posing.

@@ -309,6 +309,18 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
 - `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
   chest, hands, feet), `footprint`, `appearance` (measured albedo, luminance,
   specular), `faceRadius`, `adult`.
+- `presenceFromEvaluation({ evaluation, recipe, joints, placement })`: a
+  figure's presence from its evaluation. Anchors are joint centroids of the
+  morphed control mesh lifted onto the ground, the footprint is the extent of
+  the body's soles, `bounds` cover every surface point, `appearance` is
+  `skinAlbedo` of `recipe.skin` with its luminance and `SKIN_F0`, `faceRadius`
+  is 0.75 × the head's length, and `adult` is the age policy's verdict
+  (`age >= 18`). `placement` is `{ id, position, facing }`: the ground position
+  under the figure and its heading.
+- `presenceJoints(assets)`: the joint vertex lists presence reads from a loaded
+  body pack (small and static, so it can travel with the worker's topology).
+- `placePresence(presence, placement)`: the same presence turned and moved onto
+  a new placement. Re-place a rest presence each frame rather than chaining.
 - `presenceGroups(presences, distance)`: ids of the figures standing together.
 - `groundOcclusion(presences, { strength?, spread? })` and
   `sampleGroundOcclusion(points, x, z)`: contact shadows pooled with `max`.
