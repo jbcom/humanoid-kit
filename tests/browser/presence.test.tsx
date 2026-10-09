@@ -1,6 +1,6 @@
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Component, type ReactNode, useRef } from "react";
-import type { Group } from "three";
+import type { Group, Scene as ThreeScene } from "three";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 import {
@@ -15,6 +15,7 @@ import {
   HumanoidProvider,
   PresenceProvider,
   type PresenceRef,
+  StudioStage,
   usePresence,
   usePresenceRegistry,
   useProximity,
@@ -33,6 +34,17 @@ afterAll(() => client.dispose());
 
 const average = createRecipe();
 const tall = createRecipe({ macros: { height: 1 } });
+
+/** Shows a thrown error's message in place of its children. */
+class Boundary extends Component<{ children: ReactNode }, { message: string | null }> {
+  override state = { message: null as string | null };
+  static getDerivedStateFromError(e: Error) {
+    return { message: e.message };
+  }
+  override render() {
+    return this.state.message ?? this.props.children;
+  }
+}
 
 function Scene({ registry, children }: { registry: PresenceRegistry; children: ReactNode }) {
   return (
@@ -110,7 +122,7 @@ describe("<Humanoid presence>", () => {
       await expect
         .poll(() => (registry.get("walker")?.position[0] ?? 0) - first, LOAD)
         .toBeGreaterThan(0.5);
-      await expect.poll(() => registry.get("walker")?.velocity[0] ?? 0).toBeCloseTo(1, 0);
+      await expect.poll(() => registry.get("walker")?.velocity[0] ?? 0).toBeCloseTo(1, 1);
       // Moving did not lift the figure off the floor.
       expect(registry.get("walker")?.bounds.min[1]).toBeCloseTo(0, 2);
     },
@@ -129,6 +141,55 @@ describe("<Humanoid presence>", () => {
       await expect.poll(published(registry, "gone"), LOAD).toBeDefined();
       await screen.rerender(<Scene registry={registry}>{null}</Scene>);
       await expect.poll(() => registry.all().length).toBe(0);
+    },
+    LOAD.timeout,
+  );
+
+  it(
+    "derives a new presence when the recipe changes, without moving the figure",
+    async () => {
+      const registry = createPresenceRegistry();
+      const at = (recipe: typeof average) => (
+        <Scene registry={registry}>
+          <Humanoid recipe={recipe} presence={{ id: "r", position: [1, 0, 1] }} />
+        </Scene>
+      );
+      const screen = await render(at(average));
+      await expect.poll(published(registry, "r"), LOAD).toBeDefined();
+      const before = registry.get("r")?.anchors.head[1] as number;
+      await screen.rerender(at(tall));
+      await expect
+        .poll(() => registry.get("r")?.anchors.head[1] ?? 0, LOAD)
+        .toBeGreaterThan(before + 0.05);
+      expect(registry.get("r")?.position[0]).toBeCloseTo(1, 4);
+      expect(registry.get("r")?.bounds.min[1]).toBeCloseTo(0, 2);
+    },
+    LOAD.timeout,
+  );
+
+  it(
+    "leaves the registry while hidden or tipped over, and rejoins when it is back",
+    async () => {
+      const registry = createPresenceRegistry();
+      const at = (shown: boolean, tipped: boolean) => (
+        <Scene registry={registry}>
+          <group visible={shown} rotation-x={tipped ? Math.PI / 2 : 0}>
+            <Humanoid recipe={average} presence={{ id: "p", position: [0, 0, 0] }} />
+          </group>
+        </Scene>
+      );
+      const screen = await render(at(true, false));
+      await expect.poll(published(registry, "p"), LOAD).toBeDefined();
+      // A hidden figure is not in the world.
+      await screen.rerender(at(false, false));
+      await expect.poll(published(registry, "p")).toBeUndefined();
+      await screen.rerender(at(true, false));
+      await expect.poll(published(registry, "p")).toBeDefined();
+      // Tipped straight up it has no heading on the ground to publish: gone, not stale.
+      await screen.rerender(at(true, true));
+      await expect.poll(published(registry, "p")).toBeUndefined();
+      await screen.rerender(at(true, false));
+      await expect.poll(published(registry, "p")).toBeDefined();
     },
     LOAD.timeout,
   );
@@ -188,7 +249,7 @@ describe("presence hooks", () => {
     "lists every figure when no id is given",
     async () => {
       const registry = createPresenceRegistry();
-      const watched: { all?: PresenceRef<PublishedPresence[]> } = {};
+      const watched: { all?: PresenceRef<readonly PublishedPresence[]> } = {};
       function Watcher() {
         watched.all = usePresence();
         return null;
@@ -207,15 +268,6 @@ describe("presence hooks", () => {
 
   it("explains a missing provider instead of failing later", async () => {
     // Hooks that need the registry say so; so does a figure asking to be published without one.
-    class Boundary extends Component<{ children: ReactNode }, { message: string | null }> {
-      override state = { message: null as string | null };
-      static getDerivedStateFromError(e: Error) {
-        return { message: e.message };
-      }
-      override render() {
-        return this.state.message ?? this.props.children;
-      }
-    }
     function NeedsRegistry() {
       usePresenceRegistry();
       return null;
@@ -235,4 +287,108 @@ describe("presence hooks", () => {
     );
     await expect.element(figure.getByText(/Humanoid presence> must be used inside/)).toBeVisible();
   });
+
+  it(
+    "explains a body pack that cannot publish presence, and still renders without asking for it",
+    async () => {
+      const noJoints = inlineWorkerClient({ subdivision: 0 }, { withoutPresenceJoints: true });
+      try {
+        await noJoints.ready;
+        const registry = createPresenceRegistry();
+        // Asking for presence is reported through onError (a throw would take the canvas
+        // down), the figure still renders, and nothing is published.
+        const errors: string[] = [];
+        let drawn = false;
+        await render(
+          <HumanoidProvider client={noJoints}>
+            <div style={{ width: 160, height: 120 }}>
+              <Canvas>
+                <PresenceProvider registry={registry}>
+                  <Humanoid
+                    recipe={average}
+                    presence={{ id: "nope" }}
+                    onError={(e) => errors.push(e.message)}
+                    onEvaluated={() => (drawn = true)}
+                  />
+                </PresenceProvider>
+              </Canvas>
+            </div>
+          </HumanoidProvider>,
+        );
+        await expect.poll(() => drawn, LOAD).toBe(true);
+        expect(errors).toHaveLength(1);
+        expect(errors[0]).toMatch(/this pack lacks one/);
+        expect(registry.all()).toEqual([]);
+        // Not asking for presence is not affected: the figure evaluates as ever.
+        let evaluated = false;
+        await render(
+          <HumanoidProvider client={noJoints}>
+            <div style={{ width: 160, height: 120 }}>
+              <Canvas>
+                <Humanoid recipe={average} onEvaluated={() => (evaluated = true)} />
+              </Canvas>
+            </div>
+          </HumanoidProvider>,
+        );
+        await expect.poll(() => evaluated, LOAD).toBe(true);
+      } finally {
+        noJoints.dispose();
+      }
+    },
+    LOAD.timeout,
+  );
+});
+
+describe("the stage's pooled contact shadow", () => {
+  const out: { scene?: ThreeScene } = {};
+  function Probe() {
+    out.scene = useThree((s) => s.scene);
+    return null;
+  }
+  const quad = () => out.scene?.getObjectByName("hk-ground-contact");
+
+  it(
+    "follows the figures wherever they are, and leaves the floor below a raised one alone",
+    async () => {
+      const registry = createPresenceRegistry();
+      const at = (x: number, y: number) => (
+        <Scene registry={registry}>
+          <Probe />
+          <StudioStage />
+          <Humanoid recipe={average} presence={{ id: "s", position: [x, y, 0] }} />
+        </Scene>
+      );
+      // Far beyond any fixed ground: the quad moves to the figure.
+      const screen = await render(at(30, 0));
+      await expect.poll(() => quad()?.visible, LOAD).toBe(true);
+      await expect.poll(() => Math.abs((quad()?.position.x ?? 0) - 30)).toBeLessThan(0.4);
+      // Standing half a metre up, it casts no shadow on this floor.
+      await screen.rerender(at(30, 0.5));
+      await expect.poll(() => quad()?.visible).toBe(false);
+      // A little off the floor it still casts, more faintly.
+      await screen.rerender(at(30, 0.1));
+      await expect.poll(() => quad()?.visible).toBe(true);
+      await screen.rerender(at(-12, 0));
+      await expect.poll(() => Math.abs((quad()?.position.x ?? 0) + 12)).toBeLessThan(0.4);
+    },
+    LOAD.timeout,
+  );
+
+  it(
+    "shadows only the figures that publish presence",
+    async () => {
+      const registry = createPresenceRegistry();
+      await render(
+        <Scene registry={registry}>
+          <Probe />
+          <StudioStage />
+          <Humanoid recipe={average} position={[0, 0.82, 0]} />
+        </Scene>,
+      );
+      await new Promise((r) => setTimeout(r, 1500));
+      expect(quad()).toBeDefined();
+      expect(quad()?.visible).toBe(false);
+    },
+    LOAD.timeout,
+  );
 });

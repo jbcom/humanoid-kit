@@ -437,6 +437,17 @@ export function Humanoid({
     () => (e: Error) => (onErrorRef.current ? onErrorRef.current(e) : console.error(e)),
     [onErrorRef],
   );
+  // A body pack without the joints presence reads still renders the figure; it
+  // is reported (not thrown, which would take the canvas down) and not published.
+  const lacksPresenceJoints = Boolean(presence && ready && !ready.presenceJoints);
+  useEffect(() => {
+    if (lacksPresenceJoints)
+      report(
+        new Error(
+          "<Humanoid presence> needs the body pack's head, eye, mouth, spine, wrist, finger, ankle and toe joints, and this pack lacks one",
+        ),
+      );
+  }, [lacksPresenceJoints, report]);
   const skin = useMemo(() => new SkinMaterial(), []);
   const geometries = useMemo(() => {
     if (!ready) return null;
@@ -599,7 +610,7 @@ export function Humanoid({
         });
         setFigure(ev);
         ground(ev);
-        presenceSource.current = ready
+        presenceSource.current = ready?.presenceJoints
           ? { evaluation: ev, recipe, joints: ready.presenceJoints }
           : null;
         setShown(true);

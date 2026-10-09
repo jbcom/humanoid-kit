@@ -12,19 +12,30 @@ import type { WorkerRequest, WorkerResponse } from "../../src/worker/protocol.ts
 class InlineWorker {
   onmessage: ((e: MessageEvent<WorkerResponse>) => void) | null = null;
   onerror: ((e: ErrorEvent) => void) | null = null;
-  private readonly handle = createWorkerHandler((data) =>
-    queueMicrotask(() => this.onmessage?.({ data } as MessageEvent<WorkerResponse>)),
-  );
+  private readonly handle: ReturnType<typeof createWorkerHandler>;
+  /** `withoutPresenceJoints` reports the body pack as lacking the joints presence reads. */
+  constructor(withoutPresenceJoints: boolean) {
+    this.handle = createWorkerHandler((reply) => {
+      const data =
+        withoutPresenceJoints && reply.type === "ready"
+          ? { ...reply, presenceJoints: null }
+          : reply;
+      queueMicrotask(() => this.onmessage?.({ data } as MessageEvent<WorkerResponse>));
+    });
+  }
   postMessage(request: WorkerRequest) {
     void this.handle(request);
   }
   terminate() {}
 }
 
-export function inlineWorkerClient(model: ModelOptions = { subdivision: 0 }) {
+export function inlineWorkerClient(
+  model: ModelOptions = { subdivision: 0 },
+  options: { withoutPresenceJoints?: boolean } = {},
+) {
   return new HumanoidWorkerClient(
     { body: bodyPack },
     model,
-    new InlineWorker() as unknown as Worker,
+    new InlineWorker(options.withoutPresenceJoints ?? false) as unknown as Worker,
   );
 }

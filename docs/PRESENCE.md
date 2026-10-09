@@ -46,7 +46,12 @@ dictated by them.
    combine every figure's state and decide.
 4. **Cheap by default.** Continuous state is read on demand (pull);
    discrete changes (enter/leave proximity, joins a group) are events (push).
-   Nothing is computed for a channel nobody subscribes to.
+   Nothing is computed for a channel nobody subscribes to. The per-frame path
+   allocates nothing once figures have joined: a figure's presence is derived
+   once per evaluation and re-placed in place each frame, the registry keeps
+   those objects, proximity pairs are keyed by number, and the shadow's
+   contacts are a reused array. Published objects therefore change under you:
+   copy what you keep.
 5. **Combining is the consumer's job, with helpers.** The library ships
    helpers for the common combinations, for example a ground occlusion field
    that merges footprints with `max` (so overlapping figures darken the floor
@@ -109,13 +114,33 @@ In React, `<Humanoid presence>` registers the figure; `usePresence()` and
   over a uniform array (128 contacts), refreshed right after the registry
   ticks. The alternative was a `DataTexture` filled each frame by sampling
   `sampleGroundOcclusion` on a grid. The shader is resolution independent (no
-  texel blur or grid to size to the ground), uploads a few hundred bytes per
-  frame instead of a texture, and the browser test can compare its pixels with
-  the framework-free function exactly; a texture needs a grid fine enough for a
+  texel blur or grid to size to the ground), uploads one uniform array per
+  frame (128 × vec4 = 2 KiB; three uploads the whole array) instead of a
+  texture, and the browser test can compare its pixels with the
+  framework-free function exactly; a texture needs a grid fine enough for a
   foot-sized contact over a studio-sized ground, re-sampled on the CPU every
   frame. Contacts beyond the 128 slots are ignored (two feet per figure, so 64
   figures), documented and reported by `setContacts`. Without a provider the
   stage keeps drei's `ContactShadows`.
+- **The stage shadows its own floor, for the figures that publish.** The quad
+  sits at the stage's height and is resized each frame to the contacts, so it
+  needs no fixed extent. A contact carries the height of its figure
+  (`ContactPoint.y`), and `groundOcclusion`'s `floorY` fades a figure's contacts
+  out as it rises (or sinks) off that floor and drops them beyond 0.3 m, so a
+  figure on a platform leaves the floor below clean. Under a provider a figure
+  without `presence` casts no stage shadow: the alternative, drei's
+  `ContactShadows`, shadows every object and would darken the published figures
+  twice.
+- **A figure with nothing to publish leaves the registry.** Hidden (the group or
+  an ancestor is not `visible`), tipped so far over that it has no heading on
+  the ground, or not yet evaluated: the publisher returns null and the provider
+  removes the figure, rather than leaving its last placement stale. A hidden
+  figure is not in the world, so it does not shadow, pair or meter. It rejoins
+  when shown again.
+- **A pack without the joints is tolerated.** The worker reports
+  `presenceJoints: null` rather than failing `ready`; such a pack renders, and
+  `<Humanoid presence>` reports the cause through `onError` and publishes
+  nothing (a thrown render error would take the canvas down).
 - **Face metering reports; it does not expose.** Following
   `research/SKIN-RENDERING.md` §4.4, `faceMetering` gives each face's metering
   region, measured reflectance and intended zone (`skinZoneEV = log2(Y /

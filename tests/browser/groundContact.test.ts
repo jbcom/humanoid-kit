@@ -69,8 +69,8 @@ function shadow(points: readonly ContactPoint[]): { at: (x: number, z: number) =
 }
 
 const feetAt = (x: number, z = 0): ContactPoint[] => [
-  { x: x - 0.1, z, radius: 0.6, strength: 0.6 },
-  { x: x + 0.1, z, radius: 0.6, strength: 0.6 },
+  { x: x - 0.1, y: 0, z, radius: 0.6, strength: 0.6 },
+  { x: x + 0.1, y: 0, z, radius: 0.6, strength: 0.6 },
 ];
 
 describe("the pooled ground contact shadow", () => {
@@ -135,6 +135,7 @@ describe("the pooled ground contact shadow", () => {
     const material = new GroundContactMaterial();
     const many = Array.from({ length: MAX_CONTACTS + 5 }, (_, i) => ({
       x: i * 0.01,
+      y: 0,
       z: 0,
       radius: 0.2,
       strength: 0.5,

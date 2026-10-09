@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import {
+  clonePresence,
   type Placement,
   placePresence,
   presenceFromEvaluation,
   presenceJoints,
+  tryPresenceJoints,
 } from "../src/presence/fromEvaluation.ts";
 import type { FigurePresence, Vec3 } from "../src/presence/presence.ts";
 import { createRecipe, type Recipe } from "../src/recipe/recipe.ts";
@@ -153,5 +155,106 @@ describe("presenceFromEvaluation", () => {
     expect(adult(17)).toBe(false);
     expect(adult(18)).toBe(true);
     expect(adult(30)).toBe(true);
+  });
+});
+
+describe("placePresence", () => {
+  const recipe = createRecipe({ macros: { height: 0.8 } });
+  const rest = presence(recipe);
+  const same = (a: FigurePresence, b: FigurePresence) => {
+    expect(a.id).toBe(b.id);
+    for (let k = 0; k < 3; k++) {
+      expect(a.position[k]).toBeCloseTo(b.position[k] as number, 6);
+      expect(a.facing[k]).toBeCloseTo(b.facing[k] as number, 6);
+      expect(a.bounds.min[k]).toBeCloseTo(b.bounds.min[k] as number, 5);
+      expect(a.bounds.max[k]).toBeCloseTo(b.bounds.max[k] as number, 5);
+      for (const name of Object.keys(b.anchors) as (keyof FigurePresence["anchors"])[])
+        expect(a.anchors[name][k]).toBeCloseTo(b.anchors[name][k] as number, 5);
+    }
+    a.footprint.points.forEach((pt, i) => {
+      expect(pt[0]).toBeCloseTo(b.footprint.points[i]?.[0] as number, 5);
+      expect(pt[1]).toBeCloseTo(b.footprint.points[i]?.[1] as number, 5);
+    });
+    expect(a.footprint.radius).toBe(b.footprint.radius);
+  };
+
+  it("re-places a presence that already stands elsewhere, facing any way", () => {
+    const first: Placement = { id: "q", position: [2, 0.4, -1], facing: [1, 0, 0] };
+    const second: Placement = { id: "r", position: [-3, 0, 5], facing: [-0.6, 0, -0.8] };
+    // Chaining a turned source gives what placing the rest directly gives.
+    same(placePresence(placePresence(rest, first), second), placePresence(rest, second));
+    // Bounds stay valid boxes when turned a quarter turn: the figure's height is unchanged.
+    const turned = placePresence(rest, { id: "t", position: [0, 0, 0], facing: [0, 0, -1] });
+    expect(turned.bounds.max[1] - turned.bounds.min[1]).toBeCloseTo(
+      rest.bounds.max[1] - rest.bounds.min[1],
+      5,
+    );
+  });
+
+  it("writes into `out` without allocating, and may re-place a presence in place", () => {
+    const placement: Placement = { id: "q", position: [-1, 0, 4], facing: [0.6, 0, 0.8] };
+    const out = clonePresence(rest);
+    const parts = () => [
+      out.position,
+      out.facing,
+      out.bounds.min,
+      out.anchors.head,
+      out.footprint.points,
+    ];
+    const before = parts();
+    const result = placePresence(rest, placement, out);
+    expect(result).toBe(out);
+    // Every nested object is the one it was: only their numbers changed.
+    const after = parts();
+    for (let i = 0; i < before.length; i++) expect(after[i]).toBe(before[i]);
+    same(out, placePresence(rest, placement));
+    // The source is untouched by placing it elsewhere.
+    same(rest, presence(recipe));
+    // Re-placing a presence onto itself, in place, equals placing a copy.
+    const mine = clonePresence(rest);
+    placePresence(mine, placement, mine);
+    same(mine, placePresence(rest, placement));
+  });
+
+  it("copies deeply when cloned", () => {
+    const copy = clonePresence(rest);
+    same(copy, { ...rest, id: rest.id });
+    copy.anchors.head[1] = 99;
+    (copy.footprint.points[0] as [number, number])[0] = 99;
+    copy.appearance.albedo[0] = 99;
+    expect(rest.anchors.head[1]).not.toBe(99);
+    expect(rest.footprint.points[0]?.[0]).not.toBe(99);
+    expect(rest.appearance.albedo[0]).not.toBe(99);
+  });
+
+  it("refuses a heading with no horizontal component, on either side", () => {
+    expect(() => placePresence(rest, { id: "up", position: [0, 0, 0], facing: [0, 1, 0] })).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      placePresence(rest, { id: "zero", position: [0, 0, 0], facing: [0, 0, 0] }),
+    ).toThrow(RangeError);
+    const lying = { ...rest, facing: [0, 1, 0] as Vec3 };
+    expect(() =>
+      placePresence(lying, { id: "ok", position: [0, 0, 0], facing: [0, 0, 1] }),
+    ).toThrow(RangeError);
+  });
+});
+
+describe("presenceJoints", () => {
+  it("names the missing joint, and the tolerant form says only that presence is unavailable", () => {
+    const missing = {
+      ...assets,
+      manifest: {
+        ...assets.manifest,
+        skeleton: {
+          ...assets.manifest.skeleton,
+          joints: { ...assets.manifest.skeleton.joints, oris01____head: [] },
+        },
+      },
+    };
+    expect(() => presenceJoints(missing)).toThrow(/no joint oris01____head/);
+    expect(tryPresenceJoints(missing)).toBeNull();
+    expect(tryPresenceJoints(assets)).toEqual(presenceJoints(assets));
   });
 });

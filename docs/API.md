@@ -379,7 +379,11 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
   figure's `velocity` and raises proximity events) and
   `onProximity(radius, listener)`, which reports `{ type: "enter" | "leave",
   ids, distance }` for each pair (entering at `radius`, leaving beyond 1.1 ×
-  `radius`) and returns its unsubscribe function.
+  `radius`) and returns its unsubscribe function. The registry keeps the
+  objects it is given by reference, `all()` returns the same read-only array
+  until a figure joins or leaves, and entries are updated in place as figures
+  move, so copy what you keep. `set`, `tick` and `all` allocate nothing once a
+  figure has joined.
 - `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
   chest, hands, feet), `footprint`, `appearance` (measured albedo, luminance,
   specular), `faceRadius`, `adult`.
@@ -392,12 +396,25 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
   (`age >= 18`). `placement` is `{ id, position, facing }`: the ground position
   under the figure and its heading.
 - `presenceJoints(assets)`: the joint vertex lists presence reads from a loaded
-  body pack (small and static, so it can travel with the worker's topology).
-- `placePresence(presence, placement)`: the same presence turned and moved onto
-  a new placement. Re-place a rest presence each frame rather than chaining.
+  body pack (small and static, so it can travel with the worker's topology);
+  it throws an `AssetFormatError` naming a missing joint. `tryPresenceJoints`
+  returns `null` instead, which is what the worker reports for a pack with
+  another skeleton: such a pack still renders, it cannot publish presence.
+- `placePresence(presence, placement, out?)`: the same presence turned and
+  moved onto a new placement. Re-place a rest presence each frame rather than
+  chaining. With `out` (a `clonePresence` of it, or the presence itself) it
+  writes in place and allocates nothing. It throws a `RangeError` for a heading
+  with no horizontal component (a figure pointing straight up).
+- `clonePresence(presence)`: a deep copy, for `placePresence`'s `out`.
 - `presenceGroups(presences, distance)`: ids of the figures standing together.
-- `groundOcclusion(presences, { strength?, spread? })` and
-  `sampleGroundOcclusion(points, x, z)`: contact shadows pooled with `max`.
+- `groundOcclusion(presences, { strength?, spread?, floorY?, reach? }, into?)`
+  and `sampleGroundOcclusion(points, x, z)`: contact shadows pooled with `max`.
+  Each `ContactPoint` is `{ x, y, z, radius, strength }`, with `y` the height
+  of the figure that casts it. With `floorY`, a figure standing on that floor
+  casts at full strength, one more than 2 cm above or below it casts less, and
+  none beyond `reach` metres (default 0.3), so a figure on a platform does not
+  shadow the floor under it. Pass the array a previous call returned as `into`
+  to reuse its contacts (nothing is allocated once it fits).
 - `faceMetering(presences, { position })`: each face's region, reflectance and
   `skinZoneEV`, heaviest first, and the `deepest` face's id.
 
@@ -492,10 +509,18 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   position and heading are read from the group's world transform every frame,
   so moving the group, a parent or a `useFrame` mover moves the presence.
   `position` and `facing` place the group declaratively, replacing its own
-  `position` and `rotation`. The figure is removed from the registry on
-  unmount. Assumes an upright figure at unit scale. The published anchors,
-  footprint and bounds describe the figure at rest (they are derived from its
-  evaluation, not its `pose`); the meshes are lifted by the posed ground offset.
+  `position` and `rotation`. Assumes an upright figure at unit scale. The
+  published anchors, footprint and bounds describe the figure at rest (they are
+  derived from its evaluation, not its `pose`); the meshes are lifted by the
+  posed ground offset.
+- A figure is in the registry only while it is mounted, shown and placed: it
+  leaves while the group or any ancestor is not `visible` (a hidden figure is
+  not in the world), while it is tipped so far over that it has no heading on
+  the ground, and until its first evaluation arrives, and it rejoins when that
+  ends. Each frame re-places one presence in place, allocating nothing.
+- A body pack that lacks a joint presence reads still renders the figure; asking
+  for `presence` then reports an error through `onError` (or the console) and
+  publishes nothing.
 
 ### `<PresenceProvider registry? />`
 
@@ -507,9 +532,11 @@ placement. Render it inside the `<Canvas>`.
 ### `usePresence(id?)`
 
 A live accessor, `{ readonly current }`: one figure's `PublishedPresence` (or
-`undefined` while it has none) for an `id`, every published figure without
+`undefined` while it has none) for an `id`, every published figure (a
+read-only array that stays the same until a figure joins or leaves) without
 one. Read `.current` in `useFrame` or an event handler; it is looked up when
-read, so a figure that walks never re-renders its readers.
+read, so a figure that walks never re-renders its readers. Published objects
+are updated in place each frame: copy what you keep.
 
 ### `useProximity(radius, listener)`
 
@@ -538,9 +565,24 @@ footprint (`groundOcclusion`), drawn by a single shader that takes the
 strongest contact at each point: figures walking together share one shadow that
 separates as they part, and where they overlap the ground is no darker than
 under one figure. `contactShadowOpacity` (0 to 1, default 0.5) is its darkness
-at the centre of a contact. It holds up to 128 contacts (64 figures); more are
-ignored. Outside a provider the stage falls back to drei's `ContactShadows`
-around the origin.
+at the centre of a contact. Its limits:
+
+- Only figures that publish presence (`<Humanoid presence>`) cast it. Under a
+  provider a `<Humanoid>` without `presence` has no contact shadow (drei's
+  `ContactShadows` would shadow everything, and so darken the published
+  figures twice).
+- The floor is the stage's own height (its parent's origin): a figure on it
+  casts fully, one raised or sunk casts less and none beyond 0.3 m, so a
+  figure on a platform does not shadow the floor below. One horizontal floor
+  only.
+- It follows the figures wherever they are (the quad is resized to their
+  contacts every frame, and hidden when there are none), but the stage may be
+  translated, not rotated or scaled.
+- It holds up to 128 contacts (64 figures, two feet each); more are ignored.
+  Every frame uploads the whole contact array to the GPU (128 × vec4, 2 KiB).
+
+Outside a provider the stage falls back to drei's `ContactShadows` around the
+origin.
 
 ## `humanoid-kit/editor`
 

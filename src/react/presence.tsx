@@ -17,9 +17,11 @@ import {
   useMemo,
   useRef,
 } from "react";
-import { type Group, Vector3 } from "three";
+import { type Group, type Object3D, Vector3 } from "three";
 import type { Evaluation } from "../model/humanoidModel.ts";
 import {
+  clonePresence,
+  type Placement,
   type PresenceJoints,
   placePresence,
   presenceFromEvaluation,
@@ -33,13 +35,17 @@ import {
 } from "../presence/presence.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 
-/** Called every frame before the registry ticks; returns the figure's presence, or null while it has none. */
+/**
+ * Called every frame before the registry ticks; returns the figure's presence
+ * (the same object, updated in place, from one frame to the next), or null
+ * while it has none, which takes the figure out of the registry.
+ */
 export type PresencePublisher = () => FigurePresence | null;
 
 interface PresenceContextValue {
   registry: PresenceRegistry;
-  /** Registers a publisher to run each frame; returns the function that stops it. */
-  track(publisher: PresencePublisher): () => void;
+  /** Registers figure `id`'s publisher to run each frame; returns the function that stops it. */
+  track(id: string, publisher: PresencePublisher): () => void;
   /**
    * Registers a consumer to run each frame right after the registry ticks, so
    * it sees every figure's placement from this very frame. Returns the function
@@ -66,33 +72,42 @@ export function PresenceProvider({
   children: ReactNode;
 }) {
   const owned = useMemo(() => registry ?? createPresenceRegistry(), [registry]);
-  const publishers = useRef(new Set<PresencePublisher>());
-  const consumers = useRef(new Set<(registry: PresenceRegistry) => void>());
+  // Plain arrays, walked by index: nothing is allocated per frame.
+  const publishers = useRef<{ id: string; publish: PresencePublisher }[]>([]);
+  const consumers = useRef<((registry: PresenceRegistry) => void)[]>([]);
   const value = useMemo<PresenceContextValue>(
     () => ({
       registry: owned,
-      track(publisher) {
-        publishers.current.add(publisher);
+      track(id, publish) {
+        const entry = { id, publish };
+        publishers.current = [...publishers.current, entry];
         return () => {
-          publishers.current.delete(publisher);
+          publishers.current = publishers.current.filter((e) => e !== entry);
         };
       },
       afterTick(consumer) {
-        consumers.current.add(consumer);
+        consumers.current = [...consumers.current, consumer];
         return () => {
-          consumers.current.delete(consumer);
+          consumers.current = consumers.current.filter((c) => c !== consumer);
         };
       },
     }),
     [owned],
   );
   useFrame((state) => {
-    for (const publish of publishers.current) {
+    const mine = publishers.current;
+    for (let i = 0; i < mine.length; i++) {
+      const { id, publish } = mine[i] as { id: string; publish: PresencePublisher };
       const presence = publish();
       if (presence) owned.set(presence);
+      // A figure with no presence to publish (hidden, tipped over, not yet
+      // evaluated) is not in the registry, rather than stale in it.
+      else owned.remove(id);
     }
     owned.tick(state.clock.elapsedTime);
-    for (const consume of consumers.current) consume(owned);
+    const after = consumers.current;
+    for (let i = 0; i < after.length; i++)
+      (after[i] as (registry: PresenceRegistry) => void)(owned);
   });
   return <PresenceContext.Provider value={value}>{children}</PresenceContext.Provider>;
 }
@@ -107,14 +122,25 @@ export interface PresenceSource {
 const worldPosition = new Vector3();
 const worldHeading = new Vector3();
 
+/** Whether the object and every ancestor is visible: a hidden figure is not in the world. */
+function isShown(object: Object3D): boolean {
+  for (let o: Object3D | null = object; o; o = o.parent) if (!o.visible) return false;
+  return true;
+}
+
 /**
  * Publishes a figure into the nearest registry every frame, for as long as it
- * is mounted (and removes it after). The ground position and heading are read
- * from the group's world transform, so a figure moved by its own `position`,
- * by a parent, or by `useFrame` is followed alike; `source` supplies the rest
- * of the presence, derived once per evaluation. The group's origin is the
- * ground under the figure (`<Humanoid>` lifts its meshes onto it). Assumes an
- * upright figure at unit scale.
+ * is mounted and shown (and removes it after). The ground position and heading
+ * are read from the group's world transform, so a figure moved by its own
+ * `position`, by a parent, or by `useFrame` is followed alike; `source`
+ * supplies the rest of the presence, derived once per evaluation. The group's
+ * origin is the ground under the figure (`<Humanoid>` lifts its meshes onto
+ * it). Assumes an upright figure at unit scale.
+ *
+ * A figure leaves the registry while the group or any ancestor is not
+ * `visible`, while it is tipped so far over that it has no heading on the
+ * ground, and until its first evaluation arrives; it rejoins when that ends.
+ * Each frame re-places one presence in place: nothing is allocated.
  */
 export function usePublishPresence(
   id: string | undefined,
@@ -123,35 +149,40 @@ export function usePublishPresence(
 ): void {
   const ctx = useContext(PresenceContext);
   // Re-derived only when the evaluation changes, not as the figure moves.
-  const rest = useRef<{ source: PresenceSource; presence: FigurePresence } | null>(null);
+  const derived = useRef<{
+    source: PresenceSource;
+    rest: FigurePresence;
+    placed: FigurePresence;
+  } | null>(null);
   useEffect(() => {
     if (!ctx || id === undefined) return;
+    const placement: Placement = { id, position: [0, 0, 0], facing: [0, 0, 1] };
     const publish: PresencePublisher = () => {
       const g = group.current;
       const s = source.current;
-      if (!g || !s) return null;
-      if (rest.current?.source !== s)
-        rest.current = {
-          source: s,
-          presence: presenceFromEvaluation({
-            evaluation: s.evaluation,
-            recipe: s.recipe,
-            joints: s.joints,
-            placement: { id, position: [0, 0, 0], facing: [0, 0, 1] },
-          }),
-        };
+      if (!g || !s || !isShown(g)) return null;
+      if (derived.current?.source !== s) {
+        const rest = presenceFromEvaluation({
+          evaluation: s.evaluation,
+          recipe: s.recipe,
+          joints: s.joints,
+          placement: { id, position: [0, 0, 0], facing: [0, 0, 1] },
+        });
+        derived.current = { source: s, rest, placed: clonePresence(rest) };
+      }
       g.updateWorldMatrix(true, false);
       worldPosition.setFromMatrixPosition(g.matrixWorld);
       worldHeading.set(0, 0, 1).transformDirection(g.matrixWorld);
       // A figure tipped onto its back has no heading on the ground to publish.
       if (Math.hypot(worldHeading.x, worldHeading.z) < 1e-6) return null;
-      return placePresence(rest.current.presence, {
-        id,
-        position: [worldPosition.x, worldPosition.y, worldPosition.z],
-        facing: [worldHeading.x, 0, worldHeading.z],
-      });
+      placement.position[0] = worldPosition.x;
+      placement.position[1] = worldPosition.y;
+      placement.position[2] = worldPosition.z;
+      placement.facing[0] = worldHeading.x;
+      placement.facing[2] = worldHeading.z;
+      return placePresence(derived.current.rest, placement, derived.current.placed);
     };
-    const untrack = ctx.track(publish);
+    const untrack = ctx.track(id, publish);
     return () => {
       untrack();
       ctx.registry.remove(id);
@@ -178,10 +209,10 @@ export interface PresenceRef<T> {
  */
 export function usePresence(id: string): PresenceRef<PublishedPresence | undefined>;
 /** A live accessor to every published figure. */
-export function usePresence(): PresenceRef<PublishedPresence[]>;
+export function usePresence(): PresenceRef<readonly PublishedPresence[]>;
 export function usePresence(
   id?: string,
-): PresenceRef<PublishedPresence | PublishedPresence[] | undefined> {
+): PresenceRef<PublishedPresence | readonly PublishedPresence[] | undefined> {
   const registry = usePresenceRegistry();
   return useMemo(
     () => ({

@@ -166,7 +166,11 @@ function Api({
           radius: p.footprint.radius,
         })),
       expectedShadow: (x, z) =>
-        sampleGroundOcclusion(groundOcclusion(registry.all(), { strength: SHADOW_OPACITY }), x, z),
+        sampleGroundOcclusion(
+          groundOcclusion(registry.all(), { strength: SHADOW_OPACITY, floorY: 0 }),
+          x,
+          z,
+        ),
       groundPixel: (x, z) => {
         v.set(x, 0, z).project(camera);
         return [(v.x * 0.5 + 0.5) * canvas.width, (-v.y * 0.5 + 0.5) * canvas.height];

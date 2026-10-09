@@ -24,8 +24,12 @@ export interface ReadyInfo {
    * units. Each evaluation carries the bones' rest heads for its figure.
    */
   rig: RigData & { parents: Int16Array; skin: RigSkin };
-  /** The joints presence reads (`presenceFromEvaluation`), so the main thread needs no packs. */
-  presenceJoints: PresenceJoints;
+  /**
+   * The joints presence reads (`presenceFromEvaluation`), so the main thread
+   * needs no packs; null when the body pack lacks one (such a pack renders but
+   * cannot publish presence).
+   */
+  presenceJoints: PresenceJoints | null;
   adultAnatomyLoaded: boolean;
 }
 

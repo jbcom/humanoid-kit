@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
+import { budget } from "./budget.ts";
 
 /** A light ground, so a shadow on it is measurable (the default studio ground is near black). */
 const GROUND = "c8c8c8";
@@ -92,13 +93,13 @@ async function save(page: Page, name: string) {
 
 test.describe("presence in the studio", () => {
   test.use({ viewport: { width: 640, height: 480 } });
-  test.setTimeout(5 * 60_000);
+  test.setTimeout(budget(180_000));
 
   test("two figures walking together share one shadow that separates as they part", async ({
     page,
   }) => {
     await openSilentGame(page, "./", { scene: "walk", bg: GROUND });
-    await page.locator('[data-figure="ready"]').waitFor({ timeout: 120_000 });
+    await page.locator('[data-figure="ready"]').waitFor({ timeout: budget(120_000) });
 
     // Walking: both figures move toward the camera at the same pace, and the
     // registry measured it.
@@ -135,7 +136,7 @@ test.describe("presence in the studio", () => {
 
   test("where figures overlap the ground is no darker than under one figure", async ({ page }) => {
     await openSilentGame(page, "./", { scene: "walk", bg: GROUND });
-    await page.locator('[data-figure="ready"]').waitFor({ timeout: 120_000 });
+    await page.locator('[data-figure="ready"]').waitFor({ timeout: budget(120_000) });
 
     // Two figures with the same feet, standing on the same spot: their soles coincide.
     await page.evaluate(() => window.hkWalk?.setTwins(true));

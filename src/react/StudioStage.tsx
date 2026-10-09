@@ -4,11 +4,13 @@
  * 3.4:1, a rim light behind, a faint studio environment for reflections, and a
  * contact shadow on the floor.
  *
+ * Inside a `PresenceProvider` the contact shadow is the pooled ground field of
+ * every figure that publishes presence (presence is what tells the stage where
+ * the figures stand), and only of those; without a provider it falls back to
+ * drei's `ContactShadows` around the origin.
+ *
  * Fill and ambient are neutral on purpose: cool fill pushes deep skin toward
- * grey ("ashy"). Inside a `PresenceProvider` the contact shadow is the pooled
- * ground field of every published figure (presence is what tells the stage
- * where the figures stand); without one it falls back to drei's
- * `ContactShadows` around the origin. Render it with `STUDIO_TONE_MAPPING` and `STUDIO_EXPOSURE`.
+ * grey ("ashy"). Render it with `STUDIO_TONE_MAPPING` and `STUDIO_EXPOSURE`.
  * They were chosen by measuring rendered faces against the measured albedo at
  * five melanin levels: Neutral keeps lightness, hue and chroma within a few
  * units with the same offset at every tone, while AgX lifted the deepest skin
@@ -20,10 +22,10 @@
  */
 import { ContactShadows } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
-import { useEffect, useMemo } from "react";
-import { NeutralToneMapping, PMREMGenerator } from "three";
+import { useEffect, useMemo, useRef } from "react";
+import { type Mesh, NeutralToneMapping, PMREMGenerator } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { groundOcclusion } from "../presence/presence.ts";
+import { type ContactPoint, groundOcclusion } from "../presence/presence.ts";
 import { GroundContactMaterial } from "../render/groundContact.ts";
 import { usePresenceContext } from "./presence.tsx";
 
@@ -70,8 +72,8 @@ function RoomLighting({ intensity }: { intensity: number }) {
   return null;
 }
 
-/** Side of the square the pooled contact shadow is drawn on, metres: more than any studio shot sees. */
-const GROUND_SIZE = 40;
+/** How far the shadow quad floats above the stage's floor, so it does not fight the soles for depth. */
+const SHADOW_LIFT = 0.0005;
 
 /**
  * The contact shadow of every published figure as one field on the ground: the
@@ -79,22 +81,69 @@ const GROUND_SIZE = 40;
  * shader), so figures walking together share a shadow that separates as they
  * part and overlap never darkens twice. Redrawn each frame from the registry,
  * right after it ticks.
+ *
+ * The floor is the stage's own height (its parent's origin): a figure standing
+ * on it casts fully, one raised or sunk casts less and none beyond 0.3 m, so a
+ * figure on a platform does not shadow the floor below. The quad is resized
+ * each frame to fit the contacts, wherever they are, and hidden when there are
+ * none. The stage may be translated but not rotated or scaled.
  */
 function PooledContactShadows({ opacity }: { opacity: number }) {
   const presence = usePresenceContext();
   const material = useMemo(() => new GroundContactMaterial(), []);
+  const quad = useRef<Mesh>(null);
+  const contacts = useRef<ContactPoint[]>([]);
   useEffect(() => () => material.dispose(), [material]);
   useEffect(
     () =>
       presence?.afterTick((registry) => {
-        material.setContacts(groundOcclusion(registry.all(), { strength: opacity }));
+        const mesh = quad.current;
+        if (!mesh) return;
+        mesh.updateWorldMatrix(true, false);
+        const floorY = mesh.matrixWorld.elements[13] - SHADOW_LIFT;
+        const list = groundOcclusion(
+          registry.all(),
+          { strength: opacity, floorY },
+          contacts.current,
+        );
+        mesh.visible = list.length > 0;
+        if (list.length === 0) return;
+        let minX = Number.POSITIVE_INFINITY;
+        let maxX = Number.NEGATIVE_INFINITY;
+        let minZ = Number.POSITIVE_INFINITY;
+        let maxZ = Number.NEGATIVE_INFINITY;
+        for (let i = 0; i < list.length; i++) {
+          const c = list[i] as ContactPoint;
+          if (c.x - c.radius < minX) minX = c.x - c.radius;
+          if (c.x + c.radius > maxX) maxX = c.x + c.radius;
+          if (c.z - c.radius < minZ) minZ = c.z - c.radius;
+          if (c.z + c.radius > maxZ) maxZ = c.z + c.radius;
+        }
+        // The quad lives in the stage's frame; the contacts are in the world's.
+        const parent = mesh.parent?.matrixWorld.elements;
+        mesh.position.set(
+          (minX + maxX) / 2 - (parent?.[12] ?? 0),
+          SHADOW_LIFT,
+          (minZ + maxZ) / 2 - (parent?.[14] ?? 0),
+        );
+        const side = Math.max(maxX - minX, maxZ - minZ);
+        mesh.scale.set(side, side, 1);
+        material.setContacts(list);
       }),
     [presence, material, opacity],
   );
   return (
     // Drawn before other transparent parts (eyes, hair): the ground is behind them all.
-    <mesh rotation-x={-Math.PI / 2} position-y={0.0005} renderOrder={-1} material={material}>
-      <planeGeometry args={[GROUND_SIZE, GROUND_SIZE]} />
+    <mesh
+      ref={quad}
+      name="hk-ground-contact"
+      rotation-x={-Math.PI / 2}
+      position-y={SHADOW_LIFT}
+      renderOrder={-1}
+      material={material}
+      visible={false}
+    >
+      <planeGeometry args={[1, 1]} />
     </mesh>
   );
 }

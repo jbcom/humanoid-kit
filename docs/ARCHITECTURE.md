@@ -398,22 +398,25 @@ the rendered body's soles, bounds cover every surface point, appearance is
 `skinAlbedo` of the recipe's skin, and `adult` is the age policy's verdict.
 The evaluation is in the figure's own frame; `placePresence` turns it about its
 ground position and moves it onto a `Placement`, so a moving figure re-places
-one rest presence each frame instead of being re-derived. The registry, the
-helpers (`groundOcclusion`, `faceMetering`, `presenceGroups`) are pure.
+one rest presence each frame instead of being re-derived (into a preallocated
+copy: the per-frame path allocates nothing). The registry, the helpers
+(`groundOcclusion`, `faceMetering`, `presenceGroups`) are pure.
 
 React only publishes into and reads from the registry. `<PresenceProvider>`
 owns it and, once per frame, runs every mounted figure's publisher and then
 ticks the registry; a `<Humanoid presence>` publisher re-places the figure's
 rest presence (derived once per evaluation) on the group's world transform, so
 a figure moved by anything in the scene graph is followed with no props
-changing. Readers pull (`usePresence` is a live accessor) and subscribe only to
-discrete events (`useProximity`).
+changing. A figure that is hidden, tipped over or not yet evaluated returns
+null and is removed from the registry. Readers pull (`usePresence` is a live
+accessor) and subscribe only to discrete events (`useProximity`).
 
 `StudioStage` is the first consumer. Inside a provider it draws the contact
 shadow as one quad whose fragment shader (`GroundContactMaterial`) evaluates
 `sampleGroundOcclusion`'s formula (a smoothstep falloff per contact, combined
 with `max`) over a uniform array refreshed right after each tick from
-`groundOcclusion(registry.all())`. One pass over one quad is what makes the
+`groundOcclusion(registry.all(), { floorY }, contacts)`, where `floorY` is the
+stage's own height and the quad is resized to the contacts each frame. One pass over one quad is what makes the
 pool: separate per-figure shadows would blend over each other and darken the
 overlap twice. A browser test renders the shader from above and compares its
 pixels with `sampleGroundOcclusion`; the Playwright spec `e2e/presence.spec.ts`

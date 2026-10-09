@@ -72,6 +72,20 @@ export function presenceJoints(assets: HumanoidAssets): PresenceJoints {
   return out;
 }
 
+/**
+ * `presenceJoints`, or null when the pack lacks one of the joints (a pack with
+ * another skeleton): such a pack still loads and renders, it just cannot
+ * publish presence. Only a missing joint is tolerated; anything else throws.
+ */
+export function tryPresenceJoints(assets: HumanoidAssets): PresenceJoints | null {
+  try {
+    return presenceJoints(assets);
+  } catch (e) {
+    if (e instanceof AssetFormatError) return null;
+    throw e;
+  }
+}
+
 const centroid = (control: Float32Array, verts: readonly number[]): Vec3 => {
   let x = 0;
   let y = 0;
@@ -209,48 +223,146 @@ export function presenceFromEvaluation(input: {
  * Moves a presence onto a new placement (turning about its ground position),
  * keeping everything else. Re-place from a figure's rest presence rather than
  * chaining: a turned figure's bounds are the box around the turned box.
+ *
+ * Writes into `out` when given (a `clonePresence` of the presence, or the
+ * presence itself) and allocates nothing, so a moving figure is re-placed every
+ * frame for free; otherwise returns a new presence. Throws a `RangeError` when
+ * either heading has no horizontal component (a figure pointing straight up).
  */
-export function placePresence(presence: FigurePresence, placement: Placement): FigurePresence {
+export function placePresence(
+  presence: FigurePresence,
+  placement: Placement,
+  out?: FigurePresence,
+): FigurePresence {
+  const target = out ?? clonePresence(presence);
   const [fx, , fz] = placement.facing;
   const len = Math.hypot(fx, fz);
   if (!(len > 1e-9)) throw new RangeError("facing must have a horizontal component");
-  const facing: Vec3 = [fx / len, 0, fz / len];
+  const nfx = fx / len;
+  const nfz = fz / len;
   // Rotation from the presence's own heading to the new one, about the vertical.
-  const [ox, , oz] = presence.facing;
-  const olen = Math.hypot(ox, oz);
-  const [os, oc] = [ox / olen, oz / olen];
-  const cos = facing[2] * oc + facing[0] * os;
-  const sin = facing[0] * oc - facing[2] * os;
-  const [px, py, pz] = presence.position;
-  const [nx, ny, nz] = placement.position;
-  const move = ([x, y, z]: Vec3): Vec3 => {
-    const dx = x - px;
-    const dz = z - pz;
-    return [nx + dx * cos + dz * sin, ny + (y - py), nz - dx * sin + dz * cos];
-  };
-  const { min, max } = presence.bounds;
-  const corners = [0, 1, 2, 3, 4, 5, 6, 7].map((c) =>
-    move([c & 1 ? max[0] : min[0], c & 2 ? max[1] : min[1], c & 4 ? max[2] : min[2]]),
-  );
-  const anchors = Object.fromEntries(
-    Object.entries(presence.anchors).map(([name, p]) => [name, move(p)]),
-  ) as Record<AnchorName, Vec3>;
+  const olen = Math.hypot(presence.facing[0], presence.facing[2]);
+  if (!(olen > 1e-9)) throw new RangeError("the presence's own facing must be horizontal");
+  const os = presence.facing[0] / olen;
+  const oc = presence.facing[2] / olen;
+  // Everything below reads the source into scalars before writing, so `out`
+  // may be the presence itself.
+  const f = frame;
+  f.cos = nfz * oc + nfx * os;
+  f.sin = nfx * oc - nfz * os;
+  f.px = presence.position[0];
+  f.py = presence.position[1];
+  f.pz = presence.position[2];
+  f.nx = placement.position[0];
+  f.ny = placement.position[1];
+  f.nz = placement.position[2];
+
+  const lo = presence.bounds.min;
+  const hi = presence.bounds.max;
+  const x0 = lo[0];
+  const y0 = lo[1];
+  const z0 = lo[2];
+  const x1 = hi[0];
+  const y1 = hi[1];
+  const z1 = hi[2];
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+  for (let c = 0; c < 8; c++) {
+    const dx = (c & 1 ? x1 : x0) - f.px;
+    const dz = (c & 4 ? z1 : z0) - f.pz;
+    const x = f.nx + dx * f.cos + dz * f.sin;
+    const y = f.ny + ((c & 2 ? y1 : y0) - f.py);
+    const z = f.nz - dx * f.sin + dz * f.cos;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (z < minZ) minZ = z;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    if (z > maxZ) maxZ = z;
+  }
+  target.bounds.min[0] = minX;
+  target.bounds.min[1] = minY;
+  target.bounds.min[2] = minZ;
+  target.bounds.max[0] = maxX;
+  target.bounds.max[1] = maxY;
+  target.bounds.max[2] = maxZ;
+
+  for (let a = 0; a < ANCHOR_NAMES.length; a++) {
+    const name = ANCHOR_NAMES[a] as AnchorName;
+    const p = presence.anchors[name];
+    move(p[0], p[1], p[2], target.anchors[name]);
+  }
+
+  const points = presence.footprint.points;
+  const placed = target.footprint.points;
+  // `placed` is `points` itself when re-placing in place; otherwise it is made to fit.
+  while (placed.length < points.length) placed.push([0, 0]);
+  placed.length = points.length;
+  for (let i = 0; i < points.length; i++) {
+    const [x, z] = points[i] as [number, number];
+    const dx = x - f.px;
+    const dz = z - f.pz;
+    const slot = placed[i] as [number, number];
+    slot[0] = f.nx + dx * f.cos + dz * f.sin;
+    slot[1] = f.nz - dx * f.sin + dz * f.cos;
+  }
+
+  target.id = placement.id;
+  target.position[0] = f.nx;
+  target.position[1] = f.ny;
+  target.position[2] = f.nz;
+  target.facing[0] = nfx;
+  target.facing[1] = 0;
+  target.facing[2] = nfz;
+  target.footprint.radius = presence.footprint.radius;
+  target.appearance = presence.appearance;
+  target.faceRadius = presence.faceRadius;
+  target.adult = presence.adult;
+  return target;
+}
+
+/** The anchors, in a fixed order, so placing visits them without building a key list. */
+const ANCHOR_NAMES: readonly AnchorName[] = [
+  "head",
+  "face",
+  "chest",
+  "leftHand",
+  "rightHand",
+  "leftFoot",
+  "rightFoot",
+];
+
+/** The turn and move `placePresence` applies, held between calls so a placement allocates nothing. */
+const frame = { px: 0, py: 0, pz: 0, nx: 0, ny: 0, nz: 0, cos: 1, sin: 0 };
+
+function move(x: number, y: number, z: number, into: Vec3): void {
+  const dx = x - frame.px;
+  const dz = z - frame.pz;
+  into[0] = frame.nx + dx * frame.cos + dz * frame.sin;
+  into[1] = frame.ny + (y - frame.py);
+  into[2] = frame.nz - dx * frame.sin + dz * frame.cos;
+}
+
+/** A deep copy: the presence `placePresence` writes into as its `out`. */
+export function clonePresence(p: FigurePresence): FigurePresence {
+  const anchors = {} as Record<AnchorName, Vec3>;
+  for (const name of ANCHOR_NAMES) anchors[name] = [...p.anchors[name]];
   return {
-    ...presence,
-    id: placement.id,
-    position: [...placement.position],
-    facing,
-    bounds: {
-      min: [0, 1, 2].map((k) => Math.min(...corners.map((c) => c[k] as number))) as Vec3,
-      max: [0, 1, 2].map((k) => Math.max(...corners.map((c) => c[k] as number))) as Vec3,
-    },
+    id: p.id,
+    position: [...p.position],
+    facing: [...p.facing],
+    bounds: { min: [...p.bounds.min], max: [...p.bounds.max] },
     anchors,
     footprint: {
-      points: presence.footprint.points.map(([x, z]) => {
-        const [mx, , mz] = move([x, py, z]);
-        return [mx, mz] as [number, number];
-      }),
-      radius: presence.footprint.radius,
+      points: p.footprint.points.map(([x, z]) => [x, z] as [number, number]),
+      radius: p.footprint.radius,
     },
+    appearance: { ...p.appearance, albedo: [...p.appearance.albedo] },
+    faceRadius: p.faceRadius,
+    adult: p.adult,
   };
 }
