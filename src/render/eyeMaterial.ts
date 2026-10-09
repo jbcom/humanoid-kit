@@ -24,6 +24,9 @@ export const DEFAULT_EYE_APPEARANCE: Readonly<EyeAppearance> = {
   scleraWarmth: 0.5,
 };
 
+/** Fraction of the environment's specular reflection the eye keeps (GLSL float literal). */
+const ENV_SPECULAR = "0.06";
+
 export class EyeMaterial extends MeshPhysicalMaterial {
   readonly hkUniforms = {
     hkIris: { value: new Color() },
@@ -41,8 +44,6 @@ export class EyeMaterial extends MeshPhysicalMaterial {
       // alpha test is robust without MSAA; the eyeball's clearcoat supplies the wet
       // highlight a cornea would.
       alphaTest: 0.5,
-      // A cornea shows a small sharp catchlight, not the whole environment.
-      envMapIntensity: 0.35,
     });
     this.setAppearance(DEFAULT_EYE_APPEARANCE);
   }
@@ -60,13 +61,30 @@ export class EyeMaterial extends MeshPhysicalMaterial {
 
   override onBeforeCompile: MeshPhysicalMaterial["onBeforeCompile"] = (shader) => {
     Object.assign(shader.uniforms, this.hkUniforms);
-    if (!shader.fragmentShader.includes("#include <map_fragment>")) {
-      throw new Error("EyeMaterial: three's map_fragment chunk moved");
+    for (const chunk of ["map_fragment", "lights_fragment_maps"]) {
+      if (!shader.fragmentShader.includes(`#include <${chunk}>`)) {
+        throw new Error(`EyeMaterial: three's ${chunk} chunk moved`);
+      }
     }
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
         "#include <common>\nuniform vec3 hkIris;\nuniform vec3 hkSclera;",
+      )
+      // Cause of the grey crescent across one iris: with scene.environment set, three
+      // ignores material.envMapIntensity (it uses scene.environmentIntensity), so the
+      // mirror-like cornea reflected the studio softbox at full strength, and only the
+      // eye whose normals line up with it showed a ring. Direct lights still give the
+      // small sharp catchlight; the reflected environment is scaled down here instead.
+      .replace(
+        "#include <lights_fragment_maps>",
+        `#include <lights_fragment_maps>
+	#if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )
+		radiance *= ${ENV_SPECULAR};
+		#ifdef USE_CLEARCOAT
+			clearcoatRadiance *= ${ENV_SPECULAR};
+		#endif
+	#endif`,
       )
       .replace(
         "#include <map_fragment>",
@@ -87,6 +105,6 @@ export class EyeMaterial extends MeshPhysicalMaterial {
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-eye-1";
+    return "humanoid-kit-eye-2";
   }
 }
