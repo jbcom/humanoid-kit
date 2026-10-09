@@ -1090,6 +1090,36 @@ procedural coily style** (instanced curl cards or strand clumps over the same
 scalp and growth fields), which is a milestone of its own. Evidence and the
 audit are in `docs/evidence/hair.md`.
 
+## Body hair
+
+**Use cases.** Every figure carries the body hair of its age and sex, at every
+skin tone, without a choice being made: vellus everywhere from infancy, and
+terminal hair coming in through adolescence and thinning and greying in old
+age. A creator can thin, thicken or shave a region and pick a beard. Axillary
+and pubic hair exist for adults only.
+
+**Requirements.** It reuses what exists: the skin layer stack for what lies on
+the skin, the hair pack's cards and material for what stands off it, and the
+hair colour model for its colour. No second hair system. Densities and timing
+cite measurements or are marked as choices (`docs/research/BODY-HAIR.md`).
+Old recipes evaluate and serialise as before.
+
+**Decisions (2026-10-09).**
+
+- *One pure model, two ways of drawing.* `src/surface/bodyHair.ts` says how
+  much terminal hair each region group carries (coverage 0..1, the
+  Ferriman-Gallwey grade over 4), from the gender macro read as the androgen
+  level, the age (a ramp per group on the Tanner ages, a thinning after 55) and
+  the recipe's multipliers; and what colour (the figure's hair pigments, darker
+  on the face and pubis, lighter on the limbs, greyed with age later on the
+  body than the beard). The groups follow the modified FG regions, merged to
+  what a picker offers: face, chest, abdomen, back, buttocks, arms, legs, and the
+  adult-only axillary and pubic.
+- *Adult-only groups are gated in the model itself.* `defaultBodyHairCoverage`
+  returns 0 for axillary and pubic hair unless the age is an adult's (`age >=
+  ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
+  scales the default, so no recipe value can add them under 18.
+
 ## Presence
 
 `src/presence` is what a figure publishes about itself for the scene around it

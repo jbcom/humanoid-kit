@@ -444,6 +444,25 @@ compute what the renderer will do.
   values (`black` to `white`), `DEFAULT_HAIR_COLOUR` is `brown`, and
   `hairTint(colour)` is the material colour that makes a packed strand map
   (mean `HAIR_STRAND_MEAN`) render as that albedo.
+- Body hair (research/BODY-HAIR.md): `BODY_HAIR_GROUPS` (`face`, `chest`,
+  `abdomen`, `back`, `buttocks`, `arms`, `legs`, and the adult-only `axillary`
+  and `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`),
+  `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
+  `defaultBodyHairCoverage(group, age, gender)` is a group's terminal-hair
+  coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years and
+  the gender macro read as the androgen level: 0 before puberty, rising through
+  adolescence (`BODY_HAIR_MATURITY`), thinning in old age
+  (`BODY_HAIR_SENESCENCE`), between `BODY_HAIR_COVERAGE`'s female and male
+  ends. An adult-only group is 0 under 18 and for an age that is not a number.
+  `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's density
+  multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage; it never
+  adds hair where the default has none). `beardStyle(input)` is the recipe's
+  style, or `stubble` where the face's coverage is a quarter or more and `none`
+  elsewhere. `bodyHairColour(group, input)` is the figure's hair pigments
+  darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
+  fibre diameter and drawn length) and at least as grey as ageing makes them
+  (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an
+  override as given.
 - CIELAB conversions: `labFromLinear`, `linearFromLab`, `lchFromLab`,
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
