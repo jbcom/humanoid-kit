@@ -6,6 +6,7 @@
 import { isAdultLayer, type SkinLayer } from "../layers.ts";
 import { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER } from "./adult.ts";
 import { AREA_SKIN_LAYERS } from "./areas.ts";
+import { BODY_HAIR_LAYERS } from "./bodyHair.ts";
 import { CREASE_LAYERS } from "./creases.ts";
 import { EXPRESSION_LINE_LAYERS } from "./faceLines.ts";
 import { MOUTH_INTERIOR_LAYER } from "./mouth.ts";
@@ -46,6 +47,8 @@ const BODY_SKIN_LAYERS: readonly SkinLayer[] = [
   SWEAT_EXERCISE_LAYER,
   ...CREASE_LAYERS,
   ...EXPRESSION_LINE_LAYERS,
+  // Body hair lies over the skin's own colour, lines and creases.
+  ...BODY_HAIR_LAYERS,
 ];
 
 /**
@@ -70,6 +73,7 @@ export const SKIN_LAYER_TARGETS: readonly string[] = targetsOf(
 );
 
 export * from "./areas.ts";
+export * from "./bodyHair.ts";
 export * from "./creases.ts";
 export * from "./faceLines.ts";
 export * from "./feet.ts";

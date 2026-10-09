@@ -233,8 +233,11 @@ in men (derived from two abstract means, indirect).
 
 **Consequence for the sculpt.** The `mound` control's range is sized by the one
 verified contrast, about 1.5 cm of soft-tissue thickness between BMI bands, and
-the ±1 SD of the monal height (about 1 cm), applied in the surface normal
-direction over a patch of the reported width and length; the shape of its edge
-and the male range are modelled and labelled uncalibrated in the pack, as the
-genital colour is, until a verified source exists. The mound is a feature of
-every adult figure at any gender position, not of one sex.
+the ±1 SD of the monal height (about 1 cm), as a broad pad whose extent at half
+height is the reported width and length and which falls to nothing over twice
+that (a pad whose whole extent were the reported size would read as a lump, since
+the reported size is what is visible as a pad); the shape of its profile, its
+lean to the forward axis and the male range are modelled and labelled
+uncalibrated in the pack, as the genital colour is, until a verified source
+exists. The mound is a feature of every adult figure at any gender position, not
+of one sex.
