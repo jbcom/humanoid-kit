@@ -42,7 +42,8 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
   the client keeps only the latest request, so dragging a slider never builds a
   backlog.
 - **React Three Fiber bindings.** `humanoid-kit/react` provides
-  `HumanoidProvider`, `Humanoid`, `useHumanoidClient` and `useHumanoidReady`.
+  `HumanoidProvider`, `Humanoid`, `useHumanoidClient` and `useHumanoidReady`,
+  and the presence bindings (`PresenceProvider`, `usePresence`, `useProximity`).
 - **Clothing, as an optional pack.** `humanoid-kit-clothing` carries MakeHuman
   garments bound to the base mesh, so they follow every shape and pose. A recipe
   names what a figure wears (`outfit`); garments layer, hide the skin they cover
@@ -190,7 +191,7 @@ const assets = await loadHumanoidAssets({ body: bodyPack, adultAnatomy: adultAna
 | Entry point | Contents | Needs React |
 | --- | --- | --- |
 | `humanoid-kit` | Asset loading and parsing, recipes, the age policy, macro and region model, `HumanoidModel`, subdivision, the surface builder and `HumanoidWorkerClient` | no |
-| `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady` | yes |
+| `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady`, `PresenceProvider`, `usePresence`, `usePresenceRegistry`, `useProximity` | yes |
 | `humanoid-kit/worker` | The worker module that `HumanoidWorkerClient` starts by default | no |
 
 See the [API reference](https://jbcom.github.io/humanoid-kit/API/) and the

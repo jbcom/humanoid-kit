@@ -21,6 +21,7 @@ import {
 } from "../format/assetFormat.ts";
 import { buildFeatureMap } from "../makehuman/features.ts";
 import { HumanoidModel } from "../model/humanoidModel.ts";
+import { tryPresenceJoints } from "../presence/fromEvaluation.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { rigData } from "../rig/pose.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
@@ -77,6 +78,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           modifiers: [...assets.modifiers.values()],
           sliders: assets.sliders,
           rig: { ...rigData(assets), parents: model.boneParents(), skin: model.rigSkin() },
+          presenceJoints: tryPresenceJoints(assets),
           adultAnatomyLoaded: assets.adultAnatomyLoaded,
           ...(assets.adultAnatomyManifest?.anatomy && {
             anatomy: assets.adultAnatomyManifest.anatomy,

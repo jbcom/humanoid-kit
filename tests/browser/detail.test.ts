@@ -4,96 +4,19 @@
  * pixel, and surface layers changing roughness and specular exactly as the
  * material's own parameters would.
  */
-import {
-  BufferAttribute,
-  DataUtils,
-  DirectionalLight,
-  FloatType,
-  Mesh,
-  OrthographicCamera,
-  PlaneGeometry,
-  Scene,
-  WebGLRenderer,
-  WebGLRenderTarget,
-} from "three";
+import { DataUtils } from "three";
 import { afterAll, describe, expect, it } from "vitest";
-import { buildLayerAtlas, type LayerAtlasSource } from "../../src/render/layerAtlas.ts";
-import { SkinMaterial, UV_SCALE_ATTRIBUTE } from "../../src/render/skinMaterial.ts";
-import type { SkinLayer, SkinPaintInput } from "../../src/surface/layers.ts";
+import type { SkinLayer } from "../../src/surface/layers.ts";
+import {
+  disposeLayerRender,
+  mean,
+  noFields,
+  renderLayers as render,
+  SIZE,
+  variance,
+} from "./layerRender.ts";
 
-const SIZE = 128;
-const renderer = new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
-renderer.setSize(SIZE, SIZE, false);
-const target = new WebGLRenderTarget(SIZE, SIZE, { type: FloatType });
-const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
-camera.position.set(0, 0, 5);
-afterAll(() => {
-  target.dispose();
-  renderer.dispose();
-});
-
-const appearance: SkinPaintInput = {
-  tone: { melanin: 0.4, haemoglobin: 0.5, undertone: 0, override: null },
-  flush: 0,
-  lips: 0.5,
-  areola: 0.5,
-  signals: {},
-};
-const noFields = () => ({ mask: new Float32Array(0), coord: null });
-
-/**
- * Renders a 2 m plane (UV 0..1, so 2 m per UV unit) with `layers`, every layer
- * fully masked with its coordinate running along u; lit by a grazing light so
- * relief shows. Returns the red channel, row-major.
- */
-function render(
-  layers: SkinLayer[],
-  options: { light?: [number, number, number]; tune?: (m: SkinMaterial) => void } = {},
-): Float32Array {
-  const plane = new PlaneGeometry(2, 2);
-  const uv = plane.getAttribute("uv");
-  plane.setAttribute(
-    UV_SCALE_ATTRIBUTE,
-    new BufferAttribute(new Float32Array(uv.count).fill(2), 1),
-  );
-  const source: LayerAtlasSource = {
-    uvs: uv.array as Float32Array,
-    index: plane.getIndex()?.array as Uint16Array,
-    vertexCount: uv.count,
-    layerFields: new Float32Array(layers.length * uv.count * 2),
-    layers: layers.map((l) => l.id),
-  };
-  for (let v = 0; v < uv.count; v++)
-    layers.forEach((_, l) => {
-      source.layerFields[(l * uv.count + v) * 2] = 1;
-      source.layerFields[(l * uv.count + v) * 2 + 1] = uv.getX(v);
-    });
-  const atlas = layers.length ? buildLayerAtlas(renderer, source, 256) : null;
-  const material = new SkinMaterial(layers);
-  material.setAppearance(appearance);
-  material.setLayerAtlas(atlas?.texture ?? null);
-  material.normalMap = null; // the pore map would add its own relief
-  options.tune?.(material);
-  const scene = new Scene();
-  scene.add(new Mesh(plane, material));
-  const light = new DirectionalLight(0xffffff, 3);
-  light.position.set(...(options.light ?? [1, 0, 0.35]));
-  scene.add(light);
-  renderer.setRenderTarget(target);
-  renderer.render(scene, camera);
-  const px = new Float32Array(SIZE * SIZE * 4);
-  renderer.readRenderTargetPixels(target, 0, 0, SIZE, SIZE, px);
-  renderer.setRenderTarget(null);
-  atlas?.dispose();
-  material.dispose();
-  plane.dispose();
-  return px.filter((_, i) => i % 4 === 0);
-}
-
-const variance = (a: Float32Array) => {
-  const mean = a.reduce((s, x) => s + x, 0) / a.length;
-  return a.reduce((s, x) => s + (x - mean) ** 2, 0) / a.length;
-};
+afterAll(disposeLayerRender);
 
 describe("detail layers", () => {
   const creases = (height: number, size: number): SkinLayer => ({
@@ -166,7 +89,6 @@ describe("surface layers", () => {
   });
 
   it("strengthens the specular reflection with a positive specular change", () => {
-    const mean = (a: Float32Array) => a.reduce((s, x) => s + x, 0) / a.length;
     const plain = mean(render([surface(0, 0)], { light: glancing }));
     const wet = mean(render([surface(0, 0.8)], { light: glancing }));
     expect(wet).toBeGreaterThan(plain * 1.02);

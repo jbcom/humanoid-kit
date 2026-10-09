@@ -84,6 +84,7 @@ class FakeWorker {
             modifiers: [],
             sliders: [],
             rig: EMPTY_RIG,
+            presenceJoints: {} as never,
             adultAnatomyLoaded: false,
             wardrobe: [],
           });

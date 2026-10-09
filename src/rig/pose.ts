@@ -135,6 +135,20 @@ export function posedGroundOffset(
   );
   let minY = Number.POSITIVE_INFINITY;
   for (const v of skin.bodyVertices) minY = Math.min(minY, posed[v * 3 + 1] as number);
+  return Math.max(-minY, wornGroundOffset(rest, rotations, worn));
+}
+
+/**
+ * The lift that puts the lowest of `worn` (garments, posed with the rig) on
+ * y = 0; negative infinity when nothing is worn, so it never raises a figure
+ * that stands on its own feet (`Math.max` with the body's).
+ */
+export function wornGroundOffset(
+  rest: RestBones,
+  rotations: BoneRotations,
+  worn: readonly SkinnedPoints[],
+): number {
+  let minY = Number.POSITIVE_INFINITY;
   for (const w of worn) {
     const p = skinPositions(
       rest,

@@ -35,6 +35,7 @@ export function readyInfo(withAdultPack = false, withClothingPack = false): Read
       ? mergeSliderTasks(body.sliders, adult.sliders)
       : mergeSliderTasks(body.sliders),
     rig: EMPTY_RIG,
+    presenceJoints: {} as never,
     adultAnatomyLoaded: withAdultPack,
     wardrobe: withClothingPack ? wardrobeOf(clothingManifest as unknown as ClothingManifest) : [],
   };

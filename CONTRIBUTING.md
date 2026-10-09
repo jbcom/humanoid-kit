@@ -29,9 +29,16 @@ To work on the figure visually, start the playground with `pnpm dev`. It imports
 the library straight from `src/`, so edits show up immediately. Add `?adult` to
 the URL to load the adult anatomy pack while developing; a production build
 drops it, so the public demo never carries it, and `pnpm check:pages` fails the
-build if it does. `?recipe=<json>` starts from a given figure. `pnpm test:e2e`
-runs the Playwright suite against the playground's production build; install
-the browser once with `pnpm exec playwright install chromium`.
+build if it does. `?recipe=<json>` starts from a given figure, and `?scene=walk` (with
+`?bg=rrggbb` for a light ground) shows two figures walking, parting and
+overlapping, to see the presence-driven stage shadow. `pnpm test:e2e`
+runs the Playwright suite against the playground's production build on port
+4173 (set `HK_E2E_PORT` when another checkout already holds it, or the run
+would test that checkout's build); install the browser once with
+`pnpm exec playwright install chromium`. To reproduce a slow CI runner's long
+frames, run the presence spec with `HK_GPU=software HK_CPU_THROTTLE=6`: it
+throttles only that page's CPU (Chrome's own throttle), so nothing else on the
+machine is slowed. Never load the whole machine to do it.
 
 Browser tests (the Vitest browser project and the Playwright suite) run headed
 Chromium through [game-harness](https://www.npmjs.com/package/game-harness), on
