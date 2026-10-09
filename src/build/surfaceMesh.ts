@@ -12,6 +12,7 @@ import {
   catmullClarkLevel,
   catmullClarkPolygons,
   composeStencils,
+  linearSubdivisionStencil,
   type QuadTopology,
   type Stencil,
   selectionStencil,
@@ -19,6 +20,9 @@ import {
   subdivideUvLinearPolygons,
 } from "../subdiv/catmullClark.ts";
 import { type Refinement, refineGraded } from "../subdiv/gradedRefine.ts";
+import { applyReservoirs, type Reservoir, type SurfaceReservoir } from "./reservoir.ts";
+
+export type { Reservoir, SurfaceReservoir } from "./reservoir.ts";
 
 export interface SurfaceMesh {
   /** Control (base) vertices → surface positions. */
@@ -62,12 +66,36 @@ export interface SurfaceLattice {
    * and its border).
    */
   region: Uint32Array;
+  /** The region's polygons (the refined faces), for placing reservoirs on. */
+  polygons: LatticePolygons;
+  /**
+   * Vertices a detail addresses: the region's, then each reservoir's rings
+   * (`SurfaceReservoir.base`), at most 65536.
+   */
+  detailCount: number;
+  /** The reservoirs on this surface, in the order they were given. */
+  reservoirs: SurfaceReservoir[];
+  /** The vertex each reservoir copy copies, in copy order (the surface's last vertices). */
+  copyOf: Uint32Array;
   /** Names this refinement (`latticeKey`): detail built on another is refused. */
   key: string;
   /** Lattice vertices → the final surface's; null at level 1, where they are the same. */
   smooth: Stencil | null;
+  /**
+   * The same, subdividing linearly instead of smoothing: how detail displacement
+   * reaches the final surface, so a lattice vertex's displacement is exactly its
+   * authored one at every level. Null at level 1.
+   */
+  linear: Stencil | null;
   /** Control vertices → lattice positions. */
   stencil: Stencil;
+}
+
+/** Polygons of the refinement mesh: polygon `i` is `id[i]` and has the vertices `vertices[start[i] .. start[i + 1])`. */
+export interface LatticePolygons {
+  id: Uint32Array;
+  start: Uint32Array;
+  vertices: Uint32Array;
 }
 
 /** Displacement of lattice vertices (metres), added to a refined surface after it is evaluated. */
@@ -95,6 +123,11 @@ export interface SmoothNormals {
   interpolate: Stencil;
   /** The refined polygon mesh's vertices → the final surface's; null when they are the same. */
   smooth: Stencil | null;
+  /**
+   * The vertices a reservoir's copies copy, for the copies that follow the
+   * smoothed surface's own vertices: a copy shades as the vertex it copies.
+   */
+  copyOf: Uint32Array;
 }
 
 /** A quad mesh with UVs and skin weights: the base body, or an attachment. */
@@ -191,12 +224,14 @@ function buildSubdividedQuads(
  * @param refinement source face indices and how many extra levels each gets
  *   over the level-1 surface (a source face's four children share its level)
  * @param levels Catmull–Clark levels of the whole surface, at least 1
+ * @param reservoirs collapsed strips to add (`applyReservoirs`), none by default
  */
 export function buildRefinedSurfaceMesh(
   source: QuadSource,
   faces: Uint32Array | null,
   refinement: Refinement,
   levels: number,
+  reservoirs: readonly Reservoir[] = [],
 ): SurfaceMesh {
   if (!Number.isInteger(levels) || levels < 1)
     throw new RangeError(`a refined surface needs subdivision level 1 or more; got ${levels}`);
@@ -235,6 +270,8 @@ export function buildRefinedSurfaceMesh(
   let uvs: Float32Array = fine.uvs;
   let faceUvs: Uint32Array;
   let smooth: Stencil | null = null;
+  /** Lattice vertices → the final surface's, subdividing linearly: for detail displacement. */
+  let linear: Stencil | null = null;
   if (levels === 1) {
     ({ topology, faceUvs } = polygonsToQuads(fine));
   } else {
@@ -245,6 +282,11 @@ export function buildRefinedSurfaceMesh(
     });
     stencil = composeStencils(stencil, smoothed.stencil);
     smooth = smoothed.stencil;
+    linear = linearSubdivisionStencil({
+      vertexCount: fine.vertexCount,
+      faceStart: fine.faceStart,
+      faces: fine.faces,
+    });
     topology = smoothed.topology;
     const uvLevel = subdivideUvLinearPolygons(uvs, fine.faceStart, fine.faceUvs);
     uvs = uvLevel.uvs;
@@ -253,23 +295,78 @@ export function buildRefinedSurfaceMesh(
       const level = catmullClarkLevel(topology);
       stencil = composeStencils(stencil, level.stencil);
       smooth = composeStencils(smooth, level.stencil);
+      linear = composeStencils(
+        linear as Stencil,
+        linearSubdivisionStencil({
+          vertexCount: topology.vertexCount,
+          faceStart: Uint32Array.from({ length: topology.faces.length / 4 + 1 }, (_, i) => i * 4),
+          faces: topology.faces,
+        }),
+      );
       topology = level.topology;
       const next = subdivideUvLinear(uvs, faceUvs);
       uvs = next.uvs;
       faceUvs = next.faceUvs;
     }
   }
-  // Triangles per control face: each of its four level-1 children is some
-  // polygons, and a polygon is a fixed number of quads (`polygonsToQuads`; the
-  // Catmull–Clark levels after the first make n quads of an n-gon, then four of
-  // each), written in order, so a control face's triangles are consecutive.
-  const faceTriangles = new Uint32Array(selected.length + 1);
+  // Per quad of the final surface, the refinement polygon it descends from and
+  // the control face that owns its triangles. A polygon of n corners is some
+  // quads (`polygonsToQuads`), or n at the first Catmull–Clark level and four
+  // times as many at each after, written in order, so a face's quads are consecutive.
+  const lineageList: number[] = [];
   for (let i = 0; i + 1 < fine.faceStart.length; i++) {
     const n = (fine.faceStart[i + 1] as number) - (fine.faceStart[i] as number);
     const quads = levels === 1 ? (n === 4 ? 1 : n - 2) : n * 4 ** (levels - 2);
-    const owner = Math.floor((fine.sourceFace[i] as number) / 4);
-    faceTriangles[owner + 1] = (faceTriangles[owner + 1] as number) + quads * 2;
+    for (let q = 0; q < quads; q++) lineageList.push(i);
   }
+  const lineage = Uint32Array.from(lineageList);
+  if (lineage.length !== topology.faces.length / 4)
+    throw new Error("refined surface: face lineage does not match its faces (internal)");
+  let owner: Uint32Array = Uint32Array.from(lineage, (i) =>
+    Math.floor((fine.sourceFace[i] as number) / 4),
+  );
+  const regionVertices = refinedRegion(
+    fine,
+    Array.from(refinement.faces, (f) => position.get(f) as number),
+  );
+  let surfaceFaces = topology.faces;
+  let surfaceUvs = faceUvs;
+  let surfaceVertices = topology.vertexCount;
+  let reservoirInfo: SurfaceReservoir[] = [];
+  let copyOf: Uint32Array = new Uint32Array(0);
+  let detailCount = regionVertices.length;
+  if (reservoirs.length) {
+    const made = applyReservoirs(
+      {
+        faces: surfaceFaces,
+        faceUvs: surfaceUvs,
+        vertexCount: surfaceVertices,
+        stencil,
+        lineage,
+        owner,
+        latticeVertices: fine.vertexCount,
+        detailBase: regionVertices.length,
+      },
+      reservoirs,
+    );
+    surfaceFaces = made.faces;
+    surfaceUvs = made.faceUvs;
+    surfaceVertices = made.vertexCount;
+    stencil = made.stencil;
+    owner = made.owner;
+    reservoirInfo = made.reservoirs;
+    copyOf = made.copyOf;
+    detailCount = made.detailCount;
+    if (detailCount > 0x10000)
+      throw new RangeError(
+        `detail addresses 65536 vertices; the region and reservoirs have ${detailCount}`,
+      );
+    topology = { vertexCount: surfaceVertices, faces: surfaceFaces };
+    faceUvs = surfaceUvs;
+  }
+  // Triangles per control face: its quads' two each, consecutive.
+  const faceTriangles = new Uint32Array(selected.length + 1);
+  for (const o of owner) faceTriangles[o + 1] = (faceTriangles[o + 1] as number) + 2;
   for (let f = 0; f < selected.length; f++)
     faceTriangles[f + 1] = (faceTriangles[f + 1] as number) + (faceTriangles[f] as number);
   return {
@@ -281,15 +378,21 @@ export function buildRefinedSurfaceMesh(
       vertexCount: base.topology.vertexCount,
       interpolate: fine.stencil,
       smooth,
+      copyOf,
     },
     lattice: {
       vertexCount: fine.vertexCount,
-      region: refinedRegion(
+      region: regionVertices,
+      polygons: refinedPolygons(
         fine,
         Array.from(refinement.faces, (f) => position.get(f) as number),
       ),
-      key: latticeKey(fine),
+      detailCount,
+      reservoirs: reservoirInfo,
+      copyOf,
+      key: latticeKey(fine, reservoirs),
       smooth,
+      linear,
       stencil: lattice,
     },
   };
@@ -318,12 +421,38 @@ function refinedRegion(
   return Uint32Array.from([...vertices].sort((a, b) => a - b));
 }
 
+/** The polygons of the faces descended from the refined base faces, by their index in the refinement mesh. */
+function refinedPolygons(
+  fine: { faceStart: Uint32Array; faces: Uint32Array; sourceFace: Uint32Array },
+  places: readonly number[],
+): LatticePolygons {
+  const refined = new Set(places);
+  const id: number[] = [];
+  const start: number[] = [0];
+  const vertices: number[] = [];
+  for (let f = 0; f + 1 < fine.faceStart.length; f++) {
+    if (!refined.has(Math.floor((fine.sourceFace[f] as number) / 4))) continue;
+    id.push(f);
+    for (let c = fine.faceStart[f] as number; c < (fine.faceStart[f + 1] as number); c++)
+      vertices.push(fine.faces[c] as number);
+    start.push(vertices.length);
+  }
+  return {
+    id: Uint32Array.from(id),
+    start: Uint32Array.from(start),
+    vertices: Uint32Array.from(vertices),
+  };
+}
+
 /**
  * A 64-bit name for a refinement's lattice (its polygons), as 16 hex digits:
  * two FNV-1a lanes over the polygon mesh's integers. Not a security hash; it
  * names which refinement detail targets were authored on.
  */
-function latticeKey(fine: { vertexCount: number; faceStart: Uint32Array; faces: Uint32Array }) {
+function latticeKey(
+  fine: { vertexCount: number; faceStart: Uint32Array; faces: Uint32Array },
+  reservoirs: readonly Reservoir[],
+) {
   let a = 0x811c9dc5;
   let b = 0x01000193 ^ 0xdeadbeef;
   const mix = (x: number) => {
@@ -334,6 +463,15 @@ function latticeKey(fine: { vertexCount: number; faceStart: Uint32Array; faces: 
   mix(fine.vertexCount);
   for (const x of fine.faceStart) mix(x);
   for (const x of fine.faces) mix(x);
+  // Detail on a reservoir is placed by its loop and cap, so they name the lattice too.
+  for (const r of reservoirs) {
+    mix(0xfffffffe);
+    mix(r.rings);
+    mix(r.loop.length);
+    for (const x of r.loop) mix(x);
+    mix(r.cap.length);
+    for (const x of r.cap) mix(x);
+  }
   return a.toString(16).padStart(8, "0") + (b >>> 0).toString(16).padStart(8, "0");
 }
 
@@ -502,8 +640,19 @@ function addQuadNormals(faces: Uint32Array, positions: Float32Array, out: Float3
 
 /** The shading normals of a refined surface (`SmoothNormals`), one per surface vertex, not yet normalised. */
 function smoothNormals(plan: SmoothNormals, control: Float32Array, count: number): Float32Array {
+  const free = count - plan.copyOf.length;
   const refined = interpolatedNormals(plan, control);
-  return plan.smooth ? applyStencil(plan.smooth, refined, new Float32Array(count * 3)) : refined;
+  const own = plan.smooth
+    ? applyStencil(plan.smooth, refined, new Float32Array(free * 3))
+    : refined;
+  if (!plan.copyOf.length) return own;
+  // A reservoir's copy shades as the vertex it copies.
+  const out = new Float32Array(count * 3);
+  out.set(own);
+  plan.copyOf.forEach((rep, i) => {
+    out.set(own.subarray(rep * 3, rep * 3 + 3), (free + i) * 3);
+  });
+  return out;
 }
 
 /** The coarse surface's unit vertex normals, interpolated to the refinement mesh's vertices (not renormalised). */
@@ -546,22 +695,54 @@ function displace(mesh: SurfaceMesh, surface: Float32Array, detail: SurfaceDetai
   const lattice = mesh.lattice;
   if (!lattice) throw new Error("detail displacement needs a refined surface (internal)");
   const d = new Float32Array(lattice.vertexCount * 3);
+  // A reservoir's rings are addressed after the region's, one vertex per loop vertex and ring.
+  const rings = lattice.reservoirs.map((r) => new Float32Array(r.loop.length * r.rings * 3));
   for (let i = 0; i < detail.indices.length; i++) {
     const v = detail.indices[i] as number;
-    if (!Number.isInteger(v) || v < 0 || v >= lattice.region.length)
-      throw new RangeError(
-        `detail vertex ${v} is out of range for a region of ${lattice.region.length}`,
-      );
-    const at = (lattice.region[v] as number) * 3;
-    d[at] = (d[at] as number) + (detail.xyz[i * 3] as number);
-    d[at + 1] = (d[at + 1] as number) + (detail.xyz[i * 3 + 1] as number);
-    d[at + 2] = (d[at + 2] as number) + (detail.xyz[i * 3 + 2] as number);
+    if (!Number.isInteger(v) || v < 0 || v >= lattice.detailCount)
+      throw new RangeError(`detail vertex ${v} is out of range for ${lattice.detailCount}`);
+    const xyz = [0, 1, 2].map((k) => detail.xyz[i * 3 + k] as number);
+    if (v < lattice.region.length) {
+      const at = (lattice.region[v] as number) * 3;
+      for (let k = 0; k < 3; k++) d[at + k] = (d[at + k] as number) + (xyz[k] as number);
+      continue;
+    }
+    const r = lattice.reservoirs.findIndex(
+      (x) => v >= x.base && v < x.base + x.loop.length * x.rings,
+    );
+    const into = rings[r] as Float32Array;
+    const at = (v - (lattice.reservoirs[r] as SurfaceReservoir).base) * 3;
+    for (let k = 0; k < 3; k++) into[at + k] = (into[at + k] as number) + (xyz[k] as number);
   }
-  const final = lattice.smooth
-    ? applyStencil(lattice.smooth, d, new Float32Array(surface.length))
+  const final = lattice.linear
+    ? applyStencil(lattice.linear, d, new Float32Array(surface.length))
     : d;
-  for (let i = 0; i < surface.length; i++)
-    surface[i] = (surface[i] as number) + (final[i] as number);
+  for (let i = 0; i < final.length; i++) surface[i] = (surface[i] as number) + (final[i] as number);
+  // A copy follows whatever displaces the vertex it copies (so the strips stay closed
+  // under the mound, say), then its ring's own displacement.
+  const free = surface.length / 3 - lattice.copyOf.length;
+  lattice.copyOf.forEach((rep, i) => {
+    for (let k = 0; k < 3; k++)
+      surface[(free + i) * 3 + k] =
+        (surface[(free + i) * 3 + k] as number) + (final[rep * 3 + k] as number);
+  });
+  // Each copy takes its ring's displacement, interpolated between the loop vertices around it.
+  lattice.reservoirs.forEach((r, s) => {
+    const into = rings[s] as Float32Array;
+    const n = r.loop.length;
+    for (let j = 0; j < r.rings; j++)
+      for (let t = 0; t < r.chain; t++) {
+        const a = ((j * n + (r.slot[t] as number)) % (n * r.rings)) * 3;
+        const b = (j * n + (((r.slot[t] as number) + 1) % n)) * 3;
+        const f = r.fraction[t] as number;
+        const at = (r.copies[j * r.chain + t] as number) * 3;
+        for (let k = 0; k < 3; k++)
+          surface[at + k] =
+            (surface[at + k] as number) +
+            (1 - f) * (into[a + k] as number) +
+            f * (into[b + k] as number);
+      }
+  });
 }
 
 /**

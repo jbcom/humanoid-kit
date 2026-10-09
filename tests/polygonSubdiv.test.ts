@@ -5,6 +5,7 @@ import {
   applyStencil,
   catmullClarkLevel,
   catmullClarkPolygons,
+  linearSubdivisionStencil,
   subdivideUvLinear,
   subdivideUvLinearPolygons,
 } from "../src/subdiv/catmullClark.ts";
@@ -120,5 +121,60 @@ describe("Catmull–Clark on polygons", () => {
     const facePoint = p.faceUvs[2] as number; // the face point of the first output quad
     expect(p.uvs[facePoint * 2]).toBeCloseTo((0 + 1 + 1.5 + 0.5 - 0.5) / 5, 6);
     expect(p.uvs[facePoint * 2 + 1]).toBeCloseTo((0 + 0 + 1 + 2 + 1) / 5, 6);
+  });
+});
+
+describe("linear subdivision of a field over polygons", () => {
+  // A pentagon, a quad sharing an edge with it, and a triangle: every size the refinement makes.
+  const topo = {
+    vertexCount: 8,
+    faceStart: Uint32Array.of(0, 5, 9, 12),
+    faces: Uint32Array.of(0, 1, 2, 3, 4, 1, 5, 6, 2, 5, 7, 6),
+  };
+
+  it("keeps each original vertex's value, averages the ends of an edge and the corners of a face", () => {
+    const s = linearSubdivisionStencil(topo);
+    const smooth = catmullClarkPolygons(topo).stencil;
+    // The same vertices as Catmull–Clark in the same order: the originals, an edge point each, a face point each.
+    expect(s.offsets.length).toBe(smooth.offsets.length);
+    const field = Float32Array.from({ length: 8 * 3 }, (_, i) => (i % 3 === 0 ? i : i * 2 - 1));
+    const out = applyStencil(s, field, new Float32Array((s.offsets.length - 1) * 3));
+    for (let v = 0; v < 8; v++)
+      for (let k = 0; k < 3; k++) expect(out[v * 3 + k]).toBe(field[v * 3 + k]);
+    // Every row is a convex combination: a displacement never goes beyond its extremes.
+    for (let i = 0; i < s.offsets.length - 1; i++) {
+      let sum = 0;
+      for (let k = s.offsets[i] as number; k < (s.offsets[i + 1] as number); k++) {
+        sum += s.weights[k] as number;
+        expect(s.weights[k] as number).toBeGreaterThan(0);
+      }
+      expect(sum).toBeCloseTo(1, 6);
+    }
+    // The first edge point is the midpoint of the first edge (vertices 0 and 1).
+    for (let k = 0; k < 3; k++)
+      expect(out[(8 + 0) * 3 + k]).toBeCloseTo(
+        ((field[k] as number) + (field[3 + k] as number)) / 2,
+        5,
+      );
+  });
+
+  it("never overshoots where Catmull–Clark smoothing does", () => {
+    // A spike: one vertex displaced, the rest not. Smoothing leaks it onto the neighbours
+    // (and, at this valence, can push a neighbour above zero); linear keeps it where it was.
+    const spike = new Float32Array(8 * 3);
+    spike[0] = 1;
+    const linear = applyStencil(
+      linearSubdivisionStencil(topo),
+      spike,
+      new Float32Array((8 + 11 + 3) * 3),
+    );
+    const smooth = applyStencil(
+      catmullClarkPolygons(topo).stencil,
+      spike,
+      new Float32Array((8 + 11 + 3) * 3),
+    );
+    for (let v = 1; v < 8; v++) expect(linear[v * 3]).toBe(0);
+    expect(Math.max(...linear)).toBe(1);
+    expect(Math.max(...Array.from(smooth).filter((_, i) => i >= 3))).toBeGreaterThan(0);
   });
 });

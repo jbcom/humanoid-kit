@@ -343,6 +343,52 @@ interface BodyArtRecipe {
   `veil` what the dermis above the ink (`INK_DEPTH`) scatters back, bluer than
   red (`dermalVeil()`), and `keep` the light that crosses it twice. The same
   ink darkens with every step of tone and reads cooler than the skin round it.
+- Marks (research/BODY-ART.md C2): a scar, birthmark or vitiligo patch changes
+  what is in the skin. `markChannels(mark): MarkChannels` is what it puts in the
+  marks page at full strength:
+  - `melanin`, signed: down toward `vitiligoAlbedo(tone)`, up by shares of
+    `markMelaninSpan()`;
+  - `haemoglobin`, shares of `PORT_WINE_HAEMOGLOBIN` steps;
+  - a scar's `smooth` and `raise`;
+  - `ink`: dermal pigment, drawn as ink.
+
+  `markRatios(tone)` gives the per-tone ratios the shader raises to those
+  channels, and `markedAlbedo(tone, channels)` the skin under them.
+  `markOutline(mark)` and `markShape(mark, outline, x, y)` give the irregular,
+  seeded outline the bake draws. Constants: `VITILIGO_RESIDUAL`,
+  `CAFE_AU_LAIT_MELANIN`, `NAEVUS_MELANIN`, `SCAR_HAEMOGLOBIN` (the keloids'
+  erythema ratio), `SCAR_RAISE`, `SCAR_SMOOTHNESS`, `DERMAL_MELANIN_INK` and
+  `MARK_OUTLINE`.
+- `vitiligoPatches(assets, vitiligo)`: the seeded patches. Each is a left
+  vertex at a typical site (round the eyes and mouth, backs of the hands,
+  wrists, elbows, knees, tops of the feet) and its mirror image, with more and
+  larger patches at a larger `extent`. `placeBodyArt` turns them into marks of
+  kind `"vitiligo"`, the right side's outline mirrored (a negative `width`).
+- Piercings (research/BODY-ART.md C3): `placeBodyArt` places each as a
+  `PlacedPiercing`. That is the recipe's piercing plus its hole in rest space:
+  - `hole` (the site vertex) and the skin's `normal`;
+  - the `channel` the hole runs through the tissue (into the skin, across the
+    body, or vertically under the skin, by the site's `channel`);
+  - the `down` a ring hangs toward (out in front of a ridge for a vertical
+    hole);
+  - the hole's `middle`, `TISSUE_DEPTH[site]` into the tissue;
+  - the site vertex's `skinIndex` and `skinWeight`.
+
+  `jewelleryMesh(piercing): { positions, normals, index }`:
+  - a stud: a ball seated on the skin;
+  - a ring: a torus through the hole's middle;
+  - a barbell: a bar along the channel with a ball at each end.
+
+  `<Humanoid>` draws each as a skinned mesh, `METAL_REFLECTANCE[metal]` at
+  `JEWELLERY_ROUGHNESS`, skinned rigidly by the site vertex's bones, so it
+  follows the posed skin. Garments, hair and the skin hide it as depth does. A
+  site the body does not have throws `RangeError` at evaluation: the adult
+  anatomy pack names no sites yet.
+- `seededRandom(seed)`: deterministic numbers in [0, 1) (mulberry32), shared by
+  the editor's randomiser and the vitiligo patches.
+- `melaninDensity(tone)` and `melaninFreeAlbedo(tone)` (skin model):
+  `melaninDensityAlbedo` now goes on below the lightest measured skin toward
+  the melanin-free albedo.
 
 ### Evaluation
 
@@ -369,12 +415,20 @@ and throws `RangeError` for anything else.
   moves `Evaluation.control` and no drawn vertex until the sculpt phase.
   `recipe.outfit` adds the garments (see "Clothing"); `haveOutfit` is the
   outfit key the caller already holds the masks of.
+- `model.controlShape(recipe): ControlShape`: an adult figure's control mesh for
+  authoring control-level features, as targets on the base's own vertices
+  (`{ control, normals, body }`: the vertices, their unit normals and the ids the
+  drawn body uses). Throws `AgePolicyError` for a figure under 18. The packer
+  generates the mound on it.
 - `model.adultDetailLattice(recipe): AdultDetailLattice | null`: the vertex
-  space the adult pack's detail targets are authored on (`{ key, vertexCount,
-  positions, normals }`): the vertices of the refined region, which a detail
-  target indexes from 0, with their positions and outward unit normals on this
-  figure and the key that names the refinement. Null without an adult surface; throws `AgePolicyError` for a
-  figure under 18. The packer uses it to place authored forms.
+  space the adult pack's detail targets are authored on: the vertices of the
+  refined region (`regionCount` of them) and then each reservoir's rings
+  (`vertexCount` in all), which a detail target indexes from 0, with their
+  positions and outward unit normals on this figure (`positions`, `normals`; a
+  ring's, at rest, are its loop's), the key that names the refinement and its
+  reservoirs, and, for placing forms, `regionIds`, `polygons`, `latticePositions`
+  and `reservoirs` (`{ id, base, loop, rings }`). Null without an adult surface;
+  throws `AgePolicyError` for a figure under 18. The packer uses it to author.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
   only (every pose corner holding the rest value). `body.occlusion` is the
@@ -716,14 +770,17 @@ compute what the renderer will do.
     `CREASE_HALF_WIDTH` how far either side of the joint each joint's creases
     reach.
   - Expression lines (ARCHITECTURE.md, "Facial wrinkles"):
-    `EXPRESSION_LINE_LAYERS`, five `creases` `DetailLayer`s (`lines.forehead`,
-    `lines.crows-feet`, `lines.glabella`, `lines.nasolabial`, `lines.nose`) driven
-    by the `face.*` signals and the figure's `age`: forehead lines on
-    `browRaise`, furrows between the brows on `browFurrow`, crow's feet on
-    `squint` (or a smile), the folds on `nasolabial` (or a smile), nose lines on
-    `noseWrinkle`. `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
+    `EXPRESSION_LINE_LAYERS`, five layers (`lines.forehead`, `lines.crows-feet`,
+    `lines.glabella`, `lines.nasolabial`, `lines.nose`) driven by the `face.*`
+    signals and the figure's `age`: forehead lines on `browRaise`, furrows
+    between the brows on `browFurrow`, crow's feet on `squint` (or a smile), the
+    folds on `nasolabial` (or a smile), nose lines on `noseWrinkle`. The forehead's
+    and the furrows' are multiply `ColourLayer`s, thin lines on colour stops
+    (`FOREHEAD_STOPS`, `GLABELLA_STOPS`) of a coordinate exactly linear in
+    position, shaded by `lineShade(age)`; the rest are `creases` `DetailLayer`s.
+    `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
     `EXPRESSION_COUNT` are art-directed, `expressionAgeFactor(age)` scales the
-    depth by age (0.2 at 6, 1 at 40, 1.4 at 70).
+    depth or shade by age (0.2 at 6, 1 at 40, 1.4 at 70).
   - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones
     (head, hand, thigh, …) as soft per-vertex masks from the skin weights, plus
     its `front`, `palm`, `sole`, `forehead` and `neck` fields from the vertex
@@ -1043,7 +1100,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `bodyArtImages?` | `BodyArtImages`: the decoded images (`ImageBitmap`, loaded `HTMLImageElement`, canvas) the recipe's tattoos name by key. Keep the object stable: a new one bakes the figure's body art again. A tattoo whose image is missing is reported through `onError`, and the figure is drawn without its body art |
-| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
+| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, `"piercing"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |
 | other props | Passed to the wrapping `<group>` |
 
@@ -1366,7 +1423,16 @@ keeps them out of the control morph and adds them to the adult surface after it
 is evaluated, scaled by the figure (`detail.scale`: two control vertices and
 their distance on the authoring figure), so a figure under 18, evaluated on the
 base surface, has nowhere to apply one. `detail.surfaceKey` pins the targets to
-the refinement they were authored on; the model refuses them against another.
+the refinement and reservoirs they were authored on; the model refuses them
+against another. `anatomy.reservoirs` (`AdultReservoirSpec`: `id`, `loop`, `cap`,
+`rings`) names *reservoirs*: a closed loop of the refinement's vertices round a
+disc of its polygons, in which the adult surface adds collapsed rings and strips
+between the loop and the cap. At rest they coincide with the loop (the surface is
+exactly the one without them, at every subdivision level, with zero-area strips);
+a detail target indexing a reservoir's rings (`AdultDetailLattice.reservoirs`)
+draws them out into a tube. They exist in the adult surface only, so a figure
+under 18 has none. Detail is subdivided linearly, positions smoothly, so a
+displacement authored at a vertex is exactly that at every level.
 
 ## `humanoid-kit-clothing`
 
