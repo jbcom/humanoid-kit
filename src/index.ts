@@ -9,6 +9,7 @@ export * from "./makehuman/features.ts";
 export * from "./makehuman/macro.ts";
 export * from "./makehuman/recipeMorph.ts";
 export * from "./makehuman/regions.ts";
+export * from "./makehuman/stateMorphs.ts";
 export * from "./model/humanoidModel.ts";
 export * from "./morph/evaluate.ts";
 export * from "./presence/presence.ts";
