@@ -54,7 +54,9 @@ type PackLocation =
   A `HairStyleEntry` is an attachment entry (no `deleteVerts`,
   one occlusion value per vertex) with a `label`, `tags` (`short`, `bob`,
   `curly`...), its `kind` (`scalp`, or `brows` or `lashes`, which share the pack's
-  loader; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
+  loader, or `beard`, generated body hair cards tagged with the beard style they
+  serve, whose layout adds a `rank` per vertex, `CARD_FIELD_KEYS`; `STRAND_KINDS`
+  are the kinds with measured strand fields; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
   carries each entry's kind), its `file` and `sha256`, and the `strand` direction and
   `coherence` measured from its strand map. With the clothing pack loaded,
   `clothingManifest` lists its garments from the start; `garments` (a map of
@@ -467,9 +469,15 @@ and throws `RangeError` for anything else.
   skin along its normal, since the smooth body surface can swallow a decal bound to
   the coarse mesh by up to 1.8 mm at the brow ridge (a test holds it clear at ages
   6 to 75). `model.pendingHairStyles(recipe)` lists every worn style not yet loaded,
-  and the worker's `evaluated` reply carries `decalTopologies` for the brows' and
-  lashes' static data (`HairTopology.kind` is `scalp`, `brows` or `lashes`; a
-  decal's fade is all 1, fin and growth 0, scalp none).
+  and the worker's `evaluated` reply carries `decalTopologies` for the brows',
+  lashes' and beard cards' static data (`HairTopology.kind` is `scalp`, `brows`,
+  `lashes` or `beard`; a decal's fade is all 1, fin and growth 0, scalp none).
+  `Evaluation.beard` is the hair pack's cards for the recipe's beard style
+  (`model.wornBeardCards(recipe)`: the `beard` entry tagged with the style, or
+  null when there is none or the face grows no terminal hair), evaluated as
+  scalp hair is; `HairTopology.rank` is its cards' ranks per render vertex (null
+  for every other kind), and `<Humanoid>` draws the cards whose rank is under the
+  face's coverage (`HairMaterial.setDensity`), in the face's body hair colour.
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
@@ -1354,7 +1362,10 @@ takes the styles as `options.hairStyles`, and without them keeps the base
 recipe's hair. It also draws one of the pack's brows and one of its lashes
 (`options.browStyles`, `options.lashStyles`; after the hair, so a seed's hair and
 shape are the same without them), and a new head of hair keeps the brows and
-lashes the figure had. `withHair(recipe, patch)` changes the scalp style, colour,
+lashes the figure had. Last of all it draws a beard style (`options.beards`,
+which the creator sets; `randomBeard(draw)` by `BEARD_ODDS`: clean-shaven most
+often, then stubble), so old seeds keep their figures; the body hair model grows
+it only where the face carries terminal hair. `withHair(recipe, patch)` changes the scalp style, colour,
 brows or lashes of a recipe (`null` takes one away) and keeps whatever the patch
 leaves out; the Appearance panel uses it, offering the brows and lashes in
 groups of their own, and `load` refuses a saved figure whose brows or lashes the
@@ -1478,6 +1489,10 @@ styles are MakeHuman's own CC0 scalp hair: `short02`, `bob02`, `long01`,
 `afro01`, `short04`, `short03`, `ponytail01`, `short01`, `bob01` and `braid01`.
 Its manifest records the hash of the body pack it binds to, and the loader
 refuses any other.
+
+It also lists generated body hair cards (kind `beard`, today `beard-full`, 64 kB
+the pair): a full beard's length over the coat, made by the packer from the
+body pack's mesh and a seed rather than from any MakeHuman file.
 
 The pack also lists MakeHuman's twelve eyebrows (`eyebrow001` to `eyebrow012`,
 kind `brows`) and four eyelashes (`eyelashes01` to `eyelashes04`, kind `lashes`),
