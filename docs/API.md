@@ -265,6 +265,7 @@ interface Evaluation {
   control: Float32Array;    // morphed positions in the base topology
   curvature: Float32Array;  // per body render vertex, mean curvature (1/m)
   boneHeads: Float32Array;  // the skeleton fitted to this figure: each bone's rest head, xyz
+  surface: "base" | "adult"; // which topology the render arrays are in
 }
 
 interface SurfaceTopology {
@@ -275,6 +276,13 @@ interface SurfaceTopology {
   vertexCount: number;
 }
 ```
+
+`surface` says which topology `positions`, `normals` and `curvature` are in: the
+base body's (`topology().body`) or, for an adult with the adult pack's refined
+pelvic surface loaded and subdivision 1 or more, `adultSurface()`'s. A figure
+under 18 is always `"base"`, with exactly the base body's vertices, vertex for
+vertex what it is without the adult pack; `control` is the base topology either
+way.
 
 `evaluate` throws `MorphError` for a recipe that needs target files not loaded
 yet (`model.pendingTargetFiles(recipe)` names them), `AgePolicyError` for a recipe that
@@ -296,6 +304,15 @@ Lower-level pieces, also exported:
   `applyStencil(stencil, input, out)`, `selectionStencil(inputCount, vertices)`
   and `subdivideUvLinear(uvs, faceUvs)`; types `QuadTopology`, `Stencil` and
   `SubdivisionLevel`.
+- `buildRefinedSurfaceMesh(assets, faces, refinement, levels): SurfaceMesh`:
+  the surface with `refinement.faces` (base face indices) refined `refinement.levels`
+  extra levels (at most 4), built on the base's own level-1 surface so it keeps
+  the same shape: conforming (no cracks), the base's vertices unmoved, UV seams
+  kept, normals interpolated from the base's, and at level 2 and above the
+  transition polygons smoothed into quads. It throws `RangeError` below level 1.
+  `refineGraded(source, faces, {faces, levels})`, `catmullClarkPolygons(topology)`
+  and `subdivideUvLinearPolygons` are the pieces (graded local refinement and
+  polygon Catmull-Clark; `catmullClarkLevel` is the quad case of the latter).
 
 ### Surface appearance
 
@@ -478,6 +495,15 @@ The main-thread handle to an evaluation worker.
   (`LayerAtlas.refresh`; the texture stays the same object, so the skin shader
   is not recompiled and nothing is re-evaluated). It applies a shared update
   once however many figures pass it.
+- `client.adultSurface(): Promise<AdultSurfaceTopology | null>` resolves with the
+  adult pack's refined pelvic surface: the static render data of the whole body
+  (`SurfaceTopology` plus `uvScale`) with the pack's `anatomy.surface` faces
+  refined (`HumanoidModel.adultSurface`), or null when the pack names no surface
+  or the model's subdivision is 0. It is its own request and never part of
+  `ready`'s topology, so a minor's session never holds it. `<Humanoid>` asks for
+  it once the figure is an adult and draws it, in place of the base body, from
+  then on (`Evaluation.surface === "adult"`); the worker builds it once and
+  later calls share it.
 - `client.dispose()` terminates the worker and rejects pending requests.
 - Errors from the worker arrive as `HumanoidWorkerError` with `name` set to the
   original error's name (for example `AgePolicyError`).
@@ -513,7 +539,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers; those with state morphs also reshape the figure (a re-evaluation). Never part of the recipe |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
-| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
+| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | other props | Passed to the wrapping `<group>` |
 
 - Hidden until the first evaluation arrives.
@@ -611,13 +637,14 @@ range input sized for touch. `onChange(value, gesture)` fires while dragging and
 ## `humanoid-kit/worker`
 
 The worker module that `HumanoidWorkerClient` starts by default. It owns one
-`HumanoidModel` and answers six messages: `init` (replied to with `ready`
+`HumanoidModel` and answers seven messages: `init` (replied to with `ready`
 once the first figure can be evaluated), `complete` (replied to once every
 target file has loaded, or with the error that stopped one), `pickMap`
 (replied to with the pick map once everything has loaded), `posedOcclusion`
 (replied to once the corner bake, made a corner at a time between other
 requests, is done), `adultLayers` (replied to with the adult anatomy layers'
-fields once the adult pack's stage has loaded, or null without that pack) and
+fields once the adult pack's stage has loaded, or null without that pack),
+`adultSurface` (replied to with the adult pack's refined surface, or null) and
 `evaluate`, which
 waits for exactly the load stages its recipe needs without holding up other
 requests. Result buffers are transferred. Applications use it through the
@@ -653,7 +680,9 @@ measured from the pack's targets (`skinLayers`), and the shape states of the
 adult anatomy (`stateMorphs`, arousal). This is the pack's data so that the
 core, which ships in the public build, names no adult target or modifier
 (`pnpm check:pages`); a pack without it adds no adult layers and no state
-morphs.
+morphs. `anatomy.surface` (`AdultSurfaceSpec`: the base body `faces` to refine
+and their `levels`) names the pelvic region the adult surface refines; a pack
+without it leaves every figure on the base surface.
 
 ## Errors
 
