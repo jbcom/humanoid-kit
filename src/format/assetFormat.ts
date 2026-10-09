@@ -375,9 +375,10 @@ export function parseHumanoidAssets(
     addTargets(map, a.targets.entries, adultAnatomy.targets, "the adult anatomy pack");
     for (const m of a.modifiers) modifiers.set(m.id, m);
   }
+  // Merging also orders tasks by sortOrder; the manifest keeps upstream's file order.
   const sliders = adultAnatomy
     ? mergeSliderTasks(manifest.sliders, adultAnatomy.manifest.sliders)
-    : structuredClone(manifest.sliders);
+    : mergeSliderTasks(manifest.sliders);
   for (const t of sliders)
     for (const g of t.groups)
       for (const s of g.sliders)

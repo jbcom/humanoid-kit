@@ -36,15 +36,15 @@ export function seededRandom(seed: number): () => number {
   };
 }
 
-/** Natural iris colours in linear RGB: browns, hazel, amber, green, grey, blue. */
-const IRISES: Rgb[] = [
-  [0.12, 0.055, 0.025],
-  [0.07, 0.03, 0.012],
-  [0.2, 0.12, 0.04],
-  [0.25, 0.14, 0.03],
-  [0.1, 0.16, 0.06],
-  [0.16, 0.18, 0.19],
-  [0.08, 0.14, 0.26],
+/** Natural iris colours in linear RGB. */
+export const IRIS_PALETTE: readonly { name: string; rgb: Readonly<Rgb> }[] = [
+  { name: "Brown", rgb: [0.12, 0.055, 0.025] },
+  { name: "Dark brown", rgb: [0.07, 0.03, 0.012] },
+  { name: "Hazel", rgb: [0.2, 0.12, 0.04] },
+  { name: "Amber", rgb: [0.25, 0.14, 0.03] },
+  { name: "Green", rgb: [0.1, 0.16, 0.06] },
+  { name: "Grey", rgb: [0.16, 0.18, 0.19] },
+  { name: "Blue", rgb: [0.08, 0.14, 0.26] },
 ];
 
 /** Shape groups that are whole-body archetypes rather than variation; never randomised. */
@@ -98,7 +98,10 @@ export function randomRecipe(
         areola: centred(0.3, 0.8),
       },
       eyes: {
-        iris: [...(IRISES[Math.floor(rand() * IRISES.length)] as Rgb)] as Rgb,
+        iris: [
+          ...(IRIS_PALETTE[Math.floor(rand() * IRIS_PALETTE.length)] as (typeof IRIS_PALETTE)[0])
+            .rgb,
+        ] as Rgb,
         scleraWarmth: centred(0.3, 0.7),
       },
     },
@@ -107,7 +110,10 @@ export function randomRecipe(
 
   const adultAllowed = options.includeAdultAnatomy === true && recipe.macros.age >= ADULT_AGE;
   const values: Record<string, number> = {};
-  for (const m of [...modifiers.values()].sort((a, b) => a.id.localeCompare(b.id))) {
+  // Code-unit order, not localeCompare: the same seed must give the same figure on every machine.
+  for (const m of [...modifiers.values()].sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  )) {
     // Draw for every modifier, used or not, so one modifier's eligibility never
     // shifts the random stream for the others.
     const pick = rand();

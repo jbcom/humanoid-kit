@@ -13,7 +13,7 @@
  */
 import type { ShapeModifierEntry, SliderEntry } from "../format/assetFormat.ts";
 import { ADULT_AGE, MAX_AGE, type MacroValues, MIN_AGE } from "../makehuman/macro.ts";
-import { withAge } from "../recipe/agePolicy.ts";
+import { AgePolicyError, withAge } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 
 export interface SliderRange {
@@ -68,6 +68,9 @@ export function withSliderValue(
   const range = sliderRange(entry, modifiers);
   const v = clamp(value, range.min, range.max);
   if (entry.kind === "modifier") {
+    // Rejected, never clamped: a caller that skipped sliderAvailability learns it here.
+    if (v !== 0 && modifierOf(entry, modifiers).adultOnly && recipe.macros.age < ADULT_AGE)
+      throw new AgePolicyError(`${entry.id}: adult anatomy is not available under ${ADULT_AGE}`);
     const next = { ...recipe, modifiers: { ...recipe.modifiers } };
     // Neutral values are dropped so recipes stay small and diff cleanly.
     if (v === 0) delete next.modifiers[entry.id];
@@ -102,7 +105,9 @@ export function sliderAvailability(
 
 /** The value as the editor shows it: years for age, percentages otherwise, signed when two-sided. */
 export function formatSliderValue(entry: SliderEntry, value: number, range: SliderRange): string {
-  if (entry.kind === "macro" && entry.id === "age") return `${Math.round(value)} yr`;
+  // Never rounded up: 17.5 must not read as 18 while adult controls are still unavailable.
+  if (entry.kind === "macro" && entry.id === "age")
+    return `${Number.isInteger(value) ? value : value.toFixed(1)} yr`;
   const pct = Math.round(value * 100);
   return range.min < 0 && pct > 0 ? `+${pct}%` : `${pct}%`;
 }

@@ -63,9 +63,8 @@ export function framePartsOfBone(bone: string): FramePart[] {
   if (side && /^(wrist|metacarpal|finger)/.test(bone)) parts.push(`${side}Hand`, `${side}Arm`);
   else if (side && /^(shoulder|upperarm|lowerarm)/.test(bone)) parts.push(`${side}Arm`);
   else if (side && /^(foot|toe)/.test(bone)) parts.push(`${side}Foot`, `${side}Leg`);
-  else if (side && /^(upperleg02|lowerleg)/.test(bone)) parts.push(`${side}Leg`);
-  else if (!/^(neck|spine|clavicle|breast|pelvis|root|upperleg01|shoulder)/.test(bone))
-    parts.push("head");
+  else if (side && /^(upperleg|lowerleg)/.test(bone)) parts.push(`${side}Leg`);
+  else if (!/^(neck|spine|clavicle|breast|pelvis|root)/.test(bone)) parts.push("head");
   return parts;
 }
 

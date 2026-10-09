@@ -45,13 +45,14 @@ let scanned = 0;
 function dataUris(text) {
   const out = [];
   for (const m of text.matchAll(
-    /data:[\w.+-]+\/[\w.+-]+(?:;(?!base64)[\w=.+-]+)*(;base64)?,([^"'`)\s]+)/g,
+    /data:(?:[\w.+-]+\/[\w.+-]+)?(?:;(?!base64[,;])[\w=.+-]+)*(;base64)?,([^"'`)\s]*)/gi,
   )) {
-    try {
-      out.push(m[1] ? Buffer.from(m[2], "base64") : Buffer.from(decodeURIComponent(m[2])));
-    } catch {
-      // not a decodable URI; the raw text is still scanned
-    }
+    // Percent escapes decode to raw bytes (not UTF-8 text, which binary data is not).
+    const bytes = Buffer.from(
+      m[2].replace(/%([0-9a-f]{2})/gi, (_, h) => String.fromCharCode(Number.parseInt(h, 16))),
+      "latin1",
+    );
+    out.push(m[1] ? Buffer.from(bytes.toString("latin1"), "base64") : bytes);
   }
   return out;
 }

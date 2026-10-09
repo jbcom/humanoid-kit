@@ -30,7 +30,18 @@ describe("slider taxonomy", () => {
   });
 
   it("offers only body sliders when the adult pack is not loaded", () => {
-    expect(sliderIds(loadFixtureAssets(false).sliders)).toEqual(sliderIds(bodyManifest.sliders));
+    const core = loadFixtureAssets(false).sliders;
+    expect(new Set(sliderIds(core))).toEqual(new Set(sliderIds(bodyManifest.sliders)));
+    // In MakeHuman's tab order, not the manifest's file order.
+    expect(core.map((t) => t.id)).toEqual([
+      "Macro modelling",
+      "Gender",
+      "Face",
+      "Torso",
+      "Arms and Legs",
+      "Measure",
+      "Body shapes",
+    ]);
   });
 
   it("merges adult sliders into their upstream task, group and position", () => {

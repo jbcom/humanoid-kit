@@ -18,7 +18,7 @@ import { createHistory, HISTORY_LIMIT, historyReducer } from "../src/editor/hist
 import { randomRecipe } from "../src/editor/randomize.ts";
 import type { SliderEntry } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
-import { agePolicyViolations } from "../src/recipe/agePolicy.ts";
+import { AgePolicyError, agePolicyViolations } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { recipeProblems } from "../src/recipe/validate.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
@@ -93,6 +93,21 @@ describe("editor controls", () => {
     expect(agePolicyViolations(r)).toEqual([]);
   });
 
+  it("refuses to write an adult anatomy value under 18, even without an availability check", () => {
+    if (!adultSlider) throw new Error("fixture has no adult slider");
+    fc.assert(
+      fc.property(
+        fc.double({ min: 1, max: 17.99, noNaN: true }),
+        fc.double({ min: 0.01, max: 1, noNaN: true }),
+        (age, v) => {
+          const r = createRecipe({ macros: { age } });
+          expect(() => withSliderValue(r, adultSlider, v, modifiers)).toThrow(AgePolicyError);
+          expect(withSliderValue(r, adultSlider, 0, modifiers).modifiers).toEqual({});
+        },
+      ),
+    );
+  });
+
   it("makes adult anatomy sliders unavailable under 18, with a reason", () => {
     if (!adultSlider) throw new Error("fixture has no adult slider");
     const minor = sliderAvailability(createRecipe({ macros: { age: 17 } }), adultSlider, modifiers);
@@ -111,7 +126,8 @@ describe("editor controls", () => {
 
   it("formats values for display", () => {
     const age = slider("age");
-    expect(formatSliderValue(age, 34.4, sliderRange(age, modifiers))).toBe("34 yr");
+    expect(formatSliderValue(age, 34, sliderRange(age, modifiers))).toBe("34 yr");
+    expect(formatSliderValue(age, 17.5, sliderRange(age, modifiers))).toBe("17.5 yr");
     const nose = slider("nose/nose-scale-horiz-decr|incr");
     expect(formatSliderValue(nose, 0.4, sliderRange(nose, modifiers))).toBe("+40%");
     const oval = slider("head/head-oval");
@@ -228,6 +244,14 @@ describe("framing", () => {
     expect(feet.max[1]).toBeLessThan(bounds("leftHand").min[1]);
     expect(bounds("leftHand").min[0]).toBeGreaterThan(0);
     expect(bounds("rightHand").max[0]).toBeLessThan(0);
+  });
+
+  it("frames a whole leg, from the hip down", () => {
+    const body = bounds("body");
+    const leg = bounds("leftLeg");
+    const height = body.max[1] - body.min[1];
+    expect(leg.max[1] - body.min[1]).toBeGreaterThan(0.47 * height);
+    expect(leg.min[1]).toBeCloseTo(body.min[1], 1);
   });
 
   it("resolves MakeHuman's camera hints", () => {
