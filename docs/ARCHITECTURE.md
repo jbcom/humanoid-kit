@@ -1269,9 +1269,27 @@ a coloured texture; everything in the pure core is testable in Node.
   divides the luminance by an alpha-weighted gaussian of itself (sigma well under
   the blotch, well over a strand), leaving strand-scale structure and alpha as
   they were; every other style keeps its atlas's shading.
+- *The coily styles are authored, not compiled.* The CC0 sources have no twists,
+  braids, cornrows or locs, and the community ones fail the licence rule
+  (`docs/licence-history.md`), so `scripts/lib/hairCards` builds them: **ropes**, tubes of
+  quads along a centreline (`ropes.ts`) that leaves the scalp at an angle read from the head
+  (`HeadFrame`: azimuth and elevation from the skull's centre, a ray to the head's own
+  triangles), lifts a little, then falls under gravity and lies over the body
+  (`BodySurface.probe`, signed distance from the whole body, winding taken from the skull); a
+  **grid of partings** (brick-wise rows, a hairline that recedes at the temples and runs up over
+  the ear and down at the nape) places box braids, twists and locs, and cornrows are parallel
+  parting lines on the scalp with a braid hanging from each end. The cards are bound to the
+  base mesh by the MHCLO scheme (`bindToBody`: the nearest triangle's corners, barycentric
+  weights, an offset) with the head's extents as the scale references, so they go through the
+  same pack, worker and renderer as a MakeHuman style and fit other heads. Each style's strand
+  map is a tile per rope variant, drawn as vector shapes and rasterised by sharp (`atlas.ts`),
+  periodic round the tube. A tube faces every way round its axis, so these styles opt out of
+  both the fin dissolve and the hairline fade (`HairFieldsInput.fins`, `feather`). Provenance
+  names them as authored by the packer. Not yet: a close crop or fade, bantu knots, curl
+  texture for the soft styles.
 
 **Costs and limits.** The pack is 3.5 MB for ten styles, mostly strand maps at
-1024 px; the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
+1024 px (and 0.3 to 0.5 MB for each authored one); the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
 because their alpha is fine detail. Hair has no physics and no strand shadows
 inside the volume beyond the baked occlusion. Red hair's chroma is limited by the
 pheomelanin spectrum, and blond, red and white are modelled, not measured

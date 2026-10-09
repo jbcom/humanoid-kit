@@ -25,6 +25,7 @@ import type { AdultDetailLattice, ControlShape } from "../../src/model/humanoidM
 import { moundTargets } from "./control/mound.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE, phallusTargets } from "./detail/phallus.ts";
 import { reservoirRoot } from "./detail/root.ts";
+import { scrotumTargets, TESTES_SIZE } from "./detail/scrotum.ts";
 import { type EncodedTarget, encodeSparseTarget } from "./targetEncoding.ts";
 
 /**
@@ -43,6 +44,7 @@ export const AUTHORED_MODIFIERS: readonly ShapeModifierEntry[] = [
   { id: PHALLUS_SIZE, group: "genitals", lo: null, hi: "", adultOnly: true },
   { id: PHALLUS_LENGTH, group: "genitals", lo: "", hi: "", adultOnly: true },
   { id: PHALLUS_GIRTH, group: "genitals", lo: "", hi: "", adultOnly: true },
+  { id: TESTES_SIZE, group: "genitals", lo: null, hi: "", adultOnly: true },
 ];
 
 /**
@@ -75,12 +77,20 @@ const AUTHORED_SLIDERS = [
     label: "Phallus girth",
     description: "Slimmer or thicker than the size sets, by up to two standard deviations.",
   },
+  {
+    mod: TESTES_SIZE,
+    after: "genitals/penis-testicles-decr|incr",
+    label: "Testes size",
+    description:
+      "From none to a large testis, each in its own sac; the right a little larger than the left, as measured.",
+  },
 ] as const;
 
 /** Upstream sliders the authored ones replace: the CC0 penis targets, whose shape the phallus supersedes. */
 export const HIDDEN_SLIDERS: readonly string[] = [
   "genitals/penis-length-decr|incr",
   "genitals/penis-circ-decr|incr",
+  "genitals/penis-testicles-decr|incr",
 ];
 
 /**
@@ -97,6 +107,10 @@ export const AUTHORED_PROVENANCE: readonly string[] = [
     "`scripts/lib/adultReservoirs.ts` places on the base mesh's own refinement. The inputs are the base body's " +
     "vertices and published measurements (length, girth, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F); " +
     "the glans' shape, the hang and the erect angle are modelled and labelled so there.",
+  "- `genitals/testes-k*` (detail targets) and the modifier `genitals/testes-size`: authored by " +
+    "`scripts/lib/detail/scrotum.ts` out of the labioscrotal pair of reservoirs. The inputs are the base body's " +
+    "vertices and published testis volumes and dimensions (docs/research/ADULT-ANATOMY-DATA.md, section F); " +
+    "the sac's skin, neck and hang are modelled and labelled so there.",
 ];
 
 /** Every target name the pack authors as a control target (a virtual modifier has none). */
@@ -168,15 +182,20 @@ export function authorDetail(
   lattice: AdultDetailLattice,
   reservoirs: readonly AdultReservoirSpec[],
 ): { targets: EncodedTarget[]; detail: AdultDetailSpec } {
-  const spec = reservoirs.find((r) => r.id === "phallic");
-  if (!spec) throw new Error("the pack has no phallic reservoir to draw the organ from");
-  const organ = phallusTargets(reservoirRoot(lattice, spec));
+  const rootOf = (id: string) => {
+    const spec = reservoirs.find((r) => r.id === id);
+    if (!spec) throw new Error(`the pack has no reservoir ${id} to draw from`);
+    return reservoirRoot(lattice, spec);
+  };
+  const organ = phallusTargets(rootOf("phallic"));
+  const sac = scrotumTargets([rootOf("labioscrotal-left"), rootOf("labioscrotal-right")]);
+  const made = [...organ.targets, ...sac.targets];
   return {
-    targets: organ.targets.map((t) => encodeSparseTarget(t.name, t.indices, t.xyz)),
+    targets: made.map((t) => encodeSparseTarget(t.name, t.indices, t.xyz)),
     detail: {
-      targets: organ.targets.map((t) => t.name),
+      targets: made.map((t) => t.name),
       surfaceKey: lattice.key,
-      drives: organ.drives,
+      drives: { ...organ.drives, ...sac.drives },
     },
   };
 }
