@@ -203,10 +203,12 @@ function AutoFrame({
   bone,
   view,
   span,
+  offset,
 }: {
   bone: string;
   view: [number, number, number];
   span: number;
+  offset: [number, number, number];
 }) {
   const camera = useThree((s) => s.camera);
   const controls = useThree((s) => s.controls) as { target: Vector3; update(): void } | null;
@@ -216,6 +218,7 @@ function AutoFrame({
     const b = scene.getObjectByName(bone);
     if (!b) return;
     b.getWorldPosition(at.current);
+    at.current.add(new Vector3(...offset));
     const fov = ((camera as { fov?: number }).fov ?? 35) * (Math.PI / 180);
     const distance = span / 2 / Math.tan(fov / 2);
     const dir = new Vector3(...view).normalize();
@@ -245,8 +248,8 @@ function QaLight({ kind }: { kind: "camera" | "under" }) {
 
 /**
  * A fixed-camera render for visual QA: `?view=front|side|back|face`, or
- * `?cam=x,y,z,tx,ty,tz` to place the camera exactly, or `?frame=<bone>&view=dx,dy,dz&span=<m>`
- * to frame a bone by name (`AutoFrame`), with `?light=camera|under` to light what the studio
+ * `?cam=x,y,z,tx,ty,tz` to place the camera exactly, or `?frame=<bone>&view=dx,dy,dz&span=<m>[&at=dx,dy,dz]`
+ * to frame a bone by name (`AutoFrame`, `at` a world offset in metres from the bone's head), with `?light=camera|under` to light what the studio
  * does not reach; `?tm=agx|neutral|aces`
  * and `?exp=<number>` override tone mapping and exposure for comparisons;
  * `?bg=rrggbb` sets a background key colour; `?face=JawDrop:1,LipsKiss:0.5`
@@ -287,6 +290,9 @@ function Shot() {
   const frame = params.get("frame");
   const frameView = (params.get("view")?.split(",").map(Number) ?? [0, 0, 1]) as number[];
   const frameSpan = Number(params.get("span") ?? 0.5);
+  const at = params.get("at")?.split(",").map(Number);
+  const frameOffset: [number, number, number] =
+    at?.length === 3 && at.every(Number.isFinite) ? (at as [number, number, number]) : [0, 0, 0];
   const qaLight = params.get("light");
   const preset: Record<
     string,
@@ -325,6 +331,7 @@ function Shot() {
             bone={frame}
             view={frameView as [number, number, number]}
             span={Number.isFinite(frameSpan) && frameSpan > 0 ? frameSpan : 0.5}
+            offset={frameOffset}
           />
         )}
         {(qaLight === "camera" || qaLight === "under") && <QaLight kind={qaLight} />}
