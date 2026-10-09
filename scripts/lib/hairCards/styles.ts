@@ -8,7 +8,7 @@
 import { Vector3 } from "three";
 import { METRES_PER_V, random, TILE_COUNT, tileRange } from "./atlas.ts";
 import type { BodySurface, HeadFrame, ScalpPoint } from "./head.ts";
-import { addRope, addTube, type Cards, newCards, type RopeSpec } from "./ropes.ts";
+import { addRope, addTube, type Cards, newCards } from "./ropes.ts";
 
 const DEG = Math.PI / 180;
 
@@ -44,64 +44,6 @@ const tileOf = (index: number, metresPerV = METRES_PER_V) => {
   const { u0, u1 } = tileRange(index % TILE_COUNT);
   return { u0, u1, metresPerV, v0: ((index * 0.37) % 1) * 0.3 };
 };
-
-/**
- * Box braids: plaits from the roots all the way down, one from each section of a grid of partings
- * over the head, shoulder-blade length, hanging under their own weight.
- */
-export function boxBraids({ head, body }: StyleContext): Cards {
-  const cards = newCards();
-  const rand = random(11);
-  const spacing = 0.02; // metres between roots
-  const radiusOfHead = (head.extent.max.x - head.extent.min.x) / 2;
-  const rowStep = spacing / radiusOfHead;
-  let index = 0;
-  for (let e = 82 * DEG; e > -36 * DEG; e -= rowStep) {
-    const ring = 2 * Math.PI * Math.cos(e) * radiusOfHead;
-    const count = Math.max(1, Math.round(ring / spacing));
-    for (let n = 0; n < count; n++) {
-      // Stagger alternate rows by half a step, as sections are parted brick-wise.
-      const a =
-        ((n + 0.5 * (Math.round((82 * DEG - e) / rowStep) % 2)) / count) * 2 * Math.PI - Math.PI;
-      if (e / DEG < hairlineElevation(a / DEG) + 3) continue;
-      const root = head.surface(a, e);
-      if (!root) continue;
-      // Braids from the front fall to the side of the face, not across it: swept away from the
-      // midline and back, more the nearer the front they start.
-      const front = Math.max(0, 1 - Math.abs(a) / (40 * DEG));
-      const spec: RopeSpec = {
-        drift: new Vector3(Math.sign(root.point.x) * 1.3 * front, 0, -0.5 * front),
-        root,
-        length: 0.3 + 0.04 * (rand() - 0.5),
-        radius: 0.0072,
-        tipRadius: 0.0035,
-        lift: 0.012,
-        sides: 5,
-        segments: 12,
-        tile: tileOf(index++),
-      };
-      addRope(cards, spec, body);
-    }
-  }
-  const crown = head.surface(0, 90 * DEG);
-  if (crown)
-    addRope(
-      cards,
-      {
-        root: crown,
-        length: 0.3,
-        radius: 0.0072,
-        tipRadius: 0.0035,
-        lift: 0.012,
-        sides: 5,
-        segments: 12,
-        drift: new Vector3(0, 0, -0.6),
-        tile: tileOf(index++),
-      },
-      body,
-    );
-  return cards;
-}
 
 /** The scalp where a plane `x` = constant meets it, from `fromE` to `toE` (radians) over the top: one parting, front to back. */
 function partingAlong(
@@ -209,54 +151,57 @@ function ropeGrid(
   const radiusOfHead = (head.extent.max.x - head.extent.min.x) / 2;
   const rowStep = rope.spacing / radiusOfHead;
   let index = 0;
-  const top = 84 * DEG;
-  for (let e = top; e > -36 * DEG; e -= rowStep) {
-    const ring = 2 * Math.PI * Math.cos(e) * radiusOfHead;
-    const count = Math.max(1, Math.round(ring / rope.spacing));
-    for (let n = 0; n < count; n++) {
-      const a = ((n + 0.5 * (Math.round((top - e) / rowStep) % 2)) / count) * 2 * Math.PI - Math.PI;
-      if (e / DEG < hairlineElevation(a / DEG) + 3) continue;
-      const root = head.surface(a, e);
-      if (!root) continue;
-      const front = Math.max(0, 1 - Math.abs(a) / (40 * DEG));
-      addRope(
-        cards,
-        {
-          root,
-          length: rope.length * (0.85 + 0.3 * rand()),
-          radius: rope.radius,
-          tipRadius: rope.tipRadius,
-          lift: rope.lift,
-          sides: rope.sides,
-          segments: rope.segments,
-          drift: new Vector3(
-            Math.sign(root.point.x) * 1.3 * front + rope.stray * (rand() - 0.5),
-            0,
-            -0.5 * front + rope.stray * (rand() - 0.5),
-          ),
-          tile: tileOf(index++),
-        },
-        body,
-      );
-    }
-  }
-  const crown = head.surface(0, 90 * DEG);
-  if (crown)
+  const place = (root: ScalpPoint, a: number) => {
+    // Braids from the front hairline fall to the side of the face; over the crown there is no front.
+    const rise = Math.atan2(
+      root.point.y - head.centre.y,
+      Math.hypot(root.point.x - head.centre.x, root.point.z - head.centre.z),
+    );
+    const high = Math.min(1, Math.max(0, (rise - 35 * DEG) / (25 * DEG)));
+    const front = Math.max(0, 1 - Math.abs(a) / (40 * DEG)) * (1 - high * high * (3 - 2 * high));
     addRope(
       cards,
       {
-        root: crown,
-        length: rope.length,
+        root,
+        length: rope.length * (0.85 + 0.3 * rand()),
         radius: rope.radius,
+        collar: 0.7,
         tipRadius: rope.tipRadius,
         lift: rope.lift,
         sides: rope.sides,
         segments: rope.segments,
-        drift: new Vector3(0, 0, -0.5),
+        drift: new Vector3(
+          Math.sign(root.point.x) * 1.3 * front + rope.stray * (rand() - 0.5),
+          0,
+          -0.5 * front + rope.stray * (rand() - 0.5),
+        ),
         tile: tileOf(index++),
       },
       body,
     );
+  };
+  // Over the crown the rows of a ring would crowd into a point; a flat grid, read from above, does not.
+  const crownFrom = 62 * DEG;
+  for (let e = crownFrom - rowStep / 2; e > -36 * DEG; e -= rowStep) {
+    const ring = 2 * Math.PI * Math.cos(e) * radiusOfHead;
+    const count = Math.max(1, Math.round(ring / rope.spacing));
+    for (let n = 0; n < count; n++) {
+      const a =
+        ((n + 0.5 * (Math.round((crownFrom - e) / rowStep) % 2)) / count) * 2 * Math.PI - Math.PI;
+      if (e / DEG < hairlineElevation(a / DEG) + 3) continue;
+      const root = head.surface(a, e);
+      if (root) place(root, a);
+    }
+  }
+  const reach = radiusOfHead * Math.cos(crownFrom);
+  for (let row = 0, z = -reach; z <= reach; z += rope.spacing * 0.9, row++)
+    for (let x = -reach + (row % 2) * rope.spacing * 0.5; x <= reach; x += rope.spacing) {
+      if (Math.hypot(x, z) > reach) continue;
+      // From the skull's centre toward a point over the crown: the grid, projected onto the scalp.
+      const direction = new Vector3(x, radiusOfHead, z).normalize();
+      const root = head.surface(Math.atan2(direction.x, direction.z), Math.asin(direction.y));
+      if (root) place(root, Math.atan2(direction.x, direction.z));
+    }
   return cards;
 }
 
@@ -286,4 +231,21 @@ export const locs = (context: StyleContext): Cards =>
     sides: 6,
     segments: 12,
     stray: 0.2,
+  });
+
+/**
+ * Box braids: plaits from the roots all the way down, one from each section of a grid of partings
+ * over the head, shoulder-blade length, hanging under their own weight.
+ */
+export const boxBraids = (context: StyleContext): Cards =>
+  ropeGrid(context, {
+    seed: 11,
+    spacing: 0.02,
+    length: 0.3,
+    radius: 0.0072,
+    tipRadius: 0.0035,
+    lift: 0.012,
+    sides: 5,
+    segments: 12,
+    stray: 0.1,
   });
