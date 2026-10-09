@@ -10,6 +10,7 @@
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
 import { groupFaces, jointPosition } from "../../format/assetFormat.ts";
+import { callusAlbedo } from "../footTone.ts";
 import type { DetailLayer, SkinLayer, SkinLayerFields, SurfaceLayer } from "../layers.ts";
 import { ridgeOrientationCoordinate } from "../ridges.ts";
 import { type DigitFrame, digitFrame, type Vec3 } from "./digitFrame.ts";
@@ -297,17 +298,23 @@ export function callusAmount(age: number | undefined): number {
 }
 
 /**
- * Thickened stratum corneum over the sole's pressure sites: yellower and a
- * little paler where it is thick (the blood under it shows less), and drier, so
- * duller. The tint is a choice; `callusAmount` sets how much.
+ * Thickened stratum corneum over the sole's pressure sites: the sole's colour
+ * (`palmAlbedo`) made paler and yellower (`callusAlbedo`), as much as
+ * `callusAmount` says of this age.
  */
 export const CALLUS_LAYER: SkinLayer = {
   id: "callus",
-  blend: "multiply",
+  blend: "mix",
   targets: [],
   fields: callusFields,
-  paint: ({ age }) => ({ strength: callusAmount(age), stops: [[1.04, 0.97, 0.86]] }),
+  paint: ({ tone, age }) => ({
+    strength: CALLUS_OPACITY * callusAmount(age),
+    stops: [callusAlbedo(tone)],
+  }),
 };
+
+/** How much of a figure's callus colour shows over the sole at full age amount (a choice). */
+export const CALLUS_OPACITY = 0.85;
 
 /** How much duller (rougher, less specular) callus is at full strength: dry keratin scatters light, it does not mirror it (a choice). */
 export const CALLUS_ROUGHNESS = 0.2;

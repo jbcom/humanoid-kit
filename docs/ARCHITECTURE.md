@@ -1712,8 +1712,9 @@ anything when shoes are worn beyond the fields every figure shares.
   placed from the skeleton's toe joints. The sole is `skinZones(...).sole`, the
   foot skin that faces down.
 - *Callus is a layer over the pressure sites, scaled by age.* Gaussian sites
-  weighted as the pressure maps say, a yellower, paler multiply tint and a
-  matte surface layer on the sole only (`callusAmount(age)`; a small child's
+  weighted as the pressure maps say, a mix toward the sole's colour made paler
+  and yellower in CIELAB (`callusAlbedo`; the sole's colour is the hands'
+  `palmAlbedo`, one owner) and a matte surface layer on the sole only (`callusAmount(age)`; a small child's
   sole is soft and the forefoot hardens with age). The age reaches the layer
   through `SkinPaintInput.age`, which `<Humanoid>` sets from the recipe. The
   tint and the age curve are choices and say so in C6: no callus colorimetry

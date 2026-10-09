@@ -224,7 +224,7 @@ float hkDetailHeight( vec2 uv ) {
 		} else if ( kind == 5 ) {
 			vec2 p = uv * vHkUvScale;
 			// Ridges within a pixel of one another blur to a flat; fade them out before they alias.
-			float fade = 1.0 - smoothstep( 0.2, 0.45, length( fwidth( p ) ) / head.w );
+			float fade = 1.0 - smoothstep( 0.12, 0.32, length( fwidth( p ) ) / head.w );
 			// The derivatives above are taken in uniform flow; only the pattern is skipped off the ridged skin.
 			if ( a > 0.002 && fade > 0.0 ) {
 				float theta = f.y * 3.14159265359 + ${glslFloat(RIDGE_ORIENTATION_SEAM)};
