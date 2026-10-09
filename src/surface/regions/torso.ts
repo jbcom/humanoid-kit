@@ -4,17 +4,20 @@
  * quantity names its source in docs/research/SKIN-STATES.md (C7) or is marked
  * a CHOICE there.
  */
-import { AssetFormatError, type HumanoidAssets } from "../../format/assetFormat.ts";
-import type { ColourLayer, DetailLayer, SkinPaintInput } from "../layers.ts";
+import { AssetFormatError, type HumanoidAssets, jointPosition } from "../../format/assetFormat.ts";
+import type { ColourLayer, DetailLayer, SkinLayerFields, SkinPaintInput } from "../layers.ts";
 import { areolaAlbedo, type Rgb, skinAlbedo } from "../skinTone.ts";
 import {
   areolaRadius,
+  clavicleDefinition,
   figureBuild,
   nippleContrast,
   nippleRadius,
   pubertyProgress,
+  ribDefinition,
 } from "../torsoTone.ts";
-import { once } from "./once.ts";
+import { bodySurface, once } from "./once.ts";
+import { skinZones } from "./skinZones.ts";
 
 const smoothstep = (lo: number, hi: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
@@ -29,12 +32,14 @@ export const AREOLA_EDGE_SOFTNESS = 0.14;
 const AREOLA_EDGE_MIN = 0.0015;
 
 /**
- * How far from a nipple's centre the areola's fields reach, metres: past the
- * largest areola a figure paints (a woman's at the largest breast, 22 mm in
- * radius) and its soft edge. A static bound of the field: the
- * paint (`AREOLA_LAYER`) puts the figure's own edge inside it.
+ * How far from a nipple's centre the areola's fields reach, in the base mesh's
+ * metres: past the largest areola any figure paints on that mesh (its own
+ * radius over its `areolaStretch`: a small-breasted woman's 16 mm over 1.14 is
+ * 14, a short man's 14 over 0.83 is 17, with the soft edge 19) and no further,
+ * so the eight stops across it are as fine as they can be. A static bound of
+ * the field: the paint (`AREOLA_LAYER`) puts the figure's own edge inside it.
  */
-export const AREOLA_REACH = 0.0275;
+export const AREOLA_REACH = 0.022;
 
 export interface AreolaZone {
   /** 1 within the reach's inner part, easing to 0 at the reach. */
@@ -43,14 +48,20 @@ export interface AreolaZone {
   radial: Float32Array;
 }
 
-/** The centre of the vertices the nipple-size target moves on each side of the body (side +1, then -1). */
-function nippleCentres(assets: HumanoidAssets): [number, number, number][] {
+/** The vertices the nipple-size target moves on one side of the body (+1 the left, -1 the right). */
+function nippleVertices(assets: HumanoidAssets, side: number): number[] {
   const t = assets.targets.get(NIPPLE_TARGET);
   if (!t)
     throw new AssetFormatError(`a skin layer needs target ${NIPPLE_TARGET}, which is not loaded`);
   const P = assets.positions;
+  return Array.from(t.indices).filter((v) => Math.sign(P[v * 3] as number) === side);
+}
+
+/** The centre of the vertices the nipple-size target moves on each side of the body (side +1, then -1). */
+function nippleCentres(assets: HumanoidAssets): [number, number, number][] {
+  const P = assets.positions;
   return [1, -1].map((side) => {
-    const vs = Array.from(t.indices).filter((v) => Math.sign(P[v * 3] as number) === side);
+    const vs = nippleVertices(assets, side);
     const sum = [0, 0, 0];
     for (const v of vs)
       for (let k = 0; k < 3; k++) sum[k] = (sum[k] as number) + (P[v * 3 + k] as number);
@@ -105,11 +116,13 @@ interface AreolaShape {
 
 function areolaShape(input: SkinPaintInput): AreolaShape {
   const b = figureBuild(input);
-  const edge = areolaRadius(b.age, b.gender, b.breastSize);
+  // The figure's own lengths, in the field's: the mesh round the nipple is this much bigger.
+  const k = input.areolaScale && input.areolaScale > 0 ? input.areolaScale : 1;
+  const edge = areolaRadius(b.age, b.gender, b.breastSize) / k;
   return {
     edge,
-    soft: Math.max(AREOLA_EDGE_MIN, AREOLA_EDGE_SOFTNESS * edge),
-    tip: nippleRadius(b.age, b.gender),
+    soft: Math.max(AREOLA_EDGE_MIN / k, AREOLA_EDGE_SOFTNESS * edge),
+    tip: nippleRadius(b.age, b.gender) / k,
     stage: pubertyProgress(b.age, b.gender),
     gender: b.gender,
   };
@@ -246,9 +259,220 @@ export const MONTGOMERY_LAYER: DetailLayer = {
   },
 };
 
+/** The vertices the stretch is measured on: the body's, from this far to this far (base metres) of a nipple's centre. */
+const STRETCH_RING = [0.008, 0.03] as const;
+
+/**
+ * How much larger the skin round the nipples is on a figure than on the base
+ * mesh: the median, over the body's vertices in a ring round each nipple's
+ * centre, of their distance from it on the figure (`control`, the morphed
+ * control mesh) over their distance on the base mesh. The fields are measured
+ * on the base mesh, and the figure's mesh is that mesh morphed: 0.65 on a
+ * seven year old, 1.96 on the largest breast. 1 on the base mesh itself.
+ */
+export function areolaStretch(assets: HumanoidAssets, control: Float32Array): number {
+  const rings = once(assets, "areola-ring", () => {
+    const P = assets.positions;
+    const onBody = bodySurface(assets);
+    return nippleCentres(assets).map((c) => {
+      const side = Math.sign(c[0]);
+      const vs: number[] = [];
+      const base: number[] = [];
+      for (let v = 0; v < assets.manifest.vertexCount; v++) {
+        if (onBody[v] !== 1 || Math.sign(P[v * 3] as number) !== side) continue;
+        const d = Math.hypot(
+          (P[v * 3] as number) - c[0],
+          (P[v * 3 + 1] as number) - c[1],
+          (P[v * 3 + 2] as number) - c[2],
+        );
+        if (d >= STRETCH_RING[0] && d <= STRETCH_RING[1]) {
+          vs.push(v);
+          base.push(d);
+        }
+      }
+      return { vs, base, centre: nippleVertices(assets, side) };
+    });
+  });
+  const ratios: number[] = [];
+  for (const { vs, base, centre } of rings) {
+    // The nipple's centre on the figure: the same vertices' centroid.
+    const c = [0, 0, 0];
+    for (const v of centre)
+      for (let k = 0; k < 3; k++)
+        c[k] = (c[k] as number) + (control[v * 3 + k] as number) / centre.length;
+    vs.forEach((v, i) => {
+      const d = Math.hypot(
+        (control[v * 3] as number) - (c[0] as number),
+        (control[v * 3 + 1] as number) - (c[1] as number),
+        (control[v * 3 + 2] as number) - (c[2] as number),
+      );
+      ratios.push(d / (base[i] as number));
+    });
+  }
+  ratios.sort((a, b) => a - b);
+  return ratios.length > 0 ? (ratios[ratios.length >> 1] as number) : 1;
+}
+
+/** A skeleton joint's position on the base mesh. */
+function joint(assets: HumanoidAssets, name: string): [number, number, number] {
+  const out = new Float32Array(3);
+  jointPosition(assets, assets.positions, name, out, 0);
+  return [out[0] as number, out[1] as number, out[2] as number];
+}
+
+/**
+ * The collarbones: a ridge on each clavicle's axis between two grooves, the
+ * fossae above and below it, drawn as two periods of a crease layer across the
+ * bone. The coordinate is the signed distance up from the axis, in the skin's
+ * plane, in periods (`CLAVICLE_PERIOD`): the ridge is at coordinate 0.5, the
+ * grooves at 0.25 and 0.75, and the window is flat at 0 and 1. The mask
+ * tapers where the bone meets the breastbone and the shoulder, and over skin
+ * that does not face up and forward.
+ */
+export const CLAVICLE_PERIODS = 2;
+/** Groove to ridge to groove, metres (CHOICE: a collarbone's width, with the hollows either side). */
+const CLAVICLE_PERIOD = 0.016;
+/** The relief of a collarbone on a lean figure, metres (CHOICE: bone is 6 to 10 mm proud of the hollows; a shading cue is a fraction of it). */
+export const CLAVICLE_RELIEF_HEIGHT = 0.0012;
+
+/** The direction from a collarbone out through the skin over it: forward and up (a unit vector). */
+const CLAVICLE_OUTWARD = [0, 0.5, 0.866] as const;
+
+export function clavicleFields(assets: HumanoidAssets): SkinLayerFields {
+  return once(assets, "clavicles", () => {
+    const P = assets.positions;
+    const n = assets.manifest.vertexCount;
+    const onBody = bodySurface(assets);
+    const mask = new Float32Array(n);
+    const coord = new Float32Array(n);
+    // The skin lies in front of and above the bone: out from the bone along this.
+    const out = CLAVICLE_OUTWARD;
+    for (const side of ["L", "R"]) {
+      const head = joint(assets, `clavicle.${side}____head`);
+      const tail = joint(assets, `clavicle.${side}____tail`);
+      const axis = [0, 1, 2].map((k) => (tail[k] as number) - (head[k] as number));
+      const len2 = axis.reduce((a, x) => a + x * x, 0);
+      // Up across the bone, in the cross-section the outward direction and the axis leave: a
+      // point straight out from the bone has 0 of it, the neck side of the bone has more.
+      const raw = [
+        out[1] * (axis[2] as number) - out[2] * (axis[1] as number),
+        out[2] * (axis[0] as number) - out[0] * (axis[2] as number),
+        out[0] * (axis[1] as number) - out[1] * (axis[0] as number),
+      ];
+      const sign = (raw[1] as number) >= 0 ? 1 : -1;
+      const across = raw.map((x) => (sign * x) / Math.hypot(...raw));
+      for (let v = 0; v < n; v++) {
+        if (onBody[v] !== 1) continue;
+        // Each vertex belongs to the bone on its own side of the body.
+        if ((P[v * 3] as number) >= 0 !== (side === "L")) continue;
+        const p = [0, 1, 2].map((k) => (P[v * 3 + k] as number) - (head[k] as number));
+        const t = p.reduce((a, x, k) => a + x * (axis[k] as number), 0) / len2;
+        if (t < 0 || t > 1) continue;
+        const height = p.reduce((a, x, k) => a + x * (out[k] as number), 0);
+        // Over the bone, not behind it: the skin is a few millimetres to three centimetres out.
+        const over = smoothstep(0, 0.008, height) * (1 - smoothstep(0.03, 0.045, height));
+        const d = p.reduce((a, x, k) => a + x * (across[k] as number), 0);
+        const w =
+          smoothstep(0.04, 0.18, t) *
+          (1 - smoothstep(0.78, 0.96, t)) *
+          (1 - smoothstep(0.75 * CLAVICLE_PERIOD, CLAVICLE_PERIOD, Math.abs(d))) *
+          over;
+        if (w > (mask[v] as number)) {
+          mask[v] = w;
+          coord[v] = 0.5 + d / (CLAVICLE_PERIODS * CLAVICLE_PERIOD);
+        }
+      }
+    }
+    return { mask, coord };
+  });
+}
+
+export const CLAVICLE_LAYER: DetailLayer = {
+  id: "clavicles",
+  kind: "detail",
+  pattern: "creases",
+  targets: [],
+  fields: clavicleFields,
+  paint: (input) => ({
+    strength: clavicleDefinition(figureBuild(input)),
+    height: CLAVICLE_RELIEF_HEIGHT,
+    size: CLAVICLE_PERIODS,
+  }),
+};
+
+/**
+ * The ribs: the grooves between them over the front and flanks of the chest,
+ * `RIB_PERIODS` periods of a crease layer down a window from the second rib to
+ * the tenth. A rib runs down and outward from the breastbone, so the coordinate
+ * is the distance down from the second rib's height along the line y + slope ·
+ * |x| = constant, in the window's length. The breast (tissue over the ribs),
+ * the arms and the breastbone's own strip are left out. Anatomy (the ribs'
+ * spacing, slope, extent) is a CHOICE from a thorax's proportions, fitted to the
+ * base mesh's chest: no measurement of the surface landmarks was found.
+ */
+export const RIB_PERIODS = 9;
+/** Distance between ribs at the front, metres. */
+const RIB_SPACING = 0.03;
+/** How far a rib falls per metre outward from the breastbone (a slope of 25°). */
+const RIB_SLOPE = 0.47;
+/** The second rib sits this far below the collarbone's inner end at the midline, metres. */
+const RIB_TOP_BELOW_CLAVICLE = 0.05;
+/** The relief of the grooves between ribs on a lean figure, metres (CHOICE). */
+export const RIB_RELIEF_HEIGHT = 0.001;
+
+export function ribFields(assets: HumanoidAssets): SkinLayerFields {
+  return once(assets, "ribs", () => {
+    const P = assets.positions;
+    const n = assets.manifest.vertexCount;
+    const zones = skinZones(assets);
+    const breast = zones.zone("breast");
+    const arm = zones.zone("upperArm");
+    const top = joint(assets, "clavicle.L____head")[1] - RIB_TOP_BELOW_CLAVICLE;
+    const window = RIB_PERIODS * RIB_SPACING;
+    const onBody = bodySurface(assets);
+    const mask = new Float32Array(n);
+    const coord = new Float32Array(n);
+    for (let v = 0; v < n; v++) {
+      if (onBody[v] !== 1) continue;
+      const x = Math.abs(P[v * 3] as number);
+      const y = P[v * 3 + 1] as number;
+      const t = (top - (y + RIB_SLOPE * x)) / window;
+      if (t <= 0 || t >= 1) continue;
+      const w =
+        (zones.front[v] as number) *
+        smoothstep(0, 0.06, t) *
+        (1 - smoothstep(0.94, 1, t)) *
+        smoothstep(0.015, 0.04, x) *
+        (1 - smoothstep(0.15, 0.2, x)) *
+        (1 - smoothstep(0.1, 0.5, breast[v] as number)) *
+        (1 - smoothstep(0.1, 0.5, arm[v] as number));
+      if (w > 0) {
+        mask[v] = w;
+        coord[v] = t;
+      }
+    }
+    return { mask, coord };
+  });
+}
+
+export const RIB_LAYER: DetailLayer = {
+  id: "ribs",
+  kind: "detail",
+  pattern: "creases",
+  targets: [],
+  fields: ribFields,
+  paint: (input) => ({
+    strength: ribDefinition(figureBuild(input)),
+    height: RIB_RELIEF_HEIGHT,
+    size: RIB_PERIODS,
+  }),
+};
+
 /** The torso's layers in stack order. */
 export const TORSO_SKIN_LAYERS: readonly (ColourLayer | DetailLayer)[] = [
   AREOLA_LAYER,
   AREOLA_RELIEF_LAYER,
   MONTGOMERY_LAYER,
+  CLAVICLE_LAYER,
+  RIB_LAYER,
 ];

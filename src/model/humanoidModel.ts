@@ -61,6 +61,7 @@ import {
 } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { SKIN_LAYERS } from "../surface/regions/index.ts";
+import { areolaStretch } from "../surface/regions/torso.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 import { tuckDepths } from "./tuck.ts";
 
@@ -320,6 +321,8 @@ export interface Evaluation extends SurfaceEvaluation {
   groundOffset: number;
   /** Morphed control positions (base topology), for joints, bindings and measurement. */
   control: Float32Array;
+  /** How much larger the skin round the nipples is than the base mesh's (`areolaStretch`). */
+  areolaScale: number;
   /** Per body render vertex: mean curvature magnitude (m⁻¹), for subsurface scattering. */
   curvature: Float32Array;
   /** The skeleton fitted to this figure: each bone's rest head (`restBones`), bones × 3. */
@@ -1283,6 +1286,7 @@ export class HumanoidModel {
       },
       groundOffset: -minY,
       control,
+      areolaScale: areolaStretch(this.assets, control),
       curvature,
       boneHeads,
       bodyArt: recipe.bodyArt ? placeBodyArt(this.assets, recipe.bodyArt, control) : null,

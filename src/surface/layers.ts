@@ -33,6 +33,12 @@ export interface SkinPaintInput {
    * macros, so an input built without them still paints.
    */
   build?: Partial<Omit<FigureBuild, "age">>;
+  /**
+   * How much larger the figure's skin round the nipple is than the base mesh's
+   * (`areolaStretch`, measured on its evaluated shape), so the areola's size in
+   * metres can be put on the base mesh's field. Absent is 1.
+   */
+  areolaScale?: number;
   /** The recipe's regional skin parameters (0..1 each). */
   flush: number;
   lips: number;

@@ -948,6 +948,9 @@ export function Humanoid({
   // crouch or a kneel comes down to the ground rather than hanging where the
   // standing feet were.
   const [figure, setFigure] = useState<Evaluation | null>(null);
+  // How much larger the skin round the nipples is than the base mesh's, to a hundredth, so the
+  // skin is repainted when the figure's shape changes it and not on every evaluation.
+  const [areolaScale, setAreolaScale] = useState(1);
   // The same pose, as dual quaternions over the evaluated figure's rest skeleton.
   useEffect(() => {
     if (!dual || !ready || !figure) return;
@@ -1114,12 +1117,13 @@ export function Humanoid({
         muscle: recipe.macros.muscle,
         breastSize: recipe.macros.breastSize,
       },
+      areolaScale,
       // Which adult layers paint: only for an adult, only for the anatomy applied
       // (the adult pack's own list of features; none without the pack).
       adult: isAdult(recipe),
       anatomy: appliedAnatomy(recipe, ready?.anatomy?.features ?? []),
     });
-  }, [skin, recipe, signals, flexion, face, ready]);
+  }, [skin, recipe, signals, flexion, face, ready, areolaScale]);
 
   // Only the signals that change the shape re-evaluate the figure; a stable
   // key keeps a colour-only change (or a new object with the same values) from
@@ -1235,6 +1239,7 @@ export function Humanoid({
           if (g) writeGeometry(g, a);
         });
         setFigure(ev);
+        setAreolaScale(Math.round(ev.areolaScale * 100) / 100);
         ground(ev);
         presenceSource.current = ready?.presenceJoints
           ? {

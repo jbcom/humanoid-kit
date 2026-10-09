@@ -14,6 +14,7 @@ import type { DetailLayer, SkinLayer, SkinLayerFields } from "../layers.ts";
 import { ridgeOrientationCoordinate } from "../ridges.ts";
 import { type DigitFrame, digitFrame, type Vec3 } from "./digitFrame.ts";
 import { NAIL_SHARP, nailCoordinate } from "./hands/nails.ts";
+import { bodySurface } from "./once.ts";
 import { skinZones } from "./skinZones.ts";
 
 /** Where a landmark lies in a foot's frame: `along` (0 heel, 1 second toe's tip) and `across` (metres, positive outward). */
@@ -48,18 +49,6 @@ export interface FootFrame {
   axis: readonly [readonly [number, number], readonly [number, number]];
   lateral: readonly [readonly [number, number], readonly [number, number]];
   landmarks: readonly [FootLandmarks, FootLandmarks];
-}
-
-/**
- * The vertices of the body surface: the base mesh also carries helper geometry
- * (the tights proxy garments are bound to, joints, ...) with skin weights of its
- * own, whose vertices lie a little off the skin and would move a frame's extent.
- */
-function bodySurface(assets: HumanoidAssets): Uint8Array {
-  const out = new Uint8Array(assets.manifest.vertexCount);
-  for (const f of groupFaces(assets, "body"))
-    for (let k = 0; k < 4; k++) out[assets.faceVerts[f * 4 + k] as number] = 1;
-  return out;
 }
 
 const frames = new WeakMap<HumanoidAssets, FootFrame>();

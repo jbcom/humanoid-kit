@@ -2156,6 +2156,21 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   and a puberty that grows it, without a field per age. The resolution is the
   eight stops across the reach (a stop every 3.9 mm); the edge position is
   continuous, its softness is not finer than that.
+- *Sizes in metres are put on the base mesh by the measured stretch.* The fields
+  are measured on the base mesh and the figure's mesh is that mesh morphed, so a
+  nipple's surroundings are 0.65 times as big on a seven year old and 1.96 on the
+  largest breast (`areolaStretch`: the median over the vertices in a ring round
+  each nipple of their distance from its centre on the evaluated control mesh
+  over their distance on the base mesh). An evaluation reports it
+  (`Evaluation.areolaScale`), the component rounds it to a hundredth and puts it
+  in the paint input (`SkinPaintInput.areolaScale`), and the areola's paint
+  divides its own lengths in metres (the areola's radius and its soft edge, the
+  nipple's) by it. The first sheets of the relief had a tubercle ring that ran
+  a centimetre past the areola for want of this. A fitted model of the stretch
+  by macro was rejected: it is not separable in height, age, sex and breast size,
+  and the evaluation has the number already. Relief sizes (the grain and the
+  tubercles' spacing) are not affected: they are in the skin's own metres
+  through the shader's UV scale.
 - *The areola multiplies the skin, by ratios.* The stops are the nipple's and
   the areola's colour as a ratio to the tone's skin, one beyond the areola's
   edge, so the layer leaves whatever skin is under it as it is. (The first
@@ -2179,6 +2194,21 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   an occupancy of about 8% in a woman give about a dozen on an areola. Each is a
   1.5 mm bump (a bump spans 0.7 of a cell), where measured tubercles are 1 to 2
   mm.
+- *Collarbones and ribs are crease layers by body fat.* The body fat is
+  Gallagher's equation (`bodyFatPercent`) of the body mass index the figure's
+  own mesh has (`figureBmi`: its volume at the density of the body over its
+  height squared, measured on the base mesh and re-measured by a test, so it
+  cannot drift), its sex and its age. How plainly a bone shows is a smoothstep
+  of that between a fat at which it does not (`CLAVICLE_VISIBLE_FAT`,
+  `RIB_VISIBLE_FAT`: ribs only on the leanest) and one at which it does, so the
+  relief's strength is the figure's own; a heavy figure's collarbones and ribs
+  are flat. The collarbone is two periods of a crease layer across the bone: a
+  ridge on the clavicle's axis between the fossae above and below it, the
+  coordinate the distance up the bone's own cross-section, so a point straight
+  out from the bone is the ridge; a rib is the groove between two, nine
+  periods down a window from the second rib to the tenth, along lines that fall
+  25 degrees outward from the breastbone, and the breast, the arms and the
+  breastbone's strip are left out.
 - *No channel was added.* The areola's colour keeps its two; the texture and the
   tubercles overlap it on the surface, so each needs its own, but the atlas plan
   puts them where the face's lines and the feet's and hands' layers are not

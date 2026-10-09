@@ -101,3 +101,72 @@ export function nippleContrast(age: number, gender: number): number {
   const p = pubertyProgress(age, g);
   return 1 + (mix(NIPPLE_CONTRAST_FEMALE, NIPPLE_CONTRAST_MALE, g) - 1) * p;
 }
+
+/**
+ * The body mass index the figure's own mesh has, by weight macro and sex: the
+ * body group's volume at the density of the body (1010 kg/m³) over its height
+ * squared, measured on the base mesh at 25 years and the middle height
+ * (`tests/torsoTone.test.ts` measures it again, so these cannot drift). The
+ * weight macro has no stated index; this is what its extremes weigh. A slim
+ * default (19.2 in a woman, 21.4 in a man), and at the macro's top a woman is
+ * still within the healthy range (21.9): the mesh does not model obesity.
+ */
+const BMI_FEMALE = [16.1, 21.9] as const;
+const BMI_MALE = [19.4, 23.4] as const;
+
+export function figureBmi(b: Pick<FigureBuild, "weight" | "gender">): number {
+  const w = clamp(b.weight);
+  const f = mix(BMI_FEMALE[0], BMI_FEMALE[1], w);
+  const m = mix(BMI_MALE[0], BMI_MALE[1], w);
+  return mix(f, m, clamp(b.gender));
+}
+
+/**
+ * Body fat as a percentage of weight from the index, sex and age, Gallagher et
+ * al. 2000 (Am J Clin Nutr 72:694, the equation for all subjects without the
+ * ethnic terms: standard error 2.8 to 5.4 points): 64.5 − 848/BMI + 0.079 age
+ * − 16.4 sex + 0.05 sex age + 39 sex/BMI, sex 1 for a man and 0 for a woman
+ * (taken continuously from the gender macro). Fitted on adults of BMI up to
+ * 35; a child takes the age of 18, a choice (the equation does not reach them).
+ */
+export function bodyFatPercent(bmi: number, b: Pick<FigureBuild, "gender" | "age">): number {
+  const sex = clamp(b.gender);
+  const age = Math.max(18, b.age);
+  return 64.5 - 848 / bmi + 0.079 * age - 16.4 * sex + 0.05 * sex * age + (39 * sex) / bmi;
+}
+
+/** The figure's body fat, percent: `bodyFatPercent` of its own index. */
+export const figureBodyFat = (b: FigureBuild): number => bodyFatPercent(figureBmi(b), b);
+
+/**
+ * How much a bone shows through the skin at a body fat, 1 at `[full]` percent
+ * and below, 0 at `[none]` and above, a smoothstep between; the thresholds are
+ * by sex (the gender macro interpolates them). Choices from where the bones
+ * are said to show: the collarbones in most people but those with the most
+ * fat over them, the ribs only in the leanest (men under about 10 to 12% and
+ * women under about 18 to 20%: fitness-science lore, not measurement; essential
+ * fat is 2 to 5% in men and 10 to 13% in women).
+ */
+function showsAt(
+  fat: number,
+  gender: number,
+  female: readonly [number, number],
+  male: readonly [number, number],
+) {
+  const none = mix(female[0], male[0], clamp(gender));
+  const full = mix(female[1], male[1], clamp(gender));
+  return 1 - smoothstep(full, none, fat);
+}
+
+/** [none, full] body fat for the collarbones, percent: woman, man. */
+export const CLAVICLE_VISIBLE_FAT = { female: [30, 18], male: [22, 10] } as const;
+/** [none, full] body fat for the ribs, percent: woman, man. */
+export const RIB_VISIBLE_FAT = { female: [21, 13], male: [13, 7] } as const;
+
+/** How plainly the collarbones show on this figure, 0..1. */
+export const clavicleDefinition = (b: FigureBuild): number =>
+  showsAt(figureBodyFat(b), b.gender, CLAVICLE_VISIBLE_FAT.female, CLAVICLE_VISIBLE_FAT.male);
+
+/** How plainly the ribs show on this figure, 0..1. */
+export const ribDefinition = (b: FigureBuild): number =>
+  showsAt(figureBodyFat(b), b.gender, RIB_VISIBLE_FAT.female, RIB_VISIBLE_FAT.male);

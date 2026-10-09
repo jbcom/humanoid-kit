@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { jointPosition } from "../src/format/assetFormat.ts";
+import { HumanoidModel } from "../src/model/humanoidModel.ts";
+import { createRecipe } from "../src/recipe/recipe.ts";
 import {
   paintStopTable,
   type SkinLayer,
@@ -12,11 +15,15 @@ import {
   AREOLA_LAYER,
   AREOLA_REACH,
   AREOLA_RELIEF_LAYER,
+  areolaStretch,
   areolaZone,
+  CLAVICLE_LAYER,
+  CLAVICLE_PERIODS,
   MONTGOMERY_LAYER,
+  RIB_LAYER,
 } from "../src/surface/regions/torso.ts";
 import { areolaAlbedo, luminance, type Rgb, skinAlbedo } from "../src/surface/skinTone.ts";
-import { areolaRadius, nippleContrast } from "../src/surface/torsoTone.ts";
+import { areolaRadius, type FigureBuild, nippleContrast } from "../src/surface/torsoTone.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const tone = { melanin: 0.6, haemoglobin: 0.5, undertone: 0, override: null };
@@ -84,10 +91,6 @@ describe("the areola zone", () => {
     }
     // Both nipples: a few dozen vertices each.
     expect(inside).toBeGreaterThan(40);
-  });
-
-  it("reaches farther than the largest areola the figures paint", () => {
-    expect(AREOLA_REACH).toBeGreaterThan(areolaRadius(30, 0, 1) * (1 + AREOLA_EDGE_SOFTNESS));
   });
 });
 
@@ -268,5 +271,259 @@ describe("the areola's relief", () => {
     expect(ids).toContain("areola-relief");
     expect(ids).toContain("montgomery");
     expect(ids.indexOf("areola-relief")).toBeGreaterThan(ids.indexOf("areola"));
+  });
+});
+
+describe("the collarbones' and ribs' relief", () => {
+  const assets = loadFixtureAssets();
+  const P = assets.positions;
+  const n = assets.manifest.vertexCount;
+  const joint = (name: string) => {
+    const out = new Float32Array(3);
+    jointPosition(assets, P, name, out, 0);
+    return Array.from(out);
+  };
+  const lean: FigureBuild = {
+    gender: 0,
+    age: 25,
+    weight: 0,
+    height: 0.5,
+    muscle: 0.5,
+    breastSize: 0.5,
+  };
+
+  describe("collarbones", () => {
+    const f = CLAVICLE_LAYER.fields(assets);
+    const coord = f.coord as Float32Array;
+    /** Distance from the segment head-tail, and the vertex's height over the axis in the plane facing up. */
+    const along = (side: "L" | "R", v: number) => {
+      const h = joint(`clavicle.${side}____head`);
+      const t = joint(`clavicle.${side}____tail`);
+      const axis = [0, 1, 2].map((k) => (t[k] as number) - (h[k] as number));
+      const len = Math.hypot(...axis);
+      const p = [0, 1, 2].map((k) => (P[v * 3 + k] as number) - (h[k] as number));
+      const s = Math.min(
+        1,
+        Math.max(0, p.reduce((a, x, k) => a + x * (axis[k] as number), 0) / len ** 2),
+      );
+      const closest = axis.map((x) => x * s);
+      const off = p.map((x, k) => x - (closest[k] as number));
+      return { dist: Math.hypot(...off), s, up: off[1] as number };
+    };
+
+    it("is a creases layer of two periods: a ridge between two grooves, by the collarbone", () => {
+      expect(CLAVICLE_LAYER.kind).toBe("detail");
+      expect(CLAVICLE_LAYER.pattern).toBe("creases");
+      const t = paintStopTable([CLAVICLE_LAYER], paint({ build: lean }));
+      expect(t[1]).toBe(3);
+      expect(t[3]).toBe(CLAVICLE_PERIODS);
+    });
+
+    it("lies along each collarbone and nowhere else, mirrored", () => {
+      let count = 0;
+      for (let v = 0; v < n; v++) {
+        if ((f.mask[v] as number) < 0.05) continue;
+        count++;
+        const side = (P[v * 3] as number) >= 0 ? "L" : "R";
+        const a = along(side, v);
+        expect(a.dist, `vertex ${v}`).toBeLessThan(0.03);
+        expect(a.s, `vertex ${v}`).toBeGreaterThan(0.02);
+        expect(a.s, `vertex ${v}`).toBeLessThan(0.98);
+      }
+      expect(count).toBeGreaterThan(10);
+      const left = [...Array(n).keys()].filter(
+        (v) => (f.mask[v] as number) > 0.05 && (P[v * 3] as number) > 0,
+      ).length;
+      const right = [...Array(n).keys()].filter(
+        (v) => (f.mask[v] as number) > 0.05 && (P[v * 3] as number) < 0,
+      ).length;
+      expect(Math.abs(left - right)).toBeLessThanOrEqual(2);
+    });
+
+    it("runs its coordinate across the bone: higher on the chest is greater, and a ridge lies between grooves", () => {
+      const head = joint("clavicle.L____head");
+      const tail = joint("clavicle.L____tail");
+      const vs = [...Array(n).keys()].filter(
+        (v) => (f.mask[v] as number) > 0.3 && (P[v * 3] as number) > 0,
+      );
+      expect(vs.length).toBeGreaterThan(5);
+      // Each vertex's height over the bone's own height at its place along it.
+      const rise = vs.map((v) => {
+        const s = along("L", v).s;
+        return (
+          (P[v * 3 + 1] as number) -
+          ((head[1] as number) + s * ((tail[1] as number) - (head[1] as number)))
+        );
+      });
+      const c = vs.map((v) => coord[v] as number);
+      const mean = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
+      const [mr, mc] = [mean(rise), mean(c)];
+      const corr =
+        rise.reduce((a, r, i) => a + (r - mr) * ((c[i] as number) - mc), 0) /
+        Math.sqrt(
+          rise.reduce((a, r) => a + (r - mr) ** 2, 0) * c.reduce((a, x) => a + (x - mc) ** 2, 0),
+        );
+      expect(corr).toBeGreaterThan(0.7);
+      // Grooves either side of the ridge at 0.5: the coordinate reaches both.
+      expect(Math.min(...c)).toBeLessThan(0.42);
+      expect(Math.max(...c)).toBeGreaterThan(0.58);
+    });
+
+    it("shows by the figure's body fat: none on a heavy figure, the full relief on a lean one", () => {
+      const heavy = paintStopTable([CLAVICLE_LAYER], paint({ build: { ...lean, weight: 1 } }));
+      const thin = paintStopTable([CLAVICLE_LAYER], paint({ build: lean }));
+      expect(thin[0]).toBeGreaterThan(0.95);
+      expect(heavy[0]).toBeLessThan(0.3);
+      // A depth of a millimetre or two (CHOICE: a collarbone's relief on a lean figure).
+      expect(thin[2]).toBeGreaterThan(0.0005);
+      expect(thin[2]).toBeLessThan(0.003);
+    });
+  });
+
+  describe("ribs", () => {
+    const f = RIB_LAYER.fields(assets);
+    const coord = f.coord as Float32Array;
+    const nipple = [joint("breast.L____tail"), joint("breast.R____tail")];
+
+    it("is a creases layer, a groove between each pair of ribs", () => {
+      expect(RIB_LAYER.kind).toBe("detail");
+      expect(RIB_LAYER.pattern).toBe("creases");
+      const t = paintStopTable([RIB_LAYER], paint({ build: lean }));
+      expect(t[1]).toBe(3);
+      // Eight or nine intercostal spaces from the second rib to the tenth.
+      expect(t[3]).toBeGreaterThanOrEqual(8);
+      expect(t[3]).toBeLessThanOrEqual(9);
+    });
+
+    it("is on the front and flanks of the chest and not the back, the arms or the head", () => {
+      let count = 0;
+      for (let v = 0; v < n; v++) {
+        if ((f.mask[v] as number) < 0.05) continue;
+        count++;
+        expect(P[v * 3 + 2] as number, `vertex ${v} depth`).toBeGreaterThan(-0.08);
+        expect(P[v * 3 + 1] as number, `vertex ${v} height`).toBeLessThan(0.52);
+        expect(P[v * 3 + 1] as number, `vertex ${v} height`).toBeGreaterThan(0.1);
+        expect(Math.abs(P[v * 3] as number), `vertex ${v} width`).toBeLessThan(0.22);
+      }
+      expect(count).toBeGreaterThan(100);
+    });
+
+    it("leaves the breast out, where tissue lies over the ribs", () => {
+      for (let v = 0; v < n; v++) {
+        const d = Math.min(
+          ...nipple.map((c) =>
+            Math.hypot(...[0, 1, 2].map((k) => (P[v * 3 + k] as number) - (c[k] as number))),
+          ),
+        );
+        if (d < 0.025) expect(f.mask[v], `vertex ${v} at the nipple`).toBeLessThan(0.05);
+      }
+    });
+
+    it("runs its coordinate down the chest and along each rib: a rib is a line of constant coordinate", () => {
+      // Down: lower is greater, at a given distance from the midline.
+      const col = (x: number) =>
+        [...Array(n).keys()].filter(
+          (v) => (f.mask[v] as number) > 0.5 && Math.abs((P[v * 3] as number) - x) < 0.003,
+        );
+      let checked = 0;
+      for (const x of [0.04, 0.07, 0.1, 0.13]) {
+        const vs = col(x).sort((a, b) => (P[b * 3 + 1] as number) - (P[a * 3 + 1] as number));
+        for (let i = 1; i < vs.length; i++) {
+          const a = vs[i - 1] as number;
+          const b = vs[i] as number;
+          if ((P[a * 3 + 1] as number) - (P[b * 3 + 1] as number) < 0.004) continue;
+          expect(coord[b], `x ${x}`).toBeGreaterThan(coord[a] as number);
+          checked++;
+        }
+      }
+      expect(checked).toBeGreaterThan(10);
+      // Along: a rib falls away from the breastbone, so at one height the ribs farther out are the
+      // ones that start higher up the breastbone: a smaller coordinate.
+      const vs = [...Array(n).keys()].filter(
+        (v) => (f.mask[v] as number) > 0.5 && Math.abs((P[v * 3 + 1] as number) - 0.3) < 0.01,
+      );
+      const near = vs.filter((v) => Math.abs(P[v * 3] as number) < 0.06);
+      const far = vs.filter((v) => Math.abs(P[v * 3] as number) > 0.1);
+      expect(near.length).toBeGreaterThan(0);
+      expect(far.length).toBeGreaterThan(0);
+      const mean = (a: number[]) => a.reduce((s, v) => s + (coord[v] as number), 0) / a.length;
+      expect(mean(far)).toBeLessThan(mean(near));
+    });
+
+    it("shows by the figure's body fat, ribs only on a lean figure", () => {
+      const thin = paintStopTable([RIB_LAYER], paint({ build: lean }));
+      const average = paintStopTable([RIB_LAYER], paint({ build: { ...lean, weight: 0.5 } }));
+      expect(thin[0]).toBeGreaterThan(0.9);
+      expect(average[0]).toBe(0);
+      expect(thin[2]).toBeGreaterThan(0.0004);
+      expect(thin[2]).toBeLessThan(0.002);
+    });
+  });
+
+  it("is in the stack", () => {
+    const ids = SKIN_LAYERS.map((l) => l.id);
+    expect(ids).toContain("clavicles");
+    expect(ids).toContain("ribs");
+  });
+});
+
+describe("the areola's stretch on a figure", () => {
+  const assets = loadFixtureAssets();
+  const model = new HumanoidModel(assets, { subdivision: 0 });
+  const stretch = (macros: Record<string, number>) =>
+    areolaStretch(assets, model.evaluate(createRecipe({ macros })).control);
+
+  it("is 1 on the base mesh itself and what the morph makes of the skin round the nipple elsewhere", () => {
+    expect(areolaStretch(assets, assets.positions)).toBeCloseTo(1, 6);
+    // Measured on the evaluated control mesh (the probe in the commit that added it):
+    // a small child's skin is a little over half the base mesh's size, a large breast's twice.
+    expect(stretch({ age: 7, gender: 0 })).toBeCloseTo(0.65, 1);
+    expect(stretch({ gender: 0, breastSize: 1 })).toBeCloseTo(1.96, 1);
+    expect(stretch({ gender: 0, breastSize: 0 })).toBeCloseTo(1.14, 1);
+  });
+
+  it("is what a model evaluation reports", () => {
+    const ev = model.evaluate(createRecipe({ macros: { age: 12, gender: 0 } }));
+    expect(ev.areolaScale).toBeCloseTo(stretch({ age: 12, gender: 0 }), 9);
+  });
+
+  it("makes the areola the size it is in metres, whatever the figure's stretch", () => {
+    // The paint's lengths are the figure's own; the field's, the base mesh's: divide by the stretch.
+    const at = (areolaScale: number) => {
+      const t = paintStopTable([AREOLA_LAYER], paint({ ...adultFemale, areolaScale }));
+      const s = Array.from({ length: STOP_COUNT }, (_, k) => t[(k + 1) * 4 + 1] as number);
+      // The radius (in field metres) at which the ratio is half way to 1.
+      const inner = s[2] as number;
+      let r = 0.004;
+      while (r < AREOLA_REACH) {
+        const x = (r / AREOLA_REACH) * (STOP_COUNT - 1);
+        const i = Math.min(Math.floor(x), STOP_COUNT - 2);
+        const v = (s[i] as number) * (1 - (x - i)) + (s[i + 1] as number) * (x - i);
+        if (v > (inner + 1) / 2) return r;
+        r += 0.0001;
+      }
+      return r;
+    };
+    const single = at(1);
+    const doubled = at(2);
+    expect(doubled / single).toBeCloseTo(0.5, 1);
+    // Absent, it is the base mesh's own.
+    expect(at(1)).toBeCloseTo(single, 9);
+  });
+
+  it("keeps every figure's areola, and its soft edge, inside the field's reach", () => {
+    // The largest areola in field metres over the macro range: the figure's own size, over its stretch.
+    for (const macros of [
+      { age: 25, gender: 0, breastSize: 0 },
+      { age: 25, gender: 1, height: 0 },
+      { age: 60, gender: 1, height: 0 },
+      { age: 25, gender: 0, height: 0, breastSize: 0 },
+      { age: 12, gender: 0, height: 0 },
+    ]) {
+      const k = stretch(macros);
+      const b = { gender: macros.gender, breastSize: macros.breastSize ?? 0.5 };
+      const edge = areolaRadius(macros.age, b.gender, b.breastSize) / k;
+      expect(edge * (1 + AREOLA_EDGE_SOFTNESS), JSON.stringify(macros)).toBeLessThan(AREOLA_REACH);
+    }
   });
 });
