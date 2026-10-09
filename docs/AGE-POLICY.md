@@ -170,7 +170,7 @@ treats it as the operative line for anything it publishes.
 | Legal element | humanoid-kit |
 | --- | --- |
 | A figure of a minor, unclothed, without sexual conduct | Supported, as in MakeHuman. Not sexually explicit conduct by itself (Osborne). |
-| Genital anatomy of a minor | Not shipped in the core body pack; adult anatomy refuses any figure under 18. |
+| Genital anatomy of a minor | No genital shape targets or modifiers in the core body pack; the adult anatomy pack refuses any figure under 18. |
 | Sexually explicit conduct by a figure under 18 | Not produced anywhere in the library; the planned animation packages refuse it. |
 | Posing, framing, scene, intent (Dost; § 1466A "appears to be") | Downstream application's responsibility. |
 
