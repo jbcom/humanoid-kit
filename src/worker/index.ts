@@ -38,6 +38,7 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       evaluation.positions.buffer,
       evaluation.normals.buffer,
       evaluation.control.buffer,
+      evaluation.curvature.buffer,
     ];
     for (const a of evaluation.attachments) transfer.push(a.positions.buffer, a.normals.buffer);
     post({ type: "evaluated", id: req.id, evaluation, ms: performance.now() - t0 }, transfer);

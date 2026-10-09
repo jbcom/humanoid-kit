@@ -111,15 +111,16 @@ test.describe("colour parity under the studio stage", () => {
 
     const dLs = rows.map((r) => r.dL);
     // The bound that matters for fairness: no colour is lifted or crushed relative to the others.
-    // Measured 2026-10-08 (Neutral, exposure 1.05): dL -2.0..+3.5, dC +1.5..+6.8, dH within 3 deg.
+    // Measured 2026-10-08 (albedo-driven scatter, Neutral, exposure 1.15): dL -2.3..+0.2,
+    // dC -0.6..+5.4 (the Neutral curve adds chroma to saturated colours), dH within 3 deg.
     expect(
       Math.max(...dLs) - Math.min(...dLs),
       "lightness error spread across the palette",
-    ).toBeLessThanOrEqual(7);
+    ).toBeLessThanOrEqual(5);
     for (const r of rows) {
-      expect(Math.abs(r.dL), `${r.name}: lightness error`).toBeLessThanOrEqual(5);
-      expect(Math.abs(r.dC), `${r.name}: chroma error`).toBeLessThanOrEqual(9);
-      if (r.dH !== null) expect(Math.abs(r.dH), `${r.name}: hue error`).toBeLessThanOrEqual(6);
+      expect(Math.abs(r.dL), `${r.name}: lightness error`).toBeLessThanOrEqual(4);
+      expect(Math.abs(r.dC), `${r.name}: chroma error`).toBeLessThanOrEqual(7);
+      if (r.dH !== null) expect(Math.abs(r.dH), `${r.name}: hue error`).toBeLessThanOrEqual(5);
     }
   });
 });

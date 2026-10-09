@@ -5,6 +5,7 @@
  * and later hair and clothing) placed on that same morphed mesh.
  * Framework-free; runs in a worker or on the main thread.
  */
+import { meanCurvature, triangleEdges } from "../build/curvature.ts";
 import { buildSurfaceMesh, evaluateSurface, type SurfaceMesh } from "../build/surfaceMesh.ts";
 import {
   type AttachmentMaterial,
@@ -72,6 +73,8 @@ export interface Evaluation extends SurfaceEvaluation {
   groundOffset: number;
   /** Morphed control positions (base topology), for joints, bindings and measurement. */
   control: Float32Array;
+  /** Per body render vertex: mean curvature magnitude (m⁻¹), for subsurface scattering. */
+  curvature: Float32Array;
 }
 
 interface Part {
@@ -123,6 +126,7 @@ export class HumanoidModel {
   private readonly body: Part;
   private readonly bodyVertices: Uint32Array;
   private readonly bodyControlTriangles: Uint32Array;
+  private readonly bodyEdges: Uint32Array;
   private readonly attached: { asset: BoundAsset; part: Part; control: Float32Array }[];
   private readonly skinMask: Float32Array;
 
@@ -169,6 +173,7 @@ export class HumanoidModel {
       buildSkinMasks(assets),
       new Float32Array(this.body.mesh.topology.vertexCount * 3),
     );
+    this.bodyEdges = triangleEdges(this.body.mesh.index);
     const r2s = this.body.mesh.renderToSurface;
     this.skinMask = new Float32Array(r2s.length * 3);
     r2s.forEach((s, r) => {
@@ -266,7 +271,13 @@ export class HumanoidModel {
     const attachments = this.attached.map((a) =>
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
     );
-    return { ...body, attachments, groundOffset: -minY, control };
+    const curvature = meanCurvature(
+      body.positions,
+      body.normals,
+      this.bodyEdges,
+      new Float32Array(body.positions.length / 3),
+    );
+    return { ...body, attachments, groundOffset: -minY, control, curvature };
   }
 
   private evaluatePart(p: Part, control: Float32Array): SurfaceEvaluation {

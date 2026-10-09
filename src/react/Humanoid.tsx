@@ -35,7 +35,7 @@ import type {
 import type { Recipe } from "../recipe/recipe.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { AttachmentStandardMaterial, OCCLUSION_ATTRIBUTE } from "../render/occlusion.ts";
-import { SKIN_MASK_ATTRIBUTE, SkinMaterial } from "../render/skinMaterial.ts";
+import { CURVATURE_ATTRIBUTE, SKIN_MASK_ATTRIBUTE, SkinMaterial } from "../render/skinMaterial.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 
 const ClientContext = createContext<HumanoidWorkerClient | null>(null);
@@ -208,6 +208,10 @@ export function Humanoid({ recipe, material, onEvaluated, onError, ...group }: H
     if (!ready) return null;
     const body = makeGeometry(ready.topology.body);
     body.setAttribute(SKIN_MASK_ATTRIBUTE, new BufferAttribute(ready.topology.body.skinMask, 3));
+    body.setAttribute(
+      CURVATURE_ATTRIBUTE,
+      new BufferAttribute(new Float32Array(ready.topology.body.vertexCount), 1),
+    );
     const attachments = ready.topology.attachments.map((t) => {
       const g = makeGeometry(t);
       g.setAttribute(OCCLUSION_ATTRIBUTE, new BufferAttribute(t.occlusion, 1));
@@ -247,6 +251,9 @@ export function Humanoid({ recipe, material, onEvaluated, onError, ...group }: H
       (ev) => {
         if (!live) return;
         writeGeometry(geometries.body, ev);
+        (geometries.body.getAttribute(CURVATURE_ATTRIBUTE) as BufferAttribute).copyArray(
+          ev.curvature,
+        ).needsUpdate = true;
         ev.attachments.forEach((a, i) => {
           const g = geometries.attachments[i];
           if (g) writeGeometry(g, a);

@@ -17,7 +17,7 @@ import { NeutralToneMapping } from "three";
 /** The tone mapping the stage is validated with. */
 export const STUDIO_TONE_MAPPING = NeutralToneMapping;
 /** The exposure the stage is validated with. */
-export const STUDIO_EXPOSURE = 1.05;
+export const STUDIO_EXPOSURE = 1.15;
 
 export interface StudioStageProps {
   /** Background colour; `null` leaves the canvas background alone. */

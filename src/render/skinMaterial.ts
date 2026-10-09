@@ -2,9 +2,13 @@
  * A physically based skin material for humanoid-kit figures.
  *
  * It extends three's MeshPhysicalMaterial with:
- * - subsurface scattering, approximated by a per-channel wrapped diffuse term
- *   (red light travels furthest under skin, so terminators glow warm instead of
- *   cutting to grey);
+ * - subsurface scattering derived from the colour itself, so any colour (skin,
+ *   fur, scales, fantasy) scatters plausibly with no per-colour tuning: each
+ *   channel's scatter distance follows from its albedo (Chiang, Kutz & Burley
+ *   2016; Christensen & Burley 2015), and how much light it carries round a
+ *   curve follows from that distance and the surface's curvature through an
+ *   energy-conserving wrap fitted to Penner-style pre-integration
+ *   (docs/research/ALGORITHMIC-APPEARANCE.md §2);
  * - regional colour from the figure's skin masks (lips, flush, areola), carried
  *   as a vertex attribute so they follow every shape change;
  * - a fine tiling pore normal map and a low sheen for vellus hair.
@@ -20,7 +24,13 @@ import {
   Vector2,
   Vector3,
 } from "three";
-import { type Rgb, type SkinTone, skinAlbedo } from "../surface/skinTone.ts";
+import {
+  luminance,
+  MELANIN_ANCHORS,
+  type Rgb,
+  type SkinTone,
+  skinAlbedo,
+} from "../surface/skinTone.ts";
 
 export interface SkinAppearance {
   tone: SkinTone;
@@ -45,10 +55,46 @@ export const SKIN_MASK_ATTRIBUTE = "hkSkinMask";
 const DIRECT_DIFFUSE =
   "reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );";
 
+/** Name of the per-vertex curvature attribute (mean curvature magnitude, m⁻¹). */
+export const CURVATURE_ATTRIBUTE = "hkCurvature";
+
+/** Scatter functions, defined before three's lighting code uses them. */
+const SCATTER_FUNCTIONS = `
+uniform float hkScatterMfp;
+uniform float hkScatterSlope;
+uniform float hkPigmentDepth;
+uniform vec3 hkSubstrate;
+varying float vHkCurvature;
+// Chiang, Kutz & Burley 2016, Eq. 1: surface albedo -> single-scattering albedo.
+vec3 hkSingleScatterAlbedo( vec3 A ) {
+	return 1.0 - exp( -5.09406 * A + 2.61188 * A * A - 4.31805 * A * A * A );
+}
+// Christensen & Burley 2015, Eq. 6 (diffuse surface transmission).
+vec3 hkProfileScale( vec3 A ) {
+	vec3 t = A - 0.8;
+	return 1.9 - A + 3.5 * t * t;
+}
+// Per-channel Burley profile width, in metres.
+vec3 hkScatterDistance( vec3 albedo ) {
+	vec3 A = clamp( albedo, vec3( 0.001 ), vec3( 0.999 ) );
+	// Pigment above the scattering layer: scatter as the unpigmented substrate does.
+	A = pow( A, vec3( 1.0 - hkPigmentDepth ) ) * pow( clamp( hkSubstrate, vec3( 0.001 ), vec3( 0.999 ) ), vec3( hkPigmentDepth ) );
+	// Representative wavelengths 612, 549, 465 nm relative to 550 nm.
+	vec3 ls = hkScatterMfp * pow( vec3( 1.1127, 0.9982, 0.8455 ), vec3( hkScatterSlope ) );
+	return hkSingleScatterAlbedo( A ) * ls / hkProfileScale( A );
+}
+// Energy-conserving wrap fitted to pre-integration of Burley's profile over a sphere.
+vec3 hkWrapFromScatter( vec3 d, float curvature ) {
+	vec3 y = pow( max( d * curvature, vec3( 0.0 ) ), vec3( 1.2997 ) );
+	return 2.0246 * y / ( 1.0 + 1.3543 * y );
+}
+`;
+
 const SUBSURFACE_DIFFUSE = `
-	// humanoid-kit skin: per-channel wrapped diffuse approximates subsurface scattering.
+	// humanoid-kit: scatter carries light round curves (McAuley's energy-conserving wrap).
 	float hkNdotL = dot( geometryNormal, directLight.direction );
-	vec3 hkWrapped = clamp( ( vec3( hkNdotL ) + hkScatter ) / ( 1.0 + hkScatter ), 0.0, 1.0 );
+	vec3 hkW = hkWrapFromScatter( hkScatterDistance( material.diffuseContribution ), vHkCurvature );
+	vec3 hkWrapped = max( vec3( hkNdotL ) + hkW, vec3( 0.0 ) ) / ( ( 1.0 + hkW ) * ( 1.0 + hkW ) );
 	reflectedLight.directDiffuse += hkWrapped * directLight.color * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );
 `;
 
@@ -120,7 +166,14 @@ const mul = (a: Rgb, k: Rgb): Rgb => [a[0] * k[0], a[1] * k[1], a[2] * k[2]];
 
 export class SkinMaterial extends MeshPhysicalMaterial {
   readonly hkUniforms = {
-    hkScatter: { value: new Vector3(0.42, 0.2, 0.12) },
+    /** Scattering mean free path, metres (skin ≈ 1.14 mm, Jensen 2001); 0 disables scatter. */
+    hkScatterMfp: { value: 1.14e-3 },
+    /** How much further red scatters than blue (spectral slope). */
+    hkScatterSlope: { value: 1.4 },
+    /** 0 = pigment mixed through the medium; 1 = all pigment above an unpigmented layer. */
+    hkPigmentDepth: { value: 0.75 },
+    /** The unpigmented layer's albedo (linear), used when pigment depth > 0. */
+    hkSubstrate: { value: new Vector3(...(MELANIN_ANCHORS[0] as Rgb)) },
     hkMaskStrength: { value: new Vector3(0.55, 0.45, 0) },
     hkLipColor: { value: new Color() },
     hkFlushTint: { value: new Color(1.1, 0.84, 0.84) },
@@ -147,12 +200,13 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   setAppearance(a: SkinAppearance): void {
     const albedo = skinAlbedo(a.tone);
     this.color.setRGB(albedo[0], albedo[1], albedo[2], LinearSRGBColorSpace);
-    const m = Math.min(1, Math.max(0, a.tone.melanin));
-    // Melanin absorbs in the epidermis, so less light bleeds red through shadow
-    // edges on deeper skin; a fixed red-heavy wrap turns deep terminators orange.
-    this.hkUniforms.hkScatter.value.set(0.42 - 0.1 * m, 0.2 - 0.04 * m, 0.12 - 0.045 * m);
-    // Vellus sheen takes the skin's own hue. A near-white sheen over deep skin is
-    // the optical signature of dry, "ashy" skin, so it is tinted and reduced.
+    // Natural skin keeps its melanin in the epidermis, above a dermis that scatters
+    // much the same in everyone (fitted p = 0.75 over the lightest measured skin).
+    // Any other colour is taken as pigment mixed through the medium (p = 0).
+    this.hkUniforms.hkPigmentDepth.value = a.tone.override ? 0 : 0.75;
+    // Vellus sheen takes the surface's own hue. A near-white sheen over dark
+    // colours is the optical signature of dry, "ashy" skin, so it is tinted, and
+    // reduced with luminance across the measured skin range.
     const peak = Math.max(albedo[0], albedo[1], albedo[2], 1e-6);
     this.sheenColor.setRGB(
       0.75 * (albedo[0] / peak) + 0.25,
@@ -160,7 +214,9 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       0.75 * (albedo[2] / peak) + 0.25,
       LinearSRGBColorSpace,
     );
-    this.sheen = 0.25 - 0.13 * m;
+    const y = luminance(albedo);
+    const t = Math.min(1, Math.max(0, (y - 0.05) / (0.355 - 0.05)));
+    this.sheen = 0.12 + 0.13 * t * t * (3 - 2 * t);
     const lip = mul(albedo, [0.74 - 0.2 * a.lips, 0.42 - 0.12 * a.lips, 0.44 - 0.1 * a.lips]);
     this.hkUniforms.hkLipColor.value.setRGB(lip[0], lip[1], lip[2], LinearSRGBColorSpace);
     const areola = mul(albedo, [
@@ -186,14 +242,18 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       )
       .replace(
         "#include <color_vertex>",
-        `#include <color_vertex>\n\tvHkSkinMask = ${SKIN_MASK_ATTRIBUTE};`,
+        `#include <color_vertex>\n\tvHkSkinMask = ${SKIN_MASK_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};`,
+      )
+      .replace(
+        "#include <common>",
+        `#include <common>\nattribute float ${CURVATURE_ATTRIBUTE};\nvarying float vHkCurvature;`,
       );
     if (!shader.fragmentShader.includes("#include <color_fragment>"))
       throw new Error("SkinMaterial: three's color_fragment chunk moved");
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        "#include <common>\nvarying vec3 vHkSkinMask;\nuniform vec3 hkScatter;\nuniform vec3 hkMaskStrength;\nuniform vec3 hkLipColor;\nuniform vec3 hkFlushTint;\nuniform vec3 hkAreolaColor;",
+        `#include <common>\nvarying vec3 vHkSkinMask;\nuniform vec3 hkMaskStrength;\nuniform vec3 hkLipColor;\nuniform vec3 hkFlushTint;\nuniform vec3 hkAreolaColor;\n${SCATTER_FUNCTIONS}`,
       )
       .replace(
         "#include <color_fragment>",
@@ -215,6 +275,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-skin-1";
+    return "humanoid-kit-skin-2";
   }
 }
