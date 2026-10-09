@@ -430,9 +430,10 @@ gates were.
    anatomy depends on it.
 3. **One feature at a time**, each its own target file, zone, controls, tests and
    contact sheet: `mound` first (it replaces today's only visible target), then
-   `penis`, `testes`, the vulvar features. Status: the `mound` detail is built
-   (generated on the lattice, `scripts/lib/detail/mound.ts`, sized from
-   ADULT-ANATOMY-DATA.md section E). The rest draw on reservoirs (section 6b),
+   `penis`, `testes`, the vulvar features. Status: the `mound` is built, as a
+   generated control target (`scripts/lib/control/mound.ts`, sized from
+   ADULT-ANATOMY-DATA.md section E; a broad swell is low-frequency, so control
+   level suits it and detail is for what needs finer cells). The rest draw on reservoirs (section 6b),
    which are built: the engine (`src/build/reservoir.ts`), linear detail
    subdivision, and a phallic and a labioscrotal pair placed in the pack
    (`scripts/lib/adultReservoirs.ts`); the shaft, glans, scrotum and labia

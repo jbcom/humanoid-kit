@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RESERVOIR_RINGS, reservoirSpecs } from "../scripts/lib/adultReservoirs.ts";
-import { AUTHORING_FIGURE } from "../scripts/lib/detail/mound.ts";
+import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";

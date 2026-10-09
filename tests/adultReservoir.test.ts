@@ -281,10 +281,14 @@ describe("a reservoir in the adult surface", { timeout: 600_000 }, () => {
     expect(() => bad.adultSurface()).toThrow(/different refinement/);
   });
 
-  it("uses the pack's own default pack too: the shipped pack has no reservoirs yet", () => {
+  it("is in the shipped pack too: the model exposes its reservoirs for authoring", () => {
     const shipped = new HumanoidModel(parseHumanoidAssets(bodyPackData(), adultPackData()), {
       subdivision: 1,
     });
-    expect(shipped.adultDetailLattice(adult)?.reservoirs).toEqual([]);
+    expect(shipped.adultDetailLattice(adult)?.reservoirs.map((r) => r.id)).toEqual([
+      "phallic",
+      "labioscrotal-left",
+      "labioscrotal-right",
+    ]);
   });
 });

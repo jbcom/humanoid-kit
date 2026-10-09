@@ -51,6 +51,8 @@ export interface SyntheticPack {
   reservoirs?: AdultReservoirSpec[];
   targets?: SyntheticTarget[];
   modifiers?: ShapeModifierEntry[];
+  /** False when the targets are control targets (on the base's vertices), not detail: no `anatomy.detail`. */
+  detail?: boolean;
   /** The lattice key the targets were authored on, when there are targets. */
   surfaceKey?: string;
   scale?: { a: number; b: number; rest: number };
@@ -64,6 +66,7 @@ export function adultPackWith(o: SyntheticPack = {}): AdultAnatomyData {
   if (!spec) throw new Error("no anatomy spec");
   // The shipped pack's own detail is replaced, so the surface is the synthetic one alone.
   delete spec.detail;
+  delete spec.reservoirs;
   if (o.reservoirs) spec.reservoirs = o.reservoirs;
   const parts: Uint8Array[] = [];
   let at = base.targets.byteLength;
@@ -79,7 +82,7 @@ export function adultPackWith(o: SyntheticPack = {}): AdultAnatomyData {
     at += bytes.byteLength;
   }
   for (const m of o.modifiers ?? []) manifest.modifiers.push(m);
-  if (o.targets?.length)
+  if (o.targets?.length && o.detail !== false)
     spec.detail = {
       targets: o.targets.map((t) => t.name),
       surfaceKey: o.surfaceKey ?? "",

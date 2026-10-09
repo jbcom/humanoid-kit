@@ -249,6 +249,16 @@ export interface AdultDetailLattice {
   reservoirs: { id: string; base: number; loop: number; rings: number }[];
 }
 
+/** An adult figure's control mesh as features are authored on it (`HumanoidModel.controlShape`). */
+export interface ControlShape {
+  /** The base mesh's vertices on this figure, xyz, metres. */
+  control: Float32Array;
+  /** Their unit normals. */
+  normals: Float32Array;
+  /** The vertices the drawn body uses. */
+  body: Uint32Array;
+}
+
 /** Per render vertex, an index into a `FeatureMap`'s features (or `NO_FEATURE`). */
 export interface RenderFeatures {
   body: Uint8Array;
@@ -1330,6 +1340,23 @@ export class HumanoidModel {
       polygons: lattice.polygons,
       latticePositions: all,
       reservoirs,
+    };
+  }
+
+  /**
+   * The control mesh of an adult figure for authoring control-level features
+   * (targets on the base's own vertices, which the surface smooths): the control
+   * vertices, their unit normals and the ids of those the drawn body uses.
+   * Refused under 18.
+   */
+  controlShape(recipe: Recipe): ControlShape {
+    if (!isAdult(recipe))
+      throw new AgePolicyError("the adult control shape is for figures aged 18 or over");
+    const control = this.evaluateControl(recipe, {});
+    return {
+      control,
+      normals: unitNormals(quadVertexNormals(control, this.assets.faceVerts)),
+      body: this.bodyVertices,
     };
   }
 

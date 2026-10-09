@@ -297,6 +297,11 @@ and throws `RangeError` for anything else.
   moves `Evaluation.control` and no drawn vertex until the sculpt phase.
   `recipe.outfit` adds the garments (see "Clothing"); `haveOutfit` is the
   outfit key the caller already holds the masks of.
+- `model.controlShape(recipe): ControlShape`: an adult figure's control mesh for
+  authoring control-level features, as targets on the base's own vertices
+  (`{ control, normals, body }`: the vertices, their unit normals and the ids the
+  drawn body uses). Throws `AgePolicyError` for a figure under 18. The packer
+  generates the mound on it.
 - `model.adultDetailLattice(recipe): AdultDetailLattice | null`: the vertex
   space the adult pack's detail targets are authored on: the vertices of the
   refined region (`regionCount` of them) and then each reservoir's rings
