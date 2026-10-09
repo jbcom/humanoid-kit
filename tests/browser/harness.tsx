@@ -32,6 +32,7 @@ export function readyInfo(withAdultPack = false): ReadyInfo {
       ? mergeSliderTasks(body.sliders, adult.sliders)
       : mergeSliderTasks(body.sliders),
     rig: EMPTY_RIG,
+    presenceJoints: {} as never,
     adultAnatomyLoaded: withAdultPack,
   };
 }

@@ -33,13 +33,15 @@ import {
   TextureLoader,
   Vector3,
 } from "three";
-import { STATE_MORPHS } from "../makehuman/stateMorphs.ts";
+import { quantisedShapeSignals, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import type {
   AttachmentTopology,
   Evaluation,
   SurfaceEvaluation,
   SurfaceTopology,
 } from "../model/humanoidModel.ts";
+import { groundOffsetOf, posedControl } from "../presence/posed.ts";
+import type { Vec3 } from "../presence/presence.ts";
 import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
@@ -55,11 +57,11 @@ import {
   composeRotations,
   faceUnitRotations,
   IDENTITY_POSE,
-  posedGroundOffset,
   restBonesFrom,
 } from "../rig/pose.ts";
 import { skinDualShare } from "../rig/skinShare.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
+import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 import { sameEntries } from "./sameEntries.ts";
 
 const ClientContext = createContext<HumanoidWorkerClient | null>(null);
@@ -138,6 +140,16 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
    * group's clicks in place of `onClick`.
    */
   onPick?: (pick: HumanoidPick) => void;
+  /**
+   * Publishes the figure into the nearest `PresenceProvider`'s registry under
+   * `id`, for as long as it is mounted. With `presence` the group's origin is
+   * the ground under the figure (the figure lifts itself onto it, so do not lift
+   * the group), and where it stands and which way it faces are read from the
+   * group every frame: moving the group, or a parent, moves the presence.
+   * `position` and `facing` are optional shorthand that place the group,
+   * replacing its own `position` and `rotation`.
+   */
+  presence?: HumanoidPresenceProps;
   /** How the figure is posed; absent is the rest pose. */
   pose?: HumanoidPose;
   /**
@@ -154,6 +166,12 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
    */
   onGroundOffset?: (offset: number) => void;
 };
+
+export interface HumanoidPresenceProps {
+  id: string;
+  position?: Vec3;
+  facing?: Vec3;
+}
 
 /**
  * A pose: a whole-body pose from the pack by name (`tpose`, `benchmark`,
@@ -422,6 +440,7 @@ export function Humanoid({
   onEvaluated,
   onError,
   onPick,
+  presence,
   pose,
   signals,
   onGroundOffset,
@@ -431,12 +450,30 @@ export function Humanoid({
   const ready = useHumanoidReady();
   const key = useId();
   const groupRef = useRef<Group>(null);
+  const presenceSource = useRef<PresenceSource | null>(null);
+  const presenceContext = usePresenceContext();
+  if (presence && !presenceContext)
+    throw new Error("<Humanoid presence> must be used inside <PresenceProvider>");
+  usePublishPresence(presence?.id, groupRef, presenceSource);
+  // Lifts the figure so its soles meet the declared ground position.
+  const [lift, setLift] = useState(0);
   const onEvaluatedRef = useLatest(onEvaluated);
   const onErrorRef = useLatest(onError);
   const report = useMemo(
     () => (e: Error) => (onErrorRef.current ? onErrorRef.current(e) : console.error(e)),
     [onErrorRef],
   );
+  // A body pack without the joints presence reads still renders the figure; it
+  // is reported (not thrown, which would take the canvas down) and not published.
+  const lacksPresenceJoints = Boolean(presence && ready && !ready.presenceJoints);
+  useEffect(() => {
+    if (lacksPresenceJoints)
+      report(
+        new Error(
+          "<Humanoid presence> needs the body pack's head, eye, mouth, spine, wrist, finger, ankle and toe joints, and this pack lacks one",
+        ),
+      );
+  }, [lacksPresenceJoints, report]);
   const skin = useMemo(() => new SkinMaterial(), []);
   const geometries = useMemo(() => {
     if (!ready) return null;
@@ -540,15 +577,12 @@ export function Humanoid({
     () => (ev: Evaluation) => {
       if (!ready) return;
       const q = rotationsRef.current;
+      // The same skinning of the control mesh the figure's presence derives from.
       const offset = q
-        ? posedGroundOffset(
-            restBonesFrom(ready.rig.bones, ready.rig.parents, ev.boneHeads),
-            q,
-            ev.control,
-            ready.rig.skin,
-          )
+        ? groundOffsetOf(posedControl(ready.rig, ev, q), ready.rig.skin.bodyVertices)
         : ev.groundOffset;
       if (groupRef.current) groupRef.current.userData.groundOffset = offset;
+      setLift(offset);
       onGroundOffsetRef.current?.(offset);
     },
     [ready, rotationsRef, onGroundOffsetRef],
@@ -559,6 +593,16 @@ export function Humanoid({
   useEffect(() => {
     if (figure) ground(figure);
   }, [rotations, ground]);
+  // A new pose gives the figure's presence a new source, so it is derived again
+  // from the posed skeleton (a new evaluation's own source carries the pose).
+  useEffect(() => {
+    const source = presenceSource.current;
+    if (!source || !ready) return;
+    presenceSource.current = {
+      ...source,
+      pose: rotations ? { rig: ready.rig, rotations } : undefined,
+    };
+  }, [rotations, ready]);
 
   useEffect(
     () => () => {
@@ -619,14 +663,24 @@ export function Humanoid({
   // Only the signals that change the shape re-evaluate the figure; a stable
   // key keeps a colour-only change (or a new object with the same values) from
   // re-evaluating it. The adult pack's state morphs (arousal) count with the
-  // body's once it is loaded.
+  // body's once it is loaded. Rounded to steps (`quantiseShapeSignal`), so a
+  // signal that eases does not evaluate every frame.
   const shapeNames = useMemo(
     () => [
       ...new Set([...STATE_MORPHS, ...(ready?.anatomy?.stateMorphs ?? [])].map((m) => m.signal)),
     ],
     [ready],
   );
-  const shapeKey = shapeNames.map((name) => signals?.[name] ?? 0).join(",");
+  // The age policy judges the signals before they are rounded; a refused one
+  // is reported rather than evaluated.
+  const { shapeKey, signalPolicyError } = useMemo(() => {
+    try {
+      const key = quantisedShapeSignals(recipe, signals ?? {}, shapeNames).join(",");
+      return { shapeKey: key, signalPolicyError: null };
+    } catch (e) {
+      return { shapeKey: "", signalPolicyError: e as Error };
+    }
+  }, [recipe, signals, shapeNames]);
   const shapeSignals = useMemo(
     () => Object.fromEntries(shapeNames.map((name, i) => [name, Number(shapeKey.split(",")[i])])),
     [shapeNames, shapeKey],
@@ -634,6 +688,10 @@ export function Humanoid({
 
   useEffect(() => {
     if (!geometries) return;
+    if (signalPolicyError) {
+      report(signalPolicyError);
+      return;
+    }
     let live = true;
     client.evaluate(recipe, key, shapeSignals).then(
       (ev) => {
@@ -649,6 +707,16 @@ export function Humanoid({
         });
         setFigure(ev);
         ground(ev);
+        presenceSource.current = ready?.presenceJoints
+          ? {
+              evaluation: ev,
+              recipe,
+              joints: ready.presenceJoints,
+              pose: rotationsRef.current
+                ? { rig: ready.rig, rotations: rotationsRef.current }
+                : undefined,
+            }
+          : null;
         setShown(true);
         onEvaluatedRef.current?.(ev);
       },
@@ -659,17 +727,36 @@ export function Humanoid({
     return () => {
       live = false;
     };
-  }, [client, geometries, rig, ready, recipe, key, shapeSignals, onEvaluatedRef, report, ground]);
+  }, [
+    client,
+    geometries,
+    rig,
+    ready,
+    recipe,
+    key,
+    shapeSignals,
+    signalPolicyError,
+    onEvaluatedRef,
+    rotationsRef,
+    report,
+    ground,
+  ]);
 
+  const placed = presence?.position;
+  const heading = presence?.facing;
   return (
     <group
       ref={groupRef}
       {...group}
+      {...(placed && { position: placed })}
+      {...(heading && { rotation: [0, Math.atan2(heading[0], heading[2]), 0] as Vec3 })}
       // Only listen when asked: a handler makes three raycast the figure on every click.
       {...(onPick && { onClick: (e: ThreeEvent<MouseEvent>) => pick(e, onPick) })}
     >
       {geometries && ready && rig && (
-        <>
+        // With presence the group's origin is the ground under the figure, so the
+        // meshes are lifted here; without it the caller lifts the group.
+        <group position-y={presence ? lift : 0}>
           <primitive object={rig.root} />
           <SkinnedPart
             geometry={geometries.body}
@@ -697,7 +784,7 @@ export function Humanoid({
               />
             ) : null;
           })}
-        </>
+        </group>
       )}
     </group>
   );

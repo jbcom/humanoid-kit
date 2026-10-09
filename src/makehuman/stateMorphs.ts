@@ -27,6 +27,8 @@
  * those stay still until the sculpt phase adds both.
  */
 import type { Contribution } from "../morph/evaluate.ts";
+import { assertSignalPolicy } from "../recipe/agePolicy.ts";
+import type { Recipe } from "../recipe/recipe.ts";
 
 export interface StateMorph {
   signal: string;
@@ -47,6 +49,34 @@ export const STATE_MORPHS: readonly StateMorph[] = [
 export const STATE_MORPH_TARGETS: readonly string[] = [
   ...new Set(STATE_MORPHS.flatMap((m) => m.targets.map((t) => t.name))),
 ];
+
+/**
+ * How many steps a shape signal moves in, 0 to 1. A shape state re-evaluates the
+ * figure, so a signal easing at the frame rate (`useSkinStateFilter`) would
+ * evaluate it every frame; in 50 steps it evaluates it a few dozen times,
+ * each a change under 1% of the nipple's point target.
+ */
+export const SHAPE_SIGNAL_STEPS = 50;
+
+/** A shape signal rounded to its step, inside 0..1. */
+export function quantiseShapeSignal(signal: number): number {
+  return Math.round(Math.min(1, Math.max(0, signal)) * SHAPE_SIGNAL_STEPS) / SHAPE_SIGNAL_STEPS;
+}
+
+/**
+ * The named shape signals, each rounded to its step (`quantiseShapeSignal`),
+ * after the age policy has judged them as given. Rounding and clamping would
+ * turn a small or negative adult-only signal into 0 and let it through, so a
+ * figure under 18 with any nonzero adult-only signal throws `AgePolicyError`.
+ */
+export function quantisedShapeSignals(
+  recipe: Recipe,
+  signals: Readonly<Record<string, number>>,
+  names: readonly string[],
+): number[] {
+  assertSignalPolicy(recipe, signals);
+  return names.map((name) => quantiseShapeSignal(signals[name] ?? 0));
+}
 
 /**
  * The target weights the signals add to an evaluation (signals are 0..1).

@@ -12,6 +12,7 @@ import type {
   ModelTopology,
   RenderFeatures,
 } from "../model/humanoidModel.ts";
+import type { PresenceJoints } from "../presence/fromEvaluation.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import type { RigData, RigSkin } from "../rig/pose.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
@@ -29,6 +30,12 @@ export interface ReadyInfo {
    * units. Each evaluation carries the bones' rest heads for its figure.
    */
   rig: RigData & { parents: Int16Array; skin: RigSkin };
+  /**
+   * The joints presence reads (`presenceFromEvaluation`), so the main thread
+   * needs no packs; null when the body pack lacks one (such a pack renders but
+   * cannot publish presence).
+   */
+  presenceJoints: PresenceJoints | null;
   adultAnatomyLoaded: boolean;
   /**
    * The adult anatomy pack's features and state morphs (`AdultAnatomySpec`),

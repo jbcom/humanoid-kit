@@ -70,13 +70,32 @@ export function vertexAdjacency(
  * every vertex belongs somewhere.
  */
 export function buildRegionField(assets: HumanoidAssets, smoothing = 6): RegionField {
-  const n = assets.manifest.vertexCount;
-  const R = BODY_REGIONS.length;
-  const boneRegion = assets.manifest.skeleton.bones.map((b) =>
-    BODY_REGIONS.indexOf(regionOfBone(b.name)),
+  return buildBoneField(
+    assets,
+    BODY_REGIONS,
+    (bone) => BODY_REGIONS.indexOf(regionOfBone(bone)),
+    BODY_REGIONS.indexOf("chest"),
+    smoothing,
   );
-  let masks = BODY_REGIONS.map(() => new Float32Array(n));
-  const fallback = BODY_REGIONS.indexOf("chest");
+}
+
+/**
+ * The same construction for any partition of the skeleton: `zoneOfBone` names
+ * the index in `names` each bone's weight counts towards (skin states split the
+ * limbs and trunk more finely than the shape traits do), and vertices with no
+ * skin weight fall to zone `fallback`.
+ */
+export function buildBoneField(
+  assets: HumanoidAssets,
+  names: readonly string[],
+  zoneOfBone: (bone: string) => number,
+  fallback: number,
+  smoothing = 6,
+): RegionField {
+  const n = assets.manifest.vertexCount;
+  const R = names.length;
+  const boneRegion = assets.manifest.skeleton.bones.map((b) => zoneOfBone(b.name));
+  let masks = names.map(() => new Float32Array(n));
   for (let v = 0; v < n; v++) {
     let sum = 0;
     for (let k = 0; k < 4; k++) {
@@ -90,7 +109,7 @@ export function buildRegionField(assets: HumanoidAssets, smoothing = 6): RegionF
   }
   const adj = vertexAdjacency(n, assets.faceVerts);
   for (let it = 0; it < smoothing; it++) {
-    const next = BODY_REGIONS.map(() => new Float32Array(n));
+    const next = names.map(() => new Float32Array(n));
     for (let v = 0; v < n; v++) {
       const s = adj.start[v] as number;
       const e = adj.start[v + 1] as number;
@@ -110,5 +129,5 @@ export function buildRegionField(assets: HumanoidAssets, smoothing = 6): RegionF
       for (let r = 0; r < R; r++)
         (masks[r] as Float32Array)[v] = ((masks[r] as Float32Array)[v] as number) / sum;
   }
-  return { names: BODY_REGIONS, masks };
+  return { names, masks };
 }
