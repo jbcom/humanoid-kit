@@ -137,7 +137,9 @@ function creaseFields(
       (normals[v * 3 + 2] as number) * joint.flexes[2];
     const window = 1 - smoothstep(half * 0.75, half, Math.abs(s));
     const onLimb = 1 - smoothstep(LIMB_RADIUS.inside, LIMB_RADIUS.edge, r);
-    mask[v] = window * onLimb * smoothstep(0.1, 0.6, facing);
+    // Full within about 30° of the way the joint folds, none past 63°: the sides and the
+    // back of the limb carry no crease, which would read as a seam round it.
+    mask[v] = window * onLimb * smoothstep(0.5, 0.87, facing);
     coord[v] = Math.min(1, Math.max(0, (s + half) / (2 * half)));
   }
   return { mask, coord };
