@@ -67,6 +67,6 @@ describe("the package entry's skin-state API", () => {
       // The joint creases follow the states.
       ...kit.CREASE_LAYERS.map((l) => l.id),
     ]);
-    expect(kit.CREASE_LAYERS).toHaveLength(12);
+    expect(kit.CREASE_LAYERS).toHaveLength(6);
   });
 });

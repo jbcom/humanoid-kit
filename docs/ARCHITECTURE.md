@@ -1168,9 +1168,9 @@ regions.
 
 ### Joint creases (2026-10-09)
 
-**Use cases.** A bent elbow or knee shows its fold; a straight one shows loose
-skin; a game bends many figures at every frame, from any animation; every body
-type and skin tone gets them without painting.
+**Use cases.** A bent elbow or knee shows its fold; a game bends many figures at
+every frame, from any animation; every body type and skin tone gets them without
+painting.
 
 **Requirements.** Driven by the flexion signals the rig already computes
 (`flex.<joint>.<side>`, `src/rig/flexion.ts`), so any pose or animation drives
@@ -1180,29 +1180,40 @@ the joint's skin takes, which is measured.
 
 **Decisions.**
 
-- *Two layers per joint and side, one for each side of the bend* (twelve in all:
-  elbows, knees, wrists). The inside of the bend (the crook of the elbow, the
-  back of the knee, the wrist's palm side) folds as the joint flexes, as
-  grooves across the limb. The outside (the elbow's point, the kneecap) is loose
-  when the joint is straight, wrinkles then, and is drawn tight as it bends:
-  strain there is highest at flexion (+25 % over the forearm's extension, over
-  60 % at the knee). One layer per side because a layer has one strength, and the
-  left and right joints bend independently; one per role because the two sides
-  respond in opposite senses.
+- *One layer per joint and side* (six in all: elbows, knees, wrists), on the
+  inside of the bend (the crook of the elbow, the back of the knee, the wrist's
+  palm side), which folds as the joint flexes, as grooves across the limb. One
+  per side because a layer has one strength, and the left and right joints bend
+  independently. The outside of the bend (the elbow's point, the kneecap) has
+  none. The measured strain there is a stretch (+25 % over the forearm's
+  extension, over 60 % at the knee), which draws skin smooth; wrinkling when it
+  is loose has no measurement behind it, and the first version drew it, 0.5 mm
+  deep, as bands round the knee and a pale ring at the wrist. It is dropped
+  rather than tuned: nothing says how deep or where. Twelve layers of this kind
+  were also twelve atlas masks.
 - *Fields from the rest mesh.* A layer's mask is a window along the limb about
   the joint (the axis through the segments either side of it), on the limb
   (within 9 to 12 cm of the axis, which keeps the torso and the other limb out),
   on the side the skin faces (its normal against the joint's flex direction,
   `FLEXION_JOINTS[].flexes`); its coordinate runs along the limb across the
   window, so the grooves lie across it. Nothing is painted or packed.
-- *Flexor strength* is `smoothstep(0.05, 0.85, flex)`: nothing straight, the
-  whole near the joint's limit; the rest A-pose's elbow (flexion 0.3) holds a
-  quarter. *Extensor strength* is `1 - smoothstep(0, 0.6, flex)`.
-- *Depth* is `0.006 m × strain` for the folds (elbow 1.5 mm, knee 3.9 mm, wrist
-  1.5 mm) and 30 % of that for the loose skin; the number of creases across a
-  window is art-directed (the flexor sides 3, 3 and 2; the extensor sides 3, 2
-  and 2). No measurement of crease depth or spacing against joint angle exists
-  (SKIN-STATES.md, B5): the strain ratios are measured, the scale is a choice.
+- *Strength* is `smoothstep(0.05, 0.85, flex)`: nothing straight, the whole
+  near the joint's limit; the rest A-pose's elbow (flexion 0.3) holds a quarter.
+- *Depth follows from the strain.* A crease of span `s` and depth `d` takes up
+  `PROFILE_STRETCH × d² ÷ s` of skin (the arc length of the groove the shader
+  draws, `sin⁶(πt)`, about 3.64 in those units), so a crease that must take up
+  `e` is `√(e·s ÷ 3.64)` deep. Each crease takes its share of the strain over
+  the window: `e = CREASE_ABSORBED × strain × s`, with `s` the window ÷ the
+  crease count (3 at the elbow and the knee, 2 at the wrist). The strains are
+  measured (SKIN-STATES.md, B5); a tenth of the strain taken up by creases
+  (`CREASE_ABSORBED`, the rest going into the skin's compression and the flesh
+  bulging beside the fold) and the counts are art-directed, for no measurement of
+  crease depth or spacing against joint angle exists. That is 2.8 mm at the elbow,
+  2.5 mm at the wrist and 6.2 mm at the knee (`creaseDepth`), and a test
+  integrates the drawn profile to hold the formula to it. The first scale, a
+  flat `0.006 m × strain` (1.5 mm at the elbow), read as a faint line at viewing
+  distance; the strain-derived 2.8 mm is the same rule with a fold that has to
+  take up what the strain says.
 - *The groove profile.* The detail layer's crease profile was a raised cosine,
   a soft ripple whose steepest slope at 1.5 mm over 3 cm is 3°, invisible. A
   crease is a narrow cut in flat skin, so the profile is now the raised cosine
@@ -1213,10 +1224,17 @@ the joint's skin takes, which is measured.
 - *Wrists* have the least to show (a few centimetres of window, a quarter of the
   knee's strain) and are drawn at the same rules.
 
-**Cost.** Twelve more layers: the atlas doubles to twelve pages of 1024² (about
-48 MB shared by every figure), the detail loop does one field fetch per crease
-layer per pixel, and the stop table 12 more rows of a few bytes. Colour and
-surface layers skip the crease rows before any fetch.
+**Cost.** Six more layers. The field atlas is channel-packed (`planAtlas`: a
+channel for each mask, one for each coordinate a layer reads, and one
+coordinate between the layers of a `coordGroup`), and every crease layer measures
+its coordinate along its own limb, so they share one: six masks and a
+coordinate are 7 channels of 1024², shared by every figure.
+The whole stack of 22 layers is 36 channels in 9 pages (36 MB). Two layers a
+page would take 8 pages (32 MB) for the 16 rest layers (packing them by what the
+shader reads is 29 channels, also 8 pages) and 11 (44 MB) with the creases, as
+twelve layers of two channels would have taken 14. So the creases add one
+page, 4 MB, to the atlas. The detail loop does one field fetch per crease layer per pixel, only
+while the layer has strength, and the stop table has 6 more rows of a few bytes.
 
 **Not here.** Skin colour at the joint (darker and redder when extended, a
 colour term, SKIN-STATES.md A2); crease depth varying with age or body fat

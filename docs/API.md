@@ -462,13 +462,14 @@ compute what the renderer will do.
     `SWEAT_SPECULAR` are the change at full wetness. The two signals share one
     sweat drive, `1 - (1 - heat)(1 - exertion)`, split between the maps by
     their shares, so both at 1 is half of each map.
-  - Joint creases (ARCHITECTURE.md, "Joint creases"): `CREASE_LAYERS`, twelve
-    `DetailLayer`s with the `creases` pattern, a flexor and an extensor layer for
-    each side of the elbows, knees and wrists (`creaseLayerId(joint, side,
-    role)`: `creases.elbow.L.flexor`, …). The flexor side folds as the joint's
-    `flex.<joint>.<side>` signal rises; the extensor side wrinkles as it falls.
-    `CREASE_STRAIN` is the measured skin strain at full flexion (forearm 0.25,
-    knee 0.65), `CREASE_HEIGHT_PER_STRAIN` the depth per unit of it and
+  - Joint creases (ARCHITECTURE.md, "Joint creases"): `CREASE_LAYERS`, six
+    `DetailLayer`s with the `creases` pattern, one for each side of the elbows,
+    knees and wrists (`creaseLayerId(joint, side)`: `creases.elbow.L`, …),
+    which fold the inside of the bend as the joint's `flex.<joint>.<side>`
+    signal rises. `CREASE_STRAIN` is the measured skin strain at full flexion
+    (forearm 0.25, knee 0.65), `CREASE_ABSORBED` the share of it the creases
+    take up, `CREASE_COUNT` the creases across a joint's window,
+    `creaseDepth(joint)` the fold's depth in metres that follows from them, and
     `CREASE_HALF_WIDTH` how far either side of the joint each joint's creases
     reach.
   - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones

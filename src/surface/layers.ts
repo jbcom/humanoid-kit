@@ -94,8 +94,8 @@ interface LayerBase {
    * Layers that name the same group share one coordinate channel in the field
    * atlas (src/render/layerAtlas.ts), so they cost one coordinate between them
    * rather than one each. Their coordinates must agree wherever their masks
-   * overlap, which is how a joint's flexor and extensor creases, one limb's
-   * and the other's, can be one set of texels. Absent: the layer has its own.
+   * overlap, which is how the creases of every joint, each along its own limb,
+   * can be one set of texels. Absent: the layer has its own.
    */
   coordGroup?: string;
   /**

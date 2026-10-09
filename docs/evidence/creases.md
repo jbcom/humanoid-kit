@@ -25,16 +25,14 @@ cuts in flat skin, not ripples: that is what the light catches.
 The same bend from the front. The fold across the elbow reads as a skin fold
 and not a seam; the forearm and hand beyond it are unchanged.
 
-## The loose skin of a straight joint
+## The outside of a bend has none
 
-![The front of a straight knee and the back of a straight elbow, without and with creases](./creases-extensor.webp)
-
-The extensor side wrinkles when the joint is straight and is drawn tight as it
-bends. Top: the kneecap's skin of a standing knee; bottom: the point of the
-elbow with the arm out. These are at 30 % of the flexor folds' depth and fewer:
-a first version drew four deep rings round the straight knee, which read as a
-stack of bands, and was reduced until the skin showed a trace of loose skin
-over the kneecap and nothing round the sides.
+A first version also wrinkled the outside of the bend (the kneecap's and the
+elbow's point's skin) while the joint was straight. It drew four deep rings
+round the straight knee, which read as a stack of bands, then a faint trace
+over the kneecap, and a pale ring round the wrist. The measured strain there is
+a stretch, which draws skin smooth, and nothing measured says how loose skin
+wrinkles, so those layers were dropped, not tuned (ARCHITECTURE.md).
 
 ## Body types
 
