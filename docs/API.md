@@ -248,7 +248,11 @@ and throws `RangeError` for anything else.
   moves `Evaluation.control` and no drawn vertex until the sculpt phase.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
-  only (every pose corner holding the rest value).
+  only (every pose corner holding the rest value). `body.occlusion` is the
+  body's own cavity occlusion (below), a byte per pose corner per render vertex.
+- `model.bakeBodyOcclusion(): BodyOcclusion` is the body's whole cavity bake
+  (what the packer stores in `body-occlusion.bin.gz`); it depends on neither
+  the worn set nor the subdivision level.
 - `model.bakePosedOcclusion(): Generator<void, Float32Array[] | null>` bakes
   that set's pose corners, yielding before each one so a caller can let other
   work in between; it returns per-render-vertex arrays shaped like
@@ -481,6 +485,21 @@ and expressions"). Framework-free.
   `AttachmentTopology.occlusion` holds `occlusionCorners` values per render
   vertex, rest first. `rotationVectors(rotations)` gives each bone's rotation
   vector.
+- Body occlusion (ARCHITECTURE.md, "Body occlusion"): the inside of the mouth,
+  the nostrils, the ear canals and the eye sockets are darkened by pose, at the
+  same corners. `HumanoidAssets.bodyOcclusion` is `{ vertices, values }`: the
+  ascending base-vertex indices of the few vertices ever enclosed and a byte
+  per vertex per corner (255 open), or null for a pack that predates it (a
+  body never darkened). `ModelTopology.body.occlusion` is the same per render
+  vertex, `occlusionCorners` bytes each, 255 off the cavities.
+  `cavityCandidates(assets)`, `selectCavity(candidates, bakes)`,
+  `cavityOcclusion(visibility)`, `OPEN_VISIBILITY` and
+  `expandBodyOcclusion(occlusion, vertexCount, corner)` are the bake's steps;
+  `parseBodyOcclusion(entry, bytes, vertexCount)` reads the file.
+  `<Humanoid>` puts `body.occlusion` on the body geometry
+  (`setBodyOcclusionAttributes`) and shares the pose's key weights with the
+  skin material (`SkinMaterial.occlusionKeys`, as with the attachments'
+  materials); a body geometry without the attributes renders open.
 
 ### Presence
 
@@ -647,7 +666,8 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 - Renders the body and the body pack's attachments (eyes with their own eye
   shader following `recipe.eyes`, teeth and tongue), each attachment shaded by
   its baked occlusion, which follows the pose (an open mouth lights the teeth
-  it uncovers).
+  it uncovers). The body's own cavities (mouth, nostrils, ear canals, eye
+  sockets) are darkened the same way, so a mouth without a tongue is dim inside.
 - Updates the geometry in place when `recipe` changes.
 - Stores the latest ground offset (posed when posed) on the group's `userData.groundOffset`.
 - Disposes its geometries, textures and built-in materials on unmount.
@@ -841,7 +861,7 @@ import { bodyPack } from "humanoid-kit-body";
 `bodyPack` is `{ manifest, files: { "body.bin.gz", "targets-core.bin.gz",
 "targets-baby.bin.gz", "targets-child.bin.gz", "targets-young.bin.gz",
 "targets-old.bin.gz", "targets-modifiers.bin.gz", "attachments.bin.gz",
-...WebP textures } }`, with
+"body-occlusion.bin.gz", ...WebP textures } }`, with
 each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the
 worker client. The package also exposes its files under
 `humanoid-kit-body/data/*`.

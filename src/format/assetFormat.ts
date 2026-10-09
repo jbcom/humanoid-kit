@@ -180,10 +180,42 @@ export interface BodyManifest {
     occlusionKeys: string[];
     entries: AttachmentEntry[];
   };
+  /**
+   * The body's own occlusion, baked at pack time (`HumanoidModel.bakeBodyOcclusion`).
+   * Absent from packs that predate it, whose body is then never darkened.
+   */
+  bodyOcclusion?: BodyOcclusionEntry;
   skeleton: { bones: BoneEntry[]; joints: Record<string, number[]> };
   faceUnits: { names: string[]; joints: BvhJoint[]; frames: number[][] };
   /** Whole-body poses (one BVH frame each, MakeHuman's Z-up axes; see src/rig/pose.ts). */
   poses: BodyPoseEntry[];
+}
+
+/**
+ * The body's cavity occlusion file: `count` ascending base-vertex indices
+ * (u32), then one byte per vertex for each corner of the cube of `keys` (the
+ * `OCCLUSION_KEYS` ids it was baked at; corner 0 is rest), corner by corner.
+ */
+export interface BodyOcclusionEntry {
+  file: string;
+  /** SHA-256 of the file as shipped (compressed). */
+  sha256: string;
+  keys: string[];
+  /** How many vertices it stores. */
+  count: number;
+}
+
+/**
+ * Occlusion for the few body vertices that are ever enclosed (the mouth's
+ * inside, the nostrils, the ear canals, the eye sockets); every other vertex is
+ * open at every pose. 255 = open, 0 = fully enclosed
+ * (docs/ARCHITECTURE.md, "Body occlusion").
+ */
+export interface BodyOcclusion {
+  /** Ascending base-vertex indices. */
+  vertices: Uint32Array;
+  /** One byte per vertex for each corner of the key cube: corner 0 (rest) first, each `vertices.length` long. */
+  values: Uint8Array;
 }
 
 export interface AttachmentMaterial {
@@ -318,6 +350,8 @@ export interface HumanoidAssets {
   /** The slider taxonomy of every loaded pack, merged in MakeHuman's order. */
   sliders: SliderTask[];
   attachments: Map<string, BoundAsset>;
+  /** The body's own cavity occlusion; null for a pack that predates it. */
+  bodyOcclusion: BodyOcclusion | null;
   /** URL of each pack file by name (textures included); empty when parsed without URLs. */
   fileUrls: Map<string, string>;
   adultAnatomyLoaded: boolean;
@@ -357,6 +391,10 @@ function view<T extends Float32Array | Uint32Array | Uint8Array>(
     );
   }
   return new Ctor(buffer, range.offset, range.byteLength / Ctor.BYTES_PER_ELEMENT);
+}
+
+function fail(message: string): never {
+  throw new AssetFormatError(message);
 }
 
 function expectLength(arr: ArrayLike<number>, expected: number, what: string): void {
@@ -428,8 +466,34 @@ export interface BodyPackData {
    */
   targets: TargetFileData;
   attachments: ArrayBuffer;
+  /** The decompressed body occlusion file; needed when the manifest has an entry for it. */
+  bodyOcclusion?: ArrayBuffer;
   /** URL of each pack file by name, when known (needed to load textures). */
   fileUrls?: Map<string, string>;
+}
+
+/**
+ * Reads a body occlusion file (`BodyOcclusionEntry`) for a mesh of
+ * `vertexCount` base vertices as views, with no copy.
+ */
+export function parseBodyOcclusion(
+  entry: Pick<BodyOcclusionEntry, "keys" | "count">,
+  bin: ArrayBuffer,
+  vertexCount: number,
+): BodyOcclusion {
+  const corners = 2 ** entry.keys.length;
+  const expected = entry.count * (4 + corners);
+  if (!Number.isInteger(entry.count) || entry.count < 0 || bin.byteLength !== expected)
+    throw new AssetFormatError(
+      `body occlusion: ${bin.byteLength} bytes cannot hold ${entry.count} vertices baked at ` +
+        `${entry.keys.length} keys (${expected} bytes)`,
+    );
+  const vertices = new Uint32Array(bin, 0, entry.count);
+  for (let i = 1; i < vertices.length; i++)
+    if ((vertices[i] as number) <= (vertices[i - 1] as number))
+      throw new AssetFormatError("body occlusion: vertex indices are not ascending");
+  expectIndices(vertices, vertexCount, "body occlusion vertices");
+  return { vertices, values: new Uint8Array(bin, entry.count * 4, entry.count * corners) };
 }
 
 function parseAttachments(manifest: BodyManifest, bin: ArrayBuffer): Map<string, BoundAsset> {
@@ -565,6 +629,16 @@ export function parseHumanoidAssets(
     modifiers,
     sliders,
     attachments: parseAttachments(manifest, pack.attachments),
+    bodyOcclusion: manifest.bodyOcclusion
+      ? parseBodyOcclusion(
+          manifest.bodyOcclusion,
+          pack.bodyOcclusion ??
+            fail(
+              `the manifest lists ${manifest.bodyOcclusion.file} but the pack data has no bytes for it`,
+            ),
+          manifest.vertexCount,
+        )
+      : null,
     fileUrls: pack.fileUrls ?? new Map(),
     adultAnatomyLoaded: adultAnatomy !== undefined,
     adultAnatomyManifest: adultAnatomy?.manifest ?? null,
@@ -751,9 +825,10 @@ export async function loadHumanoidAssetsStaged(
     return Object.fromEntries(present.map(([id], i) => [id, bins[i]]));
   };
   const [first, ...later] = targetLoadOrder(options.firstFigureAge ?? DEFAULT_MACROS.age);
-  const [bodyBin, attachments, firstTargets] = await Promise.all([
+  const [bodyBin, attachments, bodyOcclusion, firstTargets] = await Promise.all([
     fetchGzip(body.file(manifest.body.file)),
     fetchGzip(body.file(manifest.attachments.file)),
+    manifest.bodyOcclusion ? fetchGzip(body.file(manifest.bodyOcclusion.file)) : undefined,
     fetchFiles(first as string[]),
   ]);
   const fileUrls = new Map<string, string>();
@@ -761,7 +836,14 @@ export async function loadHumanoidAssetsStaged(
     if (a.material.texture) fileUrls.set(a.material.texture, body.file(a.material.texture));
   }
   const assets = parseHumanoidAssets(
-    { manifest, body: bodyBin, targets: firstTargets, attachments, fileUrls },
+    {
+      manifest,
+      body: bodyBin,
+      targets: firstTargets,
+      attachments,
+      ...(bodyOcclusion && { bodyOcclusion }),
+      fileUrls,
+    },
     adultManifest && { manifest: adultManifest },
   );
   // Each stage's bytes are fetched after the previous stage's settled; each is

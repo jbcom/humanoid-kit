@@ -48,7 +48,11 @@ import type { Recipe } from "../recipe/recipe.ts";
 import { DualBones, dualShadowMaterials, followDualSkinning } from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
-import { AttachmentStandardMaterial, setOcclusionAttributes } from "../render/occlusion.ts";
+import {
+  AttachmentStandardMaterial,
+  setBodyOcclusionAttributes,
+  setOcclusionAttributes,
+} from "../render/occlusion.ts";
 import { CURVATURE_ATTRIBUTE, SkinMaterial, UV_SCALE_ATTRIBUTE } from "../render/skinMaterial.ts";
 import { flexionRig, jointFlexion } from "../rig/flexion.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
@@ -463,6 +467,14 @@ export function Humanoid({
     () => (e: Error) => (onErrorRef.current ? onErrorRef.current(e) : console.error(e)),
     [onErrorRef],
   );
+  // How much of each occlusion key the pose holds, shared by the skin and the
+  // attachments' materials.
+  const occlusionKeys = useMemo(() => new Vector3(), []);
+  const skin = useMemo(() => {
+    const m = new SkinMaterial();
+    m.occlusionKeys = occlusionKeys;
+    return m;
+  }, [occlusionKeys]);
   // A body pack without the joints presence reads still renders the figure; it
   // is reported (not thrown, which would take the canvas down) and not published.
   const lacksPresenceJoints = Boolean(presence && ready && !ready.presenceJoints);
@@ -474,7 +486,6 @@ export function Humanoid({
         ),
       );
   }, [lacksPresenceJoints, report]);
-  const skin = useMemo(() => new SkinMaterial(), []);
   const geometries = useMemo(() => {
     if (!ready) return null;
     const body = makeGeometry(ready.topology.body);
@@ -483,6 +494,7 @@ export function Humanoid({
       new BufferAttribute(new Float32Array(ready.topology.body.vertexCount), 1),
     );
     body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(ready.topology.body.uvScale, 1));
+    setBodyOcclusionAttributes(body, ready.topology.body.occlusion);
     const attachments = ready.topology.attachments.map((t) => {
       const g = makeGeometry(t);
       setOcclusionAttributes(g, t.occlusion);
@@ -534,8 +546,6 @@ export function Humanoid({
     };
   }, [dual]);
   const keyBasis = useMemo(() => (ready ? occlusionKeyBasis(ready.rig) : null), [ready]);
-  // Shared by the attachments' materials: how much of each occlusion key the pose holds.
-  const occlusionKeys = useMemo(() => new Vector3(), []);
   const [shown, setShown] = useState(false);
 
   // The pose: face units blended into bone rotations (rest when absent), and
