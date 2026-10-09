@@ -308,7 +308,7 @@ function QaLight({ kind }: { kind: "camera" | "under" }) {
 
 /**
  * A fixed-camera render for visual QA: `?view=front|side|back|face`, or
- * `?cam=x,y,z,tx,ty,tz` to place the camera exactly, or `?frame=<bone>&view=dx,dy,dz&span=<m>[&at=dx,dy,dz]`
+ * `?cam=x,y,z,tx,ty,tz[&span=<m>]` to place the camera exactly (with `span`, the field of view fits that many metres across at the target), or `?frame=<bone>&view=dx,dy,dz&span=<m>[&at=dx,dy,dz]`
  * to frame a bone by name (`AutoFrame`, `at` a world offset in metres from the bone's head), with `?light=camera|under` to light what the studio
  * does not reach; `?tm=agx|neutral|aces`
  * and `?exp=<number>` override tone mapping and exposure for comparisons;
@@ -385,6 +385,19 @@ function Shot() {
         target: cam.slice(3) as [number, number, number],
       }
     : ((preset[view] ?? preset.front) as (typeof preset)[string]);
+  // `?cam=…&span=<m>`: an exact camera keeps its position and narrows (or widens)
+  // its field of view until `span` metres across fit the frame at the target, so a
+  // close crop can be shot from a set distance without perspective changing.
+  const camSpan = Number(params.get("span"));
+  const reach = Math.hypot(
+    position[0] - target[0],
+    position[1] - target[1],
+    position[2] - target[2],
+  );
+  const fov =
+    exact && Number.isFinite(camSpan) && camSpan > 0 && reach > 0
+      ? 2 * Math.atan(camSpan / 2 / reach) * (180 / Math.PI)
+      : 35;
   return (
     <div
       style={{ position: "absolute", inset: 0 }}
@@ -393,7 +406,7 @@ function Shot() {
     >
       <Canvas
         shadows="percentage"
-        camera={{ position, fov: 35 }}
+        camera={{ position, fov }}
         gl={{
           preserveDrawingBuffer: true,
           toneMapping,
