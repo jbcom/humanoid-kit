@@ -12,30 +12,12 @@ import {
   type HairColour,
   hairAlbedo,
 } from "../../surface/hairTone.ts";
-import { linearToSrgb, type Rgb, skinAlbedo, srgbToLinear } from "../../surface/skinTone.ts";
+import { type Rgb, skinAlbedo } from "../../surface/skinTone.ts";
 import type { FrameRequest } from "../framing.ts";
 import { IRIS_PALETTE } from "../randomize.ts";
+import { cssColour as css, fromCssColour as fromCss, cssRamp as ramp } from "./cssColour.ts";
 import { SliderRow } from "./SliderRow.tsx";
 import type { HumanoidEditor } from "./useHumanoidEditor.ts";
-
-const css = (rgb: Readonly<Rgb>) =>
-  `#${rgb
-    .map((c) =>
-      Math.round(Math.min(1, Math.max(0, linearToSrgb(c))) * 255)
-        .toString(16)
-        .padStart(2, "0"),
-    )
-    .join("")}`;
-
-const fromCss = (hex: string): Rgb => {
-  const n = Number.parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => srgbToLinear(c / 255)) as Rgb;
-};
-
-function ramp(steps: number, at: (t: number) => Rgb): string {
-  const stops = Array.from({ length: steps }, (_, i) => css(at(i / (steps - 1))));
-  return `linear-gradient(90deg, ${stops.join(", ")})`;
-}
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 

@@ -30,7 +30,6 @@ import { gzipSync } from "node:zlib";
 import {
   BODY_TARGET_FILES,
   type BodyManifest,
-  type BvhJoint,
   parseHumanoidAssets,
   type ShapeModifierEntry,
   TARGET_ENCODING,
@@ -40,6 +39,12 @@ import { STATE_MORPH_TARGETS } from "../src/makehuman/stateMorphs.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
 import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
+import {
+  ADULT_ANATOMY_SPEC,
+  ADULT_SPEC_MODIFIERS,
+  ADULT_SPEC_TARGETS,
+} from "./lib/adultAnatomySpec.ts";
+import { authoredPoses } from "./lib/authoredPoses.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { packHair } from "./lib/packHair.ts";
 import { writeAttachments, writeAttachmentTextures, writePackEntry } from "./lib/packWriter.ts";
@@ -77,21 +82,6 @@ const UNIT = 0.1;
 const MODIFIER_TABLES = ["modeling", "measurement", "bodyshapes"] as const;
 /** Whole-body poses from MakeHuman's data/poses, each CC0 by its .meta. */
 const BODY_POSES = ["tpose", "benchmark"] as const;
-/**
- * Whole-body poses authored for this package (dedicated to the public domain
- * under CC0 1.0, like the data they pose): one JSON file each, giving BVH
- * channel values in degrees per joint over the joint layout of a MakeHuman
- * pose (`base`). Every other channel is zero, the rest pose.
- */
-const AUTHORED_POSES_DIR = path.resolve(import.meta.dirname, "poses");
-
-interface AuthoredPose {
-  name: string;
-  title: string;
-  description: string;
-  base: (typeof BODY_POSES)[number];
-  rotations: Record<string, Record<string, number>>;
-}
 
 interface TargetEntry {
   name: string;
@@ -376,42 +366,6 @@ function parseBvh(text: string) {
   return { joints, frames: data };
 }
 
-/** The authored poses (`AUTHORED_POSES_DIR`) as pack entries, each checked against its base's joints. */
-function authoredPoses(
-  shipped: readonly { name: string; joints: { name: string; channels: string[] }[] }[],
-): { name: string; title: string; description: string; joints: BvhJoint[]; frame: number[] }[] {
-  return fs
-    .readdirSync(AUTHORED_POSES_DIR)
-    .filter((f) => f.endsWith(".json"))
-    .sort()
-    .map((file) => {
-      const spec = JSON.parse(
-        fs.readFileSync(path.join(AUTHORED_POSES_DIR, file), "utf8"),
-      ) as AuthoredPose;
-      if (`${spec.name}.json` !== file) throw new Error(`poses/${file}: name ${spec.name}`);
-      if (shipped.some((p) => p.name === spec.name))
-        throw new Error(`poses/${file}: ${spec.name} is a MakeHuman pose's name`);
-      const base = shipped.find((p) => p.name === spec.base);
-      if (!base) throw new Error(`poses/${file}: unknown base ${spec.base}`);
-      for (const [joint, channels] of Object.entries(spec.rotations)) {
-        const j = base.joints.find((b) => b.name === joint);
-        if (!j) throw new Error(`poses/${file}: ${spec.base} has no joint ${joint}`);
-        for (const c of Object.keys(channels))
-          if (!j.channels.includes(c) || !c.endsWith("rotation"))
-            throw new Error(`poses/${file}: ${joint} has no rotation channel ${c}`);
-      }
-      licenseEvidence[`humanoid-kit:scripts/poses/${file}`] =
-        "authored for humanoid-kit and dedicated to the public domain under CC0 1.0";
-      return {
-        name: spec.name,
-        title: spec.title,
-        description: spec.description,
-        joints: base.joints,
-        frame: base.joints.flatMap((j) => j.channels.map((c) => spec.rotations[j.name]?.[c] ?? 0)),
-      };
-    });
-}
-
 // ---------------------------------------------------------------- provenance
 /** One line per licence-evidence kind with its file count; repo-level evidence names its files. */
 function writeProvenance(
@@ -546,6 +500,27 @@ async function main() {
   const missingMasks = SKIN_LAYER_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
   if (missingMasks.length)
     throw new Error(`skin-layer targets not packed: ${missingMasks.join(", ")}`);
+  // A body layer must not pull adult data into the body pack's core file, and
+  // every target and modifier the adult anatomy spec names (written into the
+  // adult manifest) must be one the adult pack ships.
+  const adultInCore = SKIN_LAYER_TARGETS.filter(isAdultPackTarget);
+  if (adultInCore.length)
+    throw new Error(`body skin layers measure adult targets: ${adultInCore.join(", ")}`);
+  const missingAdultTargets = ADULT_SPEC_TARGETS.filter(
+    (n) => !isAdultPackTarget(n) || !driven.has(n) || !packed.has(n),
+  );
+  if (missingAdultTargets.length)
+    throw new Error(
+      `adult anatomy targets not in the adult pack: ${missingAdultTargets.join(", ")}`,
+    );
+  const adultModifierIds = new Set(
+    modifiers.filter((m) => isAdultPackTarget(m.hi)).map((m) => m.id),
+  );
+  const missingAdultModifiers = ADULT_SPEC_MODIFIERS.filter((id) => !adultModifierIds.has(id));
+  if (missingAdultModifiers.length)
+    throw new Error(
+      `adult anatomy modifiers not in the adult pack: ${missingAdultModifiers.join(", ")}`,
+    );
   const missingStates = STATE_MORPH_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
   if (missingStates.length)
     throw new Error(`state-morph targets not packed: ${missingStates.join(", ")}`);
@@ -588,7 +563,12 @@ async function main() {
       frame: (bvh.frames[0] ?? []).map((x) => Math.round(x * 1000) / 1000),
     };
   });
-  const poses = [...shipped, ...authoredPoses(shipped)];
+  // Poses authored here (scripts/lib/authoredPoses.ts), CC0 like the data they pose.
+  const authored = authoredPoses(shipped, boneNames);
+  for (const { file } of authored)
+    licenseEvidence[`humanoid-kit:scripts/poses/${file}`] =
+      "authored for humanoid-kit and dedicated to the public domain under CC0 1.0";
+  const poses = [...shipped, ...authored.map((a) => a.pose)];
   const sliders = buildSliders(
     MODIFIER_TABLES.map((table) => ({
       table,
@@ -715,6 +695,8 @@ async function main() {
     },
     modifiers: modifiers.filter((m) => isAdultPackTarget(m.hi)),
     sliders: sliders.adult,
+    /** Features, skin-layer measurements and shape states: the core names none of these. */
+    anatomy: ADULT_ANATOMY_SPEC,
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 

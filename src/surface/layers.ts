@@ -25,6 +25,18 @@ export interface SkinPaintInput {
   areola: number;
   /** Continuous state signals by name (temperature, arousal, …); absent = rest. */
   signals: Readonly<Record<string, number>>;
+  /**
+   * The figure is an adult (`isAdult(recipe)`). Adult-pack layers paint
+   * nothing unless this is true; absent is false, so an input built without
+   * it fails closed.
+   */
+  adult?: boolean;
+  /**
+   * The adult anatomy the recipe applies, by feature id with its presence
+   * 0..1 (`appliedAnatomy`). An adult layer paints only where its feature is
+   * present; absent is none.
+   */
+  anatomy?: Readonly<Record<string, number>>;
 }
 
 export interface SkinLayerPaint {
@@ -64,9 +76,42 @@ export interface SkinLayerFields {
 
 interface LayerBase {
   id: string;
-  /** Targets the fields are measured from; packed with the first stage. */
+  /**
+   * Targets the fields are measured from, packed with the body pack's first
+   * stage. An adult layer lists none: the core names no adult target, so which
+   * ones its fields come from is data of the adult pack (`AdultSkinLayerSpec`).
+   */
   targets: readonly string[];
+  /**
+   * Marks a layer of the adult anatomy: its code lives here so the shader is
+   * compiled once with every layer, its data (the targets its fields come
+   * from) in the adult pack. Its fields are zero until those targets load, and
+   * `paintStopTable` paints it only for an adult figure whose recipe applies
+   * `feature` (`SkinPaintInput.anatomy`), so no layer can forget the gate.
+   */
+  adult?: { feature: string };
+  /**
+   * Whether the data the fields are measured from has loaded; absent means
+   * always. An adult layer's targets arrive in the adult pack's last stage, or
+   * never; `buildLayerFields` leaves an unavailable layer at zero.
+   */
+  available?(assets: HumanoidAssets): boolean;
+  /** Per base vertex fields; for a layer that can be unavailable, called only once it is available. */
   fields(assets: HumanoidAssets): SkinLayerFields;
+}
+
+/** Whether a layer belongs to the adult anatomy (and so is gated by age and anatomy). */
+export const isAdultLayer = (layer: SkinLayer): boolean => layer.adult !== undefined;
+
+/**
+ * How much of a layer's paint shows for this input, 0..1: 1 for a body
+ * layer; for an adult layer, the presence of its anatomy feature on an
+ * adult figure and 0 on any other.
+ */
+function layerGate(layer: SkinLayer, input: SkinPaintInput): number {
+  if (!layer.adult) return 1;
+  if (input.adult !== true) return 0;
+  return unit(input.anatomy?.[layer.adult.feature] ?? 0);
 }
 
 /** Changes the skin's colour (the default kind). */
@@ -159,11 +204,86 @@ export function targetMask(
 }
 
 /**
- * Metres of skin per unit of UV at each base vertex of `faces` (quads): the
- * square root of the ratio of each face's surface area to its UV area,
- * averaged over the faces around the vertex. Detail layers use it to draw
- * relief at its true size wherever the UV layout stretches or shrinks.
- * Vertices on no listed face get 0.
+ * A 0..1 coordinate across a feature from one target: each moved vertex's
+ * displacement relative to the target's peak (zero where it does not move).
+ * For a target that stretches a feature from a root, such as a length target,
+ * displacement grows with distance from the root, so this runs from the root (0)
+ * to the far end (1) without any geometry being invented.
+ */
+export function targetCoordinate(assets: HumanoidAssets, name: string): Float32Array {
+  const t: SparseTarget | undefined = assets.targets.get(name);
+  if (!t) throw new AssetFormatError(`a skin layer needs target ${name}, which is not loaded`);
+  const out = new Float32Array(assets.manifest.vertexCount);
+  let max = 0;
+  const mags = new Float32Array(t.indices.length);
+  for (let i = 0; i < t.indices.length; i++) {
+    const m = Math.hypot(
+      t.deltas[i * 3] as number,
+      t.deltas[i * 3 + 1] as number,
+      t.deltas[i * 3 + 2] as number,
+    );
+    mags[i] = m;
+    if (m > max) max = m;
+  }
+  if (max === 0) return out;
+  for (let i = 0; i < t.indices.length; i++)
+    out[t.indices[i] as number] = (mags[i] as number) / max;
+  return out;
+}
+
+/**
+ * A filled region from MakeHuman targets, for a feature they outline rather
+ * than cover: on each side of the body, the disk round the centre of the
+ * vertices the targets move, out to the farthest of them, with a soft edge
+ * `soft` × radius wide. (The nipple-size target moves the areola's rim more than
+ * its centre, so `targetMask` would draw a ring.)
+ */
+export function diskMask(
+  assets: HumanoidAssets,
+  targets: readonly string[],
+  soft = 0.25,
+): Float32Array {
+  const P = assets.positions;
+  const n = assets.manifest.vertexCount;
+  const out = new Float32Array(n);
+  for (const side of [1, -1]) {
+    const moved = new Set<number>();
+    for (const name of targets) {
+      const t = assets.targets.get(name);
+      if (!t) throw new AssetFormatError(`a skin layer needs target ${name}, which is not loaded`);
+      for (const v of t.indices) if (Math.sign(P[v * 3] as number) === side) moved.add(v);
+    }
+    if (moved.size === 0) continue;
+    const c = [0, 0, 0];
+    for (const v of moved)
+      for (let k = 0; k < 3; k++) c[k] = (c[k] as number) + (P[v * 3 + k] as number);
+    for (let k = 0; k < 3; k++) c[k] = (c[k] as number) / moved.size;
+    const dist = (v: number) =>
+      Math.hypot(
+        (P[v * 3] as number) - (c[0] as number),
+        (P[v * 3 + 1] as number) - (c[1] as number),
+        (P[v * 3 + 2] as number) - (c[2] as number),
+      );
+    let r = 0;
+    for (const v of moved) r = Math.max(r, dist(v));
+    for (let v = 0; v < n; v++) {
+      const w = 1 - smoothstep(r * (1 - soft), r * (1 + soft), dist(v));
+      if (w > (out[v] as number)) out[v] = w;
+    }
+  }
+  return out;
+}
+
+/**
+ * Metres of skin per unit of UV at each base vertex of `faces` (quads): for
+ * each UV island (faces joined through shared UV vertices), the square root of
+ * the ratio of its surface area to its UV area, averaged over the islands of
+ * the faces around the vertex. Detail layers draw relief at p = uv × scale, so
+ * the scale must be one value across an island: a scale that varies face by
+ * face (a ratio per face) makes p's derivative uv × d(scale) off from the
+ * surface's, and stretches relief into streaks. A seam vertex takes the plain
+ * mean of its islands' scales, each island once whatever its number of faces
+ * there. Vertices on no listed face get 0.
  */
 export function uvScale(assets: HumanoidAssets, faces: ArrayLike<number>): Float32Array {
   const n = assets.manifest.vertexCount;
@@ -191,38 +311,86 @@ export function uvScale(assets: HumanoidAssets, faces: ArrayLike<number>): Float
         ((U[c * 2] as number) - (U[a * 2] as number)) *
           ((U[b * 2 + 1] as number) - (U[a * 2 + 1] as number)),
     );
+  // UV islands: faces joined through shared UV vertices (union-find on UV indices).
+  const parent = new Map<number, number>();
+  const find = (x: number): number => {
+    let r = x;
+    while ((parent.get(r) ?? r) !== r) r = parent.get(r) as number;
+    parent.set(x, r);
+    return r;
+  };
+  for (let i = 0; i < faces.length; i++) {
+    const f = faces[i] as number;
+    const first = find(assets.faceUvs[f * 4] as number);
+    for (let k = 1; k < 4; k++) {
+      const other = find(assets.faceUvs[f * 4 + k] as number);
+      if (other !== first) parent.set(other, find(first));
+    }
+  }
+  const island = (f: number) => find(assets.faceUvs[f * 4] as number);
+  const areas = new Map<number, { surface: number; uv: number }>();
   for (let i = 0; i < faces.length; i++) {
     const f = faces[i] as number;
     const v = [0, 1, 2, 3].map((k) => assets.faceVerts[f * 4 + k] as number);
     const t = [0, 1, 2, 3].map((k) => assets.faceUvs[f * 4 + k] as number);
-    const a3 =
+    const a = areas.get(island(f)) ?? { surface: 0, uv: 0 };
+    a.surface +=
       area3(v[0] as number, v[1] as number, v[2] as number) +
       area3(v[0] as number, v[2] as number, v[3] as number);
-    const a2 =
+    a.uv +=
       area2(t[0] as number, t[1] as number, t[2] as number) +
       area2(t[0] as number, t[2] as number, t[3] as number);
-    if (a2 <= 0) continue;
-    const s = Math.sqrt(a3 / a2);
-    for (const k of v) {
-      sum[k] = (sum[k] as number) + s;
-      count[k] = (count[k] as number) + 1;
+    areas.set(island(f), a);
+  }
+  // Each island counts once at a vertex, however many of its faces meet there.
+  const counted = new Set<number>();
+  for (let i = 0; i < faces.length; i++) {
+    const f = faces[i] as number;
+    const id = island(f);
+    const a = areas.get(id);
+    if (!a || a.uv <= 0) continue;
+    const s = Math.sqrt(a.surface / a.uv);
+    for (let k = 0; k < 4; k++) {
+      const v = assets.faceVerts[f * 4 + k] as number;
+      if (counted.has(id * n + v)) continue;
+      counted.add(id * n + v);
+      sum[v] = (sum[v] as number) + s;
+      count[v] = (count[v] as number) + 1;
     }
   }
   return sum.map((s, k) => ((count[k] as number) > 0 ? s / (count[k] as number) : 0));
 }
 
 /**
+ * Layer fields for some layers of the stack, per render vertex: for each layer
+ * in `layers` in turn, `vertexCount` pairs of (mask, coordinate). The shape of
+ * `ModelTopology.body.layerFields`, and of what the worker posts once the
+ * adult anatomy's targets have loaded (`HumanoidModel.adultLayerFields`).
+ */
+export interface LayerFieldsUpdate {
+  /** Ids of the layers the fields hold, in order. */
+  layers: string[];
+  layerFields: Float32Array;
+}
+
+/**
  * Every layer's fields per base vertex, three floats per layer per vertex
  * (mask, coordinate, 0: the stride the subdivision stencil carries), layer
- * after layer: `layers.length * vertexCount * 3`.
+ * after layer: `layers.length * vertexCount * 3`. A layer `include` rejects
+ * is left at zero without being measured; by default that is a layer that is
+ * not `available` (an adult layer whose targets have not loaded: the adult pack
+ * arrives in the last stage, or is not installed), so a body-only build gets
+ * zero fields for it, not an error.
  */
 export function buildLayerFields(
   assets: HumanoidAssets,
   layers: readonly SkinLayer[],
+  include: (layer: SkinLayer) => boolean = (layer) => layer.available?.(assets) ?? true,
 ): Float32Array {
   const n = assets.manifest.vertexCount;
   const out = new Float32Array(layers.length * n * 3);
   layers.forEach((layer, l) => {
+    if (!include(layer)) return;
     const { mask, coord } = layer.fields(assets);
     if (mask.length !== n || (coord && coord.length !== n))
       throw new AssetFormatError(`skin layer ${layer.id}: fields must have one value per vertex`);
@@ -251,22 +419,30 @@ export function paintStopTable(
     const row = l * STOP_TABLE_WIDTH * 4;
     const code = layerKindCode(layer);
     out.fill(0, row, row + STOP_TABLE_WIDTH * 4);
+    // The one place an adult layer is gated (by age and by the anatomy the
+    // recipe applies): a gated-off layer is not even asked to paint. A detail
+    // row keeps a positive size, which the shader divides by.
+    const gate = layerGate(layer, input);
+    if (gate === 0) {
+      out.set([0, code, 0, layer.kind === "detail" ? 1 : 0], row);
+      return;
+    }
     if (layer.kind === "detail") {
       const p = layer.paint(input);
       if (!(p.height >= 0 && p.size > 0))
         throw new RangeError(`skin layer ${layer.id}: height must be >= 0 and size > 0`);
-      out.set([unit(p.strength), code, p.height, p.size], row);
+      out.set([unit(p.strength) * gate, code, p.height, p.size], row);
       return;
     }
     if (layer.kind === "surface") {
       const p = layer.paint(input);
-      out.set([unit(p.strength), code, p.roughness, p.specular], row);
+      out.set([unit(p.strength) * gate, code, p.roughness, p.specular], row);
       return;
     }
     const { strength, stops } = layer.paint(input);
     if (stops.length < 1 || stops.length > STOP_COUNT)
       throw new RangeError(`skin layer ${layer.id}: 1 to ${STOP_COUNT} stops, got ${stops.length}`);
-    out.set([unit(strength), code, 0, 0], row);
+    out.set([unit(strength) * gate, code, 0, 0], row);
     for (let k = 0; k < STOP_COUNT; k++) {
       const x = (k / (STOP_COUNT - 1)) * (stops.length - 1);
       const i = Math.min(Math.floor(x), stops.length - 1);

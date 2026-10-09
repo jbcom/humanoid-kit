@@ -292,7 +292,8 @@ is the next refinement if expressions need it.
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one
 `HumanoidModel`. The worker loads the packs in stages (above), builds the model
 from the first and replies with the topology, the modifier ids and the slider
-taxonomy while later stages are still arriving. An evaluation whose recipe
+taxonomy (and the joints presence reads, so the main thread derives presence
+without the packs) while later stages are still arriving. An evaluation whose recipe
 names a target that has not arrived waits in the worker for the stage that
 brings it, and only for that; one that has everything evaluates at once. If a
 stage fails to load, each evaluation that needs it rejects with the reason, and
@@ -525,6 +526,54 @@ inside the volume beyond the baked occlusion. Red hair's chroma is limited by th
 pheomelanin spectrum, and blond, red and white are modelled, not measured
 (`docs/research/HAIR-COLOUR.md`).
 
+## Presence
+
+`src/presence` is what a figure publishes about itself for the scene around it
+(`docs/PRESENCE.md`). `presenceFromEvaluation` reads an `Evaluation`: anchors
+are the centroids of the joints' vertex lists (`presenceJoints`) over the
+morphed control mesh lifted by `groundOffset`, the footprint is the extent of
+the rendered body's soles, bounds cover every surface point, appearance is
+`skinAlbedo` of the recipe's skin, and `adult` is the age policy's verdict.
+The evaluation is in the figure's own frame; `placePresence` turns it about its
+ground position and moves it onto a `Placement`, so a moving figure re-places
+one rest presence each frame instead of being re-derived (into a preallocated
+copy: the per-frame path allocates nothing). The registry, the helpers
+(`groundOcclusion`, `faceMetering`, `presenceGroups`) are pure.
+
+**In a pose** (`presenceFromPose`) the same description comes from the posed
+skeleton. The control mesh is skinned by the pose once (`posedControl`, cached on
+the evaluation and the pose, because grounding needs the same mesh's lowest
+point and the two share the pass); anchors are the same joint centroids over it;
+the footprint is the body within 3 cm of the floor, so a lunge has one contact
+where standing had two; and bounds are the posed control body's box widened per
+side by how far the rest surface sits inside the rest control mesh's box
+(measured once per evaluation). The rendered surface is not skinned per pose: it
+has about four times the vertices to move a box by a centimetre, and an unrotated
+pose reports exactly the rest bounds this way (tested). Deriving takes about
+0.7 ms (13k body vertices) and happens when the evaluation or pose changes; a
+figure that only moves is re-placed, not re-derived.
+
+React only publishes into and reads from the registry. `<PresenceProvider>`
+owns it and, once per frame, runs every mounted figure's publisher and then
+ticks the registry; a `<Humanoid presence>` publisher re-places the figure's
+rest presence (derived once per evaluation) on the group's world transform, so
+a figure moved by anything in the scene graph is followed with no props
+changing. A figure that is hidden, tipped over or not yet evaluated returns
+null and is removed from the registry. Readers pull (`usePresence` is a live
+accessor) and subscribe only to discrete events (`useProximity`).
+
+`StudioStage` is the first consumer. Inside a provider it draws the contact
+shadow as one quad whose fragment shader (`GroundContactMaterial`) evaluates
+`sampleGroundOcclusion`'s formula (a smoothstep falloff per contact, combined
+with `max`) over a uniform array refreshed right after each tick from
+`groundOcclusion(registry.all(), { floorY }, contacts)`, where `floorY` is the
+stage's own height and the quad is resized to the contacts each frame. One pass over one quad is what makes the
+pool: separate per-figure shadows would blend over each other and darken the
+overlap twice. A browser test renders the shader from above and compares its
+pixels with `sampleGroundOcclusion`; the Playwright spec `e2e/presence.spec.ts`
+does the same on the playground's `?scene=walk` (two figures walking, parting
+and overlapping), measuring the canvas against the model.
+
 ## Layers
 
 | Folder | Role | React or DOM |
@@ -538,9 +587,10 @@ pheomelanin spectrum, and blond, red and white are modelled, not measured
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
 | `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking | no |
 | `src/model` | `HumanoidModel`, the evaluation pipeline | no |
+| `src/presence` | Presence registry, helpers, and presence derived from an evaluation | no |
 | `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
-| `src/render` | The skin, eye and hair materials, the layer field atlas | three.js, no React |
+| `src/render` | The skin, eye and hair materials, the layer field atlas, the pooled ground contact shader | three.js, no React |
 | `src/react` | `HumanoidProvider`, `Humanoid`, `StudioStage` and hooks | yes |
 | `src/editor/ui` | `HumanoidCreator` and its panels | yes |
 
@@ -580,9 +630,16 @@ Milestones, in the order each is proven (built in parallel lanes; see
 2. **Rig, poses and expressions.** A skeleton fitted to the morphed body, posing,
    and the facial pose units.
 3. **Adult anatomy sculpt.** Sculpting on top of the adult anatomy pack, for
-   figures aged 18 or over.
-4. **Scalp hair.** Implemented: `humanoid-kit-hair` (see "Scalp hair"); body
-   and facial hair is the next milestone.
+   figures aged 18 or over. Phase 1 (the layer, state and age-gating plumbing on
+   today's CC0 targets) is in place ("Adult-pack layers"); the own-sculpt phase
+   is planned in `docs/research/ADULT-SCULPT-PLAN.md`. **The sculpt is the
+   critical path for this milestone:** the CC0 `genitals/*` targets deform
+   `helper-genital`, which is never drawn, so the penis and testes skin layers
+   and engorgement are invisible until the sculpt puts adult geometry on the
+   surface.
+4. **Scalp hair.** Implemented: `humanoid-kit-hair` (see "Scalp hair"); its
+   texture coverage is incomplete (a named gap there), and body and facial hair
+   is the next milestone.
 5. **Body and facial hair.**
 6. **Anthro traits.**
 7. **Clothing and surface layers.** Layers bound to the base mesh, including
@@ -635,8 +692,9 @@ upper segment and to the way the joint flexes; MakeHuman's roll planes would
 not do, because in the A-pose the arm lies in the frontal plane and the
 elbow's roll-plane normal points forward. The library maps signals to
 appearance; how a signal evolves over time belongs to the application, with a
-small first-order attack and decay helper for the measured time courses.
-Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
+small first-order attack and decay helper for the measured time courses
+(`SkinStateFilter`, below). Signals reach every layer's `paint`
+(`SkinPaintInput.signals`) already.
 
 **Four channels, one per kind of change:**
 
@@ -654,7 +712,12 @@ Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
    flexion and folding on the compressed side while flattening on the
    stretched side, as measured. Their depth and spacing are art-directed
    parameters, and documented as such. A per-vertex field of world length per
-   UV unit keeps procedural detail at true scale across the atlas.
+   UV unit keeps procedural detail at true scale across the atlas. It is one
+   value for each UV island, never a ratio per face: the shader draws relief at
+   p = uv × scale, and a scale that varies across a face adds uv × d(scale) to
+   p's derivative, which stretched bumps into streaks five to twenty times
+   longer than wide on the thighs (`tests/layers.test.ts` holds the map to a
+   median stretch under 1.6).
 3. *Surface sheen*, through a surface layer that lowers roughness and raises
    specular where sweat flows, weighted by the regional sweat map and the
    `exertion` and `heat` signals.
@@ -666,6 +729,67 @@ Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
    change slowly (seconds), so a re-evaluation per change is acceptable;
    colour, detail and sheen states cost no evaluation at all.
 
+**Built (2026-10-09), in `src/surface/regions/states.ts`.** Each state layer
+cites its magnitudes in `docs/research/SKIN-STATES.md` Part C, and its contact
+sheets are in `docs/evidence/states.md`.
+
+- *Goosebumps* (`cold`, `fear`). Hair-bearing skin is the base mesh's body minus
+  the head zone (face, lips, scalp), the palms, the soles and the areola. None
+  of it needs a new target, because the base mesh is frozen: the zones are
+  measured from what the mesh carries (`skinZones`). The skeleton's skin weights
+  give soft zone masks (`buildBoneField`, the shape traits' construction on a
+  finer partition); vertex normals tell the palmar side of a hand (the cross
+  product of the hand's axis and its thumb's direction, mirrored for the right
+  hand) and the sole of a foot (normals facing down) from the rest; and the
+  existing areola disk (`diskMask`) is reused. The base mesh's body has no
+  genital skin (its genital helper is a separate, undrawn group), so the adult
+  pack's layers own that region. Papule height scales with the signal up to the
+  largest measured, and its spacing is the follicle density's.
+
+- *Flush and pallor* (`blush`, `exertion`, `heat`, `fear`, `cold`). Each is a
+  multiply layer whose stop is `haemoglobinRatio(tone, delta)`: the skin model's
+  own albedo with more or less haemoglobin, over the albedo at the tone, so the
+  state moves along the measured haemoglobin axis rather than adding a fixed
+  tint. It composes with the rest layers (flush, lips) by multiplication, keeps
+  luminance as the model does, and melanin attenuates it as it attenuates the
+  resting spread: the same delta moves a\* by 5.2 on the lightest skin and 3.1 on
+  the deepest, with no rule of its own for deep skin. The model is linear in
+  haemoglobin, so a state carries it past the figure's own value (a ruddy figure
+  still flushes), limited to the whole measured axis. Regions are zones
+  (`skinZones`), each state its own layer because each has its own region: a
+  blush is cheeks, ears, forehead and neck; exertion the face, neck and chest;
+  heat the whole body; fear the face and neck; cold the extremities. The lips
+  have a mix layer of their own (`lipStateAlbedo`): bluer in the cold, paler
+  in fright.
+
+- *Sweat sheen* (`heat`, `exertion`). Two surface layers lower roughness and
+  raise specular where the local sweat rate says, from Taylor and
+  Machado-Moreira's regional rates for 13 regions (head, chest, abdomen, back,
+  buttocks, upper arm, forearm, palm, back of hand, thigh, shin, sole, top of
+  foot), taken per vertex from the zones (front from back by the vertex normal,
+  palm from back of hand, sole from top of foot as for goosebumps), with the
+  forehead at twice the head's rate. A passive-heating map serves `heat` and an
+  exercise map `exertion`: the exercise map is wetter and more even, as the
+  paper finds, so a figure that exerts shines over its whole body where one
+  that is only hot shines on its forehead and back. Rate becomes wetness by
+  `rate / (rate + 0.5)`, a choice. The two signals share one sweat drive.
+
+- *Time* (`SkinStateFilter`, `useSkinStateFilter`). An application sets a
+  signal as a step (a stimulus on or off); a body answers over time. Each
+  signal follows its target by a first-order response with one time constant
+  to rise (`attack`) and one to fall (`decay`), integrated exactly so any frame
+  rate gives the same curve, and snapped to the target within a thousandth so a
+  settled state stops changing. `cold` and `fear` are calibrated to the
+  measured piloerection episode: a 3 s trigger stays visible for 11 to 12 s,
+  where McPhetres et al. measured 9 to 13. A blush rises in seconds and falls
+  in tens, exertion in tens of seconds and over a minute, heat over minutes
+  (choices). The hook keeps one filter per component, re-renders each frame
+  while a signal moves and not once they settle, and starts at the first
+  target so a figure that mounts in a state is not seen easing into it. A shape
+  signal re-evaluates the figure, so `<Humanoid>` rounds those to 50 steps
+  (`quantiseShapeSignal`): an easing cold signal evaluates a few dozen times,
+  not every frame, each a change under 1% of the nipple's target.
+
 **Adult-pack layers (design, 2026-10-09; built with the milestone 3 graft
 lane).** Genital-region colour, relief and state layers draw their masks from
 the adult pack's targets, which arrive in the last load stage, after the
@@ -675,14 +799,81 @@ topology and the field atlas exist. Decisions:
   `ADULT_SKIN_LAYERS`, appended to the stack, so the shader is compiled once
   with every layer whether or not the pack is installed. The adult pack stays
   data.
+- **The core names no adult target or modifier.** The public demo ships the core
+  and no adult pack, and `pnpm check:pages` fails a built site that names one,
+  so a layer cannot list the targets its masks come from, nor can the feature
+  list or the arousal state morph live in core code. They are the adult pack's
+  manifest (`anatomy`: `AdultAnatomySpec`: features and their modifiers, each
+  layer's mask targets and easing, the state morphs), which the packer writes
+  from `scripts/lib/adultAnatomySpec.ts` after checking every name against what
+  it packed, and the worker reports in `ready` (`ReadyInfo.anatomy`). The core
+  layers read their spec by id; a pack without a spec adds no layers and no
+  states. `tests/adultStack.test.ts` scans the source for any adult name, so the
+  slip fails before a build does.
 - Until the adult stage arrives their fields are zero (empty atlas pages).
   When it arrives the worker derives the fields from the pack's targets and
   posts them; the main thread re-rasterises those pages of the shared atlas.
   No shader recompiles and no figure re-evaluates.
-- `SkinPaintInput` gains `adult` (from the recipe's age). Every adult-pack
-  layer paints zero strength under 18, so even a figure whose atlas holds the
+- `SkinPaintInput` gains `adult` (from the recipe's age) and `anatomy` (which
+  adult anatomy the recipe applies, `appliedAnatomy`). Every adult-pack layer
+  paints zero strength under 18, so even a figure whose atlas holds the
   fields shows nothing there, consistent with genital anatomy living only in
-  the adult pack (AGE-POLICY.md).
+  the adult pack (AGE-POLICY.md). The gate is in `paintStopTable`, once, not in
+  each layer: a layer declares `adult: { feature }` and the table paints it
+  only for an adult whose recipe applies that feature, scaled by its presence,
+  without calling the layer's `paint` otherwise. A genital layer therefore
+  never tints a figure whose recipe shapes no genital anatomy. Features are
+  independent keys (today `penis`, `testes`, `mound`, from the CC0 genital
+  modifiers), so the sculpt phase adds vulva, clitoris and intersex variation
+  as further features, each with its own presence, instead of one male-to-female
+  axis.
+- The fields travel as their own worker request, in the pattern of `pickMap`
+  and `posedOcclusion`: `client.adultLayers()` is answered when the adult pack's
+  stage (the last, and alone) has loaded, and `<Humanoid>` passes the answer to
+  the shared atlas's `refresh`, which re-rasterises only the pages holding those
+  layers (the layers on a shared page keep their fields from the source). An
+  adult stage that fails rejects that one request and costs the body nothing.
+- The adult data never rides in the static topology: the model leaves the adult
+  layers' fields at zero in `topology()` even with the pack loaded, and
+  `model.adultLayerFields()` derives them (through the same subdivision stencil)
+  only after the pack's targets have arrived, so one code path serves a staged
+  load and an eager one. The packer refuses a body layer that measures an adult
+  target, and an adult layer whose target the adult pack does not ship.
+
+**What phase 1 can show.** The CC0 `genitals/penis-*` targets deform MakeHuman's
+`helper-genital` group (200 vertices), which the render surface leaves out
+(only the `body` group is drawn, and none of those vertices is in it); only
+`pelvis/bulge-incr` moves drawn skin (57 body vertices). So the penis and testes
+layers resolve to masks on vertices that are not drawn and paint nothing yet,
+and the mound layer is the one that shows. Putting adult geometry on the render
+surface is the sculpt phase's first job, and cannot be done by drawing
+`helper-genital` for every figure: the surface is shared across ages, and a
+static surface cannot be gated by age (docs/research/ADULT-SCULPT-PLAN.md).
+`tests/adultStack.test.ts` records the limit so that change fails it.
+
+**Arousal.** The adult manifest adds an `arousal` state morph
+(`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by
+`assertSignalPolicy` before any target is named), driving the adult pack's
+`penis-circ-incr` (0.44) and `penis-length-incr` (0.25), calibrated so that full
+arousal gives the measured erect against flaccid: circumference +25% and length
++43% (research/SKIN-STATES.md, B4; `tests/arousal.test.ts` measures it on the
+length target's own vertices). Only targets that exist are driven: the testes'
+response is unmeasured and the vulva and clitoris have no targets (their volume
+change has no verified magnitude), so those wait for the sculpt phase.
+`stateContributions` skips targets no loaded pack knows, so without the adult
+pack the figure is simply unchanged, and a target of the adult pack that has not
+arrived yet is named as pending, so an evaluation waits for the adult stage as
+it does for any other. Colour deepening is the layers' own: `genitalAlbedo` moves
+haemoglobin a fraction of the way to its ceiling with the signal, so it stays
+inside the skin model's measured haemoglobin axis (about 0.4 to 1.3 CIELAB a\*
+units, smaller on deep skin) and is **uncalibrated**: no measured colour change
+with arousal exists at any skin tone.
+
+**Colour is uncalibrated.** No colorimetry of genital skin by skin type exists in
+the open literature (research/SKIN-STATES.md, A4), so `genitalAlbedo` models it
+along the measured melanin and haemoglobin axes the areola colour already uses,
+with a thin, vascular glans; the sizes of the shifts are choices, not
+measurements.
 
 Rejected: shipping layer code inside the adult pack (a second code path that
 the core's tests could not reach), and recompiling the material when the pack

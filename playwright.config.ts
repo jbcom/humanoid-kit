@@ -15,7 +15,8 @@ const gpuMode = (process.env.HK_GPU ?? (process.env.CI ? "software" : "auto")) a
 export default definePlaywrightConfig({
   testDir: "./e2e",
   basePath: "/humanoid-kit/playground/",
-  port: 4173,
+  // A second checkout (a worktree, another agent) runs its own server beside this one.
+  port: Number(process.env.HK_E2E_PORT ?? 4173),
   gpuMode,
   webServerCommand: (port) =>
     `pnpm build:playground && pnpm exec vite preview --config playground/vite.config.ts --base /humanoid-kit/playground/ --host 127.0.0.1 --port ${port} --strictPort`,

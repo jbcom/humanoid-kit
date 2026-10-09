@@ -18,6 +18,8 @@
  * parser turn it back into ordinary index and xyz arrays.
  */
 import { AGE_ANCHORS, ageAnchorsOf, DEFAULT_MACROS } from "../makehuman/macro.ts";
+import type { StateMorph } from "../makehuman/stateMorphs.ts";
+import type { AnatomyFeature } from "../recipe/anatomy.ts";
 
 const MACRO_KEYS = new Set(Object.keys(DEFAULT_MACROS));
 
@@ -128,7 +130,7 @@ export interface BvhJoint {
 }
 
 export interface BodyPoseEntry {
-  /** Id, the source file's name (`tpose`, `benchmark`). */
+  /** Id, the source file's name (`tpose`, `benchmark`, or an authored pose such as `relaxed`). */
   name: string;
   title: string;
   description: string;
@@ -298,6 +300,34 @@ export interface HairPackData {
   manifest: HairManifest;
 }
 
+/**
+ * What the core needs to know about the adult anatomy that names its targets
+ * and modifiers. It is the pack's data, so the core, which ships in the public
+ * build, names none of them (`pnpm check:pages`): the code of the adult skin
+ * layers is in the core, and this says which targets their fields are
+ * measured from.
+ */
+export interface AdultAnatomySpec {
+  /** The anatomy features and the modifiers that apply each (`appliedAnatomy`). */
+  features: AnatomyFeature[];
+  /** How each adult skin layer's fields are measured, by the layer's id. */
+  skinLayers: AdultSkinLayerSpec[];
+  /** Shape states of the adult anatomy (arousal), added to the body's `STATE_MORPHS`. */
+  stateMorphs: StateMorph[];
+}
+
+/** A skin layer's mask is the union of these targets' footprints (`targetMask`). */
+export interface AdultSkinLayerSpec {
+  /** Id of the adult layer in the core's stack (`ADULT_SKIN_LAYERS`). */
+  id: string;
+  masks: string[];
+  /** The mask's easing between a vertex's displacement relative to the peak (`targetMask`'s lo and hi). */
+  lo: number;
+  hi: number;
+  /** The target the layer's 0..1 coordinate is measured from (`targetCoordinate`), if it has one. */
+  coordinate?: string;
+}
+
 export interface AdultAnatomyManifest {
   format: 1;
   kind: "adult-anatomy";
@@ -309,6 +339,8 @@ export interface AdultAnatomyManifest {
   modifiers: ShapeModifierEntry[];
   /** This pack's sliders, placed into the body pack's tasks and groups by id. */
   sliders: SliderTask[];
+  /** The anatomy's features, skin layers and states; a pack without it adds none of them. */
+  anatomy?: AdultAnatomySpec;
 }
 
 /** A sparse target: ascending base-vertex indices and their quantised xyz deltas. */
