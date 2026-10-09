@@ -19,9 +19,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { NeutralToneMapping } from "three";
 import { Humanoid } from "../../react/Humanoid.tsx";
-import { StudioStage } from "../../react/StudioStage.tsx";
+import { STUDIO_EXPOSURE, STUDIO_TONE_MAPPING, StudioStage } from "../../react/StudioStage.tsx";
 import type { Recipe } from "../../recipe/recipe.ts";
 import type { FrameRequest } from "../framing.ts";
 import { AppearancePanel } from "./AppearancePanel.tsx";
@@ -189,8 +188,8 @@ function CreatorBody({
           shadows="percentage"
           camera={{ position: [0, 1, 3.4], fov: 32 }}
           gl={{
-            toneMapping: NeutralToneMapping,
-            toneMappingExposure: 0.95,
+            toneMapping: STUDIO_TONE_MAPPING,
+            toneMappingExposure: STUDIO_EXPOSURE,
             preserveDrawingBuffer: true,
           }}
           aria-label="Figure preview"

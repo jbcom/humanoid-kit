@@ -2,10 +2,16 @@ import { OrbitControls } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import { createRecipe, HumanoidWorkerClient, type Recipe } from "humanoid-kit";
 import { HumanoidCreator } from "humanoid-kit/editor";
-import { Humanoid, HumanoidProvider, StudioStage } from "humanoid-kit/react";
+import {
+  Humanoid,
+  HumanoidProvider,
+  STUDIO_EXPOSURE,
+  STUDIO_TONE_MAPPING,
+  StudioStage,
+} from "humanoid-kit/react";
 import { bodyPack } from "humanoid-kit-body";
 import { useEffect, useState } from "react";
-import { NeutralToneMapping } from "three";
+import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, type ToneMapping } from "three";
 
 function createClient(): HumanoidWorkerClient {
   const worker = new Worker(new URL("../../src/worker/index.ts", import.meta.url), {
@@ -47,11 +53,21 @@ export function App() {
   );
 }
 
+/** Tone mappers QA can compare with `?tm=` (the stage's own is the default). */
+const TONE_MAPPERS: Record<string, ToneMapping> = {
+  agx: AgXToneMapping,
+  neutral: NeutralToneMapping,
+  aces: ACESFilmicToneMapping,
+};
+
 /**
  * A fixed-camera render for visual QA: `?view=front|side|back|face`, or
- * `?cam=x,y,z,tx,ty,tz` to place the camera exactly.
+ * `?cam=x,y,z,tx,ty,tz` to place the camera exactly; `?tm=agx|neutral|aces`
+ * and `?exp=<number>` override tone mapping and exposure for comparisons.
  */
 function Shot() {
+  const toneMapping = TONE_MAPPERS[params.get("tm") ?? ""] ?? STUDIO_TONE_MAPPING;
+  const exposure = Number(params.get("exp") ?? Number.NaN);
   const [recipe] = useState(initialRecipe);
   const [lift, setLift] = useState(0);
   const view = params.get("view") ?? "front";
@@ -79,8 +95,8 @@ function Shot() {
         camera={{ position, fov: 35 }}
         gl={{
           preserveDrawingBuffer: true,
-          toneMapping: NeutralToneMapping,
-          toneMappingExposure: 0.95,
+          toneMapping,
+          toneMappingExposure: Number.isFinite(exposure) ? exposure : STUDIO_EXPOSURE,
         }}
       >
         <StudioStage />

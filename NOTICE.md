@@ -59,6 +59,19 @@ Each pack's `data/PROVENANCE.md` is written by the packer. It records the
 upstream commit, how many files were accepted on which evidence, and the SHA-256
 of every output file. Do not edit it by hand.
 
+## Skin colour data (CC BY 4.0)
+
+The melanin anchors in `src/surface/skinTone.ts` are ten median diffuse
+albedos derived from the International Skin Spectra Archive: Yan, L. et al.
+(2025), "The International Skin Spectra Archive (ISSA): a multicultural human
+skin phenotype and colour spectra collection", Scientific Data,
+<https://www.nature.com/articles/s41597-025-04857-5>. The dataset
+(<https://doi.org/10.6084/m9.figshare.28228571.v4>) is licensed CC BY 4.0
+(<https://creativecommons.org/licenses/by/4.0/>), confirmed from figshare's
+record. The values were changed from the source: facial readings binned by
+ITA°, medians taken per bin, and surface reflection removed. The derivation is
+in `docs/research/SKIN-RENDERING.md`.
+
 ## Trademarks and affiliation
 
 "MakeHuman" is the name of the upstream project. humanoid-kit is an independent

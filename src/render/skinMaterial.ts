@@ -129,11 +129,14 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   constructor() {
     super({
+      // Measured skin: roughness ≈ 0.5 (Weyrich et al. 2006) and an index of
+      // refraction of about 1.4 (F0 ≈ 0.028), the same at every skin tone.
+      // three's default ior 1.5 would make the surface reflection ~45% too strong,
+      // which reads as oily on deep skin, where less diffuse light competes with it.
       roughness: 0.52,
       metalness: 0,
-      sheen: 0.25,
+      ior: 1.4,
       sheenRoughness: 0.8,
-      sheenColor: new Color(0.9, 0.82, 0.78),
     });
     this.normalMap = poreNormalMap();
     // Pores are felt in the highlights, not seen as texture: keep the relief faint.
@@ -144,6 +147,20 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   setAppearance(a: SkinAppearance): void {
     const albedo = skinAlbedo(a.tone);
     this.color.setRGB(albedo[0], albedo[1], albedo[2], LinearSRGBColorSpace);
+    const m = Math.min(1, Math.max(0, a.tone.melanin));
+    // Melanin absorbs in the epidermis, so less light bleeds red through shadow
+    // edges on deeper skin; a fixed red-heavy wrap turns deep terminators orange.
+    this.hkUniforms.hkScatter.value.set(0.42 - 0.1 * m, 0.2 - 0.04 * m, 0.12 - 0.045 * m);
+    // Vellus sheen takes the skin's own hue. A near-white sheen over deep skin is
+    // the optical signature of dry, "ashy" skin, so it is tinted and reduced.
+    const peak = Math.max(albedo[0], albedo[1], albedo[2], 1e-6);
+    this.sheenColor.setRGB(
+      0.75 * (albedo[0] / peak) + 0.25,
+      0.75 * (albedo[1] / peak) + 0.25,
+      0.75 * (albedo[2] / peak) + 0.25,
+      LinearSRGBColorSpace,
+    );
+    this.sheen = 0.25 - 0.13 * m;
     const lip = mul(albedo, [0.74 - 0.2 * a.lips, 0.42 - 0.12 * a.lips, 0.44 - 0.1 * a.lips]);
     this.hkUniforms.hkLipColor.value.setRGB(lip[0], lip[1], lip[2], LinearSRGBColorSpace);
     const areola = mul(albedo, [

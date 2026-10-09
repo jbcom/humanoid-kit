@@ -5,4 +5,9 @@ export {
   useHumanoidClient,
   useHumanoidReady,
 } from "./Humanoid.tsx";
-export { StudioStage, type StudioStageProps } from "./StudioStage.tsx";
+export {
+  STUDIO_EXPOSURE,
+  STUDIO_TONE_MAPPING,
+  StudioStage,
+  type StudioStageProps,
+} from "./StudioStage.tsx";
