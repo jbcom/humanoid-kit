@@ -13,13 +13,14 @@
 import type {
   AdultAnatomySpec,
   AdultDetailSpec,
+  AdultReservoirSpec,
   HumanoidAssets,
 } from "../../src/format/assetFormat.ts";
 import { DETAIL_MODIFIERS } from "./adultDetail.ts";
 import { pelvicRefinement } from "./pelvicRegion.ts";
 
 /** The part of the spec that does not depend on the base mesh. */
-export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail"> = {
+export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "reservoirs"> = {
   features: [
     {
       id: "penis",
@@ -58,10 +59,15 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail"> = 
  * The whole spec for a base body: the fixed part and the surface refinement
  * round the pelvis (`pelvicRefinement`), which is a choice of that body's faces.
  */
-export function adultAnatomySpec(base: HumanoidAssets, detail?: AdultDetailSpec): AdultAnatomySpec {
+export function adultAnatomySpec(
+  base: HumanoidAssets,
+  detail?: AdultDetailSpec,
+  reservoirs?: AdultReservoirSpec[],
+): AdultAnatomySpec {
   return {
     ...ADULT_ANATOMY_SPEC,
     surface: pelvicRefinement(base),
+    ...(reservoirs && { reservoirs }),
     ...(detail && { detail }),
   };
 }

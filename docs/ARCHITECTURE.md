@@ -1531,9 +1531,30 @@ and `tests/moundPack.test.ts` holds the shipped pack to the generator. Its skin
 fields and colour layer still follow the body's bulge target, not the new
 detail. The penis, testes and vulva are the next features
 (docs/research/ADULT-SCULPT-PLAN.md, section 10): a shaft is an extrusion far
-beyond what displacing existing vertices can do, so they need reservoir
-topology. `tests/adultPermutations.test.ts` holds the matrix of ages, genders,
-feature combinations and states every feature joins.
+beyond what displacing existing vertices can do, so they draw on **reservoirs**.
+`tests/adultPermutations.test.ts` holds the matrix of ages, genders, feature
+combinations and states every feature joins.
+
+**Reservoirs** (docs/research/ADULT-SCULPT-PLAN.md, section 6b) are the material
+those features extrude from, kept continuous with the body: the pack names a
+closed loop of the refinement's vertices round a disc of its polygons
+(`anatomy.reservoirs`), and `applyReservoirs` (`src/build/reservoir.ts`) adds, on
+the surface at the level in use, rings of copies of the loop, the strips between
+them, and the cap re-attached to the last ring. A copy has its vertex's stencil
+row, so it has its position, skin weights, shading normal, occlusion and uv scale;
+at rest the strips have no area and the surface is exactly the one without them,
+at every subdivision level (`tests/reservoir.test.ts`, `tests/adultReservoir.test.ts`).
+A copy also follows whatever displaces the vertex it copies, so the strips stay
+closed under the mound, and a detail addressing the rings draws them into a tube
+(a watertight one, tested). The strips are written with the control face that owns
+their edge, so a garment that hides the face hides them. The adult pack places a
+phallic disc on the midline where the front of the pelvis turns under and a
+labioscrotal pair on the underside between the legs
+(`scripts/lib/adultReservoirs.ts`), as one continuum of sizes for every
+presentation, with no feature knowing which anatomy it will become. Detail is
+subdivided linearly (`linearSubdivisionStencil`), positions smoothly, because
+smoothing the cap's displacement leaked it into the loop and overshot the tube by
+up to 22% at level 2.
 
 **Arousal.** The adult manifest adds an `arousal` state morph
 (`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by

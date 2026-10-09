@@ -65,7 +65,7 @@ describe("the pelvic refinement the adult pack asks for", () => {
     const spec = adultAnatomySpec(assets);
     expect(spec.surface).toEqual({ faces: r.faces, levels: r.levels });
     // Its detail (the generated targets' pin) is held to the generator in moundPack.test.ts.
-    const { detail: _detail, ...rest } = adultManifest.anatomy ?? {};
+    const { detail: _detail, reservoirs: _reservoirs, ...rest } = adultManifest.anatomy ?? {};
     expect(rest).toEqual(spec);
   });
 });

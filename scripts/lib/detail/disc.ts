@@ -25,8 +25,10 @@ export function findDisc(
   polygons: LatticePolygons,
   position: (vertex: number) => Vec3,
   centre: Vec3,
-  radius: number,
+  /** A radius, or the three semi-axes (x, y, z) of an ellipsoid. */
+  radius: number | Vec3,
 ): Disc {
+  const axes: Vec3 = typeof radius === "number" ? [radius, radius, radius] : radius;
   const cap: number[] = [];
   const edges = new Map<string, { from: number; to: number; count: number }>();
   const vertexSet = new Set<number>();
@@ -44,7 +46,12 @@ export function findDisc(
       z += p[2];
     }
     const n = e - s;
-    if (Math.hypot(x / n - centre[0], y / n - centre[1], z / n - centre[2]) > radius) continue;
+    const d = Math.hypot(
+      (x / n - centre[0]) / axes[0],
+      (y / n - centre[1]) / axes[1],
+      (z / n - centre[2]) / axes[2],
+    );
+    if (d > 1) continue;
     cap.push(polygons.id[i] as number);
     faces++;
     for (let c = s; c < e; c++) {

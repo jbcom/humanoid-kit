@@ -28,6 +28,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import {
+  type AdultReservoirSpec,
   BODY_TARGET_FILES,
   type BodyManifest,
   parseHumanoidAssets,
@@ -50,6 +51,7 @@ import {
   DETAIL_MODIFIERS,
   pelvicBreadth,
 } from "./lib/adultDetail.ts";
+import { reservoirSpecs } from "./lib/adultReservoirs.ts";
 import { authoredPoses } from "./lib/authoredPoses.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { AUTHORING_FIGURE } from "./lib/detail/mound.ts";
@@ -680,37 +682,44 @@ async function main() {
   // the adult surface's lattice, so it is placed on a model of this body with the
   // pack's control targets and the surface spec, before its own targets exist.
   const controlFile = writeTargetFile(adultControl);
-  const interimAdult = {
-    manifest: {
-      format: 1 as const,
-      kind: "adult-anatomy" as const,
-      topology: TOPOLOGY,
-      bodySha256: bodySha,
-      source,
-      targets: {
-        id: "adult",
-        file: TARGETS_FILE,
-        encoding: TARGET_ENCODING as typeof TARGET_ENCODING,
-        sha256: sha(controlFile.bin),
-        entries: controlFile.entries,
-      },
-      modifiers: modifiers.filter((m) => isAdultPackTarget(m.hi)),
-      sliders: [],
-      anatomy: adultAnatomySpec(packedFigure),
-    },
-    targets: buffer(controlFile.raw),
-  };
-  const authoring = new HumanoidModel(
-    parseHumanoidAssets(
-      {
-        manifest,
-        body: buffer(bodyRaw),
-        targets: Object.fromEntries(bodyFiles.map((f) => [f.id, buffer(f.raw)])),
-        attachments: buffer(attachments.raw),
-      },
-      interimAdult,
-    ),
-  );
+  /** A model of this body with the control targets and a surface spec with the given reservoirs. */
+  const interim = (given?: AdultReservoirSpec[]) =>
+    new HumanoidModel(
+      parseHumanoidAssets(
+        {
+          manifest,
+          body: buffer(bodyRaw),
+          targets: Object.fromEntries(bodyFiles.map((f) => [f.id, buffer(f.raw)])),
+          attachments: buffer(attachments.raw),
+        },
+        {
+          manifest: {
+            format: 1 as const,
+            kind: "adult-anatomy" as const,
+            topology: TOPOLOGY,
+            bodySha256: bodySha,
+            source,
+            targets: {
+              id: "adult",
+              file: TARGETS_FILE,
+              encoding: TARGET_ENCODING as typeof TARGET_ENCODING,
+              sha256: sha(controlFile.bin),
+              entries: controlFile.entries,
+            },
+            modifiers: modifiers.filter((m) => isAdultPackTarget(m.hi)),
+            sliders: [],
+            anatomy: adultAnatomySpec(packedFigure, undefined, given),
+          },
+          targets: buffer(controlFile.raw),
+        },
+      ),
+    );
+  // Reservoirs are placed on the surface as it is without them; the detail is then
+  // authored on the surface with them, whose lattice has their rings too.
+  const surfaceOnly = interim().adultDetailLattice(AUTHORING_FIGURE);
+  if (!surfaceOnly) throw new Error("the adult pack has no refined surface to place reservoirs on");
+  const reservoirs = reservoirSpecs(surfaceOnly);
+  const authoring = interim(reservoirs);
   const lattice = authoring.adultDetailLattice(AUTHORING_FIGURE);
   if (!lattice) throw new Error("the adult pack has no refined surface to author detail on");
   const figure = authoring.evaluate(AUTHORING_FIGURE).control;
@@ -757,7 +766,7 @@ async function main() {
     modifiers: [...modifiers.filter((m) => isAdultPackTarget(m.hi)), ...DETAIL_MODIFIERS],
     sliders: sliders.adult,
     /** Features, skin-layer measurements and shape states: the core names none of these. */
-    anatomy: adultAnatomySpec(packedFigure, detail.spec),
+    anatomy: adultAnatomySpec(packedFigure, detail.spec, reservoirs),
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 

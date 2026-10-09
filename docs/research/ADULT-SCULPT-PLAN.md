@@ -432,7 +432,11 @@ gates were.
    contact sheet: `mound` first (it replaces today's only visible target), then
    `penis`, `testes`, the vulvar features. Status: the `mound` detail is built
    (generated on the lattice, `scripts/lib/detail/mound.ts`, sized from
-   ADULT-ANATOMY-DATA.md section E). The rest need reservoir topology, below.
+   ADULT-ANATOMY-DATA.md section E). The rest draw on reservoirs (section 6b),
+   which are built: the engine (`src/build/reservoir.ts`), linear detail
+   subdivision, and a phallic and a labioscrotal pair placed in the pack
+   (`scripts/lib/adultReservoirs.ts`); the shaft, glans, scrotum and labia
+   targets generated on them are next.
 4. **Skin fields on the patch** and the layers' remap, so the phase 1 layers
    show.
 5. **State morphs on the patch** (engorgement moves from `helper-genital`).

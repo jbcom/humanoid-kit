@@ -35,7 +35,7 @@ describe("the adult anatomy spec in the pack's manifest", () => {
     // the packer writes `adultAnatomySpec(base body)` into it, and this holds the two together.
     // Its detail (the generated targets' pin to the refinement) is checked against
     // the generator in moundPack.test.ts; the rest is the packer's spec for this body.
-    const { detail: _detail, ...rest } = spec ?? { detail: undefined };
+    const { detail: _detail, reservoirs: _reservoirs, ...rest } = spec ?? {};
     expect(rest).toEqual(adultAnatomySpec(core));
     expect(spec).toMatchObject(ADULT_ANATOMY_SPEC);
   });
