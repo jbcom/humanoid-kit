@@ -21,6 +21,7 @@ import {
   rigData,
   rotationVectors,
   skinPositions,
+  skinPositionsLinear,
 } from "../src/rig/pose.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
@@ -340,6 +341,40 @@ describe("body poses", () => {
     for (let i = 0; i < b.length; i++)
       moved = Math.max(moved, Math.abs((b[i] as number) - (control[i] as number)));
     expect(moved).toBeGreaterThan(0.1);
+  });
+
+  it("skins by the shipped blend: linear where no bone asks for dual quaternions, not where an arm turns", () => {
+    const skinWith = (rotations: Float32Array, scheme: typeof skinPositions) =>
+      scheme(
+        rest,
+        rotations,
+        control,
+        assets.skinIndex,
+        assets.skinWeight,
+        new Float32Array(control.length),
+      );
+    // How far apart the visible body's vertices land (the helper geometry between the legs is not drawn).
+    const body = model.rigSkin().bodyVertices;
+    const farthest = (a: Float32Array, b: Float32Array) => {
+      let d = 0;
+      for (const v of body)
+        for (let k = 0; k < 3; k++)
+          d = Math.max(d, Math.abs((a[v * 3 + k] as number) - (b[v * 3 + k] as number)));
+      return d;
+    };
+    // The face's bones are all linear: the blend is the old scheme, to a tenth of a millimetre (float error).
+    const smile = faceUnitRotations(rig, { JawDrop: 1, MouthMoveLeft: 0.5 });
+    expect(
+      farthest(skinWith(smile, skinPositions), skinWith(smile, skinPositionsLinear)),
+    ).toBeLessThan(1e-4);
+    // An arm's are not: raised overhead it differs from linear skinning, by millimetres to a few centimetres.
+    const benchmark = bodyPoseRotations(rig, "benchmark");
+    const d = farthest(
+      skinWith(benchmark, skinPositions),
+      skinWith(benchmark, skinPositionsLinear),
+    );
+    expect(d).toBeGreaterThan(0.005);
+    expect(d).toBeLessThan(0.05);
   });
 
   it("grounds a posed figure on its lowest body point, and at rest exactly as evaluated", () => {
