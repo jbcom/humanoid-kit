@@ -100,14 +100,15 @@ describe("the adult surface in the model", () => {
     expect(noSurface.evaluate(adult).surface).toBe("base");
   });
 
-  it("works at subdivision 0 and 2, drawing finite geometry", () => {
-    for (const subdivision of [0, 2]) {
-      const m = new HumanoidModel(withAdult, { subdivision });
-      const ev = m.evaluate(adult);
-      expect(ev.surface).toBe("adult");
-      expect(ev.positions.every(Number.isFinite)).toBe(true);
-      expect(ev.normals.every(Number.isFinite)).toBe(true);
-    }
+  it("needs subdivision 1 or more: at 0 an adult keeps the base surface, at 2 it has the refined one", () => {
+    const flat = new HumanoidModel(withAdult, { subdivision: 0 });
+    expect(flat.adultSurface()).toBeNull();
+    expect(flat.evaluate(adult).surface).toBe("base");
+    const smooth = new HumanoidModel(withAdult, { subdivision: 2 });
+    const ev = smooth.evaluate(adult);
+    expect(ev.surface).toBe("adult");
+    expect(ev.positions.every(Number.isFinite)).toBe(true);
+    expect(ev.normals.every(Number.isFinite)).toBe(true);
   });
 
   it("maps the refined surface's vertices to the controls that shape them, for picking", () => {

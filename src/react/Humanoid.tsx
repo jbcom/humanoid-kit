@@ -34,6 +34,7 @@ import {
 } from "three";
 import { STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import type {
+  AdultSurfaceTopology,
   AttachmentTopology,
   Evaluation,
   SurfaceEvaluation,
@@ -165,12 +166,25 @@ export interface HumanoidPose {
 
 /** Where a tap on the figure landed. */
 export interface HumanoidPick {
-  /** `"body"`, or the attachment's index in `ModelTopology.attachments`. */
-  part: "body" | number;
+  /**
+   * `"body"`, `"adultBody"` (the adult surface, for a figure aged 18 or over when
+   * the adult pack refines the body), or the attachment's index in
+   * `ModelTopology.attachments`. Look the vertex up in the pick map's
+   * `render.body` or `render.adultBody` accordingly.
+   */
+  part: "body" | "adultBody" | number;
   /** The render vertex of that mesh nearest the tap. */
   vertex: number;
   /** The tapped point, in world space. */
   point: Vector3;
+}
+
+/** A body surface's geometry: the skinned mesh plus the curvature and UV-scale attributes the skin reads. */
+function makeBodyGeometry(t: SurfaceTopology & { uvScale: Float32Array }): BufferGeometry {
+  const g = makeGeometry(t);
+  g.setAttribute(CURVATURE_ATTRIBUTE, new BufferAttribute(new Float32Array(t.vertexCount), 1));
+  g.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(t.uvScale, 1));
+  return g;
 }
 
 function makeGeometry(t: SurfaceTopology): BufferGeometry {
@@ -417,12 +431,7 @@ export function Humanoid({
   const skin = useMemo(() => new SkinMaterial(), []);
   const geometries = useMemo(() => {
     if (!ready) return null;
-    const body = makeGeometry(ready.topology.body);
-    body.setAttribute(
-      CURVATURE_ATTRIBUTE,
-      new BufferAttribute(new Float32Array(ready.topology.body.vertexCount), 1),
-    );
-    body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(ready.topology.body.uvScale, 1));
+    const body = makeBodyGeometry(ready.topology.body);
     const attachments = ready.topology.attachments.map((t) => {
       const g = makeGeometry(t);
       setOcclusionAttributes(g, t.occlusion);
@@ -454,6 +463,32 @@ export function Humanoid({
   // Shared by the attachments' materials: how much of each occlusion key the pose holds.
   const occlusionKeys = useMemo(() => new Vector3(), []);
   const [shown, setShown] = useState(false);
+  // The adult surface (the base body with the adult pack's finer pelvis), for a
+  // figure aged 18 or over. It arrives on its own request, never with the
+  // base's topology, and is drawn only while the figure shown is an adult's.
+  const [adultSurface, setAdultSurface] = useState<AdultSurfaceTopology | null>(null);
+  const refinesBody = ready?.anatomy?.surface !== undefined;
+  useEffect(() => {
+    if (!ready || !refinesBody) {
+      setAdultSurface(null);
+      return;
+    }
+    let live = true;
+    client.adultSurface().then(
+      (t) => live && setAdultSurface(t),
+      (e: Error) => live && report(e),
+    );
+    return () => {
+      live = false;
+    };
+  }, [client, ready, refinesBody, report]);
+  const adultGeometry = useMemo(
+    () => (adultSurface ? makeBodyGeometry(adultSurface) : null),
+    [adultSurface],
+  );
+  useEffect(() => () => adultGeometry?.dispose(), [adultGeometry]);
+  /** Which body surface the geometry last written is for. */
+  const [surface, setSurface] = useState<"base" | "adult">("base");
 
   // The pose: face units blended into bone rotations (rest when absent), and
   // the attachments' occlusion following it.
@@ -584,11 +619,16 @@ export function Humanoid({
     client.evaluate(recipe, key, shapeSignals).then(
       (ev) => {
         if (!live) return;
+        // An adult's evaluation is for the adult surface: wait for its geometry
+        // (this effect runs again when it arrives) rather than write it to the base's.
+        const target = ev.surface === "adult" ? adultGeometry : geometries.body;
+        if (!target) return;
         if (rig && ready) fitSkeleton(rig.skeleton, ready.rig.parents, ev.boneHeads);
-        writeGeometry(geometries.body, ev);
-        (geometries.body.getAttribute(CURVATURE_ATTRIBUTE) as BufferAttribute).copyArray(
+        writeGeometry(target, ev);
+        (target.getAttribute(CURVATURE_ATTRIBUTE) as BufferAttribute).copyArray(
           ev.curvature,
         ).needsUpdate = true;
+        setSurface(ev.surface);
         ev.attachments.forEach((a, i) => {
           const g = geometries.attachments[i];
           if (g) writeGeometry(g, a);
@@ -605,7 +645,19 @@ export function Humanoid({
     return () => {
       live = false;
     };
-  }, [client, geometries, rig, ready, recipe, key, shapeSignals, onEvaluatedRef, report, ground]);
+  }, [
+    client,
+    geometries,
+    adultGeometry,
+    rig,
+    ready,
+    recipe,
+    key,
+    shapeSignals,
+    onEvaluatedRef,
+    report,
+    ground,
+  ]);
 
   return (
     <group
@@ -621,10 +673,20 @@ export function Humanoid({
             geometry={geometries.body}
             material={material ?? skin}
             skeleton={rig.skeleton}
-            visible={shown}
+            visible={shown && surface === "base"}
             part="body"
             shape={shape}
           />
+          {adultGeometry && (
+            <SkinnedPart
+              geometry={adultGeometry}
+              material={material ?? skin}
+              skeleton={rig.skeleton}
+              visible={shown && surface === "adult"}
+              part="adultBody"
+              shape={shape}
+            />
+          )}
           {ready.topology.attachments.map((t, i) => {
             const g = geometries.attachments[i];
             return g ? (

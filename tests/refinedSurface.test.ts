@@ -42,6 +42,21 @@ function region() {
   };
 }
 
+// Each surface is built once for the file: they take seconds apiece.
+const built = new Map<string, SurfaceMesh>();
+const memo = (id: string, make: () => SurfaceMesh) => {
+  let m = built.get(id);
+  if (!m) {
+    m = make();
+    built.set(id, m);
+  }
+  return m;
+};
+const plainSurface = (level: number) =>
+  memo(`plain${level}`, () => buildSurfaceMesh(source, body, level));
+const fineSurface = (level: number) =>
+  memo(`fine${level}`, () => buildRefinedSurfaceMesh(source, body, region(), level));
+
 const evaluate = (mesh: SurfaceMesh, control: Float32Array) => {
   const n = mesh.renderToSurface.length;
   const positions = new Float32Array(n * 3);
@@ -64,85 +79,79 @@ function uvArea(mesh: SurfaceMesh) {
   return total;
 }
 
-describe("a body surface with local refinement", () => {
-  it("is the plain surface when nothing is refined", () => {
-    const plain = buildSurfaceMesh(source, body, 1);
-    const same = buildRefinedSurfaceMesh(source, body, { faces: [], levels: [] }, 1);
-    expect(Array.from(same.topology.faces)).toEqual(Array.from(plain.topology.faces));
-    expect(Array.from(same.index)).toEqual(Array.from(plain.index));
-    expect(Array.from(same.renderToSurface)).toEqual(Array.from(plain.renderToSurface));
-    expect(Array.from(same.uvs)).toEqual(Array.from(plain.uvs));
-    expect(Array.from(same.skinWeight)).toEqual(Array.from(plain.skinWeight));
-    const a = evaluate(plain, P);
-    const b = evaluate(same, P);
-    expect(Array.from(b.positions)).toEqual(Array.from(a.positions));
+/** How many triangles each undirected edge of the surface (UV seams joined) belongs to. */
+function edgeUse(mesh: SurfaceMesh) {
+  const use = new Map<string, number>();
+  const s = (r: number) => mesh.renderToSurface[r] as number;
+  for (let i = 0; i < mesh.index.length; i += 3) {
+    const t = [0, 1, 2].map((k) => s(mesh.index[i + k] as number));
+    // A triangle drawn as a quad has a repeated corner: its second half is degenerate.
+    if (t[0] === t[1] || t[1] === t[2] || t[0] === t[2]) continue;
+    for (let k = 0; k < 3; k++) {
+      const a = t[k] as number;
+      const b = t[(k + 1) % 3] as number;
+      const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+      use.set(key, (use.get(key) ?? 0) + 1);
+    }
+  }
+  return use;
+}
+
+const key = (p: Float32Array, i: number) =>
+  [0, 1, 2].map((k) => (p[i * 3 + k] as number).toFixed(6)).join(",");
+
+// Building a surface takes seconds, several times over on a busy machine.
+describe("a body surface with local refinement", { timeout: 600_000 }, () => {
+  it("is the plain surface when nothing is refined, at every level it can be built", () => {
+    for (const level of [1, 2]) {
+      const plain = plainSurface(level);
+      const same = buildRefinedSurfaceMesh(source, body, { faces: [], levels: [] }, level);
+      expect(Array.from(same.topology.faces)).toEqual(Array.from(plain.topology.faces));
+      expect(Array.from(same.index)).toEqual(Array.from(plain.index));
+      expect(Array.from(same.renderToSurface)).toEqual(Array.from(plain.renderToSurface));
+      expect(Array.from(same.uvs)).toEqual(Array.from(plain.uvs));
+      expect(Array.from(same.skinWeight)).toEqual(Array.from(plain.skinWeight));
+      expect(Array.from(evaluate(same, P).positions)).toEqual(
+        Array.from(evaluate(plain, P).positions),
+      );
+    }
   });
 
-  it("adds vertices only where refined, and keeps every unrefined face's vertices exactly", () => {
-    const refinement = region();
-    const plain = buildSurfaceMesh(source, body, 1);
-    const fine = buildRefinedSurfaceMesh(source, body, refinement, 1);
+  it("refines the base's own level-1 surface: no base vertex moves, new ones are added in the region", () => {
+    const plain = plainSurface(1);
+    const fine = fineSurface(1);
     expect(fine.renderToSurface.length).toBeGreaterThan(plain.renderToSurface.length + 2000);
     expect(fine.renderToSurface.length).toBeLessThan(plain.renderToSurface.length + 20000);
     const a = evaluate(plain, P).positions;
     const b = evaluate(fine, P).positions;
-    // Away from the region (more than 12 cm from it) the surface is the same vertices.
-    const key = (p: Float32Array, i: number) =>
-      [0, 1, 2].map((k) => (p[i * 3 + k] as number).toFixed(6)).join(",");
+    // Every vertex of the plain surface is a vertex of the refined one, exactly.
+    const fineSet = new Set(Array.from({ length: b.length / 3 }, (_, i) => key(b, i)));
+    for (let i = 0; i < a.length / 3; i++) expect(fineSet.has(key(a, i)), `vertex ${i}`).toBe(true);
+    // And away from the region there is nothing else.
     const baseSet = new Set(Array.from({ length: a.length / 3 }, (_, i) => key(a, i)));
-    let far = 0;
     for (let i = 0; i < b.length / 3; i++) {
       const [x, y, z] = [0, 1, 2].map((k) => b[i * 3 + k] as number) as [number, number, number];
-      if (Math.hypot(x, y - -0.03, z - 0.05) > 0.2) {
-        far++;
-        expect(baseSet.has(key(b, i)), `vertex ${i}`).toBe(true);
-      }
-    }
-    expect(far).toBeGreaterThan(30000);
-  });
-
-  it("is quads throughout after one level, and a level 0 surface still draws every face", () => {
-    const fine = buildRefinedSurfaceMesh(source, body, region(), 1);
-    expect(fine.topology.faces.length % 4).toBe(0);
-    const flat = buildRefinedSurfaceMesh(source, body, region(), 0);
-    // Level 0 keeps the control polygons: each is fanned into triangles.
-    expect(flat.index.length / 3).toBeGreaterThan(body.length * 2);
-    const positions = evaluate(flat, P).positions;
-    expect(positions.every(Number.isFinite)).toBe(true);
-  });
-
-  it("keeps the UV layout: the surface's UV area is the plain surface's, seams included", () => {
-    const plain = buildSurfaceMesh(source, body, 1);
-    const fine = buildRefinedSurfaceMesh(source, body, region(), 1);
-    const ratio = uvArea(fine) / uvArea(plain);
-    expect(ratio).toBeGreaterThan(0.9999);
-    expect(ratio).toBeLessThan(1.0001);
-    expect(fine.uvs.every((u) => u >= -1e-6 && u <= 1 + 1e-6)).toBe(true);
-  });
-
-  it("follows the base's skin weights: normalised, bones in range, none lost", () => {
-    const fine = buildRefinedSurfaceMesh(source, body, region(), 1);
-    const n = fine.renderToSurface.length;
-    expect(fine.skinIndex.length).toBe(n * 4);
-    const bones = assets.manifest.skeleton.bones.length;
-    for (let r = 0; r < n; r++) {
-      let sum = 0;
-      for (let k = 0; k < 4; k++) {
-        sum += fine.skinWeight[r * 4 + k] as number;
-        expect(fine.skinIndex[r * 4 + k] as number).toBeLessThan(bones);
-      }
-      expect(sum).toBeCloseTo(1, 4);
+      if (Math.hypot(x, y - -0.03, z - 0.05) > 0.2) expect(baseSet.has(key(b, i))).toBe(true);
     }
   });
 
-  it("stays on the base surface: every refined vertex within 1.5 mm of it", () => {
-    // A finer control polygon shrinks less under Catmull–Clark than the base's
-    // coarse one, so the refined surface sits slightly off the base's: measured
-    // 1.24 mm at worst around the pelvis, where the base's quads are 19 mm.
-    const plain = buildSurfaceMesh(source, body, 1);
-    const fine = buildRefinedSurfaceMesh(source, body, region(), 1);
+  it("is conforming: no cracks, and the same border as the plain surface", () => {
+    const plain = plainSurface(1);
+    const fine = fineSurface(1);
+    const border = (m: SurfaceMesh) => [...edgeUse(m).values()].filter((n) => n === 1).length;
+    for (const n of edgeUse(fine).values()) expect([1, 2]).toContain(n);
+    // The refinement is interior: the body's open borders (eyes, mouth, neck…) are the same.
+    expect(border(fine)).toBe(border(plain));
+  });
+
+  it("keeps the surface the base draws: refined vertices lie on it, within 0.6 mm", () => {
+    // They are bilinear on the level-1 surface's own quads, not a new smoothing of
+    // the coarse mesh, so refining adds detail without changing the shape.
+    const plain = plainSurface(1);
+    const fine = fineSurface(1);
     const a = evaluate(plain, P).positions;
     const b = evaluate(fine, P).positions;
+    const baseSet = new Set(Array.from({ length: a.length / 3 }, (_, i) => key(a, i)));
     const near = (p: Float32Array, i: number) =>
       Math.abs(p[i * 3] as number) < 0.07 &&
       (p[i * 3 + 1] as number) > -0.14 &&
@@ -209,8 +218,10 @@ describe("a body surface with local refinement", () => {
       return Math.hypot(px - (q[0] as number), py - (q[1] as number), pz - (q[2] as number));
     };
     let worst = 0;
+    let added = 0;
     for (let i = 0; i < b.length / 3; i++) {
-      if (!near(b, i)) continue;
+      if (!near(b, i) || baseSet.has(key(b, i))) continue;
+      added++;
       let best = Number.POSITIVE_INFINITY;
       for (const t of tris)
         best = Math.min(
@@ -219,7 +230,50 @@ describe("a body surface with local refinement", () => {
         );
       worst = Math.max(worst, best);
     }
-    expect(worst).toBeLessThan(0.0015);
-    expect(worst).toBeGreaterThan(0); // it is a different, finer surface, not the same one
+    expect(added).toBeGreaterThan(2000);
+    // Within half the warp of the base's own quads (0.44 mm measured): the base draws
+    // each quad as two triangles, the refinement is bilinear on the quad.
+    expect(worst).toBeLessThan(0.0006);
+  });
+
+  it("keeps the UV layout: the surface's UV area is the plain surface's, seams included", () => {
+    const plain = plainSurface(1);
+    const fine = fineSurface(1);
+    const ratio = uvArea(fine) / uvArea(plain);
+    expect(ratio).toBeGreaterThan(0.9999);
+    expect(ratio).toBeLessThan(1.0001);
+    expect(fine.uvs.every((u) => u >= -1e-6 && u <= 1 + 1e-6)).toBe(true);
+  });
+
+  it("follows the base's skin weights: normalised, bones in range, none lost", () => {
+    const fine = fineSurface(1);
+    const n = fine.renderToSurface.length;
+    expect(fine.skinIndex.length).toBe(n * 4);
+    const bones = assets.manifest.skeleton.bones.length;
+    for (let r = 0; r < n; r++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) {
+        sum += fine.skinWeight[r * 4 + k] as number;
+        expect(fine.skinIndex[r * 4 + k] as number).toBeLessThan(bones);
+      }
+      expect(sum).toBeCloseTo(1, 4);
+    }
+  });
+
+  it("at level 2 the transition polygons are smoothed into quads, finite and conforming", () => {
+    const plain = plainSurface(2);
+    const fine = fineSurface(2);
+    expect(fine.topology.faces.length % 4).toBe(0);
+    expect(fine.renderToSurface.length).toBeGreaterThan(plain.renderToSurface.length);
+    const out = evaluate(fine, P);
+    expect(out.positions.every(Number.isFinite)).toBe(true);
+    expect(out.normals.every(Number.isFinite)).toBe(true);
+    for (const n of edgeUse(fine).values()) expect([1, 2]).toContain(n);
+    const border = (m: SurfaceMesh) => [...edgeUse(m).values()].filter((n) => n === 1).length;
+    expect(border(fine)).toBe(border(plain));
+  });
+
+  it("needs a subdivision level: the refinement is defined on the level-1 surface", () => {
+    expect(() => buildRefinedSurfaceMesh(source, body, region(), 0)).toThrow(RangeError);
   });
 });

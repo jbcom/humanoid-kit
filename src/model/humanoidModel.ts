@@ -692,7 +692,8 @@ export class HumanoidModel {
   private adultBodySurface() {
     if (this.adultBody !== undefined) return this.adultBody;
     const spec = this.assets.adultAnatomyManifest?.anatomy?.surface;
-    if (!spec) {
+    // The refinement is of the level-1 surface: a model drawing the control mesh has none.
+    if (!spec || this.level < 1) {
       this.adultBody = null;
       return null;
     }

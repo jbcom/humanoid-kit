@@ -57,6 +57,19 @@ export function buildSurfaceMesh(
   levels: number,
 ): SurfaceMesh {
   const selected = faces ?? Uint32Array.from({ length: source.faceVerts.length / 4 }, (_, i) => i);
+  const built = buildSubdividedQuads(source, selected, levels);
+  return finishSurface(source, built.stencil, built.topology, built.uvs, built.faceUvs);
+}
+
+/**
+ * The quad mesh of `faces` subdivided `levels` times: its stencil from the
+ * source's control vertices, topology and face-varying UVs.
+ */
+function buildSubdividedQuads(
+  source: QuadSource,
+  selected: Uint32Array,
+  levels: number,
+): { stencil: Stencil; topology: QuadTopology; uvs: Float32Array; faceUvs: Uint32Array } {
   // Compact the face subset to its own vertex numbering.
   const used = new Int32Array(source.vertexCount).fill(-1);
   const verts: number[] = [];
@@ -87,16 +100,30 @@ export function buildSurfaceMesh(
     uvs = uvLevel.uvs;
     faceUvs = uvLevel.faceUvs;
   }
-  return finishSurface(source, stencil, topology, uvs, faceUvs);
+  return { stencil, topology, uvs, faceUvs };
 }
 
 /**
- * Like `buildSurfaceMesh`, with some faces refined locally first
- * (`refineGraded`): the surface of a body with finer geometry where `refinement`
- * asks for it, evaluated from the same control vertices (the stencil starts at
- * the source's, so `evaluateSurface` takes the same control positions). The
- * refined control mesh has pentagon and hexagon transitions, so level 0 draws
- * each polygon as a fan of triangles and level 1 or more is quads throughout.
+ * Like `buildSurfaceMesh`, with some faces refined locally: the surface of a body
+ * with finer geometry where `refinement` asks for it, evaluated from the same
+ * control vertices (the stencil starts at the source's, so `evaluateSurface`
+ * takes the same control positions).
+ *
+ * The refinement is of the base's own level-1 surface, not of its control mesh:
+ * each source face named in `refinement` is four faces of that surface, and
+ * `refineGraded` splits those 2^level by 2^level, so the new vertices lie on the
+ * surface the base already draws and refining adds detail without changing the
+ * shape. (Refining the 19 mm control mesh instead, then smoothing once, leaves
+ * the control polyhedron's facets showing as terraces.) A level-1 surface is the
+ * refined mesh itself, its pentagon and hexagon transitions split into
+ * triangles and quads; from level 2 the polygons are smoothed into quads by
+ * Catmull–Clark, and the surface outside the region is the base's at every level.
+ * Vertex numbering of the refined mesh is the same at every level 1 or more,
+ * which is what features authored against it need.
+ *
+ * @param refinement source face indices and how many extra levels each gets
+ *   over the level-1 surface (a source face's four children share its level)
+ * @param levels Catmull–Clark levels of the whole surface, at least 1
  */
 export function buildRefinedSurfaceMesh(
   source: QuadSource,
@@ -104,60 +131,55 @@ export function buildRefinedSurfaceMesh(
   refinement: Refinement,
   levels: number,
 ): SurfaceMesh {
+  if (!Number.isInteger(levels) || levels < 1)
+    throw new RangeError(`a refined surface needs subdivision level 1 or more; got ${levels}`);
   const selected = faces ?? Uint32Array.from({ length: source.faceVerts.length / 4 }, (_, i) => i);
-  const fine = refineGraded(source, selected, refinement);
-  // Compact the refined mesh to the vertices its polygons use.
-  const used = new Int32Array(fine.vertexCount).fill(-1);
-  const verts: number[] = [];
-  const polygons = new Uint32Array(fine.faces.length);
-  fine.faces.forEach((v, i) => {
-    let c = used[v] as number;
-    if (c === -1) {
-      c = verts.length;
-      used[v] = c;
-      verts.push(v);
-    }
-    polygons[i] = c;
+  // The base's level-1 surface, built exactly as `buildSurfaceMesh` builds it.
+  const base = buildSubdividedQuads(source, selected, 1);
+  const position = new Map<number, number>();
+  selected.forEach((f, i) => {
+    position.set(f, i);
   });
-  let stencil = composeStencils(fine.stencil, selectionStencil(fine.vertexCount, verts));
+  // Each source face is four faces of that surface, in order (catmullClarkLevel).
+  const children: number[] = [];
+  const childLevels: number[] = [];
+  for (let i = 0; i < refinement.faces.length; i++) {
+    const f = refinement.faces[i] as number;
+    const p = position.get(f);
+    if (p === undefined) throw new RangeError(`refinement: face ${f} is not in the mesh`);
+    for (let k = 0; k < 4; k++) {
+      children.push(p * 4 + k);
+      childLevels.push(refinement.levels[i] as number);
+    }
+  }
+  const fine = refineGraded(
+    {
+      vertexCount: base.topology.vertexCount,
+      faceVerts: base.topology.faces,
+      faceUvs: base.faceUvs,
+      uvs: base.uvs,
+    },
+    Uint32Array.from({ length: base.topology.faces.length / 4 }, (_, i) => i),
+    { faces: children, levels: childLevels },
+  );
+  let stencil = composeStencils(base.stencil, fine.stencil);
   let topology: QuadTopology;
   let uvs: Float32Array = fine.uvs;
   let faceUvs: Uint32Array;
-  if (levels === 0) {
-    // The control polygons as they are: each fanned into triangles, drawn as
-    // quads with a repeated corner (a triangle's normal and area come out right).
-    const quads: number[] = [];
-    const quadUvs: number[] = [];
-    for (let f = 0; f + 1 < fine.faceStart.length; f++) {
-      const s = fine.faceStart[f] as number;
-      const n = (fine.faceStart[f + 1] as number) - s;
-      if (n === 4) {
-        for (let k = 0; k < 4; k++) {
-          quads.push(polygons[s + k] as number);
-          quadUvs.push(fine.faceUvs[s + k] as number);
-        }
-        continue;
-      }
-      for (let i = 1; i + 1 < n; i++)
-        for (const k of [0, i, i + 1, i + 1]) {
-          quads.push(polygons[s + k] as number);
-          quadUvs.push(fine.faceUvs[s + k] as number);
-        }
-    }
-    topology = { vertexCount: verts.length, faces: Uint32Array.from(quads) };
-    faceUvs = Uint32Array.from(quadUvs);
+  if (levels === 1) {
+    ({ topology, faceUvs } = polygonsToQuads(fine));
   } else {
-    const first = catmullClarkPolygons({
-      vertexCount: verts.length,
+    const smoothed = catmullClarkPolygons({
+      vertexCount: fine.vertexCount,
       faceStart: fine.faceStart,
-      faces: polygons,
+      faces: fine.faces,
     });
-    stencil = composeStencils(stencil, first.stencil);
-    topology = first.topology;
+    stencil = composeStencils(stencil, smoothed.stencil);
+    topology = smoothed.topology;
     const uvLevel = subdivideUvLinearPolygons(uvs, fine.faceStart, fine.faceUvs);
     uvs = uvLevel.uvs;
     faceUvs = uvLevel.faceUvs;
-    for (let l = 1; l < levels; l++) {
+    for (let l = 2; l < levels; l++) {
       const level = catmullClarkLevel(topology);
       stencil = composeStencils(stencil, level.stencil);
       topology = level.topology;
@@ -167,6 +189,36 @@ export function buildRefinedSurfaceMesh(
     }
   }
   return finishSurface(source, stencil, topology, uvs, faceUvs);
+}
+
+/**
+ * A polygon mesh as the quad topology a surface draws: quads as they are,
+ * larger polygons fanned into triangles, each drawn as a quad with a repeated
+ * corner (its normal and area come out right).
+ */
+function polygonsToQuads(fine: {
+  faceStart: Uint32Array;
+  faces: Uint32Array;
+  faceUvs: Uint32Array;
+  vertexCount: number;
+}): { topology: QuadTopology; faceUvs: Uint32Array } {
+  const quads: number[] = [];
+  const quadUvs: number[] = [];
+  for (let f = 0; f + 1 < fine.faceStart.length; f++) {
+    const s = fine.faceStart[f] as number;
+    const n = (fine.faceStart[f + 1] as number) - s;
+    const corners =
+      n === 4 ? [[0, 1, 2, 3]] : Array.from({ length: n - 2 }, (_, i) => [0, i + 1, i + 2, i + 2]);
+    for (const corner of corners)
+      for (const k of corner) {
+        quads.push(fine.faces[s + k] as number);
+        quadUvs.push(fine.faceUvs[s + k] as number);
+      }
+  }
+  return {
+    topology: { vertexCount: fine.vertexCount, faces: Uint32Array.from(quads) },
+    faceUvs: Uint32Array.from(quadUvs),
+  };
 }
 
 /** Render vertices, triangles and skin weights for a subdivided surface. */
