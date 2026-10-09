@@ -297,6 +297,87 @@ key raises the upper and lowers the lower lip together, so a pose raising only
 the upper lip reads as half the key. Splitting it (four keys, sixteen corners)
 is the next refinement if expressions need it.
 
+## Clothing (milestone 7)
+
+**Use cases.** A creator dresses a figure from a wardrobe and changes one
+garment at a time while the shape sliders keep moving. A game dresses a crowd
+from saved recipes, each figure in its own outfit. The same garment must fit a
+lean, a heavy and a muscular body and a child, and follow every pose. Garments
+layer: shoes over trousers, a jacket over a shirt. No skin may show through a
+garment, and no gap may open at a neckline, cuff or hem.
+
+**Requirements.** Changing the outfit must not rebuild or re-subdivide the
+body (a hat swap in a slider drag would stall it). The occlusion the pack
+baked for the eyes, teeth and tongue must stay valid whatever is worn. The core
+stays framework-free and testable in Node. Only CC0 data is packed, proved
+from each file.
+
+**Decisions (2026-10-09).**
+
+- *A garment is an attachment worn by choice.* It binds to base vertices by
+  index and weight (`.mhclo`), so it follows the shape through the same
+  `evaluateBinding` as the eyes, is skinned from its references' weights and
+  subdivided at the attachments' level (at most 1). It lives in its own pack
+  (`humanoid-kit-clothing`) and its own map (`assets.garments`), not
+  `assets.attachments`: the model wears every body-pack attachment by default,
+  and a garment must never be worn that way. `recipe.outfit`, an optional list
+  of ids, says what a figure wears; the recipe stays plain data, and a saved
+  figure names its clothes.
+- *Masking is a mask over indices, not a rebuild.* The first version of the
+  model dropped covered body faces from the quad list before building the
+  surface, so every outfit change meant a new subdivision stencil, new UV
+  splitting and new skin weights, the occluder for the attachment bake changed
+  with the outfit, and the ground offset read a different vertex set.
+  MakeHuman does the opposite: the subdivided mesh keeps its geometry and only
+  its face mask changes, "allowing faster changes to the face mask without
+  requiring a rebuild". The model now builds the body once from all its faces.
+  An outfit is a pure function of the garment ids (`outfit(ids)`): it works
+  out which base vertices still show and returns the body's triangle index with
+  the hidden faces' triangles left out, and each garment's. A control face owns
+  `2 × 4^level` consecutive triangles, so masking is a copy of the runs that
+  stay. Results are cached by key (a handful at a time), and the worker sends
+  the masks only to a caller that does not hold them. Rejected: rebuilding the
+  surface per outfit (above), and discarding fragments in the shader (a
+  per-vertex attribute cannot express a per-face rule across UV seams, and a
+  discarded triangle still costs its vertex work).
+- *A face is hidden only when all its corners are deleted.* The first
+  implementation hid a body quad when any corner was deleted, which left a gap
+  ring at every garment edge; a garment's `delete_verts` list the vertices it
+  covers, and the quads on its boundary still have visible corners under the
+  cloth's edge. The garment's own faces follow the same rule.
+- *Layering is by category, then `z_depth`, then id.* MakeHuman orders by
+  `z_depth` and breaks ties by uuid, but nearly every system asset has
+  `z_depth` 50 (shoes 5), so the file value alone stacks shoes under trousers
+  and ties arbitrarily. Each garment instead declares a category (`kind`,
+  `GARMENT_LAYERS`, whose order is MakeHuman's own table of conventional
+  values: underwear 39, socks 43, shirt and trousers 47, sweater 50, indoor
+  jacket 53, shoes 57, coat 61, backpack 69), then `z_depth`, then id, so an
+  outfit always stacks the same way. The stack is processed from the
+  outermost in; each garment is masked by the deletions of the garments over it
+  only, then adds its own. A coat's `delete_verts` therefore hide the shirt
+  under it and never the coat, and the shoes hide the trouser hems they cover.
+- *A mask reaches a garment through its references.* A garment vertex bound
+  exactly to one base vertex copies that vertex's visibility; any other is
+  visible when at least two of its three references are. This is MakeHuman's
+  rule, and it keeps the cloth that lies over a hidden region from being cut by
+  one reference vertex alone.
+- *Hair, brows, lashes, eyes and teeth are not in the stack.* They are
+  attachments with no layer: they hide no skin and no garment masks them.
+- *The attachments' occlusion does not depend on the outfit.* The body that
+  occludes them is the full body (`bodyControlTriangles`), as in the pack's
+  bake, and garments are not occluders or occludees: a worn outfit never forces
+  the bake to run again, and `wearsPackedSet` stays true. Whether garments
+  should shade skin (the neck under a collar) is open; the skin layer stack
+  (`src/surface/layers.ts`) is where it would go, as a layer whose mask is the
+  rim of the covered region.
+- *The figure stands on what it wears.* `groundOffset` counts the garments'
+  lowest control point as well as the body's, so soles that reach 2 cm below
+  the foot rest on the ground instead of sinking. A posed figure's grounding
+  (`posedGroundOffset`) still reads the body alone.
+- *Garments load as a stage of their own* (see "Packs and the binary format")
+  and are evaluated lazily: the model builds a garment's surface the first time
+  an outfit names it.
+
 ## Worker
 
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one

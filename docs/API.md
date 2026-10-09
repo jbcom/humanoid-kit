@@ -108,6 +108,7 @@ createRecipe(init?: {
   modifiers?: Record<string, number>;
   skin?: Partial<SkinRecipe>;
   eyes?: Partial<EyesRecipe>;
+  outfit?: readonly string[];
 }): Recipe
 ```
 
@@ -123,6 +124,7 @@ interface Recipe {
   modifiers: Record<string, number>; // id -> [-1, 1]; one-sided [0, 1]; missing = 0
   skin: SkinRecipe;
   eyes: EyesRecipe;
+  outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
 }
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
@@ -234,11 +236,13 @@ new HumanoidModel(assets: HumanoidAssets, options?: { subdivision?: 0 | 1 | 2 })
 The framework-free pipeline for one loaded body pack. `subdivision` defaults to 1
 and throws `RangeError` for anything else.
 
-- `model.evaluate(recipe, signals?): Evaluation`: `signals` (0..1 each) set the
-  skin's state; those in `STATE_MORPHS` (`cold`: the nipple rises and the areola
-  contracts, calibrated to the measured response) add their targets.
-  `stateContributions(signals)` gives those target weights. `ADULT_ONLY_SIGNALS`
-  (`arousal`) throw `AgePolicyError` under 18 (`assertSignalPolicy`).
+- `model.evaluate(recipe, signals?, haveOutfit?): Evaluation`: `signals` (0..1
+  each) set the skin's state; those in `STATE_MORPHS` (`cold`: the nipple rises
+  and the areola contracts, calibrated to the measured response) add their
+  targets. `stateContributions(signals)` gives those target weights.
+  `ADULT_ONLY_SIGNALS` (`arousal`) throw `AgePolicyError` under 18
+  (`assertSignalPolicy`). `recipe.outfit` adds the garments (see "Clothing");
+  `haveOutfit` is the outfit key the caller already holds the masks of.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
   only (every pose corner holding the rest value).
@@ -258,6 +262,13 @@ interface Evaluation {
   control: Float32Array;    // morphed positions in the base topology
   curvature: Float32Array;  // per body render vertex, mean curvature (1/m)
   boneHeads: Float32Array;  // the skeleton fitted to this figure: each bone's rest head, xyz
+  attachments: SurfaceEvaluation[]; // eyes, teeth, tongue: positions and normals each
+  garments: SurfaceEvaluation[];    // the outfit's garments, in outfit.order
+  outfit: {
+    key: string;                    // the garments in stacking order, joined by "|"; "" for none
+    order: string[];                // garment ids, innermost first
+    masks: OutfitMasks | null;      // null when the caller passed this key as haveOutfit
+  };
 }
 
 interface SurfaceTopology {
@@ -275,6 +286,34 @@ violates the age policy,
 `RecipeError` for an unknown modifier id (adult-only ids need the adult pack),
 an adult-only modifier on a minor, or a negative value on a one-sided modifier,
 and `MorphError` for an unknown target. Modifier values are clamped to `[-1, 1]`.
+
+### Clothing
+
+A figure wears the clothing pack's garments by id in `recipe.outfit`. The body
+surface is never rebuilt for it: a worn set only changes which triangles of the
+body and of each garment are drawn.
+
+- `model.outfit(ids): Outfit`: `{ key, order, masks }` for a set of garment
+  ids in any order. `order` is innermost first (by category, then `z_depth`,
+  then id) and `masks` is `{ bodyIndex, garmentIndex }`: the triangle indices to
+  draw in place of `topology().body.index` and each garment's
+  `GarmentTopology.index`. Garments stack as MakeHuman does: processed from the
+  outermost in, each is hidden only where the garments over it delete, and a
+  face hides only when every corner is hidden. Results are cached by key.
+  Throws `OutfitError` for an id the clothing pack lacks, one named twice,
+  garments that have not loaded, or no clothing pack.
+- `model.garmentTopology(id): GarmentTopology`: a garment's static render data
+  (`SurfaceTopology` plus `id`, `kind`, `zDepth`, `tags`, `material`,
+  `textureUrl`, `normalTextureUrl`), built once. Its `index` draws every face.
+- `GARMENT_LAYERS`: the categories (`kind`) a garment can have and their order:
+  `underwear`, `socks`, `clothes`, `sweater`, `jacket`, `shoes`, `coat`, `hat`,
+  `backpack`.
+- The arithmetic behind it, pure and exported: `layerOrder(entries)`,
+  `stackVisibility(vertexCount, garments, visible?)`,
+  `transferVisibility(visible, garment)`, `faceVisibility(faceVerts, faces,
+  visible)` and `maskIndex(index, faceVisible, trianglesPerFace)`.
+- The figure stands on what it wears: `groundOffset` counts the garments'
+  lowest point, so a sole that reaches below the foot rests on the ground.
 
 Lower-level pieces, also exported:
 

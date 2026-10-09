@@ -10,6 +10,7 @@ import { buildSurfaceMesh, evaluateSurface, type SurfaceMesh } from "../build/su
 import {
   type AttachmentMaterial,
   type BoundAsset,
+  type BoundGarment,
   groupFaces,
   type HumanoidAssets,
   pendingTargetFiles,
@@ -18,7 +19,7 @@ import { NO_FEATURE } from "../makehuman/features.ts";
 import { recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
 import { stateContributions } from "../makehuman/stateMorphs.ts";
-import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
+import { type Bound, bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
 import { assertSignalPolicy } from "../recipe/agePolicy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
@@ -28,6 +29,7 @@ import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { buildLayerFields, uvScale } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { SKIN_LAYERS } from "../surface/regions/index.ts";
+import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 
 export interface ModelOptions {
   /** Catmull–Clark levels for the body surface (0–2). Default 1. Attachments use at most 1. */
@@ -61,6 +63,42 @@ export interface AttachmentTopology extends SurfaceTopology {
    * blend (`occlusionCornerWeights` of `occlusionKeyWeights`).
    */
   occlusion: Float32Array;
+}
+
+/**
+ * A garment's static render data (`HumanoidModel.garmentTopology`). Its
+ * `index` draws every face; `Outfit.masks` has the ones to draw in an outfit.
+ */
+export interface GarmentTopology extends SurfaceTopology {
+  id: string;
+  /** The category it stacks as (`GARMENT_LAYERS`). */
+  kind: string;
+  zDepth: number;
+  tags: string[];
+  material: AttachmentMaterial;
+  /** Resolved URLs of the diffuse and normal textures, or null when absent or loaded without URLs. */
+  textureUrl: string | null;
+  normalTextureUrl: string | null;
+}
+
+/** The triangles to draw in an outfit: the body's and each garment's, with hidden faces left out. */
+export interface OutfitMasks {
+  /** Replaces `ModelTopology.body.index`. */
+  bodyIndex: Uint32Array;
+  /** Replaces each garment's `GarmentTopology.index`, in `Outfit.order`. */
+  garmentIndex: Uint32Array[];
+}
+
+/**
+ * A set of garments as worn: how they stack and what each hides. Depends on
+ * the garments alone, not on the figure's shape.
+ */
+export interface Outfit {
+  /** Names the set: the ids in stacking order, joined by `|`; empty for nothing worn. */
+  key: string;
+  /** Garment ids, innermost first. */
+  order: string[];
+  masks: OutfitMasks;
 }
 
 export interface ModelTopology {
@@ -110,6 +148,13 @@ function dominantInput(stencil: Stencil, surfaceVertex: number): number {
 export interface Evaluation extends SurfaceEvaluation {
   /** One entry per attachment, in `ModelTopology.attachments` order. */
   attachments: SurfaceEvaluation[];
+  /** One entry per garment worn, in `outfit.order`. */
+  garments: SurfaceEvaluation[];
+  /**
+   * The recipe's outfit. `masks` is null when the caller said it already holds
+   * this outfit's (`evaluate`'s `haveOutfit`).
+   */
+  outfit: Pick<Outfit, "key" | "order"> & { masks: OutfitMasks | null };
   /** Lift (metres) that puts the lowest body point on y = 0. */
   groundOffset: number;
   /** Morphed control positions (base topology), for joints, bindings and measurement. */
@@ -170,12 +215,27 @@ const occlusionFigure = (): Recipe => createRecipe();
 export class HumanoidModel {
   readonly regions: RegionField;
   private readonly body: Part;
+  /** The body group's faces, in the order the body surface was built from them. */
+  private readonly bodyFaces: Uint32Array;
+  private readonly bodyTrianglesPerFace: number;
+  /** Base vertices still showing once the mounted attachments' deletions are applied (1 = showing). */
+  private readonly mountedVisible: Uint8Array;
+  /** The body's triangles with what the mounted attachments hide left out. */
+  private readonly mountedBodyIndex: Uint32Array;
   private readonly bodyVertices: Uint32Array;
   private readonly bodyControlTriangles: Uint32Array;
   private readonly bodyEdges: Uint32Array;
   private readonly attached: { asset: BoundAsset; part: Part; control: Float32Array }[];
-  /** Subdivision level of the attachments: the body's, at most 1. */
+  /** Subdivision level of the attachments and garments: the body's, at most 1. */
   private readonly attachmentLevel: number;
+  /** Garments built so far, on first use. */
+  private readonly garmentParts = new Map<
+    string,
+    { asset: BoundGarment; part: Part; control: Float32Array }
+  >();
+  private readonly garmentTopologies = new Map<string, GarmentTopology>();
+  /** Outfits worked out so far, most recent last; a handful, since few are worn at once. */
+  private readonly outfits = new Map<string, Outfit>();
   private readonly layerFields: Float32Array;
   private readonly uvScale: Float32Array;
   /** The rest bake of the worn set, kept for the corner bakes to reuse. */
@@ -201,18 +261,25 @@ export class HumanoidModel {
       return a;
     });
 
-    // Body faces a worn attachment covers (its MHCLO delete_verts) are left out.
-    // As in MakeHuman, a face goes only when all its corners are deleted: one
-    // that keeps a visible corner stays, so no gap opens at a garment's edge.
-    const hidden = new Set<number>();
-    for (const a of wearing) for (const v of a.deleteVerts) hidden.add(v);
-    const bodyFaces = groupFaces(assets, "body").filter((f) => {
-      for (let k = 0; k < 4; k++)
-        if (!hidden.has(assets.faceVerts[f * 4 + k] as number)) return true;
-      return false;
-    });
+    // The body surface is built from every body face and never rebuilt. What a
+    // worn thing covers is a mask over its triangles (docs/ARCHITECTURE.md,
+    // "Clothing"): an attachment's MHCLO delete_verts hide the faces whose
+    // corners are all deleted, which `topology()` already carries, and a
+    // garment outfit hides more (`outfit`). As in MakeHuman, a face goes only
+    // when all its corners are deleted: one that keeps a visible corner stays,
+    // so no gap opens at an edge.
+    const bodyFaces = groupFaces(assets, "body");
+    this.bodyFaces = bodyFaces;
+    this.mountedVisible = new Uint8Array(assets.manifest.vertexCount).fill(1);
+    for (const a of wearing) for (const v of a.deleteVerts) this.mountedVisible[v] = 0;
     this.body = part(
       buildSurfaceMesh({ ...assets, vertexCount: assets.manifest.vertexCount }, bodyFaces, level),
+    );
+    this.bodyTrianglesPerFace = 2 * 4 ** level;
+    this.mountedBodyIndex = maskIndex(
+      this.body.mesh.index,
+      faceVisibility(assets.faceVerts, bodyFaces, this.mountedVisible),
+      this.bodyTrianglesPerFace,
     );
     const verts = new Set<number>();
     for (const f of bodyFaces)
@@ -256,7 +323,10 @@ export class HumanoidModel {
     }));
   }
 
-  private attachmentSurface(asset: BoundAsset, level: number): SurfaceMesh {
+  private attachmentSurface(
+    asset: Bound & Pick<BoundAsset, "faceVerts" | "faceUvs" | "uvs">,
+    level: number,
+  ): SurfaceMesh {
     const skin = bindingSkin(asset, this.assets.skinIndex, this.assets.skinWeight);
     return buildSurfaceMesh(
       {
@@ -466,6 +536,7 @@ export class HumanoidModel {
     return {
       body: {
         ...topologyOf(this.body.mesh),
+        index: this.mountedBodyIndex,
         layerFields: this.layerFields,
         layers: SKIN_LAYERS.map((l) => l.id),
         uvScale: this.uvScale,
@@ -543,7 +614,11 @@ export class HumanoidModel {
    * docs/ARCHITECTURE.md, "Skin states") add their state morphs. A state is
    * never part of the recipe; adult-only signals are refused under 18.
    */
-  evaluate(recipe: Recipe, signals: Readonly<Record<string, number>> = {}): Evaluation {
+  evaluate(
+    recipe: Recipe,
+    signals: Readonly<Record<string, number>> = {},
+    haveOutfit: string | null = null,
+  ): Evaluation {
     const contributions = this.contributions(recipe, signals);
     const pending = this.pendingFor(contributions);
     if (pending.size)
@@ -551,6 +626,8 @@ export class HumanoidModel {
         `the recipe needs target files that have not loaded yet: ${[...pending].join(", ")} ` +
           "(await their stage of loadHumanoidAssetsStaged)",
       );
+    // Before any geometry: a recipe naming a garment that cannot be worn fails whole.
+    const outfit = this.outfit(recipe.outfit ?? []);
     const control = new Float32Array(this.assets.positions.length);
     evaluateMorph(this.assets.positions, this.assets.targets, contributions, control, this.regions);
     let minY = Number.POSITIVE_INFINITY;
@@ -559,6 +636,13 @@ export class HumanoidModel {
     const attachments = this.attached.map((a) =>
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
     );
+    // The figure stands on what it wears: a sole reaches below the foot inside it.
+    const garments = outfit.order.map((id) => {
+      const g = this.garmentPart(id);
+      const placed = evaluateBinding(g.asset, control, g.control);
+      for (let i = 1; i < placed.length; i += 3) minY = Math.min(minY, placed[i] as number);
+      return this.evaluatePart(g.part, placed);
+    });
     const curvature = meanCurvature(
       body.positions,
       body.normals,
@@ -566,7 +650,116 @@ export class HumanoidModel {
       new Float32Array(body.positions.length / 3),
     );
     const boneHeads = restBones(this.assets, control).heads;
-    return { ...body, attachments, groundOffset: -minY, control, curvature, boneHeads };
+    return {
+      ...body,
+      attachments,
+      garments,
+      outfit: {
+        key: outfit.key,
+        order: outfit.order,
+        masks: outfit.key === haveOutfit ? null : outfit.masks,
+      },
+      groundOffset: -minY,
+      control,
+      curvature,
+      boneHeads,
+    };
+  }
+
+  /** A garment of the loaded clothing pack, or why it cannot be worn. */
+  private garmentAsset(id: string): BoundGarment {
+    const garment = this.assets.garments.get(id);
+    if (garment) return garment;
+    if (!this.assets.clothingManifest)
+      throw new OutfitError(`cannot wear ${id}: no clothing pack is loaded`);
+    if (this.assets.garmentsPending)
+      throw new OutfitError(
+        `cannot wear ${id}: the garments have not loaded yet (await their stage of loadHumanoidAssetsStaged)`,
+      );
+    throw new OutfitError(`the clothing pack has no garment ${id}`);
+  }
+
+  /** A garment's surface and scratch space, built on first use. */
+  private garmentPart(id: string) {
+    let g = this.garmentParts.get(id);
+    if (!g) {
+      const asset = this.garmentAsset(id);
+      g = {
+        asset,
+        part: part(this.attachmentSurface(asset, this.attachmentLevel)),
+        control: new Float32Array(asset.entry.vertexCount * 3),
+      };
+      this.garmentParts.set(id, g);
+    }
+    return g;
+  }
+
+  /**
+   * A garment's static render data, built once: its surface at the model's
+   * subdivision (at most 1, like the attachments'), skin weights, UVs and
+   * material. Draw it with the `garmentIndex` its outfit gives.
+   */
+  garmentTopology(id: string): GarmentTopology {
+    let t = this.garmentTopologies.get(id);
+    if (!t) {
+      const { asset, part: p } = this.garmentPart(id);
+      const url = (file: string | null | undefined) =>
+        file ? (this.assets.fileUrls.get(file) ?? null) : null;
+      t = {
+        ...topologyOf(p.mesh),
+        id,
+        kind: asset.entry.kind,
+        zDepth: asset.entry.zDepth,
+        tags: asset.entry.tags,
+        material: asset.entry.material,
+        textureUrl: url(asset.entry.material.texture),
+        normalTextureUrl: url(asset.entry.material.normalTexture),
+      };
+      this.garmentTopologies.set(id, t);
+    }
+    return t;
+  }
+
+  /**
+   * The outfit for a set of garment ids, in any order: how they stack, and
+   * the triangles of the body and of each garment that show. The body surface
+   * is not rebuilt for it. Garments stack by category, then `z_depth`, then
+   * id (`layerOrder`), and each is hidden only where garments over it delete,
+   * so a coat hides the shirt under it, never the other way round
+   * (`stackVisibility`). Throws `OutfitError` for a garment the loaded clothing
+   * pack does not have, one named twice, or garments that have not loaded yet.
+   */
+  outfit(ids: readonly string[]): Outfit {
+    const entries = ids.map((id) => this.garmentAsset(id));
+    const order = layerOrder(entries.map((g) => g.entry));
+    const key = order.join("|");
+    const known = this.outfits.get(key);
+    if (known) {
+      // Most recently used last, so the oldest is the one dropped.
+      this.outfits.delete(key);
+      this.outfits.set(key, known);
+      return known;
+    }
+    const stack = stackVisibility(this.assets.manifest.vertexCount, entries, this.mountedVisible);
+    const bodyIndex = order.length
+      ? maskIndex(
+          this.body.mesh.index,
+          faceVisibility(this.assets.faceVerts, this.bodyFaces, stack.base),
+          this.bodyTrianglesPerFace,
+        )
+      : this.mountedBodyIndex;
+    const garmentIndex = order.map((id) => {
+      const { asset, part: p } = this.garmentPart(id);
+      return maskIndex(
+        p.mesh.index,
+        faceVisibility(asset.faceVerts, null, stack.garments.get(id) as Uint8Array),
+        2 * 4 ** this.attachmentLevel,
+      );
+    });
+    const outfit: Outfit = { key, order, masks: { bodyIndex, garmentIndex } };
+    this.outfits.set(key, outfit);
+    if (this.outfits.size > 8) this.outfits.delete(this.outfits.keys().next().value as string);
+    return outfit;
   }
 
   private evaluatePart(p: Part, control: Float32Array): SurfaceEvaluation {
