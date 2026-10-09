@@ -39,8 +39,7 @@ masked in darker skin. At light tones, flush 1 turns the nose strongly red.
 
 ## What is not rendered yet
 
-The skin-state signals `heat`, `exertion`, `blush` and `fear` are accepted by
-`<Humanoid signals>` but nothing on `main` draws them. Only `cold` has a visible
-effect, through its state morph (nipple and areola, `docs/evidence/posing.md`).
-Their colour and relief layers (pallor, flush, sweat sheen, goosebumps) are
-queued as their own work.
+The skin-state signals are drawn by their own layers, with their own sheets in
+`docs/evidence/states.md`; the rest-state regions on this page are layer zero
+beneath them. Goosebumps are drawn; `heat`, `exertion`, `blush` and `fear`'s
+colour and sheen are not yet.

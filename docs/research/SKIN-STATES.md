@@ -218,6 +218,24 @@ Not found: measured specular/gloss (sheen) change from sweat, nor L*a*b*shift of
 4. States are best parameterised by physiology you CAN verify: goosebump episode duration 9-13 s, raised follicle-scale papules ~0.15-0.2 mm (single device) at density 14-32 /cm2; nipple: areola circumference -2 to -6% and nipple height +8 to +19% with cold (free grafts, so lower bound); penile erect/flaccid +43% length, +25% circumference; sweat flow map; skin strain 25% (volar forearm extension) to >60% (knee flexion).
 5. Highest-value follow-ups (can be done, not done here): (a) obtain Sommers 2008 per-site L*a*b*tables (vulvar epidermis, posterior fourchette, vaginal wall; N=63 black / 57 white); (b) check the hyperspectral facial database data release for per-position spectra across tones; (c) ask the JBO 2022 authors for palm a*,b*; (d) look for a Stephen et al. Table S1 (hand-perfusion CIELab axes) to seed a blood-flow colour vector, then scale by the melanin attenuation from ISSA spectra; (e) pull Smith & Havenith body-map tables; (f) read the NIST forearm CSV licence.
 
+---------------------------------------------------------------------------
+
+## PART C - What the state layers use (implementation, 2026-10-09)
+
+Each magnitude in `src/surface/regions/states.ts` is either one of the sources
+above (cited) or a choice (marked CHOICE, with what bounds it). Contact sheets
+of the result: `docs/evidence/states.md`.
+
+### C1. Goosebumps (`cold`, `fear`)
+
+| Quantity | Value | Source |
+| --- | --- | --- |
+| Papule height at signal 1 | 194 µm (`GOOSEBUMP_HEIGHT`); signal 0.75 is 145 µm | Kim 2014, two episodes on one forearm (B1). Height scales linearly with the signal. |
+| Papule density | 21 per cm² (`GOOSEBUMP_DENSITY_PER_CM2`), one bump per cell, spacing 2.18 mm | The geometric mean of follicle densities 14 (calf) to 32 (upper arm) per cm² (Otberg 2004, quoted in McPhetres 2024, B1). CHOICE: one density for the whole body, since a layer has one bump spacing. |
+| Triggers | `cold` and `fear`, combined as 1 − (1 − cold)(1 − fear) | Thermal, tactile and audio-visual stimuli are equally effective (McPhetres 2024, B1). The union is a CHOICE. |
+| Where | Body minus the head zone, palms, soles and areola | B1: arm, thigh and calf measured; "by construction not palms/soles/lips". CHOICE: the face and scalp are left out (no goosebumps are observed there). |
+| How the zones are measured | Skin weights for zones, vertex normals for palm and sole, the existing areola disk | Base mesh data only; see ARCHITECTURE.md, "Skin states". |
+
 ## ITEMS I COULD NOT VERIFY / PRIMARY NOT OPENED
 
 - Masters & Johnson 1966 magnitudes; Maravilla MRI clitoral volume percentages; Veale full text; Charkoudian 2003 numbers; Hermanns 2000 primary; Otberg 2004 follicle densities (secondary only); Malaysian periorbital study (search-summary only); NIST dataset details (search-summary only); Kim 2014 volume/issue/page (APL 105, article number guessed as 013504 - treat as unverified; DOI 10.1063/1.4881888 is verified via Crossref); per-site numbers in Korean and Chinese body-map papers (figures only); any deep-skin (V-VI) erythema/a* magnitude for flush, exercise or blush.

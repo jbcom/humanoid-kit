@@ -536,6 +536,23 @@ Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
    change slowly (seconds), so a re-evaluation per change is acceptable;
    colour, detail and sheen states cost no evaluation at all.
 
+**Built (2026-10-09), in `src/surface/regions/states.ts`.** Each state layer
+cites its magnitudes in `docs/research/SKIN-STATES.md` Part C, and its contact
+sheets are in `docs/evidence/states.md`.
+
+- *Goosebumps* (`cold`, `fear`). Hair-bearing skin is the base mesh's body minus
+  the head zone (face, lips, scalp), the palms, the soles and the areola. None
+  of it needs a new target, because the base mesh is frozen: the zones are
+  measured from what the mesh carries (`skinZones`). The skeleton's skin weights
+  give soft zone masks (`buildBoneField`, the shape traits' construction on a
+  finer partition); vertex normals tell the palmar side of a hand (the cross
+  product of the hand's axis and its thumb's direction, mirrored for the right
+  hand) and the sole of a foot (normals facing down) from the rest; and the
+  existing areola disk (`diskMask`) is reused. The base mesh's body has no
+  genital skin (its genital helper is a separate, undrawn group), so the adult
+  pack's layers own that region. Papule height scales with the signal up to the
+  largest measured, and its spacing is the follicle density's.
+
 **Adult-pack layers (design, 2026-10-09; built with the milestone 3 graft
 lane).** Genital-region colour, relief and state layers draw their masks from
 the adult pack's targets, which arrive in the last load stage, after the

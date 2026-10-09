@@ -300,7 +300,8 @@ compute what the renderer will do.
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
   `SkinLayer` (`id`, `blend`, `targets`, `fields(assets)`, `paint(input)`),
-  `SKIN_LAYERS` (the stack, in order: flush, lips, areola), `SKIN_LAYER_TARGETS`,
+  `SKIN_LAYERS` (the stack, in order: flush, lips, areola, then the state
+  layers below), `SKIN_LAYER_TARGETS`,
   `targetMask(assets, targets, lo, hi)` for masks measured from targets,
   `diskMask(assets, targets, soft?)` for a feature the targets outline (filled
   per side of the body),
@@ -320,6 +321,22 @@ compute what the renderer will do.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).
+- Skin-state layers (`src/surface/regions/states.ts`), driven by the signals in
+  `SkinPaintInput.signals`; every magnitude is cited, or marked as a choice, in
+  research/SKIN-STATES.md Part C:
+  - `GOOSEBUMP_LAYER` (`cold`, `fear`: either raises papules, and two triggers
+    combine as independent): a `bumps` detail layer on hair-bearing skin only,
+    `GOOSEBUMP_HEIGHT` (194 µm at signal 1) tall at `GOOSEBUMP_DENSITY_PER_CM2`
+    (21) per cm². Relief is a close-up effect: it fades where a cell is finer
+    than about a pixel (a few millimetres), so at full-figure distances the
+    skin shows nothing.
+  - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones
+    (head, hand, thigh, …) as soft per-vertex masks from the skin weights, plus
+    its `front`, `palm` and `sole` fields from the vertex normals and joints, all
+    measured from the base mesh and cached per set of assets.
+    `buildBoneField(assets, names, zoneOfBone, fallback, smoothing?)` builds
+    such a partition for any grouping of the bones (`buildRegionField` is it
+    for the shape traits' regions).
 - The scatter model `SkinMaterial` renders (its constants and table come from
   these, and the browser tests hold the shader to them): `scatterDistance(albedo, mfp?, slope?, pigmentDepth?,
   substrate?)` gives each channel's scatter width in metres, and
