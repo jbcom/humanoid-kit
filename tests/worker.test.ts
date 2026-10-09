@@ -235,6 +235,7 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
         "penis",
         "testes",
         "phallus",
+        "scrotum",
         "mound",
       ]);
       expect(shapeSignalNames([], ready.anatomy)).toEqual(["arousal"]);
