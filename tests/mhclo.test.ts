@@ -33,6 +33,27 @@ describe("parseMhclo", () => {
     expect([...b.refVerts]).toEqual([4, 4, 4]);
   });
 
+  it("keeps reading vertices after keyword lines written between `verts` and the data", () => {
+    // The system shoes put `material` and `vertexboneweights_file` there; a
+    // reader that ends the block at the first keyword binds none of the mesh.
+    const b = parseMhclo(
+      `${HEADER}verts 0\nmaterial shoe.mhmat\nvertexboneweights_file shoe.mhw\n4\n1 2 3 0.5 0.25 0.25 0 0 0\n`,
+    );
+    expect(b.material).toBe("shoe.mhmat");
+    expect([...b.refVerts]).toEqual([4, 4, 4, 1, 2, 3]);
+  });
+
+  it("does not end a section at a blank line, as MakeHuman's reader does not", () => {
+    const b = parseMhclo(`${HEADER}verts 0\n1\n\n2\ndelete_verts\n0 - 1\n\n5 - 6\n`);
+    expect([...b.refVerts]).toEqual([1, 1, 1, 2, 2, 2]);
+    expect([...b.deleteVerts]).toEqual([0, 1, 5, 6]);
+  });
+
+  it("reads a delete_verts range that wraps onto the next line", () => {
+    const b = parseMhclo(`${HEADER}verts 0\n1\ndelete_verts\n3 - 4 8\n- 10\n`);
+    expect([...b.deleteVerts]).toEqual([3, 4, 8, 9, 10]);
+  });
+
   it("rejects malformed vertex lines and a missing obj_file", () => {
     expect(() => parseMhclo(`${HEADER}verts 0\n1 2\n`)).toThrow(/1 or 9 fields/);
     expect(() => parseMhclo("name x\n")).toThrow(/obj_file/);
