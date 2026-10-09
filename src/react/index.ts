@@ -1,3 +1,4 @@
+export type { BodyArtImages } from "../render/bodyArtTexture.ts";
 export { applyDualSkinning, DualBones } from "../render/dualSkinning.ts";
 export {
   Humanoid,

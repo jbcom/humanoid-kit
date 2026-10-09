@@ -61,7 +61,7 @@ export const EXPRESSION_DEPTH = {
 /** Grooves across each set's window (art-directed). */
 export const EXPRESSION_COUNT = {
   forehead: 3,
-  glabella: 2,
+  glabella: 4,
   crowsFeet: 3,
   nasolabial: 1,
   nose: 3,
@@ -273,8 +273,8 @@ function distanceFromBrows(assets: HumanoidAssets): Float32Array {
 }
 
 /** Horizontal lines across the forehead, above the brows. */
-const FOREHEAD_FROM = 0.014;
-const FOREHEAD_TO = 0.058;
+const FOREHEAD_FROM = 0.01;
+const FOREHEAD_TO = 0.062;
 const forehead = cached((assets) => {
   const { brow } = landmarks(assets);
   const dist = distanceFromBrows(assets);
@@ -282,13 +282,15 @@ const forehead = cached((assets) => {
     const d = dist[v] as number;
     if (!Number.isFinite(d)) return [0, 0];
     return [
-      smoothstep(FOREHEAD_FROM, FOREHEAD_FROM + 0.012, d) *
-        (1 - smoothstep(FOREHEAD_TO - 0.016, FOREHEAD_TO, d)) *
+      smoothstep(FOREHEAD_FROM, FOREHEAD_FROM + 0.014, d) *
+        (1 - smoothstep(FOREHEAD_TO - 0.02, FOREHEAD_TO, d)) *
         // Above the brows only, and fading toward the temples.
         smoothstep(brow[1] - 0.002, brow[1] + 0.004, y) *
-        (1 - smoothstep(0.042, 0.056, Math.abs(x))) *
+        (1 - smoothstep(0.048, 0.062, Math.abs(x))) *
         smoothstep(0.2, 0.5, nz),
-      (d - FOREHEAD_FROM) / (FOREHEAD_TO - FOREHEAD_FROM),
+      // The grooves run across the forehead by height, which is smooth over the
+      // coarse mesh where a distance along its edges is not.
+      (y - (brow[1] + FOREHEAD_FROM)) / (FOREHEAD_TO - FOREHEAD_FROM),
     ];
   });
   return f;
@@ -298,13 +300,18 @@ const forehead = cached((assets) => {
 const glabella = cached((assets) => {
   const { eye } = landmarks(assets);
   const dist = distanceFromBrows(assets);
-  const half = 0.016;
+  // Four grooves across 6 cm put them at 0.75 and 2.25 cm either side of the midline;
+  // the mask keeps only the two nearest, a centimetre and a half apart, straight and
+  // near-vertical, and the coordinate runs unclamped across the whole window so the
+  // grooves do not bend where a clamp would flatten it.
+  const half = 0.03;
+  const reach = 0.013;
   return fieldsOfVertices(assets, (v, x, y, _z, _nx, _ny, nz) => {
     const d = dist[v] as number;
     if (!Number.isFinite(d)) return [0, 0];
     return [
       (1 - smoothstep(0.012, 0.026, d)) *
-        (1 - smoothstep(half - 0.004, half, Math.abs(x))) *
+        (1 - smoothstep(reach - 0.004, reach, Math.abs(x))) *
         smoothstep(eye[1] + 0.008, eye[1] + 0.016, y) *
         smoothstep(0.2, 0.5, nz),
       (x + half) / (2 * half),

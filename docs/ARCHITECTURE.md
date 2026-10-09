@@ -764,8 +764,8 @@ mean what they meant there; everything must be testable in Node.
   joint layout, every other channel at rest, packed into the same entries. The
   first is `relaxed`, standing at ease with the arms at the sides, since the
   rest A-pose holds them 42° out; `bent`, `flexed`, `twisted`, `abducted`
-  (the thighs opened 40°), `seated` (the hips and knees at 90°) and `tucked`
-  (the hips at 120°) are the joint extremes the skinning and the creases are
+  (the thighs opened 40°), `seated` (the hips and knees at 90°), `tucked`
+  (the hips at 120°) and `bowed` (the trunk folded 60°) are the joint extremes the skinning and the creases are
   checked at (below), which the pack's benchmark does not reach: it bends no
   elbow, knee or wrist. An expression layers on top of a body pose bone by
   bone.
@@ -833,9 +833,11 @@ forehead's lines and the furrows are bounded by distance along the skin from
 the brows' band (`distanceFromBrows`: Dijkstra over the mesh's edges), not by
 height, since the mesh is coarse over the forehead and a mask built from heights
 leaked across big triangles up and over the crown on the first sheets: the
-forehead lines run from 1.4 to 5.8 cm along the skin above the brows, fading
-toward the temples, and the furrows reach 1 to 2.6 cm above them, between the
-brows (frontalis lines stop 5 to 7 cm above the brows, glabellar lines are 1 to
+forehead lines (by height, which is smooth over the coarse mesh where a distance along its edges bends the grooves) run from 1 to 6.2 cm above the brows, fading
+toward the temples, and the furrows reach 1 to 2.6 cm above them, two straight near-vertical
+grooves 1.5 cm apart either side of the midline (a coordinate that runs
+unclamped across 6 cm with four grooves, of which the mask keeps the middle two,
+so no clamp bends them), between the brows (frontalis lines stop 5 to 7 cm above the brows, glabellar lines are 1 to
 2.5 cm long; a test holds every layer's mask to its extent). The
 crow's feet and the folds are each one layer for both sides, the coordinate
 being the angle about its own corner and the distance across its own fold, so
@@ -876,10 +878,29 @@ one closed surface, wound consistently, so the volume is exact). Worst body for
 | thigh twisted 90° | 0.93 / 0.72 / −34.1‰ | 1.00 / 1.00 / −8.9‰ | 0.97 / 0.83 / −13.9‰ |
 | arm raised forward 130° | 0.81 / 0.41 / −19.4‰ | 0.97 / 0.57 / −2.3‰ | 0.94 / 0.53 / −10.5‰ |
 | arm raised sideways 130° | 0.87 / 0.48 / −9.6‰ | 0.97 / 0.67 / −12.5‰ | 0.96 / 0.67 / −4.6‰ |
-| hip flexed 120° | 0.80 / 0.30 / −35.2‰ | 0.97 / 0.47 / −17.4‰ | 0.95 / 0.42 / −19.8‰ |
+| arm raised forward 170° | 0.76 / 0.17 / −24.1‰ | 0.94 / 0.42 / −3.3‰ | 0.91 / 0.41 / −14.6‰ |
+| arm raised sideways 170° | 0.84 / 0.28 / −8.0‰ | 0.96 / 0.70 / −16.3‰ | 0.95 / 0.63 / −1.2‰ |
+| hip flexed 120° | 0.80 / 0.30 / −35.2‰ | 0.97 / 0.47 / −17.4‰ | 0.86 / 0.36 / −24.0‰ |
+| spine folded forward 90° | 1.02 / 0.88 / −72.6‰ | 1.03 / 0.89 / −66.2‰ | 1.02 / 0.88 / −71.3‰ |
 | hip abducted 45° | 0.98 / 0.70 / −17.1‰ | 1.00 / 0.74 / −15.2‰ | 0.99 / 0.73 / −15.6‰ |
 | knee flexed 120° | 0.81 / 0.22 / −6.4‰ | 0.93 / 0.26 / −2.5‰ | 0.81 / 0.22 / −6.4‰ |
 | elbow flexed 120° | 0.84 / 0.33 / −3.8‰ | 0.91 / 0.31 / −3.9‰ | 0.90 / 0.31 / −3.9‰ |
+
+**The shoulder past 150° and the spine (2026-10-09).** The benchmark pose sends
+the arms overhead, and a trunk can fold; the bench goes to 170° for a raised arm
+and folds the spine 30°, 60° and 90° forward, shared equally along its five
+bones (`bowed` is the 60° pose). At 170° linear skinning collapses the shoulder
+(girth 5th percentile 0.17 forward) and the blend holds it (0.41), with the bulge
+1.29 forward and 1.17 to the side, under the 1.45 the table allows: no change
+is needed, and new gates hold the numbers. The spine folds with a girth 5th
+percentile of 0.88 at 90° (mean 1.02, 95th percentile 1.15) in every scheme, so
+the belly and back keep their size; the volume lost, 71‰ at 90° and 48‰ at 60°
+(about 2.6 L), is first order in the angle (turning only the upper chest by 10°
+loses 9‰), the same under linear skinning (−72.6‰), dual quaternions (−66.2‰)
+and the blend: it is the weights', and none of the shares changes it. It is the
+largest loss in the table, and the one a pose-space corrective (a volume
+restoring inflation of the trunk along its normals, keyed on the spine's flexion)
+would be for, if a figure is seen bowing.
 
 The pack's benchmark pose bends no elbow, knee or wrist, so `flexed` (every
 hinge near its limit) and `twisted` (each limb turned past what a body can) are
@@ -1240,19 +1261,30 @@ four ages, with a test that fails without the lift); lashes are not, since they
 are meant to stand clear of the lid.
 
 **Colour and density** (`src/surface/decalTone.ts`). One hair colour drives all
-three: the brows are `hairAlbedo(colour)`, the lashes the same hue darker by a
-fixed `LASH_DARKEN` (0.55). The mask is white, so the material's colour is the
-only colour it takes. A child's brows and lashes are finer and fewer: the decal's
-opacity, which multiplies the mask's alpha before the material's cut-off (0.35),
-ramps from 0.45 (brows) or 0.7 (lashes) at birth to 1 by 14, so the partial
-strokes go first. **Choices**, not measurements: no source of brow or lash density
-by age ships here, so the numbers are tuned against `docs/evidence/brows.md`.
+three: the brows are `hairAlbedo(colour)`, the scalp's own albedo, the lashes
+0.55 as deep (`LASH_DARKEN`). The mask is white, so the material's colour is the
+only colour it takes. A browser test renders a brow and a scalp card of one colour
+under one light and holds their chromaticity within 0.02 and their brightness
+within a third (the material takes `HairMaterial`'s base specular and sheen, which
+is what keeps dark brown and red hair warm). A child's brows and lashes are finer
+and fewer: the decal's opacity, which multiplies the mask's alpha, ramps from 0.45
+(brows) or 0.7 (lashes) at birth to 1 by 14. Both are **choices**: no source of
+brow or lash density by age ships here, so the numbers are tuned against
+`docs/evidence/brows.md`.
 
-**The material** (`DecalMaterial`, `src/render/decalMaterial.ts`) is a plain
-standard one, not `HairMaterial`: a decal has no growth, hairline fade or fin, and
-the hair material reads a missing one as "dithered away". It cuts by the mask,
-takes its edges as hair does (alpha-to-coverage on a multisampled target, an
-alpha test otherwise) and draws over the skin by a polygon offset.
+**The material** (`DecalMaterial`, `src/render/decalMaterial.ts`) is a physical
+one, not `HairMaterial`: a decal has no growth, hairline fade or fin, and the hair
+material reads a missing one as "dithered away". It **blends** by the mask's alpha
+rather than cutting it out: a brow is a band of hairs thinner than a pixel, and
+the cut-out (alpha test or alpha-to-coverage) kept a stroke or dropped it, so the
+first renders were a few hard pencil lines; blended, a thin stroke keeps the
+partial opacity it covers. A soft fill (two blurs of the mask, a mip each, at 0.9
+and 0.5 of their density) lies under the strokes, the body and the sparse soft edge
+of a real brow. It **casts and receives no shadows**: a decal 2 mm off the skin
+would shade the skin round its quad's outline (a faint halo on the first sheets)
+and be shaded by the skin under it, and that, not its colour, was why a blonde's
+brow read dark and olive. It draws after the skin without writing depth, and over
+it by a polygon offset.
 
 ## Body hair
 
@@ -1871,8 +1903,27 @@ pack's, and is adult-only by construction (`ADULT_ONLY_PIERCING`): the core
 fails closed without naming any adult site. Tattoos and marks apply at every
 age.
 
-**Landed so far:** the recipe field, its validation, the age policy and the
-sites. The texture, the marks and the piercings follow in their own commits.
+**Tattoos, as built.**
+
+- The worker places the body art on each evaluation (`Evaluation.bodyArt`,
+  frames on the morphed control mesh), since only it has the assets that
+  name the sites.
+- `<Humanoid>` bakes the texture from that placement and the evaluated
+  surface (`bakeBodyArt`, `src/render/bodyArtTexture.ts`) with the images the
+  application passes (`bodyArtImages`).
+- A new evaluation rebakes into a new texture that replaces the old in the
+  same uniform, so only a figure gaining or losing body art rebuilds its
+  shader.
+- The projection reaches 30% of the tattoo's longer side off the skin's plane
+  (at least 1 cm) and skips skin facing away from it, so a tattoo on a
+  forearm never lands on the hip behind it.
+- The ink's colour is stored sRGB-encoded so dark inks keep their precision
+  in eight bits.
+- The browser tests hold the bake to its frame (orientation, the seam, facing
+  and reach, a later tattoo over an earlier one) and the shader to `inkSeen`.
+
+**Landed so far:** the recipe field, its validation, the age policy, the
+sites, and tattoos. The marks and the piercings follow in their own commits.
 
 ### Joint creases (2026-10-09)
 

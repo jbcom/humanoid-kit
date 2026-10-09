@@ -226,6 +226,7 @@ describe("body poses", () => {
       "benchmark",
       "abducted",
       "bent",
+      "bowed",
       "flexed",
       "relaxed",
       "seated",
@@ -233,6 +234,26 @@ describe("body poses", () => {
       "twisted",
     ]);
     expect(() => bodyPoseRotations(rig, "dab")).toThrow(/dab/);
+  });
+
+  it("folds the trunk forward 60° along the spine in the bowed pose, each of the five bones a fifth", () => {
+    const heads = posedBoneHeads(rest, bodyPoseRotations(rig, "bowed"));
+    const at = (h: Float32Array, n: string, k: number) => h[bone(n) * 3 + k] as number;
+    const pitch = (h: Float32Array) => {
+      const dy = at(h, "spine01", 1) - at(h, "spine05", 1);
+      const dz = at(h, "spine01", 2) - at(h, "spine05", 2);
+      return (Math.atan2(dz, dy) * 180) / Math.PI;
+    };
+    // The rest pose: `bowed` is the rest A-pose with the spine turned, as `bent` is.
+    const standing = posedBoneHeads(rest, IDENTITY_POSE(rest.names.length));
+    // The line from the lowest spine head to the highest leans over by the average of the bones'
+    // turns up to the highest head: 12°, 24°, 36° and 48° (the last bone turns that head's
+    // successor, not the head), about 30°.
+    expect(pitch(heads) - pitch(standing)).toBeGreaterThan(26);
+    expect(pitch(heads) - pitch(standing)).toBeLessThan(40);
+    // The legs stay where they were.
+    for (const n of ["upperleg01.L", "lowerleg01.L", "foot.L"])
+      for (let k = 0; k < 3; k++) expect(at(heads, n, k), n).toBeCloseTo(at(standing, n, k), 5);
   });
 
   it("draws the knees up in the tucked pose: each thigh flexed 120° at the hip, the shin back down", () => {
