@@ -124,6 +124,49 @@ Dermatological context only: Skin colour of Montgomery glands, glans/mucosal tis
 | "Skin Colour Does Not Define Ethnicity" (SRT 2026, 10.1111/srt.70343) and "Unifying the spectrum" (JBO 2026, 10.1117/1.jbo.31.9.095005) | CC BY | both analyse ISSA (14,000-15,256 spectra, 8 groups) | confirm ISSA body-site coverage and note a published meta-framework to cite |
 | Skin characteristics: normative data ... 16 anatomical locations, Skin Res Technol 22:263 (2016), DOI 10.1111/srt.12256 | closed (abstract) | N=241, Mexameter erythema and melanin at 16 sites, 6 age bands | single-site tables would need purchase; cite only; skin types not stratified |
 
+### A6. Hands (2026-10-09)
+
+Palm colour with a\* and b\*, deep skin included. The International Skin
+Spectra Archive (Lu et al., Sci Data 2025, DOI 10.1038/s41597-025-04857-5;
+data figshare DOI 10.6084/m9.figshare.28228571.v4; CC BY 4.0; the archive the
+skin model's anchors come from) measured palm (site 11) and back of hand
+(site 1), specular included (SCI). Computed here from the archive: the 777
+people with both sites, paired, binned by the back of the hand's L\*.
+
+| Back-of-hand L\* | n | Back L\*, a\*, b\* | Palm L\*, a\*, b\* |
+| --- | --- | --- | --- |
+| < 35 | 45 | 31.8, 8.8, 9.7 | 48.2, 11.0, 17.7 |
+| 35 to 45 | 28 | 38.8, 10.7, 15.0 | 53.4, 11.2, 16.8 |
+| 45 to 55 | 122 | 51.8, 10.5, 17.4 | 58.7, 10.4, 14.8 |
+| 55 to 65 | 518 | 59.9, 8.8, 16.9 | 62.7, 9.0, 14.1 |
+| > 65 | 64 | 67.1, 7.2, 16.0 | 66.6, 8.1, 14.6 |
+
+The deep end is the archive's African group (UK-resident, one site, one
+instrument, Fitzpatrick type not recorded): palm minus back, paired, n = 65,
++15.6 L\*, +1.6 a\*, +6.3 b\*. Palm chroma is not lost on deep skin (C\* 21.3,
+higher than every other group's palm, about 15.8). The archive does not define
+the palm site's exact location.
+
+| Source | Licence | What it gives | Deep skin |
+| --- | --- | --- | --- |
+| Phan T, Rowland R, Ponticorvo A, Le BC, Wilson RH, Durkin AJ et al., J Biomed Opt 27:036002 (2022), DOI 10.1117/1.JBO.27.3.036002 (the JBO 2022 paper of A1) | CC BY 4.0 | Palm and ventral forearm L\* per person (Table 1, A1). Used as an independent check of the archive's palms. | YES |
+| Horibata K et al., J Gen Fam Med (2025), DOI 10.1002/jgf2.776 | CC BY-NC 4.0 | 67 non-anaemic Japanese outpatients (CM-700d): palm L\* 61.2, a\* 8.0, b\* 15.3; inner upper arm 65.0, 5.4, 15.4; nail (bed through plate) 54.3, 4.9, 10.1. Table header labels lost in the XML; the non-anaemic column inferred from the abstract. | NO |
+| Leeb G et al., eBioMedicine (2024), DOI 10.1016/j.ebiom.2024.105051 | CC BY 4.0 | 34 adults, Fitzpatrick I to VI (9 of V to VI), ITA only: fingernail −9.8° to 68.1°, palmar finger pad −3.4° to 40.7°, dorsal finger −67.0° to 46.8°, forehead −65.7° to 44.7°. The palm side and the nail barely darken. | YES |
+| Bugbee WD, Botte MJ, Clin Orthop Relat Res 296:122 (1993), DOI 10.1097/00003086-199311000-00023 | closed (abstract) | 53 hands, radio-opaque markers: distal and middle digital creases 7 to 8 and 2 to 3 mm proximal to their joints; proximal digital crease 14 to 20 mm distal to the metacarpophalangeal joint; distal transverse palmar crease 6.8 to 10.3 mm and proximal transverse 9.1 to 22.1 mm from their associated metacarpophalangeal joints. | not stated |
+| Kosif R, Diramali M, Sertel S, Int J Morphol 33:173 (2015), DOI 10.4067/S0717-95022015000100028 | SciELO OA (licence not read) | Quotes Doyle and Botte 2003: middle digital crease 1.6 to 2.6 mm proximal to the PIP joint, proximal 14.4 to 19.6 mm distal to the MCP joint, thumb IP crease 2.2 mm proximal to its joint, thumb MCP crease over its joint. Own data, 164 Turkish adults, calipers: lengths between a finger's creases (right hands of right-handed men / women, mm): index 24.35 / 22.82 proximal-to-middle, 22.02 / 20.45 middle-to-distal; middle 27.23 / 25.42, 24.93 / 23.38; ring 23.98 / 21.98, 23.00 / 21.40; little 19.11 / 17.63, 16.93 / 15.28. | NO |
+| Padmanabha A et al., Adv Healthc Mater (2026), DOI 10.1002/adhm.202504402 | CC BY-NC-ND | 15 adults, Fitzpatrick III to VI (4 of V to VI), tactile probe: 80th-percentile micro-wrinkle depth 35.9 µm at the knuckle against 21.1 µm on the back of the hand and about 19 µm on the palm. Micro-relief, not fold depth. | YES |
+| Gahalaut P et al., ISRN Dermatol (2014), DOI 10.1155/2014/271230 | CC BY 3.0 | 168 healthy Indian adults: lunula visible on 95 to 98% of thumbs, 84 to 89% of index, 80 to 83% of middle, 56 to 60% of ring and 46 to 51% of little fingernails. Lunula length not given. | not stated |
+| Saleah SA et al., Sci Rep (2021), DOI 10.1038/s41598-020-79497-3 | CC BY | Used a nail plate refractive index of 1.47 for OCT (an assumed value, not a measurement). | n/a |
+| Nail size: Jung JW et al., Arch Plast Surg 42:753 (2015), DOI 10.5999/aps.2015.42.6.753 | CC BY-NC 3.0 | 300 Korean adults, width and length per digit (index 12.3 / 11.1 wide, 13.0 / 12.1 long, men / women, mm). The base mesh sculpts the nails, so the layers follow the sculpt; recorded for a later nail morph. | NO |
+| Longitudinal melanonychia: Duhard E et al. (1995), PMID 8745680; Alchorne 2024 citing Leyden 1972 | abstract / review | 1.4% of 4,400 white French adults; "up to 77% of young African-American adults and nearly 100% over 50" (secondary; primary not read). Not drawn. | secondary |
+| Crease pigment: Alchorne MM et al., An Bras Dermatol (2024), DOI 10.1016/j.abd.2023.10.001; Leal-Silva H et al., J Cosmet Dermatol (2021), DOI 10.1111/jocd.13968 | CC BY / closed | Palmoplantar hyperpigmentation is common and more frequent with greater skin pigmentation (review); palmar crease contrast is a gradable feature linked to darker skin (126 photographs, 8 raters). No prevalence by skin type found. | qualitative |
+
+Not found: sole colour; crease width or depth; knuckle fold count, spacing or
+colour against the back of the hand at any tone; lunula length; free-edge
+colour; nail gloss; nail colour by skin type; any measurement of children's
+palm colour or creases (creases form at 7 to 9 weeks' gestation, Kosif 2015
+citing Kimura and Kitagawa 1986, so their places are fixed early).
+
 ---------------------------------------------------------------------------
 
 ## PART B - Skin states
@@ -280,6 +323,33 @@ bounded by the axis.
 
 A shape signal is rounded to 50 steps before it re-evaluates the figure: a step
 of `cold` moves the nipple's point target by 0.37 / 50, under a percent.
+
+### C5. Hands (`src/surface/handTone.ts`, `src/surface/regions/hands/`)
+
+The hands are rest-state regional colour and relief, not a state; they sit
+before the state layers, so cold pallor and flush act on them (C2). Contact
+sheets: `docs/evidence/hands.md`.
+
+| Quantity | Value | Source |
+| --- | --- | --- |
+| Palm L\* | the archive's paired palm L\* at the skin's L\*, interpolated between the five bins (`PALM_BINS`): 48.2 at back-of-hand L\* 31.8 to 66.6 at 67.1 | ISSA, computed here (A6). The figure's skin stands for the back of its hand: a CHOICE, since the tone's anchors are facial readings. Checked against Phan et al. 2022 (A1): within 4 L\* of both its groups. |
+| Palm a\*, b\* | the skin's own, plus the bin's palm-minus-back difference (+2.2 a\* and +8.0 b\* at the darkest bin; +0.9 and −1.4 at the lightest) | ISSA (A6). Carrying the figure's own a\* and b\* (so a ruddy or golden figure keeps its cast) is a CHOICE. Horibata 2025 agrees in sign on light skin (palm a\* 2.6 above the arm). |
+| Palm region | `skinZones().palm`, the zone goosebumps and sweat already use | Base mesh data only (C1). |
+| Sole colour | the palm's (`palmAlbedo`) over `skinZones().sole` | CHOICE: palms and soles share the suppressed melanocytes of palmoplantar skin (Yamaguchi 2004, A1), but no sole colour was found measured. The feet's area adds the sole's relief over it. |
+| Finger crease places | middle crease 2.1 mm proximal to the PIP joint; proximal and distal creases from it by Kosif's spans (index 23.6 and 21.2 mm, middle 26.3 and 24.2, ring 23.0 and 22.2, little 18.4 and 16.1); thumb creases over its MCP joint and 2.2 mm proximal to its IP joint | Doyle and Botte 2003 and Kosif 2015 (A6), mean of men and women. Bugbee's 7 to 8 mm for the distal crease does not fit MakeHuman's joints (Kosif's spans put it 0.2 to 3.6 mm proximal); the spans are used. |
+| Palm crease places | each anatomical knuckle 14.4 mm proximal to its finger's first crease; distal transverse crease 8.5 mm proximal to the ring and little knuckles; the proximal transverse and thenar creases' origin 9.1 mm proximal to the index knuckle | Bugbee and Botte 1993 (A6): the middle of the distal crease's range, the low ends of the other two, which put the shared origin on the radial border distal to the thumb's web, where it is seen. The curves' shapes between those points: CHOICE after anatomy texts. |
+| Crease line | the skin's own colour over the palm's, 60% of the way (only where the skin is darker), times a shade of 0.80 | Crease pigment in darker skin: qualitative only (A6); the 60% is a CHOICE. The shade (the crease's walls darken its narrow bottom, which the broad relief cannot) is a CHOICE tuned on the contact sheets. |
+| Crease line width | a seventh of an 18.5 mm band on the palm, 11 mm on the fingers (2.6 and 1.6 mm) | CHOICE, bounded by the mesh: the band must span two faces for the line to fall where the crease is (`tests/hands.test.ts`). No crease width was found measured. |
+| Crease relief | a fold 7.8 mm wide on the palm, 4.5 mm on the fingers (0.7 of the depth), 0.30 mm deep | CHOICE: no crease depth found measured; the width spans a face. |
+| Knuckle colour | 1.35 times the skin's melanin optical density, haemoglobin +0.15 | CHOICE. No knuckle colorimetry against the back of the hand at any tone (A2, A6). The factor is below the measured exposed-to-protected ratio, 1.6 to 2 (Alaluf 2001, 2002). Redder: extended joints have the highest a\* (J Clin Med 2024, A2; ordinal). Multiplying density makes deep knuckles darken more than fair ones: the luminance lost grows with melanin. |
+| Knuckle wrinkles | 5 arcs at the PIP joint, 3 at the DIP and MCP (3 and 4 on the thumb), 1.6 mm apart, 0.12 mm high, held short of the next joint | CHOICE: no fold count, spacing or depth found. Knuckle micro-relief is 1.7 times the back of the hand's (Padmanabha 2026, A6), which supports wrinkles there, not their size. |
+| Nail bed | CIELAB 54.3, 4.9, 10.1 on skin of L\* 62; lightness 0.154 L\* per L\* of skin (49.4 on the deepest, 55.2 on the lightest); the plate's surface reflection (F0 0.036, index 1.47) removed | Horibata 2025 (colour; one cohort of older adults, mean age 68.5); the slope is derived from the ends of Leeb 2024's ITA ranges (the darkest forehead's nail at ITA −9.8°, L\* 48 at the nail's b\*, on skin of about L\* 23), so it rests on two range ends: a derivation, not a fit. Melanocytes in the nail bed are about 5% of skin's (A1), the reason it barely darkens. Index 1.47: Saleah 2021's assumed value. |
+| Nail places | fold, cuticle, lunula's end and free edge's start along the last segment (`NAIL_LAYOUT`), following the base mesh's sculpted nails | Read from the mesh's dorsal profile; not a measurement of nails. |
+| Lunula | the bed 40% of the way to keratin white; largest on the thumb, least on the little finger | Visibility by finger: Gahalaut 2014 (A6). Its colour and size: CHOICE. |
+| Free edge | keratin white, linear (0.62, 0.58, 0.50) | CHOICE: not found measured. |
+| Nail fold | 1.15 times the skin's melanin density, haemoglobin +0.1 | CHOICE. |
+| Nail gloss | roughness −0.28, specular +0.35 | CHOICE: no nail gloss found measured; keratin's index (1.47) is above skin's (1.4), so the plate reflects more. |
+| Longitudinal melanonychia | not drawn | A6: common in darker skin, increasing with age (secondary). A later choice for the figure, not a default. |
 
 ## ITEMS I COULD NOT VERIFY / PRIMARY NOT OPENED
 

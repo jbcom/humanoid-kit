@@ -383,7 +383,9 @@ gates were.
    anatomy depends on it.
 3. **One feature at a time**, each its own target file, zone, controls, tests and
    contact sheet: `mound` first (it replaces today's only visible target), then
-   `penis`, `testes`, the vulvar features.
+   `penis`, `testes`, the vulvar features. Status: the `mound` detail is built
+   (generated on the lattice, `scripts/lib/detail/mound.ts`, sized from
+   ADULT-ANATOMY-DATA.md section E). The rest need reservoir topology, below.
 4. **Skin fields on the patch** and the layers' remap, so the phase 1 layers
    show.
 5. **State morphs on the patch** (engorgement moves from `helper-genital`).

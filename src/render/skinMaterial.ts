@@ -180,7 +180,9 @@ float hkDetailHeight( vec2 uv ) {
 			H += a * head.z * fade * hkBumps( p );
 		} else {
 			float phase = f.y * head.w;
-			float fade = 1.0 - smoothstep( 0.25, 0.75, fwidth( phase ) );
+			// A groove is a thin line: it goes by the time a period is ten pixels, not one, or
+			// seen end-on down a limb it shows as a dotted ring.
+			float fade = 1.0 - smoothstep( 0.1, 0.3, fwidth( phase ) );
 			H -= a * head.z * fade * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} );
 		}
 	}
@@ -600,6 +602,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-8-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}`;
+    return `humanoid-kit-skin-9-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}`;
   }
 }

@@ -11,6 +11,11 @@ import {
 } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { RecipeValidationError } from "../src/recipe/validate.ts";
+import {
+  ADULT_ONLY_BODY_HAIR,
+  BODY_HAIR_GROUPS,
+  isAdultOnlyBodyHair,
+} from "../src/surface/bodyHair.ts";
 import { adultManifest, bodyManifest, loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets(true);
@@ -31,7 +36,9 @@ describe("age policy", () => {
     const body = new Set(bodyManifest.targets.flatMap((f) => f.entries.map((e) => e.name)));
     for (const e of adultManifest.targets.entries) expect(body.has(e.name), e.name).toBe(false);
     for (const name of body)
-      expect(name).not.toMatch(/^(genitals\/|pelvis\/bulge-|stomach\/stomach-pregnant-)/);
+      expect(name).not.toMatch(
+        /^(genitals\/|pelvis\/bulge-|pelvis\/mound-|stomach\/stomach-pregnant-)/,
+      );
   });
 
   it("rejects any adult anatomy modifier on a figure under 18", () => {
@@ -98,6 +105,60 @@ describe("age policy", () => {
     expect(() =>
       recipeContributions(createRecipe({ macros: { age: Number.NaN } }), assets.modifiers),
     ).toThrow(RecipeValidationError);
+  });
+});
+
+describe("adult-only body hair", () => {
+  it("is exactly axillary and pubic hair", () => {
+    expect([...ADULT_ONLY_BODY_HAIR].sort()).toEqual(["axillary", "pubic"]);
+    for (const g of BODY_HAIR_GROUPS)
+      expect(isAdultOnlyBodyHair(g)).toBe(g === "axillary" || g === "pubic");
+  });
+
+  it("refuses any axillary or pubic density but 0 under 18, never clamping it", () => {
+    fc.assert(
+      fc.property(
+        minorAge,
+        fc.constantFrom(...ADULT_ONLY_BODY_HAIR),
+        fc.double({ min: 0.001, max: 2, noNaN: true }),
+        (age, group, v) => {
+          const r = createRecipe({ macros: { age }, bodyHair: { density: { [group]: v } } });
+          expect(agePolicyViolations(r)).toEqual([`body hair ${group} is adult-only`]);
+          expect(() => recipeContributions(r, assets.modifiers)).toThrow(AgePolicyError);
+          expect(r.bodyHair?.density?.[group]).toBe(v); // refused, not rewritten
+        },
+      ),
+    );
+  });
+
+  it("allows a 0 under 18 (shaven is not adult-only) and every group at 18", () => {
+    const shaven = createRecipe({
+      macros: { age: 12 },
+      bodyHair: { density: { axillary: 0, pubic: 0, legs: 2, face: 1.5 } },
+    });
+    expect(agePolicyViolations(shaven)).toEqual([]);
+    const adult = createRecipe({
+      macros: { age: ADULT_AGE },
+      bodyHair: { density: { axillary: 1, pubic: 2 } },
+    });
+    expect(agePolicyViolations(adult)).toEqual([]);
+  });
+
+  it("refuses them for a NaN age, which is not an adult's", () => {
+    const r = createRecipe({ macros: { age: Number.NaN }, bodyHair: { density: { pubic: 1 } } });
+    expect(agePolicyViolations(r)).toEqual(["body hair pubic is adult-only"]);
+  });
+
+  it("withAge strips them when moving under 18, keeps the rest, and leaves the input untouched", () => {
+    const adult = createRecipe({
+      macros: { age: 30 },
+      bodyHair: { density: { axillary: 1, pubic: 1, chest: 0.5 }, beard: "full" },
+    });
+    const minor = withAge(adult, 15);
+    expect(agePolicyViolations(minor)).toEqual([]);
+    expect(minor.bodyHair).toEqual({ density: { chest: 0.5 }, beard: "full" });
+    expect(adult.bodyHair?.density).toEqual({ axillary: 1, pubic: 1, chest: 0.5 });
+    expect(withAge(adult, 40).bodyHair).toEqual(adult.bodyHair);
   });
 });
 

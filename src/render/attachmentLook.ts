@@ -44,6 +44,16 @@ export function attachmentColour(kind: string, color: Readonly<Rgb>): Rgb {
   ];
 }
 
+/**
+ * The exponent on a tooth's baked openness (0 covered, 1 open): the light a tooth
+ * gets is `OCCLUSION_FLOOR + (1 - OCCLUSION_FLOOR) * openness ** TEETH_EXPOSURE`. The
+ * bake counts every ray the lips, cheeks and chin block within 5 cm, so teeth the
+ * lips have parted only a little (a grin, a snarl, a fear) came out at a tenth open
+ * and rendered as dim olive; a square root lifts them and leaves a covered tooth
+ * (openness 0) at the floor. A CHOICE: tuned against docs/evidence/expressions.md.
+ */
+export const TEETH_EXPOSURE = 0.5;
+
 /** How finely the gum's pigment patches vary across the texture, in cycles per unit of UV. */
 const PATCH_SCALE = 40;
 
@@ -84,7 +94,7 @@ export class TeethMaterial extends AttachmentStandardMaterial {
   }
 
   override onBeforeCompile: AttachmentStandardMaterial["onBeforeCompile"] = (shader) => {
-    patchOcclusion(shader, this.occlusionKeys);
+    patchOcclusion(shader, this.occlusionKeys, { exposure: TEETH_EXPOSURE });
     if (!shader.fragmentShader.includes("#include <map_fragment>"))
       throw new Error("TeethMaterial: three's map_fragment chunk moved");
     Object.assign(shader.uniforms, this.hkUniforms);
@@ -129,7 +139,7 @@ float hkNoise( vec2 p ) {
   };
 
   override customProgramCacheKey(): string {
-    return `${super.customProgramCacheKey()}-teeth-1`;
+    return `${super.customProgramCacheKey()}-teeth-2`;
   }
 }
 
