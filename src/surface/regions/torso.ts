@@ -739,6 +739,9 @@ function striaeDirections(assets: HumanoidAssets): {
       (1 - smoothstep(0.2, 0.6, inner)) *
       facing *
       (1 - groin) *
+      // The body's UV islands meet on the midline, and the noise is drawn in UV: marks that crossed
+      // it would be cut and offset there, so they stop a little short of it.
+      smoothstep(0.004, 0.02, Math.abs(x)) *
       (1 - smoothstep(0.2, 0.5, breast[v] as number));
     if (w <= 0 || len < 1e-6) continue;
     weight[v] = w;

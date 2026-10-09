@@ -2643,16 +2643,18 @@ says; nothing here is sexualised, and the adult anatomy's own layers
 - *Stretch marks are a detail layer that also colours.* Kind 8 in the stop table
   (`pattern: "striae"`): the sole's friction ridges' noise (`ridgeHeight`, one
   function in TypeScript and in the shader) past a threshold the figure's
-  amount sets (`striaMark`: coverage 5% of the sites' skin at an amount of a
-  quarter, 10% at half, 22% at 1), as streaks 5 mm apart that run for
+  amount sets (`striaMark`: coverage 2.5% of the sites' skin at an amount of a
+  quarter, 7.6% at half, 19% at 1; the edge soft by a fifth of the noise's range), as streaks 5 mm apart that run for
   centimetres and end, in groups. A mark multiplies the skin by the layer's
   colour ratio and sinks it a fifth of a millimetre; the header carries the
   depth and the spacing, stop 0 the ratio and stop 1 the amount, and the
   coordinate the streaks' direction. The mask is the site's weight and scales the
   amount, so the belly, flank, hip and thigh differ in density; a mark is never
   more opaque than the layer's strength. *Where:* the lower trunk, hips,
-  buttocks and the outer and back of the thigh, not the breast, groin, inner thigh
-  or skin that faces up or down. *Direction:* round the body, horizontal in the
+  buttocks and the outer and back of the thigh, not the breast, groin, inner thigh,
+  skin that faces up or down or the midline's few centimetres (the body's UV islands meet
+  there, the noise is drawn in UV, and a mark that crossed would be cut and offset:
+  a limit of drawing in UV that the sole's ridges share). *Direction:* round the body, horizontal in the
   skin's plane, across the stretch; the UV angle that gives it comes from
   `uvOrientation`, the code the feet's ridges use, stored about a seam
   (`STRIAE_ORIENTATION_SEAM`) at the angle the fewest neighbours straddle. *How much:*

@@ -91,7 +91,7 @@ const mix3 = (a: Rgb, b: Rgb, t: number): Rgb =>
 export const STRIA_SPACING = 0.009;
 
 /** The noise's threshold for a mark at an amount: the more marks, the lower, from `STRIA_THRESHOLD_BASE` (above 1: none) by `STRIA_THRESHOLD_SLOPE` an amount. */
-export const STRIA_THRESHOLD_BASE = 1.04;
+export const STRIA_THRESHOLD_BASE = 1;
 export const STRIA_THRESHOLD_SLOPE = 0.4;
 export const striaThreshold = (amount: number): number =>
   STRIA_THRESHOLD_BASE - STRIA_THRESHOLD_SLOPE * clamp(amount);
@@ -105,7 +105,7 @@ export const striaThreshold = (amount: number): number =>
  */
 export const STRIAE_ORIENTATION_SEAM = Math.PI / 6;
 /** How soft a mark's edge is, in the noise's units. */
-export const STRIA_SOFT = 0.1;
+export const STRIA_SOFT = 0.22;
 
 /**
  * Whether there is a mark at (`x`, `y`) metres, 0 to 1, for streaks running
