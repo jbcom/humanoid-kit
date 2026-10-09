@@ -442,13 +442,26 @@ and expressions"). Framework-free.
   MakeHuman's 60 face units (`JawDrop`, `LeftUpperLidClosed`, …), blended in
   log space; a quaternion per bone. Throws for an unknown unit.
   `IDENTITY_POSE(bones)` is the rest pose.
-- `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out)`: linear
-  blend skinning on the CPU, exactly as the renderer skins, for tests, anchors
-  and pose-dependent bakes. `posedBoneHeads(rest, rotations)` gives every
-  joint's posed position.
+- `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out)`: the
+  rig's skinning on the CPU, exactly as the renderer skins, for grounding,
+  tests, anchors and pose-dependent bakes: linear blend skinning mixed with
+  dual quaternion skinning vertex by vertex, by the share each bone asks for
+  (ARCHITECTURE.md, "Skinning artefacts"). `posedBoneHeads(rest, rotations)`
+  gives every joint's posed position. `skinPositionsLinear` is linear blending
+  alone, `skinPositionsDual` dual quaternion skinning alone, and
+  `skinPositionsBlended(…, share)` the mix at any share (a number, or one per
+  bone); `skinNormalsBlended` and `skinNormalsDual` give the matching normals,
+  and `skinPose` / `skinVertex` skin one vertex at a time.
+- `SKIN_DUAL_SHARE` is each limb bone's share of dual quaternion skinning (0 is
+  linear, 1 dual quaternion), `skinDualShare(bones)` the share of every bone of
+  a rig in its order, and `dualBones(rest, rotations)` each bone's pose as a
+  unit dual quaternion (what the renderer uploads: `dualBoneTexels`).
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
-  stress pose, and `relaxed`, standing at ease with the arms at the sides); `composeRotations(a, b)` layers `b` (an expression) over `a`.
+  stress pose; and the poses authored here, `relaxed`, standing at ease with the
+  arms at the sides, and two for the skinning's extremes, `flexed`, every hinge
+  near its limit, and `twisted`, each limb turned about its own axis);
+  `composeRotations(a, b)` layers `b` (an expression) over `a`.
 - `restBonesFrom(names, parents, heads)` rebuilds the rest skeleton from an
   evaluation's `boneHeads` without the packs, and
   `posedGroundOffset(rest, rotations, control, skin)` is the lift that puts a
@@ -623,7 +636,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `material?` | A three.js `Material` replacing the built-in skin material, which follows `recipe.skin` |
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
@@ -639,8 +652,20 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 - Stores the latest ground offset (posed when posed) on the group's `userData.groundOffset`.
 - Disposes its geometries, textures and built-in materials on unmount.
 - Skins the body and attachments to the skeleton fitted to each evaluation
-  (linear blend skinning on the GPU) and poses it from `pose`; posing does not
-  re-evaluate the figure.
+  and poses it from `pose`; posing does not re-evaluate the figure. The built-in
+  skin material skins by linear blending mixed with dual quaternions, by each
+  bone's share (`SKIN_DUAL_SHARE`; ARCHITECTURE.md, "Skinning artefacts"), so a
+  twisted forearm or a raised shoulder keeps its volume, and its shadows, bounds
+  and picking follow. A `material` of your own skins by three's linear skinning
+  alone, and the attachments (eyes, teeth, tongue) follow single bones.
+- Stores the figure's bones as dual quaternions on the group's
+  `userData.dualBones` (a `DualBones`, null before the first evaluation), so
+  clothing and materials of your own can follow its joints as its skin does:
+  `applyDualSkinning(material, group.userData.dualBones)`, both exported from
+  `humanoid-kit/react`, makes a skinned mesh's material blend dual quaternions
+  with three's linear skinning by the same per-bone shares (`SKIN_DUAL_SHARE`),
+  so cloth does not part from the skin at a joint. Call it before the material's
+  first render; a `DualBones` is the figure's own and is disposed with it.
 - With `presence`, the group's origin is the ground under the figure: the
   figure lifts its own meshes onto it, so do not lift the group by
   `groundOffset` (without `presence` the caller does, as before). The ground

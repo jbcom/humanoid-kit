@@ -1,0 +1,14 @@
+{
+  "name": "twisted",
+  "title": "Twisted",
+  "description": "Each limb twisted about its own axis, past what a body can: upper arms 110°, forearms (at the wrist) 170° and thighs 60°, mirrored right to left. The check for the candy-wrapper collapse of linear blend skinning.",
+  "base": "tpose",
+  "rotations": {
+    "upperarm01.L": { "Xrotation": 57, "Yrotation": -42.1, "Zrotation": -70 },
+    "upperarm01.R": { "Xrotation": 57, "Yrotation": 42.1, "Zrotation": 70 },
+    "wrist.L": { "Xrotation": -125.9, "Yrotation": -40.3, "Zrotation": 127.7 },
+    "wrist.R": { "Xrotation": -125.9, "Yrotation": 40.3, "Zrotation": -127.7 },
+    "upperleg01.L": { "Xrotation": 2.9, "Yrotation": -7.1, "Zrotation": -59.4 },
+    "upperleg01.R": { "Xrotation": 2.9, "Yrotation": 7.1, "Zrotation": 59.4 }
+  }
+}
