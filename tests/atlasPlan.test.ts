@@ -197,10 +197,10 @@ describe("the atlas plan of the shipped stack", () => {
     }
   });
 
-  it("keeps the whole stack, creases included, to seven pages", () => {
+  it("keeps the whole stack, creases and expression lines included, to eight pages", () => {
     // Two layers a page was 11 pages (44 MB) for these layers; the crease layers alone,
     // twelve of them, took 6 more.
-    expect(plan.pages).toBeLessThanOrEqual(7);
+    expect(plan.pages).toBeLessThanOrEqual(8);
     expect(plan.pages).toBeLessThan(densePlan(SKIN_LAYERS.length).pages);
   });
 

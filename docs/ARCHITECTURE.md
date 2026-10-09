@@ -780,6 +780,27 @@ holds, and the expressions read as themselves (a smile as `smile` with some
 `squint` from the raised cheeks, anger as `browFurrow`, surprise as `browRaise`,
 disgust as `noseWrinkle`).
 
+Five crease layers draw the lines (`EXPRESSION_LINE_LAYERS`,
+`src/surface/regions/faceLines.ts`), the same `creases` detail pattern as the
+elbow and knee: the forehead's horizontal lines (`browRaise`), the furrows
+between the brows (`browFurrow`), crow's feet fanning from each eye's outer
+corner (`squint`, or 0.6 of `smile`), the nasolabial folds from the nose's wing
+past the mouth's corner (`nasolabial`, or 0.7 of `smile`) and the nose
+bridge's lines (`noseWrinkle`). Where each lies is read from the default
+figure's joints (the brows, the outer corners, the nose's wing), so it follows
+the mesh, and keeps off the lips and the eyeballs (a test holds it); the
+crow's feet and the folds are each one layer for both sides, the coordinate
+being the angle about its own corner and the distance across its own fold, so
+the right is the left reflected and two layers' channels are saved. How many
+lines (1 to 3) and how deep (0.25 to 0.6 mm, against the elbow's 2.8) is
+art-directed, since no measurement of facial wrinkle depth or spacing against
+expression is in this repository; the depth grows with age
+(`expressionAgeFactor`: 0.2 at 6, 0.8 at 25, 1 at 40, 1.4 at 70), because a
+child's elastic skin barely lines and an old face does most. The layers cost a
+page in the field atlas (eight, 32 MB, against seven), packed in the one order
+of the five that fits them in one extra page (`planAtlas` is greedy; the order
+they read in needs two).
+
 ### Skinning artefacts (2026-10-09)
 
 Linear blend skinning averages bone matrices, and the average of two rotations
