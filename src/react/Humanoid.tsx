@@ -32,7 +32,7 @@ import {
   TextureLoader,
   Vector3,
 } from "three";
-import { STATE_MORPHS } from "../makehuman/stateMorphs.ts";
+import { quantisedShapeSignals, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import type {
   AttachmentTopology,
   Evaluation,
@@ -609,14 +609,24 @@ export function Humanoid({
   // Only the signals that change the shape re-evaluate the figure; a stable
   // key keeps a colour-only change (or a new object with the same values) from
   // re-evaluating it. The adult pack's state morphs (arousal) count with the
-  // body's once it is loaded.
+  // body's once it is loaded. Rounded to steps (`quantiseShapeSignal`), so a
+  // signal that eases does not evaluate every frame.
   const shapeNames = useMemo(
     () => [
       ...new Set([...STATE_MORPHS, ...(ready?.anatomy?.stateMorphs ?? [])].map((m) => m.signal)),
     ],
     [ready],
   );
-  const shapeKey = shapeNames.map((name) => signals?.[name] ?? 0).join(",");
+  // The age policy judges the signals before they are rounded; a refused one
+  // is reported rather than evaluated.
+  const { shapeKey, signalPolicyError } = useMemo(() => {
+    try {
+      const key = quantisedShapeSignals(recipe, signals ?? {}, shapeNames).join(",");
+      return { shapeKey: key, signalPolicyError: null };
+    } catch (e) {
+      return { shapeKey: "", signalPolicyError: e as Error };
+    }
+  }, [recipe, signals, shapeNames]);
   const shapeSignals = useMemo(
     () => Object.fromEntries(shapeNames.map((name, i) => [name, Number(shapeKey.split(",")[i])])),
     [shapeNames, shapeKey],
@@ -624,6 +634,10 @@ export function Humanoid({
 
   useEffect(() => {
     if (!geometries) return;
+    if (signalPolicyError) {
+      report(signalPolicyError);
+      return;
+    }
     let live = true;
     client.evaluate(recipe, key, shapeSignals).then(
       (ev) => {
@@ -667,6 +681,7 @@ export function Humanoid({
     recipe,
     key,
     shapeSignals,
+    signalPolicyError,
     onEvaluatedRef,
     rotationsRef,
     report,

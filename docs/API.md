@@ -319,9 +319,10 @@ compute what the renderer will do.
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
   `SkinLayer` (`id`, `blend`, `targets`, `fields(assets)`, `paint(input)`),
-  `SKIN_LAYERS` (the stack, in order: flush, lips, areola, then
-  `ADULT_SKIN_LAYERS`: penis, testes, mound), `SKIN_LAYER_TARGETS` (the body
-  layers' only: an adult layer names none, the adult pack's manifest does),
+  `SKIN_LAYERS` (the stack, in order: flush, lips, areola, the state layers
+  below, then `ADULT_SKIN_LAYERS`: penis, testes, mound), `SKIN_LAYER_TARGETS`
+  (the body layers' only: an adult layer names none, the adult pack's manifest
+  does),
   `targetMask(assets, targets, lo, hi)` for masks measured from targets,
   `diskMask(assets, targets, soft?)` for a feature the targets outline (filled
   per side of the body),
@@ -339,7 +340,8 @@ compute what the renderer will do.
   `SurfaceLayer` (`kind: "surface"`, `paint` giving `strength`, a `roughness`
   change and a `specular` change). `surfaceChange` and `creaseHeight` are the
   shader's references; `uvScale(assets, faces)` gives metres of skin per UV
-  unit (carried as `body.uvScale` in the topology).
+  unit, one value for each UV island (carried as `body.uvScale` in the
+  topology).
   A layer of the adult anatomy sets `adult: { feature }` (`isAdultLayer`):
   `paintStopTable` paints it only when `SkinPaintInput.adult` is true (from
   `isAdult(recipe)`; absent is false) and `SkinPaintInput.anatomy[feature]` is
@@ -356,6 +358,44 @@ compute what the renderer will do.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).
+- Skin-state layers (`src/surface/regions/states.ts`), driven by the signals in
+  `SkinPaintInput.signals`; every magnitude is cited, or marked as a choice, in
+  research/SKIN-STATES.md Part C:
+  - `GOOSEBUMP_LAYER` (`cold`, `fear`: either raises papules, and two triggers
+    combine as independent): a `bumps` detail layer on hair-bearing skin only,
+    `GOOSEBUMP_HEIGHT` (194 µm at signal 1) tall at `GOOSEBUMP_DENSITY_PER_CM2`
+    (21) per cm². Relief is a close-up effect: it fades where a cell is finer
+    than about a pixel (a few millimetres), so at full-figure distances the
+    skin shows nothing.
+  - Flush and pallor, colour layers that multiply the skin by
+    `haemoglobinRatio(tone, FLUSH_DELTA[state])` with the signal as strength:
+    `HEAT_FLUSH_LAYER` (`heat`, the whole body), `EXERTION_FLUSH_LAYER`
+    (`exertion`: face, neck, chest), `BLUSH_LAYER` (`blush`: cheeks, ears,
+    forehead, neck, chest), `COLD_PALLOR_LAYER` (`cold`: hands, feet, ears, nose,
+    a little forearms, shins and cheeks) and `FEAR_PALLOR_LAYER` (`fear`: face
+    and neck), and `LIP_STATE_LAYER` (`cold` turns the lips bluer, `fear` paler:
+    `lipStateAlbedo(tone, depth, cold, fear)`). `haemoglobinRatio(tone, delta)`
+    is the skin model's own response to `delta` more haemoglobin, in units of the
+    measured axis (limited to ±1, so a state moves the skin no further than the
+    spread people have); melanin attenuates it as it does the resting spread, and
+    a colour that is not human skin (`tone.override`) has none to move. No state
+    layer changes lightness.
+  - Sweat sheen, two `SurfaceLayer`s over regional sweat maps: `SWEAT_REST_LAYER`
+    (`heat`: the passive-heating map) and `SWEAT_EXERCISE_LAYER` (`exertion`: the
+    exercise map, wetter and more even). `SWEAT_RATE` is Taylor and
+    Machado-Moreira's regional rates (mg/cm²/min, `[rest, exercise]`),
+    `wetness(rate)` turns a rate into 0..1 wetness, and `SWEAT_ROUGHNESS` and
+    `SWEAT_SPECULAR` are the change at full wetness. The two signals share one
+    sweat drive, `1 - (1 - heat)(1 - exertion)`, split between the maps by
+    their shares, so both at 1 is half of each map.
+  - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones
+    (head, hand, thigh, …) as soft per-vertex masks from the skin weights, plus
+    its `front`, `palm`, `sole`, `forehead` and `neck` fields from the vertex
+    normals, joints and weights, all
+    measured from the base mesh and cached per set of assets.
+    `buildBoneField(assets, names, zoneOfBone, fallback, smoothing?)` builds
+    such a partition for any grouping of the bones (`buildRegionField` is it
+    for the shape traits' regions).
 - The scatter model `SkinMaterial` renders (its constants and table come from
   these, and the browser tests hold the shader to them): `scatterDistance(albedo, mfp?, slope?, pigmentDepth?,
   substrate?)` gives each channel's scatter width in metres, and
@@ -369,6 +409,24 @@ compute what the renderer will do.
 - `bakeOcclusion(occluders, targets, options?)`: per-vertex ambient occlusion
   by cosine-weighted ray casts (`hemisphereDirections(n)`), as used for
   attachments.
+- Skin-state time (ARCHITECTURE.md, "Skin states"): `stepSkinState(current,
+  target, dt, rates?)`, a pure step of every signal toward its target (0..1
+  each; a missing one is 0) by the exact first-order response, with one time
+  constant to rise (`attack`) and one to fall (`decay`), in seconds, from
+  `STATE_TIME_CONSTANTS` (`cold`, `fear`, `blush`, `exertion`, `heat`; any other
+  signal moves at `DEFAULT_STATE_RATE`). `new SkinStateFilter(rates?, initial?)`
+  keeps the state between frames: `step(target, dt)` returns the new signals
+  (a copy), `value` the current ones, `settled(target)` whether there is
+  nothing left to animate, `reset(state?)` jumps. `cold` and `fear` are
+  calibrated to the measured goosebump episode (a 3 s trigger shows for 11 to
+  12 s); the others are choices (research/SKIN-STATES.md C4).
+  `quantiseShapeSignal(s)` and `SHAPE_SIGNAL_STEPS` (50) round the signals
+  that reshape the figure, so an easing one does not evaluate every frame.
+  `quantisedShapeSignals(recipe, signals, names)` rounds the named ones after
+  the age policy has judged them as given: rounding would turn a small or
+  negative adult-only signal into 0, so a figure under 18 with any nonzero one
+  throws `AgePolicyError` (`<Humanoid>` reports it through `onError` and does
+  not evaluate).
 
 ### Rig and poses
 
@@ -544,6 +602,17 @@ Returns the provided client. Throws outside a `HumanoidProvider`.
 
 Returns `null` until the worker has loaded its packs, then its `ReadyInfo`.
 
+### `useSkinStateFilter(target, options?): Record<string, number>`
+
+Follows `target`, the signals an application wants (each 0..1), at the time
+constants of `STATE_TIME_CONSTANTS`, and returns the signals to give
+`<Humanoid signals>`: `const signals = useSkinStateFilter({ cold: chilled ? 1 :
+0 })`. It starts at the first `target`, so a figure that mounts in a state does
+not ease into it (`initial: "rest"` starts at rest instead); `rates` replaces
+the time constants (pass a stable object). The component re-renders each frame
+while a signal moves and not once they have settled, and a new `target` object
+with the same entries changes nothing.
+
 ### `<Humanoid recipe />`
 
 Renders a recipe as a mesh inside a React Three Fiber canvas.
@@ -555,7 +624,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
 | `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
-| `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers; those with state morphs also reshape the figure (a re-evaluation). Never part of the recipe |
+| `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |

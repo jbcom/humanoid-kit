@@ -275,11 +275,15 @@ export function diskMask(
 }
 
 /**
- * Metres of skin per unit of UV at each base vertex of `faces` (quads): the
- * square root of the ratio of each face's surface area to its UV area,
- * averaged over the faces around the vertex. Detail layers use it to draw
- * relief at its true size wherever the UV layout stretches or shrinks.
- * Vertices on no listed face get 0.
+ * Metres of skin per unit of UV at each base vertex of `faces` (quads): for
+ * each UV island (faces joined through shared UV vertices), the square root of
+ * the ratio of its surface area to its UV area, averaged over the islands of
+ * the faces around the vertex. Detail layers draw relief at p = uv × scale, so
+ * the scale must be one value across an island: a scale that varies face by
+ * face (a ratio per face) makes p's derivative uv × d(scale) off from the
+ * surface's, and stretches relief into streaks. A seam vertex takes the plain
+ * mean of its islands' scales, each island once whatever its number of faces
+ * there. Vertices on no listed face get 0.
  */
 export function uvScale(assets: HumanoidAssets, faces: ArrayLike<number>): Float32Array {
   const n = assets.manifest.vertexCount;
@@ -307,21 +311,51 @@ export function uvScale(assets: HumanoidAssets, faces: ArrayLike<number>): Float
         ((U[c * 2] as number) - (U[a * 2] as number)) *
           ((U[b * 2 + 1] as number) - (U[a * 2 + 1] as number)),
     );
+  // UV islands: faces joined through shared UV vertices (union-find on UV indices).
+  const parent = new Map<number, number>();
+  const find = (x: number): number => {
+    let r = x;
+    while ((parent.get(r) ?? r) !== r) r = parent.get(r) as number;
+    parent.set(x, r);
+    return r;
+  };
+  for (let i = 0; i < faces.length; i++) {
+    const f = faces[i] as number;
+    const first = find(assets.faceUvs[f * 4] as number);
+    for (let k = 1; k < 4; k++) {
+      const other = find(assets.faceUvs[f * 4 + k] as number);
+      if (other !== first) parent.set(other, find(first));
+    }
+  }
+  const island = (f: number) => find(assets.faceUvs[f * 4] as number);
+  const areas = new Map<number, { surface: number; uv: number }>();
   for (let i = 0; i < faces.length; i++) {
     const f = faces[i] as number;
     const v = [0, 1, 2, 3].map((k) => assets.faceVerts[f * 4 + k] as number);
     const t = [0, 1, 2, 3].map((k) => assets.faceUvs[f * 4 + k] as number);
-    const a3 =
+    const a = areas.get(island(f)) ?? { surface: 0, uv: 0 };
+    a.surface +=
       area3(v[0] as number, v[1] as number, v[2] as number) +
       area3(v[0] as number, v[2] as number, v[3] as number);
-    const a2 =
+    a.uv +=
       area2(t[0] as number, t[1] as number, t[2] as number) +
       area2(t[0] as number, t[2] as number, t[3] as number);
-    if (a2 <= 0) continue;
-    const s = Math.sqrt(a3 / a2);
-    for (const k of v) {
-      sum[k] = (sum[k] as number) + s;
-      count[k] = (count[k] as number) + 1;
+    areas.set(island(f), a);
+  }
+  // Each island counts once at a vertex, however many of its faces meet there.
+  const counted = new Set<number>();
+  for (let i = 0; i < faces.length; i++) {
+    const f = faces[i] as number;
+    const id = island(f);
+    const a = areas.get(id);
+    if (!a || a.uv <= 0) continue;
+    const s = Math.sqrt(a.surface / a.uv);
+    for (let k = 0; k < 4; k++) {
+      const v = assets.faceVerts[f * 4 + k] as number;
+      if (counted.has(id * n + v)) continue;
+      counted.add(id * n + v);
+      sum[v] = (sum[v] as number) + s;
+      count[v] = (count[v] as number) + 1;
     }
   }
   return sum.map((s, k) => ((count[k] as number) > 0 ? s / (count[k] as number) : 0));

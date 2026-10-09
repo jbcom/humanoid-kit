@@ -267,3 +267,136 @@ describe("detail and surface layers", () => {
     expect(values.every((x) => x > 0 && Number.isFinite(x))).toBe(true);
   });
 });
+
+describe("the UV scale and the relief coordinate built from it", () => {
+  const assets = loadFixtureAssets();
+  const faces = groupFaces(assets, "body");
+  const scale = uvScale(assets, faces);
+  const P = assets.positions;
+  const U = assets.uvs;
+
+  /** The UV island (connected faces sharing UV vertices) of each body face. */
+  const islands = (() => {
+    const parent = new Map<number, number>();
+    const find = (x: number): number => {
+      let r = x;
+      while ((parent.get(r) ?? r) !== r) r = parent.get(r) as number;
+      parent.set(x, r);
+      return r;
+    };
+    for (const f of faces)
+      for (let k = 1; k < 4; k++) {
+        const a = find(assets.faceUvs[f * 4] as number);
+        const b = find(assets.faceUvs[f * 4 + k] as number);
+        if (a !== b) parent.set(a, b);
+      }
+    return new Map([...faces].map((f) => [f, find(assets.faceUvs[f * 4] as number)]));
+  })();
+
+  it("is one value for a whole UV island, away from its seams", () => {
+    // A vertex's islands: a seam vertex belongs to two, and takes a blend.
+    const of = new Map<number, Set<number>>();
+    for (const f of faces)
+      for (let k = 0; k < 4; k++) {
+        const v = assets.faceVerts[f * 4 + k] as number;
+        if (!of.has(v)) of.set(v, new Set());
+        of.get(v)?.add(islands.get(f) as number);
+      }
+    const perIsland = new Map<number, number[]>();
+    for (const [v, set] of of)
+      if (set.size === 1) {
+        const id = [...set][0] as number;
+        if (!perIsland.has(id)) perIsland.set(id, []);
+        perIsland.get(id)?.push(scale[v] as number);
+      }
+    expect(perIsland.size).toBeGreaterThanOrEqual(5);
+    for (const [id, values] of perIsland) {
+      const lo = Math.min(...values);
+      const hi = Math.max(...values);
+      expect(hi - lo, `island ${id}`).toBeLessThan(1e-4);
+    }
+  });
+
+  it("gives a seam vertex the plain mean of its islands, however many faces each has there", () => {
+    const of = new Map<number, Set<number>>();
+    for (const f of faces)
+      for (let k = 0; k < 4; k++) {
+        const v = assets.faceVerts[f * 4 + k] as number;
+        if (!of.has(v)) of.set(v, new Set());
+        of.get(v)?.add(islands.get(f) as number);
+      }
+    // An island's own scale: the value at any of its vertices in no other island.
+    const own = new Map<number, number>();
+    for (const [v, set] of of)
+      if (set.size === 1) own.set([...set][0] as number, scale[v] as number);
+    let seams = 0;
+    for (const [v, set] of of) {
+      if (set.size < 2 || ![...set].every((id) => own.has(id))) continue;
+      const mean = [...set].reduce((s, id) => s + (own.get(id) as number), 0) / set.size;
+      expect(scale[v] as number, `vertex ${v}`).toBeCloseTo(mean, 4);
+      seams++;
+    }
+    expect(seams).toBeGreaterThan(20);
+  });
+
+  it("makes the relief coordinate uv × scale an undistorted map of the skin", () => {
+    // Relief is drawn at p = uv × scale (metres), interpolated over each face. If the
+    // scale varied across a face, uv × scale would stretch and shear p against the
+    // surface: bumps become streaks. Measure that map's singular values per triangle.
+    const ratios: number[] = [];
+    for (const f of faces) {
+      const v = [0, 1, 2, 3].map((k) => assets.faceVerts[f * 4 + k] as number);
+      const t = [0, 1, 2, 3].map((k) => assets.faceUvs[f * 4 + k] as number);
+      for (const tri of [
+        [0, 1, 2],
+        [0, 2, 3],
+      ] as const) {
+        const [a, b, c] = tri;
+        const pos = (i: number) => [0, 1, 2].map((k) => P[(v[i] as number) * 3 + k] as number);
+        const p = (i: number) =>
+          [0, 1].map(
+            (k) => (U[(t[i] as number) * 2 + k] as number) * (scale[v[i] as number] as number),
+          );
+        const e1 = pos(b).map((x, k) => x - (pos(a)[k] as number));
+        const e2 = pos(c).map((x, k) => x - (pos(a)[k] as number));
+        const d1 = p(b).map((x, k) => x - (p(a)[k] as number));
+        const d2 = p(c).map((x, k) => x - (p(a)[k] as number));
+        // The surface's metric in p: Gram matrix of the images of e1, e2 inverted.
+        const g11 = e1.reduce((s, x) => s + x * x, 0);
+        const g12 = e1.reduce((s, x, i) => s + x * (e2[i] as number), 0);
+        const g22 = e2.reduce((s, x) => s + x * x, 0);
+        const det = (d1[0] as number) * (d2[1] as number) - (d1[1] as number) * (d2[0] as number);
+        if (Math.abs(det) < 1e-14) continue;
+        // M maps (e1, e2) coordinates to p; singular values of p's per-metre derivative.
+        const inv = [
+          [(d2[1] as number) / det, -(d2[0] as number) / det],
+          [-(d1[1] as number) / det, (d1[0] as number) / det],
+        ] as const;
+        // dsurface/dp = [e1 e2] · inv; its Gram matrix G' = invᵀ [g] inv.
+        const gp = [0, 1].map((i) =>
+          [0, 1].map((j) => {
+            let s = 0;
+            const g = [
+              [g11, g12],
+              [g12, g22],
+            ] as const;
+            for (let m = 0; m < 2; m++)
+              for (let n = 0; n < 2; n++)
+                s += (inv[m]?.[i] as number) * (g[m]?.[n] as number) * (inv[n]?.[j] as number);
+            return s;
+          }),
+        );
+        const [[e, ff], [, gg]] = gp as [[number, number], [number, number]];
+        const tr = e + gg;
+        const disc = Math.sqrt(Math.max(0, (e - gg) ** 2 + 4 * ff * ff));
+        ratios.push(Math.sqrt((tr + disc) / 2) / Math.sqrt(Math.max(1e-30, (tr - disc) / 2)));
+      }
+    }
+    ratios.sort((x, y) => x - y);
+    const at = (q: number) => ratios[Math.floor(q * (ratios.length - 1))] as number;
+    // The UV layout itself stretches up to about 1.5× on the limbs (see below);
+    // anything near 5× is the coordinate's doing.
+    expect(at(0.5)).toBeLessThan(1.6);
+    expect(at(0.95)).toBeLessThan(2.5);
+  });
+});
