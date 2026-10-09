@@ -415,12 +415,20 @@ and throws `RangeError` for anything else.
   moves `Evaluation.control` and no drawn vertex until the sculpt phase.
   `recipe.outfit` adds the garments (see "Clothing"); `haveOutfit` is the
   outfit key the caller already holds the masks of.
+- `model.controlShape(recipe): ControlShape`: an adult figure's control mesh for
+  authoring control-level features, as targets on the base's own vertices
+  (`{ control, normals, body }`: the vertices, their unit normals and the ids the
+  drawn body uses). Throws `AgePolicyError` for a figure under 18. The packer
+  generates the mound on it.
 - `model.adultDetailLattice(recipe): AdultDetailLattice | null`: the vertex
-  space the adult pack's detail targets are authored on (`{ key, vertexCount,
-  positions, normals }`): the vertices of the refined region, which a detail
-  target indexes from 0, with their positions and outward unit normals on this
-  figure and the key that names the refinement. Null without an adult surface; throws `AgePolicyError` for a
-  figure under 18. The packer uses it to place authored forms.
+  space the adult pack's detail targets are authored on: the vertices of the
+  refined region (`regionCount` of them) and then each reservoir's rings
+  (`vertexCount` in all), which a detail target indexes from 0, with their
+  positions and outward unit normals on this figure (`positions`, `normals`; a
+  ring's, at rest, are its loop's), the key that names the refinement and its
+  reservoirs, and, for placing forms, `regionIds`, `polygons`, `latticePositions`
+  and `reservoirs` (`{ id, base, loop, rings }`). Null without an adult surface;
+  throws `AgePolicyError` for a figure under 18. The packer uses it to author.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
   only (every pose corner holding the rest value). `body.occlusion` is the
@@ -1394,7 +1402,16 @@ keeps them out of the control morph and adds them to the adult surface after it
 is evaluated, scaled by the figure (`detail.scale`: two control vertices and
 their distance on the authoring figure), so a figure under 18, evaluated on the
 base surface, has nowhere to apply one. `detail.surfaceKey` pins the targets to
-the refinement they were authored on; the model refuses them against another.
+the refinement and reservoirs they were authored on; the model refuses them
+against another. `anatomy.reservoirs` (`AdultReservoirSpec`: `id`, `loop`, `cap`,
+`rings`) names *reservoirs*: a closed loop of the refinement's vertices round a
+disc of its polygons, in which the adult surface adds collapsed rings and strips
+between the loop and the cap. At rest they coincide with the loop (the surface is
+exactly the one without them, at every subdivision level, with zero-area strips);
+a detail target indexing a reservoir's rings (`AdultDetailLattice.reservoirs`)
+draws them out into a tube. They exist in the adult surface only, so a figure
+under 18 has none. Detail is subdivided linearly, positions smoothly, so a
+displacement authored at a vertex is exactly that at every level.
 
 ## `humanoid-kit-clothing`
 

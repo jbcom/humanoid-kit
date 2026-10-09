@@ -200,14 +200,14 @@ const cached = (build: (assets: HumanoidAssets) => Fields) => {
  * from the brow is the anatomy's own measure (frontalis lines stop 5 to 7 cm
  * above the brows, glabellar lines 1 to 2.5 cm), and a vertex beyond it is zero.
  */
-const browDistances = new WeakMap<HumanoidAssets, Float32Array>();
-function distanceFromBrows(assets: HumanoidAssets): Float32Array {
+const browDistances = new WeakMap<HumanoidAssets, Float64Array>();
+export function distanceFromBrows(assets: HumanoidAssets): Float64Array {
   const cachedDistance = browDistances.get(assets);
   if (cachedDistance) return cachedDistance;
   const f = frameOf(assets);
   const { brow } = landmarks(assets);
   const { start, list } = vertexAdjacency(f.n, assets.faceVerts);
-  const dist = new Float32Array(f.n).fill(Number.POSITIVE_INFINITY);
+  const dist = new Float64Array(f.n).fill(Number.POSITIVE_INFINITY);
   // A binary heap of [distance, vertex].
   const heap: [number, number][] = [];
   const push = (e: [number, number]) => {

@@ -856,7 +856,11 @@ Where each lies is read from the default figure's joints (the brows, the outer
 corners, the nose's wing), so it follows the mesh, and keeps off the lips and the
 eyeballs (a test holds it). The forehead's lines and the furrows are also
 bounded by distance along the skin from the brows' band (`distanceFromBrows`:
-Dijkstra over the mesh's edges), since a mask built from heights alone leaked
+Dijkstra over the mesh's edges, in double precision: stored in single it rounded
+below the distance each vertex was queued with, so the vertex never relaxed its
+neighbours and the forehead's midline was never reached, which left the lines
+at the temples as curled marks and none at the centre; a test holds the
+distance a metric and the midline reached), since a mask built from heights alone leaked
 across big triangles up and over the crown on the first sheets (frontalis lines
 stop 5 to 7 cm above the brows, glabellar lines are 1 to 2.5 cm long; a test
 holds every layer's mask to its extent). The
@@ -1724,20 +1728,51 @@ engine with a synthetic target before any anatomy is authored on it.
 With no detail applied the refined region is the base shape in finer cells,
 proven by the geometry tests and by a render within 11 pixels over 8 levels of
 the base's (adult against base contact sheet, local only). The first authored
-feature on it is the **mound** (`pelvis/mound-decr|incr`, the pack's own
-adult-only modifier, `scripts/lib/detail/mound.ts`): a cosine bell of displacement
-along the skin's outward normal over the measured mons width and length,
-peaking at the verified 1.5 cm BMI-band contrast (fuller) or 1 cm (flatter),
-scaled by the figure's hip breadth. The packer generates its targets on the
-authoring figure's lattice from the control targets and the surface spec, so the
-pack is reproducible; `tests/moundDetail.test.ts` holds the form to its numbers
-and `tests/moundPack.test.ts` holds the shipped pack to the generator. Its skin
+feature authored for it is the **mound** (`pelvis/mound-decr|incr`, the pack's own
+adult-only modifier, `scripts/lib/control/mound.ts`): a broad, low pad over the
+pubic bone of the measured mons width and length (taken as its extent at half
+height, with a smootherstep falling to nothing over twice that), peaking at the
+verified 1.5 cm BMI-band contrast (fuller) or 1 cm (flatter), fullest in its upper
+centre, rising from nothing at the fold below it, and leaning to the body's forward
+axis so it does not push tissue into the fold. It is a *control* target, not
+detail: a swell that broad is low-frequency, the base's cells and the subdivision
+that smooths them carry it exactly, and its margins run past the refined region,
+where a lattice detail would leave a crease at the region's edge. (The first
+version was a lattice detail along the skin's normal with a cosine bell; it read as
+a lump with a lower rim, and the flatter as a ledge: the normal's downward lean
+piled tissue into the fold, and the bell's margin had a curvature jump.) The
+packer generates the targets on the authoring figure's control mesh
+(`HumanoidModel.controlShape`), so the pack is reproducible; `tests/moundControl.test.ts`
+holds the form to its numbers and the surface it makes to having no crease (no
+edge's shading turns by more than about 7° fuller or 4° flatter), and
+`tests/moundPack.test.ts` holds the shipped pack to the generator. Its skin
 fields and colour layer still follow the body's bulge target, not the new
-detail. The penis, testes and vulva are the next features
+target. The penis, testes and vulva are the next features
 (docs/research/ADULT-SCULPT-PLAN.md, section 10): a shaft is an extrusion far
-beyond what displacing existing vertices can do, so they need reservoir
-topology. `tests/adultPermutations.test.ts` holds the matrix of ages, genders,
-feature combinations and states every feature joins.
+beyond what displacing existing vertices can do, so they draw on **reservoirs**.
+`tests/adultPermutations.test.ts` holds the matrix of ages, genders, feature
+combinations and states every feature joins.
+
+**Reservoirs** (docs/research/ADULT-SCULPT-PLAN.md, section 6b) are the material
+those features extrude from, kept continuous with the body: the pack names a
+closed loop of the refinement's vertices round a disc of its polygons
+(`anatomy.reservoirs`), and `applyReservoirs` (`src/build/reservoir.ts`) adds, on
+the surface at the level in use, rings of copies of the loop, the strips between
+them, and the cap re-attached to the last ring. A copy has its vertex's stencil
+row, so it has its position, skin weights, shading normal, occlusion and uv scale;
+at rest the strips have no area and the surface is exactly the one without them,
+at every subdivision level (`tests/reservoir.test.ts`, `tests/adultReservoir.test.ts`).
+A copy also follows whatever displaces the vertex it copies, so the strips stay
+closed under the mound, and a detail addressing the rings draws them into a tube
+(a watertight one, tested). The strips are written with the control face that owns
+their edge, so a garment that hides the face hides them. The adult pack places a
+phallic disc on the midline where the front of the pelvis turns under and a
+labioscrotal pair on the underside between the legs
+(`scripts/lib/adultReservoirs.ts`), as one continuum of sizes for every
+presentation, with no feature knowing which anatomy it will become. Detail is
+subdivided linearly (`linearSubdivisionStencil`), positions smoothly, because
+smoothing the cap's displacement leaked it into the loop and overshot the tube by
+up to 22% at level 2.
 
 **Arousal.** The adult manifest adds an `arousal` state morph
 (`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by

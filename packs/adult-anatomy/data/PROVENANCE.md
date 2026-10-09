@@ -12,4 +12,4 @@ Every packed source file was checked for CC0 from its own content before packing
 
 | Output | SHA-256 |
 | --- | --- |
-| targets.bin.gz | `2f9e597812a874e42e76808982aedd9ebf73e2ad6b3a8adf0973b2f5c0821ae2` |
+| targets.bin.gz | `5074cb7afd570c48ddf9287a9dc714ca72e3252e3907a4f01dfe26ffb912c0aa` |
