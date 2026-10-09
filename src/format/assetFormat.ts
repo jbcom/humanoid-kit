@@ -482,6 +482,15 @@ export interface AdultDetailSpec {
    * scaled by the ratio of the figure's own distance to `rest`. Absent: none.
    */
   scale?: { a: number; b: number; rest: number };
+  /**
+   * Targets whose weight is multiplied by other values: `gates[target]` lists
+   * factors, each `mod:<modifier id>` (that modifier's value, the positive part:
+   * how much of a feature there is) or `signal:<name>` (a skin-state signal, 0..1).
+   * A girth change of a shaft is worth nothing without a shaft: its target is
+   * gated by the length modifier, so the two combine as a product and not as a
+   * sum of two independent displacements. A factor that is zero drops the target.
+   */
+  gates?: Record<string, string[]>;
 }
 
 /** Faces of the base body to refine and by how much: `levels[i]` for face `faces[i]`. */

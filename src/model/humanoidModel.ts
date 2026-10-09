@@ -458,6 +458,23 @@ export class HumanoidModel {
       ...(assets.adultAnatomyManifest?.anatomy?.stateMorphs ?? []),
     ];
     this.detailTargets = new Set(assets.adultAnatomyManifest?.anatomy?.detail?.targets);
+    // A gate names a detail target and factors the loaded packs know: a typo is an error now, not a feature that never shows.
+    for (const [target, factors] of Object.entries(
+      assets.adultAnatomyManifest?.anatomy?.detail?.gates ?? {},
+    )) {
+      if (!this.detailTargets.has(target))
+        throw new AssetFormatError(`detail gate for ${target}: it is not a detail target`);
+      for (const f of factors) {
+        const kind = f.slice(0, f.indexOf(":"));
+        const name = f.slice(f.indexOf(":") + 1);
+        if (kind !== "mod" && kind !== "signal")
+          throw new AssetFormatError(
+            `detail gate ${f} of ${target}: expected mod:<id> or signal:<name>`,
+          );
+        if (kind === "mod" && !assets.modifiers.has(name))
+          throw new AssetFormatError(`detail gate ${f} of ${target}: no such modifier`);
+      }
+    }
     const ids = options.attachments ?? [...assets.attachments.keys()];
     const wearing = ids.map((id) => {
       const a = assets.attachments.get(id);
@@ -1331,13 +1348,43 @@ export class HumanoidModel {
         `the recipe needs target files that have not loaded yet: ${[...pending].join(", ")} ` +
           "(await their stage of loadHumanoidAssetsStaged)",
       );
-    const detail = all.filter((c) => this.detailTargets.has(c.target));
-    const contributions = detail.length
+    const isDetail = all.filter((c) => this.detailTargets.has(c.target));
+    // A gated target is worth its weight times its factors; a factor of nothing drops it.
+    const detail: Contribution[] = [];
+    for (const c of isDetail) {
+      const gate = this.detailGate(c.target, recipe, signals);
+      if (gate === 0) continue;
+      detail.push(typeof c.weight === "number" ? { target: c.target, weight: c.weight * gate } : c);
+    }
+    const contributions = isDetail.length
       ? all.filter((c) => !this.detailTargets.has(c.target))
       : all;
     const control = new Float32Array(this.assets.positions.length);
     evaluateMorph(this.assets.positions, this.assets.targets, contributions, control, this.regions);
     return { control, detail };
+  }
+
+  /** The product of a detail target's gates (`AdultDetailSpec.gates`) for a figure in a state; 1 without any. */
+  private detailGate(
+    target: string,
+    recipe: Recipe,
+    signals: Readonly<Record<string, number>>,
+  ): number {
+    const factors = this.assets.adultAnatomyManifest?.anatomy?.detail?.gates?.[target];
+    if (!factors) return 1;
+    let gate = 1;
+    for (const f of factors) {
+      const at = f.indexOf(":");
+      const kind = f.slice(0, at);
+      const name = f.slice(at + 1);
+      if (kind === "mod") gate *= Math.min(1, Math.max(0, recipe.modifiers[name] ?? 0));
+      else if (kind === "signal") gate *= Math.min(1, Math.max(0, signals[name] ?? 0));
+      else
+        throw new AssetFormatError(
+          `detail gate ${f} of ${target}: expected mod:<id> or signal:<name>`,
+        );
+    }
+    return gate;
   }
 
   /**

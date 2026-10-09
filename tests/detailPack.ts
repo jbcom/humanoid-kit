@@ -53,6 +53,8 @@ export interface SyntheticPack {
   modifiers?: ShapeModifierEntry[];
   /** False when the targets are control targets (on the base's vertices), not detail: no `anatomy.detail`. */
   detail?: boolean;
+  /** `AdultDetailSpec.gates`: detail targets whose weight is multiplied by other values. */
+  gates?: Record<string, string[]>;
   /** The lattice key the targets were authored on, when there are targets. */
   surfaceKey?: string;
   scale?: { a: number; b: number; rest: number };
@@ -87,6 +89,7 @@ export function adultPackWith(o: SyntheticPack = {}): AdultAnatomyData {
       targets: o.targets.map((t) => t.name),
       surfaceKey: o.surfaceKey ?? "",
       ...(o.scale && { scale: o.scale }),
+      ...(o.gates && { gates: o.gates }),
     };
   return { manifest, targets: concat(base.targets, parts) };
 }
