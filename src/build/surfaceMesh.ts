@@ -32,6 +32,30 @@ export interface SurfaceMesh {
   index: Uint32Array;
   skinIndex: Uint16Array;
   skinWeight: Float32Array;
+  /**
+   * Set for a surface refined on top of a coarser one (`buildRefinedSurfaceMesh`):
+   * its shading normals come from the coarser surface's, not from its own faces.
+   */
+  smoothNormals?: SmoothNormals;
+}
+
+/**
+ * Shading normals for a refined surface: the coarse surface's vertex normals
+ * (from its own quads, as the base body shades), interpolated to the refined
+ * vertices by the refinement's stencil and, when the refined polygons are
+ * subdivided further, carried through that stencil too. Normals from the refined
+ * faces themselves would be flat across each coarse quad and band the shading.
+ */
+export interface SmoothNormals {
+  /** Control vertices → the coarse surface's vertices. */
+  control: Stencil;
+  /** The coarse surface's quads, and its vertex count. */
+  faces: Uint32Array;
+  vertexCount: number;
+  /** The coarse surface's vertices → the refined polygon mesh's. */
+  interpolate: Stencil;
+  /** The refined polygon mesh's vertices → the final surface's; null when they are the same. */
+  smooth: Stencil | null;
 }
 
 /** A quad mesh with UVs and skin weights: the base body, or an attachment. */
@@ -166,6 +190,7 @@ export function buildRefinedSurfaceMesh(
   let topology: QuadTopology;
   let uvs: Float32Array = fine.uvs;
   let faceUvs: Uint32Array;
+  let smooth: Stencil | null = null;
   if (levels === 1) {
     ({ topology, faceUvs } = polygonsToQuads(fine));
   } else {
@@ -175,6 +200,7 @@ export function buildRefinedSurfaceMesh(
       faces: fine.faces,
     });
     stencil = composeStencils(stencil, smoothed.stencil);
+    smooth = smoothed.stencil;
     topology = smoothed.topology;
     const uvLevel = subdivideUvLinearPolygons(uvs, fine.faceStart, fine.faceUvs);
     uvs = uvLevel.uvs;
@@ -182,13 +208,23 @@ export function buildRefinedSurfaceMesh(
     for (let l = 2; l < levels; l++) {
       const level = catmullClarkLevel(topology);
       stencil = composeStencils(stencil, level.stencil);
+      smooth = composeStencils(smooth, level.stencil);
       topology = level.topology;
       const next = subdivideUvLinear(uvs, faceUvs);
       uvs = next.uvs;
       faceUvs = next.faceUvs;
     }
   }
-  return finishSurface(source, stencil, topology, uvs, faceUvs);
+  return {
+    ...finishSurface(source, stencil, topology, uvs, faceUvs),
+    smoothNormals: {
+      control: base.stencil,
+      faces: base.topology.faces,
+      vertexCount: base.topology.vertexCount,
+      interpolate: fine.stencil,
+      smooth,
+    },
+  };
 }
 
 /**
@@ -330,6 +366,49 @@ function interpolateSkin(assets: Pick<QuadSource, "skinIndex" | "skinWeight">, s
   return { index, weight };
 }
 
+/** Adds each quad's area-weighted normal (from its diagonals, robust for non-planar quads) to its corners'. */
+function addQuadNormals(faces: Uint32Array, positions: Float32Array, out: Float32Array): void {
+  for (let f = 0; f < faces.length; f += 4) {
+    const a = (faces[f] as number) * 3;
+    const b = (faces[f + 1] as number) * 3;
+    const c = (faces[f + 2] as number) * 3;
+    const d = (faces[f + 3] as number) * 3;
+    const ux = (positions[c] as number) - (positions[a] as number);
+    const uy = (positions[c + 1] as number) - (positions[a + 1] as number);
+    const uz = (positions[c + 2] as number) - (positions[a + 2] as number);
+    const vx = (positions[d] as number) - (positions[b] as number);
+    const vy = (positions[d + 1] as number) - (positions[b + 1] as number);
+    const vz = (positions[d + 2] as number) - (positions[b + 2] as number);
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const nz = ux * vy - uy * vx;
+    for (const p of [a, b, c, d]) {
+      out[p] = (out[p] as number) + nx;
+      out[p + 1] = (out[p + 1] as number) + ny;
+      out[p + 2] = (out[p + 2] as number) + nz;
+    }
+  }
+}
+
+/** The shading normals of a refined surface (`SmoothNormals`), one per surface vertex, not yet normalised. */
+function smoothNormals(plan: SmoothNormals, control: Float32Array, count: number): Float32Array {
+  const base = applyStencil(plan.control, control, new Float32Array(plan.vertexCount * 3));
+  const n = new Float32Array(plan.vertexCount * 3);
+  addQuadNormals(plan.faces, base, n);
+  for (let v = 0; v < plan.vertexCount; v++) {
+    const l = Math.hypot(n[v * 3] as number, n[v * 3 + 1] as number, n[v * 3 + 2] as number) || 1;
+    n[v * 3] = (n[v * 3] as number) / l;
+    n[v * 3 + 1] = (n[v * 3 + 1] as number) / l;
+    n[v * 3 + 2] = (n[v * 3 + 2] as number) / l;
+  }
+  const refined = applyStencil(
+    plan.interpolate,
+    n,
+    new Float32Array(plan.interpolate.offsets.length * 3 - 3),
+  );
+  return plan.smooth ? applyStencil(plan.smooth, refined, new Float32Array(count * 3)) : refined;
+}
+
 /** Morphed control positions → render positions and smooth normals (normals shared across UV seams). */
 export function evaluateSurface(
   mesh: SurfaceMesh,
@@ -340,30 +419,13 @@ export function evaluateSurface(
 ): void {
   const sCount = mesh.topology.vertexCount;
   const surface = scratch?.surface ?? new Float32Array(sCount * 3);
-  const sn = scratch?.normals ?? new Float32Array(sCount * 3);
+  let sn = scratch?.normals ?? new Float32Array(sCount * 3);
   applyStencil(mesh.stencil, control, surface);
-  sn.fill(0);
-  const fv = mesh.topology.faces;
-  for (let f = 0; f < fv.length; f += 4) {
-    const a = (fv[f] as number) * 3;
-    const b = (fv[f + 1] as number) * 3;
-    const c = (fv[f + 2] as number) * 3;
-    const d = (fv[f + 3] as number) * 3;
-    // Quad normal from its diagonals (area-weighted, robust for non-planar quads).
-    const ux = (surface[c] as number) - (surface[a] as number);
-    const uy = (surface[c + 1] as number) - (surface[a + 1] as number);
-    const uz = (surface[c + 2] as number) - (surface[a + 2] as number);
-    const vx = (surface[d] as number) - (surface[b] as number);
-    const vy = (surface[d + 1] as number) - (surface[b + 1] as number);
-    const vz = (surface[d + 2] as number) - (surface[b + 2] as number);
-    const nx = uy * vz - uz * vy;
-    const ny = uz * vx - ux * vz;
-    const nz = ux * vy - uy * vx;
-    for (const p of [a, b, c, d]) {
-      sn[p] = (sn[p] as number) + nx;
-      sn[p + 1] = (sn[p + 1] as number) + ny;
-      sn[p + 2] = (sn[p + 2] as number) + nz;
-    }
+  if (mesh.smoothNormals) {
+    sn = smoothNormals(mesh.smoothNormals, control, sCount);
+  } else {
+    sn.fill(0);
+    addQuadNormals(mesh.topology.faces, surface, sn);
   }
   const r2s = mesh.renderToSurface;
   for (let r = 0; r < r2s.length; r++) {

@@ -236,6 +236,49 @@ describe("a body surface with local refinement", { timeout: 600_000 }, () => {
     expect(worst).toBeLessThan(0.0006);
   });
 
+  it("shades smoothly: normals interpolate the base's, so no edge turns sharper than the base's own", () => {
+    // Flat-face normals on the new vertices against the smoothed ones at the base's
+    // would band the shading at the base's quad size (seen in the contact sheet).
+    const maxTurn = (mesh: SurfaceMesh) => {
+      const n = evaluate(mesh, P).normals;
+      let worst = 0;
+      for (let i = 0; i < mesh.index.length; i += 3)
+        for (let k = 0; k < 3; k++) {
+          const a = mesh.index[i + k] as number;
+          const b = mesh.index[i + ((k + 1) % 3)] as number;
+          if (a === b) continue;
+          const dot =
+            (n[a * 3] as number) * (n[b * 3] as number) +
+            (n[a * 3 + 1] as number) * (n[b * 3 + 1] as number) +
+            (n[a * 3 + 2] as number) * (n[b * 3 + 2] as number);
+          worst = Math.max(worst, Math.acos(Math.min(1, Math.max(-1, dot))));
+        }
+      return worst;
+    };
+    const plain = plainSurface(1);
+    const fine = fineSurface(1);
+    const out = evaluate(fine, P).normals;
+    for (let r = 0; r < out.length / 3; r++)
+      expect(
+        Math.hypot(out[r * 3] as number, out[r * 3 + 1] as number, out[r * 3 + 2] as number),
+      ).toBeCloseTo(1, 4);
+    expect(maxTurn(fine)).toBeLessThanOrEqual(maxTurn(plain) * 1.02);
+    // And away from the new vertices the normals are the base's, exactly.
+    const a = evaluate(plain, P);
+    const b = evaluate(fine, P);
+    const at = (p: Float32Array, i: number) =>
+      [0, 1, 2].map((k) => (p[i * 3 + k] as number).toFixed(6)).join(",");
+    const normalAt = new Map<string, string>();
+    for (let i = 0; i < a.positions.length / 3; i++)
+      normalAt.set(at(a.positions, i), at(a.normals, i));
+    let same = 0;
+    for (let i = 0; i < b.positions.length / 3; i++) {
+      const want = normalAt.get(at(b.positions, i));
+      if (want !== undefined && want === at(b.normals, i)) same++;
+    }
+    expect(same).toBeGreaterThan(a.positions.length / 3 - 400);
+  });
+
   it("keeps the UV layout: the surface's UV area is the plain surface's, seams included", () => {
     const plain = plainSurface(1);
     const fine = fineSurface(1);

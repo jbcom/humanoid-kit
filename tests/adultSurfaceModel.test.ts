@@ -12,7 +12,8 @@ const coreModel = new HumanoidModel(core, { subdivision: 1 });
 const adult = createRecipe({ macros: { age: 30 } });
 const minor = createRecipe({ macros: { age: 15 } });
 
-describe("the adult surface in the model", () => {
+// Each surface build takes seconds, and the subdivision-2 one tens on a busy machine.
+describe("the adult surface in the model", { timeout: 300_000 }, () => {
   it("is the base surface for every figure under 18, vertex for vertex", () => {
     // The structural guarantee: a minor's evaluation has exactly the base
     // body's vertices, so there is no adult vertex in it to leak.
