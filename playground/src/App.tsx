@@ -13,6 +13,7 @@ import {
 import { bodyPack } from "humanoid-kit-body";
 import { useEffect, useState } from "react";
 import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, type ToneMapping } from "three";
+import { Walk } from "./Walk";
 
 async function createClient(): Promise<HumanoidWorkerClient> {
   // `?adult` loads the adult anatomy pack for local testing only: the condition
@@ -115,7 +116,9 @@ export function App() {
   if (!client) return null;
   return (
     <HumanoidProvider client={client}>
-      {params.has("view") || params.has("cam") ? (
+      {params.get("scene") === "walk" ? (
+        <Walk />
+      ) : params.has("view") || params.has("cam") ? (
         <Shot />
       ) : (
         <HumanoidCreator title="humanoid-kit" initialRecipe={initialRecipe()} />

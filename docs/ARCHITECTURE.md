@@ -284,7 +284,8 @@ is the next refinement if expressions need it.
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one
 `HumanoidModel`. The worker loads the packs in stages (above), builds the model
 from the first and replies with the topology, the modifier ids and the slider
-taxonomy while later stages are still arriving. An evaluation whose recipe
+taxonomy (and the joints presence reads, so the main thread derives presence
+without the packs) while later stages are still arriving. An evaluation whose recipe
 names a target that has not arrived waits in the worker for the stage that
 brings it, and only for that; one that has everything evaluates at once. If a
 stage fails to load, each evaluation that needs it rejects with the reason, and
@@ -392,6 +393,54 @@ mean what they meant there; everything must be testable in Node.
   kneeling figure rests on the floor instead of hanging where its standing
   feet were.
 
+## Presence
+
+`src/presence` is what a figure publishes about itself for the scene around it
+(`docs/PRESENCE.md`). `presenceFromEvaluation` reads an `Evaluation`: anchors
+are the centroids of the joints' vertex lists (`presenceJoints`) over the
+morphed control mesh lifted by `groundOffset`, the footprint is the extent of
+the rendered body's soles, bounds cover every surface point, appearance is
+`skinAlbedo` of the recipe's skin, and `adult` is the age policy's verdict.
+The evaluation is in the figure's own frame; `placePresence` turns it about its
+ground position and moves it onto a `Placement`, so a moving figure re-places
+one rest presence each frame instead of being re-derived (into a preallocated
+copy: the per-frame path allocates nothing). The registry, the helpers
+(`groundOcclusion`, `faceMetering`, `presenceGroups`) are pure.
+
+**In a pose** (`presenceFromPose`) the same description comes from the posed
+skeleton. The control mesh is skinned by the pose once (`posedControl`, cached on
+the evaluation and the pose, because grounding needs the same mesh's lowest
+point and the two share the pass); anchors are the same joint centroids over it;
+the footprint is the body within 3 cm of the floor, so a lunge has one contact
+where standing had two; and bounds are the posed control body's box widened per
+side by how far the rest surface sits inside the rest control mesh's box
+(measured once per evaluation). The rendered surface is not skinned per pose: it
+has about four times the vertices to move a box by a centimetre, and an unrotated
+pose reports exactly the rest bounds this way (tested). Deriving takes about
+0.7 ms (13k body vertices) and happens when the evaluation or pose changes; a
+figure that only moves is re-placed, not re-derived.
+
+React only publishes into and reads from the registry. `<PresenceProvider>`
+owns it and, once per frame, runs every mounted figure's publisher and then
+ticks the registry; a `<Humanoid presence>` publisher re-places the figure's
+rest presence (derived once per evaluation) on the group's world transform, so
+a figure moved by anything in the scene graph is followed with no props
+changing. A figure that is hidden, tipped over or not yet evaluated returns
+null and is removed from the registry. Readers pull (`usePresence` is a live
+accessor) and subscribe only to discrete events (`useProximity`).
+
+`StudioStage` is the first consumer. Inside a provider it draws the contact
+shadow as one quad whose fragment shader (`GroundContactMaterial`) evaluates
+`sampleGroundOcclusion`'s formula (a smoothstep falloff per contact, combined
+with `max`) over a uniform array refreshed right after each tick from
+`groundOcclusion(registry.all(), { floorY }, contacts)`, where `floorY` is the
+stage's own height and the quad is resized to the contacts each frame. One pass over one quad is what makes the
+pool: separate per-figure shadows would blend over each other and darken the
+overlap twice. A browser test renders the shader from above and compares its
+pixels with `sampleGroundOcclusion`; the Playwright spec `e2e/presence.spec.ts`
+does the same on the playground's `?scene=walk` (two figures walking, parting
+and overlapping), measuring the canvas against the model.
+
 ## Layers
 
 | Folder | Role | React or DOM |
@@ -405,9 +454,10 @@ mean what they meant there; everything must be testable in Node.
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
 | `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking | no |
 | `src/model` | `HumanoidModel`, the evaluation pipeline | no |
+| `src/presence` | Presence registry, helpers, and presence derived from an evaluation | no |
 | `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
-| `src/render` | The skin and eye materials, the layer field atlas | three.js, no React |
+| `src/render` | The skin and eye materials, the layer field atlas, the pooled ground contact shader | three.js, no React |
 | `src/react` | `HumanoidProvider`, `Humanoid`, `StudioStage` and hooks | yes |
 | `src/editor/ui` | `HumanoidCreator` and its panels | yes |
 
