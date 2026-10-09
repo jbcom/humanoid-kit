@@ -132,6 +132,7 @@ try {
           (id) => `data/targets-${id}.bin.gz`,
         ),
         "data/attachments.bin.gz",
+        "data/body-occlusion.bin.gz",
       ],
     ],
     [

@@ -34,9 +34,10 @@ lengths are in metres.
 
 | Pack | Files | Contents |
 | --- | --- | --- |
-| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, and the eyes, teeth and tongue |
+| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, and the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion") |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
 | `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | Ten scalp hair styles bound to the base mesh, each with its baked occlusion and a strand map (see "Scalp hair") |
+| `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 19 garments from MakeHuman's system assets (suits, shoes, a hat), each bound to the base mesh with the vertices it hides |
 
 A target is stored sparsely: the indices of the vertices it moves (`uint16`),
 then their `int16` xyz deltas, plus a per-target scale in metres per step.
@@ -93,7 +94,24 @@ already-fetched buffers.
 The adult manifest records `topology` and `bodySha256`. The parser refuses it
 unless both match the body pack it is combined with, so adult targets can never
 be applied to a body they were not built for. The hair manifest records the same
-pair and is refused the same way. Each pack's `data/PROVENANCE.md`
+pair and is refused the same way. The clothing manifest records the
+same two keys and is refused the same way: a garment's bindings are indices into
+one specific base mesh.
+
+The clothing pack's garments binary is large next to the first figure (2.3 MB
+of bindings and meshes), and a figure that wears nothing never needs it, so it
+loads as a stage of its own, after the body's modifier targets
+(`GARMENTS_FILE`); its manifest, which lists the garments and names their
+textures, arrives with the first stage. A garment is an attachment without
+baked occlusion: the same bindings (three base vertices, weights and an offset
+per vertex, per-axis scale references) and mesh, plus `delete_verts`, a
+category (`kind`, below) and the asset's tags. The packer
+(`scripts/pack-clothing.ts`) packs diffuse and normal maps as WebP at most
+1024 px on a side (2.1 MB for all nineteen), and reads the same `.mhclo`
+syntax as the attachments: the system shoes write `material` and
+`vertexboneweights_file` between `verts` and its data, so a keyword line does
+not end a vertex or `delete_verts` block, and only the other section keyword
+switches one. Each pack's `data/PROVENANCE.md`
 records the upstream commit, the CC0 evidence per source file and the SHA-256 of
 every output. The packer's licence gate refuses any source file that does not
 prove CC0 from its own content; see `NOTICE.md`.
@@ -287,6 +305,307 @@ key raises the upper and lowers the lower lip together, so a pose raising only
 the upper lip reads as half the key. Splitting it (four keys, sixteen corners)
 is the next refinement if expressions need it.
 
+## Clothing (milestone 7)
+
+**Use cases.** A creator dresses a figure from a wardrobe and changes one
+garment at a time while the shape sliders keep moving. A game dresses a crowd
+from saved recipes, each figure in its own outfit. The same garment must fit a
+lean, a heavy and a muscular body and a child, and follow every pose. Garments
+layer: shoes over trousers, a jacket over a shirt. No skin may show through a
+garment, and no gap may open at a neckline, cuff or hem.
+
+**Requirements.** Changing the outfit must not rebuild or re-subdivide the
+body (a hat swap in a slider drag would stall it). The occlusion the pack
+baked for the eyes, teeth and tongue must stay valid whatever is worn. The core
+stays framework-free and testable in Node. Only CC0 data is packed, proved
+from each file.
+
+**Decisions (2026-10-09).**
+
+- *A garment is an attachment worn by choice.* It binds to base vertices by
+  index and weight (`.mhclo`), so it follows the shape through the same
+  `evaluateBinding` as the eyes, is skinned from its references' weights and
+  subdivided at the attachments' level (at most 1). It lives in its own pack
+  (`humanoid-kit-clothing`) and its own map (`assets.garments`), not
+  `assets.attachments`: the model wears every body-pack attachment by default,
+  and a garment must never be worn that way. `recipe.outfit`, an optional list
+  of ids, says what a figure wears; the recipe stays plain data, and a saved
+  figure names its clothes.
+- *Masking is a mask over indices, not a rebuild.* The first version of the
+  model dropped covered body faces from the quad list before building the
+  surface, so every outfit change meant a new subdivision stencil, new UV
+  splitting and new skin weights, the occluder for the attachment bake changed
+  with the outfit, and the ground offset read a different vertex set.
+  MakeHuman does the opposite: the subdivided mesh keeps its geometry and only
+  its face mask changes, "allowing faster changes to the face mask without
+  requiring a rebuild". The model now builds the body once from all its faces.
+  An outfit is a pure function of the garment ids (`outfit(ids)`): it works
+  out which base vertices still show and returns the body's triangle index with
+  the hidden faces' triangles left out, and each garment's. A control face owns
+  `2 × 4^level` consecutive triangles, so masking is a copy of the runs that
+  stay. The adult surface (finer faces round the pelvis) owns a varying number
+  per face, which `buildRefinedSurfaceMesh` reports as `faceTriangles`; the same
+  mask applies to it, worked out the first time an adult wears the outfit. An
+  evaluation carries the mask of the surface it is for, and its outfit key says
+  which (`adult:` first). Results are cached by key (a handful at a time), and
+  the worker sends the masks only to a caller that does not hold them.
+  Rejected: rebuilding the
+  surface per outfit (above), and discarding fragments in the shader (a
+  per-vertex attribute cannot express a per-face rule across UV seams, and a
+  discarded triangle still costs its vertex work).
+- *A face is hidden only when all its corners are deleted.* The first
+  implementation hid a body quad when any corner was deleted, which left a gap
+  ring at every garment edge; a garment's `delete_verts` list the vertices it
+  covers, and the quads on its boundary still have visible corners under the
+  cloth's edge. The garment's own faces follow the same rule.
+- *Layering is by `z_depth`, then category, then id.* MakeHuman orders by the
+  asset's `z_depth` and breaks ties by uuid, which is random. Nearly every
+  system asset has `z_depth` 50, so the tie decides almost everything; each
+  garment therefore also declares a category (`kind`, `GARMENT_LAYERS`, whose
+  order is MakeHuman's own table of conventional values: underwear 39, socks
+  43, shirt and trousers 47, sweater 50, indoor jacket 53, shoes 57, coat 61,
+  backpack 69), which decides between garments of equal `z_depth`, and the id
+  decides what is left, so an outfit always stacks the same way. The
+  stack is processed from the outermost in; each garment is masked by the
+  deletions of the garments over it only, then adds its own. A jacket's
+  `delete_verts` therefore hide the shirt under it and never the jacket.
+  *The category does not come first, which was the first version*: the table
+  puts shoes (57) over trousers (47), but the system shoes declare `z_depth` 5
+  against the suits' 50, and ordered by category the shoes' deletions cut the
+  trousers off at the ankle with a torn staircase edge. With the asset's own
+  depth leading, the hem hangs over the shoe, as it does on a person. An
+  asset's author said which of two garments is nearer the skin; the category
+  table is for the garments that did not.
+- *Layering suits garments that are separate pieces.* The system suits are
+  complete outfits (shirt, trousers and, for the elegant ones, a jacket in one
+  mesh), so they are all category `clothes`, and the creator wears one at a time
+  (`wearGarment` replaces a garment of the same kind). Two of them worn through
+  the API stack two pairs of trousers: the one that reaches lower shows below
+  the other's hem, and its edge follows the mask's face boundary, which is
+  ragged. That is MakeHuman's result too; it is not an error to hide, and the
+  stack is demonstrated by what is separate in the pack: shoes under trousers,
+  a hat over everything.
+- *A mask reaches a garment through its references.* A garment vertex bound
+  exactly to one base vertex copies that vertex's visibility; any other is
+  visible when at least two of its three references are. This is MakeHuman's
+  rule, and it keeps the cloth that lies over a hidden region from being cut by
+  one reference vertex alone.
+- *Hair, brows, lashes, eyes and teeth are not in the stack.* They are
+  attachments with no layer: they hide no skin and no garment masks them.
+- *The attachments' occlusion does not depend on the outfit.* The body that
+  occludes them is the full body (`bodyControlTriangles`), as in the pack's
+  bake, and garments are not occluders or occludees: a worn outfit never forces
+  the bake to run again, and `wearsPackedSet` stays true. Whether garments
+  should shade skin (the neck under a collar) is open; the skin layer stack
+  (`src/surface/layers.ts`) is where it would go, as a layer whose mask is the
+  rim of the covered region. It is not done, for a reason of design rather than
+  effort: the field atlas is rasterised once for the base mesh and shared by every
+  figure, and the rim of what a garment covers changes with the outfit, so each
+  outfit would need its own field. The light does the work meanwhile: garments
+  cast and receive shadows like the body, which darkens the skin at a cuff or
+  collar the way contact does.
+- *The figure stands on what it wears.* `groundOffset` counts the garments'
+  lowest control point as well as the body's, so soles that reach 2 cm below
+  the foot rest on the ground instead of sinking. A posed figure's grounding
+  (`posedGroundOffset`) takes the worn garments' render vertices too and skins
+  them with the pose, so a kneeling figure rests on its knee or its shoe,
+  whichever is lower.
+- *Skin at a garment's edge is sunk under the cloth.* MakeHuman hides only the
+  body faces a garment covers whole and keeps the ring round its edge (above),
+  so no gap opens. That ring sits a centimetre or two under the cloth, and a
+  joint moves cloth and skin by different amounts: in a raised-arm pose, skin
+  came through the yoke on either side of a shirt's collar (and, less, at a cuff
+  and a hem). Found by posing the body and the suit the way the renderer does
+  and finding body vertices that were under the cloth at rest and outside it
+  posed: at the shoulder top, where the clavicle, shoulder, spine and neck bones
+  meet with near-equal weights, cloth bound a centimetre or two off the skin
+  ends up 2–9 mm inside it. Ruled out: the blend shortening the cloth's offset
+  (skinning the offset by the vertex's dual quaternion rotation, which keeps its
+  length, changed nothing), and skin weights (cloth is bound through MakeHuman's
+  helper-tights proxy, whose weights differ from the body's by 0.13 on average;
+  transferring the body's weights at the nearest point left as much skin
+  showing, 26 against 17 vertices in the benchmark pose, and was dropped).
+  Fixed in the geometry: for the visible body vertices within three edges of
+  what the outfit hides, `edgeTuck` casts a ray along the rest normal to the
+  garments' rest surface and sinks the vertex by that clearance (at most 3 cm,
+  the outermost garment's), along its normal in the posed figure's rest shape.
+  Only the body surface sinks; the garments stay bound to the unsunk shape, so
+  nothing the cloth covers moves and the visible skin begins where it did. It is
+  worked out once per outfit (a function of the garments, like the masks) and
+  applied per evaluation. Measured on skin that is covered at rest and outside
+  the cloth posed, within 15 mm, at the shoulder top: benchmark 107 → 26 mm of
+  summed depth (17 → 3 vertices), twisted 10 → 4 mm; a T-pose and `flexed` none.
+  Rejected: hiding the ring (a pose that lifts the cloth would show the empty
+  body under it), a shader depth bias on garments (it would also draw cloth over
+  skin that is truly in front of it, such as a hand at a cuff), and a fixed
+  offset of the garments (cloth floating off the skin at rest).
+- *Garments skin as the body does.* Their material takes the figure's dual
+  quaternion bones (`applyDualSkinning`, as for any material the library does
+  not make), and so do their shadow materials and the mesh's bounds and
+  picking, so a sleeve keeps the arm's volume at a twisted or raised joint and
+  does not part from the skin (`docs/evidence/clothing.md`, "Garments skin
+  like the body"). The grounding above uses the same blended skinning
+  (`skinPositions`), so what stands on the ground is what is drawn.
+- *Garments load as a stage of their own* (see "Packs and the binary format")
+  and are evaluated lazily: the model builds a garment's surface the first time
+  an outfit names it.
+
+## Body occlusion
+
+Attachment occlusion darkens what the body encloses; the body's own surface
+was never baked, so the inside of the mouth, the nostrils, the ear canals and
+the eye sockets rendered as open, fully lit skin (a flat wall behind the lips
+whenever no tongue hid it: `docs/evidence/occlusion.md`). The body now carries
+the same pose-keyed occlusion for those cavities.
+
+**The bake** (`HumanoidModel.bakeBodyOcclusion`, `src/surface/bodyOcclusion.ts`)
+casts the attachments' 32 cosine-weighted rays from the *control* vertices a
+head, jaw, tongue, eye or face-muscle bone moves (`cavityCandidates`, the
+visible body's vertices with any head-region skin weight: 4,073 of the 13,380),
+against the unsubdivided body alone, at every corner of the `OCCLUSION_KEYS`
+cube (the body posed by `skinPositions`, the corners reusing the rest bake
+where nothing within reach moved). The body shades itself, so the bake does
+not depend on the worn set, the subdivision level or what hides body faces:
+the tongue and teeth carry their own occlusion, and a mouth without them is
+simply open to the cavity behind. The value stored is `cavityOcclusion` of the
+visibility, `min(1, visibility / 0.85)` (`OPEN_VISIBILITY`): open skin is
+never fully visible (a cheek sees past the nose), so only enclosure beyond
+15% counts as a cavity, and a vertex leaves the stored set exactly where its
+value reaches 1. No step shows at the set's edge.
+
+**Sparse storage** (decision, 2026-10-09). The pack's `body-occlusion.bin.gz`
+holds only the vertices enclosed at some corner: 2,288 vertices, as `uint32`
+indices then one byte per corner each, 27.5 KB decoded and 9.2 KB gzipped;
+every other base vertex is open at every pose and costs nothing. The manifest
+field `bodyOcclusion` (`file`, `sha256`, `keys`, `count`) is additive: a pack
+without it is never darkened, and a pack baked at other keys than the code's
+is refused (`AssetFormatError`; the attachments' keys mismatch re-bakes, but
+the body's bake is a pack-time product with nothing at load to re-bake it).
+Dense storage (a byte per base vertex per corner, 150 KB decoded) would
+gzip to nearly the same size, since open skin is a run of 255s, so size is not
+the reason. Sparse is chosen because (1) the bake runs rays only for the head's
+candidates, not the whole body; (2) the set is explicit, so skin outside the
+face is guaranteed untouched by construction, not by every value happening to
+read 1; (3) the loader keeps a small index and bytes rather than a second
+body-sized array. The GPU needs a dense attribute whichever way the pack
+stores it, so `topology().body.occlusion` expands it once, through the
+subdivision stencil like any per-vertex field (three corners at a time), to a
+byte per corner per *render* vertex (8 bytes a vertex; 255 = open). It stays
+bytes on the GPU (normalised `uint8` attributes), and is uploaded as how
+*enclosed* a vertex is, so a body geometry with no occlusion attributes (a
+plain mesh in a `SkinMaterial`) reads open rather than black: an unset
+attribute reads as zero. The eight corners are packed `1 + 3 + 3 + 1` into
+attributes for that reason and not `1 + 4 + 3` like the attachments': a
+`vec4` attribute's unset fourth component reads as one, which darkened such a
+mesh whenever the smile key was held (caught by a browser test; the shader's
+corner blend is now generated from the layout).
+
+**Shading.** `SkinMaterial` applies it with the attachments' patch
+(`patchOcclusion`, `src/render/occlusion.ts`): the corner values are blended
+multilinearly in the vertex shader by the figure's key weights, and every
+light term (diffuse, specular, clearcoat and the vellus sheen) is scaled by
+`mix(floor, 1, occlusion ^ e)`. The body's floor is 0.1 where the attachments'
+is 0.15. The exponent `e` is the real correction. The mesh's mouth is a pocket
+only a couple of centimetres deep, so even the back wall that faces the camera
+at full jaw drop is 70–80% visible, and scaling light by 0.8 leaves a glowing
+wall (measured at the first tuning: nearly twice a cheek's luminance, where a
+mouth's inside is dimmer than a cheek). A cavity's directional light must
+come through the same aperture its visibility counts, so it loses more than
+the visibility it loses. `e` is therefore 1 for a vertex that is open at rest
+(a fold: the lip-chin crease keeps its plain value) and rises to 10
+(`BODY_OCCLUSION_POWER`) for one that is fully enclosed at rest (a cavity), as
+`1 + 9 × (1 − rest occlusion)`, computed per vertex in the vertex shader from
+corner 0. Raising every vertex to 6 was tried first and left a dark smudge
+under the lower lip at every jaw opening, because that fold is 70–80% visible
+too. With the rest-dependent exponent the back wall reads at about half a
+cheek's luminance at full jaw drop (mean luminance 44 against 85, where it
+was 147 against 80 before) and the fold is untouched. `<Humanoid>` shares one key-weight vector between the skin and the
+attachments' materials. A test re-bakes from the
+shipped pack (`tests/bake/bodyOcclusionPack.test.ts`) and fails if the stored
+bytes drift from what the code computes.
+
+Alternatives rejected: a skin colour layer over the cavity (does not follow
+the pose, so an open jaw would keep a dark mouth, and it cannot dim the
+specular and sheen terms); baking the body against the worn attachments (the
+body's bytes would then depend on the worn set, and the pack could not serve
+a mouth without a tongue); a screen-space occlusion pass (a renderer-wide
+cost, and noisy at the lip line where the cavity is thinnest).
+
+## The mouth's lining
+
+Inside the lips the surface is mucosa, not skin, and the body mesh carries it
+as one UV-mapped surface with the lips' outside, so it rendered in the skin's
+own colour: with the jaw dropped and no tongue, a wall of tan. `MOUTH_INTERIOR_LAYER`
+(`src/surface/regions/mouth.ts`) paints it with the measured lip colour at its
+deepest (`lipAlbedo`), which is the same epithelium over the same blood. Its
+mask comes from data the pack already has and no new targets:
+
+- **Seeds** are what the closed lips enclose, the body occlusion at rest
+  (`BodyOcclusion`), inside a box the lips' joints place (the nostrils, ear
+  canals and eye sockets are enclosed too and are not the mouth's).
+- **Spreading** along the mesh's own edges, through the box, reaches the
+  pocket's far end, which no ray can measure (the mesh leaves the pocket open,
+  so rays leave through it and its enclosure reads as partial) and which is
+  lining all the same, down to the pharynx wall 11 cm behind the lips that the
+  open jaw shows. Near the lips it passes only through enclosed vertices, so it
+  does not run out along the lower lip's outer surface to the chin, which joins
+  the lips' edge; deeper than 3.5 cm behind them it passes through anything,
+  since only the mouth is there.
+
+The occlusion then darkens the lining by pose as it does any cavity, so the
+colour reads as the dim maroon of a mouth's inside at every tone. Without body
+occlusion data the layer is open (no seeds, no lining).
+
+## Attachment colour
+
+An attachment is drawn with its pack material (roughness, transparency,
+culling, texture) and the colour the pack records, except teeth
+(`src/render/attachmentLook.ts`). MakeHuman's teeth multiply a flat 0.64 into a
+mid-grey texture in its own display-referred pipeline; decoded to linear light
+here that is a grey of about 0.18 albedo, so the teeth rendered darker than
+the skin around them at every tone. The colour is instead enamel's albedo
+(`ENAMEL_LAB`, ivory: L\* 76, a\* 0.5, b\* 12) divided by the texture's measured
+mean tooth colour (`TEETH_TEXTURE_MEAN`), so the texture's shading, cusps and
+gums are kept and only its level moves. Decision: a render-side constant over
+re-encoding the shipped texture or editing the pack's material, because the pack
+stays MakeHuman's data as it is and the correction is a statement about this
+renderer's colour pipeline. A test re-measures the texture and fails if the
+constant drifts; evidence in `docs/evidence/teeth.md`.
+
+### The gums
+
+The same lift reached the texture's gum texels, which are MakeHuman's dark
+saturated red (mean linear 0.195 / 0.039 / 0.045), and made the ring round the
+teeth an almost pure red. Real gingiva is a paler coral pink, and on deeper skin
+carries physiological melanin pigmentation, brown and patchy. Teeth therefore
+get a `TeethMaterial` (a `AttachmentStandardMaterial` whose fragment shader
+recolours the gum): a texel is gum where more than about half of its linear
+red is not green (`GUM_SATURATION`; the texture's texels fall into two groups,
+the tooth under 0.3 and the gum over 0.5, so a bright or stained tooth texel is
+never taken for gum, as it was when the test was a difference in red and green
+and left pink specks on the teeth), and a gum texel keeps its luminance
+(the creases painted into the texture) and takes the hue of `GUM_LAB`, mixed
+toward `GUM_PIGMENT_LAB` by `gumPigmentAmount(melanin)` (none up to melanin
+0.25, 0.85 at 1) in patches of a two-octave value noise over the texture's UVs
+(about a fifth of the pigment between patches). The tints are divided by
+`GUM_TEXTURE_MEAN_LUMINANCE`, measured from the shipped texture, so an average
+gum texel lands on the albedo and a test re-measures the texture. Tooth texels
+are untouched. `Humanoid` passes `recipe.skin.melanin` to the teeth, as it does
+the eye appearance to the eyes.
+
+**Choice, not measurement.** "Coral pink" and "brown, patchy melanosis on
+deeper complexions" are the periodontology descriptors of healthy gingiva (the
+pigmentation is graded clinically from none to heavy on the Dummett oral
+pigmentation index), but no table of CIELAB values from them is in this
+repository, so `GUM_LAB` (L\* 70, a\* 24, b\* 16, lifted above the 55 to 65 of a lit gum
+because the mouth's occlusion shades the ring round the teeth to about half), `GUM_PIGMENT_LAB` (L\* 35,
+a\* 12, b\* 13) and the pigmentation curve are picked to read right beside the
+lip and skin colours and tuned by eye against `docs/evidence/gums.md`. Decision:
+a recolour in the teeth's own shader over a second gum mesh or an edited pack
+texture, because the gum is part of the teeth texture's UV layout, the pack
+stays MakeHuman's data, and the tone must reach the gum without baking one
+texture per tone.
+
 ## Worker
 
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one
@@ -307,6 +626,16 @@ key nothing is gained by reordering: once a figure needs a stage, its later
 recipes need it too. Results are transferred, not copied. The client accepts an
 injected `Worker`; by default it starts the built `dist/worker/index.js` next to
 it.
+
+An outfit crosses the worker boundary in two parts, because they change at
+different rates. A garment's static data (surface, UVs, skin weights, material)
+is requested once per garment (`client.garment`) and kept. An evaluation carries
+only the garments' positions and normals, plus the outfit's masks (the triangle
+indices to draw) when the caller does not already hold them: the caller passes
+the key of the outfit it holds, and a slider drag over an unchanged outfit
+sends no indices at all. The masks the model caches are copied before they are
+transferred. A recipe with an outfit waits for the garments' load stage, and a
+figure that wears nothing does not.
 
 ## Editor
 
@@ -370,17 +699,33 @@ mean what they meant there; everything must be testable in Node.
   are kept for exporting to tools with bone-local frames; posing does not need
   them. Rotations from MakeHuman's BVH files apply unchanged, in each joint's
   channel order.
-- *Linear blend skinning on the GPU* (three's `SkinnedMesh`) with the pack's
-  weights, which MakeHuman authored for linear blending. The worker returns
-  the bone heads with each evaluation; the main thread binds the skeleton at
-  that rest and poses it per frame. Dual-quaternion skinning and corrective
-  shapes, for elbows, knees and shoulders, are a later area lane on the same
-  rig.
+- *Skinning on the GPU* (three's `SkinnedMesh`) with the pack's weights, which
+  MakeHuman authored for linear blending. The worker returns the bone heads with
+  each evaluation; the main thread binds the skeleton at that rest and poses it
+  per frame. Linear blending alone loses volume and collapses twisted limbs, so
+  the skin mixes it with dual quaternion skinning (below, "Skinning artefacts").
 - *Expressions blend face units in log space*: each unit's per-bone rotation
   is a rotation vector, an expression is the weighted sum per bone, and the sum
   is exponentiated. Blending is order-independent and exact for one unit.
+- *The face units are packed mirror-symmetric* (2026-10-09, an audit of every
+  unit's skin displacement against its partner's, reflected). MakeHuman authored
+  them by hand and a few are uneven: `NasolabialDeepener` turns one nose-wing
+  bone 7.8° about an axis its other side leaves alone (2.7 mm of 5.6 mm at age
+  45, so a figure's right fold deepened half as much again as its left), and
+  `MouthLeftPullUp` and `MouthRightPullUp` differ in a lip-corner bone and in a
+  sideways turn of the midline lip bone, so a smile pulled 0.45 mm to one side.
+  The packer makes each unit the mean of its authored frame and the reflection of
+  its partner's (`scripts/lib/faceUnits.ts`: `Left` and `Right` swapped in the
+  unit's name, `.L` and `.R` in the joint's, an X rotation kept and a Y or Z
+  rotation and X position negated), which favours neither side and leaves a
+  symmetric unit exactly as it was; a central unit's sideways turns go. A test
+  holds every shipped unit to the mirror of its partner. Decision: the
+  correction is the packer's, since the data is MakeHuman's and the asymmetry is
+  in it, over a runtime fix that every consumer would have to repeat. Averaging
+  over choosing a side, because nothing says which side was the intended one.
 - *A CPU reference* (`skinPositions`) poses control vertices exactly as the
-  shader does, for tests, presence anchors and pose-keyed occlusion bakes.
+  shader does, for tests, presence anchors, grounding and pose-keyed occlusion
+  bakes. The browser project holds the shader to it.
 - *MakeHuman's BVH files are Z-up, facing -Y*; the figure is Y-up, facing +Z.
   Every rotation channel is mapped into the figure's axes (X stays X, Y becomes
   -Z, Z becomes Y). An X rotation (the jaw, the lids) means the same either
@@ -393,13 +738,146 @@ mean what they meant there; everything must be testable in Node.
   they pose): BVH channel values in degrees per joint over a MakeHuman pose's
   joint layout, every other channel at rest, packed into the same entries. The
   first is `relaxed`, standing at ease with the arms at the sides, since the
-  rest A-pose holds them 42° out. An expression layers on top of a body pose
-  bone by bone.
+  rest A-pose holds them 42° out; `flexed`, `twisted` and `abducted` (the
+  thighs opened 40°) are the skinning's extremes (below), which the pack's benchmark does not reach: it bends no
+  elbow, knee or wrist. An expression layers on top of a body pose bone by
+  bone.
 - *Grounding follows the pose.* The rest ground offset comes with each
   evaluation; a posed figure's comes from skinning its control mesh on the
   main thread (`posedGroundOffset`, with the pack's skin sent once), so a
   kneeling figure rests on the floor instead of hanging where its standing
   feet were.
+
+### Named expressions (2026-10-09)
+
+The pack's 60 units are muscles, not faces; what people ask for is a smile or
+a look of surprise. `EXPRESSIONS` (`src/rig/expressions.ts`) names ten as
+weights of units (smile, grin, frown, surprise, anger, disgust, fear, sadness,
+blink, squint), `expressionUnits(id, intensity)` scales one for a pose's
+`faceUnits`, and the caller blends them as any other units. They follow the
+facial action coding system's description of each emotion (a smile is the lip
+corner puller with the cheek raiser; surprise the brow raisers with the upper
+lid raiser and a dropped jaw), but a MakeHuman unit is a bone-driven shape,
+not an action unit, so every weight is a **choice** judged against the sheets
+in `docs/evidence/expressions.md`, to be tuned rather than cited. Each holds a
+left unit at the weight of its right (a test checks the pairing, and that the
+posed skin is the mirror of itself to 0.1 mm), so an expression never reads as
+a smirk; a one-sided face is composed from units by the caller.
+
+Audit of the rig under them (age 6, 14, 45 and 75, from `skinPositions` and
+rays against the posed body, no rendering): a blink leaves under 2 % of rays
+from the eye centre open, so the lids close fully at every age; a squint keeps
+the eye narrowed, not shut; no unit moves the skin nearer the eyeball's centre
+than 0.6 mm from where it rests. The one defect was the asymmetry above.
+
+### Skinning artefacts (2026-10-09)
+
+Linear blend skinning averages bone matrices, and the average of two rotations
+is not a rotation. A vertex between a bone and one turned against it about the
+limb's axis is pulled toward that axis (the candy wrapper), and a bent joint
+loses the volume it should wrap round the bend. Both are worst at the extremes
+a game reaches: a forearm turned by retargeted animation, an arm raised
+overhead, a crouch.
+
+**Measured** (`scripts/lib/skinBench.ts`, run by
+`node scripts/research/skinning-artefacts.ts`). Each case turns one bone of the
+packed figure about a world axis and measures the body with two numbers, over
+five body types (an average adult, a tall lean and a muscular man, a short full
+woman and a child). *Girth*: for the body's vertices at the joint, the distance
+to the limb's centreline (the joints' polyline) posed over at rest; 1 is clean,
+below it is a pinch, 0 the collapsed neck of a candy wrapper. *ΔV*: the change
+in the whole body's volume in thousandths of it (an adult is 55 L, so 1‰ is
+55 mL), which is that joint's alone since nothing else moves (the body mesh is
+one closed surface, wound consistently, so the volume is exact). Worst body for
+ΔV and for the 5th percentile of girth `p5`; mean girth is over the bodies:
+
+| Case | Linear: mean / p5 / ΔV | Dual quaternion: mean / p5 / ΔV | Shipped: mean / p5 / ΔV |
+| --- | --- | --- | --- |
+| forearm twisted 135° | 0.98 / 0.87 / −1.2‰ | 1.00 / 1.00 / −0.1‰ | 0.99 / 0.94 / −0.6‰ |
+| upper arm twisted 135° | 0.93 / 0.52 / −13.8‰ | 1.00 / 1.00 / −5.5‰ | 0.99 / 0.88 / −6.8‰ |
+| thigh twisted 90° | 0.93 / 0.72 / −34.1‰ | 1.00 / 1.00 / −8.9‰ | 1.00 / 0.97 / −12.2‰ |
+| arm raised forward 130° | 0.81 / 0.41 / −19.4‰ | 0.97 / 0.57 / −2.3‰ | 0.94 / 0.53 / −10.5‰ |
+| arm raised sideways 130° | 0.87 / 0.48 / −9.6‰ | 0.97 / 0.67 / −12.5‰ | 0.96 / 0.67 / −4.6‰ |
+| hip flexed 120° | 0.80 / 0.30 / −35.2‰ | 0.97 / 0.47 / −17.4‰ | 0.95 / 0.42 / −19.8‰ |
+| hip abducted 45° | 0.98 / 0.70 / −17.1‰ | 1.00 / 0.74 / −15.2‰ | 0.99 / 0.73 / −15.4‰ |
+| knee flexed 120° | 0.81 / 0.22 / −6.4‰ | 0.93 / 0.26 / −2.5‰ | 0.88 / 0.25 / −4.1‰ |
+| elbow flexed 120° | 0.84 / 0.33 / −3.8‰ | 0.91 / 0.31 / −3.9‰ | 0.90 / 0.31 / −3.9‰ |
+
+The pack's benchmark pose bends no elbow, knee or wrist, so `flexed` (every
+hinge near its limit) and `twisted` (each limb turned past what a body can) are
+authored for the check (`scripts/poses/`; their rotations are pure turns about
+the limb's hinge or axis, which a test holds them to). Their sheets, and the
+numbers, are what the lane checked against.
+
+**Options, by total fit.**
+
+1. *Dual quaternion skinning everywhere* (Kavan et al. 2008; three has none, so
+   a patch of its skinning chunks). It removes the twist collapse and most of
+   the shaft's lost volume outright (above). It bulges bent joints, though: the
+   95th percentile of girth at a bent knee reaches 1.66 (linear: 1.23) and at a
+   flexed hip 1.39 (linear: 1.13), and it leaves the elbow and the hips'
+   abduction where they were, because their loss is the weights' own geometry.
+2. *Twist bones.* MakeHuman's skeleton has helper bones along each limb
+   (`upperarm02`, `lowerarm02`, `upperleg02`, `lowerleg02`) that its poses drive
+   by hand and a BVH from elsewhere leaves at rest. Distributing a child's twist
+   to them is a kinematic fix, free on the GPU and exact in the CPU reference.
+   But only where a helper lies between the two bones (not at the shoulder or
+   hip, where the twist meets the torso), and it does nothing for the volume a
+   bend loses. Dual quaternions do the same for every pair of bones at once.
+3. *Pose-space correctives* driven by the flexion signals. No CC0 correctives
+   exist for this mesh, and deriving them needs a reference deformation per
+   joint and body type (a corrective per morph, or one that follows the morphs);
+   their data, and a second system next to the skinning, are what dual
+   quaternions avoid. They are the next step for what remains (below), derived
+   against the skinning that ships.
+4. *Per-vertex centres of rotation* (Le & Hodgins 2016) fit best of all, but
+   each figure's morph moves the centres, and finding them costs a pass over
+   the mesh per figure. Not now.
+5. *A blend of 1 with linear skinning, by bone* (shipped). The bulge comes from
+   dual quaternions and the collapse from linear blending, so each bone says how
+   much of each it takes, and a vertex mixes the two results by the mean of its
+   bones' shares. The table is 13 numbers (`SKIN_DUAL_SHARE`, left and right
+   alike); the rest of the skeleton (spine, neck, face, fingers, toes) stays
+   linear, as before.
+
+**The table** is searched, not painted: `scripts/research/tune-skin-share.ts`
+walks each limb's bones, one at a time over 0, ¼, ½, ¾ and 1, for the lowest
+cost over the bench's joint cases at four body types, where a case costs what
+it does wrong: mean girth below 1 (pinch), `p5` below 0.85 (collapse), the 95th
+percentile above 1.08 (bulge) and volume lost. The fifth body type (the child)
+is held out of the search: the table costs it less than linear skinning too
+(arm 7.4 → 2.8, leg 25.9 → 7.2). It came out as dual quaternions for the whole
+arm but the elbow's two bones (½), and for the pelvis, the thigh and the foot,
+and linear for the shin: the knee is where a bend's bulge outweighs the volume
+dual quaternions save. Re-run it if the pack's skin weights change.
+
+**How it runs.** `DualBones` (`src/render/dualSkinning.ts`) holds each bone's
+dual quaternion and share as a float texture, written from the same bone
+rotations as the CPU reference whenever the pose or the figure changes. A patch
+of three's `skinning_vertex` and `skinnormal_vertex` chunks (on the skin
+material, the shadow depth materials and, for materials this library does not
+make, `applyDualSkinning`) blends the vertex's bones' dual quaternions, skins by
+the result and mixes it with three's own linear skinning by the vertex's share.
+Three's bounds and ray picking skin on the CPU, linearly, so the mesh's
+`applyBoneTransform` follows the blend too. `skinPositions` *is* the blend, for
+grounding, anchors and occlusion bakes, so they follow what is drawn;
+`skinPositionsLinear` is the old scheme. The shader is held to the reference in
+the browser project (the dual quaternion blend and share vertex by vertex to
+2·10⁻⁵, and a whole skinned mesh against the reference's image).
+
+**What remains.** The elbow loses about 4‰ and the hips 15 to 20‰ in every
+scheme (the weights' geometry: the inside of a fold, and the groin).
+**Decision (2026-10-09): no corrective for the elbow or the hip's abduction.**
+Rendered at their extremes in four bodies (`docs/evidence/skinning.md`) neither
+shows a fault: the elbow's 4‰ is about 0.2 L and the smallest loss measured, the
+abducted groin is skin stretched rather than lost, and a corrective shape
+authored for either would add data and a per-pose evaluation for a change the
+sheets cannot show. The gate (never worse than linear in girth, within a
+thousandth in volume) holds both. The blend bulges a flexed hip's front (95th
+percentile 1.37 at 120°, against linear skinning's 1.13) for the 15‰ of volume
+it keeps, and a bent knee's (1.32 against 1.23); that is the remainder a
+pose-space corrective would address, if figures are posed there often. The
+crease detail layers (`flex.*` signals) paint the fold's skin on top of it.
 
 ## Scalp hair (milestone 4)
 
@@ -653,10 +1131,10 @@ and overlapping), measuring the canvas against the model.
 | `src/recipe` | Recipe schema and defaults, the age policy, validation | no |
 | `src/subdiv` | Catmull-Clark stencils | no |
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
-| `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking | no |
-| `src/model` | `HumanoidModel`, the evaluation pipeline | no |
+| `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking, the body's cavity occlusion | no |
+| `src/model` | `HumanoidModel`, the evaluation pipeline; `outfit.ts`, the layering and masking of garments | no |
 | `src/presence` | Presence registry, helpers, and presence derived from an evaluation | no |
-| `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
+| `src/editor` | The creator's logic: controls, history, randomisation, framing, the wardrobe | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
 | `src/render` | The skin, eye and hair materials, the layer field atlas, the pooled ground contact shader | three.js, no React |
 | `src/react` | `HumanoidProvider`, `Humanoid`, `StudioStage` and hooks | yes |
@@ -918,6 +1396,43 @@ surface is the sculpt phase's first job, and cannot be done by drawing
 `helper-genital` for every figure: the surface is shared across ages, and a
 static surface cannot be gated by age (docs/research/ADULT-SCULPT-PLAN.md).
 `tests/adultStack.test.ts` records the limit so that change fails it.
+
+### The adult surface (sculpt phase 2, refined pelvic topology)
+
+The sculpt needs more vertices in the pelvis than the base has, for an adult
+only. So the adult pack's `anatomy.surface` names a region of the base body (a
+core of faces and a one-face ring around it) and `buildRefinedSurfaceMesh`
+refines it: it takes the base's own level-1 surface, splits each selected face
+into 2^l by 2^l cells (core +2 levels, ring +1, giving 2.3 mm cells in the core),
+joins the levels with conforming transition polygons (a hanging point becomes a
+polygon vertex, so there are no cracks; neighbouring faces differ by at most one
+level), and from level 2 on smooths with polygon Catmull-Clark. The base's
+vertices keep their indices and positions, UVs stay face-varying with their
+seams, and the vertex normals interpolate the base's, so the refined surface
+shades like the base. All-quad local refinement is impossible without refining
+whole chains of faces across the body (the dual chords through the pelvis run
+156 to 900 faces), which is why the transition is polygonal.
+
+It is a second topology, gated by age structurally rather than by being hidden:
+
+- `HumanoidModel.adultSurface()` builds it only with the adult pack's spec and
+  subdivision of 1 or more, and the worker delivers it on its own request
+  (`adultSurface`), never inside `ready`'s topology.
+- `evaluate(recipe)` uses it only when `isAdult(recipe)`; a figure under 18 is
+  evaluated on the base surface and has exactly the base's vertices, with or
+  without the adult pack (`tests/adultSurfaceModel.test.ts`, at ages 1, 11, 15
+  and 17.99). There is no adult vertex in a minor's evaluation to hide.
+- The control vertices are the base's either way, so every target, binding,
+  weight and layer works on both; the layer atlas serves both because it lives in
+  UV space, which refinement preserves.
+
+The refined region is empty of anatomy today: it is the base shape in finer
+cells, proven by the geometry tests and by a render within 11 pixels over 8
+levels of the base's (adult against base contact sheet, local only). The
+features (mound, penis, testes, vulva) land on it one at a time
+(docs/research/ADULT-SCULPT-PLAN.md, section 10), and
+`tests/adultPermutations.test.ts` holds the matrix of ages, genders, feature
+combinations and states every one of them joins.
 
 **Arousal.** The adult manifest adds an `arousal` state morph
 (`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by

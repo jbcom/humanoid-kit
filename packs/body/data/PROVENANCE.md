@@ -13,7 +13,7 @@ Every packed source file was checked for CC0 from its own content before packing
 - 9 file(s) — upstream LICENSE.md: "Targets and modifiers" listed under "These assets have been released under CC0 1.0 Universal."
 - 1 file(s) — upstream LICENSE.md: "Poses and expressions" listed under "These assets have been released under CC0 1.0 Universal.": poseunits/face-poseunits.bvh
 - 2 file(s) — sibling .meta: "license CC0": poses/tpose.bvh, poses/benchmark.bvh
-- 1 file(s) — authored for humanoid-kit and dedicated to the public domain under CC0 1.0: humanoid-kit:scripts/poses/relaxed.json
+- 4 file(s) — authored for humanoid-kit and dedicated to the public domain under CC0 1.0: humanoid-kit:scripts/poses/abducted.json, humanoid-kit:scripts/poses/flexed.json, humanoid-kit:scripts/poses/relaxed.json, humanoid-kit:scripts/poses/twisted.json
 
 Attachments come from the MakeHuman system assets pack (makehuman_system_assets_cc0.zip, listed as
 "System assets, shared under CC0" on the MakeHuman community asset packs page). Each file was checked the same way:
@@ -32,4 +32,5 @@ Attachments come from the MakeHuman system assets pack (makehuman_system_assets_
 | targets-young.bin.gz | `b2a442d5ecbb2a846a5160adfae027ab14b8d34d573bb169d0920a3c35b3474b` |
 | targets-old.bin.gz | `b17a88e4d428d56344245237bccaf5a64d51d7dba5615f62024033a1710ce501` |
 | targets-modifiers.bin.gz | `6c2c5713c5c1d3b52dfbe30e15de8e0bc6d3920cd906ea32072a9160152ea581` |
-| attachments.bin.gz | `4996e60a0b9089b89e0df6ff54bd11f4d859d7cc2912c3767091edfcaa946264` |
+| attachments.bin.gz | `96200315808ade378412a2bdda0b8e9dc009d56b2704d0f746b71cdcab024843` |
+| body-occlusion.bin.gz | `c9a5b960fc63fe1808f845d41c19ee983c0d70a99b4c7abc5c94ff86866b274f` |

@@ -14,8 +14,8 @@ covers what isn't obvious from reading the code alone.
 - This is a pnpm workspace with five members: `.` (the `humanoid-kit` library,
   plus the playground and its tests), `packs/body` (`humanoid-kit-body`),
   `packs/adult-anatomy` (`humanoid-kit-adult-anatomy`), `packs/hair`
-  (`humanoid-kit-hair`) and `docs/` (the private
-  Sourcey site). Root scripts operate on the library; `pnpm docs:*` delegate to
+  (`humanoid-kit-hair`), `packs/clothing` (`humanoid-kit-clothing`) and `docs/`
+  (the private Sourcey site). Root scripts operate on the library; `pnpm docs:*` delegate to
   `docs/`.
 - `pnpm verify` is the gate CI runs: Biome lint, markdownlint (`pnpm lint:docs`),
   strict TypeScript over `src`, `tests`, `scripts`, `e2e` and `playground`, the
@@ -31,7 +31,9 @@ covers what isn't obvious from reading the code alone.
   `humanoid-kit` and its subpaths to `../src`, so it needs no build step, and it
   loads the body pack and the hair pack (never the adult pack outside `?adult`
   in development).
-- `pnpm pack:data <makehuman-data-dir> <system-assets-dir>` regenerates all three
+- `pnpm pack:clothing <system-assets-dir>` regenerates `packs/clothing` from the
+  extracted MakeHuman system assets pack, against the committed body pack.
+- `pnpm pack:data <makehuman-data-dir> <system-assets-dir>` regenerates all the
   packs from a checkout of the upstream project and its system assets pack (the
   hair pack last, since it binds to the body pack by hash); `pnpm pack:hair
   <system-assets-dir>` regenerates only the hair against the committed body pack.

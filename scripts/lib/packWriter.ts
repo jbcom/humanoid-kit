@@ -9,9 +9,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import sharp from "sharp";
+import type { BodyOcclusion, BodyOcclusionEntry } from "../../src/format/assetFormat.ts";
 import type { CompiledAsset } from "./compileAsset.ts";
 
-export interface AttachmentEntry<Extra extends string = never> {
+type Range = { offset: number; byteLength: number };
+
+/** A garment's entry: an attachment's without the occlusion bytes. */
+export interface GarmentEntry {
   id: string;
   kind: string;
   name: string;
@@ -20,13 +24,24 @@ export interface AttachmentEntry<Extra extends string = never> {
   faceCount: number;
   scale: CompiledAsset["scale"];
   material: CompiledAsset["material"];
-  layout: Record<
-    keyof CompiledAsset["arrays"] | "occlusion" | Extra,
-    { offset: number; byteLength: number }
-  >;
+  layout: Record<keyof CompiledAsset["arrays"], Range>;
+}
+
+export interface AttachmentEntry<Extra extends string = never>
+  extends Omit<GarmentEntry, "layout"> {
+  layout: GarmentEntry["layout"] & { occlusion: Range } & Record<Extra, Range>;
 }
 
 export const sha256 = (buf: Uint8Array) => createHash("sha256").update(buf).digest("hex");
+
+export interface TextureOptions {
+  /** Longest edge shipped; larger sources are scaled down, smaller ones are kept. */
+  max?: number;
+  /** WebP quality, 1-100. */
+  quality?: number;
+  /** WebP quality of normal maps (files whose name ends `_normal.webp`), default `quality`. */
+  normalQuality?: number;
+}
 
 /** Longest texture edge shipped. On-screen, an eye or a mouth never needs more. */
 const TEXTURE_MAX = 1024;
@@ -36,10 +51,16 @@ const TEXTURE_MAX = 1024;
  * eye's cornea is cut by its alpha, which must not blur), at most
  * TEXTURE_MAX pixels on a side. Output is deterministic for a sharp version.
  */
-async function writeTexture(src: string, dest: string): Promise<void> {
+async function writeTexture(src: string, dest: string, options: TextureOptions): Promise<void> {
+  const max = options.max ?? TEXTURE_MAX;
+  const quality = options.quality ?? 88;
   await sharp(src)
-    .resize({ width: TEXTURE_MAX, height: TEXTURE_MAX, fit: "inside", withoutEnlargement: true })
-    .webp({ quality: 88, alphaQuality: 100, effort: 6 })
+    .resize({ width: max, height: max, fit: "inside", withoutEnlargement: true })
+    .webp({
+      quality: dest.endsWith("_normal.webp") ? (options.normalQuality ?? quality) : quality,
+      alphaQuality: 100,
+      effort: 6,
+    })
     .toFile(dest);
 }
 
@@ -47,11 +68,13 @@ async function writeTexture(src: string, dest: string): Promise<void> {
 export async function writeAttachmentTextures(
   dataDir: string,
   assets: readonly CompiledAsset[],
+  options: TextureOptions = {},
 ): Promise<void> {
   for (const f of fs.readdirSync(dataDir))
     if (/\.(png|jpe?g|webp)$/i.test(f)) fs.rmSync(path.join(dataDir, f));
   for (const a of assets)
-    for (const [src, name] of a.textures) await writeTexture(src, path.join(dataDir, name));
+    for (const [src, name] of a.textures)
+      await writeTexture(src, path.join(dataDir, name), options);
 }
 
 /**
@@ -70,21 +93,36 @@ export function writeAttachments<Extra extends string = never>(
   bakes: number,
   extras: readonly Record<Extra, ArrayBufferView>[] = [],
 ) {
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  const entries: AttachmentEntry<Extra>[] = [];
-  for (const [i, a] of assets.entries()) {
-    const layout = {} as AttachmentEntry<Extra>["layout"];
+  return writePacked<AttachmentEntry<Extra>>(dataDir, file, assets, (a, i) => {
     const baked = occlusion?.[i] ?? new Uint8Array(a.vertexCount * bakes).fill(255);
     if (baked.length !== a.vertexCount * bakes)
       throw new Error(
         `${a.id}: ${baked.length} occlusion values for ${a.vertexCount} vertices × ${bakes} bakes`,
       );
-    for (const [key, arr] of [
-      ...Object.entries(a.arrays),
-      ["occlusion", baked],
-      ...Object.entries(extras[i] ?? {}),
-    ] as [keyof AttachmentEntry<Extra>["layout"], ArrayBufferView][]) {
+    return [["occlusion", baked], ...Object.entries<ArrayBufferView>(extras[i] ?? {})];
+  });
+}
+
+/** Packs garments: attachments without occlusion, which a garment does not carry. */
+export function writeGarments(dataDir: string, file: string, assets: readonly CompiledAsset[]) {
+  return writePacked<GarmentEntry>(dataDir, file, assets, () => []);
+}
+
+function writePacked<E extends GarmentEntry>(
+  dataDir: string,
+  file: string,
+  assets: readonly CompiledAsset[],
+  extra: (asset: CompiledAsset, index: number) => [string, ArrayBufferView][],
+) {
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const entries: E[] = [];
+  for (const [i, a] of assets.entries()) {
+    const layout: Record<string, Range> = {};
+    for (const [key, arr] of [...Object.entries(a.arrays), ...extra(a, i)] as [
+      string,
+      ArrayBufferView,
+    ][]) {
       size = Math.ceil(size / 4) * 4;
       const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
       layout[key] = { offset: size, byteLength: bytes.byteLength };
@@ -101,7 +139,7 @@ export function writeAttachments<Extra extends string = never>(
       scale: a.scale,
       material: a.material,
       layout,
-    });
+    } as E);
   }
   const bin = new Uint8Array(size);
   let o = 0;
@@ -114,6 +152,42 @@ export function writeAttachments<Extra extends string = never>(
   const gz = new Uint8Array(gzipSync(bin, { level: 9 }));
   fs.writeFileSync(path.join(dataDir, file), gz);
   return { entries, sha256: sha256(gz), raw: bin };
+}
+
+/**
+ * The body occlusion file's bytes (`BodyOcclusionEntry`): the vertex indices
+ * (u32, little-endian), then the corner bakes, one byte each.
+ */
+export function encodeBodyOcclusion(
+  occlusion: BodyOcclusion,
+  keys: readonly string[],
+): { raw: Uint8Array; entry: Pick<BodyOcclusionEntry, "keys" | "count"> } {
+  const count = occlusion.vertices.length;
+  const corners = 2 ** keys.length;
+  if (occlusion.values.length !== count * corners)
+    throw new Error(
+      `body occlusion: ${occlusion.values.length} values for ${count} vertices × ${corners} corners`,
+    );
+  const raw = new Uint8Array(count * (4 + corners));
+  const view = new DataView(raw.buffer);
+  occlusion.vertices.forEach((v, i) => {
+    view.setUint32(i * 4, v, true);
+  });
+  raw.set(occlusion.values, count * 4);
+  return { raw, entry: { keys: [...keys], count } };
+}
+
+/** Writes the body occlusion gzipped, like every pack binary, and returns its manifest entry. */
+export function writeBodyOcclusion(
+  dataDir: string,
+  file: string,
+  occlusion: BodyOcclusion,
+  keys: readonly string[],
+): BodyOcclusionEntry {
+  const { raw, entry } = encodeBodyOcclusion(occlusion, keys);
+  const gz = new Uint8Array(gzipSync(raw, { level: 9 }));
+  fs.writeFileSync(path.join(dataDir, file), gz);
+  return { file, sha256: sha256(gz), ...entry };
 }
 
 /** Generates `index.js` and `index.d.ts` exporting `exportName` with a literal URL per data file. */

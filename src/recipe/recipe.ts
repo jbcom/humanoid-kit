@@ -81,6 +81,12 @@ export interface Recipe {
    * hair existed are unchanged. It never changes the body's shape.
    */
   hair?: HairRecipe;
+  /**
+   * Ids of the garments the figure wears (`humanoid-kit-clothing`), in any
+   * order: how they stack comes from each garment's category. Absent means
+   * nothing worn.
+   */
+  outfit?: readonly string[];
 }
 
 export function createRecipe(
@@ -91,6 +97,7 @@ export function createRecipe(
     skin?: Partial<SkinRecipe>;
     eyes?: Partial<EyesRecipe>;
     hair?: { style?: string | null; colour?: Partial<HairColour> };
+    outfit?: readonly string[];
   } = {},
 ): Recipe {
   return {
@@ -113,5 +120,6 @@ export function createRecipe(
         },
       },
     }),
+    ...(init.outfit && { outfit: [...init.outfit] }),
   };
 }

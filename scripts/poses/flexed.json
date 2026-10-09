@@ -1,0 +1,16 @@
+{
+  "name": "flexed",
+  "title": "Flexed",
+  "description": "Every hinge joint near its extreme: elbows flexed about 140° and knees about 125°, hips raised 60°, wrists bent about 50° (the left to one side, the right to the other). The check for volume lost where skinning folds a limb.",
+  "base": "tpose",
+  "rotations": {
+    "lowerarm01.L": { "Xrotation": -65.2, "Yrotation": 32.6, "Zrotation": -56 },
+    "lowerarm01.R": { "Xrotation": -65.2, "Yrotation": -32.6, "Zrotation": 56 },
+    "lowerleg01.L": { "Xrotation": 125 },
+    "lowerleg01.R": { "Xrotation": 125 },
+    "upperleg01.L": { "Xrotation": -60 },
+    "upperleg01.R": { "Xrotation": -60 },
+    "wrist.L": { "Xrotation": 55 },
+    "wrist.R": { "Xrotation": -55 }
+  }
+}

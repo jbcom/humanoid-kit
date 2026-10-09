@@ -29,7 +29,7 @@ let loaded: HumanoidAssets | undefined;
  */
 export function loadHairFixtureAssets(): HumanoidAssets {
   if (!loaded) {
-    loaded = parseHumanoidAssets(bodyPackData(), undefined, { manifest: hairManifest });
+    loaded = parseHumanoidAssets(bodyPackData(), undefined, undefined, { manifest: hairManifest });
     for (const s of hairManifest.styles) addHairStyle(loaded, s.id, hairStyleBin(s.id));
   }
   return loaded;

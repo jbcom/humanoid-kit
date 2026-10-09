@@ -100,6 +100,15 @@ regenerate only the hair against the committed body pack, run
 `pnpm pack:hair <makehuman-system-assets-dir>`; it takes a few minutes, mostly
 encoding the strand maps. See `NOTICE.md` for provenance.
 
+`packs/clothing/data` comes from the same system assets pack, against the body
+pack already committed:
+
+```sh
+pnpm pack:clothing <makehuman-system-assets-dir>
+```
+
+It refuses any garment file that does not prove CC0 from its own header.
+
 ## Releases
 
 Releases are automated. Merging a conventional commit to `main` opens a release

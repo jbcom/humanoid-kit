@@ -44,6 +44,11 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
 - **React Three Fiber bindings.** `humanoid-kit/react` provides
   `HumanoidProvider`, `Humanoid`, `useHumanoidClient` and `useHumanoidReady`,
   and the presence bindings (`PresenceProvider`, `usePresence`, `useProximity`).
+- **Clothing, as an optional pack.** `humanoid-kit-clothing` carries MakeHuman
+  garments bound to the base mesh, so they follow every shape and pose. A recipe
+  names what a figure wears (`outfit`); garments layer, hide the skin they cover
+  without a gap at the cuff or neckline, and change without rebuilding the body.
+  See [Clothing](./docs/ARCHITECTURE.md#clothing-milestone-7).
 - **Skeleton and facial pose data ship, ready for later work.** The packs carry
   the 163-bone default skeleton, skin weights and 60 facial pose units. Skin
   weights are interpolated onto the render surface. Posing, rigging and
@@ -59,6 +64,7 @@ This repository is a pnpm workspace that publishes four packages.
 | `humanoid-kit-body` | `packs/body` | CC0 1.0 | The base mesh, shape targets for ages 1 to 90, the 163-bone skeleton and skin weights, facial pose units, eyes, teeth and tongue, and 275 shape modifiers (modelling, measurement and body shapes) with their sliders |
 | `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 | Adult-only targets and 5 modifiers with their sliders. A separate install; refused unless built against the exact body pack |
 | `humanoid-kit-hair` | `packs/hair` | CC0 1.0 | Ten scalp hair styles (short, bob, long, afro, ponytail, braid) as alpha cards bound to the base body, any colour from black to platinum. A separate install; a style's files load when a figure first wears it |
+| `humanoid-kit-clothing` | `packs/clothing` | CC0 1.0 | 19 MakeHuman garments (suits, shoes, a hat) bound to the base mesh, with the skin each hides. A separate install; refused unless built against the exact body pack |
 
 The body pack and the adult anatomy pack together account for 280 shape
 modifiers. The data packs are generated from MakeHuman's CC0 assets by

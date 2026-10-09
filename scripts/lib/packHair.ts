@@ -98,6 +98,7 @@ function readBody(bodyDir: string) {
     body: gz(manifest.body.file),
     targets: Object.fromEntries(manifest.targets.map((f) => [f.id, gz(f.file)])),
     attachments: gz(manifest.attachments.file),
+    ...(manifest.bodyOcclusion && { bodyOcclusion: gz(manifest.bodyOcclusion.file) }),
   });
   return { manifest, assets };
 }

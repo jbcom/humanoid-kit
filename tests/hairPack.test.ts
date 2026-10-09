@@ -215,16 +215,16 @@ describe("provenance", () => {
 describe("loading the pack", () => {
   it("parses beside the body pack, and refuses a body pack it was not built for", () => {
     const body = bodyPackData(["core"]);
-    const parsed = parseHumanoidAssets(body, undefined, { manifest: hairManifest });
+    const parsed = parseHumanoidAssets(body, undefined, undefined, { manifest: hairManifest });
     expect(parsed.hair?.styles.size).toBe(STYLES.length);
     expect(parsed.hair?.bound.size).toBe(0);
     const other = {
       ...body,
       manifest: { ...body.manifest, body: { ...body.manifest.body, sha256: "0".repeat(64) } },
     };
-    expect(() => parseHumanoidAssets(other, undefined, { manifest: hairManifest })).toThrow(
-      /different body pack/,
-    );
+    expect(() =>
+      parseHumanoidAssets(other, undefined, undefined, { manifest: hairManifest }),
+    ).toThrow(/different body pack/);
   });
 
   it("refuses a style of a kind it does not know, and accepts brows and lashes beside scalp hair", () => {
@@ -233,18 +233,18 @@ describe("loading the pack", () => {
       ...hairManifest,
       styles: hairManifest.styles.map((s, i) => (i === 0 ? { ...s, kind: kind as never } : s)),
     });
-    expect(() => parseHumanoidAssets(body, undefined, { manifest: withKind("beard") })).toThrow(
-      /unknown hair kind/,
-    );
+    expect(() =>
+      parseHumanoidAssets(body, undefined, undefined, { manifest: withKind("beard") }),
+    ).toThrow(/unknown hair kind/);
     for (const kind of ["brows", "lashes"]) {
-      const parsed = parseHumanoidAssets(body, undefined, { manifest: withKind(kind) });
+      const parsed = parseHumanoidAssets(body, undefined, undefined, { manifest: withKind(kind) });
       expect(parsed.hair?.styles.get(STYLES[0] as string)?.kind).toBe(kind);
     }
   });
 
   it("refuses a style whose bytes do not match its manifest", () => {
     const body = bodyPackData(["core"]);
-    const parsed = parseHumanoidAssets(body, undefined, { manifest: hairManifest });
+    const parsed = parseHumanoidAssets(body, undefined, undefined, { manifest: hairManifest });
     const short = hairStyleBin("short02").slice(0, 128);
     expect(() => addHairStyle(parsed, "short02", short)).toThrow(/exceeds|range/);
     expect(parsed.hair?.bound.size).toBe(0);

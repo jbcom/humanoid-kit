@@ -230,6 +230,9 @@ importers:
       humanoid-kit-body:
         specifier: workspace:*
         version: link:packs/body
+      humanoid-kit-clothing:
+        specifier: workspace:*
+        version: link:packs/clothing
       humanoid-kit-hair:
         specifier: workspace:*
         version: link:packs/hair
@@ -282,6 +285,8 @@ importers:
   packs/adult-anatomy: {}
 
   packs/body: {}
+
+  packs/clothing: {}
 
   packs/hair: {}
 

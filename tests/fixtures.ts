@@ -4,6 +4,7 @@ import { gunzipSync } from "node:zlib";
 import {
   type AdultAnatomyManifest,
   type BodyManifest,
+  type ClothingManifest,
   type HumanoidAssets,
   parseHumanoidAssets,
 } from "../src/format/assetFormat.ts";
@@ -54,12 +55,36 @@ export const bodyPackData = (only?: readonly string[]) => ({
   body: readGzipPackFile(path.join(bodyDir, bodyManifest.body.file)),
   targets: bodyTargetFiles(only),
   attachments: readGzipPackFile(path.join(bodyDir, bodyManifest.attachments.file)),
+  ...(bodyManifest.bodyOcclusion && {
+    bodyOcclusion: readGzipPackFile(path.join(bodyDir, bodyManifest.bodyOcclusion.file)),
+  }),
 });
 
 export const adultPackData = () => ({
   manifest: adultManifest,
   targets: readGzipPackFile(path.join(adultDir, adultManifest.targets.file)),
 });
+
+export const clothingDir = path.join(root, "packs/clothing/data");
+export const clothingManifest = JSON.parse(
+  fs.readFileSync(path.join(clothingDir, "manifest.json"), "utf8"),
+) as ClothingManifest;
+
+/** The clothing pack's manifest and, unless `withGarments` is false, its decompressed binary. */
+export const clothingPackData = (withGarments = true) => ({
+  manifest: clothingManifest,
+  ...(withGarments && {
+    garments: readGzipPackFile(path.join(clothingDir, clothingManifest.garments.file)),
+  }),
+});
+
+let clothed: HumanoidAssets | undefined;
+
+/** The packed assets with the clothing pack's garments loaded, parsed once per test file. */
+export function loadClothedAssets(): HumanoidAssets {
+  clothed ??= parseHumanoidAssets(bodyPackData(), undefined, clothingPackData());
+  return clothed;
+}
 
 /** The packed assets read from disk, parsed once per test file. */
 export function loadFixtureAssets(adultAnatomy = false): HumanoidAssets {

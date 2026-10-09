@@ -8,7 +8,13 @@
  * whose recipe needs target files that are still loading holds up no other.
  */
 import type { LoadOptions } from "../format/assetFormat.ts";
-import type { Evaluation, HairTopology, ModelOptions } from "../model/humanoidModel.ts";
+import type {
+  AdultSurfaceTopology,
+  Evaluation,
+  GarmentTopology,
+  HairTopology,
+  ModelOptions,
+} from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
 import type { HairInfo, PickMap, ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
@@ -22,6 +28,7 @@ export class HumanoidWorkerError extends Error {
 interface Job {
   recipe: Recipe;
   signals: Readonly<Record<string, number>>;
+  haveOutfit: string | null;
   resolve: (e: Evaluation) => void;
   reject: (e: Error) => void;
 }
@@ -149,6 +156,25 @@ export class HumanoidWorkerClient {
     return this.adultLayersRequest;
   }
 
+  private adultSurfaceRequest: Promise<AdultSurfaceTopology | null> | null = null;
+
+  /**
+   * The surface an evaluation of a figure aged 18 or over is for
+   * (`Evaluation.surface === "adult"`): the base body with the adult pack's finer
+   * geometry round the pelvis, its index, UVs, skin weights and `uvScale` for
+   * building the mesh. Null without an adult pack that refines the body. It is
+   * not in `ready`'s topology, which is every figure's. Built by the worker on
+   * the first call; later calls share that answer, so treat it as read-only.
+   */
+  adultSurface(): Promise<AdultSurfaceTopology | null> {
+    this.adultSurfaceRequest ??= this.ready.then(async () => {
+      const r = await this.request({ type: "adultSurface", id: 0 });
+      if (r.type !== "adultSurface") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+      return r.topology;
+    });
+    return this.adultSurfaceRequest;
+  }
+
   private request(msg: WorkerRequest): Promise<WorkerResponse> {
     if (this.disposed) return Promise.reject(new HumanoidWorkerError("disposed"));
     const id = this.nextId++;
@@ -172,15 +198,37 @@ export class HumanoidWorkerClient {
     recipe: Recipe,
     key = "default",
     signals: Readonly<Record<string, number>> = {},
+    haveOutfit: string | null = null,
   ): Promise<Evaluation> {
     if (this.disposed) return Promise.reject(new HumanoidWorkerError("disposed"));
     return new Promise((resolve, reject) => {
       this.queue.get(key)?.reject(abortError());
       // Map.set on an existing key keeps its position, so a superseding
       // request keeps its caller's place in line.
-      this.queue.set(key, { recipe, signals, resolve, reject });
+      this.queue.set(key, { recipe, signals, haveOutfit, resolve, reject });
       void this.pump();
     });
+  }
+
+  private readonly garmentRequests = new Map<string, Promise<GarmentTopology>>();
+
+  /**
+   * A garment's static render data (`HumanoidModel.garmentTopology`), fetched
+   * from the worker once however many figures wear it. A failed request is not
+   * kept, so asking again tries again.
+   */
+  garment(id: string): Promise<GarmentTopology> {
+    let request = this.garmentRequests.get(id);
+    if (!request) {
+      request = this.ready.then(async () => {
+        const r = await this.request({ type: "garment", id: 0, garment: id });
+        if (r.type !== "garment") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+        return r.topology;
+      });
+      this.garmentRequests.set(id, request);
+      request.catch(() => this.garmentRequests.delete(id));
+    }
+    return request;
   }
 
   /** Sends the waiting evaluation of every key that has none in the worker. */
@@ -207,6 +255,7 @@ export class HumanoidWorkerClient {
         id: 0,
         recipe: job.recipe,
         signals: job.signals,
+        haveOutfit: job.haveOutfit,
       });
       if (r.type !== "evaluated") throw new HumanoidWorkerError(`unexpected ${r.type}`);
       // Kept before the evaluation resolves, so whoever receives it can look the style up.

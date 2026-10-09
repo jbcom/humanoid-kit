@@ -6,6 +6,7 @@ import { ShapePanel } from "../../src/editor/ui/ShapePanel.tsx";
 import { SliderRow } from "../../src/editor/ui/SliderRow.tsx";
 import { CREATOR_CSS } from "../../src/editor/ui/styles.ts";
 import type { HumanoidEditor } from "../../src/editor/ui/useHumanoidEditor.ts";
+import { WardrobePanel } from "../../src/editor/ui/WardrobePanel.tsx";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import { DEFAULT_HAIR_COLOUR } from "../../src/surface/hairTone.ts";
 import { EditorHarness, readyInfo } from "./harness.tsx";
@@ -191,6 +192,49 @@ describe("RegionPanel", () => {
   });
 });
 
+describe("WardrobePanel", () => {
+  it("wears a garment, replaces the one of its kind, layers another kind and takes it off", async () => {
+    let latest: HumanoidEditor | undefined;
+    const screen = await render(
+      <Styled>
+        <EditorHarness ready={readyInfo(false, true)} onEditor={(e) => (latest = e)}>
+          {(editor) => <WardrobePanel editor={editor} />}
+        </EditorHarness>
+      </Styled>,
+    );
+    // Garments are listed by kind, with readable names.
+    await expect.element(screen.getByText("Outfits").first()).toBeVisible();
+    await expect.element(screen.getByText("Shoes").first()).toBeVisible();
+    const one = screen.getByRole("button", { name: "Navy shirt and jeans" });
+    await one.click();
+    await expect.element(one).toHaveAttribute("aria-pressed", "true");
+    expect(latest?.recipe.outfit).toEqual(["suits/male_casualsuit01"]);
+    // A second outfit replaces the first; shoes layer over it.
+    await screen.getByRole("button", { name: "Blue sweater and jeans" }).click();
+    await screen.getByRole("button", { name: "Brown oxfords" }).click();
+    expect(latest?.recipe.outfit).toEqual(["suits/male_casualsuit02", "shoes/shoes01"]);
+    await expect.element(one).toHaveAttribute("aria-pressed", "false");
+    await screen.getByRole("button", { name: "Brown oxfords" }).click();
+    expect(latest?.recipe.outfit).toEqual(["suits/male_casualsuit02"]);
+    // Wearing is one undoable step.
+    latest?.undo();
+    await expect
+      .poll(() => latest?.recipe.outfit)
+      .toEqual(["suits/male_casualsuit02", "shoes/shoes01"]);
+  });
+
+  it("says so when no clothing pack is loaded", async () => {
+    const screen = await render(
+      <Styled>
+        <EditorHarness ready={readyInfo()}>
+          {(editor) => <WardrobePanel editor={editor} />}
+        </EditorHarness>
+      </Styled>,
+    );
+    await expect.element(screen.getByText("No clothing pack is loaded.")).toBeVisible();
+  });
+});
+
 describe("AppearancePanel", () => {
   it("sets the iris from the palette and marks the chosen swatch", async () => {
     let latest: HumanoidEditor | undefined;
@@ -217,7 +261,7 @@ describe("AppearancePanel", () => {
         { id: "brow01", label: "Brows, natural", tags: ["brows"], kind: "brows" as const },
       ],
     };
-    const panel = async (info = readyInfo(false, hair)) => {
+    const panel = async (info = readyInfo(false, false, hair)) => {
       const seen: { editor?: HumanoidEditor } = {};
       const screen = await render(
         <Styled>

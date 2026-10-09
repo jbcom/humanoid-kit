@@ -18,6 +18,9 @@
 - `humanoid-kit-hair` (CC0 1.0): ten scalp hair styles as alpha cards bound to
   the base body; separate install, a style's files load when worn, refused
   unless built against the exact body pack. `recipe.hair` picks style and colour.
+- `humanoid-kit-clothing` (CC0 1.0): 19 MakeHuman garments bound to the base
+  mesh, worn through `recipe.outfit`; separate install, refused unless built
+  against the exact body pack.
 
 ## Docs
 

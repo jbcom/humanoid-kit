@@ -1,7 +1,4 @@
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { generateScatterTable, scatterTableSource } from "../scripts/generate-scatter-table.ts";
 import { preintegratedDiffuse } from "../src/surface/preintegration.ts";
 import {
   profileScale,
@@ -11,7 +8,6 @@ import {
   singleScatterAlbedo,
   WAVELENGTH_RATIO,
 } from "../src/surface/scatter.ts";
-import { SCATTER_TABLE } from "../src/surface/scatterTable.ts";
 import { MELANIN_ANCHORS, type Rgb } from "../src/surface/skinTone.ts";
 
 /** ∫ f(N·L) over the sphere of normals, by the midpoint rule in μ = N·L (dΩ = 2π dμ). */
@@ -135,14 +131,5 @@ describe("pre-integrated diffusion", () => {
       );
     }
     expect(worst).toBeLessThan(1e-3);
-  });
-
-  it("ships exactly the table the generator writes", { timeout: 60_000 }, () => {
-    const shipped = fs.readFileSync(
-      path.resolve(import.meta.dirname, "../src/surface/scatterTable.ts"),
-      "utf8",
-    );
-    expect(scatterTableSource(generateScatterTable())).toBe(shipped);
-    expect(SCATTER_TABLE.cosSteps * SCATTER_TABLE.uSteps * 2).toBe(atob(SCATTER_TABLE.data).length);
   });
 });

@@ -197,6 +197,7 @@ describe("hair topology", () => {
         fileUrls: new Map([["short02.webp", "https://example.test/short02.webp"]]),
       },
       undefined,
+      undefined,
       { manifest: hairManifest },
     );
     for (const s of hairManifest.styles)
@@ -223,7 +224,7 @@ describe("a style that cannot be worn", () => {
         s.id === "short02" ? { ...s, kind: "brows" as const } : s,
       ),
     };
-    const parsed = parseHumanoidAssets(bodyPackData(), undefined, { manifest: other });
+    const parsed = parseHumanoidAssets(bodyPackData(), undefined, undefined, { manifest: other });
     const m = new HumanoidModel(parsed);
     expect(() => m.pendingHair(hairy("short02"))).toThrow(RecipeError);
     expect(() => m.pendingHair(hairy("short02"))).toThrow(/brows style.*not scalp hair/);
@@ -236,7 +237,9 @@ describe("a style that cannot be worn", () => {
   });
 
   it("is rejected, not evaluated, when its geometry has not arrived, and says how to wait", () => {
-    const parsed = parseHumanoidAssets(bodyPackData(), undefined, { manifest: hairManifest });
+    const parsed = parseHumanoidAssets(bodyPackData(), undefined, undefined, {
+      manifest: hairManifest,
+    });
     const m = new HumanoidModel(parsed);
     expect(m.pendingHair(hairy("bob02"))).toBe("bob02");
     expect(m.pendingHair(createRecipe())).toBeNull();

@@ -29,6 +29,13 @@
       "component": "humanoid-kit-hair",
       "include-component-in-tag": true,
       "bump-minor-pre-major": true
+    },
+    "packs/clothing": {
+      "release-type": "node",
+      "package-name": "humanoid-kit-clothing",
+      "component": "humanoid-kit-clothing",
+      "include-component-in-tag": true,
+      "bump-minor-pre-major": true
     }
   }
 }

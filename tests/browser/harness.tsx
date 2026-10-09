@@ -5,9 +5,12 @@
 import type { ReactNode } from "react";
 import adultManifest from "../../packs/adult-anatomy/data/manifest.json";
 import bodyManifest from "../../packs/body/data/manifest.json";
+import clothingManifest from "../../packs/clothing/data/manifest.json";
 import type { HumanoidEditor } from "../../src/editor/ui/useHumanoidEditor.ts";
 import { useEditorState } from "../../src/editor/ui/useHumanoidEditor.ts";
+import { wardrobeOf } from "../../src/editor/wardrobe.ts";
 import {
+  type ClothingManifest,
   mergeSliderTasks,
   type ShapeModifierEntry,
   type SliderTask,
@@ -16,7 +19,11 @@ import type { Recipe } from "../../src/recipe/recipe.ts";
 import type { HairInfo, ReadyInfo } from "../../src/worker/protocol.ts";
 import { EMPTY_RIG } from "../emptyRig.ts";
 
-export function readyInfo(withAdultPack = false, hair: HairInfo | null = null): ReadyInfo {
+export function readyInfo(
+  withAdultPack = false,
+  withClothingPack = false,
+  hair: HairInfo | null = null,
+): ReadyInfo {
   const body = bodyManifest as unknown as {
     modifiers: ShapeModifierEntry[];
     sliders: SliderTask[];
@@ -34,6 +41,7 @@ export function readyInfo(withAdultPack = false, hair: HairInfo | null = null): 
     rig: EMPTY_RIG,
     presenceJoints: {} as never,
     adultAnatomyLoaded: withAdultPack,
+    wardrobe: withClothingPack ? wardrobeOf(clothingManifest as unknown as ClothingManifest) : [],
     hair,
   };
 }
