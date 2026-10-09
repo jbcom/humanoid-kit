@@ -2564,7 +2564,7 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   areola and skin on that coordinate (`areolaRadius`, `nippleRadius`, a soft
   edge), so one set of fields serves a child's 13 mm areola and a woman's 38,
   and a puberty that grows it, without a field per age. The resolution is the
-  eight stops across the reach (a stop every 3.9 mm); the edge position is
+  eight stops across the reach (a stop every 3.1 mm); the edge position is
   continuous, its softness is not finer than that.
 - *Sizes in metres are put on the base mesh by the measured stretch.* The fields
   are measured on the base mesh and the figure's mesh is that mesh morphed, so a
@@ -2640,11 +2640,11 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   (the breasts' skin has layers of its own, and a layer shares channels only with
   those that lie apart from it, a cell of the 64 by 64 grid and a cell's margin
   all round).
-- *Stretch marks are a detail layer that also colours.* Kind 8 in the stop table
+- *Stretch marks are a detail layer that also colours.* Kind 9 in the stop table
   (`pattern: "striae"`): the sole's friction ridges' noise (`ridgeHeight`, one
   function in TypeScript and in the shader) past a threshold the figure's
   amount sets (`striaMark`: coverage 2.5% of the sites' skin at an amount of a
-  quarter, 7.6% at half, 19% at 1; the edge soft by a fifth of the noise's range), as streaks 5 mm apart that run for
+  quarter, 7.6% at half, 19% at 1; the edge soft by a fifth of the noise's range), as streaks 9 mm apart (marks of 3 to 5 mm) that run for
   centimetres and end, in groups. A mark multiplies the skin by the layer's
   colour ratio and sinks it a fifth of a millimetre; the header carries the
   depth and the spacing, stop 0 the ratio and stop 1 the amount, and the
@@ -2664,6 +2664,14 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   years, old from 35) and the tone: red when new on light skin and violet-brown
   and darker on deep skin, pale when old, which on the deepest skin is 13
   CIELAB lightness points lighter than the skin and on the lightest 1.
+- *What the mesh limits.* The base mesh's vertices are about a centimetre apart,
+  so a field cannot hold a feature narrower than a few of them: the linea nigra
+  and the collarbone's ridge are soft bands, the navel's disc a few vertices, and
+  all geometry (the nipple's height, the navel's dimple, the rib cage) is the
+  mesh's own, not drawn here: these layers add colour and shading, no shape.
+  Everything drawn in UV (the sole's ridges, the stretch marks, the tubercles'
+  cells) is cut where two UV islands meet, which is why the marks stop short of
+  the midline. Layers that cross neither limit are exact at any figure.
 - *No page was added.* The areola's colour keeps its two channels; the texture and
   the tubercles overlap it on the surface, so each needs its own, but the atlas
   plan puts them where the face's lines and the feet's and hands' layers are not
