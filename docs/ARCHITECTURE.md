@@ -193,11 +193,18 @@ Under 18:
 - the breast macro targets are never weighted (`macroTargetWeights`), although
   their files ship in the body pack;
 - adult-only targets are not in the body pack at all; the adult anatomy pack's
-  modifiers are adult-only, so a recipe under 18 that sets one is rejected.
+  modifiers are adult-only, so a recipe under 18 that sets one is rejected;
+- axillary and pubic hair are adult-only: a recipe under 18 whose
+  `bodyHair.density` sets either to anything but 0 is rejected, and the body
+  hair model draws neither for a figure that is not an adult (see "Body hair");
+- a piercing may only be at one of the body's own sites (`PIERCING_SITES`):
+  any other is the adult pack's and adult-only (`ADULT_ONLY_PIERCING`, "Body
+  art").
 
 The policy is enforced inside `recipeContributions`, so no caller can evaluate
 an invalid recipe by skipping validation. `withAge(recipe, age)` returns a copy
-at a new age; moving below 18 explicitly removes the adult-only values and leaves
+at a new age; moving below 18 explicitly removes the adult-only values (adult
+modifiers, axillary and pubic densities, and adult-only piercings) and leaves
 the input untouched.
 
 An adult-only modifier id that is not loaded (the adult pack is absent) fails
@@ -828,10 +835,9 @@ lines (1 to 3) and how deep (0.25 to 0.6 mm, against the elbow's 2.8) is
 art-directed, since no measurement of facial wrinkle depth or spacing against
 expression is in this repository; the depth grows with age
 (`expressionAgeFactor`: 0.2 at 6, 0.8 at 25, 1 at 40, 1.4 at 70), because a
-child's elastic skin barely lines and an old face does most. The layers cost a
-page in the field atlas (eight, 32 MB, against seven), packed in the one order
-of the five that fits them in one extra page (`planAtlas` is greedy; the order
-they read in needs two).
+child's elastic skin barely lines and an old face does most. Their masks lie apart from most
+layers', so the atlas planner packs them into channels others leave free: the
+stack stays at the eight pages it had with the hands.
 
 ### Skinning artefacts (2026-10-09)
 
@@ -858,12 +864,12 @@ one closed surface, wound consistently, so the volume is exact). Worst body for
 | --- | --- | --- | --- |
 | forearm twisted 135° | 0.98 / 0.87 / −1.2‰ | 1.00 / 1.00 / −0.1‰ | 0.99 / 0.94 / −0.6‰ |
 | upper arm twisted 135° | 0.93 / 0.52 / −13.8‰ | 1.00 / 1.00 / −5.5‰ | 0.99 / 0.88 / −6.8‰ |
-| thigh twisted 90° | 0.93 / 0.72 / −34.1‰ | 1.00 / 1.00 / −8.9‰ | 1.00 / 0.97 / −12.2‰ |
+| thigh twisted 90° | 0.93 / 0.72 / −34.1‰ | 1.00 / 1.00 / −8.9‰ | 0.97 / 0.83 / −13.9‰ |
 | arm raised forward 130° | 0.81 / 0.41 / −19.4‰ | 0.97 / 0.57 / −2.3‰ | 0.94 / 0.53 / −10.5‰ |
 | arm raised sideways 130° | 0.87 / 0.48 / −9.6‰ | 0.97 / 0.67 / −12.5‰ | 0.96 / 0.67 / −4.6‰ |
 | hip flexed 120° | 0.80 / 0.30 / −35.2‰ | 0.97 / 0.47 / −17.4‰ | 0.95 / 0.42 / −19.8‰ |
-| hip abducted 45° | 0.98 / 0.70 / −17.1‰ | 1.00 / 0.74 / −15.2‰ | 0.99 / 0.73 / −15.4‰ |
-| knee flexed 120° | 0.81 / 0.22 / −6.4‰ | 0.93 / 0.26 / −2.5‰ | 0.88 / 0.25 / −4.1‰ |
+| hip abducted 45° | 0.98 / 0.70 / −17.1‰ | 1.00 / 0.74 / −15.2‰ | 0.99 / 0.73 / −15.6‰ |
+| knee flexed 120° | 0.81 / 0.22 / −6.4‰ | 0.93 / 0.26 / −2.5‰ | 0.81 / 0.22 / −6.4‰ |
 | elbow flexed 120° | 0.84 / 0.33 / −3.8‰ | 0.91 / 0.31 / −3.9‰ | 0.90 / 0.31 / −3.9‰ |
 
 The pack's benchmark pose bends no elbow, knee or wrist, so `flexed` (every
@@ -914,6 +920,19 @@ arm but the elbow's two bones (½), and for the pelvis, the thigh and the foot,
 and linear for the shin: the knee is where a bend's bulge outweighs the volume
 dual quaternions save. Re-run it if the pack's skin weights change.
 
+**The knee, revised (2026-10-09).** The searched table put the thigh's lower
+half (`upperleg02`) at 1, and a bent knee's sides then bulged past linear
+skinning's: girth 95th percentile 1.32 against 1.23 at 90° (the tall lean body;
+1.19 against 1.11 on the average, 1.14 against 1.06 on the short full woman),
+which reads as a swollen knee in a crouch. A test now holds a bent knee to
+linear skinning's bulge (plus 0.02) at 45° and 90°, the angles a body bends it,
+and the share is 0, so that the knee's girth and volume are exactly linear's
+(120°: 0.22, −6.4‰). It costs the thigh's twist some of its volume (90°: girth
+5th percentile 0.83 against 0.97, volume −13.9‰ against −12.2‰; linear
+skinning 0.72 and −34.1‰), a motion made far less often than a knee bends, and
+a crouch's thigh stays dual quaternion above its lower half. Intermediate
+shares (¼, ½, ¾) all bulge: 1.28 to 1.30.
+
 **How it runs.** `DualBones` (`src/render/dualSkinning.ts`) holds each bone's
 dual quaternion and share as a float texture, written from the same bone
 rotations as the CPU reference whenever the pose or the figure changes. A patch
@@ -938,8 +957,9 @@ authored for either would add data and a per-pose evaluation for a change the
 sheets cannot show. The gate (never worse than linear in girth, within a
 thousandth in volume) holds both. The blend bulges a flexed hip's front (95th
 percentile 1.37 at 120°, against linear skinning's 1.13) for the 15‰ of volume
-it keeps, and a bent knee's (1.32 against 1.23); that is the remainder a
-pose-space corrective would address, if figures are posed there often. The
+it keeps (a bent knee's no longer bulges past linear skinning's); that is the
+remainder a pose-space corrective would address, if figures are posed there
+often. The
 crease detail layers (`flex.*` signals) paint the fold's skin on top of it.
 
 ## Scalp hair (milestone 4)
@@ -1134,6 +1154,44 @@ not rejected**. Until one is proved, closing the gap needs an **authored or
 procedural coily style** (instanced curl cards or strand clumps over the same
 scalp and growth fields), which is a milestone of its own. Evidence and the
 audit are in `docs/evidence/hair.md`.
+
+## Body hair
+
+**Use cases.** Every figure carries the body hair of its age and sex, at every
+skin tone, without a choice being made: vellus everywhere from infancy, and
+terminal hair coming in through adolescence and thinning and greying in old
+age. A creator can thin, thicken or shave a region and pick a beard. Axillary
+and pubic hair exist for adults only.
+
+**Requirements.** It reuses what exists: the skin layer stack for what lies on
+the skin, the hair pack's cards and material for what stands off it, and the
+hair colour model for its colour. No second hair system. Densities and timing
+cite measurements or are marked as choices (`docs/research/BODY-HAIR.md`).
+Old recipes evaluate and serialise as before.
+
+**Decisions (2026-10-09).**
+
+- *One pure model, two ways of drawing.* `src/surface/bodyHair.ts` says how
+  much terminal hair each region group carries (coverage 0..1, the
+  Ferriman-Gallwey grade over 4), from the gender macro read as the androgen
+  level, the age (a ramp per group on the Tanner ages, a thinning after 55) and
+  the recipe's multipliers; and what colour (the figure's hair pigments, darker
+  on the face and pubis, lighter on the limbs, greyed with age later on the
+  body than the beard). The groups follow the modified FG regions, merged to
+  what a picker offers: face, chest, abdomen, back, buttocks, arms, legs, and the
+  adult-only axillary and pubic.
+- *Adult-only groups are gated in the model itself.* `defaultBodyHairCoverage`
+  returns 0 for axillary and pubic hair unless the age is an adult's (`age >=
+  ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
+  scales the default, so no recipe value can add them under 18.
+- *The recipe holds multipliers, not densities.* `recipe.bodyHair` is optional
+  (the recipe schema grows only by optional fields): `density` is a multiplier
+  per group on the default for age and sex (0 shaves a region, 2 doubles it,
+  clamped to full coverage), and `beard` a style. A multiplier, not an absolute
+  value, keeps a saved recipe right as the figure ages: the same recipe at 12,
+  30 and 80 shows each age's hair. Absent fields are not filled in by
+  `createRecipe`, so a recipe that never set body hair serialises exactly as
+  before.
 
 ## Presence
 
@@ -1507,13 +1565,23 @@ manifest's `anatomy.detail.surfaceKey` hashes the lattice, and the model refuses
 detail built for another refinement. `tests/detailTargets.test.ts` proves the
 engine with a synthetic target before any anatomy is authored on it.
 
-The refined region is empty of anatomy until a feature is authored on it: it is the base shape in finer
-cells, proven by the geometry tests and by a render within 11 pixels over 8
-levels of the base's (adult against base contact sheet, local only). The
-features (mound, penis, testes, vulva) land on it one at a time
-(docs/research/ADULT-SCULPT-PLAN.md, section 10), and
-`tests/adultPermutations.test.ts` holds the matrix of ages, genders, feature
-combinations and states every one of them joins.
+With no detail applied the refined region is the base shape in finer cells,
+proven by the geometry tests and by a render within 11 pixels over 8 levels of
+the base's (adult against base contact sheet, local only). The first authored
+feature on it is the **mound** (`pelvis/mound-decr|incr`, the pack's own
+adult-only modifier, `scripts/lib/detail/mound.ts`): a cosine bell of displacement
+along the skin's outward normal over the measured mons width and length,
+peaking at the verified 1.5 cm BMI-band contrast (fuller) or 1 cm (flatter),
+scaled by the figure's hip breadth. The packer generates its targets on the
+authoring figure's lattice from the control targets and the surface spec, so the
+pack is reproducible; `tests/moundDetail.test.ts` holds the form to its numbers
+and `tests/moundPack.test.ts` holds the shipped pack to the generator. Its skin
+fields and colour layer still follow the body's bulge target, not the new
+detail. The penis, testes and vulva are the next features
+(docs/research/ADULT-SCULPT-PLAN.md, section 10): a shaft is an extrusion far
+beyond what displacing existing vertices can do, so they need reservoir
+topology. `tests/adultPermutations.test.ts` holds the matrix of ages, genders,
+feature combinations and states every feature joins.
 
 **Arousal.** The adult manifest adds an `arousal` state morph
 (`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by
@@ -1551,6 +1619,162 @@ the first, calibrated against the measured one). `arousal` is refused under 18
 in every channel (AGE-POLICY.md). Area lanes then add states as they add
 regions.
 
+### Hands (2026-10-09)
+
+The hands' own skin is one area's layers (`src/surface/regions/hands/`: the
+frame, the creases, the knuckles and the nails each in a file of its own, and
+the palm and the stack order in `index.ts`; colour in `src/surface/handTone.ts`), between the rest layers and the state
+layers, so a state acts on them: cold blanches the nail beds and palms as it
+does the rest of the hand. Sources and choices: `docs/research/SKIN-STATES.md`
+C5; contact sheets, before and after, at four tones, adult and child:
+`docs/evidence/hands.md`.
+
+- *Palm colour, a fairness item.* Palmoplantar skin has few active
+  melanocytes at every tone, so the palm barely follows the body's
+  lightness: on the deepest backs of hands it is about 16 L\* lighter and
+  6 to 8 b\* yellower, on the lightest about the same. The colour is read from
+  the archive the skin model already uses (ISSA's 777 paired palm and back-of-
+  hand readings, binned by the back's lightness), not a ratio: a lighter-skin
+  rule scaled down would leave deep palms nearly the colour of the hand's back,
+  which is the error this item exists to prevent.
+- *A frame per hand, from the base mesh.* As with the skin-state zones, nothing
+  is added to the frozen mesh. The skeleton's finger joints give each digit a
+  polyline from the wrist; every hand vertex takes the nearest segment and its
+  distance along the digit and across it, blended across each joint so the
+  coordinate runs on smoothly round a bend (the nearest segment alone jumps by
+  the radius times the bend at the bisector, which drew a false crease there).
+  The vertex normal against the palm's facing tells palmar from dorsal; the
+  palm's plane (from the wrist toward the middle finger, and toward the thumb)
+  carries the palm's own creases.
+- *Creases finer than the mesh.* The palm's vertices are about 5 mm apart and a
+  crease about 1 mm wide, and a mask is interpolated between vertices, so a
+  crease cannot be a mask. Each is drawn from a signed distance to it instead,
+  which interpolates exactly across the face it crosses: as a line of colour
+  (the coordinate runs across a band wider than two faces, and the line is one
+  of the eight colour stops, a seventh of the band wide), and as a relief fold
+  a face wide. A signed distance to the nearest of several creases jumps where
+  the nearest changes; it passes the line's stop, drawing a false line, unless
+  the two sides that meet there carry the same sign. So the signs are chosen as
+  a chain (each finger's creases alternate from the base; the palm's three are
+  oriented to agree with each other and with the fingers'), and a test checks
+  every edge where the nearest crease changes for a line no crease explains,
+  and that the palm's creases never cross (the thenar crease, steeper than the
+  proximal transverse crease it starts beside, crossed it when it started
+  above it). The thumb's web is the one place three creases meet whose sides
+  no signs can all match; there the palm's creases taper in from the border.
+- *Where the creases are.* Measured offsets from the joints (the middle
+  digital crease about 2 mm proximal to its joint, the thumb's at and just
+  proximal to its joints) and measured lengths between a finger's creases. The
+  palm's creases are measured from the anatomical knuckles, which MakeHuman's
+  finger joints are not (they sit at the web), so each knuckle is placed the
+  measured distance proximal to its finger's first crease.
+- *Knuckles.* More melanin, multiplied rather than added, so fair knuckles
+  mostly redden and deep ones darken; and wrinkle arcs over each joint. No
+  knuckle colour or fold count was found measured at any tone: these are
+  choices, bounded by the measured exposed-to-protected melanin ratio. The
+  wrinkles' phase runs on unclamped past each joint's band, and each band ends
+  a face short of halfway to the next joint, where the coordinate turns to that
+  joint's (on the little finger's short middle phalanx the bands nearly met and
+  drew a false wrinkle).
+- *Nails.* No separate nail geometry: the base mesh sculpts each nail, and a
+  coordinate along the last segment carries fold, lunula, bed and free edge as
+  the colour stops, with sharp changes between them, and a surface layer the
+  plate's gloss. The bed is measured nail colour whose lightness follows the
+  skin's far less than skin does (the nail bed has about 5% of skin's
+  melanocytes), so on deep skin the nails are much lighter than the fingers.
+- *Soles.* Soles share the palm's suppressed melanocytes (the same
+  mechanism), but no sole colour was found measured, so the sole takes the
+  palm's measured colour (`PALMOPLANTAR_LAYER` paints both, a choice). One owner for the
+  palmoplantar colour: the feet's area adds the sole's relief, calluses and
+  toenails over it (`nailStops` paints any nail whose coordinate follows the
+  fingernail's).
+- *One atlas page for all of it.* Every layer costs field-atlas channels (a
+  colour layer two: mask and coordinate), and the atlas planner shares a
+  channel only between layers whose masks lie in disjoint cells of the UV
+  layout. The hand's features lie too close together in that layout to share
+  that way: as nine layers of their own the hands took 9 pages (36 channels).
+  So features that never meet on the mesh share a layer: the palm and the sole
+  one colour (`PALMOPLANTAR_LAYER`); the knuckles and the nails one colour
+  whose coordinate is 0 at the knuckles and the nail's own from its fold
+  (`DIGIT_LAYER`, within 1 ΔE\*ab of the nail layered over the knuckle, a test
+  checks); the palm's creases and the knuckles' wrinkles one relief, palmar
+  and dorsal (`HAND_RELIEF_LAYER`). Five layers, and the
+  palmoplantar colour and the crease lines share channels with the flush,
+  areola and joint creases, so the stack goes from 27 channels on 7 pages
+  (28 MiB at 1024², RGBA8) to 30 on 8 (32 MiB): one page. The palmoplantar
+  mask drops the zones' tails below what the atlas rounds to 0, which reached
+  the knees' creases. The adult layers keep their pages.
+- *Not done.* The hands' layers do not vary with age: a child's hand gets the
+  same creases and knuckles at its own scale, the fields scaling with the
+  morphed mesh (creases form before birth, so their places are set early). No
+  finger flexion is measured by the rig yet (`FLEXION_JOINTS` has wrists,
+  elbows and knees), so knuckle wrinkles are at rest.
+
+### Body art (2026-10-09)
+
+**Use cases.**
+
+- A player puts their own image on a forearm, sized and turned, and it stays
+  there through every shape, age and pose.
+- Piercings follow the ear, nose, brow, lip or navel as the figure moves.
+- A scar, birthmark or vitiligo reads right at every skin tone.
+- A crowd where most figures have none of this pays nothing for it.
+
+**Requirements.**
+
+- Placement is per figure; the field atlas is shared by every figure on one mesh.
+- Ink lies in the dermis (research/BODY-ART.md A1), so it must be coloured
+  before the skin's scattering and be covered by hair and garments as skin is.
+- Genital piercings are adult-only, yet the core names no adult anatomy.
+- Recipes stay plain JSON, and are unchanged when there is no body art.
+
+**Placement: anchors on the base mesh.** A tattoo, scar or birthmark sits at
+a `BodyAnchor`, a named site or a base-mesh vertex. A vertex is what a game's
+pick on the body returns, and it is stable because the base mesh is frozen.
+The named sites (`bodySites`) are found, not stored: the mesh has no ear, nose,
+lip or navel groups, but each feature's MakeHuman target moves that feature
+most at its most prominent point (the lobe, the helix's top, the nostril's
+wing, the brow's lateral end, the lower lip's middle, the navel's upper lip).
+The septum is the midline nose vertex nearest the point between the nostrils.
+
+**Paint: a per-figure texture, not the field atlas.** Three options were
+weighed:
+
+1. Body-art layers in the shared field atlas: impossible, since every figure
+   on a mesh shares it.
+2. Per-figure fields per base vertex: the palm is 5 mm between vertices, too
+   coarse for an image.
+3. A per-figure texture in UV space.
+
+The third is used. Tattoos, scars, birthmarks and vitiligo bake into a
+two-page RGBA8 texture array per figure that has any:
+
+- page 0 is ink (linear colour and coverage);
+- page 1 is what the marks change in the skin (melanin removed, scar,
+  melanin added, haemoglobin added).
+
+It is baked on the GPU the way the field atlas is rasterised: the morphed body
+is drawn in UV space, and each decal is projected from the tangent frame at
+its anchor, so a decal crosses UV seams without a gap. The skin shader reads
+it only under a define, so a figure without body art keeps the program it had
+and pays no texture fetch. Ink is applied after the layer stack, before
+scattering: seen through the epidermis (its melanin transmittance, squared,
+which is the ratio of the skin's albedo to the melanin-free albedo), with the
+dermis above it scattering blue back.
+
+**Piercings: generated attachments.** Each piercing is a small mesh bound
+like an MHCLO attachment, to the triangle at its site, and skinned with the
+body's bones, so it follows the posed surface with the existing occlusion. A
+site's `channel` orients the jewellery.
+
+**Age.** A piercing at any site that is not the body's own is the adult
+pack's, and is adult-only by construction (`ADULT_ONLY_PIERCING`): the core
+fails closed without naming any adult site. Tattoos and marks apply at every
+age.
+
+**Landed so far:** the recipe field, its validation, the age policy and the
+sites. The texture, the marks and the piercings follow in their own commits.
+
 ### Joint creases (2026-10-09)
 
 **Use cases.** A bent elbow or knee shows its fold; a game bends many figures at
@@ -1580,8 +1804,11 @@ the joint's skin takes, which is measured.
   the joint (the axis through the segments either side of it), on the limb
   (within 9 to 12 cm of the axis, which keeps the torso and the other limb out),
   on the side the skin faces (its normal against the joint's flex direction,
-  `FLEXION_JOINTS[].flexes`); its coordinate runs along the limb across the
-  window, so the grooves lie across it. Nothing is painted or packed.
+  `FLEXION_JOINTS[].flexes`: full within about 30° of it, none past 63°, so the
+  sides and the back of the limb carry no crease; a ramp out to 84° drew a line
+  seen from the side as a seam round the elbow); its coordinate runs along the
+  limb across the window, so the grooves lie across it. Nothing is painted or
+  packed.
 - *Strength* is `smoothstep(0.05, 0.85, flex)`: nothing straight, the whole
   near the joint's limit; the rest A-pose's elbow (flexion 0.3) holds a quarter.
 - *Depth follows from the strain.* A crease of span `s` and depth `d` takes up

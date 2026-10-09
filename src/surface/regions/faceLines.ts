@@ -291,11 +291,7 @@ const layer = (
 
 export const expressionLineId = (name: string) => `lines.${name}`;
 
-/**
- * The expression lines, after the joint creases. In this order because the atlas
- * plan packs layers greedily (`planAtlas`): it needs 32 channels, 8 pages, for
- * this order of the five and 33, 9 pages, for the order they read in.
- */
+/** The expression lines, after the joint creases. */
 export const EXPRESSION_LINE_LAYERS: readonly DetailLayer[] = [
   layer(expressionLineId("forehead"), forehead, "forehead", (s) => signal(s, "browRaise")),
   layer(expressionLineId("crows-feet"), crowsFeet, "crowsFeet", (s) =>

@@ -502,6 +502,12 @@ function addQuadNormals(faces: Uint32Array, positions: Float32Array, out: Float3
 
 /** The shading normals of a refined surface (`SmoothNormals`), one per surface vertex, not yet normalised. */
 function smoothNormals(plan: SmoothNormals, control: Float32Array, count: number): Float32Array {
+  const refined = interpolatedNormals(plan, control);
+  return plan.smooth ? applyStencil(plan.smooth, refined, new Float32Array(count * 3)) : refined;
+}
+
+/** The coarse surface's unit vertex normals, interpolated to the refinement mesh's vertices (not renormalised). */
+function interpolatedNormals(plan: SmoothNormals, control: Float32Array): Float32Array {
   const base = applyStencil(plan.control, control, new Float32Array(plan.vertexCount * 3));
   const n = new Float32Array(plan.vertexCount * 3);
   addQuadNormals(plan.faces, base, n);
@@ -511,12 +517,28 @@ function smoothNormals(plan: SmoothNormals, control: Float32Array, count: number
     n[v * 3 + 1] = (n[v * 3 + 1] as number) / l;
     n[v * 3 + 2] = (n[v * 3 + 2] as number) / l;
   }
-  const refined = applyStencil(
+  return applyStencil(
     plan.interpolate,
     n,
     new Float32Array(plan.interpolate.offsets.length * 3 - 3),
   );
-  return plan.smooth ? applyStencil(plan.smooth, refined, new Float32Array(count * 3)) : refined;
+}
+
+/**
+ * Unit normals of a refined surface's lattice (`SurfaceLattice`) on one figure,
+ * the base's own shading normals carried to the lattice's vertices, for placing
+ * features along the skin's outward direction.
+ */
+export function latticeNormals(mesh: SurfaceMesh, control: Float32Array): Float32Array {
+  if (!mesh.smoothNormals || !mesh.lattice) throw new Error("not a refined surface");
+  const n = interpolatedNormals(mesh.smoothNormals, control);
+  for (let v = 0; v < n.length; v += 3) {
+    const l = Math.hypot(n[v] as number, n[v + 1] as number, n[v + 2] as number) || 1;
+    n[v] = (n[v] as number) / l;
+    n[v + 1] = (n[v + 1] as number) / l;
+    n[v + 2] = (n[v + 2] as number) / l;
+  }
+  return n;
 }
 
 /** Adds a detail displacement of the lattice to the final surface's positions. */
