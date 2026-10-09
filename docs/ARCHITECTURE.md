@@ -1221,6 +1221,31 @@ over a pack of their own, since they bind to the same body, load lazily the same
 way and take the same colour; and kinds in one manifest over a second manifest,
 so a loader, a picker and the recipe validation know one list.
 
+**Wearing them.** `recipe.hair` gains `brows` and `lashes`, each an id of that
+kind (absent is none, so recipes saved before them serialise as they did). The
+model evaluates them beside the scalp style (`Evaluation.brows`, `lashes`) and
+the worker sends their static data once each. A brow is lifted 2 mm off the
+skin along its normal (`DECAL_LIFT`): the body is drawn subdivided and the decal
+is bound to the coarse mesh, whose smooth surface can swallow it by up to 1.8 mm
+on the brow ridge at ages 6 to 75 (measured: the lowest vertex of four brows at
+four ages, with a test that fails without the lift); lashes are not, since they
+are meant to stand clear of the lid.
+
+**Colour and density** (`src/surface/decalTone.ts`). One hair colour drives all
+three: the brows are `hairAlbedo(colour)`, the lashes the same hue darker by a
+fixed `LASH_DARKEN` (0.55). The mask is white, so the material's colour is the
+only colour it takes. A child's brows and lashes are finer and fewer: the decal's
+opacity, which multiplies the mask's alpha before the material's cut-off (0.35),
+ramps from 0.45 (brows) or 0.7 (lashes) at birth to 1 by 14, so the partial
+strokes go first. **Choices**, not measurements: no source of brow or lash density
+by age ships here, so the numbers are tuned against `docs/evidence/brows.md`.
+
+**The material** (`DecalMaterial`, `src/render/decalMaterial.ts`) is a plain
+standard one, not `HairMaterial`: a decal has no growth, hairline fade or fin, and
+the hair material reads a missing one as "dithered away". It cuts by the mask,
+takes its edges as hair does (alpha-to-coverage on a multisampled target, an
+alpha test otherwise) and draws over the skin by a polygon offset.
+
 ## Body hair
 
 **Use cases.** Every figure carries the body hair of its age and sex, at every
