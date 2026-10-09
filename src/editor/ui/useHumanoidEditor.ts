@@ -104,6 +104,7 @@ export function useEditorState(ready: ReadyInfo | null, initial?: Recipe): Human
             ...(hairStyles && { hairStyles }),
             ...(browStyles?.length && { browStyles }),
             ...(lashStyles?.length && { lashStyles }),
+            beards: true,
             ...options,
           }),
       }),

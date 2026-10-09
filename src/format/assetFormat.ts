@@ -284,9 +284,24 @@ export interface BoundAsset {
   hair?: HairFieldData;
 }
 
-/** The kinds of entry the hair pack lists. */
-export const HAIR_KINDS = ["scalp", "brows", "lashes"] as const;
+/**
+ * The kinds of entry the hair pack lists: scalp hair, the brows and lashes
+ * (decals), and generated body hair cards (`beard`: a grown beard's length,
+ * over the coat's dense base; docs/ARCHITECTURE.md, "Body hair").
+ */
+export const HAIR_KINDS = ["scalp", "brows", "lashes", "beard"] as const;
 export type HairKind = (typeof HAIR_KINDS)[number];
+
+/** Kinds whose entries carry the measured strand fields (`HAIR_FIELD_KEYS`). */
+export const STRAND_KINDS: readonly HairKind[] = ["scalp", "beard"];
+
+/**
+ * The buffer a body hair card entry carries beyond a scalp style's: per card
+ * vertex, its card's rank (0..255). A card is drawn while its rank is under the
+ * figure's coverage, so density follows age, sex and the recipe with the same
+ * geometry.
+ */
+export const CARD_FIELD_KEYS = ["rank"] as const;
 
 /** The buffers a hair style's binary carries beyond an attachment's (`src/surface/hairFields.ts`). */
 export const HAIR_FIELD_KEYS = [
@@ -312,6 +327,8 @@ export interface HairFieldData {
   fin: Uint8Array;
   scalpVerts: Uint16Array;
   scalpWeights: Uint8Array;
+  /** A body hair card entry's ranks (`CARD_FIELD_KEYS`); absent on scalp hair. */
+  rank?: Uint8Array;
 }
 
 /**
@@ -328,11 +345,14 @@ export interface HairStyleEntry extends Omit<AttachmentEntry, "layout" | "kind">
    */
   kind: HairKind;
   /**
-   * A scalp style's layout holds every `HAIR_FIELD_KEYS` buffer; a decal's
-   * (`brows`, `lashes`) holds none, since it has no hairline, growth or scalp.
+   * A scalp style's layout holds every `HAIR_FIELD_KEYS` buffer; a beard's
+   * cards hold those and `CARD_FIELD_KEYS`; a decal's (`brows`, `lashes`) holds
+   * none, since it has no hairline, growth or scalp.
    */
   layout: AttachmentEntry["layout"] &
-    Partial<Record<(typeof HAIR_FIELD_KEYS)[number], BufferRange>>;
+    Partial<
+      Record<(typeof HAIR_FIELD_KEYS)[number] | (typeof CARD_FIELD_KEYS)[number], BufferRange>
+    >;
   /** What a picker shows. */
   label: string;
   /** What the style is: length, texture, shape (`short`, `curly`, `ponytail`...). */
@@ -861,13 +881,17 @@ export function addHairStyle(assets: HumanoidAssets, id: string, bin: ArrayBuffe
     occlusion,
   };
   // Brows and lashes are decals: nothing measured of strands or a scalp.
-  if (entry.kind !== "scalp") {
-    for (const key of HAIR_FIELD_KEYS)
+  if (!STRAND_KINDS.includes(entry.kind)) {
+    for (const key of [...HAIR_FIELD_KEYS, ...CARD_FIELD_KEYS])
       if (l[key])
         throw new AssetFormatError(what(`${key}: a ${entry.kind} style has no scalp fields`));
     assets.hair.bound.set(id, base);
     return base;
   }
+  // Only body hair cards carry ranks.
+  const cards = entry.kind === "beard";
+  if (!cards && l.rank) throw new AssetFormatError(what("rank: only body hair cards have ranks"));
+  if (cards && !l.rank) throw new AssetFormatError(what("rank is missing"));
   const field = (key: (typeof HAIR_FIELD_KEYS)[number]): BufferRange => {
     const range = l[key];
     if (!range) throw new AssetFormatError(what(`${key} is missing`));
@@ -880,7 +904,9 @@ export function addHairStyle(assets: HumanoidAssets, id: string, bin: ArrayBuffe
     fin: view(Uint8Array, bin, field("fin"), what("fin")),
     scalpVerts: view(Uint16Array, bin, field("scalpVerts"), what("scalpVerts")),
     scalpWeights: view(Uint8Array, bin, field("scalpWeights"), what("scalpWeights")),
+    ...(l.rank && { rank: view(Uint8Array, bin, l.rank, what("rank")) }),
   };
+  if (hair.rank) expectLength(hair.rank, entry.vertexCount, what("rank"));
   expectLength(hair.growth, entry.vertexCount, what("growth"));
   expectLength(hair.uvScale, entry.vertexCount, what("uvScale"));
   expectLength(hair.fade, entry.vertexCount, what("fade"));

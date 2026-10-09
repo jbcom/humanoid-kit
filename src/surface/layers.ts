@@ -163,13 +163,6 @@ interface LayerBase {
    */
   adult?: { feature: string };
   /**
-   * Marks a body layer that only an adult shows (axillary and pubic hair, under
-   * the age policy): its data is in the body pack, but `paintStopTable` paints
-   * it at zero unless `SkinPaintInput.adult` is true, so an input that does not
-   * say fails closed.
-   */
-  adultOnly?: true;
-  /**
    * The layer lies on all the skin (vellus): its mask is 1 everywhere and it
    * takes no channel of the field atlas (`planAtlas` gives it none). Its
    * `fields` must say the same: a mask of 1 and no coordinate.
@@ -190,12 +183,10 @@ export const isAdultLayer = (layer: SkinLayer): boolean => layer.adult !== undef
 
 /**
  * How much of a layer's paint shows for this input, 0..1: 1 for a body
- * layer; 0 for an adult-only body layer on a figure not known to be an adult;
- * for an adult layer, the presence of its anatomy feature on an adult figure
- * and 0 on any other.
+ * layer; for an adult layer, the presence of its anatomy feature on an
+ * adult figure and 0 on any other.
  */
 function layerGate(layer: SkinLayer, input: SkinPaintInput): number {
-  if (layer.adultOnly && input.adult !== true) return 0;
   if (!layer.adult) return 1;
   if (input.adult !== true) return 0;
   return unit(input.anatomy?.[layer.adult.feature] ?? 0);

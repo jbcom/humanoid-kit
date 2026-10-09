@@ -54,7 +54,9 @@ type PackLocation =
   A `HairStyleEntry` is an attachment entry (no `deleteVerts`,
   one occlusion value per vertex) with a `label`, `tags` (`short`, `bob`,
   `curly`...), its `kind` (`scalp`, or `brows` or `lashes`, which share the pack's
-  loader; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
+  loader, or `beard`, generated body hair cards tagged with the beard style they
+  serve, whose layout adds a `rank` per vertex, `CARD_FIELD_KEYS`; `STRAND_KINDS`
+  are the kinds with measured strand fields; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
   carries each entry's kind), its `file` and `sha256`, and the `strand` direction and
   `coherence` measured from its strand map. With the clothing pack loaded,
   `clothingManifest` lists its garments from the start; `garments` (a map of
@@ -467,9 +469,15 @@ and throws `RangeError` for anything else.
   skin along its normal, since the smooth body surface can swallow a decal bound to
   the coarse mesh by up to 1.8 mm at the brow ridge (a test holds it clear at ages
   6 to 75). `model.pendingHairStyles(recipe)` lists every worn style not yet loaded,
-  and the worker's `evaluated` reply carries `decalTopologies` for the brows' and
-  lashes' static data (`HairTopology.kind` is `scalp`, `brows` or `lashes`; a
-  decal's fade is all 1, fin and growth 0, scalp none).
+  and the worker's `evaluated` reply carries `decalTopologies` for the brows',
+  lashes' and beard cards' static data (`HairTopology.kind` is `scalp`, `brows`,
+  `lashes` or `beard`; a decal's fade is all 1, fin and growth 0, scalp none).
+  `Evaluation.beard` is the hair pack's cards for the recipe's beard style
+  (`model.wornBeardCards(recipe)`: the `beard` entry tagged with the style, or
+  null when there is none or the face grows no terminal hair), evaluated as
+  scalp hair is; `HairTopology.rank` is its cards' ranks per render vertex (null
+  for every other kind), and `<Humanoid>` draws the cards whose rank is under the
+  face's coverage (`HairMaterial.setDensity`), in the face's body hair colour.
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
@@ -649,8 +657,7 @@ compute what the renderer will do.
   (`strandCover(paint)`, at most `MAX_STRAND_COVER`, what `applyLayers` applies;
   none for `inSkinAlbedo`). A layer may set `everywhere` (on all the skin: no
   atlas channel, `planAtlas` gives it `value` -1 and the shader reads its mask
-  as 1) or `adultOnly` (a body layer `paintStopTable` paints at zero unless
-  `SkinPaintInput.adult` is true; absent fails closed). `surfaceChange` and `creaseHeight` (a
+  as 1). `surfaceChange` and `creaseHeight` (a
   groove, so negative: `size` of them across the coordinate, each the raised
   cosine to the power `CREASE_SHARPNESS`, flat at the coordinate's ends) are the
   shader's references; `uvScale(assets, faces)` gives metres of skin per UV
@@ -677,19 +684,22 @@ compute what the renderer will do.
   (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
   Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
   hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
-  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs, and the
-  `adultOnly` axillary), with follicle densities `BODY_HAIR_DENSITY`. Dense,
-  short hair standing off the skin (the beard, the chest, abdomen and back) is
-  the coat's, long hair the cards', and pubic hair the adult pack's.
+  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
+  densities `BODY_HAIR_DENSITY`. Dense, short hair standing off the skin (the
+  beard, the chest, abdomen and back, and the adult-only armpits) is the
+  coat's, long hair the cards', and pubic hair the adult pack's.
   `bodyHairMasks(assets)` gives the masks per base vertex and
   `bodyHairInput(paintInput)` the body hair model's input.
 - The coat (`src/surface/coat.ts`, ARCHITECTURE.md "The coat"): short, dense hair
   drawn as shells, shared by body hair and the anthro fur. A `CoatRegion` (`id`,
   `targets`, `mask(assets)` per base vertex, `paint(input)` giving a
   `CoatPaint`: `cover`, `length` up to `MAX_COAT_LENGTH`, `density` per cm²,
-  `lie` 0 standing to 1 flat, `width`, `colour`); `COAT_REGIONS` (at most
-  `COAT_REGION_LIMIT`; today `BODY_HAIR_COAT`: `beard-moustache`, `beard-chin`,
-  `beard-cheeks`, `hair-chest`, `hair-abdomen`, `hair-back`, with
+  `lie` 0 standing to 1 flat, `width`, `colour`; and `adultOnly`, a region
+  `paintCoat` leaves unpainted, without asking its paint, unless
+  `SkinPaintInput.adult` is true, so an input that does not say fails closed);
+  `COAT_REGIONS` (at most `COAT_REGION_LIMIT`; today `BODY_HAIR_COAT`:
+  `beard-moustache`, `beard-chin`, `beard-cheeks`, `hair-chest`, `hair-abdomen`,
+  `hair-back` and the adult-only `hair-axillary`, with
   `BEARD_LENGTHS` per style and `beardMasks(assets)`). `combField(assets)` is
   the direction hair lies per base vertex (rest space, unit, in the tangent
   plane: down the limbs toward their ends, down elsewhere, smoothed);
@@ -746,9 +756,17 @@ compute what the renderer will do.
     through, from `nailColours(tone)`: fold, lunula, bed and free edge along each
     nail, the bed from `nailLab(tone)`, measured nail CIELAB at a lightness that
     follows the skin's far less than skin does). It paints within 1 ΔE\*ab of
-    the nail layered over the knuckle. `NAIL_GLOSS_LAYER` is the plate
-    (`NAIL_ROUGHNESS` and `NAIL_SPECULAR`); fields from `knuckleFields(assets)`
-    and `nailFields(assets)`, proportions in `NAIL_LAYOUT`.
+    the nail layered over the knuckle. `NAIL_GLOSS_LAYER` is the plate's gloss
+    on the skin (`NAIL_ROUGHNESS` and `NAIL_SPECULAR`); fields from
+    `knuckleFields(assets)` and `nailFields(assets)`, proportions in
+    `NAIL_LAYOUT`.
+  - The nail plates: body attachments of `NAIL_PLATE_KINDS` (`fingernails`,
+    `toenails`; CC0 meshes, see NOTICE.md) whose `AttachmentTopology.nailEdge`
+    is, per render vertex, how much of the free edge it is
+    (`nailPlateEdges(positions, faceVerts, along)`: each nail's last
+    `NAIL_FREE_EDGE_LENGTH` toward its tip). `<Humanoid>` draws them with a
+    `NailPlateMaterial`: keratin at `NAIL_PLATE_OPACITY` over the bed, so the
+    painted bed shows through, and `NAIL_FREE_EDGE_OPACITY` along the free edge.
   - `HAND_RELIEF_LAYER` (`"hand-relief"`, a `creases` detail layer, fields
     `handReliefFields(assets)`): the palm's crease folds and the knuckles'
     wrinkle arcs (over the back of each finger joint, `KNUCKLE_WRINKLE_SPACING`
@@ -1138,7 +1156,8 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 
 - Hidden until the first evaluation arrives.
 - Renders the body and the body pack's attachments (eyes with their own eye
-  shader following `recipe.eyes`, teeth and tongue), each attachment shaded by
+  shader following `recipe.eyes`, teeth, tongue, and the nail plates as
+  translucent keratin over the painted beds), each attachment shaded by
   its baked occlusion, which follows the pose (an open mouth lights the teeth
   it uncovers). The body's own cavities (mouth, nostrils, ear canals, eye
   sockets) are darkened the same way, so a mouth without a tongue is dim inside.
@@ -1345,7 +1364,10 @@ takes the styles as `options.hairStyles`, and without them keeps the base
 recipe's hair. It also draws one of the pack's brows and one of its lashes
 (`options.browStyles`, `options.lashStyles`; after the hair, so a seed's hair and
 shape are the same without them), and a new head of hair keeps the brows and
-lashes the figure had. `withHair(recipe, patch)` changes the scalp style, colour,
+lashes the figure had. Last of all it draws a beard style (`options.beards`,
+which the creator sets; `randomBeard(draw)` by `BEARD_ODDS`: clean-shaven most
+often, then stubble), so old seeds keep their figures; the body hair model grows
+it only where the face carries terminal hair. `withHair(recipe, patch)` changes the scalp style, colour,
 brows or lashes of a recipe (`null` takes one away) and keeps whatever the patch
 leaves out; the Appearance panel uses it, offering the brows and lashes in
 groups of their own, and `load` refuses a saved figure whose brows or lashes the
@@ -1477,6 +1499,10 @@ styles are MakeHuman's own CC0 scalp hair: `short02`, `bob02`, `long01`,
 `afro01`, `short04`, `short03`, `ponytail01`, `short01`, `bob01` and `braid01`.
 Its manifest records the hash of the body pack it binds to, and the loader
 refuses any other.
+
+It also lists generated body hair cards (kind `beard`, today `beard-full`, 64 kB
+the pair): a full beard's length over the coat, made by the packer from the
+body pack's mesh and a seed rather than from any MakeHuman file.
 
 The pack also lists MakeHuman's twelve eyebrows (`eyebrow001` to `eyebrow012`,
 kind `brows`) and four eyelashes (`eyelashes01` to `eyelashes04`, kind `lashes`),

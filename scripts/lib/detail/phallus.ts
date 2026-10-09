@@ -2,10 +2,11 @@
  * The phallic organ, drawn out of the phallic reservoir (docs/research/
  * ADULT-SCULPT-PLAN.md, sections 6b and 6c): a tube whose rings leave the
  * reservoir's loop on the skin, bend from the skin's normal toward the way the
- * organ lies, and close in a rounded glans on the cap. One construction covers a
- * clitoral glans to a large penis; what differs is the numbers, so size is a
- * blend of shapes baked at several sizes (a small organ is not a scaled-down
- * large one: the root's loop is 1.3 cm in radius whatever the organ drawn from it).
+ * organ lies, and close in a rounded glans on the cap (`tube.ts`). One
+ * construction covers a clitoral glans to a large penis; what differs is the
+ * numbers, so size is a blend of shapes baked at several sizes (a small organ
+ * is not a scaled-down large one: the root's loop is 1.3 cm in radius whatever
+ * the organ drawn from it).
  *
  * Measured: the length and girth of the default organ, flaccid and erect, and
  * their spread (docs/research/ADULT-ANATOMY-DATA.md, section F). Modelled and
@@ -17,13 +18,9 @@
  * the only inputs are the base body's own loop and the figures cited above.
  */
 import type { Vec3 } from "./disc.ts";
-import { type ReservoirRoot, type RootShape, restShape, shapeDifference } from "./root.ts";
-
-/** Smootherstep, 0 to 1 over 0 to 1 and clamped outside. */
-const smooth = (x: number): number => {
-  const t = Math.min(1, Math.max(0, x));
-  return t * t * t * (t * (t * 6 - 15) + 10);
-};
+import { type DetailTarget, deg, shapeSum, sizeHat, targetCollector } from "./keys.ts";
+import { type ReservoirRoot, type RootShape, restShape } from "./root.ts";
+import { smooth, tubeShape, turnAngle } from "./tube.ts";
 
 /** The glans' share of the length (corona to tip over the whole; Mehraban 2007: 3.04 of 11.58 cm stretched). */
 export const GLANS_FRACTION = 0.26;
@@ -38,8 +35,6 @@ const FLARE = 0.025;
 /** Where the glans' ridge is reached and the taper begins, over the glans' length (modelled). */
 const RIDGE_AT = 0.25;
 const TAPER_FROM = 0.3;
-/** Samples of the centreline. */
-const STEPS = 400;
 
 export interface PhallusParams {
   /**
@@ -56,8 +51,6 @@ export interface PhallusParams {
   angle: number;
 }
 
-const unit = (a: number, b: number): Vec3 => [0, a, b];
-
 /**
  * The shape of the organ for these parameters on this root: a position for
  * every vertex a target of the root may move (`RootShape`), with the dorsal
@@ -67,66 +60,15 @@ export function phallusGeometry(
   root: ReservoirRoot,
   p: PhallusParams,
 ): { shape: RootShape; dorsal: number; axial: number } {
-  const [, ny, nz] = root.normal;
-  if (Math.abs(root.normal[0]) > 1e-3) throw new Error("the phallic root's normal is not sagittal");
-  const phiN = Math.atan2(ny, nz);
-  // The loop in the plane of the root: across (x) and up the skin (toward the dorsal side).
-  const eN = unit(Math.cos(phiN), -Math.sin(phiN));
-  const polar = (q: Vec3) => {
-    const o = [q[0] - root.centre[0], q[1] - root.centre[1], q[2] - root.centre[2]];
-    const across = o[0] as number;
-    const up = (o[1] as number) * eN[1] + (o[2] as number) * eN[2];
-    return { across, up, radius: Math.hypot(across, up), angle: Math.atan2(up, across) };
-  };
-  const loop = root.loop.map(polar);
-  const dorsal = loop.reduce(
-    (best, l, i) => (l.up > (loop[best] as { up: number }).up ? i : best),
-    0,
-  );
-  // The loop's radius at an angle, for the cap's polar map.
-  const byAngle = loop
-    .map((l) => ({ angle: l.angle, radius: l.radius }))
-    .sort((a, b) => a.angle - b.angle);
-  const loopRadiusAt = (angle: number) => {
-    const n = byAngle.length;
-    let hi = byAngle.findIndex((l) => l.angle >= angle);
-    if (hi < 0) hi = 0;
-    const lo = (hi + n - 1) % n;
-    const a = byAngle[lo] as { angle: number; radius: number };
-    const b = byAngle[hi] as { angle: number; radius: number };
-    let span = b.angle - a.angle;
-    let off = angle - a.angle;
-    if (span <= 0) span += 2 * Math.PI;
-    if (off < 0) off += 2 * Math.PI;
-    return a.radius + (b.radius - a.radius) * (span > 0 ? Math.min(1, off / span) : 0);
-  };
-
+  // The organ lies in the sagittal plane: it points forward and up or down.
+  const direction: Vec3 = [0, Math.sin(p.angle), Math.cos(p.angle)];
   // The glans is a share of the length drawn; an axial length is already that of the free organ.
   const glans = GLANS_FRACTION * p.length;
   const tipRadius = TIP * CORONA * p.radius;
   const dome = DOME * tipRadius;
+  const turn = turnAngle(root, direction);
 
   const build = (axial: number) => {
-    const bend = Math.min(Math.max(1.3 * p.radius * Math.abs(p.angle - phiN), 0.02), 0.6 * axial);
-    const flare = Math.min(FLARE, 0.45 * axial);
-    const ds = axial / STEPS;
-    const y = new Float64Array(STEPS + 1);
-    const z = new Float64Array(STEPS + 1);
-    const phi = (s: number) => phiN + (p.angle - phiN) * smooth(s / bend);
-    for (let k = 1; k <= STEPS; k++) {
-      const mid = phi((k - 0.5) * ds);
-      y[k] = (y[k - 1] as number) + Math.sin(mid) * ds;
-      z[k] = (z[k - 1] as number) + Math.cos(mid) * ds;
-    }
-    const centreAt = (s: number) => {
-      const f = Math.min(STEPS, Math.max(0, s / ds));
-      const k = Math.min(STEPS - 1, Math.floor(f));
-      const t = f - k;
-      return {
-        y: root.centre[1] + (y[k] as number) * (1 - t) + (y[k + 1] as number) * t,
-        z: root.centre[2] + (z[k] as number) * (1 - t) + (z[k + 1] as number) * t,
-      };
-    };
     const sulcus = axial - Math.max(glans - dome, 0);
     const profile = (s: number) => {
       const g = (s - sulcus) / (axial - sulcus);
@@ -137,49 +79,23 @@ export function phallusGeometry(
         (1 - (1 - TIP) * smooth((g - TAPER_FROM) / (1 - TAPER_FROM)))
       );
     };
-    const ring = (j: number): Vec3[] => {
-      const s = (axial * j) / root.rings;
-      const c = centreAt(s);
-      const a = phi(s);
-      const w = smooth(s / flare);
-      return loop.map((l) => {
-        const r = l.radius + (profile(s) - l.radius) * w;
-        const cu = Math.cos(l.angle);
-        const su = Math.sin(l.angle);
-        return [
-          root.centre[0] + r * cu,
-          c.y + r * su * Math.cos(a),
-          c.z - r * su * Math.sin(a),
-        ] as Vec3;
-      });
-    };
-    const rings = Array.from({ length: root.rings }, (_, k) => ring(k + 1));
-    const tip = centreAt(axial);
-    const aEnd = phi(axial);
-    const cap = root.cap.map(({ position }) => {
-      const q = polar(position);
-      const sigma = Math.min(1, q.radius / loopRadiusAt(q.angle));
-      const r = sigma * tipRadius;
-      const height = dome * Math.sqrt(1 - sigma * sigma);
-      return [
-        root.centre[0] + r * Math.cos(q.angle),
-        tip.y + r * Math.sin(q.angle) * Math.cos(aEnd) + height * Math.sin(aEnd),
-        tip.z - r * Math.sin(q.angle) * Math.sin(aEnd) + height * Math.cos(aEnd),
-      ] as Vec3;
+    const tube = tubeShape(root, {
+      axial,
+      direction,
+      bend: Math.min(Math.max(1.3 * p.radius * turn, 0.02), 0.6 * axial),
+      flare: Math.min(FLARE, 0.45 * axial),
+      section: (s) => ({ across: profile(s), up: profile(s) }),
+      tip: { across: tipRadius, up: tipRadius },
+      dome,
     });
-    const apex: Vec3 = [
-      root.centre[0],
-      tip.y + dome * Math.sin(aEnd),
-      tip.z + dome * Math.cos(aEnd),
-    ];
     // The dorsal length: along the top of the organ from the root's junction to the apex.
     let length = 0;
-    let prev: Vec3 = root.loop[dorsal] as Vec3;
-    for (const r of [...rings.map((v) => v[dorsal] as Vec3), apex]) {
+    let prev = root.loop[tube.top] as Vec3;
+    for (const r of [...tube.rings.map((v) => v[tube.top] as Vec3), tube.apex]) {
       length += Math.hypot(r[0] - prev[0], r[1] - prev[1], r[2] - prev[2]);
       prev = r;
     }
-    return { rings, cap, length };
+    return { tube, length };
   };
 
   // The centreline's length that makes the dorsal length asked for (an axial one is the centreline's).
@@ -199,7 +115,7 @@ export function phallusGeometry(
     axial = (lo + hi) / 2;
   }
   const done = build(axial);
-  return { shape: [...done.cap, ...done.rings.flat()], dorsal: done.length, axial };
+  return { shape: done.tube.shape, dorsal: done.length, axial };
 }
 
 /** The shape alone (`phallusGeometry`). */
@@ -259,8 +175,6 @@ export interface Variation {
   state?: number;
 }
 
-const deg = (d: number) => (d * Math.PI) / 180;
-
 /** The shape of key `key` with a variation applied. */
 export function keyShape(root: ReservoirRoot, key: PhallusKey, v: Variation = {}): RootShape {
   const s = v.state ?? 0;
@@ -285,11 +199,7 @@ export const STATES: readonly { name: string; state: number }[] = [
   { name: "erect", state: 1 },
 ];
 
-export interface PhallusTarget {
-  name: string;
-  indices: number[];
-  xyz: number[];
-}
+export type PhallusTarget = DetailTarget;
 
 /** The modifiers' ids. */
 export const PHALLUS_SIZE = "genitals/phallus-size";
@@ -312,24 +222,11 @@ export function phallusTargets(root: ReservoirRoot): {
   drives: Record<string, string[]>;
 } {
   const rest = restShape(root);
-  const targets: PhallusTarget[] = [];
-  const drives: Record<string, string[]> = {};
-  const add = (name: string, from: RootShape, to: RootShape, factors: string[]) => {
-    targets.push({ name, ...shapeDifference(root, from, to) });
-    drives[name] = factors;
-  };
+  const { targets, drives, add } = targetCollector(root);
   const sizes = PHALLUS_KEYS.map((k) => k.size);
   PHALLUS_KEYS.forEach((key, k) => {
     const n = k + 1;
-    const before = sizes[k - 1];
-    const after = sizes[k + 1];
-    // The hat of the size: up from the key before to this one, down to the key after (or held).
-    const points = [
-      ...(before === undefined ? [`0,0`] : [`${before},0`]),
-      `${key.size},1`,
-      ...(after === undefined ? [] : [`${after},0`]),
-    ];
-    const hat = `ramp:${PHALLUS_SIZE}:${points.join(";")}`;
+    const hat = sizeHat(PHALLUS_SIZE, sizes, k);
     const flaccid = keyShape(root, key);
     add(keyTarget(n, "base"), rest, flaccid, [hat]);
     for (const [part, mod, mul] of [
@@ -378,15 +275,4 @@ function arousalHat(name: string): string {
   const after = STATES[at + 1]?.state;
   const points = [`${before},0`, `${here},1`, ...(after === undefined ? [] : [`${after},0`])];
   return `sramp:arousal:${points.join(";")}`;
-}
-
-/** a + (c - b) for shapes: `a` moved by what takes `b` to `c`. */
-function shapeSum(root: ReservoirRoot, a: RootShape, b: RootShape, c: RootShape): RootShape {
-  if (a.length !== b.length || b.length !== c.length)
-    throw new Error(`reservoir ${root.id}: shapes of different sizes`);
-  return a.map((p, i) => {
-    const q = b[i] as Vec3;
-    const r = c[i] as Vec3;
-    return [p[0] + r[0] - q[0], p[1] + r[1] - q[1], p[2] + r[2] - q[2]] as Vec3;
-  });
 }

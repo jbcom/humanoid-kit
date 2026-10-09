@@ -1269,9 +1269,27 @@ a coloured texture; everything in the pure core is testable in Node.
   divides the luminance by an alpha-weighted gaussian of itself (sigma well under
   the blotch, well over a strand), leaving strand-scale structure and alpha as
   they were; every other style keeps its atlas's shading.
+- *The coily styles are authored, not compiled.* The CC0 sources have no twists,
+  braids, cornrows or locs, and the community ones fail the licence rule
+  (`docs/licence-history.md`), so `scripts/lib/hairCards` builds them: **ropes**, tubes of
+  quads along a centreline (`ropes.ts`) that leaves the scalp at an angle read from the head
+  (`HeadFrame`: azimuth and elevation from the skull's centre, a ray to the head's own
+  triangles), lifts a little, then falls under gravity and lies over the body
+  (`BodySurface.probe`, signed distance from the whole body, winding taken from the skull); a
+  **grid of partings** (brick-wise rows, a hairline that recedes at the temples and runs up over
+  the ear and down at the nape) places box braids, twists and locs, and cornrows are parallel
+  parting lines on the scalp with a braid hanging from each end. The cards are bound to the
+  base mesh by the MHCLO scheme (`bindToBody`: the nearest triangle's corners, barycentric
+  weights, an offset) with the head's extents as the scale references, so they go through the
+  same pack, worker and renderer as a MakeHuman style and fit other heads. Each style's strand
+  map is a tile per rope variant, drawn as vector shapes and rasterised by sharp (`atlas.ts`),
+  periodic round the tube. A tube faces every way round its axis, so these styles opt out of
+  both the fin dissolve and the hairline fade (`HairFieldsInput.fins`, `feather`). Provenance
+  names them as authored by the packer. Not yet: a close crop or fade, bantu knots, curl
+  texture for the soft styles.
 
 **Costs and limits.** The pack is 3.5 MB for ten styles, mostly strand maps at
-1024 px; the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
+1024 px (and 0.3 to 0.5 MB for each authored one); the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
 because their alpha is fine detail. Hair has no physics and no strand shadows
 inside the volume beyond the baked occlusion. Red hair's chroma is limited by the
 pheomelanin spectrum, and blond, red and white are modelled, not measured
@@ -1445,22 +1463,25 @@ Old recipes evaluate and serialise as before.
   axis-aligned ramps, had straight edges down the cheeks and a rectangle on
   the neck. The beard's masks are redrawn with the coat, along the face's
   own lines.
-- *Terminal hair is one strand layer per group.* Each group (chest, abdomen,
-  back, buttocks, arms, legs, axillary) has its own coverage, colour, density
-  and length, so its own layer. Masks are measured from the base mesh: the skin
+- *Sparse terminal hair is one strand layer per group.* Each group drawn as
+  strands (buttocks, arms, legs) has its own coverage, colour, density and
+  length, so its own layer. Masks are measured from the base mesh: the skin
   zones (cut off where a zone's weight falls under 0.2, so supports stay near
   their region), the vertex normals, and the armpits' hollows. The limbs stop
   short of the hands and feet, which carry little terminal hair and whose
   layers crowd the atlas.
 - *The beard defaults to none.* Clean-shaven is the neutral recipe; terminal
   body hair and vellus are on by default for age and sex.
-- *Axillary hair is an adult-only body layer; pubic hair is the adult pack's.*
-  The armpit's mask comes from the base mesh, so its layer lives in the core,
-  where a layer flag, `adultOnly`, makes `paintStopTable` paint it at zero
-  unless the input says the figure is an adult, failing closed when it does
-  not say. The model's coverage is zero for it under 18 as well, the age policy
-  refuses a recipe that asks for it, and every other group's mask is cut out
-  where it lies. Pubic hair is the adult pack's, like every genital-region
+- *Axillary hair is an adult-only coat region; pubic hair is the adult pack's.*
+  The armpit's hair is dense and a couple of centimetres long, so it is the
+  coat's; its mask comes from the base mesh, so the region lives in the core,
+  where a region flag, `adultOnly`, makes `paintCoat` leave it unpainted, without
+  asking its paint, unless the input says the figure is an adult, failing
+  closed when it does not say. The model's coverage is zero for it under 18 as
+  well, the age policy refuses a recipe that asks for it, and every other
+  group's mask is cut out where it lies. (A first version drew it as a strand
+  layer with the same flag on skin layers; with it moved, the layer flag had no
+  user and went.) Pubic hair is the adult pack's, like every genital-region
   feature: its mask and its place in the stack come from the adult pack's
   manifest (`AdultAnatomySpec`), so the core names no part of it, and it
   appears only when the pack is loaded. The core keeps the recipe's `pubic`
@@ -1507,6 +1528,9 @@ module.
   (outfit-masked) index cut to the triangles whose corners carry a painted
   region; built when the outfit or the set of painted regions changes, so a
   figure without a coat draws nothing and stubble draws only the face.
+  A recipe without `bodyHair` grows no coat at all (`coatPaintFor`): until the
+  coat's sub-pixel strands resolve as coverage rather than single-pixel
+  points, default figures stay bare instead of speckled.
 - *One instanced draw.* The coat is a skinned mesh on the body's own geometry
   and skeleton, instanced N times; shell `i` is the skin offset along the rest
   normal by `(i + 1) / N` of the hair's length, leaning along the comb, before
@@ -1540,12 +1564,36 @@ and a full beard each change the face, the full beard more than the goatee,
 chest hair shows against the same chest bare, and a child asked for a full beard
 grows none.
 
+**A grown beard's length is cards, on the hair pack's machinery (2026-10-09).**
+Past the coat's few centimetres, hair is cards. The hair pack gains a kind,
+`beard`, whose entries the packer generates (`scripts/lib/bodyHairCards.ts`)
+rather than packs from a MakeHuman file: narrow strips rooted on the beard's
+area, running along the coat's comb, lifting off the skin, bound to the base
+mesh's triangles as MakeHuman binds hair, with a generated strand map. They are
+the project's own bytes, so the licence gate (which proves MakeHuman files CC0)
+has nothing to prove; `PROVENANCE.md` says so. An entry is tagged with the
+beard style it serves; today `beard-full` (a full beard; a moustache and a
+goatee are the coat's alone). Each card carries a rank, a byte per vertex
+(`CARD_FIELD_KEYS`); `HairMaterial` discards a card whose rank is at or over
+its density (`setDensity`, the face's coverage), whole, beside the hairline
+test and outside the alpha-to-coverage term, so the beard thins with age, sex
+and the recipe with the same geometry, and scalp hair, with no ranks (0) and
+the default density (1), is untouched. The model wears a style's cards
+(`wornBeardCards`) only where the face grows terminal hair, so a child's figure
+loads none; they ride the scalp hair's chain (`Evaluation.beard`, sent once like
+the brows' and lashes' topology) and are coloured by the face's body hair
+colour. Their scalp fields are neutral (no hairline fade, no scalp tint: the
+coat shades the skin under them). Rebuilding the hair pack with them leaves
+every scalp, brow and lash file byte-identical; only the manifest gains the
+entry.
+
 **Costs.** The coat costs nothing where nothing is painted (no triangles, no
-draw). A full beard with doubled chest, abdomen and back hair at 360 × 420
-measured 8.33 ms a frame against 8.29 ms without (`e2e/bodyhair.spec.ts`,
-recorded): both are the display's frame interval, so at this size the coat
-fits within a frame and the true GPU cost is below what this measures. A GPU
-timer measurement on a phone is the open item.
+draw). A full beard (its coat and its cards) with doubled chest, abdomen and
+back hair at 360 × 420 measured 10.52 ms a frame against 9.91 ms without
+(`e2e/bodyhair.spec.ts`, recorded; the coat alone, before the cards, measured
+8.33 against 8.29). These are frame intervals on a desktop browser near its
+display's rate, so they bound the cost rather than measure it. A GPU timer
+measurement on a phone is the open item.
 
 ## Presence
 
@@ -2165,12 +2213,28 @@ C5; contact sheets, before and after, at four tones, adult and child:
   a face short of halfway to the next joint, where the coordinate turns to that
   joint's (on the little finger's short middle phalanx the bands nearly met and
   drew a false wrinkle).
-- *Nails.* No separate nail geometry: the base mesh sculpts each nail, and a
-  coordinate along the last segment carries fold, lunula, bed and free edge as
-  the colour stops, with sharp changes between them, and a surface layer the
-  plate's gloss. The bed is measured nail colour whose lightness follows the
-  skin's far less than skin does (the nail bed has about 5% of skin's
-  melanocytes), so on deep skin the nails are much lighter than the fingers.
+- *Nails: a painted bed under a real plate.* A coordinate along the last
+  segment paints fold, lunula, bed and free edge on the skin as colour stops,
+  with sharp changes between them. The bed is measured nail colour whose
+  lightness follows the skin's far less than skin does (the nail bed has about
+  5% of skin's melanocytes), so on deep skin the nails are much lighter than
+  the fingers, and brownish.
+
+  Over the paint lies the plate: CC0 community nail meshes (MakeHuman's
+  bodyparts04, Mindfront's short fingernails and toenails), vendored and packed
+  as body attachments (`fingernails`, `toenails`) and bound like any MHCLO
+  asset. The plate gives the nail its thickness, curvature and free edge
+  overhang, which paint on a mesh 5 mm between vertices could not.
+
+  The plate's material (`NailPlateMaterial`) is clear keratin over the bed, so
+  the bed's colour shows through at every tone, and nearly opaque, white
+  keratin along its free edge, the last 1.5 mm of each nail toward the tip.
+  That edge is found per nail on the plate at rest, along the direction in
+  which the skin's nail coordinate grows. The sheets showed painted nails as
+  opaque plates with a wide white tip (a French manicure).
+
+  The assets' own textures paint one pink nail and are not used; the packer
+  compiles their geometry only.
 - *Soles.* Soles share the palm's suppressed melanocytes (the same
   mechanism), but no sole colour was found measured, so the sole takes the
   palm's measured colour (`PALMOPLANTAR_LAYER` paints both, a choice). One owner for the

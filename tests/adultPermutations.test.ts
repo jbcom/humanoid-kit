@@ -76,7 +76,7 @@ const withOrgan = (extra: Record<string, number> = {}, macros = base().macros) =
 // seconds unloaded, minutes on a busy machine.
 describe("the adult permutation matrix", { timeout: 600_000 }, () => {
   it("covers every feature the pack names, so a new feature extends the matrix by itself", () => {
-    expect(features.map((f) => f.id)).toEqual(["penis", "testes", "phallus", "mound"]);
+    expect(features.map((f) => f.id)).toEqual(["penis", "testes", "phallus", "scrotum", "mound"]);
     expect(COMBINATIONS.length).toBe(
       features.reduce((n, f) => n * levelsOf(f.modifiers[0] as string).length, 1),
     );
@@ -139,6 +139,9 @@ describe("the adult permutation matrix", { timeout: 600_000 }, () => {
             { [SIZE]: 0.45 },
             { [SIZE]: 0.65, "genitals/phallus-length-decr|incr": 1 },
             { [SIZE]: 1, "genitals/phallus-girth-decr|incr": -1, "pelvis/mound-decr|incr": 1 },
+            // The sacs and testes, alone and with the organ and the mound.
+            { "genitals/testes-size": 0.25 },
+            { "genitals/testes-size": 1, [SIZE]: 0.65, "pelvis/mound-decr|incr": -1 },
           ])
             for (const arousal of [0, 1]) {
               const recipe = createRecipe({ macros: { age, gender, ...build }, modifiers });

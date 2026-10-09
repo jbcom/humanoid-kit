@@ -371,6 +371,17 @@ through adds five again, so the organ is 50 targets of about 1,500 vertices (0.3
 with the rest of the adult file). A cross term of length with girth is left out: it is
 second order and the keys carry the first.
 
+**The scrotal lobes and testes** (`scripts/lib/detail/scrotum.ts`) use the same tube
+(`detail/tube.ts`, shared) on the labioscrotal pair: each lobe leaves its root, turns
+down, and swells to the sac of one testis (an ellipsoid of the measured volume and the
+one full-text dimensions' proportions, plus skin), at three keys (a small testis, the
+European mean of 17.2 mL, a large one). The right is larger than the left by the
+measured 17.9 to 16.5; the figure faces +z, so its right side is the reservoir with x
+negative. One virtual one-sided modifier (`genitals/testes-size`) blends the keys; there
+is no arousal response, since none is measured. The roots' skin faces the midline, so a
+lobe leaves inward before it hangs and the pair overlap a little, as a bilobed sac does.
+The same pair is where the labia majora will come from (step 4).
+
 Measured, in `tests/phallus.test.ts`: the dorsal length and circumference of the
 default key against the literature, erect against flaccid (+43%, +25%), the monotone
 growth through the keys, and the surface against the authored shape for every variation.
@@ -482,8 +493,8 @@ gates were.
    subdivision, and a phallic and a labioscrotal pair placed in the pack
    (`scripts/lib/adultReservoirs.ts`); the phallic organ is drawn on the phallic
    one (section 6c; the CC0 `genitals/penis-*` sliders are hidden and the engorgement
-   state morph is replaced by the detail's own arousal drives); the scrotum and
-   testes on the labioscrotal pair, then the labia, are next.
+   state morph is replaced by the detail's own arousal drives); the scrotal lobes
+   and testes are drawn on the labioscrotal pair (section 6c); the labia are next.
 4. **Skin fields on the patch** and the layers' remap, so the phase 1 layers
    show.
 5. **State morphs on the patch** (engorgement moves from `helper-genital`).

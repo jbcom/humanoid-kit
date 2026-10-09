@@ -72,11 +72,13 @@ growing upward, the reverse along x, none without a growth gradient).
 
 ## The coverage gap
 
-The ten styles are every scalp hair the system pack's CC0 header proves, and they are nearly all
-straight or wavy. **Coily and kinky textures are missing**: locs, twists and many-braid styles,
-cornrows, bantu knots, tight curls other than the one afro, and a close crop, taper or fade.
-`afro01` is one short style; `short01` is a crop of loose curls; `braid01` is a straight-textured
-side braid. The pack must not be presented as complete.
+The ten MakeHuman styles are every scalp hair the system pack's CC0 header proves, and they are
+nearly all straight or wavy. The gap in coily and kinky textures is closed in part by styles the
+packer authors itself (`braids01`, `cornrows01`, `twists01`, `locs01`: box braids, cornrows,
+two-strand twists and locs, see "Authored styles" below); what is still missing is bantu knots,
+tight curls other than the one afro, and a close crop, taper or fade. `afro01` is one short style;
+`short01` is a crop of loose curls; `braid01` is a straight-textured side braid. The pack must not
+be presented as complete.
 
 Tier-2 candidates, from the sourcing catalogue (`mhclo` and `obj` both carry `license CC0` and no
 sibling file contradicts it, so the licence can be proved from the file):
@@ -91,6 +93,17 @@ and the `elvs_*` braids are CC-BY or AGPL in the file (the asset page claiming C
 count), and `culturalibre_hair_05/06` say CC0 in the `mhclo` and AGPL3 in the `obj`. A file's
 licence line can be stale after MakeHuman's cutover to CC0, and that is being re-verified with
 dated evidence (licence history), so these are **pending licence-history verification, not
-rejected**. Until one is proved, closing the gap needs an authored or procedural coily style:
-curl cards or strand clumps over the same growth, fade and scalp fields. It is not in this
-milestone and the creator offers none.
+rejected**. The licence-history verdicts (`docs/licence-history.md`) leave none of them provable, so
+the gap is closed by authoring: curl and rope geometry over the same growth, fade and scalp fields.
+
+## Authored styles
+
+`scripts/lib/hairCards` generates the coily styles from nothing: tubes of quads along centrelines that leave
+the scalp (a grid of partings for braids, twists and locs; parallel rows lying on the scalp, then
+hanging, for cornrows), lifting a little, then falling under gravity over whatever the body is
+(`BodySurface`), bound to the base mesh by the MHCLO scheme (`bindToBody`) and scaled by the head's
+extent. Their strand maps are drawn as vector shapes (a plait's V stitches, a twist's diagonal ridges,
+a loc's matted fibres) and rasterised by sharp. No mesh or texture of anyone's is read, traced or
+sampled; photographs of braids, twists and locs informed proportions only (docs/licence-history.md rules
+out the community assets, and the sourcing found no CC0 ones). A tube faces every way round its axis,
+so the packer measures them with the fin and hairline fade off.
