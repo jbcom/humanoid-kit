@@ -10,6 +10,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -40,6 +41,7 @@ import type {
   SurfaceTopology,
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { DualBones, dualShadowMaterials, followDualSkinning } from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
 import { AttachmentStandardMaterial, setOcclusionAttributes } from "../render/occlusion.ts";
@@ -54,6 +56,7 @@ import {
   posedGroundOffset,
   restBonesFrom,
 } from "../rig/pose.ts";
+import { skinDualShare } from "../rig/skinShare.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 import { sameEntries } from "./sameEntries.ts";
 
@@ -287,6 +290,7 @@ function SkinnedPart({
   part,
   renderOrder,
   shape,
+  dual,
 }: {
   geometry: BufferGeometry;
   material: Material;
@@ -296,6 +300,8 @@ function SkinnedPart({
   renderOrder?: number;
   /** Changes whenever the figure is re-evaluated or re-posed. */
   shape: object;
+  /** Set when the material skins by dual quaternions: shadows and bounds then follow it. */
+  dual?: DualBones | null;
 }) {
   const mesh = useMemo(() => {
     const m = new SkinnedMesh(geometry, material);
@@ -304,6 +310,23 @@ function SkinnedPart({
     m.receiveShadow = true;
     return m;
   }, [geometry, material, skeleton]);
+  // Shadows are cast by a depth material, which would skin linearly alone; and
+  // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
+  useEffect(() => {
+    if (!dual) return;
+    const shadows = dualShadowMaterials(dual);
+    mesh.customDepthMaterial = shadows.depth;
+    mesh.customDistanceMaterial = shadows.distance;
+    const applyBoneTransform = mesh.applyBoneTransform;
+    followDualSkinning(mesh, dual);
+    return () => {
+      mesh.customDepthMaterial = undefined as never;
+      mesh.customDistanceMaterial = undefined as never;
+      mesh.applyBoneTransform = applyBoneTransform;
+      shadows.depth.dispose();
+      shadows.distance.dispose();
+    };
+  }, [mesh, dual]);
   // A skinned mesh caches its own (posed) bounds: three computes them once and
   // never again, so a new pose or a re-evaluated (say, taller) figure would
   // keep the old ones, and picking and culling would miss whatever lies
@@ -448,6 +471,19 @@ export function Humanoid({
     };
   }, [client, geometries, report]);
   const rig = useMemo(() => (ready ? makeSkeleton(ready.rig) : null), [ready]);
+  // The bones as dual quaternions, which the skin skins by on the GPU (mixed
+  // with three's linear skinning by each bone's share, `SKIN_DUAL_SHARE`).
+  const dual = useMemo(
+    () => (ready ? new DualBones(ready.rig.bones.length, skinDualShare(ready.rig.bones)) : null),
+    [ready],
+  );
+  useEffect(() => () => dual?.dispose(), [dual]);
+  // A custom material skins as it chooses; ours follows the dual quaternions.
+  useLayoutEffect(() => {
+    if (material) return;
+    skin.setDualBones(dual);
+    return () => skin.setDualBones(null);
+  }, [skin, dual, material]);
   const keyBasis = useMemo(() => (ready ? occlusionKeyBasis(ready.rig) : null), [ready]);
   // Shared by the attachments' materials: how much of each occlusion key the pose holds.
   const occlusionKeys = useMemo(() => new Vector3(), []);
@@ -474,6 +510,14 @@ export function Humanoid({
   // Where the posed figure's lowest body point is: a crouch or a kneel comes
   // down to the ground rather than hanging where the standing feet were.
   const [figure, setFigure] = useState<Evaluation | null>(null);
+  // The same pose, as dual quaternions over the evaluated figure's rest skeleton.
+  useEffect(() => {
+    if (!dual || !ready || !figure) return;
+    dual.update(
+      restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads),
+      rotations ?? IDENTITY_POSE(ready.rig.bones.length),
+    );
+  }, [dual, ready, figure, rotations]);
   // A new identity whenever the figure or its pose changes: the meshes' bounds follow it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: figure and rotations are the triggers
   const shape = useMemo(() => ({}), [figure, rotations]);
@@ -602,6 +646,7 @@ export function Humanoid({
             visible={shown}
             part="body"
             shape={shape}
+            dual={material ? null : dual}
           />
           {ready.topology.attachments.map((t, i) => {
             const g = geometries.attachments[i];

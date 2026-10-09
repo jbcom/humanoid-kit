@@ -42,6 +42,7 @@ import { SKIN_LAYERS } from "../surface/regions/index.ts";
 import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import { luminance, MELANIN_ANCHORS, type Rgb, skinAlbedo } from "../surface/skinTone.ts";
+import { DUAL_SKINNING_KEY, type DualBones, patchDualSkinning } from "./dualSkinning.ts";
 import { atlasPages, emptyLayerAtlas } from "./layerAtlas.ts";
 
 /** What the skin material is painted from: the recipe's skin and the figure's state signals. */
@@ -353,6 +354,18 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkLayerStops: { value: DataTexture };
   };
   private readonly stopTable: Float32Array;
+  private dualBones: DualBones | null = null;
+
+  /**
+   * Skins by `bones` (dual quaternions mixed with three's linear skinning,
+   * `src/render/dualSkinning.ts`), or by three's alone when null. The shader is
+   * rebuilt once, when the choice changes.
+   */
+  setDualBones(bones: DualBones | null): void {
+    if (bones === this.dualBones) return;
+    this.dualBones = bones;
+    this.needsUpdate = true;
+  }
 
   /** Uses the shared field atlas built for the body this material draws. */
   setLayerAtlas(texture: Texture | null): void {
@@ -419,6 +432,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override onBeforeCompile: MeshPhysicalMaterial["onBeforeCompile"] = (shader) => {
     Object.assign(shader.uniforms, this.hkUniforms);
+    if (this.dualBones) patchDualSkinning(shader, this.dualBones);
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
@@ -476,6 +490,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-6-${this.layers.length}`;
+    return `humanoid-kit-skin-6-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}`;
   }
 }
