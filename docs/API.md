@@ -557,6 +557,13 @@ and expressions"). Framework-free.
   `flex.<joint>.<side>` from 0 (straight) to 1 (the joint's anatomical limit).
   `<Humanoid>` adds them to the skin's signals for every pose. `posedBones` and
   `rotateByBone` expose the posed bone rotations.
+- The face as skin signals: `FACE_SIGNAL_KEYS`, `faceSignalBasis(rig)` and
+  `faceSignals(basis, rotations)`, giving `face.browRaise`, `face.browFurrow`,
+  `face.smile`, `face.squint`, `face.noseWrinkle` and `face.nasolabial`, each 0 to
+  1: how much of each expression key the posed bones hold (so an animation that
+  never named a face unit still reads), jointly, so overlapping keys do not read
+  double. `<Humanoid>` adds them to the skin's signals for every pose, as it does
+  `flex.*` (ARCHITECTURE.md, "Facial wrinkles").
 - Pose-keyed occlusion (ARCHITECTURE.md, "Attachment occlusion"):
   `OCCLUSION_KEYS` (jaw open, lips apart, smile), `occlusionKeyBasis(rig)` and
   `occlusionKeyWeights(basis, rotations)` (how much of each key a pose holds),

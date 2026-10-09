@@ -762,6 +762,22 @@ from the eye centre open, so the lids close fully at every age; a squint keeps
 the eye narrowed, not shut; no unit moves the skin nearer the eyeball's centre
 than 0.6 mm from where it rests. The one defect was the asymmetry above.
 
+### Facial wrinkles (2026-10-09)
+
+A smile that crinkles no corner of the eye, a frown that leaves the forehead
+smooth, read as a mask. The lines belong to the skin layers that draw creases
+at the elbow and knee from `flex.*` signals, so the face gets signals of its own
+(`src/rig/faceSignals.ts`): six keys, each a pose of face units at full weight
+(`browRaise`, `browFurrow`, `smile`, `squint` (lower lids and cheeks raised),
+`noseWrinkle`, `nasolabial`), and a pose's `face.<key>` is the least-squares
+share of each key in its bones' rotation vectors, solved jointly as the
+occlusion keys are. They are read from the bones, not from unit weights, so an
+animation that never named a unit drives them, and `<Humanoid>` merges them
+into the skin's signals beside `flex.*`. The keys were picked to overlap little:
+each reads 1 for its own pose and under 0.05 for every other key's, a test
+holds, and the expressions read as themselves (a smile 0.8 smile and 0.46
+squint, anger 1.0 furrow, surprise 1.0 raise).
+
 ### Skinning artefacts (2026-10-09)
 
 Linear blend skinning averages bone matrices, and the average of two rotations
