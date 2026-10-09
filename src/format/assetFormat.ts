@@ -1069,7 +1069,7 @@ export function pendingTargetFiles(assets: HumanoidAssets, names: Iterable<strin
   return out;
 }
 
-async function fetchOk(url: string): Promise<Response> {
+export async function fetchOk(url: string): Promise<Response> {
   const res = await fetch(url);
   if (!res.ok)
     throw new AssetFormatError(`fetching ${url} failed: ${res.status} ${res.statusText}`);
@@ -1085,7 +1085,10 @@ export type PackLocation =
   | string
   | { readonly manifest: string; readonly files: Readonly<Record<string, string>> };
 
-function packResolver(pack: PackLocation): { manifest: string; file: (name: string) => string } {
+export function packResolver(pack: PackLocation): {
+  manifest: string;
+  file: (name: string) => string;
+} {
   if (typeof pack === "string") {
     const base = pack.endsWith("/") ? pack : `${pack}/`;
     return { manifest: `${base}manifest.json`, file: (name) => base + name };
@@ -1142,7 +1145,7 @@ export interface StagedHumanoidAssets {
 
 /** Some hosts serve `.gz` files with `Content-Encoding: gzip`, so the browser has
  * already decompressed them; only data that still starts with gzip's magic is decoded. */
-const fetchGzip = (url: string) =>
+export const fetchGzip = (url: string) =>
   fetchOk(url)
     .then((r) => r.arrayBuffer())
     .then((b) => {

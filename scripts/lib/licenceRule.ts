@@ -84,6 +84,13 @@ const DERIVATION_WORDS =
   /\b(taken from|remapped|re-?map|healed|derivative|derived from|based on|modified version of|fix of|copy of|original(?:ly)?(?: [\w-]+){0,3} by|downloaded from|created from)\b/i;
 /** Files that may carry no licence line of their own; the page is then their only evidence. */
 const PAGE_ONLY_KINDS = /\.(target|mhmat|thumb|png|jpe?g|webp|tga|bmp)$/i;
+/**
+ * A BVH has no place for a licence line: MakeHuman's pose and animation files
+ * carry it in the `.meta` beside them (`license CC0`). The `.meta` is judged as
+ * a file of its own; the BVH is accepted only with it present, and is recorded
+ * as having the page and its `.meta` as its evidence.
+ */
+const BVH = /\.bvh$/i;
 
 /**
  * Uuids of assets that fail this rule, so a re-upload or edit of one cannot
@@ -217,6 +224,17 @@ export function judgeAsset(files: SourceFile[], page?: CommunityPage): Judgement
     const failing = s.uuids.find((u) => FAILING_UUIDS[u]);
     if (failing)
       return { pass: false, reason: `B4: ${f.name} uuid ${failing} is ${FAILING_UUIDS[failing]}` };
+    if (s.licences.length === 0 && BVH.test(f.name)) {
+      const meta = f.name.replace(BVH, ".meta");
+      if (!files.some((g) => g.name === meta))
+        return {
+          pass: false,
+          reason: `B2: ${f.name} has no licence line and no ${meta} beside it`,
+        };
+      evidence[f.name] = `B: BVH licence is its ${meta}; page "${page.licence}"`;
+      pageOnly.push(f.name);
+      continue;
+    }
     if (s.licences.length === 0) {
       if (!PAGE_ONLY_KINDS.test(f.name))
         return { pass: false, reason: `B2: ${f.name} has no licence line` };

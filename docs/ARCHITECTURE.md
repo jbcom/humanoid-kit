@@ -36,6 +36,7 @@ lengths are in metres.
 | --- | --- | --- |
 | `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, and the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion") |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
+| `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | Walk, idle and swim clips as local bone rotations per frame, on the default skeleton (see "Animation") |
 | `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | Ten scalp hair styles bound to the base mesh, each with its baked occlusion and a strand map (see "Scalp hair") |
 | `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 19 garments from MakeHuman's system assets (suits, shoes, a hat), each bound to the base mesh with the vertices it hides |
 
@@ -1518,6 +1519,74 @@ pixels with `sampleGroundOcclusion`; the Playwright spec `e2e/presence.spec.ts`
 does the same on the playground's `?scene=walk` (two figures walking, parting
 and overlapping), measuring the canvas against the model.
 
+## Animation (milestone 8, 2026-10-09)
+
+**Use cases.** A figure walks, idles and swims, whatever its size, shape or age.
+Several figures play the same clip at once, each carried by its own legs. A figure
+changes clips without a pop, and an expression plays over the body. A game, a
+sheet and a test can ask for a figure at a time in a clip, not only at a rate. A
+clip is loaded when first played, and the pack is optional, like the hair pack.
+
+**Requirements.** A clip says nothing about one body's proportions, so it plays on
+every body. A planted foot stays planted on any body: no skating. Nothing is
+allocated per frame once a figure is playing. Only clips whose licence is proven
+are packed, by the repository's licence rule. The adult animations are a separate
+later package that refuses participants under 18, and are not here.
+
+**Decisions.**
+
+- *A pack of its own, outside `HumanoidAssets`.* `humanoid-kit-animations` holds a
+  manifest and one small binary per clip; `loadAnimationLibrary` fetches the
+  manifest and a figure's first play of a clip fetches its binary
+  (`AnimationLibrary.load`). A clip is figure independent, so one library serves
+  every figure; coupling it to `HumanoidAssets` would have tied each figure's
+  assets to a pack they do not need. A clip binds to a rig by bone name.
+- *Clips are rotation deltas.* A clip stores, per frame, a local rotation (a
+  quaternion in the figure's axes) for each bone it moves, which is a delta from the
+  rest pose, since the rest frames have no rotation. It stores no translation: the
+  BVH's root translation is the source figure's. The bones a clip never moves are not
+  stored (the walk moves 73 of the rig's 163). Quaternions are kept in one hemisphere
+  from frame to frame, so a blend takes the short way.
+- *The source is MakeHuman's own CC0 clips.* punkduck's walk, idle and swim clips in
+  `makehuman2_additional_assets_cc0.zip` are on the default skeleton, so a BVH joint
+  is a rig bone by name and nothing is retargeted. Each clip is judged by
+  `judgeAsset` (docs/licence-history.md §4, clause B) with the asset pack listing
+  that calls the archive CC0 and the clip's own `.meta` (`license CC0`), and the
+  archive is pinned by its SHA-256 (`packs/animations/data/PROVENANCE.md`). A BVH has
+  no place for a licence line, so the rule accepts one only with its `.meta` beside
+  it. MakeHuman's own `walk.bvh` and `zombie.bvh` are AGPL3 and are not used.
+- *Where a clip carries a figure is derived from the figure's feet.* The walk's BVH
+  keeps its root in place, and a translation authored for one skeleton slides the
+  feet of another. `planRootMotion` moves the figure, frame to frame, backwards by
+  what the contact points on the ground (six, on the soles under the ankles and the
+  balls of the feet, weighted by how close each is to the lowest) move forwards in
+  the pose. A child's stride is shorter than an adult's by their legs
+  (about 0.33 against 0.65 m a cycle), by construction.
+- *Planted feet are held by a two-bone solve* (`FootLock`). A hand-keyed clip's feet
+  do not agree with their body's pace to the centimetre (the walk's heel slides 50
+  mm a frame at heel strike against a body moving 28), so a foot that lands pins its
+  place in the world and its leg is turned (hip and knee, in the plane the knee
+  bends in, the foot's orientation kept, the ankle's height kept) to hold it as the
+  figure is carried past. As the foot rolls the pin hands over to the point that is
+  lowest, taking the place it has in the held foot, so the hand-over is seamless; a
+  point that lifts is let go.
+- *Pure and allocation-free.* `Animator` owns its buffers: `update(dt)` advances time,
+  crossfades and root motion and writes the body's rotations. Face units and other
+  poses are laid over by the caller (`composeRotations`).
+
+**What the numbers are.** Measured by `tests/animation.test.ts` over nine figures
+(slim, average and heavy bodies at 6, 25 and 75): in the walk, the largest a planted
+heel or ball moves while on the ground is 2 to 12 mm (median 5), against well over 20
+mm with root motion alone (the test holds both); in the hip-swaying walk 3 to 29 mm,
+since its hand-keyed feet scissor against each other in double support; in the three
+idles under 10 mm. The tolerance in the walk is the leg's reach: at heel strike the
+front leg is already straight in the clip, and a pin ahead of it cannot be reached.
+A hand-keyed clip is the limit, not the solver: a clip that planted its feet would
+leave nothing to hold.
+
+**Not here yet:** playing it in `<Humanoid>`, the Quaternius breadth set (retargeted
+through a T-pose), and the no-interpenetration check at a clip's extremes.
+
 ## Layers
 
 | Folder | Role | React or DOM |
@@ -1531,6 +1600,7 @@ and overlapping), measuring the canvas against the model.
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
 | `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking, the body's cavity occlusion | no |
 | `src/model` | `HumanoidModel`, the evaluation pipeline; `outfit.ts`, the layering and masking of garments | no |
+| `src/animation` | Clips (`AnimationClip`), the library that fetches them, the `Animator` that plays and crossfades them, root motion from the figure's feet and the foot lock | no |
 | `src/presence` | Presence registry, helpers, and presence derived from an evaluation | no |
 | `src/editor` | The creator's logic: controls, history, randomisation, framing, the wardrobe | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |

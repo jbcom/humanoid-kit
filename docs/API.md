@@ -1381,6 +1381,56 @@ each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the
 worker client. The package also exposes its files under
 `humanoid-kit-body/data/*`.
 
+## Animation
+
+```ts
+import { animationsPack } from "humanoid-kit-animations";
+import { Animator, loadAnimationLibrary, rigData } from "humanoid-kit";
+
+const animations = await loadAnimationLibrary(animationsPack); // the manifest only
+const walk = await animations.load("walk_normal", rigData(assets).bones); // the clip's file, once
+const animator = new Animator(rig.bones.length, restBones(assets, evaluation.control), ground);
+animator.play(walk);
+animator.update(dt);          // advances time, crossfades and root motion
+animator.rotations;           // the body's local rotation per bone, bones * 4
+animator.root;                // how far the figure has been carried: [x across, z forward], metres
+```
+
+- `loadAnimationLibrary(pack)` and `createAnimationLibrary(manifest, fetchBinary)`
+  give an `AnimationLibrary`: `manifest`, `entry(id)`, `load(id, bones)` (a clip
+  bound to a rig's bone names, fetched once however many figures play it; a failed
+  fetch is retried by the next call) and `loaded(id, bones)`.
+- `AnimationClip`: `fps`, `frames`, `duration`, `loop`, `rootMotion` (it carries
+  the figure), `grounded` (the figure stands on the ground, so its feet are held),
+  and the frames' local rotations. `sampleClip(clip, time, out)` is its pose at a
+  time (a loop wraps, a clip that does not loop holds its last frame),
+  `blendRotations(a, b, weight, out)` blends two poses along the shortest arc, and
+  `slerpInto`, `clipTime` and `setIdentity` are the pieces.
+- `Animator`: `play(clip, { fade, speed, time })` (fading from the clip playing, for
+  `DEFAULT_FADE` seconds unless told), `update(dt)`, `setSpeed`, `seek`,
+  `resetRoot`, `setRest(rest, ground)` (the figure's shape changed), `playing`,
+  `fading`. With a skeleton (`rest`) and the ground under the figure at rest, a clip
+  that carries the figure moves `root` by what the figure's own feet do
+  (`planRootMotion`, `rootDisplacement`), and a grounded clip's planted feet are
+  held where they land (`FootLock`: `PLANT_LAND`, `PLANT_FULL`, `PLANT_NONE`,
+  `PLANT_SWITCH`). `contactPoints` and `CONTACT_BONES` are the points on the soles
+  they work from.
+- `frameRotations(rig, joints, frame)` (from `src/rig/pose.ts`) is a BVH frame's
+  rotations in the figure's axes, which the packer and `bodyPoseRotations` share.
+
+## `humanoid-kit-animations`
+
+```ts
+import { animationsPack } from "humanoid-kit-animations";
+```
+
+`animationsPack` is `{ manifest, files }` like `bodyPack`: per clip, `<id>.bin.gz` (the
+frames' bone rotations, a few tens of kilobytes). Pass it to `loadAnimationLibrary`.
+The six clips are punkduck's, from the MakeHuman community's CC0 additional assets:
+`walk_normal`, `walk_female`, `idle1`, `idle2`, `idlehips` and `swimcrawlstroke`.
+Its `PROVENANCE.md` pins the archive by its SHA-256 and records each clip's licence
+evidence.
+
 ## `humanoid-kit-hair`
 
 ```ts

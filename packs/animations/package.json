@@ -1,0 +1,35 @@
+{
+  "name": "humanoid-kit-animations",
+  "version": "0.0.0",
+  "description": "Animation clips for humanoid-kit: walk, idle and swim cycles on MakeHuman's default skeleton, packed from CC0 assets. Optional: install it only if your figures move.",
+  "type": "module",
+  "license": "CC0-1.0",
+  "author": "Jon Bogaty <jon@jonbogaty.com>",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./data/*": "./data/*",
+    "./package.json": "./package.json"
+  },
+  "files": ["index.js", "index.d.ts", "data", "README.md", "LICENSE"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jbcom/humanoid-kit.git",
+    "directory": "packs/animations"
+  },
+  "bugs": {
+    "url": "https://github.com/jbcom/humanoid-kit/issues"
+  },
+  "homepage": "https://jbcom.github.io/humanoid-kit/",
+  "engines": {
+    "node": ">=24"
+  },
+  "keywords": ["humanoid-kit", "makehuman", "cc0", "animation", "bvh", "character"]
+}

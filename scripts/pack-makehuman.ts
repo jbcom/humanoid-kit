@@ -48,6 +48,7 @@ import {
 import { AUTHORED_MODIFIERS, addAuthoredSliders, authorControl } from "./lib/adultAuthored.ts";
 import { reservoirSpecs } from "./lib/adultReservoirs.ts";
 import { authoredPoses } from "./lib/authoredPoses.ts";
+import { parseBvh } from "./lib/bvh.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { AUTHORING_FIGURE } from "./lib/control/mound.ts";
 import { symmetrizeFaceUnits } from "./lib/faceUnits.ts";
@@ -322,37 +323,6 @@ function packWeights(
     });
   }
   return { index, weight };
-}
-
-/** Parses a BVH into per-frame, per-joint local Euler rotations (degrees, ZXY order as written). */
-function parseBvh(text: string) {
-  const tokens = text.split(/\s+/).filter(Boolean);
-  const joints: { name: string; channels: string[] }[] = [];
-  let i = 0;
-  while (tokens[i] !== "MOTION") {
-    const t = tokens[i++];
-    if (t === "ROOT" || t === "JOINT") joints.push({ name: tokens[i++] ?? "", channels: [] });
-    else if (t === "End") i += 1;
-    else if (t === "CHANNELS") {
-      const n = Number(tokens[i++]);
-      const j = joints[joints.length - 1];
-      if (!j) throw new Error("CHANNELS before joint");
-      j.channels = tokens.slice(i, i + n);
-      i += n;
-    }
-  }
-  i++; // MOTION
-  i++; // Frames:
-  const frames = Number(tokens[i++]);
-  i += 3; // Frame Time: x
-  const data: number[][] = [];
-  for (let f = 0; f < frames; f++) {
-    const row: number[] = [];
-    for (const j of joints)
-      for (let c = 0; c < j.channels.length; c++) row.push(Number(tokens[i++]));
-    data.push(row);
-  }
-  return { joints, frames: data };
 }
 
 // ---------------------------------------------------------------- provenance

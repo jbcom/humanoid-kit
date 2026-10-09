@@ -70,6 +70,7 @@ The adult lane's finding, "the community genital proxies are AGPL-3 despite CC0 
 - **B — community asset, page captured** (`CommunityPage`: URL, submitter, submission date, licence, description, retrieval date, `derivedFrom`).
   - **B1** the page licence is CC0.
   - **B2** every licence line in every file is CC0, or exactly MakeClothes 1's default AGPL3 line with an `author` that is the submitter (spacing and case ignored) or unknown. A mesh file (`.mhclo`, `.obj`, `.proxy`, `.mhskel`, `.mhw`) must carry a line; a target, material or texture may carry none and is then recorded as page-only.
+  - A BVH (MakeHuman's poses and animation clips) has no place for a licence line: its licence is the `.meta` beside it (`license CC0`, `author punkduck`), which is judged as a file of its own under B2 and B3. The rule accepts a `.bvh` only with its `.meta` among the files, and records the BVH as evidence by the page and that `.meta`.
   - **B3** no file names the MakeHuman team, Bastioni or Larsson as author or copyright holder.
   - **B4** no file shares a uuid with an asset known to fail (`FAILING_UUIDS`).
   - **B5** every recorded source in `derivedFrom` is itself CC0 by its own statement and not a known failing asset (`FAILING_SOURCES`). A description that reads like a derivation ("taken from", "remapped", "HEALED", "Original … by", "based on", "created from"…) fails until the reader records either the source or `notDerivedBecause`. A design copied from a commercial character (Pokémon, an anime character) or from a CC-BY work is a non-CC0 source.

@@ -215,3 +215,45 @@ describe("clause B: a community asset judged with its page", () => {
     expect(j.pass && j.pageOnly).toEqual(["a.mhmat", "a_diffuse.png"]);
   });
 });
+
+describe("a MakeHuman BVH, whose licence is its .meta", () => {
+  // Quoted from makehuman2_additional_assets_cc0.zip, poses/walk_normal.meta (read 2026-10-09).
+  const META =
+    "tag Walking\ntag Animation\nname Walking-Normal\ndescription Walking animation (normal)\nauthor punkduck\nlicense CC0\n";
+  const BVH = "HIERARCHY\nROOT root\n{\n OFFSET 0.0 0.6 8.7\n}\nMOTION\nFrames: 1\n";
+  const listing = page({
+    url: "https://files2.makehumancommunity.org/functional/assetpacks.json",
+    submitter: "MakeHuman Community asset pack listing",
+    submitted: "2026-06-25",
+    licence: "cc0",
+    description: "Makehuman2 additional assets",
+  });
+  const clip = (meta: string | null): SourceFile[] => [
+    ...(meta === null ? [] : [{ name: "walk_normal.meta", text: meta }]),
+    { name: "walk_normal.bvh", text: BVH },
+    { name: "walk_normal.thumb", text: null },
+  ];
+
+  it("passes with the page and a .meta that states CC0, recording the BVH as page and .meta evidence", () => {
+    const j = judgeAsset(clip(META), listing);
+    expect(j.pass && j.clause).toBe("B");
+    expect(j.pass && j.evidence["walk_normal.bvh"]).toMatch(/its walk_normal\.meta/);
+    expect(j.pass && j.evidence["walk_normal.meta"]).toMatch(/license CC0/);
+  });
+
+  it("refuses a BVH with no .meta beside it, whatever the page says", () => {
+    expect(reason(clip(null), listing)).toMatch(/no walk_normal\.meta beside it/);
+  });
+
+  it("refuses a .meta that states another licence, or no licence, or the page not saying CC0", () => {
+    expect(reason(clip(META.replace("license CC0", "license CC-BY")), listing)).toMatch(/^C: /);
+    expect(reason(clip(META.replace("license CC0\n", "")), listing)).toMatch(
+      /^B2: .*no licence line/,
+    );
+    expect(reason(clip(META), { ...listing, licence: "cc-by" })).toMatch(/^B1/);
+  });
+
+  it("refuses a .meta naming a third party as author", () => {
+    expect(reason(clip(META.replace("punkduck", "MHteam")), listing)).toMatch(/^B3/);
+  });
+});
