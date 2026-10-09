@@ -183,25 +183,31 @@ export function faceVisibility(
 
 /**
  * A triangle index buffer without the triangles of the hidden faces. A face
- * owns `trianglesPerFace` consecutive triangles (2 × 4^level once subdivided;
- * `buildSurfaceMesh` writes them face by face). Returns `index` itself when
- * nothing is hidden.
+ * owns consecutive triangles, written face by face by the surface builders:
+ * `trianglesPerFace` of them each (2 × 4^level once subdivided), or, for a
+ * surface with finer faces in places, the starts given as `faceTriangles`
+ * (`SurfaceMesh.faceTriangles`: face `f` owns `[faceTriangles[f],
+ * faceTriangles[f + 1])`). Returns `index` itself when nothing is hidden.
  */
 export function maskIndex(
   index: Uint32Array,
   faceVisible: Uint8Array,
-  trianglesPerFace: number,
+  trianglesPerFace: number | Uint32Array,
 ): Uint32Array {
   let shown = 0;
   for (const v of faceVisible) shown += v;
   if (shown === faceVisible.length) return index;
-  const stride = trianglesPerFace * 3;
-  const out = new Uint32Array(shown * stride);
+  const start = (f: number) =>
+    typeof trianglesPerFace === "number" ? f * trianglesPerFace : (trianglesPerFace[f] as number);
+  let kept = 0;
+  for (let f = 0; f < faceVisible.length; f++) if (faceVisible[f]) kept += start(f + 1) - start(f);
+  const out = new Uint32Array(kept * 3);
   let o = 0;
   for (let f = 0; f < faceVisible.length; f++) {
     if (!faceVisible[f]) continue;
-    out.set(index.subarray(f * stride, (f + 1) * stride), o);
-    o += stride;
+    const piece = index.subarray(start(f) * 3, start(f + 1) * 3);
+    out.set(piece, o);
+    o += piece.length;
   }
   return out;
 }

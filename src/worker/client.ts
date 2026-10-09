@@ -8,7 +8,12 @@
  * whose recipe needs target files that are still loading holds up no other.
  */
 import type { LoadOptions } from "../format/assetFormat.ts";
-import type { Evaluation, GarmentTopology, ModelOptions } from "../model/humanoidModel.ts";
+import type {
+  AdultSurfaceTopology,
+  Evaluation,
+  GarmentTopology,
+  ModelOptions,
+} from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
 import type { PickMap, ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
@@ -137,6 +142,25 @@ export class HumanoidWorkerClient {
       return r.update;
     });
     return this.adultLayersRequest;
+  }
+
+  private adultSurfaceRequest: Promise<AdultSurfaceTopology | null> | null = null;
+
+  /**
+   * The surface an evaluation of a figure aged 18 or over is for
+   * (`Evaluation.surface === "adult"`): the base body with the adult pack's finer
+   * geometry round the pelvis, its index, UVs, skin weights and `uvScale` for
+   * building the mesh. Null without an adult pack that refines the body. It is
+   * not in `ready`'s topology, which is every figure's. Built by the worker on
+   * the first call; later calls share that answer, so treat it as read-only.
+   */
+  adultSurface(): Promise<AdultSurfaceTopology | null> {
+    this.adultSurfaceRequest ??= this.ready.then(async () => {
+      const r = await this.request({ type: "adultSurface", id: 0 });
+      if (r.type !== "adultSurface") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+      return r.topology;
+    });
+    return this.adultSurfaceRequest;
   }
 
   private request(msg: WorkerRequest): Promise<WorkerResponse> {

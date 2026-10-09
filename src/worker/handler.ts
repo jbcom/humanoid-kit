@@ -124,6 +124,33 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         );
         return;
       }
+      if (req.type === "adultSurface") {
+        // The surface is the pack's refinement of the base body: built from its
+        // manifest alone, so it needs no target stage. Each request gets its own
+        // copies, since the reply transfers them.
+        const t = model.adultSurface();
+        const topology = t && {
+          ...t,
+          index: t.index.slice(),
+          uvs: t.uvs.slice(),
+          skinIndex: t.skinIndex.slice(),
+          skinWeight: t.skinWeight.slice(),
+          uvScale: t.uvScale.slice(),
+        };
+        post(
+          { type: "adultSurface", id: req.id, topology },
+          topology
+            ? [
+                topology.index.buffer,
+                topology.uvs.buffer,
+                topology.skinIndex.buffer,
+                topology.skinWeight.buffer,
+                topology.uvScale.buffer,
+              ]
+            : [],
+        );
+        return;
+      }
       if (req.type === "pickMap") {
         await complete;
         const { features, vertexFeature } = buildFeatureMap(model.assets);
@@ -131,6 +158,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         const render = model.renderFeatures(vertexFeature);
         post({ type: "pickMap", id: req.id, features, render }, [
           render.body.buffer,
+          ...(render.adultBody ? [render.adultBody.buffer] : []),
           ...render.attachments.map((a) => a.buffer),
         ]);
         return;

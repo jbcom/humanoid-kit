@@ -194,10 +194,14 @@ defines `ADULT_AGE = 18`. Every recipe is checked before evaluation
 sets any adult-only modifier throws `AgePolicyError`. It is never silently
 clamped, so a mistake cannot be hidden. `withAge` removes adult-only values
 explicitly when a recipe is moved below 18. The loader refuses an adult pack not
-built against the exact body pack in use (`bodySha256`). A planned genital
-sculpt will ship in the same pack under the same rule; its design keeps adult
-geometry out of any minor's evaluation structurally (a minor's evaluation has
-exactly the base surface's vertices), not by hiding it
+built against the exact body pack in use (`bodySha256`). The genital
+sculpt ships in the same pack under the same rule, and keeps adult geometry out
+of any minor's evaluation structurally: its refined pelvic surface is a separate
+topology that `HumanoidModel.evaluate` uses only for an adult recipe, so a
+minor's evaluation has exactly the base surface's vertices, vertex for vertex
+(`tests/adultSurfaceModel.test.ts`), and the worker delivers the refined
+surface on its own request, never with the topology every session receives. This
+is not done by hiding adult geometry in a shared surface
 (docs/research/ADULT-SCULPT-PLAN.md).
 
 **Skin states follow the same rule.** A figure's skin responds to named

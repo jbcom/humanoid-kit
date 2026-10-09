@@ -8,6 +8,7 @@ import type {
 } from "../format/assetFormat.ts";
 import type { FeatureRef } from "../makehuman/features.ts";
 import type {
+  AdultSurfaceTopology,
   Evaluation,
   GarmentTopology,
   ModelOptions,
@@ -71,6 +72,12 @@ export type WorkerRequest =
    * once the adult pack's stage has loaded, or null without an adult pack.
    */
   | { type: "adultLayers"; id: number }
+  /**
+   * Answered with the adult surface (`HumanoidModel.adultSurface`) at once, or
+   * null without an adult pack that refines the body: it needs the pack's
+   * manifest, not its targets.
+   */
+  | { type: "adultSurface"; id: number }
   | {
       type: "evaluate";
       id: number;
@@ -94,6 +101,7 @@ export type WorkerResponse =
   /** Per worn attachment, its render vertices' occlusion at every corner; null when `ready`'s already was. */
   | { type: "posedOcclusion"; id: number; attachments: Float32Array[] | null }
   | { type: "adultLayers"; id: number; update: LayerFieldsUpdate | null }
+  | { type: "adultSurface"; id: number; topology: AdultSurfaceTopology | null }
   | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
   | { type: "garment"; id: number; topology: GarmentTopology }
   | { type: "error"; id: number; message: string; name: string };

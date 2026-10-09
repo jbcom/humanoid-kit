@@ -221,7 +221,12 @@ function CreatorBody({
     // A tapped garment opens nothing: the pick map describes the body and the
     // attachments, not what is worn over them.
     if (p.part === "garment") return;
-    const table = p.part === "body" ? pickMap?.render.body : pickMap?.render.attachments[p.part];
+    const table =
+      p.part === "body"
+        ? pickMap?.render.body
+        : p.part === "adultBody"
+          ? pickMap?.render.adultBody
+          : pickMap?.render.attachments[p.part];
     const index = table?.[p.vertex];
     if (index === undefined || index === NO_FEATURE) return;
     const feature = pickMap?.features[index];

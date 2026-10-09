@@ -20,6 +20,7 @@ class FakeWorker {
   pickMaps = 0;
   posedOcclusions = 0;
   adultLayerRequests = 0;
+  adultSurfaceRequests = 0;
   terminated = false;
   private readonly failInit: boolean;
   private readonly later: Promise<void>;
@@ -69,6 +70,27 @@ class FakeWorker {
             update: { layers: ["penis-skin"], layerFields: Float32Array.of(0.25, 0.5) },
           }),
         fail,
+      );
+      return;
+    }
+    if (msg.type === "adultSurface") {
+      this.adultSurfaceRequests++;
+      setTimeout(
+        () =>
+          reply({
+            type: "adultSurface",
+            id: msg.id,
+            topology: {
+              index: Uint32Array.of(0, 1, 1),
+              uvs: Float32Array.of(0, 0, 1, 1),
+              skinIndex: new Uint16Array(8),
+              skinWeight: new Float32Array(8),
+              vertexCount: 2,
+              uvScale: Float32Array.of(1, 2),
+              occlusion: new Uint8Array(16).fill(255),
+            },
+          }),
+        1,
       );
       return;
     }
@@ -271,6 +293,16 @@ describe("HumanoidWorkerClient", () => {
     expect(update?.layers).toEqual(["penis-skin"]);
     expect([...(update?.layerFields ?? [])]).toEqual([0.25, 0.5]);
     expect(worker.adultLayerRequests).toBe(1);
+  });
+
+  it("asks the worker for the adult surface once, and shares the answer", async () => {
+    const { client, worker } = make(false);
+    const first = client.adultSurface();
+    expect(client.adultSurface()).toBe(first);
+    const topology = await first;
+    expect(topology?.vertexCount).toBe(2);
+    expect([...(topology?.uvScale ?? [])]).toEqual([1, 2]);
+    expect(worker.adultSurfaceRequests).toBe(1);
   });
 
   it("fails queued evaluations when the worker cannot initialise", async () => {

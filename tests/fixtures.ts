@@ -44,6 +44,9 @@ export const bodyPackData = (only?: readonly string[]) => ({
   body: readGzipPackFile(path.join(bodyDir, bodyManifest.body.file)),
   targets: bodyTargetFiles(only),
   attachments: readGzipPackFile(path.join(bodyDir, bodyManifest.attachments.file)),
+  ...(bodyManifest.bodyOcclusion && {
+    bodyOcclusion: readGzipPackFile(path.join(bodyDir, bodyManifest.bodyOcclusion.file)),
+  }),
 });
 
 export const adultPackData = () => ({

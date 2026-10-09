@@ -264,7 +264,11 @@ and throws `RangeError` for anything else.
   outfit key the caller already holds the masks of.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
-  only (every pose corner holding the rest value).
+  only (every pose corner holding the rest value). `body.occlusion` is the
+  body's own cavity occlusion (below), a byte per pose corner per render vertex.
+- `model.bakeBodyOcclusion(): BodyOcclusion` is the body's whole cavity bake
+  (what the packer stores in `body-occlusion.bin.gz`); it depends on neither
+  the worn set nor the subdivision level.
 - `model.bakePosedOcclusion(): Generator<void, Float32Array[] | null>` bakes
   that set's pose corners, yielding before each one so a caller can let other
   work in between; it returns per-render-vertex arrays shaped like
@@ -281,10 +285,11 @@ interface Evaluation {
   control: Float32Array;    // morphed positions in the base topology
   curvature: Float32Array;  // per body render vertex, mean curvature (1/m)
   boneHeads: Float32Array;  // the skeleton fitted to this figure: each bone's rest head, xyz
+  surface: "base" | "adult"; // which topology the render arrays are in
   attachments: SurfaceEvaluation[]; // eyes, teeth, tongue: positions and normals each
   garments: SurfaceEvaluation[];    // the outfit's garments, in outfit.order
   outfit: {
-    key: string;                    // the garments in stacking order, joined by "|"; "" for none
+    key: string;                    // the garments in stacking order, joined by "|" ("adult:" first on the adult surface); "" for none
     order: string[];                // garment ids, innermost first
     masks: OutfitMasks | null;      // null when the caller passed this key as haveOutfit
   };
@@ -298,6 +303,13 @@ interface SurfaceTopology {
   vertexCount: number;
 }
 ```
+
+`surface` says which topology `positions`, `normals` and `curvature` are in: the
+base body's (`topology().body`) or, for an adult with the adult pack's refined
+pelvic surface loaded and subdivision 1 or more, `adultSurface()`'s. A figure
+under 18 is always `"base"`, with exactly the base body's vertices, vertex for
+vertex what it is without the adult pack; `control` is the base topology either
+way.
 
 `evaluate` throws `MorphError` for a recipe that needs target files not loaded
 yet (`model.pendingTargetFiles(recipe)` names them), `AgePolicyError` for a recipe that
@@ -347,6 +359,15 @@ Lower-level pieces, also exported:
   `applyStencil(stencil, input, out)`, `selectionStencil(inputCount, vertices)`
   and `subdivideUvLinear(uvs, faceUvs)`; types `QuadTopology`, `Stencil` and
   `SubdivisionLevel`.
+- `buildRefinedSurfaceMesh(assets, faces, refinement, levels): SurfaceMesh`:
+  the surface with `refinement.faces` (base face indices) refined `refinement.levels`
+  extra levels (at most 4), built on the base's own level-1 surface so it keeps
+  the same shape: conforming (no cracks), the base's vertices unmoved, UV seams
+  kept, normals interpolated from the base's, and at level 2 and above the
+  transition polygons smoothed into quads. It throws `RangeError` below level 1.
+  `refineGraded(source, faces, {faces, levels})`, `catmullClarkPolygons(topology)`
+  and `subdivideUvLinearPolygons` are the pieces (graded local refinement and
+  polygon Catmull-Clark; `catmullClarkLevel` is the quad case of the latter).
 
 ### Surface appearance
 
@@ -493,13 +514,26 @@ and expressions"). Framework-free.
   MakeHuman's 60 face units (`JawDrop`, `LeftUpperLidClosed`, …), blended in
   log space; a quaternion per bone. Throws for an unknown unit.
   `IDENTITY_POSE(bones)` is the rest pose.
-- `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out)`: linear
-  blend skinning on the CPU, exactly as the renderer skins, for tests, anchors
-  and pose-dependent bakes. `posedBoneHeads(rest, rotations)` gives every
-  joint's posed position.
+- `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out)`: the
+  rig's skinning on the CPU, exactly as the renderer skins, for grounding,
+  tests, anchors and pose-dependent bakes: linear blend skinning mixed with
+  dual quaternion skinning vertex by vertex, by the share each bone asks for
+  (ARCHITECTURE.md, "Skinning artefacts"). `posedBoneHeads(rest, rotations)`
+  gives every joint's posed position. `skinPositionsLinear` is linear blending
+  alone, `skinPositionsDual` dual quaternion skinning alone, and
+  `skinPositionsBlended(…, share)` the mix at any share (a number, or one per
+  bone); `skinNormalsBlended` and `skinNormalsDual` give the matching normals,
+  and `skinPose` / `skinVertex` skin one vertex at a time.
+- `SKIN_DUAL_SHARE` is each limb bone's share of dual quaternion skinning (0 is
+  linear, 1 dual quaternion), `skinDualShare(bones)` the share of every bone of
+  a rig in its order, and `dualBones(rest, rotations)` each bone's pose as a
+  unit dual quaternion (what the renderer uploads: `dualBoneTexels`).
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
-  stress pose, and `relaxed`, standing at ease with the arms at the sides); `composeRotations(a, b)` layers `b` (an expression) over `a`.
+  stress pose; and the poses authored here, `relaxed`, standing at ease with the
+  arms at the sides, and two for the skinning's extremes, `flexed`, every hinge
+  near its limit, and `twisted`, each limb turned about its own axis);
+  `composeRotations(a, b)` layers `b` (an expression) over `a`.
 - `restBonesFrom(names, parents, heads)` rebuilds the rest skeleton from an
   evaluation's `boneHeads` without the packs, and
   `posedGroundOffset(rest, rotations, control, skin, worn?)` is the lift that
@@ -521,6 +555,21 @@ and expressions"). Framework-free.
   `AttachmentTopology.occlusion` holds `occlusionCorners` values per render
   vertex, rest first. `rotationVectors(rotations)` gives each bone's rotation
   vector.
+- Body occlusion (ARCHITECTURE.md, "Body occlusion"): the inside of the mouth,
+  the nostrils, the ear canals and the eye sockets are darkened by pose, at the
+  same corners. `HumanoidAssets.bodyOcclusion` is `{ vertices, values }`: the
+  ascending base-vertex indices of the few vertices ever enclosed and a byte
+  per vertex per corner (255 open), or null for a pack that predates it (a
+  body never darkened). `ModelTopology.body.occlusion` is the same per render
+  vertex, `occlusionCorners` bytes each, 255 off the cavities.
+  `cavityCandidates(assets)`, `selectCavity(candidates, bakes)`,
+  `cavityOcclusion(visibility)`, `OPEN_VISIBILITY` and
+  `expandBodyOcclusion(occlusion, vertexCount, corner)` are the bake's steps;
+  `parseBodyOcclusion(entry, bytes, vertexCount)` reads the file.
+  `<Humanoid>` puts `body.occlusion` on the body geometry
+  (`setBodyOcclusionAttributes`) and shares the pose's key weights with the
+  skin material (`SkinMaterial.occlusionKeys`, as with the attachments'
+  materials); a body geometry without the attributes renders open.
 
 ### Presence
 
@@ -644,6 +693,15 @@ The main-thread handle to an evaluation worker.
   (`LayerAtlas.refresh`; the texture stays the same object, so the skin shader
   is not recompiled and nothing is re-evaluated). It applies a shared update
   once however many figures pass it.
+- `client.adultSurface(): Promise<AdultSurfaceTopology | null>` resolves with the
+  adult pack's refined pelvic surface: the static render data of the whole body
+  (`SurfaceTopology` plus `uvScale`) with the pack's `anatomy.surface` faces
+  refined (`HumanoidModel.adultSurface`), or null when the pack names no surface
+  or the model's subdivision is 0. It is its own request and never part of
+  `ready`'s topology, so a minor's session never holds it. `<Humanoid>` asks for
+  it once the figure is an adult and draws it, in place of the base body, from
+  then on (`Evaluation.surface === "adult"`); the worker builds it once and
+  later calls share it.
 - `client.dispose()` terminates the worker and rejects pending requests.
 - Errors from the worker arrive as `HumanoidWorkerError` with `name` set to the
   original error's name (for example `AgePolicyError`).
@@ -687,10 +745,10 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `material?` | A three.js `Material` replacing the built-in skin material, which follows `recipe.skin` |
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
-| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"garment"` with the garment's `garment` id, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
+| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |
 | other props | Passed to the wrapping `<group>` |
 
@@ -698,17 +756,30 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 - Renders the body and the body pack's attachments (eyes with their own eye
   shader following `recipe.eyes`, teeth and tongue), each attachment shaded by
   its baked occlusion, which follows the pose (an open mouth lights the teeth
-  it uncovers).
+  it uncovers). The body's own cavities (mouth, nostrils, ear canals, eye
+  sockets) are darkened the same way, so a mouth without a tongue is dim inside.
 - Renders the garments `recipe.outfit` names, once the client loaded a
   clothing pack: skinned to the same skeleton, so they follow the pose, with
   their diffuse and normal maps. The body keeps its geometry whatever is worn;
-  only the triangles it draws change.
+  only the triangles it draws change, on the adult surface as on the base.
 - Updates the geometry in place when `recipe` changes.
 - Stores the latest ground offset (posed when posed) on the group's `userData.groundOffset`.
 - Disposes its geometries, textures and built-in materials on unmount.
 - Skins the body and attachments to the skeleton fitted to each evaluation
-  (linear blend skinning on the GPU) and poses it from `pose`; posing does not
-  re-evaluate the figure.
+  and poses it from `pose`; posing does not re-evaluate the figure. The built-in
+  skin material skins by linear blending mixed with dual quaternions, by each
+  bone's share (`SKIN_DUAL_SHARE`; ARCHITECTURE.md, "Skinning artefacts"), so a
+  twisted forearm or a raised shoulder keeps its volume, and its shadows, bounds
+  and picking follow. A `material` of your own skins by three's linear skinning
+  alone, and the attachments (eyes, teeth, tongue) follow single bones.
+- Stores the figure's bones as dual quaternions on the group's
+  `userData.dualBones` (a `DualBones`, null before the first evaluation), so
+  clothing and materials of your own can follow its joints as its skin does:
+  `applyDualSkinning(material, group.userData.dualBones)`, both exported from
+  `humanoid-kit/react`, makes a skinned mesh's material blend dual quaternions
+  with three's linear skinning by the same per-bone shares (`SKIN_DUAL_SHARE`),
+  so cloth does not part from the skin at a joint. Call it before the material's
+  first render; a `DualBones` is the figure's own and is disposed with it.
 - With `presence`, the group's origin is the ground under the figure: the
   figure lifts its own meshes onto it, so do not lift the group by
   `groundOffset` (without `presence` the caller does, as before). The ground
@@ -879,13 +950,14 @@ range input sized for touch. `onChange(value, gesture)` fires while dragging and
 ## `humanoid-kit/worker`
 
 The worker module that `HumanoidWorkerClient` starts by default. It owns one
-`HumanoidModel` and answers six messages: `init` (replied to with `ready`
+`HumanoidModel` and answers seven messages: `init` (replied to with `ready`
 once the first figure can be evaluated), `complete` (replied to once every
 target file has loaded, or with the error that stopped one), `pickMap`
 (replied to with the pick map once everything has loaded), `posedOcclusion`
 (replied to once the corner bake, made a corner at a time between other
 requests, is done), `adultLayers` (replied to with the adult anatomy layers'
-fields once the adult pack's stage has loaded, or null without that pack) and
+fields once the adult pack's stage has loaded, or null without that pack),
+`adultSurface` (replied to with the adult pack's refined surface, or null) and
 `evaluate`, which
 waits for exactly the load stages its recipe needs without holding up other
 requests, and `garment` (replied to with a garment's static render data once
@@ -901,7 +973,7 @@ import { bodyPack } from "humanoid-kit-body";
 `bodyPack` is `{ manifest, files: { "body.bin.gz", "targets-core.bin.gz",
 "targets-baby.bin.gz", "targets-child.bin.gz", "targets-young.bin.gz",
 "targets-old.bin.gz", "targets-modifiers.bin.gz", "attachments.bin.gz",
-...WebP textures } }`, with
+"body-occlusion.bin.gz", ...WebP textures } }`, with
 each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the
 worker client. The package also exposes its files under
 `humanoid-kit-body/data/*`.
@@ -922,7 +994,9 @@ measured from the pack's targets (`skinLayers`), and the shape states of the
 adult anatomy (`stateMorphs`, arousal). This is the pack's data so that the
 core, which ships in the public build, names no adult target or modifier
 (`pnpm check:pages`); a pack without it adds no adult layers and no state
-morphs.
+morphs. `anatomy.surface` (`AdultSurfaceSpec`: the base body `faces` to refine
+and their `levels`) names the pelvic region the adult surface refines; a pack
+without it leaves every figure on the base surface.
 
 ## `humanoid-kit-clothing`
 
