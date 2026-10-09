@@ -108,3 +108,27 @@ direction: the same ink is darker on every deeper tone, and reads cooler (b\*
 lower) than the skin round it. Black ink on the fairest skin comes out L\* 36,
 b\* 1.5; whether that is too light for fresh black ink is for the contact
 sheets to judge.
+
+### C2. Marks (`src/bodyArt/marks.ts`, `src/bodyArt/vitiligo.ts`)
+
+Marks change what is in the skin (melanin, haemoglobin) through the skin
+model, never its colour directly, so each reads at every tone. Melanin moves
+in absolute density, not as a share of the skin's own: a vitiligo patch loses
+its melanocytes and a naevus is a nest of them, whatever the skin round them.
+
+| Quantity | Value | Source or choice |
+| --- | --- | --- |
+| Vitiligo's residual melanin | 0.15 × the density of skin at melanin 0.15 | Krotkova 2025: patches keep 0.10–0.26 of the skin's melanin index and read 1–5 units on any skin (absolute); the cohort's tone is a CHOICE (fair European) |
+| Below the lightest measured skin | each channel's log moves with density toward the melanin-free albedo (C1) | Beer–Lambert; continuous with the measured axis |
+| Check | patch L\* ≈ 70 at every tone; ΔE\*ab 8.5 (melanin 0.1) to 12.4 (0.2), and larger on deeper skin; b\* below the skin's at fair to medium tones | Toriyama 2021 (ΔE\* mostly 9–13); Brazzelli 2008 (L\* up, b\* down) |
+| Melanin added at full (`markMelaninSpan`) | the measured axis's density span, lightest to deepest | CHOICE of scale |
+| Café-au-lait, naevus | 0.12 and 0.55 of that span | CHOICES: light brown (fair skin L\* 65 → 58) and dark brown (deepest skin L\* 22 → 11, not black) |
+| Port-wine stain | 4 steps of the measured haemoglobin axis | CHOICE (fair skin a\* 11 → 32) |
+| Fresh or raised scar's redness | log(red ÷ green) 1.96 × the skin's, at melanin 0.2 | Aoki 2016: keloid erythema index 1.96 × the forearm's; the cohort's tone a CHOICE |
+| Raised scar's melanin | + 0.32 × the density of skin at melanin 0.2 | Aoki 2016: keloid melanin index 1.32 × |
+| Mature flat scar | 0.35 of the way to vitiligo's residual | CHOICE: paler than its skin |
+| Scar smoothness, raise | roughness −0.15; 1.5 mm at `raised` 1 | CHOICES |
+| Dermal melanocytosis | ink of [0.06, 0.04, 0.03] (linear) at 0.75 coverage, through C1's optics | CHOICE; its blue-grey follows from the dermal veil |
+| Outlines | radius harmonics 2–5, edge 0.25–0.6 mm (dermal pigment: 30% of its half-size) | CHOICES after the clinical descriptions in A2–A4 |
+| Vitiligo's sites | round the eyes and mouth (15% each), backs of the hands (30%), wrists, elbows, knees, tops of the feet (10% each); mirrored left to right | CHOICE following where non-segmental vitiligo is reported |
+| Vitiligo's extent | 2 to 14 mirrored pairs, 1.5 to 6 cm across | CHOICE |

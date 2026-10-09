@@ -201,8 +201,8 @@ interface MacroValues {
   african: number;         // ethnic anchors, normalised to sum to 1
   asian: number;
   caucasian: number;
-  breastSize: number;      // 0..1; adult-only
-  breastFirmness: number;  // 0..1; adult-only
+  breastSize: number;      // 0..1
+  breastFirmness: number;  // 0..1
 }
 ```
 
@@ -257,10 +257,12 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 - `agePolicyViolations(recipe): string[]`: every reason the recipe breaks the
   policy; empty when valid.
 - `assertAgePolicy(recipe)`: throws `AgePolicyError` listing the violations.
-- `withAge(recipe, age): Recipe`: a copy at a new age. Moving below 18 resets
-  `breastSize` and `breastFirmness` to their defaults, deletes regional breast
-  values and deletes adult-only modifiers and the axillary and pubic body hair
-  densities. The input is not modified.
+- `withAge(recipe, age): Recipe`: a copy at a new age. Moving below 18 deletes
+  the adult anatomy pack's modifiers, the axillary and pubic body hair densities
+  and the adult-only piercings. The breast macros and the body pack's `breast/*`
+  modifiers stay: the body follows MakeHuman at every age, breast development
+  through adolescence included (owner direction, `docs/AGE-POLICY.md`). The input
+  is not modified.
 - `ADULT_ONLY_MODIFIER(id): boolean`: true for ids starting `genitals/`,
   `pelvis/bulge` or `stomach/stomach-pregnant`.
 - `AgePolicyError`.
@@ -275,11 +277,11 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
   rather than a point on one axis. Always `{}` under 18. Skin layers take it as
   `SkinPaintInput.anatomy`.
 
-Under 18, a recipe is invalid if `breastSize` or `breastFirmness` differs from
-its default, if any region override contains either key, if an adult-only
-modifier is non-zero, if `bodyHair.density.axillary` or `.pubic` is non-zero
-(`ADULT_ONLY_BODY_HAIR`), or if a piercing is at an adult-only site. Refused,
-never clamped.
+Under 18, a recipe is invalid if an adult-only modifier is non-zero, if
+`bodyHair.density.axillary` or `.pubic` is non-zero (`ADULT_ONLY_BODY_HAIR`), or
+if a piercing is at an adult-only site. Refused, never clamped. The breast macros
+(`breastSize`, `breastFirmness`, and the regional overrides of them) are not
+gated: they follow MakeHuman at every age, as its breast targets do.
 
 - `ADULT_ONLY_PIERCING(site): boolean`: true for every site that is not one of
   the body's own (`PIERCING_SITES`). Those are the adult anatomy pack's, which
@@ -341,6 +343,32 @@ interface BodyArtRecipe {
   `veil` what the dermis above the ink (`INK_DEPTH`) scatters back, bluer than
   red (`dermalVeil()`), and `keep` the light that crosses it twice. The same
   ink darkens with every step of tone and reads cooler than the skin round it.
+- Marks (research/BODY-ART.md C2): a scar, birthmark or vitiligo patch changes
+  what is in the skin. `markChannels(mark): MarkChannels` is what it puts in the
+  marks page at full strength:
+  - `melanin`, signed: down toward `vitiligoAlbedo(tone)`, up by shares of
+    `markMelaninSpan()`;
+  - `haemoglobin`, shares of `PORT_WINE_HAEMOGLOBIN` steps;
+  - a scar's `smooth` and `raise`;
+  - `ink`: dermal pigment, drawn as ink.
+
+  `markRatios(tone)` gives the per-tone ratios the shader raises to those
+  channels, and `markedAlbedo(tone, channels)` the skin under them.
+  `markOutline(mark)` and `markShape(mark, outline, x, y)` give the irregular,
+  seeded outline the bake draws. Constants: `VITILIGO_RESIDUAL`,
+  `CAFE_AU_LAIT_MELANIN`, `NAEVUS_MELANIN`, `SCAR_HAEMOGLOBIN` (the keloids'
+  erythema ratio), `SCAR_RAISE`, `SCAR_SMOOTHNESS`, `DERMAL_MELANIN_INK` and
+  `MARK_OUTLINE`.
+- `vitiligoPatches(assets, vitiligo)`: the seeded patches. Each is a left
+  vertex at a typical site (round the eyes and mouth, backs of the hands,
+  wrists, elbows, knees, tops of the feet) and its mirror image, with more and
+  larger patches at a larger `extent`. `placeBodyArt` turns them into marks of
+  kind `"vitiligo"`, the right side's outline mirrored (a negative `width`).
+- `seededRandom(seed)`: deterministic numbers in [0, 1) (mulberry32), shared by
+  the editor's randomiser and the vitiligo patches.
+- `melaninDensity(tone)` and `melaninFreeAlbedo(tone)` (skin model):
+  `melaninDensityAlbedo` now goes on below the lightest measured skin toward
+  the melanin-free albedo.
 
 ### Evaluation
 
@@ -694,14 +722,17 @@ compute what the renderer will do.
     `CREASE_HALF_WIDTH` how far either side of the joint each joint's creases
     reach.
   - Expression lines (ARCHITECTURE.md, "Facial wrinkles"):
-    `EXPRESSION_LINE_LAYERS`, five `creases` `DetailLayer`s (`lines.forehead`,
-    `lines.crows-feet`, `lines.glabella`, `lines.nasolabial`, `lines.nose`) driven
-    by the `face.*` signals and the figure's `age`: forehead lines on
-    `browRaise`, furrows between the brows on `browFurrow`, crow's feet on
-    `squint` (or a smile), the folds on `nasolabial` (or a smile), nose lines on
-    `noseWrinkle`. `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
+    `EXPRESSION_LINE_LAYERS`, five layers (`lines.forehead`, `lines.crows-feet`,
+    `lines.glabella`, `lines.nasolabial`, `lines.nose`) driven by the `face.*`
+    signals and the figure's `age`: forehead lines on `browRaise`, furrows
+    between the brows on `browFurrow`, crow's feet on `squint` (or a smile), the
+    folds on `nasolabial` (or a smile), nose lines on `noseWrinkle`. The forehead's
+    and the furrows' are multiply `ColourLayer`s, thin lines on colour stops
+    (`FOREHEAD_STOPS`, `GLABELLA_STOPS`) of a coordinate exactly linear in
+    position, shaded by `lineShade(age)`; the rest are `creases` `DetailLayer`s.
+    `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
     `EXPRESSION_COUNT` are art-directed, `expressionAgeFactor(age)` scales the
-    depth by age (0.2 at 6, 1 at 40, 1.4 at 70).
+    depth or shade by age (0.2 at 6, 1 at 40, 1.4 at 70).
   - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones
     (head, hand, thigh, …) as soft per-vertex masks from the skin weights, plus
     its `front`, `palm`, `sole`, `forehead` and `neck` fields from the vertex

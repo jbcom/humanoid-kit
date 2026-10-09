@@ -160,6 +160,8 @@ describe("hair topology", () => {
       if (s.id === "afro01") expect(Math.min(...t.fade), s.id).toBe(1);
       else expect(Math.min(...t.fade), `${s.id} hairline`).toBeLessThan(0.3);
       expect(Math.max(...t.fade), `${s.id} interior`).toBeGreaterThan(0.99);
+      // Every card has a texture scale, so strands are millimetres wide wherever its island sits.
+      expect(Math.min(...t.uvScale), `${s.id} uvScale`).toBeGreaterThan(0);
       // Growth runs from zero at a root to centimetres along the card.
       expect(Math.min(...t.growth), s.id).toBeLessThan(0.002);
       expect(Math.max(...t.growth), s.id).toBeGreaterThan(0.02);

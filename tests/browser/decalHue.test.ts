@@ -67,6 +67,7 @@ function centre(material: MeshStandardMaterial, hair: boolean): [number, number,
       new Float32Array(n).fill(1),
       new Float32Array(n),
       new Float32Array(n),
+      new Float32Array(n),
     );
   }
   scene.add(new Mesh(plane, material));

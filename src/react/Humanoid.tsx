@@ -1052,7 +1052,7 @@ export function Humanoid({
     // An adult's evaluation waits for the adult surface's topology.
     if (placement && !topology) return;
     let next: BodyArtTexture | null = null;
-    if (placement?.tattoos.length && topology)
+    if (placement && (placement.tattoos.length || placement.marks.length) && topology)
       try {
         next = bakeBodyArt(
           gl,
@@ -1187,7 +1187,13 @@ export function Humanoid({
           if (!g) {
             g = makeGeometry(hairTopology);
             setHairOcclusionAttribute(g, hairTopology.occlusion);
-            setHairStrandAttributes(g, hairTopology.fade, hairTopology.growth, hairTopology.fin);
+            setHairStrandAttributes(
+              g,
+              hairTopology.fade,
+              hairTopology.growth,
+              hairTopology.fin,
+              hairTopology.uvScale,
+            );
             geometries.hair.set(ev.hair.id, g);
           }
           writeGeometry(g, ev.hair);

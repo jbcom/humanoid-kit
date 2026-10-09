@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { dermalVeil, inkOptics, inkSeen, melaninFreeAlbedo } from "../src/bodyArt/ink.ts";
+import { dermalVeil, inkOptics, inkSeen } from "../src/bodyArt/ink.ts";
 import { labFromLinear } from "../src/surface/cielab.ts";
 import {
   luminance,
   MELANIN_FREE_RED_REFLECTANCE,
+  melaninFreeAlbedo,
   type Rgb,
   type SkinTone,
   skinAlbedo,

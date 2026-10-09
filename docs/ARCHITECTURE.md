@@ -178,20 +178,27 @@ face and the hips blends across the neck and waist instead of tearing.
 
 ## Age policy
 
-`src/recipe/agePolicy.ts` supports all ages. The line is anatomy, not nudity:
-under `ADULT_AGE` (18) a figure is MakeHuman's smooth doll form, which may be
+`src/recipe/agePolicy.ts` supports all ages. The body follows MakeHuman at every
+age it models (1 to 90), breast development through adolescence included (owner
+direction, 2026-10-08, c0c6ae2: humanoid-kit adds no judgement of its own to the
+body). The one boundary is the adult anatomy pack, which mirrors MakeHuman
+keeping genital assets out of its core. Under `ADULT_AGE` (18) a figure may be
 shown with or without clothing.
+
+The breast macros (`breastSize`, `breastFirmness`, and their regional overrides)
+are not gated: the breast targets are weighted from age 1 up as MakeHuman's are
+(none at the baby anchor, then the child, young and old anchors interpolated), so
+a minor's breasts follow the age and the sliders as upstream's do. An earlier
+version of this document and of `docs/API.md` said they had to equal their
+defaults under 18 and that `withAge` reset them; no code did either, and
+`tests/agePolicy.test.ts` now holds the code to this.
 
 Under 18:
 
-- `breastSize` and `breastFirmness` must equal their defaults, in `macros` and in
-  every regional override (the keys may not appear at all in a region);
 - adult-only modifiers (ids starting `genitals/`, `pelvis/bulge` or
   `stomach/stomach-pregnant`) must be 0;
 - a violation throws `AgePolicyError`. Values are rejected, never silently
   clamped, so a mistake cannot be hidden;
-- the breast macro targets are never weighted (`macroTargetWeights`), although
-  their files ship in the body pack;
 - adult-only targets are not in the body pack at all; the adult anatomy pack's
   modifiers are adult-only, so a recipe under 18 that sets one is rejected;
 - axillary and pubic hair are adult-only: a recipe under 18 whose
@@ -820,29 +827,43 @@ holds, and the expressions read as themselves (a smile as `smile` with some
 `squint` from the raised cheeks, anger as `browFurrow`, surprise as `browRaise`,
 disgust as `noseWrinkle`).
 
-Five crease layers draw the lines (`EXPRESSION_LINE_LAYERS`,
-`src/surface/regions/faceLines.ts`), the same `creases` detail pattern as the
-elbow and knee: the forehead's horizontal lines (`browRaise`), the furrows
-between the brows (`browFurrow`), crow's feet fanning from each eye's outer
-corner (`squint`, or 0.6 of `smile`), the nasolabial folds from the nose's wing
-past the mouth's corner (`nasolabial`, or 0.7 of `smile`) and the nose
-bridge's lines (`noseWrinkle`). Where each lies is read from the default
-figure's joints (the brows, the outer corners, the nose's wing), so it follows
-the mesh, and keeps off the lips and the eyeballs (a test holds it). The
-forehead's lines and the furrows are bounded by distance along the skin from
-the brows' band (`distanceFromBrows`: Dijkstra over the mesh's edges), not by
-height, since the mesh is coarse over the forehead and a mask built from heights
-leaked across big triangles up and over the crown on the first sheets: the
-forehead lines (by height, which is smooth over the coarse mesh where a distance along its edges bends the grooves) run from 1 to 6.2 cm above the brows, fading
-toward the temples, and the furrows reach 1 to 2.6 cm above them, two straight near-vertical
-grooves 1.5 cm apart either side of the midline (a coordinate that runs
-unclamped across 6 cm with four grooves, of which the mask keeps the middle two,
-so no clamp bends them), between the brows (frontalis lines stop 5 to 7 cm above the brows, glabellar lines are 1 to
-2.5 cm long; a test holds every layer's mask to its extent). The
+Five layers draw the lines (`EXPRESSION_LINE_LAYERS`,
+`src/surface/regions/faceLines.ts`): the forehead's horizontal lines
+(`browRaise`), the furrows between the brows (`browFurrow`), crow's feet
+fanning from each eye's outer corner (`squint`, or 0.6 of `smile`), the
+nasolabial folds from the nose's wing past the mouth's corner (`nasolabial`, or
+0.7 of `smile`) and the nose bridge's lines (`noseWrinkle`). The crow's feet,
+folds and nose lines are the elbow and knee's `creases` relief; the forehead's
+lines and the furrows are thin lines of colour instead. A thin line cannot be a
+mask or a relief phase on this mesh: the forehead's triangles are about 2 cm
+across and a field is interpolated between their vertices, so any coordinate
+that is not exactly linear in position bends a line into a squiggle (the first
+sheets' "ʍ" furrow). They use the palm creases' technique
+(`hands/creases.ts`): a multiply colour layer whose coordinate is exactly
+linear (the forehead's in height, the furrows' across the face), with the
+line's shade on chosen ones of the layer's eight colour stops (`FOREHEAD_STOPS`,
+`GLABELLA_STOPS`), so a line is straight wherever the vertices fall and a
+seventh of the coordinate's band wide. A coordinate is stored in 0 to 1, and a
+vertex outside its band is stored clamped, which would bend a line in any
+triangle that has one; so each band reaches a face past its lines and the mask
+fades to zero before the band ends. The forehead has three lines (2.3, 4.1 and
+5.9 cm above the brows' joints), deepest at the centre and weakening toward the
+temples; the furrows are two vertical lines 1.05 cm either side of the midline.
+Their shade is the fold's shadow, a multiply by `lineShade(age)` (22 % at 40,
+the most 45 %), which grows with age as the relief's depth does.
+
+Where each lies is read from the default figure's joints (the brows, the outer
+corners, the nose's wing), so it follows the mesh, and keeps off the lips and the
+eyeballs (a test holds it). The forehead's lines and the furrows are also
+bounded by distance along the skin from the brows' band (`distanceFromBrows`:
+Dijkstra over the mesh's edges), since a mask built from heights alone leaked
+across big triangles up and over the crown on the first sheets (frontalis lines
+stop 5 to 7 cm above the brows, glabellar lines are 1 to 2.5 cm long; a test
+holds every layer's mask to its extent). The
 crow's feet and the folds are each one layer for both sides, the coordinate
 being the angle about its own corner and the distance across its own fold, so
 the right is the left reflected and two layers' channels are saved. How many
-lines (1 to 3) and how deep (0.25 to 0.6 mm, against the elbow's 2.8) is
+lines (1 to 5) and how deep (0.25 to 0.7 mm, against the elbow's 2.8) is
 art-directed, since no measurement of facial wrinkle depth or spacing against
 expression is in this repository; the depth grows with age
 (`expressionAgeFactor`: 0.2 at 6, 0.8 at 25, 1 at 40, 1.4 at 70), because a
@@ -1158,7 +1179,7 @@ a coloured texture; everything in the pure core is testable in Node.
   binary): **growth** (u16, 0.1 mm steps), the distance along the cards from
   where the hair roots, by Dijkstra from the vertices within 1.5 cm of the scalp
   (a card that touches none grows from its highest vertex); **fade**, 0 on a
-  card edge that meets the scalp, rising to 1 over 12 mm along the card, and
+  card edge that meets the scalp, rising to 1 over 18 mm along the card, and
   only for edges no other card lies well over (a card's edge inside the hair is
   not on its hairline: feathering those cut the afro into a lattice); **fin**,
   1 on a card standing out of the scalp, 0 on one lying along it (its normal
@@ -1172,12 +1193,16 @@ a coloured texture; everything in the pure core is testable in Node.
   their roots showed the dark inside of the volume as a band.
 - *A hairline thins, and a fin by its angle; the scalp is tinted.* A
   hair card's cut edge is a hard line, and MakeHuman's hairlines read as a helmet
-  or a wig. With alpha-to-coverage the fade (and the fin's angle term) is the
-  card's coverage, a smooth gradient over the MSAA samples; without it the
-  fragment shader discards where it is below an interleaved gradient noise of
-  its pixel (Jimenez 2014), which needs neither blending nor MSAA, so the
-  hairline thins on every GPU, SwiftShader included. (Dithering alone left a
-  speckle on the afro that read as noise.) The skin shows
+  or a wig, and a screen-space dither of it reads as a dot grid. The fin's angle
+  term is the card's coverage under alpha-to-coverage (a dither without it, which
+  needs neither blending nor MSAA, so it works on every GPU). The hairline itself
+  thins strand by strand, in the texture's own coordinates scaled to metres by a
+  baked per-vertex `uvScale` (a strand is 1.5 mm wherever its card's island sits
+  in the atlas): each strand ends at a distance of its own from the cut edge (a
+  hash of the strand), its tip tapering, and the edge recedes along its length by
+  up to a third of the fade (two slow noises: a recession and a wander), so no
+  hairline is a straight cut with a dot pattern but a feathering of wisps.
+  (Pixel dithering alone left a speckle on the afro that read as noise.) The skin shows
   through, so it must not be bare: `SkinMaterial` takes a per-vertex
   `hkScalp` attribute (the style's scalp, carried through the body's stencil like
   any field) and a uniform colour, and takes the skin toward its own colour in
@@ -1922,8 +1947,25 @@ age.
 - The browser tests hold the bake to its frame (orientation, the seam, facing
   and reach, a later tattoo over an earlier one) and the shader to `inkSeen`.
 
+**Marks, as built.**
+
+- Marks change what is in the skin, through the skin model, so each reads at
+  every tone. Melanin moves in absolute density, as the lesions do.
+- The marks page holds a signed melanin channel (128 + 127 × melanin, so "no
+  change" is exact in eight bits), added haemoglobin, a scar's smoothness and
+  its raise.
+- The shader multiplies the skin by per-tone ratios raised to those channels.
+  Melanin's density is linear in log albedo, so `ratio^t` moves the density
+  linearly in t. The smoothness and raise go to roughness and relief.
+- Marks add in the bake, so overlapping marks net out; dermal pigment is ink,
+  composited under the tattoos.
+- Vitiligo's patches are seeded marks at the sites non-segmental vitiligo
+  favours, mirrored left to right through the exactly mirrored base mesh.
+- The browser tests hold the bake to `markShape` and the shader to
+  `markedAlbedo`.
+
 **Landed so far:** the recipe field, its validation, the age policy, the
-sites, and tattoos. The marks and the piercings follow in their own commits.
+sites, tattoos and marks. Piercings follow in their own commit.
 
 ### Joint creases (2026-10-09)
 
@@ -2028,7 +2070,7 @@ anything when shoes are worn beyond the fields every figure shares.
 - *Callus is a layer over the pressure sites, scaled by age.* Gaussian sites
   weighted as the pressure maps say, a mix toward the sole's colour made paler
   and yellower in CIELAB (`callusAlbedo`; the sole's colour is the hands'
-  `palmAlbedo`, one owner) and a matte surface layer on the sole only (`callusAmount(age)`; a small child's
+  `palmAlbedo`, one owner), on the sole only (`callusAmount(age)`; a small child's
   sole is soft and the forefoot hardens with age). The age reaches the layer
   through `SkinPaintInput.age`, which `<Humanoid>` sets from the recipe. The
   tint and the age curve are choices and say so in C6: no callus colorimetry
@@ -2042,10 +2084,9 @@ anything when shoes are worn beyond the fields every figure shares.
   foot's far end as each toe's reference point and the sole as its facing.
 - *Toe joint creases are bands across the toes.* A band of 3 to 7 mm half-width
   (0.4 of the shorter bone) centred on each joint that is not a tip, on its own
-  side of the toe: fine wrinkles on the top (`TOE_WRINKLE_LAYER`, three to a
-  band, 0.12 mm deep as the hands' knuckle wrinkles, fainter in a child and
-  deepening with age, `wrinkleAmount`) and one fold under each joint
-  (`TOE_CREASE_LAYER`, 0.3 mm as the palm's creases, from birth). The coordinate
+  side of the toe: fine wrinkles on the top (`toeWrinkleFields`, three to a band,
+  0.12 mm deep as the hands' knuckle wrinkles) and one fold under each joint
+  (`toeCreaseFields`, 0.3 mm as the palm's creases, from birth). The coordinate
   runs 0 to 1 across the band, so a fold starts and ends flat, and the bands
   stay a bone's fraction apart so the nearest joint never flips inside one.
   Depths and counts are choices (C6): no measurement of crease depth was found.
@@ -2080,16 +2121,26 @@ anything when shoes are worn beyond the fields every figure shares.
   does, so they show only close up. Tested: the function's statistics and
   orientation in node, and in a browser the shader against it (the shading
   follows the reference's slope at correlation below −0.9).
-- *The feet cost one page of the atlas (nine in all).* Seven layers (callus and
-  its matte, the toe wrinkles and creases, the toenails and their gloss, the
-  ridges) overlap one another on the foot, so each needs a channel group of its
-  own, and the only partners they can share one with are the face's (the hands'
-  features lie too close to the foot's in the UV layout: the planner works in
-  cells of a 64 × 64 grid with a margin of one). That is 29 channels of the
-  body's layers where the hands left 26, and no ordering of the layers does
-  better than 28 (a search of twenty thousand random orders; the first-fit in
-  stack order finds 29). The ridges cost two channels as one layer: with the
-  orientation in the coordinate, not a second layer.
+- *The feet's skin is painted by the hands' layers, so the atlas stays at eight
+  pages.* As separate layers the feet's seven (callus and its matte, the toes'
+  wrinkles and creases, the toenails and their gloss, the ridges) overlap one
+  another and the hands' on the UV layout, so each took a channel group of its
+  own: nine pages, and no ordering of the layers found better than 28 channels
+  of the body's against the first-fit's 29 (a search of twenty thousand random
+  orders). Features whose masks never meet and that want the same colour model
+  or the same relief share a layer instead (`src/surface/regions/areas.ts`; the
+  hands' own definitions are unchanged and keep their tests): the sole's callus
+  is a term of the `palmoplantar` paint (the coordinate is the callus weight, the
+  layer's second stop the sole's colour made callus by age), the toenails are on
+  `knuckles-nails` (one nail model, one coordinate, the same stops), their gloss
+  on `nail-gloss`, and the toes' wrinkles and creases on `hand-relief`, in its
+  coordinate of ten periods (a wrinkle band is three of them, a crease one) with
+  the depth carried in the mask. Only the ridges, a different pattern, keep a
+  layer of their own, two channels. What sharing costs: no matte surface on
+  callus (a surface layer's sign is the layer's, and nail gloss is the other
+  way), no yellowing of old toenails and no age scaling of the toes' wrinkles
+  (the shared paint has no place for them), all of them choices that were not
+  measured anyway.
 - *Toenails are layers on the top of each toe's end, on the hands' scheme.* The
   base mesh sculpts a faint plate on the big toe and none on the others, so, as
   with the fingernails, there is no nail geometry: a coordinate along the nail
@@ -2099,9 +2150,10 @@ anything when shoes are worn beyond the fields every figure shares.
   region is a fraction of its distal flesh, from its last joint to the tip
   (`TOENAIL_REGION`: 0.82 on the big toe, about two thirds to three quarters on the lesser
   toes, where the nail is most of the distal phalanx), its half-width a fraction
-  of the toe's own radius, and it faces up and curls over at the tip. The bed
-  and free edge yellow with age (`toenailAging`: toenails thicken and slow with
-  age, and the colour is a choice). A lesser toe's nail has only a vertex or
+  of the toe's own radius, and it faces up and curls over at the tip. (The toe's
+  `under` is taken from the middle of its flesh: the skeleton's line lies near
+  the little toe's upper surface, which put its nail on the wrong side.) A
+  lesser toe's nail has only a vertex or
   two inside it on a 5 mm mesh, so its edge is as coarse as the hands' is.
 
 ## Parallel work: the base contract
