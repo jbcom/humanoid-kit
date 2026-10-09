@@ -224,11 +224,31 @@ describe("body poses", () => {
     expect(rig.poses.map((p) => p.name)).toEqual([
       "tpose",
       "benchmark",
+      "abducted",
       "flexed",
       "relaxed",
       "twisted",
     ]);
     expect(() => bodyPoseRotations(rig, "dab")).toThrow(/dab/);
+  });
+
+  it("swings both thighs 40° apart in the abducted pose, the legs open rather than crossed", () => {
+    const vectors = rotationVectors(bodyPoseRotations(rig, "abducted"));
+    const tpose = posedBoneHeads(rest, bodyPoseRotations(rig, "tpose"));
+    const heads = posedBoneHeads(rest, bodyPoseRotations(rig, "abducted"));
+    const foot = (h: Float32Array, side: string, k: number) =>
+      h[bone(`foot.${side}`) * 3 + k] as number;
+    for (const side of ["L", "R"]) {
+      const b = bone(`upperleg01.${side}`);
+      const v = [0, 1, 2].map((k) => vectors[b * 3 + k] as number);
+      expect((Math.hypot(...v) * 180) / Math.PI).toBeCloseTo(40, 0);
+      // The thigh turns about the line from front to back, so the foot stays at its depth.
+      expect(foot(heads, side, 2)).toBeCloseTo(foot(tpose, side, 2), 3);
+    }
+    // The left of the body is at +x: opening the legs moves the feet apart, by about
+    // twice the leg's reach times the sine of the angle (and crossing them would close the gap).
+    const gap = (h: Float32Array) => foot(h, "L", 0) - foot(h, "R", 0);
+    expect(gap(heads) - gap(tpose)).toBeGreaterThan(0.8);
   });
 
   /** The angle (degrees) between the direction from `a` to `b` and the one from `b` to `c`. */
