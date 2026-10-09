@@ -751,6 +751,35 @@ the first, calibrated against the measured one). `arousal` is refused under 18
 in every channel (AGE-POLICY.md). Area lanes then add states as they add
 regions.
 
+### Hands (2026-10-09)
+
+The hands' own skin is one area's layers (`src/surface/regions/hands.ts`,
+colour in `src/surface/handTone.ts`), between the rest layers and the state
+layers, so a state acts on them: cold blanches the palms as it does the rest
+of the hand. Sources and choices: `docs/research/SKIN-STATES.md` C5.
+
+- *Palm colour, a fairness item.* Palmoplantar skin has few active
+  melanocytes at every tone, so the palm barely follows the body's
+  lightness: on the deepest backs of hands it is about 16 L\* lighter and
+  6 to 8 b\* yellower, on the lightest about the same. The colour is read from
+  the archive the skin model already uses (ISSA's 777 paired palm and back-of-
+  hand readings, binned by the back's lightness), not a ratio: a lighter-skin
+  rule scaled down would leave deep palms nearly the colour of the hand's back,
+  which is the error this item exists to prevent.
+- *A frame per hand, from the base mesh.* As with the skin-state zones, nothing
+  is added to the frozen mesh. The skeleton's finger joints give each digit a
+  polyline from the wrist; every hand vertex takes the nearest segment and its
+  distance along the digit and across it, blended across each joint so the
+  coordinate runs on smoothly round a bend (the nearest segment alone jumps by
+  the radius times the bend at the bisector). The vertex normal against the
+  palm's facing tells palmar from dorsal; the palm's plane (from the wrist
+  toward the middle finger, and toward the thumb) places what lies on the palm.
+- *Not done.* Age does not reach a layer's paint (`SkinPaintInput` has `adult`
+  only), so a child's hand gets the same layers at its own scale, the fields
+  scaling with the morphed mesh. Soles share the palm's suppressed melanin
+  (the same mechanism) but no sole colour was found measured; the feet's area
+  owns them, and can take `palmAlbedo` if it decides to.
+
 ## Parallel work: the base contract
 
 Decision (2026-10-09, with the owner): the milestones are an order of

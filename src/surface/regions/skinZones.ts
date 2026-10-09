@@ -117,7 +117,7 @@ function vertexNormals(assets: HumanoidAssets): Float32Array {
  * axis (wrist to the middle fingertip) and the way its thumb lies (the little
  * finger's base to the thumb's), mirrored for the right hand.
  */
-function palmDirection(assets: HumanoidAssets, side: "L" | "R"): [number, number, number] {
+export function palmDirection(assets: HumanoidAssets, side: "L" | "R"): [number, number, number] {
   const at = (joint: string) => {
     const p = new Float32Array(3);
     jointPosition(assets, assets.positions, joint, p, 0);

@@ -5,6 +5,7 @@
  */
 import { isAdultLayer, type SkinLayer } from "../layers.ts";
 import { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER } from "./adult.ts";
+import { HAND_SKIN_LAYERS } from "./hands.ts";
 import { AREOLA_LAYER, FLUSH_LAYER, LIPS_LAYER } from "./rest.ts";
 import {
   BLUSH_LAYER,
@@ -18,11 +19,16 @@ import {
   SWEAT_REST_LAYER,
 } from "./states.ts";
 
-/** The layers whose data is in the body pack: the rest layers, then the state layers. */
+/**
+ * The layers whose data is in the body pack: the rest layers, the areas'
+ * layers (the hands'), then the state layers, so a state (cold pallor, a
+ * flush) acts on the areas' colour too.
+ */
 const BODY_SKIN_LAYERS: readonly SkinLayer[] = [
   FLUSH_LAYER,
   LIPS_LAYER,
   AREOLA_LAYER,
+  ...HAND_SKIN_LAYERS,
   GOOSEBUMP_LAYER,
   HEAT_FLUSH_LAYER,
   EXERTION_FLUSH_LAYER,
@@ -55,6 +61,7 @@ export const SKIN_LAYER_TARGETS: readonly string[] = targetsOf(
   SKIN_LAYERS.filter((l) => !isAdultLayer(l)),
 );
 
+export * from "./hands.ts";
 export * from "./rest.ts";
 export * from "./skinZones.ts";
 export * from "./states.ts";

@@ -319,8 +319,9 @@ compute what the renderer will do.
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
   `SkinLayer` (`id`, `blend`, `targets`, `fields(assets)`, `paint(input)`),
-  `SKIN_LAYERS` (the stack, in order: flush, lips, areola, the state layers
-  below, then `ADULT_SKIN_LAYERS`: penis, testes, mound), `SKIN_LAYER_TARGETS`
+  `SKIN_LAYERS` (the stack, in order: flush, lips, areola, the hands' layers
+  below, the state layers below, then `ADULT_SKIN_LAYERS`: penis, testes,
+  mound), `SKIN_LAYER_TARGETS`
   (the body layers' only: an adult layer names none, the adult pack's manifest
   does),
   `targetMask(assets, targets, lo, hi)` for masks measured from targets,
@@ -362,6 +363,20 @@ compute what the renderer will do.
   `factor` times the tone's melanin optical density, found on the measured
   melanin axis (extrapolated past the deepest anchor); the same factor darkens
   deep skin far more than fair. `areolaAlbedo` uses it.
+- The hands (`src/surface/regions/hands.ts`, colour in `src/surface/handTone.ts`;
+  ARCHITECTURE.md, "Hands"; every magnitude cited, or marked as a choice, in
+  research/SKIN-STATES.md C5). `HAND_SKIN_LAYERS`, in stack order after the rest
+  layers and before the state layers (so cold pallor and flush act on them):
+  - `PALM_LAYER`: `palmAlbedo(tone)` over `skinZones().palm`. `palmLab(tone)` is
+    the palm's CIELAB (surface reflection included) from `PALM_BINS`, the
+    International Skin Spectra Archive's paired palm and back-of-hand readings
+    (777 people) binned by the back of the hand's L\*: on deep skin the palm is
+    about 16 L\* lighter and 6 to 8 b\* yellower than the back of the hand, on
+    the lightest about the same.
+  - `handFrame(assets)`: each hand vertex's digit, distance along it and across
+    it, which way it faces, and its place in the palm's plane, measured from the
+    skeleton's finger joints and the vertex normals and cached per set of
+    assets; `palmDirection(assets, side)` is the way a palm faces.
 - Skin-state layers (`src/surface/regions/states.ts`), driven by the signals in
   `SkinPaintInput.signals`; every magnitude is cited, or marked as a choice, in
   research/SKIN-STATES.md Part C:

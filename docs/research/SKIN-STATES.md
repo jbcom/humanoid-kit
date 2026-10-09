@@ -124,6 +124,37 @@ Dermatological context only: Skin colour of Montgomery glands, glans/mucosal tis
 | "Skin Colour Does Not Define Ethnicity" (SRT 2026, 10.1111/srt.70343) and "Unifying the spectrum" (JBO 2026, 10.1117/1.jbo.31.9.095005) | CC BY | both analyse ISSA (14,000-15,256 spectra, 8 groups) | confirm ISSA body-site coverage and note a published meta-framework to cite |
 | Skin characteristics: normative data ... 16 anatomical locations, Skin Res Technol 22:263 (2016), DOI 10.1111/srt.12256 | closed (abstract) | N=241, Mexameter erythema and melanin at 16 sites, 6 age bands | single-site tables would need purchase; cite only; skin types not stratified |
 
+### A6. Hands (2026-10-09)
+
+Palm colour with a\* and b\*, deep skin included. The International Skin
+Spectra Archive (Lu et al., Sci Data 2025, DOI 10.1038/s41597-025-04857-5;
+data figshare DOI 10.6084/m9.figshare.28228571.v4; CC BY 4.0; the archive the
+skin model's anchors come from) measured palm (site 11) and back of hand
+(site 1), specular included (SCI). Computed here from the archive: the 777
+people with both sites, paired, binned by the back of the hand's L\*.
+
+| Back-of-hand L\* | n | Back L\*, a\*, b\* | Palm L\*, a\*, b\* |
+| --- | --- | --- | --- |
+| < 35 | 45 | 31.8, 8.8, 9.7 | 48.2, 11.0, 17.7 |
+| 35 to 45 | 28 | 38.8, 10.7, 15.0 | 53.4, 11.2, 16.8 |
+| 45 to 55 | 122 | 51.8, 10.5, 17.4 | 58.7, 10.4, 14.8 |
+| 55 to 65 | 518 | 59.9, 8.8, 16.9 | 62.7, 9.0, 14.1 |
+| > 65 | 64 | 67.1, 7.2, 16.0 | 66.6, 8.1, 14.6 |
+
+The deep end is the archive's African group (UK-resident, one site, one
+instrument, Fitzpatrick type not recorded): palm minus back, paired, n = 65,
++15.6 L\*, +1.6 a\*, +6.3 b\*. Palm chroma is not lost on deep skin (C\* 21.3,
+higher than every other group's palm, about 15.8). The archive does not define
+the palm site's exact location.
+
+| Source | Licence | What it gives | Deep skin |
+| --- | --- | --- | --- |
+| Phan T, Rowland R, Ponticorvo A, Le BC, Wilson RH, Durkin AJ et al., J Biomed Opt 27:036002 (2022), DOI 10.1117/1.JBO.27.3.036002 (the JBO 2022 paper of A1) | CC BY 4.0 | Palm and ventral forearm L\* per person (Table 1, A1). Used as an independent check of the archive's palms. | YES |
+| Horibata K et al., J Gen Fam Med (2025), DOI 10.1002/jgf2.776 | CC BY-NC 4.0 | 67 non-anaemic Japanese outpatients (CM-700d): palm L\* 61.2, a\* 8.0, b\* 15.3; inner upper arm 65.0, 5.4, 15.4; nail (bed through plate) 54.3, 4.9, 10.1. Table header labels lost in the XML; the non-anaemic column inferred from the abstract. | NO |
+| Leeb G et al., eBioMedicine (2024), DOI 10.1016/j.ebiom.2024.105051 | CC BY 4.0 | 34 adults, Fitzpatrick I to VI (9 of V to VI), ITA only: fingernail −9.8° to 68.1°, palmar finger pad −3.4° to 40.7°, dorsal finger −67.0° to 46.8°, forehead −65.7° to 44.7°. The palm side and the nail barely darken. | YES |
+
+Not found: sole colour; any measurement of children's palm colour.
+
 ---------------------------------------------------------------------------
 
 ## PART B - Skin states
@@ -280,6 +311,17 @@ bounded by the axis.
 
 A shape signal is rounded to 50 steps before it re-evaluates the figure: a step
 of `cold` moves the nipple's point target by 0.37 / 50, under a percent.
+
+### C5. Hands (`src/surface/handTone.ts`, `src/surface/regions/hands.ts`)
+
+The hands are rest-state regional colour and relief, not a state; they sit
+before the state layers, so cold pallor and flush act on them (C2).
+
+| Quantity | Value | Source |
+| --- | --- | --- |
+| Palm L\* | the archive's paired palm L\* at the skin's L\*, interpolated between the five bins (`PALM_BINS`): 48.2 at back-of-hand L\* 31.8 to 66.6 at 67.1 | ISSA, computed here (A6). The figure's skin stands for the back of its hand: a CHOICE, since the tone's anchors are facial readings. Checked against Phan et al. 2022 (A1): within 4 L\* of both its groups. |
+| Palm a\*, b\* | the skin's own, plus the bin's palm-minus-back difference (+2.2 a\* and +8.0 b\* at the darkest bin; +0.9 and −1.4 at the lightest) | ISSA (A6). Carrying the figure's own a\* and b\* (so a ruddy or golden figure keeps its cast) is a CHOICE. Horibata 2025 agrees in sign on light skin (palm a\* 2.6 above the arm). |
+| Palm region | `skinZones().palm`, the zone goosebumps and sweat already use | Base mesh data only (C1). |
 
 ## ITEMS I COULD NOT VERIFY / PRIMARY NOT OPENED
 
