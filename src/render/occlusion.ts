@@ -186,6 +186,20 @@ varying float vHkOcclusion;`,
     }
 	}`,
     );
+  patchOcclusionFragment(shader, floor);
+}
+
+/**
+ * The fragment half of the patch, shared with hair: scales every lighting term
+ * by the interpolated `vHkOcclusion` (floored at `OCCLUSION_FLOOR`), which the
+ * vertex shader of the caller sets.
+ */
+export function patchOcclusionFragment(
+  shader: WebGLProgramParametersWithUniforms,
+  floor = OCCLUSION_FLOOR,
+): void {
+  if (!shader.fragmentShader.includes("#include <aomap_fragment>"))
+    throw new Error("occlusion: three's aomap_fragment chunk moved");
   shader.fragmentShader = shader.fragmentShader
     .replace("#include <common>", "#include <common>\nvarying float vHkOcclusion;")
     .replace(

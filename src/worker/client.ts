@@ -12,13 +12,14 @@ import type {
   AdultSurfaceTopology,
   Evaluation,
   GarmentTopology,
+  HairTopology,
   ModelOptions,
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
-import type { PickMap, ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
+import type { HairInfo, PickMap, ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
 
-export type { PickMap, ReadyInfo };
+export type { HairInfo, PickMap, ReadyInfo };
 
 export class HumanoidWorkerError extends Error {
   override name = "HumanoidWorkerError";
@@ -87,6 +88,17 @@ export class HumanoidWorkerClient {
       if (r.type !== "completed") throw new HumanoidWorkerError(`unexpected ${r.type}`);
     });
     this.complete.catch(() => undefined);
+  }
+
+  private readonly hairTopologies = new Map<string, HairTopology>();
+
+  /**
+   * A hair style's static render data, once an evaluation that wears it has
+   * resolved: the worker sends it with the first and the client keeps it, so
+   * `Evaluation.hair` is rendered with `hairTopology(evaluation.hair.id)`.
+   */
+  hairTopology(id: string): HairTopology | undefined {
+    return this.hairTopologies.get(id);
   }
 
   private pickMapRequest: Promise<PickMap> | null = null;
@@ -246,6 +258,8 @@ export class HumanoidWorkerClient {
         haveOutfit: job.haveOutfit,
       });
       if (r.type !== "evaluated") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+      // Kept before the evaluation resolves, so whoever receives it can look the style up.
+      if (r.hairTopology) this.hairTopologies.set(r.hairTopology.id, r.hairTopology);
       job.resolve(r.evaluation);
     } catch (e) {
       job.reject(e instanceof Error ? e : new HumanoidWorkerError(String(e)));

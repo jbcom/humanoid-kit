@@ -23,6 +23,12 @@ export interface RandomizeOptions {
   modifierIntensity?: number;
   /** Also randomise adult anatomy modifiers (only ever for figures 18 and over). Default false. */
   includeAdultAnatomy?: boolean;
+  /**
+   * The hair styles on offer (the hair pack's ids). When given, the figure gets
+   * one of them, or none now and then, in a natural colour that runs darker on
+   * deeper skin; omitted, the base recipe's hair is kept as it is.
+   */
+  hairStyles?: readonly string[];
 }
 
 /** mulberry32: small, fast, and good enough for appearance. */
@@ -122,5 +128,36 @@ export function randomRecipe(
     const v = Math.round((m.lo !== null && sign < 0.5 ? -scale : scale) * 1000) / 1000;
     if (v !== 0) values[m.id] = v;
   }
-  return { ...recipe, modifiers: values };
+  // Hair draws come last, so a figure's shape and skin are the same with or without hair on offer.
+  const hair = options.hairStyles?.length
+    ? randomHair(rand, options.hairStyles, recipe.skin.melanin)
+    : undefined;
+  return { ...recipe, modifiers: values, ...(hair && { hair }) };
+}
+
+/** A hair style on offer (or none, one time in ten) in a natural colour, from `rand`'s next draws. */
+function randomHair(
+  rand: () => number,
+  styles: readonly string[],
+  melanin: number,
+): NonNullable<Recipe["hair"]> {
+  const bald = rand() < 0.1;
+  const style = styles[Math.floor(rand() * styles.length)] as string;
+  // Deeper skin mostly goes with black hair; lighter skin spans black to blond.
+  const w = melanin ** 1.5;
+  const eumelanin = (1 - w) * rand() + w * (0.75 + 0.25 * rand());
+  const pheomelanin = rand() ** 2 * (1 - eumelanin * 0.6);
+  // One head in eight has greyed.
+  const greys = rand() < 0.125;
+  const grey = greys ? 0.3 + 0.6 * rand() : 0;
+  const round = (x: number) => Math.round(x * 1000) / 1000;
+  return {
+    style: bald ? null : style,
+    colour: {
+      eumelanin: round(eumelanin),
+      pheomelanin: round(pheomelanin),
+      grey: round(grey),
+      override: null,
+    },
+  };
 }

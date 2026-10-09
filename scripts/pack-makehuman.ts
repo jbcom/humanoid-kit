@@ -8,8 +8,10 @@
  * The first argument is the `makehuman/data` directory of a checkout of
  * github.com/makehumancommunity/makehuman; the second is the extracted
  * "MakeHuman system assets" pack (makehuman_system_assets_cc0.zip), which
- * supplies the eyes, teeth and tongue every figure needs. Only asset files
- * are read (released CC0 in September 2020); no MakeHuman code is used.
+ * supplies the eyes, teeth and tongue every figure needs, and the scalp hair
+ * that the hair pack (`scripts/lib/packHair.ts`) packs last, since it binds to
+ * the body pack by hash. Only asset files are read (released CC0 in September
+ * 2020); no MakeHuman code is used.
  *
  * All of MakeHuman's ages (baby, child, young, old) are packed. Adult anatomy
  * targets (genitals, bulge, pregnancy), with their modifiers and sliders, go to
@@ -45,6 +47,7 @@ import {
 import { authoredPoses } from "./lib/authoredPoses.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { symmetrizeFaceUnits } from "./lib/faceUnits.ts";
+import { packHair } from "./lib/packHair.ts";
 import {
   writeAttachments,
   writeAttachmentTextures,
@@ -72,6 +75,7 @@ const ESSENTIALS: [string, string, string, string?][] = [
 ];
 const BODY_OUT = path.resolve(import.meta.dirname, "../packs/body/data");
 const ADULT_OUT = path.resolve(import.meta.dirname, "../packs/adult-anatomy/data");
+const HAIR_OUT = path.resolve(import.meta.dirname, "../packs/hair/data");
 /** Compatibility key: every MakeHuman proxy, clothes and target asset binds to this topology. */
 const TOPOLOGY = "makehuman-hm08";
 /** Every binary ships gzipped: GitHub Pages and many hosts serve .bin uncompressed. */
@@ -749,6 +753,8 @@ async function main() {
     "adultAnatomyPack",
     "URLs of the humanoid-kit-adult-anatomy pack files. Pass to `loadHumanoidAssets({ adultAnatomy })`.",
   );
+  // The hair pack binds to the body pack by hash, so it is rebuilt with it.
+  await packHair({ systemDir: SYSTEM, bodyDir: BODY_OUT, outDir: HAIR_OUT });
   const mb = (n: number) => `${(n / 1e6).toFixed(2)} MB`;
   console.log(
     `packed ${vertexCount} verts, ${manifest.faceCount} quads; targets: ` +
