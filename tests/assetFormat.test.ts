@@ -60,6 +60,24 @@ describe("parseHumanoidAssets", () => {
     expect(() => parseHumanoidAssets(pack(m))).toThrow(AssetFormatError);
   });
 
+  it("rejects a slider that drives nothing in the loaded packs", () => {
+    const m = clone();
+    const s = m.sliders[0]?.groups[0]?.sliders[0];
+    if (!s) throw new Error("no sliders");
+    s.id = "not-a-macro";
+    expect(() => parseHumanoidAssets(pack(m))).toThrow(/drives nothing/);
+    // An adult slider merged without its modifier, e.g. from a mismatched manifest.
+    const adult = structuredClone(adultManifest);
+    adult.modifiers = [];
+    const targets = fs.readFileSync(path.resolve(dir, "../../adult-anatomy/data/targets.bin"));
+    expect(() =>
+      parseHumanoidAssets(pack(), {
+        manifest: adult,
+        targets: targets.buffer.slice(targets.byteOffset, targets.byteOffset + targets.byteLength),
+      }),
+    ).toThrow(/drives nothing/);
+  });
+
   it("refuses an adult anatomy pack built for another body", () => {
     const other = { ...adultManifest, bodySha256: "0".repeat(64) };
     expect(() =>

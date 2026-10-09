@@ -7,6 +7,9 @@
  * targets, pinned to the body pack it was built against. Binaries are
  * little-endian and 4-byte aligned so typed-array views need no copies.
  */
+import { DEFAULT_MACROS } from "../makehuman/macro.ts";
+
+const MACRO_KEYS = new Set(Object.keys(DEFAULT_MACROS));
 
 export interface BufferRange {
   offset: number;
@@ -372,6 +375,14 @@ export function parseHumanoidAssets(
     addTargets(map, a.targets.entries, adultAnatomy.targets, "the adult anatomy pack");
     for (const m of a.modifiers) modifiers.set(m.id, m);
   }
+  const sliders = adultAnatomy
+    ? mergeSliderTasks(manifest.sliders, adultAnatomy.manifest.sliders)
+    : structuredClone(manifest.sliders);
+  for (const t of sliders)
+    for (const g of t.groups)
+      for (const s of g.sliders)
+        if (s.kind === "modifier" ? !modifiers.has(s.id) : !MACRO_KEYS.has(s.id))
+          throw new AssetFormatError(`slider ${s.id} drives nothing in the loaded packs`);
   const uvs = view(Float32Array, body, layout.uvs);
   const faceVerts = view(Uint32Array, body, layout.faceVerts);
   const faceUvs = view(Uint32Array, body, layout.faceUvs);
@@ -396,9 +407,7 @@ export function parseHumanoidAssets(
     skinWeight,
     targets: map,
     modifiers,
-    sliders: adultAnatomy
-      ? mergeSliderTasks(manifest.sliders, adultAnatomy.manifest.sliders)
-      : structuredClone(manifest.sliders),
+    sliders,
     attachments: parseAttachments(manifest, pack.attachments),
     fileUrls: pack.fileUrls ?? new Map(),
     adultAnatomyLoaded: adultAnatomy !== undefined,

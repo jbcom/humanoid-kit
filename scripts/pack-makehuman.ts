@@ -426,6 +426,9 @@ function main() {
           unresolved.push(id);
           continue;
         }
+        // A modifier lives in one pack; both of its targets must be in that pack.
+        if (lo && isAdultPackTarget(lo) !== isAdultPackTarget(hi))
+          throw new Error(`modifier ${id} spans the body and adult anatomy packs`);
         modifiers.push({ id, group: dir, lo, hi, adultOnly: isAdultOnlyModifier(hi) });
       }
     }
