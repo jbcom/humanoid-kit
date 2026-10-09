@@ -13,14 +13,18 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { gunzipSync } from "node:zlib";
 
 const root = path.resolve(import.meta.dirname, "..");
 const adultDir = path.join(root, "packs/adult-anatomy/data");
 const manifest = JSON.parse(fs.readFileSync(path.join(adultDir, "manifest.json"), "utf8"));
 const hash = (buf) => createHash("sha256").update(buf).digest("hex");
 
+const targets = fs.readFileSync(path.join(adultDir, manifest.targets.file));
+// The targets as shipped (gzip) and decoded, in case a build stores them decompressed.
 const forbiddenHashes = new Set([
-  hash(fs.readFileSync(path.join(adultDir, "targets.bin"))),
+  hash(targets),
+  hash(gunzipSync(targets)),
   hash(fs.readFileSync(path.join(adultDir, "manifest.json"))),
 ]);
 const forbiddenStrings = [

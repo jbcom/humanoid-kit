@@ -1,24 +1,22 @@
-import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AssetFormatError,
   type BodyManifest,
+  gunzip,
   parseHumanoidAssets,
 } from "../src/format/assetFormat.ts";
-import { adultManifest, bodyManifest } from "./fixtures.ts";
+import {
+  adultManifest,
+  adultPackData,
+  bodyDir,
+  bodyManifest,
+  bodyPackData,
+  readGzipPackFile,
+  readPackFile,
+} from "./fixtures.ts";
 
-const dir = path.resolve(import.meta.dirname, "../packs/body/data");
-const read = (f: string) => {
-  const b = fs.readFileSync(path.join(dir, f));
-  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
-};
-const pack = (manifest: BodyManifest = bodyManifest) => ({
-  manifest,
-  body: read("body.bin"),
-  targets: read("targets.bin"),
-  attachments: read("attachments.bin"),
-});
+const pack = (manifest: BodyManifest = bodyManifest) => ({ ...bodyPackData(), manifest });
 const clone = (): BodyManifest => structuredClone(bodyManifest);
 
 describe("parseHumanoidAssets", () => {
@@ -26,6 +24,25 @@ describe("parseHumanoidAssets", () => {
     const a = parseHumanoidAssets(pack());
     expect(a.positions.length).toBe(bodyManifest.vertexCount * 3);
     expect(a.attachments.size).toBeGreaterThan(0);
+  });
+
+  it("decodes every target to ascending in-range indices", () => {
+    const a = parseHumanoidAssets(pack());
+    expect(a.targets.size).toBe(bodyManifest.targets.entries.length);
+    const bad: string[] = [];
+    for (const t of a.targets.values()) {
+      let ok = t.deltas.length === t.indices.length * 3;
+      for (let i = 1; ok && i < t.indices.length; i++)
+        ok = (t.indices[i] as number) > (t.indices[i - 1] as number);
+      if (!ok || (t.indices.at(-1) ?? 0) >= bodyManifest.vertexCount) bad.push(t.name);
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it("decompresses with the platform's gzip decoder exactly as zlib does", async () => {
+    const file = path.join(bodyDir, bodyManifest.targets.file);
+    const viaPlatform = new Uint8Array(await gunzip(readPackFile(file)));
+    expect(Buffer.from(viaPlatform).equals(Buffer.from(readGzipPackFile(file)))).toBe(true);
   });
 
   it("rejects a range that runs past the buffer", () => {
@@ -42,14 +59,35 @@ describe("parseHumanoidAssets", () => {
 
   it("rejects target indices beyond the base mesh", () => {
     const m = clone();
-    // Write an index past the base mesh into the first target of an otherwise blank targets file.
     const t = m.targets.entries[0];
     if (!t) throw new Error("no targets");
-    const corrupt = new Uint8Array(read("targets.bin").byteLength);
-    new Uint16Array(corrupt.buffer, t.offset, 1)[0] = 65000;
+    // One index delta of 65000 into an otherwise blank targets file.
+    const corrupt = new Uint8Array(bodyPackData().targets.byteLength);
+    new DataView(corrupt.buffer).setUint16(t.offset, 65000, true);
     expect(() => parseHumanoidAssets({ ...pack(m), targets: corrupt.buffer })).toThrow(
       /out of range/,
     );
+  });
+
+  it("rejects index deltas that run past 65535", () => {
+    const m = clone();
+    const t = m.targets.entries.find((e) => e.count >= 2);
+    if (!t) throw new Error("no multi-vertex target");
+    const corrupt = new Uint8Array(bodyPackData().targets.byteLength);
+    const view = new DataView(corrupt.buffer);
+    view.setUint16(t.offset, 60000, true);
+    view.setUint16(t.offset + 2, 60000, true);
+    expect(() => parseHumanoidAssets({ ...pack(m), targets: corrupt.buffer })).toThrow(/65535/);
+  });
+
+  it("rejects a truncated targets file and an unknown encoding", () => {
+    const full = bodyPackData().targets;
+    expect(() =>
+      parseHumanoidAssets({ ...pack(), targets: full.slice(0, full.byteLength - 8) }),
+    ).toThrow(/exceeds/);
+    const m = clone();
+    (m.targets as { encoding: string }).encoding = "raw";
+    expect(() => parseHumanoidAssets(pack(m))).toThrow(/unsupported target encoding/);
   });
 
   it("rejects attachment face indices beyond the attachment", () => {
@@ -69,13 +107,9 @@ describe("parseHumanoidAssets", () => {
     // An adult slider merged without its modifier, e.g. from a mismatched manifest.
     const adult = structuredClone(adultManifest);
     adult.modifiers = [];
-    const targets = fs.readFileSync(path.resolve(dir, "../../adult-anatomy/data/targets.bin"));
-    expect(() =>
-      parseHumanoidAssets(pack(), {
-        manifest: adult,
-        targets: targets.buffer.slice(targets.byteOffset, targets.byteOffset + targets.byteLength),
-      }),
-    ).toThrow(/drives nothing/);
+    expect(() => parseHumanoidAssets(pack(), { ...adultPackData(), manifest: adult })).toThrow(
+      /drives nothing/,
+    );
   });
 
   it("refuses an adult anatomy pack built for another body", () => {

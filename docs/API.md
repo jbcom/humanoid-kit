@@ -262,8 +262,8 @@ result buffers. Applications use it through the client, not directly.
 import { bodyPack } from "humanoid-kit-body";
 ```
 
-`bodyPack` is `{ manifest, files: { "body.bin", "targets.bin" } }`, with each
-value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the worker
+`bodyPack` is `{ manifest, files: { "body.bin", "targets.bin.gz",
+"attachments.bin", ...textures } }`, with each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the worker
 client. The package also exposes its files under `humanoid-kit-body/data/*`.
 
 ## `humanoid-kit-adult-anatomy`
@@ -272,7 +272,7 @@ client. The package also exposes its files under `humanoid-kit-body/data/*`.
 import { adultAnatomyPack } from "humanoid-kit-adult-anatomy";
 ```
 
-`adultAnatomyPack` is `{ manifest, files: { "targets.bin" } }`. Pass it as
+`adultAnatomyPack` is `{ manifest, files: { "targets.bin.gz" } }`. Pass it as
 `adultAnatomy`. Its targets and modifiers evaluate only for figures aged 18 or
 over, and loading it fails unless it was built against the exact body pack.
 

@@ -2,14 +2,30 @@
  * The packed asset format written by `scripts/pack-makehuman.ts`.
  *
  * A body pack (`humanoid-kit-body`) has `manifest.json`, `body.bin` (base mesh,
- * UVs, quad faces, skin weights) and `targets.bin` (sparse morph targets). The
- * adult anatomy pack (`humanoid-kit-adult-anatomy`) has its own manifest and
- * targets, pinned to the body pack it was built against. Binaries are
- * little-endian and 4-byte aligned so typed-array views need no copies.
+ * UVs, quad faces, skin weights) and `targets.bin.gz` (sparse morph targets).
+ * The adult anatomy pack (`humanoid-kit-adult-anatomy`) has its own manifest
+ * and targets, pinned to the body pack it was built against. Binaries are
+ * little-endian; `body.bin` is 4-byte aligned so typed-array views need no
+ * copies.
+ *
+ * Targets are stored for transfer size (`TARGET_ENCODING`): per target, its
+ * vertex indices as ascending deltas (u16), then its quantised x, y and z
+ * deltas as three planes (i16), the whole file gzipped. That layout
+ * compresses about 3.4 times better than interleaved data; `gunzip` and the
+ * parser turn it back into ordinary index and xyz arrays.
  */
 import { DEFAULT_MACROS } from "../makehuman/macro.ts";
 
 const MACRO_KEYS = new Set(Object.keys(DEFAULT_MACROS));
+
+/** The target encoding this runtime reads. */
+export const TARGET_ENCODING = "delta-planar-gzip";
+
+/** Decompresses a gzip file with the platform's own decoder (browsers, workers, Node). */
+export async function gunzip(data: ArrayBuffer): Promise<ArrayBuffer> {
+  const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Response(stream).arrayBuffer();
+}
 
 export interface BufferRange {
   offset: number;
@@ -25,10 +41,19 @@ export interface FaceGroup {
 export interface TargetEntry {
   /** Path below `targets/` without extension, e.g. `nose/nose-scale-horiz-incr`. */
   name: string;
+  /** Byte offset of this target in the decompressed targets file. */
   offset: number;
   count: number;
   /** Metres per int16 step. */
   scale: number;
+}
+
+export interface TargetFile {
+  file: string;
+  encoding: typeof TARGET_ENCODING;
+  /** SHA-256 of the file as shipped (compressed). */
+  sha256: string;
+  entries: TargetEntry[];
 }
 
 /**
@@ -114,7 +139,7 @@ export interface BodyManifest {
       BufferRange
     >;
   };
-  targets: { file: string; sha256: string; entries: TargetEntry[] };
+  targets: TargetFile;
   modifiers: ShapeModifierEntry[];
   sliders: SliderTask[];
   attachments: { file: string; sha256: string; entries: AttachmentEntry[] };
@@ -174,13 +199,13 @@ export interface AdultAnatomyManifest {
   /** `body.sha256` of the body pack this pack was built against. */
   bodySha256: string;
   source: PackSource;
-  targets: { file: string; sha256: string; entries: TargetEntry[] };
+  targets: TargetFile;
   modifiers: ShapeModifierEntry[];
   /** This pack's sliders, placed into the body pack's tasks and groups by id. */
   sliders: SliderTask[];
 }
 
-/** A sparse target as typed-array views into a targets binary. */
+/** A sparse target: ascending base-vertex indices and their quantised xyz deltas. */
 export interface SparseTarget {
   name: string;
   indices: Uint16Array;
@@ -250,34 +275,45 @@ function expectIndices(arr: ArrayLike<number>, limit: number, what: string): voi
   }
 }
 
+/** Decodes targets from a decompressed `TARGET_ENCODING` file (see the header). */
 function addTargets(
   map: Map<string, SparseTarget>,
-  entries: readonly TargetEntry[],
+  file: TargetFile,
   bin: ArrayBuffer,
   what: string,
 ): void {
-  for (const e of entries) {
-    const idxBytes = Math.ceil((e.count * 2) / 4) * 4;
-    if (e.offset + idxBytes + e.count * 6 > bin.byteLength)
+  if (file.encoding !== TARGET_ENCODING)
+    throw new AssetFormatError(`${what}: unsupported target encoding ${String(file.encoding)}`);
+  const view = new DataView(bin);
+  for (const e of file.entries) {
+    const n = e.count;
+    if (!Number.isInteger(n) || n < 0 || e.offset < 0 || e.offset + n * 8 > bin.byteLength)
       throw new AssetFormatError(`target ${e.name} exceeds ${what}`);
     if (map.has(e.name)) throw new AssetFormatError(`duplicate target ${e.name} in ${what}`);
-    map.set(e.name, {
-      name: e.name,
-      indices: new Uint16Array(bin, e.offset, e.count),
-      deltas: new Int16Array(bin, e.offset + idxBytes, e.count * 3),
-      scale: e.scale,
-    });
+    const indices = new Uint16Array(n);
+    const deltas = new Int16Array(n * 3);
+    let v = 0;
+    for (let i = 0; i < n; i++) {
+      v += view.getUint16(e.offset + i * 2, true);
+      if (v > 0xffff) throw new AssetFormatError(`target ${e.name} indexes past 65535 in ${what}`);
+      indices[i] = v;
+      for (let k = 0; k < 3; k++)
+        deltas[i * 3 + k] = view.getInt16(e.offset + n * 2 + (k * n + i) * 2, true);
+    }
+    map.set(e.name, { name: e.name, indices, deltas, scale: e.scale });
   }
 }
 
 export interface AdultAnatomyData {
   manifest: AdultAnatomyManifest;
+  /** The targets file, decompressed (`gunzip`). */
   targets: ArrayBuffer;
 }
 
 export interface BodyPackData {
   manifest: BodyManifest;
   body: ArrayBuffer;
+  /** The targets file, decompressed (`gunzip`). */
   targets: ArrayBuffer;
   attachments: ArrayBuffer;
   /** URL of each pack file by name, when known (needed to load textures). */
@@ -363,7 +399,7 @@ export function parseHumanoidAssets(
     );
   }
   const map = new Map<string, SparseTarget>();
-  addTargets(map, manifest.targets.entries, targets, "the body pack");
+  addTargets(map, manifest.targets, targets, "the body pack");
   const modifiers = new Map(manifest.modifiers.map((m) => [m.id, m] as const));
   if (adultAnatomy) {
     const a = adultAnatomy.manifest;
@@ -372,7 +408,7 @@ export function parseHumanoidAssets(
     if (a.topology !== manifest.topology || a.bodySha256 !== manifest.body.sha256) {
       throw new AssetFormatError("the adult anatomy pack was built for a different body pack");
     }
-    addTargets(map, a.targets.entries, adultAnatomy.targets, "the adult anatomy pack");
+    addTargets(map, a.targets, adultAnatomy.targets, "the adult anatomy pack");
     for (const m of a.modifiers) modifiers.set(m.id, m);
   }
   // Merging also orders tasks by sortOrder; the manifest keeps upstream's file order.
@@ -458,16 +494,23 @@ export async function loadHumanoidAssets(options: LoadOptions): Promise<Humanoid
   const body = packResolver(options.body);
   const manifest = (await (await fetchOk(body.manifest)).json()) as BodyManifest;
   const bin = (url: string) => fetchOk(url).then((r) => r.arrayBuffer());
+  // Some hosts serve `.gz` files with `Content-Encoding: gzip`, so the browser has
+  // already decompressed them; only data that still starts with gzip's magic is decoded.
+  const gz = (url: string) =>
+    bin(url).then((b) => {
+      const head = new Uint8Array(b, 0, Math.min(2, b.byteLength));
+      return head[0] === 0x1f && head[1] === 0x8b ? gunzip(b) : b;
+    });
   const adult = options.adultAnatomy === undefined ? undefined : packResolver(options.adultAnatomy);
   const [bodyBin, targets, attachments, adultData] = await Promise.all([
     bin(body.file(manifest.body.file)),
-    bin(body.file(manifest.targets.file)),
+    gz(body.file(manifest.targets.file)),
     bin(body.file(manifest.attachments.file)),
     adult === undefined
       ? Promise.resolve(undefined)
       : fetchOk(adult.manifest)
           .then((r) => r.json() as Promise<AdultAnatomyManifest>)
-          .then(async (m) => ({ manifest: m, targets: await bin(adult.file(m.targets.file)) })),
+          .then(async (m) => ({ manifest: m, targets: await gz(adult.file(m.targets.file)) })),
   ]);
   const fileUrls = new Map<string, string>();
   for (const a of manifest.attachments.entries) {

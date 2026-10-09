@@ -24,7 +24,8 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { ShapeModifierEntry } from "../src/format/assetFormat.ts";
+import { gzipSync } from "node:zlib";
+import { type ShapeModifierEntry, TARGET_ENCODING } from "../src/format/assetFormat.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { writeAttachments, writePackEntry } from "./lib/packWriter.ts";
 import { buildSliders } from "./lib/sliders.ts";
@@ -50,6 +51,7 @@ const BODY_OUT = path.resolve(import.meta.dirname, "../packs/body/data");
 const ADULT_OUT = path.resolve(import.meta.dirname, "../packs/adult-anatomy/data");
 /** Compatibility key: every MakeHuman proxy, clothes and target asset binds to this topology. */
 const TOPOLOGY = "makehuman-hm08";
+const TARGETS_FILE = "targets.bin.gz";
 /** MakeHuman units are decimetres; the runtime works in metres. */
 const UNIT = 0.1;
 /** MakeHuman's modifier tables, each with a `_modifiers`, `_sliders` and `_modifiers_desc` file. */
@@ -166,7 +168,15 @@ function parseTarget(text: string) {
     idx.push(i);
     d.push(x * UNIT, y * UNIT, z * UNIT);
   }
-  return { idx, d };
+  // Ascending vertex order, so the packed index deltas stay small and non-negative.
+  const order = idx.map((_, k) => k).sort((a, b) => (idx[a] as number) - (idx[b] as number));
+  for (let k = 1; k < order.length; k++)
+    if (idx[order[k] as number] === idx[order[k - 1] as number])
+      throw new Error(`bad target: vertex ${idx[order[k] as number]} listed twice`);
+  return {
+    idx: order.map((k) => idx[k] as number),
+    d: order.flatMap((k) => [d[k * 3] as number, d[k * 3 + 1] as number, d[k * 3 + 2] as number]),
+  };
 }
 
 /** Targets that belong to the adult anatomy pack (a separate install). */
@@ -216,14 +226,18 @@ function packTargets(files: string[]) {
     let max = 0;
     for (const q of d) max = Math.max(max, Math.abs(q));
     const scale = max / 32767 || 1;
-    const idxBytes = Math.ceil((idx.length * 2) / 4) * 4;
-    const chunk = new Uint8Array(idxBytes + Math.ceil((idx.length * 6) / 4) * 4);
+    // Index deltas (indices ascend, so most are 1), then x, y and z planes:
+    // the same numbers, laid out so gzip finds the repetition.
+    const n = idx.length;
+    const chunk = new Uint8Array(n * 8);
     const view = new DataView(chunk.buffer);
+    let prev = 0;
     idx.forEach((v, k) => {
-      view.setUint16(k * 2, v, true);
+      view.setUint16(k * 2, v - prev, true);
+      prev = v;
     });
     d.forEach((q, k) => {
-      view.setInt16(idxBytes + k * 2, Math.round(q / scale), true);
+      view.setInt16(n * 2 + ((k % 3) * n + Math.floor(k / 3)) * 2, Math.round(q / scale), true);
     });
     entries.push({
       name: rel.replace(/^targets\//, "").replace(/\.target$/, ""),
@@ -234,13 +248,19 @@ function packTargets(files: string[]) {
     chunks.push(chunk);
     offset += chunk.byteLength;
   }
-  const bin = new Uint8Array(offset);
+  const raw = new Uint8Array(offset);
   let o = 0;
   for (const c of chunks) {
-    bin.set(c, o);
+    raw.set(c, o);
     o += c.byteLength;
   }
-  return { bin, entries, empty };
+  // gzip output is deterministic here (zlib writes no timestamp), so packs are reproducible.
+  return {
+    bin: new Uint8Array(gzipSync(raw, { level: 9 })),
+    rawBytes: raw.byteLength,
+    entries,
+    empty,
+  };
 }
 
 // ---------------------------------------------------------------- rig
@@ -398,8 +418,10 @@ function main() {
   const files = listTargets();
   const core = packTargets(files.filter((f) => !isAdultPackTarget(f.replace(/^targets\//, ""))));
   const adult = packTargets(files.filter((f) => isAdultPackTarget(f.replace(/^targets\//, ""))));
-  fs.writeFileSync(path.join(BODY_OUT, "targets.bin"), core.bin);
-  fs.writeFileSync(path.join(ADULT_OUT, "targets.bin"), adult.bin);
+  for (const dir of [BODY_OUT, ADULT_OUT])
+    fs.rmSync(path.join(dir, "targets.bin"), { force: true });
+  fs.writeFileSync(path.join(BODY_OUT, TARGETS_FILE), core.bin);
+  fs.writeFileSync(path.join(ADULT_OUT, TARGETS_FILE), adult.bin);
   const targets = [...core.entries, ...adult.entries];
 
   // Face pose units: BVH frames named by face-poseunits.json framemapping.
@@ -487,7 +509,12 @@ function main() {
     faceCount: obj.faceVerts.length / 4,
     groups: obj.groups,
     body: { file: "body.bin", sha256: bodySha, layout },
-    targets: { file: "targets.bin", sha256: sha(core.bin), entries: core.entries },
+    targets: {
+      file: TARGETS_FILE,
+      encoding: TARGET_ENCODING,
+      sha256: sha(core.bin),
+      entries: core.entries,
+    },
     modifiers: modifiers.filter((m) => !isAdultPackTarget(m.hi)),
     sliders: sliders.body,
     attachments: {
@@ -524,7 +551,12 @@ function main() {
     /** The body pack this pack was built against; the loader refuses any other. */
     bodySha256: bodySha,
     source,
-    targets: { file: "targets.bin", sha256: sha(adult.bin), entries: adult.entries },
+    targets: {
+      file: TARGETS_FILE,
+      encoding: TARGET_ENCODING,
+      sha256: sha(adult.bin),
+      entries: adult.entries,
+    },
     modifiers: modifiers.filter((m) => isAdultPackTarget(m.hi)),
     sliders: sliders.adult,
   };
@@ -538,7 +570,7 @@ function main() {
     (f) => !adultFiles.has(f),
     [
       ["body.bin", bodySha],
-      ["targets.bin", sha(core.bin)],
+      [TARGETS_FILE, sha(core.bin)],
       ["attachments.bin", attachments.sha256],
     ],
     systemEvidence,
@@ -548,7 +580,7 @@ function main() {
     "humanoid-kit-adult-anatomy",
     upstreamCommit,
     (f) => adultFiles.has(f),
-    [["targets.bin", sha(adult.bin)]],
+    [[TARGETS_FILE, sha(adult.bin)]],
   );
   writePackEntry(
     path.dirname(BODY_OUT),
@@ -563,7 +595,8 @@ function main() {
   console.log(
     `packed ${vertexCount} verts, ${manifest.faceCount} quads, ${core.entries.length} core + ${adult.entries.length} adult targets ` +
       `(${core.empty + adult.empty} empty skipped), body ${(body.byteLength / 1e6).toFixed(2)} MB, ` +
-      `targets ${(core.bin.byteLength / 1e6).toFixed(2)} MB, adult ${(adult.bin.byteLength / 1e6).toFixed(2)} MB`,
+      `targets ${(core.bin.byteLength / 1e6).toFixed(2)} MB gzip (${(core.rawBytes / 1e6).toFixed(2)} MB decoded), ` +
+      `adult ${(adult.bin.byteLength / 1e6).toFixed(2)} MB`,
   );
 }
 

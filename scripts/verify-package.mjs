@@ -124,7 +124,7 @@ try {
         "data/manifest.json",
         "data/PROVENANCE.md",
         "data/body.bin",
-        "data/targets.bin",
+        "data/targets.bin.gz",
         "data/attachments.bin",
       ],
     ],
@@ -138,7 +138,7 @@ try {
         "README.md",
         "data/manifest.json",
         "data/PROVENANCE.md",
-        "data/targets.bin",
+        "data/targets.bin.gz",
       ],
     ],
   ]) {

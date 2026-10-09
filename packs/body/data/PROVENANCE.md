@@ -24,5 +24,5 @@ Attachments come from the MakeHuman system assets pack (makehuman_system_assets_
 | Output | SHA-256 |
 | --- | --- |
 | body.bin | `777bd7ebd1491fa69359679d5c14771cf1d7d93446280c1df2e81dcdea7d56f9` |
-| targets.bin | `6bcd26f9714201a3647de2439072cd3d8cb4c8662c60fb3cfeb5fdb5e4a22935` |
+| targets.bin.gz | `a0c3399044ad1171a8336a1e1c30df390dccedd15d4d670cc6aaaebf8c78adaa` |
 | attachments.bin | `da553818803550cded3cc8a595f1a79f024db6a9c6ca0cf2c138080a77f37299` |

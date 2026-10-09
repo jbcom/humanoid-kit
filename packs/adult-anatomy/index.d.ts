@@ -2,5 +2,5 @@
 /** URLs of the humanoid-kit-adult-anatomy pack files. Pass to `loadHumanoidAssets({ adultAnatomy })`. */
 export declare const adultAnatomyPack: {
 	readonly manifest: string;
-	readonly files: Readonly<Record<"targets.bin", string>>;
+	readonly files: Readonly<Record<"targets.bin.gz", string>>;
 };

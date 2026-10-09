@@ -6,6 +6,6 @@
 export const adultAnatomyPack = {
 	manifest: new URL("./data/manifest.json", import.meta.url).href,
 	files: {
-		"targets.bin": new URL("./data/targets.bin", import.meta.url).href,
+		"targets.bin.gz": new URL("./data/targets.bin.gz", import.meta.url).href,
 	},
 };
