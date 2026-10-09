@@ -55,6 +55,8 @@ describe("the package entry's skin-state API", () => {
     expect(ids.slice(0, 3)).toEqual(["flush", "lips", "areola"]);
     expect(ids.slice(3)).toEqual([
       "mouth-interior",
+      // The feet's own skin follows the rest layers.
+      ...kit.FOOT_SKIN_LAYERS.map((l) => l.id),
       "goosebumps",
       "heat-flush",
       "exertion-flush",
