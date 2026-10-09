@@ -44,6 +44,7 @@ import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
 import { AttachmentStandardMaterial, setOcclusionAttributes } from "../render/occlusion.ts";
 import { CURVATURE_ATTRIBUTE, SkinMaterial, UV_SCALE_ATTRIBUTE } from "../render/skinMaterial.ts";
+import { flexionRig, jointFlexion } from "../rig/flexion.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
 import {
   bodyPoseRotations,
@@ -490,6 +491,13 @@ export function Humanoid({
       atlas.release();
     };
   }, [gl, ready, skin]);
+  // The joints' flexion in the current pose joins the skin's signals
+  // (`flex.elbow.L`, …), so crease layers follow any pose or animation.
+  const flexion = useMemo(() => {
+    if (!figure || !ready) return {};
+    const rest = restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads);
+    return jointFlexion(flexionRig(rest), rest, rotations ?? IDENTITY_POSE(ready.rig.bones.length));
+  }, [figure, ready, rotations]);
   useEffect(() => {
     const s = recipe.skin;
     skin.setAppearance({
@@ -502,9 +510,9 @@ export function Humanoid({
       flush: s.flush,
       lips: s.lips,
       areola: s.areola,
-      signals: signals ?? {},
+      signals: { ...signals, ...flexion },
     });
-  }, [skin, recipe, signals]);
+  }, [skin, recipe, signals, flexion]);
 
   // Only the signals that change the shape re-evaluate the figure; a stable
   // key keeps a colour-only change (or a new object with the same values) from

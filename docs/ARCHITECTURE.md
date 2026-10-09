@@ -480,8 +480,14 @@ What is not: any flush colour change on deep skin, and any wrinkle depth or
 spacing against joint angle. Those are modelled, never invented as numbers.
 
 **Signals.** One named, documented set of continuous inputs, each 0..1:
-`cold`, `heat`, `exertion`, `arousal`, `blush`, `fear`, plus joint flexion
-angles, which the rig computes from the pose. The library maps signals to
+`cold`, `heat`, `exertion`, `arousal`, `blush`, `fear`, plus joint flexion,
+which the rig computes from the pose (`flex.elbow.L` and so on,
+`src/rig/flexion.ts`). Flexion is measured from straight, not from the rest
+pose, since creases follow the true joint angle: MakeHuman's A-pose already
+bends each elbow about 43° forward. Each joint's hinge is perpendicular to the
+upper segment and to the way the joint flexes; MakeHuman's roll planes would
+not do, because in the A-pose the arm lies in the frontal plane and the
+elbow's roll-plane normal points forward. The library maps signals to
 appearance; how a signal evolves over time belongs to the application, with a
 small first-order attack and decay helper for the measured time courses.
 Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.

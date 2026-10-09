@@ -339,6 +339,37 @@ export function posedBoneHeads(rest: RestBones, rotations: BoneRotations): Float
   return boneTransforms(rest, rotations).origin;
 }
 
+/**
+ * Each bone in the pose: its world rotation (`bones * 4`, from rest) and its
+ * head (`bones * 3`).
+ */
+export function posedBones(
+  rest: RestBones,
+  rotations: BoneRotations,
+): { world: Float32Array; heads: Float32Array } {
+  const { world, origin } = boneTransforms(rest, rotations);
+  return { world, heads: origin };
+}
+
+/** Rotates a vector by bone `b`'s world rotation in `world` (from `posedBones`). */
+export function rotateByBone(
+  world: Float32Array,
+  b: number,
+  v: readonly [number, number, number],
+): [number, number, number] {
+  return rotate(
+    [
+      world[b * 4] as number,
+      world[b * 4 + 1] as number,
+      world[b * 4 + 2] as number,
+      world[b * 4 + 3] as number,
+    ],
+    v[0],
+    v[1],
+    v[2],
+  );
+}
+
 /** Each bone's world rotation and head in the pose, parents before children. */
 function boneTransforms(
   rest: RestBones,

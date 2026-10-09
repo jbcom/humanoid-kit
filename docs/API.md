@@ -347,6 +347,12 @@ and expressions"). Framework-free.
   `posedGroundOffset(rest, rotations, control, skin)` is the lift that puts a
   posed figure's lowest body point on the ground (`RigSkin`: the pack's skin
   and the visible body's base vertices, sent in `ReadyInfo.rig.skin`).
+- Joint flexion as skin signals: `FLEXION_JOINTS` (elbows, knees, wrists),
+  `flexionRig(rest)` (each joint's hinge, perpendicular to the upper segment
+  and its flex direction) and `jointFlexion(rig, rest, rotations)`, giving
+  `flex.<joint>.<side>` from 0 (straight) to 1 (the joint's anatomical limit).
+  `<Humanoid>` adds them to the skin's signals for every pose. `posedBones` and
+  `rotateByBone` expose the posed bone rotations.
 - Pose-keyed occlusion (ARCHITECTURE.md, "Attachment occlusion"):
   `OCCLUSION_KEYS` (jaw open, lips apart, smile), `occlusionKeyBasis(rig)` and
   `occlusionKeyWeights(basis, rotations)` (how much of each key a pose holds),

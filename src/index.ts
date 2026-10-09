@@ -15,6 +15,7 @@ export * from "./presence/presence.ts";
 export * from "./recipe/agePolicy.ts";
 export * from "./recipe/recipe.ts";
 export * from "./recipe/validate.ts";
+export * from "./rig/flexion.ts";
 export * from "./rig/occlusionKeys.ts";
 export * from "./rig/pose.ts";
 export * from "./subdiv/catmullClark.ts";
