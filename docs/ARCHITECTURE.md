@@ -1462,13 +1462,23 @@ manifest's `anatomy.detail.surfaceKey` hashes the lattice, and the model refuses
 detail built for another refinement. `tests/detailTargets.test.ts` proves the
 engine with a synthetic target before any anatomy is authored on it.
 
-The refined region is empty of anatomy until a feature is authored on it: it is the base shape in finer
-cells, proven by the geometry tests and by a render within 11 pixels over 8
-levels of the base's (adult against base contact sheet, local only). The
-features (mound, penis, testes, vulva) land on it one at a time
-(docs/research/ADULT-SCULPT-PLAN.md, section 10), and
-`tests/adultPermutations.test.ts` holds the matrix of ages, genders, feature
-combinations and states every one of them joins.
+With no detail applied the refined region is the base shape in finer cells,
+proven by the geometry tests and by a render within 11 pixels over 8 levels of
+the base's (adult against base contact sheet, local only). The first authored
+feature on it is the **mound** (`pelvis/mound-decr|incr`, the pack's own
+adult-only modifier, `scripts/lib/detail/mound.ts`): a cosine bell of displacement
+along the skin's outward normal over the measured mons width and length,
+peaking at the verified 1.5 cm BMI-band contrast (fuller) or 1 cm (flatter),
+scaled by the figure's hip breadth. The packer generates its targets on the
+authoring figure's lattice from the control targets and the surface spec, so the
+pack is reproducible; `tests/moundDetail.test.ts` holds the form to its numbers
+and `tests/moundPack.test.ts` holds the shipped pack to the generator. Its skin
+fields and colour layer still follow the body's bulge target, not the new
+detail. The penis, testes and vulva are the next features
+(docs/research/ADULT-SCULPT-PLAN.md, section 10): a shaft is an extrusion far
+beyond what displacing existing vertices can do, so they need reservoir
+topology. `tests/adultPermutations.test.ts` holds the matrix of ages, genders,
+feature combinations and states every feature joins.
 
 **Arousal.** The adult manifest adds an `arousal` state morph
 (`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by

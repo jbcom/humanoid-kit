@@ -109,7 +109,14 @@ describe("the adult permutation matrix", { timeout: 600_000 }, () => {
           for (const modifiers of [
             {},
             { "pelvis/bulge-decr|incr": 1 },
+            { "pelvis/mound-decr|incr": 1 },
+            { "pelvis/mound-decr|incr": -1, "pelvis/bulge-decr|incr": 1 },
             { "genitals/penis-length-decr|incr": 1, "genitals/penis-testicles-decr|incr": -1 },
+            {
+              "genitals/penis-length-decr|incr": 0.5,
+              "genitals/penis-testicles-decr|incr": 0.5,
+              "pelvis/mound-decr|incr": 1,
+            },
           ])
             for (const arousal of [0, 1]) {
               const recipe = createRecipe({ macros: { age, gender, ...build }, modifiers });

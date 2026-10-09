@@ -288,9 +288,9 @@ and throws `RangeError` for anything else.
   outfit key the caller already holds the masks of.
 - `model.adultDetailLattice(recipe): AdultDetailLattice | null`: the vertex
   space the adult pack's detail targets are authored on (`{ key, vertexCount,
-  positions }`): the vertices of the refined region, which a detail target
-  indexes from 0, with their positions on this figure and the key that names
-  the refinement. Null without an adult surface; throws `AgePolicyError` for a
+  positions, normals }`): the vertices of the refined region, which a detail
+  target indexes from 0, with their positions and outward unit normals on this
+  figure and the key that names the refinement. Null without an adult surface; throws `AgePolicyError` for a
   figure under 18. The packer uses it to place authored forms.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest

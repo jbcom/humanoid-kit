@@ -19,12 +19,13 @@ export { ADULT_AGE };
 
 /**
  * Shape modifiers that only apply to adults: the adult anatomy pack's genital,
- * bulge and pregnancy modifiers. Must agree with the packer's `adultOnly` flag
- * (a test checks every modifier).
+ * bulge, mound and pregnancy modifiers. Must agree with the packer's `adultOnly`
+ * flag (a test checks every modifier).
  */
 export const ADULT_ONLY_MODIFIER = (id: string): boolean =>
   id.startsWith("genitals/") ||
   id.startsWith("pelvis/bulge") ||
+  id.startsWith("pelvis/mound") ||
   id.startsWith("stomach/stomach-pregnant");
 
 export const isAdult = (recipe: Recipe): boolean => recipe.macros.age >= ADULT_AGE;
