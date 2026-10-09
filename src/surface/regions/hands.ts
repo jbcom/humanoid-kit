@@ -195,14 +195,24 @@ export function handFrame(assets: HumanoidAssets): HandFrame {
       let best = Number.POSITIVE_INFINITY;
       let pick = segments[0] as (typeof segments)[number];
       let t = 0;
+      // The nearest segment (squared distance, no allocation: this runs for
+      // every hand vertex against every segment).
       for (const seg of segments) {
-        const d = sub(p, seg.a);
-        const along = clamp(dot(d, seg.axis), 0, seg.len);
-        const dist = length(sub(d, seg.axis.map((c) => c * along) as Vec3));
-        if (dist < best) {
-          best = dist;
+        const [ax, ay, az] = seg.a;
+        const [ux, uy, uz] = seg.axis;
+        const dx = p[0] - ax;
+        const dy = p[1] - ay;
+        const dz = p[2] - az;
+        const proj = dx * ux + dy * uy + dz * uz;
+        const c = clamp(proj, 0, seg.len);
+        const ex = dx - ux * c;
+        const ey = dy - uy * c;
+        const ez = dz - uz * c;
+        const dist2 = ex * ex + ey * ey + ez * ez;
+        if (dist2 < best) {
+          best = dist2;
           pick = seg;
-          t = dot(d, seg.axis);
+          t = proj;
         }
       }
       // Near a joint, blend the projections onto the segments either side of
@@ -394,45 +404,50 @@ export function palmCreaseCurves(
 /** Which way each palm crease's signed distance runs (see `Curve`). */
 const CURVE_SIGN = [-1, -1, 1] as const;
 
-/** Nearest point of a curve to (u, v): signed distance (positive on the curve's left) and its parameter 0..1. */
-function curveDistance(curve: Curve, u: number, v: number): { ds: number; t: number } {
-  const [a, b, c] = curve;
-  const point = (t: number): [number, number] => {
-    const s = 1 - t;
-    return [
-      s * s * a[0] + 2 * s * t * b[0] + t * t * c[0],
-      s * s * a[1] + 2 * s * t * b[1] + t * t * c[1],
-    ];
-  };
-  let best = Number.POSITIVE_INFINITY;
-  let bestT = 0;
-  const steps = 64;
-  for (let i = 0; i <= steps; i++) {
-    const p = point(i / steps);
-    const d = Math.hypot(u - p[0], v - p[1]);
-    if (d < best) {
-      best = d;
-      bestT = i / steps;
+/** Samples along a curve for `curveDistance`'s coarse search. */
+const CURVE_STEPS = 64;
+
+/**
+ * A curve's nearest-point finder: (u, v) to the signed distance (positive on
+ * the curve's left) and the parameter 0..1 of the nearest point. The coarse
+ * samples are taken once per curve; the search runs for every hand vertex, so
+ * it allocates nothing.
+ */
+function curveDistance(curve: Curve): (u: number, v: number) => { ds: number; t: number } {
+  const [[ax, ay], [bx, by], [cx, cy]] = curve;
+  const px = (t: number) => (1 - t) * (1 - t) * ax + 2 * (1 - t) * t * bx + t * t * cx;
+  const py = (t: number) => (1 - t) * (1 - t) * ay + 2 * (1 - t) * t * by + t * t * cy;
+  const samples = new Float64Array((CURVE_STEPS + 1) * 2);
+  for (let i = 0; i <= CURVE_STEPS; i++) {
+    samples[i * 2] = px(i / CURVE_STEPS);
+    samples[i * 2 + 1] = py(i / CURVE_STEPS);
+  }
+  const dist2 = (t: number, u: number, v: number) => (u - px(t)) ** 2 + (v - py(t)) ** 2;
+  return (u, v) => {
+    let best = Number.POSITIVE_INFINITY;
+    let bestI = 0;
+    for (let i = 0; i <= CURVE_STEPS; i++) {
+      const d = (u - (samples[i * 2] as number)) ** 2 + (v - (samples[i * 2 + 1] as number)) ** 2;
+      if (d < best) {
+        best = d;
+        bestI = i;
+      }
     }
-  }
-  // Refine between the neighbouring samples.
-  let lo = Math.max(0, bestT - 1 / steps);
-  let hi = Math.min(1, bestT + 1 / steps);
-  for (let i = 0; i < 20; i++) {
-    const m1 = lo + (hi - lo) / 3;
-    const m2 = hi - (hi - lo) / 3;
-    const p1 = point(m1);
-    const p2 = point(m2);
-    if (Math.hypot(u - p1[0], v - p1[1]) < Math.hypot(u - p2[0], v - p2[1])) hi = m2;
-    else lo = m1;
-  }
-  const t = (lo + hi) / 2;
-  const p = point(t);
-  const s = 1 - t;
-  const tu = 2 * s * (b[0] - a[0]) + 2 * t * (c[0] - b[0]);
-  const tv = 2 * s * (b[1] - a[1]) + 2 * t * (c[1] - b[1]);
-  const side = Math.sign(tu * (v - p[1]) - tv * (u - p[0])) || 1;
-  return { ds: side * Math.hypot(u - p[0], v - p[1]), t };
+    // Refine between the neighbouring samples.
+    let lo = Math.max(0, (bestI - 1) / CURVE_STEPS);
+    let hi = Math.min(1, (bestI + 1) / CURVE_STEPS);
+    for (let i = 0; i < 20; i++) {
+      const m1 = lo + (hi - lo) / 3;
+      const m2 = hi - (hi - lo) / 3;
+      if (dist2(m1, u, v) < dist2(m2, u, v)) hi = m2;
+      else lo = m1;
+    }
+    const t = (lo + hi) / 2;
+    const tu = 2 * (1 - t) * (bx - ax) + 2 * t * (cx - bx);
+    const tv = 2 * (1 - t) * (by - ay) + 2 * t * (cy - by);
+    const side = Math.sign(tu * (v - py(t)) - tv * (u - px(t))) || 1;
+    return { ds: side * Math.hypot(u - px(t), v - py(t)), t };
+  };
 }
 
 /**
@@ -549,7 +564,7 @@ export function sampleCreases(assets: HumanoidAssets): CreaseSample {
     candidates: new Float32Array(n * CREASE_SLOTS).fill(Number.NaN),
   };
   const curves = frame.landmarks.map((l, side) =>
-    palmCreaseCurves(l, frame.joints[side] as number[][]),
+    palmCreaseCurves(l, frame.joints[side] as number[][]).map(curveDistance),
   );
   for (let v = 0; v < n; v++) {
     // Every hand vertex gets a distance, the dorsal ones too: only the mask
@@ -583,21 +598,23 @@ export function sampleCreases(assets: HumanoidAssets): CreaseSample {
     });
     const u = frame.palm[v * 2] as number;
     const w = frame.palm[v * 2 + 1] as number;
-    (curves[side] as Curve[]).forEach((curve, i) => {
-      const { ds: raw, t } = curveDistance(curve, u, w);
-      const ds = raw * (CURVE_SIGN[i] as number);
-      out.candidates[v * CREASE_SLOTS + i] = ds;
-      if (onPalm && Math.abs(ds) < Math.abs(best)) {
-        best = ds;
-        // Full from a little past its start (where it leaves the palm's
-        // border) to its last fifth. The proximal transverse and thenar creases
-        // start at the web beside the thumb's first crease, three creases
-        // round one web whose sides no choice of signs can all match.
-        taper = smoothstep(0, 0.12, t) * smoothstep(1, 0.8, t);
-        kind = 0;
-        id = i;
-      }
-    });
+    (curves[side] as ((u: number, v: number) => { ds: number; t: number })[]).forEach(
+      (nearest, i) => {
+        const { ds: raw, t } = nearest(u, w);
+        const ds = raw * (CURVE_SIGN[i] as number);
+        out.candidates[v * CREASE_SLOTS + i] = ds;
+        if (onPalm && Math.abs(ds) < Math.abs(best)) {
+          best = ds;
+          // Full from a little past its start (where it leaves the palm's
+          // border) to its last fifth. The proximal transverse and thenar creases
+          // start at the web beside the thumb's first crease, three creases
+          // round one web whose sides no choice of signs can all match.
+          taper = smoothstep(0, 0.12, t) * smoothstep(1, 0.8, t);
+          kind = 0;
+          id = i;
+        }
+      },
+    );
     out.ds[v] = best;
     out.kind[v] = kind;
     out.id[v] = id;
