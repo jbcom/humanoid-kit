@@ -93,10 +93,11 @@ describe("ShapePanel", () => {
     );
     await expect.element(screen.getByText("Head shape")).toBeVisible();
     const slider = screen.getByRole("slider", { name: "Head fat" });
-    await slider.click();
+    // Focus, not click: a click lands on the track and commits a value of its own.
+    (slider.element() as HTMLElement).focus();
     const { userEvent } = await import("vitest/browser");
     await userEvent.keyboard("{ArrowRight}{ArrowRight}");
-    expect(latest?.recipe.modifiers["head/head-fat-decr|incr"]).toBeGreaterThan(0);
+    await expect.poll(() => latest?.recipe.modifiers["head/head-fat-decr|incr"]).toBeGreaterThan(0);
     // The drag is one undo step.
     latest?.settle();
     latest?.undo();
@@ -177,7 +178,7 @@ describe("RegionPanel", () => {
       .element(screen.getByRole("button", { name: "Pelvis" }))
       .toHaveAttribute("aria-pressed", "true");
     await expect.element(screen.getByText("50% · whole body").first()).toBeVisible();
-    await screen.getByRole("slider", { name: "Weight" }).click();
+    (screen.getByRole("slider", { name: "Weight" }).element() as HTMLElement).focus();
     const { userEvent } = await import("vitest/browser");
     await userEvent.keyboard("{ArrowRight}");
     await expect.poll(() => latest?.recipe.regionalMacros.pelvis?.weight).toBeGreaterThan(0.5);

@@ -1,36 +1,27 @@
-import { defineConfig, devices } from "@playwright/test";
+import type { ChromiumGpuMode } from "game-harness/chromium";
+import { definePlaywrightConfig } from "game-harness/playwright";
 
-const PORT = 4173;
+/**
+ * The playground is the library's own demo. The suite drives its production
+ * build (vite preview) in headed Chromium through game-harness: native GPU
+ * locally (Metal on macOS), so what is tested is what people see.
+ *
+ * GitHub's hosted runners have no GPU, so CI declares SwiftShader explicitly
+ * and runs under xvfb; a runner exposing /dev/dri can set
+ * HK_GPU=linux-hardware-vulkan. HK_GPU overrides either way.
+ */
+const gpuMode = (process.env.HK_GPU ?? (process.env.CI ? "software" : "auto")) as ChromiumGpuMode;
 
-// The playground is the library's own demo; the suite drives it in headless
-// Chromium with software WebGL so it behaves the same locally and in CI.
-export default defineConfig({
+export default definePlaywrightConfig({
   testDir: "./e2e",
-  outputDir: "./test-results",
-  fullyParallel: true,
-  forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
-  use: {
-    baseURL: `http://localhost:${PORT}`,
-    trace: "retain-on-failure",
-  },
-  projects: [
-    {
-      name: "chromium",
-      use: {
-        ...devices["Desktop Chrome"],
-        headless: true,
-        launchOptions: {
-          args: ["--mute-audio", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
-        },
-      },
-    },
-  ],
-  webServer: {
-    command: `pnpm exec vite --config playground/vite.config.ts --port ${PORT} --strictPort`,
-    url: `http://localhost:${PORT}`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+  basePath: "/humanoid-kit/playground/",
+  port: 4173,
+  gpuMode,
+  webServerCommand: (port) =>
+    `pnpm build:playground && pnpm exec vite preview --config playground/vite.config.ts --base /humanoid-kit/playground/ --host 127.0.0.1 --port ${port} --strictPort`,
+  overrides: {
+    outputDir: "./test-results",
+    fullyParallel: true,
+    reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   },
 });

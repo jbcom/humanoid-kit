@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import { playwright } from "@vitest/browser-playwright";
+import type { ChromiumGpuMode } from "game-harness/chromium";
+import { defineBrowserTestConfig } from "game-harness/vitest";
 import { defineConfig } from "vitest/config";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
@@ -58,16 +59,13 @@ export default defineConfig({
       },
       {
         extends: true,
-        test: {
+        // game-harness: headed real Chromium, silent, fixed viewport at device scale 1.
+        test: defineBrowserTestConfig({
           name: "browser",
           include: ["tests/browser/**/*.test.tsx"],
-          browser: {
-            enabled: true,
-            headless: true,
-            provider: playwright({ launchOptions: { args: ["--mute-audio"] } }),
-            instances: [{ browser: "chromium" }],
-          },
-        },
+          gpuMode: (process.env.HK_GPU ??
+            (process.env.CI ? "software" : "auto")) as ChromiumGpuMode,
+        }),
       },
     ],
   },

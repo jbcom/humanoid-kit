@@ -27,8 +27,18 @@ pnpm verify
 
 To work on the figure visually, start the playground with `pnpm dev`. It imports
 the library straight from `src/`, so edits show up immediately. `pnpm test:e2e`
-runs the Playwright suite against it; install the browser once with
-`pnpm exec playwright install chromium`.
+runs the Playwright suite against the playground's production build; install
+the browser once with `pnpm exec playwright install chromium`.
+
+Browser tests (the Vitest browser project and the Playwright suite) run headed
+Chromium through [game-harness](https://www.npmjs.com/package/game-harness), on
+your native GPU by default, so they test what people see; the playground spec
+fails if a run that expects a GPU falls back to software rendering. CI has no
+GPU and selects SwiftShader explicitly under `xvfb-run`. Set `HK_GPU` to
+`auto`, `software` or `linux-hardware-vulkan` to choose.
+`node scripts/contact-sheet.mjs` renders recipes into a sheet for review, and
+`node scripts/measure-load.mjs [fast4g|cable]` times a cold load of the built
+playground.
 
 ## Making a change
 

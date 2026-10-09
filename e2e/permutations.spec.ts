@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { openSilentGame } from "game-harness/playwright";
 
 interface Permutation {
   label: string;
@@ -120,7 +121,7 @@ test.describe("figure permutations", () => {
     });
     page.on("pageerror", (e) => errors.push(e.message));
     // Far enough back for the tallest figure; magenta keys the background exactly.
-    await page.goto(`/?muted&cam=${CAMERA}&bg=ff00ff`);
+    await openSilentGame(page, "./", { cam: CAMERA, bg: "ff00ff" });
     await page.locator('[data-figure="ready"]').waitFor({ timeout: 120_000 });
 
     for (const p of PERMUTATIONS) {
@@ -136,7 +137,7 @@ test.describe("figure permutations", () => {
 
     if (process.env.HK_EVIDENCE) {
       // The record is shot on the studio's own background, not the test key.
-      await page.goto(`/?muted&cam=${CAMERA}`);
+      await openSilentGame(page, "./", { cam: CAMERA });
       await page.locator('[data-figure="ready"]').waitFor({ timeout: 120_000 });
       const shots: { label: string; png: Buffer }[] = [];
       for (const p of PERMUTATIONS) {

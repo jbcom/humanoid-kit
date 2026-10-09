@@ -7,6 +7,7 @@
  * across the palette that is bounded, not just its size.
  */
 import { expect, type Page, test } from "@playwright/test";
+import { openSilentGame } from "game-harness/playwright";
 import { type Rgb, skinAlbedo } from "../src/surface/skinTone.ts";
 import { chroma, hueDeg, hueDiff, type Lab, labFromLinear, summarise } from "./lib/colour.ts";
 
@@ -89,7 +90,7 @@ test.describe("colour parity under the studio stage", () => {
 
   test("every colour renders with the same small error", async ({ page }) => {
     const rows: { name: string; dL: number; dC: number; dH: number | null }[] = [];
-    await page.goto(`/?muted&cam=${CAMERA}&bg=ff00ff`);
+    await openSilentGame(page, "./", { cam: CAMERA, bg: "ff00ff" });
     // The first figure (and its textures) loads with the page.
     await page.locator('[data-figure="ready"]').waitFor({ timeout: 120_000 });
     await page.waitForTimeout(1500);
