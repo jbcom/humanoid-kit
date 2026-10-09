@@ -20,6 +20,7 @@ export * from "./rig/occlusionKeys.ts";
 export * from "./rig/pose.ts";
 export * from "./subdiv/catmullClark.ts";
 export * from "./surface/cielab.ts";
+export * from "./surface/hairTone.ts";
 export * from "./surface/layers.ts";
 export * from "./surface/occlusion.ts";
 export * from "./surface/preintegration.ts";

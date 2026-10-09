@@ -294,6 +294,17 @@ compute what the renderer will do.
 - `lipAlbedo(tone, depth)` and `areolaAlbedo(tone, depth)`: lip colour from
   measured lips paired with measured skin, and areola colour along the melanin
   axis (research/SKIN-RENDERING.md §5.6). `depth` 0..1 is the recipe's slider.
+- `hairAlbedo(colour: HairColour): Rgb`: linear-RGB diffuse albedo of hair from
+  two pigments (`eumelanin` 0 none .. 1 black, `pheomelanin` 0 none .. 1 most
+  red-gold) and the `grey` fraction of unpigmented fibres; `override` returns
+  that colour as given. The pigments' per-channel absorption
+  (`EUMELANIN_ABSORPTION`, `PHEOMELANIN_ABSORPTION`) is pbrt-v4's, and the
+  albedo follows Chiang et al.'s `exp(-g·√σ)` form with `PATH_GAIN` fitted to
+  measured tresses (research/HAIR-COLOUR.md says which colours are measured
+  and which modelled). `HAIR_COLOURS` names twelve natural colours as pigment
+  values (`black` to `white`), `DEFAULT_HAIR_COLOUR` is `brown`, and
+  `hairTint(colour)` is the material colour that makes a packed strand map
+  (mean `HAIR_STRAND_MEAN`) render as that albedo.
 - CIELAB conversions: `labFromLinear`, `linearFromLab`, `lchFromLab`,
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
