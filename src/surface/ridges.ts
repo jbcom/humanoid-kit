@@ -13,11 +13,8 @@
  * carries only the slowly turning orientation, and the shader (`hkRidges` in
  * `skinMaterial.ts`) evaluates this same function per pixel.
  *
- * The orientation is a direction modulo a half turn, so it is stored as the two
- * coordinates of the doubled angle (`ridgeOrientationCoordinates`), which
- * interpolate between neighbouring angles through the angles between them even
- * across the 0 / π seam; one coordinate per layer, so the ridge layer is
- * followed by an orientation layer holding the second.
+ * The orientation is a direction modulo a half turn. The layer's coordinate
+ * stores it (`ridgeOrientationCoordinate`), its mask where there are ridges.
  */
 
 /** Cell of the kernel grid, in ridge spacings. */
@@ -87,12 +84,24 @@ export function ridgeHeight(x: number, y: number, theta: number, spacing: number
   return Math.min(1, Math.max(0, 0.5 + (RIDGE_CONTRAST * sum) / RIDGE_SIGMA));
 }
 
-/** The two 0..1 coordinates that store an orientation modulo a half turn: ½ + ½ cos 2θ and ½ + ½ sin 2θ. */
-export function ridgeOrientationCoordinates(theta: number): [number, number] {
-  return [0.5 + 0.5 * Math.cos(2 * theta), 0.5 + 0.5 * Math.sin(2 * theta)];
+/**
+ * Where the stored orientation wraps: an orientation is a direction modulo a
+ * half turn, so its coordinate (0 to 1 over a half turn) must start somewhere,
+ * and bilinear filtering between two angles either side of that seam passes
+ * through every angle between them, the long way round. On the soles (the UV
+ * layout is frozen) the ridge directions in UV lie near 90°, with the fewest
+ * vertices at 15° (`tests/feet.test.ts` holds the share of neighbouring
+ * vertices straddling it to a few per cent), so the seam is there.
+ */
+export const RIDGE_ORIENTATION_SEAM = Math.PI / 12;
+
+/** The 0..1 coordinate that stores an orientation (radians, any turn) about the seam. */
+export function ridgeOrientationCoordinate(theta: number): number {
+  const t = (((theta - RIDGE_ORIENTATION_SEAM) % Math.PI) + Math.PI) % Math.PI;
+  return t / Math.PI;
 }
 
-/** The orientation (radians, modulo a half turn) the coordinates store, however they were interpolated. */
-export function ridgeOrientation(c: number, s: number): number {
-  return 0.5 * Math.atan2(2 * s - 1, 2 * c - 1);
+/** The orientation (radians, from the seam up to a half turn past it) a coordinate stores. */
+export function ridgeOrientation(coordinate: number): number {
+  return coordinate * Math.PI + RIDGE_ORIENTATION_SEAM;
 }

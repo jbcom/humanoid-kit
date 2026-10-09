@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   RIDGE_CELL_PERIODS,
+  RIDGE_ORIENTATION_SEAM,
   ridgeHeight,
   ridgeOrientation,
-  ridgeOrientationCoordinates,
+  ridgeOrientationCoordinate,
 } from "../src/surface/ridges.ts";
 
 const SPACING = 0.00045;
@@ -88,27 +89,29 @@ describe("friction ridge relief", () => {
   });
 });
 
-describe("the ridge orientation, stored without a wrap", () => {
-  it("round-trips an angle modulo a half turn through two coordinates", () => {
-    for (const theta of [0, 0.3, 1.2, Math.PI / 2, 2.4, Math.PI - 0.01, -0.7]) {
-      const [c, s] = ridgeOrientationCoordinates(theta);
+describe("the ridge orientation coordinate", () => {
+  it("round-trips an angle modulo a half turn, in 0..1", () => {
+    for (const theta of [0, 0.3, 1.2, Math.PI / 2, 2.4, Math.PI - 0.01, -0.7, 4.2]) {
+      const c = ridgeOrientationCoordinate(theta);
       expect(c).toBeGreaterThanOrEqual(0);
-      expect(c).toBeLessThanOrEqual(1);
-      expect(s).toBeGreaterThanOrEqual(0);
-      expect(s).toBeLessThanOrEqual(1);
-      const back = ridgeOrientation(c, s);
-      // Equal modulo pi.
-      const d = (((back - theta) % Math.PI) + Math.PI) % Math.PI;
-      expect(Math.min(d, Math.PI - d)).toBeLessThan(1e-6);
+      expect(c).toBeLessThan(1);
+      const d = (((ridgeOrientation(c) - theta) % Math.PI) + Math.PI) % Math.PI;
+      expect(Math.min(d, Math.PI - d)).toBeLessThan(1e-9);
     }
   });
 
-  it("interpolates between neighbouring angles through the angles between them, across the 0 / pi seam", () => {
-    // 0.05 and pi - 0.05 are 0.1 apart modulo pi: their midpoint is at the seam, not at pi / 2.
-    const a = ridgeOrientationCoordinates(0.05);
-    const b = ridgeOrientationCoordinates(Math.PI - 0.05);
-    const mid = ridgeOrientation((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
-    const d = ((mid % Math.PI) + Math.PI) % Math.PI;
-    expect(Math.min(d, Math.PI - d)).toBeLessThan(0.02);
+  it("wraps at the seam and nowhere else", () => {
+    // Just either side of the seam the coordinate jumps from near 1 to near 0; elsewhere it is continuous.
+    const eps = 0.01;
+    expect(ridgeOrientationCoordinate(RIDGE_ORIENTATION_SEAM + eps)).toBeLessThan(0.05);
+    expect(ridgeOrientationCoordinate(RIDGE_ORIENTATION_SEAM - eps)).toBeGreaterThan(0.95);
+    for (
+      let t = RIDGE_ORIENTATION_SEAM + 0.05;
+      t < RIDGE_ORIENTATION_SEAM + Math.PI - 0.05;
+      t += 0.05
+    )
+      expect(
+        Math.abs(ridgeOrientationCoordinate(t + 0.05) - ridgeOrientationCoordinate(t)),
+      ).toBeLessThan(0.02);
   });
 });

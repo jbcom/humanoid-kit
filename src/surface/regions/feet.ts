@@ -11,6 +11,7 @@
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
 import { groupFaces, jointPosition } from "../../format/assetFormat.ts";
 import type { DetailLayer, SkinLayer, SkinLayerFields, SurfaceLayer } from "../layers.ts";
+import { ridgeOrientationCoordinate } from "../ridges.ts";
 import { type DigitFrame, digitFrame, type Vec3 } from "./digitFrame.ts";
 import { skinZones } from "./skinZones.ts";
 
@@ -495,18 +496,14 @@ function waveDirections(assets: HumanoidAssets): Float32Array {
 }
 
 /**
- * The ridge wave directions in the UV plane, as the two coordinates of the
- * doubled angle (`ridgeOrientationCoordinates`): per face, the wave direction
+The ridge wave directions in the UV plane, as the orientation coordinate: the
+ * doubled angle averaged over the faces, then stored (`ridgeOrientationCoordinate`): per face, the wave direction
  * of each corner, taken into the face's plane and carried through the face's UV
  * map, then averaged over the faces round a vertex by their area. The relief is
  * drawn in the UV plane (p = uv × metres per UV), so its orientation has to be
  * measured there.
  */
-function ridgeOrientationFields(assets: HumanoidAssets): {
-  mask: Float32Array;
-  cos: Float32Array;
-  sin: Float32Array;
-} {
+function ridgeOrientationFields(assets: HumanoidAssets): SkinLayerFields {
   const n = assets.manifest.vertexCount;
   const sole = skinZones(assets).sole;
   const wave = waveDirections(assets);
@@ -572,21 +569,18 @@ function ridgeOrientationFields(assets: HumanoidAssets): {
     }
   }
   const mask = new Float32Array(n);
-  const cos = new Float32Array(n).fill(0.5);
-  const sin = new Float32Array(n).fill(0.5);
+  const coord = new Float32Array(n);
   for (let v = 0; v < n; v++) {
     const len = Math.hypot(cx[v] as number, cy[v] as number);
     if ((sole[v] as number) <= 0 || len < 1e-18) continue;
     mask[v] = sole[v] as number;
-    // Unit vector back to 0..1 coordinates.
-    cos[v] = 0.5 + (0.5 * (cx[v] as number)) / len;
-    sin[v] = 0.5 + (0.5 * (cy[v] as number)) / len;
+    coord[v] = ridgeOrientationCoordinate(0.5 * Math.atan2(cy[v] as number, cx[v] as number));
   }
-  return { mask, cos, sin };
+  return { mask, coord };
 }
 
-const ridgeCache = new WeakMap<HumanoidAssets, ReturnType<typeof ridgeOrientationFields>>();
-const ridgeFieldsOf = (assets: HumanoidAssets) => {
+const ridgeCache = new WeakMap<HumanoidAssets, SkinLayerFields>();
+const ridgeFieldsOf = (assets: HumanoidAssets): SkinLayerFields => {
   let f = ridgeCache.get(assets);
   if (!f) {
     f = ridgeOrientationFields(assets);
@@ -595,30 +589,14 @@ const ridgeFieldsOf = (assets: HumanoidAssets) => {
   return f;
 };
 
-/** The sole's friction ridges (`src/surface/ridges.ts`): the layer's coordinate is the first coordinate of the ridges' orientation. */
+/** The sole's friction ridges (`src/surface/ridges.ts`); the coordinate is their orientation. */
 export const RIDGE_LAYER: DetailLayer = {
   id: "sole-ridges",
   kind: "detail",
   pattern: "ridges",
   targets: [],
-  fields: (assets) => {
-    const f = ridgeFieldsOf(assets);
-    return { mask: f.mask, coord: f.cos };
-  },
+  fields: ridgeFieldsOf,
   paint: ({ age }) => ({ strength: 1, height: ridgeRelief(age), size: ridgeSpacing(age) }),
-};
-
-/** The second coordinate of the ridges' orientation; draws nothing itself. It follows `RIDGE_LAYER`. */
-export const RIDGE_ORIENTATION_LAYER: DetailLayer = {
-  id: "sole-ridge-orientation",
-  kind: "detail",
-  pattern: "ridge-orientation",
-  targets: [],
-  fields: (assets) => {
-    const f = ridgeFieldsOf(assets);
-    return { mask: f.mask, coord: f.sin };
-  },
-  paint: () => ({ strength: 1, height: 0, size: 1 }),
 };
 
 /** The feet's layers, in the order they are applied. */
@@ -628,5 +606,4 @@ export const FOOT_SKIN_LAYERS: readonly SkinLayer[] = [
   TOE_WRINKLE_LAYER,
   TOE_CREASE_LAYER,
   RIDGE_LAYER,
-  RIDGE_ORIENTATION_LAYER,
 ];

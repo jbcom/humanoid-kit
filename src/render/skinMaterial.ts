@@ -48,6 +48,7 @@ import {
   RIDGE_CELL_PERIODS,
   RIDGE_CONTRAST,
   RIDGE_KERNELS,
+  RIDGE_ORIENTATION_SEAM,
   RIDGE_SIGMA,
 } from "../surface/ridges.ts";
 import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
@@ -221,14 +222,12 @@ float hkDetailHeight( vec2 uv ) {
 			float fade = 1.0 - smoothstep( 0.25, 0.75, length( fwidth( p ) ) );
 			H += a * head.z * fade * hkBumps( p );
 		} else if ( kind == 5 ) {
-			// The ridges' direction is stored as two coordinates of the doubled angle, in this layer and the next.
 			vec2 p = uv * vHkUvScale;
-			vec2 g = hkFields( l + 1, uv );
 			// Ridges within a pixel of one another blur to a flat; fade them out before they alias.
 			float fade = 1.0 - smoothstep( 0.2, 0.45, length( fwidth( p ) ) / head.w );
-			// The derivatives above are taken in uniform flow; only the pattern is skipped off the sole.
+			// The derivatives above are taken in uniform flow; only the pattern is skipped off the ridged skin.
 			if ( a > 0.002 && fade > 0.0 ) {
-				float theta = 0.5 * atan( 2.0 * g.y - 1.0, 2.0 * f.y - 1.0 );
+				float theta = f.y * 3.14159265359 + ${glslFloat(RIDGE_ORIENTATION_SEAM)};
 				H += a * head.z * fade * ( hkRidges( p, theta, head.w ) - 0.5 );
 			}
 		} else {

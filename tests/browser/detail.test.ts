@@ -7,7 +7,11 @@
 import { DataUtils } from "three";
 import { afterAll, describe, expect, it } from "vitest";
 import { creaseHeight, type SkinLayer } from "../../src/surface/layers.ts";
-import { ridgeHeight, ridgeOrientationCoordinates } from "../../src/surface/ridges.ts";
+import {
+  ridgeHeight,
+  ridgeOrientation,
+  ridgeOrientationCoordinate,
+} from "../../src/surface/ridges.ts";
 import {
   disposeLayerRender,
   mean,
@@ -154,23 +158,17 @@ describe("friction ridges", () => {
       fields: noFields,
       paint: () => ({ strength: 1, height, size: spacing }),
     },
-    {
-      id: "ridge-orientation",
-      kind: "detail",
-      pattern: "ridge-orientation",
-      targets: [],
-      fields: noFields,
-      paint: () => ({ strength: 1, height: 0, size: 1 }),
-    },
   ];
-  /** Orientation `theta` held everywhere: the two coordinates are constants. */
-  const coordinate = (theta: number) => (l: number) =>
-    ridgeOrientationCoordinates(theta)[l] as number;
+  /** Orientation `theta` held everywhere: the coordinate is a constant. */
+  const coordinate = (theta: number) => () => ridgeOrientationCoordinate(theta);
   const PX = 512;
 
   it("cuts the ridges the reference gives: the shading follows the relief's slope", () => {
     const flat = render([], { size: PX });
-    const cut = render(ridges(0.004, SPACING), { size: PX, coordinate: coordinate(0) });
+    // An angle inside the coordinate's window (not 0, which it stores as a half turn: the same ridges, a different random pattern),
+    // as the 8-bit atlas holds it.
+    const theta = ridgeOrientation(Math.round(ridgeOrientationCoordinate(1) * 255) / 255);
+    const cut = render(ridges(0.004, SPACING), { size: PX, coordinate: coordinate(1) });
     // The row a quarter of the way up: the plane is 2 m across, UV 0..1, p = uv * 2.
     const y = Math.floor(PX / 4);
     const change: number[] = [];
@@ -181,7 +179,8 @@ describe("friction ridges", () => {
       const px = ((x + 0.5) / PX) * 2;
       const py = ((y + 0.5) / PX) * 2;
       slope.push(
-        (0.004 * (ridgeHeight(px + e, py, 0, SPACING) - ridgeHeight(px - e, py, 0, SPACING))) /
+        (0.004 *
+          (ridgeHeight(px + e, py, theta, SPACING) - ridgeHeight(px - e, py, theta, SPACING))) /
           (2 * e),
       );
     }

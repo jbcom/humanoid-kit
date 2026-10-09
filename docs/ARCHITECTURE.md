@@ -1746,13 +1746,15 @@ anything when shoes are worn beyond the fields every figure shares.
   and then end, split and join where kernels overlap, which is what a
   fingerprint's minutiae are. No global phase is needed, so no seam in the UV
   layout can break it. The atlas carries only the orientation, which turns
-  slowly: stored as the two coordinates of the doubled angle (½ + ½ cos 2θ,
-  ½ + ½ sin 2θ), so that bilinear filtering between two neighbouring angles
-  passes through the angles between them, across the 0 / π seam too (a plain
-  angle in one coordinate would interpolate 0.05 and π − 0.05 through π / 2,
-  perpendicular to both). A layer holds one coordinate, so `RIDGE_LAYER` (pattern
-  `ridges`, kind 5) is followed by `RIDGE_ORIENTATION_LAYER` (kind 6, draws
-  nothing) with the same mask, and the shader reads the second from layer l + 1.
+  slowly, as the layer's coordinate: its angle (modulo a half turn) over 0 to 1,
+  starting at a seam (`RIDGE_ORIENTATION_SEAM`, 15°). Bilinear filtering between
+  two angles either side of a seam passes through every angle between them the
+  long way round, so the seam is where the sole has the fewest vertices (the UV
+  layout is frozen: the ridge directions in UV lie near 90°), and a test holds
+  the share of neighbouring vertices straddling it under 3%. (Two coordinates of
+  the doubled angle, cos 2θ and sin 2θ, need no seam but need a second layer, and
+  the second layer was a ninth page of the atlas: 4 MB of GPU memory for a
+  pattern that shows only close up.)
   The orientation is measured in the UV plane (the relief is drawn at p = uv ×
   metres per UV): per face, each corner's 3D wave direction is taken into the
   face's plane and through its UV map, and a vertex averages those by area. The
