@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
-import { createRecipe, recipeSetsModifiers } from "../src/recipe/recipe.ts";
+import { createRecipe } from "../src/recipe/recipe.ts";
 import { RecipeValidationError } from "../src/recipe/validate.ts";
 import { bodyPackData, loadFixtureAssets } from "./fixtures.ts";
 
@@ -10,18 +10,20 @@ const model = new HumanoidModel(loadFixtureAssets(), { subdivision: 1 });
 const finite = (a: Float32Array) => a.every((x) => Number.isFinite(x));
 
 describe("HumanoidModel", () => {
-  it("evaluates macro recipes before the modifier targets load, and names the wait otherwise", () => {
-    const { modifierTargets: _, ...firstStage } = bodyPackData();
-    const early = new HumanoidModel(parseHumanoidAssets(firstStage), { subdivision: 0 });
+  it("evaluates a figure as soon as its own target files are in, and names what else it waits for", () => {
+    // Core and young: enough for any figure between 11 and 25 years without modifiers.
+    const early = new HumanoidModel(parseHumanoidAssets(bodyPackData(["core", "young"])), {
+      subdivision: 0,
+    });
     const full = new HumanoidModel(loadFixtureAssets(), { subdivision: 0 });
-    const macro = createRecipe({ macros: { gender: 0.2, age: 60, weight: 0.8 } });
-    expect(early.evaluate(macro).positions).toEqual(full.evaluate(macro).positions);
+    const young = createRecipe({ macros: { gender: 0.2, age: 25, weight: 0.8, height: 0.7 } });
+    expect(early.pendingTargetFiles(young).size).toBe(0);
+    expect(early.evaluate(young).positions).toEqual(full.evaluate(young).positions);
+    const older = createRecipe({ macros: { age: 60 } });
+    expect([...early.pendingTargetFiles(older)]).toEqual(["old"]);
+    expect(() => early.evaluate(older)).toThrow(/target files that have not loaded yet: old/);
     const shaped = createRecipe({ modifiers: { "nose/nose-scale-horiz-decr|incr": 0.5 } });
-    expect(recipeSetsModifiers(shaped)).toBe(true);
-    expect(
-      recipeSetsModifiers(createRecipe({ modifiers: { "nose/nose-scale-horiz-decr|incr": 0 } })),
-    ).toBe(false);
-    expect(() => early.evaluate(shaped)).toThrow(/modifier targets have not loaded/);
+    expect([...early.pendingTargetFiles(shaped)]).toEqual(["modifiers"]);
     // A malformed recipe (from JSON, say) is still reported by validation.
     const { modifiers: _m, ...noModifiers } = createRecipe();
     expect(() => early.evaluate(noModifiers as never)).toThrow(RecipeValidationError);

@@ -2,5 +2,5 @@
 /** URLs of the humanoid-kit-body pack files. Pass to `loadHumanoidAssets({ body })`. */
 export declare const bodyPack: {
 	readonly manifest: string;
-	readonly files: Readonly<Record<"attachments.bin.gz" | "body.bin.gz" | "eyes_high-poly_brown_eye.webp" | "modifier-targets.bin.gz" | "targets.bin.gz" | "teeth_base_teeth.webp" | "tongue_base_tongue01_diffuse.webp", string>>;
+	readonly files: Readonly<Record<"attachments.bin.gz" | "body.bin.gz" | "eyes_high-poly_brown_eye.webp" | "targets-baby.bin.gz" | "targets-child.bin.gz" | "targets-core.bin.gz" | "targets-modifiers.bin.gz" | "targets-old.bin.gz" | "targets-young.bin.gz" | "teeth_base_teeth.webp" | "tongue_base_tongue01_diffuse.webp", string>>;
 };

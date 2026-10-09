@@ -1,80 +1,15 @@
 /**
- * Worker entry: owns one `HumanoidModel` and evaluates recipes off the main
- * thread. Results are transferred, not copied.
- *
- * Packs load in two stages: the worker replies `ready` once a figure built from
- * macros can be evaluated, while the modifier targets are still arriving, and
- * answers a `modifierTargets` request when they have. A recipe that sets a
- * shape modifier waits for them; one that does not evaluates at once.
+ * Worker entry: evaluates recipes off the main thread (`createWorkerHandler`).
  */
-import { loadHumanoidAssetsStaged } from "../format/assetFormat.ts";
-import { buildFeatureMap } from "../makehuman/features.ts";
-import { HumanoidModel } from "../model/humanoidModel.ts";
-import { recipeSetsModifiers } from "../recipe/recipe.ts";
+import { createWorkerHandler } from "./handler.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
 
 declare const self: DedicatedWorkerGlobalScope;
 
-let model: HumanoidModel | null = null;
-let modifierTargets: Promise<unknown> = Promise.resolve();
+const handle = createWorkerHandler((msg: WorkerResponse, transfer: Transferable[] = []) =>
+  self.postMessage(msg, transfer),
+);
 
-const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
-  self.postMessage(msg, transfer);
-
-self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
-  const req = e.data;
-  try {
-    if (req.type === "init") {
-      const staged = await loadHumanoidAssetsStaged(req.load);
-      const { assets } = staged;
-      modifierTargets = staged.modifierTargets;
-      // A failure is reported to the evaluation that needs the targets.
-      modifierTargets.catch(() => {});
-      model = new HumanoidModel(assets, req.model);
-      const topology = model.topology();
-      post({
-        type: "ready",
-        id: req.id,
-        topology,
-        modifiers: [...assets.modifiers.values()],
-        sliders: assets.sliders,
-        bones: assets.manifest.skeleton.bones.map((b) => b.name),
-        adultAnatomyLoaded: assets.adultAnatomyLoaded,
-      });
-      return;
-    }
-    if (!model) throw new Error(`worker received ${req.type} before init`);
-    if (req.type === "modifierTargets") {
-      await modifierTargets;
-      post({ type: "modifierTargetsLoaded", id: req.id });
-      return;
-    }
-    if (req.type === "pickMap") {
-      await modifierTargets;
-      const { features, vertexFeature } = buildFeatureMap(model.assets);
-      // Built on every request; the client asks once and keeps the answer.
-      const render = model.renderFeatures(vertexFeature);
-      post({ type: "pickMap", id: req.id, features, render }, [
-        render.body.buffer,
-        ...render.attachments.map((a) => a.buffer),
-      ]);
-      return;
-    }
-    // The client holds these back until the targets arrive; a direct caller
-    // still gets a correct result, only later.
-    if (recipeSetsModifiers(req.recipe)) await modifierTargets;
-    const t0 = performance.now();
-    const evaluation = model.evaluate(req.recipe);
-    const transfer: Transferable[] = [
-      evaluation.positions.buffer,
-      evaluation.normals.buffer,
-      evaluation.control.buffer,
-      evaluation.curvature.buffer,
-    ];
-    for (const a of evaluation.attachments) transfer.push(a.positions.buffer, a.normals.buffer);
-    post({ type: "evaluated", id: req.id, evaluation, ms: performance.now() - t0 }, transfer);
-  } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    post({ type: "error", id: req.id, message: error.message, name: error.name });
-  }
+self.onmessage = (e: MessageEvent<WorkerRequest>) => {
+  void handle(e.data);
 };

@@ -24,6 +24,10 @@ Attachments come from the MakeHuman system assets pack (makehuman_system_assets_
 | Output | SHA-256 |
 | --- | --- |
 | body.bin.gz | `33e8502236f56d532abbaa2d0adbffb28af56a3f5313763feb9881c9ede668df` |
-| targets.bin.gz | `81754709757f7eb5b3899403d9a715100f42924811e395c8b258034f0789fa1c` |
-| modifier-targets.bin.gz | `6c2c5713c5c1d3b52dfbe30e15de8e0bc6d3920cd906ea32072a9160152ea581` |
+| targets-core.bin.gz | `8b356cd998e6102ed07335107f805660781c29f46cbbf53f164aa704234cf362` |
+| targets-baby.bin.gz | `ba62d1afdf5eb220fdd0c549640a1d5e15610032810c704a9ec4af429bd1136b` |
+| targets-child.bin.gz | `202e932ed86edce12b3f2301ed7cc19f3b9eb7221b101d4bf1de3cb6eb6e1857` |
+| targets-young.bin.gz | `b2a442d5ecbb2a846a5160adfae027ab14b8d34d573bb169d0920a3c35b3474b` |
+| targets-old.bin.gz | `b17a88e4d428d56344245237bccaf5a64d51d7dba5615f62024033a1710ce501` |
+| targets-modifiers.bin.gz | `6c2c5713c5c1d3b52dfbe30e15de8e0bc6d3920cd906ea32072a9160152ea581` |
 | attachments.bin.gz | `6245e1de418bffb352b47f4ce4ad02aee7098cfd71251604f4eab3d9da8315c9` |

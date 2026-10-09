@@ -2,16 +2,14 @@
  * Main-thread handle to the evaluation worker.
  *
  * Evaluations are latest-wins per key: each caller (one `<Humanoid>`, say)
- * passes its own key, and while a key has an evaluation waiting, a newer
- * request for the same key replaces it, so dragging a slider never builds a
- * backlog while several figures sharing one worker never cancel each other.
- * Waiting keys are served in the order they were first queued, except that an
- * evaluation setting shape modifiers is held back until the modifier targets
- * have loaded, so it never keeps a macro-only figure waiting behind it.
+ * passes its own key and has at most one evaluation in the worker and one
+ * waiting. A newer request for the key replaces the waiting one, so dragging a
+ * slider never builds a backlog, and keys never wait on each other: a figure
+ * whose recipe needs target files that are still loading holds up no other.
  */
 import type { LoadOptions } from "../format/assetFormat.ts";
 import type { Evaluation, ModelOptions } from "../model/humanoidModel.ts";
-import { type Recipe, recipeSetsModifiers } from "../recipe/recipe.ts";
+import type { Recipe } from "../recipe/recipe.ts";
 import type { PickMap, ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
 
 export type { PickMap, ReadyInfo };
@@ -39,19 +37,18 @@ export class HumanoidWorkerClient {
     number,
     { resolve: (v: WorkerResponse) => void; reject: (e: Error) => void }
   >();
-  private running = false;
   private disposed = false;
-  /** Waiting evaluations by caller key; Map iteration order is first-queued order. */
+  /** The waiting evaluation of each key; Map iteration order is first-queued order. */
   private readonly queue = new Map<string, Job>();
-  /** Whether the modifier targets have loaded or failed; either way, held jobs may go. */
-  private modifierTargetsSettled = false;
-  /** Resolves when the worker can evaluate a figure built from macros. */
+  /** Keys with an evaluation in the worker. */
+  private readonly inFlight = new Set<string>();
+  /** Resolves when the worker can evaluate the first figure (`LoadOptions.firstFigureAge`). */
   readonly ready: Promise<ReadyInfo>;
   /**
-   * Resolves when the modifier targets have loaded as well, or rejects with
-   * the error that stopped them (macro-only figures keep working).
+   * Resolves when every target file has loaded, or rejects with the error that
+   * stopped one (figures whose targets did arrive keep working).
    */
-  readonly modifierTargets: Promise<void>;
+  readonly complete: Promise<void>;
 
   constructor(load: LoadOptions, model: ModelOptions = {}, worker?: Worker) {
     // A runtime URL, not an import: it names the built worker module next to this file in dist/.
@@ -77,17 +74,11 @@ export class HumanoidWorkerClient {
     // Rejections reach every caller that awaits `ready`; this only marks the
     // promise observed so a client disposed during init is not reported twice.
     this.ready.catch(() => undefined);
-    this.modifierTargets = this.ready.then(async () => {
-      const r = await this.request({ type: "modifierTargets", id: 0 });
-      if (r.type !== "modifierTargetsLoaded") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+    this.complete = this.ready.then(async () => {
+      const r = await this.request({ type: "complete", id: 0 });
+      if (r.type !== "completed") throw new HumanoidWorkerError(`unexpected ${r.type}`);
     });
-    // Held evaluations go once the targets settle: after a failure the worker
-    // rejects each with the reason.
-    const release = () => {
-      this.modifierTargetsSettled = true;
-      void this.pump();
-    };
-    this.modifierTargets.then(release, release);
+    this.complete.catch(() => undefined);
   }
 
   private pickMapRequest: Promise<PickMap> | null = null;
@@ -95,8 +86,8 @@ export class HumanoidWorkerClient {
   /**
    * Which controls shape each rendered vertex (see `buildFeatureMap`), for
    * opening the controls of a tapped part. Built by the worker on the first
-   * call, once the modifier targets it is derived from have loaded; later
-   * calls share that answer.
+   * call, once the target files it is derived from have loaded; later calls
+   * share that answer.
    */
   pickMap(): Promise<PickMap> {
     this.pickMapRequest ??= this.ready.then(async () => {
@@ -137,24 +128,24 @@ export class HumanoidWorkerClient {
     });
   }
 
+  /** Sends the waiting evaluation of every key that has none in the worker. */
   private async pump(): Promise<void> {
-    if (this.running || this.queue.size === 0 || this.disposed) return;
-    this.running = true;
     try {
       await this.ready;
     } catch (e) {
-      this.running = false;
       this.failQueued(e instanceof Error ? e : new HumanoidWorkerError(String(e)));
       return;
     }
-    const next = this.nextSendable();
-    if (!next) {
-      // Everything waiting needs the modifier targets; their arrival pumps again.
-      this.running = false;
-      return;
+    if (this.disposed) return;
+    for (const [key, job] of [...this.queue]) {
+      if (this.inFlight.has(key)) continue;
+      this.queue.delete(key);
+      this.inFlight.add(key);
+      void this.run(key, job);
     }
-    const [key, job] = next;
-    this.queue.delete(key);
+  }
+
+  private async run(key: string, job: Job): Promise<void> {
     try {
       const r = await this.request({ type: "evaluate", id: 0, recipe: job.recipe });
       if (r.type !== "evaluated") throw new HumanoidWorkerError(`unexpected ${r.type}`);
@@ -162,16 +153,9 @@ export class HumanoidWorkerClient {
     } catch (e) {
       job.reject(e instanceof Error ? e : new HumanoidWorkerError(String(e)));
     } finally {
-      this.running = false;
-      void this.pump();
+      this.inFlight.delete(key);
+      if (this.queue.has(key)) void this.pump();
     }
-  }
-
-  /** The first-queued job the worker can evaluate without waiting. */
-  private nextSendable(): [string, Job] | undefined {
-    for (const entry of this.queue)
-      if (this.modifierTargetsSettled || !recipeSetsModifiers(entry[1].recipe)) return entry;
-    return undefined;
   }
 
   private failQueued(err: Error): void {

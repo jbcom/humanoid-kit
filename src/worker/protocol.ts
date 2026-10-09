@@ -30,15 +30,15 @@ export interface PickMap {
 
 export type WorkerRequest =
   | { type: "init"; id: number; load: LoadOptions; model: ModelOptions }
-  /** Answered once the modifier targets have loaded, or with the error that stopped them. */
-  | { type: "modifierTargets"; id: number }
-  /** Answered with the pick map once the modifier targets it is built from have loaded. */
+  /** Answered once every target file has loaded, or with the error that stopped one. */
+  | { type: "complete"; id: number }
+  /** Answered with the pick map once every target file (it needs the modifiers') has loaded. */
   | { type: "pickMap"; id: number }
   | { type: "evaluate"; id: number; recipe: Recipe };
 
 export type WorkerResponse =
   | ({ type: "ready"; id: number } & ReadyInfo)
-  | { type: "modifierTargetsLoaded"; id: number }
+  | { type: "completed"; id: number }
   | ({ type: "pickMap"; id: number } & PickMap)
   | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
   | { type: "error"; id: number; message: string; name: string };

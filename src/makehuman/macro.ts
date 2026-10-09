@@ -199,6 +199,21 @@ export function macroTargetWeights(m: MacroValues): Map<string, number> {
   return out;
 }
 
+/** The age anchor a macro target belongs to (`baby`, `child`, `young`, `old`), or null. */
+export function macroTargetAgeAnchor(name: string): AgeAnchor | null {
+  for (const [anchor] of AGE_ANCHORS)
+    if (new RegExp(`(^|[/-])${anchor}(-|$)`).test(name)) return anchor;
+  return null;
+}
+
+/** The age anchors whose targets a figure of this age weights. */
+export const ageAnchorsOf = (years: number): AgeAnchor[] =>
+  ageAxis(years)
+    .filter(([, weight]) => weight > 0)
+    .map(([anchor]) => anchor as AgeAnchor);
+
+export type AgeAnchor = (typeof AGE_ANCHORS)[number][0];
+
 /**
  * Every target name `macroTargetWeights` can weight, found by evaluating it
  * at every combination of anchors, so the set cannot drift from the model.

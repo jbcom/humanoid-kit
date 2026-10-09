@@ -25,6 +25,7 @@ Fetches and parses the packs.
 interface LoadOptions {
   body: PackLocation;           // e.g. bodyPack from humanoid-kit-body
   adultAnatomy?: PackLocation;  // e.g. adultAnatomyPack
+  firstFigureAge?: number;      // whose targets a staged load brings first; default 25
 }
 
 type PackLocation =
@@ -38,37 +39,41 @@ type PackLocation =
 - Returns `HumanoidAssets`: the `manifest`, typed-array views of `positions`,
   `uvs`, `faceVerts`, `faceUvs`, `skinIndex` and `skinWeight`, a `targets` map
   (`SparseTarget`: `indices`, `deltas`, `scale`), a `modifiers` map
-  (`ShapeModifierEntry`), `adultAnatomyLoaded`, `adultAnatomyManifest` and
-  `modifierTargetsLoaded`. With the adult pack loaded, `targets` and
+  (`ShapeModifierEntry`), `adultAnatomyLoaded`, `adultAnatomyManifest`,
+  `targetFilesPending` (ids of target files not loaded yet) and `targetFileOf`
+  (target name to file id). With the adult pack loaded, `targets` and
   `modifiers` include its entries.
 
 ```ts
 loadHumanoidAssetsStaged(options: LoadOptions): Promise<StagedHumanoidAssets>
 
 interface StagedHumanoidAssets {
-  assets: HumanoidAssets;                    // macro and skin-mask targets only
-  modifierTargets: Promise<HumanoidAssets>;  // the same object, completed
+  assets: HumanoidAssets;   // body, attachments, core and the first figure's age anchors
+  stages: LoadStage[];      // { files: string[]; loaded: Promise<HumanoidAssets> }, in load order
+  complete: Promise<HumanoidAssets>;
 }
 ```
 
-Loads in two stages. `assets` resolves with every macro target, so a recipe that
-sets no shape modifier can be evaluated at once; all modifiers and sliders are
-already listed. The modifier targets (the body's and the adult pack's) are
-fetched only after the first stage's files arrive, then added to the same
-object, and `modifierTargets` resolves. If they fail, `modifierTargets` rejects
-with `AssetFormatError` and `assets` stays usable for macro-only recipes.
-`loadHumanoidAssets` is this with both stages awaited.
+Loads in stages over one link, in `targetLoadOrder(firstFigureAge)`: the first
+figure's age anchors with the core, then the other age anchors, neighbours
+first, then the modifier targets with the adult pack's. All modifiers and
+sliders are listed from the start. Each later stage is fetched once the
+previous one's bytes have arrived and is added to the same `assets`; its
+`loaded` promise resolves, or rejects with `AssetFormatError`, leaving earlier
+stages usable. `loadHumanoidAssets` is this with `complete` awaited.
 
 Also exported:
 
 - `parseHumanoidAssets(pack, adultAnatomy?)`: the same parsing from
   already-fetched, decompressed buffers. Pure; usable in workers and tests.
-  Leave out `pack.modifierTargets` (and the adult pack's `targets`) to parse a
-  first stage.
-- `addModifierTargets(assets, { body, adultAnatomy? })`: completes a first
-  stage. The adult pack's targets are required exactly when that pack is
-  loaded. Throws `AssetFormatError` if the targets are already loaded or fail
-  to decode, and then leaves `assets` unchanged.
+  `pack.targets` maps file ids (`BODY_TARGET_FILES`) to buffers; `core` is
+  required and any others may come later.
+- `addTargetFiles(assets, files)`: adds target files by id as they arrive (the
+  adult pack's under `ADULT_TARGET_FILE`). Throws `AssetFormatError` for a file
+  the loaded packs do not have, one already loaded, or one that fails to
+  decode, and then leaves `assets` unchanged.
+- `pendingTargetFiles(assets, names)`: the files a list of target names still
+  needs; `model.pendingTargetFiles(recipe)` does it for a recipe.
 - `groupFaces(assets, name): Uint32Array`: face indices of a named face group
   such as `body`. Throws `AssetFormatError` for an unknown group.
 - `jointPosition(assets, positions, joint, out, offset?)`: writes a skeleton
@@ -123,8 +128,6 @@ interface EyesRecipe {
 ```
 
 A recipe is plain data, so `JSON.stringify` round-trips it.
-`recipeSetsModifiers(recipe)` is true when any shape modifier is non-zero, that
-is, when evaluating it needs the modifier targets.
 
 ### Macros
 
@@ -236,8 +239,8 @@ interface SurfaceTopology {
 }
 ```
 
-`evaluate` throws `MorphError` for a recipe that sets a shape modifier before
-the assets' modifier targets have loaded, `AgePolicyError` for a recipe that
+`evaluate` throws `MorphError` for a recipe that needs target files not loaded
+yet (`model.pendingTargetFiles(recipe)` names them), `AgePolicyError` for a recipe that
 violates the age policy,
 `RecipeError` for an unknown modifier id (adult-only ids need the adult pack),
 an adult-only modifier on a minor, or a negative value on a one-sided modifier,
@@ -289,20 +292,22 @@ new HumanoidWorkerClient(load: LoadOptions, model?: ModelOptions, worker?: Worke
 
 The main-thread handle to an evaluation worker.
 
-- `client.ready: Promise<ReadyInfo>` resolves when the worker can evaluate a
-  figure built from macros; the modifier targets may still be arriving.
-- `client.modifierTargets: Promise<void>` resolves when they have loaded, or
-  rejects with the error that stopped them. Until it settles, the client holds
-  back evaluations that set a modifier and serves macro-only ones ahead of them.
+- `client.ready: Promise<ReadyInfo>` resolves when the worker can evaluate the
+  first figure (`LoadOptions.firstFigureAge`); later target files may still be
+  arriving, and an evaluation that needs one waits in the worker for its stage.
+- `client.complete: Promise<void>` resolves when every target file has
+  loaded, or rejects with the error that stopped one.
 - `ReadyInfo` is `{ topology, modifiers, sliders, bones,
   adultAnatomyLoaded }`: the render topology, every drivable shape modifier, the
   merged slider taxonomy, the skeleton's bone names (the topology's skin indices
   refer to them) and whether the adult anatomy pack is loaded.
-- `client.evaluate(recipe): Promise<Evaluation>` is latest-wins: a request
-  replaced by a newer one before it starts rejects with an error named
-  `AbortError`. Buffers are transferred from the worker.
-- `client.pickMap(): Promise<PickMap>` resolves, once the modifier targets
-  have loaded, with which controls shape each rendered vertex:
+- `client.evaluate(recipe, key?): Promise<Evaluation>` is latest-wins per key:
+  each key has at most one evaluation in the worker and one waiting, and a
+  waiting request replaced by a newer one rejects with an error named
+  `AbortError`. Keys never wait on each other. Buffers are transferred from the
+  worker.
+- `client.pickMap(): Promise<PickMap>` resolves, once every target file has
+  loaded, with which controls shape each rendered vertex:
   `{ features: FeatureRef[], render: { body, attachments } }`, the render
   arrays holding an index into `features` per render vertex (or
   `NO_FEATURE`). The worker builds it on the first call; later calls share it.
@@ -434,12 +439,12 @@ range input sized for touch. `onChange(value, gesture)` fires while dragging and
 ## `humanoid-kit/worker`
 
 The worker module that `HumanoidWorkerClient` starts by default. It owns one
-`HumanoidModel` and answers four messages: `pickMap` (replied to with the
-pick map once the modifier targets have loaded), `init` (replied to with `ready`
-once a macro-only figure can be evaluated), `modifierTargets` (replied to once
-the modifier targets have loaded, or with the error that stopped them) and
-`evaluate`. An `evaluate` whose recipe sets a modifier waits for the modifier
-targets. Result buffers are transferred. Applications use it through the
+`HumanoidModel` and answers four messages: `init` (replied to with `ready`
+once the first figure can be evaluated), `complete` (replied to once every
+target file has loaded, or with the error that stopped one), `pickMap`
+(replied to with the pick map once everything has loaded) and `evaluate`, which
+waits for exactly the load stages its recipe needs without holding up other
+requests. Result buffers are transferred. Applications use it through the
 client, not directly.
 
 ## `humanoid-kit-body`
@@ -448,8 +453,10 @@ client, not directly.
 import { bodyPack } from "humanoid-kit-body";
 ```
 
-`bodyPack` is `{ manifest, files: { "body.bin.gz", "targets.bin.gz",
-"modifier-targets.bin.gz", "attachments.bin.gz", ...WebP textures } }`, with
+`bodyPack` is `{ manifest, files: { "body.bin.gz", "targets-core.bin.gz",
+"targets-baby.bin.gz", "targets-child.bin.gz", "targets-young.bin.gz",
+"targets-old.bin.gz", "targets-modifiers.bin.gz", "attachments.bin.gz",
+...WebP textures } }`, with
 each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the
 worker client. The package also exposes its files under
 `humanoid-kit-body/data/*`.

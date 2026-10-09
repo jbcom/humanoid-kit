@@ -2,12 +2,16 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AssetFormatError,
-  addModifierTargets,
+  addTargetFiles,
+  BODY_TARGET_FILES,
   type BodyManifest,
   gunzip,
   parseHumanoidAssets,
+  pendingTargetFiles,
+  type TargetFile,
+  targetLoadOrder,
 } from "../src/format/assetFormat.ts";
-import { macroTargetNames } from "../src/makehuman/macro.ts";
+import { macroTargetAgeAnchor, macroTargetNames } from "../src/makehuman/macro.ts";
 import { SKIN_MASK_TARGETS } from "../src/makehuman/skinMasks.ts";
 import {
   adultManifest,
@@ -15,12 +19,14 @@ import {
   bodyDir,
   bodyManifest,
   bodyPackData,
+  bodyTargetFiles,
   readGzipPackFile,
   readPackFile,
 } from "./fixtures.ts";
 
 const pack = (manifest: BodyManifest = bodyManifest) => ({ ...bodyPackData(), manifest });
 const clone = (): BodyManifest => structuredClone(bodyManifest);
+const fileOf = (id: string) => bodyManifest.targets.find((f) => f.id === id) as TargetFile;
 
 describe("parseHumanoidAssets", () => {
   it("parses the shipped body pack", () => {
@@ -31,10 +37,8 @@ describe("parseHumanoidAssets", () => {
 
   it("decodes every target to ascending in-range indices", () => {
     const a = parseHumanoidAssets(pack());
-    expect(a.modifierTargetsLoaded).toBe(true);
-    expect(a.targets.size).toBe(
-      bodyManifest.targets.entries.length + bodyManifest.modifierTargets.entries.length,
-    );
+    expect(a.targetFilesPending.size).toBe(0);
+    expect(a.targets.size).toBe(bodyManifest.targets.reduce((n, f) => n + f.entries.length, 0));
     const bad: string[] = [];
     for (const t of a.targets.values()) {
       let ok = t.deltas.length === t.indices.length * 3;
@@ -46,7 +50,7 @@ describe("parseHumanoidAssets", () => {
   });
 
   it("decompresses with the platform's gzip decoder exactly as zlib does", async () => {
-    const file = path.join(bodyDir, bodyManifest.targets.file);
+    const file = path.join(bodyDir, fileOf("young").file);
     const viaPlatform = new Uint8Array(await gunzip(readPackFile(file)));
     expect(Buffer.from(viaPlatform).equals(Buffer.from(readGzipPackFile(file)))).toBe(true);
   });
@@ -73,37 +77,42 @@ describe("parseHumanoidAssets", () => {
     expect(() => parseHumanoidAssets(pack(m))).toThrow(/misaligned/);
   });
 
+  const young = () => bodyTargetFiles(["young"]).young as ArrayBuffer;
+  /** The pack with the young file replaced. */
+  const withYoung = (bin: ArrayBuffer, m = bodyManifest) => ({
+    ...pack(m),
+    targets: { ...bodyTargetFiles(), young: bin },
+  });
+
   it("rejects target indices beyond the base mesh", () => {
-    const m = clone();
-    const t = m.targets.entries[0];
+    const t = fileOf("young").entries[0];
     if (!t) throw new Error("no targets");
     // One index delta of 65000 into an otherwise blank targets file.
-    const corrupt = new Uint8Array(bodyPackData().targets.byteLength);
+    const corrupt = new Uint8Array(young().byteLength);
     new DataView(corrupt.buffer).setUint16(t.offset, 65000, true);
-    expect(() => parseHumanoidAssets({ ...pack(m), targets: corrupt.buffer })).toThrow(
-      /out of range/,
-    );
+    expect(() => parseHumanoidAssets(withYoung(corrupt.buffer))).toThrow(/out of range/);
   });
 
   it("rejects index deltas that run past 65535", () => {
-    const m = clone();
-    const t = m.targets.entries.find((e) => e.count >= 2);
+    const t = fileOf("young").entries.find((e) => e.count >= 2);
     if (!t) throw new Error("no multi-vertex target");
-    const corrupt = new Uint8Array(bodyPackData().targets.byteLength);
+    const corrupt = new Uint8Array(young().byteLength);
     const view = new DataView(corrupt.buffer);
     view.setUint16(t.offset, 60000, true);
     view.setUint16(t.offset + 2, 60000, true);
-    expect(() => parseHumanoidAssets({ ...pack(m), targets: corrupt.buffer })).toThrow(/65535/);
+    expect(() => parseHumanoidAssets(withYoung(corrupt.buffer))).toThrow(/65535/);
   });
 
-  it("rejects a truncated targets file and an unknown encoding", () => {
-    const full = bodyPackData().targets;
-    expect(() =>
-      parseHumanoidAssets({ ...pack(), targets: full.slice(0, full.byteLength - 8) }),
-    ).toThrow(/exceeds/);
+  it("rejects a truncated targets file, an unknown encoding and a missing core", () => {
+    const full = young();
+    expect(() => parseHumanoidAssets(withYoung(full.slice(0, full.byteLength - 8)))).toThrow(
+      /exceeds/,
+    );
     const m = clone();
-    (m.targets as { encoding: string }).encoding = "raw";
+    (m.targets[0] as { encoding: string }).encoding = "raw";
     expect(() => parseHumanoidAssets(pack(m))).toThrow(/unsupported target encoding/);
+    const { core: _, ...noCore } = bodyTargetFiles();
+    expect(() => parseHumanoidAssets({ ...pack(), targets: noCore })).toThrow(/core targets/);
   });
 
   it("rejects attachment face indices beyond the attachment", () => {
@@ -136,65 +145,97 @@ describe("parseHumanoidAssets", () => {
   });
 });
 
-describe("the two target files", () => {
-  const first = new Set(bodyManifest.targets.entries.map((e) => e.name));
-  const later = new Set(bodyManifest.modifierTargets.entries.map((e) => e.name));
+describe("the target files", () => {
+  const names = (id: string) => new Set(fileOf(id).entries.map((e) => e.name));
   const modifierTargets = new Set(
     bodyManifest.modifiers.flatMap((m) => (m.lo ? [m.lo, m.hi] : [m.hi])),
   );
   const macros = macroTargetNames();
 
-  it("packs every driven target once and nothing that no control drives", () => {
-    expect([...first].filter((n) => later.has(n))).toEqual([]);
-    const packed = new Set([...first, ...later]);
+  it("are the core, one per age anchor and the modifiers, in that order", () => {
+    expect(bodyManifest.targets.map((f) => f.id)).toEqual([...BODY_TARGET_FILES]);
+  });
+
+  it("pack every driven target exactly once and nothing that no control drives", () => {
+    const all = bodyManifest.targets.flatMap((f) => f.entries.map((e) => e.name));
+    expect(all.length).toBe(new Set(all).size);
+    const packed = new Set(all);
     const driven = new Set([...macros, ...modifierTargets]);
     expect([...driven].filter((n) => !packed.has(n))).toEqual([]);
     expect([...packed].filter((n) => !driven.has(n))).toEqual([]);
   });
 
-  it("puts every macro target and every skin-mask target in the first file", () => {
-    expect([...macros].filter((n) => !first.has(n))).toEqual([]);
-    expect(SKIN_MASK_TARGETS.filter((n) => !first.has(n))).toEqual([]);
-    // Everything else in the first file would delay the figure for nothing.
-    const needed = new Set([...macros, ...SKIN_MASK_TARGETS]);
-    expect([...first].filter((n) => !needed.has(n))).toEqual([]);
+  it("put each macro target with its age anchor, and only what needs no anchor in the core", () => {
+    for (const id of ["baby", "child", "young", "old"] as const)
+      for (const n of names(id)) {
+        expect(macros.has(n), n).toBe(true);
+        expect(macroTargetAgeAnchor(n), n).toBe(id);
+      }
+    for (const n of names("core"))
+      expect(SKIN_MASK_TARGETS.includes(n) || (macros.has(n) && !macroTargetAgeAnchor(n)), n).toBe(
+        true,
+      );
+    expect(SKIN_MASK_TARGETS.filter((n) => !names("core").has(n))).toEqual([]);
+    for (const n of names("modifiers")) expect(modifierTargets.has(n), n).toBe(true);
   });
 
-  it("parses a figure from the first file and takes the modifier targets later", () => {
-    const { modifierTargets: rest, ...firstStage } = bodyPackData();
+  it("parse a figure from the core and its anchor, taking the rest as it arrives", () => {
     const { targets: adultTargets, ...adultFirstStage } = adultPackData();
-    const a = parseHumanoidAssets(firstStage, adultFirstStage);
-    expect(a.modifierTargetsLoaded).toBe(false);
-    expect(a.targets.size).toBe(first.size);
+    const a = parseHumanoidAssets(bodyPackData(["core", "young"]), adultFirstStage);
+    expect([...a.targetFilesPending].sort()).toEqual(
+      ["adult", "baby", "child", "modifiers", "old"].sort(),
+    );
+    expect(a.targets.size).toBe(names("core").size + names("young").size);
     // The controls are all known up front, so the editor can show them at once.
     expect(a.modifiers.size).toBe(bodyManifest.modifiers.length + adultManifest.modifiers.length);
-    addModifierTargets(a, { body: rest, adultAnatomy: adultTargets });
-    expect(a.modifierTargetsLoaded).toBe(true);
-    expect(a.targets.size).toBe(first.size + later.size + adultManifest.targets.entries.length);
-    expect(() => addModifierTargets(a, { body: rest, adultAnatomy: adultTargets })).toThrow(
-      /already/,
+    addTargetFiles(a, bodyTargetFiles(["old"]));
+    expect(a.targetFilesPending.has("old")).toBe(false);
+    addTargetFiles(a, { ...bodyTargetFiles(["baby", "child", "modifiers"]), adult: adultTargets });
+    expect(a.targetFilesPending.size).toBe(0);
+    expect(() => addTargetFiles(a, bodyTargetFiles(["old"]))).toThrow(/already loaded/);
+  });
+
+  it("refuse a file that no loaded pack has", () => {
+    const a = parseHumanoidAssets(bodyPackData(["core"]));
+    expect(() => addTargetFiles(a, { adult: adultPackData().targets as ArrayBuffer })).toThrow(
+      /no target file adult/,
+    );
+    expect(() => addTargetFiles(a, { elderly: new ArrayBuffer(0) })).toThrow(/no target file/);
+  });
+
+  it("report which files a list of targets still needs", () => {
+    const a = parseHumanoidAssets(bodyPackData(["core", "young"]));
+    const someOld = [...names("old")][0] as string;
+    const someYoung = [...names("young")][0] as string;
+    expect([...pendingTargetFiles(a, [someOld, someYoung, "no/such-target"])].sort()).toEqual(
+      ["", "old"].sort(),
     );
   });
 
-  it("needs the adult pack's targets with the body's when the adult pack is loaded", () => {
-    const { modifierTargets: rest, ...firstStage } = bodyPackData();
-    const { targets: _, ...adultFirstStage } = adultPackData();
-    const a = parseHumanoidAssets(firstStage, adultFirstStage);
-    expect(() => addModifierTargets(a, { body: rest })).toThrow(/adult anatomy pack's targets/);
-    const b = parseHumanoidAssets(firstStage);
-    expect(() =>
-      addModifierTargets(b, { body: rest, adultAnatomy: adultPackData().targets }),
-    ).toThrow(/no adult anatomy pack/);
+  it("validate late targets as strictly as the first, and leave the assets as they were on failure", () => {
+    const a = parseHumanoidAssets(bodyPackData(["core", "young"]));
+    const old = bodyTargetFiles(["old"]).old as ArrayBuffer;
+    expect(() => addTargetFiles(a, { old: old.slice(0, old.byteLength - 8) })).toThrow(/exceeds/);
+    expect(a.targetFilesPending.has("old")).toBe(true);
+    expect(a.targets.size).toBe(names("core").size + names("young").size);
   });
+});
 
-  it("validates late targets as strictly as the first file", () => {
-    const { modifierTargets: rest, ...firstStage } = bodyPackData();
-    const a = parseHumanoidAssets(firstStage);
-    expect(() => addModifierTargets(a, { body: rest.slice(0, rest.byteLength - 8) })).toThrow(
-      /exceeds/,
-    );
-    // A failed add leaves the figure as it was, so it can be retried.
-    expect(a.modifierTargetsLoaded).toBe(false);
-    expect(a.targets.size).toBe(first.size);
+describe("targetLoadOrder", () => {
+  it("brings the first figure's anchors first, then the others nearest first, then the modifiers", () => {
+    expect(targetLoadOrder(25)).toEqual([
+      ["core", "young"],
+      ["child"],
+      ["old"],
+      ["baby"],
+      ["modifiers", "adult"],
+    ]);
+    expect(targetLoadOrder(60)).toEqual([
+      ["core", "young", "old"],
+      ["child"],
+      ["baby"],
+      ["modifiers", "adult"],
+    ]);
+    expect(targetLoadOrder(5)[0]).toEqual(["core", "baby", "child"]);
   });
 });

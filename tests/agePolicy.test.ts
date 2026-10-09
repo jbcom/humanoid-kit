@@ -28,7 +28,7 @@ describe("age policy", () => {
   });
 
   it("keeps adult anatomy targets out of the body pack entirely", () => {
-    const body = new Set(bodyManifest.targets.entries.map((e) => e.name));
+    const body = new Set(bodyManifest.targets.flatMap((f) => f.entries.map((e) => e.name)));
     for (const e of adultManifest.targets.entries) expect(body.has(e.name), e.name).toBe(false);
     for (const name of body)
       expect(name).not.toMatch(/^(genitals\/|pelvis\/bulge-|stomach\/stomach-pregnant-)/);

@@ -32,7 +32,7 @@ lossless). All lengths are in metres.
 
 | Pack | Files | Contents |
 | --- | --- | --- |
-| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, `targets.bin.gz`, `modifier-targets.bin.gz`, `attachments.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 for the first figure, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, and the eyes, teeth and tongue |
+| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, and the eyes, teeth and tongue |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
 
 A target is stored sparsely: the indices of the vertices it moves (`uint16`),
@@ -49,15 +49,32 @@ Upstream also ships targets no modifier references (the `asym/*` set, foot
 depth and lower-leg height, `chin/chin-triangle`); MakeHuman never applies
 them, so neither does the kit.
 
-The body targets are split by when a figure needs them. `targets.bin.gz` holds
-what the first figure needs: every macro target, plus the few modifier targets
-the skin masks are measured from (`src/makehuman/skinMasks.ts`).
-`modifier-targets.bin.gz` holds the remaining shape-modifier targets, about a
-fifth of the bytes. `loadHumanoidAssetsStaged` resolves once the first file is
-parsed and returns a second promise for the rest (the adult pack's targets
-included, which are all modifiers), so a figure built from macros appears
-without waiting for 275 fine shape controls it is not using yet.
-`loadHumanoidAssets` waits for both.
+The body targets are split into files by what needs them, so a figure appears
+once its own targets have arrived rather than all of them
+(`manifest.targets`, a list of target files):
+
+| File | Holds | Size |
+| --- | --- | --- |
+| `targets-core.bin.gz` | the 8 skin-mask targets (`src/makehuman/skinMasks.ts`), and any macro target with no age anchor (MakeHuman has none) | 0.01 MB |
+| `targets-baby.bin.gz`, `-child`, `-young`, `-old` | the macro targets of one age anchor (ethnic, universal, height, proportions and breast combinations) | 0.83, 1.14, 1.25, 1.20 MB |
+| `targets-modifiers.bin.gz` | the other shape-modifier targets | 1.0 MB |
+
+Age is the macro axis people change least while shaping a figure, and every
+other macro (gender, muscle, weight, height, proportions, ethnicity, breast)
+blends combinations within the same age anchors, so an anchor's file serves
+every edit that keeps the age between its neighbours. The default figure (25
+years) needs only the young file: about 1.9 MB with the body and attachments,
+against 5.1 MB for everything.
+
+`loadHumanoidAssetsStaged(options)` loads in stages over one link, each
+starting when the previous one's bytes have arrived (`targetLoadOrder`): first
+the body, the attachments, the core file and the age anchors a figure of
+`options.firstFigureAge` needs (default: the default figure's, 25); then the
+other anchors, neighbours first (from 25, child and old, which any drag of the
+age slider needs, before baby); then the modifier targets with the adult
+pack's, which are all modifiers. It resolves with the first stage and exposes
+a promise per later stage and one for the whole load. `loadHumanoidAssets`
+waits for all of them.
 
 Each pack exports its file URLs (`bodyPack`, `adultAnatomyPack`) as literal
 `new URL(..., import.meta.url)` expressions so bundlers emit the data files
@@ -229,19 +246,22 @@ mouth will re-bake at runtime with the same method.
 ## Worker
 
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one
-`HumanoidModel`. The worker loads the packs in two stages, builds the model
+`HumanoidModel`. The worker loads the packs in stages (above), builds the model
 from the first and replies with the topology, the modifier ids and the slider
-taxonomy while the modifier targets are still arriving. The client asks the
-worker to report when they have loaded and until then holds back any
-evaluation that sets a modifier, sending macro-only ones past it, so dragging
-age or gender never waits on a download it does not need. Held evaluations go
-once the targets arrive; if they fail to load, the worker rejects each with the
-reason.
-Evaluations are latest-wins: while one runs,
-a newer request replaces any queued one, and the replaced request rejects with an
-`AbortError`, so dragging a slider never builds a backlog. Results are
-transferred, not copied. The client accepts an injected `Worker`; by default it
-starts the built `dist/worker/index.js` next to it.
+taxonomy while later stages are still arriving. An evaluation whose recipe
+names a target that has not arrived waits in the worker for the stage that
+brings it, and only for that; one that has everything evaluates at once. If a
+stage fails to load, each evaluation that needs it rejects with the reason, and
+`client.complete` (everything loaded) rejects too.
+
+Evaluations are latest-wins per caller key: each key has at most one
+evaluation in the worker and one waiting, a newer request replaces the waiting
+one (which rejects with an `AbortError`), so dragging a slider never builds a
+backlog, and a figure waiting for a stage never holds up another. Within one
+key nothing is gained by reordering: once a figure needs a stage, its later
+recipes need it too. Results are transferred, not copied. The client accepts an
+injected `Worker`; by default it starts the built `dist/worker/index.js` next to
+it.
 
 ## Editor
 
@@ -273,7 +293,7 @@ and carries it to render vertices: a body render vertex takes the feature of
 the base vertex with the largest weight in its subdivision stencil row, and an
 attachment render vertex the feature of the first base vertex it is bound to
 (an eyeball tap opens that eye's controls). The client exposes it as
-`client.features`; a tap, as opposed to an orbit drag, on a figure rendered by
+`client.pickMap()`; a tap, as opposed to an orbit drag, on a figure rendered by
 `<Humanoid onPick>` reports the render vertex it hit.
 
 ## Skeleton and facial pose data
@@ -332,10 +352,10 @@ or the name of any of its targets or modifiers.
 
 ## Roadmap
 
-Planned, in order. None of this is implemented yet.
+Planned, in order.
 
-1. **Doll form and editor shell.** `humanoid-kit/editor`: a contextual
-   tap-to-edit creator over the recipe.
+1. **Doll form and editor shell.** Implemented: `humanoid-kit/editor`, a
+   tap-to-edit creator over the recipe (see Editor).
 2. **Rig, poses and expressions.** A skeleton fitted to the morphed body, posing,
    and the facial pose units.
 3. **Adult anatomy sculpt.** Sculpting on top of the adult anatomy pack, for
@@ -348,3 +368,23 @@ Planned, in order. None of this is implemented yet.
 8. **Animation packs.** `humanoid-kit-animations`, and a separate
    `humanoid-kit-adult-animations` that refuses any participant under 18, plus
    spatial awareness for multi-person interactions.
+
+**Skin states**, across milestones 2 to 8. Skin is not a set of uniformly
+coloured regions at rest. A nipple differs from its areola, the vermilion from
+the inner lip, and genital skin varies across its own surface; all of them,
+and the skin as a whole, respond to the figure's state. One system will carry
+that: continuous signals (temperature, arousal, exertion, joint angles from the
+rig, signals from the awareness layer) drive, through multi-channel, zoned
+region masks:
+
+- shape, as morph targets (nipple erection and areola contraction,
+  engorgement);
+- colour fields with internal structure, as gradients rather than one colour
+  per region (flush, engorgement, pallor);
+- micro-surface detail: wrinkle normal maps blended by joint angle at elbows,
+  knees, knuckles and the neck, and goosebumps as a procedural normal and
+  displacement overlay.
+
+The rest-state colours (`lipAlbedo`, `areolaAlbedo`, the skin masks) are its
+layer zero, and every state is modelled along measured skin axes so that it
+holds at every skin tone.

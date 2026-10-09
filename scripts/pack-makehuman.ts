@@ -26,12 +26,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import {
+  BODY_TARGET_FILES,
   type BodyManifest,
   parseHumanoidAssets,
   type ShapeModifierEntry,
   TARGET_ENCODING,
 } from "../src/format/assetFormat.ts";
-import { macroTargetNames } from "../src/makehuman/macro.ts";
+import { macroTargetAgeAnchor, macroTargetNames } from "../src/makehuman/macro.ts";
 import { SKIN_MASK_TARGETS } from "../src/makehuman/skinMasks.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
@@ -62,7 +63,6 @@ const TOPOLOGY = "makehuman-hm08";
 /** Every binary ships gzipped: GitHub Pages and many hosts serve .bin uncompressed. */
 const BODY_FILE = "body.bin.gz";
 const TARGETS_FILE = "targets.bin.gz";
-const MODIFIER_TARGETS_FILE = "modifier-targets.bin.gz";
 const ATTACHMENTS_FILE = "attachments.bin.gz";
 /** MakeHuman units are decimetres; the runtime works in metres. */
 const UNIT = 0.1;
@@ -478,21 +478,24 @@ async function main() {
   if (missingMasks.length)
     throw new Error(`skin-mask targets not packed: ${missingMasks.join(", ")}`);
 
-  // The body's targets split by when a figure needs them: the first file has the
-  // macro targets and the skin-mask targets, the second the other modifier targets.
-  const firstFigure = new Set([...macroNames, ...SKIN_MASK_TARGETS]);
+  // The body's targets split into files by what needs them (docs/ARCHITECTURE.md):
+  // macro targets by age anchor, with the anchor-free ones and the skin-mask
+  // targets in a small core file, and the other modifier targets last.
   const inPack = [...packed.values()].filter((t) => driven.has(t.name));
-  const core = writeTargetFile(
-    inPack.filter((t) => !isAdultPackTarget(t.name) && firstFigure.has(t.name)),
-  );
-  const later = writeTargetFile(
-    inPack.filter((t) => !isAdultPackTarget(t.name) && !firstFigure.has(t.name)),
-  );
+  const fileOf = (name: string): string => {
+    if (macroNames.has(name)) return macroTargetAgeAnchor(name) ?? "core";
+    return SKIN_MASK_TARGETS.includes(name) ? "core" : "modifiers";
+  };
+  const bodyFiles = BODY_TARGET_FILES.map((id) => ({
+    id,
+    file: `targets-${id}.bin.gz`,
+    ...writeTargetFile(inPack.filter((t) => !isAdultPackTarget(t.name) && fileOf(t.name) === id)),
+  }));
   const adult = writeTargetFile(inPack.filter((t) => isAdultPackTarget(t.name)));
-  for (const dir of [BODY_OUT, ADULT_OUT])
-    fs.rmSync(path.join(dir, "targets.bin"), { force: true });
-  fs.writeFileSync(path.join(BODY_OUT, TARGETS_FILE), core.bin);
-  fs.writeFileSync(path.join(BODY_OUT, MODIFIER_TARGETS_FILE), later.bin);
+  for (const f of fs.readdirSync(BODY_OUT))
+    if (/^(modifier-)?targets(-[a-z]+)?\.bin(\.gz)?$/.test(f)) fs.rmSync(path.join(BODY_OUT, f));
+  fs.rmSync(path.join(ADULT_OUT, "targets.bin"), { force: true });
+  for (const f of bodyFiles) fs.writeFileSync(path.join(BODY_OUT, f.file), f.bin);
   fs.writeFileSync(path.join(ADULT_OUT, TARGETS_FILE), adult.bin);
 
   // Face pose units: BVH frames named by face-poseunits.json framemapping.
@@ -553,18 +556,13 @@ async function main() {
     faceCount: obj.faceVerts.length / 4,
     groups: obj.groups,
     body: { file: BODY_FILE, sha256: bodySha, layout },
-    targets: {
-      file: TARGETS_FILE,
+    targets: bodyFiles.map((f) => ({
+      id: f.id,
+      file: f.file,
       encoding: TARGET_ENCODING,
-      sha256: sha(core.bin),
-      entries: core.entries,
-    },
-    modifierTargets: {
-      file: MODIFIER_TARGETS_FILE,
-      encoding: TARGET_ENCODING,
-      sha256: sha(later.bin),
-      entries: later.entries,
-    },
+      sha256: sha(f.bin),
+      entries: f.entries,
+    })),
     modifiers: modifiers.filter((m) => !isAdultPackTarget(m.hi)),
     sliders: sliders.body,
     attachments: {
@@ -600,7 +598,7 @@ async function main() {
   const packedFigure = parseHumanoidAssets({
     manifest,
     body: buffer(bodyRaw),
-    targets: buffer(core.raw),
+    targets: Object.fromEntries(bodyFiles.map((f) => [f.id, buffer(f.raw)])),
     attachments: buffer(attachments.raw),
   });
   const occlusion = new HumanoidModel(packedFigure)
@@ -618,6 +616,7 @@ async function main() {
     bodySha256: bodySha,
     source,
     targets: {
+      id: "adult",
       file: TARGETS_FILE,
       encoding: TARGET_ENCODING,
       sha256: sha(adult.bin),
@@ -636,8 +635,7 @@ async function main() {
     (f) => !adultFiles.has(f),
     [
       [BODY_FILE, bodySha],
-      [TARGETS_FILE, sha(core.bin)],
-      [MODIFIER_TARGETS_FILE, sha(later.bin)],
+      ...bodyFiles.map((f): [string, string] => [f.file, sha(f.bin)]),
       [ATTACHMENTS_FILE, attachments.sha256],
     ],
     systemEvidence,
@@ -662,9 +660,8 @@ async function main() {
   const mb = (n: number) => `${(n / 1e6).toFixed(2)} MB`;
   console.log(
     `packed ${vertexCount} verts, ${manifest.faceCount} quads; targets: ` +
-      `${core.entries.length} first-figure (${mb(core.bin.byteLength)} gzip, ${mb(core.raw.byteLength)} decoded), ` +
-      `${later.entries.length} modifier (${mb(later.bin.byteLength)}), ` +
-      `${adult.entries.length} adult (${mb(adult.bin.byteLength)}); ` +
+      bodyFiles.map((f) => `${f.id} ${f.entries.length} (${mb(f.bin.byteLength)})`).join(", ") +
+      `, adult ${adult.entries.length} (${mb(adult.bin.byteLength)}); ` +
       `${encoded.empty} empty and ${undriven.length} undriven upstream targets left out; ` +
       `body ${mb(body.byteLength)}`,
   );

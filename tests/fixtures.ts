@@ -30,11 +30,18 @@ export const adultManifest = JSON.parse(
 let core: HumanoidAssets | undefined;
 let withAdult: HumanoidAssets | undefined;
 
-export const bodyPackData = () => ({
+/** The body pack's target files by id, decompressed; `only` limits them to those ids. */
+export const bodyTargetFiles = (only?: readonly string[]): Record<string, ArrayBuffer> =>
+  Object.fromEntries(
+    bodyManifest.targets
+      .filter((f) => !only || only.includes(f.id))
+      .map((f) => [f.id, readGzipPackFile(path.join(bodyDir, f.file))]),
+  );
+
+export const bodyPackData = (only?: readonly string[]) => ({
   manifest: bodyManifest,
   body: readGzipPackFile(path.join(bodyDir, bodyManifest.body.file)),
-  targets: readGzipPackFile(path.join(bodyDir, bodyManifest.targets.file)),
-  modifierTargets: readGzipPackFile(path.join(bodyDir, bodyManifest.modifierTargets.file)),
+  targets: bodyTargetFiles(only),
   attachments: readGzipPackFile(path.join(bodyDir, bodyManifest.attachments.file)),
 });
 

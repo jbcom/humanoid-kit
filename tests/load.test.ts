@@ -1,6 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
-import { gunzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AssetFormatError,
@@ -9,34 +7,8 @@ import {
   loadHumanoidAssets,
   loadHumanoidAssetsStaged,
 } from "../src/format/assetFormat.ts";
+import { stubFetch } from "./fetchStub.ts";
 import { adultDir, bodyDir, bodyManifest } from "./fixtures.ts";
-
-/** Serves pack files from disk at http://packs/<body|adult>/<file>, like a static host. */
-function stubFetch(
-  options: {
-    decompressGz?: boolean;
-    missing?: string;
-    /** Answers this file only once `until` settles. */
-    hold?: { file: string; until: Promise<void> };
-  } = {},
-) {
-  const requested: string[] = [];
-  vi.stubGlobal("fetch", async (input: string) => {
-    requested.push(input);
-    const url = new URL(input);
-    const [, pack, file] = url.pathname.split("/");
-    if (options.hold && file === options.hold.file) await options.hold.until;
-    const dir = pack === "adult" ? adultDir : bodyDir;
-    const p = path.join(dir, file ?? "");
-    if (file === options.missing || !fs.existsSync(p))
-      return new Response("not found", { status: 404, statusText: "Not Found" });
-    let bytes: Uint8Array = fs.readFileSync(p);
-    // A host that sends .gz with Content-Encoding: gzip hands the page decoded bytes.
-    if (options.decompressGz && p.endsWith(".gz")) bytes = gunzipSync(bytes);
-    return new Response(Uint8Array.from(bytes));
-  });
-  return requested;
-}
 
 // Each load decodes and parses the full pack (~2 s), so these get room.
 describe("loadHumanoidAssets", { timeout: 60_000 }, () => {
@@ -72,34 +44,50 @@ describe("loadHumanoidAssets", { timeout: 60_000 }, () => {
     stubFetch({ decompressGz: true });
     const assets = await loadHumanoidAssets({ body: "http://packs/body" });
     expect(assets.targets.size).toBe(
-      bodyManifest.targets.entries.length + bodyManifest.modifierTargets.entries.length,
+      bodyManifest.targets.reduce((n, f) => n + f.entries.length, 0),
     );
   });
 
-  it("hands over a figure before the modifier targets have arrived", async () => {
+  it("hands over the first figure before the rest arrives, fetching stage after stage", async () => {
     let release = () => {};
     const gate = new Promise<void>((r) => {
       release = r;
     });
-    stubFetch({ hold: { file: "modifier-targets.bin.gz", until: gate } });
+    const requested = stubFetch({ hold: { file: "targets-child.bin.gz", until: gate } });
     const staged = await loadHumanoidAssetsStaged({
       body: "http://packs/body",
       adultAnatomy: "http://packs/adult",
+      firstFigureAge: 25,
     });
-    expect(staged.assets.modifierTargetsLoaded).toBe(false);
-    expect(staged.assets.adultAnatomyLoaded).toBe(true);
+    expect([...staged.assets.targetFilesPending].sort()).toEqual(
+      ["adult", "baby", "child", "modifiers", "old"].sort(),
+    );
+    expect(staged.stages.map((s) => s.files)).toEqual([
+      ["child"],
+      ["old"],
+      ["baby"],
+      ["modifiers", "adult"],
+    ]);
+    // Nothing after the held stage was fetched: stages share the link in turn.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(requested.some((u) => u.endsWith("targets-old.bin.gz"))).toBe(false);
     release();
-    const assets = await staged.modifierTargets;
+    const assets = await staged.complete;
     expect(assets).toBe(staged.assets);
-    expect(assets.modifierTargetsLoaded).toBe(true);
-    expect([...assets.modifiers.values()].every((m) => assets.targets.has(m.hi))).toBe(true);
+    expect(assets.targetFilesPending.size).toBe(0);
+    const order = ["child", "old", "baby", "modifiers"].map((id) =>
+      requested.findIndex((u) => u.endsWith(`targets-${id}.bin.gz`)),
+    );
+    expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
-  it("reports a modifier-target failure on the second stage only", async () => {
-    stubFetch({ missing: "modifier-targets.bin.gz" });
+  it("reports a failed stage on that stage and the ones that need it, not the first", async () => {
+    stubFetch({ missing: "targets-modifiers.bin.gz" });
     const staged = await loadHumanoidAssetsStaged({ body: "http://packs/body" });
-    await expect(staged.modifierTargets).rejects.toThrow(/modifier-targets\.bin\.gz failed/);
-    expect(staged.assets.modifierTargetsLoaded).toBe(false);
+    await expect(staged.stages.at(-1)?.loaded).rejects.toThrow(/targets-modifiers\.bin\.gz failed/);
+    await expect(staged.complete).rejects.toThrow(/targets-modifiers/);
+    await expect(staged.stages[0]?.loaded).resolves.toBe(staged.assets);
+    expect(staged.assets.targetFilesPending.has("modifiers")).toBe(true);
   });
 
   it("reports a failed fetch and a missing per-file URL", async () => {

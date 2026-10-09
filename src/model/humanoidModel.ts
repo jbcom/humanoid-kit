@@ -12,6 +12,7 @@ import {
   type BoundAsset,
   groupFaces,
   type HumanoidAssets,
+  pendingTargetFiles,
 } from "../format/assetFormat.ts";
 import { NO_FEATURE } from "../makehuman/features.ts";
 import { recipeContributions } from "../makehuman/recipeMorph.ts";
@@ -19,7 +20,7 @@ import { buildRegionField } from "../makehuman/regions.ts";
 import { buildSkinMasks } from "../makehuman/skinMasks.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
-import { createRecipe, type Recipe, recipeSetsModifiers } from "../recipe/recipe.ts";
+import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { bakeOcclusion } from "../surface/occlusion.ts";
 
@@ -324,20 +325,34 @@ export class HumanoidModel {
     };
   }
 
+  /**
+   * The target files a recipe needs that have not arrived (empty when it can
+   * be evaluated now). Validates the recipe first.
+   */
+  pendingTargetFiles(recipe: Recipe): Set<string> {
+    return this.pendingFor(recipeContributions(recipe, this.assets.modifiers));
+  }
+
+  private pendingFor(contributions: readonly { target: string }[]): Set<string> {
+    const pending = pendingTargetFiles(
+      this.assets,
+      contributions.map((c) => c.target),
+    );
+    // A name in no loaded pack's files is not pending: evaluation reports it as unknown.
+    pending.delete("");
+    return pending;
+  }
+
   evaluate(recipe: Recipe): Evaluation {
-    if (!this.assets.modifierTargetsLoaded && recipeSetsModifiers(recipe))
+    const contributions = recipeContributions(recipe, this.assets.modifiers);
+    const pending = this.pendingFor(contributions);
+    if (pending.size)
       throw new MorphError(
-        "the recipe sets shape modifiers, and the modifier targets have not loaded yet " +
-          "(await the second stage of loadHumanoidAssetsStaged)",
+        `the recipe needs target files that have not loaded yet: ${[...pending].join(", ")} ` +
+          "(await their stage of loadHumanoidAssetsStaged)",
       );
     const control = new Float32Array(this.assets.positions.length);
-    evaluateMorph(
-      this.assets.positions,
-      this.assets.targets,
-      recipeContributions(recipe, this.assets.modifiers),
-      control,
-      this.regions,
-    );
+    evaluateMorph(this.assets.positions, this.assets.targets, contributions, control, this.regions);
     let minY = Number.POSITIVE_INFINITY;
     for (const v of this.bodyVertices) minY = Math.min(minY, control[v * 3 + 1] as number);
     const body = this.evaluatePart(this.body, control);

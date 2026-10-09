@@ -41,7 +41,7 @@ const FOOTPRINT = 0.25;
 const FLOOR = 0.2;
 
 export function buildFeatureMap(assets: HumanoidAssets): FeatureMap {
-  if (!assets.modifierTargetsLoaded)
+  if (assets.targetFilesPending.has("modifiers"))
     throw new Error("the feature map needs the modifier targets, which have not loaded yet");
   const n = assets.manifest.vertexCount;
   const features: FeatureRef[] = [];

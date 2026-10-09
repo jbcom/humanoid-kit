@@ -11,7 +11,7 @@ import {
 } from "../src/makehuman/macro.ts";
 import { bodyManifest } from "./fixtures.ts";
 
-const packed = new Set(bodyManifest.targets.entries.map((e) => e.name));
+const packed = new Set(bodyManifest.targets.flatMap((f) => f.entries.map((e) => e.name)));
 
 const sum = (axis: ReadonlyArray<readonly [string, number]>) => axis.reduce((s, [, w]) => s + w, 0);
 const unit = fc.double({ min: 0, max: 1, noNaN: true });

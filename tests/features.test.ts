@@ -108,7 +108,7 @@ describe("the feature map", () => {
   });
 
   it("needs the modifier targets", () => {
-    const { modifierTargets: _, ...firstStage } = bodyPackData();
-    expect(() => buildFeatureMap(parseHumanoidAssets(firstStage))).toThrow(/modifier targets/);
+    const early = parseHumanoidAssets(bodyPackData(["core", "young"]));
+    expect(() => buildFeatureMap(early)).toThrow(/modifier targets/);
   });
 });

@@ -17,7 +17,12 @@ function createClient(): HumanoidWorkerClient {
   const worker = new Worker(new URL("../../src/worker/index.ts", import.meta.url), {
     type: "module",
   });
-  return new HumanoidWorkerClient({ body: bodyPack }, { subdivision: 1 }, worker);
+  // The first figure's own targets load first; the rest stream in behind it.
+  return new HumanoidWorkerClient(
+    { body: bodyPack, firstFigureAge: initialRecipe().macros.age },
+    { subdivision: 1 },
+    worker,
+  );
 }
 
 /** One worker per mounted app; created in an effect so StrictMode's double render cannot leak a second worker. */

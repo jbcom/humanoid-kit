@@ -124,8 +124,9 @@ try {
         "data/manifest.json",
         "data/PROVENANCE.md",
         "data/body.bin.gz",
-        "data/targets.bin.gz",
-        "data/modifier-targets.bin.gz",
+        ...["core", "baby", "child", "young", "old", "modifiers"].map(
+          (id) => `data/targets-${id}.bin.gz`,
+        ),
         "data/attachments.bin.gz",
       ],
     ],
