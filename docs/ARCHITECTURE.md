@@ -1676,7 +1676,7 @@ later package that refuses participants under 18, and are not here.
   BVH's root translation is the source figure's. The bones a clip never moves are not
   stored (the walk moves 73 of the rig's 163). Quaternions are kept in one hemisphere
   from frame to frame, so a blend takes the short way.
-- *The source is MakeHuman's own CC0 clips.* punkduck's walk, idle and swim clips in
+- *The sources are MakeHuman's own CC0 clips and Quaternius's.* The first are punkduck's walk, idle and swim clips in
   `makehuman2_additional_assets_cc0.zip` are on the default skeleton, so a BVH joint
   is a rig bone by name and nothing is retargeted. Each clip is judged by
   `judgeAsset` (docs/licence-history.md, clause B) with the asset pack listing that
@@ -1684,6 +1684,24 @@ later package that refuses participants under 18, and are not here.
   `license CC0` (a BVH has no place for a licence line), and the archive is pinned by
   its SHA-256 (`packs/animations/data/PROVENANCE.md`). MakeHuman's own `walk.bvh` and
   `zombie.bvh` are AGPL3 and are not used.
+- *Breadth from Quaternius, retargeted through a T-pose.* The Universal Animation
+  Libraries 1 and 2 (CC0 1.0 Universal by the `License.txt` inside each archive; 84
+  animations, among them walks, a jog, a sprint, idles, swims, crouches, combat, sitting
+  and farm work) are on Unreal's mannequin skeleton, whose bones have axes of their own.
+  Both rigs are put in a T-pose (the libraries' own `A_TPose`; the body pack's
+  `tpose`), where a limb's direction is the same on both, and a source bone's turn from
+  its T-pose in the world is applied to the target bone from its own: the limb follows
+  whatever the bones' axes are (`scripts/lib/retarget.ts`; a test puts the T-pose
+  through it and gets the target's T-pose back, every bone). Bones with no counterpart
+  (twist and helper bones) keep their T-pose and follow their parent. The libraries'
+  three spine bones and neck against MakeHuman's five and three: each target bone
+  along the spine takes the turn the source would have at its height up the body,
+  blended between the two nearest source bones; the source pelvis turns both legs'
+  pelvis bones and the lowest spine bone. Only the copies vendored with their SHA-256
+  are used, since Quaternius moved later releases to a licence that is not CC0, on
+  2026-08-28. The in-place variants, not `_RM`: where a clip carries the figure is
+  derived from the feet, not authored. A `_Loop` clip's last frame is its first and
+  is dropped.
 - *Where a clip carries a figure is derived from the figure's feet.* The walk's BVH
   keeps its root in place, and a translation authored for one skeleton slides the
   feet of another. `planRootMotion` moves the figure, frame to frame, backwards by
@@ -1708,7 +1726,8 @@ later package that refuses participants under 18, and are not here.
 heel or ball moves while on the ground is 2 to 12 mm (median 5), against well over 20
 mm with root motion alone (the test holds both); in the hip-swaying walk 3 to 29 mm,
 since its hand-keyed feet scissor against each other in double support; in the three
-idles under 10 mm. The tolerance in the walk is the leg's reach: at heel strike the
+idles under 10 mm, and in Quaternius's walks (mocap that plants its feet) under 3
+mm (a crouch walk and a zombie's shuffle 36 and 62 mm, shuffling gaits). The tolerance in the walk is the leg's reach: at heel strike the
 front leg is already straight in the clip, and a pin ahead of it cannot be reached.
 A hand-keyed clip is the limit, not the solver: a clip that planted its feet would
 leave nothing to hold.
@@ -1728,7 +1747,10 @@ and `onGroundOffset` is not called. `time` puts the figure at a time in the clip
 at a time, a walking figure is carried forward on its feet, and the planted ball's
 world position holds.
 
-**Clearance.** `src/animation/clearance.ts` checks a pose for one part of the body
+**Clearance.** (The 90 clips: 72 of them, every locomotion and standing idle among them,
+stay within the tolerance; the 18 where a limb rests on or crosses the body, sitting,
+kneeling, a roll, a landing, a sword's swing, overlap it by up to 12.7 cm of capsule on
+some body, which is held as a bound per clip in the test, not a fix.) `src/animation/clearance.ts` checks a pose for one part of the body
 through another: the body as 14 capsules (head, torso, and each side's upper arm,
 forearm, hand, thigh, shin and foot), each between two joints with a radius measured
 from the figure's own skin (a hand and a foot are flat, so a half and 0.6 of it), and
@@ -2008,16 +2030,26 @@ topology and the field atlas exist. Decisions:
   load and an eager one. The packer refuses a body layer that measures an adult
   target, and an adult layer whose target the adult pack does not ship.
 
-**What phase 1 can show.** The CC0 `genitals/penis-*` targets deform MakeHuman's
-`helper-genital` group (200 vertices), which the render surface leaves out
-(only the `body` group is drawn, and none of those vertices is in it); only
-`pelvis/bulge-incr` moves drawn skin (57 body vertices). So the penis and testes
-layers resolve to masks on vertices that are not drawn and paint nothing yet,
-and the mound layer is the one that shows. Putting adult geometry on the render
-surface is the sculpt phase's first job, and cannot be done by drawing
-`helper-genital` for every figure: the surface is shared across ages, and a
-static surface cannot be gated by age (docs/research/ADULT-SCULPT-PLAN.md).
-`tests/adultStack.test.ts` records the limit so that change fails it.
+**Where the penis and testes skin is.** The CC0 `genitals/penis-*` targets deform
+MakeHuman's `helper-genital` group (200 vertices), which the render surface leaves
+out (only the `body` group is drawn), so layers measured from them would paint
+nothing. The sculpt draws the organ and the sacs out of reservoirs instead
+(docs/research/ADULT-SCULPT-PLAN.md, sections 6b and 6c), and a reservoir's skin
+gets an **island** of its own in free space of the body's UV layout
+(`AdultReservoirSpec.island`: the tube's wall as a grid, chain position along one
+axis and ring along the other, and the cap as a disc), with the skin layer that
+colours it (`layer`). `applyReservoirs` lays the wall and cap out on those UVs
+(the cap's corners by their polar place in the disc of skin they replace, the
+strips as a grid whose last column is the seam), so the tube is no longer
+collapsed in UV and can be told from the skin round its root. The model derives
+the layer's fields on the island's triangles (`HumanoidModel.adultLayerFields`,
+`LayerFieldsUpdate.extra`: mask 1, coordinate from the loop at 0 along the rings
+to the tip at 1, the cap at the tip) and the atlas rasterises them with the
+body's (`LayerAtlas.refresh`; `withExtra`), so the penis layer's shaft-to-glans
+stops run along the organ. The packer places islands at the root skin's own scale
+in the largest free rectangles (`scripts/lib/uvIslands.ts`), for the largest tube
+the detail draws, so a smaller tube shows its texture compressed along its length.
+Only the mound's layer is still measured from a target.
 
 ### The adult surface (sculpt phase 2, refined pelvic topology)
 
@@ -2348,9 +2380,25 @@ age.
 - `<Humanoid>` bakes the texture from that placement and the evaluated
   surface (`bakeBodyArt`, `src/render/bodyArtTexture.ts`) with the images the
   application passes (`bodyArtImages`).
-- A new evaluation rebakes into a new texture that replaces the old in the
-  same uniform, so only a figure gaining or losing body art rebuilds its
-  shader.
+- A tattoo is a decal, not baked colour (`src/render/tattooDecals.ts`). At
+  1024² the body's UV texels are 1.2–2.3 mm on a forearm (measured), so a
+  6 cm compass baked as colour had 27 texels across and its line work
+  pixelated on the sheets. No size of one texture for the whole body fixes
+  that, so the bake stores, per texel, the place in the tattoo that covers it,
+  in half floats. The skin shader samples the tattoo's own image there,
+  mipmapped and anisotropic, at the detail the screen asks for, and never
+  finer than the ink's spread.
+  - A coordinate is affine over each of the body's triangles, so a bilinear
+    blend of four texels is exact inside one.
+  - The texels round each UV island are extrapolated linearly from the two
+    inside next to them, so a tattoo stays exact across a seam.
+  - Tattoos that overlap go on separate decal layers (two at most), the
+    later above, so one composites over the other in the shader.
+  - The ink page keeps only dermal pigment, which is soft enough for the
+    body's texels.
+- A new evaluation rebakes into new textures that replace the old in the
+  same uniforms, so only a figure gaining or losing body art, or a layer of
+  overlapping tattoos, rebuilds its shader.
 - The projection reaches half the decal's longer side off the skin's plane
   (at least 1 cm) and skips skin facing away from it, so a tattoo on a
   forearm never lands on the hip behind it. Both limits fade rather than cut:
@@ -2360,8 +2408,10 @@ age.
   not skin (the sheets showed vitiligo whitening the nail beds).
 - The ink's colour is stored sRGB-encoded so dark inks keep their precision
   in eight bits.
-- The browser tests hold the bake to its frame (orientation, the seam, facing
-  and reach, a later tattoo over an earlier one) and the shader to `inkSeen`.
+- The browser tests hold the decal coordinates to the frame (orientation,
+  the seam and the texels just past it, facing and reach, a later tattoo on a
+  layer above an earlier one) and the shader to `inkSeen`. They also check
+  that stripes half a bake texel wide still resolve.
 
 **Marks, as built.**
 
@@ -2588,6 +2638,148 @@ anything when shoes are worn beyond the fields every figure shares.
   the little toe's upper surface, which put its nail on the wrong side.) A
   lesser toe's nail has only a vertex or
   two inside it on a 5 mm mesh, so its edge is as coarse as the hands' is.
+
+### Torso (2026-10-09)
+
+The trunk's own skin is one area's layers (`src/surface/regions/torso.ts`, its
+figure-dependent quantities in `src/surface/torsoTone.ts`). Sources and
+choices: `docs/research/SKIN-STATES.md` C7.
+
+**Use cases.** A close-up of a chest at any tone and age, a child's to an
+adult's, a man's or a woman's: the nipple and areola must have structure, not
+be one flat disc. A figure of any build, lean to heavy: the ribs, the
+collarbones and the navel read as the body fat says they should. A body whose
+skin has marked it (stretch marks, a dark midline). None of it adult-gated:
+breast and nipple structure follow MakeHuman at every age, as the age policy
+says; nothing here is sexualised, and the adult anatomy's own layers
+(`adult.ts`) are untouched.
+
+**Decisions.**
+
+- *The paint input carries the figure's build.* `SkinPaintInput.build` holds
+  the macros the trunk's layers read beyond the age (sex, weight, height,
+  muscle, breast size); `figureBuild` fills the default macros where an input
+  gives none, so every existing caller still paints. `Humanoid.tsx` sets it
+  from the recipe.
+- *The areola is a distance field round the nipple, and the figure's own edge
+  is paint.* The fields are the disc `AREOLA_REACH` round each nipple's centre
+  (the centroid of the nipple-size target's vertices, on each side) with the
+  distance in reaches as the coordinate; the paint puts the figure's nipple,
+  areola and skin on that coordinate (`areolaRadius`, `nippleRadius`, a soft
+  edge), so one set of fields serves a child's 13 mm areola and a woman's 38,
+  and a puberty that grows it, without a field per age. The resolution is the
+  eight stops across the reach (a stop every 3.1 mm); the edge position is
+  continuous, its softness is not finer than that.
+- *Sizes in metres are put on the base mesh by the measured stretch.* The fields
+  are measured on the base mesh and the figure's mesh is that mesh morphed, so a
+  nipple's surroundings are 0.68 times as big on a seven year old and 2.09 on the
+  largest breast (`areolaStretch`: the median over the vertices in a ring (8 to 20 mm of the base mesh) round
+  each nipple of their distance from its centre on the evaluated control mesh
+  over their distance on the base mesh). An evaluation reports it
+  (`Evaluation.areolaScale`), the component rounds it to a hundredth and puts it
+  in the paint input (`SkinPaintInput.areolaScale`), and the areola's paint
+  divides its own lengths in metres (the areola's radius and its soft edge, the
+  nipple's) by it. The first sheets of the relief had a tubercle ring that ran
+  a centimetre past the areola for want of this. A fitted model of the stretch
+  by macro was rejected: it is not separable in height, age, sex and breast size,
+  and the evaluation has the number already. Relief sizes (the grain and the
+  tubercles' spacing) are not affected: they are in the skin's own metres
+  through the shader's UV scale.
+- *The areola multiplies the skin, by ratios.* The stops are the nipple's and
+  the areola's colour as a ratio to the tone's skin, one beyond the areola's
+  edge, so the layer leaves whatever skin is under it as it is. (The first
+  version mixed to the tone's flat albedo, and the sheet showed a pale halo
+  outside the areola on a man and on deep skin: the base colour is shaded where
+  it lies, and a mix replaces that shading.) Goosebumps leave the whole zone out,
+  as the areola's smooth muscle wrinkles it (the cold state morph draws that).
+- *An amplitude profile lets a relief's extent follow the figure.* The areola's
+  texture and its Montgomery tubercles must end at this figure's areola, which
+  is 6.5 mm in radius in a child and 19 in a woman, from fields that are the
+  same for all. A detail layer may declare a `profile` (`DetailLayer.profiled`;
+  always for `tubercles`): its coordinate (here the radius) is an index into
+  eight amplitudes the paint writes into the red channel of the layer's stop
+  texels, which the shader reads as it reads colour stops. Header kinds 7
+  (profiled bumps) and 8 (tubercles) say so, and 9 is the stretch marks; kind 6 is
+  the body hair's strands, and kinds 2, 3 and 5 are unchanged.
+- *Montgomery tubercles are a share of cells, not a count.* Their relief is
+  `hkTubercles`: bumps in the cells of a 2.2 mm grid, each raised once the
+  profile's occupancy at the pixel passes the cell's own random draw, by a short
+  ramp so a bump does not lose a side where the occupancy changes across it. A
+  ring profile (from a quarter of the areola's radius to nine tenths) and
+  an occupancy of about 8% in a woman give about a dozen on an areola. Each is a
+  1.5 mm bump (a bump spans 0.7 of a cell), where measured tubercles are 1 to 2
+  mm.
+- *Collarbones and ribs are crease layers by body fat.* The body fat is
+  Gallagher's equation (`bodyFatPercent`) of the body mass index the figure's
+  own mesh has (`figureBmi`: its volume at the density of the body over its
+  height squared, measured on the base mesh and re-measured by a test, so it
+  cannot drift), its sex and its age. How plainly a bone shows is a smoothstep
+  of that between a fat at which it does not (`CLAVICLE_VISIBLE_FAT`,
+  `RIB_VISIBLE_FAT`: ribs only on the leanest) and one at which it does, so the
+  relief's strength is the figure's own; a heavy figure's collarbones and ribs
+  are flat. The collarbone is two periods of a crease layer across the bone: a
+  ridge on the clavicle's axis between the fossae above and below it, the
+  coordinate the distance up the bone's own cross-section, so a point straight
+  out from the bone is the ridge; a rib is the groove between two, nine
+  periods down a window from the second rib to the tenth, along lines that fall
+  25 degrees outward from the breastbone, and the breast, the arms and the
+  breastbone's strip are left out.
+- *The navel and the midline.* The navel's centre is the deepest point of the
+  midline's skin at the height of the spine's third joint (`navelCentre`); its
+  layer multiplies the skin by a pinker, darker hollow (more haemoglobin in thin
+  scar skin, in shadow) over a disc of 2 cm. The linea nigra is a multiply layer
+  of the skin's own melanin at 1.6 times its density down a strip of the lower
+  belly, bell-shaped across; at rest it is faint (12% of a full line) and
+  after puberty only, in both sexes, and the pregnancy state will raise its
+  strength to full. The linea alba is one groove of a crease layer along the
+  strip, broken at the navel, as deep as the figure's leanness and muscle make it.
+  A strip a base vertex's width is as narrow as the fields can carry; the
+  finer line is the paint's.
+- *The atlas plan fills a coordinate channel before opening one.* Adding the
+  midline layers took the plan to 33 channels, nine pages: first fit had put a
+  layer that reads a coordinate into a group with a value channel alone, which
+  costs a channel. A layer now goes to the first group it lies apart from that has
+  what it reads, and to the first it lies apart from only if there is none
+  (`planAtlas`). The midline layers also stop a hand's breadth above the navel
+  (the breasts' skin has layers of its own, and a layer shares channels only with
+  those that lie apart from it, a cell of the 64 by 64 grid and a cell's margin
+  all round).
+- *Stretch marks are a detail layer that also colours.* Kind 9 in the stop table
+  (`pattern: "striae"`): the sole's friction ridges' noise (`ridgeHeight`, one
+  function in TypeScript and in the shader) past a threshold the figure's
+  amount sets (`striaMark`: coverage 2.5% of the sites' skin at an amount of a
+  quarter, 7.6% at half, 19% at 1; the edge soft by a fifth of the noise's range), as streaks 9 mm apart (marks of 3 to 5 mm) that run for
+  centimetres and end, in groups. A mark multiplies the skin by the layer's
+  colour ratio and sinks it a fifth of a millimetre; the header carries the
+  depth and the spacing, stop 0 the ratio and stop 1 the amount, and the
+  coordinate the streaks' direction. The mask is the site's weight and scales the
+  amount, so the belly, flank, hip and thigh differ in density; a mark is never
+  more opaque than the layer's strength. *Where:* the lower trunk, hips,
+  buttocks and the outer and back of the thigh, not the breast, groin, inner thigh,
+  skin that faces up or down or the midline's few centimetres (the body's UV islands meet
+  there, the noise is drawn in UV, and a mark that crossed would be cut and offset:
+  a limit of drawing in UV that the sole's ridges share). *Direction:* round the body, horizontal in the
+  skin's plane, across the stretch; the UV angle that gives it comes from
+  `uvOrientation`, the code the feet's ridges use, stored about a seam
+  (`STRIAE_ORIENTATION_SEAM`) at the angle the fewest neighbours straddle. *How much:*
+  `striaeAmount` of the figure's weight above the middle, its height in the years
+  of growth, its age on the puberty ramp and its sex; none on the default figure
+  and none in a child. *Colour:* by the marks' age (`striaeMaturity`: new to 13
+  years, old from 35) and the tone: red when new on light skin and violet-brown
+  and darker on deep skin, pale when old, which on the deepest skin is 13
+  CIELAB lightness points lighter than the skin and on the lightest 1.
+- *What the mesh limits.* The base mesh's vertices are about a centimetre apart,
+  so a field cannot hold a feature narrower than a few of them: the linea nigra
+  and the collarbone's ridge are soft bands, the navel's disc a few vertices, and
+  all geometry (the nipple's height, the navel's dimple, the rib cage) is the
+  mesh's own, not drawn here: these layers add colour and shading, no shape.
+  Everything drawn in UV (the sole's ridges, the stretch marks, the tubercles'
+  cells) is cut where two UV islands meet, which is why the marks stop short of
+  the midline. Layers that cross neither limit are exact at any figure.
+- *No page was added.* The areola's colour keeps its two channels; the texture and
+  the tubercles overlap it on the surface, so each needs its own, but the atlas
+  plan puts them where the face's lines and the feet's and hands' layers are not
+  (`tests/atlasPlan.test.ts`: eight pages still, with every layer here).
 
 ## Parallel work: the base contract
 

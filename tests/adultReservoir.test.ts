@@ -292,3 +292,128 @@ describe("a reservoir in the adult surface", { timeout: 600_000 }, () => {
     ]);
   });
 });
+
+describe("a reservoir with an island of its own in UV space", { timeout: 600_000 }, () => {
+  const island = {
+    // In free space of the body's UV layout (its top right corner is empty).
+    origin: [0.65, 0.92] as [number, number],
+    along: [0.08, 0] as [number, number],
+    across: [0, 0.05] as [number, number],
+    cap: { centre: [0.85, 0.94] as [number, number], radius: 0.02 },
+  };
+  const islanded = (layer?: string): AdultReservoirSpec[] => [
+    { id: "test", loop: found.loop, cap: found.cap, rings: RINGS, island, ...(layer && { layer }) },
+  ];
+  const model = modelOf(adultPackWith({ reservoirs: islanded("penis-skin") }));
+  const surface = model.adultSurface();
+  if (!surface) throw new Error("no adult surface");
+  const plainSurface = withReservoir.adultSurface();
+  if (!plainSurface) throw new Error("no adult surface");
+  const inside = (x: number, y: number, box: { x0: number; y0: number; x1: number; y1: number }) =>
+    x >= box.x0 - 1e-6 && x <= box.x1 + 1e-6 && y >= box.y0 - 1e-6 && y <= box.y1 + 1e-6;
+  const wall = {
+    x0: island.origin[0],
+    y0: island.origin[1],
+    x1: island.origin[0] + island.along[0],
+    y1: island.origin[1] + island.across[1],
+  };
+  const disc = {
+    x0: island.cap.centre[0] - island.cap.radius,
+    y0: island.cap.centre[1] - island.cap.radius,
+    x1: island.cap.centre[0] + island.cap.radius,
+    y1: island.cap.centre[1] + island.cap.radius,
+  };
+  /** Render vertices whose UV is in the wall's rectangle or the cap's square. */
+  const islandVertices = (uvs: Float32Array) => {
+    const out: number[] = [];
+    for (let v = 0; v < uvs.length / 2; v++) {
+      const x = uvs[v * 2] as number;
+      const y = uvs[v * 2 + 1] as number;
+      if (inside(x, y, wall) || inside(x, y, disc)) out.push(v);
+    }
+    return out;
+  };
+
+  it("is the same surface in space, at rest, with or without it", () => {
+    const a = surfaceTriangles(plainSurface.index, withReservoir.evaluate(adult).positions);
+    const b = surfaceTriangles(surface.index, model.evaluate(adult).positions);
+    expect(b.real.length).toBe(a.real.length);
+    for (let i = 0; i < a.real.length; i++)
+      if (a.real[i] !== b.real[i]) throw new Error(`triangle ${i} differs`);
+  });
+
+  it("puts the wall on a grid in UV space and the cap on the disc, with the strips given real area", () => {
+    const uvs = surface.uvs;
+    const area = (a: number, b: number, c: number) =>
+      Math.abs(
+        ((uvs[b * 2] as number) - (uvs[a * 2] as number)) *
+          ((uvs[c * 2 + 1] as number) - (uvs[a * 2 + 1] as number)) -
+          ((uvs[c * 2] as number) - (uvs[a * 2] as number)) *
+            ((uvs[b * 2 + 1] as number) - (uvs[a * 2 + 1] as number)),
+      ) / 2;
+    const on = new Set(islandVertices(uvs));
+    expect(on.size).toBeGreaterThan(found.loop.length * RINGS);
+    let wallArea = 0;
+    let capArea = 0;
+    for (let t = 0; t < surface.index.length; t += 3) {
+      const [a, b, c] = [0, 1, 2].map((k) => surface.index[t + k] as number) as [
+        number,
+        number,
+        number,
+      ];
+      if (!(on.has(a) && on.has(b) && on.has(c))) continue;
+      const x = ((uvs[a * 2] as number) + (uvs[b * 2] as number) + (uvs[c * 2] as number)) / 3;
+      const y =
+        ((uvs[a * 2 + 1] as number) + (uvs[b * 2 + 1] as number) + (uvs[c * 2 + 1] as number)) / 3;
+      if (inside(x, y, wall)) wallArea += area(a, b, c);
+      else capArea += area(a, b, c);
+    }
+    // The wall fills its rectangle; the cap fills most of its disc (a polygon within it).
+    expect(wallArea).toBeCloseTo(island.along[0] * island.across[1], 6);
+    expect(capArea).toBeGreaterThan(Math.PI * island.cap.radius ** 2 * 0.6);
+    expect(capArea).toBeLessThanOrEqual(Math.PI * island.cap.radius ** 2 * 1.01);
+  });
+
+  it("leaves the surface outside the reservoir on the UVs it had", () => {
+    // Every render vertex not on the island has a UV the surface without it has too.
+    const had = new Set<string>();
+    const key = (x: number, y: number) => `${x.toFixed(6)},${y.toFixed(6)}`;
+    for (let v = 0; v < plainSurface.uvs.length / 2; v++)
+      had.add(key(plainSurface.uvs[v * 2] as number, plainSurface.uvs[v * 2 + 1] as number));
+    const on = new Set(islandVertices(surface.uvs));
+    for (let v = 0; v < surface.uvs.length / 2; v++) {
+      if (on.has(v)) continue;
+      expect(had.has(key(surface.uvs[v * 2] as number, surface.uvs[v * 2 + 1] as number))).toBe(
+        true,
+      );
+    }
+  });
+
+  it("posts the layer's fields on the island's triangles: mask 1, the coordinate along the rings", () => {
+    const update = model.adultLayerFields();
+    const extra = update?.extra;
+    expect(extra).toBeDefined();
+    const l = update?.layers.indexOf("penis-skin") as number;
+    const count = (extra?.uvs.length ?? 0) / 2;
+    if (!extra) throw new Error("no extra");
+    const block = extra.layerFields.subarray(l * count * 2, (l + 1) * count * 2);
+    for (let v = 0; v < count; v++) expect(block[v * 2]).toBe(1);
+    const along = Array.from({ length: count }, (_, v) => block[v * 2 + 1] as number);
+    expect(Math.min(...along)).toBe(0);
+    expect(Math.max(...along)).toBe(1);
+    expect(new Set(along.map((x) => Math.round(x * RINGS))).size).toBe(RINGS + 1);
+  });
+
+  it("is refused when its reservoir names no adult skin layer the core has", () => {
+    expect(() => modelOf(adultPackWith({ reservoirs: islanded() })).adultLayerFields()).toThrow(
+      /needs an adult skin layer/,
+    );
+    expect(() =>
+      modelOf(adultPackWith({ reservoirs: islanded("no-such-layer") })).adultLayerFields(),
+    ).toThrow(/needs an adult skin layer/);
+  });
+
+  it("posts nothing extra for a reservoir without an island", () => {
+    expect(withReservoir.adultLayerFields()?.extra).toBeUndefined();
+  });
+});

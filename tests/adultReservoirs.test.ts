@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { RESERVOIR_RINGS, reservoirSpecs } from "../scripts/lib/adultReservoirs.ts";
+import { ISLAND_LAYERS, RESERVOIR_RINGS, reservoirSpecs } from "../scripts/lib/adultReservoirs.ts";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
+import { ATLAS_SIZE, bodyCoverage } from "../scripts/lib/uvIslands.ts";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
@@ -26,7 +27,10 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
       "labioscrotal-left",
       "labioscrotal-right",
     ]);
-    expect(reservoirSpecs(lattice)).toEqual(shipped);
+    // Placement is the generator's; the islands and layers are the packer's (below).
+    expect(reservoirSpecs(lattice)).toEqual(
+      shipped.map(({ island: _island, layer: _layer, ...placed }) => placed),
+    );
     expect(shipped.map((r) => r.rings)).toEqual([
       RESERVOIR_RINGS.phallic,
       RESERVOIR_RINGS.labioscrotal,
@@ -81,6 +85,51 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
       lattice.regionCount + shipped.reduce((s, r) => s + r.loop.length * r.rings, 0),
     );
     expect(lattice.vertexCount).toBeLessThanOrEqual(0x10000);
+  });
+
+  it("gives each an island in free UV space, apart from the body's and from each other, and a layer to colour it", () => {
+    const size = ATLAS_SIZE;
+    const body = model.topology().body;
+    const covered = bodyCoverage(body.uvs, body.index, size);
+    const taken = new Uint8Array(size * size);
+    for (const r of shipped) {
+      expect(r.layer, r.id).toBe(ISLAND_LAYERS[r.id]);
+      const isle = r.island;
+      if (!isle) throw new Error(`${r.id} has no island`);
+      const rects = [
+        // The wall: origin to origin + along + across.
+        {
+          x0: isle.origin[0],
+          y0: isle.origin[1],
+          x1: isle.origin[0] + isle.along[0] + isle.across[0],
+          y1: isle.origin[1] + isle.along[1] + isle.across[1],
+        },
+        // The cap's disc, by its bounding square.
+        {
+          x0: isle.cap.centre[0] - isle.cap.radius,
+          y0: isle.cap.centre[1] - isle.cap.radius,
+          x1: isle.cap.centre[0] + isle.cap.radius,
+          y1: isle.cap.centre[1] + isle.cap.radius,
+        },
+      ];
+      for (const q of rects) {
+        expect(Math.min(q.x0, q.y0), r.id).toBeGreaterThan(0);
+        expect(Math.max(q.x1, q.y1), r.id).toBeLessThan(1);
+        for (let y = Math.floor(q.y0 * size); y < Math.ceil(q.y1 * size); y++)
+          for (let x = Math.floor(q.x0 * size); x < Math.ceil(q.x1 * size); x++) {
+            expect(covered[y * size + x], `${r.id} on the body at ${x},${y}`).toBe(0);
+            expect(taken[y * size + x], `${r.id} on another island at ${x},${y}`).toBe(0);
+            taken[y * size + x] = 1;
+          }
+      }
+    }
+  });
+
+  it("lets a tube be told from the skin round its root: the wall is a grid in UV, not collapsed", () => {
+    const isle = shipped[0]?.island;
+    expect(
+      isle && Math.abs(isle.along[0] * isle.across[1] - isle.along[1] * isle.across[0]),
+    ).toBeGreaterThan(1e-4);
   });
 
   it("changes nothing at rest: the adult surface is what it is without them", () => {

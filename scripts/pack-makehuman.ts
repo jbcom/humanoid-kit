@@ -31,6 +31,7 @@ import {
   type AdultReservoirSpec,
   BODY_TARGET_FILES,
   type BodyManifest,
+  groupFaces,
   parseHumanoidAssets,
   type ShapeModifierEntry,
   TARGET_ENCODING,
@@ -39,6 +40,7 @@ import { macroTargetAgeAnchor, macroTargetNames } from "../src/makehuman/macro.t
 import { STATE_MORPH_TARGETS } from "../src/makehuman/stateMorphs.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
+import { uvScale } from "../src/surface/layers.ts";
 import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
 import {
   ADULT_SPEC_TARGETS,
@@ -52,11 +54,12 @@ import {
   authorControl,
   authorDetail,
 } from "./lib/adultAuthored.ts";
-import { reservoirSpecs } from "./lib/adultReservoirs.ts";
+import { ISLAND_LAYERS, ISLAND_SIZES, reservoirSpecs } from "./lib/adultReservoirs.ts";
 import { authoredPoses } from "./lib/authoredPoses.ts";
 import { parseBvh } from "./lib/bvh.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { AUTHORING_FIGURE } from "./lib/control/mound.ts";
+import { reservoirRoot } from "./lib/detail/root.ts";
 import { symmetrizeFaceUnits } from "./lib/faceUnits.ts";
 import { NAIL_PLATES, VENDOR_BODYPARTS04 } from "./lib/nailPlates.ts";
 import { packHair } from "./lib/packHair.ts";
@@ -68,6 +71,7 @@ import {
 } from "./lib/packWriter.ts";
 import { buildSliders } from "./lib/sliders.ts";
 import { type EncodedTarget, encodeSparseTarget } from "./lib/targetEncoding.ts";
+import { bodyCoverage, placeIslands } from "./lib/uvIslands.ts";
 
 const USAGE = "usage: node scripts/pack-makehuman.ts <makehuman-data-dir> <system-assets-dir>";
 const DATA: string = (() => {
@@ -721,7 +725,8 @@ async function main() {
       ),
     );
   // Reservoirs are placed on the surface as it is without them.
-  const surfaceOnly = interim().adultDetailLattice(AUTHORING_FIGURE);
+  const plain = interim();
+  const surfaceOnly = plain.adultDetailLattice(AUTHORING_FIGURE);
   if (!surfaceOnly) throw new Error("the adult pack has no refined surface to place reservoirs on");
   const reservoirs = reservoirSpecs(surfaceOnly);
   // The control targets the pack authors (the mound) are generated on the
@@ -732,6 +737,35 @@ async function main() {
   const latticeWith = withReservoirs.adultDetailLattice(AUTHORING_FIGURE);
   if (!latticeWith) throw new Error("the adult pack has no refined surface to draw detail on");
   const organ = authorDetail(latticeWith, reservoirs);
+  // Each reservoir's skin gets an island of its own in free space of the body's UV layout,
+  // at the skin's own scale, so a skin layer can colour a tube and not the skin round its root.
+  const bodyTopology = plain.topology().body;
+  const metresPerUv = uvScale(packedFigure, groupFaces(packedFigure, "body"));
+  const control = withReservoirs.controlShape(AUTHORING_FIGURE);
+  const scaleAt = (id: string) => {
+    const spec = reservoirs.find((r) => r.id === id) as AdultReservoirSpec;
+    const [cx, cy, cz] = reservoirRoot(latticeWith, spec).centre;
+    let best = -1;
+    let nearest = Number.POSITIVE_INFINITY;
+    for (const v of control.body) {
+      const d =
+        ((control.control[v * 3] as number) - cx) ** 2 +
+        ((control.control[v * 3 + 1] as number) - cy) ** 2 +
+        ((control.control[v * 3 + 2] as number) - cz) ** 2;
+      if (d < nearest) {
+        nearest = d;
+        best = v;
+      }
+    }
+    return metresPerUv[best] as number;
+  };
+  const islanded = placeIslands(
+    reservoirs,
+    ISLAND_SIZES,
+    ISLAND_LAYERS,
+    Object.fromEntries(reservoirs.map((r) => [r.id, scaleAt(r.id)])),
+    bodyCoverage(bodyTopology.uvs, bodyTopology.index),
+  );
   const adult = writeTargetFile([...adultControl, ...generated, ...organ.targets]);
   fs.writeFileSync(path.join(ADULT_OUT, TARGETS_FILE), adult.bin);
   addAuthoredSliders(sliders.adult);
@@ -768,7 +802,7 @@ async function main() {
     modifiers: [...modifiers.filter((m) => isAdultPackTarget(m.hi)), ...AUTHORED_MODIFIERS],
     sliders: sliders.adult,
     /** Features, skin-layer measurements and shape states: the core names none of these. */
-    anatomy: adultAnatomySpec(packedFigure, organ.detail, reservoirs),
+    anatomy: adultAnatomySpec(packedFigure, organ.detail, islanded),
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 
