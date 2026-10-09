@@ -55,7 +55,7 @@ once its own targets have arrived rather than all of them
 
 | File | Holds | Size |
 | --- | --- | --- |
-| `targets-core.bin.gz` | the 8 skin-mask targets (`src/makehuman/skinMasks.ts`), and any macro target with no age anchor (MakeHuman has none) | 0.01 MB |
+| `targets-core.bin.gz` | the skin layers' mask targets (`SKIN_LAYER_TARGETS`, `src/surface/regions`), and any macro target with no age anchor (MakeHuman has none) | 0.01 MB |
 | `targets-baby.bin.gz`, `-child`, `-young`, `-old` | the macro targets of one age anchor (ethnic, universal, height, proportions and breast combinations) | 0.83, 1.14, 1.25, 1.20 MB |
 | `targets-modifiers.bin.gz` | the other shape-modifier targets | 1.0 MB |
 
@@ -67,14 +67,18 @@ years) needs only the young file: about 1.9 MB with the body and attachments,
 against 5.1 MB for everything.
 
 `loadHumanoidAssetsStaged(options)` loads in stages over one link, each
-starting when the previous one's bytes have arrived (`targetLoadOrder`): first
-the body, the attachments, the core file and the age anchors a figure of
+starting when the previous one has settled (`targetLoadOrder`): first the body,
+the attachments, the core file and the age anchors a figure of
 `options.firstFigureAge` needs (default: the default figure's, 25); then the
-other anchors, neighbours first (from 25, child and old, which any drag of the
-age slider needs, before baby); then the modifier targets with the adult
-pack's, which are all modifiers. It resolves with the first stage and exposes
-a promise per later stage and one for the whole load. `loadHumanoidAssets`
-waits for all of them.
+body's modifier targets, which every shape slider and every randomised or saved
+figure needs; then the other anchors, neighbours first (from 25, child and old,
+which any drag of the age slider needs, before baby); then the adult pack's
+targets alone, so a failure there costs the body nothing. A failed stage fails
+only itself. It resolves with the first stage and exposes a promise per later
+stage and one for the whole load. `loadHumanoidAssets` waits for all of them.
+The worker waits for the stages each request needs, including the default
+figure's anchors before baking occlusion for a partial attachment set
+(`occlusionBakeRecipe`), so a child or very old first figure still starts.
 
 Each pack exports its file URLs (`bodyPack`, `adultAnatomyPack`) as literal
 `new URL(..., import.meta.url)` expressions so bundlers emit the data files
@@ -237,11 +241,43 @@ they do on most figures, so the packer bakes it once
 as one byte per control vertex. The bake does not depend on the model's
 subdivision level: the body occludes as its unsubdivided control mesh and the
 opaque attachments always as their one-level surface. A model wearing the body
-pack's own attachments (in any order) uses the shipped bytes and casts no rays;
-a model wearing any other set bakes during construction of its topology, inside
-worker initialisation. A test re-bakes from the shipped pack and fails if the
-stored values drift from what the code computes. Expressions that open the
-mouth will re-bake at runtime with the same method.
+pack's own attachments (in any order) uses the shipped bytes and casts no rays.
+A model wearing any other set bakes it at rest while building its topology,
+inside worker initialisation, with the rest value standing in at every pose
+corner. After `ready`, `client.posedOcclusion()` has the worker bake the other
+corners (`HumanoidModel.bakePosedOcclusion`; about 6 s on desktop for the
+whole set), one corner at a time with a macrotask between, so evaluations
+queued meanwhile are answered within one corner's bake instead of after all
+of them; `<Humanoid>` swaps the attributes in when they arrive. Until then
+the attachments render as they did before occlusion followed the pose. A test re-bakes from the shipped pack and fails if the
+stored values drift from what the code computes.
+
+**Occlusion follows the pose** (2026-10-09). An open mouth exposes teeth that
+the rest bake calls enclosed, so they rendered black. Three key poses change
+what encloses the attachments (`OCCLUSION_KEYS`: jaw open, lips apart, smile),
+and their effects interact in both directions. Measured on the default figure
+(p90 openness of the front teeth): jaw 0.31 and smile 0.00 alone but 0.59
+together, since a smile uncovers the teeth only once the jaw is open; jaw 0.31
+and lips 0.59 alone but 0.72 together, since both uncover the same teeth. A sum
+of single-key changes misses both, so the packer bakes every corner of the key
+cube (eight bakes, each key absent or full, the body posed by `skinPositions`
+and the attachments bound to it) and the vertex shader blends them
+multilinearly. Each key's weight is how much of it the current pose holds,
+solved by least squares over the bones' rotation vectors
+(`occlusionKeyWeights`), so animation drives it as well as face units, and a
+corner pose is exact. The manifest names the keys it baked
+(`attachments.occlusionKeys`); a model whose keys differ re-bakes rather than
+misreading the bytes.
+
+Decision: corner bakes with multilinear blending, over re-baking per pose
+(rays every time an expression changes, impossible per frame for a crowd)
+and over summed single-key changes (wrong in both directions, above). Costs:
+eight bytes per attachment vertex in the pack, and eight bakes at worker start
+for an attachment set the pack did not bake. That start-up cost matters once
+clothing makes custom sets common (milestone 7). The keys are coarse: the lips
+key raises the upper and lowers the lower lip together, so a pose raising only
+the upper lip reads as half the key. Splitting it (four keys, sixteen corners)
+is the next refinement if expressions need it.
 
 ## Worker
 
@@ -274,7 +310,7 @@ hints, regional overrides) and `src/editor/ui` the React creator built on them.
 Tapping the figure opens the controls for what was tapped: the nose opens the
 nose sliders, a hand the hand sliders. The map from surface to controls is not
 written by hand. A slider group's modifier targets move exactly the vertices of
-the feature it shapes, as the skin masks already rely on, so the group that
+the feature it shapes, as the skin layers' masks already rely on, so the group that
 moves a vertex most is the feature there (`src/makehuman/features.ts`):
 
 - For every slider group that drives shape modifiers, and every base vertex,
@@ -296,15 +332,60 @@ attachment render vertex the feature of the first base vertex it is bound to
 `client.pickMap()`; a tap, as opposed to an orbit drag, on a figure rendered by
 `<Humanoid onPick>` reports the render vertex it hit.
 
-## Skeleton and facial pose data
+## Skeleton, poses and expressions (milestone 2)
 
 The body pack carries the MakeHuman default skeleton (163 bones with parents,
 head and tail joints and roll planes), the joint vertex lists, the skin weights
-and 60 facial pose units (named frames of a BVH). Today the skin weights drive
-the regions and are carried onto the render surface, and `jointPosition` returns
-a joint's centroid over any set of positions. The runtime does not yet build a
-three.js skeleton, pose a figure or play expressions, and `<Humanoid>` renders a
-static mesh.
+(up to four bones per vertex, indexed in the manifest's bone order) and 60
+facial pose units (named frames of a BVH).
+
+**Use cases.** The creator previews expressions and poses to judge shape and
+skin (a blink, a smile, an open jaw; arms down instead of the rest A-pose).
+Games animate many figures every frame from animation packs (BVH, milestone
+8). Attachments (eyes, teeth, tongue, later clothing and hair) must follow the
+pose. Presence anchors, joint-angle skin states (wrinkles) and pose-keyed
+occlusion (an open mouth) read the posed skeleton.
+
+**Requirements.** Posing must cost nothing on the worker per frame (a crowd
+animates at frame rate while recipes change rarely); the rig must fit every
+morphed body, not only the default; rotations from MakeHuman's BVH data must
+mean what they meant there; everything must be testable in Node.
+
+**Decisions (2026-10-09).**
+
+- *Rest frames are axis-aligned, as in BVH.* A BVH joint has an offset and no
+  rest orientation, so its rotations are about world-aligned axes at the
+  joint, composed down the hierarchy. Each bone is therefore placed at its head
+  joint (the centroid of its joint vertices over the *morphed* control mesh,
+  so the rig fits every figure) with an identity rest rotation. The roll planes
+  are kept for exporting to tools with bone-local frames; posing does not need
+  them. Rotations from MakeHuman's BVH files apply unchanged, in each joint's
+  channel order.
+- *Linear blend skinning on the GPU* (three's `SkinnedMesh`) with the pack's
+  weights, which MakeHuman authored for linear blending. The worker returns
+  the bone heads with each evaluation; the main thread binds the skeleton at
+  that rest and poses it per frame. Dual-quaternion skinning and corrective
+  shapes, for elbows, knees and shoulders, are a later area lane on the same
+  rig.
+- *Expressions blend face units in log space*: each unit's per-bone rotation
+  is a rotation vector, an expression is the weighted sum per bone, and the sum
+  is exponentiated. Blending is order-independent and exact for one unit.
+- *A CPU reference* (`skinPositions`) poses control vertices exactly as the
+  shader does, for tests, presence anchors and pose-keyed occlusion bakes.
+- *MakeHuman's BVH files are Z-up, facing -Y*; the figure is Y-up, facing +Z.
+  Every rotation channel is mapped into the figure's axes (X stays X, Y becomes
+  -Z, Z becomes Y). An X rotation (the jaw, the lids) means the same either
+  way, which is how an unmapped first version passed its jaw and lid tests
+  while turning the eyes the wrong way; tests now turn the eyes and move the
+  mouth sideways.
+- *Body poses* come from the pack: MakeHuman's CC0 T-pose and its rigging
+  benchmark, which bends every joint to an extreme and is the joint-extreme
+  check. An expression layers on top of a body pose bone by bone.
+- *Grounding follows the pose.* The rest ground offset comes with each
+  evaluation; a posed figure's comes from skinning its control mesh on the
+  main thread (`posedGroundOffset`, with the pack's skin sent once), so a
+  kneeling figure rests on the floor instead of hanging where its standing
+  feet were.
 
 ## Layers
 
@@ -312,16 +393,16 @@ static mesh.
 | --- | --- | --- |
 | `src/format` | Pack types, parsing, loading, face groups, joint positions | no (uses `fetch`) |
 | `src/morph` | Sparse morph evaluation with per-region weights | no |
-| `src/makehuman` | Macro axes and target weights, regions, skin masks, feature map, recipe to contributions | no |
+| `src/makehuman` | Macro axes and target weights, regions, feature map, recipe to contributions | no |
 | `src/mhclo` | Attachment binding (MakeHuman's MHCLO) | no |
 | `src/recipe` | Recipe schema and defaults, the age policy, validation | no |
 | `src/subdiv` | Catmull-Clark stencils | no |
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
-| `src/surface` | Skin albedo, the scatter model and table, occlusion baking | no |
+| `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking | no |
 | `src/model` | `HumanoidModel`, the evaluation pipeline | no |
 | `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
-| `src/render` | The skin and eye materials | three.js, no React |
+| `src/render` | The skin and eye materials, the layer field atlas | three.js, no React |
 | `src/react` | `HumanoidProvider`, `Humanoid`, `StudioStage` and hooks | yes |
 | `src/editor/ui` | `HumanoidCreator` and its panels | yes |
 
@@ -352,7 +433,8 @@ or the name of any of its targets or modifiers.
 
 ## Roadmap
 
-Planned, in order.
+Milestones, in the order each is proven (built in parallel lanes; see
+"Parallel work: the base contract").
 
 1. **Doll form and editor shell.** Implemented: `humanoid-kit/editor`, a
    tap-to-edit creator over the recipe (see Editor).
@@ -385,6 +467,148 @@ region masks:
   knees, knuckles and the neck, and goosebumps as a procedural normal and
   displacement overlay.
 
-The rest-state colours (`lipAlbedo`, `areolaAlbedo`, the skin masks) are its
+The rest-state layers (`src/surface/regions/rest.ts`: flush, lips, areola) are its
 layer zero, and every state is modelled along measured skin axes so that it
 holds at every skin tone.
+
+### Skin states: design (2026-10-09)
+
+Sources and their limits are in `docs/research/SKIN-STATES.md` (regional
+colour and skin states, measured sources, with what could not be verified
+marked). What is measured:
+goosebump papules of about 0.15 to 0.2 mm at follicle density (14 to 32 per
+cm²), episodes of 9 to 13 s, on hair-bearing skin only; under cold, areola
+circumference down 2 to 6 % and nipple height up 8 to 19 % (a lower bound,
+from partly denervated grafts); erect against flaccid, +25 % circumference;
+skin stretch of 25 % (forearm extension) to over 60 % (knee flexion); a
+regional sweat-rate map (forehead, dorsal fingers and upper back highest).
+What is not: any flush colour change on deep skin, and any wrinkle depth or
+spacing against joint angle. Those are modelled, never invented as numbers.
+
+**Signals.** One named, documented set of continuous inputs, each 0..1:
+`cold`, `heat`, `exertion`, `arousal`, `blush`, `fear`, plus joint flexion,
+which the rig computes from the pose (`flex.elbow.L` and so on,
+`src/rig/flexion.ts`). Flexion is measured from straight, not from the rest
+pose, since creases follow the true joint angle: MakeHuman's A-pose already
+bends each elbow about 43° forward. Each joint's hinge is perpendicular to the
+upper segment and to the way the joint flexes; MakeHuman's roll planes would
+not do, because in the A-pose the arm lies in the frontal plane and the
+elbow's roll-plane normal points forward. The library maps signals to
+appearance; how a signal evolves over time belongs to the application, with a
+small first-order attack and decay helper for the measured time courses.
+Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
+
+**Four channels, one per kind of change:**
+
+1. *Colour*, through colour layers as now. Flush, blush and pallor move
+   haemoglobin along the same measured model that `skinAlbedo` uses, whose
+   effect on a\* already fades as melanin rises. The same physical change is
+   therefore smaller and darker on deep skin, without a separate rule. Where
+   it shows most (lips, ears, nail beds, areola) follows from where blood sits
+   close under thin or unpigmented skin.
+2. *Surface detail*, through a new layer kind: a detail-normal layer, whose
+   paint gives a strength and whose normal is procedural in the shader.
+   Goosebumps are follicle-scale bumps, with height and density from the
+   numbers above, masked to hair-bearing skin (not palms, soles, lips, areolae
+   or genitals). Joint wrinkles are creases across the joint axis, driven by
+   flexion and folding on the compressed side while flattening on the
+   stretched side, as measured. Their depth and spacing are art-directed
+   parameters, and documented as such. A per-vertex field of world length per
+   UV unit keeps procedural detail at true scale across the atlas.
+3. *Surface sheen*, through a surface layer that lowers roughness and raises
+   specular where sweat flows, weighted by the regional sweat map and the
+   `exertion` and `heat` signals.
+4. *Shape*, through state morphs. These are targets the worker adds to an
+   evaluation as a separate input from the recipe, because a state is not
+   identity and must never be saved as one: under cold, the nipple-point
+   target rises and the areola contracts. Engorgement belongs to the adult
+   pack only, refused under 18 exactly as its modifiers are. Shape states
+   change slowly (seconds), so a re-evaluation per change is acceptable;
+   colour, detail and sheen states cost no evaluation at all.
+
+**Adult-pack layers (design, 2026-10-09; built with the milestone 3 graft
+lane).** Genital-region colour, relief and state layers draw their masks from
+the adult pack's targets, which arrive in the last load stage, after the
+topology and the field atlas exist. Decisions:
+
+- Their layer code (colour math only, no data) lives in the core as
+  `ADULT_SKIN_LAYERS`, appended to the stack, so the shader is compiled once
+  with every layer whether or not the pack is installed. The adult pack stays
+  data.
+- Until the adult stage arrives their fields are zero (empty atlas pages).
+  When it arrives the worker derives the fields from the pack's targets and
+  posts them; the main thread re-rasterises those pages of the shared atlas.
+  No shader recompiles and no figure re-evaluates.
+- `SkinPaintInput` gains `adult` (from the recipe's age). Every adult-pack
+  layer paints zero strength under 18, so even a figure whose atlas holds the
+  fields shows nothing there, consistent with genital anatomy living only in
+  the adult pack (AGE-POLICY.md).
+
+Rejected: shipping layer code inside the adult pack (a second code path that
+the core's tests could not reach), and recompiling the material when the pack
+loads (a visible hitch, and per-figure shader variants).
+
+**Contract changes** (additive, owned by the integrator; all in place): a
+`kind` on `SkinLayer` (`colour`, the default; `detail`; `surface`), stop-table
+rows that carry each kind's parameters, the UV-scale field, and `signals` as an
+evaluation input beside the recipe (`STATE_MORPHS`, with the cold response as
+the first, calibrated against the measured one). `arousal` is refused under 18
+in every channel (AGE-POLICY.md). Area lanes then add states as they add
+regions.
+
+## Parallel work: the base contract
+
+Decision (2026-10-09, with the owner): the milestones are an order of
+proof, not of work. Areas of the body (face, hands, feet, torso) and
+grafts (adult anatomy, clothing, hair, anthro parts) are built in parallel,
+each on its own branch against the current base, and integrated back. A graft
+fitted to today's figure inherits every later improvement beneath it (rig,
+skin states, lighting) without being redone, because it depends only on
+the contract below, not on how the layers under it are solved.
+
+**Frozen (changes need every lane's agreement):**
+
+1. The hm08 base mesh: topology, vertex indices, UV layout, face groups.
+2. The pack format and the `.mhclo` binding (grafts reference base vertices
+   by index and weight, and hide skin with `delete_verts`).
+3. The recipe schema, extended only by adding optional fields.
+4. The region layer interface (next paragraph).
+
+**Region layers.** Every area or graft that colours or textures skin adds
+*layers* rather than editing the skin material. A layer declares:
+
+- its mask, as a per-base-vertex field (from MakeHuman targets, as the skin
+  masks are now, or from vertex groups shipped in its pack);
+- an internal coordinate across it (for example radial distance from the
+  nipple, or vermilion to inner lip), so its colour can be a gradient rather
+  than one value;
+- a colour function of the skin tone, the recipe's parameters and the state
+  signals, and optionally a detail-normal function (wrinkles, goosebumps,
+  nails);
+- the signals it reads.
+
+A layer splits into what depends on the base mesh and what depends on the
+figure. Its fields (mask and coordinate) come from the base mesh alone, so
+they are rasterised once into a **field atlas** in the body's UV space (two
+layers per RGBA texture, gutters dilated so filtering never reaches empty
+texels across a seam) and shared by every figure. Its colour depends on the
+figure, so each figure carries only a small **stop table**: per layer, its
+strength, blend mode and colour stops along the coordinate, sampled with
+linear filtering so a gradient costs nothing extra. The skin shader evaluates
+the layers in order per pixel. A state signal that changes (flush rising,
+engorgement) rewrites a few stop-table texels; nothing is re-rendered, and a
+crowd costs one atlas plus a few hundred bytes per figure, where a composed
+albedo texture per figure would cost megabytes each and a pass per change.
+
+Decision (2026-10-09): the field atlas and stop table, over a composed
+per-figure texture (memory and per-change cost above) and over generating
+shader code per layer (vertex-attribute limits, a recompile per layer set,
+and GLSL that Node tests cannot run). Layer colour functions are plain
+TypeScript, unit-tested in Node; the shader is fixed. Today's three mask
+channels become the first three layers with unchanged output. Each area lives
+in its own files (`src/surface/regions/<area>.ts` and its tests) and adds one
+entry to the layer list, so lanes add files rather than edit shared ones.
+
+**Per lane, before merging:** its own unit tests, and a contact sheet of its
+area at both ends of the tone range and at the extremes of each control.
+After merging, the colour-parity and e2e gates must stay green.

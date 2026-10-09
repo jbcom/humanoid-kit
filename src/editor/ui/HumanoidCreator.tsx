@@ -242,9 +242,9 @@ function CreatorBody({
             recipe={recipe}
             position={[0, lift, 0]}
             onPick={onPick}
+            onGroundOffset={setLift}
             onEvaluated={(ev) => {
               positions.current = ev.positions;
-              setLift(ev.groundOffset);
               setHasFigure(true);
             }}
           />

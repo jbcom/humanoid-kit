@@ -51,6 +51,28 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
     expect(replies.get(2)?.type).toBe("evaluated");
   });
 
+  it("bakes a partial attachment set against the default figure, whatever the first figure's age", async () => {
+    // A child first figure loads the child anchors first; the bake needs the
+    // default (adult) figure, so ready waits for its stage rather than failing.
+    let release = () => {};
+    const young = new Promise<void>((r) => {
+      release = r;
+    });
+    stubFetch({ hold: { file: "targets-young.bin.gz", until: young } });
+    const { handle, replies } = start();
+    const init = handle({
+      type: "init",
+      id: 1,
+      load: { body: "http://packs/body", firstFigureAge: 5 },
+      model: { subdivision: 0, attachments: ["eyes/high-poly"] },
+    });
+    await settle();
+    expect(replies.has(1)).toBe(false);
+    release();
+    await init;
+    expect(replies.get(1)).toMatchObject({ type: "ready" });
+  });
+
   it("rejects an evaluation whose stage fails, with the reason, and keeps serving others", async () => {
     stubFetch({ missing: "targets-modifiers.bin.gz" });
     const { handle, replies } = start();

@@ -63,10 +63,11 @@ describe("loadHumanoidAssets", { timeout: 60_000 }, () => {
       ["adult", "baby", "child", "modifiers", "old"].sort(),
     );
     expect(staged.stages.map((s) => s.files)).toEqual([
+      ["modifiers"],
       ["child"],
       ["old"],
       ["baby"],
-      ["modifiers", "adult"],
+      ["adult"],
     ]);
     // Nothing after the held stage was fetched: stages share the link in turn.
     await new Promise((r) => setTimeout(r, 20));
@@ -75,19 +76,33 @@ describe("loadHumanoidAssets", { timeout: 60_000 }, () => {
     const assets = await staged.complete;
     expect(assets).toBe(staged.assets);
     expect(assets.targetFilesPending.size).toBe(0);
-    const order = ["child", "old", "baby", "modifiers"].map((id) =>
+    const order = ["modifiers", "child", "old", "baby"].map((id) =>
       requested.findIndex((u) => u.endsWith(`targets-${id}.bin.gz`)),
     );
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
-  it("reports a failed stage on that stage and the ones that need it, not the first", async () => {
-    stubFetch({ missing: "targets-modifiers.bin.gz" });
+  it("reports a failed stage on that stage only; the stages after it still load", async () => {
+    stubFetch({ missing: "targets-child.bin.gz" });
     const staged = await loadHumanoidAssetsStaged({ body: "http://packs/body" });
-    await expect(staged.stages.at(-1)?.loaded).rejects.toThrow(/targets-modifiers\.bin\.gz failed/);
-    await expect(staged.complete).rejects.toThrow(/targets-modifiers/);
-    await expect(staged.stages[0]?.loaded).resolves.toBe(staged.assets);
-    expect(staged.assets.targetFilesPending.has("modifiers")).toBe(true);
+    const stage = (id: string) => staged.stages.find((s) => s.files.includes(id));
+    await expect(stage("child")?.loaded).rejects.toThrow(/targets-child\.bin\.gz failed/);
+    await expect(stage("old")?.loaded).resolves.toBe(staged.assets);
+    await expect(stage("modifiers")?.loaded).resolves.toBe(staged.assets);
+    await expect(stage("baby")?.loaded).resolves.toBe(staged.assets);
+    await expect(staged.complete).rejects.toThrow(/targets-child/);
+    expect([...staged.assets.targetFilesPending]).toEqual(["child"]);
+  });
+
+  it("keeps the body's modifiers when the adult pack's targets fail", async () => {
+    stubFetch({ missing: "targets.bin.gz" }); // the adult pack's one file
+    const staged = await loadHumanoidAssetsStaged({
+      body: "http://packs/body",
+      adultAnatomy: "http://packs/adult",
+    });
+    const stage = (id: string) => staged.stages.find((s) => s.files.includes(id));
+    await expect(stage("adult")?.loaded).rejects.toThrow(/targets\.bin\.gz failed/);
+    await expect(stage("modifiers")?.loaded).resolves.toBe(staged.assets);
   });
 
   it("reports a failed fetch and a missing per-file URL", async () => {

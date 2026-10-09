@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { HumanoidWorkerClient, HumanoidWorkerError } from "../src/worker/client.ts";
 import type { WorkerRequest, WorkerResponse } from "../src/worker/protocol.ts";
+import { EMPTY_RIG } from "./emptyRig.ts";
 
 /**
  * A stand-in for the evaluation worker. As the real one does, it answers an
@@ -13,6 +14,7 @@ class FakeWorker {
   onerror: ((e: ErrorEvent) => void) | null = null;
   evaluated: number[] = [];
   pickMaps = 0;
+  posedOcclusions = 0;
   terminated = false;
   private readonly failInit: boolean;
   private readonly later: Promise<void>;
@@ -44,6 +46,14 @@ class FakeWorker {
       );
       return;
     }
+    if (msg.type === "posedOcclusion") {
+      this.posedOcclusions++;
+      setTimeout(
+        () => reply({ type: "posedOcclusion", id: msg.id, attachments: [Float32Array.of(0.5)] }),
+        1,
+      );
+      return;
+    }
     if (msg.type === "init") {
       setTimeout(() => {
         if (this.failInit)
@@ -55,7 +65,7 @@ class FakeWorker {
             topology: { body: {} as never, attachments: [] },
             modifiers: [],
             sliders: [],
-            bones: [],
+            rig: EMPTY_RIG,
             adultAnatomyLoaded: false,
           });
       }, 1);
@@ -171,6 +181,14 @@ describe("HumanoidWorkerClient", () => {
     expect(map.features[0]?.group).toBe("nose features");
     expect([...map.render.body]).toEqual([0, 255]);
     expect(worker.pickMaps).toBe(1);
+  });
+
+  it("asks the worker for the posed occlusion once", async () => {
+    const { client, worker } = make(false);
+    const first = client.posedOcclusion();
+    expect(client.posedOcclusion()).toBe(first);
+    expect([...((await first)?.[0] ?? [])]).toEqual([0.5]);
+    expect(worker.posedOcclusions).toBe(1);
   });
 
   it("fails queued evaluations when the worker cannot initialise", async () => {

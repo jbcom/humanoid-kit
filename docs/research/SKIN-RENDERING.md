@@ -491,13 +491,23 @@ lip C* = max(0, 0.81 · lip L* − 10.8)
 lip h  = 31.9° − 0.375° · (lip L* − 46)
 ```
 
+The two sides of the fit are measured differently, and the model keeps them
+apart. Skin L\* is ISSA's, specular included (§2.3 step 5), so the input is
+`measuredSkinLightness`: the diffuse albedo plus F0 = 0.028. Lip L\* is
+cross-polarised, specular excluded, so the output is a diffuse albedo directly.
+Taking the input from the albedo instead (an earlier version did) reads the
+deepest skin as L\* 21.7 rather than 30 and puts its lip 7 to 11 L\* below
+anything measured.
+
 It reproduces lip L\* 46.0, 44.8 and 34.8 at the three groups' skin (measured
 46.0, 42.4 and 33.1, all within one within-group SD), and at the deepest
-measured skin (L\* about 30) the lip has the skin's lightness, as the L'Oréal
-report found, with the chroma of the darkest measured lips. The lip slider
-moves the colour within the measured within-group spread: ±4 L\* and ±4 C\*
-around the mean, darker and more saturated as it rises. The old multipliers put
-the deepest lip at about L\* 17 to 21, 12 to 16 L\* below anything measured.
+measured skin (L\* about 30) the lip has the skin's measured lightness, as the
+L'Oréal report found, with the chroma of the darkest measured lips. Its diffuse
+albedo is then lighter than the skin's, as in many very deep-skinned faces. The
+lip slider moves the colour within the measured within-group spread: ±4 L\* and
+±4 C\* around the mean at every depth, darker and more saturated as it rises.
+The old multipliers put the deepest lip at about L\* 17 to 21, 12 to 16 L\*
+below anything measured.
 
 **Areola.** No colour measurement of the areola against surrounding skin was
 found at any skin tone. The one quantitative source is histological: 2.14 times

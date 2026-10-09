@@ -8,6 +8,7 @@ import type {
   RenderFeatures,
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import type { RigData, RigSkin } from "../rig/pose.ts";
 
 /** What the worker reports once the packs are loaded and the model is built. */
 export interface ReadyInfo {
@@ -16,8 +17,12 @@ export interface ReadyInfo {
   modifiers: ShapeModifierEntry[];
   /** The loaded packs' slider taxonomy, merged in MakeHuman's order. */
   sliders: SliderTask[];
-  /** Skeleton bone names; the topology's skin indices refer to these. */
-  bones: string[];
+  /**
+   * What posing needs: bone names (the topology's skin indices refer to
+   * these), each bone's parent index (-1 for the root) and the facial pose
+   * units. Each evaluation carries the bones' rest heads for its figure.
+   */
+  rig: RigData & { parents: Int16Array; skin: RigSkin };
   adultAnatomyLoaded: boolean;
 }
 
@@ -34,11 +39,21 @@ export type WorkerRequest =
   | { type: "complete"; id: number }
   /** Answered with the pick map once every target file (it needs the modifiers') has loaded. */
   | { type: "pickMap"; id: number }
-  | { type: "evaluate"; id: number; recipe: Recipe };
+  /** Answered with `HumanoidModel.bakePosedOcclusion`'s result, baked between evaluations. */
+  | { type: "posedOcclusion"; id: number }
+  | {
+      type: "evaluate";
+      id: number;
+      recipe: Recipe;
+      /** The skin state's signals; those with state morphs change the shape. */
+      signals?: Readonly<Record<string, number>>;
+    };
 
 export type WorkerResponse =
   | ({ type: "ready"; id: number } & ReadyInfo)
   | { type: "completed"; id: number }
   | ({ type: "pickMap"; id: number } & PickMap)
+  /** Per worn attachment, its render vertices' occlusion at every corner; null when `ready`'s already was. */
+  | { type: "posedOcclusion"; id: number; attachments: Float32Array[] | null }
   | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
   | { type: "error"; id: number; message: string; name: string };

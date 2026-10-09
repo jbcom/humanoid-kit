@@ -22,6 +22,9 @@ export default definePlaywrightConfig({
   overrides: {
     outputDir: "./test-results",
     fullyParallel: true,
+    // SwiftShader already spreads one page's rendering over every core (a lone
+    // creator test uses ~8 locally); parallel workers only starve each other.
+    ...(gpuMode === "software" && { workers: 1 }),
     reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   },
 });

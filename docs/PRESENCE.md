@@ -1,6 +1,6 @@
 # Presence: what a figure tells the world
 
-Status: design, not implemented. It is the shared foundation for the
+Status: being implemented (`src/presence`). It is the shared foundation for the
 milestone 8 animation work (awareness and interactions) and for
 environment-driven lighting and shadows.
 
@@ -50,39 +50,59 @@ dictated by them.
    (adult or not) lets interaction contracts refuse what the policy forbids,
    exactly as the adult animations package will.
 
-## Sketch
+## API
 
 ```ts
 interface FigurePresence {
   id: string;
-  /** World transform, bounds and velocity. */
-  transform: Matrix4Like;
-  bounds: Box3Like;
-  velocity: [number, number, number];
+  /** Placement: ground position, facing, bounds (world space, metres). */
+  position: Vec3;
+  facing: Vec3;
+  bounds: { min: Vec3; max: Vec3 };
   /** Named anchors in world space. */
-  anchors: Record<"head" | "face" | "chest" | "leftHand" | "rightHand" | "leftFoot" | "rightFoot", [number, number, number]>;
+  anchors: Record<"head" | "face" | "chest" | "leftHand" | "rightHand" | "leftFoot" | "rightFoot", Vec3>;
   /** Ground contact: foot positions and an approximate footprint radius. */
   footprint: { points: [number, number][]; radius: number };
   /** Measured skin appearance (linear). */
-  appearance: { albedo: [number, number, number]; luminance: number; specular: number };
+  appearance: { albedo: Vec3; luminance: number; specular: number };
+  faceRadius: number;
   adult: boolean;
 }
 
 const registry = createPresenceRegistry();
-registry.subscribe("proximity", { radius: 1.5 }, (e) => { /* enter / leave */ });
-const field = groundOcclusion(registry.all()); // pooled contact shadows
-const exposure = faceExposure(registry.all(), camera); // face-priority metering
+registry.set(presence);                  // publish; velocity is measured on tick
+const stop = registry.onProximity(1.5, (e) => { /* e.type: enter | leave, e.ids */ });
+registry.tick(clock.elapsedTime);        // from the render loop
+const groups = presenceGroups(registry.all(), 1.2);
+const contacts = groundOcclusion(registry.all()); // pooled contact shadows
+sampleGroundOcclusion(contacts, x, z);   // 0 open … 1 shadowed, max-combined
+const meter = faceMetering(registry.all(), { position: cameraPosition });
 ```
 
 In React, `<Humanoid presence>` registers the figure; `usePresence()` and
 `useProximity()` read it.
 
-## Open questions
+## Decisions (2026-10-09)
 
-- Footprint from the evaluated mesh (accurate, per evaluation) or from the
-  skeleton once posing exists (cheap, per frame). Likely both: mesh until
-  milestone 2, skeleton after.
-- Velocity needs a clock; the registry should take time from the render loop
-  rather than keep its own.
-- Group detection (who is "together") is useful to cameras and audio alike;
-  it belongs in the registry if it stays a pure function of positions.
+- **Footprint and anchors come from the evaluated mesh** (joint centroids of
+  the morphed control mesh, moved by the figure's placement) until milestone 2
+  gives a posed skeleton; then from the skeleton, per frame.
+- **The registry keeps no clock.** `registry.tick(seconds)` is called from the
+  render loop; velocity is the position change since the previous tick, and
+  proximity events are evaluated there.
+- **Proximity has hysteresis.** A pair enters at the subscribed radius and
+  leaves at 1.1 times it, so two figures standing at the edge do not flicker.
+- **Groups are a pure function** (`presenceGroups(presences, distance)`, single
+  linkage on ground positions), not registry state.
+- **Ground occlusion pools with `max`.** `groundOcclusion` turns every
+  footprint into contact points; the ground is darkened by the strongest point
+  that reaches it, never the sum, so figures walking together share one shadow
+  that separates as they part.
+- **Face metering reports; it does not expose.** Following
+  `research/SKIN-RENDERING.md` §4.4, `faceMetering` gives each face's metering
+  region, measured reflectance and intended zone (`skinZoneEV = log2(Y /
+  0.18)`), weighted by apparent size, and names the deepest face. A scene
+  exposes for grey and adds light where a face falls short; it never pulls every
+  face to one luminance.
+- **Presence carries placement, not a full matrix**, for now: ground position,
+  facing and bounds. A transform matrix arrives with posing.

@@ -36,11 +36,7 @@ import {
   srgb8FromLinear,
 } from "../../e2e/lib/colour.ts";
 import { STUDIO_EXPOSURE, STUDIO_TONE_MAPPING } from "../../src/react/StudioStage.tsx";
-import {
-  CURVATURE_ATTRIBUTE,
-  SKIN_MASK_ATTRIBUTE,
-  SkinMaterial,
-} from "../../src/render/skinMaterial.ts";
+import { CURVATURE_ATTRIBUTE, SkinMaterial } from "../../src/render/skinMaterial.ts";
 import { SKIN_SCATTER, scatterDistance, scatterTableDiffuse } from "../../src/surface/scatter.ts";
 import type { Rgb, SkinTone } from "../../src/surface/skinTone.ts";
 
@@ -129,10 +125,7 @@ camera.position.set(0, 0, 5);
 camera.lookAt(0, 0, 0);
 const geometry = new SphereGeometry(1, 256, 128);
 const vertexCount = geometry.getAttribute("position").count;
-geometry.setAttribute(
-  SKIN_MASK_ATTRIBUTE,
-  new BufferAttribute(new Float32Array(vertexCount * 3), 3),
-);
+// No layer atlas is set, so every skin layer is absent and the sphere shows the bare skin.
 const curvature = new BufferAttribute(new Float32Array(vertexCount), 1);
 geometry.setAttribute(CURVATURE_ATTRIBUTE, curvature);
 /** Makes the sphere's curvature attribute stand for a feature of this radius. */

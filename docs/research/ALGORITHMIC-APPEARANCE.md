@@ -399,7 +399,7 @@ Notes on the design:
   the tightest curves: ear folds shade softer and warmer (up to ΔE00 4.1),
   the rest of the head moves by a mean ΔE00 of 0.06.
 - **Curvature.** Prefer a per-vertex mean curvature attribute computed with the
-  evaluated geometry, alongside `hkSkinMask`, so it follows shape changes and
+  evaluated geometry, so it follows shape changes and
   subdivision. Penner's `fwidth` estimate is a fallback; it is constant per
   triangle and noisy at silhouettes.
 - **Coverage.** The replaced line covers punctual and directional lights. three

@@ -1,15 +1,14 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { buildSkinMasks } from "../src/makehuman/skinMasks.ts";
 import { labFromLinear, lchFromLab } from "../src/surface/cielab.ts";
 import {
   areolaAlbedo,
   lipAlbedo,
   luminance,
+  measuredSkinLightness,
   type Rgb,
   skinAlbedo,
 } from "../src/surface/skinTone.ts";
-import { loadFixtureAssets } from "./fixtures.ts";
 
 const tone = (melanin: number, haemoglobin = 0.5, undertone = 0) => ({
   melanin,
@@ -52,13 +51,16 @@ describe("skinAlbedo", () => {
   });
 });
 
-/** The natural tone whose skin has CIELAB lightness `L` (melanin found by bisection). */
+/**
+ * The natural tone whose skin measures CIELAB lightness `L` the way ISSA
+ * measured it, specular included (melanin found by bisection).
+ */
 const toneAtLightness = (L: number) => {
   let lo = 0;
   let hi = 1;
   for (let i = 0; i < 40; i++) {
     const m = (lo + hi) / 2;
-    if (labFromLinear(skinAlbedo(tone(m)))[0] > L) lo = m;
+    if (measuredSkinLightness(tone(m)) > L) lo = m;
     else hi = m;
   }
   return tone((lo + hi) / 2);
@@ -82,23 +84,29 @@ describe("lipAlbedo", () => {
     }
   });
 
-  it("is never lighter than the skin, and reaches its lightness at the deep end", () => {
+  it("is darker than the skin as measured, and reaches its lightness at the deep end", () => {
     for (let m = 0; m <= 1.0001; m += 0.05) {
-      const skin = labFromLinear(skinAlbedo(tone(m)))[0];
+      const skin = measuredSkinLightness(tone(m));
       const lip = labFromLinear(lipAlbedo(tone(m), 0.5))[0];
       // (within the CIELAB round trip's rounding)
       expect(lip).toBeLessThanOrEqual(skin + 0.01);
-      // The old fixed multipliers put the deepest lip 9-13 L* below its skin.
-      if (skin <= 31) expect(skin - lip).toBeLessThan(1);
     }
+    // The deepest skin measures L* 30 and its lip sits among the darkest measured
+    // lips (cluster L* 28.5, African group 33.1 ± 5.0), not 7-16 L* below them.
+    const deepest = labFromLinear(lipAlbedo(tone(1), 0.5))[0];
+    expect(measuredSkinLightness(tone(1))).toBeCloseTo(30, 0);
+    expect(deepest).toBeGreaterThanOrEqual(28.5);
+    expect(deepest - measuredSkinLightness(tone(1))).toBeLessThan(0.5);
   });
 
-  it("moves within the measured spread as the slider moves, darker and more saturated as it rises", () => {
-    const t = toneAtLightness(55);
-    const [L0, C0] = lch(lipAlbedo(t, 0));
-    const [L1, C1] = lch(lipAlbedo(t, 1));
-    expect(L0 - L1).toBeCloseTo(8, 0);
-    expect(C1 - C0).toBeCloseTo(8, 0);
+  it("moves within the measured spread as the slider moves, at every depth", () => {
+    for (const skinL of [55, 30]) {
+      const t = toneAtLightness(skinL);
+      const [L0, C0] = lch(lipAlbedo(t, 0));
+      const [L1, C1] = lch(lipAlbedo(t, 1));
+      expect(L0 - L1, `L* span at skin ${skinL}`).toBeCloseTo(8, 0);
+      expect(C1 - C0, `C* span at skin ${skinL}`).toBeCloseTo(8, 0);
+    }
   });
 
   it("darkens and reddens a non-natural colour by fixed factors (no human data applies)", () => {
@@ -117,48 +125,5 @@ describe("areolaAlbedo", () => {
     expect(gap(0.5)).toBeGreaterThan(0);
     expect(gap(1)).toBeLessThan(gap(0) / 3);
     for (let m = 0; m <= 1.0001; m += 0.1) expect(gap(m)).toBeGreaterThanOrEqual(-1e-6);
-  });
-});
-
-describe("buildSkinMasks", () => {
-  const assets = loadFixtureAssets();
-  const masks = buildSkinMasks(assets);
-  const P = assets.positions;
-  const strong = (channel: number) => {
-    const ys: number[] = [];
-    const xs: number[] = [];
-    for (let v = 0; v < assets.manifest.vertexCount; v++) {
-      if ((masks[v * 3 + channel] as number) > 0.8) {
-        xs.push(P[v * 3] as number);
-        ys.push(P[v * 3 + 1] as number);
-      }
-    }
-    return {
-      count: ys.length,
-      minY: Math.min(...ys),
-      maxY: Math.max(...ys),
-      maxAbsX: Math.max(...xs.map(Math.abs)),
-    };
-  };
-
-  it("finds the lips at the mouth and nowhere else", () => {
-    const lips = strong(0);
-    expect(lips.count).toBeGreaterThan(20);
-    // The mouth sits roughly 0.62–0.66 m above the base mesh origin and is narrow.
-    expect(lips.minY).toBeGreaterThan(0.6);
-    expect(lips.maxY).toBeLessThan(0.68);
-    expect(lips.maxAbsX).toBeLessThan(0.04);
-  });
-
-  it("finds nipples and areolae on the chest, one each side", () => {
-    const areola = strong(2);
-    expect(areola.count).toBeGreaterThan(10);
-    expect(areola.minY).toBeGreaterThan(0.3);
-    expect(areola.maxY).toBeLessThan(0.5);
-    expect(areola.maxAbsX).toBeGreaterThan(0.05);
-  });
-
-  it("keeps every mask value in [0, 1]", () => {
-    for (const v of masks) expect(v >= 0 && v <= 1).toBe(true);
   });
 });

@@ -127,6 +127,16 @@ export interface BvhJoint {
   channels: string[];
 }
 
+export interface BodyPoseEntry {
+  /** Id, the source file's name (`tpose`, `benchmark`). */
+  name: string;
+  title: string;
+  description: string;
+  joints: BvhJoint[];
+  /** One value per channel of `joints`, in order. */
+  frame: number[];
+}
+
 export interface PackSource {
   project: string;
   commit: string;
@@ -157,9 +167,21 @@ export interface BodyManifest {
   targets: TargetFile[];
   modifiers: ShapeModifierEntry[];
   sliders: SliderTask[];
-  attachments: { file: string; sha256: string; entries: AttachmentEntry[] };
+  attachments: {
+    file: string;
+    sha256: string;
+    /**
+     * The key poses attachment occlusion was baked at (`OCCLUSION_KEYS` ids, in
+     * order); each attachment's `occlusion` holds one bake per corner of their
+     * cube.
+     */
+    occlusionKeys: string[];
+    entries: AttachmentEntry[];
+  };
   skeleton: { bones: BoneEntry[]; joints: Record<string, number[]> };
   faceUnits: { names: string[]; joints: BvhJoint[]; frames: number[][] };
+  /** Whole-body poses (one BVH frame each, MakeHuman's Z-up axes; see src/rig/pose.ts). */
+  poses: BodyPoseEntry[];
 }
 
 export interface AttachmentMaterial {
@@ -215,7 +237,9 @@ export interface BoundAsset {
   /**
    * Per vertex, how open it is to light (255) or enclosed by the figure (0),
    * baked at pack time with every body-pack attachment worn
-   * (`HumanoidModel.bakeAttachmentOcclusion`).
+   * (`HumanoidModel.bakeAttachmentOcclusion`): `vertexCount` values for each
+   * corner of the cube of the manifest's `attachments.occlusionKeys` (corner
+   * m has key i at full weight when bit i of m is set; corner 0 is rest).
    */
   occlusion: Uint8Array;
 }
@@ -397,7 +421,11 @@ function parseAttachments(manifest: BodyManifest, bin: ArrayBuffer): Map<string,
     expectLength(asset.offsets, entry.vertexCount * 3, what("offsets"));
     expectLength(asset.faceVerts, entry.faceCount * 4, what("faceVerts"));
     expectLength(asset.faceUvs, entry.faceCount * 4, what("faceUvs"));
-    expectLength(asset.occlusion, entry.vertexCount, what("occlusion"));
+    expectLength(
+      asset.occlusion,
+      entry.vertexCount * 2 ** manifest.attachments.occlusionKeys.length,
+      what("occlusion"),
+    );
     if (asset.uvs.length % 2 !== 0) throw new AssetFormatError(`${what("uvs")}: odd length`);
     expectIndices(asset.refVerts, manifest.vertexCount, what("refVerts"));
     expectIndices(asset.faceVerts, entry.vertexCount, what("faceVerts"));
@@ -621,7 +649,7 @@ export interface LoadStage {
 export interface StagedHumanoidAssets {
   /** The first stage: the body, attachments, core targets and the first figure's age anchors. */
   assets: HumanoidAssets;
-  /** The rest, in load order: the other age anchors, neighbours first, then the modifier targets. */
+  /** The rest, in load order (`targetLoadOrder`); a failed stage fails only itself. */
   stages: LoadStage[];
   /** Resolves once every stage has loaded, or rejects with the first failure. */
   complete: Promise<HumanoidAssets>;
@@ -639,8 +667,10 @@ const fetchGzip = (url: string) =>
 
 /**
  * The order target files load in for a first figure of `age` years: its own
- * age anchors with the core, then the other anchors, neighbours first, then the
- * modifier targets (with the adult pack's, which are all modifiers).
+ * age anchors with the core; then the body's modifier targets, which every
+ * shape slider, randomised or saved figure needs; then the other age anchors,
+ * neighbours first; then the adult pack's targets, last and alone, so a
+ * failure there never costs the body anything.
  */
 export function targetLoadOrder(age: number): string[][] {
   const own = ageAnchorsOf(age);
@@ -654,7 +684,7 @@ export function targetLoadOrder(age: number): string[][] {
   const rest = anchors
     .filter((a) => !own.includes(a as never))
     .sort((p, q) => steps(p) - steps(q) || years(p) - years(q));
-  return [["core", ...own], ...rest.map((a) => [a]), ["modifiers", ADULT_TARGET_FILE]];
+  return [["core", ...own], ["modifiers"], ...rest.map((a) => [a]), [ADULT_TARGET_FILE]];
 }
 
 /**
@@ -702,12 +732,13 @@ export async function loadHumanoidAssetsStaged(
     { manifest, body: bodyBin, targets: firstTargets, attachments, fileUrls },
     adultManifest && { manifest: adultManifest },
   );
-  // Each stage's bytes are fetched after the previous stage's arrived; each is
-  // added to the assets as soon as its own bytes are in.
+  // Each stage's bytes are fetched after the previous stage's settled; each is
+  // added to the assets as soon as its own bytes are in. A failed stage fails
+  // only itself: the next one still fetches.
   let bytesBefore: Promise<unknown> = Promise.resolve();
   const stages = later.map((files) => {
     const bytes = bytesBefore.then(() => fetchFiles(files));
-    bytesBefore = bytes;
+    bytesBefore = bytes.catch(() => {});
     const loaded = bytes.then((data) => {
       addTargetFiles(assets, data);
       return assets;

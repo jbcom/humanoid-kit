@@ -5,13 +5,16 @@
  * Packs load in stages (`loadHumanoidAssetsStaged`): `ready` is replied once
  * the first figure can be evaluated, while later target files are still
  * arriving, and a `complete` request is answered when all have. An evaluation
- * waits for exactly the stages its recipe needs, without holding up any other
- * request. Results are transferred, not copied.
+ * waits for the stages its recipe needs, without holding up any other request;
+ * stages arrive one after another (`targetLoadOrder`), so a recipe needing a
+ * late stage also waits out the ones before it. Results are transferred, not
+ * copied.
  */
 import { type LoadStage, loadHumanoidAssetsStaged } from "../format/assetFormat.ts";
 import { buildFeatureMap } from "../makehuman/features.ts";
 import { HumanoidModel } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { rigData } from "../rig/pose.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
 
 export type Post = (msg: WorkerResponse, transfer?: Transferable[]) => void;
@@ -21,14 +24,20 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
   let model: HumanoidModel | null = null;
   let stages: LoadStage[] = [];
   let complete: Promise<unknown> = Promise.resolve();
+  /** The corner bake of a worn set the pack did not bake, made once. */
+  let posedOcclusion: Promise<Float32Array[] | null> | null = null;
 
-  /** Waits for the stages that bring the target files a recipe needs. */
-  const targetsFor = async (m: HumanoidModel, recipe: Recipe): Promise<void> => {
-    for (let pending = m.pendingTargetFiles(recipe); pending.size; ) {
+  /** Waits for the stages that bring the target files a recipe (in a skin state) needs. */
+  const targetsFor = async (
+    m: HumanoidModel,
+    recipe: Recipe,
+    signals: Readonly<Record<string, number>> = {},
+  ): Promise<void> => {
+    for (let pending = m.pendingTargetFiles(recipe, signals); pending.size; ) {
       const stage = stages.find((s) => s.files.some((f) => pending.has(f)));
       if (!stage) throw new Error(`no load stage brings ${[...pending].join(", ")}`);
       await stage.loaded;
-      pending = m.pendingTargetFiles(recipe);
+      pending = m.pendingTargetFiles(recipe, signals);
     }
   };
 
@@ -40,6 +49,8 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         stages = staged.stages;
         complete = staged.complete;
         model = new HumanoidModel(assets, req.model);
+        const bake = model.occlusionBakeRecipe();
+        if (bake) await targetsFor(model, bake);
         const topology = model.topology();
         post({
           type: "ready",
@@ -47,7 +58,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           topology,
           modifiers: [...assets.modifiers.values()],
           sliders: assets.sliders,
-          bones: assets.manifest.skeleton.bones.map((b) => b.name),
+          rig: { ...rigData(assets), parents: model.boneParents(), skin: model.rigSkin() },
           adultAnatomyLoaded: assets.adultAnatomyLoaded,
         });
         return;
@@ -56,6 +67,25 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
       if (req.type === "complete") {
         await complete;
         post({ type: "completed", id: req.id });
+        return;
+      }
+      if (req.type === "posedOcclusion") {
+        const m = model;
+        posedOcclusion ??= (async () => {
+          const steps = m.bakePosedOcclusion();
+          for (;;) {
+            const step = steps.next();
+            if (step.done) return step.value;
+            // A macrotask between corners lets queued evaluations run.
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+        })();
+        // Each request gets its own copies: the reply transfers them.
+        const attachments = (await posedOcclusion)?.map((a) => a.slice()) ?? null;
+        post(
+          { type: "posedOcclusion", id: req.id, attachments },
+          attachments?.map((a) => a.buffer) ?? [],
+        );
         return;
       }
       if (req.type === "pickMap") {
@@ -69,14 +99,15 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         ]);
         return;
       }
-      await targetsFor(model, req.recipe);
+      await targetsFor(model, req.recipe, req.signals);
       const t0 = performance.now();
-      const evaluation = model.evaluate(req.recipe);
+      const evaluation = model.evaluate(req.recipe, req.signals);
       const transfer: Transferable[] = [
         evaluation.positions.buffer,
         evaluation.normals.buffer,
         evaluation.control.buffer,
         evaluation.curvature.buffer,
+        evaluation.boneHeads.buffer,
       ];
       for (const a of evaluation.attachments) transfer.push(a.positions.buffer, a.normals.buffer);
       post({ type: "evaluated", id: req.id, evaluation, ms: performance.now() - t0 }, transfer);

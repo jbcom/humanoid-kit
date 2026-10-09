@@ -33,8 +33,10 @@ import {
   TARGET_ENCODING,
 } from "../src/format/assetFormat.ts";
 import { macroTargetAgeAnchor, macroTargetNames } from "../src/makehuman/macro.ts";
-import { SKIN_MASK_TARGETS } from "../src/makehuman/skinMasks.ts";
+import { STATE_MORPH_TARGETS } from "../src/makehuman/stateMorphs.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
+import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
+import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { writeAttachments, writeAttachmentTextures, writePackEntry } from "./lib/packWriter.ts";
 import { buildSliders } from "./lib/sliders.ts";
@@ -68,6 +70,8 @@ const ATTACHMENTS_FILE = "attachments.bin.gz";
 const UNIT = 0.1;
 /** MakeHuman's modifier tables, each with a `_modifiers`, `_sliders` and `_modifiers_desc` file. */
 const MODIFIER_TABLES = ["modeling", "measurement", "bodyshapes"] as const;
+/** Whole-body poses from MakeHuman's data/poses, each CC0 by its .meta. */
+const BODY_POSES = ["tpose", "benchmark"] as const;
 
 interface TargetEntry {
   name: string;
@@ -81,6 +85,8 @@ interface TargetEntry {
  * Every packed source file must prove it is CC0, from its own bytes:
  *  - text assets (`.obj`, `.target`) carry MakeHuman's "released as CC0" header;
  *  - JSON assets carry `"license": "CC0"`;
+ *  - a pose BVH carries its licence in the `.meta` file beside it
+ *    (`license CC0`);
  *  - the remaining kinds (modifier table, pose-unit BVH) have no per-file
  *    statement and are accepted only because the upstream LICENSE.md names
  *    their category under "released under CC0 1.0 Universal". That statement
@@ -113,6 +119,13 @@ function requireCc0(rel: string, text: string): void {
       }
     } catch {
       // fall through to the repository statement
+    }
+  }
+  if (rel.endsWith(".bvh")) {
+    const meta = path.join(DATA, rel.replace(/\.bvh$/, ".meta"));
+    if (fs.existsSync(meta) && /^license\s+CC0\s*$/m.test(fs.readFileSync(meta, "utf8"))) {
+      licenseEvidence[rel] = 'sibling .meta: "license CC0"';
+      return;
     }
   }
   const category = REPO_CATEGORIES[rel];
@@ -474,17 +487,20 @@ async function main() {
     ...macroNames,
     ...modifiers.flatMap((m) => (m.lo ? [m.lo, m.hi] : [m.hi])),
   ]);
-  const missingMasks = SKIN_MASK_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
+  const missingMasks = SKIN_LAYER_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
   if (missingMasks.length)
-    throw new Error(`skin-mask targets not packed: ${missingMasks.join(", ")}`);
+    throw new Error(`skin-layer targets not packed: ${missingMasks.join(", ")}`);
+  const missingStates = STATE_MORPH_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
+  if (missingStates.length)
+    throw new Error(`state-morph targets not packed: ${missingStates.join(", ")}`);
 
   // The body's targets split into files by what needs them (docs/ARCHITECTURE.md):
-  // macro targets by age anchor, with the anchor-free ones and the skin-mask
+  // macro targets by age anchor, with the anchor-free ones and the skin-layer
   // targets in a small core file, and the other modifier targets last.
   const inPack = [...packed.values()].filter((t) => driven.has(t.name));
   const fileOf = (name: string): string => {
     if (macroNames.has(name)) return macroTargetAgeAnchor(name) ?? "core";
-    return SKIN_MASK_TARGETS.includes(name) ? "core" : "modifiers";
+    return SKIN_LAYER_TARGETS.includes(name) ? "core" : "modifiers";
   };
   const bodyFiles = BODY_TARGET_FILES.map((id) => ({
     id,
@@ -501,6 +517,21 @@ async function main() {
   // Face pose units: BVH frames named by face-poseunits.json framemapping.
   const faceUnits = JSON.parse(read("poseunits/face-poseunits.json")) as { framemapping: string[] };
   const faceBvh = parseBvh(read("poseunits/face-poseunits.bvh"));
+  // Whole-body poses MakeHuman ships as CC0 (each proven by its .meta): the
+  // T-pose, and the rigging benchmark, which bends every joint to an extreme.
+  const poses = BODY_POSES.map((name) => {
+    const bvh = parseBvh(read(`poses/${name}.bvh`));
+    const meta = fs.readFileSync(path.join(DATA, `poses/${name}.meta`), "utf8");
+    const field = (key: string) =>
+      meta.match(new RegExp(`^${key}\\s+(.+)$`, "m"))?.[1]?.trim() ?? "";
+    return {
+      name,
+      title: field("name"),
+      description: field("description"),
+      joints: bvh.joints,
+      frame: (bvh.frames[0] ?? []).map((x) => Math.round(x * 1000) / 1000),
+    };
+  });
   const sliders = buildSliders(
     MODIFIER_TABLES.map((table) => ({
       table,
@@ -527,7 +558,8 @@ async function main() {
   fs.rmSync(path.join(BODY_OUT, "attachments.bin"), { force: true });
   await writeAttachmentTextures(BODY_OUT, compiled);
   // Written with every vertex open first; the bake below needs the packed figure.
-  let attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, null);
+  const occlusionBakes = occlusionCorners(OCCLUSION_KEYS.length);
+  let attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, null, occlusionBakes);
   const systemEvidence: Record<string, string> = {};
   for (const c of compiled) {
     for (const [file, ev] of Object.entries(c.evidence))
@@ -568,6 +600,7 @@ async function main() {
     attachments: {
       file: ATTACHMENTS_FILE,
       sha256: attachments.sha256,
+      occlusionKeys: OCCLUSION_KEYS.map((k) => k.id),
       entries: attachments.entries,
     },
     skeleton: {
@@ -589,6 +622,7 @@ async function main() {
       joints: faceBvh.joints,
       frames: faceBvh.frames.map((row) => row.map((x) => Math.round(x * 1000) / 1000)),
     },
+    poses,
   };
 
   // Attachment occlusion is geometry of the default figure, so it is baked here,
@@ -604,7 +638,7 @@ async function main() {
   const occlusion = new HumanoidModel(packedFigure)
     .bakeAttachmentOcclusion()
     .map((o) => Uint8Array.from(o, (v) => Math.round(Math.min(1, Math.max(0, v)) * 255)));
-  attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, occlusion);
+  attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, occlusion, occlusionBakes);
   manifest.attachments.sha256 = attachments.sha256;
   fs.writeFileSync(path.join(BODY_OUT, "manifest.json"), `${JSON.stringify(manifest)}\n`);
 
