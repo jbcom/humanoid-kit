@@ -33,6 +33,7 @@ import {
   Vector4,
 } from "three";
 import { inkOptics } from "../bodyArt/ink.ts";
+import { markRatios, SCAR_RAISE, SCAR_SMOOTHNESS } from "../bodyArt/marks.ts";
 import { type AtlasPlan, OWNER_GRID, planAtlas } from "../surface/atlasPlan.ts";
 import {
   CREASE_SHARPNESS,
@@ -55,6 +56,7 @@ import {
 import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import { luminance, MELANIN_ANCHORS, type Rgb, skinAlbedo } from "../surface/skinTone.ts";
+import { MARK_NEUTRAL } from "./bodyArtTexture.ts";
 import { DUAL_SKINNING_KEY, type DualBones, patchDualSkinning } from "./dualSkinning.ts";
 import { emptyLayerAtlas, emptyOwners, type SkinLayerAtlas } from "./layerAtlas.ts";
 import { BODY_OCCLUSION_FLOOR, BODY_OCCLUSION_POWER, patchOcclusion } from "./occlusion.ts";
@@ -303,20 +305,32 @@ float hkPreintegrated( float nDotL, float x ) {
 `;
 
 /**
- * Body art (`bakeBodyArt`, src/bodyArt/ink.ts), under `HK_BODY_ART` only: the
- * ink page's colour seen through this skin, mixed in by its coverage, after
- * the layer stack and before scattering, as ink lies in the dermis.
+ * Body art (`bakeBodyArt`, src/bodyArt/), under `HK_BODY_ART` only, after the
+ * layer stack and before scattering: the marks page's melanin and haemoglobin
+ * multiply the skin by this tone's ratios raised to them (`markedAlbedo`), and
+ * the ink page's colour, seen through this skin (`inkSeen`), mixes in by its
+ * coverage, as ink lies in the dermis. A scar's smoothness and raise
+ * (`hkMarkSurface`) go to the roughness and the relief; they are 0 without
+ * body art.
  */
 const BODY_ART_FUNCTIONS = `
+vec2 hkMarkSurface = vec2( 0.0 );
 #ifdef HK_BODY_ART
 uniform sampler2DArray hkBodyArt;
 uniform vec3 hkInkThrough;
 uniform vec3 hkInkVeil;
 uniform vec3 hkInkKeep;
+uniform vec3 hkMarkLight;
+uniform vec3 hkMarkDark;
+uniform vec3 hkMarkBlood;
 vec3 hkSrgbToLinear( vec3 c ) {
 	return mix( c / 12.92, pow( ( c + 0.055 ) / 1.055, vec3( 2.4 ) ), step( vec3( 0.04045 ), c ) );
 }
 vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
+	vec4 mark = texture( hkBodyArt, vec3( uv, 1.0 ) );
+	hkMarkSurface = mark.ba;
+	float melanin = ( mark.r * 255.0 - ${MARK_NEUTRAL.toFixed(1)} ) / 127.0;
+	c *= pow( hkMarkLight, vec3( max( - melanin, 0.0 ) ) ) * pow( hkMarkDark, vec3( max( melanin, 0.0 ) ) ) * pow( hkMarkBlood, vec3( mark.g ) );
 	vec4 ink = texture( hkBodyArt, vec3( uv, 0.0 ) );
 	return mix( c, hkInkThrough * ( hkInkVeil + hkInkKeep * hkSrgbToLinear( ink.rgb ) ), ink.a );
 }
@@ -507,6 +521,10 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkInkThrough: { value: Vector3 };
     hkInkVeil: { value: Vector3 };
     hkInkKeep: { value: Vector3 };
+    /** What marks multiply this skin by (`markRatios`). */
+    hkMarkLight: { value: Vector3 };
+    hkMarkDark: { value: Vector3 };
+    hkMarkBlood: { value: Vector3 };
   };
   private readonly stopTable: Float32Array;
   private dualBones: DualBones | null = null;
@@ -607,6 +625,9 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkInkThrough: { value: new Vector3() },
       hkInkVeil: { value: new Vector3() },
       hkInkKeep: { value: new Vector3() },
+      hkMarkLight: { value: new Vector3() },
+      hkMarkDark: { value: new Vector3() },
+      hkMarkBlood: { value: new Vector3() },
     };
     setChannels(this.hkUniforms.hkChannel.value, plan);
     this.normalMap = poreNormalMap();
@@ -639,6 +660,10 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     this.hkUniforms.hkInkThrough.value.fromArray(ink.through);
     this.hkUniforms.hkInkVeil.value.fromArray(ink.veil);
     this.hkUniforms.hkInkKeep.value.fromArray(ink.keep);
+    const marks = markRatios(a.tone);
+    this.hkUniforms.hkMarkLight.value.fromArray(marks.light);
+    this.hkUniforms.hkMarkDark.value.fromArray(marks.dark);
+    this.hkUniforms.hkMarkBlood.value.fromArray(marks.blood);
     // Regional colour: each layer's paint from its own model (measured for lips),
     // blended in by the atlas's soft-edged masks.
     paintStopTable(this.layers, { ...a, signals: a.signals ?? {} }, this.stopTable);
@@ -685,12 +710,12 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       // Surface layers: roughness here, specular once the material is set up.
       .replace(
         "#include <roughnessmap_fragment>",
-        "#include <roughnessmap_fragment>\n\tvec2 hkSurface = hkSurfaceChange( vHkUv );\n\troughnessFactor = clamp( roughnessFactor + hkSurface.x, 0.03, 1.0 );",
+        `#include <roughnessmap_fragment>\n\tvec2 hkSurface = hkSurfaceChange( vHkUv );\n\troughnessFactor = clamp( roughnessFactor + hkSurface.x - ${glslFloat(SCAR_SMOOTHNESS)} * hkMarkSurface.x, 0.03, 1.0 );`,
       )
       // Detail layers: relief on top of the pore map.
       .replace(
         "#include <normal_fragment_maps>",
-        "#include <normal_fragment_maps>\n\tnormal = hkPerturbNormal( normal, hkDetailHeight( vHkUv ), - vViewPosition, faceDirection );",
+        `#include <normal_fragment_maps>\n\tnormal = hkPerturbNormal( normal, hkDetailHeight( vHkUv ) + ${glslFloat(SCAR_RAISE)} * hkMarkSurface.y, - vViewPosition, faceDirection );`,
       )
       .replace(
         "#include <lights_physical_fragment>",

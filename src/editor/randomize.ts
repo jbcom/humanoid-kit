@@ -9,6 +9,7 @@
  */
 import { ARCHETYPE_MODIFIER_GROUPS } from "../makehuman/features.ts";
 import { ADULT_AGE } from "../makehuman/macro.ts";
+import { seededRandom } from "../random.ts";
 import { withAge } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { DEFAULT_HAIR_COLOUR } from "../surface/hairTone.ts";
@@ -37,18 +38,6 @@ export interface RandomizeOptions {
    */
   browStyles?: readonly string[];
   lashStyles?: readonly string[];
-}
-
-/** mulberry32: small, fast, and good enough for appearance. */
-export function seededRandom(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 /** Natural iris colours in linear RGB. */
