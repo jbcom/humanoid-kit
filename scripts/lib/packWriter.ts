@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import sharp from "sharp";
+import type { BodyOcclusion, BodyOcclusionEntry } from "../../src/format/assetFormat.ts";
 import type { CompiledAsset } from "./compileAsset.ts";
 
 export interface AttachmentEntry {
@@ -111,6 +112,42 @@ export function writeAttachments(
   const gz = new Uint8Array(gzipSync(bin, { level: 9 }));
   fs.writeFileSync(path.join(dataDir, file), gz);
   return { entries, sha256: sha256(gz), raw: bin };
+}
+
+/**
+ * The body occlusion file's bytes (`BodyOcclusionEntry`): the vertex indices
+ * (u32, little-endian), then the corner bakes, one byte each.
+ */
+export function encodeBodyOcclusion(
+  occlusion: BodyOcclusion,
+  keys: readonly string[],
+): { raw: Uint8Array; entry: Pick<BodyOcclusionEntry, "keys" | "count"> } {
+  const count = occlusion.vertices.length;
+  const corners = 2 ** keys.length;
+  if (occlusion.values.length !== count * corners)
+    throw new Error(
+      `body occlusion: ${occlusion.values.length} values for ${count} vertices × ${corners} corners`,
+    );
+  const raw = new Uint8Array(count * (4 + corners));
+  const view = new DataView(raw.buffer);
+  occlusion.vertices.forEach((v, i) => {
+    view.setUint32(i * 4, v, true);
+  });
+  raw.set(occlusion.values, count * 4);
+  return { raw, entry: { keys: [...keys], count } };
+}
+
+/** Writes the body occlusion gzipped, like every pack binary, and returns its manifest entry. */
+export function writeBodyOcclusion(
+  dataDir: string,
+  file: string,
+  occlusion: BodyOcclusion,
+  keys: readonly string[],
+): BodyOcclusionEntry {
+  const { raw, entry } = encodeBodyOcclusion(occlusion, keys);
+  const gz = new Uint8Array(gzipSync(raw, { level: 9 }));
+  fs.writeFileSync(path.join(dataDir, file), gz);
+  return { file, sha256: sha256(gz), ...entry };
 }
 
 /** Generates `index.js` and `index.d.ts` exporting `exportName` with a literal URL per data file. */

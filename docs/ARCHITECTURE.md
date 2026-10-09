@@ -32,7 +32,7 @@ lossless). All lengths are in metres.
 
 | Pack | Files | Contents |
 | --- | --- | --- |
-| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, and the eyes, teeth and tongue |
+| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, and the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion") |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
 
 A target is stored sparsely: the indices of the vertices it moves (`uint16`),
@@ -279,6 +279,82 @@ key raises the upper and lowers the lower lip together, so a pose raising only
 the upper lip reads as half the key. Splitting it (four keys, sixteen corners)
 is the next refinement if expressions need it.
 
+## Body occlusion
+
+Attachment occlusion darkens what the body encloses; the body's own surface
+was never baked, so the inside of the mouth, the nostrils, the ear canals and
+the eye sockets rendered as open, fully lit skin (a flat wall behind the lips
+whenever no tongue hid it: `docs/evidence/occlusion.md`). The body now carries
+the same pose-keyed occlusion for those cavities.
+
+**The bake** (`HumanoidModel.bakeBodyOcclusion`, `src/surface/bodyOcclusion.ts`)
+casts the attachments' 32 cosine-weighted rays from the *control* vertices a
+head, jaw, tongue, eye or face-muscle bone moves (`cavityCandidates`, the
+visible body's vertices with any head-region skin weight: 4,073 of the 13,380),
+against the unsubdivided body alone, at every corner of the `OCCLUSION_KEYS`
+cube (the body posed by `skinPositions`, the corners reusing the rest bake
+where nothing within reach moved). The body shades itself, so the bake does
+not depend on the worn set, the subdivision level or what hides body faces:
+the tongue and teeth carry their own occlusion, and a mouth without them is
+simply open to the cavity behind. The value stored is `cavityOcclusion` of the
+visibility, `min(1, visibility / 0.85)` (`OPEN_VISIBILITY`): open skin is
+never fully visible (a cheek sees past the nose), so only enclosure beyond
+15% counts as a cavity, and a vertex leaves the stored set exactly where its
+value reaches 1. No step shows at the set's edge.
+
+**Sparse storage** (decision, 2026-10-09). The pack's `body-occlusion.bin.gz`
+holds only the vertices enclosed at some corner: 2,288 vertices, as `uint32`
+indices then one byte per corner each, 27.5 KB decoded and 9.2 KB gzipped;
+every other base vertex is open at every pose and costs nothing. The manifest
+field `bodyOcclusion` (`file`, `sha256`, `keys`, `count`) is additive: a pack
+without it is never darkened, and a pack baked at other keys than the code's
+is refused (`AssetFormatError`; the attachments' keys mismatch re-bakes, but
+the body's bake is a pack-time product with nothing at load to re-bake it).
+Dense storage (a byte per base vertex per corner, 150 KB decoded) would
+gzip to nearly the same size, since open skin is a run of 255s, so size is not
+the reason. Sparse is chosen because (1) the bake runs rays only for the head's
+candidates, not the whole body; (2) the set is explicit, so skin outside the
+face is guaranteed untouched by construction, not by every value happening to
+read 1; (3) the loader keeps a small index and bytes rather than a second
+body-sized array. The GPU needs a dense attribute whichever way the pack
+stores it, so `topology().body.occlusion` expands it once, through the
+subdivision stencil like any per-vertex field (three corners at a time), to a
+byte per corner per *render* vertex (8 bytes a vertex; 255 = open). It stays
+bytes on the GPU (normalised `uint8` attributes), and is uploaded as how
+*enclosed* a vertex is, so a body geometry with no occlusion attributes (a
+plain mesh in a `SkinMaterial`) reads open rather than black.
+
+**Shading.** `SkinMaterial` applies it with the attachments' patch
+(`patchOcclusion`, `src/render/occlusion.ts`): the corner values are blended
+multilinearly in the vertex shader by the figure's key weights, and every
+light term (diffuse, specular, clearcoat and the vellus sheen) is scaled by
+`mix(floor, 1, occlusion ^ e)`. The body's floor is 0.1 where the attachments'
+is 0.15. The exponent `e` is the real correction. The mesh's mouth is a pocket
+only a couple of centimetres deep, so even the back wall that faces the camera
+at full jaw drop is 70–80% visible, and scaling light by 0.8 leaves a glowing
+wall (measured at the first tuning: nearly twice a cheek's luminance, where a
+mouth's inside is dimmer than a cheek). A cavity's directional light must
+come through the same aperture its visibility counts, so it loses more than
+the visibility it loses. `e` is therefore 1 for a vertex that is open at rest
+(a fold: the lip-chin crease keeps its plain value) and rises to 10
+(`BODY_OCCLUSION_POWER`) for one that is fully enclosed at rest (a cavity), as
+`1 + 9 × (1 − rest occlusion)`, computed per vertex in the vertex shader from
+corner 0. Raising every vertex to 6 was tried first and left a dark smudge
+under the lower lip at every jaw opening, because that fold is 70–80% visible
+too. With the rest-dependent exponent the back wall reads at about half a
+cheek's luminance at full jaw drop (mean luminance 44 against 85, where it
+was 147 against 80 before) and the fold is untouched. `<Humanoid>` shares one key-weight vector between the skin and the
+attachments' materials. A test re-bakes from the
+shipped pack (`tests/bake/bodyOcclusionPack.test.ts`) and fails if the stored
+bytes drift from what the code computes.
+
+Alternatives rejected: a skin colour layer over the cavity (does not follow
+the pose, so an open jaw would keep a dark mouth, and it cannot dim the
+specular and sheen terms); baking the body against the worn attachments (the
+body's bytes would then depend on the worn set, and the pack could not serve
+a mouth without a tongue); a screen-space occlusion pass (a renderer-wide
+cost, and noisy at the lip line where the cavity is thinnest).
+
 ## Worker
 
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one
@@ -403,7 +479,7 @@ mean what they meant there; everything must be testable in Node.
 | `src/recipe` | Recipe schema and defaults, the age policy, validation | no |
 | `src/subdiv` | Catmull-Clark stencils | no |
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
-| `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking | no |
+| `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking, the body's cavity occlusion | no |
 | `src/model` | `HumanoidModel`, the evaluation pipeline | no |
 | `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |

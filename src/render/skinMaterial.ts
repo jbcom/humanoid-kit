@@ -43,6 +43,7 @@ import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import { luminance, MELANIN_ANCHORS, type Rgb, skinAlbedo } from "../surface/skinTone.ts";
 import { atlasPages, emptyLayerAtlas } from "./layerAtlas.ts";
+import { BODY_OCCLUSION_FLOOR, BODY_OCCLUSION_POWER, patchOcclusion } from "./occlusion.ts";
 
 /** What the skin material is painted from: the recipe's skin and the figure's state signals. */
 export type SkinAppearance = Omit<SkinPaintInput, "signals"> & {
@@ -353,6 +354,13 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkLayerStops: { value: DataTexture };
   };
   private readonly stopTable: Float32Array;
+  /**
+   * The figure's occlusion key weights (`occlusionKeyWeights`); rest is (0, 0, 0).
+   * It darkens the cavities of a body geometry that carries
+   * `ModelTopology.body.occlusion` (`setBodyOcclusionAttributes`); any other
+   * geometry is open.
+   */
+  occlusionKeys = new Vector3();
 
   /** Uses the shared field atlas built for the body this material draws. */
   setLayerAtlas(texture: Texture | null): void {
@@ -472,10 +480,16 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       "#include <lights_physical_pars_fragment>",
       lighting.replace(DIRECT_DIFFUSE, SUBSURFACE_DIFFUSE),
     );
+    // The body's cavities (mouth, nostrils, ear canals, eye sockets), by pose.
+    patchOcclusion(shader, this.occlusionKeys, {
+      floor: BODY_OCCLUSION_FLOOR,
+      power: BODY_OCCLUSION_POWER,
+      body: true,
+    });
   };
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-6-${this.layers.length}`;
+    return `humanoid-kit-skin-7-${this.layers.length}`;
   }
 }
