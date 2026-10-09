@@ -20,6 +20,7 @@ import {
 import { afterAll, describe, expect, it } from "vitest";
 import { buildLayerAtlas, GUTTER, type LayerAtlasSource } from "../../src/render/layerAtlas.ts";
 import { SkinMaterial } from "../../src/render/skinMaterial.ts";
+import { densePlan, planAtlas } from "../../src/surface/atlasPlan.ts";
 import {
   applyLayers,
   paintStopTable,
@@ -64,6 +65,7 @@ function quadSource(
     vertexCount: 4,
     layerFields,
     layers: corners.map((_, l) => `l${l}`),
+    plan: densePlan(corners.length),
   };
 }
 
@@ -195,6 +197,7 @@ describe("the skin shader's layer stack", () => {
       vertexCount: uv.count,
       layerFields: new Float32Array(layers.length * uv.count * 2),
       layers: layers.map((l) => l.id),
+      plan: planAtlas(layers),
     };
     for (let v = 0; v < uv.count; v++) {
       fields(uv.getX(v), uv.getY(v)).forEach(([m, c], l) => {
@@ -248,6 +251,37 @@ describe("the skin shader's layer stack", () => {
   it("matches applyLayers per pixel", () => {
     // 8-bit fields and half-float stops: within 1% of full scale.
     expect(worstDifference(layers, appearance, fields)).toBeLessThan(0.01);
+  });
+
+  it("reads one shared coordinate channel for every layer of a group, as applyLayers does", () => {
+    const gradient = (id: string, stops: [number, number, number][]): SkinLayer => ({
+      id,
+      blend: "mix",
+      targets: [],
+      coordGroup: "shared",
+      fields: () => ({ mask: new Float32Array(0), coord: null }),
+      paint: () => ({ strength: 1, stops }),
+    });
+    const group = [
+      gradient("a", [
+        [0.05, 0.1, 0.6],
+        [0.9, 0.2, 0.2],
+      ]),
+      gradient("b", [
+        [0.2, 0.7, 0.1],
+        [0.6, 0.5, 0.05],
+      ]),
+      layers[2] as SkinLayer,
+    ];
+    // Two masks over one coordinate; the third layer keeps its own. Three masks and two
+    // coordinates are five channels, where each layer on its own would take six.
+    expect(planAtlas(group).channels).toBe(5);
+    const at = (u: number, v: number): [number, number][] => [
+      [1 - u, v],
+      [u, v],
+      [0.5, 0],
+    ];
+    expect(worstDifference(group, appearance, at)).toBeLessThan(0.01);
   });
 
   it("paints the skin-state layers as applyLayers does, at every signal at once", () => {

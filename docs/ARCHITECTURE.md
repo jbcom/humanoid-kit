@@ -954,8 +954,10 @@ the contract below, not on how the layers under it are solved.
 
 A layer splits into what depends on the base mesh and what depends on the
 figure. Its fields (mask and coordinate) come from the base mesh alone, so
-they are rasterised once into a **field atlas** in the body's UV space (two
-layers per RGBA texture, gutters dilated so filtering never reaches empty
+they are rasterised once into a **field atlas** in the body's UV space (a
+channel for each mask, one for each coordinate the shader reads, and one
+coordinate between the layers of a `coordGroup`, four channels to an RGBA page:
+`planAtlas`; gutters dilated so filtering never reaches empty
 texels across a seam) and shared by every figure. Its colour depends on the
 figure, so each figure carries only a small **stop table**: per layer, its
 strength, blend mode and colour stops along the coordinate, sampled with

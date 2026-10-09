@@ -134,6 +134,9 @@ function creaseLayer(name: CreaseJointName, side: Side, role: Role): DetailLayer
     CREASE_HEIGHT_PER_STRAIN * CREASE_STRAIN[name] * (role === "flexor" ? 1 : EXTENSOR_DEPTH);
   return {
     id: creaseLayerId(name, side, role),
+    // Every crease layer measures its coordinate along its own limb, through its own
+    // joint, so where two layers reach one vertex they agree: one atlas channel for all.
+    coordGroup: "creases",
     kind: "detail",
     pattern: "creases",
     targets: [],

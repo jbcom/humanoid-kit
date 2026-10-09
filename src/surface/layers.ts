@@ -91,6 +91,14 @@ interface LayerBase {
    */
   adult?: { feature: string };
   /**
+   * Layers that name the same group share one coordinate channel in the field
+   * atlas (src/render/layerAtlas.ts), so they cost one coordinate between them
+   * rather than one each. Their coordinates must agree wherever their masks
+   * overlap, which is how a joint's flexor and extensor creases, one limb's
+   * and the other's, can be one set of texels. Absent: the layer has its own.
+   */
+  coordGroup?: string;
+  /**
    * Whether the data the fields are measured from has loaded; absent means
    * always. An adult layer's targets arrive in the adult pack's last stage, or
    * never; `buildLayerFields` leaves an unavailable layer at zero.
@@ -161,6 +169,14 @@ export function layerKindCode(layer: SkinLayer): number {
   if (layer.kind === "surface") return 4;
   return layer.blend === "multiply" ? 1 : 0;
 }
+
+/**
+ * Whether the shader reads a layer's coordinate: a colour layer's stops lie
+ * along it and a crease layer's creases span it. Bumps and surface layers
+ * read their mask alone.
+ */
+export const layerUsesCoordinate = (layer: SkinLayer): boolean =>
+  !(layer.kind === "surface" || (layer.kind === "detail" && layer.pattern === "bumps"));
 
 const smoothstep = (lo: number, hi: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));

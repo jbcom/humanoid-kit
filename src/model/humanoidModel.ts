@@ -25,6 +25,7 @@ import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
+import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
 import {
   buildLayerFields,
   isAdultLayer,
@@ -77,6 +78,8 @@ export interface ModelTopology {
     layerFields: Float32Array;
     /** Ids of the layers `layerFields` holds, in order. */
     layers: string[];
+    /** Which channel of the field atlas holds each layer's mask and coordinate. */
+    plan: AtlasPlan;
     /** Per render vertex, metres of skin per UV unit (`uvScale`), for relief at true size. */
     uvScale: Float32Array;
   };
@@ -513,6 +516,7 @@ export class HumanoidModel {
         ...topologyOf(this.body.mesh),
         layerFields: this.layerFields,
         layers: SKIN_LAYERS.map((l) => l.id),
+        plan: planAtlas(SKIN_LAYERS),
         uvScale: this.uvScale,
       },
       attachments: this.attached.map(({ asset, part: p }, i) => ({

@@ -31,6 +31,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
+import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
 import {
   CREASE_SHARPNESS,
   paintStopTable,
@@ -44,7 +45,7 @@ import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import { luminance, MELANIN_ANCHORS, type Rgb, skinAlbedo } from "../surface/skinTone.ts";
 import { DUAL_SKINNING_KEY, type DualBones, patchDualSkinning } from "./dualSkinning.ts";
-import { atlasPages, emptyLayerAtlas } from "./layerAtlas.ts";
+import { emptyLayerAtlas } from "./layerAtlas.ts";
 
 /** What the skin material is painted from: the recipe's skin and the figure's state signals. */
 export type SkinAppearance = Omit<SkinPaintInput, "signals"> & {
@@ -84,9 +85,17 @@ varying vec2 vHkUv;
 varying float vHkUvScale;
 uniform highp sampler2DArray hkLayerAtlas;
 uniform sampler2D hkLayerStops;
+// Per layer, the atlas channels of its mask (x) and coordinate (y, -1: none), four to a page.
+uniform vec2 hkChannel[${Math.max(1, count)}];
+vec4 hkPage( float c, vec2 uv ) { return texture( hkLayerAtlas, vec3( uv, floor( c * 0.25 ) ) ); }
+float hkChannelOf( vec4 page, float c ) { return page[ int( c - 4.0 * floor( c * 0.25 ) + 0.5 ) ]; }
 vec2 hkFields( int l, vec2 uv ) {
-	vec4 page = texture( hkLayerAtlas, vec3( uv, float( l / 2 ) ) );
-	return ( l % 2 == 0 ) ? page.xy : page.zw;
+	vec2 ch = hkChannel[ l ];
+	vec4 maskPage = hkPage( ch.x, uv );
+	float mask = hkChannelOf( maskPage, ch.x );
+	if ( ch.y < 0.0 ) return vec2( mask, 0.0 );
+	vec4 coordPage = floor( ch.y * 0.25 ) == floor( ch.x * 0.25 ) ? maskPage : hkPage( ch.y, uv );
+	return vec2( mask, hkChannelOf( coordPage, ch.y ) );
 }
 vec4 hkHeader( int l ) { return texelFetch( hkLayerStops, ivec2( 0, l ), 0 ); }
 int hkKind( vec4 head ) { return int( head.y + 0.5 ); }
@@ -355,7 +364,11 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkLayerAtlas: { value: Texture };
     /** This figure's stop table (`paintStopTable`). */
     hkLayerStops: { value: DataTexture };
+    /** Per layer, the atlas channels of its mask and its coordinate (`plan`). */
+    hkChannel: { value: Vector2[] };
   };
+  /** Where each layer's fields are in the atlas; the atlas is built to the same plan. */
+  readonly plan: AtlasPlan;
   private readonly stopTable: Float32Array;
   private dualBones: DualBones | null = null;
 
@@ -372,7 +385,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   /** Uses the shared field atlas built for the body this material draws. */
   setLayerAtlas(texture: Texture | null): void {
-    this.hkUniforms.hkLayerAtlas.value = texture ?? noLayersFor(atlasPages(this.layers.length));
+    this.hkUniforms.hkLayerAtlas.value = texture ?? noLayersFor(this.plan.pages);
   }
 
   constructor(layers: readonly SkinLayer[] = SKIN_LAYERS) {
@@ -387,6 +400,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       sheenRoughness: 0.8,
     });
     this.layers = layers;
+    this.plan = planAtlas(layers);
     this.stopTable = new Float32Array(layers.length * STOP_TABLE_WIDTH * 4);
     this.hkUniforms = {
       hkScatterMfp: { value: SKIN_SCATTER.mfp },
@@ -394,8 +408,17 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkPigmentDepth: { value: SKIN_SCATTER.pigmentDepth },
       hkSubstrate: { value: new Vector3(...(MELANIN_ANCHORS[0] as Rgb)) },
       hkScatterTable: { value: scatterTableTexture() },
-      hkLayerAtlas: { value: noLayersFor(atlasPages(layers.length)) },
+      hkLayerAtlas: { value: noLayersFor(this.plan.pages) },
       hkLayerStops: { value: stopTexture(layers.length) },
+      hkChannel: {
+        // A GLSL array has at least one element, so a stack with no layers still gets one.
+        value:
+          layers.length > 0
+            ? layers.map(
+                (_, l) => new Vector2(this.plan.mask[l] as number, this.plan.coord[l] as number),
+              )
+            : [new Vector2(0, -1)],
+      },
     };
     this.normalMap = poreNormalMap();
     // Pores are felt in the highlights, not seen as texture: keep the relief faint.
@@ -493,6 +516,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-7-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}`;
+    return `humanoid-kit-skin-8-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}`;
   }
 }

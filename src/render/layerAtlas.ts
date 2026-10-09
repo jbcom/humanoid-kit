@@ -3,8 +3,9 @@
  * coordinate rasterised once into the body's UV space and shared by every
  * figure, since the fields depend on the base mesh alone.
  *
- * Two layers per page of an array texture: (mask, coord) of layer 2p in RG and
- * of layer 2p + 1 in BA. Texels outside the UV islands are filled from the
+ * Four channels per page of an array texture, laid out by an `AtlasPlan`: each
+ * layer's mask, the coordinate of each layer whose shader reads one, and one
+ * coordinate between the layers of a coordinate group. Texels outside the UV islands are filled from the
  * nearest covered texel (a gutter of `GUTTER` texels), so bilinear filtering
  * at an island's edge never blends in empty texels and draws a seam.
  */
@@ -30,6 +31,7 @@ import {
   type WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
+import type { AtlasPlan } from "../surface/atlasPlan.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
 
 /** Texels of gutter filled around each UV island. */
@@ -58,10 +60,9 @@ export interface LayerAtlasSource {
   /** `layers.length` blocks of `vertexCount` (mask, coord) pairs. */
   layerFields: Float32Array;
   layers: readonly string[];
+  /** Where each layer's fields go: `planAtlas` of the layers, which the skin material is built from too. */
+  plan: AtlasPlan;
 }
-
-/** Pages needed for `count` layers (at least one, so the sampler is always valid). */
-export const atlasPages = (count: number) => Math.max(1, Math.ceil(count / 2));
 
 const RASTER_VERTEX = /* glsl */ `
 in vec2 uv;
@@ -111,9 +112,53 @@ void main() {
     }
 }`;
 
+/** What a channel holds: one layer's mask, or the coordinate of the layers that share it. */
+type Held = { mask: number } | { coord: number[] };
+
+/** The holder of each channel of the plan. */
+function channelHolders(plan: AtlasPlan): (Held | undefined)[] {
+  const out: (Held | undefined)[] = new Array(plan.channels).fill(undefined);
+  plan.mask.forEach((c, l) => {
+    out[c] = { mask: l };
+  });
+  plan.coord.forEach((c, l) => {
+    if (c < 0) return;
+    const held = out[c];
+    if (held && "coord" in held) held.coord.push(l);
+    else out[c] = { coord: [l] };
+  });
+  return out;
+}
+
+/**
+ * Writes one channel's values per vertex into component `k` of the raster's
+ * `fields`. A shared coordinate takes, at each vertex, the value of the layer
+ * whose mask is strongest there: the layers agree wherever more than one reaches.
+ */
+function fillChannel(fields: Float32Array, k: number, source: LayerAtlasSource, held: Held): void {
+  const n = source.vertexCount;
+  const f = source.layerFields;
+  if ("mask" in held) {
+    for (let v = 0; v < n; v++) fields[v * 4 + k] = f[(held.mask * n + v) * 2] as number;
+    return;
+  }
+  for (let v = 0; v < n; v++) {
+    let best = held.coord[0] as number;
+    let strongest = -1;
+    for (const l of held.coord) {
+      const m = f[(l * n + v) * 2] as number;
+      if (m > strongest) {
+        strongest = m;
+        best = l;
+      }
+    }
+    fields[v * 4 + k] = f[(best * n + v) * 2 + 1] as number;
+  }
+}
+
 /**
  * Rasterises the given pages of the atlas from the source's fields (each page
- * holds two layers; the others are not touched). Its scratch targets, cover
+ * holds four channels, laid out by the source's plan; the others are not touched). Its scratch targets, cover
  * mask and materials live for this call only.
  */
 function rasterisePages(
@@ -198,15 +243,12 @@ function rasterisePages(
     renderer.clear();
     renderer.render(scene, camera);
     mesh.material = raster;
+    const holders = channelHolders(source.plan);
     for (const p of pageList) {
       fields.fill(0);
-      for (let k = 0; k < 2; k++) {
-        const l = p * 2 + k;
-        if (l >= source.layers.length) break;
-        for (let v = 0; v < n; v++) {
-          fields[v * 4 + k * 2] = source.layerFields[(l * n + v) * 2] as number;
-          fields[v * 4 + k * 2 + 1] = source.layerFields[(l * n + v) * 2 + 1] as number;
-        }
+      for (let k = 0; k < 4; k++) {
+        const held = holders[p * 4 + k];
+        if (held) fillChannel(fields, k, source, held);
       }
       (geometry.getAttribute("fields") as BufferAttribute).needsUpdate = true;
       renderer.setRenderTarget(scratch);
@@ -235,7 +277,7 @@ export function buildLayerAtlas(
   source: LayerAtlasSource,
   size = 1024,
 ): LayerAtlas {
-  const pages = atlasPages(source.layers.length);
+  const pages = source.plan.pages;
   const atlas = new WebGLArrayRenderTarget(size, size, pages, {
     type: UnsignedByteType,
     minFilter: LinearFilter,
@@ -268,7 +310,14 @@ export function buildLayerAtlas(
       at.forEach((l, k) => {
         source.layerFields.set(update.layerFields.subarray(k * n * 2, (k + 1) * n * 2), l * n * 2);
       });
-      rasterisePages(renderer, source, atlas, [...new Set(at.map((l) => l >> 1))], size);
+      // The pages of each updated layer's mask and of the coordinate it reads.
+      const touched = new Set<number>();
+      for (const l of at) {
+        touched.add((source.plan.mask[l] as number) >> 2);
+        const coord = source.plan.coord[l] as number;
+        if (coord >= 0) touched.add(coord >> 2);
+      }
+      rasterisePages(renderer, source, atlas, [...touched], size);
     },
     dispose: () => atlas.dispose(),
   };
