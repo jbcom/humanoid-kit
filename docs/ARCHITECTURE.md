@@ -2270,9 +2270,25 @@ age.
 - `<Humanoid>` bakes the texture from that placement and the evaluated
   surface (`bakeBodyArt`, `src/render/bodyArtTexture.ts`) with the images the
   application passes (`bodyArtImages`).
-- A new evaluation rebakes into a new texture that replaces the old in the
-  same uniform, so only a figure gaining or losing body art rebuilds its
-  shader.
+- A tattoo is a decal, not baked colour (`src/render/tattooDecals.ts`). At
+  1024² the body's UV texels are 1.2–2.3 mm on a forearm (measured), so a
+  6 cm compass baked as colour had 27 texels across and its line work
+  pixelated on the sheets. No size of one texture for the whole body fixes
+  that, so the bake stores, per texel, the place in the tattoo that covers it,
+  in half floats. The skin shader samples the tattoo's own image there,
+  mipmapped and anisotropic, at the detail the screen asks for, and never
+  finer than the ink's spread.
+  - A coordinate is affine over each of the body's triangles, so a bilinear
+    blend of four texels is exact inside one.
+  - The texels round each UV island are extrapolated linearly from the two
+    inside next to them, so a tattoo stays exact across a seam.
+  - Tattoos that overlap go on separate decal layers (two at most), the
+    later above, so one composites over the other in the shader.
+  - The ink page keeps only dermal pigment, which is soft enough for the
+    body's texels.
+- A new evaluation rebakes into new textures that replace the old in the
+  same uniforms, so only a figure gaining or losing body art, or a layer of
+  overlapping tattoos, rebuilds its shader.
 - The projection reaches half the decal's longer side off the skin's plane
   (at least 1 cm) and skips skin facing away from it, so a tattoo on a
   forearm never lands on the hip behind it. Both limits fade rather than cut:
@@ -2282,8 +2298,10 @@ age.
   not skin (the sheets showed vitiligo whitening the nail beds).
 - The ink's colour is stored sRGB-encoded so dark inks keep their precision
   in eight bits.
-- The browser tests hold the bake to its frame (orientation, the seam, facing
-  and reach, a later tattoo over an earlier one) and the shader to `inkSeen`.
+- The browser tests hold the decal coordinates to the frame (orientation,
+  the seam and the texels just past it, facing and reach, a later tattoo on a
+  layer above an earlier one) and the shader to `inkSeen`. They also check
+  that stripes half a bake texel wide still resolve.
 
 **Marks, as built.**
 
