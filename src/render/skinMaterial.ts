@@ -228,6 +228,21 @@ float hkDetailHeight( vec2 uv ) {
 	for ( int l = 0; l < ${count}; l ++ ) {
 		vec4 head = hkHeader( l );
 		int kind = hkKind( head );
+		if ( kind <= 1 ) {
+			// A colour layer's line that also shades: its stops' depths (their alpha, the layer's
+			// deepest in the header) along the exact coordinate, so the normal is tilted by the
+			// gradient across the line, per pixel, and the line is lit on one side and shadowed
+			// on the other at any tone. Smoothed so it has no kink to catch the light.
+			if ( head.x <= 0.0 || head.z <= 0.0 ) continue;
+			vec2 g = hkFields( l, uv );
+			float u = ( 1.5 + clamp( g.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
+			float depth = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).a;
+			float s = clamp( depth / head.z, 0.0, 1.0 );
+			// A line is a period of two stops of the coordinate: gone by the time that is ten pixels.
+			float lineFade = hkFootprintFade( fwidth( g.y ) * ${glslFloat((STOP_COUNT - 1) / 2)} );
+			H -= g.x * head.x * head.z * lineFade * s * s * ( 3.0 - 2.0 * s );
+			continue;
+		}
 		if ( kind != 2 && kind != 3 && kind != 5 ) continue;
 		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
 		if ( head.x <= 0.0 ) continue;
@@ -747,6 +762,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-9-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}${this.hkUniforms.hkBodyArt.value ? "-art" : ""}`;
+    return `humanoid-kit-skin-10-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}${this.hkUniforms.hkBodyArt.value ? "-art" : ""}`;
   }
 }

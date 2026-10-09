@@ -51,6 +51,34 @@ export interface SkinLayerPaint {
   strength: number;
   /** Colours at evenly spaced points along the layer's coordinate (1 to `STOP_COUNT`). */
   stops: readonly Rgb[];
+  /**
+   * Groove depth in metres at each stop, evenly spaced as the stops are (same
+   * length rule; at most `stops.length` of them, the rest taken as 0): a line of
+   * colour that also shades. The shader tilts the normal by the gradient of this
+   * profile along the layer's coordinate, per pixel (`lineRelief`), so a thin line
+   * is lit on one side and shadowed on the other, which reads on any tone where a
+   * darker colour alone does not. Absent is no relief.
+   */
+  relief?: readonly number[];
+}
+
+/** The shape of a relief profile between two stops: smooth, so a line has no kink to catch the light. */
+export const reliefProfile = (t: number): number => t * t * (3 - 2 * t);
+
+/**
+ * A colour layer's relief at a point (metres, negative: a groove): the stops'
+ * depths (`SkinLayerPaint.relief`, resampled to `STOP_COUNT` as the table holds
+ * them) interpolated along the coordinate and smoothed (`reliefProfile`). The
+ * reference the shader's colour-layer relief is held to.
+ */
+export function lineRelief(depths: readonly number[], coord: number): number {
+  const peak = Math.max(0, ...depths);
+  if (peak === 0) return 0;
+  const x = Math.min(1, Math.max(0, coord)) * (depths.length - 1);
+  const i = Math.min(Math.floor(x), depths.length - 2);
+  const f = x - i;
+  const d = (depths[i] as number) + ((depths[i + 1] as number) - (depths[i] as number)) * f;
+  return -peak * reliefProfile(d / peak);
 }
 
 /** Procedural relief: its strength and its size in metres. */
@@ -160,8 +188,10 @@ export const STOP_COUNT = 8;
 /**
  * Stop-table texels per layer: one header and the stops. The header is
  * (strength, kind, a, b): kind 0 mix, 1 multiply (colour layers; the stops
- * follow), 2 bumps and 3 creases (detail; a height, b size), 4 surface
- * (a roughness, b specular) and 5 ridges (detail; a height, b spacing).
+ * follow, a is the deepest groove of their relief in metres, 0 for none, and
+ * each stop's alpha is its depth), 2 bumps and 3 creases (detail; a height, b
+ * size), 4 surface (a roughness, b specular) and 5 ridges (detail; a height, b
+ * spacing).
  */
 export const STOP_TABLE_WIDTH = STOP_COUNT + 1;
 
@@ -426,6 +456,14 @@ export function buildLayerFields(
 
 const unit = (x: number) => Math.min(1, Math.max(0, x));
 
+/** A colour layer's relief depths, one per stop (0 where none is given); each must be >= 0. */
+function paintedRelief(id: string, count: number, relief: readonly number[] | undefined): number[] {
+  const out = Array.from({ length: count }, (_, k) => relief?.[k] ?? 0);
+  if ((relief?.length ?? 0) > count || out.some((d) => !(d >= 0)))
+    throw new RangeError(`skin layer ${id}: relief is one depth >= 0 per stop`);
+  return out;
+}
+
 /**
  * The figure's stop table: `layers.length` rows of `STOP_TABLE_WIDTH` RGBA
  * texels. Texel 0 is the header (`STOP_TABLE_WIDTH`); for a colour layer,
@@ -461,18 +499,30 @@ export function paintStopTable(
       out.set([unit(p.strength) * gate, code, p.roughness, p.specular], row);
       return;
     }
-    const { strength, stops } = layer.paint(input);
+    const paint = layer.paint(input);
+    const { strength, stops } = paint;
     if (stops.length < 1 || stops.length > STOP_COUNT)
       throw new RangeError(`skin layer ${layer.id}: 1 to ${STOP_COUNT} stops, got ${stops.length}`);
-    out.set([unit(strength) * gate, code, 0, 0], row);
+    const relief = paintedRelief(layer.id, stops.length, paint.relief);
+    const peak = Math.max(0, ...relief);
+    // A colour layer's header z is the deepest groove it draws (0: no relief, which the
+    // shader skips); the stops' alpha holds each stop's depth.
+    out.set([unit(strength) * gate, code, peak, 0], row);
     for (let k = 0; k < STOP_COUNT; k++) {
       const x = (k / (STOP_COUNT - 1)) * (stops.length - 1);
       const i = Math.min(Math.floor(x), stops.length - 1);
       const f = x - i;
       const a = stops[i] as Rgb;
       const b = stops[Math.min(i + 1, stops.length - 1)] as Rgb;
+      const d0 = relief[i] as number;
+      const d1 = relief[Math.min(i + 1, stops.length - 1)] as number;
       out.set(
-        [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, 1],
+        [
+          a[0] + (b[0] - a[0]) * f,
+          a[1] + (b[1] - a[1]) * f,
+          a[2] + (b[2] - a[2]) * f,
+          d0 + (d1 - d0) * f,
+        ],
         row + (k + 1) * 4,
       );
     }

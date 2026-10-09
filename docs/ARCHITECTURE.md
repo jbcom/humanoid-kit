@@ -839,18 +839,44 @@ mask or a relief phase on this mesh: the forehead's triangles are about 2 cm
 across and a field is interpolated between their vertices, so any coordinate
 that is not exactly linear in position bends a line into a squiggle (the first
 sheets' "ʍ" furrow). They use the palm creases' technique
-(`hands/creases.ts`): a multiply colour layer whose coordinate is exactly
-linear (the forehead's in height, the furrows' across the face), with the
-line's shade on chosen ones of the layer's eight colour stops (`FOREHEAD_STOPS`,
-`GLABELLA_STOPS`), so a line is straight wherever the vertices fall and a
-seventh of the coordinate's band wide. A coordinate is stored in 0 to 1, and a
-vertex outside its band is stored clamped, which would bend a line in any
-triangle that has one; so each band reaches a face past its lines and the mask
-fades to zero before the band ends. The forehead has three lines (2.3, 4.1 and
-5.9 cm above the brows' joints), deepest at the centre and weakening toward the
-temples; the furrows are two vertical lines 1.05 cm either side of the midline.
-Their shade is the fold's shadow, a multiply by `lineShade(age)` (22 % at 40,
-the most 45 %), which grows with age as the relief's depth does.
+(`hands/creases.ts`): a multiply colour layer whose coordinate is a smooth
+function of position (the furrows' exactly linear across the face; the forehead's
+height, see below), with the line's shade on chosen ones of the layer's eight
+colour stops (`FOREHEAD_STOPS`, `GLABELLA_STOPS`), so a line is a smooth curve
+wherever the vertices fall and a seventh of the coordinate's band wide. A
+coordinate is stored in 0 to 1, and a vertex outside its band is stored clamped,
+which would bend a line in any triangle that has one; so each band reaches a face
+past its lines and the mask fades to zero before the band ends.
+
+The forehead has three lines (about 2.1, 3.7 and 5.4 cm above the brows' joints,
+short of the hairline), deepest at the centre. Three lines of one even spacing read
+as stripes, so they are irregular, by choice: they sag 4 mm toward the temples, wave
+1.5 mm along their length, are spaced unevenly (the coordinate is height warped by 2
+% of the band), and break up toward the temples where a slow noise is high
+(`foreheadCoordinate`, `foreheadUnbroken`). The warp is a smooth function sampled
+at every vertex, so a line is a smooth curve across the triangles (a test holds the
+interpolated coordinate to within a millimetre of the function). The furrows are
+two straight vertical lines 1.05 cm either side of the midline, 1.5 to 2.5 cm long:
+the mask caps them from 8 mm below the brows' joints to 2.2 cm above, both ends soft
+(`FURROW_FROM`, `FURROW_TO`), since a glabellar furrow is a short groove between
+the inner brows, not a line up the forehead.
+
+**Tone.** A multiply by a fraction of albedo is a step too small to see on deep skin
+(the same fraction of a dark albedo is a smaller step of lightness), so the lines
+vanished on the two deepest tones. Two things fix it. The multiply is chosen per
+tone (`lineShade(age, tone)`) to lower the skin's CIELAB L* by `LINE_DELTA_L` = 6,
+times the age factor, to 12: the same step of lightness at every tone (a test holds
+the deepest tone's step to over 0.6 of the fairest's at 25, 40 and 75; the deepest
+tone's multiply is the deeper). And the lines shade: a colour layer's paint may carry
+`relief` (a groove depth at each stop, the deepest in the stop table's header and
+each stop's depth in its alpha), and the shader tilts the normal per pixel by the
+gradient of that smoothed profile along the layer's own coordinate
+(`hkDetailHeight`, `lineRelief` its reference), so a line catches light on one
+side and shadows on the other whatever the colour. It is per pixel only, from the
+exact coordinate: no vertex relief, so a line cannot bend as the first relief did.
+The grooves are 0.6 mm (forehead) and 0.7 mm (furrows) at 40, times the age factor
+(under 1 mm at any age; a CHOICE, no measurement of wrinkle depth is in this
+repository). Age scales both.
 
 Where each lies is read from the default figure's joints (the brows, the outer
 corners, the nose's wing), so it follows the mesh, and keeps off the lips and the

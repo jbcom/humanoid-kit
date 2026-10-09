@@ -601,7 +601,10 @@ compute what the renderer will do.
   `STOP_COUNT` stops in rows of `STOP_TABLE_WIDTH` texels) and
   `applyLayers(base, table, fields)`, the per-pixel blend the shader performs.
   A layer is one of three kinds: a `ColourLayer` (the default: `blend`, and
-  `paint` giving `strength` and colour `stops`), a `DetailLayer` (`kind:
+  `paint` giving `strength` and colour `stops`, and optionally `relief`: a groove
+  depth in metres per stop, which the shader tilts the normal by per pixel, so a thin
+  line shades as well as tints; `lineRelief(depths, coord)` is its reference), a
+  `DetailLayer` (`kind:
   "detail"`, `pattern` `"bumps"` or `"creases"`, `paint` giving `strength`,
   `height` in metres and `size`: bump spacing in metres, or crease count across
   the coordinate) drawn at true scale and faded where finer than a pixel, or a
@@ -728,8 +731,10 @@ compute what the renderer will do.
     between the brows on `browFurrow`, crow's feet on `squint` (or a smile), the
     folds on `nasolabial` (or a smile), nose lines on `noseWrinkle`. The forehead's
     and the furrows' are multiply `ColourLayer`s, thin lines on colour stops
-    (`FOREHEAD_STOPS`, `GLABELLA_STOPS`) of a coordinate exactly linear in
-    position, shaded by `lineShade(age)`; the rest are `creases` `DetailLayer`s.
+    (`FOREHEAD_STOPS`, `GLABELLA_STOPS`) of a coordinate that is a smooth function
+    of position (`foreheadCoordinate`; the furrows' is linear), coloured by
+    `lineShade(age, tone)` (the same step of CIELAB lightness at every tone) and cut
+    as grooves by `LINE_RELIEF`; the rest are `creases` `DetailLayer`s.
     `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
     `EXPRESSION_COUNT` are art-directed, `expressionAgeFactor(age)` scales the
     depth or shade by age (0.2 at 6, 1 at 40, 1.4 at 70).
