@@ -24,6 +24,10 @@ export interface SliderRowProps {
   onChange: (value: number, gesture: string) => void;
   onSettle: () => void;
   onFocus?: () => void;
+  /** Replaces the reset button's default (set to `neutral`), e.g. to clear an override. */
+  onReset?: () => void;
+  /** Whether the reset button shows; defaults to the value differing from `neutral`. */
+  changed?: boolean;
 }
 
 let gestures = 0;
@@ -48,7 +52,7 @@ export function SliderRow(p: SliderRowProps) {
     "--hk-to": `${to}%`,
     ...(p.track ? { "--hk-track": p.track } : {}),
   } as CSSProperties;
-  const changed = Math.abs(p.value - p.neutral) > p.step / 2;
+  const changed = p.changed ?? Math.abs(p.value - p.neutral) > p.step / 2;
   const disabled = Boolean(p.disabledReason);
   const text = p.format(p.value);
 
@@ -70,7 +74,8 @@ export function SliderRow(p: SliderRowProps) {
         aria-label={`Reset ${p.label}`}
         hidden={!changed || disabled}
         onClick={() => {
-          p.onChange(p.neutral, `${id}:reset:${++gestures}`);
+          if (p.onReset) p.onReset();
+          else p.onChange(p.neutral, `${id}:reset:${++gestures}`);
           p.onSettle();
         }}
       >

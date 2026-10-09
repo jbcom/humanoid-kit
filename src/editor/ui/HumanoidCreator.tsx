@@ -26,6 +26,7 @@ import type { Recipe } from "../../recipe/recipe.ts";
 import type { FrameRequest } from "../framing.ts";
 import { AppearancePanel } from "./AppearancePanel.tsx";
 import { CameraRig } from "./CameraRig.tsx";
+import { RegionPanel } from "./RegionPanel.tsx";
 import { ShapePanel } from "./ShapePanel.tsx";
 import { CREATOR_CSS } from "./styles.ts";
 import { type HumanoidEditor, useHumanoidEditor } from "./useHumanoidEditor.ts";
@@ -42,6 +43,7 @@ export interface HumanoidCreatorProps {
 }
 
 const APPEARANCE_TAB = "hk:appearance";
+const REGIONS_TAB = "hk:regions";
 const WHOLE_BODY: FrameRequest = { part: "body", direction: "front" };
 
 const Icon = ({ d }: { d: string }) => (
@@ -172,6 +174,7 @@ function CreatorBody({
   const task = tasks.find((t) => t.id === activeTab) ?? null;
   const tabs = [
     ...tasks.map((t) => ({ id: t.id, label: t.label })),
+    { id: REGIONS_TAB, label: "Regions" },
     { id: APPEARANCE_TAB, label: "Skin & eyes" },
   ];
   // Task ids contain spaces, so element ids use the tab's position.
@@ -285,6 +288,8 @@ function CreatorBody({
           >
             {!ready ? (
               <p className="hk-empty">Loading controls…</p>
+            ) : activeTab === REGIONS_TAB ? (
+              <RegionPanel editor={editor} onFocus={reframe} />
             ) : activeTab === APPEARANCE_TAB ? (
               <AppearancePanel editor={editor} onFocus={reframe} />
             ) : (

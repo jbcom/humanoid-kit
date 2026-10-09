@@ -151,6 +151,20 @@ export const CREATOR_CSS = /* css */ `
 .hk-range:focus-visible { outline: none; }
 .hk-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--hk-accent); }
 .hk-range:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--hk-accent); }
+.hk-note { margin: 4px 6px 4px; color: var(--hk-muted); font-size: 13px; }
+.hk-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 2px 4px 6px; border: 0; min-width: 0; }
+.hk-chip {
+  position: relative; min-height: var(--hk-touch); padding: 0 14px;
+  border: 1px solid var(--hk-border); border-radius: 999px;
+  background: var(--hk-raised); color: var(--hk-text); font: inherit; cursor: pointer;
+}
+.hk-chip[aria-pressed="true"] { background: var(--hk-accent); border-color: var(--hk-accent); color: var(--hk-accent-ink); }
+.hk-chip[data-overridden]::after {
+  content: ""; position: absolute; top: 7px; right: 7px; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--hk-accent); box-shadow: 0 0 0 2px var(--hk-panel);
+}
+.hk-chip[aria-pressed="true"][data-overridden]::after { background: var(--hk-accent-ink); }
+.hk-chip:focus-visible { outline: 2px solid var(--hk-accent); outline-offset: 1px; }
 .hk-hit-path { margin: 8px 0 0; color: var(--hk-muted); font-size: 12px; }
 .hk-empty { padding: 24px 16px; color: var(--hk-muted); text-align: center; }
 .hk-swatches {
