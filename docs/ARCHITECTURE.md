@@ -1977,7 +1977,7 @@ anything when shoes are worn beyond the fields every figure shares.
 - *Callus is a layer over the pressure sites, scaled by age.* Gaussian sites
   weighted as the pressure maps say, a mix toward the sole's colour made paler
   and yellower in CIELAB (`callusAlbedo`; the sole's colour is the hands'
-  `palmAlbedo`, one owner) and a matte surface layer on the sole only (`callusAmount(age)`; a small child's
+  `palmAlbedo`, one owner), on the sole only (`callusAmount(age)`; a small child's
   sole is soft and the forefoot hardens with age). The age reaches the layer
   through `SkinPaintInput.age`, which `<Humanoid>` sets from the recipe. The
   tint and the age curve are choices and say so in C6: no callus colorimetry
@@ -1991,10 +1991,9 @@ anything when shoes are worn beyond the fields every figure shares.
   foot's far end as each toe's reference point and the sole as its facing.
 - *Toe joint creases are bands across the toes.* A band of 3 to 7 mm half-width
   (0.4 of the shorter bone) centred on each joint that is not a tip, on its own
-  side of the toe: fine wrinkles on the top (`TOE_WRINKLE_LAYER`, three to a
-  band, 0.12 mm deep as the hands' knuckle wrinkles, fainter in a child and
-  deepening with age, `wrinkleAmount`) and one fold under each joint
-  (`TOE_CREASE_LAYER`, 0.3 mm as the palm's creases, from birth). The coordinate
+  side of the toe: fine wrinkles on the top (`toeWrinkleFields`, three to a band,
+  0.12 mm deep as the hands' knuckle wrinkles) and one fold under each joint
+  (`toeCreaseFields`, 0.3 mm as the palm's creases, from birth). The coordinate
   runs 0 to 1 across the band, so a fold starts and ends flat, and the bands
   stay a bone's fraction apart so the nearest joint never flips inside one.
   Depths and counts are choices (C6): no measurement of crease depth was found.
@@ -2029,16 +2028,26 @@ anything when shoes are worn beyond the fields every figure shares.
   does, so they show only close up. Tested: the function's statistics and
   orientation in node, and in a browser the shader against it (the shading
   follows the reference's slope at correlation below −0.9).
-- *The feet cost one page of the atlas (nine in all).* Seven layers (callus and
-  its matte, the toe wrinkles and creases, the toenails and their gloss, the
-  ridges) overlap one another on the foot, so each needs a channel group of its
-  own, and the only partners they can share one with are the face's (the hands'
-  features lie too close to the foot's in the UV layout: the planner works in
-  cells of a 64 × 64 grid with a margin of one). That is 29 channels of the
-  body's layers where the hands left 26, and no ordering of the layers does
-  better than 28 (a search of twenty thousand random orders; the first-fit in
-  stack order finds 29). The ridges cost two channels as one layer: with the
-  orientation in the coordinate, not a second layer.
+- *The feet's skin is painted by the hands' layers, so the atlas stays at eight
+  pages.* As separate layers the feet's seven (callus and its matte, the toes'
+  wrinkles and creases, the toenails and their gloss, the ridges) overlap one
+  another and the hands' on the UV layout, so each took a channel group of its
+  own: nine pages, and no ordering of the layers found better than 28 channels
+  of the body's against the first-fit's 29 (a search of twenty thousand random
+  orders). Features whose masks never meet and that want the same colour model
+  or the same relief share a layer instead (`src/surface/regions/areas.ts`; the
+  hands' own definitions are unchanged and keep their tests): the sole's callus
+  is a term of the `palmoplantar` paint (the coordinate is the callus weight, the
+  layer's second stop the sole's colour made callus by age), the toenails are on
+  `knuckles-nails` (one nail model, one coordinate, the same stops), their gloss
+  on `nail-gloss`, and the toes' wrinkles and creases on `hand-relief`, in its
+  coordinate of ten periods (a wrinkle band is three of them, a crease one) with
+  the depth carried in the mask. Only the ridges, a different pattern, keep a
+  layer of their own, two channels. What sharing costs: no matte surface on
+  callus (a surface layer's sign is the layer's, and nail gloss is the other
+  way), no yellowing of old toenails and no age scaling of the toes' wrinkles
+  (the shared paint has no place for them), all of them choices that were not
+  measured anyway.
 - *Toenails are layers on the top of each toe's end, on the hands' scheme.* The
   base mesh sculpts a faint plate on the big toe and none on the others, so, as
   with the fingernails, there is no nail geometry: a coordinate along the nail
@@ -2048,9 +2057,10 @@ anything when shoes are worn beyond the fields every figure shares.
   region is a fraction of its distal flesh, from its last joint to the tip
   (`TOENAIL_REGION`: 0.82 on the big toe, about two thirds to three quarters on the lesser
   toes, where the nail is most of the distal phalanx), its half-width a fraction
-  of the toe's own radius, and it faces up and curls over at the tip. The bed
-  and free edge yellow with age (`toenailAging`: toenails thicken and slow with
-  age, and the colour is a choice). A lesser toe's nail has only a vertex or
+  of the toe's own radius, and it faces up and curls over at the tip. (The toe's
+  `under` is taken from the middle of its flesh: the skeleton's line lies near
+  the little toe's upper surface, which put its nail on the wrong side.) A
+  lesser toe's nail has only a vertex or
   two inside it on a 5 mm mesh, so its edge is as coarse as the hands' is.
 
 ## Parallel work: the base contract

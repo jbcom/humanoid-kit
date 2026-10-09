@@ -525,7 +525,9 @@ describe("layers shared by features that never meet", () => {
 
 describe("the hands' layers in the stack", () => {
   it("paint at every tone and age, and come before the state layers", () => {
-    const first = SKIN_LAYERS.indexOf(HAND_SKIN_LAYERS[0]);
+    // By id: the stack holds these layers with the feet's skin on them (`areas.ts`).
+    const place = (id: string) => SKIN_LAYERS.findIndex((l) => l.id === id);
+    const first = place(HAND_SKIN_LAYERS[0].id);
     const goose = SKIN_LAYERS.indexOf(GOOSEBUMP_LAYER);
     expect(first).toBeGreaterThan(SKIN_LAYERS.findIndex((l) => l.id === "areola"));
     expect(goose).toBeGreaterThan(first + HAND_SKIN_LAYERS.length - 1);
@@ -539,7 +541,7 @@ describe("the hands' layers in the stack", () => {
         adult,
       });
       for (const layer of HAND_SKIN_LAYERS) {
-        const row = SKIN_LAYERS.indexOf(layer) * STOP_TABLE_WIDTH * 4;
+        const row = place(layer.id) * STOP_TABLE_WIDTH * 4;
         expect(table[row], layer.id).toBe(1);
       }
     }
