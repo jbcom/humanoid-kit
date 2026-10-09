@@ -1269,9 +1269,32 @@ a coloured texture; everything in the pure core is testable in Node.
   divides the luminance by an alpha-weighted gaussian of itself (sigma well under
   the blotch, well over a strand), leaving strand-scale structure and alpha as
   they were; every other style keeps its atlas's shading.
+- *The coily styles are authored, not compiled.* The CC0 sources have no twists,
+  braids, cornrows or locs, and the community ones fail the licence rule
+  (`docs/licence-history.md`), so `scripts/lib/hairCards` builds them: **ropes**, tubes of
+  quads along a centreline (`ropes.ts`) that leaves the scalp at an angle read from the head
+  (`HeadFrame`: azimuth and elevation from the skull's centre, a ray to the head's own
+  triangles), lifts a little, then falls under gravity and lies over the body
+  (`BodySurface.probe`, signed distance from the whole body, winding taken from the skull); a
+  **grid of partings** (brick-wise rows, a hairline that recedes at the temples and runs up over
+  the ear and down at the nape) places box braids, twists and locs, and cornrows are parallel
+  parting lines on the scalp with a braid hanging from each end. The cards are bound to the
+  base mesh by the MHCLO scheme (`bindToBody`: the nearest triangle's corners, barycentric
+  weights, an offset) with the head's extents as the scale references, so they go through the
+  same pack, worker and renderer as a MakeHuman style and fit other heads. Each style's strand
+  map is a tile per rope variant, drawn as vector shapes and rasterised by sharp (`atlas.ts`),
+  periodic round the tube. A tube faces every way round its axis, so these styles opt out of
+  both the fin dissolve and the hairline fade (`HairFieldsInput.fins`, `feather`). Provenance
+  names them as authored by the packer. A **derived** style keeps a MakeHuman style's cards
+  (geometry, binding, cut-out) and draws its own strand map inside that cut-out: `crop01` is
+  `short04`'s cap (3.8 mm median above the scalp) with thousands of tiny loops drawn at random
+  angles, its soft edge broken into ragged fuzz, the loose cards below the cap cleared, and a
+  fade (`keepAt`: full on top, tapering over the ears and round to bare skin at the nape) taken
+  from where each texel lies on the head (`uvField.ts` rasterises the cards into the texture). Not
+  yet: bantu knots, tight curls in the longer styles.
 
 **Costs and limits.** The pack is 3.5 MB for ten styles, mostly strand maps at
-1024 px; the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
+1024 px (and 0.3 to 0.5 MB for each authored one); the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
 because their alpha is fine detail. Hair has no physics and no strand shadows
 inside the volume beyond the baked occlusion. Red hair's chroma is limited by the
 pheomelanin spectrum, and blond, red and white are modelled, not measured
@@ -1445,22 +1468,25 @@ Old recipes evaluate and serialise as before.
   axis-aligned ramps, had straight edges down the cheeks and a rectangle on
   the neck. The beard's masks are redrawn with the coat, along the face's
   own lines.
-- *Terminal hair is one strand layer per group.* Each group (chest, abdomen,
-  back, buttocks, arms, legs, axillary) has its own coverage, colour, density
-  and length, so its own layer. Masks are measured from the base mesh: the skin
+- *Sparse terminal hair is one strand layer per group.* Each group drawn as
+  strands (buttocks, arms, legs) has its own coverage, colour, density and
+  length, so its own layer. Masks are measured from the base mesh: the skin
   zones (cut off where a zone's weight falls under 0.2, so supports stay near
   their region), the vertex normals, and the armpits' hollows. The limbs stop
   short of the hands and feet, which carry little terminal hair and whose
   layers crowd the atlas.
 - *The beard defaults to none.* Clean-shaven is the neutral recipe; terminal
   body hair and vellus are on by default for age and sex.
-- *Axillary hair is an adult-only body layer; pubic hair is the adult pack's.*
-  The armpit's mask comes from the base mesh, so its layer lives in the core,
-  where a layer flag, `adultOnly`, makes `paintStopTable` paint it at zero
-  unless the input says the figure is an adult, failing closed when it does
-  not say. The model's coverage is zero for it under 18 as well, the age policy
-  refuses a recipe that asks for it, and every other group's mask is cut out
-  where it lies. Pubic hair is the adult pack's, like every genital-region
+- *Axillary hair is an adult-only coat region; pubic hair is the adult pack's.*
+  The armpit's hair is dense and a couple of centimetres long, so it is the
+  coat's; its mask comes from the base mesh, so the region lives in the core,
+  where a region flag, `adultOnly`, makes `paintCoat` leave it unpainted, without
+  asking its paint, unless the input says the figure is an adult, failing
+  closed when it does not say. The model's coverage is zero for it under 18 as
+  well, the age policy refuses a recipe that asks for it, and every other
+  group's mask is cut out where it lies. (A first version drew it as a strand
+  layer with the same flag on skin layers; with it moved, the layer flag had no
+  user and went.) Pubic hair is the adult pack's, like every genital-region
   feature: its mask and its place in the stack come from the adult pack's
   manifest (`AdultAnatomySpec`), so the core names no part of it, and it
   appears only when the pack is loaded. The core keeps the recipe's `pubic`
@@ -1507,6 +1533,9 @@ module.
   (outfit-masked) index cut to the triangles whose corners carry a painted
   region; built when the outfit or the set of painted regions changes, so a
   figure without a coat draws nothing and stubble draws only the face.
+  A recipe without `bodyHair` grows no coat at all (`coatPaintFor`): until the
+  coat's sub-pixel strands resolve as coverage rather than single-pixel
+  points, default figures stay bare instead of speckled.
 - *One instanced draw.* The coat is a skinned mesh on the body's own geometry
   and skeleton, instanced N times; shell `i` is the skin offset along the rest
   normal by `(i + 1) / N` of the hair's length, leaning along the comb, before
@@ -1647,7 +1676,7 @@ later package that refuses participants under 18, and are not here.
   BVH's root translation is the source figure's. The bones a clip never moves are not
   stored (the walk moves 73 of the rig's 163). Quaternions are kept in one hemisphere
   from frame to frame, so a blend takes the short way.
-- *The source is MakeHuman's own CC0 clips.* punkduck's walk, idle and swim clips in
+- *The sources are MakeHuman's own CC0 clips and Quaternius's.* The first are punkduck's walk, idle and swim clips in
   `makehuman2_additional_assets_cc0.zip` are on the default skeleton, so a BVH joint
   is a rig bone by name and nothing is retargeted. Each clip is judged by
   `judgeAsset` (docs/licence-history.md, clause B) with the asset pack listing that
@@ -1655,6 +1684,24 @@ later package that refuses participants under 18, and are not here.
   `license CC0` (a BVH has no place for a licence line), and the archive is pinned by
   its SHA-256 (`packs/animations/data/PROVENANCE.md`). MakeHuman's own `walk.bvh` and
   `zombie.bvh` are AGPL3 and are not used.
+- *Breadth from Quaternius, retargeted through a T-pose.* The Universal Animation
+  Libraries 1 and 2 (CC0 1.0 Universal by the `License.txt` inside each archive; 84
+  animations, among them walks, a jog, a sprint, idles, swims, crouches, combat, sitting
+  and farm work) are on Unreal's mannequin skeleton, whose bones have axes of their own.
+  Both rigs are put in a T-pose (the libraries' own `A_TPose`; the body pack's
+  `tpose`), where a limb's direction is the same on both, and a source bone's turn from
+  its T-pose in the world is applied to the target bone from its own: the limb follows
+  whatever the bones' axes are (`scripts/lib/retarget.ts`; a test puts the T-pose
+  through it and gets the target's T-pose back, every bone). Bones with no counterpart
+  (twist and helper bones) keep their T-pose and follow their parent. The libraries'
+  three spine bones and neck against MakeHuman's five and three: each target bone
+  along the spine takes the turn the source would have at its height up the body,
+  blended between the two nearest source bones; the source pelvis turns both legs'
+  pelvis bones and the lowest spine bone. Only the copies vendored with their SHA-256
+  are used, since Quaternius moved later releases to a licence that is not CC0, on
+  2026-08-28. The in-place variants, not `_RM`: where a clip carries the figure is
+  derived from the feet, not authored. A `_Loop` clip's last frame is its first and
+  is dropped.
 - *Where a clip carries a figure is derived from the figure's feet.* The walk's BVH
   keeps its root in place, and a translation authored for one skeleton slides the
   feet of another. `planRootMotion` moves the figure, frame to frame, backwards by
@@ -1679,13 +1726,42 @@ later package that refuses participants under 18, and are not here.
 heel or ball moves while on the ground is 2 to 12 mm (median 5), against well over 20
 mm with root motion alone (the test holds both); in the hip-swaying walk 3 to 29 mm,
 since its hand-keyed feet scissor against each other in double support; in the three
-idles under 10 mm. The tolerance in the walk is the leg's reach: at heel strike the
+idles under 10 mm, and in Quaternius's walks (mocap that plants its feet) under 3
+mm (a crouch walk and a zombie's shuffle 36 and 62 mm, shuffling gaits). The tolerance in the walk is the leg's reach: at heel strike the
 front leg is already straight in the clip, and a pin ahead of it cannot be reached.
 A hand-keyed clip is the limit, not the solver: a clip that planted its feet would
 leave nothing to hold.
 
-**Not here yet:** playing it in `<Humanoid>`, the Quaternius breadth set (retargeted
-through a T-pose), and the no-interpenetration check at a clip's extremes.
+**In the renderer.** `<Humanoid animation={{ library, clip }}>` plays a clip
+(`useFigureAnimation`, `src/react`): each frame the animator's pose, with
+`pose.faceUnits` laid over it, goes to the skeleton, the attachments' occlusion
+keys, the skin's dual quaternions, the figure's lift onto the ground (from its soles
+for a clip that stands on the ground, from its lowest vertex for one that does not),
+its presence (derived again every third frame) and, for a clip that carries it, the
+group (moved forward in its own frame by the root motion of each frame, so a parent's
+transform and a new `position` still compose). None of it goes through React state,
+so a figure animates without re-rendering, and while it plays the figure lifts itself
+and `onGroundOffset` is not called. `time` puts the figure at a time in the clip
+(held, with `paused`), which the QA shots and sheets use (`?anim=walk_normal&t=0.4`).
+`e2e/animation.spec.ts` proves it in a browser: the feet are where the clip has them
+at a time, a walking figure is carried forward on its feet, and the planted ball's
+world position holds.
+
+**Clearance.** (The 90 clips: 72 of them, every locomotion and standing idle among them,
+stay within the tolerance; the 18 where a limb rests on or crosses the body, sitting,
+kneeling, a roll, a landing, a sword's swing, overlap it by up to 12.7 cm of capsule on
+some body, which is held as a bound per clip in the test, not a fix.) `src/animation/clearance.ts` checks a pose for one part of the body
+through another: the body as 14 capsules (head, torso, and each side's upper arm,
+forearm, hand, thigh, shin and foot), each between two joints with a radius measured
+from the figure's own skin (a hand and a foot are flat, so a half and 0.6 of it), and
+the depth to which two that are not neighbours overlap. The capsules are coarse, so
+`CLEARANCE_TOLERANCE` is 2.5 cm. `tests/animation.test.ts` holds every frame of
+every clip, on nine figures, and the walks as the foot lock turns their legs, to it;
+the widest is the crawl's arm skimming the thigh at 19 mm, and the walks stay clear
+of every other part (a hand clears the thigh by 10 to 22 mm), and a test that crosses
+two legs shows the check finds a collision.
+
+**Not here yet:** the Quaternius breadth set (retargeted through a T-pose).
 
 ## Layers
 

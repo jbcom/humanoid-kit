@@ -23,4 +23,5 @@ export {
   StudioStage,
   type StudioStageProps,
 } from "./StudioStage.tsx";
+export type { HumanoidAnimation } from "./useFigureAnimation.ts";
 export { type SkinStateFilterOptions, useSkinStateFilter } from "./useSkinStateFilter.ts";

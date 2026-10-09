@@ -108,6 +108,7 @@ import { CoatMesh } from "./CoatMesh.tsx";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 import { sameEntries } from "./sameEntries.ts";
 import { Settle, SettleContext, useSettle } from "./settle.ts";
+import { type HumanoidAnimation, useFigureAnimation } from "./useFigureAnimation.ts";
 
 const ClientContext = createContext<HumanoidWorkerClient | null>(null);
 
@@ -205,6 +206,16 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
   presence?: HumanoidPresenceProps;
   /** How the figure is posed; absent is the rest pose. */
   pose?: HumanoidPose;
+  /**
+   * A clip playing on the figure (`humanoid-kit-animations`, `loadAnimationLibrary`):
+   * the body follows it, frame by frame, with `pose.faceUnits` laid over, and
+   * `pose.body` standing aside. The figure stays on its feet, and a clip that carries
+   * it (a walk) moves its group forward in the group's own frame; with `presence`
+   * its presence follows. Nothing here goes through React state. While a clip plays
+   * the figure lifts itself onto the ground each frame (as with `presence`: do not lift
+   * the group), and `onGroundOffset` is not called.
+   */
+  animation?: HumanoidAnimation;
   /**
    * The skin's state: named signals, each 0..1 (`cold`, `heat`, `exertion`,
    * `blush`, `fear`; `arousal` for adults only). Every signal reaches the skin
@@ -838,6 +849,7 @@ export function Humanoid({
   onPick,
   presence,
   pose,
+  animation,
   signals,
   onGroundOffset,
   bodyArtImages,
@@ -1053,6 +1065,28 @@ export function Humanoid({
   // biome-ignore lint/correctness/useExhaustiveDependencies: figure and rotations are the triggers
   const shape = useMemo(() => ({}), [figure, rotations]);
   const onGroundOffsetRef = useLatest(onGroundOffset);
+  // A clip's pose is written each frame (`useFigureAnimation`), the face units over it.
+  const liftedRef = useRef<Group>(null);
+  const faceRotations = useMemo(
+    () => (ready && faceUnits ? faceUnitRotations(ready.rig, faceUnits) : null),
+    [ready, faceUnits],
+  );
+  useFigureAnimation({
+    animation,
+    ready,
+    figure,
+    skeleton: rig?.skeleton ?? null,
+    dual,
+    keyBasis,
+    occlusionKeys,
+    face: faceRotations,
+    group: groupRef,
+    lifted: liftedRef,
+    lifts: Boolean(presence) || animation !== undefined,
+    staticLift: lift,
+    presenceSource,
+    report,
+  });
   const rotationsRef = useLatest(rotations);
   /** Reports the ground offset of `ev` in the current pose. */
   const ground = useMemo(
@@ -1427,9 +1461,9 @@ export function Humanoid({
         {...(onPick && { onClick: (e: ThreeEvent<MouseEvent>) => pick(e, onPick) })}
       >
         {geometries && ready && rig && (
-          // With presence the group's origin is the ground under the figure, so the
-          // meshes are lifted here; without it the caller lifts the group.
-          <group position-y={presence ? lift : 0}>
+          // With presence, or a clip playing, the group's origin is the ground under the
+          // figure, so the meshes are lifted here; without it the caller lifts the group.
+          <group ref={liftedRef} position-y={presence || animation ? lift : 0}>
             <primitive object={rig.root} />
             <SkinnedPart
               geometry={geometries.body}

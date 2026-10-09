@@ -1,6 +1,12 @@
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { createRecipe, HumanoidWorkerClient, type Recipe } from "humanoid-kit";
+import {
+  type AnimationLibrary,
+  createRecipe,
+  HumanoidWorkerClient,
+  loadAnimationLibrary,
+  type Recipe,
+} from "humanoid-kit";
 import { HumanoidCreator } from "humanoid-kit/editor";
 import {
   Humanoid,
@@ -10,15 +16,18 @@ import {
   STUDIO_TONE_MAPPING,
   StudioStage,
 } from "humanoid-kit/react";
+import { animationsPack } from "humanoid-kit-animations";
 import { bodyPack } from "humanoid-kit-body";
 import { hairPack } from "humanoid-kit-hair";
 import { useEffect, useRef, useState } from "react";
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
+  type Bone,
   type DirectionalLight,
   type Mesh,
   NeutralToneMapping,
+  type Object3D,
   type ToneMapping,
   Vector3,
 } from "three";
@@ -109,8 +118,31 @@ function SceneProbe() {
       });
       return out;
     };
+    // Where a bone's head is in the world, and where the figure's group stands: for the animation spec.
+    window.hkBone = (name) => {
+      let found: Object3D | null = null;
+      scene.traverse((o) => {
+        if (!found && o.name === name && (o as Bone).isBone) found = o;
+      });
+      if (!found) return null;
+      (found as Object3D).updateWorldMatrix(true, false);
+      const v = new Vector3().setFromMatrixPosition((found as Object3D).matrixWorld);
+      return [v.x, v.y, v.z];
+    };
+    window.hkFigure = () => {
+      let found: Object3D | null = null;
+      scene.traverse((o) => {
+        if (!found && o.userData.groundOffset !== undefined) found = o;
+      });
+      if (!found) return null;
+      (found as Object3D).updateWorldMatrix(true, false);
+      const v = new Vector3().setFromMatrixPosition((found as Object3D).matrixWorld);
+      return { position: [v.x, v.y, v.z], groundOffset: (found as Object3D).userData.groundOffset };
+    };
     return () => {
       delete window.hkDrawn;
+      delete window.hkBone;
+      delete window.hkFigure;
     };
   }, [scene]);
   return null;
@@ -120,10 +152,14 @@ declare global {
   interface Window {
     /** QA only: what each part of the figure is drawing (see `SceneProbe`). */
     hkDrawn?: () => DrawnPart[];
+    /** QA only: a bone's head in world space (see `SceneProbe`). */
+    hkBone?: (name: string) => [number, number, number] | null;
+    /** QA only: where the figure's group stands, and the lift it was given. */
+    hkFigure?: () => { position: [number, number, number]; groundOffset: number } | null;
     /** QA only: swaps the shot's recipe (and pose) without reloading (see `Shot`). */
     hkSetRecipe?: (
       init: Parameters<typeof createRecipe>[0],
-      pose?: HumanoidPose,
+      pose?: ShotPose,
       signals?: Record<string, number>,
     ) => void;
   }
@@ -149,12 +185,36 @@ function initialSignals(): Record<string, number> {
   );
 }
 
-/** `?face=JawDrop:1,LipsKiss:0.5` poses the shot's face. */
-function initialPose(): HumanoidPose {
+/** A shot's pose: the figure's, and optionally a clip playing on it (`?anim=walk_normal&t=0.4`). */
+type ShotPose = HumanoidPose & {
+  animation?: {
+    clip: string;
+    time?: number;
+    paused?: boolean;
+    rootMotion?: boolean;
+    speed?: number;
+  };
+};
+
+/**
+ * `?face=JawDrop:1,LipsKiss:0.5` poses the shot's face; `?anim=<clip>` plays a clip of the
+ * animation pack (held at `&t=<seconds>` when given, as a still; `&root=0` keeps a walk on the
+ * spot).
+ */
+function initialPose(): ShotPose {
   const raw = params.get("face");
   const body = params.get("pose");
+  const anim = params.get("anim");
+  const time = params.get("t");
   return {
     ...(body && { body }),
+    ...(anim && {
+      animation: {
+        clip: anim,
+        ...(time !== null && { time: Number(time), paused: true }),
+        ...(params.get("root") === "0" && { rootMotion: false }),
+      },
+    }),
     ...(raw && {
       faceUnits: Object.fromEntries(
         raw.split(",").map((pair) => {
@@ -262,7 +322,20 @@ function Shot() {
   const bg = params.get("bg");
   const background = bg && /^[0-9a-f]{6}$/i.test(bg) ? `#${bg}` : null;
   const [recipe, setRecipe] = useState(initialRecipe);
-  const [pose, setPose] = useState<HumanoidPose>(initialPose);
+  const [pose, setPose] = useState<ShotPose>(initialPose);
+  const { animation, ...bodyPose } = pose;
+  // The animation pack's library, fetched once and only for a shot that plays a clip.
+  const [library, setLibrary] = useState<AnimationLibrary | null>(null);
+  const wantsAnimation = animation !== undefined;
+  useEffect(() => {
+    if (!wantsAnimation || library) return;
+    let live = true;
+    void loadAnimationLibrary(animationsPack).then((l) => live && setLibrary(l));
+    return () => {
+      live = false;
+    };
+  }, [wantsAnimation, library]);
+  const [playing, setPlaying] = useState<string | null>(null);
   const [signals, setSignals] = useState<Record<string, number>>(initialSignals);
   const [lift, setLift] = useState(0);
   // Tests wait for data-figure="ready": the figure is evaluated and placed, and
@@ -270,12 +343,15 @@ function Shot() {
   // is loaded and drawn (`Humanoid`'s `onSettled`, not `onEvaluated`).
   // data-generation counts recipes swapped in through window.hkSetRecipe, so a
   // test can render many figures from one page load.
-  const [ready, setReady] = useState(false);
+  const [settled, setSettled] = useState(false);
+  // A shot that plays a clip is ready once the figure follows it.
+  const ready = settled && (animation === undefined || playing === animation.clip);
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
     window.hkSetRecipe = (init, next, nextSignals) => {
       setSignals(nextSignals ?? initialSignals());
-      setReady(false);
+      setSettled(false);
+      setPlaying(null);
       setRecipe(createRecipe(init));
       setPose(next ?? initialPose());
       setGeneration((g) => g + 1);
@@ -337,11 +413,15 @@ function Shot() {
         {(qaLight === "camera" || qaLight === "under") && <QaLight kind={qaLight} />}
         <Humanoid
           recipe={recipe}
-          pose={pose}
+          pose={bodyPose}
+          {...(library &&
+            animation && {
+              animation: { library, ...animation, onStart: setPlaying },
+            })}
           signals={signals}
-          position={[0, lift, 0]}
+          position={[0, animation ? 0 : lift, 0]}
           onGroundOffset={setLift}
-          onSettled={() => setReady(true)}
+          onSettled={() => setSettled(true)}
           bodyArtImages={tattooImages()}
         />
         <OrbitControls makeDefault target={target} />

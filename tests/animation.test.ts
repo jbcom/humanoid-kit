@@ -8,8 +8,13 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { readRig } from "../scripts/lib/gltf.ts";
 import { ADDITIONAL_ASSETS, encodeClip, PUNKDUCK_CLIPS } from "../scripts/lib/packAnimations.ts";
+import { QUATERNIUS_LIBRARIES, retargetTarget } from "../scripts/lib/packQuaternius.ts";
+import { retarget } from "../scripts/lib/retarget.ts";
+import { readZip } from "../scripts/lib/zip.ts";
 import { Animator, DEFAULT_FADE } from "../src/animation/animator.ts";
+import { CLEARANCE_TOLERANCE, overlaps } from "../src/animation/clearance.ts";
 import {
   blendRotations,
   clipTime,
@@ -38,32 +43,52 @@ import {
 const BONES = rig.bones;
 
 describe("the animation pack", () => {
-  it("holds every clip the packer lists, once, each with the figures' 24 frames a second or a clip's own", () => {
+  it("holds punkduck's clips the packer lists and Quaternius's two libraries' animations, each id once, each with a frame rate and a duration that agree", () => {
     expect(manifest.version).toBe(1);
-    expect(manifest.clips.map((c) => c.id)).toEqual(PUNKDUCK_CLIPS.map((c) => c.id));
+    const ids = manifest.clips.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.slice(0, PUNKDUCK_CLIPS.length)).toEqual(PUNKDUCK_CLIPS.map((c) => c.id));
+    // Each library has 43 animations, one of them the T-pose the retarget goes through.
+    expect(manifest.clips.filter((c) => c.tags.includes("ual1"))).toHaveLength(42);
+    expect(manifest.clips.filter((c) => c.tags.includes("ual2"))).toHaveLength(42);
     for (const c of manifest.clips) {
-      expect(c.fps, c.id).toBe(24);
+      expect(c.fps, c.id).toBe(c.source.author === "punkduck" ? 24 : 30);
       expect(c.frames, c.id).toBeGreaterThan(1);
       expect(c.duration, c.id).toBeCloseTo((c.loop ? c.frames : c.frames - 1) / c.fps, 9);
       expect(c.description, c.id).not.toBe("");
+      // A clip that carries the figure stands on the ground.
+      if (c.rootMotion) expect(c.loop, c.id).toBe(true);
     }
+    for (const id of ["walk_loop", "jog_fwd_loop", "idle_loop", "swim_fwd_loop", "sprint_loop"])
+      expect(ids, id).toContain(id);
+    expect(entry("swim_fwd_loop").grounded).toBe(false);
+    expect(entry("walk_loop")).toMatchObject({ rootMotion: true, grounded: true, loop: true });
   });
 
-  it("is what its manifest and provenance say: each binary's hash, bones the rig has, a pinned archive, CC0 by each clip's own file", () => {
+  it("is what its manifest and provenance say: each binary's hash, bones the rig has, pinned archives, CC0 by each source's own file", () => {
     const provenance = fs.readFileSync(path.join(PACK, "PROVENANCE.md"), "utf8");
     expect(provenance).toContain(ADDITIONAL_ASSETS.sha256);
+    for (const l of QUATERNIUS_LIBRARIES) expect(provenance, l.archive).toContain(l.sha256);
     for (const c of manifest.clips) {
       const bytes = fs.readFileSync(path.join(PACK, c.file));
       expect(createHash("sha256").update(bytes).digest("hex"), c.id).toBe(c.sha256);
       expect(provenance, c.id).toContain(c.sha256);
       for (const b of c.bones) expect(BONES, `${c.id}: ${b}`).toContain(b);
       expect(new Set(c.bones).size, c.id).toBe(c.bones.length);
-      expect(c.source.archiveSha256, c.id).toBe(ADDITIONAL_ASSETS.sha256);
-      expect(c.source.licence, c.id).toBe("CC0");
-      expect(c.source.author, c.id).toBe("punkduck");
-      expect(provenance, c.id).toMatch(new RegExp(`- ${c.id}: clause B`));
+      if (c.source.author === "punkduck") {
+        expect(c.source.archiveSha256, c.id).toBe(ADDITIONAL_ASSETS.sha256);
+        expect(c.source.licence, c.id).toBe("CC0");
+        expect(provenance, c.id).toMatch(new RegExp(`- ${c.id}: clause B`));
+      } else {
+        const lib = QUATERNIUS_LIBRARIES.find((l) => l.archive === c.source.archive);
+        expect(lib, c.id).toBeDefined();
+        expect(c.source.archiveSha256, c.id).toBe(lib?.sha256);
+        expect(c.source.author, c.id).toBe("Quaternius");
+        expect(c.source.licence, c.id).toMatch(/^CC0 1\.0 Universal/);
+      }
     }
     expect(provenance).toMatch(/walk\.bvh.*zombie\.bvh.*AGPL3.*not used/s);
+    expect(provenance).toMatch(/2026-08-28/);
   });
 
   it("decodes every clip to unit quaternions, each bone in one hemisphere from frame to frame", () => {
@@ -388,6 +413,29 @@ describe("a walking figure's feet", () => {
     }
   });
 
+  it("stay put in Quaternius's walks, mocap that plants its feet: 3 mm, over nine figures", () => {
+    for (const id of ["walk_loop", "walk_formal_loop", "walk_carry_loop"]) {
+      for (const fig of allFigures()) {
+        const d = stanceDrift(fig, clip(id));
+        expect(d.stances, `${id} on ${fig.name}`).toBeGreaterThanOrEqual(8);
+        expect(d.worst, `${id} on ${fig.name}: ${(d.worst * 1000).toFixed(1)} mm`).toBeLessThan(
+          0.008,
+        );
+      }
+    }
+  });
+
+  it("stay put to a few centimetres in the gaits that shuffle: a crouch walk and a zombie's drag their feet", () => {
+    const limit: Record<string, number> = { crouch_fwd_loop: 0.05, zombie_walk_fwd_loop: 0.08 };
+    for (const [id, bound] of Object.entries(limit))
+      for (const fig of allFigures()) {
+        const d = stanceDrift(fig, clip(id));
+        expect(d.worst, `${id} on ${fig.name}: ${(d.worst * 1000).toFixed(1)} mm`).toBeLessThan(
+          bound,
+        );
+      }
+  });
+
   it("slide without the lock: the same walk, root motion only, skates far further", () => {
     const fig = figure("average", 25);
     const locked = stanceDrift(fig, clip("walk_normal"));
@@ -401,6 +449,156 @@ describe("a walking figure's feet", () => {
       for (const fig of [figure("average", 25), figure("heavy", 75), figure("slim", 6)]) {
         const d = stanceDrift(fig, clip(id), 3);
         expect(d.worst, `${id} ${fig.name}: ${(d.worst * 1000).toFixed(1)} mm`).toBeLessThan(0.01);
+      }
+    }
+  });
+});
+
+/**
+ * The clips in which the body touches itself or rests on the ground, with the deepest
+ * overlap of the coarse capsules, metres, on any of the nine figures (to the next
+ * centimetre and one more): sitting and kneeling with the hands on the thighs, a roll,
+ * a landing, a sword's swing across the body. A capsule is a coarse stand-in for a
+ * limb, so these are bounds to hold the clips to, not collisions to fix.
+ */
+const CONTACT_CLIPS: Record<string, number> = {
+  death01: 0.047,
+  fixing_kneeling: 0.114,
+  jump_land: 0.103,
+  pistol_aim_down: 0.097,
+  roll: 0.097,
+  sitting_enter: 0.097,
+  sitting_exit: 0.11,
+  sitting_idle_loop: 0.064,
+  climb_up_1m: 0.058,
+  idle_fold_arms_loop: 0.063,
+  ninja_jump_land: 0.107,
+  slide_exit: 0.127,
+  sword_dash: 0.078,
+  sword_heavy_combo: 0.061,
+  sword_regular_a: 0.093,
+  sword_regular_c: 0.079,
+  sword_regular_combo: 0.093,
+  zombie_scratch: 0.088,
+};
+
+describe("clearance: no part of the body through another", () => {
+  const q = () => new Float32Array(BONES.length * 4);
+
+  it("measures a capsule per part from the figure's own skin: plausible radii, larger on the heavy body than the slim", () => {
+    const slim = figure("slim", 25).segments;
+    const heavy = figure("heavy", 25).segments;
+    expect(slim).toHaveLength(14);
+    const r = (segs: typeof slim, id: string) => segs.find((x) => x.id === id)?.radius as number;
+    expect(r(slim, "torso")).toBeGreaterThan(0.07);
+    expect(r(slim, "torso")).toBeLessThan(0.16);
+    expect(r(slim, "thigh.L")).toBeGreaterThan(0.045);
+    expect(r(slim, "thigh.L")).toBeLessThan(0.1);
+    expect(r(heavy, "thigh.L")).toBeGreaterThan(r(slim, "thigh.L"));
+    expect(r(figure("average", 6).segments, "thigh.L")).toBeLessThan(
+      r(figure("average", 25).segments, "thigh.L"),
+    );
+  });
+
+  it("finds legs crossed through each other, and finds nothing in the rest pose", () => {
+    const fig = figure("average", 25);
+    const r = setIdentity(q());
+    const turn = (bone: string, axis: 0 | 1 | 2, degrees: number) => {
+      const half = (degrees * Math.PI) / 360;
+      const v = [0, 0, 0, Math.cos(half)];
+      v[axis] = Math.sin(half);
+      r.set(v, BONES.indexOf(bone) * 4);
+    };
+    // Both thighs swung 25 degrees across the midline: the shins pass through one another.
+    turn("upperleg01.L", 2, -25);
+    turn("upperleg01.R", 2, 25);
+    const hit = overlaps(fig.rest, fig.segments, r).sort((a, b) => b.depth - a.depth)[0];
+    expect(hit?.depth, `${hit?.a} ${hit?.b}`).toBeGreaterThan(CLEARANCE_TOLERANCE);
+    expect([hit?.a, hit?.b].sort().join(" ")).toMatch(/shin|foot/);
+    for (const o of overlaps(fig.rest, fig.segments, setIdentity(q())))
+      expect(o.depth, `${o.a} ${o.b}`).toBeLessThan(0);
+  });
+
+  it("holds in every frame of every clip on nine figures: no part is through another by more than the capsules' tolerance, but in the clips where the body touches itself", () => {
+    for (const c of manifest.clips) {
+      const k = clip(c.id);
+      const allowed = CONTACT_CLIPS[c.id] ?? CLEARANCE_TOLERANCE;
+      for (const fig of allFigures()) {
+        const r = q();
+        let worst = { depth: Number.NEGATIVE_INFINITY, pair: "", frame: 0 };
+        for (let f = 0; f < k.frames; f++) {
+          sampleClip(k, f / k.fps, r);
+          for (const o of overlaps(fig.rest, fig.segments, r))
+            if (o.depth > worst.depth) worst = { depth: o.depth, pair: `${o.a} ${o.b}`, frame: f };
+        }
+        expect(
+          worst.depth,
+          `${c.id} on ${fig.name}: ${worst.pair} at frame ${worst.frame}`,
+        ).toBeLessThan(allowed);
+      }
+    }
+  });
+
+  it("is clean in every walk, idle, jog, sprint and swim: only the clips where a limb rests on or crosses the body overlap it", () => {
+    // 72 of the 90 clips (every locomotion and standing idle among them) stay within the tolerance.
+    const touching = Object.keys(CONTACT_CLIPS);
+    expect(touching).toHaveLength(18);
+    for (const c of manifest.clips)
+      if (/walk|jog|sprint|^idle|swim|crouch/i.test(c.id) && !/fold_arms/.test(c.id))
+        expect(touching, c.id).not.toContain(c.id);
+  });
+});
+
+describe("the retarget", () => {
+  const vendored = path.join(
+    process.env.HOME ?? "",
+    "src/reference-codebases/vendored-cc0/quaternius",
+  );
+  const have = QUATERNIUS_LIBRARIES.every((l) => fs.existsSync(path.join(vendored, l.archive)));
+
+  // The libraries' own T-pose, put through the retarget, is the target's own: every bone, mapped or not.
+  it.skipIf(!have)("takes a source in its T-pose to the target in its own", () => {
+    const lib = QUATERNIUS_LIBRARIES[0] as (typeof QUATERNIUS_LIBRARIES)[number];
+    const zip = readZip(fs.readFileSync(path.join(vendored, lib.archive)));
+    const rig = readRig(zip.read(lib.glb));
+    const tpose = rig.animations.find((a) => a.name === "A_TPose");
+    if (!tpose) throw new Error("no A_TPose");
+    const target = retargetTarget(path.resolve(import.meta.dirname, "../packs/body/data"));
+    const r = retarget(rig, tpose, tpose, target, 30);
+    for (const f of [0, 20, 60]) {
+      for (let b = 0; b < target.bones.length; b++) {
+        const got = r.rotations.subarray(
+          (f * target.bones.length + b) * 4,
+          (f * target.bones.length + b) * 4 + 4,
+        );
+        const want = target.tpose.subarray(b * 4, b * 4 + 4);
+        const dot = Math.abs(
+          [0, 1, 2, 3].reduce((sum, c) => sum + (got[c] as number) * (want[c] as number), 0),
+        );
+        expect(dot, `${target.bones[b]} at frame ${f}`).toBeGreaterThan(0.99999);
+      }
+    }
+  });
+});
+
+describe("clearance under the foot lock", () => {
+  it("holds with the legs turned to keep the feet planted: no leg through the other, on nine figures", () => {
+    for (const id of ["walk_normal", "walk_female"]) {
+      for (const fig of allFigures()) {
+        const an = new Animator(BONES.length, fig.rest, fig.ground);
+        an.play(clip(id));
+        let worst = Number.NEGATIVE_INFINITY;
+        let pair = "";
+        for (let i = 0; i < 180; i++) {
+          an.update(1 / 60);
+          if (i < 60) continue;
+          for (const o of overlaps(fig.rest, fig.segments, an.rotations))
+            if (o.depth > worst) {
+              worst = o.depth;
+              pair = `${o.a} ${o.b}`;
+            }
+        }
+        expect(worst, `${id} on ${fig.name}: ${pair}`).toBeLessThan(CLEARANCE_TOLERANCE);
       }
     }
   });
