@@ -13,13 +13,14 @@ import {
   groupFaces,
   type HumanoidAssets,
 } from "../format/assetFormat.ts";
+import { NO_FEATURE } from "../makehuman/features.ts";
 import { recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
 import { buildSkinMasks } from "../makehuman/skinMasks.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
 import { createRecipe, type Recipe, recipeSetsModifiers } from "../recipe/recipe.ts";
-import { applyStencil } from "../subdiv/catmullClark.ts";
+import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { bakeOcclusion } from "../surface/occlusion.ts";
 
 export interface ModelOptions {
@@ -61,9 +62,33 @@ export interface ModelTopology {
   attachments: AttachmentTopology[];
 }
 
+/** Per render vertex, an index into a `FeatureMap`'s features (or `NO_FEATURE`). */
+export interface RenderFeatures {
+  body: Uint8Array;
+  /** In `ModelTopology.attachments` order. */
+  attachments: Uint8Array[];
+}
+
 export interface SurfaceEvaluation {
   positions: Float32Array;
   normals: Float32Array;
+}
+
+/** The input a surface vertex follows most: the largest weight in its stencil row. */
+function dominantInput(stencil: Stencil, surfaceVertex: number): number {
+  let best = -1;
+  let weight = Number.NEGATIVE_INFINITY;
+  for (
+    let k = stencil.offsets[surfaceVertex] as number;
+    k < (stencil.offsets[surfaceVertex + 1] as number);
+    k++
+  ) {
+    if ((stencil.weights[k] as number) > weight) {
+      weight = stencil.weights[k] as number;
+      best = stencil.src[k] as number;
+    }
+  }
+  return best;
 }
 
 export interface Evaluation extends SurfaceEvaluation {
@@ -238,6 +263,25 @@ export class HumanoidModel {
       })),
       { rays: 32 },
     );
+  }
+
+  /**
+   * Carries a per-base-vertex feature map (`buildFeatureMap`) to the render
+   * vertices: a body vertex takes the feature of the base vertex its
+   * subdivision stencil weights most, an attachment vertex the feature of the
+   * first base vertex its dominant control vertex is bound to.
+   */
+  renderFeatures(vertexFeature: Uint8Array): RenderFeatures {
+    const of = (base: number) => vertexFeature[base] ?? NO_FEATURE;
+    const { stencil, renderToSurface } = this.body.mesh;
+    return {
+      body: Uint8Array.from(renderToSurface, (s) => of(dominantInput(stencil, s))),
+      attachments: this.attached.map(({ asset, part: p }) =>
+        Uint8Array.from(p.mesh.renderToSurface, (s) =>
+          of(asset.refVerts[dominantInput(p.mesh.stencil, s) * 3] as number),
+        ),
+      ),
+    };
   }
 
   topology(): ModelTopology {

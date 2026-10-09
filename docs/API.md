@@ -162,6 +162,19 @@ interface MacroValues {
 Axis inputs are clamped to their range, and the age axis clamps to 1 to 90. The
 ethnic anchors are floored at 0 and normalised.
 
+### Features
+
+`buildFeatureMap(assets): FeatureMap` finds which slider group shapes each
+base vertex, from the groups' own modifier targets: the group that moves a
+vertex most relative to its own peak, the most local one when several move it
+comparably. `FeatureMap` is `{ features: FeatureRef[], vertexFeature }`, a
+`FeatureRef` being `{ task, group, label }` in the merged slider taxonomy and
+`vertexFeature` a `Uint8Array` of indices (`NO_FEATURE` where no group reaches
+a vertex by a fifth of its peak). Adult-only modifiers and whole-figure
+archetypes (`ARCHETYPE_MODIFIER_GROUPS`, MakeHuman's body shapes) never place a
+feature. It needs the modifier targets. `model.renderFeatures(vertexFeature)`
+carries it to the body's and the attachments' render vertices.
+
 ### Regions
 
 ```ts
@@ -288,6 +301,12 @@ The main-thread handle to an evaluation worker.
 - `client.evaluate(recipe): Promise<Evaluation>` is latest-wins: a request
   replaced by a newer one before it starts rejects with an error named
   `AbortError`. Buffers are transferred from the worker.
+- `client.pickMap(): Promise<PickMap>` resolves, once the modifier targets
+  have loaded, with which controls shape each rendered vertex:
+  `{ features: FeatureRef[], render: { body, attachments } }`, the render
+  arrays holding an index into `features` per render vertex (or
+  `NO_FEATURE`). The worker builds it on the first call; later calls share it.
+  Look up a `<Humanoid onPick>` tap in it to open the tapped part's controls.
 - `client.dispose()` terminates the worker and rejects pending requests.
 - Errors from the worker arrive as `HumanoidWorkerError` with `name` set to the
   original error's name (for example `AgePolicyError`).
@@ -320,6 +339,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `material?` | A three.js `Material` replacing the built-in skin material, which follows `recipe.skin` |
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
+| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | other props | Passed to the wrapping `<group>` |
 
 - Hidden until the first evaluation arrives.
@@ -362,6 +382,9 @@ and camera.
 - One tab per MakeHuman modelling task (Main, Gender, Face, Torso, ...,
   Measure), in upstream order, with MakeHuman's groups and slider labels, plus
   Appearance (skin, iris, sclera) and Regions (per-region macro overrides).
+- Tapping the figure opens the controls that shape the tapped part (its tab,
+  with the group opened and scrolled into view) and frames that part from the
+  front; see `buildFeatureMap`. Dragging orbits the view instead.
 - Focusing a slider frames the body part it shapes, from MakeHuman's camera
   hint for that slider.
 - Undo and redo (dragging a slider is one step), random figure, reset, and
@@ -411,7 +434,8 @@ range input sized for touch. `onChange(value, gesture)` fires while dragging and
 ## `humanoid-kit/worker`
 
 The worker module that `HumanoidWorkerClient` starts by default. It owns one
-`HumanoidModel` and answers three messages: `init` (replied to with `ready`
+`HumanoidModel` and answers four messages: `pickMap` (replied to with the
+pick map once the modifier targets have loaded), `init` (replied to with `ready`
 once a macro-only figure can be evaluated), `modifierTargets` (replied to once
 the modifier targets have loaded, or with the error that stopped them) and
 `evaluate`. An `evaluate` whose recipe sets a modifier waits for the modifier

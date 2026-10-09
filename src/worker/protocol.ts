@@ -1,6 +1,12 @@
 /** Messages between `HumanoidWorkerClient` and the evaluation worker. */
 import type { LoadOptions, ShapeModifierEntry, SliderTask } from "../format/assetFormat.ts";
-import type { Evaluation, ModelOptions, ModelTopology } from "../model/humanoidModel.ts";
+import type { FeatureRef } from "../makehuman/features.ts";
+import type {
+  Evaluation,
+  ModelOptions,
+  ModelTopology,
+  RenderFeatures,
+} from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 
 /** What the worker reports once the packs are loaded and the model is built. */
@@ -15,14 +21,24 @@ export interface ReadyInfo {
   adultAnatomyLoaded: boolean;
 }
 
+/** Which controls shape each rendered vertex: what a tap on the figure opens. */
+export interface PickMap {
+  features: FeatureRef[];
+  /** Per render vertex, an index into `features` or `NO_FEATURE`. */
+  render: RenderFeatures;
+}
+
 export type WorkerRequest =
   | { type: "init"; id: number; load: LoadOptions; model: ModelOptions }
   /** Answered once the modifier targets have loaded, or with the error that stopped them. */
   | { type: "modifierTargets"; id: number }
+  /** Answered with the pick map once the modifier targets it is built from have loaded. */
+  | { type: "pickMap"; id: number }
   | { type: "evaluate"; id: number; recipe: Recipe };
 
 export type WorkerResponse =
   | ({ type: "ready"; id: number } & ReadyInfo)
   | { type: "modifierTargetsLoaded"; id: number }
+  | ({ type: "pickMap"; id: number } & PickMap)
   | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
   | { type: "error"; id: number; message: string; name: string };

@@ -7,6 +7,7 @@
  * recipe unless an age range is given, and adult anatomy is never randomised
  * unless asked for and the figure is 18 or over.
  */
+import { ARCHETYPE_MODIFIER_GROUPS } from "../makehuman/features.ts";
 import { ADULT_AGE } from "../makehuman/macro.ts";
 import { withAge } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
@@ -46,9 +47,6 @@ export const IRIS_PALETTE: readonly { name: string; rgb: Readonly<Rgb> }[] = [
   { name: "Grey", rgb: [0.16, 0.18, 0.19] },
   { name: "Blue", rgb: [0.08, 0.14, 0.26] },
 ];
-
-/** Shape groups that are whole-body archetypes rather than variation; never randomised. */
-const ARCHETYPE_GROUPS = new Set(["bodyshapes"]);
 
 export function randomRecipe(
   base: Recipe,
@@ -117,7 +115,9 @@ export function randomRecipe(
     const pick = rand();
     const magnitude = rand();
     const sign = rand();
-    if (ARCHETYPE_GROUPS.has(m.group) || (m.adultOnly && !adultAllowed) || pick >= chance) continue;
+    // Whole-figure archetypes are a choice, not variation: never randomised.
+    if (ARCHETYPE_MODIFIER_GROUPS.has(m.group) || (m.adultOnly && !adultAllowed) || pick >= chance)
+      continue;
     const scale = intensity * magnitude;
     const v = Math.round((m.lo !== null && sign < 0.5 ? -scale : scale) * 1000) / 1000;
     if (v !== 0) values[m.id] = v;

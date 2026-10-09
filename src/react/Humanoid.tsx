@@ -3,7 +3,7 @@
  * `<Humanoid>`, which renders a recipe and updates its geometry in place when
  * the recipe changes (no remount, so slider drags stay smooth).
  */
-import type { ThreeElements } from "@react-three/fiber";
+import type { ThreeElements, ThreeEvent } from "@react-three/fiber";
 import {
   createContext,
   type ReactNode,
@@ -22,9 +22,11 @@ import {
   FrontSide,
   type Group,
   type Material,
+  type Mesh,
   type MeshStandardMaterial,
   SRGBColorSpace,
   TextureLoader,
+  Vector3,
 } from "three";
 import type {
   AttachmentTopology,
@@ -96,7 +98,24 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
   onEvaluated?: (evaluation: Evaluation) => void;
   /** Evaluation and texture errors; without a handler they are logged to the console. */
   onError?: (error: Error) => void;
+  /**
+   * Called when the figure is tapped (pressed and released without dragging),
+   * with the render vertex nearest the tap. Look it up in the client's
+   * `pickMap()` to find the controls that shape it. When set, it handles the
+   * group's clicks in place of `onClick`.
+   */
+  onPick?: (pick: HumanoidPick) => void;
 };
+
+/** Where a tap on the figure landed. */
+export interface HumanoidPick {
+  /** `"body"`, or the attachment's index in `ModelTopology.attachments`. */
+  part: "body" | number;
+  /** The render vertex of that mesh nearest the tap. */
+  vertex: number;
+  /** The tapped point, in world space. */
+  point: Vector3;
+}
 
 function makeGeometry(t: SurfaceTopology): BufferGeometry {
   const g = new BufferGeometry();
@@ -164,12 +183,14 @@ function useAttachmentMaterial(
 }
 
 function AttachmentMesh({
+  index,
   topology,
   geometry,
   visible,
   report,
   eyes,
 }: {
+  index: number;
   topology: AttachmentTopology;
   geometry: BufferGeometry;
   visible: boolean;
@@ -185,6 +206,7 @@ function AttachmentMesh({
       geometry={geometry}
       material={material}
       visible={visible}
+      userData={{ hkPart: index }}
       renderOrder={topology.zDepth}
       castShadow
       receiveShadow
@@ -192,7 +214,39 @@ function AttachmentMesh({
   );
 }
 
-export function Humanoid({ recipe, material, onEvaluated, onError, ...group }: HumanoidProps) {
+/** A pointer that moved further than this between press and release was dragging (orbiting), not tapping. */
+const TAP_SLOP_PX = 6;
+
+/** Reports a tap on the figure: which mesh, and the hit triangle's vertex nearest the point. */
+function pick(e: ThreeEvent<MouseEvent>, onPick: (pick: HumanoidPick) => void): void {
+  if (e.delta > TAP_SLOP_PX) return;
+  const part = e.object.userData.hkPart as HumanoidPick["part"] | undefined;
+  const face = e.face;
+  if (part === undefined || !face) return;
+  e.stopPropagation();
+  const positions = (e.object as Mesh).geometry.getAttribute("position");
+  const local = e.object.worldToLocal(e.point.clone());
+  const at = new Vector3();
+  let vertex = face.a;
+  let best = Number.POSITIVE_INFINITY;
+  for (const v of [face.a, face.b, face.c]) {
+    const d = at.fromBufferAttribute(positions, v).distanceToSquared(local);
+    if (d < best) {
+      best = d;
+      vertex = v;
+    }
+  }
+  onPick({ part, vertex, point: e.point.clone() });
+}
+
+export function Humanoid({
+  recipe,
+  material,
+  onEvaluated,
+  onError,
+  onPick,
+  ...group
+}: HumanoidProps) {
   const client = useHumanoidClient();
   const ready = useHumanoidReady();
   const key = useId();
@@ -272,13 +326,19 @@ export function Humanoid({ recipe, material, onEvaluated, onError, ...group }: H
   }, [client, geometries, recipe, key, onEvaluatedRef, report]);
 
   return (
-    <group ref={groupRef} {...group}>
+    <group
+      ref={groupRef}
+      {...group}
+      // Only listen when asked: a handler makes three raycast the figure on every click.
+      {...(onPick && { onClick: (e: ThreeEvent<MouseEvent>) => pick(e, onPick) })}
+    >
       {geometries && ready && (
         <>
           <mesh
             geometry={geometries.body}
             material={material ?? skin}
             visible={shown}
+            userData={{ hkPart: "body" }}
             castShadow
             receiveShadow
           />
@@ -287,6 +347,7 @@ export function Humanoid({ recipe, material, onEvaluated, onError, ...group }: H
             return g ? (
               <AttachmentMesh
                 key={t.id}
+                index={i}
                 topology={t}
                 geometry={g}
                 visible={shown}

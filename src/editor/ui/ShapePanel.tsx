@@ -3,6 +3,7 @@
  * groups as collapsible sections of sliders. With a search query, matching
  * sliders from every task are listed instead.
  */
+import { useEffect, useRef } from "react";
 import type { SliderEntry, SliderGroup, SliderTask } from "../../format/assetFormat.ts";
 import { formatSliderValue, sliderAvailability, sliderRange, sliderValue } from "../controls.ts";
 import type { FrameRequest } from "../framing.ts";
@@ -15,6 +16,11 @@ export interface ShapePanelProps {
   task: SliderTask | null;
   query: string;
   onFocus: (frame: FrameRequest) => void;
+  /**
+   * A group to open and scroll to, as when its part of the figure is tapped;
+   * a new `nonce` reveals it again even if it was closed since.
+   */
+  reveal?: { group: string; nonce: number } | null;
 }
 
 function ShapeSlider({
@@ -52,16 +58,22 @@ function Group({
   group,
   task,
   open,
+  revealed,
   ...rest
 }: {
   editor: HumanoidEditor;
   group: SliderGroup;
   task: SliderTask;
   open: boolean;
+  revealed: boolean;
   onFocus: (frame: FrameRequest) => void;
 }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (revealed) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [revealed]);
   return (
-    <details className="hk-group" open={open}>
+    <details ref={ref} className="hk-group" open={open} data-revealed={revealed || undefined}>
       <summary className="hk-group-title">
         <span>{group.label}</span>
         <span className="hk-group-count">{group.sliders.length}</span>
@@ -78,7 +90,7 @@ function Group({
 const matches = (s: SliderEntry, q: string) =>
   s.label.toLowerCase().includes(q) || s.id.toLowerCase().includes(q);
 
-export function ShapePanel({ editor, task, query, onFocus }: ShapePanelProps) {
+export function ShapePanel({ editor, task, query, onFocus, reveal = null }: ShapePanelProps) {
   const q = query.trim().toLowerCase();
   if (q) {
     const hits = editor.tasks.flatMap((t) =>
@@ -101,16 +113,21 @@ export function ShapePanel({ editor, task, query, onFocus }: ShapePanelProps) {
   if (!task) return null;
   return (
     <div className="hk-groups">
-      {task.groups.map((g, i) => (
-        <Group
-          key={`${task.id}/${g.id}`}
-          editor={editor}
-          group={g}
-          task={task}
-          open={i === 0 || task.groups.length <= 2}
-          onFocus={onFocus}
-        />
-      ))}
+      {task.groups.map((g, i) => {
+        const revealed = reveal?.group === g.id;
+        return (
+          <Group
+            // A new reveal remounts the group, so it opens even if the user closed it.
+            key={`${task.id}/${g.id}${revealed ? `#${reveal.nonce}` : ""}`}
+            editor={editor}
+            group={g}
+            task={task}
+            open={revealed || (!reveal && (i === 0 || task.groups.length <= 2))}
+            revealed={revealed}
+            onFocus={onFocus}
+          />
+        );
+      })}
     </div>
   );
 }

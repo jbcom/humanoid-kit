@@ -19,10 +19,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { Humanoid } from "../../react/Humanoid.tsx";
+import { NO_FEATURE } from "../../makehuman/features.ts";
+import { Humanoid, type HumanoidPick, useHumanoidClient } from "../../react/Humanoid.tsx";
 import { STUDIO_EXPOSURE, STUDIO_TONE_MAPPING, StudioStage } from "../../react/StudioStage.tsx";
 import type { Recipe } from "../../recipe/recipe.ts";
-import type { FrameRequest } from "../framing.ts";
+import type { PickMap } from "../../worker/client.ts";
+import { type FrameRequest, frameRequest } from "../framing.ts";
 import { AppearancePanel } from "./AppearancePanel.tsx";
 import { CameraRig } from "./CameraRig.tsx";
 import { RegionPanel } from "./RegionPanel.tsx";
@@ -153,8 +155,11 @@ function CreatorBody({
   children,
 }: HumanoidCreatorProps) {
   const editor = useHumanoidEditor(initialRecipe);
+  const client = useHumanoidClient();
   const { ready, recipe, tasks } = editor;
   const [tab, setTab] = useState<string | null>(null);
+  const [pickMap, setPickMap] = useState<PickMap | null>(null);
+  const [reveal, setReveal] = useState<{ group: string; nonce: number } | null>(null);
   const [query, setQuery] = useState("");
   const [focus, setFocus] = useState<FrameRequest>(WHOLE_BODY);
   const [problems, setProblems] = useState<string[]>([]);
@@ -181,9 +186,44 @@ function CreatorBody({
   const reframe = (f: FrameRequest) =>
     setFocus((cur) => (cur.part === f.part && cur.direction === f.direction ? cur : f));
 
+  useEffect(() => {
+    if (!ready) return;
+    let live = true;
+    // The map waits for the modifier targets; until it arrives a tap does nothing.
+    // If they fail, evaluations that need them report it, so it is not repeated here.
+    client.pickMap().then(
+      (m) => live && setPickMap(m),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [client, ready]);
+
+  /** Opens the controls of the tapped part of the figure and frames it. */
+  const onPick = (p: HumanoidPick) => {
+    const table = p.part === "body" ? pickMap?.render.body : pickMap?.render.attachments[p.part];
+    const index = table?.[p.vertex];
+    if (index === undefined || index === NO_FEATURE) return;
+    const feature = pickMap?.features[index];
+    const task = tasks.find((t) => t.id === feature?.task);
+    const group = task?.groups.find((g) => g.id === feature?.group);
+    if (!task || !group) return;
+    setQuery("");
+    setTab(task.id);
+    setReveal((r) => ({ group: group.id, nonce: (r?.nonce ?? 0) + 1 }));
+    // Frame the part the group shapes, facing it as the user was when they tapped it;
+    // MakeHuman's side views stay with the sliders that ask for them.
+    reframe({
+      part: frameRequest(group.sliders[0]?.camera ?? null, task.camera).part,
+      direction: "front",
+    });
+  };
+
   return (
     <>
-      <div className="hk-stage">
+      {/* data-pick: whether tapping the figure opens its controls yet (they need the modifier targets). */}
+      <div className="hk-stage" data-pick={pickMap ? "ready" : "loading"}>
         <Canvas
           shadows="percentage"
           camera={{ position: [0, 1, 3.4], fov: 32 }}
@@ -198,6 +238,7 @@ function CreatorBody({
           <Humanoid
             recipe={recipe}
             position={[0, lift, 0]}
+            onPick={onPick}
             onEvaluated={(ev) => {
               positions.current = ev.positions;
               setLift(ev.groundOffset);
@@ -261,6 +302,7 @@ function CreatorBody({
                 aria-controls={`${tabsId}-panel`}
                 onClick={() => {
                   setTab(t.id);
+                  setReveal(null);
                   const target = tasks.find((x) => x.id === t.id);
                   reframe(
                     target?.camera === "faceCamera"
@@ -292,7 +334,7 @@ function CreatorBody({
             ) : activeTab === APPEARANCE_TAB ? (
               <AppearancePanel editor={editor} onFocus={reframe} />
             ) : (
-              <ShapePanel editor={editor} task={task} query="" onFocus={reframe} />
+              <ShapePanel editor={editor} task={task} query="" onFocus={reframe} reveal={reveal} />
             )}
           </div>
         )}

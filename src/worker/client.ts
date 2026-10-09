@@ -12,9 +12,9 @@
 import type { LoadOptions } from "../format/assetFormat.ts";
 import type { Evaluation, ModelOptions } from "../model/humanoidModel.ts";
 import { type Recipe, recipeSetsModifiers } from "../recipe/recipe.ts";
-import type { ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
+import type { PickMap, ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
 
-export type { ReadyInfo };
+export type { PickMap, ReadyInfo };
 
 export class HumanoidWorkerError extends Error {
   override name = "HumanoidWorkerError";
@@ -88,6 +88,24 @@ export class HumanoidWorkerClient {
       void this.pump();
     };
     this.modifierTargets.then(release, release);
+  }
+
+  private pickMapRequest: Promise<PickMap> | null = null;
+
+  /**
+   * Which controls shape each rendered vertex (see `buildFeatureMap`), for
+   * opening the controls of a tapped part. Built by the worker on the first
+   * call, once the modifier targets it is derived from have loaded; later
+   * calls share that answer.
+   */
+  pickMap(): Promise<PickMap> {
+    this.pickMapRequest ??= this.ready.then(async () => {
+      const r = await this.request({ type: "pickMap", id: 0 });
+      if (r.type !== "pickMap") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+      const { type: _type, id: _id, ...map } = r;
+      return map;
+    });
+    return this.pickMapRequest;
   }
 
   private request(msg: WorkerRequest): Promise<WorkerResponse> {

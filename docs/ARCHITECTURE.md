@@ -243,6 +243,39 @@ a newer request replaces any queued one, and the replaced request rejects with a
 transferred, not copied. The client accepts an injected `Worker`; by default it
 starts the built `dist/worker/index.js` next to it.
 
+## Editor
+
+`src/editor` holds the creator's logic as plain functions (slider ranges and
+values, undo history, seeded randomisation, camera framing from MakeHuman's
+hints, regional overrides) and `src/editor/ui` the React creator built on them.
+
+### Picking a feature on the figure
+
+Tapping the figure opens the controls for what was tapped: the nose opens the
+nose sliders, a hand the hand sliders. The map from surface to controls is not
+written by hand. A slider group's modifier targets move exactly the vertices of
+the feature it shapes, as the skin masks already rely on, so the group that
+moves a vertex most is the feature there (`src/makehuman/features.ts`):
+
+- For every slider group that drives shape modifiers, and every base vertex,
+  the group's reach is the largest displacement any of its targets gives that
+  vertex, relative to that target's own peak.
+- A vertex belongs to the group whose reach there is at least half the best
+  reach and whose footprint (vertices it reaches by a quarter or more) is the
+  smallest: the nose groups, not the head-scale group that also moves the
+  nose; a hand, not the whole arm. Vertices no group reaches by a fifth belong
+  to none.
+- Adult-only groups are left out, so a tap never opens controls a figure may
+  not use; they stay in their tab.
+
+The map needs the modifier targets, so the worker builds it after they arrive
+and carries it to render vertices: a body render vertex takes the feature of
+the base vertex with the largest weight in its subdivision stencil row, and an
+attachment render vertex the feature of the first base vertex it is bound to
+(an eyeball tap opens that eye's controls). The client exposes it as
+`client.features`; a tap, as opposed to an orbit drag, on a figure rendered by
+`<Humanoid onPick>` reports the render vertex it hit.
+
 ## Skeleton and facial pose data
 
 The body pack carries the MakeHuman default skeleton (163 bones with parents,
@@ -259,17 +292,23 @@ static mesh.
 | --- | --- | --- |
 | `src/format` | Pack types, parsing, loading, face groups, joint positions | no (uses `fetch`) |
 | `src/morph` | Sparse morph evaluation with per-region weights | no |
-| `src/makehuman` | Macro axes and target weights, regions, recipe to contributions | no |
-| `src/recipe` | Recipe schema and defaults, the age policy | no |
+| `src/makehuman` | Macro axes and target weights, regions, skin masks, feature map, recipe to contributions | no |
+| `src/mhclo` | Attachment binding (MakeHuman's MHCLO) | no |
+| `src/recipe` | Recipe schema and defaults, the age policy, validation | no |
 | `src/subdiv` | Catmull-Clark stencils | no |
-| `src/build` | Render surface: seams, indices, skin weights, normals | no |
+| `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
+| `src/surface` | Skin albedo, the scatter model and table, occlusion baking | no |
 | `src/model` | `HumanoidModel`, the evaluation pipeline | no |
+| `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
-| `src/react` | `HumanoidProvider`, `Humanoid` and hooks | yes |
+| `src/render` | The skin and eye materials | three.js, no React |
+| `src/react` | `HumanoidProvider`, `Humanoid`, `StudioStage` and hooks | yes |
+| `src/editor/ui` | `HumanoidCreator` and its panels | yes |
 
-`src/editor` does not exist yet. The pure folders are unit-tested in Node;
-`src/react` and `src/worker` need a browser and are proven by Playwright against
-the playground.
+The pure folders are unit-tested in Node. The materials are measured in a real
+browser by the Vitest browser project (`tests/browser`), which also drives the
+creator's panels; the worker and the whole figure are proven by Playwright
+against the playground.
 
 ## Public demo
 

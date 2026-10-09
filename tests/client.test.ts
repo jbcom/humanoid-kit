@@ -8,6 +8,7 @@ class FakeWorker {
   onmessage: ((e: MessageEvent<WorkerResponse>) => void) | null = null;
   onerror: ((e: ErrorEvent) => void) | null = null;
   evaluated: number[] = [];
+  pickMaps = 0;
   terminated = false;
   private readonly failInit: boolean;
   /** Settles when the stand-in's modifier targets "arrive"; rejects to fail them. */
@@ -24,6 +25,18 @@ class FakeWorker {
       this.modifierTargets.then(
         () => reply({ type: "modifierTargetsLoaded", id: msg.id }),
         (e: Error) => reply({ type: "error", id: msg.id, message: e.message, name: e.name }),
+      );
+      return;
+    }
+    if (msg.type === "pickMap") {
+      this.pickMaps++;
+      this.modifierTargets.then(() =>
+        reply({
+          type: "pickMap",
+          id: msg.id,
+          features: [{ task: "Face", group: "nose features", label: "Nose features" }],
+          render: { body: Uint8Array.of(0, 255), attachments: [] },
+        }),
       );
       return;
     }
@@ -136,6 +149,30 @@ describe("HumanoidWorkerClient", () => {
     await expect(client.modifierTargets).rejects.toMatchObject({ name: "AssetFormatError" });
     await client.evaluate(shaped);
     expect(worker.evaluated).toHaveLength(1);
+  });
+
+  it("asks the worker for the pick map once, after the modifier targets", async () => {
+    let release = () => {};
+    const { client, worker } = make(
+      false,
+      new Promise<void>((r) => {
+        release = r;
+      }),
+    );
+    const first = client.pickMap();
+    expect(client.pickMap()).toBe(first);
+    let settled = false;
+    void first.then(() => {
+      settled = true;
+    });
+    await client.ready;
+    await new Promise((r) => setTimeout(r, 5));
+    expect(settled).toBe(false);
+    release();
+    const map = await first;
+    expect(map.features[0]?.group).toBe("nose features");
+    expect([...map.render.body]).toEqual([0, 255]);
+    expect(worker.pickMaps).toBe(1);
   });
 
   it("fails queued evaluations when the worker cannot initialise", async () => {

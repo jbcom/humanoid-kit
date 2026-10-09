@@ -1,5 +1,6 @@
 export {
   Humanoid,
+  type HumanoidPick,
   type HumanoidProps,
   HumanoidProvider,
   useHumanoidClient,

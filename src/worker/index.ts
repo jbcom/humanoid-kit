@@ -8,6 +8,7 @@
  * shape modifier waits for them; one that does not evaluates at once.
  */
 import { loadHumanoidAssetsStaged } from "../format/assetFormat.ts";
+import { buildFeatureMap } from "../makehuman/features.ts";
 import { HumanoidModel } from "../model/humanoidModel.ts";
 import { recipeSetsModifiers } from "../recipe/recipe.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
@@ -46,6 +47,17 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
     if (req.type === "modifierTargets") {
       await modifierTargets;
       post({ type: "modifierTargetsLoaded", id: req.id });
+      return;
+    }
+    if (req.type === "pickMap") {
+      await modifierTargets;
+      const { features, vertexFeature } = buildFeatureMap(model.assets);
+      // Built on every request; the client asks once and keeps the answer.
+      const render = model.renderFeatures(vertexFeature);
+      post({ type: "pickMap", id: req.id, features, render }, [
+        render.body.buffer,
+        ...render.attachments.map((a) => a.buffer),
+      ]);
       return;
     }
     // The client holds these back until the targets arrive; a direct caller
