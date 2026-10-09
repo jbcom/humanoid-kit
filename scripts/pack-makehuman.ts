@@ -37,7 +37,7 @@ import { macroTargetAgeAnchor, macroTargetNames } from "../src/makehuman/macro.t
 import { STATE_MORPH_TARGETS } from "../src/makehuman/stateMorphs.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
-import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
+import { ADULT_LAYER_TARGETS, SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { writeAttachments, writeAttachmentTextures, writePackEntry } from "./lib/packWriter.ts";
 import { buildSliders } from "./lib/sliders.ts";
@@ -542,6 +542,18 @@ async function main() {
   const missingMasks = SKIN_LAYER_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
   if (missingMasks.length)
     throw new Error(`skin-layer targets not packed: ${missingMasks.join(", ")}`);
+  // A body layer must not pull adult data into the body pack's core file, and an
+  // adult layer's targets must be ones the adult pack ships.
+  const adultInCore = SKIN_LAYER_TARGETS.filter(isAdultPackTarget);
+  if (adultInCore.length)
+    throw new Error(`body skin layers measure adult targets: ${adultInCore.join(", ")}`);
+  const missingAdultMasks = ADULT_LAYER_TARGETS.filter(
+    (n) => !isAdultPackTarget(n) || !driven.has(n) || !packed.has(n),
+  );
+  if (missingAdultMasks.length)
+    throw new Error(
+      `adult skin-layer targets not in the adult pack: ${missingAdultMasks.join(", ")}`,
+    );
   const missingStates = STATE_MORPH_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
   if (missingStates.length)
     throw new Error(`state-morph targets not packed: ${missingStates.join(", ")}`);

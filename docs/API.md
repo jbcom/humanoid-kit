@@ -305,9 +305,13 @@ compute what the renderer will do.
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
   `SkinLayer` (`id`, `blend`, `targets`, `fields(assets)`, `paint(input)`),
-  `SKIN_LAYERS` (the stack, in order: flush, lips, areola), `SKIN_LAYER_TARGETS`,
+  `SKIN_LAYERS` (the stack, in order: flush, lips, areola, then
+  `ADULT_SKIN_LAYERS`: penis, testes, mound), `SKIN_LAYER_TARGETS` (the body
+  layers' only; the adult layers' are `ADULT_LAYER_TARGETS`, in the adult pack),
   `targetMask(assets, targets, lo, hi)` for masks measured from targets,
-  `buildLayerFields`, `paintStopTable(layers, input)` (the figure's stop table,
+  `targetCoordinate(assets, target)` for a 0..1 coordinate from one target's
+  displacement,
+  `buildLayerFields` (an adult layer whose targets have not loaded stays zero), `paintStopTable(layers, input)` (the figure's stop table,
   `STOP_COUNT` stops in rows of `STOP_TABLE_WIDTH` texels) and
   `applyLayers(base, table, fields)`, the per-pixel blend the shader performs.
   A layer is one of three kinds: a `ColourLayer` (the default: `blend`, and
@@ -325,6 +329,13 @@ compute what the renderer will do.
   above 0 (from `appliedAnatomy(recipe)`), scaling its strength by that
   presence; otherwise its row is zero and its `paint` is never called. The gate
   lives in `paintStopTable` alone, so a layer cannot forget it.
+  `genitalAlbedo(tone, site, arousal?)` is the adult layers' colour: modelled
+  along the melanin and haemoglobin axes, **uncalibrated** (no measured genital
+  colorimetry exists; research/SKIN-STATES.md, A4).
+  `model.adultLayerFields(): LayerFieldsUpdate | null` gives the adult layers'
+  fields per render vertex once the adult pack's targets have loaded (null
+  before, and without the pack); the topology always carries those layers as
+  zero.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).

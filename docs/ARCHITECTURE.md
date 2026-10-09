@@ -557,6 +557,29 @@ topology and the field atlas exist. Decisions:
   modifiers), so the sculpt phase adds vulva, clitoris and intersex variation
   as further features, each with its own presence, instead of one male-to-female
   axis.
+- The adult data never rides in the static topology: the model leaves the adult
+  layers' fields at zero in `topology()` even with the pack loaded, and
+  `model.adultLayerFields()` derives them (through the same subdivision stencil)
+  only after the pack's targets have arrived, so one code path serves a staged
+  load and an eager one. The packer refuses a body layer that measures an adult
+  target, and an adult layer whose target the adult pack does not ship.
+
+**What phase 1 can show.** The CC0 `genitals/penis-*` targets deform MakeHuman's
+`helper-genital` group (200 vertices), which the render surface leaves out
+(only the `body` group is drawn, and none of those vertices is in it); only
+`pelvis/bulge-incr` moves drawn skin (57 body vertices). So the penis and testes
+layers resolve to masks on vertices that are not drawn and paint nothing yet,
+and the mound layer is the one that shows. Putting adult geometry on the render
+surface is the sculpt phase's first job, and cannot be done by drawing
+`helper-genital` for every figure: the surface is shared across ages, and a
+static surface cannot be gated by age (docs/research/ADULT-SCULPT-PLAN.md).
+`tests/adultStack.test.ts` records the limit so that change fails it.
+
+**Colour is uncalibrated.** No colorimetry of genital skin by skin type exists in
+the open literature (research/SKIN-STATES.md, A4), so `genitalAlbedo` models it
+along the measured melanin and haemoglobin axes the areola colour already uses,
+with a thin, vascular glans; the sizes of the shifts are choices, not
+measurements.
 
 Rejected: shipping layer code inside the adult pack (a second code path that
 the core's tests could not reach), and recompiling the material when the pack

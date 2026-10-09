@@ -197,6 +197,34 @@ export function targetMask(
 }
 
 /**
+ * A 0..1 coordinate across a feature from one target: each moved vertex's
+ * displacement relative to the target's peak (zero where it does not move).
+ * For a target that stretches a feature from a root, such as a length target,
+ * displacement grows with distance from the root, so this runs from the root (0)
+ * to the far end (1) without any geometry being invented.
+ */
+export function targetCoordinate(assets: HumanoidAssets, name: string): Float32Array {
+  const t: SparseTarget | undefined = assets.targets.get(name);
+  if (!t) throw new AssetFormatError(`a skin layer needs target ${name}, which is not loaded`);
+  const out = new Float32Array(assets.manifest.vertexCount);
+  let max = 0;
+  const mags = new Float32Array(t.indices.length);
+  for (let i = 0; i < t.indices.length; i++) {
+    const m = Math.hypot(
+      t.deltas[i * 3] as number,
+      t.deltas[i * 3 + 1] as number,
+      t.deltas[i * 3 + 2] as number,
+    );
+    mags[i] = m;
+    if (m > max) max = m;
+  }
+  if (max === 0) return out;
+  for (let i = 0; i < t.indices.length; i++)
+    out[t.indices[i] as number] = (mags[i] as number) / max;
+  return out;
+}
+
+/**
  * Metres of skin per unit of UV at each base vertex of `faces` (quads): the
  * square root of the ratio of each face's surface area to its UV area,
  * averaged over the faces around the vertex. Detail layers use it to draw
@@ -250,17 +278,35 @@ export function uvScale(assets: HumanoidAssets, faces: ArrayLike<number>): Float
 }
 
 /**
+ * Layer fields for some layers of the stack, per render vertex: for each layer
+ * in `layers` in turn, `vertexCount` pairs of (mask, coordinate). The shape of
+ * `ModelTopology.body.layerFields`, and of what the worker posts once the
+ * adult anatomy's targets have loaded (`HumanoidModel.adultLayerFields`).
+ */
+export interface LayerFieldsUpdate {
+  /** Ids of the layers the fields hold, in order. */
+  layers: string[];
+  layerFields: Float32Array;
+}
+
+/**
  * Every layer's fields per base vertex, three floats per layer per vertex
  * (mask, coordinate, 0: the stride the subdivision stencil carries), layer
- * after layer: `layers.length * vertexCount * 3`.
+ * after layer: `layers.length * vertexCount * 3`. A layer `include` rejects
+ * is left at zero without being measured; by default that is an adult layer
+ * whose targets have not loaded (the adult pack arrives in the last stage, or
+ * is not installed), so a body-only build gets zero fields for it, not an error.
  */
 export function buildLayerFields(
   assets: HumanoidAssets,
   layers: readonly SkinLayer[],
+  include: (layer: SkinLayer) => boolean = (layer) =>
+    !isAdultLayer(layer) || layer.targets.every((t) => assets.targets.has(t)),
 ): Float32Array {
   const n = assets.manifest.vertexCount;
   const out = new Float32Array(layers.length * n * 3);
   layers.forEach((layer, l) => {
+    if (!include(layer)) return;
     const { mask, coord } = layer.fields(assets);
     if (mask.length !== n || (coord && coord.length !== n))
       throw new AssetFormatError(`skin layer ${layer.id}: fields must have one value per vertex`);
