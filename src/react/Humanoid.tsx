@@ -843,6 +843,7 @@ export function Humanoid({
       lips: s.lips,
       areola: s.areola,
       signals: { ...signals, ...flexion },
+      age: recipe.macros.age,
       // Which adult layers paint: only for an adult, only for the anatomy applied
       // (the adult pack's own list of features; none without the pack).
       adult: isAdult(recipe),

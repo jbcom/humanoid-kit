@@ -427,6 +427,9 @@ compute what the renderer will do.
   fields per render vertex once the adult pack's targets have loaded (null
   before, and without the pack); the topology always carries those layers as
   zero.
+  `SkinPaintInput.age` is the figure's age in years (`recipe.macros.age`;
+  `<Humanoid>` sets it), for layers that change with it: a layer that reads it
+  must paint sensibly without it, since an input built without one has none.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).

@@ -400,3 +400,29 @@ describe("the UV scale and the relief coordinate built from it", () => {
     expect(at(0.95)).toBeLessThan(2.5);
   });
 });
+
+describe("a layer's paint is told the figure's age", () => {
+  it("passes the age in years through the stop table, absent when none is given", () => {
+    const seen: (number | undefined)[] = [];
+    const layer: SkinLayer = {
+      id: "age-probe",
+      blend: "mix",
+      targets: [],
+      fields: () => ({ mask: new Float32Array(0), coord: null }),
+      paint: (input) => {
+        seen.push(input.age);
+        return { strength: 1, stops: [[0.5, 0.4, 0.3]] };
+      },
+    };
+    const base = {
+      tone: { melanin: 0.5, haemoglobin: 0.5, undertone: 0, override: null },
+      flush: 0.4,
+      lips: 0.5,
+      areola: 0.5,
+      signals: {},
+    };
+    paintStopTable([layer], { ...base, age: 72 });
+    paintStopTable([layer], base);
+    expect(seen).toEqual([72, undefined]);
+  });
+});
