@@ -21,6 +21,7 @@ export * from "./recipe/anatomy.ts";
 export * from "./recipe/recipe.ts";
 export * from "./recipe/validate.ts";
 export * from "./rig/dual.ts";
+export * from "./rig/expressions.ts";
 export * from "./rig/faceMirror.ts";
 export * from "./rig/flexion.ts";
 export * from "./rig/occlusionKeys.ts";

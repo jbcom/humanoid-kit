@@ -711,6 +711,28 @@ mean what they meant there; everything must be testable in Node.
   kneeling figure rests on the floor instead of hanging where its standing
   feet were.
 
+### Named expressions (2026-10-09)
+
+The pack's 60 units are muscles, not faces; what people ask for is a smile or
+a look of surprise. `EXPRESSIONS` (`src/rig/expressions.ts`) names ten as
+weights of units (smile, grin, frown, surprise, anger, disgust, fear, sadness,
+blink, squint), `expressionUnits(id, intensity)` scales one for a pose's
+`faceUnits`, and the caller blends them as any other units. They follow the
+facial action coding system's description of each emotion (a smile is the lip
+corner puller with the cheek raiser; surprise the brow raisers with the upper
+lid raiser and a dropped jaw), but a MakeHuman unit is a bone-driven shape,
+not an action unit, so every weight is a **choice** judged against the sheets
+in `docs/evidence/expressions.md`, to be tuned rather than cited. Each holds a
+left unit at the weight of its right (a test checks the pairing, and that the
+posed skin is the mirror of itself to 0.1 mm), so an expression never reads as
+a smirk; a one-sided face is composed from units by the caller.
+
+Audit of the rig under them (age 6, 14, 45 and 75, from `skinPositions` and
+rays against the posed body, no rendering): a blink leaves under 2 % of rays
+from the eye centre open, so the lids close fully at every age; a squint keeps
+the eye narrowed, not shut; no unit moves the skin nearer the eyeball's centre
+than 0.6 mm from where it rests. The one defect was the asymmetry above.
+
 ### Skinning artefacts (2026-10-09)
 
 Linear blend skinning averages bone matrices, and the average of two rotations
