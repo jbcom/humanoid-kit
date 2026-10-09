@@ -103,7 +103,7 @@ export function renderLayers(layers: readonly SkinLayer[], options: LayerRenderO
   const atlas = layers.length ? buildLayerAtlas(renderer, source, 256) : null;
   const material = new SkinMaterial(layers);
   material.setAppearance(options.appearance ?? { ...DEFAULT_SKIN_APPEARANCE, flush: 0 });
-  material.setLayerAtlas(atlas?.texture ?? null);
+  material.setLayerAtlas(atlas);
   material.normalMap = null; // the pore map would add its own relief
   options.tune?.(material);
   const scene = new Scene();

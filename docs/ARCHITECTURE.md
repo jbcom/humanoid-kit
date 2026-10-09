@@ -1227,17 +1227,14 @@ the joint's skin takes, which is measured.
   fraction of a millimetre deep, which no strain measurement here places. The
   wrist's flexion signal is still computed.
 
-**Cost.** Six more layers. The field atlas is channel-packed (`planAtlas`: a
-channel for each mask, one for each coordinate a layer reads, and one
-coordinate between the layers of a `coordGroup`), and every crease layer measures
-its coordinate along its own limb, so they share one: six masks and a
-coordinate are 7 channels of 1024², shared by every figure.
-The whole stack of 22 layers is 36 channels in 9 pages (36 MB). Two layers a
-page would take 8 pages (32 MB) for the 16 rest layers (packing them by what the
-shader reads is 29 channels, also 8 pages) and 11 (44 MB) with the creases, as
-twelve layers of two channels would have taken 14. So the creases add one
-page, 4 MB, to the atlas. The detail loop does one field fetch per crease layer per pixel, only
-while the layer has strength, and the stop table has 6 more rows of a few bytes.
+**Cost.** Four more layers. They lie on four separate patches of the skin, so
+the field atlas (below, "Atlas packing") gives them, the flush layer and the
+areolae one channel pair between them: the whole stack of 20 layers is 27
+channels in 7 pages of 1024² (28 MB), where two layers a page would take 10
+(40 MB), and the 16 rest layers alone took 8 (32 MB). The creases make the
+atlas smaller. The detail loop does one field fetch per crease layer per
+pixel, only while the layer has strength, and the stop table has 4 more rows of
+a few bytes.
 
 **Not here.** Skin colour at the joint (darker and redder when extended, a
 colour term, SKIN-STATES.md A2); crease depth varying with age or body fat
@@ -1278,11 +1275,9 @@ the contract below, not on how the layers under it are solved.
 
 A layer splits into what depends on the base mesh and what depends on the
 figure. Its fields (mask and coordinate) come from the base mesh alone, so
-they are rasterised once into a **field atlas** in the body's UV space (a
-channel for each mask, one for each coordinate the shader reads, and one
-coordinate between the layers of a `coordGroup`, four channels to an RGBA page:
-`planAtlas`; gutters dilated so filtering never reaches empty
-texels across a seam) and shared by every figure. Its colour depends on the
+they are rasterised once into a **field atlas** in the body's UV space (four
+channels to an RGBA page, laid out by `planAtlas`; gutters dilated so filtering
+never reaches empty texels across a seam) and shared by every figure. Its colour depends on the
 figure, so each figure carries only a small **stop table**: per layer, its
 strength, blend mode and colour stops along the coordinate, sampled with
 linear filtering so a gradient costs nothing extra. The skin shader evaluates
@@ -1299,6 +1294,45 @@ TypeScript, unit-tested in Node; the shader is fixed. Today's three mask
 channels become the first three layers with unchanged output. Each area lives
 in its own files (`src/surface/regions/<area>.ts` and its tests) and adds one
 entry to the layer list, so lanes add files rather than edit shared ones.
+
+**Atlas packing (2026-10-09).** A page holds four channels, not two layers, and
+layers whose supports lie apart share channels automatically, so an area lane
+that adds layers on its own patch of the body (hands, feet, torso) costs
+almost no atlas. `planAtlas` lays it out at build time, from the layers'
+fields as built:
+
+- A layer's *support* is the skin its mask reaches: the triangles with mask at
+  a corner, as the cells of a 64×64 grid over the UV plane they cover, and one
+  cell round them (a filter's reach and a gutter are less than a cell). Layers
+  are placed in order, each in the first group whose supports it does not touch,
+  or in a group of its own. A group has a value channel, a coordinate channel if
+  any member reads one (bumps and surface layers read none), and, with two or
+  more members, an owner map.
+- *Overlapping layers never share* (a test checks every shared pair of the
+  shipped stack vertex by vertex, and a synthetic one for adjacency). The broad
+  state layers (flush, heat, exertion, blush, the pallors, sweat) keep a channel
+  each, as do the lips and mouth. The flush layer, the areola and the four
+  creases are one group.
+- *The owner map* is how a shared channel is told apart: one id per cell,
+  `OWNER_GRID`² bytes, read with `texelFetch` (exactly, never filtered), and a
+  layer reads the channel only in cells whose id is its own. Four maps to a
+  page of a small array texture; the stack has one map (a few KB). A layer that
+  shares carries (channel, coordinate channel, map, id) in the shader's
+  `hkChannel` uniform. The atlas is rasterised from each vertex's owner
+  (`vertexOwners`), so a shared channel holds, at a vertex, its member's
+  mask and coordinate.
+- The adult layers are never shared: their fields arrive after the atlas
+  exists, so their support is unknown. Three layers of two channels each.
+- Alternatives set aside: sharing by banding the value (layer *k* of *K* in
+  `[k/K, (k+1)/K)`, which bilinear filtering between regions turns into other
+  layers' bands, and loses bits); sharing by UV island (nine islands: only the
+  head and the arms ever separate); a lower resolution for smooth layers
+  (a second sampler and no cut in the broad layers, which dominate).
+
+The atlas for the stack with the joint creases: 20 layers, 27 channels, 7 pages
+(28 MB); two layers a page took 10 pages (40 MB) for them, and 8 (32 MB) for
+the 16 layers without. A fresh area lane's layers on their own patch cost the
+channel pair of their group or less.
 
 **Per lane, before merging:** its own unit tests, and a contact sheet of its
 area at both ends of the tone range and at the extremes of each control.

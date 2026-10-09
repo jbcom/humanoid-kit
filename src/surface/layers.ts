@@ -91,14 +91,6 @@ interface LayerBase {
    */
   adult?: { feature: string };
   /**
-   * Layers that name the same group share one coordinate channel in the field
-   * atlas (src/render/layerAtlas.ts), so they cost one coordinate between them
-   * rather than one each. Their coordinates must agree wherever their masks
-   * overlap, which is how the creases of every joint, each along its own limb,
-   * can be one set of texels. Absent: the layer has its own.
-   */
-  coordGroup?: string;
-  /**
    * Whether the data the fields are measured from has loaded; absent means
    * always. An adult layer's targets arrive in the adult pack's last stage, or
    * never; `buildLayerFields` leaves an unavailable layer at zero.

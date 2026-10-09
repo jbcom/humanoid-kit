@@ -252,7 +252,7 @@ describe("the skin shader after a refresh", () => {
     const held = acquireLayerAtlas(renderer, source);
     const material = new SkinMaterial([adult]);
     material.setAppearance(appearance);
-    material.setLayerAtlas(held.texture);
+    material.setLayerAtlas(held);
     try {
       const base = skinAlbedo(appearance.tone);
       const before = drawn(material, plane);

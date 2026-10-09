@@ -737,6 +737,24 @@ export class HumanoidModel {
     return this.wearsPackedSet() ? null : occlusionFigure();
   }
 
+  private planned: AtlasPlan | undefined;
+
+  /**
+   * Where the skin layers' fields lie in the atlas (`planAtlas`): layers whose
+   * support on the body's UV layout lies apart share channels. Laid out once, from
+   * the whole body's triangles and the layers' fields as built (the adult layers'
+   * arrive later and are never shared).
+   */
+  private atlasPlan(): AtlasPlan {
+    this.planned ??= planAtlas(SKIN_LAYERS, {
+      uvs: this.body.mesh.uvs,
+      index: this.body.mesh.index,
+      vertexCount: this.body.mesh.uvs.length / 2,
+      layerFields: this.layerFields,
+    });
+    return this.planned;
+  }
+
   topology(): ModelTopology {
     const corners = occlusionCorners(OCCLUSION_KEYS.length);
     const baked = this.wearsPackedSet()
@@ -754,7 +772,7 @@ export class HumanoidModel {
         index: this.mountedBodyIndex,
         layerFields: this.layerFields,
         layers: SKIN_LAYERS.map((l) => l.id),
-        plan: planAtlas(SKIN_LAYERS),
+        plan: this.atlasPlan(),
         uvScale: this.uvScale,
         occlusion: this.bodyOcclusionField(),
       },

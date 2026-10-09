@@ -153,9 +153,6 @@ function creaseLayer(name: CreaseJointName, side: Side): DetailLayer {
   const depth = creaseDepth(name);
   return {
     id: creaseLayerId(name, side),
-    // Every crease layer measures its coordinate along its own limb, through its own
-    // joint, so where two layers reach one vertex they agree: one atlas channel for all.
-    coordGroup: "creases",
     kind: "detail",
     pattern: "creases",
     targets: [],

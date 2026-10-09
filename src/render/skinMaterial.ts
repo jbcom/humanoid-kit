@@ -30,8 +30,9 @@ import {
   type Texture,
   Vector2,
   Vector3,
+  Vector4,
 } from "three";
-import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
+import { type AtlasPlan, OWNER_GRID, planAtlas } from "../surface/atlasPlan.ts";
 import {
   CREASE_SHARPNESS,
   paintStopTable,
@@ -45,7 +46,7 @@ import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import { luminance, MELANIN_ANCHORS, type Rgb, skinAlbedo } from "../surface/skinTone.ts";
 import { DUAL_SKINNING_KEY, type DualBones, patchDualSkinning } from "./dualSkinning.ts";
-import { emptyLayerAtlas } from "./layerAtlas.ts";
+import { emptyLayerAtlas, emptyOwners, type SkinLayerAtlas } from "./layerAtlas.ts";
 import { BODY_OCCLUSION_FLOOR, BODY_OCCLUSION_POWER, patchOcclusion } from "./occlusion.ts";
 
 /** What the skin material is painted from: the recipe's skin and the figure's state signals. */
@@ -86,12 +87,22 @@ varying vec2 vHkUv;
 varying float vHkUvScale;
 uniform highp sampler2DArray hkLayerAtlas;
 uniform sampler2D hkLayerStops;
-// Per layer, the atlas channels of its mask (x) and coordinate (y, -1: none), four to a page.
-uniform vec2 hkChannel[${Math.max(1, count)}];
+// Which cell of the body's UV plane owns each texel of a channel that layers share.
+uniform highp sampler2DArray hkLayerOwners;
+// Per layer, the atlas channels of its mask (x) and coordinate (y, -1: none), four to a page,
+// and, for a layer that shares its channels, its owner map (z, -1: none) and its id in it (w).
+uniform vec4 hkChannel[${Math.max(1, count)}];
 vec4 hkPage( float c, vec2 uv ) { return texture( hkLayerAtlas, vec3( uv, floor( c * 0.25 ) ) ); }
 float hkChannelOf( vec4 page, float c ) { return page[ int( c - 4.0 * floor( c * 0.25 ) + 0.5 ) ]; }
 vec2 hkFields( int l, vec2 uv ) {
-	vec2 ch = hkChannel[ l ];
+	vec4 ch = hkChannel[ l ];
+	if ( ch.z >= 0.0 ) {
+		// The channel holds this layer's fields only in the cells the owner map gives it.
+		ivec2 cell = ivec2( clamp( uv, 0.0, 0.9999 ) * ${glslFloat(OWNER_GRID)} );
+		vec4 owners = texelFetch( hkLayerOwners, ivec3( cell, int( floor( ch.z * 0.25 ) ) ), 0 );
+		float owner = owners[ int( ch.z - 4.0 * floor( ch.z * 0.25 ) + 0.5 ) ];
+		if ( abs( owner * 255.0 - ch.w ) > 0.5 ) return vec2( 0.0 );
+	}
 	vec4 maskPage = hkPage( ch.x, uv );
 	float mask = hkChannelOf( maskPage, ch.x );
 	if ( ch.y < 0.0 ) return vec2( mask, 0.0 );
@@ -337,6 +348,24 @@ function stopTexture(layerCount: number): DataTexture {
   return t;
 }
 
+/** One owner texture that owns nothing, shared by every material without its atlas. */
+let noOwnersTexture: Texture | undefined;
+function noOwners(): Texture {
+  noOwnersTexture ??= emptyOwners();
+  return noOwnersTexture;
+}
+
+/** Writes each layer's channels, owner map and id from the plan into the shader's table. */
+function setChannels(table: Vector4[], plan: AtlasPlan): void {
+  for (let l = 0; l < plan.value.length; l++)
+    table[l]?.set(
+      plan.value[l] as number,
+      plan.coord[l] as number,
+      plan.owner[l] as number,
+      plan.ownerId[l] as number,
+    );
+}
+
 /** One all-zero atlas per page count, shared by every material without its atlas. */
 const noLayers = new Map<number, Texture>();
 function noLayersFor(pages: number): Texture {
@@ -363,13 +392,13 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkScatterTable: { value: DataTexture };
     /** The shared field atlas (`buildLayerAtlas`); all zero (no layers) until set. */
     hkLayerAtlas: { value: Texture };
+    /** The atlas's owner maps (`SkinLayerAtlas.owners`). */
+    hkLayerOwners: { value: Texture };
     /** This figure's stop table (`paintStopTable`). */
     hkLayerStops: { value: DataTexture };
-    /** Per layer, the atlas channels of its mask and its coordinate (`plan`). */
-    hkChannel: { value: Vector2[] };
+    /** Per layer, its atlas channels, owner map and id in it (the atlas's plan). */
+    hkChannel: { value: Vector4[] };
   };
-  /** Where each layer's fields are in the atlas; the atlas is built to the same plan. */
-  readonly plan: AtlasPlan;
   private readonly stopTable: Float32Array;
   private dualBones: DualBones | null = null;
 
@@ -392,9 +421,20 @@ export class SkinMaterial extends MeshPhysicalMaterial {
    */
   occlusionKeys = new Vector3();
 
-  /** Uses the shared field atlas built for the body this material draws. */
-  setLayerAtlas(texture: Texture | null): void {
-    this.hkUniforms.hkLayerAtlas.value = texture ?? noLayersFor(this.plan.pages);
+  /**
+   * Uses the shared field atlas built for the body this material draws, with
+   * its owner maps and the plan that lays the layers out in it; none draws no
+   * layer. The atlas must be planned for this material's layers.
+   */
+  setLayerAtlas(atlas: SkinLayerAtlas | null): void {
+    const plan = atlas?.plan ?? planAtlas(this.layers);
+    if (plan.value.length !== this.layers.length)
+      throw new RangeError(
+        `SkinMaterial: an atlas planned for ${plan.value.length} layers, not ${this.layers.length}`,
+      );
+    this.hkUniforms.hkLayerAtlas.value = atlas?.texture ?? noLayersFor(plan.pages);
+    this.hkUniforms.hkLayerOwners.value = atlas?.owners ?? noOwners();
+    setChannels(this.hkUniforms.hkChannel.value, plan);
   }
 
   constructor(layers: readonly SkinLayer[] = SKIN_LAYERS) {
@@ -409,7 +449,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       sheenRoughness: 0.8,
     });
     this.layers = layers;
-    this.plan = planAtlas(layers);
+    const plan = planAtlas(layers);
     this.stopTable = new Float32Array(layers.length * STOP_TABLE_WIDTH * 4);
     this.hkUniforms = {
       hkScatterMfp: { value: SKIN_SCATTER.mfp },
@@ -417,18 +457,13 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkPigmentDepth: { value: SKIN_SCATTER.pigmentDepth },
       hkSubstrate: { value: new Vector3(...(MELANIN_ANCHORS[0] as Rgb)) },
       hkScatterTable: { value: scatterTableTexture() },
-      hkLayerAtlas: { value: noLayersFor(this.plan.pages) },
+      hkLayerAtlas: { value: noLayersFor(plan.pages) },
+      hkLayerOwners: { value: noOwners() },
       hkLayerStops: { value: stopTexture(layers.length) },
-      hkChannel: {
-        // A GLSL array has at least one element, so a stack with no layers still gets one.
-        value:
-          layers.length > 0
-            ? layers.map(
-                (_, l) => new Vector2(this.plan.mask[l] as number, this.plan.coord[l] as number),
-              )
-            : [new Vector2(0, -1)],
-      },
+      // A GLSL array has at least one element, so a stack with no layers still gets one.
+      hkChannel: { value: Array.from({ length: Math.max(1, layers.length) }, () => new Vector4()) },
     };
+    setChannels(this.hkUniforms.hkChannel.value, plan);
     this.normalMap = poreNormalMap();
     // Pores are felt in the highlights, not seen as texture: keep the relief faint.
     this.normalScale = new Vector2(0.06, 0.06);

@@ -801,7 +801,7 @@ export function Humanoid({
   useEffect(() => {
     if (!ready) return;
     const atlas = acquireLayerAtlas(gl, ready.topology.body);
-    skin.setLayerAtlas(atlas.texture);
+    skin.setLayerAtlas(atlas);
     // The adult anatomy's fields arrive after the atlas exists, once the adult
     // pack's last stage has loaded: only their pages are re-rasterised, in
     // place, so the figure neither recompiles its shader nor re-evaluates.
