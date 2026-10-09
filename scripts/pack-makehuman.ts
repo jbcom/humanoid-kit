@@ -37,6 +37,11 @@ import { STATE_MORPH_TARGETS } from "../src/makehuman/stateMorphs.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
 import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
+import {
+  ADULT_ANATOMY_SPEC,
+  ADULT_SPEC_MODIFIERS,
+  ADULT_SPEC_TARGETS,
+} from "./lib/adultAnatomySpec.ts";
 import { authoredPoses } from "./lib/authoredPoses.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { writeAttachments, writeAttachmentTextures, writePackEntry } from "./lib/packWriter.ts";
@@ -491,6 +496,27 @@ async function main() {
   const missingMasks = SKIN_LAYER_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
   if (missingMasks.length)
     throw new Error(`skin-layer targets not packed: ${missingMasks.join(", ")}`);
+  // A body layer must not pull adult data into the body pack's core file, and
+  // every target and modifier the adult anatomy spec names (written into the
+  // adult manifest) must be one the adult pack ships.
+  const adultInCore = SKIN_LAYER_TARGETS.filter(isAdultPackTarget);
+  if (adultInCore.length)
+    throw new Error(`body skin layers measure adult targets: ${adultInCore.join(", ")}`);
+  const missingAdultTargets = ADULT_SPEC_TARGETS.filter(
+    (n) => !isAdultPackTarget(n) || !driven.has(n) || !packed.has(n),
+  );
+  if (missingAdultTargets.length)
+    throw new Error(
+      `adult anatomy targets not in the adult pack: ${missingAdultTargets.join(", ")}`,
+    );
+  const adultModifierIds = new Set(
+    modifiers.filter((m) => isAdultPackTarget(m.hi)).map((m) => m.id),
+  );
+  const missingAdultModifiers = ADULT_SPEC_MODIFIERS.filter((id) => !adultModifierIds.has(id));
+  if (missingAdultModifiers.length)
+    throw new Error(
+      `adult anatomy modifiers not in the adult pack: ${missingAdultModifiers.join(", ")}`,
+    );
   const missingStates = STATE_MORPH_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
   if (missingStates.length)
     throw new Error(`state-morph targets not packed: ${missingStates.join(", ")}`);
@@ -665,6 +691,8 @@ async function main() {
     },
     modifiers: modifiers.filter((m) => isAdultPackTarget(m.hi)),
     sliders: sliders.adult,
+    /** Features, skin-layer measurements and shape states: the core names none of these. */
+    anatomy: ADULT_ANATOMY_SPEC,
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 
