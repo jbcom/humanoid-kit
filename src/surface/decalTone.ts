@@ -5,19 +5,19 @@
  * lashes, so a figure's hair is one colour and its pigments' physics
  * (`hairAlbedo`) the same everywhere.
  *
- * CHOICE, not measurement. The brows are the hair's own colour, lifted by a power
- * (`BROW_LIFT`, 0.8): a brow is thin, dark against skin, and lit like the face, so
- * the studio's tone curve crushes its blue and its shadows (blonde read olive, an
- * albedo of 0.21, 0.13, 0.05 came out at a third of its blue relative to its red
- * on the first sheets), and a gentle power keeps a blonde's brow golden and a white
- * one warm without lightening a black one. The lashes are
+ * CHOICE, not measurement. The brows are the hair's own colour: the same albedo
+ * the scalp's strand map is tinted to, so a figure's brows and hair are one
+ * colour, and a test renders both under one light and holds their chromaticity
+ * together. (The first sheets read olive and thin, and a lift of the colour was
+ * tried; the cause was the decal casting and receiving shadows against the skin
+ * it lies on, which darkened and shaded it, not its colour.) The lashes are
  * darker by a fixed factor, as lashes are on almost everyone, fair and red-haired
  * people most of all, whose lashes and brows read darker than their scalp hair;
  * a single factor on the albedo keeps a lash's hue and sets its depth. A young
- * child's brows and lashes are finer and fewer: the decal's opacity (the
- * share of its cut-out the renderer keeps) rises from a toddler's to full by the
- * teens, brows later and from sparser than lashes. No source of density by age
- * ships here, so the ramps are art-directed numbers, tuned against
+ * child's brows and lashes are finer and fewer: the decal's opacity (the share of
+ * its mask the renderer keeps) rises from a toddler's to full by the teens,
+ * brows later and from sparser than lashes. No source of density by age ships
+ * here, so the ramps are art-directed numbers, tuned against
  * docs/evidence/brows.md.
  */
 import { type HairColour, hairAlbedo } from "./hairTone.ts";
@@ -25,16 +25,13 @@ import type { Rgb } from "./skinTone.ts";
 
 export type DecalKind = "brows" | "lashes";
 
-/** The power the hair's albedo is raised to for a brow (below 1 lifts the dark channels most). */
-export const BROW_LIFT = 0.8;
-
 /** The share of the brows' albedo a lash has. */
 export const LASH_DARKEN = 0.55;
 
-/** The brows' colour: the hair's, lifted (`BROW_LIFT`), linear. */
+/** The brows' colour: the hair's albedo, linear. */
 export function browColour(colour: HairColour): Rgb {
   const [r, g, b] = hairAlbedo(colour);
-  return [r ** BROW_LIFT, g ** BROW_LIFT, b ** BROW_LIFT];
+  return [r, g, b];
 }
 
 /** The lashes' colour: the brows', darker by `LASH_DARKEN`. */

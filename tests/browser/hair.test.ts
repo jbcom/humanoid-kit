@@ -105,7 +105,14 @@ function setStrandAttributesFrom(
     fade[i] = o.fade ? o.fade(p.getX(i), p.getY(i)) : 1;
     growth[i] = o.growth ? o.growth(p.getX(i), p.getY(i)) : 0;
   }
-  setHairStrandAttributes(g, fade, growth, new Float32Array(n).fill(o.fin ?? 0));
+  // 20 texture units per metre: a 3 mm strand is 1/16 of the plane's UV range, four pixels.
+  setHairStrandAttributes(
+    g,
+    fade,
+    growth,
+    new Float32Array(n).fill(o.fin ?? 0),
+    new Float32Array(n).fill(20),
+  );
 }
 
 const FLAT = strandMap(4, () => texel(HAIR_STRAND_MEAN, 255));
@@ -418,17 +425,36 @@ describe("hairlines and fins", () => {
     return n / ((to - from) * SIZE);
   };
 
-  it("dithers a card away by its fade: none at 0, all at 1, a share in between, on any GPU", () => {
-    // Fade 0 on the left edge, 1 on the right, rising linearly across the card.
-    const { mesh, material } = card({ fade: (x) => (x + 1) / 2 });
+  it("thins a hairline strand by strand: none at 0, all at 1, more as the fade rises, and whole strands, not dots", () => {
+    // Fade 0 on the left edge, 1 on the right, rising linearly across the card; strands run
+    // up the card (along V), so each strand is one column of pixels.
+    const strand = { angle: Math.PI / 2, coherence: 0 };
+    const { mesh, material } = card({ fade: (x) => (x + 1) / 2, strand });
     const px = render(mesh);
     const q = SIZE / 4;
-    // Fade is about 1/8, 3/8, 5/8, 7/8 at the centres of the four quarters.
-    for (const [i, want] of [0.125, 0.375, 0.625, 0.875].entries())
-      expect(drawn(px, i * q, (i + 1) * q), `quarter ${i}`).toBeCloseTo(want, 1);
+    const share = [0, 1, 2, 3].map((i) => drawn(px, i * q, (i + 1) * q));
+    for (let i = 1; i < 4; i++)
+      expect(share[i] as number, `quarter ${i} is denser than ${i - 1}`).toBeGreaterThan(
+        share[i - 1] as number,
+      );
+    expect(share[0] as number).toBeLessThan(0.35);
+    expect(share[3] as number).toBeGreaterThan(0.9);
+    // Whole strands: a column of pixels is drawn along its whole height or not at all
+    // (a screen-door dither would leave most columns half drawn).
+    let whole = 0;
+    let partial = 0;
+    for (let x = 0; x < SIZE; x++) {
+      let n = 0;
+      for (let y = 4; y < SIZE - 4; y++) if (at(px, x, y) > 0.005) n++;
+      const f = n / (SIZE - 8);
+      if (f < 0.05 || f > 0.95) whole++;
+      else partial++;
+    }
+    // (A tip tapers over a fifth of the fade, which is dithered without alpha-to-coverage.)
+    expect(whole, `columns whole ${whole}, partial ${partial}`).toBeGreaterThan(2 * partial);
     // A flat fade of 0 draws nothing; one of 1 draws the whole card.
-    expect(drawn(render(card({ fade: () => 0 }).mesh))).toBe(0);
-    expect(drawn(render(card({ fade: () => 1 }).mesh))).toBeGreaterThan(0.99);
+    expect(drawn(render(card({ fade: () => 0, strand }).mesh))).toBe(0);
+    expect(drawn(render(card({ fade: () => 1, strand }).mesh))).toBeGreaterThan(0.99);
     material.dispose();
   });
 

@@ -46,7 +46,13 @@ import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } fr
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
-import { GROWTH_SCALE, type HairFields, hairFields, scalpShade } from "../surface/hairFields.ts";
+import {
+  GROWTH_SCALE,
+  type HairFields,
+  hairFields,
+  scalpShade,
+  UV_SCALE_STEPS,
+} from "../surface/hairFields.ts";
 import {
   buildLayerFields,
   isAdultLayer,
@@ -123,6 +129,8 @@ export interface HairTopology extends SurfaceTopology {
    * gradient across the screen is the strand's direction (the highlight's tangent).
    */
   growth: Float32Array;
+  /** Per render vertex, texture units per metre across its card: strands a few millimetres wide come from it. */
+  uvScale: Float32Array;
   /**
    * Per body render vertex (`ModelTopology.body`'s), how densely this style
    * grows from the skin there: 1 under it, falling to 0 beyond its edge.
@@ -1009,6 +1017,7 @@ export class HumanoidModel {
       fade: carry((v) => (fields ? (fields.fade[v] as number) / 255 : 1)).map(clamp01),
       fin: carry((v) => (fields ? (fields.fin[v] as number) / 255 : 0)).map(clamp01),
       growth: carry((v) => (fields ? (fields.growth[v] as number) / GROWTH_SCALE : 0)),
+      uvScale: carry((v) => (fields ? (fields.uvScale[v] as number) / UV_SCALE_STEPS : 0)),
       scalp: scalpOn(this.body.mesh),
       adultScalp: this.adultBodySurface()
         ? scalpOn(

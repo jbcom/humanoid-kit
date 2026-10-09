@@ -214,6 +214,13 @@ float hkRidges( vec2 p, float theta, float spacing ) {
 		}
 	return clamp( 0.5 + ${glslFloat(RIDGE_CONTRAST / RIDGE_SIGMA)} * sum, 0.0, 1.0 );
 }
+// How much of a periodic relief survives at this footprint (in periods per pixel):
+// all of it up to a tenth of a period, none from three tenths, where a period is
+// under about 3 px and the shading would shimmer. The one function the creases and
+// the ridges fade by.
+float hkFootprintFade( float periodsPerPixel ) {
+	return 1.0 - smoothstep( 0.1, 0.3, periodsPerPixel );
+}
 // The detail layers' relief at this pixel, metres. Relief finer than a pixel
 // fades out rather than aliasing.
 float hkDetailHeight( vec2 uv ) {
@@ -233,7 +240,7 @@ float hkDetailHeight( vec2 uv ) {
 		} else if ( kind == 5 ) {
 			vec2 p = uv * vHkUvScale;
 			// Ridges within a pixel of one another blur to a flat; fade them out before they alias.
-			float fade = 1.0 - smoothstep( 0.12, 0.32, length( fwidth( p ) ) / head.w );
+			float fade = hkFootprintFade( length( fwidth( p ) ) / head.w );
 			// The derivatives above are taken in uniform flow; only the pattern is skipped off the ridged skin.
 			if ( a > 0.002 && fade > 0.0 ) {
 				float theta = f.y * 3.14159265359 + ${glslFloat(RIDGE_ORIENTATION_SEAM)};
@@ -243,7 +250,7 @@ float hkDetailHeight( vec2 uv ) {
 			float phase = f.y * head.w;
 			// A groove is a thin line: it goes by the time a period is ten pixels, not one, or
 			// seen end-on down a limb it shows as a dotted ring.
-			float fade = 1.0 - smoothstep( 0.1, 0.3, fwidth( phase ) );
+			float fade = hkFootprintFade( fwidth( phase ) );
 			H -= a * head.z * fade * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} );
 		}
 	}

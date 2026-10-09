@@ -1,16 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { groupFaces } from "../src/format/assetFormat.ts";
 import {
-  CALLUS_LAYER,
   callusAmount,
+  callusWeights,
   footFrame,
   RIDGE_LAYER,
   RIDGE_SPACING,
-  TOE_CREASE_LAYER,
-  TOE_WRINKLE_LAYER,
-  TOENAIL_GLOSS_LAYER,
-  TOENAIL_LAYER,
+  toeCreaseFields,
   toeFrame,
+  toenailFields,
+  toeWrinkleFields,
 } from "../src/surface/regions/feet.ts";
 import { skinZones } from "../src/surface/regions/skinZones.ts";
 import { ridgeOrientation } from "../src/surface/ridges.ts";
@@ -111,8 +110,12 @@ describe("the foot frame", () => {
 
   it("measures along and across for the foot's vertices, none elsewhere", () => {
     let feet = 0;
+    // The base mesh's helper geometry (the tights proxy, joints) carries foot weights but is not the skin.
+    const body = new Uint8Array(n);
+    for (const f of groupFaces(assets, "body"))
+      for (let k = 0; k < 4; k++) body[assets.faceVerts[f * 4 + k] as number] = 1;
     for (let v = 0; v < n; v++) {
-      if ((zones.zone("foot")[v] as number) < 0.5) {
+      if ((zones.zone("foot")[v] as number) < 0.5 || !body[v]) {
         expect(frame.side[v], `vertex ${v} off the feet`).toBe(255);
         continue;
       }
@@ -127,7 +130,7 @@ describe("the foot frame", () => {
 });
 
 describe("callus", () => {
-  const fields = CALLUS_LAYER.fields(assets);
+  const fields = { mask: callusWeights(assets) };
   const frame = footFrame(assets);
 
   /** Largest mask on a foot's sole within `r` metres (along the foot) and across of a landmark. */
@@ -251,8 +254,8 @@ describe("the toes' frame", () => {
 
 describe("toe joint creases", () => {
   const frame = toeFrame(assets);
-  const dorsal = TOE_WRINKLE_LAYER.fields(assets);
-  const plantar = TOE_CREASE_LAYER.fields(assets);
+  const dorsal = toeWrinkleFields(assets);
+  const plantar = toeCreaseFields(assets);
 
   const bands = (side: 0 | 1, toe: number) => {
     const j = frame.joints[side][toe - 1] as readonly number[];
@@ -332,23 +335,6 @@ describe("toe joint creases", () => {
         wrong++;
     }
     expect(wrong).toBe(0);
-  });
-
-  it("is deeper on the sole than on the top, and the top's deepen with age", () => {
-    const input = (age: number) => ({
-      tone: { melanin: 0.5, haemoglobin: 0.5, undertone: 0, override: null },
-      flush: 0.4,
-      lips: 0.5,
-      areola: 0.5,
-      signals: {},
-      age,
-    });
-    const top = (age: number) =>
-      TOE_WRINKLE_LAYER.paint(input(age)) as { height: number; strength: number };
-    const sole = TOE_CREASE_LAYER.paint(input(30)) as { height: number };
-    expect(sole.height).toBeGreaterThan(top(30).height);
-    expect(top(80).strength).toBeGreaterThan(top(30).strength);
-    expect(top(5).strength).toBeLessThan(top(30).strength);
   });
 });
 
@@ -431,8 +417,8 @@ describe("friction ridges on the sole", () => {
 
 describe("toenails", () => {
   const frame = toeFrame(assets);
-  const colour = TOENAIL_LAYER.fields(assets);
-  const gloss = TOENAIL_GLOSS_LAYER.fields(assets);
+  const colour = toenailFields(assets).colour;
+  const gloss = { mask: toenailFields(assets).gloss };
 
   /** The toe's vertices carrying nail (mask above a fifth: a lesser toe has a handful of vertices to the nail), by digit and side. */
   const nailVertices = (side: 0 | 1, toe: number) => {
@@ -501,24 +487,28 @@ describe("toenails", () => {
     }
   });
 
-  it("glosses where the nail is, and the nail grows yellower and thicker with age", () => {
+  it("glosses where the nail is", () => {
     for (let v = 0; v < n; v++)
       expect(gloss.mask[v] as number).toBeLessThanOrEqual((colour.mask[v] as number) + 1e-6);
-    const input = (age: number) => ({
-      tone: { melanin: 0.5, haemoglobin: 0.5, undertone: 0, override: null },
-      flush: 0.4,
-      lips: 0.5,
-      areola: 0.5,
-      signals: {},
-      age,
-    });
-    const stops = (age: number) => TOENAIL_LAYER.paint(input(age)).stops;
-    // The bed (index 4): the old one is yellower (less blue against red) than the young.
-    const young = stops(25)[4] as [number, number, number];
-    const old = stops(85)[4] as [number, number, number];
-    expect(old[2] / old[0]).toBeLessThan(young[2] / young[0]);
-    // Fold and free edge ends keep their identity: eight stops either way.
-    expect(stops(25)).toHaveLength(8);
-    expect(stops(85)).toHaveLength(8);
+  });
+
+  it("reaches the tip of every toe on both feet: a nail vertex within a centimetre of each tip", () => {
+    for (const side of [0, 1] as const)
+      for (let toe = 1; toe <= 5; toe++) {
+        let tip = Number.NEGATIVE_INFINITY;
+        for (let v = 0; v < n; v++)
+          if (frame.digit[v] === toe && Math.sign(P[v * 3] as number) === (side === 0 ? 1 : -1))
+            tip = Math.max(tip, frame.along[v] as number);
+        let near = 0;
+        for (let v = 0; v < n; v++)
+          if (
+            frame.digit[v] === toe &&
+            Math.sign(P[v * 3] as number) === (side === 0 ? 1 : -1) &&
+            (frame.along[v] as number) > tip - 0.01 &&
+            (colour.mask[v] as number) > 0.02
+          )
+            near++;
+        expect(near, `toe ${toe}, side ${side}`).toBeGreaterThan(0);
+      }
   });
 });

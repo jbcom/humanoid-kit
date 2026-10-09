@@ -128,7 +128,7 @@ describe("the decal material", () => {
     material.setColour([1, 1, 1]);
     const between = (columns(material, 8)[3] as { alpha: number }).alpha;
     expect(between).toBeGreaterThan(0.02);
-    expect(between).toBeLessThanOrEqual(SOFT_FILL * 0.5);
+    expect(between).toBeLessThanOrEqual(SOFT_FILL[0].share * 0.5);
     material.dispose();
   });
 

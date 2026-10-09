@@ -5,10 +5,9 @@
  */
 import { isAdultLayer, type SkinLayer } from "../layers.ts";
 import { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER } from "./adult.ts";
+import { AREA_SKIN_LAYERS } from "./areas.ts";
 import { CREASE_LAYERS } from "./creases.ts";
 import { EXPRESSION_LINE_LAYERS } from "./faceLines.ts";
-import { FOOT_SKIN_LAYERS } from "./feet.ts";
-import { HAND_SKIN_LAYERS } from "./hands/index.ts";
 import { MOUTH_INTERIOR_LAYER } from "./mouth.ts";
 import { AREOLA_LAYER, FLUSH_LAYER, LIPS_LAYER } from "./rest.ts";
 import {
@@ -35,8 +34,7 @@ const BODY_SKIN_LAYERS: readonly SkinLayer[] = [
   LIPS_LAYER,
   AREOLA_LAYER,
   MOUTH_INTERIOR_LAYER,
-  ...HAND_SKIN_LAYERS,
-  ...FOOT_SKIN_LAYERS,
+  ...AREA_SKIN_LAYERS,
   GOOSEBUMP_LAYER,
   HEAT_FLUSH_LAYER,
   EXERTION_FLUSH_LAYER,
@@ -71,6 +69,7 @@ export const SKIN_LAYER_TARGETS: readonly string[] = targetsOf(
   SKIN_LAYERS.filter((l) => !isAdultLayer(l)),
 );
 
+export * from "./areas.ts";
 export * from "./creases.ts";
 export * from "./faceLines.ts";
 export * from "./feet.ts";
