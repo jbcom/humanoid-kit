@@ -38,9 +38,9 @@ import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
 import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
 import {
-  ADULT_ANATOMY_SPEC,
   ADULT_SPEC_MODIFIERS,
   ADULT_SPEC_TARGETS,
+  adultAnatomySpec,
 } from "./lib/adultAnatomySpec.ts";
 import { authoredPoses } from "./lib/authoredPoses.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
@@ -692,7 +692,7 @@ async function main() {
     modifiers: modifiers.filter((m) => isAdultPackTarget(m.hi)),
     sliders: sliders.adult,
     /** Features, skin-layer measurements and shape states: the core names none of these. */
-    anatomy: ADULT_ANATOMY_SPEC,
+    anatomy: adultAnatomySpec(packedFigure),
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 

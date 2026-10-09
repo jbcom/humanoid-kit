@@ -260,6 +260,18 @@ export interface AdultAnatomySpec {
   skinLayers: AdultSkinLayerSpec[];
   /** Shape states of the adult anatomy (arousal), added to the body's `STATE_MORPHS`. */
   stateMorphs: StateMorph[];
+  /**
+   * The body's pelvic faces to refine for an adult figure (`refineGraded`):
+   * the adult surface has finer geometry there than the base body, for the
+   * anatomy to be shaped in. Absent, an adult figure keeps the base surface.
+   */
+  surface?: AdultSurfaceSpec;
+}
+
+/** Faces of the base body to refine and by how much: `levels[i]` for face `faces[i]`. */
+export interface AdultSurfaceSpec {
+  faces: number[];
+  levels: number[];
 }
 
 /** A skin layer's mask is the union of these targets' footprints (`targetMask`). */
