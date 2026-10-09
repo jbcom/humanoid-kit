@@ -1,6 +1,8 @@
 export * from "./bodyArt/decals.ts";
 export * from "./bodyArt/ink.ts";
+export * from "./bodyArt/marks.ts";
 export * from "./bodyArt/sites.ts";
+export * from "./bodyArt/vitiligo.ts";
 export * from "./build/surfaceMesh.ts";
 export * from "./editor/controls.ts";
 export * from "./editor/framing.ts";
@@ -19,6 +21,7 @@ export * from "./model/outfit.ts";
 export * from "./morph/evaluate.ts";
 export * from "./presence/fromEvaluation.ts";
 export * from "./presence/presence.ts";
+export * from "./random.ts";
 export * from "./recipe/agePolicy.ts";
 export * from "./recipe/anatomy.ts";
 export * from "./recipe/bodyArt.ts";

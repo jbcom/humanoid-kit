@@ -1052,7 +1052,7 @@ export function Humanoid({
     // An adult's evaluation waits for the adult surface's topology.
     if (placement && !topology) return;
     let next: BodyArtTexture | null = null;
-    if (placement?.tattoos.length && topology)
+    if (placement && (placement.tattoos.length || placement.marks.length) && topology)
       try {
         next = bakeBodyArt(
           gl,

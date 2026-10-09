@@ -1951,8 +1951,25 @@ age.
 - The browser tests hold the bake to its frame (orientation, the seam, facing
   and reach, a later tattoo over an earlier one) and the shader to `inkSeen`.
 
+**Marks, as built.**
+
+- Marks change what is in the skin, through the skin model, so each reads at
+  every tone. Melanin moves in absolute density, as the lesions do.
+- The marks page holds a signed melanin channel (128 + 127 × melanin, so "no
+  change" is exact in eight bits), added haemoglobin, a scar's smoothness and
+  its raise.
+- The shader multiplies the skin by per-tone ratios raised to those channels.
+  Melanin's density is linear in log albedo, so `ratio^t` moves the density
+  linearly in t. The smoothness and raise go to roughness and relief.
+- Marks add in the bake, so overlapping marks net out; dermal pigment is ink,
+  composited under the tattoos.
+- Vitiligo's patches are seeded marks at the sites non-segmental vitiligo
+  favours, mirrored left to right through the exactly mirrored base mesh.
+- The browser tests hold the bake to `markShape` and the shader to
+  `markedAlbedo`.
+
 **Landed so far:** the recipe field, its validation, the age policy, the
-sites, and tattoos. The marks and the piercings follow in their own commits.
+sites, tattoos and marks. Piercings follow in their own commit.
 
 ### Joint creases (2026-10-09)
 

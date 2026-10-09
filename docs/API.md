@@ -343,6 +343,32 @@ interface BodyArtRecipe {
   `veil` what the dermis above the ink (`INK_DEPTH`) scatters back, bluer than
   red (`dermalVeil()`), and `keep` the light that crosses it twice. The same
   ink darkens with every step of tone and reads cooler than the skin round it.
+- Marks (research/BODY-ART.md C2): a scar, birthmark or vitiligo patch changes
+  what is in the skin. `markChannels(mark): MarkChannels` is what it puts in the
+  marks page at full strength:
+  - `melanin`, signed: down toward `vitiligoAlbedo(tone)`, up by shares of
+    `markMelaninSpan()`;
+  - `haemoglobin`, shares of `PORT_WINE_HAEMOGLOBIN` steps;
+  - a scar's `smooth` and `raise`;
+  - `ink`: dermal pigment, drawn as ink.
+
+  `markRatios(tone)` gives the per-tone ratios the shader raises to those
+  channels, and `markedAlbedo(tone, channels)` the skin under them.
+  `markOutline(mark)` and `markShape(mark, outline, x, y)` give the irregular,
+  seeded outline the bake draws. Constants: `VITILIGO_RESIDUAL`,
+  `CAFE_AU_LAIT_MELANIN`, `NAEVUS_MELANIN`, `SCAR_HAEMOGLOBIN` (the keloids'
+  erythema ratio), `SCAR_RAISE`, `SCAR_SMOOTHNESS`, `DERMAL_MELANIN_INK` and
+  `MARK_OUTLINE`.
+- `vitiligoPatches(assets, vitiligo)`: the seeded patches. Each is a left
+  vertex at a typical site (round the eyes and mouth, backs of the hands,
+  wrists, elbows, knees, tops of the feet) and its mirror image, with more and
+  larger patches at a larger `extent`. `placeBodyArt` turns them into marks of
+  kind `"vitiligo"`, the right side's outline mirrored (a negative `width`).
+- `seededRandom(seed)`: deterministic numbers in [0, 1) (mulberry32), shared by
+  the editor's randomiser and the vitiligo patches.
+- `melaninDensity(tone)` and `melaninFreeAlbedo(tone)` (skin model):
+  `melaninDensityAlbedo` now goes on below the lightest measured skin toward
+  the melanin-free albedo.
 
 ### Evaluation
 

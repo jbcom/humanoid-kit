@@ -8,8 +8,9 @@
 import { quadVertexNormals } from "../build/normals.ts";
 import type { HumanoidAssets } from "../format/assetFormat.ts";
 import type { Vec3 } from "../presence/presence.ts";
-import type { BirthmarkKind, BodyArtRecipe, Vitiligo } from "../recipe/bodyArt.ts";
+import type { BirthmarkKind, BodyArtRecipe } from "../recipe/bodyArt.ts";
 import { resolveAnchor } from "./sites.ts";
+import { vitiligoPatches } from "./vitiligo.ts";
 
 export interface DecalFrame {
   /** On the skin, metres, in the figure's rest space. */
@@ -30,23 +31,23 @@ export interface PlacedTattoo extends DecalFrame {
 }
 
 export interface PlacedMark extends DecalFrame {
-  kind: "scar" | BirthmarkKind;
+  kind: "scar" | BirthmarkKind | "vitiligo";
   /** Metres along the decal's up (a scar's length, a birthmark's size). */
   length: number;
-  /** Metres along its right. */
+  /** Metres along its right; negative mirrors the outline (a patch's image on the other side). */
   width: number;
-  /** A scar's maturity (0 fresh, 1 mature); 1 for a birthmark. */
+  /** A scar's maturity (0 fresh, 1 mature); 1 for other marks. */
   maturity: number;
-  /** A scar's raise; 0 for a birthmark. */
+  /** A scar's raise; 0 for other marks. */
   raised: number;
+  /** Seeds an irregular outline. */
   seed: number;
 }
 
-/** A figure's body art resolved onto its shape, ready to bake. */
+/** A figure's body art resolved onto its shape, ready to bake: vitiligo's patches are among its marks. */
 export interface BodyArtPlacement {
   tattoos: PlacedTattoo[];
   marks: PlacedMark[];
-  vitiligo: Vitiligo | null;
 }
 
 const BODY_UP: Vec3 = [0, 1, 0];
@@ -144,7 +145,18 @@ export function placeBodyArt(
         raised: 0,
         seed: b.seed,
       })),
+      ...(art.vitiligo ? vitiligoPatches(assets, art.vitiligo) : []).flatMap((p) =>
+        p.vertices.map((v, side) => ({
+          // Each side's outline is the other's mirror image: turned the other way.
+          ...frame(v, 0),
+          kind: "vitiligo" as const,
+          length: p.size,
+          width: side ? -p.size : p.size,
+          maturity: 1,
+          raised: 0,
+          seed: p.seed,
+        })),
+      ),
     ],
-    vitiligo: art.vitiligo ?? null,
   };
 }
