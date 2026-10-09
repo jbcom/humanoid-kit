@@ -236,6 +236,27 @@ of the result: `docs/evidence/states.md`.
 | Where | Body minus the head zone, palms, soles and areola | B1: arm, thigh and calf measured; "by construction not palms/soles/lips". CHOICE: the face and scalp are left out (no goosebumps are observed there). |
 | How the zones are measured | Skin weights for zones, vertex normals for palm and sole, the existing areola disk | Base mesh data only; see ARCHITECTURE.md, "Skin states". |
 
+### C2. Flush and pallor (`blush`, `exertion`, `heat`, `fear`, `cold`)
+
+The measured part is the colour model, not the states: a state moves the skin
+along the haemoglobin axis of `skinAlbedo`, whose a\* span for the whole axis is
+5.2 (lightest) to 3.1 (deepest), calibrated to ISSA (SKIN-RENDERING.md). Melanin
+attenuation is that model's, not a rule of the layers. No open data gives the
+size of a physiological flush at any skin tone (B2), so every delta is a CHOICE
+bounded by the axis.
+
+| Quantity | Value | Source |
+| --- | --- | --- |
+| Delta (haemoglobin units; 1 = whole axis, a\* of about 5 on light skin) | blush +1, exertion +0.8, heat +0.6, fear −0.7, cold −0.6 (`FLUSH_DELTA`) | CHOICE, limited to ±1, the spread between people, and as large as that allows so a state reads on a full-length figure. Stephen et al. 2009 (B2): raters prefer faces about 2.4 a\* redder (half the axis). |
+| Blush region | cheeks and ears 1, neck 0.8, forehead 0.7, chest 0.5 | Cheeks and forehead go deeper red in a compliment blush (Front Hum Neurosci 2017, B2). Ears, neck and chest: CHOICE. |
+| Exertion region | face 1, neck 0.8, chest 0.7 | CHOICE; cutaneous vasodilation of exercise differs by region (Kondo et al. 1998, B6). |
+| Heat region | the whole body | CHOICE: heat vasodilates skin everywhere. |
+| Fear region | face 1, neck 0.8 | Facial blood flow falls with fright (B2). Weights: CHOICE. |
+| Cold region | hands, feet, ears, nose 1; forearms, shins, cheeks 0.35 to 0.5 | CHOICE: vasoconstriction is strongest in acral skin. |
+| Lips, `cold` | hue −40°, chroma × 0.65, lightness −5 at full signal (`lipStateAlbedo`) | CHOICE: cyanosis. No measurement at any tone. |
+| Lips, `fear` | chroma × 0.55, lightness +3 | CHOICE: blood drawn away. |
+| Colour that is not skin | no change | No haemoglobin to move. |
+
 ## ITEMS I COULD NOT VERIFY / PRIMARY NOT OPENED
 
 - Masters & Johnson 1966 magnitudes; Maravilla MRI clitoral volume percentages; Veale full text; Charkoudian 2003 numbers; Hermanns 2000 primary; Otberg 2004 follicle densities (secondary only); Malaysian periorbital study (search-summary only); NIST dataset details (search-summary only); Kim 2014 volume/issue/page (APL 105, article number guessed as 013504 - treat as unverified; DOI 10.1063/1.4881888 is verified via Crossref); per-site numbers in Korean and Chinese body-map papers (figures only); any deep-skin (V-VI) erythema/a* magnitude for flush, exercise or blush.

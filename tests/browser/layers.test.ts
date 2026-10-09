@@ -26,6 +26,7 @@ import {
   type SkinLayer,
   type SkinPaintInput,
 } from "../../src/surface/layers.ts";
+import { SKIN_LAYERS } from "../../src/surface/regions/index.ts";
 import { type Rgb, skinAlbedo } from "../../src/surface/skinTone.ts";
 
 const SIZE = 64;
@@ -169,14 +170,23 @@ describe("the skin shader's layer stack", () => {
     [1 - u, 0],
   ];
 
-  it("matches applyLayers per pixel", () => {
-    const appearance: SkinPaintInput = {
-      tone: { melanin: 0.5, haemoglobin: 0.5, undertone: 0, override: null },
-      flush: 0.8,
-      lips: 0.5,
-      areola: 0.5,
-      signals: {},
-    };
+  const appearance: SkinPaintInput = {
+    tone: { melanin: 0.5, haemoglobin: 0.5, undertone: 0, override: null },
+    flush: 0.8,
+    lips: 0.5,
+    areola: 0.5,
+    signals: {},
+  };
+
+  /**
+   * The largest difference, over a full-screen quad, between the shader's diffuse
+   * colour and `applyLayers` at the same fields.
+   */
+  function worstDifference(
+    layers: readonly SkinLayer[],
+    appearance: SkinPaintInput,
+    fields: (u: number, v: number) => [number, number][],
+  ): number {
     const plane = new PlaneGeometry(2, 2);
     const uv = plane.getAttribute("uv");
     const source: LayerAtlasSource = {
@@ -232,7 +242,25 @@ describe("the skin shader's layer stack", () => {
     atlas.dispose();
     material.dispose();
     plane.dispose();
+    return worst;
+  }
+
+  it("matches applyLayers per pixel", () => {
     // 8-bit fields and half-float stops: within 1% of full scale.
+    expect(worstDifference(layers, appearance, fields)).toBeLessThan(0.01);
+  });
+
+  it("paints the skin-state layers as applyLayers does, at every signal at once", () => {
+    // Haemoglobin ratios near 1 and a lip colour mixed over the lips: the half-float
+    // stop table must keep them. Masks rise and fall across the quad so every layer shows.
+    const stack = SKIN_LAYERS.filter((l) => l.kind !== "detail" && l.kind !== "surface");
+    const everything: SkinPaintInput = {
+      ...appearance,
+      signals: { blush: 1, exertion: 0.7, heat: 0.5, fear: 0.4, cold: 0.8 },
+    };
+    const worst = worstDifference(stack, everything, (u, v) =>
+      stack.map((_, l) => [l % 2 ? u : v, 0.3 * l]),
+    );
     expect(worst).toBeLessThan(0.01);
   });
 });

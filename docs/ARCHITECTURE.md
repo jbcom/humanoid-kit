@@ -553,6 +553,22 @@ sheets are in `docs/evidence/states.md`.
   pack's layers own that region. Papule height scales with the signal up to the
   largest measured, and its spacing is the follicle density's.
 
+- *Flush and pallor* (`blush`, `exertion`, `heat`, `fear`, `cold`). Each is a
+  multiply layer whose stop is `haemoglobinRatio(tone, delta)`: the skin model's
+  own albedo with more or less haemoglobin, over the albedo at the tone, so the
+  state moves along the measured haemoglobin axis rather than adding a fixed
+  tint. It composes with the rest layers (flush, lips) by multiplication, keeps
+  luminance as the model does, and melanin attenuates it as it attenuates the
+  resting spread: the same delta moves a\* by 5.2 on the lightest skin and 3.1 on
+  the deepest, with no rule of its own for deep skin. The model is linear in
+  haemoglobin, so a state carries it past the figure's own value (a ruddy figure
+  still flushes), limited to the whole measured axis. Regions are zones
+  (`skinZones`), each state its own layer because each has its own region: a
+  blush is cheeks, ears, forehead and neck; exertion the face, neck and chest;
+  heat the whole body; fear the face and neck; cold the extremities. The lips
+  have a mix layer of their own (`lipStateAlbedo`): bluer in the cold, paler
+  in fright.
+
 **Adult-pack layers (design, 2026-10-09; built with the milestone 3 graft
 lane).** Genital-region colour, relief and state layers draw their masks from
 the adult pack's targets, which arrive in the last load stage, after the

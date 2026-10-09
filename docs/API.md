@@ -330,9 +330,23 @@ compute what the renderer will do.
     (21) per cm². Relief is a close-up effect: it fades where a cell is finer
     than about a pixel (a few millimetres), so at full-figure distances the
     skin shows nothing.
+  - Flush and pallor, colour layers that multiply the skin by
+    `haemoglobinRatio(tone, FLUSH_DELTA[state])` with the signal as strength:
+    `HEAT_FLUSH_LAYER` (`heat`, the whole body), `EXERTION_FLUSH_LAYER`
+    (`exertion`: face, neck, chest), `BLUSH_LAYER` (`blush`: cheeks, ears,
+    forehead, neck, chest), `COLD_PALLOR_LAYER` (`cold`: hands, feet, ears, nose,
+    a little forearms, shins and cheeks) and `FEAR_PALLOR_LAYER` (`fear`: face
+    and neck), and `LIP_STATE_LAYER` (`cold` turns the lips bluer, `fear` paler:
+    `lipStateAlbedo(tone, depth, cold, fear)`). `haemoglobinRatio(tone, delta)`
+    is the skin model's own response to `delta` more haemoglobin, in units of the
+    measured axis (limited to ±1, so a state moves the skin no further than the
+    spread people have); melanin attenuates it as it does the resting spread, and
+    a colour that is not human skin (`tone.override`) has none to move. No state
+    layer changes lightness.
   - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones
     (head, hand, thigh, …) as soft per-vertex masks from the skin weights, plus
-    its `front`, `palm` and `sole` fields from the vertex normals and joints, all
+    its `front`, `palm`, `sole`, `forehead` and `neck` fields from the vertex
+    normals, joints and weights, all
     measured from the base mesh and cached per set of assets.
     `buildBoneField(assets, names, zoneOfBone, fallback, smoothing?)` builds
     such a partition for any grouping of the bones (`buildRegionField` is it

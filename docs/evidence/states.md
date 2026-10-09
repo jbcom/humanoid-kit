@@ -29,3 +29,30 @@ Relief is a close-up effect. It is drawn at its true size (2.2 mm between
 bumps) and fades where a bump is finer than about a pixel, so these sheets are
 taken 15 to 30 cm from the skin, and at full-figure distance the skin shows no
 bumps at all.
+
+## Flush and pallor
+
+![Faces at four tones under each state](./states-flush-faces.webp)
+
+Rows: melanin 0.08, 0.35, 0.65, 0.92. Columns: rest, `blush`, `exertion`,
+`heat`, `fear`, `cold`, `cold` and `fear` together, each at 1. Blush reddens
+cheeks, ears, forehead and neck; exertion the whole face; heat a little all
+over; fright takes the colour out of the face; cold leaves the face and turns
+the lips dusky violet, which fright greys. The first sheet of this page had the
+cold lips a saturated violet, like lipstick; they now lose chroma as they turn.
+
+On deep skin the same change is smaller, because the skin model's haemoglobin
+span falls from a\* 5.2 to 3.1 as melanin rises: the bottom row's blush reads on
+the cheeks and not elsewhere. There is no separate rule for it.
+
+![Whole figures at three tones](./states-flush-body.webp)
+
+Rows: melanin 0.15, 0.5, 0.85. Columns: rest, `heat`, `exertion`, `blush`,
+`fear`, `cold`. The whole-body regions read at this distance: heat over the
+body, exertion on the face, neck and chest. The first version of these deltas
+(0.4 to 0.8 of the axis) did not.
+
+![The back of the hand, rest above and cold below](./states-cold-hands.webp)
+
+Top: rest; bottom: `cold` 1, at melanin 0.1, 0.4, 0.7 and 0.92. Hands blanch
+more than the forearm, and rise in goosebumps.

@@ -41,5 +41,5 @@ masked in darker skin. At light tones, flush 1 turns the nose strongly red.
 
 The skin-state signals are drawn by their own layers, with their own sheets in
 `docs/evidence/states.md`; the rest-state regions on this page are layer zero
-beneath them. Goosebumps are drawn; `heat`, `exertion`, `blush` and `fear`'s
-colour and sheen are not yet.
+beneath them. Goosebumps and the colour of every state (flush, pallor, the
+lips) are drawn; sweat sheen is not yet.

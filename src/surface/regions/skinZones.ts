@@ -61,6 +61,13 @@ export interface SkinZones {
   palm: Float32Array;
   /** The soles of the feet. */
   sole: Float32Array;
+  /** The forehead: the front of the head from just above the brows to short of the crown. */
+  forehead: Float32Array;
+  /**
+   * The neck: its bones share the skin of the throat with the head's and the
+   * chest's, so no vertex is mostly neck; a vertex a third neck counts in full.
+   */
+  neck: Float32Array;
 }
 
 const ramp = (lo: number, hi: number, x: number) => {
@@ -165,7 +172,23 @@ export function skinZones(assets: HumanoidAssets): SkinZones {
     palm[v] = (hand[v] as number) * ramp(0, 0.45, nx * dir[0] + ny * dir[1] + nz * dir[2]);
     sole[v] = (foot[v] as number) * ramp(0.35, 0.75, -ny);
   }
-  const zones: SkinZones = { zone, normals, front, palm, sole };
+  // The brow is a little above the eyes' height; the crown, about 12 cm above it.
+  const eye = new Float32Array(3);
+  jointPosition(assets, assets.positions, "eye.L____head", eye, 0);
+  const eyeY = eye[1] as number;
+  const head = zone("head");
+  const forehead = new Float32Array(n);
+  for (let v = 0; v < n; v++) {
+    const y = P[v * 3 + 1] as number;
+    forehead[v] =
+      (head[v] as number) *
+      (front[v] as number) *
+      ramp(eyeY + 0.025, eyeY + 0.05, y) *
+      (1 - ramp(eyeY + 0.09, eyeY + 0.12, y));
+  }
+  const neckBones = zone("neck");
+  const neck = Float32Array.from(neckBones, (w) => ramp(0.1, 0.35, w));
+  const zones: SkinZones = { zone, normals, front, palm, sole, forehead, neck };
   cache.set(assets, zones);
   return zones;
 }
