@@ -27,6 +27,7 @@ import type { PickMap } from "../../worker/client.ts";
 import { type FrameRequest, frameRequest } from "../framing.ts";
 import { AppearancePanel } from "./AppearancePanel.tsx";
 import { CameraRig } from "./CameraRig.tsx";
+import { scrollBehavior } from "./motion.ts";
 import { RegionPanel } from "./RegionPanel.tsx";
 import { ShapePanel } from "./ShapePanel.tsx";
 import { CREATOR_CSS } from "./styles.ts";
@@ -122,12 +123,14 @@ function Toolbar({
   return (
     <div className="hk-toolbar">
       <h2 className="hk-title">{title}</h2>
-      {button("Undo", ICONS.undo, editor.undo, !editor.canUndo)}
-      {button("Redo", ICONS.redo, editor.redo, !editor.canRedo)}
-      {button("Random figure", ICONS.random, () => editor.randomize(randomSeed()), !editor.ready)}
-      {button("Reset figure", ICONS.reset, editor.resetAll)}
-      {button("Save figure", ICONS.save, () => download(editor.recipe))}
-      {button("Load figure", ICONS.load, () => file.current?.click(), !editor.ready)}
+      <div className="hk-actions">
+        {button("Undo", ICONS.undo, editor.undo, !editor.canUndo)}
+        {button("Redo", ICONS.redo, editor.redo, !editor.canRedo)}
+        {button("Random figure", ICONS.random, () => editor.randomize(randomSeed()), !editor.ready)}
+        {button("Reset figure", ICONS.reset, editor.resetAll)}
+        {button("Save figure", ICONS.save, () => download(editor.recipe))}
+        {button("Load figure", ICONS.load, () => file.current?.click(), !editor.ready)}
+      </div>
       <input
         ref={file}
         className="hk-visually-hidden"
@@ -188,6 +191,14 @@ function CreatorBody({
   ];
   // Task ids contain spaces, so element ids use the tab's position.
   const tabElementId = (id: string) => `${tabsId}-tab-${tabs.findIndex((t) => t.id === id)}`;
+  // The selected tab is always on screen in the sideways-scrolling strip,
+  // however it was selected (a tap on the figure picks tabs too).
+  const activeTabElementId = tabElementId(activeTab);
+  useEffect(() => {
+    document
+      .getElementById(activeTabElementId)
+      ?.scrollIntoView({ inline: "nearest", block: "nearest", behavior: scrollBehavior() });
+  }, [activeTabElementId]);
   const reframe = (f: FrameRequest) =>
     setFocus((cur) => (cur.part === f.part && cur.direction === f.direction ? cur : f));
 

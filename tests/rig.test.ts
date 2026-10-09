@@ -236,10 +236,21 @@ describe("body poses", () => {
       const up = [elbow[0] - shoulder[0], elbow[1] - shoulder[1], elbow[2] - shoulder[2]];
       const fromVertical = Math.acos(-(up[1] as number) / Math.hypot(...up));
       expect(fromVertical).toBeLessThan((12 * Math.PI) / 180);
-      // The wrist ends near hip height, just outside the hip joint, not in front of the body.
+      // The elbow bends a little (about 17°), as a relaxed arm does.
+      const fore = [wrist[0] - elbow[0], wrist[1] - elbow[1], wrist[2] - elbow[2]];
+      const bend = Math.acos(
+        ((up[0] as number) * (fore[0] as number) +
+          (up[1] as number) * (fore[1] as number) +
+          (up[2] as number) * (fore[2] as number)) /
+          (Math.hypot(...up) * Math.hypot(...fore)),
+      );
+      expect(bend).toBeGreaterThan((10 * Math.PI) / 180);
+      expect(bend).toBeLessThan((25 * Math.PI) / 180);
+      // The wrist ends near hip height, just outside the hip joint, a little in front.
       expect(Math.abs(wrist[1] - hip[1])).toBeLessThan(0.06);
       expect(Math.abs(wrist[0]) - Math.abs(hip[0])).toBeGreaterThan(0.05);
       expect(Math.abs(wrist[0]) - Math.abs(hip[0])).toBeLessThan(0.15);
+      expect(wrist[2]).toBeGreaterThan(0.03);
       expect(wrist[2]).toBeLessThan(0.12);
     }
   });

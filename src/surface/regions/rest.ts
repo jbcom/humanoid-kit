@@ -7,7 +7,7 @@
  * internal structure (docs/ARCHITECTURE.md, Skin states).
  */
 import type { SkinLayer } from "../layers.ts";
-import { targetMask } from "../layers.ts";
+import { diskMask, targetMask } from "../layers.ts";
 import { areolaAlbedo, lipAlbedo } from "../skinTone.ts";
 
 const maskLayer = (
@@ -49,10 +49,14 @@ export const LIPS_LAYER: SkinLayer = {
   paint: ({ tone, lips }) => ({ strength: 0.9, stops: [lipAlbedo(tone, lips)] }),
 };
 
-/** Areola and nipple colour along the melanin axis (`areolaAlbedo`). */
+/**
+ * Areola and nipple colour along the melanin axis (`areolaAlbedo`), filled
+ * across the disk the nipple-size target outlines (`diskMask`).
+ */
 export const AREOLA_LAYER: SkinLayer = {
   id: "areola",
   blend: "mix",
-  ...maskLayer(["breast/nipple-size-incr"], 0.08, 0.45),
+  targets: ["breast/nipple-size-incr"],
+  fields: (assets) => ({ mask: diskMask(assets, ["breast/nipple-size-incr"]), coord: null }),
   paint: ({ tone, areola }) => ({ strength: 0.9, stops: [areolaAlbedo(tone, areola)] }),
 };

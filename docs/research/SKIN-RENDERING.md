@@ -512,12 +512,23 @@ below anything measured.
 **Areola.** No colour measurement of the areola against surrounding skin was
 found at any skin tone. The one quantitative source is histological: 2.14 times
 the melanin per basement-membrane length of breast skin (Dean et al. 2005,
-N = 20). The model therefore darkens the areola along the measured melanin axis
-(`skinAlbedo` with melanin raised by 0.3 × the slider, capped at the deepest
-anchor) and raises haemoglobin a little. Because it moves along measured skin,
-it converges on the skin at the deep end for the same physical reason lips do:
-the skin already absorbs most of what more melanin would. The size of the shift
-is a choice, not a measurement, and is documented as one.
+N = 20). The model applies that as optical density: the areola's melanin
+density (red channel, above a melanin-free skin reflectance of 0.62, about what
+depigmented skin reflects) is the skin's times 1 + 2 × the slider, so twice at
+the default of 0.5. The tone with that density is found on the measured melanin
+axis. Past the deepest anchor the extra density is extrapolated per channel at
+the rate the two deepest anchors change, and haemoglobin rises a little.
+
+A first version raised the melanin parameter by a fixed 0.3 × the slider and
+capped it at the deepest anchor. On screen that left the areola barely visible
+at every tone and invisible on deep skin (evidence sheet, 2026-10-09). A
+parameter step is not a melanin ratio: deep skin needs a far larger step to
+double its melanin than light skin does. The 0.62 baseline is an approximation,
+not a measurement, and is documented as one.
+
+The mask fills the disk the nipple-size target outlines (`diskMask`). That
+target moves the areola's rim more than its centre, so a mask measured from its
+displacement drew a ring around a skin-coloured nipple.
 
 **Non-natural colours** (fur, scales, fantasy overrides) keep a stylised rule
 (the override darkened and reddened by fixed factors): no human lip data

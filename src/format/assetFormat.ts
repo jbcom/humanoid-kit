@@ -130,7 +130,7 @@ export interface BvhJoint {
 }
 
 export interface BodyPoseEntry {
-  /** Id, the source file's name (`tpose`, `benchmark`). */
+  /** Id, the source file's name (`tpose`, `benchmark`, or an authored pose such as `relaxed`). */
   name: string;
   title: string;
   description: string;

@@ -103,7 +103,9 @@ jobs:
         with:
           name: lighthouse-reports
           path: .lighthouse/reports
-          if-no-files-found: ignore
+          # The reports live under a dot-directory, which upload-artifact skips by default.
+          include-hidden-files: true
+          if-no-files-found: warn
 
   sonarcloud:
     name: SonarCloud analysis
