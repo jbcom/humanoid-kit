@@ -48,6 +48,9 @@ hair colour is the only colour it takes; they carry no growth, hairline, fin or 
 Each style's binary also carries what the packer measured of its cards against the body at rest: growth,
 hairline fade, fin and scalp (`src/surface/hairFields.ts`).
 
+The body hair cards (kind `beard`) come from no source file: `scripts/lib/bodyHairCards.ts` generates them over the body pack's
+base mesh from a seed, with their strand map, so they are this project's own work under its licence.
+
 | Output | SHA-256 |
 | --- | --- |
 | short02.bin.gz | `aa7a311ada7b0a968cd08214326ff122d8b8907aa3195eeb9792a2109603ca81` |
@@ -102,3 +105,5 @@ hairline fade, fin and scalp (`src/surface/hairFields.ts`).
 | eyelashes03.webp | `3264a9da33053d5fd3b80747548e1c962f4abeaa20e311367bbcb2bb04ad3d4d` |
 | eyelashes04.bin.gz | `a405197a9dc7f361e9b5946b0d134aaf64e31b0072cc75151dd8bdd5b41f412c` |
 | eyelashes04.webp | `d545d987b615d55a23b4e637b193ba81ce41cf5edf0c87883cc00a6de5094059` |
+| beard-full.bin.gz | `614128cb80649ff5b9eaf31f6fd2fd94256e08a4fe8033000ec6986f41affab0` |
+| beard-full.webp | `b54fbb4eb11a3a1170e6f406276cb363d8b4d4fdf4b530ca9e8f462f07551d2f` |
