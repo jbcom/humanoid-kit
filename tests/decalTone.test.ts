@@ -10,7 +10,7 @@ import { HAIR_COLOURS, hairAlbedo } from "../src/surface/hairTone.ts";
 import { luminance } from "../src/surface/skinTone.ts";
 
 describe("the colour of brows and lashes", () => {
-  it("brows are the hair's own colour, for every colour the hair can be", () => {
+  it("brows are the hair's own albedo, for every colour the hair can be", () => {
     for (const [name, c] of Object.entries(HAIR_COLOURS))
       expect(browColour(c), name).toEqual(hairAlbedo(c));
   });

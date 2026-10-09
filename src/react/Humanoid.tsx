@@ -51,6 +51,7 @@ import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { createAttachmentMaterial, TeethMaterial } from "../render/attachmentLook.ts";
+import { type BodyArtImages, type BodyArtTexture, bakeBodyArt } from "../render/bodyArtTexture.ts";
 import { DecalMaterial } from "../render/decalMaterial.ts";
 import {
   applyDualSkinning,
@@ -201,6 +202,14 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
    * this height to stand, crouch or kneel on y = 0.
    */
   onGroundOffset?: (offset: number) => void;
+  /**
+   * The images the recipe's tattoos name (`Tattoo.image`), decoded (an
+   * `ImageBitmap`, a loaded `HTMLImageElement`, a canvas). Keep the object
+   * stable (memoise it): a new one bakes the figure's body art again. A tattoo
+   * whose image is missing is reported through `onError` and the figure is
+   * drawn without its body art.
+   */
+  bodyArtImages?: BodyArtImages;
 };
 
 export interface HumanoidPresenceProps {
@@ -433,6 +442,7 @@ function SkinnedPart({
   renderOrder,
   shape,
   dual,
+  shadows = true,
 }: {
   geometry: BufferGeometry;
   material: Material;
@@ -446,14 +456,20 @@ function SkinnedPart({
   shape: object;
   /** Set when the material skins by dual quaternions: shadows and bounds then follow it. */
   dual?: DualBones | null;
+  /**
+   * Whether it casts and receives shadows (default true). A decal lying on the skin
+   * does neither: its quad's outline would shade the skin round it, and the skin
+   * under it would shade it.
+   */
+  shadows?: boolean;
 }) {
   const mesh = useMemo(() => {
     const m = new SkinnedMesh(geometry, material);
     m.bind(skeleton, new Matrix4());
-    m.castShadow = true;
-    m.receiveShadow = true;
+    m.castShadow = shadows;
+    m.receiveShadow = shadows;
     return m;
-  }, [geometry, material, skeleton]);
+  }, [geometry, material, skeleton, shadows]);
   // Shadows are cast by a depth material, which would skin linearly alone; and
   // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
   useEffect(() => {
@@ -632,7 +648,6 @@ function DecalMesh({
   skeleton,
   colour,
   age,
-  multisampled,
   visible,
   report,
   shape,
@@ -642,7 +657,6 @@ function DecalMesh({
   skeleton: Skeleton;
   colour: HairColour;
   age: number;
-  multisampled: boolean;
   visible: boolean;
   report: (e: Error) => void;
   shape: object;
@@ -658,7 +672,6 @@ function DecalMesh({
     material.setColour(kind === "lashes" ? lashColour(c) : browColour(c));
   }, [material, kind, eumelanin, pheomelanin, grey, overrideKey]);
   useEffect(() => material.setOpacity(decalOpacity(kind, age)), [material, kind, age]);
-  useEffect(() => material.setMultisampled(multisampled), [material, multisampled]);
   useEffect(() => () => material.dispose(), [material]);
   return (
     <SkinnedPart
@@ -669,6 +682,7 @@ function DecalMesh({
       part="hair"
       renderOrder={topology.zDepth}
       shape={shape}
+      shadows={false}
     />
   );
 }
@@ -751,6 +765,7 @@ export function Humanoid({
   pose,
   signals,
   onGroundOffset,
+  bodyArtImages,
   ...group
 }: HumanoidProps) {
   const client = useHumanoidClient();
@@ -1026,6 +1041,45 @@ export function Humanoid({
       atlas.release();
     };
   }, [client, gl, ready, skin, report]);
+  // The figure's body art, baked into a texture of its own from each evaluation
+  // that brings some (the placement follows the shape). A new bake replaces the
+  // last without rebuilding the shader; only a figure gaining or losing body art does.
+  const bodyArt = useRef<BodyArtTexture | null>(null);
+  useEffect(() => {
+    if (!figure) return;
+    const placement = figure.bodyArt;
+    const topology = figure.surface === "adult" ? adultSurface : ready?.topology.body;
+    // An adult's evaluation waits for the adult surface's topology.
+    if (placement && !topology) return;
+    let next: BodyArtTexture | null = null;
+    if (placement?.tattoos.length && topology)
+      try {
+        next = bakeBodyArt(
+          gl,
+          {
+            uvs: topology.uvs,
+            index: topology.index,
+            vertexCount: topology.vertexCount,
+            positions: figure.positions,
+            normals: figure.normals,
+          },
+          placement,
+          bodyArtImages ?? {},
+        );
+      } catch (e) {
+        report(e as Error);
+      }
+    skin.setBodyArt(next?.texture ?? null);
+    bodyArt.current?.dispose();
+    bodyArt.current = next;
+  }, [figure, ready, adultSurface, gl, skin, bodyArtImages, report]);
+  useEffect(
+    () => () => {
+      bodyArt.current?.dispose();
+      bodyArt.current = null;
+    },
+    [],
+  );
   // The joints' flexion in the current pose joins the skin's signals
   // (`flex.elbow.L`, …), so crease layers follow any pose or animation.
   const flexion = useMemo(() => {
@@ -1315,7 +1369,6 @@ export function Humanoid({
                 skeleton={rig.skeleton}
                 colour={recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR}
                 age={recipe.macros.age}
-                multisampled={multisampled}
                 visible={shown}
                 report={report}
                 shape={shape}

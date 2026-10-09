@@ -5,14 +5,19 @@
  * lashes, so a figure's hair is one colour and its pigments' physics
  * (`hairAlbedo`) the same everywhere.
  *
- * CHOICE, not measurement. The brows are the hair's own colour. The lashes are
+ * CHOICE, not measurement. The brows are the hair's own colour: the same albedo
+ * the scalp's strand map is tinted to, so a figure's brows and hair are one
+ * colour, and a test renders both under one light and holds their chromaticity
+ * together. (The first sheets read olive and thin, and a lift of the colour was
+ * tried; the cause was the decal casting and receiving shadows against the skin
+ * it lies on, which darkened and shaded it, not its colour.) The lashes are
  * darker by a fixed factor, as lashes are on almost everyone, fair and red-haired
  * people most of all, whose lashes and brows read darker than their scalp hair;
  * a single factor on the albedo keeps a lash's hue and sets its depth. A young
- * child's brows and lashes are finer and fewer: the decal's opacity (the
- * share of its cut-out the renderer keeps) rises from a toddler's to full by the
- * teens, brows later and from sparser than lashes. No source of density by age
- * ships here, so the ramps are art-directed numbers, tuned against
+ * child's brows and lashes are finer and fewer: the decal's opacity (the share of
+ * its mask the renderer keeps) rises from a toddler's to full by the teens,
+ * brows later and from sparser than lashes. No source of density by age ships
+ * here, so the ramps are art-directed numbers, tuned against
  * docs/evidence/brows.md.
  */
 import { type HairColour, hairAlbedo } from "./hairTone.ts";
@@ -23,15 +28,15 @@ export type DecalKind = "brows" | "lashes";
 /** The share of the brows' albedo a lash has. */
 export const LASH_DARKEN = 0.55;
 
-/** The brows' colour: the hair's, linear. */
+/** The brows' colour: the hair's albedo, linear. */
 export function browColour(colour: HairColour): Rgb {
   const [r, g, b] = hairAlbedo(colour);
   return [r, g, b];
 }
 
-/** The lashes' colour: the hair's, darker by `LASH_DARKEN`. */
+/** The lashes' colour: the brows', darker by `LASH_DARKEN`. */
 export function lashColour(colour: HairColour): Rgb {
-  const [r, g, b] = hairAlbedo(colour);
+  const [r, g, b] = browColour(colour);
   return [r * LASH_DARKEN, g * LASH_DARKEN, b * LASH_DARKEN];
 }
 

@@ -20,6 +20,7 @@
  * lines, an old face keeps them.
  */
 import { groupFaces, type HumanoidAssets, jointPosition } from "../../format/assetFormat.ts";
+import { vertexAdjacency } from "../../makehuman/regions.ts";
 import type { DetailLayer } from "../layers.ts";
 import { skinZones } from "./skinZones.ts";
 
@@ -50,7 +51,7 @@ export function expressionAgeFactor(age: number | undefined): number {
 
 /** Depth of a groove at full expression, metres, for a grown face (art-directed). */
 export const EXPRESSION_DEPTH = {
-  forehead: 0.0004,
+  forehead: 0.0007,
   glabella: 0.0005,
   crowsFeet: 0.0003,
   nasolabial: 0.0006,
@@ -59,8 +60,8 @@ export const EXPRESSION_DEPTH = {
 
 /** Grooves across each set's window (art-directed). */
 export const EXPRESSION_COUNT = {
-  forehead: 3,
-  glabella: 2,
+  forehead: 5,
+  glabella: 4,
   crowsFeet: 3,
   nasolabial: 1,
   nose: 3,
@@ -147,6 +148,39 @@ function fieldsOf(
   return { mask, coord };
 }
 
+/** `fieldsOf` with the vertex's index first, for a shape that looks something up per vertex. */
+function fieldsOfVertices(
+  assets: HumanoidAssets,
+  shape: (
+    v: number,
+    x: number,
+    y: number,
+    z: number,
+    nx: number,
+    ny: number,
+    nz: number,
+  ) => [number, number],
+): Fields {
+  const f = frameOf(assets);
+  const mask = new Float32Array(f.n);
+  const coord = new Float32Array(f.n);
+  for (let v = 0; v < f.n; v++) {
+    if (!f.face[v]) continue;
+    const [m, c] = shape(
+      v,
+      f.P[v * 3] as number,
+      f.P[v * 3 + 1] as number,
+      f.P[v * 3 + 2] as number,
+      f.normals[v * 3] as number,
+      f.normals[v * 3 + 1] as number,
+      f.normals[v * 3 + 2] as number,
+    );
+    mask[v] = unit(m);
+    coord[v] = unit(c);
+  }
+  return { mask, coord };
+}
+
 const cached = (build: (assets: HumanoidAssets) => Fields) => {
   const cache = new WeakMap<HumanoidAssets, Fields>();
   return (assets: HumanoidAssets) => {
@@ -159,33 +193,130 @@ const cached = (build: (assets: HumanoidAssets) => Fields) => {
   };
 };
 
+/**
+ * Metres along the skin's own surface (over the mesh's edges) from the brows'
+ * band to each vertex, infinite where the face's skin does not reach. The mesh
+ * is coarse over the forehead and the skull, so a mask built from heights alone
+ * leaks across big triangles up and over the crown; a distance along the skin
+ * from the brow is the anatomy's own measure (frontalis lines stop 5 to 7 cm
+ * above the brows, glabellar lines 1 to 2.5 cm), and a vertex beyond it is zero.
+ */
+const browDistances = new WeakMap<HumanoidAssets, Float32Array>();
+function distanceFromBrows(assets: HumanoidAssets): Float32Array {
+  const cachedDistance = browDistances.get(assets);
+  if (cachedDistance) return cachedDistance;
+  const f = frameOf(assets);
+  const { brow } = landmarks(assets);
+  const { start, list } = vertexAdjacency(f.n, assets.faceVerts);
+  const dist = new Float32Array(f.n).fill(Number.POSITIVE_INFINITY);
+  // A binary heap of [distance, vertex].
+  const heap: [number, number][] = [];
+  const push = (e: [number, number]) => {
+    heap.push(e);
+    let i = heap.length - 1;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if ((heap[parent] as [number, number])[0] <= (heap[i] as [number, number])[0]) break;
+      [heap[parent], heap[i]] = [heap[i] as [number, number], heap[parent] as [number, number]];
+      i = parent;
+    }
+  };
+  const pop = (): [number, number] => {
+    const top = heap[0] as [number, number];
+    const last = heap.pop() as [number, number];
+    if (heap.length > 0) {
+      heap[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < heap.length && (heap[l] as [number, number])[0] < (heap[m] as [number, number])[0])
+          m = l;
+        if (r < heap.length && (heap[r] as [number, number])[0] < (heap[m] as [number, number])[0])
+          m = r;
+        if (m === i) break;
+        [heap[m], heap[i]] = [heap[i] as [number, number], heap[m] as [number, number]];
+        i = m;
+      }
+    }
+    return top;
+  };
+  // The brows' band: the face's skin at the brows' height, either side of the midline.
+  for (let v = 0; v < f.n; v++) {
+    if (!f.face[v]) continue;
+    const x = Math.abs(f.P[v * 3] as number);
+    if (Math.abs((f.P[v * 3 + 1] as number) - brow[1]) < 0.006 && x > 0.008 && x < 0.056) {
+      dist[v] = 0;
+      push([0, v]);
+    }
+  }
+  while (heap.length > 0) {
+    const [d, v] = pop();
+    if (d > (dist[v] as number)) continue;
+    for (let k = start[v] as number; k < (start[v + 1] as number); k++) {
+      const w = list[k] as number;
+      if (!f.face[w]) continue;
+      const step = Math.hypot(
+        (f.P[w * 3] as number) - (f.P[v * 3] as number),
+        (f.P[w * 3 + 1] as number) - (f.P[v * 3 + 1] as number),
+        (f.P[w * 3 + 2] as number) - (f.P[v * 3 + 2] as number),
+      );
+      if (d + step < (dist[w] as number)) {
+        dist[w] = d + step;
+        push([d + step, w]);
+      }
+    }
+  }
+  browDistances.set(assets, dist);
+  return dist;
+}
+
 /** Horizontal lines across the forehead, above the brows. */
+const FOREHEAD_FROM = 0.01;
+const FOREHEAD_TO = 0.062;
 const forehead = cached((assets) => {
   const { brow } = landmarks(assets);
-  const y0 = brow[1] + 0.022;
-  const y1 = brow[1] + 0.067;
-  return fieldsOf(assets, (x, y, _z, _nx, _ny, nz) => [
-    (1 - smoothstep(0.048, 0.06, Math.abs(x))) *
-      smoothstep(y0 - 0.004, y0 + 0.004, y) *
-      (1 - smoothstep(y1 - 0.004, y1 + 0.004, y)) *
-      smoothstep(0.2, 0.5, nz),
-    (y - y0) / (y1 - y0),
-  ]);
+  const dist = distanceFromBrows(assets);
+  const f = fieldsOfVertices(assets, (v, x, y, _z, _nx, _ny, nz) => {
+    const d = dist[v] as number;
+    if (!Number.isFinite(d)) return [0, 0];
+    return [
+      smoothstep(FOREHEAD_FROM, FOREHEAD_FROM + 0.014, d) *
+        (1 - smoothstep(FOREHEAD_TO - 0.02, FOREHEAD_TO, d)) *
+        // Above the brows only, and fading toward the temples.
+        smoothstep(brow[1] - 0.002, brow[1] + 0.004, y) *
+        (1 - smoothstep(0.048, 0.062, Math.abs(x))) *
+        smoothstep(0.2, 0.5, nz),
+      // The grooves run across the forehead by height, which is smooth over the
+      // coarse mesh where a distance along its edges is not.
+      (y - (brow[1] + FOREHEAD_FROM)) / (FOREHEAD_TO - FOREHEAD_FROM),
+    ];
+  });
+  return f;
 });
 
-/** Vertical furrows between the brows. */
+/** Vertical furrows between the brows: short, from the brows' band up 1 to 2.5 cm. */
 const glabella = cached((assets) => {
-  const { eye, brow } = landmarks(assets);
-  const y0 = eye[1] + 0.014;
-  const y1 = brow[1] + 0.035;
-  const half = 0.018;
-  return fieldsOf(assets, (x, y, _z, _nx, _ny, nz) => [
-    (1 - smoothstep(half - 0.004, half, Math.abs(x))) *
-      smoothstep(y0 - 0.004, y0 + 0.004, y) *
-      (1 - smoothstep(y1 - 0.004, y1 + 0.004, y)) *
-      smoothstep(0.2, 0.5, nz),
-    (x + half) / (2 * half),
-  ]);
+  const { eye } = landmarks(assets);
+  const dist = distanceFromBrows(assets);
+  // Four grooves across 6 cm put them at 0.75 and 2.25 cm either side of the midline;
+  // the mask keeps only the two nearest, a centimetre and a half apart, straight and
+  // near-vertical, and the coordinate runs unclamped across the whole window so the
+  // grooves do not bend where a clamp would flatten it.
+  const half = 0.03;
+  const reach = 0.013;
+  return fieldsOfVertices(assets, (v, x, y, _z, _nx, _ny, nz) => {
+    const d = dist[v] as number;
+    if (!Number.isFinite(d)) return [0, 0];
+    return [
+      (1 - smoothstep(0.012, 0.026, d)) *
+        (1 - smoothstep(reach - 0.004, reach, Math.abs(x))) *
+        smoothstep(eye[1] + 0.008, eye[1] + 0.016, y) *
+        smoothstep(0.2, 0.5, nz),
+      (x + half) / (2 * half),
+    ];
+  });
 });
 
 /**

@@ -65,6 +65,21 @@ describe("the shipped skinning at the joint extremes", () => {
     });
   });
 
+  it("keeps an arm raised past 150° and a trunk folded forward within range", () => {
+    // The benchmark pose's arms go overhead. Linear skinning collapses the shoulder there (girth 5th
+    // percentile 0.17 forward, 0.28 to the side at 170°) and loses 24‰ of volume; the blend holds it.
+    expect(worstP5(at(shipped, "shoulder raise (forward)", 170))).toBeGreaterThan(0.35);
+    expect(worstP5(at(shipped, "shoulder raise (side)", -170))).toBeGreaterThan(0.55);
+    expect(worstDV(at(shipped, "shoulder raise (forward)", 170))).toBeGreaterThan(-18);
+    expect(worstDV(at(shipped, "shoulder raise (side)", -170))).toBeGreaterThan(-8);
+    // The spine's bend is shared along five bones: the belly and back stay within a fifth of their girth
+    // (the volume reads high, since a folded trunk's overlap with the thighs is counted twice).
+    for (const s of at(shipped, "spine flexion", 90)) {
+      expect(s.p5, s.figure).toBeGreaterThan(0.78);
+      expect(s.mean, s.figure).toBeGreaterThan(0.94);
+    }
+  });
+
   it("bulges a bent knee no more than linear skinning does, at the angles a body bends it", () => {
     // A knee is bent far more often than a thigh is twisted: its sides must not balloon.
     linear.forEach((l, i) => {

@@ -764,8 +764,8 @@ mean what they meant there; everything must be testable in Node.
   joint layout, every other channel at rest, packed into the same entries. The
   first is `relaxed`, standing at ease with the arms at the sides, since the
   rest A-pose holds them 42° out; `bent`, `flexed`, `twisted`, `abducted`
-  (the thighs opened 40°), `seated` (the hips and knees at 90°) and `tucked`
-  (the hips at 120°) are the joint extremes the skinning and the creases are
+  (the thighs opened 40°), `seated` (the hips and knees at 90°), `tucked`
+  (the hips at 120°) and `bowed` (the trunk folded 60°) are the joint extremes the skinning and the creases are
   checked at (below), which the pack's benchmark does not reach: it bends no
   elbow, knee or wrist. An expression layers on top of a body pose bone by
   bone.
@@ -828,11 +828,21 @@ corner (`squint`, or 0.6 of `smile`), the nasolabial folds from the nose's wing
 past the mouth's corner (`nasolabial`, or 0.7 of `smile`) and the nose
 bridge's lines (`noseWrinkle`). Where each lies is read from the default
 figure's joints (the brows, the outer corners, the nose's wing), so it follows
-the mesh, and keeps off the lips and the eyeballs (a test holds it); the
+the mesh, and keeps off the lips and the eyeballs (a test holds it). The
+forehead's lines and the furrows are bounded by distance along the skin from
+the brows' band (`distanceFromBrows`: Dijkstra over the mesh's edges), not by
+height, since the mesh is coarse over the forehead and a mask built from heights
+leaked across big triangles up and over the crown on the first sheets: the
+forehead lines (by height, which is smooth over the coarse mesh where a distance along its edges bends the grooves) run from 1 to 6.2 cm above the brows, fading
+toward the temples, and the furrows reach 1 to 2.6 cm above them, two straight near-vertical
+grooves 1.5 cm apart either side of the midline (a coordinate that runs
+unclamped across 6 cm with four grooves, of which the mask keeps the middle two,
+so no clamp bends them), between the brows (frontalis lines stop 5 to 7 cm above the brows, glabellar lines are 1 to
+2.5 cm long; a test holds every layer's mask to its extent). The
 crow's feet and the folds are each one layer for both sides, the coordinate
 being the angle about its own corner and the distance across its own fold, so
 the right is the left reflected and two layers' channels are saved. How many
-lines (1 to 3) and how deep (0.25 to 0.6 mm, against the elbow's 2.8) is
+lines (1 to 5) and how deep (0.25 to 0.7 mm, against the elbow's 2.8) is
 art-directed, since no measurement of facial wrinkle depth or spacing against
 expression is in this repository; the depth grows with age
 (`expressionAgeFactor`: 0.2 at 6, 0.8 at 25, 1 at 40, 1.4 at 70), because a
@@ -868,10 +878,29 @@ one closed surface, wound consistently, so the volume is exact). Worst body for
 | thigh twisted 90° | 0.93 / 0.72 / −34.1‰ | 1.00 / 1.00 / −8.9‰ | 0.97 / 0.83 / −13.9‰ |
 | arm raised forward 130° | 0.81 / 0.41 / −19.4‰ | 0.97 / 0.57 / −2.3‰ | 0.94 / 0.53 / −10.5‰ |
 | arm raised sideways 130° | 0.87 / 0.48 / −9.6‰ | 0.97 / 0.67 / −12.5‰ | 0.96 / 0.67 / −4.6‰ |
-| hip flexed 120° | 0.80 / 0.30 / −35.2‰ | 0.97 / 0.47 / −17.4‰ | 0.95 / 0.42 / −19.8‰ |
+| arm raised forward 170° | 0.76 / 0.17 / −24.1‰ | 0.94 / 0.42 / −3.3‰ | 0.91 / 0.41 / −14.6‰ |
+| arm raised sideways 170° | 0.84 / 0.28 / −8.0‰ | 0.96 / 0.70 / −16.3‰ | 0.95 / 0.63 / −1.2‰ |
+| hip flexed 120° | 0.80 / 0.30 / −35.2‰ | 0.97 / 0.47 / −17.4‰ | 0.86 / 0.36 / −24.0‰ |
+| spine folded forward 90° | 1.02 / 0.88 / −72.6‰ | 1.03 / 0.89 / −66.2‰ | 1.02 / 0.88 / −71.3‰ |
 | hip abducted 45° | 0.98 / 0.70 / −17.1‰ | 1.00 / 0.74 / −15.2‰ | 0.99 / 0.73 / −15.6‰ |
 | knee flexed 120° | 0.81 / 0.22 / −6.4‰ | 0.93 / 0.26 / −2.5‰ | 0.81 / 0.22 / −6.4‰ |
 | elbow flexed 120° | 0.84 / 0.33 / −3.8‰ | 0.91 / 0.31 / −3.9‰ | 0.90 / 0.31 / −3.9‰ |
+
+**The shoulder past 150° and the spine (2026-10-09).** The benchmark pose sends
+the arms overhead, and a trunk can fold; the bench goes to 170° for a raised arm
+and folds the spine 30°, 60° and 90° forward, shared equally along its five
+bones (`bowed` is the 60° pose). At 170° linear skinning collapses the shoulder
+(girth 5th percentile 0.17 forward) and the blend holds it (0.41), with the bulge
+1.29 forward and 1.17 to the side, under the 1.45 the table allows: no change
+is needed, and new gates hold the numbers. The spine folds with a girth 5th
+percentile of 0.88 at 90° (mean 1.02, 95th percentile 1.15) in every scheme, so
+the belly and back keep their size; the volume lost, 71‰ at 90° and 48‰ at 60°
+(about 2.6 L), is first order in the angle (turning only the upper chest by 10°
+loses 9‰), the same under linear skinning (−72.6‰), dual quaternions (−66.2‰)
+and the blend: it is the weights', and none of the shares changes it. It is the
+largest loss in the table, and the one a pose-space corrective (a volume
+restoring inflation of the trunk along its normals, keyed on the spine's flexion)
+would be for, if a figure is seen bowing.
 
 The pack's benchmark pose bends no elbow, knee or wrist, so `flexed` (every
 hinge near its limit) and `twisted` (each limb turned past what a body can) are
@@ -1236,19 +1265,30 @@ four ages, with a test that fails without the lift); lashes are not, since they
 are meant to stand clear of the lid.
 
 **Colour and density** (`src/surface/decalTone.ts`). One hair colour drives all
-three: the brows are `hairAlbedo(colour)`, the lashes the same hue darker by a
-fixed `LASH_DARKEN` (0.55). The mask is white, so the material's colour is the
-only colour it takes. A child's brows and lashes are finer and fewer: the decal's
-opacity, which multiplies the mask's alpha before the material's cut-off (0.35),
-ramps from 0.45 (brows) or 0.7 (lashes) at birth to 1 by 14, so the partial
-strokes go first. **Choices**, not measurements: no source of brow or lash density
-by age ships here, so the numbers are tuned against `docs/evidence/brows.md`.
+three: the brows are `hairAlbedo(colour)`, the scalp's own albedo, the lashes
+0.55 as deep (`LASH_DARKEN`). The mask is white, so the material's colour is the
+only colour it takes. A browser test renders a brow and a scalp card of one colour
+under one light and holds their chromaticity within 0.02 and their brightness
+within a third (the material takes `HairMaterial`'s base specular and sheen, which
+is what keeps dark brown and red hair warm). A child's brows and lashes are finer
+and fewer: the decal's opacity, which multiplies the mask's alpha, ramps from 0.45
+(brows) or 0.7 (lashes) at birth to 1 by 14. Both are **choices**: no source of
+brow or lash density by age ships here, so the numbers are tuned against
+`docs/evidence/brows.md`.
 
-**The material** (`DecalMaterial`, `src/render/decalMaterial.ts`) is a plain
-standard one, not `HairMaterial`: a decal has no growth, hairline fade or fin, and
-the hair material reads a missing one as "dithered away". It cuts by the mask,
-takes its edges as hair does (alpha-to-coverage on a multisampled target, an
-alpha test otherwise) and draws over the skin by a polygon offset.
+**The material** (`DecalMaterial`, `src/render/decalMaterial.ts`) is a physical
+one, not `HairMaterial`: a decal has no growth, hairline fade or fin, and the hair
+material reads a missing one as "dithered away". It **blends** by the mask's alpha
+rather than cutting it out: a brow is a band of hairs thinner than a pixel, and
+the cut-out (alpha test or alpha-to-coverage) kept a stroke or dropped it, so the
+first renders were a few hard pencil lines; blended, a thin stroke keeps the
+partial opacity it covers. A soft fill (two blurs of the mask, a mip each, at 0.9
+and 0.5 of their density) lies under the strokes, the body and the sparse soft edge
+of a real brow. It **casts and receives no shadows**: a decal 2 mm off the skin
+would shade the skin round its quad's outline (a faint halo on the first sheets)
+and be shaded by the skin under it, and that, not its colour, was why a blonde's
+brow read dark and olive. It draws after the skin without writing depth, and over
+it by a polygon offset.
 
 ## Body hair
 
@@ -1867,8 +1907,27 @@ pack's, and is adult-only by construction (`ADULT_ONLY_PIERCING`): the core
 fails closed without naming any adult site. Tattoos and marks apply at every
 age.
 
-**Landed so far:** the recipe field, its validation, the age policy and the
-sites. The texture, the marks and the piercings follow in their own commits.
+**Tattoos, as built.**
+
+- The worker places the body art on each evaluation (`Evaluation.bodyArt`,
+  frames on the morphed control mesh), since only it has the assets that
+  name the sites.
+- `<Humanoid>` bakes the texture from that placement and the evaluated
+  surface (`bakeBodyArt`, `src/render/bodyArtTexture.ts`) with the images the
+  application passes (`bodyArtImages`).
+- A new evaluation rebakes into a new texture that replaces the old in the
+  same uniform, so only a figure gaining or losing body art rebuilds its
+  shader.
+- The projection reaches 30% of the tattoo's longer side off the skin's plane
+  (at least 1 cm) and skips skin facing away from it, so a tattoo on a
+  forearm never lands on the hip behind it.
+- The ink's colour is stored sRGB-encoded so dark inks keep their precision
+  in eight bits.
+- The browser tests hold the bake to its frame (orientation, the seam, facing
+  and reach, a later tattoo over an earlier one) and the shader to `inkSeen`.
+
+**Landed so far:** the recipe field, its validation, the age policy, the
+sites, and tattoos. The marks and the piercings follow in their own commits.
 
 ### Joint creases (2026-10-09)
 
@@ -1947,6 +2006,117 @@ a few bytes.
 colour term, SKIN-STATES.md A2); crease depth varying with age or body fat
 (the recipe's tone parameters reach the paint, but not age or weight); creases
 at the neck, knuckles and torso (no flexion signal exists for them).
+
+### Feet (2026-10-09)
+
+The feet's own skin is one area's layers (`src/surface/regions/feet.ts`), with
+the rest layers before the state layers, so a state acts on them. Sources and
+choices: `docs/research/SKIN-STATES.md` C6.
+
+**Use cases.** A barefoot figure seen from above (toenails, the toes' joints),
+kneeling or seated with the sole turned to the camera, and in a close-up of a
+heel, at every tone and age, a child's to an old person's. The sole is a
+fairness item as the palm is: its colour must not be the back of the foot's
+darkened or lightened by a rule. Shoes hide all of it, so none of it may cost
+anything when shoes are worn beyond the fields every figure shares.
+
+**Decisions.**
+
+- *A frame per foot, from the base mesh.* As for the hands, nothing is added to
+  the frozen mesh. Each foot's frame is its extent (the rearmost point is the
+  heel) and the second toe's tip: `along` runs 0 to 1 from heel to tip, `across`
+  is metres from the axis, positive outward, so the two feet agree. The heel
+  pad, the five metatarsal heads and the big toe's pad are landmarks in it,
+  placed from the skeleton's toe joints. The sole is `skinZones(...).sole`, the
+  foot skin that faces down.
+- *Callus is a layer over the pressure sites, scaled by age.* Gaussian sites
+  weighted as the pressure maps say, a mix toward the sole's colour made paler
+  and yellower in CIELAB (`callusAlbedo`; the sole's colour is the hands'
+  `palmAlbedo`, one owner), on the sole only (`callusAmount(age)`; a small child's
+  sole is soft and the forefoot hardens with age). The age reaches the layer
+  through `SkinPaintInput.age`, which `<Humanoid>` sets from the recipe. The
+  tint and the age curve are choices and say so in C6: no callus colorimetry
+  was found.
+- *A digit frame, shared.* Which toe a vertex lies on, how far along it (from
+  its base joint) and across come from the skeleton's joints alone
+  (`digitFrame`, `src/surface/regions/digitFrame.ts`): the nearest segment of
+  each toe's polyline, with the projections either side of a joint blended so
+  the coordinate runs on smoothly round a bend. It is the computation the
+  hands' frame does for fingers; the toes' frame (`toeFrame`) feeds it the
+  foot's far end as each toe's reference point and the sole as its facing.
+- *Toe joint creases are bands across the toes.* A band of 3 to 7 mm half-width
+  (0.4 of the shorter bone) centred on each joint that is not a tip, on its own
+  side of the toe: fine wrinkles on the top (`toeWrinkleFields`, three to a band,
+  0.12 mm deep as the hands' knuckle wrinkles) and one fold under each joint
+  (`toeCreaseFields`, 0.3 mm as the palm's creases, from birth). The coordinate
+  runs 0 to 1 across the band, so a fold starts and ends flat, and the bands
+  stay a bone's fraction apart so the nearest joint never flips inside one.
+  Depths and counts are choices (C6): no measurement of crease depth was found.
+- *Friction ridges are a function, not a field.* The ridges are 0.4 to 0.6 mm
+  apart on a mesh whose faces are 5 mm, and a field atlas texel is far coarser
+  than a ridge, so no mask, coordinate or phase can carry them: a phase stored
+  at texel resolution would stair-step by whole ridges. The shader evaluates
+  them per pixel instead (`hkRidges`, the mirror of `ridgeHeight` in
+  `src/surface/ridges.ts`), as sparse Gabor noise (Lagae et al. 2009): in each
+  cell of a jittered grid a couple of kernels, each a plane wave across the
+  ridges under an envelope elongated along them with a random phase. The sum is
+  stripes of the given spacing and orientation that run for a few millimetres
+  and then end, split and join where kernels overlap, which is what a
+  fingerprint's minutiae are. No global phase is needed, so no seam in the UV
+  layout can break it. The atlas carries only the orientation, which turns
+  slowly, as the layer's coordinate: its angle (modulo a half turn) over 0 to 1,
+  starting at a seam (`RIDGE_ORIENTATION_SEAM`, 15°). Bilinear filtering between
+  two angles either side of a seam passes through every angle between them the
+  long way round, so the seam is where the sole has the fewest vertices (the UV
+  layout is frozen: the ridge directions in UV lie near 90°), and a test holds
+  the share of neighbouring vertices straddling it under 3%. (Two coordinates of
+  the doubled angle, cos 2θ and sin 2θ, need no seam but need a second layer, and
+  the second layer was a ninth page of the atlas: 4 MB of GPU memory for a
+  pattern that shows only close up.)
+  The orientation is measured in the UV plane (the relief is drawn at p = uv ×
+  metres per UV): per face, each corner's 3D wave direction is taken into the
+  face's plane and through its UV map, and a vertex averages those by area. The
+  wave runs along the foot, bowed by the offset from the foot's axis, and
+  over a toe's pad bowed more so its ridges arch as a fingertip's do. Spacing
+  and relief follow age (a child's finer; relief halves between 40 and 85 as
+  the skin thins). They fade out where finer than a pixel, as every relief
+  does, so they show only close up. Tested: the function's statistics and
+  orientation in node, and in a browser the shader against it (the shading
+  follows the reference's slope at correlation below −0.9).
+- *The feet's skin is painted by the hands' layers, so the atlas stays at eight
+  pages.* As separate layers the feet's seven (callus and its matte, the toes'
+  wrinkles and creases, the toenails and their gloss, the ridges) overlap one
+  another and the hands' on the UV layout, so each took a channel group of its
+  own: nine pages, and no ordering of the layers found better than 28 channels
+  of the body's against the first-fit's 29 (a search of twenty thousand random
+  orders). Features whose masks never meet and that want the same colour model
+  or the same relief share a layer instead (`src/surface/regions/areas.ts`; the
+  hands' own definitions are unchanged and keep their tests): the sole's callus
+  is a term of the `palmoplantar` paint (the coordinate is the callus weight, the
+  layer's second stop the sole's colour made callus by age), the toenails are on
+  `knuckles-nails` (one nail model, one coordinate, the same stops), their gloss
+  on `nail-gloss`, and the toes' wrinkles and creases on `hand-relief`, in its
+  coordinate of ten periods (a wrinkle band is three of them, a crease one) with
+  the depth carried in the mask. Only the ridges, a different pattern, keep a
+  layer of their own, two channels. What sharing costs: no matte surface on
+  callus (a surface layer's sign is the layer's, and nail gloss is the other
+  way), no yellowing of old toenails and no age scaling of the toes' wrinkles
+  (the shared paint has no place for them), all of them choices that were not
+  measured anyway.
+- *Toenails are layers on the top of each toe's end, on the hands' scheme.* The
+  base mesh sculpts a faint plate on the big toe and none on the others, so, as
+  with the fingernails, there is no nail geometry: a coordinate along the nail
+  carries the proximal fold, lunula, bed and free edge as colour stops (the
+  hands' `nailStops` and `nailCoordinate`, so the nail model has one owner), and
+  a surface layer the plate's gloss, duller than a fingernail's. Each toe's nail
+  region is a fraction of its distal flesh, from its last joint to the tip
+  (`TOENAIL_REGION`: 0.82 on the big toe, about two thirds to three quarters on the lesser
+  toes, where the nail is most of the distal phalanx), its half-width a fraction
+  of the toe's own radius, and it faces up and curls over at the tip. (The toe's
+  `under` is taken from the middle of its flesh: the skeleton's line lies near
+  the little toe's upper surface, which put its nail on the wrong side.) A
+  lesser toe's nail has only a vertex or
+  two inside it on a 5 mm mesh, so its edge is as coarse as the hands' is.
 
 ## Parallel work: the base contract
 

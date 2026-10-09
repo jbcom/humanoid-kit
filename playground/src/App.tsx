@@ -1,5 +1,5 @@
 import { OrbitControls } from "@react-three/drei";
-import { Canvas, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { createRecipe, HumanoidWorkerClient, type Recipe } from "humanoid-kit";
 import { HumanoidCreator } from "humanoid-kit/editor";
 import {
@@ -12,14 +12,17 @@ import {
 } from "humanoid-kit/react";
 import { bodyPack } from "humanoid-kit-body";
 import { hairPack } from "humanoid-kit-hair";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
+  type DirectionalLight,
   type Mesh,
   NeutralToneMapping,
   type ToneMapping,
+  Vector3,
 } from "three";
+import { tattooImages } from "./tattooImages";
 import { Walk } from "./Walk";
 
 async function createClient(): Promise<HumanoidWorkerClient> {
@@ -187,8 +190,64 @@ const TONE_MAPPERS: Record<string, ToneMapping> = {
 };
 
 /**
+ * `?frame=<bone>&view=dx,dy,dz&span=<metres>`: aims the camera at a bone's
+ * posed world position (the skeleton's names, such as `foot.R`, `toe1-1.L`,
+ * `upperarm01.L`, `head`), from the direction `view` points to (from the bone
+ * toward the camera), at the distance that fits `span` metres across the frame.
+ * It follows the bone every frame, so a pose or a recipe swapped in is framed
+ * as it settles. `?light=camera` adds a light at the camera, so a view of the
+ * underside, or of anything the studio's key light does not reach, is lit
+ * head-on; `?light=under` adds one from below.
+ */
+function AutoFrame({
+  bone,
+  view,
+  span,
+}: {
+  bone: string;
+  view: [number, number, number];
+  span: number;
+}) {
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls) as { target: Vector3; update(): void } | null;
+  const scene = useThree((s) => s.scene);
+  const at = useRef(new Vector3());
+  useFrame(() => {
+    const b = scene.getObjectByName(bone);
+    if (!b) return;
+    b.getWorldPosition(at.current);
+    const fov = ((camera as { fov?: number }).fov ?? 35) * (Math.PI / 180);
+    const distance = span / 2 / Math.tan(fov / 2);
+    const dir = new Vector3(...view).normalize();
+    camera.position.copy(at.current).addScaledVector(dir, distance);
+    controls?.target.copy(at.current);
+    controls?.update();
+    camera.lookAt(at.current);
+  });
+  return null;
+}
+
+/** `?light=camera`: a light that follows the camera, and `?light=under`: one from below. */
+function QaLight({ kind }: { kind: "camera" | "under" }) {
+  const camera = useThree((s) => s.camera);
+  const light = useRef<DirectionalLight>(null);
+  useFrame(() => {
+    if (kind === "camera" && light.current) light.current.position.copy(camera.position);
+  });
+  return (
+    <directionalLight
+      ref={light}
+      position={kind === "under" ? [0, -3, 1] : [0, 1, 3]}
+      intensity={kind === "under" ? 2.5 : 3}
+    />
+  );
+}
+
+/**
  * A fixed-camera render for visual QA: `?view=front|side|back|face`, or
- * `?cam=x,y,z,tx,ty,tz` to place the camera exactly; `?tm=agx|neutral|aces`
+ * `?cam=x,y,z,tx,ty,tz` to place the camera exactly, or `?frame=<bone>&view=dx,dy,dz&span=<m>`
+ * to frame a bone by name (`AutoFrame`), with `?light=camera|under` to light what the studio
+ * does not reach; `?tm=agx|neutral|aces`
  * and `?exp=<number>` override tone mapping and exposure for comparisons;
  * `?bg=rrggbb` sets a background key colour; `?face=JawDrop:1,LipsKiss:0.5`
  * poses the face with MakeHuman's face units.
@@ -225,6 +284,10 @@ function Shot() {
   const view = params.get("view") ?? "front";
   const cam = params.get("cam")?.split(",").map(Number);
   const exact = cam?.length === 6 && cam.every(Number.isFinite);
+  const frame = params.get("frame");
+  const frameView = (params.get("view")?.split(",").map(Number) ?? [0, 0, 1]) as number[];
+  const frameSpan = Number(params.get("span") ?? 0.5);
+  const qaLight = params.get("light");
   const preset: Record<
     string,
     { position: [number, number, number]; target: [number, number, number] }
@@ -257,6 +320,14 @@ function Shot() {
       >
         <StudioStage {...(background ? { background } : {})} />
         <SceneProbe />
+        {frame && frameView.length === 3 && frameView.every(Number.isFinite) && (
+          <AutoFrame
+            bone={frame}
+            view={frameView as [number, number, number]}
+            span={Number.isFinite(frameSpan) && frameSpan > 0 ? frameSpan : 0.5}
+          />
+        )}
+        {(qaLight === "camera" || qaLight === "under") && <QaLight kind={qaLight} />}
         <Humanoid
           recipe={recipe}
           pose={pose}
@@ -264,6 +335,7 @@ function Shot() {
           position={[0, lift, 0]}
           onGroundOffset={setLift}
           onSettled={() => setReady(true)}
+          bodyArtImages={tattooImages()}
         />
         <OrbitControls makeDefault target={target} />
       </Canvas>

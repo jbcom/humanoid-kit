@@ -1,3 +1,5 @@
+export * from "./bodyArt/decals.ts";
+export * from "./bodyArt/ink.ts";
 export * from "./bodyArt/sites.ts";
 export * from "./build/surfaceMesh.ts";
 export * from "./editor/controls.ts";

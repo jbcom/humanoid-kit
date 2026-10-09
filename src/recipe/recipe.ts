@@ -111,6 +111,35 @@ export interface Recipe {
   bodyArt?: BodyArtRecipe;
 }
 
+/**
+ * `recipe` with its hair changed by `patch`: the scalp style (`null` for none),
+ * the colour, and the brows and lashes (`null` takes one away). What the patch
+ * leaves out stays, so choosing a style or a colour never loses the brows and
+ * lashes, and a figure with no hair starts from none at the default colour.
+ */
+export function withHair(
+  recipe: Recipe,
+  patch: {
+    style?: string | null;
+    colour?: HairColour;
+    brows?: string | null;
+    lashes?: string | null;
+  },
+): Recipe {
+  const now = recipe.hair;
+  const brows = patch.brows === undefined ? now?.brows : (patch.brows ?? undefined);
+  const lashes = patch.lashes === undefined ? now?.lashes : (patch.lashes ?? undefined);
+  return {
+    ...recipe,
+    hair: {
+      style: patch.style === undefined ? (now?.style ?? null) : patch.style,
+      colour: patch.colour ?? now?.colour ?? { ...DEFAULT_HAIR_COLOUR },
+      ...(brows && { brows }),
+      ...(lashes && { lashes }),
+    },
+  };
+}
+
 export function createRecipe(
   init: {
     macros?: Partial<MacroValues>;

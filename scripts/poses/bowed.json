@@ -1,0 +1,13 @@
+{
+  "name": "bowed",
+  "title": "Bowed",
+  "description": "The trunk folded forward 60° along the spine, each of the five spine bones turned a fifth of it, the legs straight. The check for the belly and back where the spine bends.",
+  "base": "tpose",
+  "rotations": {
+    "spine01": { "Xrotation": 12 },
+    "spine02": { "Xrotation": 12 },
+    "spine03": { "Xrotation": 12 },
+    "spine04": { "Xrotation": 12 },
+    "spine05": { "Xrotation": 12 }
+  }
+}

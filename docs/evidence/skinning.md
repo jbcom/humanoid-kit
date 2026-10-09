@@ -47,6 +47,38 @@ is slight: the front of the hip is a little fuller in the short full woman
 least in the pictures, as in the numbers. The dark streaks on the belly in both
 rows are the fingers' shadows.
 
+## Arms overhead and the trunk bowed
+
+![The benchmark pose: arms overhead on four bodies](./skinning-shoulder-overhead.webp)
+
+The benchmark pose sends the arms overhead past 150°. The shoulders and upper
+arms keep their fullness on all four bodies, with no pinch or candy-wrapper at the
+armpit (girth 5th percentile 0.41 at 170°, linear skinning's 0.17).
+
+![The bowed pose: the trunk folded forward 60° along the spine, four bodies](./skinning-spine-bowed.webp)
+
+The `bowed` pose folds the trunk forward 60° along the spine. The belly, chest and
+back keep their shape and no seam shows. The whole-body volume lost (48‰) is not
+visible as a hollow: it is spread over the trunk and is the same under every
+scheme, so it stays a recorded remainder.
+
+## Hip tucked
+
+![The tucked pose before the thigh's share falls as it swings](./skinning-hip-tucked-before.webp)
+
+Before: the `tucked` pose (each hip flexed 120°, the knees drawn up) on the
+average adult, a muscular man, a short full woman and a ten-year-old. The thigh's
+dual quaternion share is 1 at every flexion, and the front of the hip, where
+the thigh meets the trunk, stands out in a rounded lump.
+
+![The tucked pose after](./skinning-hip-tucked-after.webp)
+
+After: the share falls to a quarter by 120° of swing. The lump at the top of the
+thigh is flatter and the thigh runs into the trunk (girth 95th percentile 1.35
+to 1.12 at 120° in the bench, against linear skinning's 1.05). At the 90° of
+the `seated` pose the two were nearly identical, as the numbers predict (1.30 to
+1.20).
+
 ## Hip abducted
 
 ![The legs opened 40 degrees in the abducted pose, shipped skinning](./skinning-hip-abducted.webp)
@@ -82,7 +114,10 @@ wrapper); ΔV is the change in the whole body's volume in thousandths of it
 | thigh twisted 90° | 0.72 / −34.1‰ | 0.83 / −13.9‰ |
 | arm raised forward 130° | 0.41 / −19.4‰ | 0.53 / −10.5‰ |
 | arm raised sideways 130° | 0.48 / −9.6‰ | 0.67 / −4.6‰ |
-| hip flexed 120° | 0.30 / −35.2‰ | 0.42 / −19.8‰ |
+| arm raised forward 170° | 0.17 / −24.1‰ | 0.41 / −14.6‰ |
+| arm raised sideways 170° | 0.28 / −8.0‰ | 0.63 / −1.2‰ |
+| hip flexed 120° | 0.30 / −35.2‰ | 0.36 / −24.0‰ |
+| spine folded forward 90° | 0.88 / −72.6‰ | 0.88 / −71.3‰ |
 | hip abducted 45° | 0.70 / −17.1‰ | 0.73 / −15.6‰ |
 | knee flexed 120° | 0.22 / −6.4‰ | 0.22 / −6.4‰ |
 | elbow flexed 120° | 0.33 / −3.8‰ | 0.31 / −3.9‰ |

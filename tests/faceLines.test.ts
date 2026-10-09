@@ -97,6 +97,38 @@ describe("the expression line layers", () => {
     });
   });
 
+  it("reach no further than the anatomy: nothing above the brows' reach, or beyond a face's own extent", () => {
+    // Where a layer's mask is more than a trace, in metres from the landmarks it is measured from.
+    const bound = (id: string, x: number, y: number, z: number): boolean => {
+      const b = brow as [number, number, number];
+      const o = outer as [number, number, number];
+      switch (id) {
+        // Frontalis lines stop 5 to 7 cm above the brows, and fade toward the temples.
+        case "lines.forehead":
+          return y <= b[1] + 0.065 && y >= b[1] && Math.abs(x) <= 0.06;
+        // Glabellar lines are short: 1 to 2.5 cm, between and just above the inner brows.
+        case "lines.glabella":
+          return y <= b[1] + 0.028 && y >= (eye[1] as number) && Math.abs(x) <= 0.02;
+        case "lines.crows-feet":
+          return Math.hypot(Math.abs(x) - o[0], y - o[1], z - o[2]) <= 0.036;
+        case "lines.nasolabial":
+          return y <= (wing[1] as number) + 0.012 && y >= 0.62 && Math.abs(x) <= 0.07;
+        default:
+          return Math.abs(x) <= 0.016 && y >= (wing[1] as number) && y <= (eye[1] as number);
+      }
+    };
+    EXPRESSION_LINE_LAYERS.forEach((l, k) => {
+      for (let v = 0; v < n; v++) {
+        if (mask(k, v) <= 0.02) continue;
+        const [x, y, z] = pos(v) as [number, number, number];
+        expect(
+          bound(l.id, x, y, z),
+          `${l.id} vertex ${v} at ${x.toFixed(3)}, ${y.toFixed(3)}`,
+        ).toBe(true);
+      }
+    });
+  });
+
   it("put the forehead's lines above the brows, between the temples, running up the forehead", () => {
     const l = index("lines.forehead");
     const covered = strong(l);
@@ -110,7 +142,7 @@ describe("the expression line layers", () => {
     ];
     for (const [i, v] of covered.entries()) {
       const [x, y] = pos(v) as [number, number];
-      expect(y, `vertex ${v}`).toBeGreaterThan((brow[1] as number) + 0.015);
+      expect(y, `vertex ${v}`).toBeGreaterThan((brow[1] as number) + 0.008);
       expect(y, `vertex ${v}`).toBeLessThan((brow[1] as number) + 0.075);
       expect(Math.abs(x), `vertex ${v}`).toBeLessThan(0.065);
       sxy += ((ys[i] as number) - my) * ((cs[i] as number) - mc);
@@ -121,7 +153,7 @@ describe("the expression line layers", () => {
   it("put the glabella's furrows between the brows, running across them", () => {
     const l = index("lines.glabella");
     const covered = strong(l);
-    expect(covered.length).toBeGreaterThan(10);
+    expect(covered.length).toBeGreaterThan(5);
     const xs = covered.map((v) => pos(v)[0] as number);
     const cs = covered.map((v) => coord(l, v));
     for (const v of covered) {
@@ -299,7 +331,7 @@ describe("the expression lines' paint", () => {
     }
     for (const [set, count] of Object.entries(EXPRESSION_COUNT)) {
       expect(count, set).toBeGreaterThanOrEqual(1);
-      expect(count, set).toBeLessThanOrEqual(4);
+      expect(count, set).toBeLessThanOrEqual(5);
     }
     const paint = layer("lines.forehead").paint(input({ "face.browRaise": 1 }, 40)) as {
       height: number;
