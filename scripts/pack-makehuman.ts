@@ -40,12 +40,19 @@ import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
 import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
 import {
-  ADULT_SPEC_MODIFIERS,
   ADULT_SPEC_TARGETS,
+  ADULT_SPEC_UPSTREAM_MODIFIERS,
   adultAnatomySpec,
 } from "./lib/adultAnatomySpec.ts";
+import {
+  addDetailSliders,
+  authorDetail,
+  DETAIL_MODIFIERS,
+  pelvicBreadth,
+} from "./lib/adultDetail.ts";
 import { authoredPoses } from "./lib/authoredPoses.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
+import { AUTHORING_FIGURE } from "./lib/detail/mound.ts";
 import { symmetrizeFaceUnits } from "./lib/faceUnits.ts";
 import { packHair } from "./lib/packHair.ts";
 import {
@@ -55,6 +62,7 @@ import {
   writePackEntry,
 } from "./lib/packWriter.ts";
 import { buildSliders } from "./lib/sliders.ts";
+import { type EncodedTarget, encodeSparseTarget } from "./lib/targetEncoding.ts";
 
 const USAGE = "usage: node scripts/pack-makehuman.ts <makehuman-data-dir> <system-assets-dir>";
 const DATA: string = (() => {
@@ -225,6 +233,7 @@ function parseTarget(text: string) {
 const isAdultPackTarget = (name: string) =>
   name.startsWith("genitals/") ||
   name.startsWith("pelvis/bulge-") ||
+  name.startsWith("pelvis/mound-") ||
   name.startsWith("stomach/stomach-pregnant-");
 
 /**
@@ -251,14 +260,6 @@ function listTargets(): string[] {
   return out.sort();
 }
 
-interface EncodedTarget {
-  name: string;
-  /** Index deltas, then the x, y and z planes (`TARGET_ENCODING`, before gzip). */
-  chunk: Uint8Array;
-  count: number;
-  scale: number;
-}
-
 /**
  * Encodes targets by name. Upstream ships some targets that move nothing;
  * those are counted and left out.
@@ -272,23 +273,7 @@ function encodeTargets(names: Iterable<string>) {
       empty++;
       continue;
     }
-    let max = 0;
-    for (const q of d) max = Math.max(max, Math.abs(q));
-    const scale = max / 32767 || 1;
-    // Index deltas (indices ascend, so most are 1), then x, y and z planes:
-    // the same numbers, laid out so gzip finds the repetition.
-    const n = idx.length;
-    const chunk = new Uint8Array(n * 8);
-    const view = new DataView(chunk.buffer);
-    let prev = 0;
-    idx.forEach((v, k) => {
-      view.setUint16(k * 2, v - prev, true);
-      prev = v;
-    });
-    d.forEach((q, k) => {
-      view.setInt16(n * 2 + ((k % 3) * n + Math.floor(k / 3)) * 2, Math.round(q / scale), true);
-    });
-    out.set(name, { name, chunk, count: n, scale });
+    out.set(name, encodeSparseTarget(name, idx, d));
   }
   return { targets: out, empty };
 }
@@ -523,7 +508,9 @@ async function main() {
   const adultModifierIds = new Set(
     modifiers.filter((m) => isAdultPackTarget(m.hi)).map((m) => m.id),
   );
-  const missingAdultModifiers = ADULT_SPEC_MODIFIERS.filter((id) => !adultModifierIds.has(id));
+  const missingAdultModifiers = ADULT_SPEC_UPSTREAM_MODIFIERS.filter(
+    (id) => !adultModifierIds.has(id),
+  );
   if (missingAdultModifiers.length)
     throw new Error(
       `adult anatomy modifiers not in the adult pack: ${missingAdultModifiers.join(", ")}`,
@@ -545,12 +532,14 @@ async function main() {
     file: `targets-${id}.bin.gz`,
     ...writeTargetFile(inPack.filter((t) => !isAdultPackTarget(t.name) && fileOf(t.name) === id)),
   }));
-  const adult = writeTargetFile(inPack.filter((t) => isAdultPackTarget(t.name)));
+  // The adult file is written once the figure it is authored against exists: its
+  // generated detail targets (scripts/lib/adultDetail.ts) are placed on the adult
+  // surface's lattice, which needs a model of the body and the control targets.
+  const adultControl = inPack.filter((t) => isAdultPackTarget(t.name));
   for (const f of fs.readdirSync(BODY_OUT))
     if (/^(modifier-)?targets(-[a-z]+)?\.bin(\.gz)?$/.test(f)) fs.rmSync(path.join(BODY_OUT, f));
   fs.rmSync(path.join(ADULT_OUT, "targets.bin"), { force: true });
   for (const f of bodyFiles) fs.writeFileSync(path.join(BODY_OUT, f.file), f.bin);
-  fs.writeFileSync(path.join(ADULT_OUT, TARGETS_FILE), adult.bin);
 
   // Face pose units: BVH frames named by face-poseunits.json framemapping.
   const faceUnits = JSON.parse(read("poseunits/face-poseunits.json")) as { framemapping: string[] };
@@ -686,6 +675,56 @@ async function main() {
     attachments: buffer(attachments.raw),
   });
   const packedModel = new HumanoidModel(packedFigure);
+
+  // The adult pack's generated detail (scripts/lib/adultDetail.ts) is authored on
+  // the adult surface's lattice, so it is placed on a model of this body with the
+  // pack's control targets and the surface spec, before its own targets exist.
+  const controlFile = writeTargetFile(adultControl);
+  const interimAdult = {
+    manifest: {
+      format: 1 as const,
+      kind: "adult-anatomy" as const,
+      topology: TOPOLOGY,
+      bodySha256: bodySha,
+      source,
+      targets: {
+        id: "adult",
+        file: TARGETS_FILE,
+        encoding: TARGET_ENCODING as typeof TARGET_ENCODING,
+        sha256: sha(controlFile.bin),
+        entries: controlFile.entries,
+      },
+      modifiers: modifiers.filter((m) => isAdultPackTarget(m.hi)),
+      sliders: [],
+      anatomy: adultAnatomySpec(packedFigure),
+    },
+    targets: buffer(controlFile.raw),
+  };
+  const authoring = new HumanoidModel(
+    parseHumanoidAssets(
+      {
+        manifest,
+        body: buffer(bodyRaw),
+        targets: Object.fromEntries(bodyFiles.map((f) => [f.id, buffer(f.raw)])),
+        attachments: buffer(attachments.raw),
+      },
+      interimAdult,
+    ),
+  );
+  const lattice = authoring.adultDetailLattice(AUTHORING_FIGURE);
+  if (!lattice) throw new Error("the adult pack has no refined surface to author detail on");
+  const figure = authoring.evaluate(AUTHORING_FIGURE).control;
+  const hip = (a: number, b: number) =>
+    Math.hypot(
+      (figure[a * 3] as number) - (figure[b * 3] as number),
+      (figure[a * 3 + 1] as number) - (figure[b * 3 + 1] as number),
+      (figure[a * 3 + 2] as number) - (figure[b * 3 + 2] as number),
+    );
+  const detail = authorDetail(lattice, pelvicBreadth(joints, hip));
+  const adult = writeTargetFile([...adultControl, ...detail.targets]);
+  fs.writeFileSync(path.join(ADULT_OUT, TARGETS_FILE), adult.bin);
+  addDetailSliders(sliders.adult);
+
   const occlusion = packedModel
     .bakeAttachmentOcclusion()
     .map((o) => Uint8Array.from(o, (v) => Math.round(Math.min(1, Math.max(0, v)) * 255)));
@@ -715,10 +754,10 @@ async function main() {
       sha256: sha(adult.bin),
       entries: adult.entries,
     },
-    modifiers: modifiers.filter((m) => isAdultPackTarget(m.hi)),
+    modifiers: [...modifiers.filter((m) => isAdultPackTarget(m.hi)), ...DETAIL_MODIFIERS],
     sliders: sliders.adult,
     /** Features, skin-layer measurements and shape states: the core names none of these. */
-    anatomy: adultAnatomySpec(packedFigure),
+    anatomy: adultAnatomySpec(packedFigure, detail.spec),
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 

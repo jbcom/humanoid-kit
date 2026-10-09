@@ -65,6 +65,21 @@ describe("the shipped skinning at the joint extremes", () => {
     });
   });
 
+  it("keeps an arm raised past 150° and a trunk folded forward within range", () => {
+    // The benchmark pose's arms go overhead. Linear skinning collapses the shoulder there (girth 5th
+    // percentile 0.17 forward, 0.28 to the side at 170°) and loses 24‰ of volume; the blend holds it.
+    expect(worstP5(at(shipped, "shoulder raise (forward)", 170))).toBeGreaterThan(0.35);
+    expect(worstP5(at(shipped, "shoulder raise (side)", -170))).toBeGreaterThan(0.55);
+    expect(worstDV(at(shipped, "shoulder raise (forward)", 170))).toBeGreaterThan(-18);
+    expect(worstDV(at(shipped, "shoulder raise (side)", -170))).toBeGreaterThan(-8);
+    // The spine's bend is shared along five bones: the belly and back stay within a fifth of their girth
+    // (the volume reads high, since a folded trunk's overlap with the thighs is counted twice).
+    for (const s of at(shipped, "spine flexion", 90)) {
+      expect(s.p5, s.figure).toBeGreaterThan(0.78);
+      expect(s.mean, s.figure).toBeGreaterThan(0.94);
+    }
+  });
+
   it("bulges a bent knee no more than linear skinning does, at the angles a body bends it", () => {
     // A knee is bent far more often than a thigh is twisted: its sides must not balloon.
     linear.forEach((l, i) => {
@@ -72,6 +87,20 @@ describe("the shipped skinning at the joint extremes", () => {
       const s = shipped[i] as Reading;
       expect(s.p95, `${l.figure}, knee ${l.angle}°`).toBeLessThanOrEqual(l.p95 + 0.02);
     });
+  });
+
+  it("bulges a flexed hip's front no more than 0.15 past linear skinning's, and keeps most of the volume", () => {
+    // Dual quaternion skinning alone bulges it by 0.3 (1.35 against 1.05 at 120°); the thigh's
+    // share falls as it swings (`SKIN_SWING_SHARE`), which is what holds it.
+    linear.forEach((l, i) => {
+      if (l.joint !== "hip flexion") return;
+      const s = shipped[i] as Reading;
+      const name = `${l.figure}, hip ${l.angle}°`;
+      expect(s.p95, name).toBeLessThanOrEqual(l.p95 + 0.15);
+    });
+    // And it keeps what dual quaternions save: at 120° at least a third of the volume
+    // linear skinning loses (it loses 35‰ at the worst body; this holds under 26‰).
+    expect(worstDV(at(shipped, "hip flexion", -120))).toBeGreaterThan(-26);
   });
 
   it("bulges no bent joint past what the table was searched to allow", () => {

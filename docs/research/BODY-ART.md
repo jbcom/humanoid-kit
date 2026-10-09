@@ -1,0 +1,110 @@
+# Body art: tattoos, piercings, scars, birthmarks and vitiligo
+
+Sources and choices for the body-art layers (`src/bodyArt/`; design in
+`docs/ARCHITECTURE.md`, "Body art"). As in `SKIN-STATES.md` Part C, every
+magnitude is either measured, with its source, or marked **CHOICE**.
+
+## Part A: what is known
+
+### A1. Where tattoo ink lies, and why that changes its colour
+
+- Tattoo pigment is free granules and pigment inside phagocytes in the
+  superficial and middle dermis, under an epidermis that is otherwise
+  normal (reflectance confocal microscopy with matching histology; Skin Res
+  Technol 2023, 29:e13318, PMC10316469). So ink is seen through the whole
+  epidermis and its melanin, on the way in and on the way out.
+- Most pigment lies in the papillary dermis and rarely reaches the reticular;
+  it lies deepest on the forearm and shallowest on the deltoid and chest, and
+  shallower in older tattoos (42 tattoos, H&E histology; Olszewska et al.,
+  Histol Histopathol 2023, 38:503, doi:10.14670/HH-18-559; depths in
+  micrometres are only in a bar chart, not quoted here).
+- No colour measurement of tattooed against untattooed skin, at any tone, was
+  found, nor any measurement of black ink's blue cast.
+- Visible light reaches about 2 mm into skin, so only ink shallower than that
+  shows, and the skin's own absorbers (melanin, haemoglobin) and the dermis's
+  scattering shape how it looks (J Biomed Opt 8(1), medical tattooing of
+  nevi).
+- Consequences the model keeps:
+  - the same ink reads darker on deeper skin, by the epidermis's melanin
+    transmittance, squared;
+  - a pigment in the dermis reads bluer than it is, because the dermis above
+    it scatters short wavelengths back before they reach the ink (the Tyndall
+    effect). It is the same reason dermal melanin, a Mongolian spot, is
+    blue-grey and not brown;
+  - the dermis spreads the light a little, so the edges of a line are soft.
+
+### A2. Vitiligo
+
+- Vitiligo is the loss of the epidermis's melanocytes, so a patch is the
+  skin with its melanin taken out: haemoglobin and the dermis remain.
+- The patch is lighter (L\* higher) and less yellow (b\* lower) than both the
+  skin around it and the skin 5 cm away (chromameter, 25 patients; Brazzelli
+  et al. 2008).
+- How much melanin a patch keeps: mexameter melanin index, healthy skin
+  against patch, in 17 patients with stable non-segmental vitiligo (Krotkova
+  et al., CosmoDerma 2025, 5:105, doi:10.25259/CSDM_116_2025, Table 1):
+  cheeks 10.5 / 1.0, forehead 15.1 / 2.3, chest 6.7 / 1.5, back 13.2 / 2.1,
+  forearms 20.0 / 3.1, knees 21.5 / 5.5, backs of the feet 22.9 / 3.8. A
+  patch keeps about a sixth (0.10 to 0.26) of its skin's melanin index.
+- Colour difference between patch and the skin around it: ΔE\*ab 6.8 to 29.5
+  over 16 lesions, mostly 9 to 13, before treatment (digital colorimetry, 11
+  Japanese patients; Toriyama et al., J Dermatol 2021, PMC8453891, Table 2).
+- The vitiligo-to-normal remittance ratio is the standard melanin-free baseline
+  of skin optics (Kollias & Baqer, J Invest Dermatol 1985, 85:38); no
+  tabulated spectrum is open.
+- The contrast is larger on deeper skin, where there is more melanin to lose.
+  That is also why people with Fitzpatrick types V and VI report the largest
+  burden (VALIANT survey).
+
+### A3. Scars
+
+- Scars differ from the skin around them in colour (erythema, which is a* and
+  blood, and pigmentation). Scar-to-normal ratios separate them best (DSM II
+  erythema and melanin ratios; Lee et al., Burns 2020).
+- A hypertrophic scar differs from normal skin in every colour parameter
+  except chroma.
+- Keloids against forearm skin (DermaSpectrometer, 33 keloids in 30 Japanese
+  patients; Aoki et al., J Nippon Med Sch 2016, 83:142, Table 2): erythema
+  index 18.29 against 9.76 (ratio 1.96), melanin index 42.70 against 33.30
+  (ratio 1.32).
+- How far scars differ from the skin round them: total colour difference
+  4.4, 9.6, 17.8 and 29.1 for scars judged a perfect, slight, obvious and gross
+  mismatch (207 scars; Cheon, Lee & Rah, J Craniofac Surg 2010, 21:679).
+  Lightness and redness separate them; yellowness does not.
+- No scar colour by skin type was found.
+- A mature scar has no hair follicles or sweat glands, so it lacks pores and
+  is smoother than the skin around it.
+
+### A4. Birthmarks
+
+- Café-au-lait macule: more epidermal melanin, so a uniform light-brown patch
+  darker than the skin.
+- Congenital melanocytic naevus: melanocytes in the epidermis and dermis, so
+  dark brown.
+- Port-wine stain: dilated dermal capillaries, so more haemoglobin, pink to
+  purple.
+- Dermal melanocytosis (Mongolian spot): melanocytes deep in the dermis, so
+  blue-grey (A1's optics). Most common on the lower back and buttocks of
+  infants of East Asian, African and Indigenous American ancestry.
+- No colour measurement of café-au-lait macules, of port-wine stains against
+  normal skin, or of dermal melanocytosis against normal skin was found; their
+  colours come from what lies in the skin (above), through the skin model.
+
+## Part C: what the layers use
+
+### C1. Ink (`src/bodyArt/ink.ts`, `src/render/bodyArtTexture.ts`)
+
+| Quantity | Value | Source or choice |
+| --- | --- | --- |
+| Ink seen through the epidermis | skin albedo ÷ melanin-free albedo, per channel | Model: ink under a normal epidermis (A1), with the skin model's measured melanin; nothing fitted to tattoos |
+| Melanin-free albedo | the lightest measured skin's chromaticity, red at `MELANIN_FREE_RED_REFLECTANCE` (0.62) | CHOICE: extrapolating the melanin axis turns it violet (b\* < 0), which vitiligo is not (A2: lesions keep b\* > 0) |
+| `INK_DEPTH` | 0.3 mm | CHOICE within the papillary dermis (A1); no depth in micrometres was read |
+| Dermal veil | 1 − exp(−depth / ℓ) per channel, ℓ the skin's scatter length (1.14 mm at 550 nm, spectral slope 1.4) | Skin model (`SKIN_SCATTER`); the blue cast follows from it, not tuned |
+| `INK_SPREAD` | 0.3 mm | CHOICE: light diffusing back from the ink spreads about as far as it travels |
+| Projection reach, facing | 30% of the longer side (≥ 1 cm); cosine ≥ 0.2 | CHOICE |
+
+No tattoo colour was found measured, so the result is checked only for
+direction: the same ink is darker on every deeper tone, and reads cooler (b\*
+lower) than the skin round it. Black ink on the fairest skin comes out L\* 36,
+b\* 1.5; whether that is too light for fresh black ink is for the contact
+sheets to judge.

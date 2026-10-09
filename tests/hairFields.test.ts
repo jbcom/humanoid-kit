@@ -5,8 +5,11 @@ import {
   GROWTH_SCALE,
   HAIRLINE_NEAR,
   hairFields,
+  SCALP_DEPTH,
   SCALP_FALLOFF,
   SCALP_FULL,
+  scalpShade,
+  UV_SCALE_STEPS,
 } from "../src/surface/hairFields.ts";
 
 /**
@@ -59,6 +62,35 @@ function sheet(height: number, size = 0.1) {
   };
 }
 
+describe("scalpShade", () => {
+  const body = scalp();
+  const at = (heights: number[]) =>
+    scalpShade(new Float32Array(heights.flatMap((y) => [0, y, 0])), {
+      positions: body.positions,
+      triangles: body.triangles,
+    });
+
+  it("is 0 on the scalp, 1 from SCALP_DEPTH up, and rises smoothly between", () => {
+    const heights = [
+      0,
+      SCALP_DEPTH / 4,
+      SCALP_DEPTH / 2,
+      (3 * SCALP_DEPTH) / 4,
+      SCALP_DEPTH,
+      2 * SCALP_DEPTH,
+    ];
+    const shade = at(heights);
+    expect(shade[0]).toBe(0);
+    for (let i = 1; i < shade.length; i++)
+      expect(shade[i] as number).toBeGreaterThanOrEqual(shade[i - 1] as number);
+    expect(shade[4]).toBe(1);
+    expect(shade[5]).toBe(1);
+    // Smooth: no step between neighbouring quarters larger than the smoothstep's own slope.
+    for (let i = 1; i < 5; i++)
+      expect((shade[i] as number) - (shade[i - 1] as number)).toBeLessThan(0.75);
+  });
+});
+
 describe("hairFields", () => {
   const body = scalp();
   const eligibleAll = new Uint8Array(body.count).fill(1);
@@ -110,6 +142,18 @@ describe("hairFields", () => {
       expect(fade[2 * 2]).toBe(255);
     });
 
+    it("leaves every card whole when the style opts out of feathering (dense curls have no cut edge to soften)", () => {
+      const card = strip(10, 0.002, 0.2);
+      const { fade } = hairFields({
+        positions: card.positions,
+        faceVerts: card.faceVerts,
+        body: { positions: body.positions, triangles: body.triangles },
+        scalpEligible: eligibleAll,
+        feather: false,
+      });
+      expect(fade.every((f) => f === 255)).toBe(true);
+    });
+
     it("leaves a free edge far from the scalp alone: only a hairline feathers", () => {
       const { fade } = run(strip(4, 0.2, 0.2));
       expect(fade.every((f) => f === 255)).toBe(true);
@@ -151,6 +195,32 @@ describe("hairFields", () => {
       // The middle row sits 0.05 above the scalp: far from it, and interior.
       expect(fade[2]).toBe(255);
       expect(HAIRLINE_NEAR).toBeLessThan(0.05);
+    });
+  });
+
+  describe("uvScale", () => {
+    it("is the card's texture units per metre, from its UVs and its size", () => {
+      // A 0.4 m sheet whose UVs span the unit square: 4 UV units of edge over 1.6 m of edge.
+      const card = sheet(0.001, 0.4);
+      const { uvScale } = hairFields({
+        positions: card.positions,
+        faceVerts: card.faceVerts,
+        body: { positions: body.positions, triangles: body.triangles },
+        scalpEligible: eligibleAll,
+        cutout: {
+          faceUvs: new Uint32Array([0, 1, 2, 3]),
+          uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
+          width: 1,
+          height: 1,
+          alpha: new Uint8Array([255]),
+        },
+      });
+      for (const v of uvScale) expect(v / UV_SCALE_STEPS).toBeCloseTo(2.5, 1);
+    });
+
+    it("is zero without the UVs", () => {
+      const { uvScale } = run(sheet(0.001));
+      expect(uvScale.every((v) => v === 0)).toBe(true);
     });
   });
 
@@ -203,6 +273,37 @@ describe("hairFields", () => {
       expect(weightAt(full)).toBe(255);
       expect(weightAt(half)).toBeGreaterThan(90);
       expect(weightAt(half)).toBeLessThan(165);
+    });
+
+    it("tints only under the hair the cut-out leaves: where the card's texture is clear there is no hair, so no tint", () => {
+      // A sheet 1 mm over the scalp, its texture opaque on the left half (u < 0.5), clear on the right.
+      const card = sheet(0.001, 0.4);
+      const cutout = {
+        faceUvs: new Uint32Array([0, 1, 2, 3]),
+        // Corners (-x,-z), (+x,-z), (+x,+z), (-x,+z) -> u from 0 to 1 across x.
+        uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
+        width: 2,
+        height: 1,
+        alpha: new Uint8Array([255, 0]),
+      };
+      const { scalpVerts } = hairFields({
+        positions: card.positions,
+        faceVerts: card.faceVerts,
+        body: { positions: body.positions, triangles: body.triangles },
+        scalpEligible: eligibleAll,
+        cutout,
+      });
+      const xOf = (v: number) => body.positions[v * 3] as number;
+      expect(scalpVerts.length).toBeGreaterThan(0);
+      for (const v of scalpVerts) expect(xOf(v), `vertex ${v}`).toBeLessThanOrEqual(0.0501);
+      // And without a cut-out the whole sheet's footprint is tinted, both halves.
+      const all = hairFields({
+        positions: card.positions,
+        faceVerts: card.faceVerts,
+        body: { positions: body.positions, triangles: body.triangles },
+        scalpEligible: eligibleAll,
+      });
+      expect(all.scalpVerts.some((v) => xOf(v) > 0.1)).toBe(true);
     });
 
     it("skips ineligible body vertices: a neck or a face is never tinted", () => {

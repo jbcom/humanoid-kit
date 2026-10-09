@@ -9,7 +9,13 @@
  * adult.
  */
 import { isAdult } from "../../recipe/agePolicy.ts";
-import { DEFAULT_EYES, DEFAULT_SKIN, type Recipe, type SkinRecipe } from "../../recipe/recipe.ts";
+import {
+  DEFAULT_EYES,
+  DEFAULT_SKIN,
+  type Recipe,
+  type SkinRecipe,
+  withHair,
+} from "../../recipe/recipe.ts";
 import {
   type BeardStyle,
   type BodyHairGroup,
@@ -100,20 +106,14 @@ export function AppearancePanel({
   const hairStyles = editor.ready?.hair?.styles.filter((s) => s.kind === "scalp") ?? null;
   const style = recipe.hair?.style ?? null;
   const hairColour = recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR;
-  const setHair = (patch: { style?: string | null }, gesture?: string) =>
-    update(
-      (r) => ({
-        ...r,
-        hair: {
-          style: r.hair?.style ?? null,
-          colour: r.hair?.colour ?? { ...DEFAULT_HAIR_COLOUR },
-          ...patch,
-        },
-      }),
-      gesture,
-    );
+  const brows = editor.ready?.hair?.styles.filter((s) => s.kind === "brows") ?? [];
+  const lashes = editor.ready?.hair?.styles.filter((s) => s.kind === "lashes") ?? [];
+  const setHair = (
+    patch: { style?: string | null; brows?: string | null; lashes?: string | null },
+    gesture?: string,
+  ) => update((r) => withHair(r, patch), gesture);
   const setHairColour = (colour: HairColour, gesture?: string) =>
-    update((r) => ({ ...r, hair: { style: r.hair?.style ?? null, colour } }), gesture);
+    update((r) => withHair(r, { colour }), gesture);
   // Body hair: a recipe that sets nothing keeps no `bodyHair` at all.
   const setBodyHair = (change: (b: BodyHairRecipe) => BodyHairRecipe, gesture?: string) =>
     update((r) => {
@@ -224,6 +224,44 @@ export function AppearancePanel({
                 </button>
               ))}
             </fieldset>
+            {brows.length > 0 && (
+              <fieldset className="hk-chips">
+                <legend className="hk-visually-hidden">Eyebrows</legend>
+                {[{ id: null, label: "No eyebrows" }, ...brows].map((s) => (
+                  <button
+                    key={s.id ?? "none"}
+                    type="button"
+                    className="hk-chip"
+                    aria-pressed={(recipe.hair?.brows ?? null) === s.id}
+                    onClick={() => {
+                      onFocus(face);
+                      setHair({ brows: s.id });
+                    }}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </fieldset>
+            )}
+            {lashes.length > 0 && (
+              <fieldset className="hk-chips">
+                <legend className="hk-visually-hidden">Eyelashes</legend>
+                {[{ id: null, label: "No eyelashes" }, ...lashes].map((s) => (
+                  <button
+                    key={s.id ?? "none"}
+                    type="button"
+                    className="hk-chip"
+                    aria-pressed={(recipe.hair?.lashes ?? null) === s.id}
+                    onClick={() => {
+                      onFocus(face);
+                      setHair({ lashes: s.id });
+                    }}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </fieldset>
+            )}
             <fieldset className="hk-swatches">
               <legend>Hair colour</legend>
               {HAIR_PRESETS.map(([id, label]) => {

@@ -11,11 +11,12 @@
  *   shows the halos blending leaves at overlapping cards. Without MSAA the same
  *   cards render with a plain alpha test (hard edges, still correct).
  *   Shadows use the same alpha, so a card's cut-outs cast no shadow.
- * - **Hairlines** are dithered away: each vertex carries a fade (0 on a card
- *   edge that meets the scalp, 1 a centimetre in) and the fragment is discarded
- *   where the fade is below an interleaved-gradient noise of its pixel. A
- *   discard needs neither blending nor MSAA, so a hairline thins the same way on
- *   every GPU, software ones included, and shows the tinted scalp
+ * - **Hairlines** thin out: each vertex carries a fade (0 on a card edge that
+ *   meets the scalp, 1 a centimetre in). With alpha-to-coverage it is the card's
+ *   coverage, a smooth gradient; without it the fragment is discarded where the
+ *   fade is below an interleaved-gradient noise of its pixel, which needs neither
+ *   blending nor MSAA, so a hairline thins the same way on every GPU, software
+ *   ones included. Either way it shows the tinted scalp
  *   (`SkinMaterial.setScalp`) through it.
  * - **Highlights** are Kajiya-Kay: a strand is a thin cylinder, and it reflects
  *   in a cone around its tangent, so a highlight is a band across the strands
@@ -36,6 +37,7 @@ import {
   LinearSRGBColorSpace,
   MeshPhysicalMaterial,
   ShaderChunk,
+  Vector2,
   Vector4,
   type WebGLProgramParametersWithUniforms,
 } from "three";
@@ -51,6 +53,9 @@ export const HAIR_FADE_ATTRIBUTE = "hkHairFade";
 /** One float per vertex: 1 on a card standing out of the scalp (dithered away edge-on), 0 on one lying along it. */
 export const HAIR_FIN_ATTRIBUTE = "hkHairFin";
 
+/** One float per vertex: texture units per metre across the card. */
+export const HAIR_UVSCALE_ATTRIBUTE = "hkHairUvScale";
+
 /** One float per vertex: metres along the card from the hair's root. */
 export const HAIR_GROWTH_ATTRIBUTE = "hkHairGrowth";
 
@@ -59,7 +64,7 @@ export const HAIR_GROWTH_ATTRIBUTE = "hkHairGrowth";
  * the eyes' and teeth's floor: the bake treats cards as solid, so the inside of
  * a sparse style reads darker than strands with air between them would be.
  */
-export const HAIR_OCCLUSION_FLOOR = 0.5;
+export const HAIR_OCCLUSION_FLOOR = 0.65;
 
 /** Texels below this alpha are cut out. */
 export const HAIR_ALPHA_CUTOFF = 0.4;
@@ -72,12 +77,12 @@ export const HAIR_ALPHA_CUTOFF = 0.4;
 export const HAIR_LOBES = {
   primaryShift: -0.12,
   secondaryShift: 0.16,
-  primaryStrength: 0.07,
-  secondaryStrength: 0.45,
-  primaryExponent: 110,
-  secondaryExponent: 28,
+  primaryStrength: 0.008,
+  secondaryStrength: 0.15,
+  primaryExponent: 48,
+  secondaryExponent: 12,
   /** How far the strand map's brightness moves a lobe, per unit of its deviation from the mean. */
-  shiftJitter: 1.2,
+  shiftJitter: 0.45,
 } as const;
 
 /**
@@ -91,8 +96,50 @@ export const HAIR_LOBES = {
  */
 export const HAIR_EDGE_ON = { from: 0.3, to: 0.8 } as const;
 
+/**
+ * The most a hair pixel may exceed its diffuse by (the base specular, the fibre
+ * sheen and both strand lobes together), at any strand direction and light. Real
+ * hair's specular is a low, broad sheen, never a mirror-like patch; dark hair's
+ * diffuse is so small that its absolute specular is already about twice it, so
+ * three times is the line a mirror-like patch (ten and more) would cross.
+ * Browser-tested on analytic geometry.
+ */
+export const HIGHLIGHT_OVER_DIFFUSE = 3;
+
+/**
+ * How a hairline thins. Each strand ends at its own distance from the card's cut
+ * edge (a hash of the strand, so hair thins in wisps, not a screen-door dot grid),
+ * its tip tapering over `taper` of the fade, and the whole edge recedes along its
+ * length by up to `wander` + `slow` of the fade (two slow noises, so no hairline is a
+ * ruled straight line: a wander and a recession). `strands` is strands per metre
+ * across the strand direction (1.5 mm); `wisp` bounds the hash so a card well in is
+ * never thinned (`wisp + taper + wander + slow` is at most 1, so a card at full fade is whole at every strand); `wanderScale` and `slowScale`
+ * are the noises' cycles per metre.
+ */
+export const HAIR_HAIRLINE = {
+  strands: 660,
+  wisp: 0.45,
+  wander: 0.2,
+  wanderScale: 25,
+  slow: 0.15,
+  slowScale: 8,
+  taper: 0.2,
+} as const;
+
+/** Strength of the glint a bright strand of the strand map throws at the light, whatever the hair's colour. */
+export const HAIR_GLINT = 0.03;
+
 /** Share of the highlight a fluffy style (no direction to its strands) keeps against a combed one. */
 export const FLUFFY_HIGHLIGHT = 0.35;
+
+/**
+ * Roughness of hair with no direction to its strands (frizz scatters wide) and of
+ * perfectly combed hair: it falls linearly with the style's strand coherence.
+ */
+export const HAIR_ROUGHNESS = { fluffy: 0.95, combed: 0.7 } as const;
+
+/** Scales the base microfacet specular (direct and from the environment): hair has no mirror. */
+export const HAIR_SPECULAR_INTENSITY = 0.4;
 
 /** Puts a style's per-vertex occlusion on its geometry for `HairMaterial`. */
 export function setHairOcclusionAttribute(geometry: BufferGeometry, occlusion: Float32Array): void {
@@ -105,7 +152,9 @@ export function setHairStrandAttributes(
   fade: Float32Array,
   growth: Float32Array,
   fin: Float32Array,
+  uvScale: Float32Array,
 ): void {
+  geometry.setAttribute(HAIR_UVSCALE_ATTRIBUTE, new Float32BufferAttribute(uvScale, 1));
   geometry.setAttribute(HAIR_FADE_ATTRIBUTE, new Float32BufferAttribute(fade, 1));
   geometry.setAttribute(HAIR_FIN_ATTRIBUTE, new Float32BufferAttribute(fin, 1));
   geometry.setAttribute(HAIR_GROWTH_ATTRIBUTE, new Float32BufferAttribute(growth, 1));
@@ -123,6 +172,7 @@ const STRAND_LOBES = `
 		vec3 hkT2 = normalize( hkT + geometryNormal * ( ${HAIR_LOBES.secondaryShift.toFixed(3)} + hkShift ) );
 		float hkS1 = sqrt( max( 0.0, 1.0 - pow2( dot( hkT1, hkH ) ) ) );
 		float hkS2 = sqrt( max( 0.0, 1.0 - pow2( dot( hkT2, hkH ) ) ) );
+		reflectedLight.directSpecular += irradiance * ${HAIR_GLINT.toFixed(4)} * hkGloss;
 		reflectedLight.directSpecular += irradiance * hkTStrength * hkLobes.x * (
 			pow( hkS1, hkLobes.z ) * vec3( hkLobes.y ) +
 			pow( hkS2, hkLobes.w ) * material.diffuseContribution * hkLobes.y * ${(HAIR_LOBES.secondaryStrength / HAIR_LOBES.primaryStrength).toFixed(3)} );
@@ -132,7 +182,9 @@ const STRAND_LOBES = `
  * Interleaved gradient noise (Jimenez 2014): a cheap, well-spread per-pixel value
  * in [0, 1) whose dither has no visible pattern at one pixel's scale.
  */
-const NOISE = `float hkNoise( vec2 p ) { return fract( 52.9829189 * fract( dot( p, vec2( 0.06711056, 0.00583715 ) ) ) ); }`;
+const NOISE = `float hkNoise( vec2 p ) { return fract( 52.9829189 * fract( dot( p, vec2( 0.06711056, 0.00583715 ) ) ) ); }
+float hkHash( float n ) { return fract( sin( n * 127.1 ) * 43758.5453 ); }
+float hkSlow( float x ) { return mix( hkHash( floor( x ) ), hkHash( floor( x ) + 1.0 ), smoothstep( 0.0, 1.0, fract( x ) ) ); }`;
 
 /**
  * The strand's tangent in view space: the gradient of growth over the surface,
@@ -165,14 +217,15 @@ export class HairMaterial extends MeshPhysicalMaterial {
    * highlight (x, lower for fluffy styles), the white lobe's strength (y) and
    * both exponents (z, w).
    */
-  readonly hkUniforms: { hkLobes: { value: Vector4 } };
+  readonly hkUniforms: { hkLobes: { value: Vector4 }; hkAcross: { value: Vector2 } };
 
   constructor() {
     super({
       side: DoubleSide,
       // The wide microfacet lobe is only the base: the strand lobes are the highlight.
-      roughness: 0.75,
+      roughness: HAIR_ROUGHNESS.combed,
       metalness: 0,
+      specularIntensity: HAIR_SPECULAR_INTENSITY,
       sheen: 0.35,
       sheenRoughness: 0.6,
       alphaTest: HAIR_ALPHA_CUTOFF,
@@ -188,6 +241,8 @@ export class HairMaterial extends MeshPhysicalMaterial {
           HAIR_LOBES.secondaryExponent,
         ),
       },
+      // Across the strands in texture space (strands along V give U).
+      hkAcross: { value: new Vector2(1, 0) },
     };
   }
 
@@ -207,6 +262,10 @@ export class HairMaterial extends MeshPhysicalMaterial {
    */
   setStrand(strand: { angle: number; coherence: number }): void {
     this.hkUniforms.hkLobes.value.x = FLUFFY_HIGHLIGHT + (1 - FLUFFY_HIGHLIGHT) * strand.coherence;
+    this.hkUniforms.hkAcross.value.set(-Math.sin(strand.angle), Math.cos(strand.angle));
+    // Frizzy hair scatters light wider than combed hair does.
+    this.roughness =
+      HAIR_ROUGHNESS.fluffy + (HAIR_ROUGHNESS.combed - HAIR_ROUGHNESS.fluffy) * strand.coherence;
   }
 
   /**
@@ -232,7 +291,9 @@ varying float vHkFade;
 attribute float ${HAIR_FIN_ATTRIBUTE};
 varying float vHkFin;
 attribute float ${HAIR_GROWTH_ATTRIBUTE};
-varying float vHkGrowth;`,
+varying float vHkGrowth;
+attribute float ${HAIR_UVSCALE_ATTRIBUTE};
+varying float vHkUvScale;`,
       )
       .replace(
         "#include <begin_vertex>",
@@ -240,7 +301,8 @@ varying float vHkGrowth;`,
 	vHkOcclusion = ${HAIR_OCCLUSION_ATTRIBUTE};
 	vHkFade = ${HAIR_FADE_ATTRIBUTE};
 	vHkFin = ${HAIR_FIN_ATTRIBUTE};
-	vHkGrowth = ${HAIR_GROWTH_ATTRIBUTE};`,
+	vHkGrowth = ${HAIR_GROWTH_ATTRIBUTE};
+	vHkUvScale = ${HAIR_UVSCALE_ATTRIBUTE};`,
       );
     for (const chunk of ["alphatest_fragment", "normal_fragment_maps", "map_fragment"])
       if (!shader.fragmentShader.includes(`#include <${chunk}>`))
@@ -255,10 +317,14 @@ varying float vHkGrowth;`,
 varying float vHkFade;
 varying float vHkFin;
 varying float vHkGrowth;
+varying float vHkUvScale;
 uniform vec4 hkLobes;
 vec3 hkT = vec3( 0.0 );
 float hkTStrength = 0.0;
 float hkShift = 0.0;
+float hkKeep = 1.0;
+float hkGloss = 0.0;
+uniform vec2 hkAcross;
 ${NOISE}`,
       )
       // The strand map's brightness moves the highlight, so the band breaks into strands.
@@ -266,7 +332,10 @@ ${NOISE}`,
         "#include <map_fragment>",
         `#include <map_fragment>
 	#ifdef USE_MAP
-		hkShift = ( texture2D( map, vMapUv ).g - 0.4 ) * ${HAIR_LOBES.shiftJitter.toFixed(3)};
+		float hkTexel = texture2D( map, vMapUv ).g;
+		hkShift = ( hkTexel - 0.4 ) * ${HAIR_LOBES.shiftJitter.toFixed(3)};
+		// Only the brightest strands glint, so dark hair still shows its curls under the light.
+		hkGloss = pow( clamp( ( hkTexel - 0.4 ) / 0.6, 0.0, 1.0 ), 2.0 );
 	#endif`,
       )
       .replace(
@@ -275,10 +344,31 @@ ${NOISE}`,
 		// A card seen edge-on is a dark line, not hair: it thins out as it turns away.
 		vec3 hkFlat = normalize( cross( dFdx( vViewPosition ), dFdy( vViewPosition ) ) );
 		float hkFacing = abs( dot( hkFlat, normalize( vViewPosition ) ) );
-		float hkKeep = vHkFade * mix( 1.0, smoothstep( ${HAIR_EDGE_ON.from.toFixed(2)}, ${HAIR_EDGE_ON.to.toFixed(2)}, hkFacing ), vHkFin );
-		if ( hkKeep <= hkNoise( gl_FragCoord.xy ) ) discard;
+		hkKeep = mix( 1.0, smoothstep( ${HAIR_EDGE_ON.from.toFixed(2)}, ${HAIR_EDGE_ON.to.toFixed(2)}, hkFacing ), vHkFin );
+		// A fin turning edge-on is its coverage under alpha-to-coverage, a dither without it.
+		#ifndef ALPHA_TO_COVERAGE
+			if ( hkKeep <= hkNoise( gl_FragCoord.xy ) ) discard;
+		#endif
+		// A hairline thins strand by strand: each ends at a distance of its own, and the edge wanders.
+		#ifdef USE_MAP
+			// Metres across the strands, so a strand is a few millimetres wherever the card's island sits.
+			float hkAcrossM = dot( vMapUv, hkAcross ) / max( vHkUvScale, 0.01 );
+			float hkLine = vHkFade - ${HAIR_HAIRLINE.wander.toFixed(3)} * hkSlow( hkAcrossM * ${HAIR_HAIRLINE.wanderScale.toFixed(1)} ) - ${HAIR_HAIRLINE.slow.toFixed(3)} * hkSlow( hkAcrossM * ${HAIR_HAIRLINE.slowScale.toFixed(1)} + 17.0 );
+			// Each strand's tip tapers over a fraction of the fade: coverage under alpha-to-coverage, a dither without.
+			float hkTip = ${HAIR_HAIRLINE.wisp.toFixed(3)} * hkHash( floor( hkAcrossM * ${HAIR_HAIRLINE.strands.toFixed(1)} ) );
+			hkKeep *= smoothstep( hkTip, hkTip + ${HAIR_HAIRLINE.taper.toFixed(3)}, hkLine );
+			if ( hkKeep <= 0.004 ) discard;
+			#ifndef ALPHA_TO_COVERAGE
+				if ( hkKeep <= hkNoise( gl_FragCoord.xy ) ) discard;
+			#endif
+		#else
+			if ( vHkFade <= hkNoise( gl_FragCoord.xy ) ) discard;
+		#endif
 	}
-	#include <alphatest_fragment>`,
+	#include <alphatest_fragment>
+	#ifdef ALPHA_TO_COVERAGE
+		diffuseColor.a *= hkKeep;
+	#endif`,
       )
       .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>${TANGENT}`)
       .replace(
@@ -289,7 +379,7 @@ ${NOISE}`,
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-hair-2";
+    return "humanoid-kit-hair-4";
   }
 }
 

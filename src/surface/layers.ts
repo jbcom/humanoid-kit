@@ -186,12 +186,15 @@ export interface ColourLayer extends LayerBase {
 
 /**
  * Adds fine relief, computed in the shader at true scale: `bumps` (a jittered
- * field of rounded bumps, as goosebumps) or `creases` (ridges across the
- * layer's coordinate, as at a flexed joint).
+ * field of rounded bumps, as goosebumps), `creases` (ridges across the
+ * layer's coordinate, as at a flexed joint) or `ridges` (friction ridges, a
+ * pattern finer than any field: `src/surface/ridges.ts`): its coordinate is the
+ * ridges' orientation (`ridgeOrientationCoordinate`) and `size` their spacing
+ * in metres.
  */
 export interface DetailLayer extends LayerBase {
   kind: "detail";
-  pattern: "bumps" | "creases";
+  pattern: "bumps" | "creases" | "ridges";
   paint(input: SkinPaintInput): DetailPaint;
 }
 
@@ -222,18 +225,23 @@ export const STOP_COUNT = 8;
  * Stop-table texels per layer: one header and the stops. The header is
  * (strength, kind, a, b): kind 0 mix, 1 multiply (colour layers; the stops
  * follow), 2 bumps and 3 creases (detail; a height, b size), 4 surface
- * (a roughness, b specular), 5 strands (a follicles per cm², b length in mm;
- * texel 1 is the hair's albedo and its diameter in mm, texel 2 (relief height
- * in mm, 1 if the hair is in the skin's albedo, 0, 0)). Lengths are in
- * millimetres so the half-float table keeps their precision.
+ * (a roughness, b specular), 5 ridges (detail; a height, b spacing), 6 strands
+ * (a follicles per cm², b length in mm; texel 1 is the hair's albedo and its
+ * diameter in mm, texel 2 (relief height in mm, 1 if the hair is in the skin's
+ * albedo, 0, 0)). Lengths are in millimetres so the half-float table keeps
+ * their precision.
  */
 export const STOP_TABLE_WIDTH = STOP_COUNT + 1;
 
 /** The header's kind code for a layer. */
 export function layerKindCode(layer: SkinLayer): number {
-  if (layer.kind === "detail") return layer.pattern === "bumps" ? 2 : 3;
+  if (layer.kind === "detail") {
+    if (layer.pattern === "bumps") return 2;
+    if (layer.pattern === "ridges") return 5;
+    return 3;
+  }
   if (layer.kind === "surface") return 4;
-  if (layer.kind === "strands") return 5;
+  if (layer.kind === "strands") return 6;
   return layer.blend === "multiply" ? 1 : 0;
 }
 
@@ -588,7 +596,7 @@ export function applyLayers(
   fields.forEach(([mask, coord], l) => {
     const row = l * STOP_TABLE_WIDTH * 4;
     const kind = Math.round(table[row + 1] as number);
-    if (kind === 5) {
+    if (kind === 6) {
       // Strands, as seen from where each is finer than a pixel: their mean cover,
       // or nothing for hair the skin's measured albedo already holds.
       if ((table[row + 9] as number) > 0.5) return;

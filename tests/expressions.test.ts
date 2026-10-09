@@ -180,6 +180,52 @@ describe("the named expressions on the body", () => {
     }
   });
 
+  it("keep the tongue behind the lower teeth in every expression, at every age", {
+    timeout: 120_000,
+  }, () => {
+    const topology = model.topology();
+    const tongue = topology.attachments.findIndex((a) => a.kind === "tongue");
+    const teeth = topology.attachments.findIndex((a) => a.kind === "teeth");
+    for (const age of [6, 14, 45, 75]) {
+      const ev = model.evaluate(createRecipe({ macros: { age, gender: 0.5 } }));
+      const bones = restBones(assets, ev.control);
+      const place = (index: number, units: Record<string, number>) => {
+        const rest = (ev.attachments[index] as { positions: Float32Array }).positions;
+        const t = topology.attachments[index] as {
+          skinIndex: Uint16Array;
+          skinWeight: Float32Array;
+        };
+        return skinPositions(
+          bones,
+          faceUnitRotations(rig, units),
+          rest,
+          t.skinIndex,
+          t.skinWeight,
+          new Float32Array(rest.length),
+        );
+      };
+      const restTeeth = place(teeth, {});
+      let lo = Number.POSITIVE_INFINITY;
+      let hi = Number.NEGATIVE_INFINITY;
+      for (let v = 1; v < restTeeth.length; v += 3) {
+        lo = Math.min(lo, restTeeth[v] as number);
+        hi = Math.max(hi, restTeeth[v] as number);
+      }
+      for (const e of [{ id: "rest", faceUnits: {} }, ...EXPRESSIONS]) {
+        const t = place(tongue, e.faceUnits);
+        const l = place(teeth, e.faceUnits);
+        let front = Number.NEGATIVE_INFINITY;
+        for (let v = 2; v < t.length; v += 3) front = Math.max(front, t[v] as number);
+        let lowerFront = Number.NEGATIVE_INFINITY;
+        for (let v = 0; v < l.length / 3; v++)
+          if ((restTeeth[v * 3 + 1] as number) < (lo + hi) / 2)
+            lowerFront = Math.max(lowerFront, l[v * 3 + 2] as number);
+        // The tongue never reaches the plane of the lower teeth's fronts: the pink between the lower teeth and lip is gum.
+        expect((lowerFront - front) * 1000, `${e.id} at ${age}`).toBeGreaterThan(0.5);
+      }
+    }
+  });
+
   it("a squint narrows the eyes without closing them", { timeout: 120_000 }, () => {
     const f = figure(45);
     const open = opening(f.pose({}), f.eye("L"));

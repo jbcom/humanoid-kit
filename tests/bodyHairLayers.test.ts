@@ -169,7 +169,7 @@ describe("strand layers in the stop table", () => {
   it("store density per cm², length and width in mm and the hair's albedo", () => {
     expect([...t.subarray(0, 4)]).toEqual([
       expect.closeTo(p.strength, 6),
-      5,
+      6,
       expect.closeTo(p.density, 6),
       expect.closeTo(p.length * 1e3, 6),
     ]);

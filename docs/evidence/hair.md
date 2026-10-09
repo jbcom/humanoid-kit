@@ -41,21 +41,34 @@ The afro's net had two causes, and neither was the source texture alone:
    do. Feathering every card edge near the scalp, the first attempt, cut the afro into the same
    lattice; edges another card lies well over are now excluded from the hairline.
 
-Left: before. Middle: after. Right: after, closer. A few dark patches remain on the afro, where
-curl cards overlap.
+3. The first after-sheets still read poorly: card bands, speckle where the dither thinned
+   fins, and flat dark patches where overlapping cards darkened each other. The fade and the
+   fin angle are now the card's coverage under alpha-to-coverage (a smooth gradient, no speckle;
+   the dither remains for contexts without it), occlusion is a smooth height-above-the-scalp
+   gradient the ray bake only modulates, and the afro opts out of the hairline fade (its roots
+   showed the dark inside of the volume as a band).
+
+The scalp tint is also limited to under the hair the texture leaves (it had painted a flat
+patch over the temple and cheek past the visible hairline) and is built from the skin's own
+colour, so white hair paints no pale patch on deep skin.
+
+Left: before. Middle: after. Right: after, closer. A few darker curl clumps remain in the
+afro's texture.
 
 ## Shading
 
 ![Twelve colours, three-quarter view](./hair-colours.webp)
 
-The highlight is two Kajiya-Kay lobes along the strands: a white one shifted toward the tip and a
-wider one in the pigment's colour shifted the other way, with the strand map's brightness moving
-the shift so the band breaks into strands. The tangent is the gradient of the baked growth, so
-short styles have a highlight across their strands as long ones do. Before, the highlight was one
-smooth GGX sheen. Black, brown and blond hair read as hair with fine glints; white and platinum
-show the strand breakup best. The browser tests measure the lobes on a sphere: strands growing
-upward give a band wider than tall, growing along x the reverse, and a card with no growth gradient
-has none.
+The highlight is two Kajiya-Kay lobes along the strands, low and wide: a faint white one shifted
+toward the tip and a broader one in the pigment's colour shifted the other way, with the strand
+map's brightness moving the shift so the band breaks into strands. Roughness falls with the
+strand coherence (frizz 0.95, combed 0.7) and the base specular is scaled to 0.4. The first
+intensities read as glossy plastic patches on the bobs and side-swept styles; these do not, at any
+of the twelve colours. The tangent is the gradient of the baked growth, so short styles have a
+highlight across their strands as long ones do. A browser test bounds the worst pixel of a sphere,
+at any strand direction and light, to three times its diffuse (broken, a mirror-like lobe reads
+twelve times); browser tests also measure the lobes' band shape (wider than tall for strands
+growing upward, the reverse along x, none without a growth gradient).
 
 ## The coverage gap
 

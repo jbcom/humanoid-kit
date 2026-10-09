@@ -301,8 +301,10 @@ describe("AppearancePanel", () => {
       styles: [
         { id: "short02", label: "Short, tousled", tags: ["short"], kind: "scalp" as const },
         { id: "long01", label: "Long, straight", tags: ["long"], kind: "scalp" as const },
-        // Brows and lashes share the pack but are not hair styles the creator offers.
+        // Brows and lashes share the pack: the creator offers them in their own groups.
         { id: "brow01", label: "Brows, natural", tags: ["brows"], kind: "brows" as const },
+        { id: "brow02", label: "Brows, thin", tags: ["brows"], kind: "brows" as const },
+        { id: "lash01", label: "Lashes, full", tags: ["lashes"], kind: "lashes" as const },
       ],
     };
     const panel = async (info = readyInfo(false, false, hair)) => {
@@ -316,6 +318,35 @@ describe("AppearancePanel", () => {
       );
       return { screen, seen };
     };
+
+    it("offers the brows and lashes in groups of their own, and keeps them when the hair changes", async () => {
+      const { screen, seen } = await panel();
+      await screen.getByRole("button", { name: "Brows, thin" }).click();
+      await expect
+        .element(screen.getByRole("button", { name: "Brows, thin" }))
+        .toHaveAttribute("aria-pressed", "true");
+      await screen.getByRole("button", { name: "Lashes, full" }).click();
+      expect(seen.editor?.recipe.hair?.brows).toBe("brow02");
+      expect(seen.editor?.recipe.hair?.lashes).toBe("lash01");
+      // The scalp style and the colour change under them without losing them.
+      await screen.getByRole("button", { name: "Long, straight" }).click();
+      await screen.getByRole("button", { name: "Black hair" }).click();
+      expect(seen.editor?.recipe.hair?.style).toBe("long01");
+      expect(seen.editor?.recipe.hair?.brows).toBe("brow02");
+      expect(seen.editor?.recipe.hair?.lashes).toBe("lash01");
+      // Each can be taken away alone.
+      await screen.getByRole("button", { name: "No eyebrows" }).click();
+      expect(seen.editor?.recipe.hair?.brows).toBeUndefined();
+      expect(seen.editor?.recipe.hair?.lashes).toBe("lash01");
+    });
+
+    it("offers no brow or lash group when the pack has none", async () => {
+      const { screen } = await panel(
+        readyInfo(false, false, { styles: hair.styles.filter((s) => s.kind === "scalp") }),
+      );
+      expect(screen.getByRole("button", { name: "No eyebrows" }).elements()).toHaveLength(0);
+      expect(screen.getByRole("button", { name: "No eyelashes" }).elements()).toHaveLength(0);
+    });
 
     it("offers no hair controls without a hair pack", async () => {
       const { screen } = await panel(readyInfo());
@@ -334,9 +365,8 @@ describe("AppearancePanel", () => {
         .element(screen.getByRole("button", { name: "Long, straight" }))
         .toHaveAttribute("aria-pressed", "true");
       expect(seen.editor?.recipe.hair?.style).toBe("long01");
-      await expect
-        .element(screen.getByRole("button", { name: "Brows, natural" }))
-        .not.toBeInTheDocument();
+      // A brow is not a scalp style: choosing one leaves the hair as it was.
+      expect(seen.editor?.recipe.hair?.brows).toBeUndefined();
       // Choosing a style keeps the colour, and the default colour is the starting point.
       expect(seen.editor?.recipe.hair?.colour).toEqual(DEFAULT_HAIR_COLOUR);
       await screen.getByRole("button", { name: "None" }).click();

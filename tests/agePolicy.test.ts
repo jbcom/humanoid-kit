@@ -36,7 +36,9 @@ describe("age policy", () => {
     const body = new Set(bodyManifest.targets.flatMap((f) => f.entries.map((e) => e.name)));
     for (const e of adultManifest.targets.entries) expect(body.has(e.name), e.name).toBe(false);
     for (const name of body)
-      expect(name).not.toMatch(/^(genitals\/|pelvis\/bulge-|stomach\/stomach-pregnant-)/);
+      expect(name).not.toMatch(
+        /^(genitals\/|pelvis\/bulge-|pelvis\/mound-|stomach\/stomach-pregnant-)/,
+      );
   });
 
   it("rejects any adult anatomy modifier on a figure under 18", () => {
@@ -87,6 +89,25 @@ describe("age policy", () => {
     expect(minor.modifiers[id]).toBeUndefined();
     expect(adult.modifiers[id]).toBe(1); // input untouched
     expect(withAge(adult, 40).modifiers[id]).toBe(1);
+  });
+
+  it("withAge leaves the breast macros and the body pack's breast modifiers alone: only the adult pack is gated", () => {
+    // Owner direction (c0c6ae2): the body follows MakeHuman at every age, breast development
+    // through adolescence included; the one boundary is the adult anatomy pack. The API docs
+    // once said withAge reset these below 18, which no code ever did.
+    const breast = bodyManifest.modifiers.find((m) => m.id.startsWith("breast/"));
+    expect(breast, "the body pack has a breast modifier").toBeDefined();
+    expect(ADULT_ONLY_MODIFIER((breast as { id: string }).id)).toBe(false);
+    const id = (breast as { id: string }).id;
+    const adult = createRecipe({
+      macros: { age: 30, breastSize: 0.9, breastFirmness: 0.2 },
+      modifiers: { [id]: 0.5 },
+    });
+    const minor = withAge(adult, 12);
+    expect(minor.macros.breastSize).toBe(0.9);
+    expect(minor.macros.breastFirmness).toBe(0.2);
+    expect(minor.modifiers[id]).toBe(0.5);
+    expect(agePolicyViolations(minor)).toEqual([]);
   });
 
   it("rejects an age smuggled into a regional override (JSON can carry what the type forbids)", () => {
