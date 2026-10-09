@@ -3,10 +3,12 @@
  * ray of every style is slow under coverage instrumentation, so it runs in the
  * uninstrumented `bake` project (vitest.config.ts).
  */
+
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { HAIR_STYLES } from "../../scripts/lib/packHair.ts";
+import { cutoutOf, HAIR_STYLES } from "../../scripts/lib/packHair.ts";
 import { HumanoidModel } from "../../src/model/humanoidModel.ts";
-import { hairManifest, loadHairFixtureAssets } from "../hairFixtures.ts";
+import { hairDir, hairManifest, loadHairFixtureAssets } from "../hairFixtures.ts";
 
 describe("the shipped hair occlusion", { timeout: 300_000 }, () => {
   it("is what the code bakes, to a byte: a crop, a long style and one bound to helper-hair", () => {
@@ -29,7 +31,7 @@ describe("the shipped hair occlusion", { timeout: 300_000 }, () => {
     }
   });
 
-  it("carries the growth, fade, fin and scalp the code measures now, to a byte", () => {
+  it("carries the growth, fade, fin and scalp the code measures now, to a byte", async () => {
     const assets = loadHairFixtureAssets();
     const model = new HumanoidModel(assets, { subdivision: 0 });
     for (const s of hairManifest.styles.filter((x) =>
@@ -38,7 +40,11 @@ describe("the shipped hair occlusion", { timeout: 300_000 }, () => {
       const asset = assets.hair?.bound.get(s.id);
       if (!asset?.hair) throw new Error(`${s.id} not loaded`);
       const feather = HAIR_STYLES.find((x) => x.id === s.id)?.feather;
-      const fresh = model.bakeHairFields(asset, feather === undefined ? {} : { feather });
+      const cutout = await cutoutOf(path.join(hairDir, s.material.texture as string));
+      const fresh = model.bakeHairFields(asset, {
+        ...(feather !== undefined && { feather }),
+        cutout,
+      });
       expect(fresh.growth, `${s.id} growth`).toEqual(asset.hair.growth);
       expect(fresh.fade, `${s.id} fade`).toEqual(asset.hair.fade);
       expect(fresh.fin, `${s.id} fin`).toEqual(asset.hair.fin);

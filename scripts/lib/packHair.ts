@@ -169,6 +169,21 @@ export async function writeStrandMap(src: string, dest: string, flatten?: number
 }
 
 /**
+ * A style's texture cut-out as the scalp measurement reads it: the shipped strand
+ * map's alpha at no more than 256 px a side, decoded the same way by the packer
+ * and by the test that re-measures the pack.
+ */
+export async function cutoutOf(webp: string) {
+  const { data, info } = await sharp(webp)
+    .resize({ width: 256, height: 256, fit: "inside", withoutEnlargement: true })
+    .ensureAlpha()
+    .extractChannel(3)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  return { width: info.width, height: info.height, alpha: new Uint8Array(data) };
+}
+
+/**
  * Writes an eyebrow's or eyelash's texture: the source's alpha, with its colour
  * (near black) replaced by white, so the hair colour is the only colour it takes.
  * Its strand direction is none.
@@ -309,6 +324,7 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
       kind === "scalp"
         ? model.bakeHairFields(boundFrom(compiled), {
             ...(spec.feather !== undefined && { feather: spec.feather }),
+            cutout: await cutoutOf(path.join(outDir, textureFile)),
           })
         : {};
     const file = `${spec.id}.bin.gz`;

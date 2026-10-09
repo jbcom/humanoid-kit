@@ -97,6 +97,38 @@ describe("the expression line layers", () => {
     });
   });
 
+  it("reach no further than the anatomy: nothing above the brows' reach, or beyond a face's own extent", () => {
+    // Where a layer's mask is more than a trace, in metres from the landmarks it is measured from.
+    const bound = (id: string, x: number, y: number, z: number): boolean => {
+      const b = brow as [number, number, number];
+      const o = outer as [number, number, number];
+      switch (id) {
+        // Frontalis lines stop 5 to 7 cm above the brows, and fade toward the temples.
+        case "lines.forehead":
+          return y <= b[1] + 0.065 && y >= b[1] && Math.abs(x) <= 0.06;
+        // Glabellar lines are short: 1 to 2.5 cm, between and just above the inner brows.
+        case "lines.glabella":
+          return y <= b[1] + 0.028 && y >= (eye[1] as number) && Math.abs(x) <= 0.02;
+        case "lines.crows-feet":
+          return Math.hypot(Math.abs(x) - o[0], y - o[1], z - o[2]) <= 0.036;
+        case "lines.nasolabial":
+          return y <= (wing[1] as number) + 0.012 && y >= 0.62 && Math.abs(x) <= 0.07;
+        default:
+          return Math.abs(x) <= 0.016 && y >= (wing[1] as number) && y <= (eye[1] as number);
+      }
+    };
+    EXPRESSION_LINE_LAYERS.forEach((l, k) => {
+      for (let v = 0; v < n; v++) {
+        if (mask(k, v) <= 0.02) continue;
+        const [x, y, z] = pos(v) as [number, number, number];
+        expect(
+          bound(l.id, x, y, z),
+          `${l.id} vertex ${v} at ${x.toFixed(3)}, ${y.toFixed(3)}`,
+        ).toBe(true);
+      }
+    });
+  });
+
   it("put the forehead's lines above the brows, between the temples, running up the forehead", () => {
     const l = index("lines.forehead");
     const covered = strong(l);

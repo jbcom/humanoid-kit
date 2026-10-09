@@ -828,7 +828,15 @@ corner (`squint`, or 0.6 of `smile`), the nasolabial folds from the nose's wing
 past the mouth's corner (`nasolabial`, or 0.7 of `smile`) and the nose
 bridge's lines (`noseWrinkle`). Where each lies is read from the default
 figure's joints (the brows, the outer corners, the nose's wing), so it follows
-the mesh, and keeps off the lips and the eyeballs (a test holds it); the
+the mesh, and keeps off the lips and the eyeballs (a test holds it). The
+forehead's lines and the furrows are bounded by distance along the skin from
+the brows' band (`distanceFromBrows`: Dijkstra over the mesh's edges), not by
+height, since the mesh is coarse over the forehead and a mask built from heights
+leaked across big triangles up and over the crown on the first sheets: the
+forehead lines run from 1.4 to 5.8 cm along the skin above the brows, fading
+toward the temples, and the furrows reach 1 to 2.6 cm above them, between the
+brows (frontalis lines stop 5 to 7 cm above the brows, glabellar lines are 1 to
+2.5 cm long; a test holds every layer's mask to its extent). The
 crow's feet and the folds are each one layer for both sides, the coordinate
 being the angle about its own corner and the distance across its own fold, so
 the right is the left reflected and two layers' channels are saved. How many
@@ -1135,7 +1143,9 @@ a coloured texture; everything in the pure core is testable in Node.
   1 on a card standing out of the scalp, 0 on one lying along it (its normal
   against the direction from the nearest scalp point); and the **scalp**, the
   head's body vertices within 11 mm of a card with their density, 1 under a card
-  falling to 0 over 8 mm. Each is a pure function of the packs, so the packer
+  falling to 0 over 8 mm, and only where the card's texture cut-out is opaque at
+  the nearest point (a card's mesh reaches past the hair painted on it, and the
+  first version tinted the skin there: a flat patch over the temple and cheek). Each is a pure function of the packs, so the packer
   bakes it once, like occlusion. A style may opt out of the fade (`feather:
   false`): `afro01`'s dense curls end in a fuzzy edge of their own, and thinned,
   their roots showed the dark inside of the volume as a band.
@@ -1149,8 +1159,10 @@ a coloured texture; everything in the pure core is testable in Node.
   speckle on the afro that read as noise.) The skin shows
   through, so it must not be bare: `SkinMaterial` takes a per-vertex
   `hkScalp` attribute (the style's scalp, carried through the body's stencil like
-  any field) and a uniform colour, and mixes the skin toward 0.9 of the hair's
-  albedo by 0.5 where hair grows (a stubble shade). It is an attribute and not
+  any field) and a uniform colour, and takes the skin toward its own colour in
+  the hair's shade (0.7 of it, with 0.15 of the hair's colour) by up to 0.7 where
+  hair grows: built from the skin, so white hair paints no pale patch on deep skin
+  and black none dark on fair. It is an attribute and not
   a skin layer because a layer's field is rasterised once from the base mesh into
   a shared atlas, and a scalp differs by style. A fin card seen edge-on is a
   hairline-thin dark sliver, and the afro stands 340 loose curl cards out of its
