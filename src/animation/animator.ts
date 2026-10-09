@@ -165,14 +165,22 @@ export class Animator {
     if (!cur) return;
     if (!this.previous) {
       sampleClip(cur.clip, cur.time, this.rotations);
-      if (cur.clip.grounded) this.lock?.apply(this.rotations, this.root);
+      if (cur.clip.grounded) this.plant();
       return;
     }
     const w = smooth(Math.min(1, this.fade.elapsed / this.fade.duration));
     sampleClip(this.previous.clip, this.previous.time, this.a);
     sampleClip(cur.clip, cur.time, this.b);
     blendRotations(this.a, this.b, w, this.rotations);
-    if (cur.clip.grounded || this.previous.clip.grounded)
-      this.lock?.apply(this.rotations, this.root);
+    if (cur.clip.grounded || this.previous.clip.grounded) this.plant();
+  }
+
+  /** Holds the planted feet, and has the figure give way to one its leg could not reach (`FootLock.correction`). */
+  private plant(): void {
+    const lock = this.lock;
+    if (!lock) return;
+    lock.apply(this.rotations, this.root);
+    this.root[0] += lock.correction[0] as number;
+    this.root[1] += lock.correction[1] as number;
   }
 }
