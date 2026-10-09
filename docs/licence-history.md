@@ -348,13 +348,31 @@ Lane is assigned from the pack and category: skins and eye materials match none 
 | `jujube_bag_on_head` | hats01 | <http://www.makehumancommunity.org/node/578> | CC0 | B | all, by page | none required; header says AGPL: jujube_bag_on_head.mhclo, pillow_man.obj | clothing |
 | `jujube_newsboy_cap` | hats01 | <http://www.makehumancommunity.org/node/78> | CC0 | B | all, by page | none required; header says AGPL: jujube_newsboy_cap.mhclo, newsboy_cap.obj | clothing |
 | `kwnet_at_optical_glasses` | glasses01 | <http://www.makehumancommunity.org/node/928> | CC0 | B | all, by page | none required; header says AGPL: m_opticals01.obj, kwnet_at_optical_glasses.mhclo | clothing |
+| `kwnet_at_pantyhose01` | underwear01 | <http://www.makehumancommunity.org/node/927> | CC0 | B | all, by page | none required; header says AGPL: pantyhose01.obj, kwnet_at_pantyhose01.mhclo | clothing |
+| `learning_mma_fighting_gloves` | gloves01 | <http://www.makehumancommunity.org/node/95> | CC0 | B | all, by page | none required; header says AGPL: learning_mma_fighting_gloves.mhclo, mma_gloves.obj | clothing |
+| `marco_105_armsleeve02` | underwear01 | <http://www.makehumancommunity.org/node/352> | CC0 | B | all, by page | none required; header says AGPL: armsleeve02.obj, marco_105_armsleeve02.mhclo | clothing |
+| `marco_105_stocking01` | underwear01 | <http://www.makehumancommunity.org/node/348> | CC0 | B | all, by page | none required; header says AGPL: marco_105_stocking01.mhclo, stocking01.obj | clothing |
+| `marco_105_stocking02` | underwear01 | <http://www.makehumancommunity.org/node/349> | CC0 | B | all, by page | none required; header says AGPL: stocking02.obj, marco_105_stocking02.mhclo | clothing |
 | `o4saken_dagger` | equipment01 | <http://www.makehumancommunity.org/node/809> | CC0 | B | all, by page | none required; header says AGPL: o4saken_dagger.mhclo, dagger.obj | clothing |
+| `punkduck_strappy_lace_thong` | underwear01 | <http://www.makehumancommunity.org/node/1166> | CC0 | B | all, by page | none | clothing |
 | `rehmanpolanski_viking_boots` | suits02 | <http://www.makehumancommunity.org/node/2619> | CC0 | B | all, by page | none required; header says AGPL: bootsviking.obj | clothing |
 | `rehmanpolanski_viking_pants` | suits02 | <http://www.makehumancommunity.org/node/2618> | CC0 | B | all, by page | none required; header says AGPL: pantsviking.obj | clothing |
 | `rehmanpolanski_viking_tunic` | suits02 | <http://www.makehumancommunity.org/node/2617> | CC0 | B | all, by page | none required; header says AGPL: tunicviking.obj | clothing |
 | `scailman_gogo_platform_boots` | shoes01 | <http://www.makehumancommunity.org/node/1467> | CC0 | B | all, by page | none required; header says AGPL: scailman_gogo_platform_boots.mhclo, gogo_boots.obj | clothing |
 | `scailman_semitransparent_water_boots` | shoes01 | <http://www.makehumancommunity.org/node/1778> | CC0 | B | all, by page | none required; header says AGPL: botas_102.obj, scailman_semitransparent_water_boots.mhclo | clothing |
 | `skalldyrssuppe_tube_top_funky_colors` | shirts01 | <http://www.makehumancommunity.org/node/975> | CC0 | B | all, by page | none required; header says AGPL: skalldyrssuppe_tube_top_funky_colors.mhclo, tube_top.obj | clothing |
+| `v0rt3x_armsleeves_black_fishnet_large` | underwear01 | <http://www.makehumancommunity.org/node/305> | CC0 | B | all, by page | none required; header says AGPL: armsleeve_fishnet_large.obj | clothing |
+| `v0rt3x_armsleeves_black_fishnet_medium` | underwear01 | <http://www.makehumancommunity.org/node/304> | CC0 | B | all, by page | none required; header says AGPL: armsleeve_fishnet_medium.obj | clothing |
+| `v0rt3x_armsleeves_black_fishnet_small` | underwear01 | <http://www.makehumancommunity.org/node/303> | CC0 | B | all, by page | none required; header says AGPL: armsleeve_fishnet_small.obj | clothing |
+| `v0rt3x_armsleeves_white_fishnet_large` | underwear01 | <http://www.makehumancommunity.org/node/302> | CC0 | B | all, by page | none required; header says AGPL: armsleeve_white_l.obj | clothing |
+| `v0rt3x_armsleeves_white_fishnet_medium` | underwear01 | <http://www.makehumancommunity.org/node/301> | CC0 | B | all, by page | none required; header says AGPL: armsleeve_white_m.obj | clothing |
+| `v0rt3x_armsleeves_white_fishnet_small` | underwear01 | <http://www.makehumancommunity.org/node/300> | CC0 | B | all, by page | none required; header says AGPL: armsleeve_white_s.obj | clothing |
+| `v0rt3x_stockings_black_fishnet_large` | underwear01 | <http://www.makehumancommunity.org/node/296> | CC0 | B | all, by page | none required; header says AGPL: stockings_fishnet_large.obj | clothing |
+| `v0rt3x_stockings_black_fishnet_medium` | underwear01 | <http://www.makehumancommunity.org/node/295> | CC0 | B | all, by page | none required; header says AGPL: stockings_fishnet_medium.obj | clothing |
+| `v0rt3x_stockings_black_fishnet_small` | underwear01 | <http://www.makehumancommunity.org/node/294> | CC0 | B | all, by page | none required; header says AGPL: stockings_fishnet_small.obj | clothing |
+| `v0rt3x_stockings_white_fishnet_large` | underwear01 | <http://www.makehumancommunity.org/node/299> | CC0 | B | all, by page | none required; header says AGPL: stockings_white_l.obj | clothing |
+| `v0rt3x_stockings_white_fishnet_medium` | underwear01 | <http://www.makehumancommunity.org/node/298> | CC0 | B | all, by page | none required; header says AGPL: stockings_white_m.obj | clothing |
+| `v0rt3x_stockings_white_fishnet_small` | underwear01 | <http://www.makehumancommunity.org/node/297> | CC0 | B | all, by page | none required; header says AGPL: stockings_white_s.obj | clothing |
 | `wdg_mycenaean_tunic` | dress01 | <http://www.makehumancommunity.org/node/1763> | CC0 | B | all, by page | none required; header says AGPL: mycenaean_tunic.obj, wdg_mycenaean_tunic.mhclo | clothing |
 | `culturalibre_faun_face` | animal01 | <http://www.makehumancommunity.org/node/2357> | CC0 | B | all, by page | none | correctives/anthro |
 | `culturalibre_faun_horns` | bodyparts01 | <http://www.makehumancommunity.org/node/2355> | CC0 | B | all, by page | none required; header says AGPL: faun_horns.obj | correctives/anthro |
@@ -374,28 +392,10 @@ Lane is assigned from the pack and category: skins and eye materials match none 
 | `jaldmic_equinus_headv2` | animal01 | <http://www.makehumancommunity.org/node/2952> | CC0 | B | all, by page | none | correctives/anthro |
 | `jaldmic_houndoom_horns` | bodyparts01 | <http://www.makehumancommunity.org/node/2995> | CC0 | B | all, by page | none required; header says AGPL: jaldmic_houndoom_horns.mhclo, houndoom_horns.obj | correctives/anthro |
 | `jujube_ear_canal` | ears01 | <http://www.makehumancommunity.org/node/612> | CC0 | B | all, by page | none | correctives/anthro |
-| `kwnet_at_pantyhose01` | underwear01 | <http://www.makehumancommunity.org/node/927> | CC0 | B | all, by page | none required; header says AGPL: pantyhose01.obj, kwnet_at_pantyhose01.mhclo | correctives/anthro |
-| `learning_mma_fighting_gloves` | gloves01 | <http://www.makehumancommunity.org/node/95> | CC0 | B | all, by page | none required; header says AGPL: learning_mma_fighting_gloves.mhclo, mma_gloves.obj | correctives/anthro |
-| `marco_105_armsleeve02` | underwear01 | <http://www.makehumancommunity.org/node/352> | CC0 | B | all, by page | none required; header says AGPL: armsleeve02.obj, marco_105_armsleeve02.mhclo | correctives/anthro |
-| `marco_105_stocking01` | underwear01 | <http://www.makehumancommunity.org/node/348> | CC0 | B | all, by page | none required; header says AGPL: marco_105_stocking01.mhclo, stocking01.obj | correctives/anthro |
-| `marco_105_stocking02` | underwear01 | <http://www.makehumancommunity.org/node/349> | CC0 | B | all, by page | none required; header says AGPL: stocking02.obj, marco_105_stocking02.mhclo | correctives/anthro |
 | `mindfront_ear_details` | ears01 | <http://www.makehumancommunity.org/node/1588> | CC0 | B | all, by page | none | correctives/anthro |
 | `mindfront_ear_in` | ears01 | <http://www.makehumancommunity.org/node/1589> | CC0 | B | all, by page | none | correctives/anthro |
-| `punkduck_strappy_lace_thong` | underwear01 | <http://www.makehumancommunity.org/node/1166> | CC0 | B | all, by page | none | correctives/anthro |
 | `rehmanpolanski_ear_flatten` | ears01 | <http://www.makehumancommunity.org/node/2624> | CC0 | B | all, by page | none | correctives/anthro |
 | `titleknown_catgirl_ears` | animal01 | <http://www.makehumancommunity.org/node/1153> | CC0 | B | all, by page | none | correctives/anthro |
-| `v0rt3x_armsleeves_black_fishnet_large` | underwear01 | <http://www.makehumancommunity.org/node/305> | CC0 | B | all, by page | none required; header says AGPL: armsleeve_fishnet_large.obj | correctives/anthro |
-| `v0rt3x_armsleeves_black_fishnet_medium` | underwear01 | <http://www.makehumancommunity.org/node/304> | CC0 | B | all, by page | none required; header says AGPL: armsleeve_fishnet_medium.obj | correctives/anthro |
-| `v0rt3x_armsleeves_black_fishnet_small` | underwear01 | <http://www.makehumancommunity.org/node/303> | CC0 | B | all, by page | none required; header says AGPL: armsleeve_fishnet_small.obj | correctives/anthro |
-| `v0rt3x_armsleeves_white_fishnet_large` | underwear01 | <http://www.makehumancommunity.org/node/302> | CC0 | B | all, by page | none required; header says AGPL: armsleeve_white_l.obj | correctives/anthro |
-| `v0rt3x_armsleeves_white_fishnet_medium` | underwear01 | <http://www.makehumancommunity.org/node/301> | CC0 | B | all, by page | none required; header says AGPL: armsleeve_white_m.obj | correctives/anthro |
-| `v0rt3x_armsleeves_white_fishnet_small` | underwear01 | <http://www.makehumancommunity.org/node/300> | CC0 | B | all, by page | none required; header says AGPL: armsleeve_white_s.obj | correctives/anthro |
-| `v0rt3x_stockings_black_fishnet_large` | underwear01 | <http://www.makehumancommunity.org/node/296> | CC0 | B | all, by page | none required; header says AGPL: stockings_fishnet_large.obj | correctives/anthro |
-| `v0rt3x_stockings_black_fishnet_medium` | underwear01 | <http://www.makehumancommunity.org/node/295> | CC0 | B | all, by page | none required; header says AGPL: stockings_fishnet_medium.obj | correctives/anthro |
-| `v0rt3x_stockings_black_fishnet_small` | underwear01 | <http://www.makehumancommunity.org/node/294> | CC0 | B | all, by page | none required; header says AGPL: stockings_fishnet_small.obj | correctives/anthro |
-| `v0rt3x_stockings_white_fishnet_large` | underwear01 | <http://www.makehumancommunity.org/node/299> | CC0 | B | all, by page | none required; header says AGPL: stockings_white_l.obj | correctives/anthro |
-| `v0rt3x_stockings_white_fishnet_medium` | underwear01 | <http://www.makehumancommunity.org/node/298> | CC0 | B | all, by page | none required; header says AGPL: stockings_white_m.obj | correctives/anthro |
-| `v0rt3x_stockings_white_fishnet_small` | underwear01 | <http://www.makehumancommunity.org/node/297> | CC0 | B | all, by page | none required; header says AGPL: stockings_white_s.obj | correctives/anthro |
 | `bogdan666_short_02_brown` | system_hair_materials01 | <http://www.makehumancommunity.org/node/1937> | CC0 | B | all, by page | none | hair |
 | `bogdan666_short_02_gray` | system_hair_materials01 | <http://www.makehumancommunity.org/node/1941> | CC0 | B | all, by page | none | hair |
 | `bogdan666_short_02_red` | system_hair_materials01 | <http://www.makehumancommunity.org/node/1939> | CC0 | B | all, by page | none | hair |
