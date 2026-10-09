@@ -775,8 +775,9 @@ occlusion keys are. They are read from the bones, not from unit weights, so an
 animation that never named a unit drives them, and `<Humanoid>` merges them
 into the skin's signals beside `flex.*`. The keys were picked to overlap little:
 each reads 1 for its own pose and under 0.05 for every other key's, a test
-holds, and the expressions read as themselves (a smile 0.8 smile and 0.46
-squint, anger 1.0 furrow, surprise 1.0 raise).
+holds, and the expressions read as themselves (a smile as `smile` with some
+`squint` from the raised cheeks, anger as `browFurrow`, surprise as `browRaise`,
+disgust as `noseWrinkle`).
 
 ### Skinning artefacts (2026-10-09)
 
