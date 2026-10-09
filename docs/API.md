@@ -336,9 +336,10 @@ compute what the renderer will do.
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
   `SkinLayer` (`id`, `blend`, `targets`, `fields(assets)`, `paint(input)`),
-  `SKIN_LAYERS` (the stack, in order: flush, lips, areola, then
-  `ADULT_SKIN_LAYERS`: penis, testes, mound), `SKIN_LAYER_TARGETS` (the body
-  layers' only: an adult layer names none, the adult pack's manifest does),
+  `SKIN_LAYERS` (the stack, in order: flush, lips, areola, the state layers
+  below, then `ADULT_SKIN_LAYERS`: penis, testes, mound), `SKIN_LAYER_TARGETS`
+  (the body layers' only: an adult layer names none, the adult pack's manifest
+  does),
   `targetMask(assets, targets, lo, hi)` for masks measured from targets,
   `diskMask(assets, targets, soft?)` for a feature the targets outline (filled
   per side of the body),
@@ -356,7 +357,8 @@ compute what the renderer will do.
   `SurfaceLayer` (`kind: "surface"`, `paint` giving `strength`, a `roughness`
   change and a `specular` change). `surfaceChange` and `creaseHeight` are the
   shader's references; `uvScale(assets, faces)` gives metres of skin per UV
-  unit (carried as `body.uvScale` in the topology).
+  unit, one value for each UV island (carried as `body.uvScale` in the
+  topology).
   A layer of the adult anatomy sets `adult: { feature }` (`isAdultLayer`):
   `paintStopTable` paints it only when `SkinPaintInput.adult` is true (from
   `isAdult(recipe)`; absent is false) and `SkinPaintInput.anatomy[feature]` is
@@ -373,6 +375,44 @@ compute what the renderer will do.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).
+- Skin-state layers (`src/surface/regions/states.ts`), driven by the signals in
+  `SkinPaintInput.signals`; every magnitude is cited, or marked as a choice, in
+  research/SKIN-STATES.md Part C:
+  - `GOOSEBUMP_LAYER` (`cold`, `fear`: either raises papules, and two triggers
+    combine as independent): a `bumps` detail layer on hair-bearing skin only,
+    `GOOSEBUMP_HEIGHT` (194 µm at signal 1) tall at `GOOSEBUMP_DENSITY_PER_CM2`
+    (21) per cm². Relief is a close-up effect: it fades where a cell is finer
+    than about a pixel (a few millimetres), so at full-figure distances the
+    skin shows nothing.
+  - Flush and pallor, colour layers that multiply the skin by
+    `haemoglobinRatio(tone, FLUSH_DELTA[state])` with the signal as strength:
+    `HEAT_FLUSH_LAYER` (`heat`, the whole body), `EXERTION_FLUSH_LAYER`
+    (`exertion`: face, neck, chest), `BLUSH_LAYER` (`blush`: cheeks, ears,
+    forehead, neck, chest), `COLD_PALLOR_LAYER` (`cold`: hands, feet, ears, nose,
+    a little forearms, shins and cheeks) and `FEAR_PALLOR_LAYER` (`fear`: face
+    and neck), and `LIP_STATE_LAYER` (`cold` turns the lips bluer, `fear` paler:
+    `lipStateAlbedo(tone, depth, cold, fear)`). `haemoglobinRatio(tone, delta)`
+    is the skin model's own response to `delta` more haemoglobin, in units of the
+    measured axis (limited to ±1, so a state moves the skin no further than the
+    spread people have); melanin attenuates it as it does the resting spread, and
+    a colour that is not human skin (`tone.override`) has none to move. No state
+    layer changes lightness.
+  - Sweat sheen, two `SurfaceLayer`s over regional sweat maps: `SWEAT_REST_LAYER`
+    (`heat`: the passive-heating map) and `SWEAT_EXERCISE_LAYER` (`exertion`: the
+    exercise map, wetter and more even). `SWEAT_RATE` is Taylor and
+    Machado-Moreira's regional rates (mg/cm²/min, `[rest, exercise]`),
+    `wetness(rate)` turns a rate into 0..1 wetness, and `SWEAT_ROUGHNESS` and
+    `SWEAT_SPECULAR` are the change at full wetness. The two signals share one
+    sweat drive, `1 - (1 - heat)(1 - exertion)`, split between the maps by
+    their shares, so both at 1 is half of each map.
+  - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones
+    (head, hand, thigh, …) as soft per-vertex masks from the skin weights, plus
+    its `front`, `palm`, `sole`, `forehead` and `neck` fields from the vertex
+    normals, joints and weights, all
+    measured from the base mesh and cached per set of assets.
+    `buildBoneField(assets, names, zoneOfBone, fallback, smoothing?)` builds
+    such a partition for any grouping of the bones (`buildRegionField` is it
+    for the shape traits' regions).
 - The scatter model `SkinMaterial` renders (its constants and table come from
   these, and the browser tests hold the shader to them): `scatterDistance(albedo, mfp?, slope?, pigmentDepth?,
   substrate?)` gives each channel's scatter width in metres, and
@@ -386,6 +426,24 @@ compute what the renderer will do.
 - `bakeOcclusion(occluders, targets, options?)`: per-vertex ambient occlusion
   by cosine-weighted ray casts (`hemisphereDirections(n)`), as used for
   attachments.
+- Skin-state time (ARCHITECTURE.md, "Skin states"): `stepSkinState(current,
+  target, dt, rates?)`, a pure step of every signal toward its target (0..1
+  each; a missing one is 0) by the exact first-order response, with one time
+  constant to rise (`attack`) and one to fall (`decay`), in seconds, from
+  `STATE_TIME_CONSTANTS` (`cold`, `fear`, `blush`, `exertion`, `heat`; any other
+  signal moves at `DEFAULT_STATE_RATE`). `new SkinStateFilter(rates?, initial?)`
+  keeps the state between frames: `step(target, dt)` returns the new signals
+  (a copy), `value` the current ones, `settled(target)` whether there is
+  nothing left to animate, `reset(state?)` jumps. `cold` and `fear` are
+  calibrated to the measured goosebump episode (a 3 s trigger shows for 11 to
+  12 s); the others are choices (research/SKIN-STATES.md C4).
+  `quantiseShapeSignal(s)` and `SHAPE_SIGNAL_STEPS` (50) round the signals
+  that reshape the figure, so an easing one does not evaluate every frame.
+  `quantisedShapeSignals(recipe, signals, names)` rounds the named ones after
+  the age policy has judged them as given: rounding would turn a small or
+  negative adult-only signal into 0, so a figure under 18 with any nonzero one
+  throws `AgePolicyError` (`<Humanoid>` reports it through `onError` and does
+  not evaluate).
 
 ### Rig and poses
 
@@ -437,13 +495,57 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
   figure's `velocity` and raises proximity events) and
   `onProximity(radius, listener)`, which reports `{ type: "enter" | "leave",
   ids, distance }` for each pair (entering at `radius`, leaving beyond 1.1 ×
-  `radius`) and returns its unsubscribe function.
+  `radius`) and returns its unsubscribe function. The registry keeps the
+  objects it is given by reference, `all()` returns the same read-only array
+  until a figure joins or leaves, and entries are updated in place as figures
+  move, so copy what you keep. `set`, `tick` and `all` allocate nothing once a
+  figure has joined.
 - `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
   chest, hands, feet), `footprint`, `appearance` (measured albedo, luminance,
   specular), `faceRadius`, `adult`.
+- `presenceFromEvaluation({ evaluation, recipe, joints, placement })`: a
+  figure's presence from its evaluation. Anchors are joint centroids of the
+  morphed control mesh lifted onto the ground, the footprint is the extent of
+  the body's soles, `bounds` cover every surface point, `appearance` is
+  `skinAlbedo` of `recipe.skin` with its luminance and `SKIN_F0`, `faceRadius`
+  is 0.75 × the head's length, and `adult` is the age policy's verdict
+  (`age >= 18`). `placement` is `{ id, position, facing }`: the ground position
+  under the figure and its heading.
+- `presenceFromPose({ evaluation, recipe, joints, rig, rotations, placement })`:
+  the same presence for a figure in a pose. `rig` is `{ bones, parents, skin }`
+  (`ReadyInfo.rig` has them) and `rotations` the pose as the renderer applies it
+  (`bodyPoseRotations`, `composeRotations`). Anchors are the joint centroids over
+  the posed control mesh, the footprint is whatever of the posed body is within
+  3 cm of the floor (a lunge touches with one foot: one contact), and bounds are
+  the posed body's box (widened by the rest surface's inset, so an unrotated
+  pose reports the rest bounds). Call it when the evaluation or the pose
+  changes; re-place the result with `placePresence` as the figure moves.
+- `posedControl(rig, evaluation, rotations)` and
+  `groundOffsetOf(posed, bodyVertices)`: the evaluation's control mesh in the
+  pose (skinned once and cached on the evaluation; a different pose of it
+  overwrites the array, so use it before asking again) and the lift that puts
+  its lowest body point on the floor. `<Humanoid>` grounds a posed figure and
+  derives its presence from the same pass.
+- `presenceJoints(assets)`: the joint vertex lists presence reads from a loaded
+  body pack (small and static, so it can travel with the worker's topology);
+  it throws an `AssetFormatError` naming a missing joint. `tryPresenceJoints`
+  returns `null` instead, which is what the worker reports for a pack with
+  another skeleton: such a pack still renders, it cannot publish presence.
+- `placePresence(presence, placement, out?)`: the same presence turned and
+  moved onto a new placement. Re-place a rest presence each frame rather than
+  chaining. With `out` (a `clonePresence` of it, or the presence itself) it
+  writes in place and allocates nothing. It throws a `RangeError` for a heading
+  with no horizontal component (a figure pointing straight up).
+- `clonePresence(presence)`: a deep copy, for `placePresence`'s `out`.
 - `presenceGroups(presences, distance)`: ids of the figures standing together.
-- `groundOcclusion(presences, { strength?, spread? })` and
-  `sampleGroundOcclusion(points, x, z)`: contact shadows pooled with `max`.
+- `groundOcclusion(presences, { strength?, spread?, floorY?, reach? }, into?)`
+  and `sampleGroundOcclusion(points, x, z)`: contact shadows pooled with `max`.
+  Each `ContactPoint` is `{ x, y, z, radius, strength }`, with `y` the height
+  of the figure that casts it. With `floorY`, a figure standing on that floor
+  casts at full strength, one more than 2 cm above or below it casts less, and
+  none beyond `reach` metres (default 0.3), so a figure on a platform does not
+  shadow the floor under it. Pass the array a previous call returned as `into`
+  to reuse its contacts (nothing is allocated once it fits).
 - `faceMetering(presences, { position })`: each face's region, reflectance and
   `skinZoneEV`, heaviest first, and the `deepest` face's id.
 
@@ -460,13 +562,13 @@ The main-thread handle to an evaluation worker.
   arriving, and an evaluation that needs one waits in the worker for its stage.
 - `client.complete: Promise<void>` resolves when every target file has
   loaded, or rejects with the error that stopped one.
-- `ReadyInfo` is `{ topology, modifiers, sliders, rig,
+- `ReadyInfo` is `{ topology, modifiers, sliders, rig, presenceJoints,
   adultAnatomyLoaded, anatomy? }`: the render topology, every drivable shape
   modifier, the merged slider taxonomy, the rig (`RigData` plus each bone's
-  `parents` index; the topology's skin indices refer to `rig.bones`), whether the
-  adult anatomy pack is loaded and, with it, its `anatomy` (`AdultAnatomySpec`:
-  the features `appliedAnatomy` reads and the state morphs the shape signals
-  include).
+  `parents` index; the topology's skin indices refer to `rig.bones`), the joints
+  presence reads (`presenceJoints`), whether the adult anatomy pack is loaded
+  and, with it, its `anatomy` (`AdultAnatomySpec`: the features
+  `appliedAnatomy` reads and the state morphs the shape signals include).
 - `client.evaluate(recipe, key?, signals?): Promise<Evaluation>` (signals as for
   `model.evaluate`) is latest-wins per key:
   each key has at most one evaluation in the worker and one waiting, and a
@@ -526,6 +628,17 @@ Returns the provided client. Throws outside a `HumanoidProvider`.
 
 Returns `null` until the worker has loaded its packs, then its `ReadyInfo`.
 
+### `useSkinStateFilter(target, options?): Record<string, number>`
+
+Follows `target`, the signals an application wants (each 0..1), at the time
+constants of `STATE_TIME_CONSTANTS`, and returns the signals to give
+`<Humanoid signals>`: `const signals = useSkinStateFilter({ cold: chilled ? 1 :
+0 })`. It starts at the first `target`, so a figure that mounts in a state does
+not ease into it (`initial: "rest"` starts at rest instead); `rates` replaces
+the time constants (pass a stable object). The component re-renders each frame
+while a signal moves and not once they have settled, and a new `target` object
+with the same entries changes nothing.
+
 ### `<Humanoid recipe />`
 
 Renders a recipe as a mesh inside a React Three Fiber canvas.
@@ -537,9 +650,10 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
 | `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
-| `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers; those with state morphs also reshape the figure (a re-evaluation). Never part of the recipe |
+| `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
+| `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |
 | other props | Passed to the wrapping `<group>` |
 
 - Hidden until the first evaluation arrives.
@@ -553,8 +667,53 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 - Skins the body and attachments to the skeleton fitted to each evaluation
   (linear blend skinning on the GPU) and poses it from `pose`; posing does not
   re-evaluate the figure.
+- With `presence`, the group's origin is the ground under the figure: the
+  figure lifts its own meshes onto it, so do not lift the group by
+  `groundOffset` (without `presence` the caller does, as before). The ground
+  position and heading are read from the group's world transform every frame,
+  so moving the group, a parent or a `useFrame` mover moves the presence.
+  `position` and `facing` place the group declaratively, replacing its own
+  `position` and `rotation`. Assumes an upright figure at unit scale. In a
+  `pose` the published anchors, footprint and bounds are the posed body's (see
+  `presenceFromPose`), and are derived again when the pose changes; the meshes
+  are lifted by the same posed ground offset, so the footprint is on the floor.
+- A figure is in the registry only while it is mounted, shown and placed: it
+  leaves while the group or any ancestor is not `visible` (a hidden figure is
+  not in the world), while it is tipped so far over that it has no heading on
+  the ground, and until its first evaluation arrives, and it rejoins when that
+  ends. Each frame re-places one presence in place, allocating nothing.
+- A body pack that lacks a joint presence reads still renders the figure; asking
+  for `presence` then reports an error through `onError` (or the console) and
+  publishes nothing.
 
-### `<StudioStage background? intensity? />`
+### `<PresenceProvider registry? />`
+
+Owns a presence registry for everything below it (`createPresenceRegistry()`
+unless you pass `registry`, to share one with code outside React) and ticks it
+once per frame from `useFrame`, after every figure has published its
+placement. Render it inside the `<Canvas>`.
+
+### `usePresence(id?)`
+
+A live accessor, `{ readonly current }`: one figure's `PublishedPresence` (or
+`undefined` while it has none) for an `id`, every published figure (a
+read-only array that stays the same until a figure joins or leaves) without
+one. Read `.current` in `useFrame` or an event handler; it is looked up when
+read, so a figure that walks never re-renders its readers. Published objects
+are updated in place each frame: copy what you keep.
+
+### `useProximity(radius, listener)`
+
+Calls `listener` with a `ProximityEvent` when two figures come within `radius`
+metres on the ground and when they part beyond 1.1 × `radius`. The listener may
+change every render without resubscribing.
+
+### `usePresenceRegistry(): PresenceRegistry`
+
+The nearest provider's registry, for `groundOcclusion`, `faceMetering` and
+`presenceGroups`. All the presence hooks throw outside a `PresenceProvider`.
+
+### `<StudioStage background? intensity? contactShadowOpacity? />`
 
 A neutral studio for showing figures: a procedural room environment
 (three.js `RoomEnvironment`, prefiltered once, no network request), a key light
@@ -563,6 +722,31 @@ the canvas settings it was measured with: `STUDIO_TONE_MAPPING`
 (`NeutralToneMapping`) and `STUDIO_EXPOSURE` (1.15). `background` is a CSS
 colour (`null` leaves the canvas background alone); `intensity` scales every
 light together. It restores the scene environment it replaced on unmount.
+
+The contact shadow under the figures follows presence. Inside a
+`PresenceProvider` it is one ground field built from every published figure's
+footprint (`groundOcclusion`), drawn by a single shader that takes the
+strongest contact at each point: figures walking together share one shadow that
+separates as they part, and where they overlap the ground is no darker than
+under one figure. `contactShadowOpacity` (0 to 1, default 0.5) is its darkness
+at the centre of a contact. Its limits:
+
+- Only figures that publish presence (`<Humanoid presence>`) cast it. Under a
+  provider a `<Humanoid>` without `presence` has no contact shadow (drei's
+  `ContactShadows` would shadow everything, and so darken the published
+  figures twice).
+- The floor is the stage's own height (its parent's origin): a figure on it
+  casts fully, one raised or sunk casts less and none beyond 0.3 m, so a
+  figure on a platform does not shadow the floor below. One horizontal floor
+  only.
+- It follows the figures wherever they are (the quad is resized to their
+  contacts every frame, and hidden when there are none), but the stage may be
+  translated, not rotated or scaled.
+- It holds up to 128 contacts (64 figures, two feet each); more are ignored.
+  Every frame uploads the whole contact array to the GPU (128 × vec4, 2 KiB).
+
+Outside a provider the stage falls back to drei's `ContactShadows` around the
+origin.
 
 ## `humanoid-kit/editor`
 

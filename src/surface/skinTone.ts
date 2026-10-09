@@ -22,7 +22,7 @@
  * absorption dominates), undertone moves b* by about ±3 at constant luminance.
  */
 
-import { labFromLch, labFromLinear, linearFromLab } from "./cielab.ts";
+import { labFromLch, labFromLinear, lchFromLab, linearFromLab } from "./cielab.ts";
 
 export type Rgb = [number, number, number];
 
@@ -82,6 +82,14 @@ const UNDERTONE_GAIN: Rgb = [0.035, 0.03, -0.17];
 
 export function skinAlbedo(tone: SkinTone): Rgb {
   if (tone.override) return [...tone.override] as Rgb;
+  return albedoAt(tone, clamp(tone.haemoglobin, 0, 1));
+}
+
+/**
+ * Natural skin's albedo at `haemoglobin`, which a state may carry past the
+ * measured axis (0..1): the model is linear in haemoglobin, so it extends.
+ */
+function albedoAt(tone: SkinTone, haemoglobin: number): Rgb {
   const m = clamp(tone.melanin, 0, 1);
   const t = m * (MELANIN_ANCHORS.length - 1);
   const i = Math.min(Math.floor(t), MELANIN_ANCHORS.length - 2);
@@ -93,7 +101,7 @@ export function skinAlbedo(tone: SkinTone): Rgb {
   // unit; these factors flatten that to the measured spread: haemoglobin spans
   // about a* 5 (light), 5.8 (mid) and 3.6 (deep) across its range, undertone
   // about ±3 b* at every depth.
-  const h = (clamp(tone.haemoglobin, 0, 1) - 0.5) * 2 * (0.42 + 0.3 * m - 0.2 * m * m);
+  const h = (haemoglobin - 0.5) * 2 * (0.42 + 0.3 * m - 0.2 * m * m);
   const u = clamp(tone.undertone, -1, 1) * (0.43 + 0.57 * m);
   const tinted = base.map(
     (c, k) => c * (1 + h * (HAEMOGLOBIN_GAIN[k] as number) + u * (UNDERTONE_GAIN[k] as number)),
@@ -101,6 +109,25 @@ export function skinAlbedo(tone: SkinTone): Rgb {
   // Undertone and haemoglobin shift hue, not depth: keep the anchor's luminance.
   const scale = luminance(base) / Math.max(1e-6, luminance(tinted));
   return tinted.map((c) => clamp(c * scale, 0, 1)) as Rgb;
+}
+
+/**
+ * What a change in haemoglobin multiplies the skin's colour by, per channel:
+ * the albedo with `delta` more haemoglobin (a flush; less is pallor) over the
+ * albedo at the tone. `delta` is in units of the measured axis, whose whole
+ * span (0 to 1) is one: it is limited to ±1, and carries the tone's own
+ * haemoglobin past the axis, so a ruddy figure still flushes. It is the skin
+ * model's own response, so melanin attenuates it as it does the resting
+ * spread (the a* of the whole axis is 5.2 on the lightest skin and 3.1 on the
+ * deepest), and luminance is kept. A colour that is not human skin
+ * (`tone.override`) has no haemoglobin to move: its ratio is 1.
+ */
+export function haemoglobinRatio(tone: SkinTone, delta: number): Rgb {
+  if (tone.override) return [1, 1, 1];
+  const from = clamp(tone.haemoglobin, 0, 1);
+  const base = albedoAt(tone, from);
+  const moved = albedoAt(tone, from + clamp(delta, -1, 1));
+  return moved.map((c, k) => c / Math.max(1e-6, base[k] as number)) as Rgb;
 }
 
 /** Relative luminance of a linear-RGB colour. */
@@ -145,6 +172,33 @@ export function lipAlbedo(tone: SkinTone, depth: number): Rgb {
   const C = Math.max(0, 0.81 * meanL - 10.8 + (d - 0.5) * 8);
   const h = 31.9 - 0.375 * (meanL - 46);
   return linearFromLab(labFromLch(L, C, h)).map((c) => clamp(c, 0, 1)) as Rgb;
+}
+
+/**
+ * Lip hue turned toward violet at full cold, degrees. A CHOICE (docs/research/
+ * SKIN-STATES.md C2): lips take their colour from the blood close beneath thin
+ * skin, so vasoconstriction and deoxygenated blood turn them cyanotic; no
+ * measurement of its size at any skin tone was found.
+ */
+export const COLD_LIP_HUE_SHIFT = 40;
+
+/**
+ * Lips under cold and fear (each 0..1), from their resting albedo: in the cold
+ * the hue turns toward violet and the lips darken and grey a little (blood
+ * pooled and deoxygenated); in fright they lose chroma and lighten (blood
+ * drawn away). Magnitudes are CHOICES, as `COLD_LIP_HUE_SHIFT`. A colour that
+ * is not human skin keeps its lips.
+ */
+export function lipStateAlbedo(tone: SkinTone, depth: number, cold: number, fear: number): Rgb {
+  const rest = lipAlbedo(tone, depth);
+  const c = clamp(cold, 0, 1);
+  const f = clamp(fear, 0, 1);
+  if (tone.override || (c === 0 && f === 0)) return rest;
+  const [L, C, h] = lchFromLab(labFromLinear(rest));
+  const state = linearFromLab(
+    labFromLch(L - 5 * c + 3 * f, C * (1 - 0.35 * c - 0.45 * f), h - COLD_LIP_HUE_SHIFT * c),
+  );
+  return state.map((x) => clamp(x, 0, 1)) as Rgb;
 }
 
 /**
