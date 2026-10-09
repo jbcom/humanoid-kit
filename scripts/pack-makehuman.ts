@@ -25,11 +25,17 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import { type ShapeModifierEntry, TARGET_ENCODING } from "../src/format/assetFormat.ts";
+import {
+  type BodyManifest,
+  parseHumanoidAssets,
+  type ShapeModifierEntry,
+  TARGET_ENCODING,
+} from "../src/format/assetFormat.ts";
 import { macroTargetNames } from "../src/makehuman/macro.ts";
 import { SKIN_MASK_TARGETS } from "../src/makehuman/skinMasks.ts";
+import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
-import { writeAttachments, writePackEntry } from "./lib/packWriter.ts";
+import { writeAttachments, writeAttachmentTextures, writePackEntry } from "./lib/packWriter.ts";
 import { buildSliders } from "./lib/sliders.ts";
 
 const USAGE = "usage: node scripts/pack-makehuman.ts <makehuman-data-dir> <system-assets-dir>";
@@ -269,7 +275,7 @@ function writeTargetFile(targets: EncodedTarget[]) {
     offset += t.chunk.byteLength;
   }
   // gzip output is deterministic here (zlib writes no timestamp), so packs are reproducible.
-  return { bin: new Uint8Array(gzipSync(raw, { level: 9 })), rawBytes: raw.byteLength, entries };
+  return { bin: new Uint8Array(gzipSync(raw, { level: 9 })), raw, entries };
 }
 
 // ---------------------------------------------------------------- rig
@@ -516,7 +522,9 @@ async function main() {
     compileAsset(path.join(SYSTEM, mhclo), id, kind, mat ? path.join(SYSTEM, mat) : undefined),
   );
   fs.rmSync(path.join(BODY_OUT, "attachments.bin"), { force: true });
-  const attachments = await writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled);
+  await writeAttachmentTextures(BODY_OUT, compiled);
+  // Written with every vertex open first; the bake below needs the packed figure.
+  let attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, null);
   const systemEvidence: Record<string, string> = {};
   for (const c of compiled) {
     for (const [file, ev] of Object.entries(c.evidence))
@@ -534,7 +542,7 @@ async function main() {
     note: "Asset data only; no MakeHuman code.",
   };
   const bodySha = sha(body);
-  const manifest = {
+  const manifest: BodyManifest = {
     format: 1,
     kind: "body",
     topology: TOPOLOGY,
@@ -584,6 +592,22 @@ async function main() {
       frames: faceBvh.frames.map((row) => row.map((x) => Math.round(x * 1000) / 1000)),
     },
   };
+
+  // Attachment occlusion is geometry of the default figure, so it is baked here,
+  // from the packed data exactly as a loader reads it, and loading casts no rays.
+  const buffer = (b: Uint8Array) =>
+    b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
+  const packedFigure = parseHumanoidAssets({
+    manifest,
+    body: buffer(bodyRaw),
+    targets: buffer(core.raw),
+    attachments: buffer(attachments.raw),
+  });
+  const occlusion = new HumanoidModel(packedFigure)
+    .bakeAttachmentOcclusion()
+    .map((o) => Uint8Array.from(o, (v) => Math.round(Math.min(1, Math.max(0, v)) * 255)));
+  attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, occlusion);
+  manifest.attachments.sha256 = attachments.sha256;
   fs.writeFileSync(path.join(BODY_OUT, "manifest.json"), `${JSON.stringify(manifest)}\n`);
 
   const adultManifest = {
@@ -638,7 +662,7 @@ async function main() {
   const mb = (n: number) => `${(n / 1e6).toFixed(2)} MB`;
   console.log(
     `packed ${vertexCount} verts, ${manifest.faceCount} quads; targets: ` +
-      `${core.entries.length} first-figure (${mb(core.bin.byteLength)} gzip, ${mb(core.rawBytes)} decoded), ` +
+      `${core.entries.length} first-figure (${mb(core.bin.byteLength)} gzip, ${mb(core.raw.byteLength)} decoded), ` +
       `${later.entries.length} modifier (${mb(later.bin.byteLength)}), ` +
       `${adult.entries.length} adult (${mb(adult.bin.byteLength)}); ` +
       `${encoded.empty} empty and ${undriven.length} undriven upstream targets left out; ` +

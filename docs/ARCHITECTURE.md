@@ -200,6 +200,28 @@ through the stencil and reduced to the top four per vertex. Static render data
 (`SurfaceTopology`) is sent once; only positions and normals change per
 evaluation.
 
+## Attachment occlusion
+
+Eyes, teeth and tongue sit inside the figure, under lids and lips that block
+most of the light reaching them. Each attachment vertex carries an ambient
+occlusion value: the cosine-weighted fraction of 32 Fibonacci-hemisphere rays
+that leave it without hitting the body or another opaque attachment within
+5 cm (`src/surface/occlusion.ts`, ray casts through a `three-mesh-bvh` tree).
+Rays start from the attachments' control vertices, and the values reach the
+render surface through the subdivision stencil like any other per-vertex
+field. Transparent attachments do not occlude: the eyes' cornea dome is cut
+away by its texture's alpha and would otherwise shade the iris. The renderer
+scales the attachment's diffuse, specular and clearcoat light by the value,
+never below 0.15.
+
+The occlusion is geometry of the default figure, where lids and lips sit as
+they do on most figures, so the packer bakes it once
+(`HumanoidModel.bakeAttachmentOcclusion`, at the default subdivision level) and
+ships it in `attachments.bin.gz` as one byte per control vertex. Loading never
+casts a ray. A test re-bakes from the shipped pack and fails if the stored
+values drift from what the code computes. Expressions that open the mouth will
+re-bake at runtime with the same method.
+
 ## Worker
 
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one

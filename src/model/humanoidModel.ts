@@ -128,12 +128,14 @@ export class HumanoidModel {
   private readonly bodyControlTriangles: Uint32Array;
   private readonly bodyEdges: Uint32Array;
   private readonly attached: { asset: BoundAsset; part: Part; control: Float32Array }[];
+  /** Subdivision level of the attachments: the body's, at most 1. */
+  private readonly attachmentLevel: number;
   private readonly skinMask: Float32Array;
 
-  constructor(
-    readonly assets: HumanoidAssets,
-    options: ModelOptions = {},
-  ) {
+  readonly assets: HumanoidAssets;
+
+  constructor(assets: HumanoidAssets, options: ModelOptions = {}) {
+    this.assets = assets;
     const level = options.subdivision ?? 1;
     if (!Number.isInteger(level) || level < 0 || level > 2) {
       throw new RangeError(`subdivision must be 0, 1 or 2; got ${level}`);
@@ -180,53 +182,75 @@ export class HumanoidModel {
       this.skinMask.set(surfaceMask.subarray(s * 3, s * 3 + 3), r * 3);
     });
 
-    this.attached = wearing.map((asset) => {
-      const skin = bindingSkin(asset, assets.skinIndex, assets.skinWeight);
-      const mesh = buildSurfaceMesh(
-        {
-          vertexCount: asset.entry.vertexCount,
-          faceVerts: asset.faceVerts,
-          faceUvs: asset.faceUvs,
-          uvs: asset.uvs,
-          skinIndex: skin.index,
-          skinWeight: skin.weight,
-        },
-        null,
-        Math.min(level, 1),
-      );
-      return { asset, part: part(mesh), control: new Float32Array(asset.entry.vertexCount * 3) };
-    });
+    this.attachmentLevel = Math.min(level, 1);
+    this.attached = wearing.map((asset) => ({
+      asset,
+      part: part(this.attachmentSurface(asset, this.attachmentLevel)),
+      control: new Float32Array(asset.entry.vertexCount * 3),
+    }));
   }
 
-  topology(): ModelTopology {
-    // Occlusion is geometry the figure creates around its attachments; baked once
-    // against the default figure, where lids and lips sit as on most figures.
-    // Rays start from each attachment's control vertices (a quarter of the render
-    // vertices) and the result is carried to the render surface by the subdivision
-    // stencil, like any other per-vertex field.
+  private attachmentSurface(asset: BoundAsset, level: number): SurfaceMesh {
+    const skin = bindingSkin(asset, this.assets.skinIndex, this.assets.skinWeight);
+    return buildSurfaceMesh(
+      {
+        vertexCount: asset.entry.vertexCount,
+        faceVerts: asset.faceVerts,
+        faceUvs: asset.faceUvs,
+        uvs: asset.uvs,
+        skinIndex: skin.index,
+        skinWeight: skin.weight,
+      },
+      null,
+      level,
+    );
+  }
+
+  /**
+   * Bakes each worn attachment's occlusion per control vertex: geometry the
+   * figure creates around its attachments, against the default figure, where
+   * lids and lips sit as on most figures. Rays start from the control vertices
+   * (a quarter of the render vertices); occluders are the unsubdivided body and
+   * the opaque attachments at one subdivision level, whatever this model's
+   * level, so the result depends only on the packs and the worn set.
+   */
+  bakeAttachmentOcclusion(): Float32Array[] {
     const rest = this.evaluate(createRecipe());
-    const baked = bakeOcclusion(
-      [
-        { positions: rest.control, index: this.bodyControlTriangles },
-        // Transparent attachments (the eyes, whose cornea dome is cut away by the
-        // texture's alpha) would block light they do not block when rendered.
-        ...this.attached.flatMap((a, i) =>
-          a.asset.entry.material.transparent
-            ? []
-            : [
-                {
-                  positions: (rest.attachments[i] as SurfaceEvaluation).positions,
-                  index: a.part.mesh.index,
-                },
-              ],
-        ),
-      ],
+    const occluders = this.attached.flatMap((a, i) => {
+      // Transparent attachments (the eyes, whose cornea dome is cut away by the
+      // texture's alpha) would block light they do not block when rendered.
+      if (a.asset.entry.material.transparent) return [];
+      if (this.attachmentLevel === 1)
+        return [
+          {
+            positions: (rest.attachments[i] as SurfaceEvaluation).positions,
+            index: a.part.mesh.index,
+          },
+        ];
+      const p = part(this.attachmentSurface(a.asset, 1));
+      return [{ positions: this.evaluatePart(p, a.control).positions, index: p.mesh.index }];
+    });
+    return bakeOcclusion(
+      [{ positions: rest.control, index: this.bodyControlTriangles }, ...occluders],
       this.attached.map((a) => ({
         positions: a.control,
         normals: quadVertexNormals(a.control, a.asset.faceVerts),
       })),
       { rays: 32 },
     );
+  }
+
+  topology(): ModelTopology {
+    // The body pack ships the bake for its own attachments worn together, so
+    // loading casts no rays; any other set of attachments is baked here.
+    const worn = new Set(this.attached.map((a) => a.asset.entry.id));
+    const packed =
+      worn.size === this.attached.length && worn.size === this.assets.attachments.size
+        ? this.attached.map(({ asset }) => Float32Array.from(asset.occlusion, (o) => o / 255))
+        : null;
+    const baked = packed ?? this.bakeAttachmentOcclusion();
+    // Carried to the render surface by the subdivision stencil, like any other
+    // per-vertex field.
     const occlusion = this.attached.map(({ part: p }, i) => {
       const control = baked[i] as Float32Array;
       const field = new Float32Array(control.length * 3);

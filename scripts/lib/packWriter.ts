@@ -20,7 +20,10 @@ export interface AttachmentEntry {
   faceCount: number;
   scale: CompiledAsset["scale"];
   material: CompiledAsset["material"];
-  layout: Record<keyof CompiledAsset["arrays"], { offset: number; byteLength: number }>;
+  layout: Record<
+    keyof CompiledAsset["arrays"] | "occlusion",
+    { offset: number; byteLength: number }
+  >;
 }
 
 export const sha256 = (buf: Uint8Array) => createHash("sha256").update(buf).digest("hex");
@@ -40,22 +43,39 @@ async function writeTexture(src: string, dest: string): Promise<void> {
     .toFile(dest);
 }
 
-/** Packs attachment arrays into one 4-byte-aligned binary and writes their textures. */
-export async function writeAttachments(
+/** Writes the attachments' textures, replacing any left from an earlier pack. */
+export async function writeAttachmentTextures(
+  dataDir: string,
+  assets: readonly CompiledAsset[],
+): Promise<void> {
+  for (const f of fs.readdirSync(dataDir))
+    if (/\.(png|jpe?g|webp)$/i.test(f)) fs.rmSync(path.join(dataDir, f));
+  for (const a of assets)
+    for (const [src, name] of a.textures) await writeTexture(src, path.join(dataDir, name));
+}
+
+/**
+ * Packs attachment arrays and their baked occlusion (one byte per vertex,
+ * 255 = open) into one 4-byte-aligned binary, gzipped. The occlusion is baked
+ * from the packed figure, so the packer writes once with every vertex open,
+ * bakes, and writes again; the layout is the same both times.
+ */
+export function writeAttachments(
   dataDir: string,
   file: string,
   assets: readonly CompiledAsset[],
+  occlusion: readonly Uint8Array[] | null,
 ) {
-  // Textures from an earlier pack (or an earlier format) never linger.
-  for (const f of fs.readdirSync(dataDir))
-    if (/\.(png|jpe?g|webp)$/i.test(f)) fs.rmSync(path.join(dataDir, f));
   const chunks: Uint8Array[] = [];
   let size = 0;
   const entries: AttachmentEntry[] = [];
-  for (const a of assets) {
+  for (const [i, a] of assets.entries()) {
     const layout = {} as AttachmentEntry["layout"];
-    for (const [key, arr] of Object.entries(a.arrays) as [
-      keyof CompiledAsset["arrays"],
+    const baked = occlusion?.[i] ?? new Uint8Array(a.vertexCount).fill(255);
+    if (baked.length !== a.vertexCount)
+      throw new Error(`${a.id}: ${baked.length} occlusion values for ${a.vertexCount} vertices`);
+    for (const [key, arr] of [...Object.entries(a.arrays), ["occlusion", baked]] as [
+      keyof AttachmentEntry["layout"],
       ArrayBufferView,
     ][]) {
       size = Math.ceil(size / 4) * 4;
@@ -75,7 +95,6 @@ export async function writeAttachments(
       material: a.material,
       layout,
     });
-    for (const [src, name] of a.textures) await writeTexture(src, path.join(dataDir, name));
   }
   const bin = new Uint8Array(size);
   let o = 0;
@@ -87,7 +106,7 @@ export async function writeAttachments(
   // Gzipped for transfer, like every pack binary; offsets refer to the decoded file.
   const gz = new Uint8Array(gzipSync(bin, { level: 9 }));
   fs.writeFileSync(path.join(dataDir, file), gz);
-  return { entries, sha256: sha256(gz), byteLength: bin.byteLength };
+  return { entries, sha256: sha256(gz), raw: bin };
 }
 
 /** Generates `index.js` and `index.d.ts` exporting `exportName` with a literal URL per data file. */

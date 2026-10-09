@@ -26,4 +26,4 @@ Attachments come from the MakeHuman system assets pack (makehuman_system_assets_
 | body.bin.gz | `33e8502236f56d532abbaa2d0adbffb28af56a3f5313763feb9881c9ede668df` |
 | targets.bin.gz | `81754709757f7eb5b3899403d9a715100f42924811e395c8b258034f0789fa1c` |
 | modifier-targets.bin.gz | `6c2c5713c5c1d3b52dfbe30e15de8e0bc6d3920cd906ea32072a9160152ea581` |
-| attachments.bin.gz | `65116a3e2c2a357c9a60578ade28fa8b8c1c990890ebba0726e1b89d52b4f073` |
+| attachments.bin.gz | `6245e1de418bffb352b47f4ce4ad02aee7098cfd71251604f4eab3d9da8315c9` |

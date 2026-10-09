@@ -179,7 +179,14 @@ export interface AttachmentEntry {
   } | null;
   material: AttachmentMaterial;
   layout: Record<
-    "refVerts" | "weights" | "offsets" | "faceVerts" | "faceUvs" | "uvs" | "deleteVerts",
+    | "refVerts"
+    | "weights"
+    | "offsets"
+    | "faceVerts"
+    | "faceUvs"
+    | "uvs"
+    | "deleteVerts"
+    | "occlusion",
     BufferRange
   >;
 }
@@ -196,6 +203,12 @@ export interface BoundAsset {
   uvs: Float32Array;
   /** Base vertices this attachment hides while worn. */
   deleteVerts: Uint32Array;
+  /**
+   * Per vertex, how open it is to light (255) or enclosed by the figure (0),
+   * baked at pack time with every body-pack attachment worn
+   * (`HumanoidModel.bakeAttachmentOcclusion`).
+   */
+  occlusion: Uint8Array;
 }
 
 export interface AdultAnatomyManifest {
@@ -362,6 +375,7 @@ function parseAttachments(manifest: BodyManifest, bin: ArrayBuffer): Map<string,
       faceUvs: view(Uint32Array, bin, l.faceUvs),
       uvs: view(Float32Array, bin, l.uvs),
       deleteVerts: view(Uint32Array, bin, l.deleteVerts),
+      occlusion: view(Uint8Array, bin, l.occlusion),
     };
     const what = (field: string) => `attachment ${entry.id} ${field}`;
     expectLength(asset.refVerts, entry.vertexCount * 3, what("refVerts"));
@@ -369,6 +383,7 @@ function parseAttachments(manifest: BodyManifest, bin: ArrayBuffer): Map<string,
     expectLength(asset.offsets, entry.vertexCount * 3, what("offsets"));
     expectLength(asset.faceVerts, entry.faceCount * 4, what("faceVerts"));
     expectLength(asset.faceUvs, entry.faceCount * 4, what("faceUvs"));
+    expectLength(asset.occlusion, entry.vertexCount, what("occlusion"));
     if (asset.uvs.length % 2 !== 0) throw new AssetFormatError(`${what("uvs")}: odd length`);
     expectIndices(asset.refVerts, manifest.vertexCount, what("refVerts"));
     expectIndices(asset.faceVerts, entry.vertexCount, what("faceVerts"));

@@ -50,6 +50,38 @@ describe("attachment occlusion on the figure", () => {
     expect(median("teeth/base")).toBeLessThan(median("eyes/high-poly"));
   });
 
+  it("ships the occlusion the code bakes, whatever the subdivision level", () => {
+    const assets = loadFixtureAssets();
+    for (const level of [0, 1]) {
+      const baked = new HumanoidModel(assets, { subdivision: level }).bakeAttachmentOcclusion();
+      [...assets.attachments.values()].forEach((a, i) => {
+        const fresh = baked[i] as Float32Array;
+        let worst = 0;
+        fresh.forEach((v, k) => {
+          worst = Math.max(worst, Math.abs(v - (a.occlusion[k] as number) / 255));
+        });
+        // One byte per vertex: at most half a step of rounding.
+        expect(worst, `${a.entry.id} at level ${level}`).toBeLessThanOrEqual(0.5 / 255 + 1e-6);
+      });
+    }
+  });
+
+  it("bakes at load for a set of attachments the pack did not bake", () => {
+    const assets = loadFixtureAssets();
+    const eyesOnly = new HumanoidModel(assets, { subdivision: 0, attachments: ["eyes/high-poly"] });
+    const fromTopology = eyesOnly.topology().attachments[0]?.occlusion;
+    // The same model's own bake, carried to its render vertices, is what it shows.
+    const reference = new HumanoidModel(assets, {
+      subdivision: 0,
+      attachments: ["eyes/high-poly"],
+    }).bakeAttachmentOcclusion()[0];
+    expect(fromTopology?.length).toBeGreaterThan(0);
+    // At level 0 the render vertices are the control vertices split at UV seams,
+    // so every rendered value is one of the baked values.
+    const bakedValues = new Set(reference);
+    expect([...(fromTopology ?? [])].every((v) => bakedValues.has(v))).toBe(true);
+  });
+
   it("does not let the transparent cornea shade the iris", () => {
     // Measured: 39% of eye vertices are mostly open when the cornea is ignored,
     // 20% when the alpha-cut cornea is (wrongly) treated as solid.

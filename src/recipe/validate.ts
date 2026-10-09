@@ -9,8 +9,10 @@ import { DEFAULT_SKIN, RECIPE_VERSION, type Recipe } from "./recipe.ts";
 
 export class RecipeValidationError extends Error {
   override name = "RecipeValidationError";
-  constructor(readonly problems: string[]) {
+  readonly problems: string[];
+  constructor(problems: string[]) {
     super(`invalid recipe: ${problems.join("; ")}`);
+    this.problems = problems;
   }
 }
 

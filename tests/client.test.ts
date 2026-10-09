@@ -9,7 +9,10 @@ class FakeWorker {
   onerror: ((e: ErrorEvent) => void) | null = null;
   evaluated: number[] = [];
   terminated = false;
-  constructor(private readonly failInit = false) {}
+  private readonly failInit: boolean;
+  constructor(failInit = false) {
+    this.failInit = failInit;
+  }
   postMessage(msg: WorkerRequest) {
     setTimeout(() => {
       if (this.terminated) return;
