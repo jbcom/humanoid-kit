@@ -34,11 +34,13 @@ import type {
   SurfaceEvaluation,
   SurfaceTopology,
 } from "../model/humanoidModel.ts";
+import type { Vec3 } from "../presence/presence.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { AttachmentStandardMaterial, OCCLUSION_ATTRIBUTE } from "../render/occlusion.ts";
 import { CURVATURE_ATTRIBUTE, SKIN_MASK_ATTRIBUTE, SkinMaterial } from "../render/skinMaterial.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
+import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 
 const ClientContext = createContext<HumanoidWorkerClient | null>(null);
 
@@ -105,7 +107,23 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
    * group's clicks in place of `onClick`.
    */
   onPick?: (pick: HumanoidPick) => void;
+  /**
+   * Publishes the figure into the nearest `PresenceProvider`'s registry under
+   * `id`, for as long as it is mounted. With `presence` the group's origin is
+   * the ground under the figure (the figure lifts itself onto it, so do not lift
+   * the group), and where it stands and which way it faces are read from the
+   * group every frame: moving the group, or a parent, moves the presence.
+   * `position` and `facing` are optional shorthand that place the group,
+   * replacing its own `position` and `rotation`.
+   */
+  presence?: HumanoidPresenceProps;
 };
+
+export interface HumanoidPresenceProps {
+  id: string;
+  position?: Vec3;
+  facing?: Vec3;
+}
 
 /** Where a tap on the figure landed. */
 export interface HumanoidPick {
@@ -245,12 +263,21 @@ export function Humanoid({
   onEvaluated,
   onError,
   onPick,
+  presence,
   ...group
 }: HumanoidProps) {
   const client = useHumanoidClient();
   const ready = useHumanoidReady();
   const key = useId();
   const groupRef = useRef<Group>(null);
+  const presenceSource = useRef<PresenceSource | null>(null);
+  const presenceContext = usePresenceContext();
+  if (presence && !presenceContext)
+    throw new Error("<Humanoid presence> must be used inside <PresenceProvider>");
+  usePublishPresence(presence?.id, groupRef, presenceSource);
+  // Lifts the figure so its soles meet the declared ground position.
+  const [lift, setLift] = useState(0);
+  const readyRef = useLatest(ready);
   const onEvaluatedRef = useLatest(onEvaluated);
   const onErrorRef = useLatest(onError);
   const report = useMemo(
@@ -313,6 +340,11 @@ export function Humanoid({
           if (g) writeGeometry(g, a);
         });
         if (groupRef.current) groupRef.current.userData.groundOffset = ev.groundOffset;
+        const info = readyRef.current;
+        presenceSource.current = info
+          ? { evaluation: ev, recipe, joints: info.presenceJoints }
+          : null;
+        setLift(ev.groundOffset);
         setShown(true);
         onEvaluatedRef.current?.(ev);
       },
@@ -323,17 +355,23 @@ export function Humanoid({
     return () => {
       live = false;
     };
-  }, [client, geometries, recipe, key, onEvaluatedRef, report]);
+  }, [client, geometries, recipe, key, onEvaluatedRef, readyRef, report]);
 
+  const placed = presence?.position;
+  const heading = presence?.facing;
   return (
     <group
       ref={groupRef}
       {...group}
+      {...(placed && { position: placed })}
+      {...(heading && { rotation: [0, Math.atan2(heading[0], heading[2]), 0] as Vec3 })}
       // Only listen when asked: a handler makes three raycast the figure on every click.
       {...(onPick && { onClick: (e: ThreeEvent<MouseEvent>) => pick(e, onPick) })}
     >
       {geometries && ready && (
-        <>
+        // With presence the group's origin is the ground under the figure, so the
+        // meshes are lifted here; without it the caller lifts the group.
+        <group position-y={presence ? lift : 0}>
           <mesh
             geometry={geometries.body}
             material={material ?? skin}
@@ -356,7 +394,7 @@ export function Humanoid({
               />
             ) : null;
           })}
-        </>
+        </group>
       )}
     </group>
   );

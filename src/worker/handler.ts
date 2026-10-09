@@ -13,6 +13,7 @@
 import { type LoadStage, loadHumanoidAssetsStaged } from "../format/assetFormat.ts";
 import { buildFeatureMap } from "../makehuman/features.ts";
 import { HumanoidModel } from "../model/humanoidModel.ts";
+import { presenceJoints } from "../presence/fromEvaluation.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
 
@@ -52,6 +53,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           modifiers: [...assets.modifiers.values()],
           sliders: assets.sliders,
           bones: assets.manifest.skeleton.bones.map((b) => b.name),
+          presenceJoints: presenceJoints(assets),
           adultAnatomyLoaded: assets.adultAnatomyLoaded,
         });
         return;

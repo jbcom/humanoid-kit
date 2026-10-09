@@ -252,7 +252,8 @@ mouth will re-bake at runtime with the same method.
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one
 `HumanoidModel`. The worker loads the packs in stages (above), builds the model
 from the first and replies with the topology, the modifier ids and the slider
-taxonomy while later stages are still arriving. An evaluation whose recipe
+taxonomy (and the joints presence reads, so the main thread derives presence
+without the packs) while later stages are still arriving. An evaluation whose recipe
 names a target that has not arrived waits in the worker for the stage that
 brings it, and only for that; one that has everything evaluates at once. If a
 stage fails to load, each evaluation that needs it rejects with the reason, and
@@ -321,8 +322,15 @@ the rendered body's soles, bounds cover every surface point, appearance is
 The evaluation is in the figure's own frame; `placePresence` turns it about its
 ground position and moves it onto a `Placement`, so a moving figure re-places
 one rest presence each frame instead of being re-derived. The registry, the
-helpers (`groundOcclusion`, `faceMetering`, `presenceGroups`) are pure; React
-only publishes into and reads from the registry.
+helpers (`groundOcclusion`, `faceMetering`, `presenceGroups`) are pure.
+
+React only publishes into and reads from the registry. `<PresenceProvider>`
+owns it and, once per frame, runs every mounted figure's publisher and then
+ticks the registry; a `<Humanoid presence>` publisher re-places the figure's
+rest presence (derived once per evaluation) on the group's world transform, so
+a figure moved by anything in the scene graph is followed with no props
+changing. Readers pull (`usePresence` is a live accessor) and subscribe only to
+discrete events (`useProximity`).
 
 ## Layers
 

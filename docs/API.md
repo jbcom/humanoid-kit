@@ -340,10 +340,11 @@ The main-thread handle to an evaluation worker.
   arriving, and an evaluation that needs one waits in the worker for its stage.
 - `client.complete: Promise<void>` resolves when every target file has
   loaded, or rejects with the error that stopped one.
-- `ReadyInfo` is `{ topology, modifiers, sliders, bones,
+- `ReadyInfo` is `{ topology, modifiers, sliders, bones, presenceJoints,
   adultAnatomyLoaded }`: the render topology, every drivable shape modifier, the
   merged slider taxonomy, the skeleton's bone names (the topology's skin indices
-  refer to them) and whether the adult anatomy pack is loaded.
+  refer to them), the joints presence reads (`presenceJoints`) and whether the
+  adult anatomy pack is loaded.
 - `client.evaluate(recipe, key?): Promise<Evaluation>` is latest-wins per key:
   each key has at most one evaluation in the worker and one waiting, and a
   waiting request replaced by a newer one rejects with an error named
@@ -388,6 +389,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
+| `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |
 | other props | Passed to the wrapping `<group>` |
 
 - Hidden until the first evaluation arrives.
@@ -398,6 +400,39 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 - Stores the latest `groundOffset` on the group's `userData`.
 - Disposes its geometries, textures and built-in materials on unmount.
 - Renders static meshes; it does not build a skeleton or play animation.
+- With `presence`, the group's origin is the ground under the figure: the
+  figure lifts its own meshes onto it, so do not lift the group by
+  `groundOffset` (without `presence` the caller does, as before). The ground
+  position and heading are read from the group's world transform every frame,
+  so moving the group, a parent or a `useFrame` mover moves the presence.
+  `position` and `facing` place the group declaratively, replacing its own
+  `position` and `rotation`. The figure is removed from the registry on
+  unmount. Assumes an upright figure at unit scale.
+
+### `<PresenceProvider registry? />`
+
+Owns a presence registry for everything below it (`createPresenceRegistry()`
+unless you pass `registry`, to share one with code outside React) and ticks it
+once per frame from `useFrame`, after every figure has published its
+placement. Render it inside the `<Canvas>`.
+
+### `usePresence(id?)`
+
+A live accessor, `{ readonly current }`: one figure's `PublishedPresence` (or
+`undefined` while it has none) for an `id`, every published figure without
+one. Read `.current` in `useFrame` or an event handler; it is looked up when
+read, so a figure that walks never re-renders its readers.
+
+### `useProximity(radius, listener)`
+
+Calls `listener` with a `ProximityEvent` when two figures come within `radius`
+metres on the ground and when they part beyond 1.1 × `radius`. The listener may
+change every render without resubscribing.
+
+### `usePresenceRegistry(): PresenceRegistry`
+
+The nearest provider's registry, for `groundOcclusion`, `faceMetering` and
+`presenceGroups`. All the presence hooks throw outside a `PresenceProvider`.
 
 ### `<StudioStage background? intensity? />`
 

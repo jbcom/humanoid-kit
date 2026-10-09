@@ -56,6 +56,7 @@ class FakeWorker {
             modifiers: [],
             sliders: [],
             bones: [],
+            presenceJoints: {} as never,
             adultAnatomyLoaded: false,
           });
       }, 1);

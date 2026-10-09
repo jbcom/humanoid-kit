@@ -1,8 +1,9 @@
 # Presence: what a figure tells the world
 
-Status: being implemented (`src/presence`). The registry, the helpers and
-`presenceFromEvaluation` (presence derived from a figure's evaluation) are
-done and tested. It is the shared foundation for the milestone 8 animation work
+Status: being implemented (`src/presence`). The registry, the helpers,
+`presenceFromEvaluation` (presence derived from a figure's evaluation) and the
+React bindings (`PresenceProvider`, `<Humanoid presence>`, `usePresence`,
+`useProximity`) are done and tested. It is the shared foundation for the milestone 8 animation work
 (awareness and interactions) and for environment-driven lighting and shadows.
 
 ## Why
@@ -116,5 +117,20 @@ In React, `<Humanoid presence>` registers the figure; `usePresence()` and
   the figure's own frame; `placePresence` rotates about the ground position by
   the heading and translates. A walking figure re-places its rest presence each
   frame (cheap), and is re-derived only when its recipe is re-evaluated.
+- **The scene graph is the source of truth for placement.** `<Humanoid
+  presence>` reads the group's world transform every frame instead of taking
+  position and facing as per-frame props, because a walking figure is moved by
+  `useFrame`, a parent or physics, and re-rendering React per frame to tell the
+  registry would be wrong. `position` and `facing` in the prop are shorthand
+  that place the group once.
+- **With `presence`, the group's origin is the ground.** The figure lifts its
+  own meshes by `groundOffset` (an inner group), so the declared and published
+  position is where the soles meet the floor and callers never lift the group.
+- **Hooks pull.** `usePresence` returns a live accessor to read in a frame
+  callback or handler, not a value that re-renders on change; only discrete
+  events (`useProximity`) are subscriptions.
+- **The worker reports the joints.** The main thread has no packs, so
+  `ReadyInfo.presenceJoints` carries the small static vertex lists presence
+  reads, and presence is derived on the main thread from each evaluation.
 - **Presence carries placement, not a full matrix**, for now: ground position,
   facing and bounds. A transform matrix arrives with posing.

@@ -1,11 +1,19 @@
 export {
   Humanoid,
   type HumanoidPick,
+  type HumanoidPresenceProps,
   type HumanoidProps,
   HumanoidProvider,
   useHumanoidClient,
   useHumanoidReady,
 } from "./Humanoid.tsx";
+export {
+  PresenceProvider,
+  type PresenceRef,
+  usePresence,
+  usePresenceRegistry,
+  useProximity,
+} from "./presence.tsx";
 export {
   STUDIO_EXPOSURE,
   STUDIO_TONE_MAPPING,

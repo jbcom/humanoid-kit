@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { presenceJoints } from "../src/presence/fromEvaluation.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { createWorkerHandler } from "../src/worker/handler.ts";
 import type { WorkerResponse } from "../src/worker/protocol.ts";
 import { stubFetch } from "./fetchStub.ts";
+import { loadFixtureAssets } from "./fixtures.ts";
 
 /** Drives the worker's handler directly, collecting its replies by request id. */
 function start() {
@@ -33,6 +35,9 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
       model: { subdivision: 0 },
     });
     expect(replies.get(1)?.type).toBe("ready");
+    // Presence is derived on the main thread, which has no packs: the worker
+    // reports the joints it reads, once, with the topology.
+    expect(replies.get(1)).toMatchObject({ presenceJoints: presenceJoints(loadFixtureAssets()) });
 
     const older = handle({
       type: "evaluate",

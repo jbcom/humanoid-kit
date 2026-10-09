@@ -7,6 +7,7 @@ import type {
   ModelTopology,
   RenderFeatures,
 } from "../model/humanoidModel.ts";
+import type { PresenceJoints } from "../presence/fromEvaluation.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 
 /** What the worker reports once the packs are loaded and the model is built. */
@@ -18,6 +19,8 @@ export interface ReadyInfo {
   sliders: SliderTask[];
   /** Skeleton bone names; the topology's skin indices refer to these. */
   bones: string[];
+  /** The joints presence reads (`presenceFromEvaluation`), so the main thread needs no packs. */
+  presenceJoints: PresenceJoints;
   adultAnatomyLoaded: boolean;
 }
 
