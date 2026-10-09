@@ -1,7 +1,7 @@
 /**
  * Applies baked attachment occlusion (`AttachmentTopology.occlusion`) in
- * three's lighting: every term (direct and ambient, diffuse and specular) is
- * scaled, so an enclosed surface neither glows nor sparkles. A floor keeps
+ * three's lighting: every term (direct and ambient, diffuse, specular and
+ * clearcoat) is scaled, so an enclosed surface neither glows nor sparkles. A floor keeps
  * fully enclosed surfaces from going black: the bake is of the resting figure,
  * and a mouth that opens should not show pitch-black teeth.
  */
@@ -41,6 +41,10 @@ export function patchOcclusion(shader: WebGLProgramParametersWithUniforms): void
 		reflectedLight.indirectDiffuse *= hkOcc;
 		reflectedLight.directSpecular *= hkOcc;
 		reflectedLight.indirectSpecular *= hkOcc;
+		#ifdef USE_CLEARCOAT
+			clearcoatSpecularDirect *= hkOcc;
+			clearcoatSpecularIndirect *= hkOcc;
+		#endif
 	}`,
     );
 }
