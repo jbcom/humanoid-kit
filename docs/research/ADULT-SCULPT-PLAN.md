@@ -401,14 +401,24 @@ growth through the keys, and the surface against the authored shape for every va
 - **Features.** Feature displacement is added to the bound position, in the
   local frame, so a long shaft on a tall figure and on a short one are the same
   shape at the figure's scale.
-- **UVs and the skin layers.** The patch's UVs are the replaced region's UVs
-  interpolated onto the new vertices, so the patch lies in the same UV
-  neighbourhood and the body's texture space has no new island. The field atlas
-  rasteriser then draws the variant's patch triangles, with each adult layer's
-  fields computed from the zones (mask: zone membership; coordinate: along the
-  shaft, glans to base), and refreshes in place exactly as phase 1's
-  `LayerAtlas.refresh` does now. This is what turns today's penis and testes
-  layers, which paint nothing, into layers that do.
+- **UVs and the skin layers.** (As built; the original idea, a patch lying in the
+  replaced region's UV neighbourhood, could not colour a tube, since a reservoir's
+  strips are collapsed in UV and a long shaft cannot share a disc of skin's texels.)
+  Each reservoir's skin has an **island** of its own in free space of the body's UV
+  layout: the tube's wall as a grid (chain position along one axis, ring along the
+  other, the seam a duplicated column) and the cap as a disc, placed by the packer
+  at the root skin's scale (`scripts/lib/uvIslands.ts`; the body's UV layout leaves
+  about 36% free, and its top right corner and the gap between the legs are
+  empty). The reservoir names the adult layer that colours it
+  (`AdultReservoirSpec.island`, `layer`); the model derives the layer's fields on the
+  island's triangles (mask 1, coordinate from the loop to the tip) and the atlas
+  rasterises them with the body's, refreshing in place as phase 1's
+  `LayerAtlas.refresh` does (`LayerFieldsUpdate.extra`). This is what turns the
+  penis and testes layers, which painted nothing, into layers that do. Rejected:
+  mapping the wall radially onto the root's disc of skin (the whole tube's length in
+  a few texels, and the first strip spanning the disc), and a vertex attribute for
+  the fields (the skin shader reads them from the atlas by UV, and one path is
+  better than two).
 - **State morphs.** Engorgement moves from the `helper-genital` targets to the
   patch's own, with the same calibration (circumference +25%, length +43%), and
   the clitoral and vulvar responses are added only when their magnitudes are
@@ -495,6 +505,8 @@ gates were.
    one (section 6c; the CC0 `genitals/penis-*` sliders are hidden and the engorgement
    state morph is replaced by the detail's own arousal drives); the scrotal lobes
    and testes are drawn on the labioscrotal pair (section 6c); the labia are next.
+   Step 4 (skin fields) is built for the organ and the sacs: each reservoir has a UV
+   island and a layer (section 7), and the penis and testes layers show on them.
 4. **Skin fields on the patch** and the layers' remap, so the phase 1 layers
    show.
 5. **State morphs on the patch** (engorgement moves from `helper-genital`).

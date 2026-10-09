@@ -13,12 +13,14 @@
  * for an adult figure whose recipe applies that feature, so nothing here checks
  * age or anatomy. The colours are uncalibrated (src/surface/genitalTone.ts).
  *
- * Phase 1 builds on today's CC0 targets, and those deform MakeHuman's
- * helper-genital group, which the render surface (the body group) leaves out:
- * the penis and testes masks sit on vertices that are not drawn, so they show
- * nothing until the sculpt phase puts adult geometry on the surface
- * (docs/research/ADULT-SCULPT-PLAN.md). The mound's target moves body skin, so
- * it is the one that shows today.
+ * The mound's mask is measured from a target that moves body skin. The penis and
+ * testes layers colour geometry the sculpt draws out of reservoirs
+ * (docs/research/ADULT-SCULPT-PLAN.md, sections 6b and 6c): each reservoir has an
+ * island of its own in UV space (`AdultReservoirSpec.island`) and names the layer
+ * that colours it (`layer`); the model derives the layer's fields there (mask 1,
+ * coordinate from the root to the tip) and the atlas rasterises them with the
+ * body's (`LayerFieldsUpdate.extra`). They are not measured from targets: the CC0
+ * penis targets deform MakeHuman's helper-genital group, which the surface never draws.
  */
 import {
   type AdultSkinLayerSpec,
@@ -86,7 +88,7 @@ const sitePaint =
 const SHAFT_STOPS = 6;
 
 /** Penis skin: shaft colour from the root, shading to the glans toward the tip. */
-export const PENIS_LAYER: SkinLayer = adultLayer("penis-skin", "penis", ({ tone, signals }) => {
+export const PENIS_LAYER: SkinLayer = adultLayer("penis-skin", "phallus", ({ tone, signals }) => {
   const arousal = signals.arousal ?? 0;
   const shaft = genitalAlbedo(tone, "shaft", arousal);
   const glans = genitalAlbedo(tone, "glans", arousal);
@@ -100,7 +102,7 @@ export const PENIS_LAYER: SkinLayer = adultLayer("penis-skin", "penis", ({ tone,
 /** Scrotal skin over the testes. */
 export const TESTES_LAYER: SkinLayer = adultLayer(
   "testes-skin",
-  "testes",
+  "scrotum",
   sitePaint("scrotum", 0.9),
 );
 

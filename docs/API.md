@@ -675,7 +675,10 @@ compute what the renderer will do.
   `model.adultLayerFields(): LayerFieldsUpdate | null` gives the adult layers'
   fields per render vertex once the adult pack's targets have loaded (null
   before, and without the pack); the topology always carries those layers as
-  zero.
+  zero. When the pack's reservoirs have islands (`AdultReservoirSpec.island`, `layer`)
+  it also carries `extra: { uvs, index, layerFields }`: the island triangles in UV
+  space and the layers' fields there (mask 1, coordinate from the root to the tip),
+  which the atlas draws with the body's.
   `SkinPaintInput.age` is the figure's age in years (`recipe.macros.age`;
   `<Humanoid>` sets it), for layers that change with it: a layer that reads it
   must paint sensibly without it, since an input built without one has none.

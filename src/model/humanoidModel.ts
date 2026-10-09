@@ -60,6 +60,7 @@ import { DEFAULT_HAIR_COLOUR } from "../surface/hairTone.ts";
 import {
   buildLayerFields,
   isAdultLayer,
+  type LayerFieldsExtra,
   type LayerFieldsUpdate,
   uvScale,
 } from "../surface/layers.ts";
@@ -615,10 +616,74 @@ export class HumanoidModel {
   adultLayerFields(): LayerFieldsUpdate | null {
     const adult = SKIN_LAYERS.filter(isAdultLayer);
     if (!adult.every((l) => l.available?.(this.assets))) return null;
+    const layers = adult.map((l) => l.id);
+    const extra = this.islandFields(layers);
     return {
-      layers: adult.map((l) => l.id),
+      layers,
       layerFields: this.renderLayerFields(buildLayerFields(this.assets, adult), adult.length),
+      ...(extra && { extra }),
     };
+  }
+
+  /**
+   * The triangles of the adult surface on islands of their own in UV space
+   * (`AdultReservoirSpec.island`), and each named layer's fields there: a
+   * reservoir's `layer` has mask 1 over its island, and its coordinate runs from
+   * the loop (0) along the rings to the tip (1), the cap at the tip. Null when
+   * there is no adult surface or none of its reservoirs has an island.
+   */
+  private islandFields(layers: readonly string[]): LayerFieldsExtra | null {
+    const adult = this.adultBodySurface();
+    const specs = this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? [];
+    if (!adult) return null;
+    const { mesh } = adult.part;
+    const reservoirs = mesh.lattice?.reservoirs ?? [];
+    /** Per render vertex: -1, or the reservoir whose island it is on, and its place along it. */
+    const owner = new Int32Array(mesh.renderUv.length).fill(-1);
+    const along = new Float32Array(mesh.renderUv.length);
+    reservoirs.forEach((r, s) => {
+      const isle = r.island;
+      if (!isle) return;
+      const spec = specs[s];
+      if (!spec?.layer || !layers.includes(spec.layer))
+        throw new AssetFormatError(
+          `reservoir ${spec?.id ?? s}: its island needs an adult skin layer (\`layer\`) the core has`,
+        );
+      mesh.renderUv.forEach((uv, v) => {
+        if (uv >= isle.stripBase && uv < isle.stripBase + isle.columns * isle.rows) {
+          owner[v] = s;
+          along[v] = Math.floor((uv - isle.stripBase) / isle.columns) / (isle.rows - 1);
+        } else if (uv >= isle.capBase && uv < isle.capBase + isle.capCount) {
+          owner[v] = s;
+          along[v] = 1;
+        }
+      });
+    });
+    const local = new Int32Array(owner.length).fill(-1);
+    let count = 0;
+    owner.forEach((s, v) => {
+      if (s >= 0) local[v] = count++;
+    });
+    if (!count) return null;
+    const uvs = new Float32Array(count * 2);
+    const fields = new Float32Array(layers.length * count * 2);
+    owner.forEach((s, v) => {
+      const at = local[v] as number;
+      if (at < 0) return;
+      uvs[at * 2] = mesh.uvs[v * 2] as number;
+      uvs[at * 2 + 1] = mesh.uvs[v * 2 + 1] as number;
+      const l = layers.indexOf(specs[s]?.layer as string);
+      fields[(l * count + at) * 2] = 1;
+      fields[(l * count + at) * 2 + 1] = along[v] as number;
+    });
+    const triangles: number[] = [];
+    for (let t = 0; t < mesh.index.length; t += 3) {
+      const a = local[mesh.index[t] as number] as number;
+      const b = local[mesh.index[t + 1] as number] as number;
+      const c = local[mesh.index[t + 2] as number] as number;
+      if (a >= 0 && b >= 0 && c >= 0) triangles.push(a, b, c);
+    }
+    return { uvs, index: Uint32Array.from(triangles), layerFields: fields };
   }
 
   /**
