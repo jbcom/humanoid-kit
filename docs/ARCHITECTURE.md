@@ -833,9 +833,11 @@ forehead's lines and the furrows are bounded by distance along the skin from
 the brows' band (`distanceFromBrows`: Dijkstra over the mesh's edges), not by
 height, since the mesh is coarse over the forehead and a mask built from heights
 leaked across big triangles up and over the crown on the first sheets: the
-forehead lines run from 1.4 to 5.8 cm along the skin above the brows, fading
-toward the temples, and the furrows reach 1 to 2.6 cm above them, between the
-brows (frontalis lines stop 5 to 7 cm above the brows, glabellar lines are 1 to
+forehead lines (by height, which is smooth over the coarse mesh where a distance along its edges bends the grooves) run from 1 to 6.2 cm above the brows, fading
+toward the temples, and the furrows reach 1 to 2.6 cm above them, two straight near-vertical
+grooves 1.5 cm apart either side of the midline (a coordinate that runs
+unclamped across 6 cm with four grooves, of which the mask keeps the middle two,
+so no clamp bends them), between the brows (frontalis lines stop 5 to 7 cm above the brows, glabellar lines are 1 to
 2.5 cm long; a test holds every layer's mask to its extent). The
 crow's feet and the folds are each one layer for both sides, the coordinate
 being the angle about its own corner and the distance across its own fold, so
