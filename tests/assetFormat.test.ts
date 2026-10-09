@@ -12,7 +12,7 @@ import {
   targetLoadOrder,
 } from "../src/format/assetFormat.ts";
 import { macroTargetAgeAnchor, macroTargetNames } from "../src/makehuman/macro.ts";
-import { SKIN_MASK_TARGETS } from "../src/makehuman/skinMasks.ts";
+import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
 import {
   adultManifest,
   adultPackData,
@@ -172,10 +172,10 @@ describe("the target files", () => {
         expect(macroTargetAgeAnchor(n), n).toBe(id);
       }
     for (const n of names("core"))
-      expect(SKIN_MASK_TARGETS.includes(n) || (macros.has(n) && !macroTargetAgeAnchor(n)), n).toBe(
+      expect(SKIN_LAYER_TARGETS.includes(n) || (macros.has(n) && !macroTargetAgeAnchor(n)), n).toBe(
         true,
       );
-    expect(SKIN_MASK_TARGETS.filter((n) => !names("core").has(n))).toEqual([]);
+    expect(SKIN_LAYER_TARGETS.filter((n) => !names("core").has(n))).toEqual([]);
     for (const n of names("modifiers")) expect(modifierTargets.has(n), n).toBe(true);
   });
 

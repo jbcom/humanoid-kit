@@ -9,14 +9,15 @@
  *   curve follows from that distance and the surface's curvature through
  *   Penner's pre-integration of Burley's profile, tabulated
  *   (docs/research/ALGORITHMIC-APPEARANCE.md §2);
- * - regional colour from the figure's skin masks (lips, flush, areola), carried
- *   as a vertex attribute so they follow every shape change;
+ * - regional colour from the skin layer stack (src/surface/layers.ts): a field
+ *   atlas shared by every figure (`setLayerAtlas`) and this figure's stop
+ *   table, applied per pixel in UV space, so it follows every shape change;
  * - a fine tiling pore normal map and a low sheen for vellus hair.
  */
 import {
   ClampToEdgeWrapping,
-  Color,
   DataTexture,
+  DataUtils,
   HalfFloatType,
   LinearFilter,
   LinearSRGBColorSpace,
@@ -26,30 +27,27 @@ import {
   RepeatWrapping,
   RGBAFormat,
   ShaderChunk,
+  type Texture,
   Vector2,
   Vector3,
 } from "three";
+import {
+  paintStopTable,
+  type SkinLayer,
+  type SkinPaintInput,
+  STOP_COUNT,
+  STOP_TABLE_WIDTH,
+} from "../surface/layers.ts";
+import { SKIN_LAYERS } from "../surface/regions/index.ts";
 import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
-import {
-  areolaAlbedo,
-  lipAlbedo,
-  luminance,
-  MELANIN_ANCHORS,
-  type Rgb,
-  type SkinTone,
-  skinAlbedo,
-} from "../surface/skinTone.ts";
+import { luminance, MELANIN_ANCHORS, type Rgb, skinAlbedo } from "../surface/skinTone.ts";
+import { atlasPages, emptyLayerAtlas } from "./layerAtlas.ts";
 
-export interface SkinAppearance {
-  tone: SkinTone;
-  /** 0..1: how much the cheeks, nose and ears flush. */
-  flush: number;
-  /** 0..1: lip colour depth relative to the surrounding skin. */
-  lips: number;
-  /** 0..1: areola and nipple colour depth. */
-  areola: number;
-}
+/** What the skin material is painted from: the recipe's skin and the figure's state signals. */
+export type SkinAppearance = Omit<SkinPaintInput, "signals"> & {
+  signals?: SkinPaintInput["signals"];
+};
 
 export const DEFAULT_SKIN_APPEARANCE: Readonly<SkinAppearance> = {
   tone: { melanin: 0.35, haemoglobin: 0.5, undertone: 0, override: null },
@@ -57,9 +55,6 @@ export const DEFAULT_SKIN_APPEARANCE: Readonly<SkinAppearance> = {
   lips: 0.55,
   areola: 0.5,
 };
-
-/** Name of the vertex attribute carrying the three skin mask channels. */
-export const SKIN_MASK_ATTRIBUTE = "hkSkinMask";
 
 const DIRECT_DIFFUSE =
   "reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * ( 1.0 - F );";
@@ -69,6 +64,29 @@ export const CURVATURE_ATTRIBUTE = "hkCurvature";
 
 /** A GLSL float literal. */
 const glslFloat = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
+
+/**
+ * The layer stack, per pixel: the shader form of `applyLayers`, which the
+ * browser tests hold it to. Layer l's fields are in atlas page l / 2 (RG for
+ * even l, BA for odd); its row of the stop table holds (strength, blend) then
+ * the stops, which linear filtering interpolates along the coordinate.
+ */
+const layerFunctions = (count: number) => `
+varying vec2 vHkUv;
+uniform highp sampler2DArray hkLayerAtlas;
+uniform sampler2D hkLayerStops;
+vec3 hkApplyLayers( vec3 c, vec2 uv ) {
+	for ( int l = 0; l < ${count}; l ++ ) {
+		vec4 page = texture( hkLayerAtlas, vec3( uv, float( l / 2 ) ) );
+		vec2 f = ( l % 2 == 0 ) ? page.xy : page.zw;
+		vec4 head = texelFetch( hkLayerStops, ivec2( 0, l ), 0 );
+		float u = ( 1.5 + clamp( f.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
+		vec3 stop = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).rgb;
+		vec3 target = head.y > 0.5 ? c * stop : stop;
+		c = mix( c, target, f.x * head.x );
+	}
+	return c;
+}`;
 
 /**
  * Scatter functions, defined before three's lighting code uses them: the
@@ -215,24 +233,60 @@ function poreNormalMap(): DataTexture {
   return poreTexture;
 }
 
-export class SkinMaterial extends MeshPhysicalMaterial {
-  readonly hkUniforms = {
-    /** Scattering mean free path, metres; 0 disables scatter. */
-    hkScatterMfp: { value: SKIN_SCATTER.mfp as number },
-    /** How much further red scatters than blue (spectral slope). */
-    hkScatterSlope: { value: SKIN_SCATTER.slope as number },
-    /** 0 = pigment mixed through the medium; 1 = all pigment above an unpigmented layer. */
-    hkPigmentDepth: { value: SKIN_SCATTER.pigmentDepth as number },
-    /** The unpigmented layer's albedo (linear), used when pigment depth > 0. */
-    hkSubstrate: { value: new Vector3(...(MELANIN_ANCHORS[0] as Rgb)) },
-    hkScatterTable: { value: scatterTableTexture() },
-    hkMaskStrength: { value: new Vector3(0.55, 0.45, 0) },
-    hkLipColor: { value: new Color() },
-    hkFlushTint: { value: new Color(1.1, 0.84, 0.84) },
-    hkAreolaColor: { value: new Color() },
-  };
+function stopTexture(layerCount: number): DataTexture {
+  const t = new DataTexture(
+    new Uint16Array(layerCount * STOP_TABLE_WIDTH * 4),
+    STOP_TABLE_WIDTH,
+    layerCount,
+    RGBAFormat,
+    HalfFloatType,
+  );
+  t.minFilter = LinearFilter;
+  t.magFilter = LinearFilter;
+  t.wrapS = ClampToEdgeWrapping;
+  t.wrapT = ClampToEdgeWrapping;
+  t.colorSpace = NoColorSpace;
+  t.generateMipmaps = false;
+  return t;
+}
 
-  constructor() {
+/** One all-zero atlas per page count, shared by every material without its atlas. */
+const noLayers = new Map<number, Texture>();
+function noLayersFor(pages: number): Texture {
+  let t = noLayers.get(pages);
+  if (!t) {
+    t = emptyLayerAtlas(pages);
+    noLayers.set(pages, t);
+  }
+  return t;
+}
+
+export class SkinMaterial extends MeshPhysicalMaterial {
+  /** The layer stack this material applies; its atlas must be built from the same list. */
+  readonly layers: readonly SkinLayer[];
+  readonly hkUniforms: {
+    /** Scattering mean free path, metres; 0 disables scatter. */
+    hkScatterMfp: { value: number };
+    /** How much further red scatters than blue (spectral slope). */
+    hkScatterSlope: { value: number };
+    /** 0 = pigment mixed through the medium; 1 = all pigment above an unpigmented layer. */
+    hkPigmentDepth: { value: number };
+    /** The unpigmented layer's albedo (linear), used when pigment depth > 0. */
+    hkSubstrate: { value: Vector3 };
+    hkScatterTable: { value: DataTexture };
+    /** The shared field atlas (`buildLayerAtlas`); all zero (no layers) until set. */
+    hkLayerAtlas: { value: Texture };
+    /** This figure's stop table (`paintStopTable`). */
+    hkLayerStops: { value: DataTexture };
+  };
+  private readonly stopTable: Float32Array;
+
+  /** Uses the shared field atlas built for the body this material draws. */
+  setLayerAtlas(texture: Texture | null): void {
+    this.hkUniforms.hkLayerAtlas.value = texture ?? noLayersFor(atlasPages(this.layers.length));
+  }
+
+  constructor(layers: readonly SkinLayer[] = SKIN_LAYERS) {
     super({
       // Measured skin: roughness ≈ 0.5 (Weyrich et al. 2006) and an index of
       // refraction of about 1.4 (F0 ≈ 0.028), the same at every skin tone.
@@ -243,6 +297,17 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       ior: 1.4,
       sheenRoughness: 0.8,
     });
+    this.layers = layers;
+    this.stopTable = new Float32Array(layers.length * STOP_TABLE_WIDTH * 4);
+    this.hkUniforms = {
+      hkScatterMfp: { value: SKIN_SCATTER.mfp },
+      hkScatterSlope: { value: SKIN_SCATTER.slope },
+      hkPigmentDepth: { value: SKIN_SCATTER.pigmentDepth },
+      hkSubstrate: { value: new Vector3(...(MELANIN_ANCHORS[0] as Rgb)) },
+      hkScatterTable: { value: scatterTableTexture() },
+      hkLayerAtlas: { value: noLayersFor(atlasPages(layers.length)) },
+      hkLayerStops: { value: stopTexture(layers.length) },
+    };
     this.normalMap = poreNormalMap();
     // Pores are felt in the highlights, not seen as texture: keep the relief faint.
     this.normalScale = new Vector2(0.06, 0.06);
@@ -269,30 +334,23 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     const y = luminance(albedo);
     const t = Math.min(1, Math.max(0, (y - 0.05) / (0.355 - 0.05)));
     this.sheen = 0.12 + 0.13 * t * t * (3 - 2 * t);
-    // Lip and areola colours come from their own models (measured for lips);
-    // the sliders set the colour, and the masks' soft edges blend it in.
-    const lip = lipAlbedo(a.tone, a.lips);
-    this.hkUniforms.hkLipColor.value.setRGB(lip[0], lip[1], lip[2], LinearSRGBColorSpace);
-    const areola = areolaAlbedo(a.tone, a.areola);
-    this.hkUniforms.hkAreolaColor.value.setRGB(
-      areola[0],
-      areola[1],
-      areola[2],
-      LinearSRGBColorSpace,
-    );
-    this.hkUniforms.hkMaskStrength.value.set(0.9, a.flush, 0.9);
+    // Regional colour: each layer's paint from its own model (measured for lips),
+    // blended in by the atlas's soft-edged masks.
+    paintStopTable(this.layers, { ...a, signals: a.signals ?? {} }, this.stopTable);
+    const stops = this.hkUniforms.hkLayerStops.value;
+    const half = stops.image.data as Uint16Array;
+    for (let i = 0; i < half.length; i++)
+      half[i] = DataUtils.toHalfFloat(this.stopTable[i] as number);
+    stops.needsUpdate = true;
   }
 
   override onBeforeCompile: MeshPhysicalMaterial["onBeforeCompile"] = (shader) => {
     Object.assign(shader.uniforms, this.hkUniforms);
     shader.vertexShader = shader.vertexShader
-      .replace(
-        "#include <common>",
-        `#include <common>\nattribute vec3 ${SKIN_MASK_ATTRIBUTE};\nvarying vec3 vHkSkinMask;`,
-      )
+      .replace("#include <common>", "#include <common>\nvarying vec2 vHkUv;")
       .replace(
         "#include <color_vertex>",
-        `#include <color_vertex>\n\tvHkSkinMask = ${SKIN_MASK_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};`,
+        `#include <color_vertex>\n\tvHkUv = uv;\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};`,
       )
       .replace(
         "#include <common>",
@@ -303,15 +361,11 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        `#include <common>\nvarying vec3 vHkSkinMask;\nuniform vec3 hkMaskStrength;\nuniform vec3 hkLipColor;\nuniform vec3 hkFlushTint;\nuniform vec3 hkAreolaColor;\n${SCATTER_FUNCTIONS}`,
+        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}`,
       )
       .replace(
         "#include <color_fragment>",
-        `#include <color_fragment>
-	vec3 hkM = vHkSkinMask * hkMaskStrength;
-	diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * hkFlushTint, hkM.y );
-	diffuseColor.rgb = mix( diffuseColor.rgb, hkLipColor, hkM.x );
-	diffuseColor.rgb = mix( diffuseColor.rgb, hkAreolaColor, hkM.z );`,
+        "#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );",
       );
     // Includes are resolved after this hook, so inline the physical lighting chunk with
     // its direct diffuse term replaced. Fail loudly if three changes that line.
@@ -325,6 +379,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-skin-4";
+    // The shader depends on the layer count only; the layers' colour is in the stop table.
+    return `humanoid-kit-skin-5-${this.layers.length}`;
   }
 }

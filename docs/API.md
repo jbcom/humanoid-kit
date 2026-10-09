@@ -157,7 +157,7 @@ interface MacroValues {
   names that exist in the packed data. Never weights breast targets under 18.
 - `macroTargetNames(): Set<string>`: every name `macroTargetWeights` can
   produce; the body pack's first targets file holds exactly these plus
-  `SKIN_MASK_TARGETS`.
+  `SKIN_LAYER_TARGETS`.
 - Axis functions returning `AxisWeights`: `genderAxis`, `ageAxis`, `muscleAxis`,
   `weightAxis`, `heightAxis`, `proportionAxis`, `cupAxis`, `firmnessAxis` and
   `ethnicAxis`; `combine(prefix, axes)` takes their Cartesian product.
@@ -282,6 +282,16 @@ compute what the renderer will do.
   axis (research/SKIN-RENDERING.md §5.6). `depth` 0..1 is the recipe's slider.
 - CIELAB conversions: `labFromLinear`, `linearFromLab`, `lchFromLab`,
   `labFromLch` (D65).
+- Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
+  `SkinLayer` (`id`, `blend`, `targets`, `fields(assets)`, `paint(input)`),
+  `SKIN_LAYERS` (the stack, in order: flush, lips, areola), `SKIN_LAYER_TARGETS`,
+  `targetMask(assets, targets, lo, hi)` for masks measured from targets,
+  `buildLayerFields`, `paintStopTable(layers, input)` (the figure's stop table,
+  `STOP_COUNT` stops in rows of `STOP_TABLE_WIDTH` texels) and
+  `applyLayers(base, table, fields)`, the per-pixel blend the shader performs.
+  The model's topology carries `body.layerFields` and `body.layers`; the
+  renderer rasterises them once into a shared field atlas
+  (`humanoid-kit/react` does this for `<Humanoid>`).
 - The scatter model `SkinMaterial` renders (its constants and table come from
   these, and the browser tests hold the shader to them): `scatterDistance(albedo, mfp?, slope?, pigmentDepth?,
   substrate?)` gives each channel's scatter width in metres, and

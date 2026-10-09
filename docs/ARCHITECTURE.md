@@ -55,7 +55,7 @@ once its own targets have arrived rather than all of them
 
 | File | Holds | Size |
 | --- | --- | --- |
-| `targets-core.bin.gz` | the 8 skin-mask targets (`src/makehuman/skinMasks.ts`), and any macro target with no age anchor (MakeHuman has none) | 0.01 MB |
+| `targets-core.bin.gz` | the skin layers' mask targets (`SKIN_LAYER_TARGETS`, `src/surface/regions`), and any macro target with no age anchor (MakeHuman has none) | 0.01 MB |
 | `targets-baby.bin.gz`, `-child`, `-young`, `-old` | the macro targets of one age anchor (ethnic, universal, height, proportions and breast combinations) | 0.83, 1.14, 1.25, 1.20 MB |
 | `targets-modifiers.bin.gz` | the other shape-modifier targets | 1.0 MB |
 
@@ -278,7 +278,7 @@ hints, regional overrides) and `src/editor/ui` the React creator built on them.
 Tapping the figure opens the controls for what was tapped: the nose opens the
 nose sliders, a hand the hand sliders. The map from surface to controls is not
 written by hand. A slider group's modifier targets move exactly the vertices of
-the feature it shapes, as the skin masks already rely on, so the group that
+the feature it shapes, as the skin layers' masks already rely on, so the group that
 moves a vertex most is the feature there (`src/makehuman/features.ts`):
 
 - For every slider group that drives shape modifiers, and every base vertex,
@@ -316,16 +316,16 @@ static mesh.
 | --- | --- | --- |
 | `src/format` | Pack types, parsing, loading, face groups, joint positions | no (uses `fetch`) |
 | `src/morph` | Sparse morph evaluation with per-region weights | no |
-| `src/makehuman` | Macro axes and target weights, regions, skin masks, feature map, recipe to contributions | no |
+| `src/makehuman` | Macro axes and target weights, regions, feature map, recipe to contributions | no |
 | `src/mhclo` | Attachment binding (MakeHuman's MHCLO) | no |
 | `src/recipe` | Recipe schema and defaults, the age policy, validation | no |
 | `src/subdiv` | Catmull-Clark stencils | no |
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
-| `src/surface` | Skin albedo, the scatter model and table, occlusion baking | no |
+| `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking | no |
 | `src/model` | `HumanoidModel`, the evaluation pipeline | no |
 | `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
-| `src/render` | The skin and eye materials | three.js, no React |
+| `src/render` | The skin and eye materials, the layer field atlas | three.js, no React |
 | `src/react` | `HumanoidProvider`, `Humanoid`, `StudioStage` and hooks | yes |
 | `src/editor/ui` | `HumanoidCreator` and its panels | yes |
 
@@ -390,7 +390,7 @@ region masks:
   knees, knuckles and the neck, and goosebumps as a procedural normal and
   displacement overlay.
 
-The rest-state colours (`lipAlbedo`, `areolaAlbedo`, the skin masks) are its
+The rest-state layers (`src/surface/regions/rest.ts`: flush, lips, areola) are its
 layer zero, and every state is modelled along measured skin axes so that it
 holds at every skin tone.
 
@@ -425,13 +425,27 @@ the contract below, not on how the layers under it are solved.
   nails);
 - the signals it reads.
 
-A GPU pass composes the layers in order into a per-figure albedo texture and a
-detail-normal texture in the body's UV space, rasterising base triangles so
-that per-vertex fields interpolate across UV seams. It re-runs only when an
-input changes. The skin material samples the composed textures in place of
-today's three fixed mask channels, which become the first three layers. Each
-area lives in its own files (`src/surface/regions/<area>.ts` and its tests)
-and registers its layers, so lanes add files rather than edit shared ones.
+A layer splits into what depends on the base mesh and what depends on the
+figure. Its fields (mask and coordinate) come from the base mesh alone, so
+they are rasterised once into a **field atlas** in the body's UV space (two
+layers per RGBA texture, gutters dilated so filtering never reaches empty
+texels across a seam) and shared by every figure. Its colour depends on the
+figure, so each figure carries only a small **stop table**: per layer, its
+strength, blend mode and colour stops along the coordinate, sampled with
+linear filtering so a gradient costs nothing extra. The skin shader evaluates
+the layers in order per pixel. A state signal that changes (flush rising,
+engorgement) rewrites a few stop-table texels; nothing is re-rendered, and a
+crowd costs one atlas plus a few hundred bytes per figure, where a composed
+albedo texture per figure would cost megabytes each and a pass per change.
+
+Decision (2026-10-09): the field atlas and stop table, over a composed
+per-figure texture (memory and per-change cost above) and over generating
+shader code per layer (vertex-attribute limits, a recompile per layer set,
+and GLSL that Node tests cannot run). Layer colour functions are plain
+TypeScript, unit-tested in Node; the shader is fixed. Today's three mask
+channels become the first three layers with unchanged output. Each area lives
+in its own files (`src/surface/regions/<area>.ts` and its tests) and adds one
+entry to the layer list, so lanes add files rather than edit shared ones.
 
 **Per lane, before merging:** its own unit tests, and a contact sheet of its
 area at both ends of the tone range and at the extremes of each control.

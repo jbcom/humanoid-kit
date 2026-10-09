@@ -179,7 +179,7 @@ interpolates MakeHuman's age anchors (baby 1, child 11, young 25, old 90).
 Breast targets exist, as in MakeHuman, for the female anchor at the child, young
 and old anchors (none for baby), so breast development through adolescence comes
 from the age interpolation itself. Nipples and areolae are part of the base mesh
-and skin masks (`src/makehuman/skinMasks.ts`). humanoid-kit adds no judgement of
+and skin layers (`src/surface/regions/rest.ts`). humanoid-kit adds no judgement of
 its own to MakeHuman's body.
 
 **Genital anatomy is a separate install.** `scripts/pack-makehuman.ts` routes

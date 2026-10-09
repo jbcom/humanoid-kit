@@ -3,7 +3,7 @@
  * `<Humanoid>`, which renders a recipe and updates its geometry in place when
  * the recipe changes (no remount, so slider drags stay smooth).
  */
-import type { ThreeElements, ThreeEvent } from "@react-three/fiber";
+import { type ThreeElements, type ThreeEvent, useThree } from "@react-three/fiber";
 import {
   createContext,
   type ReactNode,
@@ -36,8 +36,9 @@ import type {
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
+import { acquireLayerAtlas } from "../render/layerAtlas.ts";
 import { AttachmentStandardMaterial, OCCLUSION_ATTRIBUTE } from "../render/occlusion.ts";
-import { CURVATURE_ATTRIBUTE, SKIN_MASK_ATTRIBUTE, SkinMaterial } from "../render/skinMaterial.ts";
+import { CURVATURE_ATTRIBUTE, SkinMaterial } from "../render/skinMaterial.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 
 const ClientContext = createContext<HumanoidWorkerClient | null>(null);
@@ -261,7 +262,6 @@ export function Humanoid({
   const geometries = useMemo(() => {
     if (!ready) return null;
     const body = makeGeometry(ready.topology.body);
-    body.setAttribute(SKIN_MASK_ATTRIBUTE, new BufferAttribute(ready.topology.body.skinMask, 3));
     body.setAttribute(
       CURVATURE_ATTRIBUTE,
       new BufferAttribute(new Float32Array(ready.topology.body.vertexCount), 1),
@@ -283,6 +283,17 @@ export function Humanoid({
     [geometries],
   );
   useEffect(() => () => skin.dispose(), [skin]);
+  // The skin layers' field atlas depends on the body alone, so figures share it.
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    if (!ready) return;
+    const atlas = acquireLayerAtlas(gl, ready.topology.body);
+    skin.setLayerAtlas(atlas.texture);
+    return () => {
+      skin.setLayerAtlas(null);
+      atlas.release();
+    };
+  }, [gl, ready, skin]);
   useEffect(() => {
     const s = recipe.skin;
     skin.setAppearance({

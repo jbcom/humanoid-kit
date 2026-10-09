@@ -17,12 +17,13 @@ import {
 import { NO_FEATURE } from "../makehuman/features.ts";
 import { recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
-import { buildSkinMasks } from "../makehuman/skinMasks.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
+import { buildLayerFields } from "../surface/layers.ts";
 import { bakeOcclusion } from "../surface/occlusion.ts";
+import { SKIN_LAYERS } from "../surface/regions/index.ts";
 
 export interface ModelOptions {
   /** Catmull–Clark levels for the body surface (0–2). Default 1. Attachments use at most 1. */
@@ -57,8 +58,13 @@ export interface AttachmentTopology extends SurfaceTopology {
 
 export interface ModelTopology {
   body: SurfaceTopology & {
-    /** Per render vertex: lips, flush and areola mask weights (see `buildSkinMasks`). */
-    skinMask: Float32Array;
+    /**
+     * The skin layers' fields per render vertex (`SKIN_LAYERS` order): for each
+     * layer in turn, `vertexCount` pairs of (mask, coordinate).
+     */
+    layerFields: Float32Array;
+    /** Ids of the layers `layerFields` holds, in order. */
+    layers: string[];
   };
   attachments: AttachmentTopology[];
 }
@@ -159,7 +165,7 @@ export class HumanoidModel {
   private readonly attached: { asset: BoundAsset; part: Part; control: Float32Array }[];
   /** Subdivision level of the attachments: the body's, at most 1. */
   private readonly attachmentLevel: number;
-  private readonly skinMask: Float32Array;
+  private readonly layerFields: Float32Array;
 
   readonly assets: HumanoidAssets;
 
@@ -198,17 +204,20 @@ export class HumanoidModel {
       const q = [0, 1, 2, 3].map((k) => assets.faceVerts[f * 4 + k] as number);
       this.bodyControlTriangles.set([q[0], q[1], q[2], q[0], q[2], q[3]] as number[], i * 6);
     });
-    // Skin masks are static: interpolate the base-vertex masks through the subdivision stencil once.
-    const surfaceMask = applyStencil(
-      this.body.mesh.stencil,
-      buildSkinMasks(assets),
-      new Float32Array(this.body.mesh.topology.vertexCount * 3),
-    );
+    // Layer fields are static: carry the base-vertex fields through the subdivision stencil once.
     this.bodyEdges = triangleEdges(this.body.mesh.index);
+    const n = assets.manifest.vertexCount;
+    const fields = buildLayerFields(assets, SKIN_LAYERS);
     const r2s = this.body.mesh.renderToSurface;
-    this.skinMask = new Float32Array(r2s.length * 3);
-    r2s.forEach((s, r) => {
-      this.skinMask.set(surfaceMask.subarray(s * 3, s * 3 + 3), r * 3);
+    const surface = new Float32Array(this.body.mesh.topology.vertexCount * 3);
+    this.layerFields = new Float32Array(SKIN_LAYERS.length * r2s.length * 2);
+    SKIN_LAYERS.forEach((_, l) => {
+      applyStencil(this.body.mesh.stencil, fields.subarray(l * n * 3, (l + 1) * n * 3), surface);
+      const base = l * r2s.length * 2;
+      r2s.forEach((s, r) => {
+        this.layerFields[base + r * 2] = surface[s * 3] as number;
+        this.layerFields[base + r * 2 + 1] = surface[s * 3 + 1] as number;
+      });
     });
 
     this.attachmentLevel = Math.min(level, 1);
@@ -327,7 +336,11 @@ export class HumanoidModel {
       return Float32Array.from(p.mesh.renderToSurface, (s) => surface[s * 3] as number);
     });
     return {
-      body: { ...topologyOf(this.body.mesh), skinMask: this.skinMask },
+      body: {
+        ...topologyOf(this.body.mesh),
+        layerFields: this.layerFields,
+        layers: SKIN_LAYERS.map((l) => l.id),
+      },
       attachments: this.attached.map(({ asset, part: p }, i) => ({
         occlusion: occlusion[i] as Float32Array,
         ...topologyOf(p.mesh),

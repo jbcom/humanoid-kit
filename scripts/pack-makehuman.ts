@@ -33,8 +33,8 @@ import {
   TARGET_ENCODING,
 } from "../src/format/assetFormat.ts";
 import { macroTargetAgeAnchor, macroTargetNames } from "../src/makehuman/macro.ts";
-import { SKIN_MASK_TARGETS } from "../src/makehuman/skinMasks.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
+import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { writeAttachments, writeAttachmentTextures, writePackEntry } from "./lib/packWriter.ts";
 import { buildSliders } from "./lib/sliders.ts";
@@ -474,17 +474,17 @@ async function main() {
     ...macroNames,
     ...modifiers.flatMap((m) => (m.lo ? [m.lo, m.hi] : [m.hi])),
   ]);
-  const missingMasks = SKIN_MASK_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
+  const missingMasks = SKIN_LAYER_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
   if (missingMasks.length)
-    throw new Error(`skin-mask targets not packed: ${missingMasks.join(", ")}`);
+    throw new Error(`skin-layer targets not packed: ${missingMasks.join(", ")}`);
 
   // The body's targets split into files by what needs them (docs/ARCHITECTURE.md):
-  // macro targets by age anchor, with the anchor-free ones and the skin-mask
+  // macro targets by age anchor, with the anchor-free ones and the skin-layer
   // targets in a small core file, and the other modifier targets last.
   const inPack = [...packed.values()].filter((t) => driven.has(t.name));
   const fileOf = (name: string): string => {
     if (macroNames.has(name)) return macroTargetAgeAnchor(name) ?? "core";
-    return SKIN_MASK_TARGETS.includes(name) ? "core" : "modifiers";
+    return SKIN_LAYER_TARGETS.includes(name) ? "core" : "modifiers";
   };
   const bodyFiles = BODY_TARGET_FILES.map((id) => ({
     id,
