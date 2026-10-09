@@ -34,6 +34,7 @@ lossless). All lengths are in metres.
 | --- | --- | --- |
 | `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, and the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion") |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
+| `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 19 garments from MakeHuman's system assets (suits, shoes, a hat), each bound to the base mesh with the vertices it hides |
 
 A target is stored sparsely: the indices of the vertices it moves (`uint16`),
 then their `int16` xyz deltas, plus a per-target scale in metres per step.
@@ -89,7 +90,24 @@ already-fetched buffers.
 
 The adult manifest records `topology` and `bodySha256`. The parser refuses it
 unless both match the body pack it is combined with, so adult targets can never
-be applied to a body they were not built for. Each pack's `data/PROVENANCE.md`
+be applied to a body they were not built for. The clothing manifest records the
+same two keys and is refused the same way: a garment's bindings are indices into
+one specific base mesh.
+
+The clothing pack's garments binary is large next to the first figure (2.3 MB
+of bindings and meshes), and a figure that wears nothing never needs it, so it
+loads as a stage of its own, after the body's modifier targets
+(`GARMENTS_FILE`); its manifest, which lists the garments and names their
+textures, arrives with the first stage. A garment is an attachment without
+baked occlusion: the same bindings (three base vertices, weights and an offset
+per vertex, per-axis scale references) and mesh, plus `delete_verts`, a
+category (`kind`, below) and the asset's tags. The packer
+(`scripts/pack-clothing.ts`) packs diffuse and normal maps as WebP at most
+1024 px on a side (2.1 MB for all nineteen), and reads the same `.mhclo`
+syntax as the attachments: the system shoes write `material` and
+`vertexboneweights_file` between `verts` and its data, so a keyword line does
+not end a vertex or `delete_verts` block, and only the other section keyword
+switches one. Each pack's `data/PROVENANCE.md`
 records the upstream commit, the CC0 evidence per source file and the SHA-256 of
 every output. The packer's licence gate refuses any source file that does not
 prove CC0 from its own content; see `NOTICE.md`.
@@ -279,6 +297,122 @@ key raises the upper and lowers the lower lip together, so a pose raising only
 the upper lip reads as half the key. Splitting it (four keys, sixteen corners)
 is the next refinement if expressions need it.
 
+## Clothing (milestone 7)
+
+**Use cases.** A creator dresses a figure from a wardrobe and changes one
+garment at a time while the shape sliders keep moving. A game dresses a crowd
+from saved recipes, each figure in its own outfit. The same garment must fit a
+lean, a heavy and a muscular body and a child, and follow every pose. Garments
+layer: shoes over trousers, a jacket over a shirt. No skin may show through a
+garment, and no gap may open at a neckline, cuff or hem.
+
+**Requirements.** Changing the outfit must not rebuild or re-subdivide the
+body (a hat swap in a slider drag would stall it). The occlusion the pack
+baked for the eyes, teeth and tongue must stay valid whatever is worn. The core
+stays framework-free and testable in Node. Only CC0 data is packed, proved
+from each file.
+
+**Decisions (2026-10-09).**
+
+- *A garment is an attachment worn by choice.* It binds to base vertices by
+  index and weight (`.mhclo`), so it follows the shape through the same
+  `evaluateBinding` as the eyes, is skinned from its references' weights and
+  subdivided at the attachments' level (at most 1). It lives in its own pack
+  (`humanoid-kit-clothing`) and its own map (`assets.garments`), not
+  `assets.attachments`: the model wears every body-pack attachment by default,
+  and a garment must never be worn that way. `recipe.outfit`, an optional list
+  of ids, says what a figure wears; the recipe stays plain data, and a saved
+  figure names its clothes.
+- *Masking is a mask over indices, not a rebuild.* The first version of the
+  model dropped covered body faces from the quad list before building the
+  surface, so every outfit change meant a new subdivision stencil, new UV
+  splitting and new skin weights, the occluder for the attachment bake changed
+  with the outfit, and the ground offset read a different vertex set.
+  MakeHuman does the opposite: the subdivided mesh keeps its geometry and only
+  its face mask changes, "allowing faster changes to the face mask without
+  requiring a rebuild". The model now builds the body once from all its faces.
+  An outfit is a pure function of the garment ids (`outfit(ids)`): it works
+  out which base vertices still show and returns the body's triangle index with
+  the hidden faces' triangles left out, and each garment's. A control face owns
+  `2 × 4^level` consecutive triangles, so masking is a copy of the runs that
+  stay. The adult surface (finer faces round the pelvis) owns a varying number
+  per face, which `buildRefinedSurfaceMesh` reports as `faceTriangles`; the same
+  mask applies to it, worked out the first time an adult wears the outfit. An
+  evaluation carries the mask of the surface it is for, and its outfit key says
+  which (`adult:` first). Results are cached by key (a handful at a time), and
+  the worker sends the masks only to a caller that does not hold them.
+  Rejected: rebuilding the
+  surface per outfit (above), and discarding fragments in the shader (a
+  per-vertex attribute cannot express a per-face rule across UV seams, and a
+  discarded triangle still costs its vertex work).
+- *A face is hidden only when all its corners are deleted.* The first
+  implementation hid a body quad when any corner was deleted, which left a gap
+  ring at every garment edge; a garment's `delete_verts` list the vertices it
+  covers, and the quads on its boundary still have visible corners under the
+  cloth's edge. The garment's own faces follow the same rule.
+- *Layering is by `z_depth`, then category, then id.* MakeHuman orders by the
+  asset's `z_depth` and breaks ties by uuid, which is random. Nearly every
+  system asset has `z_depth` 50, so the tie decides almost everything; each
+  garment therefore also declares a category (`kind`, `GARMENT_LAYERS`, whose
+  order is MakeHuman's own table of conventional values: underwear 39, socks
+  43, shirt and trousers 47, sweater 50, indoor jacket 53, shoes 57, coat 61,
+  backpack 69), which decides between garments of equal `z_depth`, and the id
+  decides what is left, so an outfit always stacks the same way. The
+  stack is processed from the outermost in; each garment is masked by the
+  deletions of the garments over it only, then adds its own. A jacket's
+  `delete_verts` therefore hide the shirt under it and never the jacket.
+  *The category does not come first, which was the first version*: the table
+  puts shoes (57) over trousers (47), but the system shoes declare `z_depth` 5
+  against the suits' 50, and ordered by category the shoes' deletions cut the
+  trousers off at the ankle with a torn staircase edge. With the asset's own
+  depth leading, the hem hangs over the shoe, as it does on a person. An
+  asset's author said which of two garments is nearer the skin; the category
+  table is for the garments that did not.
+- *Layering suits garments that are separate pieces.* The system suits are
+  complete outfits (shirt, trousers and, for the elegant ones, a jacket in one
+  mesh), so they are all category `clothes`, and the creator wears one at a time
+  (`wearGarment` replaces a garment of the same kind). Two of them worn through
+  the API stack two pairs of trousers: the one that reaches lower shows below
+  the other's hem, and its edge follows the mask's face boundary, which is
+  ragged. That is MakeHuman's result too; it is not an error to hide, and the
+  stack is demonstrated by what is separate in the pack: shoes under trousers,
+  a hat over everything.
+- *A mask reaches a garment through its references.* A garment vertex bound
+  exactly to one base vertex copies that vertex's visibility; any other is
+  visible when at least two of its three references are. This is MakeHuman's
+  rule, and it keeps the cloth that lies over a hidden region from being cut by
+  one reference vertex alone.
+- *Hair, brows, lashes, eyes and teeth are not in the stack.* They are
+  attachments with no layer: they hide no skin and no garment masks them.
+- *The attachments' occlusion does not depend on the outfit.* The body that
+  occludes them is the full body (`bodyControlTriangles`), as in the pack's
+  bake, and garments are not occluders or occludees: a worn outfit never forces
+  the bake to run again, and `wearsPackedSet` stays true. Whether garments
+  should shade skin (the neck under a collar) is open; the skin layer stack
+  (`src/surface/layers.ts`) is where it would go, as a layer whose mask is the
+  rim of the covered region. It is not done, for a reason of design rather than
+  effort: the field atlas is rasterised once for the base mesh and shared by every
+  figure, and the rim of what a garment covers changes with the outfit, so each
+  outfit would need its own field. The light does the work meanwhile: garments
+  cast and receive shadows like the body, which darkens the skin at a cuff or
+  collar the way contact does.
+- *The figure stands on what it wears.* `groundOffset` counts the garments'
+  lowest control point as well as the body's, so soles that reach 2 cm below
+  the foot rest on the ground instead of sinking. A posed figure's grounding
+  (`posedGroundOffset`) takes the worn garments' render vertices too and skins
+  them with the pose, so a kneeling figure rests on its knee or its shoe,
+  whichever is lower.
+- *Garments skin as the body does.* Their material takes the figure's dual
+  quaternion bones (`applyDualSkinning`, as for any material the library does
+  not make), and so do their shadow materials and the mesh's bounds and
+  picking, so a sleeve keeps the arm's volume at a twisted or raised joint and
+  does not part from the skin (`docs/evidence/clothing.md`, "Garments skin
+  like the body"). The grounding above uses the same blended skinning
+  (`skinPositions`), so what stands on the ground is what is drawn.
+- *Garments load as a stage of their own* (see "Packs and the binary format")
+  and are evaluated lazily: the model builds a garment's surface the first time
+  an outfit names it.
+
 ## Body occlusion
 
 Attachment occlusion darkens what the body encloses; the body's own surface
@@ -456,6 +590,16 @@ recipes need it too. Results are transferred, not copied. The client accepts an
 injected `Worker`; by default it starts the built `dist/worker/index.js` next to
 it.
 
+An outfit crosses the worker boundary in two parts, because they change at
+different rates. A garment's static data (surface, UVs, skin weights, material)
+is requested once per garment (`client.garment`) and kept. An evaluation carries
+only the garments' positions and normals, plus the outfit's masks (the triangle
+indices to draw) when the caller does not already hold them: the caller passes
+the key of the outfit it holds, and a slider drag over an unchanged outfit
+sends no indices at all. The masks the model caches are copied before they are
+transferred. A recipe with an outfit waits for the garments' load stage, and a
+figure that wears nothing does not.
+
 ## Editor
 
 `src/editor` holds the creator's logic as plain functions (slider ranges and
@@ -541,8 +685,8 @@ mean what they meant there; everything must be testable in Node.
   they pose): BVH channel values in degrees per joint over a MakeHuman pose's
   joint layout, every other channel at rest, packed into the same entries. The
   first is `relaxed`, standing at ease with the arms at the sides, since the
-  rest A-pose holds them 42° out; `flexed` and `twisted` are the skinning's
-  extremes (below), which the pack's benchmark does not reach: it bends no
+  rest A-pose holds them 42° out; `flexed`, `twisted` and `abducted` (the
+  thighs opened 40°) are the skinning's extremes (below), which the pack's benchmark does not reach: it bends no
   elbow, knee or wrist. An expression layers on top of a body pose bone by
   bone.
 - *Grounding follows the pose.* The rest ground offset comes with each
@@ -647,11 +791,18 @@ the browser project (the dual quaternion blend and share vertex by vertex to
 2·10⁻⁵, and a whole skinned mesh against the reference's image).
 
 **What remains.** The elbow loses about 4‰ and the hips 15 to 20‰ in every
-scheme (the weights' geometry: the inside of a fold, and the groin). The blend
-bulges a flexed hip's front (95th percentile 1.37 at 120°, against linear
-skinning's 1.13) for the 15‰ of volume it keeps, and a bent knee's (1.32 against
-1.23). Those are for a corrective lane, against this skinning; the crease detail
-layers (`flex.*` signals) paint the fold's skin on top of it.
+scheme (the weights' geometry: the inside of a fold, and the groin).
+**Decision (2026-10-09): no corrective for the elbow or the hip's abduction.**
+Rendered at their extremes in four bodies (`docs/evidence/skinning.md`) neither
+shows a fault: the elbow's 4‰ is about 0.2 L and the smallest loss measured, the
+abducted groin is skin stretched rather than lost, and a corrective shape
+authored for either would add data and a per-pose evaluation for a change the
+sheets cannot show. The gate (never worse than linear in girth, within a
+thousandth in volume) holds both. The blend bulges a flexed hip's front (95th
+percentile 1.37 at 120°, against linear skinning's 1.13) for the 15‰ of volume
+it keeps, and a bent knee's (1.32 against 1.23); that is the remainder a
+pose-space corrective would address, if figures are posed there often. The
+crease detail layers (`flex.*` signals) paint the fold's skin on top of it.
 
 ## Presence
 
@@ -713,9 +864,9 @@ and overlapping), measuring the canvas against the model.
 | `src/subdiv` | Catmull-Clark stencils | no |
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
 | `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking, the body's cavity occlusion | no |
-| `src/model` | `HumanoidModel`, the evaluation pipeline | no |
+| `src/model` | `HumanoidModel`, the evaluation pipeline; `outfit.ts`, the layering and masking of garments | no |
 | `src/presence` | Presence registry, helpers, and presence derived from an evaluation | no |
-| `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
+| `src/editor` | The creator's logic: controls, history, randomisation, framing, the wardrobe | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
 | `src/render` | The skin and eye materials, the layer field atlas, the pooled ground contact shader | three.js, no React |
 | `src/react` | `HumanoidProvider`, `Humanoid`, `StudioStage` and hooks | yes |

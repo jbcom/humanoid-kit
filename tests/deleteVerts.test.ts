@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
-describe("an attachment's delete_verts", () => {
+// Builds three models; about a second alone, but several times that on a loaded runner.
+describe("an attachment's delete_verts", { timeout: 120_000 }, () => {
   const assets = loadFixtureAssets();
   const id = "eyes/high-poly";
   const eyes = assets.attachments.get(id);

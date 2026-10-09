@@ -316,6 +316,28 @@ describe("a body surface with local refinement", { timeout: 600_000 }, () => {
     expect(border(fine)).toBe(border(plain));
   });
 
+  it.each([1, 2])("at level %i says which triangles each control face owns", (level) => {
+    const fine = fineSurface(level);
+    const starts = fine.faceTriangles as Uint32Array;
+    expect(starts.length).toBe(body.length + 1);
+    expect(starts[0]).toBe(0);
+    expect(starts[body.length]).toBe(fine.index.length / 3);
+    // A face the refinement leaves alone is drawn as the plain surface draws it
+    // (two triangles per cell, 4^level cells), unless a refined neighbour's
+    // hanging points make it a transition polygon; a refined face has more.
+    const plainOwns = 2 * 4 ** level;
+    let same = 0;
+    let finer = 0;
+    for (let i = 0; i < body.length; i++) {
+      const owns = (starts[i + 1] as number) - (starts[i] as number);
+      expect(owns).toBeGreaterThanOrEqual(plainOwns);
+      if (owns === plainOwns) same++;
+      else finer++;
+    }
+    expect(finer).toBeGreaterThan(0);
+    expect(same).toBeGreaterThan(body.length * 0.9);
+  });
+
   it("needs a subdivision level: the refinement is defined on the level-1 surface", () => {
     expect(() => buildRefinedSurfaceMesh(source, body, region(), 0)).toThrow(RangeError);
   });

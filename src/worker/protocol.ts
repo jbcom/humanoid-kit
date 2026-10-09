@@ -1,4 +1,5 @@
 /** Messages between `HumanoidWorkerClient` and the evaluation worker. */
+import type { WardrobeEntry } from "../editor/wardrobe.ts";
 import type {
   AdultAnatomySpec,
   LoadOptions,
@@ -9,6 +10,7 @@ import type { FeatureRef } from "../makehuman/features.ts";
 import type {
   AdultSurfaceTopology,
   Evaluation,
+  GarmentTopology,
   ModelOptions,
   ModelTopology,
   RenderFeatures,
@@ -43,6 +45,11 @@ export interface ReadyInfo {
    * which the skin paint and the shape signals read; absent without the pack.
    */
   anatomy?: AdultAnatomySpec;
+  /**
+   * The garments the clothing pack offers, listed before their geometry has
+   * loaded; empty without that pack. A recipe wears them by `id`.
+   */
+  wardrobe: WardrobeEntry[];
 }
 
 /** Which controls shape each rendered vertex: what a tap on the figure opens. */
@@ -77,7 +84,15 @@ export type WorkerRequest =
       recipe: Recipe;
       /** The skin state's signals; those with state morphs change the shape. */
       signals?: Readonly<Record<string, number>>;
-    };
+      /**
+       * The key of the outfit the caller already holds the masks of
+       * (`Evaluation.outfit`); when the recipe's outfit has this key the reply
+       * leaves the masks out.
+       */
+      haveOutfit?: string | null;
+    }
+  /** Answered with a garment's static render data, once the garments have loaded. */
+  | { type: "garment"; id: number; garment: string };
 
 export type WorkerResponse =
   | ({ type: "ready"; id: number } & ReadyInfo)
@@ -88,4 +103,5 @@ export type WorkerResponse =
   | { type: "adultLayers"; id: number; update: LayerFieldsUpdate | null }
   | { type: "adultSurface"; id: number; topology: AdultSurfaceTopology | null }
   | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
+  | { type: "garment"; id: number; topology: GarmentTopology }
   | { type: "error"; id: number; message: string; name: string };

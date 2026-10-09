@@ -33,6 +33,12 @@ export interface SurfaceMesh {
   skinIndex: Uint16Array;
   skinWeight: Float32Array;
   /**
+   * Set when the triangles per control face differ (a refined surface): face
+   * `i` of the faces it was built from owns triangles `faceTriangles[i]` up to
+   * `faceTriangles[i + 1]`. Without it each face owns 2 × 4^levels, in order.
+   */
+  faceTriangles?: Uint32Array;
+  /**
    * Set for a surface refined on top of a coarser one (`buildRefinedSurfaceMesh`):
    * its shading normals come from the coarser surface's, not from its own faces.
    */
@@ -215,8 +221,22 @@ export function buildRefinedSurfaceMesh(
       faceUvs = next.faceUvs;
     }
   }
+  // Triangles per control face: each of its four level-1 children is some
+  // polygons, and a polygon is a fixed number of quads (`polygonsToQuads`; the
+  // Catmull–Clark levels after the first make n quads of an n-gon, then four of
+  // each), written in order, so a control face's triangles are consecutive.
+  const faceTriangles = new Uint32Array(selected.length + 1);
+  for (let i = 0; i + 1 < fine.faceStart.length; i++) {
+    const n = (fine.faceStart[i + 1] as number) - (fine.faceStart[i] as number);
+    const quads = levels === 1 ? (n === 4 ? 1 : n - 2) : n * 4 ** (levels - 2);
+    const owner = Math.floor((fine.sourceFace[i] as number) / 4);
+    faceTriangles[owner + 1] = (faceTriangles[owner + 1] as number) + quads * 2;
+  }
+  for (let f = 0; f < selected.length; f++)
+    faceTriangles[f + 1] = (faceTriangles[f + 1] as number) + (faceTriangles[f] as number);
   return {
     ...finishSurface(source, stencil, topology, uvs, faceUvs),
+    faceTriangles,
     smoothNormals: {
       control: base.stencil,
       faces: base.topology.faces,

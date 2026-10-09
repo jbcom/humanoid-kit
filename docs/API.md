@@ -25,6 +25,7 @@ Fetches and parses the packs.
 interface LoadOptions {
   body: PackLocation;           // e.g. bodyPack from humanoid-kit-body
   adultAnatomy?: PackLocation;  // e.g. adultAnatomyPack
+  clothing?: PackLocation;      // e.g. clothingPack from humanoid-kit-clothing
   firstFigureAge?: number;      // whose targets a staged load brings first; default 25
 }
 
@@ -36,14 +37,18 @@ type PackLocation =
 - Rejects with `AssetFormatError` when a request answers with an error status
   (a network failure rejects with the platform's `TypeError`), a buffer range exceeds
   its file, a target is duplicated, or the adult pack was built for a different
-  body pack (`topology` or `bodySha256` mismatch).
+  body pack (`topology` or `bodySha256` mismatch), as is the clothing pack, or
+  when a garment shares an id with an attachment.
 - Returns `HumanoidAssets`: the `manifest`, typed-array views of `positions`,
   `uvs`, `faceVerts`, `faceUvs`, `skinIndex` and `skinWeight`, a `targets` map
   (`SparseTarget`: `indices`, `deltas`, `scale`), a `modifiers` map
   (`ShapeModifierEntry`), `adultAnatomyLoaded`, `adultAnatomyManifest`,
   `targetFilesPending` (ids of target files not loaded yet) and `targetFileOf`
   (target name to file id). With the adult pack loaded, `targets` and
-  `modifiers` include its entries.
+  `modifiers` include its entries. With the clothing pack loaded,
+  `clothingManifest` lists its garments from the start; `garments` (a map of
+  `BoundGarment` by id) fills once the garments binary has arrived, and
+  `garmentsPending` is true until then.
 
 ```ts
 loadHumanoidAssetsStaged(options: LoadOptions): Promise<StagedHumanoidAssets>
@@ -57,6 +62,7 @@ interface StagedHumanoidAssets {
 
 Loads in stages over one link, in `targetLoadOrder(firstFigureAge)`: the first
 figure's age anchors with the core, then the body's modifier targets, then the
+clothing pack's garments (`GARMENTS_FILE`, only with a clothing pack), then the
 other age anchors, neighbours first, then the adult pack's targets on their
 own. All modifiers and sliders are listed from the start. Each later stage is
 fetched once the previous one has settled and is added to the same `assets`.
@@ -68,10 +74,15 @@ stage still loads, and `complete` rejects with the first failure.
 
 Also exported:
 
-- `parseHumanoidAssets(pack, adultAnatomy?)`: the same parsing from
+- `parseHumanoidAssets(pack, adultAnatomy?, clothing?)`: the same parsing from
   already-fetched, decompressed buffers. Pure; usable in workers and tests.
   `pack.targets` maps file ids (`BODY_TARGET_FILES`) to buffers; `core` is
-  required and any others may come later.
+  required and any others may come later. `clothing` is `{ manifest, garments? }`;
+  without `garments` they are pending.
+- `addGarments(assets, bin)`: adds the clothing pack's decompressed garments
+  binary. Throws `AssetFormatError` when no clothing pack is loaded, the
+  garments are already loaded, or one fails to check, and then leaves `assets`
+  unchanged.
 - `addTargetFiles(assets, files)`: adds target files by id as they arrive (the
   adult pack's under `ADULT_TARGET_FILE`). Throws `AssetFormatError` for a file
   the loaded packs do not have, one already loaded, or one that fails to
@@ -83,6 +94,7 @@ Also exported:
 - `jointPosition(assets, positions, joint, out, offset?)`: writes a skeleton
   joint's centroid over the given positions.
 - Types: `BodyManifest`, `AdultAnatomyManifest`, `AdultAnatomyData`,
+  `ClothingManifest`, `ClothingPackData`, `GarmentEntry`, `BoundGarment`,
   `TargetEntry`, `ShapeModifierEntry`, `BoneEntry`, `BvhJoint`, `FaceGroup`,
   `BufferRange`, `PackSource`.
 - `AssetFormatError`.
@@ -96,6 +108,7 @@ createRecipe(init?: {
   modifiers?: Record<string, number>;
   skin?: Partial<SkinRecipe>;
   eyes?: Partial<EyesRecipe>;
+  outfit?: readonly string[];
 }): Recipe
 ```
 
@@ -111,6 +124,7 @@ interface Recipe {
   modifiers: Record<string, number>; // id -> [-1, 1]; one-sided [0, 1]; missing = 0
   skin: SkinRecipe;
   eyes: EyesRecipe;
+  outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
 }
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
@@ -232,7 +246,7 @@ new HumanoidModel(assets: HumanoidAssets, options?: { subdivision?: 0 | 1 | 2 })
 The framework-free pipeline for one loaded body pack. `subdivision` defaults to 1
 and throws `RangeError` for anything else.
 
-- `model.evaluate(recipe, signals?): Evaluation`: `signals` (0..1 each) set the
+- `model.evaluate(recipe, signals?, haveOutfit?): Evaluation`: `signals` (0..1 each) set the
   skin's state; those with a state morph add their targets: `cold` (the nipple
   rises and the areola contracts; `STATE_MORPHS`) and `arousal` (engorgement:
   the shaft's circumference +25% and length +43% at full arousal, the measured
@@ -246,6 +260,8 @@ and throws `RangeError` for anything else.
   (`assertSignalPolicy`), before any target is named. Today the penis targets
   deform `helper-genital`, which the surface does not draw, so engorgement
   moves `Evaluation.control` and no drawn vertex until the sculpt phase.
+  `recipe.outfit` adds the garments (see "Clothing"); `haveOutfit` is the
+  outfit key the caller already holds the masks of.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
   only (every pose corner holding the rest value). `body.occlusion` is the
@@ -270,6 +286,13 @@ interface Evaluation {
   curvature: Float32Array;  // per body render vertex, mean curvature (1/m)
   boneHeads: Float32Array;  // the skeleton fitted to this figure: each bone's rest head, xyz
   surface: "base" | "adult"; // which topology the render arrays are in
+  attachments: SurfaceEvaluation[]; // eyes, teeth, tongue: positions and normals each
+  garments: SurfaceEvaluation[];    // the outfit's garments, in outfit.order
+  outfit: {
+    key: string;                    // the garments in stacking order, joined by "|" ("adult:" first on the adult surface); "" for none
+    order: string[];                // garment ids, innermost first
+    masks: OutfitMasks | null;      // null when the caller passed this key as haveOutfit
+  };
 }
 
 interface SurfaceTopology {
@@ -294,6 +317,34 @@ violates the age policy,
 `RecipeError` for an unknown modifier id (adult-only ids need the adult pack),
 an adult-only modifier on a minor, or a negative value on a one-sided modifier,
 and `MorphError` for an unknown target. Modifier values are clamped to `[-1, 1]`.
+
+### Clothing
+
+A figure wears the clothing pack's garments by id in `recipe.outfit`. The body
+surface is never rebuilt for it: a worn set only changes which triangles of the
+body and of each garment are drawn.
+
+- `model.outfit(ids): Outfit`: `{ key, order, masks }` for a set of garment
+  ids in any order. `order` is innermost first (by `z_depth`, then category,
+  then id) and `masks` is `{ bodyIndex, garmentIndex }`: the triangle indices to
+  draw in place of `topology().body.index` and each garment's
+  `GarmentTopology.index`. Garments stack as MakeHuman does: processed from the
+  outermost in, each is hidden only where the garments over it delete, and a
+  face hides only when every corner is hidden. Results are cached by key.
+  Throws `OutfitError` for an id the clothing pack lacks, one named twice,
+  garments that have not loaded, or no clothing pack.
+- `model.garmentTopology(id): GarmentTopology`: a garment's static render data
+  (`SurfaceTopology` plus `id`, `kind`, `zDepth`, `tags`, `material`,
+  `textureUrl`, `normalTextureUrl`), built once. Its `index` draws every face.
+- `GARMENT_LAYERS`: the categories (`kind`) a garment can have and their order:
+  `underwear`, `socks`, `clothes`, `sweater`, `jacket`, `shoes`, `coat`, `hat`,
+  `backpack`.
+- The arithmetic behind it, pure and exported: `layerOrder(entries)`,
+  `stackVisibility(vertexCount, garments, visible?)`,
+  `transferVisibility(visible, garment)`, `faceVisibility(faceVerts, faces,
+  visible)` and `maskIndex(index, faceVisible, trianglesPerFace)`.
+- The figure stands on what it wears: `groundOffset` counts the garments'
+  lowest point, so a sole that reaches below the foot rests on the ground.
 
 Lower-level pieces, also exported:
 
@@ -480,14 +531,17 @@ and expressions"). Framework-free.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
-  arms at the sides, and two for the skinning's extremes, `flexed`, every hinge
-  near its limit, and `twisted`, each limb turned about its own axis);
+  arms at the sides, and three for the skinning's extremes, `flexed`, every hinge
+  near its limit, `twisted`, each limb turned about its own axis, and
+  `abducted`, the thighs opened 40°);
   `composeRotations(a, b)` layers `b` (an expression) over `a`.
 - `restBonesFrom(names, parents, heads)` rebuilds the rest skeleton from an
   evaluation's `boneHeads` without the packs, and
-  `posedGroundOffset(rest, rotations, control, skin)` is the lift that puts a
-  posed figure's lowest body point on the ground (`RigSkin`: the pack's skin
-  and the visible body's base vertices, sent in `ReadyInfo.rig.skin`).
+  `posedGroundOffset(rest, rotations, control, skin, worn?)` is the lift that
+  puts a posed figure's lowest point on the ground: the body's, or that of the
+  garments in `worn` (`SkinnedPoints`: render positions at rest with their skin
+  indices and weights; `RigSkin` is the pack's skin and the body's base
+  vertices, sent in `ReadyInfo.rig.skin`).
 - Joint flexion as skin signals: `FLEXION_JOINTS` (elbows, knees, wrists),
   `flexionRig(rest)` (each joint's hinge, perpendicular to the upper segment
   and its flex direction) and `jointFlexion(rig, rest, rotations)`, giving
@@ -595,18 +649,29 @@ The main-thread handle to an evaluation worker.
 - `client.complete: Promise<void>` resolves when every target file has
   loaded, or rejects with the error that stopped one.
 - `ReadyInfo` is `{ topology, modifiers, sliders, rig, presenceJoints,
-  adultAnatomyLoaded, anatomy? }`: the render topology, every drivable shape
-  modifier, the merged slider taxonomy, the rig (`RigData` plus each bone's
-  `parents` index; the topology's skin indices refer to `rig.bones`), the joints
-  presence reads (`presenceJoints`), whether the adult anatomy pack is loaded
-  and, with it, its `anatomy` (`AdultAnatomySpec`: the features
-  `appliedAnatomy` reads and the state morphs the shape signals include).
-- `client.evaluate(recipe, key?, signals?): Promise<Evaluation>` (signals as for
-  `model.evaluate`) is latest-wins per key:
+  adultAnatomyLoaded, anatomy?, wardrobe }`: the render topology, every drivable
+  shape modifier, the merged slider taxonomy, the rig (`RigData` plus each
+  bone's `parents` index; the topology's skin indices refer to `rig.bones`), the
+  joints presence reads (`presenceJoints`), whether the adult anatomy pack is
+  loaded and, with it, its `anatomy` (`AdultAnatomySpec`: the features
+  `appliedAnatomy` reads and the state morphs the shape signals include), and
+  the garments the clothing pack offers (`WardrobeEntry[]`: `id`, `name`,
+  `label`, `kind`, `tags`; empty without that pack). `label` is what to call a
+  garment in a list ("Brown oxfords"); `name` is the asset's file name, which
+  says whom it was drawn for.
+- `client.evaluate(recipe, key?, signals?, haveOutfit?): Promise<Evaluation>`
+  (signals as for `model.evaluate`) is latest-wins per key:
   each key has at most one evaluation in the worker and one waiting, and a
   waiting request replaced by a newer one rejects with an error named
   `AbortError`. Keys never wait on each other. Buffers are transferred from the
-  worker.
+  worker. A recipe with an `outfit` waits for the clothing pack's garments, and
+  a figure that wears nothing never does. `haveOutfit` is the
+  `Evaluation.outfit.key` the caller already holds the masks of, which then
+  come back null instead of copied again.
+- `client.garment(id): Promise<GarmentTopology>` resolves with a garment's
+  static render data, once the garments have loaded. Requested from the worker
+  once per id however many figures wear it; a failed request is forgotten, so
+  asking again tries again.
 - `client.pickMap(): Promise<PickMap>` resolves, once every target file has
   loaded, with which controls shape each rendered vertex:
   `{ features: FeatureRef[], render: { body, attachments } }`, the render
@@ -681,10 +746,10 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `material?` | A three.js `Material` replacing the built-in skin material, which follows `recipe.skin` |
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"abducted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
-| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
+| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |
 | other props | Passed to the wrapping `<group>` |
 
@@ -704,6 +769,10 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   (`GUM_LAB`), pigmented browner and patchier with `recipe.skin.melanin`
   (`TeethMaterial.setSkin`, `gumAppearance`; ARCHITECTURE.md, "The gums";
   `docs/evidence/gums.md`).
+- Renders the garments `recipe.outfit` names, once the client loaded a
+  clothing pack: skinned to the same skeleton, so they follow the pose, with
+  their diffuse and normal maps. The body keeps its geometry whatever is worn;
+  only the triangles it draws change, on the adult surface as on the base.
 - Updates the geometry in place when `recipe` changes.
 - Stores the latest ground offset (posed when posed) on the group's `userData.groundOffset`.
 - Disposes its geometries, textures and built-in materials on unmount.
@@ -823,7 +892,9 @@ and camera.
 
 - One tab per MakeHuman modelling task (Main, Gender, Face, Torso, ...,
   Measure), in upstream order, with MakeHuman's groups and slider labels, plus
-  Appearance (skin, iris, sclera) and Regions (per-region macro overrides).
+  Appearance (skin, iris, sclera), Regions (per-region macro overrides) and,
+  when the client loaded a clothing pack, a Wardrobe: the garments by kind,
+  one worn at a time per kind, layered across kinds.
 - Tapping the figure opens the controls that shape the tapped part (its tab,
   with the group opened and scrolled into view) and frames that part from the
   front; see `buildFeatureMap`. Dragging orbits the view instead.
@@ -866,6 +937,20 @@ deterministic for a seed and never sets adult-only modifiers unless
 `options.includeAdultAnatomy` is true and the figure is 18 or over. Every
 change is undoable.
 
+### Wardrobe helpers
+
+Pure functions behind the Wardrobe tab, also exported from `humanoid-kit`:
+
+- `wardrobeOf(manifest): WardrobeEntry[]`: the garments a `ClothingManifest`
+  lists (none for null).
+- `wardrobeGroups(wardrobe): WardrobeGroup[]`: by kind, in the order people
+  dress, each with a heading.
+- `wearGarment(recipe, garment, wardrobe): Recipe`: the recipe wearing the
+  garment in place of any other of its kind, or without it when it is worn
+  already. An empty outfit is left out of the recipe. The input is not
+  modified.
+- `wornIn(recipe): readonly string[]`: the garment ids a recipe wears.
+
 ### `<SliderRow />`
 
 The creator's slider: label, value readout, a reset button and an accessible
@@ -886,8 +971,9 @@ fields once the adult pack's stage has loaded, or null without that pack),
 `adultSurface` (replied to with the adult pack's refined surface, or null) and
 `evaluate`, which
 waits for exactly the load stages its recipe needs without holding up other
-requests. Result buffers are transferred. Applications use it through the
-client, not directly.
+requests, and `garment` (replied to with a garment's static render data once
+the garments have loaded). Result buffers are transferred. Applications use it
+through the client, not directly.
 
 ## `humanoid-kit-body`
 
@@ -922,6 +1008,21 @@ core, which ships in the public build, names no adult target or modifier
 morphs. `anatomy.surface` (`AdultSurfaceSpec`: the base body `faces` to refine
 and their `levels`) names the pelvic region the adult surface refines; a pack
 without it leaves every figure on the base surface.
+
+## `humanoid-kit-clothing`
+
+```ts
+import { clothingPack } from "humanoid-kit-clothing";
+```
+
+`clothingPack` is `{ manifest, files: { "garments.bin.gz", ...WebP textures } }`.
+Pass it as `clothing`. It ships nineteen CC0 garments from MakeHuman's system
+assets, bound to the base mesh: twelve casual, sport, work and elegant suits
+(`suits/…`, category `clothes`; each a complete outfit, so one is worn at a
+time), six pairs of shoes (`shoes/shoes01` to `06`, category `shoes`) and a
+fedora (`hats/fedora01`, category `hat`). Loading it fails unless
+it was built against the exact body pack. A figure wears garments by id in
+`recipe.outfit`.
 
 ## Errors
 
