@@ -513,7 +513,16 @@ and expressions"). Framework-free.
 - `faceUnitRotations(rig, weights): BoneRotations`: an expression from
   MakeHuman's 60 face units (`JawDrop`, `LeftUpperLidClosed`, …), blended in
   log space; a quaternion per bone. Throws for an unknown unit.
-  `IDENTITY_POSE(bones)` is the rest pose.
+  `IDENTITY_POSE(bones)` is the rest pose. The pack's units are mirror
+  symmetric: each is the reflection of its partner (`mirrorUnit(unit)`: `Left`
+  and `Right` swapped, `MouthLeftPullUp` ↔ `MouthRightPullUp`; a central unit
+  such as `JawDrop` is its own), so a symmetric expression moves both sides alike.
+- `EXPRESSIONS`, `expressionUnits(id, intensity = 1)`: ten named expressions
+  (`smile`, `grin`, `frown`, `surprise`, `anger`, `disgust`, `fear`, `sad`,
+  `blink`, `squint`) as face unit weights, symmetric, for a pose's `faceUnits`
+  (`pose={{ faceUnits: expressionUnits("surprise", 0.7) }}`). `intensity` scales
+  the weights (0 to 1; above 1 is held at 1); an unknown id throws. The weights
+  are authored choices (ARCHITECTURE.md, "Named expressions").
 - `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out)`: the
   rig's skinning on the CPU, exactly as the renderer skins, for grounding,
   tests, anchors and pose-dependent bakes: linear blend skinning mixed with
