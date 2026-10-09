@@ -31,6 +31,11 @@ describe("authored body poses", () => {
     expect(() => make({ description: undefined })).toThrow(/description/);
     expect(() => make({ base: "dab" })).toThrow(/base/);
     expect(() => make({ rotations: undefined })).toThrow(/rotations/);
+    expect(() => make({ rotations: {} })).toThrow(/rotates nothing/);
+    expect(() => make({ rotations: { "upperarm01.L": {} } })).toThrow(/rotates nothing/);
+    expect(() => make({ rotations: { "upperarm01.L": { Yrotation: 0 } } })).toThrow(
+      /rotates nothing/,
+    );
     expect(() => make({ rotations: { nope: { Yrotation: 1 } } })).toThrow(/no joint/);
     expect(() => make({ rotations: { "upperarm01.L": { Xposition: 1 } } })).toThrow(/channel/);
     expect(() => make({ rotations: { "upperarm01.L": { Yrotation: "a" } } })).toThrow(/number/);
