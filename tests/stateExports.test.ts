@@ -63,7 +63,11 @@ describe("the package entry's skin-state API", () => {
       "hand-relief",
       "nail-gloss",
     ]);
-    expect(ids.slice(9)).toEqual([
+    // The feet's own skin follows the hands'.
+    expect(ids.slice(9, 9 + kit.FOOT_SKIN_LAYERS.length)).toEqual(
+      kit.FOOT_SKIN_LAYERS.map((l) => l.id),
+    );
+    expect(ids.slice(9 + kit.FOOT_SKIN_LAYERS.length)).toEqual([
       "goosebumps",
       "heat-flush",
       "exertion-flush",
@@ -75,7 +79,10 @@ describe("the package entry's skin-state API", () => {
       "sweat-exertion",
       // The joint creases follow the states.
       ...kit.CREASE_LAYERS.map((l) => l.id),
+      // The face's expression lines follow the joints'.
+      ...kit.EXPRESSION_LINE_LAYERS.map((l) => l.id),
     ]);
+    expect(kit.EXPRESSION_LINE_LAYERS).toHaveLength(5);
     expect(kit.CREASE_LAYERS).toHaveLength(4);
   });
 });

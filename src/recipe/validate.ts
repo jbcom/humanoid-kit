@@ -107,7 +107,7 @@ export function recipeProblems(recipe: unknown): string[] {
   return p;
 }
 
-const HAIR_KEYS = new Set(["style", "colour"]);
+const HAIR_KEYS = new Set(["style", "colour", "brows", "lashes"]);
 const unit = (v: unknown): v is number => finite(v) && v >= 0 && v <= 1;
 
 /** The optional `hair` field: a style id or null, and a colour whose every value is in range. */
@@ -120,6 +120,10 @@ function hairProblems(hair: unknown, p: string[]): void {
   for (const k of Object.keys(h)) if (!HAIR_KEYS.has(k)) p.push(`hair.${k} is not a hair field`);
   if (h.style !== null && !(typeof h.style === "string" && h.style !== ""))
     p.push("hair.style must be null or a non-empty string");
+  // Brows and lashes are worn when named and absent otherwise: never null, never empty.
+  for (const k of ["brows", "lashes"] as const)
+    if (k in h && !(typeof h[k] === "string" && h[k] !== ""))
+      p.push(`hair.${k} must be a non-empty string when given`);
   if (typeof h.colour !== "object" || h.colour === null) {
     p.push("hair.colour missing");
     return;

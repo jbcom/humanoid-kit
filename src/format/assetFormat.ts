@@ -318,7 +318,12 @@ export interface HairStyleEntry extends Omit<AttachmentEntry, "layout" | "kind">
    * `brows` or `lashes` that share the pack's loader, binding and colour model.
    */
   kind: HairKind;
-  layout: AttachmentEntry["layout"] & Record<(typeof HAIR_FIELD_KEYS)[number], BufferRange>;
+  /**
+   * A scalp style's layout holds every `HAIR_FIELD_KEYS` buffer; a decal's
+   * (`brows`, `lashes`) holds none, since it has no hairline, growth or scalp.
+   */
+  layout: AttachmentEntry["layout"] &
+    Partial<Record<(typeof HAIR_FIELD_KEYS)[number], BufferRange>>;
   /** What a picker shows. */
   label: string;
   /** What the style is: length, texture, shape (`short`, `curly`, `ponytail`...). */
@@ -809,12 +814,25 @@ export function addHairStyle(assets: HumanoidAssets, id: string, bin: ArrayBuffe
     ...readBinding(entry, bin, assets.manifest.vertexCount, what),
     occlusion,
   };
+  // Brows and lashes are decals: nothing measured of strands or a scalp.
+  if (entry.kind !== "scalp") {
+    for (const key of HAIR_FIELD_KEYS)
+      if (l[key])
+        throw new AssetFormatError(what(`${key}: a ${entry.kind} style has no scalp fields`));
+    assets.hair.bound.set(id, base);
+    return base;
+  }
+  const field = (key: (typeof HAIR_FIELD_KEYS)[number]): BufferRange => {
+    const range = l[key];
+    if (!range) throw new AssetFormatError(what(`${key} is missing`));
+    return range;
+  };
   const hair: HairFieldData = {
-    growth: view(Uint16Array, bin, l.growth, what("growth")),
-    fade: view(Uint8Array, bin, l.fade, what("fade")),
-    fin: view(Uint8Array, bin, l.fin, what("fin")),
-    scalpVerts: view(Uint16Array, bin, l.scalpVerts, what("scalpVerts")),
-    scalpWeights: view(Uint8Array, bin, l.scalpWeights, what("scalpWeights")),
+    growth: view(Uint16Array, bin, field("growth"), what("growth")),
+    fade: view(Uint8Array, bin, field("fade"), what("fade")),
+    fin: view(Uint8Array, bin, field("fin"), what("fin")),
+    scalpVerts: view(Uint16Array, bin, field("scalpVerts"), what("scalpVerts")),
+    scalpWeights: view(Uint8Array, bin, field("scalpWeights"), what("scalpWeights")),
   };
   expectLength(hair.growth, entry.vertexCount, what("growth"));
   expectLength(hair.fade, entry.vertexCount, what("fade"));

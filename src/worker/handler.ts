@@ -181,8 +181,8 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
       }
       await targetsFor(model, req.recipe, req.signals);
       // The worn style's files come on demand, like a target file, and only its own.
-      const wanted = model.pendingHair(req.recipe);
-      if (wanted !== null) await model.assets.hair?.load(wanted);
+      for (const wanted of model.pendingHairStyles(req.recipe))
+        await model.assets.hair?.load(wanted);
       await garmentsFor(model, (req.recipe.outfit?.length ?? 0) > 0);
       const t0 = performance.now();
       const evaluation = model.evaluate(req.recipe, req.signals, req.haveOutfit ?? null);
@@ -194,8 +194,8 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         evaluation.boneHeads.buffer,
       ];
       for (const a of evaluation.attachments) transfer.push(a.positions.buffer, a.normals.buffer);
-      if (evaluation.hair)
-        transfer.push(evaluation.hair.positions.buffer, evaluation.hair.normals.buffer);
+      for (const h of [evaluation.hair, evaluation.brows, evaluation.lashes])
+        if (h) transfer.push(h.positions.buffer, h.normals.buffer);
       for (const g of evaluation.garments) transfer.push(g.positions.buffer, g.normals.buffer);
       const masks = evaluation.outfit.masks;
       if (masks) {
@@ -211,6 +211,14 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
       const hairId = evaluation.hair?.id;
       const hairTopology = hairId && !sentHair.has(hairId) ? model.hairTopology(hairId) : undefined;
       if (hairId) sentHair.add(hairId);
+      // The brows' and lashes' too, each once.
+      const current = model;
+      const decalTopologies = [evaluation.brows?.id, evaluation.lashes?.id]
+        .filter((id): id is string => id !== undefined && !sentHair.has(id))
+        .map((id) => {
+          sentHair.add(id);
+          return current.hairTopology(id);
+        });
       post(
         {
           type: "evaluated",
@@ -218,6 +226,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           evaluation,
           ms: performance.now() - t0,
           ...(hairTopology && { hairTopology }),
+          ...(decalTopologies.length > 0 && { decalTopologies }),
         },
         transfer,
       );

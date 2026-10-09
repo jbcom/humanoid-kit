@@ -16,7 +16,7 @@ import {
 import type { BoneRotations, RestBones } from "./bones.ts";
 import { skinPositionsBlended } from "./dual.ts";
 import { mul, type Quat } from "./quat.ts";
-import { skinDualShare } from "./skinShare.ts";
+import { poseShare, skinDualShare } from "./skinShare.ts";
 
 export {
   type BoneRotations,
@@ -333,7 +333,8 @@ export function skinPositions(
     skinIndex,
     skinWeight,
     out,
-    dualShareOf(rest.names),
+    // The thigh's share falls as it swings (`poseShare`), as the renderer's bone texture has it.
+    poseShare(rest, rotations, dualShareOf(rest.names)),
   );
 }
 

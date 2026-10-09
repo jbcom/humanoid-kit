@@ -134,12 +134,15 @@ export interface ColourLayer extends LayerBase {
 
 /**
  * Adds fine relief, computed in the shader at true scale: `bumps` (a jittered
- * field of rounded bumps, as goosebumps) or `creases` (ridges across the
- * layer's coordinate, as at a flexed joint).
+ * field of rounded bumps, as goosebumps), `creases` (ridges across the
+ * layer's coordinate, as at a flexed joint) or `ridges` (friction ridges, a
+ * pattern finer than any field: `src/surface/ridges.ts`): its coordinate is the
+ * ridges' orientation (`ridgeOrientationCoordinate`) and `size` their spacing
+ * in metres.
  */
 export interface DetailLayer extends LayerBase {
   kind: "detail";
-  pattern: "bumps" | "creases";
+  pattern: "bumps" | "creases" | "ridges";
   paint(input: SkinPaintInput): DetailPaint;
 }
 
@@ -158,13 +161,17 @@ export const STOP_COUNT = 8;
  * Stop-table texels per layer: one header and the stops. The header is
  * (strength, kind, a, b): kind 0 mix, 1 multiply (colour layers; the stops
  * follow), 2 bumps and 3 creases (detail; a height, b size), 4 surface
- * (a roughness, b specular).
+ * (a roughness, b specular) and 5 ridges (detail; a height, b spacing).
  */
 export const STOP_TABLE_WIDTH = STOP_COUNT + 1;
 
 /** The header's kind code for a layer. */
 export function layerKindCode(layer: SkinLayer): number {
-  if (layer.kind === "detail") return layer.pattern === "bumps" ? 2 : 3;
+  if (layer.kind === "detail") {
+    if (layer.pattern === "bumps") return 2;
+    if (layer.pattern === "ridges") return 5;
+    return 3;
+  }
   if (layer.kind === "surface") return 4;
   return layer.blend === "multiply" ? 1 : 0;
 }

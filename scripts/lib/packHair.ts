@@ -1,9 +1,12 @@
 /**
- * Packs MakeHuman's CC0 scalp hair into `packs/hair/data`: one binary and one
- * strand map per style, a manifest that pins the body pack it binds to, and a
- * PROVENANCE.md.
+ * Packs MakeHuman's CC0 scalp hair, eyebrows and eyelashes into
+ * `packs/hair/data`: one binary and one texture per style, a manifest that pins
+ * the body pack it binds to, and a PROVENANCE.md. A scalp style's texture is a
+ * strand map; an eyebrow's or an eyelash's is an alpha mask in white (the
+ * source's own colour is near black, and the figure's hair colour tints it).
  *
- * Styles come from the MakeHuman system assets pack (`hair/<name>/`), every file
+ * Styles come from the MakeHuman system assets pack (`hair/<name>/`,
+ * `eyebrows/<name>/`, `eyelashes/<name>/`), every file
  * of which opens with "This asset was explicitly released as CC0 in september
  * 2020". `compileAsset` proves that from the `.mhclo`, the `.obj` and the
  * `.mhmat` themselves and refuses anything else, so a hair from a community
@@ -37,6 +40,12 @@ export interface HairStyleSpec {
   id: string;
   label: string;
   tags: string[];
+  /**
+   * Whether the hairline thins out (default true). `afro01`'s dense curls end in a
+   * fuzzy edge of their own; thinned, its roots show the dark inside of the
+   * volume as a band.
+   */
+  feather?: boolean;
   /** What the entry is; default `scalp`. */
   kind?: HairKind;
   /**
@@ -57,7 +66,7 @@ export const HAIR_STYLES: readonly HairStyleSpec[] = [
   { id: "short02", label: "Short, tousled", tags: ["short", "tousled"] },
   { id: "bob02", label: "Bob with a side fringe", tags: ["bob", "straight", "fringe"] },
   { id: "long01", label: "Long, straight", tags: ["long", "straight"] },
-  { id: "afro01", label: "Afro", tags: ["short", "curly", "afro"], flatten: 0.007 },
+  { id: "afro01", label: "Afro", tags: ["short", "curly", "afro"], flatten: 0.007, feather: false },
   { id: "short04", label: "Short, slicked back", tags: ["short", "slicked"] },
   { id: "short03", label: "Short, side-swept", tags: ["short", "swept", "fringe"] },
   { id: "ponytail01", label: "Ponytail", tags: ["long", "ponytail", "tied"] },
@@ -65,6 +74,40 @@ export const HAIR_STYLES: readonly HairStyleSpec[] = [
   { id: "bob01", label: "Side-swept bob", tags: ["bob", "swept", "fringe"] },
   { id: "braid01", label: "Side braid", tags: ["long", "braid", "tied"], flatten: 0.012 },
 ];
+
+/**
+ * The eyebrows shipped: all twelve of the system assets (decal quads of 124
+ * vertices bound to the body), whose masks differ in how much they cover.
+ */
+export const BROW_STYLES: readonly HairStyleSpec[] = [
+  { id: "eyebrow001", label: "Eyebrows 01", tags: ["medium"], kind: "brows" },
+  { id: "eyebrow002", label: "Eyebrows 02", tags: ["medium"], kind: "brows" },
+  { id: "eyebrow003", label: "Eyebrows 03", tags: ["medium"], kind: "brows" },
+  { id: "eyebrow004", label: "Eyebrows 04", tags: ["medium"], kind: "brows" },
+  { id: "eyebrow005", label: "Eyebrows 05", tags: ["medium"], kind: "brows" },
+  { id: "eyebrow006", label: "Eyebrows 06, thin", tags: ["thin", "fine"], kind: "brows" },
+  { id: "eyebrow007", label: "Eyebrows 07, thin", tags: ["thin", "fine"], kind: "brows" },
+  { id: "eyebrow008", label: "Eyebrows 08, full", tags: ["thick"], kind: "brows" },
+  { id: "eyebrow009", label: "Eyebrows 09, bushy", tags: ["thick", "bushy"], kind: "brows" },
+  { id: "eyebrow010", label: "Eyebrows 10", tags: ["medium"], kind: "brows" },
+  { id: "eyebrow011", label: "Eyebrows 11, fine", tags: ["thin", "fine"], kind: "brows" },
+  { id: "eyebrow012", label: "Eyebrows 12, thick", tags: ["thick"], kind: "brows" },
+];
+
+/** The eyelashes shipped: all four of the system assets. */
+export const LASH_STYLES: readonly HairStyleSpec[] = [
+  { id: "eyelashes01", label: "Eyelashes 01", tags: ["natural"], kind: "lashes" },
+  { id: "eyelashes02", label: "Eyelashes 02, full", tags: ["full"], kind: "lashes" },
+  { id: "eyelashes03", label: "Eyelashes 03, full", tags: ["full"], kind: "lashes" },
+  { id: "eyelashes04", label: "Eyelashes 04, full", tags: ["full"], kind: "lashes" },
+];
+
+/** The folder of the system assets each kind of entry lives in. */
+const SOURCE_DIR: Record<HairKind, string> = {
+  scalp: "hair",
+  brows: "eyebrows",
+  lashes: "eyelashes",
+};
 
 /** Longest strand-map edge shipped: hair covers the head, which fills a fraction of the screen. */
 const TEXTURE_MAX = 1024;
@@ -125,6 +168,36 @@ export async function writeStrandMap(src: string, dest: string, flatten?: number
   return { angle: map.strandAngle, coherence: map.coherence };
 }
 
+/**
+ * A style's texture cut-out as the scalp measurement reads it: the shipped strand
+ * map's alpha at no more than 256 px a side, decoded the same way by the packer
+ * and by the test that re-measures the pack.
+ */
+export async function cutoutOf(webp: string) {
+  const { data, info } = await sharp(webp)
+    .resize({ width: 256, height: 256, fit: "inside", withoutEnlargement: true })
+    .ensureAlpha()
+    .extractChannel(3)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  return { width: info.width, height: info.height, alpha: new Uint8Array(data) };
+}
+
+/**
+ * Writes an eyebrow's or eyelash's texture: the source's alpha, with its colour
+ * (near black) replaced by white, so the hair colour is the only colour it takes.
+ * Its strand direction is none.
+ */
+export async function writeAlphaMask(src: string, dest: string) {
+  const { data, info } = await sharp(src).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const rgba = Buffer.alloc(data.length, 255);
+  for (let i = 3; i < data.length; i += 4) rgba[i] = data[i] as number;
+  await sharp(rgba, { raw: { width: info.width, height: info.height, channels: 4 } })
+    .webp({ quality: 60, alphaQuality: 85, effort: 4 })
+    .toFile(dest);
+  return { angle: 0, coherence: 0 };
+}
+
 /** What `bakeHairOcclusion` and the binding evaluation need of a compiled style: its arrays and entry. */
 function boundFrom(c: CompiledAsset): BoundAsset {
   const zero = { offset: 0, byteLength: 0 };
@@ -165,7 +238,7 @@ function writeProvenance(
     "Generated by `scripts/pack-makehuman.ts` (or `pnpm pack:hair`); do not edit.",
     "",
     `Source: the MakeHuman system assets pack (\`${SOURCE_ARCHIVE}\`, sha256 \`${SOURCE_ARCHIVE_SHA256}\`,`,
-    'listed as "System assets, shared under CC0" on the MakeHuman community asset packs page), directory `hair/`.',
+    'listed as "System assets, shared under CC0" on the MakeHuman community asset packs page), directories `hair/`, `eyebrows/` and `eyelashes/`.',
     'Only asset data is used; no MakeHuman code. "MakeHuman" is the upstream project\'s name; this package is not',
     "affiliated with it, and CC0 does not license trademarks (CC0 1.0 §4a).",
     "",
@@ -177,13 +250,16 @@ function writeProvenance(
         `- ${files.length} file(s) — ${ev}${files.length <= 4 ? `: ${files.join(", ")}` : ""}`,
     ),
     "",
-    "Each shipped texture is a strand map: the source atlas's luminance, normalised to a fixed mean, with its alpha",
+    "Each scalp style's texture is a strand map: the source atlas's luminance, normalised to a fixed mean, with its alpha",
     "unchanged (`scripts/lib/strandMap.ts`). It carries no colour of the original atlas. For styles whose atlas has",
     "painted-in blotches (" +
       HAIR_STYLES.filter((s) => s.flatten !== undefined)
         .map((s) => `\`${s.id}\``)
         .join(", ") +
       ") the atlas's own coarse shading is also divided out.",
+    "",
+    "An eyebrow's or eyelash's texture is the source's alpha with its near-black colour replaced by white, so the figure's",
+    "hair colour is the only colour it takes; they carry no growth, hairline, fin or scalp.",
     "",
     "Each style's binary also carries what the packer measured of its cards against the body at rest: growth,",
     "hairline fade, fin and scalp (`src/surface/hairFields.ts`).",
@@ -208,33 +284,56 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
   const evidence: Record<string, string> = {};
   const styles: HairStyleEntry[] = [];
   const outputs: [string, string][] = [];
-  for (const spec of HAIR_STYLES) {
-    const dir = path.join(systemDir, "hair", spec.id);
-    const compiled = compileAsset(path.join(dir, `${spec.id}.mhclo`), spec.id, "hair");
+  for (const spec of [...HAIR_STYLES, ...BROW_STYLES, ...LASH_STYLES]) {
+    const kind = spec.kind ?? "scalp";
+    const dir = path.join(systemDir, SOURCE_DIR[kind], spec.id);
+    const compiled = compileAsset(
+      path.join(dir, `${spec.id}.mhclo`),
+      spec.id,
+      kind === "scalp" ? "hair" : kind === "brows" ? "eyebrows" : "eyelashes",
+    );
     for (const [file, ev] of Object.entries(compiled.evidence))
       evidence[path.relative(systemDir, file)] = ev;
     if (compiled.arrays.deleteVerts.length > 0)
-      throw new Error(`${spec.id}: hair has delete_verts, which MakeHuman's hair never does`);
+      throw new Error(
+        `${spec.id}: hair has delete_verts, which MakeHuman's hair, eyebrows and eyelashes never do`,
+      );
     const [source] = [...compiled.textures.keys()];
     if (!source || compiled.textures.size !== 1)
       throw new Error(`${spec.id}: expected exactly one diffuse texture`);
     if (!TEXTURE_FILE.test(source)) throw new Error(`${spec.id}: ${source} is not an image`);
 
     const textureFile = `${spec.id}.webp`;
-    const strand = await writeStrandMap(source, path.join(outDir, textureFile), spec.flatten);
+    const textureDest = path.join(outDir, textureFile);
+    // An eyebrow or eyelash is a decal on the skin: a white alpha mask, with nothing
+    // measured of strands, a hairline or a scalp, and nothing baked, since a lid's or a
+    // brow ridge's shade is the skin's own.
+    const strand =
+      kind === "scalp"
+        ? await writeStrandMap(source, textureDest, spec.flatten)
+        : await writeAlphaMask(source, textureDest);
     compiled.material.texture = textureFile;
 
-    const occlusion = Uint8Array.from(model.bakeHairOcclusion(boundFrom(compiled)), (v) =>
-      Math.round(Math.min(1, Math.max(0, v)) * 255),
-    );
-    const fields = model.bakeHairFields(boundFrom(compiled));
+    const occlusion =
+      kind === "scalp"
+        ? Uint8Array.from(model.bakeHairOcclusion(boundFrom(compiled)), (v) =>
+            Math.round(Math.min(1, Math.max(0, v)) * 255),
+          )
+        : new Uint8Array(compiled.vertexCount).fill(255);
+    const fields =
+      kind === "scalp"
+        ? model.bakeHairFields(boundFrom(compiled), {
+            ...(spec.feather !== undefined && { feather: spec.feather }),
+            cutout: await cutoutOf(path.join(outDir, textureFile)),
+          })
+        : {};
     const file = `${spec.id}.bin.gz`;
     const written = writeAttachments(outDir, file, [compiled], [occlusion], 1, [fields]);
     const [entry] = written.entries;
     if (!entry) throw new Error(`${spec.id}: nothing written`);
     styles.push({
       ...entry,
-      kind: spec.kind ?? "scalp",
+      kind,
       label: spec.label,
       tags: spec.tags,
       file,

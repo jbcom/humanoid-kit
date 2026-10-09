@@ -43,6 +43,15 @@ import {
   STOP_TABLE_WIDTH,
 } from "../surface/layers.ts";
 import { SKIN_LAYERS } from "../surface/regions/index.ts";
+import {
+  RIDGE_ACROSS,
+  RIDGE_ALONG,
+  RIDGE_CELL_PERIODS,
+  RIDGE_CONTRAST,
+  RIDGE_KERNELS,
+  RIDGE_ORIENTATION_SEAM,
+  RIDGE_SIGMA,
+} from "../surface/ridges.ts";
 import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import { luminance, MELANIN_ANCHORS, type Rgb, skinAlbedo } from "../surface/skinTone.ts";
@@ -74,11 +83,17 @@ export const CURVATURE_ATTRIBUTE = "hkCurvature";
  */
 export const SCALP_ATTRIBUTE = "hkScalp";
 
-/** How far the skin goes toward the scalp colour where hair grows at full density. */
-export const SCALP_STRENGTH = 0.6;
+/** How far the skin goes toward its stubble tone where hair grows from it at full density. */
+export const SCALP_STRENGTH = 0.7;
 
-/** What fraction of the hair's albedo the scalp shows: the skin under hair is in its shade. */
-export const SCALP_DARKEN = 0.7;
+/**
+ * The stubble tone is the skin's own colour in the shade of the hair above it
+ * (`SCALP_SHADE` of it) with a little of the hair's colour (`SCALP_HAIR_SHARE`).
+ * Built from the skin, not from the hair, so white hair does not paint a pale
+ * patch on deep skin, nor black hair a dark one on fair.
+ */
+export const SCALP_SHADE = 0.7;
+export const SCALP_HAIR_SHARE = 0.15;
 
 /** A GLSL float literal. */
 const glslFloat = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
@@ -163,6 +178,40 @@ float hkBumps( vec2 p ) {
 		}
 	return h;
 }
+// Friction ridges: sparse Gabor noise, the shader form of ridgeHeight (src/surface/ridges.ts).
+uvec2 hkRidgeHash( uvec2 v ) {
+	v = v * 1664525u + 1013904223u;
+	v.x += v.y * 1664525u;
+	v.y += v.x * 1664525u;
+	v = v ^ ( v >> 16u );
+	v.x += v.y * 1664525u;
+	v.y += v.x * 1664525u;
+	v = v ^ ( v >> 16u );
+	return v;
+}
+float hkRidges( vec2 p, float theta, float spacing ) {
+	float cell = ${glslFloat(RIDGE_CELL_PERIODS)} * spacing;
+	ivec2 i = ivec2( floor( p / cell ) );
+	vec2 w = vec2( cos( theta ), sin( theta ) );
+	float sa = ${glslFloat(RIDGE_ALONG)} * spacing;
+	float sc = ${glslFloat(RIDGE_ACROSS)} * spacing;
+	float sum = 0.0;
+	for ( int j = -1; j <= 1; j ++ )
+		for ( int k = -1; k <= 1; k ++ ) {
+			ivec2 c = i + ivec2( k, j );
+			for ( int n = 0; n < ${RIDGE_KERNELS}; n ++ ) {
+				uvec2 h = hkRidgeHash( uvec2( uint( c.x + 32768 ), uint( c.y * ${RIDGE_KERNELS} + n + 32768 ) ) );
+				float phase = float( hkRidgeHash( uvec2( uint( c.x + 16384 ), uint( c.y * ${RIDGE_KERNELS} + n + 16384 ) ) ).x ) * 2.3283064365386963e-10;
+				vec2 centre = ( vec2( c ) + vec2( h ) * 2.3283064365386963e-10 ) * cell;
+				vec2 d = p - centre;
+				float across = dot( d, w );
+				float along = - d.x * w.y + d.y * w.x;
+				float env = exp( - 0.5 * ( along * along / ( sa * sa ) + across * across / ( sc * sc ) ) );
+				sum += env * cos( 6.28318530718 * ( across / spacing + phase ) );
+			}
+		}
+	return clamp( 0.5 + ${glslFloat(RIDGE_CONTRAST / RIDGE_SIGMA)} * sum, 0.0, 1.0 );
+}
 // The detail layers' relief at this pixel, metres. Relief finer than a pixel
 // fades out rather than aliasing.
 float hkDetailHeight( vec2 uv ) {
@@ -170,7 +219,7 @@ float hkDetailHeight( vec2 uv ) {
 	for ( int l = 0; l < ${count}; l ++ ) {
 		vec4 head = hkHeader( l );
 		int kind = hkKind( head );
-		if ( kind != 2 && kind != 3 ) continue;
+		if ( kind != 2 && kind != 3 && kind != 5 ) continue;
 		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
 		if ( head.x <= 0.0 ) continue;
 		vec2 f = hkFields( l, uv );
@@ -179,6 +228,15 @@ float hkDetailHeight( vec2 uv ) {
 			vec2 p = uv * vHkUvScale / head.w;
 			float fade = 1.0 - smoothstep( 0.25, 0.75, length( fwidth( p ) ) );
 			H += a * head.z * fade * hkBumps( p );
+		} else if ( kind == 5 ) {
+			vec2 p = uv * vHkUvScale;
+			// Ridges within a pixel of one another blur to a flat; fade them out before they alias.
+			float fade = 1.0 - smoothstep( 0.12, 0.32, length( fwidth( p ) ) / head.w );
+			// The derivatives above are taken in uniform flow; only the pattern is skipped off the ridged skin.
+			if ( a > 0.002 && fade > 0.0 ) {
+				float theta = f.y * 3.14159265359 + ${glslFloat(RIDGE_ORIENTATION_SEAM)};
+				H += a * head.z * fade * ( hkRidges( p, theta, head.w ) - 0.5 );
+			}
 		} else {
 			float phase = f.y * head.w;
 			// A groove is a thin line: it goes by the time a period is ten pixels, not one, or
@@ -437,7 +495,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkLayerOwners: { value: Texture };
     /** This figure's stop table (`paintStopTable`). */
     hkLayerStops: { value: DataTexture };
-    /** The colour (linear) the skin goes toward where hair grows from it. */
+    /** The hair's albedo (linear), a little of which the stubble tone takes. */
     hkScalpColour: { value: Vector3 };
     /** 0 without hair on the figure, else `SCALP_STRENGTH`. */
     hkScalpStrength: { value: number };
@@ -480,12 +538,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   setScalp(hairAlbedo: Rgb | null): void {
     const u = this.hkUniforms;
     u.hkScalpStrength.value = hairAlbedo ? SCALP_STRENGTH : 0;
-    if (hairAlbedo)
-      u.hkScalpColour.value.set(
-        hairAlbedo[0] * SCALP_DARKEN,
-        hairAlbedo[1] * SCALP_DARKEN,
-        hairAlbedo[2] * SCALP_DARKEN,
-      );
+    if (hairAlbedo) u.hkScalpColour.value.set(hairAlbedo[0], hairAlbedo[1], hairAlbedo[2]);
   }
 
   /**
@@ -627,7 +680,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       )
       .replace(
         "#include <color_fragment>",
-        `#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n${BODY_ART_COLOUR}\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, hkScalpColour, clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );`,
+        `#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n${BODY_ART_COLOUR}\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, mix( diffuseColor.rgb * ${glslFloat(SCALP_SHADE)}, hkScalpColour, ${glslFloat(SCALP_HAIR_SHARE)} ), clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );`,
       )
       // Surface layers: roughness here, specular once the material is set up.
       .replace(

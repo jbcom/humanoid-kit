@@ -14,6 +14,9 @@ export const hairManifest = JSON.parse(
   fs.readFileSync(path.join(hairDir, "manifest.json"), "utf8"),
 ) as HairManifest;
 
+/** The scalp styles: the ones with a hairline, growth and a strand map, which most hair tests are about. */
+export const scalpStyles = hairManifest.styles.filter((s) => s.kind === "scalp");
+
 /** One style's decompressed binary. */
 export const hairStyleBin = (id: string): ArrayBuffer => {
   const style = hairManifest.styles.find((s) => s.id === id);

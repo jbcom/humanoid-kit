@@ -66,8 +66,15 @@ export interface HairRecipe {
    * names a style the loaded pack must have; evaluation rejects an unknown id.
    */
   style: string | null;
-  /** The hair's colour, from two pigments (`hairAlbedo`). */
+  /** The hair's colour, from two pigments (`hairAlbedo`). One colour tints the scalp hair, the brows and the lashes. */
   colour: HairColour;
+  /**
+   * A brows style id of the hair pack (`eyebrow001`…), worn on the figure. Absent
+   * is none, so a recipe saved before brows existed is unchanged.
+   */
+  brows?: string;
+  /** A lashes style id of the hair pack (`eyelashes01`…); absent is none. */
+  lashes?: string;
 }
 
 export interface Recipe {
@@ -104,6 +111,35 @@ export interface Recipe {
   bodyArt?: BodyArtRecipe;
 }
 
+/**
+ * `recipe` with its hair changed by `patch`: the scalp style (`null` for none),
+ * the colour, and the brows and lashes (`null` takes one away). What the patch
+ * leaves out stays, so choosing a style or a colour never loses the brows and
+ * lashes, and a figure with no hair starts from none at the default colour.
+ */
+export function withHair(
+  recipe: Recipe,
+  patch: {
+    style?: string | null;
+    colour?: HairColour;
+    brows?: string | null;
+    lashes?: string | null;
+  },
+): Recipe {
+  const now = recipe.hair;
+  const brows = patch.brows === undefined ? now?.brows : (patch.brows ?? undefined);
+  const lashes = patch.lashes === undefined ? now?.lashes : (patch.lashes ?? undefined);
+  return {
+    ...recipe,
+    hair: {
+      style: patch.style === undefined ? (now?.style ?? null) : patch.style,
+      colour: patch.colour ?? now?.colour ?? { ...DEFAULT_HAIR_COLOUR },
+      ...(brows && { brows }),
+      ...(lashes && { lashes }),
+    },
+  };
+}
+
 export function createRecipe(
   init: {
     macros?: Partial<MacroValues>;
@@ -111,7 +147,12 @@ export function createRecipe(
     modifiers?: Record<string, number>;
     skin?: Partial<SkinRecipe>;
     eyes?: Partial<EyesRecipe>;
-    hair?: { style?: string | null; colour?: Partial<HairColour> };
+    hair?: {
+      style?: string | null;
+      colour?: Partial<HairColour>;
+      brows?: string;
+      lashes?: string;
+    };
     bodyHair?: BodyHairRecipe;
     outfit?: readonly string[];
     bodyArt?: BodyArtInit;
@@ -130,6 +171,8 @@ export function createRecipe(
     ...(init.hair && {
       hair: {
         style: init.hair.style ?? null,
+        ...(init.hair.brows && { brows: init.hair.brows }),
+        ...(init.hair.lashes && { lashes: init.hair.lashes }),
         colour: {
           ...DEFAULT_HAIR_COLOUR,
           ...init.hair.colour,

@@ -38,14 +38,18 @@ const NAIL_BOW = 0.03;
 const NAIL_HALF_WIDTH = 0.62;
 const NAIL_EDGE = 0.18;
 /** Half the width of a sharp colour edge on the nail, metres. */
-const NAIL_SHARP = 0.0004;
+export const NAIL_SHARP = 0.0004;
 
 /**
  * The nail coordinate at fraction `u` of the last segment: its eight stops are
  * fold, fold, lunula, lunula, bed, bed, free edge, free edge, and each colour
  * changes sharply at the cuticle, the lunula's end and the free edge.
  */
-function nailCoordinate(u: number, layout: (typeof NAIL_LAYOUT)[number], sharp: number): number {
+export function nailCoordinate(
+  u: number,
+  layout: (typeof NAIL_LAYOUT)[number],
+  sharp: number,
+): number {
   const lunula = Math.max(layout.lunula, layout.cuticle + 2 * sharp);
   const knots: [number, number][] = [
     [layout.fold, 0],
