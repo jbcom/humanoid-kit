@@ -3,18 +3,26 @@
  * analytic geometry: a strand map multiplied by the recipe's colour renders as
  * that colour's albedo at every hair colour, cut-outs cut and their edges
  * smooth where the canvas is multisampled, baked occlusion scales the light,
- * and highlights stretch across the strands, not along them.
+ * a hairline dithers away by its fade and an edge-on fin by its angle, a
+ * Kajiya-Kay highlight runs across the strands (their direction read from the
+ * growth gradient), and the skin under the hair takes the scalp tint.
+ *
+ * CI runs these on SwiftShader (`HK_GPU=software`), whose derivatives are taken
+ * per 2x2 quad: tests that count pixels use margins wide enough for that.
  *
  * Cards are drawn by an orthographic camera into a float render target (no
  * tone mapping), lit by one white directional light of intensity π from the
  * camera's side, so Lambert radiance of albedo A at normal incidence is A.
  */
 import {
+  BufferAttribute,
+  type BufferGeometry,
   DataTexture,
   DirectionalLight,
   FloatType,
   LinearFilter,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   NoToneMapping,
   OrthographicCamera,
@@ -34,7 +42,9 @@ import {
   HairMaterial,
   isMultisampled,
   setHairOcclusionAttribute,
+  setHairStrandAttributes,
 } from "../../src/render/hairMaterial.ts";
+import { SCALP_ATTRIBUTE, SkinMaterial } from "../../src/render/skinMaterial.ts";
 import {
   HAIR_COLOURS,
   HAIR_STRAND_MEAN,
@@ -75,6 +85,26 @@ function strandMap(
   t.colorSpace = SRGBColorSpace;
   t.needsUpdate = true;
   return t;
+}
+
+/** Sets a geometry's fade, fin and growth from functions of each vertex's x, y. */
+function setStrandAttributesFrom(
+  g: BufferGeometry,
+  o: {
+    fade?: (x: number, y: number) => number;
+    fin?: number;
+    growth?: (x: number, y: number) => number;
+  },
+): void {
+  const p = g.getAttribute("position");
+  const n = p.count;
+  const fade = new Float32Array(n);
+  const growth = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    fade[i] = o.fade ? o.fade(p.getX(i), p.getY(i)) : 1;
+    growth[i] = o.growth ? o.growth(p.getX(i), p.getY(i)) : 0;
+  }
+  setHairStrandAttributes(g, fade, growth, new Float32Array(n).fill(o.fin ?? 0));
 }
 
 const FLAT = strandMap(4, () => texel(HAIR_STRAND_MEAN, 255));
@@ -121,13 +151,18 @@ function card(
     occlusion?: number;
     strand?: { angle: number; coherence: number };
     multisampled?: boolean;
+    /** Per vertex fade, fin and growth as functions of the vertex's position; default all there, no fin, no growth. */
+    fade?: (x: number, y: number) => number;
+    fin?: number;
+    growth?: (x: number, y: number) => number;
   } = {},
 ): { mesh: Mesh; material: HairMaterial } {
-  const plane = new PlaneGeometry(2, 2);
+  const plane = new PlaneGeometry(2, 2, 8, 8);
   setHairOcclusionAttribute(
     plane,
     new Float32Array(plane.getAttribute("position").count).fill(options.occlusion ?? 1),
   );
+  setStrandAttributesFrom(plane, options);
   const material = new HairMaterial();
   material.map = options.map ?? FLAT;
   material.setColour(options.colour ?? (HAIR_COLOURS.brown as HairColour));
@@ -200,10 +235,9 @@ describe("hair cut-outs", () => {
     material.dispose();
   });
 
-  it("smooths the edge with alpha-to-coverage on a multisampled target", () => {
+  it("smooths the edge with alpha-to-coverage on a multisampled target", (ctx) => {
     /** Pixels along the cut that are neither empty nor fully lit, down every row. */
-    const partialPixels = (multisampled: boolean, samples: number) => {
-      const { mesh, material } = card({ map: ramp, multisampled });
+    const partialPixels = (mesh: Mesh, samples: number) => {
       const px = render(mesh, { samples });
       const lit = at(px, SIZE - 4, SIZE / 2);
       let partial = 0;
@@ -212,12 +246,26 @@ describe("hair cut-outs", () => {
           const v = at(px, x, y);
           if (v > 0.05 * lit && v < 0.95 * lit) partial++;
         }
-      material.dispose();
       return partial;
     };
+    const hair = (multisampled: boolean) => {
+      const { mesh, material } = card({ map: ramp, multisampled });
+      return { mesh, material };
+    };
+    // Some software rasterisers (SwiftShader in CI) do not implement alpha-to-coverage
+    // on multisampled targets at all. A stock material set up the same way shows it:
+    // when even that leaves no partial pixel, the context cannot be asked.
+    const stock = new MeshBasicMaterial({ map: ramp, alphaToCoverage: true, alphaTest: 0.4 });
+    const stockPartial = partialPixels(new Mesh(new PlaneGeometry(2, 2), stock), 4);
+    stock.dispose();
+    if (stockPartial === 0) ctx.skip("this GL context does not implement alpha-to-coverage");
+    const off = hair(false);
+    const on = hair(true);
     // A plain alpha test leaves none; coverage leaves a pixel on most rows, where the alpha crosses the cutoff.
-    expect(partialPixels(false, 4)).toBe(0);
-    expect(partialPixels(true, 4)).toBeGreaterThan(10);
+    expect(partialPixels(off.mesh, 4)).toBe(0);
+    expect(partialPixels(on.mesh, 4)).toBeGreaterThan(10);
+    off.material.dispose();
+    on.material.dispose();
   });
 
   it("detects whether the framebuffer is multisampled", () => {
@@ -242,56 +290,136 @@ describe("hair occlusion on the GPU", () => {
   });
 });
 
-describe("hair highlights", () => {
+describe("hair highlights (Kajiya-Kay)", () => {
   /**
-   * A sphere seen from the light's side, its highlight at the centre; how wide
-   * the highlight is along the horizontal and the vertical through the centre.
-   * On a UV sphere, U runs round (horizontal at the centre) and V up
-   * (vertical).
+   * A sphere seen from the light's side, with growth set from the vertex position by
+   * `growth`; the strand lobes' contribution alone (the render minus the same render
+   * with the lobes switched off), and how wide it is along the horizontal and the
+   * vertical through the centre.
    */
-  function highlight(strand: { angle: number; coherence: number }) {
-    const material = new HairMaterial();
-    material.setColour({ eumelanin: 0.5, pheomelanin: 0.1, grey: 0, override: null });
-    material.setStrand(strand);
-    // A glossy, rough-free fibre makes the highlight's shape the measurement.
-    material.roughness = 0.3;
-    material.sheen = 0;
-    material.map = FLAT;
+  function lobes(growth: ((x: number, y: number) => number) | undefined) {
     const sphere = new SphereGeometry(0.9, 64, 48);
     setHairOcclusionAttribute(
       sphere,
       new Float32Array(sphere.getAttribute("position").count).fill(1),
     );
-    const px = render(new Mesh(sphere, material));
+    setStrandAttributesFrom(sphere, growth ? { growth } : {});
+    const render1 = (strength: number) => {
+      const material = new HairMaterial();
+      material.setColour({ eumelanin: 0.5, pheomelanin: 0.1, grey: 0, override: null });
+      material.setStrand({ angle: 0, coherence: 1 });
+      material.hkUniforms.hkLobes.value.x = strength;
+      material.sheen = 0;
+      material.map = FLAT;
+      const px = render(new Mesh(sphere, material));
+      material.dispose();
+      return px;
+    };
+    const on = render1(1);
+    const off = render1(0);
     const c = SIZE / 2;
-    // The width along a line, over the middle of the disc (the rim, where a grazing
-    // highlight is brightest, is left out): how many pixels stay within 20 % of the peak.
+    const diff = (x: number, y: number) => Math.max(0, at(on, x, y, 0) - at(off, x, y, 0));
+    // How many pixels along a line through the centre hold at least half the lobes' peak there.
     const width = (read: (i: number) => number) => {
       let peak = 0;
       for (let i = c - 20; i <= c + 20; i++) peak = Math.max(peak, read(i));
       let w = 0;
-      for (let i = c - 20; i <= c + 20; i++) if (read(i) >= 0.8 * peak) w++;
-      return w;
+      for (let i = c - 20; i <= c + 20; i++) if (read(i) >= 0.5 * peak) w++;
+      return { width: w, peak };
     };
-    const horizontal = width((i) => at(px, i, c));
-    const vertical = width((i) => at(px, c, i));
-    material.dispose();
+    const horizontal = width((i) => diff(i, c));
+    const vertical = width((i) => diff(c, i));
     return { horizontal, vertical };
   }
 
-  it("spreads across strands that run along V, so the band is wider than it is tall", () => {
-    const h = highlight({ angle: Math.PI / 2, coherence: 1 });
-    expect(h.horizontal).toBeGreaterThan(h.vertical * 1.3);
+  it("spreads across strands that grow upward: the band is wider than it is tall", () => {
+    const h = lobes((_, y) => y);
+    expect(h.horizontal.peak).toBeGreaterThan(0.02);
+    expect(h.horizontal.width).toBeGreaterThan(h.vertical.width * 1.5);
   });
 
-  it("turns with the strands: along U, the band is taller than it is wide", () => {
-    const h = highlight({ angle: 0, coherence: 1 });
-    expect(h.vertical).toBeGreaterThan(h.horizontal * 1.3);
+  it("turns with the strands: growing along x, the band is taller than it is wide", () => {
+    const h = lobes((x) => x);
+    expect(h.vertical.peak).toBeGreaterThan(0.02);
+    expect(h.vertical.width).toBeGreaterThan(h.horizontal.width * 1.5);
   });
 
-  it("stays round for hair with no strand direction", () => {
-    const h = highlight({ angle: Math.PI / 2, coherence: 0 });
-    expect(Math.abs(h.horizontal - h.vertical)).toBeLessThanOrEqual(2);
+  it("is absent where growth has no gradient: no direction, no strand highlight", () => {
+    const h = lobes(undefined);
+    expect(h.horizontal.peak).toBeLessThan(0.002);
+    expect(h.vertical.peak).toBeLessThan(0.002);
+  });
+});
+
+describe("hairlines and fins", () => {
+  /** Share of the image's pixels the render draws (anything above black). */
+  const drawn = (px: Float32Array, from = 0, to = SIZE) => {
+    let n = 0;
+    for (let y = 0; y < SIZE; y++) for (let x = from; x < to; x++) if (at(px, x, y) > 0.005) n++;
+    return n / ((to - from) * SIZE);
+  };
+
+  it("dithers a card away by its fade: none at 0, all at 1, a share in between, on any GPU", () => {
+    // Fade 0 on the left edge, 1 on the right, rising linearly across the card.
+    const { mesh, material } = card({ fade: (x) => (x + 1) / 2 });
+    const px = render(mesh);
+    const q = SIZE / 4;
+    // Fade is about 1/8, 3/8, 5/8, 7/8 at the centres of the four quarters.
+    for (const [i, want] of [0.125, 0.375, 0.625, 0.875].entries())
+      expect(drawn(px, i * q, (i + 1) * q), `quarter ${i}`).toBeCloseTo(want, 1);
+    // A flat fade of 0 draws nothing; one of 1 draws the whole card.
+    expect(drawn(render(card({ fade: () => 0 }).mesh))).toBe(0);
+    expect(drawn(render(card({ fade: () => 1 }).mesh))).toBeGreaterThan(0.99);
+    material.dispose();
+  });
+
+  it("dithers a fin card away as it turns edge-on, and leaves a card lying along the scalp alone", () => {
+    /** Pixels a card turned `turn` radians about the vertical axis draws, relative to the same card face-on. */
+    const coverage = (fin: number, turn: number) => {
+      const { mesh, material } = card({ fin });
+      mesh.rotation.y = turn;
+      const full = drawn(render(card({ fin }).mesh));
+      const got = drawn(render(mesh));
+      material.dispose();
+      // A card turned by `turn` projects to cos(turn) of its width.
+      return got / (full * Math.cos(turn));
+    };
+    const turn = (80 * Math.PI) / 180; // |cos| of the angle to the eye is 0.17
+    expect(coverage(0, turn)).toBeGreaterThan(0.9);
+    expect(coverage(1, turn)).toBeLessThan(0.5);
+    // Face-on, fin or not, the whole card is there.
+    expect(coverage(1, 0)).toBeGreaterThan(0.95);
+  });
+});
+
+describe("the scalp under the hair", () => {
+  /** A plane with the scalp attribute 0 on the left and 1 on the right, rendered; the red channel's left and right. */
+  function sides(tint: [number, number, number] | null) {
+    const plane = new PlaneGeometry(2, 2, 2, 1);
+    const p = plane.getAttribute("position");
+    plane.setAttribute(
+      SCALP_ATTRIBUTE,
+      new BufferAttribute(
+        Float32Array.from({ length: p.count }, (_, i) => (p.getX(i) > 0.5 ? 1 : 0)),
+        1,
+      ),
+    );
+    const material = new SkinMaterial();
+    material.normalMap = null;
+    material.setScalp(tint);
+    const px = render(new Mesh(plane, material));
+    material.dispose();
+    return { left: at(px, SIZE / 8, SIZE / 2), right: at(px, (7 * SIZE) / 8, SIZE / 2) };
+  }
+
+  it("tints the skin toward the hair's colour where the style grows, and nowhere else", () => {
+    const none = sides(null);
+    expect(none.right).toBeCloseTo(none.left, 2);
+    const dark = sides([0.02, 0.012, 0.008]);
+    // The left (no scalp) is untouched; the right is much darker.
+    expect(dark.left).toBeCloseTo(none.left, 2);
+    // (Specular and sheen are not tinted, so the drop is less than the diffuse's.)
+    expect(dark.right).toBeLessThan(dark.left * 0.85);
   });
 });
 

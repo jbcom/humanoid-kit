@@ -21,6 +21,14 @@ const recipe = createRecipe({ hair: { style: "short02" } });
 The loader refuses this pack unless it was built against the exact body pack it
 is loaded with, and the pack's own manifest says so by hash.
 
+## Coverage
+
+The ten styles are every scalp hair the MakeHuman system pack's CC0 header proves, and they are
+nearly all straight or wavy. Coily and kinky textures are mostly missing (one short afro, one
+crop of loose curls): no locs, twists, cornrows, bantu knots or close crop and fade. No other
+CC0-provable style closes this; it needs an authored or procedural style (see
+`docs/ARCHITECTURE.md`, "Scalp hair", and `docs/evidence/hair.md`).
+
 ## Licence
 
 CC0 1.0 ([LICENSE](LICENSE)). The styles are MakeHuman's own scalp hair from

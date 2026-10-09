@@ -281,10 +281,14 @@ and throws `RangeError` for anything else.
   loaded yet (null when it has none or has what it needs; it throws
   `RecipeError` for an id the hair pack lacks, or when no hair pack is loaded),
   `model.hairTopology(id): HairTopology` is a style's static render data (the
-  mesh like an attachment's, `label`, `tags`, `material`, `textureUrl`, one
-  `occlusion` value per render vertex and the `strand` direction), and
-  `model.bakeHairOcclusion(asset)` is the packer's bake of a style's occlusion at
-  rest, per control vertex. `evaluate` fills `Evaluation.hair` from
+  mesh like an attachment's, `label`, `tags`, `material`, `textureUrl`, per
+  render vertex its `occlusion`, `fade` (0 where a hairline thins out), `fin` (1
+  on a card standing out of the scalp) and `growth` (metres from the root), the
+  `scalp` (per body render vertex, how densely the style grows from the skin
+  there) and the `strand` coherence), `model.bakeHairOcclusion(asset)` is the
+  packer's bake of a style's occlusion at rest, per control vertex, and
+  `model.bakeHairFields(asset)` its growth, fade, fin and scalp
+  (`hairFields`, `src/surface/hairFields.ts`). `evaluate` fills `Evaluation.hair` from
   `recipe.hair.style` and throws `MorphError` for a style whose geometry has
   not arrived (`assets.hair.load(id)` brings it); the style never changes the
   body, which keeps every face (hair has no `delete_verts`).
@@ -690,10 +694,14 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   it uncovers).
 - Renders `recipe.hair` when the client loaded a hair pack: alpha cards
   skinned to the figure and coloured by `recipe.hair.colour` (`HairMaterial`:
-  the strand map times the pigment colour's tint, highlights stretched across
-  the strands, baked occlusion), with edges drawn by alpha-to-coverage on a
-  multisampled canvas and by an alpha test otherwise. Changing the style loads
-  that style's files; changing the colour re-evaluates nothing.
+  the strand map times the pigment colour's tint, two Kajiya-Kay highlight
+  lobes along the strands (their direction read from the baked growth), baked
+  occlusion, hairlines dithered away by `fade` and loose fin cards by their
+  angle to the eye), with edges drawn by alpha-to-coverage on a multisampled
+  canvas and by an alpha test otherwise. The skin under the style takes a
+  stubble tint of the hair's colour where it grows (`SkinMaterial.setScalp`, the
+  `hkScalp` attribute). Changing the style loads that style's files; changing
+  the colour re-evaluates nothing.
 - Updates the geometry in place when `recipe` changes.
 - Stores the latest ground offset (posed when posed) on the group's `userData.groundOffset`.
 - Disposes its geometries, textures and built-in materials on unmount.
@@ -894,7 +902,8 @@ import { hairPack } from "humanoid-kit-hair";
 ```
 
 `hairPack` is `{ manifest, files }` like `bodyPack`: per style, `<id>.bin.gz`
-(the binding, geometry and baked occlusion) and `<id>.webp` (the strand map).
+(the binding, geometry, baked occlusion and the measured growth, fade, fin and
+scalp) and `<id>.webp` (the strand map).
 Pass it as `hair` to `loadHumanoidAssets` or to the worker client. It is an
 optional install: only its manifest loads up front, and a style's two files
 load when a figure first wears it (about 150 to 700 kB per style). The ten

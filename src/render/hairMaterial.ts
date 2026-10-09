@@ -11,10 +11,20 @@
  *   shows the halos blending leaves at overlapping cards. Without MSAA the same
  *   cards render with a plain alpha test (hard edges, still correct).
  *   Shadows use the same alpha, so a card's cut-outs cast no shadow.
- * - **Highlights** are anisotropic: a fibre reflects like a brushed cylinder, a
- *   thin band across the strands. Where the strand map's strands run in one
- *   direction (`strand.coherence`), `anisotropy` stretches the highlight across
- *   them; fluffy and curly styles, with no direction, stay isotropic.
+ * - **Hairlines** are dithered away: each vertex carries a fade (0 on a card
+ *   edge that meets the scalp, 1 a centimetre in) and the fragment is discarded
+ *   where the fade is below an interleaved-gradient noise of its pixel. A
+ *   discard needs neither blending nor MSAA, so a hairline thins the same way on
+ *   every GPU, software ones included, and shows the tinted scalp
+ *   (`SkinMaterial.setScalp`) through it.
+ * - **Highlights** are Kajiya-Kay: a strand is a thin cylinder, and it reflects
+ *   in a cone around its tangent, so a highlight is a band across the strands
+ *   at any length of hair, short styles included. Two lobes, as Marschner
+ *   measured: a white one from the fibre's surface, shifted toward the tip, and
+ *   a second tinted by the pigment, shifted the other way. The tangent is the
+ *   screen-space gradient of the vertices' growth (distance along the card from
+ *   the root), so no tangent attribute is stored; the strand map's own
+ *   brightness jitters the shift, so the band breaks up into strands.
  * - **Occlusion** is baked at pack time, one value per vertex (cards under
  *   others and against the scalp are darker) and scales every lighting term
  *   like the eyes' and teeth's (`patchOcclusionFragment`).
@@ -25,6 +35,8 @@ import {
   Float32BufferAttribute,
   LinearSRGBColorSpace,
   MeshPhysicalMaterial,
+  ShaderChunk,
+  Vector4,
   type WebGLProgramParametersWithUniforms,
 } from "three";
 import { type HairColour, hairTint } from "../surface/hairTone.ts";
@@ -32,6 +44,15 @@ import { patchOcclusionFragment } from "./occlusion.ts";
 
 /** One float per vertex: how open the card is to light. */
 export const HAIR_OCCLUSION_ATTRIBUTE = "hkHairOcclusion";
+
+/** One float per vertex: 0 where the hair is dithered away (a hairline), 1 where it is all there. */
+export const HAIR_FADE_ATTRIBUTE = "hkHairFade";
+
+/** One float per vertex: 1 on a card standing out of the scalp (dithered away edge-on), 0 on one lying along it. */
+export const HAIR_FIN_ATTRIBUTE = "hkHairFin";
+
+/** One float per vertex: metres along the card from the hair's root. */
+export const HAIR_GROWTH_ATTRIBUTE = "hkHairGrowth";
 
 /**
  * Light that still reaches the deepest hair, as a fraction. Far higher than
@@ -43,19 +64,114 @@ export const HAIR_OCCLUSION_FLOOR = 0.5;
 /** Texels below this alpha are cut out. */
 export const HAIR_ALPHA_CUTOFF = 0.4;
 
-/** The most the highlight is stretched, at a style whose strands are all parallel. */
-const MAX_ANISOTROPY = 0.7;
+/**
+ * The two highlight lobes: how far each shifts along the strand (as a tilt of
+ * the tangent toward the normal), how strong each is, and how tight. Primary is
+ * the white one, secondary the pigment-coloured, wider one.
+ */
+export const HAIR_LOBES = {
+  primaryShift: -0.12,
+  secondaryShift: 0.16,
+  primaryStrength: 0.07,
+  secondaryStrength: 0.45,
+  primaryExponent: 110,
+  secondaryExponent: 28,
+  /** How far the strand map's brightness moves a lobe, per unit of its deviation from the mean. */
+  shiftJitter: 1.2,
+} as const;
+
+/**
+ * A fin card (one standing out of the scalp, `HairFieldData.fin`) turned this far
+ * from facing the eye (|cos| of the angle between its normal and the view
+ * direction) is dithered away between `from` (gone) and `to` (all there). A flat
+ * card seen edge-on is a hairline-thin dark sliver, and styles that stand loose
+ * cards out of the scalp (the afro's curls) otherwise read as a lattice of such
+ * slivers across the head. A card lying along the scalp is never faded this way:
+ * a head's shell is seen at a grazing angle over much of its area.
+ */
+export const HAIR_EDGE_ON = { from: 0.3, to: 0.8 } as const;
+
+/** Share of the highlight a fluffy style (no direction to its strands) keeps against a combed one. */
+export const FLUFFY_HIGHLIGHT = 0.35;
 
 /** Puts a style's per-vertex occlusion on its geometry for `HairMaterial`. */
 export function setHairOcclusionAttribute(geometry: BufferGeometry, occlusion: Float32Array): void {
   geometry.setAttribute(HAIR_OCCLUSION_ATTRIBUTE, new Float32BufferAttribute(occlusion, 1));
 }
 
+/** Puts a style's per-vertex fade and growth on its geometry for `HairMaterial`. */
+export function setHairStrandAttributes(
+  geometry: BufferGeometry,
+  fade: Float32Array,
+  growth: Float32Array,
+  fin: Float32Array,
+): void {
+  geometry.setAttribute(HAIR_FADE_ATTRIBUTE, new Float32BufferAttribute(fade, 1));
+  geometry.setAttribute(HAIR_FIN_ATTRIBUTE, new Float32BufferAttribute(fin, 1));
+  geometry.setAttribute(HAIR_GROWTH_ATTRIBUTE, new Float32BufferAttribute(growth, 1));
+}
+
+/** Where `RE_Direct_Physical` adds its specular: the strand lobes follow it. */
+const DIRECT_SPECULAR =
+  "reflectedLight.directSpecular += irradiance * specularBRDF * material.multiScatteringCompensation;";
+
+/** Both strand lobes of one light, added to `RE_Direct_Physical`'s direct specular. */
+const STRAND_LOBES = `
+	{
+		vec3 hkH = normalize( directLight.direction + geometryViewDir );
+		vec3 hkT1 = normalize( hkT + geometryNormal * ( ${HAIR_LOBES.primaryShift.toFixed(3)} + hkShift ) );
+		vec3 hkT2 = normalize( hkT + geometryNormal * ( ${HAIR_LOBES.secondaryShift.toFixed(3)} + hkShift ) );
+		float hkS1 = sqrt( max( 0.0, 1.0 - pow2( dot( hkT1, hkH ) ) ) );
+		float hkS2 = sqrt( max( 0.0, 1.0 - pow2( dot( hkT2, hkH ) ) ) );
+		reflectedLight.directSpecular += irradiance * hkTStrength * hkLobes.x * (
+			pow( hkS1, hkLobes.z ) * vec3( hkLobes.y ) +
+			pow( hkS2, hkLobes.w ) * material.diffuseContribution * hkLobes.y * ${(HAIR_LOBES.secondaryStrength / HAIR_LOBES.primaryStrength).toFixed(3)} );
+	}`;
+
+/**
+ * Interleaved gradient noise (Jimenez 2014): a cheap, well-spread per-pixel value
+ * in [0, 1) whose dither has no visible pattern at one pixel's scale.
+ */
+const NOISE = `float hkNoise( vec2 p ) { return fract( 52.9829189 * fract( dot( p, vec2( 0.06711056, 0.00583715 ) ) ) ); }`;
+
+/**
+ * The strand's tangent in view space: the gradient of growth over the surface,
+ * from the screen-space derivatives of position and growth (the surface-gradient
+ * form of a cotangent frame). `hkTStrength` is how well growth is defined here:
+ * a distance field changes one metre per metre, so a flat or degenerate
+ * gradient (a card seen edge-on, an undefined root) switches the lobes off.
+ */
+const TANGENT = `
+	{
+		vec3 hkP = - vViewPosition;
+		vec3 hkDp1 = dFdx( hkP );
+		vec3 hkDp2 = dFdy( hkP );
+		float hkDg1 = dFdx( vHkGrowth );
+		float hkDg2 = dFdy( vHkGrowth );
+		vec3 hkC1 = cross( hkDp2, normal );
+		vec3 hkC2 = cross( normal, hkDp1 );
+		float hkDet = dot( hkDp1, hkC1 );
+		if ( abs( hkDet ) > 1e-13 ) {
+			vec3 hkG = ( hkC1 * hkDg1 + hkC2 * hkDg2 ) / hkDet;
+			float hkLen = length( hkG );
+			hkTStrength = smoothstep( 0.35, 0.85, hkLen );
+			hkT = hkG / max( hkLen, 1e-6 );
+		}
+	}`;
+
 export class HairMaterial extends MeshPhysicalMaterial {
+  /**
+   * Strand-lobe parameters, shared with the shader: strength of the figure's
+   * highlight (x, lower for fluffy styles), the white lobe's strength (y) and
+   * both exponents (z, w).
+   */
+  readonly hkUniforms: { hkLobes: { value: Vector4 } };
+
   constructor() {
     super({
       side: DoubleSide,
-      roughness: 0.45,
+      // The wide microfacet lobe is only the base: the strand lobes are the highlight.
+      roughness: 0.75,
       metalness: 0,
       sheen: 0.35,
       sheenRoughness: 0.6,
@@ -63,6 +179,16 @@ export class HairMaterial extends MeshPhysicalMaterial {
       alphaToCoverage: true,
       transparent: false,
     });
+    this.hkUniforms = {
+      hkLobes: {
+        value: new Vector4(
+          1,
+          HAIR_LOBES.primaryStrength,
+          HAIR_LOBES.primaryExponent,
+          HAIR_LOBES.secondaryExponent,
+        ),
+      },
+    };
   }
 
   /** Colours the hair: the strand map is multiplied by this pigment colour's tint. */
@@ -74,16 +200,13 @@ export class HairMaterial extends MeshPhysicalMaterial {
   }
 
   /**
-   * Stretches highlights across the strands where they run one way: `angle` is
-   * the strands' direction in texture space (radians from U toward V) and
-   * `coherence` how parallel they are (0 fluffy, 1 combed). Anisotropy's own
-   * direction is across the fibre, so strands along V give rotation 0.
+   * Sets how strong the strand highlight is from how directional the style's
+   * strands are (`coherence`: 0 fluffy or curly, 1 combed). A style with no
+   * preferred direction still has a tangent along each card, but its strands
+   * curl away from it, so the highlight is weaker than on combed hair.
    */
   setStrand(strand: { angle: number; coherence: number }): void {
-    this.anisotropy = MAX_ANISOTROPY * strand.coherence;
-    this.anisotropyRotation = strand.angle - Math.PI / 2;
-    // Frizzy hair scatters light wider than combed hair does.
-    this.roughness = 0.7 - 0.3 * strand.coherence;
+    this.hkUniforms.hkLobes.value.x = FLUFFY_HIGHLIGHT + (1 - FLUFFY_HIGHLIGHT) * strand.coherence;
   }
 
   /**
@@ -97,23 +220,76 @@ export class HairMaterial extends MeshPhysicalMaterial {
   }
 
   override onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
+    Object.assign(shader.uniforms, this.hkUniforms);
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
         `#include <common>
 attribute float ${HAIR_OCCLUSION_ATTRIBUTE};
-varying float vHkOcclusion;`,
+varying float vHkOcclusion;
+attribute float ${HAIR_FADE_ATTRIBUTE};
+varying float vHkFade;
+attribute float ${HAIR_FIN_ATTRIBUTE};
+varying float vHkFin;
+attribute float ${HAIR_GROWTH_ATTRIBUTE};
+varying float vHkGrowth;`,
       )
       .replace(
         "#include <begin_vertex>",
         `#include <begin_vertex>
-	vHkOcclusion = ${HAIR_OCCLUSION_ATTRIBUTE};`,
+	vHkOcclusion = ${HAIR_OCCLUSION_ATTRIBUTE};
+	vHkFade = ${HAIR_FADE_ATTRIBUTE};
+	vHkFin = ${HAIR_FIN_ATTRIBUTE};
+	vHkGrowth = ${HAIR_GROWTH_ATTRIBUTE};`,
+      );
+    for (const chunk of ["alphatest_fragment", "normal_fragment_maps", "map_fragment"])
+      if (!shader.fragmentShader.includes(`#include <${chunk}>`))
+        throw new Error(`HairMaterial: three's ${chunk} chunk moved`);
+    const lighting = ShaderChunk.lights_physical_pars_fragment;
+    if (!lighting.includes(DIRECT_SPECULAR))
+      throw new Error("HairMaterial: three's direct specular line changed");
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+varying float vHkFade;
+varying float vHkFin;
+varying float vHkGrowth;
+uniform vec4 hkLobes;
+vec3 hkT = vec3( 0.0 );
+float hkTStrength = 0.0;
+float hkShift = 0.0;
+${NOISE}`,
+      )
+      // The strand map's brightness moves the highlight, so the band breaks into strands.
+      .replace(
+        "#include <map_fragment>",
+        `#include <map_fragment>
+	#ifdef USE_MAP
+		hkShift = ( texture2D( map, vMapUv ).g - 0.4 ) * ${HAIR_LOBES.shiftJitter.toFixed(3)};
+	#endif`,
+      )
+      .replace(
+        "#include <alphatest_fragment>",
+        `{
+		// A card seen edge-on is a dark line, not hair: it thins out as it turns away.
+		vec3 hkFlat = normalize( cross( dFdx( vViewPosition ), dFdy( vViewPosition ) ) );
+		float hkFacing = abs( dot( hkFlat, normalize( vViewPosition ) ) );
+		float hkKeep = vHkFade * mix( 1.0, smoothstep( ${HAIR_EDGE_ON.from.toFixed(2)}, ${HAIR_EDGE_ON.to.toFixed(2)}, hkFacing ), vHkFin );
+		if ( hkKeep <= hkNoise( gl_FragCoord.xy ) ) discard;
+	}
+	#include <alphatest_fragment>`,
+      )
+      .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>${TANGENT}`)
+      .replace(
+        "#include <lights_physical_pars_fragment>",
+        lighting.replace(DIRECT_SPECULAR, `${DIRECT_SPECULAR}${STRAND_LOBES}`),
       );
     patchOcclusionFragment(shader, HAIR_OCCLUSION_FLOOR);
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-hair-1";
+    return "humanoid-kit-hair-2";
   }
 }
 

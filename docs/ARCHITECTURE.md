@@ -507,24 +507,90 @@ a coloured texture; everything in the pure core is testable in Node.
   (`isMultisampled`) and falls back to the plain alpha test, which is still
   correct, with hard edges. The cut-off (0.4) sits below the texture's mid
   alpha so mipmapped, minified cards keep their body.
-- *Highlights are anisotropic across the strands, from the measured direction.*
-  A fibre reflects like a brushed cylinder: a thin band across the strands. The
-  packer measures each style's strand direction and its coherence from the
-  strand map (a structure tensor over the opaque texels). `HairMaterial` is a
-  physical material whose `anisotropy` follows the coherence and whose
-  `anisotropyRotation` the direction, with a sheen in the hair's own colour for
-  fibre fuzz and a roughness that rises as the strands lose their direction
-  (frizz scatters wider). The tangent frame comes from UV derivatives, so no
-  tangent attribute is sent. A browser test builds a sphere and measures that
-  strands along V make a wider band than tall, along U the reverse, and none
-  round.
+- *Highlights are Kajiya-Kay, with a tangent from the baked growth.* The first
+  version stretched a GGX lobe by the strand map's average direction
+  (`anisotropy`), which a short style does not have: its highlight was one smooth
+  plastic sheen. A strand is a thin cylinder that reflects in a cone around its
+  tangent, at any length, so `HairMaterial` adds two Kajiya-Kay lobes to the
+  direct light, as Marschner measured hair: a white one from the fibre surface,
+  shifted toward the tip, and one tinted by the pigment, shifted the other way
+  and wider. The strand map's brightness jitters the shift, so the band breaks
+  into strands. The tangent is the screen-space gradient of the vertices'
+  *growth* (see the next decision), from derivatives of position and growth (the
+  surface-gradient form of a cotangent frame), so no tangent attribute is sent;
+  where growth has no gradient (a card seen edge-on) the lobes switch off. The
+  lobes weaken as the style's strands lose their direction (`strand.coherence`).
+  Rejected: the UV-derivative anisotropy (a global angle, no short styles), a
+  per-vertex tangent attribute (three floats per vertex for what the gradient
+  gives), and Marschner's full R/TT/TRT (the transmitted lobes need a fibre's
+  interior, which a card has not).
+- *The packer measures four more things per style, against the body at rest*
+  (`src/surface/hairFields.ts`, stored beside the occlusion in the style's
+  binary): **growth** (u16, 0.1 mm steps), the distance along the cards from
+  where the hair roots, by Dijkstra from the vertices within 1.5 cm of the scalp
+  (a card that touches none grows from its highest vertex); **fade**, 0 on a
+  card edge that meets the scalp, rising to 1 over 12 mm along the card, and
+  only for edges no other card lies well over (a card's edge inside the hair is
+  not on its hairline: feathering those cut the afro into a lattice); **fin**,
+  1 on a card standing out of the scalp, 0 on one lying along it (its normal
+  against the direction from the nearest scalp point); and the **scalp**, the
+  head's body vertices within 8 mm of a card with their density, 1 under a card
+  falling to 0 over 5 mm. Each is a pure function of the packs, so the packer
+  bakes it once, like occlusion.
+- *A hairline thins by dither, and a fin by its angle; the scalp is tinted.* A
+  hair card's cut edge is a hard line, and MakeHuman's hairlines read as a helmet
+  or a wig. The fragment shader discards where `fade` is below an interleaved
+  gradient noise of its pixel (Jimenez 2014). A discard needs neither blending
+  nor MSAA, so the hairline thins the same way on every GPU, SwiftShader
+  included (alpha-to-coverage alone would not hold there). The skin shows
+  through, so it must not be bare: `SkinMaterial` takes a per-vertex
+  `hkScalp` attribute (the style's scalp, carried through the body's stencil like
+  any field) and a uniform colour, and mixes the skin toward 0.7 of the hair's
+  albedo by 0.6 where hair grows (a stubble shade). It is an attribute and not
+  a skin layer because a layer's field is rasterised once from the base mesh into
+  a shared atlas, and a scalp differs by style. A fin card seen edge-on is a
+  hairline-thin dark sliver, and the afro stands 340 loose curl cards out of its
+  cap, which read as a lattice of them; fins thin out as they turn from the eye
+  (|cos| 0.1 to 0.4), cards of the shell never do (a head's shell is seen at a
+  grazing angle over much of its area).
+- *Two atlases are flattened in the packer.* afro01's and braid01's atlases carry
+  painted-in dark cells and blotches that read as a net or as dirt under the
+  renderer's own lighting. For those two, `strandMapFromRgba({ flatten })`
+  divides the luminance by an alpha-weighted gaussian of itself (sigma well under
+  the blotch, well over a strand), leaving strand-scale structure and alpha as
+  they were; every other style keeps its atlas's shading.
 
 **Costs and limits.** The pack is 3.5 MB for ten styles, mostly strand maps at
-1024 px; the curly styles are the largest (`afro01` 717 kB, `short01` 575 kB)
+1024 px; the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
 because their alpha is fine detail. Hair has no physics and no strand shadows
 inside the volume beyond the baked occlusion. Red hair's chroma is limited by the
 pheomelanin spectrum, and blond, red and white are modelled, not measured
 (`docs/research/HAIR-COLOUR.md`).
+
+**Named gap: coily and kinky textures.** The ten styles are the whole of what
+the system pack's CC0 header proves, and nearly all of them are straight or wavy
+hair: `short02`, `short03`, `short04`, `bob01`, `bob02`, `long01`, `ponytail01`
+and `braid01` (a straight-textured side braid). Two are curly: `afro01`, one
+short afro, and `short01`, a textured crop of loose curls. Missing outright:
+locs, twists and many-braid styles, cornrows, bantu knots, tight curls at any
+length other than the one afro, and a close crop, taper or fade (a style that
+leaves the scalp showing under very short hair; the scalp tint is built for
+it, but no style uses it). A figure of any skin tone can wear any style, so the
+pack does not exclude anyone by tone, but it does by hair texture, and it must
+not be presented as if its coverage were complete.
+
+The tier-2 candidates in the sourcing catalogue (`mhclo` and `obj` both carry
+`license CC0`, no sibling contradicts) do not close it: the six Toigo bobs
+(`toigo_blunt_bob`, `_curled_under_bob`, `_inverted_bob`, and their `_with_bangs`
+twins) are straight and curled-under bobs, and `faydaen_hair_1` is an opaque,
+straight 512 x 1024 sculpt with the exporter's default licence line as its only
+evidence. The community styles that are textured coily or braided fail the gate
+by contradiction (`o4saken_curly01` and the `elvs_*` braids are CC-BY or AGPL
+in the file; `culturalibre_hair_05/06` say CC0 in the `mhclo` and AGPL3 in the
+`obj`). None passes, so closing the gap needs an **authored or procedural coily
+style** (instanced curl cards or strand clumps over the same scalp and growth
+fields), which is a milestone of its own. Evidence and the audit are in
+`docs/evidence/hair.md`.
 
 ## Presence
 

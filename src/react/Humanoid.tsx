@@ -46,10 +46,20 @@ import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
-import { HairMaterial, isMultisampled, setHairOcclusionAttribute } from "../render/hairMaterial.ts";
+import {
+  HairMaterial,
+  isMultisampled,
+  setHairOcclusionAttribute,
+  setHairStrandAttributes,
+} from "../render/hairMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
 import { AttachmentStandardMaterial, setOcclusionAttributes } from "../render/occlusion.ts";
-import { CURVATURE_ATTRIBUTE, SkinMaterial, UV_SCALE_ATTRIBUTE } from "../render/skinMaterial.ts";
+import {
+  CURVATURE_ATTRIBUTE,
+  SCALP_ATTRIBUTE,
+  SkinMaterial,
+  UV_SCALE_ATTRIBUTE,
+} from "../render/skinMaterial.ts";
 import { flexionRig, jointFlexion } from "../rig/flexion.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
 import {
@@ -59,7 +69,7 @@ import {
   IDENTITY_POSE,
   restBonesFrom,
 } from "../rig/pose.ts";
-import { DEFAULT_HAIR_COLOUR, type HairColour } from "../surface/hairTone.ts";
+import { DEFAULT_HAIR_COLOUR, type HairColour, hairAlbedo } from "../surface/hairTone.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 import { sameEntries } from "./sameEntries.ts";
@@ -516,6 +526,11 @@ export function Humanoid({
       new BufferAttribute(new Float32Array(ready.topology.body.vertexCount), 1),
     );
     body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(ready.topology.body.uvScale, 1));
+    // Where the worn hair style grows from the skin; none until a style is worn.
+    body.setAttribute(
+      SCALP_ATTRIBUTE,
+      new BufferAttribute(new Float32Array(ready.topology.body.vertexCount), 1),
+    );
     const attachments = ready.topology.attachments.map((t) => {
       const g = makeGeometry(t);
       setOcclusionAttributes(g, t.occlusion);
@@ -554,6 +569,16 @@ export function Humanoid({
   );
   // Alpha-to-coverage needs a multisampled framebuffer; hair falls back to a plain alpha test.
   const multisampled = useThree((s) => isMultisampled(s.gl.getContext()));
+  /** The hair style whose scalp the body geometry currently holds (id null: none). */
+  const scalpStyle = useRef<{ geometry: BufferGeometry; id: string | null } | null>(null);
+  // The scalp shows the hair's own colour under it, so it follows the recipe's hair colour.
+  const wornHair = hair !== null;
+  const wornColour = recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR;
+  const overrideKey = wornColour.override?.join(",") ?? "";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: overrideKey stands for the override's values
+  useEffect(() => {
+    skin.setScalp(wornHair ? hairAlbedo(wornColour) : null);
+  }, [skin, wornHair, wornColour.eumelanin, wornColour.pheomelanin, wornColour.grey, overrideKey]);
 
   // The pose: face units blended into bone rotations (rest when absent), and
   // the attachments' occlusion following it.
@@ -721,11 +746,21 @@ export function Humanoid({
           if (!g) {
             g = makeGeometry(topology);
             setHairOcclusionAttribute(g, topology.occlusion);
+            setHairStrandAttributes(g, topology.fade, topology.growth, topology.fin);
             geometries.hair.set(ev.hair.id, g);
           }
           writeGeometry(g, ev.hair);
           setHair({ topology, geometry: g });
         } else setHair(null);
+        // The skin under the worn style takes the scalp tint; a figure with none has no scalp.
+        const scalpOf = ev.hair && topology ? ev.hair.id : null;
+        if (scalpOf !== scalpStyle.current?.id || geometries.body !== scalpStyle.current.geometry) {
+          scalpStyle.current = { geometry: geometries.body, id: scalpOf };
+          const attribute = geometries.body.getAttribute(SCALP_ATTRIBUTE) as BufferAttribute;
+          if (scalpOf && topology) attribute.copyArray(topology.scalp);
+          else attribute.array.fill(0);
+          attribute.needsUpdate = true;
+        }
         setFigure(ev);
         ground(ev);
         presenceSource.current = ready?.presenceJoints
