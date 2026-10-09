@@ -55,17 +55,17 @@ export function buildSurfaceMesh(
 ): SurfaceMesh {
   const selected = faces ?? Uint32Array.from({ length: source.faceVerts.length / 4 }, (_, i) => i);
   // Compact the face subset to its own vertex numbering.
-  const used = new Map<number, number>();
+  const used = new Int32Array(source.vertexCount).fill(-1);
   const verts: number[] = [];
   const quad = new Uint32Array(selected.length * 4);
   const quadUv = new Uint32Array(selected.length * 4);
   selected.forEach((f, i) => {
     for (let k = 0; k < 4; k++) {
       const v = source.faceVerts[f * 4 + k] as number;
-      let c = used.get(v);
-      if (c === undefined) {
+      let c = used[v] as number;
+      if (c === -1) {
         c = verts.length;
-        used.set(v, c);
+        used[v] = c;
         verts.push(v);
       }
       quad[i * 4 + k] = c;
@@ -85,21 +85,29 @@ export function buildSurfaceMesh(
     faceUvs = uvLevel.faceUvs;
   }
 
-  // Render vertices: unique (surface vertex, uv) pairs.
-  const key = new Map<string, number>();
-  const r2s: number[] = [];
-  const ruv: number[] = [];
-  const cornerRender = new Uint32Array(topology.faces.length);
-  for (let c = 0; c < topology.faces.length; c++) {
+  // Render vertices: unique (surface vertex, uv) pairs, in order of first use,
+  // found through a chain of the render vertices made for each surface vertex.
+  const corners = topology.faces.length;
+  const firstRender = new Int32Array(topology.vertexCount).fill(-1);
+  const nextRender = new Int32Array(corners);
+  const renderUv = new Uint32Array(corners);
+  const r2s = new Uint32Array(corners);
+  const ruv = new Float32Array(corners * 2);
+  let renderCount = 0;
+  const cornerRender = new Uint32Array(corners);
+  for (let c = 0; c < corners; c++) {
     const s = topology.faces[c] as number;
     const t = faceUvs[c] as number;
-    const k = `${s}:${t}`;
-    let r = key.get(k);
-    if (r === undefined) {
-      r = r2s.length;
-      key.set(k, r);
-      r2s.push(s);
-      ruv.push(uvs[t * 2] as number, uvs[t * 2 + 1] as number);
+    let r = firstRender[s] as number;
+    while (r !== -1 && renderUv[r] !== t) r = nextRender[r] as number;
+    if (r === -1) {
+      r = renderCount++;
+      nextRender[r] = firstRender[s] as number;
+      firstRender[s] = r;
+      renderUv[r] = t;
+      r2s[r] = s;
+      ruv[r * 2] = uvs[t * 2] as number;
+      ruv[r * 2 + 1] = uvs[t * 2 + 1] as number;
     }
     cornerRender[c] = r;
   }
@@ -110,11 +118,16 @@ export function buildSurfaceMesh(
     const b = cornerRender[f * 4 + 1] as number;
     const c = cornerRender[f * 4 + 2] as number;
     const d = cornerRender[f * 4 + 3] as number;
-    index.set([a, b, c, a, c, d], f * 6);
+    index[f * 6] = a;
+    index[f * 6 + 1] = b;
+    index[f * 6 + 2] = c;
+    index[f * 6 + 3] = a;
+    index[f * 6 + 4] = c;
+    index[f * 6 + 5] = d;
   }
 
   const skin = interpolateSkin(source, stencil);
-  const renderToSurface = Uint32Array.from(r2s);
+  const renderToSurface = r2s.slice(0, renderCount);
   const skinIndex = new Uint16Array(renderToSurface.length * 4);
   const skinWeight = new Float32Array(renderToSurface.length * 4);
   renderToSurface.forEach((s, r) => {
@@ -125,7 +138,7 @@ export function buildSurfaceMesh(
     stencil,
     topology,
     renderToSurface,
-    uvs: Float32Array.from(ruv),
+    uvs: ruv.slice(0, renderCount * 2),
     index,
     skinIndex,
     skinWeight,
@@ -137,9 +150,13 @@ function interpolateSkin(assets: Pick<QuadSource, "skinIndex" | "skinWeight">, s
   const n = s.offsets.length - 1;
   const index = new Uint16Array(n * 4);
   const weight = new Float32Array(n * 4);
-  const acc = new Map<number, number>();
+  // Per bone, its weight in the current row; bones in order of first touch,
+  // so equal weights keep that order through the (stable) sort.
+  const acc = new Float64Array(256);
+  const stamp = new Uint32Array(256);
+  const bones: number[] = [];
   for (let i = 0; i < n; i++) {
-    acc.clear();
+    bones.length = 0;
     for (let k = s.offsets[i] as number; k < (s.offsets[i + 1] as number); k++) {
       const v = s.src[k] as number;
       const w = s.weights[k] as number;
@@ -147,18 +164,23 @@ function interpolateSkin(assets: Pick<QuadSource, "skinIndex" | "skinWeight">, s
         const bw = assets.skinWeight[v * 4 + j] as number;
         if (bw > 0) {
           const b = assets.skinIndex[v * 4 + j] as number;
-          acc.set(b, (acc.get(b) ?? 0) + bw * w);
+          if (stamp[b] !== i + 1) {
+            stamp[b] = i + 1;
+            acc[b] = bw * w;
+            bones.push(b);
+          } else acc[b] = (acc[b] as number) + bw * w;
         }
       }
     }
-    const top = [...acc]
-      .filter((e) => e[1] > 0)
-      .sort((a, b) => b[1] - a[1])
+    const top = bones
+      .filter((b) => (acc[b] as number) > 0)
+      .sort((a, b) => (acc[b] as number) - (acc[a] as number))
       .slice(0, 4);
-    const sum = top.reduce((t, e) => t + e[1], 0);
-    top.forEach(([b, w], j) => {
+    let sum = 0;
+    for (const b of top) sum += acc[b] as number;
+    top.forEach((b, j) => {
       index[i * 4 + j] = b;
-      weight[i * 4 + j] = sum > 0 ? w / sum : 0;
+      weight[i * 4 + j] = sum > 0 ? (acc[b] as number) / sum : 0;
     });
   }
   return { index, weight };

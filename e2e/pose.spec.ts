@@ -5,6 +5,7 @@
  */
 import { expect, type Page, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
+import { budget } from "./budget.ts";
 
 /** Close on the face, which spans the frame from brow to chin. */
 const CAMERA = "0,1.55,0.6,0,1.55,0";
@@ -89,7 +90,7 @@ async function lowestFigureRow(page: Page): Promise<number> {
 
 test.describe("grounding", () => {
   test.use({ viewport: { width: 240, height: 360 } });
-  test.setTimeout(180_000);
+  test.setTimeout(budget(180_000));
 
   test("a kneeling figure comes down to the ground it stands on", async ({ page }) => {
     // The camera sits at floor height, looking level, so every point of the
@@ -119,7 +120,7 @@ test.describe("grounding", () => {
 
 test.describe("posing", () => {
   test.use({ viewport: { width: 240, height: 300 } });
-  test.setTimeout(180_000);
+  test.setTimeout(budget(180_000));
 
   test("face units move the face where they act and nowhere else", async ({ page }) => {
     const errors: string[] = [];

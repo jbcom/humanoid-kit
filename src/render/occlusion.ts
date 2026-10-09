@@ -37,8 +37,21 @@ export const OCCLUSION_FLOOR = 0.15;
 /**
  * Puts an attachment's per-vertex corner bakes (`occlusionCorners` per
  * vertex, interleaved) on its geometry as the attributes the patch reads.
+ * Called again with as many values, it refills the same buffer rather than
+ * leaving the old one uploaded: three frees a geometry's GPU buffers only for
+ * the attributes it holds when disposed.
  */
 export function setOcclusionAttributes(geometry: BufferGeometry, occlusion: Float32Array): void {
+  const current = geometry.getAttribute(OCCLUSION_ATTRIBUTE);
+  if (
+    current instanceof InterleavedBufferAttribute &&
+    current.data.array.length === occlusion.length
+  ) {
+    // The array is replaced, not written into: the old one may be shared.
+    current.data.array = occlusion;
+    current.data.needsUpdate = true;
+    return;
+  }
   const buffer = new InterleavedBuffer(occlusion, CORNERS);
   geometry.setAttribute(OCCLUSION_ATTRIBUTE, new InterleavedBufferAttribute(buffer, 1, 0));
   geometry.setAttribute(CORNERS_A, new InterleavedBufferAttribute(buffer, 4, 1));

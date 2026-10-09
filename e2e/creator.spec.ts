@@ -4,6 +4,7 @@
  */
 import { expect, type Page, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
+import { budget } from "./budget.ts";
 
 // Tap positions are fractions of the canvas for this viewport, with the whole
 // figure framed from the front (the Main tab's view).
@@ -48,7 +49,7 @@ const revealedGroup = (page: Page) => page.locator("details[data-revealed] > sum
 
 test("tapping a part of the figure opens the controls that shape it", async ({ page }) => {
   // Each step waits for the camera to glide; the figure load is the rest.
-  test.setTimeout(180_000);
+  test.setTimeout(budget(180_000));
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {

@@ -251,10 +251,14 @@ export function faceUnitRotations(
 ): BoneRotations {
   const { names, frames } = rig.faceUnits;
   const sums = new Map<number, [number, number, number]>();
-  for (const unit of Object.keys(weights).sort()) {
-    const w = weights[unit] as number;
+  // Summed in the pack's unit order, whatever the order of `weights`.
+  const units = Object.keys(weights).map((unit) => {
     const f = names.indexOf(unit);
     if (f < 0) throw new AssetFormatError(`unknown face unit ${unit}`);
+    return f;
+  });
+  for (const f of units.sort((a, b) => a - b)) {
+    const w = weights[names[f] as string] as number;
     if (w === 0) continue;
     for (const [b, q] of frameRotations(rig, rig.faceUnits.joints, frames[f] as number[])) {
       const r = log(q);
