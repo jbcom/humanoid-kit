@@ -856,7 +856,11 @@ Where each lies is read from the default figure's joints (the brows, the outer
 corners, the nose's wing), so it follows the mesh, and keeps off the lips and the
 eyeballs (a test holds it). The forehead's lines and the furrows are also
 bounded by distance along the skin from the brows' band (`distanceFromBrows`:
-Dijkstra over the mesh's edges), since a mask built from heights alone leaked
+Dijkstra over the mesh's edges, in double precision: stored in single it rounded
+below the distance each vertex was queued with, so the vertex never relaxed its
+neighbours and the forehead's midline was never reached, which left the lines
+at the temples as curled marks and none at the centre; a test holds the
+distance a metric and the midline reached), since a mask built from heights alone leaked
 across big triangles up and over the crown on the first sheets (frontalis lines
 stop 5 to 7 cm above the brows, glabellar lines are 1 to 2.5 cm long; a test
 holds every layer's mask to its extent). The
