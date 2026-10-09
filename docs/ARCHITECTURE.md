@@ -1902,6 +1902,18 @@ C5; contact sheets, before and after, at four tones, adult and child:
   hand readings, binned by the back's lightness), not a ratio: a lighter-skin
   rule scaled down would leave deep palms nearly the colour of the hand's back,
   which is the error this item exists to prevent.
+- *Where palmar skin ends, as distances.* The skin states' palm zone is a ramp
+  of the normal, which on the coarse, curved palm turns from 1 to 0 within a
+  face and drew the palm's colour as a polygon. The palm's mask
+  (`palmarMask`) is built from distances instead, which interpolate smoothly
+  across a face:
+  - the signed distance over the skin (Dijkstra along the mesh's edges, from
+    where the facing crosses 0 on each edge) to the palmar-dorsal border, eased
+    over 1.6 cm;
+  - a ramp at the wrist.
+
+  A test bounds the mask's change per metre across every edge of the hand. The
+  creases ease in from the same border, so none reaches the back of the hand.
 - *A frame per hand, from the base mesh.* As with the skin-state zones, nothing
   is added to the frozen mesh. The skeleton's finger joints give each digit a
   polyline from the wrist; every hand vertex takes the nearest segment and its
@@ -1927,6 +1939,12 @@ C5; contact sheets, before and after, at four tones, adult and child:
   proximal transverse crease it starts beside, crossed it when it started
   above it). The thumb's web is the one place three creases meet whose sides
   no signs can all match; there the palm's creases taper in from the border.
+  A crease reads mostly through its relief: the line is a faint shade between
+  slightly lighter lips, each crease's strength varies along it (deepest at
+  its middle, a finger's toward the digit's midline), and the palm's three
+  major lines are stronger than the fingers' (uniform dark lines read as
+  drawn on). A test holds every edge that crosses a crease to both ends
+  inside the line's and the fold's linear reach.
 - *Where the creases are.* Measured offsets from the joints (the middle
   digital crease about 2 mm proximal to its joint, the thumb's at and just
   proximal to its joints) and measured lengths between a finger's creases. The
