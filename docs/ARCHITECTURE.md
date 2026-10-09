@@ -1157,10 +1157,19 @@ a coloured texture; everything in the pure core is testable in Node.
   (`src/surface/hairFields.ts`, stored beside the occlusion in the style's
   binary): **growth** (u16, 0.1 mm steps), the distance along the cards from
   where the hair roots, by Dijkstra from the vertices within 1.5 cm of the scalp
-  (a card that touches none grows from its highest vertex); **fade**, 0 on a
-  card edge that meets the scalp, rising to 1 over 18 mm along the card, and
-  only for edges no other card lies well over (a card's edge inside the hair is
-  not on its hairline: feathering those cut the afro into a lattice); **fin**,
+  (a card that touches none grows from its highest vertex); **fade**, 0 at a
+  card vertex within 1.5 cm of the scalp that is on a hairline, rising to 1 over
+  18 mm along the card. A vertex is on one when the skin under it is bare (the
+  body's hair density, taken from the cards' opaque texels and from hair standing
+  over each skin vertex along its normal, below a quarter at the nearest body
+  point: the face, a temple the hair stops short of), or when it is a card's
+  boundary vertex that no other card lies well over. A card's mesh reaches well
+  past the hair painted on it, so the visible hairline is the painted edge
+  inside the mesh, and a fade measured from the mesh's own boundary ran out over
+  transparent texels (6-8% of its zero vertices sat on opaque hair): the first
+  hairlines were hard cuts. Hair over hair is no hairline (feathering those cut
+  the afro into a lattice, and two cards that meet at a parting opened a gap);
+  **fin**,
   1 on a card standing out of the scalp, 0 on one lying along it (its normal
   against the direction from the nearest scalp point); and the **scalp**, the
   head's body vertices within 11 mm of a card with their density, 1 under a card
@@ -1172,16 +1181,22 @@ a coloured texture; everything in the pure core is testable in Node.
   their roots showed the dark inside of the volume as a band.
 - *A hairline thins, and a fin by its angle; the scalp is tinted.* A
   hair card's cut edge is a hard line, and MakeHuman's hairlines read as a helmet
-  or a wig, and a screen-space dither of it reads as a dot grid. The fin's angle
-  term is the card's coverage under alpha-to-coverage (a dither without it, which
-  needs neither blending nor MSAA, so it works on every GPU). The hairline itself
+  or a wig, and a screen-space dither of it reads as a dot grid, as does the
+  2x2 coverage pattern alpha-to-coverage gives a partial alpha on hardware
+  (found on a real GPU after software renders looked fine). So nothing about a
+  hairline or a fin is a per-pixel or partial-coverage decision: every one is a
+  yes or no per strand cell of the card's own surface, which needs neither
+  blending nor MSAA and looks the same on every GPU. The hairline
   thins strand by strand, in the texture's own coordinates scaled to metres by a
   baked per-vertex `uvScale` (a strand is 1.5 mm wherever its card's island sits
-  in the atlas): each strand ends at a distance of its own from the cut edge (a
-  hash of the strand), its tip tapering, and the edge recedes along its length by
-  up to a third of the fade (two slow noises: a recession and a wander), so no
-  hairline is a straight cut with a dot pattern but a feathering of wisps.
-  (Pixel dithering alone left a speckle on the afro that read as noise.) The skin shows
+  in the atlas). Where the fade is low the thinning follows the painted hair:
+  the strand map's alpha, blurred by the mip that spans 16 mm, is 0.5 at the
+  painted edge and rises to 1 inside it, and each strand ends at a distance of its
+  own along that ramp (a hash of the strand), its tip fraying in 4.5 mm cells along
+  the strand, and the edge recedes along its length by up to a third of the ramp
+  (two slow noises: a recession and a wander), so no hairline is a straight cut
+  with a dot pattern but a feathering of wisps; a fin dissolves by the same cells as it turns
+  edge-on. Edge pixels of the cut-outs themselves stay alpha-to-coverage. The skin shows
   through, so it must not be bare: `SkinMaterial` takes a per-vertex
   `hkScalp` attribute (the style's scalp, carried through the body's stencil like
   any field) and a uniform colour, and takes the skin toward its own colour in

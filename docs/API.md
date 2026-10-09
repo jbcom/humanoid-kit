@@ -1050,8 +1050,8 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   skinned to the figure and coloured by `recipe.hair.colour` (`HairMaterial`:
   the strand map times the pigment colour's tint, two Kajiya-Kay highlight
   lobes along the strands (their direction read from the baked growth), baked
-  occlusion, hairlines dithered away by `fade` and loose fin cards by their
-  angle to the eye), with edges drawn by alpha-to-coverage on a multisampled
+  occlusion, hairlines thinned strand by strand by `fade` and loose fin cards
+  dissolved by their angle to the eye), with edges drawn by alpha-to-coverage on a multisampled
   canvas and by an alpha test otherwise. The skin under the style takes a
   stubble tint of the hair's colour where it grows (`SkinMaterial.setScalp`, the
   `hkScalp` attribute). Changing the style loads that style's files; changing
