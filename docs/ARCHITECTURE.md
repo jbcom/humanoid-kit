@@ -1471,6 +1471,82 @@ Old recipes evaluate and serialise as before.
   hands' layers in the UV layout, took two channels of their own; the coat
   replaces them).
 
+### The coat (design, 2026-10-09)
+
+Short, dense hair standing off the skin (stubble, a dense chest, an animal's
+pelt) is one module shared by body hair and the anthro fur
+(`ANTHRO-DESIGN.md` §2.7): shells, the body surface drawn N times, each
+offset outward a little further and cut to strands by a density texture
+(Lengyel et al. 2001).
+
+**Use cases.** A man's stubble and a dense chest on the creator, at every tone
+and colour, under a moving pose; a furred anthro figure with a patterned pelt;
+a phone drawing a crowd of either. **Requirements.** The coat follows the skin
+exactly (shape, pose, outfit hiding); costs nothing where it does not grow;
+colour from the hair pigment model; the core holds its fields and colour
+models, Node-tested; and fur can add regions and patterns without changing the
+module.
+
+**Decisions.**
+
+- *Fields from the base mesh, static, in the topology.* A coat has up to eight
+  **regions** (`CoatRegion`: an id and a per-base-vertex mask, registered like
+  skin layers, `COAT_REGIONS`), carried through the subdivision stencil to the
+  render vertices as eight bytes a vertex; and one **comb field**, the
+  direction hair lies, a rest-space tangent per base vertex: along each limb
+  bone from proximal to distal, down the trunk, neck and face, projected to the
+  tangent plane and smoothed by neighbour averaging, carried the same way.
+  Rejected: atlas channels for the masks (the atlas is full, and a vertex
+  attribute is exact where the shells need it, at their vertices).
+- *Per figure, a paint per region*: coverage (the share of follicles that grow
+  a hair), length, follicle density, how far the hair lies along the comb, and
+  the pigment albedo, as uniforms. Body hair paints its regions from the body
+  hair model; fur paints its own, and a pattern is a further region or a
+  pigment rule on the same fields.
+- *Drawn where it grows.* The coat's index buffer is the body's current
+  (outfit-masked) index cut to the triangles whose corners carry a painted
+  region; built when the outfit or the set of painted regions changes, so a
+  figure without a coat draws nothing and stubble draws only the face.
+- *One instanced draw.* The coat is a skinned mesh on the body's own geometry
+  and skeleton, instanced N times; shell `i` is the skin offset along the rest
+  normal by `(i + 1) / N` of the hair's length, leaning along the comb, before
+  skinning (so the skin's own skinning, dual quaternions included, carries it).
+  N scales with the figure's size on screen (`coatShellCount`), so a figure
+  far away draws few shells.
+- *Strands from a tileable density texture* at true scale (`uv × uvScale`
+  over the follicle spacing), generated from a seed: per cell a strand's
+  length, its radius profile and an id; a shell keeps a fragment inside a
+  strand that reaches its height and whose id is under the coverage, so
+  coverage thins the hair rather than fading it.
+- *Shading is Kajiya-Kay along the skinned comb*, two lobes as the hair cards
+  use, with the pigment albedo, darker toward the root (self-shadow).
+- *A far LOD by dither.* Where a follicle cell is finer than a pixel the shells
+  cannot resolve strands; a fragment is then kept by an interleaved-gradient
+  dither of the strands' mean cover at its height.
+
+**Built (2026-10-09).** `src/surface/coat.ts` (fields, paint, triangles, shell
+count), `src/render/coat.ts` (`CoatMaterial`, `coatGeometry`) and
+`src/react/CoatMesh.tsx`, which `<Humanoid>` mounts on whichever body surface
+is drawn. Body hair's regions (`BODY_HAIR_COAT`, `src/surface/regions/bodyHairCoat.ts`)
+are the beard's three parts and the trunk's chest, abdomen and back, which
+moved from strand layers to the coat: their hair stands off the skin and is
+dense. The beard's masks follow the face's lines, measured from the lips, chin,
+eyes and ears; under the jaw the mesh's edges run to 15 mm, so its lines ease
+over two to four centimetres, and a unit test requires that no part of the
+beard change fully in under a centimetre anywhere on the face away from the
+lips' border (the first version's straight cuts fail it). An e2e spec
+(`e2e/bodyhair.spec.ts`) draws the styles on a real figure: stubble, a goatee
+and a full beard each change the face, the full beard more than the goatee,
+chest hair shows against the same chest bare, and a child asked for a full beard
+grows none.
+
+**Costs.** The coat costs nothing where nothing is painted (no triangles, no
+draw). A full beard with doubled chest, abdomen and back hair at 360 × 420
+measured 8.33 ms a frame against 8.29 ms without (`e2e/bodyhair.spec.ts`,
+recorded): both are the display's frame interval, so at this size the coat
+fits within a frame and the true GPU cost is below what this measures. A GPU
+timer measurement on a phone is the open item.
+
 ## Presence
 
 `src/presence` is what a figure publishes about itself for the scene around it
@@ -1550,11 +1626,11 @@ later package that refuses participants under 18, and are not here.
 - *The source is MakeHuman's own CC0 clips.* punkduck's walk, idle and swim clips in
   `makehuman2_additional_assets_cc0.zip` are on the default skeleton, so a BVH joint
   is a rig bone by name and nothing is retargeted. Each clip is judged by
-  `judgeAsset` (docs/licence-history.md §4, clause B) with the asset pack listing
-  that calls the archive CC0 and the clip's own `.meta` (`license CC0`), and the
-  archive is pinned by its SHA-256 (`packs/animations/data/PROVENANCE.md`). A BVH has
-  no place for a licence line, so the rule accepts one only with its `.meta` beside
-  it. MakeHuman's own `walk.bvh` and `zombie.bvh` are AGPL3 and are not used.
+  `judgeAsset` (docs/licence-history.md, clause B) with the asset pack listing that
+  calls the archive CC0; the packer also requires the clip's own `.meta` to state
+  `license CC0` (a BVH has no place for a licence line), and the archive is pinned by
+  its SHA-256 (`packs/animations/data/PROVENANCE.md`). MakeHuman's own `walk.bvh` and
+  `zombie.bvh` are AGPL3 and are not used.
 - *Where a clip carries a figure is derived from the figure's feet.* The walk's BVH
   keeps its root in place, and a translation authored for one skeleton slides the
   feet of another. `planRootMotion` moves the figure, frame to frame, backwards by
@@ -1961,19 +2037,21 @@ subdivided linearly (`linearSubdivisionStencil`), positions smoothly, because
 smoothing the cap's displacement leaked it into the loop and overshot the tube by
 up to 22% at level 2.
 
-**Arousal.** The adult manifest adds an `arousal` state morph
-(`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by
-`assertSignalPolicy` before any target is named), driving the adult pack's
-`penis-circ-incr` (0.44) and `penis-length-incr` (0.25), calibrated so that full
-arousal gives the measured erect against flaccid: circumference +25% and length
-+43% (research/SKIN-STATES.md, B4; `tests/arousal.test.ts` measures it on the
-length target's own vertices). Only targets that exist are driven: the testes'
-response is unmeasured and the vulva and clitoris have no targets (their volume
-change has no verified magnitude), so those wait for the sculpt phase.
-`stateContributions` skips targets no loaded pack knows, so without the adult
-pack the figure is simply unchanged, and a target of the adult pack that has not
-arrived yet is named as pending, so an evaluation waits for the adult stage as
-it does for any other. Colour deepening is the layers' own: `genitalAlbedo` moves
+**Arousal.** Adult-only, refused under 18 by `assertSignalPolicy` before any
+target is named. Its shape response is the adult pack's detail targets reading
+the signal (`AdultDetailSpec.drives`, `sramp:arousal:…`; the core's `STATE_MORPHS`
+stays without it and the pack's `stateMorphs` is empty). The organ is drawn at
+three states (flaccid, midway, erect) so that it swings from hanging to rising
+instead of shortening on the way (a morph moves each vertex in a straight line);
+its erect state is the measured growth over flaccid, circumference +25% and
+length +43% (research/SKIN-STATES.md, B4; research/ADULT-ANATOMY-DATA.md, F;
+`tests/phallus.test.ts` measures the authored shapes against those numbers and
+holds the surface to them). The testes' response is unmeasured and the vulva and
+clitoris have no verified magnitude (their volume change), so those wait for the
+sculpt. A derived weight is an adult's alone, and a target of the adult pack that
+has not arrived yet is named as pending, so an evaluation waits for the adult
+stage as it does for any other; without the adult pack the figure is simply
+unchanged. Colour deepening is the layers' own: `genitalAlbedo` moves
 haemoglobin a fraction of the way to its ceiling with the signal, so it stays
 inside the skin model's measured haemoglobin axis (about 0.4 to 1.3 CIELAB a\*
 units, smaller on deep skin) and is **uncalibrated**: no measured colour change

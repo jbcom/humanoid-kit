@@ -301,14 +301,12 @@ export const VELLUS_LAYER: StrandLayer = {
 };
 
 /**
- * Terminal body hair drawn as strands, by group; axillary hair is
- * adult-only. The beard is not here (dense short hair is the coat's, long hair
- * the cards'), nor pubic hair (the adult pack's).
+ * Terminal body hair drawn as strands, by group: the sparse, fine hair lying
+ * on the limbs and buttocks, and the armpit's (adult-only). The beard and the
+ * trunk's hair stand off the skin and are dense, so they are the coat's
+ * (`BODY_HAIR_COAT`), long hair the cards', and pubic hair the adult pack's.
  */
 export const TERMINAL_HAIR_LAYERS: readonly StrandLayer[] = [
-  terminalLayer("hair-chest", "chest", "chest"),
-  terminalLayer("hair-abdomen", "abdomen", "abdomen"),
-  terminalLayer("hair-back", "back", "back"),
   terminalLayer("hair-buttocks", "buttocks", "buttocks"),
   terminalLayer("hair-arms", "arms", "arms"),
   terminalLayer("hair-legs", "legs", "legs"),

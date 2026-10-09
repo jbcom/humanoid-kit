@@ -402,17 +402,21 @@ and throws `RangeError` for anything else.
 - `model.evaluate(recipe, signals?, haveOutfit?): Evaluation`: `signals` (0..1 each) set the
   skin's state; those with a state morph add their targets: `cold` (the nipple
   rises and the areola contracts; `STATE_MORPHS`) and `arousal` (engorgement:
-  the shaft's circumference +25% and length +43% at full arousal, the measured
-  erect against flaccid; the adult pack's own, from its manifest's
-  `anatomy.stateMorphs`), each calibrated to its measured response.
+  the organ's circumference +25% and length +43% at full arousal, the measured
+  erect against flaccid; the adult pack's own, read by its detail targets'
+  `anatomy.detail.drives` as `sramp:arousal:…` factors, drawn at flaccid, a
+  midpoint and erect so the tube swings rather than shortens), each calibrated
+  to its measured response. `shapeSignalNames(STATE_MORPHS, anatomy?)` lists the
+  signals that change the shape: the state morphs' and those the detail's gates
+  and drives read, for a caller that re-evaluates the figure only when one changes.
   `stateContributions(signals, morphs?, exists?)` gives those target weights for
   the morphs in force, limited to targets `exists` accepts; the model passes
   the body's and the adult pack's morphs and the loaded packs' targets, so a
   state of the adult anatomy does nothing, rather than fails, without the adult
   pack. `ADULT_ONLY_SIGNALS` (`arousal`) throw `AgePolicyError` under 18
-  (`assertSignalPolicy`), before any target is named. Today the penis targets
-  deform `helper-genital`, which the surface does not draw, so engorgement
-  moves `Evaluation.control` and no drawn vertex until the sculpt phase.
+  (`assertSignalPolicy`), before any target is named. The organ is detail on the
+  adult surface (drawn out of a reservoir), so engorgement moves drawn vertices
+  of an adult figure with an organ and nothing in one without.
   `recipe.outfit` adds the garments (see "Clothing"); `haveOutfit` is the
   outfit key the caller already holds the masks of.
 - `model.controlShape(recipe): ControlShape`: an adult figure's control mesh for
@@ -673,12 +677,30 @@ compute what the renderer will do.
   (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
   Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
   hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
-  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (chest, abdomen, back, buttocks, arms,
-  legs, and the `adultOnly` axillary), with follicle densities
-  `BODY_HAIR_DENSITY`. The beard is not a strand layer (dense short hair is the
-  coat's, long hair the cards'), and pubic hair is the adult pack's.
+  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs, and the
+  `adultOnly` axillary), with follicle densities `BODY_HAIR_DENSITY`. Dense,
+  short hair standing off the skin (the beard, the chest, abdomen and back) is
+  the coat's, long hair the cards', and pubic hair the adult pack's.
   `bodyHairMasks(assets)` gives the masks per base vertex and
   `bodyHairInput(paintInput)` the body hair model's input.
+- The coat (`src/surface/coat.ts`, ARCHITECTURE.md "The coat"): short, dense hair
+  drawn as shells, shared by body hair and the anthro fur. A `CoatRegion` (`id`,
+  `targets`, `mask(assets)` per base vertex, `paint(input)` giving a
+  `CoatPaint`: `cover`, `length` up to `MAX_COAT_LENGTH`, `density` per cm²,
+  `lie` 0 standing to 1 flat, `width`, `colour`); `COAT_REGIONS` (at most
+  `COAT_REGION_LIMIT`; today `BODY_HAIR_COAT`: `beard-moustache`, `beard-chin`,
+  `beard-cheeks`, `hair-chest`, `hair-abdomen`, `hair-back`, with
+  `BEARD_LENGTHS` per style and `beardMasks(assets)`). `combField(assets)` is
+  the direction hair lies per base vertex (rest space, unit, in the tangent
+  plane: down the limbs toward their ends, down elsewhere, smoothed);
+  `coatMasks(assets, regions)` the masks as bytes; `paintCoat(regions, input)`
+  a figure's paint, two rows of four per region (a region painting no cover is
+  a zero row; a length past `MAX_COAT_LENGTH` is an error); `coatPainted(table)`;
+  `coatTriangles(index, masks, table)` the triangles a painted coat covers;
+  `coatShellCount(pixels)` the shells for a figure that tall on screen, from
+  `COAT_SHELLS.min` to `.max`. The topology carries the fields per render vertex
+  (`ModelTopology.body.coat`, `AdultSurfaceTopology.coat`: `CoatFields`).
+  `<Humanoid>` draws the coat itself.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).

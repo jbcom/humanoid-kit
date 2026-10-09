@@ -47,6 +47,7 @@ import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } fr
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
+import { COAT_REGION_LIMIT, type CoatFields, coatMasks, combField } from "../surface/coat.ts";
 import {
   GROWTH_SCALE,
   type HairFields,
@@ -61,7 +62,8 @@ import {
   uvScale,
 } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
-import { SKIN_LAYERS } from "../surface/regions/index.ts";
+import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
+import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 import { tuckDepths } from "./tuck.ts";
 
@@ -214,6 +216,8 @@ export interface ModelTopology {
      * canals and eye sockets, and for a pack with no body occlusion.
      */
     occlusion: Uint8Array;
+    /** The coat's comb and region masks per render vertex (`COAT_REGIONS`; docs/ARCHITECTURE.md, "The coat"). */
+    coat: CoatFields;
   };
   attachments: AttachmentTopology[];
 }
@@ -234,6 +238,8 @@ export interface AdultSurfaceTopology extends SurfaceTopology {
    * refined through this surface's stencil, so the face darkens as on the base.
    */
   occlusion: Uint8Array;
+  /** The coat's fields at these render vertices, as for the base body. */
+  coat: CoatFields;
 }
 
 /**
@@ -429,6 +435,10 @@ export class HumanoidModel {
   private readonly stateMorphs: readonly StateMorph[];
   /** The adult pack's detail targets (`AdultDetailSpec`): displacements of the adult surface, not morphs. */
   private readonly detailTargets: ReadonlySet<string>;
+  /** Factors that multiply a detail target's weight (`AdultDetailSpec.gates`), compiled. */
+  private readonly detailGates: ReadonlyMap<string, readonly Factor[]>;
+  /** Detail targets whose weight is derived from factors alone (`AdultDetailSpec.drives`), compiled. */
+  private readonly detailDrives: readonly (readonly [string, readonly Factor[]])[];
   /** The body's vertex adjacency, on first use (`bodyAdjacency`). */
   private adjacency: { start: Uint32Array; items: Uint32Array } | undefined;
   /** The rest bake of the worn set, kept for the corner bakes to reuse. */
@@ -458,6 +468,20 @@ export class HumanoidModel {
       ...(assets.adultAnatomyManifest?.anatomy?.stateMorphs ?? []),
     ];
     this.detailTargets = new Set(assets.adultAnatomyManifest?.anatomy?.detail?.targets);
+    // Gates and drives name detail targets and factors the loaded packs know: a typo is an error now, not a feature that never shows.
+    const compiled = (kind: "gates" | "drives") =>
+      Object.entries(assets.adultAnatomyManifest?.anatomy?.detail?.[kind] ?? {}).map(
+        ([target, factors]) => {
+          if (!this.detailTargets.has(target))
+            throw new AssetFormatError(`detail ${kind} for ${target}: it is not a detail target`);
+          return [
+            target,
+            factors.map((f) => compileFactor(f, `detail ${kind} of ${target}`, assets.modifiers)),
+          ] as const;
+        },
+      );
+    this.detailGates = new Map(compiled("gates"));
+    this.detailDrives = compiled("drives");
     const ids = options.attachments ?? [...assets.attachments.keys()];
     const wearing = ids.map((id) => {
       const a = assets.attachments.get(id);
@@ -1142,6 +1166,7 @@ export class HumanoidModel {
         plan: this.atlasPlan(),
         uvScale: this.uvScale,
         occlusion: this.bodyOcclusionField(),
+        coat: this.coatOn(this.body.mesh),
       },
       attachments: this.attached.map(({ asset, part: p }, i) => ({
         occlusion: occlusion[i] as Float32Array,
@@ -1194,16 +1219,27 @@ export class HumanoidModel {
     return this.pendingFor(this.contributions(recipe, signals));
   }
 
-  /** The recipe's target weights, plus its skin state's (`STATE_MORPHS`), after the age policy. */
+  /**
+   * The recipe's target weights, plus its skin state's (`STATE_MORPHS`) and the
+   * weights the adult pack derives from modifiers and signals
+   * (`AdultDetailSpec.drives`, an adult's alone), after the age policy.
+   */
   private contributions(recipe: Recipe, signals: Readonly<Record<string, number>>) {
     const fromRecipe = recipeContributions(recipe, this.assets.modifiers);
     assertSignalPolicy(recipe, signals);
+    const driven: Contribution[] = [];
+    if (this.detailDrives.length && isAdult(recipe))
+      for (const [target, factors] of this.detailDrives) {
+        const weight = product(factors, recipe, signals);
+        if (weight > 0) driven.push({ target, weight });
+      }
     // A state of the adult anatomy has nothing to drive without the adult pack.
     return [
       ...fromRecipe,
       ...stateContributions(signals, this.stateMorphs, (target) =>
         this.assets.targetFileOf.has(target),
       ),
+      ...driven,
     ];
   }
 
@@ -1331,8 +1367,16 @@ export class HumanoidModel {
         `the recipe needs target files that have not loaded yet: ${[...pending].join(", ")} ` +
           "(await their stage of loadHumanoidAssetsStaged)",
       );
-    const detail = all.filter((c) => this.detailTargets.has(c.target));
-    const contributions = detail.length
+    const isDetail = all.filter((c) => this.detailTargets.has(c.target));
+    // A gated target is worth its weight times its factors; a factor of nothing drops it.
+    const detail: Contribution[] = [];
+    for (const c of isDetail) {
+      const gates = this.detailGates.get(c.target);
+      const gate = gates ? product(gates, recipe, signals) : 1;
+      if (gate === 0) continue;
+      detail.push(typeof c.weight === "number" ? { target: c.target, weight: c.weight * gate } : c);
+    }
+    const contributions = isDetail.length
       ? all.filter((c) => !this.detailTargets.has(c.target))
       : all;
     const control = new Float32Array(this.assets.positions.length);
@@ -1489,9 +1533,54 @@ export class HumanoidModel {
         index: mountedIndex,
         uvScale: Float32Array.from(mesh.renderToSurface, (s) => surface[s * 3] as number),
         occlusion: this.bodyOcclusionField(mesh),
+        coat: this.coatOn(mesh),
       },
     };
     return this.adultBody;
+  }
+
+  private readonly coats = new WeakMap<SurfaceMesh, CoatFields>();
+
+  /**
+   * The coat's fields (`combField`, `coatMasks`) carried from the base vertices
+   * to a body surface's render vertices through its stencil, three values at a
+   * time; the comb is made unit again after the blend. Static, so built once
+   * per surface.
+   */
+  private coatOn(mesh: SurfaceMesh): CoatFields {
+    const known = this.coats.get(mesh);
+    if (known) return known;
+    const n = this.assets.manifest.vertexCount;
+    const r2s = mesh.renderToSurface;
+    const surface = new Float32Array(mesh.topology.vertexCount * 3);
+    applyStencil(mesh.stencil, combField(this.assets), surface);
+    const comb = new Float32Array(r2s.length * 3);
+    r2s.forEach((s, r) => {
+      const x = surface[s * 3] as number;
+      const y = surface[s * 3 + 1] as number;
+      const z = surface[s * 3 + 2] as number;
+      const len = Math.hypot(x, y, z);
+      if (len > 0) comb.set([x / len, y / len, z / len], r * 3);
+    });
+    const base = coatMasks(this.assets, COAT_REGIONS);
+    const masks = new Uint8Array(r2s.length * COAT_REGION_LIMIT);
+    const field = new Float32Array(n * 3);
+    for (let k = 0; k < COAT_REGION_LIMIT; k += 3) {
+      field.fill(0);
+      for (let v = 0; v < n; v++)
+        for (let j = 0; j < 3 && k + j < COAT_REGION_LIMIT; j++)
+          field[v * 3 + j] = (base[v * COAT_REGION_LIMIT + k + j] as number) / 255;
+      applyStencil(mesh.stencil, field, surface);
+      r2s.forEach((s, r) => {
+        for (let j = 0; j < 3 && k + j < COAT_REGION_LIMIT; j++)
+          masks[r * COAT_REGION_LIMIT + k + j] = Math.round(
+            Math.min(1, Math.max(0, surface[s * 3 + j] as number)) * 255,
+          );
+      });
+    }
+    const out: CoatFields = { regions: COAT_REGIONS.map((r) => r.id), comb, masks };
+    this.coats.set(mesh, out);
+    return out;
   }
 
   /**

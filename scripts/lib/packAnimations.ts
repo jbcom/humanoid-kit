@@ -23,7 +23,7 @@ import type { AnimationManifest, ClipEntry } from "../../src/animation/clip.ts";
 import type { BodyManifest } from "../../src/format/assetFormat.ts";
 import { frameRotations } from "../../src/rig/pose.ts";
 import { parseBvh } from "./bvh.ts";
-import { type CommunityPage, judgeAsset, type SourceFile } from "./licenceRule.ts";
+import { type CommunityPage, isCc0, judgeAsset, type SourceFile } from "./licenceRule.ts";
 import { sha256, writePackEntry } from "./packWriter.ts";
 
 /** The archive the clips come from, pinned. */
@@ -44,9 +44,7 @@ export const ADDITIONAL_ASSETS_PAGE: CommunityPage = {
   submitter: "MakeHuman Community asset pack listing",
   submitted: "2026-06-25",
   licence: "cc0",
-  description: "Makehuman2 additional assets",
   retrieved: "2026-10-09",
-  derivedFrom: [],
 };
 
 export interface ClipSpec {
@@ -241,9 +239,12 @@ export function packAnimations(options: PackAnimationsOptions): void {
     const judgement = judgeAsset(files, ADDITIONAL_ASSETS_PAGE);
     if (!judgement.pass)
       throw new Error(`${spec.id}: licence rule refuses it: ${judgement.reason}`);
+    // The page governs; the clip's own .meta must agree (a BVH has no place for a licence line).
+    const stated = metaField(meta, "license");
+    if (!isCc0(stated)) throw new Error(`${spec.id}: its .meta states "${stated}", not CC0`);
     evidence.push([
       spec.id,
-      `clause ${judgement.clause}; ${judgement.evidence[`${spec.id}.meta`]}`,
+      `clause ${judgement.clause}; ${judgement.evidence[`${spec.id}.meta`]}; its .meta states "license ${stated}", author ${metaField(meta, "author")}`,
     ]);
     const clip = encodeClip(rigBones, bvhText);
     if (spec.loop && clip.seamRatio > SEAM_LIMIT)
@@ -309,7 +310,7 @@ function writeProvenance(dir: string, evidence: [string, string][], outputs: [st
     `Licence: the archive is listed as CC0 in the community's asset pack listing (<${ADDITIONAL_ASSETS_PAGE.url}>,`,
     `entry \`makehuman2::additional_assets\`, \`"license": "cc0"\`, read ${ADDITIONAL_ASSETS_PAGE.retrieved}), and each clip's own`,
     "`.meta` states `license CC0` and its author. Each clip passed the repository's licence rule",
-    "(`scripts/lib/licenceRule.ts`, docs/licence-history.md §4, clause B) with the listing and its `.meta` before packing:",
+    "(`scripts/lib/licenceRule.ts`, docs/licence-history.md, clause B) with the listing, and its `.meta` was checked to agree, before packing:",
     "",
     ...evidence.map(([id, ev]) => `- ${id}: ${ev}`),
     "",

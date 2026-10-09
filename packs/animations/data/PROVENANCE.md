@@ -10,14 +10,14 @@ trademarks (CC0 1.0 §4a).
 Licence: the archive is listed as CC0 in the community's asset pack listing (<https://files2.makehumancommunity.org/functional/assetpacks.json>,
 entry `makehuman2::additional_assets`, `"license": "cc0"`, read 2026-10-09), and each clip's own
 `.meta` states `license CC0` and its author. Each clip passed the repository's licence rule
-(`scripts/lib/licenceRule.ts`, docs/licence-history.md §4, clause B) with the listing and its `.meta` before packing:
+(`scripts/lib/licenceRule.ts`, docs/licence-history.md, clause B) with the listing, and its `.meta` was checked to agree, before packing:
 
-- walk_normal: clause B; B: file "license CC0"
-- walk_female: clause B; B: file "license CC0"
-- idle1: clause B; B: file "license CC0"
-- idle2: clause B; B: file "license CC0"
-- idlehips: clause B; B: file "license CC0"
-- swimcrawlstroke: clause B; B: file "license CC0"
+- walk_normal: clause B; B: page licence "cc0"; its .meta states "license CC0", author punkduck
+- walk_female: clause B; B: page licence "cc0"; its .meta states "license CC0", author punkduck
+- idle1: clause B; B: page licence "cc0"; its .meta states "license CC0", author punkduck
+- idle2: clause B; B: page licence "cc0"; its .meta states "license CC0", author punkduck
+- idlehips: clause B; B: page licence "cc0"; its .meta states "license CC0", author punkduck
+- swimcrawlstroke: clause B; B: page licence "cc0"; its .meta states "license CC0", author punkduck
 
 MakeHuman's own `walk.bvh` and `zombie.bvh` (AGPL3) are not used.
 
