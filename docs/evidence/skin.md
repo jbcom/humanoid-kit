@@ -16,11 +16,18 @@ read lighter and greyer than the skin, as measured lips do.
 
 ![Chests across melanin, female above, male below](./skin-tones-chest.webp)
 
-Female above, male below. **Open finding:** the areola reads barely darker
-than the surrounding skin at every tone, and at the darkest tones it is not
-visible at all. Measured areolas contrast clearly with the skin at every tone.
-The colour model (`areolaAlbedo`) or the layer's strength needs recalibrating.
-This belongs to the torso area work and is queued there.
+Female above, male below. The first sheet of this page found two faults:
+
+- The areola read barely darker than the skin at any tone and vanished on
+  deep skin. The colour model raised the melanin parameter by a fixed step,
+  which is not a melanin ratio.
+- The mask drew a ring around a skin-coloured nipple. The nipple-size target
+  outlines the areola rather than covering it.
+
+Both are fixed: the areola now carries twice the skin's melanin optical density
+at the default depth, and the mask fills the outlined disk (research
+`SKIN-RENDERING.md` §5.6). This sheet is after the fix. The areola and nipple
+read darker at every tone, deep skin included.
 
 ## Flush
 

@@ -5,6 +5,7 @@ import {
   areolaAlbedo,
   lipAlbedo,
   luminance,
+  MELANIN_FREE_RED_REFLECTANCE,
   measuredSkinLightness,
   type Rgb,
   skinAlbedo,
@@ -118,12 +119,34 @@ describe("lipAlbedo", () => {
 });
 
 describe("areolaAlbedo", () => {
-  it("darkens along the measured melanin axis and converges on the skin at the deep end", () => {
-    const gap = (m: number) =>
-      labFromLinear(skinAlbedo(tone(m)))[0] - labFromLinear(areolaAlbedo(tone(m), 0.5))[0];
-    expect(gap(0)).toBeGreaterThan(3);
-    expect(gap(0.5)).toBeGreaterThan(0);
-    expect(gap(1)).toBeLessThan(gap(0) / 3);
-    for (let m = 0; m <= 1.0001; m += 0.1) expect(gap(m)).toBeGreaterThanOrEqual(-1e-6);
+  const redDensity = (rgb: readonly number[]) => -Math.log10(rgb[0] as number);
+  const melaninDensity = (rgb: readonly number[]) =>
+    redDensity(rgb) - redDensity([MELANIN_FREE_RED_REFLECTANCE]);
+
+  it("carries twice the skin's melanin at the default depth, at every tone (Dean et al. 2005)", () => {
+    for (let m = 0; m <= 1.0001; m += 0.1) {
+      // Haemoglobin aside: compare at the neutral redness the areola adds to.
+      const skin = skinAlbedo({ ...tone(m), haemoglobin: 0.75 });
+      const areola = areolaAlbedo(tone(m), 0.5);
+      expect(melaninDensity(areola) / melaninDensity(skin), `melanin ${m}`).toBeCloseTo(2, 1);
+    }
+  });
+
+  it("stays visibly darker than the skin at every tone, deepest skin included", () => {
+    for (let m = 0; m <= 1.0001; m += 0.1) {
+      const gap =
+        labFromLinear(skinAlbedo(tone(m)))[0] - labFromLinear(areolaAlbedo(tone(m), 0.5))[0];
+      expect(gap, `melanin ${m}`).toBeGreaterThan(3);
+    }
+  });
+
+  it("deepens with depth, from no extra melanin at 0", () => {
+    const L = (m: number, d: number) => labFromLinear(areolaAlbedo(tone(m), d))[0];
+    for (const m of [0.1, 0.5, 0.9]) {
+      expect(L(m, 0)).toBeGreaterThan(L(m, 0.5));
+      expect(L(m, 0.5)).toBeGreaterThan(L(m, 1));
+      const skin = skinAlbedo({ ...tone(m), haemoglobin: 0.75 });
+      expect(melaninDensity(areolaAlbedo(tone(m), 0))).toBeCloseTo(melaninDensity(skin), 2);
+    }
   });
 });

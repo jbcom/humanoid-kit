@@ -65,6 +65,28 @@ describe("the rest layers' fields", () => {
     expect(areola.maxAbsX).toBeGreaterThan(0.05);
   });
 
+  it("fill the areola, nipple included, rather than drawing its rim", () => {
+    const l = SKIN_LAYERS.findIndex((x) => x.id === "areola");
+    const mask = (v: number) => fields[(l * n + v) * 3] as number;
+    for (const side of [1, -1]) {
+      // The vertices the nipple-size target moves on this side, and their centre.
+      const t = assets.targets.get("breast/nipple-size-incr");
+      if (!t) throw new Error("no nipple target");
+      const vs = [...t.indices].filter((v) => Math.sign(P[v * 3] as number) === side);
+      const c = [0, 1, 2].map(
+        (k) => vs.reduce((s, v) => s + (P[v * 3 + k] as number), 0) / vs.length,
+      );
+      const dist = (v: number) =>
+        Math.hypot(...[0, 1, 2].map((k) => (P[v * 3 + k] as number) - (c[k] as number)));
+      const r = Math.max(...vs.map(dist));
+      // Everything well inside the outline is fully coloured; far outside, nothing.
+      for (let v = 0; v < n; v++) {
+        if (dist(v) < r * 0.6) expect(mask(v), `vertex ${v} inside`).toBeGreaterThan(0.95);
+        if (dist(v) > r * 1.6 && dist(v) < r * 4) expect(mask(v), `vertex ${v} outside`).toBe(0);
+      }
+    }
+  });
+
   it("keep every value in [0, 1] and name every target they need", () => {
     let lo = Number.POSITIVE_INFINITY;
     let hi = Number.NEGATIVE_INFINITY;
