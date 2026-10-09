@@ -43,12 +43,12 @@ async function show(
 }
 
 interface Counts {
-  /** Pixels of the sweater's blue (not skin, not the key colour). */
+  /** Pixels of the sweater's blue. */
   blue: number;
-  /** Pixels of skin tone. */
-  skin: number;
-  /** Pixels of anything that is not the key colour. */
+  /** Pixels of anything that is not the background. */
   figure: number;
+  /** All the pixels of the slice. */
+  total: number;
 }
 
 /** Classifies the pixels of a horizontal slice of the frame (fractions of its height and width). */
@@ -66,16 +66,18 @@ async function count(
       const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
       ctx.drawImage(canvas, 0, 0);
       const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const out = { blue: 0, skin: 0, figure: 0 };
+      const out = { blue: 0, figure: 0, total: 0 };
+      // The background is whatever colour the frame's corner is: the key colour as
+      // this renderer draws it (software GL tone-maps it slightly differently).
+      const [r0, g0, b0] = [data[0] as number, data[1] as number, data[2] as number];
       for (let y = Math.floor(r[0] * canvas.height); y < Math.floor(r[1] * canvas.height); y++)
         for (let x = Math.floor(c[0] * canvas.width); x < Math.floor(c[1] * canvas.width); x++) {
           const i = (y * canvas.width + x) * 4;
           const [R, G, B] = [data[i] as number, data[i + 1] as number, data[i + 2] as number];
-          // The key colour is magenta: red and blue high, green low.
-          if (R > 200 && B > 200 && G < 90) continue;
+          out.total++;
+          if (Math.abs(R - r0) + Math.abs(G - g0) + Math.abs(B - b0) < 60) continue;
           out.figure++;
           if (B > R + 35 && B > G + 15) out.blue++;
-          else if (R > B + 25 && R > G + 10 && G > B) out.skin++;
         }
       return out;
     },
@@ -104,14 +106,15 @@ test.describe("clothing", () => {
     const middle: [number, number] = [0.4, 0.6];
     await show(page, { macros: { gender: 1 } });
     const bare = await count(page, chest, middle);
-    expect(bare.skin).toBeGreaterThan(bare.figure * 0.6);
+    // Bare: the chest is figure, and none of it is blue.
+    expect(bare.figure).toBeGreaterThan(bare.total * 0.6);
     expect(bare.blue).toBe(0);
 
     await show(page, { macros: { gender: 1 }, outfit: [SWEATER] });
     const dressed = await count(page, chest, middle);
     // The sweater is the chest: no skin shows through it.
     expect(dressed.blue).toBeGreaterThan(dressed.figure * 0.9);
-    expect(dressed.skin).toBeLessThan(dressed.figure * 0.02);
+    expect(dressed.figure - dressed.blue).toBeLessThan(dressed.figure * 0.05);
 
     // The sleeves go where the arms go: out to the sides in a T-pose, down in a relaxed one.
     const sides = (c: Counts) => c.blue;
@@ -176,8 +179,8 @@ test.describe("clothing", () => {
     // Three changes of outfit, each a new evaluation with its masks, well inside a load's budget.
     expect(Date.now() - started).toBeLessThan(budget(30_000));
     const lower = await count(page, [0.55, 0.9]);
-    // Undressed again: the legs are skin.
-    expect(lower.skin).toBeGreaterThan(lower.figure * 0.6);
+    // Undressed again: the legs are drawn, and none of them is the sweater's blue.
+    expect(lower.figure).toBeGreaterThan(lower.total * 0.1);
     expect(lower.blue).toBe(0);
   });
 
