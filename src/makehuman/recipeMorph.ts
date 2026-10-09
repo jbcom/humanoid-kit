@@ -45,10 +45,12 @@ export function recipeContributions(
     if (m.adultOnly && !isAdult(recipe))
       throw new RecipeError(`shape modifier ${id} is adult-only`);
     const v = Math.max(-1, Math.min(1, value));
+    // An end named "" is a virtual one: the value is legal and carries no target of its own,
+    // for a pack's `AdultDetailSpec` factors to read (a size that blends baked shapes).
     if (v < 0) {
-      if (!m.lo) throw new RecipeError(`shape modifier ${id} is one-sided; got ${value}`);
-      contributions.push({ target: m.lo, weight: -v });
-    } else {
+      if (m.lo === null) throw new RecipeError(`shape modifier ${id} is one-sided; got ${value}`);
+      if (m.lo !== "") contributions.push({ target: m.lo, weight: -v });
+    } else if (m.hi !== "") {
       contributions.push({ target: m.hi, weight: v });
     }
   }

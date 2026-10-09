@@ -241,3 +241,69 @@ lean to the forward axis and the male range are modelled and labelled
 uncalibrated in the pack, as the genital colour is, until a verified source
 exists. The mound is a feature of every adult figure at any gender position, not
 of one sex.
+
+## F. The phallic organ and the testes (reservoir step 2)
+
+Research pass of 2026-10-09. Labels: **full** = numbers read in an open full
+text; **abstract** = only the abstract was available; **derived** = our own
+arithmetic on published numbers, not a published statistic. Centimetres unless
+stated. The measurement landmark is not standardised (skin junction versus
+pressing to the pubic bone), which moves length by about 2 cm between series.
+
+**Shaft, verified.** Veale et al., BJU Int 2015;115:978-986 (doi
+10.1111/bju.13010; **abstract** only, paywalled), pooled over studies by
+health professionals: flaccid length 9.16 (SD 1.57), stretched 13.24 (1.89),
+erect 13.12 (1.66, n=692); flaccid circumference 9.31 (0.90), erect 11.66
+(1.10, n=381). Cross-checked in full text by Mostafaei et al., Urol Res Pract
+2025 (CC BY 4.0, PMC11923605; 33 studies, 36,883 men): flaccid 9.22, stretched
+12.84, erect 13.84; circumference 9.10 flaccid, 11.91 erect. Belladelli et al.,
+World J Mens Health 2023 (CC BY-NC 4.0, PMC10523114): flaccid 8.70, stretched
+12.93, erect 13.93. Bone-pressed, 800 men (Sole et al., Asian J Androl 2022,
+PMC9809495): flaccid 11.4 (percentiles 5/50/95: 8/11/14), circumference 10.1
+(8/10/12), stretched 15.2.
+
+**Growth, flaccid to erect.** Lengthening +43% and circumference +25% are
+**derived** from Veale's pooled means (13.12/9.16, 11.66/9.31); a published
+global "growth coefficient" of 43.45% (Wang and WangDing, Andrology 2025,
+**abstract**) agrees. Flaccid to stretched is +72% (SD 16, n=342; Zheng et al.,
+Sex Med 2025, CC BY 4.0, **full**). The spread between men is large (Yafi et
+al. 2018, **abstract**: median change 4.0 cm, range 1.0 to 7.0, "growers" and
+"showers"), so a single ratio is a population mean, not a law.
+
+**Size range for the control.** The pooled mean and SD set the range of the
+size modifier: one SD in length is about 1.6 cm flaccid and 1.7 cm erect; a
+centile range of 5th to 95th is mean ± 1.645 SD (Veale's nomogram is itself
+that, from simulated normal draws).
+
+**Testes, verified.** Ultrasound volume, healthy fertile European men, n=248
+(Lotti et al., Andrology 2022, CC BY-NC-ND 4.0, PMC9828651, **full**): 17.2 mL
+(SD 4.1; reference range 11.8 to 24.4), right 17.9, left 16.5. Korean men 19 to
+27 (Bahk 2010, **abstract**): 18.1 to 18.4 mL. German men (Pilatz 2013,
+**abstract**): median 13.9 right, 12.7 left by 0.52·L·W·H, "virtually
+age-independent". Somali men (Osman 2026, CC BY-NC 4.0, **full**): about 10.4
+mL. Chinese fertile men (Qin 2026, CC BY-NC 4.0, **full**): 8.4 mL, with the
+only full-text dimensions: length 37.2 to 37.8, width 19.0, height (depth) 22.0
+to 22.2 mm. Right larger than left in every cohort (EAA about 8%). Volume
+depends on the formula: the constant 0.71 instead of 0.52 differs by 26.8%
+(Cai 2020, PMC7705484, **full**), and the orchidometer overstates by 1.4 to 2
+times. Volume varies with population by a factor of two, so the sculpt's
+testis size is a control with a European default and not a norm.
+
+**Not found, so not claimed.** Glans length beyond one abstract ("granular
+length" 3.04 ± 0.33 cm, Mehraban 2007, stretched, whose meaning the abstract
+does not state); corona circumference or diameter and the glans-to-shaft
+ratio; foreskin length; scrotal dimensions and the penoscrotal angle; the
+erect angle in degrees (Sparling 1997 is categorical: at least a quarter of
+erections lie below horizontal); curvature in men without disease; ranges for
+trans and intersex adults; quantitative age or BMI effects.
+
+**Consequence for the sculpt.** What is verified calibrates two things: the
+shaft's flaccid length and girth at the default size, and the arousal morph
+(+43% length, +25% girth, applied to the same shaft). The size control spans
+about ±2 SD around those means. Everything in the "not found" list is
+**modelled and labelled uncalibrated** in the pack and its provenance: the glans
+shape, the coronal ridge, the foreskin (none is drawn), the scrotal form, the
+hang angle (modelled) and the erect angle (provisional, 30 degrees above
+horizontal; the one source says only that a quarter or more lie below it). The
+testis size default is the European 17 mL ellipsoid, with the Chinese
+dimensions' proportions (length : width : depth about 1.9 : 1 : 1.15).

@@ -402,17 +402,21 @@ and throws `RangeError` for anything else.
 - `model.evaluate(recipe, signals?, haveOutfit?): Evaluation`: `signals` (0..1 each) set the
   skin's state; those with a state morph add their targets: `cold` (the nipple
   rises and the areola contracts; `STATE_MORPHS`) and `arousal` (engorgement:
-  the shaft's circumference +25% and length +43% at full arousal, the measured
-  erect against flaccid; the adult pack's own, from its manifest's
-  `anatomy.stateMorphs`), each calibrated to its measured response.
+  the organ's circumference +25% and length +43% at full arousal, the measured
+  erect against flaccid; the adult pack's own, read by its detail targets'
+  `anatomy.detail.drives` as `sramp:arousal:…` factors, drawn at flaccid, a
+  midpoint and erect so the tube swings rather than shortens), each calibrated
+  to its measured response. `shapeSignalNames(STATE_MORPHS, anatomy?)` lists the
+  signals that change the shape: the state morphs' and those the detail's gates
+  and drives read, for a caller that re-evaluates the figure only when one changes.
   `stateContributions(signals, morphs?, exists?)` gives those target weights for
   the morphs in force, limited to targets `exists` accepts; the model passes
   the body's and the adult pack's morphs and the loaded packs' targets, so a
   state of the adult anatomy does nothing, rather than fails, without the adult
   pack. `ADULT_ONLY_SIGNALS` (`arousal`) throw `AgePolicyError` under 18
-  (`assertSignalPolicy`), before any target is named. Today the penis targets
-  deform `helper-genital`, which the surface does not draw, so engorgement
-  moves `Evaluation.control` and no drawn vertex until the sculpt phase.
+  (`assertSignalPolicy`), before any target is named. The organ is detail on the
+  adult surface (drawn out of a reservoir), so engorgement moves drawn vertices
+  of an adult figure with an organ and nothing in one without.
   `recipe.outfit` adds the garments (see "Clothing"); `haveOutfit` is the
   outfit key the caller already holds the masks of.
 - `model.controlShape(recipe): ControlShape`: an adult figure's control mesh for
@@ -673,12 +677,30 @@ compute what the renderer will do.
   (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
   Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
   hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
-  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (chest, abdomen, back, buttocks, arms,
-  legs, and the `adultOnly` axillary), with follicle densities
-  `BODY_HAIR_DENSITY`. The beard is not a strand layer (dense short hair is the
-  coat's, long hair the cards'), and pubic hair is the adult pack's.
+  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs, and the
+  `adultOnly` axillary), with follicle densities `BODY_HAIR_DENSITY`. Dense,
+  short hair standing off the skin (the beard, the chest, abdomen and back) is
+  the coat's, long hair the cards', and pubic hair the adult pack's.
   `bodyHairMasks(assets)` gives the masks per base vertex and
   `bodyHairInput(paintInput)` the body hair model's input.
+- The coat (`src/surface/coat.ts`, ARCHITECTURE.md "The coat"): short, dense hair
+  drawn as shells, shared by body hair and the anthro fur. A `CoatRegion` (`id`,
+  `targets`, `mask(assets)` per base vertex, `paint(input)` giving a
+  `CoatPaint`: `cover`, `length` up to `MAX_COAT_LENGTH`, `density` per cm²,
+  `lie` 0 standing to 1 flat, `width`, `colour`); `COAT_REGIONS` (at most
+  `COAT_REGION_LIMIT`; today `BODY_HAIR_COAT`: `beard-moustache`, `beard-chin`,
+  `beard-cheeks`, `hair-chest`, `hair-abdomen`, `hair-back`, with
+  `BEARD_LENGTHS` per style and `beardMasks(assets)`). `combField(assets)` is
+  the direction hair lies per base vertex (rest space, unit, in the tangent
+  plane: down the limbs toward their ends, down elsewhere, smoothed);
+  `coatMasks(assets, regions)` the masks as bytes; `paintCoat(regions, input)`
+  a figure's paint, two rows of four per region (a region painting no cover is
+  a zero row; a length past `MAX_COAT_LENGTH` is an error); `coatPainted(table)`;
+  `coatTriangles(index, masks, table)` the triangles a painted coat covers;
+  `coatShellCount(pixels)` the shells for a figure that tall on screen, from
+  `COAT_SHELLS.min` to `.max`. The topology carries the fields per render vertex
+  (`ModelTopology.body.coat`, `AdultSurfaceTopology.coat`: `CoatFields`).
+  `<Humanoid>` draws the coat itself.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).
@@ -794,7 +816,8 @@ compute what the renderer will do.
     (`FOREHEAD_STOPS`, `GLABELLA_STOPS`) of a coordinate that is a smooth function
     of position (`foreheadCoordinate`; the furrows' is linear), coloured by
     `lineShade(age, tone)` (the same step of CIELAB lightness at every tone) and cut
-    as grooves by `LINE_RELIEF`; the rest are `creases` `DetailLayer`s.
+    as grooves by `LINE_RELIEF`, and so are the crow's feet (`CROWS_FEET_STOPS`) and
+    the folds (`NASOLABIAL_STOPS`); the nose's are `creases` `DetailLayer`s.
     `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
     `EXPRESSION_COUNT` are art-directed, `expressionAgeFactor(age)` scales the
     depth or shade by age (0.2 at 6, 1 at 40, 1.4 at 70).
@@ -1388,6 +1411,56 @@ import { bodyPack } from "humanoid-kit-body";
 each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the
 worker client. The package also exposes its files under
 `humanoid-kit-body/data/*`.
+
+## Animation
+
+```ts
+import { animationsPack } from "humanoid-kit-animations";
+import { Animator, loadAnimationLibrary, rigData } from "humanoid-kit";
+
+const animations = await loadAnimationLibrary(animationsPack); // the manifest only
+const walk = await animations.load("walk_normal", rigData(assets).bones); // the clip's file, once
+const animator = new Animator(rig.bones.length, restBones(assets, evaluation.control), ground);
+animator.play(walk);
+animator.update(dt);          // advances time, crossfades and root motion
+animator.rotations;           // the body's local rotation per bone, bones * 4
+animator.root;                // how far the figure has been carried: [x across, z forward], metres
+```
+
+- `loadAnimationLibrary(pack)` and `createAnimationLibrary(manifest, fetchBinary)`
+  give an `AnimationLibrary`: `manifest`, `entry(id)`, `load(id, bones)` (a clip
+  bound to a rig's bone names, fetched once however many figures play it; a failed
+  fetch is retried by the next call) and `loaded(id, bones)`.
+- `AnimationClip`: `fps`, `frames`, `duration`, `loop`, `rootMotion` (it carries
+  the figure), `grounded` (the figure stands on the ground, so its feet are held),
+  and the frames' local rotations. `sampleClip(clip, time, out)` is its pose at a
+  time (a loop wraps, a clip that does not loop holds its last frame),
+  `blendRotations(a, b, weight, out)` blends two poses along the shortest arc, and
+  `slerpInto`, `clipTime` and `setIdentity` are the pieces.
+- `Animator`: `play(clip, { fade, speed, time })` (fading from the clip playing, for
+  `DEFAULT_FADE` seconds unless told), `update(dt)`, `setSpeed`, `seek`,
+  `resetRoot`, `setRest(rest, ground)` (the figure's shape changed), `playing`,
+  `fading`. With a skeleton (`rest`) and the ground under the figure at rest, a clip
+  that carries the figure moves `root` by what the figure's own feet do
+  (`planRootMotion`, `rootDisplacement`), and a grounded clip's planted feet are
+  held where they land (`FootLock`: `PLANT_LAND`, `PLANT_FULL`, `PLANT_NONE`,
+  `PLANT_SWITCH`). `contactPoints` and `CONTACT_BONES` are the points on the soles
+  they work from.
+- `frameRotations(rig, joints, frame)` (from `src/rig/pose.ts`) is a BVH frame's
+  rotations in the figure's axes, which the packer and `bodyPoseRotations` share.
+
+## `humanoid-kit-animations`
+
+```ts
+import { animationsPack } from "humanoid-kit-animations";
+```
+
+`animationsPack` is `{ manifest, files }` like `bodyPack`: per clip, `<id>.bin.gz` (the
+frames' bone rotations, a few tens of kilobytes). Pass it to `loadAnimationLibrary`.
+The six clips are punkduck's, from the MakeHuman community's CC0 additional assets:
+`walk_normal`, `walk_female`, `idle1`, `idle2`, `idlehips` and `swimcrawlstroke`.
+Its `PROVENANCE.md` pins the archive by its SHA-256 and records each clip's licence
+evidence.
 
 ## `humanoid-kit-hair`
 

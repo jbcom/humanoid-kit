@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { compileAsset } from "../scripts/lib/compileAsset.ts";
@@ -14,14 +12,17 @@ import {
 import { loadFixtureAssets } from "./fixtures.ts";
 
 describe("the nail plates' source", () => {
-  it("proves CC0 from the vendored files' own bytes, with their captured pages", () => {
+  it("proves CC0 by their captured asset pages", () => {
     for (const [id, kind, file, page] of NAIL_PLATES) {
       const c = compileAsset(path.join(VENDOR_BODYPARTS04, file), id, kind, {
         page,
         geometryOnly: true,
       });
       expect(Object.keys(c.evidence)).toHaveLength(2);
-      for (const ev of Object.values(c.evidence)) expect(ev).toMatch(/^B: file "license CC0"/);
+      for (const ev of Object.values(c.evidence))
+        expect(ev).toMatch(
+          /^B: page licence "CC0.*\(<http:\/\/www\.makehumancommunity\.org\/node\/\d+>/,
+        );
       // Geometry only: the asset's painted texture is neither read nor packed.
       expect(c.textures.size).toBe(0);
       expect(c.material.texture).toBeNull();
@@ -29,21 +30,14 @@ describe("the nail plates' source", () => {
     }
   });
 
-  it("refuses a vendored file whose licence line has changed", () => {
+  it("refuses a plate whose captured page does not say CC0", () => {
     const [id, kind, file, page] = NAIL_PLATES[0] as (typeof NAIL_PLATES)[number];
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hk-nails-"));
-    try {
-      const src = path.dirname(path.join(VENDOR_BODYPARTS04, file));
-      for (const f of fs.readdirSync(src)) {
-        const text = fs.readFileSync(path.join(src, f), "utf8");
-        fs.writeFileSync(path.join(dir, f), text.replace("# license CC0", "# license CC-BY"));
-      }
-      expect(() =>
-        compileAsset(path.join(dir, path.basename(file)), id, kind, { page, geometryOnly: true }),
-      ).toThrow(/licence gate/);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    expect(() =>
+      compileAsset(path.join(VENDOR_BODYPARTS04, file), id, kind, {
+        page: { ...page, licence: "CC-BY 4.0" },
+        geometryOnly: true,
+      }),
+    ).toThrow(/licence gate/);
   });
 });
 

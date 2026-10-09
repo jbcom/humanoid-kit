@@ -13,6 +13,7 @@ import {
 } from "../src/surface/layers.ts";
 import { CREASE_LAYERS } from "../src/surface/regions/creases.ts";
 import {
+  CROWS_FEET_STOPS,
   distanceFromBrows,
   EXPRESSION_COUNT,
   EXPRESSION_DEPTH,
@@ -32,6 +33,7 @@ import {
   LINE_DARKENING_MAX,
   LINE_RELIEF,
   lineShade,
+  NASOLABIAL_STOPS,
 } from "../src/surface/regions/faceLines.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import { type Rgb, skinAlbedo } from "../src/surface/skinTone.ts";
@@ -77,7 +79,7 @@ const layer = (id: string): DetailLayer | ColourLayer => {
   return l;
 };
 /** The forehead's and the furrows' lines are colour (thin lines on an exactly linear coordinate); the rest relief. */
-const isColourLine = (id: string) => id === "lines.forehead" || id === "lines.glabella";
+const isColourLine = (id: string) => id !== "lines.nose";
 const detailLayer = (id: string): DetailLayer => {
   const l = layer(id);
   if (l.kind !== "detail") throw new Error(`${id} is not a relief layer`);
@@ -372,12 +374,12 @@ describe("the expression lines' paint", () => {
       expect(count, set).toBeGreaterThanOrEqual(1);
       expect(count, set).toBeLessThanOrEqual(5);
     }
-    const paint = detailLayer("lines.crows-feet").paint(input({ "face.squint": 1 }, 40)) as {
+    const paint = detailLayer("lines.nose").paint(input({ "face.noseWrinkle": 1 }, 40)) as {
       height: number;
       size: number;
     };
-    expect(paint.height).toBe(EXPRESSION_DEPTH.crowsFeet);
-    expect(paint.size).toBe(EXPRESSION_COUNT.crowsFeet);
+    expect(paint.height).toBe(EXPRESSION_DEPTH.nose);
+    expect(paint.size).toBe(EXPRESSION_COUNT.nose);
   });
 });
 
@@ -621,23 +623,40 @@ describe("the forehead's and the furrows' lines of colour", () => {
     }
   });
 
-  it("cut a groove at each line's stops and nowhere else, deeper with age and within a millimetre", () => {
+  it("cut a groove at each line's stops and nowhere else, deeper with age and within a millimetre, in the shade the tone calls for", () => {
     for (const [id, stops, depth] of [
       ["lines.forehead", FOREHEAD_STOPS, LINE_RELIEF.forehead],
       ["lines.glabella", GLABELLA_STOPS, LINE_RELIEF.glabella],
+      ["lines.crows-feet", CROWS_FEET_STOPS, LINE_RELIEF.crowsFeet],
+      ["lines.nasolabial", NASOLABIAL_STOPS, LINE_RELIEF.nasolabial],
     ] as const) {
-      const at = (age: number) => {
-        const p = layer(id).paint(input({ "face.browRaise": 1, "face.browFurrow": 1 }, age));
-        if (!("relief" in p) || !p.relief) throw new Error(`${id} paints no relief`);
-        return p.relief;
+      const signals = {
+        "face.browRaise": 1,
+        "face.browFurrow": 1,
+        "face.squint": 1,
+        "face.nasolabial": 1,
       };
-      at(40).forEach((d, k) => {
-        if (stops.includes(k)) expect(d, `${id} stop ${k}`).toBeCloseTo(depth, 9);
+      const at = (age: number) => {
+        const p = layer(id).paint(input(signals, age));
+        if (!("relief" in p) || !p.relief) throw new Error(`${id} paints no relief`);
+        return p;
+      };
+      const forty = at(40);
+      (forty.relief as readonly number[]).forEach((d, k) => {
+        if (stops.includes(k))
+          expect(d, `${id} stop ${k}`).toBeCloseTo(depth * expressionAgeFactor(40), 9);
         else expect(d, `${id} stop ${k}`).toBe(0);
       });
-      expect(Math.max(...at(6))).toBeLessThan(Math.max(...at(40)) * 0.3);
-      expect(Math.max(...at(75))).toBeGreaterThan(Math.max(...at(40)));
-      expect(Math.max(...at(90))).toBeLessThan(0.001);
+      // The shade at a stop is the tone's (the same lightness step at every tone).
+      const tone = input(signals, 40).tone;
+      forty.stops.forEach((c, k) => {
+        if (stops.includes(k)) expect(c, `${id} stop ${k}`).toEqual(lineShade(40, tone));
+        else expect(c, `${id} stop ${k}`).toEqual([1, 1, 1]);
+      });
+      const peak = (age: number) => Math.max(...(at(age).relief as readonly number[]));
+      expect(peak(6)).toBeLessThan(peak(40) * 0.3);
+      expect(peak(75)).toBeGreaterThan(peak(40));
+      expect(peak(90)).toBeLessThan(0.001);
     }
   });
 

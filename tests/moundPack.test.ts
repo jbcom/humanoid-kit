@@ -28,8 +28,9 @@ describe("the mound in the adult pack", { timeout: 300_000 }, () => {
       // Control targets: every index is a vertex of the base mesh.
       for (const v of shipped.indices) expect(v).toBeLessThan(assets.manifest.vertexCount);
     }
-    // They are control targets, not detail: the pack declares no detail yet.
-    expect(adultManifest.anatomy?.detail).toBeUndefined();
+    // They are control targets, not detail: the pack's detail names none of them.
+    for (const t of made)
+      expect(adultManifest.anatomy?.detail?.targets ?? []).not.toContain(t.name);
   });
 
   it("is an adult-only modifier of the mound feature, with a slider beside the body's bulge", () => {

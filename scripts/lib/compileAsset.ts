@@ -2,11 +2,11 @@
  * Compiles a MakeHuman-format asset (.mhclo + .obj + .mhmat + textures) into
  * the packed binding format the runtime evaluates (`src/mhclo/bound.ts`).
  *
- * Licence evidence is taken from each file's own content; a texture has no
- * header of its own and inherits the licence of the material that references
- * it, which must itself prove CC0. Anything that cannot prove CC0 is refused.
- * A community asset can pass only with its captured asset page, under the rule
- * in `licenceRule.ts` (docs/licence-history.md §4).
+ * Licence evidence for a MakeHuman team asset is taken from each file's own
+ * content; a texture has no header of its own and inherits the licence of the
+ * material that references it, which must itself prove CC0. A community asset
+ * passes on its captured asset page stating CC0 (`licenceRule.ts`). Anything
+ * that cannot prove CC0 is refused.
  */
 import fs from "node:fs";
 import path from "node:path";

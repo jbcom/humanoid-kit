@@ -27,8 +27,8 @@ The nail plates are CC0 community meshes from MakeHuman's bodyparts04 pack, vend
 `vendor/makehuman-bodyparts04/` (see its PROVENANCE.md); each passed the licence rule's clause B with its
 captured asset page:
 
-- 2 file(s) — B: file "license CC0" (<http://www.makehumancommunity.org/node/1368>, submitted 2018-02-15): mindfront_nails_01_short/mindfront_nails_01_short.mhclo, mindfront_nails_01_short/mind_nails_01_short.obj
-- 2 file(s) — B: file "license CC0" (<http://www.makehumancommunity.org/node/1371>, submitted 2018-02-15): mindfront_nails_toes_01/mindfront_nails_toes_01.mhclo, mindfront_nails_toes_01/mind_nails_toes_01.obj
+- 2 file(s) — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1368>, submitted 2018-02-15): mindfront_nails_01_short/mindfront_nails_01_short.mhclo, mindfront_nails_01_short/mind_nails_01_short.obj
+- 2 file(s) — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1371>, submitted 2018-02-15): mindfront_nails_toes_01/mindfront_nails_toes_01.mhclo, mindfront_nails_toes_01/mind_nails_toes_01.obj
 
 | Output | SHA-256 |
 | --- | --- |

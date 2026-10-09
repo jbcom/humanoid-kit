@@ -64,39 +64,25 @@ describe("compileAsset", () => {
     submitter: "WDG",
     submitted: "2019-02-03",
     licence: "CC0 - Creative Commons Zero",
-    description: "A beard that is slightly messy.",
     retrieved: "2026-10-09",
-    derivedFrom: [],
   };
-  const MAKECLOTHES = (author: string) => `# author ${author}\n${AGPL}`;
 
-  it("compiles a community asset with its page when its files pass the rule", () => {
-    const c = compileAsset(
-      write({ mhclo: MAKECLOTHES("WDG"), obj: MAKECLOTHES("WDG"), mhmat: "" }),
-      "beard/t",
-      "beard",
-      { page },
-    );
-    expect(c.evidence[path.join(dir, "t.obj")]).toMatch(
-      /MakeClothes default AGPL3 line, author "WDG".*node\/1769, submitted 2019-02-03/,
-    );
-    expect(c.evidence[path.join(dir, "t.mhmat")]).toMatch(/no licence line; page/);
+  it("compiles a community asset whose page says CC0, whatever its files say", () => {
+    const c = compileAsset(write({ mhclo: AGPL, obj: AGPL, mhmat: "" }), "beard/t", "beard", {
+      page,
+    });
+    for (const f of ["t.mhclo", "t.obj", "t.mhmat"])
+      expect(c.evidence[path.join(dir, f)]).toBe(
+        'B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)',
+      );
   });
 
-  it("refuses a community asset with its page when a file fails the rule", () => {
-    expect(() =>
-      compileAsset(
-        write({ mhclo: LICENSE_LINE, obj: "# author MHteam\n# license AGPL3\n" }),
-        "x/t",
-        "x",
-        { page },
-      ),
-    ).toThrow(/licence gate: .*t\.mhclo: B3: t\.obj names a third party/);
+  it("refuses a community asset whose page does not say CC0", () => {
     expect(() =>
       compileAsset(write({ mhclo: LICENSE_LINE, obj: LICENSE_LINE }), "x/t", "x", {
         page: { ...page, licence: "CC-BY - Creative Commons Attribution" },
       }),
-    ).toThrow(/B1: page licence/);
+    ).toThrow(/licence gate: .*t\.mhclo: B: page licence is "CC-BY/);
   });
 
   it("refuses an asset when any one of its files cannot prove CC0", () => {

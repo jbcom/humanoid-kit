@@ -55,15 +55,11 @@ export function expressionAgeFactor(age: number | undefined): number {
 
 /** Depth of a groove at full expression, metres, for a grown face (art-directed). */
 export const EXPRESSION_DEPTH = {
-  crowsFeet: 0.0003,
-  nasolabial: 0.0006,
   nose: 0.00025,
 } as const;
 
 /** Grooves across each set's window (art-directed). */
 export const EXPRESSION_COUNT = {
-  crowsFeet: 3,
-  nasolabial: 1,
   nose: 3,
 } as const;
 
@@ -522,7 +518,20 @@ export function lineShade(age: number | undefined, tone: SkinTone = DEFAULT_SKIN
 }
 
 /** The deepest groove a line's relief cuts at full strength, for a grown face, metres (CHOICES: no measurement of wrinkle depth is in this repository). */
-export const LINE_RELIEF = { forehead: 0.0006, glabella: 0.0007 } as const;
+export const LINE_RELIEF = {
+  forehead: 0.0006,
+  glabella: 0.0007,
+  crowsFeet: 0.0005,
+  nasolabial: 0.0007,
+} as const;
+
+/**
+ * The colour stops of the crow's feet (three lines fanning across the angle about
+ * the eye's outer corner) and the nasolabial fold (a line down the fold's middle:
+ * the two stops either side of the coordinate's centre).
+ */
+export const CROWS_FEET_STOPS: readonly number[] = [1, 3, 5];
+export const NASOLABIAL_STOPS: readonly number[] = [3, 4];
 
 /**
  * A set of lines drawn as colour and shading: a multiply layer whose stops at
@@ -564,14 +573,22 @@ export const EXPRESSION_LINE_LAYERS: readonly (DetailLayer | ColourLayer)[] = [
   colourLines(expressionLineId("forehead"), forehead, FOREHEAD_STOPS, LINE_RELIEF.forehead, (s) =>
     signal(s, "browRaise"),
   ),
-  layer(expressionLineId("crows-feet"), crowsFeet, "crowsFeet", (s) =>
-    Math.max(signal(s, "squint"), 0.6 * signal(s, "smile")),
+  colourLines(
+    expressionLineId("crows-feet"),
+    crowsFeet,
+    CROWS_FEET_STOPS,
+    LINE_RELIEF.crowsFeet,
+    (s) => Math.max(signal(s, "squint"), 0.6 * signal(s, "smile")),
   ),
   colourLines(expressionLineId("glabella"), glabella, GLABELLA_STOPS, LINE_RELIEF.glabella, (s) =>
     signal(s, "browFurrow"),
   ),
-  layer(expressionLineId("nasolabial"), nasolabial, "nasolabial", (s) =>
-    Math.max(signal(s, "nasolabial"), 0.7 * signal(s, "smile")),
+  colourLines(
+    expressionLineId("nasolabial"),
+    nasolabial,
+    NASOLABIAL_STOPS,
+    LINE_RELIEF.nasolabial,
+    (s) => Math.max(signal(s, "nasolabial"), 0.7 * signal(s, "smile")),
   ),
   layer(expressionLineId("nose"), noseBridge, "nose", (s) => signal(s, "noseWrinkle")),
 ];
