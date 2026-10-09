@@ -201,13 +201,15 @@ export class HumanoidModel {
       return a;
     });
 
-    // Body faces hidden by any worn attachment (its MHCLO delete_verts) are left out.
+    // Body faces a worn attachment covers (its MHCLO delete_verts) are left out.
+    // As in MakeHuman, a face goes only when all its corners are deleted: one
+    // that keeps a visible corner stays, so no gap opens at a garment's edge.
     const hidden = new Set<number>();
     for (const a of wearing) for (const v of a.deleteVerts) hidden.add(v);
     const bodyFaces = groupFaces(assets, "body").filter((f) => {
       for (let k = 0; k < 4; k++)
-        if (hidden.has(assets.faceVerts[f * 4 + k] as number)) return false;
-      return true;
+        if (!hidden.has(assets.faceVerts[f * 4 + k] as number)) return true;
+      return false;
     });
     this.body = part(
       buildSurfaceMesh({ ...assets, vertexCount: assets.manifest.vertexCount }, bodyFaces, level),

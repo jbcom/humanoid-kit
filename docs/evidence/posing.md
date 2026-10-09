@@ -21,9 +21,12 @@ Left to right, top to bottom (face unit weights; 1 when not given):
 10. gaze left: `LeftEyeturnLeft`, `RightEyeturnLeft`
 
 Teeth and tongue uncovered by the open mouth are lit through the pose-keyed
-occlusion. With the jaw open the front teeth still render at about 40% of their
-open-air brightness, since the hemisphere visibility the bake measures also
-scales direct light; directional visibility is an open follow-up.
+occlusion. The uncovered teeth read dim, and that is the lighting rather than
+the occlusion: at the jaw-open corner a ray from each uncovered tooth vertex
+toward the studio's high key light is blocked by the upper lip for every one
+of them (99 facing the key, none reached), while the low fill reaches 24 of
+106. Scaling the key by their hemisphere openness (median 0.25) lets more key
+light in than the geometry does, not less.
 
 ## Body poses and skin state
 

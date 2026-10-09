@@ -151,7 +151,8 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
 };
 
 /**
- * A pose: a whole-body pose from the pack by name (`tpose`, `benchmark`) and
+ * A pose: a whole-body pose from the pack by name (`tpose`, `benchmark`,
+ * `relaxed`) and
  * facial pose units by name (MakeHuman's 60, e.g. `JawDrop`,
  * `LeftUpperLidClosed`), 0..1, layered on top.
  */

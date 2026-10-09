@@ -37,6 +37,7 @@ import { STATE_MORPH_TARGETS } from "../src/makehuman/stateMorphs.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
 import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
+import { authoredPoses } from "./lib/authoredPoses.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { writeAttachments, writeAttachmentTextures, writePackEntry } from "./lib/packWriter.ts";
 import { buildSliders } from "./lib/sliders.ts";
@@ -519,7 +520,7 @@ async function main() {
   const faceBvh = parseBvh(read("poseunits/face-poseunits.bvh"));
   // Whole-body poses MakeHuman ships as CC0 (each proven by its .meta): the
   // T-pose, and the rigging benchmark, which bends every joint to an extreme.
-  const poses = BODY_POSES.map((name) => {
+  const shipped = BODY_POSES.map((name) => {
     const bvh = parseBvh(read(`poses/${name}.bvh`));
     const meta = fs.readFileSync(path.join(DATA, `poses/${name}.meta`), "utf8");
     const field = (key: string) =>
@@ -532,6 +533,12 @@ async function main() {
       frame: (bvh.frames[0] ?? []).map((x) => Math.round(x * 1000) / 1000),
     };
   });
+  // Poses authored here (scripts/lib/authoredPoses.ts), CC0 like the data they pose.
+  const authored = authoredPoses(shipped, boneNames);
+  for (const { file } of authored)
+    licenseEvidence[`humanoid-kit:scripts/poses/${file}`] =
+      "authored for humanoid-kit and dedicated to the public domain under CC0 1.0";
+  const poses = [...shipped, ...authored.map((a) => a.pose)];
   const sliders = buildSliders(
     MODIFIER_TABLES.map((table) => ({
       table,
