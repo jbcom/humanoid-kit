@@ -36,6 +36,7 @@ import {
   Vector3,
 } from "three";
 import { quantisedShapeSignals, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
+import { shapeSignalNames } from "../model/detailFactors.ts";
 import type {
   AdultSurfaceTopology,
   AttachmentTopology,
@@ -1119,12 +1120,7 @@ export function Humanoid({
   // re-evaluating it. The adult pack's state morphs (arousal) count with the
   // body's once it is loaded. Rounded to steps (`quantiseShapeSignal`), so a
   // signal that eases does not evaluate every frame.
-  const shapeNames = useMemo(
-    () => [
-      ...new Set([...STATE_MORPHS, ...(ready?.anatomy?.stateMorphs ?? [])].map((m) => m.signal)),
-    ],
-    [ready],
-  );
+  const shapeNames = useMemo(() => shapeSignalNames(STATE_MORPHS, ready?.anatomy), [ready]);
   // The age policy judges the signals before they are rounded; a refused one
   // is reported rather than evaluated.
   const { shapeKey, signalPolicyError } = useMemo(() => {

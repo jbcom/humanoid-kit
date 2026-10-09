@@ -486,8 +486,9 @@ export interface AdultDetailSpec {
    * Targets whose weight is multiplied by other values: `gates[target]` lists
    * factors (`src/model/detailFactors.ts`): `mod:<id>` (that modifier's positive
    * part: how much of a feature there is), `mod-:<id>` (its negative part),
-   * `signal:<name>` (a skin-state signal, 0..1) or `ramp:<id>:<x>,<w>;…` (a
-   * piecewise-linear function of a modifier's positive part).
+   * `signal:<name>` (a skin-state signal, 0..1), `ramp:<id>:<x>,<w>;…` (a
+   * piecewise-linear function of a modifier's positive part) or `sramp:<name>:<x>,<w>;…`
+   * (the same of a signal).
    * A girth change of a shaft is worth nothing without a shaft: its target is
    * gated by the length modifier, so the two combine as a product and not as a
    * sum of two independent displacements. A factor that is zero drops the target.

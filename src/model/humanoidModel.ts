@@ -1213,16 +1213,27 @@ export class HumanoidModel {
     return this.pendingFor(this.contributions(recipe, signals));
   }
 
-  /** The recipe's target weights, plus its skin state's (`STATE_MORPHS`), after the age policy. */
+  /**
+   * The recipe's target weights, plus its skin state's (`STATE_MORPHS`) and the
+   * weights the adult pack derives from modifiers and signals
+   * (`AdultDetailSpec.drives`, an adult's alone), after the age policy.
+   */
   private contributions(recipe: Recipe, signals: Readonly<Record<string, number>>) {
     const fromRecipe = recipeContributions(recipe, this.assets.modifiers);
     assertSignalPolicy(recipe, signals);
+    const driven: Contribution[] = [];
+    if (this.detailDrives.length && isAdult(recipe))
+      for (const [target, factors] of this.detailDrives) {
+        const weight = product(factors, recipe, signals);
+        if (weight > 0) driven.push({ target, weight });
+      }
     // A state of the adult anatomy has nothing to drive without the adult pack.
     return [
       ...fromRecipe,
       ...stateContributions(signals, this.stateMorphs, (target) =>
         this.assets.targetFileOf.has(target),
       ),
+      ...driven,
     ];
   }
 
@@ -1343,15 +1354,7 @@ export class HumanoidModel {
    * mesh but displacements of the adult surface, applied by `evaluate`.
    */
   private evaluateShape(recipe: Recipe, signals: Readonly<Record<string, number>>) {
-    const given = this.contributions(recipe, signals);
-    // Weights the pack derives from modifiers and signals (`AdultDetailSpec.drives`), an adult's alone.
-    const driven: Contribution[] = [];
-    if (this.detailDrives.length && isAdult(recipe))
-      for (const [target, factors] of this.detailDrives) {
-        const weight = product(factors, recipe, signals);
-        if (weight > 0) driven.push({ target, weight });
-      }
-    const all = driven.length ? [...given, ...driven] : given;
+    const all = this.contributions(recipe, signals);
     const pending = this.pendingFor(all);
     if (pending.size)
       throw new MorphError(

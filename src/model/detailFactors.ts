@@ -10,11 +10,19 @@
  * - `ramp:<id>:<x>,<w>;<x>,<w>;…`: a piecewise-linear function of the positive
  *   part of a modifier's value, holding its end values outside its points, which
  *   lets one modifier blend between baked shapes (a small organ is not a
- *   scaled-down large one, so size is a blend of keys, not a scale).
+ *   scaled-down large one, so size is a blend of keys, not a scale);
+ * - `sramp:<name>:<x>,<w>;…`: the same of a skin-state signal, which lets a state
+ *   pass through a shape drawn between its ends (a morph blends positions
+ *   linearly, so a tube swinging from hanging to rising would shorten on the
+ *   way if it were not drawn at its midpoint too).
  *
  * A target's weight is the product of its factors.
  */
-import { AssetFormatError, type ShapeModifierEntry } from "../format/assetFormat.ts";
+import {
+  type AdultAnatomySpec,
+  AssetFormatError,
+  type ShapeModifierEntry,
+} from "../format/assetFormat.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 
 export type Factor = (recipe: Recipe, signals: Readonly<Record<string, number>>) => number;
@@ -49,41 +57,44 @@ export function compileFactor(
     }
     case "signal":
       return (_r, s) => clamp01(s[rest] ?? 0);
-    case "ramp": {
+    case "ramp":
+    case "sramp": {
       const at = rest.lastIndexOf(":");
-      if (at < 0) return fail("needs ramp:<modifier>:<x>,<w>;…");
-      const id = known(rest.slice(0, at));
-      const points = rest
-        .slice(at + 1)
-        .split(";")
-        .map((p) => p.split(",").map(Number) as [number, number]);
-      if (
-        points.length < 2 ||
-        points.some((p) => p.length !== 2 || p.some((x) => !Number.isFinite(x)))
-      )
-        return fail("needs at least two numeric x,w points");
-      for (let i = 1; i < points.length; i++)
-        if ((points[i] as [number, number])[0] <= (points[i - 1] as [number, number])[0])
-          return fail("has points that do not ascend in x");
-      return (r) => {
-        const v = clamp01(r.modifiers[id] ?? 0);
-        const first = points[0] as [number, number];
-        const last = points[points.length - 1] as [number, number];
-        if (v <= first[0]) return first[1];
-        if (v >= last[0]) return last[1];
-        for (let i = 1; i < points.length; i++) {
-          const b = points[i] as [number, number];
-          if (v <= b[0]) {
-            const a = points[i - 1] as [number, number];
-            return a[1] + ((v - a[0]) / (b[0] - a[0])) * (b[1] - a[1]);
-          }
-        }
-        return last[1];
-      };
+      if (at < 0)
+        return fail(`needs ${kind}:<${kind === "ramp" ? "modifier" : "signal"}>:<x>,<w>;…`);
+      const name = rest.slice(0, at);
+      const curve = piecewise(rest.slice(at + 1), fail);
+      if (kind === "sramp") return (_r, s) => curve(clamp01(s[name] ?? 0));
+      const id = known(name);
+      return (r) => curve(clamp01(r.modifiers[id] ?? 0));
     }
     default:
-      return fail("has an unknown kind (mod, mod-, signal or ramp)");
+      return fail("has an unknown kind (mod, mod-, signal, ramp or sramp)");
   }
+}
+
+/** A piecewise-linear function from `x,w;x,w;…`, holding its end values outside its points. */
+function piecewise(text: string, fail: (why: string) => never): (x: number) => number {
+  const points = text.split(";").map((p) => p.split(",").map(Number) as [number, number]);
+  if (points.length < 2 || points.some((p) => p.length !== 2 || p.some((x) => !Number.isFinite(x))))
+    return fail("needs at least two numeric x,w points");
+  for (let i = 1; i < points.length; i++)
+    if ((points[i] as [number, number])[0] <= (points[i - 1] as [number, number])[0])
+      return fail("has points that do not ascend in x");
+  const first = points[0] as [number, number];
+  const last = points[points.length - 1] as [number, number];
+  return (v) => {
+    if (v <= first[0]) return first[1];
+    if (v >= last[0]) return last[1];
+    for (let i = 1; i < points.length; i++) {
+      const b = points[i] as [number, number];
+      if (v <= b[0]) {
+        const a = points[i - 1] as [number, number];
+        return a[1] + ((v - a[0]) / (b[0] - a[0])) * (b[1] - a[1]);
+      }
+    }
+    return last[1];
+  };
 }
 
 /** The product of factors for a recipe in a skin state (1 for none). */
@@ -99,3 +110,24 @@ export const product = (
   }
   return w;
 };
+
+/**
+ * The skin-state signals that change the figure's shape: those the body's and
+ * the adult pack's state morphs drive, and those a gate or drive of the pack's
+ * detail targets reads (`signal:<name>`). A caller that re-evaluates the figure
+ * only when one of these changes needs the list.
+ */
+export function shapeSignalNames(
+  bodyMorphs: readonly { signal: string }[],
+  anatomy?: AdultAnatomySpec,
+): string[] {
+  const names = new Set([...bodyMorphs, ...(anatomy?.stateMorphs ?? [])].map((m) => m.signal));
+  for (const table of [anatomy?.detail?.gates, anatomy?.detail?.drives])
+    for (const factors of Object.values(table ?? {}))
+      for (const f of factors) {
+        if (f.startsWith("signal:")) names.add(f.slice("signal:".length));
+        else if (f.startsWith("sramp:"))
+          names.add(f.slice("sramp:".length).split(":")[0] as string);
+      }
+  return [...names];
+}

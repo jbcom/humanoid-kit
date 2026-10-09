@@ -385,6 +385,20 @@ describe("a driven detail target", { timeout: 300_000 }, () => {
     expect(lift(always.evaluate(adult).positions)).toBeCloseTo(DRIVEN_Z, 6);
   });
 
+  it("can pass through a shape drawn between a state's ends: a ramp of a signal", () => {
+    const hat = detailModel({ drives: { [DRIVEN]: ["sramp:arousal:0,0;0.5,1;1,0"] } });
+    const reach = (arousal: number) => {
+      const m = moved(rest, hat.evaluate(adult, arousal ? { arousal } : {}).positions);
+      return m.length ? Math.max(...m.map(({ d }) => d[2])) : 0;
+    };
+    expect(reach(0)).toBe(0);
+    expect(reach(0.25)).toBeCloseTo(DRIVEN_Z / 2, 6);
+    expect(reach(0.5)).toBeCloseTo(DRIVEN_Z, 6);
+    expect(reach(0.75)).toBeCloseTo(DRIVEN_Z / 2, 6);
+    expect(reach(1)).toBe(0);
+    expect(() => detailModel({ drives: { [DRIVEN]: ["sramp:arousal"] } })).toThrow(/needs sramp/);
+  });
+
   it("is checked when the model is built: a drive on a target that is not detail", () => {
     expect(() => detailModel({ drives: { "pelvis/bulge-incr": [`mod:${SIZE}`] } })).toThrow(
       /drives for pelvis\/bulge-incr: it is not a detail target/,
