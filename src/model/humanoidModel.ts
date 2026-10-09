@@ -46,6 +46,7 @@ import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/o
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
+import { beardStyle, bodyHairCoverage } from "../surface/bodyHair.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
 import { COAT_REGION_LIMIT, type CoatFields, coatMasks, combField } from "../surface/coat.ts";
 import {
@@ -55,6 +56,7 @@ import {
   scalpShade,
   UV_SCALE_STEPS,
 } from "../surface/hairFields.ts";
+import { DEFAULT_HAIR_COLOUR } from "../surface/hairTone.ts";
 import {
   buildLayerFields,
   isAdultLayer,
@@ -62,6 +64,7 @@ import {
   uvScale,
 } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
+import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/regions/hands/index.ts";
 import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
@@ -99,6 +102,11 @@ export interface AttachmentTopology extends SurfaceTopology {
    * blend (`occlusionCornerWeights` of `occlusionKeyWeights`).
    */
   occlusion: Float32Array;
+  /**
+   * A nail plate's (`NAIL_PLATE_KINDS`): per render vertex, how much of the
+   * free edge it is (0 over the bed, 1 past it), for its translucency.
+   */
+  nailEdge?: Float32Array;
 }
 
 /**
@@ -144,6 +152,12 @@ export interface HairTopology extends SurfaceTopology {
   adultScalp: Float32Array | null;
   /** Which way strands run in the strand map, and how consistently (`HairStyleEntry.strand`). */
   strand: { angle: number; coherence: number };
+  /**
+   * Body hair cards (`beard`): per render vertex its card's rank, 0..1; the
+   * renderer draws a card while its rank is under the figure's coverage. Null
+   * for every other kind.
+   */
+  rank: Float32Array | null;
 }
 
 /**
@@ -339,6 +353,11 @@ export interface Evaluation extends SurfaceEvaluation {
   brows: HairEvaluation | null;
   /** The recipe's lashes (`recipe.hair.lashes`), or null. */
   lashes: HairEvaluation | null;
+  /**
+   * The hair pack's cards for the recipe's beard style (`wornBeardCards`), or
+   * null: a style the pack has cards for, on a face that grows terminal hair.
+   */
+  beard: HairEvaluation | null;
   /** One entry per garment worn, in `outfit.order`. */
   garments: SurfaceEvaluation[];
   /**
@@ -367,6 +386,19 @@ const part = (mesh: SurfaceMesh): Part => {
   const n = mesh.topology.vertexCount * 3;
   return { mesh, scratch: { surface: new Float32Array(n), normals: new Float32Array(n) } };
 };
+
+/** A per-control-vertex scalar, carried to a mesh's render vertices through its stencil. */
+function carryToRender(
+  mesh: SurfaceMesh,
+  controlCount: number,
+  value: (v: number) => number,
+): Float32Array {
+  const field = new Float32Array(controlCount * 3);
+  for (let v = 0; v < controlCount; v++) field[v * 3] = value(v);
+  const surface = new Float32Array(mesh.topology.vertexCount * 3);
+  applyStencil(mesh.stencil, field, surface);
+  return Float32Array.from(mesh.renderToSurface, (s) => surface[s * 3] as number);
+}
 
 const topologyOf = (m: SurfaceMesh): SurfaceTopology => ({
   index: m.index,
@@ -967,6 +999,7 @@ export class HumanoidModel {
       [hair?.style, "scalp"],
       [hair?.brows, "brows"],
       [hair?.lashes, "lashes"],
+      [this.wornBeardCards(recipe), "beard"],
     ];
     const out: string[] = [];
     for (const [id, kind] of worn) {
@@ -1023,16 +1056,8 @@ export class HumanoidModel {
     const { asset, part: p } = this.hairPart(id, entry?.kind ?? "scalp");
     if (!entry) throw new RecipeError(`unknown hair style ${id}`);
     // The per-control-vertex bake, one value at a time through the stencil like any field.
-    const n = asset.entry.vertexCount;
-    const r2s = p.mesh.renderToSurface;
-    const surface = new Float32Array(p.mesh.topology.vertexCount * 3);
-    /** A per-control-vertex scalar, carried to the render vertices through the style's stencil. */
-    const carry = (value: (v: number) => number): Float32Array => {
-      const field = new Float32Array(n * 3);
-      for (let v = 0; v < n; v++) field[v * 3] = value(v);
-      applyStencil(p.mesh.stencil, field, surface);
-      return Float32Array.from(r2s, (s) => surface[s * 3] as number);
-    };
+    const carry = (value: (v: number) => number): Float32Array =>
+      carryToRender(p.mesh, asset.entry.vertexCount, value);
     const fields = asset.hair;
     if (entry.kind === "scalp" && !fields)
       throw new MorphError(`hair style ${id} carries no measured fields`);
@@ -1074,7 +1099,30 @@ export class HumanoidModel {
           )
         : null,
       strand: entry.strand,
+      rank: fields?.rank ? carry((v) => (fields.rank?.[v] as number) / 255).map(clamp01) : null,
     };
+  }
+
+  /**
+   * The id of the hair pack's cards for the recipe's beard style (an entry of
+   * kind `beard` tagged with the style), or null: when the pack has none for
+   * the style, or the face grows no terminal hair (a child's, or at a density
+   * of 0), which loads nothing.
+   */
+  wornBeardCards(recipe: Recipe): string | null {
+    const styles = this.assets.hair?.styles;
+    if (!styles) return null;
+    const input = {
+      age: recipe.macros.age,
+      gender: recipe.macros.gender,
+      colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
+      ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
+    };
+    if (bodyHairCoverage("face", input) <= 0) return null;
+    const style = beardStyle(input);
+    for (const entry of styles.values())
+      if (entry.kind === "beard" && entry.tags.includes(style)) return entry.id;
+    return null;
   }
 
   /**
@@ -1178,8 +1226,34 @@ export class HumanoidModel {
         textureUrl: asset.entry.material.texture
           ? (this.assets.fileUrls.get(asset.entry.material.texture) ?? null)
           : null,
+        ...(NAIL_PLATE_KINDS.includes(asset.entry.kind) && {
+          nailEdge: this.nailPlateEdges(asset, p.mesh),
+        }),
       })),
     };
+  }
+
+  /**
+   * How much of a nail plate's free edge each of its render vertices is
+   * (`nailPlateEdges`), measured on the plate at rest on the base figure, with
+   * each vertex taking the knuckles' and nails' coordinate of the skin it is
+   * bound to.
+   */
+  private nailPlateEdges(asset: BoundAsset, mesh: SurfaceMesh): Float32Array {
+    const digits = SKIN_LAYERS.find((l) => l.id === DIGIT_LAYER.id);
+    const skin = digits?.fields(this.assets).coord;
+    if (!skin) throw new MorphError("the skin stack has no knuckles-and-nails coordinate");
+    const n = asset.entry.vertexCount;
+    const along = new Float32Array(n);
+    for (let v = 0; v < n; v++)
+      for (let k = 0; k < 3; k++)
+        along[v] =
+          (along[v] as number) +
+          (asset.weights[v * 3 + k] as number) *
+            (skin[asset.refVerts[v * 3 + k] as number] as number);
+    const rest = evaluateBinding(asset, this.assets.positions, new Float32Array(n * 3));
+    const edges = nailPlateEdges(rest, asset.faceVerts, along);
+    return carryToRender(mesh, n, (v) => edges[v] as number);
   }
 
   /**
@@ -1274,6 +1348,8 @@ export class HumanoidModel {
     const wornBrows = browsId === null ? null : { id: browsId, h: this.hairPart(browsId, "brows") };
     const wornLashes =
       lashesId === null ? null : { id: lashesId, h: this.hairPart(lashesId, "lashes") };
+    const beardId = this.wornBeardCards(recipe);
+    const wornBeard = beardId === null ? null : { id: beardId, h: this.hairPart(beardId, "beard") };
     let minY = Number.POSITIVE_INFINITY;
     for (const v of this.bodyVertices) minY = Math.min(minY, control[v * 3 + 1] as number);
     // The adult surface only for a figure aged 18 or over, decided here and nowhere
@@ -1313,6 +1389,8 @@ export class HumanoidModel {
     };
     const brows = decal(wornBrows, true);
     const lashes = decal(wornLashes, false);
+    // A beard's cards are bound and evaluated as scalp hair is.
+    const beard = decal(wornBeard, false);
     const curvature = meanCurvature(
       body.positions,
       body.normals,
@@ -1329,6 +1407,7 @@ export class HumanoidModel {
       hair,
       brows,
       lashes,
+      beard,
       garments,
       outfit: {
         key,

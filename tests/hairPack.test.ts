@@ -207,8 +207,11 @@ describe("provenance", () => {
   it("names the source pack and its CC0 evidence for every source file", () => {
     expect(text).toMatch(/makehuman_system_assets_cc0\.zip/);
     expect(text).toMatch(/explicitly released as CC0/);
-    // Per style: the .mhclo, the .obj and the .mhmat each proved their own header.
-    expect(text).toMatch(new RegExp(`${hairManifest.styles.length * 3} file\\(s\\) — file header`));
+    // Per style packed from a file: the .mhclo, the .obj and the .mhmat each proved
+    // their own header. Body hair cards are generated, and come from no file.
+    const fromFiles = hairManifest.styles.filter((s) => s.kind !== "beard").length;
+    expect(text).toMatch(new RegExp(`${fromFiles * 3} file\\(s\\) — file header`));
+    expect(text).toMatch(/body hair cards \(kind `beard`\) come from no source file/);
   });
 
   it("lists the hash of every shipped file", () => {
@@ -234,16 +237,16 @@ describe("loading the pack", () => {
     ).toThrow(/different body pack/);
   });
 
-  it("refuses a style of a kind it does not know, and accepts brows and lashes beside scalp hair", () => {
+  it("refuses a style of a kind it does not know, and accepts brows, lashes and beards beside scalp hair", () => {
     const body = bodyPackData(["core"]);
     const withKind = (kind: string): HairManifest => ({
       ...hairManifest,
       styles: hairManifest.styles.map((s, i) => (i === 0 ? { ...s, kind: kind as never } : s)),
     });
     expect(() =>
-      parseHumanoidAssets(body, undefined, undefined, { manifest: withKind("beard") }),
+      parseHumanoidAssets(body, undefined, undefined, { manifest: withKind("mane") }),
     ).toThrow(/unknown hair kind/);
-    for (const kind of ["brows", "lashes"]) {
+    for (const kind of ["brows", "lashes", "beard"]) {
       const parsed = parseHumanoidAssets(body, undefined, undefined, { manifest: withKind(kind) });
       expect(parsed.hair?.styles.get(STYLES[0] as string)?.kind).toBe(kind);
     }

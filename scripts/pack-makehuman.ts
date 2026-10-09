@@ -54,9 +54,11 @@ import {
 } from "./lib/adultAuthored.ts";
 import { reservoirSpecs } from "./lib/adultReservoirs.ts";
 import { authoredPoses } from "./lib/authoredPoses.ts";
+import { parseBvh } from "./lib/bvh.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { AUTHORING_FIGURE } from "./lib/control/mound.ts";
 import { symmetrizeFaceUnits } from "./lib/faceUnits.ts";
+import { NAIL_PLATES, VENDOR_BODYPARTS04 } from "./lib/nailPlates.ts";
 import { packHair } from "./lib/packHair.ts";
 import {
   writeAttachments,
@@ -330,37 +332,6 @@ function packWeights(
   return { index, weight };
 }
 
-/** Parses a BVH into per-frame, per-joint local Euler rotations (degrees, ZXY order as written). */
-function parseBvh(text: string) {
-  const tokens = text.split(/\s+/).filter(Boolean);
-  const joints: { name: string; channels: string[] }[] = [];
-  let i = 0;
-  while (tokens[i] !== "MOTION") {
-    const t = tokens[i++];
-    if (t === "ROOT" || t === "JOINT") joints.push({ name: tokens[i++] ?? "", channels: [] });
-    else if (t === "End") i += 1;
-    else if (t === "CHANNELS") {
-      const n = Number(tokens[i++]);
-      const j = joints[joints.length - 1];
-      if (!j) throw new Error("CHANNELS before joint");
-      j.channels = tokens.slice(i, i + n);
-      i += n;
-    }
-  }
-  i++; // MOTION
-  i++; // Frames:
-  const frames = Number(tokens[i++]);
-  i += 3; // Frame Time: x
-  const data: number[][] = [];
-  for (let f = 0; f < frames; f++) {
-    const row: number[] = [];
-    for (const j of joints)
-      for (let c = 0; c < j.channels.length; c++) row.push(Number(tokens[i++]));
-    data.push(row);
-  }
-  return { joints, frames: data };
-}
-
 // ---------------------------------------------------------------- provenance
 /** One line per licence-evidence kind with its file count; repo-level evidence names its files. */
 function writeProvenance(
@@ -370,6 +341,7 @@ function writeProvenance(
   include: (file: string) => boolean,
   outputs: [string, string][],
   systemEvidence: Record<string, string> = {},
+  vendorEvidence: Record<string, string> = {},
   authored: readonly string[] = [],
 ): void {
   const group = (evidence: Record<string, string>, keep: (f: string) => boolean) => {
@@ -392,6 +364,16 @@ function writeProvenance(
         ...group(systemEvidence, () => true),
       ]
     : [];
+  const vendor = Object.keys(vendorEvidence).length
+    ? [
+        "",
+        "The nail plates are CC0 community meshes from MakeHuman's bodyparts04 pack, vendored in",
+        "`vendor/makehuman-bodyparts04/` (see its PROVENANCE.md); each passed the licence rule's clause B with its",
+        "captured asset page:",
+        "",
+        ...group(vendorEvidence, () => true),
+      ]
+    : [];
   const lines = [
     `# ${pack} data provenance`,
     "",
@@ -405,6 +387,7 @@ function writeProvenance(
     "",
     ...group(licenseEvidence, include),
     ...system,
+    ...vendor,
     ...(authored.length
       ? [
           "",
@@ -598,21 +581,32 @@ async function main() {
   const joints: Record<string, number[]> = {};
   for (const [k, verts] of Object.entries(skel.joints)) joints[k] = verts;
 
-  // Essential attachments (eyes, teeth, tongue) from the system assets pack.
-  const compiled = ESSENTIALS.map(([id, kind, mhclo, mat]) =>
+  // Essential attachments (eyes, teeth, tongue) from the system assets pack,
+  // then the nail plates, vendored CC0 community meshes (geometry only: the
+  // kit draws them with its own plate material).
+  const essentials = ESSENTIALS.map(([id, kind, mhclo, mat]) =>
     compileAsset(path.join(SYSTEM, mhclo), id, kind, {
       ...(mat && { materialFile: path.join(SYSTEM, mat) }),
     }),
   );
+  const plates = NAIL_PLATES.map(([id, kind, mhclo, page]) =>
+    compileAsset(path.join(VENDOR_BODYPARTS04, mhclo), id, kind, { page, geometryOnly: true }),
+  );
+  const compiled = [...essentials, ...plates];
   fs.rmSync(path.join(BODY_OUT, "attachments.bin"), { force: true });
   await writeAttachmentTextures(BODY_OUT, compiled);
   // Written with every vertex open first; the bake below needs the packed figure.
   const occlusionBakes = occlusionCorners(OCCLUSION_KEYS.length);
   let attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, null, occlusionBakes);
   const systemEvidence: Record<string, string> = {};
-  for (const c of compiled) {
+  for (const c of essentials) {
     for (const [file, ev] of Object.entries(c.evidence))
       systemEvidence[path.relative(SYSTEM, file)] = ev;
+  }
+  const vendorEvidence: Record<string, string> = {};
+  for (const c of plates) {
+    for (const [file, ev] of Object.entries(c.evidence))
+      vendorEvidence[path.relative(VENDOR_BODYPARTS04, file)] = ev;
   }
 
   const sha = (buf: Uint8Array) => createHash("sha256").update(buf).digest("hex");
@@ -791,6 +785,7 @@ async function main() {
       [BODY_OCCLUSION_FILE, bodyOcclusion.sha256],
     ],
     systemEvidence,
+    vendorEvidence,
   );
   writeProvenance(
     ADULT_OUT,
@@ -798,6 +793,7 @@ async function main() {
     upstreamCommit,
     (f) => adultFiles.has(f),
     [[TARGETS_FILE, sha(adult.bin)]],
+    {},
     {},
     AUTHORED_PROVENANCE,
   );

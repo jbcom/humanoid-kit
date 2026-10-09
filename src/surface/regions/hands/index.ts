@@ -194,11 +194,17 @@ export {
   knuckleFields,
 } from "./knuckles.ts";
 export {
+  NAIL_FREE_EDGE_LENGTH,
+  NAIL_FREE_EDGE_OPACITY,
+  NAIL_FREE_EDGE_SOFT,
   NAIL_GLOSS_LAYER,
   NAIL_LAYOUT,
+  NAIL_PLATE_KINDS,
+  NAIL_PLATE_OPACITY,
   NAIL_ROUGHNESS,
   NAIL_SPECULAR,
   nailFields,
+  nailPlateEdges,
 } from "./nails.ts";
 export {
   PALM_BORDER_BLEND,

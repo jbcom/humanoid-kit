@@ -158,6 +158,11 @@ export interface CompileOptions {
    * it every file must carry MakeHuman's own CC0 release header (clause A).
    */
   page?: CommunityPage;
+  /**
+   * Pack the geometry and binding only, ignoring the asset's material: for an
+   * attachment the kit draws with a material of its own (the nail plates).
+   */
+  geometryOnly?: boolean;
 }
 
 /**
@@ -171,7 +176,7 @@ export function compileAsset(
   kind: string,
   options: CompileOptions = {},
 ): CompiledAsset {
-  const { materialFile, normalMap = false, page } = options;
+  const { materialFile, normalMap = false, page, geometryOnly = false } = options;
   const evidence: Record<string, string> = {};
   // With a page, the files are judged together once all are read; without one,
   // each must prove CC0 on its own as it is read.
@@ -190,7 +195,9 @@ export function compileAsset(
       `${mhcloFile}: ${obj.vertexCount} OBJ vertices but ${binding.weights.length / 3} bindings`,
     );
   }
-  const matPath = materialFile ?? (binding.material ? path.resolve(dir, binding.material) : null);
+  const matPath = geometryOnly
+    ? null
+    : (materialFile ?? (binding.material ? path.resolve(dir, binding.material) : null));
   const textures = new Map<string, string>();
   let material: AssetMaterial = {
     color: [1, 1, 1],
@@ -231,7 +238,7 @@ export function compileAsset(
     if (!judgement.pass) throw new Error(`licence gate: ${mhcloFile}: ${judgement.reason}`);
     for (const { file } of files)
       evidence[file] =
-        `${judgement.evidence[path.basename(file)]} (${page.url}, submitted ${page.submitted})`;
+        `${judgement.evidence[path.basename(file)]} (<${page.url}>, submitted ${page.submitted})`;
   }
   const s = binding.scale;
   return {

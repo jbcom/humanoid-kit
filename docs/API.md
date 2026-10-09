@@ -54,7 +54,9 @@ type PackLocation =
   A `HairStyleEntry` is an attachment entry (no `deleteVerts`,
   one occlusion value per vertex) with a `label`, `tags` (`short`, `bob`,
   `curly`...), its `kind` (`scalp`, or `brows` or `lashes`, which share the pack's
-  loader; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
+  loader, or `beard`, generated body hair cards tagged with the beard style they
+  serve, whose layout adds a `rank` per vertex, `CARD_FIELD_KEYS`; `STRAND_KINDS`
+  are the kinds with measured strand fields; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
   carries each entry's kind), its `file` and `sha256`, and the `strand` direction and
   `coherence` measured from its strand map. With the clothing pack loaded,
   `clothingManifest` lists its garments from the start; `garments` (a map of
@@ -467,9 +469,15 @@ and throws `RangeError` for anything else.
   skin along its normal, since the smooth body surface can swallow a decal bound to
   the coarse mesh by up to 1.8 mm at the brow ridge (a test holds it clear at ages
   6 to 75). `model.pendingHairStyles(recipe)` lists every worn style not yet loaded,
-  and the worker's `evaluated` reply carries `decalTopologies` for the brows' and
-  lashes' static data (`HairTopology.kind` is `scalp`, `brows` or `lashes`; a
-  decal's fade is all 1, fin and growth 0, scalp none).
+  and the worker's `evaluated` reply carries `decalTopologies` for the brows',
+  lashes' and beard cards' static data (`HairTopology.kind` is `scalp`, `brows`,
+  `lashes` or `beard`; a decal's fade is all 1, fin and growth 0, scalp none).
+  `Evaluation.beard` is the hair pack's cards for the recipe's beard style
+  (`model.wornBeardCards(recipe)`: the `beard` entry tagged with the style, or
+  null when there is none or the face grows no terminal hair), evaluated as
+  scalp hair is; `HairTopology.rank` is its cards' ranks per render vertex (null
+  for every other kind), and `<Humanoid>` draws the cards whose rank is under the
+  face's coverage (`HairMaterial.setDensity`), in the face's body hair colour.
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
@@ -746,9 +754,17 @@ compute what the renderer will do.
     through, from `nailColours(tone)`: fold, lunula, bed and free edge along each
     nail, the bed from `nailLab(tone)`, measured nail CIELAB at a lightness that
     follows the skin's far less than skin does). It paints within 1 ΔE\*ab of
-    the nail layered over the knuckle. `NAIL_GLOSS_LAYER` is the plate
-    (`NAIL_ROUGHNESS` and `NAIL_SPECULAR`); fields from `knuckleFields(assets)`
-    and `nailFields(assets)`, proportions in `NAIL_LAYOUT`.
+    the nail layered over the knuckle. `NAIL_GLOSS_LAYER` is the plate's gloss
+    on the skin (`NAIL_ROUGHNESS` and `NAIL_SPECULAR`); fields from
+    `knuckleFields(assets)` and `nailFields(assets)`, proportions in
+    `NAIL_LAYOUT`.
+  - The nail plates: body attachments of `NAIL_PLATE_KINDS` (`fingernails`,
+    `toenails`; CC0 meshes, see NOTICE.md) whose `AttachmentTopology.nailEdge`
+    is, per render vertex, how much of the free edge it is
+    (`nailPlateEdges(positions, faceVerts, along)`: each nail's last
+    `NAIL_FREE_EDGE_LENGTH` toward its tip). `<Humanoid>` draws them with a
+    `NailPlateMaterial`: keratin at `NAIL_PLATE_OPACITY` over the bed, so the
+    painted bed shows through, and `NAIL_FREE_EDGE_OPACITY` along the free edge.
   - `HAND_RELIEF_LAYER` (`"hand-relief"`, a `creases` detail layer, fields
     `handReliefFields(assets)`): the palm's crease folds and the knuckles'
     wrinkle arcs (over the back of each finger joint, `KNUCKLE_WRINKLE_SPACING`
@@ -1138,7 +1154,8 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 
 - Hidden until the first evaluation arrives.
 - Renders the body and the body pack's attachments (eyes with their own eye
-  shader following `recipe.eyes`, teeth and tongue), each attachment shaded by
+  shader following `recipe.eyes`, teeth, tongue, and the nail plates as
+  translucent keratin over the painted beds), each attachment shaded by
   its baked occlusion, which follows the pose (an open mouth lights the teeth
   it uncovers). The body's own cavities (mouth, nostrils, ear canals, eye
   sockets) are darkened the same way, so a mouth without a tongue is dim inside.
@@ -1345,7 +1362,10 @@ takes the styles as `options.hairStyles`, and without them keeps the base
 recipe's hair. It also draws one of the pack's brows and one of its lashes
 (`options.browStyles`, `options.lashStyles`; after the hair, so a seed's hair and
 shape are the same without them), and a new head of hair keeps the brows and
-lashes the figure had. `withHair(recipe, patch)` changes the scalp style, colour,
+lashes the figure had. Last of all it draws a beard style (`options.beards`,
+which the creator sets; `randomBeard(draw)` by `BEARD_ODDS`: clean-shaven most
+often, then stubble), so old seeds keep their figures; the body hair model grows
+it only where the face carries terminal hair. `withHair(recipe, patch)` changes the scalp style, colour,
 brows or lashes of a recipe (`null` takes one away) and keeps whatever the patch
 leaves out; the Appearance panel uses it, offering the brows and lashes in
 groups of their own, and `load` refuses a saved figure whose brows or lashes the
@@ -1403,6 +1423,56 @@ each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the
 worker client. The package also exposes its files under
 `humanoid-kit-body/data/*`.
 
+## Animation
+
+```ts
+import { animationsPack } from "humanoid-kit-animations";
+import { Animator, loadAnimationLibrary, rigData } from "humanoid-kit";
+
+const animations = await loadAnimationLibrary(animationsPack); // the manifest only
+const walk = await animations.load("walk_normal", rigData(assets).bones); // the clip's file, once
+const animator = new Animator(rig.bones.length, restBones(assets, evaluation.control), ground);
+animator.play(walk);
+animator.update(dt);          // advances time, crossfades and root motion
+animator.rotations;           // the body's local rotation per bone, bones * 4
+animator.root;                // how far the figure has been carried: [x across, z forward], metres
+```
+
+- `loadAnimationLibrary(pack)` and `createAnimationLibrary(manifest, fetchBinary)`
+  give an `AnimationLibrary`: `manifest`, `entry(id)`, `load(id, bones)` (a clip
+  bound to a rig's bone names, fetched once however many figures play it; a failed
+  fetch is retried by the next call) and `loaded(id, bones)`.
+- `AnimationClip`: `fps`, `frames`, `duration`, `loop`, `rootMotion` (it carries
+  the figure), `grounded` (the figure stands on the ground, so its feet are held),
+  and the frames' local rotations. `sampleClip(clip, time, out)` is its pose at a
+  time (a loop wraps, a clip that does not loop holds its last frame),
+  `blendRotations(a, b, weight, out)` blends two poses along the shortest arc, and
+  `slerpInto`, `clipTime` and `setIdentity` are the pieces.
+- `Animator`: `play(clip, { fade, speed, time })` (fading from the clip playing, for
+  `DEFAULT_FADE` seconds unless told), `update(dt)`, `setSpeed`, `seek`,
+  `resetRoot`, `setRest(rest, ground)` (the figure's shape changed), `playing`,
+  `fading`. With a skeleton (`rest`) and the ground under the figure at rest, a clip
+  that carries the figure moves `root` by what the figure's own feet do
+  (`planRootMotion`, `rootDisplacement`), and a grounded clip's planted feet are
+  held where they land (`FootLock`: `PLANT_LAND`, `PLANT_FULL`, `PLANT_NONE`,
+  `PLANT_SWITCH`). `contactPoints` and `CONTACT_BONES` are the points on the soles
+  they work from.
+- `frameRotations(rig, joints, frame)` (from `src/rig/pose.ts`) is a BVH frame's
+  rotations in the figure's axes, which the packer and `bodyPoseRotations` share.
+
+## `humanoid-kit-animations`
+
+```ts
+import { animationsPack } from "humanoid-kit-animations";
+```
+
+`animationsPack` is `{ manifest, files }` like `bodyPack`: per clip, `<id>.bin.gz` (the
+frames' bone rotations, a few tens of kilobytes). Pass it to `loadAnimationLibrary`.
+The six clips are punkduck's, from the MakeHuman community's CC0 additional assets:
+`walk_normal`, `walk_female`, `idle1`, `idle2`, `idlehips` and `swimcrawlstroke`.
+Its `PROVENANCE.md` pins the archive by its SHA-256 and records each clip's licence
+evidence.
+
 ## `humanoid-kit-hair`
 
 ```ts
@@ -1419,6 +1489,10 @@ styles are MakeHuman's own CC0 scalp hair: `short02`, `bob02`, `long01`,
 `afro01`, `short04`, `short03`, `ponytail01`, `short01`, `bob01` and `braid01`.
 Its manifest records the hash of the body pack it binds to, and the loader
 refuses any other.
+
+It also lists generated body hair cards (kind `beard`, today `beard-full`, 64 kB
+the pair): a full beard's length over the coat, made by the packer from the
+body pack's mesh and a seed rather than from any MakeHuman file.
 
 The pack also lists MakeHuman's twelve eyebrows (`eyebrow001` to `eyebrow012`,
 kind `brows`) and four eyelashes (`eyelashes01` to `eyelashes04`, kind `lashes`),

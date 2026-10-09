@@ -64,6 +64,7 @@ This repository is a pnpm workspace that publishes four packages.
 | `humanoid-kit-body` | `packs/body` | CC0 1.0 | The base mesh, shape targets for ages 1 to 90, the 163-bone skeleton and skin weights, facial pose units, eyes, teeth and tongue, and 275 shape modifiers (modelling, measurement and body shapes) with their sliders |
 | `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 | Adult-only targets and 5 modifiers with their sliders. A separate install; refused unless built against the exact body pack |
 | `humanoid-kit-hair` | `packs/hair` | CC0 1.0 | Ten scalp hair styles (short, bob, long, afro, ponytail, braid) as alpha cards bound to the base body, any colour from black to platinum. A separate install; a style's files load when a figure first wears it |
+| `humanoid-kit-animations` | `packs/animations` | CC0 1.0 | Walk, idle and swim cycles on MakeHuman's default skeleton, played on any figure whatever its size, shape or age, its planted feet held in place. A separate install; a clip's file loads when a figure first plays it |
 | `humanoid-kit-clothing` | `packs/clothing` | CC0 1.0 | 19 MakeHuman garments (suits, shoes, a hat) bound to the base mesh, with the skin each hides. A separate install; refused unless built against the exact body pack |
 
 The body pack and the adult anatomy pack together account for 280 shape
@@ -83,7 +84,7 @@ pnpm add react @react-three/fiber @react-three/drei
 ```
 
 Add `humanoid-kit-adult-anatomy` only if your application needs adult anatomy,
-and `humanoid-kit-hair` only if your figures wear hair.
+`humanoid-kit-hair` only if your figures wear hair, and `humanoid-kit-animations` only if they move.
 
 Requirements:
 
