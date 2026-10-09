@@ -226,4 +226,50 @@ test.describe("presence in the studio", () => {
       { timeout: budget(60_000) },
     );
   });
+
+  test("a relaxed figure's arms come in and nothing else in its presence moves", async ({
+    page,
+  }) => {
+    await openSilentGame(page, "./", { scene: "walk", bg: GROUND });
+    await page.locator('[data-figure="ready"]').waitFor({ timeout: budget(120_000) });
+    await stage(page, 1.8, 1);
+    const [standing] = await figures(page);
+    if (!standing) throw new Error("the figure should be published");
+
+    // `relaxed` is standing at ease, arms at the sides: a pose that changes the
+    // arms and leaves the legs, the head and the ground contact where they were.
+    await page.evaluate(() => window.hkWalk?.setPose("relaxed"));
+    await page.waitForFunction(
+      (out) => (window.hkWalk?.figures()[0]?.handOut ?? out) < out - 0.1,
+      standing.handOut,
+      { timeout: budget(60_000) },
+    );
+    await frames(page);
+    await save(page, "relaxed");
+    const [relaxed] = await figures(page);
+    if (!relaxed) throw new Error("the figure should still be published");
+    // The hand is closer to the body and the whole figure is narrower.
+    expect(relaxed.handOut).toBeLessThan(standing.handOut - 0.1);
+    expect(relaxed.width).toBeLessThan(standing.width - 0.15);
+    // The head, the floor and the two soles are as standing had them.
+    expect(Math.abs(relaxed.head - standing.head)).toBeLessThan(0.02);
+    expect(Math.abs(relaxed.floor)).toBeLessThan(0.01);
+    expect(relaxed.feet).toHaveLength(2);
+    expect(Math.abs(relaxed.radius - standing.radius)).toBeLessThan(0.02);
+    for (let i = 0; i < 2; i++) {
+      expect(
+        Math.abs((relaxed.feet[i]?.[0] as number) - (standing.feet[i]?.[0] as number)),
+      ).toBeLessThan(0.02);
+      expect(
+        Math.abs((relaxed.feet[i]?.[1] as number) - (standing.feet[i]?.[1] as number)),
+      ).toBeLessThan(0.02);
+    }
+    // So the stage's shadow is where it was: under the same feet.
+    const x = standing.feet[0]?.[0] as number;
+    const z = (standing.feet[0]?.[1] as number) + 0.17;
+    expect(await expectedShadow(page, x, z)).toBeGreaterThan(0.1);
+    expect(
+      Math.abs((await darkness(page, x, z)) - (await expectedShadow(page, x, z))),
+    ).toBeLessThan(0.06);
+  });
 });

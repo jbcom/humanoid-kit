@@ -54,8 +54,11 @@ export interface WalkApi {
     radius: number;
     /** Height of the head anchor, and of the lowest point of the bounds. */
     head: number;
-    /** Height of the left hand anchor. */
+    /** Height of the left hand anchor, and how far it is from the figure's centre, sideways. */
     hand: number;
+    handOut: number;
+    /** Width of the bounds along x. */
+    width: number;
     floor: number;
   }[];
   /** What the presence model says the shadow is at ground point (x, z): `sampleGroundOcclusion` over the registry. */
@@ -182,6 +185,8 @@ function Api({
           radius: p.footprint.radius,
           head: p.anchors.head[1],
           hand: p.anchors.leftHand[1],
+          handOut: Math.abs(p.anchors.leftHand[0] - p.position[0]),
+          width: p.bounds.max[0] - p.bounds.min[0],
           floor: p.bounds.min[1],
         })),
       expectedShadow: (x, z) =>
