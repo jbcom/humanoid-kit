@@ -37,22 +37,49 @@ const dirs = [
 const problems = [];
 let scanned = 0;
 
+/**
+ * Bundlers inline small assets as data URIs (Vite: under 4 KB, which the adult
+ * manifest is), so a file's embedded data URIs are decoded and checked as
+ * files in their own right.
+ */
+function dataUris(text) {
+  const out = [];
+  for (const m of text.matchAll(
+    /data:[\w.+-]+\/[\w.+-]+(?:;(?!base64)[\w=.+-]+)*(;base64)?,([^"'`)\s]+)/g,
+  )) {
+    try {
+      out.push(m[1] ? Buffer.from(m[2], "base64") : Buffer.from(decodeURIComponent(m[2])));
+    } catch {
+      // not a decodable URI; the raw text is still scanned
+    }
+  }
+  return out;
+}
+
+function check(label, buf, app) {
+  if (forbiddenHashes.has(hash(buf))) problems.push(`${label}: is an adult anatomy pack file`);
+  const text = buf.toString("utf8");
+  // App files are scanned as text whatever their extension: names survive in any text format.
+  if (app)
+    for (const s of forbiddenStrings)
+      if (text.includes(s)) problems.push(`${label}: contains "${s}"`);
+  dataUris(text).forEach((inner, i) => {
+    check(`${label} (data URI ${i + 1})`, inner, app);
+  });
+}
+
 function walk(dir, app) {
+  let files = 0;
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = path.join(dir, ent.name);
     if (ent.isDirectory()) {
-      walk(file, app);
+      files += walk(file, app);
       continue;
     }
-    scanned++;
-    const buf = fs.readFileSync(file);
-    if (forbiddenHashes.has(hash(buf))) problems.push(`${file}: is an adult anatomy pack file`);
-    if (app && /\.(js|mjs|html|json|css|map|txt|md)$/.test(file)) {
-      const text = buf.toString("utf8");
-      for (const s of forbiddenStrings)
-        if (text.includes(s)) problems.push(`${file}: contains "${s}"`);
-    }
+    files++;
+    check(file, fs.readFileSync(file), app);
   }
+  return files;
 }
 
 for (const { d, app } of dirs) {
@@ -61,7 +88,9 @@ for (const { d, app } of dirs) {
     problems.push(`${d}: build output not found (build it before running this check)`);
     continue;
   }
-  walk(abs, app);
+  const files = walk(abs, app);
+  if (files === 0) problems.push(`${d}: build output is empty`);
+  scanned += files;
 }
 
 if (problems.length) {
