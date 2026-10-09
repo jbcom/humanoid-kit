@@ -33,6 +33,7 @@ import {
   TARGET_ENCODING,
 } from "../src/format/assetFormat.ts";
 import { macroTargetAgeAnchor, macroTargetNames } from "../src/makehuman/macro.ts";
+import { STATE_MORPH_TARGETS } from "../src/makehuman/stateMorphs.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
 import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
@@ -489,6 +490,9 @@ async function main() {
   const missingMasks = SKIN_LAYER_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
   if (missingMasks.length)
     throw new Error(`skin-layer targets not packed: ${missingMasks.join(", ")}`);
+  const missingStates = STATE_MORPH_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
+  if (missingStates.length)
+    throw new Error(`state-morph targets not packed: ${missingStates.join(", ")}`);
 
   // The body's targets split into files by what needs them (docs/ARCHITECTURE.md):
   // macro targets by age anchor, with the anchor-free ones and the skin-layer

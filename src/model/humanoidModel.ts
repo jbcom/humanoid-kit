@@ -17,8 +17,10 @@ import {
 import { NO_FEATURE } from "../makehuman/features.ts";
 import { recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
+import { stateContributions } from "../makehuman/stateMorphs.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
+import { assertSignalPolicy } from "../recipe/agePolicy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
@@ -456,11 +458,18 @@ export class HumanoidModel {
   }
 
   /**
-   * The target files a recipe needs that have not arrived (empty when it can
-   * be evaluated now). Validates the recipe first.
+   * The target files a recipe (in a skin state) needs that have not arrived
+   * (empty when it can be evaluated now). Validates the recipe first.
    */
-  pendingTargetFiles(recipe: Recipe): Set<string> {
-    return this.pendingFor(recipeContributions(recipe, this.assets.modifiers));
+  pendingTargetFiles(recipe: Recipe, signals: Readonly<Record<string, number>> = {}): Set<string> {
+    return this.pendingFor(this.contributions(recipe, signals));
+  }
+
+  /** The recipe's target weights, plus its skin state's (`STATE_MORPHS`), after the age policy. */
+  private contributions(recipe: Recipe, signals: Readonly<Record<string, number>>) {
+    const fromRecipe = recipeContributions(recipe, this.assets.modifiers);
+    assertSignalPolicy(recipe, signals);
+    return [...fromRecipe, ...stateContributions(signals)];
   }
 
   private pendingFor(contributions: readonly { target: string }[]): Set<string> {
@@ -473,8 +482,13 @@ export class HumanoidModel {
     return pending;
   }
 
-  evaluate(recipe: Recipe): Evaluation {
-    const contributions = recipeContributions(recipe, this.assets.modifiers);
+  /**
+   * Evaluates a recipe in a skin state: `signals` (0..1 each, see
+   * docs/ARCHITECTURE.md, "Skin states") add their state morphs. A state is
+   * never part of the recipe; adult-only signals are refused under 18.
+   */
+  evaluate(recipe: Recipe, signals: Readonly<Record<string, number>> = {}): Evaluation {
+    const contributions = this.contributions(recipe, signals);
     const pending = this.pendingFor(contributions);
     if (pending.size)
       throw new MorphError(

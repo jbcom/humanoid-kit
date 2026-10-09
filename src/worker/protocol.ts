@@ -39,7 +39,13 @@ export type WorkerRequest =
   | { type: "complete"; id: number }
   /** Answered with the pick map once every target file (it needs the modifiers') has loaded. */
   | { type: "pickMap"; id: number }
-  | { type: "evaluate"; id: number; recipe: Recipe };
+  | {
+      type: "evaluate";
+      id: number;
+      recipe: Recipe;
+      /** The skin state's signals; those with state morphs change the shape. */
+      signals?: Readonly<Record<string, number>>;
+    };
 
 export type WorkerResponse =
   | ({ type: "ready"; id: number } & ReadyInfo)

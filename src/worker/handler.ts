@@ -25,13 +25,17 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
   let stages: LoadStage[] = [];
   let complete: Promise<unknown> = Promise.resolve();
 
-  /** Waits for the stages that bring the target files a recipe needs. */
-  const targetsFor = async (m: HumanoidModel, recipe: Recipe): Promise<void> => {
-    for (let pending = m.pendingTargetFiles(recipe); pending.size; ) {
+  /** Waits for the stages that bring the target files a recipe (in a skin state) needs. */
+  const targetsFor = async (
+    m: HumanoidModel,
+    recipe: Recipe,
+    signals: Readonly<Record<string, number>> = {},
+  ): Promise<void> => {
+    for (let pending = m.pendingTargetFiles(recipe, signals); pending.size; ) {
       const stage = stages.find((s) => s.files.some((f) => pending.has(f)));
       if (!stage) throw new Error(`no load stage brings ${[...pending].join(", ")}`);
       await stage.loaded;
-      pending = m.pendingTargetFiles(recipe);
+      pending = m.pendingTargetFiles(recipe, signals);
     }
   };
 
@@ -74,9 +78,9 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         ]);
         return;
       }
-      await targetsFor(model, req.recipe);
+      await targetsFor(model, req.recipe, req.signals);
       const t0 = performance.now();
-      const evaluation = model.evaluate(req.recipe);
+      const evaluation = model.evaluate(req.recipe, req.signals);
       const transfer: Transferable[] = [
         evaluation.positions.buffer,
         evaluation.normals.buffer,

@@ -52,6 +52,26 @@ export function assertAgePolicy(recipe: Recipe): void {
 }
 
 /**
+ * Skin-state signals that only apply to adults: sexual arousal, in any
+ * channel (colour, relief or shape). Cold, heat, exertion, blush and fear are
+ * physiological at every age, as the body's own responses are.
+ */
+export const ADULT_ONLY_SIGNALS: readonly string[] = ["arousal"];
+
+/** Refuses an adult-only signal for a figure under 18 (never clamps it). */
+export function assertSignalPolicy(
+  recipe: Recipe,
+  signals: Readonly<Record<string, number>>,
+): void {
+  if (isAdult(recipe)) return;
+  const bad = ADULT_ONLY_SIGNALS.filter((s) => (signals[s] ?? 0) !== 0);
+  if (bad.length)
+    throw new AgePolicyError(
+      `signals for age ${recipe.macros.age} violate the age policy: ${bad.join(", ")} adult-only`,
+    );
+}
+
+/**
  * Returns a copy at a new age. Moving an adult recipe below 18 removes the
  * adult-only modifiers explicitly (the caller sees the result); nothing is
  * removed when the target age is adult.

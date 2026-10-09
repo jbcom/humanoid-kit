@@ -20,6 +20,7 @@ export class HumanoidWorkerError extends Error {
 
 interface Job {
   recipe: Recipe;
+  signals: Readonly<Record<string, number>>;
   resolve: (e: Evaluation) => void;
   reject: (e: Error) => void;
 }
@@ -114,16 +115,21 @@ export class HumanoidWorkerClient {
   }
 
   /**
-   * Evaluates a recipe. `key` identifies the caller; a waiting request for the
+   * Evaluates a recipe, in a skin state when `signals` drive state morphs
+   * (`STATE_MORPHS`). `key` identifies the caller; a waiting request for the
    * same key is superseded and rejects with an `AbortError`.
    */
-  evaluate(recipe: Recipe, key = "default"): Promise<Evaluation> {
+  evaluate(
+    recipe: Recipe,
+    key = "default",
+    signals: Readonly<Record<string, number>> = {},
+  ): Promise<Evaluation> {
     if (this.disposed) return Promise.reject(new HumanoidWorkerError("disposed"));
     return new Promise((resolve, reject) => {
       this.queue.get(key)?.reject(abortError());
       // Map.set on an existing key keeps its position, so a superseding
       // request keeps its caller's place in line.
-      this.queue.set(key, { recipe, resolve, reject });
+      this.queue.set(key, { recipe, signals, resolve, reject });
       void this.pump();
     });
   }
@@ -147,7 +153,12 @@ export class HumanoidWorkerClient {
 
   private async run(key: string, job: Job): Promise<void> {
     try {
-      const r = await this.request({ type: "evaluate", id: 0, recipe: job.recipe });
+      const r = await this.request({
+        type: "evaluate",
+        id: 0,
+        recipe: job.recipe,
+        signals: job.signals,
+      });
       if (r.type !== "evaluated") throw new HumanoidWorkerError(`unexpected ${r.type}`);
       job.resolve(r.evaluation);
     } catch (e) {

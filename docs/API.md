@@ -222,7 +222,11 @@ new HumanoidModel(assets: HumanoidAssets, options?: { subdivision?: 0 | 1 | 2 })
 The framework-free pipeline for one loaded body pack. `subdivision` defaults to 1
 and throws `RangeError` for anything else.
 
-- `model.evaluate(recipe): Evaluation`
+- `model.evaluate(recipe, signals?): Evaluation`: `signals` (0..1 each) set the
+  skin's state; those in `STATE_MORPHS` (`cold`: the nipple rises and the areola
+  contracts, calibrated to the measured response) add their targets.
+  `stateContributions(signals)` gives those target weights. `ADULT_ONLY_SIGNALS`
+  (`arousal`) throw `AgePolicyError` under 18 (`assertSignalPolicy`).
 - `model.topology(): SurfaceTopology`: the static render data, sent once.
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
@@ -389,7 +393,8 @@ The main-thread handle to an evaluation worker.
   merged slider taxonomy, the rig (`RigData` plus each bone's `parents` index;
   the topology's skin indices refer to `rig.bones`) and whether the adult
   anatomy pack is loaded.
-- `client.evaluate(recipe, key?): Promise<Evaluation>` is latest-wins per key:
+- `client.evaluate(recipe, key?, signals?): Promise<Evaluation>` (signals as for
+  `model.evaluate`) is latest-wins per key:
   each key has at most one evaluation in the worker and one waiting, and a
   waiting request replaced by a newer one rejects with an error named
   `AbortError`. Keys never wait on each other. Buffers are transferred from the
@@ -433,6 +438,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
 | `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers; those with state morphs also reshape the figure (a re-evaluation). Never part of the recipe |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | other props | Passed to the wrapping `<group>` |

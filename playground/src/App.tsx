@@ -62,7 +62,11 @@ function useClient(): HumanoidWorkerClient | null {
 declare global {
   interface Window {
     /** QA only: swaps the shot's recipe (and pose) without reloading (see `Shot`). */
-    hkSetRecipe?: (init: Parameters<typeof createRecipe>[0], pose?: HumanoidPose) => void;
+    hkSetRecipe?: (
+      init: Parameters<typeof createRecipe>[0],
+      pose?: HumanoidPose,
+      signals?: Record<string, number>,
+    ) => void;
   }
 }
 
@@ -72,6 +76,18 @@ const params = new URLSearchParams(window.location.search);
 function initialRecipe(): Recipe {
   const raw = params.get("recipe");
   return createRecipe(raw ? (JSON.parse(raw) as Parameters<typeof createRecipe>[0]) : {});
+}
+
+/** `?signals=cold:1,exertion:0.5` sets the skin's state. */
+function initialSignals(): Record<string, number> {
+  const raw = params.get("signals");
+  if (!raw) return {};
+  return Object.fromEntries(
+    raw.split(",").map((pair) => {
+      const [name = "", value = "1"] = pair.split(":");
+      return [name, Number(value)];
+    }),
+  );
 }
 
 /** `?face=JawDrop:1,LipsKiss:0.5` poses the shot's face. */
@@ -127,6 +143,7 @@ function Shot() {
   const background = bg && /^[0-9a-f]{6}$/i.test(bg) ? `#${bg}` : null;
   const [recipe, setRecipe] = useState(initialRecipe);
   const [pose, setPose] = useState<HumanoidPose>(initialPose);
+  const [signals, setSignals] = useState<Record<string, number>>(initialSignals);
   const [lift, setLift] = useState(0);
   // Tests wait for data-figure="ready": the figure is evaluated and placed.
   // data-generation counts recipes swapped in through window.hkSetRecipe, so a
@@ -134,7 +151,8 @@ function Shot() {
   const [ready, setReady] = useState(false);
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
-    window.hkSetRecipe = (init, next) => {
+    window.hkSetRecipe = (init, next, nextSignals) => {
+      setSignals(nextSignals ?? initialSignals());
       setReady(false);
       setRecipe(createRecipe(init));
       setPose(next ?? initialPose());
@@ -181,6 +199,7 @@ function Shot() {
         <Humanoid
           recipe={recipe}
           pose={pose}
+          signals={signals}
           position={[0, lift, 0]}
           onGroundOffset={setLift}
           onEvaluated={() => setReady(true)}

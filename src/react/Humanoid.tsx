@@ -32,6 +32,7 @@ import {
   TextureLoader,
   Vector3,
 } from "three";
+import { STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import type {
   AttachmentTopology,
   Evaluation,
@@ -121,6 +122,13 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
   onPick?: (pick: HumanoidPick) => void;
   /** How the figure is posed; absent is the rest pose. */
   pose?: HumanoidPose;
+  /**
+   * The skin's state: named signals, each 0..1 (`cold`, `heat`, `exertion`,
+   * `blush`, `fear`; `arousal` for adults only). Every signal reaches the skin
+   * layers; those with state morphs (`STATE_MORPHS`) also change the shape,
+   * which re-evaluates the figure. Never part of the recipe.
+   */
+  signals?: Readonly<Record<string, number>>;
   /**
    * Called with the lift (metres) that puts the figure's lowest body point on
    * the ground, whenever the figure or its pose changes it: place the group at
@@ -376,6 +384,7 @@ export function Humanoid({
   onError,
   onPick,
   pose,
+  signals,
   onGroundOffset,
   ...group
 }: HumanoidProps) {
@@ -493,13 +502,24 @@ export function Humanoid({
       flush: s.flush,
       lips: s.lips,
       areola: s.areola,
+      signals: signals ?? {},
     });
-  }, [skin, recipe]);
+  }, [skin, recipe, signals]);
+
+  // Only the signals that change the shape re-evaluate the figure; a stable
+  // key keeps a colour-only change (or a new object with the same values) from
+  // re-evaluating it.
+  const shapeKey = STATE_MORPHS.map((m) => signals?.[m.signal] ?? 0).join(",");
+  const shapeSignals = useMemo(
+    () =>
+      Object.fromEntries(STATE_MORPHS.map((m, i) => [m.signal, Number(shapeKey.split(",")[i])])),
+    [shapeKey],
+  );
 
   useEffect(() => {
     if (!geometries) return;
     let live = true;
-    client.evaluate(recipe, key).then(
+    client.evaluate(recipe, key, shapeSignals).then(
       (ev) => {
         if (!live) return;
         if (rig && ready) fitSkeleton(rig.skeleton, ready.rig.parents, ev.boneHeads);
@@ -523,7 +543,7 @@ export function Humanoid({
     return () => {
       live = false;
     };
-  }, [client, geometries, rig, ready, recipe, key, onEvaluatedRef, report, ground]);
+  }, [client, geometries, rig, ready, recipe, key, shapeSignals, onEvaluatedRef, report, ground]);
 
   return (
     <group

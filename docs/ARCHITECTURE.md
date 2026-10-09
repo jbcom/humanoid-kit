@@ -514,10 +514,13 @@ Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
    change slowly (seconds), so a re-evaluation per change is acceptable;
    colour, detail and sheen states cost no evaluation at all.
 
-**Contract changes** (additive, owned by the integrator): a `kind` on
-`SkinLayer` (`colour`, the default; `detail`; `surface`), stop-table rows that
-carry each kind's parameters, the UV-scale field, and an evaluation input for
-state morphs. Area lanes then add states as they add regions.
+**Contract changes** (additive, owned by the integrator; all in place): a
+`kind` on `SkinLayer` (`colour`, the default; `detail`; `surface`), stop-table
+rows that carry each kind's parameters, the UV-scale field, and `signals` as an
+evaluation input beside the recipe (`STATE_MORPHS`, with the cold response as
+the first, calibrated against the measured one). `arousal` is refused under 18
+in every channel (AGE-POLICY.md). Area lanes then add states as they add
+regions.
 
 ## Parallel work: the base contract
 
