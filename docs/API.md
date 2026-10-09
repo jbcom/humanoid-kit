@@ -338,7 +338,9 @@ compute what the renderer will do.
   `height` in metres and `size`: bump spacing in metres, or crease count across
   the coordinate) drawn at true scale and faded where finer than a pixel, or a
   `SurfaceLayer` (`kind: "surface"`, `paint` giving `strength`, a `roughness`
-  change and a `specular` change). `surfaceChange` and `creaseHeight` are the
+  change and a `specular` change). `surfaceChange` and `creaseHeight` (a
+  groove, so negative: `size` of them across the coordinate, each the raised
+  cosine to the power `CREASE_SHARPNESS`, flat at the coordinate's ends) are the
   shader's references; `uvScale(assets, faces)` gives metres of skin per UV
   unit, one value for each UV island (carried as `body.uvScale` in the
   topology).
@@ -388,6 +390,15 @@ compute what the renderer will do.
     `SWEAT_SPECULAR` are the change at full wetness. The two signals share one
     sweat drive, `1 - (1 - heat)(1 - exertion)`, split between the maps by
     their shares, so both at 1 is half of each map.
+  - Joint creases (ARCHITECTURE.md, "Joint creases"): `CREASE_LAYERS`, twelve
+    `DetailLayer`s with the `creases` pattern, a flexor and an extensor layer for
+    each side of the elbows, knees and wrists (`creaseLayerId(joint, side,
+    role)`: `creases.elbow.L.flexor`, …). The flexor side folds as the joint's
+    `flex.<joint>.<side>` signal rises; the extensor side wrinkles as it falls.
+    `CREASE_STRAIN` is the measured skin strain at full flexion (forearm 0.25,
+    knee 0.65), `CREASE_HEIGHT_PER_STRAIN` the depth per unit of it and
+    `CREASE_HALF_WIDTH` how far either side of the joint each joint's creases
+    reach.
   - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones
     (head, hand, thigh, …) as soft per-vertex masks from the skin weights, plus
     its `front`, `palm`, `sole`, `forehead` and `neck` fields from the vertex
@@ -459,7 +470,7 @@ and expressions"). Framework-free.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
-  arms at the sides, and two for the skinning's extremes, `flexed`, every hinge
+  arms at the sides, and three for joint extremes, `bent`, every hinge about half way (the check for joint creases), `flexed`, every hinge
   near its limit, and `twisted`, each limb turned about its own axis);
   `composeRotations(a, b)` layers `b` (an expression) over `a`.
 - `restBonesFrom(names, parents, heads)` rebuilds the rest skeleton from an
@@ -636,7 +647,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `material?` | A three.js `Material` replacing the built-in skin material, which follows `recipe.skin` |
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |

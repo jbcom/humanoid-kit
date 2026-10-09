@@ -385,8 +385,8 @@ mean what they meant there; everything must be testable in Node.
   they pose): BVH channel values in degrees per joint over a MakeHuman pose's
   joint layout, every other channel at rest, packed into the same entries. The
   first is `relaxed`, standing at ease with the arms at the sides, since the
-  rest A-pose holds them 42° out; `flexed` and `twisted` are the skinning's
-  extremes (below), which the pack's benchmark does not reach: it bends no
+  rest A-pose holds them 42° out; `bent`, `flexed` and `twisted` are the joint extremes the skinning and the creases are checked at
+  (below), which the pack's benchmark does not reach: it bends no
   elbow, knee or wrist. An expression layers on top of a body pose bone by
   bone.
 - *Grounding follows the pose.* The rest ground offset comes with each
@@ -854,6 +854,63 @@ evaluation input beside the recipe (`STATE_MORPHS`, with the cold response as
 the first, calibrated against the measured one). `arousal` is refused under 18
 in every channel (AGE-POLICY.md). Area lanes then add states as they add
 regions.
+
+### Joint creases (2026-10-09)
+
+**Use cases.** A bent elbow or knee shows its fold; a straight one shows loose
+skin; a game bends many figures at every frame, from any animation; every body
+type and skin tone gets them without painting.
+
+**Requirements.** Driven by the flexion signals the rig already computes
+(`flex.<joint>.<side>`, `src/rig/flexion.ts`), so any pose or animation drives
+them; relief at true scale, from the detail-layer channel above; fields from the
+base mesh alone, shared through the field atlas; a fold deepens with the strain
+the joint's skin takes, which is measured.
+
+**Decisions.**
+
+- *Two layers per joint and side, one for each side of the bend* (twelve in all:
+  elbows, knees, wrists). The inside of the bend (the crook of the elbow, the
+  back of the knee, the wrist's palm side) folds as the joint flexes, as
+  grooves across the limb. The outside (the elbow's point, the kneecap) is loose
+  when the joint is straight, wrinkles then, and is drawn tight as it bends:
+  strain there is highest at flexion (+25 % over the forearm's extension, over
+  60 % at the knee). One layer per side because a layer has one strength, and the
+  left and right joints bend independently; one per role because the two sides
+  respond in opposite senses.
+- *Fields from the rest mesh.* A layer's mask is a window along the limb about
+  the joint (the axis through the segments either side of it), on the limb
+  (within 9 to 12 cm of the axis, which keeps the torso and the other limb out),
+  on the side the skin faces (its normal against the joint's flex direction,
+  `FLEXION_JOINTS[].flexes`); its coordinate runs along the limb across the
+  window, so the grooves lie across it. Nothing is painted or packed.
+- *Flexor strength* is `smoothstep(0.05, 0.85, flex)`: nothing straight, the
+  whole near the joint's limit; the rest A-pose's elbow (flexion 0.3) holds a
+  quarter. *Extensor strength* is `1 - smoothstep(0, 0.6, flex)`.
+- *Depth* is `0.006 m × strain` for the folds (elbow 1.5 mm, knee 3.9 mm, wrist
+  1.5 mm) and 30 % of that for the loose skin; the number of creases across a
+  window is art-directed (the flexor sides 3, 3 and 2; the extensor sides 3, 2
+  and 2). No measurement of crease depth or spacing against joint angle exists
+  (SKIN-STATES.md, B5): the strain ratios are measured, the scale is a choice.
+- *The groove profile.* The detail layer's crease profile was a raised cosine,
+  a soft ripple whose steepest slope at 1.5 mm over 3 cm is 3°, invisible. A
+  crease is a narrow cut in flat skin, so the profile is now the raised cosine
+  to the power 3, negated: a groove in the middle of each period and none at its
+  ends, so a window starts and ends flat (`CREASE_SHARPNESS`, `creaseHeight`;
+  the shader and its reference changed together, and the browser project holds
+  the shader's shading to the reference's slope).
+- *Wrists* have the least to show (a few centimetres of window, a quarter of the
+  knee's strain) and are drawn at the same rules.
+
+**Cost.** Twelve more layers: the atlas doubles to twelve pages of 1024² (about
+48 MB shared by every figure), the detail loop does one field fetch per crease
+layer per pixel, and the stop table 12 more rows of a few bytes. Colour and
+surface layers skip the crease rows before any fetch.
+
+**Not here.** Skin colour at the joint (darker and redder when extended, a
+colour term, SKIN-STATES.md A2); crease depth varying with age or body fat
+(the recipe's tone parameters reach the paint, but not age or weight); creases
+at the neck, knuckles and torso (no flexion signal exists for them).
 
 ## Parallel work: the base contract
 
