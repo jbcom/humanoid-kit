@@ -11,6 +11,7 @@
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
 import { jointPosition } from "../../format/assetFormat.ts";
 import type { SkinLayer, SkinLayerFields, SurfaceLayer } from "../layers.ts";
+import { type DigitFrame, digitFrame, type Vec3 } from "./digitFrame.ts";
 import { skinZones } from "./skinZones.ts";
 
 /** Where a landmark lies in a foot's frame: `along` (0 heel, 1 second toe's tip) and `across` (metres, positive outward). */
@@ -130,6 +131,78 @@ export function footFrame(assets: HumanoidAssets): FootFrame {
   };
   frames.set(assets, frame);
   return frame;
+}
+
+/**
+ * The toes' frame (`digitFrame`): per vertex of a toe, its digit (1 the big toe
+ * to 5 the little toe; 0 off the toes), `along` from its base joint to its tip,
+ * `across`, and `under`, positive on the sole's side. `joints[side][digit - 1]`
+ * is `along` of the digit's base joint (0), its joints and its tip.
+ */
+export interface ToeFrame {
+  digit: Int8Array;
+  along: Float32Array;
+  across: Float32Array;
+  under: Float32Array;
+  joints: readonly [DigitFrame["joints"], DigitFrame["joints"]];
+}
+
+const toeFrames = new WeakMap<HumanoidAssets, ToeFrame>();
+
+/** The toes' frame of a base mesh, measured on first use. */
+export function toeFrame(assets: HumanoidAssets): ToeFrame {
+  const known = toeFrames.get(assets);
+  if (known) return known;
+  const n = assets.manifest.vertexCount;
+  const P = assets.positions;
+  const foot = skinZones(assets).zone("foot");
+  const at = (joint: string): Vec3 => {
+    const p = new Float32Array(3);
+    jointPosition(assets, assets.positions, joint, p, 0);
+    return [p[0] as number, p[1] as number, p[2] as number];
+  };
+  const out: ToeFrame = {
+    digit: new Int8Array(n),
+    along: new Float32Array(n),
+    across: new Float32Array(n),
+    under: new Float32Array(n),
+    joints: [[], []],
+  };
+  const joints: DigitFrame["joints"][] = [];
+  (["L", "R"] as const).forEach((name, s) => {
+    const sign = name === "L" ? 1 : -1;
+    // A toe's joints: from the foot's far end, the base joint (the ball of the
+    // foot), each joint between its bones and the tip. The big toe has two bones.
+    const lines = [1, 2, 3, 4, 5].map((t) => {
+      const bones = t === 1 ? 2 : 3;
+      const pts: Vec3[] = [at(`foot.${name}____tail`)];
+      for (let b = 1; b <= bones; b++) pts.push(at(`toe${t}-${b}.${name}____head`));
+      pts.push(at(`toe${t}-${bones}.${name}____tail`));
+      return pts;
+    });
+    const frame = digitFrame({
+      positions: P,
+      vertexCount: n,
+      include: (v) => (foot[v] as number) > 0.5 && Math.sign(P[v * 3] as number) === sign,
+      lines,
+      // The sole faces down at rest.
+      facing: [0, -1, 0],
+    });
+    for (let v = 0; v < n; v++) {
+      if (frame.digit[v] === 0) continue;
+      out.digit[v] = frame.digit[v] as number;
+      out.along[v] = frame.along[v] as number;
+      out.across[v] = frame.across[v] as number;
+      out.under[v] = frame.under[v] as number;
+    }
+    joints.push(frame.joints);
+  });
+  (out as { joints: ToeFrame["joints"] }).joints = [
+    joints[0] as DigitFrame["joints"],
+    joints[1] as DigitFrame["joints"],
+  ];
+  toeFrames.set(assets, out);
+  return out;
 }
 
 /* ------------------------------------------------------------------ callus */

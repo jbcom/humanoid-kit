@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CALLUS_LAYER, callusAmount, footFrame } from "../src/surface/regions/feet.ts";
+import { CALLUS_LAYER, callusAmount, footFrame, toeFrame } from "../src/surface/regions/feet.ts";
 import { skinZones } from "../src/surface/regions/skinZones.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
@@ -120,5 +120,64 @@ describe("callus", () => {
     expect(callusAmount(30)).toBeLessThan(callusAmount(80));
     expect(callusAmount(80)).toBeLessThanOrEqual(1);
     expect(callusAmount(undefined)).toBe(callusAmount(30));
+  });
+});
+
+describe("the toes' frame", () => {
+  const frame = toeFrame(assets);
+  const zones = skinZones(assets);
+
+  it("lays the digits big toe first from the inside out, on both feet", () => {
+    for (const sign of [1, -1]) {
+      const sum = [0, 0, 0, 0, 0, 0];
+      const count = [0, 0, 0, 0, 0, 0];
+      for (let v = 0; v < n; v++) {
+        const d = frame.digit[v] as number;
+        if (d === 0 || Math.sign(P[v * 3] as number) !== sign) continue;
+        // Out on the toes proper, not the instep.
+        if ((frame.along[v] as number) < 0.01) continue;
+        sum[d] = (sum[d] as number) + Math.abs(P[v * 3] as number);
+        count[d] = (count[d] as number) + 1;
+      }
+      const mean = [1, 2, 3, 4, 5].map((d) => (sum[d] as number) / (count[d] as number));
+      // |x| grows from the big toe (inside) to the little toe (outside).
+      for (let d = 1; d < 5; d++)
+        expect(mean[d] as number, `digit ${d + 1}`).toBeGreaterThan(mean[d - 1] as number);
+    }
+  });
+
+  it("measures `along` from each toe's base joint to its tip, in metres", () => {
+    for (let d = 0; d < 5; d++) {
+      // The big toe has two bones, the others three: the last joint is the tip.
+      const joints = frame.joints[0]?.[d] as readonly number[];
+      expect(joints.length).toBe(d === 0 ? 3 : 4);
+      expect(joints[0]).toBeCloseTo(0, 6);
+      expect(joints[1]).toBeGreaterThan(0.01);
+      expect(joints[joints.length - 1]).toBeLessThan(0.07);
+    }
+    // The toes' flesh reaches the tip of the last bone and, with the pad, up to two centimetres past it.
+    for (let d = 1; d <= 5; d++) {
+      let top = Number.NEGATIVE_INFINITY;
+      for (let v = 0; v < n; v++)
+        if (frame.digit[v] === d && Math.sign(P[v * 3] as number) === 1)
+          top = Math.max(top, frame.along[v] as number);
+      const joints = frame.joints[0]?.[d - 1] as readonly number[];
+      const tip = joints[joints.length - 1] as number;
+      expect(top, `toe ${d}`).toBeGreaterThan(tip - 0.004);
+      expect(top, `toe ${d}`).toBeLessThan(tip + 0.02);
+    }
+  });
+
+  it("tells the sole from the top of the toe", () => {
+    // `under` is positive on the sole's side: the pads of the toes have it, the nails' side not.
+    let pads = 0;
+    let nails = 0;
+    for (let v = 0; v < n; v++) {
+      if ((frame.digit[v] as number) === 0 || (zones.zone("foot")[v] as number) < 0.5) continue;
+      if ((frame.under[v] as number) > 0.006) pads++;
+      if ((frame.under[v] as number) < -0.006) nails++;
+    }
+    expect(pads).toBeGreaterThan(50);
+    expect(nails).toBeGreaterThan(50);
   });
 });
