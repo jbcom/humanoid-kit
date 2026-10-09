@@ -11,11 +11,12 @@ import {
   type AttachmentMaterial,
   type BoundAsset,
   groupFaces,
+  type HairStyleEntry,
   type HumanoidAssets,
   pendingTargetFiles,
 } from "../format/assetFormat.ts";
 import { NO_FEATURE } from "../makehuman/features.ts";
-import { recipeContributions } from "../makehuman/recipeMorph.ts";
+import { RecipeError, recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
 import { stateContributions } from "../makehuman/stateMorphs.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
@@ -63,6 +64,27 @@ export interface AttachmentTopology extends SurfaceTopology {
   occlusion: Float32Array;
 }
 
+/**
+ * Static render data of a hair style: sent once per style, when a figure first
+ * wears it. A hair style is an alpha-card attachment (`AttachmentTopology`'s
+ * mesh and material) with one occlusion value per vertex, since hair is lit
+ * from outside and the pose never opens it up as it does a mouth.
+ */
+export interface HairTopology extends SurfaceTopology {
+  id: string;
+  label: string;
+  tags: string[];
+  /** Render order hint from the asset (MakeHuman `z_depth`). */
+  zDepth: number;
+  material: AttachmentMaterial;
+  /** Resolved URL of the strand map, or null when loaded without URLs. */
+  textureUrl: string | null;
+  /** Per render vertex, how open it is to light (1) or buried in the hair or against the scalp (0), at rest. */
+  occlusion: Float32Array;
+  /** Which way strands run in the strand map, and how consistently (`HairStyleEntry.strand`). */
+  strand: { angle: number; coherence: number };
+}
+
 export interface ModelTopology {
   body: SurfaceTopology & {
     /**
@@ -107,9 +129,16 @@ function dominantInput(stencil: Stencil, surfaceVertex: number): number {
   return best;
 }
 
+/** The worn hair style's evaluated surface; its static data is `HairTopology`, by `id`. */
+export interface HairEvaluation extends SurfaceEvaluation {
+  id: string;
+}
+
 export interface Evaluation extends SurfaceEvaluation {
   /** One entry per attachment, in `ModelTopology.attachments` order. */
   attachments: SurfaceEvaluation[];
+  /** The recipe's hair, or null when it has none. */
+  hair: HairEvaluation | null;
   /** Lift (metres) that puts the lowest body point on y = 0. */
   groundOffset: number;
   /** Morphed control positions (base topology), for joints, bindings and measurement. */
@@ -174,6 +203,11 @@ export class HumanoidModel {
   private readonly bodyControlTriangles: Uint32Array;
   private readonly bodyEdges: Uint32Array;
   private readonly attached: { asset: BoundAsset; part: Part; control: Float32Array }[];
+  /** Hair styles worn so far, built on first use. */
+  private readonly hairParts = new Map<
+    string,
+    { asset: BoundAsset; part: Part; control: Float32Array }
+  >();
   /** Subdivision level of the attachments: the body's, at most 1. */
   private readonly attachmentLevel: number;
   private readonly layerFields: Float32Array;
@@ -394,6 +428,43 @@ export class HumanoidModel {
   }
 
   /**
+   * Bakes a hair style's occlusion per control vertex, at rest, against the
+   * default figure: how open each card vertex is to light. Hair is lit from
+   * outside, so a card under others, or against the scalp and neck, is darker
+   * than one on the outside of the volume. Cards are two-sided and their
+   * normals say nothing about which side faces out, so each vertex takes the
+   * more open of its two sides, and the rays meet the body and the style's own
+   * cards (as solid triangles: the cards' cut-outs are not modelled, which
+   * darkens the interior of sparse styles somewhat, and the floor in
+   * `OCCLUSION_FLOOR` keeps it from going black). The result depends only on
+   * the packs, so the packer bakes it once. Needs the default figure's target
+   * files.
+   */
+  bakeHairOcclusion(asset: BoundAsset): Float32Array {
+    const rest = this.evaluate(occlusionFigure()).control;
+    const control = evaluateBinding(asset, rest, new Float32Array(asset.entry.vertexCount * 3));
+    const normals = quadVertexNormals(control, asset.faceVerts);
+    const cards = new Uint32Array(asset.entry.faceCount * 6);
+    for (let f = 0; f < asset.entry.faceCount; f++) {
+      const q = [0, 1, 2, 3].map((k) => asset.faceVerts[f * 4 + k] as number);
+      cards.set([q[0], q[1], q[2], q[0], q[2], q[3]] as number[], f * 6);
+    }
+    const occluders = [
+      { positions: rest, index: this.bodyControlTriangles },
+      { positions: control, index: cards },
+    ];
+    const outward = bakeOcclusion(occluders, [{ positions: control, normals }], { rays: 32 })[0];
+    const inward = bakeOcclusion(
+      occluders,
+      [{ positions: control, normals: normals.map((x) => -x) }],
+      { rays: 32 },
+    )[0];
+    return Float32Array.from(outward as Float32Array, (o, v) =>
+      Math.max(o, (inward as Float32Array)[v] as number),
+    );
+  }
+
+  /**
    * Carries a per-base-vertex feature map (`buildFeatureMap`) to the render
    * vertices: a body vertex takes the feature of the base vertex its
    * subdivision stencil weights most, an attachment vertex the feature of the
@@ -426,6 +497,75 @@ export class HumanoidModel {
       keys.length === OCCLUSION_KEYS.length &&
       keys.every((k, i) => k === OCCLUSION_KEYS[i]?.id)
     );
+  }
+
+  /**
+   * The hair style a recipe wears that has not arrived yet (`HairAssets.load`
+   * brings it), or null when it has none or has what it needs. An unknown
+   * style id is an error, as an unknown modifier is.
+   */
+  pendingHair(recipe: Recipe): string | null {
+    const id = recipe.hair?.style ?? null;
+    if (id === null) return null;
+    return this.hairEntry(id) && this.assets.hair?.bound.has(id) ? null : id;
+  }
+
+  /** The manifest entry of a style the loaded hair pack must have. */
+  private hairEntry(id: string): HairStyleEntry {
+    const entry = this.assets.hair?.styles.get(id);
+    if (!entry)
+      throw new RecipeError(
+        this.assets.hair
+          ? `unknown hair style ${id}`
+          : `the recipe wears hair style ${id}, but no hair pack is loaded`,
+      );
+    return entry;
+  }
+
+  /** A hair style's mesh, built the first time it is worn. Its geometry must have arrived. */
+  private hairPart(id: string): { asset: BoundAsset; part: Part; control: Float32Array } {
+    let h = this.hairParts.get(id);
+    if (!h) {
+      this.hairEntry(id);
+      const asset = this.assets.hair?.bound.get(id);
+      if (!asset)
+        throw new MorphError(
+          `hair style ${id} has not loaded yet (await assets.hair.load(${JSON.stringify(id)}))`,
+        );
+      h = {
+        asset,
+        part: part(this.attachmentSurface(asset, this.attachmentLevel)),
+        control: new Float32Array(asset.entry.vertexCount * 3),
+      };
+      this.hairParts.set(id, h);
+    }
+    return h;
+  }
+
+  /** A hair style's static render data, carried to the render vertices. Needs its geometry loaded. */
+  hairTopology(id: string): HairTopology {
+    const { asset, part: p } = this.hairPart(id);
+    const entry = this.hairEntry(id);
+    // The per-control-vertex bake, one value at a time through the stencil like any field.
+    const n = asset.entry.vertexCount;
+    const r2s = p.mesh.renderToSurface;
+    const field = new Float32Array(n * 3);
+    for (let v = 0; v < n; v++) field[v * 3] = (asset.occlusion[v] as number) / 255;
+    const surface = new Float32Array(p.mesh.topology.vertexCount * 3);
+    applyStencil(p.mesh.stencil, field, surface);
+    return {
+      ...topologyOf(p.mesh),
+      id,
+      label: entry.label,
+      tags: entry.tags,
+      zDepth: asset.entry.zDepth,
+      material: asset.entry.material,
+      textureUrl: asset.entry.material.texture
+        ? (this.assets.fileUrls.get(asset.entry.material.texture) ?? null)
+        : null,
+      occlusion: Float32Array.from(r2s, (s) => Math.min(1, Math.max(0, surface[s * 3] as number))),
+      strand: entry.strand,
+    };
   }
 
   /** Each bone's parent index in skin-weight order (-1 for the root). */
@@ -551,6 +691,9 @@ export class HumanoidModel {
         `the recipe needs target files that have not loaded yet: ${[...pending].join(", ")} ` +
           "(await their stage of loadHumanoidAssetsStaged)",
       );
+    // An unknown or unloaded style fails before any morphing is spent on it.
+    const id = recipe.hair?.style ?? null;
+    const worn = id === null ? null : { id, h: this.hairPart(id) };
     const control = new Float32Array(this.assets.positions.length);
     evaluateMorph(this.assets.positions, this.assets.targets, contributions, control, this.regions);
     let minY = Number.POSITIVE_INFINITY;
@@ -559,6 +702,16 @@ export class HumanoidModel {
     const attachments = this.attached.map((a) =>
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
     );
+    const hair =
+      worn === null
+        ? null
+        : {
+            id: worn.id,
+            ...this.evaluatePart(
+              worn.h.part,
+              evaluateBinding(worn.h.asset, control, worn.h.control),
+            ),
+          };
     const curvature = meanCurvature(
       body.positions,
       body.normals,
@@ -566,7 +719,7 @@ export class HumanoidModel {
       new Float32Array(body.positions.length / 3),
     );
     const boneHeads = restBones(this.assets, control).heads;
-    return { ...body, attachments, groundOffset: -minY, control, curvature, boneHeads };
+    return { ...body, attachments, hair, groundOffset: -minY, control, curvature, boneHeads };
   }
 
   private evaluatePart(p: Part, control: Float32Array): SurfaceEvaluation {

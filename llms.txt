@@ -4,8 +4,7 @@
 > for every age from 1 to 90, a serializable recipe with independent regional
 > traits, Catmull-Clark subdivision in a Web Worker, and an enforced age policy
 > that keeps adult anatomy in a separate package. Pre-release; the API is in
-> development. The editor, rigging, hair, clothing and animation are roadmap
-> items, not implemented.
+> development. Clothing and animation are roadmap items, not implemented.
 
 ## Packages
 
@@ -16,6 +15,9 @@
   weights, facial pose units, shape modifiers.
 - `humanoid-kit-adult-anatomy` (CC0 1.0): adult-only targets; separate install,
   refused unless built against the exact body pack.
+- `humanoid-kit-hair` (CC0 1.0): ten scalp hair styles as alpha cards bound to
+  the base body; separate install, a style's files load when worn, refused
+  unless built against the exact body pack. `recipe.hair` picks style and colour.
 
 ## Docs
 

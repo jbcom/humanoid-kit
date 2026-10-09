@@ -230,6 +230,9 @@ importers:
       humanoid-kit-body:
         specifier: workspace:*
         version: link:packs/body
+      humanoid-kit-hair:
+        specifier: workspace:*
+        version: link:packs/hair
       lint-staged:
         specifier: ^17.6.0
         version: 17.6.0
@@ -279,6 +282,8 @@ importers:
   packs/adult-anatomy: {}
 
   packs/body: {}
+
+  packs/hair: {}
 
 packages:
 

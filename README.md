@@ -50,13 +50,14 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
 
 ## Packages
 
-This repository is a pnpm workspace that publishes three packages.
+This repository is a pnpm workspace that publishes four packages.
 
 | Package | Directory | Licence | Contents |
 | --- | --- | --- | --- |
 | `humanoid-kit` | `.` | MIT | The code: asset loading, recipes, evaluation, subdivision, the worker client and the React bindings |
 | `humanoid-kit-body` | `packs/body` | CC0 1.0 | The base mesh, shape targets for ages 1 to 90, the 163-bone skeleton and skin weights, facial pose units, eyes, teeth and tongue, and 275 shape modifiers (modelling, measurement and body shapes) with their sliders |
 | `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 | Adult-only targets and 5 modifiers with their sliders. A separate install; refused unless built against the exact body pack |
+| `humanoid-kit-hair` | `packs/hair` | CC0 1.0 | Ten scalp hair styles (short, bob, long, afro, ponytail, braid) as alpha cards bound to the base body, any colour from black to platinum. A separate install; a style's files load when a figure first wears it |
 
 The body pack and the adult anatomy pack together account for 280 shape
 modifiers. The data packs are generated from MakeHuman's CC0 assets by
@@ -74,7 +75,8 @@ For React Three Fiber, add the optional peers as well:
 pnpm add react @react-three/fiber @react-three/drei
 ```
 
-Add `humanoid-kit-adult-anatomy` only if your application needs adult anatomy.
+Add `humanoid-kit-adult-anatomy` only if your application needs adult anatomy,
+and `humanoid-kit-hair` only if your figures wear hair.
 
 Requirements:
 
@@ -197,7 +199,7 @@ Planned, in order. None of this exists in the code yet.
 1. Doll form and an editor shell (`humanoid-kit/editor`)
 2. Rig, poses and expressions from the shipped skeleton and facial pose units
 3. Adult anatomy sculpting
-4. Scalp hair
+4. Scalp hair (implemented as the `humanoid-kit-hair` pack)
 5. Body and facial hair
 6. Anthro traits
 7. Clothing and surface layers: bound `.mhclo` layers including `delete_verts`;

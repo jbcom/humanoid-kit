@@ -25,6 +25,7 @@ Fetches and parses the packs.
 interface LoadOptions {
   body: PackLocation;           // e.g. bodyPack from humanoid-kit-body
   adultAnatomy?: PackLocation;  // e.g. adultAnatomyPack
+  hair?: PackLocation;          // e.g. hairPack from humanoid-kit-hair; only its manifest loads up front
   firstFigureAge?: number;      // whose targets a staged load brings first; default 25
 }
 
@@ -36,14 +37,22 @@ type PackLocation =
 - Rejects with `AssetFormatError` when a request answers with an error status
   (a network failure rejects with the platform's `TypeError`), a buffer range exceeds
   its file, a target is duplicated, or the adult pack was built for a different
-  body pack (`topology` or `bodySha256` mismatch).
+  body pack (`topology` or `bodySha256` mismatch), or likewise the hair pack.
 - Returns `HumanoidAssets`: the `manifest`, typed-array views of `positions`,
   `uvs`, `faceVerts`, `faceUvs`, `skinIndex` and `skinWeight`, a `targets` map
   (`SparseTarget`: `indices`, `deltas`, `scale`), a `modifiers` map
   (`ShapeModifierEntry`), `adultAnatomyLoaded`, `adultAnatomyManifest`,
   `targetFilesPending` (ids of target files not loaded yet) and `targetFileOf`
   (target name to file id). With the adult pack loaded, `targets` and
-  `modifiers` include its entries.
+  `modifiers` include its entries. `hair` is the hair pack (`HairAssets`) or
+  null: `styles` (every `HairStyleEntry` of the manifest, by id), `bound` (the
+  styles whose geometry has arrived) and `load(id)`, which resolves with a
+  style's geometry, fetching its binary the first time and sharing a fetch that
+  is already running (a failed fetch is forgotten, so the next wearer retries).
+  A `HairStyleEntry` is an attachment entry (`kind: "hair"`, no `deleteVerts`,
+  one occlusion value per vertex) with a `label`, `tags` (`short`, `bob`,
+  `curly`...), its `file` and `sha256`, and the `strand` direction and
+  `coherence` measured from its strand map.
 
 ```ts
 loadHumanoidAssetsStaged(options: LoadOptions): Promise<StagedHumanoidAssets>
@@ -68,10 +77,14 @@ stage still loads, and `complete` rejects with the first failure.
 
 Also exported:
 
-- `parseHumanoidAssets(pack, adultAnatomy?)`: the same parsing from
+- `parseHumanoidAssets(pack, adultAnatomy?, hair?)`: the same parsing from
   already-fetched, decompressed buffers. Pure; usable in workers and tests.
   `pack.targets` maps file ids (`BODY_TARGET_FILES`) to buffers; `core` is
-  required and any others may come later.
+  required and any others may come later. `hair` is `{ manifest }`: the styles
+  are known, their geometry comes with `addHairStyle`.
+- `addHairStyle(assets, id, bin)`: adds one hair style's decompressed binary.
+  Throws `AssetFormatError` for a style the hair pack does not have or bytes
+  that do not parse, and then leaves `assets` unchanged.
 - `addTargetFiles(assets, files)`: adds target files by id as they arrive (the
   adult pack's under `ADULT_TARGET_FILE`). Throws `AssetFormatError` for a file
   the loaded packs do not have, one already loaded, or one that fails to
@@ -83,6 +96,7 @@ Also exported:
 - `jointPosition(assets, positions, joint, out, offset?)`: writes a skeleton
   joint's centroid over the given positions.
 - Types: `BodyManifest`, `AdultAnatomyManifest`, `AdultAnatomyData`,
+  `HairManifest`, `HairStyleEntry`, `HairAssets`, `HairPackData`,
   `TargetEntry`, `ShapeModifierEntry`, `BoneEntry`, `BvhJoint`, `FaceGroup`,
   `BufferRange`, `PackSource`.
 - `AssetFormatError`.
@@ -244,12 +258,24 @@ and throws `RangeError` for anything else.
   `AttachmentTopology.occlusion`, or null for the pack's own set.
   `model.bakeAttachmentOcclusion()` is the whole bake at once, per control
   vertex (what the packer stores).
+- Hair: `model.pendingHair(recipe)` is the style id the recipe wears that has not
+  loaded yet (null when it has none or has what it needs; it throws
+  `RecipeError` for an id the hair pack lacks, or when no hair pack is loaded),
+  `model.hairTopology(id): HairTopology` is a style's static render data (the
+  mesh like an attachment's, `label`, `tags`, `material`, `textureUrl`, one
+  `occlusion` value per render vertex and the `strand` direction), and
+  `model.bakeHairOcclusion(asset)` is the packer's bake of a style's occlusion at
+  rest, per control vertex. `evaluate` fills `Evaluation.hair` from
+  `recipe.hair.style` and throws `MorphError` for a style whose geometry has
+  not arrived (`assets.hair.load(id)` brings it); the style never changes the
+  body, which keeps every face (hair has no `delete_verts`).
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
 interface Evaluation {
   positions: Float32Array;  // render vertices, xyz, metres
   normals: Float32Array;    // smooth, shared across UV seams
+  hair: HairEvaluation | null; // the worn style's { id, positions, normals }; null without hair
   groundOffset: number;     // lift that puts the lowest body point on y = 0
   control: Float32Array;    // morphed positions in the base topology
   curvature: Float32Array;  // per body render vertex, mean curvature (1/m)
@@ -599,6 +625,22 @@ import { bodyPack } from "humanoid-kit-body";
 each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the
 worker client. The package also exposes its files under
 `humanoid-kit-body/data/*`.
+
+## `humanoid-kit-hair`
+
+```ts
+import { hairPack } from "humanoid-kit-hair";
+```
+
+`hairPack` is `{ manifest, files }` like `bodyPack`: per style, `<id>.bin.gz`
+(the binding, geometry and baked occlusion) and `<id>.webp` (the strand map).
+Pass it as `hair` to `loadHumanoidAssets` or to the worker client. It is an
+optional install: only its manifest loads up front, and a style's two files
+load when a figure first wears it (about 150 to 700 kB per style). The ten
+styles are MakeHuman's own CC0 scalp hair: `short02`, `bob02`, `long01`,
+`afro01`, `short04`, `short03`, `ponytail01`, `short01`, `bob01` and `braid01`.
+Its manifest records the hash of the body pack it binds to, and the loader
+refuses any other.
 
 ## `humanoid-kit-adult-anatomy`
 

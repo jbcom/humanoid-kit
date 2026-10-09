@@ -1,16 +1,17 @@
 # Notice
 
-This repository contains three separately licensed works:
+This repository contains four separately licensed works:
 
 | Work | Location | Licence |
 | --- | --- | --- |
 | `humanoid-kit`, the code | `src/`, `scripts/`, `playground/`, `tests/` | MIT (see `LICENSE`) |
 | `humanoid-kit-body`, the base body data | `packs/body/` | CC0 1.0 (see `packs/body/LICENSE`) |
 | `humanoid-kit-adult-anatomy`, the adult anatomy data | `packs/adult-anatomy/` | CC0 1.0 (see `packs/adult-anatomy/LICENSE`) |
+| `humanoid-kit-hair`, the scalp hair data | `packs/hair/` | CC0 1.0 (see `packs/hair/LICENSE`) |
 
 ## MakeHuman asset data (CC0 1.0)
 
-The data in `packs/body/data` and `packs/adult-anatomy/data` is derived from the
+The data in `packs/body/data`, `packs/adult-anatomy/data` and `packs/hair/data` is derived from the
 asset files of the MakeHuman project
 (`github.com/makehumancommunity/makehuman`, directory `makehuman/data`): the hm08
 base mesh, morph targets, the modifier table, the default skeleton, the skin
@@ -37,6 +38,14 @@ and writes:
 - `packs/adult-anatomy/data`: `manifest.json` and `targets.bin` for the targets
   that apply only to adults (genital, bulge and pregnancy targets). Its manifest
   records the SHA-256 of the exact `body.bin` it was built against.
+- `packs/hair/data`: `manifest.json` and, per style, a binary and a strand map,
+  from the scalp hair in the MakeHuman system assets pack
+  (`makehuman_system_assets_cc0.zip`, released CC0 in September 2020 with every
+  file's header saying so). `scripts/lib/packHair.ts` packs them, last in
+  `pnpm pack:data` or alone with `pnpm pack:hair <system-assets-dir>`. The
+  texture is the source atlas's luminance, normalised, with its alpha: a
+  derived work of CC0 data, also CC0. The manifest records the SHA-256 of the
+  body pack it binds to.
 
 Height and proportion targets are kept for average muscle and weight only. The
 universal muscle and weight targets already carry that variation, and the dense
@@ -54,6 +63,11 @@ content. It accepts, in this order:
    "Targets and modifiers" or "Poses and expressions", under "These assets have
    been released under CC0 1.0 Universal." The packer checks that sentence
    verbatim, so a changed upstream licence fails the pack.
+
+Attachments (eyes, teeth, tongue and hair) are held to the first form only:
+each of a style's `.mhclo`, `.obj` and `.mhmat` must carry the header, and a
+bare `license CC0` line, which community exporters write by default and which a
+sibling file can contradict, is refused.
 
 Each pack's `data/PROVENANCE.md` is written by the packer. It records the
 upstream commit, how many files were accepted on which evidence, and the SHA-256

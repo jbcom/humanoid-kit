@@ -75,8 +75,8 @@ playground.
 
 ## Asset data
 
-`packs/body/data` and `packs/adult-anatomy/data` are generated from the CC0
-MakeHuman assets:
+`packs/body/data`, `packs/adult-anatomy/data` and `packs/hair/data` are generated
+from the CC0 MakeHuman assets:
 
 ```sh
 pnpm pack:data <makehuman-checkout>/makehuman/data <makehuman-system-assets-dir>
@@ -84,11 +84,14 @@ pnpm pack:data <makehuman-checkout>/makehuman/data <makehuman-system-assets-dir>
 
 The first argument is the `makehuman/data` directory of a checkout of
 github.com/makehumancommunity/makehuman; the second is the extracted
-"MakeHuman system assets" pack (eyes, teeth, tongue). The packer refuses any
-file that does not prove CC0 from its own content and writes each pack's
-`PROVENANCE.md`. Packing is deterministic, so regenerating unchanged sources
-gives byte-identical files. Do not edit the data by hand; change
-`scripts/pack-makehuman.ts` and regenerate. See `NOTICE.md` for provenance.
+"MakeHuman system assets" pack (eyes, teeth, tongue, scalp hair). The packer
+refuses any file that does not prove CC0 from its own content and writes each
+pack's `PROVENANCE.md`. Packing is deterministic, so regenerating unchanged
+sources gives byte-identical files. Do not edit the data by hand; change
+`scripts/pack-makehuman.ts` (or `scripts/lib/packHair.ts`) and regenerate. To
+regenerate only the hair against the committed body pack, run
+`pnpm pack:hair <makehuman-system-assets-dir>`; it takes a few minutes, mostly
+encoding the strand maps. See `NOTICE.md` for provenance.
 
 ## Releases
 
