@@ -3,7 +3,7 @@
  * `<Humanoid>`, which renders a recipe and updates its geometry in place when
  * the recipe changes (no remount, so slider drags stay smooth).
  */
-import type { ThreeElements, ThreeEvent } from "@react-three/fiber";
+import { type ThreeElements, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import {
   createContext,
   type ReactNode,
@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import {
+  Bone,
   BufferAttribute,
   BufferGeometry,
   Color,
@@ -22,12 +23,16 @@ import {
   FrontSide,
   type Group,
   type Material,
+  Matrix4,
   type Mesh,
   type MeshStandardMaterial,
+  Skeleton,
+  SkinnedMesh,
   SRGBColorSpace,
   TextureLoader,
   Vector3,
 } from "three";
+import { STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import type {
   AttachmentTopology,
   Evaluation,
@@ -37,8 +42,19 @@ import type {
 import type { Vec3 } from "../presence/presence.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
-import { AttachmentStandardMaterial, OCCLUSION_ATTRIBUTE } from "../render/occlusion.ts";
-import { CURVATURE_ATTRIBUTE, SKIN_MASK_ATTRIBUTE, SkinMaterial } from "../render/skinMaterial.ts";
+import { acquireLayerAtlas } from "../render/layerAtlas.ts";
+import { AttachmentStandardMaterial, setOcclusionAttributes } from "../render/occlusion.ts";
+import { CURVATURE_ATTRIBUTE, SkinMaterial, UV_SCALE_ATTRIBUTE } from "../render/skinMaterial.ts";
+import { flexionRig, jointFlexion } from "../rig/flexion.ts";
+import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
+import {
+  bodyPoseRotations,
+  composeRotations,
+  faceUnitRotations,
+  IDENTITY_POSE,
+  posedGroundOffset,
+  restBonesFrom,
+} from "../rig/pose.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 
@@ -117,12 +133,37 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
    * replacing its own `position` and `rotation`.
    */
   presence?: HumanoidPresenceProps;
+  /** How the figure is posed; absent is the rest pose. */
+  pose?: HumanoidPose;
+  /**
+   * The skin's state: named signals, each 0..1 (`cold`, `heat`, `exertion`,
+   * `blush`, `fear`; `arousal` for adults only). Every signal reaches the skin
+   * layers; those with state morphs (`STATE_MORPHS`) also change the shape,
+   * which re-evaluates the figure. Never part of the recipe.
+   */
+  signals?: Readonly<Record<string, number>>;
+  /**
+   * Called with the lift (metres) that puts the figure's lowest body point on
+   * the ground, whenever the figure or its pose changes it: place the group at
+   * this height to stand, crouch or kneel on y = 0.
+   */
+  onGroundOffset?: (offset: number) => void;
 };
 
 export interface HumanoidPresenceProps {
   id: string;
   position?: Vec3;
   facing?: Vec3;
+}
+
+/**
+ * A pose: a whole-body pose from the pack by name (`tpose`, `benchmark`) and
+ * facial pose units by name (MakeHuman's 60, e.g. `JawDrop`,
+ * `LeftUpperLidClosed`), 0..1, layered on top.
+ */
+export interface HumanoidPose {
+  body?: string;
+  faceUnits?: Readonly<Record<string, number>>;
 }
 
 /** Where a tap on the figure landed. */
@@ -141,7 +182,43 @@ function makeGeometry(t: SurfaceTopology): BufferGeometry {
   g.setAttribute("position", new BufferAttribute(new Float32Array(t.vertexCount * 3), 3));
   g.setAttribute("normal", new BufferAttribute(new Float32Array(t.vertexCount * 3), 3));
   g.setAttribute("uv", new BufferAttribute(t.uvs, 2));
+  g.setAttribute("skinIndex", new BufferAttribute(t.skinIndex, 4));
+  g.setAttribute("skinWeight", new BufferAttribute(t.skinWeight, 4));
   return g;
+}
+
+/**
+ * The figure's skeleton, built once per rig: one bone per skeleton bone,
+ * parented as in the rig, with no rest rotation (docs/ARCHITECTURE.md,
+ * "Skeleton, poses and expressions"). `fit` places it on an evaluated figure.
+ */
+function makeSkeleton(rig: ReadyInfo["rig"]): { root: Bone; skeleton: Skeleton } {
+  const bones = rig.bones.map((name) => Object.assign(new Bone(), { name }));
+  let root: Bone | null = null;
+  bones.forEach((b, i) => {
+    const p = rig.parents[i] as number;
+    if (p < 0) root = b;
+    else bones[p]?.add(b);
+  });
+  if (!root) throw new Error("the rig has no root bone");
+  return { root, skeleton: new Skeleton(bones) };
+}
+
+/** Puts the skeleton at an evaluated figure's rest: bone offsets and inverse binds from its heads. */
+function fitSkeleton(skeleton: Skeleton, parents: Int16Array, heads: Float32Array): void {
+  skeleton.bones.forEach((bone, i) => {
+    const p = parents[i] as number;
+    const [x, y, z] = [heads[i * 3] ?? 0, heads[i * 3 + 1] ?? 0, heads[i * 3 + 2] ?? 0];
+    if (p < 0) bone.position.set(x, y, z);
+    else
+      bone.position.set(
+        x - (heads[p * 3] ?? 0),
+        y - (heads[p * 3 + 1] ?? 0),
+        z - (heads[p * 3 + 2] ?? 0),
+      );
+    // Bones and meshes share the figure's group, so mesh space is bind space.
+    skeleton.boneInverses[i]?.makeTranslation(-x, -y, -z);
+  });
 }
 
 function writeGeometry(g: BufferGeometry, s: SurfaceEvaluation): void {
@@ -157,20 +234,26 @@ function writeGeometry(g: BufferGeometry, s: SurfaceEvaluation): void {
  */
 function useAttachmentMaterial(
   t: AttachmentTopology,
+  occlusionKeys: Vector3,
   report: (e: Error) => void,
 ): MeshStandardMaterial {
   const material = useMemo(() => {
     const m = t.material;
-    if (t.kind === "eyes") return new EyeMaterial();
-    return new AttachmentStandardMaterial({
-      color: new Color(m.color[0], m.color[1], m.color[2]),
-      roughness: m.roughness,
-      metalness: 0,
-      transparent: m.transparent && !m.alphaToCoverage,
-      alphaToCoverage: m.alphaToCoverage,
-      side: m.backfaceCull ? FrontSide : DoubleSide,
-    });
-  }, [t]);
+    const material =
+      t.kind === "eyes"
+        ? new EyeMaterial()
+        : new AttachmentStandardMaterial({
+            color: new Color(m.color[0], m.color[1], m.color[2]),
+            roughness: m.roughness,
+            metalness: 0,
+            transparent: m.transparent && !m.alphaToCoverage,
+            alphaToCoverage: m.alphaToCoverage,
+            side: m.backfaceCull ? FrontSide : DoubleSide,
+          });
+    // The figure's key weights, shared, so a pose change reaches every attachment.
+    material.occlusionKeys = occlusionKeys;
+    return material;
+  }, [t, occlusionKeys]);
   const reportRef = useLatest(report);
   useEffect(() => {
     if (!t.textureUrl) return;
@@ -200,34 +283,90 @@ function useAttachmentMaterial(
   return material;
 }
 
+/** A mesh skinned to the figure's skeleton, bound once in mesh space. */
+function SkinnedPart({
+  geometry,
+  material,
+  skeleton,
+  visible,
+  part,
+  renderOrder,
+  shape,
+}: {
+  geometry: BufferGeometry;
+  material: Material;
+  skeleton: Skeleton;
+  visible: boolean;
+  part: HumanoidPick["part"];
+  renderOrder?: number;
+  /** Changes whenever the figure is re-evaluated or re-posed. */
+  shape: object;
+}) {
+  const mesh = useMemo(() => {
+    const m = new SkinnedMesh(geometry, material);
+    m.bind(skeleton, new Matrix4());
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+  }, [geometry, material, skeleton]);
+  // A skinned mesh caches its own (posed) bounds: three computes them once and
+  // never again, so a new pose or a re-evaluated (say, taller) figure would
+  // keep the old ones, and picking and culling would miss whatever lies
+  // outside them. They are recomputed from the posed vertices on the frame
+  // after each change of shape (the skinning reads world matrices, so those
+  // are brought up to date first).
+  const stale = useRef(true);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: shape is a deliberate trigger
+  useEffect(() => {
+    stale.current = true;
+  }, [mesh, shape]);
+  useFrame(() => {
+    if (!stale.current) return;
+    stale.current = false;
+    mesh.parent?.updateWorldMatrix(true, true);
+    mesh.computeBoundingBox();
+    mesh.computeBoundingSphere();
+  });
+  mesh.visible = visible;
+  mesh.userData.hkPart = part;
+  if (renderOrder !== undefined) mesh.renderOrder = renderOrder;
+  return <primitive object={mesh} />;
+}
+
 function AttachmentMesh({
   index,
   topology,
   geometry,
+  skeleton,
+  occlusionKeys,
   visible,
   report,
   eyes,
+  shape,
 }: {
   index: number;
   topology: AttachmentTopology;
   geometry: BufferGeometry;
+  skeleton: Skeleton;
+  occlusionKeys: Vector3;
   visible: boolean;
   report: (e: Error) => void;
   eyes: Recipe["eyes"];
+  shape: object;
 }) {
-  const material = useAttachmentMaterial(topology, report);
+  const material = useAttachmentMaterial(topology, occlusionKeys, report);
   useEffect(() => {
     if (material instanceof EyeMaterial) material.setAppearance(eyes);
   }, [material, eyes]);
   return (
-    <mesh
+    <SkinnedPart
       geometry={geometry}
       material={material}
+      skeleton={skeleton}
       visible={visible}
-      userData={{ hkPart: index }}
+      part={index}
       renderOrder={topology.zDepth}
-      castShadow
-      receiveShadow
+      shape={shape}
     />
   );
 }
@@ -264,6 +403,9 @@ export function Humanoid({
   onError,
   onPick,
   presence,
+  pose,
+  signals,
+  onGroundOffset,
   ...group
 }: HumanoidProps) {
   const client = useHumanoidClient();
@@ -277,7 +419,6 @@ export function Humanoid({
   usePublishPresence(presence?.id, groupRef, presenceSource);
   // Lifts the figure so its soles meet the declared ground position.
   const [lift, setLift] = useState(0);
-  const readyRef = useLatest(ready);
   const onEvaluatedRef = useLatest(onEvaluated);
   const onErrorRef = useLatest(onError);
   const report = useMemo(
@@ -288,19 +429,91 @@ export function Humanoid({
   const geometries = useMemo(() => {
     if (!ready) return null;
     const body = makeGeometry(ready.topology.body);
-    body.setAttribute(SKIN_MASK_ATTRIBUTE, new BufferAttribute(ready.topology.body.skinMask, 3));
     body.setAttribute(
       CURVATURE_ATTRIBUTE,
       new BufferAttribute(new Float32Array(ready.topology.body.vertexCount), 1),
     );
+    body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(ready.topology.body.uvScale, 1));
     const attachments = ready.topology.attachments.map((t) => {
       const g = makeGeometry(t);
-      g.setAttribute(OCCLUSION_ATTRIBUTE, new BufferAttribute(t.occlusion, 1));
+      setOcclusionAttributes(g, t.occlusion);
       return g;
     });
     return { body, attachments };
   }, [ready]);
+  // A worn set the pack did not bake arrives at rest only; its pose-following
+  // corners replace that once the worker has baked them.
+  useEffect(() => {
+    if (!geometries) return;
+    let live = true;
+    client.posedOcclusion().then((posed) => {
+      if (!live || !posed) return;
+      geometries.attachments.forEach((g, i) => {
+        const o = posed[i];
+        if (o) setOcclusionAttributes(g, o);
+      });
+    }, report);
+    return () => {
+      live = false;
+    };
+  }, [client, geometries, report]);
+  const rig = useMemo(() => (ready ? makeSkeleton(ready.rig) : null), [ready]);
+  const keyBasis = useMemo(() => (ready ? occlusionKeyBasis(ready.rig) : null), [ready]);
+  // Shared by the attachments' materials: how much of each occlusion key the pose holds.
+  const occlusionKeys = useMemo(() => new Vector3(), []);
   const [shown, setShown] = useState(false);
+
+  // The pose: face units blended into bone rotations (rest when absent), and
+  // the attachments' occlusion following it.
+  const faceUnits = pose?.faceUnits;
+  const body = pose?.body;
+  const rotations = useMemo(() => {
+    if (!ready || (!body && !faceUnits)) return null; // rest
+    const face = faceUnitRotations(ready.rig, faceUnits ?? {});
+    return body ? composeRotations(bodyPoseRotations(ready.rig, body), face) : face;
+  }, [ready, body, faceUnits]);
+  useEffect(() => {
+    if (!rig || !ready || !keyBasis) return;
+    const q = rotations ?? IDENTITY_POSE(ready.rig.bones.length);
+    rig.skeleton.bones.forEach((bone, i) => {
+      bone.quaternion.fromArray(q, i * 4);
+    });
+    occlusionKeys.fromArray(occlusionKeyWeights(keyBasis, q));
+  }, [rig, ready, keyBasis, occlusionKeys, rotations]);
+
+  // Where the posed figure's lowest body point is: a crouch or a kneel comes
+  // down to the ground rather than hanging where the standing feet were.
+  const [figure, setFigure] = useState<Evaluation | null>(null);
+  // A new identity whenever the figure or its pose changes: the meshes' bounds follow it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: figure and rotations are the triggers
+  const shape = useMemo(() => ({}), [figure, rotations]);
+  const onGroundOffsetRef = useLatest(onGroundOffset);
+  const rotationsRef = useLatest(rotations);
+  /** Reports the ground offset of `ev` in the current pose. */
+  const ground = useMemo(
+    () => (ev: Evaluation) => {
+      if (!ready) return;
+      const q = rotationsRef.current;
+      const offset = q
+        ? posedGroundOffset(
+            restBonesFrom(ready.rig.bones, ready.rig.parents, ev.boneHeads),
+            q,
+            ev.control,
+            ready.rig.skin,
+          )
+        : ev.groundOffset;
+      if (groupRef.current) groupRef.current.userData.groundOffset = offset;
+      setLift(offset);
+      onGroundOffsetRef.current?.(offset);
+    },
+    [ready, rotationsRef, onGroundOffsetRef],
+  );
+  // A new pose regrounds the figure it poses; a new evaluation is grounded as
+  // it arrives (below), before `onEvaluated`, so the two are never out of step.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rotations is the trigger; figure is read
+  useEffect(() => {
+    if (figure) ground(figure);
+  }, [rotations, ground]);
 
   useEffect(
     () => () => {
@@ -310,6 +523,24 @@ export function Humanoid({
     [geometries],
   );
   useEffect(() => () => skin.dispose(), [skin]);
+  // The skin layers' field atlas depends on the body alone, so figures share it.
+  const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    if (!ready) return;
+    const atlas = acquireLayerAtlas(gl, ready.topology.body);
+    skin.setLayerAtlas(atlas.texture);
+    return () => {
+      skin.setLayerAtlas(null);
+      atlas.release();
+    };
+  }, [gl, ready, skin]);
+  // The joints' flexion in the current pose joins the skin's signals
+  // (`flex.elbow.L`, …), so crease layers follow any pose or animation.
+  const flexion = useMemo(() => {
+    if (!figure || !ready) return {};
+    const rest = restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads);
+    return jointFlexion(flexionRig(rest), rest, rotations ?? IDENTITY_POSE(ready.rig.bones.length));
+  }, [figure, ready, rotations]);
   useEffect(() => {
     const s = recipe.skin;
     skin.setAppearance({
@@ -322,15 +553,27 @@ export function Humanoid({
       flush: s.flush,
       lips: s.lips,
       areola: s.areola,
+      signals: { ...signals, ...flexion },
     });
-  }, [skin, recipe]);
+  }, [skin, recipe, signals, flexion]);
+
+  // Only the signals that change the shape re-evaluate the figure; a stable
+  // key keeps a colour-only change (or a new object with the same values) from
+  // re-evaluating it.
+  const shapeKey = STATE_MORPHS.map((m) => signals?.[m.signal] ?? 0).join(",");
+  const shapeSignals = useMemo(
+    () =>
+      Object.fromEntries(STATE_MORPHS.map((m, i) => [m.signal, Number(shapeKey.split(",")[i])])),
+    [shapeKey],
+  );
 
   useEffect(() => {
     if (!geometries) return;
     let live = true;
-    client.evaluate(recipe, key).then(
+    client.evaluate(recipe, key, shapeSignals).then(
       (ev) => {
         if (!live) return;
+        if (rig && ready) fitSkeleton(rig.skeleton, ready.rig.parents, ev.boneHeads);
         writeGeometry(geometries.body, ev);
         (geometries.body.getAttribute(CURVATURE_ATTRIBUTE) as BufferAttribute).copyArray(
           ev.curvature,
@@ -339,12 +582,11 @@ export function Humanoid({
           const g = geometries.attachments[i];
           if (g) writeGeometry(g, a);
         });
-        if (groupRef.current) groupRef.current.userData.groundOffset = ev.groundOffset;
-        const info = readyRef.current;
-        presenceSource.current = info
-          ? { evaluation: ev, recipe, joints: info.presenceJoints }
+        setFigure(ev);
+        ground(ev);
+        presenceSource.current = ready
+          ? { evaluation: ev, recipe, joints: ready.presenceJoints }
           : null;
-        setLift(ev.groundOffset);
         setShown(true);
         onEvaluatedRef.current?.(ev);
       },
@@ -355,7 +597,7 @@ export function Humanoid({
     return () => {
       live = false;
     };
-  }, [client, geometries, recipe, key, onEvaluatedRef, readyRef, report]);
+  }, [client, geometries, rig, ready, recipe, key, shapeSignals, onEvaluatedRef, report, ground]);
 
   const placed = presence?.position;
   const heading = presence?.facing;
@@ -368,17 +610,18 @@ export function Humanoid({
       // Only listen when asked: a handler makes three raycast the figure on every click.
       {...(onPick && { onClick: (e: ThreeEvent<MouseEvent>) => pick(e, onPick) })}
     >
-      {geometries && ready && (
+      {geometries && ready && rig && (
         // With presence the group's origin is the ground under the figure, so the
         // meshes are lifted here; without it the caller lifts the group.
         <group position-y={presence ? lift : 0}>
-          <mesh
+          <primitive object={rig.root} />
+          <SkinnedPart
             geometry={geometries.body}
             material={material ?? skin}
+            skeleton={rig.skeleton}
             visible={shown}
-            userData={{ hkPart: "body" }}
-            castShadow
-            receiveShadow
+            part="body"
+            shape={shape}
           />
           {ready.topology.attachments.map((t, i) => {
             const g = geometries.attachments[i];
@@ -388,9 +631,12 @@ export function Humanoid({
                 index={i}
                 topology={t}
                 geometry={g}
+                skeleton={rig.skeleton}
+                occlusionKeys={occlusionKeys}
                 visible={shown}
                 report={report}
                 eyes={recipe.eyes}
+                shape={shape}
               />
             ) : null;
           })}

@@ -157,7 +157,7 @@ interface MacroValues {
   names that exist in the packed data. Never weights breast targets under 18.
 - `macroTargetNames(): Set<string>`: every name `macroTargetWeights` can
   produce; the body pack's first targets file holds exactly these plus
-  `SKIN_MASK_TARGETS`.
+  `SKIN_LAYER_TARGETS`.
 - Axis functions returning `AxisWeights`: `genderAxis`, `ageAxis`, `muscleAxis`,
   `weightAxis`, `heightAxis`, `proportionAxis`, `cupAxis`, `firmnessAxis` and
   `ethnicAxis`; `combine(prefix, axes)` takes their Cartesian product.
@@ -222,8 +222,20 @@ new HumanoidModel(assets: HumanoidAssets, options?: { subdivision?: 0 | 1 | 2 })
 The framework-free pipeline for one loaded body pack. `subdivision` defaults to 1
 and throws `RangeError` for anything else.
 
-- `model.evaluate(recipe): Evaluation`
-- `model.topology(): SurfaceTopology`: the static render data, sent once.
+- `model.evaluate(recipe, signals?): Evaluation`: `signals` (0..1 each) set the
+  skin's state; those in `STATE_MORPHS` (`cold`: the nipple rises and the areola
+  contracts, calibrated to the measured response) add their targets.
+  `stateContributions(signals)` gives those target weights. `ADULT_ONLY_SIGNALS`
+  (`arousal`) throw `AgePolicyError` under 18 (`assertSignalPolicy`).
+- `model.topology(): SurfaceTopology`: the static render data, sent once. A
+  worn attachment set the body pack did not bake gets its occlusion at rest
+  only (every pose corner holding the rest value).
+- `model.bakePosedOcclusion(): Generator<void, Float32Array[] | null>` bakes
+  that set's pose corners, yielding before each one so a caller can let other
+  work in between; it returns per-render-vertex arrays shaped like
+  `AttachmentTopology.occlusion`, or null for the pack's own set.
+  `model.bakeAttachmentOcclusion()` is the whole bake at once, per control
+  vertex (what the packer stores).
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
@@ -232,6 +244,8 @@ interface Evaluation {
   normals: Float32Array;    // smooth, shared across UV seams
   groundOffset: number;     // lift that puts the lowest body point on y = 0
   control: Float32Array;    // morphed positions in the base topology
+  curvature: Float32Array;  // per body render vertex, mean curvature (1/m)
+  boneHeads: Float32Array;  // the skeleton fitted to this figure: each bone's rest head, xyz
 }
 
 interface SurfaceTopology {
@@ -282,6 +296,25 @@ compute what the renderer will do.
   axis (research/SKIN-RENDERING.md §5.6). `depth` 0..1 is the recipe's slider.
 - CIELAB conversions: `labFromLinear`, `linearFromLab`, `lchFromLab`,
   `labFromLch` (D65).
+- Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
+  `SkinLayer` (`id`, `blend`, `targets`, `fields(assets)`, `paint(input)`),
+  `SKIN_LAYERS` (the stack, in order: flush, lips, areola), `SKIN_LAYER_TARGETS`,
+  `targetMask(assets, targets, lo, hi)` for masks measured from targets,
+  `buildLayerFields`, `paintStopTable(layers, input)` (the figure's stop table,
+  `STOP_COUNT` stops in rows of `STOP_TABLE_WIDTH` texels) and
+  `applyLayers(base, table, fields)`, the per-pixel blend the shader performs.
+  A layer is one of three kinds: a `ColourLayer` (the default: `blend`, and
+  `paint` giving `strength` and colour `stops`), a `DetailLayer` (`kind:
+  "detail"`, `pattern` `"bumps"` or `"creases"`, `paint` giving `strength`,
+  `height` in metres and `size`: bump spacing in metres, or crease count across
+  the coordinate) drawn at true scale and faded where finer than a pixel, or a
+  `SurfaceLayer` (`kind: "surface"`, `paint` giving `strength`, a `roughness`
+  change and a `specular` change). `surfaceChange` and `creaseHeight` are the
+  shader's references; `uvScale(assets, faces)` gives metres of skin per UV
+  unit (carried as `body.uvScale` in the topology).
+  The model's topology carries `body.layerFields` and `body.layers`; the
+  renderer rasterises them once into a shared field atlas
+  (`humanoid-kit/react` does this for `<Humanoid>`).
 - The scatter model `SkinMaterial` renders (its constants and table come from
   these, and the browser tests hold the shader to them): `scatterDistance(albedo, mfp?, slope?, pigmentDepth?,
   substrate?)` gives each channel's scatter width in metres, and
@@ -295,6 +328,47 @@ compute what the renderer will do.
 - `bakeOcclusion(occluders, targets, options?)`: per-vertex ambient occlusion
   by cosine-weighted ray casts (`hemisphereDirections(n)`), as used for
   attachments.
+
+### Rig and poses
+
+The skeleton fitted to a figure, and posing (ARCHITECTURE.md, "Skeleton, poses
+and expressions"). Framework-free.
+
+- `restBones(assets, control): RestBones`: `names` (skin-weight order),
+  `parents` (-1 for the root), `heads` (each bone's head joint over the morphed
+  control mesh) and `order` (parents before children).
+- `rigData(assets): RigData`: the bone names and facial pose units, small
+  enough for the main thread (the worker sends it in `ReadyInfo.rig`).
+- `faceUnitRotations(rig, weights): BoneRotations`: an expression from
+  MakeHuman's 60 face units (`JawDrop`, `LeftUpperLidClosed`, …), blended in
+  log space; a quaternion per bone. Throws for an unknown unit.
+  `IDENTITY_POSE(bones)` is the rest pose.
+- `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out)`: linear
+  blend skinning on the CPU, exactly as the renderer skins, for tests, anchors
+  and pose-dependent bakes. `posedBoneHeads(rest, rotations)` gives every
+  joint's posed position.
+- `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
+  (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
+  stress pose); `composeRotations(a, b)` layers `b` (an expression) over `a`.
+- `restBonesFrom(names, parents, heads)` rebuilds the rest skeleton from an
+  evaluation's `boneHeads` without the packs, and
+  `posedGroundOffset(rest, rotations, control, skin)` is the lift that puts a
+  posed figure's lowest body point on the ground (`RigSkin`: the pack's skin
+  and the visible body's base vertices, sent in `ReadyInfo.rig.skin`).
+- Joint flexion as skin signals: `FLEXION_JOINTS` (elbows, knees, wrists),
+  `flexionRig(rest)` (each joint's hinge, perpendicular to the upper segment
+  and its flex direction) and `jointFlexion(rig, rest, rotations)`, giving
+  `flex.<joint>.<side>` from 0 (straight) to 1 (the joint's anatomical limit).
+  `<Humanoid>` adds them to the skin's signals for every pose. `posedBones` and
+  `rotateByBone` expose the posed bone rotations.
+- Pose-keyed occlusion (ARCHITECTURE.md, "Attachment occlusion"):
+  `OCCLUSION_KEYS` (jaw open, lips apart, smile), `occlusionKeyBasis(rig)` and
+  `occlusionKeyWeights(basis, rotations)` (how much of each key a pose holds),
+  `occlusionCorners(keys)`, `occlusionCornerUnits(m)` and
+  `occlusionCornerWeights(w)` (the multilinear blend of the corner bakes).
+  `AttachmentTopology.occlusion` holds `occlusionCorners` values per render
+  vertex, rest first. `rotationVectors(rotations)` gives each bone's rotation
+  vector.
 
 ### Presence
 
@@ -340,12 +414,13 @@ The main-thread handle to an evaluation worker.
   arriving, and an evaluation that needs one waits in the worker for its stage.
 - `client.complete: Promise<void>` resolves when every target file has
   loaded, or rejects with the error that stopped one.
-- `ReadyInfo` is `{ topology, modifiers, sliders, bones, presenceJoints,
+- `ReadyInfo` is `{ topology, modifiers, sliders, rig, presenceJoints,
   adultAnatomyLoaded }`: the render topology, every drivable shape modifier, the
-  merged slider taxonomy, the skeleton's bone names (the topology's skin indices
-  refer to them), the joints presence reads (`presenceJoints`) and whether the
-  adult anatomy pack is loaded.
-- `client.evaluate(recipe, key?): Promise<Evaluation>` is latest-wins per key:
+  merged slider taxonomy, the rig (`RigData` plus each bone's `parents` index;
+  the topology's skin indices refer to `rig.bones`), the joints presence reads
+  (`presenceJoints`) and whether the adult anatomy pack is loaded.
+- `client.evaluate(recipe, key?, signals?): Promise<Evaluation>` (signals as for
+  `model.evaluate`) is latest-wins per key:
   each key has at most one evaluation in the worker and one waiting, and a
   waiting request replaced by a newer one rejects with an error named
   `AbortError`. Keys never wait on each other. Buffers are transferred from the
@@ -356,6 +431,11 @@ The main-thread handle to an evaluation worker.
   arrays holding an index into `features` per render vertex (or
   `NO_FEATURE`). The worker builds it on the first call; later calls share it.
   Look up a `<Humanoid onPick>` tap in it to open the tapped part's controls.
+- `client.posedOcclusion(): Promise<Float32Array[] | null>` resolves with the
+  pose-following occlusion of a worn attachment set the body pack did not bake
+  (one array per worn attachment, for `setOcclusionAttributes`), or null when
+  `ready`'s topology already follows the pose. The worker bakes it once,
+  between evaluations; later calls share it. `<Humanoid>` asks for it itself.
 - `client.dispose()` terminates the worker and rejects pending requests.
 - Errors from the worker arrive as `HumanoidWorkerError` with `name` set to the
   original error's name (for example `AgePolicyError`).
@@ -388,6 +468,9 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `material?` | A three.js `Material` replacing the built-in skin material, which follows `recipe.skin` |
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers; those with state morphs also reshape the figure (a re-evaluation). Never part of the recipe |
+| `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |
 | other props | Passed to the wrapping `<group>` |
@@ -395,11 +478,14 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 - Hidden until the first evaluation arrives.
 - Renders the body and the body pack's attachments (eyes with their own eye
   shader following `recipe.eyes`, teeth and tongue), each attachment shaded by
-  its baked occlusion.
+  its baked occlusion, which follows the pose (an open mouth lights the teeth
+  it uncovers).
 - Updates the geometry in place when `recipe` changes.
-- Stores the latest `groundOffset` on the group's `userData`.
+- Stores the latest ground offset (posed when posed) on the group's `userData.groundOffset`.
 - Disposes its geometries, textures and built-in materials on unmount.
-- Renders static meshes; it does not build a skeleton or play animation.
+- Skins the body and attachments to the skeleton fitted to each evaluation
+  (linear blend skinning on the GPU) and poses it from `pose`; posing does not
+  re-evaluate the figure.
 - With `presence`, the group's origin is the ground under the figure: the
   figure lifts its own meshes onto it, so do not lift the group by
   `groundOffset` (without `presence` the caller does, as before). The ground
@@ -407,7 +493,9 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   so moving the group, a parent or a `useFrame` mover moves the presence.
   `position` and `facing` place the group declaratively, replacing its own
   `position` and `rotation`. The figure is removed from the registry on
-  unmount. Assumes an upright figure at unit scale.
+  unmount. Assumes an upright figure at unit scale. The published anchors,
+  footprint and bounds describe the figure at rest (they are derived from its
+  evaluation, not its `pose`); the meshes are lifted by the posed ground offset.
 
 ### `<PresenceProvider registry? />`
 
@@ -527,10 +615,12 @@ range input sized for touch. `onChange(value, gesture)` fires while dragging and
 ## `humanoid-kit/worker`
 
 The worker module that `HumanoidWorkerClient` starts by default. It owns one
-`HumanoidModel` and answers four messages: `init` (replied to with `ready`
+`HumanoidModel` and answers five messages: `init` (replied to with `ready`
 once the first figure can be evaluated), `complete` (replied to once every
 target file has loaded, or with the error that stopped one), `pickMap`
-(replied to with the pick map once everything has loaded) and `evaluate`, which
+(replied to with the pick map once everything has loaded), `posedOcclusion`
+(replied to once the corner bake, made a corner at a time between other
+requests, is done) and `evaluate`, which
 waits for exactly the load stages its recipe needs without holding up other
 requests. Result buffers are transferred. Applications use it through the
 client, not directly.

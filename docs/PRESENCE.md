@@ -148,5 +148,10 @@ In React, `<Humanoid presence>` registers the figure; `usePresence()` and
 - **The worker reports the joints.** The main thread has no packs, so
   `ReadyInfo.presenceJoints` carries the small static vertex lists presence
   reads, and presence is derived on the main thread from each evaluation.
+- **Presence still describes the rest body.** Posing exists now, but anchors,
+  footprint and bounds come from the evaluation, not the posed skeleton, so a
+  crouching figure publishes its standing anchors (the meshes are lifted by the
+  posed ground offset, so the footprint stays on the floor). Deriving them from
+  the posed skeleton per frame is the next step.
 - **Presence carries placement, not a full matrix**, for now: ground position,
   facing and bounds. A transform matrix arrives with posing.

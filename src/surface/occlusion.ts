@@ -32,6 +32,96 @@ export interface OcclusionOptions {
   distance?: number;
   /** Ray start offset along the normal, in metres, so a surface does not occlude itself. Default 0.0004. */
   bias?: number;
+  /**
+   * A previous bake of the same meshes in another pose. A target vertex that
+   * has not moved, with no moved occluder triangle (where it was or where it
+   * is) within reach of its rays, would cast exactly the same rays with the
+   * same hits, so it takes its baseline value and casts none.
+   */
+  baseline?: OcclusionBaseline;
+}
+
+export interface OcclusionBaseline {
+  occluders: readonly OccluderMesh[];
+  targets: readonly OcclusionTarget[];
+  values: readonly Float32Array[];
+}
+
+/** A triangle's bounding sphere: centre (xyz) and radius. */
+type Sphere = [number, number, number, number];
+
+function triangleSphere(p: Float32Array, a: number, b: number, c: number): Sphere {
+  const cx = ((p[a * 3] as number) + (p[b * 3] as number) + (p[c * 3] as number)) / 3;
+  const cy = ((p[a * 3 + 1] as number) + (p[b * 3 + 1] as number) + (p[c * 3 + 1] as number)) / 3;
+  const cz = ((p[a * 3 + 2] as number) + (p[b * 3 + 2] as number) + (p[c * 3 + 2] as number)) / 3;
+  let r = 0;
+  for (const v of [a, b, c])
+    r = Math.max(
+      r,
+      Math.hypot(
+        (p[v * 3] as number) - cx,
+        (p[v * 3 + 1] as number) - cy,
+        (p[v * 3 + 2] as number) - cz,
+      ),
+    );
+  return [cx, cy, cz, r];
+}
+
+/** Which target vertices may differ from the baseline: moved themselves, or near moved occluders. */
+function changedTargets(
+  occluders: readonly OccluderMesh[],
+  targets: readonly OcclusionTarget[],
+  baseline: OcclusionBaseline,
+  reach: number,
+): Uint8Array[] {
+  if (
+    baseline.occluders.length !== occluders.length ||
+    baseline.targets.length !== targets.length ||
+    occluders.some(
+      (o, i) =>
+        o.positions.length !== baseline.occluders[i]?.positions.length ||
+        o.index.length !== baseline.occluders[i]?.index.length,
+    ) ||
+    targets.some((t, i) => t.positions.length !== baseline.targets[i]?.positions.length)
+  )
+    throw new Error("occlusion baseline: the meshes differ from the ones being baked");
+  const spheres: Sphere[] = [];
+  occluders.forEach((o, i) => {
+    const before = (baseline.occluders[i] as OccluderMesh).positions;
+    const moved = new Uint8Array(o.positions.length / 3);
+    for (let v = 0; v < moved.length; v++)
+      for (let k = 0; k < 3; k++) if (o.positions[v * 3 + k] !== before[v * 3 + k]) moved[v] = 1;
+    for (let t = 0; t < o.index.length; t += 3) {
+      const [a, b, c] = [o.index[t] as number, o.index[t + 1] as number, o.index[t + 2] as number];
+      if (!moved[a] && !moved[b] && !moved[c]) continue;
+      spheres.push(triangleSphere(o.positions, a, b, c), triangleSphere(before, a, b, c));
+    }
+  });
+  return targets.map((t, i) => {
+    const before = baseline.targets[i] as OcclusionTarget;
+    const count = t.positions.length / 3;
+    const changed = new Uint8Array(count);
+    for (let v = 0; v < count; v++) {
+      for (let k = 0; k < 3; k++)
+        if (
+          t.positions[v * 3 + k] !== before.positions[v * 3 + k] ||
+          t.normals[v * 3 + k] !== before.normals[v * 3 + k]
+        )
+          changed[v] = 1;
+      if (changed[v]) continue;
+      const [x, y, z] = [
+        t.positions[v * 3] as number,
+        t.positions[v * 3 + 1] as number,
+        t.positions[v * 3 + 2] as number,
+      ];
+      for (const s of spheres)
+        if (Math.hypot(x - s[0], y - s[1], z - s[2]) - s[3] <= reach) {
+          changed[v] = 1;
+          break;
+        }
+    }
+    return changed;
+  });
 }
 
 /** Unit directions over +z, cosine-weighted, from a Fibonacci spiral. */
@@ -78,6 +168,10 @@ export function bakeOcclusion(
   const rays = options.rays ?? 48;
   const distance = options.distance ?? 0.05;
   const bias = options.bias ?? 0.0004;
+  // Rays start `bias` off the surface and reach `distance`; a slack covers rounding.
+  const changed =
+    options.baseline &&
+    changedTargets(occluders, targets, options.baseline, distance + bias + 1e-6);
   const bvh = new MeshBVH(mergedGeometry(occluders), { verbose: false });
   const dirs = hemisphereDirections(rays);
   const ray = new Ray();
@@ -86,10 +180,16 @@ export function bakeOcclusion(
   const b = new Vector3();
   const up = new Vector3();
 
-  return targets.map(({ positions, normals }) => {
+  return targets.map(({ positions, normals }, i) => {
     const count = positions.length / 3;
     const out = new Float32Array(count);
+    const mayDiffer = changed?.[i];
+    const previous = options.baseline?.values[i];
     for (let v = 0; v < count; v++) {
+      if (mayDiffer && previous && !mayDiffer[v]) {
+        out[v] = previous[v] as number;
+        continue;
+      }
       n.fromArray(normals, v * 3);
       if (n.lengthSq() < 1e-12) {
         out[v] = 1;

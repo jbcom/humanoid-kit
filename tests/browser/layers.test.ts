@@ -1,0 +1,238 @@
+/**
+ * The skin layer stack on the GPU (src/surface/layers.ts, src/render/layerAtlas.ts):
+ * the field atlas holds each layer's fields where its UV islands are and fills
+ * their gutters, and the skin shader applies the stack exactly as
+ * `applyLayers` does, gradients included.
+ */
+import {
+  FloatType,
+  GLSL3,
+  Mesh,
+  NoBlending,
+  OrthographicCamera,
+  PlaneGeometry,
+  RawShaderMaterial,
+  Scene,
+  type Texture,
+  WebGLRenderer,
+  WebGLRenderTarget,
+} from "three";
+import { afterAll, describe, expect, it } from "vitest";
+import { buildLayerAtlas, GUTTER, type LayerAtlasSource } from "../../src/render/layerAtlas.ts";
+import { SkinMaterial } from "../../src/render/skinMaterial.ts";
+import {
+  applyLayers,
+  paintStopTable,
+  type SkinLayer,
+  type SkinPaintInput,
+} from "../../src/surface/layers.ts";
+import { type Rgb, skinAlbedo } from "../../src/surface/skinTone.ts";
+
+const SIZE = 64;
+const canvas = document.createElement("canvas");
+const renderer = new WebGLRenderer({ canvas, antialias: false });
+renderer.setPixelRatio(1);
+renderer.setSize(SIZE, SIZE, false);
+const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+camera.position.set(0, 0, 5);
+camera.lookAt(0, 0, 0);
+const target = new WebGLRenderTarget(SIZE, SIZE, { type: FloatType });
+afterAll(() => {
+  target.dispose();
+  renderer.dispose();
+});
+
+/** A quad covering UVs [lo, hi]², with per-layer (mask, coord) at its four corners. */
+function quadSource(
+  lo: number,
+  hi: number,
+  corners: ((u: number, v: number) => [number, number])[],
+): LayerAtlasSource {
+  const uvs = new Float32Array([lo, lo, hi, lo, hi, hi, lo, hi]);
+  const layerFields = new Float32Array(corners.length * 4 * 2);
+  corners.forEach((field, l) => {
+    for (let v = 0; v < 4; v++) {
+      const [m, c] = field(uvs[v * 2] as number, uvs[v * 2 + 1] as number);
+      layerFields[(l * 4 + v) * 2] = m;
+      layerFields[(l * 4 + v) * 2 + 1] = c;
+    }
+  });
+  return {
+    uvs,
+    index: new Uint32Array([0, 1, 2, 0, 2, 3]),
+    vertexCount: 4,
+    layerFields,
+    layers: corners.map((_, l) => `l${l}`),
+  };
+}
+
+/** Reads an atlas page back, texel for texel, through a float target. */
+function readPage(texture: Texture, page: number, size: number): Float32Array {
+  const rt = new WebGLRenderTarget(size, size, { type: FloatType });
+  const material = new RawShaderMaterial({
+    glslVersion: GLSL3,
+    vertexShader: `in vec3 position; void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+    fragmentShader: `precision highp float; uniform highp sampler2DArray atlas; uniform int page;
+      out vec4 color; void main() { color = texelFetch(atlas, ivec3(ivec2(gl_FragCoord.xy), page), 0); }`,
+    uniforms: { atlas: { value: texture }, page: { value: page } },
+    blending: NoBlending,
+  });
+  const mesh = new Mesh(new PlaneGeometry(2, 2), material);
+  mesh.frustumCulled = false;
+  const scene = new Scene();
+  scene.add(mesh);
+  renderer.setRenderTarget(rt);
+  renderer.render(scene, camera);
+  const out = new Float32Array(size * size * 4);
+  renderer.readRenderTargetPixels(rt, 0, 0, size, size, out);
+  renderer.setRenderTarget(null);
+  mesh.geometry.dispose();
+  material.dispose();
+  rt.dispose();
+  return out;
+}
+
+describe("the layer field atlas", () => {
+  it("holds each layer's fields on its islands, fills their gutters, and leaves the rest empty", () => {
+    const size = 64;
+    const source = quadSource(0.25, 0.75, [
+      (u, v) => [(u - 0.25) * 2, (v - 0.25) * 2], // mask across u, coord across v
+      () => [0.5, 0.25],
+      () => [1, 1],
+    ]);
+    const atlas = buildLayerAtlas(renderer, source, size);
+    try {
+      expect(atlas.pages).toBe(2);
+      const p0 = readPage(atlas.texture, 0, size);
+      const p1 = readPage(atlas.texture, 1, size);
+      const at = (page: Float32Array, x: number, y: number) =>
+        Array.from(page.slice((y * size + x) * 4, (y * size + x) * 4 + 4));
+      // Centre of the island: layer 0 at (0.5, 0.5) of its ramp, layer 1 constant.
+      const centre = at(p0, 32, 32);
+      expect(centre[0]).toBeCloseTo(0.5, 1);
+      expect(centre[1]).toBeCloseTo(0.5, 1);
+      expect(centre[2]).toBeCloseTo(0.5, 2);
+      expect(centre[3]).toBeCloseTo(0.25, 2);
+      expect(at(p1, 32, 32).slice(0, 2)).toEqual([1, 1]);
+      // Gutter just right of the island (x from 48): the right edge's values, mask ≈ 1.
+      const gutter = at(p0, 48 + GUTTER - 2, 32);
+      expect(gutter[0]).toBeGreaterThan(0.9);
+      expect(gutter[2]).toBeCloseTo(0.5, 2);
+      // Far from any island: no layer.
+      expect(at(p0, 2, 2)).toEqual([0, 0, 0, 0]);
+      expect(at(p1, 60, 60)).toEqual([0, 0, 0, 0]);
+    } finally {
+      atlas.dispose();
+    }
+  });
+});
+
+describe("the skin shader's layer stack", () => {
+  // A gradient (mix), a tint (multiply) and a flat colour (mix), so the stop
+  // lookup along the coordinate, both blends and the order are all exercised.
+  const layers: SkinLayer[] = [
+    {
+      id: "ramp",
+      blend: "mix",
+      targets: [],
+      fields: () => ({ mask: new Float32Array(0), coord: null }),
+      paint: () => ({
+        strength: 1,
+        stops: [
+          [0.05, 0.1, 0.6],
+          [0.6, 0.5, 0.05],
+          [0.9, 0.2, 0.2],
+        ],
+      }),
+    },
+    {
+      id: "tint",
+      blend: "multiply",
+      targets: [],
+      fields: () => ({ mask: new Float32Array(0), coord: null }),
+      paint: ({ flush }) => ({ strength: flush, stops: [[1.3, 0.7, 0.8]] }),
+    },
+    {
+      id: "flat",
+      blend: "mix",
+      targets: [],
+      fields: () => ({ mask: new Float32Array(0), coord: null }),
+      paint: () => ({ strength: 0.5, stops: [[0.2, 0.6, 0.3]] }),
+    },
+  ];
+  // Fields over the full-screen quad, linear so the rasterised atlas holds them
+  // exactly: the ramp's mask rises across u and its coordinate across v, the
+  // tint rises up the quad, the flat colour towards the left.
+  const fields = (u: number, v: number): [number, number][] => [
+    [u, v],
+    [v, 0],
+    [1 - u, 0],
+  ];
+
+  it("matches applyLayers per pixel", () => {
+    const appearance: SkinPaintInput = {
+      tone: { melanin: 0.5, haemoglobin: 0.5, undertone: 0, override: null },
+      flush: 0.8,
+      lips: 0.5,
+      areola: 0.5,
+      signals: {},
+    };
+    const plane = new PlaneGeometry(2, 2);
+    const uv = plane.getAttribute("uv");
+    const source: LayerAtlasSource = {
+      uvs: uv.array as Float32Array,
+      index: plane.getIndex()?.array as Uint16Array,
+      vertexCount: uv.count,
+      layerFields: new Float32Array(layers.length * uv.count * 2),
+      layers: layers.map((l) => l.id),
+    };
+    for (let v = 0; v < uv.count; v++) {
+      fields(uv.getX(v), uv.getY(v)).forEach(([m, c], l) => {
+        source.layerFields[(l * uv.count + v) * 2] = m;
+        source.layerFields[(l * uv.count + v) * 2 + 1] = c;
+      });
+    }
+    const atlas = buildLayerAtlas(renderer, source, 256);
+    const material = new SkinMaterial(layers);
+    material.setAppearance(appearance);
+    material.setLayerAtlas(atlas.texture);
+    // Output the diffuse colour itself, before any lighting.
+    const compile = material.onBeforeCompile;
+    material.onBeforeCompile = (shader, r) => {
+      compile.call(material, shader, r);
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <dithering_fragment>",
+        "#include <dithering_fragment>\n\tgl_FragColor = vec4( diffuseColor.rgb, 1.0 );",
+      );
+    };
+    material.customProgramCacheKey = () => "humanoid-kit-skin-test-diffuse";
+    const mesh = new Mesh(plane, material);
+    const scene = new Scene();
+    scene.add(mesh);
+    renderer.setRenderTarget(target);
+    renderer.render(scene, camera);
+    const pixels = new Float32Array(SIZE * SIZE * 4);
+    renderer.readRenderTargetPixels(target, 0, 0, SIZE, SIZE, pixels);
+    renderer.setRenderTarget(null);
+
+    const table = paintStopTable(layers, appearance);
+    const base: Rgb = skinAlbedo(appearance.tone);
+    let worst = 0;
+    for (let y = 0; y < SIZE; y++)
+      for (let x = 0; x < SIZE; x++) {
+        const u = (x + 0.5) / SIZE;
+        const v = (y + 0.5) / SIZE;
+        const want = applyLayers(base, table, fields(u, v));
+        for (let k = 0; k < 3; k++)
+          worst = Math.max(
+            worst,
+            Math.abs((pixels[(y * SIZE + x) * 4 + k] as number) - (want[k] as number)),
+          );
+      }
+    atlas.dispose();
+    material.dispose();
+    plane.dispose();
+    // 8-bit fields and half-float stops: within 1% of full scale.
+    expect(worst).toBeLessThan(0.01);
+  });
+});

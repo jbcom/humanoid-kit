@@ -15,6 +15,7 @@ import { buildFeatureMap } from "../makehuman/features.ts";
 import { HumanoidModel } from "../model/humanoidModel.ts";
 import { presenceJoints } from "../presence/fromEvaluation.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { rigData } from "../rig/pose.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
 
 export type Post = (msg: WorkerResponse, transfer?: Transferable[]) => void;
@@ -24,14 +25,20 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
   let model: HumanoidModel | null = null;
   let stages: LoadStage[] = [];
   let complete: Promise<unknown> = Promise.resolve();
+  /** The corner bake of a worn set the pack did not bake, made once. */
+  let posedOcclusion: Promise<Float32Array[] | null> | null = null;
 
-  /** Waits for the stages that bring the target files a recipe needs. */
-  const targetsFor = async (m: HumanoidModel, recipe: Recipe): Promise<void> => {
-    for (let pending = m.pendingTargetFiles(recipe); pending.size; ) {
+  /** Waits for the stages that bring the target files a recipe (in a skin state) needs. */
+  const targetsFor = async (
+    m: HumanoidModel,
+    recipe: Recipe,
+    signals: Readonly<Record<string, number>> = {},
+  ): Promise<void> => {
+    for (let pending = m.pendingTargetFiles(recipe, signals); pending.size; ) {
       const stage = stages.find((s) => s.files.some((f) => pending.has(f)));
       if (!stage) throw new Error(`no load stage brings ${[...pending].join(", ")}`);
       await stage.loaded;
-      pending = m.pendingTargetFiles(recipe);
+      pending = m.pendingTargetFiles(recipe, signals);
     }
   };
 
@@ -52,7 +59,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           topology,
           modifiers: [...assets.modifiers.values()],
           sliders: assets.sliders,
-          bones: assets.manifest.skeleton.bones.map((b) => b.name),
+          rig: { ...rigData(assets), parents: model.boneParents(), skin: model.rigSkin() },
           presenceJoints: presenceJoints(assets),
           adultAnatomyLoaded: assets.adultAnatomyLoaded,
         });
@@ -62,6 +69,25 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
       if (req.type === "complete") {
         await complete;
         post({ type: "completed", id: req.id });
+        return;
+      }
+      if (req.type === "posedOcclusion") {
+        const m = model;
+        posedOcclusion ??= (async () => {
+          const steps = m.bakePosedOcclusion();
+          for (;;) {
+            const step = steps.next();
+            if (step.done) return step.value;
+            // A macrotask between corners lets queued evaluations run.
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+        })();
+        // Each request gets its own copies: the reply transfers them.
+        const attachments = (await posedOcclusion)?.map((a) => a.slice()) ?? null;
+        post(
+          { type: "posedOcclusion", id: req.id, attachments },
+          attachments?.map((a) => a.buffer) ?? [],
+        );
         return;
       }
       if (req.type === "pickMap") {
@@ -75,14 +101,15 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         ]);
         return;
       }
-      await targetsFor(model, req.recipe);
+      await targetsFor(model, req.recipe, req.signals);
       const t0 = performance.now();
-      const evaluation = model.evaluate(req.recipe);
+      const evaluation = model.evaluate(req.recipe, req.signals);
       const transfer: Transferable[] = [
         evaluation.positions.buffer,
         evaluation.normals.buffer,
         evaluation.control.buffer,
         evaluation.curvature.buffer,
+        evaluation.boneHeads.buffer,
       ];
       for (const a of evaluation.attachments) transfer.push(a.positions.buffer, a.normals.buffer);
       post({ type: "evaluated", id: req.id, evaluation, ms: performance.now() - t0 }, transfer);

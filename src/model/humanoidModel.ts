@@ -17,12 +17,17 @@ import {
 import { NO_FEATURE } from "../makehuman/features.ts";
 import { recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
-import { buildSkinMasks } from "../makehuman/skinMasks.ts";
+import { stateContributions } from "../makehuman/stateMorphs.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
+import { assertSignalPolicy } from "../recipe/agePolicy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
+import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
+import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
-import { bakeOcclusion } from "../surface/occlusion.ts";
+import { buildLayerFields, uvScale } from "../surface/layers.ts";
+import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
+import { SKIN_LAYERS } from "../surface/regions/index.ts";
 
 export interface ModelOptions {
   /** Catmull–Clark levels for the body surface (0–2). Default 1. Attachments use at most 1. */
@@ -49,16 +54,26 @@ export interface AttachmentTopology extends SurfaceTopology {
   /** Resolved URL of the diffuse texture, or null when untextured or loaded without URLs. */
   textureUrl: string | null;
   /**
-   * Per render vertex: how open it is to light (1) or enclosed by the figure (0),
-   * baked against the default figure (lids over eyes, lips over teeth).
+   * Per render vertex, how open it is to light (1) or enclosed by the figure
+   * (0), baked against the default figure (lids over eyes, lips over teeth) at
+   * each corner of the `OCCLUSION_KEYS` cube: `occlusionCorners(keys)` values
+   * per vertex, the first at rest. A pose's occlusion is their multilinear
+   * blend (`occlusionCornerWeights` of `occlusionKeyWeights`).
    */
   occlusion: Float32Array;
 }
 
 export interface ModelTopology {
   body: SurfaceTopology & {
-    /** Per render vertex: lips, flush and areola mask weights (see `buildSkinMasks`). */
-    skinMask: Float32Array;
+    /**
+     * The skin layers' fields per render vertex (`SKIN_LAYERS` order): for each
+     * layer in turn, `vertexCount` pairs of (mask, coordinate).
+     */
+    layerFields: Float32Array;
+    /** Ids of the layers `layerFields` holds, in order. */
+    layers: string[];
+    /** Per render vertex, metres of skin per UV unit (`uvScale`), for relief at true size. */
+    uvScale: Float32Array;
   };
   attachments: AttachmentTopology[];
 }
@@ -101,6 +116,8 @@ export interface Evaluation extends SurfaceEvaluation {
   control: Float32Array;
   /** Per body render vertex: mean curvature magnitude (m⁻¹), for subsurface scattering. */
   curvature: Float32Array;
+  /** The skeleton fitted to this figure: each bone's rest head (`restBones`), bones × 3. */
+  boneHeads: Float32Array;
 }
 
 interface Part {
@@ -159,7 +176,14 @@ export class HumanoidModel {
   private readonly attached: { asset: BoundAsset; part: Part; control: Float32Array }[];
   /** Subdivision level of the attachments: the body's, at most 1. */
   private readonly attachmentLevel: number;
-  private readonly skinMask: Float32Array;
+  private readonly layerFields: Float32Array;
+  private readonly uvScale: Float32Array;
+  /** The rest bake of the worn set, kept for the corner bakes to reuse. */
+  private restOcclusion: {
+    rest: Float32Array;
+    surfaces: readonly Part[];
+    bake: OcclusionBaseline;
+  } | null = null;
 
   readonly assets: HumanoidAssets;
 
@@ -198,18 +222,29 @@ export class HumanoidModel {
       const q = [0, 1, 2, 3].map((k) => assets.faceVerts[f * 4 + k] as number);
       this.bodyControlTriangles.set([q[0], q[1], q[2], q[0], q[2], q[3]] as number[], i * 6);
     });
-    // Skin masks are static: interpolate the base-vertex masks through the subdivision stencil once.
-    const surfaceMask = applyStencil(
-      this.body.mesh.stencil,
-      buildSkinMasks(assets),
-      new Float32Array(this.body.mesh.topology.vertexCount * 3),
-    );
+    // Layer fields are static: carry the base-vertex fields through the subdivision stencil once.
     this.bodyEdges = triangleEdges(this.body.mesh.index);
+    const n = assets.manifest.vertexCount;
+    const fields = buildLayerFields(assets, SKIN_LAYERS);
     const r2s = this.body.mesh.renderToSurface;
-    this.skinMask = new Float32Array(r2s.length * 3);
-    r2s.forEach((s, r) => {
-      this.skinMask.set(surfaceMask.subarray(s * 3, s * 3 + 3), r * 3);
+    const surface = new Float32Array(this.body.mesh.topology.vertexCount * 3);
+    this.layerFields = new Float32Array(SKIN_LAYERS.length * r2s.length * 2);
+    SKIN_LAYERS.forEach((_, l) => {
+      applyStencil(this.body.mesh.stencil, fields.subarray(l * n * 3, (l + 1) * n * 3), surface);
+      const base = l * r2s.length * 2;
+      r2s.forEach((s, r) => {
+        this.layerFields[base + r * 2] = surface[s * 3] as number;
+        this.layerFields[base + r * 2 + 1] = surface[s * 3 + 1] as number;
+      });
     });
+    // Metres per UV unit, for relief at true size; carried the same way.
+    const scale = uvScale(assets, bodyFaces);
+    const scaleField = new Float32Array(n * 3);
+    scale.forEach((s, v) => {
+      scaleField[v * 3] = s;
+    });
+    applyStencil(this.body.mesh.stencil, scaleField, surface);
+    this.uvScale = Float32Array.from(r2s, (s) => surface[s * 3] as number);
 
     this.attachmentLevel = Math.min(level, 1);
     this.attached = wearing.map((asset) => ({
@@ -238,35 +273,122 @@ export class HumanoidModel {
   /**
    * Bakes each worn attachment's occlusion per control vertex: geometry the
    * figure creates around its attachments, against the default figure, where
-   * lids and lips sit as on most figures. Rays start from the control vertices
-   * (a quarter of the render vertices); occluders are the unsubdivided body and
+   * lids and lips sit as on most figures, at every corner of the
+   * `OCCLUSION_KEYS` cube (the body posed by `skinPositions`, the attachments
+   * bound to it; corner 0 is rest). Rays start from the control vertices (a
+   * quarter of the render vertices); occluders are the unsubdivided body and
    * the opaque attachments at one subdivision level, whatever this model's
-   * level, so the result depends only on the packs and the worn set.
+   * level, so the result depends only on the packs and the worn set. Per
+   * attachment, one bake per corner, each `vertexCount` long.
    */
   bakeAttachmentOcclusion(): Float32Array[] {
-    const rest = this.evaluate(occlusionFigure());
-    const occluders = this.attached.flatMap((a, i) => {
-      // Transparent attachments (the eyes, whose cornea dome is cut away by the
-      // texture's alpha) would block light they do not block when rendered.
-      if (a.asset.entry.material.transparent) return [];
-      if (this.attachmentLevel === 1)
+    const steps = this.bakeOcclusionCorners();
+    for (;;) {
+      const step = steps.next();
+      if (step.done) return step.value;
+    }
+  }
+
+  /**
+   * `bakeAttachmentOcclusion` a corner at a time: it yields before each
+   * corner after rest, so a caller can let other work in between.
+   */
+  private *bakeOcclusionCorners(): Generator<void, Float32Array[]> {
+    const { rest, surfaces, bake: atRest } = this.occlusionAtRest();
+    const bones = restBones(this.assets, rest);
+    const rig = rigData(this.assets);
+    const bakes = [atRest.values];
+    for (let m = 1; m < occlusionCorners(OCCLUSION_KEYS.length); m++) {
+      yield;
+      const body = skinPositions(
+        bones,
+        faceUnitRotations(rig, occlusionCornerUnits(m)),
+        rest,
+        this.assets.skinIndex,
+        this.assets.skinWeight,
+        new Float32Array(rest.length),
+      );
+      // Every corner reuses the rest bake wherever nothing within reach moved.
+      bakes.push(this.bakeOcclusionAt(body, surfaces, atRest).values);
+    }
+    return this.attached.map((a, i) => {
+      const n = a.asset.entry.vertexCount;
+      const out = new Float32Array(n * bakes.length);
+      bakes.forEach((b, k) => {
+        out.set(b[i] as Float32Array, k * n);
+      });
+      return out;
+    });
+  }
+
+  /** The worn set's bake at rest, made once and kept for the corners. */
+  private occlusionAtRest(): NonNullable<HumanoidModel["restOcclusion"]> {
+    if (!this.restOcclusion) {
+      const rest = this.evaluate(occlusionFigure()).control;
+      // Occluding attachments at one subdivision level, whatever this model's.
+      const surfaces = this.attached.map((a) =>
+        this.attachmentLevel === 1 ? a.part : part(this.attachmentSurface(a.asset, 1)),
+      );
+      this.restOcclusion = {
+        rest,
+        surfaces,
+        bake: this.bakeOcclusionAt(rest, surfaces, undefined),
+      };
+    }
+    return this.restOcclusion;
+  }
+
+  /**
+   * The pose-following occlusion of a worn set the pack did not bake, per
+   * render vertex as in `AttachmentTopology.occlusion`, or null when
+   * `topology()` already carries it. `topology()` bakes such a set at rest
+   * only (every corner holding the rest value), since the corners take
+   * seconds; this bakes them, yielding before each so a worker can answer
+   * evaluations in between. Needs the target files `occlusionBakeRecipe()`
+   * names.
+   */
+  *bakePosedOcclusion(): Generator<void, Float32Array[] | null> {
+    if (this.wearsPackedSet()) return null;
+    return this.renderOcclusion(yield* this.bakeOcclusionCorners());
+  }
+
+  /**
+   * One occlusion bake of the worn attachments, bound to body control
+   * positions `body`; with `baseline`, vertices nothing near has moved for
+   * keep its values (`OcclusionOptions.baseline`).
+   */
+  private bakeOcclusionAt(
+    body: Float32Array,
+    surfaces: readonly Part[],
+    baseline: OcclusionBaseline | undefined,
+  ): OcclusionBaseline {
+    const controls = this.attached.map((a) =>
+      evaluateBinding(a.asset, body, new Float32Array(a.control.length)),
+    );
+    const occluders = [
+      { positions: body, index: this.bodyControlTriangles },
+      ...this.attached.flatMap((a, i) => {
+        // Transparent attachments (the eyes, whose cornea dome is cut away by the
+        // texture's alpha) would block light they do not block when rendered.
+        if (a.asset.entry.material.transparent) return [];
+        const p = surfaces[i] as Part;
         return [
           {
-            positions: (rest.attachments[i] as SurfaceEvaluation).positions,
-            index: a.part.mesh.index,
+            positions: this.evaluatePart(p, controls[i] as Float32Array).positions,
+            index: p.mesh.index,
           },
         ];
-      const p = part(this.attachmentSurface(a.asset, 1));
-      return [{ positions: this.evaluatePart(p, a.control).positions, index: p.mesh.index }];
+      }),
+    ];
+    const targets = this.attached.map((a, i) => ({
+      positions: controls[i] as Float32Array,
+      normals: quadVertexNormals(controls[i] as Float32Array, a.asset.faceVerts),
+    }));
+    const values = bakeOcclusion(occluders, targets, {
+      rays: 32,
+      ...(baseline && { baseline }),
     });
-    return bakeOcclusion(
-      [{ positions: rest.control, index: this.bodyControlTriangles }, ...occluders],
-      this.attached.map((a) => ({
-        positions: a.control,
-        normals: quadVertexNormals(a.control, a.asset.faceVerts),
-      })),
-      { rays: 32 },
-    );
+    return { occluders, targets, values };
   }
 
   /**
@@ -294,7 +416,28 @@ export class HumanoidModel {
    */
   private wearsPackedSet(): boolean {
     const worn = new Set(this.attached.map((a) => a.asset.entry.id));
-    return worn.size === this.attached.length && worn.size === this.assets.attachments.size;
+    const keys = this.assets.manifest.attachments.occlusionKeys;
+    return (
+      worn.size === this.attached.length &&
+      worn.size === this.assets.attachments.size &&
+      // A pack baked at other keys than this code's is re-baked, not misread.
+      keys.length === OCCLUSION_KEYS.length &&
+      keys.every((k, i) => k === OCCLUSION_KEYS[i]?.id)
+    );
+  }
+
+  /** Each bone's parent index in skin-weight order (-1 for the root). */
+  boneParents(): Int16Array {
+    return restBones(this.assets, this.assets.positions).parents;
+  }
+
+  /** The pack's skin and the visible body's base vertices, for grounding a posed figure. */
+  rigSkin(): RigSkin {
+    return {
+      skinIndex: this.assets.skinIndex,
+      skinWeight: this.assets.skinWeight,
+      bodyVertices: this.bodyVertices,
+    };
   }
 
   /**
@@ -308,26 +451,23 @@ export class HumanoidModel {
   }
 
   topology(): ModelTopology {
+    const corners = occlusionCorners(OCCLUSION_KEYS.length);
     const baked = this.wearsPackedSet()
       ? this.attached.map(({ asset }) => Float32Array.from(asset.occlusion, (o) => o / 255))
-      : this.bakeAttachmentOcclusion();
-    // Carried to the render surface by the subdivision stencil, like any other
-    // per-vertex field.
-    const occlusion = this.attached.map(({ part: p }, i) => {
-      const control = baked[i] as Float32Array;
-      const field = new Float32Array(control.length * 3);
-      control.forEach((o, v) => {
-        field.fill(o, v * 3, v * 3 + 3);
-      });
-      const surface = applyStencil(
-        p.mesh.stencil,
-        field,
-        new Float32Array(p.mesh.topology.vertexCount * 3),
-      );
-      return Float32Array.from(p.mesh.renderToSurface, (s) => surface[s * 3] as number);
-    });
+      : // Rest at every corner until `bakePosedOcclusion` brings the others.
+        this.occlusionAtRest().bake.values.map((rest) => {
+          const out = new Float32Array(rest.length * corners);
+          for (let m = 0; m < corners; m++) out.set(rest, m * rest.length);
+          return out;
+        });
+    const occlusion = this.renderOcclusion(baked);
     return {
-      body: { ...topologyOf(this.body.mesh), skinMask: this.skinMask },
+      body: {
+        ...topologyOf(this.body.mesh),
+        layerFields: this.layerFields,
+        layers: SKIN_LAYERS.map((l) => l.id),
+        uvScale: this.uvScale,
+      },
       attachments: this.attached.map(({ asset, part: p }, i) => ({
         occlusion: occlusion[i] as Float32Array,
         ...topologyOf(p.mesh),
@@ -343,11 +483,47 @@ export class HumanoidModel {
   }
 
   /**
-   * The target files a recipe needs that have not arrived (empty when it can
-   * be evaluated now). Validates the recipe first.
+   * Per-control-vertex corner bakes (`bakeAttachmentOcclusion`'s layout)
+   * carried to the render vertices by the subdivision stencil, like any other
+   * per-vertex field, three corners at a time (the stencil's stride).
    */
-  pendingTargetFiles(recipe: Recipe): Set<string> {
-    return this.pendingFor(recipeContributions(recipe, this.assets.modifiers));
+  private renderOcclusion(baked: readonly Float32Array[]): Float32Array[] {
+    const corners = occlusionCorners(OCCLUSION_KEYS.length);
+    return this.attached.map(({ asset, part: p }, i) => {
+      const n = asset.entry.vertexCount;
+      const all = baked[i] as Float32Array;
+      const r2s = p.mesh.renderToSurface;
+      const out = new Float32Array(r2s.length * corners);
+      const field = new Float32Array(n * 3);
+      const surface = new Float32Array(p.mesh.topology.vertexCount * 3);
+      for (let first = 0; first < corners; first += 3) {
+        const count = Math.min(3, corners - first);
+        field.fill(0);
+        for (let v = 0; v < n; v++)
+          for (let c = 0; c < count; c++) field[v * 3 + c] = all[(first + c) * n + v] as number;
+        applyStencil(p.mesh.stencil, field, surface);
+        r2s.forEach((s, r) => {
+          for (let c = 0; c < count; c++)
+            out[r * corners + first + c] = surface[s * 3 + c] as number;
+        });
+      }
+      return out;
+    });
+  }
+
+  /**
+   * The target files a recipe (in a skin state) needs that have not arrived
+   * (empty when it can be evaluated now). Validates the recipe first.
+   */
+  pendingTargetFiles(recipe: Recipe, signals: Readonly<Record<string, number>> = {}): Set<string> {
+    return this.pendingFor(this.contributions(recipe, signals));
+  }
+
+  /** The recipe's target weights, plus its skin state's (`STATE_MORPHS`), after the age policy. */
+  private contributions(recipe: Recipe, signals: Readonly<Record<string, number>>) {
+    const fromRecipe = recipeContributions(recipe, this.assets.modifiers);
+    assertSignalPolicy(recipe, signals);
+    return [...fromRecipe, ...stateContributions(signals)];
   }
 
   private pendingFor(contributions: readonly { target: string }[]): Set<string> {
@@ -360,8 +536,13 @@ export class HumanoidModel {
     return pending;
   }
 
-  evaluate(recipe: Recipe): Evaluation {
-    const contributions = recipeContributions(recipe, this.assets.modifiers);
+  /**
+   * Evaluates a recipe in a skin state: `signals` (0..1 each, see
+   * docs/ARCHITECTURE.md, "Skin states") add their state morphs. A state is
+   * never part of the recipe; adult-only signals are refused under 18.
+   */
+  evaluate(recipe: Recipe, signals: Readonly<Record<string, number>> = {}): Evaluation {
+    const contributions = this.contributions(recipe, signals);
     const pending = this.pendingFor(contributions);
     if (pending.size)
       throw new MorphError(
@@ -382,7 +563,8 @@ export class HumanoidModel {
       this.bodyEdges,
       new Float32Array(body.positions.length / 3),
     );
-    return { ...body, attachments, groundOffset: -minY, control, curvature };
+    const boneHeads = restBones(this.assets, control).heads;
+    return { ...body, attachments, groundOffset: -minY, control, curvature, boneHeads };
   }
 
   private evaluatePart(p: Part, control: Float32Array): SurfaceEvaluation {

@@ -179,7 +179,7 @@ interpolates MakeHuman's age anchors (baby 1, child 11, young 25, old 90).
 Breast targets exist, as in MakeHuman, for the female anchor at the child, young
 and old anchors (none for baby), so breast development through adolescence comes
 from the age interpolation itself. Nipples and areolae are part of the base mesh
-and skin masks (`src/makehuman/skinMasks.ts`). humanoid-kit adds no judgement of
+and skin layers (`src/surface/regions/rest.ts`). humanoid-kit adds no judgement of
 its own to MakeHuman's body.
 
 **Genital anatomy is a separate install.** `scripts/pack-makehuman.ts` routes
@@ -196,6 +196,16 @@ clamped, so a mistake cannot be hidden. `withAge` removes adult-only values
 explicitly when a recipe is moved below 18. The loader refuses an adult pack not
 built against the exact body pack in use (`bodySha256`). A planned genital
 sculpt will ship in the same pack under the same rule.
+
+**Skin states follow the same rule.** A figure's skin responds to named
+signals (docs/ARCHITECTURE.md, "Skin states"). Cold, heat, exertion, blush and
+fear are the body's physiological responses at every age, so they apply at
+every age, as the body itself does: the nipple's response to cold, for example,
+is a reflex, not sexual. Sexual arousal is adult-only in every channel it could
+reach (colour, relief and shape): `assertSignalPolicy` in
+`src/recipe/agePolicy.ts` throws `AgePolicyError` for an `arousal` signal on a
+figure under 18, before evaluation and before any paint, and never clamps it.
+Shape responses to arousal, such as engorgement, belong to the adult pack.
 
 **Planned animation packages follow the same rule.** `humanoid-kit-adult-animations`
 (sexual and intimate animations) will refuse any participant under 18. The

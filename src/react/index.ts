@@ -1,6 +1,7 @@
 export {
   Humanoid,
   type HumanoidPick,
+  type HumanoidPose,
   type HumanoidPresenceProps,
   type HumanoidProps,
   HumanoidProvider,
