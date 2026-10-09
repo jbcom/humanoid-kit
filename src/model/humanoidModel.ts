@@ -564,7 +564,11 @@ export class HumanoidModel {
   private contributions(recipe: Recipe, signals: Readonly<Record<string, number>>) {
     const fromRecipe = recipeContributions(recipe, this.assets.modifiers);
     assertSignalPolicy(recipe, signals);
-    return [...fromRecipe, ...stateContributions(signals)];
+    // A state of the adult anatomy has nothing to drive without the adult pack.
+    return [
+      ...fromRecipe,
+      ...stateContributions(signals, (target) => this.assets.targetFileOf.has(target)),
+    ];
   }
 
   private pendingFor(contributions: readonly { target: string }[]): Set<string> {

@@ -28,7 +28,11 @@ interface SiteModel {
   melanin: number;
   /** Added to the tone's haemoglobin: thin, vascular, unpigmented skin shows more blood. */
   haemoglobin: number;
-  /** Haemoglobin added at full arousal, on top of the rest colour (a modelled deepening). */
+  /**
+   * How far full arousal moves haemoglobin toward its ceiling, as a fraction of
+   * the headroom the rest colour leaves (a modelled deepening). A fraction, not
+   * an amount, so a site already near the ceiling still deepens and none passes it.
+   */
   arousal: number;
   /** For a non-natural skin colour: per-channel factors on the override. */
   override: Rgb;
@@ -36,11 +40,11 @@ interface SiteModel {
 
 const SITES: Record<GenitalSite, SiteModel> = {
   // Keratinised skin, somewhat more pigmented than the body.
-  shaft: { melanin: 0.2, haemoglobin: 0.15, arousal: 0.3, override: [0.66, 0.48, 0.46] },
+  shaft: { melanin: 0.2, haemoglobin: 0.1, arousal: 0.6, override: [0.66, 0.48, 0.46] },
   // Non-keratinised and thin: the haemoglobin shows through and little pigment sits above it.
-  glans: { melanin: 0.1, haemoglobin: 0.45, arousal: 0.45, override: [0.74, 0.4, 0.42] },
+  glans: { melanin: 0.1, haemoglobin: 0.3, arousal: 0.8, override: [0.74, 0.4, 0.42] },
   // Thin, rugose skin; the most pigmented of the sites.
-  scrotum: { melanin: 0.25, haemoglobin: 0.1, arousal: 0.1, override: [0.62, 0.46, 0.44] },
+  scrotum: { melanin: 0.25, haemoglobin: 0.05, arousal: 0.25, override: [0.62, 0.46, 0.44] },
   // The mons: ordinary skin with a small shift.
   mound: { melanin: 0.1, haemoglobin: 0.05, arousal: 0, override: [0.82, 0.66, 0.62] },
 };
@@ -58,12 +62,13 @@ export function genitalAlbedo(tone: SkinTone, site: GenitalSite, arousal = 0): R
     const base = skinAlbedo(tone);
     // A non-natural colour has no blood to deepen: arousal reddens it by the
     // site's share of the natural deepening (green and blue fall, red stays).
-    const k = 1 - 0.4 * s.arousal * a;
+    const k = 1 - 0.2 * s.arousal * a;
     return [base[0] * s.override[0], base[1] * s.override[1] * k, base[2] * s.override[2] * k];
   }
+  const rest = Math.min(1, clamp01(tone.haemoglobin) + s.haemoglobin);
   return skinAlbedo({
     ...tone,
     melanin: Math.min(1, clamp01(tone.melanin) + s.melanin),
-    haemoglobin: Math.min(1, clamp01(tone.haemoglobin) + s.haemoglobin + s.arousal * a),
+    haemoglobin: rest + (1 - rest) * s.arousal * a,
   });
 }

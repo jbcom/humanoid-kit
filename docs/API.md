@@ -230,10 +230,17 @@ The framework-free pipeline for one loaded body pack. `subdivision` defaults to 
 and throws `RangeError` for anything else.
 
 - `model.evaluate(recipe, signals?): Evaluation`: `signals` (0..1 each) set the
-  skin's state; those in `STATE_MORPHS` (`cold`: the nipple rises and the areola
-  contracts, calibrated to the measured response) add their targets.
-  `stateContributions(signals)` gives those target weights. `ADULT_ONLY_SIGNALS`
-  (`arousal`) throw `AgePolicyError` under 18 (`assertSignalPolicy`).
+  skin's state; those in `STATE_MORPHS` add their targets: `cold` (the nipple
+  rises and the areola contracts) and `arousal` (engorgement: the shaft's
+  circumference +25% and length +43% at full arousal, the measured erect
+  against flaccid; adult pack only), each calibrated to its measured response.
+  `stateContributions(signals, exists?)` gives those target weights, limited to
+  targets `exists` accepts; the model passes the loaded packs' targets, so a
+  state of the adult anatomy does nothing, rather than fails, without the adult
+  pack. `ADULT_ONLY_SIGNALS` (`arousal`) throw `AgePolicyError` under 18
+  (`assertSignalPolicy`), before any target is named. Today the penis targets
+  deform `helper-genital`, which the surface does not draw, so engorgement
+  moves `Evaluation.control` and no drawn vertex until the sculpt phase.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
   only (every pose corner holding the rest value).
