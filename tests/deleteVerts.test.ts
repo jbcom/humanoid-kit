@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
-describe("an attachment's delete_verts", () => {
+// Builds three models; about a second alone, but several times that on a loaded runner.
+describe("an attachment's delete_verts", { timeout: 120_000 }, () => {
   const assets = loadFixtureAssets();
   const id = "eyes/high-poly";
   const eyes = assets.attachments.get(id);
@@ -27,7 +28,11 @@ describe("an attachment's delete_verts", () => {
     if (f !== first && quad(f).filter((v) => a.includes(v)).length === 2) second = f;
   const b = quad(second).filter((v) => !a.includes(v));
 
-  it("hides a body face only when every one of its corners is deleted, as MakeHuman does", () => {
+  // Four models are built, each taking seconds, several times that under coverage
+  // and a busy runner: the 30 s default is a hang detector, not a budget for this.
+  it("hides a body face only when every one of its corners is deleted, as MakeHuman does", {
+    timeout: 120_000,
+  }, () => {
     const all = bodyQuads([]);
     expect(bodyQuads(a)).toBe(all - 1);
     // The neighbour keeps its fourth corner, so it stays: no gap ring at a garment's edge.

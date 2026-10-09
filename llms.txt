@@ -16,6 +16,9 @@
   weights, facial pose units, shape modifiers.
 - `humanoid-kit-adult-anatomy` (CC0 1.0): adult-only targets; separate install,
   refused unless built against the exact body pack.
+- `humanoid-kit-clothing` (CC0 1.0): 19 MakeHuman garments bound to the base
+  mesh, worn through `recipe.outfit`; separate install, refused unless built
+  against the exact body pack.
 
 ## Docs
 

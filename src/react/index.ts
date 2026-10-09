@@ -1,3 +1,4 @@
+export { applyDualSkinning, DualBones } from "../render/dualSkinning.ts";
 export {
   Humanoid,
   type HumanoidPick,

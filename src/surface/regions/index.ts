@@ -5,7 +5,9 @@
  */
 import { isAdultLayer, type SkinLayer } from "../layers.ts";
 import { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER } from "./adult.ts";
+import { CREASE_LAYERS } from "./creases.ts";
 import { HAND_SKIN_LAYERS } from "./hands/index.ts";
+import { MOUTH_INTERIOR_LAYER } from "./mouth.ts";
 import { AREOLA_LAYER, FLUSH_LAYER, LIPS_LAYER } from "./rest.ts";
 import {
   BLUSH_LAYER,
@@ -20,14 +22,16 @@ import {
 } from "./states.ts";
 
 /**
- * The layers whose data is in the body pack: the rest layers, the areas'
- * layers (the hands'), then the state layers, so a state (cold pallor, a
- * flush) acts on the areas' colour too.
+ * The layers whose data is in the body pack: the rest layers (flush, lips,
+ * areola, the mouth's lining), the areas' layers (the hands'), then the state
+ * layers, so a state (cold pallor, a flush) acts on the areas' colour too, and
+ * last the joint creases.
  */
 const BODY_SKIN_LAYERS: readonly SkinLayer[] = [
   FLUSH_LAYER,
   LIPS_LAYER,
   AREOLA_LAYER,
+  MOUTH_INTERIOR_LAYER,
   ...HAND_SKIN_LAYERS,
   GOOSEBUMP_LAYER,
   HEAT_FLUSH_LAYER,
@@ -38,6 +42,7 @@ const BODY_SKIN_LAYERS: readonly SkinLayer[] = [
   LIP_STATE_LAYER,
   SWEAT_REST_LAYER,
   SWEAT_EXERCISE_LAYER,
+  ...CREASE_LAYERS,
 ];
 
 /**
@@ -61,7 +66,9 @@ export const SKIN_LAYER_TARGETS: readonly string[] = targetsOf(
   SKIN_LAYERS.filter((l) => !isAdultLayer(l)),
 );
 
+export * from "./creases.ts";
 export * from "./hands/index.ts";
+export * from "./mouth.ts";
 export * from "./rest.ts";
 export * from "./skinZones.ts";
 export * from "./states.ts";

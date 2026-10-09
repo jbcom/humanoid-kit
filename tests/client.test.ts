@@ -13,9 +13,14 @@ class FakeWorker {
   onmessage: ((e: MessageEvent<WorkerResponse>) => void) | null = null;
   onerror: ((e: ErrorEvent) => void) | null = null;
   evaluated: number[] = [];
+  /** The garment ids asked for, and the outfit key each evaluation said its caller held. */
+  garments: string[] = [];
+  failNextGarment = false;
+  haveOutfits: (string | null | undefined)[] = [];
   pickMaps = 0;
   posedOcclusions = 0;
   adultLayerRequests = 0;
+  adultSurfaceRequests = 0;
   terminated = false;
   private readonly failInit: boolean;
   private readonly later: Promise<void>;
@@ -68,6 +73,27 @@ class FakeWorker {
       );
       return;
     }
+    if (msg.type === "adultSurface") {
+      this.adultSurfaceRequests++;
+      setTimeout(
+        () =>
+          reply({
+            type: "adultSurface",
+            id: msg.id,
+            topology: {
+              index: Uint32Array.of(0, 1, 1),
+              uvs: Float32Array.of(0, 0, 1, 1),
+              skinIndex: new Uint16Array(8),
+              skinWeight: new Float32Array(8),
+              vertexCount: 2,
+              uvScale: Float32Array.of(1, 2),
+              occlusion: new Uint8Array(16).fill(255),
+            },
+          }),
+        1,
+      );
+      return;
+    }
     if (msg.type === "init") {
       setTimeout(() => {
         if (this.failInit)
@@ -82,11 +108,31 @@ class FakeWorker {
             rig: EMPTY_RIG,
             presenceJoints: {} as never,
             adultAnatomyLoaded: false,
+            wardrobe: [],
           });
       }, 1);
       return;
     }
+    if (msg.type === "garment") {
+      this.garments.push(msg.garment);
+      if (this.failNextGarment) {
+        this.failNextGarment = false;
+        fail(new Error("no such garment"));
+        return;
+      }
+      setTimeout(
+        () =>
+          reply({
+            type: "garment",
+            id: msg.id,
+            topology: { id: msg.garment, vertexCount: 3 } as never,
+          }),
+        1,
+      );
+      return;
+    }
     const age = msg.recipe.macros.age;
+    this.haveOutfits.push(msg.haveOutfit);
     const needs = age >= 50 ? this.later : Promise.resolve();
     needs.then(() => {
       setTimeout(() => {
@@ -206,6 +252,30 @@ describe("HumanoidWorkerClient", () => {
     expect(worker.posedOcclusions).toBe(1);
   });
 
+  it("tells the worker which outfit the caller already holds", async () => {
+    const { client, worker } = make();
+    await client.evaluate(recipe(30), "a");
+    await client.evaluate(recipe(30), "a", {}, "suits/x|shoes/y");
+    expect(worker.haveOutfits).toEqual([null, "suits/x|shoes/y"]);
+  });
+
+  it("asks for a garment's topology once, however many figures wear it", async () => {
+    const { client, worker } = make();
+    const [a, b] = await Promise.all([client.garment("suits/x"), client.garment("suits/x")]);
+    expect(a).toBe(b);
+    expect(a.id).toBe("suits/x");
+    await client.garment("shoes/y");
+    expect(worker.garments).toEqual(["suits/x", "shoes/y"]);
+  });
+
+  it("asks again for a garment whose first request failed", async () => {
+    const { client, worker } = make();
+    const first = client.garment("suits/x");
+    worker.failNextGarment = true;
+    await expect(first).rejects.toMatchObject({ message: "no such garment" });
+    await expect(client.garment("suits/x")).resolves.toMatchObject({ id: "suits/x" });
+  });
+
   it("asks the worker for the adult layer fields once, and shares the answer", async () => {
     const later = gate();
     const { client, worker } = make(false, later.promise);
@@ -223,6 +293,16 @@ describe("HumanoidWorkerClient", () => {
     expect(update?.layers).toEqual(["penis-skin"]);
     expect([...(update?.layerFields ?? [])]).toEqual([0.25, 0.5]);
     expect(worker.adultLayerRequests).toBe(1);
+  });
+
+  it("asks the worker for the adult surface once, and shares the answer", async () => {
+    const { client, worker } = make(false);
+    const first = client.adultSurface();
+    expect(client.adultSurface()).toBe(first);
+    const topology = await first;
+    expect(topology?.vertexCount).toBe(2);
+    expect([...(topology?.uvScale ?? [])]).toEqual([1, 2]);
+    expect(worker.adultSurfaceRequests).toBe(1);
   });
 
   it("fails queued evaluations when the worker cannot initialise", async () => {

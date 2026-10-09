@@ -7,6 +7,7 @@ export const bodyPack = {
 	manifest: new URL("./data/manifest.json", import.meta.url).href,
 	files: {
 		"attachments.bin.gz": new URL("./data/attachments.bin.gz", import.meta.url).href,
+		"body-occlusion.bin.gz": new URL("./data/body-occlusion.bin.gz", import.meta.url).href,
 		"body.bin.gz": new URL("./data/body.bin.gz", import.meta.url).href,
 		"eyes_high-poly_brown_eye.webp": new URL("./data/eyes_high-poly_brown_eye.webp", import.meta.url).href,
 		"targets-baby.bin.gz": new URL("./data/targets-baby.bin.gz", import.meta.url).href,

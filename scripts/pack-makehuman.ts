@@ -38,13 +38,19 @@ import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
 import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
 import {
-  ADULT_ANATOMY_SPEC,
   ADULT_SPEC_MODIFIERS,
   ADULT_SPEC_TARGETS,
+  adultAnatomySpec,
 } from "./lib/adultAnatomySpec.ts";
 import { authoredPoses } from "./lib/authoredPoses.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
-import { writeAttachments, writeAttachmentTextures, writePackEntry } from "./lib/packWriter.ts";
+import { symmetrizeFaceUnits } from "./lib/faceUnits.ts";
+import {
+  writeAttachments,
+  writeAttachmentTextures,
+  writeBodyOcclusion,
+  writePackEntry,
+} from "./lib/packWriter.ts";
 import { buildSliders } from "./lib/sliders.ts";
 
 const USAGE = "usage: node scripts/pack-makehuman.ts <makehuman-data-dir> <system-assets-dir>";
@@ -72,6 +78,7 @@ const TOPOLOGY = "makehuman-hm08";
 const BODY_FILE = "body.bin.gz";
 const TARGETS_FILE = "targets.bin.gz";
 const ATTACHMENTS_FILE = "attachments.bin.gz";
+const BODY_OCCLUSION_FILE = "body-occlusion.bin.gz";
 /** MakeHuman units are decimetres; the runtime works in metres. */
 const UNIT = 0.1;
 /** MakeHuman's modifier tables, each with a `_modifiers`, `_sliders` and `_modifiers_desc` file. */
@@ -586,7 +593,9 @@ async function main() {
 
   // Essential attachments (eyes, teeth, tongue) from the system assets pack.
   const compiled = ESSENTIALS.map(([id, kind, mhclo, mat]) =>
-    compileAsset(path.join(SYSTEM, mhclo), id, kind, mat ? path.join(SYSTEM, mat) : undefined),
+    compileAsset(path.join(SYSTEM, mhclo), id, kind, {
+      ...(mat && { materialFile: path.join(SYSTEM, mat) }),
+    }),
   );
   fs.rmSync(path.join(BODY_OUT, "attachments.bin"), { force: true });
   await writeAttachmentTextures(BODY_OUT, compiled);
@@ -653,7 +662,11 @@ async function main() {
     faceUnits: {
       names: faceUnits.framemapping,
       joints: faceBvh.joints,
-      frames: faceBvh.frames.map((row) => row.map((x) => Math.round(x * 1000) / 1000)),
+      // MakeHuman's units are not all the mirror of their partners (a smile and the
+      // nasolabial fold come out uneven): packed symmetric, scripts/lib/faceUnits.ts.
+      frames: symmetrizeFaceUnits(faceUnits.framemapping, faceBvh.joints, faceBvh.frames).map(
+        (row) => row.map((x) => Math.round(x * 1000) / 1000),
+      ),
     },
     poses,
   };
@@ -668,11 +681,20 @@ async function main() {
     targets: Object.fromEntries(bodyFiles.map((f) => [f.id, buffer(f.raw)])),
     attachments: buffer(attachments.raw),
   });
-  const occlusion = new HumanoidModel(packedFigure)
+  const packedModel = new HumanoidModel(packedFigure);
+  const occlusion = packedModel
     .bakeAttachmentOcclusion()
     .map((o) => Uint8Array.from(o, (v) => Math.round(Math.min(1, Math.max(0, v)) * 255)));
   attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, occlusion, occlusionBakes);
   manifest.attachments.sha256 = attachments.sha256;
+  // The body's own cavities (mouth, nostrils, ear canals, eye sockets) darken the same way.
+  const bodyOcclusion = writeBodyOcclusion(
+    BODY_OUT,
+    BODY_OCCLUSION_FILE,
+    packedModel.bakeBodyOcclusion(),
+    OCCLUSION_KEYS.map((k) => k.id),
+  );
+  manifest.bodyOcclusion = bodyOcclusion;
   fs.writeFileSync(path.join(BODY_OUT, "manifest.json"), `${JSON.stringify(manifest)}\n`);
 
   const adultManifest = {
@@ -692,7 +714,7 @@ async function main() {
     modifiers: modifiers.filter((m) => isAdultPackTarget(m.hi)),
     sliders: sliders.adult,
     /** Features, skin-layer measurements and shape states: the core names none of these. */
-    anatomy: ADULT_ANATOMY_SPEC,
+    anatomy: adultAnatomySpec(packedFigure),
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 
@@ -706,6 +728,7 @@ async function main() {
       [BODY_FILE, bodySha],
       ...bodyFiles.map((f): [string, string] => [f.file, sha(f.bin)]),
       [ATTACHMENTS_FILE, attachments.sha256],
+      [BODY_OCCLUSION_FILE, bodyOcclusion.sha256],
     ],
     systemEvidence,
   );

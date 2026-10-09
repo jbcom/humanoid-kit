@@ -53,8 +53,10 @@ describe("the package entry's skin-state API", () => {
     );
     const ids = kit.SKIN_LAYERS.filter((l) => !kit.isAdultLayer(l)).map((l) => l.id);
     expect(ids.slice(0, 3)).toEqual(["flush", "lips", "areola"]);
-    // A state (cold pallor on the hands, a flush) acts on the areas' colour too.
-    expect(ids.slice(3, 11)).toEqual([
+    // The mouth's lining is a rest layer; a state (cold pallor on the hands, a
+    // flush) acts on the areas' colour too.
+    expect(ids.slice(3, 12)).toEqual([
+      "mouth-interior",
       "palm",
       "sole",
       "palm-crease-lines",
@@ -64,7 +66,7 @@ describe("the package entry's skin-state API", () => {
       "knuckle-wrinkles",
       "nail-gloss",
     ]);
-    expect(ids.slice(11)).toEqual([
+    expect(ids.slice(12)).toEqual([
       "goosebumps",
       "heat-flush",
       "exertion-flush",
@@ -74,6 +76,9 @@ describe("the package entry's skin-state API", () => {
       "lips-state",
       "sweat-heat",
       "sweat-exertion",
+      // The joint creases follow the states.
+      ...kit.CREASE_LAYERS.map((l) => l.id),
     ]);
+    expect(kit.CREASE_LAYERS).toHaveLength(4);
   });
 });
