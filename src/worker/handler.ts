@@ -52,7 +52,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           topology,
           modifiers: [...assets.modifiers.values()],
           sliders: assets.sliders,
-          rig: { ...rigData(assets), parents: model.boneParents() },
+          rig: { ...rigData(assets), parents: model.boneParents(), skin: model.rigSkin() },
           adultAnatomyLoaded: assets.adultAnatomyLoaded,
         });
         return;

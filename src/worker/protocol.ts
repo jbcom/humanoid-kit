@@ -8,7 +8,7 @@ import type {
   RenderFeatures,
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import type { RigData } from "../rig/pose.ts";
+import type { RigData, RigSkin } from "../rig/pose.ts";
 
 /** What the worker reports once the packs are loaded and the model is built. */
 export interface ReadyInfo {
@@ -22,7 +22,7 @@ export interface ReadyInfo {
    * these), each bone's parent index (-1 for the root) and the facial pose
    * units. Each evaluation carries the bones' rest heads for its figure.
    */
-  rig: RigData & { parents: Int16Array };
+  rig: RigData & { parents: Int16Array; skin: RigSkin };
   adultAnatomyLoaded: boolean;
 }
 

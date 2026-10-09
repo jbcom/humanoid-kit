@@ -127,6 +127,16 @@ export interface BvhJoint {
   channels: string[];
 }
 
+export interface BodyPoseEntry {
+  /** Id, the source file's name (`tpose`, `benchmark`). */
+  name: string;
+  title: string;
+  description: string;
+  joints: BvhJoint[];
+  /** One value per channel of `joints`, in order. */
+  frame: number[];
+}
+
 export interface PackSource {
   project: string;
   commit: string;
@@ -170,6 +180,8 @@ export interface BodyManifest {
   };
   skeleton: { bones: BoneEntry[]; joints: Record<string, number[]> };
   faceUnits: { names: string[]; joints: BvhJoint[]; frames: number[][] };
+  /** Whole-body poses (one BVH frame each, MakeHuman's Z-up axes; see src/rig/pose.ts). */
+  poses: BodyPoseEntry[];
 }
 
 export interface AttachmentMaterial {

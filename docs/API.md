@@ -324,7 +324,16 @@ and expressions"). Framework-free.
   `IDENTITY_POSE(bones)` is the rest pose.
 - `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out)`: linear
   blend skinning on the CPU, exactly as the renderer skins, for tests, anchors
-  and pose-dependent bakes.
+  and pose-dependent bakes. `posedBoneHeads(rest, rotations)` gives every
+  joint's posed position.
+- `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
+  (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
+  stress pose); `composeRotations(a, b)` layers `b` (an expression) over `a`.
+- `restBonesFrom(names, parents, heads)` rebuilds the rest skeleton from an
+  evaluation's `boneHeads` without the packs, and
+  `posedGroundOffset(rest, rotations, control, skin)` is the lift that puts a
+  posed figure's lowest body point on the ground (`RigSkin`: the pack's skin
+  and the visible body's base vertices, sent in `ReadyInfo.rig.skin`).
 - Pose-keyed occlusion (ARCHITECTURE.md, "Attachment occlusion"):
   `OCCLUSION_KEYS` (jaw open, lips apart, smile), `occlusionKeyBasis(rig)` and
   `occlusionKeyWeights(basis, rotations)` (how much of each key a pose holds),
@@ -414,7 +423,8 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `material?` | A three.js `Material` replacing the built-in skin material, which follows `recipe.skin` |
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth). Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | other props | Passed to the wrapping `<group>` |
 
@@ -424,7 +434,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   its baked occlusion, which follows the pose (an open mouth lights the teeth
   it uncovers).
 - Updates the geometry in place when `recipe` changes.
-- Stores the latest `groundOffset` on the group's `userData`.
+- Stores the latest ground offset (posed when posed) on the group's `userData.groundOffset`.
 - Disposes its geometries, textures and built-in materials on unmount.
 - Skins the body and attachments to the skeleton fitted to each evaluation
   (linear blend skinning on the GPU) and poses it from `pose`; posing does not

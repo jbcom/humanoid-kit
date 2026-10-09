@@ -7,7 +7,12 @@
  * with no rest rotation, so a BVH rotation is about world-aligned axes at the
  * joint, composed down the hierarchy.
  */
-import { AssetFormatError, type HumanoidAssets, jointPosition } from "../format/assetFormat.ts";
+import {
+  AssetFormatError,
+  type BvhJoint,
+  type HumanoidAssets,
+  jointPosition,
+} from "../format/assetFormat.ts";
 
 export interface RestBones {
   /** Bone names, in the manifest's order (the order skin weights index). */
@@ -22,16 +27,19 @@ export interface RestBones {
 
 /**
  * What posing needs from the pack, small enough to send to the main thread:
- * the bone names in skin-weight order and the facial pose units.
+ * the bone names in skin-weight order, the facial pose units and the
+ * whole-body poses.
  */
 export interface RigData {
   bones: readonly string[];
   faceUnits: HumanoidAssets["manifest"]["faceUnits"];
+  poses: HumanoidAssets["manifest"]["poses"];
 }
 
 export const rigData = (assets: HumanoidAssets): RigData => ({
   bones: assets.manifest.skeleton.bones.map((b) => b.name),
   faceUnits: assets.manifest.faceUnits,
+  poses: assets.manifest.poses,
 });
 
 /** Per bone, a rotation quaternion (x, y, z, w): `bones * 4`. */
@@ -43,6 +51,29 @@ export const IDENTITY_POSE = (bones: number): BoneRotations => {
   for (let b = 0; b < bones; b++) q[b * 4 + 3] = 1;
   return q;
 };
+
+/**
+ * The rest skeleton from what an evaluation carries (its fitted bone heads)
+ * and the rig's parents, without the packs: what a renderer has on hand.
+ */
+export function restBonesFrom(
+  names: readonly string[],
+  parents: Int16Array,
+  heads: Float32Array,
+): RestBones {
+  const order: number[] = [];
+  const placed = new Uint8Array(names.length);
+  const place = (i: number, depth: number) => {
+    if (placed[i]) return;
+    if (depth > names.length) throw new AssetFormatError("the skeleton has a cycle");
+    const p = parents[i] as number;
+    if (p >= 0) place(p, depth + 1);
+    placed[i] = 1;
+    order.push(i);
+  };
+  for (let i = 0; i < names.length; i++) place(i, 0);
+  return { names: [...names], parents, heads, order: Int16Array.from(order) };
+}
 
 /** The skeleton at rest on a body whose control vertices are `control`. */
 export function restBones(assets: HumanoidAssets, control: Float32Array): RestBones {
@@ -60,18 +91,39 @@ export function restBones(assets: HumanoidAssets, control: Float32Array): RestBo
   bones.forEach((b, i) => {
     jointPosition(assets, control, b.head, heads, i * 3);
   });
-  const order: number[] = [];
-  const placed = new Uint8Array(bones.length);
-  const place = (i: number, depth: number) => {
-    if (placed[i]) return;
-    if (depth > bones.length) throw new AssetFormatError("the skeleton has a cycle");
-    const p = parents[i] as number;
-    if (p >= 0) place(p, depth + 1);
-    placed[i] = 1;
-    order.push(i);
-  };
-  for (let i = 0; i < bones.length; i++) place(i, 0);
-  return { names, parents, heads, order: Int16Array.from(order) };
+  return restBonesFrom(names, parents, heads);
+}
+
+/** What grounding a posed figure needs, sent once with the rig. */
+export interface RigSkin {
+  /** Four bone indices and weights per base vertex (the pack's skin). */
+  skinIndex: Uint8Array;
+  skinWeight: Float32Array;
+  /** Base vertices of the visible body (helpers and hidden faces excluded). */
+  bodyVertices: Uint32Array;
+}
+
+/**
+ * The lift that puts a posed figure's lowest body point on y = 0: the
+ * evaluation's `groundOffset` for the pose, from its control mesh and bone heads.
+ */
+export function posedGroundOffset(
+  rest: RestBones,
+  rotations: BoneRotations,
+  control: Float32Array,
+  skin: RigSkin,
+): number {
+  const posed = skinPositions(
+    rest,
+    rotations,
+    control,
+    skin.skinIndex,
+    skin.skinWeight,
+    new Float32Array(control.length),
+  );
+  let minY = Number.POSITIVE_INFINITY;
+  for (const v of skin.bodyVertices) minY = Math.min(minY, posed[v * 3 + 1] as number);
+  return -minY;
 }
 
 type Quat = [number, number, number, number];
@@ -136,8 +188,11 @@ const AXIS: Record<string, [0 | 1 | 2, 1 | -1]> = {
  * in the figure's axes. Channels compose in the order written: "Zrotation
  * Xrotation Yrotation" is Rz · Rx · Ry. Translation channels are ignored.
  */
-function frameRotations(rig: RigData, frame: readonly number[]): Map<number, Quat> {
-  const { joints } = rig.faceUnits;
+function frameRotations(
+  rig: RigData,
+  joints: readonly BvhJoint[],
+  frame: readonly number[],
+): Map<number, Quat> {
   const index = new Map(rig.bones.map((name, i) => [name, i]));
   const out = new Map<number, Quat>();
   let k = 0;
@@ -151,6 +206,35 @@ function frameRotations(rig: RigData, frame: readonly number[]): Map<number, Qua
     }
     const b = index.get(j.name);
     if (b !== undefined && q[3] < 1) out.set(b, q);
+  }
+  return out;
+}
+
+/** A whole-body pose from the pack (`RigData.poses`, e.g. `tpose`), per bone. */
+export function bodyPoseRotations(
+  rig: RigData,
+  name: string,
+  out: BoneRotations = IDENTITY_POSE(rig.bones.length),
+): BoneRotations {
+  const pose = rig.poses.find((p) => p.name === name);
+  if (!pose) throw new AssetFormatError(`unknown body pose ${name}`);
+  out.set(IDENTITY_POSE(out.length / 4));
+  for (const [b, q] of frameRotations(rig, pose.joints, pose.frame)) out.set(q, b * 4);
+  return out;
+}
+
+/** Applies `b` after `a` on every bone (a · b), into `out`: a body pose with an expression on top. */
+export function composeRotations(
+  a: BoneRotations,
+  b: BoneRotations,
+  out: BoneRotations = new Float32Array(a.length),
+): BoneRotations {
+  for (let i = 0; i < a.length; i += 4) {
+    const q = mul(
+      [a[i] as number, a[i + 1] as number, a[i + 2] as number, a[i + 3] as number],
+      [b[i] as number, b[i + 1] as number, b[i + 2] as number, b[i + 3] as number],
+    );
+    out.set(q, i);
   }
   return out;
 }
@@ -172,7 +256,7 @@ export function faceUnitRotations(
     const f = names.indexOf(unit);
     if (f < 0) throw new AssetFormatError(`unknown face unit ${unit}`);
     if (w === 0) continue;
-    for (const [b, q] of frameRotations(rig, frames[f] as number[])) {
+    for (const [b, q] of frameRotations(rig, rig.faceUnits.joints, frames[f] as number[])) {
       const r = log(q);
       const s = sums.get(b) ?? [0, 0, 0];
       sums.set(b, [s[0] + r[0] * w, s[1] + r[1] * w, s[2] + r[2] * w]);
@@ -214,6 +298,52 @@ export function skinPositions(
   skinWeight: Float32Array,
   out: Float32Array,
 ): Float32Array {
+  const { world, origin } = boneTransforms(rest, rotations);
+  const count = positions.length / 3;
+  for (let v = 0; v < count; v++) {
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    for (let k = 0; k < 4; k++) {
+      const w = skinWeight[v * 4 + k] as number;
+      if (w === 0) continue;
+      const b = skinIndex[v * 4 + k] as number;
+      const q: Quat = [
+        world[b * 4] as number,
+        world[b * 4 + 1] as number,
+        world[b * 4 + 2] as number,
+        world[b * 4 + 3] as number,
+      ];
+      const p = rotate(
+        q,
+        (positions[v * 3] as number) - (rest.heads[b * 3] as number),
+        (positions[v * 3 + 1] as number) - (rest.heads[b * 3 + 1] as number),
+        (positions[v * 3 + 2] as number) - (rest.heads[b * 3 + 2] as number),
+      );
+      x += w * (p[0] + (origin[b * 3] as number));
+      y += w * (p[1] + (origin[b * 3 + 1] as number));
+      z += w * (p[2] + (origin[b * 3 + 2] as number));
+    }
+    out[v * 3] = x;
+    out[v * 3 + 1] = y;
+    out[v * 3 + 2] = z;
+  }
+  return out;
+}
+
+/**
+ * Each bone's head in the pose (`bones * 3`): where the joints are, for
+ * anchors (hands, feet, face) and joint-angle signals.
+ */
+export function posedBoneHeads(rest: RestBones, rotations: BoneRotations): Float32Array {
+  return boneTransforms(rest, rotations).origin;
+}
+
+/** Each bone's world rotation and head in the pose, parents before children. */
+function boneTransforms(
+  rest: RestBones,
+  rotations: BoneRotations,
+): { world: Float32Array; origin: Float32Array } {
   const n = rest.names.length;
   const world = new Float32Array(n * 4);
   const origin = new Float32Array(n * 3);
@@ -247,34 +377,5 @@ export function skinPositions(
     origin[b * 3 + 1] = (origin[p * 3 + 1] as number) + d[1];
     origin[b * 3 + 2] = (origin[p * 3 + 2] as number) + d[2];
   }
-  const count = positions.length / 3;
-  for (let v = 0; v < count; v++) {
-    let x = 0;
-    let y = 0;
-    let z = 0;
-    for (let k = 0; k < 4; k++) {
-      const w = skinWeight[v * 4 + k] as number;
-      if (w === 0) continue;
-      const b = skinIndex[v * 4 + k] as number;
-      const q: Quat = [
-        world[b * 4] as number,
-        world[b * 4 + 1] as number,
-        world[b * 4 + 2] as number,
-        world[b * 4 + 3] as number,
-      ];
-      const p = rotate(
-        q,
-        (positions[v * 3] as number) - (rest.heads[b * 3] as number),
-        (positions[v * 3 + 1] as number) - (rest.heads[b * 3 + 1] as number),
-        (positions[v * 3 + 2] as number) - (rest.heads[b * 3 + 2] as number),
-      );
-      x += w * (p[0] + (origin[b * 3] as number));
-      y += w * (p[1] + (origin[b * 3 + 1] as number));
-      z += w * (p[2] + (origin[b * 3 + 2] as number));
-    }
-    out[v * 3] = x;
-    out[v * 3 + 1] = y;
-    out[v * 3 + 2] = z;
-  }
-  return out;
+  return { world, origin };
 }

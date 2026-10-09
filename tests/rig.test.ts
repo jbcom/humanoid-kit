@@ -10,9 +10,14 @@ import {
   occlusionKeyWeights,
 } from "../src/rig/occlusionKeys.ts";
 import {
+  bodyPoseRotations,
+  composeRotations,
   faceUnitRotations,
   IDENTITY_POSE,
+  posedBoneHeads,
+  posedGroundOffset,
   restBones,
+  restBonesFrom,
   rigData,
   skinPositions,
 } from "../src/rig/pose.ts";
@@ -199,5 +204,82 @@ describe("occlusion corners", () => {
     const w = occlusionCornerWeights([0.3, 0.6, 0.1]);
     expect(w.reduce((s, x) => s + x, 0)).toBeCloseTo(1, 6);
     expect(w[3]).toBeCloseTo(0.3 * 0.6 * 0.9, 6);
+  });
+});
+
+describe("body poses", () => {
+  const posed = (rotations: Float32Array) =>
+    skinPositions(
+      rest,
+      rotations,
+      control,
+      assets.skinIndex,
+      assets.skinWeight,
+      new Float32Array(control.length),
+    );
+
+  it("ships MakeHuman's CC0 T-pose and rigging benchmark", () => {
+    expect(rig.poses.map((p) => p.name)).toEqual(["tpose", "benchmark"]);
+    expect(() => bodyPoseRotations(rig, "dab")).toThrow(/dab/);
+  });
+
+  it("raises the arms level with the shoulders in the T-pose", () => {
+    const t = posedBoneHeads(rest, bodyPoseRotations(rig, "tpose"));
+    const head = (h: Float32Array, name: string) =>
+      Array.from(h.slice(bone(name) * 3, bone(name) * 3 + 3));
+    for (const side of ["L", "R"]) {
+      const shoulder = head(rest.heads, `upperarm01.${side}`);
+      const atRest = head(rest.heads, `wrist.${side}`);
+      const raised = head(t, `wrist.${side}`);
+      // From the rest A-pose the wrist rises to about shoulder height and moves outward.
+      expect(raised[1] as number).toBeGreaterThan(atRest[1] as number);
+      expect(Math.abs((raised[1] as number) - (shoulder[1] as number))).toBeLessThan(0.08);
+      expect(Math.abs(raised[0] as number)).toBeGreaterThan(Math.abs(atRest[0] as number));
+    }
+  });
+
+  it("bends every joint in the benchmark without breaking the mesh", () => {
+    const b = posed(bodyPoseRotations(rig, "benchmark"));
+    expect(b.every(Number.isFinite)).toBe(true);
+    let moved = 0;
+    for (let i = 0; i < b.length; i++)
+      moved = Math.max(moved, Math.abs((b[i] as number) - (control[i] as number)));
+    expect(moved).toBeGreaterThan(0.1);
+  });
+
+  it("grounds a posed figure on its lowest body point, and at rest exactly as evaluated", () => {
+    const skin = model.rigSkin();
+    const ev = model.evaluate(createRecipe());
+    const fromHeads = restBonesFrom(rest.names, rest.parents, ev.boneHeads);
+    expect(
+      posedGroundOffset(fromHeads, IDENTITY_POSE(rest.names.length), ev.control, skin),
+    ).toBeCloseTo(ev.groundOffset, 6);
+    const kneel = bodyPoseRotations(rig, "benchmark");
+    const lift = posedGroundOffset(fromHeads, kneel, ev.control, skin);
+    const p = skinPositions(
+      fromHeads,
+      kneel,
+      ev.control,
+      assets.skinIndex,
+      assets.skinWeight,
+      new Float32Array(ev.control.length),
+    );
+    let lowest = Number.POSITIVE_INFINITY;
+    for (const v of skin.bodyVertices) lowest = Math.min(lowest, (p[v * 3 + 1] as number) + lift);
+    expect(lowest).toBeCloseTo(0, 6);
+    // Kneeling brings the hips down: less lift than standing.
+    expect(lift).not.toBeCloseTo(ev.groundOffset, 2);
+  });
+
+  it("layers an expression over a body pose", () => {
+    const body = bodyPoseRotations(rig, "tpose");
+    const both = composeRotations(body, faceUnitRotations(rig, { JawDrop: 1 }));
+    const jaw = bone("jaw");
+    // The jaw takes the expression; the arms keep the pose.
+    expect(both[jaw * 4 + 3]).toBeLessThan(0.999);
+    const arm = bone("upperarm01.L");
+    expect(Array.from(both.slice(arm * 4, arm * 4 + 4))).toEqual(
+      Array.from(body.slice(arm * 4, arm * 4 + 4)),
+    );
   });
 });

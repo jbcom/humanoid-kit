@@ -69,6 +69,8 @@ const ATTACHMENTS_FILE = "attachments.bin.gz";
 const UNIT = 0.1;
 /** MakeHuman's modifier tables, each with a `_modifiers`, `_sliders` and `_modifiers_desc` file. */
 const MODIFIER_TABLES = ["modeling", "measurement", "bodyshapes"] as const;
+/** Whole-body poses from MakeHuman's data/poses, each CC0 by its .meta. */
+const BODY_POSES = ["tpose", "benchmark"] as const;
 
 interface TargetEntry {
   name: string;
@@ -82,6 +84,8 @@ interface TargetEntry {
  * Every packed source file must prove it is CC0, from its own bytes:
  *  - text assets (`.obj`, `.target`) carry MakeHuman's "released as CC0" header;
  *  - JSON assets carry `"license": "CC0"`;
+ *  - a pose BVH carries its licence in the `.meta` file beside it
+ *    (`license CC0`);
  *  - the remaining kinds (modifier table, pose-unit BVH) have no per-file
  *    statement and are accepted only because the upstream LICENSE.md names
  *    their category under "released under CC0 1.0 Universal". That statement
@@ -114,6 +118,13 @@ function requireCc0(rel: string, text: string): void {
       }
     } catch {
       // fall through to the repository statement
+    }
+  }
+  if (rel.endsWith(".bvh")) {
+    const meta = path.join(DATA, rel.replace(/\.bvh$/, ".meta"));
+    if (fs.existsSync(meta) && /^license\s+CC0\s*$/m.test(fs.readFileSync(meta, "utf8"))) {
+      licenseEvidence[rel] = 'sibling .meta: "license CC0"';
+      return;
     }
   }
   const category = REPO_CATEGORIES[rel];
@@ -502,6 +513,21 @@ async function main() {
   // Face pose units: BVH frames named by face-poseunits.json framemapping.
   const faceUnits = JSON.parse(read("poseunits/face-poseunits.json")) as { framemapping: string[] };
   const faceBvh = parseBvh(read("poseunits/face-poseunits.bvh"));
+  // Whole-body poses MakeHuman ships as CC0 (each proven by its .meta): the
+  // T-pose, and the rigging benchmark, which bends every joint to an extreme.
+  const poses = BODY_POSES.map((name) => {
+    const bvh = parseBvh(read(`poses/${name}.bvh`));
+    const meta = fs.readFileSync(path.join(DATA, `poses/${name}.meta`), "utf8");
+    const field = (key: string) =>
+      meta.match(new RegExp(`^${key}\\s+(.+)$`, "m"))?.[1]?.trim() ?? "";
+    return {
+      name,
+      title: field("name"),
+      description: field("description"),
+      joints: bvh.joints,
+      frame: (bvh.frames[0] ?? []).map((x) => Math.round(x * 1000) / 1000),
+    };
+  });
   const sliders = buildSliders(
     MODIFIER_TABLES.map((table) => ({
       table,
@@ -592,6 +618,7 @@ async function main() {
       joints: faceBvh.joints,
       frames: faceBvh.frames.map((row) => row.map((x) => Math.round(x * 1000) / 1000)),
     },
+    poses,
   };
 
   // Attachment occlusion is geometry of the default figure, so it is baked here,

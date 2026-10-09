@@ -77,14 +77,17 @@ function initialRecipe(): Recipe {
 /** `?face=JawDrop:1,LipsKiss:0.5` poses the shot's face. */
 function initialPose(): HumanoidPose {
   const raw = params.get("face");
-  if (!raw) return {};
+  const body = params.get("pose");
   return {
-    faceUnits: Object.fromEntries(
-      raw.split(",").map((pair) => {
-        const [name = "", weight = "1"] = pair.split(":");
-        return [name, Number(weight)];
-      }),
-    ),
+    ...(body && { body }),
+    ...(raw && {
+      faceUnits: Object.fromEntries(
+        raw.split(",").map((pair) => {
+          const [name = "", weight = "1"] = pair.split(":");
+          return [name, Number(weight)];
+        }),
+      ),
+    }),
   };
 }
 
@@ -179,10 +182,8 @@ function Shot() {
           recipe={recipe}
           pose={pose}
           position={[0, lift, 0]}
-          onEvaluated={(ev) => {
-            setLift(ev.groundOffset);
-            setReady(true);
-          }}
+          onGroundOffset={setLift}
+          onEvaluated={() => setReady(true)}
         />
         <OrbitControls makeDefault target={target} />
       </Canvas>

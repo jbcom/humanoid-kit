@@ -3,7 +3,7 @@
  * `<Humanoid>`, which renders a recipe and updates its geometry in place when
  * the recipe changes (no remount, so slider drags stay smooth).
  */
-import { type ThreeElements, type ThreeEvent, useThree } from "@react-three/fiber";
+import { type ThreeElements, type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import {
   createContext,
   type ReactNode,
@@ -44,7 +44,14 @@ import { acquireLayerAtlas } from "../render/layerAtlas.ts";
 import { AttachmentStandardMaterial, setOcclusionAttributes } from "../render/occlusion.ts";
 import { CURVATURE_ATTRIBUTE, SkinMaterial } from "../render/skinMaterial.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
-import { faceUnitRotations } from "../rig/pose.ts";
+import {
+  bodyPoseRotations,
+  composeRotations,
+  faceUnitRotations,
+  IDENTITY_POSE,
+  posedGroundOffset,
+  restBonesFrom,
+} from "../rig/pose.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 
 const ClientContext = createContext<HumanoidWorkerClient | null>(null);
@@ -114,10 +121,21 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
   onPick?: (pick: HumanoidPick) => void;
   /** How the figure is posed; absent is the rest pose. */
   pose?: HumanoidPose;
+  /**
+   * Called with the lift (metres) that puts the figure's lowest body point on
+   * the ground, whenever the figure or its pose changes it: place the group at
+   * this height to stand, crouch or kneel on y = 0.
+   */
+  onGroundOffset?: (offset: number) => void;
 };
 
-/** A pose: facial pose units by name (MakeHuman's 60, e.g. `JawDrop`, `LeftUpperLidClosed`), 0..1. */
+/**
+ * A pose: a whole-body pose from the pack by name (`tpose`, `benchmark`) and
+ * facial pose units by name (MakeHuman's 60, e.g. `JawDrop`,
+ * `LeftUpperLidClosed`), 0..1, layered on top.
+ */
 export interface HumanoidPose {
+  body?: string;
   faceUnits?: Readonly<Record<string, number>>;
 }
 
@@ -246,6 +264,7 @@ function SkinnedPart({
   visible,
   part,
   renderOrder,
+  shape,
 }: {
   geometry: BufferGeometry;
   material: Material;
@@ -253,6 +272,8 @@ function SkinnedPart({
   visible: boolean;
   part: HumanoidPick["part"];
   renderOrder?: number;
+  /** Changes whenever the figure is re-evaluated or re-posed. */
+  shape: object;
 }) {
   const mesh = useMemo(() => {
     const m = new SkinnedMesh(geometry, material);
@@ -261,6 +282,24 @@ function SkinnedPart({
     m.receiveShadow = true;
     return m;
   }, [geometry, material, skeleton]);
+  // A skinned mesh caches its own (posed) bounds: three computes them once and
+  // never again, so a new pose or a re-evaluated (say, taller) figure would
+  // keep the old ones, and picking and culling would miss whatever lies
+  // outside them. They are recomputed from the posed vertices on the frame
+  // after each change of shape (the skinning reads world matrices, so those
+  // are brought up to date first).
+  const stale = useRef(true);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: shape is a deliberate trigger
+  useEffect(() => {
+    stale.current = true;
+  }, [mesh, shape]);
+  useFrame(() => {
+    if (!stale.current) return;
+    stale.current = false;
+    mesh.parent?.updateWorldMatrix(true, true);
+    mesh.computeBoundingBox();
+    mesh.computeBoundingSphere();
+  });
   mesh.visible = visible;
   mesh.userData.hkPart = part;
   if (renderOrder !== undefined) mesh.renderOrder = renderOrder;
@@ -276,6 +315,7 @@ function AttachmentMesh({
   visible,
   report,
   eyes,
+  shape,
 }: {
   index: number;
   topology: AttachmentTopology;
@@ -285,6 +325,7 @@ function AttachmentMesh({
   visible: boolean;
   report: (e: Error) => void;
   eyes: Recipe["eyes"];
+  shape: object;
 }) {
   const material = useAttachmentMaterial(topology, occlusionKeys, report);
   useEffect(() => {
@@ -298,6 +339,7 @@ function AttachmentMesh({
       visible={visible}
       part={index}
       renderOrder={topology.zDepth}
+      shape={shape}
     />
   );
 }
@@ -334,6 +376,7 @@ export function Humanoid({
   onError,
   onPick,
   pose,
+  onGroundOffset,
   ...group
 }: HumanoidProps) {
   const client = useHumanoidClient();
@@ -370,14 +413,53 @@ export function Humanoid({
   // The pose: face units blended into bone rotations (rest when absent), and
   // the attachments' occlusion following it.
   const faceUnits = pose?.faceUnits;
+  const body = pose?.body;
+  const rotations = useMemo(() => {
+    if (!ready || (!body && !faceUnits)) return null; // rest
+    const face = faceUnitRotations(ready.rig, faceUnits ?? {});
+    return body ? composeRotations(bodyPoseRotations(ready.rig, body), face) : face;
+  }, [ready, body, faceUnits]);
   useEffect(() => {
     if (!rig || !ready || !keyBasis) return;
-    const q = faceUnitRotations(ready.rig, faceUnits ?? {});
+    const q = rotations ?? IDENTITY_POSE(ready.rig.bones.length);
     rig.skeleton.bones.forEach((bone, i) => {
       bone.quaternion.fromArray(q, i * 4);
     });
     occlusionKeys.fromArray(occlusionKeyWeights(keyBasis, q));
-  }, [rig, ready, keyBasis, occlusionKeys, faceUnits]);
+  }, [rig, ready, keyBasis, occlusionKeys, rotations]);
+
+  // Where the posed figure's lowest body point is: a crouch or a kneel comes
+  // down to the ground rather than hanging where the standing feet were.
+  const [figure, setFigure] = useState<Evaluation | null>(null);
+  // A new identity whenever the figure or its pose changes: the meshes' bounds follow it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: figure and rotations are the triggers
+  const shape = useMemo(() => ({}), [figure, rotations]);
+  const onGroundOffsetRef = useLatest(onGroundOffset);
+  const rotationsRef = useLatest(rotations);
+  /** Reports the ground offset of `ev` in the current pose. */
+  const ground = useMemo(
+    () => (ev: Evaluation) => {
+      if (!ready) return;
+      const q = rotationsRef.current;
+      const offset = q
+        ? posedGroundOffset(
+            restBonesFrom(ready.rig.bones, ready.rig.parents, ev.boneHeads),
+            q,
+            ev.control,
+            ready.rig.skin,
+          )
+        : ev.groundOffset;
+      if (groupRef.current) groupRef.current.userData.groundOffset = offset;
+      onGroundOffsetRef.current?.(offset);
+    },
+    [ready, rotationsRef, onGroundOffsetRef],
+  );
+  // A new pose regrounds the figure it poses; a new evaluation is grounded as
+  // it arrives (below), before `onEvaluated`, so the two are never out of step.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rotations is the trigger; figure is read
+  useEffect(() => {
+    if (figure) ground(figure);
+  }, [rotations, ground]);
 
   useEffect(
     () => () => {
@@ -428,7 +510,8 @@ export function Humanoid({
           const g = geometries.attachments[i];
           if (g) writeGeometry(g, a);
         });
-        if (groupRef.current) groupRef.current.userData.groundOffset = ev.groundOffset;
+        setFigure(ev);
+        ground(ev);
         setShown(true);
         onEvaluatedRef.current?.(ev);
       },
@@ -439,7 +522,7 @@ export function Humanoid({
     return () => {
       live = false;
     };
-  }, [client, geometries, rig, ready, recipe, key, onEvaluatedRef, report]);
+  }, [client, geometries, rig, ready, recipe, key, onEvaluatedRef, report, ground]);
 
   return (
     <group
@@ -457,6 +540,7 @@ export function Humanoid({
             skeleton={rig.skeleton}
             visible={shown}
             part="body"
+            shape={shape}
           />
           {ready.topology.attachments.map((t, i) => {
             const g = geometries.attachments[i];
@@ -471,6 +555,7 @@ export function Humanoid({
                 visible={shown}
                 report={report}
                 eyes={recipe.eyes}
+                shape={shape}
               />
             ) : null;
           })}

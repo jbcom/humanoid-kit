@@ -64,6 +64,59 @@ const change = (a: number[], b: number[]) =>
   Math.abs((a[1] as number) - (b[1] as number)) +
   Math.abs((a[2] as number) - (b[2] as number));
 
+/** The lowest row of the frame (0 top, 1 bottom) that is not the key background. */
+async function lowestFigureRow(page: Page): Promise<number> {
+  return page.locator("canvas").evaluate((el) => {
+    const c = el as HTMLCanvasElement;
+    const copy = document.createElement("canvas");
+    copy.width = c.width;
+    copy.height = c.height;
+    const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
+    ctx.drawImage(c, 0, 0);
+    const { data } = ctx.getImageData(0, 0, c.width, c.height);
+    for (let y = c.height - 1; y >= 0; y--)
+      for (let x = 0; x < c.width; x++) {
+        const i = (y * c.width + x) * 4;
+        const d =
+          Math.abs((data[i] as number) - 255) +
+          Math.abs(data[i + 1] as number) +
+          Math.abs((data[i + 2] as number) - 255);
+        if (d > 60) return y / c.height;
+      }
+    return 0;
+  });
+}
+
+test.describe("grounding", () => {
+  test.use({ viewport: { width: 240, height: 360 } });
+  test.setTimeout(180_000);
+
+  test("a kneeling figure comes down to the ground it stands on", async ({ page }) => {
+    // The camera sits at floor height, looking level, so every point of the
+    // floor projects onto the horizon (the middle row) whatever its depth: a
+    // grounded figure's lowest pixel is on that row, a floating one's above it.
+    // The magenta background keys out everything but the figure.
+    await openSilentGame(page, "./", { cam: "0,0,4.2,0,0,0", bg: "ff00ff" });
+    await page.locator('[data-figure="ready"]').waitFor({ timeout: 120_000 });
+    await show(page, {});
+    const standing = await lowestFigureRow(page);
+    await page.evaluate(() => {
+      window.hkSetRecipe?.({}, { body: "benchmark" });
+    });
+    await page.locator('[data-figure="ready"][data-generation="2"]').waitFor({ timeout: 60_000 });
+    await page.evaluate(
+      () =>
+        new Promise<void>((done) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => done())),
+        ),
+    );
+    const kneeling = await lowestFigureRow(page);
+    // Both on the horizon, within a few pixels.
+    expect(Math.abs(standing - 0.5)).toBeLessThan(0.015);
+    expect(Math.abs(kneeling - 0.5)).toBeLessThan(0.015);
+  });
+});
+
 test.describe("posing", () => {
   test.use({ viewport: { width: 240, height: 300 } });
   test.setTimeout(180_000);

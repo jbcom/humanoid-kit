@@ -366,6 +366,20 @@ mean what they meant there; everything must be testable in Node.
   is exponentiated. Blending is order-independent and exact for one unit.
 - *A CPU reference* (`skinPositions`) poses control vertices exactly as the
   shader does, for tests, presence anchors and pose-keyed occlusion bakes.
+- *MakeHuman's BVH files are Z-up, facing -Y*; the figure is Y-up, facing +Z.
+  Every rotation channel is mapped into the figure's axes (X stays X, Y becomes
+  -Z, Z becomes Y). An X rotation (the jaw, the lids) means the same either
+  way, which is how an unmapped first version passed its jaw and lid tests
+  while turning the eyes the wrong way; tests now turn the eyes and move the
+  mouth sideways.
+- *Body poses* come from the pack: MakeHuman's CC0 T-pose and its rigging
+  benchmark, which bends every joint to an extreme and is the joint-extreme
+  check. An expression layers on top of a body pose bone by bone.
+- *Grounding follows the pose.* The rest ground offset comes with each
+  evaluation; a posed figure's comes from skinning its control mesh on the
+  main thread (`posedGroundOffset`, with the pack's skin sent once), so a
+  kneeling figure rests on the floor instead of hanging where its standing
+  feet were.
 
 ## Layers
 

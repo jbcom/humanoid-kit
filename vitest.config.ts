@@ -64,6 +64,10 @@ export default defineConfig({
           include: ["tests/**/*.test.ts"],
           exclude: ["tests/browser/**", "tests/bake/**"],
           environment: "node",
+          // Building a model takes under a second alone, but coverage
+          // instrumentation and the parallel suites stretch it several times;
+          // 30 s still catches a hang.
+          testTimeout: 30_000,
         },
       },
       {

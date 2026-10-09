@@ -14,6 +14,7 @@ import {
 } from "../../src/format/assetFormat.ts";
 import type { Recipe } from "../../src/recipe/recipe.ts";
 import type { ReadyInfo } from "../../src/worker/protocol.ts";
+import { EMPTY_RIG } from "../emptyRig.ts";
 
 export function readyInfo(withAdultPack = false): ReadyInfo {
   const body = bodyManifest as unknown as {
@@ -30,11 +31,7 @@ export function readyInfo(withAdultPack = false): ReadyInfo {
     sliders: withAdultPack
       ? mergeSliderTasks(body.sliders, adult.sliders)
       : mergeSliderTasks(body.sliders),
-    rig: {
-      bones: [],
-      parents: new Int16Array(0),
-      faceUnits: { names: [], joints: [], frames: [] },
-    },
+    rig: EMPTY_RIG,
     adultAnatomyLoaded: withAdultPack,
   };
 }

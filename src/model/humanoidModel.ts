@@ -21,7 +21,7 @@ import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
-import { faceUnitRotations, restBones, rigData, skinPositions } from "../rig/pose.ts";
+import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { buildLayerFields } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
@@ -375,6 +375,15 @@ export class HumanoidModel {
   /** Each bone's parent index in skin-weight order (-1 for the root). */
   boneParents(): Int16Array {
     return restBones(this.assets, this.assets.positions).parents;
+  }
+
+  /** The pack's skin and the visible body's base vertices, for grounding a posed figure. */
+  rigSkin(): RigSkin {
+    return {
+      skinIndex: this.assets.skinIndex,
+      skinWeight: this.assets.skinWeight,
+      bodyVertices: this.bodyVertices,
+    };
   }
 
   /**
