@@ -358,6 +358,10 @@ compute what the renderer will do.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).
+- `melaninDensityAlbedo(tone, factor, haemoglobin)`: natural skin carrying
+  `factor` times the tone's melanin optical density, found on the measured
+  melanin axis (extrapolated past the deepest anchor); the same factor darkens
+  deep skin far more than fair. `areolaAlbedo` uses it.
 - Skin-state layers (`src/surface/regions/states.ts`), driven by the signals in
   `SkinPaintInput.signals`; every magnitude is cited, or marked as a choice, in
   research/SKIN-STATES.md Part C:
