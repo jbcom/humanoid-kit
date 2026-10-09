@@ -835,7 +835,14 @@ export class HumanoidModel {
    * beard line are never tinted). Depends only on the packs, so the packer
    * bakes it once. Needs the default figure's target files.
    */
-  bakeHairFields(asset: BoundAsset, options: { feather?: boolean } = {}): HairFields {
+  bakeHairFields(
+    asset: BoundAsset,
+    options: {
+      feather?: boolean;
+      /** The style's texture cut-out (`HairFieldsInput.cutout`, without the UVs, which the asset has). */
+      cutout?: { width: number; height: number; alpha: Uint8Array };
+    } = {},
+  ): HairFields {
     const rest = this.evaluate(occlusionFigure()).control;
     const control = evaluateBinding(asset, rest, new Float32Array(asset.entry.vertexCount * 3));
     const head = this.assets.manifest.skeleton.bones.findIndex((b) => b.name === "head");
@@ -855,6 +862,9 @@ export class HumanoidModel {
       body: { positions: rest, triangles: this.bodyControlTriangles },
       scalpEligible: eligible,
       ...(options.feather !== undefined && { feather: options.feather }),
+      ...(options.cutout && {
+        cutout: { faceUvs: asset.faceUvs, uvs: asset.uvs, ...options.cutout },
+      }),
     });
   }
 

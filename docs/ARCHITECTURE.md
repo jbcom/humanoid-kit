@@ -1103,7 +1103,9 @@ a coloured texture; everything in the pure core is testable in Node.
   1 on a card standing out of the scalp, 0 on one lying along it (its normal
   against the direction from the nearest scalp point); and the **scalp**, the
   head's body vertices within 11 mm of a card with their density, 1 under a card
-  falling to 0 over 8 mm. Each is a pure function of the packs, so the packer
+  falling to 0 over 8 mm, and only where the card's texture cut-out is opaque at
+  the nearest point (a card's mesh reaches past the hair painted on it, and the
+  first version tinted the skin there: a flat patch over the temple and cheek). Each is a pure function of the packs, so the packer
   bakes it once, like occlusion. A style may opt out of the fade (`feather:
   false`): `afro01`'s dense curls end in a fuzzy edge of their own, and thinned,
   their roots showed the dark inside of the volume as a band.
@@ -1117,8 +1119,10 @@ a coloured texture; everything in the pure core is testable in Node.
   speckle on the afro that read as noise.) The skin shows
   through, so it must not be bare: `SkinMaterial` takes a per-vertex
   `hkScalp` attribute (the style's scalp, carried through the body's stencil like
-  any field) and a uniform colour, and mixes the skin toward 0.9 of the hair's
-  albedo by 0.5 where hair grows (a stubble shade). It is an attribute and not
+  any field) and a uniform colour, and takes the skin toward its own colour in
+  the hair's shade (0.7 of it, with 0.15 of the hair's colour) by up to 0.7 where
+  hair grows: built from the skin, so white hair paints no pale patch on deep skin
+  and black none dark on fair. It is an attribute and not
   a skin layer because a layer's field is rasterised once from the base mesh into
   a shared atlas, and a scalp differs by style. A fin card seen edge-on is a
   hairline-thin dark sliver, and the afro stands 340 loose curl cards out of its
