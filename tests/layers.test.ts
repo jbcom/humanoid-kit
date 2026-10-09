@@ -4,6 +4,7 @@ import {
   applyLayers,
   buildLayerFields,
   creaseHeight,
+  layerUsesCoordinate,
   paintStopTable,
   type SkinLayer,
   type SkinPaintInput,
@@ -127,8 +128,14 @@ describe("the stop table", () => {
     // The lips are one colour, so every stop carries it; the areola's body is its own colour
     // (its radial profile is tested in torso.test.ts) and its outer stop the skin's.
     for (const k of [0, STOP_COUNT - 1]) close(stop("lips", k), lipAlbedo(i.tone, i.lips));
-    close(stop("areola", 2), areolaAlbedo(i.tone, i.areola));
-    close(stop("areola", STOP_COUNT - 1), skinAlbedo(i.tone));
+    // A multiply layer of ratios to the skin: the areola's body is its colour on that skin, the
+    // outer stop leaves any skin as it is.
+    const skin = skinAlbedo(i.tone);
+    close(
+      stop("areola", 2).map((x, c) => x * (skin[c] as number)),
+      areolaAlbedo(i.tone, i.areola),
+    );
+    close(stop("areola", STOP_COUNT - 1), [1, 1, 1]);
     expect(table[row("flush")]).toBeCloseTo(0.4, 6);
     expect(table[row("flush") + 1]).toBe(1); // multiply
     expect(table[row("lips") + 1]).toBe(0); // mix
@@ -167,11 +174,12 @@ describe("applyLayers", () => {
     const tint: Rgb = [1.1, 0.84, 0.84];
     const mix = (a: number, b: number, t: number) => a + (b - a) * t;
     const [mf, ml, ma] = [0.5, 0.3, 0.2];
-    // The old shader: flush tint, then lips, then areola, at strengths (flush, 0.9, 0.9).
+    const skin = skinAlbedo(i.tone);
+    // The old shader: flush tint, then lips, then the areola (now a multiply by its ratio to the skin).
     const expected = base.map((c, k) => {
       let x = mix(c, c * (tint[k] as number), mf * 0.7);
       x = mix(x, lip[k] as number, ml * 0.9);
-      return mix(x, areola[k] as number, ma * 0.9);
+      return mix(x, x * ((areola[k] as number) / (skin[k] as number)), ma);
     });
     // The areola's coordinate 0.4 is its body, 11 mm from the nipple's centre.
     const got = applyLayers(base, table, [
@@ -234,6 +242,65 @@ describe("detail and surface layers", () => {
         input(),
       ),
     ).toThrow(/size > 0/);
+  });
+
+  it("carry an amplitude profile along the coordinate in the stops, and read the coordinate only then", () => {
+    const profiled: SkinLayer = {
+      id: "profiled",
+      kind: "detail",
+      pattern: "bumps",
+      profiled: true,
+      targets: [],
+      fields: none,
+      paint: () => ({
+        strength: 0.8,
+        height: 0.0002,
+        size: 0.001,
+        profile: [1, 0.5, 0],
+      }),
+    };
+    const tubercles: SkinLayer = {
+      id: "tubercles",
+      kind: "detail",
+      pattern: "tubercles",
+      targets: [],
+      fields: none,
+      paint: () => ({ strength: 1, height: 0.0006, size: 0.0022, profile: [0, 0.2] }),
+    };
+    const table = paintStopTable([profiled, tubercles], input());
+    const row = (l: number) => l * STOP_TABLE_WIDTH * 4;
+    // Kind 6 is bumps with a profile, 7 tubercles (whose occupancy is the profile).
+    expect(table[row(0) + 1]).toBe(6);
+    expect(table[row(1) + 1]).toBe(7);
+    // The profile is resampled evenly over the stops, in the red channel, as colour stops are.
+    const red = (l: number) =>
+      Array.from({ length: STOP_COUNT }, (_, k) => table[row(l) + (k + 1) * 4] as number);
+    expect(red(0)[0]).toBeCloseTo(1, 6);
+    expect(red(0)[STOP_COUNT - 1]).toBeCloseTo(0, 6);
+    expect(red(0)[Math.floor((STOP_COUNT - 1) / 2)]).toBeGreaterThan(0.4);
+    expect(red(1)[0]).toBeCloseTo(0, 6);
+    expect(red(1)[STOP_COUNT - 1]).toBeCloseTo(0.2, 6);
+    expect(layerUsesCoordinate(profiled)).toBe(true);
+    expect(layerUsesCoordinate(tubercles)).toBe(true);
+    expect(layerUsesCoordinate(bumps)).toBe(false);
+    // A profile outside 0..1, or empty, is a mistake, and so is one a layer did not declare.
+    const bad = (profile: number[]): SkinLayer => ({
+      ...profiled,
+      paint: () => ({ strength: 1, height: 0.001, size: 0.001, profile }),
+    });
+    expect(() => paintStopTable([bad([1.5])], input())).toThrow(/profile/);
+    expect(() => paintStopTable([bad([])], input())).toThrow(/profile/);
+    expect(() => paintStopTable([bad(Array(STOP_COUNT + 1).fill(1))], input())).toThrow(/profile/);
+    const undeclared: SkinLayer = {
+      ...bumps,
+      paint: () => ({ strength: 1, height: 0.001, size: 0.001, profile: [1] }),
+    };
+    expect(() => paintStopTable([undeclared], input())).toThrow(/profile/);
+    const missing: SkinLayer = {
+      ...profiled,
+      paint: () => ({ strength: 1, height: 0.001, size: 0.001 }),
+    };
+    expect(() => paintStopTable([missing], input())).toThrow(/profile/);
   });
 
   it("leave the colour alone, and surface changes add by mask and strength", () => {

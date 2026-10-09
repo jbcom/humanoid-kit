@@ -70,6 +70,15 @@ export interface DetailPaint {
    * about 0.002). `creases`: how many creases span the layer's coordinate.
    */
   size: number;
+  /**
+   * For a layer that declares a profile (`DetailLayer.profiled`, and every
+   * `tubercles` layer): the relief's amplitude (0..1) at evenly spaced points
+   * along the layer's coordinate, 1 to `STOP_COUNT` of them, resampled like a
+   * colour layer's stops. For `tubercles` it is the share of cells that raise
+   * a tubercle. It is how a relief whose extent depends on the figure (an
+   * areola's, which grows with age) takes its window from the paint.
+   */
+  profile?: readonly number[];
 }
 
 /** How a layer changes the surface's reflection where its mask lies. */
@@ -149,9 +158,19 @@ export interface ColourLayer extends LayerBase {
  */
 export interface DetailLayer extends LayerBase {
   kind: "detail";
-  pattern: "bumps" | "creases" | "ridges";
+  pattern: "bumps" | "creases" | "ridges" | "tubercles";
+  /**
+   * The layer's coordinate carries an amplitude profile (`DetailPaint.profile`):
+   * `bumps` only, as `tubercles` always do. A profiled layer's `paint` must
+   * give one, an unprofiled layer's must not.
+   */
+  profiled?: boolean;
   paint(input: SkinPaintInput): DetailPaint;
 }
+
+/** Whether a detail layer's coordinate is an amplitude profile (a profiled `bumps` layer, or `tubercles`). */
+const isProfiled = (layer: DetailLayer): boolean =>
+  layer.pattern === "tubercles" || layer.profiled === true;
 
 /** Changes how glossy and how specular the skin is (sweat, oil, wetness). */
 export interface SurfaceLayer extends LayerBase {
@@ -168,14 +187,17 @@ export const STOP_COUNT = 8;
  * Stop-table texels per layer: one header and the stops. The header is
  * (strength, kind, a, b): kind 0 mix, 1 multiply (colour layers; the stops
  * follow), 2 bumps and 3 creases (detail; a height, b size), 4 surface
- * (a roughness, b specular) and 5 ridges (detail; a height, b spacing).
+ * (a roughness, b specular), 5 ridges (detail; a height, b spacing), 6 bumps
+ * with a profile and 7 tubercles (detail; a height, b spacing; the stops' red
+ * channel is the amplitude profile along the coordinate).
  */
 export const STOP_TABLE_WIDTH = STOP_COUNT + 1;
 
 /** The header's kind code for a layer. */
 export function layerKindCode(layer: SkinLayer): number {
   if (layer.kind === "detail") {
-    if (layer.pattern === "bumps") return 2;
+    if (layer.pattern === "bumps") return layer.profiled ? 6 : 2;
+    if (layer.pattern === "tubercles") return 7;
     if (layer.pattern === "ridges") return 5;
     return 3;
   }
@@ -185,11 +207,14 @@ export function layerKindCode(layer: SkinLayer): number {
 
 /**
  * Whether the shader reads a layer's coordinate: a colour layer's stops lie
- * along it and a crease layer's creases span it. Bumps and surface layers
- * read their mask alone.
+ * along it, a crease layer's creases span it, a profiled layer's amplitude
+ * profile does. Plain bumps and surface layers read their mask alone.
  */
 export const layerUsesCoordinate = (layer: SkinLayer): boolean =>
-  !(layer.kind === "surface" || (layer.kind === "detail" && layer.pattern === "bumps"));
+  !(
+    layer.kind === "surface" ||
+    (layer.kind === "detail" && layer.pattern === "bumps" && !layer.profiled)
+  );
 
 const smoothstep = (lo: number, hi: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
@@ -433,6 +458,31 @@ export function buildLayerFields(
 
 const unit = (x: number) => Math.min(1, Math.max(0, x));
 
+/** The profile's amplitudes in the red channel of the stops, resampled evenly as colour stops are. */
+function writeProfile(
+  layer: DetailLayer,
+  profile: readonly number[] | undefined,
+  out: Float32Array,
+  row: number,
+): void {
+  if (
+    !profile ||
+    profile.length < 1 ||
+    profile.length > STOP_COUNT ||
+    !profile.every((x) => x >= 0 && x <= 1)
+  )
+    throw new RangeError(
+      `skin layer ${layer.id}: a profile of 1 to ${STOP_COUNT} amplitudes in 0..1 is required`,
+    );
+  for (let k = 0; k < STOP_COUNT; k++) {
+    const x = (k / (STOP_COUNT - 1)) * (profile.length - 1);
+    const i = Math.min(Math.floor(x), profile.length - 1);
+    const a = profile[i] as number;
+    const b = profile[Math.min(i + 1, profile.length - 1)] as number;
+    out.set([a + (b - a) * (x - i), 0, 0, 1], row + (k + 1) * 4);
+  }
+}
+
 /**
  * The figure's stop table: `layers.length` rows of `STOP_TABLE_WIDTH` RGBA
  * texels. Texel 0 is the header (`STOP_TABLE_WIDTH`); for a colour layer,
@@ -461,6 +511,11 @@ export function paintStopTable(
       if (!(p.height >= 0 && p.size > 0))
         throw new RangeError(`skin layer ${layer.id}: height must be >= 0 and size > 0`);
       out.set([unit(p.strength) * gate, code, p.height, p.size], row);
+      if (isProfiled(layer)) writeProfile(layer, p.profile, out, row);
+      else if (p.profile)
+        throw new RangeError(
+          `skin layer ${layer.id}: a profile on a layer that did not declare one`,
+        );
       return;
     }
     if (layer.kind === "surface") {

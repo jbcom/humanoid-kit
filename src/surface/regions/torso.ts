@@ -5,7 +5,7 @@
  * a CHOICE there.
  */
 import { AssetFormatError, type HumanoidAssets } from "../../format/assetFormat.ts";
-import type { ColourLayer } from "../layers.ts";
+import type { ColourLayer, DetailLayer, SkinPaintInput } from "../layers.ts";
 import { areolaAlbedo, type Rgb, skinAlbedo } from "../skinTone.ts";
 import {
   areolaRadius,
@@ -90,15 +90,46 @@ export function areolaZone(assets: HumanoidAssets): AreolaZone {
  */
 export const AREOLA_CHILD_DEPTH = 0.3;
 
+/** The radii at which a layer's eight stops sample the coordinate, metres. */
+const STOP_RADII = Array.from({ length: 8 }, (_, i) => (i / 7) * AREOLA_REACH);
+
+/** Where a figure's nipple and areola end, and how soft the areola's edge is, metres, and its stage. */
+interface AreolaShape {
+  edge: number;
+  soft: number;
+  tip: number;
+  /** Puberty, 0..1 (`pubertyProgress`). */
+  stage: number;
+  gender: number;
+}
+
+function areolaShape(input: SkinPaintInput): AreolaShape {
+  const b = figureBuild(input);
+  const edge = areolaRadius(b.age, b.gender, b.breastSize);
+  return {
+    edge,
+    soft: Math.max(AREOLA_EDGE_MIN, AREOLA_EDGE_SOFTNESS * edge),
+    tip: nippleRadius(b.age, b.gender),
+    stage: pubertyProgress(b.age, b.gender),
+    gender: b.gender,
+  };
+}
+
+/** 1 within the areola, 0 beyond it, at radius `r` from the nipple's centre. */
+const onAreola = (s: AreolaShape, r: number) => 1 - smoothstep(s.edge - s.soft, s.edge + s.soft, r);
+/** 1 on the nipple, 0 beyond it. */
+const onNipple = (s: AreolaShape, r: number) => 1 - smoothstep(s.tip - 0.0008, s.tip + 0.0012, r);
+
 /**
  * The areola's colour round a nipple, by distance from its centre: the nipple's
  * colour (the areola's by `nippleContrast`) out to the nipple's radius, the
  * areola's out to the areola's (`areolaRadius`, which grows through puberty
- * and with the breast), the skin's beyond, each edge soft.
+ * and with the breast), the skin's beyond, each edge soft. Painted as the
+ * ratio of each to the tone's skin and multiplied in.
  */
 export const AREOLA_LAYER: ColourLayer = {
   id: "areola",
-  blend: "mix",
+  blend: "multiply",
   targets: [NIPPLE_TARGET],
   fields: (assets) => {
     const { mask, radial } = areolaZone(assets);
@@ -107,29 +138,117 @@ export const AREOLA_LAYER: ColourLayer = {
   paint: (input) => {
     const { tone, areola } = input;
     const b = figureBuild(input);
-    const p = pubertyProgress(b.age, b.gender);
-    const depth = areola * (AREOLA_CHILD_DEPTH + (1 - AREOLA_CHILD_DEPTH) * p);
+    const shape = areolaShape(input);
+    const depth = areola * (AREOLA_CHILD_DEPTH + (1 - AREOLA_CHILD_DEPTH) * shape.stage);
     const areolaColour = areolaAlbedo(tone, depth);
     const k = nippleContrast(b.age, b.gender);
     const nippleColour = areolaColour.map((c) => c * k) as Rgb;
     const skin = skinAlbedo(tone);
-    const edge = areolaRadius(b.age, b.gender, b.breastSize);
-    const tip = nippleRadius(b.age, b.gender);
-    const edgeSoft = Math.max(AREOLA_EDGE_MIN, AREOLA_EDGE_SOFTNESS * edge);
-    const stops = Array.from({ length: 8 }, (_, i) => {
-      const r = (i / 7) * AREOLA_REACH;
-      const onAreola = 1 - smoothstep(edge - edgeSoft, edge + edgeSoft, r);
-      const onNipple = 1 - smoothstep(tip - 0.0008, tip + 0.0012, r);
+    // As ratios to the tone's own skin, so the layer multiplies whatever skin is under it (the
+    // base colour carries its own shading, which a mix to the tone's flat albedo would show as
+    // a halo) and the skin beyond the areola is the identity.
+    const stops = STOP_RADII.map((r) => {
+      const a = onAreola(shape, r);
+      const n = onNipple(shape, r);
       return [0, 1, 2].map((c) => {
         const inside =
           (areolaColour[c] as number) +
-          ((nippleColour[c] as number) - (areolaColour[c] as number)) * onNipple;
-        return (skin[c] as number) + (inside - (skin[c] as number)) * onAreola;
+          ((nippleColour[c] as number) - (areolaColour[c] as number)) * n;
+        return 1 + (inside / (skin[c] as number) - 1) * a;
       }) as Rgb;
     });
-    return { strength: 0.9, stops };
+    return { strength: 1, stops };
+  },
+};
+
+/**
+ * The texture of nipple and areolar skin: a fine granular relief (the areola's
+ * skin is thin, with smooth muscle beneath that wrinkles it, and the nipple's
+ * is creased). Amplitude by the profile: full on the nipple, `AREOLA_BODY_RELIEF`
+ * of it over the areola, none beyond the areola's edge; fainter before puberty.
+ * Height and grain are CHOICES, a tenth of a millimetre at a millimetre's
+ * spacing: no profilometry of the areola was found, and skin's own relief is of
+ * that order.
+ */
+export const AREOLA_RELIEF_HEIGHT = 0.00012;
+export const AREOLA_RELIEF_SPACING = 0.0009;
+export const AREOLA_BODY_RELIEF = 0.5;
+/** The share of the relief a child's skin shows before puberty (CHOICE). */
+export const AREOLA_CHILD_RELIEF = 0.35;
+
+export const AREOLA_RELIEF_LAYER: DetailLayer = {
+  id: "areola-relief",
+  kind: "detail",
+  pattern: "bumps",
+  profiled: true,
+  targets: [NIPPLE_TARGET],
+  fields: (assets) => {
+    const { mask, radial } = areolaZone(assets);
+    return { mask, coord: radial };
+  },
+  paint: (input) => {
+    const shape = areolaShape(input);
+    return {
+      strength: AREOLA_CHILD_RELIEF + (1 - AREOLA_CHILD_RELIEF) * shape.stage,
+      height: AREOLA_RELIEF_HEIGHT,
+      size: AREOLA_RELIEF_SPACING,
+      profile: STOP_RADII.map((r) =>
+        Math.max(onNipple(shape, r), AREOLA_BODY_RELIEF * onAreola(shape, r)),
+      ),
+    };
+  },
+};
+
+/**
+ * Montgomery tubercles: sebaceous glands in a ring over the areola, 1 to 2 mm
+ * across, 2 to 28 on an areola in pregnancy (a count with no baseline for
+ * other women or for men: both found only for the pregnant). Raised cells in a
+ * ring from `MONTGOMERY_RING` of the areola's radius, their share of the cells
+ * (the occupancy) the paint's profile: `MONTGOMERY_OCCUPANCY` at full
+ * maturity, by sex, scaled by the stage's square so they appear through
+ * puberty and not before it. The occupancies give about a dozen on an adult
+ * woman's areola and four on a man's, a CHOICE inside the measured range.
+ * Spacing and height are CHOICES: a bump spans 0.7 of a cell, so a spacing of
+ * 2.2 mm makes the 1.5 mm tubercle.
+ */
+export const MONTGOMERY_SPACING = 0.0022;
+export const MONTGOMERY_HEIGHT = 0.0006;
+export const MONTGOMERY_RING: readonly [number, number, number, number] = [0.25, 0.4, 0.75, 0.92];
+export const MONTGOMERY_OCCUPANCY = { female: 0.08, male: 0.05 } as const;
+
+export const MONTGOMERY_LAYER: DetailLayer = {
+  id: "montgomery",
+  kind: "detail",
+  pattern: "tubercles",
+  targets: [NIPPLE_TARGET],
+  fields: (assets) => {
+    const { mask, radial } = areolaZone(assets);
+    return { mask, coord: radial };
+  },
+  paint: (input) => {
+    const shape = areolaShape(input);
+    const full =
+      MONTGOMERY_OCCUPANCY.female +
+      (MONTGOMERY_OCCUPANCY.male - MONTGOMERY_OCCUPANCY.female) * shape.gender;
+    const occupancy = full * shape.stage ** 2;
+    const [in0, in1, out0, out1] = MONTGOMERY_RING;
+    return {
+      strength: 1,
+      height: MONTGOMERY_HEIGHT,
+      size: MONTGOMERY_SPACING,
+      profile: STOP_RADII.map(
+        (r) =>
+          occupancy *
+          smoothstep(in0 * shape.edge, in1 * shape.edge, r) *
+          (1 - smoothstep(out0 * shape.edge, out1 * shape.edge, r)),
+      ),
+    };
   },
 };
 
 /** The torso's layers in stack order. */
-export const TORSO_SKIN_LAYERS: readonly ColourLayer[] = [AREOLA_LAYER];
+export const TORSO_SKIN_LAYERS: readonly (ColourLayer | DetailLayer)[] = [
+  AREOLA_LAYER,
+  AREOLA_RELIEF_LAYER,
+  MONTGOMERY_LAYER,
+];

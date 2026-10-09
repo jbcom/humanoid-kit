@@ -178,6 +178,22 @@ float hkBumps( vec2 p ) {
 		}
 	return h;
 }
+// Tubercles: bumps in a share of the cells, the share (0..1) being the layer's occupancy where
+// the pixel is. A cell raises a bump once the occupancy passes its own random draw, by a ramp
+// rather than a step, so the bump does not lose a side where the occupancy changes across it.
+float hkTubercles( vec2 p, float occupancy ) {
+	vec2 i = floor( p );
+	float h = 0.0;
+	for ( int y = -1; y <= 1; y ++ )
+		for ( int x = -1; x <= 1; x ++ ) {
+			vec2 c = i + vec2( float( x ), float( y ) );
+			float present = smoothstep( 0.0, 0.02, occupancy - hkHash( c + 41.7 ) );
+			vec2 centre = c + 0.2 + 0.6 * vec2( hkHash( c ), hkHash( c + 17.31 ) );
+			float d = length( p - centre ) / 0.35;
+			h = max( h, present * pow( max( 1.0 - d * d, 0.0 ), 2.0 ) );
+		}
+	return h;
+}
 // Friction ridges: sparse Gabor noise, the shader form of ridgeHeight (src/surface/ridges.ts).
 uvec2 hkRidgeHash( uvec2 v ) {
 	v = v * 1664525u + 1013904223u;
@@ -226,15 +242,23 @@ float hkDetailHeight( vec2 uv ) {
 	for ( int l = 0; l < ${count}; l ++ ) {
 		vec4 head = hkHeader( l );
 		int kind = hkKind( head );
-		if ( kind != 2 && kind != 3 && kind != 5 ) continue;
+		if ( kind != 2 && kind != 3 && kind != 5 && kind != 6 && kind != 7 ) continue;
 		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
 		if ( head.x <= 0.0 ) continue;
 		vec2 f = hkFields( l, uv );
 		float a = f.x * head.x;
-		if ( kind == 2 ) {
+		if ( kind == 2 || kind == 6 || kind == 7 ) {
 			vec2 p = uv * vHkUvScale / head.w;
 			float fade = 1.0 - smoothstep( 0.25, 0.75, length( fwidth( p ) ) );
-			H += a * head.z * fade * hkBumps( p );
+			if ( kind == 2 ) {
+				H += a * head.z * fade * hkBumps( p );
+			} else {
+				// The amplitude profile along the coordinate, read from the stops' red channel.
+				float u = ( 1.5 + clamp( f.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
+				float profile = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
+				if ( kind == 6 ) H += a * profile * head.z * fade * hkBumps( p );
+				else H += f.x * head.x * head.z * fade * hkTubercles( p, profile );
+			}
 		} else if ( kind == 5 ) {
 			vec2 p = uv * vHkUvScale;
 			// Ridges within a pixel of one another blur to a flat; fade them out before they alias.

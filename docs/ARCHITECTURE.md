@@ -2156,10 +2156,33 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   and a puberty that grows it, without a field per age. The resolution is the
   eight stops across the reach (a stop every 3.9 mm); the edge position is
   continuous, its softness is not finer than that.
-- *The areola mix ends in the skin's colour,* so the layer fades into the skin
-  it sits on rather than ending at the mask; goosebumps leave the whole zone
-  out, as the areola's smooth muscle wrinkles it (the cold state morph draws
-  that).
+- *The areola multiplies the skin, by ratios.* The stops are the nipple's and
+  the areola's colour as a ratio to the tone's skin, one beyond the areola's
+  edge, so the layer leaves whatever skin is under it as it is. (The first
+  version mixed to the tone's flat albedo, and the sheet showed a pale halo
+  outside the areola on a man and on deep skin: the base colour is shaded where
+  it lies, and a mix replaces that shading.) Goosebumps leave the whole zone out,
+  as the areola's smooth muscle wrinkles it (the cold state morph draws that).
+- *An amplitude profile lets a relief's extent follow the figure.* The areola's
+  texture and its Montgomery tubercles must end at this figure's areola, which
+  is 6.5 mm in radius in a child and 19 in a woman, from fields that are the
+  same for all. A detail layer may declare a `profile` (`DetailLayer.profiled`;
+  always for `tubercles`): its coordinate (here the radius) is an index into
+  eight amplitudes the paint writes into the red channel of the layer's stop
+  texels, which the shader reads as it reads colour stops. Header kinds 6
+  (profiled bumps) and 7 (tubercles) say so; kinds 2, 3 and 5 are unchanged.
+- *Montgomery tubercles are a share of cells, not a count.* Their relief is
+  `hkTubercles`: bumps in the cells of a 2.2 mm grid, each raised once the
+  profile's occupancy at the pixel passes the cell's own random draw, by a short
+  ramp so a bump does not lose a side where the occupancy changes across it. A
+  ring profile (from a quarter of the areola's radius to nine tenths) and
+  an occupancy of about 8% in a woman give about a dozen on an areola. Each is a
+  1.5 mm bump (a bump spans 0.7 of a cell), where measured tubercles are 1 to 2
+  mm.
+- *No channel was added.* The areola's colour keeps its two; the texture and the
+  tubercles overlap it on the surface, so each needs its own, but the atlas plan
+  puts them where the face's lines and the feet's and hands' layers are not
+  (`tests/atlasPlan.test.ts`: eight pages still).
 
 ## Parallel work: the base contract
 

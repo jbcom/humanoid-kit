@@ -147,6 +147,63 @@ describe("detail layers", () => {
   });
 });
 
+describe("profiled detail layers", () => {
+  // Bumps 2 mm apart, seen 4 cm across: twenty cells over the 128 px, about 6 px each.
+  const view = { span: 0.04, centre: [0, 0] as [number, number] };
+  const profiled = (profile: number[]): SkinLayer => ({
+    id: "profiled",
+    kind: "detail",
+    pattern: "bumps",
+    profiled: true,
+    targets: [],
+    fields: noFields,
+    paint: () => ({ strength: 1, height: 0.0004, size: 0.002, profile }),
+  });
+  const tubercles = (occupancy: number): SkinLayer => ({
+    id: "tubercles",
+    kind: "detail",
+    pattern: "tubercles",
+    targets: [],
+    fields: noFields,
+    paint: () => ({ strength: 1, height: 0.0004, size: 0.002, profile: [occupancy] }),
+  });
+  /** A constant coordinate: the profile is read at that point of it. */
+  const at = (c: number) => ({ view, coordinate: () => c });
+
+  it("scales the bumps by the profile at the coordinate", () => {
+    const layer = profiled([0, 1]);
+    const none = variance(render([], at(0)));
+    const low = variance(render([layer], at(0)));
+    const half = variance(render([layer], at(0.5)));
+    const full = variance(render([layer], at(1)));
+    expect(low).toBeLessThan(10 * Math.max(none, 1e-8));
+    expect(full).toBeGreaterThan(100 * Math.max(none, 1e-8));
+    // The shading's variance goes with the square of the relief's height.
+    expect(half / full).toBeGreaterThan(0.1);
+    expect(half / full).toBeLessThan(0.5);
+  });
+
+  it("raises a tubercle in the share of cells the occupancy gives", () => {
+    const flat = variance(render([], at(0)));
+    expect(variance(render([tubercles(0)], at(0)))).toBeLessThan(10 * Math.max(flat, 1e-8));
+    const full = variance(render([tubercles(1)], at(0)));
+    expect(full).toBeGreaterThan(100 * Math.max(flat, 1e-8));
+    // Each cell is raised independently, so the variance goes with the share of cells.
+    const half = variance(render([tubercles(0.5)], at(0)));
+    expect(half / full).toBeGreaterThan(0.3);
+    expect(half / full).toBeLessThan(0.7);
+    const sparse = variance(render([tubercles(0.1)], at(0)));
+    expect(sparse / full).toBeGreaterThan(0.03);
+    expect(sparse / full).toBeLessThan(0.25);
+  });
+
+  it("is the same relief at the same occupancy: deterministic, not shimmering", () => {
+    expect(Array.from(render([tubercles(0.4)], at(0)))).toEqual(
+      Array.from(render([tubercles(0.4)], at(0))),
+    );
+  });
+});
+
 describe("surface layers", () => {
   const surface = (roughness: number, specular: number): SkinLayer => ({
     id: "sheen",

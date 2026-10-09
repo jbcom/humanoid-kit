@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   paintStopTable,
+  type SkinLayer,
   type SkinPaintInput,
   STOP_COUNT,
   STOP_TABLE_WIDTH,
 } from "../src/surface/layers.ts";
+import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import {
   AREOLA_EDGE_SOFTNESS,
   AREOLA_LAYER,
   AREOLA_REACH,
+  AREOLA_RELIEF_LAYER,
   areolaZone,
+  MONTGOMERY_LAYER,
 } from "../src/surface/regions/torso.ts";
 import { areolaAlbedo, luminance, type Rgb, skinAlbedo } from "../src/surface/skinTone.ts";
 import { areolaRadius, nippleContrast } from "../src/surface/torsoTone.ts";
@@ -24,14 +28,13 @@ const paint = (over: Partial<SkinPaintInput> = {}): SkinPaintInput => ({
   signals: {},
   ...over,
 });
-/** The layer's stops as colours. */
+/** The layer's stops, as the colours they make of the tone's own skin (the stops are ratios to it). */
 function stops(input: SkinPaintInput): Rgb[] {
   const t = paintStopTable([AREOLA_LAYER], input);
-  return Array.from({ length: STOP_COUNT }, (_, k) => [
-    t[(k + 1) * 4] as number,
-    t[(k + 1) * 4 + 1] as number,
-    t[(k + 1) * 4 + 2] as number,
-  ]);
+  const skin = skinAlbedo(input.tone);
+  return Array.from({ length: STOP_COUNT }, (_, k) =>
+    [0, 1, 2].map((c) => (t[(k + 1) * 4 + c] as number) * (skin[c] as number)),
+  ) as Rgb[];
 }
 /** The colour at radius `r` metres from the nipple's centre: the stops, read as the shader reads them. */
 function colourAt(s: Rgb[], r: number): Rgb {
@@ -137,14 +140,133 @@ describe("the areola's colour", () => {
     expect(lum(colourAt(child, 0.004))).toBeGreaterThan(lum(colourAt(adult, 0.004)));
   });
 
-  it("is a mix layer at a strength that leaves a tenth of the skin's own colour", () => {
-    const t = paintStopTable([AREOLA_LAYER], paint(adultFemale) as never);
-    expect(t[0]).toBeCloseTo(0.9, 6);
-    expect(t[1]).toBe(0);
+  it("multiplies the skin it sits on, so it leaves any skin's own colour at its edge", () => {
+    const t = paintStopTable([AREOLA_LAYER], paint(adultFemale));
+    expect(t[0]).toBe(1);
+    expect(t[1]).toBe(1); // multiply
     expect(t.length).toBe(STOP_TABLE_WIDTH * 4);
+    // The outer stop is the identity: nothing is done to the skin beyond the areola.
+    for (let c = 0; c < 3; c++) expect(t[STOP_COUNT * 4 + c]).toBeCloseTo(1, 6);
+    // Inside, the ratio darkens it.
+    expect(t[4 + 1]).toBeLessThan(1);
   });
 
   it("paints with no age and no build, as for the default figure", () => {
     expect(() => stops(paint())).not.toThrow();
+  });
+});
+
+describe("the areola's relief", () => {
+  const assets = loadFixtureAssets();
+  const zone = areolaZone(assets);
+  const profile = (layer: SkinLayer, input: SkinPaintInput) => {
+    const t = paintStopTable([layer], input);
+    return Array.from({ length: STOP_COUNT }, (_, k) => t[(k + 1) * 4] as number);
+  };
+  /** The profile read at radius `r` metres, as the shader reads it. */
+  const at = (p: number[], r: number) => {
+    const x = Math.min(1, r / AREOLA_REACH) * (STOP_COUNT - 1);
+    const i = Math.min(Math.floor(x), STOP_COUNT - 2);
+    return (p[i] as number) * (1 - (x - i)) + (p[i + 1] as number) * (x - i);
+  };
+
+  it("shares the areola colour's fields: the zone's mask and its radial coordinate", () => {
+    for (const layer of [AREOLA_RELIEF_LAYER, MONTGOMERY_LAYER]) {
+      const f = layer.fields(assets);
+      expect(Array.from(f.mask)).toEqual(Array.from(zone.mask));
+      expect(Array.from(f.coord as Float32Array)).toEqual(Array.from(zone.radial));
+    }
+  });
+
+  describe("the texture of the nipple and areola", () => {
+    it("is bumps with a profile, strongest on the nipple, half as strong over the areola, none beyond it", () => {
+      expect(AREOLA_RELIEF_LAYER.kind).toBe("detail");
+      expect(AREOLA_RELIEF_LAYER.pattern).toBe("bumps");
+      expect(AREOLA_RELIEF_LAYER.profiled).toBe(true);
+      const p = profile(AREOLA_RELIEF_LAYER, paint(adultFemale));
+      const R = areolaRadius(30, 0, 0.5);
+      expect(at(p, 0.0005)).toBeGreaterThan(0.9);
+      expect(at(p, 0.55 * R)).toBeGreaterThan(0.4);
+      expect(at(p, 0.55 * R)).toBeLessThan(0.6);
+      expect(at(p, R + 3 * AREOLA_EDGE_SOFTNESS * R)).toBeLessThan(0.02);
+    });
+
+    it("follows the areola's own radius, a child's being smaller", () => {
+      const child = profile(AREOLA_RELIEF_LAYER, paint({ age: 6, build: { gender: 0 } }));
+      const adult = profile(AREOLA_RELIEF_LAYER, paint(adultFemale));
+      const r = 0.012; // inside an adult's areola, outside a child's
+      expect(at(adult, r)).toBeGreaterThan(0.4);
+      expect(at(child, r)).toBeLessThan(0.05);
+    });
+
+    it("is finer-grained and fainter than the relief of any hair-bearing skin, and gentler in a child", () => {
+      const t = paintStopTable([AREOLA_RELIEF_LAYER], paint(adultFemale));
+      const child = paintStopTable([AREOLA_RELIEF_LAYER], paint({ age: 6, build: { gender: 0 } }));
+      // Header: strength, kind 6, height, spacing.
+      expect(t[1]).toBe(6);
+      expect(t[2]).toBeGreaterThan(0.00005);
+      expect(t[2]).toBeLessThan(0.0003);
+      expect(t[3]).toBeGreaterThan(0.0005);
+      expect(t[3]).toBeLessThan(0.0015);
+      expect(child[0]).toBeLessThan(t[0] as number);
+      expect(child[0]).toBeGreaterThan(0);
+    });
+  });
+
+  describe("the Montgomery tubercles", () => {
+    /** Expected tubercles on one areola: the cells of the ring, each at its occupancy. */
+    function tubercles(input: SkinPaintInput): number {
+      const t = paintStopTable([MONTGOMERY_LAYER], input);
+      const p = profile(MONTGOMERY_LAYER, input);
+      const spacing = t[3] as number;
+      let n = 0;
+      const dr = 0.00005;
+      for (let r = dr / 2; r < AREOLA_REACH; r += dr)
+        n += (at(p, r) * 2 * Math.PI * r * dr) / spacing ** 2;
+      return n;
+    }
+
+    it("is a layer of tubercles, 1 to 2 mm across", () => {
+      expect(MONTGOMERY_LAYER.kind).toBe("detail");
+      expect(MONTGOMERY_LAYER.pattern).toBe("tubercles");
+      const t = paintStopTable([MONTGOMERY_LAYER], paint(adultFemale));
+      expect(t[1]).toBe(7);
+      // A bump spans 0.7 of a cell: its diameter is that of the measured tubercle.
+      expect(0.7 * (t[3] as number)).toBeGreaterThan(0.001);
+      expect(0.7 * (t[3] as number)).toBeLessThan(0.002);
+      expect(t[2]).toBeGreaterThan(0.0003);
+      expect(t[2]).toBeLessThan(0.0012);
+    });
+
+    it("counts within what pregnant women show, two to 28 on an areola, fewer in a man", () => {
+      const woman = tubercles(paint(adultFemale));
+      const man = tubercles(paint({ age: 30, build: { gender: 1 } }));
+      expect(woman).toBeGreaterThan(6);
+      expect(woman).toBeLessThan(28);
+      expect(man).toBeGreaterThan(1);
+      expect(man).toBeLessThan(woman);
+    });
+
+    it("rings the areola: none at the nipple, none beyond the areola's edge", () => {
+      const p = profile(MONTGOMERY_LAYER, paint(adultFemale));
+      const R = areolaRadius(30, 0, 0.5);
+      expect(at(p, 0.0005)).toBe(0);
+      expect(at(p, 0.6 * R)).toBeGreaterThan(0);
+      expect(at(p, R + 3 * AREOLA_EDGE_SOFTNESS * R)).toBe(0);
+    });
+
+    it("appears with puberty, not before it", () => {
+      expect(tubercles(paint({ age: 6, build: { gender: 0 } }))).toBe(0);
+      const teen = tubercles(paint({ age: 12.5, build: { gender: 0 } }));
+      expect(teen).toBeGreaterThan(0);
+      expect(teen).toBeLessThan(tubercles(paint(adultFemale)));
+    });
+  });
+
+  it("is in the stack, after the areola's colour", () => {
+    const ids = SKIN_LAYERS.map((l) => l.id);
+    expect(ids).toContain("areola-relief");
+    expect(ids).toContain("montgomery");
+    expect(ids.indexOf("areola-relief")).toBeGreaterThan(ids.indexOf("areola"));
   });
 });
