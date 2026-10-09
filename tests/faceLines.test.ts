@@ -142,7 +142,7 @@ describe("the expression line layers", () => {
     ];
     for (const [i, v] of covered.entries()) {
       const [x, y] = pos(v) as [number, number];
-      expect(y, `vertex ${v}`).toBeGreaterThan((brow[1] as number) + 0.015);
+      expect(y, `vertex ${v}`).toBeGreaterThan((brow[1] as number) + 0.008);
       expect(y, `vertex ${v}`).toBeLessThan((brow[1] as number) + 0.075);
       expect(Math.abs(x), `vertex ${v}`).toBeLessThan(0.065);
       sxy += ((ys[i] as number) - my) * ((cs[i] as number) - mc);

@@ -273,8 +273,8 @@ function distanceFromBrows(assets: HumanoidAssets): Float32Array {
 }
 
 /** Horizontal lines across the forehead, above the brows. */
-const FOREHEAD_FROM = 0.014;
-const FOREHEAD_TO = 0.058;
+const FOREHEAD_FROM = 0.01;
+const FOREHEAD_TO = 0.062;
 const forehead = cached((assets) => {
   const { brow } = landmarks(assets);
   const dist = distanceFromBrows(assets);
@@ -282,13 +282,15 @@ const forehead = cached((assets) => {
     const d = dist[v] as number;
     if (!Number.isFinite(d)) return [0, 0];
     return [
-      smoothstep(FOREHEAD_FROM, FOREHEAD_FROM + 0.012, d) *
-        (1 - smoothstep(FOREHEAD_TO - 0.016, FOREHEAD_TO, d)) *
+      smoothstep(FOREHEAD_FROM, FOREHEAD_FROM + 0.014, d) *
+        (1 - smoothstep(FOREHEAD_TO - 0.02, FOREHEAD_TO, d)) *
         // Above the brows only, and fading toward the temples.
         smoothstep(brow[1] - 0.002, brow[1] + 0.004, y) *
-        (1 - smoothstep(0.042, 0.056, Math.abs(x))) *
+        (1 - smoothstep(0.048, 0.062, Math.abs(x))) *
         smoothstep(0.2, 0.5, nz),
-      (d - FOREHEAD_FROM) / (FOREHEAD_TO - FOREHEAD_FROM),
+      // The grooves run across the forehead by height, which is smooth over the
+      // coarse mesh where a distance along its edges is not.
+      (y - (brow[1] + FOREHEAD_FROM)) / (FOREHEAD_TO - FOREHEAD_FROM),
     ];
   });
   return f;
