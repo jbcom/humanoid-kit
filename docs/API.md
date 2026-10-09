@@ -687,7 +687,7 @@ compute what the renderer will do.
   (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
   Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
   hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
-  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
+  `VELLUS`, flat: no relief) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
   densities `BODY_HAIR_DENSITY`. Dense, short hair standing off the skin (the
   beard, the chest, abdomen and back, and the adult-only armpits) is the
   coat's, long hair the cards', and pubic hair the adult pack's.
