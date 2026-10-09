@@ -6,13 +6,15 @@
  * adult: a layer that tints genital skin must not tint a figure whose recipe
  * shapes none. Each feature is independent (its own modifiers, its own
  * presence), so the vulva, clitoris and intersex variation the sculpt phase
- * adds are further features here rather than a single male-to-female axis
+ * adds are further features rather than a single male-to-female axis
  * (docs/research/ADULT-SCULPT-PLAN.md).
  *
- * Today's features are the CC0 targets' own: the genital modifiers of the adult
- * anatomy pack. A feature is present (1) once any of its modifiers is set, in
- * either direction, since "smaller" is still there; the sculpt's features take
- * a continuous presence from their own weights.
+ * The features, and the modifiers that apply each, are data of the adult
+ * anatomy pack (`AdultAnatomyManifest.anatomy`): the core names no adult
+ * modifier or target, so the public build, which has no adult pack, contains
+ * none (`pnpm check:pages`). A feature is present (1) once any of its
+ * modifiers is set, in either direction, since "smaller" is still there; the
+ * sculpt's features take a continuous presence from their own weights.
  */
 import { isAdult } from "./agePolicy.ts";
 import type { Recipe } from "./recipe.ts";
@@ -24,21 +26,20 @@ export interface AnatomyFeature {
   modifiers: readonly string[];
 }
 
-export const ANATOMY_FEATURES: readonly AnatomyFeature[] = [
-  { id: "penis", modifiers: ["genitals/penis-length-decr|incr", "genitals/penis-circ-decr|incr"] },
-  { id: "testes", modifiers: ["genitals/penis-testicles-decr|incr"] },
-  { id: "mound", modifiers: ["pelvis/bulge-decr|incr"] },
-];
-
 /**
  * The features a recipe applies, each with its presence (0..1); absent
- * features are left out. Always empty under 18, however the recipe was
- * built: the paint input does not depend on the age policy having run first.
+ * features are left out. `features` is the adult pack's list
+ * (`ReadyInfo.anatomy`), empty without the pack. Always empty under 18,
+ * however the recipe was built: the paint input does not depend on the age
+ * policy having run first.
  */
-export function appliedAnatomy(recipe: Recipe): Readonly<Record<string, number>> {
+export function appliedAnatomy(
+  recipe: Recipe,
+  features: readonly AnatomyFeature[],
+): Readonly<Record<string, number>> {
   if (!isAdult(recipe)) return {};
   const out: Record<string, number> = {};
-  for (const f of ANATOMY_FEATURES)
+  for (const f of features)
     if (f.modifiers.some((id) => (recipe.modifiers[id] ?? 0) !== 0)) out[f.id] = 1;
   return out;
 }

@@ -208,9 +208,12 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 - `ADULT_ONLY_MODIFIER(id): boolean`: true for ids starting `genitals/`,
   `pelvis/bulge` or `stomach/stomach-pregnant`.
 - `AgePolicyError`.
-- `appliedAnatomy(recipe): Record<string, number>`: which adult anatomy the
-  recipe applies, by feature id (`ANATOMY_FEATURES`: `penis`, `testes`, `mound`,
-  each tied to its own modifiers) with its presence 0..1. A feature is present
+- `appliedAnatomy(recipe, features): Record<string, number>`: which adult
+  anatomy the recipe applies, by feature id with its presence 0..1. `features`
+  is the adult pack's list (`ReadyInfo.anatomy.features`, from the manifest's
+  `anatomy`: today `penis`, `testes`, `mound`, each tied to its own modifiers);
+  the core names no adult modifier, so without the pack it is empty and so is
+  the result. A feature is present
   once any of its modifiers is non-zero, in either direction; features are
   independent, and the sculpt's vulva and clitoris will be further features
   rather than a point on one axis. Always `{}` under 18. Skin layers take it as
@@ -230,12 +233,14 @@ The framework-free pipeline for one loaded body pack. `subdivision` defaults to 
 and throws `RangeError` for anything else.
 
 - `model.evaluate(recipe, signals?): Evaluation`: `signals` (0..1 each) set the
-  skin's state; those in `STATE_MORPHS` add their targets: `cold` (the nipple
-  rises and the areola contracts) and `arousal` (engorgement: the shaft's
-  circumference +25% and length +43% at full arousal, the measured erect
-  against flaccid; adult pack only), each calibrated to its measured response.
-  `stateContributions(signals, exists?)` gives those target weights, limited to
-  targets `exists` accepts; the model passes the loaded packs' targets, so a
+  skin's state; those with a state morph add their targets: `cold` (the nipple
+  rises and the areola contracts; `STATE_MORPHS`) and `arousal` (engorgement:
+  the shaft's circumference +25% and length +43% at full arousal, the measured
+  erect against flaccid; the adult pack's own, from its manifest's
+  `anatomy.stateMorphs`), each calibrated to its measured response.
+  `stateContributions(signals, morphs?, exists?)` gives those target weights for
+  the morphs in force, limited to targets `exists` accepts; the model passes
+  the body's and the adult pack's morphs and the loaded packs' targets, so a
   state of the adult anatomy does nothing, rather than fails, without the adult
   pack. `ADULT_ONLY_SIGNALS` (`arousal`) throw `AgePolicyError` under 18
   (`assertSignalPolicy`), before any target is named. Today the penis targets
@@ -314,7 +319,7 @@ compute what the renderer will do.
   `SkinLayer` (`id`, `blend`, `targets`, `fields(assets)`, `paint(input)`),
   `SKIN_LAYERS` (the stack, in order: flush, lips, areola, then
   `ADULT_SKIN_LAYERS`: penis, testes, mound), `SKIN_LAYER_TARGETS` (the body
-  layers' only; the adult layers' are `ADULT_LAYER_TARGETS`, in the adult pack),
+  layers' only: an adult layer names none, the adult pack's manifest does),
   `targetMask(assets, targets, lo, hi)` for masks measured from targets,
   `targetCoordinate(assets, target)` for a 0..1 coordinate from one target's
   displacement,
@@ -333,7 +338,7 @@ compute what the renderer will do.
   A layer of the adult anatomy sets `adult: { feature }` (`isAdultLayer`):
   `paintStopTable` paints it only when `SkinPaintInput.adult` is true (from
   `isAdult(recipe)`; absent is false) and `SkinPaintInput.anatomy[feature]` is
-  above 0 (from `appliedAnatomy(recipe)`), scaling its strength by that
+  above 0 (from `appliedAnatomy(recipe, features)`), scaling its strength by that
   presence; otherwise its row is zero and its `paint` is never called. The gate
   lives in `paintStopTable` alone, so a layer cannot forget it.
   `genitalAlbedo(tone, site, arousal?)` is the adult layers' colour: modelled
@@ -434,10 +439,12 @@ The main-thread handle to an evaluation worker.
 - `client.complete: Promise<void>` resolves when every target file has
   loaded, or rejects with the error that stopped one.
 - `ReadyInfo` is `{ topology, modifiers, sliders, rig,
-  adultAnatomyLoaded }`: the render topology, every drivable shape modifier, the
-  merged slider taxonomy, the rig (`RigData` plus each bone's `parents` index;
-  the topology's skin indices refer to `rig.bones`) and whether the adult
-  anatomy pack is loaded.
+  adultAnatomyLoaded, anatomy? }`: the render topology, every drivable shape
+  modifier, the merged slider taxonomy, the rig (`RigData` plus each bone's
+  `parents` index; the topology's skin indices refer to `rig.bones`), whether the
+  adult anatomy pack is loaded and, with it, its `anatomy` (`AdultAnatomySpec`:
+  the features `appliedAnatomy` reads and the state morphs the shape signals
+  include).
 - `client.evaluate(recipe, key?, signals?): Promise<Evaluation>` (signals as for
   `model.evaluate`) is latest-wins per key:
   each key has at most one evaluation in the worker and one waiting, and a
@@ -634,6 +641,14 @@ import { adultAnatomyPack } from "humanoid-kit-adult-anatomy";
 `adultAnatomyPack` is `{ manifest, files: { "targets.bin.gz" } }`. Pass it as
 `adultAnatomy`. Its targets and modifiers evaluate only for figures aged 18 or
 over, and loading it fails unless it was built against the exact body pack.
+
+Its manifest also carries `anatomy` (`AdultAnatomySpec`): the anatomy features
+and the modifiers that apply each, how each adult skin layer's masks are
+measured from the pack's targets (`skinLayers`), and the shape states of the
+adult anatomy (`stateMorphs`, arousal). This is the pack's data so that the
+core, which ships in the public build, names no adult target or modifier
+(`pnpm check:pages`); a pack without it adds no adult layers and no state
+morphs.
 
 ## Errors
 

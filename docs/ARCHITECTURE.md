@@ -542,6 +542,17 @@ topology and the field atlas exist. Decisions:
   `ADULT_SKIN_LAYERS`, appended to the stack, so the shader is compiled once
   with every layer whether or not the pack is installed. The adult pack stays
   data.
+- **The core names no adult target or modifier.** The public demo ships the core
+  and no adult pack, and `pnpm check:pages` fails a built site that names one,
+  so a layer cannot list the targets its masks come from, nor can the feature
+  list or the arousal state morph live in core code. They are the adult pack's
+  manifest (`anatomy`: `AdultAnatomySpec`: features and their modifiers, each
+  layer's mask targets and easing, the state morphs), which the packer writes
+  from `scripts/lib/adultAnatomySpec.ts` after checking every name against what
+  it packed, and the worker reports in `ready` (`ReadyInfo.anatomy`). The core
+  layers read their spec by id; a pack without a spec adds no layers and no
+  states. `tests/adultStack.test.ts` scans the source for any adult name, so the
+  slip fails before a build does.
 - Until the adult stage arrives their fields are zero (empty atlas pages).
   When it arrives the worker derives the fields from the pack's targets and
   posts them; the main thread re-rasterises those pages of the shared atlas.

@@ -24,13 +24,11 @@ const targetsOf = (layers: readonly SkinLayer[]): string[] => [
 
 /**
  * Every target the body layers' fields are measured from; the packer puts them
- * in the core file. Never an adult layer's: those stay in the adult pack.
+ * in the core file. Never an adult layer's: an adult layer names none (the
+ * adult pack's manifest does, `AdultAnatomySpec.skinLayers`).
  */
 export const SKIN_LAYER_TARGETS: readonly string[] = targetsOf(
   SKIN_LAYERS.filter((l) => !isAdultLayer(l)),
 );
-
-/** Every target the adult layers' fields are measured from; all are in the adult anatomy pack. */
-export const ADULT_LAYER_TARGETS: readonly string[] = targetsOf(ADULT_SKIN_LAYERS);
 
 export { AREOLA_LAYER, FLUSH_LAYER, LIPS_LAYER, MOUND_LAYER, PENIS_LAYER, TESTES_LAYER };

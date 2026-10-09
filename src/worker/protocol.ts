@@ -1,5 +1,10 @@
 /** Messages between `HumanoidWorkerClient` and the evaluation worker. */
-import type { LoadOptions, ShapeModifierEntry, SliderTask } from "../format/assetFormat.ts";
+import type {
+  AdultAnatomySpec,
+  LoadOptions,
+  ShapeModifierEntry,
+  SliderTask,
+} from "../format/assetFormat.ts";
 import type { FeatureRef } from "../makehuman/features.ts";
 import type {
   Evaluation,
@@ -25,6 +30,11 @@ export interface ReadyInfo {
    */
   rig: RigData & { parents: Int16Array; skin: RigSkin };
   adultAnatomyLoaded: boolean;
+  /**
+   * The adult anatomy pack's features and state morphs (`AdultAnatomySpec`),
+   * which the skin paint and the shape signals read; absent without the pack.
+   */
+  anatomy?: AdultAnatomySpec;
 }
 
 /** Which controls shape each rendered vertex: what a tap on the figure opens. */

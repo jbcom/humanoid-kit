@@ -77,8 +77,9 @@ export interface SkinLayerFields {
 interface LayerBase {
   id: string;
   /**
-   * Targets the fields are measured from. A body layer's are packed with the
-   * first stage; an adult layer's are in the adult anatomy pack.
+   * Targets the fields are measured from, packed with the body pack's first
+   * stage. An adult layer lists none: the core names no adult target, so which
+   * ones its fields come from is data of the adult pack (`AdultSkinLayerSpec`).
    */
   targets: readonly string[];
   /**
@@ -89,7 +90,13 @@ interface LayerBase {
    * `feature` (`SkinPaintInput.anatomy`), so no layer can forget the gate.
    */
   adult?: { feature: string };
-  /** Per base vertex fields; for an adult layer, called only once its `targets` are loaded. */
+  /**
+   * Whether the data the fields are measured from has loaded; absent means
+   * always. An adult layer's targets arrive in the adult pack's last stage, or
+   * never; `buildLayerFields` leaves an unavailable layer at zero.
+   */
+  available?(assets: HumanoidAssets): boolean;
+  /** Per base vertex fields; for a layer that can be unavailable, called only once it is available. */
   fields(assets: HumanoidAssets): SkinLayerFields;
 }
 
@@ -293,15 +300,15 @@ export interface LayerFieldsUpdate {
  * Every layer's fields per base vertex, three floats per layer per vertex
  * (mask, coordinate, 0: the stride the subdivision stencil carries), layer
  * after layer: `layers.length * vertexCount * 3`. A layer `include` rejects
- * is left at zero without being measured; by default that is an adult layer
- * whose targets have not loaded (the adult pack arrives in the last stage, or
- * is not installed), so a body-only build gets zero fields for it, not an error.
+ * is left at zero without being measured; by default that is a layer that is
+ * not `available` (an adult layer whose targets have not loaded: the adult pack
+ * arrives in the last stage, or is not installed), so a body-only build gets
+ * zero fields for it, not an error.
  */
 export function buildLayerFields(
   assets: HumanoidAssets,
   layers: readonly SkinLayer[],
-  include: (layer: SkinLayer) => boolean = (layer) =>
-    !isAdultLayer(layer) || layer.targets.every((t) => assets.targets.has(t)),
+  include: (layer: SkinLayer) => boolean = (layer) => layer.available?.(assets) ?? true,
 ): Float32Array {
   const n = assets.manifest.vertexCount;
   const out = new Float32Array(layers.length * n * 3);

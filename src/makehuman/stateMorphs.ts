@@ -14,11 +14,13 @@
  * result).
  *
  * Arousal (B4) is adult-only (`ADULT_ONLY_SIGNALS`, refused under 18 before any
- * of this runs) and drives the adult anatomy pack's penis targets: erect
- * against flaccid is +25% in circumference (Rigiscan, N=803: +25.3%; Veale's
- * nomograms: 11.66 / 9.31 cm) and +43% in length (13.12 / 9.16 cm). One unit of
- * `penis-circ-incr` widens the shaft by 56% and one of `penis-length-incr`
- * lengthens it by 169%, so arousal uses 0.44 and 0.25
+ * of this runs) and its shape response is the adult anatomy pack's, not this
+ * file's: the pack's manifest carries its state morphs (`AdultAnatomySpec`),
+ * so the core names no adult target (`pnpm check:pages`). They drive the penis
+ * targets: erect against flaccid is +25% in circumference (Rigiscan, N=803:
+ * +25.3%; Veale's nomograms: 11.66 / 9.31 cm) and +43% in length (13.12 / 9.16
+ * cm); one unit of the circumference target widens the shaft by 56% and one of
+ * the length target lengthens it by 169%, so arousal uses 0.44 and 0.25
  * (tests/arousal.test.ts measures the result). Only targets that exist are
  * driven: there are none for the testes, whose response is unmeasured, nor for
  * the vulva and clitoris (their volume change has no verified magnitude), so
@@ -39,32 +41,27 @@ export const STATE_MORPHS: readonly StateMorph[] = [
       { name: "breast/nipple-size-decr", weight: 0.13 },
     ],
   },
-  {
-    signal: "arousal",
-    targets: [
-      { name: "genitals/penis-circ-incr", weight: 0.44 },
-      { name: "genitals/penis-length-incr", weight: 0.25 },
-    ],
-  },
 ];
 
-/** Every target a state morph can drive. */
+/** Every target the body pack's state morphs drive; the packer puts them in the body pack. */
 export const STATE_MORPH_TARGETS: readonly string[] = [
   ...new Set(STATE_MORPHS.flatMap((m) => m.targets.map((t) => t.name))),
 ];
 
 /**
  * The target weights the signals add to an evaluation (signals are 0..1).
- * `exists` limits them to targets some loaded pack knows (a state of the adult
- * anatomy does nothing, rather than fails, without the adult pack); by default
- * every target is driven.
+ * `morphs` are the state morphs in force: the body's (`STATE_MORPHS`) and, with
+ * the adult pack, its own. `exists` limits them to targets some loaded pack
+ * knows (a state of the adult anatomy does nothing, rather than fails,
+ * without the adult pack); by default every target is driven.
  */
 export function stateContributions(
   signals: Readonly<Record<string, number>>,
+  morphs: readonly StateMorph[] = STATE_MORPHS,
   exists: (target: string) => boolean = () => true,
 ): Contribution[] {
   const out: Contribution[] = [];
-  for (const m of STATE_MORPHS) {
+  for (const m of morphs) {
     const s = Math.min(1, Math.max(0, signals[m.signal] ?? 0));
     if (s === 0) continue;
     for (const t of m.targets)

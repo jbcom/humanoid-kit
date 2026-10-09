@@ -17,7 +17,7 @@ import {
 import { NO_FEATURE } from "../makehuman/features.ts";
 import { recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
-import { stateContributions } from "../makehuman/stateMorphs.ts";
+import { STATE_MORPHS, type StateMorph, stateContributions } from "../makehuman/stateMorphs.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
 import { assertSignalPolicy } from "../recipe/agePolicy.ts";
@@ -183,6 +183,8 @@ export class HumanoidModel {
   private readonly attachmentLevel: number;
   private readonly layerFields: Float32Array;
   private readonly uvScale: Float32Array;
+  /** The body's state morphs and, with the adult pack, its own (`AdultAnatomySpec.stateMorphs`). */
+  private readonly stateMorphs: readonly StateMorph[];
   /** The rest bake of the worn set, kept for the corner bakes to reuse. */
   private restOcclusion: {
     rest: Float32Array;
@@ -199,6 +201,10 @@ export class HumanoidModel {
       throw new RangeError(`subdivision must be 0, 1 or 2; got ${level}`);
     }
     this.regions = buildRegionField(assets);
+    this.stateMorphs = [
+      ...STATE_MORPHS,
+      ...(assets.adultAnatomyManifest?.anatomy?.stateMorphs ?? []),
+    ];
     const ids = options.attachments ?? [...assets.attachments.keys()];
     const wearing = ids.map((id) => {
       const a = assets.attachments.get(id);
@@ -288,7 +294,7 @@ export class HumanoidModel {
    */
   adultLayerFields(): LayerFieldsUpdate | null {
     const adult = SKIN_LAYERS.filter(isAdultLayer);
-    if (!adult.every((l) => l.targets.every((t) => this.assets.targets.has(t)))) return null;
+    if (!adult.every((l) => l.available?.(this.assets))) return null;
     return {
       layers: adult.map((l) => l.id),
       layerFields: this.renderLayerFields(buildLayerFields(this.assets, adult), adult.length),
@@ -567,7 +573,9 @@ export class HumanoidModel {
     // A state of the adult anatomy has nothing to drive without the adult pack.
     return [
       ...fromRecipe,
-      ...stateContributions(signals, (target) => this.assets.targetFileOf.has(target)),
+      ...stateContributions(signals, this.stateMorphs, (target) =>
+        this.assets.targetFileOf.has(target),
+      ),
     ];
   }
 

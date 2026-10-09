@@ -200,7 +200,7 @@ recipe gains one optional record, `anatomy`, keyed by feature id, each value its
 presence and control values; an absent record is exactly today's recipe, so the
 frozen schema is only extended. Today's `genitals/*` and `pelvis/bulge`
 modifiers keep working: they are the first controls of `penis`, `testes` and
-`mound` (the phase 1 `ANATOMY_FEATURES` modifier lists), and migrate to the new
+`mound` (the phase 1 `anatomy.features` of the pack's manifest), and migrate to the new
 targets when the patch lands.
 
 The age policy extends in the same three places it exists now: `ADULT_ONLY`

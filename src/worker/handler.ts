@@ -64,6 +64,9 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           sliders: assets.sliders,
           rig: { ...rigData(assets), parents: model.boneParents(), skin: model.rigSkin() },
           adultAnatomyLoaded: assets.adultAnatomyLoaded,
+          ...(assets.adultAnatomyManifest?.anatomy && {
+            anatomy: assets.adultAnatomyManifest.anatomy,
+          }),
         });
         return;
       }

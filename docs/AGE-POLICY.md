@@ -234,7 +234,10 @@ rather than skip.
 `scripts/check-pages-build.mjs` (`pnpm check:pages`) fails if any built site
 file matches the adult pack's data files by SHA-256, or if the demo app's build
 names the pack's package, targets or modifiers. The Pages deploy runs it before
-upload.
+upload. For the same reason the core's source names no adult target or modifier
+(`tests/adultStack.test.ts` scans it): the anatomy features, the masks of the
+adult skin layers and the arousal state morph are data of the adult pack's
+manifest, so a build without the pack has nothing of them to find.
 
 **A recipe's age is a floor, not a verdict on how a figure looks.** The adult
 pack checks the recipe's age macro, which drives every age-dependent shape. It

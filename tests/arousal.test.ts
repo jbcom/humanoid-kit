@@ -9,7 +9,7 @@ import { genitalAlbedo } from "../src/surface/genitalTone.ts";
 import { paintStopTable, STOP_TABLE_WIDTH } from "../src/surface/layers.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import type { SkinTone } from "../src/surface/skinTone.ts";
-import { adultManifest, bodyPackData, loadFixtureAssets } from "./fixtures.ts";
+import { adultManifest, adultPackData, bodyPackData, loadFixtureAssets } from "./fixtures.ts";
 
 const withAdult = loadFixtureAssets(true);
 const core = loadFixtureAssets();
@@ -102,12 +102,26 @@ describe("engorgement as a state morph", () => {
     const aroused = coreModel.evaluate(adult, { arousal: 1 }).control;
     expect(Array.from(aroused)).toEqual(Array.from(rest));
     // Names only targets the loaded packs know, so nothing unknown reaches the evaluation.
-    expect(stateContributions({ arousal: 1 }, (name) => core.targetFileOf.has(name))).toEqual([]);
+    const morphs = [...STATE_MORPHS, ...(adultManifest.anatomy?.stateMorphs ?? [])];
     expect(
-      stateContributions({ arousal: 1 }, (name) => withAdult.targetFileOf.has(name)).map(
+      stateContributions({ arousal: 1 }, morphs, (name) => core.targetFileOf.has(name)),
+    ).toEqual([]);
+    expect(
+      stateContributions({ arousal: 1 }, morphs, (name) => withAdult.targetFileOf.has(name)).map(
         (c) => c.target,
       ),
     ).toEqual(["genitals/penis-circ-incr", "genitals/penis-length-incr"]);
+  });
+
+  it("is the adult pack's own state morph: without the pack's spec the signal drives nothing", () => {
+    // A pack without `anatomy` adds no state morphs, so arousal has no shape response.
+    const { anatomy: _spec, ...bare } = adultManifest;
+    const noSpec = new HumanoidModel(
+      parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest: bare }),
+      { subdivision: 0 },
+    );
+    const rest = noSpec.evaluate(adult).control;
+    expect(Array.from(noSpec.evaluate(adult, { arousal: 1 }).control)).toEqual(Array.from(rest));
   });
 
   it("waits for the adult stage while its targets are pending", () => {
@@ -119,13 +133,14 @@ describe("engorgement as a state morph", () => {
     expect(() => model.evaluate(adult, { arousal: 1 })).toThrow(/have not loaded yet/);
   });
 
-  it("drives only adult-pack targets, each of them an adult-only target", () => {
-    const arousal = STATE_MORPHS.find((m) => m.signal === "arousal");
+  it("drives only adult-pack targets, each of them an adult-only target, from the pack's spec", () => {
+    const arousal = adultManifest.anatomy?.stateMorphs.find((m) => m.signal === "arousal");
     expect(arousal?.targets.length).toBeGreaterThan(0);
     const shipped = new Set(adultManifest.targets.entries.map((e) => e.name));
     for (const t of arousal?.targets ?? []) expect(shipped.has(t.name), t.name).toBe(true);
-    // Cold's targets stay in the body pack.
-    for (const m of STATE_MORPHS.filter((x) => x.signal !== "arousal"))
+    // The body's own state morphs (cold) stay in the body pack, and none is arousal's.
+    expect(STATE_MORPHS.some((m) => m.signal === "arousal")).toBe(false);
+    for (const m of STATE_MORPHS)
       for (const t of m.targets) expect(shipped.has(t.name), t.name).toBe(false);
   });
 });

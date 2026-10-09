@@ -85,6 +85,8 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
     });
     await handle({ type: "adultLayers", id: 2 });
     expect(replies.get(2)).toEqual({ type: "adultLayers", id: 2, update: null });
+    // No adult pack, so ready carries no anatomy: no features, no state morphs.
+    expect(replies.get(1)).not.toHaveProperty("anatomy");
   });
 
   it("posts the adult layer fields once the adult stage has loaded, without holding up evaluations", async () => {
@@ -100,6 +102,11 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
       load: { body: "http://packs/body", adultAnatomy: "http://packs/adult" },
       model: { subdivision: 0 },
     });
+    // The pack's manifest arrives with the first stage: ready already names its features.
+    const ready = replies.get(1);
+    if (ready?.type !== "ready") throw new Error("not ready");
+    expect(ready.anatomy?.features.map((f) => f.id)).toEqual(["penis", "testes", "mound"]);
+    expect(ready.anatomy?.stateMorphs.map((m) => m.signal)).toEqual(["arousal"]);
     const layers = handle({ type: "adultLayers", id: 2 });
     await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
     expect(replies.get(3)?.type).toBe("evaluated");

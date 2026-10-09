@@ -554,20 +554,27 @@ export function Humanoid({
       lips: s.lips,
       areola: s.areola,
       signals: { ...signals, ...flexion },
-      // Which adult layers paint: only for an adult, only for the anatomy applied.
+      // Which adult layers paint: only for an adult, only for the anatomy applied
+      // (the adult pack's own list of features; none without the pack).
       adult: isAdult(recipe),
-      anatomy: appliedAnatomy(recipe),
+      anatomy: appliedAnatomy(recipe, ready?.anatomy?.features ?? []),
     });
-  }, [skin, recipe, signals, flexion]);
+  }, [skin, recipe, signals, flexion, ready]);
 
   // Only the signals that change the shape re-evaluate the figure; a stable
   // key keeps a colour-only change (or a new object with the same values) from
-  // re-evaluating it.
-  const shapeKey = STATE_MORPHS.map((m) => signals?.[m.signal] ?? 0).join(",");
+  // re-evaluating it. The adult pack's state morphs (arousal) count with the
+  // body's once it is loaded.
+  const shapeNames = useMemo(
+    () => [
+      ...new Set([...STATE_MORPHS, ...(ready?.anatomy?.stateMorphs ?? [])].map((m) => m.signal)),
+    ],
+    [ready],
+  );
+  const shapeKey = shapeNames.map((name) => signals?.[name] ?? 0).join(",");
   const shapeSignals = useMemo(
-    () =>
-      Object.fromEntries(STATE_MORPHS.map((m, i) => [m.signal, Number(shapeKey.split(",")[i])])),
-    [shapeKey],
+    () => Object.fromEntries(shapeNames.map((name, i) => [name, Number(shapeKey.split(",")[i])])),
+    [shapeNames, shapeKey],
   );
 
   useEffect(() => {
