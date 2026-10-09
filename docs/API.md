@@ -96,12 +96,14 @@ createRecipe(init?: {
   modifiers?: Record<string, number>;
   skin?: Partial<SkinRecipe>;
   eyes?: Partial<EyesRecipe>;
+  hair?: { style?: string | null; colour?: Partial<HairColour> };
 }): Recipe
 ```
 
 Builds a recipe over the defaults (`DEFAULT_MACROS`, `DEFAULT_SKIN`,
-`DEFAULT_EYES`). It copies its input and does not validate it; validation
-happens at evaluation. `RECIPE_VERSION` is `1`.
+`DEFAULT_EYES`, and `DEFAULT_HAIR_COLOUR` when `hair` is given). It copies its
+input and does not validate it; validation happens at evaluation.
+`RECIPE_VERSION` is `1`.
 
 ```ts
 interface Recipe {
@@ -111,6 +113,12 @@ interface Recipe {
   modifiers: Record<string, number>; // id -> [-1, 1]; one-sided [0, 1]; missing = 0
   skin: SkinRecipe;
   eyes: EyesRecipe;
+  hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
+}
+
+interface HairRecipe {
+  style: string | null; // a style id of the hair pack, or null for none
+  colour: HairColour;   // eumelanin, pheomelanin, grey (each 0..1) and override: Rgb | null
 }
 
 type RegionalMacroValues = Omit<MacroValues, "age">;

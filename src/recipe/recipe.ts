@@ -11,6 +11,7 @@
  */
 import { DEFAULT_MACROS, type MacroValues } from "../makehuman/macro.ts";
 import type { BodyRegion } from "../makehuman/regions.ts";
+import { DEFAULT_HAIR_COLOUR, type HairColour } from "../surface/hairTone.ts";
 import type { Rgb } from "../surface/skinTone.ts";
 
 export const RECIPE_VERSION = 1 as const;
@@ -57,6 +58,16 @@ export const DEFAULT_EYES: Readonly<EyesRecipe> = {
   scleraWarmth: 0.5,
 };
 
+export interface HairRecipe {
+  /**
+   * A style id of the hair pack (`humanoid-kit-hair`), or null for none. It
+   * names a style the loaded pack must have; evaluation rejects an unknown id.
+   */
+  style: string | null;
+  /** The hair's colour, from two pigments (`hairAlbedo`). */
+  colour: HairColour;
+}
+
 export interface Recipe {
   version: typeof RECIPE_VERSION;
   macros: MacroValues;
@@ -65,6 +76,11 @@ export interface Recipe {
   modifiers: Record<string, number>;
   skin: SkinRecipe;
   eyes: EyesRecipe;
+  /**
+   * Scalp hair. Optional: a recipe without it has none, and recipes saved before
+   * hair existed are unchanged. It never changes the body's shape.
+   */
+  hair?: HairRecipe;
 }
 
 export function createRecipe(
@@ -74,6 +90,7 @@ export function createRecipe(
     modifiers?: Record<string, number>;
     skin?: Partial<SkinRecipe>;
     eyes?: Partial<EyesRecipe>;
+    hair?: { style?: string | null; colour?: Partial<HairColour> };
   } = {},
 ): Recipe {
   return {
@@ -86,5 +103,15 @@ export function createRecipe(
       iris: [...(init.eyes?.iris ?? DEFAULT_EYES.iris)] as Rgb,
       scleraWarmth: init.eyes?.scleraWarmth ?? DEFAULT_EYES.scleraWarmth,
     },
+    ...(init.hair && {
+      hair: {
+        style: init.hair.style ?? null,
+        colour: {
+          ...DEFAULT_HAIR_COLOUR,
+          ...init.hair.colour,
+          override: init.hair.colour?.override ? ([...init.hair.colour.override] as Rgb) : null,
+        },
+      },
+    }),
   };
 }

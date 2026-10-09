@@ -110,7 +110,11 @@ interface Recipe {
 and `breastFirmness`. `modifiers` maps a shape modifier id to a value in
 `[-1, 1]` (one-sided modifiers take `[0, 1]`); a missing id is 0. A recipe holds
 no functions, no three.js objects and no references into the assets, so
-`JSON.stringify` round-trips it.
+`JSON.stringify` round-trips it. The skin, eyes and the optional `hair` (a style
+id of the hair pack and a pigment colour) are appearance: they never change the
+shape. `hair` is an optional field on purpose, since the recipe schema is
+frozen except for added optional fields: a recipe without it has no hair and
+saved recipes keep their meaning.
 
 ### The macro model
 

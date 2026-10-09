@@ -19,6 +19,7 @@ export class RecipeValidationError extends Error {
 const MACRO_KEYS = new Set(Object.keys(DEFAULT_MACROS));
 const SKIN_NUMBER_KEYS = Object.keys(DEFAULT_SKIN).filter((k) => k !== "override");
 const REGIONS = new Set<string>(BODY_REGIONS);
+const HAIR_PIGMENT_KEYS = ["eumelanin", "pheomelanin", "grey"] as const;
 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
@@ -87,7 +88,33 @@ export function recipeProblems(recipe: unknown): string[] {
     }
     if (!finite(e.scleraWarmth)) p.push("eyes.scleraWarmth must be a finite number");
   }
+  if ("hair" in r && r.hair !== undefined) hairProblems(r.hair, p);
   return p;
+}
+
+const HAIR_KEYS = new Set(["style", "colour"]);
+const unit = (v: unknown): v is number => finite(v) && v >= 0 && v <= 1;
+
+/** The optional `hair` field: a style id or null, and a colour whose every value is in range. */
+function hairProblems(hair: unknown, p: string[]): void {
+  if (typeof hair !== "object" || hair === null) {
+    p.push("hair must be an object");
+    return;
+  }
+  const h = hair as Record<string, unknown>;
+  for (const k of Object.keys(h)) if (!HAIR_KEYS.has(k)) p.push(`hair.${k} is not a hair field`);
+  if (h.style !== null && !(typeof h.style === "string" && h.style !== ""))
+    p.push("hair.style must be null or a non-empty string");
+  if (typeof h.colour !== "object" || h.colour === null) {
+    p.push("hair.colour missing");
+    return;
+  }
+  const c = h.colour as Record<string, unknown>;
+  for (const k of HAIR_PIGMENT_KEYS)
+    if (!unit(c[k])) p.push(`hair.colour.${k} must be a number in [0, 1]`);
+  const o = c.override;
+  if (o !== null && !(Array.isArray(o) && o.length === 3 && o.every(unit)))
+    p.push("hair.colour.override must be null or three numbers in [0, 1]");
 }
 
 export function assertValidRecipe(recipe: unknown): asserts recipe is Recipe {
