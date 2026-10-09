@@ -11,9 +11,17 @@
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
 import { groupFaces, jointPosition } from "../../format/assetFormat.ts";
 import { callusAlbedo } from "../footTone.ts";
-import type { DetailLayer, SkinLayer, SkinLayerFields, SurfaceLayer } from "../layers.ts";
+import { nailStops } from "../handTone.ts";
+import type {
+  ColourLayer,
+  DetailLayer,
+  SkinLayer,
+  SkinLayerFields,
+  SurfaceLayer,
+} from "../layers.ts";
 import { ridgeOrientationCoordinate } from "../ridges.ts";
 import { type DigitFrame, digitFrame, type Vec3 } from "./digitFrame.ts";
+import { NAIL_ROUGHNESS, NAIL_SHARP, NAIL_SPECULAR, nailCoordinate } from "./hands/nails.ts";
 import { skinZones } from "./skinZones.ts";
 
 /** Where a landmark lies in a foot's frame: `along` (0 heel, 1 second toe's tip) and `across` (metres, positive outward). */
@@ -435,6 +443,152 @@ export const TOE_CREASE_LAYER: DetailLayer = {
   paint: () => ({ strength: 1, height: TOE_CREASE_DEPTH, size: 1 }),
 };
 
+/* ---------------------------------------------------------------- toenails */
+
+/**
+ * Where a toenail lies on its toe, as fractions of the toe's end (from its last
+ * joint to the tip of the flesh): the length of the nail's region, fold
+ * included (a lesser toe's distal phalanx is a centimetre or so and its nail
+ * most of it; the big toe's is three and its nail a little over half). The base mesh sculpts a faint plate on the big toe and none on the
+ * others, so, as the hands' nails are, they are layers on the top of each toe's
+ * end. A CHOICE from the proportions of an adult foot (a big toenail is about 19
+ * mm long and 15 wide, the lesser toes' about 9 by 7 and the little toe's under
+ * 6), as docs/research/SKIN-STATES.md C6 records: no measurement of toenail
+ * proportions against the mesh's toes exists.
+ */
+export const TOENAIL_REGION = [0.64, 0.5, 0.62, 0.68, 0.64] as const;
+
+/** Where the fold, cuticle, lunula and free edge lie along that region (the hands' scheme: `NAIL_LAYOUT`). Only the big toe's lunula shows; a lesser toe's is hidden under the fold (a choice). */
+const TOENAIL_LAYOUT = [
+  { fold: 0, cuticle: 0.1, lunula: 0.22, freeEdge: 0.95 },
+  { fold: 0, cuticle: 0.1, lunula: 0.1, freeEdge: 0.95 },
+  { fold: 0, cuticle: 0.1, lunula: 0.1, freeEdge: 0.95 },
+  { fold: 0, cuticle: 0.1, lunula: 0.1, freeEdge: 0.95 },
+  { fold: 0, cuticle: 0.1, lunula: 0.1, freeEdge: 0.95 },
+] as const;
+
+/** The nail's half-width as a fraction of the toe's radius, per toe (a choice: a toenail is broad and flat). */
+const TOENAIL_HALF_WIDTH = [0.72, 0.64, 0.62, 0.6, 0.58] as const;
+/** The soft edge of the nail's width, as a fraction of the toe's radius. */
+const TOENAIL_EDGE = 0.18;
+/** How far the free edge and lunula bow toward the tip at the nail's middle, as a fraction of its length (a choice). */
+const TOENAIL_BOW = 0.03;
+
+const toenailCache = new WeakMap<
+  HumanoidAssets,
+  { colour: SkinLayerFields; gloss: Float32Array }
+>();
+
+/** The toenails' fields: the colour layer's mask and coordinate, and the plate's gloss mask. */
+function toenailFields(assets: HumanoidAssets): { colour: SkinLayerFields; gloss: Float32Array } {
+  const known = toenailCache.get(assets);
+  if (known) return known;
+  const frame = toeFrame(assets);
+  const n = assets.manifest.vertexCount;
+  const P = assets.positions;
+  const mask = new Float32Array(n);
+  const coord = new Float32Array(n);
+  const gloss = new Float32Array(n);
+  // Per side and toe: where the flesh ends, and the toe's mean radius over its end.
+  const tip = new Float32Array(12).fill(Number.NEGATIVE_INFINITY);
+  const radius = new Float32Array(12);
+  const count = new Uint32Array(12);
+  const side = (v: number) => ((P[v * 3] as number) >= 0 ? 0 : 1);
+  const slot = (v: number, d: number) => side(v) * 6 + d;
+  for (let v = 0; v < n; v++) {
+    const d = frame.digit[v] as number;
+    if (d === 0) continue;
+    const k = slot(v, d);
+    tip[k] = Math.max(tip[k] as number, frame.along[v] as number);
+  }
+  for (let v = 0; v < n; v++) {
+    const d = frame.digit[v] as number;
+    if (d === 0) continue;
+    const k = slot(v, d);
+    const joints = frame.joints[side(v)][d - 1] as readonly number[];
+    const last = joints[joints.length - 2] as number;
+    const a = frame.along[v] as number;
+    if (a > last + 0.002 && a < (tip[k] as number) - 0.002) {
+      radius[k] =
+        (radius[k] as number) + Math.hypot(frame.across[v] as number, frame.under[v] as number);
+      count[k] = (count[k] as number) + 1;
+    }
+  }
+  for (let v = 0; v < n; v++) {
+    const d = frame.digit[v] as number;
+    if (d === 0) continue;
+    const k = slot(v, d);
+    const joints = frame.joints[side(v)][d - 1] as readonly number[];
+    const last = joints[joints.length - 2] as number;
+    const end = tip[k] as number;
+    const length = (end - last) * (TOENAIL_REGION[d - 1] as number);
+    const r = count[k] ? (radius[k] as number) / (count[k] as number) : 0.008;
+    const layout = TOENAIL_LAYOUT[d - 1] as (typeof TOENAIL_LAYOUT)[number];
+    const across = frame.across[v] as number;
+    const half = (TOENAIL_HALF_WIDTH[d - 1] as number) * r;
+    const bow = TOENAIL_BOW * (1 - Math.min(1, (across / half) ** 2));
+    const u = ((frame.along[v] as number) - (end - length)) / length + bow;
+    if (u < layout.fold - 0.1) continue;
+    const width = 1 - smooth(half, half + TOENAIL_EDGE * r, Math.abs(across));
+    // The nail faces up; at the tip it curls over toward the pad.
+    const facing = smooth(-0.25, 0.25, -(frame.under[v] as number) / r);
+    const sharp = NAIL_SHARP / length;
+    const m = width * facing * smooth(layout.fold - 0.08, layout.fold, u);
+    mask[v] = m;
+    coord[v] = nailCoordinate(u, layout, sharp);
+    gloss[v] = m * smooth(layout.cuticle - sharp, layout.cuticle + sharp, u);
+  }
+  const fields = { colour: { mask, coord }, gloss };
+  toenailCache.set(assets, fields);
+  return fields;
+}
+
+/**
+ * How yellow and thick an old toenail is, 0..1: toenails thicken and yellow with
+ * age (they grow more slowly, about 0.5% a year from 25, and thicken with
+ * trauma and poor circulation; the colour is a CHOICE, the direction is what
+ * was found: C6).
+ */
+export function toenailAging(age: number | undefined): number {
+  return smooth(50, 90, age ?? 30);
+}
+
+/** What an old nail's bed and free edge are tinted toward: a yellowed keratin (a choice). */
+const TOENAIL_YELLOW: readonly [number, number, number] = [0.52, 0.4, 0.2];
+/** How far the yellowing goes at full age (a choice). */
+const TOENAIL_YELLOWING = 0.45;
+
+/** The toenails: fold, lunula, bed and free edge along each nail (the hands' `nailStops`), the bed and free edge yellowing with age. */
+export const TOENAIL_LAYER: ColourLayer = {
+  id: "toenails",
+  blend: "mix",
+  targets: [],
+  fields: (assets) => toenailFields(assets).colour,
+  paint: ({ tone, age }) => {
+    const k = TOENAIL_YELLOWING * toenailAging(age);
+    const stops = nailStops(tone).map((c, i) =>
+      i < 4
+        ? c
+        : (c.map(
+            (x, j) => x + ((TOENAIL_YELLOW[j] as number) * (x / Math.max(c[0], 1e-6)) - x) * k,
+          ) as [number, number, number]),
+    );
+    return { strength: 1, stops };
+  },
+};
+
+/** A toenail's gloss: duller than a fingernail's (it is thicker and rougher; a choice, tuned on the sheets). */
+export const TOENAIL_ROUGHNESS = NAIL_ROUGHNESS * 0.7;
+export const TOENAIL_SPECULAR = NAIL_SPECULAR * 0.7;
+
+export const TOENAIL_GLOSS_LAYER: SurfaceLayer = {
+  id: "toenail-gloss",
+  kind: "surface",
+  targets: [],
+  fields: (assets) => ({ mask: toenailFields(assets).gloss, coord: null }),
+  paint: () => ({ strength: 1, roughness: TOENAIL_ROUGHNESS, specular: TOENAIL_SPECULAR }),
+};
+
 /* ------------------------------------------------------- friction ridges */
 
 /** The ridges' spacing on a grown foot, metres (a choice inside the 0.4 to 0.6 mm the fingerprint literature gives: C6). */
@@ -612,5 +766,7 @@ export const FOOT_SKIN_LAYERS: readonly SkinLayer[] = [
   CALLUS_SURFACE_LAYER,
   TOE_WRINKLE_LAYER,
   TOE_CREASE_LAYER,
+  TOENAIL_LAYER,
+  TOENAIL_GLOSS_LAYER,
   RIDGE_LAYER,
 ];

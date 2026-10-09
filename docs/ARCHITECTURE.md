@@ -1766,6 +1766,29 @@ anything when shoes are worn beyond the fields every figure shares.
   does, so they show only close up. Tested: the function's statistics and
   orientation in node, and in a browser the shader against it (the shading
   follows the reference's slope at correlation below −0.9).
+- *The feet cost one page of the atlas (nine in all).* Seven layers (callus and
+  its matte, the toe wrinkles and creases, the toenails and their gloss, the
+  ridges) overlap one another on the foot, so each needs a channel group of its
+  own, and the only partners they can share one with are the face's (the hands'
+  features lie too close to the foot's in the UV layout: the planner works in
+  cells of a 64 × 64 grid with a margin of one). That is 29 channels of the
+  body's layers where the hands left 26, and no ordering of the layers does
+  better than 28 (a search of twenty thousand random orders; the first-fit in
+  stack order finds 29). The ridges cost two channels as one layer: with the
+  orientation in the coordinate, not a second layer.
+- *Toenails are layers on the top of each toe's end, on the hands' scheme.* The
+  base mesh sculpts a faint plate on the big toe and none on the others, so, as
+  with the fingernails, there is no nail geometry: a coordinate along the nail
+  carries the proximal fold, lunula, bed and free edge as colour stops (the
+  hands' `nailStops` and `nailCoordinate`, so the nail model has one owner), and
+  a surface layer the plate's gloss, duller than a fingernail's. Each toe's nail
+  region is a fraction of its distal flesh, from its last joint to the tip
+  (`TOENAIL_REGION`: 0.64 on the big toe, about half to two thirds on the lesser
+  toes, where the nail is most of the distal phalanx), its half-width a fraction
+  of the toe's own radius, and it faces up and curls over at the tip. The bed
+  and free edge yellow with age (`toenailAging`: toenails thicken and slow with
+  age, and the colour is a choice). A lesser toe's nail has only a vertex or
+  two inside it on a 5 mm mesh, so its edge is as coarse as the hands' is.
 
 ## Parallel work: the base contract
 

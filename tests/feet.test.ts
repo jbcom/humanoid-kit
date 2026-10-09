@@ -8,6 +8,8 @@ import {
   RIDGE_SPACING,
   TOE_CREASE_LAYER,
   TOE_WRINKLE_LAYER,
+  TOENAIL_GLOSS_LAYER,
+  TOENAIL_LAYER,
   toeFrame,
 } from "../src/surface/regions/feet.ts";
 import { skinZones } from "../src/surface/regions/skinZones.ts";
@@ -424,5 +426,99 @@ describe("friction ridges on the sole", () => {
     expect(paint(30).size).toBeCloseTo(RIDGE_SPACING, 6);
     expect(paint(80).height).toBeLessThan(paint(30).height);
     expect(paint(30).height).toBeLessThanOrEqual(paint(3).height * 1.01 + 1e-9);
+  });
+});
+
+describe("toenails", () => {
+  const frame = toeFrame(assets);
+  const colour = TOENAIL_LAYER.fields(assets);
+  const gloss = TOENAIL_GLOSS_LAYER.fields(assets);
+
+  /** The toe's vertices carrying nail (mask above a fifth: a lesser toe has a handful of vertices to the nail), by digit and side. */
+  const nailVertices = (side: 0 | 1, toe: number) => {
+    const out: number[] = [];
+    for (let v = 0; v < n; v++)
+      if (
+        frame.digit[v] === toe &&
+        Math.sign(P[v * 3] as number) === (side === 0 ? 1 : -1) &&
+        (colour.mask[v] as number) > 0.2
+      )
+        out.push(v);
+    return out;
+  };
+
+  it("lies on the top of each toe's end, on both feet, and on no other skin", () => {
+    for (let v = 0; v < n; v++) {
+      if ((colour.mask[v] as number) <= 0) continue;
+      expect(frame.digit[v], `vertex ${v} is on a toe`).toBeGreaterThan(0);
+      // The sole's side of a toe carries none.
+      expect(frame.under[v] as number, `vertex ${v}`).toBeLessThan(0.004);
+    }
+    for (const side of [0, 1] as const)
+      for (let toe = 1; toe <= 5; toe++)
+        expect(nailVertices(side, toe).length, `toe ${toe}, side ${side}`).toBeGreaterThanOrEqual(
+          1,
+        );
+  });
+
+  it("is bigger on the big toe than the little toe, in length and in the skin it covers", () => {
+    const span = (toe: number) => {
+      const along = nailVertices(0, toe).map((v) => frame.along[v] as number);
+      return Math.max(...along) - Math.min(...along);
+    };
+    expect(span(1)).toBeGreaterThan(span(5) * 1.5);
+    for (let toe = 2; toe <= 5; toe++) expect(span(1), `toe ${toe}`).toBeGreaterThan(span(toe));
+    expect(nailVertices(0, 1).length).toBeGreaterThan(nailVertices(0, 5).length);
+  });
+
+  it("runs from the proximal fold to the free edge: the coordinate grows toward each toe's tip", () => {
+    for (const side of [0, 1] as const)
+      for (let toe = 1; toe <= 5; toe++) {
+        const vs = nailVertices(side, toe);
+        // A lesser toe's nail has only a few vertices, along a single line of them: the correlation is of what there is.
+        if (vs.length < 4) continue;
+        const xs = vs.map((v) => frame.along[v] as number);
+        const ys = vs.map((v) => (colour.coord as Float32Array)[v] as number);
+        const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+        const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+        let sxy = 0;
+        let sxx = 0;
+        let syy = 0;
+        xs.forEach((x, i) => {
+          sxy += (x - mx) * ((ys[i] as number) - my);
+          sxx += (x - mx) ** 2;
+          syy += ((ys[i] as number) - my) ** 2;
+        });
+        expect(sxy / Math.sqrt(sxx * syy), `toe ${toe}, side ${side}`).toBeGreaterThan(0.8);
+      }
+  });
+
+  it("is centred on the toe and not wider than it: the nail's edge lies short of the toe's sides", () => {
+    for (let toe = 1; toe <= 5; toe++) {
+      const across = nailVertices(0, toe).map((v) => Math.abs(frame.across[v] as number));
+      // Within the toe's own radius (a centimetre or two): the plate is narrower than the digit.
+      expect(Math.max(...across), `toe ${toe}`).toBeLessThan(toe === 1 ? 0.012 : 0.008);
+    }
+  });
+
+  it("glosses where the nail is, and the nail grows yellower and thicker with age", () => {
+    for (let v = 0; v < n; v++)
+      expect(gloss.mask[v] as number).toBeLessThanOrEqual((colour.mask[v] as number) + 1e-6);
+    const input = (age: number) => ({
+      tone: { melanin: 0.5, haemoglobin: 0.5, undertone: 0, override: null },
+      flush: 0.4,
+      lips: 0.5,
+      areola: 0.5,
+      signals: {},
+      age,
+    });
+    const stops = (age: number) => TOENAIL_LAYER.paint(input(age)).stops;
+    // The bed (index 4): the old one is yellower (less blue against red) than the young.
+    const young = stops(25)[4] as [number, number, number];
+    const old = stops(85)[4] as [number, number, number];
+    expect(old[2] / old[0]).toBeLessThan(young[2] / young[0]);
+    // Fold and free edge ends keep their identity: eight stops either way.
+    expect(stops(25)).toHaveLength(8);
+    expect(stops(85)).toHaveLength(8);
   });
 });
