@@ -1346,7 +1346,11 @@ Old recipes evaluate and serialise as before.
   grid cannot be sampled and the strands become their mean cover
   (`strandCover`: follicles × coverage × mean length × diameter, at most 0.6),
   which `applyLayers` computes, and a browser test holds the near and far
-  views to the same mean. Rejected: cards for all body hair (a forearm's
+  views to the same mean. The search covers the cells round a pixel's centre,
+  so the switch is made early, as the pixel grows from a third of a cell to
+  two thirds (`STRAND_NEAR_LIMIT`, `STRAND_FAR_START`): a later one left
+  full-body views speckled, and a browser test now renders a cell a pixel wide
+  and requires it smooth. Rejected: cards for all body hair (a forearm's
   thousands of fine hairs as geometry, and nothing for the short hair cards
   cannot draw), and a painted texture (no true scale, one resolution).
 - *The flow is skinned, and quantised.* Hair runs along the bind pose's
@@ -1369,28 +1373,41 @@ Old recipes evaluate and serialise as before.
   (`inSkinAlbedo`): from afar it changes nothing, and the skin's colour parity
   holds; only its strands up close, in a view finer than its 2 mm cells, are
   drawn. A surface with no metres per UV unit (a test sphere) draws no strands.
-- *Terminal hair is one strand layer per group, the beard three.* Each group
-  has its own coverage, colour, density and length, so its own layer; the
-  beard is the moustache, the chin, and the cheeks with the sideburns and the
-  neck, so that a style (`none`, `stubble`, `moustache`, `goatee`, `full`)
-  grows some parts and not others (`BEARD_LENGTHS`). Masks are measured from
-  the base mesh: the skin zones (cut off where a zone's weight falls under 0.2,
-  so supports stay near their region), the vertex normals, and landmarks from
-  the joints (the lips, the chin, the eyes) and from the mesh (the crotch, the
-  armpits).
-- *Axillary and pubic layers are adult-only body layers.* Their masks come from
-  the base mesh, not from adult targets, so they live in the core; a layer
-  flag, `adultOnly`, makes `paintStopTable` paint them at zero unless the input
-  says the figure is an adult, failing closed when it does not say. The model's
-  coverage is zero for them under 18 as well, and the age policy refuses a
-  recipe that asks for them. Every other group's mask is cut out where theirs
-  lies, so no other layer draws hair there.
-- *The atlas stays at eight pages.* The eleven layers fit the stack's eight
-  pages: vellus takes no channel, the terminal layers share channels with the
-  layers they lie apart from, and the beard's moustache and cheeks, which touch
-  the hands' layers in the UV layout, take the last two of the 32 channels.
-  The limbs stop short of the hands and feet for the same reason, and because
-  those carry little terminal hair.
+- *Hair is split by length, one system with the anthro fur* (the owner's
+  ruling, 2026-10-09, after the M6 fur design). Sparse, fine hair (vellus, the
+  limbs, a light chest) is strand layers; short, dense hair (stubble, a dense
+  chest or abdomen, a pelt) is the shared shell coat (`src/render/coat.ts`,
+  below); long hair (a grown beard, a mane) is the hair pack's cards. A first
+  version drew the beard as strand layers too, and its sheets showed why not:
+  a dense short coat as strands is a flat tint, and the beard's masks, cut by
+  axis-aligned ramps, had straight edges down the cheeks and a rectangle on
+  the neck. The beard's masks are redrawn with the coat, along the face's
+  own lines.
+- *Terminal hair is one strand layer per group.* Each group (chest, abdomen,
+  back, buttocks, arms, legs, axillary) has its own coverage, colour, density
+  and length, so its own layer. Masks are measured from the base mesh: the skin
+  zones (cut off where a zone's weight falls under 0.2, so supports stay near
+  their region), the vertex normals, and the armpits' hollows. The limbs stop
+  short of the hands and feet, which carry little terminal hair and whose
+  layers crowd the atlas.
+- *The beard defaults to none.* Clean-shaven is the neutral recipe; terminal
+  body hair and vellus are on by default for age and sex.
+- *Axillary hair is an adult-only body layer; pubic hair is the adult pack's.*
+  The armpit's mask comes from the base mesh, so its layer lives in the core,
+  where a layer flag, `adultOnly`, makes `paintStopTable` paint it at zero
+  unless the input says the figure is an adult, failing closed when it does
+  not say. The model's coverage is zero for it under 18 as well, the age policy
+  refuses a recipe that asks for it, and every other group's mask is cut out
+  where it lies. Pubic hair is the adult pack's, like every genital-region
+  feature: its mask and its place in the stack come from the adult pack's
+  manifest (`AdultAnatomySpec`), so the core names no part of it, and it
+  appears only when the pack is loaded. The core keeps the recipe's `pubic`
+  density and the model's coverage for it, which that layer reads.
+- *Body hair costs no atlas channel.* The eight strand layers fit the stack's
+  eight pages: vellus takes no channel, and each terminal layer shares one with
+  layers it lies apart from (the beard's strand layers, which touched the
+  hands' layers in the UV layout, took two channels of their own; the coat
+  replaces them).
 
 ## Presence
 

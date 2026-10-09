@@ -16,7 +16,6 @@ import {
   strandCover,
 } from "../src/surface/layers.ts";
 import {
-  BEARD_LAYERS,
   BODY_HAIR_LAYERS,
   bodyHairInput,
   bodyHairMasks,
@@ -64,9 +63,10 @@ describe("the body hair layers", () => {
     }
   });
 
-  it("mark exactly the axillary and pubic layers adult-only", () => {
-    expect(ADULT_ONLY_LAYERS.map((l) => l.id).sort()).toEqual(["hair-axillary", "hair-pubic"]);
-    expect(ADULT_ONLY_BODY_HAIR).toHaveLength(ADULT_ONLY_LAYERS.length);
+  it("mark exactly the axillary layer adult-only, and draw no pubic hair (the adult pack's)", () => {
+    expect(ADULT_ONLY_LAYERS.map((l) => l.id)).toEqual(["hair-axillary"]);
+    expect(ADULT_ONLY_BODY_HAIR).toContain("axillary");
+    expect(BODY_HAIR_LAYERS.some((l) => /pubic/.test(l.id))).toBe(false);
   });
 
   it("paint no terminal hair on a child, and vellus at every age", () => {
@@ -80,31 +80,13 @@ describe("the body hair layers", () => {
       expect(paintStopTable([VELLUS_LAYER], input(age, 0.5))[0]).toBe(1);
   });
 
-  it("paint an adult man's chest, legs and stubble from the coverage model", () => {
+  it("paint an adult man's chest from the coverage model", () => {
     const i = input(35, 1);
     const table = paintStopTable(TERMINAL_HAIR_LAYERS, i);
     const chest = TERMINAL_HAIR_LAYERS.findIndex((l) => l.id === "hair-chest");
     expect(row(TERMINAL_HAIR_LAYERS, chest, table)[0]).toBeCloseTo(
       bodyHairCoverage("chest", bodyHairInput(i)),
     );
-    const beard = paintStopTable(BEARD_LAYERS, i);
-    // Stubble by default: every beard part, a millimetre long.
-    BEARD_LAYERS.forEach((_, k) => {
-      expect(row(BEARD_LAYERS, k, beard)[0]).toBeGreaterThan(0.9);
-      expect(row(BEARD_LAYERS, k, beard)[3]).toBeCloseTo(1);
-    });
-  });
-
-  it("grow only the parts a beard style names", () => {
-    const moustache = paintStopTable(
-      BEARD_LAYERS,
-      input(35, 1, { bodyHair: { beard: "moustache" } }),
-    );
-    const strengths = BEARD_LAYERS.map((_, k) => row(BEARD_LAYERS, k, moustache)[0]);
-    expect(strengths[0]).toBeGreaterThan(0.9);
-    expect(strengths.slice(1)).toEqual([0, 0]);
-    const none = paintStopTable(BEARD_LAYERS, input(35, 1, { bodyHair: { beard: "none" } }));
-    expect(BEARD_LAYERS.map((_, k) => row(BEARD_LAYERS, k, none)[0])).toEqual([0, 0, 0]);
   });
 
   it("colour terminal hair from the figure's pigments", () => {
@@ -124,7 +106,7 @@ describe("the body hair layers", () => {
   });
 });
 
-describe("the adult-only gate on axillary and pubic hair", () => {
+describe("the adult-only gate on axillary hair", () => {
   it("paints them at zero for any figure under 18, whatever the recipe asks", () => {
     fc.assert(
       fc.property(
@@ -245,18 +227,15 @@ describe("the body hair masks", () => {
       });
   });
 
-  it("put the beard below the eyes and the pubic hair low on the front midline", () => {
-    const eyeY = 0.728;
-    for (const part of ["moustache", "chin", "cheeks"] as const) {
-      const c = centroid(masks[part]);
-      expect(c[1], part).toBeLessThan(eyeY);
+  it("centre the chest and abdomen on the front midline, the back behind", () => {
+    for (const name of ["chest", "abdomen"] as const) {
+      const c = centroid(masks[name]);
+      expect(Math.abs(c[0] as number), name).toBeLessThan(0.01);
+      expect(c[2], name).toBeGreaterThan(0.05);
     }
-    const pubic = centroid(masks.pubic);
-    expect(Math.abs(pubic[0] as number)).toBeLessThan(0.01);
-    expect(pubic[2]).toBeGreaterThan(0.05);
-    // Below the navel (y ≈ 0.18) and above the knees.
-    expect(pubic[1]).toBeLessThan(0.12);
-    expect(pubic[1]).toBeGreaterThan(-0.1);
+    // The back, which wraps round the flanks to the shoulders, lies well behind the chest.
+    expect(centroid(masks.back)[2]).toBeLessThan((centroid(masks.chest)[2] as number) - 0.05);
+    expect(centroid(masks.chest)[1]).toBeGreaterThan(centroid(masks.abdomen)[1] as number);
   });
 
   it("put axillary hair in each armpit, not on the chest's front", () => {
@@ -272,11 +251,10 @@ describe("the body hair masks", () => {
     expect(right).toBeGreaterThan(10);
   });
 
-  it("keep the adult-only regions out of every other group's mask", () => {
+  it("keep the adult-only armpit out of every other group's mask", () => {
     for (const name of ["chest", "abdomen", "back", "buttocks", "arms", "legs"] as const)
       masks[name].forEach((x, v) => {
-        if ((masks.pubic[v] as number) > 0.99 || (masks.axillary[v] as number) > 0.99)
-          expect(x, `${name} at ${v}`).toBeLessThan(0.02);
+        if ((masks.axillary[v] as number) > 0.99) expect(x, `${name} at ${v}`).toBeLessThan(0.02);
       });
   });
 });

@@ -165,7 +165,7 @@ interface BodyHairRecipe {
   // per BODY_HAIR_GROUPS entry, a multiplier on the default, 0..2 (1 = default);
   // axillary and pubic are adult-only: any value but 0 under 18 is refused
   density?: Partial<Record<BodyHairGroup, number>>;
-  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = stubble where the face carries terminal hair
+  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = none (clean-shaven)
 }
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
@@ -550,8 +550,7 @@ compute what the renderer will do.
   `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's density
   multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage; it never
   adds hair where the default has none). `beardStyle(input)` is the recipe's
-  style, or `stubble` where the face's coverage is a quarter or more and `none`
-  elsewhere. `bodyHairColour(group, input)` is the figure's hair pigments
+  style, or `DEFAULT_BEARD` (`none`, clean-shaven). `bodyHairColour(group, input)` is the figure's hair pigments
   darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
   fibre diameter and drawn length) and at least as grey as ageing makes them
   (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an
@@ -617,10 +616,10 @@ compute what the renderer will do.
   (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
   Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
   hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
-  `VELLUS`), `BEARD_LAYERS` (moustache, chin, and cheeks with sideburns and
-  neck; the parts each `BeardStyle` grows and how long are `BEARD_LENGTHS`) and
-  `TERMINAL_HAIR_LAYERS` (chest, abdomen, back, buttocks, arms, legs, and the
-  `adultOnly` axillary and pubic), with follicle densities `BODY_HAIR_DENSITY`.
+  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (chest, abdomen, back, buttocks, arms,
+  legs, and the `adultOnly` axillary), with follicle densities
+  `BODY_HAIR_DENSITY`. The beard is not a strand layer (dense short hair is the
+  coat's, long hair the cards'), and pubic hair is the adult pack's.
   `bodyHairMasks(assets)` gives the masks per base vertex and
   `bodyHairInput(paintInput)` the body hair model's input.
   The model's topology carries `body.layerFields` and `body.layers`; the

@@ -1,26 +1,25 @@
 /**
  * Body hair on the skin (docs/ARCHITECTURE.md, "Body hair"): vellus everywhere
- * at every age, and terminal hair where `bodyHairCoverage` says, both drawn as
- * strand layers in the shader, and glabrous skin without the vellus sheen.
+ * at every age, and the sparse, fine terminal hair of the body where
+ * `bodyHairCoverage` says, both drawn as strand layers in the shader. Dense
+ * short hair (stubble, a dense chest) is the coat's, long hair (a grown beard)
+ * the hair cards', and pubic hair the adult pack's.
  *
  * The masks are measured from the base mesh alone, like the skin states'
  * zones: the skeleton's skin weights (`skinZones`), the vertex normals, and the
- * joints' positions for the face's landmarks (the lips, the chin, the eyes).
- * Their exact edges are choices; where hair grows is the Ferriman-Gallwey
- * regions' (docs/research/BODY-HAIR.md).
+ * armpits' hollows. Their exact edges are choices; where hair grows is the
+ * Ferriman-Gallwey regions' (docs/research/BODY-HAIR.md).
  *
- * The axillary and pubic layers are adult-only: `paintStopTable` paints them
- * at zero unless the input says the figure is an adult, and the body hair
- * model gives them no coverage under 18 either way.
+ * The axillary layer is adult-only: `paintStopTable` paints it at zero unless
+ * the input says the figure is an adult, and the body hair model gives it no
+ * coverage under 18 either way.
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
-import { groupFaces, jointPosition } from "../../format/assetFormat.ts";
+import { groupFaces } from "../../format/assetFormat.ts";
 import {
-  type BeardStyle,
   BODY_HAIR_FIBRE,
   type BodyHairGroup,
   type BodyHairInput,
-  beardStyle,
   bodyHairColour,
   bodyHairCoverage,
 } from "../bodyHair.ts";
@@ -35,9 +34,6 @@ const ramp = (lo: number, hi: number, x: number) => {
   const t = unit((x - lo) / (hi - lo));
   return t * t * (3 - 2 * t);
 };
-/** 1 between `lo` and `hi`, easing to 0 over `soft` either side. */
-const band = (lo: number, hi: number, soft: number, x: number) =>
-  ramp(lo - soft, lo + soft, x) * (1 - ramp(hi - soft, hi + soft, x));
 
 /** The age a layer paints for when the input gives none: a young adult, as other age-dependent layers. */
 const DEFAULT_AGE = 25;
@@ -77,27 +73,7 @@ export const BODY_HAIR_DENSITY: Readonly<Record<BodyHairGroup, number>> = {
  */
 export const VELLUS = { density: 50, length: 0.002, width: 30e-6, height: 20e-6 } as const;
 
-/**
- * How long each beard style grows each part of the beard, metres (0: shaven).
- * Stubble is a few days at about 0.3 mm a day; the grown lengths are choices.
- */
-export const BEARD_LENGTHS: Readonly<Record<BeardStyle, Readonly<Record<BeardPart, number>>>> = {
-  none: { moustache: 0, chin: 0, cheeks: 0 },
-  stubble: { moustache: 0.001, chin: 0.001, cheeks: 0.001 },
-  moustache: { moustache: 0.012, chin: 0, cheeks: 0 },
-  goatee: { moustache: 0.012, chin: 0.015, cheeks: 0 },
-  full: { moustache: 0.015, chin: 0.02, cheeks: 0.018 },
-};
-
-/** The beard's parts: the cheeks include the sideburns and the neck under the jaw. */
-export type BeardPart = "moustache" | "chin" | "cheeks";
-
 interface Landmarks {
-  eyeY: number;
-  upperLip: Float32Array;
-  lowerLip: Float32Array;
-  chin: Float32Array;
-  crotch: Float32Array;
   armpit: { L: Float32Array; R: Float32Array };
 }
 
@@ -108,26 +84,11 @@ function landmarks(assets: HumanoidAssets): Landmarks {
   const known = landmarkCache.get(assets);
   if (known) return known;
   const P = assets.positions;
-  const at = (joint: string) => {
-    const p = new Float32Array(3);
-    jointPosition(assets, P, joint, p, 0);
-    return p;
-  };
   const zones = skinZones(assets);
-  const pelvis = zones.zone("pelvis");
   const upperArm = zones.zone("upperArm");
   const trunk = zones.zone("upperTrunk");
   const breast = zones.zone("breast");
   const body = bodyVertices(assets);
-  // The crotch: the lowest drawn vertex on the midline of the pelvis.
-  let crotch = -1;
-  for (const v of body)
-    if (
-      Math.abs(P[v * 3] as number) < 0.004 &&
-      (pelvis[v] as number) > 0.3 &&
-      (crotch < 0 || (P[v * 3 + 1] as number) < (P[crotch * 3 + 1] as number))
-    )
-      crotch = v;
   // An armpit: the centre of the skin facing down where arm and trunk share weight.
   const armpit = (side: number) => {
     const c = new Float32Array(3);
@@ -147,14 +108,7 @@ function landmarks(assets: HumanoidAssets): Landmarks {
     }
     return c.map((x) => (n ? x / n : x));
   };
-  const out: Landmarks = {
-    eyeY: at("eye.L____head")[1] as number,
-    upperLip: at("oris05____head"),
-    lowerLip: at("oris01____head"),
-    chin: at("special04____tail"),
-    crotch: crotch < 0 ? new Float32Array(3) : P.slice(crotch * 3, crotch * 3 + 3),
-    armpit: { L: armpit(1), R: armpit(-1) },
-  };
+  const out: Landmarks = { armpit: { L: armpit(1), R: armpit(-1) } };
   landmarkCache.set(assets, out);
   return out;
 }
@@ -191,84 +145,6 @@ function glabrous(assets: HumanoidAssets): Float32Array {
   );
 }
 
-/** The face's beard area by part: the moustache, the chin, and the cheeks with the sideburns and the neck under the jaw. */
-function beardMasks(assets: HumanoidAssets) {
-  const zones = skinZones(assets);
-  const head = zones.zone("head");
-  const neck = zones.neck;
-  const lips = lipsMask(assets);
-  const m = landmarks(assets);
-  const lipY = m.upperLip[1] as number;
-  const lowY = m.lowerLip[1] as number;
-  const chinY = m.chin[1] as number;
-  const noseBase = lipY + 0.018;
-  const headOrNeck = (v: number) => unit((head[v] as number) + (neck[v] as number));
-  const moustache = field(
-    assets,
-    (x, y, z, v) =>
-      headOrNeck(v) *
-      band(lipY - 0.002, noseBase, 0.004, y) *
-      (1 - ramp(0.024, 0.032, Math.abs(x))) *
-      ramp(0.11, 0.13, z) *
-      (1 - (lips[v] as number)),
-  );
-  const chin = field(
-    assets,
-    (x, y, z, v) =>
-      headOrNeck(v) *
-      band(chinY - 0.028, lowY - 0.004, 0.004, y) *
-      (1 - ramp(0.022, 0.034, Math.abs(x))) *
-      ramp(0.07, 0.09, z) *
-      (1 - (lips[v] as number)),
-  );
-  // The cheek's upper edge runs from the nose's base toward the sideburns.
-  const cheeks = field(assets, (x, y, z, v) => {
-    const ax = Math.abs(x);
-    const top = noseBase + 0.005 + (m.eyeY - 0.02 - noseBase - 0.005) * ramp(0.045, 0.07, ax);
-    return (
-      headOrNeck(v) *
-      ramp(0.022, 0.034, ax) *
-      band(chinY - 0.02, top, 0.004, y) *
-      ramp(0.07, 0.085, z) *
-      (1 - (moustache[v] as number)) *
-      (1 - (chin[v] as number)) *
-      (1 - (lips[v] as number))
-    );
-  });
-  // Under the jaw, down the throat: every style grows it with the cheeks.
-  const neckBeard = field(
-    assets,
-    (x, y, z, v) =>
-      headOrNeck(v) *
-      band(chinY - 0.06, chinY - 0.005, 0.006, y) *
-      (1 - ramp(0.05, 0.065, Math.abs(x))) *
-      ramp(0.0, 0.03, z) *
-      (1 - (chin[v] as number)),
-  );
-  return {
-    moustache,
-    chin,
-    cheeks: Float32Array.from(cheeks, (c, v) => Math.max(c, neckBeard[v] as number)),
-  };
-}
-
-/** The pubic triangle on the front of the pelvis, widest at its top above the crotch. */
-function pubicMask(assets: HumanoidAssets): Float32Array {
-  const zones = skinZones(assets);
-  const c = landmarks(assets).crotch;
-  const cy = c[1] as number;
-  return field(assets, (x, y, _z, v) => {
-    const top = cy + 0.085;
-    const t = unit((y - (cy - 0.01)) / (top - (cy - 0.01)));
-    const half = 0.015 + 0.06 * t;
-    return (
-      (zones.front[v] as number) *
-      band(cy - 0.01, top, 0.008, y) *
-      (1 - ramp(half * 0.8, half * 1.2, Math.abs(x)))
-    );
-  });
-}
-
 /** Each armpit's hair, a soft disk round the hollow under the arm. */
 function axillaryMask(assets: HumanoidAssets): Float32Array {
   const { L, R } = landmarks(assets).armpit;
@@ -279,17 +155,19 @@ function axillaryMask(assets: HumanoidAssets): Float32Array {
   });
 }
 
-/** Terminal hair masks by group (the face's parts apart). */
+/**
+ * Terminal hair masks by group, for the groups drawn as strand layers: the
+ * beard is the coat's and the cards', and pubic hair the adult pack's.
+ */
 export function bodyHairMasks(assets: HumanoidAssets) {
   const zones = skinZones(assets);
   const z = (name: Parameters<typeof zones.zone>[0]) => zones.zone(name);
   const front = zones.front;
   const areola = diskMask(assets, ["breast/nipple-size-incr"]);
-  const pubic = pubicMask(assets);
   const axillary = axillaryMask(assets);
   const gl = glabrous(assets);
   const notGlabrous = (v: number) => 1 - (gl[v] as number);
-  const notAdultOnly = (v: number) => (1 - (pubic[v] as number)) * (1 - (axillary[v] as number));
+  const notAdultOnly = (v: number) => 1 - (axillary[v] as number);
   // Zone weights are soft and reach far past a zone's middle; a group's mask is
   // cut off where its zones' weight falls under 0.2, so its support (and its
   // share of the field atlas) ends near its own region.
@@ -340,7 +218,7 @@ export function bodyHairMasks(assets: HumanoidAssets) {
       notGlabrous(v) *
       notAdultOnly(v),
   );
-  return { ...beardMasks(assets), chest, abdomen, back, buttocks, arms, legs, axillary, pubic };
+  return { chest, abdomen, back, buttocks, arms, legs, axillary };
 }
 
 type MaskName = keyof ReturnType<typeof bodyHairMasks>;
@@ -389,17 +267,6 @@ function terminalLayer(
   };
 }
 
-function beardLayer(part: BeardPart): StrandLayer {
-  return {
-    id: `beard-${part}`,
-    kind: "strands",
-    targets: [...LIPS_TARGETS, ...AREOLA_TARGETS],
-    fields: (assets) => ({ mask: masksOf(assets)[part], coord: null }),
-    paint: (input) =>
-      terminalPaint("face", input, BEARD_LENGTHS[beardStyle(bodyHairInput(input))][part]),
-  };
-}
-
 /**
  * Vellus at every age: pale, fine and short. It lies on all the skin
  * (`everywhere`), so it costs no channel of the field atlas; on the lips,
@@ -433,13 +300,11 @@ export const VELLUS_LAYER: StrandLayer = {
   },
 };
 
-export const BEARD_LAYERS: readonly StrandLayer[] = [
-  beardLayer("moustache"),
-  beardLayer("chin"),
-  beardLayer("cheeks"),
-];
-
-/** Terminal body hair, by group; axillary and pubic hair are adult-only. */
+/**
+ * Terminal body hair drawn as strands, by group; axillary hair is
+ * adult-only. The beard is not here (dense short hair is the coat's, long hair
+ * the cards'), nor pubic hair (the adult pack's).
+ */
 export const TERMINAL_HAIR_LAYERS: readonly StrandLayer[] = [
   terminalLayer("hair-chest", "chest", "chest"),
   terminalLayer("hair-abdomen", "abdomen", "abdomen"),
@@ -448,12 +313,7 @@ export const TERMINAL_HAIR_LAYERS: readonly StrandLayer[] = [
   terminalLayer("hair-arms", "arms", "arms"),
   terminalLayer("hair-legs", "legs", "legs"),
   terminalLayer("hair-axillary", "axillary", "axillary", { adultOnly: true }),
-  terminalLayer("hair-pubic", "pubic", "pubic", { adultOnly: true }),
 ];
 
 /** Every body hair layer, in stack order: vellus, then terminal hair. */
-export const BODY_HAIR_LAYERS: readonly SkinLayer[] = [
-  VELLUS_LAYER,
-  ...BEARD_LAYERS,
-  ...TERMINAL_HAIR_LAYERS,
-];
+export const BODY_HAIR_LAYERS: readonly SkinLayer[] = [VELLUS_LAYER, ...TERMINAL_HAIR_LAYERS];

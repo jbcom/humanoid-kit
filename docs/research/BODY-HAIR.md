@@ -120,9 +120,9 @@ follicles per cm² is a **choice** between the body's range and the forehead's.
 Every measured skin colour includes its vellus, so the vellus layer adds no
 mean colour; its strands show only in close views.
 
-Beard lengths (`BEARD_LENGTHS`): stubble is 1 mm, a few days at the roughly
-0.3 mm a day beard hair grows (recalled, not verified here); the grown styles'
-10 to 20 mm are **choices**.
+Beard lengths: stubble is about 1 mm, a few days at the roughly 0.3 mm a day
+beard hair grows (recalled, not verified here); grown styles' 10 to 20 mm are
+**choices**.
 
 ## What is not here
 
