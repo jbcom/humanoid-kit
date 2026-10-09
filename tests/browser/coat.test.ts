@@ -9,6 +9,7 @@ import {
   Color,
   FloatType,
   Mesh,
+  MeshBasicMaterial,
   OrthographicCamera,
   PlaneGeometry,
   Scene,
@@ -117,6 +118,62 @@ describe("the coat's shells", () => {
     const short = share(render({ ...HAIR, length: 0.0005 }, "slant"), (x) => x < 0.5);
     const long = share(render(HAIR, "slant"), (x) => x < 0.5);
     expect(long).toBeGreaterThan(1.5 * short);
+  });
+
+  // The coat's geometry shares the body's vertex buffers: disposing it must not
+  // free them under the body, which would go on drawing the shape it had.
+  it("leave the body's own buffers when disposed", () => {
+    renderer ??= new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
+    renderer.setSize(SIZE, SIZE, false);
+    const body = new PlaneGeometry(SIDE, SIDE, 4, 4);
+    const n = body.getAttribute("position").count;
+    body.setAttribute("skinIndex", new BufferAttribute(new Uint16Array(n * 4), 4));
+    body.setAttribute("skinWeight", new BufferAttribute(new Float32Array(n * 4), 4));
+    body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(new Float32Array(n).fill(SIDE), 1));
+    const masks = new Uint8Array(n * COAT_REGION_LIMIT);
+    const index = Uint32Array.from(body.getIndex()?.array as Uint16Array);
+    const coat = coatGeometry(body, { comb: new Float32Array(n * 3), masks }, index, 1);
+    const material = new CoatMaterial();
+    const scene = new Scene();
+    scene.background = new Color(1, 1, 1);
+    // The body, black, beside the coat drawn on it.
+    const skin = new Mesh(body, new MeshBasicMaterial({ color: 0x000000 }));
+    const shells = new Mesh(coat, material);
+    scene.add(skin, shells);
+    const camera = new OrthographicCamera(-SIDE, SIDE, SIDE, -SIDE, 0.001, 1);
+    camera.position.set(0, 0, 0.5);
+    /** The share of the view's left and right halves the black body covers. */
+    const covered = () => {
+      renderer?.setRenderTarget(target);
+      renderer?.render(scene, camera);
+      const px = new Float32Array(SIZE * SIZE * 4);
+      renderer?.readRenderTargetPixels(target, 0, 0, SIZE, SIZE, px);
+      renderer?.setRenderTarget(null);
+      let left = 0;
+      let right = 0;
+      for (let i = 0; i < SIZE * SIZE; i++)
+        if ((px[i * 4] as number) < 0.5) {
+          if (i % SIZE < SIZE / 2) left++;
+          else right++;
+        }
+      return { left: left / (SIZE * SIZE * 0.5), right: right / (SIZE * SIZE * 0.5) };
+    };
+    // The body spans the middle of the view, half of it in each half.
+    const before = covered();
+    expect(before.left).toBeGreaterThan(0.1);
+    expect(before.right).toBeGreaterThan(0.1);
+    // The coat goes; then the body moves wholly into the right half, as a new
+    // figure's shape would move it.
+    scene.remove(shells);
+    coat.dispose();
+    const position = body.getAttribute("position") as BufferAttribute;
+    for (let v = 0; v < n; v++) position.setX(v, position.getX(v) + 0.5 * SIDE);
+    position.needsUpdate = true;
+    const after = covered();
+    expect(after.left).toBe(0);
+    expect(after.right).toBeGreaterThan(0.2);
+    body.dispose();
+    material.dispose();
   });
 
   it("thin with cover: half the cover draws about half the strands", () => {
