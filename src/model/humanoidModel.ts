@@ -10,9 +10,11 @@ import {
   buildRefinedSurfaceMesh,
   buildSurfaceMesh,
   evaluateSurface,
+  type SurfaceDetail,
   type SurfaceMesh,
 } from "../build/surfaceMesh.ts";
 import {
+  AssetFormatError,
   type AttachmentMaterial,
   type BoundAsset,
   groupFaces,
@@ -24,8 +26,13 @@ import { recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
 import { STATE_MORPHS, type StateMorph, stateContributions } from "../makehuman/stateMorphs.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
-import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
-import { assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
+import {
+  type Contribution,
+  evaluateMorph,
+  MorphError,
+  type RegionField,
+} from "../morph/evaluate.ts";
+import { AgePolicyError, assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
@@ -98,6 +105,19 @@ export interface ModelTopology {
 export interface AdultSurfaceTopology extends SurfaceTopology {
   /** Per render vertex, metres of skin per UV unit (`uvScale`), as for the base body. */
   uvScale: Float32Array;
+}
+
+/**
+ * The lattice the adult pack's detail targets are authored on
+ * (`HumanoidModel.adultDetailLattice`): the refined surface's own vertex space.
+ */
+export interface AdultDetailLattice {
+  /** Names the refinement; `AdultDetailSpec.surfaceKey` of targets authored on it. */
+  key: string;
+  /** Vertices of the refined region; detail targets index them, 0 to this minus 1. */
+  vertexCount: number;
+  /** The region's vertices on one figure, xyz, metres, before the ground lift. */
+  positions: Float32Array;
 }
 
 /** Per render vertex, an index into a `FeatureMap`'s features (or `NO_FEATURE`). */
@@ -219,6 +239,8 @@ export class HumanoidModel {
     | undefined;
   /** The body's state morphs and, with the adult pack, its own (`AdultAnatomySpec.stateMorphs`). */
   private readonly stateMorphs: readonly StateMorph[];
+  /** The adult pack's detail targets (`AdultDetailSpec`): displacements of the adult surface, not morphs. */
+  private readonly detailTargets: ReadonlySet<string>;
   /** The rest bake of the worn set, kept for the corner bakes to reuse. */
   private restOcclusion: {
     rest: Float32Array;
@@ -239,6 +261,7 @@ export class HumanoidModel {
       ...STATE_MORPHS,
       ...(assets.adultAnatomyManifest?.anatomy?.stateMorphs ?? []),
     ];
+    this.detailTargets = new Set(assets.adultAnatomyManifest?.anatomy?.detail?.targets);
     const ids = options.attachments ?? [...assets.attachments.keys()];
     const wearing = ids.map((id) => {
       const a = assets.attachments.get(id);
@@ -637,13 +660,18 @@ export class HumanoidModel {
    * never part of the recipe; adult-only signals are refused under 18.
    */
   evaluate(recipe: Recipe, signals: Readonly<Record<string, number>> = {}): Evaluation {
-    const control = this.evaluateControl(recipe, signals);
+    const { control, detail } = this.evaluateShape(recipe, signals);
     let minY = Number.POSITIVE_INFINITY;
     for (const v of this.bodyVertices) minY = Math.min(minY, control[v * 3 + 1] as number);
     // The adult surface only for a figure aged 18 or over, decided here and nowhere
     // else: a minor's evaluation is the base body's, and never builds the other.
+    // Detail targets displace that surface alone; the base has nothing to apply them to.
     const adult = isAdult(recipe) ? this.adultBodySurface() : null;
-    const body = this.evaluatePart(adult ? adult.part : this.body, control);
+    const body = this.evaluatePart(
+      adult ? adult.part : this.body,
+      control,
+      adult && detail.length ? this.detailDisplacement(detail, control) : undefined,
+    );
     const attachments = this.attached.map((a) =>
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
     );
@@ -667,16 +695,86 @@ export class HumanoidModel {
 
   /** The morphed control positions of a recipe in a skin state: the shape, before any surface is built. */
   private evaluateControl(recipe: Recipe, signals: Readonly<Record<string, number>>): Float32Array {
-    const contributions = this.contributions(recipe, signals);
-    const pending = this.pendingFor(contributions);
+    return this.evaluateShape(recipe, signals).control;
+  }
+
+  /**
+   * The control vertices of a recipe in a skin state, and the contributions that
+   * are detail targets (`AdultDetailSpec`), which are not morphs of the control
+   * mesh but displacements of the adult surface, applied by `evaluate`.
+   */
+  private evaluateShape(recipe: Recipe, signals: Readonly<Record<string, number>>) {
+    const all = this.contributions(recipe, signals);
+    const pending = this.pendingFor(all);
     if (pending.size)
       throw new MorphError(
         `the recipe needs target files that have not loaded yet: ${[...pending].join(", ")} ` +
           "(await their stage of loadHumanoidAssetsStaged)",
       );
+    const detail = all.filter((c) => this.detailTargets.has(c.target));
+    const contributions = detail.length
+      ? all.filter((c) => !this.detailTargets.has(c.target))
+      : all;
     const control = new Float32Array(this.assets.positions.length);
     evaluateMorph(this.assets.positions, this.assets.targets, contributions, control, this.regions);
-    return control;
+    return { control, detail };
+  }
+
+  /**
+   * The displacement of the adult surface's lattice a figure's detail
+   * contributions make: each target's deltas times its weight, times the figure's
+   * scale (`AdultDetailSpec.scale`).
+   */
+  private detailDisplacement(
+    detail: readonly Contribution[],
+    control: Float32Array,
+  ): SurfaceDetail | undefined {
+    const scale = this.assets.adultAnatomyManifest?.anatomy?.detail?.scale;
+    let figure = 1;
+    if (scale) {
+      const d = (k: number) =>
+        (control[scale.a * 3 + k] as number) - (control[scale.b * 3 + k] as number);
+      figure = Math.hypot(d(0), d(1), d(2)) / scale.rest;
+    }
+    const indices: number[] = [];
+    const xyz: number[] = [];
+    for (const c of detail) {
+      if (typeof c.weight !== "number")
+        throw new MorphError(`detail target ${c.target} cannot be weighted by region`);
+      const t = this.assets.targets.get(c.target);
+      if (!t) throw new MorphError(`unknown detail target ${c.target}`);
+      const w = c.weight * t.scale * figure;
+      for (let i = 0; i < t.indices.length; i++) {
+        indices.push(t.indices[i] as number);
+        xyz.push(
+          (t.deltas[i * 3] as number) * w,
+          (t.deltas[i * 3 + 1] as number) * w,
+          (t.deltas[i * 3 + 2] as number) * w,
+        );
+      }
+    }
+    return indices.length ? { indices, xyz: Float32Array.from(xyz) } : undefined;
+  }
+
+  /**
+   * The lattice detail targets are authored on, for an adult figure: the adult
+   * surface's refinement before smoothing, its vertex count, its key and its
+   * vertex positions on this figure. Null without an adult surface. Refused
+   * under 18.
+   */
+  adultDetailLattice(recipe: Recipe): AdultDetailLattice | null {
+    if (!isAdult(recipe))
+      throw new AgePolicyError("the adult detail lattice is for figures aged 18 or over");
+    const surface = this.adultBodySurface();
+    const lattice = surface?.part.mesh.lattice;
+    if (!lattice) return null;
+    const control = this.evaluateControl(recipe, {});
+    const all = applyStencil(lattice.stencil, control, new Float32Array(lattice.vertexCount * 3));
+    const positions = new Float32Array(lattice.region.length * 3);
+    lattice.region.forEach((v, i) => {
+      positions.set(all.subarray(v * 3, v * 3 + 3), i * 3);
+    });
+    return { key: lattice.key, vertexCount: lattice.region.length, positions };
   }
 
   /**
@@ -697,18 +795,16 @@ export class HumanoidModel {
       this.adultBody = null;
       return null;
     }
-    // Faces a worn attachment hides are not in this body, so they are not refined.
-    const present = new Set(this.bodyFaces);
-    const keep = spec.faces.flatMap((f, i) => (present.has(f) ? [i] : []));
+    // Numbered over the whole body group and cut to the faces no worn attachment
+    // hides, so the lattice's numbering is the same whatever is worn.
     const mesh = buildRefinedSurfaceMesh(
       { ...this.assets, vertexCount: this.assets.manifest.vertexCount },
-      this.bodyFaces,
-      {
-        faces: keep.map((i) => spec.faces[i] as number),
-        levels: keep.map((i) => spec.levels[i] as number),
-      },
+      groupFaces(this.assets, "body"),
+      spec,
       this.level,
+      this.bodyFaces,
     );
+    this.checkDetail(mesh);
     const n = this.assets.manifest.vertexCount;
     const scaleField = new Float32Array(n * 3);
     uvScale(this.assets, this.bodyFaces).forEach((s, v) => {
@@ -727,11 +823,36 @@ export class HumanoidModel {
     return this.adultBody;
   }
 
-  private evaluatePart(p: Part, control: Float32Array): SurfaceEvaluation {
+  /**
+   * Refuses detail targets built against another refinement, or naming a vertex
+   * the lattice does not have, once the surface they apply to exists. Targets
+   * not yet loaded are checked by `evaluateSurface` when they are applied.
+   */
+  private checkDetail(mesh: SurfaceMesh): void {
+    const spec = this.assets.adultAnatomyManifest?.anatomy?.detail;
+    const lattice = mesh.lattice;
+    if (!spec || !lattice) return;
+    if (spec.surfaceKey !== lattice.key)
+      throw new AssetFormatError(
+        `the detail targets were built for a different refinement of the adult surface ` +
+          `(key ${spec.surfaceKey}, this surface is ${lattice.key}); rebuild the adult pack`,
+      );
+    for (const name of spec.targets) {
+      const t = this.assets.targets.get(name);
+      if (!t) continue;
+      for (const v of t.indices)
+        if (v >= lattice.region.length)
+          throw new AssetFormatError(
+            `detail target ${name}: vertex ${v} is out of range (< ${lattice.region.length})`,
+          );
+    }
+  }
+
+  private evaluatePart(p: Part, control: Float32Array, detail?: SurfaceDetail): SurfaceEvaluation {
     const n = p.mesh.renderToSurface.length * 3;
     const positions = new Float32Array(n);
     const normals = new Float32Array(n);
-    evaluateSurface(p.mesh, control, positions, normals, p.scratch);
+    evaluateSurface(p.mesh, control, positions, normals, p.scratch, detail);
     return { positions, normals };
   }
 }
