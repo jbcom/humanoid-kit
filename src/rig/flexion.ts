@@ -5,8 +5,7 @@
  * from the rest pose, because skin creases follow the true joint angle and
  * pose libraries rest differently: MakeHuman's A-pose already bends each elbow
  * about 43° forward (about 0.3), which a T-pose straightens to 0. Crease
- * layers read them: the flexor side folds as the joint bends, the extensor
- * side wrinkles as it straightens.
+ * layers read them: the inside of the bend folds as the joint bends.
  *
  * A joint is three bones: the segment above it, the joint, and the bone that
  * starts the segment below. Its bend is the signed angle between the two

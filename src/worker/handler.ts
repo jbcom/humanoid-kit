@@ -7,11 +7,15 @@
  * arriving, and a `complete` request is answered when all have. An evaluation
  * waits for the stages its recipe needs, without holding up any other request;
  * stages arrive one after another (`targetLoadOrder`), so a recipe needing a
- * late stage also waits out the ones before it. Results are transferred, not
- * copied.
+ * late stage also waits out the ones before it. A recipe with an outfit, and a
+ * request for a garment, wait for the clothing pack's garments the same way.
+ * Results are transferred, not copied; the outfit masks the model caches are
+ * copied first.
  */
+import { wardrobeOf } from "../editor/wardrobe.ts";
 import {
   ADULT_TARGET_FILE,
+  GARMENTS_FILE,
   type LoadStage,
   loadHumanoidAssetsStaged,
 } from "../format/assetFormat.ts";
@@ -46,6 +50,16 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
     }
   };
 
+  /**
+   * Waits for the clothing pack's garments when `needed`. Without a clothing
+   * pack there is no stage to wait for, and the model names the missing pack
+   * itself.
+   */
+  const garmentsFor = async (m: HumanoidModel, needed: boolean): Promise<void> => {
+    if (!needed || !m.assets.garmentsPending) return;
+    await stages.find((s) => s.files.includes(GARMENTS_FILE))?.loaded;
+  };
+
   return async (req) => {
     try {
       if (req.type === "init") {
@@ -69,6 +83,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           ...(assets.adultAnatomyManifest?.anatomy && {
             anatomy: assets.adultAnatomyManifest.anatomy,
           }),
+          wardrobe: wardrobeOf(assets.clothingManifest),
         });
         return;
       }
@@ -148,9 +163,16 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         ]);
         return;
       }
+      if (req.type === "garment") {
+        await garmentsFor(model, true);
+        // Copied, not transferred: the model keeps the topology for the next caller.
+        post({ type: "garment", id: req.id, topology: model.garmentTopology(req.garment) });
+        return;
+      }
       await targetsFor(model, req.recipe, req.signals);
+      await garmentsFor(model, (req.recipe.outfit?.length ?? 0) > 0);
       const t0 = performance.now();
-      const evaluation = model.evaluate(req.recipe, req.signals);
+      const evaluation = model.evaluate(req.recipe, req.signals, req.haveOutfit ?? null);
       const transfer: Transferable[] = [
         evaluation.positions.buffer,
         evaluation.normals.buffer,
@@ -159,6 +181,17 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         evaluation.boneHeads.buffer,
       ];
       for (const a of evaluation.attachments) transfer.push(a.positions.buffer, a.normals.buffer);
+      for (const g of evaluation.garments) transfer.push(g.positions.buffer, g.normals.buffer);
+      const masks = evaluation.outfit.masks;
+      if (masks) {
+        // The model caches the masks it works out, so what is transferred is a copy.
+        const sent = {
+          bodyIndex: masks.bodyIndex.slice(),
+          garmentIndex: masks.garmentIndex.map((i) => i.slice()),
+        };
+        evaluation.outfit = { ...evaluation.outfit, masks: sent };
+        transfer.push(sent.bodyIndex.buffer, ...sent.garmentIndex.map((i) => i.buffer));
+      }
       post({ type: "evaluated", id: req.id, evaluation, ms: performance.now() - t0 }, transfer);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));

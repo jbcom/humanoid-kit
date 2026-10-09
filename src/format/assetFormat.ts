@@ -61,6 +61,8 @@ export const BODY_TARGET_FILES = ["core", "baby", "child", "young", "old", "modi
 export type BodyTargetFileId = (typeof BODY_TARGET_FILES)[number];
 /** The adult anatomy pack's one target file. */
 export const ADULT_TARGET_FILE = "adult";
+/** The id of the clothing pack's garments binary among a staged load's files. */
+export const GARMENTS_FILE = "garments";
 
 export interface TargetFile {
   /** A `BodyTargetFileId` in a body pack, `ADULT_TARGET_FILE` in the adult pack. */
@@ -180,10 +182,42 @@ export interface BodyManifest {
     occlusionKeys: string[];
     entries: AttachmentEntry[];
   };
+  /**
+   * The body's own occlusion, baked at pack time (`HumanoidModel.bakeBodyOcclusion`).
+   * Absent from packs that predate it, whose body is then never darkened.
+   */
+  bodyOcclusion?: BodyOcclusionEntry;
   skeleton: { bones: BoneEntry[]; joints: Record<string, number[]> };
   faceUnits: { names: string[]; joints: BvhJoint[]; frames: number[][] };
   /** Whole-body poses (one BVH frame each, MakeHuman's Z-up axes; see src/rig/pose.ts). */
   poses: BodyPoseEntry[];
+}
+
+/**
+ * The body's cavity occlusion file: `count` ascending base-vertex indices
+ * (u32), then one byte per vertex for each corner of the cube of `keys` (the
+ * `OCCLUSION_KEYS` ids it was baked at; corner 0 is rest), corner by corner.
+ */
+export interface BodyOcclusionEntry {
+  file: string;
+  /** SHA-256 of the file as shipped (compressed). */
+  sha256: string;
+  keys: string[];
+  /** How many vertices it stores. */
+  count: number;
+}
+
+/**
+ * Occlusion for the few body vertices that are ever enclosed (the mouth's
+ * inside, the nostrils, the ear canals, the eye sockets); every other vertex is
+ * open at every pose. 255 = open, 0 = fully enclosed
+ * (docs/ARCHITECTURE.md, "Body occlusion").
+ */
+export interface BodyOcclusion {
+  /** Ascending base-vertex indices. */
+  vertices: Uint32Array;
+  /** One byte per vertex for each corner of the key cube: corner 0 (rest) first, each `vertices.length` long. */
+  values: Uint8Array;
 }
 
 export interface AttachmentMaterial {
@@ -191,6 +225,8 @@ export interface AttachmentMaterial {
   roughness: number;
   /** File name of the diffuse texture within the pack, if any. */
   texture: string | null;
+  /** File name of the tangent-space normal map within the pack, if the pack ships one. */
+  normalTexture?: string | null;
   transparent: boolean;
   alphaToCoverage: boolean;
   backfaceCull: boolean;
@@ -244,6 +280,46 @@ export interface BoundAsset {
    * m has key i at full weight when bit i of m is set; corner 0 is rest).
    */
   occlusion: Uint8Array;
+}
+
+/**
+ * A garment of the clothing pack: a mesh bound to the base mesh like an
+ * attachment, worn by choice rather than with every figure, and without baked
+ * occlusion.
+ */
+export interface GarmentEntry extends Omit<AttachmentEntry, "layout"> {
+  /**
+   * The category it stacks as among garments of equal `zDepth` (`GARMENT_LAYERS`: `clothes`, `jacket`, `shoes`,
+   * `hat`, ...), in place of an attachment's kind.
+   */
+  kind: string;
+  /**
+   * What a person would call it ("Brown oxfords"), for browsing; the asset's
+   * own name (`name`) is a file name that also says whom it was drawn for.
+   */
+  label: string;
+  /** The asset's own tags (`Casual`, `Male`, ...). */
+  tags: string[];
+  layout: Omit<AttachmentEntry["layout"], "occlusion">;
+}
+
+export interface BoundGarment extends Omit<BoundAsset, "entry" | "occlusion"> {
+  entry: GarmentEntry;
+}
+
+/** The clothing pack (`humanoid-kit-clothing`): garments bound to the body pack's base mesh. */
+export interface ClothingManifest {
+  format: 1;
+  kind: "clothing";
+  topology: string;
+  /** `body.sha256` of the body pack this pack was built against. */
+  bodySha256: string;
+  source: PackSource;
+  garments: {
+    file: string;
+    sha256: string;
+    entries: GarmentEntry[];
+  };
 }
 
 /**
@@ -357,6 +433,17 @@ export interface HumanoidAssets {
   /** The slider taxonomy of every loaded pack, merged in MakeHuman's order. */
   sliders: SliderTask[];
   attachments: Map<string, BoundAsset>;
+  /**
+   * The clothing pack's garments by id; empty without that pack and until its
+   * binary has arrived (`garmentsPending`). The manifest lists them earlier.
+   */
+  garments: Map<string, BoundGarment>;
+  /** The clothing pack's manifest, when that pack was loaded. */
+  clothingManifest: ClothingManifest | null;
+  /** True while the clothing pack is loaded but its garments binary has not arrived. */
+  garmentsPending: boolean;
+  /** The body's own cavity occlusion; null for a pack that predates it. */
+  bodyOcclusion: BodyOcclusion | null;
   /** URL of each pack file by name (textures included); empty when parsed without URLs. */
   fileUrls: Map<string, string>;
   adultAnatomyLoaded: boolean;
@@ -396,6 +483,10 @@ function view<T extends Float32Array | Uint32Array | Uint8Array>(
     );
   }
   return new Ctor(buffer, range.offset, range.byteLength / Ctor.BYTES_PER_ELEMENT);
+}
+
+function fail(message: string): never {
+  throw new AssetFormatError(message);
 }
 
 function expectLength(arr: ArrayLike<number>, expected: number, what: string): void {
@@ -457,6 +548,15 @@ export interface AdultAnatomyData {
   targets?: ArrayBuffer;
 }
 
+export interface ClothingPackData {
+  manifest: ClothingManifest;
+  /**
+   * The garments binary, decompressed (`gunzip`). Leave it out to add it later
+   * with `addGarments`; the garments are pending until then.
+   */
+  garments?: ArrayBuffer;
+}
+
 /** Decompressed target files by id (`BODY_TARGET_FILES`, `ADULT_TARGET_FILE`). */
 export type TargetFileData = Partial<Record<string, ArrayBuffer>>;
 
@@ -469,46 +569,104 @@ export interface BodyPackData {
    */
   targets: TargetFileData;
   attachments: ArrayBuffer;
+  /** The decompressed body occlusion file; needed when the manifest has an entry for it. */
+  bodyOcclusion?: ArrayBuffer;
   /** URL of each pack file by name, when known (needed to load textures). */
   fileUrls?: Map<string, string>;
+}
+
+/**
+ * The binding arrays every bound mesh has, read and checked against the base
+ * mesh it binds to (`baseVertices` vertices).
+ */
+function readBinding(
+  entry: GarmentEntry | AttachmentEntry,
+  bin: ArrayBuffer,
+  baseVertices: number,
+  what: (field: string) => string,
+): Omit<BoundGarment, "entry"> {
+  const l = entry.layout;
+  const bound = {
+    refVerts: view(Uint32Array, bin, l.refVerts, what("refVerts")),
+    weights: view(Float32Array, bin, l.weights, what("weights")),
+    offsets: view(Float32Array, bin, l.offsets, what("offsets")),
+    faceVerts: view(Uint32Array, bin, l.faceVerts, what("faceVerts")),
+    faceUvs: view(Uint32Array, bin, l.faceUvs, what("faceUvs")),
+    uvs: view(Float32Array, bin, l.uvs, what("uvs")),
+    deleteVerts: view(Uint32Array, bin, l.deleteVerts, what("deleteVerts")),
+  };
+  expectLength(bound.refVerts, entry.vertexCount * 3, what("refVerts"));
+  expectLength(bound.weights, entry.vertexCount * 3, what("weights"));
+  expectLength(bound.offsets, entry.vertexCount * 3, what("offsets"));
+  expectLength(bound.faceVerts, entry.faceCount * 4, what("faceVerts"));
+  expectLength(bound.faceUvs, entry.faceCount * 4, what("faceUvs"));
+  if (bound.uvs.length % 2 !== 0) throw new AssetFormatError(`${what("uvs")}: odd length`);
+  expectIndices(bound.refVerts, baseVertices, what("refVerts"));
+  expectIndices(bound.faceVerts, entry.vertexCount, what("faceVerts"));
+  expectIndices(bound.faceUvs, bound.uvs.length / 2, what("faceUvs"));
+  expectIndices(bound.deleteVerts, baseVertices, what("deleteVerts"));
+  if (entry.scale) {
+    for (const axis of ["x", "y", "z"] as const)
+      expectIndices(entry.scale[axis].slice(0, 2), baseVertices, what(`${axis}_scale`));
+  }
+  return bound;
+}
+
+/**
+ * Reads a body occlusion file (`BodyOcclusionEntry`) for a mesh of
+ * `vertexCount` base vertices as views, with no copy.
+ */
+export function parseBodyOcclusion(
+  entry: Pick<BodyOcclusionEntry, "keys" | "count">,
+  bin: ArrayBuffer,
+  vertexCount: number,
+): BodyOcclusion {
+  const corners = 2 ** entry.keys.length;
+  const expected = entry.count * (4 + corners);
+  if (!Number.isInteger(entry.count) || entry.count < 0 || bin.byteLength !== expected)
+    throw new AssetFormatError(
+      `body occlusion: ${bin.byteLength} bytes cannot hold ${entry.count} vertices baked at ` +
+        `${entry.keys.length} keys (${expected} bytes)`,
+    );
+  const vertices = new Uint32Array(bin, 0, entry.count);
+  for (let i = 1; i < vertices.length; i++)
+    if ((vertices[i] as number) <= (vertices[i - 1] as number))
+      throw new AssetFormatError("body occlusion: vertex indices are not ascending");
+  expectIndices(vertices, vertexCount, "body occlusion vertices");
+  return { vertices, values: new Uint8Array(bin, entry.count * 4, entry.count * corners) };
 }
 
 function parseAttachments(manifest: BodyManifest, bin: ArrayBuffer): Map<string, BoundAsset> {
   const out = new Map<string, BoundAsset>();
   for (const entry of manifest.attachments.entries) {
-    const l = entry.layout;
     const what = (field: string) => `attachment ${entry.id} ${field}`;
-    const asset: BoundAsset = {
-      entry,
-      refVerts: view(Uint32Array, bin, l.refVerts, what("refVerts")),
-      weights: view(Float32Array, bin, l.weights, what("weights")),
-      offsets: view(Float32Array, bin, l.offsets, what("offsets")),
-      faceVerts: view(Uint32Array, bin, l.faceVerts, what("faceVerts")),
-      faceUvs: view(Uint32Array, bin, l.faceUvs, what("faceUvs")),
-      uvs: view(Float32Array, bin, l.uvs, what("uvs")),
-      deleteVerts: view(Uint32Array, bin, l.deleteVerts, what("deleteVerts")),
-      occlusion: view(Uint8Array, bin, l.occlusion, what("occlusion")),
-    };
-    expectLength(asset.refVerts, entry.vertexCount * 3, what("refVerts"));
-    expectLength(asset.weights, entry.vertexCount * 3, what("weights"));
-    expectLength(asset.offsets, entry.vertexCount * 3, what("offsets"));
-    expectLength(asset.faceVerts, entry.faceCount * 4, what("faceVerts"));
-    expectLength(asset.faceUvs, entry.faceCount * 4, what("faceUvs"));
+    const occlusion = view(Uint8Array, bin, entry.layout.occlusion, what("occlusion"));
     expectLength(
-      asset.occlusion,
+      occlusion,
       entry.vertexCount * 2 ** manifest.attachments.occlusionKeys.length,
       what("occlusion"),
     );
-    if (asset.uvs.length % 2 !== 0) throw new AssetFormatError(`${what("uvs")}: odd length`);
-    expectIndices(asset.refVerts, manifest.vertexCount, what("refVerts"));
-    expectIndices(asset.faceVerts, entry.vertexCount, what("faceVerts"));
-    expectIndices(asset.faceUvs, asset.uvs.length / 2, what("faceUvs"));
-    expectIndices(asset.deleteVerts, manifest.vertexCount, what("deleteVerts"));
-    if (entry.scale) {
-      for (const axis of ["x", "y", "z"] as const)
-        expectIndices(entry.scale[axis].slice(0, 2), manifest.vertexCount, what(`${axis}_scale`));
-    }
-    out.set(entry.id, asset);
+    out.set(entry.id, {
+      entry,
+      ...readBinding(entry, bin, manifest.vertexCount, what),
+      occlusion,
+    });
+  }
+  return out;
+}
+
+function parseGarments(
+  clothing: ClothingManifest,
+  baseVertices: number,
+  bin: ArrayBuffer,
+): Map<string, BoundGarment> {
+  const out = new Map<string, BoundGarment>();
+  for (const entry of clothing.garments.entries) {
+    if (out.has(entry.id)) throw new AssetFormatError(`duplicate garment ${entry.id}`);
+    out.set(entry.id, {
+      entry,
+      ...readBinding(entry, bin, baseVertices, (field) => `garment ${entry.id} ${field}`),
+    });
   }
   return out;
 }
@@ -550,10 +708,22 @@ export function mergeSliderTasks(...sources: SliderTask[][]): SliderTask[] {
 export function parseHumanoidAssets(
   pack: BodyPackData,
   adultAnatomy?: AdultAnatomyData,
+  clothing?: ClothingPackData,
 ): HumanoidAssets {
   const { manifest, body, targets } = pack;
   if (manifest.format !== 1 || manifest.kind !== "body")
     throw new AssetFormatError("not a format-1 body pack manifest");
+  if (clothing) {
+    const c = clothing.manifest;
+    if (c.format !== 1 || c.kind !== "clothing")
+      throw new AssetFormatError("not a format-1 clothing manifest");
+    if (c.topology !== manifest.topology || c.bodySha256 !== manifest.body.sha256) {
+      throw new AssetFormatError("the clothing pack was built for a different body pack");
+    }
+    const taken = new Set(manifest.attachments.entries.map((a) => a.id));
+    for (const g of c.garments.entries)
+      if (taken.has(g.id)) throw new AssetFormatError(`garment ${g.id} is also an attachment`);
+  }
   const { layout } = manifest.body;
   const positions = view(Float32Array, body, layout.positions, "body positions");
   if (positions.length !== manifest.vertexCount * 3) {
@@ -606,6 +776,19 @@ export function parseHumanoidAssets(
     modifiers,
     sliders,
     attachments: parseAttachments(manifest, pack.attachments),
+    garments: new Map(),
+    clothingManifest: clothing?.manifest ?? null,
+    garmentsPending: clothing !== undefined,
+    bodyOcclusion: manifest.bodyOcclusion
+      ? parseBodyOcclusion(
+          manifest.bodyOcclusion,
+          pack.bodyOcclusion ??
+            fail(
+              `the manifest lists ${manifest.bodyOcclusion.file} but the pack data has no bytes for it`,
+            ),
+          manifest.vertexCount,
+        )
+      : null,
     fileUrls: pack.fileUrls ?? new Map(),
     adultAnatomyLoaded: adultAnatomy !== undefined,
     adultAnatomyManifest: adultAnatomy?.manifest ?? null,
@@ -621,7 +804,22 @@ export function parseHumanoidAssets(
     ...targets,
     ...(adultAnatomy?.targets && { [ADULT_TARGET_FILE]: adultAnatomy.targets }),
   });
+  if (clothing?.garments) addGarments(assets, clothing.garments);
   return assets;
+}
+
+/**
+ * Adds the clothing pack's garments (its decompressed binary) to assets parsed
+ * with a clothing manifest. The assets change only if every garment checks, so
+ * a failed add can be retried.
+ */
+export function addGarments(assets: HumanoidAssets, bin: ArrayBuffer): void {
+  const manifest = assets.clothingManifest;
+  if (!manifest) throw new AssetFormatError("no clothing pack is loaded");
+  if (!assets.garmentsPending) throw new AssetFormatError("the garments are already loaded");
+  for (const [id, g] of parseGarments(manifest, assets.manifest.vertexCount, bin))
+    assets.garments.set(id, g);
+  assets.garmentsPending = false;
 }
 
 /** Every target file of a body pack and, if given, an adult anatomy pack. */
@@ -706,6 +904,12 @@ export interface LoadOptions {
   /** The adult anatomy pack. Its targets only evaluate for figures aged 18+. */
   adultAnatomy?: PackLocation;
   /**
+   * The clothing pack (`humanoid-kit-clothing`). Its manifest loads with the
+   * first stage, its garments binary in a later one (`GARMENTS_FILE`), so a
+   * figure that wears nothing is never held up by it.
+   */
+  clothing?: PackLocation;
+  /**
    * The age of the first figure to show, so a staged load brings its targets
    * first (`targetLoadOrder`). Default: the default figure's.
    */
@@ -772,11 +976,15 @@ export async function loadHumanoidAssetsStaged(
 ): Promise<StagedHumanoidAssets> {
   const body = packResolver(options.body);
   const adult = options.adultAnatomy === undefined ? undefined : packResolver(options.adultAnatomy);
-  const [manifest, adultManifest] = await Promise.all([
+  const clothing = options.clothing === undefined ? undefined : packResolver(options.clothing);
+  const [manifest, adultManifest, clothingManifest] = await Promise.all([
     fetchOk(body.manifest).then((r) => r.json() as Promise<BodyManifest>),
     adult && fetchOk(adult.manifest).then((r) => r.json() as Promise<AdultAnatomyManifest>),
+    clothing && fetchOk(clothing.manifest).then((r) => r.json() as Promise<ClothingManifest>),
   ]);
   const urlOf = (id: string): string | null => {
+    if (id === GARMENTS_FILE)
+      return clothing && clothingManifest ? clothing.file(clothingManifest.garments.file) : null;
     if (id === ADULT_TARGET_FILE)
       return adult && adultManifest ? adult.file(adultManifest.targets.file) : null;
     const f = manifest.targets.find((t) => t.id === id);
@@ -792,19 +1000,37 @@ export async function loadHumanoidAssetsStaged(
     const bins = await Promise.all(present.map(([, url]) => fetchGzip(url)));
     return Object.fromEntries(present.map(([id], i) => [id, bins[i]]));
   };
-  const [first, ...later] = targetLoadOrder(options.firstFigureAge ?? DEFAULT_MACROS.age);
-  const [bodyBin, attachments, firstTargets] = await Promise.all([
+  const [first, ...order] = targetLoadOrder(options.firstFigureAge ?? DEFAULT_MACROS.age);
+  // The garments follow the body's modifier targets: every figure that is shaped
+  // needs those, and a figure that wears nothing never waits for the garments.
+  const later = clothingManifest
+    ? [order[0] as string[], [GARMENTS_FILE], ...order.slice(1)]
+    : order;
+  const [bodyBin, attachments, bodyOcclusion, firstTargets] = await Promise.all([
     fetchGzip(body.file(manifest.body.file)),
     fetchGzip(body.file(manifest.attachments.file)),
+    manifest.bodyOcclusion ? fetchGzip(body.file(manifest.bodyOcclusion.file)) : undefined,
     fetchFiles(first as string[]),
   ]);
   const fileUrls = new Map<string, string>();
   for (const a of manifest.attachments.entries) {
     if (a.material.texture) fileUrls.set(a.material.texture, body.file(a.material.texture));
   }
+  for (const g of clothingManifest?.garments.entries ?? []) {
+    for (const t of [g.material.texture, g.material.normalTexture])
+      if (t) fileUrls.set(t, (clothing as ReturnType<typeof packResolver>).file(t));
+  }
   const assets = parseHumanoidAssets(
-    { manifest, body: bodyBin, targets: firstTargets, attachments, fileUrls },
+    {
+      manifest,
+      body: bodyBin,
+      targets: firstTargets,
+      attachments,
+      ...(bodyOcclusion && { bodyOcclusion }),
+      fileUrls,
+    },
     adultManifest && { manifest: adultManifest },
+    clothingManifest && { manifest: clothingManifest },
   );
   // Each stage's bytes are fetched after the previous stage's settled; each is
   // added to the assets as soon as its own bytes are in. A failed stage fails
@@ -813,8 +1039,9 @@ export async function loadHumanoidAssetsStaged(
   const stages = later.map((files) => {
     const bytes = bytesBefore.then(() => fetchFiles(files));
     bytesBefore = bytes.catch(() => {});
-    const loaded = bytes.then((data) => {
-      addTargetFiles(assets, data);
+    const loaded = bytes.then(({ [GARMENTS_FILE]: garments, ...targets }) => {
+      addTargetFiles(assets, targets);
+      if (garments) addGarments(assets, garments);
       return assets;
     });
     // Observed here; callers that need a stage await it and see the failure.

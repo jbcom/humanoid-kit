@@ -54,6 +54,7 @@ describe("the package entry's skin-state API", () => {
     const ids = kit.SKIN_LAYERS.filter((l) => !kit.isAdultLayer(l)).map((l) => l.id);
     expect(ids.slice(0, 3)).toEqual(["flush", "lips", "areola"]);
     expect(ids.slice(3)).toEqual([
+      "mouth-interior",
       "goosebumps",
       "heat-flush",
       "exertion-flush",
@@ -63,6 +64,9 @@ describe("the package entry's skin-state API", () => {
       "lips-state",
       "sweat-heat",
       "sweat-exertion",
+      // The joint creases follow the states.
+      ...kit.CREASE_LAYERS.map((l) => l.id),
     ]);
+    expect(kit.CREASE_LAYERS).toHaveLength(4);
   });
 });

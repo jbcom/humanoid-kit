@@ -3,6 +3,7 @@ import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { buildFeatureMap } from "../src/makehuman/features.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
 import { adultManifest, adultPackData, bodyPackData, loadFixtureAssets } from "./fixtures.ts";
 
 const withAdult = loadFixtureAssets(true);
@@ -26,6 +27,32 @@ describe("the adult surface in the model", { timeout: 300_000 }, () => {
       expect(Array.from(a.positions)).toEqual(Array.from(b.positions));
       expect(Array.from(a.normals)).toEqual(Array.from(b.normals));
       expect(a.curvature.length).toBe(b.curvature.length);
+    }
+  });
+
+  it("darkens the body's cavities on the adult surface as on the base", () => {
+    // The refinement is at the pelvis; the mouth, nostrils, ear canals and eye
+    // sockets keep their geometry, so their occlusion must come through intact.
+    const corners = occlusionCorners(OCCLUSION_KEYS.length);
+    const base = adultModel.topology().body;
+    const s = adultModel.adultSurface() as NonNullable<ReturnType<HumanoidModel["adultSurface"]>>;
+    expect(s.occlusion.length).toBe(s.vertexCount * corners);
+    for (let c = 0; c < corners; c++) {
+      const dark = (o: Uint8Array, n: number) => {
+        let count = 0;
+        let min = 255;
+        for (let v = 0; v < n; v++) {
+          const x = o[v * corners + c] as number;
+          if (x < 250) count++;
+          min = Math.min(min, x);
+        }
+        return { count, min };
+      };
+      const a = dark(base.occlusion, base.vertexCount);
+      const b = dark(s.occlusion, s.vertexCount);
+      expect(a.count, `corner ${c}`).toBeGreaterThan(0);
+      expect(b.min, `corner ${c}`).toBe(a.min);
+      expect(Math.abs(b.count - a.count) / a.count, `corner ${c}`).toBeLessThan(0.05);
     }
   });
 

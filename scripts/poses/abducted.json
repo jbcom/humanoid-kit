@@ -1,0 +1,10 @@
+{
+  "name": "abducted",
+  "title": "Abducted",
+  "description": "Both legs swung out about 40° from the hips, the stance at its widest a body holds without a step. The check for the hip's volume lost where the thighs part.",
+  "base": "tpose",
+  "rotations": {
+    "upperleg01.L": { "Yrotation": -40 },
+    "upperleg01.R": { "Yrotation": 40 }
+  }
+}

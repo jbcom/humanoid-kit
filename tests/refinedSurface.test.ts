@@ -354,33 +354,26 @@ describe("a body surface with local refinement", { timeout: 600_000 }, () => {
     expect(border(fine)).toBe(border(plain));
   });
 
-  it("keeps its numbering when faces are hidden: the lattice is the same, the hidden faces are cut", () => {
-    // A garment hides body faces; the lattice that detail targets index must not move.
-    const fine = fineSurface(1);
-    const upper = Uint32Array.from(
-      Array.from(body).filter((f) => {
-        const y = [0, 1, 2, 3].reduce(
-          (s, i) => s + (P[(assets.faceVerts[f * 4 + i] as number) * 3 + 1] as number),
-          0,
-        );
-        // The body's origin is at the pelvis: above the chest is the neck and head.
-        return y / 4 < 0.45;
-      }),
-    );
-    expect(upper.length).toBeLessThan(body.length);
-    const hidden = body.length - upper.length;
-    const cut = buildRefinedSurfaceMesh(source, body, region(), 1, upper);
-    expect(cut.lattice?.key).toBe(fine.lattice?.key);
-    expectSame(cut.lattice?.region ?? [], fine.lattice?.region ?? [], "region");
-    expect(cut.topology.vertexCount).toBe(fine.topology.vertexCount);
-    // Each hidden face is four faces of the level-1 surface, none of them refined here.
-    expect(fine.topology.faces.length / 4 - cut.topology.faces.length / 4).toBe(hidden * 4);
-    // What is still drawn is where it was: shared render vertices keep their positions.
-    const a = evaluate(fine, P).positions;
-    const b = evaluate(cut, P).positions;
-    const at = new Set(Array.from({ length: a.length / 3 }, (_, i) => key(a, i)));
-    for (let i = 0; i < b.length / 3; i++) expect(at.has(key(b, i))).toBe(true);
-    expect(cut.renderToSurface.length).toBeLessThan(fine.renderToSurface.length);
+  it.each([1, 2])("at level %i says which triangles each control face owns", (level) => {
+    const fine = fineSurface(level);
+    const starts = fine.faceTriangles as Uint32Array;
+    expect(starts.length).toBe(body.length + 1);
+    expect(starts[0]).toBe(0);
+    expect(starts[body.length]).toBe(fine.index.length / 3);
+    // A face the refinement leaves alone is drawn as the plain surface draws it
+    // (two triangles per cell, 4^level cells), unless a refined neighbour's
+    // hanging points make it a transition polygon; a refined face has more.
+    const plainOwns = 2 * 4 ** level;
+    let same = 0;
+    let finer = 0;
+    for (let i = 0; i < body.length; i++) {
+      const owns = (starts[i + 1] as number) - (starts[i] as number);
+      expect(owns).toBeGreaterThanOrEqual(plainOwns);
+      if (owns === plainOwns) same++;
+      else finer++;
+    }
+    expect(finer).toBeGreaterThan(0);
+    expect(same).toBeGreaterThan(body.length * 0.9);
   });
 
   it("needs a subdivision level: the refinement is defined on the level-1 surface", () => {

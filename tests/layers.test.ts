@@ -246,10 +246,19 @@ describe("detail and surface layers", () => {
     expect(s.specular).toBeCloseTo(0.5 * 0.5 * 0.4, 6);
   });
 
-  it("raise creases with a raised-cosine profile, size of them across the coordinate", () => {
+  it("cut creases as narrow grooves, size of them across the coordinate, flat at its ends", () => {
+    // A groove at the middle of each period, nothing at the period's ends (so a
+    // layer's window, whose ends are the coordinate's, starts and ends flat).
     expect(creaseHeight(0.001, 4, 0)).toBeCloseTo(0, 9);
-    expect(creaseHeight(0.001, 4, 1 / 8)).toBeCloseTo(0.001, 9);
+    expect(creaseHeight(0.001, 4, 1)).toBeCloseTo(0, 9);
+    expect(creaseHeight(0.001, 4, 1 / 8)).toBeCloseTo(-0.001, 9);
+    expect(creaseHeight(0.001, 4, 3 / 8)).toBeCloseTo(-0.001, 9);
     expect(creaseHeight(0.001, 4, 1 / 4)).toBeCloseTo(0, 9);
+    // Narrower than a cosine, which would be half as deep a quarter of a period in.
+    expect(creaseHeight(0.001, 4, 1 / 16)).toBeGreaterThan(-0.0002);
+    expect(creaseHeight(0.001, 4, 1 / 16)).toBeLessThan(0);
+    // Depth scales with the height.
+    expect(creaseHeight(0.004, 4, 1 / 8)).toBeCloseTo(-0.004, 9);
   });
 
   it("measure the body's UV scale in metres per UV unit, positive where the body is", () => {
@@ -398,5 +407,31 @@ describe("the UV scale and the relief coordinate built from it", () => {
     // anything near 5× is the coordinate's doing.
     expect(at(0.5)).toBeLessThan(1.6);
     expect(at(0.95)).toBeLessThan(2.5);
+  });
+});
+
+describe("a layer's paint is told the figure's age", () => {
+  it("passes the age in years through the stop table, absent when none is given", () => {
+    const seen: (number | undefined)[] = [];
+    const layer: SkinLayer = {
+      id: "age-probe",
+      blend: "mix",
+      targets: [],
+      fields: () => ({ mask: new Float32Array(0), coord: null }),
+      paint: (input) => {
+        seen.push(input.age);
+        return { strength: 1, stops: [[0.5, 0.4, 0.3]] };
+      },
+    };
+    const base = {
+      tone: { melanin: 0.5, haemoglobin: 0.5, undertone: 0, override: null },
+      flush: 0.4,
+      lips: 0.5,
+      areola: 0.5,
+      signals: {},
+    };
+    paintStopTable([layer], { ...base, age: 72 });
+    paintStopTable([layer], base);
+    expect(seen).toEqual([72, undefined]);
   });
 });

@@ -33,6 +33,12 @@ export interface SurfaceMesh {
   skinIndex: Uint16Array;
   skinWeight: Float32Array;
   /**
+   * Set when the triangles per control face differ (a refined surface): face
+   * `i` of the faces it was built from owns triangles `faceTriangles[i]` up to
+   * `faceTriangles[i + 1]`. Without it each face owns 2 × 4^levels, in order.
+   */
+  faceTriangles?: Uint32Array;
+  /**
    * Set for a surface refined on top of a coarser one (`buildRefinedSurfaceMesh`):
    * its shading normals come from the coarser surface's, not from its own faces.
    */
@@ -178,26 +184,23 @@ function buildSubdividedQuads(
  * Vertex numbering of the refined mesh is the same at every level 1 or more,
  * which is what features authored against it need.
  *
- * @param faces the source faces the surface is numbered over, as for
- *   `buildSurfaceMesh` (null: all); the same set gives the same numbering
+ * @param faces the source faces the surface is built over, as for
+ *   `buildSurfaceMesh` (null: all). The same set always gives the same vertex
+ *   numbering, which features authored on the lattice depend on; the model
+ *   passes the whole body group and hides what is worn by a mask over triangles.
  * @param refinement source face indices and how many extra levels each gets
  *   over the level-1 surface (a source face's four children share its level)
  * @param levels Catmull–Clark levels of the whole surface, at least 1
- * @param visible the faces of `faces` that are drawn (null: all). The numbering,
- *   which features authored on the lattice depend on, is of `faces` whatever a
- *   worn attachment hides; the hidden faces are cut from the result afterwards.
  */
 export function buildRefinedSurfaceMesh(
   source: QuadSource,
   faces: Uint32Array | null,
   refinement: Refinement,
   levels: number,
-  visible: Uint32Array | null = null,
 ): SurfaceMesh {
   if (!Number.isInteger(levels) || levels < 1)
     throw new RangeError(`a refined surface needs subdivision level 1 or more; got ${levels}`);
   const selected = faces ?? Uint32Array.from({ length: source.faceVerts.length / 4 }, (_, i) => i);
-  const drawn = visible ? new Set(visible) : null;
   // The base's level-1 surface, built exactly as `buildSurfaceMesh` builds it.
   const base = buildSubdividedQuads(source, selected, 1);
   const position = new Map<number, number>();
@@ -232,16 +235,8 @@ export function buildRefinedSurfaceMesh(
   let uvs: Float32Array = fine.uvs;
   let faceUvs: Uint32Array;
   let smooth: Stencil | null = null;
-  // The base face each face of the surface descends from, to drop hidden ones.
-  let origin: number[];
   if (levels === 1) {
     ({ topology, faceUvs } = polygonsToQuads(fine));
-    origin = [];
-    for (let f = 0; f + 1 < fine.faceStart.length; f++) {
-      const n = (fine.faceStart[f + 1] as number) - (fine.faceStart[f] as number);
-      const from = Math.floor((fine.sourceFace[f] as number) / 4);
-      for (let q = n === 4 ? 1 : n - 2; q > 0; q--) origin.push(from);
-    }
   } else {
     const smoothed = catmullClarkPolygons({
       vertexCount: fine.vertexCount,
@@ -254,13 +249,6 @@ export function buildRefinedSurfaceMesh(
     const uvLevel = subdivideUvLinearPolygons(uvs, fine.faceStart, fine.faceUvs);
     uvs = uvLevel.uvs;
     faceUvs = uvLevel.faceUvs;
-    // A polygon of n corners becomes n quads, in order.
-    origin = [];
-    for (let f = 0; f + 1 < fine.faceStart.length; f++) {
-      const n = (fine.faceStart[f + 1] as number) - (fine.faceStart[f] as number);
-      const from = Math.floor((fine.sourceFace[f] as number) / 4);
-      for (let q = 0; q < n; q++) origin.push(from);
-    }
     for (let l = 2; l < levels; l++) {
       const level = catmullClarkLevel(topology);
       stencil = composeStencils(stencil, level.stencil);
@@ -269,35 +257,37 @@ export function buildRefinedSurfaceMesh(
       const next = subdivideUvLinear(uvs, faceUvs);
       uvs = next.uvs;
       faceUvs = next.faceUvs;
-      origin = origin.flatMap((o) => [o, o, o, o]);
     }
   }
-  if (origin.length !== topology.faces.length / 4)
-    throw new Error("refined surface: face lineage does not match its faces (internal)");
-  // Coarse faces (the base's level-1 quads) that are drawn, for shading.
-  const coarse = base.topology.faces;
-  let drawnCoarse = coarse;
-  if (drawn) {
-    // `origin` and the coarse quads count source faces by their place in `selected`.
-    const shown = (place: number) => drawn.has(selected[place] as number);
-    drawnCoarse = keepQuads(coarse, (q) => shown(Math.floor(q / 4)));
-    const kept = keepQuads(topology.faces, (q) => shown(origin[q] as number));
-    const keptUvs = keepQuads(faceUvs, (q) => shown(origin[q] as number));
-    topology = { vertexCount: topology.vertexCount, faces: kept };
-    faceUvs = keptUvs;
+  // Triangles per control face: each of its four level-1 children is some
+  // polygons, and a polygon is a fixed number of quads (`polygonsToQuads`; the
+  // Catmull–Clark levels after the first make n quads of an n-gon, then four of
+  // each), written in order, so a control face's triangles are consecutive.
+  const faceTriangles = new Uint32Array(selected.length + 1);
+  for (let i = 0; i + 1 < fine.faceStart.length; i++) {
+    const n = (fine.faceStart[i + 1] as number) - (fine.faceStart[i] as number);
+    const quads = levels === 1 ? (n === 4 ? 1 : n - 2) : n * 4 ** (levels - 2);
+    const owner = Math.floor((fine.sourceFace[i] as number) / 4);
+    faceTriangles[owner + 1] = (faceTriangles[owner + 1] as number) + quads * 2;
   }
+  for (let f = 0; f < selected.length; f++)
+    faceTriangles[f + 1] = (faceTriangles[f + 1] as number) + (faceTriangles[f] as number);
   return {
     ...finishSurface(source, stencil, topology, uvs, faceUvs),
+    faceTriangles,
     smoothNormals: {
       control: base.stencil,
-      faces: drawnCoarse,
+      faces: base.topology.faces,
       vertexCount: base.topology.vertexCount,
       interpolate: fine.stencil,
       smooth,
     },
     lattice: {
       vertexCount: fine.vertexCount,
-      region: refinedRegion(fine, refinement),
+      region: refinedRegion(
+        fine,
+        Array.from(refinement.faces, (f) => position.get(f) as number),
+      ),
       key: latticeKey(fine),
       smooth,
       stencil: lattice,
@@ -311,9 +301,10 @@ export function buildRefinedSurfaceMesh(
  */
 function refinedRegion(
   fine: { faceStart: Uint32Array; faces: Uint32Array; sourceFace: Uint32Array },
-  refinement: Refinement,
+  /** The refined faces, by place among the faces the surface is built over. */
+  places: readonly number[],
 ): Uint32Array {
-  const refined = new Set(Array.from(refinement.faces));
+  const refined = new Set(places);
   const vertices = new Set<number>();
   for (let f = 0; f + 1 < fine.faceStart.length; f++) {
     if (!refined.has(Math.floor((fine.sourceFace[f] as number) / 4))) continue;
@@ -325,20 +316,6 @@ function refinedRegion(
       `the refined region has ${vertices.size} vertices; detail addresses 65536`,
     );
   return Uint32Array.from([...vertices].sort((a, b) => a - b));
-}
-
-/** The quads (four entries each) whose index, in order, `keep` accepts. */
-function keepQuads(quads: Uint32Array, keep: (quad: number) => boolean): Uint32Array {
-  const out: number[] = [];
-  for (let q = 0; q * 4 < quads.length; q++)
-    if (keep(q))
-      out.push(
-        quads[q * 4] as number,
-        quads[q * 4 + 1] as number,
-        quads[q * 4 + 2] as number,
-        quads[q * 4 + 3] as number,
-      );
-  return Uint32Array.from(out);
 }
 
 /**

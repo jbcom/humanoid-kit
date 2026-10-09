@@ -65,6 +65,12 @@ export interface Recipe {
   modifiers: Record<string, number>;
   skin: SkinRecipe;
   eyes: EyesRecipe;
+  /**
+   * Ids of the garments the figure wears (`humanoid-kit-clothing`), in any
+   * order: how they stack comes from each garment's category. Absent means
+   * nothing worn.
+   */
+  outfit?: readonly string[];
 }
 
 export function createRecipe(
@@ -74,6 +80,7 @@ export function createRecipe(
     modifiers?: Record<string, number>;
     skin?: Partial<SkinRecipe>;
     eyes?: Partial<EyesRecipe>;
+    outfit?: readonly string[];
   } = {},
 ): Recipe {
   return {
@@ -86,5 +93,6 @@ export function createRecipe(
       iris: [...(init.eyes?.iris ?? DEFAULT_EYES.iris)] as Rgb,
       scleraWarmth: init.eyes?.scleraWarmth ?? DEFAULT_EYES.scleraWarmth,
     },
+    ...(init.outfit && { outfit: [...init.outfit] }),
   };
 }

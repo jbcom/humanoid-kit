@@ -30,8 +30,11 @@ import {
   type Texture,
   Vector2,
   Vector3,
+  Vector4,
 } from "three";
+import { type AtlasPlan, OWNER_GRID, planAtlas } from "../surface/atlasPlan.ts";
 import {
+  CREASE_SHARPNESS,
   paintStopTable,
   type SkinLayer,
   type SkinPaintInput,
@@ -42,7 +45,9 @@ import { SKIN_LAYERS } from "../surface/regions/index.ts";
 import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import { luminance, MELANIN_ANCHORS, type Rgb, skinAlbedo } from "../surface/skinTone.ts";
-import { atlasPages, emptyLayerAtlas } from "./layerAtlas.ts";
+import { DUAL_SKINNING_KEY, type DualBones, patchDualSkinning } from "./dualSkinning.ts";
+import { emptyLayerAtlas, emptyOwners, type SkinLayerAtlas } from "./layerAtlas.ts";
+import { BODY_OCCLUSION_FLOOR, BODY_OCCLUSION_POWER, patchOcclusion } from "./occlusion.ts";
 
 /** What the skin material is painted from: the recipe's skin and the figure's state signals. */
 export type SkinAppearance = Omit<SkinPaintInput, "signals"> & {
@@ -82,9 +87,27 @@ varying vec2 vHkUv;
 varying float vHkUvScale;
 uniform highp sampler2DArray hkLayerAtlas;
 uniform sampler2D hkLayerStops;
+// Which cell of the body's UV plane owns each texel of a channel that layers share.
+uniform highp sampler2DArray hkLayerOwners;
+// Per layer, the atlas channels of its mask (x) and coordinate (y, -1: none), four to a page,
+// and, for a layer that shares its channels, its owner map (z, -1: none) and its id in it (w).
+uniform vec4 hkChannel[${Math.max(1, count)}];
+vec4 hkPage( float c, vec2 uv ) { return texture( hkLayerAtlas, vec3( uv, floor( c * 0.25 ) ) ); }
+float hkChannelOf( vec4 page, float c ) { return page[ int( c - 4.0 * floor( c * 0.25 ) + 0.5 ) ]; }
 vec2 hkFields( int l, vec2 uv ) {
-	vec4 page = texture( hkLayerAtlas, vec3( uv, float( l / 2 ) ) );
-	return ( l % 2 == 0 ) ? page.xy : page.zw;
+	vec4 ch = hkChannel[ l ];
+	if ( ch.z >= 0.0 ) {
+		// The channel holds this layer's fields only in the cells the owner map gives it.
+		ivec2 cell = ivec2( clamp( uv, 0.0, 0.9999 ) * ${glslFloat(OWNER_GRID)} );
+		vec4 owners = texelFetch( hkLayerOwners, ivec3( cell, int( floor( ch.z * 0.25 ) ) ), 0 );
+		float owner = owners[ int( ch.z - 4.0 * floor( ch.z * 0.25 ) + 0.5 ) ];
+		if ( abs( owner * 255.0 - ch.w ) > 0.5 ) return vec2( 0.0 );
+	}
+	vec4 maskPage = hkPage( ch.x, uv );
+	float mask = hkChannelOf( maskPage, ch.x );
+	if ( ch.y < 0.0 ) return vec2( mask, 0.0 );
+	vec4 coordPage = floor( ch.y * 0.25 ) == floor( ch.x * 0.25 ) ? maskPage : hkPage( ch.y, uv );
+	return vec2( mask, hkChannelOf( coordPage, ch.y ) );
 }
 vec4 hkHeader( int l ) { return texelFetch( hkLayerStops, ivec2( 0, l ), 0 ); }
 int hkKind( vec4 head ) { return int( head.y + 0.5 ); }
@@ -135,6 +158,8 @@ float hkDetailHeight( vec2 uv ) {
 		vec4 head = hkHeader( l );
 		int kind = hkKind( head );
 		if ( kind != 2 && kind != 3 ) continue;
+		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
+		if ( head.x <= 0.0 ) continue;
 		vec2 f = hkFields( l, uv );
 		float a = f.x * head.x;
 		if ( kind == 2 ) {
@@ -144,7 +169,7 @@ float hkDetailHeight( vec2 uv ) {
 		} else {
 			float phase = f.y * head.w;
 			float fade = 1.0 - smoothstep( 0.25, 0.75, fwidth( phase ) );
-			H += a * head.z * fade * 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) );
+			H -= a * head.z * fade * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} );
 		}
 	}
 	return H;
@@ -323,6 +348,24 @@ function stopTexture(layerCount: number): DataTexture {
   return t;
 }
 
+/** One owner texture that owns nothing, shared by every material without its atlas. */
+let noOwnersTexture: Texture | undefined;
+function noOwners(): Texture {
+  noOwnersTexture ??= emptyOwners();
+  return noOwnersTexture;
+}
+
+/** Writes each layer's channels, owner map and id from the plan into the shader's table. */
+function setChannels(table: Vector4[], plan: AtlasPlan): void {
+  for (let l = 0; l < plan.value.length; l++)
+    table[l]?.set(
+      plan.value[l] as number,
+      plan.coord[l] as number,
+      plan.owner[l] as number,
+      plan.ownerId[l] as number,
+    );
+}
+
 /** One all-zero atlas per page count, shared by every material without its atlas. */
 const noLayers = new Map<number, Texture>();
 function noLayersFor(pages: number): Texture {
@@ -349,14 +392,49 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkScatterTable: { value: DataTexture };
     /** The shared field atlas (`buildLayerAtlas`); all zero (no layers) until set. */
     hkLayerAtlas: { value: Texture };
+    /** The atlas's owner maps (`SkinLayerAtlas.owners`). */
+    hkLayerOwners: { value: Texture };
     /** This figure's stop table (`paintStopTable`). */
     hkLayerStops: { value: DataTexture };
+    /** Per layer, its atlas channels, owner map and id in it (the atlas's plan). */
+    hkChannel: { value: Vector4[] };
   };
   private readonly stopTable: Float32Array;
+  private dualBones: DualBones | null = null;
 
-  /** Uses the shared field atlas built for the body this material draws. */
-  setLayerAtlas(texture: Texture | null): void {
-    this.hkUniforms.hkLayerAtlas.value = texture ?? noLayersFor(atlasPages(this.layers.length));
+  /**
+   * Skins by `bones` (dual quaternions mixed with three's linear skinning,
+   * `src/render/dualSkinning.ts`), or by three's alone when null. The shader is
+   * rebuilt once, when the choice changes.
+   */
+  setDualBones(bones: DualBones | null): void {
+    if (bones === this.dualBones) return;
+    this.dualBones = bones;
+    this.needsUpdate = true;
+  }
+
+  /**
+   * The figure's occlusion key weights (`occlusionKeyWeights`); rest is (0, 0, 0).
+   * It darkens the cavities of a body geometry that carries
+   * `ModelTopology.body.occlusion` (`setBodyOcclusionAttributes`); any other
+   * geometry is open.
+   */
+  occlusionKeys = new Vector3();
+
+  /**
+   * Uses the shared field atlas built for the body this material draws, with
+   * its owner maps and the plan that lays the layers out in it; none draws no
+   * layer. The atlas must be planned for this material's layers.
+   */
+  setLayerAtlas(atlas: SkinLayerAtlas | null): void {
+    const plan = atlas?.plan ?? planAtlas(this.layers);
+    if (plan.value.length !== this.layers.length)
+      throw new RangeError(
+        `SkinMaterial: an atlas planned for ${plan.value.length} layers, not ${this.layers.length}`,
+      );
+    this.hkUniforms.hkLayerAtlas.value = atlas?.texture ?? noLayersFor(plan.pages);
+    this.hkUniforms.hkLayerOwners.value = atlas?.owners ?? noOwners();
+    setChannels(this.hkUniforms.hkChannel.value, plan);
   }
 
   constructor(layers: readonly SkinLayer[] = SKIN_LAYERS) {
@@ -371,6 +449,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       sheenRoughness: 0.8,
     });
     this.layers = layers;
+    const plan = planAtlas(layers);
     this.stopTable = new Float32Array(layers.length * STOP_TABLE_WIDTH * 4);
     this.hkUniforms = {
       hkScatterMfp: { value: SKIN_SCATTER.mfp },
@@ -378,9 +457,13 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkPigmentDepth: { value: SKIN_SCATTER.pigmentDepth },
       hkSubstrate: { value: new Vector3(...(MELANIN_ANCHORS[0] as Rgb)) },
       hkScatterTable: { value: scatterTableTexture() },
-      hkLayerAtlas: { value: noLayersFor(atlasPages(layers.length)) },
+      hkLayerAtlas: { value: noLayersFor(plan.pages) },
+      hkLayerOwners: { value: noOwners() },
       hkLayerStops: { value: stopTexture(layers.length) },
+      // A GLSL array has at least one element, so a stack with no layers still gets one.
+      hkChannel: { value: Array.from({ length: Math.max(1, layers.length) }, () => new Vector4()) },
     };
+    setChannels(this.hkUniforms.hkChannel.value, plan);
     this.normalMap = poreNormalMap();
     // Pores are felt in the highlights, not seen as texture: keep the relief faint.
     this.normalScale = new Vector2(0.06, 0.06);
@@ -419,6 +502,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override onBeforeCompile: MeshPhysicalMaterial["onBeforeCompile"] = (shader) => {
     Object.assign(shader.uniforms, this.hkUniforms);
+    if (this.dualBones) patchDualSkinning(shader, this.dualBones);
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
@@ -472,10 +556,16 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       "#include <lights_physical_pars_fragment>",
       lighting.replace(DIRECT_DIFFUSE, SUBSURFACE_DIFFUSE),
     );
+    // The body's cavities (mouth, nostrils, ear canals, eye sockets), by pose.
+    patchOcclusion(shader, this.occlusionKeys, {
+      floor: BODY_OCCLUSION_FLOOR,
+      power: BODY_OCCLUSION_POWER,
+      body: true,
+    });
   };
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-6-${this.layers.length}`;
+    return `humanoid-kit-skin-8-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}`;
   }
 }

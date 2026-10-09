@@ -7,9 +7,11 @@ import { type ThreeElements, type ThreeEvent, useFrame, useThree } from "@react-
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -25,10 +27,11 @@ import {
   type Material,
   Matrix4,
   type Mesh,
-  type MeshStandardMaterial,
+  MeshStandardMaterial,
   Skeleton,
   SkinnedMesh,
   SRGBColorSpace,
+  type Texture,
   TextureLoader,
   Vector3,
 } from "three";
@@ -37,6 +40,7 @@ import type {
   AdultSurfaceTopology,
   AttachmentTopology,
   Evaluation,
+  GarmentTopology,
   SurfaceEvaluation,
   SurfaceTopology,
 } from "../model/humanoidModel.ts";
@@ -45,10 +49,18 @@ import type { Vec3 } from "../presence/presence.ts";
 import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { createAttachmentMaterial, TeethMaterial } from "../render/attachmentLook.ts";
+import {
+  applyDualSkinning,
+  DualBones,
+  dualShadowMaterials,
+  followDualSkinning,
+} from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
-import { AttachmentStandardMaterial, setOcclusionAttributes } from "../render/occlusion.ts";
+import { setBodyOcclusionAttributes, setOcclusionAttributes } from "../render/occlusion.ts";
 import { CURVATURE_ATTRIBUTE, SkinMaterial, UV_SCALE_ATTRIBUTE } from "../render/skinMaterial.ts";
+import { faceSignalBasis, faceSignals } from "../rig/faceSignals.ts";
 import { flexionRig, jointFlexion } from "../rig/flexion.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
 import {
@@ -57,7 +69,9 @@ import {
   faceUnitRotations,
   IDENTITY_POSE,
   restBonesFrom,
+  wornGroundOffset,
 } from "../rig/pose.ts";
+import { skinDualShare } from "../rig/skinShare.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 import { sameEntries } from "./sameEntries.ts";
@@ -186,11 +200,13 @@ export interface HumanoidPose {
 export interface HumanoidPick {
   /**
    * `"body"`, `"adultBody"` (the adult surface, for a figure aged 18 or over when
-   * the adult pack refines the body), or the attachment's index in
-   * `ModelTopology.attachments`. Look the vertex up in the pick map's
-   * `render.body` or `render.adultBody` accordingly.
+   * the adult pack refines the body), `"garment"` (then `garment` names it), or
+   * the attachment's index in `ModelTopology.attachments`. Look the vertex up in
+   * the pick map's `render.body` or `render.adultBody` accordingly.
    */
-  part: "body" | "adultBody" | number;
+  part: "body" | "adultBody" | "garment" | number;
+  /** The tapped garment's id, when `part` is `"garment"`. */
+  garment?: string;
   /** The render vertex of that mesh nearest the tap. */
   vertex: number;
   /** The tapped point, in world space. */
@@ -198,10 +214,13 @@ export interface HumanoidPick {
 }
 
 /** A body surface's geometry: the skinned mesh plus the curvature and UV-scale attributes the skin reads. */
-function makeBodyGeometry(t: SurfaceTopology & { uvScale: Float32Array }): BufferGeometry {
+function makeBodyGeometry(
+  t: SurfaceTopology & { uvScale: Float32Array; occlusion: Uint8Array },
+): BufferGeometry {
   const g = makeGeometry(t);
   g.setAttribute(CURVATURE_ATTRIBUTE, new BufferAttribute(new Float32Array(t.vertexCount), 1));
   g.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(t.uvScale, 1));
+  setBodyOcclusionAttributes(g, t.occlusion);
   return g;
 }
 
@@ -267,18 +286,8 @@ function useAttachmentMaterial(
   report: (e: Error) => void,
 ): MeshStandardMaterial {
   const material = useMemo(() => {
-    const m = t.material;
     const material =
-      t.kind === "eyes"
-        ? new EyeMaterial()
-        : new AttachmentStandardMaterial({
-            color: new Color(m.color[0], m.color[1], m.color[2]),
-            roughness: m.roughness,
-            metalness: 0,
-            transparent: m.transparent && !m.alphaToCoverage,
-            alphaToCoverage: m.alphaToCoverage,
-            side: m.backfaceCull ? FrontSide : DoubleSide,
-          });
+      t.kind === "eyes" ? new EyeMaterial() : createAttachmentMaterial(t.kind, t.material);
     // The figure's key weights, shared, so a pose change reaches every attachment.
     material.occlusionKeys = occlusionKeys;
     return material;
@@ -312,6 +321,69 @@ function useAttachmentMaterial(
   return material;
 }
 
+/**
+ * The material for a garment: a standard material from the packed description
+ * with its diffuse and normal maps, loaded once and released with it.
+ * Garments are not enclosed by the figure, so they take no baked occlusion.
+ */
+function useGarmentMaterial(
+  t: GarmentTopology,
+  dual: DualBones | null,
+  report: (e: Error) => void,
+): MeshStandardMaterial {
+  const material = useMemo(() => {
+    const m = t.material;
+    const made = new MeshStandardMaterial({
+      color: new Color(m.color[0], m.color[1], m.color[2]),
+      roughness: m.roughness,
+      metalness: 0,
+      alphaToCoverage: m.alphaToCoverage,
+      side: m.backfaceCull ? FrontSide : DoubleSide,
+    });
+    // Skinned as the body is, so a sleeve does not part from the arm at a joint.
+    if (dual) applyDualSkinning(made, dual);
+    return made;
+  }, [t, dual]);
+  const reportRef = useLatest(report);
+  useEffect(() => {
+    let live = true;
+    const loader = new TextureLoader();
+    const load = (url: string | null, apply: (tex: Texture) => void) => {
+      if (!url) return;
+      loader.loadAsync(url).then(
+        (tex) => {
+          if (!live) {
+            tex.dispose();
+            return;
+          }
+          apply(tex);
+          material.needsUpdate = true;
+        },
+        (e: unknown) => {
+          if (live) reportRef.current(new Error(`texture ${url} failed to load: ${String(e)}`));
+        },
+      );
+    };
+    load(t.textureUrl, (tex) => {
+      tex.colorSpace = SRGBColorSpace;
+      material.map = tex;
+    });
+    // A normal map is data, not colour: it keeps three's default (no) colour space.
+    load(t.normalTextureUrl, (tex) => {
+      material.normalMap = tex;
+    });
+    return () => {
+      live = false;
+      material.map?.dispose();
+      material.map = null;
+      material.normalMap?.dispose();
+      material.normalMap = null;
+    };
+  }, [t, material, reportRef]);
+  useEffect(() => () => material.dispose(), [material]);
+  return material;
+}
+
 /** A mesh skinned to the figure's skeleton, bound once in mesh space. */
 function SkinnedPart({
   geometry,
@@ -319,17 +391,23 @@ function SkinnedPart({
   skeleton,
   visible,
   part,
+  garment,
   renderOrder,
   shape,
+  dual,
 }: {
   geometry: BufferGeometry;
   material: Material;
   skeleton: Skeleton;
   visible: boolean;
   part: HumanoidPick["part"];
+  /** The garment's id, for a `"garment"` part. */
+  garment?: string;
   renderOrder?: number;
   /** Changes whenever the figure is re-evaluated or re-posed. */
   shape: object;
+  /** Set when the material skins by dual quaternions: shadows and bounds then follow it. */
+  dual?: DualBones | null;
 }) {
   const mesh = useMemo(() => {
     const m = new SkinnedMesh(geometry, material);
@@ -338,6 +416,23 @@ function SkinnedPart({
     m.receiveShadow = true;
     return m;
   }, [geometry, material, skeleton]);
+  // Shadows are cast by a depth material, which would skin linearly alone; and
+  // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
+  useEffect(() => {
+    if (!dual) return;
+    const shadows = dualShadowMaterials(dual);
+    mesh.customDepthMaterial = shadows.depth;
+    mesh.customDistanceMaterial = shadows.distance;
+    const applyBoneTransform = mesh.applyBoneTransform;
+    followDualSkinning(mesh, dual);
+    return () => {
+      mesh.customDepthMaterial = undefined as never;
+      mesh.customDistanceMaterial = undefined as never;
+      mesh.applyBoneTransform = applyBoneTransform;
+      shadows.depth.dispose();
+      shadows.distance.dispose();
+    };
+  }, [mesh, dual]);
   // A skinned mesh caches its own (posed) bounds: three computes them once and
   // never again, so a new pose or a re-evaluated (say, taller) figure would
   // keep the old ones, and picking and culling would miss whatever lies
@@ -358,6 +453,7 @@ function SkinnedPart({
   });
   mesh.visible = visible;
   mesh.userData.hkPart = part;
+  mesh.userData.hkGarment = garment;
   if (renderOrder !== undefined) mesh.renderOrder = renderOrder;
   return <primitive object={mesh} />;
 }
@@ -371,6 +467,7 @@ function AttachmentMesh({
   visible,
   report,
   eyes,
+  melanin,
   shape,
 }: {
   index: number;
@@ -381,12 +478,17 @@ function AttachmentMesh({
   visible: boolean;
   report: (e: Error) => void;
   eyes: Recipe["eyes"];
+  melanin: number;
   shape: object;
 }) {
   const material = useAttachmentMaterial(topology, occlusionKeys, report);
   useEffect(() => {
     if (material instanceof EyeMaterial) material.setAppearance(eyes);
   }, [material, eyes]);
+  useEffect(() => {
+    // The gums are pigmented as the skin is.
+    if (material instanceof TeethMaterial) material.setSkin({ melanin });
+  }, [material, melanin]);
   return (
     <SkinnedPart
       geometry={geometry}
@@ -398,6 +500,47 @@ function AttachmentMesh({
       shape={shape}
     />
   );
+}
+
+function GarmentMesh({
+  topology,
+  geometry,
+  skeleton,
+  visible,
+  report,
+  shape,
+  dual,
+}: {
+  topology: GarmentTopology;
+  geometry: BufferGeometry;
+  skeleton: Skeleton;
+  visible: boolean;
+  report: (e: Error) => void;
+  shape: object;
+  /** The figure's bones as dual quaternions, which the garment skins by like the body. */
+  dual: DualBones | null;
+}) {
+  const material = useGarmentMaterial(topology, dual, report);
+  return (
+    <SkinnedPart
+      geometry={geometry}
+      material={material}
+      skeleton={skeleton}
+      visible={visible}
+      part="garment"
+      garment={topology.id}
+      shape={shape}
+      dual={dual}
+    />
+  );
+}
+
+/** The garments a figure is wearing: their static data and the geometry drawn from it. */
+interface Worn {
+  /** `Outfit.key`; "" for nothing. */
+  key: string;
+  topologies: GarmentTopology[];
+  geometries: BufferGeometry[];
 }
 
 /** A pointer that moved further than this between press and release was dragging (orbiting), not tapping. */
@@ -422,7 +565,8 @@ function pick(e: ThreeEvent<MouseEvent>, onPick: (pick: HumanoidPick) => void): 
       vertex = v;
     }
   }
-  onPick({ part, vertex, point: e.point.clone() });
+  const garment = e.object.userData.hkGarment as string | undefined;
+  onPick({ part, ...(garment && { garment }), vertex, point: e.point.clone() });
 }
 
 export function Humanoid({
@@ -454,6 +598,14 @@ export function Humanoid({
     () => (e: Error) => (onErrorRef.current ? onErrorRef.current(e) : console.error(e)),
     [onErrorRef],
   );
+  // How much of each occlusion key the pose holds, shared by the skin and the
+  // attachments' materials.
+  const occlusionKeys = useMemo(() => new Vector3(), []);
+  const skin = useMemo(() => {
+    const m = new SkinMaterial();
+    m.occlusionKeys = occlusionKeys;
+    return m;
+  }, [occlusionKeys]);
   // A body pack without the joints presence reads still renders the figure; it
   // is reported (not thrown, which would take the canvas down) and not published.
   const lacksPresenceJoints = Boolean(presence && ready && !ready.presenceJoints);
@@ -465,7 +617,6 @@ export function Humanoid({
         ),
       );
   }, [lacksPresenceJoints, report]);
-  const skin = useMemo(() => new SkinMaterial(), []);
   const geometries = useMemo(() => {
     if (!ready) return null;
     const body = makeBodyGeometry(ready.topology.body);
@@ -496,9 +647,30 @@ export function Humanoid({
     };
   }, [client, geometries, report]);
   const rig = useMemo(() => (ready ? makeSkeleton(ready.rig) : null), [ready]);
+  // The bones as dual quaternions, which the skin skins by on the GPU (mixed
+  // with three's linear skinning by each bone's share, `SKIN_DUAL_SHARE`).
+  const dual = useMemo(
+    () => (ready ? new DualBones(ready.rig.bones.length, skinDualShare(ready.rig.bones)) : null),
+    [ready],
+  );
+  useEffect(() => () => dual?.dispose(), [dual]);
+  // A custom material skins as it chooses; ours follows the dual quaternions.
+  useLayoutEffect(() => {
+    if (material) return;
+    skin.setDualBones(dual);
+    return () => skin.setDualBones(null);
+  }, [skin, dual, material]);
+  // Whatever else skins to this figure (clothing, a custom material) follows its
+  // joints by `applyDualSkinning(material, group.userData.dualBones)`.
+  useLayoutEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    group.userData.dualBones = dual;
+    return () => {
+      group.userData.dualBones = null;
+    };
+  }, [dual]);
   const keyBasis = useMemo(() => (ready ? occlusionKeyBasis(ready.rig) : null), [ready]);
-  // Shared by the attachments' materials: how much of each occlusion key the pose holds.
-  const occlusionKeys = useMemo(() => new Vector3(), []);
   const [shown, setShown] = useState(false);
   // The adult surface (the base body with the adult pack's finer pelvis), for a
   // figure aged 18 or over. It arrives on its own request, never with the
@@ -545,9 +717,29 @@ export function Humanoid({
     occlusionKeys.fromArray(occlusionKeyWeights(keyBasis, q));
   }, [rig, ready, keyBasis, occlusionKeys, rotations]);
 
-  // Where the posed figure's lowest body point is: a crouch or a kneel comes
-  // down to the ground rather than hanging where the standing feet were.
+  // The garments worn: their geometry is built when an evaluation brings the
+  // outfit's masks, and replaced when a different outfit does. The body's own
+  // geometry is never rebuilt; only its index changes.
+  const [worn, setWorn] = useState<Worn | null>(null);
+  const wornRef = useRef<Worn | null>(null);
+  const wear = useCallback((next: Worn | null) => {
+    for (const g of wornRef.current?.geometries ?? []) g.dispose();
+    wornRef.current = next;
+    setWorn(next);
+  }, []);
+
+  // Where the posed figure's lowest point is (the body's, or what it wears): a
+  // crouch or a kneel comes down to the ground rather than hanging where the
+  // standing feet were.
   const [figure, setFigure] = useState<Evaluation | null>(null);
+  // The same pose, as dual quaternions over the evaluated figure's rest skeleton.
+  useEffect(() => {
+    if (!dual || !ready || !figure) return;
+    dual.update(
+      restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads),
+      rotations ?? IDENTITY_POSE(ready.rig.bones.length),
+    );
+  }, [dual, ready, figure, rotations]);
   // A new identity whenever the figure or its pose changes: the meshes' bounds follow it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: figure and rotations are the triggers
   const shape = useMemo(() => ({}), [figure, rotations]);
@@ -558,9 +750,23 @@ export function Humanoid({
     () => (ev: Evaluation) => {
       if (!ready) return;
       const q = rotationsRef.current;
+      // What the figure wears stands on the ground too: a sole is lower than the foot in it.
+      const worn = ev.garments.flatMap((g, i) => {
+        const t = wornRef.current?.topologies[i];
+        return t
+          ? [{ positions: g.positions, skinIndex: t.skinIndex, skinWeight: t.skinWeight }]
+          : [];
+      });
       // The same skinning of the control mesh the figure's presence derives from.
       const offset = q
-        ? groundOffsetOf(posedControl(ready.rig, ev, q), ready.rig.skin.bodyVertices)
+        ? Math.max(
+            groundOffsetOf(posedControl(ready.rig, ev, q), ready.rig.skin.bodyVertices),
+            wornGroundOffset(
+              restBonesFrom(ready.rig.bones, ready.rig.parents, ev.boneHeads),
+              q,
+              worn,
+            ),
+          )
         : ev.groundOffset;
       if (groupRef.current) groupRef.current.userData.groundOffset = offset;
       setLift(offset);
@@ -592,13 +798,17 @@ export function Humanoid({
     },
     [geometries],
   );
+
+  // A new body (a new client) starts again undressed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: geometries is the trigger
+  useEffect(() => () => wear(null), [geometries, wear]);
   useEffect(() => () => skin.dispose(), [skin]);
   // The skin layers' field atlas depends on the body alone, so figures share it.
   const gl = useThree((s) => s.gl);
   useEffect(() => {
     if (!ready) return;
     const atlas = acquireLayerAtlas(gl, ready.topology.body);
-    skin.setLayerAtlas(atlas.texture);
+    skin.setLayerAtlas(atlas);
     // The adult anatomy's fields arrive after the atlas exists, once the adult
     // pack's last stage has loaded: only their pages are re-rasterised, in
     // place, so the figure neither recompiles its shader nor re-evaluates.
@@ -621,6 +831,12 @@ export function Humanoid({
     const rest = restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads);
     return jointFlexion(flexionRig(rest), rest, rotations ?? IDENTITY_POSE(ready.rig.bones.length));
   }, [figure, ready, rotations]);
+  // So does the face in it (`face.smile`, …), for the lines an expression draws.
+  const faceBasis = useMemo(() => (ready ? faceSignalBasis(ready.rig) : null), [ready]);
+  const face = useMemo(
+    () => (faceBasis && rotations ? faceSignals(faceBasis, rotations) : {}),
+    [faceBasis, rotations],
+  );
   useEffect(() => {
     const s = recipe.skin;
     skin.setAppearance({
@@ -633,13 +849,14 @@ export function Humanoid({
       flush: s.flush,
       lips: s.lips,
       areola: s.areola,
-      signals: { ...signals, ...flexion },
+      signals: { ...signals, ...flexion, ...face },
+      age: recipe.macros.age,
       // Which adult layers paint: only for an adult, only for the anatomy applied
       // (the adult pack's own list of features; none without the pack).
       adult: isAdult(recipe),
       anatomy: appliedAnatomy(recipe, ready?.anatomy?.features ?? []),
     });
-  }, [skin, recipe, signals, flexion, ready]);
+  }, [skin, recipe, signals, flexion, face, ready]);
 
   // Only the signals that change the shape re-evaluate the figure; a stable
   // key keeps a colour-only change (or a new object with the same values) from
@@ -674,13 +891,30 @@ export function Humanoid({
       return;
     }
     let live = true;
-    client.evaluate(recipe, key, shapeSignals).then(
-      (ev) => {
+    client
+      .evaluate(recipe, key, shapeSignals, wornRef.current?.key ?? "")
+      .then(async (ev) => {
+        // A different outfit brings its masks: the body draws the faces they keep,
+        // and the garments' static data comes once per garment, not per evaluation.
+        const masks = ev.outfit.masks;
+        const topologies = masks
+          ? await Promise.all(ev.outfit.order.map((id) => client.garment(id)))
+          : [];
         if (!live) return;
         // An adult's evaluation is for the adult surface: wait for its geometry
         // (this effect runs again when it arrives) rather than write it to the base's.
         const target = ev.surface === "adult" ? adultGeometry : geometries.body;
         if (!target) return;
+        if (masks) {
+          target.setIndex(new BufferAttribute(masks.bodyIndex, 1));
+          wear({
+            key: ev.outfit.key,
+            topologies,
+            geometries: topologies.map((t, i) =>
+              makeGeometry({ ...t, index: masks.garmentIndex[i] as Uint32Array }),
+            ),
+          });
+        }
         if (rig && ready) fitSkeleton(rig.skeleton, ready.rig.parents, ev.boneHeads);
         writeGeometry(target, ev);
         (target.getAttribute(CURVATURE_ATTRIBUTE) as BufferAttribute).copyArray(
@@ -689,6 +923,10 @@ export function Humanoid({
         setSurface(ev.surface);
         ev.attachments.forEach((a, i) => {
           const g = geometries.attachments[i];
+          if (g) writeGeometry(g, a);
+        });
+        ev.garments.forEach((a, i) => {
+          const g = wornRef.current?.geometries[i];
           if (g) writeGeometry(g, a);
         });
         setFigure(ev);
@@ -705,11 +943,10 @@ export function Humanoid({
           : null;
         setShown(true);
         onEvaluatedRef.current?.(ev);
-      },
-      (e: Error) => {
+      })
+      .catch((e: Error) => {
         if (live && e.name !== "AbortError") report(e);
-      },
-    );
+      });
     return () => {
       live = false;
     };
@@ -727,6 +964,7 @@ export function Humanoid({
     rotationsRef,
     report,
     ground,
+    wear,
   ]);
 
   const placed = presence?.position;
@@ -752,6 +990,7 @@ export function Humanoid({
             visible={shown && surface === "base"}
             part="body"
             shape={shape}
+            dual={material ? null : dual}
           />
           {adultGeometry && (
             <SkinnedPart
@@ -761,6 +1000,7 @@ export function Humanoid({
               visible={shown && surface === "adult"}
               part="adultBody"
               shape={shape}
+              dual={material ? null : dual}
             />
           )}
           {ready.topology.attachments.map((t, i) => {
@@ -776,7 +1016,23 @@ export function Humanoid({
                 visible={shown}
                 report={report}
                 eyes={recipe.eyes}
+                melanin={recipe.skin.melanin}
                 shape={shape}
+              />
+            ) : null;
+          })}
+          {worn?.topologies.map((t, i) => {
+            const g = worn.geometries[i];
+            return g ? (
+              <GarmentMesh
+                key={`${worn.key}:${t.id}`}
+                topology={t}
+                geometry={g}
+                skeleton={rig.skeleton}
+                visible={shown}
+                report={report}
+                shape={shape}
+                dual={dual}
               />
             ) : null;
           })}
