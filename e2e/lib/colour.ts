@@ -78,6 +78,35 @@ export function deltaE2000([L1, a1, b1]: Lab, [L2, a2, b2]: Lab): number {
   );
 }
 
+/**
+ * three's `NeutralToneMapping` (Khronos PBR Neutral), exposure included,
+ * ported line for line from `tonemapping_pars_fragment` (three r186).
+ */
+export function neutralToneMap(
+  [r, g, b]: readonly [number, number, number],
+  exposure: number,
+): [number, number, number] {
+  const startCompression = 0.8 - 0.04;
+  const desaturation = 0.15;
+  let c = [r * exposure, g * exposure, b * exposure];
+  const x = Math.min(c[0] as number, c[1] as number, c[2] as number);
+  const offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
+  c = c.map((v) => v - offset);
+  const peak = Math.max(c[0] as number, c[1] as number, c[2] as number);
+  if (peak < startCompression) return c as [number, number, number];
+  const d = 1 - startCompression;
+  const newPeak = 1 - (d * d) / (peak + d - startCompression);
+  c = c.map((v) => (v * newPeak) / peak);
+  const t = 1 - 1 / (desaturation * (peak - newPeak) + 1);
+  return c.map((v) => v + (newPeak - v) * t) as [number, number, number];
+}
+
+/** three's sRGB transfer (`sRGBTransferOETF`, its 0.41666 exponent included), clamped and quantised to 8 bits. */
+export const srgb8FromLinear = (v: number): number => {
+  const e = v <= 0.0031308 ? v * 12.92 : v ** 0.41666 * 1.055 - 0.055;
+  return Math.round(Math.min(1, Math.max(0, e)) * 255);
+};
+
 /** Smallest signed difference between two hue angles, in degrees. */
 export const hueDiff = (a: number, b: number) => ((((a - b) % 360) + 540) % 360) - 180;
 

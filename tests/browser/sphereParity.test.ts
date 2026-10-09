@@ -18,6 +18,7 @@ import {
   DirectionalLight,
   FloatType,
   Mesh,
+  NoToneMapping,
   OrthographicCamera,
   Scene,
   SphereGeometry,
@@ -25,7 +26,15 @@ import {
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
-import { deltaE2000, type Lab, labFromLinear } from "../../e2e/lib/colour.ts";
+import {
+  deltaE2000,
+  type Lab,
+  labFromLinear,
+  labFromSrgb8,
+  neutralToneMap,
+  srgb8FromLinear,
+} from "../../e2e/lib/colour.ts";
+import { STUDIO_EXPOSURE, STUDIO_TONE_MAPPING } from "../../src/react/StudioStage.tsx";
 import {
   CURVATURE_ATTRIBUTE,
   SKIN_MASK_ATTRIBUTE,
@@ -136,6 +145,7 @@ scene.add(new Mesh(geometry, material));
 const light = new DirectionalLight(0xffffff, Math.PI);
 scene.add(light, light.target);
 const pixels = new Float32Array(SIZE * SIZE * 4);
+const bytes = new Uint8Array(SIZE * SIZE * 4);
 
 afterAll(() => {
   geometry.dispose();
@@ -159,23 +169,50 @@ function configure(s: Swatch, mode: Mode): void {
 }
 
 interface Measured {
+  /** Bin means: linear radiance, or 8-bit sRGB values on the display path. */
   rendered: Record<BinName, Rgb>;
   expected: Record<BinName, Rgb>;
-  /** Mean rendered radiance over the whole lit disc. */
+  /** Mean rendered value over the whole lit disc. */
   disc: Rgb;
 }
 
+/**
+ * Where the render is read: `linear` from the float target (shading only), or
+ * `display` from the canvas, through the studio's tone mapping and sRGB
+ * encoding, with the expectation sent through the same curve in TypeScript.
+ */
+type Path = "linear" | "display";
+
+function render(path: Path): ArrayLike<number> {
+  renderer.setClearColor(0x000000, 0);
+  if (path === "linear") {
+    renderer.toneMapping = NoToneMapping;
+    renderer.setRenderTarget(target);
+    renderer.clear();
+    renderer.render(scene, camera);
+    renderer.readRenderTargetPixels(target, 0, 0, SIZE, SIZE, pixels);
+    renderer.setRenderTarget(null);
+    return pixels;
+  }
+  renderer.toneMapping = STUDIO_TONE_MAPPING;
+  renderer.toneMappingExposure = STUDIO_EXPOSURE;
+  renderer.setRenderTarget(null);
+  renderer.clear();
+  renderer.render(scene, camera);
+  // Read in the same task as the render, before the canvas is composited.
+  const gl = renderer.getContext();
+  gl.readPixels(0, 0, SIZE, SIZE, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+  return bytes;
+}
+
 /** Renders the sphere lit from `angle` degrees off the view axis and bins it by N·L. */
-function measure(angle: number, expect: (nDotL: number) => Rgb): Measured {
+function measure(angle: number, expect: (nDotL: number) => Rgb, path: Path = "linear"): Measured {
   const a = (angle * Math.PI) / 180;
   const l = [Math.sin(a), 0, Math.cos(a)] as const;
   light.position.set(l[0] * 10, l[1] * 10, l[2] * 10);
-  renderer.setRenderTarget(target);
-  renderer.setClearColor(0x000000, 0);
-  renderer.clear();
-  renderer.render(scene, camera);
-  renderer.readRenderTargetPixels(target, 0, 0, SIZE, SIZE, pixels);
-  renderer.setRenderTarget(null);
+  const pixels = render(path);
+  const shown = (e: Rgb): Rgb =>
+    path === "linear" ? e : (neutralToneMap(e, STUDIO_EXPOSURE).map(srgb8FromLinear) as Rgb);
   const sums = Object.fromEntries(
     BINS.map((b) => [b.name, { r: [0, 0, 0], e: [0, 0, 0], n: 0 }]),
   ) as Record<BinName, { r: number[]; e: number[]; n: number }>;
@@ -195,7 +232,7 @@ function measure(angle: number, expect: (nDotL: number) => Rgb): Measured {
       const bin = BINS.find((b) => nDotL >= b.lo && nDotL < b.hi);
       if (!bin) continue;
       const s = sums[bin.name];
-      const e = expect(nDotL);
+      const e = shown(expect(nDotL));
       for (let k = 0; k < 3; k++) {
         s.r[k] = (s.r[k] as number) + (pixels[o + k] as number);
         s.e[k] = (s.e[k] as number) + (e[k] as number);
@@ -285,6 +322,33 @@ describe("skin material on an analytic sphere", () => {
     }
     // BabelColor's ColorChecker comparisons flag a CIEDE2000 difference above 1.3.
     expect(lit.filter((x) => x.de > 1.3)).toEqual([]);
+  });
+
+  // Stage 2 (§5.3): given correct shading, the display path. The canvas is read
+  // as shown (tone mapped, sRGB encoded, 8 bits) and the expectation is the
+  // model's radiance sent through three's curve ported to TypeScript, so dark
+  // swatches are not penalised for what the curve does on purpose. A failure
+  // means the shader and the expected curve disagree, as after a three upgrade
+  // that changes its tone mapping.
+  it("shows every colour through the studio's tone mapping as the curve predicts", () => {
+    const failures: string[] = [];
+    for (const s of PALETTE) {
+      configure(s, "scatter");
+      const A = albedoOf();
+      const w = modelWrap();
+      for (const angle of ANGLES) {
+        const m = measure(
+          angle,
+          (n) => A.map((c, k) => c * wrappedDiffuse(n, w[k] as number)) as Rgb,
+          "display",
+        );
+        for (const bin of ["lit", "shoulder"] as const) {
+          const de = deltaE2000(labFromSrgb8(...m.rendered[bin]), labFromSrgb8(...m.expected[bin]));
+          if (!(de <= 1)) failures.push(`${s.name} ${angle}° ${bin}: ΔE00 ${de.toFixed(2)}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
   });
 
   it("reflects the same specular from every base colour", () => {

@@ -808,6 +808,15 @@ Because the expectation is tone-mapped too, the swatches with channels below
 here means the shader and the expected tone curve disagree, for example after a
 three upgrade changes `tonemapping_pars_fragment`.
 
+**As implemented** (same spec file): the stage's exposure is now
+`STUDIO_EXPOSURE` (1.15). The expectation is the scatter model's radiance per
+pixel through a line-for-line port of three r186's `NeutralToneMapping` and
+`sRGBTransferOETF` (its 0.41666 exponent included), quantised to 8 bits, and
+the canvas is read with `gl.readPixels` in the same task as the render. All 49
+swatches agree within ΔE00 1.0 in the lit and shoulder bins at every angle;
+moving the curve's compression start from 0.76 to 0.56 turns 20 of them red,
+all bright, where compression acts.
+
 ### 5.4 Stage 3: fairness under the studio stage
 
 Keep the current face renders under `StudioStage`, extended to the full palette,
