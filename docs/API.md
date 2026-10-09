@@ -389,6 +389,11 @@ compute what the renderer will do.
     `KNUCKLE_WRINKLE_LAYER` (arcs over the back of each finger joint,
     `KNUCKLE_WRINKLE_SPACING` apart, `KNUCKLE_WRINKLE_DEPTH` deep), fields from
     `knuckleFields(assets)`.
+  - `NAIL_LAYER` (`nailColours(tone)`: fold, lunula, bed and free edge along each
+    nail, the bed from `nailLab(tone)`, measured nail CIELAB at a lightness that
+    follows the skin's far less than skin does) and `NAIL_GLOSS_LAYER` (the plate,
+    `NAIL_ROUGHNESS` and `NAIL_SPECULAR`), fields from `nailFields(assets)`,
+    proportions in `NAIL_LAYOUT`.
   - `handFrame(assets)`: each hand vertex's digit, distance along it and across
     it, which way it faces, and its place in the palm's plane, measured from the
     skeleton's finger joints and the vertex normals and cached per set of

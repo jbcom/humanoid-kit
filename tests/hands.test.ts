@@ -4,6 +4,8 @@ import { labFromLinear } from "../src/surface/cielab.ts";
 import {
   KNUCKLE_MELANIN_FACTOR,
   knuckleAlbedo,
+  NAIL_F0,
+  nailColours,
   PALM_BINS,
   palmAlbedo,
   palmLab,
@@ -18,6 +20,7 @@ import {
   KNUCKLE_PHASES,
   KNUCKLE_WRINKLE_SPACING,
   knuckleFields,
+  nailFields,
   PALM_CREASE_LINE_LAYER,
   type PalmLandmarks,
   palmCreaseCurves,
@@ -363,6 +366,57 @@ describe("knuckles: more melanin, multiplied, so deeper skin darkens more", () =
     // Across the wrinkles the phase runs at 1/spacing per metre, a little more where they bow.
     const rate = 1.3 / KNUCKLE_WRINKLE_SPACING;
     expect(worstJump(k.wrinkles.mask, k.wrinkles.coord, KNUCKLE_PHASES, rate)).toBeLessThan(1.5);
+  });
+});
+
+describe("nails: a bed nearly free of melanin under keratin", () => {
+  const nails = nailFields(assets);
+  /** The bed as a colorimeter reads it: the plate's surface reflection added back. */
+  const bedLab = (t: SkinTone) => labFromLinear(nailColours(t).bed.map((c) => c + NAIL_F0) as Rgb);
+
+  it("is the measured nail on the measured cohort's skin", () => {
+    // Horibata 2025: L* 54.3, a* 4.9, b* 10.1 on skin like the archive's Japanese back of hand (L* 62).
+    const lab = bedLab(toneAtLightness(62));
+    expect(lab[0]).toBeCloseTo(54.3, 1);
+    expect(lab[1]).toBeCloseTo(4.9, 1);
+    expect(lab[2]).toBeCloseTo(10.1, 1);
+    // Darker and less saturated than the palm on that skin (palm 61.2, 8.0, 15.3).
+    expect(lab[0]).toBeLessThan(measured(palmAlbedo(toneAtLightness(62)))[0]);
+  });
+
+  it("varies far less across tones than the skin does", () => {
+    const L = (m: number) => bedLab(tone(m))[0];
+    const skinSpread = measuredSkinLightness(tone(0)) - measuredSkinLightness(tone(1));
+    expect(L(0) - L(1)).toBeLessThan(0.25 * skinSpread);
+    // Leeb 2024: the darkest nails are near L* 48, not the skin's 30.
+    expect(L(1)).toBeGreaterThan(47);
+    expect(L(1) - measuredSkinLightness(tone(1))).toBeGreaterThan(15);
+  });
+
+  it("orders the free edge and lunula lighter than the bed, the fold darker than the skin", () => {
+    for (const m of [0, 0.5, 1]) {
+      const c = nailColours(tone(m));
+      const lum = (rgb: Rgb) => measured(rgb)[0];
+      expect(lum(c.freeEdge)).toBeGreaterThan(lum(c.bed));
+      expect(lum(c.lunula)).toBeGreaterThan(lum(c.bed));
+      expect(lum(c.fold)).toBeLessThan(measuredSkinLightness(tone(m)));
+    }
+  });
+
+  it("lie on the back of the last segment of each digit, ten of them", () => {
+    for (const mask of [nails.colour.mask, nails.gloss])
+      for (let v = 0; v < assets.manifest.vertexCount; v++)
+        if ((mask[v] as number) > 0.5) expect(frame.volar[v] as number).toBeLessThan(0.3);
+    for (let v = 0; v < assets.manifest.vertexCount; v++) {
+      if ((nails.colour.mask[v] as number) <= 0.1) continue;
+      const joints = (frame.joints[frame.side[v] as number] as number[][])[
+        frame.digit[v] as number
+      ] as number[];
+      expect(frame.along[v] as number).toBeGreaterThan(joints[2] as number);
+    }
+    // A few vertices on each of the ten nails.
+    const count = Array.from(nails.colour.mask).filter((m) => m > 0.5).length;
+    expect(count).toBeGreaterThan(10 * 8);
   });
 });
 

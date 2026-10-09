@@ -755,8 +755,9 @@ regions.
 
 The hands' own skin is one area's layers (`src/surface/regions/hands.ts`,
 colour in `src/surface/handTone.ts`), between the rest layers and the state
-layers, so a state acts on them: cold blanches the palms as it does the rest
-of the hand. Sources and choices: `docs/research/SKIN-STATES.md` C5.
+layers, so a state acts on them: cold blanches the nail beds and palms as it
+does the rest of the hand. Sources and choices: `docs/research/SKIN-STATES.md`
+C5.
 
 - *Palm colour, a fairness item.* Palmoplantar skin has few active
   melanocytes at every tone, so the palm barely follows the body's
@@ -805,6 +806,12 @@ of the hand. Sources and choices: `docs/research/SKIN-STATES.md` C5.
   a face short of halfway to the next joint, where the coordinate turns to that
   joint's (on the little finger's short middle phalanx the bands nearly met and
   drew a false wrinkle).
+- *Nails.* No separate nail geometry: the base mesh sculpts each nail, and a
+  coordinate along the last segment carries fold, lunula, bed and free edge as
+  the colour stops, with sharp changes between them, and a surface layer the
+  plate's gloss. The bed is measured nail colour whose lightness follows the
+  skin's far less than skin does (the nail bed has about 5% of skin's
+  melanocytes), so on deep skin the nails are much lighter than the fingers.
 - *Not done.* Age does not reach a layer's paint (`SkinPaintInput` has `adult`
   only), so a child's hand gets the same creases and knuckles at its own
   scale, the fields scaling with the morphed mesh (creases form before birth,
