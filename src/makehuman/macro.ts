@@ -185,14 +185,15 @@ export function macroTargetWeights(m: MacroValues): Map<string, number> {
       proportionAxis(m.proportions),
     ]),
   );
-  // MakeHuman's breast targets exist for the female anchor only and scale with it.
-  // They are adult-only here: below ADULT_AGE breast size and firmness are not
-  // controls at all, so no breast target is ever weighted.
+  // As in MakeHuman: breast targets exist for the female anchor only and scale
+  // with it, and for the child, young and old anchors (none for baby), so breast
+  // development through adolescence comes from the age interpolation itself.
   const female = 1 - Math.min(1, Math.max(0, m.gender));
-  if (female > 0 && m.age >= ADULT_AGE)
+  const breastAge = a.filter(([anchor]) => anchor !== "baby");
+  if (female > 0)
     add(
       "breast/",
-      combine("female", [a, mu, we, cupAxis(m.breastSize), firmnessAxis(m.breastFirmness)]),
+      combine("female", [breastAge, mu, we, cupAxis(m.breastSize), firmnessAxis(m.breastFirmness)]),
       female,
     );
   return out;

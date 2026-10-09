@@ -8,8 +8,6 @@
  * are needed, and the masks follow the same topology every pack shares.
  *
  * Channels: 0 = lips, 1 = flush (cheeks, nose, ears), 2 = areola/nipple.
- * Channel 2 is anatomical detail and is only ever applied to adults (the
- * renderer zeroes it below 18).
  */
 import type { HumanoidAssets, SparseTarget } from "../format/assetFormat.ts";
 

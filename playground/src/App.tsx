@@ -4,6 +4,7 @@ import { createRecipe, HumanoidWorkerClient, type MacroValues, type Recipe } fro
 import { Humanoid, HumanoidProvider } from "humanoid-kit/react";
 import { bodyPack } from "humanoid-kit-body";
 import { useEffect, useState } from "react";
+import { NeutralToneMapping } from "three";
 
 function createClient(): HumanoidWorkerClient {
   const worker = new Worker(new URL("../../src/worker/index.ts", import.meta.url), {
@@ -73,18 +74,27 @@ function Playground({ client }: { client: HumanoidWorkerClient }) {
         <Canvas
           shadows="percentage"
           camera={{ position: camera, fov: 35 }}
-          gl={{ preserveDrawingBuffer: true }}
+          gl={{
+            preserveDrawingBuffer: true,
+            toneMapping: NeutralToneMapping,
+            toneMappingExposure: 0.95,
+          }}
         >
           <color attach="background" args={["#1b2530"]} />
-          <hemisphereLight args={["#dfe8f0", "#3a3028", 0.5]} />
+          {/* Portrait rig: warm key high front-left, cool soft fill front-right, rim behind. */}
+          <hemisphereLight args={["#e4ecf4", "#3a3028", 0.22]} />
           <directionalLight
-            position={[2.5, 4, 3]}
-            intensity={2.2}
+            position={[1.8, 3.2, 2.6]}
+            intensity={2.4}
+            color="#fff6ef"
             castShadow
             shadow-mapSize={[2048, 2048]}
+            shadow-bias={-0.0004}
+            shadow-normalBias={0.02}
           />
-          <directionalLight position={[-3, 2, -2]} intensity={0.8} />
-          <Environment preset="studio" environmentIntensity={0.35} />
+          <directionalLight position={[-2.6, 1.6, 2.2]} intensity={0.55} color="#dfe9ff" />
+          <directionalLight position={[-1.2, 2.4, -3]} intensity={1.6} color="#ffffff" />
+          <Environment preset="studio" environmentIntensity={0.22} />
           <Humanoid
             recipe={recipe}
             position={[0, lift, 0]}

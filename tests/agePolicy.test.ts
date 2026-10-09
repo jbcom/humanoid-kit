@@ -1,5 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { DEFAULT_MACROS, macroTargetWeights } from "../src/makehuman/macro.ts";
 import { recipeContributions } from "../src/makehuman/recipeMorph.ts";
 import {
   ADULT_AGE,
@@ -17,49 +18,23 @@ const adultModifiers = adultManifest.modifiers;
 const minorAge = fc.double({ min: 1, max: ADULT_AGE - 1e-6, noNaN: true });
 
 describe("age policy", () => {
-  it("the packer's adult-only flag and the policy predicate agree on every modifier", () => {
+  it("gates exactly the adult anatomy pack's modifiers, as the packer flags them", () => {
     expect(adultModifiers.length).toBeGreaterThan(0);
     for (const m of [...adultModifiers, ...bodyManifest.modifiers]) {
       expect(ADULT_ONLY_MODIFIER(m.id), m.id).toBe(m.adultOnly);
     }
-    // Every adult-pack modifier is age-gated; the body pack keeps age-gated breast shaping.
     for (const m of adultModifiers) expect(m.adultOnly, m.id).toBe(true);
-    const gatedInBody = bodyManifest.modifiers.filter((m) => m.adultOnly).map((m) => m.id);
-    expect(gatedInBody.length).toBeGreaterThan(0);
-    for (const id of gatedInBody) expect(id.startsWith("breast/"), id).toBe(true);
+    for (const m of bodyManifest.modifiers) expect(m.adultOnly, m.id).toBe(false);
   });
 
-  it("rejects breast and nipple shaping under 18 even without the adult pack", () => {
-    const body = loadFixtureAssets(false);
-    const breastMods = bodyManifest.modifiers
-      .filter((m) => m.id.startsWith("breast/"))
-      .map((m) => m.id);
-    expect(breastMods.length).toBeGreaterThan(0);
-    fc.assert(
-      fc.property(
-        minorAge,
-        fc.constantFrom(...breastMods),
-        fc.double({ min: -1, max: 1, noNaN: true }).filter((v) => v !== 0),
-        (age, id, v) => {
-          expect(() =>
-            recipeContributions(
-              createRecipe({ macros: { age }, modifiers: { [id]: v } }),
-              body.modifiers,
-            ),
-          ).toThrow(AgePolicyError);
-        },
-      ),
-    );
-  });
-
-  it("keeps adult-only targets out of the body pack entirely", () => {
+  it("keeps adult anatomy targets out of the body pack entirely", () => {
     const body = new Set(bodyManifest.targets.entries.map((e) => e.name));
     for (const e of adultManifest.targets.entries) expect(body.has(e.name), e.name).toBe(false);
     for (const name of body)
       expect(name).not.toMatch(/^(genitals\/|pelvis\/bulge-|stomach\/stomach-pregnant-)/);
   });
 
-  it("rejects any adult-only value on a figure under 18", () => {
+  it("rejects any adult anatomy modifier on a figure under 18", () => {
     fc.assert(
       fc.property(
         minorAge,
@@ -72,26 +47,9 @@ describe("age policy", () => {
         },
       ),
     );
-    fc.assert(
-      fc.property(
-        minorAge,
-        fc.double({ min: 0, max: 1, noNaN: true }).filter((x) => x !== 0.5),
-        (age, b) => {
-          expect(() =>
-            recipeContributions(createRecipe({ macros: { age, breastSize: b } }), assets.modifiers),
-          ).toThrow(AgePolicyError);
-          expect(() =>
-            recipeContributions(
-              createRecipe({ macros: { age }, regionalMacros: { breastL: { breastSize: b } } }),
-              assets.modifiers,
-            ),
-          ).toThrow(AgePolicyError);
-        },
-      ),
-    );
   });
 
-  it("never emits an adult-only or breast target for a valid recipe under 18", () => {
+  it("never emits an adult anatomy target for a valid recipe under 18", () => {
     const adultTargets = new Set(adultManifest.targets.entries.map((e) => e.name));
     fc.assert(
       fc.property(minorAge, fc.double({ min: 0, max: 1, noNaN: true }), (age, gender) => {
@@ -100,18 +58,36 @@ describe("age policy", () => {
           assets.modifiers,
         )) {
           expect(adultTargets.has(c.target)).toBe(false);
-          expect(c.target.startsWith("breast/female-")).toBe(false);
         }
       }),
     );
+  });
+
+  it("allows adult anatomy modifiers at 18 and over", () => {
+    const id = adultModifiers[0]?.id as string;
+    const r = createRecipe({ macros: { age: ADULT_AGE }, modifiers: { [id]: 0.5 } });
+    expect(agePolicyViolations(r)).toEqual([]);
+    expect(
+      recipeContributions(r, assets.modifiers).some((c) =>
+        adultManifest.targets.entries.some((e) => e.name === c.target),
+      ),
+    ).toBe(true);
+  });
+
+  it("withAge strips adult anatomy modifiers when moving under 18 and keeps them otherwise", () => {
+    const id = adultModifiers[0]?.id as string;
+    const adult = createRecipe({ macros: { age: 30 }, modifiers: { [id]: 1 } });
+    const minor = withAge(adult, 12);
+    expect(agePolicyViolations(minor)).toEqual([]);
+    expect(minor.modifiers[id]).toBeUndefined();
+    expect(adult.modifiers[id]).toBe(1); // input untouched
+    expect(withAge(adult, 40).modifiers[id]).toBe(1);
   });
 
   it("rejects an age smuggled into a regional override (JSON can carry what the type forbids)", () => {
     fc.assert(
       fc.property(minorAge, fc.double({ min: 18, max: 90, noNaN: true }), (age, smuggled) => {
         const r = createRecipe({ macros: { age } });
-        // An adult age in one region would apply adult anchors (e.g. the young-female
-        // ethnic anchor, which includes breast development) to a child's chest.
         (r.regionalMacros as Record<string, Record<string, number>>).breastL = { age: smuggled };
         expect(() => recipeContributions(r, assets.modifiers)).toThrow(RecipeValidationError);
       }),
@@ -120,47 +96,24 @@ describe("age policy", () => {
 
   it("rejects a NaN age rather than guessing an age for it", () => {
     expect(() =>
-      recipeContributions(
-        createRecipe({ macros: { age: Number.NaN, breastSize: 0.9 } }),
-        assets.modifiers,
-      ),
+      recipeContributions(createRecipe({ macros: { age: Number.NaN } }), assets.modifiers),
     ).toThrow(RecipeValidationError);
   });
+});
 
-  it("rejects areola colour under 18 and resets it in withAge", () => {
-    expect(
-      agePolicyViolations(createRecipe({ macros: { age: 12 }, skin: { areola: 0.9 } })),
-    ).toContain("skin.areola is adult-only");
-    expect(
-      withAge(createRecipe({ macros: { age: 30 }, skin: { areola: 0.9 } }), 12).skin.areola,
-    ).toBe(0.5);
+describe("breast development follows MakeHuman", () => {
+  const breastWeights = (age: number) =>
+    [...macroTargetWeights({ ...DEFAULT_MACROS, gender: 0, age, breastSize: 0.8 })].filter(([n]) =>
+      n.startsWith("breast/"),
+    );
+
+  it("blends the child and young anchors through adolescence", () => {
+    const names = breastWeights(16).map(([n]) => n);
+    expect(names.some((n) => n.includes("-child-"))).toBe(true);
+    expect(names.some((n) => n.includes("-young-"))).toBe(true);
   });
 
-  it("allows adult-only modifiers at 18 and over", () => {
-    const id = adultModifiers[0]?.id as string;
-    const r = createRecipe({ macros: { age: ADULT_AGE }, modifiers: { [id]: 0.5 } });
-    expect(agePolicyViolations(r)).toEqual([]);
-    expect(
-      recipeContributions(r, assets.modifiers).some(
-        (c) =>
-          c.target.startsWith("genitals/") ||
-          c.target.startsWith("pelvis/") ||
-          c.target.startsWith("stomach/"),
-      ),
-    ).toBe(true);
-  });
-
-  it("withAge strips adult-only values when moving under 18 and keeps them otherwise", () => {
-    const id = adultModifiers[0]?.id as string;
-    const adult = createRecipe({
-      macros: { age: 30, breastSize: 0.9 },
-      regionalMacros: { breastR: { breastSize: 0.2 } },
-      modifiers: { [id]: 1 },
-    });
-    const minor = withAge(adult, 12);
-    expect(agePolicyViolations(minor)).toEqual([]);
-    expect(minor.modifiers[id]).toBeUndefined();
-    expect(adult.modifiers[id]).toBe(1); // input untouched
-    expect(withAge(adult, 40).modifiers[id]).toBe(1);
+  it("has no baby breast targets, as upstream", () => {
+    for (const [n] of breastWeights(1)) expect(n).not.toMatch(/-baby-/);
   });
 });

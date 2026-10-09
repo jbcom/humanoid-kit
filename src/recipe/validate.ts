@@ -70,6 +70,21 @@ export function recipeProblems(recipe: unknown): string[] {
       p.push("skin.override must be null or three numbers in [0, 1]");
     }
   }
+  if (typeof r.eyes !== "object" || r.eyes === null) p.push("eyes missing");
+  else {
+    const e = r.eyes as unknown as Record<string, unknown>;
+    const iris = e.iris;
+    if (
+      !(
+        Array.isArray(iris) &&
+        iris.length === 3 &&
+        iris.every((c) => finite(c) && c >= 0 && c <= 1)
+      )
+    ) {
+      p.push("eyes.iris must be three numbers in [0, 1]");
+    }
+    if (!finite(e.scleraWarmth)) p.push("eyes.scleraWarmth must be a finite number");
+  }
   return p;
 }
 

@@ -165,12 +165,10 @@ const isAdultPackTarget = (name: string) =>
   name.startsWith("stomach/stomach-pregnant-");
 
 /**
- * Modifiers that are age-gated (rejected below 18): everything in the adult
- * pack, plus the breast and nipple shape group, which stays in the body pack
- * because adult figures need it without installing anatomy.
+ * Modifiers that are age-gated (rejected below 18): exactly the adult pack's.
+ * Everything in the body pack follows MakeHuman, which offers it at every age.
  */
-const isAdultOnlyModifier = (group: string, hi: string) =>
-  isAdultPackTarget(hi) || group === "breast";
+const isAdultOnlyModifier = (hi: string) => isAdultPackTarget(hi);
 
 function listTargets(): string[] {
   const out: string[] = [];
@@ -422,7 +420,7 @@ function main() {
         unresolved.push(id);
         continue;
       }
-      modifiers.push({ id, group: dir, lo, hi, adultOnly: isAdultOnlyModifier(dir, hi) });
+      modifiers.push({ id, group: dir, lo, hi, adultOnly: isAdultOnlyModifier(hi) });
     }
   }
   if (unresolved.length)

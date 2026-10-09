@@ -8,9 +8,6 @@
  * - regional colour from the figure's skin masks (lips, flush, areola), carried
  *   as a vertex attribute so they follow every shape change;
  * - a fine tiling pore normal map and a low sheen for vellus hair.
- *
- * The areola channel is anatomical detail: `setAppearance` zeroes it unless the
- * figure is an adult.
  */
 import {
   Color,
@@ -31,7 +28,7 @@ export interface SkinAppearance {
   flush: number;
   /** 0..1: lip colour depth relative to the surrounding skin. */
   lips: number;
-  /** 0..1: areola and nipple colour depth (adults only). */
+  /** 0..1: areola and nipple colour depth. */
   areola: number;
 }
 
@@ -139,12 +136,12 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       sheenColor: new Color(0.9, 0.82, 0.78),
     });
     this.normalMap = poreNormalMap();
-    this.normalScale = new Vector2(0.12, 0.12);
-    this.setAppearance(DEFAULT_SKIN_APPEARANCE, false);
+    // Pores are felt in the highlights, not seen as texture: keep the relief faint.
+    this.normalScale = new Vector2(0.06, 0.06);
+    this.setAppearance(DEFAULT_SKIN_APPEARANCE);
   }
 
-  /** Applies a skin appearance. The areola channel only shows when `adult` is true. */
-  setAppearance(a: SkinAppearance, adult: boolean): void {
+  setAppearance(a: SkinAppearance): void {
     const albedo = skinAlbedo(a.tone);
     this.color.setRGB(albedo[0], albedo[1], albedo[2], LinearSRGBColorSpace);
     const lip = mul(albedo, [0.74 - 0.2 * a.lips, 0.42 - 0.12 * a.lips, 0.44 - 0.1 * a.lips]);
@@ -160,11 +157,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       areola[2],
       LinearSRGBColorSpace,
     );
-    this.hkUniforms.hkMaskStrength.value.set(
-      0.35 + 0.55 * a.lips,
-      a.flush,
-      adult ? 0.4 + 0.55 * a.areola : 0,
-    );
+    this.hkUniforms.hkMaskStrength.value.set(0.35 + 0.55 * a.lips, a.flush, 0.4 + 0.55 * a.areola);
   }
 
   override onBeforeCompile: MeshPhysicalMaterial["onBeforeCompile"] = (shader) => {

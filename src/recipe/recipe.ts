@@ -31,7 +31,7 @@ export interface SkinRecipe {
   flush: number;
   /** 0..1: lip colour depth. */
   lips: number;
-  /** 0..1: areola and nipple colour depth. Adult-only; ignored and rejected below 18. */
+  /** 0..1: areola and nipple colour depth. */
   areola: number;
 }
 
@@ -45,6 +45,18 @@ export const DEFAULT_SKIN: Readonly<SkinRecipe> = {
   areola: 0.5,
 };
 
+export interface EyesRecipe {
+  /** Linear-RGB iris colour. */
+  iris: Rgb;
+  /** 0 = clinical white, 1 = warm ivory sclera. */
+  scleraWarmth: number;
+}
+
+export const DEFAULT_EYES: Readonly<EyesRecipe> = {
+  iris: [0.12, 0.055, 0.025],
+  scleraWarmth: 0.5,
+};
+
 export interface Recipe {
   version: typeof RECIPE_VERSION;
   macros: MacroValues;
@@ -52,6 +64,7 @@ export interface Recipe {
   /** Shape modifier id → value in [-1, 1] (one-sided modifiers [0, 1]). Missing ids are 0. */
   modifiers: Record<string, number>;
   skin: SkinRecipe;
+  eyes: EyesRecipe;
 }
 
 export function createRecipe(
@@ -60,6 +73,7 @@ export function createRecipe(
     regionalMacros?: Recipe["regionalMacros"];
     modifiers?: Record<string, number>;
     skin?: Partial<SkinRecipe>;
+    eyes?: Partial<EyesRecipe>;
   } = {},
 ): Recipe {
   return {
@@ -68,5 +82,9 @@ export function createRecipe(
     regionalMacros: structuredClone(init.regionalMacros ?? {}),
     modifiers: { ...init.modifiers },
     skin: { ...DEFAULT_SKIN, ...init.skin },
+    eyes: {
+      iris: [...(init.eyes?.iris ?? DEFAULT_EYES.iris)] as Rgb,
+      scleraWarmth: init.eyes?.scleraWarmth ?? DEFAULT_EYES.scleraWarmth,
+    },
   };
 }

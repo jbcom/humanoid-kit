@@ -32,8 +32,8 @@ import type {
   SurfaceEvaluation,
   SurfaceTopology,
 } from "../model/humanoidModel.ts";
-import { isAdult } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { SKIN_MASK_ATTRIBUTE, SkinMaterial } from "../render/skinMaterial.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 
@@ -113,13 +113,17 @@ function writeGeometry(g: BufferGeometry, s: SurfaceEvaluation): void {
   g.computeBoundingSphere();
 }
 
-/** A standard material built from an attachment's packed material description. */
+/**
+ * The material for an attachment: the eye shader for eyes, otherwise a
+ * standard material built from the packed material description.
+ */
 function useAttachmentMaterial(
   t: AttachmentTopology,
   report: (e: Error) => void,
 ): MeshStandardMaterial {
   const material = useMemo(() => {
     const m = t.material;
+    if (t.kind === "eyes") return new EyeMaterial();
     return new MeshStandardMaterial({
       color: new Color(m.color[0], m.color[1], m.color[2]),
       roughness: m.roughness,
@@ -163,13 +167,18 @@ function AttachmentMesh({
   geometry,
   visible,
   report,
+  eyes,
 }: {
   topology: AttachmentTopology;
   geometry: BufferGeometry;
   visible: boolean;
   report: (e: Error) => void;
+  eyes: Recipe["eyes"];
 }) {
   const material = useAttachmentMaterial(topology, report);
+  useEffect(() => {
+    if (material instanceof EyeMaterial) material.setAppearance(eyes);
+  }, [material, eyes]);
   return (
     <mesh
       geometry={geometry}
@@ -212,20 +221,17 @@ export function Humanoid({ recipe, material, onEvaluated, onError, ...group }: H
   useEffect(() => () => skin.dispose(), [skin]);
   useEffect(() => {
     const s = recipe.skin;
-    skin.setAppearance(
-      {
-        tone: {
-          melanin: s.melanin,
-          haemoglobin: s.haemoglobin,
-          undertone: s.undertone,
-          override: s.override,
-        },
-        flush: s.flush,
-        lips: s.lips,
-        areola: s.areola,
+    skin.setAppearance({
+      tone: {
+        melanin: s.melanin,
+        haemoglobin: s.haemoglobin,
+        undertone: s.undertone,
+        override: s.override,
       },
-      isAdult(recipe),
-    );
+      flush: s.flush,
+      lips: s.lips,
+      areola: s.areola,
+    });
   }, [skin, recipe]);
 
   useEffect(() => {
@@ -272,6 +278,7 @@ export function Humanoid({ recipe, material, onEvaluated, onError, ...group }: H
                 geometry={g}
                 visible={shown}
                 report={report}
+                eyes={recipe.eyes}
               />
             ) : null;
           })}
