@@ -839,18 +839,44 @@ mask or a relief phase on this mesh: the forehead's triangles are about 2 cm
 across and a field is interpolated between their vertices, so any coordinate
 that is not exactly linear in position bends a line into a squiggle (the first
 sheets' "ʍ" furrow). They use the palm creases' technique
-(`hands/creases.ts`): a multiply colour layer whose coordinate is exactly
-linear (the forehead's in height, the furrows' across the face), with the
-line's shade on chosen ones of the layer's eight colour stops (`FOREHEAD_STOPS`,
-`GLABELLA_STOPS`), so a line is straight wherever the vertices fall and a
-seventh of the coordinate's band wide. A coordinate is stored in 0 to 1, and a
-vertex outside its band is stored clamped, which would bend a line in any
-triangle that has one; so each band reaches a face past its lines and the mask
-fades to zero before the band ends. The forehead has three lines (2.3, 4.1 and
-5.9 cm above the brows' joints), deepest at the centre and weakening toward the
-temples; the furrows are two vertical lines 1.05 cm either side of the midline.
-Their shade is the fold's shadow, a multiply by `lineShade(age)` (22 % at 40,
-the most 45 %), which grows with age as the relief's depth does.
+(`hands/creases.ts`): a multiply colour layer whose coordinate is a smooth
+function of position (the furrows' exactly linear across the face; the forehead's
+height, see below), with the line's shade on chosen ones of the layer's eight
+colour stops (`FOREHEAD_STOPS`, `GLABELLA_STOPS`), so a line is a smooth curve
+wherever the vertices fall and a seventh of the coordinate's band wide. A
+coordinate is stored in 0 to 1, and a vertex outside its band is stored clamped,
+which would bend a line in any triangle that has one; so each band reaches a face
+past its lines and the mask fades to zero before the band ends.
+
+The forehead has three lines (about 2.1, 3.7 and 5.4 cm above the brows' joints,
+short of the hairline), deepest at the centre. Three lines of one even spacing read
+as stripes, so they are irregular, by choice: they sag 4 mm toward the temples, wave
+1.5 mm along their length, are spaced unevenly (the coordinate is height warped by 2
+% of the band), and break up toward the temples where a slow noise is high
+(`foreheadCoordinate`, `foreheadUnbroken`). The warp is a smooth function sampled
+at every vertex, so a line is a smooth curve across the triangles (a test holds the
+interpolated coordinate to within a millimetre of the function). The furrows are
+two straight vertical lines 1.05 cm either side of the midline, 1.5 to 2.5 cm long:
+the mask caps them from 8 mm below the brows' joints to 2.2 cm above, both ends soft
+(`FURROW_FROM`, `FURROW_TO`), since a glabellar furrow is a short groove between
+the inner brows, not a line up the forehead.
+
+**Tone.** A multiply by a fraction of albedo is a step too small to see on deep skin
+(the same fraction of a dark albedo is a smaller step of lightness), so the lines
+vanished on the two deepest tones. Two things fix it. The multiply is chosen per
+tone (`lineShade(age, tone)`) to lower the skin's CIELAB L* by `LINE_DELTA_L` = 6,
+times the age factor, to 12: the same step of lightness at every tone (a test holds
+the deepest tone's step to over 0.6 of the fairest's at 25, 40 and 75; the deepest
+tone's multiply is the deeper). And the lines shade: a colour layer's paint may carry
+`relief` (a groove depth at each stop, the deepest in the stop table's header and
+each stop's depth in its alpha), and the shader tilts the normal per pixel by the
+gradient of that smoothed profile along the layer's own coordinate
+(`hkDetailHeight`, `lineRelief` its reference), so a line catches light on one
+side and shadows on the other whatever the colour. It is per pixel only, from the
+exact coordinate: no vertex relief, so a line cannot bend as the first relief did.
+The grooves are 0.6 mm (forehead) and 0.7 mm (furrows) at 40, times the age factor
+(under 1 mm at any age; a CHOICE, no measurement of wrinkle depth is in this
+repository). Age scales both.
 
 Where each lies is read from the default figure's joints (the brows, the outer
 corners, the nose's wing), so it follows the mesh, and keeps off the lips and the
@@ -1182,10 +1208,19 @@ a coloured texture; everything in the pure core is testable in Node.
   (`src/surface/hairFields.ts`, stored beside the occlusion in the style's
   binary): **growth** (u16, 0.1 mm steps), the distance along the cards from
   where the hair roots, by Dijkstra from the vertices within 1.5 cm of the scalp
-  (a card that touches none grows from its highest vertex); **fade**, 0 on a
-  card edge that meets the scalp, rising to 1 over 18 mm along the card, and
-  only for edges no other card lies well over (a card's edge inside the hair is
-  not on its hairline: feathering those cut the afro into a lattice); **fin**,
+  (a card that touches none grows from its highest vertex); **fade**, 0 at a
+  card vertex within 1.5 cm of the scalp that is on a hairline, rising to 1 over
+  18 mm along the card. A vertex is on one when the skin under it is bare (the
+  body's hair density, taken from the cards' opaque texels and from hair standing
+  over each skin vertex along its normal, below a quarter at the nearest body
+  point: the face, a temple the hair stops short of), or when it is a card's
+  boundary vertex that no other card lies well over. A card's mesh reaches well
+  past the hair painted on it, so the visible hairline is the painted edge
+  inside the mesh, and a fade measured from the mesh's own boundary ran out over
+  transparent texels (6-8% of its zero vertices sat on opaque hair): the first
+  hairlines were hard cuts. Hair over hair is no hairline (feathering those cut
+  the afro into a lattice, and two cards that meet at a parting opened a gap);
+  **fin**,
   1 on a card standing out of the scalp, 0 on one lying along it (its normal
   against the direction from the nearest scalp point); and the **scalp**, the
   head's body vertices within 11 mm of a card with their density, 1 under a card
@@ -1197,16 +1232,22 @@ a coloured texture; everything in the pure core is testable in Node.
   their roots showed the dark inside of the volume as a band.
 - *A hairline thins, and a fin by its angle; the scalp is tinted.* A
   hair card's cut edge is a hard line, and MakeHuman's hairlines read as a helmet
-  or a wig, and a screen-space dither of it reads as a dot grid. The fin's angle
-  term is the card's coverage under alpha-to-coverage (a dither without it, which
-  needs neither blending nor MSAA, so it works on every GPU). The hairline itself
+  or a wig, and a screen-space dither of it reads as a dot grid, as does the
+  2x2 coverage pattern alpha-to-coverage gives a partial alpha on hardware
+  (found on a real GPU after software renders looked fine). So nothing about a
+  hairline or a fin is a per-pixel or partial-coverage decision: every one is a
+  yes or no per strand cell of the card's own surface, which needs neither
+  blending nor MSAA and looks the same on every GPU. The hairline
   thins strand by strand, in the texture's own coordinates scaled to metres by a
   baked per-vertex `uvScale` (a strand is 1.5 mm wherever its card's island sits
-  in the atlas): each strand ends at a distance of its own from the cut edge (a
-  hash of the strand), its tip tapering, and the edge recedes along its length by
-  up to a third of the fade (two slow noises: a recession and a wander), so no
-  hairline is a straight cut with a dot pattern but a feathering of wisps.
-  (Pixel dithering alone left a speckle on the afro that read as noise.) The skin shows
+  in the atlas). Where the fade is low the thinning follows the painted hair:
+  the strand map's alpha, blurred by the mip that spans 16 mm, is 0.5 at the
+  painted edge and rises to 1 inside it, and each strand ends at a distance of its
+  own along that ramp (a hash of the strand), its tip fraying in 4.5 mm cells along
+  the strand, and the edge recedes along its length by up to a third of the ramp
+  (two slow noises: a recession and a wander), so no hairline is a straight cut
+  with a dot pattern but a feathering of wisps; a fin dissolves by the same cells as it turns
+  edge-on. Edge pixels of the cut-outs themselves stay alpha-to-coverage. The skin shows
   through, so it must not be bare: `SkinMaterial` takes a per-vertex
   `hkScalp` attribute (the style's scalp, carried through the body's stencil like
   any field) and a uniform colour, and takes the skin toward its own colour in
@@ -1217,7 +1258,8 @@ a coloured texture; everything in the pure core is testable in Node.
   a shared atlas, and a scalp differs by style. A fin card seen edge-on is a
   hairline-thin dark sliver, and the afro stands 340 loose curl cards out of its
   cap, which read as a lattice of them; fins thin out as they turn from the eye
-  (|cos| 0.3 to 0.8), cards of the shell never do (a head's shell is seen at a
+  (|cos| 0.5 to 0.95: the afro's cap showed a lattice of dark lines where fins
+  still showed at 0.3), cards of the shell never do (a head's shell is seen at a
   grazing angle over much of its area).
 - *Two atlases are flattened in the packer.* afro01's and braid01's atlases carry
   painted-in dark cells and blotches that read as a net or as dirt under the

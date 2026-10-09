@@ -188,13 +188,62 @@ describe("hairFields", () => {
       expect(fade[offset]).toBe(0);
     });
 
-    it("does not feather an interior edge that is near the scalp (an edge joined to another card face)", () => {
-      // Two stacked strips share their middle row of vertices: that row is interior.
+    it("does not feather a part of a card far from the scalp, which is no hairline", () => {
+      // Two stacked strips share their middle row of vertices, 0.05 above the scalp.
       const card = strip(2, 0.002, 0.1);
       const { fade } = run(card);
-      // The middle row sits 0.05 above the scalp: far from it, and interior.
       expect(fade[2]).toBe(255);
       expect(HAIRLINE_NEAR).toBeLessThan(0.05);
+    });
+
+    it("puts a hairline inside a card's mesh where its painted hair ends over bare skin", () => {
+      // A 0.4 m sheet of 2x2 quads 2 mm above the scalp: its centre vertex is interior, 0.2 m from
+      // any edge. Where the texture is opaque everywhere the centre is well inside the hair; where
+      // it is clear across the middle, the skin under the centre is bare and the centre is on a hairline.
+      const h = 0.2;
+      const positions: number[] = [];
+      const uvs: number[] = [];
+      for (let j = 0; j < 3; j++)
+        for (let i = 0; i < 3; i++) {
+          positions.push(-h + i * h, 0.002, -h + j * h);
+          uvs.push(i / 2, j / 2);
+        }
+      const faceVerts = new Uint32Array([0, 1, 4, 3, 1, 2, 5, 4, 3, 4, 7, 6, 4, 5, 8, 7]);
+      const alphaOf = (clearMiddle: boolean) =>
+        Uint8Array.from({ length: 16 }, (_, k) => {
+          const x = k % 4;
+          const y = Math.floor(k / 4);
+          return clearMiddle && x >= 1 && x <= 2 && y >= 1 && y <= 2 ? 0 : 255;
+        });
+      const fadeAt = (clearMiddle: boolean) =>
+        hairFields({
+          positions: new Float32Array(positions),
+          faceVerts,
+          body: { positions: body.positions, triangles: body.triangles },
+          scalpEligible: eligibleAll,
+          cutout: {
+            faceUvs: faceVerts,
+            uvs: new Float32Array(uvs),
+            width: 4,
+            height: 4,
+            alpha: alphaOf(clearMiddle),
+          },
+        }).fade[4];
+      expect(fadeAt(false)).toBe(255);
+      expect(fadeAt(true)).toBe(0);
+    });
+
+    it("feathers a card lying along the scalp wherever it is, not only at the mesh's own boundary", () => {
+      // The visible hairline is where the painted hair ends, which is inside a card's mesh: a
+      // 0.4 m sheet 1 mm above the scalp has vertices only at its corners, yet is all hairline.
+      const card = sheet(0.001, 0.4);
+      const { fade } = hairFields({
+        positions: card.positions,
+        faceVerts: card.faceVerts,
+        body: { positions: body.positions, triangles: body.triangles },
+        scalpEligible: eligibleAll,
+      });
+      expect(Array.from(fade)).toEqual([0, 0, 0, 0]);
     });
   });
 
