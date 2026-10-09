@@ -5,12 +5,17 @@
  * on the body has grown or shrunk since the asset was fitted, so attachments
  * keep their proportions on every body shape.
  */
-import type { BoundAsset } from "../format/assetFormat.ts";
+import type { AttachmentEntry, BoundAsset } from "../format/assetFormat.ts";
 
 const AXES = ["x", "y", "z"] as const;
 
+/** What binding reads of a bound mesh: an attachment or a garment. */
+export type Bound = Pick<BoundAsset, "refVerts" | "weights" | "offsets"> & {
+  entry: Pick<AttachmentEntry, "scale" | "vertexCount">;
+};
+
 /** Per-axis offset scale for the given control positions (1 when the asset has no scale references). */
-export function bindingScale(asset: BoundAsset, control: Float32Array): [number, number, number] {
+export function bindingScale(asset: Bound, control: Float32Array): [number, number, number] {
   const s = asset.entry.scale;
   if (!s) return [1, 1, 1];
   return AXES.map((axis, i) => {
@@ -22,7 +27,7 @@ export function bindingScale(asset: BoundAsset, control: Float32Array): [number,
 
 /** Writes the attachment's control positions (`vertexCount * 3`) for the given body control positions. */
 export function evaluateBinding(
-  asset: BoundAsset,
+  asset: Bound,
   control: Float32Array,
   out: Float32Array,
 ): Float32Array {
@@ -58,7 +63,7 @@ export function evaluateBinding(
 
 /** Skin weights for an attachment: each vertex blends the weights of its three base vertices; top four kept. */
 export function bindingSkin(
-  asset: BoundAsset,
+  asset: Bound,
   baseIndex: Uint8Array,
   baseWeight: Float32Array,
 ): { index: Uint8Array; weight: Float32Array } {

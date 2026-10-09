@@ -87,6 +87,17 @@ export function recipeProblems(recipe: unknown): string[] {
     }
     if (!finite(e.scleraWarmth)) p.push("eyes.scleraWarmth must be a finite number");
   }
+  if (r.outfit !== undefined) {
+    if (!Array.isArray(r.outfit)) p.push("outfit must be an array of garment ids");
+    else {
+      const seen = new Set<unknown>();
+      r.outfit.forEach((id: unknown, i) => {
+        if (typeof id !== "string" || id === "") p.push(`outfit[${i}] must be a garment id`);
+        else if (seen.has(id)) p.push(`outfit names ${id} twice`);
+        seen.add(id);
+      });
+    }
+  }
   return p;
 }
 

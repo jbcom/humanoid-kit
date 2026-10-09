@@ -5,6 +5,7 @@ import {
   ADULT_ANATOMY_SPEC,
   ADULT_SPEC_MODIFIERS,
   ADULT_SPEC_TARGETS,
+  adultAnatomySpec,
 } from "../scripts/lib/adultAnatomySpec.ts";
 import { groupFaces, parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -31,8 +32,9 @@ const spec = adultManifest.anatomy;
 describe("the adult anatomy spec in the pack's manifest", () => {
   it("is exactly what the packer writes", () => {
     // The core names no adult target or modifier, so the pack's manifest does;
-    // the packer writes ADULT_ANATOMY_SPEC into it, and this holds the two together.
-    expect(spec).toEqual(ADULT_ANATOMY_SPEC);
+    // the packer writes `adultAnatomySpec(base body)` into it, and this holds the two together.
+    expect(spec).toEqual(adultAnatomySpec(core));
+    expect(spec).toMatchObject(ADULT_ANATOMY_SPEC);
   });
 
   it("names only targets and modifiers the adult pack ships, and none of the body pack's", () => {

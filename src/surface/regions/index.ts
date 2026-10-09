@@ -6,6 +6,7 @@
 import { isAdultLayer, type SkinLayer } from "../layers.ts";
 import { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER } from "./adult.ts";
 import { CREASE_LAYERS } from "./creases.ts";
+import { MOUTH_INTERIOR_LAYER } from "./mouth.ts";
 import { AREOLA_LAYER, FLUSH_LAYER, LIPS_LAYER } from "./rest.ts";
 import {
   BLUSH_LAYER,
@@ -19,11 +20,12 @@ import {
   SWEAT_REST_LAYER,
 } from "./states.ts";
 
-/** The layers whose data is in the body pack: the rest layers, then the state layers. */
+/** The layers whose data is in the body pack: the rest layers (flush, lips, areola, the mouth's lining), then the state layers. */
 const BODY_SKIN_LAYERS: readonly SkinLayer[] = [
   FLUSH_LAYER,
   LIPS_LAYER,
   AREOLA_LAYER,
+  MOUTH_INTERIOR_LAYER,
   GOOSEBUMP_LAYER,
   HEAT_FLUSH_LAYER,
   EXERTION_FLUSH_LAYER,
@@ -58,6 +60,7 @@ export const SKIN_LAYER_TARGETS: readonly string[] = targetsOf(
 );
 
 export * from "./creases.ts";
+export * from "./mouth.ts";
 export * from "./rest.ts";
 export * from "./skinZones.ts";
 export * from "./states.ts";

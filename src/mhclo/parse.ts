@@ -9,13 +9,15 @@
  * recorded in the file (`x_scale v1 v2 dist`). Faces under the garment are
  * listed in `delete_verts`.
  *
- * Section rules follow the format's documented behaviour (a blank line or a
- * non-numeric line ends a section; `material` and comments may appear inside
- * the vertex block). Three behaviours of one existing reader are deliberately
- * not reproduced: licence comments are recorded verbatim rather than
- * classified by substring; multi-word names, tags and authors are kept whole;
- * and the line that ends a section is still read as a keyword, so a
- * `delete_verts` written without a blank line before it is not lost.
+ * Section rules follow the format's documented behaviour: `verts` and
+ * `delete_verts` open a run of numeric lines, and only the other of the two
+ * switches it. Blank lines, comments and keyword lines (`material`,
+ * `vertexboneweights_file`) do not end a run, and the system shoes write both
+ * of those between `verts` and their data. Three behaviours of one existing
+ * reader are deliberately not reproduced: licence comments are recorded
+ * verbatim rather than classified by substring; multi-word names, tags and
+ * authors are kept whole; and a keyword line is always read as a keyword, so
+ * a `delete_verts` written without a blank line before it is not lost.
  */
 
 export interface AxisScale {
@@ -83,19 +85,12 @@ export function parseMhclo(text: string): MhcloBinding {
       material = words.slice(1).join(" ");
       continue;
     }
-    if (section !== "none") {
-      if (line === "") {
-        section = "none";
-        continue;
-      }
-      if (!isNumeric(key)) {
-        // A non-numeric line ends the section. One reader discards it, which loses
-        // a `delete_verts` written straight after the vertex block; reading it as a
-        // keyword below cannot break a valid file and keeps the author's intent.
-        section = "none";
-      }
-    }
-    if (section !== "none") {
+    // A section is a run of numeric lines under `verts` or `delete_verts`.
+    // Neither a blank line nor a keyword line (`material`,
+    // `vertexboneweights_file`, ...) ends it; only the other section keyword
+    // switches it, and the numeric lines after a keyword still belong to it.
+    if (line === "") continue;
+    if (section !== "none" && (isNumeric(key) || key === "-")) {
       if (section === "verts") {
         const nums = words.map(Number);
         if (nums.length === 1) {
@@ -112,11 +107,14 @@ export function parseMhclo(text: string): MhcloBinding {
           );
         }
       } else {
+        // `a - b` is the inclusive range a..b; the range may wrap across a line.
         for (let i = 0; i < words.length; i++) {
-          if (words[i + 1] === "-" && isNumeric(words[i + 2])) {
-            for (let v = Number(words[i]); v <= Number(words[i + 2]); v++) del.push(v);
-            i += 2;
-          } else if (isNumeric(words[i])) del.push(Number(words[i]));
+          const word = words[i] as string;
+          if (word === "-" && isNumeric(words[i + 1])) {
+            for (let v = (del[del.length - 1] ?? 0) + 1; v <= Number(words[i + 1]); v++)
+              del.push(v);
+            i++;
+          } else if (isNumeric(word)) del.push(Number(word));
         }
       }
       continue;

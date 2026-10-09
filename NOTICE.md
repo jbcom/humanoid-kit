@@ -7,6 +7,7 @@ This repository contains three separately licensed works:
 | `humanoid-kit`, the code | `src/`, `scripts/`, `playground/`, `tests/` | MIT (see `LICENSE`) |
 | `humanoid-kit-body`, the base body data | `packs/body/` | CC0 1.0 (see `packs/body/LICENSE`) |
 | `humanoid-kit-adult-anatomy`, the adult anatomy data | `packs/adult-anatomy/` | CC0 1.0 (see `packs/adult-anatomy/LICENSE`) |
+| `humanoid-kit-clothing`, the garment data | `packs/clothing/` | CC0 1.0 (see `packs/clothing/LICENSE`) |
 
 ## MakeHuman asset data (CC0 1.0)
 
@@ -54,6 +55,15 @@ content. It accepts, in this order:
    "Targets and modifiers" or "Poses and expressions", under "These assets have
    been released under CC0 1.0 Universal." The packer checks that sentence
    verbatim, so a changed upstream licence fails the pack.
+
+`packs/clothing/data` is derived from MakeHuman's system assets pack
+(`makehuman_system_assets_cc0.zip`), whose clothes, meshes and materials each
+open with the same header, "This asset was explicitly released as CC0 in
+september 2020", naming the same copyright holders. `scripts/pack-clothing.ts`
+accepts a garment's `.mhclo`, `.obj` and `.mhmat` only on that statement (or a
+`license CC0` line) in the file itself, and a texture only through a material
+that passes. Only the tier of assets that proves CC0 this way is packed; assets
+whose page says CC0 but whose files do not are not.
 
 Each pack's `data/PROVENANCE.md` is written by the packer. It records the
 upstream commit, how many files were accepted on which evidence, and the SHA-256

@@ -1,5 +1,5 @@
 import { OrbitControls } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { createRecipe, HumanoidWorkerClient, type Recipe } from "humanoid-kit";
 import { HumanoidCreator } from "humanoid-kit/editor";
 import {
@@ -12,7 +12,13 @@ import {
 } from "humanoid-kit/react";
 import { bodyPack } from "humanoid-kit-body";
 import { useEffect, useState } from "react";
-import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, type ToneMapping } from "three";
+import {
+  ACESFilmicToneMapping,
+  AgXToneMapping,
+  type Mesh,
+  NeutralToneMapping,
+  type ToneMapping,
+} from "three";
 import { Walk } from "./Walk";
 
 async function createClient(): Promise<HumanoidWorkerClient> {
@@ -23,6 +29,11 @@ async function createClient(): Promise<HumanoidWorkerClient> {
     import.meta.env.DEV && params.has("adult")
       ? (await import("humanoid-kit-adult-anatomy")).adultAnatomyPack
       : undefined;
+  // `?clothing` loads the clothing pack, so a recipe's `outfit` can name its
+  // garments. Imported on demand: a visit without it fetches none of the pack.
+  const clothing = params.has("clothing")
+    ? (await import("humanoid-kit-clothing")).clothingPack
+    : undefined;
   const worker = new Worker(new URL("../../src/worker/index.ts", import.meta.url), {
     type: "module",
   });
@@ -34,6 +45,7 @@ async function createClient(): Promise<HumanoidWorkerClient> {
     {
       body: bodyPack,
       ...(adultAnatomy && { adultAnatomy }),
+      ...(clothing && { clothing }),
       firstFigureAge: initialRecipe().macros.age,
     },
     { subdivision: 1, ...(wear && { attachments: wear }) },
@@ -63,8 +75,45 @@ function useClient(): HumanoidWorkerClient | null {
   return client;
 }
 
+/** What the figure is drawing: one entry per skinned part, for QA to count. */
+export interface DrawnPart {
+  /** `"body"`, `"garment"` or an attachment's index. */
+  part: string | number;
+  garment?: string;
+  /** Triangles in the part's index buffer, i.e. what it draws. */
+  triangles: number;
+}
+
+/** Exposes `window.hkDrawn` while mounted: the triangles each part of the figure draws. */
+function SceneProbe() {
+  const scene = useThree((s) => s.scene);
+  useEffect(() => {
+    window.hkDrawn = () => {
+      const out: DrawnPart[] = [];
+      scene.traverse((o) => {
+        const part = o.userData.hkPart as string | number | undefined;
+        const geometry = (o as Mesh).geometry;
+        if (part === undefined || !geometry) return;
+        const garment = o.userData.hkGarment as string | undefined;
+        out.push({
+          part,
+          ...(garment && { garment }),
+          triangles: (geometry.index?.count ?? 0) / 3,
+        });
+      });
+      return out;
+    };
+    return () => {
+      delete window.hkDrawn;
+    };
+  }, [scene]);
+  return null;
+}
+
 declare global {
   interface Window {
+    /** QA only: what each part of the figure is drawing (see `SceneProbe`). */
+    hkDrawn?: () => DrawnPart[];
     /** QA only: swaps the shot's recipe (and pose) without reloading (see `Shot`). */
     hkSetRecipe?: (
       init: Parameters<typeof createRecipe>[0],
@@ -202,6 +251,7 @@ function Shot() {
         }}
       >
         <StudioStage {...(background ? { background } : {})} />
+        <SceneProbe />
         <Humanoid
           recipe={recipe}
           pose={pose}
