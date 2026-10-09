@@ -45,6 +45,27 @@ export const FRAMINGS = {
 } as const satisfies Record<string, Framing>;
 export type FramingId = keyof typeof FRAMINGS;
 
+/**
+ * What is worn on or in the head, seen at the face's framing; anything else
+ * worn, at a clothed figure's. Both the packs' kinds and the packers' (a hair
+ * style compiles as `hair`, `eyebrows` or `eyelashes`).
+ */
+const HEAD_KINDS = new Set([
+  "eyes",
+  "teeth",
+  "tongue",
+  "scalp",
+  "brows",
+  "lashes",
+  "hair",
+  "eyebrows",
+  "eyelashes",
+  "hat",
+]);
+
+/** The framing an attachment or garment of `kind` is judged at. */
+export const framingOf = (kind: string): FramingId => (HEAD_KINDS.has(kind) ? "face" : "clothed");
+
 /** Screen pixels per millimetre on a surface facing the camera at `f`. */
 export const pxPerMm = (f: Framing) =>
   (f.height * DPR) / (2 * f.distance * Math.tan((FOV * Math.PI) / 360)) / 1000;
@@ -153,15 +174,21 @@ export function texelDensity(tris: readonly Tri[], w: number, h: number, q: numb
   return rows.at(-1)?.d ?? 0;
 }
 
-const pow2AtLeast = (x: number) => 2 ** Math.ceil(Math.log2(Math.max(1, x)));
+/**
+ * Edges are rounded up to a multiple of this, not to a power of two: WebGL2
+ * mipmaps and repeats any size, and a power of two would cost up to four times
+ * the texels a texture needs (an eye that needs 1386 would get 2048).
+ */
+export const EDGE_STEP = 128;
 
 /**
- * The smallest power-of-two longest edge at which `COVERAGE` of `tris`' area
- * resolves at `framing` (a texture's density scales with its edge).
+ * The smallest longest edge, a multiple of `EDGE_STEP`, at which `COVERAGE` of
+ * `tris`' area resolves at `framing` (a square texture's density scales with
+ * its edge).
  */
 export function neededEdge(tris: readonly Tri[], framing: FramingId): number {
   const d = texelDensity(tris, 1, 1, 1 - COVERAGE);
-  return pow2AtLeast(pxPerMm(FRAMINGS[framing]) / d);
+  return Math.max(EDGE_STEP, Math.ceil(pxPerMm(FRAMINGS[framing]) / d / EDGE_STEP) * EDGE_STEP);
 }
 
 /**
