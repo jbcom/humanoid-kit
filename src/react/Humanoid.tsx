@@ -420,13 +420,16 @@ export function Humanoid({
   useEffect(() => {
     if (!geometries) return;
     let live = true;
-    client.posedOcclusion().then((posed) => {
-      if (!live || !posed) return;
-      geometries.attachments.forEach((g, i) => {
-        const o = posed[i];
-        if (o) setOcclusionAttributes(g, o);
-      });
-    }, report);
+    client.posedOcclusion().then(
+      (posed) => {
+        if (!live || !posed) return;
+        geometries.attachments.forEach((g, i) => {
+          const o = posed[i];
+          if (o) setOcclusionAttributes(g, o);
+        });
+      },
+      (e: Error) => live && report(e),
+    );
     return () => {
       live = false;
     };
