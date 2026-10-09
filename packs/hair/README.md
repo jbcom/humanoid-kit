@@ -26,8 +26,8 @@ is loaded with, and the pack's own manifest says so by hash.
 The ten MakeHuman styles are every scalp hair its CC0 header proves, and they are nearly all
 straight or wavy. Four authored styles (box braids, cornrows, two-strand twists, locs; generated
 by `scripts/lib/hairCards`, no one's mesh or texture used) cover the coily and braided textures.
-Still missing: bantu knots, tight curls other than the one afro, and a close crop, taper or fade
-(see `docs/ARCHITECTURE.md`, "Scalp hair", and `docs/evidence/hair.md`).
+A derived coily close crop with a fade (`crop01`) keeps `short04`'s cards under its own strand map.
+Still missing: bantu knots and tight curls in the longer styles (see `docs/ARCHITECTURE.md`, "Scalp hair", and `docs/evidence/hair.md`).
 
 ## Licence
 

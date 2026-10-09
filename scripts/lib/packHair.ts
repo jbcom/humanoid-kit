@@ -31,6 +31,7 @@ import {
   type HairStyleEntry,
   parseHumanoidAssets,
 } from "../../src/format/assetFormat.ts";
+import { evaluateBinding } from "../../src/mhclo/bound.ts";
 import { HumanoidModel } from "../../src/model/humanoidModel.ts";
 import {
   BODY_HAIR_CARDS,
@@ -42,7 +43,13 @@ import {
 import { type CompiledAsset, compileAsset } from "./compileAsset.ts";
 import { compileAuthored } from "./hairCards/compile.ts";
 import { BodySurface, HeadFrame } from "./hairCards/head.ts";
-import { AUTHORED_STYLES, type AuthoredStyleSpec } from "./hairCards/index.ts";
+import {
+  AUTHORED_STYLES,
+  type AuthoredStyleSpec,
+  DERIVED_STYLES,
+  type DerivedStyleSpec,
+} from "./hairCards/index.ts";
+import { texelField } from "./hairCards/uvField.ts";
 import { sha256, writeAttachments, writePackEntry } from "./packWriter.ts";
 import { strandMapFromRgba } from "./strandMap.ts";
 
@@ -142,7 +149,7 @@ export interface PackHairOptions {
 }
 
 /** The committed body pack, parsed with every target file, as the hair is baked against it. */
-function readBody(bodyDir: string) {
+export function readBody(bodyDir: string) {
   const manifest = JSON.parse(
     fs.readFileSync(path.join(bodyDir, "manifest.json"), "utf8"),
   ) as BodyManifest;
@@ -269,6 +276,11 @@ function writeProvenance(
     "so there is no source file to prove. Nothing of anyone's was read, traced or sampled; photographs of braids, twists",
     "and locs informed proportions only. They are bound to the same CC0 base mesh as every other attachment.",
     "",
+    ...DERIVED_STYLES.map(
+      (d) =>
+        `\`${d.id}\` keeps the cards of \`${d.from}\` (geometry, binding and cut-out: CC0, proved above) and draws its own strand map inside that cut-out.`,
+    ),
+    "",
     "Each scalp style's texture is a strand map: the source atlas's luminance, normalised to a fixed mean, with its alpha",
     "unchanged (`scripts/lib/strandMap.ts`). It carries no colour of the original atlas. For styles whose atlas has",
     "painted-in blotches (" +
@@ -311,7 +323,13 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
   const head = new HeadFrame(rest);
   const surface = new BodySurface(rest, head);
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "hk-hair-"));
-  for (const spec of [...HAIR_STYLES, ...AUTHORED_STYLES, ...BROW_STYLES, ...LASH_STYLES]) {
+  for (const spec of [
+    ...HAIR_STYLES,
+    ...DERIVED_STYLES,
+    ...AUTHORED_STYLES,
+    ...BROW_STYLES,
+    ...LASH_STYLES,
+  ]) {
     const authored: AuthoredStyleSpec | undefined = "build" in spec ? spec : undefined;
     const kind = ("kind" in spec && spec.kind) || "scalp";
     let compiled: CompiledAsset;
@@ -328,15 +346,59 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
       source = path.join(scratch, `${spec.id}.png`);
       fs.writeFileSync(source, await authored.atlas());
     } else {
-      const dir = path.join(systemDir, SOURCE_DIR[kind], spec.id);
+      // A derived style keeps a MakeHuman style's cards and draws its own strand map in their cut-out.
+      const derived: DerivedStyleSpec | undefined = "from" in spec ? spec : undefined;
+      const from = derived?.from ?? spec.id;
+      const dir = path.join(systemDir, SOURCE_DIR[kind], from);
       compiled = compileAsset(
-        path.join(dir, `${spec.id}.mhclo`),
+        path.join(dir, `${from}.mhclo`),
         spec.id,
         kind === "scalp" ? "hair" : kind === "brows" ? "eyebrows" : "eyelashes",
       );
       [source] = [...compiled.textures.keys()];
       if (!source || compiled.textures.size !== 1)
         throw new Error(`${spec.id}: expected exactly one diffuse texture`);
+      if (derived) {
+        const { data, info } = await sharp(source)
+          .resize({
+            width: TEXTURE_MAX,
+            height: TEXTURE_MAX,
+            fit: "inside",
+            withoutEnlargement: true,
+          })
+          .ensureAlpha()
+          .raw()
+          .toBuffer({ resolveWithObject: true });
+        const alpha = new Uint8Array(info.width * info.height);
+        for (let i = 0; i < alpha.length; i++) alpha[i] = data[i * 4 + 3] as number;
+        const { keepAt } = derived;
+        const density = keepAt
+          ? texelField(
+              {
+                positions: evaluateBinding(
+                  {
+                    ...compiled.arrays,
+                    entry: { scale: compiled.scale, vertexCount: compiled.vertexCount },
+                  },
+                  rest.positions,
+                  new Float32Array(compiled.vertexCount * 3),
+                ),
+                faceVerts: compiled.arrays.faceVerts,
+                faceUvs: compiled.arrays.faceUvs,
+                uvs: compiled.arrays.uvs,
+              },
+              head,
+              info.width,
+              info.height,
+              keepAt,
+            )
+          : undefined;
+        source = path.join(scratch, `${spec.id}.png`);
+        fs.writeFileSync(
+          source,
+          await derived.atlas({ width: info.width, height: info.height, alpha }, density),
+        );
+      }
     }
     for (const [file, ev] of Object.entries(compiled.evidence))
       evidence[authored ? file : path.relative(systemDir, file)] = ev;

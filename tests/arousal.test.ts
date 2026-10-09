@@ -223,10 +223,10 @@ describe("colour deepening with arousal (modelled, not calibrated)", () => {
     const stop = (t: Float32Array) => Array.from(t.slice(row + 4, row + 7));
     const at = (signals: Record<string, number>, over: object) =>
       paintStopTable(SKIN_LAYERS, { ...base, signals, ...over });
-    const shaped = { adult: true, anatomy: { penis: 1 } };
+    const shaped = { adult: true, anatomy: { phallus: 1 } };
     expect(stop(at({ arousal: 1 }, shaped))).not.toEqual(stop(at({}, shaped)));
     for (const over of [
-      { adult: false, anatomy: { penis: 1 } },
+      { adult: false, anatomy: { phallus: 1 } },
       { adult: true, anatomy: {} },
     ]) {
       const t = at({ arousal: 1 }, over);

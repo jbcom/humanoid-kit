@@ -130,7 +130,18 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         const update = model.adultLayerFields();
         post(
           { type: "adultLayers", id: req.id, update },
-          update ? [update.layerFields.buffer] : [],
+          update
+            ? [
+                update.layerFields.buffer,
+                ...(update.extra
+                  ? [
+                      update.extra.uvs.buffer,
+                      update.extra.index.buffer,
+                      update.extra.layerFields.buffer,
+                    ]
+                  : []),
+              ]
+            : [],
         );
         return;
       }

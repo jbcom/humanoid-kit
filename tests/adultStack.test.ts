@@ -28,6 +28,9 @@ const inUnit = (a: ArrayLike<number>) => Array.from(a).every((x) => x >= 0 && x 
 const adultNames = new Set(adultManifest.targets.entries.map((e) => e.name));
 const bodyNames = new Set(bodyManifest.targets.flatMap((f) => f.entries.map((e) => e.name)));
 const spec = adultManifest.anatomy;
+/** Whether a layer's fields are measured from targets (`AdultSkinLayerSpec.masks`), and so wait for them. */
+const measured = (id: string) =>
+  (adultManifest.anatomy?.skinLayers.find((l) => l.id === id)?.masks.length ?? 0) > 0;
 
 describe("the adult anatomy spec in the pack's manifest", () => {
   it("is exactly what the packer writes", () => {
@@ -111,7 +114,9 @@ describe("the adult layers in the stack", () => {
     const { anatomy: _spec, ...bare } = adultManifest;
     const noSpec = parseHumanoidAssets(bodyPackData(), { manifest: bare });
     for (const l of ADULT_SKIN_LAYERS) {
-      expect(l.available?.(pending), `${l.id} before its stage`).toBe(false);
+      // A layer measured from no target (the penis and testes: their skin is on islands) has
+      // none to wait for.
+      if (measured(l.id)) expect(l.available?.(pending), `${l.id} before its stage`).toBe(false);
       expect(l.available?.(noSpec), `${l.id} without a spec`).toBe(false);
       expect(l.available?.(withAdult), `${l.id} loaded`).toBe(true);
       expect(() => l.fields(noSpec), l.id).toThrow(/has no skin layer/);
@@ -134,42 +139,32 @@ describe("the adult layers' fields", () => {
   it("refuse to measure a target that has not loaded, or a pack that does not describe them", () => {
     const pending = parseHumanoidAssets(bodyPackData(), { manifest: adultManifest });
     for (const l of ADULT_SKIN_LAYERS) {
-      expect(() => l.fields(pending), l.id).toThrow(/not loaded/);
+      if (measured(l.id)) expect(() => l.fields(pending), l.id).toThrow(/not loaded/);
       expect(() => l.fields(core), l.id).toThrow(/has no skin layer/);
     }
   });
 
-  it("find the penis on its own footprint, with a coordinate from root (0) to tip (1)", () => {
-    const { mask, coord } = fieldsOf("penis-skin");
-    const covered = [...mask.keys()].filter((v) => (mask[v] as number) > 0);
-    expect(covered.length).toBeGreaterThan(40);
-    // The CC0 genital targets deform the base mesh's helper-genital group.
-    for (const v of covered) expect(genital.has(v), `vertex ${v}`).toBe(true);
-    expect(coord).not.toBeNull();
-    const c = coord as Float32Array;
-    expect(Math.max(...covered.map((v) => c[v] as number))).toBeCloseTo(1, 5);
-    expect(Math.min(...covered.map((v) => c[v] as number))).toBeLessThan(0.3);
-    expect(inUnit(c)).toBe(true);
+  it("measure nothing for the penis and testes on the base body: their skin is on the reservoirs' islands", () => {
+    // The CC0 penis targets deform the helper-genital group, which the surface never
+    // draws, so the layers are not measured from them (`AdultReservoirSpec.layer`).
+    for (const id of ["penis-skin", "testes-skin"]) {
+      const { mask, coord } = fieldsOf(id);
+      expect(
+        mask.every((x) => x === 0),
+        id,
+      ).toBe(true);
+      expect(coord).toBeNull();
+    }
+    expect(genital.size).toBeGreaterThan(0);
   });
 
-  it("find the testes apart from the penis's tip, and the mound on the body's own skin", () => {
-    const penis = fieldsOf("penis-skin").mask;
-    const testes = fieldsOf("testes-skin").mask;
+  it("find the mound on the body's own skin", () => {
     const mound = fieldsOf("mound-skin").mask;
-    const hits = (m: Float32Array) => [...m.keys()].filter((v) => (m[v] as number) > 0.5);
-    expect(hits(testes).length).toBeGreaterThan(20);
-    for (const v of hits(testes)) expect(genital.has(v)).toBe(true);
-    // The strongly shaded testes vertices are not the strongly shaded penis tip.
-    const tip = new Set(
-      hits(penis).filter(
-        (v) => ((fieldsOf("penis-skin").coord as Float32Array)[v] as number) > 0.8,
-      ),
-    );
-    expect(hits(testes).filter((v) => tip.has(v))).toEqual([]);
+    const hits = [...mound.keys()].filter((v) => (mound[v] as number) > 0.5);
     const body = new Set<number>();
     for (const f of groupFaces(withAdult, "body"))
       for (let k = 0; k < 4; k++) body.add(withAdult.faceVerts[f * 4 + k] as number);
-    expect(hits(mound).filter((v) => body.has(v)).length).toBeGreaterThan(10);
+    expect(hits.filter((v) => body.has(v)).length).toBeGreaterThan(10);
   });
 
   it("keep every value in [0, 1]", () => {
@@ -225,16 +220,94 @@ describe("the model and the adult layers", () => {
     expect(inUnit(layerFields)).toBe(true);
   });
 
-  it("documents that the CC0 penis and testes targets reach no rendered skin yet", () => {
-    // They deform the helper-genital group, which the render surface (the body
-    // group) leaves out; the sculpt phase puts adult geometry on the surface
-    // (docs/research/ADULT-SCULPT-PLAN.md). When that lands this test is the
-    // one to change, together with the docs that say so.
+  it("leaves the penis and testes layers empty on the base body's vertices: they live on the islands", () => {
     const update = adultModel.adultLayerFields();
     const vc = adultModel.topology().body.vertexCount;
     const b = blocks(update as NonNullable<typeof update>, vc);
     expect(b["penis-skin"]?.every((x) => x === 0)).toBe(true);
     expect(b["testes-skin"]?.every((x) => x === 0)).toBe(true);
+  });
+
+  describe("on the reservoirs' islands", () => {
+    const update = adultModel.adultLayerFields();
+    const extra = update?.extra;
+    const layers = update?.layers ?? [];
+    const reservoirs = adultManifest.anatomy?.reservoirs ?? [];
+    const count = (extra?.uvs.length ?? 0) / 2;
+    const block = (id: string) => {
+      const l = layers.indexOf(id);
+      return (extra?.layerFields ?? new Float32Array(0)).subarray(
+        l * count * 2,
+        (l + 1) * count * 2,
+      );
+    };
+
+    it("carries the triangles of every island, with fields for the layers they colour", () => {
+      expect(extra).toBeDefined();
+      expect(count).toBeGreaterThan(1000);
+      expect(extra?.layerFields.length).toBe(layers.length * count * 2);
+      expect(inUnit(extra?.layerFields as Float32Array)).toBe(true);
+      expect(inUnit(extra?.uvs as Float32Array)).toBe(true);
+      for (const v of extra?.index ?? []) expect(v).toBeLessThan(count);
+      expect((extra?.index.length ?? 0) % 3).toBe(0);
+    });
+
+    it("has mask 1 on each island vertex of its reservoir's layer and none of any other", () => {
+      const masks = new Map(layers.map((id) => [id, [] as number[]]));
+      for (const id of layers) {
+        const b = block(id);
+        for (let v = 0; v < count; v++) (masks.get(id) as number[]).push(b[v * 2] as number);
+      }
+      for (let v = 0; v < count; v++) {
+        const lit = layers.filter((id) => (masks.get(id) as number[])[v] === 1);
+        expect(lit, `vertex ${v}`).toHaveLength(1);
+        for (const id of layers)
+          if (!lit.includes(id)) expect((masks.get(id) as number[])[v]).toBe(0);
+      }
+      const used = new Set(reservoirs.map((r) => r.layer));
+      for (const id of used) expect(layers).toContain(id);
+    });
+
+    it("runs the penis layer's coordinate from the loop (0) to the tip (1)", () => {
+      const b = block("penis-skin");
+      const along: number[] = [];
+      for (let v = 0; v < count; v++) if (b[v * 2] === 1) along.push(b[v * 2 + 1] as number);
+      expect(Math.min(...along)).toBe(0);
+      expect(Math.max(...along)).toBe(1);
+      // The wall has a row of vertices for every ring.
+      const rings = reservoirs.find((r) => r.id === "phallic")?.rings as number;
+      expect(new Set(along.map((x) => Math.round(x * rings))).size).toBe(rings + 1);
+    });
+
+    it("keeps every island triangle inside its island and gives the wall real area in UV", () => {
+      const uvs = extra?.uvs as Float32Array;
+      const index = extra?.index as Uint32Array;
+      const area = (a: number, b: number, c: number) =>
+        Math.abs(
+          ((uvs[b * 2] as number) - (uvs[a * 2] as number)) *
+            ((uvs[c * 2 + 1] as number) - (uvs[a * 2 + 1] as number)) -
+            ((uvs[c * 2] as number) - (uvs[a * 2] as number)) *
+              ((uvs[b * 2 + 1] as number) - (uvs[a * 2 + 1] as number)),
+        ) / 2;
+      let total = 0;
+      for (let t = 0; t < index.length; t += 3)
+        total += area(index[t] as number, index[t + 1] as number, index[t + 2] as number);
+      // The walls are rectangles and the caps discs of the sizes the spec gives.
+      let expected = 0;
+      for (const r of reservoirs) {
+        const isle = r.island;
+        if (!isle) continue;
+        expected +=
+          Math.abs(isle.along[0] * isle.across[1] - isle.along[1] * isle.across[0]) +
+          Math.PI * isle.cap.radius ** 2;
+      }
+      expect(total).toBeGreaterThan(expected * 0.9);
+      expect(total).toBeLessThan(expected * 1.1);
+    });
+
+    it("is none without an island: the core pack and a pack with no reservoir islands post no extra", () => {
+      expect(coreModel.adultLayerFields()).toBeNull();
+    });
   });
 
   it("paints an adult layer only for an adult who applies its anatomy, end to end", () => {

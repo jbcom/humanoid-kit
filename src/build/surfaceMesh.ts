@@ -31,6 +31,8 @@ export interface SurfaceMesh {
   topology: QuadTopology;
   /** Render vertex → surface position index (render vertices split at UV seams). */
   renderToSurface: Uint32Array;
+  /** Per render vertex, the UV entry (of the surface's UV list before seams were split) it was made for. */
+  renderUv: Uint32Array;
   uvs: Float32Array;
   /** Triangles over render vertices. */
   index: Uint32Array;
@@ -340,6 +342,7 @@ export function buildRefinedSurfaceMesh(
       {
         faces: surfaceFaces,
         faceUvs: surfaceUvs,
+        uvs,
         vertexCount: surfaceVertices,
         stencil,
         lineage,
@@ -351,6 +354,7 @@ export function buildRefinedSurfaceMesh(
     );
     surfaceFaces = made.faces;
     surfaceUvs = made.faceUvs;
+    uvs = made.uvs;
     surfaceVertices = made.vertexCount;
     stencil = made.stencil;
     owner = made.owner;
@@ -566,6 +570,7 @@ function finishSurface(
     stencil,
     topology,
     renderToSurface,
+    renderUv: renderUv.slice(0, renderCount),
     uvs: ruv.slice(0, renderCount * 2),
     index,
     skinIndex,

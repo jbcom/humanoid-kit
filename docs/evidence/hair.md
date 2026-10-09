@@ -75,8 +75,8 @@ growing upward, the reverse along x, none without a growth gradient).
 The ten MakeHuman styles are every scalp hair the system pack's CC0 header proves, and they are
 nearly all straight or wavy. The gap in coily and kinky textures is closed in part by styles the
 packer authors itself (`braids01`, `cornrows01`, `twists01`, `locs01`: box braids, cornrows,
-two-strand twists and locs, see "Authored styles" below); what is still missing is bantu knots,
-tight curls other than the one afro, and a close crop, taper or fade. `afro01` is one short style;
+two-strand twists and locs, see "Authored styles" below) and a derived close crop with a fade
+(`crop01`); what is still missing is bantu knots and tight curls in the longer styles. `afro01` is one short style;
 `short01` is a crop of loose curls; `braid01` is a straight-textured side braid. The pack must not
 be presented as complete.
 

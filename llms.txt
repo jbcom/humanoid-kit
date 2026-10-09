@@ -15,7 +15,7 @@
   weights, facial pose units, shape modifiers.
 - `humanoid-kit-adult-anatomy` (CC0 1.0): adult-only targets; separate install,
   refused unless built against the exact body pack.
-- `humanoid-kit-animations` (CC0 1.0): walk, idle and swim clips on the default
+- `humanoid-kit-animations` (CC0 1.0): 90 clips (walks, jog, sprint, idles, swims, combat, sitting) on the default
   skeleton, played on any figure with root motion and planted feet derived from the
   figure's own legs; separate install, a clip's file loads when first played.
 - `humanoid-kit-hair` (CC0 1.0): ten scalp hair styles as alpha cards bound to

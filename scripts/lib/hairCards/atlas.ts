@@ -82,8 +82,8 @@ export async function braidAtlas(seed = 7): Promise<Buffer> {
   const columns = 4;
   const pattern = TILE_WIDTH - 2 * PAD;
   const colWidth = pattern / columns;
-  const pitch = 30;
-  const arm = 13;
+  const pitch = 36;
+  const arm = 15;
   const body: string[] = [];
   for (let k = 0; k < TILE_COUNT; k++) {
     const tone = 0.85 + 0.3 * rand();
@@ -92,7 +92,7 @@ export async function braidAtlas(seed = 7): Promise<Buffer> {
       c: n % columns,
       r: Math.floor(n / columns),
       lift: 0.8 + 0.4 * rand(),
-      fibres: Array.from({ length: 7 }, () => rand()),
+      fibres: Array.from({ length: 16 }, () => rand()),
     }));
     body.push(
       tileGroup(k, pattern, (x) =>
@@ -114,10 +114,10 @@ export async function braidAtlas(seed = 7): Promise<Buffer> {
                   const t0 = (i + f * 0.7) / fibres.length;
                   const fx1 = x1 + (t0 - 0.5) * arm * 0.9;
                   const fx2 = x2 + (t0 - 0.5) * arm * 0.9;
-                  return `<line x1="${fx1}" y1="${y}" x2="${fx2}" y2="${y + h}" stroke="${grey(0.2 + 0.7 * f)}" stroke-width="0.8"/>`;
+                  return `<line x1="${fx1}" y1="${y}" x2="${fx2}" y2="${y + h}" stroke="${grey(0.3 + 0.45 * f)}" stroke-width="0.5"/>`;
                 })
                 .join("");
-              return `${band(arm, 0.22)}${band(arm * 0.78, 0.5)}${band(arm * 0.45, 0.78)}${strands}`;
+              return `${band(arm, 0.32)}${band(arm * 0.78, 0.46)}${band(arm * 0.45, 0.62)}${strands}`;
             });
             return arms.join("");
           })
@@ -125,7 +125,7 @@ export async function braidAtlas(seed = 7): Promise<Buffer> {
       ),
     );
   }
-  return rasterise(`<g filter="url(#soft)">${body.join("")}</g>`, 0.12);
+  return rasterise(`<g filter="url(#soft)">${body.join("")}</g>`, 0.2);
 }
 
 /**
@@ -225,4 +225,84 @@ export async function locAtlas(seed = 3): Promise<Buffer> {
     body.push(strokes.join(""));
   }
   return rasterise(`<g filter="url(#soft)">${body.join("")}</g>`, 0.3);
+}
+
+/** The cut-out of a MakeHuman style's atlas, which an authored texture is drawn inside. */
+export interface Cutout {
+  width: number;
+  height: number;
+  /** Row-major, top row first, 0 to 255. */
+  alpha: Uint8Array;
+}
+
+/** The part of `cutout` connected to the texel at (x, y): where the style's cap is, without the loose cards beside it. */
+export function connectedPart(cutout: Cutout, x: number, y: number, threshold = 40): Uint8Array {
+  const { width, height, alpha } = cutout;
+  const keep = new Uint8Array(alpha.length);
+  const stack = [y * width + x];
+  while (stack.length > 0) {
+    const i = stack.pop() as number;
+    if (keep[i] || (alpha[i] as number) < threshold) continue;
+    keep[i] = 1;
+    const cx = i % width;
+    const cy = Math.floor(i / width);
+    if (cx > 0) stack.push(i - 1);
+    if (cx < width - 1) stack.push(i + 1);
+    if (cy > 0) stack.push(i - width);
+    if (cy < height - 1) stack.push(i + width);
+  }
+  return keep;
+}
+
+/**
+ * A close crop of tight coils inside a style's cut-out: thousands of tiny open loops, each a strand
+ * curling on itself two or three times within a couple of millimetres, drawn at random angles, so
+ * there is no direction to the texture and no part of it a comb has been through. The cut-out's soft
+ * edge is broken into the loops' own ragged edge, so the crop ends in fuzz and not a seam. `density`
+ * (0 to 1 per texel) thins the loops where the crop fades into the skin.
+ */
+export async function coilCropAtlas(
+  cutout: Cutout,
+  keep: Uint8Array,
+  density?: Float32Array,
+  seed = 13,
+): Promise<Buffer> {
+  const { width, height, alpha } = cutout;
+  const rand = random(seed);
+  const loops: string[] = [];
+  // About one loop per 14 square texels, so they overlap into a nap.
+  const count = Math.round((width * height) / 14);
+  for (let n = 0; n < count; n++) {
+    const x = rand() * width;
+    const y = rand() * height;
+    if (!keep[Math.min(height - 1, Math.floor(y)) * width + Math.min(width - 1, Math.floor(x))])
+      continue;
+    const r = 1.6 + rand() * 1.8;
+    const turn = rand() * 6.28;
+    const g = 0.12 + 0.88 * rand() ** 1.4;
+    // A curl as a short spiral: two arcs, the second a little smaller than the first.
+    const x1 = x + Math.cos(turn) * r * 2;
+    const y1 = y + Math.sin(turn) * r * 2;
+    loops.push(
+      `<path d="M${x.toFixed(1)},${y.toFixed(1)} A${r.toFixed(1)},${(r * 0.9).toFixed(1)} ${(turn * 57).toFixed(0)} 1 1 ${x1.toFixed(1)},${y1.toFixed(1)} A${(r * 0.7).toFixed(1)},${(r * 0.7).toFixed(1)} 0 1 1 ${(x + Math.cos(turn + 1) * r).toFixed(1)},${(y + Math.sin(turn + 1) * r).toFixed(1)}" fill="none" stroke="${grey(g)}" stroke-width="${(0.8 + rand() * 0.9).toFixed(2)}" stroke-linecap="round"/>`,
+    );
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="${grey(0.16)}"/>${loops.join("")}</svg>`;
+  const { data } = await sharp(Buffer.from(svg))
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const out = Buffer.from(data);
+  for (let i = 0; i < width * height; i++) {
+    // Soft edge to ragged: the cut-out's alpha against a per-texel threshold.
+    const a = keep[i] ? (alpha[i] as number) / 255 : 0;
+    const t = 0.2 + 0.7 * (((i * 2654435761) >>> 0) / 4294967296);
+    // Where the crop is faded the loops thin out, a texel at a time, to bare scalp.
+    const d = density?.[i] as number | undefined;
+    const present = d === undefined || Number.isNaN(d) || (((i * 40503) >>> 0) % 4096) / 4096 < d;
+    out[i * 4 + 3] = present && (a > t || a > 0.95) ? 255 : 0;
+  }
+  return sharp(out, { raw: { width, height, channels: 4 } })
+    .png()
+    .toBuffer();
 }
