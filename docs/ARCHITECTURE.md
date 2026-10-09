@@ -360,6 +360,22 @@ body's bytes would then depend on the worn set, and the pack could not serve
 a mouth without a tongue); a screen-space occlusion pass (a renderer-wide
 cost, and noisy at the lip line where the cavity is thinnest).
 
+## Attachment colour
+
+An attachment is drawn with its pack material (roughness, transparency,
+culling, texture) and the colour the pack records, except teeth
+(`src/render/attachmentLook.ts`). MakeHuman's teeth multiply a flat 0.64 into a
+mid-grey texture in its own display-referred pipeline; decoded to linear light
+here that is a grey of about 0.18 albedo, so the teeth rendered darker than
+the skin around them at every tone. The colour is instead enamel's albedo
+(`ENAMEL_LAB`, ivory: L\* 76, a\* 0.5, b\* 12) divided by the texture's measured
+mean tooth colour (`TEETH_TEXTURE_MEAN`), so the texture's shading, cusps and
+gums are kept and only its level moves. Decision: a render-side constant over
+re-encoding the shipped texture or editing the pack's material, because the pack
+stays MakeHuman's data as it is and the correction is a statement about this
+renderer's colour pipeline. A test re-measures the texture and fails if the
+constant drifts; evidence in `docs/evidence/teeth.md`.
+
 ## Worker
 
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one

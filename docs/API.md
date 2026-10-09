@@ -655,6 +655,11 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   its baked occlusion, which follows the pose (an open mouth lights the teeth
   it uncovers). The body's own cavities (mouth, nostrils, ear canals, eye
   sockets) are darkened the same way, so a mouth without a tongue is dim inside.
+  Teeth are drawn at the albedo of enamel (ivory, `ENAMEL_LAB`) whatever the
+  pack's material colour, since that colour assumed MakeHuman's display-referred
+  pipeline and rendered here as grey (`attachmentColour`,
+  `createAttachmentMaterial`; `docs/evidence/teeth.md`); other attachments are
+  drawn as the pack describes them.
 - Updates the geometry in place when `recipe` changes.
 - Stores the latest ground offset (posed when posed) on the group's `userData.groundOffset`.
 - Disposes its geometries, textures and built-in materials on unmount.
