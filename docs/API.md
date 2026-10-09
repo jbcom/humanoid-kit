@@ -311,8 +311,10 @@ compute what the renderer will do.
   reports it (albedo plus `SKIN_F0`, the surface reflection), the scale
   measured skin data uses.
 - `lipAlbedo(tone, depth)` and `areolaAlbedo(tone, depth)`: lip colour from
-  measured lips paired with measured skin, and areola colour along the melanin
-  axis (research/SKIN-RENDERING.md §5.6). `depth` 0..1 is the recipe's slider.
+  measured lips paired with measured skin, and areola colour with 1 + 2 × depth
+  times the skin's melanin optical density (twice at the default 0.5;
+  research/SKIN-RENDERING.md §5.6), `MELANIN_FREE_RED_REFLECTANCE` its baseline.
+  `depth` 0..1 is the recipe's slider.
 - CIELAB conversions: `labFromLinear`, `linearFromLab`, `lchFromLab`,
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
@@ -321,9 +323,12 @@ compute what the renderer will do.
   `ADULT_SKIN_LAYERS`: penis, testes, mound), `SKIN_LAYER_TARGETS` (the body
   layers' only: an adult layer names none, the adult pack's manifest does),
   `targetMask(assets, targets, lo, hi)` for masks measured from targets,
+  `diskMask(assets, targets, soft?)` for a feature the targets outline (filled
+  per side of the body),
   `targetCoordinate(assets, target)` for a 0..1 coordinate from one target's
   displacement,
-  `buildLayerFields` (an adult layer whose targets have not loaded stays zero), `paintStopTable(layers, input)` (the figure's stop table,
+  `buildLayerFields` (a layer that is not `available`, an adult layer whose
+  targets have not loaded, stays zero), `paintStopTable(layers, input)` (the figure's stop table,
   `STOP_COUNT` stops in rows of `STOP_TABLE_WIDTH` texels) and
   `applyLayers(base, table, fields)`, the per-pixel blend the shader performs.
   A layer is one of three kinds: a `ColourLayer` (the default: `blend`, and

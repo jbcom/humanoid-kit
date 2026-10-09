@@ -14,6 +14,12 @@ in any channel (shape, colour, relief, state), and `pnpm check:pages` proves it
 never ships on Pages. A design that cannot meet that is rejected below, whatever
 else it offers.
 
+**The sculpt is the critical path for milestone 3, not an option.** The CC0
+`genitals/*` targets deform `helper-genital`, a face group the render surface
+never draws, so the penis and testes skin layers and the engorgement state morph
+are invisible until this phase puts adult geometry on the surface. Nothing built
+in phase 1 can show without it, and no further plumbing makes it show.
+
 ## 1. What phase 1 found
 
 Measured on the shipped packs (`tests/adultStack.test.ts` records that the
@@ -156,6 +162,12 @@ meshes, so any combination is a displacement field on one lattice:
 | Between, a ring around the strip | inner labia, foreskin or hood folds |
 
 ### Central versus lateral placement, compared
+
+**Working interpretation, flagged for the owner:** the brief said "central vs
+lateral placement" without defining it, and this section reads it as where
+independent features live relative to the midline. If the owner meant something
+else (for instance where the graft sits on the body), this comparison needs
+redoing; the decisions that follow it do not depend on it except the zone layout.
 
 The question is where independent features live relative to the midline.
 

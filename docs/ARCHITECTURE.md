@@ -448,7 +448,11 @@ Milestones, in the order each is proven (built in parallel lanes; see
 3. **Adult anatomy sculpt.** Sculpting on top of the adult anatomy pack, for
    figures aged 18 or over. Phase 1 (the layer, state and age-gating plumbing on
    today's CC0 targets) is in place ("Adult-pack layers"); the own-sculpt phase
-   is planned in `docs/research/ADULT-SCULPT-PLAN.md`.
+   is planned in `docs/research/ADULT-SCULPT-PLAN.md`. **The sculpt is the
+   critical path for this milestone:** the CC0 `genitals/*` targets deform
+   `helper-genital`, which is never drawn, so the penis and testes skin layers
+   and engorgement are invisible until the sculpt puts adult geometry on the
+   surface.
 4. **Scalp hair.**
 5. **Body and facial hair.**
 6. **Anthro traits.**

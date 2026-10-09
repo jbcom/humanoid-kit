@@ -232,6 +232,49 @@ export function targetCoordinate(assets: HumanoidAssets, name: string): Float32A
 }
 
 /**
+ * A filled region from MakeHuman targets, for a feature they outline rather
+ * than cover: on each side of the body, the disk round the centre of the
+ * vertices the targets move, out to the farthest of them, with a soft edge
+ * `soft` × radius wide. (The nipple-size target moves the areola's rim more than
+ * its centre, so `targetMask` would draw a ring.)
+ */
+export function diskMask(
+  assets: HumanoidAssets,
+  targets: readonly string[],
+  soft = 0.25,
+): Float32Array {
+  const P = assets.positions;
+  const n = assets.manifest.vertexCount;
+  const out = new Float32Array(n);
+  for (const side of [1, -1]) {
+    const moved = new Set<number>();
+    for (const name of targets) {
+      const t = assets.targets.get(name);
+      if (!t) throw new AssetFormatError(`a skin layer needs target ${name}, which is not loaded`);
+      for (const v of t.indices) if (Math.sign(P[v * 3] as number) === side) moved.add(v);
+    }
+    if (moved.size === 0) continue;
+    const c = [0, 0, 0];
+    for (const v of moved)
+      for (let k = 0; k < 3; k++) c[k] = (c[k] as number) + (P[v * 3 + k] as number);
+    for (let k = 0; k < 3; k++) c[k] = (c[k] as number) / moved.size;
+    const dist = (v: number) =>
+      Math.hypot(
+        (P[v * 3] as number) - (c[0] as number),
+        (P[v * 3 + 1] as number) - (c[1] as number),
+        (P[v * 3 + 2] as number) - (c[2] as number),
+      );
+    let r = 0;
+    for (const v of moved) r = Math.max(r, dist(v));
+    for (let v = 0; v < n; v++) {
+      const w = 1 - smoothstep(r * (1 - soft), r * (1 + soft), dist(v));
+      if (w > (out[v] as number)) out[v] = w;
+    }
+  }
+  return out;
+}
+
+/**
  * Metres of skin per unit of UV at each base vertex of `faces` (quads): the
  * square root of the ratio of each face's surface area to its UV area,
  * averaged over the faces around the vertex. Detail layers use it to draw
