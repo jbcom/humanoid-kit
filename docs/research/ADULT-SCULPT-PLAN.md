@@ -242,9 +242,14 @@ through the stencil), plus *detail targets* defined on the adult surface's own
 vertices for the fine forms, added after the stencil.
 
 **Decision: (c).** Control targets keep their role and their pack file. A detail
-target is a sparse list of `(adult-surface vertex, delta)` in the pack's own
-file, evaluated as `position += sum(weight * delta * scale)` after the
-surface stencil. It exists in the adult surface only, so a minor (evaluated on
+target is a sparse list of `(region vertex, delta)` in the adult target file,
+evaluated as `position += sum(weight * delta * scale)` on the refinement's
+lattice, then carried through any further smoothing. The region is the lattice
+vertices the refined faces use (a few thousand), ranked, because the whole
+lattice (82 000 vertices) does not fit the target encoding's 16-bit index and a
+detail has no business beyond the patch and its border. The refinement is built
+over the whole body and cut to the faces no worn attachment hides, so the
+numbering does not change with clothing. It exists in the adult surface only, so a minor (evaluated on
 the base surface) cannot reach it, and it is structurally absent from a
 session that never asks for the surface.
 

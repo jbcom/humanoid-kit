@@ -246,6 +246,12 @@ and throws `RangeError` for anything else.
   (`assertSignalPolicy`), before any target is named. Today the penis targets
   deform `helper-genital`, which the surface does not draw, so engorgement
   moves `Evaluation.control` and no drawn vertex until the sculpt phase.
+- `model.adultDetailLattice(recipe): AdultDetailLattice | null`: the vertex
+  space the adult pack's detail targets are authored on (`{ key, vertexCount,
+  positions }`): the vertices of the refined region, which a detail target
+  indexes from 0, with their positions on this figure and the key that names
+  the refinement. Null without an adult surface; throws `AgePolicyError` for a
+  figure under 18. The packer uses it to place authored forms.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
   only (every pose corner holding the rest value).
@@ -866,7 +872,16 @@ core, which ships in the public build, names no adult target or modifier
 (`pnpm check:pages`); a pack without it adds no adult layers and no state
 morphs. `anatomy.surface` (`AdultSurfaceSpec`: the base body `faces` to refine
 and their `levels`) names the pelvic region the adult surface refines; a pack
-without it leaves every figure on the base surface.
+without it leaves every figure on the base surface. `anatomy.detail`
+(`AdultDetailSpec`) names the pack's *detail targets*: entries of the adult
+target file whose indices are vertices of the refined region
+(`HumanoidModel.adultDetailLattice`), not of the base body. A modifier of the
+adult pack can drive one like any target (`lo` and `hi` name them); the model
+keeps them out of the control morph and adds them to the adult surface after it
+is evaluated, scaled by the figure (`detail.scale`: two control vertices and
+their distance on the authoring figure), so a figure under 18, evaluated on the
+base surface, has nowhere to apply one. `detail.surfaceKey` pins the targets to
+the refinement they were authored on; the model refuses them against another.
 
 ## Errors
 

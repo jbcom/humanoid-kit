@@ -744,7 +744,25 @@ It is a second topology, gated by age structurally rather than by being hidden:
   weight and layer works on both; the layer atlas serves both because it lives in
   UV space, which refinement preserves.
 
-The refined region is empty of anatomy today: it is the base shape in finer
+**Detail targets** shape the refined region at finer than the base's control
+cells (docs/research/ADULT-SCULPT-PLAN.md, section 6a). The refinement is built
+over the whole body whatever a worn attachment hides (hidden faces are cut from
+the result afterwards), so its vertex numbering never depends on what is worn,
+and a *lattice* of it, the refinement's own mesh before smoothing, is the same
+at every subdivision level. A detail target is a sparse list over the region's
+vertices (ranked among the lattice's, so an index fits the target encoding's 16
+bits and a detail cannot reach past the patch and its border). The model keeps
+detail contributions out of the control morph and, for an adult figure only,
+displaces the lattice by their weights, scaled by the figure's pelvic breadth,
+then carries the displacement through any further smoothing (the stencil is
+linear, so smoothing the displaced lattice is the base plus the smoothed
+displacement). Shading normals gain the change in the faces' own normals, which
+is zero where nothing moved, so there is no seam at the patch's edge. The
+manifest's `anatomy.detail.surfaceKey` hashes the lattice, and the model refuses
+detail built for another refinement. `tests/detailTargets.test.ts` proves the
+engine with a synthetic target before any anatomy is authored on it.
+
+The refined region is empty of anatomy until a feature is authored on it: it is the base shape in finer
 cells, proven by the geometry tests and by a render within 11 pixels over 8
 levels of the base's (adult against base contact sheet, local only). The
 features (mound, penis, testes, vulva) land on it one at a time
