@@ -88,6 +88,7 @@ import { DEFAULT_HAIR_COLOUR, type HairColour, hairAlbedo } from "../surface/hai
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 import { sameEntries } from "./sameEntries.ts";
+import { Settle, SettleContext, useSettle } from "./settle.ts";
 
 const ClientContext = createContext<HumanoidWorkerClient | null>(null);
 
@@ -156,6 +157,14 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
   /** Replaces the built-in skin material (which follows `recipe.skin`). */
   material?: Material;
   onEvaluated?: (evaluation: Evaluation) => void;
+  /**
+   * Called once everything the recipe wears is drawn: the worker's reply is
+   * written (as for `onEvaluated`) and the hair style's strand map, every
+   * attachment's and garment's textures and the attachments' posed occlusion
+   * have loaded and been drawn. Called again after each evaluation. Wait for
+   * this, not `onEvaluated`, before a screenshot.
+   */
+  onSettled?: (evaluation: Evaluation) => void;
   /** Evaluation and texture errors; without a handler they are logged to the console. */
   onError?: (error: Error) => void;
   /**
@@ -308,12 +317,15 @@ function useAttachmentMaterial(
     return material;
   }, [t, occlusionKeys]);
   const reportRef = useLatest(report);
+  const settle = useSettle();
   useEffect(() => {
     if (!t.textureUrl) return;
     let live = true;
     const url = t.textureUrl;
+    const end = settle.begin();
     new TextureLoader().loadAsync(url).then(
       (tex) => {
+        end();
         if (!live) {
           tex.dispose();
           return;
@@ -323,15 +335,17 @@ function useAttachmentMaterial(
         material.needsUpdate = true;
       },
       (e: unknown) => {
+        end();
         if (live) reportRef.current(new Error(`texture ${url} failed to load: ${String(e)}`));
       },
     );
     return () => {
       live = false;
+      end();
       material.map?.dispose();
       material.map = null;
     };
-  }, [t, material, reportRef]);
+  }, [t, material, reportRef, settle]);
   useEffect(() => () => material.dispose(), [material]);
   return material;
 }
@@ -360,13 +374,18 @@ function useGarmentMaterial(
     return made;
   }, [t, dual]);
   const reportRef = useLatest(report);
+  const settle = useSettle();
   useEffect(() => {
     let live = true;
     const loader = new TextureLoader();
+    const ends: (() => void)[] = [];
     const load = (url: string | null, apply: (tex: Texture) => void) => {
       if (!url) return;
+      const end = settle.begin();
+      ends.push(end);
       loader.loadAsync(url).then(
         (tex) => {
+          end();
           if (!live) {
             tex.dispose();
             return;
@@ -375,6 +394,7 @@ function useGarmentMaterial(
           material.needsUpdate = true;
         },
         (e: unknown) => {
+          end();
           if (live) reportRef.current(new Error(`texture ${url} failed to load: ${String(e)}`));
         },
       );
@@ -389,12 +409,13 @@ function useGarmentMaterial(
     });
     return () => {
       live = false;
+      for (const end of ends) end();
       material.map?.dispose();
       material.map = null;
       material.normalMap?.dispose();
       material.normalMap = null;
     };
-  }, [t, material, reportRef]);
+  }, [t, material, reportRef, settle]);
   useEffect(() => () => material.dispose(), [material]);
   return material;
 }
@@ -524,11 +545,14 @@ function useDiffuseTexture(
   report: (e: Error) => void,
 ): void {
   const reportRef = useLatest(report);
+  const settle = useSettle();
   useEffect(() => {
     if (!url) return;
     let live = true;
+    const end = settle.begin();
     new TextureLoader().loadAsync(url).then(
       (tex) => {
+        end();
         if (!live) {
           tex.dispose();
           return;
@@ -538,15 +562,17 @@ function useDiffuseTexture(
         material.needsUpdate = true;
       },
       (e: unknown) => {
+        end();
         if (live) reportRef.current(new Error(`texture ${url} failed to load: ${String(e)}`));
       },
     );
     return () => {
       live = false;
+      end();
       material.map?.dispose();
       material.map = null;
     };
-  }, [url, material, reportRef]);
+  }, [url, material, reportRef, settle]);
 }
 
 /** The worn hair style: alpha cards skinned to the figure, coloured by the recipe. */
@@ -665,6 +691,7 @@ export function Humanoid({
   recipe,
   material,
   onEvaluated,
+  onSettled,
   onError,
   onPick,
   presence,
@@ -685,6 +712,10 @@ export function Humanoid({
   // Lifts the figure so its soles meet the declared ground position.
   const [lift, setLift] = useState(0);
   const onEvaluatedRef = useLatest(onEvaluated);
+  const onSettledRef = useLatest(onSettled);
+  const settle = useMemo(() => new Settle(), []);
+  /** The latest evaluation written to the geometry and not yet reported as settled. */
+  const [unsettled, setUnsettled] = useState<Evaluation | null>(null);
   const onErrorRef = useLatest(onError);
   const report = useMemo(
     () => (e: Error) => (onErrorRef.current ? onErrorRef.current(e) : console.error(e)),
@@ -725,20 +756,26 @@ export function Humanoid({
   useEffect(() => {
     if (!geometries) return;
     let live = true;
+    const end = settle.begin();
     client.posedOcclusion().then(
       (posed) => {
+        end();
         if (!live || !posed) return;
         geometries.attachments.forEach((g, i) => {
           const o = posed[i];
           if (o) setOcclusionAttributes(g, o);
         });
       },
-      (e: Error) => live && report(e),
+      (e: Error) => {
+        end();
+        if (live) report(e);
+      },
     );
     return () => {
       live = false;
+      end();
     };
-  }, [client, geometries, report]);
+  }, [client, geometries, report, settle]);
   const rig = useMemo(() => (ready ? makeSkeleton(ready.rig) : null), [ready]);
   // The bones as dual quaternions, which the skin skins by on the GPU (mixed
   // with three's linear skinning by each bone's share, `SKIN_DUAL_SHARE`).
@@ -1075,6 +1112,7 @@ export function Humanoid({
           : null;
         setShown(true);
         onEvaluatedRef.current?.(ev);
+        setUnsettled(ev);
       })
       .catch((e: Error) => {
         if (live && e.name !== "AbortError") report(e);
@@ -1099,90 +1137,119 @@ export function Humanoid({
     wear,
   ]);
 
+  // Settled: the evaluation is written and everything it brought has loaded and been drawn.
+  // Children register their loads in their own effects, which run before this one.
+  useEffect(() => {
+    if (!unsettled) return;
+    let live = true;
+    let cancel = () => {};
+    let frame = 0;
+    const settleAfter = (frames: number) => {
+      cancel = settle.whenIdle(() => {
+        if (!live) return;
+        if (frames > 0) {
+          frame = requestAnimationFrame(() => settleAfter(frames - 1));
+          return;
+        }
+        setUnsettled(null);
+        onSettledRef.current?.(unsettled);
+      });
+    };
+    // Two frames after the last load: the textures upload and the materials compile.
+    settleAfter(2);
+    return () => {
+      live = false;
+      cancel();
+      cancelAnimationFrame(frame);
+    };
+  }, [unsettled, settle, onSettledRef]);
+
   const placed = presence?.position;
   const heading = presence?.facing;
   return (
-    <group
-      ref={groupRef}
-      {...group}
-      {...(placed && { position: placed })}
-      {...(heading && { rotation: [0, Math.atan2(heading[0], heading[2]), 0] as Vec3 })}
-      // Only listen when asked: a handler makes three raycast the figure on every click.
-      {...(onPick && { onClick: (e: ThreeEvent<MouseEvent>) => pick(e, onPick) })}
-    >
-      {geometries && ready && rig && (
-        // With presence the group's origin is the ground under the figure, so the
-        // meshes are lifted here; without it the caller lifts the group.
-        <group position-y={presence ? lift : 0}>
-          <primitive object={rig.root} />
-          <SkinnedPart
-            geometry={geometries.body}
-            material={material ?? skin}
-            skeleton={rig.skeleton}
-            visible={shown && surface === "base"}
-            part="body"
-            shape={shape}
-            dual={material ? null : dual}
-          />
-          {adultGeometry && (
+    <SettleContext.Provider value={settle}>
+      <group
+        ref={groupRef}
+        {...group}
+        {...(placed && { position: placed })}
+        {...(heading && { rotation: [0, Math.atan2(heading[0], heading[2]), 0] as Vec3 })}
+        // Only listen when asked: a handler makes three raycast the figure on every click.
+        {...(onPick && { onClick: (e: ThreeEvent<MouseEvent>) => pick(e, onPick) })}
+      >
+        {geometries && ready && rig && (
+          // With presence the group's origin is the ground under the figure, so the
+          // meshes are lifted here; without it the caller lifts the group.
+          <group position-y={presence ? lift : 0}>
+            <primitive object={rig.root} />
             <SkinnedPart
-              geometry={adultGeometry}
+              geometry={geometries.body}
               material={material ?? skin}
               skeleton={rig.skeleton}
-              visible={shown && surface === "adult"}
-              part="adultBody"
+              visible={shown && surface === "base"}
+              part="body"
               shape={shape}
               dual={material ? null : dual}
             />
-          )}
-          {ready.topology.attachments.map((t, i) => {
-            const g = geometries.attachments[i];
-            return g ? (
-              <AttachmentMesh
-                key={t.id}
-                index={i}
-                topology={t}
-                geometry={g}
+            {adultGeometry && (
+              <SkinnedPart
+                geometry={adultGeometry}
+                material={material ?? skin}
                 skeleton={rig.skeleton}
-                occlusionKeys={occlusionKeys}
-                visible={shown}
-                report={report}
-                eyes={recipe.eyes}
-                melanin={recipe.skin.melanin}
+                visible={shown && surface === "adult"}
+                part="adultBody"
                 shape={shape}
+                dual={material ? null : dual}
               />
-            ) : null;
-          })}
-          {hair && (
-            <HairMesh
-              key={hair.topology.id}
-              topology={hair.topology}
-              geometry={hair.geometry}
-              skeleton={rig.skeleton}
-              colour={recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR}
-              multisampled={multisampled}
-              visible={shown}
-              report={report}
-              shape={shape}
-            />
-          )}
-          {worn?.topologies.map((t, i) => {
-            const g = worn.geometries[i];
-            return g ? (
-              <GarmentMesh
-                key={`${worn.key}:${t.id}`}
-                topology={t}
-                geometry={g}
+            )}
+            {ready.topology.attachments.map((t, i) => {
+              const g = geometries.attachments[i];
+              return g ? (
+                <AttachmentMesh
+                  key={t.id}
+                  index={i}
+                  topology={t}
+                  geometry={g}
+                  skeleton={rig.skeleton}
+                  occlusionKeys={occlusionKeys}
+                  visible={shown}
+                  report={report}
+                  eyes={recipe.eyes}
+                  melanin={recipe.skin.melanin}
+                  shape={shape}
+                />
+              ) : null;
+            })}
+            {hair && (
+              <HairMesh
+                key={hair.topology.id}
+                topology={hair.topology}
+                geometry={hair.geometry}
                 skeleton={rig.skeleton}
+                colour={recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR}
+                multisampled={multisampled}
                 visible={shown}
                 report={report}
                 shape={shape}
-                dual={dual}
               />
-            ) : null;
-          })}
-        </group>
-      )}
-    </group>
+            )}
+            {worn?.topologies.map((t, i) => {
+              const g = worn.geometries[i];
+              return g ? (
+                <GarmentMesh
+                  key={`${worn.key}:${t.id}`}
+                  topology={t}
+                  geometry={g}
+                  skeleton={rig.skeleton}
+                  visible={shown}
+                  report={report}
+                  shape={shape}
+                  dual={dual}
+                />
+              ) : null;
+            })}
+          </group>
+        )}
+      </group>
+    </SettleContext.Provider>
   );
 }
