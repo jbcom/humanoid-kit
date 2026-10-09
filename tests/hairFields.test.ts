@@ -9,6 +9,7 @@ import {
   SCALP_FALLOFF,
   SCALP_FULL,
   scalpShade,
+  UV_SCALE_STEPS,
 } from "../src/surface/hairFields.ts";
 
 /**
@@ -194,6 +195,32 @@ describe("hairFields", () => {
       // The middle row sits 0.05 above the scalp: far from it, and interior.
       expect(fade[2]).toBe(255);
       expect(HAIRLINE_NEAR).toBeLessThan(0.05);
+    });
+  });
+
+  describe("uvScale", () => {
+    it("is the card's texture units per metre, from its UVs and its size", () => {
+      // A 0.4 m sheet whose UVs span the unit square: 4 UV units of edge over 1.6 m of edge.
+      const card = sheet(0.001, 0.4);
+      const { uvScale } = hairFields({
+        positions: card.positions,
+        faceVerts: card.faceVerts,
+        body: { positions: body.positions, triangles: body.triangles },
+        scalpEligible: eligibleAll,
+        cutout: {
+          faceUvs: new Uint32Array([0, 1, 2, 3]),
+          uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
+          width: 1,
+          height: 1,
+          alpha: new Uint8Array([255]),
+        },
+      });
+      for (const v of uvScale) expect(v / UV_SCALE_STEPS).toBeCloseTo(2.5, 1);
+    });
+
+    it("is zero without the UVs", () => {
+      const { uvScale } = run(sheet(0.001));
+      expect(uvScale.every((v) => v === 0)).toBe(true);
     });
   });
 

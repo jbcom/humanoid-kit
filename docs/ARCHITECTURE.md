@@ -1129,7 +1129,7 @@ a coloured texture; everything in the pure core is testable in Node.
   binary): **growth** (u16, 0.1 mm steps), the distance along the cards from
   where the hair roots, by Dijkstra from the vertices within 1.5 cm of the scalp
   (a card that touches none grows from its highest vertex); **fade**, 0 on a
-  card edge that meets the scalp, rising to 1 over 12 mm along the card, and
+  card edge that meets the scalp, rising to 1 over 18 mm along the card, and
   only for edges no other card lies well over (a card's edge inside the hair is
   not on its hairline: feathering those cut the afro into a lattice); **fin**,
   1 on a card standing out of the scalp, 0 on one lying along it (its normal
@@ -1143,12 +1143,16 @@ a coloured texture; everything in the pure core is testable in Node.
   their roots showed the dark inside of the volume as a band.
 - *A hairline thins, and a fin by its angle; the scalp is tinted.* A
   hair card's cut edge is a hard line, and MakeHuman's hairlines read as a helmet
-  or a wig. With alpha-to-coverage the fade (and the fin's angle term) is the
-  card's coverage, a smooth gradient over the MSAA samples; without it the
-  fragment shader discards where it is below an interleaved gradient noise of
-  its pixel (Jimenez 2014), which needs neither blending nor MSAA, so the
-  hairline thins on every GPU, SwiftShader included. (Dithering alone left a
-  speckle on the afro that read as noise.) The skin shows
+  or a wig, and a screen-space dither of it reads as a dot grid. The fin's angle
+  term is the card's coverage under alpha-to-coverage (a dither without it, which
+  needs neither blending nor MSAA, so it works on every GPU). The hairline itself
+  thins strand by strand, in the texture's own coordinates scaled to metres by a
+  baked per-vertex `uvScale` (a strand is 1.5 mm wherever its card's island sits
+  in the atlas): each strand ends at a distance of its own from the cut edge (a
+  hash of the strand), its tip tapering, and the edge recedes along its length by
+  up to a third of the fade (two slow noises: a recession and a wander), so no
+  hairline is a straight cut with a dot pattern but a feathering of wisps.
+  (Pixel dithering alone left a speckle on the afro that read as noise.) The skin shows
   through, so it must not be bare: `SkinMaterial` takes a per-vertex
   `hkScalp` attribute (the style's scalp, carried through the body's stencil like
   any field) and a uniform colour, and takes the skin toward its own colour in

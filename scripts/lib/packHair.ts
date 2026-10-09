@@ -66,7 +66,7 @@ export const HAIR_STYLES: readonly HairStyleSpec[] = [
   { id: "short02", label: "Short, tousled", tags: ["short", "tousled"] },
   { id: "bob02", label: "Bob with a side fringe", tags: ["bob", "straight", "fringe"] },
   { id: "long01", label: "Long, straight", tags: ["long", "straight"] },
-  { id: "afro01", label: "Afro", tags: ["short", "curly", "afro"], flatten: 0.007, feather: false },
+  { id: "afro01", label: "Afro", tags: ["short", "curly", "afro"], flatten: 0.004, feather: false },
   { id: "short04", label: "Short, slicked back", tags: ["short", "slicked"] },
   { id: "short03", label: "Short, side-swept", tags: ["short", "swept", "fringe"] },
   { id: "ponytail01", label: "Ponytail", tags: ["long", "ponytail", "tied"] },

@@ -42,7 +42,7 @@ export const COVERED_BY = 0.006;
 export const COVER_MARGIN = 0.004;
 
 /** Metres along the card, from a hairline, over which hair thins in. */
-export const FADE_LENGTH = 0.012;
+export const FADE_LENGTH = 0.018;
 
 /** A scalp vertex this near a card (metres) carries hair at full density. */
 export const SCALP_FULL = 0.003;
@@ -118,9 +118,19 @@ export interface HairFieldsInput {
   };
 }
 
+/** `HairFields.uvScale` is stored in 1/`UV_SCALE_STEPS` of a texture unit per metre. */
+export const UV_SCALE_STEPS = 16;
+
 export interface HairFields {
   /** Per card vertex, distance along the card from its root in 1 / `GROWTH_SCALE` metre. */
   growth: Uint16Array;
+  /**
+   * Per card vertex, how many texture units its card spans per metre, in
+   * 1/`UV_SCALE_STEPS` (0 without a `cutout`, which carries the UVs). The renderer
+   * divides it out to find strands a few millimetres wide wherever the card's island
+   * sits in the atlas.
+   */
+  uvScale: Uint16Array;
   /** Per card vertex, 0 (cut away) to 255 (all there). */
   fade: Uint8Array;
   /** Per card vertex, 0 (lies along the scalp) to 255 (stands out of it). */
@@ -431,6 +441,41 @@ export function hairFields(input: HairFieldsInput): HairFields {
           Number.isFinite(d) ? Math.round(255 * smoothstep(0, FADE_LENGTH, d)) : 255,
         );
 
+  // UV scale: per face, the UV length of its edges over their length in metres; per vertex, the mean.
+  const uvScale = new Uint16Array(n);
+  if (input.cutout) {
+    const { faceUvs, uvs } = input.cutout;
+    const sum = new Float64Array(n);
+    const count = new Uint16Array(n);
+    for (let f = 0; f < faces; f++) {
+      let world = 0;
+      let uv = 0;
+      for (let k = 0; k < 4; k++) {
+        const a = faceVerts[f * 4 + k] as number;
+        const b = faceVerts[f * 4 + ((k + 1) % 4)] as number;
+        world += at(a).distanceTo(at(b));
+        const ua = faceUvs[f * 4 + k] as number;
+        const ub = faceUvs[f * 4 + ((k + 1) % 4)] as number;
+        uv += Math.hypot(
+          (uvs[ua * 2] as number) - (uvs[ub * 2] as number),
+          (uvs[ua * 2 + 1] as number) - (uvs[ub * 2 + 1] as number),
+        );
+      }
+      if (world <= 0) continue;
+      for (let k = 0; k < 4; k++) {
+        const v = faceVerts[f * 4 + k] as number;
+        sum[v] = (sum[v] as number) + uv / world;
+        count[v] = (count[v] as number) + 1;
+      }
+    }
+    for (let v = 0; v < n; v++)
+      if ((count[v] as number) > 0)
+        uvScale[v] = Math.min(
+          65535,
+          Math.round(((sum[v] as number) / (count[v] as number)) * UV_SCALE_STEPS),
+        );
+  }
+
   // Scalp: eligible body vertices near a card.
   const cards = new Uint32Array(faces * 6);
   for (let f = 0; f < faces; f++) {
@@ -461,6 +506,7 @@ export function hairFields(input: HairFieldsInput): HairFields {
   }
   return {
     growth,
+    uvScale,
     fade,
     fin,
     scalpVerts: Uint16Array.from(scalpVerts),

@@ -1133,7 +1133,13 @@ export function Humanoid({
           if (!g) {
             g = makeGeometry(hairTopology);
             setHairOcclusionAttribute(g, hairTopology.occlusion);
-            setHairStrandAttributes(g, hairTopology.fade, hairTopology.growth, hairTopology.fin);
+            setHairStrandAttributes(
+              g,
+              hairTopology.fade,
+              hairTopology.growth,
+              hairTopology.fin,
+              hairTopology.uvScale,
+            );
             geometries.hair.set(ev.hair.id, g);
           }
           writeGeometry(g, ev.hair);
