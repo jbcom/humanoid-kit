@@ -8,6 +8,7 @@ import {
   beardStyle,
   bodyHairColour,
   bodyHairCoverage,
+  DEFAULT_BEARD,
   defaultBodyHairCoverage,
 } from "../src/surface/bodyHair.ts";
 import { DEFAULT_HAIR_COLOUR, HAIR_COLOURS, type HairColour } from "../src/surface/hairTone.ts";
@@ -113,10 +114,14 @@ describe("the adult-only groups", () => {
 });
 
 describe("beard style", () => {
-  it("defaults to stubble where the face carries terminal hair, none elsewhere", () => {
-    expect(beardStyle(input(30, 1))).toBe("stubble");
-    expect(beardStyle(input(30, 0))).toBe("none");
-    expect(beardStyle(input(10, 1))).toBe("none");
+  it("defaults to clean-shaven, the neutral recipe, at any age and sex", () => {
+    expect(DEFAULT_BEARD).toBe("none");
+    for (const [age, gender] of [
+      [30, 1],
+      [30, 0],
+      [10, 1],
+    ] as const)
+      expect(beardStyle(input(age, gender))).toBe("none");
   });
 
   it("keeps the recipe's style", () => {

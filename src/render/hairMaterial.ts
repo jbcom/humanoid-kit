@@ -12,11 +12,12 @@
  *   cards render with a plain alpha test (hard edges, still correct).
  *   Shadows use the same alpha, so a card's cut-outs cast no shadow.
  * - **Hairlines** thin out: each vertex carries a fade (0 on a card edge that
- *   meets the scalp, 1 a centimetre in). With alpha-to-coverage it is the card's
- *   coverage, a smooth gradient; without it the fragment is discarded where the
- *   fade is below an interleaved-gradient noise of its pixel, which needs neither
- *   blending nor MSAA, so a hairline thins the same way on every GPU, software
- *   ones included. Either way it shows the tinted scalp
+ *   meets the scalp, 1 a centimetre in). A fragment is discarded where its strand
+ *   has ended (`HAIR_HAIRLINE`): a yes or no per strand cell of the card's own
+ *   surface, so the hairline is wisps and frayed tips, never a per-pixel dither
+ *   or a coverage ramp (alpha-to-coverage would draw a 2x2 dot grid of it on
+ *   hardware). It needs neither blending nor MSAA, so it thins the same way on
+ *   every GPU, software ones included, and shows the tinted scalp
  *   (`SkinMaterial.setScalp`) through it.
  * - **Highlights** are Kajiya-Kay: a strand is a thin cylinder, and it reflects
  *   in a cone around its tangent, so a highlight is a band across the strands
@@ -60,6 +61,18 @@ export const HAIR_UVSCALE_ATTRIBUTE = "hkHairUvScale";
 export const HAIR_GROWTH_ATTRIBUTE = "hkHairGrowth";
 
 /**
+ * One float per vertex, body hair cards only: its card's rank, 0..1. A card is
+ * drawn while its rank is under the material's density (`setDensity`); absent
+ * (scalp hair), it reads 0.
+ */
+export const HAIR_RANK_ATTRIBUTE = "hkHairRank";
+
+/** Gives a body hair card entry's geometry its cards' ranks (`HairTopology.rank`). */
+export function setHairRankAttribute(geometry: BufferGeometry, rank: Float32Array): void {
+  geometry.setAttribute(HAIR_RANK_ATTRIBUTE, new Float32BufferAttribute(rank, 1));
+}
+
+/**
  * Light that still reaches the deepest hair, as a fraction. Far higher than
  * the eyes' and teeth's floor: the bake treats cards as solid, so the inside of
  * a sparse style reads darker than strands with air between them would be.
@@ -88,13 +101,13 @@ export const HAIR_LOBES = {
 /**
  * A fin card (one standing out of the scalp, `HairFieldData.fin`) turned this far
  * from facing the eye (|cos| of the angle between its normal and the view
- * direction) is dithered away between `from` (gone) and `to` (all there). A flat
+ * direction) dissolves strand cell by cell between `from` (gone) and `to` (all there). A flat
  * card seen edge-on is a hairline-thin dark sliver, and styles that stand loose
  * cards out of the scalp (the afro's curls) otherwise read as a lattice of such
  * slivers across the head. A card lying along the scalp is never faded this way:
  * a head's shell is seen at a grazing angle over much of its area.
  */
-export const HAIR_EDGE_ON = { from: 0.3, to: 0.8 } as const;
+export const HAIR_EDGE_ON = { from: 0.5, to: 0.95 } as const;
 
 /**
  * The most a hair pixel may exceed its diffuse by (the base specular, the fibre
@@ -109,15 +122,20 @@ export const HIGHLIGHT_OVER_DIFFUSE = 3;
 /**
  * How a hairline thins. Each strand ends at its own distance from the card's cut
  * edge (a hash of the strand, so hair thins in wisps, not a screen-door dot grid),
- * its tip tapering over `taper` of the fade, and the whole edge recedes along its
- * length by up to `wander` + `slow` of the fade (two slow noises, so no hairline is a
- * ruled straight line: a wander and a recession). `strands` is strands per metre
- * across the strand direction (1.5 mm); `wisp` bounds the hash so a card well in is
- * never thinned (`wisp + taper + wander + slow` is at most 1, so a card at full fade is whole at every strand); `wanderScale` and `slowScale`
- * are the noises' cycles per metre.
+ * its tip fraying over `taper` of the fade cell by cell along the strand, and the
+ * whole edge recedes along its length by up to `wander` + `slow` of the fade (two
+ * slow noises, so no hairline is a ruled straight line: a wander and a recession).
+ * Every decision is a yes or no per cell of the card's own surface, never per screen
+ * pixel and never a partial coverage, so no GPU draws a dot grid. `strands` is strands
+ * per metre across the strand direction (1.5 mm) and `cells` the fray's cells per metre
+ * along it (4.5 mm); `wisp` bounds the hash so a card well in is never thinned
+ * (`wisp + taper + wander + slow` is at most 1, so a card at full fade is whole at every
+ * strand); `wanderScale` and `slowScale` are the noises' cycles per metre.
  */
 export const HAIR_HAIRLINE = {
   strands: 660,
+  cells: 220,
+  reach: 0.016,
   wisp: 0.45,
   wander: 0.2,
   wanderScale: 25,
@@ -182,8 +200,8 @@ const STRAND_LOBES = `
  * Interleaved gradient noise (Jimenez 2014): a cheap, well-spread per-pixel value
  * in [0, 1) whose dither has no visible pattern at one pixel's scale.
  */
-const NOISE = `float hkNoise( vec2 p ) { return fract( 52.9829189 * fract( dot( p, vec2( 0.06711056, 0.00583715 ) ) ) ); }
-float hkHash( float n ) { return fract( sin( n * 127.1 ) * 43758.5453 ); }
+const NOISE = `float hkHash( float n ) { return fract( sin( n * 127.1 ) * 43758.5453 ); }
+float hkHash2( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 ); }
 float hkSlow( float x ) { return mix( hkHash( floor( x ) ), hkHash( floor( x ) + 1.0 ), smoothstep( 0.0, 1.0, fract( x ) ) ); }`;
 
 /**
@@ -217,7 +235,11 @@ export class HairMaterial extends MeshPhysicalMaterial {
    * highlight (x, lower for fluffy styles), the white lobe's strength (y) and
    * both exponents (z, w).
    */
-  readonly hkUniforms: { hkLobes: { value: Vector4 }; hkAcross: { value: Vector2 } };
+  readonly hkUniforms: {
+    hkLobes: { value: Vector4 };
+    hkAcross: { value: Vector2 };
+    hkDensity: { value: number };
+  };
 
   constructor() {
     super({
@@ -243,7 +265,17 @@ export class HairMaterial extends MeshPhysicalMaterial {
       },
       // Across the strands in texture space (strands along V give U).
       hkAcross: { value: new Vector2(1, 0) },
+      hkDensity: { value: 1 },
     };
+  }
+
+  /**
+   * How much of a body hair card entry is drawn, 0..1 (the figure's coverage):
+   * the cards whose rank is under it. Scalp hair carries no ranks (all 0) and is
+   * drawn whole at the default of 1.
+   */
+  setDensity(density: number): void {
+    this.hkUniforms.hkDensity.value = Math.min(1, Math.max(0, density));
   }
 
   /** Colours the hair: the strand map is multiplied by this pigment colour's tint. */
@@ -293,11 +325,14 @@ varying float vHkFin;
 attribute float ${HAIR_GROWTH_ATTRIBUTE};
 varying float vHkGrowth;
 attribute float ${HAIR_UVSCALE_ATTRIBUTE};
-varying float vHkUvScale;`,
+varying float vHkUvScale;
+attribute float ${HAIR_RANK_ATTRIBUTE};
+varying float vHkRank;`,
       )
       .replace(
         "#include <begin_vertex>",
         `#include <begin_vertex>
+	vHkRank = ${HAIR_RANK_ATTRIBUTE};
 	vHkOcclusion = ${HAIR_OCCLUSION_ATTRIBUTE};
 	vHkFade = ${HAIR_FADE_ATTRIBUTE};
 	vHkFin = ${HAIR_FIN_ATTRIBUTE};
@@ -318,6 +353,8 @@ varying float vHkFade;
 varying float vHkFin;
 varying float vHkGrowth;
 varying float vHkUvScale;
+varying float vHkRank;
+uniform float hkDensity;
 uniform vec4 hkLobes;
 vec3 hkT = vec3( 0.0 );
 float hkTStrength = 0.0;
@@ -341,34 +378,43 @@ ${NOISE}`,
       .replace(
         "#include <alphatest_fragment>",
         `{
+		// Body hair cards: a card is drawn while its rank is under the figure's
+		// coverage, whole or not at all (scalp hair has rank 0 and density 1).
+		if ( vHkRank >= hkDensity ) discard;
 		// A card seen edge-on is a dark line, not hair: it thins out as it turns away.
 		vec3 hkFlat = normalize( cross( dFdx( vViewPosition ), dFdy( vViewPosition ) ) );
 		float hkFacing = abs( dot( hkFlat, normalize( vViewPosition ) ) );
-		hkKeep = mix( 1.0, smoothstep( ${HAIR_EDGE_ON.from.toFixed(2)}, ${HAIR_EDGE_ON.to.toFixed(2)}, hkFacing ), vHkFin );
-		// A fin turning edge-on is its coverage under alpha-to-coverage, a dither without it.
-		#ifndef ALPHA_TO_COVERAGE
-			if ( hkKeep <= hkNoise( gl_FragCoord.xy ) ) discard;
-		#endif
-		// A hairline thins strand by strand: each ends at a distance of its own, and the edge wanders.
+		float hkFinKeep = mix( 1.0, smoothstep( ${HAIR_EDGE_ON.from.toFixed(2)}, ${HAIR_EDGE_ON.to.toFixed(2)}, hkFacing ), vHkFin );
+		// Everything below is a yes or no per strand cell of the card's own surface (never per
+		// screen pixel, never partial coverage), so no GPU, multisampled or not, draws a dot grid.
 		#ifdef USE_MAP
-			// Metres across the strands, so a strand is a few millimetres wherever the card's island sits.
-			float hkAcrossM = dot( vMapUv, hkAcross ) / max( vHkUvScale, 0.01 );
-			float hkLine = vHkFade - ${HAIR_HAIRLINE.wander.toFixed(3)} * hkSlow( hkAcrossM * ${HAIR_HAIRLINE.wanderScale.toFixed(1)} ) - ${HAIR_HAIRLINE.slow.toFixed(3)} * hkSlow( hkAcrossM * ${HAIR_HAIRLINE.slowScale.toFixed(1)} + 17.0 );
-			// Each strand's tip tapers over a fraction of the fade: coverage under alpha-to-coverage, a dither without.
-			float hkTip = ${HAIR_HAIRLINE.wisp.toFixed(3)} * hkHash( floor( hkAcrossM * ${HAIR_HAIRLINE.strands.toFixed(1)} ) );
-			hkKeep *= smoothstep( hkTip, hkTip + ${HAIR_HAIRLINE.taper.toFixed(3)}, hkLine );
-			if ( hkKeep <= 0.004 ) discard;
-			#ifndef ALPHA_TO_COVERAGE
-				if ( hkKeep <= hkNoise( gl_FragCoord.xy ) ) discard;
-			#endif
+			// Metres across and along the strands, so a strand is a few millimetres wherever the card's island sits.
+			vec2 hkAlongDir = vec2( hkAcross.y, -hkAcross.x );
+			float hkScale = max( vHkUvScale, 0.01 );
+			float hkAcrossM = dot( vMapUv, hkAcross ) / hkScale;
+			float hkAlongM = dot( vMapUv, hkAlongDir ) / hkScale;
+			float hkStrand = floor( hkAcrossM * ${HAIR_HAIRLINE.strands.toFixed(1)} );
+			// A strand's cell along its length: a fin dissolves, and a tip frays, cell by cell.
+			float hkCell = hkHash2( vec2( hkStrand, floor( hkAlongM * ${HAIR_HAIRLINE.cells.toFixed(1)} ) ) );
+			if ( hkFinKeep <= hkCell ) discard;
+			// A hairline thins strand by strand: each ends at a distance of its own, its tip frays, and the edge wanders.
+			// Where the card is a hairline (its fade is low: it is near an edge that meets the scalp) the
+			// thinning follows the hair that is painted, not the card: a card's mesh reaches well past
+			// its painted hair, so a fade measured on the mesh runs out over transparent texels. The
+			// painted edge's distance is the blurred alpha (a mip chosen to span the reach in metres), 0.5 at
+			// the edge and 1 a reach inside it.
+			float hkLod = log2( max( 1.0, ${HAIR_HAIRLINE.reach.toFixed(4)} * hkScale * float( textureSize( map, 0 ).x ) ) );
+			float hkBlur = textureLod( map, vMapUv, hkLod ).a;
+			float hkOnLine = 1.0 - smoothstep( 0.7, 1.0, vHkFade );
+			float hkFade = mix( 1.0, pow( clamp( ( hkBlur - 0.45 ) / 0.5, 0.0, 1.0 ), 1.6 ), hkOnLine );
+			float hkLine = hkFade - ${HAIR_HAIRLINE.wander.toFixed(3)} * hkSlow( hkAcrossM * ${HAIR_HAIRLINE.wanderScale.toFixed(1)} ) - ${HAIR_HAIRLINE.slow.toFixed(3)} * hkSlow( hkAcrossM * ${HAIR_HAIRLINE.slowScale.toFixed(1)} + 17.0 );
+			float hkTip = ${HAIR_HAIRLINE.wisp.toFixed(3)} * hkHash( hkStrand ) + ${HAIR_HAIRLINE.taper.toFixed(3)} * hkHash2( vec2( hkStrand + 71.0, floor( hkAlongM * ${HAIR_HAIRLINE.cells.toFixed(1)} ) ) );
+			if ( hkLine <= hkTip ) discard;
 		#else
-			if ( vHkFade <= hkNoise( gl_FragCoord.xy ) ) discard;
+			if ( vHkFade < 0.5 || hkFinKeep < 0.5 ) discard;
 		#endif
 	}
-	#include <alphatest_fragment>
-	#ifdef ALPHA_TO_COVERAGE
-		diffuseColor.a *= hkKeep;
-	#endif`,
+	#include <alphatest_fragment>`,
       )
       .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>${TANGENT}`)
       .replace(
@@ -379,7 +425,7 @@ ${NOISE}`,
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-hair-4";
+    return "humanoid-kit-hair-5";
   }
 }
 

@@ -24,11 +24,13 @@ import {
 } from "./creases.ts";
 import { KNUCKLE_PHASES, KNUCKLE_WRINKLE_DEPTH, knuckleFields } from "./knuckles.ts";
 import { NAIL_GLOSS_LAYER, nailFields } from "./nails.ts";
+import { palmarMask } from "./palm.ts";
 
 /**
  * Palmoplantar colour (`palmAlbedo`) over the palms, the fingers' palmar
- * sides included (`skinZones().palm`, the zone the skin states already use),
- * and the soles (`skinZones().sole`). Soles share the palm's suppressed
+ * sides included (`palmarMask`, easing into the back of the hand over the
+ * lateral borders and into the forearm at the wrist), and the soles
+ * (`skinZones().sole`). Soles share the palm's suppressed
  * melanocytes (Yamaguchi et al. 2004, SKIN-STATES.md A1), but no sole colour
  * was found measured, so giving the sole the palm's measured colour is a
  * CHOICE (C5). One owner for the palmoplantar colour: the feet's area adds the
@@ -46,8 +48,8 @@ export const PALMOPLANTAR_LAYER: ColourLayer = {
   blend: "mix",
   targets: [],
   fields: (assets) => {
-    const { palm, sole } = skinZones(assets);
-    const mask = palm.map((p, v) => {
+    const { sole } = skinZones(assets);
+    const mask = palmarMask(assets).map((p, v) => {
       const m = Math.max(p, sole[v] as number);
       return m < PALMOPLANTAR_FLOOR ? 0 : m;
     });
@@ -159,6 +161,7 @@ export const HAND_SKIN_LAYERS = [
 ] as const;
 
 export {
+  CREASE_BORDER_INSET,
   CREASE_GEOMETRY,
   CREASE_PHASES,
   CREASE_SLOTS,
@@ -169,9 +172,11 @@ export {
   digitCreaseSign,
   digitCreases,
   FINGER_CREASE_SPANS,
+  FINGER_CREASE_STRENGTH,
   MIDDLE_CREASE_TO_JOINT,
   PALM_CREASE_DEPTH,
   PALM_CREASE_LINE_LAYER,
+  PALM_CREASE_LIP,
   PALM_CREASE_PIGMENT,
   PALM_CREASE_SHADE,
   palmCreaseCurves,
@@ -189,9 +194,22 @@ export {
   knuckleFields,
 } from "./knuckles.ts";
 export {
+  NAIL_FREE_EDGE_LENGTH,
+  NAIL_FREE_EDGE_OPACITY,
+  NAIL_FREE_EDGE_SOFT,
   NAIL_GLOSS_LAYER,
   NAIL_LAYOUT,
+  NAIL_PLATE_KINDS,
+  NAIL_PLATE_OPACITY,
   NAIL_ROUGHNESS,
   NAIL_SPECULAR,
   nailFields,
+  nailPlateEdges,
 } from "./nails.ts";
+export {
+  PALM_BORDER_BLEND,
+  PALM_WRIST_BLEND,
+  palmarBorderDistance,
+  palmarMask,
+  palmarWrist,
+} from "./palm.ts";

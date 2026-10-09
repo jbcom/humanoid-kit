@@ -32,7 +32,7 @@ export const compiledMesh = (c: CompiledAsset): BoundMesh => ({
 export interface TextureRecord {
   /** The packed file. */
   texture: string;
-  /** Its source, relative to the system assets, and that source's longest edge. */
+  /** Its source (relative to the system assets, or what generated it) and that source's longest edge. */
   source: string;
   sourceEdge: number;
   framing: string;
@@ -45,6 +45,11 @@ export interface PackTexture<R> {
   asset: CompiledAsset;
   /** The source image (absolute) and the packed file it becomes. */
   source: string;
+  /**
+   * What the provenance names as the source, for one the packer generated (an
+   * authored style's atlas) rather than read; default its system-assets path.
+   */
+  sourceLabel?: string;
   dest: string;
   /** The pack's default longest edge: need only raises it. */
   floor: number;
@@ -68,7 +73,7 @@ export async function packTexture<R>(
   const sourceEdge = Math.max(meta.width as number, meta.height as number);
   const record: TextureRecord = {
     texture: path.basename(t.dest),
-    source: path.relative(t.systemDir, t.source),
+    source: t.sourceLabel ?? path.relative(t.systemDir, t.source),
     sourceEdge,
     framing,
     needed,

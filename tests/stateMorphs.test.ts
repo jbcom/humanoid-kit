@@ -8,12 +8,12 @@ import {
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
-import { AREOLA_LAYER } from "../src/surface/regions/rest.ts";
+import { diskMask } from "../src/surface/layers.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets();
 const model = new HumanoidModel(assets, { subdivision: 0 });
-const areola = AREOLA_LAYER.fields(assets).mask;
+const areola = diskMask(assets, ["breast/nipple-size-incr"]);
 // The nipple is the nipple-point target's footprint; the areola, the size target's (the mask).
 const nipple = assets.targets.get("breast/nipple-point-incr")?.indices ?? new Uint32Array(0);
 

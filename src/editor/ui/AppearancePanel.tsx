@@ -4,7 +4,11 @@
  * haemoglobin and undertone), eyes offer a palette of natural iris colours plus
  * a picker, and hair (when a hair pack is loaded) a style, a palette of natural
  * colours, a picker for dyed hair and the pigment sliders behind the palette.
+ * Body hair offers a beard style and a density per region, relative to the
+ * default for the figure's age and sex; underarm and pubic hair only for an
+ * adult.
  */
+import { isAdult } from "../../recipe/agePolicy.ts";
 import {
   DEFAULT_EYES,
   DEFAULT_SKIN,
@@ -12,6 +16,13 @@ import {
   type SkinRecipe,
   withHair,
 } from "../../recipe/recipe.ts";
+import {
+  type BeardStyle,
+  type BodyHairGroup,
+  type BodyHairRecipe,
+  isAdultOnlyBodyHair,
+  MAX_BODY_HAIR_DENSITY,
+} from "../../surface/bodyHair.ts";
 import {
   DEFAULT_HAIR_COLOUR,
   HAIR_COLOURS,
@@ -103,6 +114,17 @@ export function AppearancePanel({
   ) => update((r) => withHair(r, patch), gesture);
   const setHairColour = (colour: HairColour, gesture?: string) =>
     update((r) => withHair(r, { colour }), gesture);
+  // Body hair: a recipe that sets nothing keeps no `bodyHair` at all.
+  const setBodyHair = (change: (b: BodyHairRecipe) => BodyHairRecipe, gesture?: string) =>
+    update((r) => {
+      const { bodyHair, ...rest } = r;
+      const next = change(bodyHair ?? {});
+      return next.beard === undefined && next.density === undefined
+        ? rest
+        : { ...rest, bodyHair: next };
+    }, gesture);
+  // Axillary and pubic hair are offered for adults only (the age policy).
+  const adult = isAdult(recipe);
 
   return (
     <div className="hk-groups">
@@ -291,9 +313,83 @@ export function AppearancePanel({
           </div>
         </details>
       )}
+      <details className="hk-group">
+        <summary className="hk-group-title">
+          <span>Body hair</span>
+        </summary>
+        <div className="hk-group-body">
+          <fieldset className="hk-chips">
+            <legend>Beard</legend>
+            {BEARD_CHOICES.map(([id, label]) => (
+              <button
+                key={id ?? "default"}
+                type="button"
+                className="hk-chip"
+                aria-pressed={(recipe.bodyHair?.beard ?? null) === id}
+                onClick={() => {
+                  onFocus(face);
+                  setBodyHair((b) => withBeard(b, id));
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </fieldset>
+          {BODY_HAIR_SLIDERS.filter((s) => adult || !isAdultOnlyBodyHair(s.group)).map((s) => (
+            <SliderRow
+              key={s.group}
+              label={s.label}
+              value={recipe.bodyHair?.density?.[s.group] ?? 1}
+              min={0}
+              max={MAX_BODY_HAIR_DENSITY}
+              step={0.01}
+              neutral={1}
+              format={pct}
+              description={s.description}
+              onChange={(v, g) => setBodyHair((b) => withDensity(b, s.group, v), g)}
+              onSettle={settle}
+              onFocus={() => onFocus(s.group === "face" ? face : body)}
+            />
+          ))}
+        </div>
+      </details>
     </div>
   );
 }
+
+/** A body hair recipe with this beard (null: the default for age and sex). */
+function withBeard(b: BodyHairRecipe, beard: BeardStyle | null): BodyHairRecipe {
+  const { beard: _, ...rest } = b;
+  return beard === null ? rest : { ...rest, beard };
+}
+
+/** A body hair recipe with one group's density multiplier set. */
+const withDensity = (b: BodyHairRecipe, group: BodyHairGroup, v: number): BodyHairRecipe => ({
+  ...b,
+  density: { ...b.density, [group]: v },
+});
+
+/** The beard choices: the default for age and sex, then each style. */
+const BEARD_CHOICES: readonly (readonly [BeardStyle | null, string])[] = [
+  [null, "Natural"],
+  ["none", "Shaven"],
+  ["stubble", "Stubble"],
+  ["moustache", "Moustache"],
+  ["goatee", "Goatee"],
+  ["full", "Full beard"],
+];
+
+const BODY_HAIR_SLIDERS: { group: BodyHairGroup; label: string; description: string }[] = [
+  { group: "face", label: "Facial hair", description: "Beard and moustache density." },
+  { group: "chest", label: "Chest", description: "Hair on the chest." },
+  { group: "abdomen", label: "Abdomen", description: "Hair on the belly and down its midline." },
+  { group: "back", label: "Back", description: "Hair on the back." },
+  { group: "buttocks", label: "Buttocks", description: "Hair on the buttocks." },
+  { group: "arms", label: "Arms", description: "Hair on the arms." },
+  { group: "legs", label: "Legs", description: "Hair on the legs." },
+  { group: "axillary", label: "Underarms", description: "Underarm hair (adults only)." },
+  { group: "pubic", label: "Pubic", description: "Pubic hair (adults only)." },
+];
 
 /** Whether two natural hair colours are the same pigments (a dyed colour is never a preset). */
 const sameColour = (a: HairColour, b: HairColour) =>

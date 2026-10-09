@@ -114,15 +114,22 @@ export function readPacks(packsDir: string): HumanoidAssets {
  * texture `<asset id>_<source stem>.webp` (a hair style's `<style>.webp`, from
  * its folder's `_diffuse` image). Where several folders hold an image of that
  * stem (every teeth shape has a `teeth.png`), the asset id names the folder.
- * Throws unless exactly one image matches.
+ * Undefined when none matches (a texture the packer draws itself); throws when
+ * several still do.
  */
-export function sourceOf(systemDir: string, images: readonly string[], packed: string): string {
+export function sourceOf(
+  systemDir: string,
+  images: readonly string[],
+  packed: string,
+): string | undefined {
   const stem = path.basename(packed, ".webp");
   const named = images.filter((f) => {
     const s = path.basename(f).replace(/\.[^.]+$/, "");
     const folder = path.basename(path.dirname(f));
     return stem.endsWith(`_${s}`) || s === stem || (folder === stem && s.endsWith("_diffuse"));
   });
+  // A texture the packer draws itself (an authored or derived hair style, body hair) has none.
+  if (!named.length) return undefined;
   const inFolder = named.filter((f) => stem.includes(path.basename(path.dirname(f))));
   const hits = named.length > 1 ? inFolder : named;
   if (hits.length !== 1)
@@ -150,10 +157,12 @@ export async function textureNeeds(packsDir: string, systemDir: string): Promise
     texture: string,
     role: TextureRole,
   ) => {
+    const source = sourceOf(systemDir, images, texture);
+    // Nothing to re-source or upscale from: the packer drew it at the size it wanted.
+    if (!source) return;
     const tris = boundTriangles(asset, assets.positions);
     const framing = framingOf(kind);
     const edge = await edgeOf(path.join(packsDir, pack, "data", texture));
-    const source = sourceOf(systemDir, images, texture);
     const sourceEdge = await edgeOf(source);
     const needed = neededEdge(tris, framing);
     const m = asset.entry.material;

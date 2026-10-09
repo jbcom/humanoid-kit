@@ -271,3 +271,87 @@ describe("the skin shader after a refresh", () => {
     }
   });
 });
+
+describe("drawing an update's extra triangles with the body's", () => {
+  /** The texel of an atlas page at (x, y) of its grid. */
+  function texelAt(texture: Texture, page: number, size: number, x: number, y: number): number[] {
+    const rt = new WebGLRenderTarget(size, size, { type: FloatType });
+    const material = new RawShaderMaterial({
+      glslVersion: GLSL3,
+      vertexShader: `in vec3 position; void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+      fragmentShader: `precision highp float; uniform highp sampler2DArray atlas; uniform int page;
+        out vec4 color; void main() { color = texelFetch(atlas, ivec3(ivec2(gl_FragCoord.xy), page), 0); }`,
+      uniforms: { atlas: { value: texture }, page: { value: page } },
+      blending: NoBlending,
+    });
+    const mesh = new Mesh(new PlaneGeometry(2, 2), material);
+    mesh.frustumCulled = false;
+    const scene = new Scene();
+    scene.add(mesh);
+    renderer.setRenderTarget(rt);
+    renderer.render(scene, camera);
+    const out = new Float32Array(4);
+    renderer.readRenderTargetPixels(rt, x, y, 1, 1, out);
+    renderer.setRenderTarget(null);
+    mesh.geometry.dispose();
+    material.dispose();
+    rt.dispose();
+    return Array.from(out);
+  }
+
+  /** A body covering the left half of UV space, one layer of (0.5, 0.25) on it. */
+  const leftHalf = (): LayerAtlasSource => ({
+    uvs: Float32Array.of(0, 0, 0.5, 0, 0.5, 1, 0, 1),
+    index: Uint32Array.of(0, 1, 2, 0, 2, 3),
+    vertexCount: 4,
+    layerFields: Float32Array.of(0.5, 0.25, 0.5, 0.25, 0.5, 0.25, 0.5, 0.25),
+    layers: ["l0"],
+    plan: densePlan(1),
+  });
+  /** An island covering the right half (a quad), the layer's fields on it. */
+  const island = (mask: number, coord: number) => ({
+    uvs: Float32Array.of(0.625, 0.25, 0.875, 0.25, 0.875, 0.75, 0.625, 0.75),
+    index: Uint32Array.of(0, 1, 2, 0, 2, 3),
+    layerFields: Float32Array.of(mask, coord, mask, coord, mask, coord, mask, coord),
+  });
+
+  it("puts the island's fields in UV space the body does not cover, and keeps the body's", () => {
+    const source = leftHalf();
+    const atlas = buildLayerAtlas(renderer, source, SIZE);
+    try {
+      // On the island's own ground (x = 3/4 of the grid) nothing is drawn before: it is far
+      // from the body, beyond the filter's reach of covered texels.
+      const before = texelAt(atlas.texture, 0, SIZE, (SIZE * 3) >> 2, SIZE >> 1);
+      expect(before[0]).toBe(0);
+      atlas.refresh({
+        layers: ["l0"],
+        layerFields: Float32Array.of(0.5, 0.25, 0.5, 0.25, 0.5, 0.25, 0.5, 0.25),
+        extra: island(1, 0.75),
+      });
+      const on = texelAt(atlas.texture, 0, SIZE, (SIZE * 3) >> 2, SIZE >> 1);
+      expect(on[0]).toBeCloseTo(1, 2);
+      expect(on[1]).toBeCloseTo(0.75, 2);
+      // The body, where it is, is what it was.
+      const body = texelAt(atlas.texture, 0, SIZE, SIZE >> 2, SIZE >> 1);
+      expect(body[0]).toBeCloseTo(0.5, 2);
+      expect(body[1]).toBeCloseTo(0.25, 2);
+    } finally {
+      atlas.dispose();
+    }
+  });
+
+  it("draws nothing extra for an update without it, as before", () => {
+    const source = leftHalf();
+    const atlas = buildLayerAtlas(renderer, source, SIZE);
+    try {
+      atlas.refresh({
+        layers: ["l0"],
+        layerFields: Float32Array.of(0.5, 0.25, 0.5, 0.25, 0.5, 0.25, 0.5, 0.25),
+      });
+      const on = texelAt(atlas.texture, 0, SIZE, (SIZE * 3) >> 2, SIZE >> 1);
+      expect(on[0]).toBe(0);
+    } finally {
+      atlas.dispose();
+    }
+  });
+});

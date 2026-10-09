@@ -75,7 +75,7 @@ export default defineConfig({
             },
             {
               group: "Project",
-              pages: ["contributing", "release-history"],
+              pages: ["contributing", "licence-history", "release-history"],
             },
           ],
         }),

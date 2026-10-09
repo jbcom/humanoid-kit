@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { shapeSignalNames } from "../src/model/detailFactors.ts";
 import { presenceJoints } from "../src/presence/fromEvaluation.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { ADULT_SKIN_LAYERS } from "../src/surface/regions/index.ts";
@@ -230,8 +231,8 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
       // The pack's manifest arrives with the first stage: ready already names its features.
       const ready = replies.get(1);
       if (ready?.type !== "ready") throw new Error("not ready");
-      expect(ready.anatomy?.features.map((f) => f.id)).toEqual(["penis", "testes", "mound"]);
-      expect(ready.anatomy?.stateMorphs.map((m) => m.signal)).toEqual(["arousal"]);
+      expect(ready.anatomy?.features.map((f) => f.id)).toEqual(["phallus", "scrotum", "mound"]);
+      expect(shapeSignalNames([], ready.anatomy)).toEqual(["arousal"]);
       const layers = handle({ type: "adultLayers", id: 2 });
       await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
       expect(replies.get(3)?.type).toBe("evaluated");

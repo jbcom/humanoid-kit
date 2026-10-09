@@ -11,8 +11,8 @@ Built against the body pack with `body.sha256` `33e8502236f56d532abbaa2d0adbffb2
 
 Every packed source file was checked for CC0 from its own content before packing:
 
-- 57 file(s) — file header: "This asset was explicitly released as CC0"
-- 33 file(s) — texture referenced by its .mhmat which proves CC0
+- 57 file(s) — A: file header "This asset was explicitly released as CC0"
+- 33 file(s) — A: binary file of a team asset
 
 | Garment | Category | Source mhclo | SHA-256 of the mhclo |
 | --- | --- | --- | --- |

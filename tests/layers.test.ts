@@ -4,6 +4,8 @@ import {
   applyLayers,
   buildLayerFields,
   creaseHeight,
+  layerUsesCoordinate,
+  lineRelief,
   paintStopTable,
   type SkinLayer,
   type SkinPaintInput,
@@ -13,7 +15,8 @@ import {
   uvScale,
 } from "../src/surface/layers.ts";
 import { SKIN_LAYER_TARGETS, SKIN_LAYERS } from "../src/surface/regions/index.ts";
-import { areolaAlbedo, lipAlbedo, type Rgb } from "../src/surface/skinTone.ts";
+import { AREOLA_REACH } from "../src/surface/regions/torso.ts";
+import { areolaAlbedo, lipAlbedo, type Rgb, skinAlbedo } from "../src/surface/skinTone.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const input = (over: Partial<SkinPaintInput> = {}): SkinPaintInput => ({
@@ -82,7 +85,8 @@ describe("the rest layers' fields", () => {
       // Everything well inside the outline is fully coloured; far outside, nothing.
       for (let v = 0; v < n; v++) {
         if (dist(v) < r * 0.6) expect(mask(v), `vertex ${v} inside`).toBeGreaterThan(0.95);
-        if (dist(v) > r * 1.6 && dist(v) < r * 4) expect(mask(v), `vertex ${v} outside`).toBe(0);
+        if (dist(v) > AREOLA_REACH && dist(v) < r * 4)
+          expect(mask(v), `vertex ${v} outside`).toBe(0);
       }
     }
   });
@@ -119,14 +123,20 @@ describe("the stop table", () => {
     const row = (id: string) => SKIN_LAYERS.findIndex((l) => l.id === id) * STOP_TABLE_WIDTH * 4;
     const stop = (id: string, k: number) =>
       Array.from(table.slice(row(id) + (k + 1) * 4, row(id) + (k + 1) * 4 + 3));
-    // One colour, so every stop carries it.
     const close = (got: number[], want: Rgb) => {
       for (let j = 0; j < 3; j++) expect(got[j]).toBeCloseTo(want[j] as number, 6);
     };
-    for (const k of [0, STOP_COUNT - 1]) {
-      close(stop("lips", k), lipAlbedo(i.tone, i.lips));
-      close(stop("areola", k), areolaAlbedo(i.tone, i.areola));
-    }
+    // The lips are one colour, so every stop carries it; the areola's body is its own colour
+    // (its radial profile is tested in torso.test.ts) and its outer stop the skin's.
+    for (const k of [0, STOP_COUNT - 1]) close(stop("lips", k), lipAlbedo(i.tone, i.lips));
+    // A multiply layer of ratios to the skin: the areola's body is its colour on that skin, the
+    // outer stop leaves any skin as it is.
+    const skin = skinAlbedo(i.tone);
+    close(
+      stop("areola", 2).map((x, c) => x * (skin[c] as number)),
+      areolaAlbedo(i.tone, i.areola),
+    );
+    close(stop("areola", STOP_COUNT - 1), [1, 1, 1]);
     expect(table[row("flush")]).toBeCloseTo(0.4, 6);
     expect(table[row("flush") + 1]).toBe(1); // multiply
     expect(table[row("lips") + 1]).toBe(0); // mix
@@ -165,16 +175,18 @@ describe("applyLayers", () => {
     const tint: Rgb = [1.1, 0.84, 0.84];
     const mix = (a: number, b: number, t: number) => a + (b - a) * t;
     const [mf, ml, ma] = [0.5, 0.3, 0.2];
-    // The old shader: flush tint, then lips, then areola, at strengths (flush, 0.9, 0.9).
+    const skin = skinAlbedo(i.tone);
+    // The old shader: flush tint, then lips, then the areola (now a multiply by its ratio to the skin).
     const expected = base.map((c, k) => {
       let x = mix(c, c * (tint[k] as number), mf * 0.7);
       x = mix(x, lip[k] as number, ml * 0.9);
-      return mix(x, areola[k] as number, ma * 0.9);
+      return mix(x, x * ((areola[k] as number) / (skin[k] as number)), ma);
     });
+    // The areola's coordinate 0.4 is its body, 11 mm from the nipple's centre.
     const got = applyLayers(base, table, [
       [mf, 0],
       [ml, 0],
-      [ma, 0],
+      [ma, 0.4],
     ]);
     for (let k = 0; k < 3; k++) expect(got[k]).toBeCloseTo(expected[k] as number, 6);
   });
@@ -231,6 +243,119 @@ describe("detail and surface layers", () => {
         input(),
       ),
     ).toThrow(/size > 0/);
+  });
+
+  it("carry an amplitude profile along the coordinate in the stops, and read the coordinate only then", () => {
+    const profiled: SkinLayer = {
+      id: "profiled",
+      kind: "detail",
+      pattern: "bumps",
+      profiled: true,
+      targets: [],
+      fields: none,
+      paint: () => ({
+        strength: 0.8,
+        height: 0.0002,
+        size: 0.001,
+        profile: [1, 0.5, 0],
+      }),
+    };
+    const tubercles: SkinLayer = {
+      id: "tubercles",
+      kind: "detail",
+      pattern: "tubercles",
+      targets: [],
+      fields: none,
+      paint: () => ({ strength: 1, height: 0.0006, size: 0.0022, profile: [0, 0.2] }),
+    };
+    const table = paintStopTable([profiled, tubercles], input());
+    const row = (l: number) => l * STOP_TABLE_WIDTH * 4;
+    // Kind 7 is bumps with a profile, 8 tubercles (whose occupancy is the profile): 6 is the strands'.
+    expect(table[row(0) + 1]).toBe(7);
+    expect(table[row(1) + 1]).toBe(8);
+    // The profile is resampled evenly over the stops, in the red channel, as colour stops are.
+    const red = (l: number) =>
+      Array.from({ length: STOP_COUNT }, (_, k) => table[row(l) + (k + 1) * 4] as number);
+    expect(red(0)[0]).toBeCloseTo(1, 6);
+    expect(red(0)[STOP_COUNT - 1]).toBeCloseTo(0, 6);
+    expect(red(0)[Math.floor((STOP_COUNT - 1) / 2)]).toBeGreaterThan(0.4);
+    expect(red(1)[0]).toBeCloseTo(0, 6);
+    expect(red(1)[STOP_COUNT - 1]).toBeCloseTo(0.2, 6);
+    expect(layerUsesCoordinate(profiled)).toBe(true);
+    expect(layerUsesCoordinate(tubercles)).toBe(true);
+    expect(layerUsesCoordinate(bumps)).toBe(false);
+    // A profile outside 0..1, or empty, is a mistake, and so is one a layer did not declare.
+    const bad = (profile: number[]): SkinLayer => ({
+      ...profiled,
+      paint: () => ({ strength: 1, height: 0.001, size: 0.001, profile }),
+    });
+    expect(() => paintStopTable([bad([1.5])], input())).toThrow(/profile/);
+    expect(() => paintStopTable([bad([])], input())).toThrow(/profile/);
+    expect(() => paintStopTable([bad(Array(STOP_COUNT + 1).fill(1))], input())).toThrow(/profile/);
+    const undeclared: SkinLayer = {
+      ...bumps,
+      paint: () => ({ strength: 1, height: 0.001, size: 0.001, profile: [1] }),
+    };
+    expect(() => paintStopTable([undeclared], input())).toThrow(/profile/);
+    const missing: SkinLayer = {
+      ...profiled,
+      paint: () => ({ strength: 1, height: 0.001, size: 0.001 }),
+    };
+    expect(() => paintStopTable([missing], input())).toThrow(/profile/);
+  });
+
+  it("carry a mark's colour ratio and amount in the stops, for a striae layer", () => {
+    const striae: SkinLayer = {
+      id: "striae",
+      kind: "detail",
+      pattern: "striae",
+      targets: [],
+      fields: none,
+      paint: () => ({
+        strength: 0.9,
+        height: 0.00015,
+        size: 0.005,
+        striae: { amount: 0.6, ratio: [0.9, 0.7, 0.75] },
+      }),
+    };
+    const table = paintStopTable([striae], input());
+    const head = Array.from(table.slice(0, 4)).map((x) => Number(x.toFixed(6)));
+    expect(head).toEqual([0.9, 9, 0.00015, 0.005]);
+    // Stop 0 is the ratio, stop 1 the amount.
+    expect(Array.from(table.slice(4, 8)).map((x) => Number(x.toFixed(6)))).toEqual([
+      0.9, 0.7, 0.75, 1,
+    ]);
+    expect(Array.from(table.slice(8, 12)).map((x) => Number(x.toFixed(6)))).toEqual([0.6, 0, 0, 1]);
+    expect(layerUsesCoordinate(striae)).toBe(true);
+    const bad = (striaePaint: object | undefined): SkinLayer => ({
+      ...striae,
+      paint: () => ({
+        strength: 1,
+        height: 0.0001,
+        size: 0.005,
+        ...(striaePaint && {
+          striae: striaePaint as { amount: number; ratio: [number, number, number] },
+        }),
+      }),
+    });
+    expect(() => paintStopTable([bad(undefined)], input())).toThrow(/striae/);
+    expect(() => paintStopTable([bad({ amount: 1.5, ratio: [1, 1, 1] })], input())).toThrow(
+      /striae/,
+    );
+    expect(() => paintStopTable([bad({ amount: 0.5, ratio: [1, -1, 1] })], input())).toThrow(
+      /striae/,
+    );
+    // Another pattern may not carry one.
+    const stray: SkinLayer = {
+      ...bumps,
+      paint: () => ({
+        strength: 1,
+        height: 0.001,
+        size: 0.002,
+        striae: { amount: 1, ratio: [1, 1, 1] as [number, number, number] },
+      }),
+    };
+    expect(() => paintStopTable([stray], input())).toThrow(/striae/);
   });
 
   it("leave the colour alone, and surface changes add by mask and strength", () => {
@@ -433,5 +558,98 @@ describe("a layer's paint is told the figure's age", () => {
     paintStopTable([layer], { ...base, age: 72 });
     paintStopTable([layer], base);
     expect(seen).toEqual([72, undefined]);
+  });
+});
+
+describe("a colour layer's relief (the lines that also shade)", () => {
+  const lineLayer = (relief?: readonly number[]): SkinLayer => ({
+    id: "line",
+    blend: "multiply",
+    targets: [],
+    fields: () => ({ mask: new Float32Array(0), coord: null }),
+    paint: () => ({
+      strength: 1,
+      stops: Array.from({ length: STOP_COUNT }, (_, k) =>
+        k === 3 ? ([0.8, 0.8, 0.8] as Rgb) : ([1, 1, 1] as Rgb),
+      ),
+      ...(relief && { relief }),
+    }),
+  });
+  const row = (table: Float32Array, k: number) => table.slice(k * 4, k * 4 + 4);
+
+  it("is encoded in the header (the deepest groove) and the stops' alpha (each stop's depth)", () => {
+    const depths = Array.from({ length: STOP_COUNT }, (_, k) => (k === 3 ? 0.0006 : 0));
+    const table = paintStopTable([lineLayer(depths)], input());
+    expect(row(table, 0)[2]).toBeCloseTo(0.0006, 9);
+    for (let k = 0; k < STOP_COUNT; k++)
+      expect(row(table, 1 + k)[3], `stop ${k}`).toBeCloseTo(depths[k] as number, 9);
+  });
+
+  it("is none, and not even asked for by the shader, when the paint gives none", () => {
+    const table = paintStopTable([lineLayer()], input());
+    expect(row(table, 0)[2]).toBe(0);
+    for (let k = 1; k <= STOP_COUNT; k++) expect(row(table, k)[3]).toBe(0);
+  });
+
+  it("resamples with the stops, and refuses a negative depth or more depths than stops", () => {
+    const coarse: SkinLayer = {
+      id: "coarse",
+      blend: "multiply",
+      targets: [],
+      fields: () => ({ mask: new Float32Array(0), coord: null }),
+      paint: () => ({
+        strength: 1,
+        stops: [
+          [1, 1, 1],
+          [0.8, 0.8, 0.8],
+          [1, 1, 1],
+        ],
+        relief: [0, 0.002, 0],
+      }),
+    };
+    const t = paintStopTable([coarse], input());
+    // Three stops across eight texels: the middle stop's depth lands between texels 3 and 4.
+    expect(
+      Math.max(...[1, 2, 3, 4, 5, 6, 7, 8].map((k) => row(t, k)[3] as number)),
+    ).toBeGreaterThan(0.0015);
+    expect(row(t, 1)[3]).toBe(0);
+    expect(row(t, 8)[3]).toBe(0);
+    expect(() => paintStopTable([lineLayer([-0.001])], input())).toThrow(RangeError);
+    expect(() =>
+      paintStopTable([lineLayer(Array.from({ length: STOP_COUNT + 1 }, () => 0.001))], input()),
+    ).toThrow(RangeError);
+  });
+
+  it("leaves the colour exactly as the stops give it: relief shades, it does not tint", () => {
+    const depths = Array.from({ length: STOP_COUNT }, (_, k) => (k === 3 ? 0.0006 : 0));
+    const base: Rgb = [0.4, 0.3, 0.2];
+    const fields = [[1, 3 / 7]] as const;
+    expect(applyLayers(base, paintStopTable([lineLayer(depths)], input()), fields)).toEqual(
+      applyLayers(base, paintStopTable([lineLayer()], input()), fields),
+    );
+  });
+
+  it("cuts a smooth groove at its stop: deepest there, nothing beyond the neighbouring stops, no kink", () => {
+    const depths = Array.from({ length: STOP_COUNT }, (_, k) => (k === 3 ? 0.001 : 0));
+    expect(lineRelief(depths, 3 / 7)).toBeCloseTo(-0.001, 9);
+    expect(lineRelief(depths, 2 / 7)).toBeCloseTo(0, 12);
+    expect(lineRelief(depths, 4 / 7)).toBeCloseTo(0, 12);
+    expect(lineRelief(depths, 0)).toBeCloseTo(0, 12);
+    expect(lineRelief(depths, 1)).toBeCloseTo(0, 12);
+    // Symmetric about the stop, and flat-bottomed (zero slope at the stop and at the edges).
+    for (const d of [0.02, 0.05, 0.1])
+      expect(lineRelief(depths, 3 / 7 - d)).toBeCloseTo(lineRelief(depths, 3 / 7 + d), 12);
+    const e = 1e-5;
+    expect((lineRelief(depths, 3 / 7 + e) - lineRelief(depths, 3 / 7 - e)) / (2 * e)).toBeCloseTo(
+      0,
+      6,
+    );
+    expect((lineRelief(depths, 2 / 7 + e) - lineRelief(depths, 2 / 7)) / e).toBeCloseTo(0, 3);
+    expect(
+      lineRelief(
+        Array.from({ length: STOP_COUNT }, () => 0),
+        0.5,
+      ),
+    ).toBe(0);
   });
 });

@@ -65,9 +65,20 @@ describe("placing body art on a figure", () => {
     expect(placed.marks[0]?.normal[2]).toBeGreaterThan(0.3);
     expect(placed.marks[0]?.normal[0]).toBeGreaterThan(0);
     expect(placed.tattoos[0]).toMatchObject({ image: "rose", width: 0.05, density: 1 });
-    expect(placed.marks.map((m) => m.kind)).toEqual(["scar", "port-wine"]);
+    expect(placed.marks.slice(0, 2).map((m) => m.kind)).toEqual(["scar", "port-wine"]);
     expect(placed.marks[1]).toMatchObject({ length: 0.04, width: 0.04, seed: 3, maturity: 1 });
-    expect(placed.vitiligo).toEqual({ extent: 0.5, seed: 0 });
+    // Vitiligo's patches follow, in mirrored pairs.
+    const patches = placed.marks.slice(2);
+    expect(patches.length).toBeGreaterThan(0);
+    expect(patches.length % 2).toBe(0);
+    for (let i = 0; i < patches.length; i += 2) {
+      const [l, r] = [patches[i], patches[i + 1]];
+      expect(l?.kind).toBe("vitiligo");
+      expect(l?.centre[0]).toBeCloseTo(-(r?.centre[0] as number), 5);
+      expect(l?.centre[1]).toBeCloseTo(r?.centre[1] as number, 5);
+      expect(r?.width).toBe(-(l?.width as number));
+      expect(r?.seed).toBe(l?.seed);
+    }
   });
 
   it("comes with every evaluation of a recipe that has it, and only then", () => {

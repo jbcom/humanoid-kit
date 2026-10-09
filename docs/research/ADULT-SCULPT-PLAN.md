@@ -284,6 +284,108 @@ Rejected: a variant mesh swapped in per figure (section 4), per-vertex local
 frames (above), and generating detail at load time from the recipe (it would
 move the sculpt's source of truth out of the pack).
 
+## 6b. Decision 5: reservoirs (what a shaft, a scrotum and a labial fold need)
+
+Detail targets move the lattice's own vertices. That shapes relief (the mound,
+labial folds) but not a shaft: a 10 to 20 cm extrusion of a surface whose cells
+are 2.3 mm would stretch a few cells into spikes. The anatomy needs *material*
+to extrude from, and it must stay one continuous surface (no attachment seam;
+the skin fields, occlusion bake and clothing masks of the body apply to it).
+
+**Use cases.** (1) A phallic body: from a clitoral glans of a few millimetres to a
+penis of 20 cm erect, one structure at different sizes, so intersex
+presentations are points on one continuum. (2) A pair of labioscrotal swellings:
+labia majora to scrotum, fused to any degree. (3) Folds (labia minora, foreskin,
+hood) that project beyond the surface. (4) Any combination on one figure, with no
+feature knowing which anatomy it is next to. (5) Nothing visible, and nothing
+different from the base, when a feature is absent; and nothing at all in a figure
+under 18.
+
+**Options.** (a) A separate mesh bound to the figure: an attachment seam, and its
+own skin fields and occlusion; rejected. (b) More vertices in the lattice at rest
+spread over the extrusion: wasteful and still spiky. (c) **Collapsed strips**: cut
+the surface along a closed loop of lattice edges around a disc of faces (the
+*cap*), insert rings of vertices between the loop and the cap that coincide with
+the loop at rest, and re-attach the cap to the last ring. The strips between
+rings have zero area at rest; detail targets pull the cap and the rings outward
+and they become the wall of a tube, with the cap as its tip. (d) A bud: a separate
+closed tube welded at the loop: at rest its cap cannot collapse to zero area
+(it spans the loop), so it would duplicate the skin and z-fight.
+
+**Decision: (c).** The reservoir exists only in the adult surface (a figure under
+18 is evaluated on the base surface and has none). It is generated at the
+subdivision level in use from the free surface: ring vertices are copies of the
+loop's vertices at that level (the same stencil row, hence the same position,
+skin weights and shading normal), so at rest the surface is exactly the surface
+without the reservoir, at every level, and the collapsed strips have zero area
+(they contribute no pixel and no normal). A detail target addresses a reservoir's
+rings at the lattice level (one vertex per loop vertex and ring, numbered after
+the region's), and finer levels interpolate along the ring. The strips belong to
+the control face that owns the cap edge they run from, and are written with that
+face's triangles, so a garment that hides the face hides them and the body
+occlusion bake covers them through their copied rows. A reservoir is data of the
+adult pack (`anatomy.reservoirs`: loop, cap faces, rings), authored by the
+packer from a disc on the lattice, never code that knows what it will become.
+
+Rejected: creases on the strip edges (a crease changes the limit surface at rest,
+a faint ridge along the loop at level 2), and reservoirs only at level 1 (the
+renderer offers level 2, and the cap's edges must match the strips' there).
+
+## 6c. Decision 6: the phallic organ (keys, factors and states)
+
+The organ is a tube drawn out of the phallic reservoir (`scripts/lib/detail/phallus.ts`):
+its rings leave the loop on the skin, bend from the skin's normal toward the way the
+organ lies, and close in a rounded glans on the cap. Authored by us from the loop and
+the measured numbers (ADULT-ANATOMY-DATA.md, F); nothing third-party is read.
+
+**Size is a blend of baked shapes, not a scale.** The root's loop is 1.3 cm in
+radius whatever is drawn from it, so a small organ is not a scaled-down large one
+(a clitoral glans cannot be a 0.1 homothety of a penis). The organ is baked at
+four sizes (a clitoral glans, a small organ, the pooled mean, a large one), and a
+size modifier between them blends its two neighbours by a hat. The pooled mean is
+exact at its key: flaccid 9.16 cm along the top and 9.31 cm round (Veale 2015).
+
+**The factor language.** The engine does not know any of this. The pack's manifest
+gives each detail target a weight as a product of factors (`src/model/detailFactors.ts`):
+`mod:`/`mod-:` (a modifier's positive or negative part), `signal:`, `ramp:` (a
+piecewise-linear function of a modifier, the hat) and `sramp:` (the same of a
+signal). `AdultDetailSpec.drives` gives a target a weight from factors alone;
+`gates` multiplies a modifier's own target by factors. A modifier end named ""
+is virtual: legal, no target, read by factors (the size, length and girth are such).
+
+**Variations are targets too.** Length and girth are two-sided modifiers whose full
+step is two standard deviations of the pooled values. A variation's shape depends
+on the size (a longer small organ is not a longer large one), so each key has its
+own length and girth targets, and the product of size and length is exact at the keys.
+
+**Arousal is drawn at three states**, not two. A morph moves each vertex in a straight
+line, so a tube swinging from hanging (about 70 degrees below forward, modelled) to
+rising (30 degrees above, provisional) would shorten at its middle (arousal 0.5 shorter
+than flaccid, found in the first build). Drawn at a midpoint too, it swings, and each
+pair is short enough to stay a tube. The signal's hats (`sramp:arousal`) are 1 at one
+state and fall to 0 at its neighbours. A key too small to be a penis (the clitoral
+glans) has no erect state: no verified magnitude exists for it.
+
+**Cost.** Each key has base, length and girth targets (five), and each state it erects
+through adds five again, so the organ is 50 targets of about 1,500 vertices (0.31 MB gzipped
+with the rest of the adult file). A cross term of length with girth is left out: it is
+second order and the keys carry the first.
+
+**The scrotal lobes and testes** (`scripts/lib/detail/scrotum.ts`) use the same tube
+(`detail/tube.ts`, shared) on the labioscrotal pair: each lobe leaves its root, turns
+down, and swells to the sac of one testis (an ellipsoid of the measured volume and the
+one full-text dimensions' proportions, plus skin), at three keys (a small testis, the
+European mean of 17.2 mL, a large one). The right is larger than the left by the
+measured 17.9 to 16.5; the figure faces +z, so its right side is the reservoir with x
+negative. One virtual one-sided modifier (`genitals/testes-size`) blends the keys; there
+is no arousal response, since none is measured. The roots' skin faces the midline, so a
+lobe leaves inward before it hangs and the pair overlap a little, as a bilobed sac does.
+The same pair is where the labia majora will come from (step 4).
+
+Measured, in `tests/phallus.test.ts`: the dorsal length and circumference of the
+default key against the literature, erect against flaccid (+43%, +25%), the monotone
+growth through the keys, and the surface against the authored shape for every variation.
+
 ## 7. How the patch stays bound to hm08
 
 - **Position.** Every new vertex is bound to base vertices exactly as an
@@ -299,14 +401,24 @@ move the sculpt's source of truth out of the pack).
 - **Features.** Feature displacement is added to the bound position, in the
   local frame, so a long shaft on a tall figure and on a short one are the same
   shape at the figure's scale.
-- **UVs and the skin layers.** The patch's UVs are the replaced region's UVs
-  interpolated onto the new vertices, so the patch lies in the same UV
-  neighbourhood and the body's texture space has no new island. The field atlas
-  rasteriser then draws the variant's patch triangles, with each adult layer's
-  fields computed from the zones (mask: zone membership; coordinate: along the
-  shaft, glans to base), and refreshes in place exactly as phase 1's
-  `LayerAtlas.refresh` does now. This is what turns today's penis and testes
-  layers, which paint nothing, into layers that do.
+- **UVs and the skin layers.** (As built; the original idea, a patch lying in the
+  replaced region's UV neighbourhood, could not colour a tube, since a reservoir's
+  strips are collapsed in UV and a long shaft cannot share a disc of skin's texels.)
+  Each reservoir's skin has an **island** of its own in free space of the body's UV
+  layout: the tube's wall as a grid (chain position along one axis, ring along the
+  other, the seam a duplicated column) and the cap as a disc, placed by the packer
+  at the root skin's scale (`scripts/lib/uvIslands.ts`; the body's UV layout leaves
+  about 36% free, and its top right corner and the gap between the legs are
+  empty). The reservoir names the adult layer that colours it
+  (`AdultReservoirSpec.island`, `layer`); the model derives the layer's fields on the
+  island's triangles (mask 1, coordinate from the loop to the tip) and the atlas
+  rasterises them with the body's, refreshing in place as phase 1's
+  `LayerAtlas.refresh` does (`LayerFieldsUpdate.extra`). This is what turns the
+  penis and testes layers, which painted nothing, into layers that do. Rejected:
+  mapping the wall radially onto the root's disc of skin (the whole tube's length in
+  a few texels, and the first strip spanning the disc), and a vertex attribute for
+  the fields (the skin shader reads them from the atlas by UV, and one path is
+  better than two).
 - **State morphs.** Engorgement moves from the `helper-genital` targets to the
   patch's own, with the same calibration (circumference +25%, length +43%), and
   the clitoral and vulvar responses are added only when their magnitudes are
@@ -383,9 +495,18 @@ gates were.
    anatomy depends on it.
 3. **One feature at a time**, each its own target file, zone, controls, tests and
    contact sheet: `mound` first (it replaces today's only visible target), then
-   `penis`, `testes`, the vulvar features. Status: the `mound` detail is built
-   (generated on the lattice, `scripts/lib/detail/mound.ts`, sized from
-   ADULT-ANATOMY-DATA.md section E). The rest need reservoir topology, below.
+   `penis`, `testes`, the vulvar features. Status: the `mound` is built, as a
+   generated control target (`scripts/lib/control/mound.ts`, sized from
+   ADULT-ANATOMY-DATA.md section E; a broad swell is low-frequency, so control
+   level suits it and detail is for what needs finer cells). The rest draw on reservoirs (section 6b),
+   which are built: the engine (`src/build/reservoir.ts`), linear detail
+   subdivision, and a phallic and a labioscrotal pair placed in the pack
+   (`scripts/lib/adultReservoirs.ts`); the phallic organ is drawn on the phallic
+   one (section 6c; the CC0 `genitals/penis-*` sliders are hidden and the engorgement
+   state morph is replaced by the detail's own arousal drives); the scrotal lobes
+   and testes are drawn on the labioscrotal pair (section 6c); the labia are next.
+   Step 4 (skin fields) is built for the organ and the sacs: each reservoir has a UV
+   island and a layer (section 7), and the penis and testes layers show on them.
 4. **Skin fields on the patch** and the layers' remap, so the phase 1 layers
    show.
 5. **State morphs on the patch** (engorgement moves from `helper-genital`).

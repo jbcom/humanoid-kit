@@ -208,7 +208,33 @@ export function lipStateAlbedo(tone: SkinTone, depth: number, cold: number, fear
  */
 export const MELANIN_FREE_RED_REFLECTANCE = 0.62;
 
+/**
+ * Skin with no melanin: the lightest measured skin's chromaticity at
+ * `MELANIN_FREE_RED_REFLECTANCE` in the red (docs/research/BODY-ART.md C1). The
+ * fairest skin still carries some melanin; taking it out raises every channel,
+ * the blue most, but haemoglobin and the dermis's other absorbers keep blue
+ * from rising as fast as a straight extrapolation of the melanin axis would,
+ * which turns violet (b* < 0) where depigmented skin stays yellowish. Keeping
+ * the fairest skin's chromaticity is a CHOICE until a measured melanin-free
+ * colour replaces it. A colour that is not human skin (`tone.override`) has no
+ * melanin to remove: it is its own melanin-free colour.
+ */
+export function melaninFreeAlbedo(tone: SkinTone): Rgb {
+  if (tone.override) return [...tone.override] as Rgb;
+  const fairest = skinAlbedo({ ...tone, melanin: 0 });
+  const k = MELANIN_FREE_RED_REFLECTANCE / (MELANIN_ANCHORS[0] as Rgb)[0];
+  return fairest.map((c) => Math.min(1, c * k)) as Rgb;
+}
+
 const log10 = (x: number) => Math.log10(Math.max(1e-6, x));
+
+/**
+ * The tone's melanin optical density: the red channel's, above
+ * `MELANIN_FREE_RED_REFLECTANCE` (the scale `melaninDensityAlbedo` multiplies).
+ */
+export function melaninDensity(tone: SkinTone): number {
+  return -log10(skinAlbedo(tone)[0]) + log10(MELANIN_FREE_RED_REFLECTANCE);
+}
 
 /**
  * Areola and nipple albedo for a skin tone; `depth` 0..1 sets how much darker.
@@ -235,14 +261,23 @@ export function areolaAlbedo(tone: SkinTone, depth: number): Rgb {
  * channel, above `MELANIN_FREE_RED_REFLECTANCE`), at `haemoglobin`: the tone
  * on the measured melanin axis that has that density, extrapolated per channel
  * past the deepest anchor as `areolaAlbedo` describes. A factor of 1 is the
- * skin itself; a factor below 1 finds a lighter tone. Because density is
- * multiplied, not added, the same factor darkens deep skin far more than fair
- * skin, which carries little melanin to multiply.
+ * skin itself; a factor below 1 finds a lighter tone, and below the lightest
+ * anchor's density goes on toward `melaninFreeAlbedo` (each channel's log
+ * moving in proportion to the density, as Beer–Lambert has it), reaching it at
+ * 0. Because density is multiplied, not added, the same factor darkens deep
+ * skin far more than fair skin, which carries little melanin to multiply.
  */
 export function melaninDensityAlbedo(tone: SkinTone, factor: number, haemoglobin: number): Rgb {
   const at = (melanin: number) => skinAlbedo({ ...tone, melanin, haemoglobin });
   const density = (rgb: Rgb) => -log10(rgb[0]) + log10(MELANIN_FREE_RED_REFLECTANCE);
   const target = density(at(clamp(tone.melanin, 0, 1))) * Math.max(0, factor);
+  const fairest = at(0);
+  const floor = density(fairest);
+  if (factor < 1 && target < floor) {
+    const t = target / floor;
+    const free = melaninFreeAlbedo({ ...tone, haemoglobin });
+    return fairest.map((c, k) => (free[k] as number) ** (1 - t) * c ** t) as Rgb;
+  }
   if (factor < 1) {
     // Lighter than the tone: bisect below it, down to the lightest anchor.
     let lo = 0;

@@ -75,7 +75,11 @@ Full detail in `docs/ARCHITECTURE.md`.
    evaluation onto the render path.
 7. Data files are generated, never hand-edited. Change the packer and rerun
    `pnpm pack:data`. The packer's licence gate must keep refusing any source file
-   that does not prove CC0 from its own content.
+   that does not prove CC0: a MakeHuman team asset by its own CC0 release header,
+   a community asset by its captured page stating CC0, whose licence governs,
+   or by its own CC0 mesh with the binding rebuilt and the asset's binding file
+   never shipped (owner rulings 2026-10-09; `scripts/lib/licenceRule.ts`,
+   `docs/licence-history.md`).
 8. Only MakeHuman asset data (CC0) is used. Never copy, port or translate
    MakeHuman program code, and keep `NOTICE.md` accurate.
 9. Public names, docs, examples and fixtures are neutral. Do not put the name of

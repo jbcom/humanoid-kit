@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import { beforeAll, describe, expect, it } from "vitest";
+import { AUTHORED_STYLES, DERIVED_STYLES } from "../scripts/lib/hairCards/index.ts";
 import { TEXTURE_CEILING } from "../scripts/lib/texelBudget.ts";
 import {
   addHairStyle,
@@ -37,7 +38,14 @@ const STYLES = [
   "short01",
   "bob01",
   "braid01",
+  ...DERIVED_STYLES.map((d) => d.id),
+  ...AUTHORED_STYLES.map((a) => a.id),
 ];
+
+/** The styles compiled from MakeHuman's assets: the authored ones carry no source files. */
+const AUTHORED = new Set(AUTHORED_STYLES.map((a) => a.id));
+/** Styles that reuse a MakeHuman style's cards (and so its source files) under their own strand map. */
+const DERIVED = new Set(DERIVED_STYLES.map((d) => d.id));
 
 const KB = 1024;
 
@@ -181,7 +189,8 @@ describe("a style's strand map", () => {
   it("keeps the cards' cut-out: every style but the solid braid has clear texels", () => {
     for (const s of scalpStyles) {
       const share = measured.get(s.id)?.clearShare as number;
-      if (s.id === "braid01") expect(share, s.id).toBeLessThan(0.01);
+      // (A solid braid, and the authored ropes, whose atlas is opaque to the tube's edge.)
+      if (s.id === "braid01" || AUTHORED.has(s.id)) expect(share, s.id).toBeLessThan(0.01);
       else expect(share, s.id).toBeGreaterThan(0.15);
     }
   });
@@ -208,9 +217,12 @@ describe("the pack's size", () => {
     for (const s of scalpStyles) expect(sizeOf(s), s.id).toBeLessThan(2560 * KB);
   });
 
-  it("keeps the whole pack under eight megabytes", () => {
-    const total = scalpStyles.reduce((t, s) => t + sizeOf(s), 0);
+  it("keeps the MakeHuman styles under eight megabytes, and each authored style under 700 KB", () => {
+    const total = scalpStyles.filter((s) => !AUTHORED.has(s.id)).reduce((t, s) => t + sizeOf(s), 0);
     expect(total).toBeLessThan(8 * 1024 * KB);
+    // A style is fetched when first worn, so what each costs matters beyond the total.
+    for (const s of scalpStyles.filter((x) => AUTHORED.has(x.id)))
+      expect(sizeOf(s), s.id).toBeLessThan(700 * KB);
   });
 });
 
@@ -220,8 +232,19 @@ describe("provenance", () => {
   it("names the source pack and its CC0 evidence for every source file", () => {
     expect(text).toMatch(/makehuman_system_assets_cc0\.zip/);
     expect(text).toMatch(/explicitly released as CC0/);
-    // Per style: the .mhclo, the .obj and the .mhmat each proved their own header.
-    expect(text).toMatch(new RegExp(`${hairManifest.styles.length * 3} file\\(s\\) — file header`));
+    // Per style packed from a file: the .mhclo, the .obj and the .mhmat each proved
+    // their own header. Body hair cards and the authored styles are generated, and come from no file;
+    // a derived style reads the files of the style it keeps the cards of.
+    const fromFiles = hairManifest.styles.filter(
+      (s) => s.kind !== "beard" && !AUTHORED.has(s.id) && !DERIVED.has(s.id),
+    ).length;
+    expect(text).toMatch(new RegExp(`${fromFiles * 3} file\\(s\\) — file header`));
+    expect(text).toMatch(/body hair cards \(kind `beard`\) come from no source file/);
+  });
+
+  it("says which styles the packer authored itself, and that no one's mesh or texture was read for them", () => {
+    for (const a of AUTHORED_STYLES) expect(text, a.id).toContain(a.id);
+    expect(text).toMatch(/authored by the packer/);
   });
 
   it("lists the hash of every shipped file", () => {
@@ -247,16 +270,16 @@ describe("loading the pack", () => {
     ).toThrow(/different body pack/);
   });
 
-  it("refuses a style of a kind it does not know, and accepts brows and lashes beside scalp hair", () => {
+  it("refuses a style of a kind it does not know, and accepts brows, lashes and beards beside scalp hair", () => {
     const body = bodyPackData(["core"]);
     const withKind = (kind: string): HairManifest => ({
       ...hairManifest,
       styles: hairManifest.styles.map((s, i) => (i === 0 ? { ...s, kind: kind as never } : s)),
     });
     expect(() =>
-      parseHumanoidAssets(body, undefined, undefined, { manifest: withKind("beard") }),
+      parseHumanoidAssets(body, undefined, undefined, { manifest: withKind("mane") }),
     ).toThrow(/unknown hair kind/);
-    for (const kind of ["brows", "lashes"]) {
+    for (const kind of ["brows", "lashes", "beard"]) {
       const parsed = parseHumanoidAssets(body, undefined, undefined, { manifest: withKind(kind) });
       expect(parsed.hair?.styles.get(STYLES[0] as string)?.kind).toBe(kind);
     }

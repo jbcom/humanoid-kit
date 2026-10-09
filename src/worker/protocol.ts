@@ -118,7 +118,7 @@ export type WorkerResponse =
       ms: number;
       /** The worn hair style's static data, with the first evaluation that wears it; absent after. */
       hairTopology?: HairTopology;
-      /** The worn brows' and lashes' static data, each once like the scalp style's. */
+      /** The worn brows', lashes' and beard cards' static data, each once like the scalp style's. */
       decalTopologies?: HairTopology[];
     }
   | { type: "garment"; id: number; topology: GarmentTopology }

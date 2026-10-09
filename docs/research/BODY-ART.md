@@ -92,19 +92,64 @@ magnitude is either measured, with its source, or marked **CHOICE**.
 
 ## Part C: what the layers use
 
-### C1. Ink (`src/bodyArt/ink.ts`, `src/render/bodyArtTexture.ts`)
+### C1. Ink (`src/bodyArt/ink.ts`, `src/render/tattooDecals.ts`)
 
 | Quantity | Value | Source or choice |
 | --- | --- | --- |
 | Ink seen through the epidermis | skin albedo ÷ melanin-free albedo, per channel | Model: ink under a normal epidermis (A1), with the skin model's measured melanin; nothing fitted to tattoos |
 | Melanin-free albedo | the lightest measured skin's chromaticity, red at `MELANIN_FREE_RED_REFLECTANCE` (0.62) | CHOICE: extrapolating the melanin axis turns it violet (b\* < 0), which vitiligo is not (A2: lesions keep b\* > 0) |
-| `INK_DEPTH` | 0.3 mm | CHOICE within the papillary dermis (A1); no depth in micrometres was read |
+| `INK_DEPTH` | 0.2 mm | CHOICE at the top of the papillary dermis (A1); no depth in micrometres was read. 0.3 mm read greyish on the contact sheets (black on the fairest skin L\* 36) |
 | Dermal veil | 1 − exp(−depth / ℓ) per channel, ℓ the skin's scatter length (1.14 mm at 550 nm, spectral slope 1.4) | Skin model (`SKIN_SCATTER`); the blue cast follows from it, not tuned |
-| `INK_SPREAD` | 0.3 mm | CHOICE: light diffusing back from the ink spreads about as far as it travels |
-| Projection reach, facing | 30% of the longer side (≥ 1 cm); cosine ≥ 0.2 | CHOICE |
+| `INK_SPREAD` | 0.2 mm | CHOICE: light diffusing back from the ink spreads about as far as it travels. The shader never samples a tattoo's image finer than a disc this far round |
+| `TATTOO_IMAGE_MAX` | 1024 texels a side | CHOICE: 1024 across a 40 cm back piece is 0.4 mm a texel, about the ink's spread across, so tattoos up to that size lose nothing the skin would show |
+| `TATTOO_MARGIN` | 8 mm | CHOICE: more than one UV texel at 1024² wherever skin is drawn (2.3 mm at most on a forearm, measured), so every texel under an image has its four neighbours in the decal |
+| `TATTOO_LAYERS_MAX` | 2 | CHOICE: a third tattoo overlapping two goes on the top layer, over the one there |
+| `TATTOO_ANISOTROPY` | 8 (or the GPU's limit) | CHOICE: a tattoo seen edge-on round a limb keeps its detail along the limb |
+| Projection reach | 50% of the decal's longer side (≥ 1 cm), fading out over its last 40% | CHOICE: 30% with a hard end cut cheek and arm decals in straight lines on the sheets |
+| Projection facing | full from cosine 0.35, nothing below 0.05 | CHOICE, faded for the same reason |
+| The nail plate | no ink or mark acts on it (the nail-gloss layer's mask) | It is not skin: vitiligo turned the sheets' nail beds white |
 
 No tattoo colour was found measured, so the result is checked only for
 direction: the same ink is darker on every deeper tone, and reads cooler (b\*
-lower) than the skin round it. Black ink on the fairest skin comes out L\* 36,
-b\* 1.5; whether that is too light for fresh black ink is for the contact
-sheets to judge.
+lower) than the skin round it. Fresh black ink on the fairest skin is L\* 30,
+b\* about 2. The body-art texture's texels are 1.2–2.3 mm on a forearm at
+1024² (measured), which pixelated line work baked as colour on the sheets. The
+tattoos are therefore decals sampled from their own images at the screen's
+detail (ARCHITECTURE, "Tattoos, as built").
+
+### C2. Marks (`src/bodyArt/marks.ts`, `src/bodyArt/vitiligo.ts`)
+
+Marks change what is in the skin (melanin, haemoglobin) through the skin
+model, never its colour directly, so each reads at every tone. Melanin moves
+in absolute density, not as a share of the skin's own: a vitiligo patch loses
+its melanocytes and a naevus is a nest of them, whatever the skin round them.
+
+| Quantity | Value | Source or choice |
+| --- | --- | --- |
+| Vitiligo's residual melanin | 0.15 × the density of skin at melanin 0.15 | Krotkova 2025: patches keep 0.10–0.26 of the skin's melanin index and read 1–5 units on any skin (absolute); the cohort's tone is a CHOICE (fair European) |
+| Below the lightest measured skin | each channel's log moves with density toward the melanin-free albedo (C1) | Beer–Lambert; continuous with the measured axis |
+| Check | patch L\* ≈ 70 at every tone; ΔE\*ab 8.5 (melanin 0.1) to 12.4 (0.2), and larger on deeper skin; b\* below the skin's at fair to medium tones | Toriyama 2021 (ΔE\* mostly 9–13); Brazzelli 2008 (L\* up, b\* down) |
+| Melanin added at full (`markMelaninSpan`) | the measured axis's density span, lightest to deepest | CHOICE of scale |
+| Café-au-lait, naevus | 0.12 and 0.55 of that span | CHOICES: light brown (fair skin L\* 65 → 58) and dark brown (deepest skin L\* 22 → 11, not black) |
+| Port-wine stain | 4 steps of the measured haemoglobin axis | CHOICE (fair skin a\* 11 → 32) |
+| Fresh or raised scar's redness | log(red ÷ green) 1.96 × the skin's, at melanin 0.2 | Aoki 2016: keloid erythema index 1.96 × the forearm's; the cohort's tone a CHOICE |
+| Raised scar's melanin | + 0.32 × the density of skin at melanin 0.2 | Aoki 2016: keloid melanin index 1.32 × |
+| Mature flat scar | 0.35 of the way to vitiligo's residual | CHOICE: paler than its skin |
+| Scar smoothness, raise | roughness −0.15; 1.5 mm at `raised` 1 | CHOICES |
+| Dermal melanocytosis | ink of [0.06, 0.04, 0.03] (linear) at 0.75 coverage, through C1's optics | CHOICE; its blue-grey follows from the dermal veil |
+| Outlines | radius harmonics 2–5, edge 0.25–0.6 mm (dermal pigment: 30% of its half-size) | CHOICES after the clinical descriptions in A2–A4 |
+| Vitiligo's sites | round the eyes and mouth (15% each), backs of the hands (30%), wrists, elbows, knees, tops of the feet (10% each); mirrored left to right | CHOICE following where non-segmental vitiligo is reported |
+| Vitiligo's extent | 2 to 14 mirrored pairs, 1.5 to 6 cm across, scaled by site: round the eyes and mouth 0.4, wrists and the backs of the hands 0.7, feet 0.8, elbows and knees 1 | CHOICE: a full-size patch round the mouth read as a mask on the sheets |
+
+### C3. Piercings (`src/bodyArt/jewellery.ts`, `src/bodyArt/sites.ts`)
+
+| Quantity | Value | Source or choice |
+| --- | --- | --- |
+| Sites | the vertex the feature's MakeHuman target moves most; the septum the midline nose vertex nearest the point between the nostrils | The targets (frozen base mesh) |
+| Channel through the tissue | into the skin (lobe, helix, nostril, lip), across (septum), vertically under the skin (brow, navel) | Piercing anatomy |
+| Tissue depth | lobe 4 mm, helix 2, nostril 3, columella 7 across, brow 8, lip 6, navel 8 | CHOICES |
+| Default sizes | stud 3 mm, ring 10 mm across, barbell 14 mm | CHOICES (common retail sizes) |
+| Ring wire, barbell balls and bar | 8% of the ring (≥ 0.8 mm); balls 22% of the bar (≥ 2.5 mm); bar 1.2 mm | CHOICES |
+| Metal reflectance (linear) | steel 0.56/0.57/0.58, silver 0.95/0.93/0.88, gold 1.00/0.71/0.29, titanium 0.54/0.50/0.45 | Measured optical constants (Hoffman, SIGGRAPH 2015 course notes, after Gulbrandsen 2014) |
+| Rose gold | 0.97/0.68/0.42 | CHOICE between gold and copper (0.95/0.64/0.54) |
+| Roughness | 0.18 | CHOICE: polished |
