@@ -161,6 +161,28 @@ describe("the crease layers' fields", () => {
     expect(pkg.creaseLayerId).toBe(creaseLayerId);
   });
 
+  it("lie within one window of their own joint, along the limb and in the posed bend too", () => {
+    // Nothing of the elbow's creases reaches the forearm's far end (a bent forearm points at
+    // the camera, and a crease half way down it reads as a ring at the wrist), and no crease
+    // is further from its joint along the limb than its window.
+    for (const joint of JOINTS)
+      for (const side of SIDES) {
+        const id = CREASE_LAYERS.findIndex((l) => l.id === creaseLayerId(joint, side));
+        const g = geometry(joint, side);
+        for (let v = 0; v < n; v++) {
+          if (mask(id, v) <= 0.001) continue;
+          const d = [0, 1, 2].map((k) => (P[v * 3 + k] as number) - (g.head[k] as number));
+          const along = d.reduce((s, x, k) => s + x * (g.axis[k] as number), 0);
+          expect(Math.abs(along), `${joint}.${side} vertex ${v}`).toBeLessThanOrEqual(
+            CREASE_HALF_WIDTH[joint] + 1e-6,
+          );
+          expect(Math.hypot(...d), `${joint}.${side} vertex ${v}`).toBeLessThan(
+            CREASE_HALF_WIDTH[joint] + 0.13,
+          );
+        }
+      }
+  });
+
   it("leave the rest of the body alone: no crease layer reaches a vertex far from every joint", () => {
     const joints = JOINTS.flatMap((j) => SIDES.map((s) => ({ j, ...geometry(j, s) })));
     for (let l = 0; l < CREASE_LAYERS.length; l++)
