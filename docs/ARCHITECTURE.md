@@ -572,6 +572,24 @@ stays MakeHuman's data as it is and the correction is a statement about this
 renderer's colour pipeline. A test re-measures the texture and fails if the
 constant drifts; evidence in `docs/evidence/teeth.md`.
 
+### Teeth exposure
+
+The teeth's baked occlusion counts every ray the lips, cheeks and chin block
+within 5 cm, so teeth the lips have parted a little (a grin, a snarl, a look of
+fear) bake at a tenth open or less: with the light a tooth gets, floor +
+(1 - floor) × openness, that renders the exposed row as a dim grey-olive. Per
+pose, the exact bake (a ray test at the posed face, against the pose-keyed blend
+the shader does) agrees with the blend to within 12 % for every expression, so
+the blend is not the fault, nor is the key set; it is the bake's scale. The teeth
+material raises the openness to `TEETH_EXPOSURE`, 0.5, before lighting it
+(`patchOcclusion`'s `exposure`): a tooth a tenth open gets 0.42 of full light
+instead of 0.24, a covered tooth (openness 0) stays at the floor, a fully open
+one is unchanged. A **choice**, tuned against `docs/evidence/expressions.md`,
+and the lip and the tongue are untouched. The tongue never reaches the plane of
+the lower teeth's fronts in any expression at any age (a test holds it), so
+the pink seen between the lower teeth and the lower lip in a grin is the lower
+gum, which the teeth mesh carries.
+
 ### The gums
 
 The same lift reached the texture's gum texels, which are MakeHuman's dark
@@ -756,11 +774,17 @@ a look of surprise. `EXPRESSIONS` (`src/rig/expressions.ts`) names ten as
 weights of units (smile, grin, frown, surprise, anger, disgust, fear, sadness,
 blink, squint), `expressionUnits(id, intensity)` scales one for a pose's
 `faceUnits`, and the caller blends them as any other units. They follow the
-facial action coding system's description of each emotion (a smile is the lip
-corner puller with the cheek raiser; surprise the brow raisers with the upper
-lid raiser and a dropped jaw), but a MakeHuman unit is a bone-driven shape,
-not an action unit, so every weight is a **choice** judged against the sheets
-in `docs/evidence/expressions.md`, to be tuned rather than cited. Each holds a
+facial action coding system's prototypes for each emotion (Ekman and Friesen
+1978; Ekman, Friesen and Hager 2002; happiness AU6 + AU12, sadness AU1 + AU4 +
+AU15 + AU17, surprise AU1 + AU2 + AU5 + AU26, fear those with AU20, anger AU4 +
+AU5 + AU7, disgust AU9 + AU10, as tabulated in the EMFACS literature and taken
+from memory of it, not re-read), mapped unit by unit in `src/rig/expressions.ts`
+(AU12 is `MouthPullUp`, AU9 `NoseWrinkler`, AU26 `JawDrop`, …). The pack has no
+lip tightener (AU23), and a MakeHuman unit is a bone-driven shape, not an
+action unit, so every weight is a **choice** judged against the sheets in
+`docs/evidence/expressions.md`, to be tuned rather than cited. Surprise raises
+the brows to 0.7, not 1: at full weight the lift made a boxy ridge over each
+eye. Each holds a
 left unit at the weight of its right (a test checks the pairing, and that the
 posed skin is the mirror of itself to 0.1 mm), so an expression never reads as
 a smirk; a one-sided face is composed from units by the caller.
