@@ -520,6 +520,28 @@ Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
    change slowly (seconds), so a re-evaluation per change is acceptable;
    colour, detail and sheen states cost no evaluation at all.
 
+**Adult-pack layers (design, 2026-10-09; built with the milestone 3 graft
+lane).** Genital-region colour, relief and state layers draw their masks from
+the adult pack's targets, which arrive in the last load stage, after the
+topology and the field atlas exist. Decisions:
+
+- Their layer code (colour math only, no data) lives in the core as
+  `ADULT_SKIN_LAYERS`, appended to the stack, so the shader is compiled once
+  with every layer whether or not the pack is installed. The adult pack stays
+  data.
+- Until the adult stage arrives their fields are zero (empty atlas pages).
+  When it arrives the worker derives the fields from the pack's targets and
+  posts them; the main thread re-rasterises those pages of the shared atlas.
+  No shader recompiles and no figure re-evaluates.
+- `SkinPaintInput` gains `adult` (from the recipe's age). Every adult-pack
+  layer paints zero strength under 18, so even a figure whose atlas holds the
+  fields shows nothing there, consistent with genital anatomy living only in
+  the adult pack (AGE-POLICY.md).
+
+Rejected: shipping layer code inside the adult pack (a second code path that
+the core's tests could not reach), and recompiling the material when the pack
+loads (a visible hitch, and per-figure shader variants).
+
 **Contract changes** (additive, owned by the integrator; all in place): a
 `kind` on `SkinLayer` (`colour`, the default; `detail`; `surface`), stop-table
 rows that carry each kind's parameters, the UV-scale field, and `signals` as an
