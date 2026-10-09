@@ -106,6 +106,14 @@ export const UV_SCALE_ATTRIBUTE = "hkUvScale";
 export const STRAND_DIRECTIONS = 8;
 
 /**
+ * Pixel sizes, in cells across, between which strands give way to their mean
+ * cover: drawn one by one while a pixel is under a third of a cell, the mean
+ * from two thirds on.
+ */
+export const STRAND_NEAR_LIMIT = 0.33;
+export const STRAND_FAR_START = 0.66;
+
+/**
  * Strand layers (kind 6): hair lying on the skin, drawn at true scale.
  *
  * Each layer's strands are roots scattered over a grid of cells in the plane
@@ -131,7 +139,10 @@ export const STRAND_DIRECTIONS = 8;
  *
  * Where a cell across is smaller than a pixel the grid cannot be sampled, and
  * the strands become their mean cover (`strandCover`, what `applyLayers`
- * computes), eased in as a cell narrows from 1.3 pixels to two thirds of one.
+ * computes), eased in as the pixel grows from `STRAND_NEAR_LIMIT` to
+ * `STRAND_FAR_START` of a cell: the search covers the cells round the pixel's
+ * centre, so a pixel any wider than a cell would sample a few strands of many
+ * and speckle.
  */
 const STRAND_FUNCTIONS = (count: number) => `
 varying vec3 vHkFlow;
@@ -209,7 +220,7 @@ vec3 hkApplyStrands( vec3 c, vec2 uv ) {
 		// Hair the skin's measured albedo already holds (vellus) adds no mean cover.
 		float mean = more.y > 0.5 ? 0.0 : min( ${glslFloat(MAX_STRAND_COVER)}, cover * density * 0.75 * len * width );
 		float ca = 1.0 / ( density * 0.5 * len );
-		float far = smoothstep( 0.75, 1.5, px / ca );
+		float far = smoothstep( ${glslFloat(STRAND_NEAR_LIMIT)}, ${glslFloat(STRAND_FAR_START)}, px / ca );
 		float a = mean;
 		if ( far < 1.0 ) {
 			float seed = float( l ) * 101.0;

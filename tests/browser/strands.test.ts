@@ -82,6 +82,16 @@ describe("strand layers", () => {
     expect(Math.abs(darkNear - darkFar)).toBeLessThan(0.35 * darkFar);
   });
 
+  it("do not speckle where a cell across is about a pixel: they are their mean there", () => {
+    // HAIR's cell across is 1 / (density × half the length) ≈ 0.67 mm; 128 of them.
+    const span = 128 / (HAIR.density * 1e4 * 0.5 * HAIR.length);
+    const hair = renderLayers([strands()], {
+      light: FRONT,
+      view: { span, centre: NEAR.centre },
+    });
+    expect(Math.sqrt(variance(hair))).toBeLessThan(0.01 * mean(hair));
+  });
+
   it("still draw strands at the far corner of the UV layout, where cell indices are large", () => {
     const corner = { span: 0.01, centre: [0.99, 0.99] as [number, number] };
     const bare = renderLayers([], { light: FRONT, view: corner });
