@@ -87,8 +87,8 @@ export function striaeColour(tone: SkinTone, maturity: number): Rgb {
 const mix3 = (a: Rgb, b: Rgb, t: number): Rgb =>
   [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)] as Rgb;
 
-/** The spacing of the streaks, metres (CHOICE: marks 2 to 6 mm across with gaps of the same order). */
-export const STRIA_SPACING = 0.005;
+/** The spacing of the streaks, metres (CHOICE: marks 3 to 5 mm across with gaps of the same order, wide enough to read at the distance of a whole figure). */
+export const STRIA_SPACING = 0.009;
 
 /** The noise's threshold for a mark at an amount: the more marks, the lower, from `STRIA_THRESHOLD_BASE` (above 1: none) by `STRIA_THRESHOLD_SLOPE` an amount. */
 export const STRIA_THRESHOLD_BASE = 1.04;

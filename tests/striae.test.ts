@@ -151,8 +151,9 @@ describe("the pattern of the marks", () => {
   });
 
   it("is made of streaks: long along their direction, narrow across it", () => {
-    const n = 120;
-    const f = patch(1, 0, n);
+    const n = 200;
+    const step = 0.0005;
+    const f = patch(1, 0, n, step);
     const m = mean(f);
     const corr = (dx: number, dy: number) => {
       let s = 0;
@@ -165,9 +166,12 @@ describe("the pattern of the marks", () => {
       return s / c;
     };
     const zero = corr(0, 0);
-    // Wave direction along x: the mark varies across x and runs along y. 4 mm along vs across.
-    expect(corr(0, 8) / zero).toBeGreaterThan(0.4);
-    expect(Math.abs(corr(8, 0) / zero)).toBeLessThan(0.3);
+    // Wave direction along x: the mark varies across x and runs along y. A spacing and a half along
+    // a streak is still on it; half a spacing across is between two.
+    const along = Math.round((1.5 * STRIA_SPACING) / step);
+    const across = Math.round((0.5 * STRIA_SPACING) / step);
+    expect(corr(0, along) / zero).toBeGreaterThan(0.4);
+    expect(corr(across, 0) / zero).toBeLessThan(0.1);
   });
 
   it("turns with its orientation", () => {
