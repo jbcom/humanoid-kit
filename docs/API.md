@@ -422,6 +422,11 @@ compute what the renderer will do.
   12 s); the others are choices (research/SKIN-STATES.md C4).
   `quantiseShapeSignal(s)` and `SHAPE_SIGNAL_STEPS` (50) round the signals
   that reshape the figure, so an easing one does not evaluate every frame.
+  `quantisedShapeSignals(recipe, signals, names)` rounds the named ones after
+  the age policy has judged them as given: rounding would turn a small or
+  negative adult-only signal into 0, so a figure under 18 with any nonzero one
+  throws `AgePolicyError` (`<Humanoid>` reports it through `onError` and does
+  not evaluate).
 
 ### Rig and poses
 

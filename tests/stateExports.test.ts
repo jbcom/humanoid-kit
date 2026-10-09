@@ -14,6 +14,7 @@ describe("the package entry's skin-state API", () => {
       "SkinStateFilter",
       "stateContributions",
       "quantiseShapeSignal",
+      "quantisedShapeSignals",
     ];
     for (const name of functions)
       expect(typeof (kit as Record<string, unknown>)[name], name).toBe("function");

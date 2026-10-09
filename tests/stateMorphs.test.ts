@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  quantisedShapeSignals,
   quantiseShapeSignal,
   SHAPE_SIGNAL_STEPS,
   stateContributions,
 } from "../src/makehuman/stateMorphs.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
+import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { AREOLA_LAYER } from "../src/surface/regions/rest.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
@@ -80,6 +82,17 @@ describe("state morphs", () => {
 });
 
 describe("the shape signals' steps", () => {
+  it("refuse an adult-only signal under 18 before rounding could hide it", () => {
+    const teen = createRecipe({ macros: { age: 15 } });
+    const adult = createRecipe({ macros: { age: 30 } });
+    const names = ["cold", "arousal"];
+    // Each of these rounds or clamps to 0, yet is still a nonzero adult-only signal.
+    for (const arousal of [0.005, -0.3, 1e-9])
+      expect(() => quantisedShapeSignals(teen, { arousal }, names)).toThrow(AgePolicyError);
+    expect(quantisedShapeSignals(teen, { cold: 0.503 }, names)).toEqual([0.5, 0]);
+    expect(quantisedShapeSignals(adult, { cold: 1, arousal: 0.005 }, names)).toEqual([1, 0]);
+  });
+
   it("round a signal to one of a few steps, inside 0..1", () => {
     expect(SHAPE_SIGNAL_STEPS).toBe(50);
     expect(quantiseShapeSignal(0)).toBe(0);

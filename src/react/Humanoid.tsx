@@ -32,7 +32,7 @@ import {
   TextureLoader,
   Vector3,
 } from "three";
-import { quantiseShapeSignal, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
+import { quantisedShapeSignals, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import type {
   AttachmentTopology,
   Evaluation,
@@ -573,7 +573,16 @@ export function Humanoid({
     ],
     [ready],
   );
-  const shapeKey = shapeNames.map((name) => quantiseShapeSignal(signals?.[name] ?? 0)).join(",");
+  // The age policy judges the signals before they are rounded; a refused one
+  // is reported rather than evaluated.
+  const { shapeKey, signalPolicyError } = useMemo(() => {
+    try {
+      const key = quantisedShapeSignals(recipe, signals ?? {}, shapeNames).join(",");
+      return { shapeKey: key, signalPolicyError: null };
+    } catch (e) {
+      return { shapeKey: "", signalPolicyError: e as Error };
+    }
+  }, [recipe, signals, shapeNames]);
   const shapeSignals = useMemo(
     () => Object.fromEntries(shapeNames.map((name, i) => [name, Number(shapeKey.split(",")[i])])),
     [shapeNames, shapeKey],
@@ -581,6 +590,10 @@ export function Humanoid({
 
   useEffect(() => {
     if (!geometries) return;
+    if (signalPolicyError) {
+      report(signalPolicyError);
+      return;
+    }
     let live = true;
     client.evaluate(recipe, key, shapeSignals).then(
       (ev) => {
@@ -606,7 +619,19 @@ export function Humanoid({
     return () => {
       live = false;
     };
-  }, [client, geometries, rig, ready, recipe, key, shapeSignals, onEvaluatedRef, report, ground]);
+  }, [
+    client,
+    geometries,
+    rig,
+    ready,
+    recipe,
+    key,
+    shapeSignals,
+    signalPolicyError,
+    onEvaluatedRef,
+    report,
+    ground,
+  ]);
 
   return (
     <group
