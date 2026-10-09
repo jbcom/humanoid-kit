@@ -12,7 +12,7 @@ import {
   twistAtlas,
 } from "./atlas.ts";
 import type { Cards } from "./ropes.ts";
-import { boxBraids, cornrows, locs, type StyleContext, twists } from "./styles.ts";
+import { bantuKnots, boxBraids, cornrows, locs, type StyleContext, twists } from "./styles.ts";
 
 export interface AuthoredStyleSpec {
   id: string;
@@ -74,6 +74,18 @@ export const AUTHORED_STYLES: readonly AuthoredStyleSpec[] = [
     build: locs,
     atlas: () => locAtlas(3),
     provenance: AUTHORED("matted rope tubes from a grid of partings (scripts/lib/hairCards)"),
+    feather: false,
+    fins: false,
+  },
+  {
+    id: "bantu01",
+    label: "Bantu knots",
+    tags: ["short", "knots", "coily"],
+    build: bantuKnots,
+    atlas: () => twistAtlas(9),
+    provenance: AUTHORED(
+      "twisted ropes coiled into knots on a grid of partings (scripts/lib/hairCards)",
+    ),
     feather: false,
     fins: false,
   },

@@ -8,6 +8,8 @@ export const hairPack = {
 	files: {
 		"afro01.bin.gz": new URL("./data/afro01.bin.gz", import.meta.url).href,
 		"afro01.webp": new URL("./data/afro01.webp", import.meta.url).href,
+		"bantu01.bin.gz": new URL("./data/bantu01.bin.gz", import.meta.url).href,
+		"bantu01.webp": new URL("./data/bantu01.webp", import.meta.url).href,
 		"beard-full.bin.gz": new URL("./data/beard-full.bin.gz", import.meta.url).href,
 		"beard-full.webp": new URL("./data/beard-full.webp", import.meta.url).href,
 		"bob01.bin.gz": new URL("./data/bob01.bin.gz", import.meta.url).href,
