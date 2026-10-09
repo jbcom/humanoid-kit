@@ -43,7 +43,7 @@ import type { Vec3 } from "../presence/presence.ts";
 import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import { createAttachmentMaterial } from "../render/attachmentLook.ts";
+import { createAttachmentMaterial, TeethMaterial } from "../render/attachmentLook.ts";
 import { DualBones, dualShadowMaterials, followDualSkinning } from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
@@ -385,6 +385,7 @@ function AttachmentMesh({
   visible,
   report,
   eyes,
+  melanin,
   shape,
 }: {
   index: number;
@@ -395,12 +396,17 @@ function AttachmentMesh({
   visible: boolean;
   report: (e: Error) => void;
   eyes: Recipe["eyes"];
+  melanin: number;
   shape: object;
 }) {
   const material = useAttachmentMaterial(topology, occlusionKeys, report);
   useEffect(() => {
     if (material instanceof EyeMaterial) material.setAppearance(eyes);
   }, [material, eyes]);
+  useEffect(() => {
+    // The gums are pigmented as the skin is.
+    if (material instanceof TeethMaterial) material.setSkin({ melanin });
+  }, [material, melanin]);
   return (
     <SkinnedPart
       geometry={geometry}
@@ -827,6 +833,7 @@ export function Humanoid({
                 visible={shown}
                 report={report}
                 eyes={recipe.eyes}
+                melanin={recipe.skin.melanin}
                 shape={shape}
               />
             ) : null;

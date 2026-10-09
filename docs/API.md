@@ -700,7 +700,10 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   pack's material colour, since that colour assumed MakeHuman's display-referred
   pipeline and rendered here as grey (`attachmentColour`,
   `createAttachmentMaterial`; `docs/evidence/teeth.md`); other attachments are
-  drawn as the pack describes them.
+  drawn as the pack describes them. The teeth's gums are a pale coral pink
+  (`GUM_LAB`), pigmented browner and patchier with `recipe.skin.melanin`
+  (`TeethMaterial.setSkin`, `gumAppearance`; ARCHITECTURE.md, "The gums";
+  `docs/evidence/gums.md`).
 - Updates the geometry in place when `recipe` changes.
 - Stores the latest ground offset (posed when posed) on the group's `userData.groundOffset`.
 - Disposes its geometries, textures and built-in materials on unmount.

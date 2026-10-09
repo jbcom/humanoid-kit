@@ -401,6 +401,40 @@ stays MakeHuman's data as it is and the correction is a statement about this
 renderer's colour pipeline. A test re-measures the texture and fails if the
 constant drifts; evidence in `docs/evidence/teeth.md`.
 
+### The gums
+
+The same lift reached the texture's gum texels, which are MakeHuman's dark
+saturated red (mean linear 0.195 / 0.039 / 0.045), and made the ring round the
+teeth an almost pure red. Real gingiva is a paler coral pink, and on deeper skin
+carries physiological melanin pigmentation, brown and patchy. Teeth therefore
+get a `TeethMaterial` (a `AttachmentStandardMaterial` whose fragment shader
+recolours the gum): a texel is gum where more than about half of its linear
+red is not green (`GUM_SATURATION`; the texture's texels fall into two groups,
+the tooth under 0.3 and the gum over 0.5, so a bright or stained tooth texel is
+never taken for gum, as it was when the test was a difference in red and green
+and left pink specks on the teeth), and a gum texel keeps its luminance
+(the creases painted into the texture) and takes the hue of `GUM_LAB`, mixed
+toward `GUM_PIGMENT_LAB` by `gumPigmentAmount(melanin)` (none up to melanin
+0.25, 0.85 at 1) in patches of a two-octave value noise over the texture's UVs
+(about a fifth of the pigment between patches). The tints are divided by
+`GUM_TEXTURE_MEAN_LUMINANCE`, measured from the shipped texture, so an average
+gum texel lands on the albedo and a test re-measures the texture. Tooth texels
+are untouched. `Humanoid` passes `recipe.skin.melanin` to the teeth, as it does
+the eye appearance to the eyes.
+
+**Choice, not measurement.** "Coral pink" and "brown, patchy melanosis on
+deeper complexions" are the periodontology descriptors of healthy gingiva (the
+pigmentation is graded clinically from none to heavy on the Dummett oral
+pigmentation index), but no table of CIELAB values from them is in this
+repository, so `GUM_LAB` (L\* 70, a\* 24, b\* 16, lifted above the 55 to 65 of a lit gum
+because the mouth's occlusion shades the ring round the teeth to about half), `GUM_PIGMENT_LAB` (L\* 35,
+a\* 12, b\* 13) and the pigmentation curve are picked to read right beside the
+lip and skin colours and tuned by eye against `docs/evidence/gums.md`. Decision:
+a recolour in the teeth's own shader over a second gum mesh or an edited pack
+texture, because the gum is part of the teeth texture's UV layout, the pack
+stays MakeHuman's data, and the tone must reach the gum without baking one
+texture per tone.
+
 ## Worker
 
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one
