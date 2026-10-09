@@ -142,6 +142,15 @@ anything**: a state morph for the clitoris waits for the primary text. The
 existing finding stands: the volume change exists and is large, its magnitude
 here is unverified.
 
+Consequence for the state morphs: the male shaft's flaccid and erect states are
+calibrated (circumference +25%, length +43%, section B4) and ship as the
+`arousal` morph. The vulvar and clitoral state has no CC0 target and no verified
+magnitude, so the library carries it as **absent and tested as absent**
+(`tests/adultPermutations.test.ts`), not as a guessed number. When the vulva
+sculpt exists, a provisional morph may use the two secondary figures above only
+if it is labelled uncalibrated in the pack and the doc, as `genitalAlbedo` is,
+and is replaced when the primary text is read.
+
 ## D. Asset licences
 
 The question: is any existing genital geometry or texture usable, and under what
