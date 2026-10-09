@@ -246,10 +246,19 @@ describe("detail and surface layers", () => {
     expect(s.specular).toBeCloseTo(0.5 * 0.5 * 0.4, 6);
   });
 
-  it("raise creases with a raised-cosine profile, size of them across the coordinate", () => {
+  it("cut creases as narrow grooves, size of them across the coordinate, flat at its ends", () => {
+    // A groove at the middle of each period, nothing at the period's ends (so a
+    // layer's window, whose ends are the coordinate's, starts and ends flat).
     expect(creaseHeight(0.001, 4, 0)).toBeCloseTo(0, 9);
-    expect(creaseHeight(0.001, 4, 1 / 8)).toBeCloseTo(0.001, 9);
+    expect(creaseHeight(0.001, 4, 1)).toBeCloseTo(0, 9);
+    expect(creaseHeight(0.001, 4, 1 / 8)).toBeCloseTo(-0.001, 9);
+    expect(creaseHeight(0.001, 4, 3 / 8)).toBeCloseTo(-0.001, 9);
     expect(creaseHeight(0.001, 4, 1 / 4)).toBeCloseTo(0, 9);
+    // Narrower than a cosine, which would be half as deep a quarter of a period in.
+    expect(creaseHeight(0.001, 4, 1 / 16)).toBeGreaterThan(-0.0002);
+    expect(creaseHeight(0.001, 4, 1 / 16)).toBeLessThan(0);
+    // Depth scales with the height.
+    expect(creaseHeight(0.004, 4, 1 / 8)).toBeCloseTo(-0.004, 9);
   });
 
   it("measure the body's UV scale in metres per UV unit, positive where the body is", () => {

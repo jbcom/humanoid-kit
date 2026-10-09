@@ -510,10 +510,19 @@ export function surfaceChange(
 }
 
 /**
- * A crease layer's relief at a point (metres): ridges across the coordinate,
- * `size` of them from 0 to 1, raised cosine profile. Bumps are the shader's
- * (a jittered cell field), so they are tested there.
+ * How narrow a crease's groove is: the raised cosine that spans a period,
+ * raised to this power. A cosine alone is a soft ripple; a crease is a narrow
+ * cut in flat skin, whose steep sides are what the light catches.
+ */
+export const CREASE_SHARPNESS = 3;
+
+/**
+ * A crease layer's relief at a point (metres, negative: a groove): `size`
+ * grooves across the coordinate from 0 to 1, one in the middle of each period
+ * and none at its ends, so a layer's window starts and ends flat. Bumps are the
+ * shader's (a jittered cell field), so they are tested there.
  */
 export function creaseHeight(height: number, size: number, coord: number): number {
-  return height * 0.5 * (1 - Math.cos(2 * Math.PI * size * coord));
+  const c = 0.5 * (1 - Math.cos(2 * Math.PI * size * coord));
+  return -height * c ** CREASE_SHARPNESS;
 }

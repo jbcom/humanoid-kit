@@ -6,7 +6,7 @@
  */
 import { DataUtils } from "three";
 import { afterAll, describe, expect, it } from "vitest";
-import type { SkinLayer } from "../../src/surface/layers.ts";
+import { creaseHeight, type SkinLayer } from "../../src/surface/layers.ts";
 import {
   disposeLayerRender,
   mean,
@@ -52,6 +52,53 @@ describe("detail layers", () => {
     expect(crossings).toBeGreaterThanOrEqual(14);
     expect(crossings).toBeLessThanOrEqual(18);
     expect(variance(flat)).toBeLessThan(1e-6);
+  });
+
+  it("cuts each crease with the profile the reference gives: the shading follows its slope", () => {
+    // Light along x makes the shading change proportional to the relief's slope
+    // along x, so the rendered change must be the reference's derivative, scaled.
+    const flat = render([]);
+    const cut = render([creases(0.004, 2)]);
+    const change = Array.from(
+      { length: SIZE },
+      (_, x) => (cut[(SIZE / 2) * SIZE + x] as number) - (flat[(SIZE / 2) * SIZE + x] as number),
+    );
+    // The plane is 2 m across and its coordinate runs 0..1 along it.
+    const slope = Array.from({ length: SIZE }, (_, x) => {
+      const c = (x + 0.5) / SIZE;
+      const e = 1e-4;
+      return (creaseHeight(0.004, 2, c + e) - creaseHeight(0.004, 2, c - e)) / (2 * e * 2);
+    });
+    let sxy = 0;
+    let sxx = 0;
+    for (let x = 0; x < SIZE; x++) {
+      sxy += (slope[x] as number) * (change[x] as number);
+      sxx += (slope[x] as number) ** 2;
+    }
+    const scale = sxy / sxx;
+    let residual = 0;
+    let energy = 0;
+    for (let x = 0; x < SIZE; x++) {
+      residual += ((change[x] as number) - scale * (slope[x] as number)) ** 2;
+      energy += (change[x] as number) ** 2;
+    }
+    // Light from +x: where the relief rises along x it faces away, and darkens.
+    expect(scale).toBeLessThan(0);
+    expect(Math.sqrt(residual / energy)).toBeLessThan(0.12);
+  });
+
+  it("draws nothing for a layer with no strength, as for none at all", () => {
+    const off = (pattern: "bumps" | "creases"): SkinLayer => ({
+      id: "off",
+      kind: "detail",
+      pattern,
+      targets: [],
+      fields: noFields,
+      paint: () => ({ strength: 0, height: 0.01, size: pattern === "bumps" ? 0.1 : 8 }),
+    });
+    const none = render([]);
+    for (const pattern of ["bumps", "creases"] as const)
+      expect(render([off(pattern)])).toEqual(none);
   });
 
   it("raises bumps at their true size, and fades them where they are finer than a pixel", () => {

@@ -32,6 +32,7 @@ import {
   Vector3,
 } from "three";
 import {
+  CREASE_SHARPNESS,
   paintStopTable,
   type SkinLayer,
   type SkinPaintInput,
@@ -136,6 +137,8 @@ float hkDetailHeight( vec2 uv ) {
 		vec4 head = hkHeader( l );
 		int kind = hkKind( head );
 		if ( kind != 2 && kind != 3 ) continue;
+		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
+		if ( head.x <= 0.0 ) continue;
 		vec2 f = hkFields( l, uv );
 		float a = f.x * head.x;
 		if ( kind == 2 ) {
@@ -145,7 +148,7 @@ float hkDetailHeight( vec2 uv ) {
 		} else {
 			float phase = f.y * head.w;
 			float fade = 1.0 - smoothstep( 0.25, 0.75, fwidth( phase ) );
-			H += a * head.z * fade * 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) );
+			H -= a * head.z * fade * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} );
 		}
 	}
 	return H;
@@ -490,6 +493,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-6-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}`;
+    return `humanoid-kit-skin-7-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}`;
   }
 }
