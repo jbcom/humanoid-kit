@@ -159,6 +159,14 @@ middle grey.
 | 8 | 0.889 | −45° | 58 | 37.2 | 10.2 | 13.0 | **[0.128, 0.054, 0.028]** | 0.068 | −1.40 | `#64422f` | 7 |
 | 9 | 1.000 | −60° | 38 | 33.6 | 8.7 | 9.6 | **[0.092, 0.040, 0.024]** | 0.050 | −1.84 | `#56392b` | 8 |
 
+**Update (2026-10-08): the deep end.** The −60° bin median left the deepest
+measured people beyond the slider's end (the darkest decile of ITA ≤ −52.5°
+has L\* 28.2; the darkest single reading 22.7). An eleventh anchor, the
+median of the −75° bin (cheek and forehead, 36 readings, about the 1st
+percentile of all facial readings), is now melanin 1:
+**[0.061, 0.028, 0.019]**, L\* 30.1. The same processing reproduces the −60°
+anchor above to within 0.001. The eleven anchors are evenly spaced, t = i/10.
+
 Source: ISSA (Yan et al. 2025, CC BY 4.0), facial sites, with the processing in
 §2.3. The light bins are mostly Caucasian, Chinese, Japanese and Thai subjects.
 The −15° to −60° bins are mostly the African dataset (for example, all 38

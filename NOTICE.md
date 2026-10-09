@@ -61,7 +61,7 @@ of every output file. Do not edit it by hand.
 
 ## Skin colour data (CC BY 4.0)
 
-The melanin anchors in `src/surface/skinTone.ts` are ten median diffuse
+The melanin anchors in `src/surface/skinTone.ts` are eleven median diffuse
 albedos derived from the International Skin Spectra Archive: Yan, L. et al.
 (2025), "The International Skin Spectra Archive (ISSA): a multicultural human
 skin phenotype and colour spectra collection", Scientific Data,

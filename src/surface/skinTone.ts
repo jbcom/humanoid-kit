@@ -9,7 +9,9 @@
  * The anchors are measured, not chosen: diffuse albedos derived from the
  * International Skin Spectra Archive (Yan et al., Scientific Data 2025, CC BY
  * 4.0; 2,113 people), facial sites binned by ITA° from 62° (very light) to
- * −60° (very deep), medians per bin, with skin's surface reflection (F0 ≈
+ * −75° (very deep, about the 1st percentile of all facial readings, so the
+ * slider reaches the real end of the measured range rather than the middle of
+ * its deepest group), medians per bin, with skin's surface reflection (F0 ≈
  * 0.028) removed because the shader adds it back as specular. Derivation and
  * sources: docs/research/SKIN-RENDERING.md. Between anchors the model
  * interpolates in linear space. Any colour outside human skin (blue, green,
@@ -53,7 +55,8 @@ export function linearToSrgb(l: number): number {
 
 /**
  * Measured diffuse albedos (linear sRGB), evenly spaced in melanin from 0
- * (ITA 62°, L* 68) to 1 (ITA −60°, L* 34). See the header for the source.
+ * (ITA 62°, L* 68) to 1 (ITA −75°, L* 30; 36 readings). See the header for
+ * the source.
  */
 export const MELANIN_ANCHORS: readonly Readonly<Rgb>[] = [
   [0.498, 0.322, 0.271],
@@ -66,6 +69,7 @@ export const MELANIN_ANCHORS: readonly Readonly<Rgb>[] = [
   [0.166, 0.073, 0.035],
   [0.128, 0.054, 0.028],
   [0.092, 0.04, 0.024],
+  [0.061, 0.028, 0.019],
 ];
 
 const clamp = (x: number, lo: number, hi: number) => (x < lo ? lo : x > hi ? hi : x);
