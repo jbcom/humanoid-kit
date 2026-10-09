@@ -125,6 +125,7 @@ createRecipe(init?: {
   skin?: Partial<SkinRecipe>;
   eyes?: Partial<EyesRecipe>;
   hair?: { style?: string | null; colour?: Partial<HairColour> };
+  bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
   bodyArt?: BodyArtInit;
 }): Recipe
@@ -145,6 +146,7 @@ interface Recipe {
   skin: SkinRecipe;
   eyes: EyesRecipe;
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
+  bodyHair?: BodyHairRecipe; // optional: absent means the default for age and sex
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
   bodyArt?: BodyArtRecipe; // optional: absent means none, as in recipes saved before body art
 }
@@ -152,6 +154,13 @@ interface Recipe {
 interface HairRecipe {
   style: string | null; // a scalp style id of the hair pack, or null for none
   colour: HairColour;   // eumelanin, pheomelanin, grey (each 0..1) and override: Rgb | null
+}
+
+interface BodyHairRecipe {
+  // per BODY_HAIR_GROUPS entry, a multiplier on the default, 0..2 (1 = default);
+  // axillary and pubic are adult-only: any value but 0 under 18 is refused
+  density?: Partial<Record<BodyHairGroup, number>>;
+  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = stubble where the face carries terminal hair
 }
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
@@ -245,7 +254,8 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 - `assertAgePolicy(recipe)`: throws `AgePolicyError` listing the violations.
 - `withAge(recipe, age): Recipe`: a copy at a new age. Moving below 18 resets
   `breastSize` and `breastFirmness` to their defaults, deletes regional breast
-  values and deletes adult-only modifiers. The input is not modified.
+  values and deletes adult-only modifiers and the axillary and pubic body hair
+  densities. The input is not modified.
 - `ADULT_ONLY_MODIFIER(id): boolean`: true for ids starting `genitals/`,
   `pelvis/bulge` or `stomach/stomach-pregnant`.
 - `AgePolicyError`.
@@ -262,7 +272,9 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 
 Under 18, a recipe is invalid if `breastSize` or `breastFirmness` differs from
 its default, if any region override contains either key, if an adult-only
-modifier is non-zero, or if a piercing is at an adult-only site.
+modifier is non-zero, if `bodyHair.density.axillary` or `.pubic` is non-zero
+(`ADULT_ONLY_BODY_HAIR`), or if a piercing is at an adult-only site. Refused,
+never clamped.
 
 - `ADULT_ONLY_PIERCING(site): boolean`: true for every site that is not one of
   the body's own (`PIERCING_SITES`). Those are the adult anatomy pack's, which
@@ -338,9 +350,9 @@ and throws `RangeError` for anything else.
   outfit key the caller already holds the masks of.
 - `model.adultDetailLattice(recipe): AdultDetailLattice | null`: the vertex
   space the adult pack's detail targets are authored on (`{ key, vertexCount,
-  positions }`): the vertices of the refined region, which a detail target
-  indexes from 0, with their positions on this figure and the key that names
-  the refinement. Null without an adult surface; throws `AgePolicyError` for a
+  positions, normals }`): the vertices of the refined region, which a detail
+  target indexes from 0, with their positions and outward unit normals on this
+  figure and the key that names the refinement. Null without an adult surface; throws `AgePolicyError` for a
   figure under 18. The packer uses it to place authored forms.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
@@ -494,6 +506,25 @@ compute what the renderer will do.
   values (`black` to `white`), `DEFAULT_HAIR_COLOUR` is `brown`, and
   `hairTint(colour)` is the material colour that makes a packed strand map
   (mean `HAIR_STRAND_MEAN`) render as that albedo.
+- Body hair (research/BODY-HAIR.md): `BODY_HAIR_GROUPS` (`face`, `chest`,
+  `abdomen`, `back`, `buttocks`, `arms`, `legs`, and the adult-only `axillary`
+  and `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`),
+  `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
+  `defaultBodyHairCoverage(group, age, gender)` is a group's terminal-hair
+  coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years and
+  the gender macro read as the androgen level: 0 before puberty, rising through
+  adolescence (`BODY_HAIR_MATURITY`), thinning in old age
+  (`BODY_HAIR_SENESCENCE`), between `BODY_HAIR_COVERAGE`'s female and male
+  ends. An adult-only group is 0 under 18 and for an age that is not a number.
+  `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's density
+  multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage; it never
+  adds hair where the default has none). `beardStyle(input)` is the recipe's
+  style, or `stubble` where the face's coverage is a quarter or more and `none`
+  elsewhere. `bodyHairColour(group, input)` is the figure's hair pigments
+  darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
+  fibre diameter and drawn length) and at least as grey as ageing makes them
+  (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an
+  override as given.
 - CIELAB conversions: `labFromLinear`, `linearFromLab`, `lchFromLab`,
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):

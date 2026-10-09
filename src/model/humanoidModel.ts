@@ -10,6 +10,7 @@ import {
   buildRefinedSurfaceMesh,
   buildSurfaceMesh,
   evaluateSurface,
+  latticeNormals,
   type SurfaceDetail,
   type SurfaceMesh,
 } from "../build/surfaceMesh.ts";
@@ -230,6 +231,8 @@ export interface AdultDetailLattice {
   vertexCount: number;
   /** The region's vertices on one figure, xyz, metres, before the ground lift. */
   positions: Float32Array;
+  /** Their outward unit normals (the base surface's, carried to the lattice), xyz. */
+  normals: Float32Array;
 }
 
 /** Per render vertex, an index into a `FeatureMap`'s features (or `NO_FEATURE`). */
@@ -1280,16 +1283,19 @@ export class HumanoidModel {
   adultDetailLattice(recipe: Recipe): AdultDetailLattice | null {
     if (!isAdult(recipe))
       throw new AgePolicyError("the adult detail lattice is for figures aged 18 or over");
-    const surface = this.adultBodySurface();
-    const lattice = surface?.part.mesh.lattice;
-    if (!lattice) return null;
+    const mesh = this.adultBodySurface()?.part.mesh;
+    const lattice = mesh?.lattice;
+    if (!mesh || !lattice) return null;
     const control = this.evaluateControl(recipe, {});
     const all = applyStencil(lattice.stencil, control, new Float32Array(lattice.vertexCount * 3));
+    const allNormals = latticeNormals(mesh, control);
     const positions = new Float32Array(lattice.region.length * 3);
+    const normals = new Float32Array(lattice.region.length * 3);
     lattice.region.forEach((v, i) => {
       positions.set(all.subarray(v * 3, v * 3 + 3), i * 3);
+      normals.set(allNormals.subarray(v * 3, v * 3 + 3), i * 3);
     });
-    return { key: lattice.key, vertexCount: lattice.region.length, positions };
+    return { key: lattice.key, vertexCount: lattice.region.length, positions, normals };
   }
 
   /**

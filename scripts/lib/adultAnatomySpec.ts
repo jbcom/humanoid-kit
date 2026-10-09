@@ -10,18 +10,25 @@
  * name against the targets and modifiers it packed; a test holds the shipped
  * manifest to this file.
  */
-import type { AdultAnatomySpec, HumanoidAssets } from "../../src/format/assetFormat.ts";
+import type {
+  AdultAnatomySpec,
+  AdultDetailSpec,
+  HumanoidAssets,
+} from "../../src/format/assetFormat.ts";
+import { DETAIL_MODIFIERS } from "./adultDetail.ts";
 import { pelvicRefinement } from "./pelvicRegion.ts";
 
 /** The part of the spec that does not depend on the base mesh. */
-export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface"> = {
+export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail"> = {
   features: [
     {
       id: "penis",
       modifiers: ["genitals/penis-length-decr|incr", "genitals/penis-circ-decr|incr"],
     },
     { id: "testes", modifiers: ["genitals/penis-testicles-decr|incr"] },
-    { id: "mound", modifiers: ["pelvis/bulge-decr|incr"] },
+    // The mound has MakeHuman's one control (the body's bulge, a control target) and this
+    // pack's own (detail targets on the adult surface, scripts/lib/detail/mound.ts).
+    { id: "mound", modifiers: ["pelvis/bulge-decr|incr", "pelvis/mound-decr|incr"] },
   ],
   skinLayers: [
     {
@@ -51,8 +58,12 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface"> = {
  * The whole spec for a base body: the fixed part and the surface refinement
  * round the pelvis (`pelvicRefinement`), which is a choice of that body's faces.
  */
-export function adultAnatomySpec(base: HumanoidAssets): AdultAnatomySpec {
-  return { ...ADULT_ANATOMY_SPEC, surface: pelvicRefinement(base) };
+export function adultAnatomySpec(base: HumanoidAssets, detail?: AdultDetailSpec): AdultAnatomySpec {
+  return {
+    ...ADULT_ANATOMY_SPEC,
+    surface: pelvicRefinement(base),
+    ...(detail && { detail }),
+  };
 }
 
 /** Every target the spec names, for the packer to check against what it packed. */
@@ -69,4 +80,9 @@ export const ADULT_SPEC_TARGETS: readonly string[] = [
 /** Every modifier the spec names. */
 export const ADULT_SPEC_MODIFIERS: readonly string[] = ADULT_ANATOMY_SPEC.features.flatMap(
   (f) => f.modifiers,
+);
+
+/** The modifiers the spec names that MakeHuman ships: the packer checks these against upstream's. */
+export const ADULT_SPEC_UPSTREAM_MODIFIERS: readonly string[] = ADULT_SPEC_MODIFIERS.filter(
+  (id) => !DETAIL_MODIFIERS.some((m) => m.id === id),
 );

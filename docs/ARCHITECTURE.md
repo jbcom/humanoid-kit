@@ -194,13 +194,17 @@ Under 18:
   their files ship in the body pack;
 - adult-only targets are not in the body pack at all; the adult anatomy pack's
   modifiers are adult-only, so a recipe under 18 that sets one is rejected;
+- axillary and pubic hair are adult-only: a recipe under 18 whose
+  `bodyHair.density` sets either to anything but 0 is rejected, and the body
+  hair model draws neither for a figure that is not an adult (see "Body hair");
 - a piercing may only be at one of the body's own sites (`PIERCING_SITES`):
   any other is the adult pack's and adult-only (`ADULT_ONLY_PIERCING`, "Body
   art").
 
 The policy is enforced inside `recipeContributions`, so no caller can evaluate
 an invalid recipe by skipping validation. `withAge(recipe, age)` returns a copy
-at a new age; moving below 18 explicitly removes the adult-only values and leaves
+at a new age; moving below 18 explicitly removes the adult-only values (adult
+modifiers, axillary and pubic densities, and adult-only piercings) and leaves
 the input untouched.
 
 An adult-only modifier id that is not loaded (the adult pack is absent) fails
@@ -1107,6 +1111,44 @@ procedural coily style** (instanced curl cards or strand clumps over the same
 scalp and growth fields), which is a milestone of its own. Evidence and the
 audit are in `docs/evidence/hair.md`.
 
+## Body hair
+
+**Use cases.** Every figure carries the body hair of its age and sex, at every
+skin tone, without a choice being made: vellus everywhere from infancy, and
+terminal hair coming in through adolescence and thinning and greying in old
+age. A creator can thin, thicken or shave a region and pick a beard. Axillary
+and pubic hair exist for adults only.
+
+**Requirements.** It reuses what exists: the skin layer stack for what lies on
+the skin, the hair pack's cards and material for what stands off it, and the
+hair colour model for its colour. No second hair system. Densities and timing
+cite measurements or are marked as choices (`docs/research/BODY-HAIR.md`).
+Old recipes evaluate and serialise as before.
+
+**Decisions (2026-10-09).**
+
+- *One pure model, two ways of drawing.* `src/surface/bodyHair.ts` says how
+  much terminal hair each region group carries (coverage 0..1, the
+  Ferriman-Gallwey grade over 4), from the gender macro read as the androgen
+  level, the age (a ramp per group on the Tanner ages, a thinning after 55) and
+  the recipe's multipliers; and what colour (the figure's hair pigments, darker
+  on the face and pubis, lighter on the limbs, greyed with age later on the
+  body than the beard). The groups follow the modified FG regions, merged to
+  what a picker offers: face, chest, abdomen, back, buttocks, arms, legs, and the
+  adult-only axillary and pubic.
+- *Adult-only groups are gated in the model itself.* `defaultBodyHairCoverage`
+  returns 0 for axillary and pubic hair unless the age is an adult's (`age >=
+  ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
+  scales the default, so no recipe value can add them under 18.
+- *The recipe holds multipliers, not densities.* `recipe.bodyHair` is optional
+  (the recipe schema grows only by optional fields): `density` is a multiplier
+  per group on the default for age and sex (0 shaves a region, 2 doubles it,
+  clamped to full coverage), and `beard` a style. A multiplier, not an absolute
+  value, keeps a saved recipe right as the figure ages: the same recipe at 12,
+  30 and 80 shows each age's hair. Absent fields are not filled in by
+  `createRecipe`, so a recipe that never set body hair serialises exactly as
+  before.
+
 ## Presence
 
 `src/presence` is what a figure publishes about itself for the scene around it
@@ -1479,13 +1521,23 @@ manifest's `anatomy.detail.surfaceKey` hashes the lattice, and the model refuses
 detail built for another refinement. `tests/detailTargets.test.ts` proves the
 engine with a synthetic target before any anatomy is authored on it.
 
-The refined region is empty of anatomy until a feature is authored on it: it is the base shape in finer
-cells, proven by the geometry tests and by a render within 11 pixels over 8
-levels of the base's (adult against base contact sheet, local only). The
-features (mound, penis, testes, vulva) land on it one at a time
-(docs/research/ADULT-SCULPT-PLAN.md, section 10), and
-`tests/adultPermutations.test.ts` holds the matrix of ages, genders, feature
-combinations and states every one of them joins.
+With no detail applied the refined region is the base shape in finer cells,
+proven by the geometry tests and by a render within 11 pixels over 8 levels of
+the base's (adult against base contact sheet, local only). The first authored
+feature on it is the **mound** (`pelvis/mound-decr|incr`, the pack's own
+adult-only modifier, `scripts/lib/detail/mound.ts`): a cosine bell of displacement
+along the skin's outward normal over the measured mons width and length,
+peaking at the verified 1.5 cm BMI-band contrast (fuller) or 1 cm (flatter),
+scaled by the figure's hip breadth. The packer generates its targets on the
+authoring figure's lattice from the control targets and the surface spec, so the
+pack is reproducible; `tests/moundDetail.test.ts` holds the form to its numbers
+and `tests/moundPack.test.ts` holds the shipped pack to the generator. Its skin
+fields and colour layer still follow the body's bulge target, not the new
+detail. The penis, testes and vulva are the next features
+(docs/research/ADULT-SCULPT-PLAN.md, section 10): a shaft is an extrusion far
+beyond what displacing existing vertices can do, so they need reservoir
+topology. `tests/adultPermutations.test.ts` holds the matrix of ages, genders,
+feature combinations and states every feature joins.
 
 **Arousal.** The adult manifest adds an `arousal` state morph
 (`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by

@@ -11,8 +11,13 @@
  * targets live in a separate install, and are only evaluated for figures aged
  * 18 or over. A recipe that sets any of them for a younger figure is invalid;
  * it is rejected, never silently clamped, so a mistake cannot be hidden.
+ *
+ * Axillary and pubic hair follow the same line: a recipe under 18 may not set
+ * their density (`recipe.bodyHair.density`) to anything but 0, and the body
+ * hair model draws none of them for a figure that is not an adult.
  */
 import { ADULT_AGE } from "../makehuman/macro.ts";
+import { ADULT_ONLY_BODY_HAIR, isAdultOnlyBodyHair } from "../surface/bodyHair.ts";
 import { isBodyPiercingSite } from "./bodyArt.ts";
 import type { Recipe } from "./recipe.ts";
 
@@ -20,12 +25,13 @@ export { ADULT_AGE };
 
 /**
  * Shape modifiers that only apply to adults: the adult anatomy pack's genital,
- * bulge and pregnancy modifiers. Must agree with the packer's `adultOnly` flag
- * (a test checks every modifier).
+ * bulge, mound and pregnancy modifiers. Must agree with the packer's `adultOnly`
+ * flag (a test checks every modifier).
  */
 export const ADULT_ONLY_MODIFIER = (id: string): boolean =>
   id.startsWith("genitals/") ||
   id.startsWith("pelvis/bulge") ||
+  id.startsWith("pelvis/mound") ||
   id.startsWith("stomach/stomach-pregnant");
 
 export const isAdult = (recipe: Recipe): boolean => recipe.macros.age >= ADULT_AGE;
@@ -41,6 +47,8 @@ export function agePolicyViolations(recipe: Recipe): string[] {
   for (const [id, v] of Object.entries(recipe.modifiers)) {
     if (v !== 0 && ADULT_ONLY_MODIFIER(id)) out.push(`modifier ${id} is adult-only`);
   }
+  for (const [group, v] of Object.entries(recipe.bodyHair?.density ?? {}))
+    if (v !== 0 && isAdultOnlyBodyHair(group)) out.push(`body hair ${group} is adult-only`);
   for (const p of recipe.bodyArt?.piercings ?? [])
     if (ADULT_ONLY_PIERCING(p.site)) out.push(`piercing site ${p.site} is adult-only`);
   return out;
@@ -84,7 +92,7 @@ export function assertSignalPolicy(
 
 /**
  * Returns a copy at a new age. Moving an adult recipe below 18 removes the
- * adult-only modifiers and piercings explicitly (the caller sees the result); nothing is
+ * adult-only modifiers, body hair and piercings explicitly (the caller sees the result); nothing is
  * removed when the target age is adult.
  */
 export function withAge(recipe: Recipe, age: number): Recipe {
@@ -93,6 +101,8 @@ export function withAge(recipe: Recipe, age: number): Recipe {
   if (age >= ADULT_AGE) return next;
   for (const id of Object.keys(next.modifiers))
     if (ADULT_ONLY_MODIFIER(id)) delete next.modifiers[id];
+  const density = next.bodyHair?.density;
+  if (density) for (const group of ADULT_ONLY_BODY_HAIR) delete density[group];
   if (next.bodyArt)
     next.bodyArt.piercings = next.bodyArt.piercings.filter((p) => !ADULT_ONLY_PIERCING(p.site));
   return next;
