@@ -764,8 +764,8 @@ mean what they meant there; everything must be testable in Node.
   joint layout, every other channel at rest, packed into the same entries. The
   first is `relaxed`, standing at ease with the arms at the sides, since the
   rest A-pose holds them 42° out; `bent`, `flexed`, `twisted`, `abducted`
-  (the thighs opened 40°), `seated` (the hips and knees at 90°) and `tucked`
-  (the hips at 120°) are the joint extremes the skinning and the creases are
+  (the thighs opened 40°), `seated` (the hips and knees at 90°), `tucked`
+  (the hips at 120°) and `bowed` (the trunk folded 60°) are the joint extremes the skinning and the creases are
   checked at (below), which the pack's benchmark does not reach: it bends no
   elbow, knee or wrist. An expression layers on top of a body pose bone by
   bone.
@@ -868,10 +868,29 @@ one closed surface, wound consistently, so the volume is exact). Worst body for
 | thigh twisted 90° | 0.93 / 0.72 / −34.1‰ | 1.00 / 1.00 / −8.9‰ | 0.97 / 0.83 / −13.9‰ |
 | arm raised forward 130° | 0.81 / 0.41 / −19.4‰ | 0.97 / 0.57 / −2.3‰ | 0.94 / 0.53 / −10.5‰ |
 | arm raised sideways 130° | 0.87 / 0.48 / −9.6‰ | 0.97 / 0.67 / −12.5‰ | 0.96 / 0.67 / −4.6‰ |
-| hip flexed 120° | 0.80 / 0.30 / −35.2‰ | 0.97 / 0.47 / −17.4‰ | 0.95 / 0.42 / −19.8‰ |
+| arm raised forward 170° | 0.76 / 0.17 / −24.1‰ | 0.94 / 0.42 / −3.3‰ | 0.91 / 0.41 / −14.6‰ |
+| arm raised sideways 170° | 0.84 / 0.28 / −8.0‰ | 0.96 / 0.70 / −16.3‰ | 0.95 / 0.63 / −1.2‰ |
+| hip flexed 120° | 0.80 / 0.30 / −35.2‰ | 0.97 / 0.47 / −17.4‰ | 0.86 / 0.36 / −24.0‰ |
+| spine folded forward 90° | 1.02 / 0.88 / −72.6‰ | 1.03 / 0.89 / −66.2‰ | 1.02 / 0.88 / −71.3‰ |
 | hip abducted 45° | 0.98 / 0.70 / −17.1‰ | 1.00 / 0.74 / −15.2‰ | 0.99 / 0.73 / −15.6‰ |
 | knee flexed 120° | 0.81 / 0.22 / −6.4‰ | 0.93 / 0.26 / −2.5‰ | 0.81 / 0.22 / −6.4‰ |
 | elbow flexed 120° | 0.84 / 0.33 / −3.8‰ | 0.91 / 0.31 / −3.9‰ | 0.90 / 0.31 / −3.9‰ |
+
+**The shoulder past 150° and the spine (2026-10-09).** The benchmark pose sends
+the arms overhead, and a trunk can fold; the bench goes to 170° for a raised arm
+and folds the spine 30°, 60° and 90° forward, shared equally along its five
+bones (`bowed` is the 60° pose). At 170° linear skinning collapses the shoulder
+(girth 5th percentile 0.17 forward) and the blend holds it (0.41), with the bulge
+1.29 forward and 1.17 to the side, under the 1.45 the table allows: no change
+is needed, and new gates hold the numbers. The spine folds with a girth 5th
+percentile of 0.88 at 90° (mean 1.02, 95th percentile 1.15) in every scheme, so
+the belly and back keep their size; the volume lost, 71‰ at 90° and 48‰ at 60°
+(about 2.6 L), is first order in the angle (turning only the upper chest by 10°
+loses 9‰), the same under linear skinning (−72.6‰), dual quaternions (−66.2‰)
+and the blend: it is the weights', and none of the shares changes it. It is the
+largest loss in the table, and the one a pose-space corrective (a volume
+restoring inflation of the trunk along its normals, keyed on the spine's flexion)
+would be for, if a figure is seen bowing.
 
 The pack's benchmark pose bends no elbow, knee or wrist, so `flexed` (every
 hinge near its limit) and `twisted` (each limb turned past what a body can) are

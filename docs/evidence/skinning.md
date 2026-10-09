@@ -99,7 +99,10 @@ wrapper); ΔV is the change in the whole body's volume in thousandths of it
 | thigh twisted 90° | 0.72 / −34.1‰ | 0.83 / −13.9‰ |
 | arm raised forward 130° | 0.41 / −19.4‰ | 0.53 / −10.5‰ |
 | arm raised sideways 130° | 0.48 / −9.6‰ | 0.67 / −4.6‰ |
-| hip flexed 120° | 0.30 / −35.2‰ | 0.42 / −19.8‰ |
+| arm raised forward 170° | 0.17 / −24.1‰ | 0.41 / −14.6‰ |
+| arm raised sideways 170° | 0.28 / −8.0‰ | 0.63 / −1.2‰ |
+| hip flexed 120° | 0.30 / −35.2‰ | 0.36 / −24.0‰ |
+| spine folded forward 90° | 0.88 / −72.6‰ | 0.88 / −71.3‰ |
 | hip abducted 45° | 0.70 / −17.1‰ | 0.73 / −15.6‰ |
 | knee flexed 120° | 0.22 / −6.4‰ | 0.22 / −6.4‰ |
 | elbow flexed 120° | 0.33 / −3.8‰ | 0.31 / −3.9‰ |
