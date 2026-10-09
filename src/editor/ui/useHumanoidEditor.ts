@@ -59,6 +59,7 @@ export function useEditorState(ready: ReadyInfo | null, initial?: Recipe): Human
     [ready],
   );
   const recipe = history.present;
+  const hairStyles = useMemo(() => ready?.hair?.styles.map((s) => s.id), [ready]);
 
   const update = useCallback(
     (change: (r: Recipe) => Recipe, gesture?: string) =>
@@ -84,7 +85,15 @@ export function useEditorState(ready: ReadyInfo | null, initial?: Recipe): Human
     undo: () => dispatch({ type: "undo" }),
     redo: () => dispatch({ type: "redo" }),
     randomize: (seed, options) =>
-      dispatch({ type: "apply", change: (r) => randomRecipe(r, seed, modifiers, options) }),
+      dispatch({
+        type: "apply",
+        change: (r) =>
+          // A random figure wears hair from the pack when there is one.
+          randomRecipe(r, seed, modifiers, {
+            ...(hairStyles && { hairStyles }),
+            ...options,
+          }),
+      }),
     resetAll: () => dispatch({ type: "set", recipe: createRecipe() }),
     load: (value) => {
       const problems = recipeProblems(value);
@@ -92,8 +101,15 @@ export function useEditorState(ready: ReadyInfo | null, initial?: Recipe): Human
       const loaded = value as Recipe;
       const unknown = Object.keys(loaded.modifiers).filter((id) => !modifiers.has(id));
       const policy = agePolicyViolations(loaded);
-      if (unknown.length || policy.length)
-        return [...unknown.map((id) => `modifier ${id} is not in the loaded packs`), ...policy];
+      // A saved figure's hair must be a style the loaded hair pack has.
+      const style = loaded.hair?.style ?? null;
+      const noStyle = style !== null && !hairStyles?.includes(style);
+      if (unknown.length || policy.length || noStyle)
+        return [
+          ...unknown.map((id) => `modifier ${id} is not in the loaded packs`),
+          ...(noStyle ? [`hair style ${style} is not in the loaded packs`] : []),
+          ...policy,
+        ];
       dispatch({ type: "set", recipe: structuredClone(loaded) });
       return [];
     },

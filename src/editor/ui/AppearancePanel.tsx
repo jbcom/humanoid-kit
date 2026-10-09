@@ -1,9 +1,17 @@
 /**
- * Skin and eye controls. Skin sliders show their effect in the track itself
- * (the melanin track is the actual skin ramp for the current haemoglobin and
- * undertone), and eyes offer a palette of natural iris colours plus a picker.
+ * Skin, eye and hair controls. Skin sliders show their effect in the track
+ * itself (the melanin track is the actual skin ramp for the current
+ * haemoglobin and undertone), eyes offer a palette of natural iris colours plus
+ * a picker, and hair (when a hair pack is loaded) a style, a palette of natural
+ * colours, a picker for dyed hair and the pigment sliders behind the palette.
  */
 import { DEFAULT_EYES, DEFAULT_SKIN, type Recipe, type SkinRecipe } from "../../recipe/recipe.ts";
+import {
+  DEFAULT_HAIR_COLOUR,
+  HAIR_COLOURS,
+  type HairColour,
+  hairAlbedo,
+} from "../../surface/hairTone.ts";
 import { linearToSrgb, type Rgb, skinAlbedo, srgbToLinear } from "../../surface/skinTone.ts";
 import type { FrameRequest } from "../framing.ts";
 import { IRIS_PALETTE } from "../randomize.ts";
@@ -95,6 +103,24 @@ export function AppearancePanel({
   const face: FrameRequest = { part: "head", direction: "front" };
   const body: FrameRequest = { part: "body", direction: "front" };
   const iris = css(recipe.eyes.iris);
+  // Hair is offered when a hair pack is loaded; a recipe with no `hair` has none.
+  const hairStyles = editor.ready?.hair?.styles ?? null;
+  const style = recipe.hair?.style ?? null;
+  const hairColour = recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR;
+  const setHair = (patch: { style?: string | null }, gesture?: string) =>
+    update(
+      (r) => ({
+        ...r,
+        hair: {
+          style: r.hair?.style ?? null,
+          colour: r.hair?.colour ?? { ...DEFAULT_HAIR_COLOUR },
+          ...patch,
+        },
+      }),
+      gesture,
+    );
+  const setHairColour = (colour: HairColour, gesture?: string) =>
+    update((r) => ({ ...r, hair: { style: r.hair?.style ?? null, colour } }), gesture);
 
   return (
     <div className="hk-groups">
@@ -171,6 +197,125 @@ export function AppearancePanel({
           />
         </div>
       </details>
+      {hairStyles && (
+        <details className="hk-group" open>
+          <summary className="hk-group-title">
+            <span>Hair</span>
+          </summary>
+          <div className="hk-group-body">
+            <fieldset className="hk-chips">
+              <legend className="hk-visually-hidden">Hair style</legend>
+              {[{ id: null, label: "None" }, ...hairStyles].map((s) => (
+                <button
+                  key={s.id ?? "none"}
+                  type="button"
+                  className="hk-chip"
+                  aria-pressed={style === s.id}
+                  onClick={() => {
+                    onFocus(face);
+                    setHair({ style: s.id });
+                  }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </fieldset>
+            <fieldset className="hk-swatches">
+              <legend>Hair colour</legend>
+              {HAIR_PRESETS.map(([id, label]) => {
+                const preset = HAIR_COLOURS[id] as HairColour;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className="hk-swatch"
+                    style={{ background: css(hairAlbedo(preset)) }}
+                    aria-label={label}
+                    aria-pressed={sameColour(hairColour, preset)}
+                    onClick={() => {
+                      onFocus(face);
+                      setHairColour({ ...preset });
+                    }}
+                  />
+                );
+              })}
+              <label className="hk-swatch hk-swatch-custom" aria-label="Custom hair colour">
+                <input
+                  type="color"
+                  value={css(hairAlbedo(hairColour))}
+                  onFocus={() => onFocus(face)}
+                  onChange={(e) =>
+                    setHairColour({ ...hairColour, override: fromCss(e.target.value) }, "hair-dye")
+                  }
+                  onBlur={settle}
+                />
+              </label>
+            </fieldset>
+            {HAIR_SLIDERS.map((s) => (
+              <SliderRow
+                key={s.key}
+                label={s.label}
+                value={hairColour[s.key]}
+                min={0}
+                max={1}
+                step={0.005}
+                neutral={DEFAULT_HAIR_COLOUR[s.key]}
+                format={pct}
+                description={s.description}
+                track={ramp(7, (t) => hairAlbedo({ ...hairColour, [s.key]: t, override: null }))}
+                onChange={(v, g) => setHairColour({ ...hairColour, [s.key]: v, override: null }, g)}
+                onSettle={settle}
+                onFocus={() => onFocus(face)}
+              />
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
+
+/** Whether two natural hair colours are the same pigments (a dyed colour is never a preset). */
+const sameColour = (a: HairColour, b: HairColour) =>
+  a.override === null &&
+  a.eumelanin === b.eumelanin &&
+  a.pheomelanin === b.pheomelanin &&
+  a.grey === b.grey;
+
+/** The named colours offered as swatches, dark to light, with their labels. */
+const HAIR_PRESETS: readonly (readonly [string, string])[] = [
+  ["black", "Black hair"],
+  ["dark-brown", "Dark brown hair"],
+  ["brown", "Brown hair"],
+  ["light-brown", "Light brown hair"],
+  ["auburn", "Auburn hair"],
+  ["red", "Red hair"],
+  ["ginger", "Ginger hair"],
+  ["blonde", "Blond hair"],
+  ["light-blonde", "Light blond hair"],
+  ["platinum", "Platinum hair"],
+  ["grey", "Grey hair"],
+  ["white", "White hair"],
+];
+
+const HAIR_SLIDERS: {
+  key: "eumelanin" | "pheomelanin" | "grey";
+  label: string;
+  description: string;
+}[] = [
+  {
+    key: "eumelanin",
+    label: "Dark pigment",
+    description: "Eumelanin: none is white or blond, full is black.",
+  },
+  {
+    key: "pheomelanin",
+    label: "Red pigment",
+    description: "Pheomelanin: the red and gold in auburn, red and ginger hair.",
+  },
+  {
+    key: "grey",
+    label: "Greying",
+    description: "The share of hairs that have lost their pigment.",
+  },
+];

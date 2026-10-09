@@ -180,7 +180,7 @@ function CreatorBody({
   const tabs = [
     ...tasks.map((t) => ({ id: t.id, label: t.label })),
     { id: REGIONS_TAB, label: "Regions" },
-    { id: APPEARANCE_TAB, label: "Skin & eyes" },
+    { id: APPEARANCE_TAB, label: ready?.hair ? "Skin, eyes & hair" : "Skin & eyes" },
   ];
   // Task ids contain spaces, so element ids use the tab's position.
   const tabElementId = (id: string) => `${tabsId}-tab-${tabs.findIndex((t) => t.id === id)}`;

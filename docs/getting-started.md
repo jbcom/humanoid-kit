@@ -161,7 +161,8 @@ const client = new HumanoidWorkerClient({ body: "/assets/body" });
 The repository includes a playground, the library's own demo, at
 [jbcom.github.io/humanoid-kit/playground](https://jbcom.github.io/humanoid-kit/playground/).
 It loads the body and hair packs and offers sliders for gender, age, muscle,
-weight and height. To run it locally:
+weight and height, skin, eyes, and a choice of hair style and colour. To run it
+locally:
 
 ```sh
 pnpm install

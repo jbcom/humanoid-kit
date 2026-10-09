@@ -562,7 +562,10 @@ and camera.
 
 - One tab per MakeHuman modelling task (Main, Gender, Face, Torso, ...,
   Measure), in upstream order, with MakeHuman's groups and slider labels, plus
-  Appearance (skin, iris, sclera) and Regions (per-region macro overrides).
+  Appearance (skin, iris, sclera, and hair when the client loaded a hair pack:
+  a style from the pack or none, twelve natural colours, a picker for dyed hair
+  and the pigment sliders behind the colours) and Regions (per-region macro
+  overrides). Tapping the hair opens Appearance.
 - Tapping the figure opens the controls that shape the tapped part (its tab,
   with the group opened and scrolled into view) and frames that part from the
   front; see `buildFeatureMap`. Dragging orbits the view instead.
@@ -570,7 +573,8 @@ and camera.
   hint for that slider.
 - Undo and redo (dragging a slider is one step), random figure, reset, and
   save and load of the recipe as JSON. A loaded recipe is validated and checked
-  against the loaded packs and the age policy before it replaces the figure.
+  against the loaded packs (modifiers, and a hair style the hair pack has) and
+  the age policy before it replaces the figure.
 - Adult-only sliders are disabled, with the reason, under 18.
 - On narrow screens the controls become a bottom sheet over the figure.
 - Styles are scoped under `.hk-creator` and themed by `--hk-*` CSS variables.
@@ -602,8 +606,11 @@ interface HumanoidEditor {
 
 Changes that share a `gesture` key form one undo step. `randomize` is
 deterministic for a seed and never sets adult-only modifiers unless
-`options.includeAdultAnatomy` is true and the figure is 18 or over. Every
-change is undoable.
+`options.includeAdultAnatomy` is true and the figure is 18 or over. With a hair
+pack loaded, a random figure also wears one of its styles (or none, one time
+in ten) in a natural colour that runs darker on deeper skin; `randomRecipe`
+takes the styles as `options.hairStyles`, and without them keeps the base
+recipe's hair. Every change is undoable.
 
 ### `<SliderRow />`
 
