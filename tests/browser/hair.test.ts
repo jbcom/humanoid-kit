@@ -3,7 +3,8 @@
  * analytic geometry: a strand map multiplied by the recipe's colour renders as
  * that colour's albedo at every hair colour, cut-outs cut and their edges
  * smooth where the canvas is multisampled, baked occlusion scales the light,
- * a hairline dithers away by its fade and an edge-on fin by its angle, a
+ * a hairline thins by its fade and an edge-on fin dissolves by its angle (cell by
+ * cell of the card, never per screen pixel), a
  * Kajiya-Kay highlight runs across the strands (their direction read from the
  * growth gradient), and the skin under the hair takes the scalp tint.
  *
@@ -21,9 +22,11 @@ import {
   DirectionalLight,
   FloatType,
   LinearFilter,
+  LinearMipmapLinearFilter,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  NearestFilter,
   NoToneMapping,
   OrthographicCamera,
   PlaneGeometry,
@@ -425,40 +428,91 @@ describe("hairlines and fins", () => {
     return n / ((to - from) * SIZE);
   };
 
-  it("thins a hairline strand by strand: none at 0, all at 1, more as the fade rises, and whole strands, not dots", () => {
-    // Fade 0 on the left edge, 1 on the right, rising linearly across the card; strands run
-    // up the card (along V), so each strand is one column of pixels.
+  /**
+   * A 16x16 strand map with mipmaps, clear across its left five columns and opaque beyond: a
+   * painted edge at 5/16 of the card, which the hairline thins toward.
+   */
+  const painted = () => {
+    const map = strandMap(16, (x) => texel(HAIR_STRAND_MEAN, x < 5 ? 0 : 255));
+    map.magFilter = NearestFilter;
+    map.minFilter = LinearMipmapLinearFilter;
+    map.generateMipmaps = true;
+    map.needsUpdate = true;
+    return map;
+  };
+  const EDGE_PX = (5 / 16) * SIZE; // where the painted edge falls on screen
+
+  it("thins a hairline strand by strand toward the painted edge: sparse at it, whole farther in, and whole strands, not dots", () => {
+    // Strands run up the card (along V), so each strand is one column of pixels.
     const strand = { angle: Math.PI / 2, coherence: 0 };
-    const { mesh, material } = card({ fade: (x) => (x + 1) / 2, strand });
+    const { mesh, material } = card({ map: painted(), fade: () => 0, strand });
     const px = render(mesh);
-    const q = SIZE / 4;
-    const share = [0, 1, 2, 3].map((i) => drawn(px, i * q, (i + 1) * q));
-    for (let i = 1; i < 4; i++)
-      expect(share[i] as number, `quarter ${i} is denser than ${i - 1}`).toBeGreaterThan(
-        share[i - 1] as number,
-      );
-    expect(share[0] as number).toBeLessThan(0.35);
-    expect(share[3] as number).toBeGreaterThan(0.9);
+    const share = (from: number, to: number) => drawn(px, from, to);
+    // Nothing where the texture is clear; thinner at the edge than a way in; whole well in.
+    expect(share(0, EDGE_PX - 2)).toBe(0);
+    const bins = [0, 1, 2, 3].map((i) =>
+      share(
+        EDGE_PX + 2 + i * ((SIZE - EDGE_PX - 2) / 4),
+        EDGE_PX + 2 + (i + 1) * ((SIZE - EDGE_PX - 2) / 4),
+      ),
+    );
+    expect(bins[0] as number, `bins ${bins}`).toBeLessThan(0.7);
+    expect(bins[3] as number, `bins ${bins}`).toBeGreaterThan(0.9);
+    expect(bins[3] as number).toBeGreaterThan((bins[0] as number) + 0.25);
     // Whole strands: a column of pixels is drawn along its whole height or not at all
     // (a screen-door dither would leave most columns half drawn).
     let whole = 0;
     let partial = 0;
-    for (let x = 0; x < SIZE; x++) {
+    for (let x = Math.ceil(EDGE_PX) + 2; x < SIZE; x++) {
       let n = 0;
       for (let y = 4; y < SIZE - 4; y++) if (at(px, x, y) > 0.005) n++;
       const f = n / (SIZE - 8);
       if (f < 0.05 || f > 0.95) whole++;
       else partial++;
     }
-    // (A tip tapers over a fifth of the fade, which is dithered without alpha-to-coverage.)
+    // (A tip frays over a fifth of the ramp, cell by cell along the strand.)
     expect(whole, `columns whole ${whole}, partial ${partial}`).toBeGreaterThan(2 * partial);
-    // A flat fade of 0 draws nothing; one of 1 draws the whole card.
-    expect(drawn(render(card({ fade: () => 0, strand }).mesh))).toBe(0);
-    expect(drawn(render(card({ fade: () => 1, strand }).mesh))).toBeGreaterThan(0.99);
     material.dispose();
+    // A card that is no hairline (fade 1) is drawn whole to its painted edge.
+    const whole1 = card({ map: painted(), fade: () => 1, strand });
+    expect(drawn(render(whole1.mesh), Math.ceil(EDGE_PX) + 1)).toBeGreaterThan(0.99);
+    whole1.material.dispose();
   });
 
-  it("dithers a fin card away as it turns edge-on, and leaves a card lying along the scalp alone", () => {
+  it("decides every strand cell on the card, never on the screen pixel: a card slid sideways draws the same image slid", () => {
+    // A screen-space dither (a function of gl_FragCoord) would draw a different pattern once the
+    // card moves; a hash of the card's own surface moves with it, so the dot-grid class of bug
+    // (found on a hardware GPU, where software renders looked fine) cannot return.
+    const strand = { angle: Math.PI / 2, coherence: 0 };
+    const shift = 4; // pixels, an exact number of them
+    for (const fin of [0, 1]) {
+      const fade = () => 0;
+      const a = card({ map: painted(), fade, strand, fin });
+      const b = card({ map: painted(), fade, strand, fin });
+      // PlaneGeometry is 2 wide over SIZE pixels; a fin card is turned until it is half dissolved (|cos| 0.54).
+      for (const m of [a.mesh, b.mesh]) m.rotation.y = fin ? 1 : 0;
+      b.mesh.position.x = (shift * 2) / SIZE;
+      const pa = render(a.mesh);
+      const pb = render(b.mesh);
+      let compared = 0;
+      let differ = 0;
+      for (let y = 4; y < SIZE - 4; y++)
+        for (let x = 10; x < SIZE - shift - 10; x++) {
+          compared++;
+          if (at(pa, x, y) > 0.005 !== at(pb, x + shift, y) > 0.005) differ++;
+        }
+      a.material.dispose();
+      b.material.dispose();
+      // (The view direction drifts a little as the card slides, moving the odd cell over its threshold;
+      // a dither of the screen pixel would differ in about half the pixels.)
+      expect(
+        differ / compared,
+        `fin ${fin}: pixels that differ once the card is slid`,
+      ).toBeLessThan(0.08);
+    }
+  });
+
+  it("dissolves a fin card as it turns edge-on, and leaves a card lying along the scalp alone", () => {
     /** Pixels a card turned `turn` radians about the vertical axis draws, relative to the same card face-on. */
     const coverage = (fin: number, turn: number) => {
       const { mesh, material } = card({ fin });
