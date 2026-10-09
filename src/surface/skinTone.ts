@@ -148,23 +148,57 @@ export function lipAlbedo(tone: SkinTone, depth: number): Rgb {
 }
 
 /**
+ * Red-channel diffuse reflectance of skin with no melanin, the baseline
+ * melanin's optical density adds to. About what depigmented (vitiligo) skin
+ * reflects in the red; an approximation, not a fitted value.
+ */
+export const MELANIN_FREE_RED_REFLECTANCE = 0.62;
+
+const log10 = (x: number) => Math.log10(Math.max(1e-6, x));
+
+/**
  * Areola and nipple albedo for a skin tone; `depth` 0..1 sets how much darker.
  *
  * No colour measurement against the surrounding skin exists at any tone. The
  * areola carries about twice the melanin of breast skin (Dean et al. 2005), so
- * natural skin moves along the measured melanin axis (by 0.3 × depth, capped at
- * the deepest anchor) with a little more haemoglobin; that converges on the
- * skin at the deep end because the skin already absorbs most of what more
- * melanin would. The size of the shift is a choice, not a measurement. A
- * non-natural colour is darkened and reddened by fixed factors.
+ * its melanin optical density (red channel, above `MELANIN_FREE_RED_REFLECTANCE`)
+ * is the skin's times 1 + 2 × depth: twice at the default depth of 0.5, none
+ * extra at 0. The tone that has that density is found on the measured melanin
+ * axis. Past the deepest anchor the extra density is extrapolated per channel
+ * with the slope between the two deepest anchors, so deep skin keeps a visible
+ * areola instead of converging on the skin. A little more haemoglobin is added
+ * throughout. A non-natural colour is darkened and reddened by fixed factors.
  */
 export function areolaAlbedo(tone: SkinTone, depth: number): Rgb {
   const d = clamp(depth, 0, 1);
   if (tone.override)
     return scale(skinAlbedo(tone), [0.62 - 0.22 * d, 0.44 - 0.18 * d, 0.42 - 0.16 * d]);
-  return skinAlbedo({
-    ...tone,
-    melanin: Math.min(1, clamp(tone.melanin, 0, 1) + 0.3 * d),
-    haemoglobin: Math.min(1, clamp(tone.haemoglobin, 0, 1) + 0.25),
-  });
+  const haemoglobin = Math.min(1, clamp(tone.haemoglobin, 0, 1) + 0.25);
+  const at = (melanin: number) => skinAlbedo({ ...tone, melanin, haemoglobin });
+  const density = (rgb: Rgb) => -log10(rgb[0]) + log10(MELANIN_FREE_RED_REFLECTANCE);
+  const target = density(at(clamp(tone.melanin, 0, 1))) * (1 + 2 * d);
+  const deepest = at(1);
+  const excess = target - density(deepest);
+  if (excess > 0) {
+    // Beyond the measured range: each channel's density grows with the red's
+    // at the rate it does between the two deepest anchors.
+    const [a, b] = [
+      MELANIN_ANCHORS[MELANIN_ANCHORS.length - 2] as Rgb,
+      MELANIN_ANCHORS[MELANIN_ANCHORS.length - 1] as Rgb,
+    ];
+    const red = log10(a[0]) - log10(b[0]);
+    return deepest.map((c, k) => {
+      const slope = (log10(a[k] as number) - log10(b[k] as number)) / red;
+      return c * 10 ** (-excess * slope);
+    }) as Rgb;
+  }
+  // Density rises monotonically with melanin: bisect for the tone that has it.
+  let lo = clamp(tone.melanin, 0, 1);
+  let hi = 1;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (density(at(mid)) < target) lo = mid;
+    else hi = mid;
+  }
+  return at((lo + hi) / 2);
 }

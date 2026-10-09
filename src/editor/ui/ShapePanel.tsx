@@ -8,6 +8,7 @@ import type { SliderEntry, SliderGroup, SliderTask } from "../../format/assetFor
 import { formatSliderValue, sliderAvailability, sliderRange, sliderValue } from "../controls.ts";
 import type { FrameRequest } from "../framing.ts";
 import { frameRequest } from "../framing.ts";
+import { scrollBehavior } from "./motion.ts";
 import { SliderRow } from "./SliderRow.tsx";
 import type { HumanoidEditor } from "./useHumanoidEditor.ts";
 
@@ -70,7 +71,7 @@ function Group({
 }) {
   const ref = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
-    if (revealed) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (revealed) ref.current?.scrollIntoView({ block: "nearest", behavior: scrollBehavior() });
   }, [revealed]);
   return (
     <details ref={ref} className="hk-group" open={open} data-revealed={revealed || undefined}>
