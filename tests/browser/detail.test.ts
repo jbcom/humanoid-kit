@@ -8,10 +8,13 @@ import { DataUtils } from "three";
 import { afterAll, describe, expect, it } from "vitest";
 import { creaseHeight, lineRelief, type SkinLayer, STOP_COUNT } from "../../src/surface/layers.ts";
 import {
+  orientationAtCoordinate,
+  orientationCoordinate,
   ridgeHeight,
   ridgeOrientation,
   ridgeOrientationCoordinate,
 } from "../../src/surface/ridges.ts";
+import { STRIAE_ORIENTATION_SEAM, striaMark } from "../../src/surface/striae.ts";
 import {
   disposeLayerRender,
   mean,
@@ -191,6 +194,178 @@ describe("detail layers", () => {
     const fine = render([bumps(0.01, 0.002)]);
     const none = render([]);
     expect(variance(coarse)).toBeGreaterThan(100 * Math.max(variance(none), 1e-8));
+    expect(variance(fine)).toBeLessThan(variance(coarse) / 50);
+  });
+});
+
+describe("profiled detail layers", () => {
+  // Bumps 2 mm apart, seen 4 cm across: twenty cells over the 128 px, about 6 px each.
+  const view = { span: 0.04, centre: [0, 0] as [number, number] };
+  const profiled = (profile: number[]): SkinLayer => ({
+    id: "profiled",
+    kind: "detail",
+    pattern: "bumps",
+    profiled: true,
+    targets: [],
+    fields: noFields,
+    paint: () => ({ strength: 1, height: 0.0004, size: 0.002, profile }),
+  });
+  const tubercles = (occupancy: number): SkinLayer => ({
+    id: "tubercles",
+    kind: "detail",
+    pattern: "tubercles",
+    targets: [],
+    fields: noFields,
+    paint: () => ({ strength: 1, height: 0.0004, size: 0.002, profile: [occupancy] }),
+  });
+  /** A constant coordinate: the profile is read at that point of it. */
+  const at = (c: number) => ({ view, coordinate: () => c });
+
+  it("scales the bumps by the profile at the coordinate", () => {
+    const layer = profiled([0, 1]);
+    const none = variance(render([], at(0)));
+    const low = variance(render([layer], at(0)));
+    const half = variance(render([layer], at(0.5)));
+    const full = variance(render([layer], at(1)));
+    expect(low).toBeLessThan(10 * Math.max(none, 1e-8));
+    expect(full).toBeGreaterThan(100 * Math.max(none, 1e-8));
+    // The shading's variance goes with the square of the relief's height.
+    expect(half / full).toBeGreaterThan(0.1);
+    expect(half / full).toBeLessThan(0.5);
+  });
+
+  it("raises a tubercle in the share of cells the occupancy gives", () => {
+    const flat = variance(render([], at(0)));
+    expect(variance(render([tubercles(0)], at(0)))).toBeLessThan(10 * Math.max(flat, 1e-8));
+    const full = variance(render([tubercles(1)], at(0)));
+    expect(full).toBeGreaterThan(100 * Math.max(flat, 1e-8));
+    // Each cell is raised independently, so the variance goes with the share of cells.
+    const half = variance(render([tubercles(0.5)], at(0)));
+    expect(half / full).toBeGreaterThan(0.3);
+    expect(half / full).toBeLessThan(0.7);
+    const sparse = variance(render([tubercles(0.1)], at(0)));
+    expect(sparse / full).toBeGreaterThan(0.03);
+    expect(sparse / full).toBeLessThan(0.25);
+  });
+
+  it("is the same relief at the same occupancy: deterministic, not shimmering", () => {
+    expect(Array.from(render([tubercles(0.4)], at(0)))).toEqual(
+      Array.from(render([tubercles(0.4)], at(0))),
+    );
+  });
+});
+
+describe("stretch marks", () => {
+  const SPACING = 0.1;
+  const PX = 512;
+  const stria = (
+    amount: number,
+    ratio: [number, number, number],
+    height: number,
+    strength = 1,
+  ): SkinLayer => ({
+    id: "striae",
+    kind: "detail",
+    pattern: "striae",
+    targets: [],
+    fields: noFields,
+    paint: () => ({ strength, height, size: SPACING, striae: { amount, ratio } }),
+  });
+  /** The orientation as the 8-bit atlas holds it, in the striae's own seam, and its angle. */
+  const stored = Math.round(orientationCoordinate(1, STRIAE_ORIENTATION_SEAM) * 255) / 255;
+  const theta = orientationAtCoordinate(stored, STRIAE_ORIENTATION_SEAM);
+  const coordinate = () => stored;
+
+  it("darkens the skin exactly where the reference has a mark", () => {
+    const flat = render([], { size: PX });
+    const cut = render([stria(0.7, [0.4, 0.4, 0.4], 0)], { size: PX, coordinate });
+    const marks: number[] = [];
+    const got: number[] = [];
+    for (let y = 2; y < PX - 2; y += 3)
+      for (let x = 2; x < PX - 2; x += 3) {
+        const px = ((x + 0.5) / PX) * 2;
+        const py = ((y + 0.5) / PX) * 2;
+        marks.push(striaMark(px, py, theta, SPACING, 0.7));
+        got.push((cut[y * PX + x] as number) / (flat[y * PX + x] as number));
+      }
+    const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
+    const [mm, mg] = [mean(marks), mean(got)];
+    let sxy = 0;
+    let sxx = 0;
+    let syy = 0;
+    marks.forEach((m, i) => {
+      sxy += (m - mm) * ((got[i] as number) - mg);
+      sxx += (m - mm) ** 2;
+      syy += ((got[i] as number) - mg) ** 2;
+    });
+    // A tenth or more of the skin is marked, and the shading falls with the mark's weight, in
+    // proportion (what the multiply leaves is the surface's own specular and ambient light).
+    expect(marks.filter((m) => m > 0.5).length).toBeGreaterThan(0.02 * marks.length);
+    expect(sxy / Math.sqrt(sxx * syy)).toBeLessThan(-0.98);
+    // At full weight the colour has gone to about the ratio: well under the skin's.
+    const full = got.filter((_, i) => (marks[i] as number) > 0.99);
+    expect(mean(full)).toBeLessThan(0.6);
+    // Away from any mark, the skin as it was (a sample at a mark's very edge may differ by a
+    // rounding in where the edge lies).
+    const none = got.filter((_, i) => (marks[i] as number) === 0);
+    expect(none.filter((g) => g < 0.99).length / none.length).toBeLessThan(0.02);
+  });
+
+  it("sinks the marks: the shading follows the slope of a dip", () => {
+    const flat = render([], { size: PX });
+    // A millimetre deep, so the slopes stay within the range the shading answers linearly.
+    const cut = render([stria(0.7, [1, 1, 1], 0.001)], { size: PX, coordinate });
+    const y = Math.floor(PX / 4);
+    const change: number[] = [];
+    const slope: number[] = [];
+    // The dip's depth at a pixel.
+    const depth = (x: number) =>
+      -0.001 * striaMark(((x + 0.5) / PX) * 2, ((y + 0.5) / PX) * 2, theta, SPACING, 0.7);
+    for (let x = 2; x < PX - 2; x++) {
+      change.push((cut[y * PX + x] as number) - (flat[y * PX + x] as number));
+      // The shader's slope is a derivative over the pixel's 2 x 2 block, taken from its left pixel
+      // to its right: a mark's edge is about a pixel wide, so the sampled slope is what to expect.
+      const left = x - (x % 2);
+      slope.push((depth(left + 1) - depth(left)) / (2 / PX));
+    }
+    let sxy = 0;
+    let sxx = 0;
+    let syy = 0;
+    change.forEach((c, i) => {
+      sxy += c * (slope[i] as number);
+      sxx += (slope[i] as number) ** 2;
+      syy += c * c;
+    });
+    expect(sxy / Math.sqrt(sxx * syy)).toBeLessThan(-0.9);
+  });
+
+  it("marks more of the skin the greater the amount, and none at none or at no strength", () => {
+    const flat = render([], { size: PX });
+    const dark = (amount: number, strength = 1) =>
+      variance(render([stria(amount, [0.4, 0.4, 0.4], 0, strength)], { size: PX, coordinate }));
+    const base = Math.max(variance(flat), 1e-8);
+    expect(dark(0)).toBeLessThan(10 * base);
+    expect(dark(0.7, 0)).toBeLessThan(10 * base);
+    expect(dark(0.4)).toBeGreaterThan(dark(0.15));
+    expect(dark(1)).toBeGreaterThan(dark(0.4));
+  });
+
+  it("fades marks finer than a pixel, as for any relief", () => {
+    const coarse = render([stria(0.7, [0.4, 0.4, 0.4], 0)], { size: PX, coordinate });
+    const fineLayer: SkinLayer = {
+      id: "striae",
+      kind: "detail",
+      pattern: "striae",
+      targets: [],
+      fields: noFields,
+      paint: () => ({
+        strength: 1,
+        height: 0,
+        size: 0.0003,
+        striae: { amount: 0.7, ratio: [0.4, 0.4, 0.4] as [number, number, number] },
+      }),
+    };
+    const fine = render([fineLayer], { size: PX, coordinate });
     expect(variance(fine)).toBeLessThan(variance(coarse) / 50);
   });
 });

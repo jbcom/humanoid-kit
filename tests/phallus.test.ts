@@ -175,7 +175,9 @@ describe("the pack's organ", () => {
     if (!detail) throw new Error("the pack has no detail");
     expect(detail.surfaceKey).toBe(lattice.key);
     expect(Object.keys(detail.drives ?? {}).sort()).toEqual([...detail.targets].sort());
-    expect(detail.targets).toEqual(phallusTargets(root).targets.map((t) => t.name));
+    // The organ's targets come first; the sacs' follow (scrotum.test.ts).
+    const organ = phallusTargets(root).targets.map((t) => t.name);
+    expect(detail.targets.slice(0, organ.length)).toEqual(organ);
   });
 
   it("is read by the arousal signal and by nothing in the body's own state morphs", () => {

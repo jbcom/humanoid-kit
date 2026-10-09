@@ -2,7 +2,8 @@
  * Body hair's coat regions (docs/ARCHITECTURE.md, "The coat"): the dense,
  * short terminal hair that stands off the skin, drawn as shells. The beard in
  * three parts a style grows or leaves (the moustache, the chin, and the cheeks
- * with the sideburns and the throat), and the trunk's chest, abdomen and back.
+ * with the sideburns and the throat), the trunk's chest, abdomen and back, and
+ * the adult-only armpits.
  * Their paint is the body hair model's (`bodyHairCoverage`, `bodyHairColour`),
  * so age, sex and the recipe's multipliers move them as they move the strands.
  *
@@ -152,6 +153,17 @@ export function beardMasks(assets: HumanoidAssets): Record<BeardPart, Float32Arr
 const LIE = { stubble: 0.15, grown: 0.6, trunk: 0.75 } as const;
 
 /** A coat region of the body hair model's `group`, grown at `length` (0: none). */
+/**
+ * Whether the recipe asks for a coat region at all. For now (2026-10-09, while
+ * the coat's shading is reworked) the coat is off unless the recipe enables it:
+ * the beard by a style other than none, any other group by setting its density.
+ * A recipe that says nothing of body hair draws no coat.
+ */
+export function coatEnabled(group: BodyHairGroup, input: SkinPaintInput): boolean {
+  if (group === "face") return (input.bodyHair?.beard ?? "none") !== "none";
+  return input.bodyHair?.density?.[group] !== undefined;
+}
+
 function paintOf(
   group: BodyHairGroup,
   input: SkinPaintInput,
@@ -161,7 +173,7 @@ function paintOf(
   const hair = bodyHairInput(input);
   const fibre = BODY_HAIR_FIBRE[group];
   return {
-    cover: length > 0 ? bodyHairCoverage(group, hair) : 0,
+    cover: length > 0 && coatEnabled(group, input) ? bodyHairCoverage(group, hair) : 0,
     length: length > 0 ? length : fibre.length,
     density: BODY_HAIR_DENSITY[group],
     lie,
@@ -193,7 +205,20 @@ function trunkRegion(group: "chest" | "abdomen" | "back"): CoatRegion {
   };
 }
 
-/** Body hair's coat: the beard's three parts and the trunk's dense hair. */
+/**
+ * Axillary hair: dense and a couple of centimetres long, so the coat's. Adult
+ * only under the age policy: `paintCoat` paints it only for an input that says
+ * the figure is an adult, and the body hair model gives it no coverage under 18.
+ */
+const AXILLARY_REGION: CoatRegion = {
+  id: "hair-axillary",
+  targets: [...LIPS_TARGETS, "breast/nipple-size-incr"],
+  adultOnly: true,
+  mask: (assets) => bodyHairMasks(assets).axillary,
+  paint: (input) => paintOf("axillary", input, BODY_HAIR_FIBRE.axillary.length, LIE.grown),
+};
+
+/** Body hair's coat: the beard's three parts, the trunk's dense hair and the armpits'. */
 export const BODY_HAIR_COAT: readonly CoatRegion[] = [
   beardRegion("moustache"),
   beardRegion("chin"),
@@ -201,4 +226,5 @@ export const BODY_HAIR_COAT: readonly CoatRegion[] = [
   trunkRegion("chest"),
   trunkRegion("abdomen"),
   trunkRegion("back"),
+  AXILLARY_REGION,
 ];

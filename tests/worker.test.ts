@@ -231,12 +231,7 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
       // The pack's manifest arrives with the first stage: ready already names its features.
       const ready = replies.get(1);
       if (ready?.type !== "ready") throw new Error("not ready");
-      expect(ready.anatomy?.features.map((f) => f.id)).toEqual([
-        "penis",
-        "testes",
-        "phallus",
-        "mound",
-      ]);
+      expect(ready.anatomy?.features.map((f) => f.id)).toEqual(["phallus", "scrotum", "mound"]);
       expect(shapeSignalNames([], ready.anatomy)).toEqual(["arousal"]);
       const layers = handle({ type: "adultLayers", id: 2 });
       await handle({ type: "evaluate", id: 3, recipe: createRecipe() });

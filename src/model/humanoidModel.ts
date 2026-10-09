@@ -46,6 +46,7 @@ import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/o
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
+import { beardStyle, bodyHairCoverage } from "../surface/bodyHair.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
 import { COAT_REGION_LIMIT, type CoatFields, coatMasks, combField } from "../surface/coat.ts";
 import {
@@ -55,15 +56,18 @@ import {
   scalpShade,
   UV_SCALE_STEPS,
 } from "../surface/hairFields.ts";
+import { DEFAULT_HAIR_COLOUR } from "../surface/hairTone.ts";
 import {
   buildLayerFields,
   isAdultLayer,
+  type LayerFieldsExtra,
   type LayerFieldsUpdate,
   uvScale,
 } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/regions/hands/index.ts";
 import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
+import { areolaStretch } from "../surface/regions/torso.ts";
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 import { tuckDepths } from "./tuck.ts";
@@ -150,6 +154,12 @@ export interface HairTopology extends SurfaceTopology {
   adultScalp: Float32Array | null;
   /** Which way strands run in the strand map, and how consistently (`HairStyleEntry.strand`). */
   strand: { angle: number; coherence: number };
+  /**
+   * Body hair cards (`beard`): per render vertex its card's rank, 0..1; the
+   * renderer draws a card while its rank is under the figure's coverage. Null
+   * for every other kind.
+   */
+  rank: Float32Array | null;
 }
 
 /**
@@ -345,6 +355,11 @@ export interface Evaluation extends SurfaceEvaluation {
   brows: HairEvaluation | null;
   /** The recipe's lashes (`recipe.hair.lashes`), or null. */
   lashes: HairEvaluation | null;
+  /**
+   * The hair pack's cards for the recipe's beard style (`wornBeardCards`), or
+   * null: a style the pack has cards for, on a face that grows terminal hair.
+   */
+  beard: HairEvaluation | null;
   /** One entry per garment worn, in `outfit.order`. */
   garments: SurfaceEvaluation[];
   /**
@@ -356,6 +371,8 @@ export interface Evaluation extends SurfaceEvaluation {
   groundOffset: number;
   /** Morphed control positions (base topology), for joints, bindings and measurement. */
   control: Float32Array;
+  /** How much larger the skin round the nipples is than the base mesh's (`areolaStretch`). */
+  areolaScale: number;
   /** Per body render vertex: mean curvature magnitude (m⁻¹), for subsurface scattering. */
   curvature: Float32Array;
   /** The skeleton fitted to this figure: each bone's rest head (`restBones`), bones × 3. */
@@ -599,10 +616,74 @@ export class HumanoidModel {
   adultLayerFields(): LayerFieldsUpdate | null {
     const adult = SKIN_LAYERS.filter(isAdultLayer);
     if (!adult.every((l) => l.available?.(this.assets))) return null;
+    const layers = adult.map((l) => l.id);
+    const extra = this.islandFields(layers);
     return {
-      layers: adult.map((l) => l.id),
+      layers,
       layerFields: this.renderLayerFields(buildLayerFields(this.assets, adult), adult.length),
+      ...(extra && { extra }),
     };
+  }
+
+  /**
+   * The triangles of the adult surface on islands of their own in UV space
+   * (`AdultReservoirSpec.island`), and each named layer's fields there: a
+   * reservoir's `layer` has mask 1 over its island, and its coordinate runs from
+   * the loop (0) along the rings to the tip (1), the cap at the tip. Null when
+   * there is no adult surface or none of its reservoirs has an island.
+   */
+  private islandFields(layers: readonly string[]): LayerFieldsExtra | null {
+    const adult = this.adultBodySurface();
+    const specs = this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? [];
+    if (!adult) return null;
+    const { mesh } = adult.part;
+    const reservoirs = mesh.lattice?.reservoirs ?? [];
+    /** Per render vertex: -1, or the reservoir whose island it is on, and its place along it. */
+    const owner = new Int32Array(mesh.renderUv.length).fill(-1);
+    const along = new Float32Array(mesh.renderUv.length);
+    reservoirs.forEach((r, s) => {
+      const isle = r.island;
+      if (!isle) return;
+      const spec = specs[s];
+      if (!spec?.layer || !layers.includes(spec.layer))
+        throw new AssetFormatError(
+          `reservoir ${spec?.id ?? s}: its island needs an adult skin layer (\`layer\`) the core has`,
+        );
+      mesh.renderUv.forEach((uv, v) => {
+        if (uv >= isle.stripBase && uv < isle.stripBase + isle.columns * isle.rows) {
+          owner[v] = s;
+          along[v] = Math.floor((uv - isle.stripBase) / isle.columns) / (isle.rows - 1);
+        } else if (uv >= isle.capBase && uv < isle.capBase + isle.capCount) {
+          owner[v] = s;
+          along[v] = 1;
+        }
+      });
+    });
+    const local = new Int32Array(owner.length).fill(-1);
+    let count = 0;
+    owner.forEach((s, v) => {
+      if (s >= 0) local[v] = count++;
+    });
+    if (!count) return null;
+    const uvs = new Float32Array(count * 2);
+    const fields = new Float32Array(layers.length * count * 2);
+    owner.forEach((s, v) => {
+      const at = local[v] as number;
+      if (at < 0) return;
+      uvs[at * 2] = mesh.uvs[v * 2] as number;
+      uvs[at * 2 + 1] = mesh.uvs[v * 2 + 1] as number;
+      const l = layers.indexOf(specs[s]?.layer as string);
+      fields[(l * count + at) * 2] = 1;
+      fields[(l * count + at) * 2 + 1] = along[v] as number;
+    });
+    const triangles: number[] = [];
+    for (let t = 0; t < mesh.index.length; t += 3) {
+      const a = local[mesh.index[t] as number] as number;
+      const b = local[mesh.index[t + 1] as number] as number;
+      const c = local[mesh.index[t + 2] as number] as number;
+      if (a >= 0 && b >= 0 && c >= 0) triangles.push(a, b, c);
+    }
+    return { uvs, index: Uint32Array.from(triangles), layerFields: fields };
   }
 
   /**
@@ -884,6 +965,27 @@ export class HumanoidModel {
   }
 
   /**
+   * The default figure at rest, as hair is fitted to it: the body's control positions and
+   * triangles, and per body vertex whether the head bone moves it most (`HEAD_WEIGHT` of its skin
+   * weight: 1 on the head, 0 on the neck, shoulders and the jaw's beard line). The packer
+   * measures hair against it and grows authored styles on it.
+   */
+  restHead(): { positions: Float32Array; triangles: Uint32Array; head: Uint8Array } {
+    const positions = this.evaluate(occlusionFigure()).control;
+    const head = this.assets.manifest.skeleton.bones.findIndex((b) => b.name === "head");
+    if (head < 0) throw new MorphError("the body pack's skeleton has no head bone");
+    const { skinIndex, skinWeight } = this.assets;
+    const onHead = new Uint8Array(this.assets.manifest.vertexCount);
+    for (let v = 0; v < onHead.length; v++) {
+      let weight = 0;
+      for (let k = 0; k < 4; k++)
+        if (skinIndex[v * 4 + k] === head) weight += skinWeight[v * 4 + k] as number;
+      onHead[v] = weight >= HEAD_WEIGHT ? 1 : 0;
+    }
+    return { positions, triangles: this.bodyControlTriangles, head: onHead };
+  }
+
+  /**
    * Measures a hair style's growth, hairline fade and scalp against the default
    * figure at rest (`hairFields`). The scalp may carry hair only on the head:
    * a body vertex the head bone moves most (the neck, shoulders and jaw's
@@ -894,22 +996,13 @@ export class HumanoidModel {
     asset: BoundAsset,
     options: {
       feather?: boolean;
+      fins?: boolean;
       /** The style's texture cut-out (`HairFieldsInput.cutout`, without the UVs, which the asset has). */
       cutout?: { width: number; height: number; alpha: Uint8Array };
     } = {},
   ): HairFields {
-    const rest = this.evaluate(occlusionFigure()).control;
+    const { positions: rest, head: eligible } = this.restHead();
     const control = evaluateBinding(asset, rest, new Float32Array(asset.entry.vertexCount * 3));
-    const head = this.assets.manifest.skeleton.bones.findIndex((b) => b.name === "head");
-    if (head < 0) throw new MorphError("the body pack's skeleton has no head bone");
-    const { skinIndex, skinWeight } = this.assets;
-    const eligible = new Uint8Array(this.assets.manifest.vertexCount);
-    for (let v = 0; v < eligible.length; v++) {
-      let onHead = 0;
-      for (let k = 0; k < 4; k++)
-        if (skinIndex[v * 4 + k] === head) onHead += skinWeight[v * 4 + k] as number;
-      eligible[v] = onHead >= HEAD_WEIGHT ? 1 : 0;
-    }
     const cards = asset.faceVerts;
     return hairFields({
       positions: control,
@@ -917,6 +1010,7 @@ export class HumanoidModel {
       body: { positions: rest, triangles: this.bodyControlTriangles },
       scalpEligible: eligible,
       ...(options.feather !== undefined && { feather: options.feather }),
+      ...(options.fins !== undefined && { fins: options.fins }),
       ...(options.cutout && {
         cutout: { faceUvs: asset.faceUvs, uvs: asset.uvs, ...options.cutout },
       }),
@@ -986,6 +1080,7 @@ export class HumanoidModel {
       [hair?.style, "scalp"],
       [hair?.brows, "brows"],
       [hair?.lashes, "lashes"],
+      [this.wornBeardCards(recipe), "beard"],
     ];
     const out: string[] = [];
     for (const [id, kind] of worn) {
@@ -1085,7 +1180,30 @@ export class HumanoidModel {
           )
         : null,
       strand: entry.strand,
+      rank: fields?.rank ? carry((v) => (fields.rank?.[v] as number) / 255).map(clamp01) : null,
     };
+  }
+
+  /**
+   * The id of the hair pack's cards for the recipe's beard style (an entry of
+   * kind `beard` tagged with the style), or null: when the pack has none for
+   * the style, or the face grows no terminal hair (a child's, or at a density
+   * of 0), which loads nothing.
+   */
+  wornBeardCards(recipe: Recipe): string | null {
+    const styles = this.assets.hair?.styles;
+    if (!styles) return null;
+    const input = {
+      age: recipe.macros.age,
+      gender: recipe.macros.gender,
+      colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
+      ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
+    };
+    if (bodyHairCoverage("face", input) <= 0) return null;
+    const style = beardStyle(input);
+    for (const entry of styles.values())
+      if (entry.kind === "beard" && entry.tags.includes(style)) return entry.id;
+    return null;
   }
 
   /**
@@ -1311,6 +1429,8 @@ export class HumanoidModel {
     const wornBrows = browsId === null ? null : { id: browsId, h: this.hairPart(browsId, "brows") };
     const wornLashes =
       lashesId === null ? null : { id: lashesId, h: this.hairPart(lashesId, "lashes") };
+    const beardId = this.wornBeardCards(recipe);
+    const wornBeard = beardId === null ? null : { id: beardId, h: this.hairPart(beardId, "beard") };
     let minY = Number.POSITIVE_INFINITY;
     for (const v of this.bodyVertices) minY = Math.min(minY, control[v * 3 + 1] as number);
     // The adult surface only for a figure aged 18 or over, decided here and nowhere
@@ -1350,6 +1470,8 @@ export class HumanoidModel {
     };
     const brows = decal(wornBrows, true);
     const lashes = decal(wornLashes, false);
+    // A beard's cards are bound and evaluated as scalp hair is.
+    const beard = decal(wornBeard, false);
     const curvature = meanCurvature(
       body.positions,
       body.normals,
@@ -1366,6 +1488,7 @@ export class HumanoidModel {
       hair,
       brows,
       lashes,
+      beard,
       garments,
       outfit: {
         key,
@@ -1380,6 +1503,7 @@ export class HumanoidModel {
       },
       groundOffset: -minY,
       control,
+      areolaScale: areolaStretch(this.assets, control),
       curvature,
       boneHeads,
       bodyArt: recipe.bodyArt ? placeBodyArt(this.assets, recipe.bodyArt, control) : null,

@@ -95,13 +95,26 @@ export function ridgeHeight(x: number, y: number, theta: number, spacing: number
  */
 export const RIDGE_ORIENTATION_SEAM = Math.PI / 12;
 
-/** The 0..1 coordinate that stores an orientation (radians, any turn) about the seam. */
-export function ridgeOrientationCoordinate(theta: number): number {
-  const t = (((theta - RIDGE_ORIENTATION_SEAM) % Math.PI) + Math.PI) % Math.PI;
+/**
+ * The 0..1 coordinate that stores an orientation (radians, any turn) about a
+ * seam: its angle from the seam, modulo a half turn, over a half turn.
+ */
+export function orientationCoordinate(theta: number, seam: number): number {
+  const t = (((theta - seam) % Math.PI) + Math.PI) % Math.PI;
   return t / Math.PI;
 }
 
-/** The orientation (radians, from the seam up to a half turn past it) a coordinate stores. */
+/** The orientation (radians, from the seam up to a half turn past it) a coordinate stores about a seam. */
+export function orientationAtCoordinate(coordinate: number, seam: number): number {
+  return coordinate * Math.PI + seam;
+}
+
+/** The 0..1 coordinate that stores a ridge orientation about the ridges' seam. */
+export function ridgeOrientationCoordinate(theta: number): number {
+  return orientationCoordinate(theta, RIDGE_ORIENTATION_SEAM);
+}
+
+/** The ridge orientation (radians, from the seam up to a half turn past it) a coordinate stores. */
 export function ridgeOrientation(coordinate: number): number {
-  return coordinate * Math.PI + RIDGE_ORIENTATION_SEAM;
+  return orientationAtCoordinate(coordinate, RIDGE_ORIENTATION_SEAM);
 }

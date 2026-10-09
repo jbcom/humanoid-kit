@@ -120,6 +120,12 @@ export interface HairFieldsInput {
    */
   feather?: boolean;
   /**
+   * Whether cards that stand out of the scalp are fins (default true). A tube of hair (a braid,
+   * a twist, a loc) faces every way round its axis, and is solid from any side: dissolving the
+   * parts of it that face away would hollow it out.
+   */
+  fins?: boolean;
+  /**
    * The cards' texture cut-out: where it is clear there is no hair, so no scalp
    * tint (a card's mesh extends past the hair painted on it, and the skin beyond the
    * visible hairline must stay bare). `faceUvs` (four per quad) index `uvs`; `alpha`
@@ -362,7 +368,7 @@ export function hairFields(input: HairFieldsInput): HairFields {
     }
   }
   const fin = new Uint8Array(n);
-  for (let v = 0; v < n; v++) {
+  for (let v = 0; v < n && input.fins !== false; v++) {
     const hit = bodyBvh.closestPointToPoint(at(v), target);
     const nl = Math.hypot(
       normals[v * 3] as number,

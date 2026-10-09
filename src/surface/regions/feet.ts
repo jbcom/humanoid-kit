@@ -9,12 +9,13 @@
  * as a choice.
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
-import { groupFaces, jointPosition } from "../../format/assetFormat.ts";
+import { jointPosition } from "../../format/assetFormat.ts";
 import type { DetailLayer, SkinLayer, SkinLayerFields } from "../layers.ts";
-import { ridgeOrientationCoordinate } from "../ridges.ts";
 import { type DigitFrame, digitFrame, type Vec3 } from "./digitFrame.ts";
 import { NAIL_SHARP, nailCoordinate } from "./hands/nails.ts";
+import { bodySurface } from "./once.ts";
 import { skinZones } from "./skinZones.ts";
+import { uvOrientation } from "./uvOrientation.ts";
 
 /** Where a landmark lies in a foot's frame: `along` (0 heel, 1 second toe's tip) and `across` (metres, positive outward). */
 export interface FootPoint {
@@ -48,18 +49,6 @@ export interface FootFrame {
   axis: readonly [readonly [number, number], readonly [number, number]];
   lateral: readonly [readonly [number, number], readonly [number, number]];
   landmarks: readonly [FootLandmarks, FootLandmarks];
-}
-
-/**
- * The vertices of the body surface: the base mesh also carries helper geometry
- * (the tights proxy garments are bound to, joints, ...) with skin weights of its
- * own, whose vertices lie a little off the skin and would move a frame's extent.
- */
-function bodySurface(assets: HumanoidAssets): Uint8Array {
-  const out = new Uint8Array(assets.manifest.vertexCount);
-  for (const f of groupFaces(assets, "body"))
-    for (let k = 0; k < 4; k++) out[assets.faceVerts[f * 4 + k] as number] = 1;
-  return out;
 }
 
 const frames = new WeakMap<HumanoidAssets, FootFrame>();
@@ -574,86 +563,16 @@ function waveDirections(assets: HumanoidAssets): Float32Array {
 }
 
 /**
-The ridge wave directions in the UV plane, as the orientation coordinate: the
- * doubled angle averaged over the faces, then stored (`ridgeOrientationCoordinate`): per face, the wave direction
- * of each corner, taken into the face's plane and carried through the face's UV
- * map, then averaged over the faces round a vertex by their area. The relief is
- * drawn in the UV plane (p = uv × metres per UV), so its orientation has to be
- * measured there.
+ * The ridge wave directions in the UV plane, as the orientation coordinate
+ * (`uvOrientation`): the relief is drawn in the UV plane, so its orientation
+ * has to be measured there.
  */
 function ridgeOrientationFields(assets: HumanoidAssets): SkinLayerFields {
   const n = assets.manifest.vertexCount;
   const sole = skinZones(assets).sole;
-  const wave = waveDirections(assets);
-  const P = assets.positions;
-  const cx = new Float64Array(n);
-  const cy = new Float64Array(n);
-  for (const f of groupFaces(assets, "body")) {
-    const q = [0, 1, 2, 3].map((k) => assets.faceVerts[f * 4 + k] as number);
-    if (!q.some((v) => (sole[v] as number) > 0)) continue;
-    const at = (v: number): [number, number, number] => [
-      P[v * 3] as number,
-      P[v * 3 + 1] as number,
-      P[v * 3 + 2] as number,
-    ];
-    const uv = [0, 1, 2, 3].map((k) => [
-      assets.uvs[(assets.faceUvs[f * 4 + k] as number) * 2] as number,
-      assets.uvs[(assets.faceUvs[f * 4 + k] as number) * 2 + 1] as number,
-    ]) as [number, number][];
-    const p0 = at(q[0] as number);
-    const sub3 = (
-      a: [number, number, number],
-      b: [number, number, number],
-    ): [number, number, number] => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-    const dot3 = (a: [number, number, number], b: [number, number, number]) =>
-      a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    const e1 = sub3(at(q[1] as number), p0);
-    const e2 = sub3(at(q[3] as number), p0);
-    const b1 = [
-      (uv[1] as [number, number])[0] - (uv[0] as [number, number])[0],
-      (uv[1] as [number, number])[1] - (uv[0] as [number, number])[1],
-    ];
-    const b2 = [
-      (uv[3] as [number, number])[0] - (uv[0] as [number, number])[0],
-      (uv[3] as [number, number])[1] - (uv[0] as [number, number])[1],
-    ];
-    const g11 = dot3(e1, e1);
-    const g12 = dot3(e1, e2);
-    const g22 = dot3(e2, e2);
-    const det = g11 * g22 - g12 * g12;
-    if (det < 1e-18) continue;
-    const area = Math.sqrt(det);
-    for (const v of q) {
-      if ((sole[v] as number) <= 0) continue;
-      const w: [number, number, number] = [
-        wave[v * 3] as number,
-        wave[v * 3 + 1] as number,
-        wave[v * 3 + 2] as number,
-      ];
-      // w = alpha e1 + beta e2 (its part in the face's plane), by least squares.
-      const r1 = dot3(w, e1);
-      const r2 = dot3(w, e2);
-      const alpha = (r1 * g22 - r2 * g12) / det;
-      const beta = (r2 * g11 - r1 * g12) / det;
-      const du = alpha * (b1[0] as number) + beta * (b2[0] as number);
-      const dv = alpha * (b1[1] as number) + beta * (b2[1] as number);
-      const len = Math.hypot(du, dv);
-      if (len < 1e-12) continue;
-      // The doubled angle's unit vector, weighted by the face's area.
-      const c2 = (du * du - dv * dv) / (len * len);
-      const s2 = (2 * du * dv) / (len * len);
-      cx[v] = (cx[v] as number) + area * c2;
-      cy[v] = (cy[v] as number) + area * s2;
-    }
-  }
+  const { coord, valid } = uvOrientation(assets, waveDirections(assets), sole);
   const mask = new Float32Array(n);
-  const coord = new Float32Array(n);
-  for (let v = 0; v < n; v++) {
-    const len = Math.hypot(cx[v] as number, cy[v] as number);
-    if ((sole[v] as number) <= 0 || len < 1e-18) continue;
-    mask[v] = sole[v] as number;
-    coord[v] = ridgeOrientationCoordinate(0.5 * Math.atan2(cy[v] as number, cx[v] as number));
-  }
+  for (let v = 0; v < n; v++) if (valid[v] === 1) mask[v] = sole[v] as number;
   return { mask, coord };
 }
 

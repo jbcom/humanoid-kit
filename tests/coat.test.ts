@@ -1,3 +1,4 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { groupFaces, jointPosition } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -108,6 +109,46 @@ describe("the comb field", () => {
   });
 });
 
+describe("the adult-only gate on the armpits' coat", () => {
+  const axillary = BODY_HAIR_COAT.filter((r) => r.adultOnly);
+  const cover = (table: Float32Array) => table[0] as number;
+
+  it("is exactly the axillary region", () => {
+    expect(axillary.map((r) => r.id)).toEqual(["hair-axillary"]);
+  });
+
+  it("paints it at zero for any figure under 18, whatever the recipe asks", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 1, max: 17.999, noNaN: true }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        fc.double({ min: 0, max: 2, noNaN: true }),
+        (age, gender, m) => {
+          const t = paintCoat(
+            axillary,
+            input(age, gender, { bodyHair: { density: { axillary: m } } }),
+          );
+          expect(cover(t)).toBe(0);
+        },
+      ),
+    );
+  });
+
+  it("fails closed: an input that does not say the figure is an adult paints none, even at 40", () => {
+    const { adult: _, ...unsaid } = input(40, 1);
+    expect(cover(paintCoat(axillary, unsaid))).toBe(0);
+    // An input claiming a child is an adult still gets none: the model gives a child no coverage.
+    expect(cover(paintCoat(axillary, { ...input(12, 1), adult: true }))).toBe(0);
+  });
+
+  it("paints it for an adult, man or woman", () => {
+    for (const gender of [0, 1])
+      expect(
+        cover(paintCoat(axillary, input(30, gender, { bodyHair: { density: { axillary: 1 } } }))),
+      ).toBeGreaterThan(0.5);
+  });
+});
+
 describe("coat masks and paint", () => {
   it("lay out one byte per region per vertex and refuse more regions than the limit", () => {
     const masks = coatMasks(assets, COAT_REGIONS);
@@ -121,12 +162,20 @@ describe("coat masks and paint", () => {
       for (const t of r.targets) expect(SKIN_LAYER_TARGETS).toContain(t);
   });
 
-  it("paint nothing on a child, and no beard by default", () => {
-    expect(coatPainted(paintCoat(BODY_HAIR_COAT, input(8, 1)))).toBe(false);
-    const man = paintCoat(BODY_HAIR_COAT, input(35, 1));
+  it("paint nothing for a recipe that says nothing of body hair, at any age or sex", () => {
+    for (const age of [8, 15, 35, 80])
+      for (const gender of [0, 0.5, 1])
+        expect(coatPainted(paintCoat(BODY_HAIR_COAT, input(age, gender)))).toBe(false);
+  });
+
+  it("paint a region the recipe enables, and nothing on a child", () => {
+    const chest = { bodyHair: { density: { chest: 1 } } };
+    expect(coatPainted(paintCoat(BODY_HAIR_COAT, input(8, 1, chest)))).toBe(false);
+    const man = paintCoat(BODY_HAIR_COAT, input(35, 1, chest));
     for (const part of ["moustache", "chin", "cheeks"])
       expect(row(man, `beard-${part}`)[0]).toBe(0);
     expect(row(man, "hair-chest")[0]).toBeGreaterThan(0.4);
+    expect(row(man, "hair-back")[0]).toBe(0);
   });
 
   it("grow the parts each beard style names, stubble short and standing", () => {
@@ -176,10 +225,16 @@ describe("the coat's triangles", () => {
   it("cover only where a painted region grows, and nothing when none is painted", () => {
     const none = paintCoat(BODY_HAIR_COAT, input(8, 1));
     expect(coatTriangles(body.index, body.coat.masks, none).length).toBe(0);
+    // A default adult recipe draws no coat at all.
+    for (const gender of [0, 1])
+      expect(
+        coatTriangles(body.index, body.coat.masks, paintCoat(BODY_HAIR_COAT, input(35, gender)))
+          .length,
+      ).toBe(0);
     const stubble = paintCoat(
       BODY_HAIR_COAT,
       input(35, 0.2, {
-        bodyHair: { beard: "stubble", density: { chest: 0, abdomen: 0, back: 0 } },
+        bodyHair: { beard: "stubble", density: { chest: 0, abdomen: 0, back: 0, axillary: 0 } },
       }),
     );
     const tris = coatTriangles(body.index, body.coat.masks, stubble);

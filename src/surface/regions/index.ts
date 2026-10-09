@@ -13,7 +13,7 @@ import { BODY_HAIR_COAT } from "./bodyHairCoat.ts";
 import { CREASE_LAYERS } from "./creases.ts";
 import { EXPRESSION_LINE_LAYERS } from "./faceLines.ts";
 import { MOUTH_INTERIOR_LAYER } from "./mouth.ts";
-import { AREOLA_LAYER, FLUSH_LAYER, LIPS_LAYER } from "./rest.ts";
+import { FLUSH_LAYER, LIPS_LAYER } from "./rest.ts";
 import {
   BLUSH_LAYER,
   COLD_PALLOR_LAYER,
@@ -25,10 +25,11 @@ import {
   SWEAT_EXERCISE_LAYER,
   SWEAT_REST_LAYER,
 } from "./states.ts";
+import { TORSO_SKIN_LAYERS } from "./torso.ts";
 
 /**
  * The layers whose data is in the body pack: the rest layers (flush, lips,
- * areola, the mouth's lining), the areas' layers (the hands', then the feet's:
+ * the torso's areola, the mouth's lining), the areas' layers (the hands', then the feet's:
  * the sole's callus goes over the palmoplantar colour), then the state layers,
  * so a state (cold pallor, a flush) acts on the areas' colour too, and last the
  * joint creases.
@@ -36,7 +37,7 @@ import {
 const BODY_SKIN_LAYERS: readonly SkinLayer[] = [
   FLUSH_LAYER,
   LIPS_LAYER,
-  AREOLA_LAYER,
+  ...TORSO_SKIN_LAYERS,
   MOUTH_INTERIOR_LAYER,
   ...AREA_SKIN_LAYERS,
   GOOSEBUMP_LAYER,
@@ -92,4 +93,5 @@ export * from "./mouth.ts";
 export * from "./rest.ts";
 export * from "./skinZones.ts";
 export * from "./states.ts";
+export * from "./torso.ts";
 export { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER };

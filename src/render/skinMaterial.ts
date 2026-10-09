@@ -57,6 +57,12 @@ import {
 import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import { luminance, MELANIN_ANCHORS, type Rgb, skinAlbedo } from "../surface/skinTone.ts";
+import {
+  STRIA_SOFT,
+  STRIA_THRESHOLD_BASE,
+  STRIA_THRESHOLD_SLOPE,
+  STRIAE_ORIENTATION_SEAM,
+} from "../surface/striae.ts";
 import { type BodyArtTexture, MARK_NEUTRAL } from "./bodyArtTexture.ts";
 import { DUAL_SKINNING_KEY, type DualBones, patchDualSkinning } from "./dualSkinning.ts";
 import { emptyLayerAtlas, emptyOwners, type SkinLayerAtlas } from "./layerAtlas.ts";
@@ -278,19 +284,6 @@ vec2 hkFields( int l, vec2 uv ) {
 }
 vec4 hkHeader( int l ) { return texelFetch( hkLayerStops, ivec2( 0, l ), 0 ); }
 int hkKind( vec4 head ) { return int( head.y + 0.5 ); }
-vec3 hkApplyLayers( vec3 c, vec2 uv ) {
-	for ( int l = 0; l < ${count}; l ++ ) {
-		vec4 head = hkHeader( l );
-		int kind = hkKind( head );
-		if ( kind > 1 ) continue;
-		vec2 f = hkFields( l, uv );
-		float u = ( 1.5 + clamp( f.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
-		vec3 stop = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).rgb;
-		vec3 target = kind == 1 ? c * stop : stop;
-		c = mix( c, target, f.x * head.x );
-	}
-	return c;
-}
 // Roughness change (x) and specular change (y) of the surface layers.
 vec2 hkSurfaceChange( vec2 uv ) {
 	vec2 s = vec2( 0.0 );
@@ -315,6 +308,22 @@ float hkBumps( vec2 p ) {
 			vec2 centre = c + 0.2 + 0.6 * vec2( hkHash( c ), hkHash( c + 17.31 ) );
 			float d = length( p - centre ) / 0.35;
 			h = max( h, pow( max( 1.0 - d * d, 0.0 ), 2.0 ) );
+		}
+	return h;
+}
+// Tubercles: bumps in a share of the cells, the share (0..1) being the layer's occupancy where
+// the pixel is. A cell raises a bump once the occupancy passes its own random draw, by a ramp
+// rather than a step, so the bump does not lose a side where the occupancy changes across it.
+float hkTubercles( vec2 p, float occupancy ) {
+	vec2 i = floor( p );
+	float h = 0.0;
+	for ( int y = -1; y <= 1; y ++ )
+		for ( int x = -1; x <= 1; x ++ ) {
+			vec2 c = i + vec2( float( x ), float( y ) );
+			float present = smoothstep( 0.0, 0.02, occupancy - hkHash( c + 41.7 ) );
+			vec2 centre = c + 0.2 + 0.6 * vec2( hkHash( c ), hkHash( c + 17.31 ) );
+			float d = length( p - centre ) / 0.35;
+			h = max( h, present * pow( max( 1.0 - d * d, 0.0 ), 2.0 ) );
 		}
 	return h;
 }
@@ -359,6 +368,38 @@ float hkRidges( vec2 p, float theta, float spacing ) {
 float hkFootprintFade( float periodsPerPixel ) {
 	return 1.0 - smoothstep( 0.1, 0.3, periodsPerPixel );
 }
+// The stretch marks' weight at this pixel, 0 to 1: the mask and the layer's strength, the
+// marks where the ridge noise passes the threshold that the amount sets (the mask scales the
+// amount, so the sites' density follows it), faded out where the streaks are finer than a pixel.
+// The one function the colour and the relief both read.
+float hkStriaeWeight( int l, vec4 head, vec2 f, vec2 uv ) {
+	vec2 p = uv * vHkUvScale;
+	float fade = hkFootprintFade( length( fwidth( p ) ) / head.w );
+	float amount = texture( hkLayerStops, vec2( 2.5 / ${glslFloat(STOP_TABLE_WIDTH)}, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r * f.x;
+	if ( amount <= 0.0 || head.x <= 0.0 || fade <= 0.0 ) return 0.0;
+	float t = ${glslFloat(STRIA_THRESHOLD_BASE)} - ${glslFloat(STRIA_THRESHOLD_SLOPE)} * amount;
+	float theta = f.y * 3.14159265359 + ${glslFloat(STRIAE_ORIENTATION_SEAM)};
+	return head.x * fade * smoothstep( t, t + ${glslFloat(STRIA_SOFT)}, hkRidges( p, theta, head.w ) );
+}
+vec3 hkApplyLayers( vec3 c, vec2 uv ) {
+	for ( int l = 0; l < ${count}; l ++ ) {
+		vec4 head = hkHeader( l );
+		int kind = hkKind( head );
+		if ( kind > 1 && kind != 9 ) continue;
+		vec2 f = hkFields( l, uv );
+		if ( kind == 9 ) {
+			// Stretch marks: the skin where there is a mark is multiplied by the layer's colour ratio.
+			vec3 ratio = texture( hkLayerStops, vec2( 1.5 / ${glslFloat(STOP_TABLE_WIDTH)}, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).rgb;
+			c = mix( c, c * ratio, hkStriaeWeight( l, head, f, uv ) );
+			continue;
+		}
+		float u = ( 1.5 + clamp( f.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
+		vec3 stop = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).rgb;
+		vec3 target = kind == 1 ? c * stop : stop;
+		c = mix( c, target, f.x * head.x );
+	}
+	return c;
+}
 // The detail layers' relief at this pixel, metres. Relief finer than a pixel
 // fades out rather than aliasing.
 float hkDetailHeight( vec2 uv ) {
@@ -381,15 +422,26 @@ float hkDetailHeight( vec2 uv ) {
 			H -= g.x * head.x * head.z * lineFade * s * s * ( 3.0 - 2.0 * s );
 			continue;
 		}
-		if ( kind != 2 && kind != 3 && kind != 5 ) continue;
+		if ( kind != 2 && kind != 3 && kind != 5 && kind != 7 && kind != 8 && kind != 9 ) continue;
 		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
 		if ( head.x <= 0.0 ) continue;
 		vec2 f = hkFields( l, uv );
 		float a = f.x * head.x;
-		if ( kind == 2 ) {
+		if ( kind == 9 ) {
+			// A stretch mark is a shallow atrophic dip: depth is the layer's height.
+			H -= head.z * hkStriaeWeight( l, head, f, uv );
+		} else if ( kind == 2 || kind == 7 || kind == 8 ) {
 			vec2 p = uv * vHkUvScale / head.w;
 			float fade = 1.0 - smoothstep( 0.25, 0.75, length( fwidth( p ) ) );
-			H += a * head.z * fade * hkBumps( p );
+			if ( kind == 2 ) {
+				H += a * head.z * fade * hkBumps( p );
+			} else {
+				// The amplitude profile along the coordinate, read from the stops' red channel.
+				float u = ( 1.5 + clamp( f.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
+				float profile = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
+				if ( kind == 7 ) H += a * profile * head.z * fade * hkBumps( p );
+				else H += f.x * head.x * head.z * fade * hkTubercles( p, profile );
+			}
 		} else if ( kind == 5 ) {
 			vec2 p = uv * vHkUvScale;
 			// Ridges within a pixel of one another blur to a flat; fade them out before they alias.

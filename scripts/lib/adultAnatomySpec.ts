@@ -18,36 +18,30 @@ import type {
 } from "../../src/format/assetFormat.ts";
 import { AUTHORED_MODIFIERS } from "./adultAuthored.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE } from "./detail/phallus.ts";
+import { TESTES_SIZE } from "./detail/scrotum.ts";
 import { pelvicRefinement } from "./pelvicRegion.ts";
 
 /** The part of the spec that does not depend on the base mesh. */
 export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "reservoirs"> = {
   features: [
-    {
-      id: "penis",
-      modifiers: ["genitals/penis-length-decr|incr", "genitals/penis-circ-decr|incr"],
-    },
-    { id: "testes", modifiers: ["genitals/penis-testicles-decr|incr"] },
-    // The organ drawn out of the phallic reservoir (scripts/lib/detail/phallus.ts). It has no skin
-    // layer yet: the layers above still measure the CC0 targets, whose sliders are hidden.
+    // The organ drawn out of the phallic reservoir (scripts/lib/detail/phallus.ts): its skin is
+    // the layer on that reservoir's island (`AdultReservoirSpec.layer`).
     {
       id: "phallus",
       modifiers: [PHALLUS_SIZE, PHALLUS_LENGTH, PHALLUS_GIRTH],
     },
+    // The sacs and testes drawn out of the labioscrotal pair (scripts/lib/detail/scrotum.ts).
+    { id: "scrotum", modifiers: [TESTES_SIZE] },
     // The mound has MakeHuman's one control (the body's bulge, a control target) and this
     // pack's own (a generated control target, scripts/lib/control/mound.ts).
     { id: "mound", modifiers: ["pelvis/bulge-decr|incr", "pelvis/mound-decr|incr"] },
   ],
   skinLayers: [
-    {
-      id: "penis-skin",
-      masks: ["genitals/penis-length-incr", "genitals/penis-circ-incr"],
-      lo: 0.05,
-      hi: 0.4,
-      // A length target stretches the penis from its root, so its displacement runs root to tip.
-      coordinate: "genitals/penis-length-incr",
-    },
-    { id: "testes-skin", masks: ["genitals/penis-testicles-incr"], lo: 0.05, hi: 0.4 },
+    // The penis and testes layers' fields are the islands of the reservoirs they colour
+    // (`AdultReservoirSpec.island`, `layer`), not measured from targets: the CC0 penis
+    // targets deform the helper-genital group, which the surface never draws.
+    { id: "penis-skin", masks: [], lo: 0.05, hi: 0.4 },
+    { id: "testes-skin", masks: [], lo: 0.05, hi: 0.4 },
     { id: "mound-skin", masks: ["pelvis/bulge-incr"], lo: 0.25, hi: 0.8 },
   ],
   // Arousal changes the organ through the detail's drives (`detail/phallus.ts`: erect against
