@@ -62,6 +62,7 @@ import {
 } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { SKIN_LAYERS } from "../surface/regions/index.ts";
+import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 import { tuckDepths } from "./tuck.ts";
 
@@ -429,6 +430,10 @@ export class HumanoidModel {
   private readonly stateMorphs: readonly StateMorph[];
   /** The adult pack's detail targets (`AdultDetailSpec`): displacements of the adult surface, not morphs. */
   private readonly detailTargets: ReadonlySet<string>;
+  /** Factors that multiply a detail target's weight (`AdultDetailSpec.gates`), compiled. */
+  private readonly detailGates: ReadonlyMap<string, readonly Factor[]>;
+  /** Detail targets whose weight is derived from factors alone (`AdultDetailSpec.drives`), compiled. */
+  private readonly detailDrives: readonly (readonly [string, readonly Factor[]])[];
   /** The body's vertex adjacency, on first use (`bodyAdjacency`). */
   private adjacency: { start: Uint32Array; items: Uint32Array } | undefined;
   /** The rest bake of the worn set, kept for the corner bakes to reuse. */
@@ -458,23 +463,20 @@ export class HumanoidModel {
       ...(assets.adultAnatomyManifest?.anatomy?.stateMorphs ?? []),
     ];
     this.detailTargets = new Set(assets.adultAnatomyManifest?.anatomy?.detail?.targets);
-    // A gate names a detail target and factors the loaded packs know: a typo is an error now, not a feature that never shows.
-    for (const [target, factors] of Object.entries(
-      assets.adultAnatomyManifest?.anatomy?.detail?.gates ?? {},
-    )) {
-      if (!this.detailTargets.has(target))
-        throw new AssetFormatError(`detail gate for ${target}: it is not a detail target`);
-      for (const f of factors) {
-        const kind = f.slice(0, f.indexOf(":"));
-        const name = f.slice(f.indexOf(":") + 1);
-        if (kind !== "mod" && kind !== "signal")
-          throw new AssetFormatError(
-            `detail gate ${f} of ${target}: expected mod:<id> or signal:<name>`,
-          );
-        if (kind === "mod" && !assets.modifiers.has(name))
-          throw new AssetFormatError(`detail gate ${f} of ${target}: no such modifier`);
-      }
-    }
+    // Gates and drives name detail targets and factors the loaded packs know: a typo is an error now, not a feature that never shows.
+    const compiled = (kind: "gates" | "drives") =>
+      Object.entries(assets.adultAnatomyManifest?.anatomy?.detail?.[kind] ?? {}).map(
+        ([target, factors]) => {
+          if (!this.detailTargets.has(target))
+            throw new AssetFormatError(`detail ${kind} for ${target}: it is not a detail target`);
+          return [
+            target,
+            factors.map((f) => compileFactor(f, `detail ${kind} of ${target}`, assets.modifiers)),
+          ] as const;
+        },
+      );
+    this.detailGates = new Map(compiled("gates"));
+    this.detailDrives = compiled("drives");
     const ids = options.attachments ?? [...assets.attachments.keys()];
     const wearing = ids.map((id) => {
       const a = assets.attachments.get(id);
@@ -1341,7 +1343,15 @@ export class HumanoidModel {
    * mesh but displacements of the adult surface, applied by `evaluate`.
    */
   private evaluateShape(recipe: Recipe, signals: Readonly<Record<string, number>>) {
-    const all = this.contributions(recipe, signals);
+    const given = this.contributions(recipe, signals);
+    // Weights the pack derives from modifiers and signals (`AdultDetailSpec.drives`), an adult's alone.
+    const driven: Contribution[] = [];
+    if (this.detailDrives.length && isAdult(recipe))
+      for (const [target, factors] of this.detailDrives) {
+        const weight = product(factors, recipe, signals);
+        if (weight > 0) driven.push({ target, weight });
+      }
+    const all = driven.length ? [...given, ...driven] : given;
     const pending = this.pendingFor(all);
     if (pending.size)
       throw new MorphError(
@@ -1352,7 +1362,8 @@ export class HumanoidModel {
     // A gated target is worth its weight times its factors; a factor of nothing drops it.
     const detail: Contribution[] = [];
     for (const c of isDetail) {
-      const gate = this.detailGate(c.target, recipe, signals);
+      const gates = this.detailGates.get(c.target);
+      const gate = gates ? product(gates, recipe, signals) : 1;
       if (gate === 0) continue;
       detail.push(typeof c.weight === "number" ? { target: c.target, weight: c.weight * gate } : c);
     }
@@ -1362,29 +1373,6 @@ export class HumanoidModel {
     const control = new Float32Array(this.assets.positions.length);
     evaluateMorph(this.assets.positions, this.assets.targets, contributions, control, this.regions);
     return { control, detail };
-  }
-
-  /** The product of a detail target's gates (`AdultDetailSpec.gates`) for a figure in a state; 1 without any. */
-  private detailGate(
-    target: string,
-    recipe: Recipe,
-    signals: Readonly<Record<string, number>>,
-  ): number {
-    const factors = this.assets.adultAnatomyManifest?.anatomy?.detail?.gates?.[target];
-    if (!factors) return 1;
-    let gate = 1;
-    for (const f of factors) {
-      const at = f.indexOf(":");
-      const kind = f.slice(0, at);
-      const name = f.slice(at + 1);
-      if (kind === "mod") gate *= Math.min(1, Math.max(0, recipe.modifiers[name] ?? 0));
-      else if (kind === "signal") gate *= Math.min(1, Math.max(0, signals[name] ?? 0));
-      else
-        throw new AssetFormatError(
-          `detail gate ${f} of ${target}: expected mod:<id> or signal:<name>`,
-        );
-    }
-    return gate;
   }
 
   /**

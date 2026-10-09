@@ -21,6 +21,10 @@ const BUMP = "detail/test-bump";
 const DENT = "detail/test-dent";
 const MODIFIER = "detail/test-bump-decr|incr";
 const GATE = "detail/test-gate";
+/** A virtual two-sided modifier (no targets of its own) and the target a pack derives from it. */
+const SIZE = "detail/test-size";
+const DRIVEN = "detail/test-driven";
+const DRIVEN_Z = 0.004;
 const BUMP_Z = 0.005;
 const DENT_Z = -0.003;
 
@@ -39,6 +43,7 @@ interface Options {
   surfaceKey?: string;
   scale?: { a: number; b: number; rest: number };
   gates?: Record<string, string[]>;
+  drives?: Record<string, string[]>;
 }
 
 /** A target moving each of `indices` by the same delta. */
@@ -61,14 +66,17 @@ function assetsWithDetail(o: Options = {}): HumanoidAssets {
         uniform(BUMP, indices, [0, 0, BUMP_Z]),
         uniform(DENT, indices, [0, 0, DENT_Z]),
         uniform(`${GATE}-incr`, [indices[0] as number], [0, 0, 0]),
+        uniform(DRIVEN, indices, [0, 0, DRIVEN_Z]),
       ],
       modifiers: [
         { id: MODIFIER, group: "detail", lo: DENT, hi: BUMP, adultOnly: true },
         { id: GATE, group: "detail", lo: null, hi: `${GATE}-incr`, adultOnly: true },
+        { id: SIZE, group: "detail", lo: "", hi: "", adultOnly: true },
       ],
       surfaceKey: o.surfaceKey ?? lattice?.key ?? "",
       ...(o.scale && { scale: o.scale }),
       ...(o.gates && { gates: o.gates }),
+      ...(o.drives && { drives: o.drives }),
     }),
   );
 }
@@ -304,9 +312,82 @@ describe("a gated detail target", { timeout: 300_000 }, () => {
     expect(() => detailModel({ gates: { "pelvis/bulge-incr": [`mod:${GATE}`] } })).toThrow(
       /not a detail target/,
     );
-    expect(() => detailModel({ gates: { [BUMP]: ["height:1"] } })).toThrow(/expected mod:/);
+    expect(() => detailModel({ gates: { [BUMP]: ["height:1"] } })).toThrow(/unknown kind/);
     expect(() => detailModel({ gates: { [BUMP]: ["mod:detail/nonesuch"] } })).toThrow(
-      /no such modifier/,
+      /names no modifier/,
+    );
+    expect(() => detailModel({ gates: { [BUMP]: ["ramp:detail/nonesuch:0,0;1,1"] } })).toThrow(
+      /names no modifier/,
+    );
+    expect(() => detailModel({ gates: { [BUMP]: [`ramp:${GATE}:0,0`] } })).toThrow(/two numeric/);
+    expect(() => detailModel({ gates: { [BUMP]: [`ramp:${GATE}:0.5,0;0.2,1`] } })).toThrow(
+      /ascend/,
+    );
+  });
+
+  it("can be gated by a ramp: a hat of the modifier, so a blend of shapes baked at sizes", () => {
+    const hat = detailModel({ gates: { [BUMP]: [`ramp:${GATE}:0,0;0.5,1;1,0`] } });
+    const lifted = (gate: number) => {
+      const r = createRecipe({
+        macros: adult.macros,
+        modifiers: { [MODIFIER]: 1, ...(gate ? { [GATE]: gate } : {}) },
+      });
+      const m = moved(hat.evaluate(adult).positions, hat.evaluate(r).positions);
+      return m.length ? Math.max(...m.map(({ d }) => d[2])) : 0;
+    };
+    expect(lifted(0)).toBe(0);
+    expect(lifted(0.25)).toBeCloseTo(BUMP_Z / 2, 6);
+    expect(lifted(0.5)).toBeCloseTo(BUMP_Z, 6);
+    expect(lifted(0.75)).toBeCloseTo(BUMP_Z / 2, 6);
+    expect(lifted(1)).toBe(0);
+  });
+});
+
+describe("a driven detail target", { timeout: 300_000 }, () => {
+  const driven = detailModel({ drives: { [DRIVEN]: [`mod:${SIZE}`] } });
+  const at = (size: number, macros = adult.macros, signals: Record<string, number> = {}) =>
+    driven.evaluate(createRecipe({ macros, modifiers: size ? { [SIZE]: size } : {} }), signals)
+      .positions;
+  const rest = at(0);
+  const lift = (positions: Float32Array) => {
+    const m = moved(rest, positions);
+    return m.length ? Math.max(...m.map(({ d }) => d[2])) : 0;
+  };
+
+  it("is worth its factors with no modifier of its own: a virtual modifier carries the value", () => {
+    expect(lift(at(0.5))).toBeCloseTo(DRIVEN_Z / 2, 6);
+    expect(lift(at(1))).toBeCloseTo(DRIVEN_Z, 6);
+  });
+
+  it("reads a virtual modifier's negative side with mod-, and a signal times it", () => {
+    const both = detailModel({
+      drives: { [DRIVEN]: [`mod-:${SIZE}`, "signal:arousal"] },
+    });
+    const r = (size: number) => createRecipe({ macros: adult.macros, modifiers: { [SIZE]: size } });
+    const base = both.evaluate(adult).positions;
+    const at = (size: number, arousal: number) =>
+      Math.max(
+        0,
+        ...moved(base, both.evaluate(r(size), { arousal }).positions).map(({ d }) => d[2]),
+      );
+    expect(at(1, 1)).toBe(0);
+    expect(at(-0.5, 0)).toBe(0);
+    expect(at(-0.5, 1)).toBeCloseTo(DRIVEN_Z / 2, 6);
+  });
+
+  it("is an adult's alone: a minor reaches neither the modifier nor the derived target", () => {
+    const child = { age: 15 };
+    expect(() => at(0.5, createRecipe({ macros: child }).macros)).toThrow(/adult-only/);
+    // A drive that is always on (a constant ramp) still never reaches a figure under 18.
+    const always = detailModel({ drives: { [DRIVEN]: [`ramp:${SIZE}:0,1;1,1`] } });
+    const minor = createRecipe({ macros: child });
+    expect(always.evaluate(minor).positions).toEqual(plainModel.evaluate(minor).positions);
+    expect(lift(always.evaluate(adult).positions)).toBeCloseTo(DRIVEN_Z, 6);
+  });
+
+  it("is checked when the model is built: a drive on a target that is not detail", () => {
+    expect(() => detailModel({ drives: { "pelvis/bulge-incr": [`mod:${SIZE}`] } })).toThrow(
+      /drives for pelvis\/bulge-incr: it is not a detail target/,
     );
   });
 });

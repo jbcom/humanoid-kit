@@ -484,13 +484,24 @@ export interface AdultDetailSpec {
   scale?: { a: number; b: number; rest: number };
   /**
    * Targets whose weight is multiplied by other values: `gates[target]` lists
-   * factors, each `mod:<modifier id>` (that modifier's value, the positive part:
-   * how much of a feature there is) or `signal:<name>` (a skin-state signal, 0..1).
+   * factors (`src/model/detailFactors.ts`): `mod:<id>` (that modifier's positive
+   * part: how much of a feature there is), `mod-:<id>` (its negative part),
+   * `signal:<name>` (a skin-state signal, 0..1) or `ramp:<id>:<x>,<w>;…` (a
+   * piecewise-linear function of a modifier's positive part).
    * A girth change of a shaft is worth nothing without a shaft: its target is
    * gated by the length modifier, so the two combine as a product and not as a
    * sum of two independent displacements. A factor that is zero drops the target.
    */
   gates?: Record<string, string[]>;
+  /**
+   * Targets whose weight is derived from factors alone, with no modifier of their
+   * own: `drives[target]` lists factors as in `gates`, and the target is worth
+   * their product. A small organ is not a scaled-down large one, so size is a
+   * blend of baked shape keys, each driven by a `ramp` of one size modifier.
+   * Derived weights reach adults only, and a drive may name a modifier that has
+   * no target of its own (`ShapeModifierEntry` with an empty `hi`).
+   */
+  drives?: Record<string, string[]>;
 }
 
 /** Faces of the base body to refine and by how much: `levels[i]` for face `faces[i]`. */
