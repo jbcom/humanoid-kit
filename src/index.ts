@@ -11,6 +11,7 @@ export * from "./makehuman/recipeMorph.ts";
 export * from "./makehuman/regions.ts";
 export * from "./model/humanoidModel.ts";
 export * from "./morph/evaluate.ts";
+export * from "./presence/fromEvaluation.ts";
 export * from "./presence/presence.ts";
 export * from "./recipe/agePolicy.ts";
 export * from "./recipe/anatomy.ts";
