@@ -251,7 +251,8 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 - `assertAgePolicy(recipe)`: throws `AgePolicyError` listing the violations.
 - `withAge(recipe, age): Recipe`: a copy at a new age. Moving below 18 resets
   `breastSize` and `breastFirmness` to their defaults, deletes regional breast
-  values and deletes adult-only modifiers. The input is not modified.
+  values and deletes adult-only modifiers and the axillary and pubic body hair
+  densities. The input is not modified.
 - `ADULT_ONLY_MODIFIER(id): boolean`: true for ids starting `genitals/`,
   `pelvis/bulge` or `stomach/stomach-pregnant`.
 - `AgePolicyError`.
@@ -267,8 +268,9 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
   `SkinPaintInput.anatomy`.
 
 Under 18, a recipe is invalid if `breastSize` or `breastFirmness` differs from
-its default, if any region override contains either key, or if an adult-only
-modifier is non-zero.
+its default, if any region override contains either key, if an adult-only
+modifier is non-zero, or if `bodyHair.density.axillary` or `.pubic` is non-zero
+(`ADULT_ONLY_BODY_HAIR`). Refused, never clamped.
 
 ### Evaluation
 

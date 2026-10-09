@@ -193,12 +193,15 @@ Under 18:
 - the breast macro targets are never weighted (`macroTargetWeights`), although
   their files ship in the body pack;
 - adult-only targets are not in the body pack at all; the adult anatomy pack's
-  modifiers are adult-only, so a recipe under 18 that sets one is rejected.
+  modifiers are adult-only, so a recipe under 18 that sets one is rejected;
+- axillary and pubic hair are adult-only: a recipe under 18 whose
+  `bodyHair.density` sets either to anything but 0 is rejected, and the body
+  hair model draws neither for a figure that is not an adult (see "Body hair").
 
 The policy is enforced inside `recipeContributions`, so no caller can evaluate
 an invalid recipe by skipping validation. `withAge(recipe, age)` returns a copy
-at a new age; moving below 18 explicitly removes the adult-only values and leaves
-the input untouched.
+at a new age; moving below 18 explicitly removes the adult-only values (adult
+modifiers, and axillary and pubic densities) and leaves the input untouched.
 
 An adult-only modifier id that is not loaded (the adult pack is absent) fails
 with `RecipeError`. Fine shape modifiers such as the `breast/*` group ship in
