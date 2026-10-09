@@ -27,6 +27,7 @@ import type { PickMap } from "../../worker/client.ts";
 import { type FrameRequest, frameRequest } from "../framing.ts";
 import { AppearancePanel } from "./AppearancePanel.tsx";
 import { CameraRig } from "./CameraRig.tsx";
+import { scrollBehavior } from "./motion.ts";
 import { RegionPanel } from "./RegionPanel.tsx";
 import { ShapePanel } from "./ShapePanel.tsx";
 import { CREATOR_CSS } from "./styles.ts";
@@ -192,7 +193,7 @@ function CreatorBody({
   useEffect(() => {
     document
       .getElementById(activeTabElementId)
-      ?.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
+      ?.scrollIntoView({ inline: "nearest", block: "nearest", behavior: scrollBehavior() });
   }, [activeTabElementId]);
   const reframe = (f: FrameRequest) =>
     setFocus((cur) => (cur.part === f.part && cur.direction === f.direction ? cur : f));

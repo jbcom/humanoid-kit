@@ -19,7 +19,7 @@ import {
 import { NO_FEATURE } from "../makehuman/features.ts";
 import { recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
-import { stateContributions } from "../makehuman/stateMorphs.ts";
+import { STATE_MORPHS, type StateMorph, stateContributions } from "../makehuman/stateMorphs.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
 import { assertSignalPolicy } from "../recipe/agePolicy.ts";
@@ -28,7 +28,12 @@ import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/o
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
-import { buildLayerFields, uvScale } from "../surface/layers.ts";
+import {
+  buildLayerFields,
+  isAdultLayer,
+  type LayerFieldsUpdate,
+  uvScale,
+} from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { SKIN_LAYERS } from "../surface/regions/index.ts";
 
@@ -189,6 +194,8 @@ export class HumanoidModel {
   private readonly attachmentLevel: number;
   private readonly layerFields: Float32Array;
   private readonly uvScale: Float32Array;
+  /** The body's state morphs and, with the adult pack, its own (`AdultAnatomySpec.stateMorphs`). */
+  private readonly stateMorphs: readonly StateMorph[];
   /** The rest bake of the worn set, kept for the corner bakes to reuse. */
   private restOcclusion: {
     rest: Float32Array;
@@ -211,6 +218,10 @@ export class HumanoidModel {
       throw new RangeError(`subdivision must be 0, 1 or 2; got ${level}`);
     }
     this.regions = buildRegionField(assets);
+    this.stateMorphs = [
+      ...STATE_MORPHS,
+      ...(assets.adultAnatomyManifest?.anatomy?.stateMorphs ?? []),
+    ];
     const ids = options.attachments ?? [...assets.attachments.keys()];
     const wearing = ids.map((id) => {
       const a = assets.attachments.get(id);
@@ -244,18 +255,15 @@ export class HumanoidModel {
     // Layer fields are static: carry the base-vertex fields through the subdivision stencil once.
     this.bodyEdges = triangleEdges(this.body.mesh.index);
     const n = assets.manifest.vertexCount;
-    const fields = buildLayerFields(assets, SKIN_LAYERS);
+    // The adult layers' fields stay zero here whatever has loaded: the adult
+    // anatomy's data never rides in the static topology, only in the update
+    // `adultLayerFields` makes once its targets have arrived.
+    this.layerFields = this.renderLayerFields(
+      buildLayerFields(assets, SKIN_LAYERS, (l) => !isAdultLayer(l)),
+      SKIN_LAYERS.length,
+    );
     const r2s = this.body.mesh.renderToSurface;
     const surface = new Float32Array(this.body.mesh.topology.vertexCount * 3);
-    this.layerFields = new Float32Array(SKIN_LAYERS.length * r2s.length * 2);
-    SKIN_LAYERS.forEach((_, l) => {
-      applyStencil(this.body.mesh.stencil, fields.subarray(l * n * 3, (l + 1) * n * 3), surface);
-      const base = l * r2s.length * 2;
-      r2s.forEach((s, r) => {
-        this.layerFields[base + r * 2] = surface[s * 3] as number;
-        this.layerFields[base + r * 2 + 1] = surface[s * 3 + 1] as number;
-      });
-    });
     // Metres per UV unit, for relief at true size; carried the same way.
     const scale = uvScale(assets, bodyFaces);
     const scaleField = new Float32Array(n * 3);
@@ -271,6 +279,43 @@ export class HumanoidModel {
       part: part(this.attachmentSurface(asset, this.attachmentLevel)),
       control: new Float32Array(asset.entry.vertexCount * 3),
     }));
+  }
+
+  /**
+   * Base-vertex layer fields (`buildLayerFields`' layout) carried to the body's
+   * render vertices through the subdivision stencil: for each of `count`
+   * layers, `renderVertexCount` pairs of (mask, coordinate).
+   */
+  private renderLayerFields(fields: Float32Array, count: number): Float32Array {
+    const n = this.assets.manifest.vertexCount;
+    const r2s = this.body.mesh.renderToSurface;
+    const surface = new Float32Array(this.body.mesh.topology.vertexCount * 3);
+    const out = new Float32Array(count * r2s.length * 2);
+    for (let l = 0; l < count; l++) {
+      applyStencil(this.body.mesh.stencil, fields.subarray(l * n * 3, (l + 1) * n * 3), surface);
+      const base = l * r2s.length * 2;
+      r2s.forEach((s, r) => {
+        out[base + r * 2] = surface[s * 3] as number;
+        out[base + r * 2 + 1] = surface[s * 3 + 1] as number;
+      });
+    }
+    return out;
+  }
+
+  /**
+   * The adult anatomy's layers' fields per render vertex, or null while the
+   * adult pack's targets they are measured from have not loaded (or no adult
+   * pack is). The topology carries these layers as zero; the worker posts this
+   * once the adult stage arrives, and the renderer re-rasterises only their
+   * pages of the field atlas, with no shader recompile and no re-evaluation.
+   */
+  adultLayerFields(): LayerFieldsUpdate | null {
+    const adult = SKIN_LAYERS.filter(isAdultLayer);
+    if (!adult.every((l) => l.available?.(this.assets))) return null;
+    return {
+      layers: adult.map((l) => l.id),
+      layerFields: this.renderLayerFields(buildLayerFields(this.assets, adult), adult.length),
+    };
   }
 
   private attachmentSurface(asset: BoundAsset, level: number): SurfaceMesh {
@@ -632,7 +677,13 @@ export class HumanoidModel {
   private contributions(recipe: Recipe, signals: Readonly<Record<string, number>>) {
     const fromRecipe = recipeContributions(recipe, this.assets.modifiers);
     assertSignalPolicy(recipe, signals);
-    return [...fromRecipe, ...stateContributions(signals)];
+    // A state of the adult anatomy has nothing to drive without the adult pack.
+    return [
+      ...fromRecipe,
+      ...stateContributions(signals, this.stateMorphs, (target) =>
+        this.assets.targetFileOf.has(target),
+      ),
+    ];
   }
 
   private pendingFor(contributions: readonly { target: string }[]): Set<string> {
