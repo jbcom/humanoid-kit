@@ -4,6 +4,7 @@ import {
   applyLayers,
   buildLayerFields,
   creaseHeight,
+  lineRelief,
   paintStopTable,
   type SkinLayer,
   type SkinPaintInput,
@@ -433,5 +434,98 @@ describe("a layer's paint is told the figure's age", () => {
     paintStopTable([layer], { ...base, age: 72 });
     paintStopTable([layer], base);
     expect(seen).toEqual([72, undefined]);
+  });
+});
+
+describe("a colour layer's relief (the lines that also shade)", () => {
+  const lineLayer = (relief?: readonly number[]): SkinLayer => ({
+    id: "line",
+    blend: "multiply",
+    targets: [],
+    fields: () => ({ mask: new Float32Array(0), coord: null }),
+    paint: () => ({
+      strength: 1,
+      stops: Array.from({ length: STOP_COUNT }, (_, k) =>
+        k === 3 ? ([0.8, 0.8, 0.8] as Rgb) : ([1, 1, 1] as Rgb),
+      ),
+      ...(relief && { relief }),
+    }),
+  });
+  const row = (table: Float32Array, k: number) => table.slice(k * 4, k * 4 + 4);
+
+  it("is encoded in the header (the deepest groove) and the stops' alpha (each stop's depth)", () => {
+    const depths = Array.from({ length: STOP_COUNT }, (_, k) => (k === 3 ? 0.0006 : 0));
+    const table = paintStopTable([lineLayer(depths)], input());
+    expect(row(table, 0)[2]).toBeCloseTo(0.0006, 9);
+    for (let k = 0; k < STOP_COUNT; k++)
+      expect(row(table, 1 + k)[3], `stop ${k}`).toBeCloseTo(depths[k] as number, 9);
+  });
+
+  it("is none, and not even asked for by the shader, when the paint gives none", () => {
+    const table = paintStopTable([lineLayer()], input());
+    expect(row(table, 0)[2]).toBe(0);
+    for (let k = 1; k <= STOP_COUNT; k++) expect(row(table, k)[3]).toBe(0);
+  });
+
+  it("resamples with the stops, and refuses a negative depth or more depths than stops", () => {
+    const coarse: SkinLayer = {
+      id: "coarse",
+      blend: "multiply",
+      targets: [],
+      fields: () => ({ mask: new Float32Array(0), coord: null }),
+      paint: () => ({
+        strength: 1,
+        stops: [
+          [1, 1, 1],
+          [0.8, 0.8, 0.8],
+          [1, 1, 1],
+        ],
+        relief: [0, 0.002, 0],
+      }),
+    };
+    const t = paintStopTable([coarse], input());
+    // Three stops across eight texels: the middle stop's depth lands between texels 3 and 4.
+    expect(
+      Math.max(...[1, 2, 3, 4, 5, 6, 7, 8].map((k) => row(t, k)[3] as number)),
+    ).toBeGreaterThan(0.0015);
+    expect(row(t, 1)[3]).toBe(0);
+    expect(row(t, 8)[3]).toBe(0);
+    expect(() => paintStopTable([lineLayer([-0.001])], input())).toThrow(RangeError);
+    expect(() =>
+      paintStopTable([lineLayer(Array.from({ length: STOP_COUNT + 1 }, () => 0.001))], input()),
+    ).toThrow(RangeError);
+  });
+
+  it("leaves the colour exactly as the stops give it: relief shades, it does not tint", () => {
+    const depths = Array.from({ length: STOP_COUNT }, (_, k) => (k === 3 ? 0.0006 : 0));
+    const base: Rgb = [0.4, 0.3, 0.2];
+    const fields = [[1, 3 / 7]] as const;
+    expect(applyLayers(base, paintStopTable([lineLayer(depths)], input()), fields)).toEqual(
+      applyLayers(base, paintStopTable([lineLayer()], input()), fields),
+    );
+  });
+
+  it("cuts a smooth groove at its stop: deepest there, nothing beyond the neighbouring stops, no kink", () => {
+    const depths = Array.from({ length: STOP_COUNT }, (_, k) => (k === 3 ? 0.001 : 0));
+    expect(lineRelief(depths, 3 / 7)).toBeCloseTo(-0.001, 9);
+    expect(lineRelief(depths, 2 / 7)).toBeCloseTo(0, 12);
+    expect(lineRelief(depths, 4 / 7)).toBeCloseTo(0, 12);
+    expect(lineRelief(depths, 0)).toBeCloseTo(0, 12);
+    expect(lineRelief(depths, 1)).toBeCloseTo(0, 12);
+    // Symmetric about the stop, and flat-bottomed (zero slope at the stop and at the edges).
+    for (const d of [0.02, 0.05, 0.1])
+      expect(lineRelief(depths, 3 / 7 - d)).toBeCloseTo(lineRelief(depths, 3 / 7 + d), 12);
+    const e = 1e-5;
+    expect((lineRelief(depths, 3 / 7 + e) - lineRelief(depths, 3 / 7 - e)) / (2 * e)).toBeCloseTo(
+      0,
+      6,
+    );
+    expect((lineRelief(depths, 2 / 7 + e) - lineRelief(depths, 2 / 7)) / e).toBeCloseTo(0, 3);
+    expect(
+      lineRelief(
+        Array.from({ length: STOP_COUNT }, () => 0),
+        0.5,
+      ),
+    ).toBe(0);
   });
 });

@@ -70,6 +70,16 @@ each of a style's `.mhclo`, `.obj` and `.mhmat` must carry the header, and a
 bare `license CC0` line, which community exporters write by default and which a
 sibling file can contradict, is refused.
 
+An asset from the community repositories on makehumancommunity.org can pass
+only with its asset page captured beside it, under the rule in
+`scripts/lib/licenceRule.ts`: the page must say CC0, every licence line in its
+files must be CC0 or MakeClothes 1's default written under the uploader's own
+name, no file may name the MakeHuman team, Bastioni or Larsson as author, and
+everything it derives from must itself be CC0. MakeHuman's September 2020 CC0
+release covered the assets it bundled, not community uploads, so no upload date
+makes an asset CC0. `docs/licence-history.md` gives the history, the evidence
+and the verdict on every community asset checked so far.
+
 `packs/clothing/data` is derived from MakeHuman's system assets pack
 (`makehuman_system_assets_cc0.zip`), whose clothes, meshes and materials each
 open with the same header, "This asset was explicitly released as CC0 in

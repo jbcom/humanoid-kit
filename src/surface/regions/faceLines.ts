@@ -1,7 +1,9 @@
 /**
  * Expression lines: the creases a face makes when it moves (docs/ARCHITECTURE.md,
- * "Facial wrinkles"), drawn by the same crease layers as the elbow and knee and
- * driven by the face signals (`face.*`, src/rig/faceSignals.ts):
+ * "Facial wrinkles"), driven by the face signals (`face.*`, src/rig/faceSignals.ts).
+ * The forehead's and the furrows' are thin lines of colour on a coordinate exactly
+ * linear in position (the palm's technique, `hands/creases.ts`); the rest are
+ * crease relief like the elbow's and knee's:
  *
  * - the forehead's horizontal lines when the brows rise (`browRaise`);
  * - the vertical furrows between the brows when they draw down (`browFurrow`);
@@ -21,7 +23,9 @@
  */
 import { groupFaces, type HumanoidAssets, jointPosition } from "../../format/assetFormat.ts";
 import { vertexAdjacency } from "../../makehuman/regions.ts";
-import type { DetailLayer } from "../layers.ts";
+import { labFromLinear } from "../cielab.ts";
+import type { ColourLayer, DetailLayer } from "../layers.ts";
+import { DEFAULT_SKIN_TONE, type Rgb, type SkinTone, skinAlbedo } from "../skinTone.ts";
 import { skinZones } from "./skinZones.ts";
 
 const smoothstep = (lo: number, hi: number, x: number) => {
@@ -51,8 +55,6 @@ export function expressionAgeFactor(age: number | undefined): number {
 
 /** Depth of a groove at full expression, metres, for a grown face (art-directed). */
 export const EXPRESSION_DEPTH = {
-  forehead: 0.0007,
-  glabella: 0.0005,
   crowsFeet: 0.0003,
   nasolabial: 0.0006,
   nose: 0.00025,
@@ -60,8 +62,6 @@ export const EXPRESSION_DEPTH = {
 
 /** Grooves across each set's window (art-directed). */
 export const EXPRESSION_COUNT = {
-  forehead: 5,
-  glabella: 4,
   crowsFeet: 3,
   nasolabial: 1,
   nose: 3,
@@ -201,14 +201,14 @@ const cached = (build: (assets: HumanoidAssets) => Fields) => {
  * from the brow is the anatomy's own measure (frontalis lines stop 5 to 7 cm
  * above the brows, glabellar lines 1 to 2.5 cm), and a vertex beyond it is zero.
  */
-const browDistances = new WeakMap<HumanoidAssets, Float32Array>();
-function distanceFromBrows(assets: HumanoidAssets): Float32Array {
+const browDistances = new WeakMap<HumanoidAssets, Float64Array>();
+export function distanceFromBrows(assets: HumanoidAssets): Float64Array {
   const cachedDistance = browDistances.get(assets);
   if (cachedDistance) return cachedDistance;
   const f = frameOf(assets);
   const { brow } = landmarks(assets);
   const { start, list } = vertexAdjacency(f.n, assets.faceVerts);
-  const dist = new Float32Array(f.n).fill(Number.POSITIVE_INFINITY);
+  const dist = new Float64Array(f.n).fill(Number.POSITIVE_INFINITY);
   // A binary heap of [distance, vertex].
   const heap: [number, number][] = [];
   const push = (e: [number, number]) => {
@@ -272,49 +272,119 @@ function distanceFromBrows(assets: HumanoidAssets): Float32Array {
   return dist;
 }
 
-/** Horizontal lines across the forehead, above the brows. */
-const FOREHEAD_FROM = 0.01;
-const FOREHEAD_TO = 0.062;
+/**
+ * Where the forehead's coordinate starts above the brows' joints, and how far it
+ * runs, metres. A coordinate is stored in 0 to 1, and a vertex beyond the band is
+ * stored clamped, which bends a line in any triangle that has one; so the band
+ * reaches a face (about 2 cm) past the lines on either side, and the mask is zero
+ * wherever the coordinate would be clamped (`inBand`).
+ */
+export const FOREHEAD_FROM = 0.004;
+export const FOREHEAD_SPAN = 0.058;
+
+/** The glabella's coordinate: x across `GLABELLA_HALF` either side of the midline. */
+export const GLABELLA_HALF = 0.0245;
+
+/**
+ * The colour stops (of eight) each line sits on: stop k is at coordinate k/7. The
+ * forehead's three lines fall about 2.1, 3.7 and 5.4 cm above the brows' joints
+ * (frontalis lines stop 5 to 7 cm up, short of the hairline); the furrows 1.05 cm
+ * either side of the midline, 2.1 cm apart, where the corrugators' lines fall.
+ */
+export const FOREHEAD_STOPS: readonly number[] = [2, 4, 6];
+export const GLABELLA_STOPS: readonly number[] = [2, 5];
+
+/**
+ * How the forehead's lines depart from straight and even (CHOICES, so that three
+ * lines read as a forehead's and not as stripes): they sag by `FOREHEAD_SAG` toward
+ * each temple, wave by `FOREHEAD_WAVE` along their length, and their spacing varies
+ * by `FOREHEAD_UNEVEN` of the span; and a line breaks up toward the temples where a
+ * slow noise is high. The coordinate stays a smooth function of position sampled at
+ * every vertex, so a line is a smooth curve across the mesh's triangles, never the
+ * kinked path an interpolated nonlinear coordinate takes.
+ */
+export const FOREHEAD_SAG = 0.004;
+export const FOREHEAD_WAVE = 0.0015;
+export const FOREHEAD_UNEVEN = 0.02;
+
+/** The most the forehead's coordinate (in metres of height) departs from straight. */
+export const FOREHEAD_WARP_MAX = FOREHEAD_SAG + FOREHEAD_WAVE + FOREHEAD_UNEVEN * FOREHEAD_SPAN;
+
+/** The forehead's coordinate at a point, 0 to 1 across its band: height, bent by the sag, the wave and the uneven spacing. */
+export function foreheadCoordinate(browY: number, x: number, y: number): number {
+  const raised =
+    y + FOREHEAD_SAG * (x / 0.06) ** 2 + FOREHEAD_WAVE * Math.sin((2 * Math.PI * x) / 0.05 + 0.9);
+  const t = (raised - (browY + FOREHEAD_FROM)) / FOREHEAD_SPAN;
+  return t + FOREHEAD_UNEVEN * Math.sin(2 * Math.PI * 1.3 * t + 0.5);
+}
+
+/** How much of a forehead line is left at a point: 1 at the centre, breaking up toward the temples. */
+export function foreheadUnbroken(x: number, y: number): number {
+  const noise =
+    0.5 + 0.5 * Math.sin(2 * Math.PI * (x * 21 + 0.3)) * Math.sin(2 * Math.PI * (y * 26 + 1.1));
+  const toTemples = smoothstep(0.025, 0.055, Math.abs(x));
+  return 1 - 0.9 * toTemples * smoothstep(0.55, 0.85, noise);
+}
+
+/** 1 well inside a coordinate's band (`0 < t < 1`), fading to 0 over `edge` of it at either end. */
+const inBand = (t: number, edge: number) =>
+  smoothstep(0, edge, t) * (1 - smoothstep(1 - edge, 1, t));
+
+/**
+ * The forehead's lines: a coordinate that is a smooth function of position
+ * (`foreheadCoordinate`: height, sagging and waving a little, spaced unevenly), so
+ * a line at one of its colour stops is a smooth curve wherever the coarse mesh's
+ * vertices fall, as the palm's creases are (`hands/creases.ts`). The mask is a
+ * plateau over the forehead above the brows, fading toward the temples, where the
+ * lines weaken and break up (`foreheadUnbroken`), and out of the coordinate's band.
+ * Deepest at the centre, as frontalis lines are.
+ */
 const forehead = cached((assets) => {
   const { brow } = landmarks(assets);
   const dist = distanceFromBrows(assets);
-  const f = fieldsOfVertices(assets, (v, x, y, _z, _nx, _ny, nz) => {
-    const d = dist[v] as number;
-    if (!Number.isFinite(d)) return [0, 0];
-    return [
-      smoothstep(FOREHEAD_FROM, FOREHEAD_FROM + 0.014, d) *
-        (1 - smoothstep(FOREHEAD_TO - 0.02, FOREHEAD_TO, d)) *
-        // Above the brows only, and fading toward the temples.
-        smoothstep(brow[1] - 0.002, brow[1] + 0.004, y) *
-        (1 - smoothstep(0.048, 0.062, Math.abs(x))) *
-        smoothstep(0.2, 0.5, nz),
-      // The grooves run across the forehead by height, which is smooth over the
-      // coarse mesh where a distance along its edges is not.
-      (y - (brow[1] + FOREHEAD_FROM)) / (FOREHEAD_TO - FOREHEAD_FROM),
-    ];
-  });
-  return f;
-});
-
-/** Vertical furrows between the brows: short, from the brows' band up 1 to 2.5 cm. */
-const glabella = cached((assets) => {
-  const { eye } = landmarks(assets);
-  const dist = distanceFromBrows(assets);
-  // Four grooves across 6 cm put them at 0.75 and 2.25 cm either side of the midline;
-  // the mask keeps only the two nearest, a centimetre and a half apart, straight and
-  // near-vertical, and the coordinate runs unclamped across the whole window so the
-  // grooves do not bend where a clamp would flatten it.
-  const half = 0.03;
-  const reach = 0.013;
   return fieldsOfVertices(assets, (v, x, y, _z, _nx, _ny, nz) => {
     const d = dist[v] as number;
     if (!Number.isFinite(d)) return [0, 0];
+    const t = foreheadCoordinate(brow[1], x, y);
+    const across = Math.abs(x);
     return [
-      (1 - smoothstep(0.012, 0.026, d)) *
-        (1 - smoothstep(reach - 0.004, reach, Math.abs(x))) *
-        smoothstep(eye[1] + 0.008, eye[1] + 0.016, y) *
+      (1 - smoothstep(0.075, 0.095, d)) *
+        inBand(t, 0.1) *
+        foreheadUnbroken(x, y) *
+        (1 - 0.5 * smoothstep(0.015, 0.05, across)) *
+        (1 - smoothstep(0.05, 0.066, across)) *
         smoothstep(0.2, 0.5, nz),
-      (x + half) / (2 * half),
+      t,
+    ];
+  });
+});
+
+/** Where the furrows start and end above the brows' joints, metres: 1.5 to 2.5 cm long, each end soft. */
+export const FURROW_FROM = -0.008;
+export const FURROW_TO = 0.022;
+
+/**
+ * The furrows between the brows: a coordinate linear in x across 4.9 cm of the
+ * midline, with a line at two of its colour stops (`GLABELLA_STOPS`), straight and
+ * vertical. The mask caps them at both ends (`FURROW_FROM`, `FURROW_TO`: a furrow
+ * is a short groove between the inner brows, not a line up the forehead) and fades
+ * out of the coordinate's band.
+ */
+const glabella = cached((assets) => {
+  const { brow } = landmarks(assets);
+  const dist = distanceFromBrows(assets);
+  return fieldsOfVertices(assets, (v, x, y, _z, _nx, _ny, nz) => {
+    const d = dist[v] as number;
+    if (!Number.isFinite(d)) return [0, 0];
+    const t = (x + GLABELLA_HALF) / (2 * GLABELLA_HALF);
+    const up = y - brow[1];
+    return [
+      (1 - smoothstep(0.03, 0.045, d)) *
+        inBand(t, 0.15) *
+        smoothstep(FURROW_FROM - 0.004, FURROW_FROM + 0.004, up) *
+        (1 - smoothstep(FURROW_TO - 0.008, FURROW_TO, up)) *
+        smoothstep(0.2, 0.5, nz),
+      t,
     ];
   });
 });
@@ -420,15 +490,86 @@ const layer = (
   }),
 });
 
+/**
+ * How much a line of colour darkens the skin, in CIELAB lightness (L*), for a
+ * grown face at full strength, and the most at any age. CHOICES, tuned against
+ * `docs/evidence/expressions.md`. A line is darker by the same step of lightness
+ * on every tone, not by the same fraction of its albedo, because a fraction of a
+ * dark albedo is a step too small to see: the multiply is chosen per tone
+ * (`lineShade`), so a line reads as well on deep skin as on fair.
+ */
+export const LINE_DELTA_L = 6;
+export const LINE_DELTA_L_MAX = 12;
+
+/** The most a line's multiply may take from a channel, at any tone (a line is a fold, not a hole). */
+export const LINE_DARKENING_MAX = 0.55;
+
+/** Luminance (Y, of white 1) of CIELAB lightness `L`. */
+const luminanceOfLightness = (L: number) => (L > 8 ? ((L + 16) / 116) ** 3 : L / (24389 / 27));
+
+/**
+ * The colour a line multiplies the skin by at `age` for skin of `tone`: the factor
+ * that lowers the skin's L* by `LINE_DELTA_L` (times the age factor, to
+ * `LINE_DELTA_L_MAX`), slightly redder where it is deeper (a fold's shadow keeps the
+ * skin's warmth, as the flush under it).
+ */
+export function lineShade(age: number | undefined, tone: SkinTone = DEFAULT_SKIN_TONE): Rgb {
+  const skinL = labFromLinear(skinAlbedo(tone))[0];
+  const drop = Math.min(LINE_DELTA_L_MAX, LINE_DELTA_L * expressionAgeFactor(age));
+  const kept = luminanceOfLightness(Math.max(0, skinL - drop)) / luminanceOfLightness(skinL);
+  const k = Math.min(LINE_DARKENING_MAX, 1 - kept);
+  return [1 - k, 1 - k * 0.94, 1 - k * 0.9];
+}
+
+/** The deepest groove a line's relief cuts at full strength, for a grown face, metres (CHOICES: no measurement of wrinkle depth is in this repository). */
+export const LINE_RELIEF = { forehead: 0.0006, glabella: 0.0007 } as const;
+
+/**
+ * A set of lines drawn as colour and shading: a multiply layer whose stops at
+ * `stops` hold the line's shade and the rest leave the skin as it is, and whose
+ * relief (`SkinLayerPaint.relief`) cuts a groove at the same stops, tilting the
+ * normal per pixel by the gradient of the same coordinate, so the line is lit on
+ * one side and shadowed on the other at every tone. A thin line carried by a
+ * coordinate that is a smooth function of position is exact across the mesh's big
+ * triangles where relief interpolated from vertices bends (the technique of the
+ * palm's creases, `hands/creases.ts`).
+ */
+const colourLines = (
+  id: string,
+  fields: (assets: HumanoidAssets) => Fields,
+  stops: readonly number[],
+  depth: number,
+  drive: (signals: Readonly<Record<string, number>>) => number,
+): ColourLayer => ({
+  id,
+  blend: "multiply",
+  targets: [],
+  fields,
+  paint: ({ signals, age, tone }) => {
+    const one: Rgb = [1, 1, 1];
+    const shade = lineShade(age, tone);
+    const groove = depth * expressionAgeFactor(age);
+    return {
+      strength: smoothstep(0.1, 0.8, drive(signals)),
+      stops: Array.from({ length: 8 }, (_, k) => (stops.includes(k) ? shade : one)),
+      relief: Array.from({ length: 8 }, (_, k) => (stops.includes(k) ? groove : 0)),
+    };
+  },
+});
+
 export const expressionLineId = (name: string) => `lines.${name}`;
 
 /** The expression lines, after the joint creases. */
-export const EXPRESSION_LINE_LAYERS: readonly DetailLayer[] = [
-  layer(expressionLineId("forehead"), forehead, "forehead", (s) => signal(s, "browRaise")),
+export const EXPRESSION_LINE_LAYERS: readonly (DetailLayer | ColourLayer)[] = [
+  colourLines(expressionLineId("forehead"), forehead, FOREHEAD_STOPS, LINE_RELIEF.forehead, (s) =>
+    signal(s, "browRaise"),
+  ),
   layer(expressionLineId("crows-feet"), crowsFeet, "crowsFeet", (s) =>
     Math.max(signal(s, "squint"), 0.6 * signal(s, "smile")),
   ),
-  layer(expressionLineId("glabella"), glabella, "glabella", (s) => signal(s, "browFurrow")),
+  colourLines(expressionLineId("glabella"), glabella, GLABELLA_STOPS, LINE_RELIEF.glabella, (s) =>
+    signal(s, "browFurrow"),
+  ),
   layer(expressionLineId("nasolabial"), nasolabial, "nasolabial", (s) =>
     Math.max(signal(s, "nasolabial"), 0.7 * signal(s, "smile")),
   ),

@@ -18,38 +18,16 @@
  * before scattering; `inkSeen` is the reference it is held to.
  */
 import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
-import {
-  MELANIN_ANCHORS,
-  MELANIN_FREE_RED_REFLECTANCE,
-  type Rgb,
-  type SkinTone,
-  skinAlbedo,
-} from "../surface/skinTone.ts";
+import { melaninFreeAlbedo, type Rgb, type SkinTone, skinAlbedo } from "../surface/skinTone.ts";
 
 /**
- * How deep the ink lies under the skin's surface, metres: a CHOICE within the
- * superficial dermis where tattoo pigment is found (BODY-ART.md A1), below an
- * epidermis of about 0.1 mm. It sets how much the dermis above veils the ink.
+ * How deep the ink lies under the skin's surface, metres: a CHOICE at the top
+ * of the papillary dermis, where most tattoo pigment is found (BODY-ART.md
+ * A1), below an epidermis of about 0.1 mm. It sets how much the dermis above
+ * veils the ink: at 0.2 mm fresh black ink on the fairest skin is L* 30 (0.3 mm
+ * read greyish, L* 36, on the contact sheets).
  */
-export const INK_DEPTH = 0.3e-3;
-
-/**
- * Skin with no melanin: the lightest measured skin's chromaticity at
- * `MELANIN_FREE_RED_REFLECTANCE` in the red (BODY-ART.md C1). The fairest skin
- * still carries some melanin; taking melanin out raises every channel, and the
- * blue most, but haemoglobin and the dermis's other absorbers keep it from
- * rising as fast as a straight extrapolation of the melanin axis would, which
- * turns it violet. Keeping the fairest skin's chromaticity is a CHOICE until a
- * measured melanin-free colour replaces it. A colour that is not human skin
- * (`tone.override`) has no melanin to remove: it is its own melanin-free
- * colour.
- */
-export function melaninFreeAlbedo(tone: SkinTone): Rgb {
-  if (tone.override) return [...tone.override] as Rgb;
-  const fairest = skinAlbedo({ ...tone, melanin: 0 });
-  const k = MELANIN_FREE_RED_REFLECTANCE / (MELANIN_ANCHORS[0] as Rgb)[0];
-  return fairest.map((c) => Math.min(1, c * k)) as Rgb;
-}
+export const INK_DEPTH = 0.2e-3;
 
 export interface InkOptics {
   /** The epidermis's two-way transmittance over the ink (the skin's melanin, twice). */

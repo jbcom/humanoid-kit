@@ -107,10 +107,22 @@ hair is 0.05 to 0.1 mm), not measured per region here.
 
 Otberg et al. (J Invest Dermatol 122:14, 2004), as quoted by McPhetres et al.
 2024 and used by the goosebumps layer: follicles per cm² run from 14 (calf) to
-32 (upper arm), with the forehead far higher. The strand layer spaces its
-strands at a region's follicle density times its terminal coverage. The
-figures per region beyond those two ends could not be read from the paper
-(not retrieved); the values between are **choices** on that range.
+32 (upper arm), with the forehead far higher. The strand layers place one root
+per follicle and draw a strand from a share of them equal to the terminal
+coverage. The figures per region beyond those two ends could not be read from
+the paper (not retrieved), so the kit's (`BODY_HAIR_DENSITY`: chest and
+abdomen 22, back 26, buttocks 20, arms 25, legs 16) are **choices** on that
+range, and the beard's 60, the armpit's 60 and the pubis's 40 are **choices**
+above it, for the denser, coarser hair there.
+
+Vellus (`VELLUS`): under 30 µm across and 2 mm long by definition; 50
+follicles per cm² is a **choice** between the body's range and the forehead's.
+Every measured skin colour includes its vellus, so the vellus layer adds no
+mean colour; its strands show only in close views.
+
+Beard lengths: stubble is about 1 mm, a few days at the roughly 0.3 mm a day
+beard hair grows (recalled, not verified here); grown styles' 10 to 20 mm are
+**choices**.
 
 ## What is not here
 

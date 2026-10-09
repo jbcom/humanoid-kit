@@ -178,20 +178,27 @@ face and the hips blends across the neck and waist instead of tearing.
 
 ## Age policy
 
-`src/recipe/agePolicy.ts` supports all ages. The line is anatomy, not nudity:
-under `ADULT_AGE` (18) a figure is MakeHuman's smooth doll form, which may be
+`src/recipe/agePolicy.ts` supports all ages. The body follows MakeHuman at every
+age it models (1 to 90), breast development through adolescence included (owner
+direction, 2026-10-08, c0c6ae2: humanoid-kit adds no judgement of its own to the
+body). The one boundary is the adult anatomy pack, which mirrors MakeHuman
+keeping genital assets out of its core. Under `ADULT_AGE` (18) a figure may be
 shown with or without clothing.
+
+The breast macros (`breastSize`, `breastFirmness`, and their regional overrides)
+are not gated: the breast targets are weighted from age 1 up as MakeHuman's are
+(none at the baby anchor, then the child, young and old anchors interpolated), so
+a minor's breasts follow the age and the sliders as upstream's do. An earlier
+version of this document and of `docs/API.md` said they had to equal their
+defaults under 18 and that `withAge` reset them; no code did either, and
+`tests/agePolicy.test.ts` now holds the code to this.
 
 Under 18:
 
-- `breastSize` and `breastFirmness` must equal their defaults, in `macros` and in
-  every regional override (the keys may not appear at all in a region);
 - adult-only modifiers (ids starting `genitals/`, `pelvis/bulge` or
   `stomach/stomach-pregnant`) must be 0;
 - a violation throws `AgePolicyError`. Values are rejected, never silently
   clamped, so a mistake cannot be hidden;
-- the breast macro targets are never weighted (`macroTargetWeights`), although
-  their files ship in the body pack;
 - adult-only targets are not in the body pack at all; the adult anatomy pack's
   modifiers are adult-only, so a recipe under 18 that sets one is rejected;
 - axillary and pubic hair are adult-only: a recipe under 18 whose
@@ -820,25 +827,69 @@ holds, and the expressions read as themselves (a smile as `smile` with some
 `squint` from the raised cheeks, anger as `browFurrow`, surprise as `browRaise`,
 disgust as `noseWrinkle`).
 
-Five crease layers draw the lines (`EXPRESSION_LINE_LAYERS`,
-`src/surface/regions/faceLines.ts`), the same `creases` detail pattern as the
-elbow and knee: the forehead's horizontal lines (`browRaise`), the furrows
-between the brows (`browFurrow`), crow's feet fanning from each eye's outer
-corner (`squint`, or 0.6 of `smile`), the nasolabial folds from the nose's wing
-past the mouth's corner (`nasolabial`, or 0.7 of `smile`) and the nose
-bridge's lines (`noseWrinkle`). Where each lies is read from the default
-figure's joints (the brows, the outer corners, the nose's wing), so it follows
-the mesh, and keeps off the lips and the eyeballs (a test holds it). The
-forehead's lines and the furrows are bounded by distance along the skin from
-the brows' band (`distanceFromBrows`: Dijkstra over the mesh's edges), not by
-height, since the mesh is coarse over the forehead and a mask built from heights
-leaked across big triangles up and over the crown on the first sheets: the
-forehead lines (by height, which is smooth over the coarse mesh where a distance along its edges bends the grooves) run from 1 to 6.2 cm above the brows, fading
-toward the temples, and the furrows reach 1 to 2.6 cm above them, two straight near-vertical
-grooves 1.5 cm apart either side of the midline (a coordinate that runs
-unclamped across 6 cm with four grooves, of which the mask keeps the middle two,
-so no clamp bends them), between the brows (frontalis lines stop 5 to 7 cm above the brows, glabellar lines are 1 to
-2.5 cm long; a test holds every layer's mask to its extent). The
+Five layers draw the lines (`EXPRESSION_LINE_LAYERS`,
+`src/surface/regions/faceLines.ts`): the forehead's horizontal lines
+(`browRaise`), the furrows between the brows (`browFurrow`), crow's feet
+fanning from each eye's outer corner (`squint`, or 0.6 of `smile`), the
+nasolabial folds from the nose's wing past the mouth's corner (`nasolabial`, or
+0.7 of `smile`) and the nose bridge's lines (`noseWrinkle`). The crow's feet,
+folds and nose lines are the elbow and knee's `creases` relief; the forehead's
+lines and the furrows are thin lines of colour instead. A thin line cannot be a
+mask or a relief phase on this mesh: the forehead's triangles are about 2 cm
+across and a field is interpolated between their vertices, so any coordinate
+that is not exactly linear in position bends a line into a squiggle (the first
+sheets' "ʍ" furrow). They use the palm creases' technique
+(`hands/creases.ts`): a multiply colour layer whose coordinate is a smooth
+function of position (the furrows' exactly linear across the face; the forehead's
+height, see below), with the line's shade on chosen ones of the layer's eight
+colour stops (`FOREHEAD_STOPS`, `GLABELLA_STOPS`), so a line is a smooth curve
+wherever the vertices fall and a seventh of the coordinate's band wide. A
+coordinate is stored in 0 to 1, and a vertex outside its band is stored clamped,
+which would bend a line in any triangle that has one; so each band reaches a face
+past its lines and the mask fades to zero before the band ends.
+
+The forehead has three lines (about 2.1, 3.7 and 5.4 cm above the brows' joints,
+short of the hairline), deepest at the centre. Three lines of one even spacing read
+as stripes, so they are irregular, by choice: they sag 4 mm toward the temples, wave
+1.5 mm along their length, are spaced unevenly (the coordinate is height warped by 2
+% of the band), and break up toward the temples where a slow noise is high
+(`foreheadCoordinate`, `foreheadUnbroken`). The warp is a smooth function sampled
+at every vertex, so a line is a smooth curve across the triangles (a test holds the
+interpolated coordinate to within a millimetre of the function). The furrows are
+two straight vertical lines 1.05 cm either side of the midline, 1.5 to 2.5 cm long:
+the mask caps them from 8 mm below the brows' joints to 2.2 cm above, both ends soft
+(`FURROW_FROM`, `FURROW_TO`), since a glabellar furrow is a short groove between
+the inner brows, not a line up the forehead.
+
+**Tone.** A multiply by a fraction of albedo is a step too small to see on deep skin
+(the same fraction of a dark albedo is a smaller step of lightness), so the lines
+vanished on the two deepest tones. Two things fix it. The multiply is chosen per
+tone (`lineShade(age, tone)`) to lower the skin's CIELAB L* by `LINE_DELTA_L` = 6,
+times the age factor, to 12: the same step of lightness at every tone (a test holds
+the deepest tone's step to over 0.6 of the fairest's at 25, 40 and 75; the deepest
+tone's multiply is the deeper). And the lines shade: a colour layer's paint may carry
+`relief` (a groove depth at each stop, the deepest in the stop table's header and
+each stop's depth in its alpha), and the shader tilts the normal per pixel by the
+gradient of that smoothed profile along the layer's own coordinate
+(`hkDetailHeight`, `lineRelief` its reference), so a line catches light on one
+side and shadows on the other whatever the colour. It is per pixel only, from the
+exact coordinate: no vertex relief, so a line cannot bend as the first relief did.
+The grooves are 0.6 mm (forehead) and 0.7 mm (furrows) at 40, times the age factor
+(under 1 mm at any age; a CHOICE, no measurement of wrinkle depth is in this
+repository). Age scales both.
+
+Where each lies is read from the default figure's joints (the brows, the outer
+corners, the nose's wing), so it follows the mesh, and keeps off the lips and the
+eyeballs (a test holds it). The forehead's lines and the furrows are also
+bounded by distance along the skin from the brows' band (`distanceFromBrows`:
+Dijkstra over the mesh's edges, in double precision: stored in single it rounded
+below the distance each vertex was queued with, so the vertex never relaxed its
+neighbours and the forehead's midline was never reached, which left the lines
+at the temples as curled marks and none at the centre; a test holds the
+distance a metric and the midline reached), since a mask built from heights alone leaked
+across big triangles up and over the crown on the first sheets (frontalis lines
+stop 5 to 7 cm above the brows, glabellar lines are 1 to 2.5 cm long; a test
+holds every layer's mask to its extent). The
 crow's feet and the folds are each one layer for both sides, the coordinate
 being the angle about its own corner and the distance across its own fold, so
 the right is the left reflected and two layers' channels are saved. How many
@@ -1343,6 +1394,80 @@ Old recipes evaluate and serialise as before.
   30 and 80 shows each age's hair. Absent fields are not filled in by
   `createRecipe`, so a recipe that never set body hair serialises exactly as
   before.
+- *Hair lying on the skin is a strand layer, not geometry.* A new layer kind,
+  `strands` (`src/surface/regions/bodyHair.ts`), draws hair in the skin
+  shader at true scale: roots on a grid in the skin's plane (metres, `uv ×
+  hkUvScale`, as the bumps), a cell half a strand long along the flow and as
+  wide across as the follicle density leaves; a root carries a strand where a
+  hash of its cell is under the coverage times the mask, so a mask's soft edge
+  thins hair rather than fading it. Each strand's coverage of a pixel is the
+  overlap of its width with the pixel's footprint (a box filter, exact for
+  strands finer than a pixel). Where a cell across is finer than a pixel, the
+  grid cannot be sampled and the strands become their mean cover
+  (`strandCover`: follicles × coverage × mean length × diameter, at most 0.6),
+  which `applyLayers` computes, and a browser test holds the near and far
+  views to the same mean. The search covers the cells round a pixel's centre,
+  so the switch is made early, as the pixel grows from a third of a cell to
+  two thirds (`STRAND_NEAR_LIMIT`, `STRAND_FAR_START`): a later one left
+  full-body views speckled, and a browser test now renders a cell a pixel wide
+  and requires it smooth. Rejected: cards for all body hair (a forearm's
+  thousands of fine hairs as geometry, and nothing for the short hair cards
+  cannot draw), and a painted texture (no true scale, one resolution).
+- *The flow is skinned, and quantised.* Hair runs along the bind pose's
+  downward direction carried through the skinning like a normal (`vHkFlow`),
+  so it runs down the limbs and trunk and follows them as they move: a choice,
+  where real hair has whorls. Its UV direction per pixel comes from the
+  position and UV derivatives. Rotating the grid by it pixel by pixel would
+  shear the grid wherever it varies (its coordinates run to thousands of
+  cells), so the direction is quantised to eight fixed grids over a half turn,
+  and each root belongs to one of the two round the flow by a hash weighted by
+  closeness, so the density holds and no strand is drawn twice at half
+  strength.
+- *Vellus is a strand layer on all the skin, and takes no atlas channel.*
+  Vellus grows almost everywhere, so its mask would be a whole channel of ones;
+  a layer may declare `everywhere`, which `planAtlas` gives no channel (`value`
+  -1) and the shader reads as a mask of 1. On the lips, palms and soles, which
+  have none, its strands (30 µm by 2 mm) are far below any view's resolution.
+  Its glow against the light stays the skin material's sheen. Every measured
+  skin colour was measured with its vellus, so vellus adds no mean cover
+  (`inSkinAlbedo`): from afar it changes nothing, and the skin's colour parity
+  holds; only its strands up close, in a view finer than its 2 mm cells, are
+  drawn. A surface with no metres per UV unit (a test sphere) draws no strands.
+- *Hair is split by length, one system with the anthro fur* (the owner's
+  ruling, 2026-10-09, after the M6 fur design). Sparse, fine hair (vellus, the
+  limbs, a light chest) is strand layers; short, dense hair (stubble, a dense
+  chest or abdomen, a pelt) is the shared shell coat (`src/render/coat.ts`,
+  below); long hair (a grown beard, a mane) is the hair pack's cards. A first
+  version drew the beard as strand layers too, and its sheets showed why not:
+  a dense short coat as strands is a flat tint, and the beard's masks, cut by
+  axis-aligned ramps, had straight edges down the cheeks and a rectangle on
+  the neck. The beard's masks are redrawn with the coat, along the face's
+  own lines.
+- *Terminal hair is one strand layer per group.* Each group (chest, abdomen,
+  back, buttocks, arms, legs, axillary) has its own coverage, colour, density
+  and length, so its own layer. Masks are measured from the base mesh: the skin
+  zones (cut off where a zone's weight falls under 0.2, so supports stay near
+  their region), the vertex normals, and the armpits' hollows. The limbs stop
+  short of the hands and feet, which carry little terminal hair and whose
+  layers crowd the atlas.
+- *The beard defaults to none.* Clean-shaven is the neutral recipe; terminal
+  body hair and vellus are on by default for age and sex.
+- *Axillary hair is an adult-only body layer; pubic hair is the adult pack's.*
+  The armpit's mask comes from the base mesh, so its layer lives in the core,
+  where a layer flag, `adultOnly`, makes `paintStopTable` paint it at zero
+  unless the input says the figure is an adult, failing closed when it does
+  not say. The model's coverage is zero for it under 18 as well, the age policy
+  refuses a recipe that asks for it, and every other group's mask is cut out
+  where it lies. Pubic hair is the adult pack's, like every genital-region
+  feature: its mask and its place in the stack come from the adult pack's
+  manifest (`AdultAnatomySpec`), so the core names no part of it, and it
+  appears only when the pack is loaded. The core keeps the recipe's `pubic`
+  density and the model's coverage for it, which that layer reads.
+- *Body hair costs no atlas channel.* The eight strand layers fit the stack's
+  eight pages: vellus takes no channel, and each terminal layer shares one with
+  layers it lies apart from (the beard's strand layers, which touched the
+  hands' layers in the UV layout, took two channels of their own; the coat
+  replaces them).
 
 ## Presence
 
@@ -1719,20 +1844,51 @@ engine with a synthetic target before any anatomy is authored on it.
 With no detail applied the refined region is the base shape in finer cells,
 proven by the geometry tests and by a render within 11 pixels over 8 levels of
 the base's (adult against base contact sheet, local only). The first authored
-feature on it is the **mound** (`pelvis/mound-decr|incr`, the pack's own
-adult-only modifier, `scripts/lib/detail/mound.ts`): a cosine bell of displacement
-along the skin's outward normal over the measured mons width and length,
-peaking at the verified 1.5 cm BMI-band contrast (fuller) or 1 cm (flatter),
-scaled by the figure's hip breadth. The packer generates its targets on the
-authoring figure's lattice from the control targets and the surface spec, so the
-pack is reproducible; `tests/moundDetail.test.ts` holds the form to its numbers
-and `tests/moundPack.test.ts` holds the shipped pack to the generator. Its skin
+feature authored for it is the **mound** (`pelvis/mound-decr|incr`, the pack's own
+adult-only modifier, `scripts/lib/control/mound.ts`): a broad, low pad over the
+pubic bone of the measured mons width and length (taken as its extent at half
+height, with a smootherstep falling to nothing over twice that), peaking at the
+verified 1.5 cm BMI-band contrast (fuller) or 1 cm (flatter), fullest in its upper
+centre, rising from nothing at the fold below it, and leaning to the body's forward
+axis so it does not push tissue into the fold. It is a *control* target, not
+detail: a swell that broad is low-frequency, the base's cells and the subdivision
+that smooths them carry it exactly, and its margins run past the refined region,
+where a lattice detail would leave a crease at the region's edge. (The first
+version was a lattice detail along the skin's normal with a cosine bell; it read as
+a lump with a lower rim, and the flatter as a ledge: the normal's downward lean
+piled tissue into the fold, and the bell's margin had a curvature jump.) The
+packer generates the targets on the authoring figure's control mesh
+(`HumanoidModel.controlShape`), so the pack is reproducible; `tests/moundControl.test.ts`
+holds the form to its numbers and the surface it makes to having no crease (no
+edge's shading turns by more than about 7° fuller or 4° flatter), and
+`tests/moundPack.test.ts` holds the shipped pack to the generator. Its skin
 fields and colour layer still follow the body's bulge target, not the new
-detail. The penis, testes and vulva are the next features
+target. The penis, testes and vulva are the next features
 (docs/research/ADULT-SCULPT-PLAN.md, section 10): a shaft is an extrusion far
-beyond what displacing existing vertices can do, so they need reservoir
-topology. `tests/adultPermutations.test.ts` holds the matrix of ages, genders,
-feature combinations and states every feature joins.
+beyond what displacing existing vertices can do, so they draw on **reservoirs**.
+`tests/adultPermutations.test.ts` holds the matrix of ages, genders, feature
+combinations and states every feature joins.
+
+**Reservoirs** (docs/research/ADULT-SCULPT-PLAN.md, section 6b) are the material
+those features extrude from, kept continuous with the body: the pack names a
+closed loop of the refinement's vertices round a disc of its polygons
+(`anatomy.reservoirs`), and `applyReservoirs` (`src/build/reservoir.ts`) adds, on
+the surface at the level in use, rings of copies of the loop, the strips between
+them, and the cap re-attached to the last ring. A copy has its vertex's stencil
+row, so it has its position, skin weights, shading normal, occlusion and uv scale;
+at rest the strips have no area and the surface is exactly the one without them,
+at every subdivision level (`tests/reservoir.test.ts`, `tests/adultReservoir.test.ts`).
+A copy also follows whatever displaces the vertex it copies, so the strips stay
+closed under the mound, and a detail addressing the rings draws them into a tube
+(a watertight one, tested). The strips are written with the control face that owns
+their edge, so a garment that hides the face hides them. The adult pack places a
+phallic disc on the midline where the front of the pelvis turns under and a
+labioscrotal pair on the underside between the legs
+(`scripts/lib/adultReservoirs.ts`), as one continuum of sizes for every
+presentation, with no feature knowing which anatomy it will become. Detail is
+subdivided linearly (`linearSubdivisionStencil`), positions smoothly, because
+smoothing the cap's displacement leaked it into the loop and overshot the tube by
+up to 22% at level 2.
 
 **Arousal.** The adult manifest adds an `arousal` state morph
 (`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by
@@ -1934,16 +2090,54 @@ age.
 - A new evaluation rebakes into a new texture that replaces the old in the
   same uniform, so only a figure gaining or losing body art rebuilds its
   shader.
-- The projection reaches 30% of the tattoo's longer side off the skin's plane
+- The projection reaches half the decal's longer side off the skin's plane
   (at least 1 cm) and skips skin facing away from it, so a tattoo on a
-  forearm never lands on the hip behind it.
+  forearm never lands on the hip behind it. Both limits fade rather than cut:
+  a hard end sliced a cheek's port-wine stain in a straight line on the
+  contact sheets, where the skin curved out of reach.
+- No ink or mark acts on the nail plate, the nail-gloss layer's mask: it is
+  not skin (the sheets showed vitiligo whitening the nail beds).
 - The ink's colour is stored sRGB-encoded so dark inks keep their precision
   in eight bits.
 - The browser tests hold the bake to its frame (orientation, the seam, facing
   and reach, a later tattoo over an earlier one) and the shader to `inkSeen`.
 
-**Landed so far:** the recipe field, its validation, the age policy, the
-sites, and tattoos. The marks and the piercings follow in their own commits.
+**Marks, as built.**
+
+- Marks change what is in the skin, through the skin model, so each reads at
+  every tone. Melanin moves in absolute density, as the lesions do.
+- The marks page holds a signed melanin channel (128 + 127 × melanin, so "no
+  change" is exact in eight bits), added haemoglobin, a scar's smoothness and
+  its raise.
+- The shader multiplies the skin by per-tone ratios raised to those channels.
+  Melanin's density is linear in log albedo, so `ratio^t` moves the density
+  linearly in t. The smoothness and raise go to roughness and relief.
+- Marks add in the bake, so overlapping marks net out; dermal pigment is ink,
+  composited under the tattoos.
+- Vitiligo's patches are seeded marks at the sites non-segmental vitiligo
+  favours, mirrored left to right through the exactly mirrored base mesh.
+- The browser tests hold the bake to `markShape` and the shader to
+  `markedAlbedo`.
+
+**Piercings, as built.**
+
+- A piercing is not an MHCLO attachment: it has no pack data, only a site and
+  a shape. The worker places each one's hole on the morphed mesh (the site
+  vertex, the skin's normal, the channel through the tissue and the way a ring
+  hangs) with the site vertex's own bone weights.
+- `<Humanoid>` builds the stud, ring or barbell there and skins every one of
+  its vertices with those weights. It moves as one rigid piece with the skin at
+  its site, which a piece a centimetre across does in life.
+- The part inside the tissue is hidden by the skin in front of it, and hair
+  and garments hide the rest as depth does, so no occlusion bake is needed.
+  The metals are measured reflectances.
+- Genital sites wait on the adult pack: its manifest must name its sites
+  (found from its targets as the body's are) before they can be placed. Until
+  then such a piercing is refused at evaluation for an adult, and by the age
+  policy for anyone under 18.
+
+**Landed:** the recipe field, its validation, the age policy, the sites,
+tattoos, marks and piercings. Still to do: the adult pack's piercing sites.
 
 ### Joint creases (2026-10-09)
 
@@ -2221,6 +2415,9 @@ fields as built:
   layers' bands, and loses bits); sharing by UV island (nine islands: only the
   head and the arms ever separate); a lower resolution for smooth layers
   (a second sampler and no cut in the broad layers, which dominate).
+
+A layer on all the skin (`everywhere`, vellus) takes no channel: its `value` is
+-1 and the shader reads its mask as 1.
 
 The atlas for the stack with the joint creases: 20 layers, 27 channels, 7 pages
 (28 MB); two layers a page took 10 pages (40 MB) for them, and 8 (32 MB) for

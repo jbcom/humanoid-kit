@@ -322,6 +322,53 @@ export function catmullClarkPolygons(topo: PolygonTopology): SubdivisionLevel {
 }
 
 /**
+ * One level of *linear* subdivision of a field over polygons, with the output
+ * order of `catmullClarkPolygons` (original vertices, an edge point per edge in
+ * order of first appearance, a face point per face): the original vertices keep
+ * their values, an edge point is the mean of its ends and a face point the mean
+ * of its corners. Detail displacement is subdivided this way, so a displacement
+ * authored at a vertex is exactly that at every level, with none of it leaking to
+ * its neighbours or overshooting, while positions are smoothed.
+ */
+export function linearSubdivisionStencil(topo: PolygonTopology): Stencil {
+  const { vertexCount: V, faceStart, faces } = topo;
+  const F = faceStart.length - 1;
+  const edges: number[] = [];
+  const seen = new Map<number, number>();
+  for (let f = 0; f < F; f++) {
+    const s = faceStart[f] as number;
+    const n = (faceStart[f + 1] as number) - s;
+    for (let k = 0; k < n; k++) {
+      const a = faces[s + k] as number;
+      const b = faces[s + ((k + 1) % n)] as number;
+      const key = edgeKey(a, b);
+      if (!seen.has(key)) {
+        seen.set(key, edges.length / 2);
+        edges.push(a, b);
+      }
+    }
+  }
+  const E = edges.length / 2;
+  const rows = new StencilBuilder(V, V + E + F, (V + E + F) * 3);
+  for (let v = 0; v < V; v++) {
+    rows.add(v, 1);
+    rows.next();
+  }
+  for (let e = 0; e < E; e++) {
+    rows.add(edges[e * 2] as number, 0.5);
+    rows.add(edges[e * 2 + 1] as number, 0.5);
+    rows.next();
+  }
+  for (let f = 0; f < F; f++) {
+    const s = faceStart[f] as number;
+    const n = (faceStart[f + 1] as number) - s;
+    for (let k = 0; k < n; k++) rows.add(faces[s + k] as number, 1 / n);
+    rows.next();
+  }
+  return rows.build();
+}
+
+/**
  * Linear (face-varying) subdivision of the UVs of polygons, matching
  * `catmullClarkPolygons`' face and corner order.
  */

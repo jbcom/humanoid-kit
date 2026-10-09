@@ -174,16 +174,12 @@ export function bodyHairCoverage(group: BodyHairGroup, input: BodyHairInput): nu
   return unit(base * Math.min(MAX_BODY_HAIR_DENSITY, Math.max(0, m)));
 }
 
-/**
- * The beard style: the recipe's, or by default stubble where the face carries
- * terminal hair at all (a coverage of a quarter or more) and none otherwise.
- * The default is a choice: a shadow shows the androgen axis without picking a
- * style for the figure.
- */
-export function beardStyle(input: BodyHairInput): BeardStyle {
-  if (input.bodyHair?.beard) return input.bodyHair.beard;
-  return bodyHairCoverage("face", input) >= 0.25 ? "stubble" : "none";
-}
+/** The beard a recipe that names none wears: clean-shaven, the neutral recipe. */
+export const DEFAULT_BEARD: BeardStyle = "none";
+
+/** The beard style: the recipe's, or `DEFAULT_BEARD`. */
+export const beardStyle = (input: BodyHairInput): BeardStyle =>
+  input.bodyHair?.beard ?? DEFAULT_BEARD;
 
 /**
  * A group's hair colour: the figure's pigments, darker or lighter by region,
