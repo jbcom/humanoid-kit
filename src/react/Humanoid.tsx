@@ -49,14 +49,11 @@ import type { Vec3 } from "../presence/presence.ts";
 import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { createAttachmentMaterial } from "../render/attachmentLook.ts";
 import { DualBones, dualShadowMaterials, followDualSkinning } from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
-import {
-  AttachmentStandardMaterial,
-  setBodyOcclusionAttributes,
-  setOcclusionAttributes,
-} from "../render/occlusion.ts";
+import { setBodyOcclusionAttributes, setOcclusionAttributes } from "../render/occlusion.ts";
 import { CURVATURE_ATTRIBUTE, SkinMaterial, UV_SCALE_ATTRIBUTE } from "../render/skinMaterial.ts";
 import { flexionRig, jointFlexion } from "../rig/flexion.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
@@ -283,18 +280,8 @@ function useAttachmentMaterial(
   report: (e: Error) => void,
 ): MeshStandardMaterial {
   const material = useMemo(() => {
-    const m = t.material;
     const material =
-      t.kind === "eyes"
-        ? new EyeMaterial()
-        : new AttachmentStandardMaterial({
-            color: new Color(m.color[0], m.color[1], m.color[2]),
-            roughness: m.roughness,
-            metalness: 0,
-            transparent: m.transparent && !m.alphaToCoverage,
-            alphaToCoverage: m.alphaToCoverage,
-            side: m.backfaceCull ? FrontSide : DoubleSide,
-          });
+      t.kind === "eyes" ? new EyeMaterial() : createAttachmentMaterial(t.kind, t.material);
     // The figure's key weights, shared, so a pose change reaches every attachment.
     material.occlusionKeys = occlusionKeys;
     return material;

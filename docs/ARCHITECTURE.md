@@ -487,6 +487,47 @@ body's bytes would then depend on the worn set, and the pack could not serve
 a mouth without a tongue); a screen-space occlusion pass (a renderer-wide
 cost, and noisy at the lip line where the cavity is thinnest).
 
+## The mouth's lining
+
+Inside the lips the surface is mucosa, not skin, and the body mesh carries it
+as one UV-mapped surface with the lips' outside, so it rendered in the skin's
+own colour: with the jaw dropped and no tongue, a wall of tan. `MOUTH_INTERIOR_LAYER`
+(`src/surface/regions/mouth.ts`) paints it with the measured lip colour at its
+deepest (`lipAlbedo`), which is the same epithelium over the same blood. Its
+mask comes from data the pack already has and no new targets:
+
+- **Seeds** are what the closed lips enclose, the body occlusion at rest
+  (`BodyOcclusion`), inside a box the lips' joints place (the nostrils, ear
+  canals and eye sockets are enclosed too and are not the mouth's).
+- **Spreading** along the mesh's own edges, through the box, reaches the
+  pocket's far end, which no ray can measure (the mesh leaves the pocket open,
+  so rays leave through it and its enclosure reads as partial) and which is
+  lining all the same, down to the pharynx wall 11 cm behind the lips that the
+  open jaw shows. Near the lips it passes only through enclosed vertices, so it
+  does not run out along the lower lip's outer surface to the chin, which joins
+  the lips' edge; deeper than 3.5 cm behind them it passes through anything,
+  since only the mouth is there.
+
+The occlusion then darkens the lining by pose as it does any cavity, so the
+colour reads as the dim maroon of a mouth's inside at every tone. Without body
+occlusion data the layer is open (no seeds, no lining).
+
+## Attachment colour
+
+An attachment is drawn with its pack material (roughness, transparency,
+culling, texture) and the colour the pack records, except teeth
+(`src/render/attachmentLook.ts`). MakeHuman's teeth multiply a flat 0.64 into a
+mid-grey texture in its own display-referred pipeline; decoded to linear light
+here that is a grey of about 0.18 albedo, so the teeth rendered darker than
+the skin around them at every tone. The colour is instead enamel's albedo
+(`ENAMEL_LAB`, ivory: L\* 76, a\* 0.5, b\* 12) divided by the texture's measured
+mean tooth colour (`TEETH_TEXTURE_MEAN`), so the texture's shading, cusps and
+gums are kept and only its level moves. Decision: a render-side constant over
+re-encoding the shipped texture or editing the pack's material, because the pack
+stays MakeHuman's data as it is and the correction is a statement about this
+renderer's colour pipeline. A test re-measures the texture and fails if the
+constant drifts; evidence in `docs/evidence/teeth.md`.
+
 ## Worker
 
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one

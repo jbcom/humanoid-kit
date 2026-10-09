@@ -758,6 +758,13 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   its baked occlusion, which follows the pose (an open mouth lights the teeth
   it uncovers). The body's own cavities (mouth, nostrils, ear canals, eye
   sockets) are darkened the same way, so a mouth without a tongue is dim inside.
+  The mouth's inside is painted as mucosa (`MOUTH_INTERIOR_LAYER`, `mucosaAlbedo`,
+  `mouthInteriorMask`; ARCHITECTURE.md, "The mouth's lining"), not as skin.
+  Teeth are drawn at the albedo of enamel (ivory, `ENAMEL_LAB`) whatever the
+  pack's material colour, since that colour assumed MakeHuman's display-referred
+  pipeline and rendered here as grey (`attachmentColour`,
+  `createAttachmentMaterial`; `docs/evidence/teeth.md`); other attachments are
+  drawn as the pack describes them.
 - Renders the garments `recipe.outfit` names, once the client loaded a
   clothing pack: skinned to the same skeleton, so they follow the pose, with
   their diffuse and normal maps. The body keeps its geometry whatever is worn;
