@@ -1,0 +1,35 @@
+{
+  "name": "humanoid-kit-body",
+  "version": "0.0.0",
+  "description": "The universal base body for humanoid-kit: base mesh, shape targets for every age, skeleton, skin weights and facial pose units, packed from CC0 MakeHuman assets.",
+  "type": "module",
+  "license": "CC0-1.0",
+  "author": "Jon Bogaty <jon@jonbogaty.com>",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./data/*": "./data/*",
+    "./package.json": "./package.json"
+  },
+  "files": ["index.js", "index.d.ts", "data", "README.md", "LICENSE"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jbcom/humanoid-kit.git",
+    "directory": "packs/body"
+  },
+  "bugs": {
+    "url": "https://github.com/jbcom/humanoid-kit/issues"
+  },
+  "homepage": "https://jbcom.github.io/humanoid-kit/",
+  "engines": {
+    "node": ">=24"
+  },
+  "keywords": ["humanoid-kit", "makehuman", "cc0", "base-mesh", "morph-targets", "character"]
+}
