@@ -165,7 +165,7 @@ interface BodyHairRecipe {
   // per BODY_HAIR_GROUPS entry, a multiplier on the default, 0..2 (1 = default);
   // axillary and pubic are adult-only: any value but 0 under 18 is refused
   density?: Partial<Record<BodyHairGroup, number>>;
-  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = stubble where the face carries terminal hair
+  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = none (clean-shaven)
 }
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
@@ -604,8 +604,7 @@ compute what the renderer will do.
   `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's density
   multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage; it never
   adds hair where the default has none). `beardStyle(input)` is the recipe's
-  style, or `stubble` where the face's coverage is a quarter or more and `none`
-  elsewhere. `bodyHairColour(group, input)` is the figure's hair pigments
+  style, or `DEFAULT_BEARD` (`none`, clean-shaven). `bodyHairColour(group, input)` is the figure's hair pigments
   darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
   fibre diameter and drawn length) and at least as grey as ageing makes them
   (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an
@@ -634,7 +633,17 @@ compute what the renderer will do.
   `height` in metres and `size`: bump spacing in metres, or crease count across
   the coordinate) drawn at true scale and faded where finer than a pixel, or a
   `SurfaceLayer` (`kind: "surface"`, `paint` giving `strength`, a `roughness`
-  change and a `specular` change). `surfaceChange` and `creaseHeight` (a
+  change and a `specular` change), or a `StrandLayer` (`kind: "strands"`,
+  `paint` giving a `StrandPaint`: `strength` (coverage, the share of follicles
+  carrying hair), the hair's `colour`, `density` in follicles per cm²,
+  `length`, `width` and relief `height` in metres, and `inSkinAlbedo` for hair
+  the measured skin colour already holds) drawn as strands at true scale along
+  the body's hair flow, and as their mean cover where finer than a pixel
+  (`strandCover(paint)`, at most `MAX_STRAND_COVER`, what `applyLayers` applies;
+  none for `inSkinAlbedo`). A layer may set `everywhere` (on all the skin: no
+  atlas channel, `planAtlas` gives it `value` -1 and the shader reads its mask
+  as 1) or `adultOnly` (a body layer `paintStopTable` paints at zero unless
+  `SkinPaintInput.adult` is true; absent fails closed). `surfaceChange` and `creaseHeight` (a
   groove, so negative: `size` of them across the coordinate, each the raised
   cosine to the power `CREASE_SHARPNESS`, flat at the coordinate's ends) are the
   shader's references; `uvScale(assets, faces)` gives metres of skin per UV
@@ -656,6 +665,17 @@ compute what the renderer will do.
   `SkinPaintInput.age` is the figure's age in years (`recipe.macros.age`;
   `<Humanoid>` sets it), for layers that change with it: a layer that reads it
   must paint sensibly without it, since an input built without one has none.
+  `SkinPaintInput.gender` (the gender macro, default 0.5), `hairColour`
+  (`recipe.hair.colour`, default `DEFAULT_HAIR_COLOUR`) and `bodyHair`
+  (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
+  Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
+  hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
+  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (chest, abdomen, back, buttocks, arms,
+  legs, and the `adultOnly` axillary), with follicle densities
+  `BODY_HAIR_DENSITY`. The beard is not a strand layer (dense short hair is the
+  coat's, long hair the cards'), and pubic hair is the adult pack's.
+  `bodyHairMasks(assets)` gives the masks per base vertex and
+  `bodyHairInput(paintInput)` the body hair model's input.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).
@@ -1238,13 +1258,14 @@ and camera.
 
 - One tab per MakeHuman modelling task (Main, Gender, Face, Torso, ...,
   Measure), in upstream order, with MakeHuman's groups and slider labels, plus
-  Appearance (skin, iris, sclera, and hair when the client loaded a hair pack:
-  a style from the pack or none, twelve natural colours, a picker for dyed hair
-  and the pigment sliders behind the colours) and Regions (per-region macro
-  overrides). Tapping the hair opens Appearance.
-  Appearance (skin, iris, sclera), Regions (per-region macro overrides) and,
-  when the client loaded a clothing pack, a Wardrobe: the garments by kind,
-  one worn at a time per kind, layered across kinds.
+  Appearance (skin, iris, sclera; hair when the client loaded a hair pack: a
+  style from the pack or none, twelve natural colours, a picker for dyed hair
+  and the pigment sliders behind the colours; and body hair: a beard style, or
+  Natural for the default for age and sex, and a density per region from none
+  to twice the default, with underarm and pubic density offered to adults
+  only), Regions (per-region macro overrides) and, when the client loaded a
+  clothing pack, a Wardrobe: the garments by kind, one worn at a time per kind,
+  layered across kinds. Tapping the hair opens Appearance.
 - Tapping the figure opens the controls that shape the tapped part (its tab,
   with the group opened and scrolled into view) and frames that part from the
   front; see `buildFeatureMap`. Dragging orbits the view instead.

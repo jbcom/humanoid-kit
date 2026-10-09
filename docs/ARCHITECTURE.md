@@ -1352,6 +1352,80 @@ Old recipes evaluate and serialise as before.
   30 and 80 shows each age's hair. Absent fields are not filled in by
   `createRecipe`, so a recipe that never set body hair serialises exactly as
   before.
+- *Hair lying on the skin is a strand layer, not geometry.* A new layer kind,
+  `strands` (`src/surface/regions/bodyHair.ts`), draws hair in the skin
+  shader at true scale: roots on a grid in the skin's plane (metres, `uv ×
+  hkUvScale`, as the bumps), a cell half a strand long along the flow and as
+  wide across as the follicle density leaves; a root carries a strand where a
+  hash of its cell is under the coverage times the mask, so a mask's soft edge
+  thins hair rather than fading it. Each strand's coverage of a pixel is the
+  overlap of its width with the pixel's footprint (a box filter, exact for
+  strands finer than a pixel). Where a cell across is finer than a pixel, the
+  grid cannot be sampled and the strands become their mean cover
+  (`strandCover`: follicles × coverage × mean length × diameter, at most 0.6),
+  which `applyLayers` computes, and a browser test holds the near and far
+  views to the same mean. The search covers the cells round a pixel's centre,
+  so the switch is made early, as the pixel grows from a third of a cell to
+  two thirds (`STRAND_NEAR_LIMIT`, `STRAND_FAR_START`): a later one left
+  full-body views speckled, and a browser test now renders a cell a pixel wide
+  and requires it smooth. Rejected: cards for all body hair (a forearm's
+  thousands of fine hairs as geometry, and nothing for the short hair cards
+  cannot draw), and a painted texture (no true scale, one resolution).
+- *The flow is skinned, and quantised.* Hair runs along the bind pose's
+  downward direction carried through the skinning like a normal (`vHkFlow`),
+  so it runs down the limbs and trunk and follows them as they move: a choice,
+  where real hair has whorls. Its UV direction per pixel comes from the
+  position and UV derivatives. Rotating the grid by it pixel by pixel would
+  shear the grid wherever it varies (its coordinates run to thousands of
+  cells), so the direction is quantised to eight fixed grids over a half turn,
+  and each root belongs to one of the two round the flow by a hash weighted by
+  closeness, so the density holds and no strand is drawn twice at half
+  strength.
+- *Vellus is a strand layer on all the skin, and takes no atlas channel.*
+  Vellus grows almost everywhere, so its mask would be a whole channel of ones;
+  a layer may declare `everywhere`, which `planAtlas` gives no channel (`value`
+  -1) and the shader reads as a mask of 1. On the lips, palms and soles, which
+  have none, its strands (30 µm by 2 mm) are far below any view's resolution.
+  Its glow against the light stays the skin material's sheen. Every measured
+  skin colour was measured with its vellus, so vellus adds no mean cover
+  (`inSkinAlbedo`): from afar it changes nothing, and the skin's colour parity
+  holds; only its strands up close, in a view finer than its 2 mm cells, are
+  drawn. A surface with no metres per UV unit (a test sphere) draws no strands.
+- *Hair is split by length, one system with the anthro fur* (the owner's
+  ruling, 2026-10-09, after the M6 fur design). Sparse, fine hair (vellus, the
+  limbs, a light chest) is strand layers; short, dense hair (stubble, a dense
+  chest or abdomen, a pelt) is the shared shell coat (`src/render/coat.ts`,
+  below); long hair (a grown beard, a mane) is the hair pack's cards. A first
+  version drew the beard as strand layers too, and its sheets showed why not:
+  a dense short coat as strands is a flat tint, and the beard's masks, cut by
+  axis-aligned ramps, had straight edges down the cheeks and a rectangle on
+  the neck. The beard's masks are redrawn with the coat, along the face's
+  own lines.
+- *Terminal hair is one strand layer per group.* Each group (chest, abdomen,
+  back, buttocks, arms, legs, axillary) has its own coverage, colour, density
+  and length, so its own layer. Masks are measured from the base mesh: the skin
+  zones (cut off where a zone's weight falls under 0.2, so supports stay near
+  their region), the vertex normals, and the armpits' hollows. The limbs stop
+  short of the hands and feet, which carry little terminal hair and whose
+  layers crowd the atlas.
+- *The beard defaults to none.* Clean-shaven is the neutral recipe; terminal
+  body hair and vellus are on by default for age and sex.
+- *Axillary hair is an adult-only body layer; pubic hair is the adult pack's.*
+  The armpit's mask comes from the base mesh, so its layer lives in the core,
+  where a layer flag, `adultOnly`, makes `paintStopTable` paint it at zero
+  unless the input says the figure is an adult, failing closed when it does
+  not say. The model's coverage is zero for it under 18 as well, the age policy
+  refuses a recipe that asks for it, and every other group's mask is cut out
+  where it lies. Pubic hair is the adult pack's, like every genital-region
+  feature: its mask and its place in the stack come from the adult pack's
+  manifest (`AdultAnatomySpec`), so the core names no part of it, and it
+  appears only when the pack is loaded. The core keeps the recipe's `pubic`
+  density and the model's coverage for it, which that layer reads.
+- *Body hair costs no atlas channel.* The eight strand layers fit the stack's
+  eight pages: vellus takes no channel, and each terminal layer shares one with
+  layers it lies apart from (the beard's strand layers, which touched the
+  hands' layers in the UV layout, took two channels of their own; the coat
+  replaces them).
 
 ## Presence
 
@@ -2299,6 +2373,9 @@ fields as built:
   layers' bands, and loses bits); sharing by UV island (nine islands: only the
   head and the arms ever separate); a lower resolution for smooth layers
   (a second sampler and no cut in the broad layers, which dominate).
+
+A layer on all the skin (`everywhere`, vellus) takes no channel: its `value` is
+-1 and the shader reads its mask as 1.
 
 The atlas for the stack with the joint creases: 20 layers, 27 channels, 7 pages
 (28 MB); two layers a page took 10 pages (40 MB) for them, and 8 (32 MB) for
