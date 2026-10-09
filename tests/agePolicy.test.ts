@@ -18,8 +18,37 @@ const minorAge = fc.double({ min: 1, max: ADULT_AGE - 1e-6, noNaN: true });
 describe("age policy", () => {
   it("the packer's adult-only flag and the policy predicate agree on every modifier", () => {
     expect(adultModifiers.length).toBeGreaterThan(0);
-    for (const m of adultModifiers) expect(ADULT_ONLY_MODIFIER(m.id), m.id).toBe(true);
-    for (const m of bodyManifest.modifiers) expect(ADULT_ONLY_MODIFIER(m.id), m.id).toBe(false);
+    for (const m of [...adultModifiers, ...bodyManifest.modifiers]) {
+      expect(ADULT_ONLY_MODIFIER(m.id), m.id).toBe(m.adultOnly);
+    }
+    // Every adult-pack modifier is age-gated; the body pack keeps age-gated breast shaping.
+    for (const m of adultModifiers) expect(m.adultOnly, m.id).toBe(true);
+    const gatedInBody = bodyManifest.modifiers.filter((m) => m.adultOnly).map((m) => m.id);
+    expect(gatedInBody.length).toBeGreaterThan(0);
+    for (const id of gatedInBody) expect(id.startsWith("breast/"), id).toBe(true);
+  });
+
+  it("rejects breast and nipple shaping under 18 even without the adult pack", () => {
+    const body = loadFixtureAssets(false);
+    const breastMods = bodyManifest.modifiers
+      .filter((m) => m.id.startsWith("breast/"))
+      .map((m) => m.id);
+    expect(breastMods.length).toBeGreaterThan(0);
+    fc.assert(
+      fc.property(
+        minorAge,
+        fc.constantFrom(...breastMods),
+        fc.double({ min: -1, max: 1, noNaN: true }).filter((v) => v !== 0),
+        (age, id, v) => {
+          expect(() =>
+            recipeContributions(
+              createRecipe({ macros: { age }, modifiers: { [id]: v } }),
+              body.modifiers,
+            ),
+          ).toThrow(AgePolicyError);
+        },
+      ),
+    );
   });
 
   it("keeps adult-only targets out of the body pack entirely", () => {

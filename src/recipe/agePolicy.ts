@@ -16,11 +16,16 @@ import type { Recipe } from "./recipe.ts";
 
 export { ADULT_AGE };
 
-/** Shape modifier groups and ids that only apply to adults. */
+/**
+ * Shape modifiers that only apply to adults: the adult pack's genital, bulge
+ * and pregnancy modifiers, and the body pack's breast and nipple shaping.
+ * Must agree with the packer's `adultOnly` flag (a test checks every modifier).
+ */
 export const ADULT_ONLY_MODIFIER = (id: string): boolean =>
   id.startsWith("genitals/") ||
   id.startsWith("pelvis/bulge") ||
-  id.startsWith("stomach/stomach-pregnant");
+  id.startsWith("stomach/stomach-pregnant") ||
+  id.startsWith("breast/");
 
 export const isAdult = (recipe: Recipe): boolean => recipe.macros.age >= ADULT_AGE;
 

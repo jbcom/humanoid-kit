@@ -158,11 +158,19 @@ function parseTarget(text: string) {
   return { idx, d };
 }
 
-/** Targets that only apply to adult figures; packed separately. */
-const isAdultOnlyTarget = (name: string) =>
+/** Targets that belong to the adult anatomy pack (a separate install). */
+const isAdultPackTarget = (name: string) =>
   name.startsWith("genitals/") ||
   name.startsWith("pelvis/bulge-") ||
   name.startsWith("stomach/stomach-pregnant-");
+
+/**
+ * Modifiers that are age-gated (rejected below 18): everything in the adult
+ * pack, plus the breast and nipple shape group, which stays in the body pack
+ * because adult figures need it without installing anatomy.
+ */
+const isAdultOnlyModifier = (group: string, hi: string) =>
+  isAdultPackTarget(hi) || group === "breast";
 
 function listTargets(): string[] {
   const out: string[] = [];
@@ -379,8 +387,8 @@ function main() {
   fs.writeFileSync(path.join(BODY_OUT, "body.bin"), body);
 
   const files = listTargets();
-  const core = packTargets(files.filter((f) => !isAdultOnlyTarget(f.replace(/^targets\//, ""))));
-  const adult = packTargets(files.filter((f) => isAdultOnlyTarget(f.replace(/^targets\//, ""))));
+  const core = packTargets(files.filter((f) => !isAdultPackTarget(f.replace(/^targets\//, ""))));
+  const adult = packTargets(files.filter((f) => isAdultPackTarget(f.replace(/^targets\//, ""))));
   fs.writeFileSync(path.join(BODY_OUT, "targets.bin"), core.bin);
   fs.writeFileSync(path.join(ADULT_OUT, "targets.bin"), adult.bin);
   const targets = [...core.entries, ...adult.entries];
@@ -414,7 +422,7 @@ function main() {
         unresolved.push(id);
         continue;
       }
-      modifiers.push({ id, group: dir, lo, hi, adultOnly: isAdultOnlyTarget(hi) });
+      modifiers.push({ id, group: dir, lo, hi, adultOnly: isAdultOnlyModifier(dir, hi) });
     }
   }
   if (unresolved.length)
@@ -457,7 +465,7 @@ function main() {
     groups: obj.groups,
     body: { file: "body.bin", sha256: bodySha, layout },
     targets: { file: "targets.bin", sha256: sha(core.bin), entries: core.entries },
-    modifiers: modifiers.filter((m) => !m.adultOnly),
+    modifiers: modifiers.filter((m) => !isAdultPackTarget(m.hi)),
     attachments: {
       file: "attachments.bin",
       sha256: attachments.sha256,
@@ -493,7 +501,7 @@ function main() {
     bodySha256: bodySha,
     source,
     targets: { file: "targets.bin", sha256: sha(adult.bin), entries: adult.entries },
-    modifiers: modifiers.filter((m) => m.adultOnly),
+    modifiers: modifiers.filter((m) => isAdultPackTarget(m.hi)),
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 
