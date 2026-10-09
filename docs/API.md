@@ -227,7 +227,15 @@ and throws `RangeError` for anything else.
   contracts, calibrated to the measured response) add their targets.
   `stateContributions(signals)` gives those target weights. `ADULT_ONLY_SIGNALS`
   (`arousal`) throw `AgePolicyError` under 18 (`assertSignalPolicy`).
-- `model.topology(): SurfaceTopology`: the static render data, sent once.
+- `model.topology(): SurfaceTopology`: the static render data, sent once. A
+  worn attachment set the body pack did not bake gets its occlusion at rest
+  only (every pose corner holding the rest value).
+- `model.bakePosedOcclusion(): Generator<void, Float32Array[] | null>` bakes
+  that set's pose corners, yielding before each one so a caller can let other
+  work in between; it returns per-render-vertex arrays shaped like
+  `AttachmentTopology.occlusion`, or null for the pack's own set.
+  `model.bakeAttachmentOcclusion()` is the whole bake at once, per control
+  vertex (what the packer stores).
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
@@ -411,6 +419,11 @@ The main-thread handle to an evaluation worker.
   arrays holding an index into `features` per render vertex (or
   `NO_FEATURE`). The worker builds it on the first call; later calls share it.
   Look up a `<Humanoid onPick>` tap in it to open the tapped part's controls.
+- `client.posedOcclusion(): Promise<Float32Array[] | null>` resolves with the
+  pose-following occlusion of a worn attachment set the body pack did not bake
+  (one array per worn attachment, for `setOcclusionAttributes`), or null when
+  `ready`'s topology already follows the pose. The worker bakes it once,
+  between evaluations; later calls share it. `<Humanoid>` asks for it itself.
 - `client.dispose()` terminates the worker and rejects pending requests.
 - Errors from the worker arrive as `HumanoidWorkerError` with `name` set to the
   original error's name (for example `AgePolicyError`).
@@ -544,10 +557,12 @@ range input sized for touch. `onChange(value, gesture)` fires while dragging and
 ## `humanoid-kit/worker`
 
 The worker module that `HumanoidWorkerClient` starts by default. It owns one
-`HumanoidModel` and answers four messages: `init` (replied to with `ready`
+`HumanoidModel` and answers five messages: `init` (replied to with `ready`
 once the first figure can be evaluated), `complete` (replied to once every
 target file has loaded, or with the error that stopped one), `pickMap`
-(replied to with the pick map once everything has loaded) and `evaluate`, which
+(replied to with the pick map once everything has loaded), `posedOcclusion`
+(replied to once the corner bake, made a corner at a time between other
+requests, is done) and `evaluate`, which
 waits for exactly the load stages its recipe needs without holding up other
 requests. Result buffers are transferred. Applications use it through the
 client, not directly.

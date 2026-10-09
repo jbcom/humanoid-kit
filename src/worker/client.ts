@@ -100,6 +100,24 @@ export class HumanoidWorkerClient {
     return this.pickMapRequest;
   }
 
+  private posedOcclusionRequest: Promise<Float32Array[] | null> | null = null;
+
+  /**
+   * The pose-following occlusion of a worn set the pack did not bake
+   * (`HumanoidModel.bakePosedOcclusion`): per worn attachment, values for
+   * `setOcclusionAttributes`, or null when `ready`'s topology already
+   * follows the pose. The worker bakes it between evaluations, once; later
+   * calls share that answer.
+   */
+  posedOcclusion(): Promise<Float32Array[] | null> {
+    this.posedOcclusionRequest ??= this.ready.then(async () => {
+      const r = await this.request({ type: "posedOcclusion", id: 0 });
+      if (r.type !== "posedOcclusion") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+      return r.attachments;
+    });
+    return this.posedOcclusionRequest;
+  }
+
   private request(msg: WorkerRequest): Promise<WorkerResponse> {
     if (this.disposed) return Promise.reject(new HumanoidWorkerError("disposed"));
     const id = this.nextId++;

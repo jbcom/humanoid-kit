@@ -39,6 +39,8 @@ export type WorkerRequest =
   | { type: "complete"; id: number }
   /** Answered with the pick map once every target file (it needs the modifiers') has loaded. */
   | { type: "pickMap"; id: number }
+  /** Answered with `HumanoidModel.bakePosedOcclusion`'s result, baked between evaluations. */
+  | { type: "posedOcclusion"; id: number }
   | {
       type: "evaluate";
       id: number;
@@ -51,5 +53,7 @@ export type WorkerResponse =
   | ({ type: "ready"; id: number } & ReadyInfo)
   | { type: "completed"; id: number }
   | ({ type: "pickMap"; id: number } & PickMap)
+  /** Per worn attachment, its render vertices' occlusion at every corner; null when `ready`'s already was. */
+  | { type: "posedOcclusion"; id: number; attachments: Float32Array[] | null }
   | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
   | { type: "error"; id: number; message: string; name: string };

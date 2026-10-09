@@ -25,6 +25,9 @@ async function createClient(): Promise<HumanoidWorkerClient> {
   const worker = new Worker(new URL("../../src/worker/index.ts", import.meta.url), {
     type: "module",
   });
+  // `?wear=teeth/base,eyes/high-poly` wears only those attachments: a set the
+  // pack did not bake, whose occlusion is baked at rest at load and posed after.
+  const wear = params.get("wear")?.split(",").filter(Boolean);
   // The first figure's own targets load first; the rest stream in behind it.
   return new HumanoidWorkerClient(
     {
@@ -32,7 +35,7 @@ async function createClient(): Promise<HumanoidWorkerClient> {
       ...(adultAnatomy && { adultAnatomy }),
       firstFigureAge: initialRecipe().macros.age,
     },
-    { subdivision: 1 },
+    { subdivision: 1, ...(wear && { attachments: wear }) },
     worker,
   );
 }

@@ -178,6 +178,12 @@ export class HumanoidModel {
   private readonly attachmentLevel: number;
   private readonly layerFields: Float32Array;
   private readonly uvScale: Float32Array;
+  /** The rest bake of the worn set, kept for the corner bakes to reuse. */
+  private restOcclusion: {
+    rest: Float32Array;
+    surfaces: readonly Part[];
+    bake: OcclusionBaseline;
+  } | null = null;
 
   readonly assets: HumanoidAssets;
 
@@ -276,31 +282,35 @@ export class HumanoidModel {
    * attachment, one bake per corner, each `vertexCount` long.
    */
   bakeAttachmentOcclusion(): Float32Array[] {
-    const rest = this.evaluate(occlusionFigure()).control;
+    const steps = this.bakeOcclusionCorners();
+    for (;;) {
+      const step = steps.next();
+      if (step.done) return step.value;
+    }
+  }
+
+  /**
+   * `bakeAttachmentOcclusion` a corner at a time: it yields before each
+   * corner after rest, so a caller can let other work in between.
+   */
+  private *bakeOcclusionCorners(): Generator<void, Float32Array[]> {
+    const { rest, surfaces, bake: atRest } = this.occlusionAtRest();
     const bones = restBones(this.assets, rest);
     const rig = rigData(this.assets);
-    const bodies = Array.from({ length: occlusionCorners(OCCLUSION_KEYS.length) }, (_, m) =>
-      m === 0
-        ? rest
-        : skinPositions(
-            bones,
-            faceUnitRotations(rig, occlusionCornerUnits(m)),
-            rest,
-            this.assets.skinIndex,
-            this.assets.skinWeight,
-            new Float32Array(rest.length),
-          ),
-    );
-    // Occluding attachments at one subdivision level, whatever this model's.
-    const surfaces = this.attached.map((a) =>
-      this.attachmentLevel === 1 ? a.part : part(this.attachmentSurface(a.asset, 1)),
-    );
-    // Every corner reuses the rest bake wherever nothing within reach moved.
-    const atRest = this.bakeOcclusionAt(rest, surfaces, undefined);
-    const bakes = [
-      atRest.values,
-      ...bodies.slice(1).map((body) => this.bakeOcclusionAt(body, surfaces, atRest).values),
-    ];
+    const bakes = [atRest.values];
+    for (let m = 1; m < occlusionCorners(OCCLUSION_KEYS.length); m++) {
+      yield;
+      const body = skinPositions(
+        bones,
+        faceUnitRotations(rig, occlusionCornerUnits(m)),
+        rest,
+        this.assets.skinIndex,
+        this.assets.skinWeight,
+        new Float32Array(rest.length),
+      );
+      // Every corner reuses the rest bake wherever nothing within reach moved.
+      bakes.push(this.bakeOcclusionAt(body, surfaces, atRest).values);
+    }
     return this.attached.map((a, i) => {
       const n = a.asset.entry.vertexCount;
       const out = new Float32Array(n * bakes.length);
@@ -309,6 +319,37 @@ export class HumanoidModel {
       });
       return out;
     });
+  }
+
+  /** The worn set's bake at rest, made once and kept for the corners. */
+  private occlusionAtRest(): NonNullable<HumanoidModel["restOcclusion"]> {
+    if (!this.restOcclusion) {
+      const rest = this.evaluate(occlusionFigure()).control;
+      // Occluding attachments at one subdivision level, whatever this model's.
+      const surfaces = this.attached.map((a) =>
+        this.attachmentLevel === 1 ? a.part : part(this.attachmentSurface(a.asset, 1)),
+      );
+      this.restOcclusion = {
+        rest,
+        surfaces,
+        bake: this.bakeOcclusionAt(rest, surfaces, undefined),
+      };
+    }
+    return this.restOcclusion;
+  }
+
+  /**
+   * The pose-following occlusion of a worn set the pack did not bake, per
+   * render vertex as in `AttachmentTopology.occlusion`, or null when
+   * `topology()` already carries it. `topology()` bakes such a set at rest
+   * only (every corner holding the rest value), since the corners take
+   * seconds; this bakes them, yielding before each so a worker can answer
+   * evaluations in between. Needs the target files `occlusionBakeRecipe()`
+   * names.
+   */
+  *bakePosedOcclusion(): Generator<void, Float32Array[] | null> {
+    if (this.wearsPackedSet()) return null;
+    return this.renderOcclusion(yield* this.bakeOcclusionCorners());
   }
 
   /**
@@ -410,32 +451,16 @@ export class HumanoidModel {
   }
 
   topology(): ModelTopology {
+    const corners = occlusionCorners(OCCLUSION_KEYS.length);
     const baked = this.wearsPackedSet()
       ? this.attached.map(({ asset }) => Float32Array.from(asset.occlusion, (o) => o / 255))
-      : this.bakeAttachmentOcclusion();
-    // Carried to the render surface by the subdivision stencil, like any other
-    // per-vertex field, three corners at a time (the stencil's stride).
-    const corners = occlusionCorners(OCCLUSION_KEYS.length);
-    const occlusion = this.attached.map(({ asset, part: p }, i) => {
-      const n = asset.entry.vertexCount;
-      const all = baked[i] as Float32Array;
-      const r2s = p.mesh.renderToSurface;
-      const out = new Float32Array(r2s.length * corners);
-      const field = new Float32Array(n * 3);
-      const surface = new Float32Array(p.mesh.topology.vertexCount * 3);
-      for (let first = 0; first < corners; first += 3) {
-        const count = Math.min(3, corners - first);
-        field.fill(0);
-        for (let v = 0; v < n; v++)
-          for (let c = 0; c < count; c++) field[v * 3 + c] = all[(first + c) * n + v] as number;
-        applyStencil(p.mesh.stencil, field, surface);
-        r2s.forEach((s, r) => {
-          for (let c = 0; c < count; c++)
-            out[r * corners + first + c] = surface[s * 3 + c] as number;
+      : // Rest at every corner until `bakePosedOcclusion` brings the others.
+        this.occlusionAtRest().bake.values.map((rest) => {
+          const out = new Float32Array(rest.length * corners);
+          for (let m = 0; m < corners; m++) out.set(rest, m * rest.length);
+          return out;
         });
-      }
-      return out;
-    });
+    const occlusion = this.renderOcclusion(baked);
     return {
       body: {
         ...topologyOf(this.body.mesh),
@@ -455,6 +480,35 @@ export class HumanoidModel {
           : null,
       })),
     };
+  }
+
+  /**
+   * Per-control-vertex corner bakes (`bakeAttachmentOcclusion`'s layout)
+   * carried to the render vertices by the subdivision stencil, like any other
+   * per-vertex field, three corners at a time (the stencil's stride).
+   */
+  private renderOcclusion(baked: readonly Float32Array[]): Float32Array[] {
+    const corners = occlusionCorners(OCCLUSION_KEYS.length);
+    return this.attached.map(({ asset, part: p }, i) => {
+      const n = asset.entry.vertexCount;
+      const all = baked[i] as Float32Array;
+      const r2s = p.mesh.renderToSurface;
+      const out = new Float32Array(r2s.length * corners);
+      const field = new Float32Array(n * 3);
+      const surface = new Float32Array(p.mesh.topology.vertexCount * 3);
+      for (let first = 0; first < corners; first += 3) {
+        const count = Math.min(3, corners - first);
+        field.fill(0);
+        for (let v = 0; v < n; v++)
+          for (let c = 0; c < count; c++) field[v * 3 + c] = all[(first + c) * n + v] as number;
+        applyStencil(p.mesh.stencil, field, surface);
+        r2s.forEach((s, r) => {
+          for (let c = 0; c < count; c++)
+            out[r * corners + first + c] = surface[s * 3 + c] as number;
+        });
+      }
+      return out;
+    });
   }
 
   /**

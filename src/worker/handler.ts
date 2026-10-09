@@ -24,6 +24,8 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
   let model: HumanoidModel | null = null;
   let stages: LoadStage[] = [];
   let complete: Promise<unknown> = Promise.resolve();
+  /** The corner bake of a worn set the pack did not bake, made once. */
+  let posedOcclusion: Promise<Float32Array[] | null> | null = null;
 
   /** Waits for the stages that bring the target files a recipe (in a skin state) needs. */
   const targetsFor = async (
@@ -65,6 +67,25 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
       if (req.type === "complete") {
         await complete;
         post({ type: "completed", id: req.id });
+        return;
+      }
+      if (req.type === "posedOcclusion") {
+        const m = model;
+        posedOcclusion ??= (async () => {
+          const steps = m.bakePosedOcclusion();
+          for (;;) {
+            const step = steps.next();
+            if (step.done) return step.value;
+            // A macrotask between corners lets queued evaluations run.
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+        })();
+        // Each request gets its own copies: the reply transfers them.
+        const attachments = (await posedOcclusion)?.map((a) => a.slice()) ?? null;
+        post(
+          { type: "posedOcclusion", id: req.id, attachments },
+          attachments?.map((a) => a.buffer) ?? [],
+        );
         return;
       }
       if (req.type === "pickMap") {

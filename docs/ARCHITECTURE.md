@@ -241,9 +241,15 @@ they do on most figures, so the packer bakes it once
 as one byte per control vertex. The bake does not depend on the model's
 subdivision level: the body occludes as its unsubdivided control mesh and the
 opaque attachments always as their one-level surface. A model wearing the body
-pack's own attachments (in any order) uses the shipped bytes and casts no rays;
-a model wearing any other set bakes during construction of its topology, inside
-worker initialisation. A test re-bakes from the shipped pack and fails if the
+pack's own attachments (in any order) uses the shipped bytes and casts no rays.
+A model wearing any other set bakes it at rest while building its topology,
+inside worker initialisation, with the rest value standing in at every pose
+corner. After `ready`, `client.posedOcclusion()` has the worker bake the other
+corners (`HumanoidModel.bakePosedOcclusion`; about 6 s on desktop for the
+whole set), one corner at a time with a macrotask between, so evaluations
+queued meanwhile are answered within one corner's bake instead of after all
+of them; `<Humanoid>` swaps the attributes in when they arrive. Until then
+the attachments render as they did before occlusion followed the pose. A test re-bakes from the shipped pack and fails if the
 stored values drift from what the code computes.
 
 **Occlusion follows the pose** (2026-10-09). An open mouth exposes teeth that

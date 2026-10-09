@@ -415,6 +415,22 @@ export function Humanoid({
     });
     return { body, attachments };
   }, [ready]);
+  // A worn set the pack did not bake arrives at rest only; its pose-following
+  // corners replace that once the worker has baked them.
+  useEffect(() => {
+    if (!geometries) return;
+    let live = true;
+    client.posedOcclusion().then((posed) => {
+      if (!live || !posed) return;
+      geometries.attachments.forEach((g, i) => {
+        const o = posed[i];
+        if (o) setOcclusionAttributes(g, o);
+      });
+    }, report);
+    return () => {
+      live = false;
+    };
+  }, [client, geometries, report]);
   const rig = useMemo(() => (ready ? makeSkeleton(ready.rig) : null), [ready]);
   const keyBasis = useMemo(() => (ready ? occlusionKeyBasis(ready.rig) : null), [ready]);
   // Shared by the attachments' materials: how much of each occlusion key the pose holds.
