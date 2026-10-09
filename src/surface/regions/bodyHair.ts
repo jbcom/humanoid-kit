@@ -1,18 +1,15 @@
 /**
  * Body hair on the skin (docs/ARCHITECTURE.md, "Body hair"): vellus everywhere
- * at every age, and the sparse, fine terminal hair of the body where
- * `bodyHairCoverage` says, both drawn as strand layers in the shader. Dense
- * short hair (stubble, a dense chest) is the coat's, long hair (a grown beard)
- * the hair cards', and pubic hair the adult pack's.
+ * at every age, and the sparse, fine terminal hair of the limbs and buttocks
+ * where `bodyHairCoverage` says, both drawn as strand layers in the shader.
+ * Dense short hair (stubble, a dense chest, the armpits) is the coat's, long
+ * hair (a grown beard) the hair cards', and pubic hair the adult pack's.
  *
- * The masks are measured from the base mesh alone, like the skin states'
- * zones: the skeleton's skin weights (`skinZones`), the vertex normals, and the
- * armpits' hollows. Their exact edges are choices; where hair grows is the
+ * The masks (`bodyHairMasks`, which the coat's trunk and armpit regions read
+ * too) are measured from the base mesh alone, like the skin states' zones: the
+ * skeleton's skin weights (`skinZones`), the vertex normals, and the armpits'
+ * hollows. Their exact edges are choices; where hair grows is the
  * Ferriman-Gallwey regions' (docs/research/BODY-HAIR.md).
- *
- * The axillary layer is adult-only: `paintStopTable` paints it at zero unless
- * the input says the figure is an adult, and the body hair model gives it no
- * coverage under 18 either way.
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
 import { groupFaces } from "../../format/assetFormat.ts";
@@ -251,17 +248,11 @@ function terminalPaint(group: BodyHairGroup, input: SkinPaintInput, length: numb
 const LIPS_TARGETS = LIPS_LAYER.targets;
 const AREOLA_TARGETS = ["breast/nipple-size-incr"];
 
-function terminalLayer(
-  id: string,
-  mask: MaskName,
-  group: BodyHairGroup,
-  extra: Partial<Pick<StrandLayer, "adultOnly">> = {},
-): StrandLayer {
+function terminalLayer(id: string, mask: MaskName, group: BodyHairGroup): StrandLayer {
   return {
     id,
     kind: "strands",
     targets: [...LIPS_TARGETS, ...AREOLA_TARGETS],
-    ...extra,
     fields: (assets) => ({ mask: masksOf(assets)[mask], coord: null }),
     paint: (input) => terminalPaint(group, input, BODY_HAIR_FIBRE[group].length),
   };
@@ -302,15 +293,14 @@ export const VELLUS_LAYER: StrandLayer = {
 
 /**
  * Terminal body hair drawn as strands, by group: the sparse, fine hair lying
- * on the limbs and buttocks, and the armpit's (adult-only). The beard and the
- * trunk's hair stand off the skin and are dense, so they are the coat's
- * (`BODY_HAIR_COAT`), long hair the cards', and pubic hair the adult pack's.
+ * on the limbs and buttocks. The beard, the trunk's hair and the armpits' stand
+ * off the skin and are dense, so they are the coat's (`BODY_HAIR_COAT`), long
+ * hair the cards', and pubic hair the adult pack's.
  */
 export const TERMINAL_HAIR_LAYERS: readonly StrandLayer[] = [
   terminalLayer("hair-buttocks", "buttocks", "buttocks"),
   terminalLayer("hair-arms", "arms", "arms"),
   terminalLayer("hair-legs", "legs", "legs"),
-  terminalLayer("hair-axillary", "axillary", "axillary", { adultOnly: true }),
 ];
 
 /** Every body hair layer, in stack order: vellus, then terminal hair. */

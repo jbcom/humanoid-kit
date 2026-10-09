@@ -10,6 +10,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { ADDITIONAL_ASSETS, encodeClip, PUNKDUCK_CLIPS } from "../scripts/lib/packAnimations.ts";
 import { Animator, DEFAULT_FADE } from "../src/animation/animator.ts";
+import { CLEARANCE_TOLERANCE, overlaps } from "../src/animation/clearance.ts";
 import {
   blendRotations,
   clipTime,
@@ -401,6 +402,86 @@ describe("a walking figure's feet", () => {
       for (const fig of [figure("average", 25), figure("heavy", 75), figure("slim", 6)]) {
         const d = stanceDrift(fig, clip(id), 3);
         expect(d.worst, `${id} ${fig.name}: ${(d.worst * 1000).toFixed(1)} mm`).toBeLessThan(0.01);
+      }
+    }
+  });
+});
+
+describe("clearance: no part of the body through another", () => {
+  const q = () => new Float32Array(BONES.length * 4);
+
+  it("measures a capsule per part from the figure's own skin: plausible radii, larger on the heavy body than the slim", () => {
+    const slim = figure("slim", 25).segments;
+    const heavy = figure("heavy", 25).segments;
+    expect(slim).toHaveLength(14);
+    const r = (segs: typeof slim, id: string) => segs.find((x) => x.id === id)?.radius as number;
+    expect(r(slim, "torso")).toBeGreaterThan(0.07);
+    expect(r(slim, "torso")).toBeLessThan(0.16);
+    expect(r(slim, "thigh.L")).toBeGreaterThan(0.045);
+    expect(r(slim, "thigh.L")).toBeLessThan(0.1);
+    expect(r(heavy, "thigh.L")).toBeGreaterThan(r(slim, "thigh.L"));
+    expect(r(figure("average", 6).segments, "thigh.L")).toBeLessThan(
+      r(figure("average", 25).segments, "thigh.L"),
+    );
+  });
+
+  it("finds legs crossed through each other, and finds nothing in the rest pose", () => {
+    const fig = figure("average", 25);
+    const r = setIdentity(q());
+    const turn = (bone: string, axis: 0 | 1 | 2, degrees: number) => {
+      const half = (degrees * Math.PI) / 360;
+      const v = [0, 0, 0, Math.cos(half)];
+      v[axis] = Math.sin(half);
+      r.set(v, BONES.indexOf(bone) * 4);
+    };
+    // Both thighs swung 25 degrees across the midline: the shins pass through one another.
+    turn("upperleg01.L", 2, -25);
+    turn("upperleg01.R", 2, 25);
+    const hit = overlaps(fig.rest, fig.segments, r).sort((a, b) => b.depth - a.depth)[0];
+    expect(hit?.depth, `${hit?.a} ${hit?.b}`).toBeGreaterThan(CLEARANCE_TOLERANCE);
+    expect([hit?.a, hit?.b].sort().join(" ")).toMatch(/shin|foot/);
+    for (const o of overlaps(fig.rest, fig.segments, setIdentity(q())))
+      expect(o.depth, `${o.a} ${o.b}`).toBeLessThan(0);
+  });
+
+  it("holds in every frame of every clip on nine figures: no part is through another by more than the capsules' tolerance", () => {
+    for (const c of manifest.clips) {
+      const k = clip(c.id);
+      for (const fig of allFigures()) {
+        const r = q();
+        let worst = { depth: Number.NEGATIVE_INFINITY, pair: "", frame: 0 };
+        for (let f = 0; f < k.frames; f++) {
+          sampleClip(k, f / k.fps, r);
+          for (const o of overlaps(fig.rest, fig.segments, r))
+            if (o.depth > worst.depth) worst = { depth: o.depth, pair: `${o.a} ${o.b}`, frame: f };
+        }
+        expect(
+          worst.depth,
+          `${c.id} on ${fig.name}: ${worst.pair} at frame ${worst.frame}`,
+        ).toBeLessThan(CLEARANCE_TOLERANCE);
+      }
+    }
+  });
+});
+
+describe("clearance under the foot lock", () => {
+  it("holds with the legs turned to keep the feet planted: no leg through the other, on nine figures", () => {
+    for (const id of ["walk_normal", "walk_female"]) {
+      for (const fig of allFigures()) {
+        const an = new Animator(BONES.length, fig.rest, fig.ground);
+        an.play(clip(id));
+        let worst = Number.NEGATIVE_INFINITY;
+        let pair = "";
+        for (let i = 0; i < 180; i++) {
+          an.update(1 / 60);
+          if (i < 60) continue;
+          for (const o of overlaps(fig.rest, fig.segments, an.rotations))
+            if (o.depth > worst) {
+              worst = o.depth;
+              pair = `${o.a} ${o.b}`;
+            }
+        }
+        expect(worst, `${id} on ${fig.name}: ${pair}`).toBeLessThan(CLEARANCE_TOLERANCE);
       }
     }
   });

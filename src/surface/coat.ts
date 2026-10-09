@@ -41,6 +41,13 @@ export interface CoatRegion {
   targets: readonly string[];
   mask(assets: HumanoidAssets): Float32Array;
   paint(input: SkinPaintInput): CoatPaint;
+  /**
+   * A region only an adult grows (axillary hair, under the age policy):
+   * `paintCoat` leaves it unpainted, without asking its `paint`, unless the
+   * input says the figure is an adult, so an input that does not say fails
+   * closed, as for an `adultOnly` skin layer.
+   */
+  adultOnly?: true;
 }
 
 /**
@@ -169,8 +176,9 @@ export function coatMasks(assets: HumanoidAssets, regions: readonly CoatRegion[]
 /**
  * Each region's paint for a figure, `COAT_REGION_LIMIT` rows of eight floats:
  * (cover, length, density, lie) then (red, green, blue, width). Regions past
- * the list, and a region that paints no cover, are zero rows. A paint out of
- * range is an error, never clamped.
+ * the list, a region that paints no cover, and an adult-only region on a figure
+ * not known to be an adult are zero rows. A paint out of range is an error,
+ * never clamped.
  */
 export function paintCoat(
   regions: readonly CoatRegion[],
@@ -179,6 +187,8 @@ export function paintCoat(
 ): Float32Array {
   out.fill(0);
   regions.forEach((r, k) => {
+    // The one place an adult-only region is gated: it is not even asked to paint.
+    if (r.adultOnly && input.adult !== true) return;
     const p = r.paint(input);
     if (!(p.length > 0 && p.length <= MAX_COAT_LENGTH && p.density > 0 && p.width > 0))
       throw new RangeError(

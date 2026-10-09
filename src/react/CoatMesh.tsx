@@ -41,6 +41,16 @@ function coatInput(recipe: Recipe) {
   };
 }
 
+/**
+ * The coat's paint for a recipe, or null when the recipe asks for no body
+ * hair: a figure grows a coat only when its recipe says so.
+ */
+export function coatPaintFor(recipe: Recipe): Float32Array | null {
+  if (!recipe.bodyHair) return null;
+  const paint = paintCoat(COAT_REGIONS, coatInput(recipe));
+  return coatPainted(paint) ? paint : null;
+}
+
 /** The figure's height on screen is about its world height over this many metres. */
 const FIGURE_HEIGHT = 1.8;
 const centre = new Vector3();
@@ -64,23 +74,25 @@ export function CoatMesh({
   /** Changes whenever the figure is re-evaluated (and its outfit's index may change). */
   shape: object;
 }) {
-  const paint = useMemo(() => paintCoat(COAT_REGIONS, coatInput(recipe)), [recipe]);
+  const paint = useMemo(() => coatPaintFor(recipe), [recipe]);
   const material = useMemo(() => {
     const m = new CoatMaterial();
     if (dual) applyDualSkinning(m, dual);
     return m;
   }, [dual]);
   useEffect(() => () => material.dispose(), [material]);
-  useEffect(() => material.setPaint(paint), [material, paint]);
+  useEffect(() => {
+    if (paint) material.setPaint(paint);
+  }, [material, paint]);
   // Which regions grow is what decides the triangles; their length and colour are uniforms.
   const growing = useMemo(
-    () => COAT_REGIONS.map((_, k) => (paint[k * 8] as number) > 0).join(","),
+    () => (paint ? COAT_REGIONS.map((_, k) => (paint[k * 8] as number) > 0).join(",") : ""),
     [paint],
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: shape re-reads the body's (outfit-masked) index; growing stands for paint's regions
   const geometry = useMemo(() => {
     const index = body.getIndex();
-    if (!index || !coatPainted(paint)) return null;
+    if (!index || !paint) return null;
     const triangles = coatTriangles(index.array, fields.masks, paint);
     return triangles.length ? coatGeometry(body, fields, triangles, coatShellCount(0)) : null;
   }, [body, fields, growing, shape]);

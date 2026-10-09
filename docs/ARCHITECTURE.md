@@ -1468,22 +1468,25 @@ Old recipes evaluate and serialise as before.
   axis-aligned ramps, had straight edges down the cheeks and a rectangle on
   the neck. The beard's masks are redrawn with the coat, along the face's
   own lines.
-- *Terminal hair is one strand layer per group.* Each group (chest, abdomen,
-  back, buttocks, arms, legs, axillary) has its own coverage, colour, density
-  and length, so its own layer. Masks are measured from the base mesh: the skin
+- *Sparse terminal hair is one strand layer per group.* Each group drawn as
+  strands (buttocks, arms, legs) has its own coverage, colour, density and
+  length, so its own layer. Masks are measured from the base mesh: the skin
   zones (cut off where a zone's weight falls under 0.2, so supports stay near
   their region), the vertex normals, and the armpits' hollows. The limbs stop
   short of the hands and feet, which carry little terminal hair and whose
   layers crowd the atlas.
 - *The beard defaults to none.* Clean-shaven is the neutral recipe; terminal
   body hair and vellus are on by default for age and sex.
-- *Axillary hair is an adult-only body layer; pubic hair is the adult pack's.*
-  The armpit's mask comes from the base mesh, so its layer lives in the core,
-  where a layer flag, `adultOnly`, makes `paintStopTable` paint it at zero
-  unless the input says the figure is an adult, failing closed when it does
-  not say. The model's coverage is zero for it under 18 as well, the age policy
-  refuses a recipe that asks for it, and every other group's mask is cut out
-  where it lies. Pubic hair is the adult pack's, like every genital-region
+- *Axillary hair is an adult-only coat region; pubic hair is the adult pack's.*
+  The armpit's hair is dense and a couple of centimetres long, so it is the
+  coat's; its mask comes from the base mesh, so the region lives in the core,
+  where a region flag, `adultOnly`, makes `paintCoat` leave it unpainted, without
+  asking its paint, unless the input says the figure is an adult, failing
+  closed when it does not say. The model's coverage is zero for it under 18 as
+  well, the age policy refuses a recipe that asks for it, and every other
+  group's mask is cut out where it lies. (A first version drew it as a strand
+  layer with the same flag on skin layers; with it moved, the layer flag had no
+  user and went.) Pubic hair is the adult pack's, like every genital-region
   feature: its mask and its place in the stack come from the adult pack's
   manifest (`AdultAnatomySpec`), so the core names no part of it, and it
   appears only when the pack is loaded. The core keeps the recipe's `pubic`
@@ -1530,6 +1533,9 @@ module.
   (outfit-masked) index cut to the triangles whose corners carry a painted
   region; built when the outfit or the set of painted regions changes, so a
   figure without a coat draws nothing and stubble draws only the face.
+  A recipe without `bodyHair` grows no coat at all (`coatPaintFor`): until the
+  coat's sub-pixel strands resolve as coverage rather than single-pixel
+  points, default figures stay bare instead of speckled.
 - *One instanced draw.* The coat is a skinned mesh on the body's own geometry
   and skeleton, instanced N times; shell `i` is the skin offset along the rest
   normal by `(i + 1) / N` of the hair's length, leaning along the comb, before
@@ -1707,8 +1713,33 @@ front leg is already straight in the clip, and a pin ahead of it cannot be reach
 A hand-keyed clip is the limit, not the solver: a clip that planted its feet would
 leave nothing to hold.
 
-**Not here yet:** playing it in `<Humanoid>`, the Quaternius breadth set (retargeted
-through a T-pose), and the no-interpenetration check at a clip's extremes.
+**In the renderer.** `<Humanoid animation={{ library, clip }}>` plays a clip
+(`useFigureAnimation`, `src/react`): each frame the animator's pose, with
+`pose.faceUnits` laid over it, goes to the skeleton, the attachments' occlusion
+keys, the skin's dual quaternions, the figure's lift onto the ground (from its soles
+for a clip that stands on the ground, from its lowest vertex for one that does not),
+its presence (derived again every third frame) and, for a clip that carries it, the
+group (moved forward in its own frame by the root motion of each frame, so a parent's
+transform and a new `position` still compose). None of it goes through React state,
+so a figure animates without re-rendering, and while it plays the figure lifts itself
+and `onGroundOffset` is not called. `time` puts the figure at a time in the clip
+(held, with `paused`), which the QA shots and sheets use (`?anim=walk_normal&t=0.4`).
+`e2e/animation.spec.ts` proves it in a browser: the feet are where the clip has them
+at a time, a walking figure is carried forward on its feet, and the planted ball's
+world position holds.
+
+**Clearance.** `src/animation/clearance.ts` checks a pose for one part of the body
+through another: the body as 14 capsules (head, torso, and each side's upper arm,
+forearm, hand, thigh, shin and foot), each between two joints with a radius measured
+from the figure's own skin (a hand and a foot are flat, so a half and 0.6 of it), and
+the depth to which two that are not neighbours overlap. The capsules are coarse, so
+`CLEARANCE_TOLERANCE` is 2.5 cm. `tests/animation.test.ts` holds every frame of
+every clip, on nine figures, and the walks as the foot lock turns their legs, to it;
+the widest is the crawl's arm skimming the thigh at 19 mm, and the walks stay clear
+of every other part (a hand clears the thigh by 10 to 22 mm), and a test that crosses
+two legs shows the check finds a collision.
+
+**Not here yet:** the Quaternius breadth set (retargeted through a T-pose).
 
 ## Layers
 
