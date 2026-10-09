@@ -2,6 +2,7 @@
 import type { WardrobeEntry } from "../editor/wardrobe.ts";
 import type {
   AdultAnatomySpec,
+  HairKind,
   LoadOptions,
   ShapeModifierEntry,
   SliderTask,
@@ -11,6 +12,7 @@ import type {
   AdultSurfaceTopology,
   Evaluation,
   GarmentTopology,
+  HairTopology,
   ModelOptions,
   ModelTopology,
   RenderFeatures,
@@ -40,6 +42,8 @@ export interface ReadyInfo {
    */
   presenceJoints: PresenceJoints | null;
   adultAnatomyLoaded: boolean;
+  /** The hair pack's styles, in the order a picker offers them; null when no hair pack was loaded. */
+  hair: HairInfo | null;
   /**
    * The adult anatomy pack's features and state morphs (`AdultAnatomySpec`),
    * which the skin paint and the shape signals read; absent without the pack.
@@ -50,6 +54,11 @@ export interface ReadyInfo {
    * loaded; empty without that pack. A recipe wears them by `id`.
    */
   wardrobe: WardrobeEntry[];
+}
+
+/** What a picker needs of the hair pack before any style's geometry has loaded. */
+export interface HairInfo {
+  styles: { id: string; label: string; tags: string[]; kind: HairKind }[];
 }
 
 /** Which controls shape each rendered vertex: what a tap on the figure opens. */
@@ -102,6 +111,13 @@ export type WorkerResponse =
   | { type: "posedOcclusion"; id: number; attachments: Float32Array[] | null }
   | { type: "adultLayers"; id: number; update: LayerFieldsUpdate | null }
   | { type: "adultSurface"; id: number; topology: AdultSurfaceTopology | null }
-  | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
+  | {
+      type: "evaluated";
+      id: number;
+      evaluation: Evaluation;
+      ms: number;
+      /** The worn hair style's static data, with the first evaluation that wears it; absent after. */
+      hairTopology?: HairTopology;
+    }
   | { type: "garment"; id: number; topology: GarmentTopology }
   | { type: "error"; id: number; message: string; name: string };

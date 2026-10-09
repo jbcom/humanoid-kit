@@ -41,6 +41,7 @@ import type {
   AttachmentTopology,
   Evaluation,
   GarmentTopology,
+  HairTopology,
   SurfaceEvaluation,
   SurfaceTopology,
 } from "../model/humanoidModel.ts";
@@ -57,9 +58,21 @@ import {
   followDualSkinning,
 } from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
+import {
+  HairMaterial,
+  isMultisampled,
+  setHairOcclusionAttribute,
+  setHairStrandAttributes,
+} from "../render/hairMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
 import { setBodyOcclusionAttributes, setOcclusionAttributes } from "../render/occlusion.ts";
-import { CURVATURE_ATTRIBUTE, SkinMaterial, UV_SCALE_ATTRIBUTE } from "../render/skinMaterial.ts";
+import {
+  CURVATURE_ATTRIBUTE,
+  SCALP_ATTRIBUTE,
+  SkinMaterial,
+  UV_SCALE_ATTRIBUTE,
+} from "../render/skinMaterial.ts";
+import { faceSignalBasis, faceSignals } from "../rig/faceSignals.ts";
 import { flexionRig, jointFlexion } from "../rig/flexion.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
 import {
@@ -71,6 +84,7 @@ import {
   wornGroundOffset,
 } from "../rig/pose.ts";
 import { skinDualShare } from "../rig/skinShare.ts";
+import { DEFAULT_HAIR_COLOUR, type HairColour, hairAlbedo } from "../surface/hairTone.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 import { sameEntries } from "./sameEntries.ts";
@@ -199,11 +213,11 @@ export interface HumanoidPose {
 export interface HumanoidPick {
   /**
    * `"body"`, `"adultBody"` (the adult surface, for a figure aged 18 or over when
-   * the adult pack refines the body), `"garment"` (then `garment` names it), or
-   * the attachment's index in `ModelTopology.attachments`. Look the vertex up in
+   * the adult pack refines the body), `"hair"`, `"garment"` (then `garment` names
+   * it), or the attachment's index in `ModelTopology.attachments`. Look the vertex up in
    * the pick map's `render.body` or `render.adultBody` accordingly.
    */
-  part: "body" | "adultBody" | "garment" | number;
+  part: "body" | "adultBody" | "hair" | "garment" | number;
   /** The tapped garment's id, when `part` is `"garment"`. */
   garment?: string;
   /** The render vertex of that mesh nearest the tap. */
@@ -220,6 +234,8 @@ function makeBodyGeometry(
   g.setAttribute(CURVATURE_ATTRIBUTE, new BufferAttribute(new Float32Array(t.vertexCount), 1));
   g.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(t.uvScale, 1));
   setBodyOcclusionAttributes(g, t.occlusion);
+  // Where the worn hair style grows from the skin; none until a style is worn.
+  g.setAttribute(SCALP_ATTRIBUTE, new BufferAttribute(new Float32Array(t.vertexCount), 1));
   return g;
 }
 
@@ -501,6 +517,83 @@ function AttachmentMesh({
   );
 }
 
+/** Loads `url` as the material's diffuse map (sRGB), and frees it when the url or material changes. */
+function useDiffuseTexture(
+  material: MeshStandardMaterial,
+  url: string | null,
+  report: (e: Error) => void,
+): void {
+  const reportRef = useLatest(report);
+  useEffect(() => {
+    if (!url) return;
+    let live = true;
+    new TextureLoader().loadAsync(url).then(
+      (tex) => {
+        if (!live) {
+          tex.dispose();
+          return;
+        }
+        tex.colorSpace = SRGBColorSpace;
+        material.map = tex;
+        material.needsUpdate = true;
+      },
+      (e: unknown) => {
+        if (live) reportRef.current(new Error(`texture ${url} failed to load: ${String(e)}`));
+      },
+    );
+    return () => {
+      live = false;
+      material.map?.dispose();
+      material.map = null;
+    };
+  }, [url, material, reportRef]);
+}
+
+/** The worn hair style: alpha cards skinned to the figure, coloured by the recipe. */
+function HairMesh({
+  topology,
+  geometry,
+  skeleton,
+  colour,
+  multisampled,
+  visible,
+  report,
+  shape,
+}: {
+  topology: HairTopology;
+  geometry: BufferGeometry;
+  skeleton: Skeleton;
+  colour: HairColour;
+  multisampled: boolean;
+  visible: boolean;
+  report: (e: Error) => void;
+  shape: object;
+}) {
+  const material = useMemo(() => new HairMaterial(), []);
+  useDiffuseTexture(material, topology.textureUrl, report);
+  // The colour is a few numbers; effects depend on their values, not the recipe's object identity.
+  const { eumelanin, pheomelanin, grey, override } = colour;
+  const overrideKey = override?.join(",") ?? "";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: overrideKey stands for override's values
+  useEffect(() => {
+    material.setColour({ eumelanin, pheomelanin, grey, override });
+  }, [material, eumelanin, pheomelanin, grey, overrideKey]);
+  useEffect(() => material.setStrand(topology.strand), [material, topology]);
+  useEffect(() => material.setMultisampled(multisampled), [material, multisampled]);
+  useEffect(() => () => material.dispose(), [material]);
+  return (
+    <SkinnedPart
+      geometry={geometry}
+      material={material}
+      skeleton={skeleton}
+      visible={visible}
+      part="hair"
+      renderOrder={topology.zDepth}
+      shape={shape}
+    />
+  );
+}
+
 function GarmentMesh({
   topology,
   geometry,
@@ -624,7 +717,8 @@ export function Humanoid({
       setOcclusionAttributes(g, t.occlusion);
       return g;
     });
-    return { body, attachments };
+    // Hair styles' geometries are made when a figure first wears the style.
+    return { body, attachments, hair: new Map<string, BufferGeometry>() };
   }, [ready]);
   // A worn set the pack did not bake arrives at rest only; its pose-following
   // corners replace that once the worker has baked them.
@@ -697,6 +791,22 @@ export function Humanoid({
   useEffect(() => () => adultGeometry?.dispose(), [adultGeometry]);
   /** Which body surface the geometry last written is for. */
   const [surface, setSurface] = useState<"base" | "adult">("base");
+  /** The worn hair style: its static data and geometry, once an evaluation has brought them. */
+  const [hair, setHair] = useState<{ topology: HairTopology; geometry: BufferGeometry } | null>(
+    null,
+  );
+  // Alpha-to-coverage needs a multisampled framebuffer; hair falls back to a plain alpha test.
+  const multisampled = useThree((s) => isMultisampled(s.gl.getContext()));
+  /** Which style's scalp each body geometry holds (null: none), so it is written when it changes. */
+  const scalpOf = useRef(new WeakMap<BufferGeometry, string | null>());
+  // The scalp shows the hair's own colour under it, so it follows the recipe's hair colour.
+  const wornHair = hair !== null;
+  const wornColour = recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR;
+  const overrideKey = wornColour.override?.join(",") ?? "";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: overrideKey stands for the override's values
+  useEffect(() => {
+    skin.setScalp(wornHair ? hairAlbedo(wornColour) : null);
+  }, [skin, wornHair, wornColour.eumelanin, wornColour.pheomelanin, wornColour.grey, overrideKey]);
 
   // The pose: face units blended into bone rotations (rest when absent), and
   // the attachments' occlusion following it.
@@ -794,6 +904,7 @@ export function Humanoid({
     () => () => {
       geometries?.body.dispose();
       for (const g of geometries?.attachments ?? []) g.dispose();
+      for (const g of geometries?.hair.values() ?? []) g.dispose();
     },
     [geometries],
   );
@@ -830,6 +941,12 @@ export function Humanoid({
     const rest = restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads);
     return jointFlexion(flexionRig(rest), rest, rotations ?? IDENTITY_POSE(ready.rig.bones.length));
   }, [figure, ready, rotations]);
+  // So does the face in it (`face.smile`, …), for the lines an expression draws.
+  const faceBasis = useMemo(() => (ready ? faceSignalBasis(ready.rig) : null), [ready]);
+  const face = useMemo(
+    () => (faceBasis && rotations ? faceSignals(faceBasis, rotations) : {}),
+    [faceBasis, rotations],
+  );
   useEffect(() => {
     const s = recipe.skin;
     skin.setAppearance({
@@ -842,13 +959,14 @@ export function Humanoid({
       flush: s.flush,
       lips: s.lips,
       areola: s.areola,
-      signals: { ...signals, ...flexion },
+      signals: { ...signals, ...flexion, ...face },
+      age: recipe.macros.age,
       // Which adult layers paint: only for an adult, only for the anatomy applied
       // (the adult pack's own list of features; none without the pack).
       adult: isAdult(recipe),
       anatomy: appliedAnatomy(recipe, ready?.anatomy?.features ?? []),
     });
-  }, [skin, recipe, signals, flexion, ready]);
+  }, [skin, recipe, signals, flexion, face, ready]);
 
   // Only the signals that change the shape re-evaluate the figure; a stable
   // key keeps a colour-only change (or a new object with the same values) from
@@ -917,6 +1035,28 @@ export function Humanoid({
           const g = geometries.attachments[i];
           if (g) writeGeometry(g, a);
         });
+        const hairTopology = ev.hair ? client.hairTopology(ev.hair.id) : undefined;
+        if (ev.hair && hairTopology) {
+          let g = geometries.hair.get(ev.hair.id);
+          if (!g) {
+            g = makeGeometry(hairTopology);
+            setHairOcclusionAttribute(g, hairTopology.occlusion);
+            setHairStrandAttributes(g, hairTopology.fade, hairTopology.growth, hairTopology.fin);
+            geometries.hair.set(ev.hair.id, g);
+          }
+          writeGeometry(g, ev.hair);
+          setHair({ topology: hairTopology, geometry: g });
+        } else setHair(null);
+        // The skin under the worn style takes the scalp tint; a figure with none has no scalp.
+        const style = ev.hair && hairTopology ? ev.hair.id : null;
+        if (!scalpOf.current.has(target) || scalpOf.current.get(target) !== style) {
+          scalpOf.current.set(target, style);
+          const attribute = target.getAttribute(SCALP_ATTRIBUTE) as BufferAttribute;
+          const scalp = ev.surface === "adult" ? hairTopology?.adultScalp : hairTopology?.scalp;
+          if (style && scalp) attribute.copyArray(scalp);
+          else attribute.array.fill(0);
+          attribute.needsUpdate = true;
+        }
         ev.garments.forEach((a, i) => {
           const g = wornRef.current?.geometries[i];
           if (g) writeGeometry(g, a);
@@ -1013,6 +1153,19 @@ export function Humanoid({
               />
             ) : null;
           })}
+          {hair && (
+            <HairMesh
+              key={hair.topology.id}
+              topology={hair.topology}
+              geometry={hair.geometry}
+              skeleton={rig.skeleton}
+              colour={recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR}
+              multisampled={multisampled}
+              visible={shown}
+              report={report}
+              shape={shape}
+            />
+          )}
           {worn?.topologies.map((t, i) => {
             const g = worn.geometries[i];
             return g ? (

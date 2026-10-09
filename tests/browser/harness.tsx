@@ -16,10 +16,14 @@ import {
   type SliderTask,
 } from "../../src/format/assetFormat.ts";
 import type { Recipe } from "../../src/recipe/recipe.ts";
-import type { ReadyInfo } from "../../src/worker/protocol.ts";
+import type { HairInfo, ReadyInfo } from "../../src/worker/protocol.ts";
 import { EMPTY_RIG } from "../emptyRig.ts";
 
-export function readyInfo(withAdultPack = false, withClothingPack = false): ReadyInfo {
+export function readyInfo(
+  withAdultPack = false,
+  withClothingPack = false,
+  hair: HairInfo | null = null,
+): ReadyInfo {
   const body = bodyManifest as unknown as {
     modifiers: ShapeModifierEntry[];
     sliders: SliderTask[];
@@ -38,6 +42,7 @@ export function readyInfo(withAdultPack = false, withClothingPack = false): Read
     presenceJoints: {} as never,
     adultAnatomyLoaded: withAdultPack,
     wardrobe: withClothingPack ? wardrobeOf(clothingManifest as unknown as ClothingManifest) : [],
+    hair,
   };
 }
 

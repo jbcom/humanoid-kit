@@ -8,6 +8,7 @@ import { CREATOR_CSS } from "../../src/editor/ui/styles.ts";
 import type { HumanoidEditor } from "../../src/editor/ui/useHumanoidEditor.ts";
 import { WardrobePanel } from "../../src/editor/ui/WardrobePanel.tsx";
 import { createRecipe } from "../../src/recipe/recipe.ts";
+import { DEFAULT_HAIR_COLOUR } from "../../src/surface/hairTone.ts";
 import { EditorHarness, readyInfo } from "./harness.tsx";
 
 const Styled = ({ children }: { children: React.ReactNode }) => (
@@ -249,5 +250,96 @@ describe("AppearancePanel", () => {
       .element(screen.getByRole("button", { name: "Green" }))
       .toHaveAttribute("aria-pressed", "true");
     expect(latest?.recipe.eyes.iris).toEqual([0.1, 0.16, 0.06]);
+  });
+
+  describe("hair", () => {
+    const hair = {
+      styles: [
+        { id: "short02", label: "Short, tousled", tags: ["short"], kind: "scalp" as const },
+        { id: "long01", label: "Long, straight", tags: ["long"], kind: "scalp" as const },
+        // Brows and lashes share the pack but are not hair styles the creator offers.
+        { id: "brow01", label: "Brows, natural", tags: ["brows"], kind: "brows" as const },
+      ],
+    };
+    const panel = async (info = readyInfo(false, false, hair)) => {
+      const seen: { editor?: HumanoidEditor } = {};
+      const screen = await render(
+        <Styled>
+          <EditorHarness ready={info} onEditor={(e) => (seen.editor = e)}>
+            {(editor) => <AppearancePanel editor={editor} onFocus={noFocus} />}
+          </EditorHarness>
+        </Styled>,
+      );
+      return { screen, seen };
+    };
+
+    it("offers no hair controls without a hair pack", async () => {
+      const { screen } = await panel(readyInfo());
+      await expect.element(screen.getByText("Green")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Long, straight" }).elements()).toHaveLength(0);
+      expect(screen.getByRole("button", { name: "Black hair" }).elements()).toHaveLength(0);
+    });
+
+    it("lists the pack's styles and none, and wears the one chosen", async () => {
+      const { screen, seen } = await panel();
+      await expect
+        .element(screen.getByRole("button", { name: "None" }))
+        .toHaveAttribute("aria-pressed", "true");
+      await screen.getByRole("button", { name: "Long, straight" }).click();
+      await expect
+        .element(screen.getByRole("button", { name: "Long, straight" }))
+        .toHaveAttribute("aria-pressed", "true");
+      expect(seen.editor?.recipe.hair?.style).toBe("long01");
+      await expect
+        .element(screen.getByRole("button", { name: "Brows, natural" }))
+        .not.toBeInTheDocument();
+      // Choosing a style keeps the colour, and the default colour is the starting point.
+      expect(seen.editor?.recipe.hair?.colour).toEqual(DEFAULT_HAIR_COLOUR);
+      await screen.getByRole("button", { name: "None" }).click();
+      expect(seen.editor?.recipe.hair?.style).toBeNull();
+    });
+
+    it("sets a natural colour from the palette, marks it, and the pigment sliders move off it", async () => {
+      const { screen, seen } = await panel();
+      await screen.getByRole("button", { name: "Blond hair" }).click();
+      await expect
+        .element(screen.getByRole("button", { name: "Blond hair" }))
+        .toHaveAttribute("aria-pressed", "true");
+      expect(seen.editor?.recipe.hair?.colour).toEqual({
+        eumelanin: 0.22,
+        pheomelanin: 0.2,
+        grey: 0,
+        override: null,
+      });
+      await expect
+        .element(screen.getByRole("slider", { name: "Dark pigment" }))
+        .toHaveAttribute("aria-valuetext", "22%");
+      await screen.getByRole("button", { name: "Reset Dark pigment" }).click();
+      await expect
+        .element(screen.getByRole("button", { name: "Blond hair" }))
+        .toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("dyes the hair from the colour picker, and a palette colour undoes the dye", async () => {
+      const { screen, seen } = await panel();
+      const picker = screen.getByLabelText("Custom hair colour").element() as HTMLElement;
+      const input = picker.querySelector("input") as HTMLInputElement;
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      set?.call(input, "#2060c0");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await expect.poll(() => seen.editor?.recipe.hair?.colour.override).not.toBeNull();
+      expect(seen.editor?.recipe.hair?.colour.override?.[2]).toBeGreaterThan(0.4);
+      await screen.getByRole("button", { name: "Black hair" }).click();
+      expect(seen.editor?.recipe.hair?.colour.override).toBeNull();
+    });
+
+    it("is undoable, one step per swatch", async () => {
+      const { screen, seen } = await panel();
+      await screen.getByRole("button", { name: "Red hair" }).click();
+      await screen.getByRole("button", { name: "Platinum hair" }).click();
+      expect(seen.editor?.recipe.hair?.colour.eumelanin).toBe(0.08);
+      seen.editor?.undo();
+      await expect.poll(() => seen.editor?.recipe.hair?.colour.eumelanin).toBe(0.1);
+    });
   });
 });

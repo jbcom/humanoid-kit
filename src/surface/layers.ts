@@ -19,6 +19,13 @@ import type { Rgb, SkinTone } from "./skinTone.ts";
 /** What a layer's paint is computed from. */
 export interface SkinPaintInput {
   tone: SkinTone;
+  /**
+   * The figure's age in years (`recipe.macros.age`), for layers that change
+   * with it: thicker plantar callus, flatter ridges, thicker toenails. Absent
+   * is "no age given" (a layer paints as for a young adult), so an input built
+   * without it still paints.
+   */
+  age?: number;
   /** The recipe's regional skin parameters (0..1 each). */
   flush: number;
   lips: number;
