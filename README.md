@@ -232,7 +232,7 @@ source file that does not prove CC0 from its own content, and each pack's
 SHA-256 of every output. `NOTICE.md` has the details. "MakeHuman" is the upstream
 project's name; humanoid-kit is not affiliated with it.
 
-The public demo ships the body pack only. `pnpm check:pages` fails if any
+The public demo ships the body pack and the hair pack. `pnpm check:pages` fails if any
 adult anatomy data file appears anywhere in the built site, or if the demo app's
 build names the pack's package, targets or modifiers.
 

@@ -67,6 +67,7 @@ class FakeWorker {
             sliders: [],
             rig: EMPTY_RIG,
             adultAnatomyLoaded: false,
+            hair: null,
           });
       }, 1);
       return;

@@ -481,6 +481,43 @@ a coloured texture; everything in the pure core is testable in Node.
   claim, or by a `license CC0` line the `.obj` contradicts) cannot be packed by
   naming it.
 
+- *The worker loads a style on the first evaluation that wears it, and sends
+  its static data once.* `HumanoidWorkerClient` answers `ready` with the styles'
+  ids, labels and tags (`ReadyInfo.hair`) at once, so a picker never waits. An
+  evaluation whose recipe names a style waits for that style's binary only, as
+  one needing a target file waits for its stage; the first reply for a style
+  carries its `HairTopology` and the client keeps it (`client.hairTopology(id)`),
+  so every `Evaluation.hair` can be drawn. A failed fetch rejects that
+  evaluation with the reason and is forgotten, so a later one retries. Colour
+  changes evaluate nothing: they set a material colour.
+- *Cards are drawn with alpha-to-coverage when the canvas is multisampled, and
+  an alpha test when it is not.* The options for cut-out cards are sorted
+  alpha blending, hashed alpha, and an alpha test or alpha-to-coverage.
+  Blending needs the cards sorted (they overlap in layers and a per-mesh sort
+  gets pairs wrong) and shows halos where translucent texels overlap. Hashed
+  alpha trades the sort for noise, which wants temporal accumulation to hide
+  (three's `alphaHash` has a fixed scale and no TAA here). Alpha-to-coverage
+  makes the cut-out's edge a few coverage samples smooth, writes depth, needs
+  no sorting, and so draws in the opaque queue, before the eyes' and teeth's
+  transparent cornea: hair in front of the eyes occludes them by the depth
+  buffer. It needs MSAA, which R3F's canvas has by default
+  (`gl.antialias`), and the shadow pass approximates it with a fixed 0.5 alpha
+  test. `<Humanoid>` asks the context whether its framebuffer is multisampled
+  (`isMultisampled`) and falls back to the plain alpha test, which is still
+  correct, with hard edges. The cut-off (0.4) sits below the texture's mid
+  alpha so mipmapped, minified cards keep their body.
+- *Highlights are anisotropic across the strands, from the measured direction.*
+  A fibre reflects like a brushed cylinder: a thin band across the strands. The
+  packer measures each style's strand direction and its coherence from the
+  strand map (a structure tensor over the opaque texels). `HairMaterial` is a
+  physical material whose `anisotropy` follows the coherence and whose
+  `anisotropyRotation` the direction, with a sheen in the hair's own colour for
+  fibre fuzz and a roughness that rises as the strands lose their direction
+  (frizz scatters wider). The tangent frame comes from UV derivatives, so no
+  tangent attribute is sent. A browser test builds a sphere and measures that
+  strands along V make a wider band than tall, along U the reverse, and none
+  round.
+
 **Costs and limits.** The pack is 3.5 MB for ten styles, mostly strand maps at
 1024 px; the curly styles are the largest (`afro01` 717 kB, `short01` 575 kB)
 because their alpha is fine detail. Hair has no physics and no strand shadows
@@ -503,7 +540,7 @@ pheomelanin spectrum, and blond, red and white are modelled, not measured
 | `src/model` | `HumanoidModel`, the evaluation pipeline | no |
 | `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
-| `src/render` | The skin and eye materials, the layer field atlas | three.js, no React |
+| `src/render` | The skin, eye and hair materials, the layer field atlas | three.js, no React |
 | `src/react` | `HumanoidProvider`, `Humanoid`, `StudioStage` and hooks | yes |
 | `src/editor/ui` | `HumanoidCreator` and its panels | yes |
 
@@ -514,7 +551,8 @@ against the playground.
 
 ## Public demo
 
-The GitHub Pages demo ships the body pack only. `pnpm check:pages` scans the
+The GitHub Pages demo ships the body pack and the hair pack (both CC0, neither
+adult). `pnpm check:pages` scans the
 built output (`dist-playground` and `docs/dist` by default) and fails if it
 contains an adult anatomy file (by SHA-256), the package name `humanoid-kit-adult-anatomy`,
 or the name of any of its targets or modifiers.

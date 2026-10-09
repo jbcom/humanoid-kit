@@ -24,7 +24,7 @@
 - [Documentation site](https://jbcom.github.io/humanoid-kit/): the published,
   browsable version of everything below.
 - [Playground](https://jbcom.github.io/humanoid-kit/playground/): the library's
-  own demo (body pack only).
+  own demo (body and hair packs).
 - [README](https://github.com/jbcom/humanoid-kit/blob/main/README.md): what works
   today, packages, install, quick start, age policy, roadmap.
 - [API reference](https://github.com/jbcom/humanoid-kit/blob/main/docs/API.md):

@@ -2,10 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { vi } from "vitest";
-import { adultDir, bodyDir } from "./fixtures.ts";
+import { adultDir, bodyDir, hairDir } from "./fixtures.ts";
 
 /**
- * Serves pack files from disk at http://packs/<body|adult>/<file>, like a
+ * Serves pack files from disk at http://packs/<body|adult|hair>/<file>, like a
  * static host. Returns the list of requested URLs, in order.
  */
 export function stubFetch(
@@ -22,7 +22,7 @@ export function stubFetch(
     const url = new URL(input);
     const [, pack, file] = url.pathname.split("/");
     if (options.hold && file === options.hold.file) await options.hold.until;
-    const dir = pack === "adult" ? adultDir : bodyDir;
+    const dir = pack === "adult" ? adultDir : pack === "hair" ? hairDir : bodyDir;
     const p = path.join(dir, file ?? "");
     if (file === options.missing || !fs.existsSync(p))
       return new Response("not found", { status: 404, statusText: "Not Found" });

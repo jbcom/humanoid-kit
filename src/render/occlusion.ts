@@ -64,8 +64,6 @@ export function setOcclusionAttributes(geometry: BufferGeometry, occlusion: Floa
  * attachments' materials).
  */
 export function patchOcclusion(shader: WebGLProgramParametersWithUniforms, keys: Vector3): void {
-  if (!shader.fragmentShader.includes("#include <aomap_fragment>"))
-    throw new Error("occlusion: three's aomap_fragment chunk moved");
   shader.uniforms.hkOcclusionKeys = { value: keys };
   shader.vertexShader = shader.vertexShader
     .replace(
@@ -92,13 +90,27 @@ varying float vHkOcclusion;`,
 			${CORNERS_B}.z * w.x * w.y * w.z;
 	}`,
     );
+  patchOcclusionFragment(shader);
+}
+
+/**
+ * The fragment half of the patch, shared with hair: scales every lighting term
+ * by the interpolated `vHkOcclusion` (floored at `OCCLUSION_FLOOR`), which the
+ * vertex shader of the caller sets.
+ */
+export function patchOcclusionFragment(
+  shader: WebGLProgramParametersWithUniforms,
+  floor = OCCLUSION_FLOOR,
+): void {
+  if (!shader.fragmentShader.includes("#include <aomap_fragment>"))
+    throw new Error("occlusion: three's aomap_fragment chunk moved");
   shader.fragmentShader = shader.fragmentShader
     .replace("#include <common>", "#include <common>\nvarying float vHkOcclusion;")
     .replace(
       "#include <aomap_fragment>",
       `#include <aomap_fragment>
 	{
-		float hkOcc = mix( ${OCCLUSION_FLOOR.toFixed(3)}, 1.0, clamp( vHkOcclusion, 0.0, 1.0 ) );
+		float hkOcc = mix( ${floor.toFixed(3)}, 1.0, clamp( vHkOcclusion, 0.0, 1.0 ) );
 		reflectedLight.directDiffuse *= hkOcc;
 		reflectedLight.indirectDiffuse *= hkOcc;
 		reflectedLight.directSpecular *= hkOcc;

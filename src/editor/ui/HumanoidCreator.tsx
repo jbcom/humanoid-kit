@@ -203,6 +203,12 @@ function CreatorBody({
 
   /** Opens the controls of the tapped part of the figure and frames it. */
   const onPick = (p: HumanoidPick) => {
+    // Hair has no shape controls to open; its colour and style are with the skin and eyes.
+    if (p.part === "hair") {
+      setQuery("");
+      setTab(APPEARANCE_TAB);
+      return;
+    }
     const table = p.part === "body" ? pickMap?.render.body : pickMap?.render.attachments[p.part];
     const index = table?.[p.vertex];
     if (index === undefined || index === NO_FEATURE) return;

@@ -448,10 +448,17 @@ The main-thread handle to an evaluation worker.
 - `client.complete: Promise<void>` resolves when every target file has
   loaded, or rejects with the error that stopped one.
 - `ReadyInfo` is `{ topology, modifiers, sliders, rig,
-  adultAnatomyLoaded }`: the render topology, every drivable shape modifier, the
+  adultAnatomyLoaded, hair }`: the render topology, every drivable shape modifier, the
   merged slider taxonomy, the rig (`RigData` plus each bone's `parents` index;
-  the topology's skin indices refer to `rig.bones`) and whether the adult
-  anatomy pack is loaded.
+  the topology's skin indices refer to `rig.bones`), whether the adult
+  anatomy pack is loaded, and the hair pack's styles (`HairInfo`: `{ styles: { id,
+  label, tags }[] }`, null without a hair pack), known before any style loads.
+- `client.hairTopology(id): HairTopology | undefined` is a worn style's static
+  render data. The worker sends it with the first evaluation that wears the
+  style and the client keeps it, so an `Evaluation` whose `hair.id` you
+  receive can always be rendered with `client.hairTopology(hair.id)`. A style's
+  files load on that first evaluation, which waits for them; one that fails
+  to load rejects that evaluation with the reason, and a later one retries.
 - `client.evaluate(recipe, key?, signals?): Promise<Evaluation>` (signals as for
   `model.evaluate`) is latest-wins per key:
   each key has at most one evaluation in the worker and one waiting, and a
@@ -504,7 +511,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers; those with state morphs also reshape the figure (a re-evaluation). Never part of the recipe |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
-| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
+| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"hair"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | other props | Passed to the wrapping `<group>` |
 
 - Hidden until the first evaluation arrives.
@@ -512,6 +519,12 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   shader following `recipe.eyes`, teeth and tongue), each attachment shaded by
   its baked occlusion, which follows the pose (an open mouth lights the teeth
   it uncovers).
+- Renders `recipe.hair` when the client loaded a hair pack: alpha cards
+  skinned to the figure and coloured by `recipe.hair.colour` (`HairMaterial`:
+  the strand map times the pigment colour's tint, highlights stretched across
+  the strands, baked occlusion), with edges drawn by alpha-to-coverage on a
+  multisampled canvas and by an alpha test otherwise. Changing the style loads
+  that style's files; changing the colour re-evaluates nothing.
 - Updates the geometry in place when `recipe` changes.
 - Stores the latest ground offset (posed when posed) on the group's `userData.groundOffset`.
 - Disposes its geometries, textures and built-in materials on unmount.

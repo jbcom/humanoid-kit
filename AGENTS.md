@@ -29,7 +29,8 @@ covers what isn't obvious from reading the code alone.
   proven by `pnpm test:e2e` (Playwright against the playground).
 - `playground/` is the library's own demo, not a consumer. It aliases
   `humanoid-kit` and its subpaths to `../src`, so it needs no build step, and it
-  loads the body pack only.
+  loads the body pack and the hair pack (never the adult pack outside `?adult`
+  in development).
 - `pnpm pack:data <makehuman-data-dir> <system-assets-dir>` regenerates all three
   packs from a checkout of the upstream project and its system assets pack (the
   hair pack last, since it binds to the body pack by hash); `pnpm pack:hair

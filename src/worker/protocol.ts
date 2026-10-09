@@ -3,6 +3,7 @@ import type { LoadOptions, ShapeModifierEntry, SliderTask } from "../format/asse
 import type { FeatureRef } from "../makehuman/features.ts";
 import type {
   Evaluation,
+  HairTopology,
   ModelOptions,
   ModelTopology,
   RenderFeatures,
@@ -24,6 +25,13 @@ export interface ReadyInfo {
    */
   rig: RigData & { parents: Int16Array; skin: RigSkin };
   adultAnatomyLoaded: boolean;
+  /** The hair pack's styles, in the order a picker offers them; null when no hair pack was loaded. */
+  hair: HairInfo | null;
+}
+
+/** What a picker needs of the hair pack before any style's geometry has loaded. */
+export interface HairInfo {
+  styles: { id: string; label: string; tags: string[] }[];
 }
 
 /** Which controls shape each rendered vertex: what a tap on the figure opens. */
@@ -55,5 +63,12 @@ export type WorkerResponse =
   | ({ type: "pickMap"; id: number } & PickMap)
   /** Per worn attachment, its render vertices' occlusion at every corner; null when `ready`'s already was. */
   | { type: "posedOcclusion"; id: number; attachments: Float32Array[] | null }
-  | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
+  | {
+      type: "evaluated";
+      id: number;
+      evaluation: Evaluation;
+      ms: number;
+      /** The worn hair style's static data, with the first evaluation that wears it; absent after. */
+      hairTopology?: HairTopology;
+    }
   | { type: "error"; id: number; message: string; name: string };

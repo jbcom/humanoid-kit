@@ -36,11 +36,13 @@ import { STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import type {
   AttachmentTopology,
   Evaluation,
+  HairTopology,
   SurfaceEvaluation,
   SurfaceTopology,
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
+import { HairMaterial, isMultisampled, setHairOcclusionAttribute } from "../render/hairMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
 import { AttachmentStandardMaterial, setOcclusionAttributes } from "../render/occlusion.ts";
 import { CURVATURE_ATTRIBUTE, SkinMaterial, UV_SCALE_ATTRIBUTE } from "../render/skinMaterial.ts";
@@ -54,6 +56,7 @@ import {
   posedGroundOffset,
   restBonesFrom,
 } from "../rig/pose.ts";
+import { DEFAULT_HAIR_COLOUR, type HairColour } from "../surface/hairTone.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 import { sameEntries } from "./sameEntries.ts";
 
@@ -162,8 +165,8 @@ export interface HumanoidPose {
 
 /** Where a tap on the figure landed. */
 export interface HumanoidPick {
-  /** `"body"`, or the attachment's index in `ModelTopology.attachments`. */
-  part: "body" | number;
+  /** `"body"`, `"hair"`, or the attachment's index in `ModelTopology.attachments`. */
+  part: "body" | "hair" | number;
   /** The render vertex of that mesh nearest the tap. */
   vertex: number;
   /** The tapped point, in world space. */
@@ -248,11 +251,21 @@ function useAttachmentMaterial(
     material.occlusionKeys = occlusionKeys;
     return material;
   }, [t, occlusionKeys]);
+  useDiffuseTexture(material, t.textureUrl, report);
+  useEffect(() => () => material.dispose(), [material]);
+  return material;
+}
+
+/** Loads `url` as the material's diffuse map (sRGB), and frees it when the url or material changes. */
+function useDiffuseTexture(
+  material: MeshStandardMaterial,
+  url: string | null,
+  report: (e: Error) => void,
+): void {
   const reportRef = useLatest(report);
   useEffect(() => {
-    if (!t.textureUrl) return;
+    if (!url) return;
     let live = true;
-    const url = t.textureUrl;
     new TextureLoader().loadAsync(url).then(
       (tex) => {
         if (!live) {
@@ -272,9 +285,7 @@ function useAttachmentMaterial(
       material.map?.dispose();
       material.map = null;
     };
-  }, [t, material, reportRef]);
-  useEffect(() => () => material.dispose(), [material]);
-  return material;
+  }, [url, material, reportRef]);
 }
 
 /** A mesh skinned to the figure's skeleton, bound once in mesh space. */
@@ -365,6 +376,51 @@ function AttachmentMesh({
   );
 }
 
+/** The worn hair style: alpha cards skinned to the figure, coloured by the recipe. */
+function HairMesh({
+  topology,
+  geometry,
+  skeleton,
+  colour,
+  multisampled,
+  visible,
+  report,
+  shape,
+}: {
+  topology: HairTopology;
+  geometry: BufferGeometry;
+  skeleton: Skeleton;
+  colour: HairColour;
+  multisampled: boolean;
+  visible: boolean;
+  report: (e: Error) => void;
+  shape: object;
+}) {
+  const material = useMemo(() => new HairMaterial(), []);
+  useDiffuseTexture(material, topology.textureUrl, report);
+  // The colour is a few numbers; effects depend on their values, not the recipe's object identity.
+  const { eumelanin, pheomelanin, grey, override } = colour;
+  const overrideKey = override?.join(",") ?? "";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: overrideKey stands for override's values
+  useEffect(() => {
+    material.setColour({ eumelanin, pheomelanin, grey, override });
+  }, [material, eumelanin, pheomelanin, grey, overrideKey]);
+  useEffect(() => material.setStrand(topology.strand), [material, topology]);
+  useEffect(() => material.setMultisampled(multisampled), [material, multisampled]);
+  useEffect(() => () => material.dispose(), [material]);
+  return (
+    <SkinnedPart
+      geometry={geometry}
+      material={material}
+      skeleton={skeleton}
+      visible={visible}
+      part="hair"
+      renderOrder={topology.zDepth}
+      shape={shape}
+    />
+  );
+}
+
 /** A pointer that moved further than this between press and release was dragging (orbiting), not tapping. */
 const TAP_SLOP_PX = 6;
 
@@ -425,7 +481,8 @@ export function Humanoid({
       setOcclusionAttributes(g, t.occlusion);
       return g;
     });
-    return { body, attachments };
+    // Hair styles' geometries are made when a figure first wears the style.
+    return { body, attachments, hair: new Map<string, BufferGeometry>() };
   }, [ready]);
   // A worn set the pack did not bake arrives at rest only; its pose-following
   // corners replace that once the worker has baked them.
@@ -451,6 +508,12 @@ export function Humanoid({
   // Shared by the attachments' materials: how much of each occlusion key the pose holds.
   const occlusionKeys = useMemo(() => new Vector3(), []);
   const [shown, setShown] = useState(false);
+  /** The worn hair style: its static data and geometry, once an evaluation has brought them. */
+  const [hair, setHair] = useState<{ topology: HairTopology; geometry: BufferGeometry } | null>(
+    null,
+  );
+  // Alpha-to-coverage needs a multisampled framebuffer; hair falls back to a plain alpha test.
+  const multisampled = useThree((s) => isMultisampled(s.gl.getContext()));
 
   // The pose: face units blended into bone rotations (rest when absent), and
   // the attachments' occlusion following it.
@@ -507,6 +570,7 @@ export function Humanoid({
     () => () => {
       geometries?.body.dispose();
       for (const g of geometries?.attachments ?? []) g.dispose();
+      for (const g of geometries?.hair.values() ?? []) g.dispose();
     },
     [geometries],
   );
@@ -570,6 +634,17 @@ export function Humanoid({
           const g = geometries.attachments[i];
           if (g) writeGeometry(g, a);
         });
+        const topology = ev.hair ? client.hairTopology(ev.hair.id) : undefined;
+        if (ev.hair && topology) {
+          let g = geometries.hair.get(ev.hair.id);
+          if (!g) {
+            g = makeGeometry(topology);
+            setHairOcclusionAttribute(g, topology.occlusion);
+            geometries.hair.set(ev.hair.id, g);
+          }
+          writeGeometry(g, ev.hair);
+          setHair({ topology, geometry: g });
+        } else setHair(null);
         setFigure(ev);
         ground(ev);
         setShown(true);
@@ -619,6 +694,19 @@ export function Humanoid({
               />
             ) : null;
           })}
+          {hair && (
+            <HairMesh
+              key={hair.topology.id}
+              topology={hair.topology}
+              geometry={hair.geometry}
+              skeleton={rig.skeleton}
+              colour={recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR}
+              multisampled={multisampled}
+              visible={shown}
+              report={report}
+              shape={shape}
+            />
+          )}
         </>
       )}
     </group>

@@ -126,9 +126,29 @@ Its targets and modifiers evaluate only for figures aged 18 or over. Loading
 fails with an `AssetFormatError` if the pack was built against a different body
 pack.
 
+## 5. Hair (optional)
+
+Install `humanoid-kit-hair` only if your figures wear hair, and load it with the
+body pack. Only its small manifest loads up front; a style's files load the first
+time a figure wears it.
+
+```ts
+import { hairPack } from "humanoid-kit-hair";
+
+const client = new HumanoidWorkerClient({ body: bodyPack, hair: hairPack });
+const { hair } = await client.ready; // { styles: [{ id, label, tags }, ...] } for a picker
+const recipe = createRecipe({ hair: { style: "bob02", colour: { eumelanin: 0.2 } } });
+```
+
+`recipe.hair.colour` is two pigments and a grey fraction, each 0 to 1
+(`HAIR_COLOURS` names twelve natural colours from `black` to `white`, and
+`override` takes any linear-RGB colour for dyed hair). `<Humanoid recipe>` draws
+the hair; with `client.evaluate` you get `evaluation.hair` and
+`client.hairTopology(evaluation.hair.id)`. Hair never changes the body.
+
 ## Serving packs from a directory
 
-`body` and `adultAnatomy` also accept a string directory URL. The directory must
+`body`, `adultAnatomy` and `hair` also accept a string directory URL. The directory must
 hold the pack's `manifest.json` and its binary files under the names the
 manifest lists:
 
@@ -140,8 +160,8 @@ const client = new HumanoidWorkerClient({ body: "/assets/body" });
 
 The repository includes a playground, the library's own demo, at
 [jbcom.github.io/humanoid-kit/playground](https://jbcom.github.io/humanoid-kit/playground/).
-It loads the body pack only and offers sliders for gender, age, muscle, weight
-and height. To run it locally:
+It loads the body and hair packs and offers sliders for gender, age, muscle,
+weight and height. To run it locally:
 
 ```sh
 pnpm install
