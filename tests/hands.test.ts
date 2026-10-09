@@ -27,6 +27,7 @@ import {
   palmCreaseLine,
   palmCreaseLineFields,
   palmCreaseReliefFields,
+  SOLE_LAYER,
   sampleCreases,
 } from "../src/surface/regions/hands/index.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
@@ -417,6 +418,17 @@ describe("nails: a bed nearly free of melanin under keratin", () => {
     // A few vertices on each of the ten nails.
     const count = Array.from(nails.colour.mask).filter((m) => m > 0.5).length;
     expect(count).toBeGreaterThan(10 * 8);
+  });
+});
+
+describe("soles", () => {
+  it("take the palm's colour over the sole, nowhere else", () => {
+    const fields = SOLE_LAYER.fields(assets);
+    expect(fields.mask).toBe(zones.sole);
+    for (const m of [0, 0.5, 1]) {
+      const input = { tone: tone(m), flush: 0, lips: 0.5, areola: 0.5, signals: {} };
+      expect(SOLE_LAYER.paint(input).stops).toEqual([palmAlbedo(tone(m))]);
+    }
   });
 });
 

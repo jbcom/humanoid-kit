@@ -214,3 +214,14 @@ export function nailColours(tone: SkinTone): NailColours {
     freeEdge: NAIL_KERATIN,
   };
 }
+
+/**
+ * A nail layer's eight colour stops along its coordinate from the proximal
+ * fold to the tip: fold, fold, lunula, lunula, bed, bed, free edge, free edge.
+ * Any nail whose coordinate puts its changes between those pairs (a
+ * fingernail, `NAIL_LAYER`; a toenail) paints with it.
+ */
+export function nailStops(tone: SkinTone): Rgb[] {
+  const c = nailColours(tone);
+  return [c.fold, c.fold, c.lunula, c.lunula, c.bed, c.bed, c.freeEdge, c.freeEdge];
+}

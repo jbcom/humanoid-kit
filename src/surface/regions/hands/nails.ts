@@ -6,7 +6,7 @@
  * docs/research/SKIN-STATES.md Part C5 or is marked there as a choice.
  */
 import type { HumanoidAssets } from "../../../format/assetFormat.ts";
-import { nailColours } from "../../handTone.ts";
+import { nailStops } from "../../handTone.ts";
 import type { ColourLayer, SkinLayerFields, SurfaceLayer } from "../../layers.ts";
 import { handFrame, smoothstep } from "./frame.ts";
 
@@ -108,19 +108,13 @@ export function nailFields(assets: HumanoidAssets): {
   return fields;
 }
 
-/** The nails: fold, lunula, bed and free edge along each nail (`nailColours`). */
+/** The nails: fold, lunula, bed and free edge along each nail (`nailStops`). */
 export const NAIL_LAYER: ColourLayer = {
   id: "nails",
   blend: "mix",
   targets: [],
   fields: (assets) => nailFields(assets).colour,
-  paint: ({ tone }) => {
-    const c = nailColours(tone);
-    return {
-      strength: 1,
-      stops: [c.fold, c.fold, c.lunula, c.lunula, c.bed, c.bed, c.freeEdge, c.freeEdge],
-    };
-  },
+  paint: ({ tone }) => ({ strength: 1, stops: nailStops(tone) }),
 };
 
 /**

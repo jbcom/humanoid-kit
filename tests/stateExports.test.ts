@@ -54,8 +54,9 @@ describe("the package entry's skin-state API", () => {
     const ids = kit.SKIN_LAYERS.filter((l) => !kit.isAdultLayer(l)).map((l) => l.id);
     expect(ids.slice(0, 3)).toEqual(["flush", "lips", "areola"]);
     // A state (cold pallor on the hands, a flush) acts on the areas' colour too.
-    expect(ids.slice(3, 10)).toEqual([
+    expect(ids.slice(3, 11)).toEqual([
       "palm",
+      "sole",
       "palm-crease-lines",
       "knuckles",
       "nails",
@@ -63,7 +64,7 @@ describe("the package entry's skin-state API", () => {
       "knuckle-wrinkles",
       "nail-gloss",
     ]);
-    expect(ids.slice(10)).toEqual([
+    expect(ids.slice(11)).toEqual([
       "goosebumps",
       "heat-flush",
       "exertion-flush",

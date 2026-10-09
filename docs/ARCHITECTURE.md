@@ -814,14 +814,17 @@ C5; contact sheets, before and after, at four tones, adult and child:
   plate's gloss. The bed is measured nail colour whose lightness follows the
   skin's far less than skin does (the nail bed has about 5% of skin's
   melanocytes), so on deep skin the nails are much lighter than the fingers.
-- *Not done.* Age does not reach a layer's paint (`SkinPaintInput` has `adult`
-  only), so a child's hand gets the same creases and knuckles at its own
-  scale, the fields scaling with the morphed mesh (creases form before birth,
-  so their places are set early). No finger flexion is measured by the rig yet
-  (`FLEXION_JOINTS` has wrists, elbows and knees), so knuckle wrinkles are at
-  rest. Soles share the palm's suppressed melanin
-  (the same mechanism) but no sole colour was found measured; the feet's area
-  owns them, and can take `palmAlbedo` if it decides to.
+- *Soles.* Soles share the palm's suppressed melanocytes (the same
+  mechanism), but no sole colour was found measured, so the sole takes the
+  palm's measured colour (`SOLE_LAYER`, a choice). One owner for the
+  palmoplantar colour: the feet's area adds the sole's relief, calluses and
+  toenails over it (`nailStops` paints any nail whose coordinate follows the
+  fingernail's).
+- *Not done.* The hands' layers do not vary with age: a child's hand gets the
+  same creases and knuckles at its own scale, the fields scaling with the
+  morphed mesh (creases form before birth, so their places are set early). No
+  finger flexion is measured by the rig yet (`FLEXION_JOINTS` has wrists,
+  elbows and knees), so knuckle wrinkles are at rest.
 
 ## Parallel work: the base contract
 

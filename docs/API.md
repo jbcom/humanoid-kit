@@ -373,6 +373,8 @@ compute what the renderer will do.
     (777 people) binned by the back of the hand's L\*: on deep skin the palm is
     about 16 L\* lighter and 6 to 8 b\* yellower than the back of the hand, on
     the lightest about the same.
+  - `SOLE_LAYER`: the palm's colour over `skinZones().sole` (palmoplantar skin;
+    no sole colour was found measured).
   - `PALM_CREASE_LINE_LAYER` (multiply: `palmCreaseLine(tone)`, the crease's
     shade, and on deep skin a return toward the skin's own colour) and
     `PALM_CREASE_LAYER` (a `creases` detail layer, `PALM_CREASE_DEPTH`): the
@@ -389,7 +391,8 @@ compute what the renderer will do.
     `KNUCKLE_WRINKLE_LAYER` (arcs over the back of each finger joint,
     `KNUCKLE_WRINKLE_SPACING` apart, `KNUCKLE_WRINKLE_DEPTH` deep), fields from
     `knuckleFields(assets)`.
-  - `NAIL_LAYER` (`nailColours(tone)`: fold, lunula, bed and free edge along each
+  - `NAIL_LAYER` (`nailStops(tone)`, the eight stops a nail coordinate runs
+    through, from `nailColours(tone)`: fold, lunula, bed and free edge along each
     nail, the bed from `nailLab(tone)`, measured nail CIELAB at a lightness that
     follows the skin's far less than skin does) and `NAIL_GLOSS_LAYER` (the plate,
     `NAIL_ROUGHNESS` and `NAIL_SPECULAR`), fields from `nailFields(assets)`,

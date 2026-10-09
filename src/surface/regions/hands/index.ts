@@ -25,11 +25,28 @@ export const PALM_LAYER: ColourLayer = {
 };
 
 /**
- * The hands' layers in stack order: the palm's colour first, then the crease
- * lines over it, the knuckles and the nails, then relief and gloss.
+ * Sole colour: the palm's (`palmAlbedo`) over `skinZones().sole`. Soles and
+ * palms share the suppressed melanocytes of palmoplantar skin (Yamaguchi et
+ * al. 2004, SKIN-STATES.md A1), but no sole colour was found measured, so
+ * giving the sole the palm's measured colour is a CHOICE (C5). One owner for
+ * the palmoplantar colour: the feet's area adds the sole's relief on top.
+ */
+export const SOLE_LAYER: ColourLayer = {
+  id: "sole",
+  blend: "mix",
+  targets: [],
+  fields: (assets) => ({ mask: skinZones(assets).sole, coord: null }),
+  paint: ({ tone }) => ({ strength: 1, stops: [palmAlbedo(tone)] }),
+};
+
+/**
+ * The hands' layers in stack order: the palm's and sole's colour first, then
+ * the crease lines over the palm, the knuckles and the nails, then relief and
+ * gloss.
  */
 export const HAND_SKIN_LAYERS = [
   PALM_LAYER,
+  SOLE_LAYER,
   PALM_CREASE_LINE_LAYER,
   KNUCKLE_LAYER,
   NAIL_LAYER,
