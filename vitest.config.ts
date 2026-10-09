@@ -6,6 +6,8 @@ import { defineConfig } from "vitest/config";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
+const gpuMode = (process.env.HK_GPU ?? (process.env.CI ? "software" : "auto")) as ChromiumGpuMode;
+
 // Three projects:
 // - unit: the pure core in Node (tests/**/*.test.ts, outside tests/browser
 //   and tests/bake).
@@ -81,12 +83,17 @@ export default defineConfig({
       {
         extends: true,
         // game-harness: headed real Chromium, silent, fixed viewport at device scale 1.
-        test: defineBrowserTestConfig({
-          name: "browser",
-          include: ["tests/browser/**/*.test.{ts,tsx}"],
-          gpuMode: (process.env.HK_GPU ??
-            (process.env.CI ? "software" : "auto")) as ChromiumGpuMode,
-        }),
+        test: {
+          ...defineBrowserTestConfig({
+            name: "browser",
+            include: ["tests/browser/**/*.test.{ts,tsx}"],
+            gpuMode,
+          }),
+          // Software rendering (CI) runs the shading measurements about seven
+          // times slower than a GPU: the scatter-parity sweep takes 3 s on a
+          // GPU and 20 s under SwiftShader.
+          testTimeout: gpuMode === "software" ? 120_000 : 30_000,
+        },
       },
     ],
   },
