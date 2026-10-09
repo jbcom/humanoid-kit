@@ -17,8 +17,8 @@ import { recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
 import { buildSkinMasks } from "../makehuman/skinMasks.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
-import { evaluateMorph, type RegionField } from "../morph/evaluate.ts";
-import { createRecipe, type Recipe } from "../recipe/recipe.ts";
+import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
+import { createRecipe, type Recipe, recipeSetsModifiers } from "../recipe/recipe.ts";
 import { applyStencil } from "../subdiv/catmullClark.ts";
 import { bakeOcclusion } from "../surface/occlusion.ts";
 
@@ -257,6 +257,11 @@ export class HumanoidModel {
   }
 
   evaluate(recipe: Recipe): Evaluation {
+    if (!this.assets.modifierTargetsLoaded && recipeSetsModifiers(recipe))
+      throw new MorphError(
+        "the recipe sets shape modifiers, and the modifier targets have not loaded yet " +
+          "(await the second stage of loadHumanoidAssetsStaged)",
+      );
     const control = new Float32Array(this.assets.positions.length);
     evaluateMorph(
       this.assets.positions,

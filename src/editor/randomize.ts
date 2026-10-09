@@ -49,8 +49,6 @@ export const IRIS_PALETTE: readonly { name: string; rgb: Readonly<Rgb> }[] = [
 
 /** Shape groups that are whole-body archetypes rather than variation; never randomised. */
 const ARCHETYPE_GROUPS = new Set(["bodyshapes"]);
-/** Groups randomised more gently, because small amounts already read strongly. */
-const GENTLE_GROUPS: Record<string, number> = { asym: 0.35 };
 
 export function randomRecipe(
   base: Recipe,
@@ -120,7 +118,7 @@ export function randomRecipe(
     const magnitude = rand();
     const sign = rand();
     if (ARCHETYPE_GROUPS.has(m.group) || (m.adultOnly && !adultAllowed) || pick >= chance) continue;
-    const scale = intensity * (GENTLE_GROUPS[m.group] ?? 1) * magnitude;
+    const scale = intensity * magnitude;
     const v = Math.round((m.lo !== null && sign < 0.5 ? -scale : scale) * 1000) / 1000;
     if (v !== 0) values[m.id] = v;
   }

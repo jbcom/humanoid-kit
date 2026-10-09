@@ -1,14 +1,21 @@
 /**
  * Worker entry: owns one `HumanoidModel` and evaluates recipes off the main
  * thread. Results are transferred, not copied.
+ *
+ * Packs load in two stages: the worker replies `ready` once a figure built from
+ * macros can be evaluated, while the modifier targets are still arriving. A
+ * recipe that sets a shape modifier waits for them; one that does not
+ * evaluates at once.
  */
-import { loadHumanoidAssets } from "../format/assetFormat.ts";
+import { loadHumanoidAssetsStaged } from "../format/assetFormat.ts";
 import { HumanoidModel } from "../model/humanoidModel.ts";
+import { recipeSetsModifiers } from "../recipe/recipe.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
 
 declare const self: DedicatedWorkerGlobalScope;
 
 let model: HumanoidModel | null = null;
+let modifierTargets: Promise<unknown> = Promise.resolve();
 
 const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
   self.postMessage(msg, transfer);
@@ -17,7 +24,11 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
   const req = e.data;
   try {
     if (req.type === "init") {
-      const assets = await loadHumanoidAssets(req.load);
+      const staged = await loadHumanoidAssetsStaged(req.load);
+      const { assets } = staged;
+      modifierTargets = staged.modifierTargets;
+      // A failure is reported to the evaluation that needs the targets.
+      modifierTargets.catch(() => {});
       model = new HumanoidModel(assets, req.model);
       const topology = model.topology();
       post({
@@ -32,6 +43,7 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       return;
     }
     if (!model) throw new Error("worker received evaluate before init");
+    if (recipeSetsModifiers(req.recipe)) await modifierTargets;
     const t0 = performance.now();
     const evaluation = model.evaluate(req.recipe);
     const transfer: Transferable[] = [

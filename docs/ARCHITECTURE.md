@@ -32,7 +32,7 @@ lossless). All lengths are in metres.
 
 | Pack | Files | Contents |
 | --- | --- | --- |
-| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, `targets.bin.gz`, `attachments.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 936 sparse targets, 275 shape modifiers with MakeHuman's slider taxonomy, and the eyes, teeth and tongue |
+| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, `targets.bin.gz`, `modifier-targets.bin.gz`, `attachments.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 for the first figure, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, and the eyes, teeth and tongue |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
 
 A target is stored sparsely: the indices of the vertices it moves (`uint16`),
@@ -40,8 +40,24 @@ then their `int16` xyz deltas, plus a per-target scale in metres per step.
 Evaluation multiplies a delta by `weight * scale`. For transfer, the targets
 file stores each target's indices as ascending deltas and its x, y and z
 deltas as separate planes, then gzips the whole file (`delta-planar-gzip`).
-That takes the body targets from 18.8 MB to 5.5 MB; the loader decompresses
+That takes the body targets from 18.1 MB to 5.4 MB; the loader decompresses
 with the platform's `DecompressionStream` and decodes in one pass.
+
+Only targets that something drives are packed: the macro combinations
+`macroTargetWeights` can name and the `lo`/`hi` targets of the shape modifiers.
+Upstream also ships targets no modifier references (the `asym/*` set, foot
+depth and lower-leg height, `chin/chin-triangle`); MakeHuman never applies
+them, so neither does the kit.
+
+The body targets are split by when a figure needs them. `targets.bin.gz` holds
+what the first figure needs: every macro target, plus the few modifier targets
+the skin masks are measured from (`src/makehuman/skinMasks.ts`).
+`modifier-targets.bin.gz` holds the remaining shape-modifier targets, about a
+fifth of the bytes. `loadHumanoidAssetsStaged` resolves once the first file is
+parsed and returns a second promise for the rest (the adult pack's targets
+included, which are all modifiers), so a figure built from macros appears
+without waiting for 275 fine shape controls it is not using yet.
+`loadHumanoidAssets` waits for both.
 
 Each pack exports its file URLs (`bodyPack`, `adultAnatomyPack`) as literal
 `new URL(..., import.meta.url)` expressions so bundlers emit the data files
@@ -138,8 +154,8 @@ at a new age; moving below 18 explicitly removes the adult-only values and leave
 the input untouched.
 
 An adult-only modifier id that is not loaded (the adult pack is absent) fails
-with `RecipeError`. Fine shape modifiers such as the `breast/*` and
-`asym/asymm-breast-*` groups ship in the body pack and are not adult-only in the
+with `RecipeError`. Fine shape modifiers such as the `breast/*` group ship in
+the body pack and are not adult-only in the
 code; the policy governs the controls listed above.
 
 ## Evaluation
@@ -187,8 +203,11 @@ evaluation.
 ## Worker
 
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one
-`HumanoidModel`. The worker loads the packs, builds the model and replies with
-the topology and the modifier ids. Evaluations are latest-wins: while one runs,
+`HumanoidModel`. The worker loads the packs in two stages, builds the model
+from the first and replies with the topology, the modifier ids and the slider
+taxonomy while the modifier targets are still arriving. A recipe that sets any
+modifier waits for them; one built from macros alone evaluates at once.
+Evaluations are latest-wins: while one runs,
 a newer request replaces any queued one, and the replaced request rejects with an
 `AbortError`, so dragging a slider never builds a backlog. Results are
 transferred, not copied. The client accepts an injected `Worker`; by default it

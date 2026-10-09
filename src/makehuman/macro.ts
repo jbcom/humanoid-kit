@@ -198,3 +198,32 @@ export function macroTargetWeights(m: MacroValues): Map<string, number> {
     );
   return out;
 }
+
+/**
+ * Every target name `macroTargetWeights` can weight, found by evaluating it
+ * at every combination of anchors, so the set cannot drift from the model.
+ */
+export function macroTargetNames(): Set<string> {
+  const names = new Set<string>();
+  const ends = [0, 1];
+  const thirds = [0, 0.5, 1];
+  const ethnic = [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1],
+  ] as const;
+  for (const gender of ends)
+    for (const [, age] of AGE_ANCHORS)
+      for (const muscle of thirds)
+        for (const weight of thirds)
+          for (const height of ends)
+            for (const proportions of ends)
+              for (const [african, asian, caucasian] of ethnic)
+                for (const breastSize of thirds)
+                  for (const breastFirmness of thirds) {
+                    const m = { gender, age, muscle, weight, height, proportions };
+                    const all = { ...m, african, asian, caucasian, breastSize, breastFirmness };
+                    for (const name of macroTargetWeights(all).keys()) names.add(name);
+                  }
+  return names;
+}

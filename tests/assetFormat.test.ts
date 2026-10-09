@@ -2,10 +2,13 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AssetFormatError,
+  addModifierTargets,
   type BodyManifest,
   gunzip,
   parseHumanoidAssets,
 } from "../src/format/assetFormat.ts";
+import { macroTargetNames } from "../src/makehuman/macro.ts";
+import { SKIN_MASK_TARGETS } from "../src/makehuman/skinMasks.ts";
 import {
   adultManifest,
   adultPackData,
@@ -28,7 +31,10 @@ describe("parseHumanoidAssets", () => {
 
   it("decodes every target to ascending in-range indices", () => {
     const a = parseHumanoidAssets(pack());
-    expect(a.targets.size).toBe(bodyManifest.targets.entries.length);
+    expect(a.modifierTargetsLoaded).toBe(true);
+    expect(a.targets.size).toBe(
+      bodyManifest.targets.entries.length + bodyManifest.modifierTargets.entries.length,
+    );
     const bad: string[] = [];
     for (const t of a.targets.values()) {
       let ok = t.deltas.length === t.indices.length * 3;
@@ -117,5 +123,68 @@ describe("parseHumanoidAssets", () => {
     expect(() =>
       parseHumanoidAssets(pack(), { manifest: other, targets: new ArrayBuffer(0) }),
     ).toThrow(/different body pack/);
+  });
+});
+
+describe("the two target files", () => {
+  const first = new Set(bodyManifest.targets.entries.map((e) => e.name));
+  const later = new Set(bodyManifest.modifierTargets.entries.map((e) => e.name));
+  const modifierTargets = new Set(
+    bodyManifest.modifiers.flatMap((m) => (m.lo ? [m.lo, m.hi] : [m.hi])),
+  );
+  const macros = macroTargetNames();
+
+  it("packs every driven target once and nothing that no control drives", () => {
+    expect([...first].filter((n) => later.has(n))).toEqual([]);
+    const packed = new Set([...first, ...later]);
+    const driven = new Set([...macros, ...modifierTargets]);
+    expect([...driven].filter((n) => !packed.has(n))).toEqual([]);
+    expect([...packed].filter((n) => !driven.has(n))).toEqual([]);
+  });
+
+  it("puts every macro target and every skin-mask target in the first file", () => {
+    expect([...macros].filter((n) => !first.has(n))).toEqual([]);
+    expect(SKIN_MASK_TARGETS.filter((n) => !first.has(n))).toEqual([]);
+    // Everything else in the first file would delay the figure for nothing.
+    const needed = new Set([...macros, ...SKIN_MASK_TARGETS]);
+    expect([...first].filter((n) => !needed.has(n))).toEqual([]);
+  });
+
+  it("parses a figure from the first file and takes the modifier targets later", () => {
+    const { modifierTargets: rest, ...firstStage } = bodyPackData();
+    const { targets: adultTargets, ...adultFirstStage } = adultPackData();
+    const a = parseHumanoidAssets(firstStage, adultFirstStage);
+    expect(a.modifierTargetsLoaded).toBe(false);
+    expect(a.targets.size).toBe(first.size);
+    // The controls are all known up front, so the editor can show them at once.
+    expect(a.modifiers.size).toBe(bodyManifest.modifiers.length + adultManifest.modifiers.length);
+    addModifierTargets(a, { body: rest, adultAnatomy: adultTargets });
+    expect(a.modifierTargetsLoaded).toBe(true);
+    expect(a.targets.size).toBe(first.size + later.size + adultManifest.targets.entries.length);
+    expect(() => addModifierTargets(a, { body: rest, adultAnatomy: adultTargets })).toThrow(
+      /already/,
+    );
+  });
+
+  it("needs the adult pack's targets with the body's when the adult pack is loaded", () => {
+    const { modifierTargets: rest, ...firstStage } = bodyPackData();
+    const { targets: _, ...adultFirstStage } = adultPackData();
+    const a = parseHumanoidAssets(firstStage, adultFirstStage);
+    expect(() => addModifierTargets(a, { body: rest })).toThrow(/adult anatomy pack's targets/);
+    const b = parseHumanoidAssets(firstStage);
+    expect(() =>
+      addModifierTargets(b, { body: rest, adultAnatomy: adultPackData().targets }),
+    ).toThrow(/no adult anatomy pack/);
+  });
+
+  it("validates late targets as strictly as the first file", () => {
+    const { modifierTargets: rest, ...firstStage } = bodyPackData();
+    const a = parseHumanoidAssets(firstStage);
+    expect(() => addModifierTargets(a, { body: rest.slice(0, rest.byteLength - 8) })).toThrow(
+      /exceeds/,
+    );
+    // A failed add leaves the figure as it was, so it can be retried.
+    expect(a.modifierTargetsLoaded).toBe(false);
+    expect(a.targets.size).toBe(first.size);
   });
 });

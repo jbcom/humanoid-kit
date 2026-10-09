@@ -26,6 +26,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { type ShapeModifierEntry, TARGET_ENCODING } from "../src/format/assetFormat.ts";
+import { macroTargetNames } from "../src/makehuman/macro.ts";
+import { SKIN_MASK_TARGETS } from "../src/makehuman/skinMasks.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { writeAttachments, writePackEntry } from "./lib/packWriter.ts";
 import { buildSliders } from "./lib/sliders.ts";
@@ -54,6 +56,7 @@ const TOPOLOGY = "makehuman-hm08";
 /** Every binary ships gzipped: GitHub Pages and many hosts serve .bin uncompressed. */
 const BODY_FILE = "body.bin.gz";
 const TARGETS_FILE = "targets.bin.gz";
+const MODIFIER_TARGETS_FILE = "modifier-targets.bin.gz";
 const ATTACHMENTS_FILE = "attachments.bin.gz";
 /** MakeHuman units are decimetres; the runtime works in metres. */
 const UNIT = 0.1;
@@ -194,6 +197,7 @@ const isAdultPackTarget = (name: string) =>
  */
 const isAdultOnlyModifier = (hi: string) => isAdultPackTarget(hi);
 
+/** Every target upstream ships, by name (path below `targets/` without extension). */
 function listTargets(): string[] {
   const out: string[] = [];
   const walk = (rel: string) => {
@@ -203,10 +207,7 @@ function listTargets(): string[] {
         if (ent.name === "images" || ent.name === "expression") continue;
         walk(child);
       } else if (ent.name.endsWith(".target")) {
-        if (/^targets\/macrodetails\/(height|proportions)$/.test(rel)) {
-          if (!ent.name.includes("-averagemuscle-averageweight-")) continue;
-        }
-        out.push(child);
+        out.push(child.replace(/^targets\//, "").replace(/\.target$/, ""));
       }
     }
   };
@@ -214,14 +215,23 @@ function listTargets(): string[] {
   return out.sort();
 }
 
-/** Packs targets as: u16 indices (padded to 4 bytes), then i16 xyz deltas. */
-function packTargets(files: string[]) {
-  const chunks: Uint8Array[] = [];
-  const entries: TargetEntry[] = [];
-  let offset = 0;
+interface EncodedTarget {
+  name: string;
+  /** Index deltas, then the x, y and z planes (`TARGET_ENCODING`, before gzip). */
+  chunk: Uint8Array;
+  count: number;
+  scale: number;
+}
+
+/**
+ * Encodes targets by name. Upstream ships some targets that move nothing;
+ * those are counted and left out.
+ */
+function encodeTargets(names: Iterable<string>) {
+  const out = new Map<string, EncodedTarget>();
   let empty = 0;
-  for (const rel of files) {
-    const { idx, d } = parseTarget(read(rel));
+  for (const name of names) {
+    const { idx, d } = parseTarget(read(`targets/${name}.target`));
     if (idx.length === 0) {
       empty++;
       continue;
@@ -242,28 +252,24 @@ function packTargets(files: string[]) {
     d.forEach((q, k) => {
       view.setInt16(n * 2 + ((k % 3) * n + Math.floor(k / 3)) * 2, Math.round(q / scale), true);
     });
-    entries.push({
-      name: rel.replace(/^targets\//, "").replace(/\.target$/, ""),
-      offset,
-      count: idx.length,
-      scale,
-    });
-    chunks.push(chunk);
-    offset += chunk.byteLength;
+    out.set(name, { name, chunk, count: n, scale });
   }
-  const raw = new Uint8Array(offset);
-  let o = 0;
-  for (const c of chunks) {
-    raw.set(c, o);
-    o += c.byteLength;
+  return { targets: out, empty };
+}
+
+/** Concatenates encoded targets, in name order, into one gzipped targets file. */
+function writeTargetFile(targets: EncodedTarget[]) {
+  const sorted = [...targets].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const entries: TargetEntry[] = [];
+  const raw = new Uint8Array(sorted.reduce((n, t) => n + t.chunk.byteLength, 0));
+  let offset = 0;
+  for (const t of sorted) {
+    entries.push({ name: t.name, offset, count: t.count, scale: t.scale });
+    raw.set(t.chunk, offset);
+    offset += t.chunk.byteLength;
   }
   // gzip output is deterministic here (zlib writes no timestamp), so packs are reproducible.
-  return {
-    bin: new Uint8Array(gzipSync(raw, { level: 9 })),
-    rawBytes: raw.byteLength,
-    entries,
-    empty,
-  };
+  return { bin: new Uint8Array(gzipSync(raw, { level: 9 })), rawBytes: raw.byteLength, entries };
 }
 
 // ---------------------------------------------------------------- rig
@@ -421,23 +427,8 @@ async function main() {
   const body = new Uint8Array(gzipSync(bodyRaw, { level: 9 }));
   fs.writeFileSync(path.join(BODY_OUT, BODY_FILE), body);
 
-  const files = listTargets();
-  const core = packTargets(files.filter((f) => !isAdultPackTarget(f.replace(/^targets\//, ""))));
-  const adult = packTargets(files.filter((f) => isAdultPackTarget(f.replace(/^targets\//, ""))));
-  for (const dir of [BODY_OUT, ADULT_OUT])
-    fs.rmSync(path.join(dir, "targets.bin"), { force: true });
-  fs.writeFileSync(path.join(BODY_OUT, TARGETS_FILE), core.bin);
-  fs.writeFileSync(path.join(ADULT_OUT, TARGETS_FILE), adult.bin);
-  const targets = [...core.entries, ...adult.entries];
-
-  // Face pose units: BVH frames named by face-poseunits.json framemapping.
-  const faceUnits = JSON.parse(read("poseunits/face-poseunits.json")) as { framemapping: string[] };
-  const faceBvh = parseBvh(read("poseunits/face-poseunits.bvh"));
-
-  // Shape modifiers: MakeHuman's modifier tables, resolved to packed target names.
-  const packedNames = new Set(targets.map((t) => t.name));
-  const modifiers: ShapeModifierEntry[] = [];
-  const unresolved: string[] = [];
+  // Shape modifiers: MakeHuman's modifier tables, by target name.
+  const declared: ShapeModifierEntry[] = [];
   for (const table of MODIFIER_TABLES) {
     const groups = JSON.parse(read(`modifiers/${table}_modifiers.json`)) as {
       group: string;
@@ -450,19 +441,57 @@ async function main() {
         const lo = m.min ? `${dir}/${m.target}-${m.min}` : null;
         const hi = m.max ? `${dir}/${m.target}-${m.max}` : `${dir}/${m.target}`;
         const id = m.min ? `${dir}/${m.target}-${m.min}|${m.max}` : `${dir}/${m.target}`;
-        if (!packedNames.has(hi) || (lo && !packedNames.has(lo))) {
-          unresolved.push(id);
-          continue;
-        }
         // A modifier lives in one pack; both of its targets must be in that pack.
         if (lo && isAdultPackTarget(lo) !== isAdultPackTarget(hi))
           throw new Error(`modifier ${id} spans the body and adult anatomy packs`);
-        modifiers.push({ id, group: dir, lo, hi, adultOnly: isAdultOnlyModifier(hi) });
+        declared.push({ id, group: dir, lo, hi, adultOnly: isAdultOnlyModifier(hi) });
       }
     }
   }
+
+  // Only targets something drives are packed: the macro combinations and the
+  // modifiers' targets. Upstream ships others that nothing in MakeHuman applies.
+  const macroNames = macroTargetNames();
+  const upstream = listTargets();
+  const wanted = new Set([
+    ...macroNames,
+    ...declared.flatMap((m) => (m.lo ? [m.lo, m.hi] : [m.hi])),
+  ]);
+  const undriven = upstream.filter((n) => !wanted.has(n));
+  const encoded = encodeTargets(upstream.filter((n) => wanted.has(n)));
+  const packed = encoded.targets;
+  const modifiers = declared.filter((m) => packed.has(m.hi) && (!m.lo || packed.has(m.lo)));
+  const unresolved = declared.filter((m) => !modifiers.includes(m)).map((m) => m.id);
   if (unresolved.length)
     console.warn(`unresolved modifiers (no packed target): ${unresolved.join(", ")}`);
+  const driven = new Set([
+    ...macroNames,
+    ...modifiers.flatMap((m) => (m.lo ? [m.lo, m.hi] : [m.hi])),
+  ]);
+  const missingMasks = SKIN_MASK_TARGETS.filter((n) => !driven.has(n) || !packed.has(n));
+  if (missingMasks.length)
+    throw new Error(`skin-mask targets not packed: ${missingMasks.join(", ")}`);
+
+  // The body's targets split by when a figure needs them: the first file has the
+  // macro targets and the skin-mask targets, the second the other modifier targets.
+  const firstFigure = new Set([...macroNames, ...SKIN_MASK_TARGETS]);
+  const inPack = [...packed.values()].filter((t) => driven.has(t.name));
+  const core = writeTargetFile(
+    inPack.filter((t) => !isAdultPackTarget(t.name) && firstFigure.has(t.name)),
+  );
+  const later = writeTargetFile(
+    inPack.filter((t) => !isAdultPackTarget(t.name) && !firstFigure.has(t.name)),
+  );
+  const adult = writeTargetFile(inPack.filter((t) => isAdultPackTarget(t.name)));
+  for (const dir of [BODY_OUT, ADULT_OUT])
+    fs.rmSync(path.join(dir, "targets.bin"), { force: true });
+  fs.writeFileSync(path.join(BODY_OUT, TARGETS_FILE), core.bin);
+  fs.writeFileSync(path.join(BODY_OUT, MODIFIER_TARGETS_FILE), later.bin);
+  fs.writeFileSync(path.join(ADULT_OUT, TARGETS_FILE), adult.bin);
+
+  // Face pose units: BVH frames named by face-poseunits.json framemapping.
+  const faceUnits = JSON.parse(read("poseunits/face-poseunits.json")) as { framemapping: string[] };
+  const faceBvh = parseBvh(read("poseunits/face-poseunits.bvh"));
   const sliders = buildSliders(
     MODIFIER_TABLES.map((table) => ({
       table,
@@ -522,6 +551,12 @@ async function main() {
       sha256: sha(core.bin),
       entries: core.entries,
     },
+    modifierTargets: {
+      file: MODIFIER_TARGETS_FILE,
+      encoding: TARGET_ENCODING,
+      sha256: sha(later.bin),
+      entries: later.entries,
+    },
     modifiers: modifiers.filter((m) => !isAdultPackTarget(m.hi)),
     sliders: sliders.body,
     attachments: {
@@ -578,6 +613,7 @@ async function main() {
     [
       [BODY_FILE, bodySha],
       [TARGETS_FILE, sha(core.bin)],
+      [MODIFIER_TARGETS_FILE, sha(later.bin)],
       [ATTACHMENTS_FILE, attachments.sha256],
     ],
     systemEvidence,
@@ -599,11 +635,14 @@ async function main() {
     "adultAnatomyPack",
     "URLs of the humanoid-kit-adult-anatomy pack files. Pass to `loadHumanoidAssets({ adultAnatomy })`.",
   );
+  const mb = (n: number) => `${(n / 1e6).toFixed(2)} MB`;
   console.log(
-    `packed ${vertexCount} verts, ${manifest.faceCount} quads, ${core.entries.length} core + ${adult.entries.length} adult targets ` +
-      `(${core.empty + adult.empty} empty skipped), body ${(body.byteLength / 1e6).toFixed(2)} MB, ` +
-      `targets ${(core.bin.byteLength / 1e6).toFixed(2)} MB gzip (${(core.rawBytes / 1e6).toFixed(2)} MB decoded), ` +
-      `adult ${(adult.bin.byteLength / 1e6).toFixed(2)} MB`,
+    `packed ${vertexCount} verts, ${manifest.faceCount} quads; targets: ` +
+      `${core.entries.length} first-figure (${mb(core.bin.byteLength)} gzip, ${mb(core.rawBytes)} decoded), ` +
+      `${later.entries.length} modifier (${mb(later.bin.byteLength)}), ` +
+      `${adult.entries.length} adult (${mb(adult.bin.byteLength)}); ` +
+      `${encoded.empty} empty and ${undriven.length} undriven upstream targets left out; ` +
+      `body ${mb(body.byteLength)}`,
   );
 }
 

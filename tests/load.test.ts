@@ -7,16 +7,25 @@ import {
   groupFaces,
   jointPosition,
   loadHumanoidAssets,
+  loadHumanoidAssetsStaged,
 } from "../src/format/assetFormat.ts";
-import { adultDir, bodyDir } from "./fixtures.ts";
+import { adultDir, bodyDir, bodyManifest } from "./fixtures.ts";
 
 /** Serves pack files from disk at http://packs/<body|adult>/<file>, like a static host. */
-function stubFetch(options: { decompressGz?: boolean; missing?: string } = {}) {
+function stubFetch(
+  options: {
+    decompressGz?: boolean;
+    missing?: string;
+    /** Answers this file only once `until` settles. */
+    hold?: { file: string; until: Promise<void> };
+  } = {},
+) {
   const requested: string[] = [];
   vi.stubGlobal("fetch", async (input: string) => {
     requested.push(input);
     const url = new URL(input);
     const [, pack, file] = url.pathname.split("/");
+    if (options.hold && file === options.hold.file) await options.hold.until;
     const dir = pack === "adult" ? adultDir : bodyDir;
     const p = path.join(dir, file ?? "");
     if (file === options.missing || !fs.existsSync(p))
@@ -62,7 +71,35 @@ describe("loadHumanoidAssets", { timeout: 60_000 }, () => {
   it("accepts targets a host has already decompressed", async () => {
     stubFetch({ decompressGz: true });
     const assets = await loadHumanoidAssets({ body: "http://packs/body" });
-    expect(assets.targets.size).toBeGreaterThan(900);
+    expect(assets.targets.size).toBe(
+      bodyManifest.targets.entries.length + bodyManifest.modifierTargets.entries.length,
+    );
+  });
+
+  it("hands over a figure before the modifier targets have arrived", async () => {
+    let release = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    stubFetch({ hold: { file: "modifier-targets.bin.gz", until: gate } });
+    const staged = await loadHumanoidAssetsStaged({
+      body: "http://packs/body",
+      adultAnatomy: "http://packs/adult",
+    });
+    expect(staged.assets.modifierTargetsLoaded).toBe(false);
+    expect(staged.assets.adultAnatomyLoaded).toBe(true);
+    release();
+    const assets = await staged.modifierTargets;
+    expect(assets).toBe(staged.assets);
+    expect(assets.modifierTargetsLoaded).toBe(true);
+    expect([...assets.modifiers.values()].every((m) => assets.targets.has(m.hi))).toBe(true);
+  });
+
+  it("reports a modifier-target failure on the second stage only", async () => {
+    stubFetch({ missing: "modifier-targets.bin.gz" });
+    const staged = await loadHumanoidAssetsStaged({ body: "http://packs/body" });
+    await expect(staged.modifierTargets).rejects.toThrow(/modifier-targets\.bin\.gz failed/);
+    expect(staged.assets.modifierTargetsLoaded).toBe(false);
   });
 
   it("reports a failed fetch and a missing per-file URL", async () => {

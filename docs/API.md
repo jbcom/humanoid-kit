@@ -39,13 +39,37 @@ type PackLocation =
 - Returns `HumanoidAssets`: the `manifest`, typed-array views of `positions`,
   `uvs`, `faceVerts`, `faceUvs`, `skinIndex` and `skinWeight`, a `targets` map
   (`SparseTarget`: `indices`, `deltas`, `scale`), a `modifiers` map
-  (`ShapeModifierEntry`) and `adultAnatomyLoaded`. With the adult pack loaded,
-  `targets` and `modifiers` include its entries.
+  (`ShapeModifierEntry`), `adultAnatomyLoaded`, `adultAnatomyManifest` and
+  `modifierTargetsLoaded`. With the adult pack loaded, `targets` and
+  `modifiers` include its entries.
+
+```ts
+loadHumanoidAssetsStaged(options: LoadOptions): Promise<StagedHumanoidAssets>
+
+interface StagedHumanoidAssets {
+  assets: HumanoidAssets;                    // macro and skin-mask targets only
+  modifierTargets: Promise<HumanoidAssets>;  // the same object, completed
+}
+```
+
+Loads in two stages. `assets` resolves with every macro target, so a recipe that
+sets no shape modifier can be evaluated at once; all modifiers and sliders are
+already listed. The modifier targets (the body's and the adult pack's) are
+fetched only after the first stage's files arrive, then added to the same
+object, and `modifierTargets` resolves. If they fail, `modifierTargets` rejects
+with `AssetFormatError` and `assets` stays usable for macro-only recipes.
+`loadHumanoidAssets` is this with both stages awaited.
 
 Also exported:
 
-- `parseHumanoidAssets(manifest, body, targets, adultAnatomy?)`: the same parsing
-  from already-fetched buffers. Pure; usable in workers and tests.
+- `parseHumanoidAssets(pack, adultAnatomy?)`: the same parsing from
+  already-fetched, decompressed buffers. Pure; usable in workers and tests.
+  Leave out `pack.modifierTargets` (and the adult pack's `targets`) to parse a
+  first stage.
+- `addModifierTargets(assets, { body, adultAnatomy? })`: completes a first
+  stage. The adult pack's targets are required exactly when that pack is
+  loaded. Throws `AssetFormatError` if the targets are already loaded or fail
+  to decode, and then leaves `assets` unchanged.
 - `groupFaces(assets, name): Uint32Array`: face indices of a named face group
   such as `body`. Throws `AssetFormatError` for an unknown group.
 - `jointPosition(assets, positions, joint, out, offset?)`: writes a skeleton
@@ -80,6 +104,8 @@ type RegionalMacroValues = Omit<MacroValues, "age">;
 ```
 
 A recipe is plain data, so `JSON.stringify` round-trips it.
+`recipeSetsModifiers(recipe)` is true when any shape modifier is non-zero, that
+is, when evaluating it needs the modifier targets.
 
 ### Macros
 
@@ -103,6 +129,9 @@ interface MacroValues {
   breastSize and breastFirmness 0.5, ethnic anchors 1/3 each.
 - `macroTargetWeights(macros): Map<string, number>`: target name to weight, for
   names that exist in the packed data. Never weights breast targets under 18.
+- `macroTargetNames(): Set<string>`: every name `macroTargetWeights` can
+  produce; the body pack's first targets file holds exactly these plus
+  `SKIN_MASK_TARGETS`.
 - Axis functions returning `AxisWeights`: `genderAxis`, `ageAxis`, `muscleAxis`,
   `weightAxis`, `heightAxis`, `proportionAxis`, `cupAxis`, `firmnessAxis` and
   `ethnicAxis`; `combine(prefix, axes)` takes their Cartesian product.
@@ -175,7 +204,9 @@ interface SurfaceTopology {
 }
 ```
 
-`evaluate` throws `AgePolicyError` for a recipe that violates the age policy,
+`evaluate` throws `MorphError` for a recipe that sets a shape modifier before
+the assets' modifier targets have loaded, `AgePolicyError` for a recipe that
+violates the age policy,
 `RecipeError` for an unknown modifier id (adult-only ids need the adult pack),
 an adult-only modifier on a minor, or a negative value on a one-sided modifier,
 and `MorphError` for an unknown target. Modifier values are clamped to `[-1, 1]`.
@@ -202,8 +233,9 @@ new HumanoidWorkerClient(load: LoadOptions, model?: ModelOptions, worker?: Worke
 
 The main-thread handle to an evaluation worker.
 
-- `client.ready: Promise<ReadyInfo>` resolves when the worker has loaded its
-  packs. `ReadyInfo` is `{ topology, modifiers, sliders, bones,
+- `client.ready: Promise<ReadyInfo>` resolves when the worker can evaluate a
+  figure built from macros; the modifier targets may still be arriving, and an
+  evaluation that sets a modifier waits for them. `ReadyInfo` is `{ topology, modifiers, sliders, bones,
   adultAnatomyLoaded }`: the render topology, every drivable shape modifier, the
   merged slider taxonomy, the skeleton's bone names (the topology's skin indices
   refer to them) and whether the adult anatomy pack is loaded.
@@ -263,8 +295,10 @@ import { bodyPack } from "humanoid-kit-body";
 ```
 
 `bodyPack` is `{ manifest, files: { "body.bin.gz", "targets.bin.gz",
-"attachments.bin.gz", ...WebP textures } }`, with each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the worker
-client. The package also exposes its files under `humanoid-kit-body/data/*`.
+"modifier-targets.bin.gz", "attachments.bin.gz", ...WebP textures } }`, with
+each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the
+worker client. The package also exposes its files under
+`humanoid-kit-body/data/*`.
 
 ## `humanoid-kit-adult-anatomy`
 

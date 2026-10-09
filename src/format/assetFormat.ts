@@ -1,10 +1,13 @@
 /**
  * The packed asset format written by `scripts/pack-makehuman.ts`.
  *
- * A body pack (`humanoid-kit-body`) has `manifest.json`, `body.bin` (base mesh,
- * UVs, quad faces, skin weights) and `targets.bin.gz` (sparse morph targets).
- * The adult anatomy pack (`humanoid-kit-adult-anatomy`) has its own manifest
- * and targets, pinned to the body pack it was built against. Binaries are
+ * A body pack (`humanoid-kit-body`) has `manifest.json`, `body.bin.gz` (base
+ * mesh, UVs, quad faces, skin weights), `attachments.bin.gz`, and its sparse
+ * morph targets in two files: `targets.bin.gz` with what a first figure needs
+ * (the macro and skin-mask targets) and `modifier-targets.bin.gz` with the
+ * rest, which can arrive later. The adult anatomy pack
+ * (`humanoid-kit-adult-anatomy`) has its own manifest and targets, pinned to
+ * the body pack it was built against. Binaries are gzipped and, decoded,
  * little-endian; `body.bin` is 4-byte aligned so typed-array views need no
  * copies.
  *
@@ -139,7 +142,10 @@ export interface BodyManifest {
       BufferRange
     >;
   };
+  /** The targets a first figure needs: every macro target and the skin-mask targets. */
   targets: TargetFile;
+  /** The remaining shape-modifier targets, loaded after the first figure. */
+  modifierTargets: TargetFile;
   modifiers: ShapeModifierEntry[];
   sliders: SliderTask[];
   attachments: { file: string; sha256: string; entries: AttachmentEntry[] };
@@ -227,8 +233,12 @@ export interface HumanoidAssets {
   skinIndex: Uint8Array;
   /** Normalised weights matching `skinIndex`. */
   skinWeight: Float32Array;
-  /** Body targets, plus adult anatomy targets when that pack was loaded. */
+  /**
+   * Loaded targets: the body pack's first-figure targets, and once
+   * `modifierTargetsLoaded`, its modifier targets and the adult pack's.
+   */
   targets: Map<string, SparseTarget>;
+  /** Every shape modifier of the loaded packs, known before their targets arrive. */
   modifiers: Map<string, ShapeModifierEntry>;
   /** The slider taxonomy of every loaded pack, merged in MakeHuman's order. */
   sliders: SliderTask[];
@@ -236,6 +246,10 @@ export interface HumanoidAssets {
   /** URL of each pack file by name (textures included); empty when parsed without URLs. */
   fileUrls: Map<string, string>;
   adultAnatomyLoaded: boolean;
+  /** The adult anatomy pack's manifest, when that pack was loaded. */
+  adultAnatomyManifest: AdultAnatomyManifest | null;
+  /** Whether the modifier targets (the body's and the adult pack's) are in `targets`. */
+  modifierTargetsLoaded: boolean;
 }
 
 export class AssetFormatError extends Error {
@@ -275,12 +289,17 @@ function expectIndices(arr: ArrayLike<number>, limit: number, what: string): voi
   }
 }
 
-/** Decodes targets from a decompressed `TARGET_ENCODING` file (see the header). */
+/**
+ * Decodes targets from a decompressed `TARGET_ENCODING` file (see the header)
+ * into `map`. `existing` holds targets already loaded, which may not repeat.
+ */
 function addTargets(
   map: Map<string, SparseTarget>,
   file: TargetFile,
   bin: ArrayBuffer,
   what: string,
+  vertexCount: number,
+  existing: ReadonlyMap<string, SparseTarget> = map,
 ): void {
   if (file.encoding !== TARGET_ENCODING)
     throw new AssetFormatError(`${what}: unsupported target encoding ${String(file.encoding)}`);
@@ -289,7 +308,8 @@ function addTargets(
     const n = e.count;
     if (!Number.isInteger(n) || n < 0 || e.offset < 0 || e.offset + n * 8 > bin.byteLength)
       throw new AssetFormatError(`target ${e.name} exceeds ${what}`);
-    if (map.has(e.name)) throw new AssetFormatError(`duplicate target ${e.name} in ${what}`);
+    if (map.has(e.name) || existing.has(e.name))
+      throw new AssetFormatError(`duplicate target ${e.name} in ${what}`);
     const indices = new Uint16Array(n);
     const deltas = new Int16Array(n * 3);
     let v = 0;
@@ -300,21 +320,30 @@ function addTargets(
       for (let k = 0; k < 3; k++)
         deltas[i * 3 + k] = view.getInt16(e.offset + n * 2 + (k * n + i) * 2, true);
     }
+    expectIndices(indices, vertexCount, `target ${e.name}`);
     map.set(e.name, { name: e.name, indices, deltas, scale: e.scale });
   }
 }
 
 export interface AdultAnatomyData {
   manifest: AdultAnatomyManifest;
-  /** The targets file, decompressed (`gunzip`). */
-  targets: ArrayBuffer;
+  /**
+   * The targets file, decompressed (`gunzip`). All of them are modifier
+   * targets, so they arrive with the body's (see `addModifierTargets`).
+   */
+  targets?: ArrayBuffer;
 }
 
 export interface BodyPackData {
   manifest: BodyManifest;
   body: ArrayBuffer;
-  /** The targets file, decompressed (`gunzip`). */
+  /** The first-figure targets file, decompressed (`gunzip`). */
   targets: ArrayBuffer;
+  /**
+   * The modifier targets file, decompressed. Leave it out to build a figure
+   * first and add it with `addModifierTargets` when it arrives.
+   */
+  modifierTargets?: ArrayBuffer;
   attachments: ArrayBuffer;
   /** URL of each pack file by name, when known (needed to load textures). */
   fileUrls?: Map<string, string>;
@@ -383,7 +412,12 @@ export function mergeSliderTasks(...sources: SliderTask[][]): SliderTask[] {
   return [...tasks.values()].sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-/** Builds typed views over already-fetched packs. Pure; usable in workers and tests. */
+/**
+ * Builds typed views over already-fetched packs. Pure; usable in workers and
+ * tests. With `pack.modifierTargets` (and the adult pack's `targets`, when that
+ * pack is given) the result is complete; without them it holds a figure's
+ * first-stage targets, and `addModifierTargets` completes it later.
+ */
 export function parseHumanoidAssets(
   pack: BodyPackData,
   adultAnatomy?: AdultAnatomyData,
@@ -399,7 +433,7 @@ export function parseHumanoidAssets(
     );
   }
   const map = new Map<string, SparseTarget>();
-  addTargets(map, manifest.targets, targets, "the body pack");
+  addTargets(map, manifest.targets, targets, "the body pack", manifest.vertexCount);
   const modifiers = new Map(manifest.modifiers.map((m) => [m.id, m] as const));
   if (adultAnatomy) {
     const a = adultAnatomy.manifest;
@@ -408,7 +442,6 @@ export function parseHumanoidAssets(
     if (a.topology !== manifest.topology || a.bodySha256 !== manifest.body.sha256) {
       throw new AssetFormatError("the adult anatomy pack was built for a different body pack");
     }
-    addTargets(map, a.targets, adultAnatomy.targets, "the adult anatomy pack");
     for (const m of a.modifiers) modifiers.set(m.id, m);
   }
   // Merging also orders tasks by sortOrder; the manifest keeps upstream's file order.
@@ -433,8 +466,7 @@ export function parseHumanoidAssets(
   expectIndices(faceVerts, manifest.vertexCount, "body faceVerts");
   expectIndices(faceUvs, manifest.uvCount, "body faceUvs");
   expectIndices(skinIndex, manifest.skeleton.bones.length, "body skinIndex");
-  for (const t of map.values()) expectIndices(t.indices, manifest.vertexCount, `target ${t.name}`);
-  return {
+  const assets: HumanoidAssets = {
     manifest,
     positions,
     uvs,
@@ -448,7 +480,60 @@ export function parseHumanoidAssets(
     attachments: parseAttachments(manifest, pack.attachments),
     fileUrls: pack.fileUrls ?? new Map(),
     adultAnatomyLoaded: adultAnatomy !== undefined,
+    adultAnatomyManifest: adultAnatomy?.manifest ?? null,
+    modifierTargetsLoaded: false,
   };
+  if (pack.modifierTargets) {
+    addModifierTargets(assets, {
+      body: pack.modifierTargets,
+      ...(adultAnatomy?.targets && { adultAnatomy: adultAnatomy.targets }),
+    });
+  } else if (adultAnatomy?.targets) {
+    throw new AssetFormatError(
+      "the adult anatomy pack's targets are modifier targets; give them with the body's",
+    );
+  }
+  return assets;
+}
+
+/**
+ * Adds the modifier targets to assets parsed without them: the body pack's
+ * `modifierTargets` file and, when the adult anatomy pack is loaded, its
+ * targets file (both decompressed). The assets are changed only if every
+ * target decodes, so a failed add can be retried.
+ */
+export function addModifierTargets(
+  assets: HumanoidAssets,
+  files: { body: ArrayBuffer; adultAnatomy?: ArrayBuffer },
+): void {
+  if (assets.modifierTargetsLoaded)
+    throw new AssetFormatError("the modifier targets are already loaded");
+  const adult = assets.adultAnatomyManifest;
+  if (adult && !files.adultAnatomy)
+    throw new AssetFormatError("the adult anatomy pack's targets must arrive with the body's");
+  if (!adult && files.adultAnatomy)
+    throw new AssetFormatError("there is no adult anatomy pack for these targets");
+  const { manifest, targets } = assets;
+  const added = new Map<string, SparseTarget>();
+  addTargets(
+    added,
+    manifest.modifierTargets,
+    files.body,
+    "the body pack's modifier targets",
+    manifest.vertexCount,
+    targets,
+  );
+  if (adult && files.adultAnatomy)
+    addTargets(
+      added,
+      adult.targets,
+      files.adultAnatomy,
+      "the adult anatomy pack",
+      manifest.vertexCount,
+      targets,
+    );
+  for (const [name, t] of added) targets.set(name, t);
+  assets.modifierTargetsLoaded = true;
 }
 
 async function fetchOk(url: string): Promise<Response> {
@@ -489,37 +574,73 @@ export interface LoadOptions {
   adultAnatomy?: PackLocation;
 }
 
-/** Fetches and parses the packs. */
-export async function loadHumanoidAssets(options: LoadOptions): Promise<HumanoidAssets> {
-  const body = packResolver(options.body);
-  const manifest = (await (await fetchOk(body.manifest)).json()) as BodyManifest;
-  const bin = (url: string) => fetchOk(url).then((r) => r.arrayBuffer());
-  // Some hosts serve `.gz` files with `Content-Encoding: gzip`, so the browser has
-  // already decompressed them; only data that still starts with gzip's magic is decoded.
-  const gz = (url: string) =>
-    bin(url).then((b) => {
+export interface StagedHumanoidAssets {
+  /** A figure's worth of assets: every macro target, without the modifier targets. */
+  assets: HumanoidAssets;
+  /**
+   * Resolves with the same `assets` once the modifier targets are added, or
+   * rejects if they fail to load (the first stage stays usable).
+   */
+  modifierTargets: Promise<HumanoidAssets>;
+}
+
+/** Some hosts serve `.gz` files with `Content-Encoding: gzip`, so the browser has
+ * already decompressed them; only data that still starts with gzip's magic is decoded. */
+const fetchGzip = (url: string) =>
+  fetchOk(url)
+    .then((r) => r.arrayBuffer())
+    .then((b) => {
       const head = new Uint8Array(b, 0, Math.min(2, b.byteLength));
       return head[0] === 0x1f && head[1] === 0x8b ? gunzip(b) : b;
     });
+
+/**
+ * Fetches and parses the packs in two stages. The first resolves with what a
+ * figure built from macros needs; the modifier targets (about a fifth of the
+ * bytes) are fetched only after the first stage's files have arrived, so they
+ * never compete with it for bandwidth.
+ */
+export async function loadHumanoidAssetsStaged(
+  options: LoadOptions,
+): Promise<StagedHumanoidAssets> {
+  const body = packResolver(options.body);
   const adult = options.adultAnatomy === undefined ? undefined : packResolver(options.adultAnatomy);
-  const [bodyBin, targets, attachments, adultData] = await Promise.all([
-    gz(body.file(manifest.body.file)),
-    gz(body.file(manifest.targets.file)),
-    gz(body.file(manifest.attachments.file)),
-    adult === undefined
-      ? Promise.resolve(undefined)
-      : fetchOk(adult.manifest)
-          .then((r) => r.json() as Promise<AdultAnatomyManifest>)
-          .then(async (m) => ({ manifest: m, targets: await gz(adult.file(m.targets.file)) })),
+  const [manifest, adultManifest] = await Promise.all([
+    fetchOk(body.manifest).then((r) => r.json() as Promise<BodyManifest>),
+    adult && fetchOk(adult.manifest).then((r) => r.json() as Promise<AdultAnatomyManifest>),
   ]);
+  const [bodyBin, targets, attachments] = await Promise.all([
+    fetchGzip(body.file(manifest.body.file)),
+    fetchGzip(body.file(manifest.targets.file)),
+    fetchGzip(body.file(manifest.attachments.file)),
+  ]);
+  const later = Promise.all([
+    fetchGzip(body.file(manifest.modifierTargets.file)),
+    adult && adultManifest && fetchGzip(adult.file(adultManifest.targets.file)),
+  ]);
+  // Handled below; this keeps a first-stage failure from leaving it unobserved.
+  later.catch(() => {});
   const fileUrls = new Map<string, string>();
   for (const a of manifest.attachments.entries) {
     if (a.material.texture) fileUrls.set(a.material.texture, body.file(a.material.texture));
   }
-  return parseHumanoidAssets(
+  const assets = parseHumanoidAssets(
     { manifest, body: bodyBin, targets, attachments, fileUrls },
-    adultData,
+    adultManifest && { manifest: adultManifest },
   );
+  const modifierTargets = later.then(([bodyTargets, adultTargets]) => {
+    addModifierTargets(assets, {
+      body: bodyTargets,
+      ...(adultTargets && { adultAnatomy: adultTargets }),
+    });
+    return assets;
+  });
+  return { assets, modifierTargets };
+}
+
+/** Fetches and parses the packs, modifier targets included. */
+export async function loadHumanoidAssets(options: LoadOptions): Promise<HumanoidAssets> {
+  return (await loadHumanoidAssetsStaged(options)).modifierTargets;
 }
 
 /**

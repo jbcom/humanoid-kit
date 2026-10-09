@@ -67,6 +67,13 @@ export interface Recipe {
   eyes: EyesRecipe;
 }
 
+/**
+ * Whether a recipe sets any shape modifier. A figure that sets none is built
+ * from macro targets alone, which load before the modifier targets.
+ */
+export const recipeSetsModifiers = (recipe: Recipe): boolean =>
+  Object.values(recipe.modifiers).some((v) => v !== 0);
+
 export function createRecipe(
   init: {
     macros?: Partial<MacroValues>;

@@ -9,7 +9,7 @@
  *
  * Channels: 0 = lips, 1 = flush (cheeks, nose, ears), 2 = areola/nipple.
  */
-import type { HumanoidAssets, SparseTarget } from "../format/assetFormat.ts";
+import { AssetFormatError, type HumanoidAssets, type SparseTarget } from "../format/assetFormat.ts";
 
 export const SKIN_MASK_CHANNELS = ["lips", "flush", "areola"] as const;
 
@@ -36,12 +36,17 @@ const MASK_TARGETS: Record<
   areola: { targets: ["breast/nipple-size-incr"], lo: 0.08, hi: 0.45 },
 };
 
+/** The targets the masks are measured from; packed with the first figure's targets. */
+export const SKIN_MASK_TARGETS: readonly string[] = Object.values(MASK_TARGETS).flatMap(
+  (spec) => spec.targets,
+);
+
 const smoothstep = (lo: number, hi: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
   return t * t * (3 - 2 * t);
 };
 
-/** Per base vertex, three mask channels in [0, 1] (`vertexCount * 3`). Missing targets leave a channel at 0. */
+/** Per base vertex, three mask channels in [0, 1] (`vertexCount * 3`). */
 export function buildSkinMasks(assets: HumanoidAssets): Float32Array {
   const n = assets.manifest.vertexCount;
   const out = new Float32Array(n * 3);
@@ -49,7 +54,7 @@ export function buildSkinMasks(assets: HumanoidAssets): Float32Array {
     const spec = MASK_TARGETS[channel];
     for (const name of spec.targets) {
       const t: SparseTarget | undefined = assets.targets.get(name);
-      if (!t) continue;
+      if (!t) throw new AssetFormatError(`the skin masks need target ${name}, which is not loaded`);
       let max = 0;
       const mags = new Float32Array(t.indices.length);
       for (let i = 0; i < t.indices.length; i++) {

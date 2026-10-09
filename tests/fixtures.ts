@@ -34,6 +34,7 @@ export const bodyPackData = () => ({
   manifest: bodyManifest,
   body: readGzipPackFile(path.join(bodyDir, bodyManifest.body.file)),
   targets: readGzipPackFile(path.join(bodyDir, bodyManifest.targets.file)),
+  modifierTargets: readGzipPackFile(path.join(bodyDir, bodyManifest.modifierTargets.file)),
   attachments: readGzipPackFile(path.join(bodyDir, bodyManifest.attachments.file)),
 });
 

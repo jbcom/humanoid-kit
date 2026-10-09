@@ -8,10 +8,10 @@ affiliated with it, and CC0 does not license trademarks (CC0 1.0 §4a).
 
 Every packed source file was checked for CC0 from its own content before packing:
 
-- 945 file(s) — file header: "This asset was explicitly released as CC0"
+- 854 file(s) — file header: "This asset was explicitly released as CC0"
 - 3 file(s) — file metadata: "license": "CC0": rigs/default.mhskel, rigs/default_weights.mhw, poseunits/face-poseunits.json
-- 1 file(s) — upstream LICENSE.md: "Poses and expressions" listed under "These assets have been released under CC0 1.0 Universal.": poseunits/face-poseunits.bvh
 - 9 file(s) — upstream LICENSE.md: "Targets and modifiers" listed under "These assets have been released under CC0 1.0 Universal."
+- 1 file(s) — upstream LICENSE.md: "Poses and expressions" listed under "These assets have been released under CC0 1.0 Universal.": poseunits/face-poseunits.bvh
 
 Attachments come from the MakeHuman system assets pack (makehuman_system_assets_cc0.zip, listed as
 "System assets, shared under CC0" on the MakeHuman community asset packs page). Each file was checked the same way:
@@ -24,5 +24,6 @@ Attachments come from the MakeHuman system assets pack (makehuman_system_assets_
 | Output | SHA-256 |
 | --- | --- |
 | body.bin.gz | `33e8502236f56d532abbaa2d0adbffb28af56a3f5313763feb9881c9ede668df` |
-| targets.bin.gz | `a0c3399044ad1171a8336a1e1c30df390dccedd15d4d670cc6aaaebf8c78adaa` |
+| targets.bin.gz | `81754709757f7eb5b3899403d9a715100f42924811e395c8b258034f0789fa1c` |
+| modifier-targets.bin.gz | `6c2c5713c5c1d3b52dfbe30e15de8e0bc6d3920cd906ea32072a9160152ea581` |
 | attachments.bin.gz | `65116a3e2c2a357c9a60578ade28fa8b8c1c990890ebba0726e1b89d52b4f073` |
