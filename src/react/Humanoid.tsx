@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import {
+  Bone,
   BufferAttribute,
   BufferGeometry,
   Color,
@@ -22,8 +23,11 @@ import {
   FrontSide,
   type Group,
   type Material,
+  Matrix4,
   type Mesh,
   type MeshStandardMaterial,
+  Skeleton,
+  SkinnedMesh,
   SRGBColorSpace,
   TextureLoader,
   Vector3,
@@ -39,6 +43,7 @@ import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
 import { AttachmentStandardMaterial, OCCLUSION_ATTRIBUTE } from "../render/occlusion.ts";
 import { CURVATURE_ATTRIBUTE, SkinMaterial } from "../render/skinMaterial.ts";
+import { faceUnitRotations } from "../rig/pose.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 
 const ClientContext = createContext<HumanoidWorkerClient | null>(null);
@@ -106,7 +111,14 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
    * group's clicks in place of `onClick`.
    */
   onPick?: (pick: HumanoidPick) => void;
+  /** How the figure is posed; absent is the rest pose. */
+  pose?: HumanoidPose;
 };
+
+/** A pose: facial pose units by name (MakeHuman's 60, e.g. `JawDrop`, `LeftUpperLidClosed`), 0..1. */
+export interface HumanoidPose {
+  faceUnits?: Readonly<Record<string, number>>;
+}
 
 /** Where a tap on the figure landed. */
 export interface HumanoidPick {
@@ -124,7 +136,43 @@ function makeGeometry(t: SurfaceTopology): BufferGeometry {
   g.setAttribute("position", new BufferAttribute(new Float32Array(t.vertexCount * 3), 3));
   g.setAttribute("normal", new BufferAttribute(new Float32Array(t.vertexCount * 3), 3));
   g.setAttribute("uv", new BufferAttribute(t.uvs, 2));
+  g.setAttribute("skinIndex", new BufferAttribute(t.skinIndex, 4));
+  g.setAttribute("skinWeight", new BufferAttribute(t.skinWeight, 4));
   return g;
+}
+
+/**
+ * The figure's skeleton, built once per rig: one bone per skeleton bone,
+ * parented as in the rig, with no rest rotation (docs/ARCHITECTURE.md,
+ * "Skeleton, poses and expressions"). `fit` places it on an evaluated figure.
+ */
+function makeSkeleton(rig: ReadyInfo["rig"]): { root: Bone; skeleton: Skeleton } {
+  const bones = rig.bones.map((name) => Object.assign(new Bone(), { name }));
+  let root: Bone | null = null;
+  bones.forEach((b, i) => {
+    const p = rig.parents[i] as number;
+    if (p < 0) root = b;
+    else bones[p]?.add(b);
+  });
+  if (!root) throw new Error("the rig has no root bone");
+  return { root, skeleton: new Skeleton(bones) };
+}
+
+/** Puts the skeleton at an evaluated figure's rest: bone offsets and inverse binds from its heads. */
+function fitSkeleton(skeleton: Skeleton, parents: Int16Array, heads: Float32Array): void {
+  skeleton.bones.forEach((bone, i) => {
+    const p = parents[i] as number;
+    const [x, y, z] = [heads[i * 3] ?? 0, heads[i * 3 + 1] ?? 0, heads[i * 3 + 2] ?? 0];
+    if (p < 0) bone.position.set(x, y, z);
+    else
+      bone.position.set(
+        x - (heads[p * 3] ?? 0),
+        y - (heads[p * 3 + 1] ?? 0),
+        z - (heads[p * 3 + 2] ?? 0),
+      );
+    // Bones and meshes share the figure's group, so mesh space is bind space.
+    skeleton.boneInverses[i]?.makeTranslation(-x, -y, -z);
+  });
 }
 
 function writeGeometry(g: BufferGeometry, s: SurfaceEvaluation): void {
@@ -183,10 +231,40 @@ function useAttachmentMaterial(
   return material;
 }
 
+/** A mesh skinned to the figure's skeleton, bound once in mesh space. */
+function SkinnedPart({
+  geometry,
+  material,
+  skeleton,
+  visible,
+  part,
+  renderOrder,
+}: {
+  geometry: BufferGeometry;
+  material: Material;
+  skeleton: Skeleton;
+  visible: boolean;
+  part: HumanoidPick["part"];
+  renderOrder?: number;
+}) {
+  const mesh = useMemo(() => {
+    const m = new SkinnedMesh(geometry, material);
+    m.bind(skeleton, new Matrix4());
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+  }, [geometry, material, skeleton]);
+  mesh.visible = visible;
+  mesh.userData.hkPart = part;
+  if (renderOrder !== undefined) mesh.renderOrder = renderOrder;
+  return <primitive object={mesh} />;
+}
+
 function AttachmentMesh({
   index,
   topology,
   geometry,
+  skeleton,
   visible,
   report,
   eyes,
@@ -194,6 +272,7 @@ function AttachmentMesh({
   index: number;
   topology: AttachmentTopology;
   geometry: BufferGeometry;
+  skeleton: Skeleton;
   visible: boolean;
   report: (e: Error) => void;
   eyes: Recipe["eyes"];
@@ -203,14 +282,13 @@ function AttachmentMesh({
     if (material instanceof EyeMaterial) material.setAppearance(eyes);
   }, [material, eyes]);
   return (
-    <mesh
+    <SkinnedPart
       geometry={geometry}
       material={material}
+      skeleton={skeleton}
       visible={visible}
-      userData={{ hkPart: index }}
+      part={index}
       renderOrder={topology.zDepth}
-      castShadow
-      receiveShadow
     />
   );
 }
@@ -246,6 +324,7 @@ export function Humanoid({
   onEvaluated,
   onError,
   onPick,
+  pose,
   ...group
 }: HumanoidProps) {
   const client = useHumanoidClient();
@@ -273,7 +352,18 @@ export function Humanoid({
     });
     return { body, attachments };
   }, [ready]);
+  const rig = useMemo(() => (ready ? makeSkeleton(ready.rig) : null), [ready]);
   const [shown, setShown] = useState(false);
+
+  // The pose: face units blended into bone rotations (rest when absent).
+  const faceUnits = pose?.faceUnits;
+  useEffect(() => {
+    if (!rig || !ready) return;
+    const q = faceUnitRotations(ready.rig, faceUnits ?? {});
+    rig.skeleton.bones.forEach((bone, i) => {
+      bone.quaternion.fromArray(q, i * 4);
+    });
+  }, [rig, ready, faceUnits]);
 
   useEffect(
     () => () => {
@@ -315,6 +405,7 @@ export function Humanoid({
     client.evaluate(recipe, key).then(
       (ev) => {
         if (!live) return;
+        if (rig && ready) fitSkeleton(rig.skeleton, ready.rig.parents, ev.boneHeads);
         writeGeometry(geometries.body, ev);
         (geometries.body.getAttribute(CURVATURE_ATTRIBUTE) as BufferAttribute).copyArray(
           ev.curvature,
@@ -334,7 +425,7 @@ export function Humanoid({
     return () => {
       live = false;
     };
-  }, [client, geometries, recipe, key, onEvaluatedRef, report]);
+  }, [client, geometries, rig, ready, recipe, key, onEvaluatedRef, report]);
 
   return (
     <group
@@ -343,15 +434,15 @@ export function Humanoid({
       // Only listen when asked: a handler makes three raycast the figure on every click.
       {...(onPick && { onClick: (e: ThreeEvent<MouseEvent>) => pick(e, onPick) })}
     >
-      {geometries && ready && (
+      {geometries && ready && rig && (
         <>
-          <mesh
+          <primitive object={rig.root} />
+          <SkinnedPart
             geometry={geometries.body}
             material={material ?? skin}
+            skeleton={rig.skeleton}
             visible={shown}
-            userData={{ hkPart: "body" }}
-            castShadow
-            receiveShadow
+            part="body"
           />
           {ready.topology.attachments.map((t, i) => {
             const g = geometries.attachments[i];
@@ -361,6 +452,7 @@ export function Humanoid({
                 index={i}
                 topology={t}
                 geometry={g}
+                skeleton={rig.skeleton}
                 visible={shown}
                 report={report}
                 eyes={recipe.eyes}

@@ -5,7 +5,8 @@
  *
  * <query> is the playground QA-shot query (e.g. "cam=0,1.5,0.85,0,1.48,0&exp=1.1");
  * <recipes.json> is a JSON array of createRecipe() inputs (or a file holding
- * one). The playground dev server must be running on HK_PLAYGROUND (default
+ * one); an entry's `$pose` key, if any, poses that figure (a `HumanoidPose`,
+ * e.g. {"faceUnits":{"JawDrop":1}}). The playground dev server must be running on HK_PLAYGROUND (default
  * http://localhost:5173). One page renders every recipe in turn, waiting for
  * each figure to be evaluated and drawn, so the sheet never shows a stale or
  * half-loaded figure.
@@ -46,7 +47,8 @@ try {
     const generation = await page.evaluate((r) => {
       const next =
         Number(document.querySelector("[data-generation]")?.getAttribute("data-generation")) + 1;
-      window.hkSetRecipe?.(r);
+      const { $pose, ...init } = r;
+      window.hkSetRecipe?.(init, $pose);
       return next;
     }, recipe);
     await page

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { HumanoidWorkerClient, HumanoidWorkerError } from "../src/worker/client.ts";
-import type { WorkerRequest, WorkerResponse } from "../src/worker/protocol.ts";
+import type { ReadyInfo, WorkerRequest, WorkerResponse } from "../src/worker/protocol.ts";
+
+const NO_RIG: ReadyInfo["rig"] = {
+  bones: [],
+  parents: new Int16Array(0),
+  faceUnits: { names: [], joints: [], frames: [] },
+};
 
 /**
  * A stand-in for the evaluation worker. As the real one does, it answers an
@@ -55,7 +61,7 @@ class FakeWorker {
             topology: { body: {} as never, attachments: [] },
             modifiers: [],
             sliders: [],
-            bones: [],
+            rig: NO_RIG,
             adultAnatomyLoaded: false,
           });
       }, 1);

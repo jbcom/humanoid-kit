@@ -232,6 +232,8 @@ interface Evaluation {
   normals: Float32Array;    // smooth, shared across UV seams
   groundOffset: number;     // lift that puts the lowest body point on y = 0
   control: Float32Array;    // morphed positions in the base topology
+  curvature: Float32Array;  // per body render vertex, mean curvature (1/m)
+  boneHeads: Float32Array;  // the skeleton fitted to this figure: each bone's rest head, xyz
 }
 
 interface SurfaceTopology {
@@ -306,6 +308,24 @@ compute what the renderer will do.
   by cosine-weighted ray casts (`hemisphereDirections(n)`), as used for
   attachments.
 
+### Rig and poses
+
+The skeleton fitted to a figure, and posing (ARCHITECTURE.md, "Skeleton, poses
+and expressions"). Framework-free.
+
+- `restBones(assets, control): RestBones`: `names` (skin-weight order),
+  `parents` (-1 for the root), `heads` (each bone's head joint over the morphed
+  control mesh) and `order` (parents before children).
+- `rigData(assets): RigData`: the bone names and facial pose units, small
+  enough for the main thread (the worker sends it in `ReadyInfo.rig`).
+- `faceUnitRotations(rig, weights): BoneRotations`: an expression from
+  MakeHuman's 60 face units (`JawDrop`, `LeftUpperLidClosed`, …), blended in
+  log space; a quaternion per bone. Throws for an unknown unit.
+  `IDENTITY_POSE(bones)` is the rest pose.
+- `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out)`: linear
+  blend skinning on the CPU, exactly as the renderer skins, for tests, anchors
+  and pose-dependent bakes.
+
 ### Presence
 
 What each figure tells the scene around it (PRESENCE.md). Framework-free.
@@ -338,10 +358,11 @@ The main-thread handle to an evaluation worker.
   arriving, and an evaluation that needs one waits in the worker for its stage.
 - `client.complete: Promise<void>` resolves when every target file has
   loaded, or rejects with the error that stopped one.
-- `ReadyInfo` is `{ topology, modifiers, sliders, bones,
+- `ReadyInfo` is `{ topology, modifiers, sliders, rig,
   adultAnatomyLoaded }`: the render topology, every drivable shape modifier, the
-  merged slider taxonomy, the skeleton's bone names (the topology's skin indices
-  refer to them) and whether the adult anatomy pack is loaded.
+  merged slider taxonomy, the rig (`RigData` plus each bone's `parents` index;
+  the topology's skin indices refer to `rig.bones`) and whether the adult
+  anatomy pack is loaded.
 - `client.evaluate(recipe, key?): Promise<Evaluation>` is latest-wins per key:
   each key has at most one evaluation in the worker and one waiting, and a
   waiting request replaced by a newer one rejects with an error named
@@ -385,6 +406,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `material?` | A three.js `Material` replacing the built-in skin material, which follows `recipe.skin` |
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
+| `pose?` | A `HumanoidPose`: `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth). Absent is the rest pose |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"` or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | other props | Passed to the wrapping `<group>` |
 
@@ -395,7 +417,10 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 - Updates the geometry in place when `recipe` changes.
 - Stores the latest `groundOffset` on the group's `userData`.
 - Disposes its geometries, textures and built-in materials on unmount.
-- Renders static meshes; it does not build a skeleton or play animation.
+- Skins the body and attachments to the skeleton fitted to each evaluation
+  (linear blend skinning on the GPU) and poses it from `pose`; posing does not
+  re-evaluate the figure. Attachment occlusion is still baked at rest, so an
+  open mouth's interior is not yet darkened.
 
 ### `<StudioStage background? intensity? />`
 

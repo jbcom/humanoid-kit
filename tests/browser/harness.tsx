@@ -30,7 +30,11 @@ export function readyInfo(withAdultPack = false): ReadyInfo {
     sliders: withAdultPack
       ? mergeSliderTasks(body.sliders, adult.sliders)
       : mergeSliderTasks(body.sliders),
-    bones: [],
+    rig: {
+      bones: [],
+      parents: new Int16Array(0),
+      faceUnits: { names: [], joints: [], frames: [] },
+    },
     adultAnatomyLoaded: withAdultPack,
   };
 }

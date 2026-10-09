@@ -300,15 +300,46 @@ attachment render vertex the feature of the first base vertex it is bound to
 `client.pickMap()`; a tap, as opposed to an orbit drag, on a figure rendered by
 `<Humanoid onPick>` reports the render vertex it hit.
 
-## Skeleton and facial pose data
+## Skeleton, poses and expressions (milestone 2)
 
 The body pack carries the MakeHuman default skeleton (163 bones with parents,
 head and tail joints and roll planes), the joint vertex lists, the skin weights
-and 60 facial pose units (named frames of a BVH). Today the skin weights drive
-the regions and are carried onto the render surface, and `jointPosition` returns
-a joint's centroid over any set of positions. The runtime does not yet build a
-three.js skeleton, pose a figure or play expressions, and `<Humanoid>` renders a
-static mesh.
+(up to four bones per vertex, indexed in the manifest's bone order) and 60
+facial pose units (named frames of a BVH).
+
+**Use cases.** The creator previews expressions and poses to judge shape and
+skin (a blink, a smile, an open jaw; arms down instead of the rest A-pose).
+Games animate many figures every frame from animation packs (BVH, milestone
+8). Attachments (eyes, teeth, tongue, later clothing and hair) must follow the
+pose. Presence anchors, joint-angle skin states (wrinkles) and pose-keyed
+occlusion (an open mouth) read the posed skeleton.
+
+**Requirements.** Posing must cost nothing on the worker per frame (a crowd
+animates at frame rate while recipes change rarely); the rig must fit every
+morphed body, not only the default; rotations from MakeHuman's BVH data must
+mean what they meant there; everything must be testable in Node.
+
+**Decisions (2026-10-09).**
+
+- *Rest frames are axis-aligned, as in BVH.* A BVH joint has an offset and no
+  rest orientation, so its rotations are about world-aligned axes at the
+  joint, composed down the hierarchy. Each bone is therefore placed at its head
+  joint (the centroid of its joint vertices over the *morphed* control mesh,
+  so the rig fits every figure) with an identity rest rotation. The roll planes
+  are kept for exporting to tools with bone-local frames; posing does not need
+  them. Rotations from MakeHuman's BVH files apply unchanged, in each joint's
+  channel order.
+- *Linear blend skinning on the GPU* (three's `SkinnedMesh`) with the pack's
+  weights, which MakeHuman authored for linear blending. The worker returns
+  the bone heads with each evaluation; the main thread binds the skeleton at
+  that rest and poses it per frame. Dual-quaternion skinning and corrective
+  shapes, for elbows, knees and shoulders, are a later area lane on the same
+  rig.
+- *Expressions blend face units in log space*: each unit's per-bone rotation
+  is a rotation vector, an expression is the weighted sum per bone, and the sum
+  is exponentiated. Blending is order-independent and exact for one unit.
+- *A CPU reference* (`skinPositions`) poses control vertices exactly as the
+  shader does, for tests, presence anchors and pose-keyed occlusion bakes.
 
 ## Layers
 

@@ -62,7 +62,14 @@ describe("the rest layers' fields", () => {
   });
 
   it("keep every value in [0, 1] and name every target they need", () => {
-    for (const v of fields) expect(v >= 0 && v <= 1).toBe(true);
+    let lo = Number.POSITIVE_INFINITY;
+    let hi = Number.NEGATIVE_INFINITY;
+    for (const v of fields) {
+      lo = Math.min(lo, v);
+      hi = Math.max(hi, v);
+    }
+    expect(lo).toBeGreaterThanOrEqual(0);
+    expect(hi).toBeLessThanOrEqual(1);
     for (const t of SKIN_LAYER_TARGETS) expect(assets.targets.has(t), t).toBe(true);
   });
 

@@ -20,6 +20,7 @@ import { buildRegionField } from "../makehuman/regions.ts";
 import { bindingSkin, evaluateBinding } from "../mhclo/bound.ts";
 import { evaluateMorph, MorphError, type RegionField } from "../morph/evaluate.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
+import { restBones } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { buildLayerFields } from "../surface/layers.ts";
 import { bakeOcclusion } from "../surface/occlusion.ts";
@@ -107,6 +108,8 @@ export interface Evaluation extends SurfaceEvaluation {
   control: Float32Array;
   /** Per body render vertex: mean curvature magnitude (m⁻¹), for subsurface scattering. */
   curvature: Float32Array;
+  /** The skeleton fitted to this figure: each bone's rest head (`restBones`), bones × 3. */
+  boneHeads: Float32Array;
 }
 
 interface Part {
@@ -312,6 +315,11 @@ export class HumanoidModel {
    * calling `topology()` (the default figure is an adult, so a child or very
    * old first figure does not bring them in its first stage).
    */
+  /** Each bone's parent index in skin-weight order (-1 for the root). */
+  boneParents(): Int16Array {
+    return restBones(this.assets, this.assets.positions).parents;
+  }
+
   occlusionBakeRecipe(): Recipe | null {
     return this.wearsPackedSet() ? null : occlusionFigure();
   }
@@ -395,7 +403,8 @@ export class HumanoidModel {
       this.bodyEdges,
       new Float32Array(body.positions.length / 3),
     );
-    return { ...body, attachments, groundOffset: -minY, control, curvature };
+    const boneHeads = restBones(this.assets, control).heads;
+    return { ...body, attachments, groundOffset: -minY, control, curvature, boneHeads };
   }
 
   private evaluatePart(p: Part, control: Float32Array): SurfaceEvaluation {

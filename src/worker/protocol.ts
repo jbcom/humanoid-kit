@@ -8,6 +8,7 @@ import type {
   RenderFeatures,
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import type { RigData } from "../rig/pose.ts";
 
 /** What the worker reports once the packs are loaded and the model is built. */
 export interface ReadyInfo {
@@ -16,8 +17,12 @@ export interface ReadyInfo {
   modifiers: ShapeModifierEntry[];
   /** The loaded packs' slider taxonomy, merged in MakeHuman's order. */
   sliders: SliderTask[];
-  /** Skeleton bone names; the topology's skin indices refer to these. */
-  bones: string[];
+  /**
+   * What posing needs: bone names (the topology's skin indices refer to
+   * these), each bone's parent index (-1 for the root) and the facial pose
+   * units. Each evaluation carries the bones' rest heads for its figure.
+   */
+  rig: RigData & { parents: Int16Array };
   adultAnatomyLoaded: boolean;
 }
 

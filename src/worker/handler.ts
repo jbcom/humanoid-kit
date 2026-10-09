@@ -14,6 +14,7 @@ import { type LoadStage, loadHumanoidAssetsStaged } from "../format/assetFormat.
 import { buildFeatureMap } from "../makehuman/features.ts";
 import { HumanoidModel } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { rigData } from "../rig/pose.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
 
 export type Post = (msg: WorkerResponse, transfer?: Transferable[]) => void;
@@ -51,7 +52,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           topology,
           modifiers: [...assets.modifiers.values()],
           sliders: assets.sliders,
-          bones: assets.manifest.skeleton.bones.map((b) => b.name),
+          rig: { ...rigData(assets), parents: model.boneParents() },
           adultAnatomyLoaded: assets.adultAnatomyLoaded,
         });
         return;
@@ -81,6 +82,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         evaluation.normals.buffer,
         evaluation.control.buffer,
         evaluation.curvature.buffer,
+        evaluation.boneHeads.buffer,
       ];
       for (const a of evaluation.attachments) transfer.push(a.positions.buffer, a.normals.buffer);
       post({ type: "evaluated", id: req.id, evaluation, ms: performance.now() - t0 }, transfer);

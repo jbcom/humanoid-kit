@@ -27,7 +27,11 @@ export function CameraRig({ ready, positions, offsetY, focus, refocus = 0 }: Cam
   const size = useThree((s) => s.size);
   const parts = useMemo(
     () =>
-      vertexFrameParts(ready.topology.body.skinIndex, ready.topology.body.skinWeight, ready.bones),
+      vertexFrameParts(
+        ready.topology.body.skinIndex,
+        ready.topology.body.skinWeight,
+        ready.rig.bones,
+      ),
     [ready],
   );
   const goal = useRef<{ position: Vector3; target: Vector3 } | null>(null);

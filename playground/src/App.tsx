@@ -4,6 +4,7 @@ import { createRecipe, HumanoidWorkerClient, type Recipe } from "humanoid-kit";
 import { HumanoidCreator } from "humanoid-kit/editor";
 import {
   Humanoid,
+  type HumanoidPose,
   HumanoidProvider,
   STUDIO_EXPOSURE,
   STUDIO_TONE_MAPPING,
@@ -60,8 +61,8 @@ function useClient(): HumanoidWorkerClient | null {
 
 declare global {
   interface Window {
-    /** QA only: swaps the shot's recipe without reloading (see `Shot`). */
-    hkSetRecipe?: (init: Parameters<typeof createRecipe>[0]) => void;
+    /** QA only: swaps the shot's recipe (and pose) without reloading (see `Shot`). */
+    hkSetRecipe?: (init: Parameters<typeof createRecipe>[0], pose?: HumanoidPose) => void;
   }
 }
 
@@ -71,6 +72,20 @@ const params = new URLSearchParams(window.location.search);
 function initialRecipe(): Recipe {
   const raw = params.get("recipe");
   return createRecipe(raw ? (JSON.parse(raw) as Parameters<typeof createRecipe>[0]) : {});
+}
+
+/** `?face=JawDrop:1,LipsKiss:0.5` poses the shot's face. */
+function initialPose(): HumanoidPose {
+  const raw = params.get("face");
+  if (!raw) return {};
+  return {
+    faceUnits: Object.fromEntries(
+      raw.split(",").map((pair) => {
+        const [name = "", weight = "1"] = pair.split(":");
+        return [name, Number(weight)];
+      }),
+    ),
+  };
 }
 
 export function App() {
@@ -98,7 +113,8 @@ const TONE_MAPPERS: Record<string, ToneMapping> = {
  * A fixed-camera render for visual QA: `?view=front|side|back|face`, or
  * `?cam=x,y,z,tx,ty,tz` to place the camera exactly; `?tm=agx|neutral|aces`
  * and `?exp=<number>` override tone mapping and exposure for comparisons;
- * `?bg=rrggbb` sets a background key colour.
+ * `?bg=rrggbb` sets a background key colour; `?face=JawDrop:1,LipsKiss:0.5`
+ * poses the face with MakeHuman's face units.
  */
 function Shot() {
   const toneMapping = TONE_MAPPERS[params.get("tm") ?? ""] ?? STUDIO_TONE_MAPPING;
@@ -107,6 +123,7 @@ function Shot() {
   const bg = params.get("bg");
   const background = bg && /^[0-9a-f]{6}$/i.test(bg) ? `#${bg}` : null;
   const [recipe, setRecipe] = useState(initialRecipe);
+  const [pose, setPose] = useState<HumanoidPose>(initialPose);
   const [lift, setLift] = useState(0);
   // Tests wait for data-figure="ready": the figure is evaluated and placed.
   // data-generation counts recipes swapped in through window.hkSetRecipe, so a
@@ -114,9 +131,10 @@ function Shot() {
   const [ready, setReady] = useState(false);
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
-    window.hkSetRecipe = (init) => {
+    window.hkSetRecipe = (init, next) => {
       setReady(false);
       setRecipe(createRecipe(init));
+      setPose(next ?? initialPose());
       setGeneration((g) => g + 1);
     };
     return () => {
@@ -159,6 +177,7 @@ function Shot() {
         <StudioStage {...(background ? { background } : {})} />
         <Humanoid
           recipe={recipe}
+          pose={pose}
           position={[0, lift, 0]}
           onEvaluated={(ev) => {
             setLift(ev.groundOffset);
