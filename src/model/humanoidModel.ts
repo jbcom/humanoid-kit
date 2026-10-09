@@ -43,6 +43,7 @@ import {
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { SKIN_LAYERS } from "../surface/regions/index.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
+import { tuckDepths } from "./tuck.ts";
 
 export interface ModelOptions {
   /** Catmull–Clark levels for the body surface (0–2). Default 1. Attachments use at most 1. */
@@ -118,6 +119,11 @@ export interface Outfit {
   bodyVisible: Uint8Array;
   /** `masks.bodyIndex` is for the base surface. */
   masks: OutfitMasks;
+  /**
+   * Per base vertex, how far to sink the skin at the edge of the garments under
+   * them (metres), or null when none needs it (`HumanoidModel.edgeTuck`).
+   */
+  bodyTuck: Float32Array | null;
   /** The same hiding over the adult surface (`HumanoidModel.adultSurface`), worked out on first use. */
   adultBodyIndex?: Uint32Array;
 }
@@ -265,6 +271,25 @@ const topologyOf = (m: SurfaceMesh): SurfaceTopology => ({
   vertexCount: m.renderToSurface.length,
 });
 
+/** Edges from what garments hide within which the skin is sunk under them (`edgeTuck`). */
+const TUCK_RING = 3;
+/** Cloth further than this (metres) over the skin does not sink it. */
+const TUCK_CAP = 0.03;
+
+/** Unit-length copies of vertex normals (zero stays zero). */
+function unitNormals(normals: Float32Array): Float32Array {
+  const out = new Float32Array(normals.length);
+  for (let v = 0; v < normals.length; v += 3) {
+    const l = Math.hypot(normals[v] as number, normals[v + 1] as number, normals[v + 2] as number);
+    if (l > 0) {
+      out[v] = (normals[v] as number) / l;
+      out[v + 1] = (normals[v + 1] as number) / l;
+      out[v + 2] = (normals[v + 2] as number) / l;
+    }
+  }
+  return out;
+}
+
 /** The figure attachment occlusion is baked against (and the pack's bake was): the default one. */
 const occlusionFigure = (): Recipe => createRecipe();
 
@@ -306,6 +331,8 @@ export class HumanoidModel {
     | undefined;
   /** The body's state morphs and, with the adult pack, its own (`AdultAnatomySpec.stateMorphs`). */
   private readonly stateMorphs: readonly StateMorph[];
+  /** The body's vertex adjacency, on first use (`bodyAdjacency`). */
+  private adjacency: { start: Uint32Array; items: Uint32Array } | undefined;
   /** The rest bake of the worn set, kept for the corner bakes to reuse. */
   private restOcclusion: {
     rest: Float32Array;
@@ -436,11 +463,15 @@ export class HumanoidModel {
     };
   }
 
+  /**
+   * A bound asset's surface. Its skin follows its references, unless `skin`
+   * says otherwise (a garment's: `garmentSkin`).
+   */
   private attachmentSurface(
     asset: Bound & Pick<BoundAsset, "faceVerts" | "faceUvs" | "uvs">,
     level: number,
+    skin = bindingSkin(asset, this.assets.skinIndex, this.assets.skinWeight),
   ): SurfaceMesh {
-    const skin = bindingSkin(asset, this.assets.skinIndex, this.assets.skinWeight);
     return buildSurfaceMesh(
       {
         vertexCount: asset.entry.vertexCount,
@@ -846,7 +877,10 @@ export class HumanoidModel {
     // The adult surface only for a figure aged 18 or over, decided here and nowhere
     // else: a minor's evaluation is the base body's, and never builds the other.
     const adult = isAdult(recipe) ? this.adultBodySurface() : null;
-    const body = this.evaluatePart(adult ? adult.part : this.body, control);
+    const body = this.evaluatePart(
+      adult ? adult.part : this.body,
+      outfit.bodyTuck ? this.tucked(control, outfit.bodyTuck) : control,
+    );
     const attachments = this.attached.map((a) =>
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
     );
@@ -1069,10 +1103,104 @@ export class HumanoidModel {
       order,
       bodyVisible: stack.base,
       masks: { bodyIndex, garmentIndex },
+      bodyTuck: order.length ? this.edgeTuck(order, stack.base) : null,
     };
     this.outfits.set(key, outfit);
     if (this.outfits.size > 8) this.outfits.delete(this.outfits.keys().next().value as string);
     return outfit;
+  }
+
+  /**
+   * How far to sink the skin at the edge of the outfit under the cloth over it
+   * (`tuckDepths`), per base vertex, or null when nothing needs it: for the
+   * visible body vertices within `TUCK_RING` edges of what the garments hide,
+   * their clearance under the garments at rest. A function of the garments
+   * alone, like the masks; `tucked` applies it to a figure.
+   */
+  private edgeTuck(order: readonly string[], visible: Uint8Array): Float32Array | null {
+    const n = this.assets.manifest.vertexCount;
+    const adjacency = this.bodyAdjacency();
+    // Edges from what the garments (not the attachments) hide.
+    const reach = new Int8Array(n).fill(-1);
+    let frontier: number[] = [];
+    for (const v of this.bodyVertices)
+      if (!visible[v] && this.mountedVisible[v]) {
+        reach[v] = 0;
+        frontier.push(v);
+      }
+    for (let hop = 1; hop <= TUCK_RING; hop++) {
+      const next: number[] = [];
+      for (const v of frontier)
+        for (let k = adjacency.start[v] as number; k < (adjacency.start[v + 1] as number); k++) {
+          const w = adjacency.items[k] as number;
+          if (reach[w] === -1) {
+            reach[w] = hop;
+            next.push(w);
+          }
+        }
+      frontier = next;
+    }
+    const candidates = this.bodyVertices.filter((v) => visible[v] && (reach[v] as number) > 0);
+    if (!candidates.length) return null;
+    const rest = this.assets.positions;
+    const normals = unitNormals(quadVertexNormals(rest, this.assets.faceVerts));
+    const cloth = order.map((id) => {
+      const { asset } = this.garmentPart(id);
+      return {
+        positions: evaluateBinding(asset, rest, new Float32Array(asset.entry.vertexCount * 3)),
+        faces: asset.faceVerts,
+      };
+    });
+    const tuck = tuckDepths({ positions: rest, normals, candidates, cloth, cap: TUCK_CAP });
+    return tuck.some((t) => t > 0) ? tuck : null;
+  }
+
+  /** The body's vertex adjacency over its faces, built on first use. */
+  private bodyAdjacency(): { start: Uint32Array; items: Uint32Array } {
+    if (!this.adjacency) {
+      const n = this.assets.manifest.vertexCount;
+      const count = new Uint32Array(n + 1);
+      const edge = (f: number, k: number) => [
+        this.assets.faceVerts[f * 4 + k] as number,
+        this.assets.faceVerts[f * 4 + ((k + 1) % 4)] as number,
+      ];
+      for (const f of this.bodyFaces)
+        for (let k = 0; k < 4; k++) {
+          const [a, b] = edge(f, k) as [number, number];
+          count[a + 1] = (count[a + 1] as number) + 1;
+          count[b + 1] = (count[b + 1] as number) + 1;
+        }
+      for (let v = 0; v < n; v++) count[v + 1] = (count[v + 1] as number) + (count[v] as number);
+      const fill = count.slice(0, n);
+      const items = new Uint32Array(count[n] as number);
+      for (const f of this.bodyFaces)
+        for (let k = 0; k < 4; k++) {
+          const [a, b] = edge(f, k) as [number, number];
+          items[fill[a] as number] = b;
+          fill[a] = (fill[a] as number) + 1;
+          items[fill[b] as number] = a;
+          fill[b] = (fill[b] as number) + 1;
+        }
+      this.adjacency = { start: count, items };
+    }
+    return this.adjacency;
+  }
+
+  /**
+   * The figure's control positions with the outfit's edge skin sunk along its
+   * normals (`edgeTuck`), for the body's surface only: garments stay bound to
+   * the untucked shape.
+   */
+  private tucked(control: Float32Array, tuck: Float32Array): Float32Array {
+    const normals = unitNormals(quadVertexNormals(control, this.assets.faceVerts));
+    const out = Float32Array.from(control);
+    for (let v = 0; v < tuck.length; v++) {
+      const t = tuck[v] as number;
+      if (t === 0) continue;
+      for (let a = 0; a < 3; a++)
+        out[v * 3 + a] = (out[v * 3 + a] as number) - (normals[v * 3 + a] as number) * t;
+    }
+    return out;
   }
 
   private evaluatePart(p: Part, control: Float32Array): SurfaceEvaluation {
