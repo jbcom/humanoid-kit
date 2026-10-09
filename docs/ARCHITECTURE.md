@@ -1445,22 +1445,25 @@ Old recipes evaluate and serialise as before.
   axis-aligned ramps, had straight edges down the cheeks and a rectangle on
   the neck. The beard's masks are redrawn with the coat, along the face's
   own lines.
-- *Terminal hair is one strand layer per group.* Each group (chest, abdomen,
-  back, buttocks, arms, legs, axillary) has its own coverage, colour, density
-  and length, so its own layer. Masks are measured from the base mesh: the skin
+- *Sparse terminal hair is one strand layer per group.* Each group drawn as
+  strands (buttocks, arms, legs) has its own coverage, colour, density and
+  length, so its own layer. Masks are measured from the base mesh: the skin
   zones (cut off where a zone's weight falls under 0.2, so supports stay near
   their region), the vertex normals, and the armpits' hollows. The limbs stop
   short of the hands and feet, which carry little terminal hair and whose
   layers crowd the atlas.
 - *The beard defaults to none.* Clean-shaven is the neutral recipe; terminal
   body hair and vellus are on by default for age and sex.
-- *Axillary hair is an adult-only body layer; pubic hair is the adult pack's.*
-  The armpit's mask comes from the base mesh, so its layer lives in the core,
-  where a layer flag, `adultOnly`, makes `paintStopTable` paint it at zero
-  unless the input says the figure is an adult, failing closed when it does
-  not say. The model's coverage is zero for it under 18 as well, the age policy
-  refuses a recipe that asks for it, and every other group's mask is cut out
-  where it lies. Pubic hair is the adult pack's, like every genital-region
+- *Axillary hair is an adult-only coat region; pubic hair is the adult pack's.*
+  The armpit's hair is dense and a couple of centimetres long, so it is the
+  coat's; its mask comes from the base mesh, so the region lives in the core,
+  where a region flag, `adultOnly`, makes `paintCoat` leave it unpainted, without
+  asking its paint, unless the input says the figure is an adult, failing
+  closed when it does not say. The model's coverage is zero for it under 18 as
+  well, the age policy refuses a recipe that asks for it, and every other
+  group's mask is cut out where it lies. (A first version drew it as a strand
+  layer with the same flag on skin layers; with it moved, the layer flag had no
+  user and went.) Pubic hair is the adult pack's, like every genital-region
   feature: its mask and its place in the stack come from the adult pack's
   manifest (`AdultAnatomySpec`), so the core names no part of it, and it
   appears only when the pack is loaded. The core keeps the recipe's `pubic`

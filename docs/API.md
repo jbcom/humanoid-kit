@@ -657,8 +657,7 @@ compute what the renderer will do.
   (`strandCover(paint)`, at most `MAX_STRAND_COVER`, what `applyLayers` applies;
   none for `inSkinAlbedo`). A layer may set `everywhere` (on all the skin: no
   atlas channel, `planAtlas` gives it `value` -1 and the shader reads its mask
-  as 1) or `adultOnly` (a body layer `paintStopTable` paints at zero unless
-  `SkinPaintInput.adult` is true; absent fails closed). `surfaceChange` and `creaseHeight` (a
+  as 1). `surfaceChange` and `creaseHeight` (a
   groove, so negative: `size` of them across the coordinate, each the raised
   cosine to the power `CREASE_SHARPNESS`, flat at the coordinate's ends) are the
   shader's references; `uvScale(assets, faces)` gives metres of skin per UV
@@ -685,19 +684,22 @@ compute what the renderer will do.
   (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
   Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
   hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
-  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs, and the
-  `adultOnly` axillary), with follicle densities `BODY_HAIR_DENSITY`. Dense,
-  short hair standing off the skin (the beard, the chest, abdomen and back) is
-  the coat's, long hair the cards', and pubic hair the adult pack's.
+  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
+  densities `BODY_HAIR_DENSITY`. Dense, short hair standing off the skin (the
+  beard, the chest, abdomen and back, and the adult-only armpits) is the
+  coat's, long hair the cards', and pubic hair the adult pack's.
   `bodyHairMasks(assets)` gives the masks per base vertex and
   `bodyHairInput(paintInput)` the body hair model's input.
 - The coat (`src/surface/coat.ts`, ARCHITECTURE.md "The coat"): short, dense hair
   drawn as shells, shared by body hair and the anthro fur. A `CoatRegion` (`id`,
   `targets`, `mask(assets)` per base vertex, `paint(input)` giving a
   `CoatPaint`: `cover`, `length` up to `MAX_COAT_LENGTH`, `density` per cm²,
-  `lie` 0 standing to 1 flat, `width`, `colour`); `COAT_REGIONS` (at most
-  `COAT_REGION_LIMIT`; today `BODY_HAIR_COAT`: `beard-moustache`, `beard-chin`,
-  `beard-cheeks`, `hair-chest`, `hair-abdomen`, `hair-back`, with
+  `lie` 0 standing to 1 flat, `width`, `colour`; and `adultOnly`, a region
+  `paintCoat` leaves unpainted, without asking its paint, unless
+  `SkinPaintInput.adult` is true, so an input that does not say fails closed);
+  `COAT_REGIONS` (at most `COAT_REGION_LIMIT`; today `BODY_HAIR_COAT`:
+  `beard-moustache`, `beard-chin`, `beard-cheeks`, `hair-chest`, `hair-abdomen`,
+  `hair-back` and the adult-only `hair-axillary`, with
   `BEARD_LENGTHS` per style and `beardMasks(assets)`). `combField(assets)` is
   the direction hair lies per base vertex (rest space, unit, in the tangent
   plane: down the limbs toward their ends, down elsewhere, smoothed);

@@ -1,4 +1,3 @@
-import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { planAtlas } from "../src/surface/atlasPlan.ts";
@@ -46,7 +45,6 @@ const input = (
   adult: age >= 18,
   ...extra,
 });
-const ADULT_ONLY_LAYERS = TERMINAL_HAIR_LAYERS.filter((l) => l.adultOnly);
 /** Layer `l`'s row of a table painted for `layers`. */
 const row = (layers: readonly StrandLayer[], l: number, table: Float32Array) => {
   expect(table.length).toBe(layers.length * STOP_TABLE_WIDTH * 4);
@@ -63,10 +61,9 @@ describe("the body hair layers", () => {
     }
   });
 
-  it("mark exactly the axillary layer adult-only, and draw no pubic hair (the adult pack's)", () => {
-    expect(ADULT_ONLY_LAYERS.map((l) => l.id)).toEqual(["hair-axillary"]);
-    expect(ADULT_ONLY_BODY_HAIR).toContain("axillary");
-    expect(BODY_HAIR_LAYERS.some((l) => /pubic/.test(l.id))).toBe(false);
+  it("draw none of the adult-only hair: the armpits are the coat's, pubic hair the adult pack's", () => {
+    for (const group of ADULT_ONLY_BODY_HAIR)
+      expect(BODY_HAIR_LAYERS.some((l) => l.id.includes(group))).toBe(false);
   });
 
   it("paint no terminal hair on a child, and vellus at every age", () => {
@@ -105,42 +102,6 @@ describe("the body hair layers", () => {
     const at = (t: Float32Array) => row(TERMINAL_HAIR_LAYERS, legs, t)[4] as number;
     expect(at(black)).toBeLessThan(at(blond));
     expect(at(black)).toBeLessThan((hairAlbedo(HAIR_COLOURS.blonde as never) as Rgb)[0]);
-  });
-});
-
-describe("the adult-only gate on axillary hair", () => {
-  it("paints them at zero for any figure under 18, whatever the recipe asks", () => {
-    fc.assert(
-      fc.property(
-        fc.double({ min: 1, max: 17.999, noNaN: true }),
-        fc.double({ min: 0, max: 1, noNaN: true }),
-        fc.double({ min: 0, max: 2, noNaN: true }),
-        (age, gender, m) => {
-          const t = paintStopTable(
-            ADULT_ONLY_LAYERS,
-            input(age, gender, { bodyHair: { density: { axillary: m, pubic: m } } }),
-          );
-          for (let k = 0; k < ADULT_ONLY_LAYERS.length; k++)
-            expect(row(ADULT_ONLY_LAYERS, k, t)[0]).toBe(0);
-        },
-      ),
-    );
-  });
-
-  it("fails closed: an input that does not say the figure is an adult paints none, even at 40", () => {
-    const { adult: _, ...unsaid } = input(40, 1);
-    const t = paintStopTable(ADULT_ONLY_LAYERS, unsaid);
-    for (let k = 0; k < ADULT_ONLY_LAYERS.length; k++)
-      expect(row(ADULT_ONLY_LAYERS, k, t)[0]).toBe(0);
-    const lying = paintStopTable(ADULT_ONLY_LAYERS, { ...input(12, 1), adult: true });
-    for (let k = 0; k < ADULT_ONLY_LAYERS.length; k++)
-      expect(row(ADULT_ONLY_LAYERS, k, lying)[0]).toBe(0);
-  });
-
-  it("paints them for an adult", () => {
-    const t = paintStopTable(ADULT_ONLY_LAYERS, input(30, 0));
-    for (let k = 0; k < ADULT_ONLY_LAYERS.length; k++)
-      expect(row(ADULT_ONLY_LAYERS, k, t)[0]).toBeGreaterThan(0.5);
   });
 });
 
