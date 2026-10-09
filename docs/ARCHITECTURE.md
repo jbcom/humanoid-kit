@@ -1541,7 +1541,14 @@ module.
   normal by `(i + 1) / N` of the hair's length, leaning along the comb, before
   skinning (so the skin's own skinning, dual quaternions included, carries it).
   N scales with the figure's size on screen (`coatShellCount`), so a figure
-  far away draws few shells.
+  far away draws few shells. The coat's geometry (`CoatGeometry`) shares the
+  body's vertex buffers, so disposing it frees only its own (the comb, the
+  masks, its index). Three frees every attribute of a disposed geometry, and a
+  body whose buffers were freed under it draws nothing, or the shape it had
+  before: a woman's eyes hanging at a man's throat.
+- *A recipe asks for it.* Until the coat's shading is reworked, a region grows
+  only where the recipe enables it (`coatEnabled`): the beard by a style, any
+  other group by its density. A recipe silent on body hair draws no coat.
 - *Strands from a tileable density texture* at true scale (`uv × uvScale`
   over the follicle spacing), generated from a seed: per cell a strand's
   length, its radius profile and an id; a shell keeps a fragment inside a
