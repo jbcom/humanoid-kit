@@ -480,6 +480,23 @@ export interface AdultReservoirSpec {
   cap: number[];
   /** Collapsed rings between the loop and the cap. */
   rings: number;
+  /**
+   * Where its skin lies in UV space (`ReservoirIsland`): a grid for the wall and a
+   * disc for the cap, in free space of the body's UV layout, so a skin layer can
+   * colour the tube and tell it from the skin round its root. Absent, the wall is
+   * collapsed in UV and the cap keeps the UVs of the skin it replaced.
+   */
+  island?: {
+    origin: [number, number];
+    across: [number, number];
+    along: [number, number];
+    cap: { centre: [number, number]; radius: number };
+  };
+  /**
+   * The adult skin layer (`AdultSkinLayerSpec.id`) that colours its island: mask 1
+   * over all of it, and the layer's coordinate running from the loop (0) to the tip (1).
+   */
+  layer?: string;
 }
 
 /**

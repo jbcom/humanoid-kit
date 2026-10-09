@@ -513,6 +513,22 @@ export interface LayerFieldsUpdate {
   /** Ids of the layers the fields hold, in order. */
   layers: string[];
   layerFields: Float32Array;
+  /**
+   * Triangles of the adult surface that lie on islands of their own in UV space
+   * (a reservoir's tube: `AdultReservoirSpec.island`), with the layers' fields at
+   * their vertices, for the atlas to rasterise besides the base body's.
+   */
+  extra?: LayerFieldsExtra;
+}
+
+/** Extra triangles in UV space and the fields of an update's layers at their vertices. */
+export interface LayerFieldsExtra {
+  /** UV per vertex, two floats. */
+  uvs: Float32Array;
+  /** Triangles over those vertices. */
+  index: Uint32Array;
+  /** The update's layers in order, each a block of one (mask, coordinate) pair per vertex. */
+  layerFields: Float32Array;
 }
 
 /**

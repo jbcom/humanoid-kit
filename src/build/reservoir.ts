@@ -20,6 +20,24 @@
  */
 import type { Stencil } from "../subdiv/catmullClark.ts";
 
+/**
+ * Where a reservoir's skin lies in UV space, on an island of its own: the strips
+ * (the tube's wall) as a grid, chain position along `across` and ring along
+ * `along`, and the cap as a disc. Without one the strips are collapsed in UV, as
+ * they are in space, and the cap keeps the UVs of the skin it replaced, so the
+ * skin layers could not tell the tube from the skin around its root.
+ */
+export interface ReservoirIsland {
+  /** UV of the loop (ring 0) at chain position 0. */
+  origin: readonly [number, number];
+  /** UV step from chain position 0 all the way round to the same place (the seam). */
+  across: readonly [number, number];
+  /** UV step from the loop to the last ring. */
+  along: readonly [number, number];
+  /** The cap's disc: its edge is the last ring, its centre the tip. */
+  cap: { centre: readonly [number, number]; radius: number };
+}
+
 /** A reservoir as the adult pack names it (`AdultReservoirSpec`). */
 export interface Reservoir {
   /** The loop's vertices of the refinement mesh, in order round the cap. */
@@ -28,6 +46,21 @@ export interface Reservoir {
   cap: readonly number[];
   /** Collapsed rings between the loop and the cap. */
   rings: number;
+  /** Where its skin lies in UV space; absent, the UVs of the surface it was cut from. */
+  island?: ReservoirIsland;
+}
+
+/** Where an island's UVs are among the surface's (`SurfaceReservoir.island`). */
+export interface SurfaceIsland {
+  /** UV index of the grid's first point (ring 0, chain position 0); the grid is row by row, rings first. */
+  stripBase: number;
+  /** Points per row: chain elements and one more, for the seam. */
+  columns: number;
+  /** Rows: rings and one more, for the loop. */
+  rows: number;
+  /** UV indices of the cap's corners: `capBase` up to `capBase + capCount`. */
+  capBase: number;
+  capCount: number;
 }
 
 /** A reservoir on a built surface: where its copies are and how a lattice-level detail reaches them. */
@@ -45,12 +78,16 @@ export interface SurfaceReservoir {
   slot: Uint32Array;
   /** Per chain element, the fraction of the way from that loop position to the next. */
   fraction: Float32Array;
+  /** Where the island's UVs are, when the reservoir has one. */
+  island?: SurfaceIsland;
 }
 
 export interface ReservoirInput {
   /** Quads of the final surface, four vertices each, with UV indices alongside. */
   faces: Uint32Array;
   faceUvs: Uint32Array;
+  /** The UV coordinates `faceUvs` index, two per entry. */
+  uvs: Float32Array;
   vertexCount: number;
   /** Control vertices → final surface positions. */
   stencil: Stencil;
@@ -67,6 +104,8 @@ export interface ReservoirInput {
 export interface ReservoirOutput {
   faces: Uint32Array;
   faceUvs: Uint32Array;
+  /** The input's UV coordinates, then each island's. */
+  uvs: Float32Array;
   vertexCount: number;
   stencil: Stencil;
   owner: Uint32Array;
@@ -147,6 +186,80 @@ function boundaryCycle(
 }
 
 /**
+ * The UVs of a reservoir's island (`ReservoirIsland`): the wall's grid, and the cap's
+ * corners mapped by their polar place in the disc of skin the cap replaces onto the
+ * island's disc. The cap's corners are the UVs the cap's faces had; the new ones are
+ * numbered from `first`, the grid's row by row and then the cap's.
+ */
+function layOutIsland(
+  input: ReservoirInput,
+  spec: Reservoir,
+  m: number,
+  boundaryUv: readonly number[],
+  quads: readonly number[],
+  first: number,
+): { grid: Uint32Array; capMap: Map<number, number>; coordinates: number[]; info: SurfaceIsland } {
+  const island = spec.island as ReservoirIsland;
+  const coordinates: number[] = [];
+  const columns = m + 1;
+  const rows = spec.rings + 1;
+  const grid = new Uint32Array(columns * rows);
+  for (let j = 0; j < rows; j++)
+    for (let t = 0; t < columns; t++) {
+      grid[j * columns + t] = first + coordinates.length / 2;
+      coordinates.push(
+        island.origin[0] + (island.across[0] * t) / m + (island.along[0] * j) / spec.rings,
+        island.origin[1] + (island.across[1] * t) / m + (island.along[1] * j) / spec.rings,
+      );
+    }
+  // The skin's disc in UV, by the angle of each boundary point round its centre.
+  const at = (uv: number) =>
+    [input.uvs[uv * 2] as number, input.uvs[uv * 2 + 1] as number] as const;
+  const points = boundaryUv.map(at);
+  const cx = points.reduce((s, p) => s + p[0], 0) / points.length;
+  const cy = points.reduce((s, p) => s + p[1], 0) / points.length;
+  const ring = points
+    .map((p) => ({
+      angle: Math.atan2(p[1] - cy, p[0] - cx),
+      radius: Math.hypot(p[0] - cx, p[1] - cy),
+    }))
+    .sort((a, b) => a.angle - b.angle);
+  const radiusAt = (angle: number) => {
+    let hi = ring.findIndex((p) => p.angle >= angle);
+    if (hi < 0) hi = 0;
+    const lo = (hi + ring.length - 1) % ring.length;
+    const a = ring[lo] as { angle: number; radius: number };
+    const b = ring[hi] as { angle: number; radius: number };
+    let span = b.angle - a.angle;
+    let off = angle - a.angle;
+    if (span <= 0) span += 2 * Math.PI;
+    if (off < 0) off += 2 * Math.PI;
+    return a.radius + (b.radius - a.radius) * (span > 0 ? Math.min(1, off / span) : 0);
+  };
+  const capMap = new Map<number, number>();
+  const capBase = first + coordinates.length / 2;
+  for (const q of quads)
+    for (let k = 0; k < 4; k++) {
+      const uv = input.faceUvs[q * 4 + k] as number;
+      if (capMap.has(uv)) continue;
+      const [x, y] = at(uv);
+      const angle = Math.atan2(y - cy, x - cx);
+      const sigma = Math.min(1, Math.hypot(x - cx, y - cy) / radiusAt(angle));
+      capMap.set(uv, first + coordinates.length / 2);
+      coordinates.push(
+        island.cap.centre[0] + sigma * island.cap.radius * Math.cos(angle),
+        island.cap.centre[1] + sigma * island.cap.radius * Math.sin(angle),
+      );
+    }
+  return {
+    grid,
+    capMap,
+    coordinates,
+    info: { stripBase: first, columns, rows, capBase, capCount: capMap.size },
+  };
+}
+
+/**
  * Adds the reservoirs to a built surface's quads (see the file header). The caps
  * must be disjoint and their loops share no vertex.
  */
@@ -161,6 +274,11 @@ export function applyReservoirs(
   const reservoirs: SurfaceReservoir[] = [];
   /** Per reservoir, per chain element, the cap-side UV index and the owning quad. */
   const chains: { vertices: number[]; uv: number[]; quads: number[] }[] = [];
+  /** UV coordinates the islands add, and per reservoir its grid's and cap's UV indices. */
+  const extraUv: number[] = [];
+  const uvBase = input.uvs.length / 2;
+  const grids: (Uint32Array | null)[] = [];
+  const capUvs: (Map<number, number> | null)[] = [];
   let detailCount = input.detailBase;
   const loopVertices = new Set<number>();
 
@@ -195,6 +313,12 @@ export function applyReservoirs(
     });
     chains.push({ vertices: cycle.vertices, uv, quads: cycle.quads });
     const m = cycle.vertices.length;
+    const island = spec.island
+      ? layOutIsland(input, spec, m, uv, quads, uvBase + extraUv.length / 2)
+      : null;
+    grids.push(island?.grid ?? null);
+    capUvs.push(island?.capMap ?? null);
+    if (island) for (const x of island.coordinates) extraUv.push(x);
     const base = detailCount;
     detailCount += spec.loop.length * spec.rings;
     const copies = new Uint32Array(m * spec.rings);
@@ -226,6 +350,7 @@ export function applyReservoirs(
       copies,
       slot,
       fraction,
+      ...(island && { island: island.info }),
     });
   });
 
@@ -243,10 +368,13 @@ export function applyReservoirs(
   });
   for (let q = 0; q < quadCount; q++) {
     const s = capOf[q] as number;
+    const island = s === -1 ? null : (capUvs[s] ?? null);
     for (let k = 0; k < 4; k++) {
       const v = faces[q * 4 + k] as number;
       outFaces.push(s === -1 ? v : (lastRing.get(v) ?? v));
-      outUvs.push(faceUvs[q * 4 + k] as number);
+      const uv = faceUvs[q * 4 + k] as number;
+      // A cap on an island of its own lies on the island's disc, not on the skin it was cut from.
+      outUvs.push(island ? (island.get(uv) as number) : uv);
     }
     outOwner.push(owner[q] as number);
   }
@@ -256,13 +384,20 @@ export function applyReservoirs(
     const m = r.chain;
     const ring = (j: number, t: number) =>
       j === 0 ? (chain.vertices[t % m] as number) : (r.copies[(j - 1) * m + (t % m)] as number);
+    const grid = grids[s] ?? null;
     for (let t = 0; t < m; t++)
       for (let j = 1; j <= r.rings; j++) {
         // Written against the cap's direction, so each edge is used once each way.
         outFaces.push(ring(j, t + 1), ring(j, t), ring(j - 1, t), ring(j - 1, t + 1));
-        const u0 = chain.uv[t] as number;
-        const u1 = chain.uv[(t + 1) % m] as number;
-        outUvs.push(u1, u0, u0, u1);
+        if (grid) {
+          // On an island the wall is a grid in UV: the seam is the last column.
+          const at = (row: number, column: number) => grid[row * (m + 1) + column] as number;
+          outUvs.push(at(j, t + 1), at(j, t), at(j - 1, t), at(j - 1, t + 1));
+        } else {
+          const u0 = chain.uv[t] as number;
+          const u1 = chain.uv[(t + 1) % m] as number;
+          outUvs.push(u1, u0, u0, u1);
+        }
         outOwner.push(owner[chain.quads[t] as number] as number);
       }
   });
@@ -280,9 +415,13 @@ export function applyReservoirs(
     }
     sortedOwner[to] = outOwner[from] as number;
   });
+  const uvs = new Float32Array(input.uvs.length + extraUv.length);
+  uvs.set(input.uvs);
+  uvs.set(extraUv, input.uvs.length);
   return {
     faces: sortedFaces,
     faceUvs: sortedUvs,
+    uvs,
     vertexCount: input.vertexCount + reps.length,
     stencil: withCopiedRows(input.stencil, reps),
     owner: sortedOwner,
