@@ -13,13 +13,24 @@ import { bodyPack } from "humanoid-kit-body";
 import { useEffect, useState } from "react";
 import { ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping, type ToneMapping } from "three";
 
-function createClient(): HumanoidWorkerClient {
+async function createClient(): Promise<HumanoidWorkerClient> {
+  // `?adult` loads the adult anatomy pack for local testing only: the condition
+  // is false in a production build, so the import is dropped and the public demo
+  // never carries the pack (`pnpm check:pages` proves it).
+  const adultAnatomy =
+    import.meta.env.DEV && params.has("adult")
+      ? (await import("humanoid-kit-adult-anatomy")).adultAnatomyPack
+      : undefined;
   const worker = new Worker(new URL("../../src/worker/index.ts", import.meta.url), {
     type: "module",
   });
   // The first figure's own targets load first; the rest stream in behind it.
   return new HumanoidWorkerClient(
-    { body: bodyPack, firstFigureAge: initialRecipe().macros.age },
+    {
+      body: bodyPack,
+      ...(adultAnatomy && { adultAnatomy }),
+      firstFigureAge: initialRecipe().macros.age,
+    },
     { subdivision: 1 },
     worker,
   );
@@ -29,9 +40,20 @@ function createClient(): HumanoidWorkerClient {
 function useClient(): HumanoidWorkerClient | null {
   const [client, setClient] = useState<HumanoidWorkerClient | null>(null);
   useEffect(() => {
-    const c = createClient();
-    setClient(c);
-    return () => c.dispose();
+    let live = true;
+    let made: HumanoidWorkerClient | null = null;
+    void createClient().then((c) => {
+      if (!live) {
+        c.dispose();
+        return;
+      }
+      made = c;
+      setClient(c);
+    });
+    return () => {
+      live = false;
+      made?.dispose();
+    };
   }, []);
   return client;
 }

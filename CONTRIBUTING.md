@@ -26,7 +26,10 @@ pnpm verify
 ```
 
 To work on the figure visually, start the playground with `pnpm dev`. It imports
-the library straight from `src/`, so edits show up immediately. `pnpm test:e2e`
+the library straight from `src/`, so edits show up immediately. Add `?adult` to
+the URL to load the adult anatomy pack while developing; a production build
+drops it, so the public demo never carries it, and `pnpm check:pages` fails the
+build if it does. `?recipe=<json>` starts from a given figure. `pnpm test:e2e`
 runs the Playwright suite against the playground's production build; install
 the browser once with `pnpm exec playwright install chromium`.
 

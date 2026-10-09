@@ -221,6 +221,9 @@ importers:
       game-harness:
         specifier: ^1.1.2
         version: 1.1.2(@playwright/test@1.64.0)(@vitest/browser-playwright@5.0.3)(vitest@5.0.3)
+      humanoid-kit-adult-anatomy:
+        specifier: workspace:*
+        version: link:packs/adult-anatomy
       humanoid-kit-body:
         specifier: workspace:*
         version: link:packs/body
