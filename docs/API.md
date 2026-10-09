@@ -782,7 +782,8 @@ compute what the renderer will do.
     (`FOREHEAD_STOPS`, `GLABELLA_STOPS`) of a coordinate that is a smooth function
     of position (`foreheadCoordinate`; the furrows' is linear), coloured by
     `lineShade(age, tone)` (the same step of CIELAB lightness at every tone) and cut
-    as grooves by `LINE_RELIEF`; the rest are `creases` `DetailLayer`s.
+    as grooves by `LINE_RELIEF`, and so are the crow's feet (`CROWS_FEET_STOPS`) and
+    the folds (`NASOLABIAL_STOPS`); the nose's are `creases` `DetailLayer`s.
     `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
     `EXPRESSION_COUNT` are art-directed, `expressionAgeFactor(age)` scales the
     depth or shade by age (0.2 at 6, 1 at 40, 1.4 at 70).

@@ -832,9 +832,10 @@ Five layers draw the lines (`EXPRESSION_LINE_LAYERS`,
 (`browRaise`), the furrows between the brows (`browFurrow`), crow's feet
 fanning from each eye's outer corner (`squint`, or 0.6 of `smile`), the
 nasolabial folds from the nose's wing past the mouth's corner (`nasolabial`, or
-0.7 of `smile`) and the nose bridge's lines (`noseWrinkle`). The crow's feet,
-folds and nose lines are the elbow and knee's `creases` relief; the forehead's
-lines and the furrows are thin lines of colour instead. A thin line cannot be a
+0.7 of `smile`) and the nose bridge's lines (`noseWrinkle`). The nose's lines are
+the elbow and knee's `creases` relief; the others (the forehead's, the furrows',
+the crow's feet and the folds) are thin lines of colour with a groove cut at the
+same stops. A thin line cannot be a
 mask or a relief phase on this mesh: the forehead's triangles are about 2 cm
 across and a field is interpolated between their vertices, so any coordinate
 that is not exactly linear in position bends a line into a squiggle (the first
