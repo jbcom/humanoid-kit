@@ -214,7 +214,12 @@ function CreatorBody({
 
   /** Opens the controls of the tapped part of the figure and frames it. */
   const onPick = (p: HumanoidPick) => {
-    const table = p.part === "body" ? pickMap?.render.body : pickMap?.render.attachments[p.part];
+    const table =
+      p.part === "body"
+        ? pickMap?.render.body
+        : p.part === "adultBody"
+          ? pickMap?.render.adultBody
+          : pickMap?.render.attachments[p.part];
     const index = table?.[p.vertex];
     if (index === undefined || index === NO_FEATURE) return;
     const feature = pickMap?.features[index];

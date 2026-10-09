@@ -134,22 +134,63 @@ const edgeKey = (a: number, b: number) => (a < b ? a * 0x200000 + b : b * 0x2000
  * sockets of a separate part stay put instead of shrinking.
  */
 export function catmullClarkLevel(topo: QuadTopology): SubdivisionLevel {
-  const { vertexCount: V, faces } = topo;
-  const F = faces.length / 4;
-  // Edges numbered in order of first appearance, found through a chain per
-  // lower vertex; each keeps its first two faces and its face count.
+  return catmullClarkPolygons({
+    vertexCount: topo.vertexCount,
+    faceStart: quadStarts(topo.faces.length / 4),
+    faces: topo.faces,
+  });
+}
+
+/** Face offsets of `count` quads in a flat index list. */
+const quadStarts = (count: number) => Uint32Array.from({ length: count + 1 }, (_, i) => i * 4);
+
+/** Linear (face-varying) subdivision of a UV layout matching `catmullClarkLevel`'s face order. */
+export function subdivideUvLinear(
+  uvs: Float32Array,
+  faceUvs: Uint32Array,
+): { uvs: Float32Array; faceUvs: Uint32Array } {
+  return subdivideUvLinearPolygons(uvs, quadStarts(faceUvs.length / 4), faceUvs);
+}
+
+/** A mesh of polygons: face `i` is `faces[faceStart[i] .. faceStart[i + 1])`. */
+export interface PolygonTopology {
+  vertexCount: number;
+  faceStart: Uint32Array;
+  faces: Uint32Array;
+}
+
+/**
+ * One level of Catmull–Clark on polygons of any size (the same rules as
+ * `catmullClarkLevel`, which is this on quads). An n-gon becomes n quads, so
+ * the result is all quads whatever went in: a locally refined mesh with
+ * pentagon and hexagon transitions (`refineGraded`) is quadrangulated by its
+ * first level. Output vertex order: original vertices, one point per edge (in
+ * order of first appearance), one per face.
+ */
+export function catmullClarkPolygons(topo: PolygonTopology): SubdivisionLevel {
+  const { vertexCount: V, faceStart, faces } = topo;
+  const F = faceStart.length - 1;
+  const C = faces.length;
+  const cornerFace = new Uint32Array(C);
+  for (let f = 0; f < F; f++)
+    for (let c = faceStart[f] as number; c < (faceStart[f + 1] as number); c++) cornerFace[c] = f;
+  const size = (f: number) => (faceStart[f + 1] as number) - (faceStart[f] as number);
+
   const head = new Int32Array(V).fill(-1);
-  const chain = new Int32Array(F * 4);
-  const edgeVerts = new Uint32Array(F * 8);
-  const edgeHigh = new Uint32Array(F * 4);
-  const edgeFaceCount = new Uint32Array(F * 4);
-  const edgeFace = new Uint32Array(F * 8);
-  const faceEdges = new Uint32Array(F * 4);
+  const chain = new Int32Array(C);
+  const edgeVerts = new Uint32Array(C * 2);
+  const edgeHigh = new Uint32Array(C);
+  const edgeFaceCount = new Uint32Array(C);
+  const edgeFace = new Uint32Array(C * 2);
+  /** Per corner, the edge from it to the next corner of its face. */
+  const cornerEdge = new Uint32Array(C);
   let E = 0;
   for (let f = 0; f < F; f++) {
-    for (let k = 0; k < 4; k++) {
-      const a = faces[f * 4 + k] as number;
-      const b = faces[f * 4 + ((k + 1) % 4)] as number;
+    const s = faceStart[f] as number;
+    const n = size(f);
+    for (let k = 0; k < n; k++) {
+      const a = faces[s + k] as number;
+      const b = faces[s + ((k + 1) % n)] as number;
       const lo = Math.min(a, b);
       const hi = Math.max(a, b);
       let e = head[lo] as number;
@@ -165,28 +206,29 @@ export function catmullClarkLevel(topo: QuadTopology): SubdivisionLevel {
       const seen = edgeFaceCount[e] as number;
       if (seen < 2) edgeFace[e * 2 + seen] = f;
       edgeFaceCount[e] = seen + 1;
-      faceEdges[f * 4 + k] = e;
+      cornerEdge[s + k] = e;
     }
   }
 
   const rows = new StencilBuilder(V, V + E + F, (V + E + F) * 9);
-  /** A face point's row (a quarter of each corner), each vertex once, first-corner order. */
+  /** A face point's row (a 1/n of each corner), each vertex once, first-corner order. */
   const faceRow = (f: number, add: (s: number, w: number) => void) => {
-    for (let k = 0; k < 4; k++) {
-      const v = faces[f * 4 + k] as number;
+    const s = faceStart[f] as number;
+    const n = size(f);
+    for (let k = 0; k < n; k++) {
+      const v = faces[s + k] as number;
       let repeat = false;
-      for (let j = 0; j < k; j++) if (faces[f * 4 + j] === v) repeat = true;
+      for (let j = 0; j < k; j++) if (faces[s + j] === v) repeat = true;
       if (repeat) continue;
-      let w = 0.25;
-      for (let j = k + 1; j < 4; j++) if (faces[f * 4 + j] === v) w += 0.25;
+      let w = 1 / n;
+      for (let j = k + 1; j < n; j++) if (faces[s + j] === v) w += 1 / n;
       add(v, w);
     }
   };
   const isBoundaryEdge = (e: number) => edgeFaceCount[e] !== 2;
 
-  // Per-vertex incident edges (ascending) and faces (ascending, once per corner).
   const vEdges = groupBy(V, E * 2, (i) => edgeVerts[i] as number);
-  const vFaces = groupBy(V, F * 4, (c) => faces[c] as number);
+  const vFaces = groupBy(V, C, (c) => faces[c] as number);
   const boundary: number[] = [];
   for (let v = 0; v < V; v++) {
     const e0 = vEdges.start[v] as number;
@@ -218,7 +260,9 @@ export function catmullClarkLevel(topo: QuadTopology): SubdivisionLevel {
       const n = eCount;
       // (F + 2R + (n - 3)P) / n with F = mean face point, R = mean edge midpoint.
       for (let i = 0; i < fCount; i++)
-        faceRow((vFaces.items[f0 + i] as number) >> 2, (s, w) => rows.add(s, w / fCount / n));
+        faceRow(cornerFace[vFaces.items[f0 + i] as number] as number, (s, w) =>
+          rows.add(s, w / fCount / n),
+        );
       for (let i = 0; i < eCount; i++) {
         const e = (vEdges.items[e0 + i] as number) >> 1;
         rows.add(edgeVerts[e * 2] as number, (2 * 0.5) / eCount / n);
@@ -247,15 +291,17 @@ export function catmullClarkLevel(topo: QuadTopology): SubdivisionLevel {
     rows.next();
   }
 
-  const out = new Uint32Array(F * 16);
+  const out = new Uint32Array(C * 4);
   for (let f = 0; f < F; f++) {
     const fp = V + E + f;
-    for (let k = 0; k < 4; k++) {
-      const o = f * 16 + k * 4;
-      out[o] = faces[f * 4 + k] as number;
-      out[o + 1] = V + (faceEdges[f * 4 + k] as number);
+    const s = faceStart[f] as number;
+    const n = size(f);
+    for (let k = 0; k < n; k++) {
+      const o = (s + k) * 4;
+      out[o] = faces[s + k] as number;
+      out[o + 1] = V + (cornerEdge[s + k] as number);
       out[o + 2] = fp;
-      out[o + 3] = V + (faceEdges[f * 4 + ((k + 3) % 4)] as number);
+      out[o + 3] = V + (cornerEdge[s + ((k + n - 1) % n)] as number);
     }
   }
   return {
@@ -264,16 +310,21 @@ export function catmullClarkLevel(topo: QuadTopology): SubdivisionLevel {
   };
 }
 
-/** Linear (face-varying) subdivision of a UV layout matching `catmullClarkLevel`'s face order. */
-export function subdivideUvLinear(
+/**
+ * Linear (face-varying) subdivision of the UVs of polygons, matching
+ * `catmullClarkPolygons`' face and corner order.
+ */
+export function subdivideUvLinearPolygons(
   uvs: Float32Array,
+  faceStart: Uint32Array,
   faceUvs: Uint32Array,
 ): { uvs: Float32Array; faceUvs: Uint32Array } {
-  const F = faceUvs.length / 4;
+  const F = faceStart.length - 1;
+  const C = faceUvs.length;
   const U = uvs.length / 2;
   const edgeIndex = new Map<number, number>();
   const extra: number[] = [];
-  const next = new Uint32Array(F * 16);
+  const next = new Uint32Array(C * 4);
   const mid = (a: number, b: number) => {
     const key = edgeKey(a, b);
     let e = edgeIndex.get(key);
@@ -289,32 +340,37 @@ export function subdivideUvLinear(
   };
   const facePts: number[] = [];
   for (let f = 0; f < F; f++) {
+    const s = faceStart[f] as number;
+    const n = (faceStart[f + 1] as number) - s;
     let u = 0;
     let v = 0;
-    for (let k = 0; k < 4; k++) {
-      const t = faceUvs[f * 4 + k] as number;
-      u += (uvs[t * 2] as number) / 4;
-      v += (uvs[t * 2 + 1] as number) / 4;
+    for (let k = 0; k < n; k++) {
+      const t = faceUvs[s + k] as number;
+      u += (uvs[t * 2] as number) / n;
+      v += (uvs[t * 2 + 1] as number) / n;
     }
     facePts.push(u, v);
   }
-  const edgePoints: number[] = [];
+  const edgePoints = new Uint32Array(C);
   for (let f = 0; f < F; f++) {
-    for (let k = 0; k < 4; k++) {
-      edgePoints.push(mid(faceUvs[f * 4 + k] as number, faceUvs[f * 4 + ((k + 1) % 4)] as number));
-    }
+    const s = faceStart[f] as number;
+    const n = (faceStart[f + 1] as number) - s;
+    for (let k = 0; k < n; k++)
+      edgePoints[s + k] = mid(faceUvs[s + k] as number, faceUvs[s + ((k + 1) % n)] as number);
   }
   const faceBase = U + extra.length / 2;
   for (let f = 0; f < F; f++) {
-    for (let k = 0; k < 4; k++) {
+    const s = faceStart[f] as number;
+    const n = (faceStart[f + 1] as number) - s;
+    for (let k = 0; k < n; k++) {
       next.set(
         [
-          faceUvs[f * 4 + k] as number,
-          edgePoints[f * 4 + k] as number,
+          faceUvs[s + k] as number,
+          edgePoints[s + k] as number,
           faceBase + f,
-          edgePoints[f * 4 + ((k + 3) % 4)] as number,
+          edgePoints[s + ((k + n - 1) % n)] as number,
         ],
-        f * 16 + k * 4,
+        (s + k) * 4,
       );
     }
   }

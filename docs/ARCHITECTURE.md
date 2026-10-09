@@ -900,6 +900,43 @@ surface is the sculpt phase's first job, and cannot be done by drawing
 static surface cannot be gated by age (docs/research/ADULT-SCULPT-PLAN.md).
 `tests/adultStack.test.ts` records the limit so that change fails it.
 
+### The adult surface (sculpt phase 2, refined pelvic topology)
+
+The sculpt needs more vertices in the pelvis than the base has, for an adult
+only. So the adult pack's `anatomy.surface` names a region of the base body (a
+core of faces and a one-face ring around it) and `buildRefinedSurfaceMesh`
+refines it: it takes the base's own level-1 surface, splits each selected face
+into 2^l by 2^l cells (core +2 levels, ring +1, giving 2.3 mm cells in the core),
+joins the levels with conforming transition polygons (a hanging point becomes a
+polygon vertex, so there are no cracks; neighbouring faces differ by at most one
+level), and from level 2 on smooths with polygon Catmull-Clark. The base's
+vertices keep their indices and positions, UVs stay face-varying with their
+seams, and the vertex normals interpolate the base's, so the refined surface
+shades like the base. All-quad local refinement is impossible without refining
+whole chains of faces across the body (the dual chords through the pelvis run
+156 to 900 faces), which is why the transition is polygonal.
+
+It is a second topology, gated by age structurally rather than by being hidden:
+
+- `HumanoidModel.adultSurface()` builds it only with the adult pack's spec and
+  subdivision of 1 or more, and the worker delivers it on its own request
+  (`adultSurface`), never inside `ready`'s topology.
+- `evaluate(recipe)` uses it only when `isAdult(recipe)`; a figure under 18 is
+  evaluated on the base surface and has exactly the base's vertices, with or
+  without the adult pack (`tests/adultSurfaceModel.test.ts`, at ages 1, 11, 15
+  and 17.99). There is no adult vertex in a minor's evaluation to hide.
+- The control vertices are the base's either way, so every target, binding,
+  weight and layer works on both; the layer atlas serves both because it lives in
+  UV space, which refinement preserves.
+
+The refined region is empty of anatomy today: it is the base shape in finer
+cells, proven by the geometry tests and by a render within 11 pixels over 8
+levels of the base's (adult against base contact sheet, local only). The
+features (mound, penis, testes, vulva) land on it one at a time
+(docs/research/ADULT-SCULPT-PLAN.md, section 10), and
+`tests/adultPermutations.test.ts` holds the matrix of ages, genders, feature
+combinations and states every one of them joins.
+
 **Arousal.** The adult manifest adds an `arousal` state morph
 (`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by
 `assertSignalPolicy` before any target is named), driving the adult pack's
