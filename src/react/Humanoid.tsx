@@ -486,6 +486,16 @@ export function Humanoid({
     skin.setDualBones(dual);
     return () => skin.setDualBones(null);
   }, [skin, dual, material]);
+  // Whatever else skins to this figure (clothing, a custom material) follows its
+  // joints by `applyDualSkinning(material, group.userData.dualBones)`.
+  useLayoutEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    group.userData.dualBones = dual;
+    return () => {
+      group.userData.dualBones = null;
+    };
+  }, [dual]);
   const keyBasis = useMemo(() => (ready ? occlusionKeyBasis(ready.rig) : null), [ready]);
   // Shared by the attachments' materials: how much of each occlusion key the pose holds.
   const occlusionKeys = useMemo(() => new Vector3(), []);

@@ -28,6 +28,7 @@ import {
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
+import * as pkg from "../../src/react/index.ts";
 import {
   applyDualSkinning,
   DUAL_BONES_UNIFORM,
@@ -385,6 +386,13 @@ function posedOnCpu(rotations: BoneRotations, share: number[]): Mesh {
   scene.add(mesh);
   return mesh;
 }
+
+describe("the package's public surface for custom materials", () => {
+  it("exports applyDualSkinning and DualBones from humanoid-kit/react, which skin a material by them", () => {
+    expect(pkg.applyDualSkinning).toBe(applyDualSkinning);
+    expect(pkg.DualBones).toBe(DualBones);
+  });
+});
 
 describe("a skinned mesh drawn by the patched shader", () => {
   for (const [name, rotations] of POSES) {

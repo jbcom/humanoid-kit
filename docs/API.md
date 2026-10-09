@@ -544,6 +544,14 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   twisted forearm or a raised shoulder keeps its volume, and its shadows, bounds
   and picking follow. A `material` of your own skins by three's linear skinning
   alone, and the attachments (eyes, teeth, tongue) follow single bones.
+- Stores the figure's bones as dual quaternions on the group's
+  `userData.dualBones` (a `DualBones`, null before the first evaluation), so
+  clothing and materials of your own can follow its joints as its skin does:
+  `applyDualSkinning(material, group.userData.dualBones)`, both exported from
+  `humanoid-kit/react`, makes a skinned mesh's material blend dual quaternions
+  with three's linear skinning by the same per-bone shares (`SKIN_DUAL_SHARE`),
+  so cloth does not part from the skin at a joint. Call it before the material's
+  first render; a `DualBones` is the figure's own and is disposed with it.
 
 ### `<StudioStage background? intensity? />`
 
