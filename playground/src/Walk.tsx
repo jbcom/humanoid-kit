@@ -15,6 +15,7 @@ import {
 } from "humanoid-kit/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Group, Vector3 } from "three";
+import { stepWalk } from "./walkStep";
 
 /**
  * QA scene (`?scene=walk`): two figures walk toward the camera side by side and
@@ -65,6 +66,8 @@ export interface WalkApi {
   expectedShadow(x: number, z: number): number;
   /** Canvas pixel of the ground point (x, 0, z). */
   groundPixel(x: number, z: number): [number, number];
+  /** How many frames the renderer has drawn: a screenshot or a canvas read is of the state at the last of them. */
+  rendered(): number;
 }
 
 declare global {
@@ -74,9 +77,6 @@ declare global {
 }
 
 const params = new URLSearchParams(window.location.search);
-/** Metres per second toward the camera, and where the walk wraps. */
-const SPEED = 0.9;
-const Z_RANGE: [number, number] = [-1.2, 0.6];
 /** Darkness of the contact shadow at its centre; the test reads back the same number. */
 const SHADOW_OPACITY = 0.6;
 /** How fast the gap eases, metres per second. */
@@ -106,14 +106,12 @@ function Pair({ control, roster }: { control: Control; roster: Roster }) {
   const a = useRef<Group>(null);
   const b = useRef<Group>(null);
   const pose = useMemo(() => (roster.pose ? { body: roster.pose } : undefined), [roster.pose]);
+  // `delta` is the clock's own step, the one the registry measures velocity
+  // with; see walkStep.ts for why it is neither clamped nor always wrapped.
   useFrame((_, delta) => {
-    const dt = Math.min(delta, 0.1);
-    const step = GAP_RATE * dt;
+    const step = GAP_RATE * delta;
     control.gap += Math.max(-step, Math.min(step, control.targetGap - control.gap));
-    if (control.walking) {
-      control.z += SPEED * dt;
-      if (control.z > Z_RANGE[1]) control.z = Z_RANGE[0];
-    }
+    control.z = stepWalk(control.z, delta, control.walking);
     a.current?.position.set(-control.gap / 2, 0, control.z);
     b.current?.position.set(control.gap / 2, 0, control.z);
   });
@@ -143,7 +141,8 @@ function Api({
   onReady: (ready: boolean) => void;
 }) {
   const camera = useThree((s) => s.camera);
-  const canvas = useThree((s) => s.gl.domElement);
+  const gl = useThree((s) => s.gl);
+  const canvas = gl.domElement;
   // Ready when every figure that should be here has published.
   const wasReady = useRef(false);
   useFrame(() => {
@@ -199,11 +198,12 @@ function Api({
         v.set(x, 0, z).project(camera);
         return [(v.x * 0.5 + 0.5) * canvas.width, (-v.y * 0.5 + 0.5) * canvas.height];
       },
+      rendered: () => gl.info.render.frame,
     };
     return () => {
       delete window.hkWalk;
     };
-  }, [camera, canvas, control, registry, onRoster]);
+  }, [camera, canvas, gl, control, registry, onRoster]);
   return null;
 }
 

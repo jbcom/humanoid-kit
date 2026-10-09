@@ -35,7 +35,10 @@ overlapping, to see the presence-driven stage shadow. `pnpm test:e2e`
 runs the Playwright suite against the playground's production build on port
 4173 (set `HK_E2E_PORT` when another checkout already holds it, or the run
 would test that checkout's build); install the browser once with
-`pnpm exec playwright install chromium`.
+`pnpm exec playwright install chromium`. To reproduce a slow CI runner's long
+frames, run the presence spec with `HK_GPU=software HK_CPU_THROTTLE=6`: it
+throttles only that page's CPU (Chrome's own throttle), so nothing else on the
+machine is slowed. Never load the whole machine to do it.
 
 Browser tests (the Vitest browser project and the Playwright suite) run headed
 Chromium through [game-harness](https://www.npmjs.com/package/game-harness), on

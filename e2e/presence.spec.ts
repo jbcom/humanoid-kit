@@ -18,16 +18,67 @@ import { budget } from "./budget.ts";
 const GROUND = "c8c8c8";
 const shots = process.env.HK_PRESENCE_SHOTS;
 
-const frames = (page: Page, n = 3) =>
-  page.evaluate(
-    (count) =>
-      new Promise<void>((done) => {
-        let left = count;
-        const tick = () => (--left <= 0 ? done() : requestAnimationFrame(tick));
-        requestAnimationFrame(tick);
-      }),
-    n,
+/**
+ * Waits until the renderer has drawn `n` more frames, so a screenshot or a
+ * canvas read shows the state as it is now. A requestAnimationFrame is not a
+ * drawn frame: under software rendering the page's callbacks run well ahead of
+ * the drawing, and a read after three of them can find the canvas unpainted.
+ */
+async function frames(page: Page, n = 3) {
+  const from = await page.evaluate(() => window.hkWalk?.rendered() ?? 0);
+  await waitUntil(
+    page,
+    `${n} more rendered frames`,
+    ({ from, n }) => (window.hkWalk?.rendered() ?? 0) >= from + n,
+    { from, n },
   );
+}
+
+/**
+ * Waits in the page for `predicate(arg)`. On a timeout the error says what was
+ * being waited for and what the page looked like (the walk's state, the
+ * registry's figures, how long a frame takes), so a failure on a slow runner
+ * names its cause instead of only its line.
+ */
+async function waitUntil<A>(
+  page: Page,
+  what: string,
+  predicate: (arg: A) => boolean,
+  arg: A,
+): Promise<void> {
+  try {
+    // Playwright types the page function's argument as the unboxed `A`, which
+    // TypeScript cannot equate with a generic `A`; the arguments here are plain JSON.
+    await page.waitForFunction(predicate as (arg: unknown) => boolean, arg, {
+      timeout: budget(60_000),
+    });
+  } catch (error) {
+    const seen = await Promise.race([
+      page.evaluate(
+        () =>
+          new Promise<unknown>((done) => {
+            const t0 = performance.now();
+            requestAnimationFrame(() =>
+              done({
+                frameMs: Math.round(performance.now() - t0),
+                state: window.hkWalk?.state(),
+                figures: window.hkWalk?.figures().map((f) => ({
+                  id: f.id,
+                  z: f.position[2],
+                  velocity: f.velocity,
+                  head: f.head,
+                })),
+              }),
+            );
+          }),
+      ),
+      new Promise((done) => setTimeout(() => done("no frame within 10 s"), 10_000)),
+    ]).catch((e) => `page unreachable: ${String(e)}`);
+    throw new Error(
+      `waiting for ${what}: ${error instanceof Error ? error.message : String(error)}; the page: ${JSON.stringify(seen)}`,
+    );
+  }
+}
 
 /** Eases the gap to `metres`, then stops the walk so a reading is taken of a still frame. */
 async function stage(page: Page, gap: number, count: 1 | 2 = 2) {
@@ -40,7 +91,9 @@ async function stage(page: Page, gap: number, count: 1 | 2 = 2) {
     },
     { gap, count },
   );
-  await page.waitForFunction(
+  await waitUntil(
+    page,
+    `the gap to reach ${gap} m with ${count} figure(s) published`,
     ({ gap, count }) => {
       const walk = window.hkWalk;
       return !!walk && Math.abs(walk.state().gap - gap) < 1e-3 && walk.figures().length === count;
@@ -76,7 +129,9 @@ async function darkness(page: Page, x: number, z: number): Promise<number> {
       };
       const [px, py] = walk.groundPixel(x as number, z as number);
       // The top-left corner is open background: the ground's own brightness.
-      return 1 - luma(px, py) / luma(4, 4);
+      const ground = luma(4, 4);
+      if (!(ground > 0.1)) throw new Error(`the canvas holds no drawn frame (corner ${ground})`);
+      return 1 - luma(px, py) / ground;
     },
     [x, z] as const,
   );
@@ -99,6 +154,16 @@ test.describe("presence in the studio", () => {
   test.use({ viewport: { width: 640, height: 480 } });
   test.setTimeout(budget(180_000));
 
+  // HK_CPU_THROTTLE=<rate> slows only this page's CPU (Chrome's own throttle),
+  // to reproduce a slow runner's long frames without loading the machine.
+  test.beforeEach(async ({ page }) => {
+    const rate = Number(process.env.HK_CPU_THROTTLE ?? 1);
+    if (rate > 1)
+      await (await page.context().newCDPSession(page)).send("Emulation.setCPUThrottlingRate", {
+        rate,
+      });
+  });
+
   test("two figures walking together share one shadow that separates as they part", async ({
     page,
   }) => {
@@ -107,10 +172,15 @@ test.describe("presence in the studio", () => {
 
     // Walking: both figures move toward the camera at the same pace, and the
     // registry measured it.
-    await page.waitForFunction(() => {
-      const f = window.hkWalk?.figures() ?? [];
-      return f.length === 2 && f.every((p) => Math.abs((p.velocity[2] ?? 0) - 0.9) < 0.3);
-    });
+    await waitUntil(
+      page,
+      "both figures to be measured walking at 0.9 m/s",
+      () => {
+        const f = window.hkWalk?.figures() ?? [];
+        return f.length === 2 && f.every((p) => Math.abs((p.velocity[2] ?? 0) - 0.9) < 0.3);
+      },
+      undefined,
+    );
 
     // Together: the ground between their nearest feet is shadowed, and as dark
     // as the model says.
@@ -144,15 +214,20 @@ test.describe("presence in the studio", () => {
 
     // Two figures with the same feet, standing on the same spot: their soles coincide.
     await page.evaluate(() => window.hkWalk?.setTwins(true));
-    await page.waitForFunction(() => {
-      const f = window.hkWalk?.figures() ?? [];
-      const sole = (p: (typeof f)[number]) => (p.feet[0]?.[0] ?? 0) - (p.position[0] ?? 0);
-      return (
-        f.length === 2 &&
-        Math.abs((f[0]?.radius ?? 0) - (f[1]?.radius ?? 1)) < 1e-6 &&
-        Math.abs(sole(f[0] as (typeof f)[number]) - sole(f[1] as (typeof f)[number])) < 1e-6
-      );
-    });
+    await waitUntil(
+      page,
+      "the second figure to take the first one's feet",
+      () => {
+        const f = window.hkWalk?.figures() ?? [];
+        const sole = (p: (typeof f)[number]) => (p.feet[0]?.[0] ?? 0) - (p.position[0] ?? 0);
+        return (
+          f.length === 2 &&
+          Math.abs((f[0]?.radius ?? 0) - (f[1]?.radius ?? 1)) < 1e-6 &&
+          Math.abs(sole(f[0] as (typeof f)[number]) - sole(f[1] as (typeof f)[number])) < 1e-6
+        );
+      },
+      undefined,
+    );
     await stage(page, 0, 2);
     await save(page, "overlapped");
     const [a] = await figures(page);
@@ -188,10 +263,11 @@ test.describe("presence in the studio", () => {
 
     // Kneel: no new evaluation, only the pose, and the presence comes down.
     await page.evaluate(() => window.hkWalk?.setPose("benchmark"));
-    await page.waitForFunction(
+    await waitUntil(
+      page,
+      "the presence to come down with the pose",
       (head) => (window.hkWalk?.figures()[0]?.head ?? head) < head - 0.25,
       standing.head,
-      { timeout: budget(60_000) },
     );
     await frames(page);
     await save(page, "kneeling");
@@ -220,10 +296,11 @@ test.describe("presence in the studio", () => {
 
     // Standing again restores the standing presence.
     await page.evaluate(() => window.hkWalk?.setPose(null));
-    await page.waitForFunction(
+    await waitUntil(
+      page,
+      "the standing presence to come back",
       (head) => Math.abs((window.hkWalk?.figures()[0]?.head ?? 0) - head) < 0.02,
       standing.head,
-      { timeout: budget(60_000) },
     );
   });
 
@@ -239,10 +316,11 @@ test.describe("presence in the studio", () => {
     // `relaxed` is standing at ease, arms at the sides: a pose that changes the
     // arms and leaves the legs, the head and the ground contact where they were.
     await page.evaluate(() => window.hkWalk?.setPose("relaxed"));
-    await page.waitForFunction(
+    await waitUntil(
+      page,
+      "the hand to come in with the relaxed pose",
       (out) => (window.hkWalk?.figures()[0]?.handOut ?? out) < out - 0.1,
       standing.handOut,
-      { timeout: budget(60_000) },
     );
     await frames(page);
     await save(page, "relaxed");
