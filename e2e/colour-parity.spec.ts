@@ -9,7 +9,15 @@
 import { expect, type Page, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
 import { type Rgb, skinAlbedo } from "../src/surface/skinTone.ts";
-import { chroma, hueDeg, hueDiff, type Lab, labFromLinear, summarise } from "./lib/colour.ts";
+import {
+  chroma,
+  deltaE2000,
+  hueDeg,
+  hueDiff,
+  type Lab,
+  labFromLinear,
+  summarise,
+} from "./lib/colour.ts";
 
 interface Swatch {
   name: string;
@@ -89,7 +97,7 @@ test.describe("colour parity under the studio stage", () => {
   test.setTimeout(10 * 60_000);
 
   test("every colour renders with the same small error", async ({ page }) => {
-    const rows: { name: string; dL: number; dC: number; dH: number | null }[] = [];
+    const rows: { name: string; dE: number; dL: number; dC: number; dH: number | null }[] = [];
     await openSilentGame(page, "./", { cam: CAMERA, bg: "ff00ff" });
     // The first figure (and its textures) loads with the page.
     await page.locator('[data-figure="ready"]').waitFor({ timeout: 120_000 });
@@ -99,16 +107,32 @@ test.describe("colour parity under the studio stage", () => {
       const want = labFromLinear(albedo(s));
       // Hue is only meaningful for chromatic colours.
       const dH = chroma(want) > 8 ? hueDiff(hueDeg(got), hueDeg(want)) : null;
-      rows.push({ name: s.name, dL: got[0] - want[0], dC: chroma(got) - chroma(want), dH });
+      rows.push({
+        name: s.name,
+        dE: deltaE2000(got, want),
+        dL: got[0] - want[0],
+        dC: chroma(got) - chroma(want),
+        dH,
+      });
     }
     console.table(
       rows.map((r) => ({
         ...r,
+        dE: r.dE.toFixed(1),
         dL: r.dL.toFixed(1),
         dC: r.dC.toFixed(1),
         dH: r.dH?.toFixed(1) ?? "-",
       })),
     );
+
+    // Perceptual difference (CIEDE2000). Measured 2026-10-08 on the GPU: 1.3..3.5, spread 2.2;
+    // about 2 is a just-noticeable difference.
+    const dEs = rows.map((r) => r.dE);
+    expect(
+      Math.max(...dEs) - Math.min(...dEs),
+      "ΔE00 spread across the palette",
+    ).toBeLessThanOrEqual(3);
+    for (const r of rows) expect(r.dE, `${r.name}: ΔE00`).toBeLessThanOrEqual(4.5);
 
     const dLs = rows.map((r) => r.dL);
     // The bound that matters for fairness: no colour is lifted or crushed relative to the others.
