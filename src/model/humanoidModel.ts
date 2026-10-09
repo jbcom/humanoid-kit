@@ -67,6 +67,7 @@ import {
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/regions/hands/index.ts";
 import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
+import { areolaStretch } from "../surface/regions/torso.ts";
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 import { tuckDepths } from "./tuck.ts";
@@ -370,6 +371,8 @@ export interface Evaluation extends SurfaceEvaluation {
   groundOffset: number;
   /** Morphed control positions (base topology), for joints, bindings and measurement. */
   control: Float32Array;
+  /** How much larger the skin round the nipples is than the base mesh's (`areolaStretch`). */
+  areolaScale: number;
   /** Per body render vertex: mean curvature magnitude (m⁻¹), for subsurface scattering. */
   curvature: Float32Array;
   /** The skeleton fitted to this figure: each bone's rest head (`restBones`), bones × 3. */
@@ -962,6 +965,27 @@ export class HumanoidModel {
   }
 
   /**
+   * The default figure at rest, as hair is fitted to it: the body's control positions and
+   * triangles, and per body vertex whether the head bone moves it most (`HEAD_WEIGHT` of its skin
+   * weight: 1 on the head, 0 on the neck, shoulders and the jaw's beard line). The packer
+   * measures hair against it and grows authored styles on it.
+   */
+  restHead(): { positions: Float32Array; triangles: Uint32Array; head: Uint8Array } {
+    const positions = this.evaluate(occlusionFigure()).control;
+    const head = this.assets.manifest.skeleton.bones.findIndex((b) => b.name === "head");
+    if (head < 0) throw new MorphError("the body pack's skeleton has no head bone");
+    const { skinIndex, skinWeight } = this.assets;
+    const onHead = new Uint8Array(this.assets.manifest.vertexCount);
+    for (let v = 0; v < onHead.length; v++) {
+      let weight = 0;
+      for (let k = 0; k < 4; k++)
+        if (skinIndex[v * 4 + k] === head) weight += skinWeight[v * 4 + k] as number;
+      onHead[v] = weight >= HEAD_WEIGHT ? 1 : 0;
+    }
+    return { positions, triangles: this.bodyControlTriangles, head: onHead };
+  }
+
+  /**
    * Measures a hair style's growth, hairline fade and scalp against the default
    * figure at rest (`hairFields`). The scalp may carry hair only on the head:
    * a body vertex the head bone moves most (the neck, shoulders and jaw's
@@ -972,22 +996,13 @@ export class HumanoidModel {
     asset: BoundAsset,
     options: {
       feather?: boolean;
+      fins?: boolean;
       /** The style's texture cut-out (`HairFieldsInput.cutout`, without the UVs, which the asset has). */
       cutout?: { width: number; height: number; alpha: Uint8Array };
     } = {},
   ): HairFields {
-    const rest = this.evaluate(occlusionFigure()).control;
+    const { positions: rest, head: eligible } = this.restHead();
     const control = evaluateBinding(asset, rest, new Float32Array(asset.entry.vertexCount * 3));
-    const head = this.assets.manifest.skeleton.bones.findIndex((b) => b.name === "head");
-    if (head < 0) throw new MorphError("the body pack's skeleton has no head bone");
-    const { skinIndex, skinWeight } = this.assets;
-    const eligible = new Uint8Array(this.assets.manifest.vertexCount);
-    for (let v = 0; v < eligible.length; v++) {
-      let onHead = 0;
-      for (let k = 0; k < 4; k++)
-        if (skinIndex[v * 4 + k] === head) onHead += skinWeight[v * 4 + k] as number;
-      eligible[v] = onHead >= HEAD_WEIGHT ? 1 : 0;
-    }
     const cards = asset.faceVerts;
     return hairFields({
       positions: control,
@@ -995,6 +1010,7 @@ export class HumanoidModel {
       body: { positions: rest, triangles: this.bodyControlTriangles },
       scalpEligible: eligible,
       ...(options.feather !== undefined && { feather: options.feather }),
+      ...(options.fins !== undefined && { fins: options.fins }),
       ...(options.cutout && {
         cutout: { faceUvs: asset.faceUvs, uvs: asset.uvs, ...options.cutout },
       }),
@@ -1487,6 +1503,7 @@ export class HumanoidModel {
       },
       groundOffset: -minY,
       control,
+      areolaScale: areolaStretch(this.assets, control),
       curvature,
       boneHeads,
       bodyArt: recipe.bodyArt ? placeBodyArt(this.assets, recipe.bodyArt, control) : null,

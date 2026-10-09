@@ -15,15 +15,8 @@
  *
  * The hands' own layer definitions are unchanged and keep their own tests.
  */
-import type { HumanoidAssets } from "../../format/assetFormat.ts";
 import { callusAlbedo } from "../footTone.ts";
-import type {
-  ColourLayer,
-  DetailLayer,
-  SkinLayer,
-  SkinLayerFields,
-  SurfaceLayer,
-} from "../layers.ts";
+import type { ColourLayer, DetailLayer, SkinLayer, SurfaceLayer } from "../layers.ts";
 import {
   CALLUS_OPACITY,
   callusAmount,
@@ -48,22 +41,7 @@ import {
   PALM_CREASE_DEPTH,
   PALMOPLANTAR_LAYER,
 } from "./hands/index.ts";
-
-const cache = new WeakMap<object, Map<string, SkinLayerFields>>();
-/** A layer's merged fields, worked out once per set of assets. */
-function once(assets: HumanoidAssets, key: string, make: () => SkinLayerFields): SkinLayerFields {
-  let m = cache.get(assets);
-  if (!m) {
-    m = new Map();
-    cache.set(assets, m);
-  }
-  let f = m.get(key);
-  if (!f) {
-    f = make();
-    m.set(key, f);
-  }
-  return f;
-}
+import { once } from "./once.ts";
 
 /**
  * Palmoplantar colour with the sole's callus as a term of its paint: the

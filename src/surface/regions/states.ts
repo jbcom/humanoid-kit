@@ -9,10 +9,11 @@
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
 import type { ColourLayer, DetailLayer, SurfaceLayer } from "../layers.ts";
-import { diskMask, targetMask } from "../layers.ts";
+import { targetMask } from "../layers.ts";
 import { haemoglobinRatio, lipStateAlbedo } from "../skinTone.ts";
 import { LIPS_LAYER } from "./rest.ts";
 import { skinZones } from "./skinZones.ts";
+import { areolaZone } from "./torso.ts";
 
 const unit = (x: number) => Math.min(1, Math.max(0, x));
 
@@ -45,7 +46,7 @@ const GOOSEBUMP_SPACING = 0.01 / Math.sqrt(GOOSEBUMP_DENSITY_PER_CM2);
 function hairBearing(assets: HumanoidAssets): Float32Array {
   const zones = skinZones(assets);
   const head = zones.zone("head");
-  const areola = diskMask(assets, ["breast/nipple-size-incr"]);
+  const areola = areolaZone(assets).mask;
   const out = new Float32Array(assets.manifest.vertexCount);
   for (let v = 0; v < out.length; v++)
     out[v] =

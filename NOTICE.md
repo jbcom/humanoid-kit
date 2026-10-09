@@ -82,8 +82,12 @@ An asset from the community repositories on makehumancommunity.org is CC0 when
 its asset page says so: the page's stated licence governs (owner ruling,
 2026-10-09: "If the website says cc0 then it's cc0"). The packer accepts such an
 asset only with the page captured beside it (`scripts/lib/licenceRule.ts`) and
-records the page and its submission date as the evidence for every file. A page
-that says CC-BY or AGPL is refused. `docs/licence-history.md` gives the rule, the
+records the page and its submission date as the evidence for every file. An
+asset whose page does not say CC0 can still be packed when its mesh (`.obj`)
+states CC0 in its own header (owner ruling, 2026-10-09: "a cc0 mesh with a agpl
+proxy is not a reason to reject"): the packer then rebuilds the binding from the
+mesh against humanoid-kit's own base body, ships nothing of the asset's own
+binding file, and leaves out any material or texture that is not CC0. `docs/licence-history.md` gives the rule, the
 history behind it and the verdict on every community asset checked so far.
 
 `packs/clothing/data` is derived from MakeHuman's system assets pack

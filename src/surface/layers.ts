@@ -17,6 +17,7 @@ import { AssetFormatError, type HumanoidAssets, type SparseTarget } from "../for
 import type { BodyHairRecipe } from "./bodyHair.ts";
 import type { HairColour } from "./hairTone.ts";
 import type { Rgb, SkinTone } from "./skinTone.ts";
+import type { FigureBuild } from "./torsoTone.ts";
 
 /** What a layer's paint is computed from. */
 export interface SkinPaintInput {
@@ -28,6 +29,18 @@ export interface SkinPaintInput {
    * without it still paints.
    */
   age?: number;
+  /**
+   * The figure's other macros the torso's layers read (`FigureBuild`): sex,
+   * weight, height, muscle and breast size. Absent entries are the default
+   * macros, so an input built without them still paints.
+   */
+  build?: Partial<Omit<FigureBuild, "age">>;
+  /**
+   * How much larger the figure's skin round the nipple is than the base mesh's
+   * (`areolaStretch`, measured on its evaluated shape), so the areola's size in
+   * metres can be put on the base mesh's field. Absent is 1.
+   */
+  areolaScale?: number;
   /** The recipe's regional skin parameters (0..1 each). */
   flush: number;
   lips: number;
@@ -102,6 +115,21 @@ export interface DetailPaint {
    * about 0.002). `creases`: how many creases span the layer's coordinate.
    */
   size: number;
+  /**
+   * For a layer that declares a profile (`DetailLayer.profiled`, and every
+   * `tubercles` layer): the relief's amplitude (0..1) at evenly spaced points
+   * along the layer's coordinate, 1 to `STOP_COUNT` of them, resampled like a
+   * colour layer's stops. For `tubercles` it is the share of cells that raise
+   * a tubercle. It is how a relief whose extent depends on the figure (an
+   * areola's, which grows with age) takes its window from the paint.
+   */
+  profile?: readonly number[];
+  /**
+   * For a `striae` layer, and only for one: the share of the skin marked (0..1,
+   * `striaeAmount`) and the colour of a mark as a ratio to the skin it is on
+   * (`striaeColour`): stretch marks colour the skin where they are as well as cut it.
+   */
+  striae?: { amount: number; ratio: Rgb };
 }
 
 /** How a layer changes the surface's reflection where its mask lies. */
@@ -163,13 +191,6 @@ interface LayerBase {
    */
   adult?: { feature: string };
   /**
-   * Marks a body layer that only an adult shows (axillary and pubic hair, under
-   * the age policy): its data is in the body pack, but `paintStopTable` paints
-   * it at zero unless `SkinPaintInput.adult` is true, so an input that does not
-   * say fails closed.
-   */
-  adultOnly?: true;
-  /**
    * The layer lies on all the skin (vellus): its mask is 1 everywhere and it
    * takes no channel of the field atlas (`planAtlas` gives it none). Its
    * `fields` must say the same: a mask of 1 and no coordinate.
@@ -190,12 +211,10 @@ export const isAdultLayer = (layer: SkinLayer): boolean => layer.adult !== undef
 
 /**
  * How much of a layer's paint shows for this input, 0..1: 1 for a body
- * layer; 0 for an adult-only body layer on a figure not known to be an adult;
- * for an adult layer, the presence of its anatomy feature on an adult figure
- * and 0 on any other.
+ * layer; for an adult layer, the presence of its anatomy feature on an
+ * adult figure and 0 on any other.
  */
 function layerGate(layer: SkinLayer, input: SkinPaintInput): number {
-  if (layer.adultOnly && input.adult !== true) return 0;
   if (!layer.adult) return 1;
   if (input.adult !== true) return 0;
   return unit(input.anatomy?.[layer.adult.feature] ?? 0);
@@ -222,9 +241,19 @@ export interface ColourLayer extends LayerBase {
  */
 export interface DetailLayer extends LayerBase {
   kind: "detail";
-  pattern: "bumps" | "creases" | "ridges";
+  pattern: "bumps" | "creases" | "ridges" | "tubercles" | "striae";
+  /**
+   * The layer's coordinate carries an amplitude profile (`DetailPaint.profile`):
+   * `bumps` only, as `tubercles` always do. A profiled layer's `paint` must
+   * give one, an unprofiled layer's must not.
+   */
+  profiled?: boolean;
   paint(input: SkinPaintInput): DetailPaint;
 }
+
+/** Whether a detail layer's coordinate is an amplitude profile (a profiled `bumps` layer, or `tubercles`). */
+const isProfiled = (layer: DetailLayer): boolean =>
+  layer.pattern === "tubercles" || layer.profiled === true;
 
 /** Changes how glossy and how specular the skin is (sweat, oil, wetness). */
 export interface SurfaceLayer extends LayerBase {
@@ -258,15 +287,20 @@ export const STOP_COUNT = 8;
  * spacing), 6 strands
  * (a follicles per cm², b length in mm; texel 1 is the hair's albedo and its
  * diameter in mm, texel 2 (relief height in mm, 1 if the hair is in the skin's
- * albedo, 0, 0)). Lengths are in millimetres so the half-float table keeps
- * their precision.
+ * albedo, 0, 0)), 7 bumps with a profile and 8 tubercles (detail; a height, b
+ * spacing; the stops' red channel is the amplitude profile along the coordinate)
+ * and 9 striae (detail; a depth, b spacing; stop 0 is the mark's colour ratio,
+ * stop 1's red its amount; the coordinate is the marks' orientation). Lengths
+ * are in millimetres so the half-float table keeps their precision.
  */
 export const STOP_TABLE_WIDTH = STOP_COUNT + 1;
 
 /** The header's kind code for a layer. */
 export function layerKindCode(layer: SkinLayer): number {
   if (layer.kind === "detail") {
-    if (layer.pattern === "bumps") return 2;
+    if (layer.pattern === "bumps") return layer.profiled ? 7 : 2;
+    if (layer.pattern === "tubercles") return 8;
+    if (layer.pattern === "striae") return 9;
     if (layer.pattern === "ridges") return 5;
     return 3;
   }
@@ -277,15 +311,15 @@ export function layerKindCode(layer: SkinLayer): number {
 
 /**
  * Whether the shader reads a layer's coordinate: a colour layer's stops lie
- * along it and a crease layer's creases span it. Bumps, surface and strand
- * layers read their mask alone (strands take their direction from the body's
- * hair flow, not from a field).
+ * along it, a crease layer's creases span it, a profiled layer's amplitude
+ * profile does. Plain bumps, surface and strand layers read their mask alone
+ * (strands take their direction from the body's hair flow, not from a field).
  */
 export const layerUsesCoordinate = (layer: SkinLayer): boolean =>
   !(
     layer.kind === "surface" ||
     layer.kind === "strands" ||
-    (layer.kind === "detail" && layer.pattern === "bumps")
+    (layer.kind === "detail" && layer.pattern === "bumps" && !layer.profiled)
   );
 
 /**
@@ -562,6 +596,50 @@ export function buildLayerFields(
 
 const unit = (x: number) => Math.min(1, Math.max(0, x));
 
+/** The profile's amplitudes in the red channel of the stops, resampled evenly as colour stops are. */
+function writeProfile(
+  layer: DetailLayer,
+  profile: readonly number[] | undefined,
+  out: Float32Array,
+  row: number,
+): void {
+  if (
+    !profile ||
+    profile.length < 1 ||
+    profile.length > STOP_COUNT ||
+    !profile.every((x) => x >= 0 && x <= 1)
+  )
+    throw new RangeError(
+      `skin layer ${layer.id}: a profile of 1 to ${STOP_COUNT} amplitudes in 0..1 is required`,
+    );
+  for (let k = 0; k < STOP_COUNT; k++) {
+    const x = (k / (STOP_COUNT - 1)) * (profile.length - 1);
+    const i = Math.min(Math.floor(x), profile.length - 1);
+    const a = profile[i] as number;
+    const b = profile[Math.min(i + 1, profile.length - 1)] as number;
+    out.set([a + (b - a) * (x - i), 0, 0, 1], row + (k + 1) * 4);
+  }
+}
+
+/** A striae layer's mark colour (stop 0) and amount (stop 1, red). */
+function writeStriae(
+  layer: DetailLayer,
+  striae: { amount: number; ratio: Rgb } | undefined,
+  out: Float32Array,
+  row: number,
+): void {
+  if (
+    !striae ||
+    !(striae.amount >= 0 && striae.amount <= 1) ||
+    !striae.ratio.every((c) => c > 0 && Number.isFinite(c))
+  )
+    throw new RangeError(
+      `skin layer ${layer.id}: striae need an amount in 0..1 and a positive colour ratio`,
+    );
+  out.set([striae.ratio[0], striae.ratio[1], striae.ratio[2], 1], row + 4);
+  out.set([striae.amount, 0, 0, 1], row + 8);
+}
+
 /** A colour layer's relief depths, one per stop (0 where none is given); each must be >= 0. */
 function paintedRelief(id: string, count: number, relief: readonly number[] | undefined): number[] {
   const out = Array.from({ length: count }, (_, k) => relief?.[k] ?? 0);
@@ -599,6 +677,16 @@ export function paintStopTable(
       if (!(p.height >= 0 && p.size > 0))
         throw new RangeError(`skin layer ${layer.id}: height must be >= 0 and size > 0`);
       out.set([unit(p.strength) * gate, code, p.height, p.size], row);
+      if (isProfiled(layer)) writeProfile(layer, p.profile, out, row);
+      else if (p.profile)
+        throw new RangeError(
+          `skin layer ${layer.id}: a profile on a layer that did not declare one`,
+        );
+      if (layer.pattern === "striae") writeStriae(layer, p.striae, out, row);
+      else if (p.striae)
+        throw new RangeError(
+          `skin layer ${layer.id}: striae on a layer that is not a striae layer`,
+        );
       return;
     }
     if (layer.kind === "surface") {

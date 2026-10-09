@@ -126,6 +126,24 @@ Its targets and modifiers evaluate only for figures aged 18 or over. Loading
 fails with an `AssetFormatError` if the pack was built against a different body
 pack.
 
+## 4b. Animation (optional)
+
+Install `humanoid-kit-animations` only if your figures move. Load its manifest once and
+hand the library to a figure; a clip's file loads the first time a figure plays it.
+
+```tsx
+import { loadAnimationLibrary } from "humanoid-kit";
+import { animationsPack } from "humanoid-kit-animations";
+
+const animations = await loadAnimationLibrary(animationsPack);
+// walk_normal, walk_female, idle1, idle2, idlehips, swimcrawlstroke
+<Humanoid recipe={recipe} animation={{ library: animations, clip: "walk_normal" }} />;
+```
+
+A walk carries the figure forward on its own feet (a child's stride is a child's), its
+planted feet held in place; `rootMotion: false` keeps it on the spot, and a new `clip`
+fades from the one playing.
+
 ## 5. Hair (optional)
 
 Install `humanoid-kit-hair` only if your figures wear hair, and load it with the

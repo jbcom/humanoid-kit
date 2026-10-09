@@ -228,22 +228,24 @@ describe("the packer's licence gate for garments", () => {
     expect(compile).toThrow(/licence gate: .*g\.obj does not prove CC0/);
   });
 
-  it("refuses a file that states another licence", () => {
+  it("will not pack a CC0 mesh on a binding that states another licence without rebuilding it", () => {
     write("g.mhclo", mhclo("# license AGPL3\n"));
     write("g.obj", `${CC0}${OBJ}`);
     write("g.mhmat", `${CC0}diffuseColor 1 1 1\n`);
-    expect(compile).toThrow(/licence gate: .*g\.mhclo does not prove CC0/);
+    expect(compile).toThrow(/licence gate: .*g\.mhclo: its binding is not CC0; pass the base body/);
   });
 
-  it("refuses a texture named by a material that does not prove CC0", () => {
+  it("leaves out a material that does not prove CC0, and the texture it names", () => {
     fs.writeFileSync(path.join(dir, "g.png"), "x");
     write("g.mhclo", mhclo(CC0));
     write("g.obj", `${CC0}${OBJ}`);
     write("g.mhmat", "diffuseTexture g.png\n");
-    expect(compile).toThrow(/licence gate: .*g\.mhmat does not prove CC0/);
+    const asset = compile();
+    expect(asset.material.texture).toBeNull();
+    expect(asset.textures.size).toBe(0);
   });
 
-  it("takes a texture's licence from the material that names it, and a normal map too", () => {
+  it("packs a team asset's textures, the normal map too, on the files' CC0 header", () => {
     fs.writeFileSync(path.join(dir, "g.png"), "x");
     fs.writeFileSync(path.join(dir, "g_n.png"), "x");
     write("g.mhclo", mhclo(CC0));
@@ -252,6 +254,8 @@ describe("the packer's licence gate for garments", () => {
     const asset = compile();
     expect([...asset.textures.values()].sort()).toEqual(["g_g.webp", "g_g_n.webp"]);
     expect(asset.material.normalTexture).toBe("g_g_n.webp");
-    expect(Object.values(asset.evidence).filter((e) => e.startsWith("texture"))).toHaveLength(2);
+    expect(
+      Object.values(asset.evidence).filter((e) => e === "A: binary file of a team asset"),
+    ).toHaveLength(2);
   });
 });

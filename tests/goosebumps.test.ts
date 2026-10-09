@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import { groupFaces } from "../src/format/assetFormat.ts";
 import { paintStopTable, STOP_TABLE_WIDTH } from "../src/surface/layers.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
-import { AREOLA_LAYER, LIPS_LAYER } from "../src/surface/regions/rest.ts";
+import { LIPS_LAYER } from "../src/surface/regions/rest.ts";
 import { skinZones } from "../src/surface/regions/skinZones.ts";
 import {
   GOOSEBUMP_DENSITY_PER_CM2,
   GOOSEBUMP_HEIGHT,
   GOOSEBUMP_LAYER,
 } from "../src/surface/regions/states.ts";
+import { AREOLA_LAYER } from "../src/surface/regions/torso.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets();

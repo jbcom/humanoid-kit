@@ -23,11 +23,11 @@ is loaded with, and the pack's own manifest says so by hash.
 
 ## Coverage
 
-The ten styles are every scalp hair the MakeHuman system pack's CC0 header proves, and they are
-nearly all straight or wavy. Coily and kinky textures are mostly missing (one short afro, one
-crop of loose curls): no locs, twists, cornrows, bantu knots or close crop and fade. No other
-CC0-provable style closes this; it needs an authored or procedural style (see
-`docs/ARCHITECTURE.md`, "Scalp hair", and `docs/evidence/hair.md`).
+The ten MakeHuman styles are every scalp hair its CC0 header proves, and they are nearly all
+straight or wavy. Four authored styles (box braids, cornrows, two-strand twists, locs; generated
+by `scripts/lib/hairCards`, no one's mesh or texture used) cover the coily and braided textures.
+A derived coily close crop with a fade (`crop01`) keeps `short04`'s cards under its own strand map.
+Still missing: bantu knots and tight curls in the longer styles (see `docs/ARCHITECTURE.md`, "Scalp hair", and `docs/evidence/hair.md`).
 
 ## Licence
 

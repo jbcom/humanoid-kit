@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { Animator } from "../src/animation/animator.ts";
+import { type BodySegment, bodySegments } from "../src/animation/clearance.ts";
 import {
   type AnimationClip,
   type AnimationManifest,
@@ -14,6 +15,7 @@ import {
   parseClip,
 } from "../src/animation/clip.ts";
 import { contactBones, contactPoints } from "../src/animation/locomotion.ts";
+import { groupFaces } from "../src/format/assetFormat.ts";
 import type { MacroValues } from "../src/makehuman/macro.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
@@ -60,10 +62,19 @@ export const BODY_TYPES: readonly [string, Partial<MacroValues>][] = [
 export const AGES = [6, 25, 75] as const;
 
 const model = new HumanoidModel(assets, { subdivision: 0 });
+/** The base vertices of the visible body (helper geometry left out). */
+const bodyVertices = (() => {
+  const out = new Set<number>();
+  for (const q of groupFaces(assets, "body"))
+    for (let k = 0; k < 4; k++) out.add(assets.faceVerts[q * 4 + k] as number);
+  return Array.from(out);
+})();
 
 export interface Figure {
   name: string;
   rest: RestBones;
+  /** The body's capsules, measured from the figure's own skin (`bodySegments`). */
+  segments: BodySegment[];
   /** Height of the ground under the figure at rest (its lowest point's). */
   ground: number;
 }
@@ -79,7 +90,20 @@ export function figure(type: string, age: number): Figure {
     let ground = Number.POSITIVE_INFINITY;
     for (let i = 1; i < ev.control.length; i += 3)
       ground = Math.min(ground, ev.control[i] as number);
-    f = { name: key, rest: restBones(assets, ev.control), ground };
+    const rest = restBones(assets, ev.control);
+    f = {
+      name: key,
+      rest,
+      segments: bodySegments(
+        assets,
+        rest,
+        ev.control,
+        assets.skinIndex,
+        assets.skinWeight,
+        bodyVertices,
+      ),
+      ground,
+    };
     figures.set(key, f);
   }
   return f;

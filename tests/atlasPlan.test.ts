@@ -87,6 +87,27 @@ describe("the atlas plan", () => {
     expect(plan.owner[0]).toBeGreaterThanOrEqual(0);
   });
 
+  it("puts a layer that reads a coordinate where a coordinate channel already is, before opening one for it", () => {
+    // a (a surface layer, no coordinate) and b (a colour layer) overlap on quad 3, so they cannot
+    // share; c (a colour layer) lies apart from both. First fit would put c with a, whose group
+    // has no coordinate channel, and cost one; b's group has one.
+    const layers = [stub("a", "surface"), stub("b", "colour"), stub("c", "colour")];
+    const plan = planAtlas(layers, strip(4, [[0, 3], [1, 3], [2]]));
+    expect(plan.value[0]).not.toBe(plan.value[1]);
+    expect(plan.value[2]).toBe(plan.value[1]);
+    expect(plan.coord[2]).toBe(plan.coord[1]);
+    // a's value; b and c's value and coordinate.
+    expect(plan.channels).toBe(3);
+  });
+
+  it("puts a layer with no coordinate with a group that has none before one that has", () => {
+    // The mirror: a layer that needs no coordinate costs nothing anywhere, so it keeps the first fit.
+    const layers = [stub("a", "colour"), stub("b", "surface"), stub("c", "surface")];
+    const plan = planAtlas(layers, strip(4, [[0, 3], [1, 3], [2]]));
+    expect(plan.value[2]).toBe(plan.value[0]);
+    expect(plan.channels).toBe(3);
+  });
+
   it("never puts two layers that overlap in one channel", () => {
     const layers = [stub("a", "colour"), stub("b", "colour"), stub("c", "colour")];
     // Layers a and b both lie on quad 0; c is elsewhere and may share with either.
