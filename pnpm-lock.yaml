@@ -167,8 +167,8 @@ importers:
   .:
     dependencies:
       three-mesh-bvh:
-        specifier: ^0.9.16
-        version: 0.9.16(three@0.186.1)
+        specifier: ^0.9.15
+        version: 0.9.15(three@0.186.1)
     devDependencies:
       '@arethetypeswrong/cli':
         specifier: ^0.18.5
@@ -2648,8 +2648,8 @@ packages:
     peerDependencies:
       three: '>= 0.159.0'
 
-  three-mesh-bvh@0.9.16:
-    resolution: {integrity: sha512-2RK+5MJOaiHJhopURn2CUkOHiF3tFloD0uZBfhebV0CKB7mgVLpWUWaDpOyhNJRDkKKe7x4rRfTHZ32GwpXdkw==}
+  three-mesh-bvh@0.9.15:
+    resolution: {integrity: sha512-9xdEDkCzFoT8VPFH9DznwFSdbaIEjMvM106Iqq7TJurrIheUKDcdW4prfJTCxryih4XS/UxWs0H3K4MLMRFyOQ==}
     peerDependencies:
       three: '>= 0.159.0'
 
@@ -5335,7 +5335,7 @@ snapshots:
     dependencies:
       three: 0.186.1
 
-  three-mesh-bvh@0.9.16(three@0.186.1):
+  three-mesh-bvh@0.9.15(three@0.186.1):
     dependencies:
       three: 0.186.1
 

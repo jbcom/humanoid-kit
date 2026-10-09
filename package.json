@@ -159,6 +159,6 @@
     "character-creator"
   ],
   "dependencies": {
-    "three-mesh-bvh": "^0.9.16"
+    "three-mesh-bvh": "^0.9.15"
   }
 }
