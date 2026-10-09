@@ -69,7 +69,18 @@ class StencilBuilder {
   /** Ends the current row. */
   next(): void {
     const t = this.touched;
-    if (t.length > 1) t.sort((a, b) => a - b);
+    if (t.length > 32) t.sort((a, b) => a - b);
+    // A row touches a few vertices: insertion sort, with no comparator call per step.
+    else
+      for (let i = 1; i < t.length; i++) {
+        const v = t[i] as number;
+        let j = i - 1;
+        while (j >= 0 && (t[j] as number) > v) {
+          t[j + 1] = t[j] as number;
+          j--;
+        }
+        t[j + 1] = v;
+      }
     if (this.size + t.length > this.src.length) {
       const grown = Math.max(this.src.length * 2, this.size + t.length);
       const src = new Uint32Array(grown);

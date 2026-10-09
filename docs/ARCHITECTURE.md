@@ -813,12 +813,12 @@ one closed surface, wound consistently, so the volume is exact). Worst body for
 | --- | --- | --- | --- |
 | forearm twisted 135° | 0.98 / 0.87 / −1.2‰ | 1.00 / 1.00 / −0.1‰ | 0.99 / 0.94 / −0.6‰ |
 | upper arm twisted 135° | 0.93 / 0.52 / −13.8‰ | 1.00 / 1.00 / −5.5‰ | 0.99 / 0.88 / −6.8‰ |
-| thigh twisted 90° | 0.93 / 0.72 / −34.1‰ | 1.00 / 1.00 / −8.9‰ | 1.00 / 0.97 / −12.2‰ |
+| thigh twisted 90° | 0.93 / 0.72 / −34.1‰ | 1.00 / 1.00 / −8.9‰ | 0.97 / 0.83 / −13.9‰ |
 | arm raised forward 130° | 0.81 / 0.41 / −19.4‰ | 0.97 / 0.57 / −2.3‰ | 0.94 / 0.53 / −10.5‰ |
 | arm raised sideways 130° | 0.87 / 0.48 / −9.6‰ | 0.97 / 0.67 / −12.5‰ | 0.96 / 0.67 / −4.6‰ |
 | hip flexed 120° | 0.80 / 0.30 / −35.2‰ | 0.97 / 0.47 / −17.4‰ | 0.95 / 0.42 / −19.8‰ |
-| hip abducted 45° | 0.98 / 0.70 / −17.1‰ | 1.00 / 0.74 / −15.2‰ | 0.99 / 0.73 / −15.4‰ |
-| knee flexed 120° | 0.81 / 0.22 / −6.4‰ | 0.93 / 0.26 / −2.5‰ | 0.88 / 0.25 / −4.1‰ |
+| hip abducted 45° | 0.98 / 0.70 / −17.1‰ | 1.00 / 0.74 / −15.2‰ | 0.99 / 0.73 / −15.6‰ |
+| knee flexed 120° | 0.81 / 0.22 / −6.4‰ | 0.93 / 0.26 / −2.5‰ | 0.81 / 0.22 / −6.4‰ |
 | elbow flexed 120° | 0.84 / 0.33 / −3.8‰ | 0.91 / 0.31 / −3.9‰ | 0.90 / 0.31 / −3.9‰ |
 
 The pack's benchmark pose bends no elbow, knee or wrist, so `flexed` (every
@@ -869,6 +869,19 @@ arm but the elbow's two bones (½), and for the pelvis, the thigh and the foot,
 and linear for the shin: the knee is where a bend's bulge outweighs the volume
 dual quaternions save. Re-run it if the pack's skin weights change.
 
+**The knee, revised (2026-10-09).** The searched table put the thigh's lower
+half (`upperleg02`) at 1, and a bent knee's sides then bulged past linear
+skinning's: girth 95th percentile 1.32 against 1.23 at 90° (the tall lean body;
+1.19 against 1.11 on the average, 1.14 against 1.06 on the short full woman),
+which reads as a swollen knee in a crouch. A test now holds a bent knee to
+linear skinning's bulge (plus 0.02) at 45° and 90°, the angles a body bends it,
+and the share is 0, so that the knee's girth and volume are exactly linear's
+(120°: 0.22, −6.4‰). It costs the thigh's twist some of its volume (90°: girth
+5th percentile 0.83 against 0.97, volume −13.9‰ against −12.2‰; linear
+skinning 0.72 and −34.1‰), a motion made far less often than a knee bends, and
+a crouch's thigh stays dual quaternion above its lower half. Intermediate
+shares (¼, ½, ¾) all bulge: 1.28 to 1.30.
+
 **How it runs.** `DualBones` (`src/render/dualSkinning.ts`) holds each bone's
 dual quaternion and share as a float texture, written from the same bone
 rotations as the CPU reference whenever the pose or the figure changes. A patch
@@ -893,8 +906,9 @@ authored for either would add data and a per-pose evaluation for a change the
 sheets cannot show. The gate (never worse than linear in girth, within a
 thousandth in volume) holds both. The blend bulges a flexed hip's front (95th
 percentile 1.37 at 120°, against linear skinning's 1.13) for the 15‰ of volume
-it keeps, and a bent knee's (1.32 against 1.23); that is the remainder a
-pose-space corrective would address, if figures are posed there often. The
+it keeps (a bent knee's no longer bulges past linear skinning's); that is the
+remainder a pose-space corrective would address, if figures are posed there
+often. The
 crease detail layers (`flex.*` signals) paint the fold's skin on top of it.
 
 ## Scalp hair (milestone 4)
@@ -1444,7 +1458,25 @@ It is a second topology, gated by age structurally rather than by being hidden:
   weight and layer works on both; the layer atlas serves both because it lives in
   UV space, which refinement preserves.
 
-The refined region is empty of anatomy today: it is the base shape in finer
+**Detail targets** shape the refined region at finer than the base's control
+cells (docs/research/ADULT-SCULPT-PLAN.md, section 6a). The refinement is built
+over every body face, and what is worn hides triangles by a mask rather than by
+removing faces (see "Clothing"), so its vertex numbering never depends on what is worn,
+and a *lattice* of it, the refinement's own mesh before smoothing, is the same
+at every subdivision level. A detail target is a sparse list over the region's
+vertices (ranked among the lattice's, so an index fits the target encoding's 16
+bits and a detail cannot reach past the patch and its border). The model keeps
+detail contributions out of the control morph and, for an adult figure only,
+displaces the lattice by their weights, scaled by the figure's pelvic breadth,
+then carries the displacement through any further smoothing (the stencil is
+linear, so smoothing the displaced lattice is the base plus the smoothed
+displacement). Shading normals gain the change in the faces' own normals, which
+is zero where nothing moved, so there is no seam at the patch's edge. The
+manifest's `anatomy.detail.surfaceKey` hashes the lattice, and the model refuses
+detail built for another refinement. `tests/detailTargets.test.ts` proves the
+engine with a synthetic target before any anatomy is authored on it.
+
+The refined region is empty of anatomy until a feature is authored on it: it is the base shape in finer
 cells, proven by the geometry tests and by a render within 11 pixels over 8
 levels of the base's (adult against base contact sheet, local only). The
 features (mound, penis, testes, vulva) land on it one at a time
@@ -1517,8 +1549,11 @@ the joint's skin takes, which is measured.
   the joint (the axis through the segments either side of it), on the limb
   (within 9 to 12 cm of the axis, which keeps the torso and the other limb out),
   on the side the skin faces (its normal against the joint's flex direction,
-  `FLEXION_JOINTS[].flexes`); its coordinate runs along the limb across the
-  window, so the grooves lie across it. Nothing is painted or packed.
+  `FLEXION_JOINTS[].flexes`: full within about 30° of it, none past 63°, so the
+  sides and the back of the limb carry no crease; a ramp out to 84° drew a line
+  seen from the side as a seam round the elbow); its coordinate runs along the
+  limb across the window, so the grooves lie across it. Nothing is painted or
+  packed.
 - *Strength* is `smoothstep(0.05, 0.85, flex)`: nothing straight, the whole
   near the joint's limit; the rest A-pose's elbow (flexion 0.3) holds a quarter.
 - *Depth follows from the strain.* A crease of span `s` and depth `d` takes up

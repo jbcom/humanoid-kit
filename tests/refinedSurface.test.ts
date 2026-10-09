@@ -65,6 +65,16 @@ const evaluate = (mesh: SurfaceMesh, control: Float32Array) => {
   return { positions, normals };
 };
 
+/**
+ * Two typed arrays are element for element equal. A loop and one assertion: a
+ * deep `toEqual` over `Array.from` of a million numbers takes minutes.
+ */
+function expectSame(a: ArrayLike<number>, b: ArrayLike<number>, what: string) {
+  expect(a.length, `${what} length`).toBe(b.length);
+  for (let i = 0; i < a.length; i++)
+    if (a[i] !== b[i]) throw new Error(`${what} differs at ${i}: ${a[i]} against ${b[i]}`);
+}
+
 /** Sum of the UV area of a mesh's triangles. */
 function uvArea(mesh: SurfaceMesh) {
   let total = 0;
@@ -81,8 +91,9 @@ function uvArea(mesh: SurfaceMesh) {
 
 /** How many triangles each undirected edge of the surface (UV seams joined) belongs to. */
 function edgeUse(mesh: SurfaceMesh) {
-  const use = new Map<string, number>();
+  const use = new Map<number, number>();
   const s = (r: number) => mesh.renderToSurface[r] as number;
+  const n = mesh.topology.vertexCount;
   for (let i = 0; i < mesh.index.length; i += 3) {
     const t = [0, 1, 2].map((k) => s(mesh.index[i + k] as number));
     // A triangle drawn as a quad has a repeated corner: its second half is degenerate.
@@ -90,7 +101,7 @@ function edgeUse(mesh: SurfaceMesh) {
     for (let k = 0; k < 3; k++) {
       const a = t[k] as number;
       const b = t[(k + 1) % 3] as number;
-      const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+      const key = a < b ? a * n + b : b * n + a;
       use.set(key, (use.get(key) ?? 0) + 1);
     }
   }
@@ -106,14 +117,12 @@ describe("a body surface with local refinement", { timeout: 600_000 }, () => {
     for (const level of [1, 2]) {
       const plain = plainSurface(level);
       const same = buildRefinedSurfaceMesh(source, body, { faces: [], levels: [] }, level);
-      expect(Array.from(same.topology.faces)).toEqual(Array.from(plain.topology.faces));
-      expect(Array.from(same.index)).toEqual(Array.from(plain.index));
-      expect(Array.from(same.renderToSurface)).toEqual(Array.from(plain.renderToSurface));
-      expect(Array.from(same.uvs)).toEqual(Array.from(plain.uvs));
-      expect(Array.from(same.skinWeight)).toEqual(Array.from(plain.skinWeight));
-      expect(Array.from(evaluate(same, P).positions)).toEqual(
-        Array.from(evaluate(plain, P).positions),
-      );
+      expectSame(same.topology.faces, plain.topology.faces, "faces");
+      expectSame(same.index, plain.index, "index");
+      expectSame(same.renderToSurface, plain.renderToSurface, "renderToSurface");
+      expectSame(same.uvs, plain.uvs, "uvs");
+      expectSame(same.skinWeight, plain.skinWeight, "skinWeight");
+      expectSame(evaluate(same, P).positions, evaluate(plain, P).positions, "positions");
     }
   });
 
@@ -162,6 +171,38 @@ describe("a body surface with local refinement", { timeout: 600_000 }, () => {
       const t = [0, 1, 2].map((k) => plain.index[i + k] as number);
       if (t.some((v) => near(a, v))) tris.push(t);
     }
+    // A 1 cm grid over the triangles, each in every cell its box touches, so a
+    // point looks only at the triangles near it (the closest is within 0.6 mm).
+    const CELL = 0.01;
+    const cell = (x: number) => Math.floor(x / CELL) + 500;
+    const cellKey = (i: number, j: number, k: number) => (i * 1000 + j) * 1000 + k;
+    const grid = new Map<number, number[]>();
+    tris.forEach((t, id) => {
+      const lo = [Infinity, Infinity, Infinity];
+      const hi = [-Infinity, -Infinity, -Infinity];
+      for (const v of t)
+        for (let k = 0; k < 3; k++) {
+          lo[k] = Math.min(lo[k] as number, a[v * 3 + k] as number);
+          hi[k] = Math.max(hi[k] as number, a[v * 3 + k] as number);
+        }
+      for (let i = cell(lo[0] as number); i <= cell(hi[0] as number); i++)
+        for (let j = cell(lo[1] as number); j <= cell(hi[1] as number); j++)
+          for (let k = cell(lo[2] as number); k <= cell(hi[2] as number); k++) {
+            const key = cellKey(i, j, k);
+            const list = grid.get(key);
+            if (list) list.push(id);
+            else grid.set(key, [id]);
+          }
+    });
+    const nearby = (x: number, y: number, z: number) => {
+      const out = new Set<number>();
+      for (let i = -1; i <= 1; i++)
+        for (let j = -1; j <= 1; j++)
+          for (let k = -1; k <= 1; k++)
+            for (const id of grid.get(cellKey(cell(x) + i, cell(y) + j, cell(z) + k)) ?? [])
+              out.add(id);
+      return out;
+    };
     const dist = (px: number, py: number, pz: number, t: number[]) => {
       // Distance to a triangle (Ericson, Real-Time Collision Detection).
       const v = (i: number) =>
@@ -223,11 +264,8 @@ describe("a body surface with local refinement", { timeout: 600_000 }, () => {
       if (!near(b, i) || baseSet.has(key(b, i))) continue;
       added++;
       let best = Number.POSITIVE_INFINITY;
-      for (const t of tris)
-        best = Math.min(
-          best,
-          dist(b[i * 3] as number, b[i * 3 + 1] as number, b[i * 3 + 2] as number, t),
-        );
+      const [x, y, z] = [b[i * 3] as number, b[i * 3 + 1] as number, b[i * 3 + 2] as number];
+      for (const id of nearby(x, y, z)) best = Math.min(best, dist(x, y, z, tris[id] as number[]));
       worst = Math.max(worst, best);
     }
     expect(added).toBeGreaterThan(2000);

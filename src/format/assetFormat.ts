@@ -425,6 +425,33 @@ export interface AdultAnatomySpec {
    * anatomy to be shaped in. Absent, an adult figure keeps the base surface.
    */
   surface?: AdultSurfaceSpec;
+  /**
+   * Targets on the adult surface's own vertices (docs/research/ADULT-SCULPT-PLAN.md,
+   * section 6a). Absent, the pack has only control targets.
+   */
+  detail?: AdultDetailSpec;
+}
+
+/**
+ * Detail targets: entries of the adult target file whose indices name vertices
+ * of the refined surface's region (`HumanoidModel.adultDetailLattice`), not of
+ * the base body. They are driven by modifiers like any target, and added to the
+ * adult surface after it is evaluated, so no figure under 18 reaches them.
+ */
+export interface AdultDetailSpec {
+  /** Names of the adult file's targets that are detail targets. */
+  targets: string[];
+  /**
+   * The lattice these targets were authored on (`AdultDetailLattice.key`); the
+   * model refuses them against any other refinement.
+   */
+  surfaceKey: string;
+  /**
+   * The figure's scale for a detail: two control vertices and their distance
+   * (metres) on the figure the targets were authored against. A detail is
+   * scaled by the ratio of the figure's own distance to `rest`. Absent: none.
+   */
+  scale?: { a: number; b: number; rest: number };
 }
 
 /** Faces of the base body to refine and by how much: `levels[i]` for face `faces[i]`. */
@@ -570,6 +597,8 @@ function addTargets(
   what: string,
   vertexCount: number,
   existing: ReadonlyMap<string, SparseTarget> = map,
+  /** Detail targets, whose indices are the adult surface's, checked when that is built. */
+  detail: ReadonlySet<string> = new Set(),
 ): void {
   if (file.encoding !== TARGET_ENCODING)
     throw new AssetFormatError(`${what}: unsupported target encoding ${String(file.encoding)}`);
@@ -590,7 +619,7 @@ function addTargets(
       for (let k = 0; k < 3; k++)
         deltas[i * 3 + k] = view.getInt16(e.offset + n * 2 + (k * n + i) * 2, true);
     }
-    expectIndices(indices, vertexCount, `target ${e.name}`);
+    if (!detail.has(e.name)) expectIndices(indices, vertexCount, `target ${e.name}`);
     map.set(e.name, { name: e.name, indices, deltas, scale: e.scale });
   }
 }
@@ -968,13 +997,14 @@ export function addTargetFiles(assets: HumanoidAssets, files: TargetFileData): v
   const all = targetFiles(manifest, assets.adultAnatomyManifest ?? undefined);
   const added = new Map<string, SparseTarget>();
   const ids: string[] = [];
+  const detail = new Set(assets.adultAnatomyManifest?.anatomy?.detail?.targets);
   for (const [id, bin] of Object.entries(files)) {
     if (!bin) continue;
     const file = all.find((f) => f.id === id);
     if (!file) throw new AssetFormatError(`no target file ${id} in the loaded packs`);
     if (!assets.targetFilesPending.has(id))
       throw new AssetFormatError(`target file ${id} is already loaded`);
-    addTargets(added, file, bin, `target file ${id}`, manifest.vertexCount, targets);
+    addTargets(added, file, bin, `target file ${id}`, manifest.vertexCount, targets, detail);
     ids.push(id);
   }
   for (const [name, t] of added) targets.set(name, t);

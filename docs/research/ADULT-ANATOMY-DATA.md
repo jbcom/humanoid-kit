@@ -189,3 +189,52 @@ downloaded file, kept side by side) and the MakeHuman checkout's `LICENSE.md`.
   asset is imported, so the licence check has nothing to clear. A later
   contributor should wait for the licence-history result before reaching for
   the community proxies, in either direction.
+
+## E. The mons pubis (the `mound` feature)
+
+Research pass of 2026-10-09, by the same method. Adults only. What was read in
+full text versus abstract only is marked; the male mons has no verified number.
+
+**Female, verified (full text).** Seleem et al., BMC Pregnancy Childbirth 2024;24:496
+(doi:10.1186/s12884-024-06667-w, PMC11264390, CC BY 4.0; the author list was not
+confirmed from the page), calipers in lithotomy on 194 multiparous women aged
+18 to 40, BMI 18 to 30, mean ± SD in cm:
+
+| BMI band | Monal height | Width | Length |
+| --- | --- | --- | --- |
+| 18.01 to 25 | 4.81 ± 0.88 (vaginal), 5.15 ± 0.93 (cesarean) | 11.20 ± 1.23, 11.64 ± 1.26 | 6.51 ± 0.60, 6.53 ± 0.57 |
+| 25.01 to 30 | 6.31 ± 1.00, 6.26 ± 1.38 | 12.34 ± 1.60, 12.30 ± 1.48 | 6.95 ± 0.90, 7.16 ± 1.04 |
+
+"Monal height" is the soft tissue from the front of the symphysis to the top of
+the mons (skin and fat together), so the higher band is about 1.1 to 1.5 cm
+thicker. Width is the widest transverse extent and length the longest vertical
+one, from the upper border where the mons merges into lower-abdominal fat to
+the top of the pudendal cleft. No effect of mode of delivery was found; ages
+were 18 to 40 only, so there is no older-adult data.
+
+**Suprapubic fat by ultrasound, mixed sex** (Nadeem et al., J Med Ultrasound
+2018;26:205, PMC6314101, CC BY-NC-SA 4.0): 384 people aged 16 to 60 (90% women),
+subcutaneous fat 18.45 ± 12.61 mm (range 4 to 86 mm), correlated with BMI at
+r = 0.703. No sex split, and it includes ages 16 and 17, so it is read for
+range only.
+
+**Grading.** El-Khatib, Aesthetic Plast Surg 2011;35:24 (full text, publisher
+copyright, numbers only used): four qualitative grades of mons bulge and
+ptosis by how much of the external genitalia it covers. No millimetre criteria.
+
+**Not found, and so not claimed:** any male mons or suprapubic fat thickness or
+width; projection of the mons beyond the surrounding abdomen in millimetres (the
+"monal height" above overstates it, being measured from bone); any sex
+comparison at the same site by the same method; age dependence beyond 40. Seen
+in abstract only and not used: Seleem et al., Aesthet Surg J 2023 (mons volume
+about 200 to 300 mL by BMI group), a CT study of lower-abdominal fat, and an
+erect-penile-length cohort that implies about 1.8 cm of suprapubic soft tissue
+in men (derived from two abstract means, indirect).
+
+**Consequence for the sculpt.** The `mound` control's range is sized by the one
+verified contrast, about 1.5 cm of soft-tissue thickness between BMI bands, and
+the ±1 SD of the monal height (about 1 cm), applied in the surface normal
+direction over a patch of the reported width and length; the shape of its edge
+and the male range are modelled and labelled uncalibrated in the pack, as the
+genital colour is, until a verified source exists. The mound is a feature of
+every adult figure at any gender position, not of one sex.

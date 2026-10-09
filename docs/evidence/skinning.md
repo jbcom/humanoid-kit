@@ -79,12 +79,12 @@ wrapper); ΔV is the change in the whole body's volume in thousandths of it
 | --- | --- | --- |
 | forearm twisted 135° | 0.87 / −1.2‰ | 0.94 / −0.6‰ |
 | upper arm twisted 135° | 0.52 / −13.8‰ | 0.88 / −6.8‰ |
-| thigh twisted 90° | 0.72 / −34.1‰ | 0.97 / −12.2‰ |
+| thigh twisted 90° | 0.72 / −34.1‰ | 0.83 / −13.9‰ |
 | arm raised forward 130° | 0.41 / −19.4‰ | 0.53 / −10.5‰ |
 | arm raised sideways 130° | 0.48 / −9.6‰ | 0.67 / −4.6‰ |
 | hip flexed 120° | 0.30 / −35.2‰ | 0.42 / −19.8‰ |
-| hip abducted 45° | 0.70 / −17.1‰ | 0.73 / −15.4‰ |
-| knee flexed 120° | 0.22 / −6.4‰ | 0.25 / −4.1‰ |
+| hip abducted 45° | 0.70 / −17.1‰ | 0.73 / −15.6‰ |
+| knee flexed 120° | 0.22 / −6.4‰ | 0.22 / −6.4‰ |
 | elbow flexed 120° | 0.33 / −3.8‰ | 0.31 / −3.9‰ |
 
 ## What is not fixed, and what needs no fix
@@ -100,9 +100,11 @@ wrapper); ΔV is the change in the whole body's volume in thousandths of it
   lost. The sheet shows a clean crotch and no step in the hips' outline in four
   bodies, so no corrective is built for it either.
 - **The flexed hip bulges more than before.** Its front reaches a 95th-
-  percentile girth of 1.37 at 120° (linear: 1.13) in exchange for 15‰ of volume,
-  and a bent knee's reaches 1.32 (linear: 1.23). The bench holds every case's
-  bulge under 1.45.
+  percentile girth of 1.37 at 120° (linear: 1.13) in exchange for 15‰ of volume.
+  A bent knee's no longer bulges past linear skinning's (the lower half of the
+  thigh is linear, so the knee is exactly linear's, 1.23 at 90°): that cost the
+  thigh's twist some of its volume (above). The bench holds every case's bulge
+  under 1.45.
 
 The flexed hip is the one remainder worth a corrective (pose-space shapes
 derived from the flexion signals), if a figure is posed there often; the
