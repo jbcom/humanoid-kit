@@ -40,6 +40,7 @@ import {
   HAIR_ALPHA_CUTOFF,
   HAIR_OCCLUSION_FLOOR,
   HairMaterial,
+  HIGHLIGHT_OVER_DIFFUSE,
   isMultisampled,
   setHairOcclusionAttribute,
   setHairStrandAttributes,
@@ -104,7 +105,14 @@ function setStrandAttributesFrom(
     fade[i] = o.fade ? o.fade(p.getX(i), p.getY(i)) : 1;
     growth[i] = o.growth ? o.growth(p.getX(i), p.getY(i)) : 0;
   }
-  setHairStrandAttributes(g, fade, growth, new Float32Array(n).fill(o.fin ?? 0));
+  // 20 texture units per metre: a 3 mm strand is 1/16 of the plane's UV range, four pixels.
+  setHairStrandAttributes(
+    g,
+    fade,
+    growth,
+    new Float32Array(n).fill(o.fin ?? 0),
+    new Float32Array(n).fill(20),
+  );
 }
 
 const FLAT = strandMap(4, () => texel(HAIR_STRAND_MEAN, 255));
@@ -185,8 +193,9 @@ describe("hair colour on the GPU", () => {
       for (const c of [0, 1, 2]) {
         const got = centre(px, c);
         // Lambert at normal incidence is the albedo. The light is at the camera, the
-        // peak of the fibre's specular lobe, which adds about 0.05 of white at every colour.
-        expect(got, `${name} channel ${c}`).toBeGreaterThanOrEqual((want[c] as number) * 0.97);
+        // peak of the fibre's specular lobe, which adds a little white at every colour (and takes
+        // a little of the diffuse, as any specular layer does).
+        expect(got, `${name} channel ${c}`).toBeGreaterThanOrEqual((want[c] as number) * 0.93);
         expect(got, `${name} channel ${c}`).toBeLessThan((want[c] as number) * 1.1 + 0.06);
       }
       material.dispose();
@@ -344,6 +353,63 @@ describe("hair highlights (Kajiya-Kay)", () => {
     expect(h.vertical.width).toBeGreaterThan(h.horizontal.width * 1.5);
   });
 
+  it("never outshines its diffuse: peak highlight stays under a set multiple, on every strand direction and light", () => {
+    /** The render with the lobes on, divided by the same material's diffuse alone (lobes, sheen and base specular off). */
+    const ratioPeak = (
+      growth: ((x: number, y: number) => number) | undefined,
+      light: [number, number, number],
+      coherence: number,
+    ) => {
+      const sphere = new SphereGeometry(0.9, 64, 48);
+      setHairOcclusionAttribute(
+        sphere,
+        new Float32Array(sphere.getAttribute("position").count).fill(1),
+      );
+      setStrandAttributesFrom(sphere, growth ? { growth } : {});
+      const draw = (diffuseOnly: boolean) => {
+        const material = new HairMaterial();
+        material.setColour({ eumelanin: 0.5, pheomelanin: 0.1, grey: 0, override: null });
+        material.setStrand({ angle: 0, coherence });
+        material.map = FLAT;
+        if (diffuseOnly) {
+          material.hkUniforms.hkLobes.value.x = 0;
+          material.sheen = 0;
+          material.specularIntensity = 0;
+        }
+        const px = render(new Mesh(sphere, material), { light });
+        material.dispose();
+        return px;
+      };
+      const on = draw(false);
+      const off = draw(true);
+      let brightest = 0;
+      for (let y = 0; y < SIZE; y++)
+        for (let x = 0; x < SIZE; x++) brightest = Math.max(brightest, at(off, x, y));
+      let peak = 0;
+      for (let y = 0; y < SIZE; y++)
+        for (let x = 0; x < SIZE; x++) {
+          const d = at(off, x, y);
+          // Only where the diffuse is at least half its brightest (not the limb, where sheen, a fibre's grazing fuzz, rightly outweighs it).
+          if (d > 0.5 * brightest) peak = Math.max(peak, at(on, x, y) / d);
+        }
+      return peak;
+    };
+    const lights: [number, number, number][] = [
+      [0, 0, 1],
+      [0.8, 0.4, 0.6],
+      [-0.6, 0.7, 0.4],
+    ];
+    const growths: ((x: number, y: number) => number)[] = [(_, y) => y, (x) => x, (x, y) => x + y];
+    // The worst hair pixel at the key light, against its diffuse.
+    for (const coherence of [0, 1])
+      for (const growth of growths)
+        for (const light of lights)
+          expect(
+            ratioPeak(growth, light, coherence),
+            `coherence ${coherence}, light ${light}`,
+          ).toBeLessThan(HIGHLIGHT_OVER_DIFFUSE);
+  });
+
   it("is absent where growth has no gradient: no direction, no strand highlight", () => {
     const h = lobes(undefined);
     expect(h.horizontal.peak).toBeLessThan(0.002);
@@ -359,17 +425,36 @@ describe("hairlines and fins", () => {
     return n / ((to - from) * SIZE);
   };
 
-  it("dithers a card away by its fade: none at 0, all at 1, a share in between, on any GPU", () => {
-    // Fade 0 on the left edge, 1 on the right, rising linearly across the card.
-    const { mesh, material } = card({ fade: (x) => (x + 1) / 2 });
+  it("thins a hairline strand by strand: none at 0, all at 1, more as the fade rises, and whole strands, not dots", () => {
+    // Fade 0 on the left edge, 1 on the right, rising linearly across the card; strands run
+    // up the card (along V), so each strand is one column of pixels.
+    const strand = { angle: Math.PI / 2, coherence: 0 };
+    const { mesh, material } = card({ fade: (x) => (x + 1) / 2, strand });
     const px = render(mesh);
     const q = SIZE / 4;
-    // Fade is about 1/8, 3/8, 5/8, 7/8 at the centres of the four quarters.
-    for (const [i, want] of [0.125, 0.375, 0.625, 0.875].entries())
-      expect(drawn(px, i * q, (i + 1) * q), `quarter ${i}`).toBeCloseTo(want, 1);
+    const share = [0, 1, 2, 3].map((i) => drawn(px, i * q, (i + 1) * q));
+    for (let i = 1; i < 4; i++)
+      expect(share[i] as number, `quarter ${i} is denser than ${i - 1}`).toBeGreaterThan(
+        share[i - 1] as number,
+      );
+    expect(share[0] as number).toBeLessThan(0.35);
+    expect(share[3] as number).toBeGreaterThan(0.9);
+    // Whole strands: a column of pixels is drawn along its whole height or not at all
+    // (a screen-door dither would leave most columns half drawn).
+    let whole = 0;
+    let partial = 0;
+    for (let x = 0; x < SIZE; x++) {
+      let n = 0;
+      for (let y = 4; y < SIZE - 4; y++) if (at(px, x, y) > 0.005) n++;
+      const f = n / (SIZE - 8);
+      if (f < 0.05 || f > 0.95) whole++;
+      else partial++;
+    }
+    // (A tip tapers over a fifth of the fade, which is dithered without alpha-to-coverage.)
+    expect(whole, `columns whole ${whole}, partial ${partial}`).toBeGreaterThan(2 * partial);
     // A flat fade of 0 draws nothing; one of 1 draws the whole card.
-    expect(drawn(render(card({ fade: () => 0 }).mesh))).toBe(0);
-    expect(drawn(render(card({ fade: () => 1 }).mesh))).toBeGreaterThan(0.99);
+    expect(drawn(render(card({ fade: () => 0, strand }).mesh))).toBe(0);
+    expect(drawn(render(card({ fade: () => 1, strand }).mesh))).toBeGreaterThan(0.99);
     material.dispose();
   });
 

@@ -6,8 +6,8 @@
  * Four channels per page of an array texture, laid out by an `AtlasPlan`: each
  * layer's mask, the coordinate of each layer whose shader reads one, and one
  * coordinate between the layers of a coordinate group. Texels outside the UV islands are filled from the
- * nearest covered texel (a gutter of `GUTTER` texels), so bilinear filtering
- * at an island's edge never blends in empty texels and draws a seam.
+ * nearest covered texel (`uvRaster.ts`), so bilinear filtering at an island's
+ * edge never blends in empty texels and draws a seam.
  */
 import {
   BufferAttribute,
@@ -33,9 +33,12 @@ import {
 } from "three";
 import { type AtlasPlan, OWNER_GRID, vertexOwners } from "../surface/atlasPlan.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
-
-/** Texels of gutter filled around each UV island. */
-export const GUTTER = 4;
+import {
+  COVER_FRAGMENT,
+  NEAREST_COVERED,
+  QUAD_VERTEX,
+  UV_RASTER_VERTEX as RASTER_VERTEX,
+} from "./uvRaster.ts";
 
 /** What a skin material reads the layers' fields from: the atlas, the owner maps and the plan that lays them out. */
 export interface SkinLayerAtlas {
@@ -70,33 +73,11 @@ export interface LayerAtlasSource {
   plan: AtlasPlan;
 }
 
-const RASTER_VERTEX = /* glsl */ `
-in vec2 uv;
-in vec4 fields;
-out vec4 vFields;
-void main() {
-  vFields = fields;
-  gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
-}`;
-
 const RASTER_FRAGMENT = /* glsl */ `
 precision highp float;
 in vec4 vFields;
 out vec4 color;
 void main() { color = vFields; }`;
-
-const COVER_FRAGMENT = /* glsl */ `
-precision highp float;
-out vec4 color;
-void main() { color = vec4(1.0); }`;
-
-const QUAD_VERTEX = /* glsl */ `
-in vec3 position;
-out vec2 vUv;
-void main() {
-  vUv = position.xy * 0.5 + 0.5;
-  gl_Position = vec4(position.xy, 0.0, 1.0);
-}`;
 
 const DILATE_FRAGMENT = /* glsl */ `
 precision highp float;
@@ -105,18 +86,8 @@ uniform sampler2D cover;
 uniform float texel;
 in vec2 vUv;
 out vec4 color;
-void main() {
-  if (texture(cover, vUv).r > 0.5) { color = texture(fields, vUv); return; }
-  float best = 1e9;
-  color = vec4(0.0);
-  for (int y = -${GUTTER}; y <= ${GUTTER}; y++)
-    for (int x = -${GUTTER}; x <= ${GUTTER}; x++) {
-      vec2 o = vec2(float(x), float(y));
-      vec2 p = vUv + o * texel;
-      float d = dot(o, o);
-      if (d < best && texture(cover, p).r > 0.5) { best = d; color = texture(fields, p); }
-    }
-}`;
+${NEAREST_COVERED}
+void main() { color = hkNearestCovered(fields, cover, vUv, texel); }`;
 
 /** What a channel holds: the masks (field 0) or the coordinates (field 1) of the layers that share it. */
 interface Held {

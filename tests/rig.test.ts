@@ -226,11 +226,82 @@ describe("body poses", () => {
       "benchmark",
       "abducted",
       "bent",
+      "bowed",
       "flexed",
       "relaxed",
+      "seated",
+      "tucked",
       "twisted",
     ]);
     expect(() => bodyPoseRotations(rig, "dab")).toThrow(/dab/);
+  });
+
+  it("folds the trunk forward 60° along the spine in the bowed pose, each of the five bones a fifth", () => {
+    const heads = posedBoneHeads(rest, bodyPoseRotations(rig, "bowed"));
+    const at = (h: Float32Array, n: string, k: number) => h[bone(n) * 3 + k] as number;
+    const pitch = (h: Float32Array) => {
+      const dy = at(h, "spine01", 1) - at(h, "spine05", 1);
+      const dz = at(h, "spine01", 2) - at(h, "spine05", 2);
+      return (Math.atan2(dz, dy) * 180) / Math.PI;
+    };
+    // The rest pose: `bowed` is the rest A-pose with the spine turned, as `bent` is.
+    const standing = posedBoneHeads(rest, IDENTITY_POSE(rest.names.length));
+    // The line from the lowest spine head to the highest leans over by the average of the bones'
+    // turns up to the highest head: 12°, 24°, 36° and 48° (the last bone turns that head's
+    // successor, not the head), about 30°.
+    expect(pitch(heads) - pitch(standing)).toBeGreaterThan(26);
+    expect(pitch(heads) - pitch(standing)).toBeLessThan(40);
+    // The legs stay where they were.
+    for (const n of ["upperleg01.L", "lowerleg01.L", "foot.L"])
+      for (let k = 0; k < 3; k++) expect(at(heads, n, k), n).toBeCloseTo(at(standing, n, k), 5);
+  });
+
+  it("draws the knees up in the tucked pose: each thigh flexed 120° at the hip, the shin back down", () => {
+    const heads = posedBoneHeads(rest, bodyPoseRotations(rig, "tucked"));
+    const at = (n: string, k: number) => heads[bone(n) * 3 + k] as number;
+    for (const side of ["L", "R"]) {
+      const thigh = [0, 1, 2].map(
+        (k) => at(`lowerleg01.${side}`, k) - at(`upperleg01.${side}`, k),
+      ) as [number, number, number];
+      const len = Math.hypot(...thigh);
+      // From straight down, flexed 120° about the hip: forward and 30° above level.
+      const lift = Math.asin(thigh[1] / len) * (180 / Math.PI);
+      expect(lift, `thigh ${side}`).toBeGreaterThan(25);
+      expect(lift, `thigh ${side}`).toBeLessThan(35);
+      expect(thigh[2] / len, `thigh ${side}`).toBeGreaterThan(0.8);
+      // The knee is bent far enough to bring the shin back down toward the thigh's start.
+      expect(
+        bend(heads, `upperleg02.${side}`, `lowerleg01.${side}`, `foot.${side}`),
+      ).toBeGreaterThan(110);
+    }
+  });
+
+  it("sits in the seated pose: thighs level and forward, shins upright, soles flat", () => {
+    const heads = posedBoneHeads(rest, bodyPoseRotations(rig, "seated"));
+    const standing = posedBoneHeads(rest, bodyPoseRotations(rig, "tpose"));
+    const at = (h: Float32Array, n: string, k: number) => h[bone(n) * 3 + k] as number;
+    const dir = (h: Float32Array, a: string, b: string) => {
+      const v = [0, 1, 2].map((k) => at(h, b, k) - at(h, a, k));
+      const l = Math.hypot(...v);
+      return v.map((x) => x / l) as [number, number, number];
+    };
+    for (const side of ["L", "R"]) {
+      const thigh = dir(heads, `upperleg01.${side}`, `lowerleg01.${side}`);
+      const shin = dir(heads, `lowerleg01.${side}`, `foot.${side}`);
+      // The thigh runs forward (+z) within 12° of level, the shin hangs down within 12° of upright.
+      expect(Math.abs(thigh[1]), `thigh ${side}`).toBeLessThan(Math.sin((12 * Math.PI) / 180));
+      expect(thigh[2], `thigh ${side}`).toBeGreaterThan(0.95);
+      expect(shin[1], `shin ${side}`).toBeLessThan(-Math.cos((12 * Math.PI) / 180));
+      // The foot keeps its rest pitch (the knee's and the hip's bends cancel at the ankle).
+      const pitch = (h: Float32Array) =>
+        (Math.atan2(
+          at(h, `toe3-1.${side}`, 1) - at(h, `foot.${side}`, 1),
+          Math.abs(at(h, `toe3-1.${side}`, 2) - at(h, `foot.${side}`, 2)),
+        ) *
+          180) /
+        Math.PI;
+      expect(Math.abs(pitch(heads) - pitch(standing)), `foot ${side}`).toBeLessThan(8);
+    }
   });
 
   it("swings both thighs 40° apart in the abducted pose, the legs open rather than crossed", () => {

@@ -148,7 +148,7 @@ export function setBodyOcclusionAttributes(geometry: BufferGeometry, occlusion: 
 export function patchOcclusion(
   shader: WebGLProgramParametersWithUniforms,
   keys: Vector3,
-  { floor = OCCLUSION_FLOOR, power = 1, body = false } = {},
+  { floor = OCCLUSION_FLOOR, power = 1, body = false, exposure = 1 } = {},
 ): void {
   if (!shader.fragmentShader.includes("#include <aomap_fragment>"))
     throw new Error("occlusion: three's aomap_fragment chunk moved");
@@ -177,7 +177,7 @@ varying float vHkOcclusion;`,
 			${corners.map((c, m) => `${c} * ${weightOf(m)}`).join(" +\n\t\t\t")};
 		float occ = clamp( ${layout.enclosure ? "1.0 - blended" : "blended"}, 0.0, 1.0 );${
       power === 1
-        ? "\n\t\t\tvHkOcclusion = occ;"
+        ? `\n\t\t\tvHkOcclusion = ${exposure === 1 ? "occ" : `pow( occ, ${exposure.toFixed(3)} )`};`
         : `
 			// Enclosed at rest, a vertex is in a cavity, which loses light faster than the
 			// visibility it loses; open at rest, it is only in a fold and keeps its value.

@@ -9,8 +9,10 @@
  */
 import { ARCHETYPE_MODIFIER_GROUPS } from "../makehuman/features.ts";
 import { ADULT_AGE } from "../makehuman/macro.ts";
+import { seededRandom } from "../random.ts";
 import { withAge } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { DEFAULT_HAIR_COLOUR } from "../surface/hairTone.ts";
 import type { Rgb } from "../surface/skinTone.ts";
 import type { ModifierTable } from "./controls.ts";
 
@@ -29,18 +31,13 @@ export interface RandomizeOptions {
    * deeper skin; omitted, the base recipe's hair is kept as it is.
    */
   hairStyles?: readonly string[];
-}
-
-/** mulberry32: small, fast, and good enough for appearance. */
-export function seededRandom(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+  /**
+   * The brows and lashes on offer (the hair pack's ids of those kinds). When given,
+   * the figure wears one of each, drawn after the hair so a seed's hair and shape
+   * are the same with or without them; omitted, the base recipe's are kept.
+   */
+  browStyles?: readonly string[];
+  lashStyles?: readonly string[];
 }
 
 /** Natural iris colours in linear RGB. */
@@ -132,7 +129,26 @@ export function randomRecipe(
   const hair = options.hairStyles?.length
     ? randomHair(rand, options.hairStyles, recipe.skin.melanin)
     : undefined;
-  return { ...recipe, modifiers: values, ...(hair && { hair }) };
+  // A new head of hair keeps the brows and lashes the figure had; those on offer are drawn last.
+  const keepBrows = recipe.hair?.brows;
+  const keepLashes = recipe.hair?.lashes;
+  const brows = options.browStyles?.length
+    ? (options.browStyles[Math.floor(rand() * options.browStyles.length)] as string)
+    : keepBrows;
+  const lashes = options.lashStyles?.length
+    ? (options.lashStyles[Math.floor(rand() * options.lashStyles.length)] as string)
+    : keepLashes;
+  const current = hair ?? recipe.hair;
+  const worn =
+    current || brows || lashes
+      ? {
+          style: current?.style ?? null,
+          colour: current?.colour ?? { ...DEFAULT_HAIR_COLOUR },
+          ...(brows && { brows }),
+          ...(lashes && { lashes }),
+        }
+      : undefined;
+  return { ...recipe, modifiers: values, ...(worn && { hair: worn }) };
 }
 
 /** A hair style on offer (or none, one time in ten) in a natural colour, from `rand`'s next draws. */

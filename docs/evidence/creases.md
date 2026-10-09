@@ -1,52 +1,64 @@
 # Joint creases
 
-Rendered on 2026-10-09 with `scripts/contact-sheet.mjs` against the playground,
-on the studio stage, at 2× pixel density, with the camera 0.3 to 0.5 m from the
-skin: the same figure and pose, once with the crease depth set to zero (left)
-and once as shipped (right). The poses are `bent` (elbows about 90°, knees about
-80°) and `tpose` (arms straight), authored for the check
-(`scripts/poses/bent.json`). The creases follow the pose's flexion signals
-(`flex.elbow.L` and so on); magnitudes and what is measured against what is
-art-directed are in `docs/ARCHITECTURE.md`, "Joint creases".
+Rendered on 2026-10-09 by the integrator's shared sheet pass against the
+playground, on the studio stage, at 2× pixel density. The poses are `bent`
+(elbows about 90°, knees about 80°, the ankles bent back to keep the soles
+level) and `tpose`, authored for the check (`scripts/poses/bent.json`). The
+creases follow the pose's flexion signals (`flex.elbow.L` and so on); how the
+fold's depth follows from the measured strain, and what is art-directed, are in
+`docs/ARCHITECTURE.md`, "Joint creases". Only the elbows and the knees have
+creases.
 
-## The crook of a bent joint
+## The crook of a bent elbow
 
-![The crook of the left elbow and the back of the left knee, without and with creases](./creases-flexor.webp)
+![The crook of a bent elbow, an average adult and a short full woman](./creases-elbow.webp)
 
-Top: the elbow's crook, seen from inside the bend. Without creases the skin is
-smooth up to the step where the weights hand over from the upper arm to the
-forearm; with them, two folds cross the crook. Bottom: the back of the knee,
-whose skin folds in several grooves as the shin comes up (the strain there is
-over 60 %, so the folds are the deepest of any joint). The grooves are narrow
-cuts in flat skin, not ripples: that is what the light catches.
+The inside of the bend, seen from inside it: the fold takes up the skin that the
+bend compresses (2.8 mm deep, from the 25 % measured strain). It is on the inside
+of the bend only, within about 63° either side of the way the joint folds.
 
-![The arm bent at the elbow, without and with creases](./creases-arm-front.webp)
+## The back of a bent knee
 
-The same bend from the front. The fold across the elbow reads as a skin fold
-and not a seam; the forearm and hand beyond it are unchanged.
+![The back of a bent knee, an average adult and a muscular man](./creases-knee.webp)
 
-## The outside of a bend has none
+Several grooves as the shin comes up (6.2 mm deep, from over 60 % strain): the
+deepest of any joint. The grooves are narrow cuts in flat skin, not ripples:
+that is what the light catches.
 
-A first version also wrinkled the outside of the bend (the kneecap's and the
-elbow's point's skin) while the joint was straight. It drew four deep rings
-round the straight knee, which read as a stack of bands, then a faint trace
-over the kneecap, and a pale ring round the wrist. The measured strain there is
-a stretch, which draws skin smooth, and nothing measured says how loose skin
-wrinkles, so those layers were dropped, not tuned (ARCHITECTURE.md).
+## Seen down a limb
+
+![The right arm of two bodies from the front, the forearm pointing at the camera](./creases-end-on.webp)
+
+A bent forearm points at the camera in a front view, so the elbow's crease,
+17 cm up the arm, is projected onto the forearm just above the hand. A groove is
+a thin line, so it fades by its screen footprint (it is gone by the time a
+period is three pixels): it shows as one fine line and not as a dotted ring.
 
 ## Body types
 
 ![A bent figure at four body types](./creases-bodies.webp)
 
 The `bent` pose on the average adult, a muscular man, a short full woman and a
-ten-year-old. Creases are close-up relief: at full-figure distance (above) they
-are finer than a pixel and fade out, so these figures show the posed geometry
-only. The dark streaks beside the hips are the fingers' shadows, not skin.
+ten-year-old. Creases are close-up relief: at full-figure distance they are
+finer than a pixel and fade out, so these figures show the posed geometry only.
+The pale band at the screen-right wrist of the first, third and fourth is
+lighting on the bent wrist's back: it is the same with no crease layer and with
+linear skinning everywhere (checked on sheets of both). The dark streaks beside
+the hips are the fingers' shadows, not skin.
 
-## What this does not show
+## The feet of a bent figure
 
-The wrists' creases are 2 across 6 cm of skin at a quarter of the knee's strain
-and show at no angle tried; they are in the layer stack and tested, but the
-wrist is the joint with least to see. Skin colour darkens and reddens at an
-extended elbow or knee (SKIN-STATES.md, A2); that is a colour term and not part
-of these detail layers.
+![The legs of the T-pose, the bent pose and the flexed pose at floor level](./bent-pose-feet.webp)
+
+A figure's lowest point is on the floor, and in `bent` the soles lie flat on the
+contact shadow like the T-pose's: the pose bends each ankle back 60° so the
+folded knees and raised hips do not leave the feet pointing down. (The flexed
+pose, the deep crouch on the right, is not part of this check.)
+
+## What is not here
+
+Wrists and the outside of each bend (the elbow's point, the kneecap) have no
+creases: what was drawn there read as a bracelet and as bands round the limb, and
+nothing measured says where or how deep loose skin wrinkles. Skin colour darkens
+and reddens at an extended elbow or knee (SKIN-STATES.md, A2); that is a colour
+term and not part of these detail layers.

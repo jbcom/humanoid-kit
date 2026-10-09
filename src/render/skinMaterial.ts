@@ -32,6 +32,8 @@ import {
   Vector3,
   Vector4,
 } from "three";
+import { inkOptics } from "../bodyArt/ink.ts";
+import { markRatios, SCAR_RAISE, SCAR_SMOOTHNESS } from "../bodyArt/marks.ts";
 import { type AtlasPlan, OWNER_GRID, planAtlas } from "../surface/atlasPlan.ts";
 import {
   CREASE_SHARPNESS,
@@ -42,9 +44,19 @@ import {
   STOP_TABLE_WIDTH,
 } from "../surface/layers.ts";
 import { SKIN_LAYERS } from "../surface/regions/index.ts";
+import {
+  RIDGE_ACROSS,
+  RIDGE_ALONG,
+  RIDGE_CELL_PERIODS,
+  RIDGE_CONTRAST,
+  RIDGE_KERNELS,
+  RIDGE_ORIENTATION_SEAM,
+  RIDGE_SIGMA,
+} from "../surface/ridges.ts";
 import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import { luminance, MELANIN_ANCHORS, type Rgb, skinAlbedo } from "../surface/skinTone.ts";
+import { MARK_NEUTRAL } from "./bodyArtTexture.ts";
 import { DUAL_SKINNING_KEY, type DualBones, patchDualSkinning } from "./dualSkinning.ts";
 import { emptyLayerAtlas, emptyOwners, type SkinLayerAtlas } from "./layerAtlas.ts";
 import { BODY_OCCLUSION_FLOOR, BODY_OCCLUSION_POWER, patchOcclusion } from "./occlusion.ts";
@@ -73,11 +85,17 @@ export const CURVATURE_ATTRIBUTE = "hkCurvature";
  */
 export const SCALP_ATTRIBUTE = "hkScalp";
 
-/** How far the skin goes toward the scalp colour where hair grows at full density. */
-export const SCALP_STRENGTH = 0.6;
+/** How far the skin goes toward its stubble tone where hair grows from it at full density. */
+export const SCALP_STRENGTH = 0.7;
 
-/** What fraction of the hair's albedo the scalp shows: the skin under hair is in its shade. */
-export const SCALP_DARKEN = 0.7;
+/**
+ * The stubble tone is the skin's own colour in the shade of the hair above it
+ * (`SCALP_SHADE` of it) with a little of the hair's colour (`SCALP_HAIR_SHARE`).
+ * Built from the skin, not from the hair, so white hair does not paint a pale
+ * patch on deep skin, nor black hair a dark one on fair.
+ */
+export const SCALP_SHADE = 0.7;
+export const SCALP_HAIR_SHARE = 0.15;
 
 /** A GLSL float literal. */
 const glslFloat = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
@@ -162,6 +180,47 @@ float hkBumps( vec2 p ) {
 		}
 	return h;
 }
+// Friction ridges: sparse Gabor noise, the shader form of ridgeHeight (src/surface/ridges.ts).
+uvec2 hkRidgeHash( uvec2 v ) {
+	v = v * 1664525u + 1013904223u;
+	v.x += v.y * 1664525u;
+	v.y += v.x * 1664525u;
+	v = v ^ ( v >> 16u );
+	v.x += v.y * 1664525u;
+	v.y += v.x * 1664525u;
+	v = v ^ ( v >> 16u );
+	return v;
+}
+float hkRidges( vec2 p, float theta, float spacing ) {
+	float cell = ${glslFloat(RIDGE_CELL_PERIODS)} * spacing;
+	ivec2 i = ivec2( floor( p / cell ) );
+	vec2 w = vec2( cos( theta ), sin( theta ) );
+	float sa = ${glslFloat(RIDGE_ALONG)} * spacing;
+	float sc = ${glslFloat(RIDGE_ACROSS)} * spacing;
+	float sum = 0.0;
+	for ( int j = -1; j <= 1; j ++ )
+		for ( int k = -1; k <= 1; k ++ ) {
+			ivec2 c = i + ivec2( k, j );
+			for ( int n = 0; n < ${RIDGE_KERNELS}; n ++ ) {
+				uvec2 h = hkRidgeHash( uvec2( uint( c.x + 32768 ), uint( c.y * ${RIDGE_KERNELS} + n + 32768 ) ) );
+				float phase = float( hkRidgeHash( uvec2( uint( c.x + 16384 ), uint( c.y * ${RIDGE_KERNELS} + n + 16384 ) ) ).x ) * 2.3283064365386963e-10;
+				vec2 centre = ( vec2( c ) + vec2( h ) * 2.3283064365386963e-10 ) * cell;
+				vec2 d = p - centre;
+				float across = dot( d, w );
+				float along = - d.x * w.y + d.y * w.x;
+				float env = exp( - 0.5 * ( along * along / ( sa * sa ) + across * across / ( sc * sc ) ) );
+				sum += env * cos( 6.28318530718 * ( across / spacing + phase ) );
+			}
+		}
+	return clamp( 0.5 + ${glslFloat(RIDGE_CONTRAST / RIDGE_SIGMA)} * sum, 0.0, 1.0 );
+}
+// How much of a periodic relief survives at this footprint (in periods per pixel):
+// all of it up to a tenth of a period, none from three tenths, where a period is
+// under about 3 px and the shading would shimmer. The one function the creases and
+// the ridges fade by.
+float hkFootprintFade( float periodsPerPixel ) {
+	return 1.0 - smoothstep( 0.1, 0.3, periodsPerPixel );
+}
 // The detail layers' relief at this pixel, metres. Relief finer than a pixel
 // fades out rather than aliasing.
 float hkDetailHeight( vec2 uv ) {
@@ -169,7 +228,7 @@ float hkDetailHeight( vec2 uv ) {
 	for ( int l = 0; l < ${count}; l ++ ) {
 		vec4 head = hkHeader( l );
 		int kind = hkKind( head );
-		if ( kind != 2 && kind != 3 ) continue;
+		if ( kind != 2 && kind != 3 && kind != 5 ) continue;
 		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
 		if ( head.x <= 0.0 ) continue;
 		vec2 f = hkFields( l, uv );
@@ -178,11 +237,20 @@ float hkDetailHeight( vec2 uv ) {
 			vec2 p = uv * vHkUvScale / head.w;
 			float fade = 1.0 - smoothstep( 0.25, 0.75, length( fwidth( p ) ) );
 			H += a * head.z * fade * hkBumps( p );
+		} else if ( kind == 5 ) {
+			vec2 p = uv * vHkUvScale;
+			// Ridges within a pixel of one another blur to a flat; fade them out before they alias.
+			float fade = hkFootprintFade( length( fwidth( p ) ) / head.w );
+			// The derivatives above are taken in uniform flow; only the pattern is skipped off the ridged skin.
+			if ( a > 0.002 && fade > 0.0 ) {
+				float theta = f.y * 3.14159265359 + ${glslFloat(RIDGE_ORIENTATION_SEAM)};
+				H += a * head.z * fade * ( hkRidges( p, theta, head.w ) - 0.5 );
+			}
 		} else {
 			float phase = f.y * head.w;
 			// A groove is a thin line: it goes by the time a period is ten pixels, not one, or
 			// seen end-on down a limb it shows as a dotted ring.
-			float fade = 1.0 - smoothstep( 0.1, 0.3, fwidth( phase ) );
+			float fade = hkFootprintFade( fwidth( phase ) );
 			H -= a * head.z * fade * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} );
 		}
 	}
@@ -242,6 +310,44 @@ float hkPreintegrated( float nDotL, float x ) {
 	return max( nDotL, 0.0 ) + texture2D( hkScatterTable, uv ).r;
 }
 `;
+
+/**
+ * Body art (`bakeBodyArt`, src/bodyArt/), under `HK_BODY_ART` only, after the
+ * layer stack and before scattering: the marks page's melanin and haemoglobin
+ * multiply the skin by this tone's ratios raised to them (`markedAlbedo`), and
+ * the ink page's colour, seen through this skin (`inkSeen`), mixes in by its
+ * coverage, as ink lies in the dermis. A scar's smoothness and raise
+ * (`hkMarkSurface`) go to the roughness and the relief; they are 0 without
+ * body art.
+ */
+const BODY_ART_FUNCTIONS = `
+vec2 hkMarkSurface = vec2( 0.0 );
+#ifdef HK_BODY_ART
+uniform sampler2DArray hkBodyArt;
+uniform vec3 hkInkThrough;
+uniform vec3 hkInkVeil;
+uniform vec3 hkInkKeep;
+uniform vec3 hkMarkLight;
+uniform vec3 hkMarkDark;
+uniform vec3 hkMarkBlood;
+vec3 hkSrgbToLinear( vec3 c ) {
+	return mix( c / 12.92, pow( ( c + 0.055 ) / 1.055, vec3( 2.4 ) ), step( vec3( 0.04045 ), c ) );
+}
+vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
+	vec4 mark = texture( hkBodyArt, vec3( uv, 1.0 ) );
+	hkMarkSurface = mark.ba;
+	float melanin = ( mark.r * 255.0 - ${MARK_NEUTRAL.toFixed(1)} ) / 127.0;
+	c *= pow( hkMarkLight, vec3( max( - melanin, 0.0 ) ) ) * pow( hkMarkDark, vec3( max( melanin, 0.0 ) ) ) * pow( hkMarkBlood, vec3( mark.g ) );
+	vec4 ink = texture( hkBodyArt, vec3( uv, 0.0 ) );
+	return mix( c, hkInkThrough * ( hkInkVeil + hkInkKeep * hkSrgbToLinear( ink.rgb ) ), ink.a );
+}
+#endif
+`;
+
+const BODY_ART_COLOUR = `
+	#ifdef HK_BODY_ART
+		diffuseColor.rgb = hkApplyBodyArt( diffuseColor.rgb, vHkUv );
+	#endif`;
 
 const SUBSURFACE_DIFFUSE = `
 	// humanoid-kit: scatter dims the lit side and carries light past the terminator,
@@ -410,12 +516,22 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkLayerOwners: { value: Texture };
     /** This figure's stop table (`paintStopTable`). */
     hkLayerStops: { value: DataTexture };
-    /** The colour (linear) the skin goes toward where hair grows from it. */
+    /** The hair's albedo (linear), a little of which the stubble tone takes. */
     hkScalpColour: { value: Vector3 };
     /** 0 without hair on the figure, else `SCALP_STRENGTH`. */
     hkScalpStrength: { value: number };
     /** Per layer, its atlas channels, owner map and id in it (the atlas's plan). */
     hkChannel: { value: Vector4[] };
+    /** The figure's body-art texture (`bakeBodyArt`); read only while one is set (`setBodyArt`). */
+    hkBodyArt: { value: Texture | null };
+    /** How ink looks through this figure's skin (`inkOptics`). */
+    hkInkThrough: { value: Vector3 };
+    hkInkVeil: { value: Vector3 };
+    hkInkKeep: { value: Vector3 };
+    /** What marks multiply this skin by (`markRatios`). */
+    hkMarkLight: { value: Vector3 };
+    hkMarkDark: { value: Vector3 };
+    hkMarkBlood: { value: Vector3 };
   };
   private readonly stopTable: Float32Array;
   private dualBones: DualBones | null = null;
@@ -447,12 +563,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   setScalp(hairAlbedo: Rgb | null): void {
     const u = this.hkUniforms;
     u.hkScalpStrength.value = hairAlbedo ? SCALP_STRENGTH : 0;
-    if (hairAlbedo)
-      u.hkScalpColour.value.set(
-        hairAlbedo[0] * SCALP_DARKEN,
-        hairAlbedo[1] * SCALP_DARKEN,
-        hairAlbedo[2] * SCALP_DARKEN,
-      );
+    if (hairAlbedo) u.hkScalpColour.value.set(hairAlbedo[0], hairAlbedo[1], hairAlbedo[2]);
   }
 
   /**
@@ -469,6 +580,25 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     this.hkUniforms.hkLayerAtlas.value = atlas?.texture ?? noLayersFor(plan.pages);
     this.hkUniforms.hkLayerOwners.value = atlas?.owners ?? noOwners();
     setChannels(this.hkUniforms.hkChannel.value, plan);
+  }
+
+  /**
+   * Draws the figure's body art from `texture` (`bakeBodyArt`), or none. The
+   * shader reads it only while one is set, so a figure without body art pays
+   * nothing for it; setting or clearing it rebuilds the shader once, and
+   * replacing one texture with another does not.
+   */
+  setBodyArt(texture: Texture | null): void {
+    const had = this.hkUniforms.hkBodyArt.value !== null;
+    this.hkUniforms.hkBodyArt.value = texture;
+    if (had !== (texture !== null)) {
+      if (texture) this.defines = { ...this.defines, HK_BODY_ART: "" };
+      else {
+        const { HK_BODY_ART: _, ...rest } = this.defines ?? {};
+        this.defines = rest;
+      }
+      this.needsUpdate = true;
+    }
   }
 
   constructor(layers: readonly SkinLayer[] = SKIN_LAYERS) {
@@ -498,6 +628,13 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkScalpStrength: { value: 0 },
       // A GLSL array has at least one element, so a stack with no layers still gets one.
       hkChannel: { value: Array.from({ length: Math.max(1, layers.length) }, () => new Vector4()) },
+      hkBodyArt: { value: null },
+      hkInkThrough: { value: new Vector3() },
+      hkInkVeil: { value: new Vector3() },
+      hkInkKeep: { value: new Vector3() },
+      hkMarkLight: { value: new Vector3() },
+      hkMarkDark: { value: new Vector3() },
+      hkMarkBlood: { value: new Vector3() },
     };
     setChannels(this.hkUniforms.hkChannel.value, plan);
     this.normalMap = poreNormalMap();
@@ -526,6 +663,14 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     const y = luminance(albedo);
     const t = Math.min(1, Math.max(0, (y - 0.05) / (0.355 - 0.05)));
     this.sheen = 0.12 + 0.13 * t * t * (3 - 2 * t);
+    const ink = inkOptics(a.tone);
+    this.hkUniforms.hkInkThrough.value.fromArray(ink.through);
+    this.hkUniforms.hkInkVeil.value.fromArray(ink.veil);
+    this.hkUniforms.hkInkKeep.value.fromArray(ink.keep);
+    const marks = markRatios(a.tone);
+    this.hkUniforms.hkMarkLight.value.fromArray(marks.light);
+    this.hkUniforms.hkMarkDark.value.fromArray(marks.dark);
+    this.hkUniforms.hkMarkBlood.value.fromArray(marks.blood);
     // Regional colour: each layer's paint from its own model (measured for lips),
     // blended in by the atlas's soft-edged masks.
     paintStopTable(this.layers, { ...a, signals: a.signals ?? {} }, this.stopTable);
@@ -563,21 +708,21 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
+        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${BODY_ART_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
       )
       .replace(
         "#include <color_fragment>",
-        "#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, hkScalpColour, clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );",
+        `#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n${BODY_ART_COLOUR}\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, mix( diffuseColor.rgb * ${glslFloat(SCALP_SHADE)}, hkScalpColour, ${glslFloat(SCALP_HAIR_SHARE)} ), clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );`,
       )
       // Surface layers: roughness here, specular once the material is set up.
       .replace(
         "#include <roughnessmap_fragment>",
-        "#include <roughnessmap_fragment>\n\tvec2 hkSurface = hkSurfaceChange( vHkUv );\n\troughnessFactor = clamp( roughnessFactor + hkSurface.x, 0.03, 1.0 );",
+        `#include <roughnessmap_fragment>\n\tvec2 hkSurface = hkSurfaceChange( vHkUv );\n\troughnessFactor = clamp( roughnessFactor + hkSurface.x - ${glslFloat(SCAR_SMOOTHNESS)} * hkMarkSurface.x, 0.03, 1.0 );`,
       )
       // Detail layers: relief on top of the pore map.
       .replace(
         "#include <normal_fragment_maps>",
-        "#include <normal_fragment_maps>\n\tnormal = hkPerturbNormal( normal, hkDetailHeight( vHkUv ), - vViewPosition, faceDirection );",
+        `#include <normal_fragment_maps>\n\tnormal = hkPerturbNormal( normal, hkDetailHeight( vHkUv ) + ${glslFloat(SCAR_RAISE)} * hkMarkSurface.y, - vViewPosition, faceDirection );`,
       )
       .replace(
         "#include <lights_physical_fragment>",
@@ -602,6 +747,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-9-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}`;
+    return `humanoid-kit-skin-9-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}${this.hkUniforms.hkBodyArt.value ? "-art" : ""}`;
   }
 }

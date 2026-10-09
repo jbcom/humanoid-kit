@@ -42,6 +42,8 @@ export interface LayerRenderOptions {
   /** Pixels per side; default `SIZE`. */
   size?: number;
   appearance?: SkinAppearance;
+  /** The coordinate of layer `l` at horizontal UV position `u`; default `u`, so it runs along the plane. */
+  coordinate?: (l: number, u: number) => number;
   /** Turns the plane about its vertical axis, radians: its u axis is foreshortened by the cosine. */
   tilt?: number;
 }
@@ -101,7 +103,9 @@ export function renderLayers(layers: readonly SkinLayer[], options: LayerRenderO
   for (let v = 0; v < uv.count; v++)
     layers.forEach((_, l) => {
       source.layerFields[(l * uv.count + v) * 2] = 1;
-      source.layerFields[(l * uv.count + v) * 2 + 1] = uv.getX(v);
+      source.layerFields[(l * uv.count + v) * 2 + 1] = options.coordinate
+        ? options.coordinate(l, uv.getX(v))
+        : uv.getX(v);
     });
   const atlas = layers.length ? buildLayerAtlas(renderer, source, 256) : null;
   const material = new SkinMaterial(layers);

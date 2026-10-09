@@ -1,0 +1,12 @@
+{
+  "name": "seated",
+  "title": "Seated",
+  "description": "Sitting on a seat: the hips flexed 90° so the thighs run level and forward, the knees bent 90° so the shins hang upright, the soles flat. The check for the hip's volume and bulge where the thigh folds against the trunk.",
+  "base": "tpose",
+  "rotations": {
+    "lowerleg01.L": { "Xrotation": 90 },
+    "lowerleg01.R": { "Xrotation": 90 },
+    "upperleg01.L": { "Xrotation": -90 },
+    "upperleg01.R": { "Xrotation": -90 }
+  }
+}
