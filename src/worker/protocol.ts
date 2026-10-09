@@ -9,6 +9,7 @@ import type {
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import type { RigData, RigSkin } from "../rig/pose.ts";
+import type { LayerFieldsUpdate } from "../surface/layers.ts";
 
 /** What the worker reports once the packs are loaded and the model is built. */
 export interface ReadyInfo {
@@ -41,6 +42,11 @@ export type WorkerRequest =
   | { type: "pickMap"; id: number }
   /** Answered with `HumanoidModel.bakePosedOcclusion`'s result, baked between evaluations. */
   | { type: "posedOcclusion"; id: number }
+  /**
+   * Answered with the adult anatomy layers' fields (`HumanoidModel.adultLayerFields`)
+   * once the adult pack's stage has loaded, or null without an adult pack.
+   */
+  | { type: "adultLayers"; id: number }
   | {
       type: "evaluate";
       id: number;
@@ -55,5 +61,6 @@ export type WorkerResponse =
   | ({ type: "pickMap"; id: number } & PickMap)
   /** Per worn attachment, its render vertices' occlusion at every corner; null when `ready`'s already was. */
   | { type: "posedOcclusion"; id: number; attachments: Float32Array[] | null }
+  | { type: "adultLayers"; id: number; update: LayerFieldsUpdate | null }
   | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
   | { type: "error"; id: number; message: string; name: string };

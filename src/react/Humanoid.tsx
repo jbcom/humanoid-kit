@@ -519,11 +519,21 @@ export function Humanoid({
     if (!ready) return;
     const atlas = acquireLayerAtlas(gl, ready.topology.body);
     skin.setLayerAtlas(atlas.texture);
+    // The adult anatomy's fields arrive after the atlas exists, once the adult
+    // pack's last stage has loaded: only their pages are re-rasterised, in
+    // place, so the figure neither recompiles its shader nor re-evaluates.
+    let live = true;
+    if (ready.adultAnatomyLoaded)
+      client.adultLayers().then(
+        (update) => live && update && atlas.refresh(update),
+        (e: Error) => live && report(e),
+      );
     return () => {
+      live = false;
       skin.setLayerAtlas(null);
       atlas.release();
     };
-  }, [gl, ready, skin]);
+  }, [client, gl, ready, skin, report]);
   // The joints' flexion in the current pose joins the skin's signals
   // (`flex.elbow.L`, …), so crease layers follow any pose or animation.
   const flexion = useMemo(() => {

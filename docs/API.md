@@ -448,6 +448,17 @@ The main-thread handle to an evaluation worker.
   (one array per worn attachment, for `setOcclusionAttributes`), or null when
   `ready`'s topology already follows the pose. The worker bakes it once,
   between evaluations; later calls share it. `<Humanoid>` asks for it itself.
+- `client.adultLayers(): Promise<LayerFieldsUpdate | null>` resolves, once the
+  adult pack's last load stage has, with the adult anatomy layers' fields per
+  render vertex (`{ layers, layerFields }`, `HumanoidModel.adultLayerFields`), or
+  null without an adult pack; it rejects with the error that stopped that stage.
+  The worker derives it once; later calls share it (treat it as read-only).
+  `<Humanoid>` hands it to the shared field atlas itself: `acquireLayerAtlas(
+  renderer, topology.body)` returns `{ texture, refresh(update), release() }`,
+  and `refresh` re-rasterises only the pages holding those layers, in place
+  (`LayerAtlas.refresh`; the texture stays the same object, so the skin shader
+  is not recompiled and nothing is re-evaluated). It applies a shared update
+  once however many figures pass it.
 - `client.dispose()` terminates the worker and rejects pending requests.
 - Errors from the worker arrive as `HumanoidWorkerError` with `name` set to the
   original error's name (for example `AgePolicyError`).
@@ -581,12 +592,14 @@ range input sized for touch. `onChange(value, gesture)` fires while dragging and
 ## `humanoid-kit/worker`
 
 The worker module that `HumanoidWorkerClient` starts by default. It owns one
-`HumanoidModel` and answers five messages: `init` (replied to with `ready`
+`HumanoidModel` and answers six messages: `init` (replied to with `ready`
 once the first figure can be evaluated), `complete` (replied to once every
 target file has loaded, or with the error that stopped one), `pickMap`
 (replied to with the pick map once everything has loaded), `posedOcclusion`
 (replied to once the corner bake, made a corner at a time between other
-requests, is done) and `evaluate`, which
+requests, is done), `adultLayers` (replied to with the adult anatomy layers'
+fields once the adult pack's stage has loaded, or null without that pack) and
+`evaluate`, which
 waits for exactly the load stages its recipe needs without holding up other
 requests. Result buffers are transferred. Applications use it through the
 client, not directly.

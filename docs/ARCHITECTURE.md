@@ -557,6 +557,12 @@ topology and the field atlas exist. Decisions:
   modifiers), so the sculpt phase adds vulva, clitoris and intersex variation
   as further features, each with its own presence, instead of one male-to-female
   axis.
+- The fields travel as their own worker request, in the pattern of `pickMap`
+  and `posedOcclusion`: `client.adultLayers()` is answered when the adult pack's
+  stage (the last, and alone) has loaded, and `<Humanoid>` passes the answer to
+  the shared atlas's `refresh`, which re-rasterises only the pages holding those
+  layers (the layers on a shared page keep their fields from the source). An
+  adult stage that fails rejects that one request and costs the body nothing.
 - The adult data never rides in the static topology: the model leaves the adult
   layers' fields at zero in `topology()` even with the pack loaded, and
   `model.adultLayerFields()` derives them (through the same subdivision stencil)
