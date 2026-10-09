@@ -99,8 +99,9 @@ export function useFigureAnimation(args: Args): void {
 
   const start = useCallback((a: Animator, clip: AnimationClip) => {
     const o = argsRef.current.animation;
+    // A paused figure's time does not run, so a fade would never end: the new clip replaces the old at once.
     a.play(clip, {
-      ...(o?.fade !== undefined && { fade: o.fade }),
+      ...(o?.paused ? { fade: 0 } : o?.fade !== undefined && { fade: o.fade }),
       ...(o?.speed !== undefined && { speed: o.speed }),
       time: o?.time ?? 0,
     });
