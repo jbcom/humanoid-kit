@@ -241,7 +241,7 @@ export const AREOLA_RELIEF_LAYER: DetailLayer = {
  * 2.2 mm makes the 1.5 mm tubercle.
  */
 export const MONTGOMERY_SPACING = 0.0022;
-export const MONTGOMERY_HEIGHT = 0.0006;
+export const MONTGOMERY_HEIGHT = 0.0004;
 export const MONTGOMERY_RING: readonly [number, number, number, number] = [0.25, 0.4, 0.75, 0.92];
 export const MONTGOMERY_OCCUPANCY = { female: 0.08, male: 0.05 } as const;
 

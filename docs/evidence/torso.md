@@ -5,6 +5,39 @@ playground with `?frame=` (the camera aims at a bone by name, `at=` moves the ai
 a world offset) on 2026-10-09. What each layer is and where its numbers come from:
 docs/ARCHITECTURE.md, "Torso", and docs/research/SKIN-STATES.md, C7.
 
+## Nipple and areola
+
+![Women: default, deep, fair and 60 years](./torso-areola-women.webp)
+
+`frame=breast.L&at=0.100,-0.045,0.137&view=0.35,-0.1,0.93&span=0.11`, lit from the
+camera (the offset is the nipple's from the breast bone's head, measured on the
+evaluated mesh). Adult women, age 30 at the default tone, melanin 0.85 and 0.15, then
+age 60. The areola is a round disc a little under 40 mm across that fades into the skin,
+the nipple darker than it (by the measured ratio), a granular texture over both, and
+about a dozen Montgomery tubercles, 1.5 mm and 0.4 mm high, in a ring inside it. The
+deep tone's areola is far darker than its skin and the fair tone's pink-brown, both
+from the measured melanin axis.
+
+![The smallest and the largest breast](./torso-areola-breast-size.webp)
+
+Breast size 0.1 and 0.9, same framing: the areola is 15% smaller or larger and stays on
+the nipple; on the largest breast, where the skin is stretched twice over the base
+mesh's, it is broad and soft. Its size in metres is put on the base mesh by the measured
+stretch (`Evaluation.areolaScale`): without it the ring ran a centimetre outside it.
+
+![Men: default, deep and 45 years heavier](./torso-areola-men.webp)
+
+Men at 30 (default and melanin 0.85) and 45 at weight 0.8: a 28 mm areola, the nipple a
+shade lighter than it (Motosko et al.: lighter in men, darker in women), the same
+texture and a few tubercles (about four).
+
+![Girl 12, boy 12 and girl 7](./torso-areola-children.webp)
+
+`span=0.14`, the offset averaged for the three. The areola is small and barely darker
+than the skin at 7 (13 mm across), with no tubercles and a nipple of a millimetre or two;
+by 12 it has grown through puberty (`pubertyProgress`), the girl's nipple standing out
+and the boy's areola a faint disc with its texture.
+
 ## Ribs
 
 ![A woman and a man at weight 0, 0.2 and 0.5: the ribs fade out](./torso-ribs.webp)
@@ -71,5 +104,8 @@ marks the clinical descriptions give.
   cage are the mesh's; a layer colours and shades.
 - The base mesh's vertices are about a centimetre apart, so the linea nigra and the
   collarbone's ridge are soft bands.
-- No sheet of the areola here yet: its first sheets were clipped by the camera's
-  10 cm near plane (a nipple stands 3 cm out), which is why the frames are 11 cm across.
+- The areola frames are 11 cm across because the playground camera's near plane is
+  10 cm and a nipple stands 3 cm out: a closer frame clips it.
+- The tubercles catch the light as small glints on the camera-lit sheets (0.6 mm high
+  made them glare; 0.4 mm is the compromise), and none of this is geometry: the nipple's
+  height is the mesh's.
