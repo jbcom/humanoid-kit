@@ -20,6 +20,11 @@ function start() {
 
 const settle = () => new Promise((r) => setTimeout(r, 30));
 
+// The adult cases also build the adult pack's layer fields or refined surface:
+// 13–50 s alone on a loaded machine, more under coverage, as in
+// tests/adultSurfaceModel.test.ts.
+const ADULT_BUILD = { timeout: 300_000 };
+
 // Init parses the whole first stage and builds the model (~1 s), so these get room.
 describe("the evaluation worker", { timeout: 60_000 }, () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -191,7 +196,7 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
     });
   });
 
-  it("has no adult layer fields to post without an adult pack", async () => {
+  it("has no adult layer fields to post without an adult pack", ADULT_BUILD, async () => {
     stubFetch();
     const { handle, replies } = start();
     await handle({
@@ -206,106 +211,122 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
     expect(replies.get(1)).not.toHaveProperty("anatomy");
   });
 
-  it("posts the adult layer fields once the adult stage has loaded, without holding up evaluations", async () => {
-    let release = () => {};
-    const adult = new Promise<void>((r) => {
-      release = r;
-    });
-    stubFetch({ hold: { file: "targets.bin.gz", until: adult } });
-    const { handle, replies } = start();
-    await handle({
-      type: "init",
-      id: 1,
-      load: { body: "http://packs/body", adultAnatomy: "http://packs/adult" },
-      model: { subdivision: 0 },
-    });
-    // The pack's manifest arrives with the first stage: ready already names its features.
-    const ready = replies.get(1);
-    if (ready?.type !== "ready") throw new Error("not ready");
-    expect(ready.anatomy?.features.map((f) => f.id)).toEqual(["penis", "testes", "mound"]);
-    expect(ready.anatomy?.stateMorphs.map((m) => m.signal)).toEqual(["arousal"]);
-    const layers = handle({ type: "adultLayers", id: 2 });
-    await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
-    expect(replies.get(3)?.type).toBe("evaluated");
-    await settle();
-    expect(replies.has(2)).toBe(false);
+  it(
+    "posts the adult layer fields once the adult stage has loaded, without holding up evaluations",
+    ADULT_BUILD,
+    async () => {
+      let release = () => {};
+      const adult = new Promise<void>((r) => {
+        release = r;
+      });
+      stubFetch({ hold: { file: "targets.bin.gz", until: adult } });
+      const { handle, replies } = start();
+      await handle({
+        type: "init",
+        id: 1,
+        load: { body: "http://packs/body", adultAnatomy: "http://packs/adult" },
+        model: { subdivision: 0 },
+      });
+      // The pack's manifest arrives with the first stage: ready already names its features.
+      const ready = replies.get(1);
+      if (ready?.type !== "ready") throw new Error("not ready");
+      expect(ready.anatomy?.features.map((f) => f.id)).toEqual(["penis", "testes", "mound"]);
+      expect(ready.anatomy?.stateMorphs.map((m) => m.signal)).toEqual(["arousal"]);
+      const layers = handle({ type: "adultLayers", id: 2 });
+      await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
+      expect(replies.get(3)?.type).toBe("evaluated");
+      await settle();
+      expect(replies.has(2)).toBe(false);
 
-    release();
-    await layers;
-    const reply = replies.get(2);
-    if (reply?.type !== "adultLayers" || !reply.update) throw new Error("no adult layer fields");
-    expect(reply.update.layers).toEqual(ADULT_SKIN_LAYERS.map((l) => l.id));
-    expect(reply.update.layerFields.length).toBeGreaterThan(0);
-    expect(reply.update.layerFields.some((x) => x > 0)).toBe(true);
-  });
+      release();
+      await layers;
+      const reply = replies.get(2);
+      if (reply?.type !== "adultLayers" || !reply.update) throw new Error("no adult layer fields");
+      expect(reply.update.layers).toEqual(ADULT_SKIN_LAYERS.map((l) => l.id));
+      expect(reply.update.layerFields.length).toBeGreaterThan(0);
+      expect(reply.update.layerFields.some((x) => x > 0)).toBe(true);
+    },
+  );
 
-  it("has no adult surface without an adult pack, and the base surface for every figure", async () => {
-    stubFetch();
-    const { handle, replies } = start();
-    await handle({
-      type: "init",
-      id: 1,
-      load: { body: "http://packs/body" },
-      model: { subdivision: 0 },
-    });
-    await handle({ type: "adultSurface", id: 2 });
-    expect(replies.get(2)).toEqual({ type: "adultSurface", id: 2, topology: null });
-    await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
-    const ev = replies.get(3);
-    if (ev?.type !== "evaluated") throw new Error("not evaluated");
-    expect(ev.evaluation.surface).toBe("base");
-  });
+  it(
+    "has no adult surface without an adult pack, and the base surface for every figure",
+    ADULT_BUILD,
+    async () => {
+      stubFetch();
+      const { handle, replies } = start();
+      await handle({
+        type: "init",
+        id: 1,
+        load: { body: "http://packs/body" },
+        model: { subdivision: 0 },
+      });
+      await handle({ type: "adultSurface", id: 2 });
+      expect(replies.get(2)).toEqual({ type: "adultSurface", id: 2, topology: null });
+      await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
+      const ev = replies.get(3);
+      if (ev?.type !== "evaluated") throw new Error("not evaluated");
+      expect(ev.evaluation.surface).toBe("base");
+    },
+  );
 
-  it("serves the adult surface at once and evaluates an adult on it and a minor on the base", async () => {
-    stubFetch();
-    const { handle, replies } = start();
-    await handle({
-      type: "init",
-      id: 1,
-      load: { body: "http://packs/body", adultAnatomy: "http://packs/adult", firstFigureAge: 15 },
-      model: { subdivision: 1 },
-    });
-    // The surface needs only the pack's manifest, not its targets: no waiting for the adult stage.
-    await handle({ type: "adultSurface", id: 2 });
-    const reply = replies.get(2);
-    if (reply?.type !== "adultSurface" || !reply.topology) throw new Error("no adult surface");
-    const { topology } = reply;
-    await handle({ type: "evaluate", id: 3, recipe: createRecipe({ macros: { age: 30 } }) });
-    await handle({ type: "evaluate", id: 4, recipe: createRecipe({ macros: { age: 15 } }) });
-    const adult = replies.get(3);
-    const minor = replies.get(4);
-    if (adult?.type !== "evaluated" || minor?.type !== "evaluated")
-      throw new Error("no evaluation");
-    expect(adult.evaluation.surface).toBe("adult");
-    expect(adult.evaluation.positions.length).toBe(topology.vertexCount * 3);
-    expect(minor.evaluation.surface).toBe("base");
-    const ready = replies.get(1);
-    if (ready?.type !== "ready") throw new Error("not ready");
-    expect(minor.evaluation.positions.length).toBe(ready.topology.body.vertexCount * 3);
-    // The pick map covers the adult surface's vertices too.
-    await handle({ type: "pickMap", id: 5 });
-    const pick = replies.get(5);
-    if (pick?.type !== "pickMap") throw new Error("no pick map");
-    expect(pick.render.adultBody?.length).toBe(topology.vertexCount);
-  });
+  it(
+    "serves the adult surface at once and evaluates an adult on it and a minor on the base",
+    ADULT_BUILD,
+    async () => {
+      stubFetch();
+      const { handle, replies } = start();
+      await handle({
+        type: "init",
+        id: 1,
+        load: { body: "http://packs/body", adultAnatomy: "http://packs/adult", firstFigureAge: 15 },
+        model: { subdivision: 1 },
+      });
+      // The surface needs only the pack's manifest, not its targets: no waiting for the adult stage.
+      await handle({ type: "adultSurface", id: 2 });
+      const reply = replies.get(2);
+      if (reply?.type !== "adultSurface" || !reply.topology) throw new Error("no adult surface");
+      const { topology } = reply;
+      await handle({ type: "evaluate", id: 3, recipe: createRecipe({ macros: { age: 30 } }) });
+      await handle({ type: "evaluate", id: 4, recipe: createRecipe({ macros: { age: 15 } }) });
+      const adult = replies.get(3);
+      const minor = replies.get(4);
+      if (adult?.type !== "evaluated" || minor?.type !== "evaluated")
+        throw new Error("no evaluation");
+      expect(adult.evaluation.surface).toBe("adult");
+      expect(adult.evaluation.positions.length).toBe(topology.vertexCount * 3);
+      expect(minor.evaluation.surface).toBe("base");
+      const ready = replies.get(1);
+      if (ready?.type !== "ready") throw new Error("not ready");
+      expect(minor.evaluation.positions.length).toBe(ready.topology.body.vertexCount * 3);
+      // The pick map covers the adult surface's vertices too.
+      await handle({ type: "pickMap", id: 5 });
+      const pick = replies.get(5);
+      if (pick?.type !== "pickMap") throw new Error("no pick map");
+      expect(pick.render.adultBody?.length).toBe(topology.vertexCount);
+    },
+  );
 
-  it("rejects the adult layer fields when the adult stage fails, and keeps serving others", async () => {
-    stubFetch({ missing: "targets.bin.gz" });
-    const { handle, replies } = start();
-    await handle({
-      type: "init",
-      id: 1,
-      load: { body: "http://packs/body", adultAnatomy: "http://packs/adult" },
-      model: { subdivision: 0 },
-    });
-    await handle({ type: "adultLayers", id: 2 });
-    expect(replies.get(2)).toMatchObject({
-      type: "error",
-      message: expect.stringMatching(/targets\.bin\.gz failed/),
-    });
-    await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
-    expect(replies.get(3)?.type).toBe("evaluated");
-  });
+  it(
+    "rejects the adult layer fields when the adult stage fails, and keeps serving others",
+    ADULT_BUILD,
+    async () => {
+      stubFetch({ missing: "targets.bin.gz" });
+      const { handle, replies } = start();
+      await handle({
+        type: "init",
+        id: 1,
+        load: { body: "http://packs/body", adultAnatomy: "http://packs/adult" },
+        model: { subdivision: 0 },
+      });
+      await handle({ type: "adultLayers", id: 2 });
+      expect(replies.get(2)).toMatchObject({
+        type: "error",
+        message: expect.stringMatching(/targets\.bin\.gz failed/),
+      });
+      await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
+      expect(replies.get(3)?.type).toBe("evaluated");
+    },
+  );
 
   it("rejects an evaluation whose stage fails, with the reason, and keeps serving others", async () => {
     stubFetch({ missing: "targets-modifiers.bin.gz" });
