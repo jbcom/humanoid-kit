@@ -31,7 +31,12 @@ const patch = (signals: Record<string, number>, at: [number, number] = [0, 0]) =
     appearance: { ...DEFAULT_SKIN_APPEARANCE, flush: 0, signals },
   });
 
-/** Local maxima of the shading: one bright flank per bump under a grazing light. */
+/**
+ * Local maxima of the shading: one bright flank per bump under a grazing light.
+ * A plateau of equal values counts once: a neighbour earlier in scan order that
+ * ties disqualifies the pixel. Software GL takes screen-space derivatives per
+ * 2×2 quad, which flattens each flank's peak into such a plateau.
+ */
 function brightFlanks(px: Float32Array): number {
   const sd = Math.sqrt(variance(px));
   const m = px.reduce((s, x) => s + x, 0) / px.length;
@@ -43,11 +48,15 @@ function brightFlanks(px: Float32Array): number {
       if (c < m + 0.5 * sd) continue;
       let peak = true;
       for (let dy = -R; dy <= R && peak; dy++)
-        for (let dx = -R; dx <= R; dx++)
-          if ((dx || dy) && (px[(y + dy) * PIXELS + x + dx] as number) > c) {
+        for (let dx = -R; dx <= R; dx++) {
+          if (!(dx || dy)) continue;
+          const n = px[(y + dy) * PIXELS + x + dx] as number;
+          const earlier = dy < 0 || (dy === 0 && dx < 0);
+          if (n > c || (earlier && n === c)) {
             peak = false;
             break;
           }
+        }
       if (peak) count++;
     }
   return count;
