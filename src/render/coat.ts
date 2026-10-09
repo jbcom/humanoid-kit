@@ -237,6 +237,21 @@ export class CoatMaterial extends MeshStandardMaterial {
   }
 }
 
+/** The body's attributes the coat's geometry draws with: the body's, not the coat's. */
+const BODY_ATTRIBUTES = ["position", "normal", "uv", "skinIndex", "skinWeight", UV_SCALE_ATTRIBUTE];
+
+/**
+ * The coat's geometry. Disposing it frees only the coat's own buffers: three
+ * frees every attribute of a disposed geometry, and the body's, freed under
+ * it, leave the body drawing nothing, or the shape it had before.
+ */
+export class CoatGeometry extends InstancedBufferGeometry {
+  override dispose(): void {
+    for (const name of BODY_ATTRIBUTES) this.deleteAttribute(name);
+    super.dispose();
+  }
+}
+
 /**
  * The coat's geometry: the body's own attributes (shared, so an evaluation that
  * moves the body moves the coat), the coat's comb and masks, the coat's index
@@ -247,9 +262,9 @@ export function coatGeometry(
   coat: { comb: Float32Array; masks: Uint8Array },
   index: Uint32Array,
   shells: number,
-): InstancedBufferGeometry {
-  const g = new InstancedBufferGeometry();
-  for (const name of ["position", "normal", "uv", "skinIndex", "skinWeight", UV_SCALE_ATTRIBUTE]) {
+): CoatGeometry {
+  const g = new CoatGeometry();
+  for (const name of BODY_ATTRIBUTES) {
     const a = body.getAttribute(name);
     if (!a) throw new Error(`coat geometry: the body has no ${name} attribute`);
     g.setAttribute(name, a);

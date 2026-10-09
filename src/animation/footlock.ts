@@ -61,6 +61,16 @@ export class FootLock {
   /** Per foot, the contact point index pinned (-1: none) and where, in the world (x, z). */
   private readonly pinned = new Int8Array(2).fill(-1);
   private readonly pin = new Float64Array(4);
+  /**
+   * How far (x, z) the last `apply` found a planted foot out of its leg's reach: the figure
+   * is that far ahead of where its planted feet let it be, and the caller moves it by this
+   * much, so that the foot stays where it was put and the figure yields instead. Two feet
+   * out of reach the same way ask for the larger of the two, not both (the figure is one
+   * body); two that pull opposite ways cancel.
+   */
+  readonly correction = new Float64Array(2);
+  /** The least and most each axis was out of reach by, over the feet: x low, x high, z low, z high. */
+  private readonly short = new Float64Array(4);
 
   constructor(rest: RestBones, ground: number) {
     this.rest = rest;
@@ -91,6 +101,7 @@ export class FootLock {
    */
   apply(rotations: BoneRotations, root: readonly [number, number]): void {
     const { rest, buf } = this;
+    this.short.fill(0);
     contactPoints(rest, rotations, this.ground, buf, 0, this.bones);
     let low = Number.POSITIVE_INFINITY;
     for (let k = 0; k < CONTACT_BONES.length; k++) low = Math.min(low, buf[k * 3 + 1] as number);
@@ -143,6 +154,9 @@ export class FootLock {
       const gz = ankle[2] + hold * (target[1] - ankle[2]);
       this.solve(leg, rotations, world, heads, [gx, ankle[1], gz]);
     });
+    const { short } = this;
+    this.correction[0] = (short[0] as number) + (short[1] as number);
+    this.correction[1] = (short[2] as number) + (short[3] as number);
   }
 
   /** Two-bone solve: the leg's hip and knee turned so the ankle reaches `target`, the foot's world orientation kept. */
@@ -184,6 +198,13 @@ export class FootLock {
     if (wanted > far || wanted < near) {
       const radius = Math.sqrt(Math.max(0, (wanted > far ? far : near) ** 2 - dy * dy));
       const k = flat > 1e-9 ? radius / flat : 0;
+      // What the leg could not reach, across the ground: the figure has outrun its foot by this much.
+      const ex = dx * (1 - k);
+      const ez = dz * (1 - k);
+      this.short[0] = Math.min(this.short[0] as number, ex);
+      this.short[1] = Math.max(this.short[1] as number, ex);
+      this.short[2] = Math.min(this.short[2] as number, ez);
+      this.short[3] = Math.max(this.short[3] as number, ez);
       dx *= k;
       dz *= k;
     }

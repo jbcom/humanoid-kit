@@ -1541,7 +1541,14 @@ module.
   normal by `(i + 1) / N` of the hair's length, leaning along the comb, before
   skinning (so the skin's own skinning, dual quaternions included, carries it).
   N scales with the figure's size on screen (`coatShellCount`), so a figure
-  far away draws few shells.
+  far away draws few shells. The coat's geometry (`CoatGeometry`) shares the
+  body's vertex buffers, so disposing it frees only its own (the comb, the
+  masks, its index). Three frees every attribute of a disposed geometry, and a
+  body whose buffers were freed under it draws nothing, or the shape it had
+  before: a woman's eyes hanging at a man's throat.
+- *A recipe asks for it.* Until the coat's shading is reworked, a region grows
+  only where the recipe enables it (`coatEnabled`): the beard by a style, any
+  other group by its density. A recipe silent on body hair draws no coat.
 - *Strands from a tileable density texture* at true scale (`uv × uvScale`
   over the follicle spacing), generated from a seed: per cell a strand's
   length, its radius profile and an id; a shell keeps a fragment inside a
@@ -1716,21 +1723,28 @@ later package that refuses participants under 18, and are not here.
   bends in, the foot's orientation kept, the ankle's height kept) to hold it as the
   figure is carried past. As the foot rolls the pin hands over to the point that is
   lowest, taking the place it has in the held foot, so the hand-over is seamless; a
-  point that lifts is let go.
+  point that lifts is let go. A pin the leg cannot reach (the clip's foot lands
+  ahead of where its body then is, and the leg is straight) is not met by sliding the
+  foot: the solve reports how far it fell short (`FootLock.correction`, the larger of
+  the two feet's, opposite pulls cancelling) and the `Animator` gives that much back
+  from the figure's root, so the figure yields to its planted foot instead of
+  outrunning it. The pins are in the world, so the next foot lands where the figure
+  now is and nothing accumulates.
 - *Pure and allocation-free.* `Animator` owns its buffers: `update(dt)` advances time,
   crossfades and root motion and writes the body's rotations. Face units and other
   poses are laid over by the caller (`composeRotations`).
 
 **What the numbers are.** Measured by `tests/animation.test.ts` over nine figures
 (slim, average and heavy bodies at 6, 25 and 75): in the walk, the largest a planted
-heel or ball moves while on the ground is 2 to 12 mm (median 5), against well over 20
-mm with root motion alone (the test holds both); in the hip-swaying walk 3 to 29 mm,
-since its hand-keyed feet scissor against each other in double support; in the three
-idles under 10 mm, and in Quaternius's walks (mocap that plants its feet) under 3
-mm (a crouch walk and a zombie's shuffle 36 and 62 mm, shuffling gaits). The tolerance in the walk is the leg's reach: at heel strike the
-front leg is already straight in the clip, and a pin ahead of it cannot be reached.
-A hand-keyed clip is the limit, not the solver: a clip that planted its feet would
-leave nothing to hold.
+heel or ball moves while on the ground is 2 to 6 mm (median 5), against well over 20
+mm with root motion alone (the test holds both); in the hip-swaying walk 3 to 7 mm
+(its hand-keyed front foot skates 12 cm along the floor as it lands, which a pin at
+the first touch left 29 mm short of reach at the far end of the stance, and the
+figure's yielding to the pin now absorbs); in the three idles under 10 mm, and in
+Quaternius's walks (mocap that plants its feet) under 3 mm; in a zombie's shuffle
+under 20 mm and in a crouch walk 36 mm, the dragged foot of the one and the
+shuffled one of the other never quite planted. A hand-keyed clip is the limit, not
+the solver: a clip that planted its feet would leave nothing to hold.
 
 **In the renderer.** `<Humanoid animation={{ library, clip }}>` plays a clip
 (`useFigureAnimation`, `src/react`): each frame the animator's pose, with

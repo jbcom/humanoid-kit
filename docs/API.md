@@ -1490,7 +1490,8 @@ animator.root;                // how far the figure has been carried: [x across,
   that carries the figure moves `root` by what the figure's own feet do
   (`planRootMotion`, `rootDisplacement`), and a grounded clip's planted feet are
   held where they land (`FootLock`: `PLANT_LAND`, `PLANT_FULL`, `PLANT_NONE`,
-  `PLANT_SWITCH`). `contactPoints` and `CONTACT_BONES` are the points on the soles
+  `PLANT_SWITCH`), `root` giving way by what a planted foot's leg could not reach
+  (`FootLock.correction`). `contactPoints` and `CONTACT_BONES` are the points on the soles
   they work from.
 - `<Humanoid animation={{ library, clip, speed, fade, paused, time, rootMotion, onStart }}>`
   (`HumanoidAnimation`, from `humanoid-kit/react`) plays a clip on the figure, frame by
