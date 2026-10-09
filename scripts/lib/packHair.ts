@@ -142,7 +142,7 @@ export interface PackHairOptions {
 }
 
 /** The committed body pack, parsed with every target file, as the hair is baked against it. */
-function readBody(bodyDir: string) {
+export function readBody(bodyDir: string) {
   const manifest = JSON.parse(
     fs.readFileSync(path.join(bodyDir, "manifest.json"), "utf8"),
   ) as BodyManifest;

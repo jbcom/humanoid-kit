@@ -1671,7 +1671,7 @@ later package that refuses participants under 18, and are not here.
   BVH's root translation is the source figure's. The bones a clip never moves are not
   stored (the walk moves 73 of the rig's 163). Quaternions are kept in one hemisphere
   from frame to frame, so a blend takes the short way.
-- *The source is MakeHuman's own CC0 clips.* punkduck's walk, idle and swim clips in
+- *The sources are MakeHuman's own CC0 clips and Quaternius's.* The first are punkduck's walk, idle and swim clips in
   `makehuman2_additional_assets_cc0.zip` are on the default skeleton, so a BVH joint
   is a rig bone by name and nothing is retargeted. Each clip is judged by
   `judgeAsset` (docs/licence-history.md, clause B) with the asset pack listing that
@@ -1679,6 +1679,24 @@ later package that refuses participants under 18, and are not here.
   `license CC0` (a BVH has no place for a licence line), and the archive is pinned by
   its SHA-256 (`packs/animations/data/PROVENANCE.md`). MakeHuman's own `walk.bvh` and
   `zombie.bvh` are AGPL3 and are not used.
+- *Breadth from Quaternius, retargeted through a T-pose.* The Universal Animation
+  Libraries 1 and 2 (CC0 1.0 Universal by the `License.txt` inside each archive; 84
+  animations, among them walks, a jog, a sprint, idles, swims, crouches, combat, sitting
+  and farm work) are on Unreal's mannequin skeleton, whose bones have axes of their own.
+  Both rigs are put in a T-pose (the libraries' own `A_TPose`; the body pack's
+  `tpose`), where a limb's direction is the same on both, and a source bone's turn from
+  its T-pose in the world is applied to the target bone from its own: the limb follows
+  whatever the bones' axes are (`scripts/lib/retarget.ts`; a test puts the T-pose
+  through it and gets the target's T-pose back, every bone). Bones with no counterpart
+  (twist and helper bones) keep their T-pose and follow their parent. The libraries'
+  three spine bones and neck against MakeHuman's five and three: each target bone
+  along the spine takes the turn the source would have at its height up the body,
+  blended between the two nearest source bones; the source pelvis turns both legs'
+  pelvis bones and the lowest spine bone. Only the copies vendored with their SHA-256
+  are used, since Quaternius moved later releases to a licence that is not CC0, on
+  2026-08-28. The in-place variants, not `_RM`: where a clip carries the figure is
+  derived from the feet, not authored. A `_Loop` clip's last frame is its first and
+  is dropped.
 - *Where a clip carries a figure is derived from the figure's feet.* The walk's BVH
   keeps its root in place, and a translation authored for one skeleton slides the
   feet of another. `planRootMotion` moves the figure, frame to frame, backwards by
@@ -1703,7 +1721,8 @@ later package that refuses participants under 18, and are not here.
 heel or ball moves while on the ground is 2 to 12 mm (median 5), against well over 20
 mm with root motion alone (the test holds both); in the hip-swaying walk 3 to 29 mm,
 since its hand-keyed feet scissor against each other in double support; in the three
-idles under 10 mm. The tolerance in the walk is the leg's reach: at heel strike the
+idles under 10 mm, and in Quaternius's walks (mocap that plants its feet) under 3
+mm (a crouch walk and a zombie's shuffle 36 and 62 mm, shuffling gaits). The tolerance in the walk is the leg's reach: at heel strike the
 front leg is already straight in the clip, and a pin ahead of it cannot be reached.
 A hand-keyed clip is the limit, not the solver: a clip that planted its feet would
 leave nothing to hold.
@@ -1723,7 +1742,10 @@ and `onGroundOffset` is not called. `time` puts the figure at a time in the clip
 at a time, a walking figure is carried forward on its feet, and the planted ball's
 world position holds.
 
-**Clearance.** `src/animation/clearance.ts` checks a pose for one part of the body
+**Clearance.** (The 90 clips: 72 of them, every locomotion and standing idle among them,
+stay within the tolerance; the 18 where a limb rests on or crosses the body, sitting,
+kneeling, a roll, a landing, a sword's swing, overlap it by up to 12.7 cm of capsule on
+some body, which is held as a bound per clip in the test, not a fix.) `src/animation/clearance.ts` checks a pose for one part of the body
 through another: the body as 14 capsules (head, torso, and each side's upper arm,
 forearm, hand, thigh, shin and foot), each between two joints with a radius measured
 from the figure's own skin (a hand and a foot are flat, so a half and 0.6 of it), and

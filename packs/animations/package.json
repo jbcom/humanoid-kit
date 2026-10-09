@@ -1,7 +1,7 @@
 {
   "name": "humanoid-kit-animations",
   "version": "0.0.0",
-  "description": "Animation clips for humanoid-kit: walk, idle and swim cycles on MakeHuman's default skeleton, packed from CC0 assets. Optional: install it only if your figures move.",
+  "description": "Animation clips for humanoid-kit: 90 clips (walks, idles, swims, combat and more) on MakeHuman's default skeleton, packed from CC0 assets. Optional: install it only if your figures move.",
   "type": "module",
   "license": "CC0-1.0",
   "author": "Jon Bogaty <jon@jonbogaty.com>",
