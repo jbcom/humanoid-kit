@@ -1026,9 +1026,9 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   (`TeethMaterial.setSkin`, `gumAppearance`; ARCHITECTURE.md, "The gums";
   `docs/evidence/gums.md`).
 - Renders `recipe.hair.brows` and `recipe.hair.lashes` as decals on the skin
-  (`DecalMaterial`): the hair pack's white alpha masks, in the hair colour
-  (`browColour`) and, for lashes, darker by `LASH_DARKEN` (`lashColour`), thinner
-  on a child (`decalOpacity(kind, age)`: 0.45 for brows and 0.7 for lashes at
+  (`DecalMaterial`, alpha-blended): the hair pack's white alpha masks, in the hair
+  colour lifted a little (`browColour`) and, for lashes, darker by `LASH_DARKEN`
+  (`lashColour`), thinner on a child (`decalOpacity(kind, age)`: 0.45 for brows and 0.7 for lashes at
   birth, full by 14).
 - Renders `recipe.hair` when the client loaded a hair pack: alpha cards
   skinned to the figure and coloured by `recipe.hair.colour` (`HairMaterial`:
