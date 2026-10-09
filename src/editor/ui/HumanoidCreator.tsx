@@ -224,9 +224,9 @@ function CreatorBody({
       setTab(APPEARANCE_TAB);
       return;
     }
-    // A tapped garment opens nothing: the pick map describes the body and the
-    // attachments, not what is worn over them.
-    if (p.part === "garment") return;
+    // A tapped garment or piercing opens nothing: the pick map describes the body
+    // and the attachments, not what is worn on them.
+    if (p.part === "garment" || p.part === "piercing") return;
     const table =
       p.part === "body"
         ? pickMap?.render.body

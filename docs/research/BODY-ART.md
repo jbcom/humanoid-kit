@@ -132,3 +132,16 @@ its melanocytes and a naevus is a nest of them, whatever the skin round them.
 | Outlines | radius harmonics 2–5, edge 0.25–0.6 mm (dermal pigment: 30% of its half-size) | CHOICES after the clinical descriptions in A2–A4 |
 | Vitiligo's sites | round the eyes and mouth (15% each), backs of the hands (30%), wrists, elbows, knees, tops of the feet (10% each); mirrored left to right | CHOICE following where non-segmental vitiligo is reported |
 | Vitiligo's extent | 2 to 14 mirrored pairs, 1.5 to 6 cm across | CHOICE |
+
+### C3. Piercings (`src/bodyArt/jewellery.ts`, `src/bodyArt/sites.ts`)
+
+| Quantity | Value | Source or choice |
+| --- | --- | --- |
+| Sites | the vertex the feature's MakeHuman target moves most; the septum the midline nose vertex nearest the point between the nostrils | The targets (frozen base mesh) |
+| Channel through the tissue | into the skin (lobe, helix, nostril, lip), across (septum), vertically under the skin (brow, navel) | Piercing anatomy |
+| Tissue depth | lobe 4 mm, helix 2, nostril 3, columella 7 across, brow 8, lip 6, navel 8 | CHOICES |
+| Default sizes | stud 3 mm, ring 10 mm across, barbell 14 mm | CHOICES (common retail sizes) |
+| Ring wire, barbell balls and bar | 8% of the ring (≥ 0.8 mm); balls 22% of the bar (≥ 2.5 mm); bar 1.2 mm | CHOICES |
+| Metal reflectance (linear) | steel 0.56/0.57/0.58, silver 0.95/0.93/0.88, gold 1.00/0.71/0.29, titanium 0.54/0.50/0.45 | Measured optical constants (Hoffman, SIGGRAPH 2015 course notes, after Gulbrandsen 2014) |
+| Rose gold | 0.97/0.68/0.42 | CHOICE between gold and copper (0.95/0.64/0.54) |
+| Roughness | 0.18 | CHOICE: polished |

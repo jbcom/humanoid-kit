@@ -8,8 +8,9 @@
 import { quadVertexNormals } from "../build/normals.ts";
 import type { HumanoidAssets } from "../format/assetFormat.ts";
 import type { Vec3 } from "../presence/presence.ts";
-import type { BirthmarkKind, BodyArtRecipe } from "../recipe/bodyArt.ts";
-import { resolveAnchor } from "./sites.ts";
+import { type BirthmarkKind, type BodyArtRecipe, isBodyPiercingSite } from "../recipe/bodyArt.ts";
+import { holeFrame, type PlacedPiercing, TISSUE_DEPTH } from "./jewellery.ts";
+import { bodySites, resolveAnchor } from "./sites.ts";
 import { vitiligoPatches } from "./vitiligo.ts";
 
 export interface DecalFrame {
@@ -44,10 +45,14 @@ export interface PlacedMark extends DecalFrame {
   seed: number;
 }
 
-/** A figure's body art resolved onto its shape, ready to bake: vitiligo's patches are among its marks. */
+/**
+ * A figure's body art resolved onto its shape: tattoos and marks ready to
+ * bake (vitiligo's patches are among the marks), and piercings ready to build.
+ */
 export interface BodyArtPlacement {
   tattoos: PlacedTattoo[];
   marks: PlacedMark[];
+  piercings: PlacedPiercing[];
 }
 
 const BODY_UP: Vec3 = [0, 1, 0];
@@ -158,5 +163,29 @@ export function placeBodyArt(
         })),
       ),
     ],
+    piercings: art.piercings.map((p) => {
+      if (!isBodyPiercingSite(p.site))
+        throw new RangeError(
+          `piercing site ${p.site} is not one of the body's; the adult anatomy pack names no sites yet`,
+        );
+      const site = bodySites(assets)[p.site];
+      const v = site.vertex;
+      const hole: Vec3 = [
+        control[v * 3] as number,
+        control[v * 3 + 1] as number,
+        control[v * 3 + 2] as number,
+      ];
+      const normal = controlNormal(normals, v);
+      const skin = (a: ArrayLike<number>) =>
+        [0, 1, 2, 3].map((k) => a[v * 4 + k] as number) as [number, number, number, number];
+      return {
+        ...p,
+        hole,
+        normal,
+        ...holeFrame(hole, normal, site.channel, TISSUE_DEPTH[p.site]),
+        skinIndex: skin(assets.skinIndex),
+        skinWeight: skin(assets.skinWeight),
+      };
+    }),
   };
 }

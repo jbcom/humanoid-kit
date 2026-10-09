@@ -30,6 +30,9 @@ import type { SkinPaintInput } from "../../src/surface/layers.ts";
 import { type Rgb, skinAlbedo, srgbToLinear } from "../../src/surface/skinTone.ts";
 import { readPage } from "./readPage.ts";
 
+/** What the bake draws: tattoos and marks. */
+type Baked = Pick<BodyArtPlacement, "tattoos" | "marks">;
+
 const renderer = new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
 renderer.setPixelRatio(1);
 afterAll(() => renderer.dispose());
@@ -97,7 +100,7 @@ const tattoo = (more: Partial<PlacedTattoo> = {}): PlacedTattoo => ({
   density: 1,
   ...more,
 });
-const placement = (...tattoos: PlacedTattoo[]): BodyArtPlacement => ({
+const placement = (...tattoos: PlacedTattoo[]): Baked => ({
   tattoos,
   marks: [],
 });
@@ -106,7 +109,7 @@ const SIZE = 64;
 const images = { quads: quadrants(RED, BLUE, GREEN, BARE) };
 
 /** The ink page of a bake, as a reader of texel (u, v) in 0..1: [r, g, b] sRGB 0..255, and coverage 0..1. */
-function bake(surface: BodyArtSurface, art: BodyArtPlacement) {
+function bake(surface: BodyArtSurface, art: Baked) {
   const t = bakeBodyArt(renderer, surface, art, images, SIZE);
   const page = readPage(renderer, t.texture, 0, SIZE);
   const marks = readPage(renderer, t.texture, 1, SIZE);
@@ -217,7 +220,7 @@ const mark = (kind: PlacedMark["kind"], more: Partial<PlacedMark> = {}): PlacedM
 
 describe("baking marks", () => {
   /** Both pages of a bake, read back. */
-  function pages(art: BodyArtPlacement) {
+  function pages(art: Baked) {
     const t = bakeBodyArt(renderer, skin(), art, images, SIZE);
     const out = [readPage(renderer, t.texture, 0, SIZE), readPage(renderer, t.texture, 1, SIZE)];
     t.dispose();
@@ -299,7 +302,7 @@ describe("ink in the skin shader", () => {
   });
 
   /** The shader's diffuse colour at the centre of the skin, with this body art baked on it. */
-  function diffuse(melanin: number, body: BodyArtPlacement, using: BodyArtImages = images): Rgb {
+  function diffuse(melanin: number, body: Baked, using: BodyArtImages = images): Rgb {
     const art = bakeBodyArt(renderer, skin(), body, using, SIZE);
     const material = new SkinMaterial([]);
     material.setAppearance(appearance(melanin));

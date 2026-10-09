@@ -1964,8 +1964,25 @@ age.
 - The browser tests hold the bake to `markShape` and the shader to
   `markedAlbedo`.
 
-**Landed so far:** the recipe field, its validation, the age policy, the
-sites, tattoos and marks. Piercings follow in their own commit.
+**Piercings, as built.**
+
+- A piercing is not an MHCLO attachment: it has no pack data, only a site and
+  a shape. The worker places each one's hole on the morphed mesh (the site
+  vertex, the skin's normal, the channel through the tissue and the way a ring
+  hangs) with the site vertex's own bone weights.
+- `<Humanoid>` builds the stud, ring or barbell there and skins every one of
+  its vertices with those weights. It moves as one rigid piece with the skin at
+  its site, which a piece a centimetre across does in life.
+- The part inside the tissue is hidden by the skin in front of it, and hair
+  and garments hide the rest as depth does, so no occlusion bake is needed.
+  The metals are measured reflectances.
+- Genital sites wait on the adult pack: its manifest must name its sites
+  (found from its targets as the body's are) before they can be placed. Until
+  then such a piercing is refused at evaluation for an adult, and by the age
+  policy for anyone under 18.
+
+**Landed:** the recipe field, its validation, the age policy, the sites,
+tattoos, marks and piercings. Still to do: the adult pack's piercing sites.
 
 ### Joint creases (2026-10-09)
 

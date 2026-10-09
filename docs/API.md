@@ -364,6 +364,26 @@ interface BodyArtRecipe {
   wrists, elbows, knees, tops of the feet) and its mirror image, with more and
   larger patches at a larger `extent`. `placeBodyArt` turns them into marks of
   kind `"vitiligo"`, the right side's outline mirrored (a negative `width`).
+- Piercings (research/BODY-ART.md C3): `placeBodyArt` places each as a
+  `PlacedPiercing`. That is the recipe's piercing plus its hole in rest space:
+  - `hole` (the site vertex) and the skin's `normal`;
+  - the `channel` the hole runs through the tissue (into the skin, across the
+    body, or vertically under the skin, by the site's `channel`);
+  - the `down` a ring hangs toward (out in front of a ridge for a vertical
+    hole);
+  - the hole's `middle`, `TISSUE_DEPTH[site]` into the tissue;
+  - the site vertex's `skinIndex` and `skinWeight`.
+
+  `jewelleryMesh(piercing): { positions, normals, index }`:
+  - a stud: a ball seated on the skin;
+  - a ring: a torus through the hole's middle;
+  - a barbell: a bar along the channel with a ball at each end.
+
+  `<Humanoid>` draws each as a skinned mesh, `METAL_REFLECTANCE[metal]` at
+  `JEWELLERY_ROUGHNESS`, skinned rigidly by the site vertex's bones, so it
+  follows the posed skin. Garments, hair and the skin hide it as depth does. A
+  site the body does not have throws `RangeError` at evaluation: the adult
+  anatomy pack names no sites yet.
 - `seededRandom(seed)`: deterministic numbers in [0, 1) (mulberry32), shared by
   the editor's randomiser and the vitiligo patches.
 - `melaninDensity(tone)` and `melaninFreeAlbedo(tone)` (skin model):
@@ -1052,7 +1072,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `bodyArtImages?` | `BodyArtImages`: the decoded images (`ImageBitmap`, loaded `HTMLImageElement`, canvas) the recipe's tattoos name by key. Keep the object stable: a new one bakes the figure's body art again. A tattoo whose image is missing is reported through `onError`, and the figure is drawn without its body art |
-| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
+| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, `"piercing"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |
 | other props | Passed to the wrapping `<group>` |
 

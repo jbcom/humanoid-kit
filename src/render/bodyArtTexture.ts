@@ -267,7 +267,7 @@ function setFrame(u: ReturnType<typeof frameUniforms>, f: DecalFrame, extent: nu
 export function bakeBodyArt(
   renderer: WebGLRenderer,
   surface: BodyArtSurface,
-  placement: BodyArtPlacement,
+  placement: Pick<BodyArtPlacement, "tattoos" | "marks">,
   images: BodyArtImages,
   size = 1024,
 ): BodyArtTexture {
