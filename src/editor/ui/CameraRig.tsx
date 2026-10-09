@@ -17,9 +17,11 @@ export interface CameraRigProps {
   /** The figure's offset in the scene (its ground lift). */
   offsetY: number;
   focus: FrameRequest;
+  /** Bumped to frame `focus` again although it has not changed (a repeated tap after orbiting away). */
+  refocus?: number;
 }
 
-export function CameraRig({ ready, positions, offsetY, focus }: CameraRigProps) {
+export function CameraRig({ ready, positions, offsetY, focus, refocus = 0 }: CameraRigProps) {
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
   const camera = useThree((s) => s.camera) as PerspectiveCamera;
   const size = useThree((s) => s.size);
@@ -42,7 +44,16 @@ export function CameraRig({ ready, positions, offsetY, focus }: CameraRigProps) 
     b.max[1] += offsetY;
     const f = frameCamera(b, focus.direction, camera.fov, size.width / Math.max(1, size.height));
     goal.current = { position: new Vector3(...f.position), target: new Vector3(...f.target) };
-  }, [focus.part, focus.direction, parts, camera, size.width, size.height, positions !== null]);
+  }, [
+    focus.part,
+    focus.direction,
+    refocus,
+    parts,
+    camera,
+    size.width,
+    size.height,
+    positions !== null,
+  ]);
 
   useEffect(() => {
     const c = controls.current;

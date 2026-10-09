@@ -160,6 +160,7 @@ function CreatorBody({
   const [tab, setTab] = useState<string | null>(null);
   const [pickMap, setPickMap] = useState<PickMap | null>(null);
   const [reveal, setReveal] = useState<{ group: string; nonce: number } | null>(null);
+  const [refocus, setRefocus] = useState(0);
   const [query, setQuery] = useState("");
   const [focus, setFocus] = useState<FrameRequest>(WHOLE_BODY);
   const [problems, setProblems] = useState<string[]>([]);
@@ -212,8 +213,10 @@ function CreatorBody({
     setQuery("");
     setTab(task.id);
     setReveal((r) => ({ group: group.id, nonce: (r?.nonce ?? 0) + 1 }));
-    // Frame the part the group shapes, facing it as the user was when they tapped it;
-    // MakeHuman's side views stay with the sliders that ask for them.
+    // Frame the part the group shapes from the front, even if it is already the
+    // focus (the user may have orbited away); MakeHuman's side views stay with
+    // the sliders that ask for them.
+    setRefocus((n) => n + 1);
     reframe({
       part: frameRequest(group.sliders[0]?.camera ?? null, task.camera).part,
       direction: "front",
@@ -251,6 +254,7 @@ function CreatorBody({
               positions={hasFigure ? positions.current : null}
               offsetY={lift}
               focus={focus}
+              refocus={refocus}
             />
           )}
           {children}
