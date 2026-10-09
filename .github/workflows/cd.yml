@@ -38,6 +38,8 @@ jobs:
       # The playground is the library's own demo, published under /playground/
       # beside the Sourcey docs at the site root.
       - run: pnpm build:playground
+      # The public site must not carry the adult anatomy pack (docs/AGE-POLICY.md).
+      - run: pnpm check:pages
       - run: cp -R dist-playground docs/dist/playground
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

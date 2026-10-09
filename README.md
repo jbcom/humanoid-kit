@@ -30,10 +30,13 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
   pelvis, legs, feet) let any macro except age take a different value in one
   region, for example a different gender anchor for the face than for the hips.
   Regions blend smoothly across joints.
-- **A clear age policy.** All ages are supported. The line is anatomy, not
-  nudity: under 18 a figure is MakeHuman's smooth doll form, and every
-  adult-only control is rejected with `AgePolicyError`, never silently clamped.
-  Adult anatomy lives in a separate package. See [Age policy](#age-policy).
+- **A clear age policy.** All ages are supported, and the body follows
+  MakeHuman at every age. Genital anatomy lives in a separate package that
+  refuses any figure under 18 with `AgePolicyError`, never silently clamped. See
+  [Age policy](#age-policy).
+- **MakeHuman's own slider taxonomy.** The packs carry MakeHuman's modelling
+  tabs, groups, labels, camera hints and descriptions for every macro and
+  modifier, ready for an editor to render.
 - **Subdivision off the main thread.** Catmull-Clark subdivision (levels 0 to
   2) is precomputed as sparse stencils. A Web Worker evaluates the recipe, and
   the client keeps only the latest request, so dragging a slider never builds a
@@ -52,10 +55,10 @@ This repository is a pnpm workspace that publishes three packages.
 | Package | Directory | Licence | Contents |
 | --- | --- | --- | --- |
 | `humanoid-kit` | `.` | MIT | The code: asset loading, recipes, evaluation, subdivision, the worker client and the React bindings |
-| `humanoid-kit-body` | `packs/body` | CC0 1.0 | The base mesh, shape targets for ages 1 to 90, the 163-bone skeleton and skin weights, facial pose units and 233 shape modifiers |
-| `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 | Adult-only targets and 5 modifiers. A separate install; refused unless built against the exact body pack |
+| `humanoid-kit-body` | `packs/body` | CC0 1.0 | The base mesh, shape targets for ages 1 to 90, the 163-bone skeleton and skin weights, facial pose units, eyes, teeth and tongue, and 275 shape modifiers (modelling, measurement and body shapes) with their sliders |
+| `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 | Adult-only targets and 5 modifiers with their sliders. A separate install; refused unless built against the exact body pack |
 
-The body pack and the adult anatomy pack together account for 238 shape
+The body pack and the adult anatomy pack together account for 280 shape
 modifiers. The data packs are generated from MakeHuman's CC0 assets by
 `pnpm pack:data`; see [Data and licensing](#data-and-licensing).
 
@@ -152,21 +155,23 @@ by that region's overrides; the region masks then blend the results.
 
 ## Age policy
 
-humanoid-kit models people of every age MakeHuman covers. Anatomy, not nudity,
-is the line, and it is enforced in code:
+humanoid-kit is a system for using MakeHuman, and its body follows MakeHuman at
+every age, including breast development through adolescence. What it adds is
+enforced in code:
 
-- Under 18, `breastSize` and `breastFirmness` must stay at their defaults, in
-  the recipe and in any region override, and adult-only shape modifiers must be
-  zero. Anything else throws `AgePolicyError` when the recipe is evaluated. It is
-  never silently clamped.
-- Under 18, MakeHuman's breast macro targets are never weighted.
+- Genital, bulge and pregnancy targets are not in the body pack. They live in
+  `humanoid-kit-adult-anatomy`, mirroring MakeHuman's separation of genital
+  assets from its core.
+- A recipe under 18 that sets any adult anatomy modifier throws
+  `AgePolicyError` when it is evaluated. It is never silently clamped.
 - `withAge(recipe, age)` returns a copy at a new age. Moving below 18 removes the
-  adult-only values explicitly; the original is untouched.
-- Adult-only targets (genital, bulge and pregnancy targets) are not in the body
-  pack. They live in `humanoid-kit-adult-anatomy`, which only evaluates for
-  figures aged 18 or over.
+  adult anatomy values explicitly; the original is untouched.
 - The loader refuses an adult anatomy pack unless it records the SHA-256 of the
   exact body pack it is loaded with (`bodySha256`).
+
+[docs/AGE-POLICY.md](./docs/AGE-POLICY.md) sets out the US federal law and
+GitHub policy behind these rules, and what remains each application's
+responsibility.
 
 ```ts
 import { adultAnatomyPack } from "humanoid-kit-adult-anatomy";
@@ -181,7 +186,6 @@ const assets = await loadHumanoidAssets({ body: bodyPack, adultAnatomy: adultAna
 | `humanoid-kit` | Asset loading and parsing, recipes, the age policy, macro and region model, `HumanoidModel`, subdivision, the surface builder and `HumanoidWorkerClient` | no |
 | `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady` | yes |
 | `humanoid-kit/worker` | The worker module that `HumanoidWorkerClient` starts by default | no |
-| `humanoid-kit/editor` | Declared in `package.json` but **not implemented yet**; there is no `src/editor` | yes |
 
 See the [API reference](https://jbcom.github.io/humanoid-kit/API/) and the
 [architecture notes](https://jbcom.github.io/humanoid-kit/ARCHITECTURE/).
@@ -227,8 +231,8 @@ SHA-256 of every output. `NOTICE.md` has the details. "MakeHuman" is the upstrea
 project's name; humanoid-kit is not affiliated with it.
 
 The public demo ships the body pack only. `pnpm check:pages` fails if any
-adult-anatomy file, package name, target name or modifier name appears in the
-built output.
+adult anatomy data file appears anywhere in the built site, or if the demo app's
+build names the pack's package, targets or modifiers.
 
 ## Contributing
 
