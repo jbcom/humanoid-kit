@@ -263,10 +263,12 @@ function AutoFrame({
   bone,
   view,
   span,
+  offset,
 }: {
   bone: string;
   view: [number, number, number];
   span: number;
+  offset: [number, number, number];
 }) {
   const camera = useThree((s) => s.camera);
   const controls = useThree((s) => s.controls) as { target: Vector3; update(): void } | null;
@@ -276,6 +278,7 @@ function AutoFrame({
     const b = scene.getObjectByName(bone);
     if (!b) return;
     b.getWorldPosition(at.current);
+    at.current.add(new Vector3(...offset));
     const fov = ((camera as { fov?: number }).fov ?? 35) * (Math.PI / 180);
     const distance = span / 2 / Math.tan(fov / 2);
     const dir = new Vector3(...view).normalize();
@@ -305,8 +308,8 @@ function QaLight({ kind }: { kind: "camera" | "under" }) {
 
 /**
  * A fixed-camera render for visual QA: `?view=front|side|back|face`, or
- * `?cam=x,y,z,tx,ty,tz` to place the camera exactly, or `?frame=<bone>&view=dx,dy,dz&span=<m>`
- * to frame a bone by name (`AutoFrame`), with `?light=camera|under` to light what the studio
+ * `?cam=x,y,z,tx,ty,tz[&span=<m>]` to place the camera exactly (with `span`, the field of view fits that many metres across at the target), or `?frame=<bone>&view=dx,dy,dz&span=<m>[&at=dx,dy,dz]`
+ * to frame a bone by name (`AutoFrame`, `at` a world offset in metres from the bone's head), with `?light=camera|under` to light what the studio
  * does not reach; `?tm=agx|neutral|aces`
  * and `?exp=<number>` override tone mapping and exposure for comparisons;
  * `?bg=rrggbb` sets a background key colour; `?face=JawDrop:1,LipsKiss:0.5`
@@ -363,6 +366,9 @@ function Shot() {
   const frame = params.get("frame");
   const frameView = (params.get("view")?.split(",").map(Number) ?? [0, 0, 1]) as number[];
   const frameSpan = Number(params.get("span") ?? 0.5);
+  const at = params.get("at")?.split(",").map(Number);
+  const frameOffset: [number, number, number] =
+    at?.length === 3 && at.every(Number.isFinite) ? (at as [number, number, number]) : [0, 0, 0];
   const qaLight = params.get("light");
   const preset: Record<
     string,
@@ -379,6 +385,19 @@ function Shot() {
         target: cam.slice(3) as [number, number, number],
       }
     : ((preset[view] ?? preset.front) as (typeof preset)[string]);
+  // `?cam=…&span=<m>`: an exact camera keeps its position and narrows (or widens)
+  // its field of view until `span` metres across fit the frame at the target, so a
+  // close crop can be shot from a set distance without perspective changing.
+  const camSpan = Number(params.get("span"));
+  const reach = Math.hypot(
+    position[0] - target[0],
+    position[1] - target[1],
+    position[2] - target[2],
+  );
+  const fov =
+    exact && Number.isFinite(camSpan) && camSpan > 0 && reach > 0
+      ? 2 * Math.atan(camSpan / 2 / reach) * (180 / Math.PI)
+      : 35;
   return (
     <div
       style={{ position: "absolute", inset: 0 }}
@@ -387,7 +406,7 @@ function Shot() {
     >
       <Canvas
         shadows="percentage"
-        camera={{ position, fov: 35 }}
+        camera={{ position, fov }}
         gl={{
           preserveDrawingBuffer: true,
           toneMapping,
@@ -401,6 +420,7 @@ function Shot() {
             bone={frame}
             view={frameView as [number, number, number]}
             span={Number.isFinite(frameSpan) && frameSpan > 0 ? frameSpan : 0.5}
+            offset={frameOffset}
           />
         )}
         {(qaLight === "camera" || qaLight === "under") && <QaLight kind={qaLight} />}

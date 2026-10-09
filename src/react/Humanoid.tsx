@@ -1050,6 +1050,9 @@ export function Humanoid({
   // crouch or a kneel comes down to the ground rather than hanging where the
   // standing feet were.
   const [figure, setFigure] = useState<Evaluation | null>(null);
+  // How much larger the skin round the nipples is than the base mesh's, to a hundredth, so the
+  // skin is repainted when the figure's shape changes it and not on every evaluation.
+  const [areolaScale, setAreolaScale] = useState(1);
   // The same pose, as dual quaternions over the evaluated figure's rest skeleton.
   useEffect(() => {
     if (!dual || !ready || !figure) return;
@@ -1167,7 +1170,8 @@ export function Humanoid({
   }, [client, gl, ready, skin, report]);
   // The figure's body art, baked into a texture of its own from each evaluation
   // that brings some (the placement follows the shape). A new bake replaces the
-  // last without rebuilding the shader; only a figure gaining or losing body art does.
+  // last without rebuilding the shader; only a figure gaining or losing body art,
+  // or a layer of overlapping tattoos, does.
   const bodyArt = useRef<BodyArtTexture | null>(null);
   useEffect(() => {
     if (!figure) return;
@@ -1193,7 +1197,7 @@ export function Humanoid({
       } catch (e) {
         report(e as Error);
       }
-    skin.setBodyArt(next?.texture ?? null);
+    skin.setBodyArt(next);
     bodyArt.current?.dispose();
     bodyArt.current = next;
   }, [figure, ready, adultSurface, gl, skin, bodyArtImages, report]);
@@ -1231,6 +1235,14 @@ export function Humanoid({
       areola: s.areola,
       signals: { ...signals, ...flexion, ...face },
       age: recipe.macros.age,
+      build: {
+        gender: recipe.macros.gender,
+        weight: recipe.macros.weight,
+        height: recipe.macros.height,
+        muscle: recipe.macros.muscle,
+        breastSize: recipe.macros.breastSize,
+      },
+      areolaScale,
       // Which adult layers paint: only for an adult, only for the anatomy applied
       // (the adult pack's own list of features; none without the pack).
       adult: isAdult(recipe),
@@ -1240,7 +1252,7 @@ export function Humanoid({
       ...(recipe.hair && { hairColour: recipe.hair.colour }),
       ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     });
-  }, [skin, recipe, signals, flexion, face, ready]);
+  }, [skin, recipe, signals, flexion, face, ready, areolaScale]);
 
   // Only the signals that change the shape re-evaluate the figure; a stable
   // key keeps a colour-only change (or a new object with the same values) from
@@ -1371,6 +1383,7 @@ export function Humanoid({
           if (g) writeGeometry(g, a);
         });
         setFigure(ev);
+        setAreolaScale(Math.round(ev.areolaScale * 100) / 100);
         ground(ev);
         presenceSource.current = ready?.presenceJoints
           ? {

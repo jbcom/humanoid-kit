@@ -17,6 +17,7 @@
 import type { AdultReservoirSpec } from "../../src/format/assetFormat.ts";
 import type { AdultDetailLattice } from "../../src/model/humanoidModel.ts";
 import { findDisc, type Vec3 } from "./detail/disc.ts";
+import type { IslandSize } from "./uvIslands.ts";
 
 /** Collapsed rings between each loop and cap: the length a detail can draw a tube out to, in steps. */
 export const RESERVOIR_RINGS = { phallic: 32, labioscrotal: 16 } as const;
@@ -28,6 +29,23 @@ const SIZE = {
 };
 /** How far each labioscrotal disc's centre is from the midline, metres. */
 const LABIOSCROTAL_OFFSET = 0.014;
+
+/**
+ * The skin layer (`SKIN_LAYERS` id) that colours each reservoir's island, and the
+ * size of the tube the island is made for (`uvIslands.ts`), metres: the largest the
+ * detail draws (a large erect organ, a large testis' sac), so a smaller tube shows
+ * its texture compressed along its rings and never cut off.
+ */
+export const ISLAND_LAYERS: Readonly<Record<string, string>> = {
+  phallic: "penis-skin",
+  "labioscrotal-left": "testes-skin",
+  "labioscrotal-right": "testes-skin",
+};
+export const ISLAND_SIZES: Readonly<Record<string, IslandSize>> = {
+  phallic: { circumference: 0.14, length: 0.22, cap: 0.016 },
+  "labioscrotal-left": { circumference: 0.14, length: 0.1, cap: 0.012 },
+  "labioscrotal-right": { circumference: 0.14, length: 0.1, cap: 0.012 },
+};
 
 export type ReservoirLattice = Pick<
   AdultDetailLattice,

@@ -675,7 +675,10 @@ compute what the renderer will do.
   `model.adultLayerFields(): LayerFieldsUpdate | null` gives the adult layers'
   fields per render vertex once the adult pack's targets have loaded (null
   before, and without the pack); the topology always carries those layers as
-  zero.
+  zero. When the pack's reservoirs have islands (`AdultReservoirSpec.island`, `layer`)
+  it also carries `extra: { uvs, index, layerFields }`: the island triangles in UV
+  space and the layers' fields there (mask 1, coordinate from the root to the tip),
+  which the atlas draws with the body's.
   `SkinPaintInput.age` is the figure's age in years (`recipe.macros.age`;
   `<Humanoid>` sets it), for layers that change with it: a layer that reads it
   must paint sensibly without it, since an input built without one has none.
@@ -776,6 +779,36 @@ compute what the renderer will do.
     it, which way it faces, and its place in the palm's plane, measured from the
     skeleton's finger joints and the vertex normals and cached per set of
     assets; `palmDirection(assets, side)` is the way a palm faces.
+- The torso (`src/surface/regions/torso.ts`, figure quantities in
+  `src/surface/torsoTone.ts` and `src/surface/striae.ts`; ARCHITECTURE.md,
+  "Torso"; every magnitude cited, or marked as a choice, in research/SKIN-STATES.md
+  C7). `TORSO_SKIN_LAYERS`, in stack order after the hands' and feet's:
+  - `SkinPaintInput` carries the figure's build (`build`: gender, weight, height,
+    muscle, breastSize; `figureBuild(input)` fills the defaults) and
+    `areolaScale`, how much larger the skin round its nipples is than the base
+    mesh's (`areolaStretch(assets, control)`, which `Evaluation.areolaScale`
+    reports for the evaluated figure); `Humanoid` sets all three.
+  - `AREOLA_LAYER` (`"areola"`, multiply): the nipple's, areola's and skin's
+    colour as ratios to the skin along the distance from each nipple (`areolaZone`,
+    `AREOLA_REACH`): the areola's radius is `areolaRadius(age, gender, breastSize)`
+    (38.1 mm across in an adult woman, 28.0 in a man, growing through puberty:
+    `pubertyProgress`), the nipple's `nippleRadius`, its colour `nippleContrast`
+    times the areola's. `AREOLA_RELIEF_LAYER` (`"areola-relief"`, profiled
+    `bumps`) is the granular texture, full on the nipple and half over the
+    areola; `MONTGOMERY_LAYER` (`"montgomery"`, `tubercles`) a ring of raised 1.5
+    mm glands in a share of the cells, about a dozen on an adult woman.
+  - `CLAVICLE_LAYER` (`"clavicles"`) and `RIB_LAYER` (`"ribs"`), `creases`
+    layers shown by body fat: `figureBodyFat(build)` is Gallagher's
+    `bodyFatPercent` of the figure's own mesh's index (`figureBmi`), and
+    `clavicleDefinition` and `ribDefinition` how plainly each bone shows.
+  - `NAVEL_LAYER` (`"navel"`, centre `navelCentre(assets)`), `LINEA_NIGRA_LAYER`
+    (`"linea-nigra"`, faint at rest: `lineaNigraStrength`) and `LINEA_ALBA_LAYER`
+    (`"linea-alba"`, one furrow shown by `abdominalDefinition`).
+  - `STRIAE_LAYER` (`"striae"`): stretch marks of `striaeAmount(build)`, red then
+    silver (`striaeColour(tone, striaeMaturity(age))`), drawn by `striaMark`.
+  - `DetailPaint` gained `profile` (an amplitude along the coordinate, for a
+    `profiled` `bumps` layer and for `tubercles`) and `striae` (`{ amount, ratio }`,
+    for the `striae` pattern); the stop table's header kinds 7, 8 and 9 are them (6 is the strands').
 - Skin-state layers (`src/surface/regions/states.ts`), driven by the signals in
   `SkinPaintInput.signals`; every magnitude is cited, or marked as a choice, in
   research/SKIN-STATES.md Part C:
