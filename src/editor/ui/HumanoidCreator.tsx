@@ -235,6 +235,9 @@ function CreatorBody({
             toneMappingExposure: STUDIO_EXPOSURE,
             preserveDrawingBuffer: true,
           }}
+          // An image of the figure to assistive technology: tapping and orbiting
+          // are pointer shortcuts to what the tabs already offer.
+          role="img"
           aria-label="Figure preview"
         >
           <StudioStage />
