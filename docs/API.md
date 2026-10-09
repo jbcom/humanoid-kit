@@ -531,8 +531,9 @@ and expressions"). Framework-free.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
-  arms at the sides, and two for the skinning's extremes, `flexed`, every hinge
-  near its limit, and `twisted`, each limb turned about its own axis);
+  arms at the sides, and three for the skinning's extremes, `flexed`, every hinge
+  near its limit, `twisted`, each limb turned about its own axis, and
+  `abducted`, the thighs opened 40°);
   `composeRotations(a, b)` layers `b` (an expression) over `a`.
 - `restBonesFrom(names, parents, heads)` rebuilds the rest skeleton from an
   evaluation's `boneHeads` without the packs, and
@@ -745,7 +746,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `material?` | A three.js `Material` replacing the built-in skin material, which follows `recipe.skin` |
 | `onEvaluated?` | Called with each `Evaluation` |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"abducted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
@@ -764,7 +765,10 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   pack's material colour, since that colour assumed MakeHuman's display-referred
   pipeline and rendered here as grey (`attachmentColour`,
   `createAttachmentMaterial`; `docs/evidence/teeth.md`); other attachments are
-  drawn as the pack describes them.
+  drawn as the pack describes them. The teeth's gums are a pale coral pink
+  (`GUM_LAB`), pigmented browner and patchier with `recipe.skin.melanin`
+  (`TeethMaterial.setSkin`, `gumAppearance`; ARCHITECTURE.md, "The gums";
+  `docs/evidence/gums.md`).
 - Renders the garments `recipe.outfit` names, once the client loaded a
   clothing pack: skinned to the same skeleton, so they follow the pose, with
   their diffuse and normal maps. The body keeps its geometry whatever is worn;

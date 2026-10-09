@@ -47,6 +47,26 @@ is slight: the front of the hip is a little fuller in the short full woman
 least in the pictures, as in the numbers. The dark streaks on the belly in both
 rows are the fingers' shadows.
 
+## Hip abducted
+
+![The legs opened 40 degrees in the abducted pose, shipped skinning](./skinning-hip-abducted.webp)
+
+The `abducted` pose opens each thigh 40° from the T-pose. In all four bodies
+(the average figure, a muscular man, a short full woman, a ten-year-old) the
+crotch closes in a clean fold, the inside of the thighs is smooth, and the
+hips' outline runs into the thigh without a step. The dark streaks on the
+thigh are the fingers' shadows. (A first version of this pose had its sign
+reversed and crossed the legs, which drew a hard ledge across the hips; it
+was the pose, not the skinning, and a test now holds the direction.)
+
+## Elbow flexed
+
+![The elbows flexed in the flexed pose, shipped skinning](./skinning-elbow.webp)
+
+The same `flexed` pose, close on the elbows (shipped skinning only: linear
+looks the same here, as the numbers say). The crook folds without a pinch or a
+bulge, in three figures and a close-up.
+
 ## The numbers
 
 Worst body of five (the four above and a child) at the angle shown; girth is the
@@ -67,21 +87,24 @@ wrapper); ΔV is the change in the whole body's volume in thousandths of it
 | knee flexed 120° | 0.22 / −6.4‰ | 0.25 / −4.1‰ |
 | elbow flexed 120° | 0.33 / −3.8‰ | 0.31 / −3.9‰ |
 
-## What is not fixed
+## What is not fixed, and what needs no fix
 
-- **The elbow** loses about 4‰ of body volume at 120° in every scheme tried
-  (linear, dual quaternion, and the blend), and its girth 5th percentile is no
-  better (0.33 against 0.31): the inside of the fold, where the skin has
-  nowhere to go, is where the weights' own geometry puts it. The sheets show no
-  difference at the elbow for the same reason.
-- **Hip abduction** barely moves (−17.1‰ to −15.4‰): opening the legs draws the
-  crotch and the hip's outside in, and no skinning scheme restores what the
-  weights leave out there.
+- **The elbow** loses about 4‰ of body volume at 120° (about 0.2 L of an
+  adult) in every scheme tried (linear, dual quaternion, and the blend). Its
+  girth 5th percentile (0.33 against 0.31) is the inside of the crook, where
+  distance to the bent centreline shrinks by geometry alone, so it is a lower
+  bound rather than a pinch. The sheet shows a natural fold, and it is the
+  smallest loss in the table. No corrective is built for it.
+- **Hip abduction** barely moves (−17.1‰ to −15.4‰): opening the legs stretches
+  the groin and the inner thigh, and the skin there is stretched rather than
+  lost. The sheet shows a clean crotch and no step in the hips' outline in four
+  bodies, so no corrective is built for it either.
 - **The flexed hip bulges more than before.** Its front reaches a 95th-
   percentile girth of 1.37 at 120° (linear: 1.13) in exchange for 15‰ of volume,
   and a bent knee's reaches 1.32 (linear: 1.23). The bench holds every case's
   bulge under 1.45.
 
-These are for a corrective lane against this skinning (pose-space corrective
-shapes derived from the flexion signals); the options considered and why the
-blend was chosen are in the same ARCHITECTURE section.
+The flexed hip is the one remainder worth a corrective (pose-space shapes
+derived from the flexion signals), if a figure is posed there often; the
+options considered and why the blend was chosen are in the same ARCHITECTURE
+section.
