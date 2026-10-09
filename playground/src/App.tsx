@@ -70,6 +70,8 @@ function Shot() {
   const exposure = Number(params.get("exp") ?? Number.NaN);
   const [recipe] = useState(initialRecipe);
   const [lift, setLift] = useState(0);
+  // Tests wait for data-figure="ready": the figure is evaluated and placed.
+  const [ready, setReady] = useState(false);
   const view = params.get("view") ?? "front";
   const cam = params.get("cam")?.split(",").map(Number);
   const exact = cam?.length === 6 && cam.every(Number.isFinite);
@@ -89,7 +91,7 @@ function Shot() {
       }
     : ((preset[view] ?? preset.front) as (typeof preset)[string]);
   return (
-    <div style={{ position: "absolute", inset: 0 }}>
+    <div style={{ position: "absolute", inset: 0 }} data-figure={ready ? "ready" : "loading"}>
       <Canvas
         shadows="percentage"
         camera={{ position, fov: 35 }}
@@ -103,7 +105,10 @@ function Shot() {
         <Humanoid
           recipe={recipe}
           position={[0, lift, 0]}
-          onEvaluated={(ev) => setLift(ev.groundOffset)}
+          onEvaluated={(ev) => {
+            setLift(ev.groundOffset);
+            setReady(true);
+          }}
         />
         <OrbitControls makeDefault target={target} />
       </Canvas>
