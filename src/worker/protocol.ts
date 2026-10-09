@@ -118,6 +118,8 @@ export type WorkerResponse =
       ms: number;
       /** The worn hair style's static data, with the first evaluation that wears it; absent after. */
       hairTopology?: HairTopology;
+      /** The worn brows' and lashes' static data, each once like the scalp style's. */
+      decalTopologies?: HairTopology[];
     }
   | { type: "garment"; id: number; topology: GarmentTopology }
   | { type: "error"; id: number; message: string; name: string };

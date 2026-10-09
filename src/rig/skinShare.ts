@@ -1,3 +1,5 @@
+import type { BoneRotations, RestBones } from "./bones.ts";
+
 /**
  * Which skinning scheme each bone asks for (docs/ARCHITECTURE.md, "Skinning
  * artefacts"). Linear blending (0) pinches a twisted limb and dual quaternion
@@ -44,4 +46,71 @@ export function skinDualShare(
   table: Readonly<Record<string, number>> = SKIN_DUAL_SHARE,
 ): Float32Array {
   return Float32Array.from(bones, (name) => table[name.replace(/\.[LR]$/, "")] ?? 0);
+}
+
+/** A bone whose share changes as it swings: where it ends, how far it swings to get there, and its axis. */
+export interface SwingShare {
+  /** The share at `degrees` of swing and beyond. */
+  share: number;
+  /** The swing, in degrees, at which the share has fallen (or risen) all the way. */
+  degrees: number;
+  /** The bone that carries on from this one (left and right alike): its head is along this bone's own axis. */
+  along: string;
+}
+
+/**
+ * Bones whose share depends on how far they swing, left and right alike. The
+ * thigh: dual quaternion skinning bulges a flexed hip's front (girth 95th
+ * percentile 1.35 at 120°, against linear skinning's 1.05), and linear blending
+ * loses the hip's volume (-35‰, against -20‰); falling to a quarter by 120° of
+ * swing brings the bulge to 1.12 for 4‰ of volume (-24‰). It must be the swing
+ * alone: a twisted thigh, which dual quaternions keep from collapsing, does not
+ * swing, so its share stays at the table's 1.
+ */
+export const SKIN_SWING_SHARE: Readonly<Record<string, SwingShare>> = {
+  upperleg01: { share: 0.25, degrees: 120, along: "lowerleg01" },
+};
+
+/**
+ * The shares of this pose: the table's (`base`, one per bone), and for each
+ * bone of `SKIN_SWING_SHARE` its share moved from the table's toward the swung
+ * share in proportion to its swing, which is what is left of its rotation once
+ * its twist about its own axis (towards its `along` bone) is taken out. A new
+ * array; `base` is not changed.
+ */
+export function poseShare(
+  rest: RestBones,
+  rotations: BoneRotations,
+  base: Float32Array,
+  table: Readonly<Record<string, SwingShare>> = SKIN_SWING_SHARE,
+): Float32Array {
+  const out = Float32Array.from(base);
+  rest.names.forEach((name, b) => {
+    const suffix = name.match(/\.[LR]$/)?.[0] ?? "";
+    const swing = table[name.replace(/\.[LR]$/, "")];
+    if (!swing) return;
+    const next = rest.names.indexOf(swing.along + suffix);
+    if (next < 0) return;
+    const ax = (rest.heads[next * 3] as number) - (rest.heads[b * 3] as number);
+    const ay = (rest.heads[next * 3 + 1] as number) - (rest.heads[b * 3 + 1] as number);
+    const az = (rest.heads[next * 3 + 2] as number) - (rest.heads[b * 3 + 2] as number);
+    const len = Math.hypot(ax, ay, az) || 1;
+    const x = rotations[b * 4] as number;
+    const y = rotations[b * 4 + 1] as number;
+    const z = rotations[b * 4 + 2] as number;
+    const w = rotations[b * 4 + 3] as number;
+    // The twist about the axis keeps the vector part along it: (a·v) a, with w. The swing is the
+    // rest, q · twist*, and its w is the product of the two parts' lengths' cosine: w·tw + (v·t).
+    const along = (x * ax + y * ay + z * az) / len;
+    const tn = Math.hypot(w, along) || 1;
+    const tw = w / tn;
+    const tv = along / tn;
+    // swing = q · twist⁻¹, whose scalar part is w·tw + v·(tv a) = w·tw + along·tv.
+    const swingW = Math.min(1, Math.abs(w * tw + along * tv));
+    const angle = (2 * Math.acos(swingW) * 180) / Math.PI;
+    const t = Math.min(1, angle / swing.degrees);
+    const from = base[b] as number;
+    out[b] = from + (swing.share - from) * t;
+  });
+  return out;
 }

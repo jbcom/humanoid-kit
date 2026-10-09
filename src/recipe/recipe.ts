@@ -66,8 +66,15 @@ export interface HairRecipe {
    * names a style the loaded pack must have; evaluation rejects an unknown id.
    */
   style: string | null;
-  /** The hair's colour, from two pigments (`hairAlbedo`). */
+  /** The hair's colour, from two pigments (`hairAlbedo`). One colour tints the scalp hair, the brows and the lashes. */
   colour: HairColour;
+  /**
+   * A brows style id of the hair pack (`eyebrow001`…), worn on the figure. Absent
+   * is none, so a recipe saved before brows existed is unchanged.
+   */
+  brows?: string;
+  /** A lashes style id of the hair pack (`eyelashes01`…); absent is none. */
+  lashes?: string;
 }
 
 export interface Recipe {
@@ -111,7 +118,12 @@ export function createRecipe(
     modifiers?: Record<string, number>;
     skin?: Partial<SkinRecipe>;
     eyes?: Partial<EyesRecipe>;
-    hair?: { style?: string | null; colour?: Partial<HairColour> };
+    hair?: {
+      style?: string | null;
+      colour?: Partial<HairColour>;
+      brows?: string;
+      lashes?: string;
+    };
     bodyHair?: BodyHairRecipe;
     outfit?: readonly string[];
     bodyArt?: BodyArtInit;
@@ -130,6 +142,8 @@ export function createRecipe(
     ...(init.hair && {
       hair: {
         style: init.hair.style ?? null,
+        ...(init.hair.brows && { brows: init.hair.brows }),
+        ...(init.hair.lashes && { lashes: init.hair.lashes }),
         colour: {
           ...DEFAULT_HAIR_COLOUR,
           ...init.hair.colour,

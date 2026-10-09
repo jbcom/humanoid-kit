@@ -95,7 +95,8 @@ export class HumanoidWorkerClient {
   /**
    * A hair style's static render data, once an evaluation that wears it has
    * resolved: the worker sends it with the first and the client keeps it, so
-   * `Evaluation.hair` is rendered with `hairTopology(evaluation.hair.id)`.
+   * `Evaluation.hair`, `brows` and `lashes` are each rendered with
+   * `hairTopology(evaluation.hair.id)`.
    */
   hairTopology(id: string): HairTopology | undefined {
     return this.hairTopologies.get(id);
@@ -260,6 +261,7 @@ export class HumanoidWorkerClient {
       if (r.type !== "evaluated") throw new HumanoidWorkerError(`unexpected ${r.type}`);
       // Kept before the evaluation resolves, so whoever receives it can look the style up.
       if (r.hairTopology) this.hairTopologies.set(r.hairTopology.id, r.hairTopology);
+      for (const t of r.decalTopologies ?? []) this.hairTopologies.set(t.id, t);
       job.resolve(r.evaluation);
     } catch (e) {
       job.reject(e instanceof Error ? e : new HumanoidWorkerError(String(e)));

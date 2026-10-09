@@ -124,7 +124,12 @@ createRecipe(init?: {
   modifiers?: Record<string, number>;
   skin?: Partial<SkinRecipe>;
   eyes?: Partial<EyesRecipe>;
-  hair?: { style?: string | null; colour?: Partial<HairColour> };
+  hair?: {
+    style?: string | null;
+    colour?: Partial<HairColour>;
+    brows?: string; // a brows style id of the hair pack (`eyebrow001`…); absent = none
+    lashes?: string; // a lashes style id (`eyelashes01`…); absent = none
+  };
   bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
   bodyArt?: BodyArtInit;
@@ -381,7 +386,16 @@ and throws `RangeError` for anything else.
   (`hairFields`, `src/surface/hairFields.ts`). `evaluate` fills `Evaluation.hair` from
   `recipe.hair.style` and throws `MorphError` for a style whose geometry has
   not arrived (`assets.hair.load(id)` brings it); the style never changes the
-  body, which keeps every face (hair has no `delete_verts`).
+  body, which keeps every face (hair has no `delete_verts`). `Evaluation.brows` and
+  `Evaluation.lashes` are the worn `recipe.hair.brows` and `lashes` the same way
+  (an id of the wrong kind is a `RecipeError`: `hair.style` wears scalp styles,
+  `brows` brows, `lashes` lashes); a brow is lifted `DECAL_LIFT` (2 mm) off the
+  skin along its normal, since the smooth body surface can swallow a decal bound to
+  the coarse mesh by up to 1.8 mm at the brow ridge (a test holds it clear at ages
+  6 to 75). `model.pendingHairStyles(recipe)` lists every worn style not yet loaded,
+  and the worker's `evaluated` reply carries `decalTopologies` for the brows' and
+  lashes' static data (`HairTopology.kind` is `scalp`, `brows` or `lashes`; a
+  decal's fade is all 1, fin and growth 0, scalp none).
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
@@ -750,13 +764,18 @@ and expressions"). Framework-free.
   linear, 1 dual quaternion), `skinDualShare(bones)` the share of every bone of
   a rig in its order, and `dualBones(rest, rotations)` each bone's pose as a
   unit dual quaternion (what the renderer uploads: `dualBoneTexels`).
+  `SKIN_SWING_SHARE` names the bones whose share changes as they swing (the
+  thigh's falls from 1 to ¼ over 120°, so a flexed hip does not bulge), and
+  `poseShare(rest, rotations, base)` gives every bone's share for a pose: the
+  table's, moved by each such bone's swing (its rotation less its twist about
+  its own axis). `skinPositions` and `DualBones` use it.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
-  arms at the sides, and four for joint extremes, `bent`, every hinge about half
+  arms at the sides, and five for joint extremes, `bent`, every hinge about half
   way (the check for joint creases), `flexed`, every hinge near its limit,
-  `twisted`, each limb turned about its own axis, and `abducted`, the thighs
-  opened 40°);
+  `twisted`, each limb turned about its own axis, `abducted`, the thighs
+  opened 40°, `seated`, the hips and knees at 90° with the soles flat, and `tucked`, the hips at 120° with the knees drawn up);
   `composeRotations(a, b)` layers `b` (an expression) over `a`.
 - `restBonesFrom(names, parents, heads)` rebuilds the rest skeleton from an
   evaluation's `boneHeads` without the packs, and
@@ -983,7 +1002,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation`, as its geometry is written |
 | `onSettled?` | Called with an `Evaluation` once everything the recipe wears is drawn: the geometry is written and the hair style's strand map, the attachments' and garments' textures and the attachments' posed occlusion have loaded (then two frames). Wait for this, not `onEvaluated`, before a screenshot. The playground's `data-figure="ready"` is this |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
@@ -1260,6 +1279,14 @@ styles are MakeHuman's own CC0 scalp hair: `short02`, `bob02`, `long01`,
 `afro01`, `short04`, `short03`, `ponytail01`, `short01`, `bob01` and `braid01`.
 Its manifest records the hash of the body pack it binds to, and the loader
 refuses any other.
+
+The pack also lists MakeHuman's twelve eyebrows (`eyebrow001` to `eyebrow012`,
+kind `brows`) and four eyelashes (`eyelashes01` to `eyelashes04`, kind `lashes`),
+the same CC0 system assets bound to the same body, each one `<id>.bin.gz` and a
+`<id>.webp` that is a white alpha mask for the hair colour to tint (14 to 67 kB
+the pair). They are decals: no hairline, growth or scalp, so their entries carry
+none of those buffers (`HairStyleEntry.layout` has them for `scalp` only), and
+`recipe.hair.style` wears only scalp styles.
 
 ## `humanoid-kit-adult-anatomy`
 
