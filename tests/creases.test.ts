@@ -151,6 +151,15 @@ describe("the crease layers' fields", () => {
         });
       }
 
+  it("are part of the package's public surface", async () => {
+    const pkg = await import("../src/index.ts");
+    expect(pkg.CREASE_LAYERS).toBe(CREASE_LAYERS);
+    expect(pkg.CREASE_STRAIN).toBe(CREASE_STRAIN);
+    expect(pkg.CREASE_HEIGHT_PER_STRAIN).toBe(CREASE_HEIGHT_PER_STRAIN);
+    expect(pkg.CREASE_HALF_WIDTH).toBe(CREASE_HALF_WIDTH);
+    expect(pkg.creaseLayerId).toBe(creaseLayerId);
+  });
+
   it("never lay flexor and extensor creases on the same skin at once", () => {
     for (const joint of JOINTS)
       for (const side of SIDES) {
