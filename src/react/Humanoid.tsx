@@ -433,6 +433,7 @@ function SkinnedPart({
   renderOrder,
   shape,
   dual,
+  shadows = true,
 }: {
   geometry: BufferGeometry;
   material: Material;
@@ -446,14 +447,20 @@ function SkinnedPart({
   shape: object;
   /** Set when the material skins by dual quaternions: shadows and bounds then follow it. */
   dual?: DualBones | null;
+  /**
+   * Whether it casts and receives shadows (default true). A decal lying on the skin
+   * does neither: its quad's outline would shade the skin round it, and the skin
+   * under it would shade it.
+   */
+  shadows?: boolean;
 }) {
   const mesh = useMemo(() => {
     const m = new SkinnedMesh(geometry, material);
     m.bind(skeleton, new Matrix4());
-    m.castShadow = true;
-    m.receiveShadow = true;
+    m.castShadow = shadows;
+    m.receiveShadow = shadows;
     return m;
-  }, [geometry, material, skeleton]);
+  }, [geometry, material, skeleton, shadows]);
   // Shadows are cast by a depth material, which would skin linearly alone; and
   // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
   useEffect(() => {
@@ -666,6 +673,7 @@ function DecalMesh({
       part="hair"
       renderOrder={topology.zDepth}
       shape={shape}
+      shadows={false}
     />
   );
 }

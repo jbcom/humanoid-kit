@@ -14,9 +14,14 @@
  * - **A soft fill under the strokes.** The mask blurred (a high mip of itself)
  *   is added as a faint underlay, `SOFT_FILL` of its strength, so the band has
  *   the soft, sparse edge and the density a brow has between its hairs.
- * - **Little specular.** A hair's sheen on a brow is slight; a standard
- *   material's reflection of the studio's cool environment turned pale hair
- *   grey-blue.
+ * - **Fibre sheen, as the scalp's.** Hair's fuzz at grazing angles takes the hair's
+ *   own colour (`HairMaterial` does the same), which is what makes dark brown and
+ *   red hair read warmer than its diffuse alone; without it a brow of the same
+ *   colour read less saturated than the head's hair.
+ * - **The scalp's base specular.** A hair's sheen on a brow is slight, and the same
+ *   as on the scalp: the base lobe's strength and roughness are `HairMaterial`'s, so
+ *   a brow and the head's hair of one colour add the same neutral light (a test
+ *   renders both and holds their chromaticity together).
  * - It draws over the skin it lies on (a polygon offset toward the camera)
  *   however little it is lifted.
  *
@@ -34,22 +39,33 @@ import type { Rgb } from "../surface/skinTone.ts";
 /** Texels below this alpha (after the opacity) are dropped. */
 export const DECAL_ALPHA_CUTOFF = 0.01;
 
-/** The share of the mask's blurred density that fills between its strokes. */
-export const SOFT_FILL = 0.35;
+/**
+ * The soft fill under the strokes: two blurs of the mask (a mip each), the finer
+ * giving a thin stroke the body of a band of hairs, the broader the sparse soft
+ * edge, each added at its share of the blur's density.
+ */
+export const SOFT_FILL = [
+  { lod: 1.5, share: 0.9 },
+  { lod: 3, share: 0.5 },
+] as const;
 
-/** The mip of the mask the soft fill is read from: 2^3 texels across, about a hair's clump. */
-export const SOFT_FILL_LOD = 3;
-
-/** How much of a standard material's specular a decal keeps. */
-export const DECAL_SPECULAR = 0.25;
+/**
+ * How much of a standard material's specular a decal keeps, and its roughness: those
+ * of `HairMaterial`'s base lobe (`HAIR_SPECULAR_INTENSITY`, the combed roughness), so
+ * a brow and the scalp of one colour add the same neutral light.
+ */
+export const DECAL_SPECULAR = 0.4;
+export const DECAL_ROUGHNESS = 0.7;
 
 export class DecalMaterial extends MeshPhysicalMaterial {
   constructor() {
     super({
       side: DoubleSide,
-      roughness: 0.8,
+      roughness: DECAL_ROUGHNESS,
       metalness: 0,
       specularIntensity: DECAL_SPECULAR,
+      sheen: 0.35,
+      sheenRoughness: 0.6,
       alphaTest: DECAL_ALPHA_CUTOFF,
       transparent: true,
       depthWrite: false,
@@ -63,6 +79,7 @@ export class DecalMaterial extends MeshPhysicalMaterial {
   /** The hair colour, linear. */
   setColour(rgb: Readonly<Rgb>): void {
     this.color.setRGB(rgb[0], rgb[1], rgb[2], LinearSRGBColorSpace);
+    this.sheenColor.setRGB(rgb[0], rgb[1], rgb[2], LinearSRGBColorSpace);
   }
 
   /** How much of the mask is kept, 0 to 1 (`decalOpacity`). */
@@ -79,8 +96,10 @@ export class DecalMaterial extends MeshPhysicalMaterial {
 	{
 		vec4 sampledDiffuseColor = texture2D( map, vMapUv );
 		// The strokes, and under them a faint blur of them: the soft density between hairs.
-		float hkSoft = textureLod( map, vMapUv, ${SOFT_FILL_LOD.toFixed(1)} ).a;
-		sampledDiffuseColor.a = max( sampledDiffuseColor.a, hkSoft * ${SOFT_FILL.toFixed(3)} );
+		float hkSoft = max(
+			textureLod( map, vMapUv, ${SOFT_FILL[0].lod.toFixed(1)} ).a * ${SOFT_FILL[0].share.toFixed(2)},
+			textureLod( map, vMapUv, ${SOFT_FILL[1].lod.toFixed(1)} ).a * ${SOFT_FILL[1].share.toFixed(2)} );
+		sampledDiffuseColor.a = max( sampledDiffuseColor.a, hkSoft );
 		diffuseColor *= sampledDiffuseColor;
 	}
 	#endif`,
@@ -88,6 +107,6 @@ export class DecalMaterial extends MeshPhysicalMaterial {
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-decal-2";
+    return "humanoid-kit-decal-3";
   }
 }
