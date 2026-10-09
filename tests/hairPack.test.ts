@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import { beforeAll, describe, expect, it } from "vitest";
-import { AUTHORED_STYLES } from "../scripts/lib/hairCards/index.ts";
+import { AUTHORED_STYLES, DERIVED_STYLES } from "../scripts/lib/hairCards/index.ts";
 import {
   addHairStyle,
   type HairManifest,
@@ -37,11 +37,14 @@ const STYLES = [
   "short01",
   "bob01",
   "braid01",
+  ...DERIVED_STYLES.map((d) => d.id),
   ...AUTHORED_STYLES.map((a) => a.id),
 ];
 
 /** The styles compiled from MakeHuman's assets: the authored ones carry no source files. */
 const AUTHORED = new Set(AUTHORED_STYLES.map((a) => a.id));
+/** Styles that reuse a MakeHuman style's cards (and so its source files) under their own strand map. */
+const DERIVED = new Set(DERIVED_STYLES.map((d) => d.id));
 
 const KB = 1024;
 
@@ -217,9 +220,10 @@ describe("provenance", () => {
     expect(text).toMatch(/makehuman_system_assets_cc0\.zip/);
     expect(text).toMatch(/explicitly released as CC0/);
     // Per style packed from a file: the .mhclo, the .obj and the .mhmat each proved
-    // their own header. Body hair cards and the authored styles are generated, and come from no file.
+    // their own header. Body hair cards and the authored styles are generated, and come from no file;
+    // a derived style reads the files of the style it keeps the cards of.
     const fromFiles = hairManifest.styles.filter(
-      (s) => s.kind !== "beard" && !AUTHORED.has(s.id),
+      (s) => s.kind !== "beard" && !AUTHORED.has(s.id) && !DERIVED.has(s.id),
     ).length;
     expect(text).toMatch(new RegExp(`${fromFiles * 3} file\\(s\\) — file header`));
     expect(text).toMatch(/body hair cards \(kind `beard`\) come from no source file/);

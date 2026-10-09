@@ -30,14 +30,13 @@ describe("the nail plates' source", () => {
     }
   });
 
-  it("refuses a plate whose captured page does not say CC0", () => {
+  it("falls back to the plate's own CC0 mesh when its captured page does not say CC0", () => {
     const [id, kind, file, page] = NAIL_PLATES[0] as (typeof NAIL_PLATES)[number];
-    expect(() =>
-      compileAsset(path.join(VENDOR_BODYPARTS04, file), id, kind, {
-        page: { ...page, licence: "CC-BY 4.0" },
-        geometryOnly: true,
-      }),
-    ).toThrow(/licence gate/);
+    const c = compileAsset(path.join(VENDOR_BODYPARTS04, file), id, kind, {
+      page: { ...page, licence: "CC-BY 4.0" },
+      geometryOnly: true,
+    });
+    for (const ev of Object.values(c.evidence)) expect(ev).toMatch(/^M: file states "CC0/);
   });
 });
 

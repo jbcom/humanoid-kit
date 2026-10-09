@@ -3,7 +3,14 @@
  * MakeHuman ones it compiles (`HAIR_STYLES` in `../packHair.ts`). The CC0 sources have no
  * twists, braids, cornrows or locs (docs/ARCHITECTURE.md, "the coily gap"); these fill it.
  */
-import { braidAtlas, locAtlas, twistAtlas } from "./atlas.ts";
+import {
+  braidAtlas,
+  type Cutout,
+  coilCropAtlas,
+  connectedPart,
+  locAtlas,
+  twistAtlas,
+} from "./atlas.ts";
 import type { Cards } from "./ropes.ts";
 import { boxBraids, cornrows, locs, type StyleContext, twists } from "./styles.ts";
 
@@ -69,5 +76,56 @@ export const AUTHORED_STYLES: readonly AuthoredStyleSpec[] = [
     provenance: AUTHORED("matted rope tubes from a grid of partings (scripts/lib/hairCards)"),
     feather: false,
     fins: false,
+  },
+];
+
+/**
+ * A style that keeps a MakeHuman style's cards (its geometry, binding and cut-out are CC0) and
+ * draws its own strand map inside the cut-out: the texture a style has is the one thing a different
+ * hair type needs. The packer compiles `from` as it does any MakeHuman style, under this id.
+ */
+export interface DerivedStyleSpec {
+  id: string;
+  label: string;
+  tags: string[];
+  /** The MakeHuman style whose cards are kept. */
+  from: string;
+  /** The strand map before normalisation, drawn inside the source's cut-out: PNG bytes with alpha. */
+  atlas: (cutout: Cutout, density?: Float32Array) => Promise<Buffer>;
+  /** The share of hair kept at a place on the head (azimuth from the front, elevation, degrees): a fade. Absent keeps it all. */
+  keepAt?: (azimuth: number, elevation: number) => number;
+  /** Whether the hairline thins (default true, as for a MakeHuman style). */
+  feather?: boolean;
+}
+
+const smooth = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * A mid fade: full on top, tapering over the ears and round the back to bare skin at the nape; the
+ * front is left to the hairline. The taper starts a little lower at the back, where the neck is.
+ */
+export function fadeKeep(azimuth: number, elevation: number): number {
+  const side = smooth(30, 55, azimuth);
+  const full = 24 - 8 * smooth(80, 150, azimuth);
+  const bare = 6 - 14 * smooth(80, 150, azimuth);
+  return 1 - side * (1 - smooth(bare, full, elevation));
+}
+
+export const DERIVED_STYLES: readonly DerivedStyleSpec[] = [
+  {
+    id: "crop01",
+    label: "Close crop, coily",
+    tags: ["short", "crop", "coily"],
+    from: "short04",
+    // The cap is the part of the cut-out the centre of the top of the atlas belongs to: the
+    // source's loose cards below it stay clear.
+    atlas: (cutout) =>
+      coilCropAtlas(
+        cutout,
+        connectedPart(cutout, Math.round(cutout.width / 2), Math.round(cutout.height * 0.1)),
+      ),
   },
 ];

@@ -52,9 +52,47 @@ describe("clause A: MakeHuman's own CC0 release", () => {
   it("passes a team asset with no page when every text file carries the 2020 header", () => {
     expect(verdict(asset(TEAM))).toBe("PASS A");
   });
+});
 
-  it("refuses an asset without the header when no page was captured", () => {
-    expect(verdict(asset("# license CC0\n"))).toMatch(/no captured asset page/);
+describe("clause M: a CC0 mesh whose binding is not CC0 (owner ruling 2026-10-09)", () => {
+  const files = (obj: string, proxy: string): SourceFile[] => [
+    { name: "a.proxy", text: `${proxy}name a\n` },
+    { name: "a.obj", text: `${obj}v 0 0 0\n` },
+    { name: "a.mhmat", text: "name aMaterial\n" },
+    { name: "a_diffuse.png", text: null },
+  ];
+
+  it("passes a CC0 .obj with an AGPL .proxy, marking the proxy for regeneration", () => {
+    const j = judgeAsset(
+      files("# license CC0\n", AGPL),
+      page("AGPL - Affero General Public License"),
+    );
+    expect(j.pass && j.clause).toBe("M");
+    expect(j.pass && j.regenerate).toEqual(["a.proxy"]);
+    expect(j.pass && j.evidence["a.obj"]).toBe('M: file states "CC0"');
+  });
+
+  it("leaves out materials and textures that are not CC0 on their own", () => {
+    const j = judgeAsset(files("# license CC0\n", AGPL));
+    expect(j.pass && j.exclude).toEqual(["a.mhmat", "a_diffuse.png"]);
+  });
+
+  it("ships a binding that is CC0 on its own instead of regenerating it", () => {
+    const j = judgeAsset(files("# license CC0\n", "# license: CC0\n"));
+    expect(j.pass && j.regenerate).toEqual([]);
+  });
+
+  it("refuses when the mesh itself is not CC0, whatever the page says short of CC0", () => {
+    expect(
+      verdict(files(AGPL, "# license CC0\n"), page("CC-BY - Creative Commons Attribution")),
+    ).toMatch(/^a\.obj does not prove CC0 \(page licence is "CC-BY/);
+    expect(verdict(files("", "# license CC0\n"))).toMatch(
+      /a\.obj does not prove CC0 \(no captured asset page/,
+    );
+  });
+
+  it("refuses an asset with no mesh, such as a target, unless its page says CC0", () => {
+    expect(verdict([{ name: "ears.target", text: "1 0.1 0 0\n" }])).toMatch(/no mesh to judge/);
   });
 });
 
@@ -65,12 +103,15 @@ describe("clause B: the asset page's licence governs (owner ruling 2026-10-09)",
     expect(j.pass && j.evidence["a.obj"]).toBe('B: page licence "CC0 - Creative Commons Zero"');
   });
 
-  it("refuses when the page says CC-BY or AGPL, even though the files say CC0", () => {
-    expect(verdict(asset("# license CC0\n"), page("CC-BY - Creative Commons Attribution"))).toMatch(
-      /^B: page licence is "CC-BY/,
-    );
-    expect(verdict(asset("# license CC0\n"), page("AGPL - Affero General Public License"))).toMatch(
-      /^B: page licence is "AGPL/,
-    );
+  it("does not pass on a page that says CC-BY or AGPL: only the asset's own CC0 mesh can", () => {
+    for (const licence of [
+      "CC-BY - Creative Commons Attribution",
+      "AGPL - Affero General Public License",
+    ]) {
+      expect(verdict(asset(AGPL), page(licence))).toMatch(
+        /^a\.obj does not prove CC0 \(page licence is/,
+      );
+      expect(verdict(asset("# license CC0\n"), page(licence))).toBe("PASS M");
+    }
   });
 });

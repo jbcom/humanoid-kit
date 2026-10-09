@@ -1285,8 +1285,13 @@ a coloured texture; everything in the pure core is testable in Node.
   map is a tile per rope variant, drawn as vector shapes and rasterised by sharp (`atlas.ts`),
   periodic round the tube. A tube faces every way round its axis, so these styles opt out of
   both the fin dissolve and the hairline fade (`HairFieldsInput.fins`, `feather`). Provenance
-  names them as authored by the packer. Not yet: a close crop or fade, bantu knots, curl
-  texture for the soft styles.
+  names them as authored by the packer. A **derived** style keeps a MakeHuman style's cards
+  (geometry, binding, cut-out) and draws its own strand map inside that cut-out: `crop01` is
+  `short04`'s cap (3.8 mm median above the scalp) with thousands of tiny loops drawn at random
+  angles, its soft edge broken into ragged fuzz, the loose cards below the cap cleared, and a
+  fade (`keepAt`: full on top, tapering over the ears and round to bare skin at the nape) taken
+  from where each texel lies on the head (`uvField.ts` rasterises the cards into the texture). Not
+  yet: bantu knots, tight curls in the longer styles.
 
 **Costs and limits.** The pack is 3.5 MB for ten styles, mostly strand maps at
 1024 px (and 0.3 to 0.5 MB for each authored one); the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)

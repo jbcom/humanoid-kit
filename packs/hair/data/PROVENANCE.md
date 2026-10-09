@@ -47,6 +47,8 @@ The styles marked 'authored by the packer' above are not MakeHuman's: their card
 so there is no source file to prove. Nothing of anyone's was read, traced or sampled; photographs of braids, twists
 and locs informed proportions only. They are bound to the same CC0 base mesh as every other attachment.
 
+`crop01` keeps the cards of `short04` (geometry, binding and cut-out: CC0, proved above) and draws its own strand map inside that cut-out.
+
 Each scalp style's texture is a strand map: the source atlas's luminance, normalised to a fixed mean, with its alpha
 unchanged (`scripts/lib/strandMap.ts`). It carries no colour of the original atlas. For styles whose atlas has
 painted-in blotches (`afro01`, `braid01`) the atlas's own coarse shading is also divided out.
@@ -82,6 +84,8 @@ base mesh from a seed, with their strand map, so they are this project's own wor
 | bob01.webp | `f8651d5958922af9ba4c3d84b6bcadfb452baed3d50d67e56b05f7a762478887` |
 | braid01.bin.gz | `128b547c9accc81570053bc1244b28f6d0da6cfddff25bc8e78fe16c7b6f6298` |
 | braid01.webp | `48e40f8e71e74e58933a6135ee0121591e399ef0627ce7021264cf26a326d662` |
+| crop01.bin.gz | `c9573475672cb91d0b38e6f3ea9c81da66fea2e54ae4372f9919c2193432976a` |
+| crop01.webp | `7f858f4ab396ec187ea3ff3f9574674a92597e8cab0b06447061f36e3175e293` |
 | braids01.bin.gz | `949246ba9a5033667318286335fa185a6a3a59e7e807bcf69423c1a850eadd19` |
 | braids01.webp | `99536ed006e96e2faf9618371202cf43d76e85de4d7179d3e1f18a6d6b397e44` |
 | cornrows01.bin.gz | `2063a55ab2564a962e1c2bf5650767c5314cfdedafe41b952811b728832dc8d1` |
