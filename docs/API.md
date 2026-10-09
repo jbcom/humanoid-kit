@@ -222,6 +222,16 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 - `ADULT_ONLY_MODIFIER(id): boolean`: true for ids starting `genitals/`,
   `pelvis/bulge` or `stomach/stomach-pregnant`.
 - `AgePolicyError`.
+- `appliedAnatomy(recipe, features): Record<string, number>`: which adult
+  anatomy the recipe applies, by feature id with its presence 0..1. `features`
+  is the adult pack's list (`ReadyInfo.anatomy.features`, from the manifest's
+  `anatomy`: today `penis`, `testes`, `mound`, each tied to its own modifiers);
+  the core names no adult modifier, so without the pack it is empty and so is
+  the result. A feature is present
+  once any of its modifiers is non-zero, in either direction; features are
+  independent, and the sculpt's vulva and clitoris will be further features
+  rather than a point on one axis. Always `{}` under 18. Skin layers take it as
+  `SkinPaintInput.anatomy`.
 
 Under 18, a recipe is invalid if `breastSize` or `breastFirmness` differs from
 its default, if any region override contains either key, or if an adult-only
@@ -236,13 +246,22 @@ new HumanoidModel(assets: HumanoidAssets, options?: { subdivision?: 0 | 1 | 2 })
 The framework-free pipeline for one loaded body pack. `subdivision` defaults to 1
 and throws `RangeError` for anything else.
 
-- `model.evaluate(recipe, signals?, haveOutfit?): Evaluation`: `signals` (0..1
-  each) set the skin's state; those in `STATE_MORPHS` (`cold`: the nipple rises
-  and the areola contracts, calibrated to the measured response) add their
-  targets. `stateContributions(signals)` gives those target weights.
-  `ADULT_ONLY_SIGNALS` (`arousal`) throw `AgePolicyError` under 18
-  (`assertSignalPolicy`). `recipe.outfit` adds the garments (see "Clothing");
-  `haveOutfit` is the outfit key the caller already holds the masks of.
+- `model.evaluate(recipe, signals?, haveOutfit?): Evaluation`: `signals` (0..1 each) set the
+  skin's state; those with a state morph add their targets: `cold` (the nipple
+  rises and the areola contracts; `STATE_MORPHS`) and `arousal` (engorgement:
+  the shaft's circumference +25% and length +43% at full arousal, the measured
+  erect against flaccid; the adult pack's own, from its manifest's
+  `anatomy.stateMorphs`), each calibrated to its measured response.
+  `stateContributions(signals, morphs?, exists?)` gives those target weights for
+  the morphs in force, limited to targets `exists` accepts; the model passes
+  the body's and the adult pack's morphs and the loaded packs' targets, so a
+  state of the adult anatomy does nothing, rather than fails, without the adult
+  pack. `ADULT_ONLY_SIGNALS` (`arousal`) throw `AgePolicyError` under 18
+  (`assertSignalPolicy`), before any target is named. Today the penis targets
+  deform `helper-genital`, which the surface does not draw, so engorgement
+  moves `Evaluation.control` and no drawn vertex until the sculpt phase.
+  `recipe.outfit` adds the garments (see "Clothing"); `haveOutfit` is the
+  outfit key the caller already holds the masks of.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
   only (every pose corner holding the rest value).
@@ -351,11 +370,16 @@ compute what the renderer will do.
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
   `SkinLayer` (`id`, `blend`, `targets`, `fields(assets)`, `paint(input)`),
-  `SKIN_LAYERS` (the stack, in order: flush, lips, areola), `SKIN_LAYER_TARGETS`,
+  `SKIN_LAYERS` (the stack, in order: flush, lips, areola, then
+  `ADULT_SKIN_LAYERS`: penis, testes, mound), `SKIN_LAYER_TARGETS` (the body
+  layers' only: an adult layer names none, the adult pack's manifest does),
   `targetMask(assets, targets, lo, hi)` for masks measured from targets,
   `diskMask(assets, targets, soft?)` for a feature the targets outline (filled
   per side of the body),
-  `buildLayerFields`, `paintStopTable(layers, input)` (the figure's stop table,
+  `targetCoordinate(assets, target)` for a 0..1 coordinate from one target's
+  displacement,
+  `buildLayerFields` (a layer that is not `available`, an adult layer whose
+  targets have not loaded, stays zero), `paintStopTable(layers, input)` (the figure's stop table,
   `STOP_COUNT` stops in rows of `STOP_TABLE_WIDTH` texels) and
   `applyLayers(base, table, fields)`, the per-pixel blend the shader performs.
   A layer is one of three kinds: a `ColourLayer` (the default: `blend`, and
@@ -367,6 +391,19 @@ compute what the renderer will do.
   change and a `specular` change). `surfaceChange` and `creaseHeight` are the
   shader's references; `uvScale(assets, faces)` gives metres of skin per UV
   unit (carried as `body.uvScale` in the topology).
+  A layer of the adult anatomy sets `adult: { feature }` (`isAdultLayer`):
+  `paintStopTable` paints it only when `SkinPaintInput.adult` is true (from
+  `isAdult(recipe)`; absent is false) and `SkinPaintInput.anatomy[feature]` is
+  above 0 (from `appliedAnatomy(recipe, features)`), scaling its strength by that
+  presence; otherwise its row is zero and its `paint` is never called. The gate
+  lives in `paintStopTable` alone, so a layer cannot forget it.
+  `genitalAlbedo(tone, site, arousal?)` is the adult layers' colour: modelled
+  along the melanin and haemoglobin axes, **uncalibrated** (no measured genital
+  colorimetry exists; research/SKIN-STATES.md, A4).
+  `model.adultLayerFields(): LayerFieldsUpdate | null` gives the adult layers'
+  fields per render vertex once the adult pack's targets have loaded (null
+  before, and without the pack); the topology always carries those layers as
+  zero.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).
@@ -460,10 +497,12 @@ The main-thread handle to an evaluation worker.
 - `client.complete: Promise<void>` resolves when every target file has
   loaded, or rejects with the error that stopped one.
 - `ReadyInfo` is `{ topology, modifiers, sliders, rig,
-  adultAnatomyLoaded, wardrobe }`: the render topology, every drivable shape
-  modifier, the merged slider taxonomy, the rig (`RigData` plus each bone's
-  `parents` index; the topology's skin indices refer to `rig.bones`), whether
-  the adult anatomy pack is loaded, and the garments the clothing pack offers
+  adultAnatomyLoaded, anatomy?, wardrobe }`: the render topology, every drivable
+  shape modifier, the merged slider taxonomy, the rig (`RigData` plus each
+  bone's `parents` index; the topology's skin indices refer to `rig.bones`),
+  whether the adult anatomy pack is loaded and, with it, its `anatomy`
+  (`AdultAnatomySpec`: the features `appliedAnatomy` reads and the state morphs
+  the shape signals include), and the garments the clothing pack offers
   (`WardrobeEntry[]`: `id`, `name`, `kind`, `tags`; empty without that pack).
 - `client.evaluate(recipe, key?, signals?, haveOutfit?): Promise<Evaluation>`
   (signals as for `model.evaluate`) is latest-wins per key:
@@ -489,6 +528,17 @@ The main-thread handle to an evaluation worker.
   (one array per worn attachment, for `setOcclusionAttributes`), or null when
   `ready`'s topology already follows the pose. The worker bakes it once,
   between evaluations; later calls share it. `<Humanoid>` asks for it itself.
+- `client.adultLayers(): Promise<LayerFieldsUpdate | null>` resolves, once the
+  adult pack's last load stage has, with the adult anatomy layers' fields per
+  render vertex (`{ layers, layerFields }`, `HumanoidModel.adultLayerFields`), or
+  null without an adult pack; it rejects with the error that stopped that stage.
+  The worker derives it once; later calls share it (treat it as read-only).
+  `<Humanoid>` hands it to the shared field atlas itself: `acquireLayerAtlas(
+  renderer, topology.body)` returns `{ texture, refresh(update), release() }`,
+  and `refresh` re-rasterises only the pages holding those layers, in place
+  (`LayerAtlas.refresh`; the texture stays the same object, so the skin shader
+  is not recompiled and nothing is re-evaluated). It applies a shared update
+  once however many figures pass it.
 - `client.dispose()` terminates the worker and rejects pending requests.
 - Errors from the worker arrive as `HumanoidWorkerError` with `name` set to the
   original error's name (for example `AgePolicyError`).
@@ -647,7 +697,9 @@ once the first figure can be evaluated), `complete` (replied to once every
 target file has loaded, or with the error that stopped one), `pickMap`
 (replied to with the pick map once everything has loaded), `posedOcclusion`
 (replied to once the corner bake, made a corner at a time between other
-requests, is done) and `evaluate`, which
+requests, is done), `adultLayers` (replied to with the adult anatomy layers'
+fields once the adult pack's stage has loaded, or null without that pack) and
+`evaluate`, which
 waits for exactly the load stages its recipe needs without holding up other
 requests, and `garment` (replied to with a garment's static render data once
 the garments have loaded). Result buffers are transferred. Applications use it
@@ -676,6 +728,14 @@ import { adultAnatomyPack } from "humanoid-kit-adult-anatomy";
 `adultAnatomyPack` is `{ manifest, files: { "targets.bin.gz" } }`. Pass it as
 `adultAnatomy`. Its targets and modifiers evaluate only for figures aged 18 or
 over, and loading it fails unless it was built against the exact body pack.
+
+Its manifest also carries `anatomy` (`AdultAnatomySpec`): the anatomy features
+and the modifiers that apply each, how each adult skin layer's masks are
+measured from the pack's targets (`skinLayers`), and the shape states of the
+adult anatomy (`stateMorphs`, arousal). This is the pack's data so that the
+core, which ships in the public build, names no adult target or modifier
+(`pnpm check:pages`); a pack without it adds no adult layers and no state
+morphs.
 
 ## `humanoid-kit-clothing`
 

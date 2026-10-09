@@ -13,7 +13,12 @@
  * copied first.
  */
 import { wardrobeOf } from "../editor/wardrobe.ts";
-import { GARMENTS_FILE, type LoadStage, loadHumanoidAssetsStaged } from "../format/assetFormat.ts";
+import {
+  ADULT_TARGET_FILE,
+  GARMENTS_FILE,
+  type LoadStage,
+  loadHumanoidAssetsStaged,
+} from "../format/assetFormat.ts";
 import { buildFeatureMap } from "../makehuman/features.ts";
 import { HumanoidModel } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
@@ -73,6 +78,9 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           sliders: assets.sliders,
           rig: { ...rigData(assets), parents: model.boneParents(), skin: model.rigSkin() },
           adultAnatomyLoaded: assets.adultAnatomyLoaded,
+          ...(assets.adultAnatomyManifest?.anatomy && {
+            anatomy: assets.adultAnatomyManifest.anatomy,
+          }),
           wardrobe: wardrobeOf(assets.clothingManifest),
         });
         return;
@@ -99,6 +107,18 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         post(
           { type: "posedOcclusion", id: req.id, attachments },
           attachments?.map((a) => a.buffer) ?? [],
+        );
+        return;
+      }
+      if (req.type === "adultLayers") {
+        // The adult pack's targets arrive in the last stage; wait for that one
+        // only, then derive the adult layers' fields once and post them.
+        const stage = stages.find((s) => s.files.includes(ADULT_TARGET_FILE));
+        await stage?.loaded;
+        const update = model.adultLayerFields();
+        post(
+          { type: "adultLayers", id: req.id, update },
+          update ? [update.layerFields.buffer] : [],
         );
         return;
       }

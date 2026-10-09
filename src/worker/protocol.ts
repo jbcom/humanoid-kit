@@ -1,6 +1,11 @@
 /** Messages between `HumanoidWorkerClient` and the evaluation worker. */
 import type { WardrobeEntry } from "../editor/wardrobe.ts";
-import type { LoadOptions, ShapeModifierEntry, SliderTask } from "../format/assetFormat.ts";
+import type {
+  AdultAnatomySpec,
+  LoadOptions,
+  ShapeModifierEntry,
+  SliderTask,
+} from "../format/assetFormat.ts";
 import type { FeatureRef } from "../makehuman/features.ts";
 import type {
   Evaluation,
@@ -11,6 +16,7 @@ import type {
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import type { RigData, RigSkin } from "../rig/pose.ts";
+import type { LayerFieldsUpdate } from "../surface/layers.ts";
 
 /** What the worker reports once the packs are loaded and the model is built. */
 export interface ReadyInfo {
@@ -26,6 +32,11 @@ export interface ReadyInfo {
    */
   rig: RigData & { parents: Int16Array; skin: RigSkin };
   adultAnatomyLoaded: boolean;
+  /**
+   * The adult anatomy pack's features and state morphs (`AdultAnatomySpec`),
+   * which the skin paint and the shape signals read; absent without the pack.
+   */
+  anatomy?: AdultAnatomySpec;
   /**
    * The garments the clothing pack offers, listed before their geometry has
    * loaded; empty without that pack. A recipe wears them by `id`.
@@ -48,6 +59,11 @@ export type WorkerRequest =
   | { type: "pickMap"; id: number }
   /** Answered with `HumanoidModel.bakePosedOcclusion`'s result, baked between evaluations. */
   | { type: "posedOcclusion"; id: number }
+  /**
+   * Answered with the adult anatomy layers' fields (`HumanoidModel.adultLayerFields`)
+   * once the adult pack's stage has loaded, or null without an adult pack.
+   */
+  | { type: "adultLayers"; id: number }
   | {
       type: "evaluate";
       id: number;
@@ -70,6 +86,7 @@ export type WorkerResponse =
   | ({ type: "pickMap"; id: number } & PickMap)
   /** Per worn attachment, its render vertices' occlusion at every corner; null when `ready`'s already was. */
   | { type: "posedOcclusion"; id: number; attachments: Float32Array[] | null }
+  | { type: "adultLayers"; id: number; update: LayerFieldsUpdate | null }
   | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
   | { type: "garment"; id: number; topology: GarmentTopology }
   | { type: "error"; id: number; message: string; name: string };

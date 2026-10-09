@@ -10,6 +10,7 @@
 import type { LoadOptions } from "../format/assetFormat.ts";
 import type { Evaluation, GarmentTopology, ModelOptions } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import type { LayerFieldsUpdate } from "../surface/layers.ts";
 import type { PickMap, ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
 
 export type { PickMap, ReadyInfo };
@@ -117,6 +118,25 @@ export class HumanoidWorkerClient {
       return r.attachments;
     });
     return this.posedOcclusionRequest;
+  }
+
+  private adultLayersRequest: Promise<LayerFieldsUpdate | null> | null = null;
+
+  /**
+   * The adult anatomy layers' fields per render vertex
+   * (`HumanoidModel.adultLayerFields`), for `refreshLayerAtlas`: they arrive
+   * once the adult pack's last load stage has, so the figure draws without them
+   * first. Null without an adult pack. Built by the worker on the first call;
+   * later calls share that answer, so treat it as read-only. Rejects with the
+   * error that stopped the adult stage.
+   */
+  adultLayers(): Promise<LayerFieldsUpdate | null> {
+    this.adultLayersRequest ??= this.ready.then(async () => {
+      const r = await this.request({ type: "adultLayers", id: 0 });
+      if (r.type !== "adultLayers") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+      return r.update;
+    });
+    return this.adultLayersRequest;
   }
 
   private request(msg: WorkerRequest): Promise<WorkerResponse> {

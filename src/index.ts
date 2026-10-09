@@ -15,6 +15,7 @@ export * from "./model/outfit.ts";
 export * from "./morph/evaluate.ts";
 export * from "./presence/presence.ts";
 export * from "./recipe/agePolicy.ts";
+export * from "./recipe/anatomy.ts";
 export * from "./recipe/recipe.ts";
 export * from "./recipe/validate.ts";
 export * from "./rig/flexion.ts";
