@@ -19,6 +19,13 @@ import type { Rgb, SkinTone } from "./skinTone.ts";
 /** What a layer's paint is computed from. */
 export interface SkinPaintInput {
   tone: SkinTone;
+  /**
+   * The figure's age in years (`recipe.macros.age`), for layers that change
+   * with it: thicker plantar callus, flatter ridges, thicker toenails. Absent
+   * is "no age given" (a layer paints as for a young adult), so an input built
+   * without it still paints.
+   */
+  age?: number;
   /** The recipe's regional skin parameters (0..1 each). */
   flush: number;
   lips: number;
@@ -161,6 +168,14 @@ export function layerKindCode(layer: SkinLayer): number {
   if (layer.kind === "surface") return 4;
   return layer.blend === "multiply" ? 1 : 0;
 }
+
+/**
+ * Whether the shader reads a layer's coordinate: a colour layer's stops lie
+ * along it and a crease layer's creases span it. Bumps and surface layers
+ * read their mask alone.
+ */
+export const layerUsesCoordinate = (layer: SkinLayer): boolean =>
+  !(layer.kind === "surface" || (layer.kind === "detail" && layer.pattern === "bumps"));
 
 const smoothstep = (lo: number, hi: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
@@ -510,10 +525,19 @@ export function surfaceChange(
 }
 
 /**
- * A crease layer's relief at a point (metres): ridges across the coordinate,
- * `size` of them from 0 to 1, raised cosine profile. Bumps are the shader's
- * (a jittered cell field), so they are tested there.
+ * How narrow a crease's groove is: the raised cosine that spans a period,
+ * raised to this power. A cosine alone is a soft ripple; a crease is a narrow
+ * cut in flat skin, whose steep sides are what the light catches.
+ */
+export const CREASE_SHARPNESS = 3;
+
+/**
+ * A crease layer's relief at a point (metres, negative: a groove): `size`
+ * grooves across the coordinate from 0 to 1, one in the middle of each period
+ * and none at its ends, so a layer's window starts and ends flat. Bumps are the
+ * shader's (a jittered cell field), so they are tested there.
  */
 export function creaseHeight(height: number, size: number, coord: number): number {
-  return height * 0.5 * (1 - Math.cos(2 * Math.PI * size * coord));
+  const c = 0.5 * (1 - Math.cos(2 * Math.PI * size * coord));
+  return -height * c ** CREASE_SHARPNESS;
 }

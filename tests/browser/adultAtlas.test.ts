@@ -24,6 +24,7 @@ import {
   type LayerAtlasSource,
 } from "../../src/render/layerAtlas.ts";
 import { SkinMaterial } from "../../src/render/skinMaterial.ts";
+import { densePlan, planAtlas } from "../../src/surface/atlasPlan.ts";
 import {
   applyLayers,
   paintStopTable,
@@ -63,6 +64,7 @@ function quadSource(values: [number, number][]): LayerAtlasSource {
     vertexCount: uv.count,
     layerFields,
     layers: values.map((_, l) => `l${l}`),
+    plan: densePlan(values.length),
   };
   plane.dispose();
   return source;
@@ -245,11 +247,12 @@ describe("the skin shader after a refresh", () => {
       vertexCount: uv.count,
       layerFields: new Float32Array(uv.count * 2),
       layers: [adult.id],
+      plan: planAtlas([adult]),
     };
     const held = acquireLayerAtlas(renderer, source);
     const material = new SkinMaterial([adult]);
     material.setAppearance(appearance);
-    material.setLayerAtlas(held.texture);
+    material.setLayerAtlas(held);
     try {
       const base = skinAlbedo(appearance.tone);
       const before = drawn(material, plane);

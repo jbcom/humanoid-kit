@@ -142,4 +142,26 @@ describe("the posed control mesh", () => {
       );
     }
   });
+
+  it("puts a crouching figure's whole soles on the ground, heel and toe, not its toe tips", () => {
+    const standingSole = (rotations: Float32Array, side: 1 | -1) => {
+      const posed = posedControl(rig, evaluation, rotations);
+      const lift = groundOffsetOf(posed, rig.skin.bodyVertices);
+      const depths: number[] = [];
+      for (const v of rig.skin.bodyVertices) {
+        const x = posed[v * 3] as number;
+        // The left foot is at +x; a vertex within 1 cm of the floor and over that foot.
+        if (x * side > 0.04 && (posed[v * 3 + 1] as number) + lift < 0.01) {
+          depths.push(posed[v * 3 + 2] as number);
+        }
+      }
+      return Math.max(...depths) - Math.min(...depths);
+    };
+    // The bent pose folds the knees about 80° with the ankles bent back to keep the
+    // soles level: the foot rests on its length, a good part of what it does standing.
+    for (const side of [1, -1] as const)
+      expect(standingSole(body("bent"), side)).toBeGreaterThan(
+        0.6 * standingSole(body("tpose"), side),
+      );
+  });
 });
