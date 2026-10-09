@@ -465,6 +465,60 @@ The rest-state layers (`src/surface/regions/rest.ts`: flush, lips, areola) are i
 layer zero, and every state is modelled along measured skin axes so that it
 holds at every skin tone.
 
+### Skin states: design (2026-10-09)
+
+Sources and their limits are in `docs/research/SKIN-STATES.md` (regional
+colour and skin states, measured sources, with what could not be verified
+marked). What is measured:
+goosebump papules of about 0.15 to 0.2 mm at follicle density (14 to 32 per
+cm²), episodes of 9 to 13 s, on hair-bearing skin only; under cold, areola
+circumference down 2 to 6 % and nipple height up 8 to 19 % (a lower bound,
+from partly denervated grafts); erect against flaccid, +25 % circumference;
+skin stretch of 25 % (forearm extension) to over 60 % (knee flexion); a
+regional sweat-rate map (forehead, dorsal fingers and upper back highest).
+What is not: any flush colour change on deep skin, and any wrinkle depth or
+spacing against joint angle. Those are modelled, never invented as numbers.
+
+**Signals.** One named, documented set of continuous inputs, each 0..1:
+`cold`, `heat`, `exertion`, `arousal`, `blush`, `fear`, plus joint flexion
+angles, which the rig computes from the pose. The library maps signals to
+appearance; how a signal evolves over time belongs to the application, with a
+small first-order attack and decay helper for the measured time courses.
+Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
+
+**Four channels, one per kind of change:**
+
+1. *Colour*, through colour layers as now. Flush, blush and pallor move
+   haemoglobin along the same measured model that `skinAlbedo` uses, whose
+   effect on a\* already fades as melanin rises. The same physical change is
+   therefore smaller and darker on deep skin, without a separate rule. Where
+   it shows most (lips, ears, nail beds, areola) follows from where blood sits
+   close under thin or unpigmented skin.
+2. *Surface detail*, through a new layer kind: a detail-normal layer, whose
+   paint gives a strength and whose normal is procedural in the shader.
+   Goosebumps are follicle-scale bumps, with height and density from the
+   numbers above, masked to hair-bearing skin (not palms, soles, lips, areolae
+   or genitals). Joint wrinkles are creases across the joint axis, driven by
+   flexion and folding on the compressed side while flattening on the
+   stretched side, as measured. Their depth and spacing are art-directed
+   parameters, and documented as such. A per-vertex field of world length per
+   UV unit keeps procedural detail at true scale across the atlas.
+3. *Surface sheen*, through a surface layer that lowers roughness and raises
+   specular where sweat flows, weighted by the regional sweat map and the
+   `exertion` and `heat` signals.
+4. *Shape*, through state morphs. These are targets the worker adds to an
+   evaluation as a separate input from the recipe, because a state is not
+   identity and must never be saved as one: under cold, the nipple-point
+   target rises and the areola contracts. Engorgement belongs to the adult
+   pack only, refused under 18 exactly as its modifiers are. Shape states
+   change slowly (seconds), so a re-evaluation per change is acceptable;
+   colour, detail and sheen states cost no evaluation at all.
+
+**Contract changes** (additive, owned by the integrator): a `kind` on
+`SkinLayer` (`colour`, the default; `detail`; `surface`), stop-table rows that
+carry each kind's parameters, the UV-scale field, and an evaluation input for
+state morphs. Area lanes then add states as they add regions.
+
 ## Parallel work: the base contract
 
 Decision (2026-10-09, with the owner): the milestones are an order of
