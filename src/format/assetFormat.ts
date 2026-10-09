@@ -244,6 +244,25 @@ export interface BoundAsset {
    * m has key i at full weight when bit i of m is set; corner 0 is rest).
    */
   occlusion: Uint8Array;
+  /** A hair style's measured fields (`HairFieldData`); absent on every other attachment. */
+  hair?: HairFieldData;
+}
+
+/** The buffers a hair style's binary carries beyond an attachment's (`src/surface/hairFields.ts`). */
+export const HAIR_FIELD_KEYS = ["growth", "fade", "fin", "scalpVerts", "scalpWeights"] as const;
+
+/**
+ * What the packer measured of a hair style against the body at rest: per card
+ * vertex its growth (distance from the root, 1e-4 m steps), fade (255 = all
+ * there, 0 = dithered away, at a hairline) and fin (255 = stands out of the scalp), and the body vertices the style
+ * grows from with their density (1..255).
+ */
+export interface HairFieldData {
+  growth: Uint16Array;
+  fade: Uint8Array;
+  fin: Uint8Array;
+  scalpVerts: Uint16Array;
+  scalpWeights: Uint8Array;
 }
 
 /**
@@ -253,7 +272,8 @@ export interface BoundAsset {
  * The `material.texture` is a strand map (docs/ARCHITECTURE.md, "Hair"), and
  * `occlusion` is one baked value per control vertex, at rest.
  */
-export interface HairStyleEntry extends AttachmentEntry {
+export interface HairStyleEntry extends Omit<AttachmentEntry, "layout"> {
+  layout: AttachmentEntry["layout"] & Record<(typeof HAIR_FIELD_KEYS)[number], BufferRange>;
   /** What a picker shows. */
   label: string;
   /** What the style is: length, texture, shape (`short`, `curly`, `ponytail`...). */
@@ -392,7 +412,7 @@ export class AssetFormatError extends Error {
   override name = "AssetFormatError";
 }
 
-function view<T extends Float32Array | Uint32Array | Uint8Array>(
+function view<T extends Float32Array | Uint32Array | Uint16Array | Uint8Array>(
   Ctor: { new (buffer: ArrayBuffer, offset: number, length: number): T; BYTES_PER_ELEMENT: number },
   buffer: ArrayBuffer,
   range: BufferRange | undefined,
@@ -581,7 +601,22 @@ export function addHairStyle(assets: HumanoidAssets, id: string, bin: ArrayBuffe
   if (!assets.hair || !entry) throw new AssetFormatError(`no hair style ${id} in the loaded packs`);
   const have = assets.hair.bound.get(id);
   if (have) return have;
-  const asset = parseBoundAsset(entry, bin, assets.manifest.vertexCount, 1, "hair style");
+  const base = parseBoundAsset(entry, bin, assets.manifest.vertexCount, 1, "hair style");
+  const what = (field: string) => `hair style ${id} ${field}`;
+  const l = entry.layout;
+  const hair: HairFieldData = {
+    growth: view(Uint16Array, bin, l.growth, what("growth")),
+    fade: view(Uint8Array, bin, l.fade, what("fade")),
+    fin: view(Uint8Array, bin, l.fin, what("fin")),
+    scalpVerts: view(Uint16Array, bin, l.scalpVerts, what("scalpVerts")),
+    scalpWeights: view(Uint8Array, bin, l.scalpWeights, what("scalpWeights")),
+  };
+  expectLength(hair.growth, entry.vertexCount, what("growth"));
+  expectLength(hair.fade, entry.vertexCount, what("fade"));
+  expectLength(hair.fin, entry.vertexCount, what("fin"));
+  expectLength(hair.scalpWeights, hair.scalpVerts.length, what("scalpWeights"));
+  expectIndices(hair.scalpVerts, assets.manifest.vertexCount, what("scalpVerts"));
+  const asset: BoundAsset = { ...base, hair };
   assets.hair.bound.set(id, asset);
   return asset;
 }

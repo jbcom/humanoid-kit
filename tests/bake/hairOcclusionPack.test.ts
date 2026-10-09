@@ -28,6 +28,23 @@ describe("the shipped hair occlusion", { timeout: 300_000 }, () => {
     }
   });
 
+  it("carries the growth, fade, fin and scalp the code measures now, to a byte", () => {
+    const assets = loadHairFixtureAssets();
+    const model = new HumanoidModel(assets, { subdivision: 0 });
+    for (const s of hairManifest.styles.filter((x) =>
+      ["short04", "afro01", "braid01"].includes(x.id),
+    )) {
+      const asset = assets.hair?.bound.get(s.id);
+      if (!asset?.hair) throw new Error(`${s.id} not loaded`);
+      const fresh = model.bakeHairFields(asset);
+      expect(fresh.growth, `${s.id} growth`).toEqual(asset.hair.growth);
+      expect(fresh.fade, `${s.id} fade`).toEqual(asset.hair.fade);
+      expect(fresh.fin, `${s.id} fin`).toEqual(asset.hair.fin);
+      expect(fresh.scalpVerts, `${s.id} scalp vertices`).toEqual(asset.hair.scalpVerts);
+      expect(fresh.scalpWeights, `${s.id} scalp weights`).toEqual(asset.hair.scalpWeights);
+    }
+  });
+
   it("does not depend on the model's subdivision level", () => {
     const assets = loadHairFixtureAssets();
     const asset = assets.hair?.bound.get("short04");

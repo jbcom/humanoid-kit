@@ -11,7 +11,7 @@ import { gzipSync } from "node:zlib";
 import sharp from "sharp";
 import type { CompiledAsset } from "./compileAsset.ts";
 
-export interface AttachmentEntry {
+export interface AttachmentEntry<Extra extends string = never> {
   id: string;
   kind: string;
   name: string;
@@ -21,7 +21,7 @@ export interface AttachmentEntry {
   scale: CompiledAsset["scale"];
   material: CompiledAsset["material"];
   layout: Record<
-    keyof CompiledAsset["arrays"] | "occlusion",
+    keyof CompiledAsset["arrays"] | "occlusion" | Extra,
     { offset: number; byteLength: number }
   >;
 }
@@ -59,29 +59,32 @@ export async function writeAttachmentTextures(
  * bake, 255 = open: one bake per corner of the occlusion keys' cube) into one
  * 4-byte-aligned binary, gzipped. The occlusion is baked from the packed
  * figure, so the packer writes once with every vertex open, bakes, and writes
- * again; the layout is the same both times.
+ * again; the layout is the same both times. `extras` adds named buffers per asset
+ * (the hair pack's measured fields) after the standard ones, under their names.
  */
-export function writeAttachments(
+export function writeAttachments<Extra extends string = never>(
   dataDir: string,
   file: string,
   assets: readonly CompiledAsset[],
   occlusion: readonly Uint8Array[] | null,
   bakes: number,
+  extras: readonly Record<Extra, ArrayBufferView>[] = [],
 ) {
   const chunks: Uint8Array[] = [];
   let size = 0;
-  const entries: AttachmentEntry[] = [];
+  const entries: AttachmentEntry<Extra>[] = [];
   for (const [i, a] of assets.entries()) {
-    const layout = {} as AttachmentEntry["layout"];
+    const layout = {} as AttachmentEntry<Extra>["layout"];
     const baked = occlusion?.[i] ?? new Uint8Array(a.vertexCount * bakes).fill(255);
     if (baked.length !== a.vertexCount * bakes)
       throw new Error(
         `${a.id}: ${baked.length} occlusion values for ${a.vertexCount} vertices × ${bakes} bakes`,
       );
-    for (const [key, arr] of [...Object.entries(a.arrays), ["occlusion", baked]] as [
-      keyof AttachmentEntry["layout"],
-      ArrayBufferView,
-    ][]) {
+    for (const [key, arr] of [
+      ...Object.entries(a.arrays),
+      ["occlusion", baked],
+      ...Object.entries(extras[i] ?? {}),
+    ] as [keyof AttachmentEntry<Extra>["layout"], ArrayBufferView][]) {
       size = Math.ceil(size / 4) * 4;
       const bytes = new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
       layout[key] = { offset: size, byteLength: bytes.byteLength };

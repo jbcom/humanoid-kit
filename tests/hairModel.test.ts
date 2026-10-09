@@ -135,6 +135,59 @@ describe("hair topology", () => {
     }
   });
 
+  it("carries fade, fin and growth per render vertex, each in range and each varying", () => {
+    for (const s of hairManifest.styles) {
+      const t = model.hairTopology(s.id);
+      for (const [name, values] of [
+        ["fade", t.fade],
+        ["fin", t.fin],
+        ["growth", t.growth],
+      ] as const) {
+        expect(values.length, `${s.id} ${name}`).toBe(t.vertexCount);
+        expect(values.every(Number.isFinite), `${s.id} ${name}`).toBe(true);
+      }
+      expect(
+        t.fade.every((f) => f >= 0 && f <= 1),
+        s.id,
+      ).toBe(true);
+      expect(
+        t.fin.every((f) => f >= 0 && f <= 1),
+        s.id,
+      ).toBe(true);
+      // Every style has some card edge at a hairline (a vertex mostly faded) and hair well past it.
+      expect(Math.min(...t.fade), `${s.id} hairline`).toBeLessThan(0.3);
+      expect(Math.max(...t.fade), `${s.id} interior`).toBeGreaterThan(0.99);
+      // Growth runs from zero at a root to centimetres along the card.
+      expect(Math.min(...t.growth), s.id).toBeLessThan(0.002);
+      expect(Math.max(...t.growth), s.id).toBeGreaterThan(0.02);
+    }
+  });
+
+  it("carries the scalp to the body's render vertices: only the head, none far from hair, some at full density", () => {
+    const topology = model.topology();
+    const bald = model.evaluate(createRecipe());
+    for (const s of hairManifest.styles) {
+      const scalp = model.hairTopology(s.id).scalp;
+      expect(scalp.length, s.id).toBe(topology.body.vertexCount);
+      let full = 0;
+      let top = 0;
+      let bottom = Number.POSITIVE_INFINITY;
+      scalp.forEach((w, i) => {
+        expect(w >= 0 && w <= 1, s.id).toBe(true);
+        if (w > 0) {
+          const y = bald.positions[i * 3 + 1] as number;
+          top = Math.max(top, y);
+          bottom = Math.min(bottom, y);
+        }
+        if (w > 0.9) full++;
+      });
+      // (braid01 is a thick sculpt that floats off the scalp: little skin is under it at full density.)
+      expect(full, `${s.id} grows from some skin`).toBeGreaterThan(0);
+      // Never on the neck or body: the lowest tinted vertex is above the jaw.
+      expect(bottom, `${s.id} lowest scalp vertex`).toBeGreaterThan(top - 0.22);
+    }
+  });
+
   it("resolves the strand map's URL from the pack's files, when the pack was loaded with URLs", () => {
     expect(model.hairTopology("short02").textureUrl).toBeNull();
     const withUrls = parseHumanoidAssets(

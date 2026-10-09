@@ -23,27 +23,31 @@ Every source file was checked for CC0 from its own content before packing; each 
 - 1 file(s) — texture referenced by braid01.mhmat, which proves CC0: hair/braid01/braid01_diffuse.png
 
 Each shipped texture is a strand map: the source atlas's luminance, normalised to a fixed mean, with its alpha
-unchanged (`scripts/lib/strandMap.ts`). It carries no colour of the original atlas.
+unchanged (`scripts/lib/strandMap.ts`). It carries no colour of the original atlas. For styles whose atlas has
+painted-in blotches (`afro01`, `braid01`) the atlas's own coarse shading is also divided out.
+
+Each style's binary also carries what the packer measured of its cards against the body at rest: growth,
+hairline fade, fin and scalp (`src/surface/hairFields.ts`).
 
 | Output | SHA-256 |
 | --- | --- |
-| short02.bin.gz | `140308e76dc82edf5492c906ff29bb0f105c1e890f07dd98adef5f05e5bc758f` |
+| short02.bin.gz | `bdeee424a5e63c1265d0e67ed4f2aea9c7acf35af70bad37d94be6b3b0c92b68` |
 | short02.webp | `e8336d9ed64c67cec17dc96d830988de09c98374c9765075180d9d1237cdcc00` |
-| bob02.bin.gz | `f1701e8e3c97ea9bc1727d24f4cbba8fc61c6a05f48d37c459e48cc18d61b5fd` |
+| bob02.bin.gz | `d893769488a8fb8619f1e12c7b05da9f98b153c00257da0876a05404b06370bc` |
 | bob02.webp | `18d29c2407d03abaf9cf92262ac705100891d3ed619b7cd336ce1221c0bae7bc` |
-| long01.bin.gz | `f8666f84b1ee4c7d5e43b628bce70ce820d0c5b918b54bdd971d5a0274df24db` |
+| long01.bin.gz | `58c61089fd760a89ae86da97198f712eb51dabfcb4c7c1b336043fadf87e78f8` |
 | long01.webp | `f4f3f2259a380c1ef5d8a8ec5c73a94971db58606a417ac1996517c785486d6e` |
-| afro01.bin.gz | `48d2a92e10de7e4169abfdad28bdd03bf9448388299398e6bc6d367aeac1e820` |
-| afro01.webp | `11c186297523c52167e38bf7a378aef48f11cf92d08396516657c710212c8db5` |
-| short04.bin.gz | `c6e15c61ca7f35961fe1772e854ff4f88562a58f8d2ebf166fd06d321cb3ce85` |
+| afro01.bin.gz | `f8d13fee932f7597de8606b1f7e16d024da850e78a1ae3d4d11e0db604532103` |
+| afro01.webp | `20d5f656894e58bfbfed19435e2babf266c43f360fe88baa993453a79ac8cdc9` |
+| short04.bin.gz | `7952f633e57e9ccca70bfc3d56bc1ea62093fc423bd6dc918cedbb18bcea3fbf` |
 | short04.webp | `1114db8ded14167fbf72f997435a7d61c467aad56ed8526bdac11abac4ab75e9` |
-| short03.bin.gz | `bc39b8444ea581e3d9b22b6ba4350503bd8d3a5b9e844fe0087f71c1cc6eddfc` |
+| short03.bin.gz | `56398cd506cd578aa7dd7f4daaa0d8803544dea8a5f1cd3a261c3fe2a1f1bd05` |
 | short03.webp | `2a5ebfeb7e6bc7dccc5ff6297d4e3c9d5017a4a971e463b0fa5f22141372b593` |
-| ponytail01.bin.gz | `679b2c76b05fc2356355716f92d2ef18cfb5ee3b09df87bc5b9f669c54ad4175` |
+| ponytail01.bin.gz | `6f2c9d11a477359342968aed42ff5f97cf100578e2aa52ef39d600f3b5c5f726` |
 | ponytail01.webp | `b72d7410ddd6503b24b56a7260b4667caa838f2a6efd532c6b163fe697002a88` |
-| short01.bin.gz | `13595eaa15e2b37510b2ccdbd3c700fe3cb72e6b41908c004b4276d72d9b424e` |
+| short01.bin.gz | `024b68bcbaf80b5e48191ccb1a3b7bae5c717173805e57eaa2a661c216f3d277` |
 | short01.webp | `44a159b43f88432fca378a1bfbe4c3ab31349dd4587aee35372377b5582bd685` |
-| bob01.bin.gz | `49dc39e291969dc763f3b706968462bc889c60b141e5b7ecb304b675cae842c8` |
+| bob01.bin.gz | `224914ca334e2f3867cca35b14c72d763bbc8ff12c28fa0c56f16f92163b62e3` |
 | bob01.webp | `f8651d5958922af9ba4c3d84b6bcadfb452baed3d50d67e56b05f7a762478887` |
-| braid01.bin.gz | `7d8ab681bf3de3210dc6f67880e850e7dd777d92f4c1df3c9a5543f583f1a755` |
-| braid01.webp | `73f339da2c02ed092cd00991cb3c1a4ac8aa5b780604f4cb923951cfbd6bc8d7` |
+| braid01.bin.gz | `76bdbbe720ddaf1b8f59d062d378021304080db7e269e63cd9e251265a26c2d5` |
+| braid01.webp | `48e40f8e71e74e58933a6135ee0121591e399ef0627ce7021264cf26a326d662` |

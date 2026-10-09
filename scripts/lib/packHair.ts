@@ -174,7 +174,15 @@ function writeProvenance(
     ),
     "",
     "Each shipped texture is a strand map: the source atlas's luminance, normalised to a fixed mean, with its alpha",
-    "unchanged (`scripts/lib/strandMap.ts`). It carries no colour of the original atlas.",
+    "unchanged (`scripts/lib/strandMap.ts`). It carries no colour of the original atlas. For styles whose atlas has",
+    "painted-in blotches (" +
+      HAIR_STYLES.filter((s) => s.flatten !== undefined)
+        .map((s) => `\`${s.id}\``)
+        .join(", ") +
+      ") the atlas's own coarse shading is also divided out.",
+    "",
+    "Each style's binary also carries what the packer measured of its cards against the body at rest: growth,",
+    "hairline fade, fin and scalp (`src/surface/hairFields.ts`).",
     "",
     "| Output | SHA-256 |",
     "| --- | --- |",
@@ -215,8 +223,9 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
     const occlusion = Uint8Array.from(model.bakeHairOcclusion(boundFrom(compiled)), (v) =>
       Math.round(Math.min(1, Math.max(0, v)) * 255),
     );
+    const fields = model.bakeHairFields(boundFrom(compiled));
     const file = `${spec.id}.bin.gz`;
-    const written = writeAttachments(outDir, file, [compiled], [occlusion], 1);
+    const written = writeAttachments(outDir, file, [compiled], [occlusion], 1, [fields]);
     const [entry] = written.entries;
     if (!entry) throw new Error(`${spec.id}: nothing written`);
     styles.push({

@@ -26,6 +26,7 @@ import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
+import { GROWTH_SCALE, type HairFields, hairFields } from "../surface/hairFields.ts";
 import {
   buildLayerFields,
   isAdultLayer,
@@ -86,6 +87,21 @@ export interface HairTopology extends SurfaceTopology {
   textureUrl: string | null;
   /** Per render vertex, how open it is to light (1) or buried in the hair or against the scalp (0), at rest. */
   occlusion: Float32Array;
+  /** Per render vertex, 0 where the hair is dithered away (a hairline against the scalp) to 1 where it is all there. */
+  fade: Float32Array;
+  /** Per render vertex, 1 on a card standing out of the scalp (dithered away when seen edge-on), 0 on one lying along it. */
+  fin: Float32Array;
+  /**
+   * Per render vertex, metres along its card from where the hair roots. Its
+   * gradient across the screen is the strand's direction (the highlight's tangent).
+   */
+  growth: Float32Array;
+  /**
+   * Per body render vertex (`ModelTopology.body`'s), how densely this style
+   * grows from the skin there: 1 under it, falling to 0 beyond its edge.
+   * The skin is tinted by the hair's colour in proportion (stubble).
+   */
+  scalp: Float32Array;
   /** Which way strands run in the strand map, and how consistently (`HairStyleEntry.strand`). */
   strand: { angle: number; coherence: number };
 }
@@ -200,6 +216,9 @@ const topologyOf = (m: SurfaceMesh): SurfaceTopology => ({
 
 /** The figure attachment occlusion is baked against (and the pack's bake was): the default one. */
 const occlusionFigure = (): Recipe => createRecipe();
+
+/** Share of a body vertex's skin weight the head bone must hold for it to take a scalp tint. */
+const HEAD_WEIGHT = 0.5;
 
 export class HumanoidModel {
   readonly regions: RegionField;
@@ -510,6 +529,35 @@ export class HumanoidModel {
   }
 
   /**
+   * Measures a hair style's growth, hairline fade and scalp against the default
+   * figure at rest (`hairFields`). The scalp may carry hair only on the head:
+   * a body vertex the head bone moves most (the neck, shoulders and jaw's
+   * beard line are never tinted). Depends only on the packs, so the packer
+   * bakes it once. Needs the default figure's target files.
+   */
+  bakeHairFields(asset: BoundAsset): HairFields {
+    const rest = this.evaluate(occlusionFigure()).control;
+    const control = evaluateBinding(asset, rest, new Float32Array(asset.entry.vertexCount * 3));
+    const head = this.assets.manifest.skeleton.bones.findIndex((b) => b.name === "head");
+    if (head < 0) throw new MorphError("the body pack's skeleton has no head bone");
+    const { skinIndex, skinWeight } = this.assets;
+    const eligible = new Uint8Array(this.assets.manifest.vertexCount);
+    for (let v = 0; v < eligible.length; v++) {
+      let onHead = 0;
+      for (let k = 0; k < 4; k++)
+        if (skinIndex[v * 4 + k] === head) onHead += skinWeight[v * 4 + k] as number;
+      eligible[v] = onHead >= HEAD_WEIGHT ? 1 : 0;
+    }
+    const cards = asset.faceVerts;
+    return hairFields({
+      positions: control,
+      faceVerts: cards,
+      body: { positions: rest, triangles: this.bodyControlTriangles },
+      scalpEligible: eligible,
+    });
+  }
+
+  /**
    * Carries a per-base-vertex feature map (`buildFeatureMap`) to the render
    * vertices: a body vertex takes the feature of the base vertex its
    * subdivision stencil weights most, an attachment vertex the feature of the
@@ -594,10 +642,25 @@ export class HumanoidModel {
     // The per-control-vertex bake, one value at a time through the stencil like any field.
     const n = asset.entry.vertexCount;
     const r2s = p.mesh.renderToSurface;
-    const field = new Float32Array(n * 3);
-    for (let v = 0; v < n; v++) field[v * 3] = (asset.occlusion[v] as number) / 255;
     const surface = new Float32Array(p.mesh.topology.vertexCount * 3);
-    applyStencil(p.mesh.stencil, field, surface);
+    /** A per-control-vertex scalar, carried to the render vertices through the style's stencil. */
+    const carry = (value: (v: number) => number): Float32Array => {
+      const field = new Float32Array(n * 3);
+      for (let v = 0; v < n; v++) field[v * 3] = value(v);
+      applyStencil(p.mesh.stencil, field, surface);
+      return Float32Array.from(r2s, (s) => surface[s * 3] as number);
+    };
+    const fields = asset.hair;
+    if (!fields) throw new MorphError(`hair style ${id} carries no measured fields`);
+    // The scalp lives on the body: its base vertices' density through the body's stencil.
+    const bodyBase = this.assets.manifest.vertexCount;
+    const scalpField = new Float32Array(bodyBase * 3);
+    fields.scalpVerts.forEach((v, i) => {
+      scalpField[v * 3] = (fields.scalpWeights[i] as number) / 255;
+    });
+    const bodySurface = new Float32Array(this.body.mesh.topology.vertexCount * 3);
+    applyStencil(this.body.mesh.stencil, scalpField, bodySurface);
+    const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
     return {
       ...topologyOf(p.mesh),
       id,
@@ -608,7 +671,13 @@ export class HumanoidModel {
       textureUrl: asset.entry.material.texture
         ? (this.assets.fileUrls.get(asset.entry.material.texture) ?? null)
         : null,
-      occlusion: Float32Array.from(r2s, (s) => Math.min(1, Math.max(0, surface[s * 3] as number))),
+      occlusion: carry((v) => (asset.occlusion[v] as number) / 255).map(clamp01),
+      fade: carry((v) => (fields.fade[v] as number) / 255).map(clamp01),
+      fin: carry((v) => (fields.fin[v] as number) / 255).map(clamp01),
+      growth: carry((v) => (fields.growth[v] as number) / GROWTH_SCALE),
+      scalp: Float32Array.from(this.body.mesh.renderToSurface, (s) =>
+        clamp01(bodySurface[s * 3] as number),
+      ),
       strand: entry.strand,
     };
   }
