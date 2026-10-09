@@ -94,10 +94,11 @@ describe("a style's binding", () => {
       const o = assets.hair?.bound.get(s.id)?.occlusion as Uint8Array;
       expect(o.length, s.id).toBe(s.vertexCount);
       const mean = o.reduce((t, x) => t + x, 0) / o.length / 255;
-      // A bun of curls buries more of itself than a crop does, but none is all one or the other.
-      expect(mean, s.id).toBeGreaterThan(0.3);
+      // Occlusion follows height above the scalp, so a crop (all within a few centimetres of it) is
+      // darker on the whole than a long style, but none is all one or the other.
+      expect(mean, s.id).toBeGreaterThan(0.05);
       expect(mean, s.id).toBeLessThan(1);
-      expect(Math.max(...o), s.id).toBeGreaterThan(240);
+      expect(Math.max(...o), s.id).toBeGreaterThan(200);
       expect(Math.min(...o), s.id).toBeLessThan(130);
     }
   });

@@ -18,18 +18,20 @@
  */
 import { ADULT_AGE } from "../makehuman/macro.ts";
 import { ADULT_ONLY_BODY_HAIR, isAdultOnlyBodyHair } from "../surface/bodyHair.ts";
+import { isBodyPiercingSite } from "./bodyArt.ts";
 import type { Recipe } from "./recipe.ts";
 
 export { ADULT_AGE };
 
 /**
  * Shape modifiers that only apply to adults: the adult anatomy pack's genital,
- * bulge and pregnancy modifiers. Must agree with the packer's `adultOnly` flag
- * (a test checks every modifier).
+ * bulge, mound and pregnancy modifiers. Must agree with the packer's `adultOnly`
+ * flag (a test checks every modifier).
  */
 export const ADULT_ONLY_MODIFIER = (id: string): boolean =>
   id.startsWith("genitals/") ||
   id.startsWith("pelvis/bulge") ||
+  id.startsWith("pelvis/mound") ||
   id.startsWith("stomach/stomach-pregnant");
 
 export const isAdult = (recipe: Recipe): boolean => recipe.macros.age >= ADULT_AGE;
@@ -47,8 +49,18 @@ export function agePolicyViolations(recipe: Recipe): string[] {
   }
   for (const [group, v] of Object.entries(recipe.bodyHair?.density ?? {}))
     if (v !== 0 && isAdultOnlyBodyHair(group)) out.push(`body hair ${group} is adult-only`);
+  for (const p of recipe.bodyArt?.piercings ?? [])
+    if (ADULT_ONLY_PIERCING(p.site)) out.push(`piercing site ${p.site} is adult-only`);
   return out;
 }
+
+/**
+ * Piercing sites that only apply to adults: every site that is not one of the
+ * body's own (`PIERCING_SITES`). Those are the adult anatomy pack's, which the
+ * core never names, so an unknown site fails closed: it is refused under 18
+ * whether or not the pack is loaded.
+ */
+export const ADULT_ONLY_PIERCING = (site: string): boolean => !isBodyPiercingSite(site);
 
 export function assertAgePolicy(recipe: Recipe): void {
   const v = agePolicyViolations(recipe);
@@ -80,7 +92,7 @@ export function assertSignalPolicy(
 
 /**
  * Returns a copy at a new age. Moving an adult recipe below 18 removes the
- * adult-only modifiers explicitly (the caller sees the result); nothing is
+ * adult-only modifiers, body hair and piercings explicitly (the caller sees the result); nothing is
  * removed when the target age is adult.
  */
 export function withAge(recipe: Recipe, age: number): Recipe {
@@ -91,5 +103,7 @@ export function withAge(recipe: Recipe, age: number): Recipe {
     if (ADULT_ONLY_MODIFIER(id)) delete next.modifiers[id];
   const density = next.bodyHair?.density;
   if (density) for (const group of ADULT_ONLY_BODY_HAIR) delete density[group];
+  if (next.bodyArt)
+    next.bodyArt.piercings = next.bodyArt.piercings.filter((p) => !ADULT_ONLY_PIERCING(p.site));
   return next;
 }

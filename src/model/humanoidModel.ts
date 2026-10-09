@@ -10,6 +10,7 @@ import {
   buildRefinedSurfaceMesh,
   buildSurfaceMesh,
   evaluateSurface,
+  latticeNormals,
   type SurfaceDetail,
   type SurfaceMesh,
 } from "../build/surfaceMesh.ts";
@@ -43,7 +44,7 @@ import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } fr
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
-import { GROWTH_SCALE, type HairFields, hairFields } from "../surface/hairFields.ts";
+import { GROWTH_SCALE, type HairFields, hairFields, scalpShade } from "../surface/hairFields.ts";
 import {
   buildLayerFields,
   isAdultLayer,
@@ -230,6 +231,8 @@ export interface AdultDetailLattice {
   vertexCount: number;
   /** The region's vertices on one figure, xyz, metres, before the ground lift. */
   positions: Float32Array;
+  /** Their outward unit normals (the base surface's, carried to the lattice), xyz. */
+  normals: Float32Array;
 }
 
 /** Per render vertex, an index into a `FeatureMap`'s features (or `NO_FEATURE`). */
@@ -362,6 +365,9 @@ function unitNormals(normals: Float32Array): Float32Array {
 
 /** The figure attachment occlusion is baked against (and the pack's bake was): the default one. */
 const occlusionFigure = (): Recipe => createRecipe();
+
+/** How much of a hair vertex's occlusion the ray bake (cards under cards) may take away from its height term. */
+const RAY_SHARE = 0.25;
 
 /** Share of a body vertex's skin weight the head bone must hold for it to take a scalp tint. */
 const HEAD_WEIGHT = 0.5;
@@ -783,9 +789,10 @@ export class HumanoidModel {
 
   /**
    * Bakes a hair style's occlusion per control vertex, at rest, against the
-   * default figure: how open each card vertex is to light. Hair is lit from
-   * outside, so a card under others, or against the scalp and neck, is darker
-   * than one on the outside of the volume. Cards are two-sided and their
+   * default figure: how open each card vertex is to light. Hair is darkest at
+   * its roots and brightens smoothly with height above the scalp (`scalpShade`);
+   * the ray bake below, a card under others, only modulates that by a quarter, so
+   * overlapping cards leave no flat dark patch. The rays: Cards are two-sided and their
    * normals say nothing about which side faces out, so each vertex takes the
    * more open of its two sides, and the rays meet the body and the style's own
    * cards (as solid triangles: the cards' cut-outs are not modelled, which
@@ -813,9 +820,12 @@ export class HumanoidModel {
       [{ positions: control, normals: normals.map((x) => -x) }],
       { rays: 32 },
     )[0];
-    return Float32Array.from(outward as Float32Array, (o, v) =>
-      Math.max(o, (inward as Float32Array)[v] as number),
-    );
+    const shade = scalpShade(control, { positions: rest, triangles: this.bodyControlTriangles });
+    // The ray bake only modulates the smooth height term, so overlapping cards never leave a flat dark patch.
+    return Float32Array.from(outward as Float32Array, (o, v) => {
+      const open = Math.max(o, (inward as Float32Array)[v] as number);
+      return (shade[v] as number) * (1 - RAY_SHARE + RAY_SHARE * open);
+    });
   }
 
   /**
@@ -825,7 +835,7 @@ export class HumanoidModel {
    * beard line are never tinted). Depends only on the packs, so the packer
    * bakes it once. Needs the default figure's target files.
    */
-  bakeHairFields(asset: BoundAsset): HairFields {
+  bakeHairFields(asset: BoundAsset, options: { feather?: boolean } = {}): HairFields {
     const rest = this.evaluate(occlusionFigure()).control;
     const control = evaluateBinding(asset, rest, new Float32Array(asset.entry.vertexCount * 3));
     const head = this.assets.manifest.skeleton.bones.findIndex((b) => b.name === "head");
@@ -844,6 +854,7 @@ export class HumanoidModel {
       faceVerts: cards,
       body: { positions: rest, triangles: this.bodyControlTriangles },
       scalpEligible: eligible,
+      ...(options.feather !== undefined && { feather: options.feather }),
     });
   }
 
@@ -1280,16 +1291,19 @@ export class HumanoidModel {
   adultDetailLattice(recipe: Recipe): AdultDetailLattice | null {
     if (!isAdult(recipe))
       throw new AgePolicyError("the adult detail lattice is for figures aged 18 or over");
-    const surface = this.adultBodySurface();
-    const lattice = surface?.part.mesh.lattice;
-    if (!lattice) return null;
+    const mesh = this.adultBodySurface()?.part.mesh;
+    const lattice = mesh?.lattice;
+    if (!mesh || !lattice) return null;
     const control = this.evaluateControl(recipe, {});
     const all = applyStencil(lattice.stencil, control, new Float32Array(lattice.vertexCount * 3));
+    const allNormals = latticeNormals(mesh, control);
     const positions = new Float32Array(lattice.region.length * 3);
+    const normals = new Float32Array(lattice.region.length * 3);
     lattice.region.forEach((v, i) => {
       positions.set(all.subarray(v * 3, v * 3 + 3), i * 3);
+      normals.set(allNormals.subarray(v * 3, v * 3 + 3), i * 3);
     });
-    return { key: lattice.key, vertexCount: lattice.region.length, positions };
+    return { key: lattice.key, vertexCount: lattice.region.length, positions, normals };
   }
 
   /**

@@ -6,6 +6,7 @@
 import { DEFAULT_MACROS } from "../makehuman/macro.ts";
 import { BODY_REGIONS } from "../makehuman/regions.ts";
 import { BEARD_STYLES, BODY_HAIR_GROUPS, MAX_BODY_HAIR_DENSITY } from "../surface/bodyHair.ts";
+import { bodyArtProblems } from "./bodyArt.ts";
 import { DEFAULT_SKIN, RECIPE_VERSION, type Recipe } from "./recipe.ts";
 
 export class RecipeValidationError extends Error {
@@ -91,6 +92,7 @@ export function recipeProblems(recipe: unknown): string[] {
   }
   if ("hair" in r && r.hair !== undefined) hairProblems(r.hair, p);
   if ("bodyHair" in r && r.bodyHair !== undefined) bodyHairProblems(r.bodyHair, p);
+  if (r.bodyArt !== undefined) bodyArtProblems(r.bodyArt, p);
   if (r.outfit !== undefined) {
     if (!Array.isArray(r.outfit)) p.push("outfit must be an array of garment ids");
     else {

@@ -75,7 +75,10 @@ describe("the package entry's skin-state API", () => {
       "sweat-exertion",
       // The joint creases follow the states.
       ...kit.CREASE_LAYERS.map((l) => l.id),
+      // The face's expression lines follow the joints'.
+      ...kit.EXPRESSION_LINE_LAYERS.map((l) => l.id),
     ]);
+    expect(kit.EXPRESSION_LINE_LAYERS).toHaveLength(5);
     expect(kit.CREASE_LAYERS).toHaveLength(4);
   });
 });

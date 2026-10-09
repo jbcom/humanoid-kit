@@ -22,10 +22,11 @@ import type { AttachmentMaterial } from "../../src/format/assetFormat.ts";
 import {
   createAttachmentMaterial,
   ENAMEL_LAB,
+  TEETH_EXPOSURE,
   TEETH_TEXTURE_MEAN,
   TeethMaterial,
 } from "../../src/render/attachmentLook.ts";
-import { setOcclusionAttributes } from "../../src/render/occlusion.ts";
+import { OCCLUSION_FLOOR, setOcclusionAttributes } from "../../src/render/occlusion.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../../src/rig/occlusionKeys.ts";
 import { linearFromLab } from "../../src/surface/cielab.ts";
 import { GUM_LAB, GUM_TEXTURE_MEAN_LUMINANCE } from "../../src/surface/gumTone.ts";
@@ -52,18 +53,18 @@ const described: AttachmentMaterial = {
 };
 
 /** A plane no cavity shades: an attachment whose occlusion attributes are unset reads enclosed. */
-function openPlane(): PlaneGeometry {
+function openPlane(openness = 1): PlaneGeometry {
   const plane = new PlaneGeometry(2, 2);
   const corners = occlusionCorners(OCCLUSION_KEYS.length);
   setOcclusionAttributes(
     plane,
-    new Float32Array(plane.getAttribute("position").count * corners).fill(1),
+    new Float32Array(plane.getAttribute("position").count * corners).fill(openness),
   );
   return plane;
 }
 
 /** The mean linear colour of the left (tooth) and right (gum) halves, not yet divided by the white reference. */
-function halves(texels: [Readonly<Rgb>, Readonly<Rgb>], melanin: number): [Rgb, Rgb] {
+function halves(texels: [Readonly<Rgb>, Readonly<Rgb>], melanin: number, openness = 1): [Rgb, Rgb] {
   const data = new Float32Array(2 * 4);
   texels.forEach((t, i) => {
     data.set([t[0], t[1], t[2], 1], i * 4);
@@ -79,7 +80,7 @@ function halves(texels: [Readonly<Rgb>, Readonly<Rgb>], melanin: number): [Rgb, 
   (material as TeethMaterial).setSkin({ melanin });
   const scene = new Scene();
   scene.add(new AmbientLight(0xffffff, Math.PI));
-  const plane = openPlane();
+  const plane = openPlane(openness);
   scene.add(new Mesh(plane, material));
   renderer.setRenderTarget(target);
   renderer.render(scene, camera);
@@ -177,5 +178,21 @@ describe("the teeth's gums on the GPU", () => {
     toothLight.forEach((v, k) => {
       expect(toothDeep[k]).toBeCloseTo(v, 3);
     });
+  });
+
+  it("brighten teeth that are a little exposed faster than the baked occlusion alone, and keep a covered tooth dark", () => {
+    const unit = white();
+    const tooth: [Readonly<Rgb>, Readonly<Rgb>] = [TEETH_TEXTURE_MEAN, TEETH_TEXTURE_MEAN];
+    const lit = (openness: number) => (halves(tooth, 0, openness)[0][1] as number) / unit;
+    const shut = lit(0);
+    const full = lit(1);
+    // What the light on a tooth is, against a fully open tooth: the floor and the exposure curve.
+    for (const o of [0, 0.1, 0.3, 0.7, 1]) {
+      const want = OCCLUSION_FLOOR + (1 - OCCLUSION_FLOOR) * o ** TEETH_EXPOSURE;
+      expect(lit(o) / full, `openness ${o}`).toBeCloseTo(want, 2);
+    }
+    // Covered stays at the floor; a tooth a tenth open is already well past where the linear curve puts it.
+    expect(shut / full).toBeCloseTo(OCCLUSION_FLOOR, 2);
+    expect(lit(0.1) / full).toBeGreaterThan(OCCLUSION_FLOOR + (1 - OCCLUSION_FLOOR) * 0.1 * 1.5);
   });
 });

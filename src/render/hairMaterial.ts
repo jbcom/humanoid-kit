@@ -11,11 +11,12 @@
  *   shows the halos blending leaves at overlapping cards. Without MSAA the same
  *   cards render with a plain alpha test (hard edges, still correct).
  *   Shadows use the same alpha, so a card's cut-outs cast no shadow.
- * - **Hairlines** are dithered away: each vertex carries a fade (0 on a card
- *   edge that meets the scalp, 1 a centimetre in) and the fragment is discarded
- *   where the fade is below an interleaved-gradient noise of its pixel. A
- *   discard needs neither blending nor MSAA, so a hairline thins the same way on
- *   every GPU, software ones included, and shows the tinted scalp
+ * - **Hairlines** thin out: each vertex carries a fade (0 on a card edge that
+ *   meets the scalp, 1 a centimetre in). With alpha-to-coverage it is the card's
+ *   coverage, a smooth gradient; without it the fragment is discarded where the
+ *   fade is below an interleaved-gradient noise of its pixel, which needs neither
+ *   blending nor MSAA, so a hairline thins the same way on every GPU, software
+ *   ones included. Either way it shows the tinted scalp
  *   (`SkinMaterial.setScalp`) through it.
  * - **Highlights** are Kajiya-Kay: a strand is a thin cylinder, and it reflects
  *   in a cone around its tangent, so a highlight is a band across the strands
@@ -59,7 +60,7 @@ export const HAIR_GROWTH_ATTRIBUTE = "hkHairGrowth";
  * the eyes' and teeth's floor: the bake treats cards as solid, so the inside of
  * a sparse style reads darker than strands with air between them would be.
  */
-export const HAIR_OCCLUSION_FLOOR = 0.5;
+export const HAIR_OCCLUSION_FLOOR = 0.65;
 
 /** Texels below this alpha are cut out. */
 export const HAIR_ALPHA_CUTOFF = 0.4;
@@ -72,12 +73,12 @@ export const HAIR_ALPHA_CUTOFF = 0.4;
 export const HAIR_LOBES = {
   primaryShift: -0.12,
   secondaryShift: 0.16,
-  primaryStrength: 0.07,
-  secondaryStrength: 0.45,
-  primaryExponent: 110,
-  secondaryExponent: 28,
+  primaryStrength: 0.008,
+  secondaryStrength: 0.15,
+  primaryExponent: 48,
+  secondaryExponent: 12,
   /** How far the strand map's brightness moves a lobe, per unit of its deviation from the mean. */
-  shiftJitter: 1.2,
+  shiftJitter: 0.45,
 } as const;
 
 /**
@@ -91,8 +92,27 @@ export const HAIR_LOBES = {
  */
 export const HAIR_EDGE_ON = { from: 0.3, to: 0.8 } as const;
 
+/**
+ * The most a hair pixel may exceed its diffuse by (the base specular, the fibre
+ * sheen and both strand lobes together), at any strand direction and light. Real
+ * hair's specular is a low, broad sheen, never a mirror-like patch; dark hair's
+ * diffuse is so small that its absolute specular is already about twice it, so
+ * three times is the line a mirror-like patch (ten and more) would cross.
+ * Browser-tested on analytic geometry.
+ */
+export const HIGHLIGHT_OVER_DIFFUSE = 3;
+
 /** Share of the highlight a fluffy style (no direction to its strands) keeps against a combed one. */
 export const FLUFFY_HIGHLIGHT = 0.35;
+
+/**
+ * Roughness of hair with no direction to its strands (frizz scatters wide) and of
+ * perfectly combed hair: it falls linearly with the style's strand coherence.
+ */
+export const HAIR_ROUGHNESS = { fluffy: 0.95, combed: 0.7 } as const;
+
+/** Scales the base microfacet specular (direct and from the environment): hair has no mirror. */
+export const HAIR_SPECULAR_INTENSITY = 0.4;
 
 /** Puts a style's per-vertex occlusion on its geometry for `HairMaterial`. */
 export function setHairOcclusionAttribute(geometry: BufferGeometry, occlusion: Float32Array): void {
@@ -171,8 +191,9 @@ export class HairMaterial extends MeshPhysicalMaterial {
     super({
       side: DoubleSide,
       // The wide microfacet lobe is only the base: the strand lobes are the highlight.
-      roughness: 0.75,
+      roughness: HAIR_ROUGHNESS.combed,
       metalness: 0,
+      specularIntensity: HAIR_SPECULAR_INTENSITY,
       sheen: 0.35,
       sheenRoughness: 0.6,
       alphaTest: HAIR_ALPHA_CUTOFF,
@@ -207,6 +228,9 @@ export class HairMaterial extends MeshPhysicalMaterial {
    */
   setStrand(strand: { angle: number; coherence: number }): void {
     this.hkUniforms.hkLobes.value.x = FLUFFY_HIGHLIGHT + (1 - FLUFFY_HIGHLIGHT) * strand.coherence;
+    // Frizzy hair scatters light wider than combed hair does.
+    this.roughness =
+      HAIR_ROUGHNESS.fluffy + (HAIR_ROUGHNESS.combed - HAIR_ROUGHNESS.fluffy) * strand.coherence;
   }
 
   /**
@@ -259,6 +283,7 @@ uniform vec4 hkLobes;
 vec3 hkT = vec3( 0.0 );
 float hkTStrength = 0.0;
 float hkShift = 0.0;
+float hkKeep = 1.0;
 ${NOISE}`,
       )
       // The strand map's brightness moves the highlight, so the band breaks into strands.
@@ -275,10 +300,16 @@ ${NOISE}`,
 		// A card seen edge-on is a dark line, not hair: it thins out as it turns away.
 		vec3 hkFlat = normalize( cross( dFdx( vViewPosition ), dFdy( vViewPosition ) ) );
 		float hkFacing = abs( dot( hkFlat, normalize( vViewPosition ) ) );
-		float hkKeep = vHkFade * mix( 1.0, smoothstep( ${HAIR_EDGE_ON.from.toFixed(2)}, ${HAIR_EDGE_ON.to.toFixed(2)}, hkFacing ), vHkFin );
-		if ( hkKeep <= hkNoise( gl_FragCoord.xy ) ) discard;
+		hkKeep = vHkFade * mix( 1.0, smoothstep( ${HAIR_EDGE_ON.from.toFixed(2)}, ${HAIR_EDGE_ON.to.toFixed(2)}, hkFacing ), vHkFin );
+		// Without alpha-to-coverage the fade is dithered away; with it, it is the card's coverage.
+		#ifndef ALPHA_TO_COVERAGE
+			if ( hkKeep <= hkNoise( gl_FragCoord.xy ) ) discard;
+		#endif
 	}
-	#include <alphatest_fragment>`,
+	#include <alphatest_fragment>
+	#ifdef ALPHA_TO_COVERAGE
+		diffuseColor.a *= hkKeep;
+	#endif`,
       )
       .replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>${TANGENT}`)
       .replace(

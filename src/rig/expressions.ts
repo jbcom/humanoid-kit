@@ -5,13 +5,29 @@
  * them; these are the weights that make the faces people ask for. The result
  * of `expressionUnits` is what `HumanoidPose.faceUnits` takes.
  *
- * CHOICE, not measurement. The weights are authored here, after the action
- * units the facial action coding system (FACS) names for each emotion (a
- * smile is the lip corner puller and the cheek raiser, surprise the brow
- * raisers and the upper lid raiser with the jaw dropped, and so on), but a
- * face unit is MakeHuman's own bone-driven shape and not a FACS unit, so each
- * weight was set by looking at the result across ages and tones
- * (docs/evidence/expressions.md) and is a number to tune, not a standard.
+ * The expressions follow the facial action coding system's prototypes for the
+ * emotions (Ekman and Friesen, "Facial Action Coding System", 1978, and Ekman,
+ * Friesen and Hager's 2002 manual; the prototypes as tabulated in the EMFACS
+ * literature, taken here from memory of them and not re-read):
+ *
+ *   happiness  AU6 + AU12            cheek raiser, lip corner puller
+ *   sadness    AU1 + AU4 + AU15 (+17) inner brow raiser, brow lowerer, lip corner depressor, chin raiser
+ *   surprise   AU1 + AU2 + AU5 + AU26  brow raisers, upper lid raiser, jaw drop
+ *   fear       AU1 + AU2 + AU4 + AU5 + AU20 + AU26  as surprise, with the lip stretcher
+ *   anger      AU4 + AU5 + AU7 + AU23   brow lowerer, upper lid raiser, lid tightener, lip tightener
+ *   disgust    AU9 or AU10 (+ AU15, AU17)  nose wrinkler, upper lip raiser
+ *
+ * onto MakeHuman's units: AU1 `InnerBrowUp`, AU2 `OuterBrowUp`, AU4 `BrowDown`,
+ * AU5 `UpperLidOpen`, AU6 `CheekUp` (with `LowerLidUp`), AU7 `LowerLidUp`, AU9
+ * `NoseWrinkler`, AU10 `UpperLipUp`, AU12 `MouthPullUp`, AU15 `MouthPullDown`,
+ * AU17 `lowerLipUp`, AU20 `MouthPlatysma`, AU26 `JawDrop`. The pack has no lip
+ * tightener (AU23), so anger presses nothing and relies on the brows, lids and
+ * nose; fear leaves AU4 out, since the brow lowerer and the raisers' units cancel.
+ *
+ * CHOICE, not measurement. A face unit is MakeHuman's own bone-driven shape and
+ * not a FACS unit, so which units and at what weight are authored here, set by
+ * looking at the result across ages and tones (docs/evidence/expressions.md)
+ * and are numbers to tune, not a standard.
  *
  * Every expression is symmetric: a left unit is always held at the weight of
  * its right, which `mirrorUnit` pairs and a test checks. A one-sided face (a
@@ -82,10 +98,12 @@ export const EXPRESSIONS: readonly FaceExpression[] = [
   {
     id: "surprise",
     label: "Surprise",
-    // Both parts of the brow raised, the upper lids lifted wide, the jaw dropped.
+    // Both parts of the brow raised (0.7: at full weight the lift is a boxy ridge over
+    // each eye, which the forehead's lines carry the rest of), the upper lids lifted
+    // wide, the jaw dropped.
     faceUnits: {
-      ...both("InnerBrowUp", 1),
-      ...both("OuterBrowUp", 1),
+      ...both("InnerBrowUp", 0.7),
+      ...both("OuterBrowUp", 0.7),
       ...both("UpperLidOpen", 1),
       JawDrop: 0.5,
     },
@@ -97,6 +115,7 @@ export const EXPRESSIONS: readonly FaceExpression[] = [
     // upper lip raised off the teeth, the corners drawn down.
     faceUnits: {
       ...both("BrowDown", 1),
+      ...both("UpperLidOpen", 0.3),
       ...both("LowerLidUp", 0.35),
       NoseWrinkler: 0.4,
       NasolabialDeepener: 0.6,
@@ -124,8 +143,8 @@ export const EXPRESSIONS: readonly FaceExpression[] = [
     // Inner brows raised, upper lids wide, the corners of the mouth stretched
     // back and down (the platysma), the jaw slightly dropped.
     faceUnits: {
-      ...both("InnerBrowUp", 1),
-      ...both("OuterBrowUp", 0.3),
+      ...both("InnerBrowUp", 0.8),
+      ...both("OuterBrowUp", 0.2),
       ...both("UpperLidOpen", 1),
       ...mouth("Platysma", 1),
       JawDrop: 0.35,

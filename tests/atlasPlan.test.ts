@@ -197,10 +197,12 @@ describe("the atlas plan of the shipped stack", () => {
     }
   });
 
-  it("keeps the whole stack, creases and hands included, to eight pages", () => {
+  it("keeps the whole stack, creases, hands and expression lines included, to eight pages", () => {
     // Two layers a page was 11 pages (44 MB) for these layers; the crease layers alone,
     // twelve of them, took 6 more. The hands' layers are budgeted one page
-    // (docs/ARCHITECTURE.md, "Hands"): 7 pages before them, 8 with them.
+    // (docs/ARCHITECTURE.md, "Hands"): 7 pages before them, 8 with them. The face's
+    // five expression lines, whose masks lie apart from most layers', share channels
+    // and add none.
     expect(plan.pages).toBeLessThanOrEqual(8);
     expect(plan.pages).toBeLessThan(densePlan(SKIN_LAYERS.length).pages);
   });
