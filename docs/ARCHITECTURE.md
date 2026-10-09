@@ -216,11 +216,15 @@ never below 0.15.
 
 The occlusion is geometry of the default figure, where lids and lips sit as
 they do on most figures, so the packer bakes it once
-(`HumanoidModel.bakeAttachmentOcclusion`, at the default subdivision level) and
-ships it in `attachments.bin.gz` as one byte per control vertex. Loading never
-casts a ray. A test re-bakes from the shipped pack and fails if the stored
-values drift from what the code computes. Expressions that open the mouth will
-re-bake at runtime with the same method.
+(`HumanoidModel.bakeAttachmentOcclusion`) and ships it in `attachments.bin.gz`
+as one byte per control vertex. The bake does not depend on the model's
+subdivision level: the body occludes as its unsubdivided control mesh and the
+opaque attachments always as their one-level surface. A model wearing the body
+pack's own attachments (in any order) uses the shipped bytes and casts no rays;
+a model wearing any other set bakes during construction of its topology, inside
+worker initialisation. A test re-bakes from the shipped pack and fails if the
+stored values drift from what the code computes. Expressions that open the
+mouth will re-bake at runtime with the same method.
 
 ## Worker
 

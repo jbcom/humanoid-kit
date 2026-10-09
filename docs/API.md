@@ -387,8 +387,12 @@ range input sized for touch. `onChange(value, gesture)` fires while dragging and
 ## `humanoid-kit/worker`
 
 The worker module that `HumanoidWorkerClient` starts by default. It owns one
-`HumanoidModel`, answers `init` and `evaluate` messages, and transfers its
-result buffers. Applications use it through the client, not directly.
+`HumanoidModel` and answers three messages: `init` (replied to with `ready`
+once a macro-only figure can be evaluated), `modifierTargets` (replied to once
+the modifier targets have loaded, or with the error that stopped them) and
+`evaluate`. An `evaluate` whose recipe sets a modifier waits for the modifier
+targets. Result buffers are transferred. Applications use it through the
+client, not directly.
 
 ## `humanoid-kit-body`
 

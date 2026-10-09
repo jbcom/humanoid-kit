@@ -272,8 +272,10 @@ export class AssetFormatError extends Error {
 function view<T extends Float32Array | Uint32Array | Uint8Array>(
   Ctor: { new (buffer: ArrayBuffer, offset: number, length: number): T; BYTES_PER_ELEMENT: number },
   buffer: ArrayBuffer,
-  range: BufferRange,
+  range: BufferRange | undefined,
+  what: string,
 ): T {
+  if (!range) throw new AssetFormatError(`${what}: the pack has no buffer range for it`);
   if (range.offset + range.byteLength > buffer.byteLength) {
     throw new AssetFormatError(
       `buffer range ${range.offset}+${range.byteLength} exceeds ${buffer.byteLength}`,
@@ -366,18 +368,18 @@ function parseAttachments(manifest: BodyManifest, bin: ArrayBuffer): Map<string,
   const out = new Map<string, BoundAsset>();
   for (const entry of manifest.attachments.entries) {
     const l = entry.layout;
+    const what = (field: string) => `attachment ${entry.id} ${field}`;
     const asset: BoundAsset = {
       entry,
-      refVerts: view(Uint32Array, bin, l.refVerts),
-      weights: view(Float32Array, bin, l.weights),
-      offsets: view(Float32Array, bin, l.offsets),
-      faceVerts: view(Uint32Array, bin, l.faceVerts),
-      faceUvs: view(Uint32Array, bin, l.faceUvs),
-      uvs: view(Float32Array, bin, l.uvs),
-      deleteVerts: view(Uint32Array, bin, l.deleteVerts),
-      occlusion: view(Uint8Array, bin, l.occlusion),
+      refVerts: view(Uint32Array, bin, l.refVerts, what("refVerts")),
+      weights: view(Float32Array, bin, l.weights, what("weights")),
+      offsets: view(Float32Array, bin, l.offsets, what("offsets")),
+      faceVerts: view(Uint32Array, bin, l.faceVerts, what("faceVerts")),
+      faceUvs: view(Uint32Array, bin, l.faceUvs, what("faceUvs")),
+      uvs: view(Float32Array, bin, l.uvs, what("uvs")),
+      deleteVerts: view(Uint32Array, bin, l.deleteVerts, what("deleteVerts")),
+      occlusion: view(Uint8Array, bin, l.occlusion, what("occlusion")),
     };
-    const what = (field: string) => `attachment ${entry.id} ${field}`;
     expectLength(asset.refVerts, entry.vertexCount * 3, what("refVerts"));
     expectLength(asset.weights, entry.vertexCount * 3, what("weights"));
     expectLength(asset.offsets, entry.vertexCount * 3, what("offsets"));
@@ -441,7 +443,7 @@ export function parseHumanoidAssets(
   if (manifest.format !== 1 || manifest.kind !== "body")
     throw new AssetFormatError("not a format-1 body pack manifest");
   const { layout } = manifest.body;
-  const positions = view(Float32Array, body, layout.positions);
+  const positions = view(Float32Array, body, layout.positions, "body positions");
   if (positions.length !== manifest.vertexCount * 3) {
     throw new AssetFormatError(
       `expected ${manifest.vertexCount * 3} position floats, got ${positions.length}`,
@@ -468,11 +470,11 @@ export function parseHumanoidAssets(
       for (const s of g.sliders)
         if (s.kind === "modifier" ? !modifiers.has(s.id) : !MACRO_KEYS.has(s.id))
           throw new AssetFormatError(`slider ${s.id} drives nothing in the loaded packs`);
-  const uvs = view(Float32Array, body, layout.uvs);
-  const faceVerts = view(Uint32Array, body, layout.faceVerts);
-  const faceUvs = view(Uint32Array, body, layout.faceUvs);
-  const skinIndex = view(Uint8Array, body, layout.skinIndex);
-  const skinWeight = view(Float32Array, body, layout.skinWeight);
+  const uvs = view(Float32Array, body, layout.uvs, "body uvs");
+  const faceVerts = view(Uint32Array, body, layout.faceVerts, "body faceVerts");
+  const faceUvs = view(Uint32Array, body, layout.faceUvs, "body faceUvs");
+  const skinIndex = view(Uint8Array, body, layout.skinIndex, "body skinIndex");
+  const skinWeight = view(Float32Array, body, layout.skinWeight, "body skinWeight");
   expectLength(uvs, manifest.uvCount * 2, "body uvs");
   expectLength(faceVerts, manifest.faceCount * 4, "body faceVerts");
   expectLength(faceUvs, manifest.faceCount * 4, "body faceUvs");

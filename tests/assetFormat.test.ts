@@ -57,6 +57,16 @@ describe("parseHumanoidAssets", () => {
     expect(() => parseHumanoidAssets(pack(m))).toThrow(AssetFormatError);
   });
 
+  it("names a buffer range missing from an older pack", () => {
+    const m = clone();
+    const a = m.attachments.entries[0];
+    if (!a) throw new Error("no attachments");
+    delete (a.layout as Partial<typeof a.layout>).occlusion;
+    expect(() => parseHumanoidAssets(pack(m))).toThrow(
+      new AssetFormatError(`attachment ${a.id} occlusion: the pack has no buffer range for it`),
+    );
+  });
+
   it("rejects a misaligned range instead of truncating it", () => {
     const m = clone();
     m.body.layout.uvs.byteLength -= 2;
