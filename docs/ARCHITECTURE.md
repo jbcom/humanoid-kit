@@ -1723,8 +1723,18 @@ and `onGroundOffset` is not called. `time` puts the figure at a time in the clip
 at a time, a walking figure is carried forward on its feet, and the planted ball's
 world position holds.
 
-**Not here yet:** the Quaternius breadth set (retargeted through a T-pose) and the
-no-interpenetration check at a clip's extremes.
+**Clearance.** `src/animation/clearance.ts` checks a pose for one part of the body
+through another: the body as 14 capsules (head, torso, and each side's upper arm,
+forearm, hand, thigh, shin and foot), each between two joints with a radius measured
+from the figure's own skin (a hand and a foot are flat, so a half and 0.6 of it), and
+the depth to which two that are not neighbours overlap. The capsules are coarse, so
+`CLEARANCE_TOLERANCE` is 2.5 cm. `tests/animation.test.ts` holds every frame of
+every clip, on nine figures, and the walks as the foot lock turns their legs, to it;
+the widest is the crawl's arm skimming the thigh at 19 mm, and the walks stay clear
+of every other part (a hand clears the thigh by 10 to 22 mm), and a test that crosses
+two legs shows the check finds a collision.
+
+**Not here yet:** the Quaternius breadth set (retargeted through a T-pose).
 
 ## Layers
 

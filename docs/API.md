@@ -1467,6 +1467,11 @@ animator.root;                // how far the figure has been carried: [x across,
   figure (`rootMotion`, default true) moves the group forward in its own frame; and the
   figure's presence follows. `time` puts it at a time in the clip. `onStart(clip)` is
   called once the figure follows the clip, and again for a new figure or `time`.
+- `bodySegments(assets, rest, control, skinIndex, skinWeight, bodyVertices)` (a figure's 14
+  capsules, radii measured from its skin) and `overlaps(rest, segments, rotations)` (every
+  pair of parts that are not neighbours, with how deep they overlap in the pose, negative
+  when apart) check a pose for one part through another; `CLEARANCE_TOLERANCE` (2.5 cm)
+  is what the coarse capsules allow.
 - `frameRotations(rig, joints, frame)` (from `src/rig/pose.ts`) is a BVH frame's
   rotations in the figure's axes, which the packer and `bodyPoseRotations` share.
 
