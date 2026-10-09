@@ -430,6 +430,22 @@ export interface AdultAnatomySpec {
    * section 6a). Absent, the pack has only control targets.
    */
   detail?: AdultDetailSpec;
+  /**
+   * Collapsed strips on the adult surface that detail extrudes (docs/research/
+   * ADULT-SCULPT-PLAN.md, section 6b). Needs `surface`; absent, there are none.
+   */
+  reservoirs?: AdultReservoirSpec[];
+}
+
+/** A reservoir (`Reservoir` in src/build/reservoir.ts) with the id detail refers to it by. */
+export interface AdultReservoirSpec {
+  id: string;
+  /** Vertices of the refinement mesh round the cap, in order. */
+  loop: number[];
+  /** Polygons of the refinement mesh that make the cap. */
+  cap: number[];
+  /** Collapsed rings between the loop and the cap. */
+  rings: number;
 }
 
 /**

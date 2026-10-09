@@ -127,6 +127,7 @@ describe("the mound's weighting, on a lattice built to test it", () => {
   const synthetic = (nz: number) => ({
     key: "synthetic",
     vertexCount: 3,
+    regionCount: 3,
     positions: Float32Array.from([0, 0, 0.1, 0, centreY, 0.1, 0, centreY, 0.1]),
     normals: Float32Array.from([0, 0, 1, 0, 0, nz, 0, 0, 1]),
   });

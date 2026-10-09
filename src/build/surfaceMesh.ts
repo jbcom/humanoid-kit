@@ -12,6 +12,7 @@ import {
   catmullClarkLevel,
   catmullClarkPolygons,
   composeStencils,
+  linearSubdivisionStencil,
   type QuadTopology,
   type Stencil,
   selectionStencil,
@@ -74,10 +75,18 @@ export interface SurfaceLattice {
   detailCount: number;
   /** The reservoirs on this surface, in the order they were given. */
   reservoirs: SurfaceReservoir[];
+  /** The vertex each reservoir copy copies, in copy order (the surface's last vertices). */
+  copyOf: Uint32Array;
   /** Names this refinement (`latticeKey`): detail built on another is refused. */
   key: string;
   /** Lattice vertices → the final surface's; null at level 1, where they are the same. */
   smooth: Stencil | null;
+  /**
+   * The same, subdividing linearly instead of smoothing: how detail displacement
+   * reaches the final surface, so a lattice vertex's displacement is exactly its
+   * authored one at every level. Null at level 1.
+   */
+  linear: Stencil | null;
   /** Control vertices → lattice positions. */
   stencil: Stencil;
 }
@@ -261,6 +270,8 @@ export function buildRefinedSurfaceMesh(
   let uvs: Float32Array = fine.uvs;
   let faceUvs: Uint32Array;
   let smooth: Stencil | null = null;
+  /** Lattice vertices → the final surface's, subdividing linearly: for detail displacement. */
+  let linear: Stencil | null = null;
   if (levels === 1) {
     ({ topology, faceUvs } = polygonsToQuads(fine));
   } else {
@@ -271,6 +282,11 @@ export function buildRefinedSurfaceMesh(
     });
     stencil = composeStencils(stencil, smoothed.stencil);
     smooth = smoothed.stencil;
+    linear = linearSubdivisionStencil({
+      vertexCount: fine.vertexCount,
+      faceStart: fine.faceStart,
+      faces: fine.faces,
+    });
     topology = smoothed.topology;
     const uvLevel = subdivideUvLinearPolygons(uvs, fine.faceStart, fine.faceUvs);
     uvs = uvLevel.uvs;
@@ -279,6 +295,14 @@ export function buildRefinedSurfaceMesh(
       const level = catmullClarkLevel(topology);
       stencil = composeStencils(stencil, level.stencil);
       smooth = composeStencils(smooth, level.stencil);
+      linear = composeStencils(
+        linear as Stencil,
+        linearSubdivisionStencil({
+          vertexCount: topology.vertexCount,
+          faceStart: Uint32Array.from({ length: topology.faces.length / 4 + 1 }, (_, i) => i * 4),
+          faces: topology.faces,
+        }),
+      );
       topology = level.topology;
       const next = subdivideUvLinear(uvs, faceUvs);
       uvs = next.uvs;
@@ -365,8 +389,10 @@ export function buildRefinedSurfaceMesh(
       ),
       detailCount,
       reservoirs: reservoirInfo,
-      key: latticeKey(fine),
+      copyOf,
+      key: latticeKey(fine, reservoirs),
       smooth,
+      linear,
       stencil: lattice,
     },
   };
@@ -423,7 +449,10 @@ function refinedPolygons(
  * two FNV-1a lanes over the polygon mesh's integers. Not a security hash; it
  * names which refinement detail targets were authored on.
  */
-function latticeKey(fine: { vertexCount: number; faceStart: Uint32Array; faces: Uint32Array }) {
+function latticeKey(
+  fine: { vertexCount: number; faceStart: Uint32Array; faces: Uint32Array },
+  reservoirs: readonly Reservoir[],
+) {
   let a = 0x811c9dc5;
   let b = 0x01000193 ^ 0xdeadbeef;
   const mix = (x: number) => {
@@ -434,6 +463,15 @@ function latticeKey(fine: { vertexCount: number; faceStart: Uint32Array; faces: 
   mix(fine.vertexCount);
   for (const x of fine.faceStart) mix(x);
   for (const x of fine.faces) mix(x);
+  // Detail on a reservoir is placed by its loop and cap, so they name the lattice too.
+  for (const r of reservoirs) {
+    mix(0xfffffffe);
+    mix(r.rings);
+    mix(r.loop.length);
+    for (const x of r.loop) mix(x);
+    mix(r.cap.length);
+    for (const x of r.cap) mix(x);
+  }
   return a.toString(16).padStart(8, "0") + (b >>> 0).toString(16).padStart(8, "0");
 }
 
@@ -676,10 +714,18 @@ function displace(mesh: SurfaceMesh, surface: Float32Array, detail: SurfaceDetai
     const at = (v - (lattice.reservoirs[r] as SurfaceReservoir).base) * 3;
     for (let k = 0; k < 3; k++) into[at + k] = (into[at + k] as number) + (xyz[k] as number);
   }
-  const final = lattice.smooth
-    ? applyStencil(lattice.smooth, d, new Float32Array(surface.length))
+  const final = lattice.linear
+    ? applyStencil(lattice.linear, d, new Float32Array(surface.length))
     : d;
   for (let i = 0; i < final.length; i++) surface[i] = (surface[i] as number) + (final[i] as number);
+  // A copy follows whatever displaces the vertex it copies (so the strips stay closed
+  // under the mound, say), then its ring's own displacement.
+  const free = surface.length / 3 - lattice.copyOf.length;
+  lattice.copyOf.forEach((rep, i) => {
+    for (let k = 0; k < 3; k++)
+      surface[(free + i) * 3 + k] =
+        (surface[(free + i) * 3 + k] as number) + (final[rep * 3 + k] as number);
+  });
   // Each copy takes its ring's displacement, interpolated between the loop vertices around it.
   lattice.reservoirs.forEach((r, s) => {
     const into = rings[s] as Float32Array;

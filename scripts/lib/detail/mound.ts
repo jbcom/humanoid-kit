@@ -17,6 +17,10 @@
  * is the same on every rebuild.
  */
 import type { AdultDetailLattice } from "../../../src/model/humanoidModel.ts";
+
+/** What the mound needs of the lattice: the region's vertices, which it alone shapes. */
+export type MoundLattice = Pick<AdultDetailLattice, "regionCount" | "positions" | "normals">;
+
 import { createRecipe } from "../../../src/recipe/recipe.ts";
 
 /** The figure the detail is authored against: the default adult, so every other figure is a deformation of it. */
@@ -53,8 +57,8 @@ const smoothstep = (lo: number, hi: number, x: number) => {
  * of the measured width and length, a cosine bell inside it, and zero where the
  * skin faces away from the front (the buttocks, the inner thighs).
  */
-function moundWeights(lattice: AdultDetailLattice): Float32Array {
-  const { positions: P, normals: N, vertexCount: n } = lattice;
+function moundWeights(lattice: MoundLattice): Float32Array {
+  const { positions: P, normals: N, regionCount: n } = lattice;
   // The lowest point of the front of the pelvis on the midline: where the skin turns under.
   let low = Number.POSITIVE_INFINITY;
   for (let v = 0; v < n; v++)
@@ -79,7 +83,7 @@ function moundWeights(lattice: AdultDetailLattice): Float32Array {
  * The mound's two detail targets: fuller (outward) and flatter (inward), each a
  * displacement along the vertex's outward normal weighted by `moundWeights`.
  */
-export function moundTargets(lattice: AdultDetailLattice): {
+export function moundTargets(lattice: MoundLattice): {
   fuller: DetailDelta;
   flatter: DetailDelta;
 } {
