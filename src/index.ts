@@ -40,6 +40,7 @@ export * from "./subdiv/catmullClark.ts";
 export * from "./surface/bodyHair.ts";
 export * from "./surface/bodyOcclusion.ts";
 export * from "./surface/cielab.ts";
+export * from "./surface/coat.ts";
 export * from "./surface/hairTone.ts";
 export * from "./surface/handTone.ts";
 export * from "./surface/layers.ts";

@@ -97,6 +97,7 @@ import { skinDualShare } from "../rig/skinShare.ts";
 import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
 import { DEFAULT_HAIR_COLOUR, type HairColour, hairAlbedo } from "../surface/hairTone.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
+import { CoatMesh } from "./CoatMesh.tsx";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 import { sameEntries } from "./sameEntries.ts";
 import { Settle, SettleContext, useSettle } from "./settle.ts";
@@ -1395,6 +1396,20 @@ export function Humanoid({
                 part="adultBody"
                 shape={shape}
                 dual={material ? null : dual}
+              />
+            )}
+            {/* The coat (stubble, a dense chest): shells on whichever body surface is drawn. */}
+            {!material && (
+              <CoatMesh
+                body={surface === "adult" && adultGeometry ? adultGeometry : geometries.body}
+                fields={
+                  surface === "adult" && adultSurface ? adultSurface.coat : ready.topology.body.coat
+                }
+                recipe={recipe}
+                skeleton={rig.skeleton}
+                dual={dual}
+                visible={shown}
+                shape={shape}
               />
             )}
             {ready.topology.attachments.map((t, i) => {

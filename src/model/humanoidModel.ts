@@ -47,6 +47,7 @@ import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } fr
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
+import { COAT_REGION_LIMIT, type CoatFields, coatMasks, combField } from "../surface/coat.ts";
 import {
   GROWTH_SCALE,
   type HairFields,
@@ -61,7 +62,7 @@ import {
   uvScale,
 } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
-import { SKIN_LAYERS } from "../surface/regions/index.ts";
+import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 import { tuckDepths } from "./tuck.ts";
 
@@ -214,6 +215,8 @@ export interface ModelTopology {
      * canals and eye sockets, and for a pack with no body occlusion.
      */
     occlusion: Uint8Array;
+    /** The coat's comb and region masks per render vertex (`COAT_REGIONS`; docs/ARCHITECTURE.md, "The coat"). */
+    coat: CoatFields;
   };
   attachments: AttachmentTopology[];
 }
@@ -234,6 +237,8 @@ export interface AdultSurfaceTopology extends SurfaceTopology {
    * refined through this surface's stencil, so the face darkens as on the base.
    */
   occlusion: Uint8Array;
+  /** The coat's fields at these render vertices, as for the base body. */
+  coat: CoatFields;
 }
 
 /**
@@ -1142,6 +1147,7 @@ export class HumanoidModel {
         plan: this.atlasPlan(),
         uvScale: this.uvScale,
         occlusion: this.bodyOcclusionField(),
+        coat: this.coatOn(this.body.mesh),
       },
       attachments: this.attached.map(({ asset, part: p }, i) => ({
         occlusion: occlusion[i] as Float32Array,
@@ -1489,9 +1495,54 @@ export class HumanoidModel {
         index: mountedIndex,
         uvScale: Float32Array.from(mesh.renderToSurface, (s) => surface[s * 3] as number),
         occlusion: this.bodyOcclusionField(mesh),
+        coat: this.coatOn(mesh),
       },
     };
     return this.adultBody;
+  }
+
+  private readonly coats = new WeakMap<SurfaceMesh, CoatFields>();
+
+  /**
+   * The coat's fields (`combField`, `coatMasks`) carried from the base vertices
+   * to a body surface's render vertices through its stencil, three values at a
+   * time; the comb is made unit again after the blend. Static, so built once
+   * per surface.
+   */
+  private coatOn(mesh: SurfaceMesh): CoatFields {
+    const known = this.coats.get(mesh);
+    if (known) return known;
+    const n = this.assets.manifest.vertexCount;
+    const r2s = mesh.renderToSurface;
+    const surface = new Float32Array(mesh.topology.vertexCount * 3);
+    applyStencil(mesh.stencil, combField(this.assets), surface);
+    const comb = new Float32Array(r2s.length * 3);
+    r2s.forEach((s, r) => {
+      const x = surface[s * 3] as number;
+      const y = surface[s * 3 + 1] as number;
+      const z = surface[s * 3 + 2] as number;
+      const len = Math.hypot(x, y, z);
+      if (len > 0) comb.set([x / len, y / len, z / len], r * 3);
+    });
+    const base = coatMasks(this.assets, COAT_REGIONS);
+    const masks = new Uint8Array(r2s.length * COAT_REGION_LIMIT);
+    const field = new Float32Array(n * 3);
+    for (let k = 0; k < COAT_REGION_LIMIT; k += 3) {
+      field.fill(0);
+      for (let v = 0; v < n; v++)
+        for (let j = 0; j < 3 && k + j < COAT_REGION_LIMIT; j++)
+          field[v * 3 + j] = (base[v * COAT_REGION_LIMIT + k + j] as number) / 255;
+      applyStencil(mesh.stencil, field, surface);
+      r2s.forEach((s, r) => {
+        for (let j = 0; j < 3 && k + j < COAT_REGION_LIMIT; j++)
+          masks[r * COAT_REGION_LIMIT + k + j] = Math.round(
+            Math.min(1, Math.max(0, surface[s * 3 + j] as number)) * 255,
+          );
+      });
+    }
+    const out: CoatFields = { regions: COAT_REGIONS.map((r) => r.id), comb, masks };
+    this.coats.set(mesh, out);
+    return out;
   }
 
   /**

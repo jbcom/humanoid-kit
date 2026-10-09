@@ -80,13 +80,15 @@ describe("the body hair layers", () => {
       expect(paintStopTable([VELLUS_LAYER], input(age, 0.5))[0]).toBe(1);
   });
 
-  it("paint an adult man's chest from the coverage model", () => {
+  it("paint an adult man's legs from the coverage model, and leave the trunk to the coat", () => {
     const i = input(35, 1);
     const table = paintStopTable(TERMINAL_HAIR_LAYERS, i);
-    const chest = TERMINAL_HAIR_LAYERS.findIndex((l) => l.id === "hair-chest");
-    expect(row(TERMINAL_HAIR_LAYERS, chest, table)[0]).toBeCloseTo(
-      bodyHairCoverage("chest", bodyHairInput(i)),
+    const legs = TERMINAL_HAIR_LAYERS.findIndex((l) => l.id === "hair-legs");
+    expect(row(TERMINAL_HAIR_LAYERS, legs, table)[0]).toBeCloseTo(
+      bodyHairCoverage("legs", bodyHairInput(i)),
     );
+    for (const trunk of ["hair-chest", "hair-abdomen", "hair-back"])
+      expect(BODY_HAIR_LAYERS.some((l) => l.id === trunk)).toBe(false);
   });
 
   it("colour terminal hair from the figure's pigments", () => {
