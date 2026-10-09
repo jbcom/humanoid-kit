@@ -99,14 +99,13 @@ wrapper); ΔV is the change in the whole body's volume in thousandths of it
   the groin and the inner thigh, and the skin there is stretched rather than
   lost. The sheet shows a clean crotch and no step in the hips' outline in four
   bodies, so no corrective is built for it either.
-- **The flexed hip bulges more than before.** Its front reaches a 95th-
-  percentile girth of 1.37 at 120° (linear: 1.13) in exchange for 15‰ of volume.
+- **The flexed hip** bulged: its front reached a 95th-percentile girth of
+  1.35 at 120° (linear: 1.05) in exchange for 15‰ of volume. The thigh's share
+  of dual quaternion skinning now falls as it swings, from 1 to ¼ over 120°
+  (`SKIN_SWING_SHARE`), which brings the bulge to 1.12 at 120° and 1.20 at 90°
+  (linear: 1.05 and 1.08) for 4‰ more volume lost (−24‰ at 120°; linear −35‰).
   A bent knee's no longer bulges past linear skinning's (the lower half of the
   thigh is linear, so the knee is exactly linear's, 1.23 at 90°): that cost the
   thigh's twist some of its volume (above). The bench holds every case's bulge
-  under 1.45.
-
-The flexed hip is the one remainder worth a corrective (pose-space shapes
-derived from the flexion signals), if a figure is posed there often; the
-options considered and why the blend was chosen are in the same ARCHITECTURE
-section.
+  under 1.45. The options considered, and why the blend was chosen, are in
+  the same ARCHITECTURE section.

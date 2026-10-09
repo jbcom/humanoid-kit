@@ -741,9 +741,9 @@ mean what they meant there; everything must be testable in Node.
   they pose): BVH channel values in degrees per joint over a MakeHuman pose's
   joint layout, every other channel at rest, packed into the same entries. The
   first is `relaxed`, standing at ease with the arms at the sides, since the
-  rest A-pose holds them 42° out; `bent`, `flexed`, `twisted` and `abducted`
-  (the thighs opened 40°) are the joint extremes the skinning and the creases
-  are checked at (below), which the pack's benchmark does not reach: it bends no
+  rest A-pose holds them 42° out; `bent`, `flexed`, `twisted`, `abducted`
+  (the thighs opened 40°) and `seated` (the hips and knees at 90°) are the
+  joint extremes the skinning and the creases are checked at (below), which the pack's benchmark does not reach: it bends no
   elbow, knee or wrist. An expression layers on top of a body pose bone by
   bone.
 - *Grounding follows the pose.* The rest ground offset comes with each
@@ -885,6 +885,37 @@ skinning 0.72 and −34.1‰), a motion made far less often than a knee bends, a
 a crouch's thigh stays dual quaternion above its lower half. Intermediate
 shares (¼, ½, ¾) all bulge: 1.28 to 1.30.
 
+**The flexed hip, corrected (2026-10-09).** The one bulge left was the hip's
+front: girth 95th percentile 1.35 at 120° of flexion (linear skinning's: 1.05).
+Use cases: a figure sits, squats or kicks, so the thigh swings against the
+trunk from 0 to 120° and a flexed hip must not swell at its front.
+Options, by total fit:
+
+1. *A pose-space corrective shape* (a per-vertex displacement keyed on the
+   hip's flexion). It is what the corrective literature does, but the bulge
+   comes from the figure's own weights and proportions, so a shape needs
+   solving for every body (a pass over the mesh in the worker per evaluation)
+   and a vertex attribute and a CPU twin for the shader. Not now.
+2. *A share that falls as the thigh swings* (shipped). The bulge is the dual
+   quaternion half's, and linear blending does not have it, so the hip's own
+   share moves from the table's 1 to ¼ as the thigh swings from 0 to 120°. It
+   is a number a frame in the bone texture the shader already reads, so the
+   shader, its tests and the CPU reference (`poseShare`) change by nothing but
+   where the share comes from.
+3. *A fixed lower share* for the hip. It would lose the twist and the raised leg
+   that dual quaternions hold (a table search put 1 there).
+
+The swing is what is left of the thigh's rotation once its twist about its own
+axis (the hip to the knee) is taken out, so a twisted thigh, which dual
+quaternions keep from collapsing (girth 5th percentile 0.83 against linear
+skinning's 0.72 at 90°), does not lose its share: `SKIN_SWING_SHARE`,
+`poseShare(rest, rotations, base)`. At 120°: the girth 95th percentile 1.35 →
+1.12 (linear: 1.05), at 90°: 1.30 → 1.20 (linear: 1.08); the volume lost is
+−19.8‰ → −24.0‰ at 120° (linear: −35.2‰) and −15.7‰ → −18.1‰ at 90° (linear:
+−23.4‰). It is a trade, as every share is: 4‰ of the body's volume (0.2 L)
+for the front of the hip. The `seated` pose (hips and knees at 90°) is the
+check for it.
+
 **How it runs.** `DualBones` (`src/render/dualSkinning.ts`) holds each bone's
 dual quaternion and share as a float texture, written from the same bone
 rotations as the CPU reference whenever the pose or the figure changes. A patch
@@ -907,12 +938,12 @@ shows a fault: the elbow's 4‰ is about 0.2 L and the smallest loss measured, t
 abducted groin is skin stretched rather than lost, and a corrective shape
 authored for either would add data and a per-pose evaluation for a change the
 sheets cannot show. The gate (never worse than linear in girth, within a
-thousandth in volume) holds both. The blend bulges a flexed hip's front (95th
-percentile 1.37 at 120°, against linear skinning's 1.13) for the 15‰ of volume
-it keeps (a bent knee's no longer bulges past linear skinning's); that is the
-remainder a pose-space corrective would address, if figures are posed there
-often. The
-crease detail layers (`flex.*` signals) paint the fold's skin on top of it.
+thousandth in volume) holds both. The blend bulged a flexed hip's front (95th
+percentile 1.35 at 120°, against linear skinning's 1.05) for the 15‰ of volume
+it keeps; the thigh's share falling as it swings (above, "The flexed hip,
+corrected") brings that to 1.12, and a bent knee's no longer bulges past
+linear skinning's. The crease detail layers (`flex.*` signals) paint the fold's
+skin on top of it.
 
 ## Scalp hair (milestone 4)
 

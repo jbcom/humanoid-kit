@@ -690,13 +690,18 @@ and expressions"). Framework-free.
   linear, 1 dual quaternion), `skinDualShare(bones)` the share of every bone of
   a rig in its order, and `dualBones(rest, rotations)` each bone's pose as a
   unit dual quaternion (what the renderer uploads: `dualBoneTexels`).
+  `SKIN_SWING_SHARE` names the bones whose share changes as they swing (the
+  thigh's falls from 1 to ¼ over 120°, so a flexed hip does not bulge), and
+  `poseShare(rest, rotations, base)` gives every bone's share for a pose: the
+  table's, moved by each such bone's swing (its rotation less its twist about
+  its own axis). `skinPositions` and `DualBones` use it.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
-  arms at the sides, and four for joint extremes, `bent`, every hinge about half
+  arms at the sides, and five for joint extremes, `bent`, every hinge about half
   way (the check for joint creases), `flexed`, every hinge near its limit,
-  `twisted`, each limb turned about its own axis, and `abducted`, the thighs
-  opened 40°);
+  `twisted`, each limb turned about its own axis, `abducted`, the thighs
+  opened 40°, and `seated`, the hips and knees at 90° with the soles flat);
   `composeRotations(a, b)` layers `b` (an expression) over `a`.
 - `restBonesFrom(names, parents, heads)` rebuilds the rest skeleton from an
   evaluation's `boneHeads` without the packs, and
@@ -923,7 +928,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation`, as its geometry is written |
 | `onSettled?` | Called with an `Evaluation` once everything the recipe wears is drawn: the geometry is written and the hair style's strand map, the attachments' and garments' textures and the attachments' posed occlusion have loaded (then two frames). Wait for this, not `onEvaluated`, before a screenshot. The playground's `data-figure="ready"` is this |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
