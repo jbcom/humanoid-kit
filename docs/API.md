@@ -701,7 +701,7 @@ and expressions"). Framework-free.
   arms at the sides, and five for joint extremes, `bent`, every hinge about half
   way (the check for joint creases), `flexed`, every hinge near its limit,
   `twisted`, each limb turned about its own axis, `abducted`, the thighs
-  opened 40°, and `seated`, the hips and knees at 90° with the soles flat);
+  opened 40°, `seated`, the hips and knees at 90° with the soles flat, and `tucked`, the hips at 120° with the knees drawn up);
   `composeRotations(a, b)` layers `b` (an expression) over `a`.
 - `restBonesFrom(names, parents, heads)` rebuilds the rest skeleton from an
   evaluation's `boneHeads` without the packs, and
@@ -928,7 +928,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation`, as its geometry is written |
 | `onSettled?` | Called with an `Evaluation` once everything the recipe wears is drawn: the geometry is written and the hair style's strand map, the attachments' and garments' textures and the attachments' posed occlusion have loaded (then two frames). Wait for this, not `onEvaluated`, before a screenshot. The playground's `data-figure="ready"` is this |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |

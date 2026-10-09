@@ -1,0 +1,14 @@
+{
+  "name": "tucked",
+  "title": "Tucked",
+  "description": "Sitting with the knees drawn up: each hip flexed 120° so the thigh rises 30° above level, each knee bent 130°, the ankles bent back to keep the soles flat. The check for a flexed hip's bulge at its deepest, where the thigh folds against the trunk.",
+  "base": "tpose",
+  "rotations": {
+    "foot.L": { "Xrotation": -10 },
+    "foot.R": { "Xrotation": -10 },
+    "lowerleg01.L": { "Xrotation": 130 },
+    "lowerleg01.R": { "Xrotation": 130 },
+    "upperleg01.L": { "Xrotation": -120 },
+    "upperleg01.R": { "Xrotation": -120 }
+  }
+}

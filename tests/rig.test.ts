@@ -229,9 +229,30 @@ describe("body poses", () => {
       "flexed",
       "relaxed",
       "seated",
+      "tucked",
       "twisted",
     ]);
     expect(() => bodyPoseRotations(rig, "dab")).toThrow(/dab/);
+  });
+
+  it("draws the knees up in the tucked pose: each thigh flexed 120° at the hip, the shin back down", () => {
+    const heads = posedBoneHeads(rest, bodyPoseRotations(rig, "tucked"));
+    const at = (n: string, k: number) => heads[bone(n) * 3 + k] as number;
+    for (const side of ["L", "R"]) {
+      const thigh = [0, 1, 2].map(
+        (k) => at(`lowerleg01.${side}`, k) - at(`upperleg01.${side}`, k),
+      ) as [number, number, number];
+      const len = Math.hypot(...thigh);
+      // From straight down, flexed 120° about the hip: forward and 30° above level.
+      const lift = Math.asin(thigh[1] / len) * (180 / Math.PI);
+      expect(lift, `thigh ${side}`).toBeGreaterThan(25);
+      expect(lift, `thigh ${side}`).toBeLessThan(35);
+      expect(thigh[2] / len, `thigh ${side}`).toBeGreaterThan(0.8);
+      // The knee is bent far enough to bring the shin back down toward the thigh's start.
+      expect(
+        bend(heads, `upperleg02.${side}`, `lowerleg01.${side}`, `foot.${side}`),
+      ).toBeGreaterThan(110);
+    }
   });
 
   it("sits in the seated pose: thighs level and forward, shins upright, soles flat", () => {

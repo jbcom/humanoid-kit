@@ -742,8 +742,9 @@ mean what they meant there; everything must be testable in Node.
   joint layout, every other channel at rest, packed into the same entries. The
   first is `relaxed`, standing at ease with the arms at the sides, since the
   rest A-pose holds them 42° out; `bent`, `flexed`, `twisted`, `abducted`
-  (the thighs opened 40°) and `seated` (the hips and knees at 90°) are the
-  joint extremes the skinning and the creases are checked at (below), which the pack's benchmark does not reach: it bends no
+  (the thighs opened 40°), `seated` (the hips and knees at 90°) and `tucked`
+  (the hips at 120°) are the joint extremes the skinning and the creases are
+  checked at (below), which the pack's benchmark does not reach: it bends no
   elbow, knee or wrist. An expression layers on top of a body pose bone by
   bone.
 - *Grounding follows the pose.* The rest ground offset comes with each
