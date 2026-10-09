@@ -19,6 +19,7 @@ import {
   restBones,
   restBonesFrom,
   rigData,
+  rotationVectors,
   skinPositions,
 } from "../src/rig/pose.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
@@ -218,9 +219,71 @@ describe("body poses", () => {
       new Float32Array(control.length),
     );
 
-  it("ships MakeHuman's CC0 T-pose and rigging benchmark, and the authored relaxed pose", () => {
-    expect(rig.poses.map((p) => p.name)).toEqual(["tpose", "benchmark", "relaxed"]);
+  it("ships MakeHuman's CC0 T-pose and rigging benchmark, and the authored poses", () => {
+    expect(rig.poses.map((p) => p.name)).toEqual([
+      "tpose",
+      "benchmark",
+      "flexed",
+      "relaxed",
+      "twisted",
+    ]);
     expect(() => bodyPoseRotations(rig, "dab")).toThrow(/dab/);
+  });
+
+  /** The angle (degrees) between the direction from `a` to `b` and the one from `b` to `c`. */
+  const bend = (heads: Float32Array, a: string, b: string, c: string) => {
+    const at = (n: string, k: number) => heads[bone(n) * 3 + k] as number;
+    const u = [0, 1, 2].map((k) => at(b, k) - at(a, k));
+    const l = [0, 1, 2].map((k) => at(c, k) - at(b, k));
+    const dot = u.reduce((s, v, k) => s + v * (l[k] as number), 0);
+    return (Math.acos(dot / Math.hypot(...u) / Math.hypot(...l)) * 180) / Math.PI;
+  };
+
+  it("flexes every hinge near its extreme in the flexed pose, the check for volume lost in a fold", () => {
+    const heads = posedBoneHeads(rest, bodyPoseRotations(rig, "flexed"));
+    for (const side of ["L", "R"]) {
+      expect(
+        bend(heads, `upperarm02.${side}`, `lowerarm01.${side}`, `wrist.${side}`),
+      ).toBeGreaterThan(120);
+      expect(
+        bend(heads, `upperleg02.${side}`, `lowerleg01.${side}`, `foot.${side}`),
+      ).toBeGreaterThan(110);
+      // The wrists bend to opposite sides, so one pose shows both.
+      expect(
+        bend(heads, `lowerarm02.${side}`, `wrist.${side}`, `finger3-1.${side}`),
+      ).toBeGreaterThan(40);
+    }
+  });
+
+  it("twists each limb about its own axis in the twisted pose, the candy wrapper's check", () => {
+    const vectors = rotationVectors(bodyPoseRotations(rig, "twisted"));
+    const axis = (from: string, to: string) => {
+      const v = [0, 1, 2].map(
+        (k) =>
+          (rest.heads[bone(to) * 3 + k] as number) - (rest.heads[bone(from) * 3 + k] as number),
+      );
+      const len = Math.hypot(...v);
+      return v.map((x) => x / len);
+    };
+    const twists: [string, string, string, number][] = [
+      ["upperarm01", "upperarm01", "lowerarm01", 110],
+      ["wrist", "lowerarm01", "wrist", 170],
+      ["upperleg01", "upperleg01", "lowerleg01", 60],
+    ];
+    for (const side of ["L", "R"]) {
+      const sign = side === "L" ? 1 : -1;
+      for (const [name, from, to, degrees] of twists) {
+        const b = bone(`${name}.${side}`);
+        const v = [0, 1, 2].map((k) => vectors[b * 3 + k] as number);
+        const angle = (Math.hypot(...v) * 180) / Math.PI;
+        const a = axis(`${from}.${side}`, `${to}.${side}`);
+        const along = v.reduce((s, x, k) => s + x * (a[k] as number), 0);
+        expect(angle).toBeCloseTo(degrees, 0);
+        // Pure twist: the rotation vector lies along the limb (the right side turns the other way).
+        expect(Math.abs(along) / Math.hypot(...v)).toBeGreaterThan(0.999);
+        expect(Math.sign(along)).toBe(sign);
+      }
+    }
   });
 
   it("lets the arms hang beside the thighs in the relaxed pose", () => {
