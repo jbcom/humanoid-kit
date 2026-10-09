@@ -31,6 +31,13 @@ function useClient(): HumanoidWorkerClient | null {
   return client;
 }
 
+declare global {
+  interface Window {
+    /** QA only: swaps the shot's recipe without reloading (see `Shot`). */
+    hkSetRecipe?: (init: Parameters<typeof createRecipe>[0]) => void;
+  }
+}
+
 const params = new URLSearchParams(window.location.search);
 
 /** `?recipe=<json>` seeds the figure (e2e permutations, sharing a figure). */
@@ -68,10 +75,23 @@ const TONE_MAPPERS: Record<string, ToneMapping> = {
 function Shot() {
   const toneMapping = TONE_MAPPERS[params.get("tm") ?? ""] ?? STUDIO_TONE_MAPPING;
   const exposure = Number(params.get("exp") ?? Number.NaN);
-  const [recipe] = useState(initialRecipe);
+  const [recipe, setRecipe] = useState(initialRecipe);
   const [lift, setLift] = useState(0);
   // Tests wait for data-figure="ready": the figure is evaluated and placed.
+  // data-generation counts recipes swapped in through window.hkSetRecipe, so a
+  // test can render many figures from one page load.
   const [ready, setReady] = useState(false);
+  const [generation, setGeneration] = useState(0);
+  useEffect(() => {
+    window.hkSetRecipe = (init) => {
+      setReady(false);
+      setRecipe(createRecipe(init));
+      setGeneration((g) => g + 1);
+    };
+    return () => {
+      delete window.hkSetRecipe;
+    };
+  }, []);
   const view = params.get("view") ?? "front";
   const cam = params.get("cam")?.split(",").map(Number);
   const exact = cam?.length === 6 && cam.every(Number.isFinite);
@@ -91,7 +111,11 @@ function Shot() {
       }
     : ((preset[view] ?? preset.front) as (typeof preset)[string]);
   return (
-    <div style={{ position: "absolute", inset: 0 }} data-figure={ready ? "ready" : "loading"}>
+    <div
+      style={{ position: "absolute", inset: 0 }}
+      data-figure={ready ? "ready" : "loading"}
+      data-generation={generation}
+    >
       <Canvas
         shadows="percentage"
         camera={{ position, fov: 35 }}

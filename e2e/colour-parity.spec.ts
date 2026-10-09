@@ -33,12 +33,32 @@ const CAMERA = "0,1.5,0.85,0,1.48,0";
 const FACE = { x0: 0.36, x1: 0.64, y0: 0.14, y1: 0.6 };
 
 async function renderFace(page: Page, s: Swatch): Promise<Lab> {
-  // No flush, so the comparison is with the surface's own albedo.
-  const recipe = encodeURIComponent(JSON.stringify({ skin: { ...s.skin, flush: 0 } }));
-  await page.goto(`/?muted&cam=${CAMERA}&recipe=${recipe}`);
-  await page.locator('[data-figure="ready"]').waitFor({ timeout: 60_000 });
-  // Let the evaluated geometry and the eye textures reach a drawn frame.
-  await page.waitForTimeout(1500);
+  // No flush, so the comparison is with the surface's own albedo. Swatches are
+  // swapped into one loaded page; generation tells this figure from the last.
+  const generation = await page.evaluate(
+    (skin) => {
+      const set = window.hkSetRecipe;
+      if (!set) throw new Error("the QA shot is not mounted");
+      const next =
+        Number(document.querySelector("[data-generation]")?.getAttribute("data-generation")) + 1;
+      set({ skin });
+      return next;
+    },
+    { ...s.skin, flush: 0 },
+  );
+  await page
+    .locator(`[data-figure="ready"][data-generation="${generation}"]`)
+    .waitFor({ timeout: 60_000 });
+  // Ready means evaluated, not drawn: wait out a few animation frames so the
+  // renderer (slow under software WebGL) has drawn the new figure.
+  await page.evaluate(
+    () =>
+      new Promise<void>((done) => {
+        let frames = 0;
+        const tick = () => (++frames >= 4 ? done() : requestAnimationFrame(tick));
+        requestAnimationFrame(tick);
+      }),
+  );
   const rgba = await page.locator("canvas").evaluate((el, box) => {
     const c = el as HTMLCanvasElement;
     const w = Math.round(c.width * (box.x1 - box.x0));
@@ -65,6 +85,10 @@ test.describe("colour parity under the studio stage", () => {
 
   test("every colour renders with the same small error", async ({ page }) => {
     const rows: { name: string; dL: number; dC: number; dH: number | null }[] = [];
+    await page.goto(`/?muted&cam=${CAMERA}`);
+    // The first figure (and its textures) loads with the page.
+    await page.locator('[data-figure="ready"]').waitFor({ timeout: 120_000 });
+    await page.waitForTimeout(1500);
     for (const s of PALETTE) {
       const got = await renderFace(page, s);
       const want = labFromLinear(albedo(s));
