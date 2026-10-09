@@ -45,6 +45,12 @@ On deep skin the same change is smaller, because the skin model's haemoglobin
 span falls from a\* 5.2 to 3.1 as melanin rises: the bottom row's blush reads on
 the cheeks and not elsewhere. There is no separate rule for it.
 
+The deepest row's flush is very faint, and that is physically right: melanin
+absorbs the light haemoglobin would add, which is why erythema is hard to see on
+deep skin (B2 of the research notes). A game should therefore carry a flush with
+a second cue (sweat, posture, expression) and not rely on colour alone. Sweat
+sheen and goosebumps read at every tone, and so do the lips.
+
 ![Whole figures at three tones](./states-flush-body.webp)
 
 Rows: melanin 0.15, 0.5, 0.85. Columns: rest, `heat`, `exertion`, `blush`,
