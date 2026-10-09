@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AUTHORED_STYLES } from "../scripts/lib/hairCards/index.ts";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { RecipeError } from "../src/makehuman/recipeMorph.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -7,6 +8,21 @@ import { createRecipe } from "../src/recipe/recipe.ts";
 import { RecipeValidationError } from "../src/recipe/validate.ts";
 import { bodyPackData } from "./fixtures.ts";
 import { hairManifest, loadHairFixtureAssets, scalpStyles } from "./hairFixtures.ts";
+
+/** The extremes of a large array (a spread of one overflows the stack). */
+const maxOf = (a: ArrayLike<number>) => {
+  let m = Number.NEGATIVE_INFINITY;
+  for (let i = 0; i < a.length; i++) m = Math.max(m, a[i] as number);
+  return m;
+};
+const minOf = (a: ArrayLike<number>) => {
+  let m = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < a.length; i++) m = Math.min(m, a[i] as number);
+  return m;
+};
+
+/** Styles that opt out of the hairline fade: dense curls and authored ropes have no cut edge to thin. */
+const NO_HAIRLINE = new Set(["afro01", ...AUTHORED_STYLES.map((a) => a.id)]);
 
 const assets = loadHairFixtureAssets();
 const model = new HumanoidModel(assets);
@@ -39,7 +55,7 @@ describe("evaluating a figure with hair", () => {
       expect(e.hair?.positions.length, s.id).toBe(t.vertexCount * 3);
       expect(e.hair?.normals.length, s.id).toBe(t.vertexCount * 3);
       expect(t.index.length % 3).toBe(0);
-      expect(Math.max(...t.index)).toBeLessThan(t.vertexCount);
+      expect(maxOf(t.index)).toBeLessThan(t.vertexCount);
     }
   });
 
@@ -156,15 +172,15 @@ describe("hair topology", () => {
         s.id,
       ).toBe(true);
       // Every style has some card edge at a hairline (a vertex mostly faded) and hair well past it.
-      // (afro01 opts out: its dense curls have no cut edge to thin.)
-      if (s.id === "afro01") expect(Math.min(...t.fade), s.id).toBe(1);
-      else expect(Math.min(...t.fade), `${s.id} hairline`).toBeLessThan(0.3);
-      expect(Math.max(...t.fade), `${s.id} interior`).toBeGreaterThan(0.99);
+      // (afro01 and the authored ropes opt out: no cut edge to thin.)
+      if (NO_HAIRLINE.has(s.id)) expect(minOf(t.fade), s.id).toBe(1);
+      else expect(minOf(t.fade), `${s.id} hairline`).toBeLessThan(0.3);
+      expect(maxOf(t.fade), `${s.id} interior`).toBeGreaterThan(0.99);
       // Every card has a texture scale, so strands are millimetres wide wherever its island sits.
-      expect(Math.min(...t.uvScale), `${s.id} uvScale`).toBeGreaterThan(0);
+      expect(minOf(t.uvScale), `${s.id} uvScale`).toBeGreaterThan(0);
       // Growth runs from zero at a root to centimetres along the card.
-      expect(Math.min(...t.growth), s.id).toBeLessThan(0.002);
-      expect(Math.max(...t.growth), s.id).toBeGreaterThan(0.02);
+      expect(minOf(t.growth), s.id).toBeLessThan(0.002);
+      expect(maxOf(t.growth), s.id).toBeGreaterThan(0.02);
     }
   });
 

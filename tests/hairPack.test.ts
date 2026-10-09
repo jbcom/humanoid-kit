@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import { beforeAll, describe, expect, it } from "vitest";
+import { AUTHORED_STYLES } from "../scripts/lib/hairCards/index.ts";
 import {
   addHairStyle,
   type HairManifest,
@@ -36,7 +37,11 @@ const STYLES = [
   "short01",
   "bob01",
   "braid01",
+  ...AUTHORED_STYLES.map((a) => a.id),
 ];
+
+/** The styles compiled from MakeHuman's assets: the authored ones carry no source files. */
+const AUTHORED = new Set(AUTHORED_STYLES.map((a) => a.id));
 
 const KB = 1024;
 
@@ -171,7 +176,8 @@ describe("a style's strand map", () => {
   it("keeps the cards' cut-out: every style but the solid braid has clear texels", () => {
     for (const s of scalpStyles) {
       const share = measured.get(s.id)?.clearShare as number;
-      if (s.id === "braid01") expect(share, s.id).toBeLessThan(0.01);
+      // (A solid braid, and the authored ropes, whose atlas is opaque to the tube's edge.)
+      if (s.id === "braid01" || AUTHORED.has(s.id)) expect(share, s.id).toBeLessThan(0.01);
       else expect(share, s.id).toBeGreaterThan(0.15);
     }
   });
@@ -195,9 +201,12 @@ describe("the pack's size", () => {
     for (const s of scalpStyles) expect(sizeOf(s), s.id).toBeLessThan(800 * KB);
   });
 
-  it("keeps the whole pack under four megabytes", () => {
-    const total = scalpStyles.reduce((t, s) => t + sizeOf(s), 0);
+  it("keeps the MakeHuman styles under four megabytes, and each authored style under 700 KB", () => {
+    const total = scalpStyles.filter((s) => !AUTHORED.has(s.id)).reduce((t, s) => t + sizeOf(s), 0);
     expect(total).toBeLessThan(4 * 1024 * KB);
+    // A style is fetched when first worn, so what each costs matters beyond the total.
+    for (const s of scalpStyles.filter((x) => AUTHORED.has(x.id)))
+      expect(sizeOf(s), s.id).toBeLessThan(700 * KB);
   });
 });
 
@@ -208,7 +217,13 @@ describe("provenance", () => {
     expect(text).toMatch(/makehuman_system_assets_cc0\.zip/);
     expect(text).toMatch(/explicitly released as CC0/);
     // Per style: the .mhclo, the .obj and the .mhmat each proved their own header.
-    expect(text).toMatch(new RegExp(`${hairManifest.styles.length * 3} file\\(s\\) — file header`));
+    const sourced = hairManifest.styles.filter((s) => !AUTHORED.has(s.id)).length;
+    expect(text).toMatch(new RegExp(`${sourced * 3} file\\(s\\) — file header`));
+  });
+
+  it("says which styles the packer authored itself, and that no one's mesh or texture was read for them", () => {
+    for (const a of AUTHORED_STYLES) expect(text, a.id).toContain(a.id);
+    expect(text).toMatch(/authored by the packer/);
   });
 
   it("lists the hash of every shipped file", () => {
