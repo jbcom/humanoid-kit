@@ -26,14 +26,17 @@ import {
   placePresence,
   presenceFromEvaluation,
 } from "../presence/fromEvaluation.ts";
+import { type PosedRig, presenceFromPose } from "../presence/posed.ts";
 import {
   createPresenceRegistry,
   type FigurePresence,
   type PresenceRegistry,
   type ProximityEvent,
   type PublishedPresence,
+  type Vec3,
 } from "../presence/presence.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import type { BoneRotations } from "../rig/pose.ts";
 
 /**
  * Called every frame before the registry ticks; returns the figure's presence
@@ -112,11 +115,16 @@ export function PresenceProvider({
   return <PresenceContext.Provider value={value}>{children}</PresenceContext.Provider>;
 }
 
-/** What a figure publishes presence from: its latest evaluation, recipe and the pack's joints. */
+/**
+ * What a figure publishes presence from: its latest evaluation, recipe and the
+ * pack's joints, and the pose it is in (absent at rest). A new source, from a
+ * new evaluation or a new pose, is derived again; the same one is only re-placed.
+ */
 export interface PresenceSource {
   evaluation: Evaluation;
   recipe: Recipe;
   joints: PresenceJoints;
+  pose?: { rig: PosedRig; rotations: BoneRotations } | undefined;
 }
 
 const worldPosition = new Vector3();
@@ -162,12 +170,22 @@ export function usePublishPresence(
       const s = source.current;
       if (!g || !s || !isShown(g)) return null;
       if (derived.current?.source !== s) {
-        const rest = presenceFromEvaluation({
-          evaluation: s.evaluation,
-          recipe: s.recipe,
-          joints: s.joints,
-          placement: { id, position: [0, 0, 0], facing: [0, 0, 1] },
-        });
+        const at = { id, position: [0, 0, 0] as Vec3, facing: [0, 0, 1] as Vec3 };
+        const rest = s.pose
+          ? presenceFromPose({
+              evaluation: s.evaluation,
+              recipe: s.recipe,
+              joints: s.joints,
+              rig: s.pose.rig,
+              rotations: s.pose.rotations,
+              placement: at,
+            })
+          : presenceFromEvaluation({
+              evaluation: s.evaluation,
+              recipe: s.recipe,
+              joints: s.joints,
+              placement: at,
+            });
         derived.current = { source: s, rest, placed: clonePresence(rest) };
       }
       g.updateWorldMatrix(true, false);

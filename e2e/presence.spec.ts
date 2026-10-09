@@ -47,7 +47,11 @@ async function stage(page: Page, gap: number, count: 1 | 2 = 2) {
     },
     { gap, count },
   );
-  await page.evaluate(() => window.hkWalk?.setWalking(false));
+  // Stand still at one fixed place: the same still frame (and ground-to-pixel mapping) every run.
+  await page.evaluate(() => {
+    window.hkWalk?.setWalking(false);
+    window.hkWalk?.setZ(0);
+  });
   await frames(page);
 }
 
@@ -170,5 +174,56 @@ test.describe("presence in the studio", () => {
     expect(single).toBeGreaterThan(0.08);
     expect(Math.abs(single - modelSingle)).toBeLessThan(0.06);
     expect(Math.abs(overlapped - single)).toBeLessThan(0.02);
+  });
+
+  test("a kneeling figure's presence follows its pose, and the shadow follows what touches the ground", async ({
+    page,
+  }) => {
+    await openSilentGame(page, "./", { scene: "walk", bg: GROUND });
+    await page.locator('[data-figure="ready"]').waitFor({ timeout: budget(120_000) });
+    await stage(page, 1.8, 1);
+    await save(page, "standing");
+    const [standing] = await figures(page);
+    if (!standing) throw new Error("the figure should be published");
+
+    // Kneel: no new evaluation, only the pose, and the presence comes down.
+    await page.evaluate(() => window.hkWalk?.setPose("benchmark"));
+    await page.waitForFunction(
+      (head) => (window.hkWalk?.figures()[0]?.head ?? head) < head - 0.25,
+      standing.head,
+      { timeout: budget(60_000) },
+    );
+    await frames(page);
+    await save(page, "kneeling");
+    const [kneeling] = await figures(page);
+    if (!kneeling) throw new Error("the figure should still be published");
+    expect(kneeling.head).toBeLessThan(standing.head - 0.25);
+    // The pose raises both arms overhead, and the hand anchor went with them: it is
+    // derived from the posed joints, not the rest body lifted.
+    expect(standing.hand).toBeLessThan(standing.head);
+    expect(kneeling.hand).toBeGreaterThan(kneeling.head);
+    // Grounded: the posed body's lowest point is on the floor.
+    expect(Math.abs(kneeling.floor)).toBeLessThan(0.01);
+    // The contact is whatever touches the floor now: the benchmark pose is a
+    // lunge, so one foot and not two, while standing had both.
+    expect(standing.feet).toHaveLength(2);
+    expect(kneeling.feet).toHaveLength(1);
+
+    // The pooled shadow is under that contact, as dark as the model says: just in front of the patch.
+    const patch = kneeling.feet[0] as number[];
+    const x = patch[0] as number;
+    const z = (patch[1] as number) + kneeling.radius + 0.02;
+    const model = await expectedShadow(page, x, z);
+    expect(model).toBeGreaterThan(0.08);
+    const seen = await darkness(page, x, z);
+    expect(Math.abs(seen - model)).toBeLessThan(0.06);
+
+    // Standing again restores the standing presence.
+    await page.evaluate(() => window.hkWalk?.setPose(null));
+    await page.waitForFunction(
+      (head) => Math.abs((window.hkWalk?.figures()[0]?.head ?? 0) - head) < 0.02,
+      standing.head,
+      { timeout: budget(60_000) },
+    );
   });
 });

@@ -29,10 +29,14 @@ export interface WalkApi {
   /** Eases the lateral distance between the two figures to this many metres. */
   setGap(metres: number): void;
   setWalking(on: boolean): void;
+  /** Where the figures stand along the walk, so a still frame is the same every time. */
+  setZ(z: number): void;
   /** One figure or two. */
   setCount(count: 1 | 2): void;
   /** Gives the second figure the first one's recipe, so their feet are alike. */
   setTwins(twins: boolean): void;
+  /** Poses the first figure with a whole-body pose from the pack (`benchmark`, `tpose`), or back to rest with null. */
+  setPose(body: string | null): void;
   state(): {
     gap: number;
     targetGap: number;
@@ -48,6 +52,11 @@ export interface WalkApi {
     velocity: number[];
     feet: number[][];
     radius: number;
+    /** Height of the head anchor, and of the lowest point of the bounds. */
+    head: number;
+    /** Height of the left hand anchor. */
+    hand: number;
+    floor: number;
   }[];
   /** What the presence model says the shadow is at ground point (x, z): `sampleGroundOcclusion` over the registry. */
   expectedShadow(x: number, z: number): number;
@@ -86,11 +95,14 @@ interface Control {
 interface Roster {
   count: 1 | 2;
   twins: boolean;
+  /** The first figure's whole-body pose, or null at rest. */
+  pose: string | null;
 }
 
 function Pair({ control, roster }: { control: Control; roster: Roster }) {
   const a = useRef<Group>(null);
   const b = useRef<Group>(null);
+  const pose = useMemo(() => (roster.pose ? { body: roster.pose } : undefined), [roster.pose]);
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.1);
     const step = GAP_RATE * dt;
@@ -105,7 +117,7 @@ function Pair({ control, roster }: { control: Control; roster: Roster }) {
   return (
     <>
       <group ref={a}>
-        <Humanoid recipe={alex} presence={{ id: "alex" }} />
+        <Humanoid recipe={alex} {...(pose && { pose })} presence={{ id: "alex" }} />
       </group>
       {roster.count === 2 && (
         <group ref={b}>
@@ -148,6 +160,9 @@ function Api({
       setWalking: (on) => {
         control.walking = on;
       },
+      setZ: (z) => {
+        control.z = z;
+      },
       setCount: (count) => {
         control.count = count;
         onRoster({ count });
@@ -156,6 +171,7 @@ function Api({
         control.twins = twins;
         onRoster({ twins });
       },
+      setPose: (pose) => onRoster({ pose }),
       state: () => ({ ...control }),
       figures: () =>
         registry.all().map((p: PublishedPresence) => ({
@@ -164,6 +180,9 @@ function Api({
           velocity: p.velocity,
           feet: p.footprint.points,
           radius: p.footprint.radius,
+          head: p.anchors.head[1],
+          hand: p.anchors.leftHand[1],
+          floor: p.bounds.min[1],
         })),
       expectedShadow: (x, z) =>
         sampleGroundOcclusion(
@@ -189,7 +208,7 @@ export function Walk() {
     () => ({ gap: 1.8, targetGap: 1.8, z: 0, walking: true, count: 2, twins: false }),
     [],
   );
-  const [roster, setRoster] = useState<Roster>({ count: 2, twins: false });
+  const [roster, setRoster] = useState<Roster>({ count: 2, twins: false, pose: null });
   const onRoster = useCallback(
     (change: Partial<Roster>) => setRoster((r) => ({ ...r, ...change })),
     [],

@@ -395,6 +395,21 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
   is 0.75 × the head's length, and `adult` is the age policy's verdict
   (`age >= 18`). `placement` is `{ id, position, facing }`: the ground position
   under the figure and its heading.
+- `presenceFromPose({ evaluation, recipe, joints, rig, rotations, placement })`:
+  the same presence for a figure in a pose. `rig` is `{ bones, parents, skin }`
+  (`ReadyInfo.rig` has them) and `rotations` the pose as the renderer applies it
+  (`bodyPoseRotations`, `composeRotations`). Anchors are the joint centroids over
+  the posed control mesh, the footprint is whatever of the posed body is within
+  3 cm of the floor (a lunge touches with one foot: one contact), and bounds are
+  the posed body's box (widened by the rest surface's inset, so an unrotated
+  pose reports the rest bounds). Call it when the evaluation or the pose
+  changes; re-place the result with `placePresence` as the figure moves.
+- `posedControl(rig, evaluation, rotations)` and
+  `groundOffsetOf(posed, bodyVertices)`: the evaluation's control mesh in the
+  pose (skinned once and cached on the evaluation; a different pose of it
+  overwrites the array, so use it before asking again) and the lift that puts
+  its lowest body point on the floor. `<Humanoid>` grounds a posed figure and
+  derives its presence from the same pass.
 - `presenceJoints(assets)`: the joint vertex lists presence reads from a loaded
   body pack (small and static, so it can travel with the worker's topology);
   it throws an `AssetFormatError` naming a missing joint. `tryPresenceJoints`
@@ -509,10 +524,10 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   position and heading are read from the group's world transform every frame,
   so moving the group, a parent or a `useFrame` mover moves the presence.
   `position` and `facing` place the group declaratively, replacing its own
-  `position` and `rotation`. Assumes an upright figure at unit scale. The
-  published anchors, footprint and bounds describe the figure at rest (they are
-  derived from its evaluation, not its `pose`); the meshes are lifted by the
-  posed ground offset.
+  `position` and `rotation`. Assumes an upright figure at unit scale. In a
+  `pose` the published anchors, footprint and bounds are the posed body's (see
+  `presenceFromPose`), and are derived again when the pose changes; the meshes
+  are lifted by the same posed ground offset, so the footprint is on the floor.
 - A figure is in the registry only while it is mounted, shown and placed: it
   leaves while the group or any ancestor is not `visible` (a hidden figure is
   not in the world), while it is tipped so far over that it has no heading on

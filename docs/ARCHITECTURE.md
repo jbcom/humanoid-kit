@@ -402,6 +402,19 @@ one rest presence each frame instead of being re-derived (into a preallocated
 copy: the per-frame path allocates nothing). The registry, the helpers
 (`groundOcclusion`, `faceMetering`, `presenceGroups`) are pure.
 
+**In a pose** (`presenceFromPose`) the same description comes from the posed
+skeleton. The control mesh is skinned by the pose once (`posedControl`, cached on
+the evaluation and the pose, because grounding needs the same mesh's lowest
+point and the two share the pass); anchors are the same joint centroids over it;
+the footprint is the body within 3 cm of the floor, so a lunge has one contact
+where standing had two; and bounds are the posed control body's box widened per
+side by how far the rest surface sits inside the rest control mesh's box
+(measured once per evaluation). The rendered surface is not skinned per pose: it
+has about four times the vertices to move a box by a centimetre, and an unrotated
+pose reports exactly the rest bounds this way (tested). Deriving takes about
+0.7 ms (13k body vertices) and happens when the evaluation or pose changes; a
+figure that only moves is re-placed, not re-derived.
+
 React only publishes into and reads from the registry. `<PresenceProvider>`
 owns it and, once per frame, runs every mounted figure's publisher and then
 ticks the registry; a `<Humanoid presence>` publisher re-places the figure's

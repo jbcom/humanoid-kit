@@ -5,7 +5,7 @@ Status: being implemented (`src/presence`). The registry, the helpers,
 React bindings (`PresenceProvider`, `<Humanoid presence>`, `usePresence`,
 `useProximity`) and the first consumer, the studio stage's pooled ground
 contact shadow, are done and tested (unit, browser and a Playwright spec with
-two walking figures). Face metering has no consumer yet. It is the shared
+two walking figures). Presence follows the pose, from the posed skeleton. Face metering has no consumer yet. It is the shared
 foundation for the milestone 8 animation work
 (awareness and interactions) and for environment-driven lighting and shadows.
 
@@ -173,10 +173,24 @@ In React, `<Humanoid presence>` registers the figure; `usePresence()` and
 - **The worker reports the joints.** The main thread has no packs, so
   `ReadyInfo.presenceJoints` carries the small static vertex lists presence
   reads, and presence is derived on the main thread from each evaluation.
-- **Presence still describes the rest body.** Posing exists now, but anchors,
-  footprint and bounds come from the evaluation, not the posed skeleton, so a
-  crouching figure publishes its standing anchors (the meshes are lifted by the
-  posed ground offset, so the footprint stays on the floor). Deriving them from
-  the posed skeleton per frame is the next step.
+- **Presence follows the pose** (`presenceFromPose`). A posed figure's anchors
+  are the same joint centroids over the control mesh skinned by the pose, lifted
+  by the posed ground offset; the footprint is whatever of that body is within
+  3 cm of the floor (a lunge touches with one foot: one contact, not two soles);
+  bounds are the posed body's box. It is derived when the evaluation or the pose
+  changes, and re-placed (not re-derived) as the figure moves, so a held pose
+  costs nothing per frame and an animated one about 0.7 ms a frame.
+- **The posed bounds come from the control mesh, widened by the rest inset.**
+  The rendered surface (subdivided, with the attachments) is not skinned per
+  pose: that would skin about four times the vertices to move a box by a
+  centimetre. Skinning the control mesh is already paid for, because grounding
+  needs the lowest point of exactly that mesh, and the two share one pass
+  (`posedControl` caches it on the evaluation and the pose). The box of the posed
+  control vertices is widened per side by how far the rest surface sits inside
+  the rest control mesh's box, measured once per evaluation, so a pose that
+  rotates nothing reports exactly the rest figure's bounds (a test holds it) and
+  a pose moves them as the body moves. The cost is that a pose that bends the
+  subdivided skin out past its control mesh by more than the rest inset is not
+  seen, which is millimetres, not the limb-scale error of the old rest bounds.
 - **Presence carries placement, not a full matrix**, for now: ground position,
   facing and bounds. A transform matrix arrives with posing.

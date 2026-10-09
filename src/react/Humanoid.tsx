@@ -39,6 +39,7 @@ import type {
   SurfaceEvaluation,
   SurfaceTopology,
 } from "../model/humanoidModel.ts";
+import { groundOffsetOf, posedControl } from "../presence/posed.ts";
 import type { Vec3 } from "../presence/presence.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
@@ -52,7 +53,6 @@ import {
   composeRotations,
   faceUnitRotations,
   IDENTITY_POSE,
-  posedGroundOffset,
   restBonesFrom,
 } from "../rig/pose.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
@@ -520,13 +520,9 @@ export function Humanoid({
     () => (ev: Evaluation) => {
       if (!ready) return;
       const q = rotationsRef.current;
+      // The same skinning of the control mesh the figure's presence derives from.
       const offset = q
-        ? posedGroundOffset(
-            restBonesFrom(ready.rig.bones, ready.rig.parents, ev.boneHeads),
-            q,
-            ev.control,
-            ready.rig.skin,
-          )
+        ? groundOffsetOf(posedControl(ready.rig, ev, q), ready.rig.skin.bodyVertices)
         : ev.groundOffset;
       if (groupRef.current) groupRef.current.userData.groundOffset = offset;
       setLift(offset);
@@ -540,6 +536,16 @@ export function Humanoid({
   useEffect(() => {
     if (figure) ground(figure);
   }, [rotations, ground]);
+  // A new pose gives the figure's presence a new source, so it is derived again
+  // from the posed skeleton (a new evaluation's own source carries the pose).
+  useEffect(() => {
+    const source = presenceSource.current;
+    if (!source || !ready) return;
+    presenceSource.current = {
+      ...source,
+      pose: rotations ? { rig: ready.rig, rotations } : undefined,
+    };
+  }, [rotations, ready]);
 
   useEffect(
     () => () => {
@@ -611,7 +617,14 @@ export function Humanoid({
         setFigure(ev);
         ground(ev);
         presenceSource.current = ready?.presenceJoints
-          ? { evaluation: ev, recipe, joints: ready.presenceJoints }
+          ? {
+              evaluation: ev,
+              recipe,
+              joints: ready.presenceJoints,
+              pose: rotationsRef.current
+                ? { rig: ready.rig, rotations: rotationsRef.current }
+                : undefined,
+            }
           : null;
         setShown(true);
         onEvaluatedRef.current?.(ev);
@@ -623,7 +636,19 @@ export function Humanoid({
     return () => {
       live = false;
     };
-  }, [client, geometries, rig, ready, recipe, key, shapeSignals, onEvaluatedRef, report, ground]);
+  }, [
+    client,
+    geometries,
+    rig,
+    ready,
+    recipe,
+    key,
+    shapeSignals,
+    onEvaluatedRef,
+    rotationsRef,
+    report,
+    ground,
+  ]);
 
   const placed = presence?.position;
   const heading = presence?.facing;

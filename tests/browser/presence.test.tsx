@@ -168,6 +168,42 @@ describe("<Humanoid presence>", () => {
   );
 
   it(
+    "follows the pose: a kneeling figure's presence comes down and stays on the floor, then stands again",
+    async () => {
+      const registry = createPresenceRegistry();
+      const at = (body?: string) => (
+        <Scene registry={registry}>
+          <Humanoid
+            recipe={average}
+            {...(body && { pose: { body } })}
+            presence={{ id: "k", position: [1, 0, 1] }}
+          />
+        </Scene>
+      );
+      const head = () => registry.get("k")?.anchors.head[1] ?? 0;
+      const screen = await render(at());
+      await expect.poll(published(registry, "k"), LOAD).toBeDefined();
+      const standing = head();
+      expect(standing).toBeGreaterThan(1.4);
+      // The pose changes with no new evaluation: the presence is derived again from it.
+      await screen.rerender(at("benchmark"));
+      await expect.poll(head, LOAD).toBeLessThan(standing - 0.25);
+      expect(registry.get("k")?.bounds.min[1]).toBeCloseTo(0, 2);
+      expect(registry.get("k")?.position[0]).toBeCloseTo(1, 4);
+      const kneeling = head();
+      await screen.rerender(at("tpose"));
+      await expect
+        .poll(() => registry.get("k")?.anchors.leftHand[1] ?? 0, LOAD)
+        .toBeGreaterThan(1.2);
+      expect(head()).toBeGreaterThan(kneeling + 0.25);
+      // Back to rest: the standing presence, not the last pose's.
+      await screen.rerender(at());
+      await expect.poll(head, LOAD).toBeCloseTo(standing, 2);
+    },
+    LOAD.timeout,
+  );
+
+  it(
     "leaves the registry while hidden or tipped over, and rejoins when it is back",
     async () => {
       const registry = createPresenceRegistry();

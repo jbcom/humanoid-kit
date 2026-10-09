@@ -115,14 +115,19 @@ interface Extent {
 /**
  * Ground footprints from the soles of the rendered body: the left foot's is
  * the sole points at x ≥ 0, the right foot's those at x < 0. Each is a centre
- * and the half-length of its larger side.
+ * and the half-length of its larger side. `vertices` limits the points looked
+ * at (the body's own, when `positions` is a control mesh that also holds
+ * helpers); in a pose the "soles" are whatever touches the ground.
  */
-function soleFootprints(
+export function soleFootprints(
   positions: Float32Array,
   groundOffset: number,
+  vertices?: ArrayLike<number>,
 ): { points: [number, number][]; radius: number } | null {
   const sides: (Extent | null)[] = [null, null];
-  for (let i = 0; i < positions.length; i += 3) {
+  const count = vertices ? vertices.length : positions.length / 3;
+  for (let n = 0; n < count; n++) {
+    const i = (vertices ? (vertices[n] as number) : n) * 3;
     if ((positions[i + 1] as number) + groundOffset > SOLE_DEPTH) continue;
     const x = positions[i] as number;
     const z = positions[i + 2] as number;
@@ -134,14 +139,15 @@ function soleFootprints(
       e.max = [Math.max(e.max[0], x), Math.max(e.max[1], z)];
     }
   }
-  const [left, right] = sides;
-  if (!left || !right) return null;
+  // A pose may rest on one side only (a one-legged stand): that side's patch alone.
+  const touching = sides.filter((e): e is Extent => e !== null);
+  if (touching.length === 0) return null;
   const centre = (e: Extent): [number, number] => [
     (e.min[0] + e.max[0]) / 2,
     (e.min[1] + e.max[1]) / 2,
   ];
   const half = (e: Extent) => Math.max(e.max[0] - e.min[0], e.max[1] - e.min[1]) / 2;
-  return { points: [centre(left), centre(right)], radius: Math.max(half(left), half(right)) };
+  return { points: touching.map(centre), radius: Math.max(...touching.map(half)) };
 }
 
 /** The figure standing at the origin facing +z: the frame every evaluation is in. */
@@ -164,22 +170,7 @@ export function presenceFromEvaluation(input: {
 }): FigurePresence {
   const { evaluation: ev, recipe, joints, placement } = input;
   const lift = ev.groundOffset;
-  const at = (verts: readonly number[]): Vec3 => {
-    const [x, y, z] = centroid(ev.control, verts);
-    return [x, y + lift, z];
-  };
-  const headBase = at(joints.headBase);
-  const headTop = at(joints.headTop);
-  const eyes = mid(at(joints.leftEye), at(joints.rightEye));
-  const anchors: Record<AnchorName, Vec3> = {
-    head: mid(headBase, headTop),
-    face: mid(eyes, at(joints.mouth)),
-    chest: at(joints.chest),
-    leftHand: mid(at(joints.leftWrist), at(joints.leftKnuckle)),
-    rightHand: mid(at(joints.rightWrist), at(joints.rightKnuckle)),
-    leftFoot: mid(at(joints.leftAnkle), at(joints.leftToe)),
-    rightFoot: mid(at(joints.rightAnkle), at(joints.rightToe)),
-  };
+  const { anchors, faceRadius, appearance, adult } = figureTraits(ev.control, lift, joints, recipe);
 
   const min: Vec3 = [Infinity, Infinity, Infinity];
   const max: Vec3 = [-Infinity, -Infinity, -Infinity];
@@ -197,6 +188,49 @@ export function presenceFromEvaluation(input: {
   ];
   const soles = soleFootprints(ev.positions, lift);
 
+  const rest: FigurePresence = {
+    ...REST,
+    bounds: { min, max },
+    anchors,
+    footprint: soles ?? { points: feet, radius: FALLBACK_FOOT_RADIUS },
+    appearance,
+    faceRadius,
+    adult,
+  };
+  return placePresence(rest, placement);
+}
+
+/** A foot's footprint radius when no sole points are found, metres. */
+export const FALLBACK_FOOT_RADIUS = 0.1;
+
+/**
+ * What presence reads from a figure's control mesh (rest or posed) and recipe:
+ * the anchors (joint centroids, lifted by `lift`), the face's metering radius,
+ * the measured skin and the age policy's verdict. Shared by the rest and posed
+ * derivations, so the two cannot drift apart.
+ */
+export function figureTraits(
+  control: Float32Array,
+  lift: number,
+  joints: PresenceJoints,
+  recipe: Recipe,
+): Pick<FigurePresence, "anchors" | "faceRadius" | "appearance" | "adult"> {
+  const at = (verts: readonly number[]): Vec3 => {
+    const [x, y, z] = centroid(control, verts);
+    return [x, y + lift, z];
+  };
+  const headBase = at(joints.headBase);
+  const headTop = at(joints.headTop);
+  const eyes = mid(at(joints.leftEye), at(joints.rightEye));
+  const anchors: Record<AnchorName, Vec3> = {
+    head: mid(headBase, headTop),
+    face: mid(eyes, at(joints.mouth)),
+    chest: at(joints.chest),
+    leftHand: mid(at(joints.leftWrist), at(joints.leftKnuckle)),
+    rightHand: mid(at(joints.rightWrist), at(joints.rightKnuckle)),
+    leftFoot: mid(at(joints.leftAnkle), at(joints.leftToe)),
+    rightFoot: mid(at(joints.rightAnkle), at(joints.rightToe)),
+  };
   const s = recipe.skin;
   const albedo = skinAlbedo({
     melanin: s.melanin,
@@ -204,19 +238,14 @@ export function presenceFromEvaluation(input: {
     undertone: s.undertone,
     override: s.override,
   });
-
-  const rest: FigurePresence = {
-    ...REST,
-    bounds: { min, max },
+  return {
     anchors,
-    footprint: soles ?? { points: feet, radius: 0.1 },
-    appearance: { albedo, luminance: luminance(albedo), specular: SKIN_F0 },
     faceRadius:
       FACE_RADIUS_PER_HEAD_LENGTH *
       Math.hypot(headTop[0] - headBase[0], headTop[1] - headBase[1], headTop[2] - headBase[2]),
+    appearance: { albedo, luminance: luminance(albedo), specular: SKIN_F0 },
     adult: isAdult(recipe),
   };
-  return placePresence(rest, placement);
 }
 
 /**
