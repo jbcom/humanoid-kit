@@ -376,6 +376,32 @@ float hkRidges( vec2 p, float theta, float spacing ) {
 float hkFootprintFade( float periodsPerPixel ) {
 	return 1.0 - smoothstep( 0.1, 0.3, periodsPerPixel );
 }
+// Perlin's smootherstep on 0..1 (smootherstep in layers.ts).
+float hkSmootherstep( float t ) {
+	float x = clamp( t, 0.0, 1.0 );
+	return x * x * x * ( x * ( 6.0 * x - 15.0 ) + 10.0 );
+}
+// Layer l's control value k of a swell's cross-section: stop k's red, clamped to the ends.
+float hkSwellControl( int l, int k ) {
+	float u = ( 1.5 + float( clamp( k, 0, ${STOP_COUNT - 1} ) ) ) / ${glslFloat(STOP_TABLE_WIDTH)};
+	return texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
+}
+// A swell's cross-section at the coordinate: the uniform cubic B-spline through the
+// controls (swellProfile in layers.ts), smooth in slope and curvature everywhere.
+float hkSwellProfile( int l, float coord ) {
+	float x = clamp( coord, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)};
+	int i = min( int( floor( x ) ), ${STOP_COUNT - 2} );
+	float f = x - float( i );
+	float f2 = f * f;
+	float f3 = f2 * f;
+	float g = 1.0 - f;
+	return (
+		g * g * g * hkSwellControl( l, i - 1 ) +
+		( 3.0 * f3 - 6.0 * f2 + 4.0 ) * hkSwellControl( l, i ) +
+		( -3.0 * f3 + 3.0 * f2 + 3.0 * f + 1.0 ) * hkSwellControl( l, i + 1 ) +
+		f3 * hkSwellControl( l, i + 2 )
+	) / 6.0;
+}
 // The stretch marks' weight at this pixel, 0 to 1: the mask and the layer's strength, the
 // marks where the ridge noise passes the threshold that the amount sets (the mask scales the
 // amount, so the sites' density follows it), faded out where the streaks are finer than a pixel.
@@ -430,12 +456,16 @@ float hkDetailHeight( vec2 uv ) {
 			H -= g.x * head.x * head.z * lineFade * s * s * ( 3.0 - 2.0 * s );
 			continue;
 		}
-		if ( kind != 2 && kind != 3 && kind != 5 && kind != 7 && kind != 8 && kind != 9 ) continue;
+		if ( kind != 2 && kind != 3 && kind != 5 && kind != 7 && kind != 8 && kind != 9 && kind != 10 ) continue;
 		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
 		if ( head.x <= 0.0 ) continue;
 		vec2 f = hkFields( l, uv );
 		float a = f.x * head.x;
-		if ( kind == 9 ) {
+		if ( kind == 10 ) {
+			// A swell: the smooth cross-section, faded by the smootherstep of the mask per pixel, so
+			// it leaves the skin with no outline where the mask ends (swellHeight in layers.ts).
+			H += head.x * head.z * hkSmootherstep( f.x ) * hkSwellProfile( l, f.y );
+		} else if ( kind == 9 ) {
 			// A stretch mark is a shallow atrophic dip: depth is the layer's height.
 			H -= head.z * hkStriaeWeight( l, head, f, uv );
 		} else if ( kind == 2 || kind == 7 || kind == 8 ) {

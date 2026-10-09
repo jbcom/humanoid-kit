@@ -337,22 +337,64 @@ function joint(assets: HumanoidAssets, name: string): [number, number, number] {
 }
 
 /**
- * The collarbones: a ridge on each clavicle's axis between two grooves, the
- * fossae above and below it, drawn as two periods of a crease layer across the
- * bone. The coordinate is the signed distance up from the axis, in the skin's
- * plane, in periods (`CLAVICLE_PERIOD`): the ridge is at coordinate 0.5, the
- * grooves at 0.25 and 0.75, and the window is flat at 0 and 1. The mask
- * tapers where the bone meets the breastbone and the shoulder, and over skin
- * that does not face up and forward.
+ * The collarbones: a swell layer (`swellHeight`), a smooth rounded ridge over
+ * each clavicle with the supraclavicular fossa, a hollow, above it, and no
+ * groove or outline anywhere. The coordinate is the signed distance up from
+ * the bone across the skin, from `CLAVICLE_BELOW` under it (0) to
+ * `CLAVICLE_ABOVE` over it (1); the cross-section (`CLAVICLE_PROFILE`) is flat
+ * at both ends. The bone is S-shaped, bowed forward over its inner two thirds
+ * and back over its outer third (`clavicleBow`), so the ridge follows the S.
+ * The mask tapers where the bone meets the breastbone and the shoulder, and
+ * over skin that does not face up and forward; the shader fades the relief by
+ * the smootherstep of the mask per pixel, so its edge leaves no step.
  */
-export const CLAVICLE_PERIODS = 2;
-/** Groove to ridge to groove, metres (CHOICE: a collarbone's width, with the hollows either side). */
-const CLAVICLE_PERIOD = 0.016;
+/** The window's reach below the bone's line across the skin, metres (CHOICE: the ridge's lower flank). */
+const CLAVICLE_BELOW = 0.02;
+/** The window's reach above the bone's line, metres (CHOICE: the ridge's upper flank and the supraclavicular fossa, 2 to 3 cm wide). */
+const CLAVICLE_ABOVE = 0.04;
+/**
+ * The cross-section, below to above (CHOICE, shaped on lean figures' photographs): flat,
+ * the ridge over the bone a millimetre above its line (the spline's peak, about 0.75),
+ * then the fossa's hollow (about -0.45) 2 to 3 cm above it, and flat again.
+ */
+export const CLAVICLE_PROFILE = [0, 0, 0.9, 0.8, -0.3, -0.6, 0, 0] as const;
 /** The relief of a collarbone on a lean figure, metres (CHOICE: bone is 6 to 10 mm proud of the hollows; a shading cue is a fraction of it). */
 export const CLAVICLE_RELIEF_HEIGHT = 0.0012;
+/** How far the clavicle bows forward over its inner part and back over its outer part, metres (CHOICE from its S shape seen from above). */
+const CLAVICLE_BOW_MEDIAL = 0.008;
+const CLAVICLE_BOW_LATERAL = 0.005;
+/** Where along the bone (0 at the breastbone) the bow turns from forward to back (its inner two thirds and outer third). */
+const CLAVICLE_BOW_TURN = 0.6;
 
 /** The direction from a collarbone out through the skin over it: forward and up (a unit vector). */
 const CLAVICLE_OUTWARD = [0, 0.5, 0.866] as const;
+
+/** How far forward of its straight axis the S-shaped clavicle lies at `t` along it (0 at the breastbone), metres. */
+export function clavicleBow(t: number): number {
+  if (t <= 0 || t >= 1) return 0;
+  return t < CLAVICLE_BOW_TURN
+    ? CLAVICLE_BOW_MEDIAL * Math.sin((Math.PI * t) / CLAVICLE_BOW_TURN)
+    : -CLAVICLE_BOW_LATERAL *
+        Math.sin((Math.PI * (t - CLAVICLE_BOW_TURN)) / (1 - CLAVICLE_BOW_TURN));
+}
+
+/**
+ * The clavicle's outer (acromial) end. The rig's clavicle bone stops at the shoulder
+ * bone's head, about halfway along the real collarbone, and the shoulder bone runs on
+ * down to the head of the humerus; the collarbone itself runs out over it to the
+ * acromion, at the shoulder bone's tail's width, rising on along its own slope by half
+ * as much again (CHOICE: the bone's outer end is a little higher than its middle).
+ */
+export function clavicleLateralEnd(
+  assets: HumanoidAssets,
+  side: "L" | "R",
+): [number, number, number] {
+  const head = joint(assets, `clavicle.${side}____head`);
+  const mid = joint(assets, `clavicle.${side}____tail`);
+  const shoulder = joint(assets, `shoulder01.${side}____tail`);
+  const run = Math.abs(shoulder[0] - mid[0]) / Math.max(1e-6, Math.abs(mid[0] - head[0]));
+  return [shoulder[0], mid[1] + 0.5 * run * (mid[1] - head[1]), mid[2]];
+}
 
 export function clavicleFields(assets: HumanoidAssets): SkinLayerFields {
   return once(assets, "clavicles", () => {
@@ -361,11 +403,12 @@ export function clavicleFields(assets: HumanoidAssets): SkinLayerFields {
     const onBody = bodySurface(assets);
     const mask = new Float32Array(n);
     const coord = new Float32Array(n);
+    const window = CLAVICLE_BELOW + CLAVICLE_ABOVE;
     // The skin lies in front of and above the bone: out from the bone along this.
     const out = CLAVICLE_OUTWARD;
-    for (const side of ["L", "R"]) {
+    for (const side of ["L", "R"] as const) {
       const head = joint(assets, `clavicle.${side}____head`);
-      const tail = joint(assets, `clavicle.${side}____tail`);
+      const tail = clavicleLateralEnd(assets, side);
       const axis = [0, 1, 2].map((k) => (tail[k] as number) - (head[k] as number));
       const len2 = axis.reduce((a, x) => a + x * x, 0);
       // Up across the bone, in the cross-section the outward direction and the axis leave: a
@@ -383,18 +426,23 @@ export function clavicleFields(assets: HumanoidAssets): SkinLayerFields {
         if ((P[v * 3] as number) >= 0 !== (side === "L")) continue;
         const p = [0, 1, 2].map((k) => (P[v * 3 + k] as number) - (head[k] as number));
         const t = p.reduce((a, x, k) => a + x * (axis[k] as number), 0) / len2;
+        // Relative to the S-shaped bone at this place along it, not its straight axis.
+        p[2] = (p[2] as number) - clavicleBow(t);
         const d = p.reduce((a, x, k) => a + x * (across[k] as number), 0);
-        // The coordinate is the height over the bone's own line, held at 0 and 1 (a flat) far above
-        // and below it, so no triangle on the mask's edge sweeps through grooves it skips.
-        coord[v] = Math.min(1, Math.max(0, 0.5 + d / (CLAVICLE_PERIODS * CLAVICLE_PERIOD)));
+        // The coordinate is the height over the bone's own line, held at 0 and 1 (the flat ends of
+        // the cross-section) beyond the window, so no triangle on the mask's edge sweeps through it.
+        coord[v] = Math.min(1, Math.max(0, (d + CLAVICLE_BELOW) / window));
         if (t < 0 || t > 1) continue;
         const height = p.reduce((a, x, k) => a + x * (out[k] as number), 0);
-        // Over the bone, not behind it: the skin is a few millimetres to three centimetres out.
-        const over = smoothstep(0, 0.008, height) * (1 - smoothstep(0.03, 0.045, height));
+        // Over the bone and the fossa, not the back: the skin over the bone is a few millimetres
+        // to three centimetres out, and the fossa lies above and a little behind it (its skin up
+        // to 1.5 cm behind the bone's line along the outward direction).
+        const over = smoothstep(-0.02, -0.008, height) * (1 - smoothstep(0.03, 0.045, height));
         const w =
           smoothstep(0.04, 0.18, t) *
           (1 - smoothstep(0.78, 0.96, t)) *
-          (1 - smoothstep(0.75 * CLAVICLE_PERIOD, CLAVICLE_PERIOD, Math.abs(d))) *
+          smoothstep(-CLAVICLE_BELOW, -0.6 * CLAVICLE_BELOW, d) *
+          (1 - smoothstep(0.75 * CLAVICLE_ABOVE, CLAVICLE_ABOVE, d)) *
           over;
         if (w > (mask[v] as number)) mask[v] = w;
       }
@@ -406,13 +454,15 @@ export function clavicleFields(assets: HumanoidAssets): SkinLayerFields {
 export const CLAVICLE_LAYER: DetailLayer = {
   id: "clavicles",
   kind: "detail",
-  pattern: "creases",
+  pattern: "swell",
   targets: [],
   fields: clavicleFields,
   paint: (input) => ({
     strength: clavicleDefinition(figureBuild(input)),
     height: CLAVICLE_RELIEF_HEIGHT,
-    size: CLAVICLE_PERIODS,
+    // A swell has no period; the size is unused.
+    size: 1,
+    profile: CLAVICLE_PROFILE,
   }),
 };
 

@@ -3051,10 +3051,21 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   of that between a fat at which it does not (`CLAVICLE_VISIBLE_FAT`,
   `RIB_VISIBLE_FAT`: ribs only on the leanest) and one at which it does, so the
   relief's strength is the figure's own; a heavy figure's collarbones and ribs
-  are flat. The collarbone is two periods of a crease layer across the bone: a
-  ridge on the clavicle's axis between the fossae above and below it, the
-  coordinate the distance up the bone's own cross-section, so a point straight
-  out from the bone is the ridge; a rib is the groove between two, nine
+  are flat. The collarbone is a swell layer (detail kind 10, `swellHeight`): a
+  smooth signed cross-section, the cubic B-spline through eight control values
+  in the stops, with a rounded ridge over the bone and the supraclavicular
+  fossa's hollow 2 to 3 cm above it, flat at both ends. Its coordinate is the
+  distance up the bone's own cross-section, from 2 cm below the bone to 4 cm
+  above, measured from the S-shaped bone (bowed forward over its inner two
+  thirds, back over its outer third), not its straight axis. The bone runs
+  from the rig's clavicle head out to the acromion (`clavicleLateralEnd`): the
+  rig's clavicle bone stops halfway, at the shoulder bone's head, so the first
+  layer drew only the inner half. It was two
+  grooves of a crease layer, and the grooves read as a hard outline round a
+  raised crescent; a swell has no groove, and the shader fades it by the
+  smootherstep of the mask per pixel, so the mask's edge leaves no step (a test
+  walks every edge the mask touches in half-millimetre pixels and bounds the
+  change between neighbours). A rib is the groove between two, nine
   periods down a window from the second rib to the tenth, along lines that fall
   25 degrees outward from the breastbone, and the breast, the arms and the
   breastbone's strip are left out.

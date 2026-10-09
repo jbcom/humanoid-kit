@@ -6,7 +6,13 @@
  */
 import { DataUtils } from "three";
 import { afterAll, describe, expect, it } from "vitest";
-import { creaseHeight, lineRelief, type SkinLayer, STOP_COUNT } from "../../src/surface/layers.ts";
+import {
+  creaseHeight,
+  lineRelief,
+  type SkinLayer,
+  STOP_COUNT,
+  swellHeight,
+} from "../../src/surface/layers.ts";
 import {
   orientationAtCoordinate,
   orientationCoordinate,
@@ -252,6 +258,55 @@ describe("profiled detail layers", () => {
     expect(Array.from(render([tubercles(0.4)], at(0)))).toEqual(
       Array.from(render([tubercles(0.4)], at(0))),
     );
+  });
+});
+
+describe("swell layers", () => {
+  const PROFILE = [0, 0, 0.9, 0.8, -0.3, -0.6, 0, 0];
+  const swell = (height: number, strength = 1): SkinLayer => ({
+    id: "swell",
+    kind: "detail",
+    pattern: "swell",
+    targets: [],
+    fields: noFields,
+    paint: () => ({ strength, height, size: 1, profile: PROFILE }),
+  });
+
+  it("raises the cross-section the reference gives: the shading follows its slope", () => {
+    const flat = render([]);
+    const raised = render([swell(0.05)]);
+    const change = Array.from(
+      { length: SIZE },
+      (_, x) => (raised[(SIZE / 2) * SIZE + x] as number) - (flat[(SIZE / 2) * SIZE + x] as number),
+    );
+    // The plane is 2 m across and its coordinate runs 0..1 along it; the mask is 1.
+    const slope = Array.from({ length: SIZE }, (_, x) => {
+      const c = (x + 0.5) / SIZE;
+      const e = 1e-4;
+      return (
+        (swellHeight(0.05, PROFILE, c + e, 1) - swellHeight(0.05, PROFILE, c - e, 1)) / (2 * e * 2)
+      );
+    });
+    let sxy = 0;
+    let sxx = 0;
+    for (let x = 0; x < SIZE; x++) {
+      sxy += (slope[x] as number) * (change[x] as number);
+      sxx += (slope[x] as number) ** 2;
+    }
+    const scale = sxy / sxx;
+    let residual = 0;
+    let energy = 0;
+    for (let x = 0; x < SIZE; x++) {
+      residual += ((change[x] as number) - scale * (slope[x] as number)) ** 2;
+      energy += (change[x] as number) ** 2;
+    }
+    // Light from +x: where the relief rises along x it faces away, and darkens.
+    expect(scale).toBeLessThan(0);
+    expect(Math.sqrt(residual / energy)).toBeLessThan(0.12);
+  });
+
+  it("draws nothing at no strength", () => {
+    expect(Array.from(render([swell(0.05, 0)]))).toEqual(Array.from(render([])));
   });
 });
 

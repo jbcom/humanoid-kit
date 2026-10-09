@@ -8,6 +8,8 @@ import {
   type SkinPaintInput,
   STOP_COUNT,
   STOP_TABLE_WIDTH,
+  swellHeight,
+  swellProfile,
 } from "../src/surface/layers.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import { bodySurface } from "../src/surface/regions/once.ts";
@@ -20,7 +22,10 @@ import {
   areolaStretch,
   areolaZone,
   CLAVICLE_LAYER,
-  CLAVICLE_PERIODS,
+  CLAVICLE_PROFILE,
+  CLAVICLE_RELIEF_HEIGHT,
+  clavicleBow,
+  clavicleLateralEnd,
   LINEA_ALBA_LAYER,
   LINEA_NIGRA_LAYER,
   MONTGOMERY_LAYER,
@@ -315,7 +320,7 @@ describe("the collarbones' and ribs' relief", () => {
     /** Distance from the segment head-tail, and the vertex's height over the axis in the plane facing up. */
     const along = (side: "L" | "R", v: number) => {
       const h = joint(`clavicle.${side}____head`);
-      const t = joint(`clavicle.${side}____tail`);
+      const t = clavicleLateralEnd(assets, side);
       const axis = [0, 1, 2].map((k) => (t[k] as number) - (h[k] as number));
       const len = Math.hypot(...axis);
       const p = [0, 1, 2].map((k) => (P[v * 3 + k] as number) - (h[k] as number));
@@ -328,12 +333,93 @@ describe("the collarbones' and ribs' relief", () => {
       return { dist: Math.hypot(...off), s, up: off[1] as number };
     };
 
-    it("is a creases layer of two periods: a ridge between two grooves, by the collarbone", () => {
+    it("is a swell: a smooth ridge over the bone, the fossa's hollow above it, flat at both ends", () => {
       expect(CLAVICLE_LAYER.kind).toBe("detail");
-      expect(CLAVICLE_LAYER.pattern).toBe("creases");
+      expect(CLAVICLE_LAYER.pattern).toBe("swell");
       const t = paintStopTable([CLAVICLE_LAYER], paint({ build: lean }));
-      expect(t[1]).toBe(3);
-      expect(t[3]).toBe(CLAVICLE_PERIODS);
+      expect(t[1]).toBe(10);
+      // The stops' red channel is the cross-section.
+      const controls = Array.from({ length: STOP_COUNT }, (_, k) => t[(k + 1) * 4] as number);
+      for (const [k, x] of controls.entries())
+        expect(x).toBeCloseTo(CLAVICLE_PROFILE[k] as number, 6);
+      const section = Array.from({ length: 201 }, (_, k) => swellProfile(controls, k / 200));
+      const peak = section.indexOf(Math.max(...section));
+      const pit = section.indexOf(Math.min(...section));
+      // One ridge, then one hollow above it: the bone's line is at coordinate 1/3 (2 cm of 6).
+      expect(peak / 200).toBeGreaterThan(0.25);
+      expect(peak / 200).toBeLessThan(0.45);
+      expect(pit).toBeGreaterThan(peak);
+      expect(section[peak]).toBeGreaterThan(0.6);
+      expect(section[pit]).toBeLessThan(-0.3);
+      // No groove below the ridge, and nothing at all at the window's ends.
+      expect(Math.min(...section.slice(0, peak))).toBeGreaterThanOrEqual(0);
+      expect(section[0]).toBe(0);
+      expect(section[200]).toBe(0);
+      // Smooth: no kink between neighbouring samples (the second difference stays small).
+      for (let k = 1; k < 200; k++)
+        expect(
+          Math.abs(
+            (section[k + 1] as number) - 2 * (section[k] as number) + (section[k - 1] as number),
+          ),
+        ).toBeLessThan(0.01);
+    });
+
+    it("is S-shaped: the bone bows forward over its inner part and back over its outer part", () => {
+      expect(clavicleBow(0)).toBe(0);
+      expect(clavicleBow(1)).toBe(0);
+      expect(clavicleBow(0.3)).toBeGreaterThan(0.005);
+      expect(clavicleBow(0.8)).toBeLessThan(-0.003);
+    });
+
+    it("runs the whole collarbone, out past the rig's clavicle bone to the shoulder", () => {
+      // The rig's clavicle stops halfway; the bone itself reaches the acromion.
+      const mid = joint("clavicle.L____tail")[0] as number;
+      const end = clavicleLateralEnd(assets, "L")[0];
+      expect(end).toBeCloseTo(joint("shoulder01.L____tail")[0] as number, 6);
+      // On both sides (the base mesh's vertices are about a centimetre apart).
+      const outer = [...Array(n).keys()].filter(
+        (v) =>
+          (f.mask[v] as number) > 0.3 && Math.abs(P[v * 3] as number) > mid + 0.1 * (end - mid),
+      );
+      expect(outer.length).toBeGreaterThanOrEqual(4);
+    });
+
+    it("leaves the skin with no outline: the relief has no step anywhere across its mask's edge", () => {
+      // The atlas interpolates the mask and the coordinate linearly along each edge of the mesh,
+      // and the shader computes the relief per pixel from them. Walk every edge the mask touches in
+      // half-millimetre pixels: the relief between neighbouring pixels may change by no more than a
+      // smooth slope's share. A relief cut off at the mask's edge, or a narrow groove, is a step.
+      const faces = groupFaces(assets, "body");
+      const controls = [...CLAVICLE_PROFILE];
+      const H = CLAVICLE_RELIEF_HEIGHT;
+      const PIXEL = 0.0005;
+      let worst = 0;
+      let edgesAtRim = 0;
+      for (const q of faces)
+        for (let k = 0; k < 4; k++) {
+          const a = assets.faceVerts[q * 4 + k] as number;
+          const b = assets.faceVerts[q * 4 + ((k + 1) % 4)] as number;
+          const [ma, mb] = [f.mask[a] as number, f.mask[b] as number];
+          if (ma === 0 && mb === 0) continue;
+          if (ma === 0 || mb === 0) edgesAtRim++;
+          const length = Math.hypot(
+            ...[0, 1, 2].map((c) => (P[a * 3 + c] as number) - (P[b * 3 + c] as number)),
+          );
+          const steps = Math.max(1, Math.ceil(length / PIXEL));
+          let prev = swellHeight(H, controls, coord[a] as number, ma);
+          for (let s = 1; s <= steps; s++) {
+            const x = s / steps;
+            const m = ma + (mb - ma) * x;
+            const c = (coord[a] as number) + ((coord[b] as number) - (coord[a] as number)) * x;
+            const h = swellHeight(H, controls, c, m);
+            worst = Math.max(worst, Math.abs(h - prev) / (length / steps / PIXEL));
+            prev = h;
+          }
+        }
+      expect(edgesAtRim).toBeGreaterThan(20);
+      // At most 5% of the relief's height per half-millimetre pixel: a gentle flank. The two
+      // narrow grooves this replaced changed by up to 14% of theirs.
+      expect(worst / H).toBeLessThan(0.05);
     });
 
     it("lies along each collarbone and nowhere else, mirrored", () => {
@@ -343,7 +429,8 @@ describe("the collarbones' and ribs' relief", () => {
         count++;
         const side = (P[v * 3] as number) >= 0 ? "L" : "R";
         const a = along(side, v);
-        expect(a.dist, `vertex ${v}`).toBeLessThan(0.03);
+        // Within the fossa's reach above the bone, 4 cm, and the S bow's 8 mm.
+        expect(a.dist, `vertex ${v}`).toBeLessThan(0.045);
         expect(a.s, `vertex ${v}`).toBeGreaterThan(0.02);
         expect(a.s, `vertex ${v}`).toBeLessThan(0.98);
       }
@@ -357,9 +444,9 @@ describe("the collarbones' and ribs' relief", () => {
       expect(Math.abs(left - right)).toBeLessThanOrEqual(2);
     });
 
-    it("runs its coordinate across the bone: higher on the chest is greater, and a ridge lies between grooves", () => {
+    it("runs its coordinate across the bone: higher on the chest is greater, from below the bone to the fossa", () => {
       const head = joint("clavicle.L____head");
-      const tail = joint("clavicle.L____tail");
+      const tail = clavicleLateralEnd(assets, "L");
       const vs = [...Array(n).keys()].filter(
         (v) => (f.mask[v] as number) > 0.3 && (P[v * 3] as number) > 0,
       );
@@ -381,9 +468,9 @@ describe("the collarbones' and ribs' relief", () => {
           rise.reduce((a, r) => a + (r - mr) ** 2, 0) * c.reduce((a, x) => a + (x - mc) ** 2, 0),
         );
       expect(corr).toBeGreaterThan(0.7);
-      // Grooves either side of the ridge at 0.5: the coordinate reaches both.
-      expect(Math.min(...c)).toBeLessThan(0.42);
-      expect(Math.max(...c)).toBeGreaterThan(0.58);
+      // The window spans the ridge's lower flank (below 1/3, the bone's line) and the fossa above.
+      expect(Math.min(...c)).toBeLessThan(0.25);
+      expect(Math.max(...c)).toBeGreaterThan(0.6);
     });
 
     it("shows by the figure's body fat: none on a heavy figure, the full relief on a lean one", () => {
@@ -893,8 +980,9 @@ describe("the relief layers' coordinates are continuous", () => {
 
   /** Per layer, the steepest the coordinate runs, per metre. */
   const GRADIENT = [
-    // Up the bone's cross-section, one period of 16 mm per period of the coordinate.
-    [CLAVICLE_LAYER, 1 / (CLAVICLE_PERIODS * 0.016)],
+    // Up the bone's cross-section, a window of 6 cm, steepened along the bone by its S bow
+    // (forward by up to 8 mm over a few centimetres, half of it across the skin).
+    [CLAVICLE_LAYER, Math.hypot(1, 0.3) / 0.06],
     // Down the window of nine periods of 3 cm, along a line that falls 0.47 per metre outward.
     [RIB_LAYER, Math.hypot(1, 0.47) / (RIB_PERIODS * 0.03)],
     // Across the strip, its width.
