@@ -1,9 +1,11 @@
 # Presence: what a figure tells the world
 
 Status: being implemented (`src/presence`). The registry, the helpers,
-`presenceFromEvaluation` (presence derived from a figure's evaluation) and the
+`presenceFromEvaluation` (presence derived from a figure's evaluation), the
 React bindings (`PresenceProvider`, `<Humanoid presence>`, `usePresence`,
-`useProximity`) are done and tested. It is the shared foundation for the milestone 8 animation work
+`useProximity`) and the first consumer, the studio stage's pooled ground
+contact shadow, are done and tested (unit and browser). Face metering has no consumer yet. It is the shared
+foundation for the milestone 8 animation work
 (awareness and interactions) and for environment-driven lighting and shadows.
 
 ## Why
@@ -100,6 +102,19 @@ In React, `<Humanoid presence>` registers the figure; `usePresence()` and
   footprint into contact points; the ground is darkened by the strongest point
   that reaches it, never the sum, so figures walking together share one shadow
   that separates as they part.
+- **The stage pools the shadow in a ground shader, not a texture.**
+  `StudioStage` draws every figure's contact shadow as one quad whose fragment
+  shader evaluates the same smoothstep and `max` as `sampleGroundOcclusion`
+  over a uniform array (128 contacts), refreshed right after the registry
+  ticks. The alternative was a `DataTexture` filled each frame by sampling
+  `sampleGroundOcclusion` on a grid. The shader is resolution independent (no
+  texel blur or grid to size to the ground), uploads a few hundred bytes per
+  frame instead of a texture, and the browser test can compare its pixels with
+  the framework-free function exactly; a texture needs a grid fine enough for a
+  foot-sized contact over a studio-sized ground, re-sampled on the CPU every
+  frame. Contacts beyond the 128 slots are ignored (two feet per figure, so 64
+  figures), documented and reported by `setContacts`. Without a provider the
+  stage keeps drei's `ContactShadows`.
 - **Face metering reports; it does not expose.** Following
   `research/SKIN-RENDERING.md` §4.4, `faceMetering` gives each face's metering
   region, measured reflectance and intended zone (`skinZoneEV = log2(Y /

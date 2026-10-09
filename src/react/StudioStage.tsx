@@ -5,7 +5,10 @@
  * contact shadow on the floor.
  *
  * Fill and ambient are neutral on purpose: cool fill pushes deep skin toward
- * grey ("ashy"). Render it with `STUDIO_TONE_MAPPING` and `STUDIO_EXPOSURE`.
+ * grey ("ashy"). Inside a `PresenceProvider` the contact shadow is the pooled
+ * ground field of every published figure (presence is what tells the stage
+ * where the figures stand); without one it falls back to drei's
+ * `ContactShadows` around the origin. Render it with `STUDIO_TONE_MAPPING` and `STUDIO_EXPOSURE`.
  * They were chosen by measuring rendered faces against the measured albedo at
  * five melanin levels: Neutral keeps lightness, hue and chroma within a few
  * units with the same offset at every tone, while AgX lifted the deepest skin
@@ -17,9 +20,12 @@
  */
 import { ContactShadows } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { NeutralToneMapping, PMREMGenerator } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { groundOcclusion } from "../presence/presence.ts";
+import { GroundContactMaterial } from "../render/groundContact.ts";
+import { usePresenceContext } from "./presence.tsx";
 
 /** The tone mapping the stage is validated with. */
 export const STUDIO_TONE_MAPPING = NeutralToneMapping;
@@ -31,6 +37,8 @@ export interface StudioStageProps {
   background?: string | null;
   /** Scales every light together. */
   intensity?: number;
+  /** Darkness of the contact shadow under the figures at its centre, 0 to 1. Default 0.5. */
+  contactShadowOpacity?: number;
 }
 
 /** Image-based lighting from a procedural studio room, prefiltered once. */
@@ -62,7 +70,41 @@ function RoomLighting({ intensity }: { intensity: number }) {
   return null;
 }
 
-export function StudioStage({ background = "#1b2530", intensity = 1 }: StudioStageProps) {
+/** Side of the square the pooled contact shadow is drawn on, metres: more than any studio shot sees. */
+const GROUND_SIZE = 40;
+
+/**
+ * The contact shadow of every published figure as one field on the ground: the
+ * strongest contact at each point (`groundOcclusion`, pooled with max in the
+ * shader), so figures walking together share a shadow that separates as they
+ * part and overlap never darkens twice. Redrawn each frame from the registry,
+ * right after it ticks.
+ */
+function PooledContactShadows({ opacity }: { opacity: number }) {
+  const presence = usePresenceContext();
+  const material = useMemo(() => new GroundContactMaterial(), []);
+  useEffect(() => () => material.dispose(), [material]);
+  useEffect(
+    () =>
+      presence?.afterTick((registry) => {
+        material.setContacts(groundOcclusion(registry.all(), { strength: opacity }));
+      }),
+    [presence, material, opacity],
+  );
+  return (
+    // Drawn before other transparent parts (eyes, hair): the ground is behind them all.
+    <mesh rotation-x={-Math.PI / 2} position-y={0.0005} renderOrder={-1} material={material}>
+      <planeGeometry args={[GROUND_SIZE, GROUND_SIZE]} />
+    </mesh>
+  );
+}
+
+export function StudioStage({
+  background = "#1b2530",
+  intensity = 1,
+  contactShadowOpacity = 0.5,
+}: StudioStageProps) {
+  const pooled = usePresenceContext() !== null;
   return (
     <>
       {background !== null && <color attach="background" args={[background]} />}
@@ -79,7 +121,17 @@ export function StudioStage({ background = "#1b2530", intensity = 1 }: StudioSta
       <directionalLight position={[-2.6, 1.6, 2.2]} intensity={0.7 * intensity} color="#ffffff" />
       <directionalLight position={[-1.2, 2.4, -3]} intensity={1.6 * intensity} color="#ffffff" />
       <RoomLighting intensity={0.22 * intensity} />
-      <ContactShadows position={[0, 0, 0]} opacity={0.5} scale={4} blur={2.4} far={1.5} />
+      {pooled ? (
+        <PooledContactShadows opacity={contactShadowOpacity} />
+      ) : (
+        <ContactShadows
+          position={[0, 0, 0]}
+          opacity={contactShadowOpacity}
+          scale={4}
+          blur={2.4}
+          far={1.5}
+        />
+      )}
     </>
   );
 }

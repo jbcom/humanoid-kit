@@ -332,6 +332,15 @@ a figure moved by anything in the scene graph is followed with no props
 changing. Readers pull (`usePresence` is a live accessor) and subscribe only to
 discrete events (`useProximity`).
 
+`StudioStage` is the first consumer. Inside a provider it draws the contact
+shadow as one quad whose fragment shader (`GroundContactMaterial`) evaluates
+`sampleGroundOcclusion`'s formula (a smoothstep falloff per contact, combined
+with `max`) over a uniform array refreshed right after each tick from
+`groundOcclusion(registry.all())`. One pass over one quad is what makes the
+pool: separate per-figure shadows would blend over each other and darken the
+overlap twice. A browser test renders the shader from above and compares its
+pixels with `sampleGroundOcclusion`.
+
 ## Layers
 
 | Folder | Role | React or DOM |
@@ -348,7 +357,7 @@ discrete events (`useProximity`).
 | `src/presence` | Presence registry, helpers, and presence derived from an evaluation | no |
 | `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
-| `src/render` | The skin and eye materials | three.js, no React |
+| `src/render` | The skin and eye materials, the pooled ground contact shader | three.js, no React |
 | `src/react` | `HumanoidProvider`, `Humanoid`, `StudioStage` and hooks | yes |
 | `src/editor/ui` | `HumanoidCreator` and its panels | yes |
 

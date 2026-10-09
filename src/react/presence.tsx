@@ -40,6 +40,12 @@ interface PresenceContextValue {
   registry: PresenceRegistry;
   /** Registers a publisher to run each frame; returns the function that stops it. */
   track(publisher: PresencePublisher): () => void;
+  /**
+   * Registers a consumer to run each frame right after the registry ticks, so
+   * it sees every figure's placement from this very frame. Returns the function
+   * that stops it.
+   */
+  afterTick(consumer: (registry: PresenceRegistry) => void): () => void;
 }
 
 const PresenceContext = createContext<PresenceContextValue | null>(null);
@@ -61,6 +67,7 @@ export function PresenceProvider({
 }) {
   const owned = useMemo(() => registry ?? createPresenceRegistry(), [registry]);
   const publishers = useRef(new Set<PresencePublisher>());
+  const consumers = useRef(new Set<(registry: PresenceRegistry) => void>());
   const value = useMemo<PresenceContextValue>(
     () => ({
       registry: owned,
@@ -68,6 +75,12 @@ export function PresenceProvider({
         publishers.current.add(publisher);
         return () => {
           publishers.current.delete(publisher);
+        };
+      },
+      afterTick(consumer) {
+        consumers.current.add(consumer);
+        return () => {
+          consumers.current.delete(consumer);
         };
       },
     }),
@@ -79,6 +92,7 @@ export function PresenceProvider({
       if (presence) owned.set(presence);
     }
     owned.tick(state.clock.elapsedTime);
+    for (const consume of consumers.current) consume(owned);
   });
   return <PresenceContext.Provider value={value}>{children}</PresenceContext.Provider>;
 }

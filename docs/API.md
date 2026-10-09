@@ -434,7 +434,7 @@ change every render without resubscribing.
 The nearest provider's registry, for `groundOcclusion`, `faceMetering` and
 `presenceGroups`. All the presence hooks throw outside a `PresenceProvider`.
 
-### `<StudioStage background? intensity? />`
+### `<StudioStage background? intensity? contactShadowOpacity? />`
 
 A neutral studio for showing figures: a procedural room environment
 (three.js `RoomEnvironment`, prefiltered once, no network request), a key light
@@ -443,6 +443,16 @@ the canvas settings it was measured with: `STUDIO_TONE_MAPPING`
 (`NeutralToneMapping`) and `STUDIO_EXPOSURE` (1.15). `background` is a CSS
 colour (`null` leaves the canvas background alone); `intensity` scales every
 light together. It restores the scene environment it replaced on unmount.
+
+The contact shadow under the figures follows presence. Inside a
+`PresenceProvider` it is one ground field built from every published figure's
+footprint (`groundOcclusion`), drawn by a single shader that takes the
+strongest contact at each point: figures walking together share one shadow that
+separates as they part, and where they overlap the ground is no darker than
+under one figure. `contactShadowOpacity` (0 to 1, default 0.5) is its darkness
+at the centre of a contact. It holds up to 128 contacts (64 figures); more are
+ignored. Outside a provider the stage falls back to drei's `ContactShadows`
+around the origin.
 
 ## `humanoid-kit/editor`
 
