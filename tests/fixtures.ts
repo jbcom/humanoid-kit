@@ -32,9 +32,9 @@ let withAdult: HumanoidAssets | undefined;
 
 export const bodyPackData = () => ({
   manifest: bodyManifest,
-  body: readPackFile(path.join(bodyDir, bodyManifest.body.file)),
+  body: readGzipPackFile(path.join(bodyDir, bodyManifest.body.file)),
   targets: readGzipPackFile(path.join(bodyDir, bodyManifest.targets.file)),
-  attachments: readPackFile(path.join(bodyDir, bodyManifest.attachments.file)),
+  attachments: readGzipPackFile(path.join(bodyDir, bodyManifest.attachments.file)),
 });
 
 export const adultPackData = () => ({

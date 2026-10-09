@@ -123,9 +123,9 @@ try {
         "README.md",
         "data/manifest.json",
         "data/PROVENANCE.md",
-        "data/body.bin",
+        "data/body.bin.gz",
         "data/targets.bin.gz",
-        "data/attachments.bin",
+        "data/attachments.bin.gz",
       ],
     ],
     [

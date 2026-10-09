@@ -66,9 +66,9 @@ describe("loadHumanoidAssets", { timeout: 60_000 }, () => {
   });
 
   it("reports a failed fetch and a missing per-file URL", async () => {
-    stubFetch({ missing: "attachments.bin" });
+    stubFetch({ missing: "attachments.bin.gz" });
     await expect(loadHumanoidAssets({ body: "http://packs/body" })).rejects.toThrow(
-      /attachments\.bin failed: 404 Not Found/,
+      /attachments\.bin\.gz failed: 404 Not Found/,
     );
     stubFetch();
     await expect(

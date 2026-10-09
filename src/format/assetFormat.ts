@@ -503,9 +503,9 @@ export async function loadHumanoidAssets(options: LoadOptions): Promise<Humanoid
     });
   const adult = options.adultAnatomy === undefined ? undefined : packResolver(options.adultAnatomy);
   const [bodyBin, targets, attachments, adultData] = await Promise.all([
-    bin(body.file(manifest.body.file)),
+    gz(body.file(manifest.body.file)),
     gz(body.file(manifest.targets.file)),
-    bin(body.file(manifest.attachments.file)),
+    gz(body.file(manifest.attachments.file)),
     adult === undefined
       ? Promise.resolve(undefined)
       : fetchOk(adult.manifest)

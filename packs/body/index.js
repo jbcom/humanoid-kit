@@ -6,11 +6,11 @@
 export const bodyPack = {
 	manifest: new URL("./data/manifest.json", import.meta.url).href,
 	files: {
-		"attachments.bin": new URL("./data/attachments.bin", import.meta.url).href,
-		"body.bin": new URL("./data/body.bin", import.meta.url).href,
-		"eyes_high-poly_brown_eye.png": new URL("./data/eyes_high-poly_brown_eye.png", import.meta.url).href,
+		"attachments.bin.gz": new URL("./data/attachments.bin.gz", import.meta.url).href,
+		"body.bin.gz": new URL("./data/body.bin.gz", import.meta.url).href,
+		"eyes_high-poly_brown_eye.webp": new URL("./data/eyes_high-poly_brown_eye.webp", import.meta.url).href,
 		"targets.bin.gz": new URL("./data/targets.bin.gz", import.meta.url).href,
-		"teeth_base_teeth.png": new URL("./data/teeth_base_teeth.png", import.meta.url).href,
-		"tongue_base_tongue01_diffuse.png": new URL("./data/tongue_base_tongue01_diffuse.png", import.meta.url).href,
+		"teeth_base_teeth.webp": new URL("./data/teeth_base_teeth.webp", import.meta.url).href,
+		"tongue_base_tongue01_diffuse.webp": new URL("./data/tongue_base_tongue01_diffuse.webp", import.meta.url).href,
 	},
 };

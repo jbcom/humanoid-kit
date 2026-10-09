@@ -7,6 +7,8 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { gzipSync } from "node:zlib";
+import sharp from "sharp";
 import type { CompiledAsset } from "./compileAsset.ts";
 
 export interface AttachmentEntry {
@@ -23,8 +25,30 @@ export interface AttachmentEntry {
 
 export const sha256 = (buf: Uint8Array) => createHash("sha256").update(buf).digest("hex");
 
-/** Packs attachment arrays into one 4-byte-aligned binary and copies their textures. */
-export function writeAttachments(dataDir: string, file: string, assets: readonly CompiledAsset[]) {
+/** Longest texture edge shipped. On-screen, an eye or a mouth never needs more. */
+const TEXTURE_MAX = 1024;
+
+/**
+ * Encodes a texture for the web: WebP at quality 88 with lossless alpha (the
+ * eye's cornea is cut by its alpha, which must not blur), at most
+ * TEXTURE_MAX pixels on a side. Output is deterministic for a sharp version.
+ */
+async function writeTexture(src: string, dest: string): Promise<void> {
+  await sharp(src)
+    .resize({ width: TEXTURE_MAX, height: TEXTURE_MAX, fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 88, alphaQuality: 100, effort: 6 })
+    .toFile(dest);
+}
+
+/** Packs attachment arrays into one 4-byte-aligned binary and writes their textures. */
+export async function writeAttachments(
+  dataDir: string,
+  file: string,
+  assets: readonly CompiledAsset[],
+) {
+  // Textures from an earlier pack (or an earlier format) never linger.
+  for (const f of fs.readdirSync(dataDir))
+    if (/\.(png|jpe?g|webp)$/i.test(f)) fs.rmSync(path.join(dataDir, f));
   const chunks: Uint8Array[] = [];
   let size = 0;
   const entries: AttachmentEntry[] = [];
@@ -51,7 +75,7 @@ export function writeAttachments(dataDir: string, file: string, assets: readonly
       material: a.material,
       layout,
     });
-    for (const [src, name] of a.textures) fs.copyFileSync(src, path.join(dataDir, name));
+    for (const [src, name] of a.textures) await writeTexture(src, path.join(dataDir, name));
   }
   const bin = new Uint8Array(size);
   let o = 0;
@@ -60,8 +84,10 @@ export function writeAttachments(dataDir: string, file: string, assets: readonly
     bin.set(c, o);
     o += c.byteLength;
   }
-  fs.writeFileSync(path.join(dataDir, file), bin);
-  return { entries, sha256: sha256(bin), byteLength: bin.byteLength };
+  // Gzipped for transfer, like every pack binary; offsets refer to the decoded file.
+  const gz = new Uint8Array(gzipSync(bin, { level: 9 }));
+  fs.writeFileSync(path.join(dataDir, file), gz);
+  return { entries, sha256: sha256(gz), byteLength: bin.byteLength };
 }
 
 /** Generates `index.js` and `index.d.ts` exporting `exportName` with a literal URL per data file. */

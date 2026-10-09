@@ -164,8 +164,9 @@ export function compileAsset(
       evidence,
       matPath,
     );
+    // Textures ship as WebP (see writeAttachments), named after the asset and source file.
     const packedName = textureSource
-      ? `${id.replace(/\//g, "_")}_${path.basename(textureSource)}`
+      ? `${id.replace(/\//g, "_")}_${path.basename(textureSource, path.extname(textureSource))}.webp`
       : null;
     if (textureSource && packedName) textures.set(textureSource, packedName);
     material = { ...rest, texture: packedName };

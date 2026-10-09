@@ -51,7 +51,10 @@ const BODY_OUT = path.resolve(import.meta.dirname, "../packs/body/data");
 const ADULT_OUT = path.resolve(import.meta.dirname, "../packs/adult-anatomy/data");
 /** Compatibility key: every MakeHuman proxy, clothes and target asset binds to this topology. */
 const TOPOLOGY = "makehuman-hm08";
+/** Every binary ships gzipped: GitHub Pages and many hosts serve .bin uncompressed. */
+const BODY_FILE = "body.bin.gz";
 const TARGETS_FILE = "targets.bin.gz";
+const ATTACHMENTS_FILE = "attachments.bin.gz";
 /** MakeHuman units are decimetres; the runtime works in metres. */
 const UNIT = 0.1;
 /** MakeHuman's modifier tables, each with a `_modifiers`, `_sliders` and `_modifiers_desc` file. */
@@ -381,7 +384,7 @@ function writeProvenance(
 }
 
 // ---------------------------------------------------------------- main
-function main() {
+async function main() {
   fs.mkdirSync(BODY_OUT, { recursive: true });
   fs.mkdirSync(ADULT_OUT, { recursive: true });
   const obj = parseObj(read("3dobjs/base.obj"));
@@ -411,9 +414,12 @@ function main() {
     layout[p.key] = { offset: size, byteLength: p.bytes.byteLength };
     size += p.bytes.byteLength;
   }
-  const body = new Uint8Array(size);
-  for (const p of parts) body.set(p.bytes, layout[p.key]?.offset ?? 0);
-  fs.writeFileSync(path.join(BODY_OUT, "body.bin"), body);
+  const bodyRaw = new Uint8Array(size);
+  for (const p of parts) bodyRaw.set(p.bytes, layout[p.key]?.offset ?? 0);
+  // Gzipped for transfer (Pages serves .bin uncompressed); the layout is the decoded file's.
+  fs.rmSync(path.join(BODY_OUT, "body.bin"), { force: true });
+  const body = new Uint8Array(gzipSync(bodyRaw, { level: 9 }));
+  fs.writeFileSync(path.join(BODY_OUT, BODY_FILE), body);
 
   const files = listTargets();
   const core = packTargets(files.filter((f) => !isAdultPackTarget(f.replace(/^targets\//, ""))));
@@ -480,7 +486,8 @@ function main() {
   const compiled = ESSENTIALS.map(([id, kind, mhclo, mat]) =>
     compileAsset(path.join(SYSTEM, mhclo), id, kind, mat ? path.join(SYSTEM, mat) : undefined),
   );
-  const attachments = writeAttachments(BODY_OUT, "attachments.bin", compiled);
+  fs.rmSync(path.join(BODY_OUT, "attachments.bin"), { force: true });
+  const attachments = await writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled);
   const systemEvidence: Record<string, string> = {};
   for (const c of compiled) {
     for (const [file, ev] of Object.entries(c.evidence))
@@ -508,7 +515,7 @@ function main() {
     uvCount: obj.uvs.length / 2,
     faceCount: obj.faceVerts.length / 4,
     groups: obj.groups,
-    body: { file: "body.bin", sha256: bodySha, layout },
+    body: { file: BODY_FILE, sha256: bodySha, layout },
     targets: {
       file: TARGETS_FILE,
       encoding: TARGET_ENCODING,
@@ -518,7 +525,7 @@ function main() {
     modifiers: modifiers.filter((m) => !isAdultPackTarget(m.hi)),
     sliders: sliders.body,
     attachments: {
-      file: "attachments.bin",
+      file: ATTACHMENTS_FILE,
       sha256: attachments.sha256,
       entries: attachments.entries,
     },
@@ -569,9 +576,9 @@ function main() {
     upstreamCommit,
     (f) => !adultFiles.has(f),
     [
-      ["body.bin", bodySha],
+      [BODY_FILE, bodySha],
       [TARGETS_FILE, sha(core.bin)],
-      ["attachments.bin", attachments.sha256],
+      [ATTACHMENTS_FILE, attachments.sha256],
     ],
     systemEvidence,
   );
@@ -600,4 +607,4 @@ function main() {
   );
 }
 
-main();
+await main();

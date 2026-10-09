@@ -262,8 +262,8 @@ result buffers. Applications use it through the client, not directly.
 import { bodyPack } from "humanoid-kit-body";
 ```
 
-`bodyPack` is `{ manifest, files: { "body.bin", "targets.bin.gz",
-"attachments.bin", ...textures } }`, with each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the worker
+`bodyPack` is `{ manifest, files: { "body.bin.gz", "targets.bin.gz",
+"attachments.bin.gz", ...WebP textures } }`, with each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the worker
 client. The package also exposes its files under `humanoid-kit-body/data/*`.
 
 ## `humanoid-kit-adult-anatomy`

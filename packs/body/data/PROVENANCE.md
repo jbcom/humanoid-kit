@@ -23,6 +23,6 @@ Attachments come from the MakeHuman system assets pack (makehuman_system_assets_
 
 | Output | SHA-256 |
 | --- | --- |
-| body.bin | `777bd7ebd1491fa69359679d5c14771cf1d7d93446280c1df2e81dcdea7d56f9` |
+| body.bin.gz | `33e8502236f56d532abbaa2d0adbffb28af56a3f5313763feb9881c9ede668df` |
 | targets.bin.gz | `a0c3399044ad1171a8336a1e1c30df390dccedd15d4d670cc6aaaebf8c78adaa` |
-| attachments.bin | `da553818803550cded3cc8a595f1a79f024db6a9c6ca0cf2c138080a77f37299` |
+| attachments.bin.gz | `65116a3e2c2a357c9a60578ade28fa8b8c1c990890ebba0726e1b89d52b4f073` |
