@@ -803,11 +803,13 @@ describe("the stretch marks", () => {
 
   it("orients the marks round the body: horizontal on the skin, whatever way its UV map turns", () => {
     // Carry each marked vertex's stored UV angle back through one of its faces' UV maps to the
-    // skin: the direction should be horizontal (marks run across the stretch, round the body).
+    // skin. It is the direction of the waves of the noise, across the streaks: for streaks that run
+    // round the body (across the stretch) it is vertical in the skin's plane.
     const faces = groupFaces(assets, "body");
     const faceOf = new Map<number, number>();
     for (const q of faces)
       for (let k = 0; k < 4; k++) faceOf.set(assets.faceVerts[q * 4 + k] as number, q);
+    const off: number[] = [];
     let checked = 0;
     for (let v = 0; v < n; v++) {
       if ((f.mask[v] as number) < 0.5) continue;
@@ -836,10 +838,19 @@ describe("the stretch marks", () => {
       const dir = [0, 1, 2].map((k) => alpha * (e1[k] as number) + beta * (e2[k] as number));
       const len = Math.hypot(...dir);
       if (len < 1e-9) continue;
-      expect(Math.abs((dir[1] as number) / len), `vertex ${v}`).toBeLessThan(0.45);
+      // Across the horizontal of the skin's plane (up x normal): perpendicular to it.
+      const nrm = [0, 1, 2].map((k) => zones.normals[v * 3 + k] as number);
+      const h = [nrm[2] as number, 0, -(nrm[0] as number)];
+      const hl = Math.hypot(...h);
+      if (hl < 1e-6) continue;
+      const along = (dir as number[]).reduce((a, x, k) => a + (x * (h[k] as number)) / hl, 0);
+      // One face's map stands for the vertex, so a few on a curved edge are off by a little more.
+      off.push(Math.abs(along) / len);
       checked++;
     }
     expect(checked).toBeGreaterThan(100);
+    expect(off.filter((x) => x < 0.3).length / off.length).toBeGreaterThan(0.95);
+    expect(Math.max(...off)).toBeLessThan(0.6);
   });
 
   it("stores its orientation so that neighbours straddle the seam rarely", () => {

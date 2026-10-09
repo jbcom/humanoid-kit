@@ -99,10 +99,11 @@ export const striaThreshold = (amount: number): number =>
 /**
  * Where the stored orientation of the marks wraps (the sole ridges' own is
  * `RIDGE_ORIENTATION_SEAM`): at the UV direction the fewest of the sites' marks run
- * in, so that filtering between two stored angles never takes the long way
+ * in (the noise's waves lie within 20° of the UV plane's vertical on 99% of the
+ * sites, and the seam is 60° from it), so that filtering between two stored angles never takes the long way
  * round (`tests/torso.test.ts` holds the share that straddle it to a few per cent).
  */
-export const STRIAE_ORIENTATION_SEAM = Math.PI / 2;
+export const STRIAE_ORIENTATION_SEAM = Math.PI / 6;
 /** How soft a mark's edge is, in the noise's units. */
 export const STRIA_SOFT = 0.1;
 

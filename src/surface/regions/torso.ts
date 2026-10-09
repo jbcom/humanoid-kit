@@ -686,7 +686,11 @@ export const LINEA_ALBA_LAYER: DetailLayer = {
  */
 export const STRIAE_SITE_WEIGHT = { flank: 1, belly: 0.7, hip: 1, thigh: 0.8 } as const;
 
-/** The marks' direction at each vertex: the horizontal in the skin's plane (up × normal), three floats a vertex. */
+/**
+ * The direction of the noise's waves at each vertex, three floats a vertex: across the marks, which run
+ * horizontal in the skin's plane (up × normal) round the body, across the stretch; so the waves run
+ * along the skin's vertical (the normal × that horizontal).
+ */
 function striaeDirections(assets: HumanoidAssets): {
   direction: Float32Array;
   weight: Float32Array;
@@ -706,6 +710,7 @@ function striaeDirections(assets: HumanoidAssets): {
   for (let v = 0; v < n; v++) {
     if (onBody[v] !== 1) continue;
     const nx = zones.normals[v * 3] as number;
+    const ny = zones.normals[v * 3 + 1] as number;
     const nz = zones.normals[v * 3 + 2] as number;
     // up × normal = (nz, 0, -nx): horizontal, in the skin's plane; short where the skin faces up or down.
     const tx = nz;
@@ -737,8 +742,12 @@ function striaeDirections(assets: HumanoidAssets): {
       (1 - smoothstep(0.2, 0.5, breast[v] as number));
     if (w <= 0 || len < 1e-6) continue;
     weight[v] = w;
-    direction[v * 3] = tx / len;
-    direction[v * 3 + 2] = tz / len;
+    // The marks' own direction is (tx, 0, tz) / len; the waves cross them: normal × it.
+    const hx = tx / len;
+    const hz = tz / len;
+    direction[v * 3] = ny * hz;
+    direction[v * 3 + 1] = nz * hx - nx * hz;
+    direction[v * 3 + 2] = -ny * hx;
   }
   return { direction, weight };
 }
