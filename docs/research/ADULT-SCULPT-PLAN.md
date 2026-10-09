@@ -284,6 +284,53 @@ Rejected: a variant mesh swapped in per figure (section 4), per-vertex local
 frames (above), and generating detail at load time from the recipe (it would
 move the sculpt's source of truth out of the pack).
 
+## 6b. Decision 5: reservoirs (what a shaft, a scrotum and a labial fold need)
+
+Detail targets move the lattice's own vertices. That shapes relief (the mound,
+labial folds) but not a shaft: a 10 to 20 cm extrusion of a surface whose cells
+are 2.3 mm would stretch a few cells into spikes. The anatomy needs *material*
+to extrude from, and it must stay one continuous surface (no attachment seam;
+the skin fields, occlusion bake and clothing masks of the body apply to it).
+
+**Use cases.** (1) A phallic body: from a clitoral glans of a few millimetres to a
+penis of 20 cm erect, one structure at different sizes, so intersex
+presentations are points on one continuum. (2) A pair of labioscrotal swellings:
+labia majora to scrotum, fused to any degree. (3) Folds (labia minora, foreskin,
+hood) that project beyond the surface. (4) Any combination on one figure, with no
+feature knowing which anatomy it is next to. (5) Nothing visible, and nothing
+different from the base, when a feature is absent; and nothing at all in a figure
+under 18.
+
+**Options.** (a) A separate mesh bound to the figure: an attachment seam, and its
+own skin fields and occlusion; rejected. (b) More vertices in the lattice at rest
+spread over the extrusion: wasteful and still spiky. (c) **Collapsed strips**: cut
+the surface along a closed loop of lattice edges around a disc of faces (the
+*cap*), insert rings of vertices between the loop and the cap that coincide with
+the loop at rest, and re-attach the cap to the last ring. The strips between
+rings have zero area at rest; detail targets pull the cap and the rings outward
+and they become the wall of a tube, with the cap as its tip. (d) A bud: a separate
+closed tube welded at the loop: at rest its cap cannot collapse to zero area
+(it spans the loop), so it would duplicate the skin and z-fight.
+
+**Decision: (c).** The reservoir exists only in the adult surface (a figure under
+18 is evaluated on the base surface and has none). It is generated at the
+subdivision level in use from the free surface: ring vertices are copies of the
+loop's vertices at that level (the same stencil row, hence the same position,
+skin weights and shading normal), so at rest the surface is exactly the surface
+without the reservoir, at every level, and the collapsed strips have zero area
+(they contribute no pixel and no normal). A detail target addresses a reservoir's
+rings at the lattice level (one vertex per loop vertex and ring, numbered after
+the region's), and finer levels interpolate along the ring. The strips belong to
+the control face that owns the cap edge they run from, and are written with that
+face's triangles, so a garment that hides the face hides them and the body
+occlusion bake covers them through their copied rows. A reservoir is data of the
+adult pack (`anatomy.reservoirs`: loop, cap faces, rings), authored by the
+packer from a disc on the lattice, never code that knows what it will become.
+
+Rejected: creases on the strip edges (a crease changes the limit surface at rest,
+a faint ridge along the loop at level 2), and reservoirs only at level 1 (the
+renderer offers level 2, and the cap's edges must match the strips' there).
+
 ## 7. How the patch stays bound to hm08
 
 - **Position.** Every new vertex is bound to base vertices exactly as an
