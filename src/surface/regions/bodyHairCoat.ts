@@ -153,6 +153,17 @@ export function beardMasks(assets: HumanoidAssets): Record<BeardPart, Float32Arr
 const LIE = { stubble: 0.15, grown: 0.6, trunk: 0.75 } as const;
 
 /** A coat region of the body hair model's `group`, grown at `length` (0: none). */
+/**
+ * Whether the recipe asks for a coat region at all. For now (2026-10-09, while
+ * the coat's shading is reworked) the coat is off unless the recipe enables it:
+ * the beard by a style other than none, any other group by setting its density.
+ * A recipe that says nothing of body hair draws no coat.
+ */
+export function coatEnabled(group: BodyHairGroup, input: SkinPaintInput): boolean {
+  if (group === "face") return (input.bodyHair?.beard ?? "none") !== "none";
+  return input.bodyHair?.density?.[group] !== undefined;
+}
+
 function paintOf(
   group: BodyHairGroup,
   input: SkinPaintInput,
@@ -162,7 +173,7 @@ function paintOf(
   const hair = bodyHairInput(input);
   const fibre = BODY_HAIR_FIBRE[group];
   return {
-    cover: length > 0 ? bodyHairCoverage(group, hair) : 0,
+    cover: length > 0 && coatEnabled(group, input) ? bodyHairCoverage(group, hair) : 0,
     length: length > 0 ? length : fibre.length,
     density: BODY_HAIR_DENSITY[group],
     lie,
