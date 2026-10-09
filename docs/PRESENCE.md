@@ -4,7 +4,8 @@ Status: being implemented (`src/presence`). The registry, the helpers,
 `presenceFromEvaluation` (presence derived from a figure's evaluation), the
 React bindings (`PresenceProvider`, `<Humanoid presence>`, `usePresence`,
 `useProximity`) and the first consumer, the studio stage's pooled ground
-contact shadow, are done and tested (unit and browser). Face metering has no consumer yet. It is the shared
+contact shadow, are done and tested (unit, browser and a Playwright spec with
+two walking figures). Face metering has no consumer yet. It is the shared
 foundation for the milestone 8 animation work
 (awareness and interactions) and for environment-driven lighting and shadows.
 

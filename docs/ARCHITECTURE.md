@@ -339,7 +339,9 @@ with `max`) over a uniform array refreshed right after each tick from
 `groundOcclusion(registry.all())`. One pass over one quad is what makes the
 pool: separate per-figure shadows would blend over each other and darken the
 overlap twice. A browser test renders the shader from above and compares its
-pixels with `sampleGroundOcclusion`.
+pixels with `sampleGroundOcclusion`; the Playwright spec `e2e/presence.spec.ts`
+does the same on the playground's `?scene=walk` (two figures walking, parting
+and overlapping), measuring the canvas against the model.
 
 ## Layers
 
