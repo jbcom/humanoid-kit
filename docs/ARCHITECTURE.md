@@ -797,10 +797,20 @@ of the hand. Sources and choices: `docs/research/SKIN-STATES.md` C5.
   palm's creases are measured from the anatomical knuckles, which MakeHuman's
   finger joints are not (they sit at the web), so each knuckle is placed the
   measured distance proximal to its finger's first crease.
+- *Knuckles.* More melanin, multiplied rather than added, so fair knuckles
+  mostly redden and deep ones darken; and wrinkle arcs over each joint. No
+  knuckle colour or fold count was found measured at any tone: these are
+  choices, bounded by the measured exposed-to-protected melanin ratio. The
+  wrinkles' phase runs on unclamped past each joint's band, and each band ends
+  a face short of halfway to the next joint, where the coordinate turns to that
+  joint's (on the little finger's short middle phalanx the bands nearly met and
+  drew a false wrinkle).
 - *Not done.* Age does not reach a layer's paint (`SkinPaintInput` has `adult`
-  only), so a child's hand gets the same creases at its own scale, the fields
-  scaling with the morphed mesh (creases form before birth, so their places
-  are set early). Soles share the palm's suppressed melanin
+  only), so a child's hand gets the same creases and knuckles at its own
+  scale, the fields scaling with the morphed mesh (creases form before birth,
+  so their places are set early). No finger flexion is measured by the rig yet
+  (`FLEXION_JOINTS` has wrists, elbows and knees), so knuckle wrinkles are at
+  rest. Soles share the palm's suppressed melanin
   (the same mechanism) but no sole colour was found measured; the feet's area
   owns them, and can take `palmAlbedo` if it decides to.
 

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { groupFaces } from "../src/format/assetFormat.ts";
 import { labFromLinear } from "../src/surface/cielab.ts";
-import { PALM_BINS, palmAlbedo, palmLab } from "../src/surface/handTone.ts";
+import {
+  KNUCKLE_MELANIN_FACTOR,
+  knuckleAlbedo,
+  PALM_BINS,
+  palmAlbedo,
+  palmLab,
+} from "../src/surface/handTone.ts";
 import { paintStopTable, STOP_TABLE_WIDTH } from "../src/surface/layers.ts";
 import {
   CREASE_GEOMETRY,
@@ -9,6 +15,9 @@ import {
   CREASE_SLOTS,
   HAND_SKIN_LAYERS,
   handFrame,
+  KNUCKLE_PHASES,
+  KNUCKLE_WRINKLE_SPACING,
+  knuckleFields,
   PALM_CREASE_LINE_LAYER,
   type PalmLandmarks,
   palmCreaseCurves,
@@ -21,6 +30,7 @@ import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import { skinZones } from "../src/surface/regions/skinZones.ts";
 import { GOOSEBUMP_LAYER } from "../src/surface/regions/states.ts";
 import {
+  luminance,
   measuredSkinLightness,
   type Rgb,
   SKIN_F0,
@@ -312,6 +322,47 @@ describe("palmar creases", () => {
     p.stops.forEach((s, i) => {
       if (i !== 3) expect(s).toEqual([1, 1, 1]);
     });
+  });
+});
+
+describe("knuckles: more melanin, multiplied, so deeper skin darkens more", () => {
+  const k = knuckleFields(assets);
+
+  it("darkens every tone, and deep skin by far more than fair", () => {
+    // The fraction of the skin's luminance the knuckle loses: contrast, as the eye reads it.
+    const loss = (m: number) =>
+      1 - luminance(knuckleAlbedo(tone(m))) / luminance(skinAlbedo(tone(m)));
+    for (const m of TONES) expect(loss(m), `melanin ${m}`).toBeGreaterThan(0);
+    expect(loss(0.8)).toBeGreaterThan(2 * loss(0.05));
+    for (let i = 1; i < TONES.length; i++)
+      expect(loss(TONES[i] as number)).toBeGreaterThan(loss(TONES[i - 1] as number));
+  });
+
+  it("reddens fair skin's knuckles (extended joints measure redder)", () => {
+    const a = (rgb: Rgb) => measured(rgb)[1];
+    expect(a(knuckleAlbedo(tone(0.05)))).toBeGreaterThan(a(skinAlbedo(tone(0.05))));
+  });
+
+  it("stays below the measured exposed-to-protected melanin ratio", () => {
+    // Alaluf 2001/2002: 1.6 in Fitzpatrick V to VI, up to 2 across groups.
+    expect(KNUCKLE_MELANIN_FACTOR).toBeGreaterThan(1);
+    expect(KNUCKLE_MELANIN_FACTOR).toBeLessThan(1.6);
+  });
+
+  it("lie on the back of the digits, where goosebumps can still rise", () => {
+    const bumps = GOOSEBUMP_LAYER.fields(assets).mask;
+    for (const mask of [k.pigment, k.wrinkles.mask])
+      for (let v = 0; v < assets.manifest.vertexCount; v++)
+        if ((mask[v] as number) > 0.5) {
+          expect(frame.volar[v] as number).toBeLessThan(0.3);
+          expect(bumps[v] as number).toBeGreaterThan(0);
+        }
+  });
+
+  it("draw the wrinkles without jumps", () => {
+    // Across the wrinkles the phase runs at 1/spacing per metre, a little more where they bow.
+    const rate = 1.3 / KNUCKLE_WRINKLE_SPACING;
+    expect(worstJump(k.wrinkles.mask, k.wrinkles.coord, KNUCKLE_PHASES, rate)).toBeLessThan(1.5);
   });
 });
 

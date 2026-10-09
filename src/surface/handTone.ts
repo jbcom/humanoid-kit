@@ -4,11 +4,12 @@
  *
  * The palm is measured in CIELAB against the skin around it and placed by the
  * skin's own measured lightness, so it holds at every tone without a rule per
- * tone. Which numbers are measured and which are choices is in
+ * tone; the knuckles stay on the skin model's measured melanin axis. Which
+ * numbers are measured and which are choices is in
  * docs/research/SKIN-STATES.md, Part C5.
  */
 import { type Lab, labFromLinear, linearFromLab } from "./cielab.ts";
-import { type Rgb, SKIN_F0, type SkinTone, skinAlbedo } from "./skinTone.ts";
+import { melaninDensityAlbedo, type Rgb, SKIN_F0, type SkinTone, skinAlbedo } from "./skinTone.ts";
 
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const scale = (rgb: Rgb, k: Rgb): Rgb => [rgb[0] * k[0], rgb[1] * k[1], rgb[2] * k[2]];
@@ -88,4 +89,35 @@ const PALM_OVERRIDE: Rgb = [1.18, 1.14, 1.1];
 export function palmAlbedo(tone: SkinTone): Rgb {
   if (tone.override) return scale(skinAlbedo(tone), PALM_OVERRIDE);
   return albedoFromMeasured(palmLab(tone), SKIN_F0);
+}
+
+/**
+ * Melanin optical density over the knuckles, relative to the back of the hand.
+ * A CHOICE: no knuckle colour was measured at any tone (SKIN-STATES.md A2, C5).
+ * It is bounded by the only measured site ratio, photoexposed against
+ * protected skin, 1.6 in Fitzpatrick V to VI and up to 2 across groups
+ * (Alaluf 2001, 2002), and set below it because the back of the hand is itself
+ * exposed.
+ */
+export const KNUCKLE_MELANIN_FACTOR = 1.35;
+
+/**
+ * Haemoglobin added over the knuckles: extended joints are redder (highest
+ * a\* at the extended elbow of 53 women, J Clin Med 2024, SKIN-STATES.md A2,
+ * which ranks sites but gives no value); the size is a CHOICE.
+ */
+export const KNUCKLE_HAEMOGLOBIN = 0.15;
+
+/**
+ * Knuckle albedo: more melanin (`KNUCKLE_MELANIN_FACTOR`) and a little more
+ * blood (`KNUCKLE_HAEMOGLOBIN`). The factor multiplies optical density, so
+ * fair skin's knuckles mostly redden and deep skin's darken, as observed.
+ */
+export function knuckleAlbedo(tone: SkinTone): Rgb {
+  if (tone.override) return scale(skinAlbedo(tone), [0.9, 0.86, 0.86]);
+  return melaninDensityAlbedo(
+    tone,
+    KNUCKLE_MELANIN_FACTOR,
+    Math.min(1, clamp01(tone.haemoglobin) + KNUCKLE_HAEMOGLOBIN),
+  );
 }

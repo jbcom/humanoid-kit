@@ -154,9 +154,11 @@ the palm site's exact location.
 | Leeb G et al., eBioMedicine (2024), DOI 10.1016/j.ebiom.2024.105051 | CC BY 4.0 | 34 adults, Fitzpatrick I to VI (9 of V to VI), ITA only: fingernail −9.8° to 68.1°, palmar finger pad −3.4° to 40.7°, dorsal finger −67.0° to 46.8°, forehead −65.7° to 44.7°. The palm side and the nail barely darken. | YES |
 | Bugbee WD, Botte MJ, Clin Orthop Relat Res 296:122 (1993), DOI 10.1097/00003086-199311000-00023 | closed (abstract) | 53 hands, radio-opaque markers: distal and middle digital creases 7 to 8 and 2 to 3 mm proximal to their joints; proximal digital crease 14 to 20 mm distal to the metacarpophalangeal joint; distal transverse palmar crease 6.8 to 10.3 mm and proximal transverse 9.1 to 22.1 mm from their associated metacarpophalangeal joints. | not stated |
 | Kosif R, Diramali M, Sertel S, Int J Morphol 33:173 (2015), DOI 10.4067/S0717-95022015000100028 | SciELO OA (licence not read) | Quotes Doyle and Botte 2003: middle digital crease 1.6 to 2.6 mm proximal to the PIP joint, proximal 14.4 to 19.6 mm distal to the MCP joint, thumb IP crease 2.2 mm proximal to its joint, thumb MCP crease over its joint. Own data, 164 Turkish adults, calipers: lengths between a finger's creases (right hands of right-handed men / women, mm): index 24.35 / 22.82 proximal-to-middle, 22.02 / 20.45 middle-to-distal; middle 27.23 / 25.42, 24.93 / 23.38; ring 23.98 / 21.98, 23.00 / 21.40; little 19.11 / 17.63, 16.93 / 15.28. | NO |
+| Padmanabha A et al., Adv Healthc Mater (2026), DOI 10.1002/adhm.202504402 | CC BY-NC-ND | 15 adults, Fitzpatrick III to VI (4 of V to VI), tactile probe: 80th-percentile micro-wrinkle depth 35.9 µm at the knuckle against 21.1 µm on the back of the hand and about 19 µm on the palm. Micro-relief, not fold depth. | YES |
 | Crease pigment: Alchorne MM et al., An Bras Dermatol (2024), DOI 10.1016/j.abd.2023.10.001; Leal-Silva H et al., J Cosmet Dermatol (2021), DOI 10.1111/jocd.13968 | CC BY / closed | Palmoplantar hyperpigmentation is common and more frequent with greater skin pigmentation (review); palmar crease contrast is a gradable feature linked to darker skin (126 photographs, 8 raters). No prevalence by skin type found. | qualitative |
 
-Not found: sole colour; crease width or depth; any measurement of children's
+Not found: sole colour; crease width or depth; knuckle fold count, spacing or
+colour against the back of the hand at any tone; any measurement of children's
 palm colour or creases (creases form at 7 to 9 weeks' gestation, Kosif 2015
 citing Kimura and Kitagawa 1986, so their places are fixed early).
 
@@ -332,6 +334,8 @@ before the state layers, so cold pallor and flush act on them (C2).
 | Crease line | the skin's own colour over the palm's, 60% of the way (only where the skin is darker), times a shade of 0.80 | Crease pigment in darker skin: qualitative only (A6); the 60% is a CHOICE. The shade (the crease's walls darken its narrow bottom, which the broad relief cannot) is a CHOICE tuned on the contact sheets. |
 | Crease line width | a seventh of an 18.5 mm band on the palm, 11 mm on the fingers (2.6 and 1.6 mm) | CHOICE, bounded by the mesh: the band must span two faces for the line to fall where the crease is (`tests/hands.test.ts`). No crease width was found measured. |
 | Crease relief | a fold 7.8 mm wide on the palm, 4.5 mm on the fingers (0.7 of the depth), 0.30 mm deep | CHOICE: no crease depth found measured; the width spans a face. |
+| Knuckle colour | 1.35 times the skin's melanin optical density, haemoglobin +0.15 | CHOICE. No knuckle colorimetry against the back of the hand at any tone (A2, A6). The factor is below the measured exposed-to-protected ratio, 1.6 to 2 (Alaluf 2001, 2002). Redder: extended joints have the highest a\* (J Clin Med 2024, A2; ordinal). Multiplying density makes deep knuckles darken more than fair ones: the luminance lost grows with melanin. |
+| Knuckle wrinkles | 5 arcs at the PIP joint, 3 at the DIP and MCP (3 and 4 on the thumb), 1.6 mm apart, 0.12 mm high, held short of the next joint | CHOICE: no fold count, spacing or depth found. Knuckle micro-relief is 1.7 times the back of the hand's (Padmanabha 2026, A6), which supports wrinkles there, not their size. |
 
 ## ITEMS I COULD NOT VERIFY / PRIMARY NOT OPENED
 

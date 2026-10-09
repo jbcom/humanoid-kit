@@ -384,6 +384,11 @@ compute what the renderer will do.
     signed distance to the nearest crease (`sampleCreases`), so a line finer
     than the mesh is drawn where the crease is (`creaseLineCoordinate`,
     `creasePhase`, `CREASE_GEOMETRY`).
+  - `KNUCKLE_LAYER` (`knuckleAlbedo(tone)`: `KNUCKLE_MELANIN_FACTOR` times the
+    skin's melanin density and `KNUCKLE_HAEMOGLOBIN` more blood) and
+    `KNUCKLE_WRINKLE_LAYER` (arcs over the back of each finger joint,
+    `KNUCKLE_WRINKLE_SPACING` apart, `KNUCKLE_WRINKLE_DEPTH` deep), fields from
+    `knuckleFields(assets)`.
   - `handFrame(assets)`: each hand vertex's digit, distance along it and across
     it, which way it faces, and its place in the palm's plane, measured from the
     skeleton's finger joints and the vertex normals and cached per set of
