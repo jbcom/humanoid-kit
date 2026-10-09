@@ -50,7 +50,12 @@ import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { createAttachmentMaterial } from "../render/attachmentLook.ts";
-import { DualBones, dualShadowMaterials, followDualSkinning } from "../render/dualSkinning.ts";
+import {
+  applyDualSkinning,
+  DualBones,
+  dualShadowMaterials,
+  followDualSkinning,
+} from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
 import { setBodyOcclusionAttributes, setOcclusionAttributes } from "../render/occlusion.ts";
@@ -320,17 +325,24 @@ function useAttachmentMaterial(
  * with its diffuse and normal maps, loaded once and released with it.
  * Garments are not enclosed by the figure, so they take no baked occlusion.
  */
-function useGarmentMaterial(t: GarmentTopology, report: (e: Error) => void): MeshStandardMaterial {
+function useGarmentMaterial(
+  t: GarmentTopology,
+  dual: DualBones | null,
+  report: (e: Error) => void,
+): MeshStandardMaterial {
   const material = useMemo(() => {
     const m = t.material;
-    return new MeshStandardMaterial({
+    const made = new MeshStandardMaterial({
       color: new Color(m.color[0], m.color[1], m.color[2]),
       roughness: m.roughness,
       metalness: 0,
       alphaToCoverage: m.alphaToCoverage,
       side: m.backfaceCull ? FrontSide : DoubleSide,
     });
-  }, [t]);
+    // Skinned as the body is, so a sleeve does not part from the arm at a joint.
+    if (dual) applyDualSkinning(made, dual);
+    return made;
+  }, [t, dual]);
   const reportRef = useLatest(report);
   useEffect(() => {
     let live = true;
@@ -490,6 +502,7 @@ function GarmentMesh({
   visible,
   report,
   shape,
+  dual,
 }: {
   topology: GarmentTopology;
   geometry: BufferGeometry;
@@ -497,8 +510,10 @@ function GarmentMesh({
   visible: boolean;
   report: (e: Error) => void;
   shape: object;
+  /** The figure's bones as dual quaternions, which the garment skins by like the body. */
+  dual: DualBones | null;
 }) {
-  const material = useGarmentMaterial(topology, report);
+  const material = useGarmentMaterial(topology, dual, report);
   return (
     <SkinnedPart
       geometry={geometry}
@@ -508,6 +523,7 @@ function GarmentMesh({
       part="garment"
       garment={topology.id}
       shape={shape}
+      dual={dual}
     />
   );
 }
@@ -970,6 +986,7 @@ export function Humanoid({
               visible={shown && surface === "adult"}
               part="adultBody"
               shape={shape}
+              dual={material ? null : dual}
             />
           )}
           {ready.topology.attachments.map((t, i) => {
@@ -1000,6 +1017,7 @@ export function Humanoid({
                 visible={shown}
                 report={report}
                 shape={shape}
+                dual={dual}
               />
             ) : null;
           })}

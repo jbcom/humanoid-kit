@@ -402,6 +402,13 @@ from each file.
   (`posedGroundOffset`) takes the worn garments' render vertices too and skins
   them with the pose, so a kneeling figure rests on its knee or its shoe,
   whichever is lower.
+- *Garments skin as the body does.* Their material takes the figure's dual
+  quaternion bones (`applyDualSkinning`, as for any material the library does
+  not make), and so do their shadow materials and the mesh's bounds and
+  picking, so a sleeve keeps the arm's volume at a twisted or raised joint and
+  does not part from the skin (`docs/evidence/clothing.md`, "Garments skin
+  like the body"). The grounding above uses the same blended skinning
+  (`skinPositions`), so what stands on the ground is what is drawn.
 - *Garments load as a stage of their own* (see "Packs and the binary format")
   and are evaluated lazily: the model builds a garment's surface the first time
   an outfit names it.

@@ -45,6 +45,24 @@ yet (animation packs are milestone 8), so the three poses it does have are
 shown; the benchmark is the harder test, since it bends the elbows, shoulders,
 hips and knees past what a walk reaches.
 
+### Garments skin like the body
+
+Garments take the body's dual quaternion skinning (`applyDualSkinning`), so a
+sleeve keeps the arm's volume where linear skinning pinches it. The casual
+suit in `twisted` (every limb turned past what a body can) and `flexed`, first
+with linear cloth, then with dual quaternions:
+
+![The casual suit in the twisted and flexed poses, skinned linearly](./clothing-skinning-linear.webp)
+
+![The suit in flexed, twisted and benchmark poses, then an adult flexed, skinned by dual quaternions](./clothing-skinning.webp)
+
+Left to right on the second sheet: flexed, twisted, the elegant suit in the
+benchmark pose, and an adult (the refined surface) flexed. Linear, the twisted
+upper arms narrow to a wrapper and skin shows at the shoulder tops. Dual, the
+sleeves stay full and the skin at the shoulders shrinks to two small patches,
+which remain in this pose only (it turns the arms beyond their range; the
+relaxed, T-pose and benchmark sheets show none).
+
 ## Layering at the feet: the fault, and the fix
 
 Before: garments ordered by MakeHuman's category table, which puts shoes (57)
