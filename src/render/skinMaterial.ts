@@ -74,10 +74,10 @@ export const CURVATURE_ATTRIBUTE = "hkCurvature";
 export const SCALP_ATTRIBUTE = "hkScalp";
 
 /** How far the skin goes toward the scalp colour where hair grows at full density. */
-export const SCALP_STRENGTH = 0.6;
+export const SCALP_STRENGTH = 0.5;
 
 /** What fraction of the hair's albedo the scalp shows: the skin under hair is in its shade. */
-export const SCALP_DARKEN = 0.7;
+export const SCALP_DARKEN = 0.9;
 
 /** A GLSL float literal. */
 const glslFloat = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);

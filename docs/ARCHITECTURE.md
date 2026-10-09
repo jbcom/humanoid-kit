@@ -972,15 +972,17 @@ a coloured texture; everything in the pure core is testable in Node.
   leaves each atlas's own hue in every colour.
 - *Occlusion is baked once, at rest, one value per control vertex.* Hair is lit
   from outside; the jaw and lips never open it up, so the eight pose corners of
-  the eyes' and teeth's occlusion would be eight copies. The bake
-  (`HumanoidModel.bakeHairOcclusion`) casts 32 rays from each vertex against the
-  default figure's body and the style's own cards as solid triangles, takes the
-  more open of the card's two sides (a two-sided card's normal does not say
-  which faces out), and stores a byte. Cards under others and against the
-  scalp read darker than the outside of the volume. Treating cards as solid
-  overstates the dark inside a sparse style, so the renderer floors hair's
-  occlusion at 0.5 rather than the eyes' 0.15. A test re-bakes from the shipped
-  pack and fails if the stored bytes drift.
+  the eyes' and teeth's occlusion would be eight copies. The value
+  (`HumanoidModel.bakeHairOcclusion`) is mostly smooth: hair is darkest at its
+  roots and brightens with height above the scalp (`scalpShade`, a smoothstep
+  over 2.5 cm), which no overlap of cards can break into patches. A quarter of
+  it is the ray bake: 32 rays from each vertex against the default figure's body
+  and the style's own cards as solid triangles, the more open of the card's two
+  sides (a two-sided card's normal does not say which faces out). The first
+  version used the ray bake alone, and the cards that happen to overlap in a
+  curly style left flat dark patches. The result is a byte, and the renderer
+  floors hair's occlusion at 0.65 rather than the eyes' 0.15. A test re-bakes
+  from the shipped pack and fails if the stored bytes drift.
 - *The licence gate is the asset header, nothing else.* `compileAsset`'s
   `proveCc0` accepts a file only if its first 3000 bytes carry "This asset was
   explicitly released as CC0". It used to accept a bare `license CC0` line as
@@ -1029,7 +1031,12 @@ a coloured texture; everything in the pure core is testable in Node.
   *growth* (see the next decision), from derivatives of position and growth (the
   surface-gradient form of a cotangent frame), so no tangent attribute is sent;
   where growth has no gradient (a card seen edge-on) the lobes switch off. The
-  lobes weaken as the style's strands lose their direction (`strand.coherence`).
+  lobes weaken as the style's strands lose their direction (`strand.coherence`),
+  which also sets the roughness (0.95 for frizz, 0.7 combed), and the base
+  specular is scaled to 0.4: hair has no mirror. The first intensities read as
+  glossy patches on the bobs, so the lobes are narrow-in-strength and wide, and a
+  browser test bounds the worst pixel of a sphere at any strand direction and
+  light to three times its diffuse (a mirror-like patch is ten and more).
   Rejected: the UV-derivative anisotropy (a global angle, no short styles), a
   per-vertex tangent attribute (three floats per vertex for what the gradient
   gives), and Marschner's full R/TT/TRT (the transmitted lobes need a fibre's
@@ -1044,24 +1051,28 @@ a coloured texture; everything in the pure core is testable in Node.
   not on its hairline: feathering those cut the afro into a lattice); **fin**,
   1 on a card standing out of the scalp, 0 on one lying along it (its normal
   against the direction from the nearest scalp point); and the **scalp**, the
-  head's body vertices within 8 mm of a card with their density, 1 under a card
-  falling to 0 over 5 mm. Each is a pure function of the packs, so the packer
-  bakes it once, like occlusion.
-- *A hairline thins by dither, and a fin by its angle; the scalp is tinted.* A
+  head's body vertices within 11 mm of a card with their density, 1 under a card
+  falling to 0 over 8 mm. Each is a pure function of the packs, so the packer
+  bakes it once, like occlusion. A style may opt out of the fade (`feather:
+  false`): `afro01`'s dense curls end in a fuzzy edge of their own, and thinned,
+  their roots showed the dark inside of the volume as a band.
+- *A hairline thins, and a fin by its angle; the scalp is tinted.* A
   hair card's cut edge is a hard line, and MakeHuman's hairlines read as a helmet
-  or a wig. The fragment shader discards where `fade` is below an interleaved
-  gradient noise of its pixel (Jimenez 2014). A discard needs neither blending
-  nor MSAA, so the hairline thins the same way on every GPU, SwiftShader
-  included (alpha-to-coverage alone would not hold there). The skin shows
+  or a wig. With alpha-to-coverage the fade (and the fin's angle term) is the
+  card's coverage, a smooth gradient over the MSAA samples; without it the
+  fragment shader discards where it is below an interleaved gradient noise of
+  its pixel (Jimenez 2014), which needs neither blending nor MSAA, so the
+  hairline thins on every GPU, SwiftShader included. (Dithering alone left a
+  speckle on the afro that read as noise.) The skin shows
   through, so it must not be bare: `SkinMaterial` takes a per-vertex
   `hkScalp` attribute (the style's scalp, carried through the body's stencil like
-  any field) and a uniform colour, and mixes the skin toward 0.7 of the hair's
-  albedo by 0.6 where hair grows (a stubble shade). It is an attribute and not
+  any field) and a uniform colour, and mixes the skin toward 0.9 of the hair's
+  albedo by 0.5 where hair grows (a stubble shade). It is an attribute and not
   a skin layer because a layer's field is rasterised once from the base mesh into
   a shared atlas, and a scalp differs by style. A fin card seen edge-on is a
   hairline-thin dark sliver, and the afro stands 340 loose curl cards out of its
   cap, which read as a lattice of them; fins thin out as they turn from the eye
-  (|cos| 0.1 to 0.4), cards of the shell never do (a head's shell is seen at a
+  (|cos| 0.3 to 0.8), cards of the shell never do (a head's shell is seen at a
   grazing angle over much of its area).
 - *Two atlases are flattened in the packer.* afro01's and braid01's atlases carry
   painted-in dark cells and blotches that read as a net or as dirt under the

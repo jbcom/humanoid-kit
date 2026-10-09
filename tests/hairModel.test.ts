@@ -156,7 +156,9 @@ describe("hair topology", () => {
         s.id,
       ).toBe(true);
       // Every style has some card edge at a hairline (a vertex mostly faded) and hair well past it.
-      expect(Math.min(...t.fade), `${s.id} hairline`).toBeLessThan(0.3);
+      // (afro01 opts out: its dense curls have no cut edge to thin.)
+      if (s.id === "afro01") expect(Math.min(...t.fade), s.id).toBe(1);
+      else expect(Math.min(...t.fade), `${s.id} hairline`).toBeLessThan(0.3);
       expect(Math.max(...t.fade), `${s.id} interior`).toBeGreaterThan(0.99);
       // Growth runs from zero at a root to centimetres along the card.
       expect(Math.min(...t.growth), s.id).toBeLessThan(0.002);
