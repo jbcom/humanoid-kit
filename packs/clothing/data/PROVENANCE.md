@@ -26,8 +26,8 @@ Every packed source file was checked for CC0 from its own content before packing
 | suits/female_casualsuit02 | clothes | clothes/female_casualsuit02/female_casualsuit02.mhclo | `dbbce782dcb95f2dc9d9b70fe66629c9a177fe0a8d14fd546961ed01eeb556c8` |
 | suits/female_sportsuit01 | clothes | clothes/female_sportsuit01/female_sportsuit01.mhclo | `6df057d3116db93afbbbb6d692f92cce84aa16db699f47dd14e825d07c6fd42f` |
 | suits/male_worksuit01 | clothes | clothes/male_worksuit01/male_worksuit01.mhclo | `77561689f0e9eb13537f67e0582ce4e8b93fc7291ea87f57fd86b38b9114d4e1` |
-| suits/female_elegantsuit01 | jacket | clothes/female_elegantsuit01/female_elegantsuit01.mhclo | `8ed657dbc49466e6a485993cfdcfd7b6ac30a0f44408dfd38de7a649477d8928` |
-| suits/male_elegantsuit01 | jacket | clothes/male_elegantsuit01/male_elegantsuit01.mhclo | `6e725b0adac1a07173a14e15207d0b0125d5510455ef6dee756b5fa1c51cccef` |
+| suits/female_elegantsuit01 | clothes | clothes/female_elegantsuit01/female_elegantsuit01.mhclo | `8ed657dbc49466e6a485993cfdcfd7b6ac30a0f44408dfd38de7a649477d8928` |
+| suits/male_elegantsuit01 | clothes | clothes/male_elegantsuit01/male_elegantsuit01.mhclo | `6e725b0adac1a07173a14e15207d0b0125d5510455ef6dee756b5fa1c51cccef` |
 | shoes/shoes01 | shoes | clothes/shoes01/shoes01.mhclo | `7994e38f7cdcee0bd5f55101660badcce0162fcdfc7f432218dd1eb301626252` |
 | shoes/shoes02 | shoes | clothes/shoes02/shoes02.mhclo | `0d447fd6b7415d6b2603e91697336ee51ac2f00ef85878d6667e9acfb45a20fe` |
 | shoes/shoes03 | shoes | clothes/shoes03/shoes03.mhclo | `5a388e18e6759db99bcc8c7d062a2b3bed02eecd32705731ba90063a6e35265b` |

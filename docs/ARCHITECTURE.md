@@ -363,6 +363,15 @@ from each file.
   depth leading, the hem hangs over the shoe, as it does on a person. An
   asset's author said which of two garments is nearer the skin; the category
   table is for the garments that did not.
+- *Layering suits garments that are separate pieces.* The system suits are
+  complete outfits (shirt, trousers and, for the elegant ones, a jacket in one
+  mesh), so they are all category `clothes`, and the creator wears one at a time
+  (`wearGarment` replaces a garment of the same kind). Two of them worn through
+  the API stack two pairs of trousers: the one that reaches lower shows below
+  the other's hem, and its edge follows the mask's face boundary, which is
+  ragged. That is MakeHuman's result too; it is not an error to hide, and the
+  stack is demonstrated by what is separate in the pack: shoes under trousers,
+  a hat over everything.
 - *A mask reaches a garment through its references.* A garment vertex bound
   exactly to one base vertex copies that vertex's visibility; any other is
   visible when at least two of its three references are. This is MakeHuman's

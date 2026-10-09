@@ -126,9 +126,29 @@ Its targets and modifiers evaluate only for figures aged 18 or over. Loading
 fails with an `AssetFormatError` if the pack was built against a different body
 pack.
 
+## 5. Clothing (optional)
+
+Install `humanoid-kit-clothing` to dress figures, and load it with the body
+pack:
+
+```ts
+import { clothingPack } from "humanoid-kit-clothing";
+
+const client = new HumanoidWorkerClient({ body: bodyPack, clothing: clothingPack });
+const recipe = createRecipe({ outfit: ["suits/male_casualsuit01", "shoes/shoes03"] });
+```
+
+A recipe names what a figure wears by garment id, in any order; the garments
+stack by themselves (trousers over shoes, a jacket over a suit), hide the skin
+they cover, and follow the figure's shape and pose. `ready.wardrobe` lists the
+ids on offer. The garments load after the body's shape targets, so a figure that
+wears nothing never waits for them, and changing the outfit does not rebuild the
+body. Loading fails with an `AssetFormatError` if the pack was built against a
+different body pack.
+
 ## Serving packs from a directory
 
-`body` and `adultAnatomy` also accept a string directory URL. The directory must
+`body`, `adultAnatomy` and `clothing` also accept a string directory URL. The directory must
 hold the pack's `manifest.json` and its binary files under the names the
 manifest lists:
 
@@ -149,4 +169,5 @@ pnpm dev
 ```
 
 The playground also accepts a `recipe` query parameter holding recipe JSON, and
-`view=front|side|back|face`.
+`view=front|side|back|face`. Add `clothing` to load the clothing pack (a recipe's
+`outfit` then dresses the figure, and the creator gains a Wardrobe tab).

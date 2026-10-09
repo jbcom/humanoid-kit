@@ -151,7 +151,7 @@ test.describe("clothing", () => {
     const alone = await garment(SWEATER);
     expect(alone).toBeGreaterThan(5_000);
 
-    // A jacket over it hides part of the sweater (and a little more skin), not the jacket.
+    // A second outfit over it hides part of the sweater (and a little more skin), not itself.
     const JACKET = "suits/male_elegantsuit01";
     await show(page, { macros: { gender: 1 }, outfit: [SWEATER, JACKET] });
     expect(await garment(SWEATER)).toBeLessThan(alone);

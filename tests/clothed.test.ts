@@ -75,7 +75,7 @@ describe("a figure wearing garments", { timeout: 120_000 }, () => {
       expect(a.key).toBe(b.key);
       expect(a.key).not.toBe(model.outfit([SUIT]).key);
       expect(model.outfit([]).key).toBe("");
-      // Equal depth stacks by category: a jacket over clothes, a hat outside both.
+      // Equal depth and category stack by id; a hat (category) goes outside the suits.
       expect(model.outfit([COAT, SHOES, SUIT, HAT]).order).toEqual([SHOES, SUIT, COAT, HAT]);
     });
 
@@ -87,7 +87,7 @@ describe("a figure wearing garments", { timeout: 120_000 }, () => {
       expect(shoes.length).toBeLessThan(shoesAlone.length);
       // Nothing is over the suit, and the shoes do not mask it.
       expect(suit.length).toBe(model.outfit([SUIT]).masks.garmentIndex[0]?.length);
-      // Wearing a jacket over the suit masks the suit and leaves the jacket whole.
+      // A second outfit over the first (the later id) masks it and is itself left whole.
       const suitAlone = model.outfit([SUIT]).masks.garmentIndex[0] as Uint32Array;
       const coated = model.outfit([SUIT, COAT]).masks.garmentIndex as [Uint32Array, Uint32Array];
       expect(coated[0].length).toBeLessThan(suitAlone.length);

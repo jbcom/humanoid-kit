@@ -681,9 +681,10 @@ import { clothingPack } from "humanoid-kit-clothing";
 
 `clothingPack` is `{ manifest, files: { "garments.bin.gz", ...WebP textures } }`.
 Pass it as `clothing`. It ships nineteen CC0 garments from MakeHuman's system
-assets, bound to the base mesh: ten casual, sport and work suits (`suits/…`,
-category `clothes`), two elegant suits (category `jacket`), six pairs of shoes
-(`shoes/shoes01` to `06`) and a fedora (`hats/fedora01`). Loading it fails unless
+assets, bound to the base mesh: twelve casual, sport, work and elegant suits
+(`suits/…`, category `clothes`; each a complete outfit, so one is worn at a
+time), six pairs of shoes (`shoes/shoes01` to `06`, category `shoes`) and a
+fedora (`hats/fedora01`, category `hat`). Loading it fails unless
 it was built against the exact body pack. A figure wears garments by id in
 `recipe.outfit`.
 
