@@ -1341,7 +1341,10 @@ takes the styles as `options.hairStyles`, and without them keeps the base
 recipe's hair. It also draws one of the pack's brows and one of its lashes
 (`options.browStyles`, `options.lashStyles`; after the hair, so a seed's hair and
 shape are the same without them), and a new head of hair keeps the brows and
-lashes the figure had. `withHair(recipe, patch)` changes the scalp style, colour,
+lashes the figure had. Last of all it draws a beard style (`options.beards`,
+which the creator sets; `randomBeard(draw)` by `BEARD_ODDS`: clean-shaven most
+often, then stubble), so old seeds keep their figures; the body hair model grows
+it only where the face carries terminal hair. `withHair(recipe, patch)` changes the scalp style, colour,
 brows or lashes of a recipe (`null` takes one away) and keeps whatever the patch
 leaves out; the Appearance panel uses it, offering the brows and lashes in
 groups of their own, and `load` refuses a saved figure whose brows or lashes the
