@@ -1,0 +1,39 @@
+# humanoid-kit
+
+> Parametric human figures for three.js and React Three Fiber: one CC0 base mesh
+> for every age from 1 to 90, a serializable recipe with independent regional
+> traits, Catmull-Clark subdivision in a Web Worker, and an enforced age policy
+> that keeps adult anatomy in a separate package. Pre-release; the API is in
+> development. The editor, rigging, hair, clothing and animation are roadmap
+> items, not implemented.
+
+## Packages
+
+- `humanoid-kit` (MIT): loading, recipes, age policy, evaluation, worker client,
+  React bindings (`humanoid-kit/react`). `humanoid-kit/editor` is declared but
+  not implemented.
+- `humanoid-kit-body` (CC0 1.0): base mesh, shape targets, skeleton, skin
+  weights, facial pose units, shape modifiers.
+- `humanoid-kit-adult-anatomy` (CC0 1.0): adult-only targets; separate install,
+  refused unless built against the exact body pack.
+
+## Docs
+
+- [Documentation site](https://jbcom.github.io/humanoid-kit/): the published,
+  browsable version of everything below.
+- [Playground](https://jbcom.github.io/humanoid-kit/playground/): the library's
+  own demo (body pack only).
+- [README](https://github.com/jbcom/humanoid-kit/blob/main/README.md): what works
+  today, packages, install, quick start, age policy, roadmap.
+- [API reference](https://github.com/jbcom/humanoid-kit/blob/main/docs/API.md):
+  every export of the entry points that exist, and the pack exports.
+- [Architecture](https://github.com/jbcom/humanoid-kit/blob/main/docs/ARCHITECTURE.md):
+  the base mesh, packs, recipe and regions, age policy, evaluation pipeline,
+  subdivision, worker and layers.
+- [NOTICE.md](https://github.com/jbcom/humanoid-kit/blob/main/NOTICE.md):
+  provenance, the CC0 licence gate and trademark notice.
+- [AGENTS.md](https://github.com/jbcom/humanoid-kit/blob/main/AGENTS.md):
+  toolchain, invariants not to violate, doc/test sync obligations and known gaps
+  for an autonomous coding agent working in this repository.
+- [CONTRIBUTING.md](https://github.com/jbcom/humanoid-kit/blob/main/CONTRIBUTING.md):
+  local setup, the `pnpm verify` gate, commit and release conventions.

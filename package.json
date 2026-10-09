@@ -22,10 +22,6 @@
       "types": "./dist/react/index.d.ts",
       "default": "./dist/react/index.js"
     },
-    "./editor": {
-      "types": "./dist/editor/index.d.ts",
-      "default": "./dist/editor/index.js"
-    },
     "./worker": {
       "types": "./dist/worker/index.d.ts",
       "default": "./dist/worker/index.js"
@@ -36,9 +32,6 @@
     "*": {
       "react": [
         "./dist/react/index.d.ts"
-      ],
-      "editor": [
-        "./dist/editor/index.d.ts"
       ],
       "worker": [
         "./dist/worker/index.d.ts"
