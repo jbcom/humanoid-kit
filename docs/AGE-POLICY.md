@@ -207,6 +207,15 @@ reach (colour, relief and shape): `assertSignalPolicy` in
 figure under 18, before evaluation and before any paint, and never clamps it.
 Shape responses to arousal, such as engorgement, belong to the adult pack.
 
+**Adult skin layers follow the same rule, once, in one place.** The colour code
+of the adult anatomy's layers is in the core (so the skin shader is compiled
+once with every layer), its data is in the adult pack. `paintStopTable` in
+`src/surface/layers.ts` writes a layer marked `adult` as zero strength, without
+calling its paint, unless the paint input says the figure is an adult
+(`SkinPaintInput.adult`, from `isAdult`; absent counts as not adult) and its
+recipe applies the layer's anatomy (`appliedAnatomy`, which is empty under 18).
+No layer implements the gate itself, so none can omit it.
+
 **Planned animation packages follow the same rule.** `humanoid-kit-adult-animations`
 (sexual and intimate animations) will refuse any participant under 18. The
 general animations package's interaction contracts tagged `intimate` will also

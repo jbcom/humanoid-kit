@@ -208,6 +208,13 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 - `ADULT_ONLY_MODIFIER(id): boolean`: true for ids starting `genitals/`,
   `pelvis/bulge` or `stomach/stomach-pregnant`.
 - `AgePolicyError`.
+- `appliedAnatomy(recipe): Record<string, number>`: which adult anatomy the
+  recipe applies, by feature id (`ANATOMY_FEATURES`: `penis`, `testes`, `mound`,
+  each tied to its own modifiers) with its presence 0..1. A feature is present
+  once any of its modifiers is non-zero, in either direction; features are
+  independent, and the sculpt's vulva and clitoris will be further features
+  rather than a point on one axis. Always `{}` under 18. Skin layers take it as
+  `SkinPaintInput.anatomy`.
 
 Under 18, a recipe is invalid if `breastSize` or `breastFirmness` differs from
 its default, if any region override contains either key, or if an adult-only
@@ -312,6 +319,12 @@ compute what the renderer will do.
   change and a `specular` change). `surfaceChange` and `creaseHeight` are the
   shader's references; `uvScale(assets, faces)` gives metres of skin per UV
   unit (carried as `body.uvScale` in the topology).
+  A layer of the adult anatomy sets `adult: { feature }` (`isAdultLayer`):
+  `paintStopTable` paints it only when `SkinPaintInput.adult` is true (from
+  `isAdult(recipe)`; absent is false) and `SkinPaintInput.anatomy[feature]` is
+  above 0 (from `appliedAnatomy(recipe)`), scaling its strength by that
+  presence; otherwise its row is zero and its `paint` is never called. The gate
+  lives in `paintStopTable` alone, so a layer cannot forget it.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).

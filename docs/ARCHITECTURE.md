@@ -544,10 +544,19 @@ topology and the field atlas exist. Decisions:
   When it arrives the worker derives the fields from the pack's targets and
   posts them; the main thread re-rasterises those pages of the shared atlas.
   No shader recompiles and no figure re-evaluates.
-- `SkinPaintInput` gains `adult` (from the recipe's age). Every adult-pack
-  layer paints zero strength under 18, so even a figure whose atlas holds the
+- `SkinPaintInput` gains `adult` (from the recipe's age) and `anatomy` (which
+  adult anatomy the recipe applies, `appliedAnatomy`). Every adult-pack layer
+  paints zero strength under 18, so even a figure whose atlas holds the
   fields shows nothing there, consistent with genital anatomy living only in
-  the adult pack (AGE-POLICY.md).
+  the adult pack (AGE-POLICY.md). The gate is in `paintStopTable`, once, not in
+  each layer: a layer declares `adult: { feature }` and the table paints it
+  only for an adult whose recipe applies that feature, scaled by its presence,
+  without calling the layer's `paint` otherwise. A genital layer therefore
+  never tints a figure whose recipe shapes no genital anatomy. Features are
+  independent keys (today `penis`, `testes`, `mound`, from the CC0 genital
+  modifiers), so the sculpt phase adds vulva, clitoris and intersex variation
+  as further features, each with its own presence, instead of one male-to-female
+  axis.
 
 Rejected: shipping layer code inside the adult pack (a second code path that
 the core's tests could not reach), and recompiling the material when the pack

@@ -39,6 +39,8 @@ import type {
   SurfaceEvaluation,
   SurfaceTopology,
 } from "../model/humanoidModel.ts";
+import { isAdult } from "../recipe/agePolicy.ts";
+import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
@@ -542,6 +544,9 @@ export function Humanoid({
       lips: s.lips,
       areola: s.areola,
       signals: { ...signals, ...flexion },
+      // Which adult layers paint: only for an adult, only for the anatomy applied.
+      adult: isAdult(recipe),
+      anatomy: appliedAnatomy(recipe),
     });
   }, [skin, recipe, signals, flexion]);
 
