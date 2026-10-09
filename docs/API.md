@@ -1100,13 +1100,14 @@ and camera.
 
 - One tab per MakeHuman modelling task (Main, Gender, Face, Torso, ...,
   Measure), in upstream order, with MakeHuman's groups and slider labels, plus
-  Appearance (skin, iris, sclera, and hair when the client loaded a hair pack:
-  a style from the pack or none, twelve natural colours, a picker for dyed hair
-  and the pigment sliders behind the colours) and Regions (per-region macro
-  overrides). Tapping the hair opens Appearance.
-  Appearance (skin, iris, sclera), Regions (per-region macro overrides) and,
-  when the client loaded a clothing pack, a Wardrobe: the garments by kind,
-  one worn at a time per kind, layered across kinds.
+  Appearance (skin, iris, sclera; hair when the client loaded a hair pack: a
+  style from the pack or none, twelve natural colours, a picker for dyed hair
+  and the pigment sliders behind the colours; and body hair: a beard style, or
+  Natural for the default for age and sex, and a density per region from none
+  to twice the default, with underarm and pubic density offered to adults
+  only), Regions (per-region macro overrides) and, when the client loaded a
+  clothing pack, a Wardrobe: the garments by kind, one worn at a time per kind,
+  layered across kinds. Tapping the hair opens Appearance.
 - Tapping the figure opens the controls that shape the tapped part (its tab,
   with the group opened and scrolled into view) and frames that part from the
   front; see `buildFeatureMap`. Dragging orbits the view instead.
