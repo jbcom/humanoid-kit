@@ -68,8 +68,9 @@ lock (`grounded: false`); the figure's lift follows its lowest vertex.
 ![A crouch walk](./animation-quaternius-crouch.webp)
 
 *`crouch_fwd_loop`.* A deep crouch with a hand to the ground. The darker patches
-at the knees and hips at full flexion are the creases layer (`docs/evidence/creases.md`),
-not the clip.
+at the knees and hips, here and in the jog, at full flexion read as the creases
+layer's shading (`docs/evidence/creases.md`), not the clip; they are the
+correctives lane's to judge.
 
 ![Sitting idle](./animation-quaternius-sitting.webp)
 
