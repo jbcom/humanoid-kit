@@ -1974,9 +1974,13 @@ age.
 - A new evaluation rebakes into a new texture that replaces the old in the
   same uniform, so only a figure gaining or losing body art rebuilds its
   shader.
-- The projection reaches 30% of the tattoo's longer side off the skin's plane
+- The projection reaches half the decal's longer side off the skin's plane
   (at least 1 cm) and skips skin facing away from it, so a tattoo on a
-  forearm never lands on the hip behind it.
+  forearm never lands on the hip behind it. Both limits fade rather than cut:
+  a hard end sliced a cheek's port-wine stain in a straight line on the
+  contact sheets, where the skin curved out of reach.
+- No ink or mark acts on the nail plate, the nail-gloss layer's mask: it is
+  not skin (the sheets showed vitiligo whitening the nail beds).
 - The ink's colour is stored sRGB-encoded so dark inks keep their precision
   in eight bits.
 - The browser tests hold the bake to its frame (orientation, the seam, facing

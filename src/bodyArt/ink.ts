@@ -21,11 +21,13 @@ import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { melaninFreeAlbedo, type Rgb, type SkinTone, skinAlbedo } from "../surface/skinTone.ts";
 
 /**
- * How deep the ink lies under the skin's surface, metres: a CHOICE within the
- * superficial dermis where tattoo pigment is found (BODY-ART.md A1), below an
- * epidermis of about 0.1 mm. It sets how much the dermis above veils the ink.
+ * How deep the ink lies under the skin's surface, metres: a CHOICE at the top
+ * of the papillary dermis, where most tattoo pigment is found (BODY-ART.md
+ * A1), below an epidermis of about 0.1 mm. It sets how much the dermis above
+ * veils the ink: at 0.2 mm fresh black ink on the fairest skin is L* 30 (0.3 mm
+ * read greyish, L* 36, on the contact sheets).
  */
-export const INK_DEPTH = 0.3e-3;
+export const INK_DEPTH = 0.2e-3;
 
 export interface InkOptics {
   /** The epidermis's two-way transmittance over the ink (the skin's melanin, twice). */
