@@ -108,6 +108,7 @@ class FakeWorker {
             rig: EMPTY_RIG,
             presenceJoints: {} as never,
             adultAnatomyLoaded: false,
+            hair: null,
             wardrobe: [],
           });
       }, 1);

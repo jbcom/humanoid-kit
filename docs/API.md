@@ -25,6 +25,7 @@ Fetches and parses the packs.
 interface LoadOptions {
   body: PackLocation;           // e.g. bodyPack from humanoid-kit-body
   adultAnatomy?: PackLocation;  // e.g. adultAnatomyPack
+  hair?: PackLocation;          // e.g. hairPack from humanoid-kit-hair; only its manifest loads up front
   clothing?: PackLocation;      // e.g. clothingPack from humanoid-kit-clothing
   firstFigureAge?: number;      // whose targets a staged load brings first; default 25
 }
@@ -37,15 +38,25 @@ type PackLocation =
 - Rejects with `AssetFormatError` when a request answers with an error status
   (a network failure rejects with the platform's `TypeError`), a buffer range exceeds
   its file, a target is duplicated, or the adult pack was built for a different
-  body pack (`topology` or `bodySha256` mismatch), as is the clothing pack, or
-  when a garment shares an id with an attachment.
+  body pack (`topology` or `bodySha256` mismatch), as are the hair pack and the
+  clothing pack, or when a garment shares an id with an attachment.
 - Returns `HumanoidAssets`: the `manifest`, typed-array views of `positions`,
   `uvs`, `faceVerts`, `faceUvs`, `skinIndex` and `skinWeight`, a `targets` map
   (`SparseTarget`: `indices`, `deltas`, `scale`), a `modifiers` map
   (`ShapeModifierEntry`), `adultAnatomyLoaded`, `adultAnatomyManifest`,
   `targetFilesPending` (ids of target files not loaded yet) and `targetFileOf`
   (target name to file id). With the adult pack loaded, `targets` and
-  `modifiers` include its entries. With the clothing pack loaded,
+  `modifiers` include its entries. `hair` is the hair pack (`HairAssets`) or
+  null: `styles` (every `HairStyleEntry` of the manifest, by id), `bound` (the
+  styles whose geometry has arrived) and `load(id)`, which resolves with a
+  style's geometry, fetching its binary the first time and sharing a fetch that
+  is already running (a failed fetch is forgotten, so the next wearer retries).
+  A `HairStyleEntry` is an attachment entry (no `deleteVerts`,
+  one occlusion value per vertex) with a `label`, `tags` (`short`, `bob`,
+  `curly`...), its `kind` (`scalp`, or `brows` or `lashes`, which share the pack's
+  loader; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
+  carries each entry's kind), its `file` and `sha256`, and the `strand` direction and
+  `coherence` measured from its strand map. With the clothing pack loaded,
   `clothingManifest` lists its garments from the start; `garments` (a map of
   `BoundGarment` by id) fills once the garments binary has arrived, and
   `garmentsPending` is true until then.
@@ -74,15 +85,19 @@ stage still loads, and `complete` rejects with the first failure.
 
 Also exported:
 
-- `parseHumanoidAssets(pack, adultAnatomy?, clothing?)`: the same parsing from
-  already-fetched, decompressed buffers. Pure; usable in workers and tests.
+- `parseHumanoidAssets(pack, adultAnatomy?, clothing?, hair?)`: the same parsing
+  from already-fetched, decompressed buffers. Pure; usable in workers and tests.
   `pack.targets` maps file ids (`BODY_TARGET_FILES`) to buffers; `core` is
   required and any others may come later. `clothing` is `{ manifest, garments? }`;
-  without `garments` they are pending.
+  without `garments` they are pending. `hair` is `{ manifest }`: the styles
+  are known, their geometry comes with `addHairStyle`.
 - `addGarments(assets, bin)`: adds the clothing pack's decompressed garments
   binary. Throws `AssetFormatError` when no clothing pack is loaded, the
   garments are already loaded, or one fails to check, and then leaves `assets`
   unchanged.
+- `addHairStyle(assets, id, bin)`: adds one hair style's decompressed binary.
+  Throws `AssetFormatError` for a style the hair pack does not have or bytes
+  that do not parse, and then leaves `assets` unchanged.
 - `addTargetFiles(assets, files)`: adds target files by id as they arrive (the
   adult pack's under `ADULT_TARGET_FILE`). Throws `AssetFormatError` for a file
   the loaded packs do not have, one already loaded, or one that fails to
@@ -94,6 +109,7 @@ Also exported:
 - `jointPosition(assets, positions, joint, out, offset?)`: writes a skeleton
   joint's centroid over the given positions.
 - Types: `BodyManifest`, `AdultAnatomyManifest`, `AdultAnatomyData`,
+  `HairManifest`, `HairStyleEntry`, `HairAssets`, `HairPackData`,
   `ClothingManifest`, `ClothingPackData`, `GarmentEntry`, `BoundGarment`,
   `TargetEntry`, `ShapeModifierEntry`, `BoneEntry`, `BvhJoint`, `FaceGroup`,
   `BufferRange`, `PackSource`.
@@ -108,13 +124,15 @@ createRecipe(init?: {
   modifiers?: Record<string, number>;
   skin?: Partial<SkinRecipe>;
   eyes?: Partial<EyesRecipe>;
+  hair?: { style?: string | null; colour?: Partial<HairColour> };
   outfit?: readonly string[];
 }): Recipe
 ```
 
 Builds a recipe over the defaults (`DEFAULT_MACROS`, `DEFAULT_SKIN`,
-`DEFAULT_EYES`). It copies its input and does not validate it; validation
-happens at evaluation. `RECIPE_VERSION` is `1`.
+`DEFAULT_EYES`, and `DEFAULT_HAIR_COLOUR` when `hair` is given). It copies its
+input and does not validate it; validation happens at evaluation.
+`RECIPE_VERSION` is `1`.
 
 ```ts
 interface Recipe {
@@ -124,7 +142,13 @@ interface Recipe {
   modifiers: Record<string, number>; // id -> [-1, 1]; one-sided [0, 1]; missing = 0
   skin: SkinRecipe;
   eyes: EyesRecipe;
+  hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
+}
+
+interface HairRecipe {
+  style: string | null; // a scalp style id of the hair pack, or null for none
+  colour: HairColour;   // eumelanin, pheomelanin, grey (each 0..1) and override: Rgb | null
 }
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
@@ -262,6 +286,12 @@ and throws `RangeError` for anything else.
   moves `Evaluation.control` and no drawn vertex until the sculpt phase.
   `recipe.outfit` adds the garments (see "Clothing"); `haveOutfit` is the
   outfit key the caller already holds the masks of.
+- `model.adultDetailLattice(recipe): AdultDetailLattice | null`: the vertex
+  space the adult pack's detail targets are authored on (`{ key, vertexCount,
+  positions }`): the vertices of the refined region, which a detail target
+  indexes from 0, with their positions on this figure and the key that names
+  the refinement. Null without an adult surface; throws `AgePolicyError` for a
+  figure under 18. The packer uses it to place authored forms.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
   only (every pose corner holding the rest value). `body.occlusion` is the
@@ -275,12 +305,28 @@ and throws `RangeError` for anything else.
   `AttachmentTopology.occlusion`, or null for the pack's own set.
   `model.bakeAttachmentOcclusion()` is the whole bake at once, per control
   vertex (what the packer stores).
+- Hair: `model.pendingHair(recipe)` is the style id the recipe wears that has not
+  loaded yet (null when it has none or has what it needs; it throws
+  `RecipeError` for an id the hair pack lacks, or when no hair pack is loaded),
+  `model.hairTopology(id): HairTopology` is a style's static render data (the
+  mesh like an attachment's, `label`, `tags`, `material`, `textureUrl`, per
+  render vertex its `occlusion`, `fade` (0 where a hairline thins out), `fin` (1
+  on a card standing out of the scalp) and `growth` (metres from the root), the
+  `scalp` (per body render vertex, how densely the style grows from the skin
+  there) and the `strand` coherence), `model.bakeHairOcclusion(asset)` is the
+  packer's bake of a style's occlusion at rest, per control vertex, and
+  `model.bakeHairFields(asset)` its growth, fade, fin and scalp
+  (`hairFields`, `src/surface/hairFields.ts`). `evaluate` fills `Evaluation.hair` from
+  `recipe.hair.style` and throws `MorphError` for a style whose geometry has
+  not arrived (`assets.hair.load(id)` brings it); the style never changes the
+  body, which keeps every face (hair has no `delete_verts`).
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
 interface Evaluation {
   positions: Float32Array;  // render vertices, xyz, metres
   normals: Float32Array;    // smooth, shared across UV seams
+  hair: HairEvaluation | null; // the worn style's { id, positions, normals }; null without hair
   groundOffset: number;     // lift that puts the lowest body point on y = 0
   control: Float32Array;    // morphed positions in the base topology
   curvature: Float32Array;  // per body render vertex, mean curvature (1/m)
@@ -387,6 +433,17 @@ compute what the renderer will do.
   times the skin's melanin optical density (twice at the default 0.5;
   research/SKIN-RENDERING.md §5.6), `MELANIN_FREE_RED_REFLECTANCE` its baseline.
   `depth` 0..1 is the recipe's slider.
+- `hairAlbedo(colour: HairColour): Rgb`: linear-RGB diffuse albedo of hair from
+  two pigments (`eumelanin` 0 none .. 1 black, `pheomelanin` 0 none .. 1 most
+  red-gold) and the `grey` fraction of unpigmented fibres; `override` returns
+  that colour as given. The pigments' per-channel absorption
+  (`EUMELANIN_ABSORPTION`, `PHEOMELANIN_ABSORPTION`) is pbrt-v4's, and the
+  albedo follows Chiang et al.'s `exp(-g·σ^p)` form with `PATH_GAIN` and
+  `PATH_EXPONENT` fitted to measured tresses (research/HAIR-COLOUR.md says which
+  colours are measured and which modelled). `HAIR_COLOURS` names twelve natural colours as pigment
+  values (`black` to `white`), `DEFAULT_HAIR_COLOUR` is `brown`, and
+  `hairTint(colour)` is the material colour that makes a packed strand map
+  (mean `HAIR_STRAND_MEAN`) render as that albedo.
 - CIELAB conversions: `labFromLinear`, `linearFromLab`, `lchFromLab`,
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
@@ -732,7 +789,7 @@ The main-thread handle to an evaluation worker.
 - `client.complete: Promise<void>` resolves when every target file has
   loaded, or rejects with the error that stopped one.
 - `ReadyInfo` is `{ topology, modifiers, sliders, rig, presenceJoints,
-  adultAnatomyLoaded, anatomy?, wardrobe }`: the render topology, every drivable
+  adultAnatomyLoaded, anatomy?, wardrobe, hair }`: the render topology, every drivable
   shape modifier, the merged slider taxonomy, the rig (`RigData` plus each
   bone's `parents` index; the topology's skin indices refer to `rig.bones`), the
   joints presence reads (`presenceJoints`), whether the adult anatomy pack is
@@ -741,7 +798,13 @@ The main-thread handle to an evaluation worker.
   the garments the clothing pack offers (`WardrobeEntry[]`: `id`, `name`,
   `label`, `kind`, `tags`; empty without that pack). `label` is what to call a
   garment in a list ("Brown oxfords"); `name` is the asset's file name, which
-  says whom it was drawn for.
+  says whom it was drawn for. `hair` is the hair pack's entries (`HairInfo`: `{ styles: { id, label, tags, kind }[] }`, null without a hair pack), known before any style loads.
+- `client.hairTopology(id): HairTopology | undefined` is a worn style's static
+  render data. The worker sends it with the first evaluation that wears the
+  style and the client keeps it, so an `Evaluation` whose `hair.id` you
+  receive can always be rendered with `client.hairTopology(hair.id)`. A style's
+  files load on that first evaluation, which waits for them; one that fails
+  to load rejects that evaluation with the reason, and a later one retries.
 - `client.evaluate(recipe, key?, signals?, haveOutfit?): Promise<Evaluation>`
   (signals as for `model.evaluate`) is latest-wins per key:
   each key has at most one evaluation in the worker and one waiting, and a
@@ -827,12 +890,13 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | --- | --- |
 | `recipe` | The `Recipe` to render |
 | `material?` | A three.js `Material` replacing the built-in skin material, which follows `recipe.skin` |
-| `onEvaluated?` | Called with each `Evaluation` |
+| `onEvaluated?` | Called with each `Evaluation`, as its geometry is written |
+| `onSettled?` | Called with an `Evaluation` once everything the recipe wears is drawn: the geometry is written and the hair style's strand map, the attachments' and garments' textures and the attachments' posed occlusion have loaded (then two frames). Wait for this, not `onEvaluated`, before a screenshot. The playground's `data-figure="ready"` is this |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
 | `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
-| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
+| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |
 | other props | Passed to the wrapping `<group>` |
 
@@ -852,6 +916,16 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   (`GUM_LAB`), pigmented browner and patchier with `recipe.skin.melanin`
   (`TeethMaterial.setSkin`, `gumAppearance`; ARCHITECTURE.md, "The gums";
   `docs/evidence/gums.md`).
+- Renders `recipe.hair` when the client loaded a hair pack: alpha cards
+  skinned to the figure and coloured by `recipe.hair.colour` (`HairMaterial`:
+  the strand map times the pigment colour's tint, two Kajiya-Kay highlight
+  lobes along the strands (their direction read from the baked growth), baked
+  occlusion, hairlines dithered away by `fade` and loose fin cards by their
+  angle to the eye), with edges drawn by alpha-to-coverage on a multisampled
+  canvas and by an alpha test otherwise. The skin under the style takes a
+  stubble tint of the hair's colour where it grows (`SkinMaterial.setScalp`, the
+  `hkScalp` attribute). Changing the style loads that style's files; changing
+  the colour re-evaluates nothing.
 - Renders the garments `recipe.outfit` names, once the client loaded a
   clothing pack: skinned to the same skeleton, so they follow the pose, with
   their diffuse and normal maps. The body keeps its geometry whatever is worn;
@@ -975,6 +1049,10 @@ and camera.
 
 - One tab per MakeHuman modelling task (Main, Gender, Face, Torso, ...,
   Measure), in upstream order, with MakeHuman's groups and slider labels, plus
+  Appearance (skin, iris, sclera, and hair when the client loaded a hair pack:
+  a style from the pack or none, twelve natural colours, a picker for dyed hair
+  and the pigment sliders behind the colours) and Regions (per-region macro
+  overrides). Tapping the hair opens Appearance.
   Appearance (skin, iris, sclera), Regions (per-region macro overrides) and,
   when the client loaded a clothing pack, a Wardrobe: the garments by kind,
   one worn at a time per kind, layered across kinds.
@@ -985,7 +1063,8 @@ and camera.
   hint for that slider.
 - Undo and redo (dragging a slider is one step), random figure, reset, and
   save and load of the recipe as JSON. A loaded recipe is validated and checked
-  against the loaded packs and the age policy before it replaces the figure.
+  against the loaded packs (modifiers, and a hair style the hair pack has) and
+  the age policy before it replaces the figure.
 - Adult-only sliders are disabled, with the reason, under 18.
 - On narrow screens the controls become a bottom sheet over the figure.
 - Styles are scoped under `.hk-creator` and themed by `--hk-*` CSS variables.
@@ -1017,8 +1096,11 @@ interface HumanoidEditor {
 
 Changes that share a `gesture` key form one undo step. `randomize` is
 deterministic for a seed and never sets adult-only modifiers unless
-`options.includeAdultAnatomy` is true and the figure is 18 or over. Every
-change is undoable.
+`options.includeAdultAnatomy` is true and the figure is 18 or over. With a hair
+pack loaded, a random figure also wears one of its styles (or none, one time
+in ten) in a natural colour that runs darker on deeper skin; `randomRecipe`
+takes the styles as `options.hairStyles`, and without them keeps the base
+recipe's hair. Every change is undoable.
 
 ### Wardrobe helpers
 
@@ -1072,6 +1154,23 @@ each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the
 worker client. The package also exposes its files under
 `humanoid-kit-body/data/*`.
 
+## `humanoid-kit-hair`
+
+```ts
+import { hairPack } from "humanoid-kit-hair";
+```
+
+`hairPack` is `{ manifest, files }` like `bodyPack`: per style, `<id>.bin.gz`
+(the binding, geometry, baked occlusion and the measured growth, fade, fin and
+scalp) and `<id>.webp` (the strand map).
+Pass it as `hair` to `loadHumanoidAssets` or to the worker client. It is an
+optional install: only its manifest loads up front, and a style's two files
+load when a figure first wears it (about 150 to 700 kB per style). The ten
+styles are MakeHuman's own CC0 scalp hair: `short02`, `bob02`, `long01`,
+`afro01`, `short04`, `short03`, `ponytail01`, `short01`, `bob01` and `braid01`.
+Its manifest records the hash of the body pack it binds to, and the loader
+refuses any other.
+
 ## `humanoid-kit-adult-anatomy`
 
 ```ts
@@ -1090,7 +1189,16 @@ core, which ships in the public build, names no adult target or modifier
 (`pnpm check:pages`); a pack without it adds no adult layers and no state
 morphs. `anatomy.surface` (`AdultSurfaceSpec`: the base body `faces` to refine
 and their `levels`) names the pelvic region the adult surface refines; a pack
-without it leaves every figure on the base surface.
+without it leaves every figure on the base surface. `anatomy.detail`
+(`AdultDetailSpec`) names the pack's *detail targets*: entries of the adult
+target file whose indices are vertices of the refined region
+(`HumanoidModel.adultDetailLattice`), not of the base body. A modifier of the
+adult pack can drive one like any target (`lo` and `hi` name them); the model
+keeps them out of the control morph and adds them to the adult surface after it
+is evaluated, scaled by the figure (`detail.scale`: two control vertices and
+their distance on the authoring figure), so a figure under 18, evaluated on the
+base surface, has nowhere to apply one. `detail.surfaceKey` pins the targets to
+the refinement they were authored on; the model refuses them against another.
 
 ## `humanoid-kit-clothing`
 

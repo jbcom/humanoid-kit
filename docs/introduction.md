@@ -20,9 +20,11 @@ replay.
 | `humanoid-kit` | MIT | Asset loading, recipes, the age policy, evaluation, subdivision, the worker client and the React bindings |
 | `humanoid-kit-body` | CC0 1.0 | The base mesh, shape targets for every age MakeHuman models (1 to 90 years), the 163-bone skeleton and skin weights, facial pose units and 233 shape modifiers |
 | `humanoid-kit-adult-anatomy` | CC0 1.0 | Adult-only targets and 5 modifiers. A separate install |
+| `humanoid-kit-hair` | CC0 1.0 | Ten scalp hair styles as alpha cards bound to the base body. A separate install |
 
-The two packs together carry 238 shape modifiers. An application that never
-installs the adult anatomy pack cannot render adult anatomy at all.
+The body and adult packs together carry 238 shape modifiers. An application that never
+installs the adult anatomy pack cannot render adult anatomy at all, and one that
+never installs the hair pack never downloads hair.
 
 ## Entry points
 
@@ -50,10 +52,8 @@ into geometry yourself, and it runs in Node, which is how its tests run.
 
 ## What is planned
 
-The skeleton, skin weights and facial pose units are already in the body pack,
-but posing, expressions, hair, clothing, anthro traits and animation are not
-implemented, and neither is the editor. The [architecture notes](./ARCHITECTURE/)
-list the roadmap.
+Clothing, body and facial hair, anthro traits and animation packs are not
+implemented. The [architecture notes](./ARCHITECTURE/) list the roadmap.
 
 Start with [Getting started](./getting-started/), then read the
 [API reference](./API/) and the [architecture notes](./ARCHITECTURE/).

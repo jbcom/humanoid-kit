@@ -2,5 +2,6 @@
   ".": "0.0.0",
   "packs/body": "0.0.0",
   "packs/adult-anatomy": "0.0.0",
+  "packs/hair": "0.0.0",
   "packs/clothing": "0.0.0"
 }
