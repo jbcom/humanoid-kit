@@ -46,6 +46,7 @@ import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/o
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
+import { beardStyle, bodyHairCoverage } from "../surface/bodyHair.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
 import { COAT_REGION_LIMIT, type CoatFields, coatMasks, combField } from "../surface/coat.ts";
 import {
@@ -55,6 +56,7 @@ import {
   scalpShade,
   UV_SCALE_STEPS,
 } from "../surface/hairFields.ts";
+import { DEFAULT_HAIR_COLOUR } from "../surface/hairTone.ts";
 import {
   buildLayerFields,
   isAdultLayer,
@@ -143,6 +145,12 @@ export interface HairTopology extends SurfaceTopology {
   adultScalp: Float32Array | null;
   /** Which way strands run in the strand map, and how consistently (`HairStyleEntry.strand`). */
   strand: { angle: number; coherence: number };
+  /**
+   * Body hair cards (`beard`): per render vertex its card's rank, 0..1; the
+   * renderer draws a card while its rank is under the figure's coverage. Null
+   * for every other kind.
+   */
+  rank: Float32Array | null;
 }
 
 /**
@@ -338,6 +346,11 @@ export interface Evaluation extends SurfaceEvaluation {
   brows: HairEvaluation | null;
   /** The recipe's lashes (`recipe.hair.lashes`), or null. */
   lashes: HairEvaluation | null;
+  /**
+   * The hair pack's cards for the recipe's beard style (`wornBeardCards`), or
+   * null: a style the pack has cards for, on a face that grows terminal hair.
+   */
+  beard: HairEvaluation | null;
   /** One entry per garment worn, in `outfit.order`. */
   garments: SurfaceEvaluation[];
   /**
@@ -948,6 +961,7 @@ export class HumanoidModel {
       [hair?.style, "scalp"],
       [hair?.brows, "brows"],
       [hair?.lashes, "lashes"],
+      [this.wornBeardCards(recipe), "beard"],
     ];
     const out: string[] = [];
     for (const [id, kind] of worn) {
@@ -1055,7 +1069,30 @@ export class HumanoidModel {
           )
         : null,
       strand: entry.strand,
+      rank: fields?.rank ? carry((v) => (fields.rank?.[v] as number) / 255).map(clamp01) : null,
     };
+  }
+
+  /**
+   * The id of the hair pack's cards for the recipe's beard style (an entry of
+   * kind `beard` tagged with the style), or null: when the pack has none for
+   * the style, or the face grows no terminal hair (a child's, or at a density
+   * of 0), which loads nothing.
+   */
+  wornBeardCards(recipe: Recipe): string | null {
+    const styles = this.assets.hair?.styles;
+    if (!styles) return null;
+    const input = {
+      age: recipe.macros.age,
+      gender: recipe.macros.gender,
+      colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
+      ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
+    };
+    if (bodyHairCoverage("face", input) <= 0) return null;
+    const style = beardStyle(input);
+    for (const entry of styles.values())
+      if (entry.kind === "beard" && entry.tags.includes(style)) return entry.id;
+    return null;
   }
 
   /**
@@ -1244,6 +1281,8 @@ export class HumanoidModel {
     const wornBrows = browsId === null ? null : { id: browsId, h: this.hairPart(browsId, "brows") };
     const wornLashes =
       lashesId === null ? null : { id: lashesId, h: this.hairPart(lashesId, "lashes") };
+    const beardId = this.wornBeardCards(recipe);
+    const wornBeard = beardId === null ? null : { id: beardId, h: this.hairPart(beardId, "beard") };
     let minY = Number.POSITIVE_INFINITY;
     for (const v of this.bodyVertices) minY = Math.min(minY, control[v * 3 + 1] as number);
     // The adult surface only for a figure aged 18 or over, decided here and nowhere
@@ -1283,6 +1322,8 @@ export class HumanoidModel {
     };
     const brows = decal(wornBrows, true);
     const lashes = decal(wornLashes, false);
+    // A beard's cards are bound and evaluated as scalp hair is.
+    const beard = decal(wornBeard, false);
     const curvature = meanCurvature(
       body.positions,
       body.normals,
@@ -1299,6 +1340,7 @@ export class HumanoidModel {
       hair,
       brows,
       lashes,
+      beard,
       garments,
       outfit: {
         key,
