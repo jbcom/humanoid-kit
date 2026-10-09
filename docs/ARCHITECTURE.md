@@ -1458,6 +1458,13 @@ Old recipes evaluate and serialise as before.
   (`inSkinAlbedo`): from afar it changes nothing, and the skin's colour parity
   holds; only its strands up close, in a view finer than its 2 mm cells, are
   drawn. A surface with no metres per UV unit (a test sphere) draws no strands.
+  Vellus lies flat (no relief): raised, its strands caught a raking light on
+  their lit side and read as light flecks, most of all on deep skin.
+- *Hair is never lighter than the skin it lies on.* A strand's colour is held
+  to the luminance of the skin under it, keeping its hue, so a fair strand on
+  deep skin is a darker line rather than a fleck. A browser test holds vellus
+  up close, lit from the front and at a graze, to no pixel lighter than bare
+  skin (ΔL\* under 0.5) and a mean ΔL\* under 2, at four tones.
 - *Hair is split by length, one system with the anthro fur* (the owner's
   ruling, 2026-10-09, after the M6 fur design). Sparse, fine hair (vellus, the
   limbs, a light chest) is strand layers; short, dense hair (stubble, a dense
