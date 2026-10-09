@@ -222,8 +222,8 @@ describe("the areola's relief", () => {
     it("is finer-grained and fainter than the relief of any hair-bearing skin, and gentler in a child", () => {
       const t = paintStopTable([AREOLA_RELIEF_LAYER], paint(adultFemale));
       const child = paintStopTable([AREOLA_RELIEF_LAYER], paint({ age: 6, build: { gender: 0 } }));
-      // Header: strength, kind 6, height, spacing.
-      expect(t[1]).toBe(6);
+      // Header: strength, kind 7, height, spacing.
+      expect(t[1]).toBe(7);
       expect(t[2]).toBeGreaterThan(0.00005);
       expect(t[2]).toBeLessThan(0.0003);
       expect(t[3]).toBeGreaterThan(0.0005);
@@ -250,7 +250,7 @@ describe("the areola's relief", () => {
       expect(MONTGOMERY_LAYER.kind).toBe("detail");
       expect(MONTGOMERY_LAYER.pattern).toBe("tubercles");
       const t = paintStopTable([MONTGOMERY_LAYER], paint(adultFemale));
-      expect(t[1]).toBe(7);
+      expect(t[1]).toBe(8);
       // A bump spans 0.7 of a cell: its diameter is that of the measured tubercle.
       expect(0.7 * (t[3] as number)).toBeGreaterThan(0.001);
       expect(0.7 * (t[3] as number)).toBeLessThan(0.002);
@@ -742,7 +742,7 @@ describe("the stretch marks", () => {
     expect(STRIAE_LAYER.kind).toBe("detail");
     expect(STRIAE_LAYER.pattern).toBe("striae");
     const t = paintStopTable([STRIAE_LAYER], paint({ age: 25, build: heavy }));
-    expect(t[1]).toBe(8);
+    expect(t[1]).toBe(9);
     expect(t[2]).toBeGreaterThan(0.00005);
     expect(t[2]).toBeLessThan(0.0004);
     expect(t[3]).toBeCloseTo(STRIA_SPACING, 9);

@@ -6,7 +6,7 @@
  */
 import { DataUtils } from "three";
 import { afterAll, describe, expect, it } from "vitest";
-import { creaseHeight, type SkinLayer } from "../../src/surface/layers.ts";
+import { creaseHeight, lineRelief, type SkinLayer, STOP_COUNT } from "../../src/surface/layers.ts";
 import {
   orientationAtCoordinate,
   orientationCoordinate,
@@ -93,6 +93,54 @@ describe("detail layers", () => {
     // Light from +x: where the relief rises along x it faces away, and darkens.
     expect(scale).toBeLessThan(0);
     expect(Math.sqrt(residual / energy)).toBeLessThan(0.12);
+  });
+
+  it("shades a colour layer's line by the slope of its relief and leaves its colour alone", () => {
+    // A multiply layer whose stops are all 1 (no colour change) and whose relief cuts a groove
+    // at stop 3 (`SkinLayerPaint.relief`): the shading must be the reference's slope, and with
+    // no relief the layer must render exactly as a layer with no relief at all.
+    const depths = Array.from({ length: STOP_COUNT }, (_, k) => (k === 3 ? 0.004 : 0));
+    const line = (relief?: number[]): SkinLayer => ({
+      id: "line",
+      blend: "multiply",
+      targets: [],
+      fields: noFields,
+      paint: () => ({
+        strength: 1,
+        stops: Array.from({ length: STOP_COUNT }, () => [1, 1, 1] as [number, number, number]),
+        ...(relief && { relief }),
+      }),
+    });
+    const flat = render([]);
+    expect(render([line()])).toEqual(flat);
+    const cut = render([line(depths)]);
+    const change = Array.from(
+      { length: SIZE },
+      (_, x) => (cut[(SIZE / 2) * SIZE + x] as number) - (flat[(SIZE / 2) * SIZE + x] as number),
+    );
+    // The plane is 2 m across and its coordinate runs 0..1 along it.
+    const slope = Array.from({ length: SIZE }, (_, x) => {
+      const c = (x + 0.5) / SIZE;
+      const e = 1e-4;
+      return (lineRelief(depths, c + e) - lineRelief(depths, c - e)) / (2 * e * 2);
+    });
+    let sxy = 0;
+    let sxx = 0;
+    for (let x = 0; x < SIZE; x++) {
+      sxy += (slope[x] as number) * (change[x] as number);
+      sxx += (slope[x] as number) ** 2;
+    }
+    const scale = sxy / sxx;
+    let residual = 0;
+    let energy = 0;
+    for (let x = 0; x < SIZE; x++) {
+      residual += ((change[x] as number) - scale * (slope[x] as number)) ** 2;
+      energy += (change[x] as number) ** 2;
+    }
+    // Light from +x: where the relief rises along x it faces away, and darkens.
+    expect(scale).toBeLessThan(0);
+    expect(energy).toBeGreaterThan(0);
+    expect(Math.sqrt(residual / energy)).toBeLessThan(0.15);
   });
 
   it("fades creases where a period is a few pixels, so a bent limb seen end-on shows no dotted ring", () => {

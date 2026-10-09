@@ -88,6 +88,10 @@ try {
   const hairManifest = JSON.parse(
     readFileSync(path.join(root, "packs/hair/data/manifest.json"), "utf8"),
   );
+  const animations = pack(path.join(root, "packs/animations"), workDir);
+  const animationsManifest = JSON.parse(
+    readFileSync(path.join(root, "packs/animations/data/manifest.json"), "utf8"),
+  );
 
   const codeFiles = new Set(code.files.map((f) => f.path));
   for (const f of ["LICENSE", "NOTICE.md", "README.md", "package.json", WORKER_FILE]) {
@@ -162,6 +166,20 @@ try {
         ...hairManifest.styles.flatMap((s) => [`data/${s.file}`, `data/${s.material.texture}`]),
       ],
     ],
+    [
+      "humanoid-kit-animations",
+      animations,
+      [
+        "index.js",
+        "index.d.ts",
+        "LICENSE",
+        "README.md",
+        "data/manifest.json",
+        "data/PROVENANCE.md",
+        // Every clip ships its binary, and the manifest names no other file.
+        ...animationsManifest.clips.map((c) => `data/${c.file}`),
+      ],
+    ],
   ]) {
     const present = new Set(p.files.map((f) => f.path));
     for (const f of files) assert(present.has(f), `${label} tarball is missing ${f}`);
@@ -178,6 +196,14 @@ try {
       '"kind":"hair"',
     ),
     "body pack manifest holds a hair style",
+  );
+
+  // The animation pack carries no body data, and no clip is in the body pack.
+  const animationFiles = new Set(animations.files.map((f) => f.path));
+  assert(!animationFiles.has("data/body.bin.gz"), "animation pack carries body data");
+  assert(
+    [...animationFiles].every((f) => !/targets/.test(f)),
+    "animation pack carries target files",
   );
 
   // The body pack must carry nothing from the adult anatomy pack.
@@ -207,7 +233,7 @@ try {
       "install",
       "--no-audit",
       "--no-fund",
-      ...[code, body, adult, hair].map((p) => path.join(workDir, p.filename)),
+      ...[code, body, adult, hair, animations].map((p) => path.join(workDir, p.filename)),
       ...PEERS,
     ],
     { cwd: consumer, env: npmEnvironment, shell: npmNeedsShell, stdio: "pipe" },
@@ -226,7 +252,8 @@ try {
       const { bodyPack } = await import("humanoid-kit-body");
       const { adultAnatomyPack } = await import("humanoid-kit-adult-anatomy");
       const { hairPack } = await import("humanoid-kit-hair");
-      for (const p of [bodyPack, adultAnatomyPack, hairPack]) {
+      const { animationsPack } = await import("humanoid-kit-animations");
+      for (const p of [bodyPack, adultAnatomyPack, hairPack, animationsPack]) {
         assert(p.manifest.startsWith("file:"), "pack manifest URL should resolve to the installed file");
         for (const url of Object.values(p.files)) assert(url.startsWith("file:"), "pack file URL should resolve");
       }
@@ -237,7 +264,7 @@ try {
   );
   assert.equal(result, "ok", "installed ESM smoke failed");
   console.log(
-    `verify-package: ${code.entryCount} + ${body.entryCount} + ${adult.entryCount} + ${hair.entryCount} files packed; every entry point imports`,
+    `verify-package: ${code.entryCount} + ${body.entryCount} + ${adult.entryCount} + ${hair.entryCount} + ${animations.entryCount} files packed; every entry point imports`,
   );
 } finally {
   rmSync(workDir, { recursive: true, force: true });

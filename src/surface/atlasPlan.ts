@@ -21,7 +21,8 @@ const SUPPORT_FLOOR = 1 / 512;
 
 /**
  * Which atlas channel holds what: for each layer, the channel of its mask
- * (`value`) and of its coordinate (`coord`, -1: the shader reads none), and,
+ * (`value`, -1: none, the layer is on all the skin) and of its coordinate
+ * (`coord`, -1: the shader reads none), and,
  * for a layer that shares its channels, the owner map it reads (`owner`, -1:
  * none) and its id in it.
  */
@@ -116,11 +117,15 @@ interface Group {
  * has one. A group has a value channel,
  * a coordinate channel if any member reads one, and, with two or more members,
  * an owner map. Without a surface, or for an adult layer (whose fields arrive
- * after the plan) or one that reaches nothing, a layer is its own group.
+ * after the plan) or one that reaches nothing, a layer is its own group. A
+ * layer on all the skin (`everywhere`) takes no channel at all: its `value` is
+ * -1, and the shader reads its mask as 1.
  */
 export function planAtlas(layers: readonly SkinLayer[], surface?: AtlasSurface): AtlasPlan {
   const groups: Group[] = [];
   layers.forEach((layer, l) => {
+    // A layer on all the skin has no field to store: the shader reads its mask as 1.
+    if (layer.everywhere) return;
     const cells = surface && !layer.adult ? supportCells(surface, l) : null;
     const reads = layerUsesCoordinate(layer);
     if (cells?.some((c) => c === 1)) {
@@ -145,7 +150,7 @@ export function planAtlas(layers: readonly SkinLayer[], surface?: AtlasSurface):
     groups.push({ members: [l], cells: null, reads });
   });
 
-  const value = new Int16Array(layers.length);
+  const value = new Int16Array(layers.length).fill(-1);
   const coord = new Int16Array(layers.length).fill(-1);
   const owner = new Int16Array(layers.length).fill(-1);
   const ownerId = new Uint8Array(layers.length);

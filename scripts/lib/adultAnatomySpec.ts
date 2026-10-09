@@ -13,21 +13,32 @@
 import type {
   AdultAnatomySpec,
   AdultDetailSpec,
+  AdultReservoirSpec,
   HumanoidAssets,
 } from "../../src/format/assetFormat.ts";
-import { DETAIL_MODIFIERS } from "./adultDetail.ts";
+import { AUTHORED_MODIFIERS } from "./adultAuthored.ts";
+import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE } from "./detail/phallus.ts";
+import { TESTES_SIZE } from "./detail/scrotum.ts";
 import { pelvicRefinement } from "./pelvicRegion.ts";
 
 /** The part of the spec that does not depend on the base mesh. */
-export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail"> = {
+export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "reservoirs"> = {
   features: [
     {
       id: "penis",
       modifiers: ["genitals/penis-length-decr|incr", "genitals/penis-circ-decr|incr"],
     },
     { id: "testes", modifiers: ["genitals/penis-testicles-decr|incr"] },
+    // The organ drawn out of the phallic reservoir (scripts/lib/detail/phallus.ts). It has no skin
+    // layer yet: the layers above still measure the CC0 targets, whose sliders are hidden.
+    {
+      id: "phallus",
+      modifiers: [PHALLUS_SIZE, PHALLUS_LENGTH, PHALLUS_GIRTH],
+    },
+    // The sacs and testes drawn out of the labioscrotal pair (scripts/lib/detail/scrotum.ts); no layer yet either.
+    { id: "scrotum", modifiers: [TESTES_SIZE] },
     // The mound has MakeHuman's one control (the body's bulge, a control target) and this
-    // pack's own (detail targets on the adult surface, scripts/lib/detail/mound.ts).
+    // pack's own (a generated control target, scripts/lib/control/mound.ts).
     { id: "mound", modifiers: ["pelvis/bulge-decr|incr", "pelvis/mound-decr|incr"] },
   ],
   skinLayers: [
@@ -42,26 +53,25 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail"> = 
     { id: "testes-skin", masks: ["genitals/penis-testicles-incr"], lo: 0.05, hi: 0.4 },
     { id: "mound-skin", masks: ["pelvis/bulge-incr"], lo: 0.25, hi: 0.8 },
   ],
-  stateMorphs: [
-    {
-      // Erect against flaccid: circumference +25% and length +43% (docs/research/SKIN-STATES.md, B4).
-      signal: "arousal",
-      targets: [
-        { name: "genitals/penis-circ-incr", weight: 0.44 },
-        { name: "genitals/penis-length-incr", weight: 0.25 },
-      ],
-    },
-  ],
+  // Arousal changes the organ through the detail's drives (`detail/phallus.ts`: erect against
+  // flaccid is length +43% and circumference +25%, docs/research/ADULT-ANATOMY-DATA.md, F), which
+  // read the signal, not through state morphs on the CC0 penis targets that this replaces.
+  stateMorphs: [],
 };
 
 /**
  * The whole spec for a base body: the fixed part and the surface refinement
  * round the pelvis (`pelvicRefinement`), which is a choice of that body's faces.
  */
-export function adultAnatomySpec(base: HumanoidAssets, detail?: AdultDetailSpec): AdultAnatomySpec {
+export function adultAnatomySpec(
+  base: HumanoidAssets,
+  detail?: AdultDetailSpec,
+  reservoirs?: AdultReservoirSpec[],
+): AdultAnatomySpec {
   return {
     ...ADULT_ANATOMY_SPEC,
     surface: pelvicRefinement(base),
+    ...(reservoirs && { reservoirs }),
     ...(detail && { detail }),
   };
 }
@@ -84,5 +94,5 @@ export const ADULT_SPEC_MODIFIERS: readonly string[] = ADULT_ANATOMY_SPEC.featur
 
 /** The modifiers the spec names that MakeHuman ships: the packer checks these against upstream's. */
 export const ADULT_SPEC_UPSTREAM_MODIFIERS: readonly string[] = ADULT_SPEC_MODIFIERS.filter(
-  (id) => !DETAIL_MODIFIERS.some((m) => m.id === id),
+  (id) => !AUTHORED_MODIFIERS.some((m) => m.id === id),
 );

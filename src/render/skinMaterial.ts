@@ -33,16 +33,18 @@ import {
   Vector4,
 } from "three";
 import { inkOptics } from "../bodyArt/ink.ts";
+import { markRatios, SCAR_RAISE, SCAR_SMOOTHNESS } from "../bodyArt/marks.ts";
 import { type AtlasPlan, OWNER_GRID, planAtlas } from "../surface/atlasPlan.ts";
 import {
   CREASE_SHARPNESS,
+  MAX_STRAND_COVER,
   paintStopTable,
   type SkinLayer,
   type SkinPaintInput,
   STOP_COUNT,
   STOP_TABLE_WIDTH,
 } from "../surface/layers.ts";
-import { SKIN_LAYERS } from "../surface/regions/index.ts";
+import { NAIL_GLOSS_LAYER, SKIN_LAYERS } from "../surface/regions/index.ts";
 import {
   RIDGE_ACROSS,
   RIDGE_ALONG,
@@ -61,6 +63,7 @@ import {
   STRIA_THRESHOLD_SLOPE,
   STRIAE_ORIENTATION_SEAM,
 } from "../surface/striae.ts";
+import { MARK_NEUTRAL } from "./bodyArtTexture.ts";
 import { DUAL_SKINNING_KEY, type DualBones, patchDualSkinning } from "./dualSkinning.ts";
 import { emptyLayerAtlas, emptyOwners, type SkinLayerAtlas } from "./layerAtlas.ts";
 import { BODY_OCCLUSION_FLOOR, BODY_OCCLUSION_POWER, patchOcclusion } from "./occlusion.ts";
@@ -107,6 +110,139 @@ const glslFloat = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
 /** Name of the per-vertex attribute holding metres of skin per UV unit. */
 export const UV_SCALE_ATTRIBUTE = "hkUvScale";
 
+/** How many directions strand layers quantise the hair flow to (over a half turn). */
+export const STRAND_DIRECTIONS = 8;
+
+/**
+ * Pixel sizes, in cells across, between which strands give way to their mean
+ * cover: drawn one by one while a pixel is under a third of a cell, the mean
+ * from two thirds on.
+ */
+export const STRAND_NEAR_LIMIT = 0.33;
+export const STRAND_FAR_START = 0.66;
+
+/**
+ * Strand layers (kind 6): hair lying on the skin, drawn at true scale.
+ *
+ * Each layer's strands are roots scattered over a grid of cells in the plane
+ * of the skin (metres, `uv × hkUvScale`), a cell half a strand long along the
+ * hair's flow and as wide across it as the follicle density leaves, so one
+ * root a cell is the density. A root carries a strand when a hash of its cell
+ * is under the layer's coverage times its mask, so a mask's soft edge thins
+ * the hair rather than fading it. A strand is a segment of random length
+ * (half to all of the layer's), tilted a little, thinning to its tip; its
+ * coverage of the pixel is the overlap of its width with the pixel's footprint
+ * across it (a box filter, exact for strands finer than a pixel), so a far
+ * strand is a faint line rather than a flickering one.
+ *
+ * The flow is the bind pose's downward direction carried through the
+ * skinning (`vHkFlow`, view space), so hair runs down the limbs and trunk and
+ * follows them as they move. The pixel's UV-space direction comes from the
+ * position and UV derivatives. Rotating the grid by that direction pixel by
+ * pixel would shear it wherever the direction varies (the grid's coordinates
+ * are thousands of cells), so it is quantised to `STRAND_DIRECTIONS` fixed
+ * grids over a half turn, and each root belongs to the nearer of the two
+ * grids round the flow by a hash weighted by closeness: the density is kept
+ * and no strand is drawn faint twice.
+ *
+ * Where a cell across is smaller than a pixel the grid cannot be sampled, and
+ * the strands become their mean cover (`strandCover`, what `applyLayers`
+ * computes), eased in as the pixel grows from `STRAND_NEAR_LIMIT` to
+ * `STRAND_FAR_START` of a cell: the search covers the cells round the pixel's
+ * centre, so a pixel any wider than a cell would sample a few strands of many
+ * and speckle.
+ */
+const STRAND_FUNCTIONS = (count: number) => `
+varying vec3 vHkFlow;
+// The strands' relief at this pixel, metres, left by hkApplyStrands for the normal.
+float hkStrandHeight = 0.0;
+// A hash that holds up at the large cell coordinates strands reach (Hoskins' hash12).
+float hkHashS( vec2 p ) {
+	vec3 p3 = fract( vec3( p.xyx ) * 0.1031 );
+	p3 += dot( p3, p3.yzx + 33.33 );
+	return fract( ( p3.x + p3.y ) * p3.z );
+}
+// One grid's strands at p (metres), oriented at angle: their cover of the pixel, 0..1.
+// keep: the share of roots this grid draws; cover: the share that carry hair.
+float hkStrandGrid( vec2 p, float angle, float seed, float keep, float cover, float density, float len, float width, float px ) {
+	float cl = 0.5 * len;
+	float ca = 1.0 / ( density * cl );
+	float c = cos( angle ), s = sin( angle );
+	vec2 q = vec2( c * p.x + s * p.y, - s * p.x + c * p.y );
+	vec2 g = floor( q / vec2( cl, ca ) );
+	float clear = 1.0;
+	for ( int dx = -2; dx <= 0; dx ++ )
+		for ( int dy = -1; dy <= 1; dy ++ ) {
+			vec2 id = g + vec2( float( dx ), float( dy ) );
+			vec2 k = id + seed;
+			if ( hkHashS( k + 3.71 ) >= keep || hkHashS( k + 9.13 ) >= cover ) continue;
+			vec2 root = ( id + vec2( hkHashS( k ), hkHashS( k + 17.31 ) ) ) * vec2( cl, ca );
+			float slen = len * ( 0.5 + 0.5 * hkHashS( k + 5.17 ) );
+			float tilt = ( 2.0 * hkHashS( k + 7.77 ) - 1.0 ) * min( 0.25, 0.45 * ca / slen );
+			vec2 dir = vec2( cos( tilt ), sin( tilt ) );
+			vec2 rel = q - root;
+			float t = dot( rel, dir );
+			if ( t < - px || t > slen + px ) continue;
+			float d = dot( rel, vec2( - dir.y, dir.x ) );
+			float w = width * ( 1.0 - 0.6 * clamp( t / slen, 0.0, 1.0 ) );
+			float across = max( 0.0, min( d + 0.5 * px, 0.5 * w ) - max( d - 0.5 * px, - 0.5 * w ) ) / px;
+			float along = clamp( ( t + 0.5 * px ) / px, 0.0, 1.0 ) * clamp( ( slen - t + 0.5 * px ) / px, 0.0, 1.0 );
+			clear *= 1.0 - across * along;
+		}
+	return 1.0 - clear;
+}
+// Applies every strand layer to the colour c at uv, and leaves their relief in hkStrandHeight.
+vec3 hkApplyStrands( vec3 c, vec2 uv ) {
+	// A surface without a scale (no metres per UV unit) has no true-scale detail.
+	if ( vHkUvScale <= 0.0 ) return c;
+	vec2 p = uv * vHkUvScale;
+	float px = max( max( length( dFdx( p ) ), length( dFdy( p ) ) ), 1e-7 );
+	// The flow's direction in UV: the screen-space combination of the position's
+	// derivatives nearest to it, carried to UV by the same combination of uv's.
+	vec3 dpx = dFdx( - vViewPosition );
+	vec3 dpy = dFdy( - vViewPosition );
+	vec2 dux = dFdx( uv );
+	vec2 duy = dFdy( uv );
+	float a11 = dot( dpx, dpx ), a12 = dot( dpx, dpy ), a22 = dot( dpy, dpy );
+	float det = a11 * a22 - a12 * a12;
+	vec2 r = vec2( dot( dpx, vHkFlow ), dot( dpy, vHkFlow ) );
+	vec2 k = abs( det ) > 1e-30 ? vec2( a22 * r.x - a12 * r.y, a11 * r.y - a12 * r.x ) / det : vec2( 0.0 );
+	vec2 flow = k.x * dux + k.y * duy;
+	float theta = dot( flow, flow ) > 0.0 ? atan( flow.y, flow.x ) : 0.0;
+	float f = mod( theta, 3.14159265 ) / ( 3.14159265 / ${glslFloat(STRAND_DIRECTIONS)} );
+	float i0 = floor( f );
+	float wNext = f - i0;
+	float turn = 3.14159265 / ${glslFloat(STRAND_DIRECTIONS)};
+	for ( int l = 0; l < ${count}; l ++ ) {
+		vec4 head = hkHeader( l );
+		if ( hkKind( head ) != 6 || head.x <= 0.0 ) continue;
+		float mask = hkFields( l, uv ).x;
+		if ( mask <= 0.0 ) continue;
+		vec4 hair = texelFetch( hkLayerStops, ivec2( 1, l ), 0 );
+		vec4 more = texelFetch( hkLayerStops, ivec2( 2, l ), 0 );
+		float relief = more.x * 1e-3;
+		float density = head.z * 1e4;
+		float len = head.w * 1e-3;
+		float width = hair.w * 1e-3;
+		float cover = head.x * mask;
+		// Hair the skin's measured albedo already holds (vellus) adds no mean cover.
+		float mean = more.y > 0.5 ? 0.0 : min( ${glslFloat(MAX_STRAND_COVER)}, cover * density * 0.75 * len * width );
+		float ca = 1.0 / ( density * 0.5 * len );
+		float far = smoothstep( ${glslFloat(STRAND_NEAR_LIMIT)}, ${glslFloat(STRAND_FAR_START)}, px / ca );
+		float a = mean;
+		if ( far < 1.0 ) {
+			float seed = float( l ) * 101.0;
+			float a0 = hkStrandGrid( p, i0 * turn, seed, 1.0 - wNext, cover, density, len, width, px );
+			float a1 = hkStrandGrid( p, ( i0 + 1.0 ) * turn, seed + 53.0, wNext, cover, density, len, width, px );
+			float near = 1.0 - ( 1.0 - a0 ) * ( 1.0 - a1 );
+			a = mix( near, mean, far );
+			hkStrandHeight += ( 1.0 - far ) * near * relief;
+		}
+		c = mix( c, hair.rgb, a );
+	}
+	return c;
+}`;
+
 /**
  * The layer stack, per pixel: the shader form of `applyLayers`,
  * `surfaceChange` and `creaseHeight`, which the browser tests hold it to.
@@ -123,13 +259,15 @@ uniform highp sampler2DArray hkLayerAtlas;
 uniform sampler2D hkLayerStops;
 // Which cell of the body's UV plane owns each texel of a channel that layers share.
 uniform highp sampler2DArray hkLayerOwners;
-// Per layer, the atlas channels of its mask (x) and coordinate (y, -1: none), four to a page,
+// Per layer, the atlas channels of its mask (x, -1: none, mask 1) and coordinate (y, -1: none), four to a page,
 // and, for a layer that shares its channels, its owner map (z, -1: none) and its id in it (w).
 uniform vec4 hkChannel[${Math.max(1, count)}];
 vec4 hkPage( float c, vec2 uv ) { return texture( hkLayerAtlas, vec3( uv, floor( c * 0.25 ) ) ); }
 float hkChannelOf( vec4 page, float c ) { return page[ int( c - 4.0 * floor( c * 0.25 ) + 0.5 ) ]; }
 vec2 hkFields( int l, vec2 uv ) {
 	vec4 ch = hkChannel[ l ];
+	// A layer on all the skin has no channel.
+	if ( ch.x < 0.0 ) return vec2( 1.0, 0.0 );
 	if ( ch.z >= 0.0 ) {
 		// The channel holds this layer's fields only in the cells the owner map gives it.
 		ivec2 cell = ivec2( clamp( uv, 0.0, 0.9999 ) * ${glslFloat(OWNER_GRID)} );
@@ -155,6 +293,7 @@ vec2 hkSurfaceChange( vec2 uv ) {
 	}
 	return s;
 }
+${STRAND_FUNCTIONS(count)}
 float hkHash( vec2 p ) {
 	return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 );
 }
@@ -245,9 +384,9 @@ vec3 hkApplyLayers( vec3 c, vec2 uv ) {
 	for ( int l = 0; l < ${count}; l ++ ) {
 		vec4 head = hkHeader( l );
 		int kind = hkKind( head );
-		if ( kind > 1 && kind != 8 ) continue;
+		if ( kind > 1 && kind != 9 ) continue;
 		vec2 f = hkFields( l, uv );
-		if ( kind == 8 ) {
+		if ( kind == 9 ) {
 			// Stretch marks: the skin where there is a mark is multiplied by the layer's colour ratio.
 			vec3 ratio = texture( hkLayerStops, vec2( 1.5 / ${glslFloat(STOP_TABLE_WIDTH)}, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).rgb;
 			c = mix( c, c * ratio, hkStriaeWeight( l, head, f, uv ) );
@@ -267,15 +406,30 @@ float hkDetailHeight( vec2 uv ) {
 	for ( int l = 0; l < ${count}; l ++ ) {
 		vec4 head = hkHeader( l );
 		int kind = hkKind( head );
-		if ( kind != 2 && kind != 3 && kind != 5 && kind != 6 && kind != 7 && kind != 8 ) continue;
+		if ( kind <= 1 ) {
+			// A colour layer's line that also shades: its stops' depths (their alpha, the layer's
+			// deepest in the header) along the exact coordinate, so the normal is tilted by the
+			// gradient across the line, per pixel, and the line is lit on one side and shadowed
+			// on the other at any tone. Smoothed so it has no kink to catch the light.
+			if ( head.x <= 0.0 || head.z <= 0.0 ) continue;
+			vec2 g = hkFields( l, uv );
+			float u = ( 1.5 + clamp( g.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
+			float depth = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).a;
+			float s = clamp( depth / head.z, 0.0, 1.0 );
+			// A line is a period of two stops of the coordinate: gone by the time that is ten pixels.
+			float lineFade = hkFootprintFade( fwidth( g.y ) * ${glslFloat((STOP_COUNT - 1) / 2)} );
+			H -= g.x * head.x * head.z * lineFade * s * s * ( 3.0 - 2.0 * s );
+			continue;
+		}
+		if ( kind != 2 && kind != 3 && kind != 5 && kind != 7 && kind != 8 && kind != 9 ) continue;
 		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
 		if ( head.x <= 0.0 ) continue;
 		vec2 f = hkFields( l, uv );
 		float a = f.x * head.x;
-		if ( kind == 8 ) {
+		if ( kind == 9 ) {
 			// A stretch mark is a shallow atrophic dip: depth is the layer's height.
 			H -= head.z * hkStriaeWeight( l, head, f, uv );
-		} else if ( kind == 2 || kind == 6 || kind == 7 ) {
+		} else if ( kind == 2 || kind == 7 || kind == 8 ) {
 			vec2 p = uv * vHkUvScale / head.w;
 			float fade = 1.0 - smoothstep( 0.25, 0.75, length( fwidth( p ) ) );
 			if ( kind == 2 ) {
@@ -284,7 +438,7 @@ float hkDetailHeight( vec2 uv ) {
 				// The amplitude profile along the coordinate, read from the stops' red channel.
 				float u = ( 1.5 + clamp( f.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
 				float profile = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
-				if ( kind == 6 ) H += a * profile * head.z * fade * hkBumps( p );
+				if ( kind == 7 ) H += a * profile * head.z * fade * hkBumps( p );
 				else H += f.x * head.x * head.z * fade * hkTubercles( p, profile );
 			}
 		} else if ( kind == 5 ) {
@@ -304,7 +458,7 @@ float hkDetailHeight( vec2 uv ) {
 			H -= a * head.z * fade * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} );
 		}
 	}
-	return H;
+	return H + hkStrandHeight;
 }
 // Tilts the normal by the gradient of a height field (metres) across the
 // surface (Mikkelsen's surface gradient, unnormalised so relief keeps its size).
@@ -362,25 +516,49 @@ float hkPreintegrated( float nDotL, float x ) {
 `;
 
 /**
- * Body art (`bakeBodyArt`, src/bodyArt/ink.ts), under `HK_BODY_ART` only: the
- * ink page's colour seen through this skin, mixed in by its coverage, after
- * the layer stack and before scattering, as ink lies in the dermis.
+ * Body art (`bakeBodyArt`, src/bodyArt/), under `HK_BODY_ART` only, after the
+ * layer stack and before scattering: the marks page's melanin and haemoglobin
+ * multiply the skin by this tone's ratios raised to them (`markedAlbedo`), and
+ * the ink page's colour, seen through this skin (`inkSeen`), mixes in by its
+ * coverage, as ink lies in the dermis. A scar's smoothness and raise
+ * (`hkMarkSurface`) go to the roughness and the relief; they are 0 without
+ * body art.
  */
 const BODY_ART_FUNCTIONS = `
+vec2 hkMarkSurface = vec2( 0.0 );
 #ifdef HK_BODY_ART
 uniform sampler2DArray hkBodyArt;
 uniform vec3 hkInkThrough;
 uniform vec3 hkInkVeil;
 uniform vec3 hkInkKeep;
+uniform vec3 hkMarkLight;
+uniform vec3 hkMarkDark;
+uniform vec3 hkMarkBlood;
 vec3 hkSrgbToLinear( vec3 c ) {
 	return mix( c / 12.92, pow( ( c + 0.055 ) / 1.055, vec3( 2.4 ) ), step( vec3( 0.04045 ), c ) );
 }
 vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
+	// The nail plate is not skin: no mark or ink acts on it.
+	#ifdef HK_NAIL_PLATE
+		float skin = 1.0 - clamp( hkFields( HK_NAIL_PLATE, uv ).x, 0.0, 1.0 );
+	#else
+		float skin = 1.0;
+	#endif
+	vec4 mark = texture( hkBodyArt, vec3( uv, 1.0 ) );
+	hkMarkSurface = mark.ba * skin;
+	float melanin = skin * ( mark.r * 255.0 - ${MARK_NEUTRAL.toFixed(1)} ) / 127.0;
+	c *= pow( hkMarkLight, vec3( max( - melanin, 0.0 ) ) ) * pow( hkMarkDark, vec3( max( melanin, 0.0 ) ) ) * pow( hkMarkBlood, vec3( mark.g * skin ) );
 	vec4 ink = texture( hkBodyArt, vec3( uv, 0.0 ) );
-	return mix( c, hkInkThrough * ( hkInkVeil + hkInkKeep * hkSrgbToLinear( ink.rgb ) ), ink.a );
+	return mix( c, hkInkThrough * ( hkInkVeil + hkInkKeep * hkSrgbToLinear( ink.rgb ) ), ink.a * skin );
 }
 #endif
 `;
+
+/** Which of `layers` is the nail plate's (`NAIL_GLOSS_LAYER`, whose mask is the plate), for body art to leave alone. */
+function nailPlateDefine(layers: readonly SkinLayer[]): string {
+  const l = layers.findIndex((layer) => layer.id === NAIL_GLOSS_LAYER.id);
+  return l < 0 ? "" : `#define HK_NAIL_PLATE ${l}\n`;
+}
 
 const BODY_ART_COLOUR = `
 	#ifdef HK_BODY_ART
@@ -566,6 +744,10 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkInkThrough: { value: Vector3 };
     hkInkVeil: { value: Vector3 };
     hkInkKeep: { value: Vector3 };
+    /** What marks multiply this skin by (`markRatios`). */
+    hkMarkLight: { value: Vector3 };
+    hkMarkDark: { value: Vector3 };
+    hkMarkBlood: { value: Vector3 };
   };
   private readonly stopTable: Float32Array;
   private dualBones: DualBones | null = null;
@@ -666,6 +848,9 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkInkThrough: { value: new Vector3() },
       hkInkVeil: { value: new Vector3() },
       hkInkKeep: { value: new Vector3() },
+      hkMarkLight: { value: new Vector3() },
+      hkMarkDark: { value: new Vector3() },
+      hkMarkBlood: { value: new Vector3() },
     };
     setChannels(this.hkUniforms.hkChannel.value, plan);
     this.normalMap = poreNormalMap();
@@ -698,6 +883,10 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     this.hkUniforms.hkInkThrough.value.fromArray(ink.through);
     this.hkUniforms.hkInkVeil.value.fromArray(ink.veil);
     this.hkUniforms.hkInkKeep.value.fromArray(ink.keep);
+    const marks = markRatios(a.tone);
+    this.hkUniforms.hkMarkLight.value.fromArray(marks.light);
+    this.hkUniforms.hkMarkDark.value.fromArray(marks.dark);
+    this.hkUniforms.hkMarkBlood.value.fromArray(marks.blood);
     // Regional colour: each layer's paint from its own model (measured for lips),
     // blended in by the atlas's soft-edged masks.
     paintStopTable(this.layers, { ...a, signals: a.signals ?? {} }, this.stopTable);
@@ -722,7 +911,12 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       )
       .replace(
         "#include <common>",
-        `#include <common>\nattribute float ${CURVATURE_ATTRIBUTE};\nvarying float vHkCurvature;`,
+        `#include <common>\nattribute float ${CURVATURE_ATTRIBUTE};\nvarying float vHkCurvature;\nvarying vec3 vHkFlow;`,
+      )
+      // The hair flow: the bind pose's downward direction, skinned like a normal.
+      .replace(
+        "#include <skinnormal_vertex>",
+        "#include <skinnormal_vertex>\n\tvec3 hkFlow = vec3( 0.0, - 1.0, 0.0 );\n\t#ifdef USE_SKINNING\n\t\thkFlow = ( skinMatrix * vec4( hkFlow, 0.0 ) ).xyz;\n\t#endif\n\tvHkFlow = normalize( ( modelViewMatrix * vec4( hkFlow, 0.0 ) ).xyz );",
       );
     for (const chunk of [
       "color_fragment",
@@ -735,21 +929,22 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${BODY_ART_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
+        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${nailPlateDefine(this.layers)}${BODY_ART_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
       )
       .replace(
         "#include <color_fragment>",
-        `#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n${BODY_ART_COLOUR}\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, mix( diffuseColor.rgb * ${glslFloat(SCALP_SHADE)}, hkScalpColour, ${glslFloat(SCALP_HAIR_SHARE)} ), clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );`,
+        // Hair lies over the skin's ink, so strands follow the body art.
+        `#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n${BODY_ART_COLOUR}\n\tdiffuseColor.rgb = hkApplyStrands( diffuseColor.rgb, vHkUv );\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, mix( diffuseColor.rgb * ${glslFloat(SCALP_SHADE)}, hkScalpColour, ${glslFloat(SCALP_HAIR_SHARE)} ), clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );`,
       )
       // Surface layers: roughness here, specular once the material is set up.
       .replace(
         "#include <roughnessmap_fragment>",
-        "#include <roughnessmap_fragment>\n\tvec2 hkSurface = hkSurfaceChange( vHkUv );\n\troughnessFactor = clamp( roughnessFactor + hkSurface.x, 0.03, 1.0 );",
+        `#include <roughnessmap_fragment>\n\tvec2 hkSurface = hkSurfaceChange( vHkUv );\n\troughnessFactor = clamp( roughnessFactor + hkSurface.x - ${glslFloat(SCAR_SMOOTHNESS)} * hkMarkSurface.x, 0.03, 1.0 );`,
       )
       // Detail layers: relief on top of the pore map.
       .replace(
         "#include <normal_fragment_maps>",
-        "#include <normal_fragment_maps>\n\tnormal = hkPerturbNormal( normal, hkDetailHeight( vHkUv ), - vViewPosition, faceDirection );",
+        `#include <normal_fragment_maps>\n\tnormal = hkPerturbNormal( normal, hkDetailHeight( vHkUv ) + ${glslFloat(SCAR_RAISE)} * hkMarkSurface.y, - vViewPosition, faceDirection );`,
       )
       .replace(
         "#include <lights_physical_fragment>",
@@ -774,6 +969,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-9-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}${this.hkUniforms.hkBodyArt.value ? "-art" : ""}`;
+    return `humanoid-kit-skin-10-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}${this.hkUniforms.hkBodyArt.value ? "-art" : ""}`;
   }
 }

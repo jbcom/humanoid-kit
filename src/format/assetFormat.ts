@@ -284,9 +284,24 @@ export interface BoundAsset {
   hair?: HairFieldData;
 }
 
-/** The kinds of entry the hair pack lists. */
-export const HAIR_KINDS = ["scalp", "brows", "lashes"] as const;
+/**
+ * The kinds of entry the hair pack lists: scalp hair, the brows and lashes
+ * (decals), and generated body hair cards (`beard`: a grown beard's length,
+ * over the coat's dense base; docs/ARCHITECTURE.md, "Body hair").
+ */
+export const HAIR_KINDS = ["scalp", "brows", "lashes", "beard"] as const;
 export type HairKind = (typeof HAIR_KINDS)[number];
+
+/** Kinds whose entries carry the measured strand fields (`HAIR_FIELD_KEYS`). */
+export const STRAND_KINDS: readonly HairKind[] = ["scalp", "beard"];
+
+/**
+ * The buffer a body hair card entry carries beyond a scalp style's: per card
+ * vertex, its card's rank (0..255). A card is drawn while its rank is under the
+ * figure's coverage, so density follows age, sex and the recipe with the same
+ * geometry.
+ */
+export const CARD_FIELD_KEYS = ["rank"] as const;
 
 /** The buffers a hair style's binary carries beyond an attachment's (`src/surface/hairFields.ts`). */
 export const HAIR_FIELD_KEYS = [
@@ -312,6 +327,8 @@ export interface HairFieldData {
   fin: Uint8Array;
   scalpVerts: Uint16Array;
   scalpWeights: Uint8Array;
+  /** A body hair card entry's ranks (`CARD_FIELD_KEYS`); absent on scalp hair. */
+  rank?: Uint8Array;
 }
 
 /**
@@ -328,11 +345,14 @@ export interface HairStyleEntry extends Omit<AttachmentEntry, "layout" | "kind">
    */
   kind: HairKind;
   /**
-   * A scalp style's layout holds every `HAIR_FIELD_KEYS` buffer; a decal's
-   * (`brows`, `lashes`) holds none, since it has no hairline, growth or scalp.
+   * A scalp style's layout holds every `HAIR_FIELD_KEYS` buffer; a beard's
+   * cards hold those and `CARD_FIELD_KEYS`; a decal's (`brows`, `lashes`) holds
+   * none, since it has no hairline, growth or scalp.
    */
   layout: AttachmentEntry["layout"] &
-    Partial<Record<(typeof HAIR_FIELD_KEYS)[number], BufferRange>>;
+    Partial<
+      Record<(typeof HAIR_FIELD_KEYS)[number] | (typeof CARD_FIELD_KEYS)[number], BufferRange>
+    >;
   /** What a picker shows. */
   label: string;
   /** What the style is: length, texture, shape (`short`, `curly`, `ponytail`...). */
@@ -444,6 +464,22 @@ export interface AdultAnatomySpec {
    * section 6a). Absent, the pack has only control targets.
    */
   detail?: AdultDetailSpec;
+  /**
+   * Collapsed strips on the adult surface that detail extrudes (docs/research/
+   * ADULT-SCULPT-PLAN.md, section 6b). Needs `surface`; absent, there are none.
+   */
+  reservoirs?: AdultReservoirSpec[];
+}
+
+/** A reservoir (`Reservoir` in src/build/reservoir.ts) with the id detail refers to it by. */
+export interface AdultReservoirSpec {
+  id: string;
+  /** Vertices of the refinement mesh round the cap, in order. */
+  loop: number[];
+  /** Polygons of the refinement mesh that make the cap. */
+  cap: number[];
+  /** Collapsed rings between the loop and the cap. */
+  rings: number;
 }
 
 /**
@@ -466,6 +502,27 @@ export interface AdultDetailSpec {
    * scaled by the ratio of the figure's own distance to `rest`. Absent: none.
    */
   scale?: { a: number; b: number; rest: number };
+  /**
+   * Targets whose weight is multiplied by other values: `gates[target]` lists
+   * factors (`src/model/detailFactors.ts`): `mod:<id>` (that modifier's positive
+   * part: how much of a feature there is), `mod-:<id>` (its negative part),
+   * `signal:<name>` (a skin-state signal, 0..1), `ramp:<id>:<x>,<w>;…` (a
+   * piecewise-linear function of a modifier's positive part) or `sramp:<name>:<x>,<w>;…`
+   * (the same of a signal).
+   * A girth change of a shaft is worth nothing without a shaft: its target is
+   * gated by the length modifier, so the two combine as a product and not as a
+   * sum of two independent displacements. A factor that is zero drops the target.
+   */
+  gates?: Record<string, string[]>;
+  /**
+   * Targets whose weight is derived from factors alone, with no modifier of their
+   * own: `drives[target]` lists factors as in `gates`, and the target is worth
+   * their product. A small organ is not a scaled-down large one, so size is a
+   * blend of baked shape keys, each driven by a `ramp` of one size modifier.
+   * Derived weights reach adults only, and a drive may name a modifier that has
+   * no target of its own (`ShapeModifierEntry` with an empty `hi`).
+   */
+  drives?: Record<string, string[]>;
 }
 
 /** Faces of the base body to refine and by how much: `levels[i]` for face `faces[i]`. */
@@ -824,13 +881,17 @@ export function addHairStyle(assets: HumanoidAssets, id: string, bin: ArrayBuffe
     occlusion,
   };
   // Brows and lashes are decals: nothing measured of strands or a scalp.
-  if (entry.kind !== "scalp") {
-    for (const key of HAIR_FIELD_KEYS)
+  if (!STRAND_KINDS.includes(entry.kind)) {
+    for (const key of [...HAIR_FIELD_KEYS, ...CARD_FIELD_KEYS])
       if (l[key])
         throw new AssetFormatError(what(`${key}: a ${entry.kind} style has no scalp fields`));
     assets.hair.bound.set(id, base);
     return base;
   }
+  // Only body hair cards carry ranks.
+  const cards = entry.kind === "beard";
+  if (!cards && l.rank) throw new AssetFormatError(what("rank: only body hair cards have ranks"));
+  if (cards && !l.rank) throw new AssetFormatError(what("rank is missing"));
   const field = (key: (typeof HAIR_FIELD_KEYS)[number]): BufferRange => {
     const range = l[key];
     if (!range) throw new AssetFormatError(what(`${key} is missing`));
@@ -843,7 +904,9 @@ export function addHairStyle(assets: HumanoidAssets, id: string, bin: ArrayBuffe
     fin: view(Uint8Array, bin, field("fin"), what("fin")),
     scalpVerts: view(Uint16Array, bin, field("scalpVerts"), what("scalpVerts")),
     scalpWeights: view(Uint8Array, bin, field("scalpWeights"), what("scalpWeights")),
+    ...(l.rank && { rank: view(Uint8Array, bin, l.rank, what("rank")) }),
   };
+  if (hair.rank) expectLength(hair.rank, entry.vertexCount, what("rank"));
   expectLength(hair.growth, entry.vertexCount, what("growth"));
   expectLength(hair.uvScale, entry.vertexCount, what("uvScale"));
   expectLength(hair.fade, entry.vertexCount, what("fade"));
@@ -1053,7 +1116,7 @@ export function pendingTargetFiles(assets: HumanoidAssets, names: Iterable<strin
   return out;
 }
 
-async function fetchOk(url: string): Promise<Response> {
+export async function fetchOk(url: string): Promise<Response> {
   const res = await fetch(url);
   if (!res.ok)
     throw new AssetFormatError(`fetching ${url} failed: ${res.status} ${res.statusText}`);
@@ -1069,7 +1132,10 @@ export type PackLocation =
   | string
   | { readonly manifest: string; readonly files: Readonly<Record<string, string>> };
 
-function packResolver(pack: PackLocation): { manifest: string; file: (name: string) => string } {
+export function packResolver(pack: PackLocation): {
+  manifest: string;
+  file: (name: string) => string;
+} {
   if (typeof pack === "string") {
     const base = pack.endsWith("/") ? pack : `${pack}/`;
     return { manifest: `${base}manifest.json`, file: (name) => base + name };
@@ -1126,7 +1192,7 @@ export interface StagedHumanoidAssets {
 
 /** Some hosts serve `.gz` files with `Content-Encoding: gzip`, so the browser has
  * already decompressed them; only data that still starts with gzip's magic is decoded. */
-const fetchGzip = (url: string) =>
+export const fetchGzip = (url: string) =>
   fetchOk(url)
     .then((r) => r.arrayBuffer())
     .then((b) => {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { HIDDEN_SLIDERS } from "../scripts/lib/adultAuthored.ts";
 import { modifierLabel } from "../scripts/lib/sliders.ts";
 import { mergeSliderTasks, type SliderTask } from "../src/format/assetFormat.ts";
 import { DEFAULT_MACROS } from "../src/makehuman/macro.ts";
@@ -15,7 +16,10 @@ describe("slider taxonomy", () => {
     const modifierSliders = assets.sliders.flatMap((t) =>
       t.groups.flatMap((g) => g.sliders.filter((s) => s.kind === "modifier").map((s) => s.id)),
     );
-    expect(new Set(modifierSliders)).toEqual(new Set(assets.modifiers.keys()));
+    // A modifier has a slider unless the pack replaced it with its own (`HIDDEN_SLIDERS`).
+    expect(new Set(modifierSliders)).toEqual(
+      new Set([...assets.modifiers.keys()].filter((id) => !HIDDEN_SLIDERS.includes(id))),
+    );
     for (const t of assets.sliders)
       for (const g of t.groups)
         for (const s of g.sliders)
@@ -26,7 +30,9 @@ describe("slider taxonomy", () => {
     const adult = new Set(adultManifest.modifiers.map((m) => m.id));
     expect(adult.size).toBeGreaterThan(0);
     for (const id of sliderIds(bodyManifest.sliders)) expect(adult.has(id), id).toBe(false);
-    expect(new Set(sliderIds(adultManifest.sliders))).toEqual(adult);
+    expect(new Set(sliderIds(adultManifest.sliders))).toEqual(
+      new Set([...adult].filter((id) => !HIDDEN_SLIDERS.includes(id))),
+    );
   });
 
   it("offers only body sliders when the adult pack is not loaded", () => {
