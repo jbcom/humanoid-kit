@@ -1,8 +1,12 @@
 /**
  * Joint creases: the folds the skin makes where it is pressed together on the
- * inside of a bend (the crook of the elbow, the back of the knee, the wrist's
- * palm side), driven by the pose's flexion signals (`flex.<joint>.<side>`,
- * src/rig/flexion.ts; docs/ARCHITECTURE.md, "Joint creases").
+ * inside of a bend (the crook of the elbow, the back of the knee), driven by the
+ * pose's flexion signals (`flex.<joint>.<side>`, src/rig/flexion.ts;
+ * docs/ARCHITECTURE.md, "Joint creases").
+ *
+ * The wrists have none: their skin has no strain measurement, and the folds
+ * drawn at the wrist (2.5 mm deep, round the palm side) read as a pale
+ * bracelet, where a real wrist has fine lines a fraction of a millimetre deep.
  *
  * One detail layer for each joint and side. Its folds are ridges across the
  * limb, so its coordinate runs along the limb through the joint. The outside of
@@ -24,35 +28,32 @@ import { FLEXION_JOINTS, type FlexionJoint } from "../../rig/flexion.ts";
 import type { DetailLayer } from "../layers.ts";
 import { skinZones } from "./skinZones.ts";
 
-export type CreaseJointName = "elbow" | "knee" | "wrist";
+export type CreaseJointName = "elbow" | "knee";
 type Side = "L" | "R";
 
-const JOINT_NAMES: readonly CreaseJointName[] = ["elbow", "knee", "wrist"];
+const JOINT_NAMES: readonly CreaseJointName[] = ["elbow", "knee"];
 const SIDES: readonly Side[] = ["L", "R"];
 
 /** Metres either side of the joint, along the limb, that its creases span. */
 export const CREASE_HALF_WIDTH: Readonly<Record<CreaseJointName, number>> = {
   elbow: 0.05,
   knee: 0.07,
-  wrist: 0.03,
 };
 
 /**
  * Skin strain at the joint's full flexion (fraction): measured at the forearm
  * (+25 % from 90° flexion to full extension) and the knee (over 60 % at
- * flexion). The wrist has no measurement and takes the forearm's.
+ * flexion).
  */
 export const CREASE_STRAIN: Readonly<Record<CreaseJointName, number>> = {
   elbow: 0.25,
   knee: 0.65,
-  wrist: 0.25,
 };
 
 /** Creases across a layer's window (art-directed). */
 export const CREASE_COUNT: Readonly<Record<CreaseJointName, number>> = {
   elbow: 3,
   knee: 3,
-  wrist: 2,
 };
 
 /**
@@ -76,7 +77,7 @@ const PROFILE_STRETCH = (378 * Math.PI ** 2) / 1024;
  * that must take up `e` is `√(e·s ÷ PROFILE_STRETCH)` deep. Each crease takes
  * its share of the strain over the window:
  * `e = CREASE_ABSORBED × strain × s`, with `s` the window ÷ the crease count.
- * That is 2.8 mm at the elbow, 2.5 mm at the wrist and 6.2 mm at the knee.
+ * That is 2.8 mm at the elbow and 6.2 mm at the knee.
  */
 export function creaseDepth(joint: CreaseJointName): number {
   const spacing = (2 * CREASE_HALF_WIDTH[joint]) / CREASE_COUNT[joint];
@@ -175,7 +176,7 @@ function creaseLayer(name: CreaseJointName, side: Side): DetailLayer {
   };
 }
 
-/** Creases for each side of the elbows, knees and wrists. */
+/** Creases for each side of the elbows and knees. */
 export const CREASE_LAYERS: readonly DetailLayer[] = JOINT_NAMES.flatMap((j) =>
   SIDES.map((s) => creaseLayer(j, s)),
 );

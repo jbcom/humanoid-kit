@@ -51,7 +51,7 @@ const layer = (id: string): DetailLayer => {
 const mask = (id: number, v: number) => fields[(id * n + v) * 3] as number;
 const coord = (id: number, v: number) => fields[(id * n + v) * 3 + 1] as number;
 
-const JOINTS = ["elbow", "knee", "wrist"] as const;
+const JOINTS = ["elbow", "knee"] as const;
 const SIDES = ["L", "R"] as const;
 
 /** A joint's rest geometry: its position, the axis through the segments either side, and its flex direction. */
@@ -81,7 +81,7 @@ const strong = (id: number) => {
 };
 
 describe("the crease layers' fields", () => {
-  it("are one layer for each side of the elbows, knees and wrists, after the rest layers", () => {
+  it("are one layer for each side of the elbows and knees, after the rest layers", () => {
     expect(CREASE_LAYERS.map((l) => l.id)).toEqual(
       JOINTS.flatMap((j) => SIDES.map((s) => creaseLayerId(j, s))),
     );
@@ -231,7 +231,6 @@ describe("the crease layers' paint", () => {
     expect(CREASE_STRAIN.elbow).toBeCloseTo(0.25, 6);
     expect(CREASE_STRAIN.knee).toBeGreaterThan(0.6);
     expect(creaseDepth("elbow")).toBeCloseTo(0.0028, 4);
-    expect(creaseDepth("wrist")).toBeCloseTo(0.0025, 4);
     expect(creaseDepth("knee")).toBeCloseTo(0.0062, 4);
     expect(creaseDepth("knee")).toBeGreaterThan(creaseDepth("elbow"));
   });
@@ -280,6 +279,10 @@ describe("the crease layers in a pose", () => {
     for (const joint of ["elbow", "knee"] as const)
       for (const side of SIDES)
         expect(strength(creaseLayerId(joint, side), s), `${joint}.${side}`).toBeGreaterThan(0.85);
+  });
+
+  it("have no layer for the wrists, whose creases read as a bracelet", () => {
+    expect(CREASE_LAYERS.some((l) => l.id.includes("wrist"))).toBe(false);
   });
 
   it("fold nothing at the elbows in the T-pose, which straightens them", () => {

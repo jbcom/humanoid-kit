@@ -1180,16 +1180,16 @@ the joint's skin takes, which is measured.
 
 **Decisions.**
 
-- *One layer per joint and side* (six in all: elbows, knees, wrists), on the
-  inside of the bend (the crook of the elbow, the back of the knee, the wrist's
-  palm side), which folds as the joint flexes, as grooves across the limb. One
+- *One layer per joint and side* (four in all: elbows and knees), on the
+  inside of the bend (the crook of the elbow, the back of the knee), which
+  folds as the joint flexes, as grooves across the limb. One
   per side because a layer has one strength, and the left and right joints bend
   independently. The outside of the bend (the elbow's point, the kneecap) has
   none. The measured strain there is a stretch (+25 % over the forearm's
   extension, over 60 % at the knee), which draws skin smooth; wrinkling when it
   is loose has no measurement behind it, and the first version drew it, 0.5 mm
-  deep, as bands round the knee and a pale ring at the wrist. It is dropped
-  rather than tuned: nothing says how deep or where. Twelve layers of this kind
+  deep, as bands round the knee. It is dropped rather than tuned: nothing says
+  how deep or where. Twelve layers of this kind
   were also twelve atlas masks.
 - *Fields from the rest mesh.* A layer's mask is a window along the limb about
   the joint (the axis through the segments either side of it), on the limb
@@ -1204,12 +1204,12 @@ the joint's skin takes, which is measured.
   draws, `sin⁶(πt)`, about 3.64 in those units), so a crease that must take up
   `e` is `√(e·s ÷ 3.64)` deep. Each crease takes its share of the strain over
   the window: `e = CREASE_ABSORBED × strain × s`, with `s` the window ÷ the
-  crease count (3 at the elbow and the knee, 2 at the wrist). The strains are
+  crease count (3 at the elbow and the knee). The strains are
   measured (SKIN-STATES.md, B5); a tenth of the strain taken up by creases
   (`CREASE_ABSORBED`, the rest going into the skin's compression and the flesh
   bulging beside the fold) and the counts are art-directed, for no measurement of
-  crease depth or spacing against joint angle exists. That is 2.8 mm at the elbow,
-  2.5 mm at the wrist and 6.2 mm at the knee (`creaseDepth`), and a test
+  crease depth or spacing against joint angle exists. That is 2.8 mm at the elbow
+  and 6.2 mm at the knee (`creaseDepth`), and a test
   integrates the drawn profile to hold the formula to it. The first scale, a
   flat `0.006 m × strain` (1.5 mm at the elbow), read as a faint line at viewing
   distance; the strain-derived 2.8 mm is the same rule with a fold that has to
@@ -1221,8 +1221,11 @@ the joint's skin takes, which is measured.
   ends, so a window starts and ends flat (`CREASE_SHARPNESS`, `creaseHeight`;
   the shader and its reference changed together, and the browser project holds
   the shader's shading to the reference's slope).
-- *Wrists* have the least to show (a few centimetres of window, a quarter of the
-  knee's strain) and are drawn at the same rules.
+- *Wrists have none.* They were drawn at the same rules (2 creases across 6 cm,
+  the forearm's strain, 2.5 mm deep) and, once deep enough to see, read as a
+  pale bracelet round the palm side; a real wrist has a few fine lines a
+  fraction of a millimetre deep, which no strain measurement here places. The
+  wrist's flexion signal is still computed.
 
 **Cost.** Six more layers. The field atlas is channel-packed (`planAtlas`: a
 channel for each mask, one for each coordinate a layer reads, and one

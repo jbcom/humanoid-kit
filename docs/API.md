@@ -462,9 +462,9 @@ compute what the renderer will do.
     `SWEAT_SPECULAR` are the change at full wetness. The two signals share one
     sweat drive, `1 - (1 - heat)(1 - exertion)`, split between the maps by
     their shares, so both at 1 is half of each map.
-  - Joint creases (ARCHITECTURE.md, "Joint creases"): `CREASE_LAYERS`, six
-    `DetailLayer`s with the `creases` pattern, one for each side of the elbows,
-    knees and wrists (`creaseLayerId(joint, side)`: `creases.elbow.L`, …),
+  - Joint creases (ARCHITECTURE.md, "Joint creases"): `CREASE_LAYERS`, four
+    `DetailLayer`s with the `creases` pattern, one for each side of the elbows
+    and knees (`creaseLayerId(joint, side)`: `creases.elbow.L`, …),
     which fold the inside of the bend as the joint's `flex.<joint>.<side>`
     signal rises. `CREASE_STRAIN` is the measured skin strain at full flexion
     (forearm 0.25, knee 0.65), `CREASE_ABSORBED` the share of it the creases
