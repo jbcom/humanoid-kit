@@ -55,6 +55,7 @@ import {
   restBonesFrom,
 } from "../rig/pose.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
+import { sameEntries } from "./sameEntries.ts";
 
 const ClientContext = createContext<HumanoidWorkerClient | null>(null);
 
@@ -105,6 +106,17 @@ function useLatest<T>(value: T) {
   const ref = useRef(value);
   ref.current = value;
   return ref;
+}
+
+/**
+ * The previous record while a new one has the same entries, so a prop passed
+ * inline (`pose={{ faceUnits: { JawDrop: 1 } }}`) does not recompute what
+ * depends on it on every render.
+ */
+function useSameEntries<T extends Readonly<Record<string, number>> | undefined>(value: T): T {
+  const ref = useRef(value);
+  if (!sameEntries(ref.current, value)) ref.current = value;
+  return ref.current;
 }
 
 export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
@@ -442,7 +454,7 @@ export function Humanoid({
 
   // The pose: face units blended into bone rotations (rest when absent), and
   // the attachments' occlusion following it.
-  const faceUnits = pose?.faceUnits;
+  const faceUnits = useSameEntries(pose?.faceUnits);
   const body = pose?.body;
   const rotations = useMemo(() => {
     if (!ready || (!body && !faceUnits)) return null; // rest
