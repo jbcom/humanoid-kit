@@ -42,6 +42,8 @@ export interface LayerRenderOptions {
   /** Pixels per side; default `SIZE`. */
   size?: number;
   appearance?: SkinAppearance;
+  /** Turns the plane about its vertical axis, radians: its u axis is foreshortened by the cosine. */
+  tilt?: number;
 }
 
 let renderer: WebGLRenderer | null = null;
@@ -82,6 +84,7 @@ export function renderLayers(layers: readonly SkinLayer[], options: LayerRenderO
   const camera = new OrthographicCamera(-half, half, half, -half, 0.1, 10);
   camera.position.set(cx, cy, 5);
   const plane = new PlaneGeometry(side, side);
+  if (options.tilt) plane.rotateY(options.tilt);
   const uv = plane.getAttribute("uv");
   plane.setAttribute(
     UV_SCALE_ATTRIBUTE,
