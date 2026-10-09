@@ -147,6 +147,9 @@ const topologyOf = (m: SurfaceMesh): SurfaceTopology => ({
   vertexCount: m.renderToSurface.length,
 });
 
+/** The figure attachment occlusion is baked against (and the pack's bake was): the default one. */
+const occlusionFigure = (): Recipe => createRecipe();
+
 export class HumanoidModel {
   readonly regions: RegionField;
   private readonly body: Part;
@@ -241,7 +244,7 @@ export class HumanoidModel {
    * level, so the result depends only on the packs and the worn set.
    */
   bakeAttachmentOcclusion(): Float32Array[] {
-    const rest = this.evaluate(createRecipe());
+    const rest = this.evaluate(occlusionFigure());
     const occluders = this.attached.flatMap((a, i) => {
       // Transparent attachments (the eyes, whose cornea dome is cut away by the
       // texture's alpha) would block light they do not block when rendered.
@@ -285,15 +288,29 @@ export class HumanoidModel {
     };
   }
 
-  topology(): ModelTopology {
-    // The body pack ships the bake for its own attachments worn together, so
-    // loading casts no rays; any other set of attachments is baked here.
+  /**
+   * The body pack ships the bake for its own attachments worn together, so
+   * loading casts no rays; any other set is baked by `topology()`.
+   */
+  private wearsPackedSet(): boolean {
     const worn = new Set(this.attached.map((a) => a.asset.entry.id));
-    const packed =
-      worn.size === this.attached.length && worn.size === this.assets.attachments.size
-        ? this.attached.map(({ asset }) => Float32Array.from(asset.occlusion, (o) => o / 255))
-        : null;
-    const baked = packed ?? this.bakeAttachmentOcclusion();
+    return worn.size === this.attached.length && worn.size === this.assets.attachments.size;
+  }
+
+  /**
+   * The recipe `topology()` evaluates to bake attachment occlusion, or null
+   * when the pack's bake applies. A staged load awaits its target files before
+   * calling `topology()` (the default figure is an adult, so a child or very
+   * old first figure does not bring them in its first stage).
+   */
+  occlusionBakeRecipe(): Recipe | null {
+    return this.wearsPackedSet() ? null : occlusionFigure();
+  }
+
+  topology(): ModelTopology {
+    const baked = this.wearsPackedSet()
+      ? this.attached.map(({ asset }) => Float32Array.from(asset.occlusion, (o) => o / 255))
+      : this.bakeAttachmentOcclusion();
     // Carried to the render surface by the subdivision stencil, like any other
     // per-vertex field.
     const occlusion = this.attached.map(({ part: p }, i) => {

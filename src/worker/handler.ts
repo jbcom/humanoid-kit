@@ -5,8 +5,10 @@
  * Packs load in stages (`loadHumanoidAssetsStaged`): `ready` is replied once
  * the first figure can be evaluated, while later target files are still
  * arriving, and a `complete` request is answered when all have. An evaluation
- * waits for exactly the stages its recipe needs, without holding up any other
- * request. Results are transferred, not copied.
+ * waits for the stages its recipe needs, without holding up any other request;
+ * stages arrive one after another (`targetLoadOrder`), so a recipe needing a
+ * late stage also waits out the ones before it. Results are transferred, not
+ * copied.
  */
 import { type LoadStage, loadHumanoidAssetsStaged } from "../format/assetFormat.ts";
 import { buildFeatureMap } from "../makehuman/features.ts";
@@ -40,6 +42,8 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         stages = staged.stages;
         complete = staged.complete;
         model = new HumanoidModel(assets, req.model);
+        const bake = model.occlusionBakeRecipe();
+        if (bake) await targetsFor(model, bake);
         const topology = model.topology();
         post({
           type: "ready",
