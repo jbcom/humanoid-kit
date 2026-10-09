@@ -766,6 +766,30 @@ The last check is the colour-agnostic invariant in its simplest form. It would
 catch any future code that tints the specular or sheen from the albedo by
 accident.
 
+**As implemented (`tests/browser/sphereParity.test.ts`), and one correction.**
+The render target is `FloatType` rather than half-float, so readback adds no
+quantisation, and the curvature attribute stands for a 2 cm feature (a nose
+tip), where scatter is strong enough to measure. Against the TypeScript model
+(`src/surface/scatter.ts`, from which the shader's constants are generated) the
+scatter material renders within ΔE00 0.5 in every bin, terminator included, for
+all 49 swatches at 0°, 45° and 70°. That replaces the energy and terminator-order
+rows: both are properties of the model, proven on it in `tests/scatter.test.ts`
+(the wrap integrates to Lambert over the sphere at every w), and a single view
+of the sphere cannot measure the energy anyway, because at a frontal light the
+wrapped light falls behind the silhouette.
+
+The "spread ≤ 0.5" row was wrong. How far a colour carries light follows from
+its albedo by design (§2), so the lit peak of white dims more than black's:
+measured ΔE00 1.01 for white 9.5, 0.60 for neutral 8, 0.12 for neutral 5 and
+0.01 for black 2. A spread bound would forbid the model itself. The test bounds
+every colour at ΔE00 1.3 (BabelColor's red flag, §5.5), and the fairness
+property for skin, that pigment sits above a shared scattering layer so the
+deepest measured skin keeps more than half the fairest's scatter distance
+(about a tenth if the pigment were mixed through), is asserted on the model.
+Each of these checks was seen to fail under a planted fault: the old
+(1 + w) wrap, a specular tinted by the albedo, a tenfold mean free path, and
+pigment mixed through the medium.
+
 ### 5.3 Stage 2: the display path
 
 What it isolates: tone mapping and sRGB encoding, given correct shading.

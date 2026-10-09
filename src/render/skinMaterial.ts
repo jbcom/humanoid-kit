@@ -24,6 +24,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
+import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import {
   luminance,
   MELANIN_ANCHORS,
@@ -58,7 +59,11 @@ const DIRECT_DIFFUSE =
 /** Name of the per-vertex curvature attribute (mean curvature magnitude, m⁻¹). */
 export const CURVATURE_ATTRIBUTE = "hkCurvature";
 
-/** Scatter functions, defined before three's lighting code uses them. */
+/**
+ * Scatter functions, defined before three's lighting code uses them: the
+ * shader form of `src/surface/scatter.ts`, which the sphere parity test checks
+ * it against.
+ */
 const SCATTER_FUNCTIONS = `
 uniform float hkScatterMfp;
 uniform float hkScatterSlope;
@@ -80,7 +85,7 @@ vec3 hkScatterDistance( vec3 albedo ) {
 	// Pigment above the scattering layer: scatter as the unpigmented substrate does.
 	A = pow( A, vec3( 1.0 - hkPigmentDepth ) ) * pow( clamp( hkSubstrate, vec3( 0.001 ), vec3( 0.999 ) ), vec3( hkPigmentDepth ) );
 	// Representative wavelengths 612, 549, 465 nm relative to 550 nm.
-	vec3 ls = hkScatterMfp * pow( vec3( 1.1127, 0.9982, 0.8455 ), vec3( hkScatterSlope ) );
+	vec3 ls = hkScatterMfp * pow( vec3( ${WAVELENGTH_RATIO.map((r) => r.toFixed(6)).join(", ")} ), vec3( hkScatterSlope ) );
 	return hkSingleScatterAlbedo( A ) * ls / hkProfileScale( A );
 }
 // Energy-conserving wrap fitted to pre-integration of Burley's profile over a sphere.
@@ -166,12 +171,12 @@ const mul = (a: Rgb, k: Rgb): Rgb => [a[0] * k[0], a[1] * k[1], a[2] * k[2]];
 
 export class SkinMaterial extends MeshPhysicalMaterial {
   readonly hkUniforms = {
-    /** Scattering mean free path, metres (skin ≈ 1.14 mm, Jensen 2001); 0 disables scatter. */
-    hkScatterMfp: { value: 1.14e-3 },
+    /** Scattering mean free path, metres; 0 disables scatter. */
+    hkScatterMfp: { value: SKIN_SCATTER.mfp as number },
     /** How much further red scatters than blue (spectral slope). */
-    hkScatterSlope: { value: 1.4 },
+    hkScatterSlope: { value: SKIN_SCATTER.slope as number },
     /** 0 = pigment mixed through the medium; 1 = all pigment above an unpigmented layer. */
-    hkPigmentDepth: { value: 0.75 },
+    hkPigmentDepth: { value: SKIN_SCATTER.pigmentDepth as number },
     /** The unpigmented layer's albedo (linear), used when pigment depth > 0. */
     hkSubstrate: { value: new Vector3(...(MELANIN_ANCHORS[0] as Rgb)) },
     hkMaskStrength: { value: new Vector3(0.55, 0.45, 0) },
@@ -203,7 +208,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     // Natural skin keeps its melanin in the epidermis, above a dermis that scatters
     // much the same in everyone (fitted p = 0.75 over the lightest measured skin).
     // Any other colour is taken as pigment mixed through the medium (p = 0).
-    this.hkUniforms.hkPigmentDepth.value = a.tone.override ? 0 : 0.75;
+    this.hkUniforms.hkPigmentDepth.value = a.tone.override ? 0 : SKIN_SCATTER.pigmentDepth;
     // Vellus sheen takes the surface's own hue. A near-white sheen over dark
     // colours is the optical signature of dry, "ashy" skin, so it is tinted, and
     // reduced with luminance across the measured skin range.

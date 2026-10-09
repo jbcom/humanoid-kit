@@ -244,6 +244,27 @@ Lower-level pieces, also exported:
   and `subdivideUvLinear(uvs, faceUvs)`; types `QuadTopology`, `Stencil` and
   `SubdivisionLevel`.
 
+### Surface appearance
+
+Colour and light transport, framework-free so applications and tests can
+compute what the renderer will do.
+
+- `skinAlbedo(tone: SkinTone): Rgb`: linear-RGB diffuse albedo. Natural skin
+  interpolates the 11 measured `MELANIN_ANCHORS` (International Skin Spectra
+  Archive, ITA 62° to −75°), then shifts hue for `haemoglobin` and `undertone`
+  at constant luminance; `override` returns that colour as given. Also
+  `DEFAULT_SKIN_TONE`, `luminance`, `srgbToLinear` and `linearToSrgb`.
+- The scatter model `SkinMaterial` renders (it is generated from these and
+  tested against them): `scatterDistance(albedo, mfp?, slope?, pigmentDepth?,
+  substrate?)` gives each channel's scatter width in metres;
+  `wrapFromScatter(d · curvature)` the wrap; `wrappedDiffuse(nDotL, w)` the
+  diffuse response relative to the albedo, which integrates to Lambert's over
+  the sphere at every `w`. `SKIN_SCATTER` holds natural skin's parameters, and
+  `singleScatterAlbedo`, `profileScale` and `WAVELENGTH_RATIO` the steps.
+- `bakeOcclusion(occluders, targets, options?)`: per-vertex ambient occlusion
+  by cosine-weighted ray casts (`hemisphereDirections(n)`), as used for
+  attachments.
+
 ### Worker client
 
 ```ts
