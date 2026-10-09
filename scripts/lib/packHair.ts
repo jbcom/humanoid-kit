@@ -334,11 +334,14 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
     const kind = ("kind" in spec && spec.kind) || "scalp";
     let compiled: CompiledAsset;
     let source: string | undefined;
+    let roots: number[] | undefined;
     if (authored) {
+      const cards = authored.build({ head, body: surface });
+      roots = cards.roots;
       compiled = compileAuthored(
         spec.id,
         spec.label,
-        authored.build({ head, body: surface }),
+        cards,
         rest,
         `${spec.id}.webp`,
         authored.provenance,
@@ -430,6 +433,7 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
         ? model.bakeHairFields(boundFrom(compiled), {
             ...(spec.feather !== undefined && { feather: spec.feather }),
             ...("fins" in spec && { fins: spec.fins }),
+            ...(roots && { roots }),
             cutout: await cutoutOf(path.join(outDir, textureFile)),
           })
         : {};

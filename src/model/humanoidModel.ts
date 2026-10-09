@@ -997,6 +997,7 @@ export class HumanoidModel {
     options: {
       feather?: boolean;
       fins?: boolean;
+      roots?: readonly number[];
       /** The style's texture cut-out (`HairFieldsInput.cutout`, without the UVs, which the asset has). */
       cutout?: { width: number; height: number; alpha: Uint8Array };
     } = {},
@@ -1011,6 +1012,7 @@ export class HumanoidModel {
       scalpEligible: eligible,
       ...(options.feather !== undefined && { feather: options.feather }),
       ...(options.fins !== undefined && { fins: options.fins }),
+      ...(options.roots && { roots: options.roots }),
       ...(options.cutout && {
         cutout: { faceUvs: asset.faceUvs, uvs: asset.uvs, ...options.cutout },
       }),

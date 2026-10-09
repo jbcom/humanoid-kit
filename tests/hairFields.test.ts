@@ -120,6 +120,21 @@ describe("hairFields", () => {
       expect(growth[0]).toBeCloseTo(0.2 * GROWTH_SCALE, -1);
     });
 
+    it("grows from the roots the author names, when hair lies on the scalp throughout", () => {
+      // A strip 2 mm over the scalp is all root by distance; named roots make its top row the only one.
+      const card = strip(10, 0.002, 0.04, 0.1);
+      const { growth } = hairFields({
+        positions: card.positions,
+        faceVerts: card.faceVerts,
+        body: { positions: body.positions, triangles: body.triangles },
+        scalpEligible: eligibleAll,
+        roots: [20, 21],
+      });
+      expect(growth[20]).toBe(0);
+      expect(growth[0] as number).toBeGreaterThan(0.03 * GROWTH_SCALE);
+      expect(growth[10] as number).toBeCloseTo(0.02 * GROWTH_SCALE, -1);
+    });
+
     it("saturates instead of wrapping past the quantisation range", () => {
       const { growth } = run(strip(1, 0.2, 60, 0.01));
       expect(growth[0]).toBe(65535);

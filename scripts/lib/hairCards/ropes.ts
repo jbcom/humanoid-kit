@@ -18,9 +18,17 @@ export interface Cards {
   /** Four per quad, indices into `uvs` (UV = two numbers). */
   faceUvs: number[];
   uvs: number[];
+  /** The vertices the hair grows from: the first ring of every rope. Growth is measured from them. */
+  roots: number[];
 }
 
-export const newCards = (): Cards => ({ positions: [], faceVerts: [], faceUvs: [], uvs: [] });
+export const newCards = (): Cards => ({
+  positions: [],
+  faceVerts: [],
+  faceUvs: [],
+  uvs: [],
+  roots: [],
+});
 
 export interface RopeSpec {
   /** Where the rope leaves the scalp. */
@@ -159,6 +167,7 @@ export function addTube(
         (tile.v0 ?? 0) + along / tile.metresPerV,
       );
   }
+  for (let j = 0; j < sides; j++) cards.roots.push(first + j);
   for (let i = 0; i < rings - 1; i++)
     for (let j = 0; j < sides; j++) {
       const v = (ring: number, k: number) => first + ring * sides + (k % sides);
