@@ -1310,8 +1310,11 @@ the joint's skin takes, which is measured.
   the joint (the axis through the segments either side of it), on the limb
   (within 9 to 12 cm of the axis, which keeps the torso and the other limb out),
   on the side the skin faces (its normal against the joint's flex direction,
-  `FLEXION_JOINTS[].flexes`); its coordinate runs along the limb across the
-  window, so the grooves lie across it. Nothing is painted or packed.
+  `FLEXION_JOINTS[].flexes`: full within about 30° of it, none past 63°, so the
+  sides and the back of the limb carry no crease; a ramp out to 84° drew a line
+  seen from the side as a seam round the elbow); its coordinate runs along the
+  limb across the window, so the grooves lie across it. Nothing is painted or
+  packed.
 - *Strength* is `smoothstep(0.05, 0.85, flex)`: nothing straight, the whole
   near the joint's limit; the rest A-pose's elbow (flexion 0.3) holds a quarter.
 - *Depth follows from the strain.* A crease of span `s` and depth `d` takes up

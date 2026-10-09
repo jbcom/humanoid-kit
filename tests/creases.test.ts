@@ -188,7 +188,9 @@ describe("the crease layers' fields", () => {
             (normals[v * 3] as number) * (g.flexes[0] as number) +
             (normals[v * 3 + 1] as number) * (g.flexes[1] as number) +
             (normals[v * 3 + 2] as number) * (g.flexes[2] as number);
-          expect(facing, `${joint}.${side} vertex ${v}`).toBeGreaterThan(0.05);
+          // At most 63° either side of the way the joint folds: the sides and the back of the
+          // limb carry none, so a crease never reads as a seam round it.
+          expect(facing, `${joint}.${side} vertex ${v}`).toBeGreaterThan(0.45);
         }
       }
   });
