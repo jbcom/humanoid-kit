@@ -27,7 +27,11 @@ const PALETTE: Swatch[] = [
   { name: "golden fur", skin: { override: [0.55, 0.36, 0.1] } },
 ];
 
-const BACKGROUND: [number, number, number] = [0x1b, 0x25, 0x30];
+/**
+ * A key colour no swatch comes near, so masking it out cannot also drop the
+ * shadowed pixels of dark swatches (as masking the studio's dark blue did).
+ */
+const BACKGROUND: [number, number, number] = [0xff, 0x00, 0xff];
 const CAMERA = "0,1.5,0.85,0,1.48,0";
 /** The face, in fractions of the viewport (camera above). */
 const FACE = { x0: 0.36, x1: 0.64, y0: 0.14, y1: 0.6 };
@@ -68,9 +72,9 @@ async function renderFace(page: Page, s: Swatch): Promise<Lab> {
     copy.height = h;
     const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
     ctx.drawImage(c, c.width * box.x0, c.height * box.y0, w, h, 0, 0, w, h);
-    return Array.from(ctx.getImageData(0, 0, w, h).data);
+    return { width: w, data: Array.from(ctx.getImageData(0, 0, w, h).data) };
   }, FACE);
-  const lab = summarise(rgba, BACKGROUND);
+  const lab = summarise(rgba.data, rgba.width, BACKGROUND);
   if (!lab) throw new Error(`${s.name}: no figure in the face region`);
   return lab;
 }
@@ -85,7 +89,7 @@ test.describe("colour parity under the studio stage", () => {
 
   test("every colour renders with the same small error", async ({ page }) => {
     const rows: { name: string; dL: number; dC: number; dH: number | null }[] = [];
-    await page.goto(`/?muted&cam=${CAMERA}`);
+    await page.goto(`/?muted&cam=${CAMERA}&bg=ff00ff`);
     // The first figure (and its textures) loads with the page.
     await page.locator('[data-figure="ready"]').waitFor({ timeout: 120_000 });
     await page.waitForTimeout(1500);

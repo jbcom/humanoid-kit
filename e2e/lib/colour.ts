@@ -28,23 +28,42 @@ export const hueDiff = (a: number, b: number) => ((((a - b) % 360) + 540) % 360)
  * Summarises the figure's pixels in an RGBA region: median L* (robust to
  * highlights and shadow) and mean a*, b* over the middle 60% by lightness, so
  * eye whites, nostrils and specular peaks do not dominate.
+ *
+ * Background is keyed out and the mask is eroded by `erode` pixels, so
+ * anti-aliased edge pixels, which blend in the key colour, are not counted.
  */
 export function summarise(
   rgba: Uint8ClampedArray | number[],
+  width: number,
   background: [number, number, number],
+  erode = 2,
 ): Lab | null {
-  const labs: Lab[] = [];
-  for (let i = 0; i < rgba.length; i += 4) {
-    const r = rgba[i] as number;
-    const g = rgba[i + 1] as number;
-    const b = rgba[i + 2] as number;
-    if (
-      Math.abs(r - background[0]) + Math.abs(g - background[1]) + Math.abs(b - background[2]) <
-      24
-    )
-      continue;
-    labs.push(labFromSrgb8(r, g, b));
+  const height = rgba.length / 4 / width;
+  const isBackground = new Uint8Array(width * height);
+  for (let p = 0; p < width * height; p++) {
+    const d =
+      Math.abs((rgba[p * 4] as number) - background[0]) +
+      Math.abs((rgba[p * 4 + 1] as number) - background[1]) +
+      Math.abs((rgba[p * 4 + 2] as number) - background[2]);
+    isBackground[p] = d < 24 ? 1 : 0;
   }
+  const nearBackground = (x: number, y: number) => {
+    for (let dy = -erode; dy <= erode; dy++)
+      for (let dx = -erode; dx <= erode; dx++) {
+        const xx = x + dx;
+        const yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= width || yy >= height) continue;
+        if (isBackground[yy * width + xx]) return true;
+      }
+    return false;
+  };
+  const labs: Lab[] = [];
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      if (nearBackground(x, y)) continue;
+      const i = (y * width + x) * 4;
+      labs.push(labFromSrgb8(rgba[i] as number, rgba[i + 1] as number, rgba[i + 2] as number));
+    }
   if (labs.length < 500) return null;
   labs.sort((p, q) => p[0] - q[0]);
   const mid = labs.slice(Math.floor(labs.length * 0.2), Math.ceil(labs.length * 0.8));

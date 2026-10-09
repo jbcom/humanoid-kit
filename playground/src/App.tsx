@@ -70,11 +70,15 @@ const TONE_MAPPERS: Record<string, ToneMapping> = {
 /**
  * A fixed-camera render for visual QA: `?view=front|side|back|face`, or
  * `?cam=x,y,z,tx,ty,tz` to place the camera exactly; `?tm=agx|neutral|aces`
- * and `?exp=<number>` override tone mapping and exposure for comparisons.
+ * and `?exp=<number>` override tone mapping and exposure for comparisons;
+ * `?bg=rrggbb` sets a background key colour.
  */
 function Shot() {
   const toneMapping = TONE_MAPPERS[params.get("tm") ?? ""] ?? STUDIO_TONE_MAPPING;
   const exposure = Number(params.get("exp") ?? Number.NaN);
+  // `?bg=rrggbb`: a key colour no figure uses, so tests can mask the background exactly.
+  const bg = params.get("bg");
+  const background = bg && /^[0-9a-f]{6}$/i.test(bg) ? `#${bg}` : null;
   const [recipe, setRecipe] = useState(initialRecipe);
   const [lift, setLift] = useState(0);
   // Tests wait for data-figure="ready": the figure is evaluated and placed.
@@ -125,7 +129,7 @@ function Shot() {
           toneMappingExposure: Number.isFinite(exposure) ? exposure : STUDIO_EXPOSURE,
         }}
       >
-        <StudioStage />
+        <StudioStage {...(background ? { background } : {})} />
         <Humanoid
           recipe={recipe}
           position={[0, lift, 0]}
