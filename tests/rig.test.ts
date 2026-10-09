@@ -292,6 +292,19 @@ describe("body poses", () => {
     }
   });
 
+  it("keeps the soles as level as at rest in the bent pose, so the figure stands on its feet and not its toes", () => {
+    const pitch = (heads: Float32Array, side: string) => {
+      const at = (n: string, k: number) => heads[bone(n) * 3 + k] as number;
+      const dy = at(`toe3-1.${side}`, 1) - at(`foot.${side}`, 1);
+      const dz = at(`toe3-1.${side}`, 2) - at(`foot.${side}`, 2);
+      return (Math.atan2(dy, Math.abs(dz)) * 180) / Math.PI;
+    };
+    const standing = posedBoneHeads(rest, bodyPoseRotations(rig, "tpose"));
+    const bentHeads = posedBoneHeads(rest, bodyPoseRotations(rig, "bent"));
+    for (const side of ["L", "R"])
+      expect(Math.abs(pitch(bentHeads, side) - pitch(standing, side))).toBeLessThan(8);
+  });
+
   it("twists each limb about its own axis in the twisted pose, the candy wrapper's check", () => {
     const vectors = rotationVectors(bodyPoseRotations(rig, "twisted"));
     const axis = (from: string, to: string) => {
