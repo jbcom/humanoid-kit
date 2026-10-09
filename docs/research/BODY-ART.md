@@ -98,16 +98,18 @@ magnitude is either measured, with its source, or marked **CHOICE**.
 | --- | --- | --- |
 | Ink seen through the epidermis | skin albedo ÷ melanin-free albedo, per channel | Model: ink under a normal epidermis (A1), with the skin model's measured melanin; nothing fitted to tattoos |
 | Melanin-free albedo | the lightest measured skin's chromaticity, red at `MELANIN_FREE_RED_REFLECTANCE` (0.62) | CHOICE: extrapolating the melanin axis turns it violet (b\* < 0), which vitiligo is not (A2: lesions keep b\* > 0) |
-| `INK_DEPTH` | 0.3 mm | CHOICE within the papillary dermis (A1); no depth in micrometres was read |
+| `INK_DEPTH` | 0.2 mm | CHOICE at the top of the papillary dermis (A1); no depth in micrometres was read. 0.3 mm read greyish on the contact sheets (black on the fairest skin L\* 36) |
 | Dermal veil | 1 − exp(−depth / ℓ) per channel, ℓ the skin's scatter length (1.14 mm at 550 nm, spectral slope 1.4) | Skin model (`SKIN_SCATTER`); the blue cast follows from it, not tuned |
-| `INK_SPREAD` | 0.3 mm | CHOICE: light diffusing back from the ink spreads about as far as it travels |
-| Projection reach, facing | 30% of the longer side (≥ 1 cm); cosine ≥ 0.2 | CHOICE |
+| `INK_SPREAD` | 0.2 mm | CHOICE: light diffusing back from the ink spreads about as far as it travels |
+| Projection reach | 50% of the decal's longer side (≥ 1 cm), fading out over its last 40% | CHOICE: 30% with a hard end cut cheek and arm decals in straight lines on the sheets |
+| Projection facing | full from cosine 0.35, nothing below 0.05 | CHOICE, faded for the same reason |
+| The nail plate | no ink or mark acts on it (the nail-gloss layer's mask) | It is not skin: vitiligo turned the sheets' nail beds white |
 
 No tattoo colour was found measured, so the result is checked only for
 direction: the same ink is darker on every deeper tone, and reads cooler (b\*
-lower) than the skin round it. Black ink on the fairest skin comes out L\* 36,
-b\* 1.5; whether that is too light for fresh black ink is for the contact
-sheets to judge.
+lower) than the skin round it. Fresh black ink on the fairest skin is L\* 30,
+b\* about 2. The body-art texture's texels are about 1.5 mm at 1024², so line
+work finer than about 2 mm blurs grey.
 
 ### C2. Marks (`src/bodyArt/marks.ts`, `src/bodyArt/vitiligo.ts`)
 
@@ -131,7 +133,7 @@ its melanocytes and a naevus is a nest of them, whatever the skin round them.
 | Dermal melanocytosis | ink of [0.06, 0.04, 0.03] (linear) at 0.75 coverage, through C1's optics | CHOICE; its blue-grey follows from the dermal veil |
 | Outlines | radius harmonics 2–5, edge 0.25–0.6 mm (dermal pigment: 30% of its half-size) | CHOICES after the clinical descriptions in A2–A4 |
 | Vitiligo's sites | round the eyes and mouth (15% each), backs of the hands (30%), wrists, elbows, knees, tops of the feet (10% each); mirrored left to right | CHOICE following where non-segmental vitiligo is reported |
-| Vitiligo's extent | 2 to 14 mirrored pairs, 1.5 to 6 cm across | CHOICE |
+| Vitiligo's extent | 2 to 14 mirrored pairs, 1.5 to 6 cm across, scaled by site: round the eyes and mouth 0.4, wrists and the backs of the hands 0.7, feet 0.8, elbows and knees 1 | CHOICE: a full-size patch round the mouth read as a mask on the sheets |
 
 ### C3. Piercings (`src/bodyArt/jewellery.ts`, `src/bodyArt/sites.ts`)
 

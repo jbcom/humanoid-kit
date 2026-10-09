@@ -73,13 +73,20 @@ export const INK_SPREAD = INK_DEPTH;
 /**
  * How far off the skin's plane at a decal's centre the projection still
  * reaches, as a share of the decal's longer side, and at least `DECAL_REACH_MIN`
- * metres: enough to follow the skin's curve under the decal, too little to
- * reach a limb behind it. A CHOICE.
+ * metres: enough to follow the skin's curve under the decal (a cheek, a
+ * shoulder), too little to reach a limb behind it. Beyond `DECAL_REACH_FADE` of
+ * it the decal fades out rather than ending in a cut along the skin's curve.
+ * CHOICES.
  */
-export const DECAL_REACH = 0.3;
+export const DECAL_REACH = 0.5;
 export const DECAL_REACH_MIN = 0.01;
-/** The least the skin may face the decal (cosine) and still take it: the projection's far sides are skipped. */
-export const DECAL_FACING = 0.2;
+export const DECAL_REACH_FADE = 0.6;
+/**
+ * How squarely the skin must face the decal (cosine) to take it: fully from
+ * `DECAL_FACING[1]`, fading to nothing at `DECAL_FACING[0]`, so the
+ * projection's far sides are skipped without a cut where the skin turns away.
+ */
+export const DECAL_FACING: readonly [number, number] = [0.05, 0.35];
 
 /** The figure's body surface, as evaluated: its UV layout and its morphed rest positions and normals. */
 export interface BodyArtSurface {
@@ -110,7 +117,11 @@ void main() {
   gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
-/** The decal's frame, and the point's place in it (metres along right and up); skips skin out of reach or facing away. */
+/**
+ * The decal's frame: the point's place in it (metres along right and up), and
+ * how fully the skin there takes it (`hkDecalWeight`), fading out toward the
+ * reach's end and where the skin turns away; skin it does not reach is skipped.
+ */
 const FRAME = /* glsl */ `
 uniform vec3 centre;
 uniform vec3 right;
@@ -119,9 +130,12 @@ uniform vec3 normal;
 uniform float reach;
 in vec3 vPosition;
 in vec3 vNormal;
+float hkDecalWeight;
 vec2 hkDecalPoint() {
   vec3 d = vPosition - centre;
-  if (abs(dot(d, normal)) > reach || dot(normalize(vNormal), normal) < ${DECAL_FACING.toFixed(3)}) discard;
+  hkDecalWeight = (1.0 - smoothstep(${DECAL_REACH_FADE.toFixed(3)} * reach, reach, abs(dot(d, normal))))
+    * smoothstep(${DECAL_FACING[0].toFixed(3)}, ${DECAL_FACING[1].toFixed(3)}, dot(normalize(vNormal), normal));
+  if (hkDecalWeight <= 0.0) discard;
   return vec2(dot(d, right), dot(d, up));
 }`;
 
@@ -151,7 +165,7 @@ void main() {
     vec4 s = texture(image, p);
     ink += vec4(s.rgb * s.a, s.a);
   }
-  color = ink / 12.0 * density;
+  color = ink / 12.0 * density * hkDecalWeight;
 }`;
 
 /**
@@ -177,7 +191,7 @@ void main() {
   float theta = atan(p.y, qx);
   float r = 1.0;
   for (int i = 0; i < 4; i++) r += amplitude[i] * sin(float(i + 2) * theta + phase[i]);
-  float s = 1.0 - smoothstep(r - wander.z, r + wander.z, length(vec2(qx, p.y)));
+  float s = (1.0 - smoothstep(r - wander.z, r + wander.z, length(vec2(qx, p.y)))) * hkDecalWeight;
   if (s <= 0.0) discard;
   color = toInk > 0.5 ? vec4(ink.rgb * ink.a, ink.a) * s : vec4(channels.xyz * s, channels.w * s * s);
 }`;

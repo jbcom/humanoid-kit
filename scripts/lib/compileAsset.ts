@@ -2,13 +2,16 @@
  * Compiles a MakeHuman-format asset (.mhclo + .obj + .mhmat + textures) into
  * the packed binding format the runtime evaluates (`src/mhclo/bound.ts`).
  *
- * Licence evidence is taken from each file's own content; a texture has no
- * header of its own and inherits the licence of the material that references
- * it, which must itself prove CC0. Anything that cannot prove CC0 is refused.
+ * Licence evidence for a MakeHuman team asset is taken from each file's own
+ * content; a texture has no header of its own and inherits the licence of the
+ * material that references it, which must itself prove CC0. A community asset
+ * passes on its captured asset page stating CC0 (`licenceRule.ts`). Anything
+ * that cannot prove CC0 is refused.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { parseMhclo } from "../../src/mhclo/parse.ts";
+import { type CommunityPage, judgeAsset } from "./licenceRule.ts";
 
 export const MH_UNIT = 0.1;
 
@@ -150,6 +153,11 @@ export interface CompileOptions {
    * Off by default, so the body pack's attachments are packed exactly as before.
    */
   normalMap?: boolean;
+  /**
+   * The asset's page on makehumancommunity.org, for a community asset. Without
+   * it every file must carry MakeHuman's own CC0 release header (clause A).
+   */
+  page?: CommunityPage;
 }
 
 /**
@@ -163,11 +171,20 @@ export function compileAsset(
   kind: string,
   options: CompileOptions = {},
 ): CompiledAsset {
-  const { materialFile, normalMap = false } = options;
+  const { materialFile, normalMap = false, page } = options;
   const evidence: Record<string, string> = {};
+  // With a page, the files are judged together once all are read; without one,
+  // each must prove CC0 on its own as it is read.
+  const sources: { file: string; text: string }[] = [];
+  const readSource = (file: string) => {
+    if (!page) return readProven(file, evidence);
+    const text = fs.readFileSync(file, "utf8");
+    sources.push({ file, text });
+    return text;
+  };
   const dir = path.dirname(mhcloFile);
-  const binding = parseMhclo(readProven(mhcloFile, evidence));
-  const obj = parseObjAsset(readProven(path.resolve(dir, binding.objFile), evidence));
+  const binding = parseMhclo(readSource(mhcloFile));
+  const obj = parseObjAsset(readSource(path.resolve(dir, binding.objFile)));
   if (obj.vertexCount !== binding.weights.length / 3) {
     throw new Error(
       `${mhcloFile}: ${obj.vertexCount} OBJ vertices but ${binding.weights.length / 3} bindings`,
@@ -188,13 +205,7 @@ export function compileAsset(
       texture: textureSource,
       normalTexture: normalSource,
       ...rest
-    } = parseMhmat(
-      readProven(matPath, evidence),
-      path.dirname(matPath),
-      evidence,
-      matPath,
-      normalMap,
-    );
+    } = parseMhmat(readSource(matPath), path.dirname(matPath), evidence, matPath, normalMap);
     // Textures ship as WebP (see writeAttachments), named after the asset and source file.
     const packed = (source: string | null) => {
       if (!source) return null;
@@ -207,6 +218,20 @@ export function compileAsset(
       texture: packed(textureSource),
       ...(normalMap && { normalTexture: packed(normalSource) }),
     };
+  }
+  if (page) {
+    const files = [
+      ...sources.map(({ file, text }) => ({ file, text: text.slice(0, 3000) as string | null })),
+      ...[...textures.keys()].map((file) => ({ file, text: null })),
+    ];
+    const judgement = judgeAsset(
+      files.map(({ file, text }) => ({ name: path.basename(file), text })),
+      page,
+    );
+    if (!judgement.pass) throw new Error(`licence gate: ${mhcloFile}: ${judgement.reason}`);
+    for (const { file } of files)
+      evidence[file] =
+        `${judgement.evidence[path.basename(file)]} (${page.url}, submitted ${page.submitted})`;
   }
   const s = binding.scale;
   return {

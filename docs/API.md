@@ -628,7 +628,10 @@ compute what the renderer will do.
   `STOP_COUNT` stops in rows of `STOP_TABLE_WIDTH` texels) and
   `applyLayers(base, table, fields)`, the per-pixel blend the shader performs.
   A layer is one of three kinds: a `ColourLayer` (the default: `blend`, and
-  `paint` giving `strength` and colour `stops`), a `DetailLayer` (`kind:
+  `paint` giving `strength` and colour `stops`, and optionally `relief`: a groove
+  depth in metres per stop, which the shader tilts the normal by per pixel, so a thin
+  line shades as well as tints; `lineRelief(depths, coord)` is its reference), a
+  `DetailLayer` (`kind:
   "detail"`, `pattern` `"bumps"` or `"creases"`, `paint` giving `strength`,
   `height` in metres and `size`: bump spacing in metres, or crease count across
   the coordinate) drawn at true scale and faded where finer than a pixel, or a
@@ -708,16 +711,20 @@ compute what the renderer will do.
   Features whose masks never meet share a layer, to hold the hands to one atlas
   page:
   - `PALMOPLANTAR_LAYER` (`"palmoplantar"`): `palmAlbedo(tone)` over
-    `skinZones().palm` and `skinZones().sole` (palmoplantar skin; no sole colour
+    `palmarMask(assets)` and `skinZones().sole` (palmoplantar skin; no sole colour
     was found measured), less than `PALMOPLANTAR_FLOOR`, which the 8-bit atlas
     rounds to 0, dropped. `palmLab(tone)` is
     the palm's CIELAB (surface reflection included) from `PALM_BINS`, the
     International Skin Spectra Archive's paired palm and back-of-hand readings
     (777 people) binned by the back of the hand's L\*: on deep skin the palm is
     about 16 L\* lighter and 6 to 8 b\* yellower than the back of the hand, on
-    the lightest about the same.
-  - `PALM_CREASE_LINE_LAYER` (multiply: `palmCreaseLine(tone)`, the crease's
-    shade, and on deep skin a return toward the skin's own colour) and, in
+    the lightest about the same. `palmarMask(assets)` is palmar skin, 0 to 1:
+    the signed distance over the skin to the palmar-dorsal border
+    (`palmarBorderDistance`) eased over `PALM_BORDER_BLEND`, times the wrist's
+    ramp (`palmarWrist`, `PALM_WRIST_BLEND`).
+  - `PALM_CREASE_LINE_LAYER` (multiply: `palmCreaseLine(tone)`, a faint shade,
+    and on deep skin a return toward the skin's own colour, between lips
+    `PALM_CREASE_LIP` lighter; a crease reads mostly through its relief) and, in
     `HAND_RELIEF_LAYER`, folds `PALM_CREASE_DEPTH` deep: the
     distal and proximal transverse and thenar creases of the palm
     (`palmCreaseCurves(landmarks, joints)`) and each digit's flexion creases
@@ -794,8 +801,11 @@ compute what the renderer will do.
     between the brows on `browFurrow`, crow's feet on `squint` (or a smile), the
     folds on `nasolabial` (or a smile), nose lines on `noseWrinkle`. The forehead's
     and the furrows' are multiply `ColourLayer`s, thin lines on colour stops
-    (`FOREHEAD_STOPS`, `GLABELLA_STOPS`) of a coordinate exactly linear in
-    position, shaded by `lineShade(age)`; the rest are `creases` `DetailLayer`s.
+    (`FOREHEAD_STOPS`, `GLABELLA_STOPS`) of a coordinate that is a smooth function
+    of position (`foreheadCoordinate`; the furrows' is linear), coloured by
+    `lineShade(age, tone)` (the same step of CIELAB lightness at every tone) and cut
+    as grooves by `LINE_RELIEF`, and so are the crow's feet (`CROWS_FEET_STOPS`) and
+    the folds (`NASOLABIAL_STOPS`); the nose's are `creases` `DetailLayer`s.
     `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
     `EXPRESSION_COUNT` are art-directed, `expressionAgeFactor(age)` scales the
     depth or shade by age (0.2 at 6, 1 at 40, 1.4 at 70).
@@ -1147,8 +1157,8 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   skinned to the figure and coloured by `recipe.hair.colour` (`HairMaterial`:
   the strand map times the pigment colour's tint, two Kajiya-Kay highlight
   lobes along the strands (their direction read from the baked growth), baked
-  occlusion, hairlines dithered away by `fade` and loose fin cards by their
-  angle to the eye), with edges drawn by alpha-to-coverage on a multisampled
+  occlusion, hairlines thinned strand by strand by `fade` and loose fin cards
+  dissolved by their angle to the eye), with edges drawn by alpha-to-coverage on a multisampled
   canvas and by an alpha test otherwise. The skin under the style takes a
   stubble tint of the hair's colour where it grows (`SkinMaterial.setScalp`, the
   `hkScalp` attribute). Changing the style loads that style's files; changing

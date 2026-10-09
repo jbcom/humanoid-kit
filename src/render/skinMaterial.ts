@@ -44,7 +44,7 @@ import {
   STOP_COUNT,
   STOP_TABLE_WIDTH,
 } from "../surface/layers.ts";
-import { SKIN_LAYERS } from "../surface/regions/index.ts";
+import { NAIL_GLOSS_LAYER, SKIN_LAYERS } from "../surface/regions/index.ts";
 import {
   RIDGE_ACROSS,
   RIDGE_ALONG,
@@ -365,6 +365,21 @@ float hkDetailHeight( vec2 uv ) {
 	for ( int l = 0; l < ${count}; l ++ ) {
 		vec4 head = hkHeader( l );
 		int kind = hkKind( head );
+		if ( kind <= 1 ) {
+			// A colour layer's line that also shades: its stops' depths (their alpha, the layer's
+			// deepest in the header) along the exact coordinate, so the normal is tilted by the
+			// gradient across the line, per pixel, and the line is lit on one side and shadowed
+			// on the other at any tone. Smoothed so it has no kink to catch the light.
+			if ( head.x <= 0.0 || head.z <= 0.0 ) continue;
+			vec2 g = hkFields( l, uv );
+			float u = ( 1.5 + clamp( g.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
+			float depth = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).a;
+			float s = clamp( depth / head.z, 0.0, 1.0 );
+			// A line is a period of two stops of the coordinate: gone by the time that is ten pixels.
+			float lineFade = hkFootprintFade( fwidth( g.y ) * ${glslFloat((STOP_COUNT - 1) / 2)} );
+			H -= g.x * head.x * head.z * lineFade * s * s * ( 3.0 - 2.0 * s );
+			continue;
+		}
 		if ( kind != 2 && kind != 3 && kind != 5 ) continue;
 		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
 		if ( head.x <= 0.0 ) continue;
@@ -471,15 +486,27 @@ vec3 hkSrgbToLinear( vec3 c ) {
 	return mix( c / 12.92, pow( ( c + 0.055 ) / 1.055, vec3( 2.4 ) ), step( vec3( 0.04045 ), c ) );
 }
 vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
+	// The nail plate is not skin: no mark or ink acts on it.
+	#ifdef HK_NAIL_PLATE
+		float skin = 1.0 - clamp( hkFields( HK_NAIL_PLATE, uv ).x, 0.0, 1.0 );
+	#else
+		float skin = 1.0;
+	#endif
 	vec4 mark = texture( hkBodyArt, vec3( uv, 1.0 ) );
-	hkMarkSurface = mark.ba;
-	float melanin = ( mark.r * 255.0 - ${MARK_NEUTRAL.toFixed(1)} ) / 127.0;
-	c *= pow( hkMarkLight, vec3( max( - melanin, 0.0 ) ) ) * pow( hkMarkDark, vec3( max( melanin, 0.0 ) ) ) * pow( hkMarkBlood, vec3( mark.g ) );
+	hkMarkSurface = mark.ba * skin;
+	float melanin = skin * ( mark.r * 255.0 - ${MARK_NEUTRAL.toFixed(1)} ) / 127.0;
+	c *= pow( hkMarkLight, vec3( max( - melanin, 0.0 ) ) ) * pow( hkMarkDark, vec3( max( melanin, 0.0 ) ) ) * pow( hkMarkBlood, vec3( mark.g * skin ) );
 	vec4 ink = texture( hkBodyArt, vec3( uv, 0.0 ) );
-	return mix( c, hkInkThrough * ( hkInkVeil + hkInkKeep * hkSrgbToLinear( ink.rgb ) ), ink.a );
+	return mix( c, hkInkThrough * ( hkInkVeil + hkInkKeep * hkSrgbToLinear( ink.rgb ) ), ink.a * skin );
 }
 #endif
 `;
+
+/** Which of `layers` is the nail plate's (`NAIL_GLOSS_LAYER`, whose mask is the plate), for body art to leave alone. */
+function nailPlateDefine(layers: readonly SkinLayer[]): string {
+  const l = layers.findIndex((layer) => layer.id === NAIL_GLOSS_LAYER.id);
+  return l < 0 ? "" : `#define HK_NAIL_PLATE ${l}\n`;
+}
 
 const BODY_ART_COLOUR = `
 	#ifdef HK_BODY_ART
@@ -850,7 +877,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${BODY_ART_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
+        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${nailPlateDefine(this.layers)}${BODY_ART_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
       )
       .replace(
         "#include <color_fragment>",
@@ -890,6 +917,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-9-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}${this.hkUniforms.hkBodyArt.value ? "-art" : ""}`;
+    return `humanoid-kit-skin-10-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}${this.hkUniforms.hkBodyArt.value ? "-art" : ""}`;
   }
 }
