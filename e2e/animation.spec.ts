@@ -136,6 +136,32 @@ test.describe("a clip on the figure", () => {
     }
   });
 
+  test("plays a retargeted Quaternius clip: a walk carries the figure on its feet, a swim lays it flat", async ({
+    page,
+  }) => {
+    await openSilentGame(page, "./", { bg: "00ff00", cam: "0,0.95,3.2,0,0.88,0" });
+    // The walk: legs a stride apart half a cycle on, and the figure carried forward.
+    const feet = async (time: number) => {
+      await show(page, { clip: "walk_loop", time, paused: true, rootMotion: false });
+      return { left: await bone(page, "foot.L"), right: await bone(page, "foot.R") };
+    };
+    const a = await feet(0.05);
+    const b = await feet(0.7);
+    expect(Math.abs(a.left[2] - b.left[2]), "left foot, z").toBeGreaterThan(0.2);
+    expect(Math.sign(a.left[2] - a.right[2])).toBe(-Math.sign(b.left[2] - b.right[2]));
+    await show(page, { clip: "walk_loop" });
+    const start = await page.evaluate(() => window.hkFigure?.()?.position as Vec3);
+    await page.waitForTimeout(2500);
+    const end = await page.evaluate(() => window.hkFigure?.()?.position as Vec3);
+    expect(end[2] - start[2], "carried forward, metres").toBeGreaterThan(0.8);
+    // The swim: the body is horizontal, the head about as high as the feet, not a standing figure's metre and a half above them.
+    await show(page, { clip: "swim_fwd_loop", time: 0.3, paused: true, rootMotion: false });
+    const head = await bone(page, "head");
+    const foot = await bone(page, "foot.L");
+    expect(Math.abs(head[1] - foot[1]), "head above foot, metres").toBeLessThan(0.5);
+    expect(Math.abs(head[2] - foot[2]), "head from foot along the body, metres").toBeGreaterThan(1);
+  });
+
   test("holds a still when paused, and a walk on the spot when told not to carry the figure", async ({
     page,
   }) => {

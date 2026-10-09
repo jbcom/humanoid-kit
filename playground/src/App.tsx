@@ -405,7 +405,7 @@ function Shot() {
       data-generation={generation}
     >
       <Canvas
-        shadows="percentage"
+        shadows={params.has("noshadow") ? false : "percentage"}
         camera={{ position, fov }}
         gl={{
           preserveDrawingBuffer: true,

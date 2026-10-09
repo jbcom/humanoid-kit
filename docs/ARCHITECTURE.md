@@ -1290,8 +1290,8 @@ a coloured texture; everything in the pure core is testable in Node.
   `short04`'s cap (3.8 mm median above the scalp) with thousands of tiny loops drawn at random
   angles, its soft edge broken into ragged fuzz, the loose cards below the cap cleared, and a
   fade (`keepAt`: full on top, tapering over the ears and round to bare skin at the nape) taken
-  from where each texel lies on the head (`uvField.ts` rasterises the cards into the texture). Not
-  yet: bantu knots, tight curls in the longer styles.
+  from where each texel lies on the head (`uvField.ts` rasterises the cards into the texture). Bantu
+  knots are a spiral rope coiled round its root. Not yet: tight curls in the longer styles.
 
 **Costs and limits.** The pack is 3.5 MB for ten styles, mostly strand maps at
 1024 px (and 0.3 to 0.5 MB for each authored one); the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)

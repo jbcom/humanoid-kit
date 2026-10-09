@@ -46,6 +46,9 @@ const AUTHORED = new Set(AUTHORED_STYLES.map((a) => a.id));
 /** Styles that reuse a MakeHuman style's cards (and so its source files) under their own strand map. */
 const DERIVED = new Set(DERIVED_STYLES.map((d) => d.id));
 
+/** Styles whose hair lies on the scalp from root to tip. */
+const ON_THE_SCALP = new Set(["bantu01"]);
+
 const KB = 1024;
 
 describe("the hair pack's manifest", () => {
@@ -112,7 +115,8 @@ describe("a style's binding", () => {
       // darker on the whole than a long style, but none is all one or the other.
       expect(mean, s.id).toBeGreaterThan(0.05);
       expect(mean, s.id).toBeLessThan(1);
-      expect(Math.max(...o), s.id).toBeGreaterThan(200);
+      // (Knots lie within a centimetre or two of the scalp throughout, so none is ever wholly open.)
+      expect(Math.max(...o), s.id).toBeGreaterThan(ON_THE_SCALP.has(s.id) ? 120 : 200);
       expect(Math.min(...o), s.id).toBeLessThan(130);
     }
   });
@@ -225,7 +229,7 @@ describe("provenance", () => {
     const fromFiles = hairManifest.styles.filter(
       (s) => s.kind !== "beard" && !AUTHORED.has(s.id) && !DERIVED.has(s.id),
     ).length;
-    expect(text).toMatch(new RegExp(`${fromFiles * 3} file\\(s\\) — file header`));
+    expect(text).toMatch(new RegExp(`${fromFiles * 3} file\\(s\\) — (A: )?file header`));
     expect(text).toMatch(/body hair cards \(kind `beard`\) come from no source file/);
   });
 
