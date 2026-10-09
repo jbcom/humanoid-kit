@@ -3,9 +3,13 @@
  * layers in its own file and one entry here; the adult anatomy's layers follow
  * every body layer.
  */
+
+import type { CoatRegion } from "../coat.ts";
 import { isAdultLayer, type SkinLayer } from "../layers.ts";
 import { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER } from "./adult.ts";
 import { AREA_SKIN_LAYERS } from "./areas.ts";
+import { BODY_HAIR_LAYERS } from "./bodyHair.ts";
+import { BODY_HAIR_COAT } from "./bodyHairCoat.ts";
 import { CREASE_LAYERS } from "./creases.ts";
 import { EXPRESSION_LINE_LAYERS } from "./faceLines.ts";
 import { MOUTH_INTERIOR_LAYER } from "./mouth.ts";
@@ -46,6 +50,8 @@ const BODY_SKIN_LAYERS: readonly SkinLayer[] = [
   SWEAT_EXERCISE_LAYER,
   ...CREASE_LAYERS,
   ...EXPRESSION_LINE_LAYERS,
+  // Body hair lies over the skin's own colour, lines and creases.
+  ...BODY_HAIR_LAYERS,
 ];
 
 /**
@@ -53,6 +59,12 @@ const BODY_SKIN_LAYERS: readonly SkinLayer[] = [
  * gated by age and anatomy in `paintStopTable`).
  */
 export const ADULT_SKIN_LAYERS: readonly SkinLayer[] = [PENIS_LAYER, TESTES_LAYER, MOUND_LAYER];
+
+/**
+ * The coat's regions (docs/ARCHITECTURE.md, "The coat"), at most
+ * `COAT_REGION_LIMIT`: body hair's; the anthro fur adds its own.
+ */
+export const COAT_REGIONS: readonly CoatRegion[] = BODY_HAIR_COAT;
 
 export const SKIN_LAYERS: readonly SkinLayer[] = [...BODY_SKIN_LAYERS, ...ADULT_SKIN_LAYERS];
 
@@ -70,6 +82,8 @@ export const SKIN_LAYER_TARGETS: readonly string[] = targetsOf(
 );
 
 export * from "./areas.ts";
+export * from "./bodyHair.ts";
+export * from "./bodyHairCoat.ts";
 export * from "./creases.ts";
 export * from "./faceLines.ts";
 export * from "./feet.ts";

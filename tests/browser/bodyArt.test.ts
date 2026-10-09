@@ -25,10 +25,16 @@ import {
   bakeBodyArt,
   MARK_NEUTRAL,
 } from "../../src/render/bodyArtTexture.ts";
+import { buildLayerAtlas } from "../../src/render/layerAtlas.ts";
 import { SkinMaterial } from "../../src/render/skinMaterial.ts";
+import { planAtlas } from "../../src/surface/atlasPlan.ts";
 import type { SkinPaintInput } from "../../src/surface/layers.ts";
+import { NAIL_GLOSS_LAYER } from "../../src/surface/regions/index.ts";
 import { type Rgb, skinAlbedo, srgbToLinear } from "../../src/surface/skinTone.ts";
 import { readPage } from "./readPage.ts";
+
+/** What the bake draws: tattoos and marks. */
+type Baked = Pick<BodyArtPlacement, "tattoos" | "marks">;
 
 const renderer = new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
 renderer.setPixelRatio(1);
@@ -97,7 +103,7 @@ const tattoo = (more: Partial<PlacedTattoo> = {}): PlacedTattoo => ({
   density: 1,
   ...more,
 });
-const placement = (...tattoos: PlacedTattoo[]): BodyArtPlacement => ({
+const placement = (...tattoos: PlacedTattoo[]): Baked => ({
   tattoos,
   marks: [],
 });
@@ -106,7 +112,7 @@ const SIZE = 64;
 const images = { quads: quadrants(RED, BLUE, GREEN, BARE) };
 
 /** The ink page of a bake, as a reader of texel (u, v) in 0..1: [r, g, b] sRGB 0..255, and coverage 0..1. */
-function bake(surface: BodyArtSurface, art: BodyArtPlacement) {
+function bake(surface: BodyArtSurface, art: Baked) {
   const t = bakeBodyArt(renderer, surface, art, images, SIZE);
   const page = readPage(renderer, t.texture, 0, SIZE);
   const marks = readPage(renderer, t.texture, 1, SIZE);
@@ -217,7 +223,7 @@ const mark = (kind: PlacedMark["kind"], more: Partial<PlacedMark> = {}): PlacedM
 
 describe("baking marks", () => {
   /** Both pages of a bake, read back. */
-  function pages(art: BodyArtPlacement) {
+  function pages(art: Baked) {
     const t = bakeBodyArt(renderer, skin(), art, images, SIZE);
     const out = [readPage(renderer, t.texture, 0, SIZE), readPage(renderer, t.texture, 1, SIZE)];
     t.dispose();
@@ -299,9 +305,37 @@ describe("ink in the skin shader", () => {
   });
 
   /** The shader's diffuse colour at the centre of the skin, with this body art baked on it. */
-  function diffuse(melanin: number, body: BodyArtPlacement, using: BodyArtImages = images): Rgb {
+  /**
+   * The shader's diffuse colour at the centre of the skin, with this body art
+   * baked on it; with `plate`, under a nail plate of that strength (the
+   * nail-gloss layer's mask over the whole skin).
+   */
+  function diffuse(
+    melanin: number,
+    body: Baked,
+    using: BodyArtImages = images,
+    plate?: number,
+  ): Rgb {
     const art = bakeBodyArt(renderer, skin(), body, using, SIZE);
-    const material = new SkinMaterial([]);
+    const uvs = new Float32Array([0, 1, 1, 1, 0, 0, 1, 0]);
+    const layers = plate === undefined ? [] : [NAIL_GLOSS_LAYER];
+    const atlas =
+      plate === undefined
+        ? null
+        : buildLayerAtlas(
+            renderer,
+            {
+              uvs,
+              index: new Uint16Array([0, 2, 1, 2, 3, 1]),
+              vertexCount: 4,
+              layerFields: new Float32Array([plate, 0, plate, 0, plate, 0, plate, 0]),
+              layers: [NAIL_GLOSS_LAYER.id],
+              plan: planAtlas(layers),
+            },
+            64,
+          );
+    const material = new SkinMaterial(layers);
+    if (atlas) material.setLayerAtlas(atlas);
     material.setAppearance(appearance(melanin));
     material.setBodyArt(art.texture);
     const compile = material.onBeforeCompile;
@@ -317,7 +351,7 @@ describe("ink in the skin shader", () => {
     const plane = new PlaneGeometry(2, 2);
     geometry.setAttribute("position", plane.getAttribute("position"));
     geometry.setAttribute("normal", plane.getAttribute("normal"));
-    geometry.setAttribute("uv", new BufferAttribute(new Float32Array([0, 1, 1, 1, 0, 0, 1, 0]), 2));
+    geometry.setAttribute("uv", new BufferAttribute(uvs, 2));
     geometry.setIndex(plane.getIndex());
     const mesh = new Mesh(geometry, material);
     const scene = new Scene().add(mesh);
@@ -330,6 +364,7 @@ describe("ink in the skin shader", () => {
     renderer.readRenderTargetPixels(target, 0, 0, 8, 8, px);
     renderer.setRenderTarget(null);
     for (const d of [target, material, geometry, plane, art]) d.dispose();
+    atlas?.dispose();
     const i = (4 * 8 + 4) * 4;
     return [px[i] as number, px[i + 1] as number, px[i + 2] as number];
   }
@@ -369,6 +404,20 @@ describe("ink in the skin shader", () => {
           );
         });
       }
+  });
+
+  it("leaves the nail plate alone: it is not skin", () => {
+    const base = skinAlbedo(appearance(0.7).tone);
+    const vitiligo = mark("vitiligo", { width: 2, length: 2 });
+    const solid = quadrants([20, 20, 25], [20, 20, 25], [20, 20, 25], [20, 20, 25]);
+    const art = { tattoos: [tattoo({ image: "ink", width: 0.4 })], marks: [vitiligo] };
+    const plated = diffuse(0.7, art, { ink: solid }, 1);
+    plated.forEach((c, k) => {
+      expect(Math.abs(c - (base[k] as number))).toBeLessThan(0.01);
+    });
+    // Off the plate the same art changes the skin.
+    const bare = diffuse(0.7, art, { ink: solid }, 0);
+    expect(Math.abs((bare[0] as number) - (base[0] as number))).toBeGreaterThan(0.02);
   });
 
   it("reads body art only while the figure has some", () => {

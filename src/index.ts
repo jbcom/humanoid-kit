@@ -1,5 +1,6 @@
 export * from "./bodyArt/decals.ts";
 export * from "./bodyArt/ink.ts";
+export * from "./bodyArt/jewellery.ts";
 export * from "./bodyArt/marks.ts";
 export * from "./bodyArt/sites.ts";
 export * from "./bodyArt/vitiligo.ts";
@@ -39,6 +40,7 @@ export * from "./subdiv/catmullClark.ts";
 export * from "./surface/bodyHair.ts";
 export * from "./surface/bodyOcclusion.ts";
 export * from "./surface/cielab.ts";
+export * from "./surface/coat.ts";
 export * from "./surface/hairTone.ts";
 export * from "./surface/handTone.ts";
 export * from "./surface/layers.ts";

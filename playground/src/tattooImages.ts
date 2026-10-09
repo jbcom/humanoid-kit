@@ -40,16 +40,18 @@ const compass = () =>
   canvas((g) => {
     g.strokeStyle = INK;
     g.fillStyle = INK;
+    // Bold traditional line work, 2 to 4 mm on a tattoo 8 to 10 cm across: the
+    // body-art texture's texels are about 1.5 mm, so finer lines would blur grey.
+    g.lineWidth = 12;
+    g.beginPath();
+    g.arc(0, 0, 108, 0, Math.PI * 2);
+    g.stroke();
     g.lineWidth = 6;
     g.beginPath();
-    g.arc(0, 0, 112, 0, Math.PI * 2);
+    g.arc(0, 0, 88, 0, Math.PI * 2);
     g.stroke();
-    g.lineWidth = 3;
-    g.beginPath();
-    g.arc(0, 0, 98, 0, Math.PI * 2);
-    g.stroke();
-    star(g, 4, 118, 22);
-    g.lineWidth = 5;
+    star(g, 4, 116, 22);
+    g.lineWidth = 9;
     g.stroke();
     // The north point solid, the rest in outline.
     g.beginPath();
@@ -60,7 +62,7 @@ const compass = () =>
     g.fill();
     g.rotate(Math.PI / 4);
     star(g, 4, 70, 14);
-    g.lineWidth = 4;
+    g.lineWidth = 7;
     g.stroke();
   });
 

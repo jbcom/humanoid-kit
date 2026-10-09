@@ -252,6 +252,50 @@ describe("AppearancePanel", () => {
     expect(latest?.recipe.eyes.iris).toEqual([0.1, 0.16, 0.06]);
   });
 
+  describe("body hair", () => {
+    const panel = async (age: number) => {
+      const seen: { editor?: HumanoidEditor } = {};
+      const screen = await render(
+        <Styled>
+          <EditorHarness
+            ready={readyInfo()}
+            initial={createRecipe({ macros: { age, gender: 1 } })}
+            onEditor={(e) => (seen.editor = e)}
+          >
+            {(editor) => <AppearancePanel editor={editor} onFocus={noFocus} />}
+          </EditorHarness>
+        </Styled>,
+      );
+      await screen.getByText("Body hair").click();
+      return { screen, seen };
+    };
+
+    it("starts natural, picks a beard, and returns to natural leaving no body hair field", async () => {
+      const { screen, seen } = await panel(30);
+      await expect
+        .element(screen.getByRole("button", { name: "Natural" }))
+        .toHaveAttribute("aria-pressed", "true");
+      expect(seen.editor?.recipe.bodyHair).toBeUndefined();
+      await screen.getByRole("button", { name: "Goatee" }).click();
+      expect(seen.editor?.recipe.bodyHair).toEqual({ beard: "goatee" });
+      await screen.getByRole("button", { name: "Natural" }).click();
+      expect(seen.editor?.recipe.bodyHair).toBeUndefined();
+    });
+
+    it("offers underarm and pubic density to an adult", async () => {
+      const { screen } = await panel(30);
+      await expect.element(screen.getByText("Underarms")).toBeInTheDocument();
+      await expect.element(screen.getByText("Pubic")).toBeInTheDocument();
+    });
+
+    it("offers neither to a figure under 18", async () => {
+      const { screen } = await panel(15);
+      await expect.element(screen.getByText("Chest")).toBeInTheDocument();
+      expect(screen.getByText("Underarms").elements()).toHaveLength(0);
+      expect(screen.getByText("Pubic").elements()).toHaveLength(0);
+    });
+  });
+
   describe("hair", () => {
     const hair = {
       styles: [

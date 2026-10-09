@@ -24,9 +24,11 @@ import {
   DoubleSide,
   FrontSide,
   type Group,
+  LinearSRGBColorSpace,
   type Material,
   Matrix4,
   type Mesh,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   Skeleton,
   SkinnedMesh,
@@ -35,6 +37,12 @@ import {
   TextureLoader,
   Vector3,
 } from "three";
+import {
+  JEWELLERY_ROUGHNESS,
+  jewelleryMesh,
+  METAL_REFLECTANCE,
+  type PlacedPiercing,
+} from "../bodyArt/jewellery.ts";
 import { quantisedShapeSignals, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import { shapeSignalNames } from "../model/detailFactors.ts";
 import type {
@@ -90,6 +98,7 @@ import { skinDualShare } from "../rig/skinShare.ts";
 import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
 import { DEFAULT_HAIR_COLOUR, type HairColour, hairAlbedo } from "../surface/hairTone.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
+import { CoatMesh } from "./CoatMesh.tsx";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 import { sameEntries } from "./sameEntries.ts";
 import { Settle, SettleContext, useSettle } from "./settle.ts";
@@ -235,10 +244,11 @@ export interface HumanoidPick {
   /**
    * `"body"`, `"adultBody"` (the adult surface, for a figure aged 18 or over when
    * the adult pack refines the body), `"hair"`, `"garment"` (then `garment` names
-   * it), or the attachment's index in `ModelTopology.attachments`. Look the vertex up in
-   * the pick map's `render.body` or `render.adultBody` accordingly.
+   * it), `"piercing"` (a piercing's jewellery), or the attachment's index in
+   * `ModelTopology.attachments`. Look the vertex up in the pick map's
+   * `render.body` or `render.adultBody` accordingly.
    */
-  part: "body" | "adultBody" | "hair" | "garment" | number;
+  part: "body" | "adultBody" | "hair" | "garment" | "piercing" | number;
   /** The tapped garment's id, when `part` is `"garment"`. */
   garment?: string;
   /** The render vertex of that mesh nearest the tap. */
@@ -643,6 +653,60 @@ function HairMesh({
  * A worn eyebrow or eyelash: a decal on the skin, cut out by its mask and
  * coloured by the recipe's hair colour (the lashes darker), thinner on a child.
  */
+/**
+ * A piercing's jewellery (`jewelleryMesh`), skinned rigidly with its site
+ * vertex's bones so it follows the posed skin there; the part inside the
+ * tissue is hidden by the skin in front of it.
+ */
+function PiercingMesh({
+  piercing,
+  skeleton,
+  visible,
+  shape,
+}: {
+  piercing: PlacedPiercing;
+  skeleton: Skeleton;
+  visible: boolean;
+  shape: object;
+}) {
+  const geometry = useMemo(() => {
+    const m = jewelleryMesh(piercing);
+    const n = m.positions.length / 3;
+    const g = new BufferGeometry();
+    g.setIndex(new BufferAttribute(m.index, 1));
+    g.setAttribute("position", new BufferAttribute(m.positions, 3));
+    g.setAttribute("normal", new BufferAttribute(m.normals, 3));
+    const index = new Uint8Array(n * 4);
+    const weight = new Float32Array(n * 4);
+    for (let v = 0; v < n; v++) {
+      index.set(piercing.skinIndex, v * 4);
+      weight.set(piercing.skinWeight, v * 4);
+    }
+    g.setAttribute("skinIndex", new BufferAttribute(index, 4));
+    g.setAttribute("skinWeight", new BufferAttribute(weight, 4));
+    return g;
+  }, [piercing]);
+  const material = useMemo(
+    () => new MeshPhysicalMaterial({ metalness: 1, roughness: JEWELLERY_ROUGHNESS }),
+    [],
+  );
+  useEffect(() => {
+    material.color.setRGB(...METAL_REFLECTANCE[piercing.metal], LinearSRGBColorSpace);
+  }, [material, piercing.metal]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => () => material.dispose(), [material]);
+  return (
+    <SkinnedPart
+      geometry={geometry}
+      material={material}
+      skeleton={skeleton}
+      visible={visible}
+      part="piercing"
+      shape={shape}
+    />
+  );
+}
+
 function DecalMesh({
   topology,
   geometry,
@@ -1112,6 +1176,10 @@ export function Humanoid({
       // (the adult pack's own list of features; none without the pack).
       adult: isAdult(recipe),
       anatomy: appliedAnatomy(recipe, ready?.anatomy?.features ?? []),
+      // Body hair: its amount from the androgen axis and age, its colour from the hair's.
+      gender: recipe.macros.gender,
+      ...(recipe.hair && { hairColour: recipe.hair.colour }),
+      ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     });
   }, [skin, recipe, signals, flexion, face, ready]);
 
@@ -1326,6 +1394,20 @@ export function Humanoid({
                 dual={material ? null : dual}
               />
             )}
+            {/* The coat (stubble, a dense chest): shells on whichever body surface is drawn. */}
+            {!material && (
+              <CoatMesh
+                body={surface === "adult" && adultGeometry ? adultGeometry : geometries.body}
+                fields={
+                  surface === "adult" && adultSurface ? adultSurface.coat : ready.topology.body.coat
+                }
+                recipe={recipe}
+                skeleton={rig.skeleton}
+                dual={dual}
+                visible={shown}
+                shape={shape}
+              />
+            )}
             {ready.topology.attachments.map((t, i) => {
               const g = geometries.attachments[i];
               return g ? (
@@ -1367,6 +1449,15 @@ export function Humanoid({
                 age={recipe.macros.age}
                 visible={shown}
                 report={report}
+                shape={shape}
+              />
+            ))}
+            {figure?.bodyArt?.piercings.map((p) => (
+              <PiercingMesh
+                key={p.site}
+                piercing={p}
+                skeleton={rig.skeleton}
+                visible={shown}
                 shape={shape}
               />
             ))}

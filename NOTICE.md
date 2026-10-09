@@ -70,14 +70,22 @@ each of a style's `.mhclo`, `.obj` and `.mhmat` must carry the header, and a
 bare `license CC0` line, which community exporters write by default and which a
 sibling file can contradict, is refused.
 
+An asset from the community repositories on makehumancommunity.org is CC0 when
+its asset page says so: the page's stated licence governs (owner ruling,
+2026-10-09: "If the website says cc0 then it's cc0"). The packer accepts such an
+asset only with the page captured beside it (`scripts/lib/licenceRule.ts`) and
+records the page and its submission date as the evidence for every file. A page
+that says CC-BY or AGPL is refused. `docs/licence-history.md` gives the rule, the
+history behind it and the verdict on every community asset checked so far.
+
 `packs/clothing/data` is derived from MakeHuman's system assets pack
 (`makehuman_system_assets_cc0.zip`), whose clothes, meshes and materials each
 open with the same header, "This asset was explicitly released as CC0 in
 september 2020", naming the same copyright holders. `scripts/pack-clothing.ts`
 accepts a garment's `.mhclo`, `.obj` and `.mhmat` only on that statement in the
 file itself (a bare `license CC0` line is refused), and a texture only through a material
-that passes. Only the tier of assets that proves CC0 this way is packed; assets
-whose page says CC0 but whose files do not are not.
+that passes. The clothing pack holds only these system assets; a community
+garment would enter it on its page licence, as above.
 
 Each pack's `data/PROVENANCE.md` is written by the packer. It records the
 upstream commit, how many files were accepted on which evidence, and the SHA-256

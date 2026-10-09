@@ -59,6 +59,32 @@ describe("compileAsset", () => {
     expect(Object.values(c.evidence).every((e) => /released as CC0/.test(e))).toBe(true);
   });
 
+  const page = {
+    url: "http://www.makehumancommunity.org/node/1769",
+    submitter: "WDG",
+    submitted: "2019-02-03",
+    licence: "CC0 - Creative Commons Zero",
+    retrieved: "2026-10-09",
+  };
+
+  it("compiles a community asset whose page says CC0, whatever its files say", () => {
+    const c = compileAsset(write({ mhclo: AGPL, obj: AGPL, mhmat: "" }), "beard/t", "beard", {
+      page,
+    });
+    for (const f of ["t.mhclo", "t.obj", "t.mhmat"])
+      expect(c.evidence[path.join(dir, f)]).toBe(
+        'B: page licence "CC0 - Creative Commons Zero" (http://www.makehumancommunity.org/node/1769, submitted 2019-02-03)',
+      );
+  });
+
+  it("refuses a community asset whose page does not say CC0", () => {
+    expect(() =>
+      compileAsset(write({ mhclo: LICENSE_LINE, obj: LICENSE_LINE }), "x/t", "x", {
+        page: { ...page, licence: "CC-BY - Creative Commons Attribution" },
+      }),
+    ).toThrow(/licence gate: .*t\.mhclo: B: page licence is "CC-BY/);
+  });
+
   it("refuses an asset when any one of its files cannot prove CC0", () => {
     expect(() => compileAsset(write({ mhclo: LICENSE_LINE }), "hair/t", "hair")).toThrow(
       /t\.mhclo does not prove CC0/,

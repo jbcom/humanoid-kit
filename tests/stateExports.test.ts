@@ -77,10 +77,11 @@ describe("the package entry's skin-state API", () => {
       "lips-state",
       "sweat-heat",
       "sweat-exertion",
-      // The joint creases follow the states.
+      // The joint creases follow the states, and body hair lies over all of them.
       ...kit.CREASE_LAYERS.map((l) => l.id),
       // The face's expression lines follow the joints'.
       ...kit.EXPRESSION_LINE_LAYERS.map((l) => l.id),
+      ...kit.BODY_HAIR_LAYERS.map((l) => l.id),
     ]);
     expect(kit.EXPRESSION_LINE_LAYERS).toHaveLength(5);
     expect(kit.CREASE_LAYERS).toHaveLength(4);
