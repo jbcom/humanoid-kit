@@ -103,8 +103,15 @@ the other in a walk, on nine figures.
 
 ## What is not claimed
 
-- A hand-keyed clip is the limit of the foot lock, not the lock: the shuffling
-  gaits are the least planted (a crouch walk 36 mm, a zombie's shuffle 18).
+- **`crouch_fwd_loop` skates up to 36 mm** (the test holds it under 50). The
+  measured drift is the ball of a planted foot sweeping across the floor while
+  its heel does not move (0 mm): the clip swivels the foot on its heel for a
+  second or so while it stays flat, and the lock pins one point per foot and
+  keeps the clip's own foot orientation, so a twist of a planted foot is the
+  clip's and is not held. The bound is the clip's own. A zombie's shuffle
+  measures 18 mm.
+- A hand-keyed clip is the limit of the foot lock, not the lock: a clip that
+  planted its feet would leave nothing to hold.
 - Jogs and sprints, swims, sitting and anything else that leaves the ground are
   `grounded: false`, and are held by nothing.
 - Adult animations are out of scope.

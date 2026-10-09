@@ -5,9 +5,20 @@
  * downward direction) runs down the plane's v.
  */
 import { afterAll, describe, expect, it } from "vitest";
+import { DEFAULT_SKIN_APPEARANCE } from "../../src/render/skinMaterial.ts";
+import { labFromLinear } from "../../src/surface/cielab.ts";
 import type { StrandLayer, StrandPaint } from "../../src/surface/layers.ts";
 import { strandCover } from "../../src/surface/layers.ts";
-import { disposeLayerRender, mean, noFields, renderLayers, SIZE, variance } from "./layerRender.ts";
+import { VELLUS_LAYER } from "../../src/surface/regions/bodyHair.ts";
+import {
+  disposeLayerRender,
+  mean,
+  noFields,
+  renderLayers,
+  renderLayersRgba,
+  SIZE,
+  variance,
+} from "./layerRender.ts";
 
 afterAll(disposeLayerRender);
 
@@ -97,6 +108,30 @@ describe("strand layers", () => {
     const bare = renderLayers([], { light: FRONT, view: corner });
     const hair = renderLayers([strands()], { light: FRONT, view: corner });
     expect(variance(hair)).toBeGreaterThan(50 * variance(bare) + 1e-6);
+  });
+
+  // Hair is never lighter than the skin it lies on, and vellus, which every
+  // measured skin colour already holds, barely moves it: up close, lit from the
+  // front and at a graze, at every tone.
+  it("draw vellus no lighter than the skin, and within a small ΔL* of it, at every tone", () => {
+    const lightness = (px: Float32Array) =>
+      Array.from({ length: px.length / 4 }, (_, i) =>
+        labFromLinear([px[i * 4] as number, px[i * 4 + 1] as number, px[i * 4 + 2] as number]),
+      ).map((lab) => lab[0]);
+    for (const melanin of [0.05, 0.35, 0.65, 0.95])
+      for (const light of [FRONT, [1, 0, 0.35] as [number, number, number]]) {
+        const appearance = {
+          ...DEFAULT_SKIN_APPEARANCE,
+          tone: { ...DEFAULT_SKIN_APPEARANCE.tone, melanin },
+          flush: 0,
+        };
+        const bare = lightness(renderLayersRgba([], { light, view: NEAR, appearance }));
+        const hair = lightness(renderLayersRgba([VELLUS_LAYER], { light, view: NEAR, appearance }));
+        const delta = hair.map((L, i) => L - (bare[i] as number));
+        const label = `melanin ${melanin}, light ${light}`;
+        expect(Math.max(...delta), label).toBeLessThan(0.5);
+        expect(delta.reduce((s, d) => s + Math.abs(d), 0) / delta.length, label).toBeLessThan(2);
+      }
   });
 
   it("thin with coverage: half the hair covers about half as much", () => {

@@ -67,8 +67,10 @@ export const BODY_HAIR_DENSITY: Readonly<Record<BodyHairGroup, number>> = {
  * age. Diameter about 30 µm and length about 2 mm, a choice in the range
  * vellus is defined by (under 30 µm, under 2 mm); 50 follicles per cm², a
  * choice between the body's 14 to 32 and the forehead's far higher count.
+ * It lies flat and gives the skin no relief: raised strands this fine caught
+ * a raking light on their lit side and read as light flecks on the skin.
  */
-export const VELLUS = { density: 50, length: 0.002, width: 30e-6, height: 20e-6 } as const;
+export const VELLUS = { density: 50, length: 0.002, width: 30e-6, height: 0 } as const;
 
 interface Landmarks {
   armpit: { L: Float32Array; R: Float32Array };
