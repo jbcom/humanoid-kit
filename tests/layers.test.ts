@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { groupFaces } from "../src/format/assetFormat.ts";
 import {
   applyLayers,
   buildLayerFields,
+  creaseHeight,
   paintStopTable,
   type SkinLayer,
   type SkinPaintInput,
   STOP_COUNT,
   STOP_TABLE_WIDTH,
+  surfaceChange,
+  uvScale,
 } from "../src/surface/layers.ts";
 import { SKIN_LAYER_TARGETS, SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import { areolaAlbedo, lipAlbedo, type Rgb } from "../src/surface/skinTone.ts";
@@ -162,5 +166,82 @@ describe("applyLayers", () => {
         [0, 0.5],
       ]),
     ).toEqual([0.2, 0.1, 0.05]);
+  });
+});
+
+describe("detail and surface layers", () => {
+  const none = () => ({ mask: new Float32Array(0), coord: null });
+  const bumps: SkinLayer = {
+    id: "goosebumps",
+    kind: "detail",
+    pattern: "bumps",
+    targets: [],
+    fields: none,
+    paint: ({ signals }) => ({ strength: signals.cold ?? 0, height: 0.00018, size: 0.002 }),
+  };
+  const creases: SkinLayer = {
+    id: "creases",
+    kind: "detail",
+    pattern: "creases",
+    targets: [],
+    fields: none,
+    paint: () => ({ strength: 1, height: 0.0005, size: 6 }),
+  };
+  const sheen: SkinLayer = {
+    id: "sheen",
+    kind: "surface",
+    targets: [],
+    fields: none,
+    paint: ({ signals }) => ({ strength: signals.exertion ?? 0, roughness: -0.3, specular: 0.4 }),
+  };
+  const stack = [bumps, creases, sheen];
+
+  it("encode their kind and parameters in the header, driven by the signals", () => {
+    const table = paintStopTable(stack, input({ signals: { cold: 0.5, exertion: 1 } }));
+    const head = (l: number) =>
+      Array.from(table.slice(l * STOP_TABLE_WIDTH * 4, l * STOP_TABLE_WIDTH * 4 + 4));
+    expect(head(0).map((x) => Number(x.toFixed(6)))).toEqual([0.5, 2, 0.00018, 0.002]);
+    expect(head(1).map((x) => Number(x.toFixed(6)))).toEqual([1, 3, 0.0005, 6]);
+    expect(head(2).map((x) => Number(x.toFixed(6)))).toEqual([1, 4, -0.3, 0.4]);
+    expect(() =>
+      paintStopTable(
+        [{ ...bumps, paint: () => ({ strength: 1, height: 0.001, size: 0 }) }],
+        input(),
+      ),
+    ).toThrow(/size > 0/);
+  });
+
+  it("leave the colour alone, and surface changes add by mask and strength", () => {
+    const table = paintStopTable(stack, input({ signals: { exertion: 0.5 } }));
+    const fields: [number, number][] = [
+      [1, 0],
+      [1, 0.3],
+      [0.5, 0],
+    ];
+    expect(applyLayers([0.3, 0.2, 0.1], table, fields)).toEqual([0.3, 0.2, 0.1]);
+    const s = surfaceChange(table, fields);
+    expect(s.roughness).toBeCloseTo(0.5 * 0.5 * -0.3, 6);
+    expect(s.specular).toBeCloseTo(0.5 * 0.5 * 0.4, 6);
+  });
+
+  it("raise creases with a raised-cosine profile, size of them across the coordinate", () => {
+    expect(creaseHeight(0.001, 4, 0)).toBeCloseTo(0, 9);
+    expect(creaseHeight(0.001, 4, 1 / 8)).toBeCloseTo(0.001, 9);
+    expect(creaseHeight(0.001, 4, 1 / 4)).toBeCloseTo(0, 9);
+  });
+
+  it("measure the body's UV scale in metres per UV unit, positive where the body is", () => {
+    const assets = loadFixtureAssets();
+    const faces = groupFaces(assets, "body");
+    const s = uvScale(assets, faces);
+    const onBody = new Set<number>();
+    for (const f of faces)
+      for (let k = 0; k < 4; k++) onBody.add(assets.faceVerts[f * 4 + k] as number);
+    const values = [...onBody].map((v) => s[v] as number);
+    // The figure is about 1.7 m tall on a 0..1 UV square: around a metre or two per unit.
+    const median = values.sort((a, b) => a - b)[values.length >> 1] as number;
+    expect(median).toBeGreaterThan(0.5);
+    expect(median).toBeLessThan(5);
+    expect(values.every((x) => x > 0 && Number.isFinite(x))).toBe(true);
   });
 });

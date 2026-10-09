@@ -23,7 +23,7 @@ import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
-import { buildLayerFields } from "../surface/layers.ts";
+import { buildLayerFields, uvScale } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { SKIN_LAYERS } from "../surface/regions/index.ts";
 
@@ -70,6 +70,8 @@ export interface ModelTopology {
     layerFields: Float32Array;
     /** Ids of the layers `layerFields` holds, in order. */
     layers: string[];
+    /** Per render vertex, metres of skin per UV unit (`uvScale`), for relief at true size. */
+    uvScale: Float32Array;
   };
   attachments: AttachmentTopology[];
 }
@@ -173,6 +175,7 @@ export class HumanoidModel {
   /** Subdivision level of the attachments: the body's, at most 1. */
   private readonly attachmentLevel: number;
   private readonly layerFields: Float32Array;
+  private readonly uvScale: Float32Array;
 
   readonly assets: HumanoidAssets;
 
@@ -226,6 +229,14 @@ export class HumanoidModel {
         this.layerFields[base + r * 2 + 1] = surface[s * 3 + 1] as number;
       });
     });
+    // Metres per UV unit, for relief at true size; carried the same way.
+    const scale = uvScale(assets, bodyFaces);
+    const scaleField = new Float32Array(n * 3);
+    scale.forEach((s, v) => {
+      scaleField[v * 3] = s;
+    });
+    applyStencil(this.body.mesh.stencil, scaleField, surface);
+    this.uvScale = Float32Array.from(r2s, (s) => surface[s * 3] as number);
 
     this.attachmentLevel = Math.min(level, 1);
     this.attached = wearing.map((asset) => ({
@@ -428,6 +439,7 @@ export class HumanoidModel {
         ...topologyOf(this.body.mesh),
         layerFields: this.layerFields,
         layers: SKIN_LAYERS.map((l) => l.id),
+        uvScale: this.uvScale,
       },
       attachments: this.attached.map(({ asset, part: p }, i) => ({
         occlusion: occlusion[i] as Float32Array,

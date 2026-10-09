@@ -291,6 +291,15 @@ compute what the renderer will do.
   `buildLayerFields`, `paintStopTable(layers, input)` (the figure's stop table,
   `STOP_COUNT` stops in rows of `STOP_TABLE_WIDTH` texels) and
   `applyLayers(base, table, fields)`, the per-pixel blend the shader performs.
+  A layer is one of three kinds: a `ColourLayer` (the default: `blend`, and
+  `paint` giving `strength` and colour `stops`), a `DetailLayer` (`kind:
+  "detail"`, `pattern` `"bumps"` or `"creases"`, `paint` giving `strength`,
+  `height` in metres and `size`: bump spacing in metres, or crease count across
+  the coordinate) drawn at true scale and faded where finer than a pixel, or a
+  `SurfaceLayer` (`kind: "surface"`, `paint` giving `strength`, a `roughness`
+  change and a `specular` change). `surfaceChange` and `creaseHeight` are the
+  shader's references; `uvScale(assets, faces)` gives metres of skin per UV
+  unit (carried as `body.uvScale` in the topology).
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).

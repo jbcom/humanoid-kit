@@ -65,27 +65,100 @@ export const CURVATURE_ATTRIBUTE = "hkCurvature";
 /** A GLSL float literal. */
 const glslFloat = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
 
+/** Name of the per-vertex attribute holding metres of skin per UV unit. */
+export const UV_SCALE_ATTRIBUTE = "hkUvScale";
+
 /**
- * The layer stack, per pixel: the shader form of `applyLayers`, which the
- * browser tests hold it to. Layer l's fields are in atlas page l / 2 (RG for
- * even l, BA for odd); its row of the stop table holds (strength, blend) then
- * the stops, which linear filtering interpolates along the coordinate.
+ * The layer stack, per pixel: the shader form of `applyLayers`,
+ * `surfaceChange` and `creaseHeight`, which the browser tests hold it to.
+ * Layer l's fields are in atlas page l / 2 (RG for even l, BA for odd); its
+ * row of the stop table starts with the header (strength, kind, a, b) and, for
+ * a colour layer, the stops, which linear filtering interpolates along the
+ * coordinate. The kind comes from the table, the same for every pixel, so the
+ * branches on it are uniform and the derivatives under them well defined.
  */
 const layerFunctions = (count: number) => `
 varying vec2 vHkUv;
+varying float vHkUvScale;
 uniform highp sampler2DArray hkLayerAtlas;
 uniform sampler2D hkLayerStops;
+vec2 hkFields( int l, vec2 uv ) {
+	vec4 page = texture( hkLayerAtlas, vec3( uv, float( l / 2 ) ) );
+	return ( l % 2 == 0 ) ? page.xy : page.zw;
+}
+vec4 hkHeader( int l ) { return texelFetch( hkLayerStops, ivec2( 0, l ), 0 ); }
+int hkKind( vec4 head ) { return int( head.y + 0.5 ); }
 vec3 hkApplyLayers( vec3 c, vec2 uv ) {
 	for ( int l = 0; l < ${count}; l ++ ) {
-		vec4 page = texture( hkLayerAtlas, vec3( uv, float( l / 2 ) ) );
-		vec2 f = ( l % 2 == 0 ) ? page.xy : page.zw;
-		vec4 head = texelFetch( hkLayerStops, ivec2( 0, l ), 0 );
+		vec4 head = hkHeader( l );
+		int kind = hkKind( head );
+		if ( kind > 1 ) continue;
+		vec2 f = hkFields( l, uv );
 		float u = ( 1.5 + clamp( f.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
 		vec3 stop = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).rgb;
-		vec3 target = head.y > 0.5 ? c * stop : stop;
+		vec3 target = kind == 1 ? c * stop : stop;
 		c = mix( c, target, f.x * head.x );
 	}
 	return c;
+}
+// Roughness change (x) and specular change (y) of the surface layers.
+vec2 hkSurfaceChange( vec2 uv ) {
+	vec2 s = vec2( 0.0 );
+	for ( int l = 0; l < ${count}; l ++ ) {
+		vec4 head = hkHeader( l );
+		if ( hkKind( head ) != 4 ) continue;
+		s += hkFields( l, uv ).x * head.x * head.zw;
+	}
+	return s;
+}
+float hkHash( vec2 p ) {
+	return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 );
+}
+// A jittered field of rounded bumps, one per cell (p in cells): 1 at a bump's top.
+float hkBumps( vec2 p ) {
+	vec2 i = floor( p );
+	float h = 0.0;
+	for ( int y = -1; y <= 1; y ++ )
+		for ( int x = -1; x <= 1; x ++ ) {
+			vec2 c = i + vec2( float( x ), float( y ) );
+			vec2 centre = c + 0.2 + 0.6 * vec2( hkHash( c ), hkHash( c + 17.31 ) );
+			float d = length( p - centre ) / 0.35;
+			h = max( h, pow( max( 1.0 - d * d, 0.0 ), 2.0 ) );
+		}
+	return h;
+}
+// The detail layers' relief at this pixel, metres. Relief finer than a pixel
+// fades out rather than aliasing.
+float hkDetailHeight( vec2 uv ) {
+	float H = 0.0;
+	for ( int l = 0; l < ${count}; l ++ ) {
+		vec4 head = hkHeader( l );
+		int kind = hkKind( head );
+		if ( kind != 2 && kind != 3 ) continue;
+		vec2 f = hkFields( l, uv );
+		float a = f.x * head.x;
+		if ( kind == 2 ) {
+			vec2 p = uv * vHkUvScale / head.w;
+			float fade = 1.0 - smoothstep( 0.25, 0.75, length( fwidth( p ) ) );
+			H += a * head.z * fade * hkBumps( p );
+		} else {
+			float phase = f.y * head.w;
+			float fade = 1.0 - smoothstep( 0.25, 0.75, fwidth( phase ) );
+			H += a * head.z * fade * 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) );
+		}
+	}
+	return H;
+}
+// Tilts the normal by the gradient of a height field (metres) across the
+// surface (Mikkelsen's surface gradient, unnormalised so relief keeps its size).
+vec3 hkPerturbNormal( vec3 n, float h, vec3 position, float faceDirection ) {
+	vec3 sx = dFdx( position );
+	vec3 sy = dFdy( position );
+	vec3 r1 = cross( sy, n );
+	vec3 r2 = cross( n, sx );
+	float det = dot( sx, r1 ) * faceDirection;
+	vec3 grad = sign( det ) * ( dFdx( h ) * r1 + dFdy( h ) * r2 );
+	return normalize( abs( det ) * n - grad );
 }`;
 
 /**
@@ -347,17 +420,26 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   override onBeforeCompile: MeshPhysicalMaterial["onBeforeCompile"] = (shader) => {
     Object.assign(shader.uniforms, this.hkUniforms);
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec2 vHkUv;")
+      .replace(
+        "#include <common>",
+        `#include <common>\nvarying vec2 vHkUv;\nattribute float ${UV_SCALE_ATTRIBUTE};\nvarying float vHkUvScale;`,
+      )
       .replace(
         "#include <color_vertex>",
-        `#include <color_vertex>\n\tvHkUv = uv;\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};`,
+        `#include <color_vertex>\n\tvHkUv = uv;\n\tvHkUvScale = ${UV_SCALE_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};`,
       )
       .replace(
         "#include <common>",
         `#include <common>\nattribute float ${CURVATURE_ATTRIBUTE};\nvarying float vHkCurvature;`,
       );
-    if (!shader.fragmentShader.includes("#include <color_fragment>"))
-      throw new Error("SkinMaterial: three's color_fragment chunk moved");
+    for (const chunk of [
+      "color_fragment",
+      "roughnessmap_fragment",
+      "normal_fragment_maps",
+      "lights_physical_fragment",
+    ])
+      if (!shader.fragmentShader.includes(`#include <${chunk}>`))
+        throw new Error(`SkinMaterial: three's ${chunk} chunk moved`);
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
@@ -366,6 +448,20 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       .replace(
         "#include <color_fragment>",
         "#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );",
+      )
+      // Surface layers: roughness here, specular once the material is set up.
+      .replace(
+        "#include <roughnessmap_fragment>",
+        "#include <roughnessmap_fragment>\n\tvec2 hkSurface = hkSurfaceChange( vHkUv );\n\troughnessFactor = clamp( roughnessFactor + hkSurface.x, 0.03, 1.0 );",
+      )
+      // Detail layers: relief on top of the pore map.
+      .replace(
+        "#include <normal_fragment_maps>",
+        "#include <normal_fragment_maps>\n\tnormal = hkPerturbNormal( normal, hkDetailHeight( vHkUv ), - vViewPosition, faceDirection );",
+      )
+      .replace(
+        "#include <lights_physical_fragment>",
+        "#include <lights_physical_fragment>\n\tmaterial.specularColor *= max( 0.0, 1.0 + hkSurface.y );\n\tmaterial.specularColorBlended = mix( material.specularColor, diffuseColor.rgb, metalnessFactor );",
       );
     // Includes are resolved after this hook, so inline the physical lighting chunk with
     // its direct diffuse term replaced. Fail loudly if three changes that line.
@@ -380,6 +476,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-5-${this.layers.length}`;
+    return `humanoid-kit-skin-6-${this.layers.length}`;
   }
 }

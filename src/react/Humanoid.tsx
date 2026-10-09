@@ -42,7 +42,7 @@ import type { Recipe } from "../recipe/recipe.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
 import { AttachmentStandardMaterial, setOcclusionAttributes } from "../render/occlusion.ts";
-import { CURVATURE_ATTRIBUTE, SkinMaterial } from "../render/skinMaterial.ts";
+import { CURVATURE_ATTRIBUTE, SkinMaterial, UV_SCALE_ATTRIBUTE } from "../render/skinMaterial.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
 import {
   bodyPoseRotations,
@@ -397,6 +397,7 @@ export function Humanoid({
       CURVATURE_ATTRIBUTE,
       new BufferAttribute(new Float32Array(ready.topology.body.vertexCount), 1),
     );
+    body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(ready.topology.body.uvScale, 1));
     const attachments = ready.topology.attachments.map((t) => {
       const g = makeGeometry(t);
       setOcclusionAttributes(g, t.occlusion);
