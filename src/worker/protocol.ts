@@ -3,6 +3,7 @@ import type { LoadOptions, ShapeModifierEntry, SliderTask } from "../format/asse
 import type { FeatureRef } from "../makehuman/features.ts";
 import type {
   Evaluation,
+  GarmentTopology,
   ModelOptions,
   ModelTopology,
   RenderFeatures,
@@ -47,7 +48,15 @@ export type WorkerRequest =
       recipe: Recipe;
       /** The skin state's signals; those with state morphs change the shape. */
       signals?: Readonly<Record<string, number>>;
-    };
+      /**
+       * The key of the outfit the caller already holds the masks of
+       * (`Evaluation.outfit`); when the recipe's outfit has this key the reply
+       * leaves the masks out.
+       */
+      haveOutfit?: string | null;
+    }
+  /** Answered with a garment's static render data, once the garments have loaded. */
+  | { type: "garment"; id: number; garment: string };
 
 export type WorkerResponse =
   | ({ type: "ready"; id: number } & ReadyInfo)
@@ -56,4 +65,5 @@ export type WorkerResponse =
   /** Per worn attachment, its render vertices' occlusion at every corner; null when `ready`'s already was. */
   | { type: "posedOcclusion"; id: number; attachments: Float32Array[] | null }
   | { type: "evaluated"; id: number; evaluation: Evaluation; ms: number }
+  | { type: "garment"; id: number; topology: GarmentTopology }
   | { type: "error"; id: number; message: string; name: string };

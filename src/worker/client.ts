@@ -8,7 +8,7 @@
  * whose recipe needs target files that are still loading holds up no other.
  */
 import type { LoadOptions } from "../format/assetFormat.ts";
-import type { Evaluation, ModelOptions } from "../model/humanoidModel.ts";
+import type { Evaluation, GarmentTopology, ModelOptions } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import type { PickMap, ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
 
@@ -21,6 +21,7 @@ export class HumanoidWorkerError extends Error {
 interface Job {
   recipe: Recipe;
   signals: Readonly<Record<string, number>>;
+  haveOutfit: string | null;
   resolve: (e: Evaluation) => void;
   reject: (e: Error) => void;
 }
@@ -141,15 +142,37 @@ export class HumanoidWorkerClient {
     recipe: Recipe,
     key = "default",
     signals: Readonly<Record<string, number>> = {},
+    haveOutfit: string | null = null,
   ): Promise<Evaluation> {
     if (this.disposed) return Promise.reject(new HumanoidWorkerError("disposed"));
     return new Promise((resolve, reject) => {
       this.queue.get(key)?.reject(abortError());
       // Map.set on an existing key keeps its position, so a superseding
       // request keeps its caller's place in line.
-      this.queue.set(key, { recipe, signals, resolve, reject });
+      this.queue.set(key, { recipe, signals, haveOutfit, resolve, reject });
       void this.pump();
     });
+  }
+
+  private readonly garmentRequests = new Map<string, Promise<GarmentTopology>>();
+
+  /**
+   * A garment's static render data (`HumanoidModel.garmentTopology`), fetched
+   * from the worker once however many figures wear it. A failed request is not
+   * kept, so asking again tries again.
+   */
+  garment(id: string): Promise<GarmentTopology> {
+    let request = this.garmentRequests.get(id);
+    if (!request) {
+      request = this.ready.then(async () => {
+        const r = await this.request({ type: "garment", id: 0, garment: id });
+        if (r.type !== "garment") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+        return r.topology;
+      });
+      this.garmentRequests.set(id, request);
+      request.catch(() => this.garmentRequests.delete(id));
+    }
+    return request;
   }
 
   /** Sends the waiting evaluation of every key that has none in the worker. */
@@ -176,6 +199,7 @@ export class HumanoidWorkerClient {
         id: 0,
         recipe: job.recipe,
         signals: job.signals,
+        haveOutfit: job.haveOutfit,
       });
       if (r.type !== "evaluated") throw new HumanoidWorkerError(`unexpected ${r.type}`);
       job.resolve(r.evaluation);

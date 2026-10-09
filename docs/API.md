@@ -458,12 +458,19 @@ The main-thread handle to an evaluation worker.
   merged slider taxonomy, the rig (`RigData` plus each bone's `parents` index;
   the topology's skin indices refer to `rig.bones`) and whether the adult
   anatomy pack is loaded.
-- `client.evaluate(recipe, key?, signals?): Promise<Evaluation>` (signals as for
-  `model.evaluate`) is latest-wins per key:
+- `client.evaluate(recipe, key?, signals?, haveOutfit?): Promise<Evaluation>`
+  (signals as for `model.evaluate`) is latest-wins per key:
   each key has at most one evaluation in the worker and one waiting, and a
   waiting request replaced by a newer one rejects with an error named
   `AbortError`. Keys never wait on each other. Buffers are transferred from the
-  worker.
+  worker. A recipe with an `outfit` waits for the clothing pack's garments, and
+  a figure that wears nothing never does. `haveOutfit` is the
+  `Evaluation.outfit.key` the caller already holds the masks of, which then
+  come back null instead of copied again.
+- `client.garment(id): Promise<GarmentTopology>` resolves with a garment's
+  static render data, once the garments have loaded. Requested from the worker
+  once per id however many figures wear it; a failed request is forgotten, so
+  asking again tries again.
 - `client.pickMap(): Promise<PickMap>` resolves, once every target file has
   loaded, with which controls shape each rendered vertex:
   `{ features: FeatureRef[], render: { body, attachments } }`, the render

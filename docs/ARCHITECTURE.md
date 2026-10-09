@@ -398,6 +398,16 @@ recipes need it too. Results are transferred, not copied. The client accepts an
 injected `Worker`; by default it starts the built `dist/worker/index.js` next to
 it.
 
+An outfit crosses the worker boundary in two parts, because they change at
+different rates. A garment's static data (surface, UVs, skin weights, material)
+is requested once per garment (`client.garment`) and kept. An evaluation carries
+only the garments' positions and normals, plus the outfit's masks (the triangle
+indices to draw) when the caller does not already hold them: the caller passes
+the key of the outfit it holds, and a slider drag over an unchanged outfit
+sends no indices at all. The masks the model caches are copied before they are
+transferred. A recipe with an outfit waits for the garments' load stage, and a
+figure that wears nothing does not.
+
 ## Editor
 
 `src/editor` holds the creator's logic as plain functions (slider ranges and
