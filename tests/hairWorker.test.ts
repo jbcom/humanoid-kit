@@ -115,6 +115,50 @@ describe("the worker with hair", { timeout: 60_000 }, () => {
     expect(bald?.type === "evaluated" && bald.hairTopology).toBeFalsy();
   });
 
+  it("loads and sends the brows' and lashes' geometry beside the scalp style's, each topology once", async () => {
+    const requested = stubFetch();
+    const { handle, replies } = start();
+    await handle({ type: "init", id: 1, load: LOAD, model: { subdivision: 0 } });
+    const recipe = createRecipe({
+      hair: { style: "short02", brows: "eyebrow002", lashes: "eyelashes03" },
+    });
+    await handle({ type: "evaluate", id: 2, recipe });
+    const first = replies.get(2);
+    expect(first?.type).toBe("evaluated");
+    if (first?.type !== "evaluated") return;
+    expect(first.evaluation.brows?.id).toBe("eyebrow002");
+    expect(first.evaluation.lashes?.id).toBe("eyelashes03");
+    expect(first.hairTopology?.id).toBe("short02");
+    expect(first.decalTopologies?.map((t) => [t.id, t.kind])).toEqual([
+      ["eyebrow002", "brows"],
+      ["eyelashes03", "lashes"],
+    ]);
+    // Only the worn styles' files were fetched.
+    const hairFiles = requested.filter(
+      (u) => u.startsWith("http://packs/hair/") && u.endsWith(".bin.gz"),
+    );
+    expect(hairFiles.sort()).toEqual([
+      "http://packs/hair/eyebrow002.bin.gz",
+      "http://packs/hair/eyelashes03.bin.gz",
+      "http://packs/hair/short02.bin.gz",
+    ]);
+
+    await handle({ type: "evaluate", id: 3, recipe });
+    const second = replies.get(3);
+    expect(second?.type === "evaluated" && second.decalTopologies).toBeFalsy();
+    // Brows alone, a different one: its own topology, none for the lashes it no longer wears.
+    await handle({
+      type: "evaluate",
+      id: 4,
+      recipe: createRecipe({ hair: { style: null, brows: "eyebrow007" } }),
+    });
+    const alone = replies.get(4);
+    expect(alone?.type === "evaluated" && alone.decalTopologies?.map((t) => t.id)).toEqual([
+      "eyebrow007",
+    ]);
+    expect(alone?.type === "evaluated" && alone.evaluation.lashes).toBeNull();
+  });
+
   it("answers an unknown style with an error that names it, and keeps serving", async () => {
     stubFetch();
     const { handle, replies } = start();

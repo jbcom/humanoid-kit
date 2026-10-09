@@ -124,7 +124,12 @@ createRecipe(init?: {
   modifiers?: Record<string, number>;
   skin?: Partial<SkinRecipe>;
   eyes?: Partial<EyesRecipe>;
-  hair?: { style?: string | null; colour?: Partial<HairColour> };
+  hair?: {
+    style?: string | null;
+    colour?: Partial<HairColour>;
+    brows?: string; // a brows style id of the hair pack (`eyebrow001`…); absent = none
+    lashes?: string; // a lashes style id (`eyelashes01`…); absent = none
+  };
   bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
 }): Recipe
@@ -330,7 +335,16 @@ and throws `RangeError` for anything else.
   (`hairFields`, `src/surface/hairFields.ts`). `evaluate` fills `Evaluation.hair` from
   `recipe.hair.style` and throws `MorphError` for a style whose geometry has
   not arrived (`assets.hair.load(id)` brings it); the style never changes the
-  body, which keeps every face (hair has no `delete_verts`).
+  body, which keeps every face (hair has no `delete_verts`). `Evaluation.brows` and
+  `Evaluation.lashes` are the worn `recipe.hair.brows` and `lashes` the same way
+  (an id of the wrong kind is a `RecipeError`: `hair.style` wears scalp styles,
+  `brows` brows, `lashes` lashes); a brow is lifted `DECAL_LIFT` (2 mm) off the
+  skin along its normal, since the smooth body surface can swallow a decal bound to
+  the coarse mesh by up to 1.8 mm at the brow ridge (a test holds it clear at ages
+  6 to 75). `model.pendingHairStyles(recipe)` lists every worn style not yet loaded,
+  and the worker's `evaluated` reply carries `decalTopologies` for the brows' and
+  lashes' static data (`HairTopology.kind` is `scalp`, `brows` or `lashes`; a
+  decal's fade is all 1, fin and growth 0, scalp none).
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
