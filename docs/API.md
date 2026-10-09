@@ -693,16 +693,20 @@ compute what the renderer will do.
   Features whose masks never meet share a layer, to hold the hands to one atlas
   page:
   - `PALMOPLANTAR_LAYER` (`"palmoplantar"`): `palmAlbedo(tone)` over
-    `skinZones().palm` and `skinZones().sole` (palmoplantar skin; no sole colour
+    `palmarMask(assets)` and `skinZones().sole` (palmoplantar skin; no sole colour
     was found measured), less than `PALMOPLANTAR_FLOOR`, which the 8-bit atlas
     rounds to 0, dropped. `palmLab(tone)` is
     the palm's CIELAB (surface reflection included) from `PALM_BINS`, the
     International Skin Spectra Archive's paired palm and back-of-hand readings
     (777 people) binned by the back of the hand's L\*: on deep skin the palm is
     about 16 L\* lighter and 6 to 8 b\* yellower than the back of the hand, on
-    the lightest about the same.
-  - `PALM_CREASE_LINE_LAYER` (multiply: `palmCreaseLine(tone)`, the crease's
-    shade, and on deep skin a return toward the skin's own colour) and, in
+    the lightest about the same. `palmarMask(assets)` is palmar skin, 0 to 1:
+    the signed distance over the skin to the palmar-dorsal border
+    (`palmarBorderDistance`) eased over `PALM_BORDER_BLEND`, times the wrist's
+    ramp (`palmarWrist`, `PALM_WRIST_BLEND`).
+  - `PALM_CREASE_LINE_LAYER` (multiply: `palmCreaseLine(tone)`, a faint shade,
+    and on deep skin a return toward the skin's own colour, between lips
+    `PALM_CREASE_LIP` lighter; a crease reads mostly through its relief) and, in
     `HAND_RELIEF_LAYER`, folds `PALM_CREASE_DEPTH` deep: the
     distal and proximal transverse and thenar creases of the palm
     (`palmCreaseCurves(landmarks, joints)`) and each digit's flexion creases
