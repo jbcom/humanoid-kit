@@ -1,0 +1,16 @@
+{
+  "name": "bent",
+  "title": "Bent",
+  "description": "Every hinge about half way: elbows flexed to about 90°, knees to about 80°, wrists bent about 35° (the left one way, the right the other), the hips raised 20°. Open enough to see the crook of each joint, where its skin folds; the check for joint creases.",
+  "base": "tpose",
+  "rotations": {
+    "lowerarm01.L": { "Xrotation": -35.8, "Yrotation": 8.2, "Zrotation": -32 },
+    "lowerarm01.R": { "Xrotation": -35.8, "Yrotation": -8.2, "Zrotation": 32 },
+    "lowerleg01.L": { "Xrotation": 80 },
+    "lowerleg01.R": { "Xrotation": 80 },
+    "upperleg01.L": { "Xrotation": -20 },
+    "upperleg01.R": { "Xrotation": -20 },
+    "wrist.L": { "Xrotation": 35 },
+    "wrist.R": { "Xrotation": -35 }
+  }
+}

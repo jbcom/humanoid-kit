@@ -224,6 +224,7 @@ describe("body poses", () => {
     expect(rig.poses.map((p) => p.name)).toEqual([
       "tpose",
       "benchmark",
+      "bent",
       "flexed",
       "relaxed",
       "twisted",
@@ -253,6 +254,21 @@ describe("body poses", () => {
       expect(
         bend(heads, `lowerarm02.${side}`, `wrist.${side}`, `finger3-1.${side}`),
       ).toBeGreaterThan(40);
+    }
+  });
+
+  it("bends every hinge about half way in the bent pose, open enough to see each crook", () => {
+    const heads = posedBoneHeads(rest, bodyPoseRotations(rig, "bent"));
+    for (const side of ["L", "R"]) {
+      const elbow = bend(heads, `upperarm02.${side}`, `lowerarm01.${side}`, `wrist.${side}`);
+      const knee = bend(heads, `upperleg02.${side}`, `lowerleg01.${side}`, `foot.${side}`);
+      const wrist = bend(heads, `lowerarm02.${side}`, `wrist.${side}`, `finger3-1.${side}`);
+      expect(elbow).toBeGreaterThan(80);
+      expect(elbow).toBeLessThan(105);
+      expect(knee).toBeGreaterThan(70);
+      expect(knee).toBeLessThan(95);
+      expect(wrist).toBeGreaterThan(25);
+      expect(wrist).toBeLessThan(55);
     }
   });
 
