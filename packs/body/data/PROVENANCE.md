@@ -30,4 +30,4 @@ Attachments come from the MakeHuman system assets pack (makehuman_system_assets_
 | targets-young.bin.gz | `b2a442d5ecbb2a846a5160adfae027ab14b8d34d573bb169d0920a3c35b3474b` |
 | targets-old.bin.gz | `b17a88e4d428d56344245237bccaf5a64d51d7dba5615f62024033a1710ce501` |
 | targets-modifiers.bin.gz | `6c2c5713c5c1d3b52dfbe30e15de8e0bc6d3920cd906ea32072a9160152ea581` |
-| attachments.bin.gz | `25e297b950e141b00d5f133433214ab228db1374a50a02d49c436db5094b4582` |
+| attachments.bin.gz | `4996e60a0b9089b89e0df6ff54bd11f4d859d7cc2912c3767091edfcaa946264` |

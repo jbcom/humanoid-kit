@@ -250,9 +250,9 @@ stored values drift from what the code computes.
 the rest bake calls enclosed, so they rendered black. Three key poses change
 what encloses the attachments (`OCCLUSION_KEYS`: jaw open, lips apart, smile),
 and their effects interact in both directions. Measured on the default figure
-(p90 openness of the front teeth): jaw 0.31 and smile 0.06 alone but 0.69
+(p90 openness of the front teeth): jaw 0.31 and smile 0.00 alone but 0.59
 together, since a smile uncovers the teeth only once the jaw is open; jaw 0.31
-and lips 0.53 alone but 0.69 together, since both uncover the same teeth. A sum
+and lips 0.59 alone but 0.72 together, since both uncover the same teeth. A sum
 of single-key changes misses both, so the packer bakes every corner of the key
 cube (eight bakes, each key absent or full, the body posed by `skinPositions`
 and the attachments bound to it) and the vertex shader blends them

@@ -116,6 +116,33 @@ describe("posing", () => {
     expect(drop(right)).toBeGreaterThan(-1e-6);
   });
 
+  it("turns the eyes about the vertical axis, toward the side the unit names", () => {
+    // MakeHuman's BVH is Z-up facing -Y; the figure is Y-up facing +Z, its left at +X.
+    const turned = pose({ LeftEyeturnLeft: 1 });
+    const eye = ownedBy("eye.L", 0.99);
+    expect(eye.length).toBeGreaterThan(10);
+    let front = eye[0] as number;
+    for (const v of eye)
+      if ((control[v * 3 + 2] as number) > (control[front * 3 + 2] as number)) front = v;
+    const d = [0, 1, 2].map(
+      (k) => (turned[front * 3 + k] as number) - (control[front * 3 + k] as number),
+    );
+    // The front of the eye swings sideways, toward the figure's left, not up or down.
+    expect(d[0] as number).toBeGreaterThan(0.002);
+    expect(Math.abs(d[1] as number)).toBeLessThan(Math.abs(d[0] as number) / 4);
+  });
+
+  it("moves the mouth sideways with MouthMoveLeft, toward the figure's left", () => {
+    const moved = pose({ MouthMoveLeft: 1 });
+    const lips = ownedBy("oris01", 0.5).concat(ownedBy("oris05", 0.5));
+    expect(lips.length).toBeGreaterThan(3);
+    const dx = lips.map((v) => (moved[v * 3] as number) - (control[v * 3] as number));
+    const dy = lips.map((v) => (moved[v * 3 + 1] as number) - (control[v * 3 + 1] as number));
+    const mean = (a: number[]) => a.reduce((s, x) => s + x, 0) / a.length;
+    expect(mean(dx)).toBeGreaterThan(0.001);
+    expect(Math.abs(mean(dy))).toBeLessThan(Math.abs(mean(dx)));
+  });
+
   it("blends units in log space: one unit at weight 1 is that unit, weights scale its angle", () => {
     const jaw = bone("jaw");
     const angle = (q: Float32Array) =>

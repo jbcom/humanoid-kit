@@ -105,7 +105,7 @@ describe("attachment occlusion on the figure", () => {
       return v[Math.floor(v.length * 0.9)] as number;
     };
     // Corner bits: 1 = jaw open, 2 = lips apart, 4 = smile. Measured on the
-    // default figure, corners 0-7: 0.03 0.31 0.53 0.69 0.06 0.69 0.62 0.75.
+    // default figure, corners 0-7: 0.03 0.31 0.59 0.72 0.00 0.59 0.69 0.84.
     // The keys interact both ways, so a sum of single keys would be wrong:
     // a smile uncovers the teeth only with the jaw open (more than the sum),
     // while jaw and lips uncover the same teeth (less than the sum).

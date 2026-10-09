@@ -120,12 +120,21 @@ const exp = (r: [number, number, number]): Quat => {
   return [r[0] * s, r[1] * s, r[2] * s, Math.cos(angle / 2)];
 };
 
-const AXIS: Record<string, 0 | 1 | 2> = { Xrotation: 0, Yrotation: 1, Zrotation: 2 };
+/**
+ * MakeHuman's BVH files are Z-up with the figure facing -Y; the base mesh and
+ * this rig are Y-up facing +Z. A BVH axis maps to the figure's axis with a sign:
+ * X stays X, Y (front to back) is -Z, Z (up) is Y.
+ */
+const AXIS: Record<string, [0 | 1 | 2, 1 | -1]> = {
+  Xrotation: [0, 1],
+  Yrotation: [2, -1],
+  Zrotation: [1, 1],
+};
 
 /**
- * One BVH frame's rotations per bone (identity for bones the BVH leaves out).
- * Channels compose in the order written: "Zrotation Xrotation Yrotation" is
- * Rz · Rx · Ry. Translation channels are ignored.
+ * One BVH frame's rotations per bone (identity for bones the BVH leaves out),
+ * in the figure's axes. Channels compose in the order written: "Zrotation
+ * Xrotation Yrotation" is Rz · Rx · Ry. Translation channels are ignored.
  */
 function frameRotations(rig: RigData, frame: readonly number[]): Map<number, Quat> {
   const { joints } = rig.faceUnits;
@@ -137,7 +146,8 @@ function frameRotations(rig: RigData, frame: readonly number[]): Map<number, Qua
     for (const c of j.channels) {
       const value = frame[k++] ?? 0;
       const axis = AXIS[c];
-      if (axis !== undefined && value !== 0) q = mul(q, axisAngle(axis, (value * Math.PI) / 180));
+      if (axis !== undefined && value !== 0)
+        q = mul(q, axisAngle(axis[0], (axis[1] * value * Math.PI) / 180));
     }
     const b = index.get(j.name);
     if (b !== undefined && q[3] < 1) out.set(b, q);
