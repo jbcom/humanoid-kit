@@ -12,6 +12,7 @@
  * Results are transferred, not copied; the outfit masks the model caches are
  * copied first.
  */
+import { wardrobeOf } from "../editor/wardrobe.ts";
 import { GARMENTS_FILE, type LoadStage, loadHumanoidAssetsStaged } from "../format/assetFormat.ts";
 import { buildFeatureMap } from "../makehuman/features.ts";
 import { HumanoidModel } from "../model/humanoidModel.ts";
@@ -72,6 +73,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           sliders: assets.sliders,
           rig: { ...rigData(assets), parents: model.boneParents(), skin: model.rigSkin() },
           adultAnatomyLoaded: assets.adultAnatomyLoaded,
+          wardrobe: wardrobeOf(assets.clothingManifest),
         });
         return;
       }

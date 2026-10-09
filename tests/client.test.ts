@@ -71,6 +71,7 @@ class FakeWorker {
             sliders: [],
             rig: EMPTY_RIG,
             adultAnatomyLoaded: false,
+            wardrobe: [],
           });
       }, 1);
       return;

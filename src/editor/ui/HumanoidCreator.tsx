@@ -31,6 +31,7 @@ import { RegionPanel } from "./RegionPanel.tsx";
 import { ShapePanel } from "./ShapePanel.tsx";
 import { CREATOR_CSS } from "./styles.ts";
 import { type HumanoidEditor, useHumanoidEditor } from "./useHumanoidEditor.ts";
+import { WardrobePanel } from "./WardrobePanel.tsx";
 
 export interface HumanoidCreatorProps {
   initialRecipe?: Recipe;
@@ -45,6 +46,7 @@ export interface HumanoidCreatorProps {
 
 const APPEARANCE_TAB = "hk:appearance";
 const REGIONS_TAB = "hk:regions";
+const WARDROBE_TAB = "hk:wardrobe";
 const WHOLE_BODY: FrameRequest = { part: "body", direction: "front" };
 
 const Icon = ({ d }: { d: string }) => (
@@ -181,6 +183,8 @@ function CreatorBody({
     ...tasks.map((t) => ({ id: t.id, label: t.label })),
     { id: REGIONS_TAB, label: "Regions" },
     { id: APPEARANCE_TAB, label: "Skin & eyes" },
+    // Only with a clothing pack: without one there is nothing to wear.
+    ...(ready?.wardrobe.length ? [{ id: WARDROBE_TAB, label: "Wardrobe" }] : []),
   ];
   // Task ids contain spaces, so element ids use the tab's position.
   const tabElementId = (id: string) => `${tabsId}-tab-${tabs.findIndex((t) => t.id === id)}`;
@@ -203,6 +207,9 @@ function CreatorBody({
 
   /** Opens the controls of the tapped part of the figure and frames it. */
   const onPick = (p: HumanoidPick) => {
+    // A tapped garment opens nothing: the pick map describes the body and the
+    // attachments, not what is worn over them.
+    if (p.part === "garment") return;
     const table = p.part === "body" ? pickMap?.render.body : pickMap?.render.attachments[p.part];
     const index = table?.[p.vertex];
     if (index === undefined || index === NO_FEATURE) return;
@@ -340,6 +347,8 @@ function CreatorBody({
               <RegionPanel editor={editor} onFocus={reframe} />
             ) : activeTab === APPEARANCE_TAB ? (
               <AppearancePanel editor={editor} onFocus={reframe} />
+            ) : activeTab === WARDROBE_TAB ? (
+              <WardrobePanel editor={editor} />
             ) : (
               <ShapePanel editor={editor} task={task} query="" onFocus={reframe} reveal={reveal} />
             )}

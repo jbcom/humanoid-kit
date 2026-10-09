@@ -1,4 +1,5 @@
 /** Messages between `HumanoidWorkerClient` and the evaluation worker. */
+import type { WardrobeEntry } from "../editor/wardrobe.ts";
 import type { LoadOptions, ShapeModifierEntry, SliderTask } from "../format/assetFormat.ts";
 import type { FeatureRef } from "../makehuman/features.ts";
 import type {
@@ -25,6 +26,11 @@ export interface ReadyInfo {
    */
   rig: RigData & { parents: Int16Array; skin: RigSkin };
   adultAnatomyLoaded: boolean;
+  /**
+   * The garments the clothing pack offers, listed before their geometry has
+   * loaded; empty without that pack. A recipe wears them by `id`.
+   */
+  wardrobe: WardrobeEntry[];
 }
 
 /** Which controls shape each rendered vertex: what a tap on the figure opens. */

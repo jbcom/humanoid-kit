@@ -114,6 +114,7 @@
     "game-harness": "^1.1.2",
     "humanoid-kit-adult-anatomy": "workspace:*",
     "humanoid-kit-body": "workspace:*",
+    "humanoid-kit-clothing": "workspace:*",
     "lint-staged": "^17.6.0",
     "markdownlint-cli2": "^0.23.3",
     "postprocessing": "^6.39.5",

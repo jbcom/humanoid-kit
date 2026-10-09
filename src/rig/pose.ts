@@ -103,15 +103,27 @@ export interface RigSkin {
   bodyVertices: Uint32Array;
 }
 
+/** Points skinned to the rig, at rest: a garment's render vertices and their skin. */
+export interface SkinnedPoints {
+  /** Rest positions, xyz per point. */
+  positions: Float32Array;
+  /** Four bone indices and weights per point. */
+  skinIndex: ArrayLike<number>;
+  skinWeight: Float32Array;
+}
+
 /**
- * The lift that puts a posed figure's lowest body point on y = 0: the
- * evaluation's `groundOffset` for the pose, from its control mesh and bone heads.
+ * The lift that puts a posed figure's lowest point on y = 0: the
+ * evaluation's `groundOffset` for the pose, from its control mesh and bone
+ * heads. The lowest point is the body's, or that of anything it wears
+ * (`worn`: soles reach below the foot inside them), posed with it.
  */
 export function posedGroundOffset(
   rest: RestBones,
   rotations: BoneRotations,
   control: Float32Array,
   skin: RigSkin,
+  worn: readonly SkinnedPoints[] = [],
 ): number {
   const posed = skinPositions(
     rest,
@@ -123,6 +135,17 @@ export function posedGroundOffset(
   );
   let minY = Number.POSITIVE_INFINITY;
   for (const v of skin.bodyVertices) minY = Math.min(minY, posed[v * 3 + 1] as number);
+  for (const w of worn) {
+    const p = skinPositions(
+      rest,
+      rotations,
+      w.positions,
+      w.skinIndex,
+      w.skinWeight,
+      new Float32Array(w.positions.length),
+    );
+    for (let i = 1; i < p.length; i += 3) minY = Math.min(minY, p[i] as number);
+  }
   return -minY;
 }
 
@@ -298,7 +321,7 @@ export function skinPositions(
   rest: RestBones,
   rotations: BoneRotations,
   positions: Float32Array,
-  skinIndex: Uint8Array,
+  skinIndex: ArrayLike<number>,
   skinWeight: Float32Array,
   out: Float32Array,
 ): Float32Array {

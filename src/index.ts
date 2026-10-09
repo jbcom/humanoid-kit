@@ -4,6 +4,7 @@ export * from "./editor/framing.ts";
 export * from "./editor/history.ts";
 export * from "./editor/randomize.ts";
 export * from "./editor/regional.ts";
+export * from "./editor/wardrobe.ts";
 export * from "./format/assetFormat.ts";
 export * from "./makehuman/features.ts";
 export * from "./makehuman/macro.ts";

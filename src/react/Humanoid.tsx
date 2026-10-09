@@ -7,6 +7,7 @@ import { type ThreeElements, type ThreeEvent, useFrame, useThree } from "@react-
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useId,
@@ -25,10 +26,11 @@ import {
   type Material,
   Matrix4,
   type Mesh,
-  type MeshStandardMaterial,
+  MeshStandardMaterial,
   Skeleton,
   SkinnedMesh,
   SRGBColorSpace,
+  type Texture,
   TextureLoader,
   Vector3,
 } from "three";
@@ -36,6 +38,7 @@ import { STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import type {
   AttachmentTopology,
   Evaluation,
+  GarmentTopology,
   SurfaceEvaluation,
   SurfaceTopology,
 } from "../model/humanoidModel.ts";
@@ -162,8 +165,13 @@ export interface HumanoidPose {
 
 /** Where a tap on the figure landed. */
 export interface HumanoidPick {
-  /** `"body"`, or the attachment's index in `ModelTopology.attachments`. */
-  part: "body" | number;
+  /**
+   * `"body"`; `"garment"` (then `garment` names it); or the attachment's index
+   * in `ModelTopology.attachments`.
+   */
+  part: "body" | "garment" | number;
+  /** The tapped garment's id, when `part` is `"garment"`. */
+  garment?: string;
   /** The render vertex of that mesh nearest the tap. */
   vertex: number;
   /** The tapped point, in world space. */
@@ -277,6 +285,62 @@ function useAttachmentMaterial(
   return material;
 }
 
+/**
+ * The material for a garment: a standard material from the packed description
+ * with its diffuse and normal maps, loaded once and released with it.
+ * Garments are not enclosed by the figure, so they take no baked occlusion.
+ */
+function useGarmentMaterial(t: GarmentTopology, report: (e: Error) => void): MeshStandardMaterial {
+  const material = useMemo(() => {
+    const m = t.material;
+    return new MeshStandardMaterial({
+      color: new Color(m.color[0], m.color[1], m.color[2]),
+      roughness: m.roughness,
+      metalness: 0,
+      alphaToCoverage: m.alphaToCoverage,
+      side: m.backfaceCull ? FrontSide : DoubleSide,
+    });
+  }, [t]);
+  const reportRef = useLatest(report);
+  useEffect(() => {
+    let live = true;
+    const loader = new TextureLoader();
+    const load = (url: string | null, apply: (tex: Texture) => void) => {
+      if (!url) return;
+      loader.loadAsync(url).then(
+        (tex) => {
+          if (!live) {
+            tex.dispose();
+            return;
+          }
+          apply(tex);
+          material.needsUpdate = true;
+        },
+        (e: unknown) => {
+          if (live) reportRef.current(new Error(`texture ${url} failed to load: ${String(e)}`));
+        },
+      );
+    };
+    load(t.textureUrl, (tex) => {
+      tex.colorSpace = SRGBColorSpace;
+      material.map = tex;
+    });
+    // A normal map is data, not colour: it keeps three's default (no) colour space.
+    load(t.normalTextureUrl, (tex) => {
+      material.normalMap = tex;
+    });
+    return () => {
+      live = false;
+      material.map?.dispose();
+      material.map = null;
+      material.normalMap?.dispose();
+      material.normalMap = null;
+    };
+  }, [t, material, reportRef]);
+  useEffect(() => () => material.dispose(), [material]);
+  return material;
+}
+
 /** A mesh skinned to the figure's skeleton, bound once in mesh space. */
 function SkinnedPart({
   geometry,
@@ -284,6 +348,7 @@ function SkinnedPart({
   skeleton,
   visible,
   part,
+  garment,
   renderOrder,
   shape,
 }: {
@@ -292,6 +357,8 @@ function SkinnedPart({
   skeleton: Skeleton;
   visible: boolean;
   part: HumanoidPick["part"];
+  /** The garment's id, for a `"garment"` part. */
+  garment?: string;
   renderOrder?: number;
   /** Changes whenever the figure is re-evaluated or re-posed. */
   shape: object;
@@ -323,6 +390,7 @@ function SkinnedPart({
   });
   mesh.visible = visible;
   mesh.userData.hkPart = part;
+  mesh.userData.hkGarment = garment;
   if (renderOrder !== undefined) mesh.renderOrder = renderOrder;
   return <primitive object={mesh} />;
 }
@@ -365,6 +433,43 @@ function AttachmentMesh({
   );
 }
 
+function GarmentMesh({
+  topology,
+  geometry,
+  skeleton,
+  visible,
+  report,
+  shape,
+}: {
+  topology: GarmentTopology;
+  geometry: BufferGeometry;
+  skeleton: Skeleton;
+  visible: boolean;
+  report: (e: Error) => void;
+  shape: object;
+}) {
+  const material = useGarmentMaterial(topology, report);
+  return (
+    <SkinnedPart
+      geometry={geometry}
+      material={material}
+      skeleton={skeleton}
+      visible={visible}
+      part="garment"
+      garment={topology.id}
+      shape={shape}
+    />
+  );
+}
+
+/** The garments a figure is wearing: their static data and the geometry drawn from it. */
+interface Worn {
+  /** `Outfit.key`; "" for nothing. */
+  key: string;
+  topologies: GarmentTopology[];
+  geometries: BufferGeometry[];
+}
+
 /** A pointer that moved further than this between press and release was dragging (orbiting), not tapping. */
 const TAP_SLOP_PX = 6;
 
@@ -387,7 +492,8 @@ function pick(e: ThreeEvent<MouseEvent>, onPick: (pick: HumanoidPick) => void): 
       vertex = v;
     }
   }
-  onPick({ part, vertex, point: e.point.clone() });
+  const garment = e.object.userData.hkGarment as string | undefined;
+  onPick({ part, ...(garment && { garment }), vertex, point: e.point.clone() });
 }
 
 export function Humanoid({
@@ -470,8 +576,20 @@ export function Humanoid({
     occlusionKeys.fromArray(occlusionKeyWeights(keyBasis, q));
   }, [rig, ready, keyBasis, occlusionKeys, rotations]);
 
-  // Where the posed figure's lowest body point is: a crouch or a kneel comes
-  // down to the ground rather than hanging where the standing feet were.
+  // The garments worn: their geometry is built when an evaluation brings the
+  // outfit's masks, and replaced when a different outfit does. The body's own
+  // geometry is never rebuilt; only its index changes.
+  const [worn, setWorn] = useState<Worn | null>(null);
+  const wornRef = useRef<Worn | null>(null);
+  const wear = useCallback((next: Worn | null) => {
+    for (const g of wornRef.current?.geometries ?? []) g.dispose();
+    wornRef.current = next;
+    setWorn(next);
+  }, []);
+
+  // Where the posed figure's lowest point is (the body's, or what it wears): a
+  // crouch or a kneel comes down to the ground rather than hanging where the
+  // standing feet were.
   const [figure, setFigure] = useState<Evaluation | null>(null);
   // A new identity whenever the figure or its pose changes: the meshes' bounds follow it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: figure and rotations are the triggers
@@ -483,12 +601,20 @@ export function Humanoid({
     () => (ev: Evaluation) => {
       if (!ready) return;
       const q = rotationsRef.current;
+      // What the figure wears stands on the ground too: a sole is lower than the foot in it.
+      const worn = ev.garments.flatMap((g, i) => {
+        const t = wornRef.current?.topologies[i];
+        return t
+          ? [{ positions: g.positions, skinIndex: t.skinIndex, skinWeight: t.skinWeight }]
+          : [];
+      });
       const offset = q
         ? posedGroundOffset(
             restBonesFrom(ready.rig.bones, ready.rig.parents, ev.boneHeads),
             q,
             ev.control,
             ready.rig.skin,
+            worn,
           )
         : ev.groundOffset;
       if (groupRef.current) groupRef.current.userData.groundOffset = offset;
@@ -510,6 +636,10 @@ export function Humanoid({
     },
     [geometries],
   );
+
+  // A new body (a new client) starts again undressed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: geometries is the trigger
+  useEffect(() => () => wear(null), [geometries, wear]);
   useEffect(() => () => skin.dispose(), [skin]);
   // The skin layers' field atlas depends on the body alone, so figures share it.
   const gl = useThree((s) => s.gl);
@@ -558,9 +688,26 @@ export function Humanoid({
   useEffect(() => {
     if (!geometries) return;
     let live = true;
-    client.evaluate(recipe, key, shapeSignals).then(
-      (ev) => {
+    client
+      .evaluate(recipe, key, shapeSignals, wornRef.current?.key ?? "")
+      .then(async (ev) => {
+        // A different outfit brings its masks: the body draws the faces they keep,
+        // and the garments' static data comes once per garment, not per evaluation.
+        const masks = ev.outfit.masks;
+        const topologies = masks
+          ? await Promise.all(ev.outfit.order.map((id) => client.garment(id)))
+          : [];
         if (!live) return;
+        if (masks) {
+          geometries.body.setIndex(new BufferAttribute(masks.bodyIndex, 1));
+          wear({
+            key: ev.outfit.key,
+            topologies,
+            geometries: topologies.map((t, i) =>
+              makeGeometry({ ...t, index: masks.garmentIndex[i] as Uint32Array }),
+            ),
+          });
+        }
         if (rig && ready) fitSkeleton(rig.skeleton, ready.rig.parents, ev.boneHeads);
         writeGeometry(geometries.body, ev);
         (geometries.body.getAttribute(CURVATURE_ATTRIBUTE) as BufferAttribute).copyArray(
@@ -570,19 +717,34 @@ export function Humanoid({
           const g = geometries.attachments[i];
           if (g) writeGeometry(g, a);
         });
+        ev.garments.forEach((a, i) => {
+          const g = wornRef.current?.geometries[i];
+          if (g) writeGeometry(g, a);
+        });
         setFigure(ev);
         ground(ev);
         setShown(true);
         onEvaluatedRef.current?.(ev);
-      },
-      (e: Error) => {
+      })
+      .catch((e: Error) => {
         if (live && e.name !== "AbortError") report(e);
-      },
-    );
+      });
     return () => {
       live = false;
     };
-  }, [client, geometries, rig, ready, recipe, key, shapeSignals, onEvaluatedRef, report, ground]);
+  }, [
+    client,
+    geometries,
+    rig,
+    ready,
+    recipe,
+    key,
+    shapeSignals,
+    onEvaluatedRef,
+    report,
+    ground,
+    wear,
+  ]);
 
   return (
     <group
@@ -615,6 +777,20 @@ export function Humanoid({
                 visible={shown}
                 report={report}
                 eyes={recipe.eyes}
+                shape={shape}
+              />
+            ) : null;
+          })}
+          {worn?.topologies.map((t, i) => {
+            const g = worn.geometries[i];
+            return g ? (
+              <GarmentMesh
+                key={`${worn.key}:${t.id}`}
+                topology={t}
+                geometry={g}
+                skeleton={rig.skeleton}
+                visible={shown}
+                report={report}
                 shape={shape}
               />
             ) : null;
