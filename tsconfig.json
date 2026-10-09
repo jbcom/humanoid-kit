@@ -26,6 +26,7 @@
     "paths": {
       "humanoid-kit": ["./src/index.ts"],
       "humanoid-kit/react": ["./src/react/index.ts"],
+      "humanoid-kit/editor": ["./src/editor/ui/index.ts"],
       "humanoid-kit/worker": ["./src/worker/index.ts"]
     }
   },

@@ -66,7 +66,12 @@ const CODE_ENTRIES = [
   {
     specifier: "humanoid-kit/react",
     file: "react/index",
-    exports: ["Humanoid", "HumanoidProvider"],
+    exports: ["Humanoid", "HumanoidProvider", "StudioStage"],
+  },
+  {
+    specifier: "humanoid-kit/editor",
+    file: "editor/ui/index",
+    exports: ["HumanoidCreator", "useHumanoidEditor", "SliderRow"],
   },
 ];
 // The worker entry is a Web Worker script (it assigns `self.onmessage`), so it is

@@ -26,12 +26,19 @@
       "types": "./dist/worker/index.d.ts",
       "default": "./dist/worker/index.js"
     },
+    "./editor": {
+      "types": "./dist/editor/ui/index.d.ts",
+      "default": "./dist/editor/ui/index.js"
+    },
     "./package.json": "./package.json"
   },
   "typesVersions": {
     "*": {
       "react": [
         "./dist/react/index.d.ts"
+      ],
+      "editor": [
+        "./dist/editor/ui/index.d.ts"
       ],
       "worker": [
         "./dist/worker/index.d.ts"

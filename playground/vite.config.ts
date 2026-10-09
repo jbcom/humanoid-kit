@@ -14,6 +14,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: /^humanoid-kit\/react$/, replacement: here("../src/react/index.ts") },
+      { find: /^humanoid-kit\/editor$/, replacement: here("../src/editor/ui/index.ts") },
       { find: /^humanoid-kit\/worker$/, replacement: here("../src/worker/index.ts") },
       { find: /^humanoid-kit$/, replacement: here("../src/index.ts") },
     ],

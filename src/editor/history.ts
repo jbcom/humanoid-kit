@@ -18,6 +18,8 @@ export interface RecipeHistory {
 
 export type HistoryAction =
   | { type: "set"; recipe: Recipe; gesture?: string }
+  /** Like `set`, computed from the present recipe (a pure function). */
+  | { type: "apply"; change: (present: Recipe) => Recipe; gesture?: string }
   /** Ends any open gesture, so the next change starts a new step. */
   | { type: "settle" }
   | { type: "undo" }
@@ -41,6 +43,12 @@ export function historyReducer(state: RecipeHistory, action: HistoryAction): Rec
       const past = [...state.past, state.present].slice(-HISTORY_LIMIT);
       return { past, present: action.recipe, future: [], gesture };
     }
+    case "apply":
+      return historyReducer(state, {
+        type: "set",
+        recipe: action.change(state.present),
+        ...(action.gesture === undefined ? {} : { gesture: action.gesture }),
+      });
     case "settle":
       return state.gesture === null ? state : { ...state, gesture: null };
     case "undo": {
