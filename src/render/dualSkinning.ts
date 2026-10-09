@@ -36,6 +36,7 @@ import {
   skinVertex,
 } from "../rig/dual.ts";
 import type { BoneRotations, RestBones } from "../rig/pose.ts";
+import { poseShare } from "../rig/skinShare.ts";
 
 /** The bone texture's uniform, in every patched shader. */
 export const DUAL_BONES_UNIFORM = "hkDualBones";
@@ -47,14 +48,16 @@ export const DUAL_BONES_UNIFORM = "hkDualBones";
 export class DualBones {
   readonly texture: DataTexture;
   readonly data: Float32Array;
-  private readonly share: DualShare;
-  /** The pose last written, for the CPU reference (`pose`). */
-  private posed: { rest: RestBones; rotations: BoneRotations } | null = null;
+  /** The table's share per bone (`skinDualShare`); a pose's own shares come from it (`poseShare`). */
+  private readonly share: Float32Array;
+  /** The pose last written, for the CPU reference (`pose`), with the shares it was written with. */
+  private posed: { rest: RestBones; rotations: BoneRotations; share: Float32Array } | null = null;
   private cached: SkinPose | null = null;
 
   /** `share`: each bone's share of dual quaternion skinning (`skinDualShare`). */
   constructor(bones: number, share: DualShare) {
-    this.share = share;
+    this.share =
+      typeof share === "number" ? new Float32Array(bones).fill(share) : Float32Array.from(share);
     this.data = new Float32Array(bones * DUAL_TEXELS * 4);
     // Until posed, every bone is the identity motion, so no frame ever skins by zeros.
     for (let b = 0; b < bones; b++) this.data[b * DUAL_TEXELS * 4 + 3] = 1;
@@ -68,8 +71,10 @@ export class DualBones {
 
   /** Poses the bones: `rotations` over the skeleton `rest`. */
   update(rest: RestBones, rotations: BoneRotations): void {
-    dualBoneTexels(rest, rotations, this.share, this.data);
-    this.posed = { rest, rotations };
+    // A bone that swings changes its share (the thigh's, so a flexed hip does not bulge).
+    const share = poseShare(rest, rotations, this.share);
+    dualBoneTexels(rest, rotations, share, this.data);
+    this.posed = { rest, rotations, share };
     this.cached = null;
     this.texture.needsUpdate = true;
   }
@@ -77,7 +82,7 @@ export class DualBones {
   /** The pose last written, prepared for skinning on the CPU (null before the first). */
   pose(): SkinPose | null {
     if (!this.cached && this.posed)
-      this.cached = skinPose(this.posed.rest, this.posed.rotations, this.share);
+      this.cached = skinPose(this.posed.rest, this.posed.rotations, this.posed.share);
     return this.cached;
   }
 

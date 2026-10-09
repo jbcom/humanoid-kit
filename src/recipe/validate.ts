@@ -5,6 +5,8 @@
  */
 import { DEFAULT_MACROS } from "../makehuman/macro.ts";
 import { BODY_REGIONS } from "../makehuman/regions.ts";
+import { BEARD_STYLES, BODY_HAIR_GROUPS, MAX_BODY_HAIR_DENSITY } from "../surface/bodyHair.ts";
+import { bodyArtProblems } from "./bodyArt.ts";
 import { DEFAULT_SKIN, RECIPE_VERSION, type Recipe } from "./recipe.ts";
 
 export class RecipeValidationError extends Error {
@@ -89,6 +91,8 @@ export function recipeProblems(recipe: unknown): string[] {
     if (!finite(e.scleraWarmth)) p.push("eyes.scleraWarmth must be a finite number");
   }
   if ("hair" in r && r.hair !== undefined) hairProblems(r.hair, p);
+  if ("bodyHair" in r && r.bodyHair !== undefined) bodyHairProblems(r.bodyHair, p);
+  if (r.bodyArt !== undefined) bodyArtProblems(r.bodyArt, p);
   if (r.outfit !== undefined) {
     if (!Array.isArray(r.outfit)) p.push("outfit must be an array of garment ids");
     else {
@@ -103,7 +107,7 @@ export function recipeProblems(recipe: unknown): string[] {
   return p;
 }
 
-const HAIR_KEYS = new Set(["style", "colour"]);
+const HAIR_KEYS = new Set(["style", "colour", "brows", "lashes"]);
 const unit = (v: unknown): v is number => finite(v) && v >= 0 && v <= 1;
 
 /** The optional `hair` field: a style id or null, and a colour whose every value is in range. */
@@ -116,6 +120,10 @@ function hairProblems(hair: unknown, p: string[]): void {
   for (const k of Object.keys(h)) if (!HAIR_KEYS.has(k)) p.push(`hair.${k} is not a hair field`);
   if (h.style !== null && !(typeof h.style === "string" && h.style !== ""))
     p.push("hair.style must be null or a non-empty string");
+  // Brows and lashes are worn when named and absent otherwise: never null, never empty.
+  for (const k of ["brows", "lashes"] as const)
+    if (k in h && !(typeof h[k] === "string" && h[k] !== ""))
+      p.push(`hair.${k} must be a non-empty string when given`);
   if (typeof h.colour !== "object" || h.colour === null) {
     p.push("hair.colour missing");
     return;
@@ -126,6 +134,33 @@ function hairProblems(hair: unknown, p: string[]): void {
   const o = c.override;
   if (o !== null && !(Array.isArray(o) && o.length === 3 && o.every(unit)))
     p.push("hair.colour.override must be null or three numbers in [0, 1]");
+}
+
+const BODY_HAIR_KEYS = new Set(["density", "beard"]);
+const GROUPS = new Set<string>(BODY_HAIR_GROUPS);
+const BEARDS = new Set<string>(BEARD_STYLES);
+
+/** The optional `bodyHair` field: known groups with multipliers in range, and a known beard style. */
+function bodyHairProblems(bodyHair: unknown, p: string[]): void {
+  if (typeof bodyHair !== "object" || bodyHair === null) {
+    p.push("bodyHair must be an object");
+    return;
+  }
+  const b = bodyHair as Record<string, unknown>;
+  for (const k of Object.keys(b))
+    if (!BODY_HAIR_KEYS.has(k)) p.push(`bodyHair.${k} is not a body hair field`);
+  if (b.density !== undefined) {
+    if (typeof b.density !== "object" || b.density === null)
+      p.push("bodyHair.density must be an object");
+    else
+      for (const [g, v] of Object.entries(b.density)) {
+        if (!GROUPS.has(g)) p.push(`bodyHair.density.${g} is not a body hair group`);
+        else if (!(finite(v) && v >= 0 && v <= MAX_BODY_HAIR_DENSITY))
+          p.push(`bodyHair.density.${g} must be a number in [0, ${MAX_BODY_HAIR_DENSITY}]`);
+      }
+  }
+  if (b.beard !== undefined && !(typeof b.beard === "string" && BEARDS.has(b.beard)))
+    p.push(`bodyHair.beard must be one of ${BEARD_STYLES.join(", ")}`);
 }
 
 export function assertValidRecipe(recipe: unknown): asserts recipe is Recipe {

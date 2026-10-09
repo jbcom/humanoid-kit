@@ -20,7 +20,7 @@
  *
  * All three depend only on the packs, so they are measured once, here.
  */
-import { BufferAttribute, BufferGeometry, Line3, Vector3 } from "three";
+import { BufferAttribute, BufferGeometry, Line3, Triangle, Vector3 } from "three";
 import { MeshBVH } from "three-mesh-bvh";
 
 /** Growth is stored as unsigned 16-bit steps of 1 / `GROWTH_SCALE` metre (6.5 m of hair at most). */
@@ -48,7 +48,7 @@ export const FADE_LENGTH = 0.012;
 export const SCALP_FULL = 0.003;
 
 /** Metres beyond `SCALP_FULL` over which the density falls to zero. */
-export const SCALP_FALLOFF = 0.005;
+export const SCALP_FALLOFF = 0.008;
 
 /** A card vertex nearer the scalp than this (metres) is too close to tell which way it faces. */
 const FIN_MIN_DISTANCE = 0.001;
@@ -60,6 +60,35 @@ const FIN_MIN_DISTANCE = 0.001;
 const FIN_ALIGNED_FROM = 0.35;
 const FIN_ALIGNED_TO = 0.75;
 
+/** Metres above the scalp over which hair brightens from the shade at its roots to open light. */
+export const SCALP_DEPTH = 0.025;
+
+/**
+ * How open to light each point is by its height above the scalp alone: 0 at the
+ * skin, rising smoothly to 1 at `SCALP_DEPTH`. Hair is darkest at its roots and
+ * brightens along its length; unlike the ray bake, which treats cards as solid
+ * and darkens whichever cards happen to overlap, this has no patches.
+ */
+export function scalpShade(
+  positions: Float32Array,
+  body: { positions: Float32Array; triangles: Uint32Array },
+): Float32Array {
+  const bvh = new MeshBVH(geometry(body.positions, body.triangles), { verbose: false });
+  const target = { point: new Vector3(), distance: 0, faceIndex: 0 };
+  const p = new Vector3();
+  const out = new Float32Array(positions.length / 3);
+  for (let v = 0; v < out.length; v++) {
+    p.set(
+      positions[v * 3] as number,
+      positions[v * 3 + 1] as number,
+      positions[v * 3 + 2] as number,
+    );
+    const d = bvh.closestPointToPoint(p, target)?.distance ?? Number.POSITIVE_INFINITY;
+    out[v] = smoothstep(0, SCALP_DEPTH, d);
+  }
+  return out;
+}
+
 export interface HairFieldsInput {
   /** The style's control vertices at rest (metres), three per vertex. */
   positions: Float32Array;
@@ -69,6 +98,24 @@ export interface HairFieldsInput {
   body: { positions: Float32Array; triangles: Uint32Array };
   /** One per body control vertex: 1 where the skin may be tinted as scalp (the head), else 0. */
   scalpEligible: Uint8Array;
+  /**
+   * Whether a hairline thins out (default true). Dense curls have no cut edge to
+   * soften: faded, their roots show the dark inside of the volume as a band.
+   */
+  feather?: boolean;
+  /**
+   * The cards' texture cut-out: where it is clear there is no hair, so no scalp
+   * tint (a card's mesh extends past the hair painted on it, and the skin beyond the
+   * visible hairline must stay bare). `faceUvs` (four per quad) index `uvs`; `alpha`
+   * is the cut-out, row-major, top row first.
+   */
+  cutout?: {
+    faceUvs: Uint32Array;
+    uvs: Float32Array;
+    width: number;
+    height: number;
+    alpha: Uint8Array;
+  };
 }
 
 export interface HairFields {
@@ -183,6 +230,45 @@ function connectedPieces(adjacency: readonly (readonly [number, number][])[]): I
     }
   }
   return piece;
+}
+
+const TRI_A = new Vector3();
+const TRI_B = new Vector3();
+const TRI_C = new Vector3();
+const BARY = new Vector3();
+
+/**
+ * 1 where the card's texture is opaque at a hit's closest point on the cards, 0
+ * where it is clear (a smoothstep between a quarter and three quarters).
+ */
+function hairUnder(
+  hit: { point: Vector3; faceIndex: number },
+  cutout: NonNullable<HairFieldsInput["cutout"]>,
+  faceVerts: Uint32Array,
+  positions: Float32Array,
+): number {
+  const f = hit.faceIndex >> 1;
+  // Triangle 2f is the quad's corners (0, 1, 2); 2f + 1 is (0, 2, 3).
+  const corners = hit.faceIndex % 2 === 0 ? [0, 1, 2] : [0, 2, 3];
+  const vert = (k: number) => faceVerts[f * 4 + (corners[k] as number)] as number;
+  const set = (t: Vector3, v: number) =>
+    t.set(
+      positions[v * 3] as number,
+      positions[v * 3 + 1] as number,
+      positions[v * 3 + 2] as number,
+    );
+  set(TRI_A, vert(0));
+  set(TRI_B, vert(1));
+  set(TRI_C, vert(2));
+  Triangle.getBarycoord(hit.point, TRI_A, TRI_B, TRI_C, BARY);
+  const uv = (k: number, axis: number) =>
+    cutout.uvs[(cutout.faceUvs[f * 4 + (corners[k] as number)] as number) * 2 + axis] as number;
+  const u = BARY.x * uv(0, 0) + BARY.y * uv(1, 0) + BARY.z * uv(2, 0);
+  const v = BARY.x * uv(0, 1) + BARY.y * uv(1, 1) + BARY.z * uv(2, 1);
+  const col = Math.min(cutout.width - 1, Math.max(0, Math.floor(u * cutout.width)));
+  const row = Math.min(cutout.height - 1, Math.max(0, Math.floor((1 - v) * cutout.height)));
+  const alpha = (cutout.alpha[row * cutout.width + col] as number) / 255;
+  return smoothstep(0.25, 0.75, alpha);
 }
 
 export function hairFields(input: HairFieldsInput): HairFields {
@@ -338,9 +424,12 @@ export function hairFields(input: HairFieldsInput): HairFields {
     (v) => (nearBody[v] as number) < HAIRLINE_NEAR && !coveredByAnother(v),
   );
   const along = distanceAlong(adjacency, hairline);
-  const fade = Uint8Array.from(along, (d) =>
-    Number.isFinite(d) ? Math.round(255 * smoothstep(0, FADE_LENGTH, d)) : 255,
-  );
+  const fade =
+    input.feather === false
+      ? new Uint8Array(n).fill(255)
+      : Uint8Array.from(along, (d) =>
+          Number.isFinite(d) ? Math.round(255 * smoothstep(0, FADE_LENGTH, d)) : 255,
+        );
 
   // Scalp: eligible body vertices near a card.
   const cards = new Uint32Array(faces * 6);
@@ -359,8 +448,12 @@ export function hairFields(input: HairFieldsInput): HairFields {
       body.positions[v * 3 + 1] as number,
       body.positions[v * 3 + 2] as number,
     );
-    const d = cardBvh.closestPointToPoint(p, target)?.distance ?? Number.POSITIVE_INFINITY;
-    const w = Math.round(255 * (1 - smoothstep(SCALP_FULL, SCALP_FULL + SCALP_FALLOFF, d)));
+    const hit = cardBvh.closestPointToPoint(p, target);
+    const d = hit?.distance ?? Number.POSITIVE_INFINITY;
+    let density = 1 - smoothstep(SCALP_FULL, SCALP_FULL + SCALP_FALLOFF, d);
+    if (hit && density > 0 && input.cutout)
+      density *= hairUnder(hit, input.cutout, faceVerts, positions);
+    const w = Math.round(255 * density);
     if (w > 0) {
       scalpVerts.push(v);
       scalpWeights.push(w);

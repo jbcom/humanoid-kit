@@ -6,7 +6,7 @@ import { MorphError } from "../src/morph/evaluate.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { RecipeValidationError } from "../src/recipe/validate.ts";
 import { bodyPackData } from "./fixtures.ts";
-import { hairManifest, loadHairFixtureAssets } from "./hairFixtures.ts";
+import { hairManifest, loadHairFixtureAssets, scalpStyles } from "./hairFixtures.ts";
 
 const assets = loadHairFixtureAssets();
 const model = new HumanoidModel(assets);
@@ -32,7 +32,7 @@ describe("evaluating a figure with hair", () => {
   });
 
   it("evaluates the worn style on the figure's own mesh, one vertex per render vertex", () => {
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       const e = model.evaluate(hairy(s.id));
       const t = model.hairTopology(s.id);
       expect(e.hair?.id).toBe(s.id);
@@ -121,7 +121,7 @@ describe("hair topology", () => {
   });
 
   it("has occlusion per render vertex, in [0, 1], not all open and not all shut", () => {
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       const t = model.hairTopology(s.id);
       expect(t.occlusion.length, s.id).toBe(t.vertexCount);
       let min = 1;
@@ -137,7 +137,7 @@ describe("hair topology", () => {
   });
 
   it("carries fade, fin and growth per render vertex, each in range and each varying", () => {
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       const t = model.hairTopology(s.id);
       for (const [name, values] of [
         ["fade", t.fade],
@@ -156,7 +156,9 @@ describe("hair topology", () => {
         s.id,
       ).toBe(true);
       // Every style has some card edge at a hairline (a vertex mostly faded) and hair well past it.
-      expect(Math.min(...t.fade), `${s.id} hairline`).toBeLessThan(0.3);
+      // (afro01 opts out: its dense curls have no cut edge to thin.)
+      if (s.id === "afro01") expect(Math.min(...t.fade), s.id).toBe(1);
+      else expect(Math.min(...t.fade), `${s.id} hairline`).toBeLessThan(0.3);
       expect(Math.max(...t.fade), `${s.id} interior`).toBeGreaterThan(0.99);
       // Growth runs from zero at a root to centimetres along the card.
       expect(Math.min(...t.growth), s.id).toBeLessThan(0.002);
@@ -167,7 +169,7 @@ describe("hair topology", () => {
   it("carries the scalp to the body's render vertices: only the head, none far from hair, some at full density", () => {
     const topology = model.topology();
     const bald = model.evaluate(createRecipe());
-    for (const s of hairManifest.styles) {
+    for (const s of scalpStyles) {
       const scalp = model.hairTopology(s.id).scalp;
       expect(scalp.length, s.id).toBe(topology.body.vertexCount);
       let full = 0;
@@ -200,7 +202,7 @@ describe("hair topology", () => {
       undefined,
       { manifest: hairManifest },
     );
-    for (const s of hairManifest.styles)
+    for (const s of scalpStyles)
       withUrls.hair?.bound.set(s.id, assets.hair?.bound.get(s.id) as never);
     expect(new HumanoidModel(withUrls).hairTopology("short02").textureUrl).toBe(
       "https://example.test/short02.webp",

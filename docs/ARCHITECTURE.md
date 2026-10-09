@@ -193,11 +193,18 @@ Under 18:
 - the breast macro targets are never weighted (`macroTargetWeights`), although
   their files ship in the body pack;
 - adult-only targets are not in the body pack at all; the adult anatomy pack's
-  modifiers are adult-only, so a recipe under 18 that sets one is rejected.
+  modifiers are adult-only, so a recipe under 18 that sets one is rejected;
+- axillary and pubic hair are adult-only: a recipe under 18 whose
+  `bodyHair.density` sets either to anything but 0 is rejected, and the body
+  hair model draws neither for a figure that is not an adult (see "Body hair");
+- a piercing may only be at one of the body's own sites (`PIERCING_SITES`):
+  any other is the adult pack's and adult-only (`ADULT_ONLY_PIERCING`, "Body
+  art").
 
 The policy is enforced inside `recipeContributions`, so no caller can evaluate
 an invalid recipe by skipping validation. `withAge(recipe, age)` returns a copy
-at a new age; moving below 18 explicitly removes the adult-only values and leaves
+at a new age; moving below 18 explicitly removes the adult-only values (adult
+modifiers, axillary and pubic densities, and adult-only piercings) and leaves
 the input untouched.
 
 An adult-only modifier id that is not loaded (the adult pack is absent) fails
@@ -572,6 +579,24 @@ stays MakeHuman's data as it is and the correction is a statement about this
 renderer's colour pipeline. A test re-measures the texture and fails if the
 constant drifts; evidence in `docs/evidence/teeth.md`.
 
+### Teeth exposure
+
+The teeth's baked occlusion counts every ray the lips, cheeks and chin block
+within 5 cm, so teeth the lips have parted a little (a grin, a snarl, a look of
+fear) bake at a tenth open or less: with the light a tooth gets, floor +
+(1 - floor) × openness, that renders the exposed row as a dim grey-olive. Per
+pose, the exact bake (a ray test at the posed face, against the pose-keyed blend
+the shader does) agrees with the blend to within 12 % for every expression, so
+the blend is not the fault, nor is the key set; it is the bake's scale. The teeth
+material raises the openness to `TEETH_EXPOSURE`, 0.5, before lighting it
+(`patchOcclusion`'s `exposure`): a tooth a tenth open gets 0.42 of full light
+instead of 0.24, a covered tooth (openness 0) stays at the floor, a fully open
+one is unchanged. A **choice**, tuned against `docs/evidence/expressions.md`,
+and the lip and the tongue are untouched. The tongue never reaches the plane of
+the lower teeth's fronts in any expression at any age (a test holds it), so
+the pink seen between the lower teeth and the lower lip in a grin is the lower
+gum, which the teeth mesh carries.
+
 ### The gums
 
 The same lift reached the texture's gum texels, which are MakeHuman's dark
@@ -738,9 +763,10 @@ mean what they meant there; everything must be testable in Node.
   they pose): BVH channel values in degrees per joint over a MakeHuman pose's
   joint layout, every other channel at rest, packed into the same entries. The
   first is `relaxed`, standing at ease with the arms at the sides, since the
-  rest A-pose holds them 42° out; `bent`, `flexed`, `twisted` and `abducted`
-  (the thighs opened 40°) are the joint extremes the skinning and the creases
-  are checked at (below), which the pack's benchmark does not reach: it bends no
+  rest A-pose holds them 42° out; `bent`, `flexed`, `twisted`, `abducted`
+  (the thighs opened 40°), `seated` (the hips and knees at 90°) and `tucked`
+  (the hips at 120°) are the joint extremes the skinning and the creases are
+  checked at (below), which the pack's benchmark does not reach: it bends no
   elbow, knee or wrist. An expression layers on top of a body pose bone by
   bone.
 - *Grounding follows the pose.* The rest ground offset comes with each
@@ -756,11 +782,17 @@ a look of surprise. `EXPRESSIONS` (`src/rig/expressions.ts`) names ten as
 weights of units (smile, grin, frown, surprise, anger, disgust, fear, sadness,
 blink, squint), `expressionUnits(id, intensity)` scales one for a pose's
 `faceUnits`, and the caller blends them as any other units. They follow the
-facial action coding system's description of each emotion (a smile is the lip
-corner puller with the cheek raiser; surprise the brow raisers with the upper
-lid raiser and a dropped jaw), but a MakeHuman unit is a bone-driven shape,
-not an action unit, so every weight is a **choice** judged against the sheets
-in `docs/evidence/expressions.md`, to be tuned rather than cited. Each holds a
+facial action coding system's prototypes for each emotion (Ekman and Friesen
+1978; Ekman, Friesen and Hager 2002; happiness AU6 + AU12, sadness AU1 + AU4 +
+AU15 + AU17, surprise AU1 + AU2 + AU5 + AU26, fear those with AU20, anger AU4 +
+AU5 + AU7, disgust AU9 + AU10, as tabulated in the EMFACS literature and taken
+from memory of it, not re-read), mapped unit by unit in `src/rig/expressions.ts`
+(AU12 is `MouthPullUp`, AU9 `NoseWrinkler`, AU26 `JawDrop`, …). The pack has no
+lip tightener (AU23), and a MakeHuman unit is a bone-driven shape, not an
+action unit, so every weight is a **choice** judged against the sheets in
+`docs/evidence/expressions.md`, to be tuned rather than cited. Surprise raises
+the brows to 0.7, not 1: at full weight the lift made a boxy ridge over each
+eye. Each holds a
 left unit at the weight of its right (a test checks the pairing, and that the
 posed skin is the mirror of itself to 0.1 mm), so an expression never reads as
 a smirk; a one-sided face is composed from units by the caller.
@@ -787,6 +819,34 @@ each reads 1 for its own pose and under 0.05 for every other key's, a test
 holds, and the expressions read as themselves (a smile as `smile` with some
 `squint` from the raised cheeks, anger as `browFurrow`, surprise as `browRaise`,
 disgust as `noseWrinkle`).
+
+Five crease layers draw the lines (`EXPRESSION_LINE_LAYERS`,
+`src/surface/regions/faceLines.ts`), the same `creases` detail pattern as the
+elbow and knee: the forehead's horizontal lines (`browRaise`), the furrows
+between the brows (`browFurrow`), crow's feet fanning from each eye's outer
+corner (`squint`, or 0.6 of `smile`), the nasolabial folds from the nose's wing
+past the mouth's corner (`nasolabial`, or 0.7 of `smile`) and the nose
+bridge's lines (`noseWrinkle`). Where each lies is read from the default
+figure's joints (the brows, the outer corners, the nose's wing), so it follows
+the mesh, and keeps off the lips and the eyeballs (a test holds it). The
+forehead's lines and the furrows are bounded by distance along the skin from
+the brows' band (`distanceFromBrows`: Dijkstra over the mesh's edges), not by
+height, since the mesh is coarse over the forehead and a mask built from heights
+leaked across big triangles up and over the crown on the first sheets: the
+forehead lines run from 1.4 to 5.8 cm along the skin above the brows, fading
+toward the temples, and the furrows reach 1 to 2.6 cm above them, between the
+brows (frontalis lines stop 5 to 7 cm above the brows, glabellar lines are 1 to
+2.5 cm long; a test holds every layer's mask to its extent). The
+crow's feet and the folds are each one layer for both sides, the coordinate
+being the angle about its own corner and the distance across its own fold, so
+the right is the left reflected and two layers' channels are saved. How many
+lines (1 to 3) and how deep (0.25 to 0.6 mm, against the elbow's 2.8) is
+art-directed, since no measurement of facial wrinkle depth or spacing against
+expression is in this repository; the depth grows with age
+(`expressionAgeFactor`: 0.2 at 6, 0.8 at 25, 1 at 40, 1.4 at 70), because a
+child's elastic skin barely lines and an old face does most. Their masks lie apart from most
+layers', so the atlas planner packs them into channels others leave free: the
+stack stays at the eight pages it had with the hands.
 
 ### Skinning artefacts (2026-10-09)
 
@@ -882,6 +942,37 @@ skinning 0.72 and −34.1‰), a motion made far less often than a knee bends, a
 a crouch's thigh stays dual quaternion above its lower half. Intermediate
 shares (¼, ½, ¾) all bulge: 1.28 to 1.30.
 
+**The flexed hip, corrected (2026-10-09).** The one bulge left was the hip's
+front: girth 95th percentile 1.35 at 120° of flexion (linear skinning's: 1.05).
+Use cases: a figure sits, squats or kicks, so the thigh swings against the
+trunk from 0 to 120° and a flexed hip must not swell at its front.
+Options, by total fit:
+
+1. *A pose-space corrective shape* (a per-vertex displacement keyed on the
+   hip's flexion). It is what the corrective literature does, but the bulge
+   comes from the figure's own weights and proportions, so a shape needs
+   solving for every body (a pass over the mesh in the worker per evaluation)
+   and a vertex attribute and a CPU twin for the shader. Not now.
+2. *A share that falls as the thigh swings* (shipped). The bulge is the dual
+   quaternion half's, and linear blending does not have it, so the hip's own
+   share moves from the table's 1 to ¼ as the thigh swings from 0 to 120°. It
+   is a number a frame in the bone texture the shader already reads, so the
+   shader, its tests and the CPU reference (`poseShare`) change by nothing but
+   where the share comes from.
+3. *A fixed lower share* for the hip. It would lose the twist and the raised leg
+   that dual quaternions hold (a table search put 1 there).
+
+The swing is what is left of the thigh's rotation once its twist about its own
+axis (the hip to the knee) is taken out, so a twisted thigh, which dual
+quaternions keep from collapsing (girth 5th percentile 0.83 against linear
+skinning's 0.72 at 90°), does not lose its share: `SKIN_SWING_SHARE`,
+`poseShare(rest, rotations, base)`. At 120°: the girth 95th percentile 1.35 →
+1.12 (linear: 1.05), at 90°: 1.30 → 1.20 (linear: 1.08); the volume lost is
+−19.8‰ → −24.0‰ at 120° (linear: −35.2‰) and −15.7‰ → −18.1‰ at 90° (linear:
+−23.4‰). It is a trade, as every share is: 4‰ of the body's volume (0.2 L)
+for the front of the hip. The `seated` pose (hips and knees at 90°) is the
+check for it.
+
 **How it runs.** `DualBones` (`src/render/dualSkinning.ts`) holds each bone's
 dual quaternion and share as a float texture, written from the same bone
 rotations as the CPU reference whenever the pose or the figure changes. A patch
@@ -904,12 +995,12 @@ shows a fault: the elbow's 4‰ is about 0.2 L and the smallest loss measured, t
 abducted groin is skin stretched rather than lost, and a corrective shape
 authored for either would add data and a per-pose evaluation for a change the
 sheets cannot show. The gate (never worse than linear in girth, within a
-thousandth in volume) holds both. The blend bulges a flexed hip's front (95th
-percentile 1.37 at 120°, against linear skinning's 1.13) for the 15‰ of volume
-it keeps (a bent knee's no longer bulges past linear skinning's); that is the
-remainder a pose-space corrective would address, if figures are posed there
-often. The
-crease detail layers (`flex.*` signals) paint the fold's skin on top of it.
+thousandth in volume) holds both. The blend bulged a flexed hip's front (95th
+percentile 1.35 at 120°, against linear skinning's 1.05) for the 15‰ of volume
+it keeps; the thigh's share falling as it swings (above, "The flexed hip,
+corrected") brings that to 1.12, and a bent knee's no longer bulges past
+linear skinning's. The crease detail layers (`flex.*` signals) paint the fold's
+skin on top of it.
 
 ## Scalp hair (milestone 4)
 
@@ -972,15 +1063,17 @@ a coloured texture; everything in the pure core is testable in Node.
   leaves each atlas's own hue in every colour.
 - *Occlusion is baked once, at rest, one value per control vertex.* Hair is lit
   from outside; the jaw and lips never open it up, so the eight pose corners of
-  the eyes' and teeth's occlusion would be eight copies. The bake
-  (`HumanoidModel.bakeHairOcclusion`) casts 32 rays from each vertex against the
-  default figure's body and the style's own cards as solid triangles, takes the
-  more open of the card's two sides (a two-sided card's normal does not say
-  which faces out), and stores a byte. Cards under others and against the
-  scalp read darker than the outside of the volume. Treating cards as solid
-  overstates the dark inside a sparse style, so the renderer floors hair's
-  occlusion at 0.5 rather than the eyes' 0.15. A test re-bakes from the shipped
-  pack and fails if the stored bytes drift.
+  the eyes' and teeth's occlusion would be eight copies. The value
+  (`HumanoidModel.bakeHairOcclusion`) is mostly smooth: hair is darkest at its
+  roots and brightens with height above the scalp (`scalpShade`, a smoothstep
+  over 2.5 cm), which no overlap of cards can break into patches. A quarter of
+  it is the ray bake: 32 rays from each vertex against the default figure's body
+  and the style's own cards as solid triangles, the more open of the card's two
+  sides (a two-sided card's normal does not say which faces out). The first
+  version used the ray bake alone, and the cards that happen to overlap in a
+  curly style left flat dark patches. The result is a byte, and the renderer
+  floors hair's occlusion at 0.65 rather than the eyes' 0.15. A test re-bakes
+  from the shipped pack and fails if the stored bytes drift.
 - *The licence gate is the asset header, nothing else.* `compileAsset`'s
   `proveCc0` accepts a file only if its first 3000 bytes carry "This asset was
   explicitly released as CC0". It used to accept a bare `license CC0` line as
@@ -1029,7 +1122,12 @@ a coloured texture; everything in the pure core is testable in Node.
   *growth* (see the next decision), from derivatives of position and growth (the
   surface-gradient form of a cotangent frame), so no tangent attribute is sent;
   where growth has no gradient (a card seen edge-on) the lobes switch off. The
-  lobes weaken as the style's strands lose their direction (`strand.coherence`).
+  lobes weaken as the style's strands lose their direction (`strand.coherence`),
+  which also sets the roughness (0.95 for frizz, 0.7 combed), and the base
+  specular is scaled to 0.4: hair has no mirror. The first intensities read as
+  glossy patches on the bobs, so the lobes are narrow-in-strength and wide, and a
+  browser test bounds the worst pixel of a sphere at any strand direction and
+  light to three times its diffuse (a mirror-like patch is ten and more).
   Rejected: the UV-derivative anisotropy (a global angle, no short styles), a
   per-vertex tangent attribute (three floats per vertex for what the gradient
   gives), and Marschner's full R/TT/TRT (the transmitted lobes need a fibre's
@@ -1044,24 +1142,32 @@ a coloured texture; everything in the pure core is testable in Node.
   not on its hairline: feathering those cut the afro into a lattice); **fin**,
   1 on a card standing out of the scalp, 0 on one lying along it (its normal
   against the direction from the nearest scalp point); and the **scalp**, the
-  head's body vertices within 8 mm of a card with their density, 1 under a card
-  falling to 0 over 5 mm. Each is a pure function of the packs, so the packer
-  bakes it once, like occlusion.
-- *A hairline thins by dither, and a fin by its angle; the scalp is tinted.* A
+  head's body vertices within 11 mm of a card with their density, 1 under a card
+  falling to 0 over 8 mm, and only where the card's texture cut-out is opaque at
+  the nearest point (a card's mesh reaches past the hair painted on it, and the
+  first version tinted the skin there: a flat patch over the temple and cheek). Each is a pure function of the packs, so the packer
+  bakes it once, like occlusion. A style may opt out of the fade (`feather:
+  false`): `afro01`'s dense curls end in a fuzzy edge of their own, and thinned,
+  their roots showed the dark inside of the volume as a band.
+- *A hairline thins, and a fin by its angle; the scalp is tinted.* A
   hair card's cut edge is a hard line, and MakeHuman's hairlines read as a helmet
-  or a wig. The fragment shader discards where `fade` is below an interleaved
-  gradient noise of its pixel (Jimenez 2014). A discard needs neither blending
-  nor MSAA, so the hairline thins the same way on every GPU, SwiftShader
-  included (alpha-to-coverage alone would not hold there). The skin shows
+  or a wig. With alpha-to-coverage the fade (and the fin's angle term) is the
+  card's coverage, a smooth gradient over the MSAA samples; without it the
+  fragment shader discards where it is below an interleaved gradient noise of
+  its pixel (Jimenez 2014), which needs neither blending nor MSAA, so the
+  hairline thins on every GPU, SwiftShader included. (Dithering alone left a
+  speckle on the afro that read as noise.) The skin shows
   through, so it must not be bare: `SkinMaterial` takes a per-vertex
   `hkScalp` attribute (the style's scalp, carried through the body's stencil like
-  any field) and a uniform colour, and mixes the skin toward 0.7 of the hair's
-  albedo by 0.6 where hair grows (a stubble shade). It is an attribute and not
+  any field) and a uniform colour, and takes the skin toward its own colour in
+  the hair's shade (0.7 of it, with 0.15 of the hair's colour) by up to 0.7 where
+  hair grows: built from the skin, so white hair paints no pale patch on deep skin
+  and black none dark on fair. It is an attribute and not
   a skin layer because a layer's field is rasterised once from the base mesh into
   a shared atlas, and a scalp differs by style. A fin card seen edge-on is a
   hairline-thin dark sliver, and the afro stands 340 loose curl cards out of its
   cap, which read as a lattice of them; fins thin out as they turn from the eye
-  (|cos| 0.1 to 0.4), cards of the shell never do (a head's shell is seen at a
+  (|cos| 0.3 to 0.8), cards of the shell never do (a head's shell is seen at a
   grazing angle over much of its area).
 - *Two atlases are flattened in the packer.* afro01's and braid01's atlases carry
   painted-in dark cells and blotches that read as a net or as dirt under the
@@ -1103,6 +1209,88 @@ not rejected**. Until one is proved, closing the gap needs an **authored or
 procedural coily style** (instanced curl cards or strand clumps over the same
 scalp and growth fields), which is a milestone of its own. Evidence and the
 audit are in `docs/evidence/hair.md`.
+
+### Eyebrows and eyelashes (the hair pack)
+
+MakeHuman's system assets also hold twelve eyebrows and four eyelashes
+(`eyebrows/eyebrow001`…`012`, `eyelashes/eyelashes01`…`04`), every file of
+which proves CC0 in its own header (`compileAsset` refuses any that does not,
+as it does for scalp hair). Each is an alpha-mask decal (124 vertices for a
+brow, about 250 for lashes; a 512² texture covering 4 to 30 % of it) bound to
+the body (the lashes to the base mesh's lash helper), whose colour is near black
+in the source. They share the hair pack: the same lazily fetched
+binary-and-texture per style, the same manifest, `kind` `brows` or `lashes` beside
+`scalp`. A decal skips what only a scalp style has: no growth, hairline fade or
+fin and no scalp (so those buffers are optional by kind in the format), no
+strand map (its texture is the source's alpha with the colour replaced by white,
+so the figure's hair colour is the only colour it takes), and no occlusion bake
+(open: the skin's own shade is the lid's or the brow ridge's). Decision: one pack
+over a pack of their own, since they bind to the same body, load lazily the same
+way and take the same colour; and kinds in one manifest over a second manifest,
+so a loader, a picker and the recipe validation know one list.
+
+**Wearing them.** `recipe.hair` gains `brows` and `lashes`, each an id of that
+kind (absent is none, so recipes saved before them serialise as they did). The
+model evaluates them beside the scalp style (`Evaluation.brows`, `lashes`) and
+the worker sends their static data once each. A brow is lifted 2 mm off the
+skin along its normal (`DECAL_LIFT`): the body is drawn subdivided and the decal
+is bound to the coarse mesh, whose smooth surface can swallow it by up to 1.8 mm
+on the brow ridge at ages 6 to 75 (measured: the lowest vertex of four brows at
+four ages, with a test that fails without the lift); lashes are not, since they
+are meant to stand clear of the lid.
+
+**Colour and density** (`src/surface/decalTone.ts`). One hair colour drives all
+three: the brows are `hairAlbedo(colour)`, the lashes the same hue darker by a
+fixed `LASH_DARKEN` (0.55). The mask is white, so the material's colour is the
+only colour it takes. A child's brows and lashes are finer and fewer: the decal's
+opacity, which multiplies the mask's alpha before the material's cut-off (0.35),
+ramps from 0.45 (brows) or 0.7 (lashes) at birth to 1 by 14, so the partial
+strokes go first. **Choices**, not measurements: no source of brow or lash density
+by age ships here, so the numbers are tuned against `docs/evidence/brows.md`.
+
+**The material** (`DecalMaterial`, `src/render/decalMaterial.ts`) is a plain
+standard one, not `HairMaterial`: a decal has no growth, hairline fade or fin, and
+the hair material reads a missing one as "dithered away". It cuts by the mask,
+takes its edges as hair does (alpha-to-coverage on a multisampled target, an
+alpha test otherwise) and draws over the skin by a polygon offset.
+
+## Body hair
+
+**Use cases.** Every figure carries the body hair of its age and sex, at every
+skin tone, without a choice being made: vellus everywhere from infancy, and
+terminal hair coming in through adolescence and thinning and greying in old
+age. A creator can thin, thicken or shave a region and pick a beard. Axillary
+and pubic hair exist for adults only.
+
+**Requirements.** It reuses what exists: the skin layer stack for what lies on
+the skin, the hair pack's cards and material for what stands off it, and the
+hair colour model for its colour. No second hair system. Densities and timing
+cite measurements or are marked as choices (`docs/research/BODY-HAIR.md`).
+Old recipes evaluate and serialise as before.
+
+**Decisions (2026-10-09).**
+
+- *One pure model, two ways of drawing.* `src/surface/bodyHair.ts` says how
+  much terminal hair each region group carries (coverage 0..1, the
+  Ferriman-Gallwey grade over 4), from the gender macro read as the androgen
+  level, the age (a ramp per group on the Tanner ages, a thinning after 55) and
+  the recipe's multipliers; and what colour (the figure's hair pigments, darker
+  on the face and pubis, lighter on the limbs, greyed with age later on the
+  body than the beard). The groups follow the modified FG regions, merged to
+  what a picker offers: face, chest, abdomen, back, buttocks, arms, legs, and the
+  adult-only axillary and pubic.
+- *Adult-only groups are gated in the model itself.* `defaultBodyHairCoverage`
+  returns 0 for axillary and pubic hair unless the age is an adult's (`age >=
+  ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
+  scales the default, so no recipe value can add them under 18.
+- *The recipe holds multipliers, not densities.* `recipe.bodyHair` is optional
+  (the recipe schema grows only by optional fields): `density` is a multiplier
+  per group on the default for age and sex (0 shaves a region, 2 doubles it,
+  clamped to full coverage), and `beard` a style. A multiplier, not an absolute
+  value, keeps a saved recipe right as the figure ages: the same recipe at 12,
+  30 and 80 shows each age's hair. Absent fields are not filled in by
+  `createRecipe`, so a recipe that never set body hair serialises exactly as
+  before.
 
 ## Presence
 
@@ -1476,13 +1664,23 @@ manifest's `anatomy.detail.surfaceKey` hashes the lattice, and the model refuses
 detail built for another refinement. `tests/detailTargets.test.ts` proves the
 engine with a synthetic target before any anatomy is authored on it.
 
-The refined region is empty of anatomy until a feature is authored on it: it is the base shape in finer
-cells, proven by the geometry tests and by a render within 11 pixels over 8
-levels of the base's (adult against base contact sheet, local only). The
-features (mound, penis, testes, vulva) land on it one at a time
-(docs/research/ADULT-SCULPT-PLAN.md, section 10), and
-`tests/adultPermutations.test.ts` holds the matrix of ages, genders, feature
-combinations and states every one of them joins.
+With no detail applied the refined region is the base shape in finer cells,
+proven by the geometry tests and by a render within 11 pixels over 8 levels of
+the base's (adult against base contact sheet, local only). The first authored
+feature on it is the **mound** (`pelvis/mound-decr|incr`, the pack's own
+adult-only modifier, `scripts/lib/detail/mound.ts`): a cosine bell of displacement
+along the skin's outward normal over the measured mons width and length,
+peaking at the verified 1.5 cm BMI-band contrast (fuller) or 1 cm (flatter),
+scaled by the figure's hip breadth. The packer generates its targets on the
+authoring figure's lattice from the control targets and the surface spec, so the
+pack is reproducible; `tests/moundDetail.test.ts` holds the form to its numbers
+and `tests/moundPack.test.ts` holds the shipped pack to the generator. Its skin
+fields and colour layer still follow the body's bulge target, not the new
+detail. The penis, testes and vulva are the next features
+(docs/research/ADULT-SCULPT-PLAN.md, section 10): a shaft is an extrusion far
+beyond what displacing existing vertices can do, so they need reservoir
+topology. `tests/adultPermutations.test.ts` holds the matrix of ages, genders,
+feature combinations and states every feature joins.
 
 **Arousal.** The adult manifest adds an `arousal` state morph
 (`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by
@@ -1610,6 +1808,71 @@ C5; contact sheets, before and after, at four tones, adult and child:
   morphed mesh (creases form before birth, so their places are set early). No
   finger flexion is measured by the rig yet (`FLEXION_JOINTS` has wrists,
   elbows and knees), so knuckle wrinkles are at rest.
+
+### Body art (2026-10-09)
+
+**Use cases.**
+
+- A player puts their own image on a forearm, sized and turned, and it stays
+  there through every shape, age and pose.
+- Piercings follow the ear, nose, brow, lip or navel as the figure moves.
+- A scar, birthmark or vitiligo reads right at every skin tone.
+- A crowd where most figures have none of this pays nothing for it.
+
+**Requirements.**
+
+- Placement is per figure; the field atlas is shared by every figure on one mesh.
+- Ink lies in the dermis (research/BODY-ART.md A1), so it must be coloured
+  before the skin's scattering and be covered by hair and garments as skin is.
+- Genital piercings are adult-only, yet the core names no adult anatomy.
+- Recipes stay plain JSON, and are unchanged when there is no body art.
+
+**Placement: anchors on the base mesh.** A tattoo, scar or birthmark sits at
+a `BodyAnchor`, a named site or a base-mesh vertex. A vertex is what a game's
+pick on the body returns, and it is stable because the base mesh is frozen.
+The named sites (`bodySites`) are found, not stored: the mesh has no ear, nose,
+lip or navel groups, but each feature's MakeHuman target moves that feature
+most at its most prominent point (the lobe, the helix's top, the nostril's
+wing, the brow's lateral end, the lower lip's middle, the navel's upper lip).
+The septum is the midline nose vertex nearest the point between the nostrils.
+
+**Paint: a per-figure texture, not the field atlas.** Three options were
+weighed:
+
+1. Body-art layers in the shared field atlas: impossible, since every figure
+   on a mesh shares it.
+2. Per-figure fields per base vertex: the palm is 5 mm between vertices, too
+   coarse for an image.
+3. A per-figure texture in UV space.
+
+The third is used. Tattoos, scars, birthmarks and vitiligo bake into a
+two-page RGBA8 texture array per figure that has any:
+
+- page 0 is ink (linear colour and coverage);
+- page 1 is what the marks change in the skin (melanin removed, scar,
+  melanin added, haemoglobin added).
+
+It is baked on the GPU the way the field atlas is rasterised: the morphed body
+is drawn in UV space, and each decal is projected from the tangent frame at
+its anchor, so a decal crosses UV seams without a gap. The skin shader reads
+it only under a define, so a figure without body art keeps the program it had
+and pays no texture fetch. Ink is applied after the layer stack, before
+scattering: seen through the epidermis (its melanin transmittance, squared,
+which is the ratio of the skin's albedo to the melanin-free albedo), with the
+dermis above it scattering blue back.
+
+**Piercings: generated attachments.** Each piercing is a small mesh bound
+like an MHCLO attachment, to the triangle at its site, and skinned with the
+body's bones, so it follows the posed surface with the existing occlusion. A
+site's `channel` orients the jewellery.
+
+**Age.** A piercing at any site that is not the body's own is the adult
+pack's, and is adult-only by construction (`ADULT_ONLY_PIERCING`): the core
+fails closed without naming any adult site. Tattoos and marks apply at every
+age.
+
+**Landed so far:** the recipe field, its validation, the age policy and the
+sites. The texture, the marks and the piercings follow in their own commits.
 
 ### Joint creases (2026-10-09)
 

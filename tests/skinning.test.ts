@@ -74,6 +74,20 @@ describe("the shipped skinning at the joint extremes", () => {
     });
   });
 
+  it("bulges a flexed hip's front no more than 0.15 past linear skinning's, and keeps most of the volume", () => {
+    // Dual quaternion skinning alone bulges it by 0.3 (1.35 against 1.05 at 120°); the thigh's
+    // share falls as it swings (`SKIN_SWING_SHARE`), which is what holds it.
+    linear.forEach((l, i) => {
+      if (l.joint !== "hip flexion") return;
+      const s = shipped[i] as Reading;
+      const name = `${l.figure}, hip ${l.angle}°`;
+      expect(s.p95, name).toBeLessThanOrEqual(l.p95 + 0.15);
+    });
+    // And it keeps what dual quaternions save: at 120° at least a third of the volume
+    // linear skinning loses (it loses 35‰ at the worst body; this holds under 26‰).
+    expect(worstDV(at(shipped, "hip flexion", -120))).toBeGreaterThan(-26);
+  });
+
   it("bulges no bent joint past what the table was searched to allow", () => {
     for (const s of shipped)
       expect(s.p95, `${s.figure}, ${s.joint} ${s.angle}°`).toBeLessThan(1.45);

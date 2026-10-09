@@ -124,13 +124,21 @@ createRecipe(init?: {
   modifiers?: Record<string, number>;
   skin?: Partial<SkinRecipe>;
   eyes?: Partial<EyesRecipe>;
-  hair?: { style?: string | null; colour?: Partial<HairColour> };
+  hair?: {
+    style?: string | null;
+    colour?: Partial<HairColour>;
+    brows?: string; // a brows style id of the hair pack (`eyebrow001`…); absent = none
+    lashes?: string; // a lashes style id (`eyelashes01`…); absent = none
+  };
+  bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
+  bodyArt?: BodyArtInit;
 }): Recipe
 ```
 
 Builds a recipe over the defaults (`DEFAULT_MACROS`, `DEFAULT_SKIN`,
-`DEFAULT_EYES`, and `DEFAULT_HAIR_COLOUR` when `hair` is given). It copies its
+`DEFAULT_EYES`, `DEFAULT_HAIR_COLOUR` when `hair` is given, and
+`createBodyArt`'s defaults when `bodyArt` is given). It copies its
 input and does not validate it; validation happens at evaluation.
 `RECIPE_VERSION` is `1`.
 
@@ -143,12 +151,21 @@ interface Recipe {
   skin: SkinRecipe;
   eyes: EyesRecipe;
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
+  bodyHair?: BodyHairRecipe; // optional: absent means the default for age and sex
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
+  bodyArt?: BodyArtRecipe; // optional: absent means none, as in recipes saved before body art
 }
 
 interface HairRecipe {
   style: string | null; // a scalp style id of the hair pack, or null for none
   colour: HairColour;   // eumelanin, pheomelanin, grey (each 0..1) and override: Rgb | null
+}
+
+interface BodyHairRecipe {
+  // per BODY_HAIR_GROUPS entry, a multiplier on the default, 0..2 (1 = default);
+  // axillary and pubic are adult-only: any value but 0 under 18 is refused
+  density?: Partial<Record<BodyHairGroup, number>>;
+  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = stubble where the face carries terminal hair
 }
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
@@ -242,7 +259,8 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 - `assertAgePolicy(recipe)`: throws `AgePolicyError` listing the violations.
 - `withAge(recipe, age): Recipe`: a copy at a new age. Moving below 18 resets
   `breastSize` and `breastFirmness` to their defaults, deletes regional breast
-  values and deletes adult-only modifiers. The input is not modified.
+  values and deletes adult-only modifiers and the axillary and pubic body hair
+  densities. The input is not modified.
 - `ADULT_ONLY_MODIFIER(id): boolean`: true for ids starting `genitals/`,
   `pelvis/bulge` or `stomach/stomach-pregnant`.
 - `AgePolicyError`.
@@ -258,8 +276,57 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
   `SkinPaintInput.anatomy`.
 
 Under 18, a recipe is invalid if `breastSize` or `breastFirmness` differs from
-its default, if any region override contains either key, or if an adult-only
-modifier is non-zero.
+its default, if any region override contains either key, if an adult-only
+modifier is non-zero, if `bodyHair.density.axillary` or `.pubic` is non-zero
+(`ADULT_ONLY_BODY_HAIR`), or if a piercing is at an adult-only site. Refused,
+never clamped.
+
+- `ADULT_ONLY_PIERCING(site): boolean`: true for every site that is not one of
+  the body's own (`PIERCING_SITES`). Those are the adult anatomy pack's, which
+  the core never names, so an unknown site fails closed. `withAge` below 18
+  removes those piercings and keeps the rest.
+
+### Body art
+
+The recipe's optional `bodyArt` (ARCHITECTURE.md, "Body art"; sources and
+choices in research/BODY-ART.md). Everything is placed by a `BodyAnchor`, a
+named site or a base-mesh vertex index, so it follows every shape and pose.
+Sizes are metres on the skin, angles degrees counter-clockwise looking at the
+skin from the body's up.
+
+```ts
+type BodyAnchor = string | number; // a PIERCING_SITES name, or a base-mesh vertex
+
+interface BodyArtRecipe {
+  tattoos: Tattoo[];      // { image, at, size, rotation = 0, density = 1 }
+  piercings: Piercing[];  // { site, jewellery = "stud", metal = "steel", size = JEWELLERY_SIZE[jewellery] }
+  scars: Scar[];          // { at, length, width = SCAR_WIDTH, rotation = 0, maturity = 1, raised = 0 }
+  birthmarks: Birthmark[]; // { kind, at, size, rotation = 0, seed = 0 }
+  vitiligo?: Vitiligo;    // { extent = 0.3, seed = 0 }; absent means none
+}
+```
+
+- `createBodyArt(init: BodyArtInit): BodyArtRecipe`: fills each item's
+  defaults; `createRecipe` calls it.
+- A tattoo's `image` is a key the application resolves to an image when it
+  renders, so the recipe stays plain JSON. `density` is how much ink the dermis
+  holds (1 fresh, lower faded).
+- `PIERCING_SITES`: `ear-lobe.L/R`, `ear-helix.L/R`, `nostril.L/R`, `septum`,
+  `brow.L/R`, `lower-lip`, `navel`. A recipe pierces a site at most once.
+  `JEWELLERY` (`stud`, `ring`, `barbell`), `METALS` (`steel`, `titanium`,
+  `gold`, `rose-gold`, `silver`), `JEWELLERY_SIZE`.
+- `BIRTHMARKS`: `cafe-au-lait`, `naevus`, `port-wine`, `dermal-melanocytosis`.
+  A scar's `maturity` runs from 0 (fresh: red, raised) to 1 (mature: pale,
+  flat); `raised` is how hypertrophic it is.
+- `bodySites(assets): Record<PiercingSite, BodySite>`: each site's base-mesh
+  vertex, found from the target that shapes its feature (the vertex it moves
+  most), and its `channel` (`"normal"`, `"across"` or `"vertical"`): which way a
+  piercing runs through the skin there.
+- `resolveAnchor(assets, at): number`: the vertex an anchor names. An unknown
+  site or a vertex past the mesh throws `RangeError`.
+- Validation (`recipeProblems`) checks body art's structure and ranges and
+  rejects unknown fields, clamping nothing. Whether an anchor exists is checked
+  when the figure is evaluated, against the loaded assets.
 
 ### Evaluation
 
@@ -288,9 +355,9 @@ and throws `RangeError` for anything else.
   outfit key the caller already holds the masks of.
 - `model.adultDetailLattice(recipe): AdultDetailLattice | null`: the vertex
   space the adult pack's detail targets are authored on (`{ key, vertexCount,
-  positions }`): the vertices of the refined region, which a detail target
-  indexes from 0, with their positions on this figure and the key that names
-  the refinement. Null without an adult surface; throws `AgePolicyError` for a
+  positions, normals }`): the vertices of the refined region, which a detail
+  target indexes from 0, with their positions and outward unit normals on this
+  figure and the key that names the refinement. Null without an adult surface; throws `AgePolicyError` for a
   figure under 18. The packer uses it to place authored forms.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
@@ -319,7 +386,16 @@ and throws `RangeError` for anything else.
   (`hairFields`, `src/surface/hairFields.ts`). `evaluate` fills `Evaluation.hair` from
   `recipe.hair.style` and throws `MorphError` for a style whose geometry has
   not arrived (`assets.hair.load(id)` brings it); the style never changes the
-  body, which keeps every face (hair has no `delete_verts`).
+  body, which keeps every face (hair has no `delete_verts`). `Evaluation.brows` and
+  `Evaluation.lashes` are the worn `recipe.hair.brows` and `lashes` the same way
+  (an id of the wrong kind is a `RecipeError`: `hair.style` wears scalp styles,
+  `brows` brows, `lashes` lashes); a brow is lifted `DECAL_LIFT` (2 mm) off the
+  skin along its normal, since the smooth body surface can swallow a decal bound to
+  the coarse mesh by up to 1.8 mm at the brow ridge (a test holds it clear at ages
+  6 to 75). `model.pendingHairStyles(recipe)` lists every worn style not yet loaded,
+  and the worker's `evaluated` reply carries `decalTopologies` for the brows' and
+  lashes' static data (`HairTopology.kind` is `scalp`, `brows` or `lashes`; a
+  decal's fade is all 1, fin and growth 0, scalp none).
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
@@ -444,6 +520,25 @@ compute what the renderer will do.
   values (`black` to `white`), `DEFAULT_HAIR_COLOUR` is `brown`, and
   `hairTint(colour)` is the material colour that makes a packed strand map
   (mean `HAIR_STRAND_MEAN`) render as that albedo.
+- Body hair (research/BODY-HAIR.md): `BODY_HAIR_GROUPS` (`face`, `chest`,
+  `abdomen`, `back`, `buttocks`, `arms`, `legs`, and the adult-only `axillary`
+  and `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`),
+  `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
+  `defaultBodyHairCoverage(group, age, gender)` is a group's terminal-hair
+  coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years and
+  the gender macro read as the androgen level: 0 before puberty, rising through
+  adolescence (`BODY_HAIR_MATURITY`), thinning in old age
+  (`BODY_HAIR_SENESCENCE`), between `BODY_HAIR_COVERAGE`'s female and male
+  ends. An adult-only group is 0 under 18 and for an age that is not a number.
+  `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's density
+  multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage; it never
+  adds hair where the default has none). `beardStyle(input)` is the recipe's
+  style, or `stubble` where the face's coverage is a quarter or more and `none`
+  elsewhere. `bodyHairColour(group, input)` is the figure's hair pigments
+  darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
+  fibre diameter and drawn length) and at least as grey as ageing makes them
+  (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an
+  override as given.
 - CIELAB conversions: `labFromLinear`, `linearFromLab`, `lchFromLab`,
   `labFromLch` (D65).
 - Skin layers (ARCHITECTURE.md, "Parallel work: the base contract"):
@@ -583,6 +678,15 @@ compute what the renderer will do.
     `creaseDepth(joint)` the fold's depth in metres that follows from them, and
     `CREASE_HALF_WIDTH` how far either side of the joint each joint's creases
     reach.
+  - Expression lines (ARCHITECTURE.md, "Facial wrinkles"):
+    `EXPRESSION_LINE_LAYERS`, five `creases` `DetailLayer`s (`lines.forehead`,
+    `lines.crows-feet`, `lines.glabella`, `lines.nasolabial`, `lines.nose`) driven
+    by the `face.*` signals and the figure's `age`: forehead lines on
+    `browRaise`, furrows between the brows on `browFurrow`, crow's feet on
+    `squint` (or a smile), the folds on `nasolabial` (or a smile), nose lines on
+    `noseWrinkle`. `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
+    `EXPRESSION_COUNT` are art-directed, `expressionAgeFactor(age)` scales the
+    depth by age (0.2 at 6, 1 at 40, 1.4 at 70).
   - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones
     (head, hand, thigh, …) as soft per-vertex masks from the skin weights, plus
     its `front`, `palm`, `sole`, `forehead` and `neck` fields from the vertex
@@ -660,13 +764,18 @@ and expressions"). Framework-free.
   linear, 1 dual quaternion), `skinDualShare(bones)` the share of every bone of
   a rig in its order, and `dualBones(rest, rotations)` each bone's pose as a
   unit dual quaternion (what the renderer uploads: `dualBoneTexels`).
+  `SKIN_SWING_SHARE` names the bones whose share changes as they swing (the
+  thigh's falls from 1 to ¼ over 120°, so a flexed hip does not bulge), and
+  `poseShare(rest, rotations, base)` gives every bone's share for a pose: the
+  table's, moved by each such bone's swing (its rotation less its twist about
+  its own axis). `skinPositions` and `DualBones` use it.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
-  arms at the sides, and four for joint extremes, `bent`, every hinge about half
+  arms at the sides, and five for joint extremes, `bent`, every hinge about half
   way (the check for joint creases), `flexed`, every hinge near its limit,
-  `twisted`, each limb turned about its own axis, and `abducted`, the thighs
-  opened 40°);
+  `twisted`, each limb turned about its own axis, `abducted`, the thighs
+  opened 40°, `seated`, the hips and knees at 90° with the soles flat, and `tucked`, the hips at 120° with the knees drawn up);
   `composeRotations(a, b)` layers `b` (an expression) over `a`.
 - `restBonesFrom(names, parents, heads)` rebuilds the rest skeleton from an
   evaluation's `boneHeads` without the packs, and
@@ -893,7 +1002,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation`, as its geometry is written |
 | `onSettled?` | Called with an `Evaluation` once everything the recipe wears is drawn: the geometry is written and the hair style's strand map, the attachments' and garments' textures and the attachments' posed occlusion have loaded (then two frames). Wait for this, not `onEvaluated`, before a screenshot. The playground's `data-figure="ready"` is this |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
@@ -916,6 +1025,11 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   (`GUM_LAB`), pigmented browner and patchier with `recipe.skin.melanin`
   (`TeethMaterial.setSkin`, `gumAppearance`; ARCHITECTURE.md, "The gums";
   `docs/evidence/gums.md`).
+- Renders `recipe.hair.brows` and `recipe.hair.lashes` as decals on the skin
+  (`DecalMaterial`): the hair pack's white alpha masks, in the hair colour
+  (`browColour`) and, for lashes, darker by `LASH_DARKEN` (`lashColour`), thinner
+  on a child (`decalOpacity(kind, age)`: 0.45 for brows and 0.7 for lashes at
+  birth, full by 14).
 - Renders `recipe.hair` when the client loaded a hair pack: alpha cards
   skinned to the figure and coloured by `recipe.hair.colour` (`HairMaterial`:
   the strand map times the pigment colour's tint, two Kajiya-Kay highlight
@@ -1100,7 +1214,14 @@ deterministic for a seed and never sets adult-only modifiers unless
 pack loaded, a random figure also wears one of its styles (or none, one time
 in ten) in a natural colour that runs darker on deeper skin; `randomRecipe`
 takes the styles as `options.hairStyles`, and without them keeps the base
-recipe's hair. Every change is undoable.
+recipe's hair. It also draws one of the pack's brows and one of its lashes
+(`options.browStyles`, `options.lashStyles`; after the hair, so a seed's hair and
+shape are the same without them), and a new head of hair keeps the brows and
+lashes the figure had. `withHair(recipe, patch)` changes the scalp style, colour,
+brows or lashes of a recipe (`null` takes one away) and keeps whatever the patch
+leaves out; the Appearance panel uses it, offering the brows and lashes in
+groups of their own, and `load` refuses a saved figure whose brows or lashes the
+loaded pack lacks. Every change is undoable.
 
 ### Wardrobe helpers
 
@@ -1170,6 +1291,14 @@ styles are MakeHuman's own CC0 scalp hair: `short02`, `bob02`, `long01`,
 `afro01`, `short04`, `short03`, `ponytail01`, `short01`, `bob01` and `braid01`.
 Its manifest records the hash of the body pack it binds to, and the loader
 refuses any other.
+
+The pack also lists MakeHuman's twelve eyebrows (`eyebrow001` to `eyebrow012`,
+kind `brows`) and four eyelashes (`eyelashes01` to `eyelashes04`, kind `lashes`),
+the same CC0 system assets bound to the same body, each one `<id>.bin.gz` and a
+`<id>.webp` that is a white alpha mask for the hair colour to tint (14 to 67 kB
+the pair). They are decals: no hairline, growth or scalp, so their entries carry
+none of those buffers (`HairStyleEntry.layout` has them for `scalp` only), and
+`recipe.hair.style` wears only scalp styles.
 
 ## `humanoid-kit-adult-anatomy`
 

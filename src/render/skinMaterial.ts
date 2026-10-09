@@ -82,11 +82,17 @@ export const CURVATURE_ATTRIBUTE = "hkCurvature";
  */
 export const SCALP_ATTRIBUTE = "hkScalp";
 
-/** How far the skin goes toward the scalp colour where hair grows at full density. */
-export const SCALP_STRENGTH = 0.6;
+/** How far the skin goes toward its stubble tone where hair grows from it at full density. */
+export const SCALP_STRENGTH = 0.7;
 
-/** What fraction of the hair's albedo the scalp shows: the skin under hair is in its shade. */
-export const SCALP_DARKEN = 0.7;
+/**
+ * The stubble tone is the skin's own colour in the shade of the hair above it
+ * (`SCALP_SHADE` of it) with a little of the hair's colour (`SCALP_HAIR_SHARE`).
+ * Built from the skin, not from the hair, so white hair does not paint a pale
+ * patch on deep skin, nor black hair a dark one on fair.
+ */
+export const SCALP_SHADE = 0.7;
+export const SCALP_HAIR_SHARE = 0.15;
 
 /** A GLSL float literal. */
 const glslFloat = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
@@ -232,7 +238,9 @@ float hkDetailHeight( vec2 uv ) {
 			}
 		} else {
 			float phase = f.y * head.w;
-			float fade = 1.0 - smoothstep( 0.25, 0.75, fwidth( phase ) );
+			// A groove is a thin line: it goes by the time a period is ten pixels, not one, or
+			// seen end-on down a limb it shows as a dotted ring.
+			float fade = 1.0 - smoothstep( 0.1, 0.3, fwidth( phase ) );
 			H -= a * head.z * fade * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} );
 		}
 	}
@@ -460,7 +468,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkLayerOwners: { value: Texture };
     /** This figure's stop table (`paintStopTable`). */
     hkLayerStops: { value: DataTexture };
-    /** The colour (linear) the skin goes toward where hair grows from it. */
+    /** The hair's albedo (linear), a little of which the stubble tone takes. */
     hkScalpColour: { value: Vector3 };
     /** 0 without hair on the figure, else `SCALP_STRENGTH`. */
     hkScalpStrength: { value: number };
@@ -497,12 +505,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   setScalp(hairAlbedo: Rgb | null): void {
     const u = this.hkUniforms;
     u.hkScalpStrength.value = hairAlbedo ? SCALP_STRENGTH : 0;
-    if (hairAlbedo)
-      u.hkScalpColour.value.set(
-        hairAlbedo[0] * SCALP_DARKEN,
-        hairAlbedo[1] * SCALP_DARKEN,
-        hairAlbedo[2] * SCALP_DARKEN,
-      );
+    if (hairAlbedo) u.hkScalpColour.value.set(hairAlbedo[0], hairAlbedo[1], hairAlbedo[2]);
   }
 
   /**
@@ -617,7 +620,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       )
       .replace(
         "#include <color_fragment>",
-        "#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, hkScalpColour, clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );",
+        `#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, mix( diffuseColor.rgb * ${glslFloat(SCALP_SHADE)}, hkScalpColour, ${glslFloat(SCALP_HAIR_SHARE)} ), clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );`,
       )
       // Surface layers: roughness here, specular once the material is set up.
       .replace(
@@ -652,6 +655,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    return `humanoid-kit-skin-8-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}`;
+    return `humanoid-kit-skin-9-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}`;
   }
 }
