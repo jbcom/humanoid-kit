@@ -5,7 +5,12 @@
  * lashes, so a figure's hair is one colour and its pigments' physics
  * (`hairAlbedo`) the same everywhere.
  *
- * CHOICE, not measurement. The brows are the hair's own colour. The lashes are
+ * CHOICE, not measurement. The brows are the hair's own colour, lifted by a power
+ * (`BROW_LIFT`, 0.8): a brow is thin, dark against skin, and lit like the face, so
+ * the studio's tone curve crushes its blue and its shadows (blonde read olive, an
+ * albedo of 0.21, 0.13, 0.05 came out at a third of its blue relative to its red
+ * on the first sheets), and a gentle power keeps a blonde's brow golden and a white
+ * one warm without lightening a black one. The lashes are
  * darker by a fixed factor, as lashes are on almost everyone, fair and red-haired
  * people most of all, whose lashes and brows read darker than their scalp hair;
  * a single factor on the albedo keeps a lash's hue and sets its depth. A young
@@ -20,18 +25,21 @@ import type { Rgb } from "./skinTone.ts";
 
 export type DecalKind = "brows" | "lashes";
 
+/** The power the hair's albedo is raised to for a brow (below 1 lifts the dark channels most). */
+export const BROW_LIFT = 0.8;
+
 /** The share of the brows' albedo a lash has. */
 export const LASH_DARKEN = 0.55;
 
-/** The brows' colour: the hair's, linear. */
+/** The brows' colour: the hair's, lifted (`BROW_LIFT`), linear. */
 export function browColour(colour: HairColour): Rgb {
   const [r, g, b] = hairAlbedo(colour);
-  return [r, g, b];
+  return [r ** BROW_LIFT, g ** BROW_LIFT, b ** BROW_LIFT];
 }
 
-/** The lashes' colour: the hair's, darker by `LASH_DARKEN`. */
+/** The lashes' colour: the brows', darker by `LASH_DARKEN`. */
 export function lashColour(colour: HairColour): Rgb {
-  const [r, g, b] = hairAlbedo(colour);
+  const [r, g, b] = browColour(colour);
   return [r * LASH_DARKEN, g * LASH_DARKEN, b * LASH_DARKEN];
 }
 

@@ -1240,19 +1240,29 @@ four ages, with a test that fails without the lift); lashes are not, since they
 are meant to stand clear of the lid.
 
 **Colour and density** (`src/surface/decalTone.ts`). One hair colour drives all
-three: the brows are `hairAlbedo(colour)`, the lashes the same hue darker by a
-fixed `LASH_DARKEN` (0.55). The mask is white, so the material's colour is the
-only colour it takes. A child's brows and lashes are finer and fewer: the decal's
-opacity, which multiplies the mask's alpha before the material's cut-off (0.35),
-ramps from 0.45 (brows) or 0.7 (lashes) at birth to 1 by 14, so the partial
-strokes go first. **Choices**, not measurements: no source of brow or lash density
-by age ships here, so the numbers are tuned against `docs/evidence/brows.md`.
+three: the brows are `hairAlbedo(colour)` raised to the power 0.8 (`BROW_LIFT`),
+the lashes those 0.55 as deep (`LASH_DARKEN`). The mask is white, so the
+material's colour is the only colour it takes. The lift is a **choice**, from the
+first sheets: a brow is thin, dark against skin and lit like the face, so the
+studio's tone curve crushed its blue and its shadows (a blonde's albedo of 0.21,
+0.13, 0.05 came out olive, its blue a third of what it should be against its red),
+and a gentle power keeps blonde golden and white warm without lightening black.
+A child's brows and lashes are finer and fewer: the decal's opacity, which
+multiplies the mask's alpha, ramps from 0.45 (brows) or 0.7 (lashes) at birth to
+1 by 14, so a toddler's are fainter. Also choices: no source of brow or lash
+density by age ships here, so the numbers are tuned against `docs/evidence/brows.md`.
 
 **The material** (`DecalMaterial`, `src/render/decalMaterial.ts`) is a plain
-standard one, not `HairMaterial`: a decal has no growth, hairline fade or fin, and
-the hair material reads a missing one as "dithered away". It cuts by the mask,
-takes its edges as hair does (alpha-to-coverage on a multisampled target, an
-alpha test otherwise) and draws over the skin by a polygon offset.
+physical one, not `HairMaterial`: a decal has no growth, hairline fade or fin, and
+the hair material reads a missing one as "dithered away". It **blends** by the
+mask's alpha rather than cutting it out: a brow is a band of hairs thinner than a
+pixel, and the cut-out (alpha test or alpha-to-coverage) kept a stroke or dropped
+it, so the first renders were a few hard pencil lines; blended, a thin stroke
+keeps the partial opacity it covers. A faint soft fill (a high mip of the mask, at
+0.35 of its strength) lies between the strokes, the sparse soft edge and density
+of a real brow. It keeps a quarter of a standard material's specular (the cool
+studio environment turned white hair grey-blue), draws after the skin without
+writing depth, and over it by a polygon offset.
 
 ## Body hair
 

@@ -632,7 +632,6 @@ function DecalMesh({
   skeleton,
   colour,
   age,
-  multisampled,
   visible,
   report,
   shape,
@@ -642,7 +641,6 @@ function DecalMesh({
   skeleton: Skeleton;
   colour: HairColour;
   age: number;
-  multisampled: boolean;
   visible: boolean;
   report: (e: Error) => void;
   shape: object;
@@ -658,7 +656,6 @@ function DecalMesh({
     material.setColour(kind === "lashes" ? lashColour(c) : browColour(c));
   }, [material, kind, eumelanin, pheomelanin, grey, overrideKey]);
   useEffect(() => material.setOpacity(decalOpacity(kind, age)), [material, kind, age]);
-  useEffect(() => material.setMultisampled(multisampled), [material, multisampled]);
   useEffect(() => () => material.dispose(), [material]);
   return (
     <SkinnedPart
@@ -1309,7 +1306,6 @@ export function Humanoid({
                 skeleton={rig.skeleton}
                 colour={recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR}
                 age={recipe.macros.age}
-                multisampled={multisampled}
                 visible={shown}
                 report={report}
                 shape={shape}
