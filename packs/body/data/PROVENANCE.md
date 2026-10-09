@@ -11,7 +11,7 @@ Every packed source file was checked for CC0 from its own content before packing
 - 945 file(s) — file header: "This asset was explicitly released as CC0"
 - 3 file(s) — file metadata: "license": "CC0": rigs/default.mhskel, rigs/default_weights.mhw, poseunits/face-poseunits.json
 - 1 file(s) — upstream LICENSE.md: "Poses and expressions" listed under "These assets have been released under CC0 1.0 Universal.": poseunits/face-poseunits.bvh
-- 1 file(s) — upstream LICENSE.md: "Targets and modifiers" listed under "These assets have been released under CC0 1.0 Universal.": modifiers/modeling_modifiers.json
+- 9 file(s) — upstream LICENSE.md: "Targets and modifiers" listed under "These assets have been released under CC0 1.0 Universal."
 
 Attachments come from the MakeHuman system assets pack (makehuman_system_assets_cc0.zip, listed as
 "System assets, shared under CC0" on the MakeHuman community asset packs page). Each file was checked the same way:

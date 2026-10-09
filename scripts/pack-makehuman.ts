@@ -1,7 +1,7 @@
 /**
- * Packs the CC0 MakeHuman hm08 base mesh, its adult morph targets, the default
- * skeleton, skin weights and facial pose units into the binary layout the
- * runtime loads (`src/format/assetFormat.ts`).
+ * Packs the CC0 MakeHuman hm08 base mesh, its morph targets, modifier tables
+ * and slider taxonomy, the default skeleton, skin weights and facial pose
+ * units into the binary layout the runtime loads (`src/format/assetFormat.ts`).
  *
  *   node scripts/pack-makehuman.ts <makehuman-data-dir> <system-assets-dir>
  *
@@ -11,9 +11,10 @@
  * supplies the eyes, teeth and tongue every figure needs. Only asset files
  * are read (released CC0 in September 2020); no MakeHuman code is used.
  *
- * All of MakeHuman's ages (baby, child, young, old) are packed. Adult-only
- * targets (genitals, bulge, pregnancy) go to a separate `adult-targets.bin`
- * that the runtime loads only on request and only evaluates for adults.
+ * All of MakeHuman's ages (baby, child, young, old) are packed. Adult anatomy
+ * targets (genitals, bulge, pregnancy), with their modifiers and sliders, go to
+ * the separate humanoid-kit-adult-anatomy pack, which the runtime loads only on
+ * request and only evaluates for figures 18 and over.
  *
  * Height and proportion targets are kept for average muscle and weight only:
  * the dense per-muscle/weight variants triple the package size for a shape
@@ -23,8 +24,10 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import type { ShapeModifierEntry } from "../src/format/assetFormat.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { writeAttachments, writePackEntry } from "./lib/packWriter.ts";
+import { buildSliders } from "./lib/sliders.ts";
 
 const USAGE = "usage: node scripts/pack-makehuman.ts <makehuman-data-dir> <system-assets-dir>";
 const DATA: string = (() => {
@@ -49,6 +52,8 @@ const ADULT_OUT = path.resolve(import.meta.dirname, "../packs/adult-anatomy/data
 const TOPOLOGY = "makehuman-hm08";
 /** MakeHuman units are decimetres; the runtime works in metres. */
 const UNIT = 0.1;
+/** MakeHuman's modifier tables, each with a `_modifiers`, `_sliders` and `_modifiers_desc` file. */
+const MODIFIER_TABLES = ["modeling", "measurement", "bodyshapes"] as const;
 
 interface TargetEntry {
   name: string;
@@ -70,7 +75,13 @@ interface TargetEntry {
 const REPO_LICENSE = path.resolve(DATA, "../../LICENSE.md");
 const REPO_STATEMENT = "These assets have been released under CC0 1.0 Universal.";
 const REPO_CATEGORIES: Record<string, string> = {
-  "modifiers/modeling_modifiers.json": "* Targets and modifiers",
+  ...Object.fromEntries(
+    MODIFIER_TABLES.flatMap((t) => [
+      [`modifiers/${t}_modifiers.json`, "* Targets and modifiers"],
+      [`modifiers/${t}_sliders.json`, "* Targets and modifiers"],
+      [`modifiers/${t}_modifiers_desc.json`, "* Targets and modifiers"],
+    ]),
+  ),
   "poseunits/face-poseunits.bvh": "* Poses and expressions",
 };
 const licenseEvidence: Record<string, string> = {};
@@ -395,36 +406,47 @@ function main() {
   const faceUnits = JSON.parse(read("poseunits/face-poseunits.json")) as { framemapping: string[] };
   const faceBvh = parseBvh(read("poseunits/face-poseunits.bvh"));
 
-  // Shape modifiers: MakeHuman's modeling modifier table, resolved to packed target names.
+  // Shape modifiers: MakeHuman's modifier tables, resolved to packed target names.
   const packedNames = new Set(targets.map((t) => t.name));
-  const modifierGroups = JSON.parse(read("modifiers/modeling_modifiers.json")) as {
-    group: string;
-    modifiers: { target?: string; min?: string; max?: string }[];
-  }[];
-  const modifiers: {
-    id: string;
-    group: string;
-    lo: string | null;
-    hi: string;
-    adultOnly: boolean;
-  }[] = [];
+  const modifiers: ShapeModifierEntry[] = [];
   const unresolved: string[] = [];
-  for (const g of modifierGroups) {
-    for (const m of g.modifiers) {
-      if (!m.target) continue; // macro variables are handled by the macro model
-      const dir = g.group;
-      const lo = m.min ? `${dir}/${m.target}-${m.min}` : null;
-      const hi = m.max ? `${dir}/${m.target}-${m.max}` : `${dir}/${m.target}`;
-      const id = m.min ? `${dir}/${m.target}-${m.min}|${m.max}` : `${dir}/${m.target}`;
-      if (!packedNames.has(hi) || (lo && !packedNames.has(lo))) {
-        unresolved.push(id);
-        continue;
+  for (const table of MODIFIER_TABLES) {
+    const groups = JSON.parse(read(`modifiers/${table}_modifiers.json`)) as {
+      group: string;
+      modifiers: { target?: string; min?: string; max?: string }[];
+    }[];
+    for (const g of groups) {
+      for (const m of g.modifiers) {
+        if (!m.target) continue; // macro variables are handled by the macro model
+        const dir = g.group;
+        const lo = m.min ? `${dir}/${m.target}-${m.min}` : null;
+        const hi = m.max ? `${dir}/${m.target}-${m.max}` : `${dir}/${m.target}`;
+        const id = m.min ? `${dir}/${m.target}-${m.min}|${m.max}` : `${dir}/${m.target}`;
+        if (!packedNames.has(hi) || (lo && !packedNames.has(lo))) {
+          unresolved.push(id);
+          continue;
+        }
+        modifiers.push({ id, group: dir, lo, hi, adultOnly: isAdultOnlyModifier(hi) });
       }
-      modifiers.push({ id, group: dir, lo, hi, adultOnly: isAdultOnlyModifier(hi) });
     }
   }
   if (unresolved.length)
     console.warn(`unresolved modifiers (no packed target): ${unresolved.join(", ")}`);
+  const sliders = buildSliders(
+    MODIFIER_TABLES.map((table) => ({
+      table,
+      sliders: JSON.parse(read(`modifiers/${table}_sliders.json`)),
+      descriptions: JSON.parse(read(`modifiers/${table}_modifiers_desc.json`)),
+    })),
+    new Map(modifiers.map((m) => [m.id, m])),
+  );
+  const slid = new Set(
+    [...sliders.body, ...sliders.adult].flatMap((t) =>
+      t.groups.flatMap((g) => g.sliders.map((s) => s.id)),
+    ),
+  );
+  const unslid = modifiers.filter((m) => !slid.has(m.id)).map((m) => m.id);
+  if (unslid.length) console.warn(`modifiers without an upstream slider: ${unslid.join(", ")}`);
 
   const joints: Record<string, number[]> = {};
   for (const [k, verts] of Object.entries(skel.joints)) joints[k] = verts;
@@ -464,6 +486,7 @@ function main() {
     body: { file: "body.bin", sha256: bodySha, layout },
     targets: { file: "targets.bin", sha256: sha(core.bin), entries: core.entries },
     modifiers: modifiers.filter((m) => !isAdultPackTarget(m.hi)),
+    sliders: sliders.body,
     attachments: {
       file: "attachments.bin",
       sha256: attachments.sha256,
@@ -500,6 +523,7 @@ function main() {
     source,
     targets: { file: "targets.bin", sha256: sha(adult.bin), entries: adult.entries },
     modifiers: modifiers.filter((m) => isAdultPackTarget(m.hi)),
+    sliders: sliders.adult,
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 

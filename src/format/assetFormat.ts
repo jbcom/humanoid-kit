@@ -41,6 +41,35 @@ export interface ShapeModifierEntry {
   adultOnly: boolean;
 }
 
+/** One control in MakeHuman's modelling taxonomy. */
+export interface SliderEntry {
+  /** A macro variable (a `MacroValues` key) or a shape modifier id. */
+  kind: "macro" | "modifier";
+  id: string;
+  label: string;
+  /** MakeHuman's camera hint for this slider (`frontView`, `leftView`, ...). */
+  camera: string | null;
+  description: string | null;
+  /** Position in MakeHuman's full taxonomy, so sliders from several packs merge in upstream order. */
+  order: number;
+}
+
+export interface SliderGroup {
+  id: string;
+  label: string;
+  sliders: SliderEntry[];
+}
+
+/** A tab of MakeHuman's modelling UI (Main, Gender, Face, Torso, ..., Measure, Body shapes). */
+export interface SliderTask {
+  id: string;
+  label: string;
+  sortOrder: number;
+  /** Camera hint for the whole task (`faceCamera`), if any. */
+  camera: string | null;
+  groups: SliderGroup[];
+}
+
 export interface BoneEntry {
   name: string;
   parent: string | null;
@@ -84,6 +113,7 @@ export interface BodyManifest {
   };
   targets: { file: string; sha256: string; entries: TargetEntry[] };
   modifiers: ShapeModifierEntry[];
+  sliders: SliderTask[];
   attachments: { file: string; sha256: string; entries: AttachmentEntry[] };
   skeleton: { bones: BoneEntry[]; joints: Record<string, number[]> };
   faceUnits: { names: string[]; joints: BvhJoint[]; frames: number[][] };
@@ -143,6 +173,8 @@ export interface AdultAnatomyManifest {
   source: PackSource;
   targets: { file: string; sha256: string; entries: TargetEntry[] };
   modifiers: ShapeModifierEntry[];
+  /** This pack's sliders, placed into the body pack's tasks and groups by id. */
+  sliders: SliderTask[];
 }
 
 /** A sparse target as typed-array views into a targets binary. */
@@ -170,6 +202,8 @@ export interface HumanoidAssets {
   /** Body targets, plus adult anatomy targets when that pack was loaded. */
   targets: Map<string, SparseTarget>;
   modifiers: Map<string, ShapeModifierEntry>;
+  /** The slider taxonomy of every loaded pack, merged in MakeHuman's order. */
+  sliders: SliderTask[];
   attachments: Map<string, BoundAsset>;
   /** URL of each pack file by name (textures included); empty when parsed without URLs. */
   fileUrls: Map<string, string>;
@@ -281,6 +315,35 @@ function parseAttachments(manifest: BodyManifest, bin: ArrayBuffer): Map<string,
   return out;
 }
 
+/**
+ * Merges slider taxonomies: tasks and groups are matched by id, and every
+ * group's sliders, every task's groups and the tasks themselves end up in
+ * MakeHuman's order. Inputs are not modified.
+ */
+export function mergeSliderTasks(...sources: SliderTask[][]): SliderTask[] {
+  const tasks = new Map<string, SliderTask>();
+  for (const source of sources) {
+    for (const t of source) {
+      let task = tasks.get(t.id);
+      if (!task) {
+        task = { ...t, groups: [] };
+        tasks.set(t.id, task);
+      }
+      for (const g of t.groups) {
+        const group = task.groups.find((x) => x.id === g.id);
+        if (group) group.sliders.push(...g.sliders.map((s) => ({ ...s })));
+        else task.groups.push({ ...g, sliders: g.sliders.map((s) => ({ ...s })) });
+      }
+    }
+  }
+  const first = (g: SliderGroup) => Math.min(...g.sliders.map((s) => s.order));
+  for (const task of tasks.values()) {
+    for (const g of task.groups) g.sliders.sort((a, b) => a.order - b.order);
+    task.groups.sort((a, b) => first(a) - first(b));
+  }
+  return [...tasks.values()].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
 /** Builds typed views over already-fetched packs. Pure; usable in workers and tests. */
 export function parseHumanoidAssets(
   pack: BodyPackData,
@@ -333,6 +396,9 @@ export function parseHumanoidAssets(
     skinWeight,
     targets: map,
     modifiers,
+    sliders: adultAnatomy
+      ? mergeSliderTasks(manifest.sliders, adultAnatomy.manifest.sliders)
+      : structuredClone(manifest.sliders),
     attachments: parseAttachments(manifest, pack.attachments),
     fileUrls: pack.fileUrls ?? new Map(),
     adultAnatomyLoaded: adultAnatomy !== undefined,
