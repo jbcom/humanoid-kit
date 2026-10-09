@@ -78,6 +78,14 @@ describe("the body's cavity occlusion", () => {
   it("scales the light by the floor-mixed byte, and leaves a body without the attributes open", () => {
     const open = render(new Array(CORNERS).fill(255));
     expect(render(null)).toBeCloseTo(open, 5);
+    // An unset attribute reads as zero, but a vec4's fourth component reads as one:
+    // a body without the attributes must stay open however the pose weighs the keys.
+    for (const keys of [
+      [0, 0, 1],
+      [1, 1, 1],
+      [0.5, 0.2, 0.9],
+    ] as [number, number, number][])
+      expect(render(null, keys), `keys ${keys.join(",")}`).toBeCloseTo(open, 5);
     expect(render(new Array(CORNERS).fill(0)) / open).toBeCloseTo(BODY_OCCLUSION_FLOOR, 2);
     // A byte's value is raised to a power before the floor mixes in; the power
     // grows with how enclosed the vertex is at rest (corner 0).

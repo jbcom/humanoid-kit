@@ -27,15 +27,18 @@ if (OCCLUSION_KEYS.length !== 3)
   throw new Error("occlusion: the shader blends three keys; update it with OCCLUSION_KEYS");
 const CORNERS = occlusionCorners(OCCLUSION_KEYS.length);
 
-/** The attributes one kind of geometry carries its corners in (corner 0 first, then 1–4, then 5–7). */
+/**
+ * The attributes one kind of geometry carries its corners in: the corners in
+ * order (corner 0 first), packed into these attributes in turn, each `size`
+ * wide, interleaved in one buffer.
+ */
 interface OcclusionLayout {
-  base: string;
-  a: string;
-  b: string;
+  attributes: readonly { name: string; size: 1 | 3 | 4 }[];
   /**
-   * The attributes hold how enclosed a vertex is, not how open. A geometry
-   * without them (a plain mesh in a skin material) reads as open, since an
-   * unset attribute reads as zero.
+   * The attributes hold how enclosed a vertex is, not how open, so a geometry
+   * without them (a plain mesh in a skin material) reads as open: an unset
+   * attribute reads as zero. That also keeps the layout off `vec4`, whose unset
+   * fourth component reads as one and would darken it at some poses.
    */
   enclosure: boolean;
 }
@@ -43,17 +46,47 @@ interface OcclusionLayout {
 /** Corner 0 (rest), one float per vertex. */
 export const OCCLUSION_ATTRIBUTE = "hkOcclusion";
 const ATTACHMENT: OcclusionLayout = {
-  base: OCCLUSION_ATTRIBUTE,
-  a: "hkOcclusionA",
-  b: "hkOcclusionB",
+  attributes: [
+    { name: OCCLUSION_ATTRIBUTE, size: 1 },
+    { name: "hkOcclusionA", size: 4 },
+    { name: "hkOcclusionB", size: 3 },
+  ],
   enclosure: false,
 };
 const BODY: OcclusionLayout = {
-  base: "hkEnclosure",
-  a: "hkEnclosureA",
-  b: "hkEnclosureB",
+  attributes: [
+    { name: "hkEnclosure", size: 1 },
+    { name: "hkEnclosureA", size: 3 },
+    { name: "hkEnclosureB", size: 3 },
+    { name: "hkEnclosureC", size: 1 },
+  ],
   enclosure: true,
 };
+
+/** The GLSL expression of each corner, in order. */
+const cornerExpressions = (layout: OcclusionLayout): string[] =>
+  layout.attributes.flatMap(({ name, size }) =>
+    size === 1 ? [name] : ["x", "y", "z", "w"].slice(0, size).map((c) => `${name}.${c}`),
+  );
+
+for (const layout of [ATTACHMENT, BODY])
+  if (cornerExpressions(layout).length !== CORNERS)
+    throw new Error("occlusion: a layout does not hold one attribute component per corner");
+
+/** Puts an interleaved corner array on a geometry as `layout`'s attributes. */
+function setAttributes(
+  geometry: BufferGeometry,
+  layout: OcclusionLayout,
+  array: Float32Array | Uint8Array,
+  normalized: boolean,
+): void {
+  const buffer = new InterleavedBuffer(array, CORNERS);
+  let offset = 0;
+  for (const { name, size } of layout.attributes) {
+    geometry.setAttribute(name, new InterleavedBufferAttribute(buffer, size, offset, normalized));
+    offset += size;
+  }
+}
 
 /** Light that still reaches a fully enclosed surface, as a fraction. */
 export const OCCLUSION_FLOOR = 0.15;
@@ -80,7 +113,7 @@ export const BODY_OCCLUSION_POWER = 10;
  * the attributes it holds when disposed.
  */
 export function setOcclusionAttributes(geometry: BufferGeometry, occlusion: Float32Array): void {
-  const current = geometry.getAttribute(ATTACHMENT.base);
+  const current = geometry.getAttribute(OCCLUSION_ATTRIBUTE);
   if (
     current instanceof InterleavedBufferAttribute &&
     current.data.array.length === occlusion.length
@@ -90,10 +123,7 @@ export function setOcclusionAttributes(geometry: BufferGeometry, occlusion: Floa
     current.data.needsUpdate = true;
     return;
   }
-  const buffer = new InterleavedBuffer(occlusion, CORNERS);
-  geometry.setAttribute(ATTACHMENT.base, new InterleavedBufferAttribute(buffer, 1, 0));
-  geometry.setAttribute(ATTACHMENT.a, new InterleavedBufferAttribute(buffer, 4, 1));
-  geometry.setAttribute(ATTACHMENT.b, new InterleavedBufferAttribute(buffer, 3, 5));
+  setAttributes(geometry, ATTACHMENT, occlusion, false);
 }
 
 /**
@@ -102,11 +132,12 @@ export function setOcclusionAttributes(geometry: BufferGeometry, occlusion: Floa
  * how enclosed each vertex is, so a body geometry without them is open.
  */
 export function setBodyOcclusionAttributes(geometry: BufferGeometry, occlusion: Uint8Array): void {
-  const enclosure = Uint8Array.from(occlusion, (v) => 255 - v);
-  const buffer = new InterleavedBuffer(enclosure, CORNERS);
-  geometry.setAttribute(BODY.base, new InterleavedBufferAttribute(buffer, 1, 0, true));
-  geometry.setAttribute(BODY.a, new InterleavedBufferAttribute(buffer, 4, 1, true));
-  geometry.setAttribute(BODY.b, new InterleavedBufferAttribute(buffer, 3, 5, true));
+  setAttributes(
+    geometry,
+    BODY,
+    Uint8Array.from(occlusion, (v) => 255 - v),
+    true,
+  );
 }
 
 /**
@@ -122,14 +153,16 @@ export function patchOcclusion(
   if (!shader.fragmentShader.includes("#include <aomap_fragment>"))
     throw new Error("occlusion: three's aomap_fragment chunk moved");
   const layout = body ? BODY : ATTACHMENT;
+  const corners = cornerExpressions(layout);
+  // Corner m holds key i when bit i of m is set; x, y, z are keys 0, 1, 2.
+  const weightOf = (m: number) =>
+    ["x", "y", "z"].map((k, i) => `${m & (1 << i) ? "w" : "a"}.${k}`).join(" * ");
   shader.uniforms.hkOcclusionKeys = { value: keys };
   shader.vertexShader = shader.vertexShader
     .replace(
       "#include <common>",
       `#include <common>
-attribute float ${layout.base};
-attribute vec4 ${layout.a};
-attribute vec3 ${layout.b};
+${layout.attributes.map(({ name, size }) => `attribute ${size === 1 ? "float" : `vec${size}`} ${name};`).join("\n")}
 uniform vec3 hkOcclusionKeys;
 varying float vHkOcclusion;`,
     )
@@ -141,18 +174,14 @@ varying float vHkOcclusion;`,
 		vec3 w = clamp( hkOcclusionKeys, 0.0, 1.0 );
 		vec3 a = 1.0 - w;
 		float blended =
-			${layout.base} * a.x * a.y * a.z +
-			${layout.a}.x * w.x * a.y * a.z + ${layout.a}.y * a.x * w.y * a.z +
-			${layout.a}.z * w.x * w.y * a.z + ${layout.a}.w * a.x * a.y * w.z +
-			${layout.b}.x * w.x * a.y * w.z + ${layout.b}.y * a.x * w.y * w.z +
-			${layout.b}.z * w.x * w.y * w.z;
+			${corners.map((c, m) => `${c} * ${weightOf(m)}`).join(" +\n\t\t\t")};
 		float occ = clamp( ${layout.enclosure ? "1.0 - blended" : "blended"}, 0.0, 1.0 );${
       power === 1
         ? "\n\t\t\tvHkOcclusion = occ;"
         : `
 			// Enclosed at rest, a vertex is in a cavity, which loses light faster than the
 			// visibility it loses; open at rest, it is only in a fold and keeps its value.
-			float restOcc = clamp( ${layout.enclosure ? `1.0 - ${layout.base}` : layout.base}, 0.0, 1.0 );
+			float restOcc = clamp( ${layout.enclosure ? `1.0 - ${corners[0]}` : corners[0]}, 0.0, 1.0 );
 			vHkOcclusion = pow( occ, 1.0 + ${(power - 1).toFixed(1)} * ( 1.0 - restOcc ) );`
     }
 	}`,

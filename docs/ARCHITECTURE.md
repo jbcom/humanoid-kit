@@ -322,7 +322,12 @@ subdivision stencil like any per-vertex field (three corners at a time), to a
 byte per corner per *render* vertex (8 bytes a vertex; 255 = open). It stays
 bytes on the GPU (normalised `uint8` attributes), and is uploaded as how
 *enclosed* a vertex is, so a body geometry with no occlusion attributes (a
-plain mesh in a `SkinMaterial`) reads open rather than black.
+plain mesh in a `SkinMaterial`) reads open rather than black: an unset
+attribute reads as zero. The eight corners are packed `1 + 3 + 3 + 1` into
+attributes for that reason and not `1 + 4 + 3` like the attachments': a
+`vec4` attribute's unset fourth component reads as one, which darkened such a
+mesh whenever the smile key was held (caught by a browser test; the shader's
+corner blend is now generated from the layout).
 
 **Shading.** `SkinMaterial` applies it with the attachments' patch
 (`patchOcclusion`, `src/render/occlusion.ts`): the corner values are blended
