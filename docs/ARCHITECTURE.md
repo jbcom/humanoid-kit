@@ -365,7 +365,8 @@ cost, and noisy at the lip line where the cavity is thinnest).
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one
 `HumanoidModel`. The worker loads the packs in stages (above), builds the model
 from the first and replies with the topology, the modifier ids and the slider
-taxonomy while later stages are still arriving. An evaluation whose recipe
+taxonomy (and the joints presence reads, so the main thread derives presence
+without the packs) while later stages are still arriving. An evaluation whose recipe
 names a target that has not arrived waits in the worker for the stage that
 brings it, and only for that; one that has everything evaluates at once. If a
 stage fails to load, each evaluation that needs it rejects with the reason, and
@@ -473,6 +474,54 @@ mean what they meant there; everything must be testable in Node.
   kneeling figure rests on the floor instead of hanging where its standing
   feet were.
 
+## Presence
+
+`src/presence` is what a figure publishes about itself for the scene around it
+(`docs/PRESENCE.md`). `presenceFromEvaluation` reads an `Evaluation`: anchors
+are the centroids of the joints' vertex lists (`presenceJoints`) over the
+morphed control mesh lifted by `groundOffset`, the footprint is the extent of
+the rendered body's soles, bounds cover every surface point, appearance is
+`skinAlbedo` of the recipe's skin, and `adult` is the age policy's verdict.
+The evaluation is in the figure's own frame; `placePresence` turns it about its
+ground position and moves it onto a `Placement`, so a moving figure re-places
+one rest presence each frame instead of being re-derived (into a preallocated
+copy: the per-frame path allocates nothing). The registry, the helpers
+(`groundOcclusion`, `faceMetering`, `presenceGroups`) are pure.
+
+**In a pose** (`presenceFromPose`) the same description comes from the posed
+skeleton. The control mesh is skinned by the pose once (`posedControl`, cached on
+the evaluation and the pose, because grounding needs the same mesh's lowest
+point and the two share the pass); anchors are the same joint centroids over it;
+the footprint is the body within 3 cm of the floor, so a lunge has one contact
+where standing had two; and bounds are the posed control body's box widened per
+side by how far the rest surface sits inside the rest control mesh's box
+(measured once per evaluation). The rendered surface is not skinned per pose: it
+has about four times the vertices to move a box by a centimetre, and an unrotated
+pose reports exactly the rest bounds this way (tested). Deriving takes about
+0.7 ms (13k body vertices) and happens when the evaluation or pose changes; a
+figure that only moves is re-placed, not re-derived.
+
+React only publishes into and reads from the registry. `<PresenceProvider>`
+owns it and, once per frame, runs every mounted figure's publisher and then
+ticks the registry; a `<Humanoid presence>` publisher re-places the figure's
+rest presence (derived once per evaluation) on the group's world transform, so
+a figure moved by anything in the scene graph is followed with no props
+changing. A figure that is hidden, tipped over or not yet evaluated returns
+null and is removed from the registry. Readers pull (`usePresence` is a live
+accessor) and subscribe only to discrete events (`useProximity`).
+
+`StudioStage` is the first consumer. Inside a provider it draws the contact
+shadow as one quad whose fragment shader (`GroundContactMaterial`) evaluates
+`sampleGroundOcclusion`'s formula (a smoothstep falloff per contact, combined
+with `max`) over a uniform array refreshed right after each tick from
+`groundOcclusion(registry.all(), { floorY }, contacts)`, where `floorY` is the
+stage's own height and the quad is resized to the contacts each frame. One pass over one quad is what makes the
+pool: separate per-figure shadows would blend over each other and darken the
+overlap twice. A browser test renders the shader from above and compares its
+pixels with `sampleGroundOcclusion`; the Playwright spec `e2e/presence.spec.ts`
+does the same on the playground's `?scene=walk` (two figures walking, parting
+and overlapping), measuring the canvas against the model.
+
 ## Layers
 
 | Folder | Role | React or DOM |
@@ -486,9 +535,10 @@ mean what they meant there; everything must be testable in Node.
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
 | `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking, the body's cavity occlusion | no |
 | `src/model` | `HumanoidModel`, the evaluation pipeline | no |
+| `src/presence` | Presence registry, helpers, and presence derived from an evaluation | no |
 | `src/editor` | The creator's logic: controls, history, randomisation, framing | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
-| `src/render` | The skin and eye materials, the layer field atlas | three.js, no React |
+| `src/render` | The skin and eye materials, the layer field atlas, the pooled ground contact shader | three.js, no React |
 | `src/react` | `HumanoidProvider`, `Humanoid`, `StudioStage` and hooks | yes |
 | `src/editor/ui` | `HumanoidCreator` and its panels | yes |
 
@@ -587,8 +637,9 @@ upper segment and to the way the joint flexes; MakeHuman's roll planes would
 not do, because in the A-pose the arm lies in the frontal plane and the
 elbow's roll-plane normal points forward. The library maps signals to
 appearance; how a signal evolves over time belongs to the application, with a
-small first-order attack and decay helper for the measured time courses.
-Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
+small first-order attack and decay helper for the measured time courses
+(`SkinStateFilter`, below). Signals reach every layer's `paint`
+(`SkinPaintInput.signals`) already.
 
 **Four channels, one per kind of change:**
 
@@ -606,7 +657,12 @@ Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
    flexion and folding on the compressed side while flattening on the
    stretched side, as measured. Their depth and spacing are art-directed
    parameters, and documented as such. A per-vertex field of world length per
-   UV unit keeps procedural detail at true scale across the atlas.
+   UV unit keeps procedural detail at true scale across the atlas. It is one
+   value for each UV island, never a ratio per face: the shader draws relief at
+   p = uv × scale, and a scale that varies across a face adds uv × d(scale) to
+   p's derivative, which stretched bumps into streaks five to twenty times
+   longer than wide on the thighs (`tests/layers.test.ts` holds the map to a
+   median stretch under 1.6).
 3. *Surface sheen*, through a surface layer that lowers roughness and raises
    specular where sweat flows, weighted by the regional sweat map and the
    `exertion` and `heat` signals.
@@ -617,6 +673,67 @@ Signals reach every layer's `paint` (`SkinPaintInput.signals`) already.
    pack only, refused under 18 exactly as its modifiers are. Shape states
    change slowly (seconds), so a re-evaluation per change is acceptable;
    colour, detail and sheen states cost no evaluation at all.
+
+**Built (2026-10-09), in `src/surface/regions/states.ts`.** Each state layer
+cites its magnitudes in `docs/research/SKIN-STATES.md` Part C, and its contact
+sheets are in `docs/evidence/states.md`.
+
+- *Goosebumps* (`cold`, `fear`). Hair-bearing skin is the base mesh's body minus
+  the head zone (face, lips, scalp), the palms, the soles and the areola. None
+  of it needs a new target, because the base mesh is frozen: the zones are
+  measured from what the mesh carries (`skinZones`). The skeleton's skin weights
+  give soft zone masks (`buildBoneField`, the shape traits' construction on a
+  finer partition); vertex normals tell the palmar side of a hand (the cross
+  product of the hand's axis and its thumb's direction, mirrored for the right
+  hand) and the sole of a foot (normals facing down) from the rest; and the
+  existing areola disk (`diskMask`) is reused. The base mesh's body has no
+  genital skin (its genital helper is a separate, undrawn group), so the adult
+  pack's layers own that region. Papule height scales with the signal up to the
+  largest measured, and its spacing is the follicle density's.
+
+- *Flush and pallor* (`blush`, `exertion`, `heat`, `fear`, `cold`). Each is a
+  multiply layer whose stop is `haemoglobinRatio(tone, delta)`: the skin model's
+  own albedo with more or less haemoglobin, over the albedo at the tone, so the
+  state moves along the measured haemoglobin axis rather than adding a fixed
+  tint. It composes with the rest layers (flush, lips) by multiplication, keeps
+  luminance as the model does, and melanin attenuates it as it attenuates the
+  resting spread: the same delta moves a\* by 5.2 on the lightest skin and 3.1 on
+  the deepest, with no rule of its own for deep skin. The model is linear in
+  haemoglobin, so a state carries it past the figure's own value (a ruddy figure
+  still flushes), limited to the whole measured axis. Regions are zones
+  (`skinZones`), each state its own layer because each has its own region: a
+  blush is cheeks, ears, forehead and neck; exertion the face, neck and chest;
+  heat the whole body; fear the face and neck; cold the extremities. The lips
+  have a mix layer of their own (`lipStateAlbedo`): bluer in the cold, paler
+  in fright.
+
+- *Sweat sheen* (`heat`, `exertion`). Two surface layers lower roughness and
+  raise specular where the local sweat rate says, from Taylor and
+  Machado-Moreira's regional rates for 13 regions (head, chest, abdomen, back,
+  buttocks, upper arm, forearm, palm, back of hand, thigh, shin, sole, top of
+  foot), taken per vertex from the zones (front from back by the vertex normal,
+  palm from back of hand, sole from top of foot as for goosebumps), with the
+  forehead at twice the head's rate. A passive-heating map serves `heat` and an
+  exercise map `exertion`: the exercise map is wetter and more even, as the
+  paper finds, so a figure that exerts shines over its whole body where one
+  that is only hot shines on its forehead and back. Rate becomes wetness by
+  `rate / (rate + 0.5)`, a choice. The two signals share one sweat drive.
+
+- *Time* (`SkinStateFilter`, `useSkinStateFilter`). An application sets a
+  signal as a step (a stimulus on or off); a body answers over time. Each
+  signal follows its target by a first-order response with one time constant
+  to rise (`attack`) and one to fall (`decay`), integrated exactly so any frame
+  rate gives the same curve, and snapped to the target within a thousandth so a
+  settled state stops changing. `cold` and `fear` are calibrated to the
+  measured piloerection episode: a 3 s trigger stays visible for 11 to 12 s,
+  where McPhetres et al. measured 9 to 13. A blush rises in seconds and falls
+  in tens, exertion in tens of seconds and over a minute, heat over minutes
+  (choices). The hook keeps one filter per component, re-renders each frame
+  while a signal moves and not once they settle, and starts at the first
+  target so a figure that mounts in a state is not seen easing into it. A shape
+  signal re-evaluates the figure, so `<Humanoid>` rounds those to 50 steps
+  (`quantiseShapeSignal`): an easing cold signal evaluates a few dozen times,
+  not every frame, each a change under 1% of the nipple's target.
 
 **Adult-pack layers (design, 2026-10-09; built with the milestone 3 graft
 lane).** Genital-region colour, relief and state layers draw their masks from

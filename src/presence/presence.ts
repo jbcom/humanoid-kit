@@ -7,7 +7,8 @@
  * do. One registry serves every consumer: lighting, shadows, cameras,
  * awareness, audio and game logic. Continuous state is read on demand;
  * discrete changes (proximity) are events, evaluated only for subscribers.
- * Framework-free.
+ * The per-frame paths (`set`, `tick`, `all`, `groundOcclusion` with `into`)
+ * allocate nothing once figures have joined. Framework-free.
  */
 
 export type Vec3 = [number, number, number];
@@ -52,11 +53,20 @@ export interface ProximityEvent {
 }
 
 export interface PresenceRegistry {
-  /** Publishes or replaces a figure's presence. */
+  /**
+   * Publishes or replaces a figure's presence. The registry keeps the objects
+   * it is given by reference (anchors, bounds, footprint) and measures
+   * `velocity` itself, so a publisher that updates one presence in place every
+   * frame (see `placePresence`'s `out`) allocates nothing.
+   */
   set(presence: FigurePresence): void;
   remove(id: string): void;
   get(id: string): PublishedPresence | undefined;
-  all(): PublishedPresence[];
+  /**
+   * Every published figure. The same array until a figure joins or leaves, and
+   * each entry is updated in place as figures move: copy what you keep.
+   */
+  all(): readonly PublishedPresence[];
   /**
    * Advances to `seconds` (the render loop's clock): measures velocities since
    * the previous tick and raises proximity events.
@@ -72,77 +82,127 @@ export interface PresenceRegistry {
 /** Leaving takes this much more distance than entering, so edges do not flicker. */
 const HYSTERESIS = 1.1;
 
+/** Pairs are keyed by their two slots: `low * SLOT_STRIDE + high`. */
+const SLOT_STRIDE = 0x10000;
+
 const groundDistance = (a: FigurePresence, b: FigurePresence) =>
   Math.hypot(a.position[0] - b.position[0], a.position[2] - b.position[2]);
 
 export function createPresenceRegistry(): PresenceRegistry {
   const figures = new Map<string, PublishedPresence>();
-  const previous = new Map<string, Vec3>();
+  /** Each figure holds a numeric slot while published, so pairs key without strings. */
+  const slotOf = new Map<string, number>();
+  const slots: (PublishedPresence | undefined)[] = [];
+  const before: (Vec3 | undefined)[] = [];
+  const freeSlots: number[] = [];
+  /** Slots whose figure was removed, and its id, until the next tick has reported the pairs they ended. */
+  const retired: number[] = [];
+  const retiredId: string[] = [];
+  let list: readonly PublishedPresence[] = [];
   let lastTick: number | null = null;
   const proximity = new Set<{
     radius: number;
     listener: (e: ProximityEvent) => void;
-    near: Map<string, [string, string]>;
+    near: Set<number>;
   }>();
+
+  const idOf = (slot: number) => slots[slot]?.id ?? (retiredId[slot] as string);
+  const pairIds = (a: number, b: number): [string, string] => {
+    const x = idOf(a);
+    const y = idOf(b);
+    return x < y ? [x, y] : [y, x];
+  };
 
   return {
     set(presence) {
-      figures.set(presence.id, {
-        ...presence,
-        velocity: figures.get(presence.id)?.velocity ?? [0, 0, 0],
-      });
+      const existing = figures.get(presence.id);
+      if (existing) {
+        const velocity = existing.velocity;
+        Object.assign(existing, presence);
+        existing.velocity = velocity;
+        return;
+      }
+      const entry: PublishedPresence = { ...presence, velocity: [0, 0, 0] };
+      figures.set(presence.id, entry);
+      const slot = freeSlots.pop() ?? slots.length;
+      slots[slot] = entry;
+      slotOf.set(presence.id, slot);
+      list = [...figures.values()];
     },
     remove(id) {
+      const slot = slotOf.get(id);
+      if (slot === undefined) return;
       figures.delete(id);
-      previous.delete(id);
+      slotOf.delete(id);
+      slots[slot] = undefined;
+      retired.push(slot);
+      retiredId[slot] = id;
+      list = [...figures.values()];
     },
     get: (id) => figures.get(id),
-    all: () => [...figures.values()],
+    all: () => list,
     tick(seconds) {
       const dt = lastTick === null ? 0 : seconds - lastTick;
-      for (const f of figures.values()) {
-        const before = previous.get(f.id);
-        f.velocity =
-          before && dt > 0
-            ? [
-                (f.position[0] - before[0]) / dt,
-                (f.position[1] - before[1]) / dt,
-                (f.position[2] - before[2]) / dt,
-              ]
-            : [0, 0, 0];
-        previous.set(f.id, [...f.position]);
-      }
       lastTick = seconds;
-      if (proximity.size === 0) return;
-      const list = [...figures.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
-      for (const sub of proximity) {
-        const now = new Map<string, number>();
-        for (let i = 0; i < list.length; i++)
-          for (let j = i + 1; j < list.length; j++) {
-            const a = list[i] as PublishedPresence;
-            const b = list[j] as PublishedPresence;
-            now.set(`${a.id}\u0000${b.id}`, groundDistance(a, b));
-          }
-        for (const [key, d] of now) {
-          const ids = key.split("\u0000") as [string, string];
-          if (!sub.near.has(key) && d <= sub.radius) {
-            sub.near.set(key, ids);
-            sub.listener({ type: "enter", ids, distance: d });
-          } else if (sub.near.has(key) && d > sub.radius * HYSTERESIS) {
-            sub.near.delete(key);
-            sub.listener({ type: "leave", ids, distance: d });
+      for (let s = 0; s < slots.length; s++) {
+        const f = slots[s];
+        if (!f) continue;
+        const prev = before[s];
+        if (prev && dt > 0) {
+          f.velocity[0] = (f.position[0] - prev[0]) / dt;
+          f.velocity[1] = (f.position[1] - prev[1]) / dt;
+          f.velocity[2] = (f.position[2] - prev[2]) / dt;
+        } else f.velocity.fill(0);
+        if (prev) {
+          prev[0] = f.position[0];
+          prev[1] = f.position[1];
+          prev[2] = f.position[2];
+        } else before[s] = [f.position[0], f.position[1], f.position[2]];
+      }
+      if (proximity.size > 0)
+        for (const sub of proximity) {
+          // A pair whose figure was removed has parted (before any newcomer pairs form).
+          if (retired.length > 0)
+            for (const key of sub.near) {
+              const low = Math.floor(key / SLOT_STRIDE);
+              const high = key % SLOT_STRIDE;
+              if (retired.includes(low) || retired.includes(high)) {
+                sub.near.delete(key);
+                sub.listener({
+                  type: "leave",
+                  ids: pairIds(low, high),
+                  distance: Number.POSITIVE_INFINITY,
+                });
+              }
+            }
+          for (let i = 0; i < slots.length; i++) {
+            const a = slots[i];
+            if (!a) continue;
+            for (let j = i + 1; j < slots.length; j++) {
+              const b = slots[j];
+              if (!b) continue;
+              const key = i * SLOT_STRIDE + j;
+              const d = groundDistance(a, b);
+              if (!sub.near.has(key) && d <= sub.radius) {
+                sub.near.add(key);
+                sub.listener({ type: "enter", ids: pairIds(i, j), distance: d });
+              } else if (sub.near.has(key) && d > sub.radius * HYSTERESIS) {
+                sub.near.delete(key);
+                sub.listener({ type: "leave", ids: pairIds(i, j), distance: d });
+              }
+            }
           }
         }
-        // A pair whose figure was removed has parted.
-        for (const [key, ids] of sub.near)
-          if (!now.has(key)) {
-            sub.near.delete(key);
-            sub.listener({ type: "leave", ids, distance: Number.POSITIVE_INFINITY });
-          }
+      // Retired slots are free again once every subscriber has heard of them.
+      for (const s of retired) {
+        before[s] = undefined;
+        retiredId[s] = "";
+        freeSlots.push(s);
       }
+      retired.length = 0;
     },
     onProximity(radius, listener) {
-      const sub = { radius, listener, near: new Map<string, [string, string]>() };
+      const sub = { radius, listener, near: new Set<number>() };
       proximity.add(sub);
       return () => proximity.delete(sub);
     },
@@ -173,35 +233,74 @@ export function presenceGroups(presences: readonly FigurePresence[], distance: n
   return [...groups.values()];
 }
 
-/** One contact shadow on the ground: a soft disc at (x, z). */
+/**
+ * One contact shadow on the ground: a soft disc at (x, z), cast by a figure
+ * standing at height `y`. Sampling pools contacts on one horizontal plane;
+ * `groundOcclusion`'s `floorY` keeps off-plane ones out.
+ */
 export interface ContactPoint {
   x: number;
+  y: number;
   z: number;
   radius: number;
   strength: number;
-}
-
-/**
- * Contact shadows for every figure's footprint. Sample them with
- * `sampleGroundOcclusion`, which pools them with `max`, so figures walking
- * together share one shadow that separates as they part, and overlap never
- * darkens twice.
- */
-export function groundOcclusion(
-  presences: readonly FigurePresence[],
-  options: { strength?: number; spread?: number } = {},
-): ContactPoint[] {
-  const strength = options.strength ?? 0.6;
-  const spread = options.spread ?? 2.5;
-  return presences.flatMap((p) =>
-    p.footprint.points.map(([x, z]) => ({ x, z, radius: p.footprint.radius * spread, strength })),
-  );
 }
 
 const smoothstep = (lo: number, hi: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
   return t * t * (3 - 2 * t);
 };
+
+/** A figure this close to the floor plane counts as standing on it, metres. */
+const FLOOR_TOLERANCE = 0.02;
+
+/**
+ * Contact shadows for every figure's footprint. Sample them with
+ * `sampleGroundOcclusion`, which pools them with `max`, so figures walking
+ * together share one shadow that separates as they part, and overlap never
+ * darkens twice.
+ *
+ * `floorY` is the height of the floor the shadows fall on. A figure standing
+ * on it casts at full strength; one raised above (or sunk below) it by more
+ * than 2 cm casts less, fading to nothing `reach` metres (default 0.3) off the
+ * floor, so a figure on a platform does not shadow the ground below it.
+ * Without `floorY` every figure casts.
+ *
+ * Pass the array a previous call returned as `into` to reuse its contacts:
+ * nothing is allocated once it has grown to fit.
+ */
+export function groundOcclusion(
+  presences: readonly FigurePresence[],
+  options: { strength?: number; spread?: number; floorY?: number; reach?: number } = {},
+  into: ContactPoint[] = [],
+): ContactPoint[] {
+  const strength = options.strength ?? 0.6;
+  const spread = options.spread ?? 2.5;
+  const reach = options.reach ?? 0.3;
+  let n = 0;
+  for (let i = 0; i < presences.length; i++) {
+    const p = presences[i] as FigurePresence;
+    const off = options.floorY === undefined ? 0 : Math.abs(p.position[1] - options.floorY);
+    const k = off <= FLOOR_TOLERANCE ? 1 : 1 - smoothstep(FLOOR_TOLERANCE, reach, off);
+    if (k <= 0) continue;
+    for (let f = 0; f < p.footprint.points.length; f++) {
+      const point = p.footprint.points[f] as [number, number];
+      let c = into[n];
+      if (!c) {
+        c = { x: 0, y: 0, z: 0, radius: 0, strength: 0 };
+        into[n] = c;
+      }
+      c.x = point[0];
+      c.y = p.position[1];
+      c.z = point[1];
+      c.radius = p.footprint.radius * spread;
+      c.strength = strength * k;
+      n++;
+    }
+  }
+  into.length = n;
+  return into;
+}
 
 /** Ground occlusion (0 open … 1 fully shadowed) at (x, z): the strongest contact point there. */
 export function sampleGroundOcclusion(

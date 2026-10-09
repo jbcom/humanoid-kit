@@ -42,7 +42,8 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
   the client keeps only the latest request, so dragging a slider never builds a
   backlog.
 - **React Three Fiber bindings.** `humanoid-kit/react` provides
-  `HumanoidProvider`, `Humanoid`, `useHumanoidClient` and `useHumanoidReady`.
+  `HumanoidProvider`, `Humanoid`, `useHumanoidClient` and `useHumanoidReady`,
+  and the presence bindings (`PresenceProvider`, `usePresence`, `useProximity`).
 - **Skeleton and facial pose data ship, ready for later work.** The packs carry
   the 163-bone default skeleton, skin weights and 60 facial pose units. Skin
   weights are interpolated onto the render surface. Posing, rigging and
@@ -184,7 +185,7 @@ const assets = await loadHumanoidAssets({ body: bodyPack, adultAnatomy: adultAna
 | Entry point | Contents | Needs React |
 | --- | --- | --- |
 | `humanoid-kit` | Asset loading and parsing, recipes, the age policy, macro and region model, `HumanoidModel`, subdivision, the surface builder and `HumanoidWorkerClient` | no |
-| `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady` | yes |
+| `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady`, `PresenceProvider`, `usePresence`, `usePresenceRegistry`, `useProximity` | yes |
 | `humanoid-kit/worker` | The worker module that `HumanoidWorkerClient` starts by default | no |
 
 See the [API reference](https://jbcom.github.io/humanoid-kit/API/) and the
