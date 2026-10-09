@@ -126,6 +126,12 @@ export interface HairFieldsInput {
    */
   fins?: boolean;
   /**
+   * The vertices the hair grows from, when the author knows them (a rope's first ring). Absent, the
+   * roots are the vertices within `ROOT_NEAR` of the scalp, which for hair that lies on the scalp
+   * throughout (bantu knots) is every vertex, and growth then says nothing of strand direction.
+   */
+  roots?: readonly number[];
+  /**
    * The cards' texture cut-out: where it is clear there is no hair, so no scalp
    * tint (a card's mesh extends past the hair painted on it, and the skin beyond the
    * visible hairline must stay bare). `faceUvs` (four per quad) index `uvs`; `alpha`
@@ -389,7 +395,8 @@ export function hairFields(input: HairFieldsInput): HairFields {
   // Growth: from the vertices at the scalp; a card (connected piece) that touches none
   // grows from its highest vertex (a free-hanging lock grows from where it hangs).
   const roots = new Set<number>();
-  for (let v = 0; v < n; v++) if ((nearBody[v] as number) < ROOT_NEAR) roots.add(v);
+  if (input.roots) for (const v of input.roots) roots.add(v);
+  else for (let v = 0; v < n; v++) if ((nearBody[v] as number) < ROOT_NEAR) roots.add(v);
   let reach = distanceAlong(adjacency, roots);
   for (let v = 0; v < n; v++) {
     if (Number.isFinite(reach[v] as number)) continue;

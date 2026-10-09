@@ -329,11 +329,14 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
     let source: string | undefined;
     // What the provenance names as a generated texture's source (a scratch file is no source).
     let sourceLabel: string | undefined;
+    let roots: number[] | undefined;
     if (authored) {
+      const cards = authored.build({ head, body: surface });
+      roots = cards.roots;
       compiled = compileAuthored(
         spec.id,
         spec.label,
-        authored.build({ head, body: surface }),
+        cards,
         rest,
         `${spec.id}.webp`,
         authored.provenance,
@@ -439,6 +442,7 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
         ? model.bakeHairFields(boundFrom(compiled), {
             ...(spec.feather !== undefined && { feather: spec.feather }),
             ...("fins" in spec && { fins: spec.fins }),
+            ...(roots && { roots }),
             cutout: await cutoutOf(path.join(outDir, textureFile)),
           })
         : {};
