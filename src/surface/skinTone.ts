@@ -106,6 +106,18 @@ export function skinAlbedo(tone: SkinTone): Rgb {
 /** Relative luminance of a linear-RGB colour. */
 export const luminance = ([r, g, b]: Rgb) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
+/** Skin's surface reflectance at normal incidence (ior 1.4), removed from the anchors. */
+export const SKIN_F0 = 0.028;
+
+/**
+ * The skin's CIELAB lightness as a spectrophotometer reports it (specular
+ * included, d/8°, as in ISSA): the diffuse albedo plus the surface reflection.
+ * Models fitted against measured skin lightness take this, not the albedo's.
+ */
+export function measuredSkinLightness(tone: SkinTone): number {
+  return labFromLinear(skinAlbedo(tone).map((c) => c + SKIN_F0) as Rgb)[0];
+}
+
 const scale = (rgb: Rgb, k: Rgb): Rgb => [rgb[0] * k[0], rgb[1] * k[1], rgb[2] * k[2]];
 
 /**
@@ -116,21 +128,23 @@ const scale = (rgb: Rgb, k: Rgb): Rgb => [rgb[0] * k[0], rgb[1] * k[1], rgb[2] *
  * Natural skin follows measured lip colour (Vergnaud 2024, Charton 2026: lips
  * of 514 women by cross-polarised hyperspectral imaging) paired with the same
  * populations' facial skin in ISSA, fitted in CIELAB: lips are well below the
- * skin's lightness on fair skin and reach it on the deepest, and lose chroma
- * and turn slightly yellower as they darken (docs/research/SKIN-RENDERING.md
- * §5.6). A non-natural colour has no human data, so its lips are the override
- * darkened and reddened by fixed factors.
+ * skin's measured lightness on fair skin and reach it on the deepest, and lose
+ * chroma and turn slightly yellower as they darken
+ * (docs/research/SKIN-RENDERING.md §5.6). The fit's input is the skin as ISSA
+ * measured it (specular included); its output is diffuse, as the lips were
+ * measured, so it is an albedo directly. A non-natural colour has no human
+ * data, so its lips are the override darkened and reddened by fixed factors.
  */
 export function lipAlbedo(tone: SkinTone, depth: number): Rgb {
   const d = clamp(depth, 0, 1);
-  const skin = skinAlbedo(tone);
-  if (tone.override) return scale(skin, [0.74 - 0.2 * d, 0.42 - 0.12 * d, 0.44 - 0.1 * d]);
-  const skinL = labFromLinear(skin)[0];
+  if (tone.override)
+    return scale(skinAlbedo(tone), [0.74 - 0.2 * d, 0.42 - 0.12 * d, 0.44 - 0.1 * d]);
+  const skinL = measuredSkinLightness(tone);
   const meanL = skinL - Math.max(0, (skinL - 30) / 2);
   const L = meanL - (d - 0.5) * 8;
   const C = Math.max(0, 0.81 * meanL - 10.8 + (d - 0.5) * 8);
   const h = 31.9 - 0.375 * (meanL - 46);
-  return linearFromLab(labFromLch(Math.min(L, skinL), C, h)).map((c) => clamp(c, 0, 1)) as Rgb;
+  return linearFromLab(labFromLch(L, C, h)).map((c) => clamp(c, 0, 1)) as Rgb;
 }
 
 /**

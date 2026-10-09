@@ -270,6 +270,14 @@ compute what the renderer will do.
   Archive, ITA 62° to −75°), then shifts hue for `haemoglobin` and `undertone`
   at constant luminance; `override` returns that colour as given. Also
   `DEFAULT_SKIN_TONE`, `luminance`, `srgbToLinear` and `linearToSrgb`.
+- `measuredSkinLightness(tone)`: the skin's CIELAB L\* as a spectrophotometer
+  reports it (albedo plus `SKIN_F0`, the surface reflection), the scale
+  measured skin data uses.
+- `lipAlbedo(tone, depth)` and `areolaAlbedo(tone, depth)`: lip colour from
+  measured lips paired with measured skin, and areola colour along the melanin
+  axis (research/SKIN-RENDERING.md §5.6). `depth` 0..1 is the recipe's slider.
+- CIELAB conversions: `labFromLinear`, `linearFromLab`, `lchFromLab`,
+  `labFromLch` (D65).
 - The scatter model `SkinMaterial` renders (its constants and table come from
   these, and the browser tests hold the shader to them): `scatterDistance(albedo, mfp?, slope?, pigmentDepth?,
   substrate?)` gives each channel's scatter width in metres, and
@@ -283,6 +291,25 @@ compute what the renderer will do.
 - `bakeOcclusion(occluders, targets, options?)`: per-vertex ambient occlusion
   by cosine-weighted ray casts (`hemisphereDirections(n)`), as used for
   attachments.
+
+### Presence
+
+What each figure tells the scene around it (PRESENCE.md). Framework-free.
+
+- `createPresenceRegistry()`: `set(presence)`, `remove(id)`, `get(id)`,
+  `all()`, `tick(seconds)` (call it from the render loop; it measures each
+  figure's `velocity` and raises proximity events) and
+  `onProximity(radius, listener)`, which reports `{ type: "enter" | "leave",
+  ids, distance }` for each pair (entering at `radius`, leaving beyond 1.1 ×
+  `radius`) and returns its unsubscribe function.
+- `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
+  chest, hands, feet), `footprint`, `appearance` (measured albedo, luminance,
+  specular), `faceRadius`, `adult`.
+- `presenceGroups(presences, distance)`: ids of the figures standing together.
+- `groundOcclusion(presences, { strength?, spread? })` and
+  `sampleGroundOcclusion(points, x, z)`: contact shadows pooled with `max`.
+- `faceMetering(presences, { position })`: each face's region, reflectance and
+  `skinZoneEV`, heaviest first, and the `deepest` face's id.
 
 ### Worker client
 

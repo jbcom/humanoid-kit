@@ -6,6 +6,7 @@ import {
   areolaAlbedo,
   lipAlbedo,
   luminance,
+  measuredSkinLightness,
   type Rgb,
   skinAlbedo,
 } from "../src/surface/skinTone.ts";
@@ -52,13 +53,16 @@ describe("skinAlbedo", () => {
   });
 });
 
-/** The natural tone whose skin has CIELAB lightness `L` (melanin found by bisection). */
+/**
+ * The natural tone whose skin measures CIELAB lightness `L` the way ISSA
+ * measured it, specular included (melanin found by bisection).
+ */
 const toneAtLightness = (L: number) => {
   let lo = 0;
   let hi = 1;
   for (let i = 0; i < 40; i++) {
     const m = (lo + hi) / 2;
-    if (labFromLinear(skinAlbedo(tone(m)))[0] > L) lo = m;
+    if (measuredSkinLightness(tone(m)) > L) lo = m;
     else hi = m;
   }
   return tone((lo + hi) / 2);
@@ -82,23 +86,29 @@ describe("lipAlbedo", () => {
     }
   });
 
-  it("is never lighter than the skin, and reaches its lightness at the deep end", () => {
+  it("is darker than the skin as measured, and reaches its lightness at the deep end", () => {
     for (let m = 0; m <= 1.0001; m += 0.05) {
-      const skin = labFromLinear(skinAlbedo(tone(m)))[0];
+      const skin = measuredSkinLightness(tone(m));
       const lip = labFromLinear(lipAlbedo(tone(m), 0.5))[0];
       // (within the CIELAB round trip's rounding)
       expect(lip).toBeLessThanOrEqual(skin + 0.01);
-      // The old fixed multipliers put the deepest lip 9-13 L* below its skin.
-      if (skin <= 31) expect(skin - lip).toBeLessThan(1);
     }
+    // The deepest skin measures L* 30 and its lip sits among the darkest measured
+    // lips (cluster L* 28.5, African group 33.1 ± 5.0), not 7-16 L* below them.
+    const deepest = labFromLinear(lipAlbedo(tone(1), 0.5))[0];
+    expect(measuredSkinLightness(tone(1))).toBeCloseTo(30, 0);
+    expect(deepest).toBeGreaterThanOrEqual(28.5);
+    expect(deepest - measuredSkinLightness(tone(1))).toBeLessThan(0.5);
   });
 
-  it("moves within the measured spread as the slider moves, darker and more saturated as it rises", () => {
-    const t = toneAtLightness(55);
-    const [L0, C0] = lch(lipAlbedo(t, 0));
-    const [L1, C1] = lch(lipAlbedo(t, 1));
-    expect(L0 - L1).toBeCloseTo(8, 0);
-    expect(C1 - C0).toBeCloseTo(8, 0);
+  it("moves within the measured spread as the slider moves, at every depth", () => {
+    for (const skinL of [55, 30]) {
+      const t = toneAtLightness(skinL);
+      const [L0, C0] = lch(lipAlbedo(t, 0));
+      const [L1, C1] = lch(lipAlbedo(t, 1));
+      expect(L0 - L1, `L* span at skin ${skinL}`).toBeCloseTo(8, 0);
+      expect(C1 - C0, `C* span at skin ${skinL}`).toBeCloseTo(8, 0);
+    }
   });
 
   it("darkens and reddens a non-natural colour by fixed factors (no human data applies)", () => {
