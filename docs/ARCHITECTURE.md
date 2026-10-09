@@ -1962,6 +1962,107 @@ colour term, SKIN-STATES.md A2); crease depth varying with age or body fat
 (the recipe's tone parameters reach the paint, but not age or weight); creases
 at the neck, knuckles and torso (no flexion signal exists for them).
 
+### Feet (2026-10-09)
+
+The feet's own skin is one area's layers (`src/surface/regions/feet.ts`), with
+the rest layers before the state layers, so a state acts on them. Sources and
+choices: `docs/research/SKIN-STATES.md` C6.
+
+**Use cases.** A barefoot figure seen from above (toenails, the toes' joints),
+kneeling or seated with the sole turned to the camera, and in a close-up of a
+heel, at every tone and age, a child's to an old person's. The sole is a
+fairness item as the palm is: its colour must not be the back of the foot's
+darkened or lightened by a rule. Shoes hide all of it, so none of it may cost
+anything when shoes are worn beyond the fields every figure shares.
+
+**Decisions.**
+
+- *A frame per foot, from the base mesh.* As for the hands, nothing is added to
+  the frozen mesh. Each foot's frame is its extent (the rearmost point is the
+  heel) and the second toe's tip: `along` runs 0 to 1 from heel to tip, `across`
+  is metres from the axis, positive outward, so the two feet agree. The heel
+  pad, the five metatarsal heads and the big toe's pad are landmarks in it,
+  placed from the skeleton's toe joints. The sole is `skinZones(...).sole`, the
+  foot skin that faces down.
+- *Callus is a layer over the pressure sites, scaled by age.* Gaussian sites
+  weighted as the pressure maps say, a mix toward the sole's colour made paler
+  and yellower in CIELAB (`callusAlbedo`; the sole's colour is the hands'
+  `palmAlbedo`, one owner) and a matte surface layer on the sole only (`callusAmount(age)`; a small child's
+  sole is soft and the forefoot hardens with age). The age reaches the layer
+  through `SkinPaintInput.age`, which `<Humanoid>` sets from the recipe. The
+  tint and the age curve are choices and say so in C6: no callus colorimetry
+  was found.
+- *A digit frame, shared.* Which toe a vertex lies on, how far along it (from
+  its base joint) and across come from the skeleton's joints alone
+  (`digitFrame`, `src/surface/regions/digitFrame.ts`): the nearest segment of
+  each toe's polyline, with the projections either side of a joint blended so
+  the coordinate runs on smoothly round a bend. It is the computation the
+  hands' frame does for fingers; the toes' frame (`toeFrame`) feeds it the
+  foot's far end as each toe's reference point and the sole as its facing.
+- *Toe joint creases are bands across the toes.* A band of 3 to 7 mm half-width
+  (0.4 of the shorter bone) centred on each joint that is not a tip, on its own
+  side of the toe: fine wrinkles on the top (`TOE_WRINKLE_LAYER`, three to a
+  band, 0.12 mm deep as the hands' knuckle wrinkles, fainter in a child and
+  deepening with age, `wrinkleAmount`) and one fold under each joint
+  (`TOE_CREASE_LAYER`, 0.3 mm as the palm's creases, from birth). The coordinate
+  runs 0 to 1 across the band, so a fold starts and ends flat, and the bands
+  stay a bone's fraction apart so the nearest joint never flips inside one.
+  Depths and counts are choices (C6): no measurement of crease depth was found.
+- *Friction ridges are a function, not a field.* The ridges are 0.4 to 0.6 mm
+  apart on a mesh whose faces are 5 mm, and a field atlas texel is far coarser
+  than a ridge, so no mask, coordinate or phase can carry them: a phase stored
+  at texel resolution would stair-step by whole ridges. The shader evaluates
+  them per pixel instead (`hkRidges`, the mirror of `ridgeHeight` in
+  `src/surface/ridges.ts`), as sparse Gabor noise (Lagae et al. 2009): in each
+  cell of a jittered grid a couple of kernels, each a plane wave across the
+  ridges under an envelope elongated along them with a random phase. The sum is
+  stripes of the given spacing and orientation that run for a few millimetres
+  and then end, split and join where kernels overlap, which is what a
+  fingerprint's minutiae are. No global phase is needed, so no seam in the UV
+  layout can break it. The atlas carries only the orientation, which turns
+  slowly, as the layer's coordinate: its angle (modulo a half turn) over 0 to 1,
+  starting at a seam (`RIDGE_ORIENTATION_SEAM`, 15°). Bilinear filtering between
+  two angles either side of a seam passes through every angle between them the
+  long way round, so the seam is where the sole has the fewest vertices (the UV
+  layout is frozen: the ridge directions in UV lie near 90°), and a test holds
+  the share of neighbouring vertices straddling it under 3%. (Two coordinates of
+  the doubled angle, cos 2θ and sin 2θ, need no seam but need a second layer, and
+  the second layer was a ninth page of the atlas: 4 MB of GPU memory for a
+  pattern that shows only close up.)
+  The orientation is measured in the UV plane (the relief is drawn at p = uv ×
+  metres per UV): per face, each corner's 3D wave direction is taken into the
+  face's plane and through its UV map, and a vertex averages those by area. The
+  wave runs along the foot, bowed by the offset from the foot's axis, and
+  over a toe's pad bowed more so its ridges arch as a fingertip's do. Spacing
+  and relief follow age (a child's finer; relief halves between 40 and 85 as
+  the skin thins). They fade out where finer than a pixel, as every relief
+  does, so they show only close up. Tested: the function's statistics and
+  orientation in node, and in a browser the shader against it (the shading
+  follows the reference's slope at correlation below −0.9).
+- *The feet cost one page of the atlas (nine in all).* Seven layers (callus and
+  its matte, the toe wrinkles and creases, the toenails and their gloss, the
+  ridges) overlap one another on the foot, so each needs a channel group of its
+  own, and the only partners they can share one with are the face's (the hands'
+  features lie too close to the foot's in the UV layout: the planner works in
+  cells of a 64 × 64 grid with a margin of one). That is 29 channels of the
+  body's layers where the hands left 26, and no ordering of the layers does
+  better than 28 (a search of twenty thousand random orders; the first-fit in
+  stack order finds 29). The ridges cost two channels as one layer: with the
+  orientation in the coordinate, not a second layer.
+- *Toenails are layers on the top of each toe's end, on the hands' scheme.* The
+  base mesh sculpts a faint plate on the big toe and none on the others, so, as
+  with the fingernails, there is no nail geometry: a coordinate along the nail
+  carries the proximal fold, lunula, bed and free edge as colour stops (the
+  hands' `nailStops` and `nailCoordinate`, so the nail model has one owner), and
+  a surface layer the plate's gloss, duller than a fingernail's. Each toe's nail
+  region is a fraction of its distal flesh, from its last joint to the tip
+  (`TOENAIL_REGION`: 0.82 on the big toe, about two thirds to three quarters on the lesser
+  toes, where the nail is most of the distal phalanx), its half-width a fraction
+  of the toe's own radius, and it faces up and curls over at the tip. The bed
+  and free edge yellow with age (`toenailAging`: toenails thicken and slow with
+  age, and the colour is a choice). A lesser toe's nail has only a vertex or
+  two inside it on a 5 mm mesh, so its edge is as coarse as the hands' is.
+
 ## Parallel work: the base contract
 
 Decision (2026-10-09, with the owner): the milestones are an order of
