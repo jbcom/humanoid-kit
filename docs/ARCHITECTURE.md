@@ -670,6 +670,22 @@ mean what they meant there; everything must be testable in Node.
 - *Expressions blend face units in log space*: each unit's per-bone rotation
   is a rotation vector, an expression is the weighted sum per bone, and the sum
   is exponentiated. Blending is order-independent and exact for one unit.
+- *The face units are packed mirror-symmetric* (2026-10-09, an audit of every
+  unit's skin displacement against its partner's, reflected). MakeHuman authored
+  them by hand and a few are uneven: `NasolabialDeepener` turns one nose-wing
+  bone 7.8° about an axis its other side leaves alone (2.7 mm of 5.6 mm at age
+  45, so a figure's right fold deepened half as much again as its left), and
+  `MouthLeftPullUp` and `MouthRightPullUp` differ in a lip-corner bone and in a
+  sideways turn of the midline lip bone, so a smile pulled 0.45 mm to one side.
+  The packer makes each unit the mean of its authored frame and the reflection of
+  its partner's (`scripts/lib/faceUnits.ts`: `Left` and `Right` swapped in the
+  unit's name, `.L` and `.R` in the joint's, an X rotation kept and a Y or Z
+  rotation and X position negated), which favours neither side and leaves a
+  symmetric unit exactly as it was; a central unit's sideways turns go. A test
+  holds every shipped unit to the mirror of its partner. Decision: the
+  correction is the packer's, since the data is MakeHuman's and the asymmetry is
+  in it, over a runtime fix that every consumer would have to repeat. Averaging
+  over choosing a side, because nothing says which side was the intended one.
 - *A CPU reference* (`skinPositions`) poses control vertices exactly as the
   shader does, for tests, presence anchors, grounding and pose-keyed occlusion
   bakes. The browser project holds the shader to it.
