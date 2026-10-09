@@ -47,6 +47,23 @@ is slight: the front of the hip is a little fuller in the short full woman
 least in the pictures, as in the numbers. The dark streaks on the belly in both
 rows are the fingers' shadows.
 
+## Hip tucked
+
+![The tucked pose before the thigh's share falls as it swings](./skinning-hip-tucked-before.webp)
+
+Before: the `tucked` pose (each hip flexed 120°, the knees drawn up) on the
+average adult, a muscular man, a short full woman and a ten-year-old. The thigh's
+dual quaternion share is 1 at every flexion, and the front of the hip, where
+the thigh meets the trunk, stands out in a rounded lump.
+
+![The tucked pose after](./skinning-hip-tucked-after.webp)
+
+After: the share falls to a quarter by 120° of swing. The lump at the top of the
+thigh is flatter and the thigh runs into the trunk (girth 95th percentile 1.35
+to 1.12 at 120° in the bench, against linear skinning's 1.05). At the 90° of
+the `seated` pose the two were nearly identical, as the numbers predict (1.30 to
+1.20).
+
 ## Hip abducted
 
 ![The legs opened 40 degrees in the abducted pose, shipped skinning](./skinning-hip-abducted.webp)
