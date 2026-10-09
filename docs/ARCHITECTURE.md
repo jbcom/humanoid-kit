@@ -1019,7 +1019,117 @@ percentile 1.35 at 120°, against linear skinning's 1.05) for the 15‰ of volum
 it keeps; the thigh's share falling as it swings (above, "The flexed hip,
 corrected") brings that to 1.12, and a bent knee's no longer bulges past
 linear skinning's. The crease detail layers (`flex.*` signals) paint the fold's
-skin on top of it.
+skin on top of it. The groin's loss was not what it seemed: see "The hip fold".
+
+### The hip fold (2026-10-09)
+
+**The fault.** A thigh flexed past a right angle swings the skin at the front of
+the hip into the belly and through it, and the groin collapses into a slit. It
+is not skinning's blend: linear, dual quaternion and the shipped mix put every
+vertex in the same place to within a few millimetres, because it is where the
+weights and the pose put the thigh's front skin. Measured as skin through skin
+(`scripts/lib/hipContact.ts`): an edge of the mesh whose end the thigh holds
+most of (a vertex over half on `upperleg01`/`upperleg02`, no more than 3 cm
+behind the hip joint and within 0.7 of a thigh of it) that crosses a triangle whose corners the
+trunk holds as much of as the thigh and some of (`root`, `spine`, `pelvis`),
+with the depth the thigh's end lies behind the crossed triangle's plane. At rest
+none cross, in any of the five bodies of the bench. Both hips flexed, no fold,
+the average figure: 60° 28 edges, 5 mm deep; 80° 50, 12 mm; 100° 68, 23 mm; 120°
+94, 30 mm; and by the vertex's distance to the trunk's skin 17 mm behind it at
+80°, 42 mm at 100°, 65 mm at 120°. The skin concerned is the groin front and the
+inner thigh from the inguinal line down a hand's breadth (rest y −2 to −16 cm, z
+−1 to +12 cm in the average figure), which swings up into the lower belly and,
+as the knees draw up, the thigh's front against it. (The first reach, half a
+thigh in front of the joint, caught the groin alone: in a tuck the thigh passed
+through the belly 20 cm below the hip, and the picture kept its jagged slots.) The `seated` pose (90°) is already 26 mm into it. Real flesh gives: the
+belly and the thigh press flat against each other and the fold between them is
+deep and smooth.
+
+**Why a contact solve, per figure.** The depth depends on the body (its belly,
+its thigh, its weight macro), so a fixed shape cannot clear it in all of them and
+leave the thin ones alone. Options, by total fit:
+
+1. *A fixed corrective shape* keyed on flexion: one set of displacements for the
+   default figure. Wrong for every other body, by as much as the fault.
+2. *A contact-aware push-out in the skin* (nearest-triangle tests on the GPU):
+   not possible in a vertex shader, and the CPU reference could not be its twin.
+3. *A displacement solved once per figure by contact, played back by flexion*
+   (shipped): the contact is solved where it can be, in the worker, for the
+   figure that is drawn, and what the shader and the CPU reference do is read a
+   table. Both do exactly the same thing, so tests hold them together.
+
+**How it is solved** (`src/rig/hipFoldSolve.ts`, `src/rig/contact.ts`). The hips
+are flexed together from `HIP_FOLD.from` (30°) in steps of `HIP_FOLD.step`
+(2.5°) to `HIP_FOLD.to` (140°, a margin past the 135° a hip reaches; past it a
+heavy body's thigh is wedged against a belly with nowhere to go and the solve
+does not settle, so the last key holds). At each
+step the thigh's skin is pushed out of the trunk's: a vertex behind the trunk's
+nearest skin (`PosedSkin.signed`: the sign from the face normal, or the
+pseudo-normal at an edge or a corner) or whose edges cross a trunk triangle
+(`TriangleCrossings`) is moved along that triangle's outward normal to 5 mm off
+it, each push is spread over the neighbouring skin for a few passes (which is
+what makes it a smooth fold and not a crease cut by the trunk's edge), and the
+pass is repeated until no push is needed. The step is small enough that the push
+is always from the nearest skin and never from the far side of the belly, and the
+displacement a step ends with carries on to the next. Each step also looks at the
+pose halfway back to the last one, with the mean of the two folds, so that what
+is played back between two flexions is as clear as they are. The result per
+figure: per moved vertex, 44 displacements (a flexion each, in the figure's axes);
+about 230 control vertices move in the average figure, by up to 8 cm at 120° (12
+at the furthest flexion; the deepest are the inner thigh at the groin and the
+thigh's front, which the fold pastes against the belly). Passes after the 30th
+make half the push they find: a vertex in a concave corner, pushed out of one
+triangle into the next and back, settles.
+
+**How it plays.** `hipPose` reads each hip's flexion from the bone's rotation as
+the poses' channels build it (abduction, then flexion, then twist, so a twisted
+or opened thigh is not flexed, and a hip flexed past 90° still is); a vertex's
+flexion is the mean of those of the thigh bones it holds. `addFold` reads its
+displacement at that flexion, nothing up to `HIP_FOLD.from`, the straight line
+between the two solved flexions it lies between, and the last past `HIP_FOLD.to`,
+and the skin adds it *after* skinning, turned with the root (the fold is made in
+the figure's own axes). Applied after skinning, not to the rest figure, because
+the push is a way out of the belly, which is the same way whichever way the thigh
+is turned. `skinPositions(…, fold)` is the CPU reference; `DualBones` carries
+each bone's flexion and the root's rotation in the bone texture, the fold is a
+texture of 44 texels by one row per vertex of the surface it moves
+(`surfaceFold`: the control vertices' displacements mixed by the subdivision's
+stencil, so a rendered vertex is displaced as the surface it lies on is), and the
+patched `skinning_vertex` chunk adds `hkFoldDisplacement` of its row
+(`FOLD_SLOT_ATTRIBUTE`) at its flexion. The browser project holds the shader's
+read to the CPU's to 2·10⁻⁶.
+
+**Where it runs.** Solving takes one to three seconds of one core for a figure,
+so it is not part of `evaluate`: `HumanoidWorkerClient.hipFold(recipe)` asks the
+worker, which solves a flexion at a time with a macrotask between (an evaluation
+is never held up behind it) and answers a newer request by stopping the older
+(`AbortError`). `<Humanoid>` asks once a hip in the pose is flexed past the
+fold's start, whenever the figure's shape changes, and holds its settle open
+until the fold is drawn; until it arrives the figure draws without it, and a
+figure that changes shape draws with the last. The fold is for the surface the
+evaluation draws (the base body, or an adult's refined surface), the other's
+slots set to none.
+
+**Gates** (`tests/hipFold.test.ts`, five bodies): the thigh stays under 2 mm
+behind the belly's skin at every flexion solved and halfway between (32.5° to
+140°), under 8 mm at arbitrary flexions in between (the line from one fold to
+the next leaves a millimetre or two on a few vertices; the worst is 6 mm), is
+unchanged at rest and below the fold's start, folds one hip alone, and turns with
+the root.
+
+**Limits, stated.** The fold is solved with both hips flexed alike and read by
+each hip's own flexion, so a vertex between the legs (held by both thighs) reads
+the mean; it is exact for a symmetric tuck and sound for one hip alone (tested),
+approximate for a deep flexion of one hip with the other's thigh across it. About
+a dozen edges still cross at 120° in the average figure (down from 94), none with
+the thigh's end behind the belly: a seam vertex, held mostly by the trunk, lies
+5 to 14 mm behind its neighbour's triangle, which reads as the crease of the fold,
+and is not pushed. It is
+the groin's: the lateral and rear hip (behind the joint) are not folded, where the
+thigh meets the flank and the buttock rather than the belly. A trunk bent forward
+(`bowed`) presses the belly toward the thighs without flexing a hip, and is not
+read. Garments follow the body's skinning but not the fold. Normals are not
+recomputed for the displaced skin.
 
 ## Scalp hair (milestone 4)
 

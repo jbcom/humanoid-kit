@@ -39,6 +39,8 @@ import {
 } from "../morph/evaluate.ts";
 import { AgePolicyError, assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
+import { type SurfaceFold, surfaceFold } from "../rig/hipFold.ts";
+import { solveHipFoldSteps } from "../rig/hipFoldSolve.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
@@ -1410,6 +1412,34 @@ export class HumanoidModel {
    */
   adultSurface(): AdultSurfaceTopology | null {
     return this.adultBodySurface()?.topology ?? null;
+  }
+
+  /**
+   * The hip fold of the figure a recipe makes in a skin state (docs/ARCHITECTURE.md,
+   * "The hip fold"), on the body surface its evaluation is for
+   * (`Evaluation.surface`): for the renderer, `DualBones.setFold` and the
+   * geometry's `FOLD_SLOT_ATTRIBUTE`. Solved a flexion at a time, which takes
+   * a moment, so it yields after each: a worker lets its other requests in
+   * between. The recipe's target files must have loaded.
+   */
+  *hipFold(
+    recipe: Recipe,
+    signals: Readonly<Record<string, number>> = {},
+  ): Generator<void, { surface: "base" | "adult"; fold: SurfaceFold }> {
+    const control = this.evaluateControl(recipe, signals);
+    const fold = yield* solveHipFoldSteps(
+      restBones(this.assets, control),
+      control,
+      this.assets.skinIndex,
+      this.assets.skinWeight,
+      this.bodyControlTriangles,
+    );
+    const adult = isAdult(recipe) ? this.adultBodySurface() : null;
+    const mesh = adult ? adult.part.mesh : this.body.mesh;
+    return {
+      surface: adult ? "adult" : "base",
+      fold: surfaceFold(fold, mesh.stencil, mesh.renderToSurface),
+    };
   }
 
   private adultBodySurface() {

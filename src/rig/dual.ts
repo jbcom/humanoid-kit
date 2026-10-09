@@ -16,6 +16,7 @@
  * by the mean of its bones' shares.
  */
 import { type BoneRotations, posedBones, type RestBones } from "./bones.ts";
+import { addFold, folds, type HipFold, type HipPose, hipPose } from "./hipFold.ts";
 import { mul, type Quat, rotate } from "./quat.ts";
 
 /** Floats per bone in `dualBones`: the rotation (x, y, z, w), then the dual part (x, y, z, w). */
@@ -69,20 +70,23 @@ export const DUAL_TEXELS = 3;
 
 /**
  * The renderer's bone texture, `bones * DUAL_TEXELS` RGBA texels: each bone's
- * dual quaternion (`dualBones`) and its share of dual quaternion skinning.
+ * dual quaternion (`dualBones`), its share of dual quaternion skinning, and,
+ * when `hips` is given, the hip fold's terms (`hipPose`): the bone's flexion
+ * in degrees, and 1 for a bone of the thigh.
  */
 export function dualBoneTexels(
   rest: RestBones,
   rotations: BoneRotations,
   share: DualShare,
   out: Float32Array = new Float32Array(rest.names.length * DUAL_TEXELS * 4),
+  hips?: HipPose,
 ): Float32Array {
   const dual = dualBones(rest, rotations);
   for (let b = 0; b < rest.names.length; b++) {
     out.set(dual.subarray(b * DUAL_STRIDE, (b + 1) * DUAL_STRIDE), b * DUAL_TEXELS * 4);
     out[b * DUAL_TEXELS * 4 + 8] = typeof share === "number" ? share : (share[b] as number);
-    out[b * DUAL_TEXELS * 4 + 9] = 0;
-    out[b * DUAL_TEXELS * 4 + 10] = 0;
+    out[b * DUAL_TEXELS * 4 + 9] = hips ? (hips.flexion[b] as number) : 0;
+    out[b * DUAL_TEXELS * 4 + 10] = hips ? (hips.thigh[b] as number) : 0;
     out[b * DUAL_TEXELS * 4 + 11] = 0;
   }
   return out;
@@ -287,10 +291,22 @@ export function skinPositionsBlended(
   skinWeight: Float32Array,
   out: Float32Array,
   share: DualShare,
+  fold?: HipFold,
 ): Float32Array {
   const pose = skinPose(rest, rotations, share);
   const count = positions.length / 3;
-  for (let v = 0; v < count; v++)
+  // The hip fold's displacement is read at the flexion the vertex's thigh bones have, and turns with the figure's root.
+  const hips = fold ? hipPose(rest, rotations) : null;
+  const folding = fold !== undefined && hips !== null && folds(hips);
+  const root = rest.parents.indexOf(-1);
+  const turn: Quat = [
+    rotations[root * 4] as number,
+    rotations[root * 4 + 1] as number,
+    rotations[root * 4 + 2] as number,
+    rotations[root * 4 + 3] as number,
+  ];
+  const shown = new Float32Array(3);
+  for (let v = 0; v < count; v++) {
     skinVertex(
       pose,
       skinIndex,
@@ -302,6 +318,24 @@ export function skinPositionsBlended(
       out,
       v * 3,
     );
+    if (!folding) continue;
+    let held = 0;
+    let flexion = 0;
+    for (let k = 0; k < 4; k++) {
+      const b = skinIndex[v * 4 + k] as number;
+      if (!hips.thigh[b]) continue;
+      const w = skinWeight[v * 4 + k] as number;
+      held += w;
+      flexion += w * (hips.flexion[b] as number);
+    }
+    if (!held) continue;
+    shown.fill(0);
+    addFold(fold, v, flexion / held, shown, 0);
+    const [dx, dy, dz] = rotate(turn, shown[0] as number, shown[1] as number, shown[2] as number);
+    out[v * 3] = (out[v * 3] as number) + dx;
+    out[v * 3 + 1] = (out[v * 3 + 1] as number) + dy;
+    out[v * 3 + 2] = (out[v * 3 + 2] as number) + dz;
+  }
   return out;
 }
 

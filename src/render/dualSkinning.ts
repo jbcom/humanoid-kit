@@ -1,6 +1,7 @@
 /**
  * The renderer's skinning: linear blend skinning mixed with dual quaternion
- * skinning by each vertex's share (docs/ARCHITECTURE.md, "Skinning artefacts").
+ * skinning by each vertex's share (docs/ARCHITECTURE.md, "Skinning artefacts"),
+ * and the hip fold added to the skinned vertex ("The hip fold").
  *
  * Three skins on the GPU from a texture of bone matrices. This keeps that
  * (it is the linear half, and carries morph targets and bind matrices) and adds
@@ -35,11 +36,28 @@ import {
   skinPose,
   skinVertex,
 } from "../rig/dual.ts";
+import { FOLD_KEYS, HIP_FOLD, hipPose, type SurfaceFold } from "../rig/hipFold.ts";
 import type { BoneRotations, RestBones } from "../rig/pose.ts";
 import { poseShare } from "../rig/skinShare.ts";
 
 /** The bone texture's uniform, in every patched shader. */
 export const DUAL_BONES_UNIFORM = "hkDualBones";
+/** The hip fold texture's uniform: a row per vertex the fold moves, a texel per key. */
+export const FOLD_UNIFORM = "hkFoldTexture";
+/** Which texel of the bone texture holds the root's rotation (after every bone's own). */
+export const ROOT_UNIFORM = "hkRootTexel";
+/** The vertex attribute holding a vertex's row in the fold texture, or -1. */
+export const FOLD_SLOT_ATTRIBUTE = "hkFoldSlot";
+
+/** A texture of no fold: one row, all zeros, that no vertex refers to. */
+export const noFoldTexture = (): DataTexture => {
+  const t = new DataTexture(new Float32Array(FOLD_KEYS * 4), FOLD_KEYS, 1, RGBAFormat, FloatType);
+  t.minFilter = NearestFilter;
+  t.magFilter = NearestFilter;
+  t.generateMipmaps = false;
+  t.needsUpdate = true;
+  return t;
+};
 
 /**
  * A figure's bones as dual quaternions, shared by the materials that skin by
@@ -48,6 +66,10 @@ export const DUAL_BONES_UNIFORM = "hkDualBones";
 export class DualBones {
   readonly texture: DataTexture;
   readonly data: Float32Array;
+  /** How many bones. */
+  readonly bones: number;
+  /** The hip fold's texture, in a holder the shaders share, so that `setFold` can replace it. */
+  readonly fold: { value: DataTexture } = { value: noFoldTexture() };
   /** The table's share per bone (`skinDualShare`); a pose's own shares come from it (`poseShare`). */
   private readonly share: Float32Array;
   /** The pose last written, for the CPU reference (`pose`), with the shares it was written with. */
@@ -56,12 +78,16 @@ export class DualBones {
 
   /** `share`: each bone's share of dual quaternion skinning (`skinDualShare`). */
   constructor(bones: number, share: DualShare) {
+    this.bones = bones;
     this.share =
       typeof share === "number" ? new Float32Array(bones).fill(share) : Float32Array.from(share);
-    this.data = new Float32Array(bones * DUAL_TEXELS * 4);
+    // After every bone's texels, one more: the root's rotation, which the fold turns with.
+    const texels = bones * DUAL_TEXELS + 1;
+    this.data = new Float32Array(texels * 4);
     // Until posed, every bone is the identity motion, so no frame ever skins by zeros.
     for (let b = 0; b < bones; b++) this.data[b * DUAL_TEXELS * 4 + 3] = 1;
-    this.texture = new DataTexture(this.data, bones * DUAL_TEXELS, 1, RGBAFormat, FloatType);
+    this.data[bones * DUAL_TEXELS * 4 + 3] = 1;
+    this.texture = new DataTexture(this.data, texels, 1, RGBAFormat, FloatType);
     // Fetched texel by texel (texelFetch), never filtered.
     this.texture.minFilter = NearestFilter;
     this.texture.magFilter = NearestFilter;
@@ -73,10 +99,31 @@ export class DualBones {
   update(rest: RestBones, rotations: BoneRotations): void {
     // A bone that swings changes its share (the thigh's, so a flexed hip does not bulge).
     const share = poseShare(rest, rotations, this.share);
-    dualBoneTexels(rest, rotations, share, this.data);
+    dualBoneTexels(rest, rotations, share, this.data, hipPose(rest, rotations));
+    const root = rest.parents.indexOf(-1);
+    if (root >= 0)
+      this.data.set(rotations.subarray(root * 4, root * 4 + 4), this.bones * DUAL_TEXELS * 4);
     this.posed = { rest, rotations, share };
     this.cached = null;
     this.texture.needsUpdate = true;
+  }
+
+  /**
+   * Sets the hip fold of the surface being drawn (`surfaceFold`), or none: its
+   * rows are what the geometry's `FOLD_SLOT_ATTRIBUTE` points into.
+   */
+  setFold(fold: SurfaceFold | null): void {
+    const old = this.fold.value;
+    if (!fold || fold.rows === 0) this.fold.value = noFoldTexture();
+    else {
+      const t = new DataTexture(fold.data, FOLD_KEYS, fold.rows, RGBAFormat, FloatType);
+      t.minFilter = NearestFilter;
+      t.magFilter = NearestFilter;
+      t.generateMipmaps = false;
+      t.needsUpdate = true;
+      this.fold.value = t;
+    }
+    old.dispose();
   }
 
   /** The pose last written, prepared for skinning on the CPU (null before the first). */
@@ -88,6 +135,7 @@ export class DualBones {
 
   dispose(): void {
     this.texture.dispose();
+    this.fold.value.dispose();
   }
 }
 
@@ -97,9 +145,13 @@ export interface PatchableShader {
   uniforms: Record<string, { value: unknown }>;
 }
 
+/** A GLSL float literal. */
+const glFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`);
+
 /**
  * GLSL for the blend, mirroring `blend` and `skinVertex` in src/rig/dual.ts:
- * the motion a vertex follows under dual quaternion skinning, and its share.
+ * the motion a vertex follows under dual quaternion skinning, its share of the
+ * scheme, and the flexion of the thigh bones it holds.
  */
 export const DUAL_SKINNING_FUNCTIONS = /* glsl */ `
 #ifdef USE_SKINNING
@@ -107,20 +159,25 @@ uniform highp sampler2D ${DUAL_BONES_UNIFORM};
 vec3 hkQRotate( vec4 q, vec3 v ) {
 	return v + 2.0 * cross( q.xyz, cross( q.xyz, v ) + q.w * v );
 }
-// The rotation q and translation t of the vertex's blended dual quaternion, and its share of the scheme.
-void hkDualMotion( vec4 index, vec4 weight, out vec4 q, out vec3 t, out float share ) {
+// The rotation q and translation t of the vertex's blended dual quaternion, its share of the scheme, and the mean flexion (degrees) of the thigh bones it holds (-1000 when it holds none).
+void hkDualMotion( vec4 index, vec4 weight, out vec4 q, out vec3 t, out float share, out float flexion ) {
 	vec4 r = vec4( 0.0 );
 	vec4 d = vec4( 0.0 );
 	vec4 pivot = vec4( 0.0 );
 	bool pivoted = false;
 	share = 0.0;
+	float held = 0.0;
+	float bent = 0.0;
 	for ( int k = 0; k < 4; k ++ ) {
 		float w = weight[ k ];
 		if ( w == 0.0 ) continue;
 		int j = int( index[ k ] ) * ${DUAL_TEXELS};
 		vec4 bq = texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( j, 0 ), 0 );
 		vec4 bd = texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( j + 1, 0 ), 0 );
-		share += w * texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( j + 2, 0 ), 0 ).x;
+		vec4 bs = texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( j + 2, 0 ), 0 );
+		share += w * bs.x;
+		held += w * bs.z;
+		bent += w * bs.z * bs.y;
 		if ( ! pivoted ) {
 			pivot = bq;
 			pivoted = true;
@@ -135,12 +192,43 @@ void hkDualMotion( vec4 index, vec4 weight, out vec4 q, out vec3 t, out float sh
 	q = r;
 	t = 2.0 * ( r.w * d.xyz - d.w * r.xyz - cross( d.xyz, r.xyz ) );
 	share = clamp( share, 0.0, 1.0 );
+	flexion = held > 0.0 ? bent / held : - 1000.0;
 }
 #endif
 `;
 
-/** The blend of the vertex's position, after three's linear skinning has run. */
-const POSITION = /* glsl */ `
+/**
+ * GLSL for the hip fold, mirroring `addFold` in src/rig/hipFold.ts: a vertex's
+ * displacement at the flexion it has, from the fold texture's row (its slot),
+ * turned with the root.
+ */
+export const FOLD_FUNCTIONS = /* glsl */ `
+#ifdef USE_SKINNING
+uniform highp sampler2D ${FOLD_UNIFORM};
+uniform int ${ROOT_UNIFORM};
+vec3 hkFoldKey( int key, int slot ) {
+	return texelFetch( ${FOLD_UNIFORM}, ivec2( key, slot ), 0 ).xyz;
+}
+vec3 hkFoldDisplacement( float slotValue, float flexion ) {
+	float t = ( flexion - ${glFloat(HIP_FOLD.from)} ) / ${glFloat(HIP_FOLD.step)};
+	if ( ! ( t > 0.0 ) ) return vec3( 0.0 );
+	int slot = int( slotValue + 0.5 );
+	float i = floor( t );
+	vec3 d;
+	if ( i >= ${glFloat(FOLD_KEYS)} ) d = hkFoldKey( ${FOLD_KEYS - 1}, slot );
+	else {
+		int key = int( i );
+		vec3 to = hkFoldKey( key, slot );
+		vec3 was = key == 0 ? vec3( 0.0 ) : hkFoldKey( key - 1, slot );
+		d = mix( was, to, t - i );
+	}
+	return hkQRotate( texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( ${ROOT_UNIFORM}, 0 ), 0 ), d );
+}
+#endif
+`;
+
+/** The blend of the vertex's position, after three's linear skinning has run; with the fold, the fold after it. */
+const position = (fold: boolean): string => /* glsl */ `
 #ifdef USE_SKINNING
 	vec3 hkRestPosition = transformed;
 #endif
@@ -150,9 +238,11 @@ const POSITION = /* glsl */ `
 		vec4 hkQ;
 		vec3 hkT;
 		float hkShare;
-		hkDualMotion( skinIndex, skinWeight, hkQ, hkT, hkShare );
+		float hkFlexion;
+		hkDualMotion( skinIndex, skinWeight, hkQ, hkT, hkShare, hkFlexion );
 	#endif
 	if ( hkShare > 0.0 ) transformed = mix( transformed, hkQRotate( hkQ, hkRestPosition ) + hkT, hkShare );
+	${fold ? `if ( ${FOLD_SLOT_ATTRIBUTE} >= 0.0 ) transformed += hkFoldDisplacement( ${FOLD_SLOT_ATTRIBUTE}, hkFlexion );` : ""}
 #endif
 `;
 
@@ -163,7 +253,8 @@ const NORMAL = /* glsl */ `
 	vec4 hkQ;
 	vec3 hkT;
 	float hkShare;
-	hkDualMotion( skinIndex, skinWeight, hkQ, hkT, hkShare );
+	float hkFlexion;
+	hkDualMotion( skinIndex, skinWeight, hkQ, hkT, hkShare, hkFlexion );
 	#define HK_DUAL_MOTION
 #endif
 #include <skinnormal_vertex>
@@ -172,50 +263,68 @@ const NORMAL = /* glsl */ `
 #endif
 `;
 
-/** Makes a three vertex shader skin by `bones`: call it from an `onBeforeCompile`. */
-export function patchDualSkinning(shader: PatchableShader, bones: DualBones): void {
+/**
+ * Makes a three vertex shader skin by `bones`: call it from an
+ * `onBeforeCompile`. With `fold`, the shader adds the hip fold too, for a
+ * geometry that carries `FOLD_SLOT_ATTRIBUTE` (the body's).
+ */
+export function patchDualSkinning(shader: PatchableShader, bones: DualBones, fold = false): void {
   const needs = ["#include <common>", "#include <skinning_vertex>"];
   for (const chunk of needs)
     if (!shader.vertexShader.includes(chunk))
       throw new Error(`dual skinning: three's ${chunk} chunk moved`);
   shader.uniforms[DUAL_BONES_UNIFORM] = { value: bones.texture };
+  if (fold) {
+    shader.uniforms[FOLD_UNIFORM] = bones.fold;
+    shader.uniforms[ROOT_UNIFORM] = { value: bones.bones * DUAL_TEXELS };
+  }
   shader.vertexShader = shader.vertexShader
-    .replace("#include <common>", `#include <common>\n${DUAL_SKINNING_FUNCTIONS}`)
+    .replace(
+      "#include <common>",
+      `#include <common>\n${DUAL_SKINNING_FUNCTIONS}${fold ? `attribute float ${FOLD_SLOT_ATTRIBUTE};\n${FOLD_FUNCTIONS}` : ""}`,
+    )
     .replace("#include <skinnormal_vertex>", NORMAL)
-    .replace("#include <skinning_vertex>", POSITION);
+    .replace("#include <skinning_vertex>", position(fold));
 }
 
 /** Part of the program's cache key: a shader patched for dual skinning differs from one that is not. */
-export const DUAL_SKINNING_KEY = "dual-skinning-1";
+export const DUAL_SKINNING_KEY = "dual-skinning-2";
 
 /**
  * Makes `material` skin by `bones`, for materials this library does not make
  * (clothing, hair): it follows the body's dual quaternion skinning instead of
  * three's linear skinning alone, so it does not part from the skin at a joint.
+ * With `fold`, for a geometry with `FOLD_SLOT_ATTRIBUTE` (the body's), the hip
+ * fold too.
  */
-export function applyDualSkinning(material: Material, bones: DualBones): void {
+export function applyDualSkinning(material: Material, bones: DualBones, fold = false): void {
   const before = material.onBeforeCompile;
   const key = material.customProgramCacheKey;
   material.onBeforeCompile = (shader, renderer) => {
     before.call(material, shader, renderer);
-    patchDualSkinning(shader as unknown as PatchableShader, bones);
+    patchDualSkinning(shader as unknown as PatchableShader, bones, fold);
   };
-  material.customProgramCacheKey = () => `${key.call(material)}|${DUAL_SKINNING_KEY}`;
+  material.customProgramCacheKey = () =>
+    `${key.call(material)}|${DUAL_SKINNING_KEY}${fold ? "-fold" : ""}`;
   material.needsUpdate = true;
 }
 
 /**
  * The depth materials a skinned mesh casts shadows with: three's own would
- * skin linearly, and a shadow must follow the surface it is cast from.
+ * skin linearly, and a shadow must follow the surface it is cast from (with
+ * `fold`, the body's, its fold too).
  */
-export function dualShadowMaterials(bones: DualBones): {
+export function dualShadowMaterials(
+  bones: DualBones,
+  fold = false,
+): {
   depth: MeshDepthMaterial;
   distance: MeshDistanceMaterial;
 } {
   const depth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
   const distance = new MeshDistanceMaterial();
-  applyDualSkinning(depth, bones);
-  applyDualSkinning(distance, bones);
+  applyDualSkinning(depth, bones, fold);
+  applyDualSkinning(distance, bones, fold);
   return { depth, distance };
 }
 

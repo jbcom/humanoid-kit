@@ -37,6 +37,8 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
   let posedOcclusion: Promise<Float32Array[] | null> | null = null;
   /** Hair styles whose static data has gone to the client. */
   const sentHair = new Set<string>();
+  /** The hip fold request being solved, so that a newer one can supersede it. */
+  let foldRun = 0;
 
   /** Waits for the stages that bring the target files a recipe (in a skin state) needs. */
   const targetsFor = async (
@@ -172,6 +174,33 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           ...render.attachments.map((a) => a.buffer),
         ]);
         return;
+      }
+      if (req.type === "hipFold") {
+        // A newer request for a fold supersedes this one, wherever it is: it stops at its next step.
+        const run = ++foldRun;
+        const superseded = () => {
+          if (run === foldRun) return;
+          const stopped = new Error("a newer hip fold was asked for");
+          stopped.name = "AbortError";
+          throw stopped;
+        };
+        await targetsFor(model, req.recipe, req.signals);
+        superseded();
+        const steps = model.hipFold(req.recipe, req.signals);
+        for (;;) {
+          const step = steps.next();
+          if (step.done) {
+            const { surface, fold } = step.value;
+            post({ type: "hipFold", id: req.id, surface, fold }, [
+              fold.slot.buffer,
+              fold.data.buffer,
+            ]);
+            return;
+          }
+          // A macrotask between flexions lets queued evaluations run.
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          superseded();
+        }
       }
       if (req.type === "garment") {
         await garmentsFor(model, true);

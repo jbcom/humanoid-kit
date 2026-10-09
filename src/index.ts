@@ -27,6 +27,17 @@ export * from "./rig/expressions.ts";
 export * from "./rig/faceMirror.ts";
 export * from "./rig/faceSignals.ts";
 export * from "./rig/flexion.ts";
+export {
+  addFold,
+  FOLD_KEYS,
+  HIP_FOLD,
+  type HipFold,
+  type HipPose,
+  hipPose,
+  type SurfaceFold,
+  surfaceFold,
+} from "./rig/hipFold.ts";
+export { solveHipFold, solveHipFoldSteps } from "./rig/hipFoldSolve.ts";
 export * from "./rig/occlusionKeys.ts";
 export * from "./rig/pose.ts";
 export * from "./rig/skinShare.ts";
