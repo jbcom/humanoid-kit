@@ -16,10 +16,15 @@ Bottom line:
 - **Genital colour is still an open gap.** A second search of the open literature
   (vulvar, penile and scrotal colorimetry, melanin and erythema index) found no
   normative values. The sculpt's colour stays modelled and labelled so.
-- **No existing genital asset is usable.** Every detailed female and male
-  proxy found is AGPL-3 by its file header, or a derivative of one, whatever
-  its web page says. That confirms the clean-room decision: the shipped
-  geometry is new, built against the CC0 hm08 base only.
+- **No existing genital asset is used, and the community assets' licence is
+  under verification (licence-history).** Every detailed female and male proxy
+  found carries an AGPL-3 file header or derives from one that does, while its
+  web page says CC0. MakeHuman made a definite cutover to CC0, and a licence
+  line or page label can be stale and superseded, so which of the two governs
+  each asset is being traced with dated evidence (commits, archived pages, the
+  cutover announcement, each asset's upload date against it). Until that
+  reports, this document does not settle it. The decision below does not depend
+  on it: the shipped geometry is new, built against the CC0 hm08 base only.
 
 ## A. Vulvar dimensions
 
@@ -163,21 +168,24 @@ downloaded file, kept side by side) and the MakeHuman checkout's `LICENSE.md`.
   Universal"). This includes the `helper-genital` face group and the genital
   targets the pack already uses. These are the only genital data this project
   ships or builds on.
-- **Community genital proxies: not usable.** `adult_female_genitalia_remapped`,
+- **Community genital proxies: licence status under verification (licence-history);
+  not used meanwhile.** What the catalogue of 2026-10-08 recorded: `adult_female_genitalia_remapped`,
   `adult_male_genitalia_xsuprem3x`, `adult_female_2020` and `simple_penis` say
   CC0 on their pages but carry `# license AGPL3` in the `.proxy` file, and the
   first two are derivatives of the original AGPL proxies. `adult_male_genitalia_breast_fix`
   and `erect_penis_only_works_with_males` say CC0 on the page with no file-level
   licence and derive from the same lineage (the latter from "Male_Gen-Heal1",
   a "HEALED" proxy). The detailed female proxies by wolgade/geyser are AGPL on
-  their pages and were not downloaded. AGPL-3 is not compatible with shipping an
-  MIT package, and a page-versus-file conflict resolves to the stricter. Not
-  used, not copied, not traced.
+  their pages and were not downloaded. If the AGPL-3 headers govern, they are
+  not compatible with shipping an MIT package; if the CC0 cutover supersedes
+  them, they may be. That turns on the dated history under verification, not on
+  this catalogue. Until it reports they are not used, copied or traced.
 - **Genital skins** (wolgade): the page says CC0, the `.mhmat` files carry no
   licence line, and they are textures painted for the AGPL proxies' UV layout.
   Not used; the sculpt's skin colour is procedural (the layers).
 - **Decision.** The anatomy geometry is authored here against the hm08 base
   (CC0) and the measurements above (facts), by us, and the pack that carries it
   stays CC0-dedicated like the existing adult pack. No third-party genital
-  asset is imported, so the licence check has nothing to clear; this is
-  recorded so a later contributor does not reach for the community proxies.
+  asset is imported, so the licence check has nothing to clear. A later
+  contributor should wait for the licence-history result before reaching for
+  the community proxies, in either direction.
