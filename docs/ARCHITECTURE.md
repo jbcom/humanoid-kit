@@ -446,7 +446,9 @@ Milestones, in the order each is proven (built in parallel lanes; see
 2. **Rig, poses and expressions.** A skeleton fitted to the morphed body, posing,
    and the facial pose units.
 3. **Adult anatomy sculpt.** Sculpting on top of the adult anatomy pack, for
-   figures aged 18 or over.
+   figures aged 18 or over. Phase 1 (the layer, state and age-gating plumbing on
+   today's CC0 targets) is in place ("Adult-pack layers"); the own-sculpt phase
+   is planned in `docs/research/ADULT-SCULPT-PLAN.md`.
 4. **Scalp hair.**
 5. **Body and facial hair.**
 6. **Anthro traits.**

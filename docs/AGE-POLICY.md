@@ -195,7 +195,10 @@ sets any adult-only modifier throws `AgePolicyError`. It is never silently
 clamped, so a mistake cannot be hidden. `withAge` removes adult-only values
 explicitly when a recipe is moved below 18. The loader refuses an adult pack not
 built against the exact body pack in use (`bodySha256`). A planned genital
-sculpt will ship in the same pack under the same rule.
+sculpt will ship in the same pack under the same rule; its design keeps adult
+geometry out of any minor's evaluation structurally (a minor's evaluation has
+exactly the base surface's vertices), not by hiding it
+(docs/research/ADULT-SCULPT-PLAN.md).
 
 **Skin states follow the same rule.** A figure's skin responds to named
 signals (docs/ARCHITECTURE.md, "Skin states"). Cold, heat, exertion, blush and
