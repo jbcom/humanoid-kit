@@ -1349,10 +1349,26 @@ C5; contact sheets, before and after, at four tones, adult and child:
   melanocytes), so on deep skin the nails are much lighter than the fingers.
 - *Soles.* Soles share the palm's suppressed melanocytes (the same
   mechanism), but no sole colour was found measured, so the sole takes the
-  palm's measured colour (`SOLE_LAYER`, a choice). One owner for the
+  palm's measured colour (`PALMOPLANTAR_LAYER` paints both, a choice). One owner for the
   palmoplantar colour: the feet's area adds the sole's relief, calluses and
   toenails over it (`nailStops` paints any nail whose coordinate follows the
   fingernail's).
+- *One atlas page for all of it.* Every layer costs field-atlas channels (a
+  colour layer two: mask and coordinate), and the atlas planner shares a
+  channel only between layers whose masks lie in disjoint cells of the UV
+  layout. The hand's features lie too close together in that layout to share
+  that way: as nine layers of their own the hands took 9 pages (36 channels).
+  So features that never meet on the mesh share a layer: the palm and the sole
+  one colour (`PALMOPLANTAR_LAYER`); the knuckles and the nails one colour
+  whose coordinate is 0 at the knuckles and the nail's own from its fold
+  (`DIGIT_LAYER`, within 1 ΔE\*ab of the nail layered over the knuckle, a test
+  checks); the palm's creases and the knuckles' wrinkles one relief, palmar
+  and dorsal (`HAND_RELIEF_LAYER`). Five layers, and the
+  palmoplantar colour and the crease lines share channels with the flush,
+  areola and joint creases, so the stack goes from 27 channels on 7 pages
+  (28 MiB at 1024², RGBA8) to 30 on 8 (32 MiB): one page. The palmoplantar
+  mask drops the zones' tails below what the atlas rounds to 0, which reached
+  the knees' creases. The adult layers keep their pages.
 - *Not done.* The hands' layers do not vary with age: a child's hand gets the
   same creases and knuckles at its own scale, the fields scaling with the
   morphed mesh (creases form before birth, so their places are set early). No

@@ -1,12 +1,12 @@
 /**
- * The knuckles: more melanin and a little more blood over the back of each
- * finger joint, and the slack skin's wrinkles there as arcs across the digit.
- * Every magnitude cites docs/research/SKIN-STATES.md Part C5 or is marked
- * there as a choice.
+ * The knuckles' fields: where more melanin and a little more blood lie over
+ * the back of each finger joint (painted with the nails, `DIGIT_LAYER`), and
+ * the slack skin's wrinkles there as arcs across the digit (relief with the
+ * palm's creases, `HAND_RELIEF_LAYER`). Every magnitude cites
+ * docs/research/SKIN-STATES.md Part C5 or is marked there as a choice.
  */
 import type { HumanoidAssets } from "../../../format/assetFormat.ts";
-import { knuckleAlbedo } from "../../handTone.ts";
-import type { ColourLayer, DetailLayer, SkinLayerFields } from "../../layers.ts";
+import type { SkinLayerFields } from "../../layers.ts";
 import { skinZones } from "../skinZones.ts";
 import { creaseWindow } from "./creases.ts";
 import { clamp, handFrame, smoothstep } from "./frame.ts";
@@ -130,24 +130,10 @@ export function knuckleFields(assets: HumanoidAssets): {
   return fields;
 }
 
-/** Knuckle pigment (`knuckleAlbedo`) over the back of each finger joint. */
-export const KNUCKLE_LAYER: ColourLayer = {
-  id: "knuckles",
-  blend: "mix",
-  targets: [],
-  fields: (assets) => ({ mask: knuckleFields(assets).pigment, coord: null }),
-  paint: ({ tone }) => ({ strength: 1, stops: [knuckleAlbedo(tone)] }),
-};
-
-/** Relief height of the knuckle wrinkles at full strength, metres (CHOICE, tuned on the contact sheets). */
+/**
+ * Relief height of the knuckle wrinkles at full strength, metres (CHOICE,
+ * tuned on the contact sheets). They share the palm's creases' relief layer
+ * (`HAND_RELIEF_LAYER`), which carries this as a fraction of its own depth in
+ * the mask.
+ */
 export const KNUCKLE_WRINKLE_DEPTH = 0.00012;
-
-/** Knuckle wrinkles: the slack skin over the back of the finger joints, arcs across the digit. */
-export const KNUCKLE_WRINKLE_LAYER: DetailLayer = {
-  id: "knuckle-wrinkles",
-  kind: "detail",
-  pattern: "creases",
-  targets: [],
-  fields: (assets) => knuckleFields(assets).wrinkles,
-  paint: () => ({ strength: 1, height: KNUCKLE_WRINKLE_DEPTH, size: KNUCKLE_PHASES }),
-};

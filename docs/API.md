@@ -443,18 +443,21 @@ compute what the renderer will do.
 - The hands (`src/surface/regions/hands/`, colour in `src/surface/handTone.ts`;
   ARCHITECTURE.md, "Hands"; every magnitude cited, or marked as a choice, in
   research/SKIN-STATES.md C5). `HAND_SKIN_LAYERS`, in stack order after the rest
-  layers and before the state layers (so cold pallor and flush act on them):
-  - `PALM_LAYER`: `palmAlbedo(tone)` over `skinZones().palm`. `palmLab(tone)` is
+  layers and before the state layers (so cold pallor and flush act on them).
+  Features whose masks never meet share a layer, to hold the hands to one atlas
+  page:
+  - `PALMOPLANTAR_LAYER` (`"palmoplantar"`): `palmAlbedo(tone)` over
+    `skinZones().palm` and `skinZones().sole` (palmoplantar skin; no sole colour
+    was found measured), less than `PALMOPLANTAR_FLOOR`, which the 8-bit atlas
+    rounds to 0, dropped. `palmLab(tone)` is
     the palm's CIELAB (surface reflection included) from `PALM_BINS`, the
     International Skin Spectra Archive's paired palm and back-of-hand readings
     (777 people) binned by the back of the hand's L\*: on deep skin the palm is
     about 16 L\* lighter and 6 to 8 b\* yellower than the back of the hand, on
     the lightest about the same.
-  - `SOLE_LAYER`: the palm's colour over `skinZones().sole` (palmoplantar skin;
-    no sole colour was found measured).
   - `PALM_CREASE_LINE_LAYER` (multiply: `palmCreaseLine(tone)`, the crease's
-    shade, and on deep skin a return toward the skin's own colour) and
-    `PALM_CREASE_LAYER` (a `creases` detail layer, `PALM_CREASE_DEPTH`): the
+    shade, and on deep skin a return toward the skin's own colour) and, in
+    `HAND_RELIEF_LAYER`, folds `PALM_CREASE_DEPTH` deep: the
     distal and proximal transverse and thenar creases of the palm
     (`palmCreaseCurves(landmarks, joints)`) and each digit's flexion creases
     (`digitCreases(joints, digit)`), placed by the measured `CREASE_TO_JOINT`,
@@ -463,17 +466,22 @@ compute what the renderer will do.
     signed distance to the nearest crease (`sampleCreases`), so a line finer
     than the mesh is drawn where the crease is (`creaseLineCoordinate`,
     `creasePhase`, `CREASE_GEOMETRY`).
-  - `KNUCKLE_LAYER` (`knuckleAlbedo(tone)`: `KNUCKLE_MELANIN_FACTOR` times the
-    skin's melanin density and `KNUCKLE_HAEMOGLOBIN` more blood) and
-    `KNUCKLE_WRINKLE_LAYER` (arcs over the back of each finger joint,
-    `KNUCKLE_WRINKLE_SPACING` apart, `KNUCKLE_WRINKLE_DEPTH` deep), fields from
-    `knuckleFields(assets)`.
-  - `NAIL_LAYER` (`nailStops(tone)`, the eight stops a nail coordinate runs
+  - `DIGIT_LAYER` (`"knuckles-nails"`, fields `digitFields(assets)`): the
+    knuckles' colour at its coordinate's 0 (`knuckleAlbedo(tone)`:
+    `KNUCKLE_MELANIN_FACTOR` times the skin's melanin density and
+    `KNUCKLE_HAEMOGLOBIN` more blood), then the nail's along it
+    (`nailStops(tone)` after its first, the eight stops a nail coordinate runs
     through, from `nailColours(tone)`: fold, lunula, bed and free edge along each
     nail, the bed from `nailLab(tone)`, measured nail CIELAB at a lightness that
-    follows the skin's far less than skin does) and `NAIL_GLOSS_LAYER` (the plate,
-    `NAIL_ROUGHNESS` and `NAIL_SPECULAR`), fields from `nailFields(assets)`,
-    proportions in `NAIL_LAYOUT`.
+    follows the skin's far less than skin does). It paints within 1 ΔE\*ab of
+    the nail layered over the knuckle. `NAIL_GLOSS_LAYER` is the plate
+    (`NAIL_ROUGHNESS` and `NAIL_SPECULAR`); fields from `knuckleFields(assets)`
+    and `nailFields(assets)`, proportions in `NAIL_LAYOUT`.
+  - `HAND_RELIEF_LAYER` (`"hand-relief"`, a `creases` detail layer, fields
+    `handReliefFields(assets)`): the palm's crease folds and the knuckles'
+    wrinkle arcs (over the back of each finger joint, `KNUCKLE_WRINKLE_SPACING`
+    apart, `KNUCKLE_WRINKLE_DEPTH` deep, the depth carried in the mask), on a
+    coordinate of `HAND_RELIEF_PHASES` phases.
   - `handFrame(assets)`: each hand vertex's digit, distance along it and across
     it, which way it faces, and its place in the palm's plane, measured from the
     skeleton's finger joints and the vertex normals and cached per set of

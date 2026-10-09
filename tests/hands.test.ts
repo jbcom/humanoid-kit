@@ -6,28 +6,41 @@ import {
   knuckleAlbedo,
   NAIL_F0,
   nailColours,
+  nailStops,
   PALM_BINS,
   palmAlbedo,
   palmLab,
 } from "../src/surface/handTone.ts";
-import { paintStopTable, STOP_TABLE_WIDTH } from "../src/surface/layers.ts";
+import {
+  applyLayers,
+  type ColourLayer,
+  paintStopTable,
+  STOP_TABLE_WIDTH,
+} from "../src/surface/layers.ts";
 import {
   CREASE_GEOMETRY,
   CREASE_PHASES,
   CREASE_SLOTS,
+  DIGIT_LAYER,
+  digitFields,
+  HAND_RELIEF_LAYER,
+  HAND_RELIEF_PHASES,
   HAND_SKIN_LAYERS,
   handFrame,
   KNUCKLE_PHASES,
+  KNUCKLE_WRINKLE_DEPTH,
   KNUCKLE_WRINKLE_SPACING,
   knuckleFields,
   nailFields,
+  PALM_CREASE_DEPTH,
   PALM_CREASE_LINE_LAYER,
+  PALMOPLANTAR_FLOOR,
+  PALMOPLANTAR_LAYER,
   type PalmLandmarks,
   palmCreaseCurves,
   palmCreaseLine,
   palmCreaseLineFields,
   palmCreaseReliefFields,
-  SOLE_LAYER,
   sampleCreases,
 } from "../src/surface/regions/hands/index.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
@@ -421,14 +434,92 @@ describe("nails: a bed nearly free of melanin under keratin", () => {
   });
 });
 
-describe("soles", () => {
-  it("take the palm's colour over the sole, nowhere else", () => {
-    const fields = SOLE_LAYER.fields(assets);
-    expect(fields.mask).toBe(zones.sole);
-    for (const m of [0, 0.5, 1]) {
-      const input = { tone: tone(m), flush: 0, lips: 0.5, areola: 0.5, signals: {} };
-      expect(SOLE_LAYER.paint(input).stops).toEqual([palmAlbedo(tone(m))]);
+describe("layers shared by features that never meet", () => {
+  const input = (m: number) => ({ tone: tone(m), flush: 0, lips: 0.5, areola: 0.5, signals: {} });
+
+  it("paint the palm's colour over the palms and the soles, nowhere else", () => {
+    const { mask } = PALMOPLANTAR_LAYER.fields(assets);
+    for (let v = 0; v < assets.manifest.vertexCount; v++) {
+      const m = Math.max(zones.palm[v] as number, zones.sole[v] as number);
+      // What the 8-bit atlas would round to 0 is dropped, so the mask lies only where it paints.
+      expect(mask[v]).toBe(m < PALMOPLANTAR_FLOOR ? 0 : m);
+      if (m < PALMOPLANTAR_FLOOR) expect(Math.round(m * 255)).toBe(0);
+      // Palm and sole are apart: no vertex is both.
+      expect(Math.min(zones.palm[v] as number, zones.sole[v] as number)).toBe(0);
     }
+    for (const m of [0, 0.5, 1])
+      expect(PALMOPLANTAR_LAYER.paint(input(m)).stops).toEqual([palmAlbedo(tone(m))]);
+  });
+
+  it("paint the knuckles and the nails as the two did layered, knuckles under nails", () => {
+    const k = knuckleFields(assets).pigment;
+    const nails = nailFields(assets).colour;
+    const d = digitFields(assets);
+    for (const m of [0.05, 0.35, 0.7, 1]) {
+      const t = tone(m);
+      const stops = DIGIT_LAYER.paint(input(m)).stops;
+      expect(stops[0]).toEqual(knuckleAlbedo(t));
+      expect(stops.slice(1)).toEqual(nailStops(t).slice(1));
+      const layered = (stack: ColourLayer["paint"][]) =>
+        paintStopTable(
+          stack.map(
+            (paint, i): ColourLayer => ({
+              id: `l${i}`,
+              blend: "mix",
+              targets: [],
+              fields: () => d,
+              paint,
+            }),
+          ),
+          input(m),
+        );
+      const pair = layered([
+        () => ({ strength: 1, stops: [knuckleAlbedo(t)] }),
+        () => ({ strength: 1, stops: nailStops(t) }),
+      ]);
+      const merged = layered([DIGIT_LAYER.paint]);
+      const base = skinAlbedo(t);
+      let worst = 0;
+      for (let v = 0; v < assets.manifest.vertexCount; v++) {
+        expect(d.mask[v]).toBe(Math.max(k[v] as number, nails.mask[v] as number));
+        if (!(d.mask[v] as number)) continue;
+        const a = labFromLinear(
+          applyLayers(base, pair, [
+            [k[v] as number, 0],
+            [nails.mask[v] as number, nails.coord?.[v] as number],
+          ]),
+        );
+        const b = labFromLinear(
+          applyLayers(base, merged, [[d.mask[v] as number, d.coord?.[v] as number]]),
+        );
+        worst = Math.max(worst, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+      }
+      // Under 1 ΔE*ab, about a just-noticeable difference (Sharma 2003).
+      expect(worst, `melanin ${m}`).toBeLessThan(1);
+    }
+  });
+
+  it("draw the palm's creases and the knuckles' wrinkles in one relief, each as it was", () => {
+    const creases = palmCreaseReliefFields(assets);
+    const wrinkles = knuckleFields(assets).wrinkles;
+    const relief = HAND_RELIEF_LAYER.fields(assets);
+    const depth = KNUCKLE_WRINKLE_DEPTH / PALM_CREASE_DEPTH;
+    for (let v = 0; v < assets.manifest.vertexCount; v++) {
+      const c = creases.mask[v] as number;
+      const k = (wrinkles.mask[v] as number) * depth;
+      // Palmar and dorsal: the two never lie on one vertex.
+      expect(Math.min(c, k), `vertex ${v}`).toBe(0);
+      if (c > 0)
+        expect(relief.coord?.[v]).toBeCloseTo(
+          ((creases.coord?.[v] as number) * CREASE_PHASES) / HAND_RELIEF_PHASES,
+          6,
+        );
+      if (k > 0) expect(relief.coord?.[v]).toBe(wrinkles.coord?.[v]);
+      expect(relief.mask[v]).toBeCloseTo(Math.max(c, k), 6);
+    }
+    const p = HAND_RELIEF_LAYER.paint(input(0.5));
+    expect(p.height).toBe(PALM_CREASE_DEPTH);
+    expect(p.size).toBe(HAND_RELIEF_PHASES);
   });
 });
 

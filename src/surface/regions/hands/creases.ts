@@ -22,7 +22,7 @@
  */
 import type { HumanoidAssets } from "../../../format/assetFormat.ts";
 import { palmAlbedo } from "../../handTone.ts";
-import type { ColourLayer, DetailLayer, SkinLayerFields } from "../../layers.ts";
+import type { ColourLayer, SkinLayerFields } from "../../layers.ts";
 import { type Rgb, type SkinTone, skinAlbedo } from "../../skinTone.ts";
 import { skinZones } from "../skinZones.ts";
 import { clamp, handFrame, type PalmLandmarks, smoothstep } from "./frame.ts";
@@ -412,21 +412,12 @@ export function palmCreaseLineFields(assets: HumanoidAssets): SkinLayerFields {
 }
 
 /**
- * Relief depth of the creases' folds at full strength, metres. CHOICE: no
- * depth was measured (SKIN-STATES.md C5); tuned on the contact sheets so the
- * folds read at hand-close-up distance and fade at full-figure distance.
+ * Relief depth of the creases' folds at full strength, metres: the depth of
+ * the hands' relief layer (`HAND_RELIEF_LAYER`). CHOICE: no depth was
+ * measured (SKIN-STATES.md C5); tuned on the contact sheets so the folds read
+ * at hand-close-up distance and fade at full-figure distance.
  */
 export const PALM_CREASE_DEPTH = 0.0003;
-
-/** The palmar flexion creases as relief: fixed folds, present from birth, at every age and tone. */
-export const PALM_CREASE_LAYER: DetailLayer = {
-  id: "palm-creases",
-  kind: "detail",
-  pattern: "creases",
-  targets: [],
-  fields: palmCreaseReliefFields,
-  paint: () => ({ strength: 1, height: PALM_CREASE_DEPTH, size: CREASE_PHASES }),
-};
 
 /**
  * How far a crease's line returns toward the body's own colour (CHOICE):

@@ -55,18 +55,15 @@ describe("the package entry's skin-state API", () => {
     expect(ids.slice(0, 3)).toEqual(["flush", "lips", "areola"]);
     // The mouth's lining is a rest layer; a state (cold pallor on the hands, a
     // flush) acts on the areas' colour too.
-    expect(ids.slice(3, 12)).toEqual([
+    expect(ids.slice(3, 9)).toEqual([
       "mouth-interior",
-      "palm",
-      "sole",
+      "palmoplantar",
       "palm-crease-lines",
-      "knuckles",
-      "nails",
-      "palm-creases",
-      "knuckle-wrinkles",
+      "knuckles-nails",
+      "hand-relief",
       "nail-gloss",
     ]);
-    expect(ids.slice(12)).toEqual([
+    expect(ids.slice(9)).toEqual([
       "goosebumps",
       "heat-flush",
       "exertion-flush",

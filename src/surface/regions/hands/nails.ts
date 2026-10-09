@@ -1,13 +1,13 @@
 /**
  * The nails. The base mesh sculpts each nail but has no nail geometry of its
- * own, so they are layers on the back of each fingertip: a coordinate along
+ * own, so they are drawn on the back of each fingertip: a coordinate along
  * the last segment carries the proximal fold, lunula, bed and free edge as
- * colour stops, and a surface layer the plate's gloss. Every magnitude cites
- * docs/research/SKIN-STATES.md Part C5 or is marked there as a choice.
+ * colour stops (painted with the knuckles, `DIGIT_LAYER`), and a surface
+ * layer the plate's gloss. Every magnitude cites docs/research/SKIN-STATES.md
+ * Part C5 or is marked there as a choice.
  */
 import type { HumanoidAssets } from "../../../format/assetFormat.ts";
-import { nailStops } from "../../handTone.ts";
-import type { ColourLayer, SkinLayerFields, SurfaceLayer } from "../../layers.ts";
+import type { SkinLayerFields, SurfaceLayer } from "../../layers.ts";
 import { handFrame, smoothstep } from "./frame.ts";
 
 /**
@@ -107,15 +107,6 @@ export function nailFields(assets: HumanoidAssets): {
   nailCache.set(assets, fields);
   return fields;
 }
-
-/** The nails: fold, lunula, bed and free edge along each nail (`nailStops`). */
-export const NAIL_LAYER: ColourLayer = {
-  id: "nails",
-  blend: "mix",
-  targets: [],
-  fields: (assets) => nailFields(assets).colour,
-  paint: ({ tone }) => ({ strength: 1, stops: nailStops(tone) }),
-};
 
 /**
  * The nail plate's gloss: hard, smooth keratin over the bed. Roughness and
