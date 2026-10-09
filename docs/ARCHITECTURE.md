@@ -36,6 +36,7 @@ lengths are in metres.
 | --- | --- | --- |
 | `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, and the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion") |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
+| `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | Walk, idle and swim clips as local bone rotations per frame, on the default skeleton (see "Animation") |
 | `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | Ten scalp hair styles bound to the base mesh, each with its baked occlusion and a strand map (see "Scalp hair") |
 | `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 19 garments from MakeHuman's system assets (suits, shoes, a hat), each bound to the base mesh with the vertices it hides |
 
@@ -1618,6 +1619,74 @@ pixels with `sampleGroundOcclusion`; the Playwright spec `e2e/presence.spec.ts`
 does the same on the playground's `?scene=walk` (two figures walking, parting
 and overlapping), measuring the canvas against the model.
 
+## Animation (milestone 8, 2026-10-09)
+
+**Use cases.** A figure walks, idles and swims, whatever its size, shape or age.
+Several figures play the same clip at once, each carried by its own legs. A figure
+changes clips without a pop, and an expression plays over the body. A game, a
+sheet and a test can ask for a figure at a time in a clip, not only at a rate. A
+clip is loaded when first played, and the pack is optional, like the hair pack.
+
+**Requirements.** A clip says nothing about one body's proportions, so it plays on
+every body. A planted foot stays planted on any body: no skating. Nothing is
+allocated per frame once a figure is playing. Only clips whose licence is proven
+are packed, by the repository's licence rule. The adult animations are a separate
+later package that refuses participants under 18, and are not here.
+
+**Decisions.**
+
+- *A pack of its own, outside `HumanoidAssets`.* `humanoid-kit-animations` holds a
+  manifest and one small binary per clip; `loadAnimationLibrary` fetches the
+  manifest and a figure's first play of a clip fetches its binary
+  (`AnimationLibrary.load`). A clip is figure independent, so one library serves
+  every figure; coupling it to `HumanoidAssets` would have tied each figure's
+  assets to a pack they do not need. A clip binds to a rig by bone name.
+- *Clips are rotation deltas.* A clip stores, per frame, a local rotation (a
+  quaternion in the figure's axes) for each bone it moves, which is a delta from the
+  rest pose, since the rest frames have no rotation. It stores no translation: the
+  BVH's root translation is the source figure's. The bones a clip never moves are not
+  stored (the walk moves 73 of the rig's 163). Quaternions are kept in one hemisphere
+  from frame to frame, so a blend takes the short way.
+- *The source is MakeHuman's own CC0 clips.* punkduck's walk, idle and swim clips in
+  `makehuman2_additional_assets_cc0.zip` are on the default skeleton, so a BVH joint
+  is a rig bone by name and nothing is retargeted. Each clip is judged by
+  `judgeAsset` (docs/licence-history.md, clause B) with the asset pack listing that
+  calls the archive CC0; the packer also requires the clip's own `.meta` to state
+  `license CC0` (a BVH has no place for a licence line), and the archive is pinned by
+  its SHA-256 (`packs/animations/data/PROVENANCE.md`). MakeHuman's own `walk.bvh` and
+  `zombie.bvh` are AGPL3 and are not used.
+- *Where a clip carries a figure is derived from the figure's feet.* The walk's BVH
+  keeps its root in place, and a translation authored for one skeleton slides the
+  feet of another. `planRootMotion` moves the figure, frame to frame, backwards by
+  what the contact points on the ground (six, on the soles under the ankles and the
+  balls of the feet, weighted by how close each is to the lowest) move forwards in
+  the pose. A child's stride is shorter than an adult's by their legs
+  (about 0.33 against 0.65 m a cycle), by construction.
+- *Planted feet are held by a two-bone solve* (`FootLock`). A hand-keyed clip's feet
+  do not agree with their body's pace to the centimetre (the walk's heel slides 50
+  mm a frame at heel strike against a body moving 28), so a foot that lands pins its
+  place in the world and its leg is turned (hip and knee, in the plane the knee
+  bends in, the foot's orientation kept, the ankle's height kept) to hold it as the
+  figure is carried past. As the foot rolls the pin hands over to the point that is
+  lowest, taking the place it has in the held foot, so the hand-over is seamless; a
+  point that lifts is let go.
+- *Pure and allocation-free.* `Animator` owns its buffers: `update(dt)` advances time,
+  crossfades and root motion and writes the body's rotations. Face units and other
+  poses are laid over by the caller (`composeRotations`).
+
+**What the numbers are.** Measured by `tests/animation.test.ts` over nine figures
+(slim, average and heavy bodies at 6, 25 and 75): in the walk, the largest a planted
+heel or ball moves while on the ground is 2 to 12 mm (median 5), against well over 20
+mm with root motion alone (the test holds both); in the hip-swaying walk 3 to 29 mm,
+since its hand-keyed feet scissor against each other in double support; in the three
+idles under 10 mm. The tolerance in the walk is the leg's reach: at heel strike the
+front leg is already straight in the clip, and a pin ahead of it cannot be reached.
+A hand-keyed clip is the limit, not the solver: a clip that planted its feet would
+leave nothing to hold.
+
+**Not here yet:** playing it in `<Humanoid>`, the Quaternius breadth set (retargeted
+through a T-pose), and the no-interpenetration check at a clip's extremes.
+
 ## Layers
 
 | Folder | Role | React or DOM |
@@ -1631,6 +1700,7 @@ and overlapping), measuring the canvas against the model.
 | `src/build` | Render surface: seams, indices, skin weights, normals, curvature | no |
 | `src/surface` | Skin albedo, the skin layer stack and its regions, the scatter model and table, occlusion baking, the body's cavity occlusion | no |
 | `src/model` | `HumanoidModel`, the evaluation pipeline; `outfit.ts`, the layering and masking of garments | no |
+| `src/animation` | Clips (`AnimationClip`), the library that fetches them, the `Animator` that plays and crossfades them, root motion from the figure's feet and the foot lock | no |
 | `src/presence` | Presence registry, helpers, and presence derived from an evaluation | no |
 | `src/editor` | The creator's logic: controls, history, randomisation, framing, the wardrobe | no |
 | `src/worker` | Worker entry, protocol and `HumanoidWorkerClient` | no (Web Worker) |
@@ -1991,19 +2061,21 @@ subdivided linearly (`linearSubdivisionStencil`), positions smoothly, because
 smoothing the cap's displacement leaked it into the loop and overshot the tube by
 up to 22% at level 2.
 
-**Arousal.** The adult manifest adds an `arousal` state morph
-(`anatomy.stateMorphs`; the core's `STATE_MORPHS` stays without it; adult-only, refused under 18 by
-`assertSignalPolicy` before any target is named), driving the adult pack's
-`penis-circ-incr` (0.44) and `penis-length-incr` (0.25), calibrated so that full
-arousal gives the measured erect against flaccid: circumference +25% and length
-+43% (research/SKIN-STATES.md, B4; `tests/arousal.test.ts` measures it on the
-length target's own vertices). Only targets that exist are driven: the testes'
-response is unmeasured and the vulva and clitoris have no targets (their volume
-change has no verified magnitude), so those wait for the sculpt phase.
-`stateContributions` skips targets no loaded pack knows, so without the adult
-pack the figure is simply unchanged, and a target of the adult pack that has not
-arrived yet is named as pending, so an evaluation waits for the adult stage as
-it does for any other. Colour deepening is the layers' own: `genitalAlbedo` moves
+**Arousal.** Adult-only, refused under 18 by `assertSignalPolicy` before any
+target is named. Its shape response is the adult pack's detail targets reading
+the signal (`AdultDetailSpec.drives`, `sramp:arousal:…`; the core's `STATE_MORPHS`
+stays without it and the pack's `stateMorphs` is empty). The organ is drawn at
+three states (flaccid, midway, erect) so that it swings from hanging to rising
+instead of shortening on the way (a morph moves each vertex in a straight line);
+its erect state is the measured growth over flaccid, circumference +25% and
+length +43% (research/SKIN-STATES.md, B4; research/ADULT-ANATOMY-DATA.md, F;
+`tests/phallus.test.ts` measures the authored shapes against those numbers and
+holds the surface to them). The testes' response is unmeasured and the vulva and
+clitoris have no verified magnitude (their volume change), so those wait for the
+sculpt. A derived weight is an adult's alone, and a target of the adult pack that
+has not arrived yet is named as pending, so an evaluation waits for the adult
+stage as it does for any other; without the adult pack the figure is simply
+unchanged. Colour deepening is the layers' own: `genitalAlbedo` moves
 haemoglobin a fraction of the way to its ceiling with the signal, so it stays
 inside the skin model's measured haemoglobin axis (about 0.4 to 1.3 CIELAB a\*
 units, smaller on deep skin) and is **uncalibrated**: no measured colour change
@@ -2102,12 +2174,28 @@ C5; contact sheets, before and after, at four tones, adult and child:
   a face short of halfway to the next joint, where the coordinate turns to that
   joint's (on the little finger's short middle phalanx the bands nearly met and
   drew a false wrinkle).
-- *Nails.* No separate nail geometry: the base mesh sculpts each nail, and a
-  coordinate along the last segment carries fold, lunula, bed and free edge as
-  the colour stops, with sharp changes between them, and a surface layer the
-  plate's gloss. The bed is measured nail colour whose lightness follows the
-  skin's far less than skin does (the nail bed has about 5% of skin's
-  melanocytes), so on deep skin the nails are much lighter than the fingers.
+- *Nails: a painted bed under a real plate.* A coordinate along the last
+  segment paints fold, lunula, bed and free edge on the skin as colour stops,
+  with sharp changes between them. The bed is measured nail colour whose
+  lightness follows the skin's far less than skin does (the nail bed has about
+  5% of skin's melanocytes), so on deep skin the nails are much lighter than
+  the fingers, and brownish.
+
+  Over the paint lies the plate: CC0 community nail meshes (MakeHuman's
+  bodyparts04, Mindfront's short fingernails and toenails), vendored and packed
+  as body attachments (`fingernails`, `toenails`) and bound like any MHCLO
+  asset. The plate gives the nail its thickness, curvature and free edge
+  overhang, which paint on a mesh 5 mm between vertices could not.
+
+  The plate's material (`NailPlateMaterial`) is clear keratin over the bed, so
+  the bed's colour shows through at every tone, and nearly opaque, white
+  keratin along its free edge, the last 1.5 mm of each nail toward the tip.
+  That edge is found per nail on the plate at rest, along the direction in
+  which the skin's nail coordinate grows. The sheets showed painted nails as
+  opaque plates with a wide white tip (a French manicure).
+
+  The assets' own textures paint one pink nail and are not used; the packer
+  compiles their geometry only.
 - *Soles.* Soles share the palm's suppressed melanocytes (the same
   mechanism), but no sole colour was found measured, so the sole takes the
   palm's measured colour (`PALMOPLANTAR_LAYER` paints both, a choice). One owner for the

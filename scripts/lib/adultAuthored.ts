@@ -14,12 +14,24 @@
  * `group/target-lo|hi` form so the recipe, the age policy and the creator treat
  * them like any other adult modifier.
  */
-import type { ShapeModifierEntry, SliderEntry, SliderTask } from "../../src/format/assetFormat.ts";
-import type { ControlShape } from "../../src/model/humanoidModel.ts";
+import type {
+  AdultDetailSpec,
+  AdultReservoirSpec,
+  ShapeModifierEntry,
+  SliderEntry,
+  SliderTask,
+} from "../../src/format/assetFormat.ts";
+import type { AdultDetailLattice, ControlShape } from "../../src/model/humanoidModel.ts";
 import { moundTargets } from "./control/mound.ts";
+import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE, phallusTargets } from "./detail/phallus.ts";
+import { reservoirRoot } from "./detail/root.ts";
 import { type EncodedTarget, encodeSparseTarget } from "./targetEncoding.ts";
 
-/** The modifiers the pack authors. All are adult-only. */
+/**
+ * The modifiers the pack authors. All are adult-only. The phallic organ's are
+ * virtual (an end named "" has no target, `recipeContributions`): they carry a
+ * value, and the detail's `drives` read it (`detail/phallus.ts`).
+ */
 export const AUTHORED_MODIFIERS: readonly ShapeModifierEntry[] = [
   {
     id: "pelvis/mound-decr|incr",
@@ -28,9 +40,15 @@ export const AUTHORED_MODIFIERS: readonly ShapeModifierEntry[] = [
     hi: "pelvis/mound-incr",
     adultOnly: true,
   },
+  { id: PHALLUS_SIZE, group: "genitals", lo: null, hi: "", adultOnly: true },
+  { id: PHALLUS_LENGTH, group: "genitals", lo: "", hi: "", adultOnly: true },
+  { id: PHALLUS_GIRTH, group: "genitals", lo: "", hi: "", adultOnly: true },
 ];
 
-/** The slider of each authored modifier, placed after the upstream slider named by `after`. */
+/**
+ * The slider of each authored modifier, placed after the upstream slider named
+ * by `after`, in the order listed.
+ */
 const AUTHORED_SLIDERS = [
   {
     mod: "pelvis/mound-decr|incr",
@@ -38,11 +56,52 @@ const AUTHORED_SLIDERS = [
     label: "Mound",
     description: "The fullness of the mound over the pubic bone, flatter to fuller.",
   },
+  {
+    mod: PHALLUS_SIZE,
+    after: "genitals/penis-length-decr|incr",
+    label: "Phallus size",
+    description:
+      "From none through a clitoral glans to a large penis. Sizes between are blends of shapes made at several sizes, not one shape scaled.",
+  },
+  {
+    mod: PHALLUS_LENGTH,
+    after: PHALLUS_SIZE,
+    label: "Phallus length",
+    description: "Shorter or longer than the size sets, by up to two standard deviations.",
+  },
+  {
+    mod: PHALLUS_GIRTH,
+    after: PHALLUS_LENGTH,
+    label: "Phallus girth",
+    description: "Slimmer or thicker than the size sets, by up to two standard deviations.",
+  },
 ] as const;
 
-/** Every target name the pack authors. */
+/** Upstream sliders the authored ones replace: the CC0 penis targets, whose shape the phallus supersedes. */
+export const HIDDEN_SLIDERS: readonly string[] = [
+  "genitals/penis-length-decr|incr",
+  "genitals/penis-circ-decr|incr",
+];
+
+/**
+ * What the pack authors itself and where each asset comes from, for the pack's
+ * PROVENANCE.md: what was referenced, what was authored, and by which script.
+ * No third-party model, image, texture or target was opened, traced or copied
+ * for any of it.
+ */
+export const AUTHORED_PROVENANCE: readonly string[] = [
+  "- `pelvis/mound-decr`, `pelvis/mound-incr` (control targets): authored by `scripts/lib/control/mound.ts` " +
+    "on the CC0 hm08 base mesh; sized from published soft-tissue measurements (docs/research/ADULT-ANATOMY-DATA.md, section E).",
+  "- `genitals/phallus-k*` (detail targets) and the modifiers `genitals/phallus-size`, `-length-decr|incr`, `-girth-decr|incr`: " +
+    "authored by `scripts/lib/detail/phallus.ts` out of the phallic reservoir, whose loop and cap " +
+    "`scripts/lib/adultReservoirs.ts` places on the base mesh's own refinement. The inputs are the base body's " +
+    "vertices and published measurements (length, girth, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F); " +
+    "the glans' shape, the hang and the erect angle are modelled and labelled so there.",
+];
+
+/** Every target name the pack authors as a control target (a virtual modifier has none). */
 export const AUTHORED_TARGET_NAMES: readonly string[] = AUTHORED_MODIFIERS.flatMap((m) =>
-  m.lo ? [m.lo, m.hi] : [m.hi],
+  [m.lo, m.hi].filter((t): t is string => !!t),
 );
 
 /**
@@ -73,10 +132,11 @@ export function authorControl(shape: ControlShape): EncodedTarget[] {
 
 /**
  * Adds the authored modifiers' sliders to the adult sliders, each after the slider
- * it sits beside. The order is the sibling's plus half a step, so the merged
- * taxonomy keeps upstream's order.
+ * it sits beside, and removes the upstream sliders they replace. The order is the
+ * sibling's plus a fraction of a step, so the merged taxonomy keeps upstream's order.
  */
 export function addAuthoredSliders(tasks: SliderTask[]): void {
+  const authoredIds = new Set<string>(AUTHORED_SLIDERS.map((s) => s.mod));
   for (const s of AUTHORED_SLIDERS) {
     const sibling = tasks
       .flatMap((t) => t.groups)
@@ -91,7 +151,32 @@ export function addAuthoredSliders(tasks: SliderTask[]): void {
       label: s.label,
       camera: next.camera,
       description: s.description,
-      order: next.order + 0.5,
+      order: next.order + (authoredIds.has(s.after) ? 0.01 : 0.1),
     });
   }
+  for (const group of tasks.flatMap((t) => t.groups))
+    group.sliders = group.sliders.filter((x) => !HIDDEN_SLIDERS.includes(x.id));
+}
+
+/**
+ * The detail targets the pack authors on the adult surface's lattice, encoded,
+ * and the spec that names them (`AdultDetailSpec`): the phallic organ on the
+ * phallic reservoir. `lattice` is the lattice of a model with the pack's
+ * reservoirs, on the authoring figure.
+ */
+export function authorDetail(
+  lattice: AdultDetailLattice,
+  reservoirs: readonly AdultReservoirSpec[],
+): { targets: EncodedTarget[]; detail: AdultDetailSpec } {
+  const spec = reservoirs.find((r) => r.id === "phallic");
+  if (!spec) throw new Error("the pack has no phallic reservoir to draw the organ from");
+  const organ = phallusTargets(reservoirRoot(lattice, spec));
+  return {
+    targets: organ.targets.map((t) => encodeSparseTarget(t.name, t.indices, t.xyz)),
+    detail: {
+      targets: organ.targets.map((t) => t.name),
+      surfaceKey: lattice.key,
+      drives: organ.drives,
+    },
+  };
 }

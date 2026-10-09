@@ -1,3 +1,4 @@
+export * from "./animation/index.ts";
 export * from "./bodyArt/decals.ts";
 export * from "./bodyArt/ink.ts";
 export * from "./bodyArt/jewellery.ts";

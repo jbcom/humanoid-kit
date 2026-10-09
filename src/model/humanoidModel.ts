@@ -64,7 +64,9 @@ import {
   uvScale,
 } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
+import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/regions/hands/index.ts";
 import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
+import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 import { tuckDepths } from "./tuck.ts";
 
@@ -100,6 +102,11 @@ export interface AttachmentTopology extends SurfaceTopology {
    * blend (`occlusionCornerWeights` of `occlusionKeyWeights`).
    */
   occlusion: Float32Array;
+  /**
+   * A nail plate's (`NAIL_PLATE_KINDS`): per render vertex, how much of the
+   * free edge it is (0 over the bed, 1 past it), for its translucency.
+   */
+  nailEdge?: Float32Array;
 }
 
 /**
@@ -380,6 +387,19 @@ const part = (mesh: SurfaceMesh): Part => {
   return { mesh, scratch: { surface: new Float32Array(n), normals: new Float32Array(n) } };
 };
 
+/** A per-control-vertex scalar, carried to a mesh's render vertices through its stencil. */
+function carryToRender(
+  mesh: SurfaceMesh,
+  controlCount: number,
+  value: (v: number) => number,
+): Float32Array {
+  const field = new Float32Array(controlCount * 3);
+  for (let v = 0; v < controlCount; v++) field[v * 3] = value(v);
+  const surface = new Float32Array(mesh.topology.vertexCount * 3);
+  applyStencil(mesh.stencil, field, surface);
+  return Float32Array.from(mesh.renderToSurface, (s) => surface[s * 3] as number);
+}
+
 const topologyOf = (m: SurfaceMesh): SurfaceTopology => ({
   index: m.index,
   uvs: m.uvs,
@@ -447,6 +467,10 @@ export class HumanoidModel {
   private readonly stateMorphs: readonly StateMorph[];
   /** The adult pack's detail targets (`AdultDetailSpec`): displacements of the adult surface, not morphs. */
   private readonly detailTargets: ReadonlySet<string>;
+  /** Factors that multiply a detail target's weight (`AdultDetailSpec.gates`), compiled. */
+  private readonly detailGates: ReadonlyMap<string, readonly Factor[]>;
+  /** Detail targets whose weight is derived from factors alone (`AdultDetailSpec.drives`), compiled. */
+  private readonly detailDrives: readonly (readonly [string, readonly Factor[]])[];
   /** The body's vertex adjacency, on first use (`bodyAdjacency`). */
   private adjacency: { start: Uint32Array; items: Uint32Array } | undefined;
   /** The rest bake of the worn set, kept for the corner bakes to reuse. */
@@ -476,6 +500,20 @@ export class HumanoidModel {
       ...(assets.adultAnatomyManifest?.anatomy?.stateMorphs ?? []),
     ];
     this.detailTargets = new Set(assets.adultAnatomyManifest?.anatomy?.detail?.targets);
+    // Gates and drives name detail targets and factors the loaded packs know: a typo is an error now, not a feature that never shows.
+    const compiled = (kind: "gates" | "drives") =>
+      Object.entries(assets.adultAnatomyManifest?.anatomy?.detail?.[kind] ?? {}).map(
+        ([target, factors]) => {
+          if (!this.detailTargets.has(target))
+            throw new AssetFormatError(`detail ${kind} for ${target}: it is not a detail target`);
+          return [
+            target,
+            factors.map((f) => compileFactor(f, `detail ${kind} of ${target}`, assets.modifiers)),
+          ] as const;
+        },
+      );
+    this.detailGates = new Map(compiled("gates"));
+    this.detailDrives = compiled("drives");
     const ids = options.attachments ?? [...assets.attachments.keys()];
     const wearing = ids.map((id) => {
       const a = assets.attachments.get(id);
@@ -1018,16 +1056,8 @@ export class HumanoidModel {
     const { asset, part: p } = this.hairPart(id, entry?.kind ?? "scalp");
     if (!entry) throw new RecipeError(`unknown hair style ${id}`);
     // The per-control-vertex bake, one value at a time through the stencil like any field.
-    const n = asset.entry.vertexCount;
-    const r2s = p.mesh.renderToSurface;
-    const surface = new Float32Array(p.mesh.topology.vertexCount * 3);
-    /** A per-control-vertex scalar, carried to the render vertices through the style's stencil. */
-    const carry = (value: (v: number) => number): Float32Array => {
-      const field = new Float32Array(n * 3);
-      for (let v = 0; v < n; v++) field[v * 3] = value(v);
-      applyStencil(p.mesh.stencil, field, surface);
-      return Float32Array.from(r2s, (s) => surface[s * 3] as number);
-    };
+    const carry = (value: (v: number) => number): Float32Array =>
+      carryToRender(p.mesh, asset.entry.vertexCount, value);
     const fields = asset.hair;
     if (entry.kind === "scalp" && !fields)
       throw new MorphError(`hair style ${id} carries no measured fields`);
@@ -1196,8 +1226,34 @@ export class HumanoidModel {
         textureUrl: asset.entry.material.texture
           ? (this.assets.fileUrls.get(asset.entry.material.texture) ?? null)
           : null,
+        ...(NAIL_PLATE_KINDS.includes(asset.entry.kind) && {
+          nailEdge: this.nailPlateEdges(asset, p.mesh),
+        }),
       })),
     };
+  }
+
+  /**
+   * How much of a nail plate's free edge each of its render vertices is
+   * (`nailPlateEdges`), measured on the plate at rest on the base figure, with
+   * each vertex taking the knuckles' and nails' coordinate of the skin it is
+   * bound to.
+   */
+  private nailPlateEdges(asset: BoundAsset, mesh: SurfaceMesh): Float32Array {
+    const digits = SKIN_LAYERS.find((l) => l.id === DIGIT_LAYER.id);
+    const skin = digits?.fields(this.assets).coord;
+    if (!skin) throw new MorphError("the skin stack has no knuckles-and-nails coordinate");
+    const n = asset.entry.vertexCount;
+    const along = new Float32Array(n);
+    for (let v = 0; v < n; v++)
+      for (let k = 0; k < 3; k++)
+        along[v] =
+          (along[v] as number) +
+          (asset.weights[v * 3 + k] as number) *
+            (skin[asset.refVerts[v * 3 + k] as number] as number);
+    const rest = evaluateBinding(asset, this.assets.positions, new Float32Array(n * 3));
+    const edges = nailPlateEdges(rest, asset.faceVerts, along);
+    return carryToRender(mesh, n, (v) => edges[v] as number);
   }
 
   /**
@@ -1237,16 +1293,27 @@ export class HumanoidModel {
     return this.pendingFor(this.contributions(recipe, signals));
   }
 
-  /** The recipe's target weights, plus its skin state's (`STATE_MORPHS`), after the age policy. */
+  /**
+   * The recipe's target weights, plus its skin state's (`STATE_MORPHS`) and the
+   * weights the adult pack derives from modifiers and signals
+   * (`AdultDetailSpec.drives`, an adult's alone), after the age policy.
+   */
   private contributions(recipe: Recipe, signals: Readonly<Record<string, number>>) {
     const fromRecipe = recipeContributions(recipe, this.assets.modifiers);
     assertSignalPolicy(recipe, signals);
+    const driven: Contribution[] = [];
+    if (this.detailDrives.length && isAdult(recipe))
+      for (const [target, factors] of this.detailDrives) {
+        const weight = product(factors, recipe, signals);
+        if (weight > 0) driven.push({ target, weight });
+      }
     // A state of the adult anatomy has nothing to drive without the adult pack.
     return [
       ...fromRecipe,
       ...stateContributions(signals, this.stateMorphs, (target) =>
         this.assets.targetFileOf.has(target),
       ),
+      ...driven,
     ];
   }
 
@@ -1379,8 +1446,16 @@ export class HumanoidModel {
         `the recipe needs target files that have not loaded yet: ${[...pending].join(", ")} ` +
           "(await their stage of loadHumanoidAssetsStaged)",
       );
-    const detail = all.filter((c) => this.detailTargets.has(c.target));
-    const contributions = detail.length
+    const isDetail = all.filter((c) => this.detailTargets.has(c.target));
+    // A gated target is worth its weight times its factors; a factor of nothing drops it.
+    const detail: Contribution[] = [];
+    for (const c of isDetail) {
+      const gates = this.detailGates.get(c.target);
+      const gate = gates ? product(gates, recipe, signals) : 1;
+      if (gate === 0) continue;
+      detail.push(typeof c.weight === "number" ? { target: c.target, weight: c.weight * gate } : c);
+    }
+    const contributions = isDetail.length
       ? all.filter((c) => !this.detailTargets.has(c.target))
       : all;
     const control = new Float32Array(this.assets.positions.length);

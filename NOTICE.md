@@ -48,6 +48,14 @@ and writes:
   derived work of CC0 data, also CC0. The manifest records the SHA-256 of the
   body pack it binds to.
 
+The body pack's nail plates are two CC0 community meshes from MakeHuman's
+bodyparts04 pack, "Mind nails 01 short" and "Mind nails toes 01" by Mindfront
+(2018), whose files say `license CC0` and whose asset pages say "CC0 - Creative
+Commons Zero". Their geometry and binding are vendored in
+`vendor/makehuman-bodyparts04/`, with the provenance of each file in its
+`PROVENANCE.md`, and pass the licence rule's clause B (a community asset with
+its captured page). Credit to Mindfront for them.
+
 Height and proportion targets are kept for average muscle and weight only. The
 universal muscle and weight targets already carry that variation, and the dense
 variants would roughly triple the size of the package.

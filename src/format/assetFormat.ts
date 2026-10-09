@@ -502,6 +502,27 @@ export interface AdultDetailSpec {
    * scaled by the ratio of the figure's own distance to `rest`. Absent: none.
    */
   scale?: { a: number; b: number; rest: number };
+  /**
+   * Targets whose weight is multiplied by other values: `gates[target]` lists
+   * factors (`src/model/detailFactors.ts`): `mod:<id>` (that modifier's positive
+   * part: how much of a feature there is), `mod-:<id>` (its negative part),
+   * `signal:<name>` (a skin-state signal, 0..1), `ramp:<id>:<x>,<w>;…` (a
+   * piecewise-linear function of a modifier's positive part) or `sramp:<name>:<x>,<w>;…`
+   * (the same of a signal).
+   * A girth change of a shaft is worth nothing without a shaft: its target is
+   * gated by the length modifier, so the two combine as a product and not as a
+   * sum of two independent displacements. A factor that is zero drops the target.
+   */
+  gates?: Record<string, string[]>;
+  /**
+   * Targets whose weight is derived from factors alone, with no modifier of their
+   * own: `drives[target]` lists factors as in `gates`, and the target is worth
+   * their product. A small organ is not a scaled-down large one, so size is a
+   * blend of baked shape keys, each driven by a `ramp` of one size modifier.
+   * Derived weights reach adults only, and a drive may name a modifier that has
+   * no target of its own (`ShapeModifierEntry` with an empty `hi`).
+   */
+  drives?: Record<string, string[]>;
 }
 
 /** Faces of the base body to refine and by how much: `levels[i]` for face `faces[i]`. */
@@ -1095,7 +1116,7 @@ export function pendingTargetFiles(assets: HumanoidAssets, names: Iterable<strin
   return out;
 }
 
-async function fetchOk(url: string): Promise<Response> {
+export async function fetchOk(url: string): Promise<Response> {
   const res = await fetch(url);
   if (!res.ok)
     throw new AssetFormatError(`fetching ${url} failed: ${res.status} ${res.statusText}`);
@@ -1111,7 +1132,10 @@ export type PackLocation =
   | string
   | { readonly manifest: string; readonly files: Readonly<Record<string, string>> };
 
-function packResolver(pack: PackLocation): { manifest: string; file: (name: string) => string } {
+export function packResolver(pack: PackLocation): {
+  manifest: string;
+  file: (name: string) => string;
+} {
   if (typeof pack === "string") {
     const base = pack.endsWith("/") ? pack : `${pack}/`;
     return { manifest: `${base}manifest.json`, file: (name) => base + name };
@@ -1168,7 +1192,7 @@ export interface StagedHumanoidAssets {
 
 /** Some hosts serve `.gz` files with `Content-Encoding: gzip`, so the browser has
  * already decompressed them; only data that still starts with gzip's magic is decoded. */
-const fetchGzip = (url: string) =>
+export const fetchGzip = (url: string) =>
   fetchOk(url)
     .then((r) => r.arrayBuffer())
     .then((b) => {

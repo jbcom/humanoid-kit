@@ -73,7 +73,7 @@ describe("compileAsset", () => {
     });
     for (const f of ["t.mhclo", "t.obj", "t.mhmat"])
       expect(c.evidence[path.join(dir, f)]).toBe(
-        'B: page licence "CC0 - Creative Commons Zero" (http://www.makehumancommunity.org/node/1769, submitted 2019-02-03)',
+        'B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)',
       );
   });
 

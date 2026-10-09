@@ -404,17 +404,21 @@ and throws `RangeError` for anything else.
 - `model.evaluate(recipe, signals?, haveOutfit?): Evaluation`: `signals` (0..1 each) set the
   skin's state; those with a state morph add their targets: `cold` (the nipple
   rises and the areola contracts; `STATE_MORPHS`) and `arousal` (engorgement:
-  the shaft's circumference +25% and length +43% at full arousal, the measured
-  erect against flaccid; the adult pack's own, from its manifest's
-  `anatomy.stateMorphs`), each calibrated to its measured response.
+  the organ's circumference +25% and length +43% at full arousal, the measured
+  erect against flaccid; the adult pack's own, read by its detail targets'
+  `anatomy.detail.drives` as `sramp:arousal:…` factors, drawn at flaccid, a
+  midpoint and erect so the tube swings rather than shortens), each calibrated
+  to its measured response. `shapeSignalNames(STATE_MORPHS, anatomy?)` lists the
+  signals that change the shape: the state morphs' and those the detail's gates
+  and drives read, for a caller that re-evaluates the figure only when one changes.
   `stateContributions(signals, morphs?, exists?)` gives those target weights for
   the morphs in force, limited to targets `exists` accepts; the model passes
   the body's and the adult pack's morphs and the loaded packs' targets, so a
   state of the adult anatomy does nothing, rather than fails, without the adult
   pack. `ADULT_ONLY_SIGNALS` (`arousal`) throw `AgePolicyError` under 18
-  (`assertSignalPolicy`), before any target is named. Today the penis targets
-  deform `helper-genital`, which the surface does not draw, so engorgement
-  moves `Evaluation.control` and no drawn vertex until the sculpt phase.
+  (`assertSignalPolicy`), before any target is named. The organ is detail on the
+  adult surface (drawn out of a reservoir), so engorgement moves drawn vertices
+  of an adult figure with an organ and nothing in one without.
   `recipe.outfit` adds the garments (see "Clothing"); `haveOutfit` is the
   outfit key the caller already holds the masks of.
 - `model.controlShape(recipe): ControlShape`: an adult figure's control mesh for
@@ -750,9 +754,17 @@ compute what the renderer will do.
     through, from `nailColours(tone)`: fold, lunula, bed and free edge along each
     nail, the bed from `nailLab(tone)`, measured nail CIELAB at a lightness that
     follows the skin's far less than skin does). It paints within 1 ΔE\*ab of
-    the nail layered over the knuckle. `NAIL_GLOSS_LAYER` is the plate
-    (`NAIL_ROUGHNESS` and `NAIL_SPECULAR`); fields from `knuckleFields(assets)`
-    and `nailFields(assets)`, proportions in `NAIL_LAYOUT`.
+    the nail layered over the knuckle. `NAIL_GLOSS_LAYER` is the plate's gloss
+    on the skin (`NAIL_ROUGHNESS` and `NAIL_SPECULAR`); fields from
+    `knuckleFields(assets)` and `nailFields(assets)`, proportions in
+    `NAIL_LAYOUT`.
+  - The nail plates: body attachments of `NAIL_PLATE_KINDS` (`fingernails`,
+    `toenails`; CC0 meshes, see NOTICE.md) whose `AttachmentTopology.nailEdge`
+    is, per render vertex, how much of the free edge it is
+    (`nailPlateEdges(positions, faceVerts, along)`: each nail's last
+    `NAIL_FREE_EDGE_LENGTH` toward its tip). `<Humanoid>` draws them with a
+    `NailPlateMaterial`: keratin at `NAIL_PLATE_OPACITY` over the bed, so the
+    painted bed shows through, and `NAIL_FREE_EDGE_OPACITY` along the free edge.
   - `HAND_RELIEF_LAYER` (`"hand-relief"`, a `creases` detail layer, fields
     `handReliefFields(assets)`): the palm's crease folds and the knuckles'
     wrinkle arcs (over the back of each finger joint, `KNUCKLE_WRINKLE_SPACING`
@@ -1142,7 +1154,8 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 
 - Hidden until the first evaluation arrives.
 - Renders the body and the body pack's attachments (eyes with their own eye
-  shader following `recipe.eyes`, teeth and tongue), each attachment shaded by
+  shader following `recipe.eyes`, teeth, tongue, and the nail plates as
+  translucent keratin over the painted beds), each attachment shaded by
   its baked occlusion, which follows the pose (an open mouth lights the teeth
   it uncovers). The body's own cavities (mouth, nostrils, ear canals, eye
   sockets) are darkened the same way, so a mouth without a tongue is dim inside.
@@ -1409,6 +1422,56 @@ import { bodyPack } from "humanoid-kit-body";
 each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the
 worker client. The package also exposes its files under
 `humanoid-kit-body/data/*`.
+
+## Animation
+
+```ts
+import { animationsPack } from "humanoid-kit-animations";
+import { Animator, loadAnimationLibrary, rigData } from "humanoid-kit";
+
+const animations = await loadAnimationLibrary(animationsPack); // the manifest only
+const walk = await animations.load("walk_normal", rigData(assets).bones); // the clip's file, once
+const animator = new Animator(rig.bones.length, restBones(assets, evaluation.control), ground);
+animator.play(walk);
+animator.update(dt);          // advances time, crossfades and root motion
+animator.rotations;           // the body's local rotation per bone, bones * 4
+animator.root;                // how far the figure has been carried: [x across, z forward], metres
+```
+
+- `loadAnimationLibrary(pack)` and `createAnimationLibrary(manifest, fetchBinary)`
+  give an `AnimationLibrary`: `manifest`, `entry(id)`, `load(id, bones)` (a clip
+  bound to a rig's bone names, fetched once however many figures play it; a failed
+  fetch is retried by the next call) and `loaded(id, bones)`.
+- `AnimationClip`: `fps`, `frames`, `duration`, `loop`, `rootMotion` (it carries
+  the figure), `grounded` (the figure stands on the ground, so its feet are held),
+  and the frames' local rotations. `sampleClip(clip, time, out)` is its pose at a
+  time (a loop wraps, a clip that does not loop holds its last frame),
+  `blendRotations(a, b, weight, out)` blends two poses along the shortest arc, and
+  `slerpInto`, `clipTime` and `setIdentity` are the pieces.
+- `Animator`: `play(clip, { fade, speed, time })` (fading from the clip playing, for
+  `DEFAULT_FADE` seconds unless told), `update(dt)`, `setSpeed`, `seek`,
+  `resetRoot`, `setRest(rest, ground)` (the figure's shape changed), `playing`,
+  `fading`. With a skeleton (`rest`) and the ground under the figure at rest, a clip
+  that carries the figure moves `root` by what the figure's own feet do
+  (`planRootMotion`, `rootDisplacement`), and a grounded clip's planted feet are
+  held where they land (`FootLock`: `PLANT_LAND`, `PLANT_FULL`, `PLANT_NONE`,
+  `PLANT_SWITCH`). `contactPoints` and `CONTACT_BONES` are the points on the soles
+  they work from.
+- `frameRotations(rig, joints, frame)` (from `src/rig/pose.ts`) is a BVH frame's
+  rotations in the figure's axes, which the packer and `bodyPoseRotations` share.
+
+## `humanoid-kit-animations`
+
+```ts
+import { animationsPack } from "humanoid-kit-animations";
+```
+
+`animationsPack` is `{ manifest, files }` like `bodyPack`: per clip, `<id>.bin.gz` (the
+frames' bone rotations, a few tens of kilobytes). Pass it to `loadAnimationLibrary`.
+The six clips are punkduck's, from the MakeHuman community's CC0 additional assets:
+`walk_normal`, `walk_female`, `idle1`, `idle2`, `idlehips` and `swimcrawlstroke`.
+Its `PROVENANCE.md` pins the archive by its SHA-256 and records each clip's licence
+evidence.
 
 ## `humanoid-kit-hair`
 
