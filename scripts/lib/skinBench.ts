@@ -59,8 +59,13 @@ export type Scheme = (
 interface Joint {
   name: string;
   /** The rig's group the joint belongs to, for tuning a group's bones together. */
-  group: "arm" | "leg";
+  group: "arm" | "leg" | "spine";
   bone: string;
+  /**
+   * Bones that share the angle equally, each turning by its part about `axis`
+   * (a spine bends along its length, not at one joint); default just `bone`.
+   */
+  bones?: string[];
   /** The rotation axis, from the rest figure, and the angles to try. */
   axis: (f: Figure) => Vec;
   angles: number[];
@@ -170,7 +175,7 @@ export const JOINTS: Joint[] = [
     group: "arm",
     bone: ARM,
     axis: () => [0, 0, 1],
-    angles: [-45, -90, -130],
+    angles: [-45, -90, -130, -150, -170],
     line: [ARM, "lowerarm01.L"],
     limb: ARM,
     zone: { around: 0, radius: 0.12 },
@@ -180,10 +185,22 @@ export const JOINTS: Joint[] = [
     group: "arm",
     bone: ARM,
     axis: (f) => unit(cross(sub(f.head("lowerarm01.L"), f.head(ARM)), [0, 0, 1])),
-    angles: [45, 90, 130],
+    angles: [45, 90, 130, 150, 170],
     line: [ARM, "lowerarm01.L"],
     limb: ARM,
     zone: { around: 0, radius: 0.12 },
+  },
+  {
+    // The trunk folded forward, shared out along the spine: five bones, a fifth each.
+    name: "spine flexion",
+    group: "spine",
+    bone: "spine05",
+    bones: ["spine05", "spine04", "spine03", "spine02", "spine01"],
+    axis: () => [1, 0, 0],
+    angles: [30, 60, 90],
+    line: ["spine05", "spine04", "spine03", "spine02", "spine01"],
+    limb: "spine05",
+    zone: { around: 2, radius: 0.15 },
   },
   {
     name: "hip flexion",
@@ -318,7 +335,12 @@ export class SkinBench {
 
   private prepare(figure: Figure, joint: Joint, angle: number): Case {
     const rotations = IDENTITY_POSE(figure.rest.names.length);
-    rotations.set(rotation(joint.axis(figure), angle), figure.rest.names.indexOf(joint.bone) * 4);
+    const turned = joint.bones ?? [joint.bone];
+    for (const bone of turned)
+      rotations.set(
+        rotation(joint.axis(figure), angle / turned.length),
+        figure.rest.names.indexOf(bone) * 4,
+      );
     return {
       figure,
       joint,
