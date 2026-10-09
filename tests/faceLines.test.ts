@@ -213,7 +213,7 @@ describe("the expression line layers", () => {
       const l = index(`lines.${name}`);
       let diff = 0;
       let total = 0;
-      for (let v = 0; v < BODY; v += 3) {
+      for (let v = 0; v < BODY; v += 1) {
         const [x, y, z] = pos(v) as [number, number, number];
         if (x <= 0 || mask(l, v) < 0.05) continue;
         // The vertex across the face: the nearest to the reflection.
