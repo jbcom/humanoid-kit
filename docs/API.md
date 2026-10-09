@@ -694,14 +694,17 @@ compute what the renderer will do.
     `CREASE_HALF_WIDTH` how far either side of the joint each joint's creases
     reach.
   - Expression lines (ARCHITECTURE.md, "Facial wrinkles"):
-    `EXPRESSION_LINE_LAYERS`, five `creases` `DetailLayer`s (`lines.forehead`,
-    `lines.crows-feet`, `lines.glabella`, `lines.nasolabial`, `lines.nose`) driven
-    by the `face.*` signals and the figure's `age`: forehead lines on
-    `browRaise`, furrows between the brows on `browFurrow`, crow's feet on
-    `squint` (or a smile), the folds on `nasolabial` (or a smile), nose lines on
-    `noseWrinkle`. `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
+    `EXPRESSION_LINE_LAYERS`, five layers (`lines.forehead`, `lines.crows-feet`,
+    `lines.glabella`, `lines.nasolabial`, `lines.nose`) driven by the `face.*`
+    signals and the figure's `age`: forehead lines on `browRaise`, furrows
+    between the brows on `browFurrow`, crow's feet on `squint` (or a smile), the
+    folds on `nasolabial` (or a smile), nose lines on `noseWrinkle`. The forehead's
+    and the furrows' are multiply `ColourLayer`s, thin lines on colour stops
+    (`FOREHEAD_STOPS`, `GLABELLA_STOPS`) of a coordinate exactly linear in
+    position, shaded by `lineShade(age)`; the rest are `creases` `DetailLayer`s.
+    `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
     `EXPRESSION_COUNT` are art-directed, `expressionAgeFactor(age)` scales the
-    depth by age (0.2 at 6, 1 at 40, 1.4 at 70).
+    depth or shade by age (0.2 at 6, 1 at 40, 1.4 at 70).
   - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones
     (head, hand, thigh, …) as soft per-vertex masks from the skin weights, plus
     its `front`, `palm`, `sole`, `forehead` and `neck` fields from the vertex

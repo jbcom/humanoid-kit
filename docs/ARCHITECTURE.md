@@ -820,25 +820,39 @@ holds, and the expressions read as themselves (a smile as `smile` with some
 `squint` from the raised cheeks, anger as `browFurrow`, surprise as `browRaise`,
 disgust as `noseWrinkle`).
 
-Five crease layers draw the lines (`EXPRESSION_LINE_LAYERS`,
-`src/surface/regions/faceLines.ts`), the same `creases` detail pattern as the
-elbow and knee: the forehead's horizontal lines (`browRaise`), the furrows
-between the brows (`browFurrow`), crow's feet fanning from each eye's outer
-corner (`squint`, or 0.6 of `smile`), the nasolabial folds from the nose's wing
-past the mouth's corner (`nasolabial`, or 0.7 of `smile`) and the nose
-bridge's lines (`noseWrinkle`). Where each lies is read from the default
-figure's joints (the brows, the outer corners, the nose's wing), so it follows
-the mesh, and keeps off the lips and the eyeballs (a test holds it). The
-forehead's lines and the furrows are bounded by distance along the skin from
-the brows' band (`distanceFromBrows`: Dijkstra over the mesh's edges), not by
-height, since the mesh is coarse over the forehead and a mask built from heights
-leaked across big triangles up and over the crown on the first sheets: the
-forehead lines (by height, which is smooth over the coarse mesh where a distance along its edges bends the grooves) run from 1 to 6.2 cm above the brows, fading
-toward the temples, and the furrows reach 1 to 2.6 cm above them, two straight near-vertical
-grooves 1.5 cm apart either side of the midline (a coordinate that runs
-unclamped across 6 cm with four grooves, of which the mask keeps the middle two,
-so no clamp bends them), between the brows (frontalis lines stop 5 to 7 cm above the brows, glabellar lines are 1 to
-2.5 cm long; a test holds every layer's mask to its extent). The
+Five layers draw the lines (`EXPRESSION_LINE_LAYERS`,
+`src/surface/regions/faceLines.ts`): the forehead's horizontal lines
+(`browRaise`), the furrows between the brows (`browFurrow`), crow's feet
+fanning from each eye's outer corner (`squint`, or 0.6 of `smile`), the
+nasolabial folds from the nose's wing past the mouth's corner (`nasolabial`, or
+0.7 of `smile`) and the nose bridge's lines (`noseWrinkle`). The crow's feet,
+folds and nose lines are the elbow and knee's `creases` relief; the forehead's
+lines and the furrows are thin lines of colour instead. A thin line cannot be a
+mask or a relief phase on this mesh: the forehead's triangles are about 2 cm
+across and a field is interpolated between their vertices, so any coordinate
+that is not exactly linear in position bends a line into a squiggle (the first
+sheets' "ʍ" furrow). They use the palm creases' technique
+(`hands/creases.ts`): a multiply colour layer whose coordinate is exactly
+linear (the forehead's in height, the furrows' across the face), with the
+line's shade on chosen ones of the layer's eight colour stops (`FOREHEAD_STOPS`,
+`GLABELLA_STOPS`), so a line is straight wherever the vertices fall and a
+seventh of the coordinate's band wide. A coordinate is stored in 0 to 1, and a
+vertex outside its band is stored clamped, which would bend a line in any
+triangle that has one; so each band reaches a face past its lines and the mask
+fades to zero before the band ends. The forehead has three lines (2.3, 4.1 and
+5.9 cm above the brows' joints), deepest at the centre and weakening toward the
+temples; the furrows are two vertical lines 1.05 cm either side of the midline.
+Their shade is the fold's shadow, a multiply by `lineShade(age)` (22 % at 40,
+the most 45 %), which grows with age as the relief's depth does.
+
+Where each lies is read from the default figure's joints (the brows, the outer
+corners, the nose's wing), so it follows the mesh, and keeps off the lips and the
+eyeballs (a test holds it). The forehead's lines and the furrows are also
+bounded by distance along the skin from the brows' band (`distanceFromBrows`:
+Dijkstra over the mesh's edges), since a mask built from heights alone leaked
+across big triangles up and over the crown on the first sheets (frontalis lines
+stop 5 to 7 cm above the brows, glabellar lines are 1 to 2.5 cm long; a test
+holds every layer's mask to its extent). The
 crow's feet and the folds are each one layer for both sides, the coordinate
 being the angle about its own corner and the distance across its own fold, so
 the right is the left reflected and two layers' channels are saved. How many
