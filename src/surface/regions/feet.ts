@@ -169,7 +169,7 @@ export function toeFrame(assets: HumanoidAssets): ToeFrame {
     joints: [[], []],
   };
   const joints: DigitFrame["joints"][] = [];
-  (["L", "R"] as const).forEach((name, s) => {
+  (["L", "R"] as const).forEach((name) => {
     const sign = name === "L" ? 1 : -1;
     // A toe's joints: from the foot's far end, the base joint (the ball of the
     // foot), each joint between its bones and the tip. The big toe has two bones.
