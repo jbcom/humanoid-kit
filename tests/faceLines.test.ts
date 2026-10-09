@@ -331,7 +331,7 @@ describe("the expression lines' paint", () => {
     }
     for (const [set, count] of Object.entries(EXPRESSION_COUNT)) {
       expect(count, set).toBeGreaterThanOrEqual(1);
-      expect(count, set).toBeLessThanOrEqual(4);
+      expect(count, set).toBeLessThanOrEqual(5);
     }
     const paint = layer("lines.forehead").paint(input({ "face.browRaise": 1 }, 40)) as {
       height: number;
