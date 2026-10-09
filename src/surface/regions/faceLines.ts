@@ -51,7 +51,7 @@ export function expressionAgeFactor(age: number | undefined): number {
 
 /** Depth of a groove at full expression, metres, for a grown face (art-directed). */
 export const EXPRESSION_DEPTH = {
-  forehead: 0.0004,
+  forehead: 0.0007,
   glabella: 0.0005,
   crowsFeet: 0.0003,
   nasolabial: 0.0006,
@@ -60,7 +60,7 @@ export const EXPRESSION_DEPTH = {
 
 /** Grooves across each set's window (art-directed). */
 export const EXPRESSION_COUNT = {
-  forehead: 3,
+  forehead: 5,
   glabella: 4,
   crowsFeet: 3,
   nasolabial: 1,

@@ -842,7 +842,7 @@ so no clamp bends them), between the brows (frontalis lines stop 5 to 7 cm above
 crow's feet and the folds are each one layer for both sides, the coordinate
 being the angle about its own corner and the distance across its own fold, so
 the right is the left reflected and two layers' channels are saved. How many
-lines (1 to 3) and how deep (0.25 to 0.6 mm, against the elbow's 2.8) is
+lines (1 to 5) and how deep (0.25 to 0.7 mm, against the elbow's 2.8) is
 art-directed, since no measurement of facial wrinkle depth or spacing against
 expression is in this repository; the depth grows with age
 (`expressionAgeFactor`: 0.2 at 6, 0.8 at 25, 1 at 40, 1.4 at 70), because a
