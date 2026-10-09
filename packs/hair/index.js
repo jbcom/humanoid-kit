@@ -20,6 +20,8 @@ export const hairPack = {
 		"braids01.webp": new URL("./data/braids01.webp", import.meta.url).href,
 		"cornrows01.bin.gz": new URL("./data/cornrows01.bin.gz", import.meta.url).href,
 		"cornrows01.webp": new URL("./data/cornrows01.webp", import.meta.url).href,
+		"crop01.bin.gz": new URL("./data/crop01.bin.gz", import.meta.url).href,
+		"crop01.webp": new URL("./data/crop01.webp", import.meta.url).href,
 		"eyebrow001.bin.gz": new URL("./data/eyebrow001.bin.gz", import.meta.url).href,
 		"eyebrow001.webp": new URL("./data/eyebrow001.webp", import.meta.url).href,
 		"eyebrow002.bin.gz": new URL("./data/eyebrow002.bin.gz", import.meta.url).href,

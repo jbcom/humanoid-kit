@@ -1285,8 +1285,13 @@ a coloured texture; everything in the pure core is testable in Node.
   map is a tile per rope variant, drawn as vector shapes and rasterised by sharp (`atlas.ts`),
   periodic round the tube. A tube faces every way round its axis, so these styles opt out of
   both the fin dissolve and the hairline fade (`HairFieldsInput.fins`, `feather`). Provenance
-  names them as authored by the packer. Not yet: a close crop or fade, bantu knots, curl
-  texture for the soft styles.
+  names them as authored by the packer. A **derived** style keeps a MakeHuman style's cards
+  (geometry, binding, cut-out) and draws its own strand map inside that cut-out: `crop01` is
+  `short04`'s cap (3.8 mm median above the scalp) with thousands of tiny loops drawn at random
+  angles, its soft edge broken into ragged fuzz, the loose cards below the cap cleared, and a
+  fade (`keepAt`: full on top, tapering over the ears and round to bare skin at the nape) taken
+  from where each texel lies on the head (`uvField.ts` rasterises the cards into the texture). Not
+  yet: bantu knots, tight curls in the longer styles.
 
 **Costs and limits.** The pack is 3.5 MB for ten styles, mostly strand maps at
 1024 px (and 0.3 to 0.5 MB for each authored one); the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
@@ -1528,6 +1533,9 @@ module.
   (outfit-masked) index cut to the triangles whose corners carry a painted
   region; built when the outfit or the set of painted regions changes, so a
   figure without a coat draws nothing and stubble draws only the face.
+  A recipe without `bodyHair` grows no coat at all (`coatPaintFor`): until the
+  coat's sub-pixel strands resolve as coverage rather than single-pixel
+  points, default figures stay bare instead of speckled.
 - *One instanced draw.* The coat is a skinned mesh on the body's own geometry
   and skeleton, instanced N times; shell `i` is the skin offset along the rest
   normal by `(i + 1) / N` of the hair's length, leaning along the comb, before
@@ -1705,8 +1713,33 @@ front leg is already straight in the clip, and a pin ahead of it cannot be reach
 A hand-keyed clip is the limit, not the solver: a clip that planted its feet would
 leave nothing to hold.
 
-**Not here yet:** playing it in `<Humanoid>`, the Quaternius breadth set (retargeted
-through a T-pose), and the no-interpenetration check at a clip's extremes.
+**In the renderer.** `<Humanoid animation={{ library, clip }}>` plays a clip
+(`useFigureAnimation`, `src/react`): each frame the animator's pose, with
+`pose.faceUnits` laid over it, goes to the skeleton, the attachments' occlusion
+keys, the skin's dual quaternions, the figure's lift onto the ground (from its soles
+for a clip that stands on the ground, from its lowest vertex for one that does not),
+its presence (derived again every third frame) and, for a clip that carries it, the
+group (moved forward in its own frame by the root motion of each frame, so a parent's
+transform and a new `position` still compose). None of it goes through React state,
+so a figure animates without re-rendering, and while it plays the figure lifts itself
+and `onGroundOffset` is not called. `time` puts the figure at a time in the clip
+(held, with `paused`), which the QA shots and sheets use (`?anim=walk_normal&t=0.4`).
+`e2e/animation.spec.ts` proves it in a browser: the feet are where the clip has them
+at a time, a walking figure is carried forward on its feet, and the planted ball's
+world position holds.
+
+**Clearance.** `src/animation/clearance.ts` checks a pose for one part of the body
+through another: the body as 14 capsules (head, torso, and each side's upper arm,
+forearm, hand, thigh, shin and foot), each between two joints with a radius measured
+from the figure's own skin (a hand and a foot are flat, so a half and 0.6 of it), and
+the depth to which two that are not neighbours overlap. The capsules are coarse, so
+`CLEARANCE_TOLERANCE` is 2.5 cm. `tests/animation.test.ts` holds every frame of
+every clip, on nine figures, and the walks as the foot lock turns their legs, to it;
+the widest is the crawl's arm skimming the thigh at 19 mm, and the walks stay clear
+of every other part (a hand clears the thigh by 10 to 22 mm), and a test that crosses
+two legs shows the check finds a collision.
+
+**Not here yet:** the Quaternius breadth set (retargeted through a T-pose).
 
 ## Layers
 
