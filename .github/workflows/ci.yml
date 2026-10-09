@@ -98,7 +98,9 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm coverage
+      # Coverage includes the browser project (the shader-side render code).
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: xvfb-run --auto-servernum pnpm coverage
       - name: SonarCloud scan
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
