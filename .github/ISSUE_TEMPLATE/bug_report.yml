@@ -1,0 +1,36 @@
+name: Bug report
+description: Report reproducible incorrect behavior in humanoid-kit.
+title: "fix: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: For security vulnerabilities, use the private reporting link in SECURITY.md.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the smallest runnable code sample, the recipe values involved, and exact commands.
+      render: ts
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: humanoid-kit, three, React, React Three Fiber, Node.js, package manager, browser, and operating system.
+      placeholder: humanoid-kit 0.1.0; three 0.185; React 19; Node 24; pnpm 12; Chrome 140; macOS 26
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add console output, screenshots, or other useful details.

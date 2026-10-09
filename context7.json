@@ -1,0 +1,24 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "humanoid-kit",
+  "description": "Universal parametric human and anthro figures for three.js and React Three Fiber: one CC0 base mesh, independent regional traits, subdivision, rigging, hair, clothing fit and a contextual tap-to-edit creator.",
+  "branch": "main",
+  "folders": ["docs", "src"],
+  "excludeFolders": [
+    "node_modules",
+    "dist",
+    "dist-playground",
+    "coverage",
+    "data",
+    "docs/dist",
+    "docs/node_modules"
+  ],
+  "excludeFiles": ["CHANGELOG.md"],
+  "rules": [
+    "The package is ESM-only and pre-release; the API is still in development.",
+    "Every figure derives from one adult CC0 base mesh; baby and child targets are excluded from the shipped data so non-adult proportions cannot be produced.",
+    "Regional trait masks keep traits independent: changing one region never locks or rescales another.",
+    "Subdivision runs in a Web Worker through the humanoid-kit/worker entry point.",
+    "The core entry point has no React dependency; React, React Three Fiber and drei are optional peers used only by humanoid-kit/react and humanoid-kit/editor."
+  ]
+}

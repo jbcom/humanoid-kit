@@ -1,0 +1,7 @@
+# Local development only. CI installs Node and pnpm with the official
+# actions/setup-node and pnpm/action-setup (see .github/workflows/*.yml); the
+# pnpm version is read from package.json#packageManager, so it is not repeated
+# here. `mise install` gives a contributor the same toolchain without corepack.
+[tools]
+node = "26"
+pnpm = "12"

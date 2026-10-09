@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "package-name": "humanoid-kit",
+      "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false,
+      "bump-minor-pre-major": true,
+      "exclude-paths": ["packs"]
+    },
+    "packs/body": {
+      "release-type": "node",
+      "package-name": "humanoid-kit-body",
+      "component": "humanoid-kit-body",
+      "include-component-in-tag": true,
+      "bump-minor-pre-major": true
+    },
+    "packs/adult-anatomy": {
+      "release-type": "node",
+      "package-name": "humanoid-kit-adult-anatomy",
+      "component": "humanoid-kit-adult-anatomy",
+      "include-component-in-tag": true,
+      "bump-minor-pre-major": true
+    }
+  }
+}

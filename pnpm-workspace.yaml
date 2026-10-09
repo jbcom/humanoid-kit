@@ -1,0 +1,11 @@
+packages:
+  - .
+  - packs/*
+  - docs
+
+# pnpm blocks dependency install scripts by default. Allow exactly the ones the
+# toolchain needs: esbuild's and sharp's native binaries (Sourcey's docs build).
+allowBuilds:
+  esbuild: true
+  sharp: true
+  simple-git-hooks: true

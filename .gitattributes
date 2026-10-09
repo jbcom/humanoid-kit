@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# The packed asset data is plain binary and ships in the repository (no LFS).
+packs/*/data/*.bin binary
+*.webp binary

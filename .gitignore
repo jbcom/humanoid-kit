@@ -1,0 +1,20 @@
+node_modules/
+dist/
+dist-playground/
+coverage/
+test-results/
+playwright-report/
+*.tgz
+.DS_Store
+docs/dist/
+# Local agent runtime state and cache; never part of the package. The tracked
+# directive.md and decisions.ndjson stay out of these patterns on purpose.
+.agent-state/digest.md
+.agent-state/cursor.md
+.agent-state/.indexed-sha
+.agent-state/.last-stop-sha
+.agent-state/.last-compaction
+.agent-state/batch.json
+.agent-state/session-logs/
+.agent-state/session-state/
+.claude/
