@@ -42,11 +42,104 @@ const srgb8 = (l: number) => {
   return Math.round(s * 255);
 };
 
-export function strandMapFromRgba(rgba: Uint8Array, width: number, height: number): StrandMap {
+export interface StrandMapOptions {
+  /**
+   * Divide out the atlas's coarse shading: a gaussian of this sigma (a fraction of
+   * the longer edge) is blurred over the opaque texels, and every texel is divided
+   * by it. The atlas's own blotches (a painted-in dark patch, a lighter cell) are
+   * lighting the model bakes in, and the renderer lights the hair itself, so they
+   * read as a net or as dirt; the strand-scale structure is what remains. Alpha is
+   * untouched, and the blur is weighted by alpha, so clear texels (the atlas's
+   * backdrop) contribute nothing and a card is flattened by its own texels; cards
+   * closer together than three sigma still share some. Absent, the atlas's shading
+   * is kept.
+   */
+  flatten?: number;
+}
+
+/** A gaussian kernel of the given sigma (in texels), normalised, radius 3 sigma. */
+const gaussian = (sigma: number) => {
+  const radius = Math.max(1, Math.ceil(sigma * 3));
+  const k = new Float32Array(radius * 2 + 1);
+  let total = 0;
+  for (let i = -radius; i <= radius; i++) {
+    const w = Math.exp(-(i * i) / (2 * sigma * sigma));
+    k[i + radius] = w;
+    total += w;
+  }
+  for (let i = 0; i < k.length; i++) k[i] = (k[i] as number) / total;
+  return k;
+};
+
+/** A separable gaussian blur of a single-channel image; the edge repeats. */
+function blur(src: Float32Array, width: number, height: number, sigma: number): Float32Array {
+  const k = gaussian(sigma);
+  const r = (k.length - 1) / 2;
+  const tmp = new Float32Array(src.length);
+  const out = new Float32Array(src.length);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      let s = 0;
+      for (let i = -r; i <= r; i++)
+        s +=
+          (k[i + r] as number) *
+          (src[y * width + Math.min(width - 1, Math.max(0, x + i))] as number);
+      tmp[y * width + x] = s;
+    }
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      let s = 0;
+      for (let i = -r; i <= r; i++)
+        s +=
+          (k[i + r] as number) *
+          (tmp[Math.min(height - 1, Math.max(0, y + i)) * width + x] as number);
+      out[y * width + x] = s;
+    }
+  return out;
+}
+
+/**
+ * Luminance with its coarse shading divided out, rescaled to the same
+ * alpha-weighted mean. Texels with no alpha are left as they were.
+ */
+function flattened(
+  luminance: Float32Array,
+  alpha: Float32Array,
+  width: number,
+  height: number,
+  sigma: number,
+  mean: number,
+): Float32Array {
+  const weighted = new Float32Array(luminance.length);
+  for (let i = 0; i < weighted.length; i++)
+    weighted[i] = (luminance[i] as number) * (alpha[i] as number);
+  const num = blur(weighted, width, height, sigma);
+  const den = blur(alpha, width, height, sigma);
+  const out = new Float32Array(luminance.length);
+  // A floor keeps a texel in a near-black patch from being amplified without limit.
+  const floor = 0.05 * mean;
+  for (let i = 0; i < out.length; i++) {
+    const d = den[i] as number;
+    const low = d > 1e-4 ? (num[i] as number) / d : mean;
+    out[i] =
+      (alpha[i] as number) === 0
+        ? (luminance[i] as number)
+        : (luminance[i] as number) * (mean / Math.max(low, floor));
+  }
+  return out;
+}
+
+export function strandMapFromRgba(
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+  options: StrandMapOptions = {},
+): StrandMap {
   const count = width * height;
   if (rgba.length !== count * 4)
     throw new Error(`strand map: ${rgba.length} bytes is not a ${width}x${height} RGBA image`);
-  const luminance = new Float32Array(count);
+  let luminance: Float32Array = new Float32Array(count);
+  const alphas = new Float32Array(count);
   let sum = 0;
   let weight = 0;
   for (let i = 0; i < count; i++) {
@@ -56,10 +149,22 @@ export function strandMapFromRgba(rgba: Uint8Array, width: number, height: numbe
       0.0722 * (LINEAR[rgba[i * 4 + 2] as number] as number);
     luminance[i] = y;
     const a = (rgba[i * 4 + 3] as number) / 255;
+    alphas[i] = a;
     sum += y * a;
     weight += a;
   }
   if (weight === 0) throw new Error("strand map: the atlas has no opaque texel");
+  if (options.flatten !== undefined)
+    luminance = flattened(
+      luminance,
+      alphas,
+      width,
+      height,
+      options.flatten * Math.max(width, height),
+      sum / weight,
+    );
+  sum = 0;
+  for (let i = 0; i < count; i++) sum += (luminance[i] as number) * (alphas[i] as number);
   const sourceMean = sum / weight;
   // The gain that makes the *clipped* map average HAIR_STRAND_MEAN. A dark atlas's
   // bright strands clip at white, so the plain ratio would leave the map darker than

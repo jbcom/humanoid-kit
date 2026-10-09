@@ -143,6 +143,77 @@ describe("strandMapFromRgba", () => {
     expect(strandMapFromRgba(noise, SIZE, SIZE).coherence).toBeLessThan(0.15);
   });
 
+  describe("flattening", () => {
+    // Fine vertical strands (period 2) under a coarse checker of 8-texel cells, one dark and
+    // one bright: the checker is baked-in blotching, the strands are what the map is for.
+    const CELL = 8;
+    const blotchy = image((x, y) => {
+      const cell = (Math.floor(x / CELL) + Math.floor(y / CELL)) % 2 === 0 ? 0.6 : 1;
+      const strand = x % 2 === 0 ? 1 : 0.6;
+      const v = Math.round(200 * cell * strand);
+      return [v, v, v, 255];
+    });
+    /** Mean linear value of the texels in one checker cell: column 0 of the grid, row 0 (dark) or 1 (bright). */
+    const cellMean = (rgba: Uint8Array, row: number) => {
+      let sum = 0;
+      for (let y = row * CELL; y < (row + 1) * CELL; y++)
+        for (let x = 0; x < CELL; x++) sum += srgbToLinear(rgba[(y * SIZE + x) * 4] as number);
+      return sum / (CELL * CELL);
+    };
+    /** Mean absolute difference between neighbouring columns inside one cell, relative to the cell's mean. */
+    const strandContrast = (rgba: Uint8Array, row: number) => {
+      let sum = 0;
+      for (let y = row * CELL + 1; y < (row + 1) * CELL - 1; y++)
+        for (let x = 1; x < CELL - 2; x++)
+          sum += Math.abs(
+            srgbToLinear(rgba[(y * SIZE + x) * 4] as number) -
+              srgbToLinear(rgba[(y * SIZE + x + 1) * 4] as number),
+          );
+      return sum / ((CELL - 2) * (CELL - 3)) / cellMean(rgba, row);
+    };
+
+    it("is off unless asked for: the map keeps the atlas's coarse shading", () => {
+      const m = strandMapFromRgba(blotchy, SIZE, SIZE);
+      expect(cellMean(m.rgba, 1) / cellMean(m.rgba, 0)).toBeGreaterThan(2.5);
+    });
+
+    it("removes coarse blotches and keeps the strands", () => {
+      const plain = strandMapFromRgba(blotchy, SIZE, SIZE);
+      const flat = strandMapFromRgba(blotchy, SIZE, SIZE, { flatten: 0.04 });
+      // The bright cells were 2.5x the dark ones or more; the gap to equal is now under half...
+      const gap = (m: { rgba: Uint8Array }) => cellMean(m.rgba, 1) / cellMean(m.rgba, 0) - 1;
+      expect(gap(plain)).toBeGreaterThan(1.5);
+      expect(gap(flat)).toBeLessThan(0.5 * gap(plain));
+      expect(gap(flat)).toBeGreaterThan(-0.2);
+      // ...and the strand-scale contrast survives in both.
+      for (const row of [0, 1])
+        expect(strandContrast(flat.rgba, row)).toBeGreaterThan(
+          0.5 * strandContrast(plain.rgba, row),
+        );
+    });
+
+    it("still averages HAIR_STRAND_MEAN", () => {
+      const flat = strandMapFromRgba(blotchy, SIZE, SIZE, { flatten: 0.04 });
+      expect(meanLinear(flat.rgba)).toBeCloseTo(HAIR_STRAND_MEAN, 2);
+    });
+
+    it("weights by alpha: a card is flattened by its own texels, not by its backdrop", () => {
+      // A dark island and a bright island split by a wide clear band (the backdrop is white,
+      // as in an atlas): flattened, both come out the same, and the backdrop feeds neither.
+      const islands = image((x) =>
+        x >= 24 && x < 40
+          ? [255, 255, 255, 0]
+          : x < 24
+            ? [60, 60, 60, 255]
+            : ([180, 180, 180, 255] as [number, number, number, number]),
+      );
+      const m = strandMapFromRgba(islands, SIZE, SIZE, { flatten: 0.04 });
+      const left = srgbToLinear(m.rgba[(10 * SIZE + 8) * 4] as number);
+      const right = srgbToLinear(m.rgba[(10 * SIZE + 54) * 4] as number);
+      expect(Math.abs(left - right) / Math.max(left, right)).toBeLessThan(0.1);
+    });
+  });
+
   it("refuses an image with no opaque texel", () => {
     expect(() =>
       strandMapFromRgba(

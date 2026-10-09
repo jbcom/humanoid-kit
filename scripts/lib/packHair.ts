@@ -36,6 +36,13 @@ export interface HairStyleSpec {
   id: string;
   label: string;
   tags: string[];
+  /**
+   * `strandMapFromRgba`'s `flatten`, for an atlas whose painted-in shading reads as a
+   * net or as dirt under the renderer's own lighting (afro01's cell pattern, braid01's
+   * dark blotches). The sigma must be well under the blotch size to follow it, and
+   * well over a strand's width to leave the strands alone.
+   */
+  flatten?: number;
 }
 
 /**
@@ -47,13 +54,13 @@ export const HAIR_STYLES: readonly HairStyleSpec[] = [
   { id: "short02", label: "Short, tousled", tags: ["short", "tousled"] },
   { id: "bob02", label: "Bob with a side fringe", tags: ["bob", "straight", "fringe"] },
   { id: "long01", label: "Long, straight", tags: ["long", "straight"] },
-  { id: "afro01", label: "Afro", tags: ["short", "curly", "afro"] },
+  { id: "afro01", label: "Afro", tags: ["short", "curly", "afro"], flatten: 0.007 },
   { id: "short04", label: "Short, slicked back", tags: ["short", "slicked"] },
   { id: "short03", label: "Short, side-swept", tags: ["short", "swept", "fringe"] },
   { id: "ponytail01", label: "Ponytail", tags: ["long", "ponytail", "tied"] },
   { id: "short01", label: "Short, textured", tags: ["short", "textured"] },
   { id: "bob01", label: "Side-swept bob", tags: ["bob", "swept", "fringe"] },
-  { id: "braid01", label: "Side braid", tags: ["long", "braid", "tied"] },
+  { id: "braid01", label: "Side braid", tags: ["long", "braid", "tied"], flatten: 0.012 },
 ];
 
 /** Longest strand-map edge shipped: hair covers the head, which fills a fraction of the screen. */
@@ -93,13 +100,18 @@ function readBody(bodyDir: string) {
 }
 
 /** Writes a style's strand map and measures its strand direction. */
-async function writeStrandMap(src: string, dest: string) {
+export async function writeStrandMap(src: string, dest: string, flatten?: number) {
   const { data, info } = await sharp(src)
     .resize({ width: TEXTURE_MAX, height: TEXTURE_MAX, fit: "inside", withoutEnlargement: true })
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  const map = strandMapFromRgba(new Uint8Array(data), info.width, info.height);
+  const map = strandMapFromRgba(
+    new Uint8Array(data),
+    info.width,
+    info.height,
+    flatten === undefined ? {} : { flatten },
+  );
   await sharp(Buffer.from(map.rgba), {
     raw: { width: info.width, height: info.height, channels: 4 },
   })
@@ -197,7 +209,7 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
     if (!TEXTURE_FILE.test(source)) throw new Error(`${spec.id}: ${source} is not an image`);
 
     const textureFile = `${spec.id}.webp`;
-    const strand = await writeStrandMap(source, path.join(outDir, textureFile));
+    const strand = await writeStrandMap(source, path.join(outDir, textureFile), spec.flatten);
     compiled.material.texture = textureFile;
 
     const occlusion = Uint8Array.from(model.bakeHairOcclusion(boundFrom(compiled)), (v) =>
