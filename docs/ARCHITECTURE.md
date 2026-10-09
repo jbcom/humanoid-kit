@@ -1371,6 +1371,22 @@ anything when shoes are worn beyond the fields every figure shares.
   through `SkinPaintInput.age`, which `<Humanoid>` sets from the recipe. The
   tint and the age curve are choices and say so in C6: no callus colorimetry
   was found.
+- *A digit frame, shared.* Which toe a vertex lies on, how far along it (from
+  its base joint) and across come from the skeleton's joints alone
+  (`digitFrame`, `src/surface/regions/digitFrame.ts`): the nearest segment of
+  each toe's polyline, with the projections either side of a joint blended so
+  the coordinate runs on smoothly round a bend. It is the computation the
+  hands' frame does for fingers; the toes' frame (`toeFrame`) feeds it the
+  foot's far end as each toe's reference point and the sole as its facing.
+- *Toe joint creases are bands across the toes.* A band of 3 to 7 mm half-width
+  (0.4 of the shorter bone) centred on each joint that is not a tip, on its own
+  side of the toe: fine wrinkles on the top (`TOE_WRINKLE_LAYER`, three to a
+  band, 0.12 mm deep as the hands' knuckle wrinkles, fainter in a child and
+  deepening with age, `wrinkleAmount`) and one fold under each joint
+  (`TOE_CREASE_LAYER`, 0.3 mm as the palm's creases, from birth). The coordinate
+  runs 0 to 1 across the band, so a fold starts and ends flat, and the bands
+  stay a bone's fraction apart so the nearest joint never flips inside one.
+  Depths and counts are choices (C6): no measurement of crease depth was found.
 
 ## Parallel work: the base contract
 

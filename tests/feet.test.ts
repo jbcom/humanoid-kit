@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { CALLUS_LAYER, callusAmount, footFrame, toeFrame } from "../src/surface/regions/feet.ts";
+import {
+  CALLUS_LAYER,
+  callusAmount,
+  footFrame,
+  TOE_CREASE_LAYER,
+  TOE_WRINKLE_LAYER,
+  toeFrame,
+} from "../src/surface/regions/feet.ts";
 import { skinZones } from "../src/surface/regions/skinZones.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
@@ -179,5 +186,108 @@ describe("the toes' frame", () => {
     }
     expect(pads).toBeGreaterThan(50);
     expect(nails).toBeGreaterThan(50);
+  });
+});
+
+describe("toe joint creases", () => {
+  const frame = toeFrame(assets);
+  const dorsal = TOE_WRINKLE_LAYER.fields(assets);
+  const plantar = TOE_CREASE_LAYER.fields(assets);
+
+  const bands = (side: 0 | 1, toe: number) => {
+    const j = frame.joints[side][toe - 1] as readonly number[];
+    // Base joint (0) and the joints between the bones: the tip is not a joint.
+    return j.slice(0, -1);
+  };
+
+  it("lies in a band across each toe at each of its joints, on its side of the toe only", () => {
+    for (let v = 0; v < n; v++) {
+      const d = frame.digit[v] as number;
+      const under = frame.under[v] as number;
+      const md = dorsal.mask[v] as number;
+      const mp = plantar.mask[v] as number;
+      if (d === 0) {
+        expect(md).toBe(0);
+        expect(mp).toBe(0);
+        continue;
+      }
+      // Never on the sole's side of the dorsal wrinkles, nor the top's of the plantar creases.
+      if (under > 0.002) expect(md, `vertex ${v}`).toBe(0);
+      if (under < -0.002) expect(mp, `vertex ${v}`).toBe(0);
+    }
+  });
+
+  it("is centred on a joint and runs 0 to 1 across the band, the way the toe runs", () => {
+    for (const side of [0, 1] as const) {
+      for (let toe = 1; toe <= 5; toe++) {
+        for (const j of bands(side, toe)) {
+          const xs: number[] = [];
+          const ys: number[] = [];
+          for (let v = 0; v < n; v++) {
+            if (frame.digit[v] !== toe || Math.sign(P[v * 3] as number) !== (side === 0 ? 1 : -1))
+              continue;
+            const m = dorsal.mask[v] as number;
+            // This joint's band: the nearest joint is this one (a band is at most 7 mm either side).
+            const a = frame.along[v] as number;
+            const closer = bands(side, toe).some((o) => Math.abs(a - o) < Math.abs(a - j));
+            if (m <= 0 || closer || Math.abs(a - j) > 0.0075) continue;
+            xs.push((frame.along[v] as number) - j);
+            ys.push(dorsal.coord?.[v] as number);
+          }
+          if (xs.length < 6) continue;
+          // Within 1.5 mm of the joint the coordinate is within a quarter of 0.5 (a band is at least 6 mm wide).
+          xs.forEach((x, i) => {
+            if (Math.abs(x) < 0.0015)
+              expect(
+                Math.abs((ys[i] as number) - 0.5),
+                `toe ${toe} at ${j.toFixed(3)}`,
+              ).toBeLessThan(0.26);
+          });
+          // And it grows along the toe: the correlation with `along` is strong.
+          const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+          const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+          let sxy = 0;
+          let sxx = 0;
+          let syy = 0;
+          xs.forEach((x, i) => {
+            sxy += (x - mx) * ((ys[i] as number) - my);
+            sxx += (x - mx) ** 2;
+            syy += ((ys[i] as number) - my) ** 2;
+          });
+          expect(sxy / Math.sqrt(sxx * syy), `toe ${toe} at ${j.toFixed(3)}`).toBeGreaterThan(0.95);
+        }
+      }
+    }
+  });
+
+  it("has a coordinate that stays inside 0..1 and a mask that fades out at the band's ends", () => {
+    for (const f of [dorsal, plantar]) {
+      expect(Math.min(...(f.coord as Float32Array))).toBeGreaterThanOrEqual(0);
+      expect(Math.max(...(f.coord as Float32Array))).toBeLessThanOrEqual(1);
+    }
+    // A mask is only above zero where the coordinate says the vertex is within its band.
+    let wrong = 0;
+    for (let v = 0; v < n; v++) {
+      if ((dorsal.mask[v] as number) > 0 && ((dorsal.coord as Float32Array)[v] as number) <= 0)
+        wrong++;
+    }
+    expect(wrong).toBe(0);
+  });
+
+  it("is deeper on the sole than on the top, and the top's deepen with age", () => {
+    const input = (age: number) => ({
+      tone: { melanin: 0.5, haemoglobin: 0.5, undertone: 0, override: null },
+      flush: 0.4,
+      lips: 0.5,
+      areola: 0.5,
+      signals: {},
+      age,
+    });
+    const top = (age: number) =>
+      TOE_WRINKLE_LAYER.paint(input(age)) as { height: number; strength: number };
+    const sole = TOE_CREASE_LAYER.paint(input(30)) as { height: number };
+    expect(sole.height).toBeGreaterThan(top(30).height);
+    expect(top(80).strength).toBeGreaterThan(top(30).strength);
+    expect(top(5).strength).toBeLessThan(top(30).strength);
   });
 });

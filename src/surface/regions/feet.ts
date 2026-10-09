@@ -10,7 +10,7 @@
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
 import { jointPosition } from "../../format/assetFormat.ts";
-import type { SkinLayer, SkinLayerFields, SurfaceLayer } from "../layers.ts";
+import type { DetailLayer, SkinLayer, SkinLayerFields, SurfaceLayer } from "../layers.ts";
 import { type DigitFrame, digitFrame, type Vec3 } from "./digitFrame.ts";
 import { skinZones } from "./skinZones.ts";
 
@@ -315,5 +315,113 @@ export const CALLUS_SURFACE_LAYER: SurfaceLayer = {
   }),
 };
 
+/* ------------------------------------------------------- toe joint creases */
+
+const smooth = (lo: number, hi: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * Half the width of the band across a toe at each of its joints, metres: 0.4 of
+ * the shorter bone either side of it, within 3 to 7 mm. A choice: the creases'
+ * extent along a toe is not measured, and a band wider than a bone would run
+ * into the next joint's.
+ */
+function bandHalfWidth(joints: readonly number[], k: number): number {
+  const before =
+    k === 0 ? Number.POSITIVE_INFINITY : (joints[k] as number) - (joints[k - 1] as number);
+  const after = (joints[k + 1] as number) - (joints[k] as number);
+  return Math.min(0.007, Math.max(0.003, 0.4 * Math.min(before, after)));
+}
+
+/**
+ * A layer's fields from bands across the toes at their joints: the mask is the
+ * band's window times the toe's side (`side(under)`), and the coordinate runs
+ * 0 to 1 across the band (0.5 at the joint), so the crease layers' folds start
+ * and end flat. The tip is not a joint.
+ */
+function toeBandFields(assets: HumanoidAssets, side: (under: number) => number): SkinLayerFields {
+  const frame = toeFrame(assets);
+  const P = assets.positions;
+  const n = assets.manifest.vertexCount;
+  const mask = new Float32Array(n);
+  const coord = new Float32Array(n);
+  for (let v = 0; v < n; v++) {
+    const d = frame.digit[v] as number;
+    if (d === 0) continue;
+    const joints = frame.joints[(P[v * 3] as number) >= 0 ? 0 : 1][d - 1] as readonly number[];
+    const along = frame.along[v] as number;
+    // The nearest joint that is not the tip.
+    let k = 0;
+    for (let i = 1; i < joints.length - 1; i++)
+      if (Math.abs(along - (joints[i] as number)) < Math.abs(along - (joints[k] as number))) k = i;
+    const h = bandHalfWidth(joints, k);
+    const off = along - (joints[k] as number);
+    if (Math.abs(off) >= h) continue;
+    const window = 1 - smooth(0.7, 1, Math.abs(off) / h);
+    mask[v] = window * side(frame.under[v] as number);
+    coord[v] = Math.min(1, Math.max(1e-4, 0.5 + off / (2 * h)));
+  }
+  return { mask, coord };
+}
+
+/** How prominent the skin's fine wrinkles are by age, 0..1: faint in a child, deepening as the skin loses its elasticity (a choice, with the direction well established). */
+export function wrinkleAmount(age: number | undefined): number {
+  const a = age ?? 30;
+  const points: readonly (readonly [number, number])[] = [
+    [0, 0.3],
+    [12, 0.5],
+    [30, 0.7],
+    [60, 0.9],
+    [85, 1],
+  ];
+  const first = points[0] as readonly [number, number];
+  const last = points[points.length - 1] as readonly [number, number];
+  if (a <= first[0]) return first[1];
+  if (a >= last[0]) return last[1];
+  let i = 0;
+  while ((points[i + 1] as readonly [number, number])[0] < a) i++;
+  const p = points[i] as readonly [number, number];
+  const q = points[i + 1] as readonly [number, number];
+  return p[1] + ((q[1] - p[1]) * (a - p[0])) / (q[0] - p[0]);
+}
+
+/** Depth of the wrinkles over the toes' joints, metres: the hands' knuckle wrinkles' (a choice; none is measured). */
+export const TOE_WRINKLE_DEPTH = 0.00012;
+/** Wrinkles across a toe joint's band. */
+export const TOE_WRINKLE_COUNT = 3;
+/** Depth of the creases under the toes' joints, metres: the palm's creases' (a choice). */
+export const TOE_CREASE_DEPTH = 0.0003;
+
+/** Fine wrinkles over each joint of each toe, on its top. */
+export const TOE_WRINKLE_LAYER: DetailLayer = {
+  id: "toe-wrinkles",
+  kind: "detail",
+  pattern: "creases",
+  targets: [],
+  fields: (assets) => toeBandFields(assets, (under) => 1 - smooth(-0.006, -0.002, under)),
+  paint: ({ age }) => ({
+    strength: wrinkleAmount(age),
+    height: TOE_WRINKLE_DEPTH,
+    size: TOE_WRINKLE_COUNT,
+  }),
+};
+
+/** The fold under each joint of each toe: one, where the toe bends. They form before birth, so no age. */
+export const TOE_CREASE_LAYER: DetailLayer = {
+  id: "toe-creases",
+  kind: "detail",
+  pattern: "creases",
+  targets: [],
+  fields: (assets) => toeBandFields(assets, (under) => smooth(0.002, 0.006, under)),
+  paint: () => ({ strength: 1, height: TOE_CREASE_DEPTH, size: 1 }),
+};
+
 /** The feet's layers, in the order they are applied. */
-export const FOOT_SKIN_LAYERS: readonly SkinLayer[] = [CALLUS_LAYER, CALLUS_SURFACE_LAYER];
+export const FOOT_SKIN_LAYERS: readonly SkinLayer[] = [
+  CALLUS_LAYER,
+  CALLUS_SURFACE_LAYER,
+  TOE_WRINKLE_LAYER,
+  TOE_CREASE_LAYER,
+];
