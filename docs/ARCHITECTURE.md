@@ -575,7 +575,8 @@ the contract below, not on how the layers under it are solved.
 
 1. The hm08 base mesh: topology, vertex indices, UV layout, face groups.
 2. The pack format and the `.mhclo` binding (grafts reference base vertices
-   by index and weight, and hide skin with `delete_verts`).
+   by index and weight, and hide skin with `delete_verts`: as in MakeHuman, a
+   body face is hidden only when all its corners are deleted).
 3. The recipe schema, extended only by adding optional fields.
 4. The region layer interface (next paragraph).
 
