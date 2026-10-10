@@ -10,7 +10,8 @@
 import type { HumanoidModel } from "../model/humanoidModel.ts";
 import { skinOfEvaluation } from "../model/reservoirSkin.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import { renderFold, type SurfaceFold } from "../rig/hipFold.ts";
+import { FOLD_JOINTS, foldFlexion } from "../rig/folds.ts";
+import { flexedPast, renderFold, type SurfaceFold } from "../rig/jointFold.ts";
 import {
   type BoneRotations,
   bodyPoseRotations,
@@ -85,7 +86,12 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
   const bones = restBones(model.assets, control);
   const rotations =
     pose === REST_POSE ? IDENTITY_POSE(rig.bones.length) : bodyPoseRotations(rig, pose);
-  const fold = renderFold(solvedHipFold(model, recipe));
+  // The folds as the renderer has them: asked for once a joint of the pose is flexed past its fold's start
+  // (`<Humanoid>` asks so), and adding nothing in a pose that flexes none, which is not solved for.
+  const flexed = FOLD_JOINTS.some((joint) =>
+    flexedPast(joint, foldFlexion(joint, bones, rotations)),
+  );
+  const folds = flexed ? solvedFolds(model, recipe).map(renderFold) : [];
   // The weights this figure is skinned by: a reservoir its detail drew out moves with its root.
   const { skinIndex, skinWeight } = skinOfEvaluation(ev, topology);
   const n = rest.length;
@@ -101,7 +107,7 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
       skinIndex,
       skinWeight,
       new Float32Array(n),
-      fold,
+      folds,
     ),
     normals: skinNormals(
       bones,
@@ -110,7 +116,7 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
       skinIndex,
       skinWeight,
       new Float32Array(n),
-      fold,
+      folds,
     ),
     weld: weldOf(rest),
     vertexCount: topology.vertexCount,
@@ -124,13 +130,13 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
 }
 
 /**
- * The figure's hip fold on its body surface (`HumanoidModel.hipFold`), solved
- * to the end at once: the renderer's corrective for a flexed hip, which the
- * posed body must carry as the drawn one does.
+ * The figure's joint folds on its body surface (`HumanoidModel.folds`), solved
+ * to the end at once: the renderer's correctives for a flexed hip and a bent
+ * knee, which the posed body must carry as the drawn one does.
  */
-function solvedHipFold(model: HumanoidModel, recipe: Recipe): SurfaceFold {
-  const solve = model.hipFold(recipe);
+function solvedFolds(model: HumanoidModel, recipe: Recipe): SurfaceFold[] {
+  const solve = model.folds(recipe);
   let step = solve.next();
   while (!step.done) step = solve.next();
-  return step.value.fold;
+  return step.value.folds;
 }

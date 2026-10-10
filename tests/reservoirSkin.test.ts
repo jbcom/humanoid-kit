@@ -19,7 +19,9 @@ import {
 } from "../src/model/reservoirSkin.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { fromHalf, toHalf } from "../src/rig/half.ts";
-import { FOLD_ROW_TEXELS, type SurfaceFold } from "../src/rig/hipFold.ts";
+import { HIP_FOLD } from "../src/rig/hipFold.ts";
+import { rowTexels, type SurfaceFold } from "../src/rig/jointFold.ts";
+import { KNEE_FOLD } from "../src/rig/kneeFold.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
@@ -175,7 +177,7 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
   it("moves a pushed reservoir vertex's hip fold to its root's as its weights, and leaves the rest as they were", () => {
     // Render vertices 0 and 1 are the loop (rows 0 and 1, the left hip's and the right's);
     // 2 is a ring copy with a row of its own, 3 a cap vertex the fold left; 4 is skin elsewhere.
-    const row = FOLD_ROW_TEXELS * 4;
+    const row = rowTexels(HIP_FOLD) * 4;
     const values = new Float32Array(3 * row);
     for (let r = 0; r < 3; r++)
       for (let i = 0; i < row; i++) values[r * row + i] = (r + 1) * 0.01 + i * 1e-5;
@@ -185,7 +187,12 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     // Half floats, as a fold holds them, and what they hold.
     const data = Uint16Array.from(values, toHalf);
     const held = (i: number) => fromHalf(data[i] as number);
-    const fold: SurfaceFold = { slot: Float32Array.from([0, 1, 2, -1, -1]), rows: 3, data };
+    const fold: SurfaceFold = {
+      joint: HIP_FOLD,
+      slot: Float32Array.from([0, 1, 2, -1, -1]),
+      rows: 3,
+      data,
+    };
     const skinning: ReservoirSkinning = {
       owner: Int16Array.from([-1, -1, 0, 0, -1]),
       roots: [{ index: new Uint16Array(4), weight: Float32Array.from([1, 0, 0, 0]) }],
@@ -219,5 +226,15 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     const halfway = rowOf(3);
     for (let i = 0; i < row; i++)
       rounded(halfway[i] as number, i === 3 ? 0.5 : e * (root[i] as number));
+    // A fold that reaches neither the loop nor the vertices pushed (the knee's) gives them no rows.
+    const elsewhere: SurfaceFold = {
+      joint: KNEE_FOLD,
+      slot: Float32Array.from([-1, -1, -1, -1, 0]),
+      rows: 1,
+      data: new Uint16Array(rowTexels(KNEE_FOLD) * 4),
+    };
+    expect(
+      evaluatedFold(elsewhere, skinning, Float32Array.from([0, 0, PUSHED_FULLY, half, 0])),
+    ).toBe(elsewhere);
   });
 });

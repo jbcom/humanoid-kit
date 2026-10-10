@@ -22,13 +22,16 @@ const maxY = (p: Float32Array) => {
 };
 
 describe("the posed body", () => {
-  // The first posed evaluation builds the model's subdivided surface and its
-  // fold tables, about 8 s alone and over 30 s when the whole unit project
-  // runs at once, so it is built here rather than charged to the first test.
+  // The first posed evaluation builds the model's subdivided surface, and the first that
+  // flexes a joint solves the figure's folds (kept by its shape for the poses after):
+  // seconds each alone, and far more when the whole unit project runs at once, so they
+  // are made here rather than charged to the first tests.
   let body: ReturnType<typeof posedSurface>;
+  let seated: ReturnType<typeof posedSurface>;
   beforeAll(() => {
     body = posedSurface(model, recipe, REST_POSE);
-  }, 120_000);
+    seated = posedSurface(model, recipe, "seated");
+  }, 300_000);
 
   it("is the evaluated body itself at rest", () => {
     let worst = 0;
@@ -44,8 +47,7 @@ describe("the posed body", () => {
     expect(maxY(body.positions)).toBeGreaterThan(maxY(body.rest) + 0.05);
   });
 
-  it("carries the renderer's hip fold where the hips flex, and nowhere at rest", () => {
-    const seated = posedSurface(model, recipe, "seated");
+  it("carries the renderer's joint folds where the hips and the knees flex", () => {
     const unfolded = skinPositions(
       seated.bones,
       seated.rotations,

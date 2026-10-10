@@ -52,23 +52,31 @@ export * from "./rig/expressions.ts";
 export * from "./rig/faceMirror.ts";
 export * from "./rig/faceSignals.ts";
 export * from "./rig/flexion.ts";
+export { type FoldSetup, solveFold } from "./rig/foldSolve.ts";
+export {
+  FOLD_JOINTS,
+  type FoldJointName,
+  foldFlexion,
+  jointRotations,
+  jointTurns,
+} from "./rig/folds.ts";
+export { foldSides, HIP_FOLD, hipFlexion, hipRotation } from "./rig/hipFold.ts";
+export { hipFoldSetup, solveHipFold, solveHipFoldSteps } from "./rig/hipFoldSolve.ts";
 export {
   addFold,
   addFoldNormal,
-  FOLD_KEYS,
-  FOLD_OPENINGS,
+  type FoldJoint,
+  flexedPast,
   foldAngles,
-  foldSides,
-  folds,
-  HIP_FOLD,
-  type HipFlexion,
-  type HipFold,
-  hipFlexion,
-  hipRotation,
+  type JointFlexion,
+  type JointFold,
+  renderFold,
+  rowTexels,
   type SurfaceFold,
   surfaceFold,
-} from "./rig/hipFold.ts";
-export { solveHipFold, solveHipFoldSteps } from "./rig/hipFoldSolve.ts";
+} from "./rig/jointFold.ts";
+export { KNEE_FOLD, kneeFlexion, kneeRotation, kneeSides } from "./rig/kneeFold.ts";
+export { kneeFoldSetup, solveKneeFold, solveKneeFoldSteps } from "./rig/kneeFoldSolve.ts";
 export * from "./rig/occlusionKeys.ts";
 export * from "./rig/pose.ts";
 export * from "./rig/skinShare.ts";

@@ -36,9 +36,9 @@ import {
   DualBones,
   FOLD_BLEND_UNIFORM,
   FOLD_FUNCTIONS,
-  FOLD_UNIFORM,
+  FOLD_TEXELS_UNIFORM,
+  foldUniform,
   followDualSkinning,
-  ROOT_UNIFORM,
 } from "../../src/render/dualSkinning.ts";
 import {
   DUAL_TEXELS,
@@ -47,22 +47,20 @@ import {
   skinPositionsBlended,
   skinVertex,
 } from "../../src/rig/dual.ts";
+import { FOLD_JOINTS, foldFlexion, jointTurns } from "../../src/rig/folds.ts";
 import { toHalf } from "../../src/rig/half.ts";
+import { hipRotation } from "../../src/rig/hipFold.ts";
 import {
   addFold,
   addFoldNormal,
-  FOLD_KEYS,
-  FOLD_OPENINGS,
-  FOLD_ROW_TEXELS,
   foldAngles,
-  HIP_FOLD,
-  type HipFold,
-  hipFlexion,
-  hipRotation,
+  type JointFold,
   renderFold,
+  rowTexels,
   type SurfaceFold,
-} from "../../src/rig/hipFold.ts";
-import { type BoneRotations, restBonesFrom } from "../../src/rig/pose.ts";
+} from "../../src/rig/jointFold.ts";
+import { kneeRotation } from "../../src/rig/kneeFold.ts";
+import { type BoneRotations, IDENTITY_POSE, restBonesFrom } from "../../src/rig/pose.ts";
 import { rotate } from "../../src/rig/quat.ts";
 
 const renderer = new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
@@ -252,88 +250,107 @@ describe("the vertex shader's dual quaternion blend", () => {
   });
 });
 
-/** Two thighs off a root, for the fold: the hips' flexions are what the fold is read at. */
-const HIP_NAMES = ["root", "upperleg01.L", "upperleg01.R"];
-const hipRest = restBonesFrom(
-  HIP_NAMES,
-  Int16Array.from([-1, 0, 0]),
-  Float32Array.from([0, 1, 0, 0.1, 0.95, 0, -0.1, 0.95, 0]),
+/**
+ * Two legs off a root, for the folds: each thigh in two bones and a shin below.
+ * The hips' and the knees' flexions are what the folds are read at, and the
+ * root and the thighs' lower halves what they turn with.
+ */
+const LEG_NAMES = [
+  "root",
+  "upperleg01.L",
+  "upperleg01.R",
+  "upperleg02.L",
+  "upperleg02.R",
+  "lowerleg01.L",
+  "lowerleg01.R",
+];
+const legRest = restBonesFrom(
+  LEG_NAMES,
+  Int16Array.from([-1, 0, 0, 1, 2, 3, 4]),
+  Float32Array.from([
+    0, 1, 0, 0.1, 0.95, 0, -0.1, 0.95, 0, 0.1, 0.75, 0, -0.1, 0.75, 0, 0.1, 0.5, 0, -0.1, 0.5, 0,
+  ]),
 );
 /**
- * The root turned `root`, the left hip flexed `left` degrees and opened
- * `leftOpening`, the right flexed `right` and opened `rightOpening` (`hipRotation`).
+ * The root turned `root`; the left hip flexed `left` degrees and opened
+ * `leftOpening`, the right flexed `right` and opened `rightOpening`
+ * (`hipRotation`); the knees bent `kneeLeft` and `kneeRight` (`kneeRotation`).
  */
-function hipsPose(
+function legsPose(
   root: number[],
-  left: number,
-  right: number,
-  leftOpening = 0,
-  rightOpening = 0,
+  [left, right, leftOpening, rightOpening, kneeLeft, kneeRight]: readonly number[],
 ): BoneRotations {
-  const r = new Float32Array(HIP_NAMES.length * 4);
+  const r = IDENTITY_POSE(LEG_NAMES.length);
   r.set(root, 0);
-  r.set(hipRotation(left, leftOpening, 1), 4);
-  r.set(hipRotation(right, rightOpening, -1), 8);
+  r.set(hipRotation(left as number, leftOpening as number, 1), 4);
+  r.set(hipRotation(right as number, rightOpening as number, -1), 8);
+  r.set(kneeRotation(kneeLeft as number), 20);
+  r.set(kneeRotation(kneeRight as number), 24);
   return r;
 }
 
-describe("the vertex shader's hip fold", () => {
-  it("reads each vertex's displacement and normal change at the flexion and opening of the hips on its side, turned with the root, exactly as the CPU reference does", () => {
-    const rand = random(11);
-    // More rows than a texture a row a line could hold on many GPUs (8192 on the render
-    // host), and than an adult surface's fold has (14796 rows for the average figure,
-    // 15200 for the heavy man), each row both openings wide.
-    const rows = 16000;
-    const count = 200;
-    // Every key of every opening, per row.
-    const K = FOLD_OPENINGS * FOLD_KEYS;
-    const fold: HipFold = {
-      vertices: Uint32Array.from({ length: rows }, (_, i) => i),
-      slot: Int32Array.from({ length: rows }, (_, i) => i),
-      vectors: new Float32Array(rows * K * 3).map(() => (rand() - 0.5) * 0.2),
-      normals: new Float32Array(rows * K * 3).map(() => (rand() - 0.5) * 1.5),
-      // The left hip's alone, the right's alone, and mixes of the two: in 1024ths, which a half float holds
-      // exactly, so that the read against these unrounded values below measures the values' rounding alone.
-      side: Float32Array.from({ length: rows }, (_, i) =>
-        i < 2 ? i : Math.round(rand() * 1024) / 1024,
-      ),
-    };
-    // The renderer's rows: per opening and key, the displacement's texel (x, y, z, 0) and the normal's; the side in the first's fourth place.
-    const values = new Float32Array(rows * FOLD_ROW_TEXELS * 4);
-    for (let i = 0; i < rows * K; i++) {
-      values.set(fold.vectors.subarray(i * 3, i * 3 + 3), i * 8);
-      values.set(fold.normals.subarray(i * 3, i * 3 + 3), i * 8 + 4);
-    }
-    for (let r = 0; r < rows; r++) values[r * FOLD_ROW_TEXELS * 4 + 3] = fold.side[r] as number;
-    // Half floats, as the texture holds them; the CPU's fold (`renderFold`) reads the same halves.
-    const surface: SurfaceFold = {
-      slot: Float32Array.from({ length: rows }, (_, i) => i),
-      rows,
-      data: Uint16Array.from(values, toHalf),
-    };
-    const shown = renderFold(surface);
-    const dual = new DualBones(HIP_NAMES.length, 0);
-    dual.setFold(surface);
-    // A row per vertex: the left hip's and the right's alone, the last row, and rows from every line between.
-    const asked = new Float32Array(count * 4);
-    for (let v = 0; v < count; v++)
-      asked[v * 4] = v < 2 ? v : v === 2 ? rows - 1 : Math.floor(rand() * rows);
-    const input = new DataTexture(asked, count, 1, RGBAFormat, FloatType);
-    input.minFilter = NearestFilter;
-    input.magFilter = NearestFilter;
-    input.needsUpdate = true;
-    const material = new ShaderMaterial({
-      glslVersion: GLSL3,
-      uniforms: {
-        [DUAL_BONES_UNIFORM]: { value: dual.texture },
-        [FOLD_UNIFORM]: dual.fold,
-        [ROOT_UNIFORM]: { value: HIP_NAMES.length * DUAL_TEXELS },
-        [FOLD_BLEND_UNIFORM]: dual.foldBlend,
-        tAsked: { value: input },
-        tPart: { value: 0 },
-      },
-      vertexShader: "void main() { gl_Position = vec4( position.xy, 0.0, 1.0 ); }",
-      fragmentShader: `
+describe.each(FOLD_JOINTS.map((joint) => [joint.name, joint] as const))(
+  "the vertex shader's %s fold",
+  (name, joint) => {
+    it("reads each vertex's displacement and normal change at the flexion and opening of the joint on its side, turned with that side's turn, exactly as the CPU reference does", () => {
+      const rand = random(11);
+      // More rows than a texture a row a line could hold on many GPUs (8192 on the render
+      // host), and than an adult surface's hip fold has (14796 rows for the average figure,
+      // 15200 for the heavy man), each row every opening wide.
+      const rows = 16000;
+      const count = 200;
+      // Every key of every opening, per row.
+      const K = joint.openings * joint.keys;
+      const row4 = rowTexels(joint) * 4;
+      const fold: JointFold = {
+        joint,
+        vertices: Uint32Array.from({ length: rows }, (_, i) => i),
+        slot: Int32Array.from({ length: rows }, (_, i) => i),
+        vectors: new Float32Array(rows * K * 3).map(() => (rand() - 0.5) * 0.2),
+        normals: new Float32Array(rows * K * 3).map(() => (rand() - 0.5) * 1.5),
+        // The left side's alone, the right's alone, and mixes of the two: in 1024ths, which a half float holds
+        // exactly, so that the read against these unrounded values below measures the values' rounding alone.
+        side: Float32Array.from({ length: rows }, (_, i) =>
+          i < 2 ? i : Math.round(rand() * 1024) / 1024,
+        ),
+      };
+      // The renderer's rows: per opening and key, the displacement's texel (x, y, z, 0) and the normal's; the side in the first's fourth place.
+      const values = new Float32Array(rows * row4);
+      for (let i = 0; i < rows * K; i++) {
+        values.set(fold.vectors.subarray(i * 3, i * 3 + 3), i * 8);
+        values.set(fold.normals.subarray(i * 3, i * 3 + 3), i * 8 + 4);
+      }
+      for (let r = 0; r < rows; r++) values[r * row4 + 3] = fold.side[r] as number;
+      // Half floats, as the texture holds them; the CPU's fold (`renderFold`) reads the same halves.
+      const surface: SurfaceFold = {
+        joint,
+        slot: Float32Array.from({ length: rows }, (_, i) => i),
+        rows,
+        data: Uint16Array.from(values, toHalf),
+      };
+      const shown = renderFold(surface);
+      const dual = new DualBones(LEG_NAMES.length, 0);
+      dual.setFolds([surface]);
+      // A row per vertex: the left side's and the right's alone, the last row, and rows from every line between.
+      const asked = new Float32Array(count * 4);
+      for (let v = 0; v < count; v++)
+        asked[v * 4] = v < 2 ? v : v === 2 ? rows - 1 : Math.floor(rand() * rows);
+      const input = new DataTexture(asked, count, 1, RGBAFormat, FloatType);
+      input.minFilter = NearestFilter;
+      input.magFilter = NearestFilter;
+      input.needsUpdate = true;
+      const material = new ShaderMaterial({
+        glslVersion: GLSL3,
+        uniforms: {
+          [DUAL_BONES_UNIFORM]: { value: dual.texture },
+          ...Object.fromEntries(FOLD_JOINTS.map((j) => [foldUniform(j), dual.folds[j.name]])),
+          [FOLD_TEXELS_UNIFORM]: { value: LEG_NAMES.length * DUAL_TEXELS },
+          [FOLD_BLEND_UNIFORM]: dual.foldBlend,
+          tAsked: { value: input },
+          tPart: { value: 0 },
+        },
+        vertexShader: "void main() { gl_Position = vec4( position.xy, 0.0, 1.0 ); }",
+        fragmentShader: `
         #define USE_SKINNING
         uniform highp sampler2D tAsked;
         uniform int tPart;
@@ -344,105 +361,113 @@ describe("the vertex shader's hip fold", () => {
           vec4 a = texelFetch( tAsked, ivec2( gl_FragCoord.xy ), 0 );
           int slot = int( a.x + 0.5 );
           outColor = tPart == 2
-            ? vec4( hkFoldAngles( slot ), 0.0, 1.0 )
-            : vec4( tPart == 0 ? hkFoldDisplacement( a.x ) : hkFoldNormal( a.x ), 1.0 );
+            ? vec4( hkFoldAngles_${name}( slot ), 1.0 )
+            : vec4( hkFoldValue_${name}( a.x, tPart ), 1.0 );
         }`,
-    });
-    const scene = new Scene();
-    scene.add(new Mesh(new PlaneGeometry(2, 2), material));
-    const target = new WebGLRenderTarget(count, 1, { type: FloatType, depthBuffer: false });
-    const draw = (part: number) => {
-      material.uniforms.tPart = { value: part };
-      renderer.setRenderTarget(target);
-      renderer.render(scene, new OrthographicCamera(-1, 1, 1, -1, 0, 1));
-      const px = new Float32Array(count * 4);
-      renderer.readRenderTargetPixels(target, 0, 0, count, 1, px);
-      renderer.setRenderTarget(null);
-      return px;
-    };
-    // The root turned, so the displacement turns too; the hips flexed apart, from short of where the fold starts to past where it ends,
-    // and opened apart, from drawn in to past the fold's opened keys.
-    const root = turn(0.3, 1, 0.2, 70);
-    let moved = 0;
-    for (const [left, right, leftOpening, rightOpening] of [
-      [120, 0, 0, 0],
-      [-10, 75, 5, 12],
-      [45, 133, 20, 31],
-      [100, 100, -8, 10],
-      [HIP_FOLD.to + 12, HIP_FOLD.from - 5, 15, 0],
-    ] as const) {
-      const rotations = hipsPose(root, left, right, leftOpening, rightOpening);
-      dual.update(hipRest, rotations);
-      const hips = hipFlexion(hipRest, rotations);
-      expect(hips.left, `${left}°`).toBeCloseTo(left, 3);
-      expect(hips.rightOpening, `${rightOpening}°`).toBeCloseTo(rightOpening, 3);
-      // The angles each row is read at: the left hip's for side 1, the right's for side 0, and the greater flexion of the two, each weighed by its side, between.
-      const angles = draw(2);
-      for (let v = 0; v < count; v++) {
-        const cpu = foldAngles(shown, asked[v * 4] as number, hips);
-        expect(angles[v * 4], `${left}/${right}: vertex ${v}`).toBeCloseTo(
-          cpu?.flexion as number,
-          3,
-        );
-        expect(angles[v * 4 + 1], `${left}/${right}: vertex ${v}`).toBeCloseTo(
-          cpu?.opening as number,
-          3,
-        );
-      }
-      // A row all the right's reads the right hip, all the left's the left (the other counts for nothing, as an unflexed hip does).
-      expect(angles[0]).toBeCloseTo(Math.max(0, right), 2);
-      expect(angles[4]).toBeCloseTo(Math.max(0, left), 2);
-      // Whole, then half faded in, then not at all (the fold fades in when it arrives).
-      for (const [part, read, blend] of [
-        [0, addFold, 1],
-        [1, addFoldNormal, 1],
-        [0, addFold, 0.5],
-        [1, addFoldNormal, 0.25],
-        [0, addFold, 0],
+      });
+      const scene = new Scene();
+      scene.add(new Mesh(new PlaneGeometry(2, 2), material));
+      const target = new WebGLRenderTarget(count, 1, { type: FloatType, depthBuffer: false });
+      const draw = (part: number) => {
+        material.uniforms.tPart = { value: part };
+        renderer.setRenderTarget(target);
+        renderer.render(scene, new OrthographicCamera(-1, 1, 1, -1, 0, 1));
+        const px = new Float32Array(count * 4);
+        renderer.readRenderTargetPixels(target, 0, 0, count, 1, px);
+        renderer.setRenderTarget(null);
+        return px;
+      };
+      // The root turned, so the displacement turns too; each joint flexed apart on its two sides, from short of where
+      // its fold starts to past where it ends, and the hips opened apart, from drawn in to past the fold's opened keys.
+      // The hips flexed turn the thighs, which the knees' displacements turn with.
+      const root = turn(0.3, 1, 0.2, 70);
+      const past = joint.to + 12;
+      const short = joint.from - 5;
+      let moved = 0;
+      for (const legs of [
+        [120, 0, 0, 0, 90, 0],
+        [-10, 75, 5, 12, 0, 135],
+        [45, 133, 20, 31, 60, 110],
+        [100, 100, -8, 10, 150, 150],
+        [past, short, 15, 0, past, short],
       ] as const) {
-        dual.foldBlend.value = blend;
-        const px = draw(part);
-        /** The GPU's read against the CPU's of `of` (the halves it draws, or the values before they were rounded). */
-        const against = (of: HipFold) => {
-          let worst = 0;
-          for (let v = 0; v < count; v++) {
-            const cpu = new Float32Array(3);
-            const slot = asked[v * 4] as number;
-            const at = foldAngles(of, slot, hips);
-            read(of, slot, at?.flexion as number, at?.opening as number, cpu, 0);
-            const turned = rotate(
-              root as [number, number, number, number],
-              cpu[0] as number,
-              cpu[1] as number,
-              cpu[2] as number,
-            );
-            const want = turned.map((x) => x * blend);
-            if (of === shown && blend === 1 && part === 0 && Math.hypot(...turned) > 0) moved++;
-            for (let k = 0; k < 3; k++)
-              worst = Math.max(worst, Math.abs((px[v * 4 + k] as number) - (want[k] as number)));
-          }
-          return worst;
-        };
-        // The same halves: float error alone. The normal's change is some seven times the displacement's in size, so float error is too.
-        expect(against(shown), `${left}/${right}: part ${part} at ${blend}`).toBeLessThan(
-          part === 0 ? 2e-6 : 1e-5,
-        );
-        // The values before rounding: each within 2⁻¹¹ of its largest (0.1 and 0.75), a mix of them no further, and
-        // turned, a vector's three no further than √3 of that between them.
-        const largest = part === 0 ? 0.1 : 0.75;
-        expect(against(fold), `${left}/${right}: part ${part} at ${blend}, unrounded`).toBeLessThan(
-          largest * 2 ** -11 * Math.sqrt(3) * blend + (part === 0 ? 2e-6 : 1e-5),
-        );
+        const rotations = legsPose(root, legs);
+        dual.update(legRest, rotations);
+        const flexion = foldFlexion(joint, legRest, rotations);
+        const [left, right] = joint.name === "hip" ? [legs[0], legs[1]] : [legs[4], legs[5]];
+        expect(flexion.left, `${left}°`).toBeCloseTo(left, 3);
+        expect(flexion.right, `${right}°`).toBeCloseTo(right, 3);
+        const turns = jointTurns(joint, legRest, rotations);
+        // The angles each row is read at: the left side's for side 1, the right's for side 0, and the greater flexion of the two, each weighed by its side, between.
+        const angles = draw(2);
+        for (let v = 0; v < count; v++) {
+          const cpu = foldAngles(shown, asked[v * 4] as number, flexion);
+          expect(angles[v * 4], `${left}/${right}: vertex ${v}`).toBeCloseTo(
+            cpu?.flexion as number,
+            3,
+          );
+          expect(angles[v * 4 + 1], `${left}/${right}: vertex ${v}`).toBeCloseTo(
+            cpu?.opening as number,
+            3,
+          );
+          expect(angles[v * 4 + 2], `${left}/${right}: vertex ${v}`).toBe(cpu?.left ? 1 : 0);
+        }
+        // A row all the right's reads the right side, all the left's the left (the other counts for nothing, as an unflexed joint does).
+        expect(angles[0]).toBeCloseTo(Math.max(0, right), 2);
+        expect(angles[4]).toBeCloseTo(Math.max(0, left), 2);
+        // Whole, then half faded in, then not at all (the fold fades in when it arrives).
+        for (const [part, read, blend] of [
+          [0, addFold, 1],
+          [1, addFoldNormal, 1],
+          [0, addFold, 0.5],
+          [1, addFoldNormal, 0.25],
+          [0, addFold, 0],
+        ] as const) {
+          dual.foldBlend.value = blend;
+          const px = draw(part);
+          /** The GPU's read against the CPU's of `of` (the halves it draws, or the values before they were rounded). */
+          const against = (of: JointFold) => {
+            let worst = 0;
+            for (let v = 0; v < count; v++) {
+              const cpu = new Float32Array(3);
+              const slot = asked[v * 4] as number;
+              const at = foldAngles(of, slot, flexion);
+              read(of, slot, at?.flexion as number, at?.opening as number, cpu, 0);
+              const turned = rotate(
+                turns[at?.left ? 0 : 1],
+                cpu[0] as number,
+                cpu[1] as number,
+                cpu[2] as number,
+              );
+              const want = turned.map((x) => x * blend);
+              if (of === shown && blend === 1 && part === 0 && Math.hypot(...turned) > 0) moved++;
+              for (let k = 0; k < 3; k++)
+                worst = Math.max(worst, Math.abs((px[v * 4 + k] as number) - (want[k] as number)));
+            }
+            return worst;
+          };
+          // The same halves: float error alone. The normal's change is some seven times the displacement's in size, so float error is too.
+          expect(against(shown), `${left}/${right}: part ${part} at ${blend}`).toBeLessThan(
+            part === 0 ? 2e-6 : 1e-5,
+          );
+          // The values before rounding: each within 2⁻¹¹ of its largest (0.1 and 0.75), a mix of them no further, and
+          // turned, a vector's three no further than √3 of that between them.
+          const largest = part === 0 ? 0.1 : 0.75;
+          expect(
+            against(fold),
+            `${left}/${right}: part ${part} at ${blend}, unrounded`,
+          ).toBeLessThan(largest * 2 ** -11 * Math.sqrt(3) * blend + (part === 0 ? 2e-6 : 1e-5));
+        }
       }
-    }
-    // Most of what was asked is in the fold's range, so this compares displacements, not zeros.
-    expect(moved).toBeGreaterThan(count * 2);
-    target.dispose();
-    input.dispose();
-    material.dispose();
-    dual.dispose();
-  });
-});
+      // Most of what was asked is in the fold's range, so this compares displacements, not zeros.
+      expect(moved).toBeGreaterThan(count * 2);
+      target.dispose();
+      input.dispose();
+      material.dispose();
+      dual.dispose();
+    });
+  },
+);
 
 const SIZE = 96;
 const camera = new OrthographicCamera(-2.4, 2.4, 3.6, -0.6, 0.1, 20);

@@ -38,7 +38,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
   let posedOcclusion: Promise<Float32Array[] | null> | null = null;
   /** Hair styles whose static data has gone to the client. */
   const sentHair = new Set<string>();
-  /** The hip fold request being solved, so that a newer one can supersede it. */
+  /** The joint folds request being solved, so that a newer one can supersede it. */
   let foldRun = 0;
 
   /** Waits for the stages that bring the target files a recipe (in a skin state) needs. */
@@ -199,26 +199,26 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         });
         return;
       }
-      if (req.type === "hipFold") {
-        // A newer request for a fold supersedes this one, wherever it is: it stops at its next step.
+      if (req.type === "folds") {
+        // A newer request for folds supersedes this one, wherever it is: it stops at its next step.
         const run = ++foldRun;
         const superseded = () => {
           if (run === foldRun) return;
-          const stopped = new Error("a newer hip fold was asked for");
+          const stopped = new Error("newer joint folds were asked for");
           stopped.name = "AbortError";
           throw stopped;
         };
         await targetsFor(model, req.recipe, req.signals);
         superseded();
-        const steps = model.hipFold(req.recipe, req.signals);
+        const steps = model.folds(req.recipe, req.signals);
         for (;;) {
           const step = steps.next();
           if (step.done) {
-            const { surface, fold } = step.value;
-            post({ type: "hipFold", id: req.id, surface, fold }, [
-              fold.slot.buffer,
-              fold.data.buffer,
-            ]);
+            const { surface, folds } = step.value;
+            post(
+              { type: "folds", id: req.id, surface, folds },
+              folds.flatMap((fold) => [fold.slot.buffer, fold.data.buffer]),
+            );
             return;
           }
           // A macrotask between flexions lets queued evaluations run.

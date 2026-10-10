@@ -47,8 +47,9 @@ import type { Vec3 } from "../presence/presence.ts";
 import { AgePolicyError, assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
 import { withAnatomyDefaults } from "../recipe/anatomy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
-import { type HipFold, type SurfaceFold, surfaceFold } from "../rig/hipFold.ts";
 import { solveHipFoldSteps } from "../rig/hipFoldSolve.ts";
+import { type JointFold, type SurfaceFold, surfaceFold } from "../rig/jointFold.ts";
+import { solveKneeFoldSteps } from "../rig/kneeFoldSolve.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { solvedSurfaceFold } from "../rig/solvedSurface.ts";
@@ -460,8 +461,8 @@ const RAY_SHARE = 0.25;
 /** Share of a body vertex's skin weight the head bone must hold for it to take a scalp tint. */
 const HEAD_WEIGHT = 0.5;
 
-/** How many hip folds a model keeps for figures it has solved (a fold is some 100 kB). */
-const HIP_FOLDS_KEPT = 6;
+/** How many figures' joint folds a model keeps (a figure's are some 200 kB). */
+const FOLDS_KEPT = 6;
 
 /** A hash of a figure's control vertices (FNV-1a over their bits), to know the same shape again. */
 function controlHash(control: Float32Array): string {
@@ -507,8 +508,8 @@ export class HumanoidModel {
    */
   private readonly level: number;
   private readonly bodyFaces: Uint32Array;
-  /** The hip folds solved lately, by the shape they are for (`controlHash`), the most recently used last. */
-  private readonly hipFolds = new Map<string, HipFold>();
+  /** The joint folds solved lately (`FOLD_JOINTS`' order), by the shape they are for (`controlHash`), the most recently used last. */
+  private readonly solvedFolds = new Map<string, JointFold[]>();
   /** Each body surface's `baseRenderVertices`, found on first use. */
   private readonly baseRender = new Map<"base" | "adult", Int32Array>();
   /** Each body surface's `renderWeld`, found on first use. */
@@ -1911,55 +1912,61 @@ export class HumanoidModel {
   }
 
   /**
-   * The hip fold of the figure a recipe makes in a skin state (docs/ARCHITECTURE.md,
-   * "The hip fold"), on the body surface its evaluation is for
-   * (`Evaluation.surface`): for the renderer, `DualBones.setFold` and the
-   * geometry's `FOLD_SLOT_ATTRIBUTE`. Solved a flexion at a time, which takes
-   * a moment, so it yields after each: a worker lets its other requests in
-   * between. The recipe's target files must have loaded.
+   * The joint folds of the figure a recipe makes in a skin state
+   * (docs/ARCHITECTURE.md, "The hip fold", "The knee fold"), one per joint of
+   * `FOLD_JOINTS` in its order, on the body surface its evaluation is for
+   * (`Evaluation.surface`): for the renderer, `DualBones.setFolds` and the
+   * geometry's slot attributes (`foldSlotAttribute`). Solved a flexion at a
+   * time, which takes a moment, so it yields after each: a worker lets its
+   * other requests in between. The recipe's target files must have loaded.
    */
-  *hipFold(
+  *folds(
     recipe: Recipe,
     signals: Readonly<Record<string, number>> = {},
-  ): Generator<void, { surface: "base" | "adult"; fold: SurfaceFold }> {
+  ): Generator<void, { surface: "base" | "adult"; folds: SurfaceFold[] }> {
     const { control, detail } = this.evaluateShape(recipe, signals);
-    // A figure's fold depends on its shape alone: the same shape (an edit undone, a pose changed) is not solved twice.
+    // A figure's folds depend on its shape alone: the same shape (an edit undone, a pose changed) is not solved twice.
     const key = controlHash(control);
-    let fold = this.hipFolds.get(key);
-    if (fold) {
-      this.hipFolds.delete(key);
+    let solved = this.solvedFolds.get(key);
+    const rest = restBones(this.assets, control);
+    if (solved) {
+      this.solvedFolds.delete(key);
     } else {
-      fold = yield* solveHipFoldSteps(
-        restBones(this.assets, control),
-        control,
-        this.assets.skinIndex,
-        this.assets.skinWeight,
-        this.bodyControlTriangles,
-      );
+      const { skinIndex, skinWeight } = this.assets;
+      const tris = this.bodyControlTriangles;
+      solved = [
+        yield* solveHipFoldSteps(rest, control, skinIndex, skinWeight, tris),
+        yield* solveKneeFoldSteps(rest, control, skinIndex, skinWeight, tris),
+      ];
     }
-    this.hipFolds.set(key, fold);
+    this.solvedFolds.set(key, solved);
     // The eldest of the kept ones goes (a Map iterates in the order its keys were set).
-    if (this.hipFolds.size > HIP_FOLDS_KEPT)
-      this.hipFolds.delete(this.hipFolds.keys().next().value as string);
+    if (this.solvedFolds.size > FOLDS_KEPT)
+      this.solvedFolds.delete(this.solvedFolds.keys().next().value as string);
     const adult = isAdult(recipe) ? this.adultBodySurface() : null;
     const mesh = adult ? adult.part.mesh : this.body.mesh;
-    // The drawn surface draws the solved shape: the stencil's mix of the fold, and what skinning the surface's
-    // own vertices lacks of the solved control surface subdivided (`solvedSurfaceFold`).
-    const onSurface = solvedSurfaceFold(
-      surfaceFold(fold, mesh.stencil, mesh.renderToSurface),
-      fold,
-      mesh,
-      restBones(this.assets, control),
-      control,
-      this.assets,
-    );
     // An organ the detail draws out of a reservoir moves with where it is rooted, its fold as its weights (`evaluatedFold`).
     const displacement =
       adult && detail.length ? this.detailDisplacement(detail, control) : undefined;
-    if (!adult || !displacement) return { surface: adult ? "adult" : "base", fold: onSurface };
-    const pushed = new Float32Array(mesh.renderToSurface.length);
-    this.evaluatePart(adult.part, control, displacement, pushed);
-    return { surface: "adult", fold: evaluatedFold(onSurface, adult.skinning, pushed) };
+    let pushed: Float32Array | undefined;
+    if (adult && displacement) {
+      pushed = new Float32Array(mesh.renderToSurface.length);
+      this.evaluatePart(adult.part, control, displacement, pushed);
+    }
+    const folds = solved.map((fold) => {
+      // The drawn surface draws the solved shape: the stencil's mix of the fold, and what skinning the surface's
+      // own vertices lacks of the solved control surface subdivided (`solvedSurfaceFold`).
+      const onSurface = solvedSurfaceFold(
+        surfaceFold(fold, mesh.stencil, mesh.renderToSurface),
+        fold,
+        mesh,
+        rest,
+        control,
+        this.assets,
+      );
+      return adult && pushed ? evaluatedFold(onSurface, adult.skinning, pushed) : onSurface;
+    });
+    return { surface: adult ? "adult" : "base", folds };
   }
 
   private adultBodySurface() {
