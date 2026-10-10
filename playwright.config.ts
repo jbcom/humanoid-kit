@@ -48,6 +48,9 @@ export default definePlaywrightConfig({
           name: "sheets",
           // A sheet is a review render, not a test: it never matches the suite's `*.spec.ts`.
           testMatch: /sheets\/.*\.sheet\.ts$/,
+          // One sheet at a time in one page: two rendered side by side in software
+          // starved each other (a mute marker unseen in two minutes, a canvas never still).
+          fullyParallel: false,
           // A sheet of many figures waits on each one's evaluation in turn.
           timeout: 30 * 60_000,
         },
