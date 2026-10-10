@@ -27,16 +27,21 @@ read by `src/format/assetFormat.ts`. Every binary ships gzipped (`*.bin.gz`),
 because GitHub Pages and many hosts serve `.bin` files uncompressed; the loader
 decodes them with the platform's `DecompressionStream`. Decoded, they are
 little-endian, and `body.bin` and `attachments.bin` are 4-byte aligned, so
-typed-array views need no copies. Textures ship as WebP (at most 1024 px, alpha
-lossless; the hair strand maps use lossy alpha, since a strand's edge moving by a
-level is invisible and lossless alpha is most of a curly style's size). All
-lengths are in metres.
+typed-array views need no copies. Textures ship as WebP (alpha lossless; the
+hair strand maps use lossy alpha, since a strand's edge moving by a level is
+invisible and lossless alpha is most of a curly style's size). Each is sized
+by the texel density its closest QA framing needs on the figure
+(`scripts/lib/textureSizing.ts`, docs/evidence/upscale-inventory.md): its
+pack's default (1024 px, or the source's own size if smaller), more where it
+needs more, up to its source's size and at most 2048 px, and never upscaled
+(docs/evidence/upscale.md). All lengths are in metres.
 
 | Pack | Files | Contents |
 | --- | --- | --- |
 | `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, and the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion") |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
 | `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | Walk, idle and swim clips as local bone rotations per frame, on the default skeleton (see "Animation") |
+| `humanoid-kit-eyes` | `manifest.json`, then per material `<id>.webp` | 32 CC0 eye materials (human, slit-pupil, toon, creature) whose textures add iris pattern and sclera detail to the eye shader's own colours (see "Attachment colour") |
 | `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | Ten scalp hair styles bound to the base mesh, each with its baked occlusion and a strand map (see "Scalp hair") |
 | `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 19 garments from MakeHuman's system assets (suits, shoes, a hat), each bound to the base mesh with the vertices it hides |
 
@@ -107,8 +112,9 @@ textures, arrives with the first stage. A garment is an attachment without
 baked occlusion: the same bindings (three base vertices, weights and an offset
 per vertex, per-axis scale references) and mesh, plus `delete_verts`, a
 category (`kind`, below) and the asset's tags. The packer
-(`scripts/pack-clothing.ts`) packs diffuse and normal maps as WebP at most
-1024 px on a side (2.1 MB for all nineteen), and reads the same `.mhclo`
+(`scripts/pack-clothing.ts`) packs diffuse and normal maps as WebP, each sized
+by what a clothed figure's framing needs (1024 to 2048 px on a side; 3.5 MB
+for all nineteen), and reads the same `.mhclo`
 syntax as the attachments: the system shoes write `material` and
 `vertexboneweights_file` between `verts` and its data, so a keyword line does
 not end a vertex or `delete_verts` block, and only the other section keyword
@@ -625,6 +631,39 @@ toward `GUM_PIGMENT_LAB` by `gumPigmentAmount(melanin)` (none up to melanin
 gum texel lands on the albedo and a test re-measures the texture. Tooth texels
 are untouched. `Humanoid` passes `recipe.skin.melanin` to the teeth, as it does
 the eye appearance to the eyes.
+
+**Eye materials (`humanoid-kit-eyes`).** The built-in eye has one texture, brown, and
+the shader recolours it: the iris is the chromatic, not-too-bright region, and the
+recipe's `eyes.iris` times nine times the texture's luminance is its colour, so
+`eyes.iris` is the iris's mean colour and the texture is its fibres, pupil and limbal
+ring. 32 materials of the community's `system_eye_materials01` and `02` (the third pack
+is CC-BY and is not used) add pattern without changing that model. A recipe names one
+(`eyes.material`, validated as a non-empty string; `<Humanoid eyeMaterials={library}>`
+supplies the library from `loadEyeLibrary`, and without a library, or for an id it
+does not have, the built-in eye is shown and the unknown id is reported). The eye
+shader (`EyeMaterial.setMaterial`) then draws the iris as a disc around the two
+known centres, with a soft edge at the material's radius (a chroma mask fails a
+bright, grey or painted iris, and a painted catchlight in the iris is sclera), and
+multiplies the luminance by the material's measured gains, so a material's iris is
+the recipe's colour at the built-in iris's mean brightness, whatever its own
+brightness. The sclera is the recipe's warm white times the material's measured
+tint and gain (a human or cat material's is within a fifth to a quarter of neutral; a yellow or a zombie's is
+what it was painted). A material with no iris edge to measure is all sclera detail:
+the eyes of a single glowing or blank colour.
+
+The numbers are measured from each texture's pixels by `scripts/lib/packEyes.ts`
+(`measureEye`), never authored: the iris's radius is where the disc inside differs
+most from the ring around it (a plateau test, which a slit pupil or a limbal ring does
+not upset), the gains are the built-in texture's mean luminance over the material's
+in the same iris ring (0.45 to 0.92 of the radius) and sclera ring (1.25 to 1.9), and
+the tint is the sclera ring's colour against the built-in's. `paintedIris` is the
+recipe colour at which the material shows the colour it was painted in. Each
+material passed the licence rule (`judgeAsset`, clause B) with the community's page
+record before it was packed; a texture that is opaque everywhere (the toon eyes) takes
+the built-in texture's alpha, because the cornea dome is cut by the transparent disc
+of the texture and would otherwise be drawn over the iris. `docs/evidence/eyes.md`
+holds the close-ups at three tones, and `tests/eyes.test.ts` the pack, the
+measurement and the colour model.
 
 **Choice, not measurement.** "Coral pink" and "brown, patchy melanosis on
 deeper complexions" are the periodontology descriptors of healthy gingiva (the
@@ -1201,7 +1240,15 @@ a coloured texture; everything in the pure core is testable in Node.
   specular is scaled to 0.4: hair has no mirror. The first intensities read as
   glossy patches on the bobs, so the lobes are narrow-in-strength and wide, and a
   browser test bounds the worst pixel of a sphere at any strand direction and
-  light to three times its diffuse (a mirror-like patch is ten and more).
+  light to three times its diffuse (a mirror-like patch is ten and more). That
+  test was brown under one light; under the studio's rim light and room
+  environment black hair measured 47.8 times its diffuse (base specular alone 45,
+  strand lobes up to 21), and still read as glossy plastic. So the bound is now
+  built in: all the specular together (base, environment, lobes, sheen) is
+  compressed by luminance toward `HAIR_SPECULAR_BUDGET`, 1.8 times the pixel's
+  diffuse (`b·(1 − e^(−s/b))`, unchanged when faint), and a second browser test
+  renders black, dark brown, brown and light blonde at the combing of short02,
+  bob02 and long01 under the studio stage: worst 2.76, 2.64, 2.27 and 1.48.
   Rejected: the UV-derivative anisotropy (a global angle, no short styles), a
   per-vertex tangent attribute (three floats per vertex for what the gradient
   gives), and Marschner's full R/TT/TRT (the transmitted lobes need a fibre's
@@ -1216,7 +1263,11 @@ a coloured texture; everything in the pure core is testable in Node.
   body's hair density, taken from the cards' opaque texels and from hair standing
   over each skin vertex along its normal, below a quarter at the nearest body
   point: the face, a temple the hair stops short of), or when it is a card's
-  boundary vertex that no other card lies well over. A card's mesh reaches well
+  boundary vertex that no other card lies well over *and* that lies within 1 cm
+  of bare skin (a body triangle with a corner under a quarter density,
+  `BARE_NEAR`). Cards that meet edge to edge at a part or a crown leave edges no
+  other card lies over, but the skin around them is all under hair: seeded as
+  hairlines, they thinned into skin-coloured gaps there. A card's mesh reaches well
   past the hair painted on it, so the visible hairline is the painted edge
   inside the mesh, and a fade measured from the mesh's own boundary ran out over
   transparent texels (6-8% of its zero vertices sat on opaque hair): the first
@@ -1236,10 +1287,20 @@ a coloured texture; everything in the pure core is testable in Node.
   hair card's cut edge is a hard line, and MakeHuman's hairlines read as a helmet
   or a wig, and a screen-space dither of it reads as a dot grid, as does the
   2x2 coverage pattern alpha-to-coverage gives a partial alpha on hardware
-  (found on a real GPU after software renders looked fine). So nothing about a
-  hairline or a fin is a per-pixel or partial-coverage decision: every one is a
-  yes or no per strand cell of the card's own surface, which needs neither
-  blending nor MSAA and looks the same on every GPU. The hairline
+  (found on a real GPU after software renders looked fine). So no hairline or
+  fin decision is made per pixel: every one is a yes or no per strand cell of
+  the card's own surface, which holds still as the head moves and looks the
+  same on every GPU. A cut that stops there is aliased, though: a strand cell is
+  about 2 px by 6 px at a portrait's scale, and a hard discard draws its ends as
+  stair-steps. So each cell's *own edge* is smoothed analytically: the share of a
+  1.5 px box footprint (`HAIR_EDGE_PX`) that falls on kept cells, from the
+  fragment's distance to the cell's edges over their screen-space derivative,
+  and each strand's end inside a cell ramps the same way over its thinning
+  field's derivative. Under MSAA that coverage goes to alpha-to-coverage; it is
+  partial only within that band, so the 2x2 pattern never fills a region.
+  Without MSAA the fragment's own cell is cut at a half, as before. A box 1 px
+  wide would still leave an empty and a whole pixel either side of an edge on a
+  pixel boundary; 1.5 px never does. The hairline
   thins strand by strand, in the texture's own coordinates scaled to metres by a
   baked per-vertex `uvScale` (a strand is 1.5 mm wherever its card's island sits
   in the atlas). Where the fade is low the thinning follows the painted hair:
@@ -1274,11 +1335,23 @@ a coloured texture; everything in the pure core is testable in Node.
   (`docs/licence-history.md`), so `scripts/lib/hairCards` builds them: **ropes**, tubes of
   quads along a centreline (`ropes.ts`) that leaves the scalp at an angle read from the head
   (`HeadFrame`: azimuth and elevation from the skull's centre, a ray to the head's own
-  triangles), lifts a little, then falls under gravity and lies over the body
-  (`BodySurface.probe`, signed distance from the whole body, winding taken from the skull); a
-  **grid of partings** (brick-wise rows, a hairline that recedes at the temples and runs up over
-  the ear and down at the nape) places box braids, twists and locs, and cornrows are parallel
-  parting lines on the scalp with a braid hanging from each end. The cards are bound to the
+  triangles) and lies over the body (`BodySurface.probe`, signed distance from the whole
+  body, winding taken from the skull); a **grid of partings** (brick-wise rows, a hairline
+  that recedes at the temples and runs up over the ear and down at the nape) places box braids
+  (179), twists (197) and locs (78), and cornrows are parallel parting lines on the scalp with
+  a braid hanging from each end. A grid's ropes are *combed* (`RopeHang`): each leaves its
+  root at a shallow angle, then lies along the scalp the way hair is combed (`combAlong`: back
+  over the top and from the front hairline, down on the sides and the back), held at its
+  clearance, until the comb runs steeply down; from there it hangs and settles
+  (`relaxRope`: gravity, follow-the-leader inextensibility, a stiffness per style, the body
+  as a collider with friction, so it rests on a shoulder or down the back instead of sliding
+  off to hang plumb). The first ropes stood up out of their roots and fell radially, a bare
+  starburst of partings round the crown; combed, each row lies over the roots of the row
+  behind, and a test that looks in at the scalp from 50 degrees up finds a rope first at
+  least 90% of the time (85% for the thicker, sparser locs and the short twists). Ropes from
+  the sides and the lower rows come to rest on the shoulders, neck and back (tested at 80%);
+  the crown's, combed back, are the outer layer over them (rope-on-rope contact is not
+  modelled). The cards are bound to the
   base mesh by the MHCLO scheme (`bindToBody`: the nearest triangle's corners, barycentric
   weights, an offset) with the head's extents as the scale references, so they go through the
   same pack, worker and renderer as a MakeHuman style and fit other heads. Each style's strand
@@ -1290,8 +1363,15 @@ a coloured texture; everything in the pure core is testable in Node.
   `short04`'s cap (3.8 mm median above the scalp) with thousands of tiny loops drawn at random
   angles, its soft edge broken into ragged fuzz, the loose cards below the cap cleared, and a
   fade (`keepAt`: full on top, tapering over the ears and round to bare skin at the nape) taken
-  from where each texel lies on the head (`uvField.ts` rasterises the cards into the texture). Not
-  yet: bantu knots, tight curls in the longer styles.
+  from where each texel lies on the head (`uvField.ts` rasterises the cards into the texture). Bantu
+  knots (`BANTU_KNOT`) part the head into 4.5 cm sections, each one's hair a 4.5 mm twisted rope
+  that leaves its root, lies out to a 1.1 cm bottom coil, then winds about three times round the
+  scalp's normal there, each turn 1.7 rope radii above the last and drawn in toward the axis, into a
+  raised cone 2.5 to 3.5 cm tall with the end tucked into its top. Every root sits far enough behind
+  the hairline that the whole bottom coil does. The first knots were a flat spiral lying outward
+  across the scalp, about 1 cm high, which read as snail-shell decals on the forehead; tests now
+  hold every apex 15 to 45 mm off the scalp, every knot's footprint behind the hairline, and every
+  knot taller than it is wide. Not yet: tight curls in the longer styles.
 
 **Costs and limits.** The pack is 3.5 MB for ten styles, mostly strand maps at
 1024 px (and 0.3 to 0.5 MB for each authored one); the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
@@ -1458,6 +1538,13 @@ Old recipes evaluate and serialise as before.
   (`inSkinAlbedo`): from afar it changes nothing, and the skin's colour parity
   holds; only its strands up close, in a view finer than its 2 mm cells, are
   drawn. A surface with no metres per UV unit (a test sphere) draws no strands.
+  Vellus lies flat (no relief): raised, its strands caught a raking light on
+  their lit side and read as light flecks, most of all on deep skin.
+- *Hair is never lighter than the skin it lies on.* A strand's colour is held
+  to the luminance of the skin under it, keeping its hue, so a fair strand on
+  deep skin is a darker line rather than a fleck. A browser test holds vellus
+  up close, lit from the front and at a graze, to no pixel lighter than bare
+  skin (ΔL\* under 0.5) and a mean ΔL\* under 2, at four tones.
 - *Hair is split by length, one system with the anthro fur* (the owner's
   ruling, 2026-10-09, after the M6 fur design). Sparse, fine hair (vellus, the
   limbs, a light chest) is strand layers; short, dense hair (stubble, a dense
@@ -1486,11 +1573,14 @@ Old recipes evaluate and serialise as before.
   well, the age policy refuses a recipe that asks for it, and every other
   group's mask is cut out where it lies. (A first version drew it as a strand
   layer with the same flag on skin layers; with it moved, the layer flag had no
-  user and went.) Pubic hair is the adult pack's, like every genital-region
-  feature: its mask and its place in the stack come from the adult pack's
-  manifest (`AdultAnatomySpec`), so the core names no part of it, and it
-  appears only when the pack is loaded. The core keeps the recipe's `pubic`
-  density and the model's coverage for it, which that layer reads.
+  user and went.) Pubic hair is a coat region too (dense, up to a few
+  centimetres), adult-only by the same flag, and the adult pack's data like
+  every genital-region feature: the core holds its paint (`PUBIC_REGION`, the
+  model's `pubic` group), the pack where it grows (`AdultAnatomySpec.coatRegions`,
+  a sparse mask over base vertices, refused at parse unless it is ascending,
+  within the body, 0..1 and for a region the core has), so without the pack it
+  has no area and the core names no adult target. It takes the coat's eighth
+  and last region.
 - *Body hair costs no atlas channel.* The eight strand layers fit the stack's
   eight pages: vellus takes no channel, and each terminal layer shares one with
   layers it lies apart from (the beard's strand layers, which touched the
@@ -1524,6 +1614,11 @@ module.
   tangent plane and smoothed by neighbour averaging, carried the same way.
   Rejected: atlas channels for the masks (the atlas is full, and a vertex
   attribute is exact where the shells need it, at their vertices).
+  A region's hair thins out over centimetres: the trunk's and armpits'
+  regions take the strand layers' masks averaged with their neighbours ten
+  times over the drawn skin, so they change by no more than fully over 2 cm
+  (a unit test walks every edge). The strand layers' own masks, and the atlas
+  packed by their support, are unchanged.
 - *Per figure, a paint per region*: coverage (the share of follicles that grow
   a hair), length, follicle density, how far the hair lies along the comb, and
   the pigment albedo, as uniforms. Body hair paints its regions from the body
@@ -1533,25 +1628,53 @@ module.
   (outfit-masked) index cut to the triangles whose corners carry a painted
   region; built when the outfit or the set of painted regions changes, so a
   figure without a coat draws nothing and stubble draws only the face.
-  A recipe without `bodyHair` grows no coat at all (`coatPaintFor`): until the
-  coat's sub-pixel strands resolve as coverage rather than single-pixel
-  points, default figures stay bare instead of speckled.
 - *One instanced draw.* The coat is a skinned mesh on the body's own geometry
   and skeleton, instanced N times; shell `i` is the skin offset along the rest
   normal by `(i + 1) / N` of the hair's length, leaning along the comb, before
   skinning (so the skin's own skinning, dual quaternions included, carries it).
   N scales with the figure's size on screen (`coatShellCount`), so a figure
-  far away draws few shells.
+  far away draws few shells. The coat's geometry (`CoatGeometry`) shares the
+  body's vertex buffers, so disposing it frees only its own (the comb, the
+  masks, its index). Three frees every attribute of a disposed geometry, and a
+  body whose buffers were freed under it draws nothing, or the shape it had
+  before: a woman's eyes hanging at a man's throat.
+- *A recipe asks for it, region by region.* A region grows only where the
+  recipe enables it (`coatEnabled`): the beard by a style other than none, any
+  other group by setting its density. A recipe silent on body hair, or one
+  that names no region, grows no coat (`coatPaintFor` is null), so default
+  figures stay bare.
 - *Strands from a tileable density texture* at true scale (`uv × uvScale`
-  over the follicle spacing), generated from a seed: per cell a strand's
-  length, its radius profile and an id; a shell keeps a fragment inside a
-  strand that reaches its height and whose id is under the coverage, so
-  coverage thins the hair rather than fading it.
+  over the follicle spacing), generated from a seed: per follicle cell a
+  strand's root, its reach (the share of the hair's length it grows), its
+  radius tapering to the tip, and an id; the strand is there when its id is
+  under the coverage, so coverage thins the hair rather than fading it.
+- *Coverage, not points (2026-10-09, after coat v2 was rejected).* A shell's
+  fragment is never kept or dropped whole; it is blended over what is under
+  it by the share of its pixel the strands cover at that shell's height, so
+  the hair's colour, its darkening toward the root and its sheen all arrive as
+  a fraction of the pixel. Where a strand is wider than about a pixel the
+  share is the strand's disc under the strand footprint (`STRAND_FOOTPRINT`,
+  its width under a tent a pixel either side, the one function the skin's
+  strand layers draw with too, so a strand about a pixel wide is soft-edged
+  and not a hard dash); where it is
+  narrower it is the strands' mean cover at that height (their expected area,
+  spread so the shells together cover what the strands do seen from above),
+  crossfading as the strand's width goes from half a pixel to a pixel and a
+  half. The footprint is the pixel's size in follicle cells, from the cells'
+  derivatives: it depends on how the skin lies on screen, never on where, so
+  sliding a figure across the screen moves its coat's image with it and does
+  not change it. The shells blend inner to outer, the order they lie in seen
+  from outside, and do not write depth. (Rejected: v2's interleaved-gradient
+  dither of the mean below a pixel. Its single-pixel points read as pepper,
+  not hair, and moved with the screen rather than the skin.)
 - *Shading is Kajiya-Kay along the skinned comb*, two lobes as the hair cards
-  use, with the pigment albedo, darker toward the root (self-shadow).
-- *A far LOD by dither.* Where a follicle cell is finer than a pixel the shells
-  cannot resolve strands; a fragment is then kept by an interleaved-gradient
-  dither of the strands' mean cover at its height.
+  use, with the pigment albedo, darker toward the root (self-shadow). Where
+  the comb blends to nothing between vertices (it is zero at some and turns
+  back on itself between others) the strand has no direction and no lobe:
+  normalising zero gave a NaN that blending spread as pastel green and pink
+  blotches with hard edges. A browser test holds the lit coat's hue to 20°–80°
+  in LCh, its chroma under 40 and every pixel finite, at four tones and four
+  hair colours on such a comb.
 
 **Built (2026-10-09).** `src/surface/coat.ts` (fields, paint, triangles, shell
 count), `src/render/coat.ts` (`CoatMaterial`, `coatGeometry`) and
@@ -1572,8 +1695,11 @@ grows none.
 **A grown beard's length is cards, on the hair pack's machinery (2026-10-09).**
 Past the coat's few centimetres, hair is cards. The hair pack gains a kind,
 `beard`, whose entries the packer generates (`scripts/lib/bodyHairCards.ts`)
-rather than packs from a MakeHuman file: narrow strips rooted on the beard's
-area, running along the coat's comb, lifting off the skin, bound to the base
+rather than packs from a MakeHuman file: narrow strips rooted where the
+beard's area is solid (`ROOT_SOLID`: none under a mask of 0.4, its full
+density from 0.7; a card is drawn whole, so one rooted in the mask's faint
+edge was a lone strip down the neck, and the coat carries that thinning
+instead), running along the coat's comb, lifting off the skin, bound to the base
 mesh's triangles as MakeHuman binds hair, with a generated strand map. They are
 the project's own bytes, so the licence gate (which proves MakeHuman files CC0)
 has nothing to prove; `PROVENANCE.md` says so. An entry is tagged with the
@@ -1596,9 +1722,16 @@ entry.
 draw). A full beard (its coat and its cards) with doubled chest, abdomen and
 back hair at 360 × 420 measured 10.52 ms a frame against 9.91 ms without
 (`e2e/bodyhair.spec.ts`, recorded; the coat alone, before the cards, measured
-8.33 against 8.29). These are frame intervals on a desktop browser near its
-display's rate, so they bound the cost rather than measure it. A GPU timer
-measurement on a phone is the open item.
+8.33 against 8.29; with coverage shading, which blends rather than discards,
+9.76 against 8.70 on the software renderer). These are frame intervals on a
+desktop browser near its display's rate, so they bound the cost rather than
+measure it. A GPU timer measurement on a phone is the open item.
+
+**Sheen.** At its peak, with light and view both square to the comb, the
+coat's Kajiya-Kay lobes add 0.23 to 0.34 of the hair's diffuse at a beard's
+close framing and at a chest's (a cell about a pixel), across the sheets'
+hair colours, from blond to black: the lightest hair has the most. A browser
+test holds it under three times the diffuse.
 
 ## Presence
 
@@ -1716,21 +1849,28 @@ later package that refuses participants under 18, and are not here.
   bends in, the foot's orientation kept, the ankle's height kept) to hold it as the
   figure is carried past. As the foot rolls the pin hands over to the point that is
   lowest, taking the place it has in the held foot, so the hand-over is seamless; a
-  point that lifts is let go.
+  point that lifts is let go. A pin the leg cannot reach (the clip's foot lands
+  ahead of where its body then is, and the leg is straight) is not met by sliding the
+  foot: the solve reports how far it fell short (`FootLock.correction`, the larger of
+  the two feet's, opposite pulls cancelling) and the `Animator` gives that much back
+  from the figure's root, so the figure yields to its planted foot instead of
+  outrunning it. The pins are in the world, so the next foot lands where the figure
+  now is and nothing accumulates.
 - *Pure and allocation-free.* `Animator` owns its buffers: `update(dt)` advances time,
   crossfades and root motion and writes the body's rotations. Face units and other
   poses are laid over by the caller (`composeRotations`).
 
 **What the numbers are.** Measured by `tests/animation.test.ts` over nine figures
 (slim, average and heavy bodies at 6, 25 and 75): in the walk, the largest a planted
-heel or ball moves while on the ground is 2 to 12 mm (median 5), against well over 20
-mm with root motion alone (the test holds both); in the hip-swaying walk 3 to 29 mm,
-since its hand-keyed feet scissor against each other in double support; in the three
-idles under 10 mm, and in Quaternius's walks (mocap that plants its feet) under 3
-mm (a crouch walk and a zombie's shuffle 36 and 62 mm, shuffling gaits). The tolerance in the walk is the leg's reach: at heel strike the
-front leg is already straight in the clip, and a pin ahead of it cannot be reached.
-A hand-keyed clip is the limit, not the solver: a clip that planted its feet would
-leave nothing to hold.
+heel or ball moves while on the ground is 2 to 6 mm (median 5), against well over 20
+mm with root motion alone (the test holds both); in the hip-swaying walk 3 to 7 mm
+(its hand-keyed front foot skates 12 cm along the floor as it lands, which a pin at
+the first touch left 29 mm short of reach at the far end of the stance, and the
+figure's yielding to the pin now absorbs); in the three idles under 10 mm, and in
+Quaternius's walks (mocap that plants its feet) under 3 mm; in a zombie's shuffle
+under 20 mm and in a crouch walk 36 mm, the dragged foot of the one and the
+shuffled one of the other never quite planted. A hand-keyed clip is the limit, not
+the solver: a clip that planted its feet would leave nothing to hold.
 
 **In the renderer.** `<Humanoid animation={{ library, clip }}>` plays a clip
 (`useFigureAnimation`, `src/react`): each frame the animator's pose, with
@@ -2000,6 +2140,14 @@ topology and the field atlas exist. Decisions:
   layers read their spec by id; a pack without a spec adds no layers and no
   states. `tests/adultStack.test.ts` scans the source for any adult name, so the
   slip fails before a build does.
+- **An adult with the pack is anatomically complete by default.** The pack's
+  `anatomy.defaults` gives each adult-only modifier a value as a
+  piecewise-linear function of the gender macro; `withAnatomyDefaults` fills
+  the modifiers a recipe leaves unset, for an adult only, and the model (morph,
+  gates, drives) and the paint input both read the filled recipe. A value the
+  recipe sets, 0 included, wins, so a developer can still draw an adult without
+  some feature. The core stays anatomy-free: it knows a curve over gender, not
+  what the curve shapes (docs/FOUNDATION.md, "both forms").
 - Until the adult stage arrives their fields are zero (empty atlas pages).
   When it arrives the worker derives the fields from the pack's targets and
   posts them; the main thread re-rasterises those pages of the shared atlas.
@@ -2380,7 +2528,7 @@ age.
 - `<Humanoid>` bakes the texture from that placement and the evaluated
   surface (`bakeBodyArt`, `src/render/bodyArtTexture.ts`) with the images the
   application passes (`bodyArtImages`).
-- A tattoo is a decal, not baked colour (`src/render/tattooDecals.ts`). At
+- A tattoo is a decal, not baked colour (`src/render/bodyArtDecals.ts`). At
   1024² the body's UV texels are 1.2–2.3 mm on a forearm (measured), so a
   6 cm compass baked as colour had 27 texels across and its line work
   pixelated on the sheets. No size of one texture for the whole body fixes
@@ -2392,20 +2540,25 @@ age.
     blend of four texels is exact inside one.
   - The texels round each UV island are extrapolated linearly from the two
     inside next to them, so a tattoo stays exact across a seam.
-  - Tattoos that overlap go on separate decal layers (two at most), the
-    later above, so one composites over the other in the shader.
+  - Decals that overlap go on separate decal layers (two at most), the later
+    above, so one composites over the other in the shader.
   - The ink page keeps only dermal pigment, which is soft enough for the
     body's texels.
+  - A naevus is a decal too: a round, slightly raised dot the shader draws
+    exactly. It adds melanin and raise to the marks. Baked into the 1 mm
+    texels round a brow, the sheets' 8 mm naevus read as a dark rectangle.
 - A new evaluation rebakes into new textures that replace the old in the
   same uniforms, so only a figure gaining or losing body art, or a layer of
-  overlapping tattoos, rebuilds its shader.
+  overlapping decals, rebuilds its shader.
 - The projection reaches half the decal's longer side off the skin's plane
   (at least 1 cm) and skips skin facing away from it, so a tattoo on a
   forearm never lands on the hip behind it. Both limits fade rather than cut:
   a hard end sliced a cheek's port-wine stain in a straight line on the
   contact sheets, where the skin curved out of reach.
-- No ink or mark acts on the nail plate, the nail-gloss layer's mask: it is
-  not skin (the sheets showed vitiligo whitening the nail beds).
+- No ink or mark acts on the nail plate, the nail-gloss layer's mask, neither
+  its colour nor its surface: it is not skin (the sheets showed vitiligo
+  whitening the nail beds). A browser test holds every mark kind and a tattoo
+  to that.
 - The ink's colour is stored sRGB-encoded so dark inks keep their precision
   in eight bits.
 - The browser tests hold the decal coordinates to the frame (orientation,
@@ -2422,7 +2575,22 @@ age.
   its raise.
 - The shader multiplies the skin by per-tone ratios raised to those channels.
   Melanin's density is linear in log albedo, so `ratio^t` moves the density
-  linearly in t. The smoothness and raise go to roughness and relief.
+  linearly in t. Added melanin reads its ratio from a table along the measured
+  tone axis instead. The axis is not straight in log albedo, so one ratio
+  raised to a power cut across it and greyed the sheets' café-au-lait. The
+  smoothness and raise go to roughness and relief.
+- A patch's shape (`markShape`) is an ellipsoid thresholded by seeded noise in
+  its frame's own 3D space. Its edge is the noise field over its gradient, a
+  distance, softened over 1–3 mm. Vitiligo throws flecks just outside its
+  border. A scar keeps its harmonic line.
+  - Measured in 3D, a patch is whole across a UV seam and ends by its own
+    depth where the skin curves away.
+  - The planar projection's reach had cut the sheets' café-au-lait and
+    port-wine in straight lines, and its polar outline read as the UV
+    island's shape round the mouth.
+- On the lips vitiligo pales the lip to a depigmented lip
+  (`vitiligoLipAlbedo`), mixed as the lips' layer mixes in. The skin's ratio
+  scaled the lip's colour channel by channel and turned deep lips lavender.
 - Marks add in the bake, so overlapping marks net out; dermal pigment is ink,
   composited under the tattoos.
 - Vitiligo's patches are seeded marks at the sites non-segmental vitiligo
@@ -2439,16 +2607,33 @@ age.
 - `<Humanoid>` builds the stud, ring or barbell there and skins every one of
   its vertices with those weights. It moves as one rigid piece with the skin at
   its site, which a piece a centimetre across does in life.
+- A barbell's balls are seated on the skin at placement, each moved out along
+  the skin's normal from the morphed mesh near the site, so the bar bends
+  through the hole as a navel's or brow's curved bar does. Straight under a
+  flat belly, both balls sat 4.5 mm inside it and the sheets showed none.
 - The part inside the tissue is hidden by the skin in front of it, and hair
   and garments hide the rest as depth does, so no occlusion bake is needed.
   The metals are measured reflectances.
-- Genital sites wait on the adult pack: its manifest must name its sites
-  (found from its targets as the body's are) before they can be placed. Until
-  then such a piercing is refused at evaluation for an adult, and by the age
-  policy for anyone under 18.
+- Genital sites are the adult pack's data, the core's code
+  (`AdultAnatomySpec.piercingSites`), as pubic hair's area is.
+  - A declared site names a detail-lattice vertex (the space the pack's detail
+    targets address, the refined region's vertices then each reservoir's
+    rings), its channel and its tissue depth. The anatomy is shaped on the
+    adult surface by that detail, so a base-mesh vertex could not follow it.
+  - On an adult drawn with the adult surface, the core takes the vertex's
+    rest position on the lattice, adds the detail displacing it, and takes
+    the evaluated surface's nearest render vertex there: the hole, its normal
+    and its bones. The jewellery seats against that surface.
+  - A site no loaded pack declares is refused at evaluation, a malformed
+    declaration when the pack is parsed (a vertex past the lattice when the
+    adult surface is built), and every such site by the age policy under 18,
+    whose evaluation never has the adult surface.
+  - A fixture test declares a site on the shipped pack's phallic reservoir:
+    it resolves on the drawn surface and moves with the phallus's size.
 
 **Landed:** the recipe field, its validation, the age policy, the sites,
-tattoos, marks and piercings. Still to do: the adult pack's piercing sites.
+tattoos, marks, piercings and the adult piercing-site contract. The adult
+pack's sites themselves are its lane's data.
 
 ### Joint creases (2026-10-09)
 

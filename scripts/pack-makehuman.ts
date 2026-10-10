@@ -72,6 +72,7 @@ import {
 } from "./lib/packWriter.ts";
 import { buildSliders } from "./lib/sliders.ts";
 import { type EncodedTarget, encodeSparseTarget } from "./lib/targetEncoding.ts";
+import { type TextureRecord, textureProvenance } from "./lib/textureSizing.ts";
 import { bodyCoverage, placeIslands } from "./lib/uvIslands.ts";
 
 const USAGE = "usage: node scripts/pack-makehuman.ts <makehuman-data-dir> <system-assets-dir>";
@@ -348,6 +349,7 @@ function writeProvenance(
   systemEvidence: Record<string, string> = {},
   vendorEvidence: Record<string, string> = {},
   authored: readonly string[] = [],
+  textures: readonly TextureRecord[] = [],
 ): void {
   const group = (evidence: Record<string, string>, keep: (f: string) => boolean) => {
     const byKind = new Map<string, string[]>();
@@ -405,6 +407,7 @@ function writeProvenance(
         ]
       : []),
     "",
+    ...(textures.length ? [...textureProvenance(textures), "## Outputs", ""] : []),
     "| Output | SHA-256 |",
     "| --- | --- |",
     ...outputs.map(([f, h]) => `| ${f} | \`${h}\` |`),
@@ -600,7 +603,10 @@ async function main() {
   );
   const compiled = [...essentials, ...plates];
   fs.rmSync(path.join(BODY_OUT, "attachments.bin"), { force: true });
-  await writeAttachmentTextures(BODY_OUT, compiled);
+  const textures = await writeAttachmentTextures(BODY_OUT, compiled, {
+    base: Float32Array.from(obj.positions),
+    systemDir: SYSTEM,
+  });
   // Written with every vertex open first; the bake below needs the packed figure.
   const occlusionBakes = occlusionCorners(OCCLUSION_KEYS.length);
   let attachments = writeAttachments(BODY_OUT, ATTACHMENTS_FILE, compiled, null, occlusionBakes);
@@ -821,9 +827,15 @@ async function main() {
       ...bodyFiles.map((f): [string, string] => [f.file, sha(f.bin)]),
       [ATTACHMENTS_FILE, attachments.sha256],
       [BODY_OCCLUSION_FILE, bodyOcclusion.sha256],
+      ...textures.map((t): [string, string] => [
+        t.texture,
+        sha(new Uint8Array(fs.readFileSync(path.join(BODY_OUT, t.texture)))),
+      ]),
     ],
     systemEvidence,
     vendorEvidence,
+    [],
+    textures,
   );
   writeProvenance(
     ADULT_OUT,

@@ -16,8 +16,33 @@
  * modifiers is set, in either direction, since "smaller" is still there; the
  * sculpt's features take a continuous presence from their own weights.
  */
+import { curveAt, parseCurve } from "../format/assetFormat.ts";
 import { isAdult } from "./agePolicy.ts";
 import type { Recipe } from "./recipe.ts";
+
+/**
+ * The recipe an adult figure is drawn from when the adult pack is loaded: each
+ * adult-only modifier the recipe leaves unset takes the pack's default for the
+ * figure's gender (`AdultAnatomySpec.defaults`), so an adult with the pack is
+ * anatomically complete without the developer knowing the anatomy's controls.
+ * A value the recipe sets, 0 included, always wins. A minor's recipe, or one
+ * evaluated without defaults, comes back unchanged (the same object).
+ */
+export function withAnatomyDefaults(
+  recipe: Recipe,
+  defaults: Readonly<Record<string, string>> | undefined,
+): Recipe {
+  if (!defaults || !isAdult(recipe)) return recipe;
+  let filled: Record<string, number> | null = null;
+  for (const [id, curve] of Object.entries(defaults)) {
+    if (id in recipe.modifiers) continue;
+    const v = curveAt(parseCurve(curve), recipe.macros.gender);
+    if (v === 0) continue;
+    filled ??= { ...recipe.modifiers };
+    filled[id] = v;
+  }
+  return filled ? { ...recipe, modifiers: filled } : recipe;
+}
 
 export interface AnatomyFeature {
   /** Key of the feature in `SkinPaintInput.anatomy`, and of the layers that colour it. */

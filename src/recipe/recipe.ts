@@ -53,6 +53,13 @@ export interface EyesRecipe {
   iris: Rgb;
   /** 0 = clinical white, 1 = warm ivory sclera. */
   scleraWarmth: number;
+  /**
+   * An eye material of the eye pack (`humanoid-kit-eyes`): its texture's iris pattern and
+   * sclera detail, worn in `iris` and `scleraWarmth`'s colours. Absent is the built-in
+   * texture, so a recipe saved before eye materials existed is unchanged. It names a
+   * material the loaded library must have; without a library the built-in one is shown.
+   */
+  material?: string;
 }
 
 export const DEFAULT_EYES: Readonly<EyesRecipe> = {
@@ -167,6 +174,7 @@ export function createRecipe(
     eyes: {
       iris: [...(init.eyes?.iris ?? DEFAULT_EYES.iris)] as Rgb,
       scleraWarmth: init.eyes?.scleraWarmth ?? DEFAULT_EYES.scleraWarmth,
+      ...(init.eyes?.material && { material: init.eyes.material }),
     },
     ...(init.hair && {
       hair: {

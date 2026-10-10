@@ -3,6 +3,8 @@ import type { PlacedMark } from "../src/bodyArt/decals.ts";
 import { inkSeen } from "../src/bodyArt/ink.ts";
 import {
   CAFE_AU_LAIT_MELANIN,
+  deeperAlbedo,
+  MARK_DARK_STEPS,
   markChannels,
   markedAlbedo,
   markMelaninSpan,
@@ -113,6 +115,46 @@ describe("a mark's change to the skin", () => {
       });
       const r = markRatios(t);
       for (const x of r.blood.slice(1)) expect(x).toBeLessThan(1);
+    }
+  });
+
+  it("adds melanin along the measured tone axis at any strength, so a macule is warm brown", () => {
+    const span = markMelaninSpan();
+    for (const m of TONES) {
+      const t = tone(m);
+      const own = melaninDensity(t);
+      for (const up of [0.05, CAFE_AU_LAIT_MELANIN, 0.3, NAEVUS_MELANIN]) {
+        const axis = melaninDensityAlbedo(t, (own + up * span) / own, 0.5);
+        markedAlbedo(t, { melanin: up, haemoglobin: 0 }).forEach((c, k) => {
+          expect(c, `melanin ${m}, up ${up}`).toBeCloseTo(axis[k] as number, 6);
+        });
+      }
+      // The shader's table, interpolated, holds to the axis well below a just
+      // noticeable difference (ΔE*ab 1).
+      const { dark } = markRatios(t);
+      let worst = 0;
+      const skin = skinAlbedo(t);
+      for (let up = 0; up <= 1; up += 0.01) {
+        const x = Math.sqrt(up) * (MARK_DARK_STEPS - 1);
+        const i = Math.min(Math.floor(x), MARK_DARK_STEPS - 2);
+        const lerp = skin.map((s, k) => {
+          const a = (dark[i] as Rgb)[k] as number;
+          const b = (dark[i + 1] as Rgb)[k] as number;
+          return s * (a + (b - a) * (x - i));
+        }) as Rgb;
+        const [p, q] = [lab(lerp), lab(deeperAlbedo(t, up))];
+        worst = Math.max(worst, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]));
+      }
+      expect(worst, `melanin ${m}`).toBeLessThan(0.5);
+      // On fair and light skin a café-au-lait macule is light brown: darker, and
+      // yellower than the skin round it, as the next skin down the axis is (from
+      // medium skin on, the measured axis deepens without yellowing).
+      if (m >= 0.5) continue;
+      const [L0, , b0] = lab(skinAlbedo(t));
+      const [L, , b] = lab(markedAlbedo(t, { melanin: CAFE_AU_LAIT_MELANIN, haemoglobin: 0 }));
+      expect(L - L0, `melanin ${m}`).toBeLessThan(-3);
+      expect(L - L0, `melanin ${m}`).toBeGreaterThan(-15);
+      expect(b - b0, `melanin ${m}`).toBeGreaterThan(0);
     }
   });
 

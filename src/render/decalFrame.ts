@@ -1,6 +1,6 @@
 /**
  * Projecting a decal onto the body in UV space, shared by the body-art bakes
- * (`bodyArtTexture.ts` for marks, `tattooDecals.ts` for tattoos): the body is
+ * (`bodyArtTexture.ts` for marks, `bodyArtDecals.ts` for tattoos and naevi): the body is
  * drawn at its UVs, and each fragment finds its place in the decal's frame
  * (`DecalFrame`) from the figure's morphed rest surface, so a decal crosses a
  * UV seam whole: both sides of the seam are the same place on the body.
@@ -25,6 +25,12 @@ export const DECAL_REACH_FADE = 0.6;
  * projection's far sides are skipped without a cut where the skin turns away.
  */
 export const DECAL_FACING: readonly [number, number] = [0.05, 0.35];
+/**
+ * The same for a patch (`markShape`), which ends by its own depth rather than
+ * by a reach: only skin turned more than a right angle away from it, the far
+ * side of a thin part such as an ear, is skipped, fading in between. A CHOICE.
+ */
+export const PATCH_FACING: readonly [number, number] = [-0.35, -0.05];
 
 /** Draws the body at its UVs, passing its rest position and normal on. */
 export const DECAL_VERTEX = /* glsl */ `
@@ -60,6 +66,15 @@ vec2 hkDecalPoint() {
     * smoothstep(${DECAL_FACING[0].toFixed(3)}, ${DECAL_FACING[1].toFixed(3)}, dot(normalize(vNormal), normal));
   if (hkDecalWeight <= 0.0) discard;
   return vec2(dot(d, right), dot(d, up));
+}
+// The point in the frame's own space (right, up, normal), for a shape that
+// measures its own depth; skin facing away (\`PATCH_FACING\`) is skipped.
+float hkDecalFacing;
+vec3 hkDecalLocal() {
+  vec3 d = vPosition - centre;
+  hkDecalFacing = smoothstep(${PATCH_FACING[0].toFixed(3)}, ${PATCH_FACING[1].toFixed(3)}, dot(normalize(vNormal), normal));
+  if (hkDecalFacing <= 0.0) discard;
+  return vec3(dot(d, right), dot(d, up), dot(d, normal));
 }`;
 
 export function frameUniforms() {

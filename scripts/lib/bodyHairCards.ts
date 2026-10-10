@@ -30,6 +30,20 @@ import type { CompiledAsset } from "./compileAsset.ts";
 /** Quads along a card, root to tip. */
 export const SEGMENTS = 3;
 
+/**
+ * Where on a mask cards root: none under `lo`, the mask's full density from
+ * `hi`, easing between. A card is drawn whole, so one rooted in a mask's faint
+ * edge is a lone strip where the hair has all but ended (the beards sheet's
+ * splinters down the neck); the coat carries the edge's thinning instead.
+ */
+export const ROOT_SOLID = { lo: 0.4, hi: 0.7 } as const;
+
+/** The share of a mask's density that roots cards at mask `m` (`ROOT_SOLID`). */
+export function rootShare(m: number): number {
+  const t = Math.min(1, Math.max(0, (m - ROOT_SOLID.lo) / (ROOT_SOLID.hi - ROOT_SOLID.lo)));
+  return t * t * (3 - 2 * t);
+}
+
 export interface CardSpec {
   id: string;
   /** Per base vertex, 0..1: where cards grow, and how densely. */
@@ -125,14 +139,15 @@ export function generateCards(assets: HumanoidAssets, spec: CardSpec): Cards {
       const [a, b, c] = tri;
       const m =
         ((spec.mask[a] as number) + (spec.mask[b] as number) + (spec.mask[c] as number)) / 3;
-      if (m <= 0) continue;
+      const share = rootShare(m);
+      if (share <= 0) continue;
       const pa = at(a);
       const pb = at(b);
       const pc = at(c);
       const n0 = cross(sub(pb, pa), sub(pc, pa));
       const area = Math.hypot(...n0) / 2;
       // Expected cards on this triangle; the fraction is a draw, so totals are right on average.
-      const expected = area * 1e4 * spec.density * m;
+      const expected = area * 1e4 * spec.density * share;
       let count = Math.floor(expected);
       if (rand() < expected - count) count++;
       const normal = norm(n0);
@@ -293,6 +308,9 @@ export interface CardEntrySpec extends CardSpec {
  * longer than the coat's hair, lying along the comb with some lift. The numbers
  * are choices.
  */
+/** How long a full beard's cards grow at most, metres: a choice, a little past the coat's hair. */
+export const FULL_BEARD_CARD_LENGTH = 0.028;
+
 export const BODY_HAIR_CARDS = (assets: HumanoidAssets): CardEntrySpec[] => {
   const parts = beardMasks(assets);
   const beard = Float32Array.from(
@@ -306,7 +324,7 @@ export const BODY_HAIR_CARDS = (assets: HumanoidAssets): CardEntrySpec[] => {
       style: "full",
       mask: beard,
       density: 0.9,
-      length: 0.028,
+      length: FULL_BEARD_CARD_LENGTH,
       width: 0.005,
       lift: 0.3,
       spread: 0.45,

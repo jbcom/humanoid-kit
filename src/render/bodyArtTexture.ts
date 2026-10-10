@@ -1,8 +1,8 @@
 /**
  * A figure's body-art texture (docs/ARCHITECTURE.md, "Body art"): its marks
  * baked into the body's UV space, per figure, since placement is per figure
- * while the field atlas is shared, with its tattoos' decals beside them
- * (`tattooDecals.ts`). Two pages of an RGBA8 array:
+ * while the field atlas is shared, with its tattoos' and naevi's decals
+ * beside them (`bodyArtDecals.ts`). Two pages of an RGBA8 array:
  *
  * - page 0, ink: dermal pigment (a Mongolian spot), colour sRGB-encoded (dark
  *   pigment keeps its precision in eight bits) and coverage in alpha. The
@@ -46,9 +46,18 @@ import {
   WebGLRenderTarget,
 } from "three";
 import type { BodyArtPlacement, PlacedMark } from "../bodyArt/decals.ts";
-import { markChannels, markOutline } from "../bodyArt/marks.ts";
+import {
+  EDGE_VARIATION,
+  FIELD_STEP,
+  FLECK_CELL,
+  FLECK_REACH,
+  FLECK_SOFT,
+  FLECK_THRESHOLD,
+  markOutline,
+} from "../bodyArt/markShape.ts";
+import { markChannels } from "../bodyArt/marks.ts";
+import { type BodyArtDecals, bakeDecals, naevusDecal, tattooDecal } from "./bodyArtDecals.ts";
 import { DECAL_FRAME, DECAL_VERTEX, frameUniforms, setFrame } from "./decalFrame.ts";
-import { bakeTattooDecals, type TattooDecals } from "./tattooDecals.ts";
 import { COVER_FRAGMENT, NEAREST_COVERED, QUAD_VERTEX, UV_RASTER_VERTEX } from "./uvRaster.ts";
 
 /** Pages of a body-art texture: ink, then marks. */
@@ -75,35 +84,99 @@ export type BodyArtImages = Readonly<Record<string, TexImageSource>>;
 export interface BodyArtTexture {
   /** The ink and marks pages. */
   texture: Texture;
-  /** The tattoos' decals, or null for a figure without tattoos. */
-  tattoos: TattooDecals | null;
+  /** The tattoos' and naevi's decals, or null for a figure without either. */
+  decals: BodyArtDecals | null;
   dispose(): void;
 }
 
+/** GLSL twin of `markNoise` (src/bodyArt/markShape.ts), in the same uint arithmetic. */
+const MARK_NOISE = /* glsl */ `
+float hkHash(ivec3 i) {
+  uint h = (uint(i.x) * 0x8da6b343u) ^ (uint(i.y) * 0xd8163841u) ^ (uint(i.z) * 0xcb1ab31fu);
+  h = (h ^ (h >> 16u)) * 0x7feb352du;
+  h = (h ^ (h >> 15u)) * 0x846ca68bu;
+  return float(h ^ (h >> 16u)) / 4294967296.0;
+}
+float hkValueNoise(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = p - i;
+  vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  ivec3 c = ivec3(i);
+  return mix(
+    mix(mix(hkHash(c), hkHash(c + ivec3(1, 0, 0)), u.x), mix(hkHash(c + ivec3(0, 1, 0)), hkHash(c + ivec3(1, 1, 0)), u.x), u.y),
+    mix(mix(hkHash(c + ivec3(0, 0, 1)), hkHash(c + ivec3(1, 0, 1)), u.x), mix(hkHash(c + ivec3(0, 1, 1)), hkHash(c + ivec3(1, 1, 1)), u.x), u.y),
+    u.z);
+}
+float hkMarkNoise(vec3 p) {
+  float sum = 0.0;
+  float amp = 1.0;
+  float f = 1.0;
+  for (int o = 0; o < 3; o++) {
+    sum += amp * (2.0 * hkValueNoise(p * f) - 1.0);
+    amp *= 0.5;
+    f *= 2.0;
+  }
+  return sum / 1.75;
+}`;
+
 /**
- * A mark (`markShape`): an ellipse width by length with harmonics on its
- * radius, its x wandering along its length, and a soft edge. Writes the mark's
- * channels times its shape, the raise times its square for a rounded profile
- * (`toInk` 0, added), or its ink premultiplied (`toInk` 1, composited over).
+ * A mark (`markShape`, whose twin this is). A scar: an ellipse width by length
+ * with harmonics on its radius and its x wandering along its length. A patch:
+ * an ellipsoid thresholded by noise in the frame's space, with vitiligo's
+ * flecks round it. Each with a soft edge. Writes the mark's channels times
+ * its shape, the raise times its square for a rounded profile (`toInk` 0,
+ * added), or its ink premultiplied (`toInk` 1, composited over).
  */
 const MARK_FRAGMENT = /* glsl */ `
 precision highp float;
 uniform vec2 size;
+uniform int patchShape;
 uniform vec4 amplitude;
 uniform vec4 phase;
 uniform vec3 wander;
+uniform vec3 offset;
+uniform vec3 fleckOffset;
+uniform vec3 noise;
 uniform vec4 channels;
 uniform vec4 ink;
 uniform float toInk;
 out vec4 color;
 ${DECAL_FRAME}
-void main() {
+${MARK_NOISE}
+float hkScar() {
   vec2 p = hkDecalPoint() / (size * 0.5);
   float qx = p.x - wander.x * sin(3.14159265359 * 1.5 * p.y + wander.y);
   float theta = atan(p.y, qx);
   float r = 1.0;
   for (int i = 0; i < 4; i++) r += amplitude[i] * sin(float(i + 2) * theta + phase[i]);
-  float s = (1.0 - smoothstep(r - wander.z, r + wander.z, length(vec2(qx, p.y)))) * hkDecalWeight;
+  return (1.0 - smoothstep(r - wander.z, r + wander.z, length(vec2(qx, p.y)))) * hkDecalWeight;
+}
+vec3 hkHalf;
+float hkField(vec3 p) {
+  return length(p / hkHalf) - 1.0 - noise.y * hkMarkNoise(p / noise.x + offset);
+}
+float hkPatch() {
+  vec3 p = hkDecalLocal();
+  if (size.x < 0.0) p.x = -p.x;
+  hkHalf = vec3(abs(size.x) * 0.5, size.y * 0.5, min(abs(size.x), size.y) * 0.5);
+  float reach = ${FLECK_REACH.toFixed(3)} * hkHalf.z * noise.z;
+  if (length(p / hkHalf) > 1.0 + noise.y + (wander.z * ${(1 + EDGE_VARIATION).toFixed(3)} + reach) / hkHalf.z + 0.05) discard;
+  const float h = ${FIELD_STEP.toExponential(6)};
+  vec3 g = vec3(
+    hkField(p + vec3(h, 0.0, 0.0)) - hkField(p - vec3(h, 0.0, 0.0)),
+    hkField(p + vec3(0.0, h, 0.0)) - hkField(p - vec3(0.0, h, 0.0)),
+    hkField(p + vec3(0.0, 0.0, h)) - hkField(p - vec3(0.0, 0.0, h))) / (2.0 * h);
+  float d = hkField(p) / max(1e-6, length(g));
+  float edge = wander.z * (1.0 + ${EDGE_VARIATION.toFixed(3)} * hkMarkNoise(p / noise.x + offset));
+  float s = 1.0 - smoothstep(-edge, edge, d);
+  if (noise.z > 0.5) {
+    float spot = smoothstep(${(FLECK_THRESHOLD - FLECK_SOFT).toFixed(4)}, ${(FLECK_THRESHOLD + FLECK_SOFT).toFixed(4)}, hkMarkNoise(p / ${FLECK_CELL.toFixed(6)} + fleckOffset));
+    s = max(s, spot * (1.0 - smoothstep(0.0, reach, d)));
+  }
+  return s * hkDecalFacing;
+}
+void main() {
+  float s = patchShape == 1 ? hkPatch() : hkScar();
   if (s <= 0.0) discard;
   color = toInk > 0.5 ? vec4(ink.rgb * ink.a, ink.a) * s : vec4(channels.xyz * s, channels.w * s * s);
 }`;
@@ -213,6 +286,10 @@ export function bakeBodyArt(
     amplitude: { value: new Vector4() },
     phase: { value: new Vector4() },
     wander: { value: new Vector3() },
+    patchShape: { value: 0 },
+    offset: { value: new Vector3() },
+    fleckOffset: { value: new Vector3() },
+    noise: { value: new Vector3() },
     channels: { value: new Vector4() },
     ink: { value: new Vector4() },
     toInk: { value: 0 },
@@ -262,6 +339,10 @@ export function bakeBodyArt(
     mu.amplitude.value.fromArray(o.amplitude);
     mu.phase.value.fromArray(o.phase);
     mu.wander.value.set(o.wander, o.wanderPhase, o.soft);
+    mu.patchShape.value = o.patch ? 1 : 0;
+    mu.offset.value.fromArray(o.offset);
+    mu.fleckOffset.value.fromArray(o.fleckOffset);
+    mu.noise.value.set(o.cell, o.irregular, o.flecks);
     mu.channels.value.set(c.melanin, c.haemoglobin, c.smooth, c.raise);
     mu.ink.value.set(...(c.ink?.colour ?? [0, 0, 0]), c.ink?.cover ?? 0);
     return c;
@@ -274,7 +355,15 @@ export function bakeBodyArt(
   renderer.setClearColor(0x000000, 0);
   // Pigment composites over and marks add to one another: each pass must keep what is drawn.
   renderer.autoClear = false;
-  let tattoos: TattooDecals | null = null;
+  let decals: BodyArtDecals | null = null;
+  // A naevus is a decal; the other marks are baked.
+  const naevi = placement.marks.filter((m) => m.kind === "naevus");
+  const baked = placement.marks.filter((m) => m.kind !== "naevus");
+  const dims = (key: string) => images[key] as TexImageSource & { width: number; height: number };
+  const decalList = [
+    ...naevi.map(naevusDecal),
+    ...placement.tattoos.map((t) => tattooDecal(t, dims(t.image))),
+  ];
   try {
     renderer.setRenderTarget(cover);
     renderer.clear();
@@ -284,7 +373,7 @@ export function bakeBodyArt(
     renderer.setRenderTarget(inkComposite);
     renderer.clear();
     // Dermal pigment is ink; the other marks change the skin.
-    for (const m of placement.marks) {
+    for (const m of baked) {
       const c = setMark(m);
       mu.toInk.value = c.ink ? 1 : 0;
       mesh.material = c.ink ? markInk : markAdd;
@@ -299,10 +388,11 @@ export function bakeBodyArt(
     renderer.clear();
     quadMesh.material = markPage;
     renderer.render(quadScene, camera);
-    if (placement.tattoos.length)
-      tattoos = bakeTattooDecals(
+    // Naevi first: a tattoo over one is drawn above it.
+    if (decalList.length)
+      decals = bakeDecals(
         { renderer, camera, body: mesh, bodyScene: scene, quad: quadMesh, quadScene, cover, size },
-        placement.tattoos,
+        decalList,
         images,
       );
   } catch (e) {
@@ -318,10 +408,10 @@ export function bakeBodyArt(
   }
   return {
     texture: art.texture,
-    tattoos,
+    decals,
     dispose() {
       art.dispose();
-      tattoos?.dispose();
+      decals?.dispose();
     },
   };
 }

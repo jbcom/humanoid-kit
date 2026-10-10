@@ -21,6 +21,7 @@ import {
   DataTexture,
   DirectionalLight,
   FloatType,
+  HemisphereLight,
   LinearFilter,
   LinearMipmapLinearFilter,
   Mesh,
@@ -30,14 +31,17 @@ import {
   NoToneMapping,
   OrthographicCamera,
   PlaneGeometry,
+  PMREMGenerator,
   RGBAFormat,
   Scene,
   SphereGeometry,
   SRGBColorSpace,
+  type Texture,
   UnsignedByteType,
   WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   HAIR_ALPHA_CUTOFF,
@@ -121,17 +125,57 @@ function setStrandAttributesFrom(
 
 const FLAT = strandMap(4, () => texel(HAIR_STRAND_MEAN, 255));
 
+/** The studio's environment (`StudioStage`'s RoomEnvironment), prefiltered once on first use. */
+let studioRoom: Texture | null = null;
+function studioEnvironment(): Texture {
+  if (!studioRoom) {
+    const pmrem = new PMREMGenerator(renderer);
+    const room = new RoomEnvironment();
+    studioRoom = pmrem.fromScene(room, 0.04).texture;
+    room.dispose();
+    pmrem.dispose();
+  }
+  return studioRoom;
+}
+
+/**
+ * `StudioStage`'s lights, seen from the camera on +z: the warm key high front-right, the
+ * fill front-left, the rim behind, the hemisphere and the room environment.
+ */
+function addStudio(scene: Scene): void {
+  scene.add(new HemisphereLight(0xeceeee, 0x3a342e, 0.22));
+  const lights: [number, [number, number, number], number][] = [
+    [0xfff6ef, [1.8, 3.2, 2.6], 2.4],
+    [0xffffff, [-2.6, 1.6, 2.2], 0.7],
+    [0xffffff, [-1.2, 2.4, -3], 1.6],
+  ];
+  for (const [colour, position, intensity] of lights) {
+    const lamp = new DirectionalLight(colour, intensity);
+    lamp.position.set(...position);
+    scene.add(lamp);
+  }
+  scene.environment = studioEnvironment();
+  scene.environmentIntensity = 0.22;
+}
+
 function render(
   mesh: Mesh,
-  { samples = 0, light = [0, 0, 1] as [number, number, number] } = {},
+  {
+    samples = 0,
+    light = [0, 0, 1] as [number, number, number],
+    studio = false,
+  }: { samples?: number; light?: [number, number, number]; studio?: boolean } = {},
 ): Float32Array {
   const target = new WebGLRenderTarget(SIZE, SIZE, { type: FloatType, samples });
   targets.push(target);
   const scene = new Scene();
   scene.add(mesh);
-  const lamp = new DirectionalLight(0xffffff, Math.PI);
-  lamp.position.set(...light);
-  scene.add(lamp);
+  if (studio) addStudio(scene);
+  else {
+    const lamp = new DirectionalLight(0xffffff, Math.PI);
+    lamp.position.set(...light);
+    scene.add(lamp);
+  }
   renderer.setRenderTarget(target);
   renderer.setClearColor(0x000000, 1);
   renderer.clear();
@@ -414,6 +458,64 @@ describe("hair highlights (Kajiya-Kay)", () => {
           ).toBeLessThan(HIGHLIGHT_OVER_DIFFUSE);
   });
 
+  it("never outshines its diffuse under the studio's lights and environment, at any colour or style's combing", () => {
+    // The playground's stage adds a rim light and a room environment, whose reflection is what
+    // makes black hair (a tiny diffuse) read as glossy plastic. Luminance, every pixel whose
+    // diffuse is at least half its brightest, against the same material with the lobes, the
+    // sheen and the base specular off.
+    const luminance = (px: Float32Array, x: number, y: number) =>
+      0.2126 * at(px, x, y, 0) + 0.7152 * at(px, x, y, 1) + 0.0722 * at(px, x, y, 2);
+    const ratioPeak = (
+      colour: HairColour,
+      coherence: number,
+      growth: (x: number, y: number) => number,
+    ) => {
+      const sphere = new SphereGeometry(0.9, 64, 48);
+      setHairOcclusionAttribute(
+        sphere,
+        new Float32Array(sphere.getAttribute("position").count).fill(1),
+      );
+      setStrandAttributesFrom(sphere, { growth });
+      const draw = (diffuseOnly: boolean) => {
+        const material = new HairMaterial();
+        material.setColour(colour);
+        material.setStrand({ angle: 0, coherence });
+        material.map = FLAT;
+        if (diffuseOnly) {
+          material.hkUniforms.hkLobes.value.x = 0;
+          material.sheen = 0;
+          material.specularIntensity = 0;
+        }
+        const px = render(new Mesh(sphere, material), { studio: true });
+        material.dispose();
+        return px;
+      };
+      const on = draw(false);
+      const off = draw(true);
+      let brightest = 0;
+      for (let y = 0; y < SIZE; y++)
+        for (let x = 0; x < SIZE; x++) brightest = Math.max(brightest, luminance(off, x, y));
+      let peak = 0;
+      for (let y = 0; y < SIZE; y++)
+        for (let x = 0; x < SIZE; x++) {
+          const d = luminance(off, x, y);
+          if (d > 0.5 * brightest) peak = Math.max(peak, luminance(on, x, y) / d);
+        }
+      return peak;
+    };
+    const growths: ((x: number, y: number) => number)[] = [(_, y) => y, (x) => x, (x, y) => x + y];
+    const worst: Record<string, number> = {};
+    // short02's combing (side-swept), bob02's, long01's (long and straight), and perfectly combed.
+    for (const name of ["black", "dark-brown", "brown", "light-blonde"])
+      for (const coherence of [0.08, 0.64, 0.81, 1])
+        for (const growth of growths) {
+          const r = ratioPeak(HAIR_COLOURS[name] as HairColour, coherence, growth);
+          worst[name] = Math.max(worst[name] ?? 0, r);
+          expect(r, `${name}, coherence ${coherence}`).toBeLessThan(HIGHLIGHT_OVER_DIFFUSE);
+        }
+    console.log(`studio highlight over diffuse, worst per colour: ${JSON.stringify(worst)}`);
+  });
+
   it("is absent where growth has no gradient: no direction, no strand highlight", () => {
     const h = lobes(undefined);
     expect(h.horizontal.peak).toBeLessThan(0.002);
@@ -480,37 +582,98 @@ describe("hairlines and fins", () => {
     whole1.material.dispose();
   });
 
+  it("ramps a hairline's strand edges over more than a pixel under MSAA: no step from empty to whole between neighbours", (ctx) => {
+    // Some software rasterisers (SwiftShader in CI) do not implement alpha-to-coverage; a stock
+    // material on the same target shows whether this context can be asked.
+    const stock = new MeshBasicMaterial({ map: FLAT, alphaToCoverage: true, alphaTest: 0.4 });
+    stock.onBeforeCompile = (s) => {
+      s.fragmentShader = s.fragmentShader.replace(
+        "#include <alphatest_fragment>",
+        "diffuseColor.a = 0.5;\n#include <alphatest_fragment>",
+      );
+    };
+    const half = render(new Mesh(new PlaneGeometry(2, 2), stock), { samples: 4 });
+    stock.dispose();
+    const v = at(half, SIZE / 2, SIZE / 2);
+    if (!(v > 0.05 && v < 0.95)) ctx.skip("this GL context does not implement alpha-to-coverage");
+
+    const strand = { angle: Math.PI / 2, coherence: 0 };
+    /** Pixel pairs in the hairline that step straight from empty to whole, and those that cross the edge at all. */
+    const steps = (multisampled: boolean) => {
+      const { mesh, material } = card({ map: painted(), fade: () => 0, strand, multisampled });
+      const px = render(mesh, { samples: 4 });
+      material.dispose();
+      let lit = 0;
+      for (let y = 0; y < SIZE; y++)
+        for (let x = 0; x < SIZE; x++) lit = Math.max(lit, at(px, x, y));
+      const empty = (x: number, y: number) => at(px, x, y) < 0.02 * lit;
+      const whole = (x: number, y: number) => at(px, x, y) > 0.98 * lit;
+      let hard = 0;
+      let crossings = 0;
+      for (let y = 4; y < SIZE - 5; y++)
+        for (let x = Math.ceil(EDGE_PX) + 2; x < SIZE - 5; x++)
+          for (const [nx, ny] of [
+            [x + 1, y],
+            [x, y + 1],
+          ] as const) {
+            const a = at(px, x, y);
+            const b = at(px, nx, ny);
+            if (Math.abs(a - b) < 0.5 * lit) continue;
+            crossings++;
+            if ((empty(x, y) && whole(nx, ny)) || (whole(x, y) && empty(nx, ny))) hard++;
+          }
+      return { hard, crossings };
+    };
+    const cut = steps(false);
+    const smooth = steps(true);
+    // The plain cut steps at nearly every edge; the ramp leaves a part-covered pixel on each.
+    expect(cut.hard, `cut ${JSON.stringify(cut)}`).toBeGreaterThan(0.8 * cut.crossings);
+    expect(smooth.crossings, `smooth ${JSON.stringify(smooth)}`).toBeGreaterThan(20);
+    expect(smooth.hard, `smooth ${JSON.stringify(smooth)}`).toBeLessThanOrEqual(
+      0.02 * smooth.crossings,
+    );
+  });
+
   it("decides every strand cell on the card, never on the screen pixel: a card slid sideways draws the same image slid", () => {
     // A screen-space dither (a function of gl_FragCoord) would draw a different pattern once the
     // card moves; a hash of the card's own surface moves with it, so the dot-grid class of bug
     // (found on a hardware GPU, where software renders looked fine) cannot return.
     const strand = { angle: Math.PI / 2, coherence: 0 };
     const shift = 4; // pixels, an exact number of them
-    for (const fin of [0, 1]) {
-      const fade = () => 0;
-      const a = card({ map: painted(), fade, strand, fin });
-      const b = card({ map: painted(), fade, strand, fin });
-      // PlaneGeometry is 2 wide over SIZE pixels; a fin card is turned until it is half dissolved (|cos| 0.54).
-      for (const m of [a.mesh, b.mesh]) m.rotation.y = fin ? 1 : 0;
-      b.mesh.position.x = (shift * 2) / SIZE;
-      const pa = render(a.mesh);
-      const pb = render(b.mesh);
-      let compared = 0;
-      let differ = 0;
-      for (let y = 4; y < SIZE - 4; y++)
-        for (let x = 10; x < SIZE - shift - 10; x++) {
-          compared++;
-          if (at(pa, x, y) > 0.005 !== at(pb, x + shift, y) > 0.005) differ++;
-        }
-      a.material.dispose();
-      b.material.dispose();
-      // (The view direction drifts a little as the card slides, moving the odd cell over its threshold;
-      // a dither of the screen pixel would differ in about half the pixels.)
-      expect(
-        differ / compared,
-        `fin ${fin}: pixels that differ once the card is slid`,
-      ).toBeLessThan(0.08);
-    }
+    // Both paths: the plain cut, and the smoothed edges under MSAA (alpha-to-coverage).
+    for (const multisampled of [false, true])
+      for (const fin of [0, 1]) {
+        const fade = () => 0;
+        const a = card({ map: painted(), fade, strand, fin, multisampled });
+        const b = card({ map: painted(), fade, strand, fin, multisampled });
+        // PlaneGeometry is 2 wide over SIZE pixels; a fin card is turned until it is half dissolved (|cos| 0.54).
+        for (const m of [a.mesh, b.mesh]) m.rotation.y = fin ? 1 : 0;
+        b.mesh.position.x = (shift * 2) / SIZE;
+        const samples = multisampled ? 4 : 0;
+        const pa = render(a.mesh, { samples });
+        const pb = render(b.mesh, { samples });
+        let lit = 0;
+        for (let y = 0; y < SIZE; y++)
+          for (let x = 0; x < SIZE; x++) lit = Math.max(lit, at(pa, x, y));
+        let compared = 0;
+        let differ = 0;
+        for (let y = 4; y < SIZE - 4; y++)
+          for (let x = 10; x < SIZE - shift - 10; x++) {
+            compared++;
+            const va = at(pa, x, y);
+            const vb = at(pb, x + shift, y);
+            // A cut pixel is drawn or not; a smoothed one may differ by a sample of its coverage.
+            if (multisampled ? Math.abs(va - vb) > 0.3 * lit : va > 0.005 !== vb > 0.005) differ++;
+          }
+        a.material.dispose();
+        b.material.dispose();
+        // (The view direction drifts a little as the card slides, moving the odd cell over its threshold;
+        // a dither of the screen pixel would differ in about half the pixels.)
+        expect(
+          differ / compared,
+          `multisampled ${multisampled}, fin ${fin}: pixels that differ once the card is slid`,
+        ).toBeLessThan(0.08);
+      }
   });
 
   it("dissolves a fin card as it turns edge-on, and leaves a card lying along the scalp alone", () => {

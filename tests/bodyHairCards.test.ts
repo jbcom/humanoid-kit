@@ -3,6 +3,8 @@ import {
   type CardSpec,
   generateCards,
   generateStrandMap,
+  ROOT_SOLID,
+  rootShare,
   SEGMENTS,
   STRAND_COLUMNS,
 } from "../scripts/lib/bodyHairCards.ts";
@@ -54,7 +56,7 @@ describe("body hair cards", () => {
           (e1[2] as number) * (e2[0] as number) - (e1[0] as number) * (e2[2] as number),
           (e1[0] as number) * (e2[1] as number) - (e1[1] as number) * (e2[0] as number),
         ];
-        area += (Math.hypot(...cr) / 2) * 1e4 * m;
+        area += (Math.hypot(...cr) / 2) * 1e4 * rootShare(m);
       }
     }
     const expected = area * spec.density;
@@ -91,7 +93,10 @@ describe("body hair cards", () => {
     }
   });
 
-  it("grow only where the mask lies, and run down the body", () => {
+  // A card is drawn whole, so one rooted in a mask's faint edge is a lone
+  // strip of hair where the hair has all but ended: the beards sheet's
+  // splinters down the neck. Cards root only where the mask is solid.
+  it("grow only where the mask is solid, and run down the body", () => {
     let down = 0;
     for (let c = 0; c < cards.cardCount; c++) {
       const v0 = c * PER_CARD;
@@ -100,9 +105,9 @@ describe("body hair cards", () => {
         number,
         number,
       ];
-      expect(
-        Math.max(spec.mask[a] as number, spec.mask[b] as number, spec.mask[cc] as number),
-      ).toBeGreaterThan(0);
+      const mean =
+        ((spec.mask[a] as number) + (spec.mask[b] as number) + (spec.mask[cc] as number)) / 3;
+      expect(mean).toBeGreaterThan(ROOT_SOLID.lo);
       const tip = (v0 + PER_CARD - 2) * 3 + 1;
       if ((arrays.offsets[tip] as number) < (arrays.offsets[v0 * 3 + 1] as number)) down++;
     }

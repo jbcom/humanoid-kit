@@ -14,6 +14,7 @@ import type { Vec3 } from "../presence/presence.ts";
 import type { Jewellery, Metal, PiercingSite } from "../recipe/bodyArt.ts";
 import type { Rgb } from "../surface/skinTone.ts";
 import type { PiercingChannel } from "./sites.ts";
+import { closestSkin, type SkinPatch } from "./skinDistance.ts";
 
 /** A piercing placed on a figure: what it is, and its hole's frame and skinning. */
 export interface PlacedPiercing {
@@ -31,6 +32,8 @@ export interface PlacedPiercing {
   down: Vec3;
   /** The hole's midpoint, where a ring passes and a barbell's bar lies. */
   middle: Vec3;
+  /** A barbell's ends, its balls seated on the skin (`barbellEnds`). */
+  ends: [Vec3, Vec3];
   /** The site vertex's four bones and weights. */
   skinIndex: [number, number, number, number];
   skinWeight: [number, number, number, number];
@@ -202,6 +205,40 @@ const cross = (a: Vec3, b: Vec3): Vec3 => [
   a[0] * b[1] - a[1] * b[0],
 ];
 
+/** A barbell's balls' radius, metres. */
+export function barbellBall(p: Pick<PlacedPiercing, "size">): number {
+  return Math.max(BARBELL_BALL_MIN, p.size * BARBELL_BALL) / 2;
+}
+
+/** How far round a site the skin is searched for seating a barbell's balls, metres. */
+export const SEAT_REACH = 0.04;
+
+/**
+ * A barbell's two ends, where its balls sit: along the channel either side of
+ * the hole's middle, each moved out along the skin's normal, where it lies
+ * under the skin, until its ball rests on the skin. A straight bar under skin
+ * that is flat or curves away (a navel's rim, a brow's ridge) would hold both
+ * balls inside the tissue, as the sheets' navel did; seated, the bar bends
+ * through the middle as those piercings' curved bars do.
+ */
+export function barbellEnds(
+  p: Pick<PlacedPiercing, "middle" | "channel" | "size">,
+  skin: SkinPatch,
+): [Vec3, Vec3] {
+  const r = barbellBall(p);
+  const seat = (sign: number): Vec3 => {
+    let end = add(p.middle, p.channel, (sign * p.size) / 2);
+    // Moving out along the normal can bring other skin nearer: settle twice more.
+    for (let i = 0; i < 3; i++) {
+      const c = closestSkin(skin, end);
+      if (c.distance >= r - 1e-6) break;
+      end = add(c.point, c.normal, r);
+    }
+    return end;
+  };
+  return [seat(-1), seat(1)];
+}
+
 /**
  * The jewellery's mesh in rest space: a stud is a ball sitting on the skin at
  * the hole; a ring is a torus through the hole's middle, hanging toward `down`;
@@ -220,11 +257,14 @@ export function jewelleryMesh(p: PlacedPiercing): JewelleryMesh {
     const R = p.size / 2 - t;
     b.torus(add(p.middle, p.down, R), R, t, p.down, p.channel, side);
   } else {
-    const ball = Math.max(BARBELL_BALL_MIN, p.size * BARBELL_BALL) / 2;
-    const [a, z] = [add(p.middle, p.channel, -p.size / 2), add(p.middle, p.channel, p.size / 2)];
-    b.tube(a, z, BARBELL_BAR / 2, p.down, side);
-    b.sphere(a, ball, p.down, side, p.channel);
-    b.sphere(z, ball, p.down, side, p.channel);
+    const ball = barbellBall(p);
+    // The bar runs from each ball to the hole's middle.
+    for (const end of p.ends) {
+      const along = unit([end[0] - p.middle[0], end[1] - p.middle[1], end[2] - p.middle[2]]);
+      const e1 = square(p.down, along);
+      b.tube(p.middle, end, BARBELL_BAR / 2, e1, cross(along, e1));
+      b.sphere(end, ball, p.down, side, p.channel);
+    }
   }
   return {
     positions: new Float32Array(b.positions),

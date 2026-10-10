@@ -348,19 +348,26 @@ interface BodyArtRecipe {
 - Marks (research/BODY-ART.md C2): a scar, birthmark or vitiligo patch changes
   what is in the skin. `markChannels(mark): MarkChannels` is what it puts in the
   marks page at full strength:
-  - `melanin`, signed: down toward `vitiligoAlbedo(tone)`, up by shares of
+  - `melanin`, signed: down toward `vitiligoAlbedo(tone)` (on the lips,
+    `vitiligoLipAlbedo(tone, depth)`, a depigmented lip), up by shares of
     `markMelaninSpan()`;
   - `haemoglobin`, shares of `PORT_WINE_HAEMOGLOBIN` steps;
   - a scar's `smooth` and `raise`;
   - `ink`: dermal pigment, drawn as ink.
 
-  `markRatios(tone)` gives the per-tone ratios the shader raises to those
-  channels, and `markedAlbedo(tone, channels)` the skin under them.
-  `markOutline(mark)` and `markShape(mark, outline, x, y)` give the irregular,
-  seeded outline the bake draws. Constants: `VITILIGO_RESIDUAL`,
-  `CAFE_AU_LAIT_MELANIN`, `NAEVUS_MELANIN`, `SCAR_HAEMOGLOBIN` (the keloids'
-  erythema ratio), `SCAR_RAISE`, `SCAR_SMOOTHNESS`, `DERMAL_MELANIN_INK` and
-  `MARK_OUTLINE`.
+  `markRatios(tone)` gives the per-tone ratios the shader applies to those
+  channels: added melanin as a table of `MARK_DARK_STEPS` along the measured
+  axis (`deeperAlbedo(tone, up)`). `markedAlbedo(tone, channels)` gives the
+  skin under them. Constants: `VITILIGO_RESIDUAL`, `CAFE_AU_LAIT_MELANIN`,
+  `NAEVUS_MELANIN`, `NAEVUS_EDGE` and `NAEVUS_RAISE` (a naevus is a round,
+  slightly raised dot, drawn exactly as a decal), `SCAR_HAEMOGLOBIN` (the
+  keloids' erythema ratio),
+  `SCAR_RAISE`, `SCAR_SMOOTHNESS` and `DERMAL_MELANIN_INK`.
+- `markOutline(mark)` and `markShape(mark, outline, x, y, z?)`
+  (`src/bodyArt/markShape.ts`) give the seeded outline the bake draws. A patch
+  is an ellipsoid thresholded by `markNoise` in its frame's 3D space, softened
+  over 1–3 mm, with vitiligo's flecks; a scar is a harmonic line. Constants:
+  `PATCH_OUTLINE`, `SCAR_OUTLINE`, `EDGE_VARIATION` and `FLECK_*`.
 - `vitiligoPatches(assets, vitiligo)`: the seeded patches. Each is a left
   vertex at a typical site (round the eyes and mouth, backs of the hands,
   wrists, elbows, knees, tops of the feet) and its mirror image, with more and
@@ -379,7 +386,16 @@ interface BodyArtRecipe {
   `jewelleryMesh(piercing): { positions, normals, index }`:
   - a stud: a ball seated on the skin;
   - a ring: a torus through the hole's middle;
-  - a barbell: a bar along the channel with a ball at each end.
+  - a barbell: a ball at each of its `ends`, seated on the skin at placement
+    (`barbellEnds`), the bar bending through the hole's middle.
+
+  The adult anatomy's sites are the adult pack's (`anatomy.piercingSites`,
+  `AdultPiercingSiteSpec`): `name` (a recipe's `Piercing.site`, not one of
+  `PIERCING_SITES`), `vertex` (a detail-lattice vertex), `channel` and `depth`
+  (metres, at most `PIERCING_DEPTH_MAX`), checked when the pack is parsed.
+  `adultPiercingSite(assets, name)` finds one. `placeBodyArt` places one through
+  its `adultSite` argument, which `HumanoidModel.evaluate` gives for a figure
+  drawn with the adult surface; otherwise it refuses with a `RangeError`.
 
   `<Humanoid>` draws each as a skinned mesh, `METAL_REFLECTANCE[metal]` at
   `JEWELLERY_ROUGHNESS`, skinned rigidly by the site vertex's bones, so it
@@ -687,7 +703,7 @@ compute what the renderer will do.
   (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
   Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
   hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
-  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
+  `VELLUS`, flat: no relief) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
   densities `BODY_HAIR_DENSITY`. Dense, short hair standing off the skin (the
   beard, the chest, abdomen and back, and the adult-only armpits) is the
   coat's, long hair the cards', and pubic hair the adult pack's.
@@ -702,7 +718,11 @@ compute what the renderer will do.
   `SkinPaintInput.adult` is true, so an input that does not say fails closed);
   `COAT_REGIONS` (at most `COAT_REGION_LIMIT`; today `BODY_HAIR_COAT`:
   `beard-moustache`, `beard-chin`, `beard-cheeks`, `hair-chest`, `hair-abdomen`,
-  `hair-back` and the adult-only `hair-axillary`, with
+  `hair-back` and the adult-only `hair-axillary` and `hair-pubic`
+  (`PUBIC_REGION`, whose mask is the adult anatomy pack's
+  `anatomy.coatRegions` entry of that id, `AdultCoatRegionSpec`: ascending base
+  vertices and their mask, checked when the pack is parsed against
+  `ADULT_COAT_REGION_IDS`; without the pack it has no area), with
   `BEARD_LENGTHS` per style and `beardMasks(assets)`). `combField(assets)` is
   the direction hair lies per base vertex (rest space, unit, in the tangent
   plane: down the limbs toward their ends, down elsewhere, smoothed);
@@ -1490,7 +1510,8 @@ animator.root;                // how far the figure has been carried: [x across,
   that carries the figure moves `root` by what the figure's own feet do
   (`planRootMotion`, `rootDisplacement`), and a grounded clip's planted feet are
   held where they land (`FootLock`: `PLANT_LAND`, `PLANT_FULL`, `PLANT_NONE`,
-  `PLANT_SWITCH`). `contactPoints` and `CONTACT_BONES` are the points on the soles
+  `PLANT_SWITCH`), `root` giving way by what a planted foot's leg could not reach
+  (`FootLock.correction`). `contactPoints` and `CONTACT_BONES` are the points on the soles
   they work from.
 - `<Humanoid animation={{ library, clip, speed, fade, paused, time, rootMotion, onStart }}>`
   (`HumanoidAnimation`, from `humanoid-kit/react`) plays a clip on the figure, frame by
@@ -1507,6 +1528,31 @@ animator.root;                // how far the figure has been carried: [x across,
   is what the coarse capsules allow.
 - `frameRotations(rig, joints, frame)` (from `src/rig/pose.ts`) is a BVH frame's
   rotations in the figure's axes, which the packer and `bodyPoseRotations` share.
+
+## `humanoid-kit-eyes`
+
+```ts
+import { eyesPack } from "humanoid-kit-eyes";
+import { loadEyeLibrary } from "humanoid-kit";
+
+const eyes = await loadEyeLibrary(eyesPack);
+<Humanoid recipe={createRecipe({ eyes: { material: "nyloseth_green_cat_eyes" } })} eyeMaterials={eyes} />;
+```
+
+`eyesPack` is `{ manifest, files }` like `bodyPack`: one WebP texture per material
+(about 100 KB, loaded when a figure first wears it). 32 CC0 materials of the MakeHuman
+community's `system_eye_materials01` and `02`: human irises (`bobby_03_diffuse_*`,
+`mindfront_brown_eye_02`, `nyloseth_sapphire_blue_eyes`), cats' slit pupils
+(`nyloseth_*_cat_eyes`), toon and anime eyes, and creatures'. `loadEyeLibrary(pack)`
+fetches the manifest and returns an `EyeLibrary`: `entry(id)` (an `EyeMaterialEntry`:
+`title`, `author`, `tags`, `hasIris`, the measured `irisRadius`, `irisGain`,
+`scleraGain`, `scleraTint`, `paintedIris` and its `source`), `textureUrl(id)` and the
+`manifest` (with the iris `centres` every material shares). `createEyeLibrary(manifest,
+url)` builds one over any locator. `recipe.eyes.material` names a material, optional
+like every recipe addition; a material supplies pattern and detail and the colours stay
+`eyes.iris` and `eyes.scleraWarmth`'s. `<Humanoid eyeMaterials>` is the library; keep
+it stable. Without it, or for an id it does not have (reported through `onError`), the
+built-in eye is shown.
 
 ## `humanoid-kit-animations`
 

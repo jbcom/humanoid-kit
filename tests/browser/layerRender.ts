@@ -78,6 +78,11 @@ export const noFields = () => ({ mask: new Float32Array(0), coord: null });
  * channel, row-major.
  */
 export function renderLayers(layers: readonly SkinLayer[], options: LayerRenderOptions = {}) {
+  return renderLayersRgba(layers, options).filter((_, i) => i % 4 === 0);
+}
+
+/** As `renderLayers`, returning every channel: RGBA, linear, row-major. */
+export function renderLayersRgba(layers: readonly SkinLayer[], options: LayerRenderOptions = {}) {
   const side = options.plane ?? 2;
   const size = options.size ?? SIZE;
   const { renderer, target } = context(size);
@@ -126,7 +131,7 @@ export function renderLayers(layers: readonly SkinLayer[], options: LayerRenderO
   atlas?.dispose();
   material.dispose();
   plane.dispose();
-  return px.filter((_, i) => i % 4 === 0);
+  return px;
 }
 
 export const mean = (a: Float32Array) => a.reduce((s, x) => s + x, 0) / a.length;

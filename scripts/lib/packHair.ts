@@ -20,16 +20,13 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { gunzipSync } from "node:zlib";
 import sharp from "sharp";
-import {
-  type AttachmentEntry,
-  type BodyManifest,
-  type BoundAsset,
-  type HairKind,
-  type HairManifest,
-  type HairStyleEntry,
-  parseHumanoidAssets,
+import type {
+  AttachmentEntry,
+  BoundAsset,
+  HairKind,
+  HairManifest,
+  HairStyleEntry,
 } from "../../src/format/assetFormat.ts";
 import { evaluateBinding } from "../../src/mhclo/bound.ts";
 import { HumanoidModel } from "../../src/model/humanoidModel.ts";
@@ -40,7 +37,9 @@ import {
   generateCards,
   generateStrandMap,
 } from "./bodyHairCards.ts";
+import { readBodyPack } from "./bodyPack.ts";
 import { type CompiledAsset, compileAsset } from "./compileAsset.ts";
+import { bleedEdges } from "./edgeBleed.ts";
 import { compileAuthored } from "./hairCards/compile.ts";
 import { BodySurface, HeadFrame } from "./hairCards/head.ts";
 import {
@@ -52,6 +51,8 @@ import {
 import { texelField } from "./hairCards/uvField.ts";
 import { sha256, writeAttachments, writePackEntry } from "./packWriter.ts";
 import { strandMapFromRgba } from "./strandMap.ts";
+import { TEXTURE_CEILING } from "./texelBudget.ts";
+import { packTexture, type TextureRecord, textureProvenance } from "./textureSizing.ts";
 
 export interface HairStyleSpec {
   /** The folder name under the system assets' `hair/`, and the style's id. */
@@ -130,8 +131,11 @@ const SOURCE_DIR: Record<AssetHairKind, string> = {
   lashes: "eyelashes",
 };
 
-/** Longest strand-map edge shipped: hair covers the head, which fills a fraction of the screen. */
-const TEXTURE_MAX = 1024;
+/**
+ * The default longest edge of a strand map: a style that needs more at the
+ * face's framing gets it, up to its source's (`scripts/lib/textureSizing.ts`).
+ */
+const TEXTURE_FLOOR = 1024;
 
 /** The source archive audited for these styles (see docs/research/HAIR-COLOUR.md and PROVENANCE.md). */
 const SOURCE_ARCHIVE = "makehuman_system_assets_cc0.zip";
@@ -148,43 +152,32 @@ export interface PackHairOptions {
   outDir: string;
 }
 
-/** The committed body pack, parsed with every target file, as the hair is baked against it. */
-export function readBody(bodyDir: string) {
-  const manifest = JSON.parse(
-    fs.readFileSync(path.join(bodyDir, "manifest.json"), "utf8"),
-  ) as BodyManifest;
-  const gz = (file: string): ArrayBuffer => {
-    const b = gunzipSync(fs.readFileSync(path.join(bodyDir, file)));
-    return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
-  };
-  const assets = parseHumanoidAssets({
-    manifest,
-    body: gz(manifest.body.file),
-    targets: Object.fromEntries(manifest.targets.map((f) => [f.id, gz(f.file)])),
-    attachments: gz(manifest.attachments.file),
-    ...(manifest.bodyOcclusion && { bodyOcclusion: gz(manifest.bodyOcclusion.file) }),
-  });
-  return { manifest, assets };
-}
-
-/** Writes a style's strand map and measures its strand direction. */
-export async function writeStrandMap(src: string, dest: string, flatten?: number) {
+/** Writes a style's strand map, at most `edge` texels a side, and measures its strand direction. */
+export async function writeStrandMap(src: string, dest: string, edge: number, flatten?: number) {
   const { data, info } = await sharp(src)
-    .resize({ width: TEXTURE_MAX, height: TEXTURE_MAX, fit: "inside", withoutEnlargement: true })
+    .resize({ width: edge, height: edge, fit: "inside", withoutEnlargement: true })
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
+  // A card's faint edge texels carry the atlas's dark backdrop; bled from the
+  // strands beside them, the edge filters toward the strands' own colour rather
+  // than drawing a dark wire. Bled before the map is made, so its normalisation
+  // to the strand mean counts the faint edge as it will be drawn; and again
+  // after, so its clear texels carry their neighbours' grey rather than the
+  // map's one flat fill (they weigh nothing in its mean).
   const map = strandMapFromRgba(
-    new Uint8Array(data),
+    bleedEdges(new Uint8Array(data), info.width, info.height),
     info.width,
     info.height,
     flatten === undefined ? {} : { flatten },
   );
+  bleedEdges(map.rgba, info.width, info.height);
   await sharp(Buffer.from(map.rgba), {
     raw: { width: info.width, height: info.height, channels: 4 },
   })
     // Lossy alpha: a strand's edge moving by a level is invisible, and lossless alpha is most of a curly style's size.
-    .webp({ quality: 80, alphaQuality: 85, effort: 4 })
+    // `exact` keeps the bled colour under clear texels, which the encoder would otherwise rewrite.
+    .webp({ quality: 80, alphaQuality: 85, effort: 4, exact: true })
     .toFile(dest);
   return { angle: map.strandAngle, coherence: map.coherence };
 }
@@ -206,11 +199,15 @@ export async function cutoutOf(webp: string) {
 
 /**
  * Writes an eyebrow's or eyelash's texture: the source's alpha, with its colour
- * (near black) replaced by white, so the hair colour is the only colour it takes.
- * Its strand direction is none.
+ * (near black) replaced by white, so the hair colour is the only colour it takes,
+ * at most `edge` texels a side. Its strand direction is none.
  */
-export async function writeAlphaMask(src: string, dest: string) {
-  const { data, info } = await sharp(src).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+export async function writeAlphaMask(src: string, dest: string, edge: number) {
+  const { data, info } = await sharp(src)
+    .resize({ width: edge, height: edge, fit: "inside", withoutEnlargement: true })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
   const rgba = Buffer.alloc(data.length, 255);
   for (let i = 3; i < data.length; i += 4) rgba[i] = data[i] as number;
   await sharp(rgba, { raw: { width: info.width, height: info.height, channels: 4 } })
@@ -249,6 +246,7 @@ function writeProvenance(
   dir: string,
   evidence: Record<string, string>,
   outputs: [string, string][],
+  textures: readonly TextureRecord[],
 ): void {
   const byKind = new Map<string, string[]>();
   for (const [file, ev] of Object.entries(evidence))
@@ -299,6 +297,9 @@ function writeProvenance(
       "kind `beard`) come from no source file: `scripts/lib/bodyHairCards.ts` generates them over the body pack's",
     "base mesh from a seed, with their strand map, so they are this project's own work under its licence.",
     "",
+    ...textureProvenance(textures),
+    "## Outputs",
+    "",
     "| Output | SHA-256 |",
     "| --- | --- |",
     ...outputs.map(([f, h]) => `| ${f} | \`${h}\` |`),
@@ -310,7 +311,7 @@ function writeProvenance(
 /** Packs every style of `HAIR_STYLES` and returns the manifest it wrote. */
 export async function packHair(options: PackHairOptions): Promise<HairManifest> {
   const { systemDir, bodyDir, outDir } = options;
-  const { manifest: body, assets } = readBody(bodyDir);
+  const { manifest: body, assets } = readBodyPack(bodyDir);
   fs.mkdirSync(outDir, { recursive: true });
   for (const f of fs.readdirSync(outDir))
     if (/\.(bin\.gz|webp)$/.test(f)) fs.rmSync(path.join(outDir, f));
@@ -319,6 +320,7 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
   const evidence: Record<string, string> = {};
   const styles: HairStyleEntry[] = [];
   const outputs: [string, string][] = [];
+  const textures: TextureRecord[] = [];
   const rest = model.restHead();
   const head = new HeadFrame(rest);
   const surface = new BodySurface(rest, head);
@@ -334,17 +336,23 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
     const kind = ("kind" in spec && spec.kind) || "scalp";
     let compiled: CompiledAsset;
     let source: string | undefined;
+    // What the provenance names as a generated texture's source (a scratch file is no source).
+    let sourceLabel: string | undefined;
+    let roots: number[] | undefined;
     if (authored) {
+      const cards = authored.build({ head, body: surface });
+      roots = cards.roots;
       compiled = compileAuthored(
         spec.id,
         spec.label,
-        authored.build({ head, body: surface }),
+        cards,
         rest,
         `${spec.id}.webp`,
         authored.provenance,
       );
       source = path.join(scratch, `${spec.id}.png`);
       fs.writeFileSync(source, await authored.atlas());
+      sourceLabel = "authored by the packer";
     } else {
       // A derived style keeps a MakeHuman style's cards and draws its own strand map in their cut-out.
       const derived: DerivedStyleSpec | undefined = "from" in spec ? spec : undefined;
@@ -359,10 +367,12 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
       if (!source || compiled.textures.size !== 1)
         throw new Error(`${spec.id}: expected exactly one diffuse texture`);
       if (derived) {
+        // Drawn at the cut-out's own resolution (up to the ceiling); the packed edge
+        // is then chosen like any other texture's (`packTexture`).
         const { data, info } = await sharp(source)
           .resize({
-            width: TEXTURE_MAX,
-            height: TEXTURE_MAX,
+            width: TEXTURE_CEILING,
+            height: TEXTURE_CEILING,
             fit: "inside",
             withoutEnlargement: true,
           })
@@ -393,6 +403,7 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
               keepAt,
             )
           : undefined;
+        sourceLabel = `drawn in the cut-out of ${path.relative(systemDir, source)}`;
         source = path.join(scratch, `${spec.id}.png`);
         fs.writeFileSync(
           source,
@@ -409,14 +420,24 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
     if (!TEXTURE_FILE.test(source)) throw new Error(`${spec.id}: ${source} is not an image`);
 
     const textureFile = `${spec.id}.webp`;
-    const textureDest = path.join(outDir, textureFile);
     // An eyebrow or eyelash is a decal on the skin: a white alpha mask, with nothing
     // measured of strands, a hairline or a scalp, and nothing baked, since a lid's or a
     // brow ridge's shade is the skin's own.
-    const strand =
-      kind === "scalp"
-        ? await writeStrandMap(source, textureDest, "flatten" in spec ? spec.flatten : undefined)
-        : await writeAlphaMask(source, textureDest);
+    const flatten = "flatten" in spec ? spec.flatten : undefined;
+    const { record, encoded: strand } = await packTexture({
+      asset: compiled,
+      source,
+      ...(sourceLabel && { sourceLabel }),
+      dest: path.join(outDir, textureFile),
+      floor: TEXTURE_FLOOR,
+      base: assets.positions,
+      systemDir,
+      encode: (src, dest, edge) =>
+        kind === "scalp"
+          ? writeStrandMap(src, dest, edge, flatten)
+          : writeAlphaMask(src, dest, edge),
+    });
+    textures.push(record);
     compiled.material.texture = textureFile;
 
     const occlusion =
@@ -430,6 +451,7 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
         ? model.bakeHairFields(boundFrom(compiled), {
             ...(spec.feather !== undefined && { feather: spec.feather }),
             ...("fins" in spec && { fins: spec.fins }),
+            ...(roots && { roots }),
             cutout: await cutoutOf(path.join(outDir, textureFile)),
           })
         : {};
@@ -504,7 +526,7 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
     styles,
   };
   fs.writeFileSync(path.join(outDir, "manifest.json"), `${JSON.stringify(manifest)}\n`);
-  writeProvenance(outDir, evidence, outputs);
+  writeProvenance(outDir, evidence, outputs, textures);
   writePackEntry(
     path.dirname(outDir),
     "hairPack",

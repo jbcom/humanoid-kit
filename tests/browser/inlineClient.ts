@@ -5,6 +5,7 @@
  */
 import { adultAnatomyPack } from "humanoid-kit-adult-anatomy";
 import { bodyPack } from "humanoid-kit-body";
+import { hairPack } from "humanoid-kit-hair";
 import type { ModelOptions } from "../../src/model/humanoidModel.ts";
 import { HumanoidWorkerClient } from "../../src/worker/client.ts";
 import { createWorkerHandler } from "../../src/worker/handler.ts";
@@ -32,10 +33,14 @@ class InlineWorker {
 
 export function inlineWorkerClient(
   model: ModelOptions = { subdivision: 0 },
-  options: { withoutPresenceJoints?: boolean; adultAnatomy?: boolean } = {},
+  options: { withoutPresenceJoints?: boolean; hair?: boolean; adultAnatomy?: boolean } = {},
 ) {
   return new HumanoidWorkerClient(
-    { body: bodyPack, ...(options.adultAnatomy && { adultAnatomy: adultAnatomyPack }) },
+    {
+      body: bodyPack,
+      ...(options.hair && { hair: hairPack }),
+      ...(options.adultAnatomy && { adultAnatomy: adultAnatomyPack }),
+    },
     model,
     new InlineWorker(options.withoutPresenceJoints ?? false) as unknown as Worker,
   );

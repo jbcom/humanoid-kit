@@ -14,11 +14,12 @@
  * - **Strands.** A strand rises from each follicle cell of the skin's plane at
  *   true scale (`uv × hkUvScale`, cells the follicle spacing wide); a hash of
  *   the cell gives its root, its length and its id, and the strand is there
- *   when its id is under the cover, so cover thins the hair. A shell keeps a
- *   fragment inside a strand that reaches its height, its radius tapering to
- *   the tip. Where a cell is finer than a pixel the shells cannot resolve
- *   strands, and a fragment is kept by an interleaved-gradient dither of the
- *   strands' mean cover at that height instead (the far LOD).
+ *   when its id is under the cover, so cover thins the hair. A shell's
+ *   fragment blends by the share of its pixel the strands cover at its height
+ *   (`FRAGMENT_STRANDS`): the strand's tapering disc, filtered over the pixel,
+ *   where the strand is wider than about a pixel; the strands' mean cover
+ *   where it is narrower. No fragment is kept or dropped whole, so a far coat
+ *   is a tint of hair's colour and sheen, not points.
  * - **Shading.** The pigment albedo, darker toward the root (the hair's own
  *   shade), with the hair cards' two Kajiya-Kay lobes along the skinned comb.
  */
@@ -37,6 +38,7 @@ import {
 import { COAT_REGION_LIMIT } from "../surface/coat.ts";
 import { HAIR_LOBES } from "./hairMaterial.ts";
 import { UV_SCALE_ATTRIBUTE } from "./skinMaterial.ts";
+import { STRAND_FOOTPRINT } from "./strandFootprint.ts";
 
 /** The comb attribute: three floats a vertex, rest space. */
 export const COAT_COMB_ATTRIBUTE = "hkCoatComb";
@@ -64,6 +66,7 @@ varying float vCoatSpacing;
 varying float vCoatRadius;
 varying vec3 vCoatColour;
 varying vec3 vCoatComb;
+varying float vCoatHeight;
 `;
 
 /** The regions blended at this vertex, the shell's height, and the shell's offset before skinning. */
@@ -94,6 +97,8 @@ const VERTEX_REGIONS = /* glsl */ `
 	vCoatSpacing = hkMean.z > 0.0 ? 0.01 / sqrt( hkMean.z ) : 1.0;
 	vCoatRadius = clamp( 1.5 * hkLookMean.w / vCoatSpacing, 0.08, 0.35 );
 	vCoatColour = hkLookMean.rgb;
+	// How far the strands stand off the skin, in follicle cells (a strand reaches 0.8 of the length on average).
+	vCoatHeight = 0.8 * hkLength * ( 1.0 - 0.7 * hkLie ) / vCoatSpacing;
 	vCoatP = uv * ${UV_SCALE_ATTRIBUTE};
 `;
 
@@ -115,6 +120,7 @@ const VERTEX_COMB = /* glsl */ `
 `;
 
 const FRAGMENT_PARS = /* glsl */ `
+${STRAND_FOOTPRINT}
 varying vec2 vCoatP;
 varying float vCoatT;
 varying float vCoatCover;
@@ -122,39 +128,67 @@ varying float vCoatSpacing;
 varying float vCoatRadius;
 varying vec3 vCoatColour;
 varying vec3 vCoatComb;
+varying float vCoatHeight;
 uniform vec4 hkLobes;
+uniform float hkCoatShells;
 float hkCoatHash( vec2 p ) {
 	vec3 p3 = fract( vec3( p.xyx ) * 0.1031 );
 	p3 += dot( p3, p3.yzx + 33.33 );
 	return fract( ( p3.x + p3.y ) * p3.z );
 }
-float hkCoatNoise( vec2 p ) { return fract( 52.9829189 * fract( dot( p, vec2( 0.06711056, 0.00583715 ) ) ) ); }
 `;
 
-/** Keeps the fragment only inside a strand that reaches this shell, or, far away, by dither. */
+/**
+ * The share of the pixel the strands cover at this shell, as the fragment's
+ * alpha: a strand wider than about a pixel is its disc under the strand
+ * footprint (`STRAND_FOOTPRINT`, shared with the skin's strand layers), a
+ * narrower one the strands' mean cover, spread over the shells so
+ * that together they cover what the strands' bases do seen from above. The
+ * pixel's footprint comes from the cells' derivatives, so the image follows
+ * the skin, never the screen.
+ */
 const FRAGMENT_STRANDS = /* glsl */ `
 	{
 		if ( vCoatCover <= 0.0 ) discard;
 		vec2 hkCell = vCoatP / vCoatSpacing;
-		float hkPx = length( fwidth( hkCell ) );
+		float hkPx = max( length( fwidth( hkCell ) ), 1e-4 );
 		vec2 hkId = floor( hkCell );
 		vec2 hkF = hkCell - hkId;
 		vec2 hkRoot = 0.25 + 0.5 * vec2( hkCoatHash( hkId ), hkCoatHash( hkId + 17.31 ) );
 		float hkReach = 0.6 + 0.4 * hkCoatHash( hkId + 5.17 );
 		float hkPresent = step( hkCoatHash( hkId + 9.13 ), vCoatCover );
 		float hkRadius = vCoatRadius * ( 1.0 - 0.75 * clamp( vCoatT / hkReach, 0.0, 1.0 ) );
-		float hkNear = hkPresent * step( vCoatT, hkReach ) * step( length( hkF - hkRoot ), hkRadius );
-		// The strands' mean cover at this height, for the dither where a cell is finer than a pixel.
-		float hkMeanCover = vCoatCover * smoothstep( 1.0, 0.6, vCoatT ) * 3.14159 * hkRadius * hkRadius;
-		float hkFar = step( hkCoatNoise( gl_FragCoord.xy ), hkMeanCover );
-		if ( mix( hkNear, hkFar, smoothstep( 0.35, 0.7, hkPx ) ) < 0.5 ) discard;
+		float hkNear = hkPresent * step( vCoatT, hkReach )
+			* hkDiscFootprint( length( hkF - hkRoot ), hkRadius, hkPx );
+		// The strands as upright cylinders, one a cell at the cover's odds. Seen
+		// at an angle θ off the skin's normal each hides its base, π r², which no
+		// neighbour's overlaps (a root keeps to its cell's middle), and its side,
+		// 2 r h tan θ as it tapers, which do overlap, so the share they leave
+		// clear is (1 - bases) e^-(sides). Each of the N shells covers the share
+		// that, compounded over N, makes it.
+		vec3 hkView = isOrthographic ? vec3( 0.0, 0.0, 1.0 ) : normalize( vViewPosition );
+		float hkCos = clamp( abs( dot( normalize( vNormal ), hkView ) ), 0.2, 1.0 );
+		float hkTan = sqrt( 1.0 - hkCos * hkCos ) / hkCos;
+		float hkBases = min( 0.95, vCoatCover * 3.14159 * vCoatRadius * vCoatRadius );
+		float hkSides = vCoatCover * 2.0 * 0.6 * vCoatRadius * vCoatHeight * hkTan;
+		float hkFar = 1.0 - pow( ( 1.0 - hkBases ) * exp( - hkSides ), 1.0 / hkCoatShells );
+		// Resolved from a pixel and a half across down to half a pixel, by this cell's own strand.
+		float hkCover = mix( hkFar, hkNear, smoothstep( 0.5, 1.5, 2.0 * hkRadius / hkPx ) );
+		if ( hkCover <= 0.0 ) discard;
 		diffuseColor.rgb = vCoatColour * mix( ${COAT_ROOT_SHADE.toFixed(3)}, 1.0, vCoatT );
+		diffuseColor.a = hkCover;
 	}
 `;
 
-/** The two Kajiya-Kay lobes of one light along the comb, as the hair cards' (`HAIR_LOBES`). */
+/**
+ * The two Kajiya-Kay lobes of one light along the comb, as the hair cards'
+ * (`HAIR_LOBES`). The comb is zero at some vertices and turns back on itself
+ * between others, so between them it can blend to nothing; a strand with no
+ * direction there, or a light straight behind the view, adds no lobe rather
+ * than normalising zero (a NaN, which blending spreads as green and pink).
+ */
 const STRAND_LOBES = /* glsl */ `
-	{
+	if ( dot( vCoatComb, vCoatComb ) > 1e-8 && dot( directLight.direction + geometryViewDir, directLight.direction + geometryViewDir ) > 1e-8 ) {
 		vec3 hkT = normalize( vCoatComb );
 		vec3 hkH = normalize( directLight.direction + geometryViewDir );
 		vec3 hkT1 = normalize( hkT + geometryNormal * ${HAIR_LOBES.primaryShift.toFixed(3)} );
@@ -175,7 +209,17 @@ export class CoatMaterial extends MeshStandardMaterial {
   };
 
   constructor() {
-    super({ roughness: 0.6, metalness: 0, side: DoubleSide });
+    // Shells blend over the skin and each other, inner to outer (instance
+    // order, back to front seen from outside), writing no depth; one pass
+    // draws both faces.
+    super({
+      roughness: 0.6,
+      metalness: 0,
+      side: DoubleSide,
+      transparent: true,
+      depthWrite: false,
+      forceSinglePass: true,
+    });
     this.color.setRGB(1, 1, 1, LinearSRGBColorSpace);
     this.hkUniforms = {
       hkCoatPaint: { value: Array.from({ length: COAT_REGION_LIMIT * 2 }, () => new Vector4()) },
@@ -233,7 +277,22 @@ export class CoatMaterial extends MeshStandardMaterial {
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-coat-1";
+    return "humanoid-kit-coat-2";
+  }
+}
+
+/** The body's attributes the coat's geometry draws with: the body's, not the coat's. */
+const BODY_ATTRIBUTES = ["position", "normal", "uv", "skinIndex", "skinWeight", UV_SCALE_ATTRIBUTE];
+
+/**
+ * The coat's geometry. Disposing it frees only the coat's own buffers: three
+ * frees every attribute of a disposed geometry, and the body's, freed under
+ * it, leave the body drawing nothing, or the shape it had before.
+ */
+export class CoatGeometry extends InstancedBufferGeometry {
+  override dispose(): void {
+    for (const name of BODY_ATTRIBUTES) this.deleteAttribute(name);
+    super.dispose();
   }
 }
 
@@ -247,9 +306,9 @@ export function coatGeometry(
   coat: { comb: Float32Array; masks: Uint8Array },
   index: Uint32Array,
   shells: number,
-): InstancedBufferGeometry {
-  const g = new InstancedBufferGeometry();
-  for (const name of ["position", "normal", "uv", "skinIndex", "skinWeight", UV_SCALE_ATTRIBUTE]) {
+): CoatGeometry {
+  const g = new CoatGeometry();
+  for (const name of BODY_ATTRIBUTES) {
     const a = body.getAttribute(name);
     if (!a) throw new Error(`coat geometry: the body has no ${name} attribute`);
     g.setAttribute(name, a);

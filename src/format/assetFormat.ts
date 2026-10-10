@@ -20,6 +20,7 @@
 import { AGE_ANCHORS, ageAnchorsOf, DEFAULT_MACROS } from "../makehuman/macro.ts";
 import type { StateMorph } from "../makehuman/stateMorphs.ts";
 import type { AnatomyFeature } from "../recipe/anatomy.ts";
+import { isBodyPiercingSite } from "../recipe/bodyArt.ts";
 
 const MACRO_KEYS = new Set(Object.keys(DEFAULT_MACROS));
 
@@ -469,6 +470,62 @@ export interface AdultAnatomySpec {
    * ADULT-SCULPT-PLAN.md, section 6b). Needs `surface`; absent, there are none.
    */
   reservoirs?: AdultReservoirSpec[];
+  /**
+   * The areas of the coat regions only an adult grows (pubic hair), as data:
+   * the core holds their code and paint, the pack where they grow. Absent,
+   * they grow nowhere.
+   */
+  coatRegions?: AdultCoatRegionSpec[];
+  /**
+   * The piercing sites of the adult anatomy, as data: the core holds the
+   * jewellery and its placement, the pack where the holes are. A recipe names
+   * one by `name` (`Piercing.site`); the age policy refuses any of them under
+   * 18. Their vertices are the detail lattice's (`detail`), which they need.
+   * Absent, the adult anatomy has none.
+   */
+  piercingSites?: AdultPiercingSiteSpec[];
+  /**
+   * What an adult figure's anatomy is when its recipe sets none of it: per
+   * adult-only modifier, its value as a piecewise-linear function of the gender
+   * macro, written `x,w;x,w;…` (`withAnatomyDefaults`). With the pack loaded an
+   * adult is anatomically complete by default; a recipe's own value always wins.
+   * Absent, unset modifiers stay at 0.
+   */
+  defaults?: Record<string, string>;
+}
+
+/**
+ * A piercing site on the adult anatomy (`AdultAnatomySpec.piercingSites`).
+ * Its hole is where the figure's evaluated adult surface carries detail-lattice
+ * vertex `vertex` (the vertices `AdultDetailSpec`'s targets address: the
+ * refined region's, then each reservoir's rings), so it follows the detail
+ * that shapes the anatomy.
+ */
+export interface AdultPiercingSiteSpec {
+  /** The site's name in a recipe: not one of the body's own (`PIERCING_SITES`). */
+  name: string;
+  /** The detail-lattice vertex the hole meets the skin at. */
+  vertex: number;
+  /** How the hole runs through the tissue (`PiercingChannel`). */
+  channel: "normal" | "across" | "vertical";
+  /** The tissue the hole crosses, metres: more than 0, at most `PIERCING_DEPTH_MAX`. */
+  depth: number;
+}
+
+/** The thickest tissue a declared piercing site may say its hole crosses, metres. */
+export const PIERCING_DEPTH_MAX = 0.03;
+
+/** The ids of the core's coat regions whose area an adult anatomy pack gives. */
+export const ADULT_COAT_REGION_IDS = ["hair-pubic"] as const;
+
+/** A coat region's area: its mask, sparse over base vertices (0 elsewhere). */
+export interface AdultCoatRegionSpec {
+  /** The core's coat region it is the area of (`ADULT_COAT_REGION_IDS`). */
+  id: string;
+  /** Base vertices in the region, ascending. */
+  vertices: number[];
+  /** Each vertex's mask, 0..1. */
+  mask: number[];
 }
 
 /** A reservoir (`Reservoir` in src/build/reservoir.ts) with the id detail refers to it by. */
@@ -671,6 +728,117 @@ function expectIndices(arr: ArrayLike<number>, limit: number, what: string): voi
   for (let i = 0; i < arr.length; i++) {
     if ((arr[i] as number) >= limit)
       throw new AssetFormatError(`${what}: index ${arr[i]} is out of range (< ${limit})`);
+  }
+}
+
+/** Refuses an adult pack's coat regions unless each is a known region's well-formed area, once. */
+function checkAdultCoatRegions(regions: readonly AdultCoatRegionSpec[], vertexCount: number): void {
+  const known = new Set<string>(ADULT_COAT_REGION_IDS);
+  const seen = new Set<string>();
+  for (const r of regions) {
+    const what = `adult coat region ${r.id}`;
+    if (!known.has(r.id)) throw new AssetFormatError(`${what}: the core has no such region`);
+    if (seen.has(r.id)) throw new AssetFormatError(`${what}: given twice`);
+    seen.add(r.id);
+    expectLength(r.mask, r.vertices.length, what);
+    for (let i = 0; i < r.vertices.length; i++) {
+      const v = r.vertices[i] as number;
+      const m = r.mask[i] as number;
+      if (
+        !Number.isInteger(v) ||
+        v < 0 ||
+        v >= vertexCount ||
+        (i > 0 && v <= (r.vertices[i - 1] as number))
+      )
+        throw new AssetFormatError(`${what}: vertex ${v} is not ascending within the body`);
+      if (!(m >= 0 && m <= 1)) throw new AssetFormatError(`${what}: mask ${m} is outside 0..1`);
+    }
+  }
+}
+
+/**
+ * Refuses anatomy defaults the core could not apply: one for a modifier the
+ * pack does not declare or that is not adult-only (a default must never shape a
+ * minor's figure), or a curve that is not ascending `x,w` points within the
+ * modifier's range.
+ */
+function checkAnatomyDefaults(
+  anatomy: AdultAnatomySpec | undefined,
+  modifiers: readonly ShapeModifierEntry[],
+): void {
+  for (const [id, curve] of Object.entries(anatomy?.defaults ?? {})) {
+    const what = `adult anatomy default for ${id}`;
+    const m = modifiers.find((x) => x.id === id);
+    if (!m) throw new AssetFormatError(`${what}: the pack declares no such modifier`);
+    if (!m.adultOnly) throw new AssetFormatError(`${what}: the modifier is not adult-only`);
+    const lo = m.lo === null ? 0 : -1;
+    try {
+      for (const [, w] of parseCurve(curve))
+        if (!(w >= lo && w <= 1)) throw new Error(`value ${w} is outside ${lo}..1`);
+    } catch (e) {
+      throw new AssetFormatError(`${what}: ${(e as Error).message}`);
+    }
+  }
+}
+
+/** Ascending `x,w;x,w;…` points, at least two; throws a plain Error naming what is wrong. */
+export function parseCurve(text: string): [number, number][] {
+  const points = text.split(";").map((p) => p.split(",").map(Number) as [number, number]);
+  if (points.length < 2 || points.some((p) => p.length !== 2 || p.some((x) => !Number.isFinite(x))))
+    throw new Error("needs at least two numeric x,w points");
+  for (let i = 1; i < points.length; i++)
+    if ((points[i] as [number, number])[0] <= (points[i - 1] as [number, number])[0])
+      throw new Error("has points that do not ascend in x");
+  return points;
+}
+
+/** The piecewise-linear function through `points`, holding its end values outside them. */
+export function curveAt(points: readonly (readonly [number, number])[], v: number): number {
+  const first = points[0] as readonly [number, number];
+  const last = points[points.length - 1] as readonly [number, number];
+  if (v <= first[0]) return first[1];
+  if (v >= last[0]) return last[1];
+  for (let i = 1; i < points.length; i++) {
+    const b = points[i] as readonly [number, number];
+    if (v <= b[0]) {
+      const a = points[i - 1] as readonly [number, number];
+      return a[1] + ((v - a[0]) / (b[0] - a[0])) * (b[1] - a[1]);
+    }
+  }
+  return last[1];
+}
+
+/**
+ * Refuses a declared piercing site the core could not place: one without the
+ * detail lattice its vertex is numbered in, a name given twice or that is the
+ * body's own, a channel it does not know, a vertex that is not an index, or a
+ * depth outside (0, `PIERCING_DEPTH_MAX`]. Whether the vertex is in the lattice
+ * is checked once the adult surface is built.
+ */
+function checkAdultPiercingSites(anatomy: AdultAnatomySpec | undefined): void {
+  const sites = anatomy?.piercingSites ?? [];
+  if (sites.length && !anatomy?.detail)
+    throw new AssetFormatError(
+      "adult piercing sites are numbered in the detail lattice, and the pack has no detail spec",
+    );
+  const channels = new Set(["normal", "across", "vertical"]);
+  const seen = new Set<string>();
+  for (const s of sites) {
+    const what = `adult piercing site ${String(s.name)}`;
+    if (typeof s.name !== "string" || s.name === "")
+      throw new AssetFormatError("an adult piercing site has no name");
+    if (isBodyPiercingSite(s.name))
+      throw new AssetFormatError(`${what}: the name is one of the body's own sites`);
+    if (seen.has(s.name)) throw new AssetFormatError(`${what}: given twice`);
+    seen.add(s.name);
+    if (!channels.has(s.channel))
+      throw new AssetFormatError(`${what}: channel ${String(s.channel)} is not one the core knows`);
+    if (!Number.isInteger(s.vertex) || s.vertex < 0)
+      throw new AssetFormatError(`${what}: vertex ${String(s.vertex)} is not an index`);
+    if (!(s.depth > 0 && s.depth <= PIERCING_DEPTH_MAX))
+      throw new AssetFormatError(
+        `${what}: depth ${String(s.depth)} is outside (0, ${PIERCING_DEPTH_MAX}]`,
+      );
   }
 }
 
@@ -1005,6 +1173,9 @@ export function parseHumanoidAssets(
     if (a.topology !== manifest.topology || a.bodySha256 !== manifest.body.sha256) {
       throw new AssetFormatError("the adult anatomy pack was built for a different body pack");
     }
+    checkAdultCoatRegions(a.anatomy?.coatRegions ?? [], manifest.vertexCount);
+    checkAdultPiercingSites(a.anatomy);
+    checkAnatomyDefaults(a.anatomy, a.modifiers);
     for (const m of a.modifiers) modifiers.set(m.id, m);
   }
   // Merging also orders tasks by sortOrder; the manifest keeps upstream's file order.

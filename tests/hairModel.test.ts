@@ -148,7 +148,8 @@ describe("hair topology", () => {
         max = Math.max(max, o);
       }
       expect(min, s.id).toBeLessThan(0.7);
-      expect(max, s.id).toBeGreaterThan(0.9);
+      // (Knots lie on the scalp from root to tip, so none is ever wholly open.)
+      expect(max, s.id).toBeGreaterThan(s.id === "bantu01" ? 0.4 : 0.9);
     }
   });
 

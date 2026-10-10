@@ -19,6 +19,7 @@ export {
 } from "./presence.tsx";
 export {
   STUDIO_EXPOSURE,
+  STUDIO_SHADOWS,
   STUDIO_TONE_MAPPING,
   StudioStage,
   type StudioStageProps,
