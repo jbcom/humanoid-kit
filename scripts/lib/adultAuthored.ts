@@ -22,7 +22,7 @@ import type {
   SliderTask,
 } from "../../src/format/assetFormat.ts";
 import type { AdultDetailLattice, ControlShape } from "../../src/model/humanoidModel.ts";
-import { moundTargets } from "./control/mound.ts";
+import { AUTHORING_FIGURE, moundTargets } from "./control/mound.ts";
 import { skinOf } from "./detail/contact.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE, phallusTargets } from "./detail/phallus.ts";
 import { reservoirRoot } from "./detail/root.ts";
@@ -208,6 +208,8 @@ export function authorDetail(
     detail: {
       targets: made.map((t) => t.name),
       surfaceKey: lattice.key,
+      // The figure the lattice was evaluated on: a reservoir's organ is carried from it.
+      authoredOn: { macros: AUTHORING_FIGURE.macros },
       drives: { ...organ.drives, ...sac.drives },
     },
   };

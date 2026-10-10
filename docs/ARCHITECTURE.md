@@ -1609,6 +1609,28 @@ triangles. Penetration counted on every vertex moves within a square centimetre 
 every row (m-heavy seated 51.43 → 52.38 cm², m-muscular seated 43.64 → 44.44); on
 the worklist's stride of four, m-heavy seated reads 48.21 → 49.58.
 
+**An organ carried by its loop (2026-10-10).** A detail target is a displacement of
+the lattice vertices under a reservoir, authored on one figure (the default adult)
+and added to each figure's own skin. A body morph moves the skin inside a loop by 2
+to 5 mm more than it moves the loop (the sac's disc, from the default adult to a man,
+a woman or a heavy man), and the organ took that shape on: the sac's notch between
+its lobes, 10.9% of its width in the sculpt and 11.8% as transferred, was 16.6% on a
+man. An organ's shape is its own, so a pushed vertex is now placed where the
+authoring figure's skin plus its displacement put it, moved rigidly from that
+figure's loop to this one's (`src/model/detailCarry.ts`; the pack names the figure,
+`AdultDetailSpec.authoredOn`), blended in from 5 to 20 mm of push
+(`CARRIED_FROM`, `CARRIED_FULLY`): a vertex pushed less stays on this figure's skin,
+so a reservoir with no organ is the skin exactly. The fit has no scale: the organ
+keeps its measured size on every body. The notch is then 11.5 to 12.1% of the width
+on every body tested. Carried from the skin up (0 to 5 mm), the root's first
+millimetres jumped between the skin and the carried organ and the men's rows
+inverted 66 to 116 more triangles; fitted on the cap's skin as well as the loop, no
+row was better. The cost is the muscular man's sac meeting his thighs: counted on
+every vertex, m-muscular seated penetrates 44.44 → 52.33 cm² (2.7 into the thighs,
+5.2 through the sac's own fold) and m-muscular squat 71.27 → 75.17, while the heavy
+man's rows fall. The sac against the thigh is a contact pair of the contact
+compression work (ruled 2026-10-10).
+
 ## Scalp hair (milestone 4)
 
 **Use cases.** A creator offers a hair style and a colour beside skin and eyes,

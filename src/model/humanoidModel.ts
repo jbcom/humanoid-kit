@@ -76,6 +76,12 @@ import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/regions/hands/index.ts";
 import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
 import { areolaStretch } from "../surface/regions/torso.ts";
+import {
+  carriedDetail,
+  latticePositions,
+  type ReservoirCarriage,
+  reservoirCarriages,
+} from "./detailCarry.ts";
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 import {
@@ -525,6 +531,16 @@ export class HumanoidModel {
         topology: AdultSurfaceTopology;
         /** Its reservoirs' vertices and roots, for the weights an evaluation skins it by (`evaluatedSkin`). */
         skinning: ReservoirSkinning;
+      }
+    | null
+    | undefined;
+  /** What carries a reservoir's organ from the figure it was authored on (`detailCarriage`): undefined until first used, null without one. */
+  private carriage:
+    | {
+        carriages: ReservoirCarriage[];
+        stencil: Stencil;
+        control: Float32Array;
+        authored: Map<number, readonly [number, number, number]>;
       }
     | null
     | undefined;
@@ -1760,7 +1776,55 @@ export class HumanoidModel {
         );
       }
     }
-    return indices.length ? { indices, xyz: Float32Array.from(xyz) } : undefined;
+    if (!indices.length) return undefined;
+    const displaced = { indices, xyz: Float32Array.from(xyz) };
+    const carried = this.detailCarriage();
+    if (!carried) return displaced;
+    // An organ moves with where it is rooted: carried from the authoring figure (`carriedDetail`).
+    const here = new Map<number, readonly [number, number, number]>();
+    const at =
+      (cache: Map<number, readonly [number, number, number]>, from: Float32Array) =>
+      (v: number) => {
+        let p = cache.get(v);
+        if (!p) {
+          const q = latticePositions(carried.stencil, from, [v]);
+          p = [q[0] as number, q[1] as number, q[2] as number];
+          cache.set(v, p);
+        }
+        return p;
+      };
+    return carriedDetail(
+      displaced,
+      carried.carriages,
+      at(carried.authored, carried.control),
+      at(here, control),
+    );
+  }
+
+  /**
+   * What `carriedDetail` reads, once per model: each reservoir's carriage, the
+   * lattice's stencil, and the control positions of the figure the pack's detail
+   * was authored on (`AdultDetailSpec.authoredOn`), with a cache of that figure's
+   * lattice positions. Null when the pack names no such figure, or has no reservoirs.
+   */
+  private detailCarriage() {
+    if (this.carriage !== undefined) return this.carriage;
+    const anatomy = this.assets.adultAnatomyManifest?.anatomy;
+    const lattice = this.adultBodySurface()?.part.mesh.lattice;
+    const authoredOn = anatomy?.detail?.authoredOn;
+    if (!lattice || !authoredOn || !lattice.reservoirs.length) {
+      this.carriage = null;
+      return null;
+    }
+    this.carriage = {
+      carriages: reservoirCarriages(lattice, anatomy?.reservoirs ?? []),
+      stencil: lattice.stencil,
+      control: Float32Array.from(
+        this.evaluateControl(createRecipe({ macros: authoredOn.macros }), {}),
+      ),
+      authored: new Map(),
+    };
+    return this.carriage;
   }
 
   /**

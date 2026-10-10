@@ -17,7 +17,7 @@
  * compresses about 3.4 times better than interleaved data; `gunzip` and the
  * parser turn it back into ordinary index and xyz arrays.
  */
-import { AGE_ANCHORS, ageAnchorsOf, DEFAULT_MACROS } from "../makehuman/macro.ts";
+import { AGE_ANCHORS, ageAnchorsOf, DEFAULT_MACROS, type MacroValues } from "../makehuman/macro.ts";
 import type { StateMorph } from "../makehuman/stateMorphs.ts";
 import type { AnatomyFeature } from "../recipe/anatomy.ts";
 import { isBodyPiercingSite } from "../recipe/bodyArt.ts";
@@ -576,6 +576,14 @@ export interface AdultDetailSpec {
    * scaled by the ratio of the figure's own distance to `rest`. Absent: none.
    */
   scale?: { a: number; b: number; rest: number };
+  /**
+   * The figure the targets were authored on, by its macros (`createRecipe` input).
+   * With it, a reservoir's organ is placed as that figure's skin under it plus the
+   * displacement, carried rigidly from that figure's loop to the evaluated one's,
+   * as far as it is pushed out of the skin (`src/model/detailCarry.ts`). Absent: the
+   * displacement is added to the evaluated figure's own skin.
+   */
+  authoredOn?: { macros: Partial<MacroValues> };
   /**
    * Targets whose weight is multiplied by other values: `gates[target]` lists
    * factors (`src/model/detailFactors.ts`): `mod:<id>` (that modifier's positive
