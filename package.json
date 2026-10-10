@@ -71,6 +71,7 @@
     "pack:animations": "node scripts/pack-animations.ts",
     "pack:eyes": "node scripts/pack-eyes.ts",
     "pack:clothing": "node scripts/pack-clothing.ts",
+    "upscale": "node scripts/upscale.ts",
     "check:pages": "node scripts/check-pages-build.mjs",
     "lighthouse": "pnpm build:playground && node scripts/lighthouserc.mjs && lhci autorun --config=.lighthouse/lighthouserc.json",
     "prepack": "pnpm run build",

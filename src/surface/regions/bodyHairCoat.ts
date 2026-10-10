@@ -17,7 +17,7 @@
  * choices.
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
-import { jointPosition } from "../../format/assetFormat.ts";
+import { ADULT_COAT_REGION_IDS, jointPosition } from "../../format/assetFormat.ts";
 import {
   type BeardStyle,
   BODY_HAIR_FIBRE,
@@ -218,7 +218,30 @@ const AXILLARY_REGION: CoatRegion = {
   paint: (input) => paintOf("axillary", input, BODY_HAIR_FIBRE.axillary.length, LIE.grown),
 };
 
-/** Body hair's coat: the beard's three parts, the trunk's dense hair and the armpits'. */
+/**
+ * Pubic hair: adult only, as the armpits', and adult-pack data besides. The
+ * core holds its paint; where it grows is the adult anatomy pack's
+ * (`AdultAnatomySpec.coatRegions`), so without the pack it has no area and
+ * the public build names nothing of it.
+ */
+export const PUBIC_REGION: CoatRegion = {
+  id: ADULT_COAT_REGION_IDS[0],
+  targets: [],
+  adultOnly: true,
+  mask: (assets) => {
+    const out = new Float32Array(assets.manifest.vertexCount);
+    const spec = assets.adultAnatomyManifest?.anatomy?.coatRegions?.find(
+      (r) => r.id === PUBIC_REGION.id,
+    );
+    spec?.vertices.forEach((v, i) => {
+      out[v] = spec.mask[i] as number;
+    });
+    return out;
+  },
+  paint: (input) => paintOf("pubic", input, BODY_HAIR_FIBRE.pubic.length, LIE.grown),
+};
+
+/** Body hair's coat: the beard's three parts, the trunk's dense hair, the armpits' and the pubic. */
 export const BODY_HAIR_COAT: readonly CoatRegion[] = [
   beardRegion("moustache"),
   beardRegion("chin"),
@@ -227,4 +250,5 @@ export const BODY_HAIR_COAT: readonly CoatRegion[] = [
   trunkRegion("abdomen"),
   trunkRegion("back"),
   AXILLARY_REGION,
+  PUBIC_REGION,
 ];

@@ -687,7 +687,7 @@ compute what the renderer will do.
   (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
   Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
   hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
-  `VELLUS`) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
+  `VELLUS`, flat: no relief) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
   densities `BODY_HAIR_DENSITY`. Dense, short hair standing off the skin (the
   beard, the chest, abdomen and back, and the adult-only armpits) is the
   coat's, long hair the cards', and pubic hair the adult pack's.
@@ -702,7 +702,11 @@ compute what the renderer will do.
   `SkinPaintInput.adult` is true, so an input that does not say fails closed);
   `COAT_REGIONS` (at most `COAT_REGION_LIMIT`; today `BODY_HAIR_COAT`:
   `beard-moustache`, `beard-chin`, `beard-cheeks`, `hair-chest`, `hair-abdomen`,
-  `hair-back` and the adult-only `hair-axillary`, with
+  `hair-back` and the adult-only `hair-axillary` and `hair-pubic`
+  (`PUBIC_REGION`, whose mask is the adult anatomy pack's
+  `anatomy.coatRegions` entry of that id, `AdultCoatRegionSpec`: ascending base
+  vertices and their mask, checked when the pack is parsed against
+  `ADULT_COAT_REGION_IDS`; without the pack it has no area), with
   `BEARD_LENGTHS` per style and `beardMasks(assets)`). `combField(assets)` is
   the direction hair lies per base vertex (rest space, unit, in the tangent
   plane: down the limbs toward their ends, down elsewhere, smoothed);
