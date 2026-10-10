@@ -1,15 +1,16 @@
-import type { ChromiumGpuMode } from "game-harness/chromium";
 import { definePlaywrightConfig } from "game-harness/playwright";
+import { browserRun } from "./scripts/lib/browserRun.ts";
 
 /**
  * The playground is the library's own demo. The suite drives its production
  * build (vite preview) in headed Chromium through game-harness: native GPU
  * locally (Metal on macOS), so what is tested is what people see.
  *
- * Unattended runs (CI, the dedicated render Mac's service account) have no GPU
- * worth trusting and no window session, so CI declares SwiftShader and runs
- * headless; a runner exposing /dev/dri can set HK_GPU=linux-hardware-vulkan.
- * HK_GPU and HK_HEADED=1 override.
+ * Unattended runs have no window session and run headless: the render Macs on
+ * their GPU through ANGLE Metal, other CI on SwiftShader; heavy-slot's priority
+ * lane picks for itself (scripts/lib/browserRun.ts has the whole rule). A runner
+ * exposing /dev/dri can set HK_GPU=linux-hardware-vulkan. HK_GPU and HK_HEADED=1
+ * override.
  *
  * `--project sheets` instead renders review contact sheets (e2e/sheets/, the
  * job in `.sheets/job.json`): against the playground's dev server, the only one
@@ -18,8 +19,7 @@ import { definePlaywrightConfig } from "game-harness/playwright";
  * runs every project it is given and has one server per config, and the render
  * pool forwards a command's arguments but not its environment.
  */
-const gpuMode = (process.env.HK_GPU ?? (process.env.CI ? "software" : "auto")) as ChromiumGpuMode;
-const headless = Boolean(process.env.CI) && !process.env.HK_HEADED;
+const { gpuMode, headless } = browserRun(process.env, process.platform);
 
 /** Whether this run's command line selects the `sheets` project (`--project sheets` or `--project=sheets`). */
 export const selectsSheets = (argv: readonly string[]): boolean =>
