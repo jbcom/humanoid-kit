@@ -343,15 +343,16 @@ describe("the vertex shader's hip fold", () => {
       dual.update(hipRest, rotations);
       const hips = hipFlexion(hipRest, rotations);
       expect(hips.left, `${left}°`).toBeCloseTo(left, 3);
-      // The flexion each row is read at: the left hip's for side 1, the right's for side 0, and the mix between.
+      // The flexion each row is read at: the left hip's for side 1, the right's for side 0, and the greater of the two, each weighed by its side, between.
       const flexion = draw(2);
       for (let v = 0; v < count; v++)
         expect(flexion[v * 4], `${left}/${right}: vertex ${v}`).toBeCloseTo(
           foldFlexion(fold, asked[v * 4] as number, hips) as number,
           3,
         );
-      expect(flexion[0]).toBeCloseTo(right, 2);
-      expect(flexion[4]).toBeCloseTo(left, 2);
+      // A row all the right's reads the right hip, all the left's the left (the other counts for nothing, as an unflexed hip does).
+      expect(flexion[0]).toBeCloseTo(Math.max(0, right), 2);
+      expect(flexion[4]).toBeCloseTo(Math.max(0, left), 2);
       // Whole, then half faded in, then not at all (the fold fades in when it arrives).
       for (const [part, read, blend] of [
         [0, addFold, 1],

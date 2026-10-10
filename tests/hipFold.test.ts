@@ -7,7 +7,7 @@
  * fold the mesh over itself.
  */
 import { describe, expect, it } from "vitest";
-import { HipContact } from "../scripts/lib/hipContact.ts";
+import { CreaseFlaps, HipContact, vertexNormals } from "../scripts/lib/hipContact.ts";
 import { BODY_TYPES } from "../scripts/lib/skinBench.ts";
 import { bodyTriangles } from "../scripts/lib/skinMeasure.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -17,15 +17,26 @@ import {
   boneMass,
   FOLD_BODIES,
   FOLD_KEYS,
+  FOLD_THIGH_HOLD,
+  FOLD_TRUNK_REACH,
   foldSides,
   HIP_FOLD,
   type HipFold,
   hipFlexion,
+  nearHips,
   renderFold,
   surfaceFold,
+  TRUNK_SHARE,
 } from "../src/rig/hipFold.ts";
 import { solveHipFold } from "../src/rig/hipFoldSolve.ts";
-import { IDENTITY_POSE, restBones, skinPositions } from "../src/rig/pose.ts";
+import {
+  bodyPoseRotations,
+  IDENTITY_POSE,
+  restBones,
+  rigData,
+  skinNormals,
+  skinPositions,
+} from "../src/rig/pose.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets();
@@ -61,6 +72,15 @@ const figures = Object.entries({ ...BODY_TYPES, ...BATTERY_EXTREMES }).map(([nam
   return { name, control, rest, fold, contact };
 });
 const average = figures[0] as (typeof figures)[number];
+
+/**
+ * The most of the crease's inverted triangles, as a share of those the bones
+ * alone leave, that the fold may leave over every body and pose of the flap
+ * gate. Measured (2026-10-10): the thigh pushed out alone, 0.68; the shared
+ * solve, 0.50. CHOICE: between the two, so the gate holds the share and fails
+ * a fold that pushes the thigh's skin past its neighbours again.
+ */
+const FLAP_SHARE = 0.6;
 
 const pose = (
   f: (typeof figures)[number],
@@ -290,18 +310,23 @@ describe("the hip fold", () => {
       }
   });
 
-  it("moves only the skin the thigh holds most of, and by less than the thigh is thick", () => {
+  it("moves only the thigh's skin and the trunk's in front of the hips, and by less than the thigh is thick", () => {
     const thigh = boneMass(names, assets.skinIndex, assets.skinWeight, FOLD_BODIES.thigh);
     const trunk = boneMass(names, assets.skinIndex, assets.skinWeight, FOLD_BODIES.trunk);
     for (const f of figures) {
-      // Skin the trunk holds most of, or the thigh a quarter of, stays where the bones put it (its normal turns beside what moves).
+      const front = nearHips(f.rest, f.control, FOLD_TRUNK_REACH, true);
+      // Skin neither part holds most of, or behind the hips, stays where the bones put it (its normal turns beside what moves).
       f.fold.vertices.forEach((v, s) => {
         let moved = false;
         for (let i = 0; i < FOLD_KEYS * 3; i++)
           if (f.fold.vectors[s * FOLD_KEYS * 3 + i] !== 0) moved = true;
         if (!moved) return;
-        expect(thigh[v] as number, `${f.name} vertex ${v}`).toBeGreaterThanOrEqual(0.25);
-        expect(thigh[v] as number, `${f.name} vertex ${v}`).toBeGreaterThan(trunk[v] as number);
+        expect(front[v], `${f.name} vertex ${v}`).toBe(1);
+        const thighs = thigh[v] as number;
+        const trunks = trunk[v] as number;
+        const thighSkin = thighs >= FOLD_THIGH_HOLD && thighs > trunks;
+        const trunkSkin = trunks >= TRUNK_SHARE && trunks >= thighs;
+        expect(thighSkin || trunkSkin, `${f.name} vertex ${v}`).toBe(true);
       });
       expect(f.fold.vertices.length, f.name).toBeGreaterThan(50);
       let furthest = 0;
@@ -317,6 +342,73 @@ describe("the hip fold", () => {
       expect(furthest, f.name).toBeGreaterThan(0.03);
       expect(furthest, f.name).toBeLessThan(0.2);
     }
+  });
+
+  it("presses the trunk's skin in where the thigh meets it, spread over its neighbours", () => {
+    const thigh = boneMass(names, assets.skinIndex, assets.skinWeight, FOLD_BODIES.thigh);
+    const trunk = boneMass(names, assets.skinIndex, assets.skinWeight, FOLD_BODIES.trunk);
+    for (const f of figures) {
+      const bare = pose(f, flexed(120), false);
+      const folded = pose(f, flexed(120), true);
+      const outward = vertexNormals(bare, tris);
+      let pressed = 0;
+      let inward = 0;
+      let deepest = 0;
+      for (const v of f.fold.vertices) {
+        if ((trunk[v] as number) < (thigh[v] as number)) continue;
+        const d = [0, 1, 2].map((k) => (folded[v * 3 + k] as number) - (bare[v * 3 + k] as number));
+        const size = Math.hypot(...(d as [number, number, number]));
+        if (size < 0.002) continue;
+        pressed++;
+        deepest = Math.max(deepest, size);
+        const along = d.reduce((s, x, k) => s + x * (outward[v * 3 + k] as number), 0);
+        if (along < 0) inward++;
+      }
+      // Many vertices, not a few corners: the press is spread over the belly and the groin.
+      expect(pressed, f.name).toBeGreaterThan(40);
+      expect(inward / pressed, f.name).toBeGreaterThan(0.9);
+      expect(deepest, f.name).toBeGreaterThan(0.005);
+    }
+  });
+
+  it("adds no flaps to the crease: fewer triangles turned against their normals than the bones leave, in every body and pose that flexes the hips", () => {
+    const rig = rigData(assets);
+    const poses: [string, Float32Array][] = [
+      ["90°", flexed(90)],
+      ["120°", flexed(120)],
+      ["135°", flexed(135)],
+      ["one hip at 120°", flexed(120, ["L"])],
+      ["seated", bodyPoseRotations(rig, "seated")],
+      ["squat", bodyPoseRotations(rig, "squat")],
+      ["tucked", bodyPoseRotations(rig, "tucked")],
+    ];
+    let bare = 0;
+    let folded = 0;
+    for (const f of figures) {
+      const restNormals = vertexNormals(f.control, tris);
+      const flaps = new CreaseFlaps(f.rest, f.control, restNormals, tris);
+      const count = (rotations: Float32Array, withFold: boolean) =>
+        flaps.count(
+          pose(f, rotations, withFold),
+          skinNormals(
+            f.rest,
+            rotations,
+            restNormals,
+            assets.skinIndex,
+            assets.skinWeight,
+            new Float32Array(f.control.length),
+            withFold ? f.fold : undefined,
+          ),
+        );
+      for (const [name, rotations] of poses) {
+        const without = count(rotations, false);
+        const with_ = count(rotations, true);
+        expect(with_.inverted, `${f.name}, ${name}`).toBeLessThanOrEqual(without.inverted);
+        bare += without.inverted;
+        folded += with_.inverted;
+      }
+    }
+    expect(folded / bare).toBeLessThan(FLAP_SHARE);
   });
 
   it("folds one hip alone, and the other at the same figure", () => {

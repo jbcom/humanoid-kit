@@ -153,6 +153,8 @@ export class PosedSkin {
   private readonly edge: Float32Array;
   private readonly closest = new Float64Array(3);
   private readonly which = new Uint8Array(1);
+  /** The patch triangle the last `signed` found nearest (-1 for none). */
+  nearest = -1;
 
   constructor(patch: SkinPatch, P: Float32Array) {
     this.patch = patch;
@@ -209,8 +211,8 @@ export class PosedSkin {
   /**
    * The signed distance from (x, y, z) to the skin of the triangles
    * `candidates` (the whole patch when omitted): positive outside the skin,
-   * negative behind it. The closest point is left in `point`, and the skin's
-   * unit normal there (the way out) in `outward`.
+   * negative behind it. The closest point is left in `point`, the skin's
+   * unit normal there (the way out) in `outward`, and its triangle in `nearest`.
    */
   signed(
     x: number,
@@ -235,6 +237,7 @@ export class PosedSkin {
         point.set(this.closest);
       }
     }
+    this.nearest = bestTri;
     if (bestTri < 0) return Number.POSITIVE_INFINITY;
     const a = tris[bestTri * 3] as number;
     const b = tris[bestTri * 3 + 1] as number;

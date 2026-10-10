@@ -146,7 +146,7 @@ export interface HipFold {
   vectors: Float32Array;
   /** Per vertex, per key, x, y, z, as `vectors`: what is added to the skinned normal, before it is made a unit vector again. */
   normals: Float32Array;
-  /** Per vertex, by slot: the share of the left hip's flexion in the flexion it is read at (`foldSides`), the right's the rest. */
+  /** Per vertex, by slot: how much of it is the left hip's (`foldSides`), the right's the rest, which says the flexion it is read at (`foldFlexion`). */
   side: Float32Array;
 }
 
@@ -159,12 +159,20 @@ export const noFold = (n: number): HipFold => ({
   side: new Float32Array(0),
 });
 
-/** The flexion vertex `v`'s fold is read at, by its side (`HipFold.side`), or null where the fold leaves it. */
+/**
+ * The flexion vertex `v`'s fold is read at, by its side (`HipFold.side`), or
+ * null where the fold leaves it: each hip's flexion counted by twice the share
+ * of the vertex that is its side, to all of it from half, and the greater of the
+ * two. Skin all one thigh's is read at that hip's flexion; skin both thighs
+ * reach (the belly between the hips, the groin) is read at the more flexed
+ * hip's, for either thigh alone presses it as far as both do; and between, the
+ * other hip counts for less, to nothing at its own side's edge.
+ */
 export function foldFlexion(fold: HipFold, v: number, hips: HipFlexion): number | null {
   const slot = fold.slot[v] as number;
   if (!(slot >= 0)) return null;
   const s = fold.side[slot] as number;
-  return s * hips.left + (1 - s) * hips.right;
+  return Math.max(Math.min(1, 2 * s) * hips.left, Math.min(1, 2 * (1 - s)) * hips.right);
 }
 
 /**
@@ -336,7 +344,7 @@ export function boneMass(
 }
 
 /** The least weight on the trunk's bones a vertex needs to be the trunk's skin. */
-const TRUNK_SHARE = 0.2;
+export const TRUNK_SHARE = 0.2;
 
 /** The two parts of a figure the fold keeps apart. */
 export interface FoldParts {

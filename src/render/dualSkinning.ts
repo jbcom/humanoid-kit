@@ -239,11 +239,11 @@ uniform float ${FOLD_BLEND_UNIFORM};
 vec3 hkFoldKey( int key, int slot, int part ) {
 	return texelFetch( ${FOLD_UNIFORM}, ivec2( key * 2 + part, slot ), 0 ).xyz;
 }
-// The flexion (degrees) row slot is read at: its side's share of the left hip's, the rest the right's.
+// The flexion (degrees) row slot is read at: each hip's counted by twice its side's share, to all of it from half, and the greater.
 float hkFoldFlexion( int slot ) {
 	float side = texelFetch( ${FOLD_UNIFORM}, ivec2( 0, slot ), 0 ).w;
 	vec4 hips = texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( ${ROOT_UNIFORM} + 1, 0 ), 0 );
-	return side * hips.x + ( 1.0 - side ) * hips.y;
+	return max( min( 1.0, 2.0 * side ) * hips.x, min( 1.0, 2.0 * ( 1.0 - side ) ) * hips.y );
 }
 // Row slot's value at flexion degrees, in the figure's own axes. part 0: the vertex's displacement; part 1: what its normal gains.
 vec3 hkFoldAt( int slot, float flexion, int part ) {
