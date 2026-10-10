@@ -307,3 +307,48 @@ hang angle (modelled) and the erect angle (provisional, 30 degrees above
 horizontal; the one source says only that a quarter or more lie below it). The
 testis size default is the European 17 mL ellipsoid, with the Chinese
 dimensions' proportions (length : width : depth about 1.9 : 1 : 1.15).
+
+## G. The vaginal and anal canals at rest (female form, reservoirs)
+
+Gathered 2026-10-10 for the canals the female form draws as reservoirs
+(ADULT-SCULPT-PLAN.md, section 6f). What was read is stated per source; no
+number below was taken from a source that was not read.
+
+| # | Source | Read | Population, method |
+| --- | --- | --- | --- |
+| S1 | Luo J et al., "Vaginal and Paravaginal Shape and Location in Healthy Women", Int Urogynecol J 27(7):1087-95 (2016). DOI 10.1007/s00192-016-2949-0, PMC4916004 | Full text (NIH author manuscript; numbers only) | N=80, age 45.5 ± 8.7 (28-70), 91% Caucasian, normal support; supine 3 T MRI at rest; axes from the horizontal, gravity-aligned |
+| S2 | Barnhart KT et al., "Baseline dimensions of the human vagina", Hum Reprod 21(6):1618-22 (2006). DOI 10.1093/humrep/del022, PMID 16478763 | Abstract only | N=28, 77 MRI scans, undistended |
+| S3 | Pendergrass PB et al., Gynecol Obstet Invest 42:178-82 (1996). DOI 10.1159/000291946, PMID 8938470 | Abstract only | N=39 Caucasian women, vinyl polysiloxane casts (distended) |
+| S4 | Nivatvongs S et al., "The length of the anal canal", Dis Colon Rectum 24(8):600-1 (1981). DOI 10.1007/BF02605754, PMID 7318624 | Abstract only | N=211 (108 men, 103 women), 18-90 y |
+| S5 | Tirumanisetty P et al., Neurogastroenterol Motil 30(7):e13314 (2018). DOI 10.1111/nmo.13314, PMC6003834 | Full text (NIH author manuscript) | N=113 asymptomatic women, 50 ± 17 y, supine dynamic MRI |
+| S7 | High-resolution anorectal manometry, Neurogastroenterol Motil 31(7):e13597 (2019). DOI 10.1111/nmo.13597, PMC6559859 | Full text, Tables 1 and 2 | 96 women (41 ± 16 y), 47 men (45 ± 16 y), normal balloon expulsion |
+
+Numbers (mm unless stated):
+
+| Item | Mean | SD | Range | Where |
+| --- | --- | --- | --- | --- |
+| Vagina, anterior wall (introitus to anterior fornix) | 63 | 9 | 5th-95th 48-77 | S1 Table 1 |
+| Vagina, posterior wall (to posterior fornix) | 98 | 18 | 5th-95th 71-131 | S1 Table 1 |
+| Posterior fornix length | 21 | 5 | 13-31 | S1 Table 1 |
+| Length, cervix to introitus | 62.7 | | | S2 abstract |
+| Lumen width at five levels, hymen to top | 17 / 24 / 30 / 41 / 45 | 5 / 4 / 7 / 9 / 12 | 11-27 / 18-31 / 21-43 / 28-58 / 29-64 | S1 Table 1 |
+| Perimeter at levels 1 / 2 | 38 / 64 | 12 / 11 | | S1 Table 1 |
+| Introitus width | 26.2 | | | S2 abstract |
+| Vaginal axis from horizontal: lower / middle / upper | 90° / 72° / 41° | 11 / 21 / 22 | 73-107 / 45-114 / 10-76 | S1 Table 1 |
+| Anal canal, surgical (anorectal ring to verge) | 42 | | 30-53 | S4 abstract |
+| Anal canal, anatomic (dentate line to verge) | 21 (men 22, women 20) | | 10-38 | S4 abstract |
+| Anal canal, functional (manometry): women under 50 / men | 33 / 39 | 8 / 8 | 10th-90th 22-43 / 29-48 | S7 Tables 1, 2 |
+| Anorectal angle at rest | 100° (median 99) | | 10th-90th 86-120 | S5 Table 1 |
+
+Not found: the vagina's resting front-to-back gap or H-shaped section (S1 gives
+width and perimeter only), any resting anal canal diameter, and the anal canal's
+axis to the vertical. S3's casts are distended and give no resting size; S4's
+abstract gives a women's surgical length that contradicts its overall mean, and
+it is not used.
+
+Taken for the canals: the vagina's walls as measured (anterior 63, posterior 98,
+the widths at five levels, the three axes); its resting section a collapsed slit
+whose gap is derived from S1's means, (38 - 2 x 17) / 2 = 2 mm at the hymen, and
+labelled derived; the anal canal's functional length (33 women, 39 men) as its
+length, closed at rest (S5 calls a canal patulous only where its walls are not
+coapted, 5% of women), its gap modelled.
