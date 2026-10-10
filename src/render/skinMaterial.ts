@@ -472,7 +472,7 @@ float hkStriae( vec2 q, float theta, float amount, float fw, float soft ) {
 			float len = ${glslFloat(STRIA_CLUSTER_LENGTH[0])} + ${glslFloat(STRIA_CLUSTER_LENGTH[1] - STRIA_CLUSTER_LENGTH[0])} * h45.y;
 			float spacing = ${glslFloat(STRIA_CLUSTER_SPACING[0])} + ${glslFloat(STRIA_CLUSTER_SPACING[1] - STRIA_CLUSTER_SPACING[0])} * hkStriaRandom( c, 4 ).x;
 			int near = int( floor( across / spacing + ${glslFloat((STRIA_MARKS - 1) / 2)} + 0.5 ) );
-			for ( int k = max( 0, near - 1 ); k <= min( ${STRIA_MARKS - 1}, near + 1 ); k ++ ) {
+			for ( int k = max( 0, near - 2 ); k <= min( ${STRIA_MARKS - 1}, near + 2 ); k ++ ) {
 				vec2 m01 = hkStriaRandom( c, 8 + k );
 				vec2 m23 = hkStriaRandom( c, 24 + k );
 				if ( m01.x >= ${glslFloat(STRIA_MARK_SHARE)} ) continue;

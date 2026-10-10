@@ -241,9 +241,11 @@ export function striaMark(
       const [s0] = random(cx, cy, 4);
       const spacing =
         STRIA_CLUSTER_SPACING[0] + (STRIA_CLUSTER_SPACING[1] - STRIA_CLUSTER_SPACING[0]) * s0;
-      // Only the places either side of the nearest can reach the pixel: the marks are narrower than their spacing.
+      // Only the places within two of the nearest can reach the pixel: a mark lies within 0.35 of a
+      // spacing of its place, plus its bow, meander and half-width (at most 2.5 widths with the
+      // pixel's own half), and two and a half spacings (at least 5 widths) is more than that.
       const near = Math.round(across / spacing + (STRIA_MARKS - 1) / 2);
-      for (let k = Math.max(0, near - 1); k <= Math.min(STRIA_MARKS - 1, near + 1); k++) {
+      for (let k = Math.max(0, near - 2); k <= Math.min(STRIA_MARKS - 1, near + 2); k++) {
         const [m0, m1] = random(cx, cy, 8 + k);
         const [m2, m3] = random(cx, cy, 24 + k);
         if (m0 >= STRIA_MARK_SHARE) continue;
@@ -273,8 +275,9 @@ export function striaMark(
 /**
  * The share of the skin `striaMark` marks at an `amount`, on average: what the
  * marks blend to where a pixel holds many of them. Each mark's area is four
- * fifths of its width times its length (the mean of 1 − t⁴); overlaps are left
- * out, as marks lie narrower than their spacing.
+ * fifths of its width times its length (the mean of 1 − t⁴); where two marks
+ * overlap (a wide mark's swell next to a close neighbour) the area is counted
+ * twice, which `tests/striae.test.ts` bounds by measuring the pattern against it.
  */
 export function striaeMeanCover(amount: number): number {
   const a = clamp(amount);

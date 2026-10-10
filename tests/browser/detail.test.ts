@@ -396,7 +396,7 @@ describe("stretch marks", () => {
       sxx += (m - mm) ** 2;
       syy += ((got[i] as number) - mg) ** 2;
     });
-    // A tenth or more of the skin is marked, and the shading falls with the mark's weight, in
+    // Marks cover at least 2% of the samples, and the shading falls with the mark's weight, in
     // proportion (what the multiply leaves is the surface's own specular and ambient light).
     expect(marks.filter((m) => m > 0.5).length).toBeGreaterThan(0.02 * marks.length);
     expect(sxy / Math.sqrt(sxx * syy)).toBeLessThan(-0.98);
