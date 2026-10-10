@@ -1,44 +1,65 @@
 /**
  * The skin near a point, for seating jewellery on it (`jewellery.ts`): the
- * closest point of the figure's morphed control mesh to a point, the skin's
- * normal there (its vertex normals blended), and the signed distance, positive
- * outside. Only the faces near a site are searched.
+ * closest point of a body surface to a point, the skin's normal there (its
+ * vertex normals blended), and the signed distance, positive outside. Only
+ * the triangles near a site are searched. The surface is the figure's morphed
+ * control mesh for the body's own sites, its evaluated adult surface for the
+ * adult anatomy's.
  */
 import type { Vec3 } from "../presence/presence.ts";
 
-/** The control mesh's quads within reach of a site. */
+/** A body surface's triangles within reach of a site. */
 export interface SkinPatch {
   positions: Float32Array;
-  /** Vertex normals, of any length: blended across a face, then normalised. */
+  /** Vertex normals, of any length: blended across a triangle, then normalised. */
   normals: Float32Array;
-  faceVerts: Uint32Array;
-  /** Indices of the quads near the site. */
-  faces: number[];
+  /** The triangles near the site, three vertex indices each. */
+  triangles: number[];
 }
 
-/** The quads of `faceVerts` with a corner within `radius` of `centre`. */
+const quadTriangleCache = new WeakMap<Uint32Array, Uint32Array>();
+
+/** A quad mesh's corners as triangles, two per quad (cached per array). */
+export function quadTriangles(faceVerts: Uint32Array): Uint32Array {
+  const known = quadTriangleCache.get(faceVerts);
+  if (known) return known;
+  const out = new Uint32Array((faceVerts.length / 4) * 6);
+  for (let f = 0; f < faceVerts.length / 4; f++) {
+    const [a, b, c, d] = [0, 1, 2, 3].map((k) => faceVerts[f * 4 + k] as number) as [
+      number,
+      number,
+      number,
+      number,
+    ];
+    out.set([a, b, c, a, c, d], f * 6);
+  }
+  quadTriangleCache.set(faceVerts, out);
+  return out;
+}
+
+/** The triangles of `index` (three vertex indices each) with a corner within `radius` of `centre`. */
 export function skinNear(
   positions: Float32Array,
   normals: Float32Array,
-  faceVerts: Uint32Array,
+  index: ArrayLike<number>,
   centre: Vec3,
   radius: number,
 ): SkinPatch {
-  const faces: number[] = [];
-  for (let f = 0; f < faceVerts.length / 4; f++)
-    for (let k = 0; k < 4; k++) {
-      const v = faceVerts[f * 4 + k] as number;
+  const triangles: number[] = [];
+  for (let t = 0; t < index.length; t += 3)
+    for (let k = 0; k < 3; k++) {
+      const v = index[t + k] as number;
       const d = Math.hypot(
         (positions[v * 3] as number) - centre[0],
         (positions[v * 3 + 1] as number) - centre[1],
         (positions[v * 3 + 2] as number) - centre[2],
       );
       if (d <= radius) {
-        faces.push(f);
+        triangles.push(index[t] as number, index[t + 1] as number, index[t + 2] as number);
         break;
       }
     }
-  return { positions, normals, faceVerts, faces };
+  return { positions, normals, triangles };
 }
 
 const sub = (x: Vec3, y: Vec3): Vec3 => [x[0] - y[0], x[1] - y[1], x[2] - y[2]];
@@ -86,7 +107,7 @@ export function closestSkin(
   patch: SkinPatch,
   p: Vec3,
 ): { point: Vec3; normal: Vec3; distance: number } {
-  const { positions: P, normals: N, faceVerts } = patch;
+  const { positions: P, normals: N, triangles } = patch;
   const at = (a: Float32Array, v: number): Vec3 => [
     a[v * 3] as number,
     a[v * 3 + 1] as number,
@@ -95,27 +116,21 @@ export function closestSkin(
   let best = Number.POSITIVE_INFINITY;
   let point: Vec3 = [0, 0, 0];
   let normal: Vec3 = [0, 0, 1];
-  for (const f of patch.faces) {
-    const q = [0, 1, 2, 3].map((k) => faceVerts[f * 4 + k] as number);
-    for (const [i, j, k] of [
-      [0, 1, 2],
-      [0, 2, 3],
-    ] as const) {
-      const vs = [q[i], q[j], q[k]] as [number, number, number];
-      const w = closestWeights(p, at(P, vs[0]), at(P, vs[1]), at(P, vs[2]));
-      const c = [0, 1, 2].map((d) =>
-        vs.reduce((s, v, n) => s + (P[v * 3 + d] as number) * (w[n] as number), 0),
+  for (let t = 0; t < triangles.length; t += 3) {
+    const vs = [triangles[t], triangles[t + 1], triangles[t + 2]] as [number, number, number];
+    const w = closestWeights(p, at(P, vs[0]), at(P, vs[1]), at(P, vs[2]));
+    const blend = (a: Float32Array) =>
+      [0, 1, 2].map((d) =>
+        vs.reduce((s, v, n) => s + (a[v * 3 + d] as number) * (w[n] as number), 0),
       ) as Vec3;
-      const dist = Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]);
-      if (dist < best) {
-        best = dist;
-        point = c;
-        const n = [0, 1, 2].map((d) =>
-          vs.reduce((s, v, m) => s + (N[v * 3 + d] as number) * (w[m] as number), 0),
-        ) as Vec3;
-        const l = Math.hypot(...n) || 1;
-        normal = [n[0] / l, n[1] / l, n[2] / l];
-      }
+    const c = blend(P);
+    const dist = Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]);
+    if (dist < best) {
+      best = dist;
+      point = c;
+      const n = blend(N);
+      const l = Math.hypot(...n) || 1;
+      normal = [n[0] / l, n[1] / l, n[2] / l];
     }
   }
   const side = dot(sub(p, point), normal) >= 0 ? 1 : -1;

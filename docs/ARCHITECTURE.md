@@ -2547,13 +2547,26 @@ age.
 - The part inside the tissue is hidden by the skin in front of it, and hair
   and garments hide the rest as depth does, so no occlusion bake is needed.
   The metals are measured reflectances.
-- Genital sites wait on the adult pack: its manifest must name its sites
-  (found from its targets as the body's are) before they can be placed. Until
-  then such a piercing is refused at evaluation for an adult, and by the age
-  policy for anyone under 18.
+- Genital sites are the adult pack's data, the core's code
+  (`AdultAnatomySpec.piercingSites`), as pubic hair's area is.
+  - A declared site names a detail-lattice vertex (the space the pack's detail
+    targets address, the refined region's vertices then each reservoir's
+    rings), its channel and its tissue depth. The anatomy is shaped on the
+    adult surface by that detail, so a base-mesh vertex could not follow it.
+  - On an adult drawn with the adult surface, the core takes the vertex's
+    rest position on the lattice, adds the detail displacing it, and takes
+    the evaluated surface's nearest render vertex there: the hole, its normal
+    and its bones. The jewellery seats against that surface.
+  - A site no loaded pack declares is refused at evaluation, a malformed
+    declaration when the pack is parsed (a vertex past the lattice when the
+    adult surface is built), and every such site by the age policy under 18,
+    whose evaluation never has the adult surface.
+  - A fixture test declares a site on the shipped pack's phallic reservoir:
+    it resolves on the drawn surface and moves with the phallus's size.
 
 **Landed:** the recipe field, its validation, the age policy, the sites,
-tattoos, marks and piercings. Still to do: the adult pack's piercing sites.
+tattoos, marks, piercings and the adult piercing-site contract. The adult
+pack's sites themselves are its lane's data.
 
 ### Joint creases (2026-10-09)
 

@@ -20,6 +20,7 @@
 import { AGE_ANCHORS, ageAnchorsOf, DEFAULT_MACROS } from "../makehuman/macro.ts";
 import type { StateMorph } from "../makehuman/stateMorphs.ts";
 import type { AnatomyFeature } from "../recipe/anatomy.ts";
+import { isBodyPiercingSite } from "../recipe/bodyArt.ts";
 
 const MACRO_KEYS = new Set(Object.keys(DEFAULT_MACROS));
 
@@ -475,7 +476,36 @@ export interface AdultAnatomySpec {
    * they grow nowhere.
    */
   coatRegions?: AdultCoatRegionSpec[];
+  /**
+   * The piercing sites of the adult anatomy, as data: the core holds the
+   * jewellery and its placement, the pack where the holes are. A recipe names
+   * one by `name` (`Piercing.site`); the age policy refuses any of them under
+   * 18. Their vertices are the detail lattice's (`detail`), which they need.
+   * Absent, the adult anatomy has none.
+   */
+  piercingSites?: AdultPiercingSiteSpec[];
 }
+
+/**
+ * A piercing site on the adult anatomy (`AdultAnatomySpec.piercingSites`).
+ * Its hole is where the figure's evaluated adult surface carries detail-lattice
+ * vertex `vertex` (the vertices `AdultDetailSpec`'s targets address: the
+ * refined region's, then each reservoir's rings), so it follows the detail
+ * that shapes the anatomy.
+ */
+export interface AdultPiercingSiteSpec {
+  /** The site's name in a recipe: not one of the body's own (`PIERCING_SITES`). */
+  name: string;
+  /** The detail-lattice vertex the hole meets the skin at. */
+  vertex: number;
+  /** How the hole runs through the tissue (`PiercingChannel`). */
+  channel: "normal" | "across" | "vertical";
+  /** The tissue the hole crosses, metres: more than 0, at most `PIERCING_DEPTH_MAX`. */
+  depth: number;
+}
+
+/** The thickest tissue a declared piercing site may say its hole crosses, metres. */
+export const PIERCING_DEPTH_MAX = 0.03;
 
 /** The ids of the core's coat regions whose area an adult anatomy pack gives. */
 export const ADULT_COAT_REGION_IDS = ["hair-pubic"] as const;
@@ -715,6 +745,40 @@ function checkAdultCoatRegions(regions: readonly AdultCoatRegionSpec[], vertexCo
         throw new AssetFormatError(`${what}: vertex ${v} is not ascending within the body`);
       if (!(m >= 0 && m <= 1)) throw new AssetFormatError(`${what}: mask ${m} is outside 0..1`);
     }
+  }
+}
+
+/**
+ * Refuses a declared piercing site the core could not place: one without the
+ * detail lattice its vertex is numbered in, a name given twice or that is the
+ * body's own, a channel it does not know, a vertex that is not an index, or a
+ * depth outside (0, `PIERCING_DEPTH_MAX`]. Whether the vertex is in the lattice
+ * is checked once the adult surface is built.
+ */
+function checkAdultPiercingSites(anatomy: AdultAnatomySpec | undefined): void {
+  const sites = anatomy?.piercingSites ?? [];
+  if (sites.length && !anatomy?.detail)
+    throw new AssetFormatError(
+      "adult piercing sites are numbered in the detail lattice, and the pack has no detail spec",
+    );
+  const channels = new Set(["normal", "across", "vertical"]);
+  const seen = new Set<string>();
+  for (const s of sites) {
+    const what = `adult piercing site ${String(s.name)}`;
+    if (typeof s.name !== "string" || s.name === "")
+      throw new AssetFormatError("an adult piercing site has no name");
+    if (isBodyPiercingSite(s.name))
+      throw new AssetFormatError(`${what}: the name is one of the body's own sites`);
+    if (seen.has(s.name)) throw new AssetFormatError(`${what}: given twice`);
+    seen.add(s.name);
+    if (!channels.has(s.channel))
+      throw new AssetFormatError(`${what}: channel ${String(s.channel)} is not one the core knows`);
+    if (!Number.isInteger(s.vertex) || s.vertex < 0)
+      throw new AssetFormatError(`${what}: vertex ${String(s.vertex)} is not an index`);
+    if (!(s.depth > 0 && s.depth <= PIERCING_DEPTH_MAX))
+      throw new AssetFormatError(
+        `${what}: depth ${String(s.depth)} is outside (0, ${PIERCING_DEPTH_MAX}]`,
+      );
   }
 }
 
@@ -1050,6 +1114,7 @@ export function parseHumanoidAssets(
       throw new AssetFormatError("the adult anatomy pack was built for a different body pack");
     }
     checkAdultCoatRegions(a.anatomy?.coatRegions ?? [], manifest.vertexCount);
+    checkAdultPiercingSites(a.anatomy);
     for (const m of a.modifiers) modifiers.set(m.id, m);
   }
   // Merging also orders tasks by sortOrder; the manifest keeps upstream's file order.

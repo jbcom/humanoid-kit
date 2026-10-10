@@ -389,6 +389,14 @@ interface BodyArtRecipe {
   - a barbell: a ball at each of its `ends`, seated on the skin at placement
     (`barbellEnds`), the bar bending through the hole's middle.
 
+  The adult anatomy's sites are the adult pack's (`anatomy.piercingSites`,
+  `AdultPiercingSiteSpec`): `name` (a recipe's `Piercing.site`, not one of
+  `PIERCING_SITES`), `vertex` (a detail-lattice vertex), `channel` and `depth`
+  (metres, at most `PIERCING_DEPTH_MAX`), checked when the pack is parsed.
+  `adultPiercingSite(assets, name)` finds one. `placeBodyArt` places one through
+  its `adultSite` argument, which `HumanoidModel.evaluate` gives for a figure
+  drawn with the adult surface; otherwise it refuses with a `RangeError`.
+
   `<Humanoid>` draws each as a skinned mesh, `METAL_REFLECTANCE[metal]` at
   `JEWELLERY_ROUGHNESS`, skinned rigidly by the site vertex's bones, so it
   follows the posed skin. Garments, hair and the skin hide it as depth does. A
