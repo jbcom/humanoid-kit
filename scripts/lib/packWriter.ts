@@ -11,6 +11,7 @@ import { gzipSync } from "node:zlib";
 import sharp from "sharp";
 import type { BodyOcclusion, BodyOcclusionEntry } from "../../src/format/assetFormat.ts";
 import type { CompiledAsset } from "./compileAsset.ts";
+import { packTexture, type TextureRecord } from "./textureSizing.ts";
 
 type Range = { offset: number; byteLength: number };
 
@@ -35,27 +36,30 @@ export interface AttachmentEntry<Extra extends string = never>
 export const sha256 = (buf: Uint8Array) => createHash("sha256").update(buf).digest("hex");
 
 export interface TextureOptions {
-  /** Longest edge shipped; larger sources are scaled down, smaller ones are kept. */
-  max?: number;
+  /**
+   * The pack's default longest edge; a texture that needs more at its closest
+   * QA framing gets more (`scripts/lib/textureSizing.ts`), and a smaller source
+   * is kept at its size.
+   */
+  floor?: number;
   /** WebP quality, 1-100. */
   quality?: number;
   /** WebP quality of normal maps (files whose name ends `_normal.webp`), default `quality`. */
   normalQuality?: number;
 }
 
-/** Longest texture edge shipped. On-screen, an eye or a mouth never needs more. */
-const TEXTURE_MAX = 1024;
+/** The default longest texture edge: an eye or a mouth needs more only at a close framing. */
+const TEXTURE_FLOOR = 1024;
 
 /**
  * Encodes a texture for the web: WebP at quality 88 with lossless alpha (the
- * eye's cornea is cut by its alpha, which must not blur), at most
- * TEXTURE_MAX pixels on a side. Output is deterministic for a sharp version.
+ * eye's cornea is cut by its alpha, which must not blur), at most `edge`
+ * pixels on a side. Output is deterministic for a sharp version.
  */
-async function writeTexture(src: string, dest: string, options: TextureOptions): Promise<void> {
-  const max = options.max ?? TEXTURE_MAX;
+async function writeTexture(src: string, dest: string, edge: number, options: TextureOptions) {
   const quality = options.quality ?? 88;
   await sharp(src)
-    .resize({ width: max, height: max, fit: "inside", withoutEnlargement: true })
+    .resize({ width: edge, height: edge, fit: "inside", withoutEnlargement: true })
     .webp({
       quality: dest.endsWith("_normal.webp") ? (options.normalQuality ?? quality) : quality,
       alphaQuality: 100,
@@ -64,17 +68,42 @@ async function writeTexture(src: string, dest: string, options: TextureOptions):
     .toFile(dest);
 }
 
-/** Writes the attachments' textures, replacing any left from an earlier pack. */
+/** What sizing a texture reads beyond the asset: the body it binds to and where its sources lie. */
+export interface TextureSizingContext {
+  /** The body's base positions, metres. */
+  base: Float32Array;
+  /** The system assets directory the sources lie in. */
+  systemDir: string;
+}
+
+/**
+ * Writes the attachments' textures, each sized and sourced by
+ * `scripts/lib/textureSizing.ts`, replacing any left from an earlier pack;
+ * returns what was decided for each, for the pack's PROVENANCE.md.
+ */
 export async function writeAttachmentTextures(
   dataDir: string,
   assets: readonly CompiledAsset[],
+  context: TextureSizingContext,
   options: TextureOptions = {},
-): Promise<void> {
+): Promise<TextureRecord[]> {
   for (const f of fs.readdirSync(dataDir))
     if (/\.(png|jpe?g|webp)$/i.test(f)) fs.rmSync(path.join(dataDir, f));
+  const records: TextureRecord[] = [];
   for (const a of assets)
-    for (const [src, name] of a.textures)
-      await writeTexture(src, path.join(dataDir, name), options);
+    for (const [source, name] of a.textures) {
+      const { record } = await packTexture({
+        asset: a,
+        source,
+        dest: path.join(dataDir, name),
+        floor: options.floor ?? TEXTURE_FLOOR,
+        base: context.base,
+        systemDir: context.systemDir,
+        encode: (src, dest, edge) => writeTexture(src, dest, edge, options),
+      });
+      records.push(record);
+    }
+  return records;
 }
 
 /**

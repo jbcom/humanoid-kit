@@ -27,10 +27,14 @@ read by `src/format/assetFormat.ts`. Every binary ships gzipped (`*.bin.gz`),
 because GitHub Pages and many hosts serve `.bin` files uncompressed; the loader
 decodes them with the platform's `DecompressionStream`. Decoded, they are
 little-endian, and `body.bin` and `attachments.bin` are 4-byte aligned, so
-typed-array views need no copies. Textures ship as WebP (at most 1024 px, alpha
-lossless; the hair strand maps use lossy alpha, since a strand's edge moving by a
-level is invisible and lossless alpha is most of a curly style's size). All
-lengths are in metres.
+typed-array views need no copies. Textures ship as WebP (alpha lossless; the
+hair strand maps use lossy alpha, since a strand's edge moving by a level is
+invisible and lossless alpha is most of a curly style's size). Each is sized
+by the texel density its closest QA framing needs on the figure
+(`scripts/lib/textureSizing.ts`, docs/evidence/upscale-inventory.md): its
+pack's default (1024 px, or the source's own size if smaller), more where it
+needs more, up to its source's size and at most 2048 px, and never upscaled
+(docs/evidence/upscale.md). All lengths are in metres.
 
 | Pack | Files | Contents |
 | --- | --- | --- |
@@ -107,8 +111,9 @@ textures, arrives with the first stage. A garment is an attachment without
 baked occlusion: the same bindings (three base vertices, weights and an offset
 per vertex, per-axis scale references) and mesh, plus `delete_verts`, a
 category (`kind`, below) and the asset's tags. The packer
-(`scripts/pack-clothing.ts`) packs diffuse and normal maps as WebP at most
-1024 px on a side (2.1 MB for all nineteen), and reads the same `.mhclo`
+(`scripts/pack-clothing.ts`) packs diffuse and normal maps as WebP, each sized
+by what a clothed figure's framing needs (1024 to 2048 px on a side; 3.5 MB
+for all nineteen), and reads the same `.mhclo`
 syntax as the attachments: the system shoes write `material` and
 `vertexboneweights_file` between `verts` and its data, so a keyword line does
 not end a vertex or `delete_verts` block, and only the other section keyword
@@ -1236,10 +1241,20 @@ a coloured texture; everything in the pure core is testable in Node.
   hair card's cut edge is a hard line, and MakeHuman's hairlines read as a helmet
   or a wig, and a screen-space dither of it reads as a dot grid, as does the
   2x2 coverage pattern alpha-to-coverage gives a partial alpha on hardware
-  (found on a real GPU after software renders looked fine). So nothing about a
-  hairline or a fin is a per-pixel or partial-coverage decision: every one is a
-  yes or no per strand cell of the card's own surface, which needs neither
-  blending nor MSAA and looks the same on every GPU. The hairline
+  (found on a real GPU after software renders looked fine). So no hairline or
+  fin decision is made per pixel: every one is a yes or no per strand cell of
+  the card's own surface, which holds still as the head moves and looks the
+  same on every GPU. A cut that stops there is aliased, though: a strand cell is
+  about 2 px by 6 px at a portrait's scale, and a hard discard draws its ends as
+  stair-steps. So each cell's *own edge* is smoothed analytically: the share of a
+  1.5 px box footprint (`HAIR_EDGE_PX`) that falls on kept cells, from the
+  fragment's distance to the cell's edges over their screen-space derivative,
+  and each strand's end inside a cell ramps the same way over its thinning
+  field's derivative. Under MSAA that coverage goes to alpha-to-coverage; it is
+  partial only within that band, so the 2x2 pattern never fills a region.
+  Without MSAA the fragment's own cell is cut at a half, as before. A box 1 px
+  wide would still leave an empty and a whole pixel either side of an edge on a
+  pixel boundary; 1.5 px never does. The hairline
   thins strand by strand, in the texture's own coordinates scaled to metres by a
   baked per-vertex `uvScale` (a strand is 1.5 mm wherever its card's island sits
   in the atlas). Where the fade is low the thinning follows the painted hair:
