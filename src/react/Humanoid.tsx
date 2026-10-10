@@ -1212,6 +1212,8 @@ export function Humanoid({
     if (shown && evaluated) feedAffordances(shown, evaluated);
     return () => affordances?.attach(null);
   }, [affordances, feedAffordances]);
+  // The mouth's opening is applied in a frame: a figure drawn only on demand is asked for one.
+  useEffect(() => affordances?.onJawChange(invalidate), [affordances, invalidate]);
   // Where the landmarks are held, which the affordances' frames need: the figure is not
   // settled until they have arrived.
   useEffect(() => {
@@ -1231,6 +1233,9 @@ export function Humanoid({
     return () => {
       live = false;
       end();
+      // Another client's (or no) figure is coming: its anchors are not these, so until its own
+      // arrive the frames are null rather than these anchors read on its figure.
+      affordances.setAnchors(null);
     };
   }, [client, affordances, ready, report, settle]);
   // The hip fold (docs/ARCHITECTURE.md, "The hip fold") is solved for the figure when a

@@ -90,6 +90,7 @@ export class HumanoidAffordances {
   private readonly clipChannels = Array.from({ length: CLIP_CHANNELS }, () => emptyChannel());
   private readonly clipList: Channel[] = [];
   private readonly listeners = new Set<() => void>();
+  private readonly jawListeners = new Set<() => void>();
   /** What a read works from, set by `prepare` (held in place, so a read allocates nothing). */
   private readonly now: {
     figure: LiveFigure | null;
@@ -195,8 +196,20 @@ export class HumanoidAffordances {
    */
   set(id: string, change: AffordanceChange): AffordanceState {
     const next = this.states.set(id, change);
-    if (this.byId.get(id)?.channel === "oral" && "opening" in change) this.jawVersion++;
+    if (this.byId.get(id)?.channel === "oral" && "opening" in change) {
+      this.jawVersion++;
+      for (const l of this.jawListeners) l();
+    }
     return next;
+  }
+
+  /**
+   * Calls `listener` whenever the mouth's opening is set, so a figure drawn only
+   * on demand (`frameloop="demand"`) is drawn again; returns the call that stops it.
+   */
+  onJawChange(listener: () => void): () => void {
+    this.jawListeners.add(listener);
+    return () => this.jawListeners.delete(listener);
   }
 
   /** How open the mouth is, 0 to 1: the most any of the figure's oral apertures is. */

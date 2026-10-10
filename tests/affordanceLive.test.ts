@@ -229,6 +229,15 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
     expect(clip.uniforms.hkClipOrigin.value[0]?.equals(origin as Vector3)).toBe(true);
     const mouth = h.channel("mouth");
     expect(mouth?.depth).toBeGreaterThan(0);
+    // A figure drawn on demand is told the mouth changed, so it draws the opened jaw.
+    let told = 0;
+    const stop = h.onJawChange(() => told++);
+    h.set("mouth", { opening: 0.5 });
+    h.set("ear-canal.L", { opening: 0.5 });
+    expect(told).toBe(1);
+    stop();
+    h.set("mouth", { opening: 0.2 });
+    expect(told).toBe(1);
     // Gone: the clip holds nothing, so a held prop is drawn whole, not cut at a mouth that is not there.
     h.attach(null);
     expect(clip.uniforms.hkClipCount.value).toBe(0);
