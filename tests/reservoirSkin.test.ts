@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { posedSurface } from "../src/foundation/posed.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import {
+  evaluatedFold,
   evaluatedSkin,
   PUSH_STARTS,
   PUSHED_FULLY,
@@ -17,6 +18,7 @@ import {
   skinOfEvaluation,
 } from "../src/model/reservoirSkin.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { FOLD_ROW_TEXELS, type SurfaceFold } from "../src/rig/hipFold.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
@@ -145,7 +147,11 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
         [0],
       ),
     ];
-    const skinning: ReservoirSkinning = { owner: Int16Array.from([0]), roots };
+    const skinning: ReservoirSkinning = {
+      owner: Int16Array.from([0]),
+      roots,
+      loops: [Uint32Array.of(0)],
+    };
     const at = (d: number) => {
       const s = evaluatedSkin(skin, skinning, Float32Array.from([d])) ?? skin;
       return row(s, 0);
@@ -163,5 +169,48 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     ]);
     // Not pushed far enough to take any: the topology's arrays themselves.
     expect(evaluatedSkin(skin, skinning, Float32Array.from([PUSH_STARTS / 2]))).toBeNull();
+  });
+
+  it("moves a pushed reservoir vertex's hip fold to its root's as its weights, and leaves the rest as they were", () => {
+    // Render vertices 0 and 1 are the loop (rows 0 and 1, the left hip's and the right's);
+    // 2 is a ring copy with a row of its own, 3 a cap vertex the fold left; 4 is skin elsewhere.
+    const row = FOLD_ROW_TEXELS * 4;
+    const data = new Float32Array(3 * row);
+    for (let r = 0; r < 3; r++)
+      for (let i = 0; i < row; i++) data[r * row + i] = (r + 1) * 0.01 + i * 1e-5;
+    data[3] = 1;
+    data[row + 3] = 0;
+    data[2 * row + 3] = 0.2;
+    const fold: SurfaceFold = { slot: Float32Array.from([0, 1, 2, -1, -1]), rows: 3, data };
+    const skinning: ReservoirSkinning = {
+      owner: Int16Array.from([-1, -1, 0, 0, -1]),
+      roots: [{ index: new Uint16Array(4), weight: Float32Array.from([1, 0, 0, 0]) }],
+      loops: [Uint32Array.of(0, 1)],
+    };
+    // Nothing pushed far enough: the fold itself.
+    expect(evaluatedFold(fold, skinning, new Float32Array(5).fill(PUSH_STARTS / 2))).toBe(fold);
+    const half = PUSH_STARTS + (PUSHED_FULLY - PUSH_STARTS) / 2;
+    const out = evaluatedFold(fold, skinning, Float32Array.from([0, 0, PUSHED_FULLY, half, 0]));
+    const rowOf = (v: number) => {
+      const r = out.slot[v] as number;
+      return out.data.subarray(r * row, (r + 1) * row);
+    };
+    // The loop and the skin elsewhere keep their rows.
+    expect(out.slot[0]).toBe(0);
+    expect(out.slot[1]).toBe(1);
+    expect(out.slot[4]).toBe(-1);
+    expect(Array.from(out.data.subarray(0, 3 * row))).toEqual(Array.from(data));
+    // The root's row: the loop's mean, and its side the mean of their sides.
+    const root = Array.from({ length: row }, (_, i) =>
+      i === 3 ? 0.5 : ((data[i] as number) + (data[row + i] as number)) / 2,
+    );
+    // Pushed all the way, the ring copy has the root's row.
+    const full = rowOf(2);
+    for (let i = 0; i < row; i++) expect(full[i]).toBeCloseTo(root[i] as number, 6);
+    // Halfway, the cap vertex the fold left has half the root's, and the root's side.
+    const e = rootShare(half);
+    const halfway = rowOf(3);
+    for (let i = 0; i < row; i++)
+      expect(halfway[i]).toBeCloseTo(i === 3 ? 0.5 : e * (root[i] as number), 6);
   });
 });

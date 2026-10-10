@@ -78,6 +78,7 @@ import { areolaStretch } from "../surface/regions/torso.ts";
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 import {
+  evaluatedFold,
   evaluatedSkin,
   type ReservoirSkinning,
   reservoirSkinningOf,
@@ -1920,7 +1921,7 @@ export class HumanoidModel {
     recipe: Recipe,
     signals: Readonly<Record<string, number>> = {},
   ): Generator<void, { surface: "base" | "adult"; fold: SurfaceFold }> {
-    const control = this.evaluateControl(recipe, signals);
+    const { control, detail } = this.evaluateShape(recipe, signals);
     // A figure's fold depends on its shape alone: the same shape (an edit undone, a pose changed) is not solved twice.
     const key = controlHash(control);
     let fold = this.hipFolds.get(key);
@@ -1941,10 +1942,14 @@ export class HumanoidModel {
       this.hipFolds.delete(this.hipFolds.keys().next().value as string);
     const adult = isAdult(recipe) ? this.adultBodySurface() : null;
     const mesh = adult ? adult.part.mesh : this.body.mesh;
-    return {
-      surface: adult ? "adult" : "base",
-      fold: surfaceFold(fold, mesh.stencil, mesh.renderToSurface),
-    };
+    const onSurface = surfaceFold(fold, mesh.stencil, mesh.renderToSurface);
+    // An organ the detail draws out of a reservoir moves with where it is rooted, its fold as its weights (`evaluatedFold`).
+    const displacement =
+      adult && detail.length ? this.detailDisplacement(detail, control) : undefined;
+    if (!adult || !displacement) return { surface: adult ? "adult" : "base", fold: onSurface };
+    const pushed = new Float32Array(mesh.renderToSurface.length);
+    this.evaluatePart(adult.part, control, displacement, pushed);
+    return { surface: "adult", fold: evaluatedFold(onSurface, adult.skinning, pushed) };
   }
 
   private adultBodySurface() {

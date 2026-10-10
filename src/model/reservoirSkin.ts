@@ -22,6 +22,7 @@
  * organ) keeps its topology's weights, the very arrays.
  */
 import type { SurfaceMesh } from "../build/surfaceMesh.ts";
+import { FOLD_ROW_TEXELS, type SurfaceFold } from "../rig/hipFold.ts";
 
 /** A surface's skin weights: four bones and four weights per render vertex. */
 export interface SkinWeights {
@@ -47,6 +48,8 @@ export interface ReservoirSkinning {
   owner: Int16Array;
   /** Per reservoir, its root's four bones and weights (`rootSkin`). */
   roots: readonly { index: Uint16Array; weight: Float32Array }[];
+  /** Per reservoir, its loop's render vertices: where the organ meets the body. */
+  loops: readonly Uint32Array[];
 }
 
 /** A built surface's reservoirs as `evaluatedSkin` reads them; none without a lattice. */
@@ -60,14 +63,15 @@ export function reservoirSkinningOf(mesh: SurfaceMesh): ReservoirSkinning {
     for (const v of r.loopVertices) loopOf[v] = s;
   });
   const owner = Int16Array.from(mesh.renderToSurface, (v) => bySurface[v] as number);
-  const roots = reservoirs.map((_, s) => {
+  const loops = reservoirs.map((_, s) => {
     const loop: number[] = [];
     mesh.renderToSurface.forEach((v, r) => {
       if (loopOf[v] === s) loop.push(r);
     });
-    return rootSkin(mesh, loop);
+    return Uint32Array.from(loop);
   });
-  return { owner, roots };
+  const roots = loops.map((loop) => rootSkin(mesh, loop));
+  return { owner, roots, loops };
 }
 
 /**
@@ -195,4 +199,72 @@ export function evaluatedSkin(
     fourOf(bones, weights, out.skinIndex, out.skinWeight, v * 4);
   }
   return out;
+}
+
+/**
+ * The hip fold of a surface (`surfaceFold`) for an evaluation that pushed its
+ * render vertices `pushed` metres out of the skin, by the rule its weights follow
+ * (`evaluatedSkin`): each reservoir vertex's row blended toward its root's by
+ * `rootShare`, the root's being the mean of its loop's rows (a loop vertex the
+ * fold leaves counting as none). A reservoir's rings and cap carry the fold of
+ * the disc of skin they were copied from; drawn out into an organ, each side of
+ * it took its own share of the belly's press and the thigh's push, and the organ
+ * was pulled out of shape. The fold itself when nothing is pushed far enough.
+ */
+export function evaluatedFold(
+  fold: SurfaceFold,
+  skinning: ReservoirSkinning,
+  pushed: Float32Array,
+): SurfaceFold {
+  const row = FOLD_ROW_TEXELS * 4;
+  const { owner, loops } = skinning;
+  /** Per reservoir, its root's row (lazily), or null while not needed. */
+  const roots: (Float32Array | null)[] = loops.map(() => null);
+  const rootOf = (s: number): Float32Array => {
+    const known = roots[s];
+    if (known) return known;
+    const loop = loops[s] as Uint32Array;
+    const sum = new Float32Array(row);
+    let held = 0;
+    for (const v of loop) {
+      const r = fold.slot[v] as number;
+      if (r < 0) continue;
+      held++;
+      for (let i = 0; i < row; i++)
+        sum[i] = (sum[i] as number) + (fold.data[r * row + i] as number);
+    }
+    // The side (the first texel's fourth place) is a mean of the rows there are; the values count the rest as none.
+    const side = held ? (sum[3] as number) / held : 0.5;
+    for (let i = 0; i < row; i++) sum[i] = (sum[i] as number) / Math.max(1, loop.length);
+    sum[3] = side;
+    roots[s] = sum;
+    return sum;
+  };
+  const blended: { v: number; e: number; s: number }[] = [];
+  for (let v = 0; v < owner.length; v++) {
+    const s = owner[v] as number;
+    if (s < 0) continue;
+    const e = rootShare(pushed[v] as number);
+    if (e > 0) blended.push({ v, e, s });
+  }
+  if (!blended.length) return fold;
+  // Each blended vertex its own row after the surface's: the blend is the vertex's, not its row's.
+  const data = new Float32Array((fold.rows + blended.length) * row);
+  data.set(fold.data.subarray(0, fold.rows * row));
+  const slot = Float32Array.from(fold.slot);
+  blended.forEach(({ v, e, s }, i) => {
+    const at = (fold.rows + i) * row;
+    const own = fold.slot[v] as number;
+    const root = rootOf(s);
+    for (let k = 0; k < row; k++)
+      data[at + k] =
+        (1 - e) * (own < 0 ? 0 : (fold.data[own * row + k] as number)) + e * (root[k] as number);
+    // A vertex the fold left reads the root's side; one it moved, the two sides mixed as the rows are.
+    data[at + 3] =
+      own < 0
+        ? (root[3] as number)
+        : (1 - e) * (fold.data[own * row + 3] as number) + e * (root[3] as number);
+    slot[v] = fold.rows + i;
+  });
+  return { slot, rows: fold.rows + blended.length, data };
 }

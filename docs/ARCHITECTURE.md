@@ -1493,7 +1493,18 @@ consumer reads them through `skinOfEvaluation`: the body geometry's attributes
 (written per evaluation, and so the coat's and `followDualSkinning`'s), the posed
 body the invariants measure, the affordances' landmarks and piercing anchors. The
 hip fold's solve reads the control mesh's weights, not the adult surface's, and is
-not affected; its per-vertex flexion is read from the evaluated weights.
+not affected. Its playback reads no weights (the hip on a vertex's side, `foldSides`,
+"The hip fold"), but an organ drawn out of a reservoir carried, as its weights did,
+the fold of the 30 mm disc of skin it was copied from: each side of it took its own
+share of the belly's press, and on the smoke tier the heavy woman's `seated`
+crease went from 1139 inverted triangles to 1647 and 381 folded edges to 695, the
+elder woman's squashed triangles 299 → 567. So the fold follows the weights' rule
+(`evaluatedFold`, 2026-10-10): each reservoir vertex's row is blended toward its
+root's (the mean of its loop's rows) by the same `rootShare`, the blended vertices
+taking rows of their own after the surface's. It is per evaluation, as the weights
+are: `HumanoidModel.hipFold` finds the push with the fold, and `<Humanoid>` asks
+again when the evaluated weights change. The heavy woman's row is then 991 and 427,
+the elder woman's 280 squashed.
 
 ## Scalp hair (milestone 4)
 

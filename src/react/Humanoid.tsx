@@ -1271,7 +1271,14 @@ export function Humanoid({
     const rest = restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads);
     return folds(hipFlexion(rest, rotations));
   }, [figure, ready, rotations]);
-  const figureKey = useMemo(() => (figure ? controlKey(figure.control) : ""), [figure]);
+  // The fold follows the shape, and an organ's push too (`evaluatedFold`), which the evaluated weights follow.
+  const figureKey = useMemo(
+    () =>
+      figure
+        ? `${controlKey(figure.control)}/${figure.skin ? controlKey(figure.skin.skinWeight) : ""}`
+        : "",
+    [figure],
+  );
   /** Ends the hold on the settle that the fold's fade-in keeps, while it fades. */
   const fading = useRef<(() => void) | null>(null);
   /** Counts the folds that have faded in whole: the meshes' bounds follow each (`shape`). */
