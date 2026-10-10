@@ -484,6 +484,8 @@ export class HumanoidModel {
   private readonly hipFolds = new Map<string, HipFold>();
   /** Each body surface's `baseRenderVertices`, found on first use. */
   private readonly baseRender = new Map<"base" | "adult", Int32Array>();
+  /** Each body surface's `renderWeld`, found on first use. */
+  private readonly weldOf = new Map<"base" | "adult", Uint32Array>();
   /** The adult surface, built on first use (undefined: not yet; null: this pack has none). */
   private adultBody:
     | { part: Part; edges: Uint32Array; faceTriangles: Uint32Array; topology: AdultSurfaceTopology }
@@ -1818,6 +1820,41 @@ export class HumanoidModel {
     });
     this.baseRender.set(surface, out);
     return out;
+  }
+
+  /**
+   * Each render vertex of a body surface's representative among those a UV
+   * seam splits from one surface vertex: the lowest index of them. Two render
+   * vertices share one exactly when they are one point of the surface, in
+   * every shape and pose, so this is the surface's connectivity, fixed by the
+   * topology (`PosedBody.weld` finds the same by position).
+   */
+  renderWeld(surface: "base" | "adult" = "base"): Uint32Array {
+    const known = this.weldOf.get(surface);
+    if (known) return known;
+    const mesh = surface === "adult" ? this.adultBodySurface()?.part.mesh : this.body.mesh;
+    if (!mesh) throw new RangeError("there is no adult surface to weld");
+    const first = new Map<number, number>();
+    const out = new Uint32Array(mesh.renderToSurface.length);
+    mesh.renderToSurface.forEach((s, r) => {
+      const known = first.get(s);
+      if (known === undefined) first.set(s, r);
+      out[r] = known ?? r;
+    });
+    this.weldOf.set(surface, out);
+    return out;
+  }
+
+  /**
+   * A body surface's triangles over its render vertices, as its topology has
+   * them (`topology().body.index`, `adultSurface().index`), without building
+   * the rest of the topology.
+   */
+  bodyIndex(surface: "base" | "adult" = "base"): Uint32Array {
+    if (surface === "base") return this.mountedBodyIndex;
+    const adult = this.adultSurface();
+    if (!adult) throw new RangeError("there is no adult surface to index");
+    return adult.index;
   }
 
   /**
