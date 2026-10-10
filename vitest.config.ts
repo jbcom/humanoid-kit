@@ -63,6 +63,14 @@ export default defineConfig({
     projects: [
       {
         extends: true,
+        // Vitest empties `mainFields` for its ssr environment so Node can run what it
+        // externalizes, which resolves a package with no `exports` map (fiber, drei,
+        // maath, troika, meshline, three-mesh-bvh) to its CommonJS `main`. Those
+        // `require("three")`: three's deprecated CJS build loads beside the ESM one
+        // the library imports, so every class exists twice. Asking for `module` first
+        // resolves their ESM builds; Vitest inlines any that Node cannot import
+        // natively. tests/threeSingleCopy.test.ts.
+        environments: { ssr: { resolve: { mainFields: ["module", "main"] } } },
         test: {
           name: "unit",
           include: ["tests/**/*.test.ts"],
