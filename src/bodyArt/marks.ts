@@ -20,6 +20,7 @@
 
 import {
   haemoglobinRatio,
+  lipAlbedo,
   melaninDensity,
   melaninDensityAlbedo,
   type Rgb,
@@ -116,6 +117,14 @@ export interface MarkRatios {
   dark: Rgb[];
   /** `PORT_WINE_HAEMOGLOBIN` steps of haemoglobin, over the skin (the haemoglobin channel at 1). */
   blood: Rgb;
+  /**
+   * The skin's and the lips' albedo, and a depigmented lip's over the lip's
+   * (`vitiligoLipAlbedo`): where the lips' layer mixes in, vitiligo takes each
+   * of the two to its own depigmented colour.
+   */
+  skin: Rgb;
+  lip: Rgb;
+  lipLight: Rgb;
 }
 
 /**
@@ -144,15 +153,43 @@ export function vitiligoAlbedo(tone: SkinTone): Rgb {
   return melaninDensityAlbedo(tone, residual / own, tone.haemoglobin);
 }
 
-export function markRatios(tone: SkinTone): MarkRatios {
+/**
+ * A depigmented lip at this tone, `depth` the lips' (`lipAlbedo`): the lip of
+ * skin carrying vitiligo's residual melanin, the lightest measured skin's
+ * where that is lighter still. Lips take their colour from the skin's
+ * lightness and the blood beneath, so a lip that loses its melanin pales to
+ * pink; the skin's own ratio would scale the lip's colour channel by channel
+ * and, on deep skin, turned it lavender on the sheets.
+ */
+export function vitiligoLipAlbedo(tone: SkinTone, depth: number): Rgb {
+  if (tone.override) return lipAlbedo(tone, depth);
+  const residual =
+    VITILIGO_RESIDUAL * melaninDensity({ ...tone, melanin: VITILIGO_COHORT_MELANIN });
+  if (melaninDensity(tone) <= residual) return lipAlbedo(tone, depth);
+  let lo = 0;
+  let hi = Math.min(1, Math.max(0, tone.melanin));
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (melaninDensity({ ...tone, melanin: mid }) < residual) lo = mid;
+    else hi = mid;
+  }
+  return lipAlbedo({ ...tone, melanin: (lo + hi) / 2 }, depth);
+}
+
+export function markRatios(tone: SkinTone, lips = 0.5): MarkRatios {
   const skin = skinAlbedo(tone);
+  const lip = lipAlbedo(tone, lips);
   const over = (c: Rgb) => c.map((x, k) => x / Math.max(1e-6, skin[k] as number)) as Rgb;
+  const overLip = vitiligoLipAlbedo(tone, lips).map(
+    (x, k) => x / Math.max(1e-6, lip[k] as number),
+  ) as Rgb;
   const blood = haemoglobinRatio(tone, 1).map((r) => r ** PORT_WINE_HAEMOGLOBIN) as Rgb;
   const dark = Array.from({ length: MARK_DARK_STEPS }, (_, i) =>
     over(deeperAlbedo(tone, (i / (MARK_DARK_STEPS - 1)) ** 2)),
   );
-  if (tone.override) return { light: [1, 1, 1], dark, blood };
-  return { light: over(vitiligoAlbedo(tone)), dark, blood };
+  const pair = { skin, lip, lipLight: overLip };
+  if (tone.override) return { light: [1, 1, 1], dark, blood, ...pair };
+  return { light: over(vitiligoAlbedo(tone)), dark, blood, ...pair };
 }
 
 /** The skin's albedo under a mark's channels (the reference the shader is held to). */

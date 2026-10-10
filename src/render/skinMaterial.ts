@@ -44,7 +44,7 @@ import {
   STOP_COUNT,
   STOP_TABLE_WIDTH,
 } from "../surface/layers.ts";
-import { NAIL_GLOSS_LAYER, SKIN_LAYERS } from "../surface/regions/index.ts";
+import { LIPS_LAYER, NAIL_GLOSS_LAYER, SKIN_LAYERS } from "../surface/regions/index.ts";
 import {
   RIDGE_ACROSS,
   RIDGE_ALONG,
@@ -536,6 +536,9 @@ uniform vec3 hkInkKeep;
 uniform vec3 hkMarkLight;
 uniform vec3 hkMarkDark[ ${MARK_DARK_STEPS} ];
 uniform vec3 hkMarkBlood;
+uniform vec3 hkMarkSkin;
+uniform vec3 hkMarkLip;
+uniform vec3 hkMarkLipLight;
 vec3 hkSrgbToLinear( vec3 c ) {
 	return mix( c / 12.92, pow( ( c + 0.055 ) / 1.055, vec3( 2.4 ) ), step( vec3( 0.04045 ), c ) );
 }
@@ -557,7 +560,15 @@ vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
 	vec4 mark = texture( hkBodyArt, vec3( uv, 1.0 ) );
 	hkMarkSurface = mark.ba * skin;
 	float melanin = skin * ( mark.r * 255.0 - ${MARK_NEUTRAL.toFixed(1)} ) / 127.0;
-	c *= pow( hkMarkLight, vec3( max( - melanin, 0.0 ) ) ) * hkMarkDarkRatio( melanin ) * pow( hkMarkBlood, vec3( mark.g * skin ) );
+	// Where the lips' layer mixes in (at its mask times its strength), vitiligo
+	// takes the skin and the lip each to its own depigmented colour.
+	#ifdef HK_LIPS
+		float lip = clamp( hkFields( HK_LIPS, uv ).x, 0.0, 1.0 ) * hkHeader( HK_LIPS ).x;
+		vec3 light = mix( hkMarkSkin * hkMarkLight, hkMarkLip * hkMarkLipLight, lip ) / max( mix( hkMarkSkin, hkMarkLip, lip ), vec3( 1e-4 ) );
+	#else
+		vec3 light = hkMarkLight;
+	#endif
+	c *= pow( light, vec3( max( - melanin, 0.0 ) ) ) * hkMarkDarkRatio( melanin ) * pow( hkMarkBlood, vec3( mark.g * skin ) );
 	vec4 pigment = texture( hkBodyArt, vec3( uv, 0.0 ) );
 	vec4 ink = vec4( hkSrgbToLinear( pigment.rgb ) * pigment.a, pigment.a );
 	#ifdef HK_TATTOO_LAYERS
@@ -569,10 +580,15 @@ vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
 #endif
 `;
 
-/** Which of `layers` is the nail plate's (`NAIL_GLOSS_LAYER`, whose mask is the plate), for body art to leave alone. */
-function nailPlateDefine(layers: readonly SkinLayer[]): string {
-  const l = layers.findIndex((layer) => layer.id === NAIL_GLOSS_LAYER.id);
-  return l < 0 ? "" : `#define HK_NAIL_PLATE ${l}\n`;
+/**
+ * Which of `layers` body art treats apart: the nail plate's (`NAIL_GLOSS_LAYER`,
+ * whose mask is the plate), which it leaves alone, and the lips'
+ * (`LIPS_LAYER`), which vitiligo pales to a depigmented lip.
+ */
+function bodyArtLayerDefines(layers: readonly SkinLayer[]): string {
+  const nail = layers.findIndex((layer) => layer.id === NAIL_GLOSS_LAYER.id);
+  const lips = layers.findIndex((layer) => layer.id === LIPS_LAYER.id);
+  return `${nail < 0 ? "" : `#define HK_NAIL_PLATE ${nail}\n`}${lips < 0 ? "" : `#define HK_LIPS ${lips}\n`}`;
 }
 
 const BODY_ART_COLOUR = `
@@ -767,6 +783,10 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkMarkLight: { value: Vector3 };
     hkMarkDark: { value: Vector3[] };
     hkMarkBlood: { value: Vector3 };
+    /** The skin's and the lips' albedo, and a depigmented lip's over the lip's (`markRatios`). */
+    hkMarkSkin: { value: Vector3 };
+    hkMarkLip: { value: Vector3 };
+    hkMarkLipLight: { value: Vector3 };
   };
   private readonly stopTable: Float32Array;
   private dualBones: DualBones | null = null;
@@ -882,6 +902,9 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkMarkLight: { value: new Vector3() },
       hkMarkDark: { value: Array.from({ length: MARK_DARK_STEPS }, () => new Vector3(1, 1, 1)) },
       hkMarkBlood: { value: new Vector3() },
+      hkMarkSkin: { value: new Vector3(1, 1, 1) },
+      hkMarkLip: { value: new Vector3(1, 1, 1) },
+      hkMarkLipLight: { value: new Vector3(1, 1, 1) },
     };
     setChannels(this.hkUniforms.hkChannel.value, plan);
     this.normalMap = poreNormalMap();
@@ -914,12 +937,15 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     this.hkUniforms.hkInkThrough.value.fromArray(ink.through);
     this.hkUniforms.hkInkVeil.value.fromArray(ink.veil);
     this.hkUniforms.hkInkKeep.value.fromArray(ink.keep);
-    const marks = markRatios(a.tone);
+    const marks = markRatios(a.tone, a.lips);
     this.hkUniforms.hkMarkLight.value.fromArray(marks.light);
     marks.dark.forEach((r, i) => {
       this.hkUniforms.hkMarkDark.value[i]?.fromArray(r);
     });
     this.hkUniforms.hkMarkBlood.value.fromArray(marks.blood);
+    this.hkUniforms.hkMarkSkin.value.fromArray(marks.skin);
+    this.hkUniforms.hkMarkLip.value.fromArray(marks.lip);
+    this.hkUniforms.hkMarkLipLight.value.fromArray(marks.lipLight);
     // Regional colour: each layer's paint from its own model (measured for lips),
     // blended in by the atlas's soft-edged masks.
     paintStopTable(this.layers, { ...a, signals: a.signals ?? {} }, this.stopTable);
@@ -962,7 +988,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${nailPlateDefine(this.layers)}${BODY_ART_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
+        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${bodyArtLayerDefines(this.layers)}${BODY_ART_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
       )
       .replace(
         "#include <color_fragment>",

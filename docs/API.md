@@ -348,7 +348,8 @@ interface BodyArtRecipe {
 - Marks (research/BODY-ART.md C2): a scar, birthmark or vitiligo patch changes
   what is in the skin. `markChannels(mark): MarkChannels` is what it puts in the
   marks page at full strength:
-  - `melanin`, signed: down toward `vitiligoAlbedo(tone)`, up by shares of
+  - `melanin`, signed: down toward `vitiligoAlbedo(tone)` (on the lips,
+    `vitiligoLipAlbedo(tone, depth)`, a depigmented lip), up by shares of
     `markMelaninSpan()`;
   - `haemoglobin`, shares of `PORT_WINE_HAEMOGLOBIN` steps;
   - a scar's `smooth` and `raise`;

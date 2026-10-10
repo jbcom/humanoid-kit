@@ -2404,8 +2404,10 @@ age.
   forearm never lands on the hip behind it. Both limits fade rather than cut:
   a hard end sliced a cheek's port-wine stain in a straight line on the
   contact sheets, where the skin curved out of reach.
-- No ink or mark acts on the nail plate, the nail-gloss layer's mask: it is
-  not skin (the sheets showed vitiligo whitening the nail beds).
+- No ink or mark acts on the nail plate, the nail-gloss layer's mask, neither
+  its colour nor its surface: it is not skin (the sheets showed vitiligo
+  whitening the nail beds). A browser test holds every mark kind and a tattoo
+  to that.
 - The ink's colour is stored sRGB-encoded so dark inks keep their precision
   in eight bits.
 - The browser tests hold the decal coordinates to the frame (orientation,
@@ -2435,6 +2437,9 @@ age.
   - The planar projection's reach had cut the sheets' café-au-lait and
     port-wine in straight lines, and its polar outline read as the UV
     island's shape round the mouth.
+- On the lips vitiligo pales the lip to a depigmented lip
+  (`vitiligoLipAlbedo`), mixed as the lips' layer mixes in. The skin's ratio
+  scaled the lip's colour channel by channel and turned deep lips lavender.
 - Marks add in the bake, so overlapping marks net out; dermal pigment is ink,
   composited under the tattoos.
 - Vitiligo's patches are seeded marks at the sites non-segmental vitiligo

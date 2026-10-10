@@ -127,6 +127,7 @@ its melanocytes and a naevus is a nest of them, whatever the skin round them.
 | Quantity | Value | Source or choice |
 | --- | --- | --- |
 | Vitiligo's residual melanin | 0.15 × the density of skin at melanin 0.15 | Krotkova 2025: patches keep 0.10–0.26 of the skin's melanin index and read 1–5 units on any skin (absolute); the cohort's tone is a CHOICE (fair European) |
+| Vitiligo on the lips | the lip of skin carrying the residual melanin (`lipAlbedo` at that tone), mixed with the depigmented skin as the lips' layer mixes in | Lips take their colour from the skin's lightness and the blood beneath (`lipAlbedo`), so a depigmented lip pales to pink. Scaling the lip by the skin's ratio turned the sheets' deep lips lavender |
 | Below the lightest measured skin | each channel's log moves with density toward the melanin-free albedo (C1) | Beer–Lambert; continuous with the measured axis |
 | Check | patch L\* ≈ 70 at every tone; ΔE\*ab 8.5 (melanin 0.1) to 12.4 (0.2), and larger on deeper skin; b\* below the skin's at fair to medium tones | Toriyama 2021 (ΔE\* mostly 9–13); Brazzelli 2008 (L\* up, b\* down) |
 | Melanin added at full (`markMelaninSpan`) | the measured axis's density span, lightest to deepest | CHOICE of scale |
