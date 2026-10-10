@@ -1508,11 +1508,14 @@ Old recipes evaluate and serialise as before.
   well, the age policy refuses a recipe that asks for it, and every other
   group's mask is cut out where it lies. (A first version drew it as a strand
   layer with the same flag on skin layers; with it moved, the layer flag had no
-  user and went.) Pubic hair is the adult pack's, like every genital-region
-  feature: its mask and its place in the stack come from the adult pack's
-  manifest (`AdultAnatomySpec`), so the core names no part of it, and it
-  appears only when the pack is loaded. The core keeps the recipe's `pubic`
-  density and the model's coverage for it, which that layer reads.
+  user and went.) Pubic hair is a coat region too (dense, up to a few
+  centimetres), adult-only by the same flag, and the adult pack's data like
+  every genital-region feature: the core holds its paint (`PUBIC_REGION`, the
+  model's `pubic` group), the pack where it grows (`AdultAnatomySpec.coatRegions`,
+  a sparse mask over base vertices, refused at parse unless it is ascending,
+  within the body, 0..1 and for a region the core has), so without the pack it
+  has no area and the core names no adult target. It takes the coat's eighth
+  and last region.
 - *Body hair costs no atlas channel.* The eight strand layers fit the stack's
   eight pages: vellus takes no channel, and each terminal layer shares one with
   layers it lies apart from (the beard's strand layers, which touched the
