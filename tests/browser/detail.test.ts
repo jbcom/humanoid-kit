@@ -322,6 +322,45 @@ describe("relief on crushed skin", () => {
       4 * bare.across,
     );
   });
+
+  it("draws a crease the bent knee compresses as a tighter groove, not a steeper one", () => {
+    // The knee's creases at their designed spacing (a 14 cm window per UV unit, three to it,
+    // 4.7 cm apart at rest), the strip squeezed until a period is drawn 10 px across. A groove
+    // that kept its 6.2 mm depth there would stand near vertical; one that keeps its depth to
+    // its width draws as the same creases designed at that spacing do: the reference is them,
+    // a sixth as deep, on skin drawn at its rest size.
+    const WINDOW = 0.14;
+    const period = (10 * view.span) / SIZE;
+    // The drawn period over the rest one: the skin's squeeze across the strip, and the share of
+    // the designed depth a groove keeping its depth to its width keeps.
+    const ratio = period / (WINDOW / CREASE_COUNT.knee);
+    const squeeze = ratio;
+    const designed: SkinLayer = {
+      ...kneeCreases,
+      paint: () => ({ strength: 1, height: creaseDepth("knee") * ratio, size: CREASE_COUNT.knee }),
+    };
+    const contrast = (image: Float32Array, bare: Float32Array) => {
+      const rows = Math.floor(((H / view.span) * SIZE) / 2) - 2;
+      let lo = Number.POSITIVE_INFINITY;
+      let hi = Number.NEGATIVE_INFINITY;
+      for (let y = SIZE / 2 - rows; y < SIZE / 2 + rows; y++)
+        for (let x = 1; x < SIZE - 1; x++) {
+          const d = (image[y * SIZE + x] as number) - (bare[y * SIZE + x] as number);
+          lo = Math.min(lo, d);
+          hi = Math.max(hi, d);
+        }
+      return hi - lo;
+    };
+    const squeezedBare = draw([], squeeze, 0, WINDOW);
+    const squeezed = contrast(draw([kneeCreases], squeeze, 0, WINDOW), squeezedBare);
+    const restBare = draw([], 1, 0, WINDOW * ratio);
+    const reference = contrast(draw([designed], 1, 0, WINDOW * ratio), restBare);
+    expect(reference).toBeGreaterThan(0);
+    expect(
+      squeezed,
+      `compressed ${squeezed.toFixed(4)} against designed ${reference.toFixed(4)}`,
+    ).toBeLessThan(1.25 * reference);
+  });
 });
 
 describe("profiled detail layers", () => {

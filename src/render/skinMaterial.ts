@@ -139,6 +139,14 @@ export const UV_SCALE_ATTRIBUTE = "hkUvScale";
  */
 export const RELIEF_GRAZE = { from: 0.05, to: 0.2 } as const;
 
+/**
+ * How far either side of a crease's rest period its kept depth turns from
+ * following the drawn period to all of the designed depth (`hkCreaseKeep`), as a
+ * share of that period. CHOICE: a quarter, a turn smooth enough not to draw an
+ * edge where skin starts to compress.
+ */
+export const CREASE_RATIO_BLEND = 0.25;
+
 /** How many directions strand layers quantise the hair flow to (over a half turn). */
 export const STRAND_DIRECTIONS = 8;
 
@@ -566,6 +574,17 @@ void hkSurfaceFootprint( vec3 n, vec3 position ) {
 	hkFootX = sx - dot( sx, n ) * along * toEye;
 	hkFootY = sy - dot( sy, n ) * along * toEye;
 }
+// A crease keeps its profile's depth to its width: skin a pose compresses folds
+// into a tighter groove, not a deeper and steeper one. Of a groove designed at its
+// rest period, the share of its depth kept where the drawn period is the share
+// c of that: c itself, but all of it from rest on, the two joined smoothly
+// over CREASE_RATIO_BLEND either side.
+float hkCreaseKeep( float c ) {
+	float w = ${glslFloat(CREASE_RATIO_BLEND)};
+	if ( c <= 1.0 - w ) return max( c, 0.0 );
+	if ( c >= 1.0 + w ) return 1.0;
+	return c - ( c - 1.0 + w ) * ( c - 1.0 + w ) / ( 4.0 * w );
+}
 // The detail layers' relief at this pixel, metres. Relief finer than a pixel
 // fades out rather than aliasing.
 float hkDetailHeight( vec2 uv ) {
@@ -630,7 +649,13 @@ float hkDetailHeight( vec2 uv ) {
 			// A groove is a thin line: it goes by the time a period is ten pixels, not one, or
 			// seen end-on down a limb it shows as a dotted ring.
 			float fade = hkFootprintFade( fwidth( phase ) );
-			H -= a * head.z * fade * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} );
+			// The period as drawn and at rest, metres, along the phase's steepest direction.
+			vec2 g = vec2( dFdx( phase ), dFdy( phase ) );
+			float g2 = dot( g, g );
+			float drawn = g2 > 0.0 ? length( hkFootX * g.x + hkFootY * g.y ) / g2 : 0.0;
+			float rest = g2 > 0.0 ? length( dFdx( uv ) * g.x + dFdy( uv ) * g.y ) * vHkUvScale / g2 : 0.0;
+			float keep = rest > 0.0 ? hkCreaseKeep( drawn / rest ) : 1.0;
+			H -= a * head.z * keep * fade * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} );
 		}
 	}
 	return H + hkStrandHeight;
