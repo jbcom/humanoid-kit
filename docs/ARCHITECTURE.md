@@ -2561,8 +2561,14 @@ measurements cheap enough for the smoke tier to run in every local test pass.
   reported apart.
 - *Collapse*: a triangle that turns against its skinned normals where at rest
   it agreed with them (a lip's or a lid's edge disagrees at rest, by its
-  shape), or keeps under 30% of its rest area; and the volume each shoulder,
-  elbow, hip and knee closes with its joint's head, held to 0.8–1.2 of rest.
+  shape), or keeps under 30% of its rest area; and the flesh round each
+  shoulder, elbow, hip and knee, held to 0.8–1.2 of rest (`jointVolume`: what
+  the skin encloses, at least once, within a ball on the joint's head of 0.3 of
+  its limb segment's length; a limb turned rigidly keeps as much of itself in
+  it). Until 2026-10-10 it was the sum of the cones from the joint's head to
+  the skin its two bones hold most, which counts skin that passes through skin
+  twice: the average figure's squatting knee read 0.89 of rest by the bones with
+  697 cm³ of calf inside the thigh, flesh that is not there.
 - *Folds*: an edge sharper than 60° in the pose where it was under 30° at
   rest, outside the named creases (the crease layers' masks).
 - *Seams*: a UV seam's duplicates stay together.

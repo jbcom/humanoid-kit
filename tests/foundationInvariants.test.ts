@@ -4,12 +4,20 @@
  * defect is put there on purpose.
  */
 import { describe, expect, it } from "vitest";
-import { isContact, measureInvariants, partOfBone } from "../src/foundation/invariants.ts";
+import {
+  isContact,
+  jointVolume,
+  measureInvariants,
+  partOfBone,
+  VOLUME_BAND,
+  VOLUME_JOINTS,
+} from "../src/foundation/invariants.ts";
 import { REST_POSE } from "../src/foundation/permutations.ts";
 import { type PosedBody, posedSurface } from "../src/foundation/posed.ts";
 import { creaseMask } from "../src/foundation/suite.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { SolidWinding } from "../src/rig/contact.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(), { subdivision: 0 });
@@ -91,6 +99,53 @@ describe("the foundation's invariants", () => {
         p[i * 3 + d] = ((p[j * 3 + d] as number) + (p[k * 3 + d] as number)) / 2;
     });
     expect(measureInvariants(crushed, crease, 1000).squashed).toBeGreaterThan(0);
+  });
+
+  it("measure the flesh round a joint as what the skin encloses, a rigid move keeping it, flesh lost reading lost, an overlap counted once", () => {
+    const names = atRest.bones.names;
+    const knee = VOLUME_JOINTS.find((j) => j.name === "knee.L");
+    if (!knee) throw new Error("no knee");
+    const restSolid = {
+      solid: new SolidWinding(atRest.rest, atRest.index),
+      heads: atRest.bones.heads,
+    };
+    const read = (positions: Float32Array, heads: Float32Array) =>
+      jointVolume(names, knee, restSolid, {
+        solid: new SolidWinding(positions, atRest.index),
+        heads,
+      });
+    // The whole body moved rigidly (turned 40° about y, carried 0.3 m): the same.
+    const turn = (p: Float32Array) => {
+      const out = new Float32Array(p.length);
+      const [c, s] = [Math.cos(0.7), Math.sin(0.7)];
+      for (let v = 0; v < p.length / 3; v++) {
+        const [x, y, z] = [p[v * 3] as number, p[v * 3 + 1] as number, p[v * 3 + 2] as number];
+        out.set([c * x + s * z + 0.3, y, -s * x + c * z], v * 3);
+      }
+      return out;
+    };
+    expect(read(turn(atRest.rest), turn(atRest.bones.heads)) as number).toBeCloseTo(1, 1);
+    // The flesh round the knee shrunk toward it to 0.8 across: the leg's section to 0.64 of itself, while the
+    // ball, the leg drawn in along its length too, still holds as long a piece of it. Out of the band.
+    const kneeAt = names.indexOf(knee.head);
+    const h = [0, 1, 2].map((k) => atRest.bones.heads[kneeAt * 3 + k] as number);
+    const shrunk = Float32Array.from(atRest.rest);
+    for (let v = 0; v < shrunk.length / 3; v++) {
+      const d = [0, 1, 2].map((k) => (shrunk[v * 3 + k] as number) - (h[k] as number));
+      if (Math.hypot(...d) > 0.25) continue;
+      for (let k = 0; k < 3; k++) shrunk[v * 3 + k] = (h[k] as number) + 0.8 * (d[k] as number);
+    }
+    const lost = read(shrunk, atRest.bones.heads) as number;
+    expect(lost).toBeGreaterThan(0.55);
+    expect(lost).toBeLessThan(VOLUME_BAND[0]);
+    // A second copy of the leg's skin laid over the first: the flesh is the same, counted once.
+    const twice = Uint32Array.from([...atRest.index, ...atRest.index]);
+    const doubled = jointVolume(names, knee, restSolid, {
+      solid: new SolidWinding(atRest.rest, twice),
+      heads: atRest.bones.heads,
+    }) as number;
+    expect(doubled).toBeCloseTo(1, 2);
+    expect(rest.worstVolume).toBeCloseTo(1, 2);
   });
 
   it("find a seam torn open", () => {
