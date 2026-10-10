@@ -1420,23 +1420,23 @@ the tall lean man and the heavy man are 8 to 9 mm through. A few edges
 still cross at 120° in the average figure (7 of 94 without the fold), none with
 the thigh's end behind the belly: a seam vertex, held mostly by the trunk, lies a
 few millimetres behind its neighbour's triangle, which reads as the crease of the
-fold, and is not pushed. **The smoke tier's worklist got worse in five cells**,
-all `seated` (2026-10-10, rewritten with this solve): squashed triangles f-slim
-363 → 385, f-heavy 289 → 312 and m-muscular 350 → 368, folded edges f-heavy
-281 → 307 and m-muscular 436 → 449. The squashed ones are the adult surface's
-refined mound and vulva, triangles 2 mm across moved under 1 mm by the edge of the
-spread press, across the 30% area line the bones already nearly put them on; no
-setting of the 24 measured, nor a ramp, a fade or keeping the press off the crotch,
-cleared them without making the squat worse. With the second key and the release, against
-the thigh pushed alone (18ffe9e) the tier's sums still fall (penetrating
-1746 → 1278, inverted 13671 → 12752, squashed 5384 → 4765, folded 5489 → 4957)
-and eight cells are worse (f-slim seated squashed 363 → 382, f-heavy seated folds
-281 → 297, m-muscular seated squashed 350 → 354, m-heavy seated squashed
-527 → 535; squat: f-slim squashed 570 → 616, m-muscular inverted 1321 → 1475,
-f-elder squashed 586 → 639, child inverted 434 → 444). Against the worklist
-written with the thighs-together press it is 30 cells worse, mostly the squat's,
-which that press, pressing belly no thigh touched, had cleared; the worklist is
-left as it was until that trade is ruled on. In the `seated` pose dark pockets at
+fold, and is not pushed. **The smoke tier is worse in eight cells, accepted
+(ruling, 2026-10-10).** The shared contact costs a few cells their 2 to 12%: ruled
+on against the thigh pushed alone (18ffe9e, 8 cells, +2 to 12%), and re-measured
+with the solve between the openings, after integration re-recorded the worklist
+with default anatomy, root skinning and its own fold, against that worklist
+(212cc58): squashed triangles f-slim seated 372 → 394, f-slim squat 574 → 628,
+f-heavy seated 292 → 318, m-heavy seated 531 → 550; folded edges f-heavy seated
+381 → 427, f-elder seated 380 → 389, f-elder squat 532 → 534; inverted triangles
+child squat 434 → 444 (+0.4 to 12.1%), while the tier's sums fall (penetrating
+2585 → 2010, inverted 16876 → 14794, squashed 5519 → 4621, folded 8061 → 6971).
+Three of the eight are other cells than those ruled on (f-heavy seated squashed,
+f-elder seated and squat folds), within the same band. The squashed ones are the
+adult surface's refined mound and vulva, triangles 2 mm across moved under 1 mm by
+the edge of the spread press, across the 30% area line the bones already nearly
+put them on; no setting of the 24 measured, nor a ramp, a fade or keeping the
+press off the crotch, cleared them without making the squat worse. The worklist
+is rewritten with them. In the `seated` pose dark pockets at
 the buttock under the thigh, behind the hip, are the bones' and not the fold's:
 the same with and without it, linear skinning leaves 4 to 8 triangles inverted
 there and dual quaternion none. On the drawn adult surface the heavy
