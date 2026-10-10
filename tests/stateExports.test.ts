@@ -52,10 +52,15 @@ describe("the package entry's skin-state API", () => {
       kit.ADULT_SKIN_LAYERS.map((l) => l.id),
     );
     const ids = kit.SKIN_LAYERS.filter((l) => !kit.isAdultLayer(l)).map((l) => l.id);
-    expect(ids.slice(0, 3)).toEqual(["flush", "lips", "areola"]);
+    expect(ids.slice(0, 2)).toEqual(["flush", "lips"]);
+    // The trunk's own skin (its first layer the areola) follows the base colour.
+    const torso = kit.TORSO_SKIN_LAYERS.map((l) => l.id);
+    expect(torso[0]).toBe("areola");
+    expect(ids.slice(2, 2 + torso.length)).toEqual(torso);
     // The mouth's lining is a rest layer; a state (cold pallor on the hands, a
     // flush) acts on the areas' colour too.
-    expect(ids.slice(3, 9)).toEqual([
+    const hands = 2 + torso.length;
+    expect(ids.slice(hands, hands + 6)).toEqual([
       "mouth-interior",
       "palmoplantar",
       "palm-crease-lines",
@@ -64,10 +69,11 @@ describe("the package entry's skin-state API", () => {
       "nail-gloss",
     ]);
     // The feet's own skin follows the hands'.
-    expect(ids.slice(9, 9 + kit.FOOT_SKIN_LAYERS.length)).toEqual(
+    const feet = hands + 6;
+    expect(ids.slice(feet, feet + kit.FOOT_SKIN_LAYERS.length)).toEqual(
       kit.FOOT_SKIN_LAYERS.map((l) => l.id),
     );
-    expect(ids.slice(9 + kit.FOOT_SKIN_LAYERS.length)).toEqual([
+    expect(ids.slice(feet + kit.FOOT_SKIN_LAYERS.length)).toEqual([
       "goosebumps",
       "heat-flush",
       "exertion-flush",
