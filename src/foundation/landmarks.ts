@@ -48,6 +48,10 @@ export const SURFACE_LANDMARKS = [
   "chin",
   "ear-lobe.L",
   "ear-lobe.R",
+  "ear-canal.L",
+  "ear-canal.R",
+  "nostril.L",
+  "nostril.R",
   "sternum-notch",
   "nipple.L",
   "nipple.R",
@@ -158,6 +162,104 @@ function midlineInFront(assets: HumanoidAssets, used: Uint8Array, point: Vec3): 
     }
   }
   if (best < 0) throw new RangeError("no midline vertex in front of the joint");
+  return best;
+}
+
+/** The drawn vertices a target moves by at least `share` of its largest move: the feature, not its falloff. */
+function movedFully(
+  assets: HumanoidAssets,
+  used: Uint8Array,
+  name: string,
+  share: number,
+): number[] {
+  const t = namedTarget(assets, name);
+  const size = (i: number) =>
+    Math.hypot(
+      t.deltas[i * 3] as number,
+      t.deltas[i * 3 + 1] as number,
+      t.deltas[i * 3 + 2] as number,
+    );
+  let max = 0;
+  for (let i = 0; i < t.indices.length; i++) max = Math.max(max, size(i));
+  return [...t.indices].filter((v, i) => used[v] && size(i) >= share * max);
+}
+
+/** Within this, seen from the side, an ear's vertices crowd round its bowl, metres. */
+const EAR_CROWD = 0.004;
+/** Within this of where they crowd, the bowl's floor is looked for, metres. */
+const EAR_BOWL = 0.008;
+
+/**
+ * The ear canal's entrance on one side: the floor of the concha. The base mesh
+ * draws the ear as a closed surface whose edge loops crowd round its bowl, so
+ * of the vertices the ear's own move carries fully (not the head's falloff),
+ * the bowl is where most of them lie within `EAR_CROWD` seen from the side, and
+ * its floor is the most medial of those within `EAR_BOWL` of it.
+ */
+function earCanal(assets: HumanoidAssets, used: Uint8Array, side: 1 | -1): number {
+  const ear = movedFully(
+    assets,
+    used,
+    side === 1 ? "ears/l-ear-trans-up" : "ears/r-ear-trans-up",
+    0.95,
+  );
+  const P = assets.positions;
+  const sideways = (u: number, v: number) =>
+    Math.hypot(
+      (P[u * 3 + 1] as number) - (P[v * 3 + 1] as number),
+      (P[u * 3 + 2] as number) - (P[v * 3 + 2] as number),
+    );
+  const crowd = (v: number) => ear.filter((u) => sideways(u, v) < EAR_CROWD).length;
+  let bowl = ear[0] as number;
+  let most = -1;
+  for (const v of ear) {
+    const c = crowd(v);
+    if (c > most) {
+      most = c;
+      bowl = v;
+    }
+  }
+  let floor = -1;
+  for (const v of ear)
+    if (
+      sideways(v, bowl) < EAR_BOWL &&
+      (floor < 0 || Math.abs(P[v * 3] as number) < Math.abs(P[floor * 3] as number))
+    )
+      floor = v;
+  if (floor < 0) throw new RangeError(`no ear bowl on side ${side}`);
+  return floor;
+}
+
+/** How nearly a vertex must face down at rest to be on a nostril's floor and walls. */
+const NOSTRIL_FACING = 0.7;
+
+/**
+ * A nostril's opening on one side: of the nose's vertices on that side whose
+ * skin faces down, the one nearest their centroid.
+ */
+function nostril(assets: HumanoidAssets, used: Uint8Array, side: 1 | -1): number {
+  const N = skinZones(assets).normals;
+  const P = assets.positions;
+  const down = namedTarget(assets, "nose/nose-trans-up").indices.filter(
+    (v) =>
+      used[v] &&
+      Math.sign(P[v * 3] as number) === side &&
+      Math.abs(P[v * 3] as number) > MIDLINE &&
+      -(N[v * 3 + 1] as number) > NOSTRIL_FACING,
+  );
+  if (down.length === 0) throw new RangeError(`no nostril on side ${side}`);
+  const c = [0, 1, 2].map(
+    (k) => down.reduce((s, v) => s + (P[v * 3 + k] as number), 0) / down.length,
+  );
+  let best = down[0] as number;
+  let dist = Number.POSITIVE_INFINITY;
+  for (const v of down) {
+    const d = Math.hypot(...[0, 1, 2].map((k) => (P[v * 3 + k] as number) - (c[k] as number)));
+    if (d < dist) {
+      dist = d;
+      best = v;
+    }
+  }
   return best;
 }
 
@@ -283,6 +385,10 @@ export function landmarkVertices(
     chin: targetPeak(assets, "chin/chin-prominent-incr", 0),
     "ear-lobe.L": targetPeak(assets, "ears/l-ear-lobe-incr", 1),
     "ear-lobe.R": targetPeak(assets, "ears/r-ear-lobe-incr", -1),
+    "ear-canal.L": earCanal(assets, used, 1),
+    "ear-canal.R": earCanal(assets, used, -1),
+    "nostril.L": nostril(assets, used, 1),
+    "nostril.R": nostril(assets, used, -1),
     // The jugular notch: the skin in front of the clavicles' inner ends.
     "sternum-notch": midlineInFront(assets, used, between("clavicle.L", "clavicle.R")),
     "nipple.L": targetPeak(assets, "breast/nipple-point-incr", 1),

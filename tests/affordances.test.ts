@@ -77,7 +77,7 @@ describe("affordance frames", { timeout: 300_000 }, () => {
       }
   });
 
-  it("opens the mouth forward, between the lips", () => {
+  it("opens the mouth forward between the lips, the nostrils down and the ear canals out to the sides", () => {
     const body = posedSurface(model, recipeOf("f-slim"), REST_POSE);
     const frames = affordanceFrames(model, body, CORE_AFFORDANCES);
     const marks = landmarks(model, body);
@@ -85,6 +85,11 @@ describe("affordance frames", { timeout: 300_000 }, () => {
     expect(mouth?.normal[2]).toBeGreaterThan(0.8);
     expect(mouth?.position[1]).toBeLessThan(marks["upper-lip"].position[1]);
     expect(mouth?.position[1]).toBeGreaterThan(marks["lower-lip"].position[1]);
+    for (const side of ["L", "R"] as const) {
+      expect(frames[`nostril.${side}`]?.normal[1], side).toBeLessThan(-0.5);
+      const out = side === "L" ? 1 : -1;
+      expect((frames[`ear-canal.${side}`]?.normal[0] ?? 0) * out, side).toBeGreaterThan(0.5);
+    }
   });
 
   it("grips from the palm, along the hand toward the fingers, in every pose", () => {

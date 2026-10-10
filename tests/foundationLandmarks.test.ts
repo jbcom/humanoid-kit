@@ -188,6 +188,19 @@ describe("landmarks", { timeout: 300_000 }, () => {
       expect(y("sole.L"), name).toBeLessThan(y("ankle.L"));
       expect(frames["sole.L"].normal[1], name).toBeLessThan(-0.8);
       expect(z("sole.L"), name).toBeGreaterThan(frames["ankle.L"].position[2] - 0.02);
+      // The ear canal opens out of the side of the head, in the ear's bowl above its lobe;
+      // the nostril opens downward under the nose, between its tip and the upper lip.
+      expect(frames["ear-canal.L"].normal[0], name).toBeGreaterThan(0.5);
+      expect(y("ear-canal.L"), name).toBeGreaterThan(y("ear-lobe.L"));
+      expect(y("ear-canal.L"), name).toBeLessThan(y("crown"));
+      expect(
+        length(sub(frames["ear-canal.L"].position, frames["ear-lobe.L"].position)),
+        name,
+      ).toBeLessThan(0.03);
+      expect(frames["nostril.L"].normal[1], name).toBeLessThan(-0.5);
+      expect(y("nostril.L"), name).toBeLessThan(y("nose-tip"));
+      expect(y("nostril.L"), name).toBeGreaterThan(y("upper-lip"));
+      expect(Math.abs(frames["nostril.L"].position[0]), name).toBeLessThan(0.02);
       // The ear lobes are out at the sides of the head and behind the face.
       for (const id of ["ear-lobe.L", "ear-lobe.R"] as const) {
         expect(Math.abs(frames[id].position[0]), `${name} ${id}`).toBeGreaterThan(0.04);

@@ -2176,7 +2176,12 @@ position, the skin's outward normal and a tangent frame:
   the clavicles' inner ends, the pubic point over the hips' centres), the palm's
   centre in the hand frame's own palm plane (on the palm, midway from the wrist
   to the middle knuckles), and the sole's centre (the downward-facing foot skin
-  under the midpoint of the ankle and the big toe's base). On a posed
+  under the midpoint of the ankle and the big toe's base). The openings are
+  found on the mesh's own shape: an ear canal's entrance is the floor of the
+  concha (of the vertices the ear's own move carries fully, the most medial
+  near where the ear's edge loops crowd round its bowl; the base mesh has no
+  canal hole), a nostril's is the downward-facing nose skin's centroid on its
+  side. On a posed
   body a landmark is its vertex's own render vertex
   (`HumanoidModel.baseRenderVertices`: the render vertex whose subdivision
   stencil weights it most, exact at every level and on either body surface), its
@@ -2255,9 +2260,10 @@ for.
   reads the landmarks of that body, so an affordance is never out of step with
   the skin it belongs to.
 
-The registry is built in steps: the kinds, the core's apertures, grips and
-mounts whose landmarks exist, state, and frames first; the channels' geometry,
-the ear canals' landmarks and the adult pack's affordances follow.
+The registry is built in steps: the kinds, the core's apertures (the mouth,
+nostrils and ear canals), grips, mounts and contacts, state, and frames
+first; the finger pads, the channels' geometry and the adult pack's
+affordances follow.
 
 ## Invariants
 

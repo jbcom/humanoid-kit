@@ -41,12 +41,15 @@ const core = (id: string, kind: AffordanceKind, at: AffordanceAnchor): Affordanc
 });
 
 /**
- * The core's affordances. Those whose places are not yet landmarks (the
- * nostrils, the ear canals, the finger pads) join as their landmarks are
- * built.
+ * The core's affordances. The finger pads join the grips as their landmarks
+ * are built.
  */
 export const CORE_AFFORDANCES: readonly Affordance[] = [
   core("mouth", "aperture", { between: ["upper-lip", "lower-lip"] }),
+  core("nostril.L", "aperture", { landmark: "nostril.L" }),
+  core("nostril.R", "aperture", { landmark: "nostril.R" }),
+  core("ear-canal.L", "aperture", { landmark: "ear-canal.L" }),
+  core("ear-canal.R", "aperture", { landmark: "ear-canal.R" }),
   core("hand.L", "grip", { landmark: "palm.L" }),
   core("hand.R", "grip", { landmark: "palm.R" }),
   core("ear-lobe.L", "mount", { landmark: "ear-lobe.L" }),
