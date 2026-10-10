@@ -124,6 +124,18 @@ export const HAIR_EDGE_ON = { from: 0.5, to: 0.95 } as const;
 export const HIGHLIGHT_OVER_DIFFUSE = 3;
 
 /**
+ * The most all of hair's specular light together (base microfacet, environment
+ * reflection, both strand lobes and the sheen) may add, as a multiple of the
+ * diffuse's luminance at the same pixel. Specular is compressed toward this
+ * smoothly (`b·(1 − e^(−s/b))`: unchanged when faint, never reaching the budget),
+ * so `1 + budget` stays under `HIGHLIGHT_OVER_DIFFUSE` by construction at every
+ * colour and light. Black hair's diffuse is so small that, measured under the
+ * studio's lights and environment, its base specular alone was 45 times it and
+ * its strand lobes up to 21 times: glossy plastic. The bound holds it to a sheen.
+ */
+export const HAIR_SPECULAR_BUDGET = 1.8;
+
+/**
  * How a hairline thins. Each strand ends at its own distance from the card's cut
  * edge (a hash of the strand, so hair thins in wisps, not a screen-door dot grid),
  * its tip fraying over `taper` of the fade cell by cell along the strand, and the
@@ -215,6 +227,28 @@ const STRAND_LOBES = `
 const NOISE = `float hkHash( float n ) { return fract( sin( n * 127.1 ) * 43758.5453 ); }
 float hkHash2( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 ); }
 float hkSlow( float x ) { return mix( hkHash( floor( x ) ), hkHash( floor( x ) + 1.0 ), smoothstep( 0.0, 1.0, fract( x ) ) ); }`;
+
+/**
+ * Holds hair's specular (with the KK lobes, which are in `directSpecular`, and the sheen) to
+ * `HAIR_SPECULAR_BUDGET` of the diffuse, by luminance so a white highlight stays white: one
+ * scale for every term, from a smooth compression of their sum.
+ */
+const SPECULAR_BUDGET = `
+	{
+		const vec3 hkLum = vec3( 0.2126, 0.7152, 0.0722 );
+		vec3 hkSpec = totalSpecular;
+		#ifdef USE_SHEEN
+			hkSpec += sheenSpecularDirect + sheenSpecularIndirect;
+		#endif
+		float hkS = dot( hkSpec, hkLum );
+		float hkB = max( ${HAIR_SPECULAR_BUDGET.toFixed(2)} * dot( totalDiffuse, hkLum ), 1e-6 );
+		float hkK = hkS > 1e-6 ? hkB * ( 1.0 - exp( - hkS / hkB ) ) / hkS : 1.0;
+		totalSpecular *= hkK;
+		#ifdef USE_SHEEN
+			sheenSpecularDirect *= hkK;
+			sheenSpecularIndirect *= hkK;
+		#endif
+	}`;
 
 /**
  * How much of strand cell `id` is there, 0..1: its strand's tip (a hash of the strand plus
@@ -363,7 +397,12 @@ varying float vHkRank;`,
 	vHkGrowth = ${HAIR_GROWTH_ATTRIBUTE};
 	vHkUvScale = ${HAIR_UVSCALE_ATTRIBUTE};`,
       );
-    for (const chunk of ["alphatest_fragment", "normal_fragment_maps", "map_fragment"])
+    for (const chunk of [
+      "alphatest_fragment",
+      "normal_fragment_maps",
+      "map_fragment",
+      "transmission_fragment",
+    ])
       if (!shader.fragmentShader.includes(`#include <${chunk}>`))
         throw new Error(`HairMaterial: three's ${chunk} chunk moved`);
     const lighting = ShaderChunk.lights_physical_pars_fragment;
@@ -468,12 +507,16 @@ ${CELL_KEEP}`,
       .replace(
         "#include <lights_physical_pars_fragment>",
         lighting.replace(DIRECT_SPECULAR, `${DIRECT_SPECULAR}${STRAND_LOBES}`),
+      )
+      .replace(
+        "#include <transmission_fragment>",
+        `${SPECULAR_BUDGET}\n#include <transmission_fragment>`,
       );
     patchOcclusionFragment(shader, HAIR_OCCLUSION_FLOOR);
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-hair-5";
+    return "humanoid-kit-hair-6";
   }
 }
 

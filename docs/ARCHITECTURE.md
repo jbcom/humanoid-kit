@@ -1206,7 +1206,15 @@ a coloured texture; everything in the pure core is testable in Node.
   specular is scaled to 0.4: hair has no mirror. The first intensities read as
   glossy patches on the bobs, so the lobes are narrow-in-strength and wide, and a
   browser test bounds the worst pixel of a sphere at any strand direction and
-  light to three times its diffuse (a mirror-like patch is ten and more).
+  light to three times its diffuse (a mirror-like patch is ten and more). That
+  test was brown under one light; under the studio's rim light and room
+  environment black hair measured 47.8 times its diffuse (base specular alone 45,
+  strand lobes up to 21), and still read as glossy plastic. So the bound is now
+  built in: all the specular together (base, environment, lobes, sheen) is
+  compressed by luminance toward `HAIR_SPECULAR_BUDGET`, 1.8 times the pixel's
+  diffuse (`b·(1 − e^(−s/b))`, unchanged when faint), and a second browser test
+  renders black, dark brown, brown and light blonde at the combing of short02,
+  bob02 and long01 under the studio stage: worst 2.76, 2.64, 2.27 and 1.48.
   Rejected: the UV-derivative anisotropy (a global angle, no short styles), a
   per-vertex tangent attribute (three floats per vertex for what the gradient
   gives), and Marschner's full R/TT/TRT (the transmitted lobes need a fibre's
