@@ -45,8 +45,9 @@ input that might be expected here do not exist in this kit:
 - **Height maps.** None ship. The only normal maps are the garments' (below)
   and the procedural pore map.
 - **Tattoos.** The application supplies the images at run time
-  (`bodyArtImages`). The playground draws its two on 256² canvases from vector
-  paths (`playground/src/tattooImages.ts`), so they are already resolution-free.
+  (`bodyArtImages`). The playground draws its two from vector paths
+  (`playground/src/tattooImages.ts`), so they are resolution-free; they were
+  256² canvases and are now 512² (below).
 
 These are the rasters that do ship, with each texture's surface-area-weighted
 median texel density and the density 90% of its area meets. A bracketed figure
@@ -104,7 +105,7 @@ above the source or 2048.
    interpolates), so its resolution does not show. The body-art texture holds
    ink, and it does show (below).
 
-## The pixelated forearm tattoo is the bake, not the image
+## The pixelated forearm tattoo was the bake, not the image
 
 On the forearm, the body-art texture has 0.44 texels/mm (1024² over the whole
 body's UV layout). The QA sheet's compass is 10 cm across, so it gets 44
@@ -115,25 +116,20 @@ at that framing has 3.44 px/mm, so each bake texel covers about 8 screen pixels.
 Upscaling the image cannot help, because the bake throws away 83% of the
 resolution it already has.
 
-The fixes, in the body-art owner's code (`src/render/bodyArtTexture.ts`), are:
+Raising the bake's size does not fix it. Resolving the forearm needs 8448²
+(two RGBA8 pages, 571 MB per figure), and at 2048² (32 MB per figure) each texel
+still covers four screen pixels. A fix has to stop baking the ink's colour
+into body UV. The options were a UV window of its own per tattoo (the same bake
+through a camera fitted to the tattoo's UV bounds: 5.1 texels/mm in a 512²
+window), or sampling the tattoo's image in the skin shader.
 
-- **Raising the bake's size is not one.** Resolving the forearm needs 8448²
-  (two RGBA8 pages, 571 MB per figure). At 2048² (32 MB per figure) each texel
-  still covers four screen pixels.
-- **Bake each tattoo into a UV window of its own.** Keep the projection, the
-  seam handling and the ink spread exactly as they are. Draw each tattoo
-  through an orthographic camera fitted to the UV bounding box of the
-  triangles it covers, instead of the whole 0–1 square. The skin shader then
-  maps a texel's UV into that window. A 10 cm forearm tattoo spans about 0.043
-  of the UV square (44 of 1024 texels), so a 512² window gives it 5.1
-  texels/mm, which resolves the forearm framing at 2 MB per tattoo (two RGBA8
-  pages). That is a quarter of today's 8 MB per figure. A tattoo that crosses a
-  UV seam gets one window per island it covers.
-- **Or sample the image in the skin shader.** Project the fragment's rest-space
-  position into the decal frame, with no bake for ink. This resolves at the
-  image's own density, but it adds a rest-position vertex attribute and moves
-  the facing, reach and ink-spread logic into the skin shader.
-
-The playground's images would then be the limit: 2.56 px/mm at 10 cm against
-the forearm's 3.44. They are drawn from vector paths, so drawing them at 512²
-instead of 256² (5.1 px/mm) is exact and needs no upscaler.
+**Fixed on integration by the body-art lane** (3d8360f, "tattoos as decals
+sampled at screen detail, not baked colour"). The bake now stores, per texel,
+the place in the tattoo that covers it, and the skin shader samples the
+tattoo's own image there, mipmapped, never finer than the ink's spread in the
+dermis (`INK_SPREAD`, 0.2 mm). That left the playground's images as the limit:
+256 px over the sheet's 10 cm compass is 0.39 mm a pixel, coarser than both the
+ink and the forearm framing's 0.29 mm screen pixel. They are drawn from vector
+paths, so `playground/src/tattooImages.ts` now draws them at 512 px (0.2 mm a
+pixel, the ink's own spread) from the same 256-unit design. That is exact, and
+needs no upscaler.
