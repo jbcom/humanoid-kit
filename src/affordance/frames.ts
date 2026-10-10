@@ -160,23 +160,38 @@ export function affordanceFrames(
 /**
  * An aperture's channel (`channel.ts`) on a posed figure, from its landmarks as
  * `mark` reads them: sized to its head (its ear canals' span) and, for the
- * mouth, to its own mouth (between its corners) and how open it is.
+ * mouth, to its own mouth (between its corners) and how open it is. Given
+ * `out` (`emptyChannel`), it is written there and nothing is allocated.
  */
 export function affordanceChannel(
   a: Affordance,
   mark: LandmarkReader,
   opening: number,
+  out?: Channel,
 ): Channel | null {
   if (!a.channel) return null;
-  const rim = affordanceFrameInto(a, mark, frameOut());
-  const l = mark("ear-canal.L", frameOut()).position;
-  const r = mark("ear-canal.R", frameOut()).position;
-  const ml = mark("mouth-corner.L", frameOut()).position;
-  const mr = mark("mouth-corner.R", frameOut()).position;
+  const rim = affordanceFrameInto(a, mark, scratch.rim);
+  const l = mark("ear-canal.L", scratch.earL).position;
+  const r = mark("ear-canal.R", scratch.earR).position;
+  const ml = mark("mouth-corner.L", scratch.mouthL).position;
+  const mr = mark("mouth-corner.R", scratch.mouthR).position;
   const span = (p: Vec3, q: Vec3) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
-  const head: Vec3 = [(l[0] + r[0]) / 2, (l[1] + r[1]) / 2, (l[2] + r[2]) / 2];
-  return channelOf(a.channel, rim, span(l, r) / ADULT_EAR_SPAN, head, opening, span(ml, mr));
+  const head = scratch.head;
+  head[0] = (l[0] + r[0]) / 2;
+  head[1] = (l[1] + r[1]) / 2;
+  head[2] = (l[2] + r[2]) / 2;
+  return channelOf(a.channel, rim, span(l, r) / ADULT_EAR_SPAN, head, opening, span(ml, mr), out);
 }
+
+/** `affordanceChannel`'s working frames, reused: a channel copies what it keeps of them. */
+const scratch = {
+  rim: frameOut(),
+  earL: frameOut(),
+  earR: frameOut(),
+  mouthL: frameOut(),
+  mouthR: frameOut(),
+  head: [0, 0, 0] as [number, number, number],
+};
 
 /**
  * Each of a figure's own apertures' channels on its posed figure's landmarks,

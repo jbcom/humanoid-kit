@@ -29,7 +29,7 @@ import type { Recipe } from "../recipe/recipe.ts";
 import { ChannelClip, CLIP_CHANNELS } from "../render/channelClip.ts";
 import { type SkinFold, type SkinPose, skinNormalAt, skinPositionAt } from "../rig/dual.ts";
 import type { SurfaceAnchors } from "../worker/protocol.ts";
-import { type Channel, type ChannelPlace, placeIn } from "./channel.ts";
+import { type Channel, type ChannelPlace, emptyChannel, placeIn } from "./channel.ts";
 import { affordanceChannel, affordanceFrameInto, type LandmarkReader } from "./frames.ts";
 import {
   type Affordance,
@@ -86,6 +86,9 @@ export class HumanoidAffordances {
   /** The up neighbours, worked out once per figure drawn. */
   private ups: { figure: LiveFigure; anchors: LandmarkAnchors; ups: Int32Array } | null = null;
   private clipped: ChannelClip | null = null;
+  /** The clip's channels, written in place each frame (`refreshClip`), and the list it is given. */
+  private readonly clipChannels = Array.from({ length: CLIP_CHANNELS }, () => emptyChannel());
+  private readonly clipList: Channel[] = [];
   private readonly listeners = new Set<() => void>();
   /** What a read works from, set by `prepare` (held in place, so a read allocates nothing). */
   private readonly now: {
@@ -147,11 +150,20 @@ export class HumanoidAffordances {
     this.ups = null;
   }
 
-  /** The figure as drawn, or null when none is. */
+  /**
+   * The figure as drawn, or null when none is. With none, the clip lets go of
+   * the figure's group and holds no channel, so an object clipped by it is drawn
+   * whole rather than cut at a mouth that is no longer there.
+   */
   attach(figure: LiveFigure | null): void {
     this.figure = figure;
     this.ups = null;
     this.version++;
+    if (!figure && this.clipped) {
+      this.clipped.follow(null);
+      this.clipList.length = 0;
+      this.clipped.set(this.clipList);
+    }
     for (const l of this.listeners) l();
   }
 
@@ -275,8 +287,7 @@ export class HumanoidAffordances {
   channel(id: string): Channel | null {
     const a = this.affordance(id);
     if (!a.channel || !this.prepare()) return null;
-    const s = this.states.get(id);
-    return affordanceChannel(a, this.read, s.kind === "aperture" ? s.opening : 0);
+    return affordanceChannel(a, this.read, this.states.opening(id));
   }
 
   /**
@@ -312,18 +323,24 @@ export class HumanoidAffordances {
     return this.clipped;
   }
 
-  /** Sets the clip, if there is one, to the figure's channels as drawn now. */
+  /**
+   * Sets the clip, if there is one, to the figure's channels as drawn now. Run
+   * each frame, so it allocates nothing: each channel is written in place.
+   */
   refreshClip(): void {
     const clip = this.clipped;
     if (!clip) return;
     clip.follow(this.figure?.world ?? null);
-    const channels: Channel[] = [];
-    for (const a of this.list) {
-      if (!a.channel || channels.length === CLIP_CHANNELS) continue;
-      const c = this.channel(a.id);
-      if (c) channels.push(c);
-    }
-    clip.set(channels);
+    const list = this.clipList;
+    list.length = 0;
+    if (this.prepare())
+      for (const a of this.list) {
+        if (!a.channel || list.length === CLIP_CHANNELS) continue;
+        const out = this.clipChannels[list.length] as Channel;
+        const c = affordanceChannel(a, this.read, this.states.opening(a.id), out);
+        if (c) list.push(c);
+      }
+    clip.set(list);
   }
 
   private affordance(id: string): Affordance {

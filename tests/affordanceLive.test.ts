@@ -210,6 +210,30 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
     expect(h.frame("mouth")).toBeNull();
   });
 
+  it("keeps its clip on the figure's channels as drawn, reusing them each frame, and lets go when the figure does", () => {
+    const recipe = createRecipe();
+    const h = new HumanoidAffordances();
+    h.setRecipe(recipe);
+    h.setAnchors(anchors);
+    h.set("mouth", { opening: 1 });
+    const group = new Group();
+    h.attach(liveFigure(recipe, REST_POSE, group));
+    const clip = h.clip;
+    h.refreshClip();
+    const count = clip.uniforms.hkClipCount.value;
+    expect(count).toBe(5);
+    // The channels the clip holds are the handle's own, written again in place: the mouth's
+    // rim is where a fresh read puts it.
+    const origin = clip.uniforms.hkClipOrigin.value[0]?.clone();
+    h.refreshClip();
+    expect(clip.uniforms.hkClipOrigin.value[0]?.equals(origin as Vector3)).toBe(true);
+    const mouth = h.channel("mouth");
+    expect(mouth?.depth).toBeGreaterThan(0);
+    // Gone: the clip holds nothing, so a held prop is drawn whole, not cut at a mouth that is not there.
+    h.attach(null);
+    expect(clip.uniforms.hkClipCount.value).toBe(0);
+  });
+
   it("gives a figure under 18 none of the adult anatomy's, and rebuilds its own and their states when the recipe crosses 18", () => {
     const packAperture = {
       id: "a-pack-aperture",
