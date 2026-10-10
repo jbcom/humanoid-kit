@@ -2175,7 +2175,12 @@ position, the skin's outward normal and a tangent frame:
   place, the midline skin straight in front of a joint (the sternal notch over
   the clavicles' inner ends, the pubic point over the hips' centres), the palm's
   centre in the hand frame's own palm plane (on the palm, midway from the wrist
-  to the middle knuckles), and the sole's centre (the downward-facing foot skin
+  to the middle knuckles), each digit's pad (on its last segment, of the skin
+  within half the fingertip's radius of the digit's axis between 40% and 90% of
+  the way to the tip, the vertices facing the palm's way nearly as much as the
+  most palmward of them, the one nearest 60% along: the pulp's centre; the
+  thumb's pad, turned toward the fingers, is measured against its own segment's
+  facing, not a fixed one), and the sole's centre (the downward-facing foot skin
   under the midpoint of the ankle and the big toe's base). The openings are
   found on the mesh's own shape: an ear canal's entrance is the floor of the
   concha (of the vertices the ear's own move carries fully, the most medial
@@ -2278,9 +2283,14 @@ for.
   the rim, which is what hiding a consumed object and measuring an occupancy
   read.
 
+- *The finger pads are contacts* (`finger-pad-1.L` to `finger-pad-5.R`, thumb
+  to little finger): what a fingertip touches and presses with, each framed on
+  its pad landmark. A hand's grip keeps its palm frame; a pinch or a press is
+  told by the pads it uses.
+
 The registry is built in steps: the kinds, the core's apertures (the mouth,
-nostrils and ear canals) with their channels, grips, mounts and contacts,
-state, and frames first; the finger pads, curved channel paths, the response
+nostrils and ear canals) with their channels, grips, mounts, contacts and the
+finger pads, state, and frames first; curved channel paths, the response
 (a channel widening to what it holds), the renderer's clip at the rim and the
 adult pack's affordances follow.
 
