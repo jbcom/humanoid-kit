@@ -22,6 +22,8 @@ import { groupFaces, type HumanoidAssets } from "../format/assetFormat.ts";
 import type { HumanoidModel } from "../model/humanoidModel.ts";
 import { MIDLINE, namedTarget, targetPeak } from "../model/targetPeak.ts";
 import { posedBones, restBones, rotateByBone } from "../rig/pose.ts";
+import { handFrame } from "../surface/regions/hands/frame.ts";
+import { skinZones } from "../surface/regions/skinZones.ts";
 import type { PosedBody } from "./posed.ts";
 
 export type Vec3 = readonly [number, number, number];
@@ -51,6 +53,10 @@ export const SURFACE_LANDMARKS = [
   "nipple.R",
   "navel",
   "pubic-point",
+  "palm.L",
+  "palm.R",
+  "sole.L",
+  "sole.R",
 ] as const;
 
 /** The joint landmarks: joint centres, each a bone's head. */
@@ -155,6 +161,73 @@ function midlineInFront(assets: HumanoidAssets, used: Uint8Array, point: Vec3): 
   return best;
 }
 
+/**
+ * The palm's centre on one side (0 left, 1 right): of the vertices on the palm
+ * (`HandFrame.volar` near 1, the skin facing the palm's way), the one nearest
+ * the point midway from the wrist to the knuckles of the middle and ring
+ * fingers, in the palm's own plane (`HandFrame.palm`).
+ */
+function palmCentre(assets: HumanoidAssets, used: Uint8Array, side: 0 | 1): number {
+  const frame = handFrame(assets);
+  const marks = frame.landmarks[side];
+  if (!marks) throw new RangeError(`no hand frame for side ${side}`);
+  const middle = marks.knuckles[1] as [number, number];
+  const ring = marks.knuckles[2] as [number, number];
+  const target: [number, number] = [(middle[0] + ring[0]) / 2, (middle[1] + ring[1]) / 4];
+  let best = -1;
+  let dist = Number.POSITIVE_INFINITY;
+  for (let v = 0; v < assets.manifest.vertexCount; v++) {
+    if (!used[v] || frame.side[v] !== side || (frame.digit[v] as number) === 0) continue;
+    if ((frame.volar[v] as number) < PALM_FACING) continue;
+    const d = Math.hypot(
+      (frame.palm[v * 2] as number) - target[0],
+      (frame.palm[v * 2 + 1] as number) - target[1],
+    );
+    if (d < dist) {
+      dist = d;
+      best = v;
+    }
+  }
+  if (best < 0) throw new RangeError(`no palm vertex on side ${side}`);
+  return best;
+}
+
+/** How nearly a vertex must face the palm's way to be on the palm (`HandFrame.volar`). */
+const PALM_FACING = 0.8;
+/** How nearly a vertex must face down at rest to be on a sole. */
+const SOLE_FACING = 0.8;
+
+/**
+ * The sole's centre on one side: of the foot's vertices whose skin faces down
+ * at rest, the one nearest, seen from below, the point midway from the ankle to
+ * the base of the big toe.
+ */
+function soleCentre(assets: HumanoidAssets, used: Uint8Array, ankle: Vec3, toe: Vec3): number {
+  const zones = skinZones(assets);
+  const foot = zones.zone("foot");
+  const N = zones.normals;
+  const P = assets.positions;
+  const mid = [(ankle[0] + toe[0]) / 2, (ankle[2] + toe[2]) / 2] as const;
+  let best = -1;
+  let dist = Number.POSITIVE_INFINITY;
+  for (let v = 0; v < assets.manifest.vertexCount; v++) {
+    if (
+      !used[v] ||
+      (foot[v] as number) < 0.5 ||
+      Math.sign(P[v * 3] as number) !== Math.sign(ankle[0])
+    )
+      continue;
+    if (-(N[v * 3 + 1] as number) < SOLE_FACING) continue;
+    const d = Math.hypot((P[v * 3] as number) - mid[0], (P[v * 3 + 2] as number) - mid[1]);
+    if (d < dist) {
+      dist = d;
+      best = v;
+    }
+  }
+  if (best < 0) throw new RangeError("no sole vertex under the foot");
+  return best;
+}
+
 /** The deepest of the midline vertices a target moves: the bottom of the hole it shapes. */
 function deepestMoved(assets: HumanoidAssets, name: string): number {
   const P = assets.positions;
@@ -218,6 +291,10 @@ export function landmarkVertices(
     navel: deepestMoved(assets, "stomach/stomach-navel-in"),
     // The pubic point: the skin in front of the hips' centres, over the symphysis.
     "pubic-point": midlineInFront(assets, used, between("upperleg01.L", "upperleg01.R")),
+    "palm.L": palmCentre(assets, used, 0),
+    "palm.R": palmCentre(assets, used, 1),
+    "sole.L": soleCentre(assets, used, head("foot.L"), head("toe1-1.L")),
+    "sole.R": soleCentre(assets, used, head("foot.R"), head("toe1-1.R")),
   };
   vertexCache.set(assets, out);
   return out;

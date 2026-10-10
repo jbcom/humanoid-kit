@@ -179,6 +179,15 @@ describe("landmarks", { timeout: 300_000 }, () => {
         expect(frames[id].normal[2], `${name} ${id}`).toBeGreaterThan(0.6);
       expect(frames["ankle.L"].tangent[1], name).toBeLessThan(-0.9);
       expect(frames["wrist.L"].tangent[0], name).toBeGreaterThan(0.3);
+      // The palm is the hand's, a hand's length from the wrist at most, and faces in toward
+      // the thigh in the A-pose; the sole is under the foot, below the ankle, facing down.
+      expect(length(sub(frames["palm.L"].position, frames["wrist.L"].position)), name).toBeLessThan(
+        0.12,
+      );
+      expect(frames["palm.L"].normal[0], name).toBeLessThan(-0.3);
+      expect(y("sole.L"), name).toBeLessThan(y("ankle.L"));
+      expect(frames["sole.L"].normal[1], name).toBeLessThan(-0.8);
+      expect(z("sole.L"), name).toBeGreaterThan(frames["ankle.L"].position[2] - 0.02);
       // The ear lobes are out at the sides of the head and behind the face.
       for (const id of ["ear-lobe.L", "ear-lobe.R"] as const) {
         expect(Math.abs(frames[id].position[0]), `${name} ${id}`).toBeGreaterThan(0.04);
