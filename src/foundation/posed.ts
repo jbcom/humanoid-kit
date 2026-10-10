@@ -9,6 +9,7 @@
  */
 import type { HumanoidModel } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { renderFold, type SurfaceFold } from "../rig/hipFold.ts";
 import {
   type BoneRotations,
   bodyPoseRotations,
@@ -73,35 +74,61 @@ function weldOf(rest: Float32Array): Uint32Array {
 /** The body of `recipe` in `pose`: `REST_POSE`, or a whole-body pose of the body pack by name. */
 export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string): PosedBody {
   const ev = model.evaluate(recipe);
+  // The evaluation's arrays are the model's scratch: kept before anything else evaluates.
+  const rest = Float32Array.from(ev.positions);
+  const restNormals = Float32Array.from(ev.normals);
+  const control = Float32Array.from(ev.control);
   const topology = ev.surface === "adult" ? model.adultSurface() : model.topology().body;
   if (!topology) throw new Error("an adult evaluation without the adult surface");
   const rig = rigData(model.assets);
-  const bones = restBones(model.assets, ev.control);
+  const bones = restBones(model.assets, control);
   const rotations =
     pose === REST_POSE ? IDENTITY_POSE(rig.bones.length) : bodyPoseRotations(rig, pose);
+  const fold = renderFold(solvedHipFold(model, recipe));
   const { skinIndex, skinWeight } = topology;
-  const n = ev.positions.length;
+  const n = rest.length;
   return {
     surface: ev.surface,
     index: topology.index,
-    rest: Float32Array.from(ev.positions),
-    restNormals: Float32Array.from(ev.normals),
+    rest,
+    restNormals,
     positions: skinPositions(
       bones,
       rotations,
-      ev.positions,
+      rest,
       skinIndex,
       skinWeight,
       new Float32Array(n),
+      fold,
     ),
-    normals: skinNormals(bones, rotations, ev.normals, skinIndex, skinWeight, new Float32Array(n)),
-    weld: weldOf(ev.positions),
+    normals: skinNormals(
+      bones,
+      rotations,
+      restNormals,
+      skinIndex,
+      skinWeight,
+      new Float32Array(n),
+      fold,
+    ),
+    weld: weldOf(rest),
     vertexCount: topology.vertexCount,
     skinIndex,
     skinWeight,
     bones,
     rotations,
     heads: posedBoneHeads(bones, rotations),
-    control: Float32Array.from(ev.control),
+    control,
   };
+}
+
+/**
+ * The figure's hip fold on its body surface (`HumanoidModel.hipFold`), solved
+ * to the end at once: the renderer's corrective for a flexed hip, which the
+ * posed body must carry as the drawn one does.
+ */
+function solvedHipFold(model: HumanoidModel, recipe: Recipe): SurfaceFold {
+  const solve = model.hipFold(recipe);
+  let step = solve.next();
+  while (!step.done) step = solve.next();
+  return step.value.fold;
 }

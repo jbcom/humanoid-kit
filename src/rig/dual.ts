@@ -16,7 +16,7 @@
  * by the mean of its bones' shares.
  */
 import { type BoneRotations, posedBones, type RestBones } from "./bones.ts";
-import { addFold, folds, type HipFold, type HipPose, hipPose } from "./hipFold.ts";
+import { addFold, addFoldNormal, folds, type HipFold, type HipPose, hipPose } from "./hipFold.ts";
 import { mul, type Quat, rotate } from "./quat.ts";
 
 /** Floats per bone in `dualBones`: the rotation (x, y, z, w), then the dual part (x, y, z, w). */
@@ -277,6 +277,36 @@ export function skinVertex(
   out[at + 2] = (1 - a) * lz + a * dz;
 }
 
+/** The figure's root rotation, which the hip fold's displacements turn with. */
+function rootTurn(rest: RestBones, rotations: BoneRotations): Quat {
+  const root = rest.parents.indexOf(-1);
+  return [
+    rotations[root * 4] as number,
+    rotations[root * 4 + 1] as number,
+    rotations[root * 4 + 2] as number,
+    rotations[root * 4 + 3] as number,
+  ];
+}
+
+/** The flexion vertex `v`'s thigh bones have, weighted by its skin, or null if no thigh holds it. */
+function thighFlexion(
+  hips: HipPose,
+  skinIndex: SkinIndex,
+  skinWeight: Float32Array,
+  v: number,
+): number | null {
+  let held = 0;
+  let flexion = 0;
+  for (let k = 0; k < 4; k++) {
+    const b = skinIndex[v * 4 + k] as number;
+    if (!hips.thigh[b]) continue;
+    const w = skinWeight[v * 4 + k] as number;
+    held += w;
+    flexion += w * (hips.flexion[b] as number);
+  }
+  return held ? flexion / held : null;
+}
+
 /**
  * The renderer's skinning of `positions` (base-mesh vertices) by `rotations`:
  * each vertex skinned linearly and by dual quaternions, the two mixed by the
@@ -298,13 +328,7 @@ export function skinPositionsBlended(
   // The hip fold's displacement is read at the flexion the vertex's thigh bones have, and turns with the figure's root.
   const hips = fold ? hipPose(rest, rotations) : null;
   const folding = fold !== undefined && hips !== null && folds(hips);
-  const root = rest.parents.indexOf(-1);
-  const turn: Quat = [
-    rotations[root * 4] as number,
-    rotations[root * 4 + 1] as number,
-    rotations[root * 4 + 2] as number,
-    rotations[root * 4 + 3] as number,
-  ];
+  const turn = rootTurn(rest, rotations);
   const shown = new Float32Array(3);
   for (let v = 0; v < count; v++) {
     skinVertex(
@@ -319,18 +343,10 @@ export function skinPositionsBlended(
       v * 3,
     );
     if (!folding) continue;
-    let held = 0;
-    let flexion = 0;
-    for (let k = 0; k < 4; k++) {
-      const b = skinIndex[v * 4 + k] as number;
-      if (!hips.thigh[b]) continue;
-      const w = skinWeight[v * 4 + k] as number;
-      held += w;
-      flexion += w * (hips.flexion[b] as number);
-    }
-    if (!held) continue;
+    const flexion = thighFlexion(hips, skinIndex, skinWeight, v);
+    if (flexion === null) continue;
     shown.fill(0);
-    addFold(fold, v, flexion / held, shown, 0);
+    addFold(fold, v, flexion, shown, 0);
     const [dx, dy, dz] = rotate(turn, shown[0] as number, shown[1] as number, shown[2] as number);
     out[v * 3] = (out[v * 3] as number) + dx;
     out[v * 3 + 1] = (out[v * 3 + 1] as number) + dy;
@@ -415,10 +431,16 @@ export function skinNormalsBlended(
   skinWeight: Float32Array,
   out: Float32Array,
   share: DualShare,
+  fold?: HipFold,
 ): Float32Array {
   const pose = skinPose(rest, rotations, share);
   const count = normals.length / 3;
-  for (let v = 0; v < count; v++)
+  // As the shader: the fold's turn added to the skinned normal, made a unit vector again.
+  const hips = fold ? hipPose(rest, rotations) : null;
+  const folding = fold !== undefined && hips !== null && folds(hips);
+  const turn = rootTurn(rest, rotations);
+  const shown = new Float32Array(3);
+  for (let v = 0; v < count; v++) {
     skinNormal(
       pose,
       skinIndex,
@@ -430,6 +452,20 @@ export function skinNormalsBlended(
       out,
       v * 3,
     );
+    if (!folding) continue;
+    const flexion = thighFlexion(hips, skinIndex, skinWeight, v);
+    if (flexion === null) continue;
+    shown.fill(0);
+    addFoldNormal(fold, v, flexion, shown, 0);
+    const [dx, dy, dz] = rotate(turn, shown[0] as number, shown[1] as number, shown[2] as number);
+    const x = (out[v * 3] as number) + dx;
+    const y = (out[v * 3 + 1] as number) + dy;
+    const z = (out[v * 3 + 2] as number) + dz;
+    const len = Math.hypot(x, y, z) || 1;
+    out[v * 3] = x / len;
+    out[v * 3 + 1] = y / len;
+    out[v * 3 + 2] = z / len;
+  }
   return out;
 }
 

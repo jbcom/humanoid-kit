@@ -9,6 +9,7 @@ import { REST_POSE } from "../src/foundation/permutations.ts";
 import { posedSurface } from "../src/foundation/posed.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { skinPositions } from "../src/rig/pose.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(), { subdivision: 1 });
@@ -34,6 +35,28 @@ describe("the posed body", () => {
   it("raises the hands above the head in the overhead pose", () => {
     const body = posedSurface(model, recipe, "overhead");
     expect(maxY(body.positions)).toBeGreaterThan(maxY(body.rest) + 0.05);
+  });
+
+  it("carries the renderer's hip fold where the hips flex, and nowhere at rest", () => {
+    const seated = posedSurface(model, recipe, "seated");
+    const unfolded = skinPositions(
+      seated.bones,
+      seated.rotations,
+      seated.rest,
+      seated.skinIndex,
+      seated.skinWeight,
+      new Float32Array(seated.rest.length),
+    );
+    let moved = 0;
+    for (let v = 0; v < seated.vertexCount; v++) {
+      const d = Math.hypot(
+        (seated.positions[v * 3] as number) - (unfolded[v * 3] as number),
+        (seated.positions[v * 3 + 1] as number) - (unfolded[v * 3 + 1] as number),
+        (seated.positions[v * 3 + 2] as number) - (unfolded[v * 3 + 2] as number),
+      );
+      if (d > 0.001) moved++;
+    }
+    expect(moved).toBeGreaterThan(50);
   });
 
   it("keeps the seams' duplicates together in a pose", () => {

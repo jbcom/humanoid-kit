@@ -341,7 +341,7 @@ export function skinPositions(
   );
 }
 
-/** The rig's skinning of rest `normals` by `rotations`, with the same shares as `skinPositions`. */
+/** The rig's skinning of rest `normals` by `rotations`, with the same shares and fold as `skinPositions`. */
 export function skinNormals(
   rest: RestBones,
   rotations: BoneRotations,
@@ -349,6 +349,7 @@ export function skinNormals(
   skinIndex: Uint8Array | Uint16Array,
   skinWeight: Float32Array,
   out: Float32Array,
+  fold?: HipFold,
 ): Float32Array {
   return skinNormalsBlended(
     rest,
@@ -358,6 +359,7 @@ export function skinNormals(
     skinWeight,
     out,
     poseShare(rest, rotations, dualShareOf(rest.names)),
+    fold,
   );
 }
 
