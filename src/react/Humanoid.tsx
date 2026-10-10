@@ -538,12 +538,13 @@ function SkinnedPart({
   // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
   useEffect(() => {
     if (!dual) return;
-    // The body's carries the hip fold, which its shadow follows too.
-    const shadows = dualShadowMaterials(dual, part === "body" || part === "adultBody");
+    // The body's carries the hip fold, which its shadow, bounds and picking follow too.
+    const body = part === "body" || part === "adultBody";
+    const shadows = dualShadowMaterials(dual, body);
     mesh.customDepthMaterial = shadows.depth;
     mesh.customDistanceMaterial = shadows.distance;
     const applyBoneTransform = mesh.applyBoneTransform;
-    followDualSkinning(mesh, dual);
+    followDualSkinning(mesh, dual, body);
     return () => {
       mesh.customDepthMaterial = undefined as never;
       mesh.customDistanceMaterial = undefined as never;
@@ -1124,12 +1125,15 @@ export function Humanoid({
   const figureKey = useMemo(() => (figure ? controlKey(figure.control) : ""), [figure]);
   /** Ends the hold on the settle that the fold's fade-in keeps, while it fades. */
   const fading = useRef<(() => void) | null>(null);
+  /** Counts the folds that have faded in whole: the meshes' bounds follow each (`shape`). */
+  const [foldsShown, setFoldsShown] = useState(0);
   useFrame((_, delta) => {
     if (!dual) return;
     if (dual.advanceFold(delta)) invalidate();
     else if (fading.current) {
       fading.current();
       fading.current = null;
+      setFoldsShown((n) => n + 1);
     }
   });
   // biome-ignore lint/correctness/useExhaustiveDependencies: figureKey stands for the figure; foldedFor holds what it was evaluated from
@@ -1155,7 +1159,7 @@ export function Humanoid({
           left.array.fill(-1);
           left.needsUpdate = true;
         }
-        dual.setFold(fold);
+        dual.setFold(fold, surface);
         // It fades in over the next frames (`DualBones.advanceFold`), and the figure is not settled before it has.
         fading.current?.();
         fading.current = settle.begin();
@@ -1171,9 +1175,10 @@ export function Humanoid({
       end();
     };
   }, [client, hipsFlexed, figureKey, dual, geometries, adultGeometry, report, settle]);
-  // A new identity whenever the figure or its pose changes: the meshes' bounds follow it.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: figure and rotations are the triggers
-  const shape = useMemo(() => ({}), [figure, rotations]);
+  // A new identity whenever the figure or its pose changes, or a fold has faded in: the
+  // meshes' bounds follow it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: figure, rotations and foldsShown are the triggers
+  const shape = useMemo(() => ({}), [figure, rotations, foldsShown]);
   const onGroundOffsetRef = useLatest(onGroundOffset);
   // A clip's pose is written each frame (`useFigureAnimation`), the face units over it.
   const liftedRef = useRef<Group>(null);
