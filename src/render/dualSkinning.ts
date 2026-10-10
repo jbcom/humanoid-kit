@@ -66,6 +66,8 @@ export const FOLD_FADE = 0.15;
 /** The vertex attribute holding a vertex's row in the fold texture, or -1. */
 export const FOLD_SLOT_ATTRIBUTE = "hkFoldSlot";
 
+/** The widest a fold texture's line may be: the texture size every WebGL 2 device takes. */
+const FOLD_LINE_TEXELS_MAX = 2048;
 /**
  * Fold rows laid side by side on one line of the fold texture. A row per line
  * made the texture as tall as the rows, and the adult surface's fold has near ten
@@ -74,16 +76,32 @@ export const FOLD_SLOT_ATTRIBUTE = "hkFoldSlot";
  * centimetres from where the CPU put it. Lines of 2048 texels, the size every
  * WebGL 2 device takes, hold any fold of up to 2048 lines of rows.
  */
-export const FOLD_ROWS_PER_LINE = Math.floor(2048 / (FOLD_KEYS * 2));
-/** Texels on a line of the fold texture. */
-const FOLD_LINE = FOLD_ROWS_PER_LINE * FOLD_KEYS * 2;
+export const FOLD_ROWS_PER_LINE = Math.floor(FOLD_LINE_TEXELS_MAX / (FOLD_KEYS * 2));
+/** Texels on a line of the fold texture: whole rows, two texels a key. */
+export const FOLD_LINE_TEXELS = FOLD_ROWS_PER_LINE * FOLD_KEYS * 2;
+
+/**
+ * Where in the fold texture row `row`'s key `key` lies, `part` 0 its displacement and
+ * 1 its normal's change: [x, y] in texels. The layout's one definition; the shader's
+ * `hkFoldTexel` is this, and `foldTexture` writes the rows where it says.
+ */
+export function foldTexel(row: number, key: number, part: 0 | 1): [number, number] {
+  const texel = row * FOLD_KEYS * 2 + key * 2 + part;
+  return [texel % FOLD_LINE_TEXELS, Math.floor(texel / FOLD_LINE_TEXELS)];
+}
 
 /** A fold texture of `rows` rows from their data (`SurfaceFold.data`), padded out to whole lines. */
 function foldTexture(data: Float32Array, rows: number): DataTexture {
   const lines = Math.max(1, Math.ceil(rows / FOLD_ROWS_PER_LINE));
-  const texels = new Float32Array(lines * FOLD_LINE * 4);
-  texels.set(data.subarray(0, Math.min(data.length, texels.length)));
-  const t = new DataTexture(texels, FOLD_LINE, lines, RGBAFormat, FloatType);
+  const texels = new Float32Array(lines * FOLD_LINE_TEXELS * 4);
+  for (let row = 0; row < rows; row++)
+    for (let key = 0; key < FOLD_KEYS; key++)
+      for (const part of [0, 1] as const) {
+        const [x, y] = foldTexel(row, key, part);
+        const from = ((row * FOLD_KEYS + key) * 2 + part) * 4;
+        texels.set(data.subarray(from, from + 4), (y * FOLD_LINE_TEXELS + x) * 4);
+      }
+  const t = new DataTexture(texels, FOLD_LINE_TEXELS, lines, RGBAFormat, FloatType);
   t.minFilter = NearestFilter;
   t.magFilter = NearestFilter;
   t.generateMipmaps = false;
@@ -301,9 +319,13 @@ export const FOLD_FUNCTIONS = /* glsl */ `
 uniform highp sampler2D ${FOLD_UNIFORM};
 uniform int ${ROOT_UNIFORM};
 uniform float ${FOLD_BLEND_UNIFORM};
-vec3 hkFoldKey( int key, int slot, int part ) {
+// foldTexel's layout (src/render/dualSkinning.ts): rows side by side, FOLD_LINE_TEXELS a line.
+ivec2 hkFoldTexel( int slot, int key, int part ) {
 	int texel = slot * ${FOLD_KEYS * 2} + key * 2 + part;
-	return texelFetch( ${FOLD_UNIFORM}, ivec2( texel % ${FOLD_LINE}, texel / ${FOLD_LINE} ), 0 ).xyz;
+	return ivec2( texel % ${FOLD_LINE_TEXELS}, texel / ${FOLD_LINE_TEXELS} );
+}
+vec3 hkFoldKey( int key, int slot, int part ) {
+	return texelFetch( ${FOLD_UNIFORM}, hkFoldTexel( slot, key, part ), 0 ).xyz;
 }
 // part 0: the vertex's displacement; part 1: what its normal gains.
 vec3 hkFoldValue( float slotValue, float flexion, int part ) {

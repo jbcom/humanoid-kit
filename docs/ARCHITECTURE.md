@@ -1257,11 +1257,16 @@ thigh 12 to 56 mm behind the belly (median 27) where each figure's own solve lea
 none, and 18 adult corners alone are 1.1 MB, so the solve stays per figure, in the
 worker.
 
-The fold's texture holds `FOLD_ROWS_PER_LINE` rows a line, 2048 texels wide. A row
-a line made it as tall as the fold has rows, and the adult surface's has near ten
-thousand: past the GPU's largest texture (8192 on the render host) it never
-uploaded, and every adult figure drew its fold from nothing, up to 30 mm from the
-CPU's, unseen while the parity test sampled only the first rows.
+The fold's texture holds `FOLD_ROWS_PER_LINE` rows side by side on each line,
+`FOLD_LINE_TEXELS` texels wide (whole rows, at most 2048, the size every WebGL 2
+device takes). `foldTexel(row, key, part)` in `src/render/dualSkinning.ts` is the
+layout's one definition: `foldTexture` writes each row where it says, and the
+shader's `hkFoldTexel` is the same arithmetic. A change to the layout changes those
+two together. A row a line made the texture as tall as the fold has rows, and the
+adult surface's has near ten thousand: past the GPU's largest texture (8192 on the
+render host) it never uploaded, and every adult figure drew its fold from nothing,
+up to 30 mm from the CPU's, unseen while the parity test sampled only the first
+rows.
 
 ### Reservoir skinning (2026-10-10)
 
@@ -2789,6 +2794,27 @@ the open literature (research/SKIN-STATES.md, A4), so `genitalAlbedo` models it
 along the measured melanin and haemoglobin axes the areola colour already uses,
 with a thin, vascular glans; the sizes of the shifts are choices, not
 measurements.
+
+**Limits, stated (ruled 2026-10-10).** An organ skinned by its root
+("Reservoir skinning") is rigid with the pelvis, and nothing yet compresses it
+where a flexed thigh meets it: the thigh passes into it where, skinned as the
+skin it was drawn from, it used to fold inside out with the thigh. Counted on
+every vertex against integration's figures and the branch's static weights, the
+smoke tier's inverted faces fell by up to 40 %, and penetration rose in these rows:
+
+| Row | Penetrating before → after | Inverted before → after |
+| --- | --- | --- |
+| f-elder squat | 572 (integration) → 613 (+7 %) | 1389 → 1374 |
+| f-heavy squat | 945 (integration) → 955 | 1996 → 1941 |
+| m-muscular seated | 1255 → 1377 | 2741 → 1579 |
+| m-muscular squat | 1381 → 1594 | 3132 → 2171 |
+
+They are the contact compression work, deferred. So is the thin dorsal lip at the
+root of a small shaft: the skin line lies inside the flaccid cut by 1.1 mm on
+average and 2.1 mm at the back, and the skirt folds back over the skin to it. Two
+millimetres more footprint past the cut removes it (folded quads on the small key
+from 21 to 3) but worsened the men's rows again (m-muscular squat folds 1307 to
+1470, penetrating 1594 to 1797), so it waits on contact handling.
 
 Rejected: shipping layer code inside the adult pack (a second code path that
 the core's tests could not reach), and recompiling the material when the pack
