@@ -1624,7 +1624,8 @@ the sides.
 **Limit, stated (ruling, 2026-10-10).** The squashed skin and the knee's volume are
 accepted for this fold and are not waived: the smoke tier's squashed rest skin
 2088 → 2962 cm², all of the rise at the back of the knee, and the knee's volume
-0.56 to 0.68 of rest in every squat (the band is 0.8 to 1.2). Keeping the volume, so
+0.56 to 0.68 of rest in every squat (the band is 0.8 to 1.2; on the volume measured
+as what the skin encloses, since 2026-10-10, 0.50 to 0.56). Keeping the volume, so
 that a press bulges the flesh out to the sides rather than flattening it, is the
 contact-compression unit, the next one this lane owns, for both joints: the hips'
 volumes are out of band the same way, 0.50 to 0.75 in the squat.

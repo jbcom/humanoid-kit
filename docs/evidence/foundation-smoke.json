@@ -19,7 +19,7 @@
       "squashed": 0,
       "squashedArea": 0,
       "volumeOut": [],
-      "worstVolume": 0.9999999993880344,
+      "worstVolume": 1,
       "folds": 0,
       "sharpest": 0,
       "seamGap": 0
@@ -45,7 +45,7 @@
       "squashed": 649,
       "squashedArea": 86.50651851669328,
       "volumeOut": [],
-      "worstVolume": 0.9009183291508746,
+      "worstVolume": 0.8876993166287015,
       "folds": 239,
       "sharpest": 178.79176277653087,
       "seamGap": 0
@@ -70,11 +70,8 @@
       "inverted": 138,
       "squashed": 18,
       "squashedArea": 6.909899114620544,
-      "volumeOut": [
-        "shoulder.L 0.71",
-        "shoulder.R 0.71"
-      ],
-      "worstVolume": 0.7074335530301945,
+      "volumeOut": [],
+      "worstVolume": 0.9142104001917086,
       "folds": 94,
       "sharpest": 168.00262223045448,
       "seamGap": 0
@@ -100,12 +97,12 @@
       "squashed": 1325,
       "squashedArea": 296.6633607371734,
       "volumeOut": [
-        "hip.L 0.71",
-        "knee.L 0.56",
-        "hip.R 0.71",
-        "knee.R 0.57"
+        "hip.L 0.77",
+        "knee.L 0.51",
+        "hip.R 0.77",
+        "knee.R 0.52"
       ],
-      "worstVolume": 0.5599499070291107,
+      "worstVolume": 0.5054347826086957,
       "folds": 245,
       "sharpest": 179.9875360120051,
       "seamGap": 0
@@ -131,7 +128,7 @@
       "squashed": 0,
       "squashedArea": 0,
       "volumeOut": [],
-      "worstVolume": 0.9999999962317723,
+      "worstVolume": 1,
       "folds": 0,
       "sharpest": 0,
       "seamGap": 0
@@ -157,7 +154,7 @@
       "squashed": 549,
       "squashedArea": 177.701829064701,
       "volumeOut": [],
-      "worstVolume": 0.8406051666433997,
+      "worstVolume": 0.8780403057678944,
       "folds": 211,
       "sharpest": 179.64758430131133,
       "seamGap": 0
@@ -182,11 +179,8 @@
       "inverted": 164,
       "squashed": 108,
       "squashedArea": 55.129071852040205,
-      "volumeOut": [
-        "shoulder.L 0.74",
-        "shoulder.R 0.74"
-      ],
-      "worstVolume": 0.7370839864267424,
+      "volumeOut": [],
+      "worstVolume": 1.017500817795224,
       "folds": 106,
       "sharpest": 173.66756131232108,
       "seamGap": 0
@@ -212,12 +206,10 @@
       "squashed": 1006,
       "squashedArea": 350.3799018805241,
       "volumeOut": [
-        "hip.L 0.66",
-        "knee.L 0.57",
-        "hip.R 0.66",
-        "knee.R 0.58"
+        "knee.L 0.50",
+        "knee.R 0.52"
       ],
-      "worstVolume": 0.5663436829649491,
+      "worstVolume": 0.5020804438280168,
       "folds": 274,
       "sharpest": 177.30710191266957,
       "seamGap": 0
@@ -243,7 +235,7 @@
       "squashed": 0,
       "squashedArea": 0,
       "volumeOut": [],
-      "worstVolume": 0.9999999990640192,
+      "worstVolume": 1,
       "folds": 0,
       "sharpest": 0,
       "seamGap": 0
@@ -268,11 +260,8 @@
       "inverted": 388,
       "squashed": 649,
       "squashedArea": 200.21964194751547,
-      "volumeOut": [
-        "hip.L 0.68",
-        "hip.R 0.69"
-      ],
-      "worstVolume": 0.6817004615408465,
+      "volumeOut": [],
+      "worstVolume": 0.8102189781021898,
       "folds": 457,
       "sharpest": 178.90079174098926,
       "seamGap": 0
@@ -297,11 +286,8 @@
       "inverted": 170,
       "squashed": 26,
       "squashedArea": 13.633836770135222,
-      "volumeOut": [
-        "shoulder.L 0.68",
-        "shoulder.R 0.68"
-      ],
-      "worstVolume": 0.6776236429682068,
+      "volumeOut": [],
+      "worstVolume": 1.0891510346161286,
       "folds": 120,
       "sharpest": 178.48809268979974,
       "seamGap": 0
@@ -327,12 +313,12 @@
       "squashed": 968,
       "squashedArea": 381.5021883641662,
       "volumeOut": [
-        "hip.L 0.50",
-        "knee.L 0.67",
-        "hip.R 0.51",
-        "knee.R 0.68"
+        "hip.L 0.70",
+        "knee.L 0.55",
+        "hip.R 0.71",
+        "knee.R 0.55"
       ],
-      "worstVolume": 0.5037067387940461,
+      "worstVolume": 0.5495397942609637,
       "folds": 634,
       "sharpest": 179.9878904927752,
       "seamGap": 0
@@ -358,7 +344,7 @@
       "squashed": 0,
       "squashedArea": 0,
       "volumeOut": [],
-      "worstVolume": 0.9999999996131961,
+      "worstVolume": 1,
       "folds": 0,
       "sharpest": 0,
       "seamGap": 0
@@ -383,11 +369,8 @@
       "inverted": 302,
       "squashed": 736,
       "squashedArea": 235.85376798116874,
-      "volumeOut": [
-        "hip.L 0.75",
-        "hip.R 0.75"
-      ],
-      "worstVolume": 0.7464483110559246,
+      "volumeOut": [],
+      "worstVolume": 0.8460710441334768,
       "folds": 535,
       "sharpest": 179.54048324208128,
       "seamGap": 0
@@ -412,11 +395,8 @@
       "inverted": 252,
       "squashed": 20,
       "squashedArea": 10.36819678952453,
-      "volumeOut": [
-        "shoulder.L 0.71",
-        "shoulder.R 0.71"
-      ],
-      "worstVolume": 0.7066201836991014,
+      "volumeOut": [],
+      "worstVolume": 1.0598011804908356,
       "folds": 112,
       "sharpest": 174.53490412542396,
       "seamGap": 0
@@ -442,12 +422,12 @@
       "squashed": 1125,
       "squashedArea": 535.3859241569086,
       "volumeOut": [
-        "hip.L 0.59",
-        "knee.L 0.62",
-        "hip.R 0.60",
-        "knee.R 0.62"
+        "hip.L 0.77",
+        "knee.L 0.52",
+        "hip.R 0.77",
+        "knee.R 0.52"
       ],
-      "worstVolume": 0.5898013820959352,
+      "worstVolume": 0.5168338108882522,
       "folds": 635,
       "sharpest": 179.65053276917368,
       "seamGap": 0
@@ -473,7 +453,7 @@
       "squashed": 0,
       "squashedArea": 0,
       "volumeOut": [],
-      "worstVolume": 0.9999999957108037,
+      "worstVolume": 1,
       "folds": 0,
       "sharpest": 0,
       "seamGap": 0
@@ -499,7 +479,7 @@
       "squashed": 523,
       "squashedArea": 128.93085876549358,
       "volumeOut": [],
-      "worstVolume": 0.9210671645880797,
+      "worstVolume": 0.9048599670510709,
       "folds": 214,
       "sharpest": 176.28825285463944,
       "seamGap": 0
@@ -524,11 +504,8 @@
       "inverted": 228,
       "squashed": 30,
       "squashedArea": 8.606647962787164,
-      "volumeOut": [
-        "shoulder.L 0.52",
-        "shoulder.R 0.52"
-      ],
-      "worstVolume": 0.5248236828925988,
+      "volumeOut": [],
+      "worstVolume": 0.8944915254237288,
       "folds": 144,
       "sharpest": 172.02608317371573,
       "seamGap": 0
@@ -554,12 +531,12 @@
       "squashed": 1159,
       "squashedArea": 310.6357694027598,
       "volumeOut": [
-        "hip.L 0.73",
-        "knee.L 0.63",
-        "hip.R 0.74",
-        "knee.R 0.63"
+        "hip.L 0.80",
+        "knee.L 0.56",
+        "hip.R 0.80",
+        "knee.R 0.56"
       ],
-      "worstVolume": 0.6308301240078918,
+      "worstVolume": 0.563251762754044,
       "folds": 247,
       "sharpest": 179.97453945402674,
       "seamGap": 0
@@ -585,7 +562,7 @@
       "squashed": 0,
       "squashedArea": 0,
       "volumeOut": [],
-      "worstVolume": 1.0000000014783408,
+      "worstVolume": 1,
       "folds": 0,
       "sharpest": 0,
       "seamGap": 0
@@ -611,7 +588,7 @@
       "squashed": 242,
       "squashedArea": 46.96785674228773,
       "volumeOut": [],
-      "worstVolume": 0.8674698855688645,
+      "worstVolume": 0.8545732874091083,
       "folds": 39,
       "sharpest": 150.39826332008815,
       "seamGap": 0
@@ -636,11 +613,8 @@
       "inverted": 284,
       "squashed": 86,
       "squashedArea": 10.799591274927957,
-      "volumeOut": [
-        "shoulder.L 0.49",
-        "shoulder.R 0.49"
-      ],
-      "worstVolume": 0.4904174733292811,
+      "volumeOut": [],
+      "worstVolume": 0.9114694750699359,
       "folds": 126,
       "sharpest": 173.201323750997,
       "seamGap": 0
@@ -666,12 +640,10 @@
       "squashed": 684,
       "squashedArea": 105.75155741726365,
       "volumeOut": [
-        "hip.L 0.69",
-        "knee.L 0.56",
-        "hip.R 0.69",
-        "knee.R 0.56"
+        "knee.L 0.51",
+        "knee.R 0.51"
       ],
-      "worstVolume": 0.5552872308460663,
+      "worstVolume": 0.508765243902439,
       "folds": 112,
       "sharpest": 174.96001188743108,
       "seamGap": 0
