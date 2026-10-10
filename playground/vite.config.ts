@@ -21,12 +21,6 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ["humanoid-kit"],
-    // The scan at startup follows the playground's own imports, not the library's
-    // behind the aliases: a cold server found three-mesh-bvh and RoomEnvironment
-    // only when the first page asked for them, re-bundled, and failed that page's
-    // modules with 504 (Outdated Optimize Dep). Scanning the library's sources too
-    // bundles every dependency before the first page.
-    entries: ["index.html", "../src/**/*.{ts,tsx}"],
   },
   server: {
     fs: { allow: [here("..")] },
