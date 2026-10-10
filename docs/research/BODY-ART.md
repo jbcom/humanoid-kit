@@ -156,6 +156,7 @@ its melanocytes and a naevus is a nest of them, whatever the skin round them.
 | Tissue depth | lobe 4 mm, helix 2, nostril 3, columella 7 across, brow 8, lip 6, navel 8 | CHOICES |
 | Default sizes | stud 3 mm, ring 10 mm across, barbell 14 mm | CHOICES (common retail sizes) |
 | Ring wire, barbell balls and bar | 8% of the ring (≥ 0.8 mm); balls 22% of the bar (≥ 2.5 mm); bar 1.2 mm | CHOICES |
+| A barbell's balls | each end moved out along the skin's normal until its ball rests on the skin (centre a radius out, skin searched within 4 cm), the bar bending through the hole's middle | Navel and brow bars are curved to bring both balls out of the tissue. A straight bar half the tissue's depth under a flat or convex surface held both balls 4.5 mm (navel) and 3.3 mm (brow) inside the skin: the sheets' navel showed no barbell. A unit test holds both balls outside the rendered skin and the bar's middle inside it |
 | Metal reflectance (linear) | steel 0.56/0.57/0.58, silver 0.95/0.93/0.88, gold 1.00/0.71/0.29, titanium 0.54/0.50/0.45 | Measured optical constants (Hoffman, SIGGRAPH 2015 course notes, after Gulbrandsen 2014) |
 | Rose gold | 0.97/0.68/0.42 | CHOICE between gold and copper (0.95/0.64/0.54) |
 | Roughness | 0.18 | CHOICE: polished |

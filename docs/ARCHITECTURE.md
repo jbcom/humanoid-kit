@@ -2529,6 +2529,10 @@ age.
 - `<Humanoid>` builds the stud, ring or barbell there and skins every one of
   its vertices with those weights. It moves as one rigid piece with the skin at
   its site, which a piece a centimetre across does in life.
+- A barbell's balls are seated on the skin at placement, each moved out along
+  the skin's normal from the morphed mesh near the site, so the bar bends
+  through the hole as a navel's or brow's curved bar does. Straight under a
+  flat belly, both balls sat 4.5 mm inside it and the sheets showed none.
 - The part inside the tissue is hidden by the skin in front of it, and hair
   and garments hide the rest as depth does, so no occlusion bake is needed.
   The metals are measured reflectances.
