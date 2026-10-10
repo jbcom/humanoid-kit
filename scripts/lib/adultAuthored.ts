@@ -109,7 +109,7 @@ export const AUTHORED_PROVENANCE: readonly string[] = [
     "the flaccid shaft, glans and corona of ieroglif's CC0 `adult_male_genitalia_breast_fix` " +
     "(<http://www.makehumancommunity.org/proxy/adult_male_genitalia_breast_fix.html>) and the erect ones of Slayer227's CC0 " +
     "`Male_Gen-Heal1` (<http://www.makehumancommunity.org/proxy/erect_penis_only_works_with_males.html>), " +
-    "cut by `scripts/blender/cut_male.py`, placed by `scripts/lib/detail/sculpt.ts` and projected onto the phallic reservoir " +
+    "cut by `scripts/blender/cut_sculpt.py`, placed by `scripts/lib/detail/sculpt.ts` and projected onto the phallic reservoir " +
     "by `scripts/lib/detail/transfer.ts`. `scripts/lib/detail/phallus.ts` grows or shrinks each by one uniform factor to a " +
     "published dorsal length, and blends the flaccid sculpt into the erect one for arousal " +
     "(length, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F). `genitals/phallus-k1*` (the clitoral glans) " +

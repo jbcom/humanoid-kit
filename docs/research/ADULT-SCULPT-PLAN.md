@@ -404,7 +404,7 @@ It is outside the published pack's `files` and outside anything the site builds 
 
 **Pipeline.**
 
-1. *Cut* (`scripts/blender/cut_male.py`, headless Blender). The source is subdivided
+1. *Cut* (`scripts/blender/cut_sculpt.py`, headless Blender). The source is subdivided
    twice (Catmull-Clark) and cut by half-spaces. The piece connected to a seed is kept.
    A part must be a topological disc: one boundary loop, no non-manifold edge, Euler
    characteristic 1. The script fails otherwise and writes its numbers to `cuts.json`.

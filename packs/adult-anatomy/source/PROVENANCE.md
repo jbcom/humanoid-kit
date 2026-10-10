@@ -26,7 +26,7 @@ URLs the files came from.
 ## How each file is used
 
 - `adult_male_genitalia_breast_fix.obj`: a whole-body proxy in metres with
-  flaccid genitals. `scripts/blender/cut_male.py` subdivides it twice and cuts
+  flaccid genitals. `scripts/blender/cut_sculpt.py` subdivides it twice and cuts
   out the hanging shaft with its glans (`phallus.obj`, cut across the shaft's
   own axis a centimetre below the root) and the sac (`scrotum.obj`, cut just
   below its neck: the sac hangs free, with two lobes and a median raphe).
