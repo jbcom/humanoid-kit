@@ -435,3 +435,25 @@ export function surfaceFold(
   const slot = Float32Array.from(renderToSurface, (s) => rowOf[s] as number);
   return { slot, rows, data };
 }
+
+/**
+ * A surface's fold (`surfaceFold`) as a fold over its render vertices, for
+ * skinning them on the CPU (`skinPositions`) exactly as the shader does with
+ * the same rows.
+ */
+export function renderFold(fold: SurfaceFold): HipFold {
+  const slot = Int32Array.from(fold.slot);
+  const vertices = Uint32Array.from(
+    Array.from(slot.keys()).filter((v) => (slot[v] as number) >= 0),
+  );
+  const vectors = new Float32Array(fold.rows * FOLD_KEYS * 3);
+  const normals = new Float32Array(fold.rows * FOLD_KEYS * 3);
+  for (let r = 0; r < fold.rows; r++)
+    for (let key = 0; key < FOLD_KEYS; key++)
+      for (let k = 0; k < 3; k++) {
+        const from = (r * FOLD_KEYS + key) * 8 + k;
+        vectors[(r * FOLD_KEYS + key) * 3 + k] = fold.data[from] as number;
+        normals[(r * FOLD_KEYS + key) * 3 + k] = fold.data[from + 4] as number;
+      }
+  return { vertices, slot, vectors, normals };
+}

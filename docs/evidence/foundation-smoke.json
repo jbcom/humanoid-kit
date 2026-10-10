@@ -1,0 +1,623 @@
+[
+  {
+    "body": "f-slim",
+    "pose": "rest",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 0,
+      "deepest": 0,
+      "deepestParts": "",
+      "contacts": 0,
+      "deepestContact": 0,
+      "inverted": 0,
+      "squashed": 0,
+      "volumeOut": [],
+      "worstVolume": 0.9999999993880344,
+      "folds": 0,
+      "sharpest": 0,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "f-slim",
+    "pose": "seated",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 69,
+      "deepest": 0.022720324057234464,
+      "deepestParts": "trunk~trunk",
+      "contacts": 34,
+      "deepestContact": 0.017218373882444675,
+      "inverted": 466,
+      "squashed": 363,
+      "volumeOut": [],
+      "worstVolume": 0.8925306116804884,
+      "folds": 319,
+      "sharpest": 177.84674332908213,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "f-slim",
+    "pose": "overhead",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 7,
+      "deepest": 0.026246313413996327,
+      "deepestParts": "trunk~head",
+      "contacts": 10,
+      "deepestContact": 0.022829213454340753,
+      "inverted": 138,
+      "squashed": 18,
+      "volumeOut": [
+        "shoulder.L 0.71",
+        "shoulder.R 0.71"
+      ],
+      "worstVolume": 0.7074335530301945,
+      "folds": 94,
+      "sharpest": 168.00262223045448,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "f-slim",
+    "pose": "squat",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 62,
+      "deepest": 0.025554858256888354,
+      "deepestParts": "trunk~trunk",
+      "contacts": 160,
+      "deepestContact": 0.02972035814021085,
+      "inverted": 644,
+      "squashed": 570,
+      "volumeOut": [
+        "hip.L 0.53",
+        "hip.R 0.54"
+      ],
+      "worstVolume": 0.5337755134492884,
+      "folds": 422,
+      "sharpest": 178.72692781549327,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "f-heavy",
+    "pose": "rest",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 0,
+      "deepest": 0,
+      "deepestParts": "",
+      "contacts": 0,
+      "deepestContact": 0,
+      "inverted": 0,
+      "squashed": 0,
+      "volumeOut": [],
+      "worstVolume": 0.9999999962317723,
+      "folds": 0,
+      "sharpest": 0,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "f-heavy",
+    "pose": "seated",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 142,
+      "deepest": 0.018943692223227105,
+      "deepestParts": "trunk~trunk",
+      "contacts": 72,
+      "deepestContact": 0.01839934098146465,
+      "inverted": 1048,
+      "squashed": 289,
+      "volumeOut": [
+        "hip.L 0.76",
+        "hip.R 0.76"
+      ],
+      "worstVolume": 0.7563944211173251,
+      "folds": 281,
+      "sharpest": 179.1403126178227,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "f-heavy",
+    "pose": "overhead",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 7,
+      "deepest": 0.02695087663570861,
+      "deepestParts": "trunk~trunk",
+      "contacts": 13,
+      "deepestContact": 0.018517822240677564,
+      "inverted": 164,
+      "squashed": 108,
+      "volumeOut": [
+        "shoulder.L 0.74",
+        "shoulder.R 0.74"
+      ],
+      "worstVolume": 0.7370839864267424,
+      "folds": 106,
+      "sharpest": 173.66756131232108,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "f-heavy",
+    "pose": "squat",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 224,
+      "deepest": 0.025304181788236575,
+      "deepestParts": "trunk~trunk",
+      "contacts": 236,
+      "deepestContact": 0.02974197740187583,
+      "inverted": 1820,
+      "squashed": 584,
+      "volumeOut": [
+        "hip.L 0.43",
+        "hip.R 0.43"
+      ],
+      "worstVolume": 0.4254847236881683,
+      "folds": 432,
+      "sharpest": 179.5653552332418,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "m-muscular",
+    "pose": "rest",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 0,
+      "deepest": 0,
+      "deepestParts": "",
+      "contacts": 0,
+      "deepestContact": 0,
+      "inverted": 0,
+      "squashed": 0,
+      "volumeOut": [],
+      "worstVolume": 0.9999999990640192,
+      "folds": 0,
+      "sharpest": 0,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "m-muscular",
+    "pose": "seated",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 121,
+      "deepest": 0.018253050838533427,
+      "deepestParts": "trunk~trunk",
+      "contacts": 26,
+      "deepestContact": 0.012869322191128036,
+      "inverted": 868,
+      "squashed": 350,
+      "volumeOut": [
+        "hip.L 0.59",
+        "hip.R 0.59"
+      ],
+      "worstVolume": 0.5892831212099969,
+      "folds": 436,
+      "sharpest": 179.2459539243016,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "m-muscular",
+    "pose": "overhead",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 9,
+      "deepest": 0.027548352466347212,
+      "deepestParts": "trunk~trunk",
+      "contacts": 14,
+      "deepestContact": 0.028383139169533708,
+      "inverted": 170,
+      "squashed": 26,
+      "volumeOut": [
+        "shoulder.L 0.68",
+        "shoulder.R 0.68"
+      ],
+      "worstVolume": 0.6776236429682068,
+      "folds": 120,
+      "sharpest": 178.48809268979974,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "m-muscular",
+    "pose": "squat",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 170,
+      "deepest": 0.025371629925851145,
+      "deepestParts": "trunk~trunk",
+      "contacts": 180,
+      "deepestContact": 0.029962587387907205,
+      "inverted": 1321,
+      "squashed": 672,
+      "volumeOut": [
+        "hip.L 0.27",
+        "hip.R 0.23"
+      ],
+      "worstVolume": 0.22917839466649362,
+      "folds": 760,
+      "sharpest": 179.77970623180715,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "m-heavy",
+    "pose": "rest",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 0,
+      "deepest": 0,
+      "deepestParts": "",
+      "contacts": 0,
+      "deepestContact": 0,
+      "inverted": 0,
+      "squashed": 0,
+      "volumeOut": [],
+      "worstVolume": 0.9999999996131961,
+      "folds": 0,
+      "sharpest": 0,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "m-heavy",
+    "pose": "seated",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 194,
+      "deepest": 0.021659113155227137,
+      "deepestParts": "trunk~trunk",
+      "contacts": 39,
+      "deepestContact": 0.01203375962947279,
+      "inverted": 1608,
+      "squashed": 527,
+      "volumeOut": [
+        "hip.L 0.65",
+        "hip.R 0.65"
+      ],
+      "worstVolume": 0.6497414416005729,
+      "folds": 445,
+      "sharpest": 179.1933278537522,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "m-heavy",
+    "pose": "overhead",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 15,
+      "deepest": 0.026193692022337654,
+      "deepestParts": "trunk~head",
+      "contacts": 24,
+      "deepestContact": 0.025622490938090596,
+      "inverted": 252,
+      "squashed": 20,
+      "volumeOut": [
+        "shoulder.L 0.71",
+        "shoulder.R 0.71"
+      ],
+      "worstVolume": 0.7066201836991014,
+      "folds": 112,
+      "sharpest": 174.53490412542396,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "m-heavy",
+    "pose": "squat",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 418,
+      "deepest": 0.029608559877558793,
+      "deepestParts": "trunk~trunk",
+      "contacts": 200,
+      "deepestContact": 0.02978278482428288,
+      "inverted": 2081,
+      "squashed": 437,
+      "volumeOut": [
+        "hip.L 0.36",
+        "hip.R 0.37"
+      ],
+      "worstVolume": 0.3574151750288469,
+      "folds": 597,
+      "sharpest": 178.41752347396297,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "f-elder",
+    "pose": "rest",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 0,
+      "deepest": 0,
+      "deepestParts": "",
+      "contacts": 0,
+      "deepestContact": 0,
+      "inverted": 0,
+      "squashed": 0,
+      "volumeOut": [],
+      "worstVolume": 0.9999999957108037,
+      "folds": 0,
+      "sharpest": 0,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "f-elder",
+    "pose": "seated",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 103,
+      "deepest": 0.02146135153445529,
+      "deepestParts": "trunk~trunk",
+      "contacts": 30,
+      "deepestContact": 0.01980626421568924,
+      "inverted": 643,
+      "squashed": 298,
+      "volumeOut": [],
+      "worstVolume": 0.8883988603868077,
+      "folds": 294,
+      "sharpest": 179.997344279467,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "f-elder",
+    "pose": "overhead",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 14,
+      "deepest": 0.02750963507960488,
+      "deepestParts": "trunk~trunk",
+      "contacts": 14,
+      "deepestContact": 0.026715240857569503,
+      "inverted": 228,
+      "squashed": 30,
+      "volumeOut": [
+        "shoulder.L 0.52",
+        "shoulder.R 0.52"
+      ],
+      "worstVolume": 0.5248236828925988,
+      "folds": 144,
+      "sharpest": 172.02608317371573,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "f-elder",
+    "pose": "squat",
+    "anatomy": "default",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 128,
+      "deepest": 0.025373296924469643,
+      "deepestParts": "trunk~trunk",
+      "contacts": 190,
+      "deepestContact": 0.029937914348266433,
+      "inverted": 1268,
+      "squashed": 586,
+      "volumeOut": [
+        "hip.L 0.57",
+        "hip.R 0.56"
+      ],
+      "worstVolume": 0.5648217604908529,
+      "folds": 432,
+      "sharpest": 179.6553006640705,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "child",
+    "pose": "rest",
+    "anatomy": "none",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 0,
+      "deepest": 0,
+      "deepestParts": "",
+      "contacts": 0,
+      "deepestContact": 0,
+      "inverted": 0,
+      "squashed": 0,
+      "volumeOut": [],
+      "worstVolume": 1.0000000014783408,
+      "folds": 0,
+      "sharpest": 0,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "child",
+    "pose": "seated",
+    "anatomy": "none",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 13,
+      "deepest": 0.021435977468492542,
+      "deepestParts": "trunk~trunk",
+      "contacts": 49,
+      "deepestContact": 0.02112266515771424,
+      "inverted": 234,
+      "squashed": 164,
+      "volumeOut": [],
+      "worstVolume": 0.8085498033490881,
+      "folds": 135,
+      "sharpest": 179.08263020892267,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "child",
+    "pose": "overhead",
+    "anatomy": "none",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 15,
+      "deepest": 0.024741373416963634,
+      "deepestParts": "head~head",
+      "contacts": 27,
+      "deepestContact": 0.023711185566250494,
+      "inverted": 284,
+      "squashed": 86,
+      "volumeOut": [
+        "shoulder.L 0.49",
+        "shoulder.R 0.49"
+      ],
+      "worstVolume": 0.4904174733292811,
+      "folds": 126,
+      "sharpest": 173.201323750997,
+      "seamGap": 0
+    }
+  },
+  {
+    "body": "child",
+    "pose": "squat",
+    "anatomy": "none",
+    "tones": [
+      "tone-1",
+      "tone-3",
+      "tone-6"
+    ],
+    "measure": {
+      "penetrating": 35,
+      "deepest": 0.02323617085051196,
+      "deepestParts": "trunk~trunk",
+      "contacts": 212,
+      "deepestContact": 0.029719506644252495,
+      "inverted": 434,
+      "squashed": 256,
+      "volumeOut": [
+        "hip.L 0.45",
+        "hip.R 0.45"
+      ],
+      "worstVolume": 0.4456992959604416,
+      "folds": 234,
+      "sharpest": 179.62036140297977,
+      "seamGap": 0
+    }
+  }
+]

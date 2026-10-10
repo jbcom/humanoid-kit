@@ -814,7 +814,9 @@ mean what they meant there; everything must be testable in Node.
   (the thighs opened 40°), `seated` (the hips and knees at 90°), `tucked`
   (the hips at 120°) and `bowed` (the trunk folded 60°) are the joint extremes the skinning and the creases are
   checked at (below), which the pack's benchmark does not reach: it bends no
-  elbow, knee or wrist. An expression layers on top of a body pose bone by
+  elbow, knee or wrist. `overhead` (both arms straight up) and `squat` (a deep
+  squat, heels down) are the foundation's (docs/FOUNDATION.md), each held to its
+  intent by a test of the posed skeleton. An expression layers on top of a body pose bone by
   bone.
 - *Grounding follows the pose.* The rest ground offset comes with each
   evaluation; a posed figure's comes from skinning its control mesh on the
@@ -2086,6 +2088,225 @@ built output (`dist-playground` and `docs/dist` by default) and fails if it
 contains an adult anatomy file (by SHA-256), the package name `humanoid-kit-adult-anatomy`,
 or the name of any of its targets or modifiers.
 
+## The foundation harness (design, 2026-10-09)
+
+What docs/FOUNDATION.md's first item builds: the one place the nude-form
+permutations are enumerated, the body posed on the CPU exactly as the
+renderer draws it, landmarks and surface queries on that posed body, and the
+invariant suite that measures it.
+
+**Use cases.** A foundation lane (correctives, adult anatomy, skin) runs the
+smoke tier in its unit tests and reads which permutations fail which
+invariant; a layer lane (garments, hair, body art) anchors to a landmark on
+any permutation and asks the posed body for closest points; evidence for any
+of them is one sheet request (`{"$foundation": "smoke"}`). **Requirements.**
+One source for bodies, tones, poses and anatomy, shared by tests and sheets;
+the posed surface identical to the drawn one; no adult target or modifier
+named in the core; no anatomy for anyone under 18, by type and by test;
+measurements cheap enough for the smoke tier to run in every local test pass.
+
+**Decisions.**
+
+- *The battery's data moves into the core* (`src/foundation/battery.ts`):
+  bodies, tones and the cross set as typed constants. `scripts/sheets/battery.json`,
+  which `hk-sheets` reads, is written from them (`scripts/write-battery.ts`)
+  and a test holds the file to the module, so there is one source.
+- *A permutation is data, not geometry*: `{ id, body, tone, pose, anatomy }`,
+  where the body and tone are battery entries, the pose `rest` (every bone at
+  rest: the A-pose the mesh is modelled in; the pack's `tpose` is MakeHuman's
+  T-pose, the arms raised level) or a whole-body pose of the body pack by name
+  (or an animation clip and time), and the anatomy a
+  size (`"default" | "min" | "max"`) the adult pack resolves through its own
+  `anatomy.features` when a figure is evaluated, so the core names no adult
+  modifier. The type allows an anatomy only on a body whose `adult` is the
+  literal `true`; `foundationPermutations` builds none otherwise, and a test
+  walks every tier for it.
+- *Poses are authored like the existing eight* (`scripts/poses/*.json`, packed
+  into the body pack), and animation frames are sampled from the animation pack
+  by clip and time; a pose's correctness is a geometric test of its intent
+  (overhead: the hands above the crown; squat: the hips below the knees, the
+  soles flat).
+- *The posed body is the renderer's*: `posedSurface` evaluates the recipe, fits
+  the rest skeleton from the evaluation's bone heads and skins the render
+  surface with `skinPositions`, the CPU reference of the shader's blend of
+  linear and dual quaternion skinning with its pose-dependent shares. A
+  corrective added to the renderer is added there, or the harness measures a
+  body nobody draws.
+- *Geometry is shared across tones*: tone changes no position, so the invariant
+  suite poses each body × pose × anatomy once and reports it for every tone.
+
+**The invariants (built 2026-10-09).** `measureInvariants`
+(`src/foundation/invariants.ts`) measures a posed body against itself at rest:
+
+- *Penetration* by ray parity: a ray out along a vertex's skinned normal
+  crosses closed skin an even number of times from outside, so an odd count,
+  agreed by a second ray tilted 27° (the eyes' sockets and the mouth are
+  openings a ray can leave through), puts the vertex inside skin it passed
+  through. Its depth is the nearest skin outside its 4 cm rest neighbourhood,
+  which must lie within 3 cm. Deeper than 2 mm is a failure, unless the two
+  parts (by the bone each vertex follows most) are a named contact pair
+  (`CONTACT_PAIRS`: thigh on shin, limbs on the trunk, the thighs together),
+  reported apart.
+- *Collapse*: a triangle that turns against its skinned normals where at rest
+  it agreed with them (a lip's or a lid's edge disagrees at rest, by its
+  shape), or keeps under 30% of its rest area; and the volume each shoulder,
+  elbow, hip and knee closes with its joint's head, held to 0.8–1.2 of rest.
+- *Folds*: an edge sharper than 60° in the pose where it was under 30° at
+  rest, outside the named creases (the crease layers' masks).
+- *Seams*: a UV seam's duplicates stay together.
+
+Triangles under 10⁻⁴ mm² at rest are not measured: their shape is noise. A
+test holds each measure to a planted defect and an average body at rest to
+none. **The worklist**: `node scripts/foundation-smoke.ts` runs the smoke tier
+(24 bodies × poses, 18 s) and writes `docs/evidence/FOUNDATION-SMOKE.md` and
+its measures; the smoke test holds every body at rest to no failure and every
+row to no worse than the file, so a foundation lane that fixes a row rewrites
+it in its commit.
+
+**The landmarks (built 2026-10-09).** `landmarks(model, posedBody)`
+(`src/foundation/landmarks.ts`) gives every named place on a posed body as a
+position, the skin's outward normal and a tangent frame:
+
+- *Surface landmarks* are base-mesh vertices, found once from the assets as
+  body-art sites are (`targetPeak`, `src/model/targetPeak.ts`, now shared by
+  both): the peak of the MakeHuman target that shapes the feature (nose tip,
+  lips, chin, ear lobes, nipples), the bottom of the hole the navel's target
+  deepens, the highest midline vertex (crown), and, where no target shapes the
+  place, the midline skin straight in front of a joint (the sternal notch over
+  the clavicles' inner ends, the pubic point over the hips' centres), the palm's
+  centre in the hand frame's own palm plane (on the palm, midway from the wrist
+  to the middle knuckles), each digit's pad (on its last segment, of the skin
+  within half the fingertip's radius of the digit's axis between 40% and 90% of
+  the way to the tip, the vertices facing the palm's way nearly as much as the
+  most palmward of them, the one nearest 60% along: the pulp's centre; the
+  thumb's pad, turned toward the fingers, is measured against its own segment's
+  facing, not a fixed one), and the sole's centre (the downward-facing foot skin
+  under the midpoint of the ankle and the big toe's base). The openings are
+  found on the mesh's own shape: an ear canal's entrance is the floor of the
+  concha (of the vertices the ear's own move carries fully, the most medial
+  near where the ear's edge loops crowd round its bowl; the base mesh has no
+  canal hole), a nostril's is the downward-facing nose skin's centroid on its
+  side. On a posed
+  body a landmark is its vertex's own render vertex
+  (`HumanoidModel.baseRenderVertices`: the render vertex whose subdivision
+  stencil weights it most, exact at every level and on either body surface), its
+  normal the skinned normal there, its tangent the way to the neighbour that was
+  most nearly up the figure's own body at rest (chosen per figure, never cached
+  from another). The frame therefore bends and turns with the skin rather than
+  being recomputed from the pose.
+- *Joint landmarks* are joint centres: a bone's posed head, framed by the limb
+  that reaches it (the tangent along the limb, away from the body; the normal
+  the figure's forward turned by the limb's bone, square to the limb at rest).
+  The wrist is framed by the forearm and the ankle by the shin, so neither
+  frame degenerates where the hand fans out or the foot runs forward.
+
+A test holds every landmark to an orthonormal frame on the drawn surface, left
+and right to mirror images, the body's order from the crown down, the limbs'
+lengths through every smoke pose, and both forms of an adult to the same
+places away from the pubic point (invariant 7). Adult-only landmarks (the
+genital root) come from the adult pack, as its piercing sites do, so the core
+names none.
+
+**The surface queries (built 2026-10-09).** `new BodySurface(posedBody)`
+(`src/foundation/surface.ts`) puts the posed skin's triangles in a
+bounding-volume hierarchy once and answers `closest(p, within)` (the point,
+the skin's normal blended from the skinned vertex normals, the triangle and
+the point's weights on it), `signedDistance(p)` (positive outside, by the
+side of that normal) and `frame(p)` (the normal, up along the skin or forward
+where the skin faces up or down, and their cross). The invariant suite's
+penetration measure builds its hierarchy here, so there is one. Tests hold a
+vertex to its own closest point, a point off the skin to its distance with
+the right sign in every smoke pose, the frame to the landmark's at a convex
+place, and a reach to finding nothing beyond it.
+
+## Affordances: the registry (design, 2026-10-09)
+
+docs/FOUNDATION.md, "Affordances", says what the body offers other objects
+and figures. This is how the kit names them, frames them and holds their
+state; the response (a channel widening, fingers closing, soft tissue
+compressing) and the clip-and-consume volumes are built on top of it.
+
+**Use cases.** A developer puts a sword in a hand: they need the hand's grip
+frame on the posed figure, set its closure and what it holds, and read back
+where it touches. A figure eats an apple: the mouth's aperture frame, an
+opening, and how much of what is inside it is consumed. An earring hangs
+from a lobe and pulls on it: a mount's frame and its load. Two figures couple:
+an aperture of one and an insertable part of the other, through the same API,
+each answering for its own state. The foundation's tests ask every affordance
+for its frame across the permutations, and the age policy asks which ones a
+figure under 18 may have.
+
+**Requirements.** Every affordance is framed on the posed, morphed body as
+drawn, so it follows any shape and pose. State is plain values a developer
+sets and the kit reports, checked on the way in. The registry is open: the
+core declares the body's own, and a pack (the adult pack) declares its own
+the same way, so the core names no adult affordance. Under 18, no
+genital or anal affordance exists, and none of an adult pack's can be asked
+for.
+
+**Decisions.**
+
+- *An affordance is data*: `{ id, kind, at, … }`, where `kind` is `aperture`,
+  `grip`, `mount` or `contact`, and `at` is where its frame comes from: a
+  landmark (`src/foundation/landmarks.ts`) or the midpoint of two (the mouth,
+  between the lips). Each kind fixes what its frame means: an aperture's
+  normal points out of the opening and its channel runs the other way; a
+  grip's normal leaves the gripping surface and its tangent runs along the
+  grip; a mount's normal leaves the skin it hangs from.
+- *The core registry* is a typed constant (`CORE_AFFORDANCES`); a pack's
+  affordances arrive in its manifest and join it when the pack loads, as its
+  piercing sites do. `affordances(recipe, registry)` is the list a figure
+  has (`FigureAffordances`): under 18, only those that say they are not the
+  adult anatomy's, so one that says nothing is refused. A figure's state and
+  frames are made from that list alone (the type admits no other), so no
+  route reaches an adult affordance under 18.
+- *State is a value per affordance*, validated by kind and by type, since a
+  developer's values arrive from plain JavaScript too (an opening and a closure
+  are numbers from 0 to 1; an occupancy is a depth and a radius, neither
+  negative; a load is a non-negative mass; what is held or attached is a name
+  or nothing). It lives with the figure, not in the registry, so two figures
+  with one registry have their own, and it is copied in and out, so nothing
+  outside can change it unchecked.
+- *Frames are evaluated, not stored*: `affordanceFrames(model, posedBody,
+  own)` reads the landmarks of that body, so an affordance is never out of
+  step with the skin it belongs to. A test frames every one on the smoke
+  tier's bodies and poses.
+
+- *Channels* (`src/affordance/channel.ts`, numbers and their sources in
+  `docs/research/AFFORDANCE-CHANNELS.md`): each aperture names a channel
+  behind its rim, a straight path in with an elliptical cross-section along a
+  size profile. Every size is an adult's, scaled by the figure's head width
+  (its ear canals' span over the default adult's); the mouth's width is the
+  figure's own (between its corners) and its height its opening.
+  `affordanceChannels(model, posedBody, own, states)` gives a figure's, and
+  `placeIn(channel, p)` says how far in a point is and whether it has passed
+  the rim, which is what hiding a consumed object and measuring an occupancy
+  read.
+
+- *The clip at the rim* (`src/render/channelClip.ts`): a `ChannelClip` holds a
+  figure's channels in world space (`set(channels, figure.matrixWorld)`, the
+  figure's scale carried into their sizes) and `clipMaterial(material, clip)`
+  has any material of an object that may enter them discard each fragment
+  `placeIn` puts inside one, so a bite dissolves past the lips and an earbud's
+  stem vanishes into the canal. A channel's size along it is its `knots`, the
+  one profile `halfSize` and the shader both read. A browser test holds the
+  discarded pixels to `placeIn`'s inside, pixel for pixel away from the walls.
+- *The finger pads are contacts* (`finger-pad-1.L` to `finger-pad-5.R`, thumb
+  to little finger): what a fingertip touches and presses with, each framed on
+  its pad landmark. A hand's grip keeps its palm frame; a pinch or a press is
+  told by the pads it uses.
+
+The registry is built in steps: the kinds, the core's apertures (the mouth,
+nostrils and ear canals) with their channels, grips, mounts, contacts and the
+finger pads, state, frames and the clip at the rim first. Next: the public
+API through `Humanoid` (frames each frame, the clip fed the figure's own
+channels), the response (a channel widening to what it holds), the adult
+pack's affordances, and curved channel paths. The canals' bends are placed
+by a CT study of 221 ears (PMC12198549: the first bend at the concha's
+junction, the second at the bony junction), but their angles were not found
+in an open source (Stinson and Lawton, JASA 85:2492, 1989, has them), so the
+paths stay straight until they are.
+
 ## Invariants
 
 1. One base mesh; no second skeleton or per-species geometry.
@@ -3003,7 +3224,12 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   edge), so one set of fields serves a child's 13 mm areola and a woman's 38,
   and a puberty that grows it, without a field per age. The resolution is the
   eight stops across the reach (a stop every 3.1 mm); the edge position is
-  continuous, its softness is not finer than that.
+  continuous, its softness is not finer than that. The coordinate runs on past
+  the disc, held at 1 (the skin's stop), as the ribs' and collarbones' do. It
+  once fell to 0 there, so each triangle on the mask's edge swept the whole
+  profile back to the nipple's stop. That drew a faint ring of the nipple's
+  colour and texture round every areola, the step under a man's (his nipple is
+  lighter than his areola), and a ring of small tubercles outside it.
 - *Sizes in metres are put on the base mesh by the measured stretch.* The fields
   are measured on the base mesh and the figure's mesh is that mesh morphed, so a
   nipple's surroundings are 0.68 times as big on a seven year old and 2.09 on the
@@ -3037,8 +3263,15 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   the body hair's strands, and kinds 2, 3 and 5 are unchanged.
 - *Montgomery tubercles are a share of cells, not a count.* Their relief is
   `hkTubercles`: bumps in the cells of a 2.2 mm grid, each raised once the
-  profile's occupancy at the pixel passes the cell's own random draw, by a short
-  ramp so a bump does not lose a side where the occupancy changes across it. A
+  profile's occupancy at its own centre passes the cell's random draw. Each
+  bump reads the layer's coordinate from the atlas at its centre's UV, so all
+  its pixels decide alike and it is drawn whole or not at all (a screen-space
+  gradient of the 8-bit coordinate was too coarse to extrapolate from). A bump
+  is drawn only if its centre lies inside the paint's `limit`
+  (`DetailPaint.limit`). Montgomery's limit is the areola's solid colour as
+  the stops draw it (`areolaSolid`: where the interpolated colour first fades
+  below nine tenths), less a millimetre and a bump's radius, so no tubercle
+  sits on the areola's fading edge or outside it. A
   ring profile (from a quarter of the areola's radius to nine tenths) and
   an occupancy of about 8% in a woman give about a dozen on an areola. Each is a
   1.5 mm bump (a bump spans 0.7 of a cell), where measured tubercles are 1 to 2
@@ -3051,10 +3284,21 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   of that between a fat at which it does not (`CLAVICLE_VISIBLE_FAT`,
   `RIB_VISIBLE_FAT`: ribs only on the leanest) and one at which it does, so the
   relief's strength is the figure's own; a heavy figure's collarbones and ribs
-  are flat. The collarbone is two periods of a crease layer across the bone: a
-  ridge on the clavicle's axis between the fossae above and below it, the
-  coordinate the distance up the bone's own cross-section, so a point straight
-  out from the bone is the ridge; a rib is the groove between two, nine
+  are flat. The collarbone is a swell layer (detail kind 10, `swellHeight`): a
+  smooth signed cross-section, the cubic B-spline through eight control values
+  in the stops, with a rounded ridge over the bone and the supraclavicular
+  fossa's hollow 2 to 3 cm above it, flat at both ends. Its coordinate is the
+  distance up the bone's own cross-section, from 2 cm below the bone to 4 cm
+  above, measured from the S-shaped bone (bowed forward over its inner two
+  thirds, back over its outer third), not its straight axis. The bone runs
+  from the rig's clavicle head out to the acromion (`clavicleLateralEnd`): the
+  rig's clavicle bone stops halfway, at the shoulder bone's head, so the first
+  layer drew only the inner half. It was two
+  grooves of a crease layer, and the grooves read as a hard outline round a
+  raised crescent; a swell has no groove, and the shader fades it by the
+  smootherstep of the mask per pixel, so the mask's edge leaves no step (a test
+  walks every edge the mask touches in half-millimetre pixels and bounds the
+  change between neighbours). A rib is the groove between two, nine
   periods down a window from the second rib to the tenth, along lines that fall
   25 degrees outward from the breastbone, and the breast, the arms and the
   breastbone's strip are left out.
@@ -3079,20 +3323,37 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   those that lie apart from it, a cell of the 64 by 64 grid and a cell's margin
   all round).
 - *Stretch marks are a detail layer that also colours.* Kind 9 in the stop table
-  (`pattern: "striae"`): the sole's friction ridges' noise (`ridgeHeight`, one
-  function in TypeScript and in the shader) past a threshold the figure's
-  amount sets (`striaMark`: coverage 2.5% of the sites' skin at an amount of a
-  quarter, 7.6% at half, 19% at 1; the edge soft by a fifth of the noise's range), as streaks 9 mm apart (marks of 3 to 5 mm) that run for
-  centimetres and end, in groups. A mark multiplies the skin by the layer's
-  colour ratio and sinks it a fifth of a millimetre; the header carries the
-  depth and the spacing, stop 0 the ratio and stop 1 the amount, and the
-  coordinate the streaks' direction. The mask is the site's weight and scales the
-  amount, so the belly, flank, hip and thigh differ in density; a mark is never
-  more opaque than the layer's strength. *Where:* the lower trunk, hips,
+  (`pattern: "striae"`): scattered spindles (`striaMark`, one function in
+  TypeScript and in the shader's `hkStriae`, sharing the sole ridges' hash).
+  On a grid of 12 cm cells, a cell holds at most one cluster: up to eight
+  parallel marks side by side, 6 to 12 mm apart, each 3 to 16 cm long and 1 to
+  7.5 mm wide with long sides tapering to points (its half-width goes as
+  1 − t⁴), bowed a little and meandering, the whole cluster turned up to 8°
+  off the skin's direction. Clusters group in patches of three by three cells,
+  each with its own share of them, so groups of marks lie with bare skin
+  between. Each cluster has its own threshold and appears as the figure's amount
+  passes it, so a growing amount adds clusters and never moves one, and the
+  share of skin marked grows in proportion to the amount (`striaeMeanCover`: 8%
+  at 1, half that at half). A pixel's coverage is box-filtered over its
+  footprint, so the marks are antialiased at any distance, and where a pixel no
+  longer resolves them (`STRIAE_DETAIL_FADE`, from half a typical width to one
+  and a half) the colour blends to the mean cover rather than shimmering. A
+  mark multiplies the skin by the layer's colour ratio and sinks it a fifth of
+  a millimetre, its relief with softer edges (`STRIA_RELIEF_SOFT`) that fades
+  out sooner (`STRIAE_RELIEF_FADE`). The header carries the depth and a mark's
+  typical width (3 mm, `STRIA_WIDTH`, the unit of every size above), stop 0 the
+  ratio and stop 1 the amount, and the coordinate the marks' direction. The
+  mask is the site's weight: it scales the amount, so the belly, flank, hip and
+  thigh differ in density, and fades the marks where it falls below 0.3
+  (`STRIA_MASK_EDGE`), so a cluster at a site's edge tapers out; a mark is
+  never more opaque than the layer's strength. *Where:* the lower trunk, hips,
   buttocks and the outer and back of the thigh, not the breast, groin, inner thigh,
-  skin that faces up or down or the midline's few centimetres (the body's UV islands meet
-  there, the noise is drawn in UV, and a mark that crossed would be cut and offset:
-  a limit of drawing in UV that the sole's ridges share). *Direction:* round the body, horizontal in the
+  skin that faces up or down or the midline's 1.5 to 4.5 cm (the body's UV islands meet
+  there, the marks are drawn in UV, and a mark that crossed would be cut and offset,
+  while the seam's vertices measure an orientation mixed from both islands that
+  tilts the marks into chevrons: a limit of drawing in UV that the sole's ridges
+  share). The pattern is seeded by the UV position, and the body's left islands
+  are the right's reflected, so each side has its own marks. *Direction:* round the body, horizontal in the
   skin's plane, across the stretch; the UV angle that gives it comes from
   `uvOrientation`, the code the feet's ridges use, stored about a seam
   (`STRIAE_ORIENTATION_SEAM`) at the angle the fewest neighbours straddle. *How much:*

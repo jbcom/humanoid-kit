@@ -1,0 +1,17 @@
+{
+  "name": "squat",
+  "title": "Deep squat",
+  "description": "A deep squat with the heels down: each hip flexed 125° with the knees turned out 20°, each knee bent 150°, the ankles bent back 25° to keep the soles flat, the trunk leaning forward. The check for the groin, the back of the knee and the calf pressed on the thigh.",
+  "base": "tpose",
+  "rotations": {
+    "spine01": { "Xrotation": 8 },
+    "spine02": { "Xrotation": 8 },
+    "spine03": { "Xrotation": 8 },
+    "upperleg01.L": { "Xrotation": -125, "Yrotation": -20 },
+    "upperleg01.R": { "Xrotation": -125, "Yrotation": 20 },
+    "lowerleg01.L": { "Xrotation": 150 },
+    "lowerleg01.R": { "Xrotation": 150 },
+    "foot.L": { "Xrotation": -25 },
+    "foot.R": { "Xrotation": -25 }
+  }
+}

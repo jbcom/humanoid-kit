@@ -491,9 +491,11 @@ export class HumanoidModel {
    */
   private readonly level: number;
   private readonly bodyFaces: Uint32Array;
-  /** The adult surface, built on first use (undefined: not yet; null: this pack has none). */
   /** The hip folds solved lately, by the shape they are for (`controlHash`), the most recently used last. */
   private readonly hipFolds = new Map<string, HipFold>();
+  /** Each body surface's `baseRenderVertices`, found on first use. */
+  private readonly baseRender = new Map<"base" | "adult", Int32Array>();
+  /** The adult surface, built on first use (undefined: not yet; null: this pack has none). */
   private adultBody:
     | { part: Part; edges: Uint32Array; faceTriangles: Uint32Array; topology: AdultSurfaceTopology }
     | null
@@ -1789,6 +1791,56 @@ export class HumanoidModel {
    */
   adultSurface(): AdultSurfaceTopology | null {
     return this.adultBodySurface()?.topology ?? null;
+  }
+
+  /**
+   * A value per base vertex (`field`, one per control vertex) carried to a body
+   * surface's render vertices through its subdivision stencil: the base's, or
+   * the adult surface's when there is one. For measuring a region of the skin
+   * (a crease, a landmark's area) on the surface as drawn.
+   */
+  bodyField(field: Float32Array, surface: "base" | "adult" = "base"): Float32Array {
+    const n = this.assets.manifest.vertexCount;
+    if (field.length !== n)
+      throw new RangeError(`a body field needs ${n} values, not ${field.length}`);
+    const mesh = surface === "adult" ? this.adultBodySurface()?.part.mesh : this.body.mesh;
+    if (!mesh) throw new RangeError("there is no adult surface to carry a field to");
+    return carryToRender(mesh, n, (v) => field[v] as number);
+  }
+
+  /**
+   * Each base vertex's own render vertex on a body surface (the base's, or the
+   * adult surface's): of the render vertices whose subdivision stencil weights it
+   * most, the one weighting it most, the lowest index where a UV seam splits it;
+   * -1 where the surface draws none (a face it leaves out, or a vertex a
+   * reservoir took). Where a place found on the base mesh (a landmark, a site)
+   * is on the surface as drawn, at every subdivision level.
+   */
+  baseRenderVertices(surface: "base" | "adult" = "base"): Int32Array {
+    const known = this.baseRender.get(surface);
+    if (known) return known;
+    const mesh = surface === "adult" ? this.adultBodySurface()?.part.mesh : this.body.mesh;
+    if (!mesh) throw new RangeError("there is no adult surface to find base vertices on");
+    const n = this.assets.manifest.vertexCount;
+    const out = new Int32Array(n).fill(-1);
+    const held = new Float32Array(n).fill(Number.NEGATIVE_INFINITY);
+    const { stencil, renderToSurface } = mesh;
+    renderToSurface.forEach((s, r) => {
+      let best = -1;
+      let weight = Number.NEGATIVE_INFINITY;
+      for (let k = stencil.offsets[s] as number; k < (stencil.offsets[s + 1] as number); k++)
+        if ((stencil.weights[k] as number) > weight) {
+          weight = stencil.weights[k] as number;
+          best = stencil.src[k] as number;
+        }
+      // Render vertices come in order, so a strictly larger weight keeps the lowest index on a tie.
+      if (best >= 0 && best < n && weight > (held[best] as number)) {
+        held[best] = weight;
+        out[best] = r;
+      }
+    });
+    this.baseRender.set(surface, out);
+    return out;
   }
 
   /**

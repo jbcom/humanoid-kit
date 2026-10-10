@@ -33,7 +33,7 @@ export const RIDGE_SIGMA = Math.sqrt(
 );
 
 /** PCG2D (Jarzynski and Olano 2020), the same arithmetic as the shader's `hkRidgeHash`. */
-function pcg2d(x: number, y: number): [number, number] {
+export function pcg2d(x: number, y: number): [number, number] {
   let a = (Math.imul(x, 1664525) + 1013904223) >>> 0;
   let b = (Math.imul(y, 1664525) + 1013904223) >>> 0;
   a = (a + Math.imul(b, 1664525)) >>> 0;
@@ -47,7 +47,8 @@ function pcg2d(x: number, y: number): [number, number] {
   return [a, b];
 }
 
-const UNIT = 1 / 4294967296;
+/** A `pcg2d` output word as a fraction in [0, 1). */
+export const UNIT = 1 / 4294967296;
 
 /**
  * The ridge relief at (`x`, `y`) metres, 0 to 1 (1 on a ridge's crest), for

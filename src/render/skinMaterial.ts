@@ -20,6 +20,7 @@ import {
   DataUtils,
   HalfFloatType,
   LinearFilter,
+  LinearMipmapLinearFilter,
   LinearSRGBColorSpace,
   MeshPhysicalMaterial,
   NoColorSpace,
@@ -43,6 +44,7 @@ import {
   type SkinPaintInput,
   STOP_COUNT,
   STOP_TABLE_WIDTH,
+  TUBERCLE_RADIUS,
 } from "../surface/layers.ts";
 import { LIPS_LAYER, NAIL_GLOSS_LAYER, SKIN_LAYERS } from "../surface/regions/index.ts";
 import {
@@ -58,10 +60,26 @@ import { SKIN_SCATTER, WAVELENGTH_RATIO } from "../surface/scatter.ts";
 import { SCATTER_TABLE } from "../surface/scatterTable.ts";
 import { luminance, MELANIN_ANCHORS, type Rgb, skinAlbedo } from "../surface/skinTone.ts";
 import {
+  STRIA_CELL,
+  STRIA_CLUSTER_LENGTH,
+  STRIA_CLUSTER_RAMP,
+  STRIA_CLUSTER_SPACING,
+  STRIA_CLUSTER_TURN,
+  STRIA_CLUSTER_WIDTH,
+  STRIA_MARK_AREA,
+  STRIA_MARK_SHARE,
+  STRIA_MARKS,
+  STRIA_MASK_EDGE,
+  STRIA_MEANDER,
+  STRIA_PATCH,
+  STRIA_PATCH_SHARE,
+  STRIA_RELIEF_SOFT,
+  STRIA_SALTS,
   STRIA_SOFT,
-  STRIA_THRESHOLD_BASE,
-  STRIA_THRESHOLD_SLOPE,
+  STRIAE_DETAIL_FADE,
+  STRIAE_MEAN_SAMPLES,
   STRIAE_ORIENTATION_SEAM,
+  STRIAE_RELIEF_FADE,
 } from "../surface/striae.ts";
 import { DECAL_FUNCTIONS } from "./bodyArtDecals.ts";
 import { type BodyArtTexture, MARK_NEUTRAL } from "./bodyArtTexture.ts";
@@ -319,19 +337,27 @@ float hkBumps( vec2 p ) {
 		}
 	return h;
 }
-// Tubercles: bumps in a share of the cells, the share (0..1) being the layer's occupancy where
-// the pixel is. A cell raises a bump once the occupancy passes its own random draw, by a ramp
-// rather than a step, so the bump does not lose a side where the occupancy changes across it.
-float hkTubercles( vec2 p, float occupancy ) {
+// Tubercles: bumps in a share of the cells, the share (0..1) being layer l's occupancy (its
+// profile) at the bump's own centre: the layer's coordinate is read from the atlas at the
+// centre's UV (cellUv: UV per cell), so every pixel of a bump makes the same decision and a
+// bump is drawn whole or not at all. A cell raises a bump once the occupancy passes its own
+// random draw, and only if its centre lies inside the limit, which the paint has drawn in by a
+// bump's radius (DetailPaint.limit in layers.ts): none crosses the edge it stands for.
+float hkTubercles( vec2 p, int l, vec2 uv, float cellUv, float limit ) {
 	vec2 i = floor( p );
 	float h = 0.0;
 	for ( int y = -1; y <= 1; y ++ )
 		for ( int x = -1; x <= 1; x ++ ) {
 			vec2 c = i + vec2( float( x ), float( y ) );
-			float present = smoothstep( 0.0, 0.02, occupancy - hkHash( c + 41.7 ) );
 			vec2 centre = c + 0.2 + 0.6 * vec2( hkHash( c ), hkHash( c + 17.31 ) );
-			float d = length( p - centre ) / 0.35;
-			h = max( h, present * pow( max( 1.0 - d * d, 0.0 ), 2.0 ) );
+			vec2 at2 = hkFields( l, uv + ( centre - p ) * cellUv );
+			float at = at2.y;
+			if ( at2.x <= 0.0 || at > limit ) continue;
+			float u = ( 1.5 + clamp( at, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
+			float occupancy = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
+			if ( occupancy <= hkHash( c + 41.7 ) ) continue;
+			float d = length( p - centre ) / ${glslFloat(TUBERCLE_RADIUS)};
+			h = max( h, pow( max( 1.0 - d * d, 0.0 ), 2.0 ) );
 		}
 	return h;
 }
@@ -376,18 +402,123 @@ float hkRidges( vec2 p, float theta, float spacing ) {
 float hkFootprintFade( float periodsPerPixel ) {
 	return 1.0 - smoothstep( 0.1, 0.3, periodsPerPixel );
 }
-// The stretch marks' weight at this pixel, 0 to 1: the mask and the layer's strength, the
-// marks where the ridge noise passes the threshold that the amount sets (the mask scales the
-// amount, so the sites' density follows it), faded out where the streaks are finer than a pixel.
-// The one function the colour and the relief both read.
-float hkStriaeWeight( int l, vec4 head, vec2 f, vec2 uv ) {
+// Perlin's smootherstep on 0..1 (smootherstep in layers.ts).
+float hkSmootherstep( float t ) {
+	float x = clamp( t, 0.0, 1.0 );
+	return x * x * x * ( x * ( 6.0 * x - 15.0 ) + 10.0 );
+}
+// Layer l's control value k of a swell's cross-section: stop k's red, clamped to the ends.
+float hkSwellControl( int l, int k ) {
+	float u = ( 1.5 + float( clamp( k, 0, ${STOP_COUNT - 1} ) ) ) / ${glslFloat(STOP_TABLE_WIDTH)};
+	return texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
+}
+// A swell's cross-section at the coordinate: the uniform cubic B-spline through the
+// controls (swellProfile in layers.ts), smooth in slope and curvature everywhere.
+float hkSwellProfile( int l, float coord ) {
+	float x = clamp( coord, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)};
+	int i = min( int( floor( x ) ), ${STOP_COUNT - 2} );
+	float f = x - float( i );
+	float f2 = f * f;
+	float f3 = f2 * f;
+	float g = 1.0 - f;
+	return (
+		g * g * g * hkSwellControl( l, i - 1 ) +
+		( 3.0 * f3 - 6.0 * f2 + 4.0 ) * hkSwellControl( l, i ) +
+		( -3.0 * f3 + 3.0 * f2 + 3.0 * f + 1.0 ) * hkSwellControl( l, i + 1 ) +
+		f3 * hkSwellControl( l, i + 2 )
+	) / 6.0;
+}
+// Stretch marks: striaMark in src/surface/striae.ts, in typical widths. Two fractions from a
+// cell's stream.
+vec2 hkStriaRandom( ivec2 c, int salt ) {
+	uvec2 h = hkRidgeHash( uvec2( uint( c.x + 32768 ), uint( c.y * ${STRIA_SALTS} + salt + 32768 ) ) );
+	return vec2( h ) * 2.3283064365386963e-10;
+}
+float hkStriaRamp( float x, float threshold, float r ) {
+	return clamp( ( x - threshold ) / r, 0.0, 1.0 );
+}
+float hkStriaRampMean( float x, float r ) {
+	return x >= r ? x - r * 0.5 : max( x, 0.0 ) * max( x, 0.0 ) / ( 2.0 * r );
+}
+float hkStriaPatchShare( float u ) {
+	return ${glslFloat(STRIA_PATCH_SHARE[0])} + ${glslFloat(STRIA_PATCH_SHARE[1])} * u;
+}
+// The share of a pixel fw wide, its centre across from a line half wide either side, the line covers.
+float hkStriaCover( float across, float hw, float fw, float soft ) {
+	if ( hw <= 0.0 ) return 0.0;
+	float w = max( fw, soft );
+	return max( 0.0, min( across + w * 0.5, hw ) - max( across - w * 0.5, - hw ) ) / w;
+}
+// Whether there is a mark at q (typical widths), 0 to 1, for marks square to theta, edges no
+// sharper than soft.
+float hkStriae( vec2 q, float theta, float amount, float fw, float soft ) {
+	float a = clamp( amount, 0.0, 1.0 );
+	ivec2 i0 = ivec2( floor( q / ${glslFloat(STRIA_CELL)} ) );
+	float best = 0.0;
+	for ( int j = -1; j <= 1; j ++ )
+		for ( int i = -1; i <= 1; i ++ ) {
+			ivec2 c = i0 + ivec2( i, j );
+			vec2 h01 = hkStriaRandom( c, 0 );
+			vec2 h23 = hkStriaRandom( c, 1 );
+			vec2 h45 = hkStriaRandom( c, 2 );
+			float patchU = hkStriaRandom( ivec2( floor( vec2( c ) / ${glslFloat(STRIA_PATCH)} ) ), 3 ).x;
+			float shown = hkStriaRamp( a * hkStriaPatchShare( patchU ), h01.x, ${glslFloat(STRIA_CLUSTER_RAMP)} );
+			if ( shown <= 0.0 ) continue;
+			vec2 d = q - ( vec2( c ) + vec2( h01.y, h23.x ) ) * ${glslFloat(STRIA_CELL)};
+			float turn = theta + ( 2.0 * h23.y - 1.0 ) * ${glslFloat(STRIA_CLUSTER_TURN)};
+			vec2 n = vec2( cos( turn ), sin( turn ) );
+			float across = dot( d, n );
+			float along = - d.x * n.y + d.y * n.x;
+			float clusterWidth = ${glslFloat(STRIA_CLUSTER_WIDTH[0])} + ${glslFloat(STRIA_CLUSTER_WIDTH[1] - STRIA_CLUSTER_WIDTH[0])} * h45.x * h45.x;
+			float len = ${glslFloat(STRIA_CLUSTER_LENGTH[0])} + ${glslFloat(STRIA_CLUSTER_LENGTH[1] - STRIA_CLUSTER_LENGTH[0])} * h45.y;
+			float spacing = ${glslFloat(STRIA_CLUSTER_SPACING[0])} + ${glslFloat(STRIA_CLUSTER_SPACING[1] - STRIA_CLUSTER_SPACING[0])} * hkStriaRandom( c, 4 ).x;
+			int near = int( floor( across / spacing + ${glslFloat((STRIA_MARKS - 1) / 2)} + 0.5 ) );
+			for ( int k = max( 0, near - 2 ); k <= min( ${STRIA_MARKS - 1}, near + 2 ); k ++ ) {
+				vec2 m01 = hkStriaRandom( c, 8 + k );
+				vec2 m23 = hkStriaRandom( c, 24 + k );
+				if ( m01.x >= ${glslFloat(STRIA_MARK_SHARE)} ) continue;
+				float markLength = len * ( 0.5 + 0.7 * m23.x );
+				float t = 2.0 * ( along - ( m23.y - 0.5 ) * 0.3 * len ) / markLength;
+				if ( t <= -1.0 || t >= 1.0 ) continue;
+				vec2 m45 = hkStriaRandom( c, 40 + k );
+				float phase = 6.28318530718 * along / ${glslFloat(STRIA_MEANDER[1])};
+				float wave = sin( phase + 6.28318530718 * m45.x );
+				float swell = 1.0 + ${glslFloat(STRIA_MEANDER[2])} * sin( phase + 6.28318530718 * m45.y );
+				float t2 = t * t;
+				float hw = 0.5 * clusterWidth * ( 0.6 + 0.4 * m01.y ) * ( 1.0 - t2 * t2 ) * swell;
+				float axis = ( float( k ) - ${glslFloat((STRIA_MARKS - 1) / 2)} ) * spacing + ( m01.y - 0.5 ) * 0.7 * spacing + ( m23.y - 0.5 ) * 0.6 * ( 1.0 - t2 ) + ${glslFloat(STRIA_MEANDER[0])} * wave;
+				best = max( best, shown * hkStriaCover( across - axis, hw, fw, soft ) );
+			}
+		}
+	return best;
+}
+// The share of the skin the marks cover at an amount, on average (striaeMeanCover).
+float hkStriaeMean( float amount ) {
+	float a = clamp( amount, 0.0, 1.0 );
+	float clusters = 0.0;
+	for ( int q = 0; q < ${STRIAE_MEAN_SAMPLES}; q ++ )
+		clusters += hkStriaRampMean( a * hkStriaPatchShare( ( float( q ) + 0.5 ) / ${glslFloat(STRIAE_MEAN_SAMPLES)} ), ${glslFloat(STRIA_CLUSTER_RAMP)} );
+	clusters /= ${glslFloat(STRIAE_MEAN_SAMPLES)};
+	return clusters * ${glslFloat(STRIA_MARKS * STRIA_MARK_SHARE * STRIA_MARK_AREA)};
+}
+// The stretch marks' weight at this pixel, 0 to 1, times the layer's strength: the mask scales the
+// amount, so the sites' density follows it, and fades the marks at the sites' edges. The colour (striaeWeight) shows the marks where a pixel
+// resolves them and their mean cover where it does not; the relief shows only the marks, with softer
+// edges, and fades out sooner.
+float hkStriaeWeight( int l, vec4 head, vec2 f, vec2 uv, bool relief ) {
 	vec2 p = uv * vHkUvScale;
-	float fade = hkFootprintFade( length( fwidth( p ) ) / head.w );
+	float fw = length( fwidth( p ) ) / head.w;
 	float amount = texture( hkLayerStops, vec2( 2.5 / ${glslFloat(STOP_TABLE_WIDTH)}, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r * f.x;
-	if ( amount <= 0.0 || head.x <= 0.0 || fade <= 0.0 ) return 0.0;
-	float t = ${glslFloat(STRIA_THRESHOLD_BASE)} - ${glslFloat(STRIA_THRESHOLD_SLOPE)} * amount;
+	if ( amount <= 0.0 || head.x <= 0.0 ) return 0.0;
+	float edge = head.x * smoothstep( 0.0, ${glslFloat(STRIA_MASK_EDGE)}, f.x );
+	float detail = relief
+		? 1.0 - smoothstep( ${glslFloat(STRIAE_RELIEF_FADE[0])}, ${glslFloat(STRIAE_RELIEF_FADE[1])}, fw )
+		: 1.0 - smoothstep( ${glslFloat(STRIAE_DETAIL_FADE[0])}, ${glslFloat(STRIAE_DETAIL_FADE[1])}, fw );
+	float mean = relief ? 0.0 : hkStriaeMean( amount );
+	if ( detail <= 0.0 ) return edge * mean;
 	float theta = f.y * 3.14159265359 + ${glslFloat(STRIAE_ORIENTATION_SEAM)};
-	return head.x * fade * smoothstep( t, t + ${glslFloat(STRIA_SOFT)}, hkRidges( p, theta, head.w ) );
+	float soft = relief ? ${glslFloat(STRIA_RELIEF_SOFT)} : ${glslFloat(STRIA_SOFT)};
+	return edge * mix( mean, hkStriae( p / head.w, theta, amount, fw, soft ), detail );
 }
 vec3 hkApplyLayers( vec3 c, vec2 uv ) {
 	for ( int l = 0; l < ${count}; l ++ ) {
@@ -398,7 +529,7 @@ vec3 hkApplyLayers( vec3 c, vec2 uv ) {
 		if ( kind == 9 ) {
 			// Stretch marks: the skin where there is a mark is multiplied by the layer's colour ratio.
 			vec3 ratio = texture( hkLayerStops, vec2( 1.5 / ${glslFloat(STOP_TABLE_WIDTH)}, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).rgb;
-			c = mix( c, c * ratio, hkStriaeWeight( l, head, f, uv ) );
+			c = mix( c, c * ratio, hkStriaeWeight( l, head, f, uv, false ) );
 			continue;
 		}
 		float u = ( 1.5 + clamp( f.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
@@ -430,14 +561,18 @@ float hkDetailHeight( vec2 uv ) {
 			H -= g.x * head.x * head.z * lineFade * s * s * ( 3.0 - 2.0 * s );
 			continue;
 		}
-		if ( kind != 2 && kind != 3 && kind != 5 && kind != 7 && kind != 8 && kind != 9 ) continue;
+		if ( kind != 2 && kind != 3 && kind != 5 && kind != 7 && kind != 8 && kind != 9 && kind != 10 ) continue;
 		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
 		if ( head.x <= 0.0 ) continue;
 		vec2 f = hkFields( l, uv );
 		float a = f.x * head.x;
-		if ( kind == 9 ) {
+		if ( kind == 10 ) {
+			// A swell: the smooth cross-section, faded by the smootherstep of the mask per pixel, so
+			// it leaves the skin with no outline where the mask ends (swellHeight in layers.ts).
+			H += head.x * head.z * hkSmootherstep( f.x ) * hkSwellProfile( l, f.y );
+		} else if ( kind == 9 ) {
 			// A stretch mark is a shallow atrophic dip: depth is the layer's height.
-			H -= head.z * hkStriaeWeight( l, head, f, uv );
+			H -= head.z * hkStriaeWeight( l, head, f, uv, true );
 		} else if ( kind == 2 || kind == 7 || kind == 8 ) {
 			vec2 p = uv * vHkUvScale / head.w;
 			float fade = 1.0 - smoothstep( 0.25, 0.75, length( fwidth( p ) ) );
@@ -448,7 +583,11 @@ float hkDetailHeight( vec2 uv ) {
 				float u = ( 1.5 + clamp( f.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
 				float profile = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
 				if ( kind == 7 ) H += a * profile * head.z * fade * hkBumps( p );
-				else H += f.x * head.x * head.z * fade * hkTubercles( p, profile );
+				else {
+					// The coordinate no bump's centre lies past (stop 0, green).
+					float limit = texture( hkLayerStops, vec2( 1.5 / ${glslFloat(STOP_TABLE_WIDTH)}, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).g;
+					H += f.x * head.x * head.z * fade * hkTubercles( p, l, uv, head.w / vHkUvScale, limit );
+				}
 			}
 		} else if ( kind == 5 ) {
 			vec2 p = uv * vHkUvScale;
@@ -704,6 +843,13 @@ function poreNormalMap(): DataTexture {
   poreTexture.wrapT = RepeatWrapping;
   poreTexture.repeat.set(48, 48);
   poreTexture.colorSpace = LinearSRGBColorSpace;
+  // A DataTexture samples with Nearest filters unless told otherwise, and Nearest ignores the
+  // mip chain: at 48 repeats a pixel of skin a body's length away spans many texels, each
+  // picked at random, and the pores sparkled in the specular as a frosty grain on deep skin.
+  // Trilinear and anisotropic filtering average the pores' normals toward flat with distance.
+  poreTexture.minFilter = LinearMipmapLinearFilter;
+  poreTexture.magFilter = LinearFilter;
+  poreTexture.anisotropy = 8;
   poreTexture.generateMipmaps = true;
   poreTexture.needsUpdate = true;
   return poreTexture;
