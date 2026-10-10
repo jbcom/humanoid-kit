@@ -81,6 +81,7 @@ import {
   latticePositions,
   type ReservoirCarriage,
   reservoirCarriages,
+  skinUnderOrgans,
 } from "./detailCarry.ts";
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
@@ -1669,11 +1670,11 @@ export class HumanoidModel {
       all[rest * 3 + 1] as number,
       all[rest * 3 + 2] as number,
     ];
-    if (displacement)
-      for (let i = 0; i < displacement.indices.length; i++)
-        if (displacement.indices[i] === site.vertex)
-          for (let k = 0; k < 3; k++)
-            at[k] = (at[k] as number) + (displacement.xyz[i * 3 + k] as number);
+    for (const part of displacement ? [displacement, displacement.skin] : [])
+      if (part)
+        for (let i = 0; i < part.indices.length; i++)
+          if (part.indices[i] === site.vertex)
+            for (let k = 0; k < 3; k++) at[k] = (at[k] as number) + (part.xyz[i * 3 + k] as number);
     const P = body.positions;
     let r = 0;
     let best = Number.POSITIVE_INFINITY;
@@ -1759,27 +1760,34 @@ export class HumanoidModel {
         (control[scale.a * 3 + k] as number) - (control[scale.b * 3 + k] as number);
       figure = Math.hypot(d(0), d(1), d(2)) / scale.rest;
     }
-    const indices: number[] = [];
-    const xyz: number[] = [];
+    // The skin's own targets (`AdultDetailSpec.skin`) apart from the organs': they shape
+    // the skin the organs are measured from, and are neither carried nor a push.
+    const skinTargets = new Set(this.assets.adultAnatomyManifest?.anatomy?.detail?.skin ?? []);
+    const organ = { indices: [] as number[], xyz: [] as number[] };
+    const skin = { indices: [] as number[], xyz: [] as number[] };
     for (const c of detail) {
       if (typeof c.weight !== "number")
         throw new MorphError(`detail target ${c.target} cannot be weighted by region`);
       const t = this.assets.targets.get(c.target);
       if (!t) throw new MorphError(`unknown detail target ${c.target}`);
+      const into = skinTargets.has(c.target) ? skin : organ;
       const w = c.weight * t.scale * figure;
       for (let i = 0; i < t.indices.length; i++) {
-        indices.push(t.indices[i] as number);
-        xyz.push(
+        into.indices.push(t.indices[i] as number);
+        into.xyz.push(
           (t.deltas[i * 3] as number) * w,
           (t.deltas[i * 3 + 1] as number) * w,
           (t.deltas[i * 3 + 2] as number) * w,
         );
       }
     }
-    if (!indices.length) return undefined;
-    const displaced = { indices, xyz: Float32Array.from(xyz) };
+    if (!organ.indices.length && !skin.indices.length) return undefined;
+    const ofSkin = skin.indices.length
+      ? { skin: { indices: skin.indices, xyz: Float32Array.from(skin.xyz) } }
+      : {};
+    const displaced = { indices: organ.indices, xyz: Float32Array.from(organ.xyz) };
     const carried = this.detailCarriage();
-    if (!carried) return displaced;
+    if (!carried || !organ.indices.length) return { ...displaced, ...ofSkin };
     // An organ moves with where it is rooted: carried from the authoring figure (`carriedDetail`).
     const here = new Map<number, readonly [number, number, number]>();
     const at =
@@ -1793,12 +1801,15 @@ export class HumanoidModel {
         }
         return p;
       };
-    return carriedDetail(
-      displaced,
-      carried.carriages,
-      at(carried.authored, carried.control),
-      at(here, control),
-    );
+    return {
+      ...carriedDetail(
+        displaced,
+        carried.carriages,
+        at(carried.authored, carried.control),
+        at(here, control),
+      ),
+      ...(ofSkin.skin && { skin: skinUnderOrgans(ofSkin.skin, displaced, carried.carriages) }),
+    };
   }
 
   /**

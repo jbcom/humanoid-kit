@@ -244,6 +244,49 @@ describe("reservoirs on the refined surface", { timeout: 600_000 }, () => {
     expect(tri.degenerate).toBeLessThan(triangles(mesh, rest.positions).degenerate);
   });
 
+  it("moves the skin by a skin displacement without pushing its reservoir out, and measures a push from it", () => {
+    const mesh = withReservoir(1);
+    const lattice = mesh.lattice as NonNullable<SurfaceMesh["lattice"]>;
+    const r = lattice.reservoirs[0] as (typeof lattice.reservoirs)[number];
+    const n = r.loop.length;
+    // The skin sinks 4 mm everywhere in the region, the rings with their loop vertices.
+    const sink = (): { indices: number[]; xyz: Float32Array } => {
+      const indices: number[] = [];
+      const xyz: number[] = [];
+      lattice.region.forEach((_, idx) => {
+        indices.push(idx);
+        xyz.push(0, 0, -0.004);
+      });
+      for (let j = 0; j < r.rings; j++)
+        for (let i = 0; i < n; i++) {
+          indices.push(r.base + j * n + i);
+          xyz.push(0, 0, -0.004);
+        }
+      return { indices, xyz: Float32Array.from(xyz) };
+    };
+    const count = mesh.renderToSurface.length;
+    const run = (detail?: Parameters<typeof evaluateSurface>[5]) => {
+      const positions = new Float32Array(count * 3);
+      const pushed = new Float32Array(count);
+      evaluateSurface(mesh, P, positions, new Float32Array(count * 3), undefined, detail, pushed);
+      return { positions, pushed };
+    };
+    const rest = run();
+    const sunk = run({ indices: [], xyz: new Float32Array(0), skin: sink() });
+    expect(Math.max(...sunk.pushed)).toBe(0);
+    let moved = 0;
+    for (let v = 0; v < count; v++) {
+      const dz = (sunk.positions[v * 3 + 2] as number) - (rest.positions[v * 3 + 2] as number);
+      if (Math.abs(dz + 0.004) < 1e-6) moved++;
+    }
+    expect(moved).toBeGreaterThan(n);
+    // An organ's displacement on top of it is a push by its own size, measured from the sunk skin.
+    const ring = { indices: [r.base], xyz: Float32Array.from([0, 0, 0.01]) };
+    const both = run({ ...ring, skin: sink() });
+    expect(Math.max(...both.pushed)).toBeGreaterThan(0.005);
+    expect(Math.max(...both.pushed)).toBeLessThanOrEqual(0.01 + 1e-6);
+  });
+
   it("refuses caps that overlap, loops that share a vertex, and a loop that is not the cap's boundary", () => {
     const one = reservoir(2);
     const build = (...specs: Reservoir[]) =>

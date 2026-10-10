@@ -248,3 +248,38 @@ export function carriedDetail(
   });
   return { indices, xyz };
 }
+
+/**
+ * The skin's own detail (`AdultDetailSpec.skin`) where an organ is drawn out of it:
+ * a reservoir's vertex takes the skin's displacement as far as the organ leaves it
+ * where it is, and none where the organ is carried (`CARRIED_FROM` to `CARRIED_FULLY`
+ * of the organ's push, `organ` before the carriage). A ring lies on its loop vertex at
+ * rest and the skin's target moves it with that vertex, so a collapsed reservoir stays
+ * in the skin; added to every ring of a sac hanging from a vulva's cleft too, it
+ * sheared each column of the sac by its root vertex's sink, and the sac's notch on a
+ * figure between the sexes deepened from 11% of its width to 14%.
+ */
+export function skinUnderOrgans(
+  skin: Pick<SurfaceDetail, "indices" | "xyz">,
+  organ: Pick<SurfaceDetail, "indices" | "xyz">,
+  carriages: readonly ReservoirCarriage[],
+): { indices: ArrayLike<number>; xyz: Float32Array } {
+  const push = new Map<number, [number, number, number]>();
+  for (let i = 0; i < organ.indices.length; i++) {
+    const index = organ.indices[i] as number;
+    const d = push.get(index) ?? [0, 0, 0];
+    for (let k = 0; k < 3; k++) d[k] = (d[k] as number) + (organ.xyz[i * 3 + k] as number);
+    push.set(index, d);
+  }
+  const member = new Set<number>();
+  for (const c of carriages) for (const m of c.members) member.add(m);
+  const xyz = Float32Array.from(skin.xyz);
+  for (let i = 0; i < skin.indices.length; i++) {
+    const index = skin.indices[i] as number;
+    const d = push.get(index);
+    if (!d || !member.has(index)) continue;
+    const keep = 1 - smooth((Math.hypot(...d) - CARRIED_FROM) / (CARRIED_FULLY - CARRIED_FROM));
+    for (let k = 0; k < 3; k++) xyz[i * 3 + k] = (xyz[i * 3 + k] as number) * keep;
+  }
+  return { indices: skin.indices, xyz };
+}

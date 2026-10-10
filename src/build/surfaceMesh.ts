@@ -111,6 +111,11 @@ export interface SurfaceDetail {
   indices: ArrayLike<number>;
   /** xyz per index. */
   xyz: Float32Array;
+  /**
+   * A displacement of the skin itself (a vulva's folds), added first: what the rest
+   * is measured from, so it pushes no reservoir out of the skin (`outPushed`).
+   */
+  skin?: { indices: ArrayLike<number>; xyz: Float32Array };
 }
 
 /**
@@ -715,7 +720,11 @@ export function latticeNormals(mesh: SurfaceMesh, control: Float32Array): Float3
 }
 
 /** Adds a detail displacement of the lattice to the final surface's positions. */
-function displace(mesh: SurfaceMesh, surface: Float32Array, detail: SurfaceDetail): void {
+function displace(
+  mesh: SurfaceMesh,
+  surface: Float32Array,
+  detail: Pick<SurfaceDetail, "indices" | "xyz">,
+): void {
   const lattice = mesh.lattice;
   if (!lattice) throw new Error("detail displacement needs a refined surface (internal)");
   const d = new Float32Array(lattice.vertexCount * 3);
@@ -810,14 +819,20 @@ export function evaluateSurface(
   let sn = scratch?.normals ?? new Float32Array(sCount * 3);
   applyStencil(mesh.stencil, control, surface);
   let undisplaced: Float32Array | null = null;
-  if (detail && detail.indices.length > 0) {
+  let unpushed: Float32Array | null = null;
+  if (detail?.skin && detail.skin.indices.length > 0) {
     undisplaced = surface.slice();
+    displace(mesh, surface, detail.skin);
+  }
+  if (detail && detail.indices.length > 0) {
+    undisplaced ??= surface.slice();
+    unpushed = surface.slice();
     displace(mesh, surface, detail);
   }
   if (outPushed) {
     outPushed.fill(0);
-    if (undisplaced) {
-      const before = undisplaced;
+    if (unpushed) {
+      const before = unpushed;
       mesh.renderToSurface.forEach((s, r) => {
         outPushed[r] = Math.hypot(
           (surface[s * 3] as number) - (before[s * 3] as number),

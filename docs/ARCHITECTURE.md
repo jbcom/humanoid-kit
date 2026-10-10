@@ -1631,6 +1631,18 @@ every vertex, m-muscular seated penetrates 44.44 → 52.33 cm² (2.7 into the th
 man's rows fall. The sac against the thigh is a contact pair of the contact
 compression work (ruled 2026-10-10).
 
+**The skin's own detail (2026-10-10).** The vulva is a fold of the skin, not an
+organ drawn out of it (`scripts/lib/detail/vulva.ts`), so the pack names its target
+as the skin's (`AdultDetailSpec.skin`). The model adds it first, to the figure's own
+skin (`SurfaceDetail.skin`): it is never carried, and it is no push of a reservoir
+out of the skin, so a woman's sac reservoir keeps the skin's weights. An organ is
+measured from the skin it shapes. A reservoir ring takes its loop vertex's share of
+the skin's detail, so a collapsed sac stays in the vulva's skin; an organ drawn out
+of it gives that share up as far as it is carried (`skinUnderOrgans`): added to every
+ring of a sac hanging from the cleft, it sheared each column of the sac by its root
+vertex's sink, and the sac's notch on a figure between the sexes went from 11% of
+its width to 14%.
+
 ## Scalp hair (milestone 4)
 
 **Use cases.** A creator offers a hair style and a colour beside skin and eyes,

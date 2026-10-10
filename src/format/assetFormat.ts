@@ -585,6 +585,13 @@ export interface AdultDetailSpec {
    */
   authoredOn?: { macros: Partial<MacroValues> };
   /**
+   * Targets that shape the skin itself (the vulva's folds), not an organ drawn out of
+   * it: added first, to the figure's own skin, never carried (`authoredOn`), and no
+   * push of a reservoir out of the skin, so they leave its skinning as it was. A ring
+   * of a reservoir lying in that skin takes its loop vertex's displacement. Absent: none.
+   */
+  skin?: string[];
+  /**
    * Targets whose weight is multiplied by other values: `gates[target]` lists
    * factors (`src/model/detailFactors.ts`): `mod:<id>` (that modifier's positive
    * part: how much of a feature there is), `mod-:<id>` (its negative part),

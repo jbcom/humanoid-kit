@@ -6,7 +6,13 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ReservoirCarriage } from "../src/model/detailCarry.ts";
-import { CARRIED_FROM, CARRIED_FULLY, carriedDetail, rigidFit } from "../src/model/detailCarry.ts";
+import {
+  CARRIED_FROM,
+  CARRIED_FULLY,
+  carriedDetail,
+  rigidFit,
+  skinUnderOrgans,
+} from "../src/model/detailCarry.ts";
 
 /** A rotation of `angle` about the unit `axis`, as a row-major 3x3. */
 function rotation(axis: [number, number, number], angle: number): number[] {
@@ -149,5 +155,26 @@ describe("a reservoir's detail, carried", () => {
       figure,
     );
     for (let k = 0; k < 3; k++) expect(two.xyz[k]).toBeCloseTo(one.xyz[k] as number, 7);
+  });
+
+  it("lets a member keep the skin's own detail as far as its organ leaves it in the skin", () => {
+    // The skin sinks 4 mm at members 20 and 21 and at 30, outside every reservoir.
+    const skin = {
+      indices: [20, 21, 30],
+      xyz: Float32Array.from([0, 0, -0.004, 0, 0, -0.004, 0, 0, -0.004]),
+    };
+    const at = (organ: number) =>
+      skinUnderOrgans(skin, { indices: [20], xyz: Float32Array.from([0, -organ, 0]) }, [carriage])
+        .xyz;
+    // Not pushed (or barely): the skin's whole sink; pushed fully out: none of it.
+    expect(at(0)[2]).toBeCloseTo(-0.004, 9);
+    expect(at(CARRIED_FROM)[2]).toBeCloseTo(-0.004, 9);
+    expect(at(CARRIED_FULLY)[2]).toBeCloseTo(0, 9);
+    const half = at((CARRIED_FROM + CARRIED_FULLY) / 2)[2] as number;
+    expect(half).toBeLessThan(-0.001);
+    expect(half).toBeGreaterThan(-0.003);
+    // A member the organ does not push, and a vertex outside every reservoir, keep it.
+    expect(at(CARRIED_FULLY)[5]).toBeCloseTo(-0.004, 9);
+    expect(at(CARRIED_FULLY)[8]).toBeCloseTo(-0.004, 9);
   });
 });
