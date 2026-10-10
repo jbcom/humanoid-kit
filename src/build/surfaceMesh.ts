@@ -783,6 +783,8 @@ export function evaluateSurface(
   outNormals: Float32Array,
   scratch?: { surface: Float32Array; normals: Float32Array },
   detail?: SurfaceDetail,
+  /** Set to how far `detail` moved each render vertex, metres (0 everywhere without one). */
+  outPushed?: Float32Array,
 ): void {
   const sCount = mesh.topology.vertexCount;
   const surface = scratch?.surface ?? new Float32Array(sCount * 3);
@@ -792,6 +794,19 @@ export function evaluateSurface(
   if (detail && detail.indices.length > 0) {
     undisplaced = surface.slice();
     displace(mesh, surface, detail);
+  }
+  if (outPushed) {
+    outPushed.fill(0);
+    if (undisplaced) {
+      const before = undisplaced;
+      mesh.renderToSurface.forEach((s, r) => {
+        outPushed[r] = Math.hypot(
+          (surface[s * 3] as number) - (before[s * 3] as number),
+          (surface[s * 3 + 1] as number) - (before[s * 3 + 1] as number),
+          (surface[s * 3 + 2] as number) - (before[s * 3 + 2] as number),
+        );
+      });
+    }
   }
   if (mesh.smoothNormals) {
     sn = smoothNormals(mesh.smoothNormals, control, sCount);

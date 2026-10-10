@@ -77,6 +77,7 @@ interface Shown {
 async function show(
   figure: (h: HumanoidAffordances, onSettled: () => void) => ReactNode,
   wrap: (children: ReactNode) => ReactNode = (c) => c,
+  using: typeof client = client,
 ): Promise<Shown> {
   let get: (() => RootState) | null = null;
   let handle: HumanoidAffordances | null = null;
@@ -87,7 +88,7 @@ async function show(
     return <>{figure(h, () => (settled = true))}</>;
   }
   await render(
-    <HumanoidProvider client={client}>
+    <HumanoidProvider client={using}>
       <div style={{ width: 160, height: 160 }}>
         <Canvas>
           <Probe onReady={(g) => (get = g)} />
@@ -286,6 +287,56 @@ describe("the affordance handle against the GPU", () => {
       const half = worstAgainstGpu(shown, false, 300);
       dual.foldBlend.value = 1;
       expect(half.worst, "fold half shown").toBeLessThan(EXACT);
+    },
+    LOAD.timeout,
+  );
+
+  it(
+    "skins an organ's vertices by the figure's own weights where the GPU does, seated",
+    async () => {
+      const adult = inlineWorkerClient({ subdivision: 1 }, { adultAnatomy: true });
+      await adult.ready;
+      const shown = await show(
+        (h, onSettled) => (
+          <Humanoid
+            recipe={createRecipe({ macros: { gender: 1 } })}
+            pose={seated}
+            affordances={h}
+            onSettled={onSettled}
+          />
+        ),
+        (c) => c,
+        adult,
+      );
+      const body = bodyOf(shown.get().scene);
+      expect(body.userData.hkPart).toBe("adultBody");
+      const topology = await adult.adultSurface();
+      if (!topology) throw new Error("no adult surface");
+      // The organ's vertices: where the weights drawn are not the topology's (`evaluatedSkin`).
+      const drawn = body.geometry.getAttribute("skinWeight");
+      const organ: number[] = [];
+      for (let v = 0; v < drawn.count; v++)
+        for (let k = 0; k < 4; k++)
+          if (drawn.getComponent(v, k) !== topology.skinWeight[v * 4 + k]) {
+            organ.push(v);
+            break;
+          }
+      expect(organ.length, "vertices skinned by their root's weights").toBeGreaterThan(1000);
+      const step = Math.ceil(organ.length / 400);
+      const sample = organ.filter((_, i) => i % step === 0);
+      const gpu = gpuPositions(shown.get(), sample);
+      let worst = 0;
+      sample.forEach((v, i) => {
+        const p = shown.h.vertex(v, "world");
+        if (!p) throw new Error(`vertex ${v}: none`);
+        worst = Math.max(worst, gap(p, gpu.subarray(i * 3, i * 3 + 3)));
+      });
+      // The organ lies where the seated thighs flex: the fold moves it, on rows past what a
+      // texture a row a line could hold, so this compares the fold too.
+      const slots = body.geometry.getAttribute(FOLD_SLOT_ATTRIBUTE);
+      expect(sample.filter((v) => slots.getX(v) >= 0).length).toBeGreaterThan(sample.length / 2);
+      expect(worst).toBeLessThan(EXACT);
+      adult.dispose();
     },
     LOAD.timeout,
   );

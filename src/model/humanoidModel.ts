@@ -77,6 +77,13 @@ import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
 import { areolaStretch } from "../surface/regions/torso.ts";
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
+import {
+  evaluatedSkin,
+  type ReservoirSkinning,
+  reservoirSkinningOf,
+  type SkinWeights,
+  skinOfEvaluation,
+} from "./reservoirSkin.ts";
 import { tuckDepths } from "./tuck.ts";
 
 export interface ModelOptions {
@@ -354,6 +361,13 @@ export interface Evaluation extends SurfaceEvaluation {
    * A figure under 18 is always `"base"`, with exactly the base body's vertices.
    */
   surface: "base" | "adult";
+  /**
+   * The body surface's skin weights for this figure (`evaluatedSkin`), or null
+   * when they are its topology's: the base surface always, and the adult surface
+   * where no detail has pushed a reservoir out of the skin. Read through
+   * `skinOfEvaluation`.
+   */
+  skin: SkinWeights | null;
   /** One entry per attachment, in `ModelTopology.attachments` order. */
   attachments: SurfaceEvaluation[];
   /** The recipe's scalp hair, or null when it has none. */
@@ -499,7 +513,14 @@ export class HumanoidModel {
   private readonly weldOf = new Map<"base" | "adult", Uint32Array>();
   /** The adult surface, built on first use (undefined: not yet; null: this pack has none). */
   private adultBody:
-    | { part: Part; edges: Uint32Array; faceTriangles: Uint32Array; topology: AdultSurfaceTopology }
+    | {
+        part: Part;
+        edges: Uint32Array;
+        faceTriangles: Uint32Array;
+        topology: AdultSurfaceTopology;
+        /** Its reservoirs' vertices and roots, for the weights an evaluation skins it by (`evaluatedSkin`). */
+        skinning: ReservoirSkinning;
+      }
     | null
     | undefined;
   /** The body's state morphs and, with the adult pack, its own (`AdultAnatomySpec.stateMorphs`). */
@@ -1496,11 +1517,16 @@ export class HumanoidModel {
     const adult = isAdult(recipe) ? this.adultBodySurface() : null;
     const displacement =
       adult && detail.length ? this.detailDisplacement(detail, control) : undefined;
+    // How far the detail pushed each of the adult surface's vertices, for the weights it is skinned by.
+    const pushed =
+      displacement && adult ? new Float32Array(adult.part.mesh.renderToSurface.length) : undefined;
     const body = this.evaluatePart(
       adult ? adult.part : this.body,
       outfit.bodyTuck ? this.tucked(control, outfit.bodyTuck) : control,
       displacement,
+      pushed,
     );
+    const skin = adult && pushed ? evaluatedSkin(adult.topology, adult.skinning, pushed) : null;
     const attachments = this.attached.map((a) =>
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
     );
@@ -1543,6 +1569,7 @@ export class HumanoidModel {
     return {
       ...body,
       surface: adult ? "adult" : "base",
+      skin,
       attachments,
       hair,
       brows,
@@ -1571,7 +1598,8 @@ export class HumanoidModel {
             recipe.bodyArt,
             control,
             adult
-              ? (site) => this.adultSiteAnchor(site, adult, control, displacement, body)
+              ? (site) =>
+                  this.adultSiteAnchor(site, adult, control, displacement, { ...body, skin })
               : undefined,
           )
         : null,
@@ -1589,7 +1617,7 @@ export class HumanoidModel {
     adult: NonNullable<ReturnType<HumanoidModel["adultBodySurface"]>>,
     control: Float32Array,
     displacement: SurfaceDetail | undefined,
-    body: SurfaceEvaluation,
+    body: SurfaceEvaluation & { skin: SkinWeights | null },
   ): PiercingAnchor {
     const lattice = adult.part.mesh.lattice;
     if (!lattice)
@@ -1645,8 +1673,8 @@ export class HumanoidModel {
         (N[r * 3 + 2] as number) / l,
       ],
       skin: skinNear(P, N, adult.part.mesh.index, hole, SEAT_REACH),
-      skinIndex: bones(adult.topology.skinIndex),
-      skinWeight: bones(adult.topology.skinWeight),
+      skinIndex: bones(skinOfEvaluation(body, adult.topology).skinIndex),
+      skinWeight: bones(skinOfEvaluation(body, adult.topology).skinWeight),
     };
   }
 
@@ -1962,6 +1990,7 @@ export class HumanoidModel {
         occlusion: this.bodyOcclusionField(mesh),
         coat: this.coatOn(mesh),
       },
+      skinning: reservoirSkinningOf(mesh),
     };
     return this.adultBody;
   }
@@ -2253,11 +2282,16 @@ export class HumanoidModel {
     return out;
   }
 
-  private evaluatePart(p: Part, control: Float32Array, detail?: SurfaceDetail): SurfaceEvaluation {
+  private evaluatePart(
+    p: Part,
+    control: Float32Array,
+    detail?: SurfaceDetail,
+    outPushed?: Float32Array,
+  ): SurfaceEvaluation {
     const n = p.mesh.renderToSurface.length * 3;
     const positions = new Float32Array(n);
     const normals = new Float32Array(n);
-    evaluateSurface(p.mesh, control, positions, normals, p.scratch, detail);
+    evaluateSurface(p.mesh, control, positions, normals, p.scratch, detail, outPushed);
     return { positions, normals };
   }
 }

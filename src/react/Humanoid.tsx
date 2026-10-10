@@ -56,6 +56,7 @@ import type {
   SurfaceEvaluation,
   SurfaceTopology,
 } from "../model/humanoidModel.ts";
+import { type SkinWeights, skinOfEvaluation } from "../model/reservoirSkin.ts";
 import { groundOffsetOf, posedControl } from "../presence/posed.ts";
 import type { Vec3 } from "../presence/presence.ts";
 import { isAdult } from "../recipe/agePolicy.ts";
@@ -295,11 +296,19 @@ export interface HumanoidPick {
   point: Vector3;
 }
 
-/** A body surface's geometry: the skinned mesh plus the curvature and UV-scale attributes the skin reads. */
+/**
+ * A body surface's geometry: the skinned mesh plus the curvature and UV-scale
+ * attributes the skin reads. Its skin weights are its own copies, written from
+ * each evaluation (`writeSkin`), so a figure's are never written into the topology's.
+ */
 function makeBodyGeometry(
   t: SurfaceTopology & { uvScale: Float32Array; occlusion: Uint8Array },
 ): BufferGeometry {
-  const g = makeGeometry(t);
+  const g = makeGeometry({
+    ...t,
+    skinIndex: t.skinIndex.slice(),
+    skinWeight: t.skinWeight.slice(),
+  });
   g.setAttribute(CURVATURE_ATTRIBUTE, new BufferAttribute(new Float32Array(t.vertexCount), 1));
   g.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(t.uvScale, 1));
   setBodyOcclusionAttributes(g, t.occlusion);
@@ -364,6 +373,17 @@ function controlKey(control: Float32Array): string {
   for (let i = 0; i < control.length; i += 7)
     h = (Math.imul(h, 31) + Math.round((control[i] as number) * 1e5)) | 0;
   return `${control.length}:${h}`;
+}
+
+/** The weights each body geometry was last written from, so the topology's are not sent again each evaluation. */
+const writtenSkin = new WeakMap<BufferGeometry, SkinWeights>();
+
+/** A body geometry's skin weights set to those an evaluation is skinned by (`skinOfEvaluation`). */
+function writeSkin(g: BufferGeometry, skin: SkinWeights): void {
+  if (writtenSkin.get(g) === skin) return;
+  writtenSkin.set(g, skin);
+  (g.getAttribute("skinIndex") as BufferAttribute).copyArray(skin.skinIndex).needsUpdate = true;
+  (g.getAttribute("skinWeight") as BufferAttribute).copyArray(skin.skinWeight).needsUpdate = true;
 }
 
 function writeGeometry(g: BufferGeometry, s: SurfaceEvaluation): void {
@@ -1188,12 +1208,13 @@ export function Humanoid({
       of.setRecipe(evaluated);
       const t = ev.surface === "adult" ? adultSurface : ready.topology.body;
       if (!t) return;
+      const skin = skinOfEvaluation(ev, t);
       of.attach({
         surface: ev.surface,
         rest: ev.positions,
         restNormals: ev.normals,
-        skinIndex: t.skinIndex,
-        skinWeight: t.skinWeight,
+        skinIndex: skin.skinIndex,
+        skinWeight: skin.skinWeight,
         pose: () => (materialRef.current ? dual.linearPose() : dual.pose()),
         fold: () =>
           materialRef.current || dual.foldSurface !== ev.surface ? null : dual.skinFold(),
@@ -1566,6 +1587,8 @@ export function Humanoid({
         }
         if (rig && ready) fitSkeleton(rig.skeleton, ready.rig.parents, ev.boneHeads);
         writeGeometry(target, ev);
+        const topology = ev.surface === "adult" ? adultSurface : ready?.topology.body;
+        if (topology) writeSkin(target, skinOfEvaluation(ev, topology));
         (target.getAttribute(CURVATURE_ATTRIBUTE) as BufferAttribute).copyArray(
           ev.curvature,
         ).needsUpdate = true;
@@ -1672,6 +1695,7 @@ export function Humanoid({
     client,
     geometries,
     adultGeometry,
+    adultSurface,
     rig,
     ready,
     recipe,

@@ -1257,6 +1257,36 @@ thigh 12 to 56 mm behind the belly (median 27) where each figure's own solve lea
 none, and 18 adult corners alone are 1.1 MB, so the solve stays per figure, in the
 worker.
 
+The fold's texture holds `FOLD_ROWS_PER_LINE` rows a line, 2048 texels wide. A row
+a line made it as tall as the fold has rows, and the adult surface's has near ten
+thousand: past the GPU's largest texture (8192 on the render host) it never
+uploaded, and every adult figure drew its fold from nothing, up to 30 mm from the
+CPU's, unseen while the parity test sampled only the first rows.
+
+### Reservoir skinning (2026-10-10)
+
+A reservoir's rings are copies of its loop's vertices and take the loop's skin
+weights; its cap keeps those of the skin it covers (`src/build/reservoir.ts`).
+Collapsed, that is exactly the skin it lies on. Drawn out into an organ it is not:
+each ring carries the whole loop's spread of weights round it and the cap the
+spread of its disc, so a 7 mm clitoral glans drawn from the 30 mm phallic
+reservoir carried an upper-leg share from a tenth at the loop's top to near a fifth
+at its foot, and turned inside out on a flexed hip (f-slim seated: 476 inverted
+faces on the organ, 246 before the new sculpt's wider loop).
+
+So an evaluation's weights are its own (`src/model/reservoirSkin.ts`): each
+reservoir vertex takes its root's weights (the mean of its loop's) in proportion
+to how far the detail pushed it out of the skin, smoothly from `PUSH_STARTS` (1 mm)
+to `PUSHED_FULLY` (5 mm), both CHOICES documented there; four bones are kept by
+taking the fifth largest off all, so the blend is continuous where the kept four
+change. They are found once, with the evaluation (`Evaluation.skin`, null where
+they are the topology's: the base surface, an adult with no organ), and every
+consumer reads them through `skinOfEvaluation`: the body geometry's attributes
+(written per evaluation, and so the coat's and `followDualSkinning`'s), the posed
+body the invariants measure, the affordances' landmarks and piercing anchors. The
+hip fold's solve reads the control mesh's weights, not the adult surface's, and is
+not affected; its per-vertex flexion is read from the evaluated weights.
+
 ## Scalp hair (milestone 4)
 
 **Use cases.** A creator offers a hair style and a colour beside skin and eyes,
