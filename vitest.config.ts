@@ -1,15 +1,14 @@
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import type { ChromiumGpuMode } from "game-harness/chromium";
 import { defineBrowserTestConfig } from "game-harness/vitest";
 import { defineConfig } from "vitest/config";
+import { browserRun } from "./scripts/lib/browserRun.ts";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
-const gpuMode = (process.env.HK_GPU ?? (process.env.CI ? "software" : "auto")) as ChromiumGpuMode;
-// Unattended runs (CI, the dedicated render Mac's service account) have no window
-// session, so a headed browser cannot open: they run headless. HK_HEADED=1 overrides.
-const headless = Boolean(process.env.CI) && !process.env.HK_HEADED;
+// Headed native GPU locally; headless Metal on the render Macs; headless SwiftShader in
+// other CI; the priority lane's own choice there (scripts/lib/browserRun.ts).
+const { gpuMode, headless } = browserRun(process.env, process.platform);
 
 // Three projects:
 // - unit: the pure core in Node (tests/**/*.test.ts, outside tests/browser
