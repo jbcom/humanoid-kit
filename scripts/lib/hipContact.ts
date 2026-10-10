@@ -8,7 +8,8 @@
  * triangle of the trunk's: a fact of the posed mesh, which does not depend on
  * which side of any surface a point is judged to lie, so it does not flicker
  * from one pose to the next. How deep is how far behind the crossed triangle's
- * plane the edge's thigh end lies.
+ * plane the edge's thigh end lies, behind meaning on the body's inside: against
+ * the triangle's face, unless the flexed hips have turned it inside out.
  */
 import type { HumanoidAssets } from "../../src/format/assetFormat.ts";
 import { DIHEDRAL_LIMIT, DIHEDRAL_REST } from "../../src/foundation/invariants.ts";
@@ -36,6 +37,7 @@ export class HipContact {
   private readonly movers = new Set<number>();
   private readonly edges: [number, number][] = [];
   private readonly skin: Uint32Array;
+  private readonly control: Float32Array;
 
   /** `rest` and `control`: the figure's skeleton and rest vertices. */
   constructor(
@@ -54,6 +56,7 @@ export class HipContact {
       FOLD_FULL_REACH,
     );
     this.skin = parts.skin;
+    this.control = control;
     for (const v of parts.movers) this.movers.add(v);
     // Each edge of the body that has a thigh vertex at an end, once.
     const seen = new Set<number>();
@@ -70,17 +73,33 @@ export class HipContact {
       }
   }
 
-  /** The thigh's penetration of the trunk in the pose that put the body's vertices at `positions`. */
-  penetration(positions: Float32Array): Penetration {
+  /**
+   * The thigh's penetration of the trunk in the pose that put the body's
+   * vertices at `positions`. A trunk triangle the flexed hips have turned inside
+   * out (its normal more than 90° from its normal in `upright`, the same pose
+   * with the hips at rest, by default the rest figure) faces into the body: what
+   * is behind it is judged from its other side.
+   */
+  penetration(positions: Float32Array, upright: Float32Array = this.control): Penetration {
     const crossings = new TriangleCrossings(positions, this.skin);
+    const unflexed = new TriangleCrossings(upright, this.skin);
     let depth = 0;
     let count = 0;
+    const posed = new Float64Array(3);
+    const was = new Float64Array(3);
     for (const [a, b] of this.edges) {
       const found = crossings.find(a, b);
       for (let h = 0; h < found; h++) {
         const t = crossings.hits[h] as number;
+        crossings.normal(t, posed);
+        unflexed.normal(t, was);
+        const facing =
+          (posed[0] as number) * (was[0] as number) +
+          (posed[1] as number) * (was[1] as number) +
+          (posed[2] as number) * (was[2] as number);
+        const outside = facing < 0 ? -1 : 1;
         for (const v of [a, b])
-          if (this.movers.has(v)) depth = Math.max(depth, -crossings.side(t, v));
+          if (this.movers.has(v)) depth = Math.max(depth, -outside * crossings.side(t, v));
       }
       if (found) count++;
     }

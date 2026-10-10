@@ -48,6 +48,23 @@ const names = assets.manifest.skeleton.bones.map((b) => b.name);
 const tris = bodyTriangles(assets);
 const model = new HumanoidModel(assets, { subdivision: 0 });
 
+/** Both hips flexed `flexion` and opened `opening` degrees to their sides, every other bone at rest. */
+function opened(flexion: number, opening: number) {
+  const rotations = IDENTITY_POSE(names.length);
+  rotations.set(hipRotation(flexion, opening, 1), names.indexOf("upperleg01.L") * 4);
+  rotations.set(hipRotation(flexion, opening, -1), names.indexOf("upperleg01.R") * 4);
+  return rotations;
+}
+
+/**
+ * How much deeper (metres) the thigh may be through the belly at openings between
+ * those the fold is solved at than at the solved ones, flexed 120° to 135°. The
+ * coordinator's bound (2026-10-10). Measured: played on the line between two
+ * openings solved apart, 8 to 31 mm at 10° in eight of the nine bodies; solved
+ * with the poses between them looked at (`AJAR`), none.
+ */
+const OPENING_SLACK = 0.002;
+
 /** Both hips flexed `degrees` (the knee up), every other bone at rest. */
 function flexed(degrees: number, sides: ("L" | "R")[] = ["L", "R"]) {
   const rotations = IDENTITY_POSE(names.length);
@@ -362,10 +379,12 @@ describe("the hip fold", () => {
     )
       solved.push(degrees, degrees - HIP_FOLD.step / 2);
     for (const f of figures)
-      for (const degrees of solved) {
-        const { depth } = f.contact.penetration(pose(f, flexed(degrees), true));
-        expect(depth, `${f.name} at ${degrees}°`).toBeLessThan(0.002);
-      }
+      for (const degrees of solved)
+        for (let o = 0; o < FOLD_OPENINGS; o++) {
+          const opening = o * HIP_FOLD.opened;
+          const { depth } = f.contact.penetration(pose(f, opened(degrees, opening), true));
+          expect(depth, `${f.name} at ${degrees}°, opened ${opening}°`).toBeLessThan(0.002);
+        }
   });
 
   it("keeps the thigh less than 8 mm behind the belly's skin at any flexion, in every body", () => {
@@ -375,6 +394,31 @@ describe("the hip fold", () => {
         const { depth } = f.contact.penetration(pose(f, flexed(degrees), true));
         expect(depth, `${f.name} at ${degrees}°`).toBeLessThan(0.008);
       }
+  });
+
+  it("keeps the thigh out of the belly between the openings it is solved at, as far as at the openings themselves", () => {
+    // The fold is read between its openings on a line; deep in the flexion that line must not cut
+    // through the belly any deeper than the solved openings leave it (`OPENING_SLACK`).
+    const openings = [0, 5, 10, 15, 20];
+    const solvedAt = (opening: number) =>
+      Array.from({ length: FOLD_OPENINGS }, (_, o) => o * HIP_FOLD.opened).includes(opening);
+    for (const f of figures) {
+      const depths = new Map<number, number>();
+      for (const opening of openings) {
+        let deepest = 0;
+        for (const flexion of [120, 125, 130, 135])
+          deepest = Math.max(
+            deepest,
+            f.contact.penetration(pose(f, opened(flexion, opening), true)).depth,
+          );
+        depths.set(opening, deepest);
+      }
+      const keys = Math.max(...openings.filter(solvedAt).map((o) => depths.get(o) as number));
+      for (const opening of openings.filter((o) => !solvedAt(o)))
+        expect(depths.get(opening), `${f.name} opened ${opening}°`).toBeLessThanOrEqual(
+          keys + OPENING_SLACK,
+        );
+    }
   });
 
   it("changes nothing at rest, or before the fold starts", () => {
@@ -601,7 +645,12 @@ describe("the hip fold", () => {
     const turned = flexed(120);
     const r = Math.PI / 3;
     turned.set([0, Math.sin(r / 2), 0, Math.cos(r / 2)], root * 4);
-    const { depth } = average.contact.penetration(pose(average, turned, true));
+    const upright = IDENTITY_POSE(names.length);
+    upright.set([0, Math.sin(r / 2), 0, Math.cos(r / 2)], root * 4);
+    const { depth } = average.contact.penetration(
+      pose(average, turned, true),
+      pose(average, upright, false),
+    );
     expect(depth).toBeLessThan(0.002);
   });
 });

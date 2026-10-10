@@ -1249,7 +1249,44 @@ press has moved for another pose: the squat's share is 0.00 in all nine bodies.
 It doubles the fold's data and its solve. The earlier measure that dropped the
 opened solve (the muscular man's smoke-tier inverted triangles 997 → 2115) was
 of the thigh pushed alone with no release; it is gone with the release below and
-`LATERAL`.
+the solve between the openings.
+
+**Between the openings (decision, 2026-10-10).** Played on the straight line
+between two openings solved apart, the fold cut through the belly where neither
+solve looked: flexed 120° to 135° and opened 10°, the thigh was 8 to 31 mm
+through in eight of the nine bodies (the heavy man 31 mm, the tall lean man 22,
+the muscular man 16, the average figure 11). Two fixes were weighed: a third key
+at 10°, which halves the line but does not close it and adds half again to the
+data and the solve, or a solve that looks at the line itself. The second was
+chosen, since what is played is what is solved: the openings are solved a key at
+a time, the thighs together first, and the opened solve looks at the poses on
+the line between them, at the quarters (`AJAR`, CHOICE) and the closed end, each
+at the key and `BETWEEN` back from it. A contact in such a pose is pushed out of
+by both openings' displacements, each by its share of that pose (the least
+pushes that move the skin so far, as the press shares a contact among a
+triangle's corners), so neither is pushed the farther the less it is played.
+Pushing the opened displacement alone, by the inverse of its share, ran away
+near the closed end (at an eighth of the way, a push eight times the depth: the
+muscular man 56 to 90 mm). Measured over the nine bodies at flexions 45° to
+140° and openings in eighths: under 1 mm everywhere between 0° and 20° but the
+tall lean man's 5.3 mm at 17.5°; past 20°, where the opened fold holds, up to 9 mm
+at 30°.
+
+**Skin the bones turn inside out (2026-10-10).** Where the trunk's skin meets the
+thigh's at the hip's front and side, a deeply flexed and opened thigh crumples it:
+some of its triangles face into the body. Pushed out along such a face, the
+thigh is pushed in; the muscular man's opened solve did not settle from 120° on
+and left up to 52 mm, which is why the opened solve once kept the flank out
+(`LATERAL`, 4 cm to the side of a hip joint), and that left the heavy bodies'
+thighs through the flank (the heavy man 45 to 70 mm, the heavy woman 20 to 30).
+So the solve judges a trunk triangle by its rest face, which is its face in every
+pose the solve makes (the hips alone move): one turned more than 90° from it is
+pushed out of from its other side, and no nearest-skin push is taken from it. The
+flank is pushed out of again, at both openings. `HipContact`, which the gates
+measure with, judges such a triangle the same way, against the same pose with the
+hips at rest; judged by its posed face, a thigh vertex on the body's outside of a
+crumpled seam triangle reads as through it (the tall lean man and the heavy man
+21 to 24 mm, on the seam).
 
 **The press only where a thigh is (2026-10-10).** Before the last round of each
 key the trunk's displacement is kept by `1 - smoothstep(FOLD_PRESS.near,
@@ -1258,15 +1295,9 @@ thigh's skin as posed and pushed (`SurfaceDistance` over the thigh's triangles,
 `src/rig/contact.ts`): whole within 1 cm, none past 3 cm (CHOICE, the reach of
 the gate below). The spread presses belly the thigh never meets; without the
 release the average figure's squat share is 0.155. The last round, pushes alone,
-then puts the thigh back out of whatever the release let go. Opened, the thigh is
-pushed out of the belly and the groin only, the trunk's skin no farther than
-`LATERAL` (4 cm, measured on the muscular man's squat: 2 cm left 34 mm of thigh
-through, 3 cm 22 mm, 4 cm none) to the side of a hip joint: an opened, deeply
-flexed thigh's outer front drives into the flank by the iliac crest, and pushed
-out of it the opened keys past 115° did not settle. The thighs-together solve
-keeps all the trunk (with `LATERAL` there too the closed poses left 26 mm). Each
-key also looks back a half and a quarter of a step (`BETWEEN`, CHOICE: at a half
-alone the slim woman was 14 mm through at 139°).
+then puts the thigh back out of whatever the release let go. Each key also looks
+back a half and a quarter of a step (`BETWEEN`, CHOICE: at a half alone the slim
+woman was 14 mm through at 139°).
 
 **Why the normal is part of the fold.** The skinned normal is the bones' own, and
 where the fold has moved the skin by centimetres it is a normal of skin that is no
@@ -1321,7 +1352,10 @@ side by the same weights over the moved vertices alone), and the patched
 at its flexion and opening (`hkFoldAngles`), the `skinnormal_vertex` chunk
 `hkFoldNormal`. The browser project holds the shader's angles to the CPU's
 (`foldAngles`) and its read to `addFold` and `addFoldNormal` to 2·10⁻⁶ and 10⁻⁵,
-with the hips flexed and opened apart.
+with the hips flexed and opened apart. The texture is four 32-bit floats a texel:
+on an adult's drawn surface about 15000 rows (14796 for the average figure, 15200
+for the heavy man), 40 MB; on a child's base surface 4075 rows, 11 MB. The second
+opening doubled it.
 
 **Where it runs.** The thigh pushed alone took 0.7 to 1.5 s of one core for a
 figure on a desktop (1.8 s with the CPU throttled 4× in Chromium, the proxy for a
@@ -1332,7 +1366,10 @@ number), 4.5 to 8.6 s of CPU against the old solve's 1.3 to 2.0 s, about three
 times; the desktop and phone figures want measuring again on a quiet machine. The
 second opening and the release make it about 1.6 times that again (13.4 s for the
 average figure and 8.0 s for the heavy man against 8.6 and 4.8 s, at a load
-average near 25), some six times the thigh pushed alone. It is not part of
+average near 25), some six times the thigh pushed alone. Solving the openings
+together, with the poses between them looked at, took on a quieter machine (a
+load average near 8) 9.7 s of wall time for the average figure and 10.3 s for the
+heavy man, against 7.2 and 4.2 s for the openings solved apart. It is not part of
 `evaluate`: `HumanoidWorkerClient.hipFold(recipe)` asks the worker, which solves a
 flexion at a time with a macrotask between (an evaluation is never held up behind
 it) and answers a newer request by stopping the older (`AbortError`). A solved fold
@@ -1349,7 +1386,12 @@ adult's refined surface), the other's slots set to none.
 **Gates** (`tests/hipFold.test.ts`, nine bodies: the bench's five and the battery's
 slim and heavy women, heavy man and elder woman): the thigh stays under 2 mm
 behind the belly's skin at every flexion solved and halfway between (32.5° to
-140°), under 8 mm at arbitrary flexions in between (the line from one fold to
+140°), with the thighs together and opened (opened, the fold solved apart left
+4.8 mm at 90° in the short full woman, and far more in the heavy bodies), under
+8 mm at arbitrary flexions in between, and between the openings no deeper than
+2 mm past the openings' own worst, opened 5°, 10° and 15° and flexed 120° to
+135° (`OPENING_SLACK`; the openings solved apart left the average figure 10.6 mm
+at 10°) (the line from one fold to
 the next leaves a millimetre or two on a few vertices; the worst is 6 mm), is
 unchanged at rest and below the fold's start, folds one hip alone, and turns with
 the root. It moves only the thigh's skin and the trunk's in front of the hips;
@@ -1373,8 +1415,8 @@ a symmetric tuck and sound for one hip alone (tested), approximate for a deep
 flexion of one hip with the other's thigh across it: one hip at 120° leaves a
 press share of up to 0.13 more than 3 cm from the thigh (about 6 mm in the heavy
 woman), the other side's belly pressed as the solve's other thigh pressed it.
-Between the two openings the fold is a line between two solves: at about 10° and
-125° to 135° the muscular man's thigh is 8 to 16 mm through the belly. A few edges
+Opened past `HIP_FOLD.opened` the opened fold holds, and is not solved for: at 30°
+the tall lean man and the heavy man are 8 to 9 mm through. A few edges
 still cross at 120° in the average figure (7 of 94 without the fold), none with
 the thigh's end behind the belly: a seam vertex, held mostly by the trunk, lies a
 few millimetres behind its neighbour's triangle, which reads as the crease of the
