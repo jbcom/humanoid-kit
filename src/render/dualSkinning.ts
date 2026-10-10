@@ -46,6 +46,10 @@ export const DUAL_BONES_UNIFORM = "hkDualBones";
 export const FOLD_UNIFORM = "hkFoldTexture";
 /** Which texel of the bone texture holds the root's rotation (after every bone's own). */
 export const ROOT_UNIFORM = "hkRootTexel";
+/** How much of the hip fold shows, 0 to 1: it fades in when it arrives (`DualBones.advanceFold`). */
+export const FOLD_BLEND_UNIFORM = "hkFoldBlend";
+/** Seconds the fold takes to fade in, so that a figure whose fold arrives late does not jump. */
+export const FOLD_FADE = 0.15;
 /** The vertex attribute holding a vertex's row in the fold texture, or -1. */
 export const FOLD_SLOT_ATTRIBUTE = "hkFoldSlot";
 
@@ -76,6 +80,8 @@ export class DualBones {
   readonly bones: number;
   /** The hip fold's texture, in a holder the shaders share, so that `setFold` can replace it. */
   readonly fold: { value: DataTexture } = { value: noFoldTexture() };
+  /** How much of the fold shows (a uniform the shaders share): 1 once it has faded in. */
+  readonly foldBlend: { value: number } = { value: 1 };
   /** The table's share per bone (`skinDualShare`); a pose's own shares come from it (`poseShare`). */
   private readonly share: Float32Array;
   /** The pose last written, for the CPU reference (`pose`), with the shares it was written with. */
@@ -120,6 +126,10 @@ export class DualBones {
    */
   setFold(fold: SurfaceFold | null): void {
     const old = this.fold.value;
+    const had = this.hasFold;
+    this.hasFold = !!fold && fold.rows > 0;
+    // A fold that arrives where there was none fades in; one that replaces another (the figure's shape changed) does not.
+    this.foldBlend.value = this.hasFold && !had ? 0 : 1;
     if (!fold || fold.rows === 0) this.fold.value = noFoldTexture();
     else {
       const t = new DataTexture(fold.data, FOLD_KEYS * 2, fold.rows, RGBAFormat, FloatType);
@@ -130,6 +140,19 @@ export class DualBones {
       this.fold.value = t;
     }
     old.dispose();
+  }
+
+  /** Whether a fold is set. */
+  private hasFold = false;
+
+  /**
+   * Carries the fold's fade on by `seconds`; true while it is not whole, so a
+   * caller that renders on demand knows to draw another frame.
+   */
+  advanceFold(seconds: number): boolean {
+    if (this.foldBlend.value >= 1) return false;
+    this.foldBlend.value = Math.min(1, this.foldBlend.value + seconds / FOLD_FADE);
+    return this.foldBlend.value < 1;
   }
 
   /** The pose last written, prepared for skinning on the CPU (null before the first). */
@@ -212,6 +235,7 @@ export const FOLD_FUNCTIONS = /* glsl */ `
 #ifdef USE_SKINNING
 uniform highp sampler2D ${FOLD_UNIFORM};
 uniform int ${ROOT_UNIFORM};
+uniform float ${FOLD_BLEND_UNIFORM};
 vec3 hkFoldKey( int key, int slot, int part ) {
 	return texelFetch( ${FOLD_UNIFORM}, ivec2( key * 2 + part, slot ), 0 ).xyz;
 }
@@ -229,7 +253,7 @@ vec3 hkFoldValue( float slotValue, float flexion, int part ) {
 		vec3 was = key == 0 ? vec3( 0.0 ) : hkFoldKey( key - 1, slot, part );
 		d = mix( was, to, t - i );
 	}
-	return hkQRotate( texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( ${ROOT_UNIFORM}, 0 ), 0 ), d );
+	return hkQRotate( texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( ${ROOT_UNIFORM}, 0 ), 0 ), d ) * ${FOLD_BLEND_UNIFORM};
 }
 vec3 hkFoldDisplacement( float slotValue, float flexion ) {
 	return hkFoldValue( slotValue, flexion, 0 );
@@ -291,6 +315,7 @@ export function patchDualSkinning(shader: PatchableShader, bones: DualBones, fol
   if (fold) {
     shader.uniforms[FOLD_UNIFORM] = bones.fold;
     shader.uniforms[ROOT_UNIFORM] = { value: bones.bones * DUAL_TEXELS };
+    shader.uniforms[FOLD_BLEND_UNIFORM] = bones.foldBlend;
   }
   shader.vertexShader = shader.vertexShader
     .replace(

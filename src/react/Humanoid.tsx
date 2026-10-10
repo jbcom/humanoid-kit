@@ -902,6 +902,7 @@ export function Humanoid({
   const [decals, setDecals] = useState<{ topology: HairTopology; geometry: BufferGeometry }[]>([]);
   // Alpha-to-coverage needs a multisampled framebuffer; hair falls back to a plain alpha test.
   const multisampled = useThree((s) => isMultisampled(s.gl.getContext()));
+  const invalidate = useThree((s) => s.invalidate);
   /** Which style's scalp each body geometry holds (null: none), so it is written when it changes. */
   const scalpOf = useRef(new WeakMap<BufferGeometry, string | null>());
   // The scalp shows the hair's own colour under it, so it follows the recipe's hair colour.
@@ -967,6 +968,16 @@ export function Humanoid({
     return hipPose(rest, rotations).flexion.some((f) => f > HIP_FOLD.from);
   }, [figure, ready, rotations]);
   const figureKey = useMemo(() => (figure ? controlKey(figure.control) : ""), [figure]);
+  /** Ends the hold on the settle that the fold's fade-in keeps, while it fades. */
+  const fading = useRef<(() => void) | null>(null);
+  useFrame((_, delta) => {
+    if (!dual) return;
+    if (dual.advanceFold(delta)) invalidate();
+    else if (fading.current) {
+      fading.current();
+      fading.current = null;
+    }
+  });
   // biome-ignore lint/correctness/useExhaustiveDependencies: figureKey stands for the figure; foldedFor holds what it was evaluated from
   useEffect(() => {
     const wanted = foldedFor.current;
@@ -991,6 +1002,10 @@ export function Humanoid({
           left.needsUpdate = true;
         }
         dual.setFold(fold);
+        // It fades in over the next frames (`DualBones.advanceFold`), and the figure is not settled before it has.
+        fading.current?.();
+        fading.current = settle.begin();
+        invalidate();
       },
       (e: Error) => {
         end();

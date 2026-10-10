@@ -83,7 +83,7 @@ describe("the hip fold in <Humanoid>", () => {
     async () => {
       let get: (() => RootState) | null = null;
       let settled = false;
-      let atSettle = { slots: 0, rows: 0 };
+      let atSettle = { slots: 0, rows: 0, blend: -1 };
       await render(
         <HumanoidProvider client={client}>
           <div style={{ width: 240, height: 240 }}>
@@ -95,7 +95,10 @@ describe("the hip fold in <Humanoid>", () => {
                 pose={{ body: "tucked" }}
                 onSettled={() => {
                   settled = true;
-                  if (get) atSettle = foldOf(get().scene);
+                  if (get) {
+                    const scene = get().scene;
+                    atSettle = { ...foldOf(scene), blend: bonesOf(scene)?.foldBlend.value ?? -1 };
+                  }
                 }}
               />
             </Canvas>
@@ -105,6 +108,8 @@ describe("the hip fold in <Humanoid>", () => {
       await expect.poll(() => settled, LOAD).toBe(true);
       expect(atSettle.slots).toBeGreaterThan(50);
       expect(atSettle.rows).toBeGreaterThan(50);
+      // The fold fades in when it arrives, and the figure is not settled before it is whole.
+      expect(atSettle.blend).toBe(1);
       // The same figure drawn with the fold and without differs where the groin is: seen from the front, the side, above and below.
       const state = (get as unknown as () => RootState)();
       const dual = bonesOf(state.scene) as DualBones;

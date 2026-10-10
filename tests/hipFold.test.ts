@@ -40,7 +40,18 @@ function flexed(degrees: number, sides: ("L" | "R")[] = ["L", "R"]) {
   return rotations;
 }
 
-const figures = Object.entries(BODY_TYPES).map(([name, recipe]) => {
+/**
+ * The figure battery's extremes (docs/evidence/BATTERY.md, the `cross` set) that
+ * the bench's five lack: deformation fails first on heavy and old bodies.
+ */
+const BATTERY_EXTREMES: typeof BODY_TYPES = {
+  "slim woman": { macros: { age: 25, gender: 0, weight: 0, muscle: 0.3 } },
+  "heavy woman": { macros: { age: 25, gender: 0, weight: 1, muscle: 0.3 } },
+  "heavy man": { macros: { age: 25, gender: 1, weight: 1, muscle: 0.3 } },
+  "elder woman": { macros: { age: 75, gender: 0 } },
+};
+
+const figures = Object.entries({ ...BODY_TYPES, ...BATTERY_EXTREMES }).map(([name, recipe]) => {
   const control = model.evaluate(createRecipe(recipe)).control;
   const rest = restBones(assets, control);
   const fold = solveHipFold(rest, control, assets.skinIndex, assets.skinWeight, tris);
@@ -165,6 +176,27 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
       yielded++;
     }
     expect(yielded).toBe(FOLD_KEYS);
+  });
+
+  it("solves a shape once: asked again for the same figure it answers at once with the same fold, and a different one is solved", () => {
+    const solved = (recipe: ReturnType<typeof createRecipe>) => {
+      const steps = model.hipFold(recipe);
+      let yielded = 0;
+      for (;;) {
+        const step = steps.next();
+        if (step.done) return { yielded, fold: step.value.fold };
+        yielded++;
+      }
+    };
+    const first = solved(createRecipe({ macros: { weight: 0.8 } }));
+    expect(first.yielded).toBe(FOLD_KEYS);
+    const again = solved(createRecipe({ macros: { weight: 0.8 } }));
+    expect(again.yielded).toBe(0);
+    expect(again.fold.rows).toBe(first.fold.rows);
+    expect([...again.fold.data]).toEqual([...first.fold.data]);
+    // Not the same buffers: a reply transfers its own.
+    expect(again.fold.data).not.toBe(first.fold.data);
+    expect(solved(createRecipe({ macros: { weight: 0.3 } })).yielded).toBe(FOLD_KEYS);
   });
 });
 

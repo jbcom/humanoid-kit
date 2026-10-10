@@ -1115,18 +1115,24 @@ row (`FOLD_SLOT_ATTRIBUTE`) at its flexion, the `skinnormal_vertex` chunk
 `hkFoldNormal`. The browser project holds the shader's read to the CPU's (`addFold`,
 `addFoldNormal`) to 2·10⁻⁶ and 10⁻⁵.
 
-**Where it runs.** Solving takes one to three seconds of one core for a figure,
-so it is not part of `evaluate`: `HumanoidWorkerClient.hipFold(recipe)` asks the
-worker, which solves a flexion at a time with a macrotask between (an evaluation
-is never held up behind it) and answers a newer request by stopping the older
-(`AbortError`). `<Humanoid>` asks once a hip in the pose is flexed past the
-fold's start, whenever the figure's shape changes, and holds its settle open
-until the fold is drawn; until it arrives the figure draws without it, and a
-figure that changes shape draws with the last. The fold is for the surface the
-evaluation draws (the base body, or an adult's refined surface), the other's
-slots set to none.
+**Where it runs.** Solving takes 0.7 to 1.5 s of one core for a figure on a desktop
+(1.8 s with the CPU throttled 4× in Chromium, the proxy for a mid phone; measured
+on the average figure and a heavy man, evaluation included), so it is not part of
+`evaluate`: `HumanoidWorkerClient.hipFold(recipe)` asks the worker, which solves a
+flexion at a time with a macrotask between (an evaluation is never held up behind
+it) and answers a newer request by stopping the older (`AbortError`). A solved fold
+is kept by a hash of the figure's control vertices (the last six), so a shape seen
+again (an edit undone, a pose changed) is answered at once (50 ms). `<Humanoid>`
+asks once a hip in the pose is flexed past the fold's start, whenever the figure's
+shape changes. Until it arrives the figure draws without it, and the fold then
+fades in over 150 ms (`FOLD_FADE`, the `hkFoldBlend` uniform, `DualBones.advanceFold`)
+so that it does not pop; a fold that replaces another, for a figure whose shape
+changed, does not fade. The figure's settle is held until the fold is drawn and
+whole. The fold is for the surface the evaluation draws (the base body, or an
+adult's refined surface), the other's slots set to none.
 
-**Gates** (`tests/hipFold.test.ts`, five bodies): the thigh stays under 2 mm
+**Gates** (`tests/hipFold.test.ts`, nine bodies: the bench's five and the battery's
+slim and heavy women, heavy man and elder woman): the thigh stays under 2 mm
 behind the belly's skin at every flexion solved and halfway between (32.5° to
 140°), under 8 mm at arbitrary flexions in between (the line from one fold to
 the next leaves a millimetre or two on a few vertices; the worst is 6 mm), is

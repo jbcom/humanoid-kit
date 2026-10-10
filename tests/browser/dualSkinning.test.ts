@@ -34,6 +34,7 @@ import {
   DUAL_BONES_UNIFORM,
   DUAL_SKINNING_FUNCTIONS,
   DualBones,
+  FOLD_BLEND_UNIFORM,
   FOLD_FUNCTIONS,
   FOLD_UNIFORM,
   followDualSkinning,
@@ -377,6 +378,7 @@ describe("the vertex shader's hip fold", () => {
         [DUAL_BONES_UNIFORM]: { value: dual.texture },
         [FOLD_UNIFORM]: dual.fold,
         [ROOT_UNIFORM]: { value: NAMES.length * DUAL_TEXELS },
+        [FOLD_BLEND_UNIFORM]: dual.foldBlend,
         tAsked: { value: input },
         tPart: { value: 0 },
       },
@@ -397,10 +399,15 @@ describe("the vertex shader's hip fold", () => {
     scene.add(new Mesh(new PlaneGeometry(2, 2), material));
     const target = new WebGLRenderTarget(count, 1, { type: FloatType, depthBuffer: false });
     const root = rotations.subarray(0, 4);
-    for (const [part, read] of [
-      [0, addFold],
-      [1, addFoldNormal],
+    // Whole, then half faded in, then not at all (the fold fades in when it arrives).
+    for (const [part, read, blend] of [
+      [0, addFold, 1],
+      [1, addFoldNormal, 1],
+      [0, addFold, 0.5],
+      [1, addFoldNormal, 0.25],
+      [0, addFold, 0],
     ] as const) {
+      dual.foldBlend.value = blend;
       material.uniforms.tPart = { value: part };
       renderer.setRenderTarget(target);
       renderer.render(scene, new OrthographicCamera(-1, 1, 1, -1, 0, 1));
@@ -412,20 +419,21 @@ describe("the vertex shader's hip fold", () => {
       for (let v = 0; v < count; v++) {
         const cpu = new Float32Array(3);
         read(fold, asked[v * 4] as number, asked[v * 4 + 1] as number, cpu, 0);
-        const want = rotate(
+        const turned = rotate(
           [root[0] as number, root[1] as number, root[2] as number, root[3] as number],
           cpu[0] as number,
           cpu[1] as number,
           cpu[2] as number,
         );
-        if (Math.hypot(...want) > 0) moved++;
+        const want = turned.map((x) => x * blend);
+        if (Math.hypot(...turned) > 0) moved++;
         for (let k = 0; k < 3; k++)
           worst = Math.max(worst, Math.abs((px[v * 4 + k] as number) - (want[k] as number)));
       }
       // Most of what was asked is in the fold's range, so this compares displacements, not zeros.
       expect(moved, `part ${part}`).toBeGreaterThan(count / 2);
       // The normal's change is some seven times the displacement's in size, so float error is too.
-      expect(worst, `part ${part}`).toBeLessThan(part === 0 ? 2e-6 : 1e-5);
+      expect(worst, `part ${part} at ${blend}`).toBeLessThan(part === 0 ? 2e-6 : 1e-5);
     }
     target.dispose();
     input.dispose();

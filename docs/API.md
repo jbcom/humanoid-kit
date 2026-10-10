@@ -779,11 +779,13 @@ and expressions"). Framework-free.
   same a flexion at a time (a generator). The result (`HipFold`) is passed to
   `skinPositions` as `fold`; `hipPose(rest, rotations)` reads each hip's flexion
   from a pose, `addFold(fold, vertex, flexion, out, at)` reads a vertex's
-  displacement at a flexion, `addFoldNormal` the change of its normal there, and `HIP_FOLD` holds the fold's terms. It takes one
-  to three seconds of one core: in an app it is asked of the worker
-  (`client.hipFold`), never solved per frame. The thigh stays under 2 mm behind
-  the belly at every flexion solved and halfway between, in the five bodies of the
-  bench. `scripts/lib/hipContact.ts` (`HipContact.penetration(positions)`)
+  displacement at a flexion, `addFoldNormal` the change of its normal there, and
+  `HIP_FOLD` holds the fold's terms. It takes about a second of one core (under two
+  with the CPU throttled 4×): in an app it is asked of the worker
+  (`client.hipFold`, which keeps the last six folds by figure shape), never solved
+  per frame; `<Humanoid>` fades it in over `FOLD_FADE` (150 ms) when it arrives. The
+  thigh stays under 2 mm behind the belly at every flexion solved and halfway
+  between, in the nine bodies of the tests. `scripts/lib/hipContact.ts` (`HipContact.penetration(positions)`)
   measures how far a posed body's thigh passes through its trunk.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
