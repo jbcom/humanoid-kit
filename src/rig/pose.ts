@@ -14,7 +14,7 @@ import {
   jointPosition,
 } from "../format/assetFormat.ts";
 import type { BoneRotations, RestBones } from "./bones.ts";
-import { skinPositionsBlended } from "./dual.ts";
+import { skinNormalsBlended, skinPositionsBlended } from "./dual.ts";
 import { mul, type Quat } from "./quat.ts";
 import { poseShare, skinDualShare } from "./skinShare.ts";
 
@@ -334,6 +334,26 @@ export function skinPositions(
     skinWeight,
     out,
     // The thigh's share falls as it swings (`poseShare`), as the renderer's bone texture has it.
+    poseShare(rest, rotations, dualShareOf(rest.names)),
+  );
+}
+
+/** The rig's skinning of rest `normals` by `rotations`, with the same shares as `skinPositions`. */
+export function skinNormals(
+  rest: RestBones,
+  rotations: BoneRotations,
+  normals: Float32Array,
+  skinIndex: Uint8Array | Uint16Array,
+  skinWeight: Float32Array,
+  out: Float32Array,
+): Float32Array {
+  return skinNormalsBlended(
+    rest,
+    rotations,
+    normals,
+    skinIndex,
+    skinWeight,
+    out,
     poseShare(rest, rotations, dualShareOf(rest.names)),
   );
 }

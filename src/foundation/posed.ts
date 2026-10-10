@@ -3,16 +3,21 @@
  * "The foundation harness"): the recipe evaluated, the skeleton fitted to it,
  * the render surface skinned by `skinPositions`, the CPU reference of the
  * shader's blend of linear and dual quaternion skinning with its
- * pose-dependent shares. A corrective added to the renderer is added here, or
- * the foundation measures a body nobody draws.
+ * pose-dependent shares, and its normals by `skinNormals`, the same blend. A
+ * corrective added to the renderer is added here, or the foundation measures
+ * a body nobody draws.
  */
 import type { HumanoidModel } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import {
+  type BoneRotations,
   bodyPoseRotations,
   IDENTITY_POSE,
+  posedBoneHeads,
+  type RestBones,
   restBones,
   rigData,
+  skinNormals,
   skinPositions,
 } from "../rig/pose.ts";
 import { REST_POSE } from "./permutations.ts";
@@ -25,8 +30,12 @@ export interface PosedBody {
   readonly index: Uint32Array;
   /** Render vertex positions at rest, model space. */
   readonly rest: Float32Array;
+  /** Render vertex normals at rest. */
+  readonly restNormals: Float32Array;
   /** Render vertex positions in the pose, model space (before the ground lift). */
   readonly positions: Float32Array;
+  /** Render vertex normals in the pose, skinned as the renderer skins them. */
+  readonly normals: Float32Array;
   /**
    * Each render vertex's representative among those at its rest position: the
    * lowest index of them. Vertices a UV seam splits share one, so `weld` gives
@@ -35,6 +44,16 @@ export interface PosedBody {
   readonly weld: Uint32Array;
   /** Render vertex count. */
   readonly vertexCount: number;
+  /** Four bone indices and weights per render vertex. */
+  readonly skinIndex: Uint16Array;
+  readonly skinWeight: Float32Array;
+  /** The skeleton fitted to the figure at rest, and the pose's rotation per bone. */
+  readonly bones: RestBones;
+  readonly rotations: BoneRotations;
+  /** Each bone's head in the pose, bones × 3. */
+  readonly heads: Float32Array;
+  /** Morphed control positions (base topology), as the evaluation gives them. */
+  readonly control: Float32Array;
 }
 
 /** The lowest render index at each rest position: the seams' duplicates share one. */
@@ -57,21 +76,32 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
   const topology = ev.surface === "adult" ? model.adultSurface() : model.topology().body;
   if (!topology) throw new Error("an adult evaluation without the adult surface");
   const rig = rigData(model.assets);
-  const rest = restBones(model.assets, ev.control);
-  const positions = skinPositions(
-    rest,
-    pose === REST_POSE ? IDENTITY_POSE(rig.bones.length) : bodyPoseRotations(rig, pose),
-    ev.positions,
-    topology.skinIndex,
-    topology.skinWeight,
-    new Float32Array(ev.positions.length),
-  );
+  const bones = restBones(model.assets, ev.control);
+  const rotations =
+    pose === REST_POSE ? IDENTITY_POSE(rig.bones.length) : bodyPoseRotations(rig, pose);
+  const { skinIndex, skinWeight } = topology;
+  const n = ev.positions.length;
   return {
     surface: ev.surface,
     index: topology.index,
     rest: Float32Array.from(ev.positions),
-    positions,
+    restNormals: Float32Array.from(ev.normals),
+    positions: skinPositions(
+      bones,
+      rotations,
+      ev.positions,
+      skinIndex,
+      skinWeight,
+      new Float32Array(n),
+    ),
+    normals: skinNormals(bones, rotations, ev.normals, skinIndex, skinWeight, new Float32Array(n)),
     weld: weldOf(ev.positions),
     vertexCount: topology.vertexCount,
+    skinIndex,
+    skinWeight,
+    bones,
+    rotations,
+    heads: posedBoneHeads(bones, rotations),
+    control: Float32Array.from(ev.control),
   };
 }

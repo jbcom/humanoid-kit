@@ -1952,8 +1952,35 @@ measurements cheap enough for the smoke tier to run in every local test pass.
 - *Geometry is shared across tones*: tone changes no position, so the invariant
   suite poses each body × pose × anatomy once and reports it for every tone.
 
-The invariants, landmarks and surface queries are recorded below as they are
-built.
+**The invariants (built 2026-10-09).** `measureInvariants`
+(`src/foundation/invariants.ts`) measures a posed body against itself at rest:
+
+- *Penetration* by ray parity: a ray out along a vertex's skinned normal
+  crosses closed skin an even number of times from outside, so an odd count,
+  agreed by a second ray tilted 27° (the eyes' sockets and the mouth are
+  openings a ray can leave through), puts the vertex inside skin it passed
+  through. Its depth is the nearest skin outside its 4 cm rest neighbourhood,
+  which must lie within 3 cm. Deeper than 2 mm is a failure, unless the two
+  parts (by the bone each vertex follows most) are a named contact pair
+  (`CONTACT_PAIRS`: thigh on shin, limbs on the trunk, the thighs together),
+  reported apart.
+- *Collapse*: a triangle that turns against its skinned normals where at rest
+  it agreed with them (a lip's or a lid's edge disagrees at rest, by its
+  shape), or keeps under 30% of its rest area; and the volume each shoulder,
+  elbow, hip and knee closes with its joint's head, held to 0.8–1.2 of rest.
+- *Folds*: an edge sharper than 60° in the pose where it was under 30° at
+  rest, outside the named creases (the crease layers' masks).
+- *Seams*: a UV seam's duplicates stay together.
+
+Triangles under 10⁻⁴ mm² at rest are not measured: their shape is noise. A
+test holds each measure to a planted defect and an average body at rest to
+none. **The worklist**: `node scripts/foundation-smoke.ts` runs the smoke tier
+(24 bodies × poses, 18 s) and writes `docs/evidence/FOUNDATION-SMOKE.md` and
+its measures; the smoke test holds every body at rest to no failure and every
+row to no worse than the file, so a foundation lane that fixes a row rewrites
+it in its commit.
+
+The landmarks and surface queries are recorded below as they are built.
 
 ## Invariants
 

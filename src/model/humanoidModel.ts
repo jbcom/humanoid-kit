@@ -1742,6 +1742,21 @@ export class HumanoidModel {
     return this.adultBodySurface()?.topology ?? null;
   }
 
+  /**
+   * A value per base vertex (`field`, one per control vertex) carried to a body
+   * surface's render vertices through its subdivision stencil: the base's, or
+   * the adult surface's when there is one. For measuring a region of the skin
+   * (a crease, a landmark's area) on the surface as drawn.
+   */
+  bodyField(field: Float32Array, surface: "base" | "adult" = "base"): Float32Array {
+    const n = this.assets.manifest.vertexCount;
+    if (field.length !== n)
+      throw new RangeError(`a body field needs ${n} values, not ${field.length}`);
+    const mesh = surface === "adult" ? this.adultBodySurface()?.part.mesh : this.body.mesh;
+    if (!mesh) throw new RangeError("there is no adult surface to carry a field to");
+    return carryToRender(mesh, n, (v) => field[v] as number);
+  }
+
   private adultBodySurface() {
     if (this.adultBody !== undefined) return this.adultBody;
     const spec = this.assets.adultAnatomyManifest?.anatomy?.surface;
