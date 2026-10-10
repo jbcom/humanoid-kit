@@ -1,7 +1,36 @@
 import { describe, expect, it } from "vitest";
 import { curveAt, parseCurve } from "../src/format/assetFormat.ts";
+import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { withAnatomyDefaults } from "../src/recipe/anatomy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { adultManifest, loadFixtureAssets } from "./fixtures.ts";
+
+describe("an adult figure drawn with the adult pack", { timeout: 600_000 }, () => {
+  const model = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
+  const defaults = adultManifest.anatomy?.defaults ?? {};
+  // The same figure with every defaulted modifier set to none: the doll.
+  const none = Object.fromEntries(Object.keys(defaults).map((id) => [id, 0]));
+  const moved = (age: number, gender: number) => {
+    const plain = model.evaluate(createRecipe({ macros: { age, gender } })).positions;
+    const doll = model.evaluate(
+      createRecipe({ macros: { age, gender }, modifiers: none }),
+    ).positions;
+    let most = 0;
+    for (let i = 0; i < plain.length; i++)
+      most = Math.max(most, Math.abs((plain[i] as number) - (doll[i] as number)));
+    return most;
+  };
+
+  it("has the pack's anatomy by default, at both ends of the gender axis", () => {
+    expect(Object.keys(defaults).length).toBeGreaterThan(0);
+    expect(moved(30, 1)).toBeGreaterThan(0.02);
+    expect(moved(30, 0)).toBeGreaterThan(0.001);
+  });
+
+  it("is drawn with none under 18", () => {
+    expect(moved(14, 1)).toBe(0);
+  });
+});
 
 // The pack's data, not the core's: generic ids stand in for the anatomy's modifiers.
 const DEFAULTS = { "part/size": "0,0.1;0.4,0.1;0.6,0.7;1,0.7", "part/other": "0.4,0;0.6,0.6" };

@@ -49,6 +49,16 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "
   // flaccid is length +43% and circumference +25%, docs/research/ADULT-ANATOMY-DATA.md, F), which
   // read the signal, not through state morphs on the CC0 penis targets that this replaces.
   stateMorphs: [],
+  // An adult with this pack loaded is anatomically complete without the recipe naming any of
+  // it (docs/FOUNDATION.md, "both forms"): the organ's size runs from the clitoral glans key
+  // (0.08) at the female end to the pooled mean (0.65, 9.2 cm, Veale 2015) at the male end,
+  // and the testes from none to their mean key. Between gender 0.35 and 0.65 both blend, so an
+  // androgynous figure is drawn with an intermediate, intersex anatomy by default. A recipe's
+  // own value always wins.
+  defaults: {
+    [PHALLUS_SIZE]: "0.35,0.08;0.65,0.65",
+    [TESTES_SIZE]: "0.35,0;0.65,0.6",
+  },
 };
 
 /**
