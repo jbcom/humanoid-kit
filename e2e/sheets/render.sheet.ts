@@ -58,7 +58,8 @@ for (const sheet of job.sheets) {
     page.on("console", (m) => {
       if (m.type() === "error") errors.push(m.text());
     });
-    await openSilentGame(page, `/?${sheet.query}`);
+    // The dev server compiles the playground on its first page: the mute marker waits for it.
+    await openSilentGame(page, `/?${sheet.query}`, {}, { markerTimeout: 120_000 });
     await page.locator('[data-figure="ready"]').waitFor({ timeout: 300_000 });
     const shots: string[] = [];
     for (const recipe of recipes) {
