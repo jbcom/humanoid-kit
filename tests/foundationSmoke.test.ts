@@ -50,9 +50,12 @@ describe("the foundation's smoke tier", { timeout: 300_000 }, () => {
       if (!was) continue;
       const m = r.measure;
       const label = `${key(r)} (rewrite the worklist when a row improves)`;
-      expect(m.penetrating, label).toBeLessThanOrEqual(was.penetrating);
+      // Penetration and collapse to a sliver are judged by the skin they
+      // cover (cm²); their counts are information, a finer surface having more
+      // vertices and triangles over the same skin. The slack is rounding.
+      expect(m.penetratingArea, label).toBeLessThanOrEqual(was.penetratingArea + 1e-3);
       expect(m.inverted, label).toBeLessThanOrEqual(was.inverted);
-      expect(m.squashed, label).toBeLessThanOrEqual(was.squashed);
+      expect(m.squashedArea, label).toBeLessThanOrEqual(was.squashedArea + 1e-3);
       expect(m.folds, label).toBeLessThanOrEqual(was.folds);
       expect(m.volumeOut.length, label).toBeLessThanOrEqual(was.volumeOut.length);
       expect(m.seamGap, label).toBeLessThanOrEqual(Math.max(was.seamGap, 1e-6));

@@ -2458,7 +2458,11 @@ none. **The worklist**: `node scripts/foundation-smoke.ts` runs the smoke tier
 (24 bodies × poses, 18 s) and writes `docs/evidence/FOUNDATION-SMOKE.md` and
 its measures; the smoke test holds every body at rest to no failure and every
 row to no worse than the file, so a foundation lane that fixes a row rewrites
-it in its commit.
+it in its commit. Penetration and squashed triangles are held by the rest skin
+they cover, in cm² (a sampled vertex standing for its share of its triangles'
+area times the stride, a squashed triangle for its own), and their counts are
+recorded as information only: a finer surface has more vertices and triangles
+over the same skin, so a count rises where nothing got worse (2026-10-10).
 
 **The landmarks (built 2026-10-09).** `landmarks(model, posedBody)`
 (`src/foundation/landmarks.ts`) gives every named place on a posed body as a
