@@ -45,6 +45,8 @@ export const SURFACE_LANDMARKS = [
   "nose-tip",
   "upper-lip",
   "lower-lip",
+  "mouth-corner.L",
+  "mouth-corner.R",
   "chin",
   "ear-lobe.L",
   "ear-lobe.R",
@@ -382,6 +384,10 @@ export function landmarkVertices(
     "nose-tip": targetPeak(assets, "nose/nose-point-up", 0),
     "upper-lip": targetPeak(assets, "mouth/mouth-upperlip-middle-up", 0),
     "lower-lip": targetPeak(assets, "mouth/mouth-lowerlip-middle-down", 0),
+    // The mouth's widening moves its corners most of the skin it draws (and the inside of
+    // the mouth, which the body does not draw, more).
+    "mouth-corner.L": targetPeak(assets, "mouth/mouth-scale-horiz-incr", 1, (v) => used[v] === 1),
+    "mouth-corner.R": targetPeak(assets, "mouth/mouth-scale-horiz-incr", -1, (v) => used[v] === 1),
     chin: targetPeak(assets, "chin/chin-prominent-incr", 0),
     "ear-lobe.L": targetPeak(assets, "ears/l-ear-lobe-incr", 1),
     "ear-lobe.R": targetPeak(assets, "ears/r-ear-lobe-incr", -1),

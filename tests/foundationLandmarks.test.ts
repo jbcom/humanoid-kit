@@ -163,6 +163,13 @@ describe("landmarks", { timeout: 300_000 }, () => {
         ).toBeGreaterThan(y(down[i] as LandmarkId));
       expect(z("nose-tip"), name).toBeGreaterThan(z("chin"));
       expect(y("upper-lip"), name).toBeGreaterThan(y("lower-lip"));
+      // The mouth's corners are between the lips' heights, behind them, a mouth's width apart.
+      const corner = frames["mouth-corner.L"].position;
+      expect(corner[1], name).toBeLessThan(y("upper-lip"));
+      expect(corner[1], name).toBeGreaterThan(y("lower-lip") - 0.005);
+      expect(corner[2], name).toBeLessThan(z("upper-lip"));
+      expect(2 * corner[0], name).toBeGreaterThan(0.025);
+      expect(2 * corner[0], name).toBeLessThan(0.07);
       expect(y("shoulder.L"), name).toBeGreaterThan(y("elbow.L"));
       expect(y("elbow.L"), name).toBeGreaterThan(y("wrist.L"));
       expect(y("hip.L"), name).toBeGreaterThan(y("knee.L"));

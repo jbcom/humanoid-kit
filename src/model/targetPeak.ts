@@ -17,14 +17,24 @@ export function namedTarget(assets: HumanoidAssets, name: string) {
   return t;
 }
 
-/** The base vertex `name` moves most on `side` of the body (+1 its left, -1 its right, 0 the midline). */
-export function targetPeak(assets: HumanoidAssets, name: string, side: 1 | -1 | 0): number {
+/**
+ * The base vertex `name` moves most on `side` of the body (+1 its left, -1 its
+ * right, 0 the midline), of those `among` admits (a target can move geometry
+ * the body does not draw, such as the inside of the mouth).
+ */
+export function targetPeak(
+  assets: HumanoidAssets,
+  name: string,
+  side: 1 | -1 | 0,
+  among: (vertex: number) => boolean = () => true,
+): number {
   const t = namedTarget(assets, name);
   const P = assets.positions;
   let best = -1;
   let max = 0;
   for (let i = 0; i < t.indices.length; i++) {
     const v = t.indices[i] as number;
+    if (!among(v)) continue;
     const x = P[v * 3] as number;
     if (side === 0 ? Math.abs(x) > MIDLINE : Math.sign(x) !== side) continue;
     const d = Math.hypot(
