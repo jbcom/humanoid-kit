@@ -480,37 +480,98 @@ describe("hairlines and fins", () => {
     whole1.material.dispose();
   });
 
+  it("ramps a hairline's strand edges over more than a pixel under MSAA: no step from empty to whole between neighbours", (ctx) => {
+    // Some software rasterisers (SwiftShader in CI) do not implement alpha-to-coverage; a stock
+    // material on the same target shows whether this context can be asked.
+    const stock = new MeshBasicMaterial({ map: FLAT, alphaToCoverage: true, alphaTest: 0.4 });
+    stock.onBeforeCompile = (s) => {
+      s.fragmentShader = s.fragmentShader.replace(
+        "#include <alphatest_fragment>",
+        "diffuseColor.a = 0.5;\n#include <alphatest_fragment>",
+      );
+    };
+    const half = render(new Mesh(new PlaneGeometry(2, 2), stock), { samples: 4 });
+    stock.dispose();
+    const v = at(half, SIZE / 2, SIZE / 2);
+    if (!(v > 0.05 && v < 0.95)) ctx.skip("this GL context does not implement alpha-to-coverage");
+
+    const strand = { angle: Math.PI / 2, coherence: 0 };
+    /** Pixel pairs in the hairline that step straight from empty to whole, and those that cross the edge at all. */
+    const steps = (multisampled: boolean) => {
+      const { mesh, material } = card({ map: painted(), fade: () => 0, strand, multisampled });
+      const px = render(mesh, { samples: 4 });
+      material.dispose();
+      let lit = 0;
+      for (let y = 0; y < SIZE; y++)
+        for (let x = 0; x < SIZE; x++) lit = Math.max(lit, at(px, x, y));
+      const empty = (x: number, y: number) => at(px, x, y) < 0.02 * lit;
+      const whole = (x: number, y: number) => at(px, x, y) > 0.98 * lit;
+      let hard = 0;
+      let crossings = 0;
+      for (let y = 4; y < SIZE - 5; y++)
+        for (let x = Math.ceil(EDGE_PX) + 2; x < SIZE - 5; x++)
+          for (const [nx, ny] of [
+            [x + 1, y],
+            [x, y + 1],
+          ] as const) {
+            const a = at(px, x, y);
+            const b = at(px, nx, ny);
+            if (Math.abs(a - b) < 0.5 * lit) continue;
+            crossings++;
+            if ((empty(x, y) && whole(nx, ny)) || (whole(x, y) && empty(nx, ny))) hard++;
+          }
+      return { hard, crossings };
+    };
+    const cut = steps(false);
+    const smooth = steps(true);
+    // The plain cut steps at nearly every edge; the ramp leaves a part-covered pixel on each.
+    expect(cut.hard, `cut ${JSON.stringify(cut)}`).toBeGreaterThan(0.8 * cut.crossings);
+    expect(smooth.crossings, `smooth ${JSON.stringify(smooth)}`).toBeGreaterThan(20);
+    expect(smooth.hard, `smooth ${JSON.stringify(smooth)}`).toBeLessThanOrEqual(
+      0.02 * smooth.crossings,
+    );
+  });
+
   it("decides every strand cell on the card, never on the screen pixel: a card slid sideways draws the same image slid", () => {
     // A screen-space dither (a function of gl_FragCoord) would draw a different pattern once the
     // card moves; a hash of the card's own surface moves with it, so the dot-grid class of bug
     // (found on a hardware GPU, where software renders looked fine) cannot return.
     const strand = { angle: Math.PI / 2, coherence: 0 };
     const shift = 4; // pixels, an exact number of them
-    for (const fin of [0, 1]) {
-      const fade = () => 0;
-      const a = card({ map: painted(), fade, strand, fin });
-      const b = card({ map: painted(), fade, strand, fin });
-      // PlaneGeometry is 2 wide over SIZE pixels; a fin card is turned until it is half dissolved (|cos| 0.54).
-      for (const m of [a.mesh, b.mesh]) m.rotation.y = fin ? 1 : 0;
-      b.mesh.position.x = (shift * 2) / SIZE;
-      const pa = render(a.mesh);
-      const pb = render(b.mesh);
-      let compared = 0;
-      let differ = 0;
-      for (let y = 4; y < SIZE - 4; y++)
-        for (let x = 10; x < SIZE - shift - 10; x++) {
-          compared++;
-          if (at(pa, x, y) > 0.005 !== at(pb, x + shift, y) > 0.005) differ++;
-        }
-      a.material.dispose();
-      b.material.dispose();
-      // (The view direction drifts a little as the card slides, moving the odd cell over its threshold;
-      // a dither of the screen pixel would differ in about half the pixels.)
-      expect(
-        differ / compared,
-        `fin ${fin}: pixels that differ once the card is slid`,
-      ).toBeLessThan(0.08);
-    }
+    // Both paths: the plain cut, and the smoothed edges under MSAA (alpha-to-coverage).
+    for (const multisampled of [false, true])
+      for (const fin of [0, 1]) {
+        const fade = () => 0;
+        const a = card({ map: painted(), fade, strand, fin, multisampled });
+        const b = card({ map: painted(), fade, strand, fin, multisampled });
+        // PlaneGeometry is 2 wide over SIZE pixels; a fin card is turned until it is half dissolved (|cos| 0.54).
+        for (const m of [a.mesh, b.mesh]) m.rotation.y = fin ? 1 : 0;
+        b.mesh.position.x = (shift * 2) / SIZE;
+        const samples = multisampled ? 4 : 0;
+        const pa = render(a.mesh, { samples });
+        const pb = render(b.mesh, { samples });
+        let lit = 0;
+        for (let y = 0; y < SIZE; y++)
+          for (let x = 0; x < SIZE; x++) lit = Math.max(lit, at(pa, x, y));
+        let compared = 0;
+        let differ = 0;
+        for (let y = 4; y < SIZE - 4; y++)
+          for (let x = 10; x < SIZE - shift - 10; x++) {
+            compared++;
+            const va = at(pa, x, y);
+            const vb = at(pb, x + shift, y);
+            // A cut pixel is drawn or not; a smoothed one may differ by a sample of its coverage.
+            if (multisampled ? Math.abs(va - vb) > 0.3 * lit : va > 0.005 !== vb > 0.005) differ++;
+          }
+        a.material.dispose();
+        b.material.dispose();
+        // (The view direction drifts a little as the card slides, moving the odd cell over its threshold;
+        // a dither of the screen pixel would differ in about half the pixels.)
+        expect(
+          differ / compared,
+          `multisampled ${multisampled}, fin ${fin}: pixels that differ once the card is slid`,
+        ).toBeLessThan(0.08);
+      }
   });
 
   it("dissolves a fin card as it turns edge-on, and leaves a card lying along the scalp alone", () => {

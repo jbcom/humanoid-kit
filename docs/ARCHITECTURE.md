@@ -1241,10 +1241,20 @@ a coloured texture; everything in the pure core is testable in Node.
   hair card's cut edge is a hard line, and MakeHuman's hairlines read as a helmet
   or a wig, and a screen-space dither of it reads as a dot grid, as does the
   2x2 coverage pattern alpha-to-coverage gives a partial alpha on hardware
-  (found on a real GPU after software renders looked fine). So nothing about a
-  hairline or a fin is a per-pixel or partial-coverage decision: every one is a
-  yes or no per strand cell of the card's own surface, which needs neither
-  blending nor MSAA and looks the same on every GPU. The hairline
+  (found on a real GPU after software renders looked fine). So no hairline or
+  fin decision is made per pixel: every one is a yes or no per strand cell of
+  the card's own surface, which holds still as the head moves and looks the
+  same on every GPU. A cut that stops there is aliased, though: a strand cell is
+  about 2 px by 6 px at a portrait's scale, and a hard discard draws its ends as
+  stair-steps. So each cell's *own edge* is smoothed analytically: the share of a
+  1.5 px box footprint (`HAIR_EDGE_PX`) that falls on kept cells, from the
+  fragment's distance to the cell's edges over their screen-space derivative,
+  and each strand's end inside a cell ramps the same way over its thinning
+  field's derivative. Under MSAA that coverage goes to alpha-to-coverage; it is
+  partial only within that band, so the 2x2 pattern never fills a region.
+  Without MSAA the fragment's own cell is cut at a half, as before. A box 1 px
+  wide would still leave an empty and a whole pixel either side of an edge on a
+  pixel boundary; 1.5 px never does. The hairline
   thins strand by strand, in the texture's own coordinates scaled to metres by a
   baked per-vertex `uvScale` (a strand is 1.5 mm wherever its card's island sits
   in the atlas). Where the fade is low the thinning follows the painted hair:
