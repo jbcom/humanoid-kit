@@ -1221,7 +1221,11 @@ a coloured texture; everything in the pure core is testable in Node.
   body's hair density, taken from the cards' opaque texels and from hair standing
   over each skin vertex along its normal, below a quarter at the nearest body
   point: the face, a temple the hair stops short of), or when it is a card's
-  boundary vertex that no other card lies well over. A card's mesh reaches well
+  boundary vertex that no other card lies well over *and* that lies within 1 cm
+  of bare skin (a body triangle with a corner under a quarter density,
+  `BARE_NEAR`). Cards that meet edge to edge at a part or a crown leave edges no
+  other card lies over, but the skin around them is all under hair: seeded as
+  hairlines, they thinned into skin-coloured gaps there. A card's mesh reaches well
   past the hair painted on it, so the visible hairline is the painted edge
   inside the mesh, and a fade measured from the mesh's own boundary ran out over
   transparent texels (6-8% of its zero vertices sat on opaque hair): the first

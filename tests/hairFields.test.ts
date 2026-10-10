@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BARE_NEAR,
   COVERED_BY,
   FADE_LENGTH,
   GROWTH_SCALE,
@@ -201,6 +202,32 @@ describe("hairFields", () => {
       const { fade } = run({ positions, faceVerts });
       expect(fade[0]).toBe(0);
       expect(fade[offset]).toBe(0);
+    });
+
+    it("does not feather two cards meeting at a part far from bare skin: a part or a crown is inside the hair", () => {
+      // Two sheets 2 mm over the scalp, side by side, meeting along x = 0 (a part): each is 0.25 m
+      // by 0.5 m in two rows, so each has a vertex at the middle of the part. Their edges there
+      // meet without either lying over the other, but the skin around the part is all under hair;
+      // only the sheets' outer edges, 5 cm from the scalp's bare margin, border bare skin.
+      const half = (x0: number) => ({
+        positions: new Float32Array(
+          [-0.25, 0, 0.25].flatMap((z) => [x0, 0.002, z, x0 + 0.25, 0.002, z]),
+        ),
+        faceVerts: new Uint32Array([0, 1, 3, 2, 2, 3, 5, 4]),
+      });
+      const a = half(-0.25);
+      const b = half(0);
+      const positions = new Float32Array([...a.positions, ...b.positions]);
+      const offset = a.positions.length / 3;
+      const faceVerts = new Uint32Array([...a.faceVerts, ...b.faceVerts.map((v) => v + offset)]);
+      const { fade } = run({ positions, faceVerts });
+      // The part's middle vertex on each sheet: (0, 0.002, 0).
+      expect(fade[3], "sheet A at the part").toBe(255);
+      expect(fade[offset + 2], "sheet B at the part").toBe(255);
+      // The outer edges still feather.
+      expect(fade[2], "sheet A's outer edge").toBe(0);
+      expect(fade[offset + 3], "sheet B's outer edge").toBe(0);
+      expect(BARE_NEAR).toBeLessThan(0.25);
     });
 
     it("does not feather a part of a card far from the scalp, which is no hairline", () => {
