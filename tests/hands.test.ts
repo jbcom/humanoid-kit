@@ -34,9 +34,12 @@ import {
   nailFields,
   PALM_CREASE_DEPTH,
   PALM_CREASE_LINE_LAYER,
+  PALM_CREASE_LIP,
   PALMOPLANTAR_FLOOR,
   PALMOPLANTAR_LAYER,
   type PalmLandmarks,
+  palmarBorderDistance,
+  palmarMask,
   palmCreaseCurves,
   palmCreaseLine,
   palmCreaseLineFields,
@@ -220,9 +223,10 @@ describe("palmar creases", () => {
   const relief = palmCreaseReliefFields(assets);
 
   it("lie only on the palmar side", () => {
+    const border = palmarBorderDistance(assets);
     for (const f of [line, relief])
       for (let v = 0; v < assets.manifest.vertexCount; v++)
-        if ((f.mask[v] as number) > 0) expect(zones.palm[v] as number).toBeGreaterThan(0);
+        if ((f.mask[v] as number) > 0) expect(border[v] as number).toBeGreaterThan(0);
   });
 
   it("never jump between two creases where they show", () => {
@@ -309,15 +313,30 @@ describe("palmar creases", () => {
   });
 
   it("are wider than the mesh, so each is interpolated exactly", () => {
-    // The fold spans a face and the line's linear band two, wherever a crease shows.
-    const lengths = edges
-      .filter(([a, b]) => (line.mask[a] as number) > 0.5 && (line.mask[b] as number) > 0.5)
-      .map(([a, b]) => dist(a, b))
-      .sort((x, y) => x - y);
-    const p90 = lengths[Math.floor(lengths.length * 0.9)] as number;
-    expect(lengths.length).toBeGreaterThan(100);
-    expect((CREASE_GEOMETRY.palm.band * 3) / 7).toBeGreaterThan(p90);
-    expect(CREASE_GEOMETRY.palm.width).toBeGreaterThan(p90);
+    // Every edge that crosses a crease where it shows has both ends within the
+    // line's linear reach (3/7 of its band) and the fold's (half its width and
+    // its fade), so across that face both interpolate exactly.
+    const s = sampleCreases(assets);
+    for (const [kind, g] of [
+      [0, CREASE_GEOMETRY.palm],
+      [1, CREASE_GEOMETRY.finger],
+    ] as const) {
+      const reach = edges
+        .filter(
+          ([a, b]) =>
+            s.kind[a] === kind &&
+            s.kind[b] === kind &&
+            s.id[a] === s.id[b] &&
+            Math.sign(s.ds[a] as number) !== Math.sign(s.ds[b] as number) &&
+            (line.mask[a] as number) > 0.5 &&
+            (line.mask[b] as number) > 0.5,
+        )
+        .map(([a, b]) => Math.max(Math.abs(s.ds[a] as number), Math.abs(s.ds[b] as number)));
+      expect(reach.length, `kind ${kind}`).toBeGreaterThan(10);
+      const worst = Math.max(...reach);
+      expect((g.band * 3) / 7, `kind ${kind}`).toBeGreaterThan(worst);
+      expect(g.width / 2 + g.fade, `kind ${kind}`).toBeGreaterThan(worst);
+    }
   });
 
   it("darken toward the skin's own colour on deep skin and only shade fair skin", () => {
@@ -327,7 +346,8 @@ describe("palmar creases", () => {
       expect(deep[k] as number).toBeLessThan(fair[k] as number);
       expect(fair[k] as number).toBeLessThan(1);
     }
-    // The line's stop is the crease's (3/7); every other stop leaves the palm.
+    // The line's stop is the crease's (3/7), its neighbours the lips, a
+    // little lighter; every other stop leaves the palm.
     const p = PALM_CREASE_LINE_LAYER.paint({
       tone: tone(1),
       flush: 0,
@@ -337,8 +357,11 @@ describe("palmar creases", () => {
     });
     expect(p.stops[3]).toEqual(deep);
     p.stops.forEach((s, i) => {
-      if (i !== 3) expect(s).toEqual([1, 1, 1]);
+      if (i === 2 || i === 4)
+        expect(s).toEqual([PALM_CREASE_LIP, PALM_CREASE_LIP, PALM_CREASE_LIP]);
+      else if (i !== 3) expect(s).toEqual([1, 1, 1]);
     });
+    expect(PALM_CREASE_LIP).toBeGreaterThan(1);
   });
 });
 
@@ -437,15 +460,56 @@ describe("nails: a bed nearly free of melanin under keratin", () => {
 describe("layers shared by features that never meet", () => {
   const input = (m: number) => ({ tone: tone(m), flush: 0, lips: 0.5, areola: 0.5, signals: {} });
 
+  it("ease the palm's colour into the back of the hand and the forearm, with no polygon in the palm", () => {
+    const palm = palmarMask(assets);
+    const frame = handFrame(assets);
+    const P = assets.positions;
+    // Across any edge of the hand's mesh the palm's mask changes by at most
+    // a fraction: a mask that turns from 1 to 0 within a face draws that
+    // face's outline (the palm zone of the skin states does: kept to show it).
+    const steepest = (m: ArrayLike<number>) => {
+      let worst = 0;
+      for (let f = 0; f < assets.faceVerts.length; f += 4)
+        for (let k = 0; k < 4; k++) {
+          const a = assets.faceVerts[f + k] as number;
+          const b = assets.faceVerts[f + ((k + 1) % 4)] as number;
+          if (!frame.digit[a] || !frame.digit[b]) continue;
+          const len = Math.hypot(
+            (P[a * 3] as number) - (P[b * 3] as number),
+            (P[a * 3 + 1] as number) - (P[b * 3 + 1] as number),
+            (P[a * 3 + 2] as number) - (P[b * 3 + 2] as number),
+          );
+          worst = Math.max(worst, Math.abs((m[a] as number) - (m[b] as number)) / len);
+        }
+      return worst;
+    };
+    // Per metre: no steeper than the border's 1.6 cm blend allows (smoothstep's slope peaks at 1.5 / width).
+    expect(steepest(palm)).toBeLessThan(1.5 / 0.016 + 1);
+    expect(steepest(zones.palm)).toBeGreaterThan(2 * (1.5 / 0.016));
+    // The palm's middle is palmar, the back of the hand is not (between the
+    // wrist and the knuckles: the fingers are too narrow to reach either fully).
+    let middle = 0;
+    let back = 1;
+    for (let v = 0; v < assets.manifest.vertexCount; v++) {
+      const along = frame.palm[v * 2 + 1] as number;
+      if (!frame.digit[v] || along < 0.03 || along > 0.07) continue;
+      if ((frame.volar[v] as number) > 0.95) middle = Math.max(middle, palm[v] as number);
+      if ((frame.volar[v] as number) < -0.95) back = Math.min(back, 1 - (palm[v] as number));
+    }
+    expect(middle).toBe(1);
+    expect(back).toBe(1);
+  });
+
   it("paint the palm's colour over the palms and the soles, nowhere else", () => {
     const { mask } = PALMOPLANTAR_LAYER.fields(assets);
+    const palm = palmarMask(assets);
     for (let v = 0; v < assets.manifest.vertexCount; v++) {
-      const m = Math.max(zones.palm[v] as number, zones.sole[v] as number);
+      const m = Math.max(palm[v] as number, zones.sole[v] as number);
       // What the 8-bit atlas would round to 0 is dropped, so the mask lies only where it paints.
       expect(mask[v]).toBe(m < PALMOPLANTAR_FLOOR ? 0 : m);
       if (m < PALMOPLANTAR_FLOOR) expect(Math.round(m * 255)).toBe(0);
       // Palm and sole are apart: no vertex is both.
-      expect(Math.min(zones.palm[v] as number, zones.sole[v] as number)).toBe(0);
+      expect(Math.min(palm[v] as number, zones.sole[v] as number)).toBe(0);
     }
     for (const m of [0, 0.5, 1])
       expect(PALMOPLANTAR_LAYER.paint(input(m)).stops).toEqual([palmAlbedo(tone(m))]);
@@ -525,7 +589,9 @@ describe("layers shared by features that never meet", () => {
 
 describe("the hands' layers in the stack", () => {
   it("paint at every tone and age, and come before the state layers", () => {
-    const first = SKIN_LAYERS.indexOf(HAND_SKIN_LAYERS[0]);
+    // By id: the stack holds these layers with the feet's skin on them (`areas.ts`).
+    const place = (id: string) => SKIN_LAYERS.findIndex((l) => l.id === id);
+    const first = place(HAND_SKIN_LAYERS[0].id);
     const goose = SKIN_LAYERS.indexOf(GOOSEBUMP_LAYER);
     expect(first).toBeGreaterThan(SKIN_LAYERS.findIndex((l) => l.id === "areola"));
     expect(goose).toBeGreaterThan(first + HAND_SKIN_LAYERS.length - 1);
@@ -539,7 +605,7 @@ describe("the hands' layers in the stack", () => {
         adult,
       });
       for (const layer of HAND_SKIN_LAYERS) {
-        const row = SKIN_LAYERS.indexOf(layer) * STOP_TABLE_WIDTH * 4;
+        const row = place(layer.id) * STOP_TABLE_WIDTH * 4;
         expect(table[row], layer.id).toBe(1);
       }
     }

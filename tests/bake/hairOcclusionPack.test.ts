@@ -46,6 +46,7 @@ describe("the shipped hair occlusion", { timeout: 300_000 }, () => {
         cutout,
       });
       expect(fresh.growth, `${s.id} growth`).toEqual(asset.hair.growth);
+      expect(fresh.uvScale, `${s.id} uvScale`).toEqual(asset.hair.uvScale);
       expect(fresh.fade, `${s.id} fade`).toEqual(asset.hair.fade);
       expect(fresh.fin, `${s.id} fin`).toEqual(asset.hair.fin);
       expect(fresh.scalpVerts, `${s.id} scalp vertices`).toEqual(asset.hair.scalpVerts);

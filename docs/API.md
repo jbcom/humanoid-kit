@@ -54,7 +54,9 @@ type PackLocation =
   A `HairStyleEntry` is an attachment entry (no `deleteVerts`,
   one occlusion value per vertex) with a `label`, `tags` (`short`, `bob`,
   `curly`...), its `kind` (`scalp`, or `brows` or `lashes`, which share the pack's
-  loader; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
+  loader, or `beard`, generated body hair cards tagged with the beard style they
+  serve, whose layout adds a `rank` per vertex, `CARD_FIELD_KEYS`; `STRAND_KINDS`
+  are the kinds with measured strand fields; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
   carries each entry's kind), its `file` and `sha256`, and the `strand` direction and
   `coherence` measured from its strand map. With the clothing pack loaded,
   `clothingManifest` lists its garments from the start; `garments` (a map of
@@ -165,7 +167,7 @@ interface BodyHairRecipe {
   // per BODY_HAIR_GROUPS entry, a multiplier on the default, 0..2 (1 = default);
   // axillary and pubic are adult-only: any value but 0 under 18 is refused
   density?: Partial<Record<BodyHairGroup, number>>;
-  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = stubble where the face carries terminal hair
+  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = none (clean-shaven)
 }
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
@@ -201,8 +203,8 @@ interface MacroValues {
   african: number;         // ethnic anchors, normalised to sum to 1
   asian: number;
   caucasian: number;
-  breastSize: number;      // 0..1; adult-only
-  breastFirmness: number;  // 0..1; adult-only
+  breastSize: number;      // 0..1
+  breastFirmness: number;  // 0..1
 }
 ```
 
@@ -257,10 +259,12 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 - `agePolicyViolations(recipe): string[]`: every reason the recipe breaks the
   policy; empty when valid.
 - `assertAgePolicy(recipe)`: throws `AgePolicyError` listing the violations.
-- `withAge(recipe, age): Recipe`: a copy at a new age. Moving below 18 resets
-  `breastSize` and `breastFirmness` to their defaults, deletes regional breast
-  values and deletes adult-only modifiers and the axillary and pubic body hair
-  densities. The input is not modified.
+- `withAge(recipe, age): Recipe`: a copy at a new age. Moving below 18 deletes
+  the adult anatomy pack's modifiers, the axillary and pubic body hair densities
+  and the adult-only piercings. The breast macros and the body pack's `breast/*`
+  modifiers stay: the body follows MakeHuman at every age, breast development
+  through adolescence included (owner direction, `docs/AGE-POLICY.md`). The input
+  is not modified.
 - `ADULT_ONLY_MODIFIER(id): boolean`: true for ids starting `genitals/`,
   `pelvis/bulge` or `stomach/stomach-pregnant`.
 - `AgePolicyError`.
@@ -275,11 +279,11 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
   rather than a point on one axis. Always `{}` under 18. Skin layers take it as
   `SkinPaintInput.anatomy`.
 
-Under 18, a recipe is invalid if `breastSize` or `breastFirmness` differs from
-its default, if any region override contains either key, if an adult-only
-modifier is non-zero, if `bodyHair.density.axillary` or `.pubic` is non-zero
-(`ADULT_ONLY_BODY_HAIR`), or if a piercing is at an adult-only site. Refused,
-never clamped.
+Under 18, a recipe is invalid if an adult-only modifier is non-zero, if
+`bodyHair.density.axillary` or `.pubic` is non-zero (`ADULT_ONLY_BODY_HAIR`), or
+if a piercing is at an adult-only site. Refused, never clamped. The breast macros
+(`breastSize`, `breastFirmness`, and the regional overrides of them) are not
+gated: they follow MakeHuman at every age, as its breast targets do.
 
 - `ADULT_ONLY_PIERCING(site): boolean`: true for every site that is not one of
   the body's own (`PIERCING_SITES`). Those are the adult anatomy pack's, which
@@ -327,6 +331,82 @@ interface BodyArtRecipe {
 - Validation (`recipeProblems`) checks body art's structure and ranges and
   rejects unknown fields, clamping nothing. Whether an anchor exists is checked
   when the figure is evaluated, against the loaded assets.
+- `placeBodyArt(assets, art, control): BodyArtPlacement`: the body art on a
+  morphed control mesh, each tattoo and mark a `DecalFrame` (`centre`, outward
+  `normal`, and the decal's `right` and `up` in the skin's plane) with its own
+  values; `Evaluation.bodyArt` is this for the evaluated figure.
+  `decalFrame(centre, normal, rotation)`: a frame whose up is the body's up
+  laid into the skin's plane (the body's forward where the skin faces up or
+  down), turned counter-clockwise.
+- Ink (research/BODY-ART.md C1): `inkOptics(tone): { through, veil, keep }`
+  and `inkSeen(tone, ink)` = through × (veil + keep × ink), the colour of an ink
+  (linear albedo) in skin of that tone. `through` is the epidermis's two-way
+  melanin transmittance (the skin's albedo over `melaninFreeAlbedo(tone)`),
+  `veil` what the dermis above the ink (`INK_DEPTH`) scatters back, bluer than
+  red (`dermalVeil()`), and `keep` the light that crosses it twice. The same
+  ink darkens with every step of tone and reads cooler than the skin round it.
+- Marks (research/BODY-ART.md C2): a scar, birthmark or vitiligo patch changes
+  what is in the skin. `markChannels(mark): MarkChannels` is what it puts in the
+  marks page at full strength:
+  - `melanin`, signed: down toward `vitiligoAlbedo(tone)` (on the lips,
+    `vitiligoLipAlbedo(tone, depth)`, a depigmented lip), up by shares of
+    `markMelaninSpan()`;
+  - `haemoglobin`, shares of `PORT_WINE_HAEMOGLOBIN` steps;
+  - a scar's `smooth` and `raise`;
+  - `ink`: dermal pigment, drawn as ink.
+
+  `markRatios(tone)` gives the per-tone ratios the shader applies to those
+  channels: added melanin as a table of `MARK_DARK_STEPS` along the measured
+  axis (`deeperAlbedo(tone, up)`). `markedAlbedo(tone, channels)` gives the
+  skin under them. Constants: `VITILIGO_RESIDUAL`, `CAFE_AU_LAIT_MELANIN`,
+  `NAEVUS_MELANIN`, `NAEVUS_EDGE` and `NAEVUS_RAISE` (a naevus is a round,
+  slightly raised dot, drawn exactly as a decal), `SCAR_HAEMOGLOBIN` (the
+  keloids' erythema ratio),
+  `SCAR_RAISE`, `SCAR_SMOOTHNESS` and `DERMAL_MELANIN_INK`.
+- `markOutline(mark)` and `markShape(mark, outline, x, y, z?)`
+  (`src/bodyArt/markShape.ts`) give the seeded outline the bake draws. A patch
+  is an ellipsoid thresholded by `markNoise` in its frame's 3D space, softened
+  over 1–3 mm, with vitiligo's flecks; a scar is a harmonic line. Constants:
+  `PATCH_OUTLINE`, `SCAR_OUTLINE`, `EDGE_VARIATION` and `FLECK_*`.
+- `vitiligoPatches(assets, vitiligo)`: the seeded patches. Each is a left
+  vertex at a typical site (round the eyes and mouth, backs of the hands,
+  wrists, elbows, knees, tops of the feet) and its mirror image, with more and
+  larger patches at a larger `extent`. `placeBodyArt` turns them into marks of
+  kind `"vitiligo"`, the right side's outline mirrored (a negative `width`).
+- Piercings (research/BODY-ART.md C3): `placeBodyArt` places each as a
+  `PlacedPiercing`. That is the recipe's piercing plus its hole in rest space:
+  - `hole` (the site vertex) and the skin's `normal`;
+  - the `channel` the hole runs through the tissue (into the skin, across the
+    body, or vertically under the skin, by the site's `channel`);
+  - the `down` a ring hangs toward (out in front of a ridge for a vertical
+    hole);
+  - the hole's `middle`, `TISSUE_DEPTH[site]` into the tissue;
+  - the site vertex's `skinIndex` and `skinWeight`.
+
+  `jewelleryMesh(piercing): { positions, normals, index }`:
+  - a stud: a ball seated on the skin;
+  - a ring: a torus through the hole's middle;
+  - a barbell: a ball at each of its `ends`, seated on the skin at placement
+    (`barbellEnds`), the bar bending through the hole's middle.
+
+  The adult anatomy's sites are the adult pack's (`anatomy.piercingSites`,
+  `AdultPiercingSiteSpec`): `name` (a recipe's `Piercing.site`, not one of
+  `PIERCING_SITES`), `vertex` (a detail-lattice vertex), `channel` and `depth`
+  (metres, at most `PIERCING_DEPTH_MAX`), checked when the pack is parsed.
+  `adultPiercingSite(assets, name)` finds one. `placeBodyArt` places one through
+  its `adultSite` argument, which `HumanoidModel.evaluate` gives for a figure
+  drawn with the adult surface; otherwise it refuses with a `RangeError`.
+
+  `<Humanoid>` draws each as a skinned mesh, `METAL_REFLECTANCE[metal]` at
+  `JEWELLERY_ROUGHNESS`, skinned rigidly by the site vertex's bones, so it
+  follows the posed skin. Garments, hair and the skin hide it as depth does. A
+  site the body does not have throws `RangeError` at evaluation: the adult
+  anatomy pack names no sites yet.
+- `seededRandom(seed)`: deterministic numbers in [0, 1) (mulberry32), shared by
+  the editor's randomiser and the vitiligo patches.
+- `melaninDensity(tone)` and `melaninFreeAlbedo(tone)` (skin model):
+  `melaninDensityAlbedo` now goes on below the lightest measured skin toward
+  the melanin-free albedo.
 
 ### Evaluation
 
@@ -340,25 +420,37 @@ and throws `RangeError` for anything else.
 - `model.evaluate(recipe, signals?, haveOutfit?): Evaluation`: `signals` (0..1 each) set the
   skin's state; those with a state morph add their targets: `cold` (the nipple
   rises and the areola contracts; `STATE_MORPHS`) and `arousal` (engorgement:
-  the shaft's circumference +25% and length +43% at full arousal, the measured
-  erect against flaccid; the adult pack's own, from its manifest's
-  `anatomy.stateMorphs`), each calibrated to its measured response.
+  the organ's circumference +25% and length +43% at full arousal, the measured
+  erect against flaccid; the adult pack's own, read by its detail targets'
+  `anatomy.detail.drives` as `sramp:arousal:…` factors, drawn at flaccid, a
+  midpoint and erect so the tube swings rather than shortens), each calibrated
+  to its measured response. `shapeSignalNames(STATE_MORPHS, anatomy?)` lists the
+  signals that change the shape: the state morphs' and those the detail's gates
+  and drives read, for a caller that re-evaluates the figure only when one changes.
   `stateContributions(signals, morphs?, exists?)` gives those target weights for
   the morphs in force, limited to targets `exists` accepts; the model passes
   the body's and the adult pack's morphs and the loaded packs' targets, so a
   state of the adult anatomy does nothing, rather than fails, without the adult
   pack. `ADULT_ONLY_SIGNALS` (`arousal`) throw `AgePolicyError` under 18
-  (`assertSignalPolicy`), before any target is named. Today the penis targets
-  deform `helper-genital`, which the surface does not draw, so engorgement
-  moves `Evaluation.control` and no drawn vertex until the sculpt phase.
+  (`assertSignalPolicy`), before any target is named. The organ is detail on the
+  adult surface (drawn out of a reservoir), so engorgement moves drawn vertices
+  of an adult figure with an organ and nothing in one without.
   `recipe.outfit` adds the garments (see "Clothing"); `haveOutfit` is the
   outfit key the caller already holds the masks of.
+- `model.controlShape(recipe): ControlShape`: an adult figure's control mesh for
+  authoring control-level features, as targets on the base's own vertices
+  (`{ control, normals, body }`: the vertices, their unit normals and the ids the
+  drawn body uses). Throws `AgePolicyError` for a figure under 18. The packer
+  generates the mound on it.
 - `model.adultDetailLattice(recipe): AdultDetailLattice | null`: the vertex
-  space the adult pack's detail targets are authored on (`{ key, vertexCount,
-  positions, normals }`): the vertices of the refined region, which a detail
-  target indexes from 0, with their positions and outward unit normals on this
-  figure and the key that names the refinement. Null without an adult surface; throws `AgePolicyError` for a
-  figure under 18. The packer uses it to place authored forms.
+  space the adult pack's detail targets are authored on: the vertices of the
+  refined region (`regionCount` of them) and then each reservoir's rings
+  (`vertexCount` in all), which a detail target indexes from 0, with their
+  positions and outward unit normals on this figure (`positions`, `normals`; a
+  ring's, at rest, are its loop's), the key that names the refinement and its
+  reservoirs, and, for placing forms, `regionIds`, `polygons`, `latticePositions`
+  and `reservoirs` (`{ id, base, loop, rings }`). Null without an adult surface;
+  throws `AgePolicyError` for a figure under 18. The packer uses it to author.
 - `model.topology(): SurfaceTopology`: the static render data, sent once. A
   worn attachment set the body pack did not bake gets its occlusion at rest
   only (every pose corner holding the rest value). `body.occlusion` is the
@@ -393,9 +485,15 @@ and throws `RangeError` for anything else.
   skin along its normal, since the smooth body surface can swallow a decal bound to
   the coarse mesh by up to 1.8 mm at the brow ridge (a test holds it clear at ages
   6 to 75). `model.pendingHairStyles(recipe)` lists every worn style not yet loaded,
-  and the worker's `evaluated` reply carries `decalTopologies` for the brows' and
-  lashes' static data (`HairTopology.kind` is `scalp`, `brows` or `lashes`; a
-  decal's fade is all 1, fin and growth 0, scalp none).
+  and the worker's `evaluated` reply carries `decalTopologies` for the brows',
+  lashes' and beard cards' static data (`HairTopology.kind` is `scalp`, `brows`,
+  `lashes` or `beard`; a decal's fade is all 1, fin and growth 0, scalp none).
+  `Evaluation.beard` is the hair pack's cards for the recipe's beard style
+  (`model.wornBeardCards(recipe)`: the `beard` entry tagged with the style, or
+  null when there is none or the face grows no terminal hair), evaluated as
+  scalp hair is; `HairTopology.rank` is its cards' ranks per render vertex (null
+  for every other kind), and `<Humanoid>` draws the cards whose rank is under the
+  face's coverage (`HairMaterial.setDensity`), in the face's body hair colour.
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
@@ -407,6 +505,7 @@ interface Evaluation {
   control: Float32Array;    // morphed positions in the base topology
   curvature: Float32Array;  // per body render vertex, mean curvature (1/m)
   boneHeads: Float32Array;  // the skeleton fitted to this figure: each bone's rest head, xyz
+  bodyArt: BodyArtPlacement | null; // the recipe's body art placed on this shape (placeBodyArt); null without
   surface: "base" | "adult"; // which topology the render arrays are in
   attachments: SurfaceEvaluation[]; // eyes, teeth, tongue: positions and normals each
   garments: SurfaceEvaluation[];    // the outfit's garments, in outfit.order
@@ -533,8 +632,7 @@ compute what the renderer will do.
   `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's density
   multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage; it never
   adds hair where the default has none). `beardStyle(input)` is the recipe's
-  style, or `stubble` where the face's coverage is a quarter or more and `none`
-  elsewhere. `bodyHairColour(group, input)` is the figure's hair pigments
+  style, or `DEFAULT_BEARD` (`none`, clean-shaven). `bodyHairColour(group, input)` is the figure's hair pigments
   darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
   fibre diameter and drawn length) and at least as grey as ageing makes them
   (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an
@@ -558,12 +656,24 @@ compute what the renderer will do.
   `STOP_COUNT` stops in rows of `STOP_TABLE_WIDTH` texels) and
   `applyLayers(base, table, fields)`, the per-pixel blend the shader performs.
   A layer is one of three kinds: a `ColourLayer` (the default: `blend`, and
-  `paint` giving `strength` and colour `stops`), a `DetailLayer` (`kind:
+  `paint` giving `strength` and colour `stops`, and optionally `relief`: a groove
+  depth in metres per stop, which the shader tilts the normal by per pixel, so a thin
+  line shades as well as tints; `lineRelief(depths, coord)` is its reference), a
+  `DetailLayer` (`kind:
   "detail"`, `pattern` `"bumps"` or `"creases"`, `paint` giving `strength`,
   `height` in metres and `size`: bump spacing in metres, or crease count across
   the coordinate) drawn at true scale and faded where finer than a pixel, or a
   `SurfaceLayer` (`kind: "surface"`, `paint` giving `strength`, a `roughness`
-  change and a `specular` change). `surfaceChange` and `creaseHeight` (a
+  change and a `specular` change), or a `StrandLayer` (`kind: "strands"`,
+  `paint` giving a `StrandPaint`: `strength` (coverage, the share of follicles
+  carrying hair), the hair's `colour`, `density` in follicles per cm²,
+  `length`, `width` and relief `height` in metres, and `inSkinAlbedo` for hair
+  the measured skin colour already holds) drawn as strands at true scale along
+  the body's hair flow, and as their mean cover where finer than a pixel
+  (`strandCover(paint)`, at most `MAX_STRAND_COVER`, what `applyLayers` applies;
+  none for `inSkinAlbedo`). A layer may set `everywhere` (on all the skin: no
+  atlas channel, `planAtlas` gives it `value` -1 and the shader reads its mask
+  as 1). `surfaceChange` and `creaseHeight` (a
   groove, so negative: `size` of them across the coordinate, each the raised
   cosine to the power `CREASE_SHARPNESS`, flat at the coordinate's ends) are the
   shader's references; `uvScale(assets, faces)` gives metres of skin per UV
@@ -581,10 +691,49 @@ compute what the renderer will do.
   `model.adultLayerFields(): LayerFieldsUpdate | null` gives the adult layers'
   fields per render vertex once the adult pack's targets have loaded (null
   before, and without the pack); the topology always carries those layers as
-  zero.
+  zero. When the pack's reservoirs have islands (`AdultReservoirSpec.island`, `layer`)
+  it also carries `extra: { uvs, index, layerFields }`: the island triangles in UV
+  space and the layers' fields there (mask 1, coordinate from the root to the tip),
+  which the atlas draws with the body's.
   `SkinPaintInput.age` is the figure's age in years (`recipe.macros.age`;
   `<Humanoid>` sets it), for layers that change with it: a layer that reads it
   must paint sensibly without it, since an input built without one has none.
+  `SkinPaintInput.gender` (the gender macro, default 0.5), `hairColour`
+  (`recipe.hair.colour`, default `DEFAULT_HAIR_COLOUR`) and `bodyHair`
+  (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
+  Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
+  hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
+  `VELLUS`, flat: no relief) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
+  densities `BODY_HAIR_DENSITY`. Dense, short hair standing off the skin (the
+  beard, the chest, abdomen and back, and the adult-only armpits) is the
+  coat's, long hair the cards', and pubic hair the adult pack's.
+  `bodyHairMasks(assets)` gives the masks per base vertex and
+  `bodyHairInput(paintInput)` the body hair model's input.
+- The coat (`src/surface/coat.ts`, ARCHITECTURE.md "The coat"): short, dense hair
+  drawn as shells, shared by body hair and the anthro fur. A `CoatRegion` (`id`,
+  `targets`, `mask(assets)` per base vertex, `paint(input)` giving a
+  `CoatPaint`: `cover`, `length` up to `MAX_COAT_LENGTH`, `density` per cm²,
+  `lie` 0 standing to 1 flat, `width`, `colour`; and `adultOnly`, a region
+  `paintCoat` leaves unpainted, without asking its paint, unless
+  `SkinPaintInput.adult` is true, so an input that does not say fails closed);
+  `COAT_REGIONS` (at most `COAT_REGION_LIMIT`; today `BODY_HAIR_COAT`:
+  `beard-moustache`, `beard-chin`, `beard-cheeks`, `hair-chest`, `hair-abdomen`,
+  `hair-back` and the adult-only `hair-axillary` and `hair-pubic`
+  (`PUBIC_REGION`, whose mask is the adult anatomy pack's
+  `anatomy.coatRegions` entry of that id, `AdultCoatRegionSpec`: ascending base
+  vertices and their mask, checked when the pack is parsed against
+  `ADULT_COAT_REGION_IDS`; without the pack it has no area), with
+  `BEARD_LENGTHS` per style and `beardMasks(assets)`). `combField(assets)` is
+  the direction hair lies per base vertex (rest space, unit, in the tangent
+  plane: down the limbs toward their ends, down elsewhere, smoothed);
+  `coatMasks(assets, regions)` the masks as bytes; `paintCoat(regions, input)`
+  a figure's paint, two rows of four per region (a region painting no cover is
+  a zero row; a length past `MAX_COAT_LENGTH` is an error); `coatPainted(table)`;
+  `coatTriangles(index, masks, table)` the triangles a painted coat covers;
+  `coatShellCount(pixels)` the shells for a figure that tall on screen, from
+  `COAT_SHELLS.min` to `.max`. The topology carries the fields per render vertex
+  (`ModelTopology.body.coat`, `AdultSurfaceTopology.coat`: `CoatFields`).
+  `<Humanoid>` draws the coat itself.
   The model's topology carries `body.layerFields` and `body.layers`; the
   renderer rasterises them once into a shared field atlas
   (`humanoid-kit/react` does this for `<Humanoid>`).
@@ -599,16 +748,20 @@ compute what the renderer will do.
   Features whose masks never meet share a layer, to hold the hands to one atlas
   page:
   - `PALMOPLANTAR_LAYER` (`"palmoplantar"`): `palmAlbedo(tone)` over
-    `skinZones().palm` and `skinZones().sole` (palmoplantar skin; no sole colour
+    `palmarMask(assets)` and `skinZones().sole` (palmoplantar skin; no sole colour
     was found measured), less than `PALMOPLANTAR_FLOOR`, which the 8-bit atlas
     rounds to 0, dropped. `palmLab(tone)` is
     the palm's CIELAB (surface reflection included) from `PALM_BINS`, the
     International Skin Spectra Archive's paired palm and back-of-hand readings
     (777 people) binned by the back of the hand's L\*: on deep skin the palm is
     about 16 L\* lighter and 6 to 8 b\* yellower than the back of the hand, on
-    the lightest about the same.
-  - `PALM_CREASE_LINE_LAYER` (multiply: `palmCreaseLine(tone)`, the crease's
-    shade, and on deep skin a return toward the skin's own colour) and, in
+    the lightest about the same. `palmarMask(assets)` is palmar skin, 0 to 1:
+    the signed distance over the skin to the palmar-dorsal border
+    (`palmarBorderDistance`) eased over `PALM_BORDER_BLEND`, times the wrist's
+    ramp (`palmarWrist`, `PALM_WRIST_BLEND`).
+  - `PALM_CREASE_LINE_LAYER` (multiply: `palmCreaseLine(tone)`, a faint shade,
+    and on deep skin a return toward the skin's own colour, between lips
+    `PALM_CREASE_LIP` lighter; a crease reads mostly through its relief) and, in
     `HAND_RELIEF_LAYER`, folds `PALM_CREASE_DEPTH` deep: the
     distal and proximal transverse and thenar creases of the palm
     (`palmCreaseCurves(landmarks, joints)`) and each digit's flexion creases
@@ -626,9 +779,17 @@ compute what the renderer will do.
     through, from `nailColours(tone)`: fold, lunula, bed and free edge along each
     nail, the bed from `nailLab(tone)`, measured nail CIELAB at a lightness that
     follows the skin's far less than skin does). It paints within 1 ΔE\*ab of
-    the nail layered over the knuckle. `NAIL_GLOSS_LAYER` is the plate
-    (`NAIL_ROUGHNESS` and `NAIL_SPECULAR`); fields from `knuckleFields(assets)`
-    and `nailFields(assets)`, proportions in `NAIL_LAYOUT`.
+    the nail layered over the knuckle. `NAIL_GLOSS_LAYER` is the plate's gloss
+    on the skin (`NAIL_ROUGHNESS` and `NAIL_SPECULAR`); fields from
+    `knuckleFields(assets)` and `nailFields(assets)`, proportions in
+    `NAIL_LAYOUT`.
+  - The nail plates: body attachments of `NAIL_PLATE_KINDS` (`fingernails`,
+    `toenails`; CC0 meshes, see NOTICE.md) whose `AttachmentTopology.nailEdge`
+    is, per render vertex, how much of the free edge it is
+    (`nailPlateEdges(positions, faceVerts, along)`: each nail's last
+    `NAIL_FREE_EDGE_LENGTH` toward its tip). `<Humanoid>` draws them with a
+    `NailPlateMaterial`: keratin at `NAIL_PLATE_OPACITY` over the bed, so the
+    painted bed shows through, and `NAIL_FREE_EDGE_OPACITY` along the free edge.
   - `HAND_RELIEF_LAYER` (`"hand-relief"`, a `creases` detail layer, fields
     `handReliefFields(assets)`): the palm's crease folds and the knuckles'
     wrinkle arcs (over the back of each finger joint, `KNUCKLE_WRINKLE_SPACING`
@@ -638,6 +799,36 @@ compute what the renderer will do.
     it, which way it faces, and its place in the palm's plane, measured from the
     skeleton's finger joints and the vertex normals and cached per set of
     assets; `palmDirection(assets, side)` is the way a palm faces.
+- The torso (`src/surface/regions/torso.ts`, figure quantities in
+  `src/surface/torsoTone.ts` and `src/surface/striae.ts`; ARCHITECTURE.md,
+  "Torso"; every magnitude cited, or marked as a choice, in research/SKIN-STATES.md
+  C7). `TORSO_SKIN_LAYERS`, in stack order after the hands' and feet's:
+  - `SkinPaintInput` carries the figure's build (`build`: gender, weight, height,
+    muscle, breastSize; `figureBuild(input)` fills the defaults) and
+    `areolaScale`, how much larger the skin round its nipples is than the base
+    mesh's (`areolaStretch(assets, control)`, which `Evaluation.areolaScale`
+    reports for the evaluated figure); `Humanoid` sets all three.
+  - `AREOLA_LAYER` (`"areola"`, multiply): the nipple's, areola's and skin's
+    colour as ratios to the skin along the distance from each nipple (`areolaZone`,
+    `AREOLA_REACH`): the areola's radius is `areolaRadius(age, gender, breastSize)`
+    (38.1 mm across in an adult woman, 28.0 in a man, growing through puberty:
+    `pubertyProgress`), the nipple's `nippleRadius`, its colour `nippleContrast`
+    times the areola's. `AREOLA_RELIEF_LAYER` (`"areola-relief"`, profiled
+    `bumps`) is the granular texture, full on the nipple and half over the
+    areola; `MONTGOMERY_LAYER` (`"montgomery"`, `tubercles`) a ring of raised 1.5
+    mm glands in a share of the cells, about a dozen on an adult woman.
+  - `CLAVICLE_LAYER` (`"clavicles"`) and `RIB_LAYER` (`"ribs"`), `creases`
+    layers shown by body fat: `figureBodyFat(build)` is Gallagher's
+    `bodyFatPercent` of the figure's own mesh's index (`figureBmi`), and
+    `clavicleDefinition` and `ribDefinition` how plainly each bone shows.
+  - `NAVEL_LAYER` (`"navel"`, centre `navelCentre(assets)`), `LINEA_NIGRA_LAYER`
+    (`"linea-nigra"`, faint at rest: `lineaNigraStrength`) and `LINEA_ALBA_LAYER`
+    (`"linea-alba"`, one furrow shown by `abdominalDefinition`).
+  - `STRIAE_LAYER` (`"striae"`): stretch marks of `striaeAmount(build)`, red then
+    silver (`striaeColour(tone, striaeMaturity(age))`), drawn by `striaMark`.
+  - `DetailPaint` gained `profile` (an amplitude along the coordinate, for a
+    `profiled` `bumps` layer and for `tubercles`) and `striae` (`{ amount, ratio }`,
+    for the `striae` pattern); the stop table's header kinds 7, 8 and 9 are them (6 is the strands').
 - Skin-state layers (`src/surface/regions/states.ts`), driven by the signals in
   `SkinPaintInput.signals`; every magnitude is cited, or marked as a choice, in
   research/SKIN-STATES.md Part C:
@@ -679,14 +870,20 @@ compute what the renderer will do.
     `CREASE_HALF_WIDTH` how far either side of the joint each joint's creases
     reach.
   - Expression lines (ARCHITECTURE.md, "Facial wrinkles"):
-    `EXPRESSION_LINE_LAYERS`, five `creases` `DetailLayer`s (`lines.forehead`,
-    `lines.crows-feet`, `lines.glabella`, `lines.nasolabial`, `lines.nose`) driven
-    by the `face.*` signals and the figure's `age`: forehead lines on
-    `browRaise`, furrows between the brows on `browFurrow`, crow's feet on
-    `squint` (or a smile), the folds on `nasolabial` (or a smile), nose lines on
-    `noseWrinkle`. `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
+    `EXPRESSION_LINE_LAYERS`, five layers (`lines.forehead`, `lines.crows-feet`,
+    `lines.glabella`, `lines.nasolabial`, `lines.nose`) driven by the `face.*`
+    signals and the figure's `age`: forehead lines on `browRaise`, furrows
+    between the brows on `browFurrow`, crow's feet on `squint` (or a smile), the
+    folds on `nasolabial` (or a smile), nose lines on `noseWrinkle`. The forehead's
+    and the furrows' are multiply `ColourLayer`s, thin lines on colour stops
+    (`FOREHEAD_STOPS`, `GLABELLA_STOPS`) of a coordinate that is a smooth function
+    of position (`foreheadCoordinate`; the furrows' is linear), coloured by
+    `lineShade(age, tone)` (the same step of CIELAB lightness at every tone) and cut
+    as grooves by `LINE_RELIEF`, and so are the crow's feet (`CROWS_FEET_STOPS`) and
+    the folds (`NASOLABIAL_STOPS`); the nose's are `creases` `DetailLayer`s.
+    `EXPRESSION_DEPTH` (metres, fractions of a millimetre) and
     `EXPRESSION_COUNT` are art-directed, `expressionAgeFactor(age)` scales the
-    depth by age (0.2 at 6, 1 at 40, 1.4 at 70).
+    depth or shade by age (0.2 at 6, 1 at 40, 1.4 at 70).
   - `skinZones(assets)`, `SKIN_ZONES`, `zoneOfBone(bone)`: the body's zones
     (head, hand, thigh, …) as soft per-vertex masks from the skin weights, plus
     its `front`, `palm`, `sole`, `forehead` and `neck` fields from the vertex
@@ -1033,13 +1230,15 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`, `"bowed"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
-| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
+| `bodyArtImages?` | `BodyArtImages`: the decoded images (`ImageBitmap`, loaded `HTMLImageElement`, canvas) the recipe's tattoos name by key. Keep the object stable: a new one bakes the figure's body art again. A tattoo whose image is missing is reported through `onError`, and the figure is drawn without its body art |
+| `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, `"piercing"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |
 | other props | Passed to the wrapping `<group>` |
 
 - Hidden until the first evaluation arrives.
 - Renders the body and the body pack's attachments (eyes with their own eye
-  shader following `recipe.eyes`, teeth and tongue), each attachment shaded by
+  shader following `recipe.eyes`, teeth, tongue, and the nail plates as
+  translucent keratin over the painted beds), each attachment shaded by
   its baked occlusion, which follows the pose (an open mouth lights the teeth
   it uncovers). The body's own cavities (mouth, nostrils, ear canals, eye
   sockets) are darkened the same way, so a mouth without a tongue is dim inside.
@@ -1055,15 +1254,15 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   `docs/evidence/gums.md`).
 - Renders `recipe.hair.brows` and `recipe.hair.lashes` as decals on the skin
   (`DecalMaterial`, alpha-blended): the hair pack's white alpha masks, in the hair
-  colour lifted a little (`browColour`) and, for lashes, darker by `LASH_DARKEN`
+  colour (`browColour`) and, for lashes, darker by `LASH_DARKEN`
   (`lashColour`), thinner on a child (`decalOpacity(kind, age)`: 0.45 for brows and 0.7 for lashes at
   birth, full by 14).
 - Renders `recipe.hair` when the client loaded a hair pack: alpha cards
   skinned to the figure and coloured by `recipe.hair.colour` (`HairMaterial`:
   the strand map times the pigment colour's tint, two Kajiya-Kay highlight
   lobes along the strands (their direction read from the baked growth), baked
-  occlusion, hairlines dithered away by `fade` and loose fin cards by their
-  angle to the eye), with edges drawn by alpha-to-coverage on a multisampled
+  occlusion, hairlines thinned strand by strand by `fade` and loose fin cards
+  dissolved by their angle to the eye), with edges drawn by alpha-to-coverage on a multisampled
   canvas and by an alpha test otherwise. The skin under the style takes a
   stubble tint of the hair's colour where it grows (`SkinMaterial.setScalp`, the
   `hkScalp` attribute). Changing the style loads that style's files; changing
@@ -1195,13 +1394,14 @@ and camera.
 
 - One tab per MakeHuman modelling task (Main, Gender, Face, Torso, ...,
   Measure), in upstream order, with MakeHuman's groups and slider labels, plus
-  Appearance (skin, iris, sclera, and hair when the client loaded a hair pack:
-  a style from the pack or none, twelve natural colours, a picker for dyed hair
-  and the pigment sliders behind the colours) and Regions (per-region macro
-  overrides). Tapping the hair opens Appearance.
-  Appearance (skin, iris, sclera), Regions (per-region macro overrides) and,
-  when the client loaded a clothing pack, a Wardrobe: the garments by kind,
-  one worn at a time per kind, layered across kinds.
+  Appearance (skin, iris, sclera; hair when the client loaded a hair pack: a
+  style from the pack or none, twelve natural colours, a picker for dyed hair
+  and the pigment sliders behind the colours; and body hair: a beard style, or
+  Natural for the default for age and sex, and a density per region from none
+  to twice the default, with underarm and pubic density offered to adults
+  only), Regions (per-region macro overrides) and, when the client loaded a
+  clothing pack, a Wardrobe: the garments by kind, one worn at a time per kind,
+  layered across kinds. Tapping the hair opens Appearance.
 - Tapping the figure opens the controls that shape the tapped part (its tab,
   with the group opened and scrolled into view) and frames that part from the
   front; see `buildFeatureMap`. Dragging orbits the view instead.
@@ -1249,7 +1449,10 @@ takes the styles as `options.hairStyles`, and without them keeps the base
 recipe's hair. It also draws one of the pack's brows and one of its lashes
 (`options.browStyles`, `options.lashStyles`; after the hair, so a seed's hair and
 shape are the same without them), and a new head of hair keeps the brows and
-lashes the figure had. `withHair(recipe, patch)` changes the scalp style, colour,
+lashes the figure had. Last of all it draws a beard style (`options.beards`,
+which the creator sets; `randomBeard(draw)` by `BEARD_ODDS`: clean-shaven most
+often, then stubble), so old seeds keep their figures; the body hair model grows
+it only where the face carries terminal hair. `withHair(recipe, patch)` changes the scalp style, colour,
 brows or lashes of a recipe (`null` takes one away) and keeps whatever the patch
 leaves out; the Appearance panel uses it, offering the brows and lashes in
 groups of their own, and `load` refuses a saved figure whose brows or lashes the
@@ -1308,6 +1511,100 @@ each value a URL string. Pass it as `body` to `loadHumanoidAssets` or to the
 worker client. The package also exposes its files under
 `humanoid-kit-body/data/*`.
 
+## Animation
+
+```ts
+import { animationsPack } from "humanoid-kit-animations";
+import { Animator, loadAnimationLibrary, rigData } from "humanoid-kit";
+
+const animations = await loadAnimationLibrary(animationsPack); // the manifest only
+const walk = await animations.load("walk_normal", rigData(assets).bones); // the clip's file, once
+const animator = new Animator(rig.bones.length, restBones(assets, evaluation.control), ground);
+animator.play(walk);
+animator.update(dt);          // advances time, crossfades and root motion
+animator.rotations;           // the body's local rotation per bone, bones * 4
+animator.root;                // how far the figure has been carried: [x across, z forward], metres
+```
+
+- `loadAnimationLibrary(pack)` and `createAnimationLibrary(manifest, fetchBinary)`
+  give an `AnimationLibrary`: `manifest`, `entry(id)`, `load(id, bones)` (a clip
+  bound to a rig's bone names, fetched once however many figures play it; a failed
+  fetch is retried by the next call) and `loaded(id, bones)`.
+- `AnimationClip`: `fps`, `frames`, `duration`, `loop`, `rootMotion` (it carries
+  the figure), `grounded` (the figure stands on the ground, so its feet are held),
+  and the frames' local rotations. `sampleClip(clip, time, out)` is its pose at a
+  time (a loop wraps, a clip that does not loop holds its last frame),
+  `blendRotations(a, b, weight, out)` blends two poses along the shortest arc, and
+  `slerpInto`, `clipTime` and `setIdentity` are the pieces.
+- `Animator`: `play(clip, { fade, speed, time })` (fading from the clip playing, for
+  `DEFAULT_FADE` seconds unless told), `update(dt)`, `setSpeed`, `seek`,
+  `resetRoot`, `setRest(rest, ground)` (the figure's shape changed), `playing`,
+  `fading`. With a skeleton (`rest`) and the ground under the figure at rest, a clip
+  that carries the figure moves `root` by what the figure's own feet do
+  (`planRootMotion`, `rootDisplacement`), and a grounded clip's planted feet are
+  held where they land (`FootLock`: `PLANT_LAND`, `PLANT_FULL`, `PLANT_NONE`,
+  `PLANT_SWITCH`), `root` giving way by what a planted foot's leg could not reach
+  (`FootLock.correction`). `contactPoints` and `CONTACT_BONES` are the points on the soles
+  they work from.
+- `<Humanoid animation={{ library, clip, speed, fade, paused, time, rootMotion, onStart }}>`
+  (`HumanoidAnimation`, from `humanoid-kit/react`) plays a clip on the figure, frame by
+  frame without React state: the body follows it with `pose.faceUnits` laid over,
+  `pose.body` standing aside; the figure lifts itself onto the ground (do not lift the
+  group; `onGroundOffset` is not called while a clip plays); a clip that carries the
+  figure (`rootMotion`, default true) moves the group forward in its own frame; and the
+  figure's presence follows. `time` puts it at a time in the clip. `onStart(clip)` is
+  called once the figure follows the clip, and again for a new figure or `time`.
+- `bodySegments(assets, rest, control, skinIndex, skinWeight, bodyVertices)` (a figure's 14
+  capsules, radii measured from its skin) and `overlaps(rest, segments, rotations)` (every
+  pair of parts that are not neighbours, with how deep they overlap in the pose, negative
+  when apart) check a pose for one part through another; `CLEARANCE_TOLERANCE` (2.5 cm)
+  is what the coarse capsules allow.
+- `frameRotations(rig, joints, frame)` (from `src/rig/pose.ts`) is a BVH frame's
+  rotations in the figure's axes, which the packer and `bodyPoseRotations` share.
+
+## `humanoid-kit-eyes`
+
+```ts
+import { eyesPack } from "humanoid-kit-eyes";
+import { loadEyeLibrary } from "humanoid-kit";
+
+const eyes = await loadEyeLibrary(eyesPack);
+<Humanoid recipe={createRecipe({ eyes: { material: "nyloseth_green_cat_eyes" } })} eyeMaterials={eyes} />;
+```
+
+`eyesPack` is `{ manifest, files }` like `bodyPack`: one WebP texture per material
+(about 100 KB, loaded when a figure first wears it). 32 CC0 materials of the MakeHuman
+community's `system_eye_materials01` and `02`: human irises (`bobby_03_diffuse_*`,
+`mindfront_brown_eye_02`, `nyloseth_sapphire_blue_eyes`), cats' slit pupils
+(`nyloseth_*_cat_eyes`), toon and anime eyes, and creatures'. `loadEyeLibrary(pack)`
+fetches the manifest and returns an `EyeLibrary`: `entry(id)` (an `EyeMaterialEntry`:
+`title`, `author`, `tags`, `hasIris`, the measured `irisRadius`, `irisGain`,
+`scleraGain`, `scleraTint`, `paintedIris` and its `source`), `textureUrl(id)` and the
+`manifest` (with the iris `centres` every material shares). `createEyeLibrary(manifest,
+url)` builds one over any locator. `recipe.eyes.material` names a material, optional
+like every recipe addition; a material supplies pattern and detail and the colours stay
+`eyes.iris` and `eyes.scleraWarmth`'s. `<Humanoid eyeMaterials>` is the library; keep
+it stable. Without it, or for an id it does not have (reported through `onError`), the
+built-in eye is shown.
+
+## `humanoid-kit-animations`
+
+```ts
+import { animationsPack } from "humanoid-kit-animations";
+```
+
+`animationsPack` is `{ manifest, files }` like `bodyPack`: per clip, `<id>.bin.gz` (the
+frames' bone rotations, a few tens of kilobytes). Pass it to `loadAnimationLibrary`.
+90 clips. Six are punkduck's, from the MakeHuman community's CC0 additional assets:
+`walk_normal`, `walk_female`, `idle1`, `idle2`, `idlehips` and `swimcrawlstroke`. 84 are
+Quaternius's Universal Animation Libraries 1 and 2 (CC0), retargeted onto the default
+skeleton: `walk_loop`, `jog_fwd_loop`, `sprint_loop`, `idle_loop`, `swim_fwd_loop`,
+`crouch_idle_loop`, `sitting_idle_loop`, `sword_idle`, `punch_cross`, `dance_loop` and
+so on, each tagged `ual1` or `ual2`; the manifest's `rootMotion`, `grounded` and `loop`
+say how each plays.
+Its `PROVENANCE.md` pins the archive by its SHA-256 and records each clip's licence
+evidence.
+
 ## `humanoid-kit-hair`
 
 ```ts
@@ -1324,6 +1621,10 @@ styles are MakeHuman's own CC0 scalp hair: `short02`, `bob02`, `long01`,
 `afro01`, `short04`, `short03`, `ponytail01`, `short01`, `bob01` and `braid01`.
 Its manifest records the hash of the body pack it binds to, and the loader
 refuses any other.
+
+It also lists generated body hair cards (kind `beard`, today `beard-full`, 64 kB
+the pair): a full beard's length over the coat, made by the packer from the
+body pack's mesh and a seed rather than from any MakeHuman file.
 
 The pack also lists MakeHuman's twelve eyebrows (`eyebrow001` to `eyebrow012`,
 kind `brows`) and four eyelashes (`eyelashes01` to `eyelashes04`, kind `lashes`),
@@ -1360,7 +1661,16 @@ keeps them out of the control morph and adds them to the adult surface after it
 is evaluated, scaled by the figure (`detail.scale`: two control vertices and
 their distance on the authoring figure), so a figure under 18, evaluated on the
 base surface, has nowhere to apply one. `detail.surfaceKey` pins the targets to
-the refinement they were authored on; the model refuses them against another.
+the refinement and reservoirs they were authored on; the model refuses them
+against another. `anatomy.reservoirs` (`AdultReservoirSpec`: `id`, `loop`, `cap`,
+`rings`) names *reservoirs*: a closed loop of the refinement's vertices round a
+disc of its polygons, in which the adult surface adds collapsed rings and strips
+between the loop and the cap. At rest they coincide with the loop (the surface is
+exactly the one without them, at every subdivision level, with zero-area strips);
+a detail target indexing a reservoir's rings (`AdultDetailLattice.reservoirs`)
+draws them out into a tube. They exist in the adult surface only, so a figure
+under 18 has none. Detail is subdivided linearly, positions smoothly, so a
+displacement authored at a vertex is exactly that at every level.
 
 ## `humanoid-kit-clothing`
 

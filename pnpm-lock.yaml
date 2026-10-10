@@ -227,12 +227,18 @@ importers:
       humanoid-kit-adult-anatomy:
         specifier: workspace:*
         version: link:packs/adult-anatomy
+      humanoid-kit-animations:
+        specifier: workspace:*
+        version: link:packs/animations
       humanoid-kit-body:
         specifier: workspace:*
         version: link:packs/body
       humanoid-kit-clothing:
         specifier: workspace:*
         version: link:packs/clothing
+      humanoid-kit-eyes:
+        specifier: workspace:*
+        version: link:packs/eyes
       humanoid-kit-hair:
         specifier: workspace:*
         version: link:packs/hair
@@ -284,9 +290,13 @@ importers:
 
   packs/adult-anatomy: {}
 
+  packs/animations: {}
+
   packs/body: {}
 
   packs/clothing: {}
+
+  packs/eyes: {}
 
   packs/hair: {}
 

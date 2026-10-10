@@ -113,6 +113,89 @@ export function nailFields(assets: HumanoidAssets): {
 }
 
 /**
+ * The nail plates: attachments of these kinds in the body pack (CC0 nail
+ * meshes, `scripts/lib/nailPlates.ts`), drawn translucent over the painted
+ * bed, lunula and fold, so the bed's colour shows through the plate at every
+ * tone, and whiter and more opaque along the free edge, where there is no bed
+ * under the plate.
+ */
+export const NAIL_PLATE_KINDS: readonly string[] = ["fingernails", "toenails"];
+
+/**
+ * How opaque the plate is over the bed, and at its free edge (CHOICES: the
+ * plate is clear keratin that transmits most light, so the bed shows through;
+ * the free edge, with air under it, scatters as white keratin).
+ */
+export const NAIL_PLATE_OPACITY = 0.18;
+export const NAIL_FREE_EDGE_OPACITY = 0.85;
+
+/**
+ * How long the free edge is, metres from the plate's tip, and how soft its
+ * start (CHOICES: a short nail's free edge is a millimetre or two).
+ */
+export const NAIL_FREE_EDGE_LENGTH = 0.0015;
+export const NAIL_FREE_EDGE_SOFT = 0.0005;
+
+/**
+ * How much of the free edge each plate vertex is (0 over the bed, 1 at the
+ * tip), for a plate mesh of several nails: each nail is a connected piece of
+ * the mesh; its direction from cuticle to tip is the way the skin's nail
+ * coordinate (`along`, the knuckles' and nails' coordinate of the skin each
+ * vertex is bound to) grows across it; and its free edge is its last
+ * `NAIL_FREE_EDGE_LENGTH` along that direction. `positions` are the plate's
+ * at rest, metres.
+ */
+export function nailPlateEdges(
+  positions: Float32Array,
+  faceVerts: Uint32Array,
+  along: Float32Array,
+): Float32Array {
+  const n = along.length;
+  // The nails: connected pieces of the plate mesh.
+  const parent = Int32Array.from({ length: n }, (_, i) => i);
+  const root = (i: number): number => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i] as number] as number;
+      i = parent[i] as number;
+    }
+    return i;
+  };
+  for (let f = 0; f < faceVerts.length; f += 4)
+    for (let k = 1; k < 4; k++)
+      parent[root(faceVerts[f + k] as number)] = root(faceVerts[f] as number);
+  const pieces = new Map<number, number[]>();
+  for (let v = 0; v < n; v++) {
+    const r = root(v);
+    pieces.set(r, [...(pieces.get(r) ?? []), v]);
+  }
+  const out = new Float32Array(n);
+  const at = (v: number, k: number) => positions[v * 3 + k] as number;
+  for (const verts of pieces.values()) {
+    // Cuticle to tip: the least and most advanced vertices on the skin's coordinate.
+    let lo = verts[0] as number;
+    let hi = lo;
+    for (const v of verts) {
+      if ((along[v] as number) < (along[lo] as number)) lo = v;
+      if ((along[v] as number) > (along[hi] as number)) hi = v;
+    }
+    const axis = [0, 1, 2].map((k) => at(hi, k) - at(lo, k));
+    const len = Math.hypot(...axis) || 1;
+    const dir = axis.map((x) => x / len);
+    const reach = (v: number) =>
+      (dir[0] as number) * at(v, 0) + (dir[1] as number) * at(v, 1) + (dir[2] as number) * at(v, 2);
+    let tip = Number.NEGATIVE_INFINITY;
+    for (const v of verts) tip = Math.max(tip, reach(v));
+    for (const v of verts)
+      out[v] = smoothstep(
+        NAIL_FREE_EDGE_LENGTH + NAIL_FREE_EDGE_SOFT,
+        NAIL_FREE_EDGE_LENGTH - NAIL_FREE_EDGE_SOFT,
+        tip - reach(v),
+      );
+  }
+  return out;
+}
+
+/**
  * The nail plate's gloss: hard, smooth keratin over the bed. Roughness and
  * specular changes are CHOICES (no gloss of nails was found measured;
  * SKIN-STATES.md C5), tuned on the contact sheets.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BARE_NEAR,
   COVERED_BY,
   FADE_LENGTH,
   GROWTH_SCALE,
@@ -9,6 +10,7 @@ import {
   SCALP_FALLOFF,
   SCALP_FULL,
   scalpShade,
+  UV_SCALE_STEPS,
 } from "../src/surface/hairFields.ts";
 
 /**
@@ -119,6 +121,21 @@ describe("hairFields", () => {
       expect(growth[0]).toBeCloseTo(0.2 * GROWTH_SCALE, -1);
     });
 
+    it("grows from the roots the author names, when hair lies on the scalp throughout", () => {
+      // A strip 2 mm over the scalp is all root by distance; named roots make its top row the only one.
+      const card = strip(10, 0.002, 0.04, 0.1);
+      const { growth } = hairFields({
+        positions: card.positions,
+        faceVerts: card.faceVerts,
+        body: { positions: body.positions, triangles: body.triangles },
+        scalpEligible: eligibleAll,
+        roots: [20, 21],
+      });
+      expect(growth[20]).toBe(0);
+      expect(growth[0] as number).toBeGreaterThan(0.03 * GROWTH_SCALE);
+      expect(growth[10] as number).toBeCloseTo(0.02 * GROWTH_SCALE, -1);
+    });
+
     it("saturates instead of wrapping past the quantisation range", () => {
       const { growth } = run(strip(1, 0.2, 60, 0.01));
       expect(growth[0]).toBe(65535);
@@ -187,13 +204,114 @@ describe("hairFields", () => {
       expect(fade[offset]).toBe(0);
     });
 
-    it("does not feather an interior edge that is near the scalp (an edge joined to another card face)", () => {
-      // Two stacked strips share their middle row of vertices: that row is interior.
+    it("does not feather two cards meeting at a part far from bare skin: a part or a crown is inside the hair", () => {
+      // Two sheets 2 mm over the scalp, side by side, meeting along x = 0 (a part): each is 0.25 m
+      // by 0.5 m in two rows, so each has a vertex at the middle of the part. Their edges there
+      // meet without either lying over the other, but the skin around the part is all under hair;
+      // only the sheets' outer edges, 5 cm from the scalp's bare margin, border bare skin.
+      const half = (x0: number) => ({
+        positions: new Float32Array(
+          [-0.25, 0, 0.25].flatMap((z) => [x0, 0.002, z, x0 + 0.25, 0.002, z]),
+        ),
+        faceVerts: new Uint32Array([0, 1, 3, 2, 2, 3, 5, 4]),
+      });
+      const a = half(-0.25);
+      const b = half(0);
+      const positions = new Float32Array([...a.positions, ...b.positions]);
+      const offset = a.positions.length / 3;
+      const faceVerts = new Uint32Array([...a.faceVerts, ...b.faceVerts.map((v) => v + offset)]);
+      const { fade } = run({ positions, faceVerts });
+      // The part's middle vertex on each sheet: (0, 0.002, 0).
+      expect(fade[3], "sheet A at the part").toBe(255);
+      expect(fade[offset + 2], "sheet B at the part").toBe(255);
+      // The outer edges still feather.
+      expect(fade[2], "sheet A's outer edge").toBe(0);
+      expect(fade[offset + 3], "sheet B's outer edge").toBe(0);
+      expect(BARE_NEAR).toBeLessThan(0.25);
+    });
+
+    it("does not feather a part of a card far from the scalp, which is no hairline", () => {
+      // Two stacked strips share their middle row of vertices, 0.05 above the scalp.
       const card = strip(2, 0.002, 0.1);
       const { fade } = run(card);
-      // The middle row sits 0.05 above the scalp: far from it, and interior.
       expect(fade[2]).toBe(255);
       expect(HAIRLINE_NEAR).toBeLessThan(0.05);
+    });
+
+    it("puts a hairline inside a card's mesh where its painted hair ends over bare skin", () => {
+      // A 0.4 m sheet of 2x2 quads 2 mm above the scalp: its centre vertex is interior, 0.2 m from
+      // any edge. Where the texture is opaque everywhere the centre is well inside the hair; where
+      // it is clear across the middle, the skin under the centre is bare and the centre is on a hairline.
+      const h = 0.2;
+      const positions: number[] = [];
+      const uvs: number[] = [];
+      for (let j = 0; j < 3; j++)
+        for (let i = 0; i < 3; i++) {
+          positions.push(-h + i * h, 0.002, -h + j * h);
+          uvs.push(i / 2, j / 2);
+        }
+      const faceVerts = new Uint32Array([0, 1, 4, 3, 1, 2, 5, 4, 3, 4, 7, 6, 4, 5, 8, 7]);
+      const alphaOf = (clearMiddle: boolean) =>
+        Uint8Array.from({ length: 16 }, (_, k) => {
+          const x = k % 4;
+          const y = Math.floor(k / 4);
+          return clearMiddle && x >= 1 && x <= 2 && y >= 1 && y <= 2 ? 0 : 255;
+        });
+      const fadeAt = (clearMiddle: boolean) =>
+        hairFields({
+          positions: new Float32Array(positions),
+          faceVerts,
+          body: { positions: body.positions, triangles: body.triangles },
+          scalpEligible: eligibleAll,
+          cutout: {
+            faceUvs: faceVerts,
+            uvs: new Float32Array(uvs),
+            width: 4,
+            height: 4,
+            alpha: alphaOf(clearMiddle),
+          },
+        }).fade[4];
+      expect(fadeAt(false)).toBe(255);
+      expect(fadeAt(true)).toBe(0);
+    });
+
+    it("feathers a card lying along the scalp wherever it is, not only at the mesh's own boundary", () => {
+      // The visible hairline is where the painted hair ends, which is inside a card's mesh: a
+      // 0.4 m sheet 1 mm above the scalp has vertices only at its corners, yet is all hairline.
+      const card = sheet(0.001, 0.4);
+      const { fade } = hairFields({
+        positions: card.positions,
+        faceVerts: card.faceVerts,
+        body: { positions: body.positions, triangles: body.triangles },
+        scalpEligible: eligibleAll,
+      });
+      expect(Array.from(fade)).toEqual([0, 0, 0, 0]);
+    });
+  });
+
+  describe("uvScale", () => {
+    it("is the card's texture units per metre, from its UVs and its size", () => {
+      // A 0.4 m sheet whose UVs span the unit square: 4 UV units of edge over 1.6 m of edge.
+      const card = sheet(0.001, 0.4);
+      const { uvScale } = hairFields({
+        positions: card.positions,
+        faceVerts: card.faceVerts,
+        body: { positions: body.positions, triangles: body.triangles },
+        scalpEligible: eligibleAll,
+        cutout: {
+          faceUvs: new Uint32Array([0, 1, 2, 3]),
+          uvs: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]),
+          width: 1,
+          height: 1,
+          alpha: new Uint8Array([255]),
+        },
+      });
+      for (const v of uvScale) expect(v / UV_SCALE_STEPS).toBeCloseTo(2.5, 1);
+    });
+
+    it("is zero without the UVs", () => {
+      const { uvScale } = run(sheet(0.001));
+      expect(uvScale.every((v) => v === 0)).toBe(true);
     });
   });
 

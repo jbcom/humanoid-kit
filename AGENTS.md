@@ -38,6 +38,13 @@ covers what isn't obvious from reading the code alone.
   hair pack last, since it binds to the body pack by hash); `pnpm pack:hair
   <system-assets-dir>` regenerates only the hair against the committed body pack.
   See `NOTICE.md`.
+- Every packer sizes its textures by `scripts/lib/textureSizing.ts`: each ships
+  at the edge its closest QA framing needs, re-sourced from the original, never
+  upscaled (docs/evidence/upscale.md). `node scripts/research/texel-density.ts
+  <system-assets-dir>` reports what every texture needs; `pnpm upscale
+  <system-assets-dir> <out-dir>` upscales the ones whose original falls short,
+  judged by the gates in `scripts/lib/upscale/gates.ts`, outside the
+  repository for inspection.
 
 ## Core invariants: do not violate these when editing `src/` or `packs/`
 
@@ -68,7 +75,11 @@ Full detail in `docs/ARCHITECTURE.md`.
    evaluation onto the render path.
 7. Data files are generated, never hand-edited. Change the packer and rerun
    `pnpm pack:data`. The packer's licence gate must keep refusing any source file
-   that does not prove CC0 from its own content.
+   that does not prove CC0: a MakeHuman team asset by its own CC0 release header,
+   a community asset by its captured page stating CC0, whose licence governs,
+   or by its own CC0 mesh with the binding rebuilt and the asset's binding file
+   never shipped (owner rulings 2026-10-09; `scripts/lib/licenceRule.ts`,
+   `docs/licence-history.md`).
 8. Only MakeHuman asset data (CC0) is used. Never copy, port or translate
    MakeHuman program code, and keep `NOTICE.md` accurate.
 9. Public names, docs, examples and fixtures are neutral. Do not put the name of

@@ -87,6 +87,27 @@ describe("the atlas plan", () => {
     expect(plan.owner[0]).toBeGreaterThanOrEqual(0);
   });
 
+  it("puts a layer that reads a coordinate where a coordinate channel already is, before opening one for it", () => {
+    // a (a surface layer, no coordinate) and b (a colour layer) overlap on quad 3, so they cannot
+    // share; c (a colour layer) lies apart from both. First fit would put c with a, whose group
+    // has no coordinate channel, and cost one; b's group has one.
+    const layers = [stub("a", "surface"), stub("b", "colour"), stub("c", "colour")];
+    const plan = planAtlas(layers, strip(4, [[0, 3], [1, 3], [2]]));
+    expect(plan.value[0]).not.toBe(plan.value[1]);
+    expect(plan.value[2]).toBe(plan.value[1]);
+    expect(plan.coord[2]).toBe(plan.coord[1]);
+    // a's value; b and c's value and coordinate.
+    expect(plan.channels).toBe(3);
+  });
+
+  it("puts a layer with no coordinate with a group that has none before one that has", () => {
+    // The mirror: a layer that needs no coordinate costs nothing anywhere, so it keeps the first fit.
+    const layers = [stub("a", "colour"), stub("b", "surface"), stub("c", "surface")];
+    const plan = planAtlas(layers, strip(4, [[0, 3], [1, 3], [2]]));
+    expect(plan.value[2]).toBe(plan.value[0]);
+    expect(plan.channels).toBe(3);
+  });
+
   it("never puts two layers that overlap in one channel", () => {
     const layers = [stub("a", "colour"), stub("b", "colour"), stub("c", "colour")];
     // Layers a and b both lie on quad 0; c is elsewhere and may share with either.
@@ -197,13 +218,16 @@ describe("the atlas plan of the shipped stack", () => {
     }
   });
 
-  it("keeps the whole stack, creases, hands, expression lines and feet included, to nine pages", () => {
+  it("keeps the whole stack, creases, hands, expression lines, feet and body hair included, to eight pages", () => {
     // Two layers a page was 11 pages (44 MB) for these layers; the crease layers alone,
     // twelve of them, took 6 more. The hands' layers are budgeted one page
     // (docs/ARCHITECTURE.md, "Hands"): 7 pages before them, 8 with them. The face's
     // five expression lines, whose masks lie apart from most layers', share channels
-    // and add none. The feet's are budgeted one more (docs/ARCHITECTURE.md, "Feet"): 9.
-    expect(plan.pages).toBeLessThanOrEqual(9);
+    // and add none. The feet's skin is painted by the hands' layers (`areas.ts`) and adds
+    // the ridges' two channels (docs/ARCHITECTURE.md, "Feet"). Body hair's layers fit
+    // the same 8: vellus takes no channel, and the rest share (docs/ARCHITECTURE.md,
+    // "Body hair").
+    expect(plan.pages).toBeLessThanOrEqual(8);
     expect(plan.pages).toBeLessThan(densePlan(SKIN_LAYERS.length).pages);
   });
 

@@ -132,7 +132,18 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         const update = model.adultLayerFields();
         post(
           { type: "adultLayers", id: req.id, update },
-          update ? [update.layerFields.buffer] : [],
+          update
+            ? [
+                update.layerFields.buffer,
+                ...(update.extra
+                  ? [
+                      update.extra.uvs.buffer,
+                      update.extra.index.buffer,
+                      update.extra.layerFields.buffer,
+                    ]
+                  : []),
+              ]
+            : [],
         );
         return;
       }
@@ -223,7 +234,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         evaluation.boneHeads.buffer,
       ];
       for (const a of evaluation.attachments) transfer.push(a.positions.buffer, a.normals.buffer);
-      for (const h of [evaluation.hair, evaluation.brows, evaluation.lashes])
+      for (const h of [evaluation.hair, evaluation.brows, evaluation.lashes, evaluation.beard])
         if (h) transfer.push(h.positions.buffer, h.normals.buffer);
       for (const g of evaluation.garments) transfer.push(g.positions.buffer, g.normals.buffer);
       const masks = evaluation.outfit.masks;
@@ -240,9 +251,9 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
       const hairId = evaluation.hair?.id;
       const hairTopology = hairId && !sentHair.has(hairId) ? model.hairTopology(hairId) : undefined;
       if (hairId) sentHair.add(hairId);
-      // The brows' and lashes' too, each once.
+      // The brows', lashes' and beard cards' too, each once.
       const current = model;
-      const decalTopologies = [evaluation.brows?.id, evaluation.lashes?.id]
+      const decalTopologies = [evaluation.brows?.id, evaluation.lashes?.id, evaluation.beard?.id]
         .filter((id): id is string => id !== undefined && !sentHair.has(id))
         .map((id) => {
           sentHair.add(id);

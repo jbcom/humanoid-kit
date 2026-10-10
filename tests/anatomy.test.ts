@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { PHALLUS_GIRTH, PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
+import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { ADULT_ONLY_MODIFIER, withAge } from "../src/recipe/agePolicy.ts";
 import { type AnatomyFeature, appliedAnatomy } from "../src/recipe/anatomy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
@@ -14,32 +16,32 @@ const adult = (modifiers: Record<string, number> = {}) =>
 describe("the anatomy a recipe applies", () => {
   it("is none for a recipe that sets no anatomy modifier", () => {
     expect(applied(adult())).toEqual({});
-    expect(applied(adult({ "genitals/penis-length-decr|incr": 0 }))).toEqual({});
+    expect(applied(adult({ [PHALLUS_SIZE]: 0 }))).toEqual({});
   });
 
   it("is none without an adult pack, whatever the recipe sets", () => {
-    expect(appliedAnatomy(adult({ "genitals/penis-length-decr|incr": 0.4 }), [])).toEqual({});
+    expect(appliedAnatomy(adult({ [PHALLUS_SIZE]: 0.4 }), [])).toEqual({});
   });
 
   it("names a feature once any of its modifiers is set, in either direction", () => {
-    expect(applied(adult({ "genitals/penis-length-decr|incr": 0.4 }))).toEqual({ penis: 1 });
-    expect(applied(adult({ "genitals/penis-circ-decr|incr": -0.3 }))).toEqual({ penis: 1 });
-    expect(applied(adult({ "genitals/penis-testicles-decr|incr": 0.2 }))).toEqual({ testes: 1 });
+    expect(applied(adult({ [PHALLUS_SIZE]: 0.4 }))).toEqual({ phallus: 1 });
+    expect(applied(adult({ [PHALLUS_GIRTH]: -0.3 }))).toEqual({ phallus: 1 });
+    expect(applied(adult({ [TESTES_SIZE]: 0.2 }))).toEqual({ scrotum: 1 });
   });
 
   it("keeps every feature independent: setting one never names another", () => {
     const only = (id: string) => Object.keys(applied(adult({ [id]: 0.5 })));
-    expect(only("genitals/penis-length-decr|incr")).toEqual(["penis"]);
-    expect(only("genitals/penis-testicles-decr|incr")).toEqual(["testes"]);
+    expect(only(PHALLUS_SIZE)).toEqual(["phallus"]);
+    expect(only(TESTES_SIZE)).toEqual(["scrotum"]);
     expect(only("pelvis/bulge-decr|incr")).toEqual(["mound"]);
     const all = applied(
       adult({
-        "genitals/penis-length-decr|incr": 0.5,
-        "genitals/penis-testicles-decr|incr": 0.5,
+        [PHALLUS_SIZE]: 0.5,
+        [TESTES_SIZE]: 0.5,
         "pelvis/bulge-decr|incr": 0.5,
       }),
     );
-    expect(Object.keys(all).sort()).toEqual(["mound", "penis", "testes"]);
+    expect(Object.keys(all).sort()).toEqual(["mound", "phallus", "scrotum"]);
   });
 
   it("is none under 18 even when the recipe carries the modifiers", () => {
@@ -47,10 +49,10 @@ describe("the anatomy a recipe applies", () => {
     // not depend on that having run first.
     const teen = createRecipe({
       macros: { age: 15 },
-      modifiers: { "genitals/penis-length-decr|incr": 0.5, "pelvis/bulge-decr|incr": 0.5 },
+      modifiers: { [PHALLUS_SIZE]: 0.5, "pelvis/bulge-decr|incr": 0.5 },
     });
     expect(applied(teen)).toEqual({});
-    expect(applied(withAge(adult({ "genitals/penis-length-decr|incr": 0.5 }), 15))).toEqual({});
+    expect(applied(withAge(adult({ [PHALLUS_SIZE]: 0.5 }), 15))).toEqual({});
   });
 
   it("lists only adult-only modifiers the adult pack ships, none twice", () => {

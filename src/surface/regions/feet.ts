@@ -9,20 +9,13 @@
  * as a choice.
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
-import { groupFaces, jointPosition } from "../../format/assetFormat.ts";
-import { callusAlbedo } from "../footTone.ts";
-import { nailStops } from "../handTone.ts";
-import type {
-  ColourLayer,
-  DetailLayer,
-  SkinLayer,
-  SkinLayerFields,
-  SurfaceLayer,
-} from "../layers.ts";
-import { ridgeOrientationCoordinate } from "../ridges.ts";
+import { jointPosition } from "../../format/assetFormat.ts";
+import type { DetailLayer, SkinLayer, SkinLayerFields } from "../layers.ts";
 import { type DigitFrame, digitFrame, type Vec3 } from "./digitFrame.ts";
-import { NAIL_ROUGHNESS, NAIL_SHARP, NAIL_SPECULAR, nailCoordinate } from "./hands/nails.ts";
+import { NAIL_SHARP, nailCoordinate } from "./hands/nails.ts";
+import { bodySurface } from "./once.ts";
 import { skinZones } from "./skinZones.ts";
+import { uvOrientation } from "./uvOrientation.ts";
 
 /** Where a landmark lies in a foot's frame: `along` (0 heel, 1 second toe's tip) and `across` (metres, positive outward). */
 export interface FootPoint {
@@ -74,6 +67,7 @@ export function footFrame(assets: HumanoidAssets): FootFrame {
   const n = assets.manifest.vertexCount;
   const P = assets.positions;
   const foot = skinZones(assets).zone("foot");
+  const onBody = bodySurface(assets);
   const side = new Uint8Array(n).fill(255);
   const along = new Float32Array(n);
   const across = new Float32Array(n);
@@ -88,7 +82,8 @@ export function footFrame(assets: HumanoidAssets): FootFrame {
   };
   (["L", "R"] as const).forEach((name, s) => {
     const sign = name === "L" ? 1 : -1;
-    const mine = (v: number) => (foot[v] as number) > 0.5 && Math.sign(P[v * 3] as number) === sign;
+    const mine = (v: number) =>
+      onBody[v] === 1 && (foot[v] as number) > 0.5 && Math.sign(P[v * 3] as number) === sign;
     // The heel: the foot's rearmost point, centred on the vertices within a
     // centimetre of it. The axis then runs to the second toe's tip.
     let rear = Number.POSITIVE_INFINITY;
@@ -175,6 +170,7 @@ export function toeFrame(assets: HumanoidAssets): ToeFrame {
   const n = assets.manifest.vertexCount;
   const P = assets.positions;
   const foot = skinZones(assets).zone("foot");
+  const onBody = bodySurface(assets);
   const at = (joint: string): Vec3 => {
     const p = new Float32Array(3);
     jointPosition(assets, assets.positions, joint, p, 0);
@@ -202,17 +198,32 @@ export function toeFrame(assets: HumanoidAssets): ToeFrame {
     const frame = digitFrame({
       positions: P,
       vertexCount: n,
-      include: (v) => (foot[v] as number) > 0.5 && Math.sign(P[v * 3] as number) === sign,
+      include: (v) =>
+        onBody[v] === 1 && (foot[v] as number) > 0.5 && Math.sign(P[v * 3] as number) === sign,
       lines,
       // The sole faces down at rest.
       facing: [0, -1, 0],
     });
+    // The skeleton's line runs nearer the top of a thin toe than through its
+    // middle (the little toe's lies at its upper surface), so `under` is taken
+    // from the middle of the toe's flesh beyond its base joint: positive on the
+    // pad's side of it, negative on the nail's.
+    const centre = new Float64Array(6);
+    const count = new Uint32Array(6);
     for (let v = 0; v < n; v++) {
-      if (frame.digit[v] === 0) continue;
-      out.digit[v] = frame.digit[v] as number;
+      const d = frame.digit[v] as number;
+      if (d === 0 || (frame.along[v] as number) < 0.004) continue;
+      centre[d] = (centre[d] as number) + (frame.under[v] as number);
+      count[d] = (count[d] as number) + 1;
+    }
+    for (let v = 0; v < n; v++) {
+      const d = frame.digit[v] as number;
+      if (d === 0) continue;
+      out.digit[v] = d;
       out.along[v] = frame.along[v] as number;
       out.across[v] = frame.across[v] as number;
-      out.under[v] = frame.under[v] as number;
+      out.under[v] =
+        (frame.under[v] as number) - (count[d] ? (centre[d] as number) / (count[d] as number) : 0);
     }
     joints.push(frame.joints);
   });
@@ -306,39 +317,14 @@ export function callusAmount(age: number | undefined): number {
 }
 
 /**
- * Thickened stratum corneum over the sole's pressure sites: the sole's colour
- * (`palmAlbedo`) made paler and yellower (`callusAlbedo`), as much as
- * `callusAmount` says of this age.
+ * Per vertex, how much callus the sole carries there (0..1, before age): each
+ * pressure site's weight spread over the sole round it. The sole's layer
+ * (`areas.ts`) paints it as a term of the palmoplantar colour.
  */
-export const CALLUS_LAYER: SkinLayer = {
-  id: "callus",
-  blend: "mix",
-  targets: [],
-  fields: callusFields,
-  paint: ({ tone, age }) => ({
-    strength: CALLUS_OPACITY * callusAmount(age),
-    stops: [callusAlbedo(tone)],
-  }),
-};
+export const callusWeights = (assets: HumanoidAssets): Float32Array => callusFields(assets).mask;
 
 /** How much of a figure's callus colour shows over the sole at full age amount (a choice). */
 export const CALLUS_OPACITY = 0.85;
-
-/** How much duller (rougher, less specular) callus is at full strength: dry keratin scatters light, it does not mirror it (a choice). */
-export const CALLUS_ROUGHNESS = 0.2;
-export const CALLUS_SPECULAR = -0.12;
-
-export const CALLUS_SURFACE_LAYER: SurfaceLayer = {
-  id: "callus-matte",
-  kind: "surface",
-  targets: [],
-  fields: callusFields,
-  paint: ({ age }) => ({
-    strength: callusAmount(age),
-    roughness: CALLUS_ROUGHNESS,
-    specular: CALLUS_SPECULAR,
-  }),
-};
 
 /* ------------------------------------------------------- toe joint creases */
 
@@ -391,27 +377,6 @@ function toeBandFields(assets: HumanoidAssets, side: (under: number) => number):
   return { mask, coord };
 }
 
-/** How prominent the skin's fine wrinkles are by age, 0..1: faint in a child, deepening as the skin loses its elasticity (a choice, with the direction well established). */
-export function wrinkleAmount(age: number | undefined): number {
-  const a = age ?? 30;
-  const points: readonly (readonly [number, number])[] = [
-    [0, 0.3],
-    [12, 0.5],
-    [30, 0.7],
-    [60, 0.9],
-    [85, 1],
-  ];
-  const first = points[0] as readonly [number, number];
-  const last = points[points.length - 1] as readonly [number, number];
-  if (a <= first[0]) return first[1];
-  if (a >= last[0]) return last[1];
-  let i = 0;
-  while ((points[i + 1] as readonly [number, number])[0] < a) i++;
-  const p = points[i] as readonly [number, number];
-  const q = points[i + 1] as readonly [number, number];
-  return p[1] + ((q[1] - p[1]) * (a - p[0])) / (q[0] - p[0]);
-}
-
 /** Depth of the wrinkles over the toes' joints, metres: the hands' knuckle wrinkles' (a choice; none is measured). */
 export const TOE_WRINKLE_DEPTH = 0.00012;
 /** Wrinkles across a toe joint's band. */
@@ -419,29 +384,13 @@ export const TOE_WRINKLE_COUNT = 3;
 /** Depth of the creases under the toes' joints, metres: the palm's creases' (a choice). */
 export const TOE_CREASE_DEPTH = 0.0003;
 
-/** Fine wrinkles over each joint of each toe, on its top. */
-export const TOE_WRINKLE_LAYER: DetailLayer = {
-  id: "toe-wrinkles",
-  kind: "detail",
-  pattern: "creases",
-  targets: [],
-  fields: (assets) => toeBandFields(assets, (under) => 1 - smooth(-0.006, -0.002, under)),
-  paint: ({ age }) => ({
-    strength: wrinkleAmount(age),
-    height: TOE_WRINKLE_DEPTH,
-    size: TOE_WRINKLE_COUNT,
-  }),
-};
+/** The fine wrinkles over each joint of each toe, on its top: a mask and a coordinate across the band. */
+export const toeWrinkleFields = (assets: HumanoidAssets): SkinLayerFields =>
+  toeBandFields(assets, (under) => 1 - smooth(-0.006, -0.002, under));
 
-/** The fold under each joint of each toe: one, where the toe bends. They form before birth, so no age. */
-export const TOE_CREASE_LAYER: DetailLayer = {
-  id: "toe-creases",
-  kind: "detail",
-  pattern: "creases",
-  targets: [],
-  fields: (assets) => toeBandFields(assets, (under) => smooth(0.002, 0.006, under)),
-  paint: () => ({ strength: 1, height: TOE_CREASE_DEPTH, size: 1 }),
-};
+/** The fold under each joint of each toe: one, where the toe bends. They form before birth. */
+export const toeCreaseFields = (assets: HumanoidAssets): SkinLayerFields =>
+  toeBandFields(assets, (under) => smooth(0.002, 0.006, under));
 
 /* ---------------------------------------------------------------- toenails */
 
@@ -480,7 +429,10 @@ const toenailCache = new WeakMap<
 >();
 
 /** The toenails' fields: the colour layer's mask and coordinate, and the plate's gloss mask. */
-function toenailFields(assets: HumanoidAssets): { colour: SkinLayerFields; gloss: Float32Array } {
+export function toenailFields(assets: HumanoidAssets): {
+  colour: SkinLayerFields;
+  gloss: Float32Array;
+} {
   const known = toenailCache.get(assets);
   if (known) return known;
   const frame = toeFrame(assets);
@@ -542,52 +494,6 @@ function toenailFields(assets: HumanoidAssets): { colour: SkinLayerFields; gloss
   toenailCache.set(assets, fields);
   return fields;
 }
-
-/**
- * How yellow and thick an old toenail is, 0..1: toenails thicken and yellow with
- * age (they grow more slowly, about 0.5% a year from 25, and thicken with
- * trauma and poor circulation; the colour is a CHOICE, the direction is what
- * was found: C6).
- */
-export function toenailAging(age: number | undefined): number {
-  return smooth(50, 90, age ?? 30);
-}
-
-/** What an old nail's bed and free edge are tinted toward: a yellowed keratin (a choice). */
-const TOENAIL_YELLOW: readonly [number, number, number] = [0.52, 0.4, 0.2];
-/** How far the yellowing goes at full age (a choice). */
-const TOENAIL_YELLOWING = 0.45;
-
-/** The toenails: fold, lunula, bed and free edge along each nail (the hands' `nailStops`), the bed and free edge yellowing with age. */
-export const TOENAIL_LAYER: ColourLayer = {
-  id: "toenails",
-  blend: "mix",
-  targets: [],
-  fields: (assets) => toenailFields(assets).colour,
-  paint: ({ tone, age }) => {
-    const k = TOENAIL_YELLOWING * toenailAging(age);
-    const stops = nailStops(tone).map((c, i) =>
-      i < 4
-        ? c
-        : (c.map(
-            (x, j) => x + ((TOENAIL_YELLOW[j] as number) * (x / Math.max(c[0], 1e-6)) - x) * k,
-          ) as [number, number, number]),
-    );
-    return { strength: 1, stops };
-  },
-};
-
-/** A toenail's gloss: duller than a fingernail's (it is thicker and rougher; a choice, tuned on the sheets). */
-export const TOENAIL_ROUGHNESS = NAIL_ROUGHNESS * 0.7;
-export const TOENAIL_SPECULAR = NAIL_SPECULAR * 0.7;
-
-export const TOENAIL_GLOSS_LAYER: SurfaceLayer = {
-  id: "toenail-gloss",
-  kind: "surface",
-  targets: [],
-  fields: (assets) => ({ mask: toenailFields(assets).gloss, coord: null }),
-  paint: () => ({ strength: 1, roughness: TOENAIL_ROUGHNESS, specular: TOENAIL_SPECULAR }),
-};
 
 /* ------------------------------------------------------- friction ridges */
 
@@ -657,86 +563,16 @@ function waveDirections(assets: HumanoidAssets): Float32Array {
 }
 
 /**
-The ridge wave directions in the UV plane, as the orientation coordinate: the
- * doubled angle averaged over the faces, then stored (`ridgeOrientationCoordinate`): per face, the wave direction
- * of each corner, taken into the face's plane and carried through the face's UV
- * map, then averaged over the faces round a vertex by their area. The relief is
- * drawn in the UV plane (p = uv × metres per UV), so its orientation has to be
- * measured there.
+ * The ridge wave directions in the UV plane, as the orientation coordinate
+ * (`uvOrientation`): the relief is drawn in the UV plane, so its orientation
+ * has to be measured there.
  */
 function ridgeOrientationFields(assets: HumanoidAssets): SkinLayerFields {
   const n = assets.manifest.vertexCount;
   const sole = skinZones(assets).sole;
-  const wave = waveDirections(assets);
-  const P = assets.positions;
-  const cx = new Float64Array(n);
-  const cy = new Float64Array(n);
-  for (const f of groupFaces(assets, "body")) {
-    const q = [0, 1, 2, 3].map((k) => assets.faceVerts[f * 4 + k] as number);
-    if (!q.some((v) => (sole[v] as number) > 0)) continue;
-    const at = (v: number): [number, number, number] => [
-      P[v * 3] as number,
-      P[v * 3 + 1] as number,
-      P[v * 3 + 2] as number,
-    ];
-    const uv = [0, 1, 2, 3].map((k) => [
-      assets.uvs[(assets.faceUvs[f * 4 + k] as number) * 2] as number,
-      assets.uvs[(assets.faceUvs[f * 4 + k] as number) * 2 + 1] as number,
-    ]) as [number, number][];
-    const p0 = at(q[0] as number);
-    const sub3 = (
-      a: [number, number, number],
-      b: [number, number, number],
-    ): [number, number, number] => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-    const dot3 = (a: [number, number, number], b: [number, number, number]) =>
-      a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-    const e1 = sub3(at(q[1] as number), p0);
-    const e2 = sub3(at(q[3] as number), p0);
-    const b1 = [
-      (uv[1] as [number, number])[0] - (uv[0] as [number, number])[0],
-      (uv[1] as [number, number])[1] - (uv[0] as [number, number])[1],
-    ];
-    const b2 = [
-      (uv[3] as [number, number])[0] - (uv[0] as [number, number])[0],
-      (uv[3] as [number, number])[1] - (uv[0] as [number, number])[1],
-    ];
-    const g11 = dot3(e1, e1);
-    const g12 = dot3(e1, e2);
-    const g22 = dot3(e2, e2);
-    const det = g11 * g22 - g12 * g12;
-    if (det < 1e-18) continue;
-    const area = Math.sqrt(det);
-    for (const v of q) {
-      if ((sole[v] as number) <= 0) continue;
-      const w: [number, number, number] = [
-        wave[v * 3] as number,
-        wave[v * 3 + 1] as number,
-        wave[v * 3 + 2] as number,
-      ];
-      // w = alpha e1 + beta e2 (its part in the face's plane), by least squares.
-      const r1 = dot3(w, e1);
-      const r2 = dot3(w, e2);
-      const alpha = (r1 * g22 - r2 * g12) / det;
-      const beta = (r2 * g11 - r1 * g12) / det;
-      const du = alpha * (b1[0] as number) + beta * (b2[0] as number);
-      const dv = alpha * (b1[1] as number) + beta * (b2[1] as number);
-      const len = Math.hypot(du, dv);
-      if (len < 1e-12) continue;
-      // The doubled angle's unit vector, weighted by the face's area.
-      const c2 = (du * du - dv * dv) / (len * len);
-      const s2 = (2 * du * dv) / (len * len);
-      cx[v] = (cx[v] as number) + area * c2;
-      cy[v] = (cy[v] as number) + area * s2;
-    }
-  }
+  const { coord, valid } = uvOrientation(assets, waveDirections(assets), sole);
   const mask = new Float32Array(n);
-  const coord = new Float32Array(n);
-  for (let v = 0; v < n; v++) {
-    const len = Math.hypot(cx[v] as number, cy[v] as number);
-    if ((sole[v] as number) <= 0 || len < 1e-18) continue;
-    mask[v] = sole[v] as number;
-    coord[v] = ridgeOrientationCoordinate(0.5 * Math.atan2(cy[v] as number, cx[v] as number));
-  }
+  for (let v = 0; v < n; v++) if (valid[v] === 1) mask[v] = sole[v] as number;
   return { mask, coord };
 }
 
@@ -760,13 +596,9 @@ export const RIDGE_LAYER: DetailLayer = {
   paint: ({ age }) => ({ strength: 1, height: ridgeRelief(age), size: ridgeSpacing(age) }),
 };
 
-/** The feet's layers, in the order they are applied. */
-export const FOOT_SKIN_LAYERS: readonly SkinLayer[] = [
-  CALLUS_LAYER,
-  CALLUS_SURFACE_LAYER,
-  TOE_WRINKLE_LAYER,
-  TOE_CREASE_LAYER,
-  TOENAIL_LAYER,
-  TOENAIL_GLOSS_LAYER,
-  RIDGE_LAYER,
-];
+/**
+ * The feet's own layers in the stack: the ridges. The rest of the feet's skin
+ * (callus, toenails, the toes' wrinkles and creases) is painted by layers the
+ * hands share (`areas.ts`), since the atlas has no channels to spare.
+ */
+export const FOOT_SKIN_LAYERS: readonly SkinLayer[] = [RIDGE_LAYER];

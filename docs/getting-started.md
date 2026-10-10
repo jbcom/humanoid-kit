@@ -126,6 +126,41 @@ Its targets and modifiers evaluate only for figures aged 18 or over. Loading
 fails with an `AssetFormatError` if the pack was built against a different body
 pack.
 
+## 4a. Eye materials (optional)
+
+Install `humanoid-kit-eyes` for more than the one brown eye. A material adds an iris's
+pattern and a sclera's detail; the colours stay the recipe's.
+
+```tsx
+import { createRecipe, loadEyeLibrary } from "humanoid-kit";
+import { eyesPack } from "humanoid-kit-eyes";
+
+const eyes = await loadEyeLibrary(eyesPack);
+const recipe = createRecipe({ eyes: { material: "bobby_03_diffuse_blue_eyes", iris: [0.05, 0.1, 0.25] } });
+<Humanoid recipe={recipe} eyeMaterials={eyes} />;
+```
+
+`eyes.iris` is the iris's mean colour whatever the material; `library.entry(id).paintedIris`
+is the colour the material was painted in.
+
+## 4b. Animation (optional)
+
+Install `humanoid-kit-animations` only if your figures move. Load its manifest once and
+hand the library to a figure; a clip's file loads the first time a figure plays it.
+
+```tsx
+import { loadAnimationLibrary } from "humanoid-kit";
+import { animationsPack } from "humanoid-kit-animations";
+
+const animations = await loadAnimationLibrary(animationsPack);
+// walk_normal, walk_female, idle1, idle2, idlehips, swimcrawlstroke
+<Humanoid recipe={recipe} animation={{ library: animations, clip: "walk_normal" }} />;
+```
+
+A walk carries the figure forward on its own feet (a child's stride is a child's), its
+planted feet held in place; `rootMotion: false` keeps it on the spot, and a new `clip`
+fades from the one playing.
+
 ## 5. Hair (optional)
 
 Install `humanoid-kit-hair` only if your figures wear hair, and load it with the

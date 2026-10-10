@@ -21,6 +21,8 @@ replay.
 | `humanoid-kit-body` | CC0 1.0 | The base mesh, shape targets for every age MakeHuman models (1 to 90 years), the 163-bone skeleton and skin weights, facial pose units and 233 shape modifiers |
 | `humanoid-kit-adult-anatomy` | CC0 1.0 | Adult-only targets and 5 modifiers. A separate install |
 | `humanoid-kit-hair` | CC0 1.0 | Ten scalp hair styles as alpha cards bound to the base body. A separate install |
+| `humanoid-kit-eyes` | CC0 1.0 | 32 eye materials: human irises, cats' slit pupils, toon and creature eyes. A separate install |
+| `humanoid-kit-animations` | CC0 1.0 | Walk, idle and swim cycles on the default skeleton, played on any figure. A separate install |
 
 The body and adult packs together carry 238 shape modifiers. An application that never
 installs the adult anatomy pack cannot render adult anatomy at all, and one that

@@ -9,11 +9,23 @@
  * a face. Teeth are therefore given the colour that makes their texture reach
  * the albedo of enamel, whatever the material said.
  */
-import { Color, DoubleSide, FrontSide, LinearSRGBColorSpace } from "three";
+import {
+  Color,
+  DoubleSide,
+  FrontSide,
+  LinearSRGBColorSpace,
+  type WebGLProgramParametersWithUniforms,
+} from "three";
 import type { AttachmentMaterial } from "../format/assetFormat.ts";
 import type { Lab } from "../surface/cielab.ts";
 import { linearFromLab } from "../surface/cielab.ts";
 import { GUM_SATURATION, gumAppearance } from "../surface/gumTone.ts";
+import { NAIL_KERATIN } from "../surface/handTone.ts";
+import {
+  NAIL_FREE_EDGE_OPACITY,
+  NAIL_PLATE_KINDS,
+  NAIL_PLATE_OPACITY,
+} from "../surface/regions/hands/index.ts";
 import { DEFAULT_SKIN_TONE, type Rgb, type SkinTone } from "../surface/skinTone.ts";
 import { AttachmentStandardMaterial, patchOcclusion } from "./occlusion.ts";
 
@@ -143,16 +155,68 @@ float hkNoise( vec2 p ) {
   }
 }
 
+/** The geometry attribute a nail plate's free edge comes in on (`AttachmentTopology.nailEdge`). */
+export const NAIL_EDGE_ATTRIBUTE = "hkNailEdge";
+
+/**
+ * A nail plate (`NAIL_PLATE_KINDS`): clear keratin over the painted bed, so
+ * the bed, lunula and fold show through it at every tone, and white, nearly
+ * opaque keratin along the free edge (`nailEdge`), where there is air under
+ * it. Its gloss is the plate's: keratin's index (1.47, F0 about 0.036) at a
+ * polished roughness. The pack's own nail texture paints one pink nail and is
+ * not used.
+ */
+export class NailPlateMaterial extends AttachmentStandardMaterial {
+  constructor() {
+    super({
+      color: new Color(...NAIL_KERATIN),
+      roughness: NAIL_PLATE_ROUGHNESS,
+      metalness: 0,
+      transparent: true,
+      side: FrontSide,
+    });
+  }
+
+  override onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
+    patchOcclusion(shader, this.occlusionKeys);
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        `#include <common>\nattribute float ${NAIL_EDGE_ATTRIBUTE};\nvarying float vHkNailEdge;`,
+      )
+      .replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>\n\tvHkNailEdge = ${NAIL_EDGE_ATTRIBUTE};`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying float vHkNailEdge;")
+      .replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>\n\tdiffuseColor.a *= mix( ${glslNumber(NAIL_PLATE_OPACITY)}, ${glslNumber(NAIL_FREE_EDGE_OPACITY)}, clamp( vHkNailEdge, 0.0, 1.0 ) );`,
+      );
+  };
+
+  override customProgramCacheKey(): string {
+    return `${super.customProgramCacheKey()}-nail-plate-1`;
+  }
+}
+
+/** Polished nail keratin's roughness (CHOICE; the plate's gloss). */
+export const NAIL_PLATE_ROUGHNESS = 0.15;
+
+const glslNumber = (x: number) => (Number.isInteger(x) ? `${x}.0` : `${x}`);
+
 /**
  * A standard material for an attachment the way the pack describes it (its
  * roughness, transparency and culling), coloured by `attachmentColour`; teeth
- * get a `TeethMaterial`. The texture, if any, is set by the caller once it has
- * loaded.
+ * get a `TeethMaterial`, nail plates a `NailPlateMaterial`. The texture, if
+ * any, is set by the caller once it has loaded.
  */
 export function createAttachmentMaterial(
   kind: string,
   m: AttachmentMaterial,
 ): AttachmentStandardMaterial {
+  if (NAIL_PLATE_KINDS.includes(kind)) return new NailPlateMaterial();
   const [r, g, b] = attachmentColour(kind, m.color);
   const parameters = {
     color: new Color(r, g, b),

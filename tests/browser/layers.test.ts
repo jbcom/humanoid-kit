@@ -8,20 +8,18 @@ import {
   BufferAttribute,
   BufferGeometry,
   FloatType,
-  GLSL3,
   Mesh,
-  NoBlending,
   OrthographicCamera,
   PlaneGeometry,
-  RawShaderMaterial,
   Scene,
   type Texture,
   WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
-import { buildLayerAtlas, GUTTER, type LayerAtlasSource } from "../../src/render/layerAtlas.ts";
+import { buildLayerAtlas, type LayerAtlasSource } from "../../src/render/layerAtlas.ts";
 import { SkinMaterial } from "../../src/render/skinMaterial.ts";
+import { GUTTER } from "../../src/render/uvRaster.ts";
 import { densePlan, planAtlas } from "../../src/surface/atlasPlan.ts";
 import {
   applyLayers,
@@ -31,6 +29,7 @@ import {
 } from "../../src/surface/layers.ts";
 import { SKIN_LAYERS } from "../../src/surface/regions/index.ts";
 import { type Rgb, skinAlbedo } from "../../src/surface/skinTone.ts";
+import { readPage as readAtlasPage } from "./readPage.ts";
 
 const SIZE = 64;
 const canvas = document.createElement("canvas");
@@ -71,31 +70,8 @@ function quadSource(
   };
 }
 
-/** Reads an atlas page back, texel for texel, through a float target. */
-function readPage(texture: Texture, page: number, size: number): Float32Array {
-  const rt = new WebGLRenderTarget(size, size, { type: FloatType });
-  const material = new RawShaderMaterial({
-    glslVersion: GLSL3,
-    vertexShader: `in vec3 position; void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }`,
-    fragmentShader: `precision highp float; uniform highp sampler2DArray atlas; uniform int page;
-      out vec4 color; void main() { color = texelFetch(atlas, ivec3(ivec2(gl_FragCoord.xy), page), 0); }`,
-    uniforms: { atlas: { value: texture }, page: { value: page } },
-    blending: NoBlending,
-  });
-  const mesh = new Mesh(new PlaneGeometry(2, 2), material);
-  mesh.frustumCulled = false;
-  const scene = new Scene();
-  scene.add(mesh);
-  renderer.setRenderTarget(rt);
-  renderer.render(scene, camera);
-  const out = new Float32Array(size * size * 4);
-  renderer.readRenderTargetPixels(rt, 0, 0, size, size, out);
-  renderer.setRenderTarget(null);
-  mesh.geometry.dispose();
-  material.dispose();
-  rt.dispose();
-  return out;
-}
+const readPage = (texture: Texture, page: number, size: number) =>
+  readAtlasPage(renderer, texture, page, size);
 
 describe("the layer field atlas", () => {
   it("holds each layer's fields on its islands, fills their gutters, and leaves the rest empty", () => {
@@ -381,7 +357,10 @@ describe("the skin shader's layer stack", () => {
   it("paints the skin-state layers as applyLayers does, at every signal at once", () => {
     // Haemoglobin ratios near 1 and a lip colour mixed over the lips: the half-float
     // stop table must keep them. Masks rise and fall across the quad so every layer shows.
-    const stack = SKIN_LAYERS.filter((l) => l.kind !== "detail" && l.kind !== "surface");
+    // Strand layers draw a pattern pixel by pixel; strands.test.ts holds their mean.
+    const stack = SKIN_LAYERS.filter(
+      (l) => l.kind !== "detail" && l.kind !== "surface" && l.kind !== "strands",
+    );
     const everything: SkinPaintInput = {
       ...appearance,
       signals: { blush: 1, exertion: 0.7, heat: 0.5, fear: 0.4, cold: 0.8 },

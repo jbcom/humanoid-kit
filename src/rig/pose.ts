@@ -201,8 +201,8 @@ const AXIS: Record<string, [0 | 1 | 2, 1 | -1]> = {
  * in the figure's axes. Channels compose in the order written: "Zrotation
  * Xrotation Yrotation" is Rz · Rx · Ry. Translation channels are ignored.
  */
-function frameRotations(
-  rig: RigData,
+export function frameRotations(
+  rig: Pick<RigData, "bones">,
   joints: readonly BvhJoint[],
   frame: readonly number[],
 ): Map<number, Quat> {

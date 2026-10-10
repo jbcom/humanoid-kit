@@ -26,12 +26,18 @@ const GENDERS = [0, 0.25, 0.5, 0.75, 1];
 const LEVELS = [-1, 0, 1];
 const STATES = [0, 0.5, 1];
 
-/** Every assignment of a level to each feature's first modifier: 3^features figures. */
+/** The levels a modifier takes: a one-sided one (a size) has no reduced level. */
+const levelsOf = (id: string) =>
+  adultManifest.modifiers.find((m) => m.id === id)?.lo === null
+    ? LEVELS.filter((v) => v >= 0)
+    : LEVELS;
+
+/** Every assignment of a level to each feature's first modifier. */
 function featureCombinations(): Record<string, number>[] {
   let out: Record<string, number>[] = [{}];
   for (const f of features) {
     const id = f.modifiers[0] as string;
-    out = out.flatMap((m) => LEVELS.map((v) => ({ ...m, [id]: v })));
+    out = out.flatMap((m) => levelsOf(id).map((v) => ({ ...m, [id]: v })));
   }
   return out;
 }
@@ -40,29 +46,40 @@ const COMBINATIONS = featureCombinations();
 
 const finite = (a: Float32Array) => a.every(Number.isFinite);
 
-/** The extent of the penis targets' vertices along x, y, z summed: grows with the shaft. */
-function shaftExtent(m: HumanoidModel, signals: Record<string, number>, recipe = base()) {
-  const t = withAdult.targets.get("genitals/penis-length-incr");
-  if (!t) throw new Error("no length target");
-  const c = m.evaluate(recipe, signals).control;
-  const lo = [Infinity, Infinity, Infinity];
-  const hi = [-Infinity, -Infinity, -Infinity];
-  for (const v of t.indices)
-    for (let k = 0; k < 3; k++) {
-      const x = c[v * 3 + k] as number;
-      lo[k] = Math.min(lo[k] as number, x);
-      hi[k] = Math.max(hi[k] as number, x);
-    }
-  return Math.hypot(...hi.map((h, k) => h - (lo[k] as number)));
-}
+const SIZE = "genitals/phallus-size";
 const base = () => createRecipe({ macros: { age: 30, gender: 0.5 } });
+
+/**
+ * How far the organ reaches from the skin: the largest distance any vertex of
+ * the adult surface has moved from where the figure's surface is without the
+ * organ. The organ is a tube drawn out of its root, so its tip is the farthest.
+ */
+function reach(m: HumanoidModel, recipe: ReturnType<typeof base>, signals: Record<string, number>) {
+  const without = createRecipe({
+    macros: recipe.macros,
+    modifiers: { ...recipe.modifiers, [SIZE]: 0 },
+  });
+  const a = m.evaluate(without).positions;
+  const b = m.evaluate(recipe, signals).positions;
+  let far = 0;
+  for (let v = 0; v < a.length / 3; v++)
+    far = Math.max(
+      far,
+      Math.hypot(...[0, 1, 2].map((k) => (b[v * 3 + k] as number) - (a[v * 3 + k] as number))),
+    );
+  return far;
+}
+const withOrgan = (extra: Record<string, number> = {}, macros = base().macros) =>
+  createRecipe({ macros, modifiers: { [SIZE]: 0.65, ...extra } });
 
 // The cross is a thousand evaluations and the refined slice builds a surface:
 // seconds unloaded, minutes on a busy machine.
 describe("the adult permutation matrix", { timeout: 600_000 }, () => {
   it("covers every feature the pack names, so a new feature extends the matrix by itself", () => {
-    expect(features.map((f) => f.id)).toEqual(["penis", "testes", "mound"]);
-    expect(COMBINATIONS.length).toBe(LEVELS.length ** features.length);
+    expect(features.map((f) => f.id)).toEqual(["phallus", "scrotum", "mound"]);
+    expect(COMBINATIONS.length).toBe(
+      features.reduce((n, f) => n * levelsOf(f.modifiers[0] as string).length, 1),
+    );
   });
 
   it("evaluates every age × gender × feature combination × state finite, at the control level", () => {
@@ -117,6 +134,14 @@ describe("the adult permutation matrix", { timeout: 600_000 }, () => {
               "genitals/penis-testicles-decr|incr": 0.5,
               "pelvis/mound-decr|incr": 1,
             },
+            // The organ, from a clitoral glans to the largest key, with its length and girth.
+            { [SIZE]: 0.08 },
+            { [SIZE]: 0.45 },
+            { [SIZE]: 0.65, "genitals/phallus-length-decr|incr": 1 },
+            { [SIZE]: 1, "genitals/phallus-girth-decr|incr": -1, "pelvis/mound-decr|incr": 1 },
+            // The sacs and testes, alone and with the organ and the mound.
+            { "genitals/testes-size": 0.25 },
+            { "genitals/testes-size": 1, [SIZE]: 0.65, "pelvis/mound-decr|incr": -1 },
           ])
             for (const arousal of [0, 1]) {
               const recipe = createRecipe({ macros: { age, gender, ...build }, modifiers });
@@ -149,42 +174,40 @@ describe("the adult permutation matrix", { timeout: 600_000 }, () => {
 });
 
 describe("flaccid and erect", () => {
-  it("lengthens the shaft monotonically with the state, for every gender position", () => {
+  it("lengthens the organ monotonically with the state, for every gender position", () => {
     for (const gender of GENDERS) {
-      const recipe = createRecipe({ macros: { age: 30, gender } });
-      const [flaccid, half, erect] = STATES.map((arousal) =>
-        shaftExtent(control, { arousal }, recipe),
-      );
+      const recipe = withOrgan({}, { ...base().macros, gender });
+      const [flaccid, half, erect] = STATES.map((arousal) => reach(surfaced, recipe, { arousal }));
       expect(half, `gender ${gender}`).toBeGreaterThan(flaccid as number);
       expect(erect, `gender ${gender}`).toBeGreaterThan(half as number);
     }
   });
 
-  it("stays an engorgement of the figure's own shaft, reduced, as made, or enlarged", () => {
-    // Aroused is a plausible multiple of the figure's own flaccid shaft at every
-    // size (the measured +43% length, with the circumference share added to the
-    // extent), never one fixed size.
-    const ratios = LEVELS.map((v) => {
-      const recipe = createRecipe({
-        macros: { age: 30, gender: 0.5 },
-        modifiers: { "genitals/penis-length-decr|incr": v },
-      });
-      return shaftExtent(control, { arousal: 1 }, recipe) / shaftExtent(control, {}, recipe);
-    });
-    for (const r of ratios) {
-      expect(r).toBeGreaterThan(1.1);
-      expect(r).toBeLessThan(1.6);
-    }
+  it("stays an engorgement of the figure's own organ, at every size, shorter, as made, or longer", () => {
+    // Aroused is a plausible multiple of the figure's own flaccid organ at every
+    // size (the measured +43% along the top, more from the tip's rise, since it
+    // is reached from the skin), never one fixed size. The organs that erect:
+    // from the key above the smallest up. A shorter one grows by more of its free
+    // length (its dorsal length counts the root's own footprint, which does not grow);
+    // the +43% itself is held on the authored shapes (tests/phallus.test.ts).
+    for (const size of [0.25, 0.45, 0.65, 1])
+      for (const length of [-1, 0, 1]) {
+        const recipe = withOrgan({ [SIZE]: size, "genitals/phallus-length-decr|incr": length });
+        const r = reach(surfaced, recipe, { arousal: 1 }) / reach(surfaced, recipe, {});
+        expect(r, `size ${size} length ${length}`).toBeGreaterThan(1.2);
+        expect(r, `size ${size} length ${length}`).toBeLessThan(2.6);
+      }
   });
 
   it("holds at every adult age, and the state never changes a figure that has not got it set", () => {
     for (const age of AGES) {
-      const recipe = createRecipe({ macros: { age, gender: 0.5 } });
-      expect(shaftExtent(control, { arousal: 1 }, recipe)).toBeGreaterThan(
-        shaftExtent(control, { arousal: 0 }, recipe),
+      const macros = { ...base().macros, age };
+      expect(reach(surfaced, withOrgan({}, macros), { arousal: 1 })).toBeGreaterThan(
+        reach(surfaced, withOrgan({}, macros), { arousal: 0 }),
       );
-      const rest = control.evaluate(recipe).control;
-      expect(Array.from(control.evaluate(recipe, { arousal: 0 }).control)).toEqual(
+      const recipe = createRecipe({ macros });
+      const rest = surfaced.evaluate(recipe).positions;
+      expect(Array.from(surfaced.evaluate(recipe, { arousal: 1 }).positions)).toEqual(
         Array.from(rest),
       );
     }

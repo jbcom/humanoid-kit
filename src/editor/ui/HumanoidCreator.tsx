@@ -21,7 +21,12 @@ import {
 } from "react";
 import { NO_FEATURE } from "../../makehuman/features.ts";
 import { Humanoid, type HumanoidPick, useHumanoidClient } from "../../react/Humanoid.tsx";
-import { STUDIO_EXPOSURE, STUDIO_TONE_MAPPING, StudioStage } from "../../react/StudioStage.tsx";
+import {
+  STUDIO_EXPOSURE,
+  STUDIO_SHADOWS,
+  STUDIO_TONE_MAPPING,
+  StudioStage,
+} from "../../react/StudioStage.tsx";
 import type { Recipe } from "../../recipe/recipe.ts";
 import type { PickMap } from "../../worker/client.ts";
 import { type FrameRequest, frameRequest } from "../framing.ts";
@@ -224,9 +229,9 @@ function CreatorBody({
       setTab(APPEARANCE_TAB);
       return;
     }
-    // A tapped garment opens nothing: the pick map describes the body and the
-    // attachments, not what is worn over them.
-    if (p.part === "garment") return;
+    // A tapped garment or piercing opens nothing: the pick map describes the body
+    // and the attachments, not what is worn on them.
+    if (p.part === "garment" || p.part === "piercing") return;
     const table =
       p.part === "body"
         ? pickMap?.render.body
@@ -257,7 +262,7 @@ function CreatorBody({
       {/* data-pick: whether tapping the figure opens its controls yet (they need the modifier targets). */}
       <div className="hk-stage" data-pick={pickMap ? "ready" : "loading"}>
         <Canvas
-          shadows="percentage"
+          shadows={STUDIO_SHADOWS}
           camera={{ position: [0, 1, 3.4], fov: 32 }}
           gl={{
             toneMapping: STUDIO_TONE_MAPPING,

@@ -20,6 +20,7 @@
 import { AGE_ANCHORS, ageAnchorsOf, DEFAULT_MACROS } from "../makehuman/macro.ts";
 import type { StateMorph } from "../makehuman/stateMorphs.ts";
 import type { AnatomyFeature } from "../recipe/anatomy.ts";
+import { isBodyPiercingSite } from "../recipe/bodyArt.ts";
 
 const MACRO_KEYS = new Set(Object.keys(DEFAULT_MACROS));
 
@@ -284,12 +285,34 @@ export interface BoundAsset {
   hair?: HairFieldData;
 }
 
-/** The kinds of entry the hair pack lists. */
-export const HAIR_KINDS = ["scalp", "brows", "lashes"] as const;
+/**
+ * The kinds of entry the hair pack lists: scalp hair, the brows and lashes
+ * (decals), and generated body hair cards (`beard`: a grown beard's length,
+ * over the coat's dense base; docs/ARCHITECTURE.md, "Body hair").
+ */
+export const HAIR_KINDS = ["scalp", "brows", "lashes", "beard"] as const;
 export type HairKind = (typeof HAIR_KINDS)[number];
 
+/** Kinds whose entries carry the measured strand fields (`HAIR_FIELD_KEYS`). */
+export const STRAND_KINDS: readonly HairKind[] = ["scalp", "beard"];
+
+/**
+ * The buffer a body hair card entry carries beyond a scalp style's: per card
+ * vertex, its card's rank (0..255). A card is drawn while its rank is under the
+ * figure's coverage, so density follows age, sex and the recipe with the same
+ * geometry.
+ */
+export const CARD_FIELD_KEYS = ["rank"] as const;
+
 /** The buffers a hair style's binary carries beyond an attachment's (`src/surface/hairFields.ts`). */
-export const HAIR_FIELD_KEYS = ["growth", "fade", "fin", "scalpVerts", "scalpWeights"] as const;
+export const HAIR_FIELD_KEYS = [
+  "growth",
+  "uvScale",
+  "fade",
+  "fin",
+  "scalpVerts",
+  "scalpWeights",
+] as const;
 
 /**
  * What the packer measured of a hair style against the body at rest: per card
@@ -299,10 +322,14 @@ export const HAIR_FIELD_KEYS = ["growth", "fade", "fin", "scalpVerts", "scalpWei
  */
 export interface HairFieldData {
   growth: Uint16Array;
+  /** Texture units per metre across each card, in 1/16 (`UV_SCALE_STEPS`). */
+  uvScale: Uint16Array;
   fade: Uint8Array;
   fin: Uint8Array;
   scalpVerts: Uint16Array;
   scalpWeights: Uint8Array;
+  /** A body hair card entry's ranks (`CARD_FIELD_KEYS`); absent on scalp hair. */
+  rank?: Uint8Array;
 }
 
 /**
@@ -319,11 +346,14 @@ export interface HairStyleEntry extends Omit<AttachmentEntry, "layout" | "kind">
    */
   kind: HairKind;
   /**
-   * A scalp style's layout holds every `HAIR_FIELD_KEYS` buffer; a decal's
-   * (`brows`, `lashes`) holds none, since it has no hairline, growth or scalp.
+   * A scalp style's layout holds every `HAIR_FIELD_KEYS` buffer; a beard's
+   * cards hold those and `CARD_FIELD_KEYS`; a decal's (`brows`, `lashes`) holds
+   * none, since it has no hairline, growth or scalp.
    */
   layout: AttachmentEntry["layout"] &
-    Partial<Record<(typeof HAIR_FIELD_KEYS)[number], BufferRange>>;
+    Partial<
+      Record<(typeof HAIR_FIELD_KEYS)[number] | (typeof CARD_FIELD_KEYS)[number], BufferRange>
+    >;
   /** What a picker shows. */
   label: string;
   /** What the style is: length, texture, shape (`short`, `curly`, `ponytail`...). */
@@ -435,6 +465,87 @@ export interface AdultAnatomySpec {
    * section 6a). Absent, the pack has only control targets.
    */
   detail?: AdultDetailSpec;
+  /**
+   * Collapsed strips on the adult surface that detail extrudes (docs/research/
+   * ADULT-SCULPT-PLAN.md, section 6b). Needs `surface`; absent, there are none.
+   */
+  reservoirs?: AdultReservoirSpec[];
+  /**
+   * The areas of the coat regions only an adult grows (pubic hair), as data:
+   * the core holds their code and paint, the pack where they grow. Absent,
+   * they grow nowhere.
+   */
+  coatRegions?: AdultCoatRegionSpec[];
+  /**
+   * The piercing sites of the adult anatomy, as data: the core holds the
+   * jewellery and its placement, the pack where the holes are. A recipe names
+   * one by `name` (`Piercing.site`); the age policy refuses any of them under
+   * 18. Their vertices are the detail lattice's (`detail`), which they need.
+   * Absent, the adult anatomy has none.
+   */
+  piercingSites?: AdultPiercingSiteSpec[];
+}
+
+/**
+ * A piercing site on the adult anatomy (`AdultAnatomySpec.piercingSites`).
+ * Its hole is where the figure's evaluated adult surface carries detail-lattice
+ * vertex `vertex` (the vertices `AdultDetailSpec`'s targets address: the
+ * refined region's, then each reservoir's rings), so it follows the detail
+ * that shapes the anatomy.
+ */
+export interface AdultPiercingSiteSpec {
+  /** The site's name in a recipe: not one of the body's own (`PIERCING_SITES`). */
+  name: string;
+  /** The detail-lattice vertex the hole meets the skin at. */
+  vertex: number;
+  /** How the hole runs through the tissue (`PiercingChannel`). */
+  channel: "normal" | "across" | "vertical";
+  /** The tissue the hole crosses, metres: more than 0, at most `PIERCING_DEPTH_MAX`. */
+  depth: number;
+}
+
+/** The thickest tissue a declared piercing site may say its hole crosses, metres. */
+export const PIERCING_DEPTH_MAX = 0.03;
+
+/** The ids of the core's coat regions whose area an adult anatomy pack gives. */
+export const ADULT_COAT_REGION_IDS = ["hair-pubic"] as const;
+
+/** A coat region's area: its mask, sparse over base vertices (0 elsewhere). */
+export interface AdultCoatRegionSpec {
+  /** The core's coat region it is the area of (`ADULT_COAT_REGION_IDS`). */
+  id: string;
+  /** Base vertices in the region, ascending. */
+  vertices: number[];
+  /** Each vertex's mask, 0..1. */
+  mask: number[];
+}
+
+/** A reservoir (`Reservoir` in src/build/reservoir.ts) with the id detail refers to it by. */
+export interface AdultReservoirSpec {
+  id: string;
+  /** Vertices of the refinement mesh round the cap, in order. */
+  loop: number[];
+  /** Polygons of the refinement mesh that make the cap. */
+  cap: number[];
+  /** Collapsed rings between the loop and the cap. */
+  rings: number;
+  /**
+   * Where its skin lies in UV space (`ReservoirIsland`): a grid for the wall and a
+   * disc for the cap, in free space of the body's UV layout, so a skin layer can
+   * colour the tube and tell it from the skin round its root. Absent, the wall is
+   * collapsed in UV and the cap keeps the UVs of the skin it replaced.
+   */
+  island?: {
+    origin: [number, number];
+    across: [number, number];
+    along: [number, number];
+    cap: { centre: [number, number]; radius: number };
+  };
+  /**
+   * The adult skin layer (`AdultSkinLayerSpec.id`) that colours its island: mask 1
+   * over all of it, and the layer's coordinate running from the loop (0) to the tip (1).
+   */
+  layer?: string;
 }
 
 /**
@@ -457,6 +568,27 @@ export interface AdultDetailSpec {
    * scaled by the ratio of the figure's own distance to `rest`. Absent: none.
    */
   scale?: { a: number; b: number; rest: number };
+  /**
+   * Targets whose weight is multiplied by other values: `gates[target]` lists
+   * factors (`src/model/detailFactors.ts`): `mod:<id>` (that modifier's positive
+   * part: how much of a feature there is), `mod-:<id>` (its negative part),
+   * `signal:<name>` (a skin-state signal, 0..1), `ramp:<id>:<x>,<w>;…` (a
+   * piecewise-linear function of a modifier's positive part) or `sramp:<name>:<x>,<w>;…`
+   * (the same of a signal).
+   * A girth change of a shaft is worth nothing without a shaft: its target is
+   * gated by the length modifier, so the two combine as a product and not as a
+   * sum of two independent displacements. A factor that is zero drops the target.
+   */
+  gates?: Record<string, string[]>;
+  /**
+   * Targets whose weight is derived from factors alone, with no modifier of their
+   * own: `drives[target]` lists factors as in `gates`, and the target is worth
+   * their product. A small organ is not a scaled-down large one, so size is a
+   * blend of baked shape keys, each driven by a `ramp` of one size modifier.
+   * Derived weights reach adults only, and a drive may name a modifier that has
+   * no target of its own (`ShapeModifierEntry` with an empty `hi`).
+   */
+  drives?: Record<string, string[]>;
 }
 
 /** Faces of the base body to refine and by how much: `levels[i]` for face `faces[i]`. */
@@ -588,6 +720,65 @@ function expectIndices(arr: ArrayLike<number>, limit: number, what: string): voi
   for (let i = 0; i < arr.length; i++) {
     if ((arr[i] as number) >= limit)
       throw new AssetFormatError(`${what}: index ${arr[i]} is out of range (< ${limit})`);
+  }
+}
+
+/** Refuses an adult pack's coat regions unless each is a known region's well-formed area, once. */
+function checkAdultCoatRegions(regions: readonly AdultCoatRegionSpec[], vertexCount: number): void {
+  const known = new Set<string>(ADULT_COAT_REGION_IDS);
+  const seen = new Set<string>();
+  for (const r of regions) {
+    const what = `adult coat region ${r.id}`;
+    if (!known.has(r.id)) throw new AssetFormatError(`${what}: the core has no such region`);
+    if (seen.has(r.id)) throw new AssetFormatError(`${what}: given twice`);
+    seen.add(r.id);
+    expectLength(r.mask, r.vertices.length, what);
+    for (let i = 0; i < r.vertices.length; i++) {
+      const v = r.vertices[i] as number;
+      const m = r.mask[i] as number;
+      if (
+        !Number.isInteger(v) ||
+        v < 0 ||
+        v >= vertexCount ||
+        (i > 0 && v <= (r.vertices[i - 1] as number))
+      )
+        throw new AssetFormatError(`${what}: vertex ${v} is not ascending within the body`);
+      if (!(m >= 0 && m <= 1)) throw new AssetFormatError(`${what}: mask ${m} is outside 0..1`);
+    }
+  }
+}
+
+/**
+ * Refuses a declared piercing site the core could not place: one without the
+ * detail lattice its vertex is numbered in, a name given twice or that is the
+ * body's own, a channel it does not know, a vertex that is not an index, or a
+ * depth outside (0, `PIERCING_DEPTH_MAX`]. Whether the vertex is in the lattice
+ * is checked once the adult surface is built.
+ */
+function checkAdultPiercingSites(anatomy: AdultAnatomySpec | undefined): void {
+  const sites = anatomy?.piercingSites ?? [];
+  if (sites.length && !anatomy?.detail)
+    throw new AssetFormatError(
+      "adult piercing sites are numbered in the detail lattice, and the pack has no detail spec",
+    );
+  const channels = new Set(["normal", "across", "vertical"]);
+  const seen = new Set<string>();
+  for (const s of sites) {
+    const what = `adult piercing site ${String(s.name)}`;
+    if (typeof s.name !== "string" || s.name === "")
+      throw new AssetFormatError("an adult piercing site has no name");
+    if (isBodyPiercingSite(s.name))
+      throw new AssetFormatError(`${what}: the name is one of the body's own sites`);
+    if (seen.has(s.name)) throw new AssetFormatError(`${what}: given twice`);
+    seen.add(s.name);
+    if (!channels.has(s.channel))
+      throw new AssetFormatError(`${what}: channel ${String(s.channel)} is not one the core knows`);
+    if (!Number.isInteger(s.vertex) || s.vertex < 0)
+      throw new AssetFormatError(`${what}: vertex ${String(s.vertex)} is not an index`);
+    if (!(s.depth > 0 && s.depth <= PIERCING_DEPTH_MAX))
+      throw new AssetFormatError(
+        `${what}: depth ${String(s.depth)} is outside (0, ${PIERCING_DEPTH_MAX}]`,
+      );
   }
 }
 
@@ -815,13 +1006,17 @@ export function addHairStyle(assets: HumanoidAssets, id: string, bin: ArrayBuffe
     occlusion,
   };
   // Brows and lashes are decals: nothing measured of strands or a scalp.
-  if (entry.kind !== "scalp") {
-    for (const key of HAIR_FIELD_KEYS)
+  if (!STRAND_KINDS.includes(entry.kind)) {
+    for (const key of [...HAIR_FIELD_KEYS, ...CARD_FIELD_KEYS])
       if (l[key])
         throw new AssetFormatError(what(`${key}: a ${entry.kind} style has no scalp fields`));
     assets.hair.bound.set(id, base);
     return base;
   }
+  // Only body hair cards carry ranks.
+  const cards = entry.kind === "beard";
+  if (!cards && l.rank) throw new AssetFormatError(what("rank: only body hair cards have ranks"));
+  if (cards && !l.rank) throw new AssetFormatError(what("rank is missing"));
   const field = (key: (typeof HAIR_FIELD_KEYS)[number]): BufferRange => {
     const range = l[key];
     if (!range) throw new AssetFormatError(what(`${key} is missing`));
@@ -829,12 +1024,16 @@ export function addHairStyle(assets: HumanoidAssets, id: string, bin: ArrayBuffe
   };
   const hair: HairFieldData = {
     growth: view(Uint16Array, bin, field("growth"), what("growth")),
+    uvScale: view(Uint16Array, bin, field("uvScale"), what("uvScale")),
     fade: view(Uint8Array, bin, field("fade"), what("fade")),
     fin: view(Uint8Array, bin, field("fin"), what("fin")),
     scalpVerts: view(Uint16Array, bin, field("scalpVerts"), what("scalpVerts")),
     scalpWeights: view(Uint8Array, bin, field("scalpWeights"), what("scalpWeights")),
+    ...(l.rank && { rank: view(Uint8Array, bin, l.rank, what("rank")) }),
   };
+  if (hair.rank) expectLength(hair.rank, entry.vertexCount, what("rank"));
   expectLength(hair.growth, entry.vertexCount, what("growth"));
+  expectLength(hair.uvScale, entry.vertexCount, what("uvScale"));
   expectLength(hair.fade, entry.vertexCount, what("fade"));
   expectLength(hair.fin, entry.vertexCount, what("fin"));
   expectLength(hair.scalpWeights, hair.scalpVerts.length, what("scalpWeights"));
@@ -914,6 +1113,8 @@ export function parseHumanoidAssets(
     if (a.topology !== manifest.topology || a.bodySha256 !== manifest.body.sha256) {
       throw new AssetFormatError("the adult anatomy pack was built for a different body pack");
     }
+    checkAdultCoatRegions(a.anatomy?.coatRegions ?? [], manifest.vertexCount);
+    checkAdultPiercingSites(a.anatomy);
     for (const m of a.modifiers) modifiers.set(m.id, m);
   }
   // Merging also orders tasks by sortOrder; the manifest keeps upstream's file order.
@@ -1042,7 +1243,7 @@ export function pendingTargetFiles(assets: HumanoidAssets, names: Iterable<strin
   return out;
 }
 
-async function fetchOk(url: string): Promise<Response> {
+export async function fetchOk(url: string): Promise<Response> {
   const res = await fetch(url);
   if (!res.ok)
     throw new AssetFormatError(`fetching ${url} failed: ${res.status} ${res.statusText}`);
@@ -1058,7 +1259,10 @@ export type PackLocation =
   | string
   | { readonly manifest: string; readonly files: Readonly<Record<string, string>> };
 
-function packResolver(pack: PackLocation): { manifest: string; file: (name: string) => string } {
+export function packResolver(pack: PackLocation): {
+  manifest: string;
+  file: (name: string) => string;
+} {
   if (typeof pack === "string") {
     const base = pack.endsWith("/") ? pack : `${pack}/`;
     return { manifest: `${base}manifest.json`, file: (name) => base + name };
@@ -1115,7 +1319,7 @@ export interface StagedHumanoidAssets {
 
 /** Some hosts serve `.gz` files with `Content-Encoding: gzip`, so the browser has
  * already decompressed them; only data that still starts with gzip's magic is decoded. */
-const fetchGzip = (url: string) =>
+export const fetchGzip = (url: string) =>
   fetchOk(url)
     .then((r) => r.arrayBuffer())
     .then((b) => {

@@ -107,10 +107,40 @@ hair is 0.05 to 0.1 mm), not measured per region here.
 
 Otberg et al. (J Invest Dermatol 122:14, 2004), as quoted by McPhetres et al.
 2024 and used by the goosebumps layer: follicles per cm² run from 14 (calf) to
-32 (upper arm), with the forehead far higher. The strand layer spaces its
-strands at a region's follicle density times its terminal coverage. The
-figures per region beyond those two ends could not be read from the paper
-(not retrieved); the values between are **choices** on that range.
+32 (upper arm), with the forehead far higher. The strand layers place one root
+per follicle and draw a strand from a share of them equal to the terminal
+coverage. The figures per region beyond those two ends could not be read from
+the paper (not retrieved), so the kit's (`BODY_HAIR_DENSITY`: chest and
+abdomen 22, back 26, buttocks 20, arms 25, legs 16) are **choices** on that
+range, and the beard's 60, the armpit's 60 and the pubis's 40 are **choices**
+above it, for the denser, coarser hair there.
+
+Vellus (`VELLUS`): under 30 µm across and 2 mm long by definition; 50
+follicles per cm² is a **choice** between the body's range and the forehead's.
+Every measured skin colour includes its vellus, so the vellus layer adds no
+mean colour; its strands show only in close views.
+
+Beard lengths: stubble is about 1 mm, a few days at the roughly 0.3 mm a day
+beard hair grows (recalled, not verified here); grown styles' 10 to 20 mm are
+**choices**.
+
+## Pubic hair
+
+Where it grows is the adult anatomy pack's data, measured on the base mesh by
+`scripts/lib/adultCoat.ts` in the frame of the mons, taken from the base mesh
+alone (the packer has no adult targets when it measures): on the midline's
+skin 9.6 cm below the hip joints' height, which is the height of the mons
+target's displacement-weighted centre, held there by a unit test. The shape is the adult pattern Tanner stage 5
+describes (the Tanner staging cited above): a triangle over the mons,
+level along its top, narrowing to the crotch and spreading onto the inner
+thighs' edges, on to the perineum. Its numbers are **choices** fitted to that
+description and this mesh, not measurements: the hairline 7.5 cm above the
+mons' centre (the mons target reaches 5.4 cm above it), a half-width of 7.5 cm
+there narrowing to 2 cm at the crotch 5 cm below the centre, the hair ending
+11 cm below it, and every edge easing over at least a centimetre. The male
+pattern's climb up the linea toward the navel is not this mask's: the trunk's
+abdomen region holds it, and the model's coverage by sex and age says how much
+grows on either.
 
 ## What is not here
 

@@ -4,16 +4,39 @@
  */
 import { describe, expect, it } from "vitest";
 import { jointPosition } from "../src/format/assetFormat.ts";
-import { buildLayerFields, type DetailLayer, type SkinPaintInput } from "../src/surface/layers.ts";
+import { labFromLinear } from "../src/surface/cielab.ts";
+import {
+  buildLayerFields,
+  type ColourLayer,
+  type DetailLayer,
+  type SkinPaintInput,
+} from "../src/surface/layers.ts";
 import { CREASE_LAYERS } from "../src/surface/regions/creases.ts";
 import {
+  CROWS_FEET_STOPS,
+  distanceFromBrows,
   EXPRESSION_COUNT,
   EXPRESSION_DEPTH,
   EXPRESSION_LINE_LAYERS,
   expressionAgeFactor,
   expressionLineId,
+  FOREHEAD_FROM,
+  FOREHEAD_SPAN,
+  FOREHEAD_STOPS,
+  FOREHEAD_WARP_MAX,
+  FURROW_FROM,
+  FURROW_TO,
+  foreheadCoordinate,
+  foreheadUnbroken,
+  GLABELLA_HALF,
+  GLABELLA_STOPS,
+  LINE_DARKENING_MAX,
+  LINE_RELIEF,
+  lineShade,
+  NASOLABIAL_STOPS,
 } from "../src/surface/regions/faceLines.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
+import { type Rgb, skinAlbedo } from "../src/surface/skinTone.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets();
@@ -50,16 +73,23 @@ const input = (signals: Record<string, number> = {}, age?: number): SkinPaintInp
   signals,
   ...(age !== undefined && { age }),
 });
-const layer = (id: string): DetailLayer => {
+const layer = (id: string): DetailLayer | ColourLayer => {
   const l = EXPRESSION_LINE_LAYERS.find((x) => x.id === id);
   if (!l) throw new Error(`no layer ${id}`);
+  return l;
+};
+/** The forehead's and the furrows' lines are colour (thin lines on an exactly linear coordinate); the rest relief. */
+const isColourLine = (id: string) => id !== "lines.nose";
+const detailLayer = (id: string): DetailLayer => {
+  const l = layer(id);
+  if (l.kind !== "detail") throw new Error(`${id} is not a relief layer`);
   return l;
 };
 const strength = (id: string, signals: Record<string, number>, age = 40) =>
   layer(id).paint(input(signals, age)).strength;
 
 describe("the expression line layers", () => {
-  it("are crease layers after the joints', each with an id of its own", () => {
+  it("are layers after the joints', each with an id of its own: the forehead's and the furrows' lines of colour, the rest crease relief", () => {
     expect(EXPRESSION_LINE_LAYERS.map((l) => l.id)).toEqual([
       "lines.forehead",
       "lines.crows-feet",
@@ -68,8 +98,12 @@ describe("the expression line layers", () => {
       "lines.nose",
     ]);
     for (const l of EXPRESSION_LINE_LAYERS) {
-      expect(l.kind).toBe("detail");
-      expect(l.pattern).toBe("creases");
+      if (isColourLine(l.id)) {
+        expect(l.kind ?? "colour", l.id).toBe("colour");
+        expect((l as ColourLayer).blend, l.id).toBe("multiply");
+      } else {
+        expect(detailLayer(l.id).pattern, l.id).toBe("creases");
+      }
     }
     const ids = SKIN_LAYERS.map((l) => l.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -105,10 +139,12 @@ describe("the expression line layers", () => {
       switch (id) {
         // Frontalis lines stop 5 to 7 cm above the brows, and fade toward the temples.
         case "lines.forehead":
-          return y <= b[1] + 0.065 && y >= b[1] && Math.abs(x) <= 0.06;
+          return y <= b[1] + FOREHEAD_FROM + FOREHEAD_SPAN && y >= b[1] && Math.abs(x) <= 0.066;
         // Glabellar lines are short: 1 to 2.5 cm, between and just above the inner brows.
         case "lines.glabella":
-          return y <= b[1] + 0.028 && y >= (eye[1] as number) && Math.abs(x) <= 0.02;
+          return (
+            y <= b[1] + FURROW_TO && y >= b[1] + FURROW_FROM - 0.004 && Math.abs(x) <= GLABELLA_HALF
+          );
         case "lines.crows-feet":
           return Math.hypot(Math.abs(x) - o[0], y - o[1], z - o[2]) <= 0.036;
         case "lines.nasolabial":
@@ -142,9 +178,9 @@ describe("the expression line layers", () => {
     ];
     for (const [i, v] of covered.entries()) {
       const [x, y] = pos(v) as [number, number];
-      expect(y, `vertex ${v}`).toBeGreaterThan((brow[1] as number) + 0.008);
-      expect(y, `vertex ${v}`).toBeLessThan((brow[1] as number) + 0.075);
-      expect(Math.abs(x), `vertex ${v}`).toBeLessThan(0.065);
+      expect(y, `vertex ${v}`).toBeGreaterThan(brow[1] as number);
+      expect(y, `vertex ${v}`).toBeLessThan((brow[1] as number) + FOREHEAD_FROM + FOREHEAD_SPAN);
+      expect(Math.abs(x), `vertex ${v}`).toBeLessThan(0.066);
       sxy += ((ys[i] as number) - my) * ((cs[i] as number) - mc);
     }
     expect(sxy, "the coordinate rises with the skin").toBeGreaterThan(0);
@@ -153,14 +189,14 @@ describe("the expression line layers", () => {
   it("put the glabella's furrows between the brows, running across them", () => {
     const l = index("lines.glabella");
     const covered = strong(l);
-    expect(covered.length).toBeGreaterThan(10);
+    expect(covered.length).toBeGreaterThan(5);
     const xs = covered.map((v) => pos(v)[0] as number);
     const cs = covered.map((v) => coord(l, v));
     for (const v of covered) {
       const [x, y] = pos(v) as [number, number];
-      expect(Math.abs(x), `vertex ${v}`).toBeLessThan(0.02);
-      expect(y, `vertex ${v}`).toBeGreaterThan(eye[1] as number);
-      expect(y, `vertex ${v}`).toBeLessThan((brow[1] as number) + 0.04);
+      expect(Math.abs(x), `vertex ${v}`).toBeLessThan(GLABELLA_HALF);
+      expect(y, `vertex ${v}`).toBeGreaterThan((brow[1] as number) + FURROW_FROM - 0.004);
+      expect(y, `vertex ${v}`).toBeLessThan((brow[1] as number) + FURROW_TO);
     }
     const [mx, mc] = [
       xs.reduce((a, b) => a + b) / xs.length,
@@ -318,10 +354,15 @@ describe("the expression lines' paint", () => {
       last = f(age);
     }
     expect(expressionAgeFactor(undefined)).toBe(expressionAgeFactor(30));
-    const h = (age: number) => layer("lines.glabella").paint(input({ "face.browFurrow": 1 }, age));
-    expect((h(6) as { height: number }).height).toBeLessThan(
-      (h(40) as { height: number }).height * 0.3,
-    );
+    // A line of colour darkens by a fraction that grows with age, and never past the most.
+    const dark = (age: number) => 1 - (lineShade(age)[0] as number);
+    expect(dark(6)).toBeLessThan(dark(40) * 0.3);
+    expect(dark(75)).toBeGreaterThan(dark(40));
+    for (const age of [1, 6, 25, 40, 75, 95])
+      for (const c of lineShade(age)) {
+        expect(c).toBeLessThanOrEqual(1);
+        expect(c).toBeGreaterThanOrEqual(1 - LINE_DARKENING_MAX);
+      }
   });
 
   it("are fractions of a millimetre and a few grooves, as a face's are", () => {
@@ -331,13 +372,304 @@ describe("the expression lines' paint", () => {
     }
     for (const [set, count] of Object.entries(EXPRESSION_COUNT)) {
       expect(count, set).toBeGreaterThanOrEqual(1);
-      expect(count, set).toBeLessThanOrEqual(4);
+      expect(count, set).toBeLessThanOrEqual(5);
     }
-    const paint = layer("lines.forehead").paint(input({ "face.browRaise": 1 }, 40)) as {
+    const paint = detailLayer("lines.nose").paint(input({ "face.noseWrinkle": 1 }, 40)) as {
       height: number;
       size: number;
     };
-    expect(paint.height).toBe(EXPRESSION_DEPTH.forehead);
-    expect(paint.size).toBe(EXPRESSION_COUNT.forehead);
+    expect(paint.height).toBe(EXPRESSION_DEPTH.nose);
+    expect(paint.size).toBe(EXPRESSION_COUNT.nose);
+  });
+});
+
+describe("the distance along the skin from the brows", () => {
+  it("is a metric: no edge between two reached vertices changes it by more than the edge's length", () => {
+    // Stored in single precision it was not: a vertex's stored distance rounded below the
+    // distance it was queued with, so it never relaxed its neighbours, and the forehead's
+    // midline (and with it the centre of its lines) was never reached.
+    const d = distanceFromBrows(assets);
+    let reached = 0;
+    for (let q = 0; q < assets.faceVerts.length / 4; q++)
+      for (let k = 0; k < 4; k++) {
+        const a = assets.faceVerts[q * 4 + k] as number;
+        const b = assets.faceVerts[q * 4 + ((k + 1) % 4)] as number;
+        if (a >= BODY || b >= BODY || !Number.isFinite(d[a] as number)) continue;
+        const edge = Math.hypot(
+          (P[a * 3] as number) - (P[b * 3] as number),
+          (P[a * 3 + 1] as number) - (P[b * 3 + 1] as number),
+          (P[a * 3 + 2] as number) - (P[b * 3 + 2] as number),
+        );
+        reached++;
+        // A neighbour of a reached vertex is reached too, when it is skin of the face.
+        if (Number.isFinite(d[b] as number))
+          expect(Math.abs((d[a] as number) - (d[b] as number))).toBeLessThanOrEqual(edge + 1e-9);
+      }
+    expect(reached).toBeGreaterThan(100);
+  });
+
+  it("reaches the forehead's midline, up to the top of the forehead's lines", () => {
+    const d = distanceFromBrows(assets);
+    const top = (brow[1] as number) + FOREHEAD_FROM + FOREHEAD_SPAN;
+    let n = 0;
+    for (let v = 0; v < BODY; v++) {
+      const [x, y, z] = pos(v) as [number, number, number];
+      if (Math.abs(x) > 0.001 || y < (brow[1] as number) + 0.01 || y > top - 0.01 || z < 0.1)
+        continue;
+      expect(d[v], `midline vertex ${v} at y ${y.toFixed(3)}`).toBeLessThan(0.1);
+      n++;
+    }
+    expect(n).toBeGreaterThan(5);
+  });
+});
+
+describe("the forehead's and the furrows' lines of colour", () => {
+  it("carry a coordinate that is a smooth function of position: the forehead's is height bent by a bounded sag, wave and uneven spacing, the furrows' exactly linear across", () => {
+    const f = index("lines.forehead");
+    const g = index("lines.glabella");
+    let nf = 0;
+    let ng = 0;
+    for (let v = 0; v < BODY; v++) {
+      const [x, y] = pos(v) as [number, number];
+      // Where the line can fall: the mask is more than a trace, so no vertex is stored clamped.
+      if (mask(f, v) > 0.02) {
+        expect(coord(f, v), `forehead vertex ${v}`).toBeCloseTo(
+          foreheadCoordinate(brow[1] as number, x, y),
+          5,
+        );
+        // Bounded: a line is still a forehead's horizontal line, off straight by millimetres.
+        const straight = (y - ((brow[1] as number) + FOREHEAD_FROM)) / FOREHEAD_SPAN;
+        expect(
+          Math.abs(coord(f, v) - straight) * FOREHEAD_SPAN,
+          `forehead vertex ${v} off straight, metres`,
+        ).toBeLessThanOrEqual(FOREHEAD_WARP_MAX + 1e-6);
+        nf++;
+      }
+      if (mask(g, v) > 0.02) {
+        expect(coord(g, v), `furrow vertex ${v}`).toBeCloseTo(
+          (x + GLABELLA_HALF) / (2 * GLABELLA_HALF),
+          5,
+        );
+        ng++;
+      }
+    }
+    expect(nf).toBeGreaterThan(8);
+    expect(ng).toBeGreaterThan(4);
+  });
+
+  it("are smooth curves (forehead) and straight lines (furrows) across the base mesh's triangles, to within a millimetre of the coordinate's own function", () => {
+    // What the rasteriser does: interpolate the three vertices' coordinates across each
+    // triangle (a quad is two, whichever way it is split), then cut the surface by a plane.
+    const check = (
+      id: string,
+      axis: 0 | 1,
+      span: number,
+      cuts: number[],
+      want: (x: number, y: number) => number,
+    ) => {
+      const l = index(id);
+      let crossings = 0;
+      let worst = 0;
+      for (let q = 0; q < assets.faceVerts.length / 4; q++) {
+        const [a, b, c, d] = [0, 1, 2, 3].map((k) => assets.faceVerts[q * 4 + k] as number) as [
+          number,
+          number,
+          number,
+          number,
+        ];
+        for (const tri of [
+          [a, b, c],
+          [a, c, d],
+          [a, b, d],
+          [b, c, d],
+        ] as const) {
+          if (tri.some((v) => v >= BODY || mask(l, v) <= 0.02)) continue;
+          for (const cut of cuts)
+            for (let e = 0; e < 3; e++) {
+              const u = tri[e] as number;
+              const w = tri[(e + 1) % 3] as number;
+              const pu = P[u * 3 + axis] as number;
+              const pw = P[w * 3 + axis] as number;
+              if ((pu - cut) * (pw - cut) >= 0) continue;
+              const t = (cut - pu) / (pw - pu);
+              const got = coord(l, u) + t * (coord(l, w) - coord(l, u));
+              const at = (k: number) =>
+                (P[u * 3 + k] as number) +
+                t * ((P[w * 3 + k] as number) - (P[u * 3 + k] as number));
+              worst = Math.max(worst, Math.abs(got - want(at(0), at(1))) * span);
+              crossings++;
+            }
+        }
+      }
+      expect(crossings, `${id} crossings`).toBeGreaterThan(5);
+      expect(worst, `${id}: worst departure from constant, metres`).toBeLessThan(0.001);
+    };
+    const bandFrom = (brow[1] as number) + FOREHEAD_FROM;
+    // The forehead's lines are smooth curves: the coordinate across a triangle is the smooth
+    // function's value at that point to within a millimetre (the wave, 1.5 mm over 5 cm, sampled by a centimetre of mesh), at each line's height.
+    check(
+      "lines.forehead",
+      1,
+      FOREHEAD_SPAN,
+      FOREHEAD_STOPS.map((k) => bandFrom + (k / 7) * FOREHEAD_SPAN),
+      (x, y) => foreheadCoordinate(brow[1] as number, x, y),
+    );
+    // The furrows' are straight: exactly linear across.
+    check(
+      "lines.glabella",
+      0,
+      2 * GLABELLA_HALF,
+      GLABELLA_STOPS.map((k) => -GLABELLA_HALF + (k / 7) * 2 * GLABELLA_HALF),
+      (x) => (x + GLABELLA_HALF) / (2 * GLABELLA_HALF),
+    );
+  });
+
+  it("put the forehead's lines 2 to 6 cm above the brows, evenly, and the furrows 2 cm apart about the midline", () => {
+    const heights = FOREHEAD_STOPS.map((k) => FOREHEAD_FROM + (k / 7) * FOREHEAD_SPAN);
+    expect(FOREHEAD_STOPS.length).toBeGreaterThanOrEqual(3);
+    expect(FOREHEAD_STOPS.length).toBeLessThanOrEqual(5);
+    for (const h of heights) {
+      expect(h).toBeGreaterThan(0.015);
+      expect(h).toBeLessThan(0.065);
+    }
+    // Not at an end stop (a line there sits where the coordinate is clamped), and evenly spaced.
+    expect(FOREHEAD_STOPS.every((k) => k > 0 && k < 7)).toBe(true);
+    const gaps = FOREHEAD_STOPS.slice(1).map((k, i) => k - (FOREHEAD_STOPS[i] as number));
+    expect(new Set(gaps).size).toBe(1);
+    const xs = GLABELLA_STOPS.map((k) => -GLABELLA_HALF + (k / 7) * 2 * GLABELLA_HALF);
+    expect(xs).toHaveLength(2);
+    expect((xs[0] as number) + (xs[1] as number)).toBeCloseTo(0, 9);
+    expect((xs[1] as number) - (xs[0] as number)).toBeGreaterThan(0.015);
+    expect((xs[1] as number) - (xs[0] as number)).toBeLessThan(0.025);
+  });
+
+  it("hold a line's shade only at its stops, and leave the rest as the skin is", () => {
+    for (const [id, stops] of [
+      ["lines.forehead", FOREHEAD_STOPS],
+      ["lines.glabella", GLABELLA_STOPS],
+    ] as const) {
+      const p = layer(id).paint(input({ "face.browRaise": 1, "face.browFurrow": 1 }, 60));
+      if (!("stops" in p)) throw new Error(`${id} paints no colour stops`);
+      expect(p.stops).toHaveLength(8);
+      p.stops.forEach((c, k) => {
+        if (stops.includes(k)) expect(c[0] as number, `${id} stop ${k}`).toBeLessThan(0.85);
+        else expect(c, `${id} stop ${k}`).toEqual([1, 1, 1]);
+      });
+    }
+  });
+
+  it("keep a furrow short, 1.5 to 2.5 cm, with soft ends, and the forehead's lines below the hairline", () => {
+    const g = index("lines.glabella");
+    const f = index("lines.forehead");
+    let top = Number.NEGATIVE_INFINITY;
+    let bottom = Number.POSITIVE_INFINITY;
+    let fTop = Number.NEGATIVE_INFINITY;
+    for (let v = 0; v < BODY; v++) {
+      const y = P[v * 3 + 1] as number;
+      if (mask(g, v) > 0.5) {
+        top = Math.max(top, y);
+        bottom = Math.min(bottom, y);
+      }
+      if (mask(f, v) > 0.5) fTop = Math.max(fTop, y);
+    }
+    // Where a furrow holds at more than half strength: its plateau, 1.5 to 3 cm of height.
+    expect(top - bottom, "furrow plateau, metres").toBeGreaterThan(0.01);
+    expect(top - bottom, "furrow plateau, metres").toBeLessThan(0.03);
+    expect(top, "furrow's top, above the brow joints").toBeLessThanOrEqual(
+      (brow[1] as number) + FURROW_TO,
+    );
+    // The forehead's lines stop 6.2 cm above the brows' joints at the highest, short of the hairline.
+    expect(fTop - (brow[1] as number), "forehead lines' top, metres").toBeLessThanOrEqual(0.062);
+  });
+
+  it("break up toward the temples and not at the centre", () => {
+    let centre = 1;
+    let broken = 0;
+    let whole = 0;
+    for (let x = -0.066; x <= 0.066; x += 0.002)
+      for (let y = 0.7; y <= 0.9; y += 0.002) {
+        const u = foreheadUnbroken(x, y);
+        expect(u).toBeGreaterThanOrEqual(0.1 - 1e-9);
+        expect(u).toBeLessThanOrEqual(1);
+        if (Math.abs(x) < 0.025) centre = Math.min(centre, u);
+        else if (Math.abs(x) > 0.045) {
+          if (u < 0.3) broken++;
+          else if (u > 0.9) whole++;
+        }
+      }
+    expect(centre, "the centre's lines never break").toBe(1);
+    // Toward the temples some of the forehead is broken and some whole: lines that stop and start.
+    expect(broken).toBeGreaterThan(100);
+    expect(whole).toBeGreaterThan(100);
+  });
+
+  it("read on every tone: a line darkens the skin by as many lightness steps on the deepest tone as on the fairest, at every age", () => {
+    for (const age of [25, 40, 75]) {
+      const drops = [0.05, 0.35, 0.7, 1].map((melanin) => {
+        const tone = { melanin, haemoglobin: 0.5, undertone: 0, override: null };
+        const skin = skinAlbedo(tone);
+        const line = lineShade(age, tone);
+        return (
+          (labFromLinear(skin)[0] as number) -
+          (labFromLinear(skin.map((c, k) => c * (line[k] as number)) as Rgb)[0] as number)
+        );
+      });
+      // CIELAB lightness, the step the eye reads, not a fraction of albedo.
+      expect(
+        Math.min(...drops) / Math.max(...drops),
+        `age ${age}: ${drops.join(", ")}`,
+      ).toBeGreaterThan(0.6);
+      expect(Math.min(...drops), `age ${age}`).toBeGreaterThan(3);
+    }
+  });
+
+  it("cut a groove at each line's stops and nowhere else, deeper with age and within a millimetre, in the shade the tone calls for", () => {
+    for (const [id, stops, depth] of [
+      ["lines.forehead", FOREHEAD_STOPS, LINE_RELIEF.forehead],
+      ["lines.glabella", GLABELLA_STOPS, LINE_RELIEF.glabella],
+      ["lines.crows-feet", CROWS_FEET_STOPS, LINE_RELIEF.crowsFeet],
+      ["lines.nasolabial", NASOLABIAL_STOPS, LINE_RELIEF.nasolabial],
+    ] as const) {
+      const signals = {
+        "face.browRaise": 1,
+        "face.browFurrow": 1,
+        "face.squint": 1,
+        "face.nasolabial": 1,
+      };
+      const at = (age: number) => {
+        const p = layer(id).paint(input(signals, age));
+        if (!("relief" in p) || !p.relief) throw new Error(`${id} paints no relief`);
+        return p;
+      };
+      const forty = at(40);
+      (forty.relief as readonly number[]).forEach((d, k) => {
+        if (stops.includes(k))
+          expect(d, `${id} stop ${k}`).toBeCloseTo(depth * expressionAgeFactor(40), 9);
+        else expect(d, `${id} stop ${k}`).toBe(0);
+      });
+      // The shade at a stop is the tone's (the same lightness step at every tone).
+      const tone = input(signals, 40).tone;
+      forty.stops.forEach((c, k) => {
+        if (stops.includes(k)) expect(c, `${id} stop ${k}`).toEqual(lineShade(40, tone));
+        else expect(c, `${id} stop ${k}`).toEqual([1, 1, 1]);
+      });
+      const peak = (age: number) => Math.max(...(at(age).relief as readonly number[]));
+      expect(peak(6)).toBeLessThan(peak(40) * 0.3);
+      expect(peak(75)).toBeGreaterThan(peak(40));
+      expect(peak(90)).toBeLessThan(0.001);
+    }
+  });
+
+  it("are deepest at the forehead's centre, weaker toward the temples", () => {
+    const f = index("lines.forehead");
+    const at = (lo: number, hi: number) => {
+      const m: number[] = [];
+      for (let v = 0; v < BODY; v++) {
+        const x = Math.abs(P[v * 3] as number);
+        if (x >= lo && x < hi && mask(f, v) > 0.02) m.push(mask(f, v));
+      }
+      return m.reduce((a, b) => a + b, 0) / Math.max(1, m.length);
+    };
+    expect(at(0, 0.015)).toBeGreaterThan(at(0.04, 0.066));
   });
 });

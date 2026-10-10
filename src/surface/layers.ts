@@ -14,7 +14,10 @@
  * the shader that applies the table is fixed.
  */
 import { AssetFormatError, type HumanoidAssets, type SparseTarget } from "../format/assetFormat.ts";
+import type { BodyHairRecipe } from "./bodyHair.ts";
+import type { HairColour } from "./hairTone.ts";
 import type { Rgb, SkinTone } from "./skinTone.ts";
+import type { FigureBuild } from "./torsoTone.ts";
 
 /** What a layer's paint is computed from. */
 export interface SkinPaintInput {
@@ -26,6 +29,18 @@ export interface SkinPaintInput {
    * without it still paints.
    */
   age?: number;
+  /**
+   * The figure's other macros the torso's layers read (`FigureBuild`): sex,
+   * weight, height, muscle and breast size. Absent entries are the default
+   * macros, so an input built without them still paints.
+   */
+  build?: Partial<Omit<FigureBuild, "age">>;
+  /**
+   * How much larger the figure's skin round the nipple is than the base mesh's
+   * (`areolaStretch`, measured on its evaluated shape), so the areola's size in
+   * metres can be put on the base mesh's field. Absent is 1.
+   */
+  areolaScale?: number;
   /** The recipe's regional skin parameters (0..1 each). */
   flush: number;
   lips: number;
@@ -44,6 +59,15 @@ export interface SkinPaintInput {
    * present; absent is none.
    */
   anatomy?: Readonly<Record<string, number>>;
+  /**
+   * The gender macro (`recipe.macros.gender`), read by body hair as the
+   * androgen level; absent is the default macro's 0.5.
+   */
+  gender?: number;
+  /** The figure's hair pigments (`recipe.hair.colour`); absent is `DEFAULT_HAIR_COLOUR`. */
+  hairColour?: HairColour;
+  /** The recipe's body hair (`recipe.bodyHair`); absent is the default for age and sex. */
+  bodyHair?: BodyHairRecipe;
 }
 
 export interface SkinLayerPaint {
@@ -51,6 +75,34 @@ export interface SkinLayerPaint {
   strength: number;
   /** Colours at evenly spaced points along the layer's coordinate (1 to `STOP_COUNT`). */
   stops: readonly Rgb[];
+  /**
+   * Groove depth in metres at each stop, evenly spaced as the stops are (same
+   * length rule; at most `stops.length` of them, the rest taken as 0): a line of
+   * colour that also shades. The shader tilts the normal by the gradient of this
+   * profile along the layer's coordinate, per pixel (`lineRelief`), so a thin line
+   * is lit on one side and shadowed on the other, which reads on any tone where a
+   * darker colour alone does not. Absent is no relief.
+   */
+  relief?: readonly number[];
+}
+
+/** The shape of a relief profile between two stops: smooth, so a line has no kink to catch the light. */
+export const reliefProfile = (t: number): number => t * t * (3 - 2 * t);
+
+/**
+ * A colour layer's relief at a point (metres, negative: a groove): the stops'
+ * depths (`SkinLayerPaint.relief`, resampled to `STOP_COUNT` as the table holds
+ * them) interpolated along the coordinate and smoothed (`reliefProfile`). The
+ * reference the shader's colour-layer relief is held to.
+ */
+export function lineRelief(depths: readonly number[], coord: number): number {
+  const peak = Math.max(0, ...depths);
+  if (peak === 0) return 0;
+  const x = Math.min(1, Math.max(0, coord)) * (depths.length - 1);
+  const i = Math.min(Math.floor(x), depths.length - 2);
+  const f = x - i;
+  const d = (depths[i] as number) + ((depths[i + 1] as number) - (depths[i] as number)) * f;
+  return -peak * reliefProfile(d / peak);
 }
 
 /** Procedural relief: its strength and its size in metres. */
@@ -63,6 +115,21 @@ export interface DetailPaint {
    * about 0.002). `creases`: how many creases span the layer's coordinate.
    */
   size: number;
+  /**
+   * For a layer that declares a profile (`DetailLayer.profiled`, and every
+   * `tubercles` layer): the relief's amplitude (0..1) at evenly spaced points
+   * along the layer's coordinate, 1 to `STOP_COUNT` of them, resampled like a
+   * colour layer's stops. For `tubercles` it is the share of cells that raise
+   * a tubercle. It is how a relief whose extent depends on the figure (an
+   * areola's, which grows with age) takes its window from the paint.
+   */
+  profile?: readonly number[];
+  /**
+   * For a `striae` layer, and only for one: the share of the skin marked (0..1,
+   * `striaeAmount`) and the colour of a mark as a ratio to the skin it is on
+   * (`striaeColour`): stretch marks colour the skin where they are as well as cut it.
+   */
+  striae?: { amount: number; ratio: Rgb };
 }
 
 /** How a layer changes the surface's reflection where its mask lies. */
@@ -72,6 +139,32 @@ export interface SurfacePaint {
   roughness: number;
   /** Added to the skin's specular intensity at full strength. */
   specular: number;
+}
+
+/**
+ * Hair lying on the skin, drawn in the shader as fine strands at true scale
+ * along the body's hair flow (`StrandLayer`).
+ */
+export interface StrandPaint {
+  /** Coverage, 0..1: the fraction of follicles that carry this hair. */
+  strength: number;
+  /** The hair's albedo, linear RGB. */
+  colour: Rgb;
+  /** Follicles per cm². */
+  density: number;
+  /** A strand's length, metres (strands vary from half of it to all of it). */
+  length: number;
+  /** A strand's diameter, metres. */
+  width: number;
+  /** How far a strand stands off the skin, metres (the relief it adds). */
+  height: number;
+  /**
+   * The hair is part of what skin colour was measured with (vellus, which
+   * every measured patch of skin carries), so its mean cover is already in the
+   * skin's albedo: only its strands up close are drawn, and from afar it adds
+   * nothing. Absent is false.
+   */
+  inSkinAlbedo?: boolean;
 }
 
 export interface SkinLayerFields {
@@ -97,6 +190,12 @@ interface LayerBase {
    * `feature` (`SkinPaintInput.anatomy`), so no layer can forget the gate.
    */
   adult?: { feature: string };
+  /**
+   * The layer lies on all the skin (vellus): its mask is 1 everywhere and it
+   * takes no channel of the field atlas (`planAtlas` gives it none). Its
+   * `fields` must say the same: a mask of 1 and no coordinate.
+   */
+  everywhere?: true;
   /**
    * Whether the data the fields are measured from has loaded; absent means
    * always. An adult layer's targets arrive in the adult pack's last stage, or
@@ -142,9 +241,19 @@ export interface ColourLayer extends LayerBase {
  */
 export interface DetailLayer extends LayerBase {
   kind: "detail";
-  pattern: "bumps" | "creases" | "ridges";
+  pattern: "bumps" | "creases" | "ridges" | "tubercles" | "striae";
+  /**
+   * The layer's coordinate carries an amplitude profile (`DetailPaint.profile`):
+   * `bumps` only, as `tubercles` always do. A profiled layer's `paint` must
+   * give one, an unprofiled layer's must not.
+   */
+  profiled?: boolean;
   paint(input: SkinPaintInput): DetailPaint;
 }
+
+/** Whether a detail layer's coordinate is an amplitude profile (a profiled `bumps` layer, or `tubercles`). */
+const isProfiled = (layer: DetailLayer): boolean =>
+  layer.pattern === "tubercles" || layer.profiled === true;
 
 /** Changes how glossy and how specular the skin is (sweat, oil, wetness). */
 export interface SurfaceLayer extends LayerBase {
@@ -152,7 +261,19 @@ export interface SurfaceLayer extends LayerBase {
   paint(input: SkinPaintInput): SurfacePaint;
 }
 
-export type SkinLayer = ColourLayer | DetailLayer | SurfaceLayer;
+/**
+ * Hair lying on the skin: short strands drawn at true scale in the shader,
+ * along the body's hair flow, tinting the skin toward the hair's colour and
+ * adding a little relief. Far away, where a strand is finer than a pixel and
+ * strands closer than one, it becomes the strands' mean tint
+ * (`strandCover`), which is what `applyLayers` computes.
+ */
+export interface StrandLayer extends LayerBase {
+  kind: "strands";
+  paint(input: SkinPaintInput): StrandPaint;
+}
+
+export type SkinLayer = ColourLayer | DetailLayer | SurfaceLayer | StrandLayer;
 
 /** Colour stops per layer in the stop table. */
 export const STOP_COUNT = 8;
@@ -160,29 +281,62 @@ export const STOP_COUNT = 8;
 /**
  * Stop-table texels per layer: one header and the stops. The header is
  * (strength, kind, a, b): kind 0 mix, 1 multiply (colour layers; the stops
- * follow), 2 bumps and 3 creases (detail; a height, b size), 4 surface
- * (a roughness, b specular) and 5 ridges (detail; a height, b spacing).
+ * follow; a is the deepest groove of their relief in metres, 0 for none, and
+ * each stop's alpha is its depth), 2 bumps and 3 creases (detail; a height, b
+ * size), 4 surface (a roughness, b specular), 5 ridges (detail; a height, b
+ * spacing), 6 strands
+ * (a follicles per cm², b length in mm; texel 1 is the hair's albedo and its
+ * diameter in mm, texel 2 (relief height in mm, 1 if the hair is in the skin's
+ * albedo, 0, 0)), 7 bumps with a profile and 8 tubercles (detail; a height, b
+ * spacing; the stops' red channel is the amplitude profile along the coordinate)
+ * and 9 striae (detail; a depth, b spacing; stop 0 is the mark's colour ratio,
+ * stop 1's red its amount; the coordinate is the marks' orientation). Lengths
+ * are in millimetres so the half-float table keeps their precision.
  */
 export const STOP_TABLE_WIDTH = STOP_COUNT + 1;
 
 /** The header's kind code for a layer. */
 export function layerKindCode(layer: SkinLayer): number {
   if (layer.kind === "detail") {
-    if (layer.pattern === "bumps") return 2;
+    if (layer.pattern === "bumps") return layer.profiled ? 7 : 2;
+    if (layer.pattern === "tubercles") return 8;
+    if (layer.pattern === "striae") return 9;
     if (layer.pattern === "ridges") return 5;
     return 3;
   }
   if (layer.kind === "surface") return 4;
+  if (layer.kind === "strands") return 6;
   return layer.blend === "multiply" ? 1 : 0;
 }
 
 /**
  * Whether the shader reads a layer's coordinate: a colour layer's stops lie
- * along it and a crease layer's creases span it. Bumps and surface layers
- * read their mask alone.
+ * along it, a crease layer's creases span it, a profiled layer's amplitude
+ * profile does. Plain bumps, surface and strand layers read their mask alone
+ * (strands take their direction from the body's hair flow, not from a field).
  */
 export const layerUsesCoordinate = (layer: SkinLayer): boolean =>
-  !(layer.kind === "surface" || (layer.kind === "detail" && layer.pattern === "bumps"));
+  !(
+    layer.kind === "surface" ||
+    layer.kind === "strands" ||
+    (layer.kind === "detail" && layer.pattern === "bumps" && !layer.profiled)
+  );
+
+/**
+ * The most of the skin strands may cover where they are finer than a pixel: hair
+ * lies in tufts and partings, so a dense region still shows skin.
+ */
+export const MAX_STRAND_COVER = 0.6;
+
+/**
+ * The fraction of the skin a strand layer's hair covers at full mask, the mean
+ * the shader draws where strands are finer than a pixel: follicles per area ×
+ * coverage × mean length (three quarters of `length`) × diameter.
+ */
+export function strandCover(p: StrandPaint): number {
+  const perM2 = p.density * 1e4;
+  return Math.min(MAX_STRAND_COVER, unit(p.strength) * perM2 * 0.75 * p.length * p.width);
+}
 
 const smoothstep = (lo: number, hi: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
@@ -393,6 +547,22 @@ export interface LayerFieldsUpdate {
   /** Ids of the layers the fields hold, in order. */
   layers: string[];
   layerFields: Float32Array;
+  /**
+   * Triangles of the adult surface that lie on islands of their own in UV space
+   * (a reservoir's tube: `AdultReservoirSpec.island`), with the layers' fields at
+   * their vertices, for the atlas to rasterise besides the base body's.
+   */
+  extra?: LayerFieldsExtra;
+}
+
+/** Extra triangles in UV space and the fields of an update's layers at their vertices. */
+export interface LayerFieldsExtra {
+  /** UV per vertex, two floats. */
+  uvs: Float32Array;
+  /** Triangles over those vertices. */
+  index: Uint32Array;
+  /** The update's layers in order, each a block of one (mask, coordinate) pair per vertex. */
+  layerFields: Float32Array;
 }
 
 /**
@@ -426,6 +596,58 @@ export function buildLayerFields(
 
 const unit = (x: number) => Math.min(1, Math.max(0, x));
 
+/** The profile's amplitudes in the red channel of the stops, resampled evenly as colour stops are. */
+function writeProfile(
+  layer: DetailLayer,
+  profile: readonly number[] | undefined,
+  out: Float32Array,
+  row: number,
+): void {
+  if (
+    !profile ||
+    profile.length < 1 ||
+    profile.length > STOP_COUNT ||
+    !profile.every((x) => x >= 0 && x <= 1)
+  )
+    throw new RangeError(
+      `skin layer ${layer.id}: a profile of 1 to ${STOP_COUNT} amplitudes in 0..1 is required`,
+    );
+  for (let k = 0; k < STOP_COUNT; k++) {
+    const x = (k / (STOP_COUNT - 1)) * (profile.length - 1);
+    const i = Math.min(Math.floor(x), profile.length - 1);
+    const a = profile[i] as number;
+    const b = profile[Math.min(i + 1, profile.length - 1)] as number;
+    out.set([a + (b - a) * (x - i), 0, 0, 1], row + (k + 1) * 4);
+  }
+}
+
+/** A striae layer's mark colour (stop 0) and amount (stop 1, red). */
+function writeStriae(
+  layer: DetailLayer,
+  striae: { amount: number; ratio: Rgb } | undefined,
+  out: Float32Array,
+  row: number,
+): void {
+  if (
+    !striae ||
+    !(striae.amount >= 0 && striae.amount <= 1) ||
+    !striae.ratio.every((c) => c > 0 && Number.isFinite(c))
+  )
+    throw new RangeError(
+      `skin layer ${layer.id}: striae need an amount in 0..1 and a positive colour ratio`,
+    );
+  out.set([striae.ratio[0], striae.ratio[1], striae.ratio[2], 1], row + 4);
+  out.set([striae.amount, 0, 0, 1], row + 8);
+}
+
+/** A colour layer's relief depths, one per stop (0 where none is given); each must be >= 0. */
+function paintedRelief(id: string, count: number, relief: readonly number[] | undefined): number[] {
+  const out = Array.from({ length: count }, (_, k) => relief?.[k] ?? 0);
+  if ((relief?.length ?? 0) > count || out.some((d) => !(d >= 0)))
+    throw new RangeError(`skin layer ${id}: relief is one depth >= 0 per stop`);
+  return out;
+}
+
 /**
  * The figure's stop table: `layers.length` rows of `STOP_TABLE_WIDTH` RGBA
  * texels. Texel 0 is the header (`STOP_TABLE_WIDTH`); for a colour layer,
@@ -446,7 +668,8 @@ export function paintStopTable(
     // row keeps a positive size, which the shader divides by.
     const gate = layerGate(layer, input);
     if (gate === 0) {
-      out.set([0, code, 0, layer.kind === "detail" ? 1 : 0], row);
+      out.set([0, code, 0, layer.kind === "detail" || layer.kind === "strands" ? 1 : 0], row);
+      if (layer.kind === "strands") out.set([0, 0, 0, 1], row + 4);
       return;
     }
     if (layer.kind === "detail") {
@@ -454,6 +677,16 @@ export function paintStopTable(
       if (!(p.height >= 0 && p.size > 0))
         throw new RangeError(`skin layer ${layer.id}: height must be >= 0 and size > 0`);
       out.set([unit(p.strength) * gate, code, p.height, p.size], row);
+      if (isProfiled(layer)) writeProfile(layer, p.profile, out, row);
+      else if (p.profile)
+        throw new RangeError(
+          `skin layer ${layer.id}: a profile on a layer that did not declare one`,
+        );
+      if (layer.pattern === "striae") writeStriae(layer, p.striae, out, row);
+      else if (p.striae)
+        throw new RangeError(
+          `skin layer ${layer.id}: striae on a layer that is not a striae layer`,
+        );
       return;
     }
     if (layer.kind === "surface") {
@@ -461,18 +694,41 @@ export function paintStopTable(
       out.set([unit(p.strength) * gate, code, p.roughness, p.specular], row);
       return;
     }
-    const { strength, stops } = layer.paint(input);
+    if (layer.kind === "strands") {
+      const p = layer.paint(input);
+      if (!(p.density > 0 && p.length > 0 && p.width > 0 && p.height >= 0))
+        throw new RangeError(
+          `skin layer ${layer.id}: density, length and width must be > 0 and height >= 0`,
+        );
+      out.set([unit(p.strength) * gate, code, p.density, p.length * 1e3], row);
+      out.set([p.colour[0], p.colour[1], p.colour[2], p.width * 1e3], row + 4);
+      out.set([p.height * 1e3, p.inSkinAlbedo ? 1 : 0, 0, 0], row + 8);
+      return;
+    }
+    const paint = layer.paint(input);
+    const { strength, stops } = paint;
     if (stops.length < 1 || stops.length > STOP_COUNT)
       throw new RangeError(`skin layer ${layer.id}: 1 to ${STOP_COUNT} stops, got ${stops.length}`);
-    out.set([unit(strength) * gate, code, 0, 0], row);
+    const relief = paintedRelief(layer.id, stops.length, paint.relief);
+    const peak = Math.max(0, ...relief);
+    // A colour layer's header z is the deepest groove it draws (0: no relief, which the
+    // shader skips); the stops' alpha holds each stop's depth.
+    out.set([unit(strength) * gate, code, peak, 0], row);
     for (let k = 0; k < STOP_COUNT; k++) {
       const x = (k / (STOP_COUNT - 1)) * (stops.length - 1);
       const i = Math.min(Math.floor(x), stops.length - 1);
       const f = x - i;
       const a = stops[i] as Rgb;
       const b = stops[Math.min(i + 1, stops.length - 1)] as Rgb;
+      const d0 = relief[i] as number;
+      const d1 = relief[Math.min(i + 1, stops.length - 1)] as number;
       out.set(
-        [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f, 1],
+        [
+          a[0] + (b[0] - a[0]) * f,
+          a[1] + (b[1] - a[1]) * f,
+          a[2] + (b[2] - a[2]) * f,
+          d0 + (d1 - d0) * f,
+        ],
         row + (k + 1) * 4,
       );
     }
@@ -494,6 +750,27 @@ export function applyLayers(
   fields.forEach(([mask, coord], l) => {
     const row = l * STOP_TABLE_WIDTH * 4;
     const kind = Math.round(table[row + 1] as number);
+    if (kind === 6) {
+      // Strands, as seen from where each is finer than a pixel: their mean cover,
+      // or nothing for hair the skin's measured albedo already holds.
+      if ((table[row + 9] as number) > 0.5) return;
+      const a =
+        mask *
+        Math.min(
+          MAX_STRAND_COVER,
+          (table[row] as number) *
+            (table[row + 2] as number) *
+            1e4 *
+            0.75 *
+            (table[row + 3] as number) *
+            1e-3 *
+            (table[row + 7] as number) *
+            1e-3,
+        );
+      for (let k = 0; k < 3; k++)
+        c[k] = (c[k] as number) + ((table[row + 4 + k] as number) - (c[k] as number)) * a;
+      return;
+    }
     if (kind > 1) return; // detail and surface layers leave the colour alone
     const a = mask * (table[row] as number);
     const multiply = kind === 1;

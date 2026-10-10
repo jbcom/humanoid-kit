@@ -18,10 +18,29 @@ Every packed source file was checked for CC0 from its own content before packing
 Attachments come from the MakeHuman system assets pack (makehuman_system_assets_cc0.zip, listed as
 "System assets, shared under CC0" on the MakeHuman community asset packs page). Each file was checked the same way:
 
-- 9 file(s) — file header: "This asset was explicitly released as CC0"
-- 1 file(s) — texture referenced by brown.mhmat, which proves CC0: eyes/materials/brown_eye.png
-- 1 file(s) — texture referenced by teeth.mhmat, which proves CC0: teeth/teeth_base/teeth.png
-- 1 file(s) — texture referenced by tongue01.mhmat, which proves CC0: tongue/tongue01/tongue01_diffuse.png
+- 9 file(s) — A: file header "This asset was explicitly released as CC0"
+- 3 file(s) — A: binary file of a team asset: eyes/materials/brown_eye.png, teeth/teeth_base/teeth.png, tongue/tongue01/tongue01_diffuse.png
+
+The nail plates are CC0 community meshes from MakeHuman's bodyparts04 pack, vendored in
+`vendor/makehuman-bodyparts04/` (see its PROVENANCE.md); each passed the licence rule's clause B with its
+captured asset page:
+
+- 2 file(s) — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1368>, submitted 2018-02-15): mindfront_nails_01_short/mindfront_nails_01_short.mhclo, mindfront_nails_01_short/mind_nails_01_short.obj
+- 2 file(s) — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1371>, submitted 2018-02-15): mindfront_nails_toes_01/mindfront_nails_toes_01.mhclo, mindfront_nails_toes_01/mind_nails_toes_01.obj
+
+## Texture sizes
+
+Each texture ships at the edge its closest QA framing needs, re-sourced from the original wherever the original
+has those texels; where it has fewer, at the original's size, since no upscale measured closer to a larger
+original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/evidence/upscale.md).
+
+| Texture | Source | Source edge | Framing | Needs | Ships | From |
+| --- | --- | --- | --- | --- | --- | --- |
+| eyes_high-poly_brown_eye.webp | eyes/materials/brown_eye.png | 1024 | face | 1408 | 1024 | the source, 384 texels short; not upscaled |
+| teeth_base_teeth.webp | teeth/teeth_base/teeth.png | 2048 | face | 768 | 1024 | the source, downsampled |
+| tongue_base_tongue01_diffuse.webp | tongue/tongue01/tongue01_diffuse.png | 1024 | face | 640 | 1024 | the source |
+
+## Outputs
 
 | Output | SHA-256 |
 | --- | --- |
@@ -32,5 +51,8 @@ Attachments come from the MakeHuman system assets pack (makehuman_system_assets_
 | targets-young.bin.gz | `b2a442d5ecbb2a846a5160adfae027ab14b8d34d573bb169d0920a3c35b3474b` |
 | targets-old.bin.gz | `b17a88e4d428d56344245237bccaf5a64d51d7dba5615f62024033a1710ce501` |
 | targets-modifiers.bin.gz | `6c2c5713c5c1d3b52dfbe30e15de8e0bc6d3920cd906ea32072a9160152ea581` |
-| attachments.bin.gz | `96200315808ade378412a2bdda0b8e9dc009d56b2704d0f746b71cdcab024843` |
+| attachments.bin.gz | `8d3752662467717b3fa913b86c612d365e1839bc1d41c7fc9d68e4ad6adadff6` |
 | body-occlusion.bin.gz | `c9a5b960fc63fe1808f845d41c19ee983c0d70a99b4c7abc5c94ff86866b274f` |
+| eyes_high-poly_brown_eye.webp | `82343d661e02db8c6fd8e4ea526c8f8c5fdcdf74f96107f9af3401af86ac5b53` |
+| teeth_base_teeth.webp | `90f929b92d2e1a92716a87e646d92cdc97be7e407899835cc6c64e7f0e8e502a` |
+| tongue_base_tongue01_diffuse.webp | `45fa5424bd0039d17abc6f4d26cf0acdf27e0e15ad37c794f3a165ee7f3e0c9f` |

@@ -24,9 +24,11 @@ import {
   DoubleSide,
   FrontSide,
   type Group,
+  LinearSRGBColorSpace,
   type Material,
   Matrix4,
   type Mesh,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   Skeleton,
   SkinnedMesh,
@@ -35,7 +37,15 @@ import {
   TextureLoader,
   Vector3,
 } from "three";
+import {
+  JEWELLERY_ROUGHNESS,
+  jewelleryMesh,
+  METAL_REFLECTANCE,
+  type PlacedPiercing,
+} from "../bodyArt/jewellery.ts";
+import type { EyeLibrary } from "../eyes/library.ts";
 import { quantisedShapeSignals, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
+import { shapeSignalNames } from "../model/detailFactors.ts";
 import type {
   AdultSurfaceTopology,
   AttachmentTopology,
@@ -50,7 +60,12 @@ import type { Vec3 } from "../presence/presence.ts";
 import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import { createAttachmentMaterial, TeethMaterial } from "../render/attachmentLook.ts";
+import {
+  createAttachmentMaterial,
+  NAIL_EDGE_ATTRIBUTE,
+  TeethMaterial,
+} from "../render/attachmentLook.ts";
+import { type BodyArtImages, type BodyArtTexture, bakeBodyArt } from "../render/bodyArtTexture.ts";
 import { DecalMaterial } from "../render/decalMaterial.ts";
 import {
   applyDualSkinning,
@@ -64,6 +79,7 @@ import {
   HairMaterial,
   isMultisampled,
   setHairOcclusionAttribute,
+  setHairRankAttribute,
   setHairStrandAttributes,
 } from "../render/hairMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
@@ -87,12 +103,15 @@ import {
   wornGroundOffset,
 } from "../rig/pose.ts";
 import { skinDualShare } from "../rig/skinShare.ts";
+import { bodyHairColour, bodyHairCoverage } from "../surface/bodyHair.ts";
 import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
 import { DEFAULT_HAIR_COLOUR, type HairColour, hairAlbedo } from "../surface/hairTone.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
+import { CoatMesh } from "./CoatMesh.tsx";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 import { sameEntries } from "./sameEntries.ts";
 import { Settle, SettleContext, useSettle } from "./settle.ts";
+import { type HumanoidAnimation, useFigureAnimation } from "./useFigureAnimation.ts";
 
 const ClientContext = createContext<HumanoidWorkerClient | null>(null);
 
@@ -191,6 +210,23 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
   /** How the figure is posed; absent is the rest pose. */
   pose?: HumanoidPose;
   /**
+   * A clip playing on the figure (`humanoid-kit-animations`, `loadAnimationLibrary`):
+   * the body follows it, frame by frame, with `pose.faceUnits` laid over, and
+   * `pose.body` standing aside. The figure stays on its feet, and a clip that carries
+   * it (a walk) moves its group forward in the group's own frame; with `presence`
+   * its presence follows. Nothing here goes through React state. While a clip plays
+   * the figure lifts itself onto the ground each frame (as with `presence`: do not lift
+   * the group), and `onGroundOffset` is not called.
+   */
+  animation?: HumanoidAnimation;
+  /**
+   * The eye pack's library (`humanoid-kit-eyes`, `loadEyeLibrary`): with it, a recipe's
+   * `eyes.material` is worn (its texture's iris pattern and sclera detail in the recipe's
+   * own colours). Keep it stable. Without it, or for a material it does not have (reported
+   * through `onError`), the built-in eye texture is shown.
+   */
+  eyeMaterials?: EyeLibrary;
+  /**
    * The skin's state: named signals, each 0..1 (`cold`, `heat`, `exertion`,
    * `blush`, `fear`; `arousal` for adults only). Every signal reaches the skin
    * layers; those with state morphs (`STATE_MORPHS`) also change the shape,
@@ -203,6 +239,14 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
    * this height to stand, crouch or kneel on y = 0.
    */
   onGroundOffset?: (offset: number) => void;
+  /**
+   * The images the recipe's tattoos name (`Tattoo.image`), decoded (an
+   * `ImageBitmap`, a loaded `HTMLImageElement`, a canvas). Keep the object
+   * stable (memoise it): a new one bakes the figure's body art again. A tattoo
+   * whose image is missing is reported through `onError` and the figure is
+   * drawn without its body art.
+   */
+  bodyArtImages?: BodyArtImages;
 };
 
 export interface HumanoidPresenceProps {
@@ -227,10 +271,11 @@ export interface HumanoidPick {
   /**
    * `"body"`, `"adultBody"` (the adult surface, for a figure aged 18 or over when
    * the adult pack refines the body), `"hair"`, `"garment"` (then `garment` names
-   * it), or the attachment's index in `ModelTopology.attachments`. Look the vertex up in
-   * the pick map's `render.body` or `render.adultBody` accordingly.
+   * it), `"piercing"` (a piercing's jewellery), or the attachment's index in
+   * `ModelTopology.attachments`. Look the vertex up in the pick map's
+   * `render.body` or `render.adultBody` accordingly.
    */
-  part: "body" | "adultBody" | "hair" | "garment" | number;
+  part: "body" | "adultBody" | "hair" | "garment" | "piercing" | number;
   /** The tapped garment's id, when `part` is `"garment"`. */
   garment?: string;
   /** The render vertex of that mesh nearest the tap. */
@@ -325,6 +370,7 @@ function useAttachmentMaterial(
   t: AttachmentTopology,
   occlusionKeys: Vector3,
   report: (e: Error) => void,
+  eyeMaterial: { library: EyeLibrary; id: string } | null = null,
 ): MeshStandardMaterial {
   const material = useMemo(() => {
     const material =
@@ -335,10 +381,22 @@ function useAttachmentMaterial(
   }, [t, occlusionKeys]);
   const reportRef = useLatest(report);
   const settle = useSettle();
+  // An eye wears a material of the eye pack when the recipe names one the library has.
+  const library = eyeMaterial?.library ?? null;
+  const wanted = eyeMaterial ? library?.entry(eyeMaterial.id) : undefined;
+  const missing = eyeMaterial && library && !wanted ? eyeMaterial.id : null;
   useEffect(() => {
-    if (!t.textureUrl) return;
+    if (missing) reportRef.current(new Error(`the eye library has no material ${missing}`));
+  }, [missing, reportRef]);
+  useEffect(() => {
+    if (!(material instanceof EyeMaterial)) return;
+    material.setMaterial(wanted ?? null, library?.manifest);
+  }, [material, wanted, library]);
+  useEffect(() => {
+    const worn = wanted && library ? library.textureUrl(wanted.id) : t.textureUrl;
+    if (!worn) return;
     let live = true;
-    const url = t.textureUrl;
+    const url = worn;
     const end = settle.begin();
     new TextureLoader().loadAsync(url).then(
       (tex) => {
@@ -362,7 +420,7 @@ function useAttachmentMaterial(
       material.map?.dispose();
       material.map = null;
     };
-  }, [t, material, reportRef, settle]);
+  }, [t, material, reportRef, settle, wanted, library]);
   useEffect(() => () => material.dispose(), [material]);
   return material;
 }
@@ -448,6 +506,7 @@ function SkinnedPart({
   renderOrder,
   shape,
   dual,
+  shadows = true,
 }: {
   geometry: BufferGeometry;
   material: Material;
@@ -461,14 +520,20 @@ function SkinnedPart({
   shape: object;
   /** Set when the material skins by dual quaternions: shadows and bounds then follow it. */
   dual?: DualBones | null;
+  /**
+   * Whether it casts and receives shadows (default true). A decal lying on the skin
+   * does neither: its quad's outline would shade the skin round it, and the skin
+   * under it would shade it.
+   */
+  shadows?: boolean;
 }) {
   const mesh = useMemo(() => {
     const m = new SkinnedMesh(geometry, material);
     m.bind(skeleton, new Matrix4());
-    m.castShadow = true;
-    m.receiveShadow = true;
+    m.castShadow = shadows;
+    m.receiveShadow = shadows;
     return m;
-  }, [geometry, material, skeleton]);
+  }, [geometry, material, skeleton, shadows]);
   // Shadows are cast by a depth material, which would skin linearly alone; and
   // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
   useEffect(() => {
@@ -521,6 +586,7 @@ function AttachmentMesh({
   visible,
   report,
   eyes,
+  eyeLibrary,
   melanin,
   shape,
 }: {
@@ -532,10 +598,18 @@ function AttachmentMesh({
   visible: boolean;
   report: (e: Error) => void;
   eyes: Recipe["eyes"];
+  eyeLibrary: EyeLibrary | undefined;
   melanin: number;
   shape: object;
 }) {
-  const material = useAttachmentMaterial(topology, occlusionKeys, report);
+  const eyeMaterial = useMemo(
+    () =>
+      topology.kind === "eyes" && eyeLibrary && eyes.material
+        ? { library: eyeLibrary, id: eyes.material }
+        : null,
+    [topology.kind, eyeLibrary, eyes.material],
+  );
+  const material = useAttachmentMaterial(topology, occlusionKeys, report, eyeMaterial);
   useEffect(() => {
     if (material instanceof EyeMaterial) material.setAppearance(eyes);
   }, [material, eyes]);
@@ -603,6 +677,7 @@ function HairMesh({
   visible,
   report,
   shape,
+  density = 1,
 }: {
   topology: HairTopology;
   geometry: BufferGeometry;
@@ -612,8 +687,11 @@ function HairMesh({
   visible: boolean;
   report: (e: Error) => void;
   shape: object;
+  /** For body hair cards, how many are drawn (the figure's coverage); scalp hair is whole. */
+  density?: number;
 }) {
   const material = useMemo(() => new HairMaterial(), []);
+  useEffect(() => material.setDensity(density), [material, density]);
   useDiffuseTexture(material, topology.textureUrl, report);
   // The colour is a few numbers; effects depend on their values, not the recipe's object identity.
   const { eumelanin, pheomelanin, grey, override } = colour;
@@ -642,6 +720,60 @@ function HairMesh({
  * A worn eyebrow or eyelash: a decal on the skin, cut out by its mask and
  * coloured by the recipe's hair colour (the lashes darker), thinner on a child.
  */
+/**
+ * A piercing's jewellery (`jewelleryMesh`), skinned rigidly with its site
+ * vertex's bones so it follows the posed skin there; the part inside the
+ * tissue is hidden by the skin in front of it.
+ */
+function PiercingMesh({
+  piercing,
+  skeleton,
+  visible,
+  shape,
+}: {
+  piercing: PlacedPiercing;
+  skeleton: Skeleton;
+  visible: boolean;
+  shape: object;
+}) {
+  const geometry = useMemo(() => {
+    const m = jewelleryMesh(piercing);
+    const n = m.positions.length / 3;
+    const g = new BufferGeometry();
+    g.setIndex(new BufferAttribute(m.index, 1));
+    g.setAttribute("position", new BufferAttribute(m.positions, 3));
+    g.setAttribute("normal", new BufferAttribute(m.normals, 3));
+    const index = new Uint8Array(n * 4);
+    const weight = new Float32Array(n * 4);
+    for (let v = 0; v < n; v++) {
+      index.set(piercing.skinIndex, v * 4);
+      weight.set(piercing.skinWeight, v * 4);
+    }
+    g.setAttribute("skinIndex", new BufferAttribute(index, 4));
+    g.setAttribute("skinWeight", new BufferAttribute(weight, 4));
+    return g;
+  }, [piercing]);
+  const material = useMemo(
+    () => new MeshPhysicalMaterial({ metalness: 1, roughness: JEWELLERY_ROUGHNESS }),
+    [],
+  );
+  useEffect(() => {
+    material.color.setRGB(...METAL_REFLECTANCE[piercing.metal], LinearSRGBColorSpace);
+  }, [material, piercing.metal]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => () => material.dispose(), [material]);
+  return (
+    <SkinnedPart
+      geometry={geometry}
+      material={material}
+      skeleton={skeleton}
+      visible={visible}
+      part="piercing"
+      shape={shape}
+    />
+  );
+}
+
 function DecalMesh({
   topology,
   geometry,
@@ -682,6 +814,7 @@ function DecalMesh({
       part="hair"
       renderOrder={topology.zDepth}
       shape={shape}
+      shadows={false}
     />
   );
 }
@@ -762,8 +895,11 @@ export function Humanoid({
   onPick,
   presence,
   pose,
+  animation,
+  eyeMaterials,
   signals,
   onGroundOffset,
+  bodyArtImages,
   ...group
 }: HumanoidProps) {
   const client = useHumanoidClient();
@@ -812,6 +948,7 @@ export function Humanoid({
     const attachments = ready.topology.attachments.map((t) => {
       const g = makeGeometry(t);
       setOcclusionAttributes(g, t.occlusion);
+      if (t.nailEdge) g.setAttribute(NAIL_EDGE_ATTRIBUTE, new BufferAttribute(t.nailEdge, 1));
       return g;
     });
     // Hair styles' geometries are made when a figure first wears the style.
@@ -900,6 +1037,10 @@ export function Humanoid({
   );
   /** The worn brows and lashes, each with its static data and geometry. */
   const [decals, setDecals] = useState<{ topology: HairTopology; geometry: BufferGeometry }[]>([]);
+  /** The cards of a grown beard, when the recipe's style has some and the face grows hair. */
+  const [beard, setBeard] = useState<{ topology: HairTopology; geometry: BufferGeometry } | null>(
+    null,
+  );
   // Alpha-to-coverage needs a multisampled framebuffer; hair falls back to a plain alpha test.
   const multisampled = useThree((s) => isMultisampled(s.gl.getContext()));
   const invalidate = useThree((s) => s.invalidate);
@@ -913,6 +1054,16 @@ export function Humanoid({
   useEffect(() => {
     skin.setScalp(wornHair ? hairAlbedo(wornColour) : null);
   }, [skin, wornHair, wornColour.eumelanin, wornColour.pheomelanin, wornColour.grey, overrideKey]);
+  // A grown beard's cards: their colour and how many show are the body hair model's.
+  const beardLook = useMemo(() => {
+    const input = {
+      age: recipe.macros.age,
+      gender: recipe.macros.gender,
+      colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
+      ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
+    };
+    return { colour: bodyHairColour("face", input), density: bodyHairCoverage("face", input) };
+  }, [recipe]);
 
   // The pose: face units blended into bone rotations (rest when absent), and
   // the attachments' occlusion following it.
@@ -947,6 +1098,9 @@ export function Humanoid({
   // crouch or a kneel comes down to the ground rather than hanging where the
   // standing feet were.
   const [figure, setFigure] = useState<Evaluation | null>(null);
+  // How much larger the skin round the nipples is than the base mesh's, to a hundredth, so the
+  // skin is repainted when the figure's shape changes it and not on every evaluation.
+  const [areolaScale, setAreolaScale] = useState(1);
   // The same pose, as dual quaternions over the evaluated figure's rest skeleton.
   useEffect(() => {
     if (!dual || !ready || !figure) return;
@@ -1021,6 +1175,28 @@ export function Humanoid({
   // biome-ignore lint/correctness/useExhaustiveDependencies: figure and rotations are the triggers
   const shape = useMemo(() => ({}), [figure, rotations]);
   const onGroundOffsetRef = useLatest(onGroundOffset);
+  // A clip's pose is written each frame (`useFigureAnimation`), the face units over it.
+  const liftedRef = useRef<Group>(null);
+  const faceRotations = useMemo(
+    () => (ready && faceUnits ? faceUnitRotations(ready.rig, faceUnits) : null),
+    [ready, faceUnits],
+  );
+  useFigureAnimation({
+    animation,
+    ready,
+    figure,
+    skeleton: rig?.skeleton ?? null,
+    dual,
+    keyBasis,
+    occlusionKeys,
+    face: faceRotations,
+    group: groupRef,
+    lifted: liftedRef,
+    lifts: Boolean(presence) || animation !== undefined,
+    staticLift: lift,
+    presenceSource,
+    report,
+  });
   const rotationsRef = useLatest(rotations);
   /** Reports the ground offset of `ev` in the current pose. */
   const ground = useMemo(
@@ -1102,6 +1278,46 @@ export function Humanoid({
       atlas.release();
     };
   }, [client, gl, ready, skin, report]);
+  // The figure's body art, baked into a texture of its own from each evaluation
+  // that brings some (the placement follows the shape). A new bake replaces the
+  // last without rebuilding the shader; only a figure gaining or losing body art,
+  // or a layer of overlapping tattoos, does.
+  const bodyArt = useRef<BodyArtTexture | null>(null);
+  useEffect(() => {
+    if (!figure) return;
+    const placement = figure.bodyArt;
+    const topology = figure.surface === "adult" ? adultSurface : ready?.topology.body;
+    // An adult's evaluation waits for the adult surface's topology.
+    if (placement && !topology) return;
+    let next: BodyArtTexture | null = null;
+    if (placement && (placement.tattoos.length || placement.marks.length) && topology)
+      try {
+        next = bakeBodyArt(
+          gl,
+          {
+            uvs: topology.uvs,
+            index: topology.index,
+            vertexCount: topology.vertexCount,
+            positions: figure.positions,
+            normals: figure.normals,
+          },
+          placement,
+          bodyArtImages ?? {},
+        );
+      } catch (e) {
+        report(e as Error);
+      }
+    skin.setBodyArt(next);
+    bodyArt.current?.dispose();
+    bodyArt.current = next;
+  }, [figure, ready, adultSurface, gl, skin, bodyArtImages, report]);
+  useEffect(
+    () => () => {
+      bodyArt.current?.dispose();
+      bodyArt.current = null;
+    },
+    [],
+  );
   // The joints' flexion in the current pose joins the skin's signals
   // (`flex.elbow.L`, …), so crease layers follow any pose or animation.
   const flexion = useMemo(() => {
@@ -1129,24 +1345,31 @@ export function Humanoid({
       areola: s.areola,
       signals: { ...signals, ...flexion, ...face },
       age: recipe.macros.age,
+      build: {
+        gender: recipe.macros.gender,
+        weight: recipe.macros.weight,
+        height: recipe.macros.height,
+        muscle: recipe.macros.muscle,
+        breastSize: recipe.macros.breastSize,
+      },
+      areolaScale,
       // Which adult layers paint: only for an adult, only for the anatomy applied
       // (the adult pack's own list of features; none without the pack).
       adult: isAdult(recipe),
       anatomy: appliedAnatomy(recipe, ready?.anatomy?.features ?? []),
+      // Body hair: its amount from the androgen axis and age, its colour from the hair's.
+      gender: recipe.macros.gender,
+      ...(recipe.hair && { hairColour: recipe.hair.colour }),
+      ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     });
-  }, [skin, recipe, signals, flexion, face, ready]);
+  }, [skin, recipe, signals, flexion, face, ready, areolaScale]);
 
   // Only the signals that change the shape re-evaluate the figure; a stable
   // key keeps a colour-only change (or a new object with the same values) from
   // re-evaluating it. The adult pack's state morphs (arousal) count with the
   // body's once it is loaded. Rounded to steps (`quantiseShapeSignal`), so a
   // signal that eases does not evaluate every frame.
-  const shapeNames = useMemo(
-    () => [
-      ...new Set([...STATE_MORPHS, ...(ready?.anatomy?.stateMorphs ?? [])].map((m) => m.signal)),
-    ],
-    [ready],
-  );
+  const shapeNames = useMemo(() => shapeSignalNames(STATE_MORPHS, ready?.anatomy), [ready]);
   // The age policy judges the signals before they are rounded; a refused one
   // is reported rather than evaluated.
   const { shapeKey, signalPolicyError } = useMemo(() => {
@@ -1209,7 +1432,13 @@ export function Humanoid({
           if (!g) {
             g = makeGeometry(hairTopology);
             setHairOcclusionAttribute(g, hairTopology.occlusion);
-            setHairStrandAttributes(g, hairTopology.fade, hairTopology.growth, hairTopology.fin);
+            setHairStrandAttributes(
+              g,
+              hairTopology.fade,
+              hairTopology.growth,
+              hairTopology.fin,
+              hairTopology.uvScale,
+            );
             geometries.hair.set(ev.hair.id, g);
           }
           writeGeometry(g, ev.hair);
@@ -1229,6 +1458,26 @@ export function Humanoid({
             return [{ topology: t, geometry: g }];
           }),
         );
+        // A grown beard's cards: bound like scalp hair, thinned by their ranks.
+        const beardTopology = ev.beard ? client.hairTopology(ev.beard.id) : undefined;
+        if (ev.beard && beardTopology) {
+          let g = geometries.hair.get(ev.beard.id);
+          if (!g) {
+            g = makeGeometry(beardTopology);
+            setHairOcclusionAttribute(g, beardTopology.occlusion);
+            setHairStrandAttributes(
+              g,
+              beardTopology.fade,
+              beardTopology.growth,
+              beardTopology.fin,
+              beardTopology.uvScale,
+            );
+            if (beardTopology.rank) setHairRankAttribute(g, beardTopology.rank);
+            geometries.hair.set(ev.beard.id, g);
+          }
+          writeGeometry(g, ev.beard);
+          setBeard({ topology: beardTopology, geometry: g });
+        } else setBeard(null);
         // The skin under the worn style takes the scalp tint; a figure with none has no scalp.
         const style = ev.hair && hairTopology ? ev.hair.id : null;
         if (!scalpOf.current.has(target) || scalpOf.current.get(target) !== style) {
@@ -1245,6 +1494,7 @@ export function Humanoid({
         });
         foldedFor.current = { recipe, signals: shapeSignals };
         setFigure(ev);
+        setAreolaScale(Math.round(ev.areolaScale * 100) / 100);
         ground(ev);
         presenceSource.current = ready?.presenceJoints
           ? {
@@ -1323,9 +1573,9 @@ export function Humanoid({
         {...(onPick && { onClick: (e: ThreeEvent<MouseEvent>) => pick(e, onPick) })}
       >
         {geometries && ready && rig && (
-          // With presence the group's origin is the ground under the figure, so the
-          // meshes are lifted here; without it the caller lifts the group.
-          <group position-y={presence ? lift : 0}>
+          // With presence, or a clip playing, the group's origin is the ground under the
+          // figure, so the meshes are lifted here; without it the caller lifts the group.
+          <group ref={liftedRef} position-y={presence || animation ? lift : 0}>
             <primitive object={rig.root} />
             <SkinnedPart
               geometry={geometries.body}
@@ -1347,6 +1597,20 @@ export function Humanoid({
                 dual={material ? null : dual}
               />
             )}
+            {/* The coat (stubble, a dense chest): shells on whichever body surface is drawn. */}
+            {!material && (
+              <CoatMesh
+                body={surface === "adult" && adultGeometry ? adultGeometry : geometries.body}
+                fields={
+                  surface === "adult" && adultSurface ? adultSurface.coat : ready.topology.body.coat
+                }
+                recipe={recipe}
+                skeleton={rig.skeleton}
+                dual={dual}
+                visible={shown}
+                shape={shape}
+              />
+            )}
             {ready.topology.attachments.map((t, i) => {
               const g = geometries.attachments[i];
               return g ? (
@@ -1360,6 +1624,7 @@ export function Humanoid({
                   visible={shown}
                   report={report}
                   eyes={recipe.eyes}
+                  eyeLibrary={eyeMaterials}
                   melanin={recipe.skin.melanin}
                   shape={shape}
                 />
@@ -1388,6 +1653,29 @@ export function Humanoid({
                 age={recipe.macros.age}
                 visible={shown}
                 report={report}
+                shape={shape}
+              />
+            ))}
+            {beard && (
+              <HairMesh
+                key={beard.topology.id}
+                topology={beard.topology}
+                geometry={beard.geometry}
+                skeleton={rig.skeleton}
+                colour={beardLook.colour}
+                density={beardLook.density}
+                multisampled={multisampled}
+                visible={shown}
+                report={report}
+                shape={shape}
+              />
+            )}
+            {figure?.bodyArt?.piercings.map((p) => (
+              <PiercingMesh
+                key={p.site}
+                piercing={p}
+                skeleton={rig.skeleton}
+                visible={shown}
                 shape={shape}
               />
             ))}

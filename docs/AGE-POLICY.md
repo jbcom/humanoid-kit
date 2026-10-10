@@ -204,6 +204,15 @@ surface on its own request, never with the topology every session receives. This
 is not done by hiding adult geometry in a shared surface
 (docs/research/ADULT-SCULPT-PLAN.md).
 
+**Genital piercings follow the same rule.** The body's own piercing sites
+(ears, nose, brows, lip, navel) apply at every age. Every other site is the
+adult pack's (`AdultAnatomySpec.piercingSites`), which the core never names,
+so an unknown site fails closed: `ADULT_ONLY_PIERCING` in
+`src/recipe/agePolicy.ts` refuses it under 18 whether or not the pack is
+loaded, and `withAge` removes it. Structurally too, such a site is placed only
+on the adult surface, which a minor's evaluation never has
+(`tests/adultPiercingSites.test.ts`).
+
 **Skin states follow the same rule.** A figure's skin responds to named
 signals (docs/ARCHITECTURE.md, "Skin states"). Cold, heat, exertion, blush and
 fear are the body's physiological responses at every age, so they apply at
@@ -213,9 +222,11 @@ reach (colour, relief and shape): `assertSignalPolicy` in
 `src/recipe/agePolicy.ts` throws `AgePolicyError` for an `arousal` signal on a
 figure under 18, before evaluation and before any paint, and never clamps it.
 Shape responses to arousal, such as engorgement, belong to the adult pack: the
-`arousal` state morph drives only that pack's penis targets, and a figure under
-18 never reaches them, because the signal is refused first and no target is
-named. Without the adult pack the signal changes nothing. Its colour response
+pack's detail targets read the `arousal` signal (`AdultDetailSpec.drives`), and
+a figure under 18 never reaches them, because the signal is refused first, the
+weights the pack derives are an adult's alone, and the adult surface they
+displace is only evaluated for an adult. Without the adult pack the signal
+changes nothing. Its colour response
 lives in the adult skin layers, which paint nothing under 18 (below), and is
 not calibrated: no measured colour change with arousal exists.
 

@@ -20,6 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ClothingManifest, GarmentEntry } from "../src/format/assetFormat.ts";
 import type { GARMENT_LAYERS } from "../src/model/outfit.ts";
+import { readBodyPack } from "./lib/bodyPack.ts";
 import { type CompiledAsset, compileAsset } from "./lib/compileAsset.ts";
 import {
   sha256,
@@ -27,6 +28,7 @@ import {
   writeGarments,
   writePackEntry,
 } from "./lib/packWriter.ts";
+import { textureProvenance } from "./lib/textureSizing.ts";
 
 const USAGE = "usage: node scripts/pack-clothing.ts <system-assets-dir>";
 const SYSTEM: string = (() => {
@@ -37,7 +39,7 @@ const SYSTEM: string = (() => {
 
 const PACK = path.resolve(import.meta.dirname, "../packs/clothing");
 const OUT = path.join(PACK, "data");
-const BODY_MANIFEST = path.resolve(import.meta.dirname, "../packs/body/data/manifest.json");
+const BODY_DIR = path.resolve(import.meta.dirname, "../packs/body/data");
 const GARMENTS_FILE = "garments.bin.gz";
 
 /**
@@ -90,8 +92,12 @@ const GROUP: Record<keyof typeof GARMENT_LAYERS, string> = {
   backpack: "backpacks",
 };
 
-/** Longest texture edge and WebP quality: a suit fills at most a screenful, a normal map tolerates less. */
-const TEXTURES = { max: 1024, quality: 86, normalQuality: 78 };
+/**
+ * Default longest texture edge (a garment that needs more at a clothed figure's
+ * framing gets it, `scripts/lib/textureSizing.ts`) and WebP quality: a normal
+ * map tolerates less.
+ */
+const TEXTURES = { floor: 1024, quality: 86, normalQuality: 78 };
 
 const sha = (file: string) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 
@@ -126,15 +132,17 @@ function evidenceLines(all: Record<string, string>): string[] {
 
 function main(): Promise<void> {
   fs.mkdirSync(OUT, { recursive: true });
-  const bodyManifest = JSON.parse(fs.readFileSync(BODY_MANIFEST, "utf8")) as {
-    topology: string;
-    body: { sha256: string };
-  };
+  const { manifest: bodyManifest, assets: body } = readBodyPack(BODY_DIR);
   const compiled = compile();
   const assets = compiled.map((c) => c.asset);
   const evidence = Object.assign({}, ...assets.map((a) => a.evidence)) as Record<string, string>;
   return (async () => {
-    await writeAttachmentTextures(OUT, assets, TEXTURES);
+    const textures = await writeAttachmentTextures(
+      OUT,
+      assets,
+      { base: body.positions, systemDir: SYSTEM },
+      TEXTURES,
+    );
     const packed = writeGarments(OUT, GARMENTS_FILE, assets);
     const entries: GarmentEntry[] = packed.entries.map((e, i) => ({
       ...e,
@@ -182,6 +190,9 @@ function main(): Promise<void> {
         ({ asset, source }) =>
           `| ${asset.id} | ${asset.kind} | ${source} | \`${sha(path.join(SYSTEM, source))}\` |`,
       ),
+      "",
+      ...textureProvenance(textures),
+      "## Outputs",
       "",
       "| Output | SHA-256 |",
       "| --- | --- |",

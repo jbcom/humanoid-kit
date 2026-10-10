@@ -9,8 +9,10 @@
  */
 import { ARCHETYPE_MODIFIER_GROUPS } from "../makehuman/features.ts";
 import { ADULT_AGE } from "../makehuman/macro.ts";
+import { seededRandom } from "../random.ts";
 import { withAge } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { BEARD_STYLES, type BeardStyle } from "../surface/bodyHair.ts";
 import { DEFAULT_HAIR_COLOUR } from "../surface/hairTone.ts";
 import type { Rgb } from "../surface/skinTone.ts";
 import type { ModifierTable } from "./controls.ts";
@@ -37,18 +39,35 @@ export interface RandomizeOptions {
    */
   browStyles?: readonly string[];
   lashStyles?: readonly string[];
+  /**
+   * Draw a beard style (`randomBeard`), last of all so a seed's figure is the
+   * same with or without it; omitted, the base recipe's body hair is kept. The
+   * body hair model grows it only where the face carries terminal hair, so a
+   * child or a woman drawn a beard shows none.
+   */
+  beards?: boolean;
 }
 
-/** mulberry32: small, fast, and good enough for appearance. */
-export function seededRandom(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+/**
+ * How often a random figure wears each beard style, given the face grows one:
+ * clean-shaven most often, then stubble. Choices.
+ */
+export const BEARD_ODDS: Readonly<Record<BeardStyle, number>> = {
+  none: 0.55,
+  stubble: 0.2,
+  moustache: 0.07,
+  goatee: 0.08,
+  full: 0.1,
+};
+
+/** A beard style from one draw in [0, 1), by `BEARD_ODDS`. */
+export function randomBeard(draw: number): BeardStyle {
+  let acc = 0;
+  for (const style of BEARD_STYLES) {
+    acc += BEARD_ODDS[style];
+    if (draw < acc) return style;
+  }
+  return "none";
 }
 
 /** Natural iris colours in linear RGB. */
@@ -159,7 +178,16 @@ export function randomRecipe(
           ...(lashes && { lashes }),
         }
       : undefined;
-  return { ...recipe, modifiers: values, ...(worn && { hair: worn }) };
+  // The beard is drawn after everything else, so old seeds keep their figures.
+  const bodyHair = options.beards
+    ? { ...recipe.bodyHair, beard: randomBeard(rand()) }
+    : recipe.bodyHair;
+  return {
+    ...recipe,
+    modifiers: values,
+    ...(worn && { hair: worn }),
+    ...(bodyHair && { bodyHair }),
+  };
 }
 
 /** A hair style on offer (or none, one time in ten) in a natural colour, from `rand`'s next draws. */

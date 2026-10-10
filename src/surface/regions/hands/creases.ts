@@ -24,8 +24,11 @@ import type { HumanoidAssets } from "../../../format/assetFormat.ts";
 import { palmAlbedo } from "../../handTone.ts";
 import type { ColourLayer, SkinLayerFields } from "../../layers.ts";
 import { type Rgb, type SkinTone, skinAlbedo } from "../../skinTone.ts";
-import { skinZones } from "../skinZones.ts";
 import { clamp, handFrame, type PalmLandmarks, smoothstep } from "./frame.ts";
+import { palmarBorderDistance, palmarWrist } from "./palm.ts";
+
+/** How far inside the palmar-dorsal border the creases ease in, metres (CHOICE: they fade at the hand's side). */
+export const CREASE_BORDER_INSET = 0.006;
 
 /** The relief's phase at signed distance `ds` (metres) from a crease `width` wide: the groove at 1, its rims at 0.5 and 1.5. */
 export function creasePhase(ds: number, width: number): number {
@@ -204,6 +207,14 @@ function curveDistance(curve: Curve): NearestOnCurve {
  * holds the fields to it). No crease width or depth was found measured
  * (SKIN-STATES.md C5): CHOICES, tuned on the contact sheets.
  */
+/**
+ * How strongly each digit's creases show against the palm's three, which are
+ * the major lines (1): the proximal, middle and distal digital creases, the
+ * distal the faintest (CHOICE: a crease's prominence follows the flexion at
+ * its joint).
+ */
+export const FINGER_CREASE_STRENGTH: readonly number[] = [0.75, 0.85, 0.55];
+
 export const CREASE_GEOMETRY = {
   palm: { width: 0.0078, fade: 0.003, band: 0.0185, plateau: 0.0045, lineFade: 0.003, relief: 1 },
   finger: {
@@ -299,7 +310,7 @@ export function sampleCreases(assets: HumanoidAssets): CreaseSample {
   const known = creaseSamples.get(assets);
   if (known) return known;
   const frame = handFrame(assets);
-  const zones = skinZones(assets);
+  const border = palmarBorderDistance(assets);
   const n = assets.manifest.vertexCount;
   const out: CreaseSample = {
     ds: new Float32Array(n).fill(Number.NaN),
@@ -317,7 +328,10 @@ export function sampleCreases(assets: HumanoidAssets): CreaseSample {
     // across the mask's edge.
     const digit = frame.digit[v] as number;
     if (digit === 0) continue;
-    const palmar = zones.palm[v] as number;
+    // Creases are palmar: they ease in from the border over `CREASE_BORDER_INSET`.
+    const palmar =
+      smoothstep(0, CREASE_BORDER_INSET, border[v] as number) *
+      palmarWrist(frame.palm[v * 2 + 1] as number);
     const side = frame.side[v] as number;
     const joints = (frame.joints[side] as number[][])[digit] as number[];
     const along = frame.along[v] as number;
@@ -330,13 +344,19 @@ export function sampleCreases(assets: HumanoidAssets): CreaseSample {
     let id = -1;
     // The digit's own creases, from the palm too, so the coordinate runs on
     // from a finger's first crease into the palm without changing crease.
+    // A finger crease is deepest across the digit's middle and shallows toward its sides.
+    const r = ((frame.radius[side] as number[])[digit] as number) || 0.007;
+    const middle = Math.sqrt(Math.max(0, 1 - ((frame.across[v] as number) / (1.3 * r)) ** 2));
     creases.forEach((at, k) => {
       const ds = (along - at) * digitCreaseSign(digit, k);
       out.candidates[v * CREASE_SLOTS + 3 + k] = ds;
       if (Math.abs(ds) < Math.abs(best)) {
         best = ds;
         // A finger crease shows on its digit, not on the palm.
-        taper = onPalm ? 0 : 1;
+        taper = onPalm
+          ? 0
+          : (FINGER_CREASE_STRENGTH[Math.min(k, FINGER_CREASE_STRENGTH.length - 1)] as number) *
+            (0.55 + 0.45 * middle);
         kind = 1;
         id = 10 * digit + k;
       }
@@ -353,7 +373,9 @@ export function sampleCreases(assets: HumanoidAssets): CreaseSample {
         // border) to its last fifth. The proximal transverse and thenar creases
         // start at the web beside the thumb's first crease, three creases
         // round one web whose sides no choice of signs can all match.
-        taper = smoothstep(0, 0.12, t) * smoothstep(1, 0.8, t);
+        // Deepest along its middle, shallowing toward its ends.
+        taper =
+          smoothstep(0, 0.12, t) * smoothstep(1, 0.8, t) * (0.7 + 0.3 * Math.sin(Math.PI * t));
         kind = 0;
         id = i;
       }
@@ -426,14 +448,21 @@ export const PALM_CREASE_DEPTH = 0.0003;
  * skin's own colour, so fair skin, whose palm is about the body's colour,
  * gains no pigment.
  */
-export const PALM_CREASE_PIGMENT = 0.6;
+export const PALM_CREASE_PIGMENT = 0.35;
 
 /**
  * The shadow a crease's walls cast into it, as a factor on its line's colour
  * (CHOICE): the relief fold is wider than the crease, so the narrow, dark
- * bottom every palm shows at every tone is drawn into the colour.
+ * bottom is drawn into the colour, faintly: a crease reads mostly through its
+ * relief (0.8 drew them as uniform marker strokes on the contact sheets).
  */
-export const PALM_CREASE_SHADE = 0.8;
+export const PALM_CREASE_SHADE = 0.92;
+
+/**
+ * The crease's lips, either side of its line, catch a little more light than
+ * the palm round them: a factor on the palm's colour (CHOICE).
+ */
+export const PALM_CREASE_LIP = 1.04;
 
 /** The colour a crease's line multiplies the palm by: its pigment (`PALM_CREASE_PIGMENT`) and shade. */
 export function palmCreaseLine(tone: SkinTone): Rgb {
@@ -448,8 +477,8 @@ export function palmCreaseLine(tone: SkinTone): Rgb {
 
 /**
  * The creases' lines: a multiply layer whose stop at 3/7, where each crease
- * falls (`creaseLineCoordinate`), is `palmCreaseLine` and whose other stops
- * leave the palm as it is.
+ * falls (`creaseLineCoordinate`), is `palmCreaseLine`, whose neighbours are its
+ * lips (`PALM_CREASE_LIP`), and whose other stops leave the palm as it is.
  */
 export const PALM_CREASE_LINE_LAYER: ColourLayer = {
   id: "palm-crease-lines",
@@ -458,6 +487,7 @@ export const PALM_CREASE_LINE_LAYER: ColourLayer = {
   fields: palmCreaseLineFields,
   paint: ({ tone }) => {
     const one: Rgb = [1, 1, 1];
-    return { strength: 1, stops: [one, one, one, palmCreaseLine(tone), one, one, one, one] };
+    const lip: Rgb = [PALM_CREASE_LIP, PALM_CREASE_LIP, PALM_CREASE_LIP];
+    return { strength: 1, stops: [one, one, lip, palmCreaseLine(tone), lip, one, one, one] };
   },
 };

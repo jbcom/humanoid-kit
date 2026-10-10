@@ -90,6 +90,7 @@ class FakeWorker {
               vertexCount: 2,
               uvScale: Float32Array.of(1, 2),
               occlusion: new Uint8Array(16).fill(255),
+              coat: { regions: [], comb: new Float32Array(6), masks: new Uint8Array(16) },
             },
           }),
         1,

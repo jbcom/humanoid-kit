@@ -6,12 +6,15 @@
  *   in 0.1 mm steps. Its screen-space gradient is the strand's direction, which
  *   the Kajiya-Kay highlight needs (`src/render/hairMaterial.ts`) and which the
  *   cards' own geometry has no other way to say.
- * - **fade**: 0 on a card edge that meets the scalp (a hairline), rising to 1
- *   over `FADE_LENGTH` along the card. The renderer dithers the card away where
- *   it is low, so a hairline thins into the scalp instead of ending on a cut edge.
+ * - **fade**: 0 where a card lies at the scalp with no other card over it (a
+ *   hairline is wherever the painted hair ends there), rising to 1 over
+ *   `FADE_LENGTH` along the card. Where it is low the renderer thins the hair
+ *   strand by strand toward the painted edge (the card's mesh reaches past the
+ *   hair painted on it, so the mesh's own boundary is not the visible hairline),
+ *   so a hairline thins into the scalp instead of ending on a cut edge.
  * - **fin**: 1 on a card that stands out of the scalp instead of lying along it, 0
  *   on a card that does. Seen edge-on a fin is a hairline-thin dark sliver, so
- *   the renderer dithers it away as it turns from the eye; a card of a style's
+ *   the renderer dissolves it as it turns from the eye; a card of a style's
  *   shell is seen at a grazing angle across a whole head and must not be.
  * - **scalp**: the body vertices the style grows from and how densely: 1 where a
  *   card sits on the scalp, falling to 0 over `SCALP_FALLOFF` beyond it. The skin
@@ -20,7 +23,16 @@
  *
  * All three depend only on the packs, so they are measured once, here.
  */
-import { BufferAttribute, BufferGeometry, Line3, Triangle, Vector3 } from "three";
+import {
+  BufferAttribute,
+  BufferGeometry,
+  DoubleSide,
+  Line3,
+  Ray,
+  Sphere,
+  Triangle,
+  Vector3,
+} from "three";
 import { MeshBVH } from "three-mesh-bvh";
 
 /** Growth is stored as unsigned 16-bit steps of 1 / `GROWTH_SCALE` metre (6.5 m of hair at most). */
@@ -29,7 +41,11 @@ export const GROWTH_SCALE = 10_000;
 /** A card vertex this near the scalp (metres) is a root. */
 export const ROOT_NEAR = 0.015;
 
-/** A card's boundary vertex this near the scalp (metres) is on a hairline... */
+/**
+ * A card vertex this near the scalp (metres) is on a hairline... (a card's mesh reaches
+ * well past the hair painted on it, so the visible hairline is the painted edge somewhere
+ * inside the mesh, not the mesh's own boundary: hair near the scalp is what marks it)
+ */
 export const HAIRLINE_NEAR = 0.015;
 
 /**
@@ -41,8 +57,16 @@ export const COVERED_BY = 0.006;
 /** How far inside the covering card's own edge (metres) a spot must be for the card to cover it. */
 export const COVER_MARGIN = 0.004;
 
+/**
+ * ...and a card edge is a hairline only if bare skin (a body triangle with a corner the
+ * hair does not cover) lies this near it (metres). Cards that meet edge to edge at a
+ * part or a crown leave edges no other card lies over, but the skin around them is all
+ * under hair: thinned, they opened skin-coloured gaps there.
+ */
+export const BARE_NEAR = 0.01;
+
 /** Metres along the card, from a hairline, over which hair thins in. */
-export const FADE_LENGTH = 0.012;
+export const FADE_LENGTH = 0.018;
 
 /** A scalp vertex this near a card (metres) carries hair at full density. */
 export const SCALP_FULL = 0.003;
@@ -104,6 +128,18 @@ export interface HairFieldsInput {
    */
   feather?: boolean;
   /**
+   * Whether cards that stand out of the scalp are fins (default true). A tube of hair (a braid,
+   * a twist, a loc) faces every way round its axis, and is solid from any side: dissolving the
+   * parts of it that face away would hollow it out.
+   */
+  fins?: boolean;
+  /**
+   * The vertices the hair grows from, when the author knows them (a rope's first ring). Absent, the
+   * roots are the vertices within `ROOT_NEAR` of the scalp, which for hair that lies on the scalp
+   * throughout (bantu knots) is every vertex, and growth then says nothing of strand direction.
+   */
+  roots?: readonly number[];
+  /**
    * The cards' texture cut-out: where it is clear there is no hair, so no scalp
    * tint (a card's mesh extends past the hair painted on it, and the skin beyond the
    * visible hairline must stay bare). `faceUvs` (four per quad) index `uvs`; `alpha`
@@ -118,9 +154,19 @@ export interface HairFieldsInput {
   };
 }
 
+/** `HairFields.uvScale` is stored in 1/`UV_SCALE_STEPS` of a texture unit per metre. */
+export const UV_SCALE_STEPS = 16;
+
 export interface HairFields {
   /** Per card vertex, distance along the card from its root in 1 / `GROWTH_SCALE` metre. */
   growth: Uint16Array;
+  /**
+   * Per card vertex, how many texture units its card spans per metre, in
+   * 1/`UV_SCALE_STEPS` (0 without a `cutout`, which carries the UVs). The renderer
+   * divides it out to find strands a few millimetres wide wherever the card's island
+   * sits in the atlas.
+   */
+  uvScale: Uint16Array;
   /** Per card vertex, 0 (cut away) to 255 (all there). */
   fade: Uint8Array;
   /** Per card vertex, 0 (lies along the scalp) to 255 (stands out of it). */
@@ -130,6 +176,13 @@ export interface HairFields {
   /** ...and each one's hair density, 1 to 255 (never 0: a vertex without hair is not listed). */
   scalpWeights: Uint8Array;
 }
+
+/** A ray looking for hair over a body vertex starts this far (metres) under the skin, so it finds a card lying on it. */
+const COVER_BELOW = 0.002;
+const AXIS = new Vector3();
+
+/** The scalp density above which the skin under a card vertex is covered by hair, not a hairline's bare edge. */
+const HAIR_COVERED = 0.25;
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -329,7 +382,7 @@ export function hairFields(input: HairFieldsInput): HairFields {
     }
   }
   const fin = new Uint8Array(n);
-  for (let v = 0; v < n; v++) {
+  for (let v = 0; v < n && input.fins !== false; v++) {
     const hit = bodyBvh.closestPointToPoint(at(v), target);
     const nl = Math.hypot(
       normals[v * 3] as number,
@@ -350,7 +403,8 @@ export function hairFields(input: HairFieldsInput): HairFields {
   // Growth: from the vertices at the scalp; a card (connected piece) that touches none
   // grows from its highest vertex (a free-hanging lock grows from where it hangs).
   const roots = new Set<number>();
-  for (let v = 0; v < n; v++) if ((nearBody[v] as number) < ROOT_NEAR) roots.add(v);
+  if (input.roots) for (const v of input.roots) roots.add(v);
+  else for (let v = 0; v < n; v++) if ((nearBody[v] as number) < ROOT_NEAR) roots.add(v);
   let reach = distanceAlong(adjacency, roots);
   for (let v = 0; v < n; v++) {
     if (Number.isFinite(reach[v] as number)) continue;
@@ -368,9 +422,133 @@ export function hairFields(input: HairFieldsInput): HairFields {
   }
   const growth = Uint16Array.from(reach, (d) => Math.min(65535, Math.round(d * GROWTH_SCALE)));
 
-  // Fade: from the boundary vertices at the scalp that no other card lies over. Cards
-  // overlap through the body of a style, and a card's edge there is inside the hair;
-  // only an edge with nothing over it is on the hairline.
+  // Scalp density: each eligible body vertex's share of hair, 1 within SCALP_FULL of a card's
+  // opaque hair and falling to 0 over SCALP_FALLOFF. The most of every card near it counts (a
+  // card's mesh may be over the transparent texels of one beside it), so a seam between two cards
+  // is not bare skin.
+  const cards = new Uint32Array(faces * 6);
+  for (let f = 0; f < faces; f++) {
+    const q = [0, 1, 2, 3].map((k) => faceVerts[f * 4 + k] as number);
+    cards.set([q[0], q[1], q[2], q[0], q[2], q[3]] as number[], f * 6);
+  }
+  const cardBvh = new MeshBVH(geometry(positions, cards), { verbose: false });
+  const bodyCount = body.positions.length / 3;
+  const bodyDensity = new Float64Array(bodyCount);
+  // Each body vertex's outward normal: its triangles' area-weighted normals.
+  const bodyNormals = new Float64Array(bodyCount * 3);
+  {
+    const a = new Vector3();
+    const b = new Vector3();
+    const c = new Vector3();
+    for (let t = 0; t < body.triangles.length; t += 3) {
+      const i = [0, 1, 2].map((k) => body.triangles[t + k] as number);
+      const load = (target: Vector3, vertex: number) =>
+        target.set(
+          body.positions[vertex * 3] as number,
+          body.positions[vertex * 3 + 1] as number,
+          body.positions[vertex * 3 + 2] as number,
+        );
+      load(a, i[0] as number);
+      load(b, i[1] as number);
+      load(c, i[2] as number);
+      b.sub(a);
+      c.sub(a);
+      b.cross(c);
+      for (const vertex of i) {
+        bodyNormals[vertex * 3] = (bodyNormals[vertex * 3] as number) + b.x;
+        bodyNormals[vertex * 3 + 1] = (bodyNormals[vertex * 3 + 1] as number) + b.y;
+        bodyNormals[vertex * 3 + 2] = (bodyNormals[vertex * 3 + 2] as number) + b.z;
+      }
+    }
+    for (let v = 0; v < bodyCount; v++) {
+      const len = Math.hypot(
+        bodyNormals[v * 3] as number,
+        bodyNormals[v * 3 + 1] as number,
+        bodyNormals[v * 3 + 2] as number,
+      );
+      if (len > 0)
+        for (let k = 0; k < 3; k++)
+          bodyNormals[v * 3 + k] = (bodyNormals[v * 3 + k] as number) / len;
+    }
+  }
+  const ray = new Ray();
+  const p = new Vector3();
+  const near = new Vector3();
+  const spread = SCALP_FULL + SCALP_FALLOFF;
+  const sphere = new Sphere(p, spread);
+  for (let v = 0; v < bodyCount; v++) {
+    if (!input.scalpEligible[v]) continue;
+    p.set(
+      body.positions[v * 3] as number,
+      body.positions[v * 3 + 1] as number,
+      body.positions[v * 3 + 2] as number,
+    );
+    sphere.center.copy(p);
+    let density = 0;
+    cardBvh.shapecast({
+      intersectsBounds: (box) => sphere.intersectsBox(box),
+      intersectsTriangle: (tri, index) => {
+        tri.closestPointToPoint(p, near);
+        const d = near.distanceTo(p);
+        let share = 1 - smoothstep(SCALP_FULL, spread, d);
+        if (share <= density) return false;
+        if (input.cutout)
+          share *= hairUnder({ point: near, faceIndex: index }, input.cutout, faceVerts, positions);
+        density = Math.max(density, share);
+        return false;
+      },
+    });
+    // And hair standing over the vertex, along its normal, counts: a card above the skin that
+    // covers it is hair, though the card's closest point to it may be a clear texel.
+    if (density < 1 && input.cutout) {
+      const n3 = bodyNormals.subarray(v * 3, v * 3 + 3);
+      if (n3[0] !== 0 || n3[1] !== 0 || n3[2] !== 0) {
+        ray.origin.copy(p).addScaledVector(AXIS.fromArray(n3), -COVER_BELOW);
+        ray.direction.copy(AXIS);
+        for (const hit of cardBvh.raycast(ray, DoubleSide, 0, COVER_BELOW + SCALP_DEPTH)) {
+          if (typeof hit.faceIndex !== "number") continue;
+          density = Math.max(
+            density,
+            hairUnder(
+              { point: hit.point, faceIndex: hit.faceIndex },
+              input.cutout,
+              faceVerts,
+              positions,
+            ),
+          );
+        }
+      }
+    }
+    bodyDensity[v] = density;
+  }
+  // How bare the skin under a card vertex is: the density at the nearest point of the body, 1
+  // under hair and 0 on a face, a neck or a temple the hair stops short of.
+  const bodyTri = new Vector3();
+  const skinUnder = (v: number): number => {
+    const hit = bodyBvh.closestPointToPoint(at(v), target);
+    if (!hit) return 1;
+    const corner = (k: number) => body.triangles[hit.faceIndex * 3 + k] as number;
+    const place = (t: Vector3, i: number) =>
+      t.set(
+        body.positions[i * 3] as number,
+        body.positions[i * 3 + 1] as number,
+        body.positions[i * 3 + 2] as number,
+      );
+    place(TRI_A, corner(0));
+    place(TRI_B, corner(1));
+    place(TRI_C, corner(2));
+    Triangle.getBarycoord(hit.point, TRI_A, TRI_B, TRI_C, bodyTri);
+    return (
+      bodyTri.x * (bodyDensity[corner(0)] as number) +
+      bodyTri.y * (bodyDensity[corner(1)] as number) +
+      bodyTri.z * (bodyDensity[corner(2)] as number)
+    );
+  };
+
+  // Fade: from the vertices at the scalp that no other card lies over. Cards overlap
+  // through the body of a style, and a card there is inside the hair; only one with
+  // nothing over it can end on a hairline. (Not only boundary vertices: the visible
+  // hairline is where the painted hair ends, which is inside the card's mesh.)
   const cardOf = connectedPieces(adjacency);
   const pieces = new Map<number, number[]>();
   for (let f = 0; f < faces; f++) {
@@ -420,9 +598,32 @@ export function hairFields(input: HairFieldsInput): HairFields {
     }
     return false;
   };
-  const hairline = [...boundary].filter(
-    (v) => (nearBody[v] as number) < HAIRLINE_NEAR && !coveredByAnother(v),
-  );
+  // Bare skin: the body triangles with a corner the hair does not cover.
+  const bare: number[] = [];
+  for (let t = 0; t < body.triangles.length; t += 3)
+    if (
+      [0, 1, 2].some((k) => (bodyDensity[body.triangles[t + k] as number] as number) < HAIR_COVERED)
+    )
+      bare.push(
+        body.triangles[t] as number,
+        body.triangles[t + 1] as number,
+        body.triangles[t + 2] as number,
+      );
+  const bareBvh =
+    bare.length > 0
+      ? new MeshBVH(geometry(body.positions, Uint32Array.from(bare)), { verbose: false })
+      : null;
+  const bordersBare = (v: number) =>
+    (bareBvh?.closestPointToPoint(at(v), target)?.distance ?? Number.POSITIVE_INFINITY) < BARE_NEAR;
+  const hairline: number[] = [];
+  for (let v = 0; v < n; v++) {
+    if ((nearBody[v] as number) >= HAIRLINE_NEAR) continue;
+    // Any vertex above skin the hair has not reached (the visible hairline is inside the mesh,
+    // where the painted hair ends), or a boundary vertex that no other card lies over and that
+    // borders bare skin (not one where cards meet at a part or a crown).
+    if (skinUnder(v) < HAIR_COVERED || (boundary.has(v) && !coveredByAnother(v) && bordersBare(v)))
+      hairline.push(v);
+  }
   const along = distanceAlong(adjacency, hairline);
   const fade =
     input.feather === false
@@ -431,29 +632,45 @@ export function hairFields(input: HairFieldsInput): HairFields {
           Number.isFinite(d) ? Math.round(255 * smoothstep(0, FADE_LENGTH, d)) : 255,
         );
 
-  // Scalp: eligible body vertices near a card.
-  const cards = new Uint32Array(faces * 6);
-  for (let f = 0; f < faces; f++) {
-    const q = [0, 1, 2, 3].map((k) => faceVerts[f * 4 + k] as number);
-    cards.set([q[0], q[1], q[2], q[0], q[2], q[3]] as number[], f * 6);
+  // UV scale: per face, the UV length of its edges over their length in metres; per vertex, the mean.
+  const uvScale = new Uint16Array(n);
+  if (input.cutout) {
+    const { faceUvs, uvs } = input.cutout;
+    const sum = new Float64Array(n);
+    const count = new Uint16Array(n);
+    for (let f = 0; f < faces; f++) {
+      let world = 0;
+      let uv = 0;
+      for (let k = 0; k < 4; k++) {
+        const a = faceVerts[f * 4 + k] as number;
+        const b = faceVerts[f * 4 + ((k + 1) % 4)] as number;
+        world += at(a).distanceTo(at(b));
+        const ua = faceUvs[f * 4 + k] as number;
+        const ub = faceUvs[f * 4 + ((k + 1) % 4)] as number;
+        uv += Math.hypot(
+          (uvs[ua * 2] as number) - (uvs[ub * 2] as number),
+          (uvs[ua * 2 + 1] as number) - (uvs[ub * 2 + 1] as number),
+        );
+      }
+      if (world <= 0) continue;
+      for (let k = 0; k < 4; k++) {
+        const v = faceVerts[f * 4 + k] as number;
+        sum[v] = (sum[v] as number) + uv / world;
+        count[v] = (count[v] as number) + 1;
+      }
+    }
+    for (let v = 0; v < n; v++)
+      if ((count[v] as number) > 0)
+        uvScale[v] = Math.min(
+          65535,
+          Math.round(((sum[v] as number) / (count[v] as number)) * UV_SCALE_STEPS),
+        );
   }
-  const cardBvh = new MeshBVH(geometry(positions, cards), { verbose: false });
+
   const scalpVerts: number[] = [];
   const scalpWeights: number[] = [];
-  const p = new Vector3();
-  for (let v = 0; v < body.positions.length / 3; v++) {
-    if (!input.scalpEligible[v]) continue;
-    p.set(
-      body.positions[v * 3] as number,
-      body.positions[v * 3 + 1] as number,
-      body.positions[v * 3 + 2] as number,
-    );
-    const hit = cardBvh.closestPointToPoint(p, target);
-    const d = hit?.distance ?? Number.POSITIVE_INFINITY;
-    let density = 1 - smoothstep(SCALP_FULL, SCALP_FULL + SCALP_FALLOFF, d);
-    if (hit && density > 0 && input.cutout)
-      density *= hairUnder(hit, input.cutout, faceVerts, positions);
-    const w = Math.round(255 * density);
+  for (let v = 0; v < bodyDensity.length; v++) {
+    const w = Math.round(255 * (bodyDensity[v] as number));
     if (w > 0) {
       scalpVerts.push(v);
       scalpWeights.push(w);
@@ -461,6 +678,7 @@ export function hairFields(input: HairFieldsInput): HairFields {
   }
   return {
     growth,
+    uvScale,
     fade,
     fin,
     scalpVerts: Uint16Array.from(scalpVerts),
