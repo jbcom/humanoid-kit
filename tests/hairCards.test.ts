@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { compileAuthored } from "../scripts/lib/hairCards/compile.ts";
 import { BodySurface, HeadFrame } from "../scripts/lib/hairCards/head.ts";
 import { AUTHORED_STYLES } from "../scripts/lib/hairCards/index.ts";
+import type { Cards } from "../scripts/lib/hairCards/ropes.ts";
 import { hairlineElevation } from "../scripts/lib/hairCards/styles.ts";
 import { evaluateBinding } from "../src/mhclo/bound.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -50,6 +51,86 @@ describe("the head frame", () => {
     expect(hairlineElevation(180)).toBeLessThan(hairlineElevation(0));
     expect(hairlineElevation(40)).toBeLessThan(hairlineElevation(0));
     expect(hairlineElevation(-40)).toBe(hairlineElevation(40));
+  });
+});
+
+describe("bantu knots", () => {
+  /**
+   * Each knot: a knot is one tube, from its first ring (a run of `roots`) to the next knot's; its
+   * root is the centre of that ring.
+   */
+  function knots(cards: Cards): { root: Vector3; points: Vector3[] }[] {
+    const runs: number[][] = [];
+    for (let i = 0; i < cards.roots.length; i++) {
+      const v = cards.roots[i] as number;
+      if (i === 0 || v !== (cards.roots[i - 1] as number) + 1) runs.push([]);
+      (runs[runs.length - 1] as number[]).push(v);
+    }
+    const end = cards.positions.length / 3;
+    const at = (v: number) =>
+      new Vector3(
+        cards.positions[v * 3] as number,
+        cards.positions[v * 3 + 1] as number,
+        cards.positions[v * 3 + 2] as number,
+      );
+    return runs.map((ring, k) => {
+      const first = ring[0] as number;
+      const last = ((runs[k + 1] as number[] | undefined)?.[0] ?? end) - 1;
+      const points: Vector3[] = [];
+      for (let v = first; v <= last; v++) points.push(at(v));
+      const root = new Vector3();
+      for (const v of ring) root.add(at(v));
+      return { root: root.divideScalar(ring.length), points };
+    });
+  }
+  let all: { root: Vector3; points: Vector3[] }[];
+  beforeAll(() => {
+    const spec = AUTHORED_STYLES.find((s) => s.id === "bantu01");
+    if (!spec) throw new Error("no bantu01");
+    all = knots(spec.build({ head, body }));
+  });
+
+  it("parts the head into a dozen or more sections, one knot each", () => {
+    expect(all.length).toBeGreaterThanOrEqual(12);
+  });
+
+  it("raises every knot as a bun: its apex stands at least 15 mm off the scalp, and at most 45 mm", () => {
+    for (const [k, knot] of all.entries()) {
+      const apex = Math.max(...knot.points.map((p) => body.probe(p).distance));
+      expect(apex, `knot ${k}`).toBeGreaterThanOrEqual(0.015);
+      expect(apex, `knot ${k}`).toBeLessThanOrEqual(0.045);
+    }
+  });
+
+  it("sits every knot behind the hairline: no part of one near the skin lies on the forehead, temple or neck", () => {
+    for (const [k, knot] of all.entries())
+      for (const p of knot.points) {
+        if (body.probe(p).distance > 0.01) continue;
+        const d = new Vector3().subVectors(p, head.centre);
+        const azimuth = (Math.atan2(d.x, d.z) * 180) / Math.PI;
+        const elevation = (Math.asin(d.y / d.length()) * 180) / Math.PI;
+        expect(elevation, `knot ${k} at azimuth ${azimuth.toFixed(0)}`).toBeGreaterThanOrEqual(
+          hairlineElevation(azimuth),
+        );
+      }
+  });
+
+  it("coils round its own root's axis: the knot rises as it winds, not outward across the scalp", () => {
+    for (const [k, { root, points }] of all.entries()) {
+      const normal = body.probe(root).normal;
+      // How far out across the scalp the knot reaches, against how high it stands.
+      let across = 0;
+      let up = 0;
+      for (const p of points) {
+        const d = new Vector3().subVectors(p, root);
+        const h = d.dot(normal);
+        up = Math.max(up, h);
+        across = Math.max(across, d.addScaledVector(normal, -h).length());
+      }
+      expect(up, `knot ${k}: ${up.toFixed(3)} up, ${across.toFixed(3)} across`).toBeGreaterThan(
+        0.9 * across,
+      );
+    }
   });
 });
 

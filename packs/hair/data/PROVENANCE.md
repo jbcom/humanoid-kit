@@ -113,7 +113,7 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | twists01.webp | `c7f300fb5c66fc549323076dd5a1f36702045a4573e269845c8585fca650f472` |
 | locs01.bin.gz | `a2198947a6ca1ba5549baa9254c44c59342e2b2a9b4c79495b02f4659ce35161` |
 | locs01.webp | `606f9cfbd2119a7eda05340ed8dfa1f19c3acba6f6f7774054e3ed09c530e586` |
-| bantu01.bin.gz | `86767bb7206a659cccf1307f13ecd2a844b18d9c735a2c030046fb698fb47ec6` |
+| bantu01.bin.gz | `4ed2060f0917dd95465fabdcb03b1b85f4dc6d77c7b71bea9ac770be3f4f551d` |
 | bantu01.webp | `3409ce0dcba009bac44141c70e2686ae06289a0dbec8fb9e120021b14a0b9a8e` |
 | eyebrow001.bin.gz | `eca8142f0c21815a2b1bd204b4c32888b71325cc3e0ab3d0013cf42f9b803b96` |
 | eyebrow001.webp | `63e0b84acd5b168e9bd5af4d9f949a21b53250142366ee1879c61748993c5758` |

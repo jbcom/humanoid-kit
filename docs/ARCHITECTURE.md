@@ -1318,7 +1318,14 @@ a coloured texture; everything in the pure core is testable in Node.
   angles, its soft edge broken into ragged fuzz, the loose cards below the cap cleared, and a
   fade (`keepAt`: full on top, tapering over the ears and round to bare skin at the nape) taken
   from where each texel lies on the head (`uvField.ts` rasterises the cards into the texture). Bantu
-  knots are a spiral rope coiled round its root. Not yet: tight curls in the longer styles.
+  knots (`BANTU_KNOT`) part the head into 4.5 cm sections, each one's hair a 4.5 mm twisted rope
+  that leaves its root, lies out to a 1.1 cm bottom coil, then winds about three times round the
+  scalp's normal there, each turn 1.7 rope radii above the last and drawn in toward the axis, into a
+  raised cone 2.5 to 3.5 cm tall with the end tucked into its top. Every root sits far enough behind
+  the hairline that the whole bottom coil does. The first knots were a flat spiral lying outward
+  across the scalp, about 1 cm high, which read as snail-shell decals on the forehead; tests now
+  hold every apex 15 to 45 mm off the scalp, every knot's footprint behind the hairline, and every
+  knot taller than it is wide. Not yet: tight curls in the longer styles.
 
 **Costs and limits.** The pack is 3.5 MB for ten styles, mostly strand maps at
 1024 px (and 0.3 to 0.5 MB for each authored one); the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
