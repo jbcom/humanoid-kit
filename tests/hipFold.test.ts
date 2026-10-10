@@ -7,22 +7,26 @@
  * fold the mesh over itself.
  */
 import { describe, expect, it } from "vitest";
-import { CreaseFlaps, HipContact, vertexNormals } from "../scripts/lib/hipContact.ts";
+import { CreaseFlaps, HipContact, PressReach, vertexNormals } from "../scripts/lib/hipContact.ts";
 import { BODY_TYPES } from "../scripts/lib/skinBench.ts";
 import { bodyTriangles } from "../scripts/lib/skinMeasure.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import {
+  addFold,
   addFoldNormal,
   boneMass,
   FOLD_BODIES,
   FOLD_KEYS,
+  FOLD_OPENINGS,
+  FOLD_ROW_TEXELS,
   FOLD_THIGH_HOLD,
   FOLD_TRUNK_REACH,
   foldSides,
   HIP_FOLD,
   type HipFold,
   hipFlexion,
+  hipRotation,
   nearHips,
   renderFold,
   surfaceFold,
@@ -72,6 +76,16 @@ const figures = Object.entries({ ...BODY_TYPES, ...BATTERY_EXTREMES }).map(([nam
   return { name, control, rest, fold, contact };
 });
 const average = figures[0] as (typeof figures)[number];
+
+/**
+ * The most the fold may move belly skin lying farther than 3 cm from any of the
+ * thighs' skin, as a share of the deepest it moves the belly. Measured
+ * (2026-10-10): the press solved with the thighs together and read by flexion
+ * alone, 0.95 to 1.00 in the squat and up to 0.36 in the tuck (a groove down the
+ * belly's middle); let go where no thigh is and keyed by the opening, 0.00 in the
+ * squat and at most 0.005 in the tuck. CHOICE: a small bound above that.
+ */
+const PRESS_APART = 0.05;
 
 /**
  * The most of the crease's inverted triangles, as a share of those the bones
@@ -124,8 +138,40 @@ describe("how far a hip is flexed (hipFlexion)", () => {
       rotations.set(q, names.indexOf("upperleg01.L") * 4);
       return hipFlexion(average.rest, rotations).left;
     };
-    expect(Math.abs(turn(2, 60)), "abducted").toBeLessThan(4);
-    expect(Math.abs(turn(1, 120)), "twisted").toBeLessThan(1);
+    expect(Math.abs(turn(2, 60)), "abducted").toBeLessThan(1e-4);
+    expect(Math.abs(turn(1, 120)), "twisted").toBeLessThan(1e-4);
+  });
+
+  it("reads how far each hip is opened, and hipRotation makes the hip it reads", () => {
+    for (const [flexion, opening] of [
+      [0, 0],
+      [90, 20],
+      [125, 20],
+      [60, -10],
+      [135, 35],
+    ] as const) {
+      const rotations = IDENTITY_POSE(names.length);
+      rotations.set(hipRotation(flexion, opening, 1), names.indexOf("upperleg01.L") * 4);
+      rotations.set(hipRotation(flexion, opening, -1), names.indexOf("upperleg01.R") * 4);
+      const hips = hipFlexion(average.rest, rotations);
+      for (const [f, o] of [
+        [hips.left, hips.leftOpening],
+        [hips.right, hips.rightOpening],
+      ] as const) {
+        expect(f, `${flexion}/${opening}`).toBeCloseTo(flexion, 3);
+        expect(o, `${flexion}/${opening}`).toBeCloseTo(opening, 3);
+      }
+    }
+    // The deep squat's hips are flexed 125° and opened 20° in its channels, and read so.
+    const squat = hipFlexion(average.rest, bodyPoseRotations(rigData(assets), "squat"));
+    expect(squat.left).toBeCloseTo(125, 1);
+    expect(squat.right).toBeCloseTo(125, 1);
+    expect(squat.leftOpening).toBeCloseTo(20, 1);
+    expect(squat.rightOpening).toBeCloseTo(20, 1);
+    // A leg swung out alone is opened, not flexed.
+    const rotations = IDENTITY_POSE(names.length);
+    rotations.set(hipRotation(0, 40, 1), names.indexOf("upperleg01.L") * 4);
+    expect(hipFlexion(average.rest, rotations).leftOpening).toBeCloseTo(40, 3);
   });
 });
 
@@ -190,8 +236,10 @@ describe("the thigh through the belly, without the fold", () => {
 
 describe("the fold on the rendered surface (surfaceFold)", () => {
   it("mixes the control vertices' folds as the stencil mixes their positions, once per surface vertex", () => {
+    // Every key of every opening, per vertex.
+    const K = FOLD_OPENINGS * FOLD_KEYS;
     const vector = (seed: number) =>
-      Float32Array.from({ length: FOLD_KEYS * 3 }, (_, i) => seed + i * 0.001);
+      Float32Array.from({ length: K * 3 }, (_, i) => seed + i * 0.001);
     const fold: HipFold = {
       vertices: Uint32Array.of(0, 1),
       slot: Int32Array.of(0, 1, -1),
@@ -208,25 +256,53 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
     const surface = surfaceFold(fold, stencil, Uint32Array.of(0, 0, 1, 2, 2));
     expect(surface.rows).toBe(2);
     expect([...surface.slot]).toEqual([0, 0, -1, 1, 1]);
-    expect(surface.data.length).toBe(2 * FOLD_KEYS * 8);
-    // A row's side is in the first key's displacement texel: the mix of its moved vertices' sides.
+    expect(surface.data.length).toBe(2 * FOLD_ROW_TEXELS * 4);
+    expect(FOLD_ROW_TEXELS).toBe(K * 2);
+    // A row's side is in its first texel: the mix of its moved vertices' sides.
     expect(surface.data[3]).toBeCloseTo(0.6, 6);
-    expect(surface.data[FOLD_KEYS * 8 + 3]).toBeCloseTo(0.2, 6);
+    expect(surface.data[K * 8 + 3]).toBeCloseTo(0.2, 6);
     expect([...renderFold(surface).side].map((s) => +s.toFixed(6))).toEqual([0.6, 0.2]);
-    for (let key = 0; key < FOLD_KEYS; key++)
+    const back = renderFold(surface);
+    for (let key = 0; key < K; key++)
       for (let k = 0; k < 3; k++) {
         const a = fold.vectors[key * 3 + k] as number;
-        const b = fold.vectors[(FOLD_KEYS + key) * 3 + k] as number;
+        const b = fold.vectors[(K + key) * 3 + k] as number;
         expect(surface.data[key * 8 + k] as number).toBeCloseTo(0.5 * a + 0.5 * b, 6);
-        expect(surface.data[(FOLD_KEYS + key) * 8 + k] as number).toBeCloseTo(b, 6);
+        expect(surface.data[(K + key) * 8 + k] as number).toBeCloseTo(b, 6);
         if (key > 0) expect(surface.data[key * 8 + 3]).toBe(0);
         // The normal's change is mixed the same way, in the texel after the displacement's.
         const an = fold.normals[key * 3 + k] as number;
-        const bn = fold.normals[(FOLD_KEYS + key) * 3 + k] as number;
+        const bn = fold.normals[(K + key) * 3 + k] as number;
         expect(surface.data[key * 8 + 4 + k] as number).toBeCloseTo(0.5 * an + 0.5 * bn, 6);
-        expect(surface.data[(FOLD_KEYS + key) * 8 + 4 + k] as number).toBeCloseTo(bn, 6);
+        expect(surface.data[(K + key) * 8 + 4 + k] as number).toBeCloseTo(bn, 6);
         expect(surface.data[key * 8 + 7]).toBe(0);
+        // And read back as the fold of the render vertices.
+        expect(back.vectors[(K + key) * 3 + k] as number).toBeCloseTo(b, 6);
       }
+  });
+
+  it("reads the fold between its openings by how far the hip is opened", () => {
+    // One vertex: 1 cm out along x with the thighs together, 3 cm opened, at every key.
+    const K = FOLD_OPENINGS * FOLD_KEYS;
+    const fold: HipFold = {
+      vertices: Uint32Array.of(0),
+      slot: Int32Array.of(0),
+      vectors: Float32Array.from({ length: K * 3 }, (_, i) =>
+        i % 3 === 0 ? (i < FOLD_KEYS * 3 ? 0.01 : 0.03) : 0,
+      ),
+      normals: new Float32Array(K * 3),
+      side: Float32Array.of(1),
+    };
+    const at = (opening: number) => {
+      const out = new Float32Array(3);
+      addFold(fold, 0, 100, opening, out, 0);
+      return out[0] as number;
+    };
+    expect(at(0)).toBeCloseTo(0.01, 6);
+    expect(at(-15)).toBeCloseTo(0.01, 6);
+    expect(at(HIP_FOLD.opened / 2)).toBeCloseTo(0.02, 6);
+    expect(at(HIP_FOLD.opened)).toBeCloseTo(0.03, 6);
+    expect(at(HIP_FOLD.opened * 2)).toBeCloseTo(0.03, 6);
   });
 
   it("is made by the model a flexion at a time, on the surface the figure is drawn on, and moves skin by the hips alone", () => {
@@ -238,7 +314,7 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
         const { surface, fold } = step.value;
         expect(surface).toBe("base");
         expect(fold.rows).toBeGreaterThan(50);
-        expect(fold.data.length).toBe(fold.rows * FOLD_KEYS * 8);
+        expect(fold.data.length).toBe(fold.rows * FOLD_ROW_TEXELS * 4);
         const moved = fold.slot.filter((s) => s >= 0).length;
         expect(moved).toBeGreaterThanOrEqual(fold.rows);
         expect(moved).toBeLessThan(fold.slot.length / 10);
@@ -247,7 +323,7 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
       }
       yielded++;
     }
-    expect(yielded).toBe(FOLD_KEYS);
+    expect(yielded).toBe(FOLD_OPENINGS * FOLD_KEYS);
   });
 
   it("solves a shape once: asked again for the same figure it answers at once with the same fold, and a different one is solved", () => {
@@ -261,15 +337,18 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
       }
     };
     const first = solved(createRecipe({ macros: { weight: 0.8 } }));
-    expect(first.yielded).toBe(FOLD_KEYS);
+    expect(first.yielded).toBe(FOLD_OPENINGS * FOLD_KEYS);
     const again = solved(createRecipe({ macros: { weight: 0.8 } }));
     expect(again.yielded).toBe(0);
     expect(again.fold.rows).toBe(first.fold.rows);
     expect([...again.fold.data]).toEqual([...first.fold.data]);
     // Not the same buffers: a reply transfers its own.
     expect(again.fold.data).not.toBe(first.fold.data);
-    expect(solved(createRecipe({ macros: { weight: 0.3 } })).yielded).toBe(FOLD_KEYS);
-  });
+    expect(solved(createRecipe({ macros: { weight: 0.3 } })).yielded).toBe(
+      FOLD_OPENINGS * FOLD_KEYS,
+    );
+    // Two figures solved whole, each at two openings: some seconds of one core each (docs/ARCHITECTURE.md, "Where it runs").
+  }, 120_000);
 });
 
 describe("the hip fold", () => {
@@ -318,8 +397,8 @@ describe("the hip fold", () => {
       // Skin neither part holds most of, or behind the hips, stays where the bones put it (its normal turns beside what moves).
       f.fold.vertices.forEach((v, s) => {
         let moved = false;
-        for (let i = 0; i < FOLD_KEYS * 3; i++)
-          if (f.fold.vectors[s * FOLD_KEYS * 3 + i] !== 0) moved = true;
+        const stride = FOLD_OPENINGS * FOLD_KEYS * 3;
+        for (let i = 0; i < stride; i++) if (f.fold.vectors[s * stride + i] !== 0) moved = true;
         if (!moved) return;
         expect(front[v], `${f.name} vertex ${v}`).toBe(1);
         const thighs = thigh[v] as number;
@@ -368,6 +447,19 @@ describe("the hip fold", () => {
       expect(pressed, f.name).toBeGreaterThan(40);
       expect(inward / pressed, f.name).toBeGreaterThan(0.9);
       expect(deepest, f.name).toBeGreaterThan(0.005);
+    }
+  });
+
+  it("presses the belly only where a thigh touches it: hardly at all farther than 3 cm from the thighs' skin, in the squat, the tuck and the seat", () => {
+    const rig = rigData(assets);
+    for (const f of figures) {
+      const reach = new PressReach(f.rest, f.control, assets.skinIndex, assets.skinWeight, tris);
+      for (const name of ["squat", "tucked", "seated"]) {
+        const rotations = bodyPoseRotations(rig, name);
+        const m = reach.measure(pose(f, rotations, false), pose(f, rotations, true), 0.03);
+        expect(m.deepest, `${f.name}, ${name}`).toBeGreaterThan(0.003);
+        expect(m.apart / m.deepest, `${f.name}, ${name}`).toBeLessThan(PRESS_APART);
+      }
     }
   });
 
@@ -486,7 +578,7 @@ describe("the hip fold", () => {
       let turned = 0;
       for (const v of f.fold.vertices) {
         const delta = new Float32Array(3);
-        addFoldNormal(f.fold, v, 120, delta, 0);
+        addFoldNormal(f.fold, v, 120, 0, delta, 0);
         let l = 0;
         for (let k = 0; k < 3; k++) {
           shaded[v * 3 + k] = (bare[v * 3 + k] as number) + (delta[k] as number);

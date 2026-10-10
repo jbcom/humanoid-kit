@@ -1,6 +1,11 @@
-import { SkinPatch, TriangleCrossings } from "./contact.ts";
+import { SkinPatch, SurfaceDistance, TriangleCrossings } from "./contact.ts";
 import {
+  boneMass,
+  FOLD_BODIES,
   FOLD_KEYS,
+  FOLD_OPENINGS,
+  FOLD_PRESS,
+  FOLD_REACH,
   FOLD_THIGH_HOLD,
   FOLD_TRUNK_REACH,
   foldParts,
@@ -8,8 +13,10 @@ import {
   foldTaper,
   HIP_FOLD,
   type HipFold,
+  hipRotation,
   nearHips,
   noFold,
+  smoothstep,
 } from "./hipFold.ts";
 import { IDENTITY_POSE, type RestBones, skinPositions } from "./pose.ts";
 
@@ -70,6 +77,25 @@ const SPREAD = 0.5;
 const SPREADS = 2;
 /** The passes of a round that spread their pushes; the rest push each vertex alone. */
 const SPREADING = 3;
+/**
+ * Where between a key and the one before it the solve looks too, as a share of a
+ * step back from the key: halfway, and a quarter of the way back. CHOICE: halfway
+ * alone left the slim woman's thigh 14 mm through the belly at 139°, where the
+ * press let go at one key and not at the one before.
+ */
+const BETWEEN = [0.5, 0.25];
+/**
+ * With the thighs opened (`HIP_FOLD.opened`), how far (metres) past a hip joint,
+ * out to the side, the trunk's skin the thigh is pushed out of reaches: the belly
+ * and the groin, to the inguinal crease's outer end. Past it is the flank by the
+ * iliac crest, which an opened, deeply flexed thigh's outer front drives into
+ * from below (the lateral hip squeezed, which the fold does not fold), and the
+ * push does not settle against it: the muscular man's opened keys past 115° left
+ * 2 to 6 cm unsettled, his squat 25 mm through. CHOICE, measured on him in the
+ * squat: 2 cm left 34 mm, 3 cm 22 mm, 4 cm none. With the thighs together the
+ * flank is kept (without it they pass through it, 26 mm at 125°).
+ */
+const LATERAL = 0.04;
 /** A pass that needs no push over this (metres) is the last of its round. */
 const TOLERANCE = 0.0002;
 const PASSES = 60;
@@ -114,12 +140,37 @@ export function* solveHipFoldSteps(
   const thighs = Array.from(parts.movers);
   // What the fold keeps of each vertex's displacement: all of it near the hip, none by the knee.
   const taper = foldTaper(rest, control);
-  const skin = Array.from(parts.skin);
   const hips = [".L", ".R"].map((s) => rest.names.indexOf(HIP_FOLD.bone + s)).filter((b) => b >= 0);
+  // The trunk's skin the thigh is pushed out of: all of it with the thighs together; opened, the belly
+  // and the groin, no farther out to the side than `LATERAL` past a hip joint, not the flank.
+  const sideOf = Math.max(0, ...hips.map((b) => Math.abs(rest.heads[b * 3] as number)));
+  const trunkSurface = (out: number) => {
+    const kept: number[] = [];
+    for (let t = 0; t < parts.skin.length; t += 3) {
+      const x =
+        ((control[(parts.skin[t] as number) * 3] as number) +
+          (control[(parts.skin[t + 1] as number) * 3] as number) +
+          (control[(parts.skin[t + 2] as number) * 3] as number)) /
+        3;
+      if (Math.abs(x) <= sideOf + out)
+        kept.push(
+          parts.skin[t] as number,
+          parts.skin[t + 1] as number,
+          parts.skin[t + 2] as number,
+        );
+    }
+    const tris = Uint32Array.from(kept);
+    return {
+      tris,
+      skin: Array.from(tris),
+      patch: new SkinPatch(tris, n),
+      triangles: kept.length / 3,
+    };
+  };
+  const surfaces = [trunkSurface(Number.POSITIVE_INFINITY), trunkSurface(LATERAL)];
+  let { tris: trunkPatch, skin, patch, triangles } = surfaces[0] as ReturnType<typeof trunkSurface>;
   if (!thighs.length || !skin.length || !hips.length) return noFold(n);
-  const patch = new SkinPatch(parts.skin, n);
   const around = neighbours(tris, n);
-  const triangles = skin.length / 3;
 
   const isThigh = new Uint8Array(n);
   for (const v of thighs) isThigh[v] = 1;
@@ -147,6 +198,16 @@ export function* solveHipFoldSteps(
   const pressSizes = [new Float64Array(n), new Float64Array(n)];
   /** Which hip drives each vertex (`foldSides`): which thigh a contact is. */
   const sides = foldSides(rest, control, skinIndex, skinWeight);
+  // The thighs' skin by the hips, all of it (not only what the fold moves): what the trunk's press must be near.
+  const trunkMass = boneMass(rest.names, skinIndex, skinWeight, FOLD_BODIES.trunk);
+  const nearThigh = nearHips(rest, control, FOLD_REACH);
+  const thighSkin = (v: number) =>
+    nearThigh[v] === 1 && (parts.thigh[v] as number) > (trunkMass[v] as number);
+  const thighFaces: number[] = [];
+  for (let t = 0; t < tris.length; t += 3)
+    if ([0, 1, 2].every((k) => thighSkin(tris[t + k] as number)))
+      thighFaces.push(tris[t] as number, tris[t + 1] as number, tris[t + 2] as number);
+  const thighSurface = Uint32Array.from(thighFaces);
   // The edges of the body that have a thigh vertex at an end, once.
   const pairs: number[] = [];
   const seen = new Set<number>();
@@ -195,13 +256,14 @@ export function* solveHipFoldSteps(
     return sum;
   };
   /** Per affected vertex, per key, x, y, z: the displacement (movers only), and the change of the normal. */
-  const keyed = new Float32Array(affected.length * FOLD_KEYS * 3);
-  const keyedNormal = new Float32Array(affected.length * FOLD_KEYS * 3);
+  const keyed = new Float32Array(affected.length * FOLD_OPENINGS * FOLD_KEYS * 3);
+  const keyedNormal = new Float32Array(affected.length * FOLD_OPENINGS * FOLD_KEYS * 3);
   // Only the vertices the solve reads are skinned: the movers, the trunk's skin, the ends of the edges, and the corners of the triangles whose normals turn.
   const wanted = new Uint8Array(n);
   for (const v of movers) wanted[v] = 1;
   for (const v of skin) wanted[v] = 1;
   for (const v of edges) wanted[v] = 1;
+  for (const v of thighSurface) wanted[v] = 1;
   for (const rows of incident.values())
     for (const t of rows) for (let k = 0; k < 3; k++) wanted[tris[t + k] as number] = 1;
   const needed = Uint32Array.from({ length: n }, (_, v) => v).filter((v) => wanted[v]);
@@ -215,11 +277,16 @@ export function* solveHipFoldSteps(
       neededWeight[i * 4 + k] = skinWeight[v * 4 + k] as number;
     }
   });
-  /** The hips flexed `degrees`, both, and the vertices the solve reads as the bones put them (the rest are zero). */
-  const posedAt = (degrees: number): Float32Array => {
+  /** Both hips flexed `degrees` and opened `opening` degrees to their sides, every other bone at rest. */
+  const rotationsAt = (degrees: number, opening: number): Float32Array => {
     const rotations = IDENTITY_POSE(rest.names.length);
-    const half = (-degrees * Math.PI) / 360;
-    for (const b of hips) rotations.set([Math.sin(half), 0, 0, Math.cos(half)], b * 4);
+    for (const b of hips)
+      rotations.set(hipRotation(degrees, opening, rest.names[b]?.endsWith(".L") ? 1 : -1), b * 4);
+    return rotations;
+  };
+  /** The hips so flexed and opened, and the vertices the solve reads as the bones put them (the rest are zero). */
+  const posedAt = (degrees: number, opening: number): Float32Array => {
+    const rotations = rotationsAt(degrees, opening);
     const posed = skinPositions(
       rest,
       rotations,
@@ -234,214 +301,240 @@ export function* solveHipFoldSteps(
     });
     return out;
   };
-  for (let key = 0; key < FOLD_KEYS; key++) {
-    const degrees = HIP_FOLD.from + (key + 1) * HIP_FOLD.step;
-    const posed0 = posedAt(degrees);
-    const P = new Float32Array(posed0);
-    // Halfway back to the last key, the fold is the mean of the two, which is not what is solved: it is looked at too, so that what is between two keys is as clear as they are.
-    const before = Float64Array.from(D);
-    const posedMid = posedAt(degrees - HIP_FOLD.step / 2);
-    const PM = new Float32Array(posedMid);
-    const mid = (v: number, k: number) =>
-      (posedMid[v * 3 + k] as number) +
-      ((before[v * 3 + k] as number) + (D[v * 3 + k] as number)) / 2;
-    /** Puts the displacement of `which` (every vertex the fold moves when omitted) on both poses. */
-    const place = (which: readonly number[] = movers) => {
-      for (const v of which)
-        for (let k = 0; k < 3; k++) {
-          P[v * 3 + k] = (posed0[v * 3 + k] as number) + (D[v * 3 + k] as number);
-          PM[v * 3 + k] = mid(v, k);
-        }
-    };
-    place();
-
-    for (let round = 0; round < ROUNDS; round++) {
-      // The trunk's skin holds still while the thigh's is pushed out of it, so the pushes settle.
-      const trunkSkin = patch.pose(P);
-      const grid = new TriangleGrid(P, skin, triangles);
-      const crossings = new TriangleCrossings(P, parts.skin);
-      const crossingsMid = new TriangleCrossings(PM, parts.skin);
-      pushed.fill(0);
-      against.fill(-1);
-      // Only the thigh's skin within `NEAR` of the trunk's can meet it this round, and only its edges cross it.
-      const close = new Uint8Array(n);
-      const active = thighs.filter((v) => {
-        const near = grid.near(
-          P[v * 3] as number,
-          P[v * 3 + 1] as number,
-          P[v * 3 + 2] as number,
-          NEAR,
-        );
-        if (near.length) close[v] = 1;
-        return near.length > 0;
+  // Each opening is a fold of its own, solved from the thighs at rest up.
+  for (let o = 0; o < FOLD_OPENINGS; o++) {
+    const opening = o * HIP_FOLD.opened;
+    ({ tris: trunkPatch, skin, patch, triangles } = surfaces[o] as ReturnType<typeof trunkSurface>);
+    D.fill(0);
+    for (let key = 0; key < FOLD_KEYS; key++) {
+      const degrees = HIP_FOLD.from + (key + 1) * HIP_FOLD.step;
+      const posed0 = posedAt(degrees, opening);
+      const P = new Float32Array(posed0);
+      // Between this key and the last, the fold is the straight line between the two, which is not what is solved: it is looked
+      // at too (`BETWEEN`, back from this key), so that what is played between two flexions is as clear as they are.
+      const before = Float64Array.from(D);
+      const betweens = BETWEEN.map((back) => {
+        const posed = posedAt(degrees - HIP_FOLD.step * back, opening);
+        return { back, posed, P: new Float32Array(posed) };
       });
-      const activeEdges: number[] = [];
-      for (let e = 0; e < edges.length; e += 2)
-        if (close[edges[e] as number] || close[edges[e + 1] as number])
-          activeEdges.push(edges[e] as number, edges[e + 1] as number);
-      const passes = round === 0 ? PASSES : LATER_PASSES;
-      let settled = false;
-      for (let pass = 0; pass < passes; pass++) {
-        let most = 0;
-        // Only the thigh's skin is pushed while the trunk's holds still.
-        for (const v of thighs) {
-          size[v] = 0;
-          push[v * 3] = 0;
-          push[v * 3 + 1] = 0;
-          push[v * 3 + 2] = 0;
-        }
-        /**
-         * Thigh vertex `v` is `wanted` behind where it may be, by trunk triangle
-         * `t`, whose outward normal is `n`: it is pushed out along `n`, if that
-         * is more than it is already to be pushed.
-         */
-        const contact = (v: number, t: number, n: ArrayLike<number>, wanted: number) => {
-          most = Math.max(most, wanted);
-          // However far behind a plane, a pass moves skin only so far: what is behind a plane is not always behind its triangle.
-          const need = Math.min(wanted, MOST_PUSH);
-          if (need <= (size[v] as number)) return;
-          size[v] = need;
-          against[v] = t;
-          for (let k = 0; k < 3; k++) push[v * 3 + k] = (n[k] as number) * need;
-        };
-        // Skin behind the trunk's, by the nearest of it...
-        for (const v of active) {
-          const [x, y, z] = [P[v * 3] as number, P[v * 3 + 1] as number, P[v * 3 + 2] as number];
-          const near = grid.near(x, y, z, REACH);
-          if (!near.length) continue;
-          const c = trunkSkin.signed(x, y, z, point, near, normal);
-          if (CLEARANCE - c > 0) contact(v, trunkSkin.nearest, normal, CLEARANCE - c);
-        }
-        // ... and skin whose edges pass through it, which is what is seen, wherever the nearest of it is;
-        // halfway, a push of the key moves the skin half as far, so it is twice what is behind.
-        const through = (c: TriangleCrossings, t: number, v: number, scale: number) => {
-          if (!isThigh[v]) return;
-          const behind = -c.side(t, v);
-          if (behind <= 0) return;
-          c.normal(t, normal);
-          contact(v, t, normal, scale * behind + CLEARANCE);
-        };
-        for (const [c, scale] of [
-          [crossings, 1],
-          [crossingsMid, 2],
-        ] as const)
-          for (let e = 0; e < activeEdges.length; e += 2) {
-            const a = activeEdges[e] as number;
-            const b = activeEdges[e + 1] as number;
-            const found = c.find(a, b);
-            for (let h = 0; h < found; h++) {
-              through(c, c.hits[h] as number, a, scale);
-              through(c, c.hits[h] as number, b, scale);
-            }
+      /** Puts the displacement of `which` (every vertex the fold moves when omitted) on this key's pose and those between. */
+      const place = (which: readonly number[] = movers) => {
+        for (const v of which)
+          for (let k = 0; k < 3; k++) {
+            const d = D[v * 3 + k] as number;
+            P[v * 3 + k] = (posed0[v * 3 + k] as number) + d;
+            for (const b of betweens)
+              b.P[v * 3 + k] =
+                (b.posed[v * 3 + k] as number) +
+                (1 - b.back) * d +
+                b.back * (before[v * 3 + k] as number);
           }
-        if (most < TOLERANCE) {
-          settled = true;
-          break;
+      };
+      place();
+
+      for (let round = 0; round < ROUNDS; round++) {
+        // Before the last round, the trunk's press is let go where no thigh is near it at this flexion:
+        // what a contact pressed at an earlier one, or what the spread carried past the contact.
+        if (round === ROUNDS - 1) {
+          const thighNear = new SurfaceDistance(P, thighSurface);
+          for (const v of trunks) {
+            const d = thighNear.distance(
+              P[v * 3] as number,
+              P[v * 3 + 1] as number,
+              P[v * 3 + 2] as number,
+              FOLD_PRESS.far,
+            );
+            const keep = 1 - smoothstep(FOLD_PRESS.near, FOLD_PRESS.far, d);
+            for (let k = 0; k < 3; k++) D[v * 3 + k] = (D[v * 3 + k] as number) * keep;
+          }
+          place();
         }
-        // The first pushes of a round spread over the neighbouring skin, so the thigh's moves as a surface, not vertex by vertex.
-        if (pass < SPREADING)
-          for (let again = 0; again < SPREADS; again++) {
-            for (const v of thighs) {
+        // The trunk's skin holds still while the thigh's is pushed out of it, so the pushes settle.
+        const trunkSkin = patch.pose(P);
+        const grid = new TriangleGrid(P, skin, triangles);
+        const crossings = new TriangleCrossings(P, trunkPatch);
+        const crossingsBetween = betweens.map(
+          (b) => [new TriangleCrossings(b.P, trunkPatch), 1 / (1 - b.back)] as const,
+        );
+        pushed.fill(0);
+        against.fill(-1);
+        // Only the thigh's skin within `NEAR` of the trunk's can meet it this round, and only its edges cross it.
+        const close = new Uint8Array(n);
+        const active = thighs.filter((v) => {
+          const near = grid.near(
+            P[v * 3] as number,
+            P[v * 3 + 1] as number,
+            P[v * 3 + 2] as number,
+            NEAR,
+          );
+          if (near.length) close[v] = 1;
+          return near.length > 0;
+        });
+        const activeEdges: number[] = [];
+        for (let e = 0; e < edges.length; e += 2)
+          if (close[edges[e] as number] || close[edges[e + 1] as number])
+            activeEdges.push(edges[e] as number, edges[e + 1] as number);
+        const passes = round === 0 ? PASSES : LATER_PASSES;
+        let settled = false;
+        for (let pass = 0; pass < passes; pass++) {
+          let most = 0;
+          // Only the thigh's skin is pushed while the trunk's holds still.
+          for (const v of thighs) {
+            size[v] = 0;
+            push[v * 3] = 0;
+            push[v * 3 + 1] = 0;
+            push[v * 3 + 2] = 0;
+          }
+          /**
+           * Thigh vertex `v` is `wanted` behind where it may be, by trunk triangle
+           * `t`, whose outward normal is `n`: it is pushed out along `n`, if that
+           * is more than it is already to be pushed.
+           */
+          const contact = (v: number, t: number, n: ArrayLike<number>, wanted: number) => {
+            most = Math.max(most, wanted);
+            // However far behind a plane, a pass moves skin only so far: what is behind a plane is not always behind its triangle.
+            const need = Math.min(wanted, MOST_PUSH);
+            if (need <= (size[v] as number)) return;
+            size[v] = need;
+            against[v] = t;
+            for (let k = 0; k < 3; k++) push[v * 3 + k] = (n[k] as number) * need;
+          };
+          // Skin behind the trunk's, by the nearest of it...
+          for (const v of active) {
+            const [x, y, z] = [P[v * 3] as number, P[v * 3 + 1] as number, P[v * 3 + 2] as number];
+            const near = grid.near(x, y, z, REACH);
+            if (!near.length) continue;
+            const c = trunkSkin.signed(x, y, z, point, near, normal);
+            if (CLEARANCE - c > 0) contact(v, trunkSkin.nearest, normal, CLEARANCE - c);
+          }
+          // ... and skin whose edges pass through it, which is what is seen, wherever the nearest of it is;
+          // between the keys, a push of the key moves the skin only so much of the way, so it is what is behind over that.
+          const through = (c: TriangleCrossings, t: number, v: number, scale: number) => {
+            if (!isThigh[v]) return;
+            const behind = -c.side(t, v);
+            if (behind <= 0) return;
+            c.normal(t, normal);
+            contact(v, t, normal, scale * behind + CLEARANCE);
+          };
+          for (const [c, scale] of [[crossings, 1] as const, ...crossingsBetween])
+            for (let e = 0; e < activeEdges.length; e += 2) {
+              const a = activeEdges[e] as number;
+              const b = activeEdges[e + 1] as number;
+              const found = c.find(a, b);
+              for (let h = 0; h < found; h++) {
+                through(c, c.hits[h] as number, a, scale);
+                through(c, c.hits[h] as number, b, scale);
+              }
+            }
+          if (most < TOLERANCE) {
+            settled = true;
+            break;
+          }
+          // The first pushes of a round spread over the neighbouring skin, so the thigh's moves as a surface, not vertex by vertex.
+          if (pass < SPREADING)
+            for (let again = 0; again < SPREADS; again++) {
+              for (const v of thighs) {
+                const [from, to] = [around.start[v] as number, around.start[v + 1] as number];
+                for (let k = 0; k < 3; k++) {
+                  let sum = 0;
+                  for (let e = from; e < to; e++)
+                    sum += push[(around.list[e] as number) * 3 + k] as number;
+                  smoothed[v * 3 + k] =
+                    (1 - SPREAD) * (push[v * 3 + k] as number) +
+                    (SPREAD * sum) / Math.max(1, to - from);
+                }
+              }
+              for (const v of thighs)
+                for (let k = 0; k < 3; k++) push[v * 3 + k] = smoothed[v * 3 + k] as number;
+            }
+          // A vertex in a concave corner is pushed out of one triangle into the next and back; pushing less each time settles it.
+          const relax = pass < RELAX_FROM ? 1 : RELAXED;
+          for (const v of thighs)
+            for (let k = 0; k < 3; k++) {
+              const step = (push[v * 3 + k] as number) * relax;
+              D[v * 3 + k] = (D[v * 3 + k] as number) + step;
+              pushed[v * 3 + k] = (pushed[v * 3 + k] as number) + step;
+            }
+          place(thighs);
+        }
+        // A round that did not settle (a thigh wedged against a belly with nowhere to go) has
+        // pushes that are no contact's, and nothing of them is shared: the step ends as it is.
+        if (round === ROUNDS - 1 || !settled) break;
+        // The trunk gives its share: what the round pushed the thigh's skin out by, the thigh's
+        // skin gives back `TRUNK_GIVE` of, and the trunk's triangle it met is pressed in as far
+        // (its corners by their share of the point nearest the thigh's skin, the least press
+        // that moves that point so far; a corner pressed by two contacts of one thigh takes the deeper).
+        for (const p of presses) p.fill(0);
+        for (const s of pressSizes) s.fill(0);
+        for (const v of thighs) {
+          // All the thigh's skin the round pushed gives back alike, so the push stays as smooth as it was.
+          for (let k = 0; k < 3; k++) {
+            const gave = TRUNK_GIVE * (pushed[v * 3 + k] as number);
+            D[v * 3 + k] = (D[v * 3 + k] as number) - gave;
+            normal[k] = gave;
+          }
+          const t = against[v] as number;
+          if (t < 0) continue;
+          // Each thigh's press is its own, and the two add: skin between the legs, pressed from both sides, is squeezed, not pushed in.
+          const by2 = (sides[v] as number) >= 0.5 ? 0 : 1;
+          const press = presses[by2] as Float64Array;
+          const size = pressSizes[by2] as Float64Array;
+          const corners = trunkPatch.subarray(t * 3, t * 3 + 3);
+          barycentric(P, corners, v, share);
+          const across =
+            (share[0] as number) ** 2 + (share[1] as number) ** 2 + (share[2] as number) ** 2;
+          for (let c = 0; c < 3; c++) {
+            const corner = corners[c] as number;
+            if (!isTrunk[corner]) continue;
+            const by = (share[c] as number) / (across || 1);
+            const deep =
+              by * Math.hypot(normal[0] as number, normal[1] as number, normal[2] as number);
+            if (deep <= (size[corner] as number)) continue;
+            size[corner] = deep;
+            for (let k = 0; k < 3; k++) press[corner * 3 + k] = -by * (normal[k] as number);
+          }
+        }
+        // The press spread over the trunk's neighbouring skin, so the belly gives as a surface and
+        // is not dimpled at a corner (a dimple's triangles tip, and would push the thigh askew).
+        for (const press of presses) {
+          // Skin the trunk does not move (beyond it, or the thigh's) holds its neighbours' press toward nothing.
+          for (let again = 0; again < PRESS_SPREADS; again++) {
+            for (const v of trunks) {
               const [from, to] = [around.start[v] as number, around.start[v + 1] as number];
               for (let k = 0; k < 3; k++) {
                 let sum = 0;
-                for (let e = from; e < to; e++)
-                  sum += push[(around.list[e] as number) * 3 + k] as number;
+                for (let e = from; e < to; e++) {
+                  const u = around.list[e] as number;
+                  if (isTrunk[u]) sum += press[u * 3 + k] as number;
+                }
                 smoothed[v * 3 + k] =
-                  (1 - SPREAD) * (push[v * 3 + k] as number) +
-                  (SPREAD * sum) / Math.max(1, to - from);
+                  (1 - PRESS_SPREAD) * (press[v * 3 + k] as number) +
+                  (PRESS_SPREAD * sum) / Math.max(1, to - from);
               }
             }
-            for (const v of thighs)
-              for (let k = 0; k < 3; k++) push[v * 3 + k] = smoothed[v * 3 + k] as number;
-          }
-        // A vertex in a concave corner is pushed out of one triangle into the next and back; pushing less each time settles it.
-        const relax = pass < RELAX_FROM ? 1 : RELAXED;
-        for (const v of thighs)
-          for (let k = 0; k < 3; k++) {
-            const step = (push[v * 3 + k] as number) * relax;
-            D[v * 3 + k] = (D[v * 3 + k] as number) + step;
-            pushed[v * 3 + k] = (pushed[v * 3 + k] as number) + step;
-          }
-        place(thighs);
-      }
-      // A round that did not settle (a thigh wedged against a belly with nowhere to go) has
-      // pushes that are no contact's, and nothing of them is shared: the step ends as it is.
-      if (round === ROUNDS - 1 || !settled) break;
-      // The trunk gives its share: what the round pushed the thigh's skin out by, the thigh's
-      // skin gives back `TRUNK_GIVE` of, and the trunk's triangle it met is pressed in as far
-      // (its corners by their share of the point nearest the thigh's skin, the least press
-      // that moves that point so far; a corner pressed by two contacts of one thigh takes the deeper).
-      for (const p of presses) p.fill(0);
-      for (const s of pressSizes) s.fill(0);
-      for (const v of thighs) {
-        // All the thigh's skin the round pushed gives back alike, so the push stays as smooth as it was.
-        for (let k = 0; k < 3; k++) {
-          const gave = TRUNK_GIVE * (pushed[v * 3 + k] as number);
-          D[v * 3 + k] = (D[v * 3 + k] as number) - gave;
-          normal[k] = gave;
-        }
-        const t = against[v] as number;
-        if (t < 0) continue;
-        // Each thigh's press is its own, and the two add: skin between the legs, pressed from both sides, is squeezed, not pushed in.
-        const by2 = (sides[v] as number) >= 0.5 ? 0 : 1;
-        const press = presses[by2] as Float64Array;
-        const size = pressSizes[by2] as Float64Array;
-        const corners = parts.skin.subarray(t * 3, t * 3 + 3);
-        barycentric(P, corners, v, share);
-        const across =
-          (share[0] as number) ** 2 + (share[1] as number) ** 2 + (share[2] as number) ** 2;
-        for (let c = 0; c < 3; c++) {
-          const corner = corners[c] as number;
-          if (!isTrunk[corner]) continue;
-          const by = (share[c] as number) / (across || 1);
-          const deep =
-            by * Math.hypot(normal[0] as number, normal[1] as number, normal[2] as number);
-          if (deep <= (size[corner] as number)) continue;
-          size[corner] = deep;
-          for (let k = 0; k < 3; k++) press[corner * 3 + k] = -by * (normal[k] as number);
-        }
-      }
-      // The press spread over the trunk's neighbouring skin, so the belly gives as a surface and
-      // is not dimpled at a corner (a dimple's triangles tip, and would push the thigh askew).
-      for (const press of presses) {
-        // Skin the trunk does not move (beyond it, or the thigh's) holds its neighbours' press toward nothing.
-        for (let again = 0; again < PRESS_SPREADS; again++) {
-          for (const v of trunks) {
-            const [from, to] = [around.start[v] as number, around.start[v + 1] as number];
-            for (let k = 0; k < 3; k++) {
-              let sum = 0;
-              for (let e = from; e < to; e++) {
-                const u = around.list[e] as number;
-                if (isTrunk[u]) sum += press[u * 3 + k] as number;
-              }
-              smoothed[v * 3 + k] =
-                (1 - PRESS_SPREAD) * (press[v * 3 + k] as number) +
-                (PRESS_SPREAD * sum) / Math.max(1, to - from);
-            }
+            for (const v of trunks)
+              for (let k = 0; k < 3; k++) press[v * 3 + k] = smoothed[v * 3 + k] as number;
           }
           for (const v of trunks)
-            for (let k = 0; k < 3; k++) press[v * 3 + k] = smoothed[v * 3 + k] as number;
+            for (let k = 0; k < 3; k++)
+              D[v * 3 + k] = (D[v * 3 + k] as number) + (press[v * 3 + k] as number);
         }
-        for (const v of trunks)
-          for (let k = 0; k < 3; k++)
-            D[v * 3 + k] = (D[v * 3 + k] as number) + (press[v * 3 + k] as number);
+        place();
       }
-      place();
+      affected.forEach((v, a) => {
+        const at = ((a * FOLD_OPENINGS + o) * FOLD_KEYS + key) * 3;
+        const was = vertexNormal(posed0, v);
+        const now = vertexNormal(P, v);
+        for (let k = 0; k < 3; k++) {
+          if (a < movers.length) keyed[at + k] = (D[v * 3 + k] as number) * (taper[v] as number);
+          keyedNormal[at + k] = ((now[k] as number) - (was[k] as number)) * (taper[v] as number);
+        }
+      });
+      yield;
     }
-    affected.forEach((v, a) => {
-      const at = (a * FOLD_KEYS + key) * 3;
-      const was = vertexNormal(posed0, v);
-      const now = vertexNormal(P, v);
-      for (let k = 0; k < 3; k++) {
-        if (a < movers.length) keyed[at + k] = (D[v * 3 + k] as number) * (taper[v] as number);
-        keyedNormal[at + k] = ((now[k] as number) - (was[k] as number)) * (taper[v] as number);
-      }
-    });
-    yield;
   }
   // Only the vertices the fold ever moves or turns are kept.
-  const stride = FOLD_KEYS * 3;
+  const stride = FOLD_OPENINGS * FOLD_KEYS * 3;
   const kept = affected.flatMap((_, a) => {
     for (let i = 0; i < stride; i++)
       if (keyed[a * stride + i] !== 0 || keyedNormal[a * stride + i] !== 0) return [a];

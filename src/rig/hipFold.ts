@@ -37,29 +37,44 @@ export const HIP_FOLD = {
    */
   step: 2.5,
   to: 140,
+  /**
+   * The opening (degrees, the thigh swung out to its side) of the fold's second
+   * set of keys: the fold is solved with the thighs together and again opened so
+   * far, and read between the two by how far a hip is opened (`addFold`), the
+   * last past it. A press solved with the thighs together presses, in an opened
+   * pose, belly the thighs have left; solved opened, it does not (see
+   * docs/ARCHITECTURE.md, "The hip fold"). CHOICE: the deep squat's 20°, the
+   * widest a flexed hip opens in the pack's poses.
+   */
+  opened: 20,
 } as const;
 
-/** How many flexions the fold is solved at. */
+/** How many flexions the fold is solved at, for each opening. */
 export const FOLD_KEYS = (HIP_FOLD.to - HIP_FOLD.from) / HIP_FOLD.step;
+/** How many openings the fold is solved at: the thighs together, and `HIP_FOLD.opened`. */
+export const FOLD_OPENINGS = 2;
 
-/** How far each hip is flexed in a pose, in degrees (`hipFlexion`). */
+/** How far each hip is flexed and opened in a pose, in degrees (`hipFlexion`). */
 export interface HipFlexion {
   left: number;
   right: number;
+  leftOpening: number;
+  rightOpening: number;
 }
 
 /**
- * How far the hip bone `b` is flexed, in degrees: the turn about the figure's
- * side-to-side axis (x) that a rotation made of an opening of the leg (about
- * z), then a flexion (about x), then a twist of the thigh (about y), as the
- * poses' channels are ("Zrotation Xrotation Yrotation", `bodyPoseRotations`),
- * has in it. A twist leaves the thigh's up axis where it was, and an opening
- * only swings it from side to side, so neither moves its height out of the
- * figure's plane front to back, which is what flexion is. Forward (the knee up)
- * is positive, a turn about -x.
+ * How far the hip bone `b` is flexed and opened, in degrees, for a rotation
+ * made of an opening of the thigh (about its own z) and then a flexion (about
+ * x), with any twist of the thigh about its own length (y) after: the squat's
+ * hips (`Xrotation` -125, `Yrotation` 20 in its channels) are exactly that,
+ * 125° and 20°. Where the rotation takes the thigh's up axis, (-sin a,
+ * cos a cos f, cos a sin f) for an opening a and a flexion f, gives both: the
+ * flexion is the axis's turn front to back, about x, whatever its opening, and
+ * the opening how far it has left the figure's plane front to back. A twist
+ * moves neither. Forward (the knee up) is a positive flexion, a turn about -x;
+ * out to its own side a positive opening (`side` +1 for the left, -1 for the right).
  */
-function flexionOf(rotations: BoneRotations, b: number): number {
-  // Where the bone's rotation takes the up axis: (-sin a cos f, cos a cos f, sin f) for an opening a and a flexion f.
+function anglesOf(rotations: BoneRotations, b: number, side: number): [number, number] {
   const [x, y, z] = rotate(
     [
       rotations[b * 4] as number,
@@ -71,18 +86,37 @@ function flexionOf(rotations: BoneRotations, b: number): number {
     1,
     0,
   );
-  // cos f is the length of (x, y), signed as y is while the opening is under a right angle, which lets f pass 90°.
-  const flexion = Math.atan2(z, y < 0 ? -Math.hypot(x, y) : Math.hypot(x, y));
-  return (-flexion * 180) / Math.PI;
+  const flexion = (-Math.atan2(z, y) * 180) / Math.PI;
+  const opening = (Math.asin(Math.max(-1, Math.min(1, -side * x))) * 180) / Math.PI;
+  return [flexion, opening];
 }
 
-/** How far each hip (`HIP_FOLD.bone`, left and right) is flexed in a pose; 0 for a skeleton without it. */
+/** How far each hip (`HIP_FOLD.bone`, left and right) is flexed and opened in a pose; 0 for a skeleton without it. */
 export function hipFlexion(rest: RestBones, rotations: BoneRotations): HipFlexion {
-  const of = (side: string) => {
+  const of = (side: string, sign: number): [number, number] => {
     const b = rest.names.indexOf(`${HIP_FOLD.bone}.${side}`);
-    return b < 0 ? 0 : flexionOf(rotations, b);
+    return b < 0 ? [0, 0] : anglesOf(rotations, b, sign);
   };
-  return { left: of("L"), right: of("R") };
+  const [left, leftOpening] = of("L", 1);
+  const [right, rightOpening] = of("R", -1);
+  return { left, right, leftOpening, rightOpening };
+}
+
+/**
+ * The rotation of a hip flexed `flexion` degrees and opened `opening` degrees to
+ * its side (`side` +1 for the left, -1 for the right), as `hipFlexion` reads them.
+ */
+export function hipRotation(
+  flexion: number,
+  opening: number,
+  side: number,
+): [number, number, number, number] {
+  // The flexion (about -x) after the opening (about z): qx · qz.
+  const fx = Math.sin((-flexion * Math.PI) / 360);
+  const fw = Math.cos((-flexion * Math.PI) / 360);
+  const oz = Math.sin((side * opening * Math.PI) / 360);
+  const ow = Math.cos((side * opening * Math.PI) / 360);
+  return [fx * ow, -fx * oz, fw * oz, fw * ow];
 }
 
 /** Whether either hip of the pose is flexed enough for the fold to show. */
@@ -90,7 +124,7 @@ export const folds = (hips: HipFlexion): boolean => Math.max(hips.left, hips.rig
 
 /**
  * Per vertex of `positions` (the rest figure), how much of its fold the left
- * hip's flexion drives, the right's the rest (`foldFlexion`). The thigh's skin
+ * hip's flexion drives, the right's the rest (`foldAngles`). The thigh's skin
  * goes with its thighs, as the bones move it: the left thigh's share of what
  * the vertex holds on the two. The trunk's goes with the side of the body it
  * lies on, from all of it at the left hip joint to none at the right, smoothly,
@@ -129,24 +163,25 @@ export function foldSides(
 export const FOLD_THIGH_HOLD = 0.25;
 
 /**
- * A figure's hip fold: for each vertex of the base mesh the fold moves, and
- * each flexion it is solved at (`FOLD_KEYS` of them, `HIP_FOLD.step` degrees
- * apart from `from`), the displacement (metres) that puts the skin the thigh
- * holds against the trunk's instead of through it, added to the vertex as the
- * skin poses it with both hips flexed so far, and how the skin's normal turns
- * with it (the normal the displaced skin has less the one the bones left it).
- * Axes are the figure's own.
+ * A figure's hip fold: for each vertex of the base mesh the fold moves, each
+ * opening it is solved at (`FOLD_OPENINGS`: the thighs together, and
+ * `HIP_FOLD.opened`) and each flexion (`FOLD_KEYS` of them, `HIP_FOLD.step`
+ * degrees apart from `from`), the displacement (metres) that puts the skin the
+ * thigh holds against the trunk's instead of through it, added to the vertex as
+ * the skin poses it with both hips so flexed and opened, and how the skin's
+ * normal turns with it (the normal the displaced skin has less the one the bones
+ * left it). Axes are the figure's own.
  */
 export interface HipFold {
   /** The vertices the fold moves or turns, in the base mesh's numbering. */
   vertices: Uint32Array;
   /** Per vertex of the base mesh, its place in `vertices`, or -1 if the fold leaves it. */
   slot: Int32Array;
-  /** Per moved vertex, per key, x, y, z: `vectors[(slot * FOLD_KEYS + key) * 3 + axis]`. */
+  /** Per moved vertex, per opening, per key, x, y, z: `vectors[((slot * FOLD_OPENINGS + opening) * FOLD_KEYS + key) * 3 + axis]`. */
   vectors: Float32Array;
-  /** Per vertex, per key, x, y, z, as `vectors`: what is added to the skinned normal, before it is made a unit vector again. */
+  /** Per vertex, per opening, per key, x, y, z, as `vectors`: what is added to the skinned normal, before it is made a unit vector again. */
   normals: Float32Array;
-  /** Per vertex, by slot: how much of it is the left hip's (`foldSides`), the right's the rest, which says the flexion it is read at (`foldFlexion`). */
+  /** Per vertex, by slot: how much of it is the left hip's (`foldSides`), the right's the rest, which says the hip it is read by (`foldAngles`). */
   side: Float32Array;
 }
 
@@ -160,31 +195,56 @@ export const noFold = (n: number): HipFold => ({
 });
 
 /**
- * The flexion vertex `v`'s fold is read at, by its side (`HipFold.side`), or
- * null where the fold leaves it: each hip's flexion counted by twice the share
- * of the vertex that is its side, to all of it from half, and the greater of the
- * two. Skin all one thigh's is read at that hip's flexion; skin both thighs
- * reach (the belly between the hips, the groin) is read at the more flexed
- * hip's, for either thigh alone presses it as far as both do; and between, the
- * other hip counts for less, to nothing at its own side's edge.
+ * How near a thigh's skin keeps the trunk's press, metres. CHOICE: at each key
+ * the solve keeps the press whole where the thigh's skin is within `near` of the
+ * trunk's (twice the 5 mm a contact leaves), and lets it go smoothly to nothing
+ * at `far`: skin no thigh touches is not pressed.
  */
-export function foldFlexion(fold: HipFold, v: number, hips: HipFlexion): number | null {
+export const FOLD_PRESS = { near: 0.01, far: 0.03 } as const;
+
+/** 0 at or below `a`, 1 at or above `b`, smooth between. */
+export const smoothstep = (a: number, b: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * The flexion and the opening vertex `v`'s fold is read at, by its side
+ * (`HipFold.side`), or null where the fold leaves it: each hip's flexion counted
+ * by twice the share of the vertex that is its side, to all of it from half, and
+ * the greater of the two, with that hip's opening. Skin all one thigh's is read
+ * by that hip; skin both thighs reach (the belly between the hips, the groin) by
+ * the more flexed hip, for either thigh alone presses it as far as both do; and
+ * between, the other hip counts for less, to nothing at its own side's edge.
+ */
+export function foldAngles(
+  fold: HipFold,
+  v: number,
+  hips: HipFlexion,
+): { flexion: number; opening: number } | null {
   const slot = fold.slot[v] as number;
   if (!(slot >= 0)) return null;
   const s = fold.side[slot] as number;
-  return Math.max(Math.min(1, 2 * s) * hips.left, Math.min(1, 2 * (1 - s)) * hips.right);
+  const left = Math.min(1, 2 * s) * hips.left;
+  const right = Math.min(1, 2 * (1 - s)) * hips.right;
+  return left >= right
+    ? { flexion: left, opening: hips.leftOpening }
+    : { flexion: right, opening: hips.rightOpening };
 }
 
 /**
  * The value of `table` (a fold's `vectors` or `normals`) for slot `slot` at
- * flexion `flexion` degrees, added to `out[at..at + 2]`: nothing up to
- * `HIP_FOLD.from`, the first key's from there to that key, then the straight
- * line from key to key, and the last key's past it.
+ * flexion `flexion` and opening `opening` degrees, added to `out[at..at + 2]`.
+ * By flexion: nothing up to `HIP_FOLD.from`, the first key's from there to that
+ * key, then the straight line from key to key, and the last key's past it; by
+ * opening: the straight line from the thighs together (no opening, or a thigh
+ * drawn in across the body) to `HIP_FOLD.opened`, and that past it.
  */
 function addKeyed(
   table: Float32Array,
   slot: number,
   flexion: number,
+  opening: number,
   out: Float32Array,
   at: number,
 ): void {
@@ -195,34 +255,39 @@ function addKeyed(
   const i = Math.min(Math.floor(t), FOLD_KEYS);
   const along = i >= FOLD_KEYS ? 1 : t - i;
   const hi = Math.min(i, FOLD_KEYS - 1);
-  const base = slot * FOLD_KEYS * 3;
-  for (let k = 0; k < 3; k++) {
+  const open = Math.min(1, Math.max(0, opening / HIP_FOLD.opened));
+  const value = (o: number, k: number) => {
+    const base = (slot * FOLD_OPENINGS + o) * FOLD_KEYS * 3;
     const to = table[base + hi * 3 + k] as number;
     const was = i === 0 || i >= FOLD_KEYS ? 0 : (table[base + (i - 1) * 3 + k] as number);
-    out[at + k] = (out[at + k] as number) + (i >= FOLD_KEYS ? to : was + (to - was) * along);
-  }
+    return i >= FOLD_KEYS ? to : was + (to - was) * along;
+  };
+  for (let k = 0; k < 3; k++)
+    out[at + k] = (out[at + k] as number) + value(0, k) * (1 - open) + value(1, k) * open;
 }
 
-/** Vertex `v`'s displacement at flexion `flexion` degrees, added to `out[at..at + 2]`. */
+/** Vertex `v`'s displacement at flexion `flexion` and opening `opening` degrees (`foldAngles`), added to `out[at..at + 2]`. */
 export function addFold(
   fold: HipFold,
   v: number,
   flexion: number,
+  opening: number,
   out: Float32Array,
   at: number,
 ): void {
-  addKeyed(fold.vectors, fold.slot[v] as number, flexion, out, at);
+  addKeyed(fold.vectors, fold.slot[v] as number, flexion, opening, out, at);
 }
 
-/** What vertex `v`'s normal gains at flexion `flexion` degrees, added to `out[at..at + 2]`. */
+/** What vertex `v`'s normal gains at flexion `flexion` and opening `opening` degrees, added to `out[at..at + 2]`. */
 export function addFoldNormal(
   fold: HipFold,
   v: number,
   flexion: number,
+  opening: number,
   out: Float32Array,
   at: number,
 ): void {
-  addKeyed(fold.normals, fold.slot[v] as number, flexion, out, at);
+  addKeyed(fold.normals, fold.slot[v] as number, flexion, opening, out, at);
 }
 
 /**
@@ -415,13 +480,17 @@ export interface SurfaceFold {
   /** How many rows `data` has. */
   rows: number;
   /**
-   * Row `r`, key `k`, as two texels: `(r * FOLD_KEYS + k) * 2` holds the
-   * displacement (x, y, z, 0) and the next the normal's change (x, y, z, 0).
-   * The first key's displacement texel holds the row's side (`HipFold.side`)
-   * in its fourth place: `data[r * FOLD_KEYS * 8 + 3]`.
+   * Row `r`, opening `o`, key `k`, as two texels: `((r * FOLD_OPENINGS + o) *
+   * FOLD_KEYS + k) * 2` holds the displacement (x, y, z, 0) and the next the
+   * normal's change (x, y, z, 0). A row is `FOLD_ROW_TEXELS` texels. Its first
+   * texel holds the row's side (`HipFold.side`) in its fourth place:
+   * `data[r * FOLD_ROW_TEXELS * 4 + 3]`.
    */
   data: Float32Array;
 }
+
+/** Texels per row of a surface fold: two (a displacement and a normal's change) per key, per opening. */
+export const FOLD_ROW_TEXELS = FOLD_OPENINGS * FOLD_KEYS * 2;
 
 /** The part of a subdivision stencil `surfaceFold` reads: row `s` mixes `src[offsets[s]..offsets[s + 1]]` by `weights`. */
 export interface StencilRows {
@@ -453,7 +522,8 @@ export function surfaceFold(
         rowOf[s] = rows++;
         break;
       }
-  const data = new Float32Array(rows * FOLD_KEYS * 8);
+  const keys = FOLD_OPENINGS * FOLD_KEYS;
+  const data = new Float32Array(rows * keys * 8);
   for (let s = 0; s < surfaceVertices; s++) {
     const row = rowOf[s] as number;
     if (row < 0) continue;
@@ -465,15 +535,15 @@ export function surfaceFold(
       const w = stencil.weights[e] as number;
       side += w * (fold.side[slot] as number);
       held += w;
-      for (let key = 0; key < FOLD_KEYS; key++)
+      for (let key = 0; key < keys; key++)
         for (let k = 0; k < 3; k++) {
-          const at = (row * FOLD_KEYS + key) * 8 + k;
-          const from = (slot * FOLD_KEYS + key) * 3 + k;
+          const at = (row * keys + key) * 8 + k;
+          const from = (slot * keys + key) * 3 + k;
           data[at] = (data[at] as number) + w * (fold.vectors[from] as number);
           data[at + 4] = (data[at + 4] as number) + w * (fold.normals[from] as number);
         }
     }
-    data[row * FOLD_KEYS * 8 + 3] = held > 0 ? side / held : 0;
+    data[row * keys * 8 + 3] = held > 0 ? side / held : 0;
   }
   const slot = Float32Array.from(renderToSurface, (s) => rowOf[s] as number);
   return { slot, rows, data };
@@ -489,16 +559,17 @@ export function renderFold(fold: SurfaceFold): HipFold {
   const vertices = Uint32Array.from(
     Array.from(slot.keys()).filter((v) => (slot[v] as number) >= 0),
   );
-  const vectors = new Float32Array(fold.rows * FOLD_KEYS * 3);
-  const normals = new Float32Array(fold.rows * FOLD_KEYS * 3);
+  const keys = FOLD_OPENINGS * FOLD_KEYS;
+  const vectors = new Float32Array(fold.rows * keys * 3);
+  const normals = new Float32Array(fold.rows * keys * 3);
   const side = new Float32Array(fold.rows);
   for (let r = 0; r < fold.rows; r++) {
-    side[r] = fold.data[r * FOLD_KEYS * 8 + 3] as number;
-    for (let key = 0; key < FOLD_KEYS; key++)
+    side[r] = fold.data[r * keys * 8 + 3] as number;
+    for (let key = 0; key < keys; key++)
       for (let k = 0; k < 3; k++) {
-        const from = (r * FOLD_KEYS + key) * 8 + k;
-        vectors[(r * FOLD_KEYS + key) * 3 + k] = fold.data[from] as number;
-        normals[(r * FOLD_KEYS + key) * 3 + k] = fold.data[from + 4] as number;
+        const from = (r * keys + key) * 8 + k;
+        vectors[(r * keys + key) * 3 + k] = fold.data[from] as number;
+        normals[(r * keys + key) * 3 + k] = fold.data[from + 4] as number;
       }
   }
   return { vertices, slot, vectors, normals, side };

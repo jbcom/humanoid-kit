@@ -1178,10 +1178,12 @@ trunk's skin that gives is every corner of its triangles in front of the hips
 belly, the groin and the mound. The step is small enough that the push is always
 from the nearest skin and never from the far side of the belly, and the
 displacement a step ends with carries on to the next. Each step also looks at
-the pose halfway back to the last one, with the mean of the two folds, so that
-what is played back between two flexions is as clear as they are. The result per
-figure: per moved vertex, 44 displacements (a flexion each, in the figure's axes)
-and 44 changes of its normal. In the average figure at 120°, 175 vertices of the
+poses back toward the last one (`BETWEEN`, below), with the folds mixed as they
+are played, so that what is played back between two flexions is as clear as they
+are. All of it is done at two openings of the hips (below). The result per
+figure: per moved vertex and opening, 44 displacements (a flexion each, in the
+figure's axes) and 44 changes of its normal. In the average figure at 120°
+(thighs together, measured before the release and the second key), 175 vertices of the
 thigh move by up to 47 mm and 296 of the trunk by up to 40 mm (234 and 420, 71
 and 59 mm, at the last key; the heavy man 235 and 365, 69 and 63 mm at 120°),
 about 1050 rows with the neighbours that only turn. The fold reaches the whole
@@ -1227,16 +1229,44 @@ belly then gives all at once rather than as the contact grows; fading out a pres
 under a few millimetres, or keeping the press off the crotch, were worse on every
 count.
 
-**Abduction (decision, 2026-10-10): no key of its own.** `hipFlexion` reads the
-`squat`'s hips at 129.7° and ignores its 20° opening. The fold solved with the
-hips opened as the squat opens them (both thighs 20° out) was worse on the smoke
-tier's squat rows than the fold of the hips together read at the squat's flexion
-(the muscular man's inverted triangles 997 → 2115, the heavy woman's
-1263 → 1670), and the shared solve played at the squat's flexion clears it: on
-the control mesh the squat's thigh edges through the trunk (`HipContact`) are 50
-to 88 without the fold, 2 to 10 with the thigh pushed alone, and 0 to 6 with the
-shared solve, in the nine bodies, and no squat row of the smoke tier is worse. So the fold is keyed by flexion alone, and a second key would double
-the data and the solve for nothing measured.
+**Abduction (decision, 2026-10-10, revised the same day): a second key.** The
+fold is solved twice, with the thighs together and opened `HIP_FOLD.opened`
+(20°, CHOICE: the `squat`'s own opening), and read between the two by how far
+the hip is opened. Keyed by flexion alone, the press solved with the thighs
+together was played in the squat, whose thighs are 20° apart: it pressed the
+middle of the belly, which no thigh reaches there, and from the front read as a
+V-shaped groove down from the navel. Measured as `PressReach` (the deepest press
+on trunk skin more than 3 cm from the posed thigh's skin, as a share of the
+deepest press anywhere, control mesh, nine bodies): 0.95 to 1.00 in the squat
+with the thighs-together fold. Three fixes were weighed. Gating the press at
+playback by how near a thigh is was tried by the distance to the thigh bone's
+axis, which an opened thigh's hip end barely moves along, and did not clear it;
+a gate by the posed skin's distance would need the thigh's surface in the shader.
+Solving the press only from contacts present across a range of openings would
+press for the closed pose too little. A key on the opening makes the press and
+the thigh's push one solve of one pose, so the thigh never rests on belly the
+press has moved for another pose: the squat's share is 0.00 in all nine bodies.
+It doubles the fold's data and its solve. The earlier measure that dropped the
+opened solve (the muscular man's smoke-tier inverted triangles 997 → 2115) was
+of the thigh pushed alone with no release; it is gone with the release below and
+`LATERAL`.
+
+**The press only where a thigh is (2026-10-10).** Before the last round of each
+key the trunk's displacement is kept by `1 - smoothstep(FOLD_PRESS.near,
+FOLD_PRESS.far, d)`, `d` the distance from the vertex, so displaced, to the
+thigh's skin as posed and pushed (`SurfaceDistance` over the thigh's triangles,
+`src/rig/contact.ts`): whole within 1 cm, none past 3 cm (CHOICE, the reach of
+the gate below). The spread presses belly the thigh never meets; without the
+release the average figure's squat share is 0.155. The last round, pushes alone,
+then puts the thigh back out of whatever the release let go. Opened, the thigh is
+pushed out of the belly and the groin only, the trunk's skin no farther than
+`LATERAL` (4 cm, measured on the muscular man's squat: 2 cm left 34 mm of thigh
+through, 3 cm 22 mm, 4 cm none) to the side of a hip joint: an opened, deeply
+flexed thigh's outer front drives into the flank by the iliac crest, and pushed
+out of it the opened keys past 115° did not settle. The thighs-together solve
+keeps all the trunk (with `LATERAL` there too the closed poses left 26 mm). Each
+key also looks back a half and a quarter of a step (`BETWEEN`, CHOICE: at a half
+alone the slim woman was 14 mm through at 139°).
 
 **Why the normal is part of the fold.** The skinned normal is the bones' own, and
 where the fold has moved the skin by centimetres it is a normal of skin that is no
@@ -1249,16 +1279,20 @@ the unit normal on the mesh the bones pose (area-weighted, over the control mesh
 and the shader adds that to the skinned normal and normalises it. (The bones' normal
 is not the control mesh's exactly, so it is a change that is stored, not a normal.)
 
-**How it plays.** `hipFlexion` reads each hip's flexion from the bone's rotation as
-the poses' channels build it (abduction, then flexion, then twist, so a twisted
-or opened thigh is not flexed, and a hip flexed past 90° still is). Each vertex
+**How it plays.** `hipFlexion` reads each hip's flexion and opening from the
+direction the bone's rotation turns the thigh's length to: the flexion is the
+angle it is swung forward in the sagittal plane, the opening the angle it leans
+out of that plane to its own side (so a twisted thigh is neither, a hip flexed
+past 90° still is, and the `squat` reads 125° and 20°; `hipRotation` makes the
+hip it reads, to 10⁻⁴°). The opening a vertex is read at is that of the hip whose
+flexion it reads. Each vertex
 the fold moves or turns has a side (`foldSides`): of the thigh's skin, the left
 thigh's share of what it holds on the two thighs, as the bones move it; of the
 trunk's, the side of the body it lies on, all the left hip's at the left hip
 joint and none at the right, smoothly, half of each at the middle; skin both hold
 mixes the two by how much a thigh holds, all of it the thighs' from a quarter
 (`FOLD_THIGH_HOLD`, the least a thigh holds of the skin the fold pushes out). Its
-flexion (`foldFlexion`) is each hip's counted by twice its side's share, to all of
+flexion (`foldAngles`) is each hip's counted by twice its side's share, to all of
 it from half, and the greater of the two: a thigh's skin reads its own hip, and
 skin both thighs reach (the belly between the hips, the groin) reads the more
 flexed hip, for either thigh alone presses it as far as both do. (Read at the
@@ -1270,20 +1304,24 @@ normal's change the solve made for the trunk's skin beside the thigh's was
 dropped, there being no thigh bone to read. `addFold` reads its
 displacement at that flexion, nothing up to `HIP_FOLD.from`, the straight line
 between the two solved flexions it lies between, and the last past `HIP_FOLD.to`,
-and the skin adds it *after* skinning, turned with the root (the fold is made in
+at each of the two openings, and mixes the two by the opening, on a line from
+the thighs together (or drawn in across the body) to `HIP_FOLD.opened`, the
+opened fold past it; and the skin adds it *after* skinning, turned with the root (the fold is made in
 the figure's own axes). Applied after skinning, not to the rest figure, because
 the push is a way out of the belly, which is the same way whichever way the thigh
 is turned. `skinPositions(…, fold)` is the CPU reference; `DualBones` carries
-the root's rotation and the two hips' flexions in the two texels after the bones',
-the fold is a texture of 88 texels (a displacement and a normal change per key, the
-row's side in the first texel's fourth place) by one row per vertex of the surface
+the root's rotation and the two hips' flexions and openings in the two texels after
+the bones', the fold is a texture of 176 texels (`FOLD_ROW_TEXELS`: a displacement
+and a normal change per opening and key, the row's side in the first texel's fourth
+place) by one row per vertex of the surface
 it moves (`surfaceFold`: the control vertices' values mixed by the subdivision's
 stencil, so a rendered vertex is displaced as the surface it lies on is, and the
 side by the same weights over the moved vertices alone), and the patched
 `skinning_vertex` chunk adds `hkFoldDisplacement` of its row (`FOLD_SLOT_ATTRIBUTE`)
-at its flexion (`hkFoldFlexion`), the `skinnormal_vertex` chunk `hkFoldNormal`. The
-browser project holds the shader's flexion to the CPU's (`foldFlexion`) and its read
-to `addFold` and `addFoldNormal` to 2·10⁻⁶ and 10⁻⁵, with the hips flexed apart.
+at its flexion and opening (`hkFoldAngles`), the `skinnormal_vertex` chunk
+`hkFoldNormal`. The browser project holds the shader's angles to the CPU's
+(`foldAngles`) and its read to `addFold` and `addFoldNormal` to 2·10⁻⁶ and 10⁻⁵,
+with the hips flexed and opened apart.
 
 **Where it runs.** The thigh pushed alone took 0.7 to 1.5 s of one core for a
 figure on a desktop (1.8 s with the CPU throttled 4× in Chromium, the proxy for a
@@ -1291,8 +1329,10 @@ mid phone; measured on the average figure and a heavy man, evaluation included).
 The shared solve does three rounds where that did one: measured on the same
 machine under the same load (a load average near 40, so neither is a clean
 number), 4.5 to 8.6 s of CPU against the old solve's 1.3 to 2.0 s, about three
-times; the desktop and phone figures want measuring again on a quiet machine. It
-is not part of
+times; the desktop and phone figures want measuring again on a quiet machine. The
+second opening and the release make it about 1.6 times that again (13.4 s for the
+average figure and 8.0 s for the heavy man against 8.6 and 4.8 s, at a load
+average near 25), some six times the thigh pushed alone. It is not part of
 `evaluate`: `HumanoidWorkerClient.hipFold(recipe)` asks the worker, which solves a
 flexion at a time with a macrotask between (an evaluation is never held up behind
 it) and answers a newer request by stopping the older (`AbortError`). A solved fold
@@ -1318,15 +1358,23 @@ them inward, by over 5 mm at the deepest; and it adds no flaps to the crease
 (`CreaseFlaps`): in every body at 90°, 120°, 135°, one hip at 120°, `seated`,
 `squat` and `tucked` it leaves no more inverted triangles than the bones alone,
 and over all of them under 0.6 of theirs (the shared solve 0.50, the thigh
-pushed alone 0.68, which the gate fails).
+pushed alone 0.68, which the gate fails). It presses the belly only where a thigh
+is (`PressReach`): in the `squat`, `tucked` and `seated` the deepest press on
+trunk skin more than 3 cm from the posed thigh's skin is under 0.05 of the
+deepest press (`PRESS_APART`, CHOICE over the measured 0.00 in the squat and at
+most 0.02 in the tuck), and the deepest is over 3 mm. Watched failing: with the
+opening ignored at playback the average figure's squat share is 1.0, with no
+release in the solve 0.155. The hips' reading round-trips through `hipRotation`
+and reads the squat at 125° and 20°.
 
 **Limits, stated.** The fold is solved with both hips flexed alike and read by
 each hip's own flexion (the greater of the two between the legs); it is exact for
 a symmetric tuck and sound for one hip alone (tested), approximate for a deep
-flexion of one hip with the other's thigh across it. The trunk's press is solved
-for thighs together: in the `squat`, whose thighs are 20° apart, the belly is
-pressed as for thighs together, and from the front its middle reads as a groove
-down from the navel where no thigh presses it. A few edges
+flexion of one hip with the other's thigh across it: one hip at 120° leaves a
+press share of up to 0.13 more than 3 cm from the thigh (about 6 mm in the heavy
+woman), the other side's belly pressed as the solve's other thigh pressed it.
+Between the two openings the fold is a line between two solves: at about 10° and
+125° to 135° the muscular man's thigh is 8 to 16 mm through the belly. A few edges
 still cross at 120° in the average figure (7 of 94 without the fold), none with
 the thigh's end behind the belly: a seam vertex, held mostly by the trunk, lies a
 few millimetres behind its neighbour's triangle, which reads as the crease of the
@@ -1337,7 +1385,19 @@ all `seated` (2026-10-10, rewritten with this solve): squashed triangles f-slim
 refined mound and vulva, triangles 2 mm across moved under 1 mm by the edge of the
 spread press, across the 30% area line the bones already nearly put them on; no
 setting of the 24 measured, nor a ramp, a fade or keeping the press off the crotch,
-cleared them without making the squat worse. On the drawn adult surface the heavy
+cleared them without making the squat worse. With the second key and the release, against
+the thigh pushed alone (18ffe9e) the tier's sums still fall (penetrating
+1746 → 1278, inverted 13671 → 12752, squashed 5384 → 4765, folded 5489 → 4957)
+and eight cells are worse (f-slim seated squashed 363 → 382, f-heavy seated folds
+281 → 297, m-muscular seated squashed 350 → 354, m-heavy seated squashed
+527 → 535; squat: f-slim squashed 570 → 616, m-muscular inverted 1321 → 1475,
+f-elder squashed 586 → 639, child inverted 434 → 444). Against the worklist
+written with the thighs-together press it is 30 cells worse, mostly the squat's,
+which that press, pressing belly no thigh touched, had cleared; the worklist is
+left as it was until that trade is ruled on. In the `seated` pose dark pockets at
+the buttock under the thigh, behind the hip, are the bones' and not the fold's:
+the same with and without it, linear skinning leaves 4 to 8 triangles inverted
+there and dual quaternion none. On the drawn adult surface the heavy
 man's `tucked` crease keeps more of the thigh through the trunk than the thigh
 pushed alone did (553 edges against 235; on the control mesh, 1 against 12). It is
 the groin's: the lateral and rear hip (behind the joint) are not folded, where the

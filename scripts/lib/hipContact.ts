@@ -12,8 +12,16 @@
  */
 import type { HumanoidAssets } from "../../src/format/assetFormat.ts";
 import { DIHEDRAL_LIMIT, DIHEDRAL_REST } from "../../src/foundation/invariants.ts";
-import { TriangleCrossings } from "../../src/rig/contact.ts";
-import { FOLD_FULL_REACH, foldParts, nearHips } from "../../src/rig/hipFold.ts";
+import { SurfaceDistance, TriangleCrossings } from "../../src/rig/contact.ts";
+import {
+  boneMass,
+  FOLD_BODIES,
+  FOLD_FULL_REACH,
+  FOLD_TRUNK_REACH,
+  foldParts,
+  nearHips,
+  TRUNK_SHARE,
+} from "../../src/rig/hipFold.ts";
 import type { RestBones } from "../../src/rig/pose.ts";
 import { bodyTriangles } from "./skinMeasure.ts";
 
@@ -77,6 +85,72 @@ export class HipContact {
       if (found) count++;
     }
     return { depth, count };
+  }
+}
+
+/** What `PressReach` measures in one pose. */
+export interface Reach {
+  /** The deepest the fold moves the trunk's skin (metres). */
+  deepest: number;
+  /** The deepest it moves trunk skin lying farther than `far` from the thigh's skin (metres). */
+  apart: number;
+}
+
+/**
+ * Whether the fold presses the trunk only where a thigh touches it
+ * (docs/ARCHITECTURE.md, "The hip fold"): how far the fold moves the trunk's
+ * skin (the vertices the trunk holds as much of as a thigh, in front of the
+ * hips) that lies farther than `far` from any of the thighs' skin in the pose.
+ * Skin no thigh touches has nothing pressing it.
+ */
+export class PressReach {
+  private readonly trunk: Uint32Array;
+  private readonly thighTris: Uint32Array;
+
+  constructor(
+    rest: RestBones,
+    control: Float32Array,
+    skinIndex: ArrayLike<number>,
+    skinWeight: ArrayLike<number>,
+    tris: Uint32Array,
+  ) {
+    const thigh = boneMass(rest.names, skinIndex, skinWeight, FOLD_BODIES.thigh);
+    const trunk = boneMass(rest.names, skinIndex, skinWeight, FOLD_BODIES.trunk);
+    const front = nearHips(rest, control, FOLD_TRUNK_REACH, true);
+    const isThigh = (v: number) => (thigh[v] as number) > (trunk[v] as number);
+    const kept: number[] = [];
+    for (let t = 0; t < tris.length; t += 3)
+      if ([0, 1, 2].every((k) => isThigh(tris[t + k] as number)))
+        kept.push(tris[t] as number, tris[t + 1] as number, tris[t + 2] as number);
+    this.thighTris = Uint32Array.from(kept);
+    const trunkSkin: number[] = [];
+    for (let v = 0; v < thigh.length; v++)
+      if (front[v] && (trunk[v] as number) >= TRUNK_SHARE && !isThigh(v)) trunkSkin.push(v);
+    this.trunk = Uint32Array.from(trunkSkin);
+  }
+
+  /** The fold's reach over the trunk in the pose that put the body at `bare` without it and at `folded` with it. */
+  measure(bare: Float32Array, folded: Float32Array, far: number): Reach {
+    const thighs = new SurfaceDistance(folded, this.thighTris);
+    let deepest = 0;
+    let apart = 0;
+    for (const v of this.trunk) {
+      const moved = Math.hypot(
+        (folded[v * 3] as number) - (bare[v * 3] as number),
+        (folded[v * 3 + 1] as number) - (bare[v * 3 + 1] as number),
+        (folded[v * 3 + 2] as number) - (bare[v * 3 + 2] as number),
+      );
+      if (moved === 0) continue;
+      deepest = Math.max(deepest, moved);
+      const d = thighs.distance(
+        folded[v * 3] as number,
+        folded[v * 3 + 1] as number,
+        folded[v * 3 + 2] as number,
+        far,
+      );
+      if (d > far) apart = Math.max(apart, moved);
+    }
+    return { deepest, apart };
   }
 }
 

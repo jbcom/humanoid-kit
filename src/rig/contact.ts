@@ -290,6 +290,98 @@ export class PosedSkin {
 const CROSSING_CELL = 0.04;
 
 /**
+ * How far a point is from a set of the body's triangles, whichever side of them
+ * it lies on (docs/ARCHITECTURE.md, "The hip fold": how near the thigh's skin is
+ * to the belly's, which says whether the belly is pressed there). The triangles
+ * are indexed by the cells their boxes cover, in the positions `P` they are in.
+ */
+export class SurfaceDistance {
+  private readonly tris: Uint32Array;
+  private readonly P: Float32Array;
+  private readonly low: [number, number, number] = [0, 0, 0];
+  private readonly size: [number, number, number] = [1, 1, 1];
+  private readonly cells = new Map<number, number[]>();
+  private readonly stamp: Int32Array;
+  private pass = 0;
+  private readonly closest = new Float64Array(3);
+  private readonly which = new Uint8Array(1);
+
+  constructor(P: Float32Array, tris: Uint32Array) {
+    this.tris = tris;
+    this.P = P;
+    const count = tris.length / 3;
+    this.stamp = new Int32Array(count);
+    const lo = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+    const hi = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+    for (const v of tris)
+      for (let k = 0; k < 3; k++) {
+        lo[k] = Math.min(lo[k] as number, P[v * 3 + k] as number);
+        hi[k] = Math.max(hi[k] as number, P[v * 3 + k] as number);
+      }
+    for (let k = 0; k < 3; k++) {
+      this.low[k] = Number.isFinite(lo[k]) ? (lo[k] as number) : 0;
+      this.size[k] = Number.isFinite(hi[k])
+        ? Math.floor(((hi[k] as number) - (this.low[k] as number)) / CROSSING_CELL) + 1
+        : 1;
+    }
+    for (let t = 0; t < count; t++) {
+      const corner = (c: number, k: number) => P[(tris[t * 3 + c] as number) * 3 + k] as number;
+      const box = [0, 1, 2].map((k) => [
+        Math.min(corner(0, k), corner(1, k), corner(2, k)),
+        Math.max(corner(0, k), corner(1, k), corner(2, k)),
+      ]) as [number, number][];
+      this.visit(box, (c) => {
+        const row = this.cells.get(c);
+        if (row) row.push(t);
+        else this.cells.set(c, [t]);
+      });
+    }
+  }
+
+  /** Calls `each` with every cell the box (per axis, low and high) covers. */
+  private visit(box: [number, number][], each: (cell: number) => void): void {
+    const range = box.map(([l, h], k) => [
+      Math.max(0, Math.floor((l - (this.low[k] as number)) / CROSSING_CELL)),
+      Math.min(
+        (this.size[k] as number) - 1,
+        Math.floor((h - (this.low[k] as number)) / CROSSING_CELL),
+      ),
+    ]) as [number, number][];
+    const [sx, sy] = this.size;
+    for (let k = (range[2] as [number, number])[0]; k <= (range[2] as [number, number])[1]; k++)
+      for (let j = (range[1] as [number, number])[0]; j <= (range[1] as [number, number])[1]; j++)
+        for (let i = (range[0] as [number, number])[0]; i <= (range[0] as [number, number])[1]; i++)
+          each(i + sx * (j + sy * k));
+  }
+
+  /** The distance (metres) from (x, y, z) to the nearest of the triangles, if it is within `reach`; else `Infinity`. */
+  distance(x: number, y: number, z: number, reach: number): number {
+    this.pass++;
+    let best = reach * reach;
+    let found = false;
+    this.visit(
+      [
+        [x - reach, x + reach],
+        [y - reach, y + reach],
+        [z - reach, z + reach],
+      ],
+      (c) => {
+        for (const t of this.cells.get(c) ?? []) {
+          if (this.stamp[t] === this.pass) continue;
+          this.stamp[t] = this.pass;
+          const d = closestOnTriangle(x, y, z, this.P, this.tris, t * 3, this.closest, this.which);
+          if (d <= best) {
+            best = d;
+            found = true;
+          }
+        }
+      },
+    );
+    return found ? Math.sqrt(best) : Number.POSITIVE_INFINITY;
+  }
+}
+
+/**
  * Where edges of the body's mesh cross a set of its triangles (docs/ARCHITECTURE.md,
  * "The hip fold"): skin through skin, a fact of the posed mesh that does not
  * depend on which side of any surface a point is judged to lie on, so it does

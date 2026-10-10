@@ -16,7 +16,7 @@
  * by the mean of its bones' shares.
  */
 import { type BoneRotations, posedBones, type RestBones } from "./bones.ts";
-import { addFold, addFoldNormal, foldFlexion, folds, type HipFold, hipFlexion } from "./hipFold.ts";
+import { addFold, addFoldNormal, foldAngles, folds, type HipFold, hipFlexion } from "./hipFold.ts";
 import { mul, type Quat, rotate } from "./quat.ts";
 
 /** Floats per bone in `dualBones`: the rotation (x, y, z, w), then the dual part (x, y, z, w). */
@@ -304,7 +304,7 @@ export function skinPositionsBlended(
 ): Float32Array {
   const pose = skinPose(rest, rotations, share);
   const count = positions.length / 3;
-  // The hip fold's displacement is read at the flexion of the hip on the vertex's side (`foldSides`), and turns with the figure's root.
+  // The hip fold's displacement is read at the flexion and opening of the hip on the vertex's side (`foldAngles`), and turns with the figure's root.
   const hips = fold ? hipFlexion(rest, rotations) : null;
   const folding = fold !== undefined && hips !== null && folds(hips);
   const turn = rootTurn(rest, rotations);
@@ -322,10 +322,10 @@ export function skinPositionsBlended(
       v * 3,
     );
     if (!folding) continue;
-    const flexion = foldFlexion(fold, v, hips);
-    if (flexion === null) continue;
+    const read = foldAngles(fold, v, hips);
+    if (!read) continue;
     shown.fill(0);
-    addFold(fold, v, flexion, shown, 0);
+    addFold(fold, v, read.flexion, read.opening, shown, 0);
     const [dx, dy, dz] = rotate(turn, shown[0] as number, shown[1] as number, shown[2] as number);
     out[v * 3] = (out[v * 3] as number) + dx;
     out[v * 3 + 1] = (out[v * 3 + 1] as number) + dy;
@@ -432,10 +432,10 @@ export function skinNormalsBlended(
       v * 3,
     );
     if (!folding) continue;
-    const flexion = foldFlexion(fold, v, hips);
-    if (flexion === null) continue;
+    const read = foldAngles(fold, v, hips);
+    if (!read) continue;
     shown.fill(0);
-    addFoldNormal(fold, v, flexion, shown, 0);
+    addFoldNormal(fold, v, read.flexion, read.opening, shown, 0);
     const [dx, dy, dz] = rotate(turn, shown[0] as number, shown[1] as number, shown[2] as number);
     const x = (out[v * 3] as number) + dx;
     const y = (out[v * 3 + 1] as number) + dy;

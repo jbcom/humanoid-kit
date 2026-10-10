@@ -51,10 +51,13 @@ import {
   addFold,
   addFoldNormal,
   FOLD_KEYS,
-  foldFlexion,
+  FOLD_OPENINGS,
+  FOLD_ROW_TEXELS,
+  foldAngles,
   HIP_FOLD,
   type HipFold,
   hipFlexion,
+  hipRotation,
 } from "../../src/rig/hipFold.ts";
 import { type BoneRotations, restBonesFrom } from "../../src/rig/pose.ts";
 import { rotate } from "../../src/rig/quat.ts";
@@ -253,35 +256,46 @@ const hipRest = restBonesFrom(
   Int16Array.from([-1, 0, 0]),
   Float32Array.from([0, 1, 0, 0.1, 0.95, 0, -0.1, 0.95, 0]),
 );
-/** The root turned `root`, the left hip flexed `left` degrees and the right `right` (turns about -x). */
-function hipsPose(root: number[], left: number, right: number): BoneRotations {
+/**
+ * The root turned `root`, the left hip flexed `left` degrees and opened
+ * `leftOpening`, the right flexed `right` and opened `rightOpening` (`hipRotation`).
+ */
+function hipsPose(
+  root: number[],
+  left: number,
+  right: number,
+  leftOpening = 0,
+  rightOpening = 0,
+): BoneRotations {
   const r = new Float32Array(HIP_NAMES.length * 4);
   r.set(root, 0);
-  r.set(turn(-1, 0, 0, left), 4);
-  r.set(turn(-1, 0, 0, right), 8);
+  r.set(hipRotation(left, leftOpening, 1), 4);
+  r.set(hipRotation(right, rightOpening, -1), 8);
   return r;
 }
 
 describe("the vertex shader's hip fold", () => {
-  it("reads each vertex's displacement and normal change at the flexion of the hips on its side, turned with the root, exactly as the CPU reference does", () => {
+  it("reads each vertex's displacement and normal change at the flexion and opening of the hips on its side, turned with the root, exactly as the CPU reference does", () => {
     const rand = random(11);
     const rows = 40;
     const count = 200;
+    // Every key of every opening, per row.
+    const K = FOLD_OPENINGS * FOLD_KEYS;
     const fold: HipFold = {
       vertices: Uint32Array.from({ length: rows }, (_, i) => i),
       slot: Int32Array.from({ length: rows }, (_, i) => i),
-      vectors: new Float32Array(rows * FOLD_KEYS * 3).map(() => (rand() - 0.5) * 0.2),
-      normals: new Float32Array(rows * FOLD_KEYS * 3).map(() => (rand() - 0.5) * 1.5),
+      vectors: new Float32Array(rows * K * 3).map(() => (rand() - 0.5) * 0.2),
+      normals: new Float32Array(rows * K * 3).map(() => (rand() - 0.5) * 1.5),
       // The left hip's alone, the right's alone, and mixes of the two.
       side: Float32Array.from({ length: rows }, (_, i) => (i < 2 ? i : rand())),
     };
-    // The renderer's rows: per key, the displacement's texel (x, y, z, 0) and the normal's; the side in the first's fourth place.
-    const data = new Float32Array(rows * FOLD_KEYS * 8);
-    for (let i = 0; i < rows * FOLD_KEYS; i++) {
+    // The renderer's rows: per opening and key, the displacement's texel (x, y, z, 0) and the normal's; the side in the first's fourth place.
+    const data = new Float32Array(rows * FOLD_ROW_TEXELS * 4);
+    for (let i = 0; i < rows * K; i++) {
       data.set(fold.vectors.subarray(i * 3, i * 3 + 3), i * 8);
       data.set(fold.normals.subarray(i * 3, i * 3 + 3), i * 8 + 4);
     }
-    for (let r = 0; r < rows; r++) data[r * FOLD_KEYS * 8 + 3] = fold.side[r] as number;
+    for (let r = 0; r < rows; r++) data[r * FOLD_ROW_TEXELS * 4 + 3] = fold.side[r] as number;
     const dual = new DualBones(HIP_NAMES.length, 0);
     dual.setFold({ slot: new Float32Array(0), rows, data });
     // A row per vertex.
@@ -313,7 +327,7 @@ describe("the vertex shader's hip fold", () => {
           vec4 a = texelFetch( tAsked, ivec2( gl_FragCoord.xy ), 0 );
           int slot = int( a.x + 0.5 );
           outColor = tPart == 2
-            ? vec4( hkFoldFlexion( slot ), 0.0, 0.0, 1.0 )
+            ? vec4( hkFoldAngles( slot ), 0.0, 1.0 )
             : vec4( tPart == 0 ? hkFoldDisplacement( a.x ) : hkFoldNormal( a.x ), 1.0 );
         }`,
     });
@@ -329,30 +343,38 @@ describe("the vertex shader's hip fold", () => {
       renderer.setRenderTarget(null);
       return px;
     };
-    // The root turned, so the displacement turns too; the hips flexed apart, from short of where the fold starts to past where it ends.
+    // The root turned, so the displacement turns too; the hips flexed apart, from short of where the fold starts to past where it ends,
+    // and opened apart, from drawn in to past the fold's opened keys.
     const root = turn(0.3, 1, 0.2, 70);
     let moved = 0;
-    for (const [left, right] of [
-      [120, 0],
-      [-10, 75],
-      [45, 133],
-      [100, 100],
-      [HIP_FOLD.to + 12, HIP_FOLD.from - 5],
+    for (const [left, right, leftOpening, rightOpening] of [
+      [120, 0, 0, 0],
+      [-10, 75, 5, 12],
+      [45, 133, 20, 31],
+      [100, 100, -8, 10],
+      [HIP_FOLD.to + 12, HIP_FOLD.from - 5, 15, 0],
     ] as const) {
-      const rotations = hipsPose(root, left, right);
+      const rotations = hipsPose(root, left, right, leftOpening, rightOpening);
       dual.update(hipRest, rotations);
       const hips = hipFlexion(hipRest, rotations);
       expect(hips.left, `${left}°`).toBeCloseTo(left, 3);
-      // The flexion each row is read at: the left hip's for side 1, the right's for side 0, and the greater of the two, each weighed by its side, between.
-      const flexion = draw(2);
-      for (let v = 0; v < count; v++)
-        expect(flexion[v * 4], `${left}/${right}: vertex ${v}`).toBeCloseTo(
-          foldFlexion(fold, asked[v * 4] as number, hips) as number,
+      expect(hips.rightOpening, `${rightOpening}°`).toBeCloseTo(rightOpening, 3);
+      // The angles each row is read at: the left hip's for side 1, the right's for side 0, and the greater flexion of the two, each weighed by its side, between.
+      const angles = draw(2);
+      for (let v = 0; v < count; v++) {
+        const cpu = foldAngles(fold, asked[v * 4] as number, hips);
+        expect(angles[v * 4], `${left}/${right}: vertex ${v}`).toBeCloseTo(
+          cpu?.flexion as number,
           3,
         );
+        expect(angles[v * 4 + 1], `${left}/${right}: vertex ${v}`).toBeCloseTo(
+          cpu?.opening as number,
+          3,
+        );
+      }
       // A row all the right's reads the right hip, all the left's the left (the other counts for nothing, as an unflexed hip does).
-      expect(flexion[0]).toBeCloseTo(Math.max(0, right), 2);
-      expect(flexion[4]).toBeCloseTo(Math.max(0, left), 2);
+      expect(angles[0]).toBeCloseTo(Math.max(0, right), 2);
+      expect(angles[4]).toBeCloseTo(Math.max(0, left), 2);
       // Whole, then half faded in, then not at all (the fold fades in when it arrives).
       for (const [part, read, blend] of [
         [0, addFold, 1],
@@ -367,7 +389,8 @@ describe("the vertex shader's hip fold", () => {
         for (let v = 0; v < count; v++) {
           const cpu = new Float32Array(3);
           const slot = asked[v * 4] as number;
-          read(fold, slot, foldFlexion(fold, slot, hips) as number, cpu, 0);
+          const at = foldAngles(fold, slot, hips);
+          read(fold, slot, at?.flexion as number, at?.opening as number, cpu, 0);
           const turned = rotate(
             root as [number, number, number, number],
             cpu[0] as number,
