@@ -5,7 +5,9 @@
  * and later hair and clothing) placed on that same morphed mesh.
  * Framework-free; runs in a worker or on the main thread.
  */
-import { type BodyArtPlacement, placeBodyArt } from "../bodyArt/decals.ts";
+import { type BodyArtPlacement, type PiercingAnchor, placeBodyArt } from "../bodyArt/decals.ts";
+import { SEAT_REACH } from "../bodyArt/jewellery.ts";
+import { skinNear } from "../bodyArt/skinDistance.ts";
 import { meanCurvature, triangleEdges } from "../build/curvature.ts";
 import { quadVertexNormals, unitNormals } from "../build/normals.ts";
 import {
@@ -18,6 +20,7 @@ import {
   type SurfaceMesh,
 } from "../build/surfaceMesh.ts";
 import {
+  type AdultPiercingSiteSpec,
   AssetFormatError,
   type AttachmentMaterial,
   type BodyOcclusion,
@@ -40,6 +43,7 @@ import {
   MorphError,
   type RegionField,
 } from "../morph/evaluate.ts";
+import type { Vec3 } from "../presence/presence.ts";
 import { AgePolicyError, assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
@@ -1439,10 +1443,12 @@ export class HumanoidModel {
     // else: a minor's evaluation is the base body's, and never builds the other.
     // Detail targets displace that surface alone; the base has nothing to apply them to.
     const adult = isAdult(recipe) ? this.adultBodySurface() : null;
+    const displacement =
+      adult && detail.length ? this.detailDisplacement(detail, control) : undefined;
     const body = this.evaluatePart(
       adult ? adult.part : this.body,
       outfit.bodyTuck ? this.tucked(control, outfit.bodyTuck) : control,
-      adult && detail.length ? this.detailDisplacement(detail, control) : undefined,
+      displacement,
     );
     const attachments = this.attached.map((a) =>
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
@@ -1508,7 +1514,88 @@ export class HumanoidModel {
       areolaScale: areolaStretch(this.assets, control),
       curvature,
       boneHeads,
-      bodyArt: recipe.bodyArt ? placeBodyArt(this.assets, recipe.bodyArt, control) : null,
+      bodyArt: recipe.bodyArt
+        ? placeBodyArt(
+            this.assets,
+            recipe.bodyArt,
+            control,
+            adult
+              ? (site) => this.adultSiteAnchor(site, adult, control, displacement, body)
+              : undefined,
+          )
+        : null,
+    };
+  }
+
+  /**
+   * Where a declared adult piercing site is on this figure
+   * (`AdultPiercingSiteSpec`): its detail-lattice vertex at rest, moved by the
+   * detail that shapes it, then the evaluated adult surface's render vertex
+   * nearest there, its normal and its bones, with the skin round it.
+   */
+  private adultSiteAnchor(
+    site: AdultPiercingSiteSpec,
+    adult: NonNullable<ReturnType<HumanoidModel["adultBodySurface"]>>,
+    control: Float32Array,
+    displacement: SurfaceDetail | undefined,
+    body: SurfaceEvaluation,
+  ): PiercingAnchor {
+    const lattice = adult.part.mesh.lattice;
+    if (!lattice)
+      throw new RangeError(`piercing site ${site.name}: the adult surface has no lattice`);
+    const all = applyStencil(lattice.stencil, control, new Float32Array(lattice.vertexCount * 3));
+    // A region vertex is a lattice vertex; a reservoir ring's lies, at rest, on its loop's.
+    let rest: number;
+    if (site.vertex < lattice.region.length) rest = lattice.region[site.vertex] as number;
+    else {
+      const r = lattice.reservoirs.find(
+        (x) => site.vertex >= x.base && site.vertex < x.base + x.loop.length * x.rings,
+      );
+      if (!r)
+        throw new RangeError(
+          `piercing site ${site.name}: vertex ${site.vertex} is not in the lattice`,
+        );
+      rest = r.loop[(site.vertex - r.base) % r.loop.length] as number;
+    }
+    const at: Vec3 = [
+      all[rest * 3] as number,
+      all[rest * 3 + 1] as number,
+      all[rest * 3 + 2] as number,
+    ];
+    if (displacement)
+      for (let i = 0; i < displacement.indices.length; i++)
+        if (displacement.indices[i] === site.vertex)
+          for (let k = 0; k < 3; k++)
+            at[k] = (at[k] as number) + (displacement.xyz[i * 3 + k] as number);
+    const P = body.positions;
+    let r = 0;
+    let best = Number.POSITIVE_INFINITY;
+    for (let v = 0; v < P.length / 3; v++) {
+      const d = Math.hypot(
+        (P[v * 3] as number) - at[0],
+        (P[v * 3 + 1] as number) - at[1],
+        (P[v * 3 + 2] as number) - at[2],
+      );
+      if (d < best) {
+        best = d;
+        r = v;
+      }
+    }
+    const hole: Vec3 = [P[r * 3] as number, P[r * 3 + 1] as number, P[r * 3 + 2] as number];
+    const N = body.normals;
+    const l = Math.hypot(N[r * 3] as number, N[r * 3 + 1] as number, N[r * 3 + 2] as number) || 1;
+    const bones = (a: ArrayLike<number>) =>
+      [0, 1, 2, 3].map((k) => a[r * 4 + k] as number) as [number, number, number, number];
+    return {
+      hole,
+      normal: [
+        (N[r * 3] as number) / l,
+        (N[r * 3 + 1] as number) / l,
+        (N[r * 3 + 2] as number) / l,
+      ],
+      skin: skinNear(P, N, adult.part.mesh.index, hole, SEAT_REACH),
+      skinIndex: bones(adult.topology.skinIndex),
+      skinWeight: bones(adult.topology.skinWeight),
     };
   }
 
@@ -1769,6 +1856,11 @@ export class HumanoidModel {
             `detail target ${name}: vertex ${v} is out of range (< ${lattice.detailCount})`,
           );
     }
+    for (const s of this.assets.adultAnatomyManifest?.anatomy?.piercingSites ?? [])
+      if (s.vertex >= lattice.detailCount)
+        throw new AssetFormatError(
+          `adult piercing site ${s.name}: vertex ${s.vertex} is out of range (< ${lattice.detailCount})`,
+        );
   }
 
   /**

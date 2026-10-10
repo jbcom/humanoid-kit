@@ -1301,11 +1301,23 @@ a coloured texture; everything in the pure core is testable in Node.
   (`docs/licence-history.md`), so `scripts/lib/hairCards` builds them: **ropes**, tubes of
   quads along a centreline (`ropes.ts`) that leaves the scalp at an angle read from the head
   (`HeadFrame`: azimuth and elevation from the skull's centre, a ray to the head's own
-  triangles), lifts a little, then falls under gravity and lies over the body
-  (`BodySurface.probe`, signed distance from the whole body, winding taken from the skull); a
-  **grid of partings** (brick-wise rows, a hairline that recedes at the temples and runs up over
-  the ear and down at the nape) places box braids, twists and locs, and cornrows are parallel
-  parting lines on the scalp with a braid hanging from each end. The cards are bound to the
+  triangles) and lies over the body (`BodySurface.probe`, signed distance from the whole
+  body, winding taken from the skull); a **grid of partings** (brick-wise rows, a hairline
+  that recedes at the temples and runs up over the ear and down at the nape) places box braids
+  (179), twists (197) and locs (78), and cornrows are parallel parting lines on the scalp with
+  a braid hanging from each end. A grid's ropes are *combed* (`RopeHang`): each leaves its
+  root at a shallow angle, then lies along the scalp the way hair is combed (`combAlong`: back
+  over the top and from the front hairline, down on the sides and the back), held at its
+  clearance, until the comb runs steeply down; from there it hangs and settles
+  (`relaxRope`: gravity, follow-the-leader inextensibility, a stiffness per style, the body
+  as a collider with friction, so it rests on a shoulder or down the back instead of sliding
+  off to hang plumb). The first ropes stood up out of their roots and fell radially, a bare
+  starburst of partings round the crown; combed, each row lies over the roots of the row
+  behind, and a test that looks in at the scalp from 50 degrees up finds a rope first at
+  least 90% of the time (85% for the thicker, sparser locs and the short twists). Ropes from
+  the sides and the lower rows come to rest on the shoulders, neck and back (tested at 80%);
+  the crown's, combed back, are the outer layer over them (rope-on-rope contact is not
+  modelled). The cards are bound to the
   base mesh by the MHCLO scheme (`bindToBody`: the nearest triangle's corners, barycentric
   weights, an offset) with the head's extents as the scale references, so they go through the
   same pack, worker and renderer as a MakeHuman style and fit other heads. Each style's strand
@@ -1318,7 +1330,14 @@ a coloured texture; everything in the pure core is testable in Node.
   angles, its soft edge broken into ragged fuzz, the loose cards below the cap cleared, and a
   fade (`keepAt`: full on top, tapering over the ears and round to bare skin at the nape) taken
   from where each texel lies on the head (`uvField.ts` rasterises the cards into the texture). Bantu
-  knots are a spiral rope coiled round its root. Not yet: tight curls in the longer styles.
+  knots (`BANTU_KNOT`) part the head into 4.5 cm sections, each one's hair a 4.5 mm twisted rope
+  that leaves its root, lies out to a 1.1 cm bottom coil, then winds about three times round the
+  scalp's normal there, each turn 1.7 rope radii above the last and drawn in toward the axis, into a
+  raised cone 2.5 to 3.5 cm tall with the end tucked into its top. Every root sits far enough behind
+  the hairline that the whole bottom coil does. The first knots were a flat spiral lying outward
+  across the scalp, about 1 cm high, which read as snail-shell decals on the forehead; tests now
+  hold every apex 15 to 45 mm off the scalp, every knot's footprint behind the hairline, and every
+  knot taller than it is wide. Not yet: tight curls in the longer styles.
 
 **Costs and limits.** The pack is 3.5 MB for ten styles, mostly strand maps at
 1024 px (and 0.3 to 0.5 MB for each authored one); the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
@@ -2553,13 +2572,26 @@ age.
 - The part inside the tissue is hidden by the skin in front of it, and hair
   and garments hide the rest as depth does, so no occlusion bake is needed.
   The metals are measured reflectances.
-- Genital sites wait on the adult pack: its manifest must name its sites
-  (found from its targets as the body's are) before they can be placed. Until
-  then such a piercing is refused at evaluation for an adult, and by the age
-  policy for anyone under 18.
+- Genital sites are the adult pack's data, the core's code
+  (`AdultAnatomySpec.piercingSites`), as pubic hair's area is.
+  - A declared site names a detail-lattice vertex (the space the pack's detail
+    targets address, the refined region's vertices then each reservoir's
+    rings), its channel and its tissue depth. The anatomy is shaped on the
+    adult surface by that detail, so a base-mesh vertex could not follow it.
+  - On an adult drawn with the adult surface, the core takes the vertex's
+    rest position on the lattice, adds the detail displacing it, and takes
+    the evaluated surface's nearest render vertex there: the hole, its normal
+    and its bones. The jewellery seats against that surface.
+  - A site no loaded pack declares is refused at evaluation, a malformed
+    declaration when the pack is parsed (a vertex past the lattice when the
+    adult surface is built), and every such site by the age policy under 18,
+    whose evaluation never has the adult surface.
+  - A fixture test declares a site on the shipped pack's phallic reservoir:
+    it resolves on the drawn surface and moves with the phallus's size.
 
 **Landed:** the recipe field, its validation, the age policy, the sites,
-tattoos, marks and piercings. Still to do: the adult pack's piercing sites.
+tattoos, marks, piercings and the adult piercing-site contract. The adult
+pack's sites themselves are its lane's data.
 
 ### Joint creases (2026-10-09)
 
