@@ -294,6 +294,8 @@ export interface AdultDetailLattice {
   regionIds: Uint32Array;
   /** The region's polygons, in the refinement mesh's vertex ids, for placing reservoirs. */
   polygons: LatticePolygons;
+  /** UV entries of the refinement mesh (`LatticePolygons.uvs` index them). */
+  uvCount: number;
   /** Every refinement-mesh vertex's position, xyz, by its id. */
   latticePositions: Float32Array;
   /** The reservoirs: where each one's rings begin among the detail's vertices, and its loop and ring counts. */
@@ -1791,6 +1793,7 @@ export class HumanoidModel {
       normals,
       regionIds: lattice.region,
       polygons: lattice.polygons,
+      uvCount: lattice.uvCount,
       latticePositions: all,
       reservoirs,
     };

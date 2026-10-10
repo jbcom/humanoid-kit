@@ -47,13 +47,20 @@ export interface SurfacePatch {
 const AFFINE = 1e-5;
 
 /**
- * The refinement with its patches applied, in order: their polygons removed, their
- * vertices (stencil rows) and UV entries appended, their polygons added, and every
- * polygon ordered by the base face that owns it (a face's polygons stay together, as
- * the clothing masks need). With no patches it is the refinement itself.
+ * The refinement with its patches applied, one after another: each names polygons,
+ * vertices and UV entries of the refinement as the patches before it left it. With
+ * no patches it is the refinement itself.
  */
 export function applyPatches(fine: GradedMesh, patches: readonly SurfacePatch[]): GradedMesh {
-  if (!patches.length) return fine;
+  return patches.reduce((mesh, patch, p) => applyPatch(mesh, patch, `surface patch ${p}`), fine);
+}
+
+/**
+ * One patch applied: its polygons removed, its vertices (stencil rows) and UV entries
+ * appended, its polygons added, and every polygon ordered by the base face that owns
+ * it (a face's polygons stay together, as the clothing masks need).
+ */
+function applyPatch(fine: GradedMesh, patch: SurfacePatch, what: string): GradedMesh {
   const polygonCount = fine.faceStart.length - 1;
   const removed = new Set<number>();
   const rows: { src: number[]; weights: number[] }[] = [];
@@ -78,80 +85,75 @@ export function applyPatches(fine: GradedMesh, patches: readonly SurfacePatch[])
     });
   }
   const added: typeof polygons = [];
-  patches.forEach((patch, p) => {
-    const what = `surface patch ${p}`;
-    for (const f of patch.remove) {
-      if (!Number.isInteger(f) || f < 0 || f >= polygonCount)
-        throw new RangeError(`${what}: polygon ${f} is not in the refinement`);
-      if (removed.has(f)) throw new RangeError(`${what}: polygon ${f} is removed twice`);
-      removed.add(f);
-    }
-    const check = (c: Combination, below: number, kind: string, i: number) => {
-      if (c.from.length !== c.weights.length || !c.from.length)
-        throw new RangeError(`${what}: ${kind} ${i} has no combination`);
-      if (c.from.some((x) => !Number.isInteger(x) || x < 0 || x >= below))
-        throw new RangeError(`${what}: ${kind} ${i} combines an entry that does not exist yet`);
-      const sum = c.weights.reduce((s, w) => s + w, 0);
-      if (Math.abs(sum - 1) > AFFINE)
-        throw new RangeError(`${what}: ${kind} ${i}'s weights sum to ${sum}, not 1`);
-    };
-    patch.vertices.forEach((c, i) => {
-      check(c, rows.length, "vertex", i);
-      // The new row is the weighted sum of the rows it combines.
-      const acc = new Map<number, number>();
-      c.from.forEach((v, k) => {
-        const row = rows[v] as { src: number[]; weights: number[] };
-        row.src.forEach((s, j) => {
-          acc.set(s, (acc.get(s) ?? 0) + (c.weights[k] as number) * (row.weights[j] as number));
-        });
+  for (const f of patch.remove) {
+    if (!Number.isInteger(f) || f < 0 || f >= polygonCount)
+      throw new RangeError(`${what}: polygon ${f} is not in the refinement`);
+    if (removed.has(f)) throw new RangeError(`${what}: polygon ${f} is removed twice`);
+    removed.add(f);
+  }
+  const check = (c: Combination, below: number, kind: string, i: number) => {
+    if (c.from.length !== c.weights.length || !c.from.length)
+      throw new RangeError(`${what}: ${kind} ${i} has no combination`);
+    if (c.from.some((x) => !Number.isInteger(x) || x < 0 || x >= below))
+      throw new RangeError(`${what}: ${kind} ${i} combines an entry that does not exist yet`);
+    const sum = c.weights.reduce((s, w) => s + w, 0);
+    if (Math.abs(sum - 1) > AFFINE)
+      throw new RangeError(`${what}: ${kind} ${i}'s weights sum to ${sum}, not 1`);
+  };
+  patch.vertices.forEach((c, i) => {
+    check(c, rows.length, "vertex", i);
+    // The new row is the weighted sum of the rows it combines.
+    const acc = new Map<number, number>();
+    c.from.forEach((v, k) => {
+      const row = rows[v] as { src: number[]; weights: number[] };
+      row.src.forEach((s, j) => {
+        acc.set(s, (acc.get(s) ?? 0) + (c.weights[k] as number) * (row.weights[j] as number));
       });
-      const src = [...acc.keys()].sort((a, b) => a - b);
-      rows.push({ src, weights: src.map((s) => acc.get(s) as number) });
     });
-    patch.uvs.forEach((c, i) => {
-      check(c, uvs.length / 2, "UV entry", i);
-      let u = 0;
-      let v = 0;
-      c.from.forEach((x, k) => {
-        u += (c.weights[k] as number) * (uvs[x * 2] as number);
-        v += (c.weights[k] as number) * (uvs[x * 2 + 1] as number);
-      });
-      uvs.push(u, v);
-    });
-    const remove = new Set(patch.remove);
-    for (const [i, poly] of patch.polygons.entries()) {
-      if (poly.vertices.length < 3 || poly.vertices.length !== poly.uvs.length)
-        throw new RangeError(`${what}: polygon ${i} needs three corners or more, a UV each`);
-      if (poly.vertices.some((v) => !Number.isInteger(v) || v < 0 || v >= rows.length))
-        throw new RangeError(`${what}: polygon ${i} names a vertex that does not exist`);
-      if (poly.uvs.some((v) => !Number.isInteger(v) || v < 0 || v >= uvs.length / 2))
-        throw new RangeError(`${what}: polygon ${i} names a UV entry that does not exist`);
-      if (!remove.has(poly.of))
-        throw new RangeError(`${what}: polygon ${i} is owned by a polygon it does not replace`);
-      added.push({
-        vertices: [...poly.vertices],
-        uvs: [...poly.uvs],
-        source: fine.sourceFace[poly.of] as number,
-      });
-    }
-    const boundary = (list: readonly (readonly number[])[]) => {
-      const directed = new Set<string>();
-      for (const c of list)
-        c.forEach((a, k) => {
-          directed.add(`${a}:${c[(k + 1) % c.length]}`);
-        });
-      return [...directed].filter((e) => {
-        const [a, b] = e.split(":");
-        return !directed.has(`${b}:${a}`);
-      });
-    };
-    const was = boundary(patch.remove.map((f) => (polygons[f] as { vertices: number[] }).vertices));
-    const now = new Set(boundary(patch.polygons.map((q) => q.vertices)));
-    if (was.length !== now.size || was.some((e) => !now.has(e)))
-      throw new RangeError(
-        `${what}: its polygons do not fill the region it removes, edge for edge`,
-      );
+    const src = [...acc.keys()].sort((a, b) => a - b);
+    rows.push({ src, weights: src.map((s) => acc.get(s) as number) });
   });
+  patch.uvs.forEach((c, i) => {
+    check(c, uvs.length / 2, "UV entry", i);
+    let u = 0;
+    let v = 0;
+    c.from.forEach((x, k) => {
+      u += (c.weights[k] as number) * (uvs[x * 2] as number);
+      v += (c.weights[k] as number) * (uvs[x * 2 + 1] as number);
+    });
+    uvs.push(u, v);
+  });
+  const remove = new Set(patch.remove);
+  for (const [i, poly] of patch.polygons.entries()) {
+    if (poly.vertices.length < 3 || poly.vertices.length !== poly.uvs.length)
+      throw new RangeError(`${what}: polygon ${i} needs three corners or more, a UV each`);
+    if (poly.vertices.some((v) => !Number.isInteger(v) || v < 0 || v >= rows.length))
+      throw new RangeError(`${what}: polygon ${i} names a vertex that does not exist`);
+    if (poly.uvs.some((v) => !Number.isInteger(v) || v < 0 || v >= uvs.length / 2))
+      throw new RangeError(`${what}: polygon ${i} names a UV entry that does not exist`);
+    if (!remove.has(poly.of))
+      throw new RangeError(`${what}: polygon ${i} is owned by a polygon it does not replace`);
+    added.push({
+      vertices: [...poly.vertices],
+      uvs: [...poly.uvs],
+      source: fine.sourceFace[poly.of] as number,
+    });
+  }
+  const boundary = (list: readonly (readonly number[])[]) => {
+    const directed = new Set<string>();
+    for (const c of list)
+      c.forEach((a, k) => {
+        directed.add(`${a}:${c[(k + 1) % c.length]}`);
+      });
+    return [...directed].filter((e) => {
+      const [a, b] = e.split(":");
+      return !directed.has(`${b}:${a}`);
+    });
+  };
+  const was = boundary(patch.remove.map((f) => (polygons[f] as { vertices: number[] }).vertices));
+  const now = new Set(boundary(patch.polygons.map((q) => q.vertices)));
+  if (was.length !== now.size || was.some((e) => !now.has(e)))
+    throw new RangeError(`${what}: its polygons do not fill the region it removes, edge for edge`);
   // Every polygon, kept and added, ordered by the base face that owns it, stably.
   const all = [...polygons.filter((_, f) => !removed.has(f)), ...added];
   const order = all
