@@ -57,8 +57,16 @@ describe("pubic hair's coat region", () => {
   });
 
   it("has no area without the adult pack, or with a pack that gives it none", () => {
-    for (const assets of [loadFixtureAssets(), loadFixtureAssets(true)])
-      expect(PUBIC_REGION.mask(assets).every((m) => m === 0)).toBe(true);
+    expect(PUBIC_REGION.mask(loadFixtureAssets()).every((m) => m === 0)).toBe(true);
+    expect(PUBIC_REGION.mask(withRegions([])).every((m) => m === 0)).toBe(true);
+  });
+
+  it("has, with the shipped adult pack, exactly the area the packer measures", () => {
+    const shipped = loadFixtureAssets(true);
+    expect(shipped.adultAnatomyManifest?.anatomy?.coatRegions).toEqual(
+      adultCoatRegions(loadFixtureAssets()),
+    );
+    expect(PUBIC_REGION.mask(shipped).some((m) => m > 0.9)).toBe(true);
   });
 
   it("takes its area from the pack: the spec's vertices at their mask, nothing elsewhere", () => {

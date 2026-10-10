@@ -5,10 +5,13 @@
  * and soft at every edge.
  */
 import { describe, expect, it } from "vitest";
-import { adultCoatRegions, MONS_TARGET } from "../scripts/lib/adultCoat.ts";
+import { adultCoatRegions, monsCentre } from "../scripts/lib/adultCoat.ts";
 import { ADULT_COAT_REGION_IDS, groupFaces } from "../src/format/assetFormat.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
+/** The adult pack's mons target: the test's check that the measured frame is on the mons. */
+const MONS_TARGET = "pelvis/bulge-incr";
+// With the adult pack, for its mons target; the regions are measured from the base mesh alone.
 const assets = loadFixtureAssets(true);
 const P = assets.positions;
 const regions = adultCoatRegions(assets);
@@ -54,6 +57,30 @@ describe("the adult pack's coat regions", () => {
       // Three decimals: the manifest carries what the pack measured, compactly.
       expect(Math.round((m[i] as number) * 1000) / 1000).toBe(m[i]);
     });
+  });
+
+  it("place their frame at the mons: its target's centre's height, on the midline's skin", () => {
+    const t = assets.targets.get(MONS_TARGET);
+    if (!t) throw new Error(`no ${MONS_TARGET}`);
+    const c = [0, 0, 0];
+    let total = 0;
+    t.indices.forEach((v, i) => {
+      const w = Math.hypot(
+        t.deltas[i * 3] as number,
+        t.deltas[i * 3 + 1] as number,
+        t.deltas[i * 3 + 2] as number,
+      );
+      total += w;
+      for (let k = 0; k < 3; k++) c[k] = (c[k] as number) + w * at(v, k);
+    });
+    const frame = monsCentre(assets, drawn);
+    expect(Math.abs(frame[1] - (c[1] as number) / total)).toBeLessThan(0.01);
+    // The midline's skin, which the mons bulges past on either side of it.
+    expect(Math.abs(frame[2] - (c[2] as number) / total)).toBeLessThan(0.04);
+  });
+
+  it("are measured from the body pack alone, as the packer measures them", () => {
+    expect(adultCoatRegions(loadFixtureAssets())).toEqual(regions);
   });
 
   it("lie on the drawn skin of the pelvis's front, round the mons", () => {
