@@ -9,6 +9,7 @@ import {
   measureEye,
   referenceEye,
   relativeTo,
+  SCLERA_TINT_RANGE,
   sample,
 } from "../scripts/lib/packEyes.ts";
 import { createEyeLibrary, type EyeManifest } from "../src/eyes/library.ts";
@@ -104,10 +105,10 @@ describe("the eye pack", () => {
       const builtIn = IRIS_LUMINANCE_SCALE * ref.irisLum;
       expect(multiplier / builtIn, `${m.id}: iris mean`).toBeGreaterThan(0.85);
       expect(multiplier / builtIn, `${m.id}: iris mean`).toBeLessThan(1.15);
-      if (m.tags.includes("human"))
+      if (m.tags.includes("human") || m.tags.includes("slit pupil"))
         for (const c of m.scleraTint) {
-          expect(c, `${m.id}: tint`).toBeGreaterThan(0.55);
-          expect(c, `${m.id}: tint`).toBeLessThan(1.45);
+          expect(c, `${m.id}: tint`).toBeGreaterThanOrEqual(SCLERA_TINT_RANGE[0]);
+          expect(c, `${m.id}: tint`).toBeLessThanOrEqual(SCLERA_TINT_RANGE[1]);
         }
     }
   });

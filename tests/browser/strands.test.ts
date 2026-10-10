@@ -65,10 +65,29 @@ describe("strand layers", () => {
     const bare = renderLayers([], { light: FRONT, view: NEAR });
     const hair = renderLayers([strands()], { light: FRONT, view: NEAR });
     expect(variance(hair)).toBeGreaterThan(50 * variance(bare) + 1e-6);
-    // Some pixels are bare skin between strands, some are dark hair.
+    // Some pixels are bare skin between strands, some are dark hair (a strand
+    // about a pixel wide, soft-edged, darkens its middle pixel by around half).
     const skin = mean(bare);
     expect(hair.filter((x) => x > 0.95 * skin).length).toBeGreaterThan(SIZE * SIZE * 0.3);
-    expect(hair.filter((x) => x < 0.5 * skin).length).toBeGreaterThan(SIZE * SIZE * 0.02);
+    expect(hair.filter((x) => x < 0.6 * skin).length).toBeGreaterThan(SIZE * SIZE * 0.02);
+  });
+
+  // A strand about a pixel wide is a thin hair, soft at its edges: a box filter
+  // made it flip from skin to hair within a pixel, hundreds of hard black
+  // dashes on a chest close-up (here, a step of 0.73 of the skin in one pixel).
+  // Under the shared strand footprint (a tent a pixel either side) no step
+  // between neighbouring pixels takes more than half the skin's value.
+  it("draw a strand about a pixel wide soft-edged, not as a hard dash", () => {
+    const skin = mean(renderLayers([], { light: FRONT, view: NEAR }));
+    const hair = renderLayers([strands()], { light: FRONT, view: NEAR });
+    let worst = 0;
+    for (let y = 0; y < SIZE; y++)
+      for (let x = 0; x + 1 < SIZE; x++)
+        worst = Math.max(
+          worst,
+          Math.abs((hair[y * SIZE + x + 1] as number) - (hair[y * SIZE + x] as number)),
+        );
+    expect(worst / skin).toBeLessThan(0.5);
   });
 
   it("run along the flow: down the plane, so the image changes less along it than across", () => {

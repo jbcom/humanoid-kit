@@ -63,9 +63,9 @@ from the pixels by `measureEye`; nothing is authored.
 | bobby_03_diffuse_sea_breeze_eyes.webp | `e2907838b4257bdcbc697b30ae13ee998d6425ee464282a5249dcdc7731ebb09` |
 | mindfront_brown_eye_02.webp | `56f6e62232f9b8e5c73f8b9e7268c3f8740c5bb1ad024049dcea14da2784fe4f` |
 | nyloseth_sapphire_blue_eyes.webp | `ec0f98b3db590ea02f35773c781d9990733aaef2b62f0d4356024750eda51e73` |
-| spamrakuen_sr_anime_eyes_navy.webp | `1f1571734647d273ce0f4cc4a1bf4f671f35544f2ee95a3836dbdb7306a7802c` |
-| spamrakuen_sr_anime_maid-san_blue_eyes.webp | `c21cf4a2df3aaab4c1c650405e5c6ac88314bfb941066780c4b7b0840b08b0c5` |
-| spamrakuen_sr_anime_maid-san_red_eyes.webp | `9ac1c520f0057b1309360a9aca46b036ba14cfc825fd8bfe07cc9831ff88947d` |
+| spamrakuen_sr_anime_eyes_navy.webp | `8ddb96b4ca8b623533a2863f16ae83a6905da043749f09eae0745c8495d81d13` |
+| spamrakuen_sr_anime_maid-san_blue_eyes.webp | `a03100cb48021ca51cfa38f2ec513716b24ddba3b2eab3c2f77f6ef321c3d9b9` |
+| spamrakuen_sr_anime_maid-san_red_eyes.webp | `dd1af0e3a81238bfe2343af5bf478d815b4b92c345c19a04166b70dd4535f833` |
 | wojackowl_blue_eyes_toon.webp | `e2632dc155f76d04e04fb36460ce67c276b5b30166fe9cffe8178c347c92ff90` |
 | wojackowl_brown_eyes_toon.webp | `c26a0d738174574c35ecfeec44365cc464ebdcfa0c9bf62c24e008849bac4333` |
 | wojackowl_green_eyes_toon.webp | `f62e9ce0f1f078b00f156d55641c15022db0f77733c323fb5144b0024a5894aa` |

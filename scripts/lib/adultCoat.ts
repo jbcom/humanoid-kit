@@ -4,8 +4,7 @@
  * It is the pack's data, so the core names none of it (`pnpm check:pages`).
  *
  * Today pubic hair's area (docs/research/BODY-HAIR.md, "Pubic hair"), in the
- * frame of the mons: the centre of the mons target's displacement, weighted by
- * it. Its upper edge is a level hairline above the mons; its sides narrow from
+ * frame of the mons, measured from the base mesh alone (`monsCentre`). Its upper edge is a level hairline above the mons; its sides narrow from
  * there to the crotch; it runs on under the crotch toward the perineum, on the
  * pelvis's front and not round onto the buttocks. Every edge eases over a
  * centimetre or more. How far it rises (the escutcheon up the linea, more in
@@ -18,9 +17,6 @@ import {
   groupFaces,
   type HumanoidAssets,
 } from "../../src/format/assetFormat.ts";
-
-/** The target whose displacement is the mons: the frame pubic hair is placed in. */
-export const MONS_TARGET = "pelvis/bulge-incr";
 
 /**
  * Above the mons' centre to the hairline, metres: a little above the mons'
@@ -41,24 +37,46 @@ const ramp = (lo: number, hi: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** The mons' centre: its target's displacement-weighted mean position. */
-function monsCentre(base: HumanoidAssets): [number, number, number] {
-  const t = base.targets.get(MONS_TARGET);
-  if (!t) throw new Error(`adult coat regions: the base has no ${MONS_TARGET} target`);
+/**
+ * How far the mons' centre lies below the hip joints' height on the base
+ * mesh, metres: measured once as the centre of the mons target's displacement
+ * (9.6 cm), which a unit test holds the frame to.
+ */
+export const MONS_BELOW_HIPS = 0.096;
+
+/** The centre of a base-mesh vertex group's vertices (a joint helper's is its joint). */
+function groupCentre(base: HumanoidAssets, group: string): [number, number, number] {
+  const vs = new Set<number>();
+  for (const f of groupFaces(base, group))
+    for (let k = 0; k < 4; k++) vs.add(base.faceVerts[f * 4 + k] as number);
+  if (vs.size === 0) throw new Error(`adult coat regions: the base has no ${group} group`);
   const P = base.positions;
-  let [x, y, z, total] = [0, 0, 0, 0];
-  t.indices.forEach((v, i) => {
-    const w = Math.hypot(
-      t.deltas[i * 3] as number,
-      t.deltas[i * 3 + 1] as number,
-      t.deltas[i * 3 + 2] as number,
-    );
-    total += w;
-    x += w * (P[v * 3] as number);
-    y += w * (P[v * 3 + 1] as number);
-    z += w * (P[v * 3 + 2] as number);
-  });
-  return [x / total, y / total, z / total];
+  const c: [number, number, number] = [0, 0, 0];
+  for (const v of vs)
+    for (let k = 0; k < 3; k++) c[k] = (c[k] as number) + (P[v * 3 + k] as number) / vs.size;
+  return c;
+}
+
+/**
+ * The mons' centre, from the base mesh alone, which the packer has without
+ * the adult pack's targets: on the midline, `MONS_BELOW_HIPS` under the hip
+ * joints' height, on the front of the drawn skin there.
+ */
+export function monsCentre(
+  base: HumanoidAssets,
+  drawn: ReadonlySet<number>,
+): [number, number, number] {
+  const hips =
+    (groupCentre(base, "joint-l-upper-leg")[1] + groupCentre(base, "joint-r-upper-leg")[1]) / 2;
+  const y = hips - MONS_BELOW_HIPS;
+  const P = base.positions;
+  let z = Number.NEGATIVE_INFINITY;
+  for (const v of drawn)
+    if (Math.abs(P[v * 3] as number) < 0.01 && Math.abs((P[v * 3 + 1] as number) - y) < 0.01)
+      z = Math.max(z, P[v * 3 + 2] as number);
+  if (!Number.isFinite(z))
+    throw new Error("adult coat regions: no skin on the midline at the mons");
+  return [0, y, z];
 }
 
 /** Pubic hair's mask at a point, in the mons' frame (`ax` the distance from the midline). */
@@ -72,18 +90,19 @@ function pubicMask(ax: number, y: number, z: number, mons: [number, number, numb
     (1 - ramp(top - 0.01, top + 0.01, y)) *
     ramp(floor - 0.015, floor + 0.015, y) *
     (1 - ramp(half - 0.012, half + 0.012, ax)) *
-    // The pelvis's front: not round past the crotch onto the buttocks.
-    ramp(mons[2] - 0.09, mons[2] - 0.06, z)
+    // The pelvis's front (`mons[2]` is its surface on the midline): not round
+    // past the crotch onto the buttocks.
+    ramp(mons[2] - 0.06, mons[2] - 0.03, z)
   );
 }
 
 /** The pack's coat regions, measured on `base`: each drawn vertex with any of a region, ascending. */
 export function adultCoatRegions(base: HumanoidAssets): AdultCoatRegionSpec[] {
-  const mons = monsCentre(base);
   const P = base.positions;
   const drawn = new Set<number>();
   for (const f of groupFaces(base, "body"))
     for (let k = 0; k < 4; k++) drawn.add(base.faceVerts[f * 4 + k] as number);
+  const mons = monsCentre(base, drawn);
   const vertices: number[] = [];
   const mask: number[] = [];
   for (const v of [...drawn].sort((a, b) => a - b)) {

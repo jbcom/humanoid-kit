@@ -15,6 +15,7 @@ import {
   type HumanoidPose,
   HumanoidProvider,
   STUDIO_EXPOSURE,
+  STUDIO_SHADOWS,
   STUDIO_TONE_MAPPING,
   StudioStage,
 } from "humanoid-kit/react";
@@ -422,7 +423,7 @@ function Shot() {
       data-generation={generation}
     >
       <Canvas
-        shadows={params.has("noshadow") ? false : "percentage"}
+        shadows={params.has("noshadow") ? false : STUDIO_SHADOWS}
         camera={{ position, fov }}
         gl={{
           preserveDrawingBuffer: true,

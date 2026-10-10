@@ -68,6 +68,7 @@ import { type BodyArtTexture, MARK_NEUTRAL } from "./bodyArtTexture.ts";
 import { DUAL_SKINNING_KEY, type DualBones, patchDualSkinning } from "./dualSkinning.ts";
 import { emptyLayerAtlas, emptyOwners, type SkinLayerAtlas } from "./layerAtlas.ts";
 import { BODY_OCCLUSION_FLOOR, BODY_OCCLUSION_POWER, patchOcclusion } from "./occlusion.ts";
+import { STRAND_FOOTPRINT } from "./strandFootprint.ts";
 
 /** What the skin material is painted from: the recipe's skin and the figure's state signals. */
 export type SkinAppearance = Omit<SkinPaintInput, "signals"> & {
@@ -132,9 +133,10 @@ export const STRAND_FAR_START = 0.66;
  * is under the layer's coverage times its mask, so a mask's soft edge thins
  * the hair rather than fading it. A strand is a segment of random length
  * (half to all of the layer's), tilted a little, thinning to its tip; its
- * coverage of the pixel is the overlap of its width with the pixel's footprint
- * across it (a box filter, exact for strands finer than a pixel), so a far
- * strand is a faint line rather than a flickering one.
+ * coverage of the pixel is the strand footprint across it (`STRAND_FOOTPRINT`,
+ * its width under a tent a pixel either side, shared with the coat), so a
+ * strand about a pixel wide is soft-edged rather than a hard dash, and a far
+ * one a faint line rather than a flickering one.
  *
  * The flow is the bind pose's downward direction carried through the
  * skinning (`vHkFlow`, view space), so hair runs down the limbs and trunk and
@@ -154,6 +156,7 @@ export const STRAND_FAR_START = 0.66;
  * and speckle.
  */
 const STRAND_FUNCTIONS = (count: number) => `
+${STRAND_FOOTPRINT}
 varying vec3 vHkFlow;
 // The strands' relief at this pixel, metres, left by hkApplyStrands for the normal.
 float hkStrandHeight = 0.0;
@@ -186,7 +189,7 @@ float hkStrandGrid( vec2 p, float angle, float seed, float keep, float cover, fl
 			if ( t < - px || t > slen + px ) continue;
 			float d = dot( rel, vec2( - dir.y, dir.x ) );
 			float w = width * ( 1.0 - 0.6 * clamp( t / slen, 0.0, 1.0 ) );
-			float across = max( 0.0, min( d + 0.5 * px, 0.5 * w ) - max( d - 0.5 * px, - 0.5 * w ) ) / px;
+			float across = hkStrandFootprint( d, w, px );
 			float along = clamp( ( t + 0.5 * px ) / px, 0.0, 1.0 ) * clamp( ( slen - t + 0.5 * px ) / px, 0.0, 1.0 );
 			clear *= 1.0 - across * along;
 		}
