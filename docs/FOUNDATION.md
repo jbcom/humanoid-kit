@@ -19,7 +19,21 @@ foundation finds them once, at the layer that owns them.
 
 ## What a permutation is
 
-A permutation is a body, a skin tone, a pose and an anatomy setting:
+A permutation is a body, a skin tone, a pose and a form.
+
+**Optional to a developer, mandatory to us.** A developer chooses whether to
+install the adult pack, so every adult figure the kit can ship exists in two
+forms: the **core form** (no adult pack) and the **adult form** (pack loaded,
+anatomically complete). Internal development never treats the adult form as an
+add-on: every adult permutation is built, tested and judged in both forms, and
+anything that sits on or interacts with the body (a garment's fit at the
+crotch and chest, a waistband, a seated contact, a grip on another figure,
+an animation's thigh clearance) must be correct on both. A feature that passes
+only on the core form has not passed. Adult-form evidence stays local and
+never reaches Pages; the shipped packages keep the pack optional and
+age-gated.
+
+The axes:
 
 - **bodies**: the battery's eighteen bodies (`scripts/sheets/battery.json`):
   slim, average, heavy and muscular women and men, an androgynous average,
@@ -35,13 +49,15 @@ A permutation is a body, a skin tone, a pose and an anatomy setting:
   - lying supine and prone;
   - walk and run contact and passing frames (from the animation pack);
   - a fist and an open spread hand.
-- **anatomy**: for adults, with the adult pack at its default and at its size
-  extremes; never for anyone under 18.
+- **forms**: core and adult for every body 18 or over; the adult form at its
+  default and at its size and arousal extremes. Figures under 18 have the core
+  form only, and the age policy refuses the adult form for them.
 
 The full product is large, so the foundation names **tiers**: a smoke tier
-(the cross set's shape extremes × tones 1/3/6 × rest, seated, overhead, squat),
-used by every unit and browser test; and the full tier, used for evidence
-before a layer is approved.
+(the cross set's shape extremes × tones 1/3/6 × rest, seated, overhead, squat ×
+both forms), used by every unit and browser test; and the full tier, used for
+evidence before a layer is approved. `hk-sheets` files every battery request
+in both forms automatically.
 
 ## What the foundation proves (its invariants)
 
@@ -59,8 +75,11 @@ Each is a measured test over the permutations, not a look at a sheet:
 5. **Fair rendering**: contrast of every skin detail reads at every tone
    (deepest at least 60% of the lightest), and no specular or shadow artefact
    differs by tone.
-6. **Anatomy correct** (adults): forms, sizes and placement within measured
-   ranges at every adult body, rendered with real volume.
+6. **Anatomy correct** (adult form): forms, sizes and placement within
+   measured ranges at every adult body and pose, rendered with real volume.
+7. **Both forms agree**: every invariant holds in both forms, and the adult
+   form changes nothing outside its region (the core form's surface, landmarks
+   and layers are identical away from the anatomy).
 
 ## What the foundation gives layers (the contract)
 
@@ -146,8 +165,9 @@ the model space at runtime, not anticipated as animations.
 
 Affordances are part of the foundation, not a later layer: an anatomy that
 passes as a closed surface and is reopened later is rebuilt twice. The
-foundation's adult figures render with the adult pack, so a female or male
-body is anatomically one; apertures are built with their channels when the
+foundation's adult figures exist in both forms, and the adult form is
+anatomically a female, male or intersex body; it is developed as core, not as
+a side lane, and integrated with the rest of the body; apertures are built with their channels when the
 anatomy is built; and the invariants extend to them (a channel never
 self-intersects or punches through the body wall at any opening or pose; a
 grip never lets fingers pass into the held object).

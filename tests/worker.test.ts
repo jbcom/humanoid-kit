@@ -65,6 +65,35 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
     expect(replies.get(2)?.type).toBe("evaluated");
   });
 
+  it("solves a figure's hip fold between other requests, and lets a newer ask supersede an older", async () => {
+    stubFetch();
+    const { handle, replies, transfers } = start();
+    await handle({
+      type: "init",
+      id: 1,
+      load: { body: "http://packs/body" },
+      model: { subdivision: 1 },
+    });
+    const first = handle({ type: "hipFold", id: 2, recipe: createRecipe({ macros: { age: 30 } }) });
+    // A newer ask for a fold stops the older one at its next flexion.
+    const second = handle({ type: "hipFold", id: 3, recipe: createRecipe() });
+    // An evaluation is not held up behind either.
+    const evaluated = handle({ type: "evaluate", id: 4, recipe: createRecipe() });
+    await Promise.all([first, second, evaluated]);
+    expect(replies.get(4)?.type).toBe("evaluated");
+    expect(replies.get(2)).toMatchObject({ type: "error", name: "AbortError" });
+    const fold = replies.get(3);
+    expect(fold?.type).toBe("hipFold");
+    if (fold?.type !== "hipFold") return;
+    expect(fold.surface).toBe("base");
+    expect(fold.fold.rows).toBeGreaterThan(50);
+    expect(fold.fold.slot.length).toBe(
+      (replies.get(1) as Extract<WorkerResponse, { type: "ready" }>).topology.body.vertexCount,
+    );
+    // The slots and the rows are transferred, not copied.
+    expect(transfers.get(3)).toEqual([fold.fold.slot.buffer, fold.fold.data.buffer]);
+  });
+
   it("bakes a partial attachment set against the default figure, whatever the first figure's age", async () => {
     // A child first figure loads the child anchors first; the bake needs the
     // default (adult) figure, so ready waits for its stage rather than failing.

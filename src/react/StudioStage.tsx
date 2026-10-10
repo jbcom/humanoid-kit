@@ -9,6 +9,9 @@
  * the figures stand), and only of those; without a provider it falls back to
  * drei's `ContactShadows` around the origin.
  *
+ * The key's shadow is fitted to the figure and blurred to a skin-like penumbra
+ * (`render/studioShadow.ts`): render with `shadows={STUDIO_SHADOWS}` on the canvas.
+ *
  * Fill and ambient are neutral on purpose: cool fill pushes deep skin toward
  * grey ("ashy"). Render it with `STUDIO_TONE_MAPPING` and `STUDIO_EXPOSURE`.
  * They were chosen by measuring rendered faces against the measured albedo at
@@ -27,12 +30,14 @@ import { type Mesh, NeutralToneMapping, PMREMGenerator } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { type ContactPoint, groundOcclusion } from "../presence/presence.ts";
 import { GroundContactMaterial } from "../render/groundContact.ts";
+import { configureKeyShadow } from "../render/studioShadow.ts";
 import { usePresenceContext } from "./presence.tsx";
 
 /** The tone mapping the stage is validated with. */
 export const STUDIO_TONE_MAPPING = NeutralToneMapping;
 /** The exposure the stage is validated with. */
 export const STUDIO_EXPOSURE = 1.15;
+export { STUDIO_SHADOWS } from "../render/studioShadow.ts";
 
 export interface StudioStageProps {
   /** Background colour; `null` leaves the canvas background alone. */
@@ -163,9 +168,9 @@ export function StudioStage({
         intensity={2.4 * intensity}
         color="#fff6ef"
         castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-bias={-0.0004}
-        shadow-normalBias={0.02}
+        ref={(light) => {
+          if (light) configureKeyShadow(light);
+        }}
       />
       <directionalLight position={[-2.6, 1.6, 2.2]} intensity={0.7 * intensity} color="#ffffff" />
       <directionalLight position={[-1.2, 2.4, -3]} intensity={1.6 * intensity} color="#ffffff" />

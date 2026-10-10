@@ -41,7 +41,7 @@ soles to under 10 mm).
 
 ![The crawl stroke at age 25](./animation-swim-age25.webp)
 
-*`swimcrawlstroke`, age 25.* A clip that does not stand on the ground is not
+*`swimcrawlstroke`, age 25, side-on at 2.4 m, eight frames of the stroke.* A clip that does not stand on the ground is not
 held to it: the figure lifts from its lowest vertex, not its soles, and the
 foot lock is off. Arm and leg strokes keep to the body at every size.
 

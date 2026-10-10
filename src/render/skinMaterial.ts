@@ -968,7 +968,8 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override onBeforeCompile: MeshPhysicalMaterial["onBeforeCompile"] = (shader) => {
     Object.assign(shader.uniforms, this.hkUniforms);
-    if (this.dualBones) patchDualSkinning(shader, this.dualBones);
+    // The skin is the body's, whose geometry carries the hip fold's slots.
+    if (this.dualBones) patchDualSkinning(shader, this.dualBones, true);
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
@@ -1039,6 +1040,6 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
     const art = this.hkUniforms.hkBodyArt.value ? `-art${this.decalLayers}` : "";
-    return `humanoid-kit-skin-10-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}${art}`;
+    return `humanoid-kit-skin-11-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}-fold` : ""}${art}`;
   }
 }

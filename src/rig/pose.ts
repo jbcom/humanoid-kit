@@ -15,6 +15,7 @@ import {
 } from "../format/assetFormat.ts";
 import type { BoneRotations, RestBones } from "./bones.ts";
 import { skinNormalsBlended, skinPositionsBlended } from "./dual.ts";
+import type { HipFold } from "./hipFold.ts";
 import { mul, type Quat } from "./quat.ts";
 import { poseShare, skinDualShare } from "./skinShare.ts";
 
@@ -325,6 +326,7 @@ export function skinPositions(
   skinIndex: Uint8Array | Uint16Array,
   skinWeight: Float32Array,
   out: Float32Array,
+  fold?: HipFold,
 ): Float32Array {
   return skinPositionsBlended(
     rest,
@@ -335,6 +337,7 @@ export function skinPositions(
     out,
     // The thigh's share falls as it swings (`poseShare`), as the renderer's bone texture has it.
     poseShare(rest, rotations, dualShareOf(rest.names)),
+    fold,
   );
 }
 

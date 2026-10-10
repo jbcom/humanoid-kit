@@ -947,11 +947,13 @@ and expressions"). Framework-free.
   (`pose={{ faceUnits: expressionUnits("surprise", 0.7) }}`). `intensity` scales
   the weights (0 to 1; above 1 is held at 1); an unknown id throws. The weights
   are authored choices (ARCHITECTURE.md, "Named expressions").
-- `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out)`: the
-  rig's skinning on the CPU, exactly as the renderer skins, for grounding,
+- `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out, fold?)`:
+  the rig's skinning on the CPU, exactly as the renderer skins, for grounding,
   tests, anchors and pose-dependent bakes: linear blend skinning mixed with
   dual quaternion skinning vertex by vertex, by the share each bone asks for
-  (ARCHITECTURE.md, "Skinning artefacts"). `posedBoneHeads(rest, rotations)`
+  (ARCHITECTURE.md, "Skinning artefacts"), and, with a `fold`
+  (`solveHipFold`, below), the hip fold added to the skinned vertex.
+  `posedBoneHeads(rest, rotations)`
   gives every joint's posed position. `skinPositionsLinear` is linear blending
   alone, `skinPositionsDual` dual quaternion skinning alone, and
   `skinPositionsBlended(…, share)` the mix at any share (a number, or one per
@@ -966,6 +968,22 @@ and expressions"). Framework-free.
   `poseShare(rest, rotations, base)` gives every bone's share for a pose: the
   table's, moved by each such bone's swing (its rotation less its twist about
   its own axis). `skinPositions` and `DualBones` use it.
+- `solveHipFold(rest, control, skinIndex, skinWeight, triangles)` solves a
+  figure's hip fold (ARCHITECTURE.md, "The hip fold"): where a thigh flexed past
+  a right angle would pass through the belly, the displacement (per flexion
+  from 32.5° to 140° in 2.5° steps, per vertex of the thigh's skin within 0.7
+  of its length of the hip) that holds it against the belly's skin instead. `solveHipFoldSteps` is the
+  same a flexion at a time (a generator). The result (`HipFold`) is passed to
+  `skinPositions` as `fold`; `hipPose(rest, rotations)` reads each hip's flexion
+  from a pose, `addFold(fold, vertex, flexion, out, at)` reads a vertex's
+  displacement at a flexion, `addFoldNormal` the change of its normal there, and
+  `HIP_FOLD` holds the fold's terms. It takes about a second of one core (under two
+  with the CPU throttled 4×): in an app it is asked of the worker
+  (`client.hipFold`, which keeps the last six folds by figure shape), never solved
+  per frame; `<Humanoid>` fades it in over `FOLD_FADE` (150 ms) when it arrives. The
+  thigh stays under 2 mm behind the belly at every flexion solved and halfway
+  between, in the nine bodies of the tests. `scripts/lib/hipContact.ts` (`HipContact.penetration(positions)`)
+  measures how far a posed body's thigh passes through its trunk.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
@@ -1155,6 +1173,16 @@ The main-thread handle to an evaluation worker.
   it once the figure is an adult and draws it, in place of the base body, from
   then on (`Evaluation.surface === "adult"`); the worker builds it once and
   later calls share it.
+- `client.hipFold(recipe, signals?): Promise<{ surface, fold }>` resolves with the
+  hip fold (ARCHITECTURE.md, "The hip fold") of the figure the recipe makes, on
+  the body surface its evaluation draws (`"base"` or `"adult"`): the
+  `SurfaceFold` (`slot` per render vertex, `rows`, `data`) for
+  `DualBones.setFold` and the geometry's `FOLD_SLOT_ATTRIBUTE`. The worker solves
+  it between other requests, so an evaluation is never held up behind it, and
+  asking again supersedes a solve still under way, which rejects with an
+  `AbortError`. `<Humanoid>` asks once a hip in its pose is flexed past 30°,
+  whenever the figure's shape changes, and counts the wait in its settle; a figure
+  drawn by other means calls it itself.
 - `client.dispose()` terminates the worker and rejects pending requests.
 - Errors from the worker arrive as `HumanoidWorkerError` with `name` set to the
   original error's name (for example `AgePolicyError`).
@@ -1252,7 +1280,11 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   bone's share (`SKIN_DUAL_SHARE`; ARCHITECTURE.md, "Skinning artefacts"), so a
   twisted forearm or a raised shoulder keeps its volume, and its shadows, bounds
   and picking follow. A `material` of your own skins by three's linear skinning
-  alone, and the attachments (eyes, teeth, tongue) follow single bones.
+  alone, and the attachments (eyes, teeth, tongue) follow single bones. With a
+  hip flexed past 30° it asks the worker for the figure's hip fold
+  (`client.hipFold`) and the skin adds it, so the groin folds against the belly
+  and does not pass through it (ARCHITECTURE.md, "The hip fold"); the figure
+  settles once it is drawn.
 - Stores the figure's bones as dual quaternions on the group's
   `userData.dualBones` (a `DualBones`, null before the first evaluation), so
   clothing and materials of your own can follow its joints as its skin does:
@@ -1450,7 +1482,7 @@ range input sized for touch. `onChange(value, gesture)` fires while dragging and
 ## `humanoid-kit/worker`
 
 The worker module that `HumanoidWorkerClient` starts by default. It owns one
-`HumanoidModel` and answers seven messages: `init` (replied to with `ready`
+`HumanoidModel` and answers eight messages: `init` (replied to with `ready`
 once the first figure can be evaluated), `complete` (replied to once every
 target file has loaded, or with the error that stopped one), `pickMap`
 (replied to with the pick map once everything has loaded), `posedOcclusion`
@@ -1460,8 +1492,9 @@ fields once the adult pack's stage has loaded, or null without that pack),
 `adultSurface` (replied to with the adult pack's refined surface, or null) and
 `evaluate`, which
 waits for exactly the load stages its recipe needs without holding up other
-requests, and `garment` (replied to with a garment's static render data once
-the garments have loaded). Result buffers are transferred. Applications use it
+requests, `garment` (replied to with a garment's static render data once
+the garments have loaded) and `hipFold` (replied to with a figure's hip fold,
+solved a flexion at a time between other requests). Result buffers are transferred. Applications use it
 through the client, not directly.
 
 ## `humanoid-kit-body`
@@ -1528,6 +1561,31 @@ animator.root;                // how far the figure has been carried: [x across,
   is what the coarse capsules allow.
 - `frameRotations(rig, joints, frame)` (from `src/rig/pose.ts`) is a BVH frame's
   rotations in the figure's axes, which the packer and `bodyPoseRotations` share.
+
+## `humanoid-kit-eyes`
+
+```ts
+import { eyesPack } from "humanoid-kit-eyes";
+import { loadEyeLibrary } from "humanoid-kit";
+
+const eyes = await loadEyeLibrary(eyesPack);
+<Humanoid recipe={createRecipe({ eyes: { material: "nyloseth_green_cat_eyes" } })} eyeMaterials={eyes} />;
+```
+
+`eyesPack` is `{ manifest, files }` like `bodyPack`: one WebP texture per material
+(about 100 KB, loaded when a figure first wears it). 32 CC0 materials of the MakeHuman
+community's `system_eye_materials01` and `02`: human irises (`bobby_03_diffuse_*`,
+`mindfront_brown_eye_02`, `nyloseth_sapphire_blue_eyes`), cats' slit pupils
+(`nyloseth_*_cat_eyes`), toon and anime eyes, and creatures'. `loadEyeLibrary(pack)`
+fetches the manifest and returns an `EyeLibrary`: `entry(id)` (an `EyeMaterialEntry`:
+`title`, `author`, `tags`, `hasIris`, the measured `irisRadius`, `irisGain`,
+`scleraGain`, `scleraTint`, `paintedIris` and its `source`), `textureUrl(id)` and the
+`manifest` (with the iris `centres` every material shares). `createEyeLibrary(manifest,
+url)` builds one over any locator. `recipe.eyes.material` names a material, optional
+like every recipe addition; a material supplies pattern and detail and the colours stay
+`eyes.iris` and `eyes.scleraWarmth`'s. `<Humanoid eyeMaterials>` is the library; keep
+it stable. Without it, or for an id it does not have (reported through `onError`), the
+built-in eye is shown.
 
 ## `humanoid-kit-animations`
 

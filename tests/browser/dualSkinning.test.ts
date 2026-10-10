@@ -34,15 +34,29 @@ import {
   DUAL_BONES_UNIFORM,
   DUAL_SKINNING_FUNCTIONS,
   DualBones,
+  FOLD_BLEND_UNIFORM,
+  FOLD_FUNCTIONS,
+  FOLD_UNIFORM,
   followDualSkinning,
+  ROOT_UNIFORM,
 } from "../../src/render/dualSkinning.ts";
 import {
+  DUAL_TEXELS,
   skinNormalsBlended,
   skinPose,
   skinPositionsBlended,
   skinVertex,
 } from "../../src/rig/dual.ts";
+import {
+  addFold,
+  addFoldNormal,
+  FOLD_KEYS,
+  HIP_FOLD,
+  type HipFold,
+  hipPose,
+} from "../../src/rig/hipFold.ts";
 import { type BoneRotations, restBonesFrom } from "../../src/rig/pose.ts";
+import { rotate } from "../../src/rig/quat.ts";
 
 const renderer = new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
 afterAll(() => renderer.dispose());
@@ -162,8 +176,8 @@ describe("the vertex shader's dual quaternion blend", () => {
             ${DUAL_SKINNING_FUNCTIONS}
             void main() {
               ivec2 p = ivec2( gl_FragCoord.xy );
-              vec4 q; vec3 t; float share;
-              hkDualMotion( texelFetch( tIndex, p, 0 ), texelFetch( tWeight, p, 0 ), q, t, share );
+              vec4 q; vec3 t; float share; float flexion;
+              hkDualMotion( texelFetch( tIndex, p, 0 ), texelFetch( tWeight, p, 0 ), q, t, share, flexion );
               vec3 rest = uMode == 1 ? texelFetch( tNormal, p, 0 ).xyz : texelFetch( tPosition, p, 0 ).xyz;
               outColor = uMode == 2 ? vec4( share, 0.0, 0.0, 1.0 ) : vec4( uMode == 1 ? hkQRotate( q, rest ) : hkQRotate( q, rest ) + t, 1.0 );
             }`,
@@ -228,6 +242,203 @@ describe("the vertex shader's dual quaternion blend", () => {
       dual.dispose();
     }
     target.dispose();
+  });
+});
+
+describe("the vertex shader's reading of a hip's flexion", () => {
+  it("is the mean flexion of the thigh bones a vertex holds, as hipPose has it, and -1000 where it holds none", () => {
+    const names = ["root", "pelvis.L", "upperleg01.L", "upperleg02.L", "lowerleg01.L"];
+    const parents = Int16Array.from([-1, 0, 1, 2, 3]);
+    const heads = Float32Array.from([0, 1, 0, 0, 1, 0, 0.1, 1, 0, 0.1, 0.6, 0, 0.1, 0.2, 0]);
+    const leg = restBonesFrom(names, parents, heads);
+    const rotations = new Float32Array(names.length * 4);
+    for (let b = 0; b < names.length; b++) rotations[b * 4 + 3] = 1;
+    // The hip flexed 100° (a turn about -x), the lower half of the thigh with it.
+    rotations.set(turn(-1, 0, 0, 100), 2 * 4);
+    const dual = new DualBones(names.length, 0);
+    dual.update(leg, rotations);
+    const hips = hipPose(leg, rotations);
+    // One vertex per mix of bones: thigh alone, thigh and root, root alone, the two halves of the thigh.
+    const mixes: [number[], number[]][] = [
+      [
+        [2, 0, 0, 0],
+        [1, 0, 0, 0],
+      ],
+      [
+        [2, 0, 0, 0],
+        [0.4, 0.6, 0, 0],
+      ],
+      [
+        [0, 1, 0, 0],
+        [0.5, 0.5, 0, 0],
+      ],
+      [
+        [2, 3, 0, 0],
+        [0.7, 0.3, 0, 0],
+      ],
+      [
+        [4, 1, 0, 0],
+        [1, 0, 0, 0],
+      ],
+    ];
+    const count = mixes.length;
+    const index = new Float32Array(count * 4);
+    const weight = new Float32Array(count * 4);
+    mixes.forEach(([i, w], v) => {
+      index.set(i, v * 4);
+      weight.set(w, v * 4);
+    });
+    const texture = (data: Float32Array) => {
+      const t = new DataTexture(data, count, 1, RGBAFormat, FloatType);
+      t.minFilter = NearestFilter;
+      t.magFilter = NearestFilter;
+      t.needsUpdate = true;
+      return t;
+    };
+    const material = new ShaderMaterial({
+      glslVersion: GLSL3,
+      uniforms: {
+        [DUAL_BONES_UNIFORM]: { value: dual.texture },
+        tIndex: { value: texture(index) },
+        tWeight: { value: texture(weight) },
+      },
+      vertexShader: "void main() { gl_Position = vec4( position.xy, 0.0, 1.0 ); }",
+      fragmentShader: `
+        #define USE_SKINNING
+        uniform highp sampler2D tIndex;
+        uniform highp sampler2D tWeight;
+        layout( location = 0 ) out highp vec4 outColor;
+        ${DUAL_SKINNING_FUNCTIONS}
+        void main() {
+          ivec2 p = ivec2( gl_FragCoord.xy );
+          vec4 q; vec3 t; float share; float flexion;
+          hkDualMotion( texelFetch( tIndex, p, 0 ), texelFetch( tWeight, p, 0 ), q, t, share, flexion );
+          outColor = vec4( flexion, 0.0, 0.0, 1.0 );
+        }`,
+    });
+    const scene = new Scene();
+    scene.add(new Mesh(new PlaneGeometry(2, 2), material));
+    const target = new WebGLRenderTarget(count, 1, { type: FloatType, depthBuffer: false });
+    renderer.setRenderTarget(target);
+    renderer.render(scene, new OrthographicCamera(-1, 1, 1, -1, 0, 1));
+    const px = new Float32Array(count * 4);
+    renderer.readRenderTargetPixels(target, 0, 0, count, 1, px);
+    renderer.setRenderTarget(null);
+    const flexion = (b: number) => hips.flexion[b] as number;
+    expect(flexion(2)).toBeCloseTo(100, 3);
+    expect(px[0]).toBeCloseTo(100, 2);
+    // Thigh at 0.4 of the vertex's weight and the root at 0.6: only the thigh's counts, so the mean is the thigh's.
+    expect(px[4]).toBeCloseTo(100, 2);
+    expect(px[8]).toBe(-1000);
+    // The two halves of the thigh are flexed alike.
+    expect(px[12]).toBeCloseTo(100, 2);
+    expect(px[16]).toBe(-1000);
+    target.dispose();
+    material.dispose();
+    dual.dispose();
+  });
+});
+
+describe("the vertex shader's hip fold", () => {
+  it("reads each vertex's displacement and normal change at its flexion, turned with the root, exactly as the CPU reference does", () => {
+    const rand = random(11);
+    const rows = 7;
+    const count = 200;
+    const fold: HipFold = {
+      vertices: Uint32Array.from({ length: rows }, (_, i) => i),
+      slot: Int32Array.from({ length: rows }, (_, i) => i),
+      vectors: new Float32Array(rows * FOLD_KEYS * 3).map(() => (rand() - 0.5) * 0.2),
+      normals: new Float32Array(rows * FOLD_KEYS * 3).map(() => (rand() - 0.5) * 1.5),
+    };
+    // The renderer's rows: per key, the displacement's texel (x, y, z, 0) and the normal's.
+    const data = new Float32Array(rows * FOLD_KEYS * 8);
+    for (let i = 0; i < rows * FOLD_KEYS; i++) {
+      data.set(fold.vectors.subarray(i * 3, i * 3 + 3), i * 8);
+      data.set(fold.normals.subarray(i * 3, i * 3 + 3), i * 8 + 4);
+    }
+    const dual = new DualBones(NAMES.length, SHARE);
+    // The root turned, so the displacement turns too.
+    const rotations = pose([[0, turn(0.3, 1, 0.2, 70)]]);
+    dual.update(rest, rotations);
+    dual.setFold({ slot: new Float32Array(0), rows, data });
+    // A row and a flexion per vertex: from short of where the fold starts to past where it ends, and some bones that are not the thigh's.
+    const asked = new Float32Array(count * 4);
+    for (let v = 0; v < count; v++) {
+      asked[v * 4] = Math.floor(rand() * rows);
+      asked[v * 4 + 1] =
+        rand() < 0.1 ? -1000 : HIP_FOLD.from - 15 + rand() * (HIP_FOLD.to - HIP_FOLD.from + 40);
+    }
+    const input = new DataTexture(asked, count, 1, RGBAFormat, FloatType);
+    input.minFilter = NearestFilter;
+    input.magFilter = NearestFilter;
+    input.needsUpdate = true;
+    const material = new ShaderMaterial({
+      glslVersion: GLSL3,
+      uniforms: {
+        [DUAL_BONES_UNIFORM]: { value: dual.texture },
+        [FOLD_UNIFORM]: dual.fold,
+        [ROOT_UNIFORM]: { value: NAMES.length * DUAL_TEXELS },
+        [FOLD_BLEND_UNIFORM]: dual.foldBlend,
+        tAsked: { value: input },
+        tPart: { value: 0 },
+      },
+      vertexShader: "void main() { gl_Position = vec4( position.xy, 0.0, 1.0 ); }",
+      fragmentShader: `
+        #define USE_SKINNING
+        uniform highp sampler2D tAsked;
+        uniform int tPart;
+        layout( location = 0 ) out highp vec4 outColor;
+        ${DUAL_SKINNING_FUNCTIONS}
+        ${FOLD_FUNCTIONS}
+        void main() {
+          vec4 a = texelFetch( tAsked, ivec2( gl_FragCoord.xy ), 0 );
+          outColor = vec4( tPart == 0 ? hkFoldDisplacement( a.x, a.y ) : hkFoldNormal( a.x, a.y ), 1.0 );
+        }`,
+    });
+    const scene = new Scene();
+    scene.add(new Mesh(new PlaneGeometry(2, 2), material));
+    const target = new WebGLRenderTarget(count, 1, { type: FloatType, depthBuffer: false });
+    const root = rotations.subarray(0, 4);
+    // Whole, then half faded in, then not at all (the fold fades in when it arrives).
+    for (const [part, read, blend] of [
+      [0, addFold, 1],
+      [1, addFoldNormal, 1],
+      [0, addFold, 0.5],
+      [1, addFoldNormal, 0.25],
+      [0, addFold, 0],
+    ] as const) {
+      dual.foldBlend.value = blend;
+      material.uniforms.tPart = { value: part };
+      renderer.setRenderTarget(target);
+      renderer.render(scene, new OrthographicCamera(-1, 1, 1, -1, 0, 1));
+      const px = new Float32Array(count * 4);
+      renderer.readRenderTargetPixels(target, 0, 0, count, 1, px);
+      renderer.setRenderTarget(null);
+      let worst = 0;
+      let moved = 0;
+      for (let v = 0; v < count; v++) {
+        const cpu = new Float32Array(3);
+        read(fold, asked[v * 4] as number, asked[v * 4 + 1] as number, cpu, 0);
+        const turned = rotate(
+          [root[0] as number, root[1] as number, root[2] as number, root[3] as number],
+          cpu[0] as number,
+          cpu[1] as number,
+          cpu[2] as number,
+        );
+        const want = turned.map((x) => x * blend);
+        if (Math.hypot(...turned) > 0) moved++;
+        for (let k = 0; k < 3; k++)
+          worst = Math.max(worst, Math.abs((px[v * 4 + k] as number) - (want[k] as number)));
+      }
+      // Most of what was asked is in the fold's range, so this compares displacements, not zeros.
+      expect(moved, `part ${part}`).toBeGreaterThan(count / 2);
+      // The normal's change is some seven times the displacement's in size, so float error is too.
+      expect(worst, `part ${part} at ${blend}`).toBeLessThan(part === 0 ? 2e-6 : 1e-5);
+    }
+    target.dispose();
+    input.dispose();
+    material.dispose();
+    dual.dispose();
   });
 });
 
