@@ -16,6 +16,7 @@ import type {
   ModelOptions,
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import type { SurfaceFold } from "../rig/hipFold.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
 import type { HairInfo, PickMap, ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
 
@@ -209,6 +210,23 @@ export class HumanoidWorkerClient {
       this.queue.set(key, { recipe, signals, haveOutfit, resolve, reject });
       void this.pump();
     });
+  }
+
+  /**
+   * The hip fold of the figure a recipe makes (`HumanoidModel.hipFold`), for
+   * `DualBones.setFold` and the body geometry's fold slots, on the body surface
+   * that figure's evaluation is for. The worker solves it between other
+   * requests; asking again supersedes a solve still under way, which rejects
+   * with an `AbortError`.
+   */
+  async hipFold(
+    recipe: Recipe,
+    signals: Readonly<Record<string, number>> = {},
+  ): Promise<{ surface: "base" | "adult"; fold: SurfaceFold }> {
+    await this.ready;
+    const r = await this.request({ type: "hipFold", id: 0, recipe, signals });
+    if (r.type !== "hipFold") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+    return { surface: r.surface, fold: r.fold };
   }
 
   private readonly garmentRequests = new Map<string, Promise<GarmentTopology>>();

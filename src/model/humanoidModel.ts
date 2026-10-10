@@ -47,6 +47,8 @@ import type { Vec3 } from "../presence/presence.ts";
 import { AgePolicyError, assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
 import { withAnatomyDefaults } from "../recipe/anatomy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
+import { type HipFold, type SurfaceFold, surfaceFold } from "../rig/hipFold.ts";
+import { solveHipFoldSteps } from "../rig/hipFoldSolve.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
@@ -431,6 +433,17 @@ const RAY_SHARE = 0.25;
 /** Share of a body vertex's skin weight the head bone must hold for it to take a scalp tint. */
 const HEAD_WEIGHT = 0.5;
 
+/** How many hip folds a model keeps for figures it has solved (a fold is some 100 kB). */
+const HIP_FOLDS_KEPT = 6;
+
+/** A hash of a figure's control vertices (FNV-1a over their bits), to know the same shape again. */
+function controlHash(control: Float32Array): string {
+  const words = new Uint32Array(control.buffer, control.byteOffset, control.length);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < words.length; i++) hash = Math.imul(hash ^ (words[i] as number), 0x01000193);
+  return `${control.length}:${(hash >>> 0).toString(16)}`;
+}
+
 export class HumanoidModel {
   readonly regions: RegionField;
   private readonly body: Part;
@@ -468,6 +481,8 @@ export class HumanoidModel {
   private readonly level: number;
   private readonly bodyFaces: Uint32Array;
   /** The adult surface, built on first use (undefined: not yet; null: this pack has none). */
+  /** The hip folds solved lately, by the shape they are for (`controlHash`), the most recently used last. */
+  private readonly hipFolds = new Map<string, HipFold>();
   private adultBody:
     | { part: Part; edges: Uint32Array; faceTriangles: Uint32Array; topology: AdultSurfaceTopology }
     | null
@@ -1002,6 +1017,7 @@ export class HumanoidModel {
     options: {
       feather?: boolean;
       fins?: boolean;
+      fillHoles?: boolean;
       roots?: readonly number[];
       /** The style's texture cut-out (`HairFieldsInput.cutout`, without the UVs, which the asset has). */
       cutout?: { width: number; height: number; alpha: Uint8Array };
@@ -1017,6 +1033,7 @@ export class HumanoidModel {
       scalpEligible: eligible,
       ...(options.feather !== undefined && { feather: options.feather }),
       ...(options.fins !== undefined && { fins: options.fins }),
+      ...(options.fillHoles !== undefined && { fillHoles: options.fillHoles }),
       ...(options.roots && { roots: options.roots }),
       ...(options.cutout && {
         cutout: { faceUvs: asset.faceUvs, uvs: asset.uvs, ...options.cutout },
@@ -1749,6 +1766,45 @@ export class HumanoidModel {
    */
   adultSurface(): AdultSurfaceTopology | null {
     return this.adultBodySurface()?.topology ?? null;
+  }
+
+  /**
+   * The hip fold of the figure a recipe makes in a skin state (docs/ARCHITECTURE.md,
+   * "The hip fold"), on the body surface its evaluation is for
+   * (`Evaluation.surface`): for the renderer, `DualBones.setFold` and the
+   * geometry's `FOLD_SLOT_ATTRIBUTE`. Solved a flexion at a time, which takes
+   * a moment, so it yields after each: a worker lets its other requests in
+   * between. The recipe's target files must have loaded.
+   */
+  *hipFold(
+    recipe: Recipe,
+    signals: Readonly<Record<string, number>> = {},
+  ): Generator<void, { surface: "base" | "adult"; fold: SurfaceFold }> {
+    const control = this.evaluateControl(recipe, signals);
+    // A figure's fold depends on its shape alone: the same shape (an edit undone, a pose changed) is not solved twice.
+    const key = controlHash(control);
+    let fold = this.hipFolds.get(key);
+    if (fold) {
+      this.hipFolds.delete(key);
+    } else {
+      fold = yield* solveHipFoldSteps(
+        restBones(this.assets, control),
+        control,
+        this.assets.skinIndex,
+        this.assets.skinWeight,
+        this.bodyControlTriangles,
+      );
+    }
+    this.hipFolds.set(key, fold);
+    // The eldest of the kept ones goes (a Map iterates in the order its keys were set).
+    if (this.hipFolds.size > HIP_FOLDS_KEPT)
+      this.hipFolds.delete(this.hipFolds.keys().next().value as string);
+    const adult = isAdult(recipe) ? this.adultBodySurface() : null;
+    const mesh = adult ? adult.part.mesh : this.body.mesh;
+    return {
+      surface: adult ? "adult" : "base",
+      fold: surfaceFold(fold, mesh.stencil, mesh.renderToSurface),
+    };
   }
 
   private adultBodySurface() {

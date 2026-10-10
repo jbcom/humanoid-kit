@@ -1,0 +1,28 @@
+import { cdp } from "vitest/browser";
+import { afterAll, beforeAll, expect, it } from "vitest";
+import { createRecipe } from "../../src/recipe/recipe.ts";
+import { inlineWorkerClient } from "./inlineClient.ts";
+
+const client = inlineWorkerClient({ subdivision: 1 });
+beforeAll(async () => {
+  await client.ready;
+});
+afterAll(() => client.dispose());
+
+it("times the hip fold solve under CPU throttling", async () => {
+  const out: string[] = [];
+  for (const rate of [1, 4]) {
+    await cdp().send("Emulation.setCPUThrottlingRate", { rate });
+    for (const [name, macros] of [
+      ["average", {}],
+      ["heavy man", { age: 25, gender: 1, weight: 1, muscle: 0.3 }],
+    ] as const) {
+      const t0 = performance.now();
+      const r = await client.hipFold(createRecipe({ macros }));
+      out.push(`throttle ${rate}x ${name}: ${Math.round(performance.now() - t0)} ms, ${r.fold.rows} rows`);
+    }
+  }
+  await cdp().send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  console.log(`FOLDTIME ${out.join(" | ")}`);
+  expect(out.length).toBe(4);
+}, 300_000);

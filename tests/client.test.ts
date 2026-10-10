@@ -21,6 +21,8 @@ class FakeWorker {
   posedOcclusions = 0;
   adultLayerRequests = 0;
   adultSurfaceRequests = 0;
+  /** The ages of the recipes whose hip fold was asked for. */
+  folded: number[] = [];
   terminated = false;
   private readonly failInit: boolean;
   private readonly later: Promise<void>;
@@ -128,6 +130,20 @@ class FakeWorker {
             type: "garment",
             id: msg.id,
             topology: { id: msg.garment, vertexCount: 3 } as never,
+          }),
+        1,
+      );
+      return;
+    }
+    if (msg.type === "hipFold") {
+      this.folded.push(msg.recipe.macros.age);
+      setTimeout(
+        () =>
+          reply({
+            type: "hipFold",
+            id: msg.id,
+            surface: "adult",
+            fold: { slot: Float32Array.of(-1, 0), rows: 1, data: new Float32Array(4 * 48) },
           }),
         1,
       );
@@ -305,6 +321,15 @@ describe("HumanoidWorkerClient", () => {
     expect(topology?.vertexCount).toBe(2);
     expect([...(topology?.uvScale ?? [])]).toEqual([1, 2]);
     expect(worker.adultSurfaceRequests).toBe(1);
+  });
+
+  it("asks the worker for a recipe's hip fold, and says which surface it is for", async () => {
+    const { client, worker } = make(false);
+    const { surface, fold } = await client.hipFold(createRecipe({ macros: { age: 33 } }));
+    expect(worker.folded).toEqual([33]);
+    expect(surface).toBe("adult");
+    expect(fold.rows).toBe(1);
+    expect([...fold.slot]).toEqual([-1, 0]);
   });
 
   it("fails queued evaluations when the worker cannot initialise", async () => {
