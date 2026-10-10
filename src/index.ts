@@ -1,3 +1,7 @@
+export * from "./affordance/channel.ts";
+export * from "./affordance/frames.ts";
+export * from "./affordance/registry.ts";
+export * from "./affordance/state.ts";
 export * from "./animation/index.ts";
 export * from "./bodyArt/decals.ts";
 export * from "./bodyArt/ink.ts";
@@ -15,6 +19,18 @@ export * from "./editor/regional.ts";
 export * from "./editor/wardrobe.ts";
 export * from "./eyes/index.ts";
 export * from "./format/assetFormat.ts";
+// Named, not `*`: its `Vec3` is presence's too.
+export {
+  type FrameOut,
+  frameOut,
+  JOINT_LANDMARKS,
+  LANDMARK_IDS,
+  type LandmarkFrame,
+  type LandmarkId,
+  landmarks,
+  SURFACE_LANDMARKS,
+} from "./foundation/landmarks.ts";
+export { type PosedBody, posedSurface } from "./foundation/posed.ts";
 export * from "./makehuman/features.ts";
 export * from "./makehuman/macro.ts";
 export * from "./makehuman/recipeMorph.ts";
