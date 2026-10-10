@@ -13,6 +13,7 @@ import { bodyTriangles } from "../scripts/lib/skinMeasure.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import {
+  addFoldNormal,
   boneMass,
   FOLD_BODIES,
   FOLD_KEYS,
@@ -117,6 +118,7 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
       vertices: Uint32Array.of(0, 1),
       slot: Int32Array.of(0, 1, -1),
       vectors: Float32Array.from([...vector(0.1), ...vector(-0.3)]),
+      normals: Float32Array.from([...vector(0.7), ...vector(-0.9)]),
     };
     // Surface vertex 0 is half of control 0 and half of control 1; 1 is control 2 (not moved); 2 is control 1.
     const stencil = {
@@ -127,14 +129,20 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
     const surface = surfaceFold(fold, stencil, Uint32Array.of(0, 0, 1, 2, 2));
     expect(surface.rows).toBe(2);
     expect([...surface.slot]).toEqual([0, 0, -1, 1, 1]);
-    expect(surface.data.length).toBe(2 * FOLD_KEYS * 4);
+    expect(surface.data.length).toBe(2 * FOLD_KEYS * 8);
     for (let key = 0; key < FOLD_KEYS; key++)
       for (let k = 0; k < 3; k++) {
         const a = fold.vectors[key * 3 + k] as number;
         const b = fold.vectors[(FOLD_KEYS + key) * 3 + k] as number;
-        expect(surface.data[key * 4 + k] as number).toBeCloseTo(0.5 * a + 0.5 * b, 6);
-        expect(surface.data[(FOLD_KEYS + key) * 4 + k] as number).toBeCloseTo(b, 6);
-        expect(surface.data[key * 4 + 3]).toBe(0);
+        expect(surface.data[key * 8 + k] as number).toBeCloseTo(0.5 * a + 0.5 * b, 6);
+        expect(surface.data[(FOLD_KEYS + key) * 8 + k] as number).toBeCloseTo(b, 6);
+        expect(surface.data[key * 8 + 3]).toBe(0);
+        // The normal's change is mixed the same way, in the texel after the displacement's.
+        const an = fold.normals[key * 3 + k] as number;
+        const bn = fold.normals[(FOLD_KEYS + key) * 3 + k] as number;
+        expect(surface.data[key * 8 + 4 + k] as number).toBeCloseTo(0.5 * an + 0.5 * bn, 6);
+        expect(surface.data[(FOLD_KEYS + key) * 8 + 4 + k] as number).toBeCloseTo(bn, 6);
+        expect(surface.data[key * 8 + 7]).toBe(0);
       }
   });
 
@@ -147,7 +155,7 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
         const { surface, fold } = step.value;
         expect(surface).toBe("base");
         expect(fold.rows).toBeGreaterThan(50);
-        expect(fold.data.length).toBe(fold.rows * FOLD_KEYS * 4);
+        expect(fold.data.length).toBe(fold.rows * FOLD_KEYS * 8);
         const moved = fold.slot.filter((s) => s >= 0).length;
         expect(moved).toBeGreaterThanOrEqual(fold.rows);
         expect(moved).toBeLessThan(fold.slot.length / 10);
@@ -202,11 +210,15 @@ describe("the hip fold", () => {
     const thigh = boneMass(names, assets.skinIndex, assets.skinWeight, FOLD_BODIES.thigh);
     const trunk = boneMass(names, assets.skinIndex, assets.skinWeight, FOLD_BODIES.trunk);
     for (const f of figures) {
-      // Skin the trunk holds most of, or the thigh a quarter of, stays where the bones put it.
-      for (const v of f.fold.vertices) {
+      // Skin the trunk holds most of, or the thigh a quarter of, stays where the bones put it (its normal turns beside what moves).
+      f.fold.vertices.forEach((v, s) => {
+        let moved = false;
+        for (let i = 0; i < FOLD_KEYS * 3; i++)
+          if (f.fold.vectors[s * FOLD_KEYS * 3 + i] !== 0) moved = true;
+        if (!moved) return;
         expect(thigh[v] as number, `${f.name} vertex ${v}`).toBeGreaterThanOrEqual(0.25);
         expect(thigh[v] as number, `${f.name} vertex ${v}`).toBeGreaterThan(trunk[v] as number);
-      }
+      });
       expect(f.fold.vertices.length, f.name).toBeGreaterThan(50);
       let furthest = 0;
       for (let i = 0; i < f.fold.vectors.length; i += 3)
@@ -257,6 +269,73 @@ describe("the hip fold", () => {
     for (let i = 0; i < folded.length; i++) expect(Number.isFinite(folded[i])).toBe(true);
     expect(kept).toBeGreaterThan(20);
     expect(moved).toBeGreaterThan(20);
+  });
+
+  it("turns the skin's normal where the fold has changed its shape, to the displaced mesh's own", () => {
+    /** Each vertex's unit normal on `positions`, its triangles' weighted by area. */
+    const normalsOf = (positions: Float32Array) => {
+      const sum = new Float64Array(positions.length);
+      for (let t = 0; t < tris.length; t += 3) {
+        const [a, b, c] = [tris[t], tris[t + 1], tris[t + 2]] as [number, number, number];
+        const u = [0, 1, 2].map(
+          (k) => (positions[b * 3 + k] as number) - (positions[a * 3 + k] as number),
+        );
+        const w = [0, 1, 2].map(
+          (k) => (positions[c * 3 + k] as number) - (positions[a * 3 + k] as number),
+        );
+        const cross = [
+          (u[1] as number) * (w[2] as number) - (u[2] as number) * (w[1] as number),
+          (u[2] as number) * (w[0] as number) - (u[0] as number) * (w[2] as number),
+          (u[0] as number) * (w[1] as number) - (u[1] as number) * (w[0] as number),
+        ];
+        for (const v of [a, b, c])
+          for (let k = 0; k < 3; k++)
+            sum[v * 3 + k] = (sum[v * 3 + k] as number) + (cross[k] as number);
+      }
+      for (let v = 0; v < sum.length / 3; v++) {
+        const l =
+          Math.hypot(sum[v * 3] as number, sum[v * 3 + 1] as number, sum[v * 3 + 2] as number) || 1;
+        for (let k = 0; k < 3; k++) sum[v * 3 + k] = (sum[v * 3 + k] as number) / l;
+      }
+      return sum;
+    };
+    const angle = (a: ArrayLike<number>, b: ArrayLike<number>, v: number) =>
+      (Math.acos(
+        Math.max(
+          -1,
+          Math.min(
+            1,
+            (a[v * 3] as number) * (b[v * 3] as number) +
+              (a[v * 3 + 1] as number) * (b[v * 3 + 1] as number) +
+              (a[v * 3 + 2] as number) * (b[v * 3 + 2] as number),
+          ),
+        ),
+      ) *
+        180) /
+      Math.PI;
+    for (const f of [average, figures[3] as (typeof figures)[number]]) {
+      const bare = normalsOf(pose(f, flexed(120), false));
+      const folded = normalsOf(pose(f, flexed(120), true));
+      // What the shader does: the skinned normal plus the fold's change, made a unit vector again.
+      const shaded = Float64Array.from(bare);
+      let turned = 0;
+      for (const v of f.fold.vertices) {
+        const delta = new Float32Array(3);
+        addFoldNormal(f.fold, v, 120, delta, 0);
+        let l = 0;
+        for (let k = 0; k < 3; k++) {
+          shaded[v * 3 + k] = (bare[v * 3 + k] as number) + (delta[k] as number);
+          l += (shaded[v * 3 + k] as number) ** 2;
+        }
+        for (let k = 0; k < 3; k++)
+          shaded[v * 3 + k] = (shaded[v * 3 + k] as number) / Math.sqrt(l);
+        // The bones' normal and the displaced mesh's differ where the fold changed the shape...
+        if (angle(bare, folded, v) > 30) turned++;
+        // ... and the shader's is the displaced mesh's.
+        expect(angle(shaded, folded, v), `${f.name} vertex ${v}`).toBeLessThan(1);
+      }
+      expect(turned, f.name).toBeGreaterThan(20);
+    }
   });
 
   it("turns with the figure's root", () => {

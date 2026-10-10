@@ -29,6 +29,7 @@ export * from "./rig/faceSignals.ts";
 export * from "./rig/flexion.ts";
 export {
   addFold,
+  addFoldNormal,
   FOLD_KEYS,
   HIP_FOLD,
   type HipFold,

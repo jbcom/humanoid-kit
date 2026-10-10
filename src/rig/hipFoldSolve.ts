@@ -1,5 +1,5 @@
 import { SkinPatch, TriangleCrossings } from "./contact.ts";
-import { FOLD_KEYS, foldParts, HIP_FOLD, type HipFold, noFold } from "./hipFold.ts";
+import { FOLD_KEYS, foldParts, foldTaper, HIP_FOLD, type HipFold, noFold } from "./hipFold.ts";
 import { IDENTITY_POSE, type RestBones, skinPositions } from "./pose.ts";
 
 /**
@@ -70,6 +70,8 @@ export function* solveHipFoldSteps(
   // The thigh's skin by the hip, which moves, and the trunk's, which it must not pass through.
   const parts = foldParts(rest, control, skinIndex, skinWeight, tris, MIN_THIGH);
   const movers = Array.from(parts.movers);
+  // What the fold keeps of each vertex's displacement: all of it near the hip, none by the knee.
+  const taper = foldTaper(rest, control);
   const skin = Array.from(parts.skin);
   const hips = [".L", ".R"].map((s) => rest.names.indexOf(HIP_FOLD.bone + s)).filter((b) => b >= 0);
   if (!movers.length || !skin.length || !hips.length) return noFold(n);
@@ -102,13 +104,45 @@ export function* solveHipFoldSteps(
   const edges = Uint32Array.from(pairs);
   const point = new Float64Array(3);
   const normal = new Float64Array(3);
-  /** Per mover, per key, x, y, z. */
-  const keyed = new Float32Array(movers.length * FOLD_KEYS * 3);
-  // Only the vertices the solve reads are skinned: the movers, the trunk's skin, and the ends of the edges.
+  // The skin whose normal the movers change: they and their neighbours, with the triangles they are corners of.
+  const turned = new Set<number>(movers);
+  for (const v of movers)
+    for (let e = around.start[v] as number; e < (around.start[v + 1] as number); e++)
+      turned.add(around.list[e] as number);
+  /** Movers first (their rows carry a displacement too), then the neighbours that are not. */
+  const affected = movers.concat([...turned].filter((v) => !isMover[v]));
+  const incident = new Map<number, number[]>(affected.map((v) => [v, []]));
+  for (let t = 0; t < tris.length; t += 3)
+    for (let k = 0; k < 3; k++) incident.get(tris[t + k] as number)?.push(t);
+  /** Vertex `v`'s unit normal on `pos`: its triangles' normals, each weighted by its area. */
+  const vertexNormal = (pos: Float32Array, v: number): Float64Array => {
+    const sum = new Float64Array(3);
+    for (const t of incident.get(v) ?? []) {
+      const [a, b, c] = [tris[t], tris[t + 1], tris[t + 2]] as [number, number, number];
+      const ux = (pos[b * 3] as number) - (pos[a * 3] as number);
+      const uy = (pos[b * 3 + 1] as number) - (pos[a * 3 + 1] as number);
+      const uz = (pos[b * 3 + 2] as number) - (pos[a * 3 + 2] as number);
+      const wx = (pos[c * 3] as number) - (pos[a * 3] as number);
+      const wy = (pos[c * 3 + 1] as number) - (pos[a * 3 + 1] as number);
+      const wz = (pos[c * 3 + 2] as number) - (pos[a * 3 + 2] as number);
+      sum[0] = (sum[0] as number) + uy * wz - uz * wy;
+      sum[1] = (sum[1] as number) + uz * wx - ux * wz;
+      sum[2] = (sum[2] as number) + ux * wy - uy * wx;
+    }
+    const length = Math.hypot(sum[0] as number, sum[1] as number, sum[2] as number) || 1;
+    for (let k = 0; k < 3; k++) sum[k] = (sum[k] as number) / length;
+    return sum;
+  };
+  /** Per affected vertex, per key, x, y, z: the displacement (movers only), and the change of the normal. */
+  const keyed = new Float32Array(affected.length * FOLD_KEYS * 3);
+  const keyedNormal = new Float32Array(affected.length * FOLD_KEYS * 3);
+  // Only the vertices the solve reads are skinned: the movers, the trunk's skin, the ends of the edges, and the corners of the triangles whose normals turn.
   const wanted = new Uint8Array(n);
   for (const v of movers) wanted[v] = 1;
   for (const v of skin) wanted[v] = 1;
   for (const v of edges) wanted[v] = 1;
+  for (const rows of incident.values())
+    for (const t of rows) for (let k = 0; k < 3; k++) wanted[tris[t + k] as number] = 1;
   const needed = Uint32Array.from({ length: n }, (_, v) => v).filter((v) => wanted[v]);
   const neededControl = new Float32Array(needed.length * 3);
   const neededIndex = new Uint16Array(needed.length * 4);
@@ -235,24 +269,34 @@ export function* solveHipFoldSteps(
           PM[v * 3 + k] = mid(v, k);
         }
     }
-    movers.forEach((v, m) => {
-      for (let k = 0; k < 3; k++) keyed[(m * FOLD_KEYS + key) * 3 + k] = D[v * 3 + k] as number;
+    affected.forEach((v, a) => {
+      const at = (a * FOLD_KEYS + key) * 3;
+      const was = vertexNormal(posed0, v);
+      const now = vertexNormal(P, v);
+      for (let k = 0; k < 3; k++) {
+        if (a < movers.length) keyed[at + k] = (D[v * 3 + k] as number) * (taper[v] as number);
+        keyedNormal[at + k] = ((now[k] as number) - (was[k] as number)) * (taper[v] as number);
+      }
     });
     yield;
   }
-  // Only the vertices the fold ever moves are kept.
-  const moved = movers.flatMap((_, m) => {
-    for (let i = 0; i < FOLD_KEYS * 3; i++) if (keyed[m * FOLD_KEYS * 3 + i] !== 0) return [m];
+  // Only the vertices the fold ever moves or turns are kept.
+  const stride = FOLD_KEYS * 3;
+  const kept = affected.flatMap((_, a) => {
+    for (let i = 0; i < stride; i++)
+      if (keyed[a * stride + i] !== 0 || keyedNormal[a * stride + i] !== 0) return [a];
     return [];
   });
   const fold = noFold(n);
-  const vertices = Uint32Array.from(moved, (m) => movers[m] as number);
-  const vectors = new Float32Array(moved.length * FOLD_KEYS * 3);
-  moved.forEach((m, s) => {
-    fold.slot[movers[m] as number] = s;
-    vectors.set(keyed.subarray(m * FOLD_KEYS * 3, (m + 1) * FOLD_KEYS * 3), s * FOLD_KEYS * 3);
+  const vertices = Uint32Array.from(kept, (a) => affected[a] as number);
+  const vectors = new Float32Array(kept.length * stride);
+  const normals = new Float32Array(kept.length * stride);
+  kept.forEach((a, s) => {
+    fold.slot[affected[a] as number] = s;
+    vectors.set(keyed.subarray(a * stride, (a + 1) * stride), s * stride);
+    normals.set(keyedNormal.subarray(a * stride, (a + 1) * stride), s * stride);
   });
-  return { vertices, slot: fold.slot, vectors };
+  return { vertices, slot: fold.slot, vectors, normals };
 }
 
 /** The trunk's triangles by where their centres are, to find those near a point without testing them all. */

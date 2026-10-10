@@ -118,15 +118,19 @@ export const folds = (pose: HipPose): boolean => pose.flexion.some((f) => f > HI
  * each flexion it is solved at (`FOLD_KEYS` of them, `HIP_FOLD.step` degrees
  * apart from `from`), the displacement (metres) that puts the skin the thigh
  * holds against the trunk's instead of through it, added to the vertex as the
- * skin poses it with both hips flexed so far. Axes are the figure's own.
+ * skin poses it with both hips flexed so far, and how the skin's normal turns
+ * with it (the normal the displaced skin has less the one the bones left it).
+ * Axes are the figure's own.
  */
 export interface HipFold {
-  /** The vertices the fold moves, in the base mesh's numbering. */
+  /** The vertices the fold moves or turns, in the base mesh's numbering. */
   vertices: Uint32Array;
   /** Per vertex of the base mesh, its place in `vertices`, or -1 if the fold leaves it. */
   slot: Int32Array;
   /** Per moved vertex, per key, x, y, z: `vectors[(slot * FOLD_KEYS + key) * 3 + axis]`. */
   vectors: Float32Array;
+  /** Per vertex, per key, x, y, z, as `vectors`: what is added to the skinned normal, before it is made a unit vector again. */
+  normals: Float32Array;
 }
 
 /** A fold that moves nothing, for a mesh of `n` vertices. */
@@ -134,21 +138,22 @@ export const noFold = (n: number): HipFold => ({
   vertices: new Uint32Array(0),
   slot: new Int32Array(n).fill(-1),
   vectors: new Float32Array(0),
+  normals: new Float32Array(0),
 });
 
 /**
- * Vertex `v`'s displacement at flexion `flexion` degrees, added to
- * `out[at..at + 2]`: nothing up to `HIP_FOLD.from`, the first key's from there
- * to that key, then the straight line from key to key, and the last key's past it.
+ * The value of `table` (a fold's `vectors` or `normals`) for slot `slot` at
+ * flexion `flexion` degrees, added to `out[at..at + 2]`: nothing up to
+ * `HIP_FOLD.from`, the first key's from there to that key, then the straight
+ * line from key to key, and the last key's past it.
  */
-export function addFold(
-  fold: HipFold,
-  v: number,
+function addKeyed(
+  table: Float32Array,
+  slot: number,
   flexion: number,
   out: Float32Array,
   at: number,
 ): void {
-  const slot = fold.slot[v] as number;
   if (slot < 0) return;
   const t = (flexion - HIP_FOLD.from) / HIP_FOLD.step;
   if (!(t > 0)) return;
@@ -158,10 +163,32 @@ export function addFold(
   const hi = Math.min(i, FOLD_KEYS - 1);
   const base = slot * FOLD_KEYS * 3;
   for (let k = 0; k < 3; k++) {
-    const to = fold.vectors[base + hi * 3 + k] as number;
-    const was = i === 0 || i >= FOLD_KEYS ? 0 : (fold.vectors[base + (i - 1) * 3 + k] as number);
+    const to = table[base + hi * 3 + k] as number;
+    const was = i === 0 || i >= FOLD_KEYS ? 0 : (table[base + (i - 1) * 3 + k] as number);
     out[at + k] = (out[at + k] as number) + (i >= FOLD_KEYS ? to : was + (to - was) * along);
   }
+}
+
+/** Vertex `v`'s displacement at flexion `flexion` degrees, added to `out[at..at + 2]`. */
+export function addFold(
+  fold: HipFold,
+  v: number,
+  flexion: number,
+  out: Float32Array,
+  at: number,
+): void {
+  addKeyed(fold.vectors, fold.slot[v] as number, flexion, out, at);
+}
+
+/** What vertex `v`'s normal gains at flexion `flexion` degrees, added to `out[at..at + 2]`. */
+export function addFoldNormal(
+  fold: HipFold,
+  v: number,
+  flexion: number,
+  out: Float32Array,
+  at: number,
+): void {
+  addKeyed(fold.normals, fold.slot[v] as number, flexion, out, at);
 }
 
 /**
@@ -171,7 +198,45 @@ export function addFold(
  * Half a thigh left the thigh's front, a hand's breadth below the groin, to go
  * through the belly of a tuck (the knees drawn up to the chest) unseen.
  */
-export const FOLD_REACH = 0.7;
+export const FOLD_REACH = 1;
+
+/**
+ * Where, as a share of the thigh's length from its hip, the fold is at full
+ * strength to: past it the displacement falls to nothing at `FOLD_REACH`, so
+ * that the skin the fold ends on has no step in it (a seam down the thigh).
+ */
+export const FOLD_FULL_REACH = 0.7;
+
+/**
+ * Per vertex of `positions` (the rest figure), how much of its displacement the
+ * fold keeps: 1 within `FOLD_FULL_REACH` of a hip, falling smoothly to 0 at
+ * `FOLD_REACH`.
+ */
+export function foldTaper(rest: RestBones, positions: Float32Array): Float32Array {
+  const out = new Float32Array(positions.length / 3);
+  for (const side of [".L", ".R"]) {
+    const hip = rest.names.indexOf(HIP_FOLD.bone + side);
+    const knee = rest.names.indexOf(HIP_FOLD.along + side);
+    if (hip < 0 || knee < 0) continue;
+    const at = (b: number, k: number) => rest.heads[b * 3 + k] as number;
+    const length = Math.hypot(
+      at(knee, 0) - at(hip, 0),
+      at(knee, 1) - at(hip, 1),
+      at(knee, 2) - at(hip, 2),
+    );
+    for (let v = 0; v < out.length; v++) {
+      const share =
+        Math.hypot(
+          (positions[v * 3] as number) - at(hip, 0),
+          (positions[v * 3 + 1] as number) - at(hip, 1),
+          (positions[v * 3 + 2] as number) - at(hip, 2),
+        ) / length;
+      const t = Math.min(1, Math.max(0, (FOLD_REACH - share) / (FOLD_REACH - FOLD_FULL_REACH)));
+      out[v] = Math.max(out[v] as number, t * t * (3 - 2 * t));
+    }
+  }
+  return out;
+}
 
 /**
  * How far (metres) behind the hip joint the groin's skin may be: the crotch
@@ -269,13 +334,14 @@ export function foldParts(
   skinWeight: ArrayLike<number>,
   tris: Uint32Array,
   thighShare: number,
+  reach: number = FOLD_REACH,
 ): FoldParts {
   const n = control.length / 3;
   const thigh = boneMass(rest.names, skinIndex, skinWeight, FOLD_BODIES.thigh);
   const trunk = boneMass(rest.names, skinIndex, skinWeight, FOLD_BODIES.trunk);
   const inBody = new Uint8Array(n);
   for (const v of tris) inBody[v] = 1;
-  const nearThigh = nearHips(rest, control, FOLD_REACH, true);
+  const nearThigh = nearHips(rest, control, reach, true);
   const nearTrunk = nearHips(rest, control, FOLD_TRUNK_REACH);
   const movers: number[] = [];
   for (let v = 0; v < n; v++)
@@ -296,7 +362,11 @@ export function foldParts(
     const [a, b, c] = [tris[t], tris[t + 1], tris[t + 2]] as [number, number, number];
     if (trunkSkin(a) && trunkSkin(b) && trunkSkin(c)) skin.push(a, b, c);
   }
-  return { movers: Uint32Array.from(movers), thigh, skin: Uint32Array.from(skin) };
+  return {
+    movers: Uint32Array.from(movers),
+    thigh,
+    skin: Uint32Array.from(skin),
+  };
 }
 
 /**
@@ -310,7 +380,10 @@ export interface SurfaceFold {
   slot: Float32Array;
   /** How many rows `data` has. */
   rows: number;
-  /** Row `r`, key `k`, as the texel `(r * FOLD_KEYS + k)`: x, y, z, and 0. */
+  /**
+   * Row `r`, key `k`, as two texels: `(r * FOLD_KEYS + k) * 2` holds the
+   * displacement (x, y, z, 0) and the next the normal's change (x, y, z, 0).
+   */
   data: Float32Array;
 }
 
@@ -342,7 +415,7 @@ export function surfaceFold(
         rowOf[s] = rows++;
         break;
       }
-  const data = new Float32Array(rows * FOLD_KEYS * 4);
+  const data = new Float32Array(rows * FOLD_KEYS * 8);
   for (let s = 0; s < surfaceVertices; s++) {
     const row = rowOf[s] as number;
     if (row < 0) continue;
@@ -352,9 +425,10 @@ export function surfaceFold(
       const w = stencil.weights[e] as number;
       for (let key = 0; key < FOLD_KEYS; key++)
         for (let k = 0; k < 3; k++) {
-          const at = (row * FOLD_KEYS + key) * 4 + k;
-          data[at] =
-            (data[at] as number) + w * (fold.vectors[(slot * FOLD_KEYS + key) * 3 + k] as number);
+          const at = (row * FOLD_KEYS + key) * 8 + k;
+          const from = (slot * FOLD_KEYS + key) * 3 + k;
+          data[at] = (data[at] as number) + w * (fold.vectors[from] as number);
+          data[at + 4] = (data[at + 4] as number) + w * (fold.normals[from] as number);
         }
     }
   }

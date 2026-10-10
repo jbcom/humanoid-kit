@@ -12,7 +12,7 @@
  */
 import type { HumanoidAssets } from "../../src/format/assetFormat.ts";
 import { TriangleCrossings } from "../../src/rig/contact.ts";
-import { foldParts } from "../../src/rig/hipFold.ts";
+import { FOLD_FULL_REACH, foldParts } from "../../src/rig/hipFold.ts";
 import type { RestBones } from "../../src/rig/pose.ts";
 import { bodyTriangles } from "./skinMeasure.ts";
 
@@ -35,7 +35,15 @@ export class HipContact {
     control: Float32Array,
     tris: Uint32Array = bodyTriangles(assets),
   ) {
-    const parts = foldParts(rest, control, assets.skinIndex, assets.skinWeight, tris, 0.5);
+    const parts = foldParts(
+      rest,
+      control,
+      assets.skinIndex,
+      assets.skinWeight,
+      tris,
+      0.5,
+      FOLD_FULL_REACH,
+    );
     this.skin = parts.skin;
     for (const v of parts.movers) this.movers.add(v);
     // Each edge of the body that has a thigh vertex at an end, once.

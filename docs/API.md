@@ -779,7 +779,7 @@ and expressions"). Framework-free.
   same a flexion at a time (a generator). The result (`HipFold`) is passed to
   `skinPositions` as `fold`; `hipPose(rest, rotations)` reads each hip's flexion
   from a pose, `addFold(fold, vertex, flexion, out, at)` reads a vertex's
-  displacement at a flexion, and `HIP_FOLD` holds the fold's terms. It takes one
+  displacement at a flexion, `addFoldNormal` the change of its normal there, and `HIP_FOLD` holds the fold's terms. It takes one
   to three seconds of one core: in an app it is asked of the worker
   (`client.hipFold`), never solved per frame. The thigh stays under 2 mm behind
   the belly at every flexion solved and halfway between, in the five bodies of the

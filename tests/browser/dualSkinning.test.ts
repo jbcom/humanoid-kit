@@ -46,7 +46,14 @@ import {
   skinPositionsBlended,
   skinVertex,
 } from "../../src/rig/dual.ts";
-import { addFold, FOLD_KEYS, HIP_FOLD, type HipFold, hipPose } from "../../src/rig/hipFold.ts";
+import {
+  addFold,
+  addFoldNormal,
+  FOLD_KEYS,
+  HIP_FOLD,
+  type HipFold,
+  hipPose,
+} from "../../src/rig/hipFold.ts";
 import { type BoneRotations, restBonesFrom } from "../../src/rig/pose.ts";
 import { rotate } from "../../src/rig/quat.ts";
 
@@ -332,7 +339,7 @@ describe("the vertex shader's reading of a hip's flexion", () => {
 });
 
 describe("the vertex shader's hip fold", () => {
-  it("reads each vertex's displacement at its flexion, turned with the root, exactly as the CPU reference does", () => {
+  it("reads each vertex's displacement and normal change at its flexion, turned with the root, exactly as the CPU reference does", () => {
     const rand = random(11);
     const rows = 7;
     const count = 200;
@@ -340,11 +347,14 @@ describe("the vertex shader's hip fold", () => {
       vertices: Uint32Array.from({ length: rows }, (_, i) => i),
       slot: Int32Array.from({ length: rows }, (_, i) => i),
       vectors: new Float32Array(rows * FOLD_KEYS * 3).map(() => (rand() - 0.5) * 0.2),
+      normals: new Float32Array(rows * FOLD_KEYS * 3).map(() => (rand() - 0.5) * 1.5),
     };
-    // The renderer's rows: x, y, z, 0 per key.
-    const data = new Float32Array(rows * FOLD_KEYS * 4);
-    for (let i = 0; i < rows * FOLD_KEYS; i++)
-      data.set(fold.vectors.subarray(i * 3, i * 3 + 3), i * 4);
+    // The renderer's rows: per key, the displacement's texel (x, y, z, 0) and the normal's.
+    const data = new Float32Array(rows * FOLD_KEYS * 8);
+    for (let i = 0; i < rows * FOLD_KEYS; i++) {
+      data.set(fold.vectors.subarray(i * 3, i * 3 + 3), i * 8);
+      data.set(fold.normals.subarray(i * 3, i * 3 + 3), i * 8 + 4);
+    }
     const dual = new DualBones(NAMES.length, SHARE);
     // The root turned, so the displacement turns too.
     const rotations = pose([[0, turn(0.3, 1, 0.2, 70)]]);
@@ -368,46 +378,55 @@ describe("the vertex shader's hip fold", () => {
         [FOLD_UNIFORM]: dual.fold,
         [ROOT_UNIFORM]: { value: NAMES.length * DUAL_TEXELS },
         tAsked: { value: input },
+        tPart: { value: 0 },
       },
       vertexShader: "void main() { gl_Position = vec4( position.xy, 0.0, 1.0 ); }",
       fragmentShader: `
         #define USE_SKINNING
         uniform highp sampler2D tAsked;
+        uniform int tPart;
         layout( location = 0 ) out highp vec4 outColor;
         ${DUAL_SKINNING_FUNCTIONS}
         ${FOLD_FUNCTIONS}
         void main() {
           vec4 a = texelFetch( tAsked, ivec2( gl_FragCoord.xy ), 0 );
-          outColor = vec4( hkFoldDisplacement( a.x, a.y ), 1.0 );
+          outColor = vec4( tPart == 0 ? hkFoldDisplacement( a.x, a.y ) : hkFoldNormal( a.x, a.y ), 1.0 );
         }`,
     });
     const scene = new Scene();
     scene.add(new Mesh(new PlaneGeometry(2, 2), material));
     const target = new WebGLRenderTarget(count, 1, { type: FloatType, depthBuffer: false });
-    renderer.setRenderTarget(target);
-    renderer.render(scene, new OrthographicCamera(-1, 1, 1, -1, 0, 1));
-    const px = new Float32Array(count * 4);
-    renderer.readRenderTargetPixels(target, 0, 0, count, 1, px);
-    renderer.setRenderTarget(null);
     const root = rotations.subarray(0, 4);
-    let worst = 0;
-    let moved = 0;
-    for (let v = 0; v < count; v++) {
-      const cpu = new Float32Array(3);
-      addFold(fold, asked[v * 4] as number, asked[v * 4 + 1] as number, cpu, 0);
-      const want = rotate(
-        [root[0] as number, root[1] as number, root[2] as number, root[3] as number],
-        cpu[0] as number,
-        cpu[1] as number,
-        cpu[2] as number,
-      );
-      if (Math.hypot(...want) > 0) moved++;
-      for (let k = 0; k < 3; k++)
-        worst = Math.max(worst, Math.abs((px[v * 4 + k] as number) - (want[k] as number)));
+    for (const [part, read] of [
+      [0, addFold],
+      [1, addFoldNormal],
+    ] as const) {
+      material.uniforms.tPart = { value: part };
+      renderer.setRenderTarget(target);
+      renderer.render(scene, new OrthographicCamera(-1, 1, 1, -1, 0, 1));
+      const px = new Float32Array(count * 4);
+      renderer.readRenderTargetPixels(target, 0, 0, count, 1, px);
+      renderer.setRenderTarget(null);
+      let worst = 0;
+      let moved = 0;
+      for (let v = 0; v < count; v++) {
+        const cpu = new Float32Array(3);
+        read(fold, asked[v * 4] as number, asked[v * 4 + 1] as number, cpu, 0);
+        const want = rotate(
+          [root[0] as number, root[1] as number, root[2] as number, root[3] as number],
+          cpu[0] as number,
+          cpu[1] as number,
+          cpu[2] as number,
+        );
+        if (Math.hypot(...want) > 0) moved++;
+        for (let k = 0; k < 3; k++)
+          worst = Math.max(worst, Math.abs((px[v * 4 + k] as number) - (want[k] as number)));
+      }
+      // Most of what was asked is in the fold's range, so this compares displacements, not zeros.
+      expect(moved, `part ${part}`).toBeGreaterThan(count / 2);
+      // The normal's change is some seven times the displacement's in size, so float error is too.
+      expect(worst, `part ${part}`).toBeLessThan(part === 0 ? 2e-6 : 1e-5);
     }
-    // Most of what was asked is in the fold's range, so this compares displacements, not zeros.
-    expect(moved).toBeGreaterThan(count / 2);
-    expect(worst).toBeLessThan(2e-6);
     target.dispose();
     input.dispose();
     material.dispose();

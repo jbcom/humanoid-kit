@@ -42,7 +42,7 @@ import { poseShare } from "../rig/skinShare.ts";
 
 /** The bone texture's uniform, in every patched shader. */
 export const DUAL_BONES_UNIFORM = "hkDualBones";
-/** The hip fold texture's uniform: a row per vertex the fold moves, a texel per key. */
+/** The hip fold texture's uniform: a row per vertex the fold moves, two texels per key (the displacement, the normal's change). */
 export const FOLD_UNIFORM = "hkFoldTexture";
 /** Which texel of the bone texture holds the root's rotation (after every bone's own). */
 export const ROOT_UNIFORM = "hkRootTexel";
@@ -51,7 +51,13 @@ export const FOLD_SLOT_ATTRIBUTE = "hkFoldSlot";
 
 /** A texture of no fold: one row, all zeros, that no vertex refers to. */
 export const noFoldTexture = (): DataTexture => {
-  const t = new DataTexture(new Float32Array(FOLD_KEYS * 4), FOLD_KEYS, 1, RGBAFormat, FloatType);
+  const t = new DataTexture(
+    new Float32Array(FOLD_KEYS * 8),
+    FOLD_KEYS * 2,
+    1,
+    RGBAFormat,
+    FloatType,
+  );
   t.minFilter = NearestFilter;
   t.magFilter = NearestFilter;
   t.generateMipmaps = false;
@@ -116,7 +122,7 @@ export class DualBones {
     const old = this.fold.value;
     if (!fold || fold.rows === 0) this.fold.value = noFoldTexture();
     else {
-      const t = new DataTexture(fold.data, FOLD_KEYS, fold.rows, RGBAFormat, FloatType);
+      const t = new DataTexture(fold.data, FOLD_KEYS * 2, fold.rows, RGBAFormat, FloatType);
       t.minFilter = NearestFilter;
       t.magFilter = NearestFilter;
       t.generateMipmaps = false;
@@ -206,23 +212,30 @@ export const FOLD_FUNCTIONS = /* glsl */ `
 #ifdef USE_SKINNING
 uniform highp sampler2D ${FOLD_UNIFORM};
 uniform int ${ROOT_UNIFORM};
-vec3 hkFoldKey( int key, int slot ) {
-	return texelFetch( ${FOLD_UNIFORM}, ivec2( key, slot ), 0 ).xyz;
+vec3 hkFoldKey( int key, int slot, int part ) {
+	return texelFetch( ${FOLD_UNIFORM}, ivec2( key * 2 + part, slot ), 0 ).xyz;
 }
-vec3 hkFoldDisplacement( float slotValue, float flexion ) {
+// part 0: the vertex's displacement; part 1: what its normal gains.
+vec3 hkFoldValue( float slotValue, float flexion, int part ) {
 	float t = ( flexion - ${glFloat(HIP_FOLD.from)} ) / ${glFloat(HIP_FOLD.step)};
 	if ( ! ( t > 0.0 ) ) return vec3( 0.0 );
 	int slot = int( slotValue + 0.5 );
 	float i = floor( t );
 	vec3 d;
-	if ( i >= ${glFloat(FOLD_KEYS)} ) d = hkFoldKey( ${FOLD_KEYS - 1}, slot );
+	if ( i >= ${glFloat(FOLD_KEYS)} ) d = hkFoldKey( ${FOLD_KEYS - 1}, slot, part );
 	else {
 		int key = int( i );
-		vec3 to = hkFoldKey( key, slot );
-		vec3 was = key == 0 ? vec3( 0.0 ) : hkFoldKey( key - 1, slot );
+		vec3 to = hkFoldKey( key, slot, part );
+		vec3 was = key == 0 ? vec3( 0.0 ) : hkFoldKey( key - 1, slot, part );
 		d = mix( was, to, t - i );
 	}
 	return hkQRotate( texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( ${ROOT_UNIFORM}, 0 ), 0 ), d );
+}
+vec3 hkFoldDisplacement( float slotValue, float flexion ) {
+	return hkFoldValue( slotValue, flexion, 0 );
+}
+vec3 hkFoldNormal( float slotValue, float flexion ) {
+	return hkFoldValue( slotValue, flexion, 1 );
 }
 #endif
 `;
@@ -247,7 +260,7 @@ const position = (fold: boolean): string => /* glsl */ `
 `;
 
 /** The blend of the vertex's normal; the motion it finds is the position's too. */
-const NORMAL = /* glsl */ `
+const normal = (fold: boolean): string => /* glsl */ `
 #ifdef USE_SKINNING
 	vec3 hkRestNormal = objectNormal;
 	vec4 hkQ;
@@ -260,6 +273,7 @@ const NORMAL = /* glsl */ `
 #include <skinnormal_vertex>
 #ifdef USE_SKINNING
 	if ( hkShare > 0.0 ) objectNormal = mix( objectNormal, hkQRotate( hkQ, hkRestNormal ), hkShare );
+	${fold ? `if ( ${FOLD_SLOT_ATTRIBUTE} >= 0.0 ) objectNormal = normalize( objectNormal + hkFoldNormal( ${FOLD_SLOT_ATTRIBUTE}, hkFlexion ) );` : ""}
 #endif
 `;
 
@@ -283,12 +297,12 @@ export function patchDualSkinning(shader: PatchableShader, bones: DualBones, fol
       "#include <common>",
       `#include <common>\n${DUAL_SKINNING_FUNCTIONS}${fold ? `attribute float ${FOLD_SLOT_ATTRIBUTE};\n${FOLD_FUNCTIONS}` : ""}`,
     )
-    .replace("#include <skinnormal_vertex>", NORMAL)
+    .replace("#include <skinnormal_vertex>", normal(fold))
     .replace("#include <skinning_vertex>", position(fold));
 }
 
 /** Part of the program's cache key: a shader patched for dual skinning differs from one that is not. */
-export const DUAL_SKINNING_KEY = "dual-skinning-2";
+export const DUAL_SKINNING_KEY = "dual-skinning-3";
 
 /**
  * Makes `material` skin by `bones`, for materials this library does not make

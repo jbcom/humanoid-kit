@@ -1074,12 +1074,27 @@ is always from the nearest skin and never from the far side of the belly, and th
 displacement a step ends with carries on to the next. Each step also looks at the
 pose halfway back to the last one, with the mean of the two folds, so that what
 is played back between two flexions is as clear as they are. The result per
-figure: per moved vertex, 44 displacements (a flexion each, in the figure's axes);
-about 230 control vertices move in the average figure, by up to 8 cm at 120° (12
+figure: per moved vertex, 44 displacements (a flexion each, in the figure's axes)
+and 44 changes of its normal; about 270 control vertices move in the average
+figure (and as many again, their neighbours, only turn), by up to 8 cm at 120° (12
 at the furthest flexion; the deepest are the inner thigh at the groin and the
-thigh's front, which the fold pastes against the belly). Passes after the 30th
-make half the push they find: a vertex in a concave corner, pushed out of one
-triangle into the next and back, settles.
+thigh's front, which the fold pastes against the belly). The fold reaches the
+whole thigh (`FOLD_REACH`, 1) and is whole to 0.7 of its length from the hip
+(`FOLD_FULL_REACH`), falling smoothly to nothing at the knee (`foldTaper`), so
+that no seam runs down the thigh where it stops. Passes after the 30th make half
+the push they find: a vertex in a concave corner, pushed out of one triangle into
+the next and back, settles.
+
+**Why the normal is part of the fold.** The skinned normal is the bones' own, and
+where the fold has moved the skin by centimetres it is a normal of skin that is no
+longer there: in the average figure at 120°, of the vertices the fold moves, a third
+have a normal over 30° off the displaced mesh's own, the worst 160° (pointing into
+the belly). That is the dark slit the sheets showed down the inner thigh, shading
+that belongs to the surface the fold removed. So the solver also records, at each
+key, each moved vertex's and its neighbours' unit normal on the displaced mesh less
+the unit normal on the mesh the bones pose (area-weighted, over the control mesh),
+and the shader adds that to the skinned normal and normalises it. (The bones' normal
+is not the control mesh's exactly, so it is a change that is stored, not a normal.)
 
 **How it plays.** `hipPose` reads each hip's flexion from the bone's rotation as
 the poses' channels build it (abduction, then flexion, then twist, so a twisted
@@ -1092,12 +1107,13 @@ the figure's own axes). Applied after skinning, not to the rest figure, because
 the push is a way out of the belly, which is the same way whichever way the thigh
 is turned. `skinPositions(…, fold)` is the CPU reference; `DualBones` carries
 each bone's flexion and the root's rotation in the bone texture, the fold is a
-texture of 44 texels by one row per vertex of the surface it moves
-(`surfaceFold`: the control vertices' displacements mixed by the subdivision's
-stencil, so a rendered vertex is displaced as the surface it lies on is), and the
-patched `skinning_vertex` chunk adds `hkFoldDisplacement` of its row
-(`FOLD_SLOT_ATTRIBUTE`) at its flexion. The browser project holds the shader's
-read to the CPU's to 2·10⁻⁶.
+texture of 88 texels (a displacement and a normal change per key) by one row per
+vertex of the surface it moves (`surfaceFold`: the control vertices' values mixed by
+the subdivision's stencil, so a rendered vertex is displaced as the surface it lies
+on is), and the patched `skinning_vertex` chunk adds `hkFoldDisplacement` of its
+row (`FOLD_SLOT_ATTRIBUTE`) at its flexion, the `skinnormal_vertex` chunk
+`hkFoldNormal`. The browser project holds the shader's read to the CPU's (`addFold`,
+`addFoldNormal`) to 2·10⁻⁶ and 10⁻⁵.
 
 **Where it runs.** Solving takes one to three seconds of one core for a figure,
 so it is not part of `evaluate`: `HumanoidWorkerClient.hipFold(recipe)` asks the
@@ -1128,8 +1144,16 @@ and is not pushed. It is
 the groin's: the lateral and rear hip (behind the joint) are not folded, where the
 thigh meets the flank and the buttock rather than the belly. A trunk bent forward
 (`bowed`) presses the belly toward the thighs without flexing a hip, and is not
-read. Garments follow the body's skinning but not the fold. Normals are not
-recomputed for the displaced skin.
+read. Garments follow the body's skinning but not the fold. The skin's own folds
+are still there: the groin's inner crease is skinning's pinch (a few edges that
+double back over their neighbours, 3 to 8 at 120°, which the fold leaves and adds
+some of: 16 to 31 in the five bodies), so the crease is shaded as the surface the
+fold leaves, which is rougher than the pack-time smooth fold a solve of many
+bodies would give. **Decision (2026-10-09):** a fold blended from solves at the
+macro corners was tried and does not hold: on 12 random figures the blend left the
+thigh 12 to 56 mm behind the belly (median 27) where each figure's own solve leaves
+none, and 18 adult corners alone are 1.1 MB, so the solve stays per figure, in the
+worker.
 
 ## Scalp hair (milestone 4)
 
