@@ -10,6 +10,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import {
   DepthTexture,
   FloatType,
+  type Material,
   Mesh,
   type Object3D,
   OrthographicCamera,
@@ -88,7 +89,12 @@ function fragmentsOf(mesh: SkinnedMesh, camera: PerspectiveCamera): Vector3[] {
   const renderer = gl as WebGLRenderer;
   const depth = new WebGLRenderTarget(SIZE, SIZE, { depthTexture: new DepthTexture(SIZE, SIZE) });
   const copy = new WebGLRenderTarget(SIZE, SIZE, { type: FloatType });
-  // Only the mesh: its own layer, and the camera sees only that.
+  // Only the mesh: its own layer, and the camera sees only that. The coat
+  // blends without writing depth; for this read it writes it, which changes
+  // no fragment it draws.
+  const material = mesh.material as Material;
+  const writes = material.depthWrite;
+  material.depthWrite = true;
   mesh.layers.set(5);
   camera.layers.set(5);
   renderer.setRenderTarget(depth);
@@ -96,6 +102,7 @@ function fragmentsOf(mesh: SkinnedMesh, camera: PerspectiveCamera): Vector3[] {
   renderer.clear();
   renderer.render(scene as Scene, camera);
   mesh.layers.set(0);
+  material.depthWrite = writes;
   DEPTH.value = depth.depthTexture;
   const quad = new Scene().add(new Mesh(new PlaneGeometry(2, 2), COPY));
   renderer.setRenderTarget(copy);

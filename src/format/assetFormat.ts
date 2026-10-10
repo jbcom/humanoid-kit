@@ -469,6 +469,25 @@ export interface AdultAnatomySpec {
    * ADULT-SCULPT-PLAN.md, section 6b). Needs `surface`; absent, there are none.
    */
   reservoirs?: AdultReservoirSpec[];
+  /**
+   * The areas of the coat regions only an adult grows (pubic hair), as data:
+   * the core holds their code and paint, the pack where they grow. Absent,
+   * they grow nowhere.
+   */
+  coatRegions?: AdultCoatRegionSpec[];
+}
+
+/** The ids of the core's coat regions whose area an adult anatomy pack gives. */
+export const ADULT_COAT_REGION_IDS = ["hair-pubic"] as const;
+
+/** A coat region's area: its mask, sparse over base vertices (0 elsewhere). */
+export interface AdultCoatRegionSpec {
+  /** The core's coat region it is the area of (`ADULT_COAT_REGION_IDS`). */
+  id: string;
+  /** Base vertices in the region, ascending. */
+  vertices: number[];
+  /** Each vertex's mask, 0..1. */
+  mask: number[];
 }
 
 /** A reservoir (`Reservoir` in src/build/reservoir.ts) with the id detail refers to it by. */
@@ -671,6 +690,31 @@ function expectIndices(arr: ArrayLike<number>, limit: number, what: string): voi
   for (let i = 0; i < arr.length; i++) {
     if ((arr[i] as number) >= limit)
       throw new AssetFormatError(`${what}: index ${arr[i]} is out of range (< ${limit})`);
+  }
+}
+
+/** Refuses an adult pack's coat regions unless each is a known region's well-formed area, once. */
+function checkAdultCoatRegions(regions: readonly AdultCoatRegionSpec[], vertexCount: number): void {
+  const known = new Set<string>(ADULT_COAT_REGION_IDS);
+  const seen = new Set<string>();
+  for (const r of regions) {
+    const what = `adult coat region ${r.id}`;
+    if (!known.has(r.id)) throw new AssetFormatError(`${what}: the core has no such region`);
+    if (seen.has(r.id)) throw new AssetFormatError(`${what}: given twice`);
+    seen.add(r.id);
+    expectLength(r.mask, r.vertices.length, what);
+    for (let i = 0; i < r.vertices.length; i++) {
+      const v = r.vertices[i] as number;
+      const m = r.mask[i] as number;
+      if (
+        !Number.isInteger(v) ||
+        v < 0 ||
+        v >= vertexCount ||
+        (i > 0 && v <= (r.vertices[i - 1] as number))
+      )
+        throw new AssetFormatError(`${what}: vertex ${v} is not ascending within the body`);
+      if (!(m >= 0 && m <= 1)) throw new AssetFormatError(`${what}: mask ${m} is outside 0..1`);
+    }
   }
 }
 
@@ -1005,6 +1049,7 @@ export function parseHumanoidAssets(
     if (a.topology !== manifest.topology || a.bodySha256 !== manifest.body.sha256) {
       throw new AssetFormatError("the adult anatomy pack was built for a different body pack");
     }
+    checkAdultCoatRegions(a.anatomy?.coatRegions ?? [], manifest.vertexCount);
     for (const m of a.modifiers) modifiers.set(m.id, m);
   }
   // Merging also orders tasks by sortOrder; the manifest keeps upstream's file order.
