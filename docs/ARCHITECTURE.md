@@ -2550,6 +2550,20 @@ they cover, in cm² (a sampled vertex standing for its share of its triangles'
 area times the stride, a squashed triangle for its own), and their counts are
 recorded as information only: a finer surface has more vertices and triangles
 over the same skin, so a count rises where nothing got worse (2026-10-10).
+A lane judges its change by penetrating area counted on every vertex, not the
+worklist's stride of four, and a row may grow by a square centimetre or 1 % of its
+area, whichever is larger (ruled 2026-10-10); a growth past that is recorded here
+when it is accepted.
+
+*Accepted, with the organ carried by its loop (2026-10-10, "Reservoir
+skinning").* m-muscular seated penetrates 44.44 → 52.33 cm² counted on every vertex
+(50.34 on the worklist's stride), and m-muscular squat 71.27 → 75.17 (74.62): 2.7
+cm² of the seated row and 3.9 of the squat's is the sac in the thigh, a contact pair
+(sac–thigh) of the contact compression work, to be solved there with volume kept;
+the seated row's other 5.2 cm² is the sac's skin passing through its own fold where
+it meets the thighs, accepted with it because the seated renders from front-low and
+from below show no fold (`carry-sac-seated-*` against `nocarry-sac-seated-*`, the
+heavy man's sac smoother than before).
 
 **The landmarks (built 2026-10-09).** `landmarks(model, posedBody)`
 (`src/foundation/landmarks.ts`) gives every named place on a posed body as a
