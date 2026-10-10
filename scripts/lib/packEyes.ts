@@ -180,6 +180,9 @@ export function measureEye(s: Samples): EyeMeasure {
 const round = (v: number, places = 5) => Math.round(v * 10 ** places) / 10 ** places;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+/** How far a human or cat material's sclera tint may leave the built-in's, per channel. */
+export const SCLERA_TINT_RANGE: [number, number] = [0.8, 1.25];
+
 /** The eye shader's constant: the built-in iris shows `eyes.iris` at nine times the texture's luminance. */
 export const IRIS_LUMINANCE_SCALE = 9;
 
@@ -322,13 +325,20 @@ export async function packEyes(options: PackEyesOptions): Promise<EyeManifest> {
       const webp = await encode(png, cornea);
       const measure = measureEye(await sample(webp));
       fs.writeFileSync(path.join(options.outDir, out), webp);
+      const tags = tagsOf(id);
       const rel = relativeTo(measure, ref);
+      // A human or cat eye's sclera is a slight warm or grey shift of the built-in's, whatever the
+      // texture's background; only a creature, toon or blank material is the colour it was painted.
+      if (tags.includes("human") || tags.includes("slit pupil"))
+        rel.scleraTint = rel.scleraTint.map((c) =>
+          clamp(c, SCLERA_TINT_RANGE[0], SCLERA_TINT_RANGE[1]),
+        ) as Rgb;
       materials.push({
         id,
         title: title(id),
         author: rec.author,
         created: rec.created,
-        tags: tagsOf(id),
+        tags,
         file: out,
         sha256: sha256(webp),
         hasIris: measure.hasIris,

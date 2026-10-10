@@ -647,7 +647,7 @@ bright, grey or painted iris, and a painted catchlight in the iris is sclera), a
 multiplies the luminance by the material's measured gains, so a material's iris is
 the recipe's colour at the built-in iris's mean brightness, whatever its own
 brightness. The sclera is the recipe's warm white times the material's measured
-tint and gain (human materials are within 45 % of neutral; a yellow or a zombie's is
+tint and gain (a human or cat material's is within a fifth to a quarter of neutral; a yellow or a zombie's is
 what it was painted). A material with no iris edge to measure is all sclera detail:
 the eyes of a single glowing or blank colour.
 
