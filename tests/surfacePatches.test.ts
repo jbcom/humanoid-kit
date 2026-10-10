@@ -14,8 +14,10 @@ import { adultManifest, adultPackData, bodyPackData, loadFixtureAssets } from ".
 
 const assets = loadFixtureAssets(true);
 const source = { ...assets, vertexCount: assets.manifest.vertexCount };
-const spec = adultManifest.anatomy?.surface;
-if (!spec) throw new Error("the adult pack has no surface");
+const shipped = adultManifest.anatomy?.surface;
+if (!shipped) throw new Error("the adult pack has no surface");
+/** The pack's refinement without its own patches. */
+const spec = { faces: shipped.faces, levels: shipped.levels };
 const plain = buildRefinedSurfaceMesh(source, null, spec, 1);
 const lattice = plain.lattice;
 if (!lattice) throw new Error("no lattice");
@@ -111,8 +113,13 @@ describe("patches of the refined surface", { timeout: 300_000 }, () => {
   });
 
   it("loads a pack written before patches, and draws its adult surface", () => {
+    // A manifest as one was written before patches: the refinement alone, with nothing
+    // (reservoirs, detail) named on a patched lattice.
     const manifest = structuredClone(adultManifest);
-    expect(manifest.anatomy?.surface?.patches).toBeUndefined();
+    const anatomy = manifest.anatomy as NonNullable<typeof manifest.anatomy>;
+    anatomy.surface = { faces: shipped.faces, levels: shipped.levels };
+    delete anatomy.reservoirs;
+    delete anatomy.detail;
     const model = new HumanoidModel(
       parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest }),
       { subdivision: 1 },
