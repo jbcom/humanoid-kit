@@ -2323,7 +2323,10 @@ const hands = useHumanoidAffordances();
   in the figure's own space (the lifted group's, standing on its ground) or in
   world space. Given `out` (`frameOut()`) it allocates nothing, so it can be
   read every frame; it is null until the figure has been drawn and its
-  anchors have arrived. `channel(id)` is an aperture's channel in the figure's
+  anchors have arrived (the figure settles only once they have).
+  `landmark(id, space, out?)` frames a landmark the same way, and
+  `vertex(v, space, out?)` places a render vertex of the body drawn (a tap's
+  `HumanoidPick.vertex`). `channel(id)` is an aperture's channel in the figure's
   space, opened as its state says, and `place(id, worldPoint)` says how far
   into it a world point is and whether it is inside (`ChannelPlace`).
 - `clip` is a `ChannelClip` that keeps itself current: the figure sets it to

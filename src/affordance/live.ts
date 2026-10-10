@@ -166,6 +166,11 @@ export class HumanoidAffordances {
     return this.figure?.world ?? null;
   }
 
+  /** Whether the figure has the affordance (it is in `own`). */
+  has(id: string): boolean {
+    return this.byId.has(id);
+  }
+
   /** A copy of the affordance's state; throws `RangeError` for one the figure does not have. */
   get(id: string): AffordanceState {
     return this.states.get(id);

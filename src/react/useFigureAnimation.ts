@@ -25,6 +25,7 @@ import {
   skinPositions,
 } from "../rig/pose.ts";
 import type { ReadyInfo } from "../worker/client.ts";
+import { FIGURE_FRAME_PRIORITY } from "./framePriority.ts";
 import type { PresenceSource } from "./presence.tsx";
 
 /** A clip playing on a figure. */
@@ -68,8 +69,8 @@ interface Args {
   dual: DualBones | null;
   keyBasis: OcclusionKeyBasis | null;
   occlusionKeys: Vector3;
-  /** The face units' pose, laid over the body's. */
-  face: BoneRotations | null;
+  /** The face units' pose, laid over the body's: read each frame, so it changes without a render. */
+  face: RefObject<BoneRotations | null>;
   group: RefObject<Group | null>;
   /** The group the figure's meshes are lifted in, when the figure lifts itself onto the ground. */
   lifted: RefObject<Group | null>;
@@ -174,7 +175,8 @@ export function useFigureAnimation(args: Args): void {
     if (!fit) return;
     const rest = fit.rest;
     const body = a.rotations;
-    const q = cur.face ? composeRotations(body, cur.face, posed.q) : body;
+    const face = cur.face.current;
+    const q = face ? composeRotations(body, face, posed.q) : body;
     // The skeleton, the occlusion keys and the skin's dual quaternions.
     sk.bones.forEach((bone, i) => {
       bone.quaternion.fromArray(q, i * 4);
@@ -225,5 +227,5 @@ export function useFigureAnimation(args: Args): void {
         ...source,
         pose: { rig: info.rig, rotations: Float32Array.from(q) },
       };
-  });
+  }, FIGURE_FRAME_PRIORITY);
 }
