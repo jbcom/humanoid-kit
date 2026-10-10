@@ -8,10 +8,17 @@
  * skin; a grip's leaves the gripping surface, its tangent runs along the hand
  * toward the fingers, and its bitangent is the axis of what it closes round.
  */
-import { type LandmarkFrame, landmarks, type Vec3 } from "../foundation/landmarks.ts";
+import {
+  type LandmarkFrame,
+  type LandmarkId,
+  landmarks,
+  type Vec3,
+} from "../foundation/landmarks.ts";
 import type { PosedBody } from "../foundation/posed.ts";
 import type { HumanoidModel } from "../model/humanoidModel.ts";
+import { ADULT_EAR_SPAN, type Channel, channelOf } from "./channel.ts";
 import type { FigureAffordances } from "./registry.ts";
+import type { AffordanceStates } from "./state.ts";
 
 const unit = (a: Vec3): Vec3 => {
   const l = Math.hypot(a[0], a[1], a[2]);
@@ -39,7 +46,48 @@ export function affordanceFrames(
   body: PosedBody,
   own: FigureAffordances,
 ): Readonly<Record<string, LandmarkFrame>> {
+  return framesFrom(landmarks(model, body), own);
+}
+
+/**
+ * Each of a figure's own apertures' channels (`channel.ts`) on its posed body,
+ * sized to its head and, for the mouth, to its own mouth and how open it is
+ * (`AffordanceStates`).
+ */
+export function affordanceChannels(
+  model: HumanoidModel,
+  body: PosedBody,
+  own: FigureAffordances,
+  states: AffordanceStates,
+): Readonly<Record<string, Channel>> {
   const marks = landmarks(model, body);
+  const frames = framesFrom(marks, own);
+  const span = (a: LandmarkId, b: LandmarkId) =>
+    Math.hypot(
+      marks[a].position[0] - marks[b].position[0],
+      marks[a].position[1] - marks[b].position[1],
+      marks[a].position[2] - marks[b].position[2],
+    );
+  const scale = span("ear-canal.L", "ear-canal.R") / ADULT_EAR_SPAN;
+  const width = span("mouth-corner.L", "mouth-corner.R");
+  const l = marks["ear-canal.L"].position;
+  const r = marks["ear-canal.R"].position;
+  const head: Vec3 = [(l[0] + r[0]) / 2, (l[1] + r[1]) / 2, (l[2] + r[2]) / 2];
+  const out: Record<string, Channel> = {};
+  for (const a of own) {
+    if (!a.channel) continue;
+    const state = states.get(a.id);
+    const opening = state.kind === "aperture" ? state.opening : 0;
+    out[a.id] = channelOf(a.channel, frames[a.id] as LandmarkFrame, scale, head, opening, width);
+  }
+  return out;
+}
+
+/** Each affordance's frame from a posed body's landmarks. */
+function framesFrom(
+  marks: Readonly<Record<LandmarkId, LandmarkFrame>>,
+  own: FigureAffordances,
+): Record<string, LandmarkFrame> {
   const out: Record<string, LandmarkFrame> = {};
   for (const a of own) {
     if ("between" in a.at) {

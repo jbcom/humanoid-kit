@@ -2267,10 +2267,22 @@ for.
   step with the skin it belongs to. A test frames every one on the smoke
   tier's bodies and poses.
 
+- *Channels* (`src/affordance/channel.ts`, numbers and their sources in
+  `docs/research/AFFORDANCE-CHANNELS.md`): each aperture names a channel
+  behind its rim, a straight path in with an elliptical cross-section along a
+  size profile. Every size is an adult's, scaled by the figure's head width
+  (its ear canals' span over the default adult's); the mouth's width is the
+  figure's own (between its corners) and its height its opening.
+  `affordanceChannels(model, posedBody, own, states)` gives a figure's, and
+  `placeIn(channel, p)` says how far in a point is and whether it has passed
+  the rim, which is what hiding a consumed object and measuring an occupancy
+  read.
+
 The registry is built in steps: the kinds, the core's apertures (the mouth,
-nostrils and ear canals), grips, mounts and contacts, state, and frames
-first; the finger pads, the channels' geometry and the adult pack's
-affordances follow.
+nostrils and ear canals) with their channels, grips, mounts and contacts,
+state, and frames first; the finger pads, curved channel paths, the response
+(a channel widening to what it holds), the renderer's clip at the rim and the
+adult pack's affordances follow.
 
 ## Invariants
 

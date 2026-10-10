@@ -11,6 +11,7 @@
 import type { LandmarkId } from "../foundation/landmarks.ts";
 import { isAdult } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import type { ChannelId } from "./channel.ts";
 
 /**
  * What an affordance does: an aperture opens into a channel (the mouth); a grip
@@ -31,25 +32,27 @@ export interface Affordance {
   readonly at: AffordanceAnchor;
   /** The adult anatomy's: declared by the adult pack, and never given to a figure under 18. */
   readonly adult: boolean;
+  /** An aperture's channel behind its rim (`channel.ts`). */
+  readonly channel?: ChannelId;
 }
 
-const core = (id: string, kind: AffordanceKind, at: AffordanceAnchor): Affordance => ({
-  id,
-  kind,
-  at,
-  adult: false,
-});
+const core = (
+  id: string,
+  kind: AffordanceKind,
+  at: AffordanceAnchor,
+  channel?: ChannelId,
+): Affordance => ({ id, kind, at, adult: false, ...(channel && { channel }) });
 
 /**
  * The core's affordances. The finger pads join the grips as their landmarks
  * are built.
  */
 export const CORE_AFFORDANCES: readonly Affordance[] = [
-  core("mouth", "aperture", { between: ["upper-lip", "lower-lip"] }),
-  core("nostril.L", "aperture", { landmark: "nostril.L" }),
-  core("nostril.R", "aperture", { landmark: "nostril.R" }),
-  core("ear-canal.L", "aperture", { landmark: "ear-canal.L" }),
-  core("ear-canal.R", "aperture", { landmark: "ear-canal.R" }),
+  core("mouth", "aperture", { between: ["upper-lip", "lower-lip"] }, "oral"),
+  core("nostril.L", "aperture", { landmark: "nostril.L" }, "nasal"),
+  core("nostril.R", "aperture", { landmark: "nostril.R" }, "nasal"),
+  core("ear-canal.L", "aperture", { landmark: "ear-canal.L" }, "auditory"),
+  core("ear-canal.R", "aperture", { landmark: "ear-canal.R" }, "auditory"),
   core("hand.L", "grip", { landmark: "palm.L" }),
   core("hand.R", "grip", { landmark: "palm.R" }),
   core("ear-lobe.L", "mount", { landmark: "ear-lobe.L" }),
