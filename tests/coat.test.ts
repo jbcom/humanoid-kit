@@ -2,6 +2,8 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { groupFaces, jointPosition } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
+import { coatPaintFor } from "../src/react/CoatMesh.tsx";
+import { createRecipe } from "../src/recipe/recipe.ts";
 import {
   COAT_REGION_LIMIT,
   COAT_SHELLS,
@@ -333,5 +335,27 @@ describe("the beard's masks", () => {
       }
     expect(left).toBeGreaterThan(40);
     expect(Math.abs(left - right)).toBeLessThan(0.1 * left);
+  });
+});
+
+describe("which figures grow a coat, from their recipe", () => {
+  it("grows none where the recipe enables no region, whatever the age or sex", () => {
+    for (const gender of [0, 0.5, 1])
+      for (const age of [8, 25, 60]) {
+        expect(coatPaintFor(createRecipe({ macros: { age, gender } }))).toBeNull();
+        // Saying something of body hair is not asking for a coat: no beard, no density.
+        const silent = createRecipe({ macros: { age, gender }, bodyHair: { beard: "none" } });
+        expect(coatPaintFor(silent)).toBeNull();
+      }
+  });
+
+  it("grows one when the recipe enables a region", () => {
+    const beard = createRecipe({ macros: { age: 30, gender: 1 }, bodyHair: { beard: "full" } });
+    const chest = createRecipe({
+      macros: { age: 30, gender: 1 },
+      bodyHair: { density: { chest: 1 } },
+    });
+    expect(coatPaintFor(beard)).not.toBeNull();
+    expect(coatPaintFor(chest)).not.toBeNull();
   });
 });

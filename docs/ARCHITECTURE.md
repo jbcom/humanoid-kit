@@ -1580,10 +1580,11 @@ module.
   masks, its index). Three frees every attribute of a disposed geometry, and a
   body whose buffers were freed under it draws nothing, or the shape it had
   before: a woman's eyes hanging at a man's throat.
-- *A recipe asks for it.* A recipe without `bodyHair` grows no coat
-  (`coatPaintFor`), and within one a region grows only where the recipe
-  enables it (`coatEnabled`): the beard by a style, any other group by its
-  density. Default figures stay bare.
+- *A recipe asks for it, region by region.* A region grows only where the
+  recipe enables it (`coatEnabled`): the beard by a style other than none, any
+  other group by setting its density. A recipe silent on body hair, or one
+  that names no region, grows no coat (`coatPaintFor` is null), so default
+  figures stay bare.
 - *Strands from a tileable density texture* at true scale (`uv × uvScale`
   over the follicle spacing), generated from a seed: per follicle cell a
   strand's root, its reach (the share of the hair's length it grows), its
