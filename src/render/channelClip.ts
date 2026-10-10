@@ -6,23 +6,47 @@
  * inside to its openings, so without the clip whatever entered would show
  * through the skin.
  *
- * A `ChannelClip` holds a figure's channels (`affordanceChannels`) in world
- * space as uniforms, and `clipMaterial` patches any material of the objects
- * that may enter them (never the figure's own) to discard each fragment that
+ * A `ChannelClip` holds a figure's channels (`affordanceChannels`) as uniforms
+ * in world space, and `clipMaterial` patches any material of the objects that
+ * may enter them (never the figure's own) to discard each fragment that
  * `placeIn` would put inside one: past the rim, short of the end, within the
  * cross-section there. The test is per fragment, so a mesh is cut exactly at
  * the rim and where it leaves the channel's wall.
+ *
+ * A figure's channels are in the space its meshes are drawn in: the group
+ * `<Humanoid>` lifts them in (the figure's own space, standing on its ground),
+ * whose `matrixWorld` carries them to world space. A clip that `follow`s that
+ * group reads its `matrixWorld` as each patched material is drawn, so the
+ * channels move with the figure on the frame it moves.
  */
-import { type Material, Matrix4, Vector3, type WebGLProgramParametersWithUniforms } from "three";
+import {
+  type Material,
+  Matrix4,
+  type Object3D,
+  Vector3,
+  type WebGLProgramParametersWithUniforms,
+} from "three";
 import { CHANNEL_KNOTS, type Channel } from "../affordance/channel.ts";
 
 /** The most channels one clip holds: a figure's head has five (mouth, nostrils, ear canals). */
 export const CLIP_CHANNELS = 8;
 
 const vectors = (n: number) => Array.from({ length: n }, () => new Vector3());
+const IDENTITY = new Matrix4();
 
 /** A figure's channels, in world space, for the clip's shaders. */
 export class ChannelClip {
+  /** The channels held, in the figure's own space. */
+  private held: readonly Channel[] = [];
+  /** The object whose `matrixWorld` carries them to world space, once followed. */
+  private followed: Object3D | null = null;
+  /** The transform the uniforms were last written with. */
+  private readonly written = new Matrix4();
+  private readonly linear = new Matrix4();
+  private readonly scale = new Vector3();
+  /** Whether the uniforms are out of step with what is held. */
+  private stale = true;
+
   /** The shader's uniforms, shared by every material the clip patches. */
   readonly uniforms = {
     hkClipCount: { value: 0 },
@@ -35,37 +59,83 @@ export class ChannelClip {
   };
 
   /**
-   * Holds `channels`, given in the figure's own space (its posed body's) and
-   * carried to world space by `toWorld` (the figure's `matrixWorld`). Call it
-   * whenever the figure moves, poses or opens a channel. A transform with a
-   * scale scales the channel with it.
+   * Holds `channels`, given in the figure's own space (the space its meshes
+   * are drawn in: the group `<Humanoid>` lifts them in) and carried to world
+   * space by `toWorld`: that group's `matrixWorld`, or, once the clip follows
+   * an object (`follow`), that object's, read as each patched material is
+   * drawn. Call it whenever the figure poses or opens a channel; without
+   * `follow`, whenever it moves too. A transform with a scale scales the
+   * channel with it.
    */
-  set(channels: readonly Channel[], toWorld: Matrix4 = new Matrix4()): void {
+  set(channels: readonly Channel[], toWorld?: Matrix4): void {
     if (channels.length > CLIP_CHANNELS)
       throw new RangeError(
         `channel clip: at most ${CLIP_CHANNELS} channels, not ${channels.length}`,
       );
+    for (const c of channels)
+      if (c.knots.length < 2 || c.knots.length > CHANNEL_KNOTS)
+        throw new RangeError(`channel clip: a channel has 2 to ${CHANNEL_KNOTS} knots`);
+    this.held = channels;
+    this.stale = true;
+    this.write(toWorld ?? this.followed?.matrixWorld ?? IDENTITY);
+  }
+
+  /**
+   * Carries the channels held to world space by `object`'s `matrixWorld`
+   * whenever a patched material is drawn from now on (null: no longer), so
+   * the clip moves with the figure without being set again. Follow the group
+   * the figure's meshes are lifted in (`useHumanoidAffordances` does).
+   */
+  follow(object: Object3D | null): void {
+    this.followed = object;
+    this.stale = true;
+  }
+
+  /**
+   * Brings the uniforms up to date with the object followed, if it has moved
+   * since they were written. The patched materials call it as they are drawn;
+   * it allocates nothing.
+   */
+  refresh(): void {
+    const o = this.followed;
+    if (!o) return;
+    // A followed object outside the scene drawn is not brought up to date by the render.
+    o.updateWorldMatrix(true, false);
+    if (!this.stale && this.written.equals(o.matrixWorld)) return;
+    this.write(o.matrixWorld);
+  }
+
+  /** Writes the channels held to the uniforms, in world space by `toWorld`. */
+  private write(toWorld: Matrix4): void {
     const u = this.uniforms;
-    const linear = new Matrix4().extractRotation(toWorld);
-    const scale = new Vector3().setFromMatrixScale(toWorld);
+    const linear = this.linear.extractRotation(toWorld);
+    const scale = this.scale.setFromMatrixScale(toWorld);
     if (
       Math.abs(scale.x - scale.y) > 1e-6 * scale.x ||
       Math.abs(scale.x - scale.z) > 1e-6 * scale.x
     )
       throw new RangeError("channel clip: a figure's transform must scale evenly");
-    channels.forEach((c, i) => {
-      (u.hkClipOrigin.value[i] as Vector3).set(...c.origin).applyMatrix4(toWorld);
-      (u.hkClipInward.value[i] as Vector3).set(...c.inward).applyMatrix4(linear);
-      (u.hkClipAcross.value[i] as Vector3).set(...c.across).applyMatrix4(linear);
-      (u.hkClipUp.value[i] as Vector3).set(...c.up).applyMatrix4(linear);
-      if (c.knots.length < 2 || c.knots.length > CHANNEL_KNOTS)
-        throw new RangeError(`channel clip: a channel has 2 to ${CHANNEL_KNOTS} knots`);
+    this.held.forEach((c, i) => {
+      (u.hkClipOrigin.value[i] as Vector3)
+        .set(c.origin[0], c.origin[1], c.origin[2])
+        .applyMatrix4(toWorld);
+      (u.hkClipInward.value[i] as Vector3)
+        .set(c.inward[0], c.inward[1], c.inward[2])
+        .applyMatrix4(linear);
+      (u.hkClipAcross.value[i] as Vector3)
+        .set(c.across[0], c.across[1], c.across[2])
+        .applyMatrix4(linear);
+      (u.hkClipUp.value[i] as Vector3).set(c.up[0], c.up[1], c.up[2]).applyMatrix4(linear);
       for (let k = 0; k < CHANNEL_KNOTS; k++) {
         const knot = c.knots[Math.min(k, c.knots.length - 1)] as readonly [number, number, number];
-        (u.hkClipKnot.value[i * CHANNEL_KNOTS + k] as Vector3).set(...knot).multiplyScalar(scale.x);
+        (u.hkClipKnot.value[i * CHANNEL_KNOTS + k] as Vector3)
+          .set(knot[0], knot[1], knot[2])
+          .multiplyScalar(scale.x);
       }
     });
-    u.hkClipCount.value = channels.length;
+    u.hkClipCount.value = this.held.length;
+    this.written.copy(toWorld);
+    this.stale = false;
   }
 
   /** Patches a material's shader (in its `onBeforeCompile`) to discard what lies inside the clip's channels. */
@@ -123,13 +193,20 @@ bool hkInChannel( int c, vec3 p ) {
 
 /**
  * Has `material` discard what lies inside `clip`'s channels, keeping any
- * `onBeforeCompile` it already has. Returns the material.
+ * `onBeforeCompile` and `onBeforeRender` it already has; as it is drawn, it
+ * brings a clip that follows its figure up to date (`ChannelClip.refresh`).
+ * Returns the material.
  */
 export function clipMaterial<M extends Material>(material: M, clip: ChannelClip): M {
   const before = material.onBeforeCompile.bind(material);
   material.onBeforeCompile = (shader, renderer) => {
     before(shader, renderer);
     clip.patch(shader);
+  };
+  const drawing = material.onBeforeRender.bind(material);
+  material.onBeforeRender = (renderer, scene, camera, geometry, object, group) => {
+    drawing(renderer, scene, camera, geometry, object, group);
+    clip.refresh();
   };
   const key = material.customProgramCacheKey.bind(material);
   material.customProgramCacheKey = () => `${key()}|humanoid-kit-channel-clip-1`;
