@@ -192,8 +192,20 @@ export const ERECT_ANGLE = 30;
 /** Two standard deviations of the pooled flaccid values over their mean: a full step of length and girth. */
 export const LENGTH_RANGE = (2 * 1.57) / 9.16;
 export const GIRTH_RANGE = (2 * 0.9) / 9.31;
-/** The arclength over which a pose fades in from the loop, metres (modelled: the root's own flare). */
+/**
+ * The arclength over which a pose fades in from the loop, metres, for the
+ * default key (modelled: the root's own flare). A shorter organ's root flare is
+ * shorter in proportion (`rootBlend`): a fixed one held the first 1.2 cm at
+ * the sculpt's length and put a floor of about 3 cm under every size.
+ */
 const ROOT_BLEND = 0.012;
+/** The dorsal length the root blend is drawn for: the default key's, Veale's pooled flaccid mean. */
+const ROOT_BLEND_AT = 0.0916;
+
+/** The root flare for an organ of dorsal length `dorsal`: in proportion, never wider than the default's. */
+export function rootBlend(dorsal: number): number {
+  return ROOT_BLEND * Math.min(1, dorsal / ROOT_BLEND_AT);
+}
 /**
  * The arclength over which arousal's turn of the shaft fades in from the loop,
  * metres (modelled): wider than the shaft, so the root bends rather than kinks.
@@ -324,11 +336,21 @@ export class SculptedPhallus {
     ) as unknown as Vec3;
   }
 
-  /** The pose of the form at factors on its sculpted length and girth, in a state. */
-  private pose(length: number, girth: number, state: number, circumference: number): Pose {
+  /**
+   * The pose of the form at factors on its sculpted length and girth, in a state,
+   * for an organ whose flaccid dorsal length is `flaccid` (its root flare's size:
+   * the same in every state, so arousal does not move the root).
+   */
+  private pose(
+    length: number,
+    girth: number,
+    state: number,
+    circumference: number,
+    flaccid: number,
+  ): Pose {
     const total = this.form.lengths.reduce((s, l) => s + l, 0) * length;
     return {
-      blend: ROOT_BLEND,
+      blend: rootBlend(flaccid),
       turnBlend: TURN_BLEND,
       length,
       across: girth,
@@ -358,20 +380,16 @@ export class SculptedPhallus {
     if (known) return known;
     // Each factor in turn with the other held, until both hold: the dorsal length moves
     // a little with the girth (the glans' dome), the girth's place with the length.
+    const flaccid = dorsal / (1 + state * (ERECT_LENGTH - 1));
+    // Measured on the shape as drawn: resting on the skin, which can move it (`Skin.rest`).
+    const drawn = (l: number, g: number) =>
+      this.skin.rest(this.root, sweep(this.form, this.pose(l, g, state, circumference, flaccid)));
     let girth = circumference / this.girthOf(this.projected);
     let length = 1;
     for (let pass = 0; pass < 8; pass++) {
-      girth = solveFactor(
-        (f) => this.girthOf(sweep(this.form, this.pose(length, f, state, circumference))),
-        circumference,
-        girth,
-      );
-      length = solveFactor(
-        (f) => dorsalLength(this.root, sweep(this.form, this.pose(f, girth, state, circumference))),
-        dorsal,
-        length,
-      );
-      const shape = sweep(this.form, this.pose(length, girth, state, circumference));
+      girth = solveFactor((f) => this.girthOf(drawn(length, f)), circumference, girth);
+      length = solveFactor((f) => dorsalLength(this.root, drawn(f, girth)), dorsal, length);
+      const shape = drawn(length, girth);
       if (Math.abs(this.girthOf(shape) / circumference - 1) < 1e-5) break;
     }
     const out = { length, girth };
@@ -393,9 +411,10 @@ export class SculptedPhallus {
     const state = v.state ?? 0;
     const want = SculptedPhallus.measures(key, v);
     const s = this.scalesFor(want.dorsal, want.circumference, state);
+    const flaccid = want.dorsal / (1 + state * (ERECT_LENGTH - 1));
     return this.skin.rest(
       this.root,
-      sweep(this.form, this.pose(s.length, s.girth, state, want.circumference)),
+      sweep(this.form, this.pose(s.length, s.girth, state, want.circumference, flaccid)),
     );
   }
 }
