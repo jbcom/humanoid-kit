@@ -1,16 +1,11 @@
 /**
  * Named places on the body for body art (docs/ARCHITECTURE.md, "Body art"),
- * found on the base mesh rather than stored: the mesh has no vertex groups for
- * ears, nose, lips or navel, but MakeHuman's targets each move exactly the
- * feature they shape, so the vertex a feature's target moves most is that
- * feature's most prominent point (the same reading `targetMask` makes). A site
- * is a base-mesh vertex, so it follows every shape and pose of the figure.
+ * found on the base mesh rather than stored, each the peak of the MakeHuman
+ * target that shapes its feature (`targetPeak`). A site is a base-mesh vertex,
+ * so it follows every shape and pose of the figure.
  */
-import {
-  type AdultPiercingSiteSpec,
-  AssetFormatError,
-  type HumanoidAssets,
-} from "../format/assetFormat.ts";
+import type { AdultPiercingSiteSpec, HumanoidAssets } from "../format/assetFormat.ts";
+import { MIDLINE, namedTarget, targetPeak } from "../model/targetPeak.ts";
 import {
   type BodyAnchor,
   isBodyPiercingSite,
@@ -53,39 +48,6 @@ const SITE_RULES: Readonly<
   navel: { target: "stomach/stomach-navel-in", side: 0, channel: "vertical" },
 };
 
-/** Vertices within this of x = 0 are on the midline, metres (the base mesh is mirrored exactly). */
-const MIDLINE = 1e-4;
-
-function target(assets: HumanoidAssets, name: string) {
-  const t = assets.targets.get(name);
-  if (!t) throw new AssetFormatError(`body-art sites need target ${name}, which is not loaded`);
-  return t;
-}
-
-/** The vertex `name` moves most on `side` of the body (0: on the midline). */
-function peak(assets: HumanoidAssets, name: string, side: 1 | -1 | 0): number {
-  const t = target(assets, name);
-  const P = assets.positions;
-  let best = -1;
-  let max = 0;
-  for (let i = 0; i < t.indices.length; i++) {
-    const v = t.indices[i] as number;
-    const x = P[v * 3] as number;
-    if (side === 0 ? Math.abs(x) > MIDLINE : Math.sign(x) !== side) continue;
-    const d = Math.hypot(
-      t.deltas[i * 3] as number,
-      t.deltas[i * 3 + 1] as number,
-      t.deltas[i * 3 + 2] as number,
-    );
-    if (d > max) {
-      max = d;
-      best = v;
-    }
-  }
-  if (best < 0) throw new AssetFormatError(`target ${name} moves nothing on side ${side}`);
-  return best;
-}
-
 /**
  * The septum: the midline vertex of the nose nearest the point between the
  * nostrils, which is the columella, where a septum piercing passes.
@@ -95,7 +57,7 @@ function septum(assets: HumanoidAssets, left: number, right: number): number {
   const c = [0, 1, 2].map((k) => ((P[left * 3 + k] as number) + (P[right * 3 + k] as number)) / 2);
   let best = -1;
   let dist = Number.POSITIVE_INFINITY;
-  for (const v of target(assets, SITE_RULES.septum.target).indices) {
+  for (const v of namedTarget(assets, SITE_RULES.septum.target).indices) {
     if (Math.abs(P[v * 3] as number) > MIDLINE) continue;
     const d = Math.hypot(
       (P[v * 3] as number) - (c[0] as number),
@@ -119,7 +81,7 @@ export function bodySites(assets: HumanoidAssets): Readonly<Record<PiercingSite,
   const out = {} as Record<PiercingSite, BodySite>;
   for (const site of PIERCING_SITES) {
     const rule = SITE_RULES[site];
-    out[site] = { vertex: peak(assets, rule.target, rule.side), channel: rule.channel };
+    out[site] = { vertex: targetPeak(assets, rule.target, rule.side), channel: rule.channel };
   }
   out.septum = {
     vertex: septum(assets, out["nostril.L"].vertex, out["nostril.R"].vertex),

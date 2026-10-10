@@ -2163,7 +2163,34 @@ its measures; the smoke test holds every body at rest to no failure and every
 row to no worse than the file, so a foundation lane that fixes a row rewrites
 it in its commit.
 
-The landmarks and surface queries are recorded below as they are built.
+**The landmarks (built 2026-10-09).** `landmarks(model, posedBody)`
+(`src/foundation/landmarks.ts`) gives every named place on a posed body as a
+position, the skin's outward normal and a tangent frame:
+
+- *Surface landmarks* are base-mesh vertices, found once from the assets as
+  body-art sites are (`targetPeak`, `src/model/targetPeak.ts`, now shared by
+  both): the peak of the MakeHuman target that shapes the feature (nose tip,
+  lips, chin, ear lobes, nipples), the bottom of the hole the navel's target
+  deepens, the highest midline vertex (crown), and, where no target shapes the
+  place, the midline skin straight in front of a joint (the sternal notch over
+  the clavicles' inner ends, the pubic point over the hips' centres). On a posed
+  body a landmark is its vertex's own render vertex
+  (`HumanoidModel.baseRenderVertices`: the render vertex whose subdivision
+  stencil weights it most, exact at every level and on either body surface), its
+  normal the skinned normal there, its tangent the way to the neighbour that was
+  most nearly up the body at rest. The frame therefore bends and turns with the
+  skin rather than being recomputed from the pose.
+- *Joint landmarks* are joint centres: a bone's posed head, the tangent along
+  the limb, the normal the figure's forward turned by the bone.
+
+A test holds every landmark to an orthonormal frame on the drawn surface, left
+and right to mirror images, the body's order from the crown down, the limbs'
+lengths through every smoke pose, and both forms of an adult to the same
+places away from the pubic point (invariant 7). Adult-only landmarks (the
+genital root) come from the adult pack, as its piercing sites do, so the core
+names none.
+
+The surface queries are recorded below as they are built.
 
 ## Invariants
 
