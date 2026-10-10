@@ -20,6 +20,7 @@ import {
   subdivideUvLinearPolygons,
 } from "../subdiv/catmullClark.ts";
 import { type Refinement, refineGraded } from "../subdiv/gradedRefine.ts";
+import { applyPatches, type SurfacePatch } from "./patches.ts";
 import { applyReservoirs, type Reservoir, type SurfaceReservoir } from "./reservoir.ts";
 
 export type { Reservoir, SurfaceReservoir } from "./reservoir.ts";
@@ -70,6 +71,8 @@ export interface SurfaceLattice {
   region: Uint32Array;
   /** The region's polygons (the refined faces), for placing reservoirs on. */
   polygons: LatticePolygons;
+  /** UV entries of the refinement (`LatticePolygons.uvs` index them): a patch's own are numbered from here. */
+  uvCount: number;
   /**
    * Vertices a detail addresses: the region's, then each reservoir's rings
    * (`SurfaceReservoir.base`), at most 65536.
@@ -98,6 +101,8 @@ export interface LatticePolygons {
   id: Uint32Array;
   start: Uint32Array;
   vertices: Uint32Array;
+  /** Each corner's UV entry in the refinement (`latticeUvs`), alongside `vertices`: what a patch is laid out from. */
+  uvs: Uint32Array;
 }
 
 /** Displacement of lattice vertices (metres), added to a refined surface after it is evaluated. */
@@ -224,14 +229,15 @@ function buildSubdividedQuads(
  *   numbering, which features authored on the lattice depend on; the model
  *   passes the whole body group and hides what is worn by a mask over triangles.
  * @param refinement source face indices and how many extra levels each gets
- *   over the level-1 surface (a source face's four children share its level)
+ *   over the level-1 surface (a source face's four children share its level),
+ *   and the patches that then replace some of the refined polygons (`applyPatches`)
  * @param levels Catmull–Clark levels of the whole surface, at least 1
  * @param reservoirs collapsed strips to add (`applyReservoirs`), none by default
  */
 export function buildRefinedSurfaceMesh(
   source: QuadSource,
   faces: Uint32Array | null,
-  refinement: Refinement,
+  refinement: Refinement & { patches?: readonly SurfacePatch[] },
   levels: number,
   reservoirs: readonly Reservoir[] = [],
 ): SurfaceMesh {
@@ -256,15 +262,18 @@ export function buildRefinedSurfaceMesh(
       childLevels.push(refinement.levels[i] as number);
     }
   }
-  const fine = refineGraded(
-    {
-      vertexCount: base.topology.vertexCount,
-      faceVerts: base.topology.faces,
-      faceUvs: base.faceUvs,
-      uvs: base.uvs,
-    },
-    Uint32Array.from({ length: base.topology.faces.length / 4 }, (_, i) => i),
-    { faces: children, levels: childLevels },
+  const fine = applyPatches(
+    refineGraded(
+      {
+        vertexCount: base.topology.vertexCount,
+        faceVerts: base.topology.faces,
+        faceUvs: base.faceUvs,
+        uvs: base.uvs,
+      },
+      Uint32Array.from({ length: base.topology.faces.length / 4 }, (_, i) => i),
+      { faces: children, levels: childLevels },
+    ),
+    refinement.patches ?? [],
   );
   const lattice = composeStencils(base.stencil, fine.stencil);
   let stencil = lattice;
@@ -386,6 +395,7 @@ export function buildRefinedSurfaceMesh(
     },
     lattice: {
       vertexCount: fine.vertexCount,
+      uvCount: fine.uvs.length / 2,
       region: regionVertices,
       polygons: refinedPolygons(
         fine,
@@ -427,24 +437,33 @@ function refinedRegion(
 
 /** The polygons of the faces descended from the refined base faces, by their index in the refinement mesh. */
 function refinedPolygons(
-  fine: { faceStart: Uint32Array; faces: Uint32Array; sourceFace: Uint32Array },
+  fine: {
+    faceStart: Uint32Array;
+    faces: Uint32Array;
+    faceUvs: Uint32Array;
+    sourceFace: Uint32Array;
+  },
   places: readonly number[],
 ): LatticePolygons {
   const refined = new Set(places);
   const id: number[] = [];
   const start: number[] = [0];
   const vertices: number[] = [];
+  const uvs: number[] = [];
   for (let f = 0; f + 1 < fine.faceStart.length; f++) {
     if (!refined.has(Math.floor((fine.sourceFace[f] as number) / 4))) continue;
     id.push(f);
-    for (let c = fine.faceStart[f] as number; c < (fine.faceStart[f + 1] as number); c++)
+    for (let c = fine.faceStart[f] as number; c < (fine.faceStart[f + 1] as number); c++) {
       vertices.push(fine.faces[c] as number);
+      uvs.push(fine.faceUvs[c] as number);
+    }
     start.push(vertices.length);
   }
   return {
     id: Uint32Array.from(id),
     start: Uint32Array.from(start),
     vertices: Uint32Array.from(vertices),
+    uvs: Uint32Array.from(uvs),
   };
 }
 
