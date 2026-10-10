@@ -134,6 +134,12 @@ export interface HairFieldsInput {
    */
   fins?: boolean;
   /**
+   * Whether gaps between the cards on the top of the head are filled as scalp under hair
+   * (`fillScalpHoles`; default true). A style that parts the scalp on purpose (braids, knots,
+   * twists) keeps every parting bare.
+   */
+  fillHoles?: boolean;
+  /**
    * The vertices the hair grows from, when the author knows them (a rope's first ring). Absent, the
    * roots are the vertices within `ROOT_NEAR` of the scalp, which for hair that lies on the scalp
    * throughout (bantu knots) is every vertex, and growth then says nothing of strand direction.
@@ -183,6 +189,74 @@ const AXIS = new Vector3();
 
 /** The scalp density above which the skin under a card vertex is covered by hair, not a hairline's bare edge. */
 const HAIR_COVERED = 0.25;
+
+/**
+ * The most body vertices a patch of bare scalp enclosed by hair may span and still be a hole in
+ * the cards (`fillScalpHoles`) rather than skin a style leaves bare on purpose.
+ */
+export const SCALP_HOLE_MAX = 60;
+
+/**
+ * A hole is filled only on the top of the head: every vertex of it faces up at least this much
+ * (its outward normal's y). An ear, or the forehead under a fringe, is skin hair encloses too,
+ * and must stay skin.
+ */
+export const SCALP_HOLE_FACING_UP = 0.6;
+
+/**
+ * Fills the holes in a style's scalp density, in place: a patch of bare skin (density under
+ * `HAIR_COVERED`) on the top of the head (`SCALP_HOLE_FACING_UP`, by the outward `normals`) that
+ * hair encloses, reaching no skin outside the scalp (the face, the neck) and no bigger than
+ * `SCALP_HOLE_MAX` vertices, is a gap between cards (a crown's whorl, a seam a card's cut-out
+ * leaves at a part), not a hairline: it takes full density, so it is tinted as scalp under hair
+ * and never seeds a hairline that would thin the hair round it into a bigger hole. A parting a
+ * style draws on purpose (cornrows, box braids, bantu sections) runs out to the hairline and is
+ * left alone.
+ */
+export function fillScalpHoles(
+  body: { positions: Float32Array; triangles: Uint32Array },
+  eligible: Uint8Array,
+  density: Float64Array,
+  normals: Float64Array,
+): void {
+  const count = density.length;
+  const bare = (v: number) => !eligible[v] || (density[v] as number) < HAIR_COVERED;
+  const neighbours: number[][] = Array.from({ length: count }, () => []);
+  for (let t = 0; t < body.triangles.length; t += 3)
+    for (let k = 0; k < 3; k++) {
+      const a = body.triangles[t + k] as number;
+      const b = body.triangles[t + ((k + 1) % 3)] as number;
+      (neighbours[a] as number[]).push(b);
+      (neighbours[b] as number[]).push(a);
+    }
+  const seen = new Uint8Array(count);
+  for (let start = 0; start < count; start++) {
+    if (seen[start] || !eligible[start] || !bare(start)) continue;
+    // One connected patch of bare scalp: does it reach skin outside the scalp?
+    const patch: number[] = [start];
+    seen[start] = 1;
+    let outside = false;
+    let bordersHair = false;
+    for (let i = 0; i < patch.length; i++)
+      for (const w of neighbours[patch[i] as number] as number[]) {
+        if (!bare(w)) {
+          bordersHair = true;
+          continue;
+        }
+        if (!eligible[w]) {
+          outside = true;
+          continue;
+        }
+        if (seen[w]) continue;
+        seen[w] = 1;
+        patch.push(w);
+      }
+    // (A patch with no hair round it is no hole: a vertex off the surface, an eyeball, the teeth.)
+    if (outside || !bordersHair || patch.length > SCALP_HOLE_MAX) continue;
+    if (patch.some((v) => (normals[v * 3 + 1] as number) < SCALP_HOLE_FACING_UP)) continue;
+    for (const v of patch) density[v] = 1;
+  }
+}
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -521,6 +595,8 @@ export function hairFields(input: HairFieldsInput): HairFields {
     }
     bodyDensity[v] = density;
   }
+  if (input.fillHoles !== false)
+    fillScalpHoles(body, input.scalpEligible, bodyDensity, bodyNormals);
   // How bare the skin under a card vertex is: the density at the nearest point of the body, 1
   // under hair and 0 on a face, a neck or a temple the hair stops short of.
   const bodyTri = new Vector3();
