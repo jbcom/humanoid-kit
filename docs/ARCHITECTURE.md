@@ -2442,6 +2442,19 @@ running when a context is lost under it: the next draw or read throws, and the
 test is failed afterwards whatever it did with the result.
 `tests/browserRenderers.test.ts` holds every file to it.
 
+A browser test compares a render or any other long numeric buffer with
+`expectSameArray` (`tests/browser/arrays.ts`), never `toEqual` or
+`toStrictEqual`. When a `toEqual` on a 16k-element `Float32Array` fails, vitest
+formats a diff of every element, and that holds the browser run until the render
+pool's job timeout kills it, so one failed assertion loses the whole job.
+`expectSameArray` compares length and then element by element, exactly or within
+an explicit `tolerance`, and fails with the count of differing elements, the
+largest gap and the first few indices with their values.
+`tests/browserArrayComparison.test.ts` fails a browser test that passes a typed
+array, an `Array.from`, a render result or a literal of more than sixteen
+elements to a raw `toEqual`. It reads source text, so it cannot see a large
+array that arrives out of a function declared in another file.
+
 ## Public demo
 
 The GitHub Pages demo ships the body pack and the hair pack (both CC0, neither
