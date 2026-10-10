@@ -1,0 +1,45 @@
+{
+  "$comment": "The figure battery: the fixed set of figures every visual feature is calibrated and judged against (docs/evidence/BATTERY.md). A feature's evidence shows the bodies set at a mid tone and the tones set on the average adult body; anything placed on an area (marks, tattoos, piercings, hair) also shows the cross set. Recipes are createRecipe input.",
+  "tones": [
+    { "name": "tone-1", "skin": { "melanin": 0.05 } },
+    { "name": "tone-2", "skin": { "melanin": 0.2 } },
+    { "name": "tone-3", "skin": { "melanin": 0.35 } },
+    { "name": "tone-4", "skin": { "melanin": 0.5 } },
+    { "name": "tone-5", "skin": { "melanin": 0.7 } },
+    { "name": "tone-6", "skin": { "melanin": 0.9 } }
+  ],
+  "bodies": [
+    { "name": "f-slim", "macros": { "age": 25, "gender": 0, "weight": 0, "muscle": 0.3 } },
+    { "name": "f-average", "macros": { "age": 25, "gender": 0 } },
+    { "name": "f-heavy", "macros": { "age": 25, "gender": 0, "weight": 1, "muscle": 0.3 } },
+    { "name": "f-muscular", "macros": { "age": 25, "gender": 0, "weight": 0.4, "muscle": 1 } },
+    { "name": "m-slim", "macros": { "age": 25, "gender": 1, "weight": 0, "muscle": 0.3 } },
+    { "name": "m-average", "macros": { "age": 25, "gender": 1 } },
+    { "name": "m-heavy", "macros": { "age": 25, "gender": 1, "weight": 1, "muscle": 0.3 } },
+    { "name": "m-muscular", "macros": { "age": 25, "gender": 1, "weight": 0.4, "muscle": 1 } },
+    { "name": "x-average", "macros": { "age": 25, "gender": 0.5 } },
+    { "name": "tall", "macros": { "age": 25, "gender": 0.5, "height": 1 } },
+    { "name": "short", "macros": { "age": 25, "gender": 0.5, "height": 0 } },
+    { "name": "f-elder", "macros": { "age": 75, "gender": 0 } },
+    { "name": "m-elder", "macros": { "age": 75, "gender": 1 } },
+    { "name": "teen", "macros": { "age": 14, "gender": 0.5 } },
+    { "name": "child", "macros": { "age": 6, "gender": 0.5 } },
+    {
+      "name": "african",
+      "macros": { "age": 25, "gender": 0.5, "african": 1, "asian": 0, "caucasian": 0 }
+    },
+    {
+      "name": "asian",
+      "macros": { "age": 25, "gender": 0.5, "african": 0, "asian": 1, "caucasian": 0 }
+    },
+    {
+      "name": "caucasian",
+      "macros": { "age": 25, "gender": 0.5, "african": 0, "asian": 0, "caucasian": 1 }
+    }
+  ],
+  "cross": {
+    "$comment": "Every listed body at tones 1, 3, 5 and 6: the extremes of shape against light, mid and deep skin.",
+    "bodies": ["f-slim", "f-heavy", "m-muscular", "m-heavy", "f-elder", "child"],
+    "tones": ["tone-1", "tone-3", "tone-5", "tone-6"]
+  }
+}
