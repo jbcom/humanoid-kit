@@ -780,7 +780,9 @@ mean what they meant there; everything must be testable in Node.
   (the thighs opened 40°), `seated` (the hips and knees at 90°), `tucked`
   (the hips at 120°) and `bowed` (the trunk folded 60°) are the joint extremes the skinning and the creases are
   checked at (below), which the pack's benchmark does not reach: it bends no
-  elbow, knee or wrist. An expression layers on top of a body pose bone by
+  elbow, knee or wrist. `overhead` (both arms straight up) and `squat` (a deep
+  squat, heels down) are the foundation's (docs/FOUNDATION.md), each held to its
+  intent by a test of the posed skeleton. An expression layers on top of a body pose bone by
   bone.
 - *Grounding follows the pose.* The rest ground offset comes with each
   evaluation; a posed figure's comes from skinning its control mesh on the

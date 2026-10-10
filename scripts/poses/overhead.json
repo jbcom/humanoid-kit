@@ -1,0 +1,10 @@
+{
+  "name": "overhead",
+  "title": "Arms overhead",
+  "description": "Both arms raised straight overhead from the rest A-pose, a little apart, the elbows straight. The check for the shoulder, the armpit and the side of the chest where the upper arm lifts past the head.",
+  "base": "tpose",
+  "rotations": {
+    "upperarm01.L": { "Xrotation": -22, "Yrotation": -138 },
+    "upperarm01.R": { "Xrotation": -22, "Yrotation": 138 }
+  }
+}

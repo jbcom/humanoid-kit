@@ -228,8 +228,10 @@ describe("body poses", () => {
       "bent",
       "bowed",
       "flexed",
+      "overhead",
       "relaxed",
       "seated",
+      "squat",
       "tucked",
       "twisted",
     ]);
@@ -302,6 +304,50 @@ describe("body poses", () => {
         Math.PI;
       expect(Math.abs(pitch(heads) - pitch(standing)), `foot ${side}`).toBeLessThan(8);
     }
+  });
+
+  it("raises both arms straight overhead, the hands above the crown", () => {
+    const heads = posedBoneHeads(rest, bodyPoseRotations(rig, "overhead"));
+    const at = (n: string, k: number) => heads[bone(n) * 3 + k] as number;
+    let crown = Number.NEGATIVE_INFINITY;
+    for (let v = 1; v < control.length; v += 3) crown = Math.max(crown, control[v] as number);
+    for (const side of ["L", "R"]) {
+      const arm = [0, 1, 2].map((k) => at(`wrist.${side}`, k) - at(`upperarm01.${side}`, k));
+      // The line from shoulder to wrist within 20° of straight up.
+      expect((arm[1] as number) / Math.hypot(...arm), side).toBeGreaterThan(
+        Math.cos((20 * Math.PI) / 180),
+      );
+      expect(at(`wrist.${side}`, 1), side).toBeGreaterThan(crown);
+      // Each arm on its own side of the body.
+      expect(Math.sign(at(`wrist.${side}`, 0)), side).toBe(side === "L" ? 1 : -1);
+    }
+  });
+
+  it("squats deep: hips below the knees, knees bent past 130°, soles flat, knees apart", () => {
+    const heads = posedBoneHeads(rest, bodyPoseRotations(rig, "squat"));
+    const standing = posedBoneHeads(rest, IDENTITY_POSE(rest.names.length));
+    const at = (h: Float32Array, n: string, k: number) => h[bone(n) * 3 + k] as number;
+    for (const side of ["L", "R"]) {
+      expect(at(heads, `upperleg01.${side}`, 1), side).toBeLessThan(
+        at(heads, `lowerleg01.${side}`, 1),
+      );
+      expect(
+        bend(heads, `upperleg02.${side}`, `lowerleg01.${side}`, `foot.${side}`),
+        side,
+      ).toBeGreaterThan(130);
+      // The foot keeps its rest pitch within 15°: the heel stays down.
+      const pitch = (h: Float32Array) =>
+        (Math.atan2(
+          at(h, `toe3-1.${side}`, 1) - at(h, `foot.${side}`, 1),
+          Math.abs(at(h, `toe3-1.${side}`, 2) - at(h, `foot.${side}`, 2)),
+        ) *
+          180) /
+        Math.PI;
+      expect(Math.abs(pitch(heads) - pitch(standing)), `foot ${side}`).toBeLessThan(15);
+    }
+    // The knees part wider than the feet, as in a squat with the heels down.
+    const gap = (n: string) => at(heads, `${n}.L`, 0) - at(heads, `${n}.R`, 0);
+    expect(gap("lowerleg01")).toBeGreaterThan(gap("foot"));
   });
 
   it("swings both thighs 40° apart in the abducted pose, the legs open rather than crossed", () => {
