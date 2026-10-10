@@ -1,3 +1,4 @@
+import { posedBones, rotateByBone } from "./bones.ts";
 import { SkinPatch, SurfaceDistance, TriangleCrossings } from "./contact.ts";
 import {
   boneMass,
@@ -102,6 +103,15 @@ const BETWEEN = [0.5, 0.25];
  * them, but for the tall lean man's 5.3 mm at 17.5°.
  */
 const AJAR = [0.25, 0.5, 0.75];
+/**
+ * Steps, at most, that smooth out skin the bones fold over itself in the fold's
+ * reach, and how far toward its neighbours' mean each step moves a vertex.
+ * CHOICE, measured seated on the nine bodies (2026-10-10): halfway steps
+ * cleared every such triangle near the hips in two to eight steps, moving skin
+ * 7 to 21 mm.
+ */
+const UNCRUMPLE_STEPS = 12;
+const UNCRUMPLE = 0.5;
 /** A pass that needs no push over this (metres) is the last of its round. */
 const TOLERANCE = 0.0002;
 const PASSES = 60;
@@ -171,6 +181,14 @@ export function* solveHipFoldSteps(
     outward[t + 1] = y / length;
     outward[t + 2] = z / length;
   }
+  // Each trunk vertex's outward direction: the sum of its triangles' (unnormalised; only its sign along a step is read).
+  const outwardAt = new Float64Array(n * 3);
+  for (let t = 0; t < trunkPatch.length; t += 3)
+    for (let c = 0; c < 3; c++) {
+      const v = trunkPatch[t + c] as number;
+      for (let k = 0; k < 3; k++)
+        outwardAt[v * 3 + k] = (outwardAt[v * 3 + k] as number) + (outward[t + k] as number);
+    }
   /**
    * Whether trunk triangle `t`, whose posed outward normal is `n`, the bones have
    * turned inside out: at the hip's front and side, where the trunk's skin meets
@@ -294,6 +312,52 @@ export function* solveHipFoldSteps(
       neededWeight[i * 4 + k] = skinWeight[v * 4 + k] as number;
     }
   });
+  // The triangles the fold may move a corner of, all of whose corners the solve skins, and each one's face at rest.
+  const crumpling: number[] = [];
+  for (let t = 0; t < tris.length; t += 3) {
+    const corners = [tris[t], tris[t + 1], tris[t + 2]] as [number, number, number];
+    if (corners.every((v) => wanted[v]) && corners.some((v) => isMover[v])) crumpling.push(t);
+  }
+  const restFaces = new Float64Array(crumpling.length * 3);
+  crumpling.forEach((t, i) => {
+    const f = faceOf(control, tris, t);
+    restFaces.set(f, i * 3);
+  });
+  /**
+   * The faces of `crumpling` the bones of `rotations` turn: each rest face carried
+   * by its corners' bones by their weights, as the skin's normals are, a unit
+   * vector each.
+   */
+  const carriedFaces = (rotations: Float32Array): Float64Array => {
+    const { world } = posedBones(rest, rotations);
+    const out = new Float64Array(crumpling.length * 3);
+    crumpling.forEach((t, i) => {
+      const n0 = [restFaces[i * 3], restFaces[i * 3 + 1], restFaces[i * 3 + 2]] as [
+        number,
+        number,
+        number,
+      ];
+      let x = 0;
+      let y = 0;
+      let z = 0;
+      for (let c = 0; c < 3; c++) {
+        const v = tris[t + c] as number;
+        for (let k = 0; k < 4; k++) {
+          const w = skinWeight[v * 4 + k] as number;
+          if (w === 0) continue;
+          const [rx, ry, rz] = rotateByBone(world, skinIndex[v * 4 + k] as number, n0);
+          x += w * rx;
+          y += w * ry;
+          z += w * rz;
+        }
+      }
+      const length = Math.hypot(x, y, z) || 1;
+      out[i * 3] = x / length;
+      out[i * 3 + 1] = y / length;
+      out[i * 3 + 2] = z / length;
+    });
+    return out;
+  };
   /** Both hips flexed `degrees` and opened `opening` degrees to their sides, every other bone at rest. */
   const rotationsAt = (degrees: number, opening: number): Float32Array => {
     const rotations = IDENTITY_POSE(rest.names.length);
@@ -377,6 +441,8 @@ export function* solveHipFoldSteps(
         // what a contact pressed at an earlier one, or what the spread carried past the contact.
         if (round === ROUNDS - 1) {
           const thighNear = new SurfaceDistance(P, thighSurface);
+          /** The trunk's skin a thigh touches at this flexion: the only trunk skin the smoothing below may move. */
+          const touched = new Uint8Array(n);
           for (const v of trunks) {
             const d = thighNear.distance(
               P[v * 3] as number,
@@ -384,10 +450,70 @@ export function* solveHipFoldSteps(
               P[v * 3 + 2] as number,
               FOLD_PRESS.far,
             );
+            if (d <= FOLD_PRESS.near) touched[v] = 1;
             const keep = 1 - smoothstep(FOLD_PRESS.near, FOLD_PRESS.far, d);
             for (let k = 0; k < 3; k++) D[v * 3 + k] = (D[v * 3 + k] as number) * keep;
           }
           place();
+          // Skin the bones have folded over itself in the fold's reach (a triangle turned against its face as
+          // the bones carry it) is smoothed out: the corners of such triangles, and their neighbours, step toward
+          // their neighbours' mean until none is left; the round's pushes then keep the thigh out. The trunk's
+          // skin is smoothed only where a thigh touches it, so the belly keeps no groove away from the thighs.
+          const carried = carriedFaces(rotationsAt(degrees, opening));
+          const smooths = (v: number) => isMover[v] === 1 && (isThigh[v] === 1 || touched[v] === 1);
+          for (let step = 0; step < UNCRUMPLE_STEPS; step++) {
+            const moving = new Set<number>();
+            crumpling.forEach((t, i) => {
+              const f = faceOf(P, tris, t);
+              if (
+                f[0] * (carried[i * 3] as number) +
+                  f[1] * (carried[i * 3 + 1] as number) +
+                  f[2] * (carried[i * 3 + 2] as number) >=
+                0
+              )
+                return;
+              for (let c = 0; c < 3; c++) {
+                const v = tris[t + c] as number;
+                if (smooths(v)) moving.add(v);
+                for (let e = around.start[v] as number; e < (around.start[v + 1] as number); e++) {
+                  const u = around.list[e] as number;
+                  if (smooths(u)) moving.add(u);
+                }
+              }
+            });
+            if (!moving.size) break;
+            const towards = new Map<number, Float64Array>();
+            for (const v of moving) {
+              const [from, to] = [around.start[v] as number, around.start[v + 1] as number];
+              const mean = new Float64Array(3);
+              for (let e = from; e < to; e++)
+                for (let k = 0; k < 3; k++)
+                  mean[k] =
+                    (mean[k] as number) +
+                    (P[(around.list[e] as number) * 3 + k] as number) / (to - from);
+              towards.set(v, mean);
+            }
+            for (const [v, mean] of towards) {
+              const step = [0, 1, 2].map(
+                (k) => UNCRUMPLE * ((mean[k] as number) - (P[v * 3 + k] as number)),
+              ) as [number, number, number];
+              // The trunk's skin is only ever pressed in: of a step, only its inward part along the skin's normal.
+              if (!isThigh[v]) {
+                const ox = outwardAt[v * 3] as number;
+                const oy = outwardAt[v * 3 + 1] as number;
+                const oz = outwardAt[v * 3 + 2] as number;
+                const oo = ox * ox + oy * oy + oz * oz;
+                const along =
+                  oo > 0 ? Math.min(0, (step[0] * ox + step[1] * oy + step[2] * oz) / oo) : 0;
+                step[0] = along * ox;
+                step[1] = along * oy;
+                step[2] = along * oz;
+              }
+              for (let k = 0; k < 3; k++)
+                D[v * 3 + k] = (D[v * 3 + k] as number) + (step[k] as number);
+            }
+            place([...moving]);
+          }
         }
         // The trunk's skin holds still while the thigh's is pushed out of it, so the pushes settle.
         const trunkSkin = patch.pose(P);
@@ -833,4 +959,18 @@ function neighbours(tris: Uint32Array, n: number): { start: Uint32Array; list: U
     for (const u of s) list[at++] = u;
   });
   return { start, list };
+}
+
+/** Triangle `t`'s face on `pos`: the cross product of its edges, the length its area's double. */
+function faceOf(pos: ArrayLike<number>, tris: Uint32Array, t: number): [number, number, number] {
+  const a = (tris[t] as number) * 3;
+  const b = (tris[t + 1] as number) * 3;
+  const c = (tris[t + 2] as number) * 3;
+  const ux = (pos[b] as number) - (pos[a] as number);
+  const uy = (pos[b + 1] as number) - (pos[a + 1] as number);
+  const uz = (pos[b + 2] as number) - (pos[a + 2] as number);
+  const wx = (pos[c] as number) - (pos[a] as number);
+  const wy = (pos[c + 1] as number) - (pos[a + 1] as number);
+  const wz = (pos[c + 2] as number) - (pos[a + 2] as number);
+  return [uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx];
 }
