@@ -3,16 +3,14 @@
  * shader: relief at the measured size, and colour and sheen at the strengths
  * their paint asks for.
  */
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { DEFAULT_SKIN_APPEARANCE } from "../../src/render/skinMaterial.ts";
 import {
   GOOSEBUMP_DENSITY_PER_CM2,
   GOOSEBUMP_LAYER,
   SWEAT_REST_LAYER,
 } from "../../src/surface/regions/states.ts";
-import { disposeLayerRender, mean, renderLayers, variance } from "./layerRender.ts";
-
-afterAll(disposeLayerRender);
+import { mean, renderLayers, variance } from "./layerRender.ts";
 
 /** A 4 cm square of skin at 0.16 mm per pixel, lit along x. */
 const PATCH = 0.04;

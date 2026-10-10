@@ -14,7 +14,6 @@ import {
   RawShaderMaterial,
   Scene,
   type Texture,
-  WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -32,10 +31,10 @@ import {
   type SkinPaintInput,
 } from "../../src/surface/layers.ts";
 import { type Rgb, skinAlbedo } from "../../src/surface/skinTone.ts";
+import { createTestRenderer } from "./gl.ts";
 
 const SIZE = 64;
-const canvas = document.createElement("canvas");
-const renderer = new WebGLRenderer({ canvas, antialias: false });
+const renderer = createTestRenderer({ antialias: false });
 renderer.setPixelRatio(1);
 renderer.setSize(SIZE, SIZE, false);
 const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
@@ -44,7 +43,6 @@ camera.lookAt(0, 0, 0);
 const target = new WebGLRenderTarget(SIZE, SIZE, { type: FloatType });
 afterAll(() => {
   target.dispose();
-  renderer.dispose();
 });
 
 /** A full-screen quad whose every layer starts with the given (mask, coord). */

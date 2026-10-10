@@ -23,7 +23,6 @@ import {
   OrthographicCamera,
   Scene,
   SphereGeometry,
-  WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
@@ -39,6 +38,7 @@ import { STUDIO_EXPOSURE, STUDIO_TONE_MAPPING } from "../../src/react/StudioStag
 import { CURVATURE_ATTRIBUTE, SkinMaterial } from "../../src/render/skinMaterial.ts";
 import { SKIN_SCATTER, scatterDistance, scatterTableDiffuse } from "../../src/surface/scatter.ts";
 import type { Rgb, SkinTone } from "../../src/surface/skinTone.ts";
+import { createTestRenderer } from "./gl.ts";
 
 interface Swatch {
   name: string;
@@ -115,8 +115,7 @@ const BINS = [
 ] as const;
 type BinName = (typeof BINS)[number]["name"];
 
-const canvas = document.createElement("canvas");
-const renderer = new WebGLRenderer({ canvas, antialias: false });
+const renderer = createTestRenderer({ antialias: false });
 renderer.setPixelRatio(1);
 renderer.setSize(SIZE, SIZE, false);
 const target = new WebGLRenderTarget(SIZE, SIZE, { type: FloatType });
@@ -147,7 +146,6 @@ afterAll(() => {
   geometry.dispose();
   material.dispose();
   target.dispose();
-  renderer.dispose();
 });
 
 type Mode = "lambert" | "scatter" | "specular" | "production";

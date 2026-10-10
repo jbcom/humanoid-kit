@@ -2377,6 +2377,16 @@ browser by the Vitest browser project (`tests/browser`), which also drives the
 creator's panels; the worker and the whole figure are proven by Playwright
 against the playground.
 
+A browser test makes its `WebGLRenderer` with `createTestRenderer`
+(`tests/browser/gl.ts`), never with `new WebGLRenderer`. Disposing a renderer
+does not free its WebGL context, Chrome keeps about sixteen live, and a
+whole-suite run then loses the contexts of the later files and reads NaN from
+them, which a comparison like `x > limit` passes. The helper disposes each
+renderer and then loses its context when its file ends, and fails the test
+running when a context is lost under it: the next draw or read throws, and the
+test is failed afterwards whatever it did with the result.
+`tests/browserRenderers.test.ts` holds every file to it.
+
 ## Public demo
 
 The GitHub Pages demo ships the body pack and the hair pack (both CC0, neither

@@ -38,7 +38,6 @@ import {
   SRGBColorSpace,
   type Texture,
   UnsignedByteType,
-  WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
@@ -61,10 +60,10 @@ import {
   hairAlbedo,
 } from "../../src/surface/hairTone.ts";
 import { linearToSrgb } from "../../src/surface/skinTone.ts";
+import { createTestRenderer, releaseTestRenderer } from "./gl.ts";
 
 const SIZE = 64;
-const canvas = document.createElement("canvas");
-const renderer = new WebGLRenderer({ canvas, antialias: true });
+const renderer = createTestRenderer({ antialias: true });
 renderer.setPixelRatio(1);
 renderer.setSize(SIZE, SIZE, false);
 renderer.toneMapping = NoToneMapping;
@@ -73,7 +72,6 @@ camera.position.set(0, 0, 5);
 const targets: WebGLRenderTarget[] = [];
 afterAll(() => {
   for (const t of targets) t.dispose();
-  renderer.dispose();
 });
 
 /** A strand map texel: grey at `linear` (sRGB-encoded as the packer does), with `alpha` 0..255. */
@@ -328,9 +326,9 @@ describe("hair cut-outs", () => {
   it("detects whether the framebuffer is multisampled", () => {
     // The canvas above asked for antialiasing; a canvas that does not has one sample.
     expect(isMultisampled(renderer.getContext())).toBe(true);
-    const plain = new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
+    const plain = createTestRenderer({ antialias: false });
     expect(isMultisampled(plain.getContext())).toBe(false);
-    plain.dispose();
+    releaseTestRenderer(plain);
   });
 });
 

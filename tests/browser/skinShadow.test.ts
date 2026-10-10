@@ -25,11 +25,11 @@ import {
   PlaneGeometry,
   Scene,
   VSMShadowMap,
-  WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
 import { configureKeyShadow, KEY_SHADOW, STUDIO_SHADOWS } from "../../src/render/studioShadow.ts";
+import { createTestRenderer } from "./gl.ts";
 
 const WIDTH = 480;
 const HEIGHT = 480;
@@ -37,8 +37,7 @@ const HEIGHT = 480;
 const SPAN = 1.8;
 const METRES_PER_PIXEL = SPAN / HEIGHT;
 
-const canvas = document.createElement("canvas");
-const renderer = new WebGLRenderer({ canvas, antialias: false });
+const renderer = createTestRenderer({ antialias: false });
 renderer.setPixelRatio(1);
 renderer.setSize(WIDTH, HEIGHT, false);
 renderer.shadowMap.enabled = true;
@@ -46,7 +45,6 @@ renderer.shadowMap.type = VSMShadowMap;
 const target = new WebGLRenderTarget(WIDTH, HEIGHT, { type: FloatType });
 afterAll(() => {
   target.dispose();
-  renderer.dispose();
 });
 
 /** The 10 % to 90 % width, in pixels, of the edge of the shadow an occluder `height` metres over the plane casts. */

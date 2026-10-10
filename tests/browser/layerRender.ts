@@ -11,9 +11,10 @@ import {
   OrthographicCamera,
   PlaneGeometry,
   Scene,
-  WebGLRenderer,
+  type WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
+import { afterAll } from "vitest";
 import { buildLayerAtlas, type LayerAtlasSource } from "../../src/render/layerAtlas.ts";
 import {
   DEFAULT_SKIN_APPEARANCE,
@@ -23,6 +24,7 @@ import {
 } from "../../src/render/skinMaterial.ts";
 import { planAtlas } from "../../src/surface/atlasPlan.ts";
 import type { SkinLayer } from "../../src/surface/layers.ts";
+import { createTestRenderer } from "./gl.ts";
 
 /** Pixels per side of the render. */
 export const SIZE = 128;
@@ -52,7 +54,7 @@ let renderer: WebGLRenderer | null = null;
 const targets = new Map<number, WebGLRenderTarget>();
 
 function context(size: number) {
-  renderer ??= new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
+  renderer ??= createTestRenderer({ antialias: false });
   renderer.setSize(size, size, false);
   let target = targets.get(size);
   if (!target) {
@@ -62,13 +64,12 @@ function context(size: number) {
   return { renderer, target };
 }
 
-/** Frees the shared context; call once from `afterAll`. */
-export function disposeLayerRender(): void {
+// The file's targets are freed when it ends, before gl.ts loses the shared renderer's context.
+afterAll(() => {
   for (const t of targets.values()) t.dispose();
   targets.clear();
-  renderer?.dispose();
   renderer = null;
-}
+});
 
 export const noFields = () => ({ mask: new Float32Array(0), coord: null });
 

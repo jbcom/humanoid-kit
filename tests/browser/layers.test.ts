@@ -13,7 +13,6 @@ import {
   PlaneGeometry,
   Scene,
   type Texture,
-  WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
@@ -29,11 +28,11 @@ import {
 } from "../../src/surface/layers.ts";
 import { SKIN_LAYERS } from "../../src/surface/regions/index.ts";
 import { type Rgb, skinAlbedo } from "../../src/surface/skinTone.ts";
+import { createTestRenderer } from "./gl.ts";
 import { readPage as readAtlasPage } from "./readPage.ts";
 
 const SIZE = 64;
-const canvas = document.createElement("canvas");
-const renderer = new WebGLRenderer({ canvas, antialias: false });
+const renderer = createTestRenderer({ antialias: false });
 renderer.setPixelRatio(1);
 renderer.setSize(SIZE, SIZE, false);
 const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
@@ -42,7 +41,6 @@ camera.lookAt(0, 0, 0);
 const target = new WebGLRenderTarget(SIZE, SIZE, { type: FloatType });
 afterAll(() => {
   target.dispose();
-  renderer.dispose();
 });
 
 /** A quad covering UVs [lo, hi]², with per-layer (mask, coord) at its four corners. */
