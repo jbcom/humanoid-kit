@@ -9,7 +9,25 @@ import type { HumanoidEditor } from "../../src/editor/ui/useHumanoidEditor.ts";
 import { WardrobePanel } from "../../src/editor/ui/WardrobePanel.tsx";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import { DEFAULT_HAIR_COLOUR } from "../../src/surface/hairTone.ts";
+import type { ReadyInfo } from "../../src/worker/protocol.ts";
 import { EditorHarness, readyInfo } from "./harness.tsx";
+
+/**
+ * The phallus length slider's modifier id (`PHALLUS_LENGTH` in scripts/lib/detail/phallus.ts, which
+ * pulls in node-only code, so a browser test cannot import it). Its label is read from the
+ * manifest the pack authored it into, not written here.
+ */
+const PHALLUS_LENGTH = "genitals/phallus-length-decr|incr";
+
+/** The label of the slider for the modifier `id` in the merged taxonomy. */
+function sliderLabel(ready: ReadyInfo, id: string): string {
+  for (const task of ready.sliders)
+    for (const group of task.groups) {
+      const slider = group.sliders.find((s) => s.id === id);
+      if (slider) return slider.label;
+    }
+  throw new Error(`no slider ${id} in the taxonomy`);
+}
 
 const Styled = ({ children }: { children: React.ReactNode }) => (
   <div className="hk-creator" style={{ height: 900, display: "block" }}>
@@ -128,6 +146,9 @@ describe("ShapePanel", () => {
   it("disables adult anatomy sliders under 18, with the reason, and enables them at 18", async () => {
     const ready = readyInfo(true);
     const gender = ready.sliders.find((t) => t.id === "Gender") ?? null;
+    // The label the panel shows, so a rename cannot leave this test asking for a slider
+    // that no longer has that name.
+    const lengthLabel = sliderLabel(ready, PHALLUS_LENGTH);
     const minor = await render(
       <Styled>
         <EditorHarness ready={ready} initial={createRecipe({ macros: { age: 15 } })}>
@@ -137,7 +158,7 @@ describe("ShapePanel", () => {
     );
     // A task with two groups opens both.
     await expect.element(minor.getByText("Genitals")).toBeVisible();
-    await expect.element(minor.getByRole("slider", { name: "Penis length" })).toBeDisabled();
+    await expect.element(minor.getByRole("slider", { name: lengthLabel })).toBeDisabled();
     await expect.element(minor.getByText(/available from age 18/).first()).toBeVisible();
     await minor.unmount();
     const adult = await render(
@@ -147,7 +168,7 @@ describe("ShapePanel", () => {
         </EditorHarness>
       </Styled>,
     );
-    await expect.element(adult.getByRole("slider", { name: "Penis length" })).toBeEnabled();
+    await expect.element(adult.getByRole("slider", { name: lengthLabel })).toBeEnabled();
   });
 
   it("offers no adult anatomy sliders when the pack is not loaded", async () => {
