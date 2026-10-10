@@ -177,9 +177,15 @@ const FRAGMENT_STRANDS = /* glsl */ `
 	}
 `;
 
-/** The two Kajiya-Kay lobes of one light along the comb, as the hair cards' (`HAIR_LOBES`). */
+/**
+ * The two Kajiya-Kay lobes of one light along the comb, as the hair cards'
+ * (`HAIR_LOBES`). The comb is zero at some vertices and turns back on itself
+ * between others, so between them it can blend to nothing; a strand with no
+ * direction there, or a light straight behind the view, adds no lobe rather
+ * than normalising zero (a NaN, which blending spreads as green and pink).
+ */
 const STRAND_LOBES = /* glsl */ `
-	{
+	if ( dot( vCoatComb, vCoatComb ) > 1e-8 && dot( directLight.direction + geometryViewDir, directLight.direction + geometryViewDir ) > 1e-8 ) {
 		vec3 hkT = normalize( vCoatComb );
 		vec3 hkH = normalize( directLight.direction + geometryViewDir );
 		vec3 hkT1 = normalize( hkT + geometryNormal * ${HAIR_LOBES.primaryShift.toFixed(3)} );
