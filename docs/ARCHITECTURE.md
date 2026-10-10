@@ -3035,6 +3035,43 @@ subdivided linearly (`linearSubdivisionStencil`), positions smoothly, because
 smoothing the cap's displacement leaked it into the loop and overshot the tube by
 up to 22% at level 2.
 
+**Patches (2026-10-10).** A footprint found from a sculpt's cut is whole
+refinement polygons, so its loop was a staircase: the band from it to the first
+ring was a row of thin teeth, each leaning its own way, which shaded as a fringe
+round a small shaft's root and bumps at the sac's corners. Neither normals nor ring
+spacing hid it. The pack therefore carries **patches** (`AdultSurfaceSpec.patches`,
+`applyPatches` in `src/build/patches.ts`): each removes some of the refinement's
+polygons and adds its own in their place, its new vertices and UV entries affine
+combinations of existing ones (stencil rows, so weights, the fold, occlusion and
+every field follow), and must fill the region it removes edge for edge. Patches
+apply one after another, each naming the mesh the ones before it left, so the
+shaft's and the sac's can border each other. The generator
+(`scripts/lib/detail/smoothLoop.ts`) maps a reservoir's footprint and the ring of
+polygons round it to a disc, puts one new loop vertex per old one at even angles
+on a curve near the footprint's boundary, kept clear of both staircases, and joins
+it to them by two strips of triangles; both staircases stay, so only the loop is
+new. Placed from the disc alone the loop still zigzagged by fractions of a
+millimetre, the map squeezing a staircase's polygons into slivers (the sac's loop,
+a millimetre between vertices, turned by up to 126° at one), so it is then faired
+on the surface itself, ten Taubin passes each put back on the nearest triangle,
+and refused if a vertex leaves the band or the loop runs out of order.
+`tests/smoothLoop.test.ts` holds every reservoir's loop, seen along its root's
+normal, to no turn over 40° at a vertex (the staircases turned 96° at the shaft
+and 138° at the sac; the faired loops turn 14° and 25°). The band's quads are not
+the measure: a thin shaft draws its first ring in over the skin, and its band is
+long and narrow by design.
+
+**What the repack moved (measured at integration dbf5374).** Penetrating and
+squashed area stay within a square centimetre or 1 % on every smoke row but the
+two men's squats (penetration +1.9 and +2.6 cm²). Their rise, and m-muscular
+seated's, is not skin entering a thigh (0.05 → 0.07 cm² of the sac is genuinely
+inside one): under the seat's compression the sac's flank triangles turn over, a
+ray from such a point leaves through the sac's own fold, and the depth is
+measured past that fold, outside the vertex's rest neighbourhood, to the thigh.
+Inverted triangles rise by 40 to 50 a row with it (m-muscular seated 1421 →
+1471), against some 700 of the sac's in both packs: the crumpling is the root
+skinning's and the crease's, not the patch's.
+
 **Arousal.** Adult-only, refused under 18 by `assertSignalPolicy` before any
 target is named. Its shape response is the adult pack's detail targets reading
 the signal (`AdultDetailSpec.drives`, `sramp:arousal:…`; the core's `STATE_MORPHS`
