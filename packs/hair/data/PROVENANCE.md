@@ -147,5 +147,5 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | eyelashes03.webp | `3264a9da33053d5fd3b80747548e1c962f4abeaa20e311367bbcb2bb04ad3d4d` |
 | eyelashes04.bin.gz | `a405197a9dc7f361e9b5946b0d134aaf64e31b0072cc75151dd8bdd5b41f412c` |
 | eyelashes04.webp | `d545d987b615d55a23b4e637b193ba81ce41cf5edf0c87883cc00a6de5094059` |
-| beard-full.bin.gz | `614128cb80649ff5b9eaf31f6fd2fd94256e08a4fe8033000ec6986f41affab0` |
+| beard-full.bin.gz | `1660723c1963bcf3a32d6f1bb17fa295f4e8484e7b3f1142e2da919e02333c99` |
 | beard-full.webp | `b54fbb4eb11a3a1170e6f406276cb363d8b4d4fdf4b530ca9e8f462f07551d2f` |
