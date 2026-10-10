@@ -348,19 +348,26 @@ interface BodyArtRecipe {
 - Marks (research/BODY-ART.md C2): a scar, birthmark or vitiligo patch changes
   what is in the skin. `markChannels(mark): MarkChannels` is what it puts in the
   marks page at full strength:
-  - `melanin`, signed: down toward `vitiligoAlbedo(tone)`, up by shares of
+  - `melanin`, signed: down toward `vitiligoAlbedo(tone)` (on the lips,
+    `vitiligoLipAlbedo(tone, depth)`, a depigmented lip), up by shares of
     `markMelaninSpan()`;
   - `haemoglobin`, shares of `PORT_WINE_HAEMOGLOBIN` steps;
   - a scar's `smooth` and `raise`;
   - `ink`: dermal pigment, drawn as ink.
 
-  `markRatios(tone)` gives the per-tone ratios the shader raises to those
-  channels, and `markedAlbedo(tone, channels)` the skin under them.
-  `markOutline(mark)` and `markShape(mark, outline, x, y)` give the irregular,
-  seeded outline the bake draws. Constants: `VITILIGO_RESIDUAL`,
-  `CAFE_AU_LAIT_MELANIN`, `NAEVUS_MELANIN`, `SCAR_HAEMOGLOBIN` (the keloids'
-  erythema ratio), `SCAR_RAISE`, `SCAR_SMOOTHNESS`, `DERMAL_MELANIN_INK` and
-  `MARK_OUTLINE`.
+  `markRatios(tone)` gives the per-tone ratios the shader applies to those
+  channels: added melanin as a table of `MARK_DARK_STEPS` along the measured
+  axis (`deeperAlbedo(tone, up)`). `markedAlbedo(tone, channels)` gives the
+  skin under them. Constants: `VITILIGO_RESIDUAL`, `CAFE_AU_LAIT_MELANIN`,
+  `NAEVUS_MELANIN`, `NAEVUS_EDGE` and `NAEVUS_RAISE` (a naevus is a round,
+  slightly raised dot, drawn exactly as a decal), `SCAR_HAEMOGLOBIN` (the
+  keloids' erythema ratio),
+  `SCAR_RAISE`, `SCAR_SMOOTHNESS` and `DERMAL_MELANIN_INK`.
+- `markOutline(mark)` and `markShape(mark, outline, x, y, z?)`
+  (`src/bodyArt/markShape.ts`) give the seeded outline the bake draws. A patch
+  is an ellipsoid thresholded by `markNoise` in its frame's 3D space, softened
+  over 1–3 mm, with vitiligo's flecks; a scar is a harmonic line. Constants:
+  `PATCH_OUTLINE`, `SCAR_OUTLINE`, `EDGE_VARIATION` and `FLECK_*`.
 - `vitiligoPatches(assets, vitiligo)`: the seeded patches. Each is a left
   vertex at a typical site (round the eyes and mouth, backs of the hands,
   wrists, elbows, knees, tops of the feet) and its mirror image, with more and
