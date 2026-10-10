@@ -105,6 +105,8 @@ describe("affordance frames", { timeout: 300_000 }, () => {
             for (let k = 0; k < 3; k++)
               expect(f.position[k], label).toBe(marks[a.at.landmark].position[k]);
         }
+        // Framed from the landmarks alone, however they were found, the frames are the same.
+        expect(affordanceFrames(marks, affordances(recipe)), `${name} ${pose}`).toEqual(frames);
       }
   });
 
