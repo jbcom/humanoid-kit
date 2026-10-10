@@ -46,8 +46,10 @@ your native GPU by default, so they test what people see; the playground spec
 fails if a run that expects a GPU falls back to software rendering. CI has no
 GPU and selects SwiftShader explicitly under `xvfb-run`. Set `HK_GPU` to
 `auto`, `software` or `linux-hardware-vulkan` to choose.
-`node scripts/contact-sheet.mjs` renders recipes into a sheet for review, and
-`node scripts/measure-load.mjs [fast4g|cable]` times a cold load of the built
+`pnpm exec playwright test --project sheets` renders the contact sheets in
+`.sheets/job.json` for review (`e2e/sheets/render.sheet.ts` describes the job;
+on the agents' machines it runs on the render pool through
+`heavy-slot --remote-render`), and `node scripts/measure-load.mjs [fast4g|cable]` times a cold load of the built
 playground.
 
 ## Making a change
