@@ -235,12 +235,13 @@ async function encode(png: Buffer, cornea: Buffer): Promise<Buffer> {
     .toBuffer({ resolveWithObject: true });
   if (!data.every((a) => a === 255))
     return resized.webp({ quality: 88, alphaQuality: 100, effort: 6 }).toBuffer();
-  const rgb = await resized.removeAlpha().raw().toBuffer();
+  const { data: raw, info } = await resized.raw().toBuffer({ resolveWithObject: true });
+  const stride = info.channels;
   const rgba = Buffer.alloc(TEXTURE_MAX * TEXTURE_MAX * 4);
   for (let i = 0; i < TEXTURE_MAX * TEXTURE_MAX; i++) {
-    rgba[i * 4] = rgb[i * 3] as number;
-    rgba[i * 4 + 1] = rgb[i * 3 + 1] as number;
-    rgba[i * 4 + 2] = rgb[i * 3 + 2] as number;
+    rgba[i * 4] = raw[i * stride] as number;
+    rgba[i * 4 + 1] = raw[i * stride + 1] as number;
+    rgba[i * 4 + 2] = raw[i * stride + 2] as number;
     rgba[i * 4 + 3] = cornea[i] as number;
   }
   return sharp(rgba, { raw: { width: TEXTURE_MAX, height: TEXTURE_MAX, channels: 4 } })
