@@ -206,8 +206,8 @@ export function evaluatedSkin(
  * The hip fold of a surface (`surfaceFold`) for an evaluation that pushed its
  * render vertices `pushed` metres out of the skin, by the rule its weights follow
  * (`evaluatedSkin`): each reservoir vertex's row blended toward its root's by
- * `rootShare`, the root's being the mean of its loop's rows (a loop vertex the
- * fold leaves counting as none). A reservoir's rings and cap carry the fold of
+ * `rootShare`, the root's being the mean of its loop's displacements (a loop vertex
+ * the fold leaves counting as none) with no change to the normal. A reservoir's rings and cap carry the fold of
  * the disc of skin they were copied from; drawn out into an organ, each side of
  * it took its own share of the belly's press and the thigh's push, and the organ
  * was pulled out of shape. The fold itself when nothing is pushed far enough.
@@ -239,6 +239,10 @@ export function evaluatedFold(
     const side = held ? (sum[3] as number) / held : 0.5;
     for (let i = 0; i < row; i++) sum[i] = (sum[i] as number) / Math.max(1, loop.length);
     sum[3] = side;
+    // No normal change (each opening and key's second texel): a loop vertex's is a change to
+    // its own normal, which the crease turns most of the way over, and their mean added to an
+    // organ's normals turned its faces against them; its normals turn with its root's weights.
+    for (let i = 0; i < row; i += 8) sum.fill(0, i + 4, i + 8);
     roots[s] = sum;
     return sum;
   };

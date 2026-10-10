@@ -1554,6 +1554,26 @@ are: `HumanoidModel.hipFold` finds the push with the fold, and `<Humanoid>` asks
 again when the evaluated weights change. The heavy woman's row is then 991 and 427,
 the elder woman's 280 squashed.
 
+**With the crease (2026-10-10).** The crease (`UNCRUMPLE`, `solvedSurfaceFold`)
+moves the groin skin round the roots most of the way over, and the reservoirs'
+triangles inverted with it (m-muscular seated 653 → 895, those whose corners touch
+a reservoir), for two reasons, both fixed. A row's normal change is a change to its
+own vertex's normal; the mean of the loop's, added to an organ whose normals already
+turn with its root's weights, turned 541 of the sac's faces against their normals
+(their positions, moved rigidly, never turned). The root's row therefore carries
+the loop's mean displacement and side and no normal change. And `solvedSurfaceFold`
+corrected each row by what the surface lacks of the solved control surface as its
+*topology's* weights skin it, while a pushed vertex is skinned by its evaluated
+ones: the correction is now computed with the weights the vertex is drawn by
+(`evaluatedSkin`, found before the fold). Against the head without either, the
+reservoirs' inverted triangles fall on every adult row (m-muscular seated 895 →
+309, m-heavy seated 717 → 315, f-heavy seated 179 → 151). Two rows stay above
+their figures before the crease: f-slim seated (96 → 118) and f-heavy seated (141
+→ 151). Both are the clitoral reservoir's first millimetres, where a vertex takes
+part of its own column's crease correction and part of its root's, and the
+correction changes steeply across a root seven millimetres wide, and the
+labioscrotal cap's skin, which the crease itself turns (51 → 61 on f-slim).
+
 ## Scalp hair (milestone 4)
 
 **Use cases.** A creator offers a hair style and a colour beside skin and eyes,

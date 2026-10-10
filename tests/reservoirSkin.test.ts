@@ -20,6 +20,7 @@ import {
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { fromHalf, toHalf } from "../src/rig/half.ts";
 import { FOLD_ROW_TEXELS, type SurfaceFold } from "../src/rig/hipFold.ts";
+import { skinNormals } from "../src/rig/pose.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
@@ -207,9 +208,12 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     expect(out.slot[1]).toBe(1);
     expect(out.slot[4]).toBe(-1);
     expect(Array.from(out.data.subarray(0, 3 * row))).toEqual(Array.from(data));
-    // The root's row: the loop's mean, and its side the mean of their sides.
+    // The root's row: the loop's mean displacement and its side the mean of their sides, and
+    // no change to the normal (each opening and key's second texel): an organ's normals turn
+    // with its root's weights, and the loop's changes are each to its own vertex's normal.
+    const normalChange = (i: number) => i % 8 >= 4;
     const root = Array.from({ length: row }, (_, i) =>
-      i === 3 ? 0.5 : (held(i) + held(row + i)) / 2,
+      i === 3 ? 0.5 : normalChange(i) ? 0 : (held(i) + held(row + i)) / 2,
     );
     // Pushed all the way, the ring copy has the root's row.
     const full = rowOf(2);
@@ -219,5 +223,46 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     const halfway = rowOf(3);
     for (let i = 0; i < row; i++)
       rounded(halfway[i] as number, i === 3 ? 0.5 : e * (root[i] as number));
+  });
+
+  it("gives an organ drawn all the way out its root's normals in a flexed hip, its faces facing them", () => {
+    // Seated, a hip turned ninety degrees: the groin skin round the sac's root turns over in
+    // the crease and the fold changes its normals by most of their length. Added to the sac,
+    // the mean of those changes turned 541 of its faces against their normals.
+    const seated = createRecipe({ macros: { age: 30, gender: 1, muscle: 1 } });
+    const body = posedSurface(model, seated, "seated");
+    const bare = skinNormals(
+      body.bones,
+      body.rotations,
+      body.restNormals,
+      body.skinIndex,
+      body.skinWeight,
+      new Float32Array(body.normals.length),
+    );
+    const topology = model.adultSurface();
+    if (!topology) throw new Error("no adult surface");
+    // A vertex on its root's weights alone has exactly them, as every such vertex of its
+    // reservoir does: the weight rows a hundred or more moved vertices share are roots'.
+    const skinned = { skinIndex: body.skinIndex, skinWeight: body.skinWeight };
+    const key = (v: number) =>
+      [...row(skinned, v)]
+        .sort((a, b) => a[0] - b[0])
+        .map(([b, w]) => `${b}:${w.toFixed(5)}`)
+        .join(" ");
+    const moved = new Map<string, number[]>();
+    for (let v = 0; v < body.vertexCount; v++) {
+      if (apart(row(topology, v), row(skinned, v)) < 1e-6) continue;
+      const k = key(v);
+      moved.set(k, [...(moved.get(k) ?? []), v]);
+    }
+    const onRoots = [...moved.values()].filter((vs) => vs.length >= 100).flat();
+    expect(onRoots.length).toBeGreaterThan(100);
+    for (const v of onRoots) {
+      const dot = [0, 1, 2].reduce(
+        (s, k) => s + (body.normals[v * 3 + k] as number) * (bare[v * 3 + k] as number),
+        0,
+      );
+      expect(dot, `render vertex ${v}`).toBeGreaterThan(1 - 1e-3);
+    }
   });
 });

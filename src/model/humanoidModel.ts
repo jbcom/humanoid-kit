@@ -1948,20 +1948,22 @@ export class HumanoidModel {
     const mesh = adult ? adult.part.mesh : this.body.mesh;
     // The drawn surface draws the solved shape: the stencil's mix of the fold, and what skinning the surface's
     // own vertices lacks of the solved control surface subdivided (`solvedSurfaceFold`).
+    const displacement =
+      adult && detail.length ? this.detailDisplacement(detail, control) : undefined;
+    const pushed = adult && displacement ? new Float32Array(mesh.renderToSurface.length) : null;
+    if (adult && displacement && pushed)
+      this.evaluatePart(adult.part, control, displacement, pushed);
+    const skin = adult && pushed ? evaluatedSkin(adult.topology, adult.skinning, pushed) : null;
     const onSurface = solvedSurfaceFold(
       surfaceFold(fold, mesh.stencil, mesh.renderToSurface),
       fold,
-      mesh,
+      skin ? { ...mesh, ...skin } : mesh,
       restBones(this.assets, control),
       control,
       this.assets,
     );
     // An organ the detail draws out of a reservoir moves with where it is rooted, its fold as its weights (`evaluatedFold`).
-    const displacement =
-      adult && detail.length ? this.detailDisplacement(detail, control) : undefined;
-    if (!adult || !displacement) return { surface: adult ? "adult" : "base", fold: onSurface };
-    const pushed = new Float32Array(mesh.renderToSurface.length);
-    this.evaluatePart(adult.part, control, displacement, pushed);
+    if (!adult || !pushed) return { surface: adult ? "adult" : "base", fold: onSurface };
     return { surface: "adult", fold: evaluatedFold(onSurface, adult.skinning, pushed) };
   }
 
