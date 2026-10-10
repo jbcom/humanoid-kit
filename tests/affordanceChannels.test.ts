@@ -52,6 +52,30 @@ describe("the channels' dimensions", () => {
 });
 
 describe("a channel on a figure", { timeout: 300_000 }, () => {
+  it("is behind each of the head's openings, oriented as the openings are", () => {
+    const { channels } = figure({ age: 25 }, 1);
+    expect(Object.keys(channels).sort()).toEqual([
+      "ear-canal.L",
+      "ear-canal.R",
+      "mouth",
+      "nostril.L",
+      "nostril.R",
+    ]);
+    // An ear canal is taller than wide; a nostril runs front to back; the mouth is wide
+    // across the face and opens up and down.
+    for (const side of ["L", "R"] as const) {
+      const ear = channels[`ear-canal.${side}`];
+      const nose = channels[`nostril.${side}`];
+      if (!ear || !nose) throw new Error(side);
+      expect(Math.abs(ear.up[1]), `ear ${side}`).toBeGreaterThan(0.8);
+      expect(Math.abs(nose.up[2]), `nostril ${side}`).toBeGreaterThan(Math.abs(nose.up[0]));
+    }
+    const mouth = channels.mouth;
+    if (!mouth) throw new Error("no mouth");
+    expect(Math.abs(mouth.across[0])).toBeGreaterThan(0.9);
+    expect(Math.abs(mouth.up[1])).toBeGreaterThan(0.8);
+  });
+
   it("runs into the head from each opening", () => {
     const { channels, marks } = figure({ age: 25 }, 1);
     // The head's centre: midway between the ear canals.
@@ -72,11 +96,16 @@ describe("a channel on a figure", { timeout: 300_000 }, () => {
         placeIn(c, along(c.origin, c.inward, c.depth + 0.002)).inside,
         `${id} past the end`,
       ).toBe(false);
-      const [half] = c.halfSize(0.002);
-      expect(
-        placeIn(c, along(along(c.origin, c.inward, 0.002), c.across, half * 1.1)).inside,
-        `${id} wall`,
-      ).toBe(false);
+      const [halfAcross, halfUp] = c.halfSize(0.002);
+      const at = along(c.origin, c.inward, 0.002);
+      expect(placeIn(c, along(at, c.across, halfAcross * 0.9)).inside, `${id} near the side`).toBe(
+        true,
+      );
+      expect(placeIn(c, along(at, c.across, halfAcross * 1.1)).inside, `${id} side wall`).toBe(
+        false,
+      );
+      expect(placeIn(c, along(at, c.up, halfUp * 0.9)).inside, `${id} near the top`).toBe(true);
+      expect(placeIn(c, along(at, c.up, halfUp * 1.1)).inside, `${id} top wall`).toBe(false);
       expect(placeIn(c, along(c.origin, c.inward, 0.005)).depth, id).toBeCloseTo(0.005, 9);
     }
   });
@@ -85,10 +114,15 @@ describe("a channel on a figure", { timeout: 300_000 }, () => {
     const { channels } = figure({ age: 25 });
     const ear = channels["ear-canal.L"];
     if (!ear) throw new Error("no ear canal");
+    // To a tenth of a millimetre: the default adult's head is the span's own, to 0.1%.
     const [a, u] = ear.halfSize(0);
-    expect(2 * a).toBeCloseTo(0.0061, 3);
-    expect(2 * u).toBeCloseTo(0.00775, 3);
-    expect(ear.depth).toBeCloseTo(0.024, 3);
+    expect(Math.abs(2 * a - 0.0061)).toBeLessThan(1e-4);
+    expect(Math.abs(2 * u - 0.00775)).toBeLessThan(1e-4);
+    expect(Math.abs(ear.depth - 0.024)).toBeLessThan(1e-4);
+    // The isthmus, a third of the way in: 6.8 high by 5.2 wide.
+    const [ia, iu] = ear.halfSize(ear.depth / 3);
+    expect(Math.abs(2 * ia - 0.0052)).toBeLessThan(1e-4);
+    expect(Math.abs(2 * iu - 0.0068)).toBeLessThan(1e-4);
   });
 
   it("holds nothing in a closed mouth, and opens as wide as the figure's mouth", () => {

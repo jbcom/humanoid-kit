@@ -5,8 +5,10 @@
  * whether a point has passed the rim and is to be hidden (what a figure eats
  * dissolves past its lips).
  *
- * A channel runs straight in along its rim's inward normal. Its cross-section is
- * an ellipse: `across` along the rim frame's bitangent, `up` along its tangent.
+ * A channel runs straight in along `inward`: its rim's inward normal, turned
+ * toward the head's centre by its `towardHead` (the nostril's). Its
+ * cross-section is an ellipse: `across` along the rim frame's bitangent, `up`
+ * along its tangent, each made square to the path.
  * Every size is an adult's, scaled to the figure by the width of its head (its
  * ear canals' span over the default adult's), so a child's are a child's. The
  * mouth's width is the figure's own (between its corners) and its height is
@@ -22,10 +24,10 @@ export interface ChannelSpec {
   /** Its size at the rim, metres across (the rim's bitangent) and up (its tangent), an adult's. */
   rim: { across: number; up: number };
   /**
-   * Its size along its depth, as a share of the rim's: `[share of depth, factor]`
-   * pairs from 0 to 1, between which the size is interpolated.
+   * Its size along its depth, as a share of the rim's: `[share of depth, across
+   * factor, up factor]` from 0 to 1, between which the size is interpolated.
    */
-  profile: readonly (readonly [number, number])[];
+  profile: readonly (readonly [number, number, number])[];
   /**
    * How far its straight path turns from the rim's inward normal toward the
    * head's centre, 0 to 1: a channel that bends inside the head (the nostril's
@@ -36,15 +38,15 @@ export interface ChannelSpec {
 
 /** The channels' adult dimensions (docs/research/AFFORDANCE-CHANNELS.md: measured unless marked CHOICE there). */
 export const CHANNELS: Readonly<Record<ChannelId, ChannelSpec>> = {
-  // The ear canal: entry 7.75 by 6.1 mm, isthmus 6.8 by 5.2 a third of the way in (CHOICE
-  // of depth), 24 mm deep (cartilage 8 + bone 16).
+  // The ear canal: entry 7.75 high by 6.1 mm wide, isthmus 6.8 by 5.2 a third of the way in
+  // (CHOICE of depth) and so to its end, 24 mm deep (cartilage 8 + bone 16).
   auditory: {
     depth: 0.024,
     rim: { across: 0.0061, up: 0.00775 },
     profile: [
-      [0, 1],
-      [1 / 3, 0.86],
-      [1, 0.86],
+      [0, 1, 1],
+      [1 / 3, 5.2 / 6.1, 6.8 / 7.75],
+      [1, 5.2 / 6.1, 6.8 / 7.75],
     ],
     towardHead: 0,
   },
@@ -55,8 +57,8 @@ export const CHANNELS: Readonly<Record<ChannelId, ChannelSpec>> = {
     depth: 0.015,
     rim: { across: 0.0105, up: 0.015 },
     profile: [
-      [0, 1],
-      [1, 1],
+      [0, 1, 1],
+      [1, 1, 1],
     ],
     towardHead: 0.5,
   },
@@ -67,9 +69,9 @@ export const CHANNELS: Readonly<Record<ChannelId, ChannelSpec>> = {
     depth: 0.09,
     rim: { across: 0, up: 0.045 },
     profile: [
-      [0, 1],
-      [0.5, 1],
-      [1, 0.6],
+      [0, 1, 1],
+      [0.5, 1, 1],
+      [1, 0.6, 0.6],
     ],
     towardHead: 0,
   },
@@ -103,14 +105,18 @@ export interface ChannelPlace {
 
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
-/** The profile's factor at a share of the depth. */
-function factorAt(profile: ChannelSpec["profile"], share: number): number {
+/** The profile's factors (across, up) at a share of the depth. */
+function factorsAt(profile: ChannelSpec["profile"], share: number): [number, number] {
   for (let i = 1; i < profile.length; i++) {
-    const [s0, f0] = profile[i - 1] as readonly [number, number];
-    const [s1, f1] = profile[i] as readonly [number, number];
-    if (share <= s1) return f0 + ((f1 - f0) * (share - s0)) / (s1 - s0 || 1);
+    const [s0, a0, u0] = profile[i - 1] as readonly [number, number, number];
+    const [s1, a1, u1] = profile[i] as readonly [number, number, number];
+    if (share <= s1) {
+      const t = (share - s0) / (s1 - s0 || 1);
+      return [a0 + (a1 - a0) * t, u0 + (u1 - u0) * t];
+    }
   }
-  return (profile[profile.length - 1] as readonly [number, number])[1];
+  const [, a, u] = profile[profile.length - 1] as readonly [number, number, number];
+  return [a, u];
 }
 
 const unit = (a: Vec3): Vec3 => {
@@ -169,8 +175,8 @@ export function channelOf(
     depth,
     halfSize(d) {
       if (d < 0 || d > depth) return [0, 0];
-      const f = factorAt(spec.profile, d / depth);
-      return [(sizeAcross / 2) * f, (sizeUp / 2) * f];
+      const [fa, fu] = factorsAt(spec.profile, d / depth);
+      return [(sizeAcross / 2) * fa, (sizeUp / 2) * fu];
     },
   };
 }
