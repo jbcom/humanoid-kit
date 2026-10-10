@@ -130,6 +130,15 @@ const glslFloat = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
 /** Name of the per-vertex attribute holding metres of skin per UV unit. */
 export const UV_SCALE_ATTRIBUTE = "hkUvScale";
 
+/**
+ * How squarely the view must meet the skin's shading normal for the detail
+ * relief to tilt it (`hkPerturbNormal`), as the cosine between them: all of the
+ * tilt from `to`, none by `from`. CHOICE: 0.05 to 0.2 (87° to 78°): skin seen
+ * that nearly edge-on shows its outline, not its relief, and the footprint the
+ * tilt is measured in grows without bound there.
+ */
+export const RELIEF_GRAZE = { from: 0.05, to: 0.2 } as const;
+
 /** How many directions strand layers quantise the hair flow to (over a half turn). */
 export const STRAND_DIRECTIONS = 8;
 
@@ -539,6 +548,24 @@ vec3 hkApplyLayers( vec3 c, vec2 uv ) {
 	}
 	return c;
 }
+// The pixel's footprint on the smooth surface the shading normal describes: each
+// screen derivative of the position carried along the view ray onto the plane
+// square to the normal, not taken on the faces. Skin crushed into a tight crease
+// has thin faces turned every way about its normals, and a footprint measured on
+// them swung from face to face. Set once per pixel (hkSurfaceFootprint), before
+// the relief is read.
+vec3 hkFootX = vec3( 0.0 );
+vec3 hkFootY = vec3( 0.0 );
+float hkFacing = 1.0;
+void hkSurfaceFootprint( vec3 n, vec3 position ) {
+	vec3 toEye = isOrthographic ? vec3( 0.0, 0.0, 1.0 ) : normalize( - position );
+	hkFacing = dot( toEye, n );
+	float along = abs( hkFacing ) > 1e-4 ? 1.0 / hkFacing : 0.0;
+	vec3 sx = dFdx( position );
+	vec3 sy = dFdy( position );
+	hkFootX = sx - dot( sx, n ) * along * toEye;
+	hkFootY = sy - dot( sy, n ) * along * toEye;
+}
 // The detail layers' relief at this pixel, metres. Relief finer than a pixel
 // fades out rather than aliasing.
 float hkDetailHeight( vec2 uv ) {
@@ -609,15 +636,22 @@ float hkDetailHeight( vec2 uv ) {
 	return H + hkStrandHeight;
 }
 // Tilts the normal by the gradient of a height field (metres) across the
-// surface (Mikkelsen's surface gradient, unnormalised so relief keeps its size).
-vec3 hkPerturbNormal( vec3 n, float h, vec3 position, float faceDirection ) {
-	vec3 sx = dFdx( position );
-	vec3 sy = dFdy( position );
+// surface (Mikkelsen's surface gradient, unnormalised so relief keeps its size),
+// measured in the pixel's footprint on the smooth surface (hkSurfaceFootprint).
+// Where the view grazes that surface the footprint grows without bound, and the
+// tilt fades to none (RELIEF_GRAZE), as relief seen edge-on is not seen.
+vec3 hkPerturbNormal( vec3 n, float h, float faceDirection ) {
+	float keep = smoothstep( ${glslFloat(RELIEF_GRAZE.from)}, ${glslFloat(RELIEF_GRAZE.to)}, abs( hkFacing ) );
+	vec3 sx = hkFootX;
+	vec3 sy = hkFootY;
 	vec3 r1 = cross( sy, n );
 	vec3 r2 = cross( n, sx );
 	float det = dot( sx, r1 ) * faceDirection;
 	vec3 grad = sign( det ) * ( dFdx( h ) * r1 + dFdy( h ) * r2 );
-	return normalize( abs( det ) * n - grad );
+	// The tilt is the gradient over the footprint; no relief leaves the normal exactly as it was.
+	float share = abs( det ) > 0.0 ? keep / abs( det ) : 0.0;
+	vec3 tilt = share * grad;
+	return dot( tilt, tilt ) > 0.0 ? normalize( n - tilt ) : n;
 }`;
 
 /**
@@ -1160,7 +1194,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       // Detail layers: relief on top of the pore map.
       .replace(
         "#include <normal_fragment_maps>",
-        `#include <normal_fragment_maps>\n\tnormal = hkPerturbNormal( normal, hkDetailHeight( vHkUv ) + ${glslFloat(SCAR_RAISE)} * hkMarkSurface.y, - vViewPosition, faceDirection );`,
+        `#include <normal_fragment_maps>\n\thkSurfaceFootprint( normal, - vViewPosition );\n\tnormal = hkPerturbNormal( normal, hkDetailHeight( vHkUv ) + ${glslFloat(SCAR_RAISE)} * hkMarkSurface.y, faceDirection );`,
       )
       .replace(
         "#include <lights_physical_fragment>",
