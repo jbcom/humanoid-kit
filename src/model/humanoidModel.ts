@@ -83,6 +83,7 @@ import {
   evaluatedSkin,
   type ReservoirSkinning,
   reservoirSkinningOf,
+  rootShares,
   type SkinWeights,
   skinOfEvaluation,
 } from "./reservoirSkin.ts";
@@ -1530,7 +1531,14 @@ export class HumanoidModel {
       displacement,
       pushed,
     );
-    const skin = adult && pushed ? evaluatedSkin(adult.topology, adult.skinning, pushed) : null;
+    const skin =
+      adult && pushed
+        ? evaluatedSkin(
+            adult.topology,
+            adult.skinning,
+            rootShares(adult.skinning, pushed, body.positions),
+          )
+        : null;
     const attachments = this.attached.map((a) =>
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
     );
@@ -1950,10 +1958,14 @@ export class HumanoidModel {
     // own vertices lacks of the solved control surface subdivided (`solvedSurfaceFold`).
     const displacement =
       adult && detail.length ? this.detailDisplacement(detail, control) : undefined;
-    const pushed = adult && displacement ? new Float32Array(mesh.renderToSurface.length) : null;
-    if (adult && displacement && pushed)
-      this.evaluatePart(adult.part, control, displacement, pushed);
-    const skin = adult && pushed ? evaluatedSkin(adult.topology, adult.skinning, pushed) : null;
+    // Each reservoir vertex's share of its root, by where it sits on the organ the detail draws (`rootShares`).
+    let shares: Float32Array | null = null;
+    if (adult && displacement) {
+      const pushed = new Float32Array(mesh.renderToSurface.length);
+      const drawn = this.evaluatePart(adult.part, control, displacement, pushed);
+      shares = rootShares(adult.skinning, pushed, drawn.positions);
+    }
+    const skin = adult ? evaluatedSkin(adult.topology, adult.skinning, shares) : null;
     const onSurface = solvedSurfaceFold(
       surfaceFold(fold, mesh.stencil, mesh.renderToSurface),
       fold,
@@ -1963,8 +1975,8 @@ export class HumanoidModel {
       this.assets,
     );
     // An organ the detail draws out of a reservoir moves with where it is rooted, its fold as its weights (`evaluatedFold`).
-    if (!adult || !pushed) return { surface: adult ? "adult" : "base", fold: onSurface };
-    return { surface: "adult", fold: evaluatedFold(onSurface, adult.skinning, pushed) };
+    if (!adult) return { surface: "base", fold: onSurface };
+    return { surface: "adult", fold: evaluatedFold(onSurface, adult.skinning, shares) };
   }
 
   private adultBodySurface() {

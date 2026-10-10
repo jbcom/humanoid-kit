@@ -1567,12 +1567,47 @@ corrected each row by what the surface lacks of the solved control surface as it
 ones: the correction is now computed with the weights the vertex is drawn by
 (`evaluatedSkin`, found before the fold). Against the head without either, the
 reservoirs' inverted triangles fall on every adult row (m-muscular seated 895 →
-309, m-heavy seated 717 → 315, f-heavy seated 179 → 151). Two rows stay above
+309, m-heavy seated 717 → 315, f-heavy seated 179 → 151). Two rows stayed above
 their figures before the crease: f-slim seated (96 → 118) and f-heavy seated (141
-→ 151). Both are the clitoral reservoir's first millimetres, where a vertex takes
-part of its own column's crease correction and part of its root's, and the
-correction changes steeply across a root seven millimetres wide, and the
-labioscrotal cap's skin, which the crease itself turns (51 → 61 on f-slim).
+→ 151), on the clitoral reservoir's first millimetres.
+
+**Where a vertex sits on the organ (2026-10-10).** The share of the root was keyed to
+how far the detail pushed a vertex, 1 to 5 mm. That is how far it moved, not where it
+sits: a vulva gathers its whole 30 mm disc in to an organ 13.5 mm across, so its
+vertices move sideways more than they rise, and its shallow base (2.8 mm proud of the
+loop's plane 8 mm along the surface) spread the 4 mm band over several millimetres of
+skin, sorting close neighbours into very different shares for the crease to shear
+apart. The share is now keyed to the vertex's distance from its loop along the drawn
+surface (`rootShares`: Dijkstra over the reservoir's welded vertices, from its loop),
+over a band a share of the organ's base radius (the loop's mean distance from its
+centre). One band does not fit both organs: the vulva wants it wide and the shaft and
+sac narrow (all inverted triangles touching a reservoir, the sweep at fixed shares of
+the base radius):
+
+| Band | f-slim seated | f-heavy seated | m-muscular seated | m-muscular squat | m-heavy seated | m-heavy squat |
+| --- | --- | --- | --- | --- | --- | --- |
+| push 1–5 mm | 118 | 151 | 309 | 276 | 315 | 264 |
+| 0.15 | 154 | 235 | 245 | 219 | 295 | 219 |
+| 0.5 | 95 | 134 | 336 | 377 | 355 | 339 |
+| 1.0 | 80 | 65 | 466 | 422 | 578 | 705 |
+
+So the band follows the organ's shape, with no switch of anatomy: how steeply it rises
+from its loop (`rise`, its height above the loop's plane over the surface distance,
+6 to 10 mm along: a vulva 0.35, a small phallus 0.43, an intermediate form and a sac
+about 0.6, a shaft 0.85) maps smoothly from `ROOT_BAND.wide` (0.7) at `RISE.shallow`
+(0.35) to `ROOT_BAND.narrow` (0.2) at `RISE.steep` (0.5). Fitted on the smoke tier's
+adult bodies: the steep end at 0.85 left the sac (0.6) on a middling band and the
+men's rows above the push-keyed ones (m-muscular seated 328); at 0.5 the sac stands
+with the shaft. A narrow end of 0.15 or 0.2 keeps every man's row under the push
+keyed one, 0.25 and wider put m-heavy seated over it (350); 0.2 gives the men's
+seated rows less penetration than 0.15. The wide end is flat from 0.6 to 0.75 (f-slim
+seated 81, 73, 78). Against the push-keyed band, the reservoirs' inverted triangles:
+f-slim seated 118 → 73, f-heavy seated 151 → 89, f-elder seated 101 → 51,
+m-muscular seated 309 → 244, m-muscular squat 276 → 226, m-heavy seated 315 → 298,
+m-heavy squat 264 → 246; outside the hip and knee, m-muscular seated inverts 62
+triangles. Penetration counted on every vertex moves within a square centimetre on
+every row (m-heavy seated 51.43 → 52.38 cm², m-muscular seated 43.64 → 44.44); on
+the worklist's stride of four, m-heavy seated reads 48.21 → 49.58.
 
 ## Scalp hair (milestone 4)
 

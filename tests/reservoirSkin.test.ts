@@ -1,18 +1,21 @@
 /**
  * Reservoir skinning (src/model/reservoirSkin.ts): a reservoir's vertices take
- * their root's skin weights as far as the detail has pushed them out of the skin;
- * a surface nothing pushes keeps its topology's weights, the very arrays.
+ * their root's skin weights by where they sit on the organ the detail draws, how
+ * far along its surface from the loop, over a band its rise sets; a surface nothing
+ * pushes keeps its topology's weights, the very arrays.
  */
 import { describe, expect, it } from "vitest";
 import { posedSurface } from "../src/foundation/posed.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import {
+  bandOf,
   evaluatedFold,
   evaluatedSkin,
-  PUSH_STARTS,
-  PUSHED_FULLY,
   type ReservoirSkinning,
-  rootShare,
+  RISE,
+  ROOT_BAND,
+  reservoirGraph,
+  rootShares,
   rootSkin,
   type SkinWeights,
   skinOfEvaluation,
@@ -77,9 +80,8 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     expect(Array.from(posed.skinIndex)).toEqual(Array.from(skin.skinIndex));
     let resting = 0;
     let changed = 0;
-    let fullCount = 0;
-    /** The weights of every vertex pushed its full distance, by row: one row per reservoir drawn. */
-    const full = new Set<string>();
+    /** How many pushed vertices have each weight row. */
+    const full = new Map<string, number>();
     for (let v = 0; v < topology.vertexCount; v++) {
       const pushed = Math.hypot(
         (ev.positions[v * 3] as number) - (rest[v * 3] as number),
@@ -88,7 +90,7 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
       );
       const before = row(topology, v);
       const now = row(skin, v);
-      if (pushed <= PUSH_STARTS * 0.99) {
+      if (pushed === 0) {
         resting++;
         for (let k = 0; k < 4; k++) {
           expect(skin.skinIndex[v * 4 + k]).toBe(topology.skinIndex[v * 4 + k]);
@@ -99,38 +101,97 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
       if (apart(before, now) > 1e-6) changed++;
       // Whatever it is blended to, a vertex's weights still sum to one.
       expect([...now.values()].reduce((s, w) => s + w, 0)).toBeCloseTo(1, 5);
-      if (pushed >= PUSHED_FULLY * 1.01) {
-        fullCount++;
-        full.add(
-          [...now]
-            .sort((a, b) => a[0] - b[0])
-            .map(([b, w]) => `${b}:${w.toFixed(5)}`)
-            .join(","),
-        );
-      }
+      const key = [...now]
+        .sort((a, b) => a[0] - b[0])
+        .map(([b, w]) => `${b}:${w.toFixed(5)}`)
+        .join(",");
+      full.set(key, (full.get(key) ?? 0) + 1);
     }
     expect(resting).toBeGreaterThan(topology.vertexCount / 2);
     expect(changed, "pushed vertices take their root's weights").toBeGreaterThan(1000);
-    // Pushed all the way, every vertex of a reservoir has its root's weights, the same ones:
-    // the shaft's and the sac's, two rows for the whole drawn organ.
-    expect(fullCount, "vertices pushed the full distance").toBeGreaterThan(1000);
-    expect(full.size).toBeLessThanOrEqual(2);
+    // Past its band, every vertex of an organ has its root's weights, the same ones: the
+    // shaft's and the sac's, two rows carrying most of the drawn organ.
+    const rows = [...full.values()].sort((a, b) => b - a);
+    expect((rows[0] ?? 0) + (rows[1] ?? 0), "vertices past the band").toBeGreaterThan(1000);
   });
 
-  it("blends continuously in the push-out distance, from none at its start to all at the full distance", () => {
-    expect(rootShare(0)).toBe(0);
-    expect(rootShare(PUSH_STARTS)).toBe(0);
-    expect(rootShare(PUSHED_FULLY)).toBe(1);
-    expect(rootShare(1)).toBe(1);
-    let previous = 0;
-    let jump = 0;
-    for (let d = 0; d <= 2 * PUSHED_FULLY; d += PUSHED_FULLY / 2000) {
-      const s = rootShare(d);
-      expect(s).toBeGreaterThanOrEqual(previous);
-      jump = Math.max(jump, s - previous);
-      previous = s;
+  it("goes from the skin's weights to the root's over the band along the organ's surface, wider for a shallow organ", () => {
+    // A cone of rings round a loop: ring 0 is the loop (skin), rings 1..R the reservoir,
+    // each 1 mm further along the surface and `slope` mm higher per mm. Pushed by the height.
+    const sides = 24;
+    const rings = 40;
+    const radius = 0.015;
+    const cone = (slope: number) => {
+      const positions: number[] = [];
+      for (let r = 0; r <= rings; r++) {
+        const along = r * 0.001;
+        const run = along * Math.sqrt(1 - Math.min(0.99, slope) ** 2);
+        const rho = Math.max(0.0005, radius - run);
+        for (let k = 0; k < sides; k++) {
+          const a = (2 * Math.PI * k) / sides;
+          positions.push(rho * Math.cos(a), rho * Math.sin(a), along * slope);
+        }
+      }
+      const index: number[] = [];
+      for (let r = 0; r < rings; r++)
+        for (let k = 0; k < sides; k++) {
+          const a = r * sides + k;
+          const b = r * sides + ((k + 1) % sides);
+          index.push(a, b, a + sides, b, b + sides, a + sides);
+        }
+      const count = (rings + 1) * sides;
+      const bySurface = Int16Array.from({ length: count }, (_, v) => (v < sides ? -1 : 0));
+      const loopOf = Int16Array.from({ length: count }, (_, v) => (v < sides ? 0 : -1));
+      const renderToSurface = Uint32Array.from({ length: count }, (_, v) => v);
+      const skinning: ReservoirSkinning = {
+        owner: bySurface,
+        roots: [{ index: new Uint16Array(4), weight: Float32Array.from([1, 0, 0, 0]) }],
+        loops: [Uint32Array.from({ length: sides }, (_, k) => k)],
+        graph: reservoirGraph(index, renderToSurface, bySurface, loopOf),
+      };
+      const pushed = Float32Array.from({ length: count }, (_, v) =>
+        v < sides ? 0 : Math.floor(v / sides) * 0.001 * slope,
+      );
+      const shares = rootShares(skinning, pushed, Float32Array.from(positions));
+      if (!shares) return { byRing: [], whole: -1 };
+      // The share by ring, and the first ring that takes the whole root.
+      const byRing = Array.from({ length: rings + 1 }, (_, r) => shares[r * sides] as number);
+      return { byRing, whole: byRing.findIndex((s) => s >= 1) };
+    };
+    const steep = cone(0.9);
+    const shallow = cone(0.3);
+    for (const { byRing } of [steep, shallow]) {
+      expect(byRing[0], "the loop is skin").toBe(0);
+      for (let r = 1; r <= rings; r++)
+        expect(byRing[r] as number).toBeGreaterThanOrEqual(byRing[r - 1] as number);
     }
-    expect(jump).toBeLessThan(0.002);
+    // Over the band, `ROOT_BAND` of the base radius: narrow for the steep organ, wide for the shallow.
+    // (to a ring: they are a millimetre apart).
+    expect(steep.whole).toBeGreaterThan(0);
+    expect(Math.abs(steep.whole * 0.001 - ROOT_BAND.narrow * radius)).toBeLessThanOrEqual(0.0015);
+    expect(Math.abs(shallow.whole * 0.001 - ROOT_BAND.wide * radius)).toBeLessThanOrEqual(0.0015);
+    // A reservoir nothing pushes takes nothing: its topology's weights, exactly.
+    expect(cone(0).whole).toBe(-1);
+  });
+
+  it("widens the band continuously as an organ rises less steeply, between the narrow and the wide", () => {
+    expect(bandOf(0)).toBe(ROOT_BAND.wide);
+    expect(bandOf(RISE.shallow)).toBe(ROOT_BAND.wide);
+    expect(bandOf(RISE.steep)).toBe(ROOT_BAND.narrow);
+    expect(bandOf(2)).toBe(ROOT_BAND.narrow);
+    let previous = bandOf(0);
+    let jump = 0;
+    for (let r = 0; r <= 1; r += 0.0005) {
+      const b = bandOf(r);
+      expect(b).toBeLessThanOrEqual(previous);
+      jump = Math.max(jump, previous - b);
+      previous = b;
+    }
+    expect(jump).toBeLessThan(0.005);
+    // An intermediate organ gets an intermediate band.
+    const mid = bandOf((RISE.shallow + RISE.steep) / 2);
+    expect(mid).toBeGreaterThan(ROOT_BAND.narrow);
+    expect(mid).toBeLessThan(ROOT_BAND.wide);
   });
 
   it("stays continuous where a root's bone overtakes one of the vertex's own: no weight jumps", () => {
@@ -153,24 +214,25 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
       owner: Int16Array.from([0]),
       roots,
       loops: [Uint32Array.of(0)],
+      graph: reservoirGraph([], [0], Int16Array.of(0), Int16Array.of(-1)),
     };
-    const at = (d: number) => {
-      const s = evaluatedSkin(skin, skinning, Float32Array.from([d])) ?? skin;
+    const at = (e: number) => {
+      const s = evaluatedSkin(skin, skinning, Float32Array.from([e])) ?? skin;
       return row(s, 0);
     };
     let worst = 0;
-    const step = (PUSHED_FULLY - PUSH_STARTS) / 4000;
-    for (let d = PUSH_STARTS; d < PUSHED_FULLY; d += step)
-      worst = Math.max(worst, apart(at(d), at(d + step)));
+    const step = 1 / 4000;
+    for (let e = 0; e < 1; e += step) worst = Math.max(worst, apart(at(e), at(e + step)));
     expect(worst).toBeLessThan(0.01);
-    expect([...at(PUSHED_FULLY)].sort((a, b) => a[0] - b[0])).toEqual([
+    expect([...at(1)].sort((a, b) => a[0] - b[0])).toEqual([
       [4, expect.closeTo(0.4, 6)],
       [5, expect.closeTo(0.3, 6)],
       [6, expect.closeTo(0.2, 6)],
       [7, expect.closeTo(0.1, 6)],
     ]);
-    // Not pushed far enough to take any: the topology's arrays themselves.
-    expect(evaluatedSkin(skin, skinning, Float32Array.from([PUSH_STARTS / 2]))).toBeNull();
+    // No share at all: the topology's arrays themselves.
+    expect(evaluatedSkin(skin, skinning, Float32Array.from([0]))).toBeNull();
+    expect(evaluatedSkin(skin, skinning, null)).toBeNull();
   });
 
   it("moves a pushed reservoir vertex's hip fold to its root's as its weights, and leaves the rest as they were", () => {
@@ -191,11 +253,18 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
       owner: Int16Array.from([-1, -1, 0, 0, -1]),
       roots: [{ index: new Uint16Array(4), weight: Float32Array.from([1, 0, 0, 0]) }],
       loops: [Uint32Array.of(0, 1)],
+      graph: reservoirGraph(
+        [],
+        [0, 1, 2, 3, 4],
+        Int16Array.from([-1, -1, 0, 0, -1]),
+        Int16Array.from([0, 0, -1, -1, -1]),
+      ),
     };
-    // Nothing pushed far enough: the fold itself.
-    expect(evaluatedFold(fold, skinning, new Float32Array(5).fill(PUSH_STARTS / 2))).toBe(fold);
-    const half = PUSH_STARTS + (PUSHED_FULLY - PUSH_STARTS) / 2;
-    const out = evaluatedFold(fold, skinning, Float32Array.from([0, 0, PUSHED_FULLY, half, 0]));
+    // No share: the fold itself.
+    expect(evaluatedFold(fold, skinning, new Float32Array(5))).toBe(fold);
+    expect(evaluatedFold(fold, skinning, null)).toBe(fold);
+    const e = 0.5;
+    const out = evaluatedFold(fold, skinning, Float32Array.from([0, 0, 1, e, 0]));
     const rowOf = (v: number) => {
       const r = out.slot[v] as number;
       return Array.from(out.data.subarray(r * row, (r + 1) * row), fromHalf);
@@ -215,11 +284,10 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     const root = Array.from({ length: row }, (_, i) =>
       i === 3 ? 0.5 : normalChange(i) ? 0 : (held(i) + held(row + i)) / 2,
     );
-    // Pushed all the way, the ring copy has the root's row.
+    // Taking the whole root, the ring copy has the root's row.
     const full = rowOf(2);
     for (let i = 0; i < row; i++) rounded(full[i] as number, root[i] as number);
-    // Halfway, the cap vertex the fold left has half the root's, and the root's side.
-    const e = rootShare(half);
+    // Taking half, the cap vertex the fold left has half the root's, and the root's side.
     const halfway = rowOf(3);
     for (let i = 0; i < row; i++)
       rounded(halfway[i] as number, i === 3 ? 0.5 : e * (root[i] as number));
