@@ -83,6 +83,7 @@ import {
   evaluatedSkin,
   type ReservoirSkinning,
   reservoirSkinningOf,
+  rootShares,
   type SkinWeights,
   skinOfEvaluation,
 } from "./reservoirSkin.ts";
@@ -296,6 +297,8 @@ export interface AdultDetailLattice {
   regionIds: Uint32Array;
   /** The region's polygons, in the refinement mesh's vertex ids, for placing reservoirs. */
   polygons: LatticePolygons;
+  /** UV entries of the refinement mesh (`LatticePolygons.uvs` index them). */
+  uvCount: number;
   /** Every refinement-mesh vertex's position, xyz, by its id. */
   latticePositions: Float32Array;
   /** The reservoirs: where each one's rings begin among the detail's vertices, and its loop and ring counts. */
@@ -1528,7 +1531,14 @@ export class HumanoidModel {
       displacement,
       pushed,
     );
-    const skin = adult && pushed ? evaluatedSkin(adult.topology, adult.skinning, pushed) : null;
+    const skin =
+      adult && pushed
+        ? evaluatedSkin(
+            adult.topology,
+            adult.skinning,
+            rootShares(adult.skinning, pushed, body.positions),
+          )
+        : null;
     const attachments = this.attached.map((a) =>
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
     );
@@ -1793,6 +1803,7 @@ export class HumanoidModel {
       normals,
       regionIds: lattice.region,
       polygons: lattice.polygons,
+      uvCount: lattice.uvCount,
       latticePositions: all,
       reservoirs,
     };
@@ -1945,21 +1956,27 @@ export class HumanoidModel {
     const mesh = adult ? adult.part.mesh : this.body.mesh;
     // The drawn surface draws the solved shape: the stencil's mix of the fold, and what skinning the surface's
     // own vertices lacks of the solved control surface subdivided (`solvedSurfaceFold`).
+    const displacement =
+      adult && detail.length ? this.detailDisplacement(detail, control) : undefined;
+    // Each reservoir vertex's share of its root, by where it sits on the organ the detail draws (`rootShares`).
+    let shares: Float32Array | null = null;
+    if (adult && displacement) {
+      const pushed = new Float32Array(mesh.renderToSurface.length);
+      const drawn = this.evaluatePart(adult.part, control, displacement, pushed);
+      shares = rootShares(adult.skinning, pushed, drawn.positions);
+    }
+    const skin = adult ? evaluatedSkin(adult.topology, adult.skinning, shares) : null;
     const onSurface = solvedSurfaceFold(
       surfaceFold(fold, mesh.stencil, mesh.renderToSurface),
       fold,
-      mesh,
+      skin ? { ...mesh, ...skin } : mesh,
       restBones(this.assets, control),
       control,
       this.assets,
     );
     // An organ the detail draws out of a reservoir moves with where it is rooted, its fold as its weights (`evaluatedFold`).
-    const displacement =
-      adult && detail.length ? this.detailDisplacement(detail, control) : undefined;
-    if (!adult || !displacement) return { surface: adult ? "adult" : "base", fold: onSurface };
-    const pushed = new Float32Array(mesh.renderToSurface.length);
-    this.evaluatePart(adult.part, control, displacement, pushed);
-    return { surface: "adult", fold: evaluatedFold(onSurface, adult.skinning, pushed) };
+    if (!adult) return { surface: "base", fold: onSurface };
+    return { surface: "adult", fold: evaluatedFold(onSurface, adult.skinning, shares) };
   }
 
   private adultBodySurface() {

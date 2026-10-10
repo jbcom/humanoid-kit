@@ -95,6 +95,9 @@ function triangles(keep: (v: number) => boolean): [number, number, number][] {
   const I = topology.index;
   for (let t = 0; t + 2 < I.length; t += 3) {
     const tri: [number, number, number] = [I[t] as number, I[t + 1] as number, I[t + 2] as number];
+    // A three-sided polygon is drawn as a quad with a corner twice (`polygonsToQuads`), and
+    // its second triangle repeats a vertex: padding with no area, not surface.
+    if (tri[0] === tri[1] || tri[1] === tri[2] || tri[2] === tri[0]) continue;
     if (tri.every(keep)) out.push(tri);
   }
   return out;
