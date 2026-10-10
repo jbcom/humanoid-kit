@@ -14,6 +14,7 @@ import {
   type LandmarkFrame,
   type LandmarkId,
   landmarks,
+  landmarkVertices,
   SURFACE_LANDMARKS,
 } from "../src/foundation/landmarks.ts";
 import { REST_POSE, SMOKE_POSES } from "../src/foundation/permutations.ts";
@@ -43,8 +44,12 @@ describe("landmarks", { timeout: 300_000 }, () => {
     expect([...SURFACE_LANDMARKS, ...JOINT_LANDMARKS].sort()).toEqual([...LANDMARK_IDS].sort());
   });
 
-  it("gives each a finite position and an orthonormal frame whose normal is the skin's", () => {
-    for (const { name, frames } of rest)
+  it("gives each a finite position and an orthonormal frame, at rest and in every pose", () => {
+    const posed = SMOKE_POSES.map((pose) => ({
+      name: `f-heavy ${pose}`,
+      frames: landmarks(core, posedSurface(core, recipeOf(batteryBody("f-heavy")), pose)),
+    }));
+    for (const { name, frames } of [...rest, ...posed])
       for (const id of LANDMARK_IDS) {
         const f = frames[id] as LandmarkFrame;
         const label = `${name} ${id}`;
@@ -87,6 +92,24 @@ describe("landmarks", { timeout: 300_000 }, () => {
           body.normals[at * 3 + 2] as number,
         ];
         expect(dot(f.normal, n) / length(n), `${b.name} ${pose} ${id}`).toBeGreaterThan(0.999);
+      }
+    }
+  });
+
+  it("is its base vertex's own point of the surface: the subdivided vertex, within millimetres of the control vertex", () => {
+    const bases = landmarkVertices(core.assets);
+    for (const b of bodies) {
+      const body = posedSurface(core, recipeOf(b), REST_POSE);
+      const frames = landmarks(core, body);
+      for (const id of SURFACE_LANDMARKS) {
+        const v = bases[id];
+        const control: V = [
+          body.control[v * 3] as number,
+          body.control[v * 3 + 1] as number,
+          body.control[v * 3 + 2] as number,
+        ];
+        // Smoothing moves a vertex a few millimetres at most; a neighbour is a centimetre away.
+        expect(length(sub(frames[id].position, control)), `${b.name} ${id}`).toBeLessThan(0.004);
       }
     }
   });
@@ -147,6 +170,22 @@ describe("landmarks", { timeout: 300_000 }, () => {
       for (const id of ["nipple.L", "navel", "sternum-notch", "pubic-point"] as const)
         expect(frames[id].normal[2], `${name} ${id}`).toBeGreaterThan(0.5);
       expect(frames.crown.normal[1], name).toBeGreaterThan(0.8);
+      // A joint is framed by the limb that reaches it, its normal the figure's forward: the
+      // ankle by the shin (the foot runs forward from it), the wrist by the forearm.
+      for (const id of ["knee.L", "ankle.L"] as const)
+        expect(frames[id].normal[2], `${name} ${id}`).toBeGreaterThan(0.9);
+      // The forearm at rest leans a little forward, so its square to forward does too.
+      for (const id of ["elbow.L", "wrist.L"] as const)
+        expect(frames[id].normal[2], `${name} ${id}`).toBeGreaterThan(0.6);
+      expect(frames["ankle.L"].tangent[1], name).toBeLessThan(-0.9);
+      expect(frames["wrist.L"].tangent[0], name).toBeGreaterThan(0.3);
+      // The ear lobes are out at the sides of the head and behind the face.
+      for (const id of ["ear-lobe.L", "ear-lobe.R"] as const) {
+        expect(Math.abs(frames[id].position[0]), `${name} ${id}`).toBeGreaterThan(0.04);
+        expect(z(id), `${name} ${id}`).toBeLessThan(z("nose-tip") - 0.04);
+        expect(y(id), `${name} ${id}`).toBeLessThan(y("crown"));
+        expect(y(id), `${name} ${id}`).toBeGreaterThan(y("sternum-notch"));
+      }
     }
   });
 

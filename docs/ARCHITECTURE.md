@@ -2178,10 +2178,14 @@ position, the skin's outward normal and a tangent frame:
   (`HumanoidModel.baseRenderVertices`: the render vertex whose subdivision
   stencil weights it most, exact at every level and on either body surface), its
   normal the skinned normal there, its tangent the way to the neighbour that was
-  most nearly up the body at rest. The frame therefore bends and turns with the
-  skin rather than being recomputed from the pose.
-- *Joint landmarks* are joint centres: a bone's posed head, the tangent along
-  the limb, the normal the figure's forward turned by the bone.
+  most nearly up the figure's own body at rest (chosen per figure, never cached
+  from another). The frame therefore bends and turns with the skin rather than
+  being recomputed from the pose.
+- *Joint landmarks* are joint centres: a bone's posed head, framed by the limb
+  that reaches it (the tangent along the limb, away from the body; the normal
+  the figure's forward turned by the limb's bone, square to the limb at rest).
+  The wrist is framed by the forearm and the ankle by the shin, so neither
+  frame degenerates where the hand fans out or the foot runs forward.
 
 A test holds every landmark to an orthonormal frame on the drawn surface, left
 and right to mirror images, the body's order from the crown down, the limbs'
@@ -2190,7 +2194,17 @@ places away from the pubic point (invariant 7). Adult-only landmarks (the
 genital root) come from the adult pack, as its piercing sites do, so the core
 names none.
 
-The surface queries are recorded below as they are built.
+**The surface queries (built 2026-10-09).** `new BodySurface(posedBody)`
+(`src/foundation/surface.ts`) puts the posed skin's triangles in a
+bounding-volume hierarchy once and answers `closest(p, within)` (the point,
+the skin's normal blended from the skinned vertex normals, the triangle and
+the point's weights on it), `signedDistance(p)` (positive outside, by the
+side of that normal) and `frame(p)` (the normal, up along the skin or forward
+where the skin faces up or down, and their cross). The invariant suite's
+penetration measure builds its hierarchy here, so there is one. Tests hold a
+vertex to its own closest point, a point off the skin to its distance with
+the right sign in every smoke pose, the frame to the landmark's at a convex
+place, and a reach to finding nothing beyond it.
 
 ## Invariants
 

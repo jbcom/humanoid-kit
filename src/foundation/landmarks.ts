@@ -11,10 +11,12 @@
  * a place no target shapes, the body's own geometry at a joint. On a posed body
  * it is that vertex's own render vertex (`HumanoidModel.baseRenderVertices`),
  * its normal the skin's there, its tangent the way to the neighbour that was
- * most nearly up the body at rest, so the frame turns and bends with the skin.
+ * most nearly up the figure's own body at rest, so the frame turns and bends
+ * with the skin.
  *
  * A joint landmark is a joint centre: the posed head of its bone, its tangent
- * along the limb, its normal the figure's forward turned by the bone.
+ * along the limb that frames it, its normal the figure's forward turned by
+ * that limb's bone.
  */
 import { groupFaces, type HumanoidAssets } from "../format/assetFormat.ts";
 import type { HumanoidModel } from "../model/humanoidModel.ts";
@@ -27,9 +29,9 @@ export type Vec3 = readonly [number, number, number];
 /** A landmark on a posed body: where it is and the skin's frame there. */
 export interface LandmarkFrame {
   position: Vec3;
-  /** Outward from the skin (a joint's: the figure's forward, turned by its bone). */
+  /** Outward from the skin (a joint's: the figure's forward, turned by its limb's bone). */
   normal: Vec3;
-  /** Along the skin, up the body at rest (a joint's: along the limb, away from the body). */
+  /** Along the skin, up the body at rest (a joint's: along its limb, away from the body). */
   tangent: Vec3;
   /** normal × tangent. */
   bitangent: Vec3;
@@ -73,25 +75,31 @@ export type SurfaceLandmarkId = (typeof SURFACE_LANDMARKS)[number];
 export type JointLandmarkId = (typeof JOINT_LANDMARKS)[number];
 export type LandmarkId = (typeof LANDMARK_IDS)[number];
 
-/** Each joint landmark's bone, and the bone whose head the limb runs toward from it. */
-const JOINTS: Readonly<Record<JointLandmarkId, { bone: string; toward: string }>> = {
-  neck: { bone: "neck01", toward: "head" },
-  "shoulder.L": { bone: "upperarm01.L", toward: "lowerarm01.L" },
-  "shoulder.R": { bone: "upperarm01.R", toward: "lowerarm01.R" },
-  "elbow.L": { bone: "lowerarm01.L", toward: "wrist.L" },
-  "elbow.R": { bone: "lowerarm01.R", toward: "wrist.R" },
-  // The wrist's limb is the forearm's: the hand's bones fan out from it.
-  "wrist.L": { bone: "wrist.L", toward: "lowerarm01.L" },
-  "wrist.R": { bone: "wrist.R", toward: "lowerarm01.R" },
-  "hip.L": { bone: "upperleg01.L", toward: "lowerleg01.L" },
-  "hip.R": { bone: "upperleg01.R", toward: "lowerleg01.R" },
-  "knee.L": { bone: "lowerleg01.L", toward: "foot.L" },
-  "knee.R": { bone: "lowerleg01.R", toward: "foot.R" },
-  "ankle.L": { bone: "foot.L", toward: "toe1-1.L" },
-  "ankle.R": { bone: "foot.R", toward: "toe1-1.R" },
+/**
+ * Each joint landmark: the bone whose head it is, and the limb it is framed by,
+ * a bone from its head to its child's (`to`). The tangent runs along the limb,
+ * away from the body, and the normal is the figure's forward turned by the
+ * limb's bone, which is square to the limb at rest (the limbs hang in the
+ * figure's frontal plane), so the frame never degenerates. A joint at a limb's
+ * far end (the wrist, the ankle) is framed by the limb that reaches it, the
+ * forearm and the shin: the hand's bones fan out from the wrist, and the foot
+ * runs forward from the ankle.
+ */
+const JOINTS: Readonly<Record<JointLandmarkId, { at: string; limb: string; to: string }>> = {
+  neck: { at: "neck01", limb: "neck01", to: "head" },
+  "shoulder.L": { at: "upperarm01.L", limb: "upperarm01.L", to: "lowerarm01.L" },
+  "shoulder.R": { at: "upperarm01.R", limb: "upperarm01.R", to: "lowerarm01.R" },
+  "elbow.L": { at: "lowerarm01.L", limb: "lowerarm01.L", to: "wrist.L" },
+  "elbow.R": { at: "lowerarm01.R", limb: "lowerarm01.R", to: "wrist.R" },
+  "wrist.L": { at: "wrist.L", limb: "lowerarm01.L", to: "wrist.L" },
+  "wrist.R": { at: "wrist.R", limb: "lowerarm01.R", to: "wrist.R" },
+  "hip.L": { at: "upperleg01.L", limb: "upperleg01.L", to: "lowerleg01.L" },
+  "hip.R": { at: "upperleg01.R", limb: "upperleg01.R", to: "lowerleg01.R" },
+  "knee.L": { at: "lowerleg01.L", limb: "lowerleg01.L", to: "foot.L" },
+  "knee.R": { at: "lowerleg01.R", limb: "lowerleg01.R", to: "foot.R" },
+  "ankle.L": { at: "foot.L", limb: "lowerleg01.L", to: "foot.L" },
+  "ankle.R": { at: "foot.R", limb: "lowerleg01.R", to: "foot.R" },
 };
-/** Joint landmarks whose `toward` bone is behind them along the limb (the tangent points away from it). */
-const AWAY = new Set<JointLandmarkId>(["wrist.L", "wrist.R"]);
 
 /** Forward, the way the figure faces at rest. */
 const FORWARD: Vec3 = [0, 0, 1];
@@ -216,26 +224,25 @@ export function landmarkVertices(
 }
 
 /**
- * Each surface landmark's render vertex on a body surface, and the neighbour
- * most nearly up the body from it at rest, which its tangent points to (cached
- * per model and surface: both are fixed by the topology).
+ * Each surface landmark's render vertex on a body surface and its neighbours
+ * (by welded vertex, so a landmark on a UV seam sees both sides): fixed by the
+ * topology, so cached per model and surface.
  */
 const anchorCache = new WeakMap<
   HumanoidModel,
-  Map<"base" | "adult", Readonly<Record<SurfaceLandmarkId, { vertex: number; up: number }>>>
+  Map<"base" | "adult", Readonly<Record<SurfaceLandmarkId, { vertex: number; around: number[] }>>>
 >();
 
 function surfaceAnchors(
   model: HumanoidModel,
   body: PosedBody,
-): Readonly<Record<SurfaceLandmarkId, { vertex: number; up: number }>> {
+): Readonly<Record<SurfaceLandmarkId, { vertex: number; around: number[] }>> {
   const byModel = anchorCache.get(model) ?? new Map();
   anchorCache.set(model, byModel);
   const known = byModel.get(body.surface);
   if (known) return known;
   const render = model.baseRenderVertices(body.surface);
   const bases = landmarkVertices(model.assets);
-  // Neighbours by welded vertex, so a landmark on a UV seam sees both sides.
   const neighbours = new Map<number, Set<number>>();
   const I = body.index;
   for (let t = 0; t < I.length; t += 3)
@@ -246,38 +253,48 @@ function surfaceAnchors(
       set.add(body.weld[I[t + ((c + 1) % 3)] as number] as number);
       set.add(body.weld[I[t + ((c + 2) % 3)] as number] as number);
     }
+  const out = {} as Record<SurfaceLandmarkId, { vertex: number; around: number[] }>;
+  for (const id of SURFACE_LANDMARKS) {
+    const vertex = render[bases[id]] as number;
+    if (vertex < 0)
+      throw new RangeError(`landmark ${id}: the ${body.surface} surface does not draw its vertex`);
+    const around = [...(neighbours.get(body.weld[vertex] as number) ?? [])].sort((a, b) => a - b);
+    if (around.length === 0) throw new RangeError(`landmark ${id}: its vertex has no neighbour`);
+    out[id] = { vertex, around };
+  }
+  byModel.set(body.surface, out);
+  return out;
+}
+
+/**
+ * Of a landmark's neighbours, the one most nearly up the skin from it on this
+ * figure at rest (forward where the skin faces up or down, at the crown):
+ * which way its tangent points, chosen on the figure's own rest shape so the
+ * frame never depends on which figure was asked about first.
+ */
+function upNeighbour(body: PosedBody, vertex: number, around: readonly number[]): number {
   const restAt = (r: number): Vec3 => [
     body.rest[r * 3] as number,
     body.rest[r * 3 + 1] as number,
     body.rest[r * 3 + 2] as number,
   ];
-  const out = {} as Record<SurfaceLandmarkId, { vertex: number; up: number }>;
-  for (const id of SURFACE_LANDMARKS) {
-    const vertex = render[bases[id]] as number;
-    if (vertex < 0)
-      throw new RangeError(`landmark ${id}: the ${body.surface} surface does not draw its vertex`);
-    const p = restAt(vertex);
-    const n = unit([
-      body.restNormals[vertex * 3] as number,
-      body.restNormals[vertex * 3 + 1] as number,
-      body.restNormals[vertex * 3 + 2] as number,
-    ]);
-    // Up along the skin; at the crown, whose normal is up, forward instead.
-    const want = Math.abs(dot(n, UP)) > 0.9 ? FORWARD : UP;
-    let up = -1;
-    let best = Number.NEGATIVE_INFINITY;
-    for (const q of neighbours.get(body.weld[vertex] as number) ?? []) {
-      const d = dot(across(sub(restAt(q), p), n), want);
-      if (d > best) {
-        best = d;
-        up = q;
-      }
+  const p = restAt(vertex);
+  const n = unit([
+    body.restNormals[vertex * 3] as number,
+    body.restNormals[vertex * 3 + 1] as number,
+    body.restNormals[vertex * 3 + 2] as number,
+  ]);
+  const want = Math.abs(dot(n, UP)) > 0.9 ? FORWARD : UP;
+  let up = around[0] as number;
+  let best = Number.NEGATIVE_INFINITY;
+  for (const q of around) {
+    const d = dot(across(sub(restAt(q), p), n), want);
+    if (d > best) {
+      best = d;
+      up = q;
     }
-    if (up < 0) throw new RangeError(`landmark ${id}: its vertex has no neighbour`);
-    out[id] = { vertex, up };
   }
-  byModel.set(body.surface, out);
-  return out;
+  return up;
 }
 
 /** A frame from a normal and a direction along the skin. */
@@ -300,7 +317,8 @@ export function landmarks(
   const out = {} as Record<LandmarkId, LandmarkFrame>;
   const anchors = surfaceAnchors(model, body);
   for (const id of SURFACE_LANDMARKS) {
-    const { vertex, up } = anchors[id];
+    const { vertex, around } = anchors[id];
+    const up = upNeighbour(body, vertex, around);
     const p = at(body.positions, vertex);
     out[id] = frameOf(p, at(body.normals, vertex), sub(at(body.positions, up), p));
   }
@@ -311,15 +329,11 @@ export function landmarks(
     return b;
   };
   for (const id of JOINT_LANDMARKS) {
-    const { bone: name, toward } = JOINTS[id];
-    const b = bone(name);
-    const p = at(heads, b);
-    const q = at(heads, bone(toward));
-    const limb = AWAY.has(id) ? sub(p, q) : sub(q, p);
-    // The limb is the frame's tangent; its normal is the figure's forward turned by the bone.
-    const t = unit(limb);
-    const n = across(rotateByBone(world, b, FORWARD), t);
-    out[id] = { position: p, normal: n, tangent: t, bitangent: cross(n, t) };
+    const j = JOINTS[id];
+    const limb = bone(j.limb);
+    const t = unit(sub(at(heads, bone(j.to)), at(heads, limb)));
+    const n = across(rotateByBone(world, limb, FORWARD), t);
+    out[id] = { position: at(heads, bone(j.at)), normal: n, tangent: t, bitangent: cross(n, t) };
   }
   return out;
 }
