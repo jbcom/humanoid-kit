@@ -1,12 +1,12 @@
 # Notice
 
-This repository contains four separately licensed works:
+This repository contains these separately licensed works:
 
 | Work | Location | Licence |
 | --- | --- | --- |
 | `humanoid-kit`, the code | `src/`, `scripts/`, `playground/`, `tests/` | MIT (see `LICENSE`) |
 | `humanoid-kit-body`, the base body data | `packs/body/` | CC0 1.0 (see `packs/body/LICENSE`) |
-| `humanoid-kit-adult-anatomy`, the adult anatomy data | `packs/adult-anatomy/` | CC0 1.0 (see `packs/adult-anatomy/LICENSE`) |
+| `humanoid-kit-adult-anatomy`, the adult anatomy data | `packs/adult-anatomy/` | CC0 1.0 AND CC BY 4.0 (see `packs/adult-anatomy/LICENSE`, `packs/adult-anatomy/LICENSE-CC-BY-4.0` and `packs/adult-anatomy/NOTICE.md`) |
 | `humanoid-kit-hair`, the scalp hair data | `packs/hair/` | CC0 1.0 (see `packs/hair/LICENSE`) |
 | `humanoid-kit-clothing`, the garment data | `packs/clothing/` | CC0 1.0 (see `packs/clothing/LICENSE`) |
 
@@ -120,6 +120,18 @@ skin phenotype and colour spectra collection", Scientific Data,
 record. The values were changed from the source: facial readings binned by
 ITA°, medians taken per bin, and surface reflection removed. The derivation is
 in `docs/research/SKIN-RENDERING.md`.
+
+## Female genital detail (CC BY 4.0)
+
+The clitoral glans, the separation of the clitoral hood and the depth of the
+vestibule in `packs/adult-anatomy/data` are cut from "Female Pelvis with Perineal
+Structures and Musculature", NIH 3D entry 3DPX-017321
+(<https://3d.nih.gov/entries/3DPX-017321>), by Emullen45; attribution: National
+Institute of Allergy and Infectious Disease; licensed CC BY 4.0
+(<https://creativecommons.org/licenses/by/4.0/>). They were fitted to the base
+body and stored as displacement targets; the original model is not included.
+`packs/adult-anatomy/NOTICE.md` carries the same attribution inside the package,
+and `packs/adult-anatomy/source/PROVENANCE.md` records the page as read.
 
 ## Trademarks and affiliation
 
