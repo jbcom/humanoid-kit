@@ -1607,7 +1607,13 @@ module.
   dither of the mean below a pixel. Its single-pixel points read as pepper,
   not hair, and moved with the screen rather than the skin.)
 - *Shading is Kajiya-Kay along the skinned comb*, two lobes as the hair cards
-  use, with the pigment albedo, darker toward the root (self-shadow).
+  use, with the pigment albedo, darker toward the root (self-shadow). Where
+  the comb blends to nothing between vertices (it is zero at some and turns
+  back on itself between others) the strand has no direction and no lobe:
+  normalising zero gave a NaN that blending spread as pastel green and pink
+  blotches with hard edges. A browser test holds the lit coat's hue to 20°–80°
+  in LCh, its chroma under 40 and every pixel finite, at four tones and four
+  hair colours on such a comb.
 
 **Built (2026-10-09).** `src/surface/coat.ts` (fields, paint, triangles, shell
 count), `src/render/coat.ts` (`CoatMaterial`, `coatGeometry`) and
