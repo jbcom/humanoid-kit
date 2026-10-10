@@ -10,6 +10,7 @@ import {
   STOP_TABLE_WIDTH,
   swellHeight,
   swellProfile,
+  TUBERCLE_RADIUS,
 } from "../src/surface/layers.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import { bodySurface } from "../src/surface/regions/once.ts";
@@ -19,6 +20,8 @@ import {
   AREOLA_LAYER,
   AREOLA_REACH,
   AREOLA_RELIEF_LAYER,
+  areolaShape,
+  areolaSolid,
   areolaStretch,
   areolaZone,
   CLAVICLE_LAYER,
@@ -278,6 +281,37 @@ describe("the areola's relief", () => {
       expect(at(p, 0.0005)).toBe(0);
       expect(at(p, 0.6 * R)).toBeGreaterThan(0);
       expect(at(p, R + 3 * AREOLA_EDGE_SOFTNESS * R)).toBe(0);
+    });
+
+    it("keeps every bump a millimetre inside the areola's edge, at any size of figure", () => {
+      for (const over of [
+        adultFemale,
+        { age: 30, build: { gender: 1 } },
+        { age: 14, build: { gender: 0 } },
+        { ...adultFemale, areolaScale: 2 },
+        { ...adultFemale, areolaScale: 0.7 },
+      ]) {
+        const input = paint(over);
+        const k = input.areolaScale ?? 1;
+        const t = paintStopTable([MONTGOMERY_LAYER], input);
+        // The limit on a bump's centre (stop 0, green), in metres on the figure: the field's
+        // coordinate times the reach, times the figure's stretch; a bump reaches its radius past it.
+        const outer = (t[5] as number) * AREOLA_REACH * k + TUBERCLE_RADIUS * (t[3] as number);
+        // The areola as drawn: solid out to where its stops' colour first fades.
+        const shape = areolaShape(input);
+        const solid = areolaSolid(shape) * k;
+        expect(outer + 0.001).toBeLessThanOrEqual(solid + 1e-6);
+        expect(outer + 0.001).toBeGreaterThan(solid - 1e-4);
+        // Solid is inside the edge's own fade, and no more than a stop's spacing inside it.
+        expect(solid).toBeLessThanOrEqual((shape.edge - 0.5 * shape.soft) * k);
+        expect(solid).toBeGreaterThan((shape.edge - shape.soft - AREOLA_REACH / 7) * k);
+      }
+      // A layer that is not tubercles may not carry one.
+      const stray: SkinLayer = {
+        ...AREOLA_RELIEF_LAYER,
+        paint: () => ({ strength: 1, height: 0.001, size: 0.001, profile: [1], limit: 0.5 }),
+      };
+      expect(() => paintStopTable([stray], paint(adultFemale))).toThrow(/limit/);
     });
 
     it("appears with puberty, not before it", () => {
@@ -987,6 +1021,9 @@ describe("the relief layers' coordinates are continuous", () => {
     [RIB_LAYER, Math.hypot(1, 0.47) / (RIB_PERIODS * 0.03)],
     // Across the strip, its width.
     [LINEA_ALBA_LAYER, 1 / (2 * 0.012)],
+    // Out from the nipple, the reach (the areola's colour, texture and tubercles share it). It
+    // once fell to 0 past the reach and drew a ring of the nipple round the areola.
+    [AREOLA_LAYER, 1 / AREOLA_REACH],
   ] as const;
 
   for (const [layer, gradient] of GRADIENT) {

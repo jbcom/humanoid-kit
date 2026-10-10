@@ -43,6 +43,7 @@ import {
   type SkinPaintInput,
   STOP_COUNT,
   STOP_TABLE_WIDTH,
+  TUBERCLE_RADIUS,
 } from "../surface/layers.ts";
 import { LIPS_LAYER, NAIL_GLOSS_LAYER, SKIN_LAYERS } from "../surface/regions/index.ts";
 import {
@@ -319,19 +320,27 @@ float hkBumps( vec2 p ) {
 		}
 	return h;
 }
-// Tubercles: bumps in a share of the cells, the share (0..1) being the layer's occupancy where
-// the pixel is. A cell raises a bump once the occupancy passes its own random draw, by a ramp
-// rather than a step, so the bump does not lose a side where the occupancy changes across it.
-float hkTubercles( vec2 p, float occupancy ) {
+// Tubercles: bumps in a share of the cells, the share (0..1) being layer l's occupancy (its
+// profile) at the bump's own centre: the layer's coordinate is read from the atlas at the
+// centre's UV (cellUv: UV per cell), so every pixel of a bump makes the same decision and a
+// bump is drawn whole or not at all. A cell raises a bump once the occupancy passes its own
+// random draw, and only if its centre lies inside the limit, which the paint has drawn in by a
+// bump's radius (DetailPaint.limit in layers.ts): none crosses the edge it stands for.
+float hkTubercles( vec2 p, int l, vec2 uv, float cellUv, float limit ) {
 	vec2 i = floor( p );
 	float h = 0.0;
 	for ( int y = -1; y <= 1; y ++ )
 		for ( int x = -1; x <= 1; x ++ ) {
 			vec2 c = i + vec2( float( x ), float( y ) );
-			float present = smoothstep( 0.0, 0.02, occupancy - hkHash( c + 41.7 ) );
 			vec2 centre = c + 0.2 + 0.6 * vec2( hkHash( c ), hkHash( c + 17.31 ) );
-			float d = length( p - centre ) / 0.35;
-			h = max( h, present * pow( max( 1.0 - d * d, 0.0 ), 2.0 ) );
+			vec2 at2 = hkFields( l, uv + ( centre - p ) * cellUv );
+			float at = at2.y;
+			if ( at2.x <= 0.0 || at > limit ) continue;
+			float u = ( 1.5 + clamp( at, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
+			float occupancy = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
+			if ( occupancy <= hkHash( c + 41.7 ) ) continue;
+			float d = length( p - centre ) / ${glslFloat(TUBERCLE_RADIUS)};
+			h = max( h, pow( max( 1.0 - d * d, 0.0 ), 2.0 ) );
 		}
 	return h;
 }
@@ -478,7 +487,11 @@ float hkDetailHeight( vec2 uv ) {
 				float u = ( 1.5 + clamp( f.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
 				float profile = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
 				if ( kind == 7 ) H += a * profile * head.z * fade * hkBumps( p );
-				else H += f.x * head.x * head.z * fade * hkTubercles( p, profile );
+				else {
+					// The coordinate no bump's centre lies past (stop 0, green).
+					float limit = texture( hkLayerStops, vec2( 1.5 / ${glslFloat(STOP_TABLE_WIDTH)}, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).g;
+					H += f.x * head.x * head.z * fade * hkTubercles( p, l, uv, head.w / vHkUvScale, limit );
+				}
 			}
 		} else if ( kind == 5 ) {
 			vec2 p = uv * vHkUvScale;

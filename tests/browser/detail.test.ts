@@ -216,13 +216,13 @@ describe("profiled detail layers", () => {
     fields: noFields,
     paint: () => ({ strength: 1, height: 0.0004, size: 0.002, profile }),
   });
-  const tubercles = (occupancy: number): SkinLayer => ({
+  const tubercles = (occupancy: number, limit = 1): SkinLayer => ({
     id: "tubercles",
     kind: "detail",
     pattern: "tubercles",
     targets: [],
     fields: noFields,
-    paint: () => ({ strength: 1, height: 0.0004, size: 0.002, profile: [occupancy] }),
+    paint: () => ({ strength: 1, height: 0.0004, size: 0.002, profile: [occupancy], limit }),
   });
   /** A constant coordinate: the profile is read at that point of it. */
   const at = (c: number) => ({ view, coordinate: () => c });
@@ -258,6 +258,36 @@ describe("profiled detail layers", () => {
     expect(Array.from(render([tubercles(0.4)], at(0)))).toEqual(
       Array.from(render([tubercles(0.4)], at(0))),
     );
+  });
+
+  it("draws no bump whose centre is past the limit, and none cut by it: each is whole or absent", () => {
+    // The coordinate runs along u (0.5 at the view's middle column), the limit at 0.5. A bump's
+    // radius is 0.35 of a 2 mm cell, 0.7 mm: 2.2 of the view's 0.31 mm pixels.
+    const limited = tubercles(1, 0.5);
+    // A 4 cm plane seen whole: the coordinate runs 0..1 across it, so the atlas's 8-bit
+    // coordinate places the limit to a sixth of a millimetre, as it does across an areola.
+    const small = { plane: 0.04 };
+    const flat = render([], small);
+    const got = render([limited], small);
+    const unlimited = render([tubercles(1)], small);
+    let past = 0;
+    let before = 0;
+    let neither = 0;
+    for (let y = 0; y < SIZE; y++)
+      for (let x = 0; x < SIZE; x++) {
+        const i = y * SIZE + x;
+        const g = got[i] as number;
+        const d = Math.abs(g - (flat[i] as number));
+        // Past the limit by more than a bump's radius: flat.
+        if (x >= SIZE / 2 + 3) past = Math.max(past, d);
+        else if (x < SIZE / 2 - 12) before = Math.max(before, d);
+        // Everywhere, a pixel is the unlimited layer's bump or the flat skin: never a cut bump.
+        if (d > 1e-4 && Math.abs(g - (unlimited[i] as number)) > 1e-4) neither++;
+      }
+    expect(past).toBeLessThan(1e-4);
+    expect(before).toBeGreaterThan(1e-3);
+    // Where two bumps overlap, the one left may differ from the pair: a pixel or two.
+    expect(neither).toBeLessThan(0.002 * SIZE * SIZE);
   });
 });
 

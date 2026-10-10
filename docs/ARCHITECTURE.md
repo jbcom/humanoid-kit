@@ -3003,7 +3003,12 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   edge), so one set of fields serves a child's 13 mm areola and a woman's 38,
   and a puberty that grows it, without a field per age. The resolution is the
   eight stops across the reach (a stop every 3.1 mm); the edge position is
-  continuous, its softness is not finer than that.
+  continuous, its softness is not finer than that. The coordinate runs on past
+  the disc, held at 1 (the skin's stop), as the ribs' and collarbones' do. It
+  once fell to 0 there, so each triangle on the mask's edge swept the whole
+  profile back to the nipple's stop. That drew a faint ring of the nipple's
+  colour and texture round every areola, the step under a man's (his nipple is
+  lighter than his areola), and a ring of small tubercles outside it.
 - *Sizes in metres are put on the base mesh by the measured stretch.* The fields
   are measured on the base mesh and the figure's mesh is that mesh morphed, so a
   nipple's surroundings are 0.68 times as big on a seven year old and 2.09 on the
@@ -3037,8 +3042,15 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   the body hair's strands, and kinds 2, 3 and 5 are unchanged.
 - *Montgomery tubercles are a share of cells, not a count.* Their relief is
   `hkTubercles`: bumps in the cells of a 2.2 mm grid, each raised once the
-  profile's occupancy at the pixel passes the cell's own random draw, by a short
-  ramp so a bump does not lose a side where the occupancy changes across it. A
+  profile's occupancy at its own centre passes the cell's random draw. Each
+  bump reads the layer's coordinate from the atlas at its centre's UV, so all
+  its pixels decide alike and it is drawn whole or not at all (a screen-space
+  gradient of the 8-bit coordinate was too coarse to extrapolate from). A bump
+  is drawn only if its centre lies inside the paint's `limit`
+  (`DetailPaint.limit`). Montgomery's limit is the areola's solid colour as
+  the stops draw it (`areolaSolid`: where the interpolated colour first fades
+  below nine tenths), less a millimetre and a bump's radius, so no tubercle
+  sits on the areola's fading edge or outside it. A
   ring profile (from a quarter of the areola's radius to nine tenths) and
   an occupancy of about 8% in a woman give about a dozen on an areola. Each is a
   1.5 mm bump (a bump spans 0.7 of a cell), where measured tubercles are 1 to 2

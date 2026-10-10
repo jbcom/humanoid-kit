@@ -5,7 +5,13 @@
  * a CHOICE there.
  */
 import { AssetFormatError, type HumanoidAssets, jointPosition } from "../../format/assetFormat.ts";
-import type { ColourLayer, DetailLayer, SkinLayerFields, SkinPaintInput } from "../layers.ts";
+import {
+  type ColourLayer,
+  type DetailLayer,
+  type SkinLayerFields,
+  type SkinPaintInput,
+  TUBERCLE_RADIUS,
+} from "../layers.ts";
 import {
   areolaAlbedo,
   haemoglobinRatio,
@@ -60,7 +66,11 @@ export const AREOLA_REACH = 0.022;
 export interface AreolaZone {
   /** 1 within the reach's inner part, easing to 0 at the reach. */
   mask: Float32Array;
-  /** Distance from the nipple's centre in reaches, 0..1, where the mask lies. */
+  /**
+   * Distance from the nearer nipple's centre in reaches, held at 1 past the
+   * reach: continuous everywhere, so a triangle on the mask's edge reads the
+   * outer stops, never the nipple's.
+   */
   radial: Float32Array;
 }
 
@@ -85,13 +95,20 @@ function nippleCentres(assets: HumanoidAssets): [number, number, number][] {
   });
 }
 
-/** The disk of `AREOLA_REACH` round each nipple, with its radial coordinate. */
+/**
+ * The disk of `AREOLA_REACH` round each nipple, with its radial coordinate. The
+ * coordinate runs on past the disk, held at 1 (the skin's own stops): it once
+ * fell to 0 outside it, so every triangle on the mask's edge swept through
+ * the whole profile back to the nipple's stop, and drew a ring of the
+ * nipple's colour and relief round the areola (the step under a man's
+ * areola, where his nipple is lighter than it) and a ring of small tubercles.
+ */
 export function areolaZone(assets: HumanoidAssets): AreolaZone {
   return once(assets, "areola-zone", () => {
     const P = assets.positions;
     const n = assets.manifest.vertexCount;
     const mask = new Float32Array(n);
-    const radial = new Float32Array(n);
+    const radial = new Float32Array(n).fill(1);
     for (const c of nippleCentres(assets)) {
       for (let v = 0; v < n; v++) {
         const d = Math.hypot(
@@ -100,10 +117,8 @@ export function areolaZone(assets: HumanoidAssets): AreolaZone {
           (P[v * 3 + 2] as number) - c[2],
         );
         const w = 1 - smoothstep(0.85 * AREOLA_REACH, AREOLA_REACH, d);
-        if (w > (mask[v] as number)) {
-          mask[v] = w;
-          radial[v] = Math.min(1, d / AREOLA_REACH);
-        }
+        if (w > (mask[v] as number)) mask[v] = w;
+        radial[v] = Math.min(radial[v] as number, d / AREOLA_REACH);
       }
     }
     return { mask, radial };
@@ -121,16 +136,18 @@ export const AREOLA_CHILD_DEPTH = 0.3;
 const STOP_RADII = Array.from({ length: 8 }, (_, i) => (i / 7) * AREOLA_REACH);
 
 /** Where a figure's nipple and areola end, and how soft the areola's edge is, metres, and its stage. */
-interface AreolaShape {
+export interface AreolaShape {
   edge: number;
   soft: number;
   tip: number;
   /** Puberty, 0..1 (`pubertyProgress`). */
   stage: number;
   gender: number;
+  /** How much larger the figure's skin is than the field's (`areolaScale`): a metre on the figure is 1 / scale in the field. */
+  scale: number;
 }
 
-function areolaShape(input: SkinPaintInput): AreolaShape {
+export function areolaShape(input: SkinPaintInput): AreolaShape {
   const b = figureBuild(input);
   // The figure's own lengths, in the field's: the mesh round the nipple is this much bigger.
   const k = input.areolaScale && input.areolaScale > 0 ? input.areolaScale : 1;
@@ -141,11 +158,32 @@ function areolaShape(input: SkinPaintInput): AreolaShape {
     tip: nippleRadius(b.age, b.gender) / k,
     stage: pubertyProgress(b.age, b.gender),
     gender: b.gender,
+    scale: k,
   };
 }
 
 /** 1 within the areola, 0 beyond it, at radius `r` from the nipple's centre. */
 const onAreola = (s: AreolaShape, r: number) => 1 - smoothstep(s.edge - s.soft, s.edge + s.soft, r);
+/**
+ * How far out the areola's colour is solid, field metres: the radius where the
+ * colour as the shader draws it (`onAreola` at the eight stops, linearly between
+ * them) first falls below nine tenths. The stops are 3 mm apart, so this is up
+ * to a stop inside the edge's own smooth fade: what the eye takes as the areola.
+ */
+export function areolaSolid(s: AreolaShape): number {
+  const a = STOP_RADII.map((r) => onAreola(s, r));
+  for (let k = 1; k < a.length; k++) {
+    const lo = a[k - 1] as number;
+    const hi = a[k] as number;
+    if (hi < 0.9) {
+      const r0 = STOP_RADII[k - 1] as number;
+      const r1 = STOP_RADII[k] as number;
+      return lo <= 0.9 ? r0 : r0 + ((lo - 0.9) / (lo - hi)) * (r1 - r0);
+    }
+  }
+  return AREOLA_REACH;
+}
+
 /** 1 on the nipple, 0 beyond it. */
 const onNipple = (s: AreolaShape, r: number) => 1 - smoothstep(s.tip - 0.0008, s.tip + 0.0012, r);
 
@@ -244,6 +282,12 @@ export const MONTGOMERY_SPACING = 0.0022;
 export const MONTGOMERY_HEIGHT = 0.0004;
 export const MONTGOMERY_RING: readonly [number, number, number, number] = [0.25, 0.4, 0.75, 0.92];
 export const MONTGOMERY_OCCUPANCY = { female: 0.08, male: 0.05 } as const;
+/**
+ * How far inside the areola's edge every tubercle stays, metres on the figure
+ * (the integrator's ruling: tubercles sat just outside the edge, where the
+ * coarse profile's interpolation and bumps cut at the pixel let them through).
+ */
+export const MONTGOMERY_EDGE_MARGIN = 0.001;
 
 export const MONTGOMERY_LAYER: DetailLayer = {
   id: "montgomery",
@@ -265,6 +309,18 @@ export const MONTGOMERY_LAYER: DetailLayer = {
       strength: 1,
       height: MONTGOMERY_HEIGHT,
       size: MONTGOMERY_SPACING,
+      // No bump reaches past where the areola's colour starts to fade (its edge less its
+      // softness) less the margin: the limit on a bump's centre is that, less its radius, in
+      // the field's coordinate (the bumps are drawn at the figure's size).
+      limit: Math.min(
+        1,
+        Math.max(
+          0,
+          (areolaSolid(shape) -
+            (MONTGOMERY_EDGE_MARGIN + TUBERCLE_RADIUS * MONTGOMERY_SPACING) / shape.scale) /
+            AREOLA_REACH,
+        ),
+      ),
       profile: STOP_RADII.map(
         (r) =>
           occupancy *

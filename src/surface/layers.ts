@@ -128,6 +128,15 @@ export interface DetailPaint {
    */
   profile?: readonly number[];
   /**
+   * For a `tubercles` layer, and only for one: the coordinate no bump's centre
+   * lies past (0..1; absent is 1, no limit). Each bump reads the coordinate,
+   * and so its occupancy and this limit, at its own centre, so it is drawn
+   * whole or not at all. A paint that wants no bump to cross an edge draws the
+   * limit in from the edge by a bump's radius (`TUBERCLE_RADIUS` of a cell):
+   * how the Montgomery tubercles keep inside the areola.
+   */
+  limit?: number;
+  /**
    * For a `striae` layer, and only for one: the share of the skin marked (0..1,
    * `striaeAmount`) and the colour of a mark as a ratio to the skin it is on
    * (`striaeColour`): stretch marks colour the skin where they are as well as cut it.
@@ -631,6 +640,25 @@ function writeProfile(
   }
 }
 
+/** A bump's radius in a tubercle layer, in cells: it spans 0.7 of one. The shader's `hkTubercles` reads it. */
+export const TUBERCLE_RADIUS = 0.35;
+
+/** A tubercle layer's limit (`DetailPaint.limit`), in stop 0's green. */
+function writeLimit(
+  layer: DetailLayer,
+  limit: number | undefined,
+  out: Float32Array,
+  row: number,
+): void {
+  if (limit !== undefined && layer.pattern !== "tubercles")
+    throw new RangeError(`skin layer ${layer.id}: a limit on a layer that is not tubercles`);
+  if (layer.pattern !== "tubercles") return;
+  const l = limit ?? 1;
+  if (!(l >= 0 && l <= 1))
+    throw new RangeError(`skin layer ${layer.id}: a limit in 0..1 is required`);
+  out[row + 4 + 1] = l;
+}
+
 /** A striae layer's mark colour (stop 0) and amount (stop 1, red). */
 function writeStriae(
   layer: DetailLayer,
@@ -692,6 +720,7 @@ export function paintStopTable(
         throw new RangeError(
           `skin layer ${layer.id}: a profile on a layer that did not declare one`,
         );
+      writeLimit(layer, p.limit, out, row);
       if (layer.pattern === "striae") writeStriae(layer, p.striae, out, row);
       else if (p.striae)
         throw new RangeError(
