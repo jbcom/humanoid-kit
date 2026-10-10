@@ -22,6 +22,8 @@ import type {
   SliderTask,
 } from "../../src/format/assetFormat.ts";
 import type { AdultDetailLattice, ControlShape } from "../../src/model/humanoidModel.ts";
+import type { ReservoirParts } from "./adultReservoirs.ts";
+import { skinOf } from "./detail/contact.ts";
 import { moundTargets } from "./control/mound.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE, phallusTargets } from "./detail/phallus.ts";
 import { reservoirRoot } from "./detail/root.ts";
@@ -82,7 +84,7 @@ const AUTHORED_SLIDERS = [
     after: "genitals/penis-testicles-decr|incr",
     label: "Testes size",
     description:
-      "From none to a large testis, each in its own sac; the right a little larger than the left, as measured.",
+      "From none to a large testis, in one sac of two lobes; the right a little larger than the left, as measured.",
   },
 ] as const;
 
@@ -96,21 +98,24 @@ export const HIDDEN_SLIDERS: readonly string[] = [
 /**
  * What the pack authors itself and where each asset comes from, for the pack's
  * PROVENANCE.md: what was referenced, what was authored, and by which script.
- * No third-party model, image, texture or target was opened, traced or copied
- * for any of it.
+ * The genital forms are CC0 community sculpts, projected and sized by code
+ * (`packs/adult-anatomy/source/PROVENANCE.md`); nothing else third-party was
+ * opened, traced or copied.
  */
 export const AUTHORED_PROVENANCE: readonly string[] = [
   "- `pelvis/mound-decr`, `pelvis/mound-incr` (control targets): authored by `scripts/lib/control/mound.ts` " +
     "on the CC0 hm08 base mesh; sized from published soft-tissue measurements (docs/research/ADULT-ANATOMY-DATA.md, section E).",
-  "- `genitals/phallus-k*` (detail targets) and the modifiers `genitals/phallus-size`, `-length-decr|incr`, `-girth-decr|incr`: " +
-    "authored by `scripts/lib/detail/phallus.ts` out of the phallic reservoir, whose loop and cap " +
-    "`scripts/lib/adultReservoirs.ts` places on the base mesh's own refinement. The inputs are the base body's " +
-    "vertices and published measurements (length, girth, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F); " +
-    "the glans' shape, the hang and the erect angle are modelled and labelled so there.",
-  "- `genitals/testes-k*` (detail targets) and the modifier `genitals/testes-size`: authored by " +
-    "`scripts/lib/detail/scrotum.ts` out of the labioscrotal pair of reservoirs. The inputs are the base body's " +
-    "vertices and published testis volumes and dimensions (docs/research/ADULT-ANATOMY-DATA.md, section F); " +
-    "the sac's skin, neck and hang are modelled and labelled so there.",
+  "- `genitals/phallus-k2..k4*` (detail targets) and the modifiers `genitals/phallus-size`, `-length-decr|incr`, `-girth-decr|incr`: " +
+    "the shaft, glans and corona of ukiyoe's CC0 `man_genital` (<http://www.makehumancommunity.org/clothes/man_genital.html>), " +
+    "cut by `scripts/blender/cut_male.py`, placed by `scripts/lib/detail/sculpt.ts`, projected onto the phallic reservoir " +
+    "by `scripts/lib/detail/transfer.ts` and sized by `scripts/lib/detail/phallus.ts` to published measurements " +
+    "(length, girth, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F). The erect angle and the bend " +
+    "toward it are modelled and labelled so there. `genitals/phallus-k1*` (the clitoral glans) is drawn by " +
+    "`scripts/lib/detail/phallus.ts` from the reservoir's loop and published measurements.",
+  "- `genitals/testes-k*` (detail targets) and the modifier `genitals/testes-size`: the sac of the same CC0 " +
+    "`man_genital`, cut, placed and projected onto the labioscrotal reservoir the same way and sized by " +
+    "`scripts/lib/detail/scrotum.ts` to published testis volumes and dimensions (docs/research/ADULT-ANATOMY-DATA.md, " +
+    "section F); the skin's thickness and the neck are modelled and labelled so there.",
 ];
 
 /** Every target name the pack authors as a control target (a virtual modifier has none). */
@@ -181,14 +186,20 @@ export function addAuthoredSliders(tasks: SliderTask[]): void {
 export function authorDetail(
   lattice: AdultDetailLattice,
   reservoirs: readonly AdultReservoirSpec[],
+  parts: ReservoirParts,
 ): { targets: EncodedTarget[]; detail: AdultDetailSpec } {
   const rootOf = (id: string) => {
     const spec = reservoirs.find((r) => r.id === id);
     if (!spec) throw new Error(`the pack has no reservoir ${id} to draw from`);
     return reservoirRoot(lattice, spec);
   };
-  const organ = phallusTargets(rootOf("phallic"));
-  const sac = scrotumTargets([rootOf("labioscrotal-left"), rootOf("labioscrotal-right")]);
+  // The skin round the reservoirs, which the organ and the sac rest on.
+  const skin = skinOf(
+    lattice,
+    reservoirs.map((r) => r.cap),
+  );
+  const organ = phallusTargets(rootOf("phallic"), parts.phallus, skin);
+  const sac = scrotumTargets(rootOf("labioscrotal"), parts.scrotum, skin);
   const made = [...organ.targets, ...sac.targets];
   return {
     targets: made.map((t) => encodeSparseTarget(t.name, t.indices, t.xyz)),

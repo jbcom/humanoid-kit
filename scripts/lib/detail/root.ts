@@ -22,6 +22,11 @@ export interface ReservoirRoot {
   loop: readonly Vec3[];
   /** The cap's interior vertices, by ascending detail index. */
   cap: readonly { index: number; position: Vec3 }[];
+  /**
+   * The cap's polygons, each corner either a loop vertex (`loop`: its place in `loop`)
+   * or an interior one (`cap`: its place in `cap`), in the lattice's winding.
+   */
+  capPolygons: readonly (readonly ({ loop: number } | { cap: number })[])[];
   /** Unit outward normal of the skin over the root. */
   normal: Vec3;
   /** Mean of the loop. */
@@ -74,12 +79,27 @@ export function reservoirRoot(
     }
   }
   const length = Math.hypot(...sum);
+  const capIndices = [...interior].sort((a, b) => a - b);
+  const capPlace = new Map(capIndices.map((r, j) => [r, j]));
+  const loopPlace = new Map(spec.loop.map((v, i) => [v, i]));
+  const capPolygons: ({ loop: number } | { cap: number })[][] = [];
+  for (let i = 0; i + 1 < poly.start.length; i++) {
+    if (!cap.has(poly.id[i] as number)) continue;
+    const corners: ({ loop: number } | { cap: number })[] = [];
+    for (let c = poly.start[i] as number; c < (poly.start[i + 1] as number); c++) {
+      const v = poly.vertices[c] as number;
+      const l = loopPlace.get(v);
+      corners.push(l !== undefined ? { loop: l } : { cap: capPlace.get(regionOf(v)) as number });
+    }
+    capPolygons.push(corners);
+  }
   return {
     id: spec.id,
     rings: info.rings,
     base: info.base,
     loop: loopRegion.map(at),
-    cap: [...interior].sort((a, b) => a - b).map((index) => ({ index, position: at(index) })),
+    cap: capIndices.map((index) => ({ index, position: at(index) })),
+    capPolygons,
     normal: [sum[0] / length, sum[1] / length, sum[2] / length],
     centre,
   };

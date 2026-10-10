@@ -9,8 +9,11 @@ import {
   PHALLUS_KEYS,
   PHALLUS_LENGTH,
   PHALLUS_SIZE,
+  SculptedPhallus,
 } from "../scripts/lib/detail/phallus.ts";
 import { type RootShape, reservoirRoot, restShape } from "../scripts/lib/detail/root.ts";
+import { skinOf } from "../scripts/lib/detail/contact.ts";
+import { maleParts } from "../scripts/lib/detail/sculpt.ts";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { STATE_MORPHS } from "../src/makehuman/stateMorphs.ts";
 import { shapeSignalNames } from "../src/model/detailFactors.ts";
@@ -71,11 +74,14 @@ describe("engorgement as a drive of the organ's targets", { timeout: 300_000 }, 
     const spec = adultManifest.anatomy?.reservoirs?.find((r) => r.id === "phallic");
     if (!lattice || !spec) throw new Error("no phallic reservoir");
     const root = reservoirRoot(lattice, spec);
+    const parts = maleParts(adultModel.assets, adultModel.controlShape(AUTHORING_FIGURE).control);
+    const skin = skinOf(lattice, (adultManifest.anatomy?.reservoirs ?? []).map((r) => r.cap));
+    const sculpted = new SculptedPhallus(root, parts.phallus, skin);
     const key = PHALLUS_KEYS[2] as (typeof PHALLUS_KEYS)[number];
     const rest = restShape(root);
     const expected =
-      authoredReach(keyShape(root, key, { state: 1 }), rest) /
-      authoredReach(keyShape(root, key), rest);
+      authoredReach(keyShape(sculpted, key, { state: 1 }), rest) /
+      authoredReach(keyShape(sculpted, key), rest);
     expect(reach({ arousal: 1 }) / reach({})).toBeCloseTo(expected, 3);
     // The numbers the shapes were built from.
     expect(ERECT_LENGTH).toBeCloseTo(1.43, 2);
@@ -84,11 +90,16 @@ describe("engorgement as a drive of the organ's targets", { timeout: 300_000 }, 
   });
 
   it("scales with the signal and leaves the figure exactly as it is without one", () => {
+    // Half the signal moves the organ, and not to where the full one does. (The tip's
+    // straight reach need not grow from midway to erect: the erect shaft rises in a curve
+    // from a root that faces down; its length does, phallus.test.ts.)
     const rest = reach({});
     const half = reach({ arousal: 0.5 });
     const full = reach({ arousal: 1 });
     expect(half).toBeGreaterThan(rest);
-    expect(half).toBeLessThan(full);
+    expect(full).toBeGreaterThan(rest);
+    const at = (arousal: number) => Array.from(adultModel.evaluate(organ, { arousal }).positions);
+    expect(at(0.5)).not.toEqual(at(1));
     const a = adultModel.evaluate(organ).positions;
     const b = adultModel.evaluate(organ, { arousal: 0 }).positions;
     expect(Array.from(b)).toEqual(Array.from(a));

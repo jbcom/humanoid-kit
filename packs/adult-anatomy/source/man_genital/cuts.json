@@ -1,0 +1,81 @@
+{
+  "source": "man_genital.obj",
+  "sha256": "8e9441b050350d588cb1e5415861f3939138354cc83ef13d5932eee59b9b8f13",
+  "subdivisions": 2,
+  "parts": {
+    "phallus": {
+      "planes": [
+        [
+          [
+            0.0,
+            0.35,
+            1.13
+          ],
+          [
+            0.0,
+            -0.16,
+            0.987
+          ]
+        ]
+      ],
+      "seed": [
+        0.0,
+        -0.25,
+        1.4
+      ],
+      "vertices": 3882,
+      "faces": 3850,
+      "edges": 7731,
+      "boundaryLoops": 1,
+      "boundaryLoopEdges": [
+        62
+      ],
+      "nonManifoldEdges": 0,
+      "euler": 1,
+      "disc": true
+    },
+    "scrotum": {
+      "planes": [
+        [
+          [
+            0.0,
+            0.16,
+            0.0
+          ],
+          [
+            0.0,
+            -1.0,
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            0.35,
+            1.13
+          ],
+          [
+            0.0,
+            0.16,
+            -0.987
+          ]
+        ]
+      ],
+      "seed": [
+        0.0,
+        0.01,
+        0.85
+      ],
+      "vertices": 3431,
+      "faces": 3351,
+      "edges": 6781,
+      "boundaryLoops": 1,
+      "boundaryLoopEdges": [
+        156
+      ],
+      "nonManifoldEdges": 0,
+      "euler": 1,
+      "disc": true
+    }
+  }
+}

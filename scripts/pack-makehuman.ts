@@ -59,6 +59,7 @@ import { authoredPoses } from "./lib/authoredPoses.ts";
 import { parseBvh } from "./lib/bvh.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { AUTHORING_FIGURE } from "./lib/control/mound.ts";
+import { maleParts } from "./lib/detail/sculpt.ts";
 import { reservoirRoot } from "./lib/detail/root.ts";
 import { symmetrizeFaceUnits } from "./lib/faceUnits.ts";
 import { NAIL_PLATES, VENDOR_BODYPARTS04 } from "./lib/nailPlates.ts";
@@ -395,9 +396,10 @@ function writeProvenance(
     ...(authored.length
       ? [
           "",
-          "Authored for this pack by code from the base mesh and published measurements, not read from any source file;",
-          "dedicated to the public domain under CC0 1.0 with the rest of the pack. No third-party model, image,",
-          "texture or target was opened, traced or copied for any of it:",
+          "Authored for this pack by code, from the base mesh, published measurements and the CC0 community sculpts",
+          "named below (their pages, licences and file hashes are in `packs/adult-anatomy/source/PROVENANCE.md`);",
+          "dedicated to the public domain under CC0 1.0 with the rest of the pack. Nothing else third-party was",
+          "opened, traced or copied for any of it:",
           "",
           ...authored,
         ]
@@ -724,19 +726,21 @@ async function main() {
         },
       ),
     );
-  // Reservoirs are placed on the surface as it is without them.
+  // The sculpted parts (packs/adult-anatomy/source), placed on the authoring figure;
+  // the reservoirs are placed where they attach, on the surface as it is without them.
   const plain = interim();
+  const sculpted = maleParts(packedFigure, plain.controlShape(AUTHORING_FIGURE).control);
   const surfaceOnly = plain.adultDetailLattice(AUTHORING_FIGURE);
   if (!surfaceOnly) throw new Error("the adult pack has no refined surface to place reservoirs on");
-  const reservoirs = reservoirSpecs(surfaceOnly);
+  const reservoirs = reservoirSpecs(surfaceOnly, sculpted);
   // The control targets the pack authors (the mound) are generated on the
-  // authoring figure's control mesh, and its detail targets (the phallic organ) on
-  // the lattice of the surface with the reservoirs, then written with the others.
+  // authoring figure's control mesh, and its detail targets (the organ and the sac)
+  // on the lattice of the surface with the reservoirs, then written with the others.
   const withReservoirs = interim(reservoirs);
   const generated = authorControl(withReservoirs.controlShape(AUTHORING_FIGURE));
   const latticeWith = withReservoirs.adultDetailLattice(AUTHORING_FIGURE);
   if (!latticeWith) throw new Error("the adult pack has no refined surface to draw detail on");
-  const organ = authorDetail(latticeWith, reservoirs);
+  const organ = authorDetail(latticeWith, reservoirs, sculpted);
   // Each reservoir's skin gets an island of its own in free space of the body's UV layout,
   // at the skin's own scale, so a skin layer can colour a tube and not the skin round its root.
   const bodyTopology = plain.topology().body;

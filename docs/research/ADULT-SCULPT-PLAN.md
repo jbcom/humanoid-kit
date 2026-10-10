@@ -386,6 +386,70 @@ Measured, in `tests/phallus.test.ts`: the dorsal length and circumference of the
 default key against the literature, erect against flaccid (+43%, +25%), the monotone
 growth through the keys, and the surface against the authored shape for every variation.
 
+## 6d. Decision 7: form transfer from CC0 sculpts (2026-10-09, supersedes the drawn forms of 6c)
+
+The drawn tubes of 6c read as crude on the sheets: a shaft that is a cylinder with
+a flat cap, and testes that are two small separate balls pinched into a rosette at
+the root. A shape authored from a handful of numbers has no anatomy between them.
+The owner ruled that the forms come from CC0 sculpted meshes instead, with the
+measurements used only to calibrate size.
+
+**Sources.** ukiyoe's `man_genital` (page CC0, 2022-11-05) gives the flaccid shaft,
+glans and corona, and one connected sac. The other male sculpts were looked at and
+not used for these parts. `Male_Gen-Heal1` and xsuprem3x's `adult_male_genitalia` have
+the small two-ball scrotum the sheets rejected. Heal1's erect shaft is not needed,
+because the erect state is the transferred form posed and grown (below).
+`packs/adult-anatomy/source/` holds the sources, the cut parts and their provenance.
+It is outside the published pack's `files` and outside anything the site builds from.
+
+**Pipeline.**
+
+1. *Cut* (`scripts/blender/cut_male.py`, headless Blender). The source is subdivided
+   twice (Catmull-Clark) and cut by half-spaces. The piece connected to a seed is kept.
+   A part must be a topological disc: one boundary loop, no non-manifold edge, Euler
+   characteristic 1. The script fails otherwise and writes its numbers to `cuts.json`.
+2. *Fit* (`scripts/lib/detail/sculpt.ts`). The source's coordinates are those of the
+   figure its author worked on, not hm08 at rest; `man_genital` sits 5 cm high. The
+   asset's own binding (CC0, by its page and header) says where it sits on our base.
+   It is evaluated on our rest body, and a per-axis scale and translation is fitted
+   from the source to it, by least squares over the whole asset. On the shaft the
+   residual median is 1.7 mm, so the sculpted form is kept exactly and only placed.
+   The placed part is then bound to our base by our own regenerated binding
+   (`bindToBody`) and evaluated on the authoring figure. No binding of the asset is
+   shipped.
+3. *Place the reservoirs* (`adultReservoirs.ts`). A reservoir sits where a part
+   attaches. Its disc is centred on the part's cut ring projected onto the skin and
+   sized to the ring. The labioscrotal *pair* becomes one `labioscrotal` reservoir:
+   two tubes cannot make one sac without either a double wall at the midline or
+   intersecting lobes, and the test asks for one connected skin surface with no
+   self-intersection. A sac's two lobes and its raphe are a shape, not two structures.
+4. *Project* (`scripts/lib/detail/transfer.ts`). The part and the reservoir are both
+   discs: the part's boundary is the cut, and the reservoir's is the loop, with the rings
+   and the cap inside it. The part is mapped to the unit disc by Floater's mean-value
+   map, which is guaranteed bijective for a convex boundary. Its boundary goes to the
+   circle by arclength, starting from a reference direction shared with the loop: dorsal
+   for the shaft, forward for the sac. The radius is then remapped so that the part's
+   area falls on the rings and the cap in proportion: rings at equal shares, the cap
+   with a share of its own. Each reservoir vertex reads the part at its disc coordinate.
+   This gives the flaccid shape key, exact to the sculpt at the reservoir's resolution.
+5. *Calibrate and pose* (`scripts/lib/detail/form.ts`). A projected shape is
+   re-expressed along its own centreline (the ring centroids, with frames carried
+   along it without twist): each vertex's offset is kept in the frame of its ring.
+   Sizes and variations rescale the arclength and the offsets, blended to nothing at
+   the loop so the root stays on the skin. Arousal swings the centreline's tangents
+   from the sculpt's hang toward the drawn erect direction, through the drawn
+   midpoint of 6c. The measured numbers enter only here, as scale factors:
+   - the shaft's dorsal length and mid-shaft girth (Veale 2015) at each key;
+   - erect growth (+43% length, +25% girth);
+   - the sac's width, depth and hang from the testis volume (EAA): two testes of
+     the key's volume side by side, each with its skin, the right one larger by the
+     measured ratio.
+
+**What stays modelled.** The erect tangent (30 degrees above forward) and the
+bend over which the shaft swings to it are modelled, as in 6c. The clitoral key
+of the phallic reservoir stays drawn until the female transfer (step 4 of the
+work list) gives it a sculpted form.
+
 ## 7. How the patch stays bound to hm08
 
 - **Position.** Every new vertex is bound to base vertices exactly as an
