@@ -267,15 +267,46 @@ describe("hair colour on the GPU", () => {
   });
 });
 
-describe("hair cut-outs", () => {
-  /** Alpha rising left to right: clear at the left edge, opaque at the right. */
-  const ramp = strandMap(64, (x) => texel(HAIR_STRAND_MEAN, Math.round((x / 63) * 255)));
-  // Filtered, as the packed maps are: coverage needs alpha to change within a texel.
-  ramp.magFilter = LinearFilter;
-  ramp.minFilter = LinearFilter;
+/** Alpha rising left to right: clear at the left edge, opaque at the right. */
+const RAMP = strandMap(64, (x) => texel(HAIR_STRAND_MEAN, Math.round((x / 63) * 255)));
+// Filtered, as the packed maps are: coverage needs alpha to change within a texel.
+RAMP.magFilter = LinearFilter;
+RAMP.minFilter = LinearFilter;
 
+/** Pixels along the cut that are neither empty nor fully lit, down every row. */
+function partialPixels(mesh: Mesh, samples: number): number {
+  const px = render(mesh, { samples });
+  const lit = at(px, SIZE - 4, SIZE / 2);
+  let partial = 0;
+  for (let y = 4; y < SIZE - 4; y++)
+    for (let x = 0; x < SIZE; x++) {
+      const v = at(px, x, y);
+      if (v > 0.05 * lit && v < 0.95 * lit) partial++;
+    }
+  return partial;
+}
+
+let alphaToCoverage: boolean | null = null;
+/**
+ * Whether this GL context implements alpha-to-coverage on a multisampled target. Some
+ * software rasterisers (SwiftShader in CI) do not at all. A stock material set up the same
+ * way shows it: when even that leaves no partial pixel over the ramp, the context cannot be
+ * asked. The probe draws the real ramp, because three takes the coverage from how far the
+ * alpha changes across a pixel (`fwidth`), which a constant alpha would not exercise; it is
+ * the one both tests that need the feature ask, and asked once.
+ */
+function supportsAlphaToCoverage(): boolean {
+  if (alphaToCoverage === null) {
+    const stock = new MeshBasicMaterial({ map: RAMP, alphaToCoverage: true, alphaTest: 0.4 });
+    alphaToCoverage = partialPixels(new Mesh(new PlaneGeometry(2, 2), stock), 4) > 0;
+    stock.dispose();
+  }
+  return alphaToCoverage;
+}
+
+describe("hair cut-outs", () => {
   it("cuts texels below the cutoff, with an alpha test where the target is not multisampled", () => {
-    const { mesh, material } = card({ map: ramp, multisampled: false });
+    const { mesh, material } = card({ map: RAMP, multisampled: false });
     const px = render(mesh);
     const row = SIZE / 2;
     // Left of the cutoff nothing is drawn; right of it the card is fully lit; no pixel is in between.
@@ -291,29 +322,12 @@ describe("hair cut-outs", () => {
   });
 
   it("smooths the edge with alpha-to-coverage on a multisampled target", (ctx) => {
-    /** Pixels along the cut that are neither empty nor fully lit, down every row. */
-    const partialPixels = (mesh: Mesh, samples: number) => {
-      const px = render(mesh, { samples });
-      const lit = at(px, SIZE - 4, SIZE / 2);
-      let partial = 0;
-      for (let y = 4; y < SIZE - 4; y++)
-        for (let x = 0; x < SIZE; x++) {
-          const v = at(px, x, y);
-          if (v > 0.05 * lit && v < 0.95 * lit) partial++;
-        }
-      return partial;
-    };
     const hair = (multisampled: boolean) => {
-      const { mesh, material } = card({ map: ramp, multisampled });
+      const { mesh, material } = card({ map: RAMP, multisampled });
       return { mesh, material };
     };
-    // Some software rasterisers (SwiftShader in CI) do not implement alpha-to-coverage
-    // on multisampled targets at all. A stock material set up the same way shows it:
-    // when even that leaves no partial pixel, the context cannot be asked.
-    const stock = new MeshBasicMaterial({ map: ramp, alphaToCoverage: true, alphaTest: 0.4 });
-    const stockPartial = partialPixels(new Mesh(new PlaneGeometry(2, 2), stock), 4);
-    stock.dispose();
-    if (stockPartial === 0) ctx.skip("this GL context does not implement alpha-to-coverage");
+    if (!supportsAlphaToCoverage())
+      ctx.skip("this GL context does not implement alpha-to-coverage");
     const off = hair(false);
     const on = hair(true);
     // A plain alpha test leaves none; coverage leaves a pixel on most rows, where the alpha crosses the cutoff.
@@ -581,19 +595,8 @@ describe("hairlines and fins", () => {
   });
 
   it("ramps a hairline's strand edges over more than a pixel under MSAA: no step from empty to whole between neighbours", (ctx) => {
-    // Some software rasterisers (SwiftShader in CI) do not implement alpha-to-coverage; a stock
-    // material on the same target shows whether this context can be asked.
-    const stock = new MeshBasicMaterial({ map: FLAT, alphaToCoverage: true, alphaTest: 0.4 });
-    stock.onBeforeCompile = (s) => {
-      s.fragmentShader = s.fragmentShader.replace(
-        "#include <alphatest_fragment>",
-        "diffuseColor.a = 0.5;\n#include <alphatest_fragment>",
-      );
-    };
-    const half = render(new Mesh(new PlaneGeometry(2, 2), stock), { samples: 4 });
-    stock.dispose();
-    const v = at(half, SIZE / 2, SIZE / 2);
-    if (!(v > 0.05 && v < 0.95)) ctx.skip("this GL context does not implement alpha-to-coverage");
+    if (!supportsAlphaToCoverage())
+      ctx.skip("this GL context does not implement alpha-to-coverage");
 
     const strand = { angle: Math.PI / 2, coherence: 0 };
     /** Pixel pairs in the hairline that step straight from empty to whole, and those that cross the edge at all. */
