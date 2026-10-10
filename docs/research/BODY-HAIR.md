@@ -127,8 +127,10 @@ beard hair grows (recalled, not verified here); grown styles' 10 to 20 mm are
 ## Pubic hair
 
 Where it grows is the adult anatomy pack's data, measured on the base mesh by
-`scripts/lib/adultCoat.ts` in the frame of the mons (its target's
-displacement-weighted centre). The shape is the adult pattern Tanner stage 5
+`scripts/lib/adultCoat.ts` in the frame of the mons, taken from the base mesh
+alone (the packer has no adult targets when it measures): on the midline's
+skin 9.6 cm below the hip joints' height, which is the height of the mons
+target's displacement-weighted centre, held there by a unit test. The shape is the adult pattern Tanner stage 5
 describes (the Tanner staging cited above): a triangle over the mons,
 level along its top, narrowing to the crotch and spreading onto the inner
 thighs' edges, on to the perineum. Its numbers are **choices** fitted to that
