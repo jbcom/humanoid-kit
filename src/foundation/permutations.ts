@@ -21,10 +21,17 @@ import {
  */
 export type AnatomySize = "default" | "min" | "max";
 
-/** A pose: a whole-body pose of the body pack by name (`tpose` is the rest A-pose). */
+/**
+ * A pose: `REST_POSE`, the mesh's own A-pose (no bone turned), or a whole-body
+ * pose of the body pack by name. The pack's `tpose` is MakeHuman's T-pose, the
+ * arms raised level, not the rest.
+ */
 export interface FoundationPose {
   readonly name: string;
 }
+
+/** The rest pose's name: every bone at rest, the A-pose the mesh is modelled in. */
+export const REST_POSE = "rest";
 
 /**
  * A permutation. Its anatomy is a size only on an adult body: on a body whose
@@ -53,7 +60,7 @@ export type FoundationTier = "smoke" | "full";
  * full tier walks all of it; a pose joins as it is authored (`scripts/poses`).
  */
 export const FOUNDATION_POSES = [
-  "tpose",
+  REST_POSE,
   "relaxed",
   "overhead",
   "twisted",
@@ -67,7 +74,7 @@ export const FOUNDATION_POSES = [
 ] as const;
 
 /** The smoke tier's poses: rest, seated, overhead and the deep squat. */
-export const SMOKE_POSES = ["tpose", "seated", "overhead", "squat"] as const;
+export const SMOKE_POSES = [REST_POSE, "seated", "overhead", "squat"] as const;
 
 /** The smoke tier's tones: the battery's lightest, middle and deepest (1, 3 and 6). */
 export const SMOKE_TONES = ["tone-1", "tone-3", "tone-6"] as const;

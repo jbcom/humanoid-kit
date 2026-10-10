@@ -10,6 +10,7 @@ import {
   FOUNDATION_POSES,
   type FoundationPermutation,
   foundationPermutations,
+  REST_POSE,
   SMOKE_POSES,
 } from "../src/foundation/permutations.ts";
 import { anatomyModifiers, foundationRecipe } from "../src/foundation/recipe.ts";
@@ -39,9 +40,11 @@ describe("the foundation's permutations", () => {
     for (const tier of [smoke, full]) expect(new Set(tier.map((p) => p.id)).size).toBe(tier.length);
   });
 
-  it("pose only with whole-body poses the body pack has", () => {
+  it("pose at rest or with whole-body poses the body pack has, never its T-pose as rest", () => {
     const packed = new Set(bodyManifest.poses.map((p: { name: string }) => p.name));
-    for (const name of FOUNDATION_POSES) expect(packed.has(name), name).toBe(true);
+    expect(packed.has(REST_POSE)).toBe(false);
+    expect(FOUNDATION_POSES[0]).toBe(REST_POSE);
+    for (const name of FOUNDATION_POSES.slice(1)) expect(packed.has(name), name).toBe(true);
   });
 
   it("give an anatomy to every adult and to no one under 18", () => {
@@ -58,7 +61,7 @@ describe("the foundation's permutations", () => {
       id: "child",
       body: child,
       tone,
-      pose: { name: "tpose" },
+      pose: { name: REST_POSE },
       anatomy: null,
     };
     // @ts-expect-error: a body under 18 takes no anatomy

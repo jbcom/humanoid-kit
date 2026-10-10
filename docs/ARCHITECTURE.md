@@ -1929,8 +1929,10 @@ measurements cheap enough for the smoke tier to run in every local test pass.
   which `hk-sheets` reads, is written from them (`scripts/write-battery.ts`)
   and a test holds the file to the module, so there is one source.
 - *A permutation is data, not geometry*: `{ id, body, tone, pose, anatomy }`,
-  where the body and tone are battery entries, the pose a whole-body pose of
-  the body pack by name (or an animation clip and time), and the anatomy a
+  where the body and tone are battery entries, the pose `rest` (every bone at
+  rest: the A-pose the mesh is modelled in; the pack's `tpose` is MakeHuman's
+  T-pose, the arms raised level) or a whole-body pose of the body pack by name
+  (or an animation clip and time), and the anatomy a
   size (`"default" | "min" | "max"`) the adult pack resolves through its own
   `anatomy.features` when a figure is evaluated, so the core names no adult
   modifier. The type allows an anatomy only on a body whose `adult` is the
