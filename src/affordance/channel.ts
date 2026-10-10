@@ -91,9 +91,18 @@ export interface Channel {
   up: Vec3;
   /** How deep it runs, metres. */
   depth: number;
+  /**
+   * Its size along it: `[depth, half across, half up]`, metres, from the rim
+   * (depth 0) to its end (`depth`), between which the size is interpolated.
+   * What `halfSize` reads and the renderer's clip (`ChannelClip`) uploads.
+   */
+  knots: readonly (readonly [number, number, number])[];
   /** Its half-sizes (across, up) at `d` metres in, metres; 0 past either end. */
   halfSize(d: number): [number, number];
 }
+
+/** The most knots a channel's profile has (`CHANNELS`' longest), which the renderer's clip is sized for. */
+export const CHANNEL_KNOTS = 3;
 
 /** Where a point is against a channel: how far in it is, and whether it is inside. */
 export interface ChannelPlace {
@@ -105,18 +114,22 @@ export interface ChannelPlace {
 
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
-/** The profile's factors (across, up) at a share of the depth. */
-function factorsAt(profile: ChannelSpec["profile"], share: number): [number, number] {
-  for (let i = 1; i < profile.length; i++) {
-    const [s0, a0, u0] = profile[i - 1] as readonly [number, number, number];
-    const [s1, a1, u1] = profile[i] as readonly [number, number, number];
-    if (share <= s1) {
-      const t = (share - s0) / (s1 - s0 || 1);
+/** The half-sizes (across, up) at `d` metres along `knots`, interpolated; 0 past either end. */
+export function knotHalfSize(
+  knots: readonly (readonly [number, number, number])[],
+  d: number,
+): [number, number] {
+  const end = knots[knots.length - 1] as readonly [number, number, number];
+  if (d < 0 || d > end[0]) return [0, 0];
+  for (let i = 1; i < knots.length; i++) {
+    const [d0, a0, u0] = knots[i - 1] as readonly [number, number, number];
+    const [d1, a1, u1] = knots[i] as readonly [number, number, number];
+    if (d <= d1) {
+      const t = (d - d0) / (d1 - d0 || 1);
       return [a0 + (a1 - a0) * t, u0 + (u1 - u0) * t];
     }
   }
-  const [, a, u] = profile[profile.length - 1] as readonly [number, number, number];
-  return [a, u];
+  return [end[1], end[2]];
 }
 
 const unit = (a: Vec3): Vec3 => {
@@ -167,17 +180,17 @@ export function channelOf(
     rim.tangent[2] - inward[2] * d,
   ]);
   const across = cross(up, inward);
+  const knots = spec.profile.map(
+    ([share, fa, fu]) => [share * depth, (sizeAcross / 2) * fa, (sizeUp / 2) * fu] as const,
+  );
   return {
     origin: rim.position,
     inward,
     across,
     up,
     depth,
-    halfSize(d) {
-      if (d < 0 || d > depth) return [0, 0];
-      const [fa, fu] = factorsAt(spec.profile, d / depth);
-      return [(sizeAcross / 2) * fa, (sizeUp / 2) * fu];
-    },
+    knots,
+    halfSize: (d) => knotHalfSize(knots, d),
   };
 }
 

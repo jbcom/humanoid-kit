@@ -2283,6 +2283,14 @@ for.
   the rim, which is what hiding a consumed object and measuring an occupancy
   read.
 
+- *The clip at the rim* (`src/render/channelClip.ts`): a `ChannelClip` holds a
+  figure's channels in world space (`set(channels, figure.matrixWorld)`, the
+  figure's scale carried into their sizes) and `clipMaterial(material, clip)`
+  has any material of an object that may enter them discard each fragment
+  `placeIn` puts inside one, so a bite dissolves past the lips and an earbud's
+  stem vanishes into the canal. A channel's size along it is its `knots`, the
+  one profile `halfSize` and the shader both read. A browser test holds the
+  discarded pixels to `placeIn`'s inside, pixel for pixel away from the walls.
 - *The finger pads are contacts* (`finger-pad-1.L` to `finger-pad-5.R`, thumb
   to little finger): what a fingertip touches and presses with, each framed on
   its pad landmark. A hand's grip keeps its palm frame; a pinch or a press is
@@ -2290,9 +2298,14 @@ for.
 
 The registry is built in steps: the kinds, the core's apertures (the mouth,
 nostrils and ear canals) with their channels, grips, mounts, contacts and the
-finger pads, state, and frames first; curved channel paths, the response
-(a channel widening to what it holds), the renderer's clip at the rim and the
-adult pack's affordances follow.
+finger pads, state, frames and the clip at the rim first. Next: the public
+API through `Humanoid` (frames each frame, the clip fed the figure's own
+channels), the response (a channel widening to what it holds), the adult
+pack's affordances, and curved channel paths. The canals' bends are placed
+by a CT study of 221 ears (PMC12198549: the first bend at the concha's
+junction, the second at the bony junction), but their angles were not found
+in an open source (Stinson and Lawton, JASA 85:2492, 1989, has them), so the
+paths stay straight until they are.
 
 ## Invariants
 
