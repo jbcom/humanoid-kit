@@ -18,9 +18,17 @@ export interface Cards {
   /** Four per quad, indices into `uvs` (UV = two numbers). */
   faceUvs: number[];
   uvs: number[];
+  /** The vertices the hair grows from: the first ring of every rope. Growth is measured from them. */
+  roots: number[];
 }
 
-export const newCards = (): Cards => ({ positions: [], faceVerts: [], faceUvs: [], uvs: [] });
+export const newCards = (): Cards => ({
+  positions: [],
+  faceVerts: [],
+  faceUvs: [],
+  uvs: [],
+  roots: [],
+});
 
 export interface RopeSpec {
   /** Where the rope leaves the scalp. */
@@ -32,8 +40,10 @@ export interface RopeSpec {
   tipRadius: number;
   /** Metres along which the rope keeps going out along the scalp normal before gravity takes it. */
   lift: number;
-  /** A sideways drift (metres per metre of rope, in world axes): a braid pulled to one side, a twist that curls. */
+  /** A steer (world axes, in units of gravity) that fades out over the rope's first nine centimetres: a braid swept clear of the face. */
   drift?: Vector3;
+  /** How much wider than `radius` the rope is at its root (a fraction), narrowing to it over three centimetres. */
+  collar?: number;
   /** Sides of the tube, and rings along it. */
   sides: number;
   segments: number;
@@ -42,6 +52,8 @@ export interface RopeSpec {
 }
 
 const GRAVITY = new Vector3(0, -1, 0);
+/** Metres of rope over which its drift acts before gravity alone decides. */
+const DRIFT_LENGTH = 0.09;
 /** How far a rope's centre stays from the body, in rope radii. */
 const CLEARANCE = 1.15;
 
@@ -63,7 +75,8 @@ export function ropePath(
     const want = new Vector3()
       .addScaledVector(root.normal, out)
       .addScaledVector(GRAVITY, 1 - out)
-      .addScaledVector(spec.drift ?? new Vector3(), 1 - out)
+      // A drift steers the rope clear of something (the face) near its root, then lets it hang.
+      .addScaledVector(spec.drift ?? new Vector3(), (1 - out) * Math.max(0, 1 - s / DRIFT_LENGTH))
       .normalize();
     dir.lerp(want, 0.55).normalize();
     const p = (points[i - 1] as Vector3).clone().addScaledVector(dir, step);
@@ -78,11 +91,18 @@ export function ropePath(
   return { points, radii };
 }
 
-/** Radius at a fraction of the length: full along most of it, rounding off to the tip. */
+/**
+ * Radius at a fraction of the length: full along most of it, rounding off to the tip, and wider at the
+ * root where a rope gathers the section of hair that grows round it (a rope's `collar`, over its first
+ * three centimetres).
+ */
 export function ropeRadius(spec: RopeSpec, t: number): number {
   const f = Math.min(1, Math.max(0, (t - 0.6) / 0.4));
   const taper = f * f * (3 - 2 * f);
-  return spec.radius + (spec.tipRadius - spec.radius) * taper;
+  const metres = t * spec.length;
+  const g = Math.min(1, Math.max(0, metres / 0.03));
+  const collar = (spec.collar ?? 0) * (1 - g * g * (3 - 2 * g));
+  return (spec.radius + (spec.tipRadius - spec.radius) * taper) * (1 + collar);
 }
 
 /** Adds a rope's tube to `cards` and returns the index of its first vertex. */
@@ -147,6 +167,7 @@ export function addTube(
         (tile.v0 ?? 0) + along / tile.metresPerV,
       );
   }
+  for (let j = 0; j < sides; j++) cards.roots.push(first + j);
   for (let i = 0; i < rings - 1; i++)
     for (let j = 0; j < sides; j++) {
       const v = (ring: number, k: number) => first + ring * sides + (k % sides);

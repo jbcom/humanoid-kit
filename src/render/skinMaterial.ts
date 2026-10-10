@@ -239,7 +239,12 @@ vec3 hkApplyStrands( vec3 c, vec2 uv ) {
 			a = mix( near, mean, far );
 			hkStrandHeight += ( 1.0 - far ) * near * relief;
 		}
-		c = mix( c, hair.rgb, a );
+		// Hair is never lighter than the skin it lies on: a fair strand on deep
+		// skin is seen as a darker line, not a light fleck.
+		float lh = dot( hair.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
+		float ls = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
+		vec3 strand = lh > ls ? hair.rgb * ( ls / lh ) : hair.rgb;
+		c = mix( c, strand, a );
 	}
 	return c;
 }`;

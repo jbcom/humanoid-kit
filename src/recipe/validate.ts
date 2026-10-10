@@ -89,6 +89,12 @@ export function recipeProblems(recipe: unknown): string[] {
       p.push("eyes.iris must be three numbers in [0, 1]");
     }
     if (!finite(e.scleraWarmth)) p.push("eyes.scleraWarmth must be a finite number");
+    if (
+      "material" in e &&
+      e.material !== undefined &&
+      !(typeof e.material === "string" && e.material !== "")
+    )
+      p.push("eyes.material must be a non-empty string");
   }
   if ("hair" in r && r.hair !== undefined) hairProblems(r.hair, p);
   if ("bodyHair" in r && r.bodyHair !== undefined) bodyHairProblems(r.bodyHair, p);

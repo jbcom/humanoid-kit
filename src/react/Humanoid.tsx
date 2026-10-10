@@ -43,6 +43,7 @@ import {
   METAL_REFLECTANCE,
   type PlacedPiercing,
 } from "../bodyArt/jewellery.ts";
+import type { EyeLibrary } from "../eyes/library.ts";
 import { quantisedShapeSignals, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import { shapeSignalNames } from "../model/detailFactors.ts";
 import type {
@@ -217,6 +218,13 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
    */
   animation?: HumanoidAnimation;
   /**
+   * The eye pack's library (`humanoid-kit-eyes`, `loadEyeLibrary`): with it, a recipe's
+   * `eyes.material` is worn (its texture's iris pattern and sclera detail in the recipe's
+   * own colours). Keep it stable. Without it, or for a material it does not have (reported
+   * through `onError`), the built-in eye texture is shown.
+   */
+  eyeMaterials?: EyeLibrary;
+  /**
    * The skin's state: named signals, each 0..1 (`cold`, `heat`, `exertion`,
    * `blush`, `fear`; `arousal` for adults only). Every signal reaches the skin
    * layers; those with state morphs (`STATE_MORPHS`) also change the shape,
@@ -347,6 +355,7 @@ function useAttachmentMaterial(
   t: AttachmentTopology,
   occlusionKeys: Vector3,
   report: (e: Error) => void,
+  eyeMaterial: { library: EyeLibrary; id: string } | null = null,
 ): MeshStandardMaterial {
   const material = useMemo(() => {
     const material =
@@ -357,10 +366,22 @@ function useAttachmentMaterial(
   }, [t, occlusionKeys]);
   const reportRef = useLatest(report);
   const settle = useSettle();
+  // An eye wears a material of the eye pack when the recipe names one the library has.
+  const library = eyeMaterial?.library ?? null;
+  const wanted = eyeMaterial ? library?.entry(eyeMaterial.id) : undefined;
+  const missing = eyeMaterial && library && !wanted ? eyeMaterial.id : null;
   useEffect(() => {
-    if (!t.textureUrl) return;
+    if (missing) reportRef.current(new Error(`the eye library has no material ${missing}`));
+  }, [missing, reportRef]);
+  useEffect(() => {
+    if (!(material instanceof EyeMaterial)) return;
+    material.setMaterial(wanted ?? null, library?.manifest);
+  }, [material, wanted, library]);
+  useEffect(() => {
+    const worn = wanted && library ? library.textureUrl(wanted.id) : t.textureUrl;
+    if (!worn) return;
     let live = true;
-    const url = t.textureUrl;
+    const url = worn;
     const end = settle.begin();
     new TextureLoader().loadAsync(url).then(
       (tex) => {
@@ -384,7 +405,7 @@ function useAttachmentMaterial(
       material.map?.dispose();
       material.map = null;
     };
-  }, [t, material, reportRef, settle]);
+  }, [t, material, reportRef, settle, wanted, library]);
   useEffect(() => () => material.dispose(), [material]);
   return material;
 }
@@ -549,6 +570,7 @@ function AttachmentMesh({
   visible,
   report,
   eyes,
+  eyeLibrary,
   melanin,
   shape,
 }: {
@@ -560,10 +582,18 @@ function AttachmentMesh({
   visible: boolean;
   report: (e: Error) => void;
   eyes: Recipe["eyes"];
+  eyeLibrary: EyeLibrary | undefined;
   melanin: number;
   shape: object;
 }) {
-  const material = useAttachmentMaterial(topology, occlusionKeys, report);
+  const eyeMaterial = useMemo(
+    () =>
+      topology.kind === "eyes" && eyeLibrary && eyes.material
+        ? { library: eyeLibrary, id: eyes.material }
+        : null,
+    [topology.kind, eyeLibrary, eyes.material],
+  );
+  const material = useAttachmentMaterial(topology, occlusionKeys, report, eyeMaterial);
   useEffect(() => {
     if (material instanceof EyeMaterial) material.setAppearance(eyes);
   }, [material, eyes]);
@@ -850,6 +880,7 @@ export function Humanoid({
   presence,
   pose,
   animation,
+  eyeMaterials,
   signals,
   onGroundOffset,
   bodyArtImages,
@@ -1513,6 +1544,7 @@ export function Humanoid({
                   visible={shown}
                   report={report}
                   eyes={recipe.eyes}
+                  eyeLibrary={eyeMaterials}
                   melanin={recipe.skin.melanin}
                   shape={shape}
                 />

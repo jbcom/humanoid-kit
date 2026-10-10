@@ -3,8 +3,10 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   type AnimationLibrary,
   createRecipe,
+  type EyeLibrary,
   HumanoidWorkerClient,
   loadAnimationLibrary,
+  loadEyeLibrary,
   type Recipe,
 } from "humanoid-kit";
 import { HumanoidCreator } from "humanoid-kit/editor";
@@ -18,6 +20,7 @@ import {
 } from "humanoid-kit/react";
 import { animationsPack } from "humanoid-kit-animations";
 import { bodyPack } from "humanoid-kit-body";
+import { eyesPack } from "humanoid-kit-eyes";
 import { hairPack } from "humanoid-kit-hair";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -308,7 +311,7 @@ function QaLight({ kind }: { kind: "camera" | "under" }) {
 
 /**
  * A fixed-camera render for visual QA: `?view=front|side|back|face`, or
- * `?cam=x,y,z,tx,ty,tz` to place the camera exactly, or `?frame=<bone>&view=dx,dy,dz&span=<m>[&at=dx,dy,dz]`
+ * `?cam=x,y,z,tx,ty,tz[&span=<m>]` to place the camera exactly (with `span`, the field of view fits that many metres across at the target), or `?frame=<bone>&view=dx,dy,dz&span=<m>[&at=dx,dy,dz]`
  * to frame a bone by name (`AutoFrame`, `at` a world offset in metres from the bone's head), with `?light=camera|under` to light what the studio
  * does not reach; `?tm=agx|neutral|aces`
  * and `?exp=<number>` override tone mapping and exposure for comparisons;
@@ -335,6 +338,17 @@ function Shot() {
       live = false;
     };
   }, [wantsAnimation, library]);
+  // The eye pack's library, fetched once and only for a shot whose recipe names an eye material.
+  const [eyeLibrary, setEyeLibrary] = useState<EyeLibrary | null>(null);
+  const wantsEyes = recipe.eyes.material !== undefined;
+  useEffect(() => {
+    if (!wantsEyes || eyeLibrary) return;
+    let live = true;
+    void loadEyeLibrary(eyesPack).then((l) => live && setEyeLibrary(l));
+    return () => {
+      live = false;
+    };
+  }, [wantsEyes, eyeLibrary]);
   const [playing, setPlaying] = useState<string | null>(null);
   const [signals, setSignals] = useState<Record<string, number>>(initialSignals);
   const [lift, setLift] = useState(0);
@@ -345,7 +359,10 @@ function Shot() {
   // test can render many figures from one page load.
   const [settled, setSettled] = useState(false);
   // A shot that plays a clip is ready once the figure follows it.
-  const ready = settled && (animation === undefined || playing === animation.clip);
+  const ready =
+    settled &&
+    (animation === undefined || playing === animation.clip) &&
+    (!wantsEyes || eyeLibrary !== null);
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
     window.hkSetRecipe = (init, next, nextSignals) => {
@@ -385,6 +402,19 @@ function Shot() {
         target: cam.slice(3) as [number, number, number],
       }
     : ((preset[view] ?? preset.front) as (typeof preset)[string]);
+  // `?cam=…&span=<m>`: an exact camera keeps its position and narrows (or widens)
+  // its field of view until `span` metres across fit the frame at the target, so a
+  // close crop can be shot from a set distance without perspective changing.
+  const camSpan = Number(params.get("span"));
+  const reach = Math.hypot(
+    position[0] - target[0],
+    position[1] - target[1],
+    position[2] - target[2],
+  );
+  const fov =
+    exact && Number.isFinite(camSpan) && camSpan > 0 && reach > 0
+      ? 2 * Math.atan(camSpan / 2 / reach) * (180 / Math.PI)
+      : 35;
   return (
     <div
       style={{ position: "absolute", inset: 0 }}
@@ -392,8 +422,8 @@ function Shot() {
       data-generation={generation}
     >
       <Canvas
-        shadows="percentage"
-        camera={{ position, fov: 35 }}
+        shadows={params.has("noshadow") ? false : "percentage"}
+        camera={{ position, fov }}
         gl={{
           preserveDrawingBuffer: true,
           toneMapping,
@@ -418,6 +448,7 @@ function Shot() {
             animation && {
               animation: { library, ...animation, onStart: setPlaying },
             })}
+          {...(eyeLibrary && { eyeMaterials: eyeLibrary })}
           signals={signals}
           position={[0, animation ? 0 : lift, 0]}
           onGroundOffset={setLift}

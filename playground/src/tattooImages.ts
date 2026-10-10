@@ -9,7 +9,15 @@
  */
 import type { BodyArtImages } from "humanoid-kit/react";
 
-const SIZE = 256;
+/** The drawings' own units: every radius and line width below is in these. */
+const DESIGN = 256;
+/**
+ * Pixels a side. The skin samples a tattoo's image no finer than the ink's
+ * spread in the dermis (`INK_SPREAD`, 0.2 mm), and the sheets wear these at up
+ * to 10 cm: 512 px puts 0.2 mm in a pixel, so the image is never what blurs.
+ * The paths are vectors, so drawing them larger is exact.
+ */
+const SIZE = 512;
 
 function canvas(draw: (g: CanvasRenderingContext2D) => void): HTMLCanvasElement {
   const c = document.createElement("canvas");
@@ -17,6 +25,7 @@ function canvas(draw: (g: CanvasRenderingContext2D) => void): HTMLCanvasElement 
   c.height = SIZE;
   const g = c.getContext("2d") as CanvasRenderingContext2D;
   g.translate(SIZE / 2, SIZE / 2);
+  g.scale(SIZE / DESIGN, SIZE / DESIGN);
   g.lineJoin = "round";
   g.lineCap = "round";
   draw(g);

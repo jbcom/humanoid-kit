@@ -57,6 +57,14 @@ export const COVERED_BY = 0.006;
 /** How far inside the covering card's own edge (metres) a spot must be for the card to cover it. */
 export const COVER_MARGIN = 0.004;
 
+/**
+ * ...and a card edge is a hairline only if bare skin (a body triangle with a corner the
+ * hair does not cover) lies this near it (metres). Cards that meet edge to edge at a
+ * part or a crown leave edges no other card lies over, but the skin around them is all
+ * under hair: thinned, they opened skin-coloured gaps there.
+ */
+export const BARE_NEAR = 0.01;
+
 /** Metres along the card, from a hairline, over which hair thins in. */
 export const FADE_LENGTH = 0.018;
 
@@ -125,6 +133,12 @@ export interface HairFieldsInput {
    * parts of it that face away would hollow it out.
    */
   fins?: boolean;
+  /**
+   * The vertices the hair grows from, when the author knows them (a rope's first ring). Absent, the
+   * roots are the vertices within `ROOT_NEAR` of the scalp, which for hair that lies on the scalp
+   * throughout (bantu knots) is every vertex, and growth then says nothing of strand direction.
+   */
+  roots?: readonly number[];
   /**
    * The cards' texture cut-out: where it is clear there is no hair, so no scalp
    * tint (a card's mesh extends past the hair painted on it, and the skin beyond the
@@ -389,7 +403,8 @@ export function hairFields(input: HairFieldsInput): HairFields {
   // Growth: from the vertices at the scalp; a card (connected piece) that touches none
   // grows from its highest vertex (a free-hanging lock grows from where it hangs).
   const roots = new Set<number>();
-  for (let v = 0; v < n; v++) if ((nearBody[v] as number) < ROOT_NEAR) roots.add(v);
+  if (input.roots) for (const v of input.roots) roots.add(v);
+  else for (let v = 0; v < n; v++) if ((nearBody[v] as number) < ROOT_NEAR) roots.add(v);
   let reach = distanceAlong(adjacency, roots);
   for (let v = 0; v < n; v++) {
     if (Number.isFinite(reach[v] as number)) continue;
@@ -583,12 +598,31 @@ export function hairFields(input: HairFieldsInput): HairFields {
     }
     return false;
   };
+  // Bare skin: the body triangles with a corner the hair does not cover.
+  const bare: number[] = [];
+  for (let t = 0; t < body.triangles.length; t += 3)
+    if (
+      [0, 1, 2].some((k) => (bodyDensity[body.triangles[t + k] as number] as number) < HAIR_COVERED)
+    )
+      bare.push(
+        body.triangles[t] as number,
+        body.triangles[t + 1] as number,
+        body.triangles[t + 2] as number,
+      );
+  const bareBvh =
+    bare.length > 0
+      ? new MeshBVH(geometry(body.positions, Uint32Array.from(bare)), { verbose: false })
+      : null;
+  const bordersBare = (v: number) =>
+    (bareBvh?.closestPointToPoint(at(v), target)?.distance ?? Number.POSITIVE_INFINITY) < BARE_NEAR;
   const hairline: number[] = [];
   for (let v = 0; v < n; v++) {
     if ((nearBody[v] as number) >= HAIRLINE_NEAR) continue;
-    // A boundary vertex that no other card lies over, or any vertex above skin the hair has
-    // not reached (the visible hairline is inside the mesh, where the painted hair ends).
-    if (skinUnder(v) < HAIR_COVERED || (boundary.has(v) && !coveredByAnother(v))) hairline.push(v);
+    // Any vertex above skin the hair has not reached (the visible hairline is inside the mesh,
+    // where the painted hair ends), or a boundary vertex that no other card lies over and that
+    // borders bare skin (not one where cards meet at a part or a crown).
+    if (skinUnder(v) < HAIR_COVERED || (boundary.has(v) && !coveredByAnother(v) && bordersBare(v)))
+      hairline.push(v);
   }
   const along = distanceAlong(adjacency, hairline);
   const fade =

@@ -82,8 +82,8 @@ export async function braidAtlas(seed = 7): Promise<Buffer> {
   const columns = 4;
   const pattern = TILE_WIDTH - 2 * PAD;
   const colWidth = pattern / columns;
-  const pitch = 30;
-  const arm = 13;
+  const pitch = 36;
+  const arm = 15;
   const body: string[] = [];
   for (let k = 0; k < TILE_COUNT; k++) {
     const tone = 0.85 + 0.3 * rand();
@@ -92,7 +92,7 @@ export async function braidAtlas(seed = 7): Promise<Buffer> {
       c: n % columns,
       r: Math.floor(n / columns),
       lift: 0.8 + 0.4 * rand(),
-      fibres: Array.from({ length: 7 }, () => rand()),
+      fibres: Array.from({ length: 16 }, () => rand()),
     }));
     body.push(
       tileGroup(k, pattern, (x) =>
@@ -114,10 +114,10 @@ export async function braidAtlas(seed = 7): Promise<Buffer> {
                   const t0 = (i + f * 0.7) / fibres.length;
                   const fx1 = x1 + (t0 - 0.5) * arm * 0.9;
                   const fx2 = x2 + (t0 - 0.5) * arm * 0.9;
-                  return `<line x1="${fx1}" y1="${y}" x2="${fx2}" y2="${y + h}" stroke="${grey(0.2 + 0.7 * f)}" stroke-width="0.8"/>`;
+                  return `<line x1="${fx1}" y1="${y}" x2="${fx2}" y2="${y + h}" stroke="${grey(0.3 + 0.45 * f)}" stroke-width="0.5"/>`;
                 })
                 .join("");
-              return `${band(arm, 0.22)}${band(arm * 0.78, 0.5)}${band(arm * 0.45, 0.78)}${strands}`;
+              return `${band(arm, 0.32)}${band(arm * 0.78, 0.46)}${band(arm * 0.45, 0.62)}${strands}`;
             });
             return arms.join("");
           })
@@ -125,7 +125,7 @@ export async function braidAtlas(seed = 7): Promise<Buffer> {
       ),
     );
   }
-  return rasterise(`<g filter="url(#soft)">${body.join("")}</g>`, 0.12);
+  return rasterise(`<g filter="url(#soft)">${body.join("")}</g>`, 0.2);
 }
 
 /**

@@ -406,10 +406,11 @@ describe("a walking figure's feet", () => {
     expect(sorted[Math.floor(sorted.length / 2)] as number, "median").toBeLessThan(0.008);
   });
 
-  it("stay put to a few centimetres in the hip-swaying walk, whose hand-keyed feet do not agree with their own body's pace", () => {
+  it("stay put in the hip-swaying walk too, whose hand-keyed front foot skates along the floor on landing: the figure gives way to its planted feet", () => {
     for (const fig of allFigures()) {
       const d = stanceDrift(fig, clip("walk_female"));
-      expect(d.worst, `${fig.name}: ${(d.worst * 1000).toFixed(1)} mm`).toBeLessThan(0.035);
+      expect(d.stances, fig.name).toBeGreaterThanOrEqual(8);
+      expect(d.worst, `${fig.name}: ${(d.worst * 1000).toFixed(1)} mm`).toBeLessThan(0.015);
     }
   });
 
@@ -426,7 +427,7 @@ describe("a walking figure's feet", () => {
   });
 
   it("stay put to a few centimetres in the gaits that shuffle: a crouch walk and a zombie's drag their feet", () => {
-    const limit: Record<string, number> = { crouch_fwd_loop: 0.05, zombie_walk_fwd_loop: 0.08 };
+    const limit: Record<string, number> = { crouch_fwd_loop: 0.05, zombie_walk_fwd_loop: 0.03 };
     for (const [id, bound] of Object.entries(limit))
       for (const fig of allFigures()) {
         const d = stanceDrift(fig, clip(id));
@@ -650,6 +651,43 @@ describe("the foot lock", () => {
       );
       expect(dot, side).toBeGreaterThan(0.99999);
     }
+  });
+
+  it("asks nothing of the figure while the leg reaches, and when it cannot, asks the figure to give way by what it could not reach", () => {
+    const lock = new FootLock(fig.rest, fig.ground);
+    lock.apply(pose(), [0, 0]);
+    lock.apply(pose(), [0, 0.02]);
+    expect(Math.hypot(lock.correction[0] as number, lock.correction[1] as number)).toBeLessThan(
+      1e-9,
+    );
+    // Carried half a metre past its planted feet, no leg reaches back to them: the figure is
+    // asked to come back by what the legs fell short, and then the feet are where they were put.
+    const start = world(pose(), 0);
+    const far = pose();
+    lock.apply(far, [0, 0.5]);
+    const back = lock.correction[1] as number;
+    expect(back).toBeLessThan(-0.2);
+    expect(back).toBeGreaterThan(-0.5);
+    // The legs are a hip's width apart, so one asks a little more than the figure's step gave: a few frames settle it.
+    let root = 0.5 + back;
+    let held = pose();
+    for (let frame = 0; frame < 6; frame++) {
+      held = pose();
+      lock.apply(held, [0, root]);
+      root += lock.correction[1] as number;
+    }
+    held = pose();
+    lock.apply(held, [0, root]);
+    expect(Math.abs(lock.correction[1] as number)).toBeLessThan(0.0005);
+    const there = world(held, root);
+    for (const k of [0, 3])
+      expect(
+        Math.hypot(
+          (there[k]?.[0] as number) - (start[k]?.[0] as number),
+          (there[k]?.[1] as number) - (start[k]?.[1] as number),
+        ),
+        `point ${k}`,
+      ).toBeLessThan(0.003);
   });
 
   it("touches nothing else: the arms, the spine, every bone but the legs' are as the clip had them", () => {
