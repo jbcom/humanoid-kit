@@ -1299,6 +1299,40 @@ then puts the thigh back out of whatever the release let go. Each key also looks
 back a half and a quarter of a step (`BETWEEN`, CHOICE: at a half alone the slim
 woman was 14 mm through at 139°).
 
+**Skin the bones fold over itself, smoothed out (2026-10-10).** After the release,
+the last round first smooths the crease's skin that the bones have turned over:
+a triangle whose face, as posed and pushed, points against its rest face as its
+corners' bones carry it has its corners and their neighbours stepped halfway to
+their neighbours' mean (`UNCRUMPLE`, at most `UNCRUMPLE_STEPS`, CHOICE: halfway
+steps cleared every such triangle near the hips in two to eight steps). The
+thigh's skin steps freely; the trunk's steps only where a thigh is within
+`FOLD_PRESS.near` of it, and only inward along its normal, so the belly gains no
+groove away from the thighs (`PressReach`) and its press stays a press (the tall
+lean man's inward share). Smoothing the trunk wherever it folded halved the smoke
+tier's inverted triangles but pressed belly no thigh meets (the squat's share
+0.63) and moved some outward (0.89 inward).
+
+**The drawn surface draws the solved shape (2026-10-10).** A surface refined
+from the control mesh takes its stencil's mix of the fold (`surfaceFold`), but
+the renderer skins each refined vertex by its own weights, and across a crease
+whose bones turn ninety degrees, skinning a vertex between two control vertices is
+not the mix of skinning them: the drawn crease folds over itself where the solved
+control mesh does not (seated, the average figure's crease 51 triangles turned
+over against 8 on its solved control surface subdivided). `solvedSurfaceFold`
+(`src/rig/solvedSurface.ts`) adds to each row, at every key and opening, what the
+surface as skinned there lacks of the control mesh skinned and subdivided, by the
+share of its stencil the fold reaches, so the correction ends where the fold does.
+
+Measured together on the drawn surface (`seated`, the lateral crease 4 to 12 cm
+out from the hip and 4 to 16 cm in front): triangles turned against their
+normals 58 → 14 (average), 76 → 24 (heavy woman), 89 → 16 (heavy man), 74 → 61
+(slim woman), 38 → 6 (child). Over the smoke tier against the fold before it:
+penetrating vertices 2011 → 1859, inverted triangles 14795 → 13301, folded edges
+6978 → 4648, squashed 4622 → 7153. One row inverts more: the muscular man
+seated, 1268 → 1421; every other posed row inverts as many or fewer. The squashed ones are the crease compressed:
+of the faces under 0.3 of their rest area, 2467 more within 15 cm of a hip, none
+more at the knee, 60 fewer elsewhere, most of them (1269) at 0.2 to 0.3.
+
 **Why the normal is part of the fold.** The skinned normal is the bones' own, and
 where the fold has moved the skin by centimetres it is a normal of skin that is no
 longer there: in the average figure at 120°, of the vertices the fold moves, a third
@@ -2424,7 +2458,11 @@ none. **The worklist**: `node scripts/foundation-smoke.ts` runs the smoke tier
 (24 bodies × poses, 18 s) and writes `docs/evidence/FOUNDATION-SMOKE.md` and
 its measures; the smoke test holds every body at rest to no failure and every
 row to no worse than the file, so a foundation lane that fixes a row rewrites
-it in its commit.
+it in its commit. Penetration and squashed triangles are held by the rest skin
+they cover, in cm² (a sampled vertex standing for its share of its triangles'
+area times the stride, a squashed triangle for its own), and their counts are
+recorded as information only: a finer surface has more vertices and triangles
+over the same skin, so a count rises where nothing got worse (2026-10-10).
 
 **The landmarks (built 2026-10-09).** `landmarks(model, posedBody)`
 (`src/foundation/landmarks.ts`) gives every named place on a posed body as a

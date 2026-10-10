@@ -4,7 +4,7 @@
  * the bones, and the seams' duplicates move together. That `skinPositions` is
  * what the shader draws is tests/browser/dualSkinning.test.ts's.
  */
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { REST_POSE } from "../src/foundation/permutations.ts";
 import { posedSurface } from "../src/foundation/posed.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -22,8 +22,15 @@ const maxY = (p: Float32Array) => {
 };
 
 describe("the posed body", () => {
+  // The first posed evaluation builds the model's subdivided surface and its
+  // fold tables, about 8 s alone and over 30 s when the whole unit project
+  // runs at once, so it is built here rather than charged to the first test.
+  let body: ReturnType<typeof posedSurface>;
+  beforeAll(() => {
+    body = posedSurface(model, recipe, REST_POSE);
+  }, 120_000);
+
   it("is the evaluated body itself at rest", () => {
-    const body = posedSurface(model, recipe, REST_POSE);
     let worst = 0;
     for (let i = 0; i < body.positions.length; i++)
       worst = Math.max(worst, Math.abs((body.positions[i] as number) - (body.rest[i] as number)));

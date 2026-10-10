@@ -90,6 +90,13 @@ export const isContact = (a: BodyPart, b: BodyPart): boolean =>
 export interface InvariantMeasure {
   /** Vertices deeper than `PENETRATION_LIMIT` inside other skin, outside a named contact, and the deepest (metres). */
   penetrating: number;
+  /**
+   * The rest skin those vertices stand for (cm²): each sampled vertex's share
+   * of its triangles' rest area, times the sampling stride. Penetration is
+   * judged by this; the count is information, since a finer surface has more
+   * vertices over the same skin.
+   */
+  penetratingArea: number;
   deepest: number;
   /** Where the deepest is: the two parts. */
   deepestParts: string;
@@ -99,6 +106,8 @@ export interface InvariantMeasure {
   /** Triangles that inverted against the skinned normals, or kept under `SQUASH_LIMIT` of their area. */
   inverted: number;
   squashed: number;
+  /** The squashed triangles' rest area (cm²), by which collapse to a sliver is judged; the count is information. */
+  squashedArea: number;
   /** Joints whose skin's volume left `VOLUME_BAND`, and the furthest ratio from 1. */
   volumeOut: string[];
   worstVolume: number;
@@ -142,6 +151,28 @@ function areaNormal(p: Float32Array, i: number, j: number, k: number, out: Vecto
   return out.crossVectors(e1.subVectors(b, a), e2.subVectors(c, a));
 }
 
+/** Square metres to square centimetres. */
+const CM2 = 1e4;
+
+/** Each welded vertex's share of its triangles' rest area (m²): a third of each, gathered on the weld's root. */
+function restVertexAreas(body: PosedBody): Float32Array {
+  const out = new Float32Array(body.vertexCount);
+  const area = new Vector3();
+  for (let t = 0; t < body.index.length; t += 3) {
+    const corners = [body.index[t], body.index[t + 1], body.index[t + 2]] as [
+      number,
+      number,
+      number,
+    ];
+    const third = areaNormal(body.rest, ...corners, area).length() / 6;
+    for (const v of corners) {
+      const root = body.weld[v] as number;
+      out[root] = (out[root] as number) + third;
+    }
+  }
+  return out;
+}
+
 /**
  * Penetration: each sampled vertex, by the parity of a ray from it outward
  * along its normal. Skin is a closed surface, so a point on its outside
@@ -153,6 +184,8 @@ function areaNormal(p: Float32Array, i: number, j: number, k: number, out: Vecto
 function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
   const surface = new BodySurface(body);
   const { bvh, triangles: tri } = surface;
+  const areas = restVertexAreas(body);
+  let penetratingArea = 0;
   const p = new Vector3();
   const near = new Vector3();
   const rest = new Vector3();
@@ -206,6 +239,7 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
       deepestContact = Math.max(deepestContact, depth);
     } else {
       penetrating++;
+      penetratingArea += (areas[v] as number) * stride * CM2;
       if (depth > deepest) {
         deepest = depth;
         deepestParts = `${mine}~${other}`;
@@ -213,13 +247,14 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
     }
   }
   surface.dispose();
-  return { penetrating, deepest, deepestParts, contacts, deepestContact };
+  return { penetrating, penetratingArea, deepest, deepestParts, contacts, deepestContact };
 }
 
 /** Inverted and squashed triangles. */
 function collapse(body: PosedBody) {
   let inverted = 0;
   let squashed = 0;
+  let squashedArea = 0;
   const posed = new Vector3();
   const atRest = new Vector3();
   const skinned = new Vector3();
@@ -241,9 +276,12 @@ function collapse(body: PosedBody) {
     const restSkinned = b.set(0, 0, 0);
     for (const v of [i, j, k]) restSkinned.add(v3(body.restNormals, v, c));
     if (posed.dot(skinned) < 0 && atRest.dot(restSkinned) > 0) inverted++;
-    else if (posed.length() < SQUASH_LIMIT * restArea) squashed++;
+    else if (posed.length() < SQUASH_LIMIT * restArea) {
+      squashed++;
+      squashedArea += (restArea / 2) * CM2;
+    }
   }
-  return { inverted, squashed };
+  return { inverted, squashed, squashedArea };
 }
 
 /** Folds: welded edges sharper in the pose than `DIHEDRAL_LIMIT`, smooth at rest, outside creases. */

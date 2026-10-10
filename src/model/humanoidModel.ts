@@ -51,6 +51,7 @@ import { type HipFold, type SurfaceFold, surfaceFold } from "../rig/hipFold.ts";
 import { solveHipFoldSteps } from "../rig/hipFoldSolve.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
+import { solvedSurfaceFold } from "../rig/solvedSurface.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
 import { beardStyle, bodyHairCoverage } from "../surface/bodyHair.ts";
@@ -1945,7 +1946,16 @@ export class HumanoidModel {
       this.hipFolds.delete(this.hipFolds.keys().next().value as string);
     const adult = isAdult(recipe) ? this.adultBodySurface() : null;
     const mesh = adult ? adult.part.mesh : this.body.mesh;
-    const onSurface = surfaceFold(fold, mesh.stencil, mesh.renderToSurface);
+    // The drawn surface draws the solved shape: the stencil's mix of the fold, and what skinning the surface's
+    // own vertices lacks of the solved control surface subdivided (`solvedSurfaceFold`).
+    const onSurface = solvedSurfaceFold(
+      surfaceFold(fold, mesh.stencil, mesh.renderToSurface),
+      fold,
+      mesh,
+      restBones(this.assets, control),
+      control,
+      this.assets,
+    );
     // An organ the detail draws out of a reservoir moves with where it is rooted, its fold as its weights (`evaluatedFold`).
     const displacement =
       adult && detail.length ? this.detailDisplacement(detail, control) : undefined;
