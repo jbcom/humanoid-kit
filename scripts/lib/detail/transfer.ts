@@ -669,6 +669,8 @@ function surfaceArea(surface: SculptPart, within?: Uint8Array): number {
 const SKIN_LINE_WINDOW = 3;
 /** How far inside the loop vertex that reaches furthest in the skin line is kept, metres. */
 const SKIN_LINE_MARGIN = 0.0005;
+/** Points each side of one over which its place along the skin line is evened (`skinLine`). */
+const SKIN_LINE_EVEN = 3;
 
 /**
  * The skin line: a smooth curve on the skin just inside the loop, one point across
@@ -685,8 +687,8 @@ const SKIN_LINE_MARGIN = 0.0005;
  * The line is drawn through the mean of each loop vertex's neighbours along the loop,
  * moved in across the loop (to the left of its run about the normal, as
  * `loopParameter` turns) until it is inside every loop vertex near it, on the skin the
- * cap covers at rest; each loop vertex's point is then the line's at the vertex's
- * share of the loop's length.
+ * cap covers at rest; each loop vertex's point is then the line's across from it, its
+ * place along the line evened over its neighbours'.
  */
 export function skinLine(
   root: ReservoirRoot,
@@ -710,38 +712,63 @@ export function skinLine(
     const l = len(w);
     return [w[0] / l, w[1] / l, w[2] / l];
   });
-  // How far in the line must go to pass inside every loop vertex beside it.
-  let reach = 0;
-  mean.forEach((m, k) => {
+  // How far in the line must go at each point to pass inside every loop vertex beside
+  // it; then the most of that over the points beside it, averaged over them again, which
+  // varies smoothly and is still at least each point's own. One depth all round, the
+  // deepest staircase's, put the line three millimetres in where the loop is straight,
+  // and the band over the skin to it crossed the groin's crease at the sac's corners
+  // and stood off it as a fringe.
+  const own = mean.map((m, k) => {
+    let r = 0;
     for (let d = -SKIN_LINE_WINDOW; d <= SKIN_LINE_WINDOW; d++)
-      reach = Math.max(reach, dot(sub(atOrder(k + d), m), inward[k] as Vec3));
+      r = Math.max(r, dot(sub(atOrder(k + d), m), inward[k] as Vec3));
+    return r;
   });
-  reach += SKIN_LINE_MARGIN;
+  const around = (values: readonly number[], k: number, pick: (xs: number[]) => number) =>
+    pick(
+      Array.from(
+        { length: 2 * SKIN_LINE_WINDOW + 1 },
+        (_, d) => values[(((k + d - SKIN_LINE_WINDOW) % n) + n) % n] as number,
+      ),
+    );
+  const widest = own.map((_, k) => around(own, k, (xs) => Math.max(...xs)));
+  const reach = widest.map(
+    (_, k) =>
+      around(widest, k, (xs) => xs.reduce((s, x) => s + x, 0) / xs.length) + SKIN_LINE_MARGIN,
+  );
   const cap = capSurface(root);
   const drawn: Vec3[] = mean.map((m, k) => {
     const w = inward[k] as Vec3;
-    return nearestOnSurface(
-      cap,
-      [m[0] + w[0] * reach, m[1] + w[1] * reach, m[2] + w[2] * reach],
-      root.normal,
-    ).point;
+    const r = reach[k] as number;
+    return nearestOnSurface(cap, [m[0] + w[0] * r, m[1] + w[1] * r, m[2] + w[2] * r], root.normal)
+      .point;
   });
-  // Moved in, the points crowd where the loop turns sharply (at the tips of a dented
-  // loop's horns, to a fifth of the loop's spacing), and the rings that read the part
-  // across a crowded step turned over. Each point is put on the line at its loop vertex's
-  // share of the loop's length, from the first.
+  // Each loop vertex's point is the one across from it, at its place along the line
+  // evened over its neighbours'. Put at its share of the loop's length instead, it drifted
+  // along the line by up to six millimetres from across, where the staircase runs
+  // diagonally and is longer than the line, and the band to it sheared across the skin.
+  // Across from each vertex unevened, the points crowd where the loop turns sharply (to
+  // a sixth of the loop's spacing at the sac's corners), and the rings that read the part
+  // across a crowded step turn over.
   const steps = drawn.map((p, k) => len(sub(drawn[(k + 1) % n] as Vec3, p)));
   const total = steps.reduce((s, x) => s + x, 0);
-  const first = loopParam.share[order[0] as number] as number;
+  const across: number[] = [0];
+  for (let k = 1; k < n; k++) across.push((across[k - 1] as number) + (steps[k - 1] as number));
+  /** A place along the line, unwrapped: index k may be past either end, a whole turn on. */
+  const placeAt = (k: number) => (across[((k % n) + n) % n] as number) + Math.floor(k / n) * total;
+  const place = across.map((_, k) => {
+    let s = 0;
+    for (let d = -SKIN_LINE_EVEN; d <= SKIN_LINE_EVEN; d++) s += placeAt(k + d);
+    return s / (2 * SKIN_LINE_EVEN + 1);
+  });
   const line: Vec3[] = new Array(n);
-  let k = 0;
-  let run = 0;
-  order.forEach((v) => {
-    const want = (((((loopParam.share[v] as number) - first) % 1) + 1) % 1) * total;
-    while (k < n - 1 && run + (steps[k] as number) < want) run += steps[k++] as number;
-    const t = (steps[k] as number) > 0 ? (want - run) / (steps[k] as number) : 0;
-    const p = drawn[k] as Vec3;
-    const q = drawn[(k + 1) % n] as Vec3;
+  order.forEach((v, k) => {
+    const want = ((((place[k] as number) % total) + total) % total) as number;
+    let j = 0;
+    while (j < n - 1 && (across[j + 1] as number) < want) j++;
+    const t = (steps[j] as number) > 0 ? (want - (across[j] as number)) / (steps[j] as number) : 0;
+    const p = drawn[j] as Vec3;
+    const q = drawn[(j + 1) % n] as Vec3;
     line[v] = nearestOnSurface(
       cap,
       [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t],
