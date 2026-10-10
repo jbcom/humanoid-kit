@@ -1,0 +1,35 @@
+{
+  "name": "humanoid-kit-eyes",
+  "version": "0.0.0",
+  "description": "Eye materials for humanoid-kit: 32 irises and sclerae (human, slit-pupil, toon and creature eyes) from CC0 MakeHuman community assets. Optional: install it only if you want eye variety.",
+  "type": "module",
+  "license": "CC0-1.0",
+  "author": "Jon Bogaty <jon@jonbogaty.com>",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./data/*": "./data/*",
+    "./package.json": "./package.json"
+  },
+  "files": ["index.js", "index.d.ts", "data", "README.md", "LICENSE"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jbcom/humanoid-kit.git",
+    "directory": "packs/eyes"
+  },
+  "bugs": {
+    "url": "https://github.com/jbcom/humanoid-kit/issues"
+  },
+  "homepage": "https://jbcom.github.io/humanoid-kit/",
+  "engines": {
+    "node": ">=24"
+  },
+  "keywords": ["humanoid-kit", "makehuman", "cc0", "eyes", "iris", "character"]
+}

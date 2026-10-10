@@ -92,6 +92,10 @@ try {
   const animationsManifest = JSON.parse(
     readFileSync(path.join(root, "packs/animations/data/manifest.json"), "utf8"),
   );
+  const eyes = pack(path.join(root, "packs/eyes"), workDir);
+  const eyesManifest = JSON.parse(
+    readFileSync(path.join(root, "packs/eyes/data/manifest.json"), "utf8"),
+  );
 
   const codeFiles = new Set(code.files.map((f) => f.path));
   for (const f of ["LICENSE", "NOTICE.md", "README.md", "package.json", WORKER_FILE]) {
@@ -180,6 +184,20 @@ try {
         ...animationsManifest.clips.map((c) => `data/${c.file}`),
       ],
     ],
+    [
+      "humanoid-kit-eyes",
+      eyes,
+      [
+        "index.js",
+        "index.d.ts",
+        "LICENSE",
+        "README.md",
+        "data/manifest.json",
+        "data/PROVENANCE.md",
+        // Every material ships its texture, and the manifest names no other file.
+        ...eyesManifest.materials.map((m) => `data/${m.file}`),
+      ],
+    ],
   ]) {
     const present = new Set(p.files.map((f) => f.path));
     for (const f of files) assert(present.has(f), `${label} tarball is missing ${f}`);
@@ -233,7 +251,7 @@ try {
       "install",
       "--no-audit",
       "--no-fund",
-      ...[code, body, adult, hair, animations].map((p) => path.join(workDir, p.filename)),
+      ...[code, body, adult, hair, animations, eyes].map((p) => path.join(workDir, p.filename)),
       ...PEERS,
     ],
     { cwd: consumer, env: npmEnvironment, shell: npmNeedsShell, stdio: "pipe" },
@@ -253,7 +271,8 @@ try {
       const { adultAnatomyPack } = await import("humanoid-kit-adult-anatomy");
       const { hairPack } = await import("humanoid-kit-hair");
       const { animationsPack } = await import("humanoid-kit-animations");
-      for (const p of [bodyPack, adultAnatomyPack, hairPack, animationsPack]) {
+      const { eyesPack } = await import("humanoid-kit-eyes");
+      for (const p of [bodyPack, adultAnatomyPack, hairPack, animationsPack, eyesPack]) {
         assert(p.manifest.startsWith("file:"), "pack manifest URL should resolve to the installed file");
         for (const url of Object.values(p.files)) assert(url.startsWith("file:"), "pack file URL should resolve");
       }
@@ -264,7 +283,7 @@ try {
   );
   assert.equal(result, "ok", "installed ESM smoke failed");
   console.log(
-    `verify-package: ${code.entryCount} + ${body.entryCount} + ${adult.entryCount} + ${hair.entryCount} + ${animations.entryCount} files packed; every entry point imports`,
+    `verify-package: ${code.entryCount} + ${body.entryCount} + ${adult.entryCount} + ${hair.entryCount} + ${animations.entryCount} + ${eyes.entryCount} files packed; every entry point imports`,
   );
 } finally {
   rmSync(workDir, { recursive: true, force: true });

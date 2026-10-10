@@ -236,6 +236,9 @@ importers:
       humanoid-kit-clothing:
         specifier: workspace:*
         version: link:packs/clothing
+      humanoid-kit-eyes:
+        specifier: workspace:*
+        version: link:packs/eyes
       humanoid-kit-hair:
         specifier: workspace:*
         version: link:packs/hair
@@ -292,6 +295,8 @@ importers:
   packs/body: {}
 
   packs/clothing: {}
+
+  packs/eyes: {}
 
   packs/hair: {}
 
