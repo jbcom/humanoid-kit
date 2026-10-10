@@ -36,7 +36,7 @@ import {
   skinPose,
   skinVertex,
 } from "../rig/dual.ts";
-import { FOLD_KEYS, HIP_FOLD, hipPose, type SurfaceFold } from "../rig/hipFold.ts";
+import { FOLD_KEYS, HIP_FOLD, hipFlexion, type SurfaceFold } from "../rig/hipFold.ts";
 import type { BoneRotations, RestBones } from "../rig/pose.ts";
 import { poseShare } from "../rig/skinShare.ts";
 
@@ -44,7 +44,10 @@ import { poseShare } from "../rig/skinShare.ts";
 export const DUAL_BONES_UNIFORM = "hkDualBones";
 /** The hip fold texture's uniform: a row per vertex the fold moves, two texels per key (the displacement, the normal's change). */
 export const FOLD_UNIFORM = "hkFoldTexture";
-/** Which texel of the bone texture holds the root's rotation (after every bone's own). */
+/**
+ * Which texel of the bone texture holds the root's rotation (after every bone's
+ * own); the next holds the hips' flexion (`hipFlexion`: left, right, 0, 0).
+ */
 export const ROOT_UNIFORM = "hkRootTexel";
 /** How much of the hip fold shows, 0 to 1: it fades in when it arrives (`DualBones.advanceFold`). */
 export const FOLD_BLEND_UNIFORM = "hkFoldBlend";
@@ -93,8 +96,8 @@ export class DualBones {
     this.bones = bones;
     this.share =
       typeof share === "number" ? new Float32Array(bones).fill(share) : Float32Array.from(share);
-    // After every bone's texels, one more: the root's rotation, which the fold turns with.
-    const texels = bones * DUAL_TEXELS + 1;
+    // After every bone's texels, two more: the root's rotation, which the fold turns with, and the hips' flexion, which it is read at.
+    const texels = bones * DUAL_TEXELS + 2;
     this.data = new Float32Array(texels * 4);
     // Until posed, every bone is the identity motion, so no frame ever skins by zeros.
     for (let b = 0; b < bones; b++) this.data[b * DUAL_TEXELS * 4 + 3] = 1;
@@ -111,10 +114,12 @@ export class DualBones {
   update(rest: RestBones, rotations: BoneRotations): void {
     // A bone that swings changes its share (the thigh's, so a flexed hip does not bulge).
     const share = poseShare(rest, rotations, this.share);
-    dualBoneTexels(rest, rotations, share, this.data, hipPose(rest, rotations));
+    dualBoneTexels(rest, rotations, share, this.data);
     const root = rest.parents.indexOf(-1);
     if (root >= 0)
       this.data.set(rotations.subarray(root * 4, root * 4 + 4), this.bones * DUAL_TEXELS * 4);
+    const hips = hipFlexion(rest, rotations);
+    this.data.set([hips.left, hips.right, 0, 0], (this.bones * DUAL_TEXELS + 1) * 4);
     this.posed = { rest, rotations, share };
     this.cached = null;
     this.texture.needsUpdate = true;
@@ -179,8 +184,8 @@ const glFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`)
 
 /**
  * GLSL for the blend, mirroring `blend` and `skinVertex` in src/rig/dual.ts:
- * the motion a vertex follows under dual quaternion skinning, its share of the
- * scheme, and the flexion of the thigh bones it holds.
+ * the motion a vertex follows under dual quaternion skinning, and its share of
+ * the scheme.
  */
 export const DUAL_SKINNING_FUNCTIONS = /* glsl */ `
 #ifdef USE_SKINNING
@@ -188,15 +193,13 @@ uniform highp sampler2D ${DUAL_BONES_UNIFORM};
 vec3 hkQRotate( vec4 q, vec3 v ) {
 	return v + 2.0 * cross( q.xyz, cross( q.xyz, v ) + q.w * v );
 }
-// The rotation q and translation t of the vertex's blended dual quaternion, its share of the scheme, and the mean flexion (degrees) of the thigh bones it holds (-1000 when it holds none).
-void hkDualMotion( vec4 index, vec4 weight, out vec4 q, out vec3 t, out float share, out float flexion ) {
+// The rotation q and translation t of the vertex's blended dual quaternion, and its share of the scheme.
+void hkDualMotion( vec4 index, vec4 weight, out vec4 q, out vec3 t, out float share ) {
 	vec4 r = vec4( 0.0 );
 	vec4 d = vec4( 0.0 );
 	vec4 pivot = vec4( 0.0 );
 	bool pivoted = false;
 	share = 0.0;
-	float held = 0.0;
-	float bent = 0.0;
 	for ( int k = 0; k < 4; k ++ ) {
 		float w = weight[ k ];
 		if ( w == 0.0 ) continue;
@@ -205,8 +208,6 @@ void hkDualMotion( vec4 index, vec4 weight, out vec4 q, out vec3 t, out float sh
 		vec4 bd = texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( j + 1, 0 ), 0 );
 		vec4 bs = texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( j + 2, 0 ), 0 );
 		share += w * bs.x;
-		held += w * bs.z;
-		bent += w * bs.z * bs.y;
 		if ( ! pivoted ) {
 			pivot = bq;
 			pivoted = true;
@@ -221,15 +222,14 @@ void hkDualMotion( vec4 index, vec4 weight, out vec4 q, out vec3 t, out float sh
 	q = r;
 	t = 2.0 * ( r.w * d.xyz - d.w * r.xyz - cross( d.xyz, r.xyz ) );
 	share = clamp( share, 0.0, 1.0 );
-	flexion = held > 0.0 ? bent / held : - 1000.0;
 }
 #endif
 `;
 
 /**
- * GLSL for the hip fold, mirroring `addFold` in src/rig/hipFold.ts: a vertex's
- * displacement at the flexion it has, from the fold texture's row (its slot),
- * turned with the root.
+ * GLSL for the hip fold, mirroring `foldFlexion` and `addFold` in
+ * src/rig/hipFold.ts: a vertex's displacement at the flexion of the hip on its
+ * side, from the fold texture's row (its slot), turned with the root.
  */
 export const FOLD_FUNCTIONS = /* glsl */ `
 #ifdef USE_SKINNING
@@ -239,11 +239,16 @@ uniform float ${FOLD_BLEND_UNIFORM};
 vec3 hkFoldKey( int key, int slot, int part ) {
 	return texelFetch( ${FOLD_UNIFORM}, ivec2( key * 2 + part, slot ), 0 ).xyz;
 }
-// part 0: the vertex's displacement; part 1: what its normal gains.
-vec3 hkFoldValue( float slotValue, float flexion, int part ) {
+// The flexion (degrees) row slot is read at: its side's share of the left hip's, the rest the right's.
+float hkFoldFlexion( int slot ) {
+	float side = texelFetch( ${FOLD_UNIFORM}, ivec2( 0, slot ), 0 ).w;
+	vec4 hips = texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( ${ROOT_UNIFORM} + 1, 0 ), 0 );
+	return side * hips.x + ( 1.0 - side ) * hips.y;
+}
+// Row slot's value at flexion degrees, in the figure's own axes. part 0: the vertex's displacement; part 1: what its normal gains.
+vec3 hkFoldAt( int slot, float flexion, int part ) {
 	float t = ( flexion - ${glFloat(HIP_FOLD.from)} ) / ${glFloat(HIP_FOLD.step)};
 	if ( ! ( t > 0.0 ) ) return vec3( 0.0 );
-	int slot = int( slotValue + 0.5 );
 	float i = floor( t );
 	vec3 d;
 	if ( i >= ${glFloat(FOLD_KEYS)} ) d = hkFoldKey( ${FOLD_KEYS - 1}, slot, part );
@@ -253,13 +258,19 @@ vec3 hkFoldValue( float slotValue, float flexion, int part ) {
 		vec3 was = key == 0 ? vec3( 0.0 ) : hkFoldKey( key - 1, slot, part );
 		d = mix( was, to, t - i );
 	}
+	return d;
+}
+// Row slotValue's value at the flexion it is read at, turned with the root, as much as has faded in.
+vec3 hkFoldValue( float slotValue, int part ) {
+	int slot = int( slotValue + 0.5 );
+	vec3 d = hkFoldAt( slot, hkFoldFlexion( slot ), part );
 	return hkQRotate( texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( ${ROOT_UNIFORM}, 0 ), 0 ), d ) * ${FOLD_BLEND_UNIFORM};
 }
-vec3 hkFoldDisplacement( float slotValue, float flexion ) {
-	return hkFoldValue( slotValue, flexion, 0 );
+vec3 hkFoldDisplacement( float slotValue ) {
+	return hkFoldValue( slotValue, 0 );
 }
-vec3 hkFoldNormal( float slotValue, float flexion ) {
-	return hkFoldValue( slotValue, flexion, 1 );
+vec3 hkFoldNormal( float slotValue ) {
+	return hkFoldValue( slotValue, 1 );
 }
 #endif
 `;
@@ -275,11 +286,10 @@ const position = (fold: boolean): string => /* glsl */ `
 		vec4 hkQ;
 		vec3 hkT;
 		float hkShare;
-		float hkFlexion;
-		hkDualMotion( skinIndex, skinWeight, hkQ, hkT, hkShare, hkFlexion );
+		hkDualMotion( skinIndex, skinWeight, hkQ, hkT, hkShare );
 	#endif
 	if ( hkShare > 0.0 ) transformed = mix( transformed, hkQRotate( hkQ, hkRestPosition ) + hkT, hkShare );
-	${fold ? `if ( ${FOLD_SLOT_ATTRIBUTE} >= 0.0 ) transformed += hkFoldDisplacement( ${FOLD_SLOT_ATTRIBUTE}, hkFlexion );` : ""}
+	${fold ? `if ( ${FOLD_SLOT_ATTRIBUTE} >= 0.0 ) transformed += hkFoldDisplacement( ${FOLD_SLOT_ATTRIBUTE} );` : ""}
 #endif
 `;
 
@@ -290,14 +300,13 @@ const normal = (fold: boolean): string => /* glsl */ `
 	vec4 hkQ;
 	vec3 hkT;
 	float hkShare;
-	float hkFlexion;
-	hkDualMotion( skinIndex, skinWeight, hkQ, hkT, hkShare, hkFlexion );
+	hkDualMotion( skinIndex, skinWeight, hkQ, hkT, hkShare );
 	#define HK_DUAL_MOTION
 #endif
 #include <skinnormal_vertex>
 #ifdef USE_SKINNING
 	if ( hkShare > 0.0 ) objectNormal = mix( objectNormal, hkQRotate( hkQ, hkRestNormal ), hkShare );
-	${fold ? `if ( ${FOLD_SLOT_ATTRIBUTE} >= 0.0 ) objectNormal = normalize( objectNormal + hkFoldNormal( ${FOLD_SLOT_ATTRIBUTE}, hkFlexion ) );` : ""}
+	${fold ? `if ( ${FOLD_SLOT_ATTRIBUTE} >= 0.0 ) objectNormal = normalize( objectNormal + hkFoldNormal( ${FOLD_SLOT_ATTRIBUTE} ) );` : ""}
 #endif
 `;
 
@@ -327,7 +336,7 @@ export function patchDualSkinning(shader: PatchableShader, bones: DualBones, fol
 }
 
 /** Part of the program's cache key: a shader patched for dual skinning differs from one that is not. */
-export const DUAL_SKINNING_KEY = "dual-skinning-3";
+export const DUAL_SKINNING_KEY = "dual-skinning-4";
 
 /**
  * Makes `material` skin by `bones`, for materials this library does not make

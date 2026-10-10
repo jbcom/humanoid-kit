@@ -51,9 +51,10 @@ import {
   addFold,
   addFoldNormal,
   FOLD_KEYS,
+  foldFlexion,
   HIP_FOLD,
   type HipFold,
-  hipPose,
+  hipFlexion,
 } from "../../src/rig/hipFold.ts";
 import { type BoneRotations, restBonesFrom } from "../../src/rig/pose.ts";
 import { rotate } from "../../src/rig/quat.ts";
@@ -176,8 +177,8 @@ describe("the vertex shader's dual quaternion blend", () => {
             ${DUAL_SKINNING_FUNCTIONS}
             void main() {
               ivec2 p = ivec2( gl_FragCoord.xy );
-              vec4 q; vec3 t; float share; float flexion;
-              hkDualMotion( texelFetch( tIndex, p, 0 ), texelFetch( tWeight, p, 0 ), q, t, share, flexion );
+              vec4 q; vec3 t; float share;
+              hkDualMotion( texelFetch( tIndex, p, 0 ), texelFetch( tWeight, p, 0 ), q, t, share );
               vec3 rest = uMode == 1 ? texelFetch( tNormal, p, 0 ).xyz : texelFetch( tPosition, p, 0 ).xyz;
               outColor = uMode == 2 ? vec4( share, 0.0, 0.0, 1.0 ) : vec4( uMode == 1 ? hkQRotate( q, rest ) : hkQRotate( q, rest ) + t, 1.0 );
             }`,
@@ -245,129 +246,47 @@ describe("the vertex shader's dual quaternion blend", () => {
   });
 });
 
-describe("the vertex shader's reading of a hip's flexion", () => {
-  it("is the mean flexion of the thigh bones a vertex holds, as hipPose has it, and -1000 where it holds none", () => {
-    const names = ["root", "pelvis.L", "upperleg01.L", "upperleg02.L", "lowerleg01.L"];
-    const parents = Int16Array.from([-1, 0, 1, 2, 3]);
-    const heads = Float32Array.from([0, 1, 0, 0, 1, 0, 0.1, 1, 0, 0.1, 0.6, 0, 0.1, 0.2, 0]);
-    const leg = restBonesFrom(names, parents, heads);
-    const rotations = new Float32Array(names.length * 4);
-    for (let b = 0; b < names.length; b++) rotations[b * 4 + 3] = 1;
-    // The hip flexed 100° (a turn about -x), the lower half of the thigh with it.
-    rotations.set(turn(-1, 0, 0, 100), 2 * 4);
-    const dual = new DualBones(names.length, 0);
-    dual.update(leg, rotations);
-    const hips = hipPose(leg, rotations);
-    // One vertex per mix of bones: thigh alone, thigh and root, root alone, the two halves of the thigh.
-    const mixes: [number[], number[]][] = [
-      [
-        [2, 0, 0, 0],
-        [1, 0, 0, 0],
-      ],
-      [
-        [2, 0, 0, 0],
-        [0.4, 0.6, 0, 0],
-      ],
-      [
-        [0, 1, 0, 0],
-        [0.5, 0.5, 0, 0],
-      ],
-      [
-        [2, 3, 0, 0],
-        [0.7, 0.3, 0, 0],
-      ],
-      [
-        [4, 1, 0, 0],
-        [1, 0, 0, 0],
-      ],
-    ];
-    const count = mixes.length;
-    const index = new Float32Array(count * 4);
-    const weight = new Float32Array(count * 4);
-    mixes.forEach(([i, w], v) => {
-      index.set(i, v * 4);
-      weight.set(w, v * 4);
-    });
-    const texture = (data: Float32Array) => {
-      const t = new DataTexture(data, count, 1, RGBAFormat, FloatType);
-      t.minFilter = NearestFilter;
-      t.magFilter = NearestFilter;
-      t.needsUpdate = true;
-      return t;
-    };
-    const material = new ShaderMaterial({
-      glslVersion: GLSL3,
-      uniforms: {
-        [DUAL_BONES_UNIFORM]: { value: dual.texture },
-        tIndex: { value: texture(index) },
-        tWeight: { value: texture(weight) },
-      },
-      vertexShader: "void main() { gl_Position = vec4( position.xy, 0.0, 1.0 ); }",
-      fragmentShader: `
-        #define USE_SKINNING
-        uniform highp sampler2D tIndex;
-        uniform highp sampler2D tWeight;
-        layout( location = 0 ) out highp vec4 outColor;
-        ${DUAL_SKINNING_FUNCTIONS}
-        void main() {
-          ivec2 p = ivec2( gl_FragCoord.xy );
-          vec4 q; vec3 t; float share; float flexion;
-          hkDualMotion( texelFetch( tIndex, p, 0 ), texelFetch( tWeight, p, 0 ), q, t, share, flexion );
-          outColor = vec4( flexion, 0.0, 0.0, 1.0 );
-        }`,
-    });
-    const scene = new Scene();
-    scene.add(new Mesh(new PlaneGeometry(2, 2), material));
-    const target = new WebGLRenderTarget(count, 1, { type: FloatType, depthBuffer: false });
-    renderer.setRenderTarget(target);
-    renderer.render(scene, new OrthographicCamera(-1, 1, 1, -1, 0, 1));
-    const px = new Float32Array(count * 4);
-    renderer.readRenderTargetPixels(target, 0, 0, count, 1, px);
-    renderer.setRenderTarget(null);
-    const flexion = (b: number) => hips.flexion[b] as number;
-    expect(flexion(2)).toBeCloseTo(100, 3);
-    expect(px[0]).toBeCloseTo(100, 2);
-    // Thigh at 0.4 of the vertex's weight and the root at 0.6: only the thigh's counts, so the mean is the thigh's.
-    expect(px[4]).toBeCloseTo(100, 2);
-    expect(px[8]).toBe(-1000);
-    // The two halves of the thigh are flexed alike.
-    expect(px[12]).toBeCloseTo(100, 2);
-    expect(px[16]).toBe(-1000);
-    target.dispose();
-    material.dispose();
-    dual.dispose();
-  });
-});
+/** Two thighs off a root, for the fold: the hips' flexions are what the fold is read at. */
+const HIP_NAMES = ["root", "upperleg01.L", "upperleg01.R"];
+const hipRest = restBonesFrom(
+  HIP_NAMES,
+  Int16Array.from([-1, 0, 0]),
+  Float32Array.from([0, 1, 0, 0.1, 0.95, 0, -0.1, 0.95, 0]),
+);
+/** The root turned `root`, the left hip flexed `left` degrees and the right `right` (turns about -x). */
+function hipsPose(root: number[], left: number, right: number): BoneRotations {
+  const r = new Float32Array(HIP_NAMES.length * 4);
+  r.set(root, 0);
+  r.set(turn(-1, 0, 0, left), 4);
+  r.set(turn(-1, 0, 0, right), 8);
+  return r;
+}
 
 describe("the vertex shader's hip fold", () => {
-  it("reads each vertex's displacement and normal change at its flexion, turned with the root, exactly as the CPU reference does", () => {
+  it("reads each vertex's displacement and normal change at the flexion of the hips on its side, turned with the root, exactly as the CPU reference does", () => {
     const rand = random(11);
-    const rows = 7;
+    const rows = 40;
     const count = 200;
     const fold: HipFold = {
       vertices: Uint32Array.from({ length: rows }, (_, i) => i),
       slot: Int32Array.from({ length: rows }, (_, i) => i),
       vectors: new Float32Array(rows * FOLD_KEYS * 3).map(() => (rand() - 0.5) * 0.2),
       normals: new Float32Array(rows * FOLD_KEYS * 3).map(() => (rand() - 0.5) * 1.5),
+      // The left hip's alone, the right's alone, and mixes of the two.
+      side: Float32Array.from({ length: rows }, (_, i) => (i < 2 ? i : rand())),
     };
-    // The renderer's rows: per key, the displacement's texel (x, y, z, 0) and the normal's.
+    // The renderer's rows: per key, the displacement's texel (x, y, z, 0) and the normal's; the side in the first's fourth place.
     const data = new Float32Array(rows * FOLD_KEYS * 8);
     for (let i = 0; i < rows * FOLD_KEYS; i++) {
       data.set(fold.vectors.subarray(i * 3, i * 3 + 3), i * 8);
       data.set(fold.normals.subarray(i * 3, i * 3 + 3), i * 8 + 4);
     }
-    const dual = new DualBones(NAMES.length, SHARE);
-    // The root turned, so the displacement turns too.
-    const rotations = pose([[0, turn(0.3, 1, 0.2, 70)]]);
-    dual.update(rest, rotations);
+    for (let r = 0; r < rows; r++) data[r * FOLD_KEYS * 8 + 3] = fold.side[r] as number;
+    const dual = new DualBones(HIP_NAMES.length, 0);
     dual.setFold({ slot: new Float32Array(0), rows, data });
-    // A row and a flexion per vertex: from short of where the fold starts to past where it ends, and some bones that are not the thigh's.
+    // A row per vertex.
     const asked = new Float32Array(count * 4);
-    for (let v = 0; v < count; v++) {
-      asked[v * 4] = Math.floor(rand() * rows);
-      asked[v * 4 + 1] =
-        rand() < 0.1 ? -1000 : HIP_FOLD.from - 15 + rand() * (HIP_FOLD.to - HIP_FOLD.from + 40);
-    }
+    for (let v = 0; v < count; v++) asked[v * 4] = v < rows ? v : Math.floor(rand() * rows);
     const input = new DataTexture(asked, count, 1, RGBAFormat, FloatType);
     input.minFilter = NearestFilter;
     input.magFilter = NearestFilter;
@@ -377,7 +296,7 @@ describe("the vertex shader's hip fold", () => {
       uniforms: {
         [DUAL_BONES_UNIFORM]: { value: dual.texture },
         [FOLD_UNIFORM]: dual.fold,
-        [ROOT_UNIFORM]: { value: NAMES.length * DUAL_TEXELS },
+        [ROOT_UNIFORM]: { value: HIP_NAMES.length * DUAL_TEXELS },
         [FOLD_BLEND_UNIFORM]: dual.foldBlend,
         tAsked: { value: input },
         tPart: { value: 0 },
@@ -392,49 +311,81 @@ describe("the vertex shader's hip fold", () => {
         ${FOLD_FUNCTIONS}
         void main() {
           vec4 a = texelFetch( tAsked, ivec2( gl_FragCoord.xy ), 0 );
-          outColor = vec4( tPart == 0 ? hkFoldDisplacement( a.x, a.y ) : hkFoldNormal( a.x, a.y ), 1.0 );
+          int slot = int( a.x + 0.5 );
+          outColor = tPart == 2
+            ? vec4( hkFoldFlexion( slot ), 0.0, 0.0, 1.0 )
+            : vec4( tPart == 0 ? hkFoldDisplacement( a.x ) : hkFoldNormal( a.x ), 1.0 );
         }`,
     });
     const scene = new Scene();
     scene.add(new Mesh(new PlaneGeometry(2, 2), material));
     const target = new WebGLRenderTarget(count, 1, { type: FloatType, depthBuffer: false });
-    const root = rotations.subarray(0, 4);
-    // Whole, then half faded in, then not at all (the fold fades in when it arrives).
-    for (const [part, read, blend] of [
-      [0, addFold, 1],
-      [1, addFoldNormal, 1],
-      [0, addFold, 0.5],
-      [1, addFoldNormal, 0.25],
-      [0, addFold, 0],
-    ] as const) {
-      dual.foldBlend.value = blend;
+    const draw = (part: number) => {
       material.uniforms.tPart = { value: part };
       renderer.setRenderTarget(target);
       renderer.render(scene, new OrthographicCamera(-1, 1, 1, -1, 0, 1));
       const px = new Float32Array(count * 4);
       renderer.readRenderTargetPixels(target, 0, 0, count, 1, px);
       renderer.setRenderTarget(null);
-      let worst = 0;
-      let moved = 0;
-      for (let v = 0; v < count; v++) {
-        const cpu = new Float32Array(3);
-        read(fold, asked[v * 4] as number, asked[v * 4 + 1] as number, cpu, 0);
-        const turned = rotate(
-          [root[0] as number, root[1] as number, root[2] as number, root[3] as number],
-          cpu[0] as number,
-          cpu[1] as number,
-          cpu[2] as number,
+      return px;
+    };
+    // The root turned, so the displacement turns too; the hips flexed apart, from short of where the fold starts to past where it ends.
+    const root = turn(0.3, 1, 0.2, 70);
+    let moved = 0;
+    for (const [left, right] of [
+      [120, 0],
+      [-10, 75],
+      [45, 133],
+      [100, 100],
+      [HIP_FOLD.to + 12, HIP_FOLD.from - 5],
+    ] as const) {
+      const rotations = hipsPose(root, left, right);
+      dual.update(hipRest, rotations);
+      const hips = hipFlexion(hipRest, rotations);
+      expect(hips.left, `${left}°`).toBeCloseTo(left, 3);
+      // The flexion each row is read at: the left hip's for side 1, the right's for side 0, and the mix between.
+      const flexion = draw(2);
+      for (let v = 0; v < count; v++)
+        expect(flexion[v * 4], `${left}/${right}: vertex ${v}`).toBeCloseTo(
+          foldFlexion(fold, asked[v * 4] as number, hips) as number,
+          3,
         );
-        const want = turned.map((x) => x * blend);
-        if (Math.hypot(...turned) > 0) moved++;
-        for (let k = 0; k < 3; k++)
-          worst = Math.max(worst, Math.abs((px[v * 4 + k] as number) - (want[k] as number)));
+      expect(flexion[0]).toBeCloseTo(right, 2);
+      expect(flexion[4]).toBeCloseTo(left, 2);
+      // Whole, then half faded in, then not at all (the fold fades in when it arrives).
+      for (const [part, read, blend] of [
+        [0, addFold, 1],
+        [1, addFoldNormal, 1],
+        [0, addFold, 0.5],
+        [1, addFoldNormal, 0.25],
+        [0, addFold, 0],
+      ] as const) {
+        dual.foldBlend.value = blend;
+        const px = draw(part);
+        let worst = 0;
+        for (let v = 0; v < count; v++) {
+          const cpu = new Float32Array(3);
+          const slot = asked[v * 4] as number;
+          read(fold, slot, foldFlexion(fold, slot, hips) as number, cpu, 0);
+          const turned = rotate(
+            root as [number, number, number, number],
+            cpu[0] as number,
+            cpu[1] as number,
+            cpu[2] as number,
+          );
+          const want = turned.map((x) => x * blend);
+          if (blend === 1 && part === 0 && Math.hypot(...turned) > 0) moved++;
+          for (let k = 0; k < 3; k++)
+            worst = Math.max(worst, Math.abs((px[v * 4 + k] as number) - (want[k] as number)));
+        }
+        // The normal's change is some seven times the displacement's in size, so float error is too.
+        expect(worst, `${left}/${right}: part ${part} at ${blend}`).toBeLessThan(
+          part === 0 ? 2e-6 : 1e-5,
+        );
       }
-      // Most of what was asked is in the fold's range, so this compares displacements, not zeros.
-      expect(moved, `part ${part}`).toBeGreaterThan(count / 2);
-      // The normal's change is some seven times the displacement's in size, so float error is too.
-      expect(worst, `part ${part} at ${blend}`).toBeLessThan(part === 0 ? 2e-6 : 1e-5);
     }
+    // Most of what was asked is in the fold's range, so this compares displacements, not zeros.
+    expect(moved).toBeGreaterThan(count * 2);
     target.dispose();
     input.dispose();
     material.dispose();

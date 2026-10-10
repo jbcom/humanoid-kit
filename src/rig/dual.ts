@@ -16,7 +16,7 @@
  * by the mean of its bones' shares.
  */
 import { type BoneRotations, posedBones, type RestBones } from "./bones.ts";
-import { addFold, addFoldNormal, folds, type HipFold, type HipPose, hipPose } from "./hipFold.ts";
+import { addFold, addFoldNormal, foldFlexion, folds, type HipFold, hipFlexion } from "./hipFold.ts";
 import { mul, type Quat, rotate } from "./quat.ts";
 
 /** Floats per bone in `dualBones`: the rotation (x, y, z, w), then the dual part (x, y, z, w). */
@@ -70,23 +70,21 @@ export const DUAL_TEXELS = 3;
 
 /**
  * The renderer's bone texture, `bones * DUAL_TEXELS` RGBA texels: each bone's
- * dual quaternion (`dualBones`), its share of dual quaternion skinning, and,
- * when `hips` is given, the hip fold's terms (`hipPose`): the bone's flexion
- * in degrees, and 1 for a bone of the thigh.
+ * dual quaternion (`dualBones`) and its share of dual quaternion skinning (the
+ * third texel's first place; the rest of it is zero).
  */
 export function dualBoneTexels(
   rest: RestBones,
   rotations: BoneRotations,
   share: DualShare,
   out: Float32Array = new Float32Array(rest.names.length * DUAL_TEXELS * 4),
-  hips?: HipPose,
 ): Float32Array {
   const dual = dualBones(rest, rotations);
   for (let b = 0; b < rest.names.length; b++) {
     out.set(dual.subarray(b * DUAL_STRIDE, (b + 1) * DUAL_STRIDE), b * DUAL_TEXELS * 4);
     out[b * DUAL_TEXELS * 4 + 8] = typeof share === "number" ? share : (share[b] as number);
-    out[b * DUAL_TEXELS * 4 + 9] = hips ? (hips.flexion[b] as number) : 0;
-    out[b * DUAL_TEXELS * 4 + 10] = hips ? (hips.thigh[b] as number) : 0;
+    out[b * DUAL_TEXELS * 4 + 9] = 0;
+    out[b * DUAL_TEXELS * 4 + 10] = 0;
     out[b * DUAL_TEXELS * 4 + 11] = 0;
   }
   return out;
@@ -288,25 +286,6 @@ function rootTurn(rest: RestBones, rotations: BoneRotations): Quat {
   ];
 }
 
-/** The flexion vertex `v`'s thigh bones have, weighted by its skin, or null if no thigh holds it. */
-function thighFlexion(
-  hips: HipPose,
-  skinIndex: SkinIndex,
-  skinWeight: Float32Array,
-  v: number,
-): number | null {
-  let held = 0;
-  let flexion = 0;
-  for (let k = 0; k < 4; k++) {
-    const b = skinIndex[v * 4 + k] as number;
-    if (!hips.thigh[b]) continue;
-    const w = skinWeight[v * 4 + k] as number;
-    held += w;
-    flexion += w * (hips.flexion[b] as number);
-  }
-  return held ? flexion / held : null;
-}
-
 /**
  * The renderer's skinning of `positions` (base-mesh vertices) by `rotations`:
  * each vertex skinned linearly and by dual quaternions, the two mixed by the
@@ -325,8 +304,8 @@ export function skinPositionsBlended(
 ): Float32Array {
   const pose = skinPose(rest, rotations, share);
   const count = positions.length / 3;
-  // The hip fold's displacement is read at the flexion the vertex's thigh bones have, and turns with the figure's root.
-  const hips = fold ? hipPose(rest, rotations) : null;
+  // The hip fold's displacement is read at the flexion of the hip on the vertex's side (`foldSides`), and turns with the figure's root.
+  const hips = fold ? hipFlexion(rest, rotations) : null;
   const folding = fold !== undefined && hips !== null && folds(hips);
   const turn = rootTurn(rest, rotations);
   const shown = new Float32Array(3);
@@ -343,7 +322,7 @@ export function skinPositionsBlended(
       v * 3,
     );
     if (!folding) continue;
-    const flexion = thighFlexion(hips, skinIndex, skinWeight, v);
+    const flexion = foldFlexion(fold, v, hips);
     if (flexion === null) continue;
     shown.fill(0);
     addFold(fold, v, flexion, shown, 0);
@@ -436,7 +415,7 @@ export function skinNormalsBlended(
   const pose = skinPose(rest, rotations, share);
   const count = normals.length / 3;
   // As the shader: the fold's turn added to the skinned normal, made a unit vector again.
-  const hips = fold ? hipPose(rest, rotations) : null;
+  const hips = fold ? hipFlexion(rest, rotations) : null;
   const folding = fold !== undefined && hips !== null && folds(hips);
   const turn = rootTurn(rest, rotations);
   const shown = new Float32Array(3);
@@ -453,7 +432,7 @@ export function skinNormalsBlended(
       v * 3,
     );
     if (!folding) continue;
-    const flexion = thighFlexion(hips, skinIndex, skinWeight, v);
+    const flexion = foldFlexion(fold, v, hips);
     if (flexion === null) continue;
     shown.fill(0);
     addFoldNormal(fold, v, flexion, shown, 0);

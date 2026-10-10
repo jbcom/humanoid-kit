@@ -18,8 +18,6 @@ export const HIP_FOLD = {
   bone: "upperleg01",
   /** The bone that carries on from the thigh's end, where the fold's reach ends (`FOLD_REACH`). */
   along: "lowerleg01",
-  /** Bones that carry on from the thigh's, and are flexed with it (the thigh's lower half). */
-  follows: ["upperleg02"],
   /**
    * Flexion, in degrees, below which the fold is nothing. The thigh's front
    * first reaches the belly's skin at about 55° (5 mm deep at 60°, 17 mm at
@@ -44,12 +42,10 @@ export const HIP_FOLD = {
 /** How many flexions the fold is solved at. */
 export const FOLD_KEYS = (HIP_FOLD.to - HIP_FOLD.from) / HIP_FOLD.step;
 
-/** How far each bone's hip is flexed, and which bones are the thigh's, in a pose. */
-export interface HipPose {
-  /** Per bone, degrees of flexion (0 for a bone that is not the thigh's, or that does not flex). */
-  flexion: Float32Array;
-  /** Per bone, 1 for the thigh's bones (`HIP_FOLD.bone`, `follows`), 0 otherwise. */
-  thigh: Uint8Array;
+/** How far each hip is flexed in a pose, in degrees (`hipFlexion`). */
+export interface HipFlexion {
+  left: number;
+  right: number;
 }
 
 /**
@@ -80,38 +76,57 @@ function flexionOf(rotations: BoneRotations, b: number): number {
   return (-flexion * 180) / Math.PI;
 }
 
-/** The thigh's bones, by index, and each one's hip bone: `bone` for the hip bone itself, its hip bone for a follower. */
-export function thighBones(rest: RestBones): { thigh: Uint8Array; hip: Int16Array } {
-  const thigh = new Uint8Array(rest.names.length);
-  const hip = new Int16Array(rest.names.length).fill(-1);
-  rest.names.forEach((name, b) => {
-    if (!name.startsWith(`${HIP_FOLD.bone}.`)) return;
-    const suffix = name.slice(HIP_FOLD.bone.length);
-    thigh[b] = 1;
-    hip[b] = b;
-    for (const f of HIP_FOLD.follows) {
-      const follower = rest.names.indexOf(f + suffix);
-      if (follower >= 0) {
-        thigh[follower] = 1;
-        hip[follower] = b;
-      }
-    }
-  });
-  return { thigh, hip };
+/** How far each hip (`HIP_FOLD.bone`, left and right) is flexed in a pose; 0 for a skeleton without it. */
+export function hipFlexion(rest: RestBones, rotations: BoneRotations): HipFlexion {
+  const of = (side: string) => {
+    const b = rest.names.indexOf(`${HIP_FOLD.bone}.${side}`);
+    return b < 0 ? 0 : flexionOf(rotations, b);
+  };
+  return { left: of("L"), right: of("R") };
 }
 
-/** How far each hip is flexed in a pose: each thigh bone carries its hip's flexion. */
-export function hipPose(rest: RestBones, rotations: BoneRotations): HipPose {
-  const { thigh, hip } = thighBones(rest);
-  const flexion = new Float32Array(rest.names.length);
-  hip.forEach((h, b) => {
-    if (h >= 0) flexion[b] = flexionOf(rotations, h);
-  });
-  return { flexion, thigh };
+/** Whether either hip of the pose is flexed enough for the fold to show. */
+export const folds = (hips: HipFlexion): boolean => Math.max(hips.left, hips.right) > HIP_FOLD.from;
+
+/**
+ * Per vertex of `positions` (the rest figure), how much of its fold the left
+ * hip's flexion drives, the right's the rest (`foldFlexion`). The thigh's skin
+ * goes with its thighs, as the bones move it: the left thigh's share of what
+ * the vertex holds on the two. The trunk's goes with the side of the body it
+ * lies on, from all of it at the left hip joint to none at the right, smoothly,
+ * so the belly the two thighs press is driven by the hip on its side, and both
+ * hips' between them. Skin held by a thigh and the trunk mixes the two by how
+ * much a thigh holds, all of it the thighs' from `FOLD_THIGH_HOLD` (the least
+ * a thigh holds of the skin the fold pushes out), so the rule is one and smooth
+ * over every vertex the fold moves, the thigh's and the trunk's.
+ */
+export function foldSides(
+  rest: RestBones,
+  positions: Float32Array,
+  skinIndex: ArrayLike<number>,
+  skinWeight: ArrayLike<number>,
+): Float32Array {
+  const n = positions.length / 3;
+  const out = new Float32Array(n);
+  const left = boneMass(rest.names, skinIndex, skinWeight, /^upperleg0[12]\.L$/);
+  const right = boneMass(rest.names, skinIndex, skinWeight, /^upperleg0[12]\.R$/);
+  const hipL = rest.names.indexOf(`${HIP_FOLD.bone}.L`);
+  const hipR = rest.names.indexOf(`${HIP_FOLD.bone}.R`);
+  const xL = hipL < 0 ? 1 : (rest.heads[hipL * 3] as number);
+  const xR = hipR < 0 ? -1 : (rest.heads[hipR * 3] as number);
+  for (let v = 0; v < n; v++) {
+    const t = Math.min(1, Math.max(0, ((positions[v * 3] as number) - xR) / (xL - xR || 1)));
+    const across = t * t * (3 - 2 * t);
+    const l = left[v] as number;
+    const held = l + (right[v] as number);
+    const thighs = Math.min(1, held / FOLD_THIGH_HOLD);
+    out[v] = thighs * (held > 0 ? l / held : 0) + (1 - thighs) * across;
+  }
+  return out;
 }
 
-/** Whether any hip of the pose is flexed enough for the fold to show. */
-export const folds = (pose: HipPose): boolean => pose.flexion.some((f) => f > HIP_FOLD.from);
+/** The least weight on a thigh's bones of the skin the fold pushes out of the trunk (`foldParts`). */
+export const FOLD_THIGH_HOLD = 0.25;
 
 /**
  * A figure's hip fold: for each vertex of the base mesh the fold moves, and
@@ -131,6 +146,8 @@ export interface HipFold {
   vectors: Float32Array;
   /** Per vertex, per key, x, y, z, as `vectors`: what is added to the skinned normal, before it is made a unit vector again. */
   normals: Float32Array;
+  /** Per vertex, by slot: the share of the left hip's flexion in the flexion it is read at (`foldSides`), the right's the rest. */
+  side: Float32Array;
 }
 
 /** A fold that moves nothing, for a mesh of `n` vertices. */
@@ -139,7 +156,16 @@ export const noFold = (n: number): HipFold => ({
   slot: new Int32Array(n).fill(-1),
   vectors: new Float32Array(0),
   normals: new Float32Array(0),
+  side: new Float32Array(0),
 });
+
+/** The flexion vertex `v`'s fold is read at, by its side (`HipFold.side`), or null where the fold leaves it. */
+export function foldFlexion(fold: HipFold, v: number, hips: HipFlexion): number | null {
+  const slot = fold.slot[v] as number;
+  if (!(slot >= 0)) return null;
+  const s = fold.side[slot] as number;
+  return s * hips.left + (1 - s) * hips.right;
+}
 
 /**
  * The value of `table` (a fold's `vectors` or `normals`) for slot `slot` at
@@ -383,6 +409,8 @@ export interface SurfaceFold {
   /**
    * Row `r`, key `k`, as two texels: `(r * FOLD_KEYS + k) * 2` holds the
    * displacement (x, y, z, 0) and the next the normal's change (x, y, z, 0).
+   * The first key's displacement texel holds the row's side (`HipFold.side`)
+   * in its fourth place: `data[r * FOLD_KEYS * 8 + 3]`.
    */
   data: Float32Array;
 }
@@ -399,7 +427,9 @@ export interface StencilRows {
  * built from the control mesh by `stencil` (one row per surface vertex), with
  * `renderToSurface` saying which surface vertex each render vertex is: each
  * row is the stencil's mix of the control vertices' displacements, as the
- * surface's positions are of their positions.
+ * surface's positions are of their positions. Its side is the mix of the sides
+ * of the control vertices the fold moves, by the same weights, over theirs
+ * alone (the others add nothing to the displacement, so they have no side).
  */
 export function surfaceFold(
   fold: HipFold,
@@ -419,10 +449,14 @@ export function surfaceFold(
   for (let s = 0; s < surfaceVertices; s++) {
     const row = rowOf[s] as number;
     if (row < 0) continue;
+    let side = 0;
+    let held = 0;
     for (let e = stencil.offsets[s] as number; e < (stencil.offsets[s + 1] as number); e++) {
       const slot = fold.slot[stencil.src[e] as number] as number;
       if (slot < 0) continue;
       const w = stencil.weights[e] as number;
+      side += w * (fold.side[slot] as number);
+      held += w;
       for (let key = 0; key < FOLD_KEYS; key++)
         for (let k = 0; k < 3; k++) {
           const at = (row * FOLD_KEYS + key) * 8 + k;
@@ -431,6 +465,7 @@ export function surfaceFold(
           data[at + 4] = (data[at + 4] as number) + w * (fold.normals[from] as number);
         }
     }
+    data[row * FOLD_KEYS * 8 + 3] = held > 0 ? side / held : 0;
   }
   const slot = Float32Array.from(renderToSurface, (s) => rowOf[s] as number);
   return { slot, rows, data };
@@ -448,12 +483,15 @@ export function renderFold(fold: SurfaceFold): HipFold {
   );
   const vectors = new Float32Array(fold.rows * FOLD_KEYS * 3);
   const normals = new Float32Array(fold.rows * FOLD_KEYS * 3);
-  for (let r = 0; r < fold.rows; r++)
+  const side = new Float32Array(fold.rows);
+  for (let r = 0; r < fold.rows; r++) {
+    side[r] = fold.data[r * FOLD_KEYS * 8 + 3] as number;
     for (let key = 0; key < FOLD_KEYS; key++)
       for (let k = 0; k < 3; k++) {
         const from = (r * FOLD_KEYS + key) * 8 + k;
         vectors[(r * FOLD_KEYS + key) * 3 + k] = fold.data[from] as number;
         normals[(r * FOLD_KEYS + key) * 3 + k] = fold.data[from + 4] as number;
       }
-  return { vertices, slot, vectors, normals };
+  }
+  return { vertices, slot, vectors, normals, side };
 }

@@ -1,5 +1,14 @@
 import { SkinPatch, TriangleCrossings } from "./contact.ts";
-import { FOLD_KEYS, foldParts, foldTaper, HIP_FOLD, type HipFold, noFold } from "./hipFold.ts";
+import {
+  FOLD_KEYS,
+  FOLD_THIGH_HOLD,
+  foldParts,
+  foldSides,
+  foldTaper,
+  HIP_FOLD,
+  type HipFold,
+  noFold,
+} from "./hipFold.ts";
 import { IDENTITY_POSE, type RestBones, skinPositions } from "./pose.ts";
 
 /**
@@ -40,8 +49,6 @@ const RELAX_FROM = 30;
 const RELAXED = 0.5;
 /** The most (metres) a pass moves any skin. */
 const MOST_PUSH = 0.04;
-/** Skin the thigh holds under this much of is not moved. */
-const MIN_THIGH = 0.25;
 
 /** `fold` for the figure whose rest vertices are `control`, skeleton `rest`, skinned by `skinIndex` and `skinWeight`; `tris` are the body's triangles. */
 export function solveHipFold(
@@ -68,7 +75,7 @@ export function* solveHipFoldSteps(
 ): Generator<void, HipFold> {
   const n = control.length / 3;
   // The thigh's skin by the hip, which moves, and the trunk's, which it must not pass through.
-  const parts = foldParts(rest, control, skinIndex, skinWeight, tris, MIN_THIGH);
+  const parts = foldParts(rest, control, skinIndex, skinWeight, tris, FOLD_THIGH_HOLD);
   const movers = Array.from(parts.movers);
   // What the fold keeps of each vertex's displacement: all of it near the hip, none by the knee.
   const taper = foldTaper(rest, control);
@@ -291,12 +298,14 @@ export function* solveHipFoldSteps(
   const vertices = Uint32Array.from(kept, (a) => affected[a] as number);
   const vectors = new Float32Array(kept.length * stride);
   const normals = new Float32Array(kept.length * stride);
+  const sides = foldSides(rest, control, skinIndex, skinWeight);
+  const side = Float32Array.from(vertices, (v) => sides[v] as number);
   kept.forEach((a, s) => {
     fold.slot[affected[a] as number] = s;
     vectors.set(keyed.subarray(a * stride, (a + 1) * stride), s * stride);
     normals.set(keyedNormal.subarray(a * stride, (a + 1) * stride), s * stride);
   });
-  return { vertices, slot: fold.slot, vectors, normals };
+  return { vertices, slot: fold.slot, vectors, normals, side };
 }
 
 /** The trunk's triangles by where their centres are, to find those near a point without testing them all. */

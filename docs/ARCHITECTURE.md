@@ -1192,24 +1192,35 @@ the unit normal on the mesh the bones pose (area-weighted, over the control mesh
 and the shader adds that to the skinned normal and normalises it. (The bones' normal
 is not the control mesh's exactly, so it is a change that is stored, not a normal.)
 
-**How it plays.** `hipPose` reads each hip's flexion from the bone's rotation as
+**How it plays.** `hipFlexion` reads each hip's flexion from the bone's rotation as
 the poses' channels build it (abduction, then flexion, then twist, so a twisted
-or opened thigh is not flexed, and a hip flexed past 90° still is); a vertex's
-flexion is the mean of those of the thigh bones it holds. `addFold` reads its
+or opened thigh is not flexed, and a hip flexed past 90° still is). A vertex's
+flexion is its side's mix of the two (`foldSides`, `foldFlexion`): the thigh's
+skin the left thigh's share of what it holds on the two thighs, as the bones move
+it, and the trunk's the side of the body it lies on, all the left hip's at the
+left hip joint and none at the right, smoothly, half of each at the middle; skin
+both hold mixes the two by how much a thigh holds, all of it the thighs' from a
+quarter (`FOLD_THIGH_HOLD`, the least a thigh holds of the skin the fold pushes
+out). One rule, so every vertex the fold moves or turns plays back, the trunk's
+too: before it, the flexion was the mean of the thigh bones a vertex holds, and
+the normal's change the solve made for the trunk's skin beside the thigh's was
+dropped, there being no thigh bone to read. `addFold` reads its
 displacement at that flexion, nothing up to `HIP_FOLD.from`, the straight line
 between the two solved flexions it lies between, and the last past `HIP_FOLD.to`,
 and the skin adds it *after* skinning, turned with the root (the fold is made in
 the figure's own axes). Applied after skinning, not to the rest figure, because
 the push is a way out of the belly, which is the same way whichever way the thigh
 is turned. `skinPositions(…, fold)` is the CPU reference; `DualBones` carries
-each bone's flexion and the root's rotation in the bone texture, the fold is a
-texture of 88 texels (a displacement and a normal change per key) by one row per
-vertex of the surface it moves (`surfaceFold`: the control vertices' values mixed by
-the subdivision's stencil, so a rendered vertex is displaced as the surface it lies
-on is), and the patched `skinning_vertex` chunk adds `hkFoldDisplacement` of its
-row (`FOLD_SLOT_ATTRIBUTE`) at its flexion, the `skinnormal_vertex` chunk
-`hkFoldNormal`. The browser project holds the shader's read to the CPU's (`addFold`,
-`addFoldNormal`) to 2·10⁻⁶ and 10⁻⁵.
+the root's rotation and the two hips' flexions in the two texels after the bones',
+the fold is a texture of 88 texels (a displacement and a normal change per key, the
+row's side in the first texel's fourth place) by one row per vertex of the surface
+it moves (`surfaceFold`: the control vertices' values mixed by the subdivision's
+stencil, so a rendered vertex is displaced as the surface it lies on is, and the
+side by the same weights over the moved vertices alone), and the patched
+`skinning_vertex` chunk adds `hkFoldDisplacement` of its row (`FOLD_SLOT_ATTRIBUTE`)
+at its flexion (`hkFoldFlexion`), the `skinnormal_vertex` chunk `hkFoldNormal`. The
+browser project holds the shader's flexion to the CPU's (`foldFlexion`) and its read
+to `addFold` and `addFoldNormal` to 2·10⁻⁶ and 10⁻⁵, with the hips flexed apart.
 
 **Where it runs.** Solving takes 0.7 to 1.5 s of one core for a figure on a desktop
 (1.8 s with the CPU throttled 4× in Chromium, the proxy for a mid phone; measured

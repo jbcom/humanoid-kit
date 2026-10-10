@@ -17,9 +17,11 @@ import {
   boneMass,
   FOLD_BODIES,
   FOLD_KEYS,
+  foldSides,
   HIP_FOLD,
   type HipFold,
-  hipPose,
+  hipFlexion,
+  renderFold,
   surfaceFold,
 } from "../src/rig/hipFold.ts";
 import { solveHipFold } from "../src/rig/hipFoldSolve.ts";
@@ -75,9 +77,8 @@ const pose = (
     withFold ? f.fold : undefined,
   );
 
-describe("how far a hip is flexed (hipPose)", () => {
-  const at = (degrees: number, bone = "upperleg01.L") =>
-    hipPose(average.rest, flexed(degrees)).flexion[names.indexOf(bone)] as number;
+describe("how far a hip is flexed (hipFlexion)", () => {
+  const at = (degrees: number) => hipFlexion(average.rest, flexed(degrees)).left;
 
   it("reads the flexion the pose put there, in degrees", () => {
     expect(at(0)).toBeCloseTo(0, 3);
@@ -86,15 +87,13 @@ describe("how far a hip is flexed (hipPose)", () => {
     expect(at(-30)).toBeCloseTo(-30, 0);
   });
 
-  it("follows each hip alone, and the lower half of the thigh follows its upper half", () => {
-    const left = hipPose(average.rest, flexed(120, ["L"]));
-    const flex = (bone: string) => left.flexion[names.indexOf(bone)] as number;
-    expect(flex("upperleg01.L")).toBeCloseTo(120, 0);
-    expect(flex("upperleg02.L")).toBe(flex("upperleg01.L"));
-    expect(flex("upperleg01.R")).toBeCloseTo(0, 5);
-    expect(flex("upperleg02.R")).toBeCloseTo(0, 5);
-    expect(left.thigh[names.indexOf("upperleg02.R")]).toBe(1);
-    expect(left.thigh[names.indexOf("lowerleg01.L")]).toBe(0);
+  it("follows each hip alone", () => {
+    const left = hipFlexion(average.rest, flexed(120, ["L"]));
+    expect(left.left).toBeCloseTo(120, 0);
+    expect(left.right).toBeCloseTo(0, 5);
+    const right = hipFlexion(average.rest, flexed(90, ["R"]));
+    expect(right.right).toBeCloseTo(90, 0);
+    expect(right.left).toBeCloseTo(0, 5);
   });
 
   it("reads a hip that is opened out or twisted as not flexed at all", () => {
@@ -103,10 +102,58 @@ describe("how far a hip is flexed (hipPose)", () => {
       const q = [0, 0, 0, Math.cos((degrees * Math.PI) / 360)];
       q[axis] = Math.sin((degrees * Math.PI) / 360);
       rotations.set(q, names.indexOf("upperleg01.L") * 4);
-      return hipPose(average.rest, rotations).flexion[names.indexOf("upperleg01.L")] as number;
+      return hipFlexion(average.rest, rotations).left;
     };
     expect(Math.abs(turn(2, 60)), "abducted").toBeLessThan(4);
     expect(Math.abs(turn(1, 120)), "twisted").toBeLessThan(1);
+  });
+});
+
+describe("which hip drives a vertex's fold (foldSides)", () => {
+  const sides = foldSides(average.rest, average.control, assets.skinIndex, assets.skinWeight);
+  const mass = (v: number, side: "L" | "R") => {
+    let m = 0;
+    for (let k = 0; k < 4; k++)
+      if (
+        new RegExp(`^upperleg0[12]\\.${side}$`).test(
+          names[assets.skinIndex[v * 4 + k] as number] as string,
+        )
+      )
+        m += assets.skinWeight[v * 4 + k] as number;
+    return m;
+  };
+
+  it("gives a thigh's skin to its own hip alone", () => {
+    let left = 0;
+    let right = 0;
+    for (let v = 0; v < sides.length; v++) {
+      if (mass(v, "L") > 0.999) {
+        expect(sides[v], `left thigh vertex ${v}`).toBeCloseTo(1, 5);
+        left++;
+      }
+      if (mass(v, "R") > 0.999) {
+        expect(sides[v], `right thigh vertex ${v}`).toBeCloseTo(0, 5);
+        right++;
+      }
+    }
+    expect(left).toBeGreaterThan(100);
+    expect(right).toBeGreaterThan(100);
+  });
+
+  it("gives the trunk's skin to the hip on its side, and half to each at the middle", () => {
+    const hipX = average.rest.heads[names.indexOf("upperleg01.L") * 3] as number;
+    let middle = 0;
+    for (let v = 0; v < sides.length; v++) {
+      if (mass(v, "L") + mass(v, "R") > 0) continue;
+      const x = average.control[v * 3] as number;
+      if (x >= hipX) expect(sides[v], `vertex ${v}`).toBe(1);
+      if (x <= -hipX) expect(sides[v], `vertex ${v}`).toBe(0);
+      if (Math.abs(x) < 1e-4) {
+        expect(sides[v], `vertex ${v}`).toBeCloseTo(0.5, 3);
+        middle++;
+      }
+    }
+    expect(middle).toBeGreaterThan(20);
   });
 });
 
@@ -130,6 +177,7 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
       slot: Int32Array.of(0, 1, -1),
       vectors: Float32Array.from([...vector(0.1), ...vector(-0.3)]),
       normals: Float32Array.from([...vector(0.7), ...vector(-0.9)]),
+      side: Float32Array.of(1, 0.2),
     };
     // Surface vertex 0 is half of control 0 and half of control 1; 1 is control 2 (not moved); 2 is control 1.
     const stencil = {
@@ -141,13 +189,17 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
     expect(surface.rows).toBe(2);
     expect([...surface.slot]).toEqual([0, 0, -1, 1, 1]);
     expect(surface.data.length).toBe(2 * FOLD_KEYS * 8);
+    // A row's side is in the first key's displacement texel: the mix of its moved vertices' sides.
+    expect(surface.data[3]).toBeCloseTo(0.6, 6);
+    expect(surface.data[FOLD_KEYS * 8 + 3]).toBeCloseTo(0.2, 6);
+    expect([...renderFold(surface).side].map((s) => +s.toFixed(6))).toEqual([0.6, 0.2]);
     for (let key = 0; key < FOLD_KEYS; key++)
       for (let k = 0; k < 3; k++) {
         const a = fold.vectors[key * 3 + k] as number;
         const b = fold.vectors[(FOLD_KEYS + key) * 3 + k] as number;
         expect(surface.data[key * 8 + k] as number).toBeCloseTo(0.5 * a + 0.5 * b, 6);
         expect(surface.data[(FOLD_KEYS + key) * 8 + k] as number).toBeCloseTo(b, 6);
-        expect(surface.data[key * 8 + 3]).toBe(0);
+        if (key > 0) expect(surface.data[key * 8 + 3]).toBe(0);
         // The normal's change is mixed the same way, in the texel after the displacement's.
         const an = fold.normals[key * 3 + k] as number;
         const bn = fold.normals[(FOLD_KEYS + key) * 3 + k] as number;
@@ -274,30 +326,19 @@ describe("the hip fold", () => {
     }
   });
 
-  it("leaves the skin of a hip that is not flexed exactly where the bones put it, and moves every other point", () => {
+  it("leaves the skin the hip that is not flexed drives exactly where the bones put it, and moves every other point", () => {
     const rotations = flexed(120, ["L"]);
     const bare = pose(average, rotations, false);
     const folded = pose(average, rotations, true);
-    const right = (v: number) => {
-      let thighs = 0;
-      let rightOnes = 0;
-      for (let k = 0; k < 4; k++) {
-        const bone = names[assets.skinIndex[v * 4 + k] as number] as string;
-        if (!/^upperleg0[12]\./.test(bone)) continue;
-        thighs += assets.skinWeight[v * 4 + k] as number;
-        if (bone.endsWith(".R")) rightOnes += assets.skinWeight[v * 4 + k] as number;
-      }
-      return thighs > 0 && rightOnes === thighs;
-    };
     let kept = 0;
     let moved = 0;
-    for (const v of average.fold.vertices) {
+    average.fold.vertices.forEach((v, s) => {
       const same = [0, 1, 2].every((k) => folded[v * 3 + k] === bare[v * 3 + k]);
-      if (right(v)) {
-        expect(same, `right thigh vertex ${v}`).toBe(true);
+      if (average.fold.side[s] === 0) {
+        expect(same, `vertex ${v}, the right hip's`).toBe(true);
         kept++;
       } else if (!same) moved++;
-    }
+    });
     for (let i = 0; i < folded.length; i++) expect(Number.isFinite(folded[i])).toBe(true);
     expect(kept).toBeGreaterThan(20);
     expect(moved).toBeGreaterThan(20);
