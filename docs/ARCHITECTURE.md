@@ -2173,7 +2173,10 @@ position, the skin's outward normal and a tangent frame:
   lips, chin, ear lobes, nipples), the bottom of the hole the navel's target
   deepens, the highest midline vertex (crown), and, where no target shapes the
   place, the midline skin straight in front of a joint (the sternal notch over
-  the clavicles' inner ends, the pubic point over the hips' centres). On a posed
+  the clavicles' inner ends, the pubic point over the hips' centres), the palm's
+  centre in the hand frame's own palm plane (on the palm, midway from the wrist
+  to the middle knuckles), and the sole's centre (the downward-facing foot skin
+  under the midpoint of the ankle and the big toe's base). On a posed
   body a landmark is its vertex's own render vertex
   (`HumanoidModel.baseRenderVertices`: the render vertex whose subdivision
   stencil weights it most, exact at every level and on either body surface), its
@@ -2205,6 +2208,56 @@ penetration measure builds its hierarchy here, so there is one. Tests hold a
 vertex to its own closest point, a point off the skin to its distance with
 the right sign in every smoke pose, the frame to the landmark's at a convex
 place, and a reach to finding nothing beyond it.
+
+## Affordances: the registry (design, 2026-10-09)
+
+docs/FOUNDATION.md, "Affordances", says what the body offers other objects
+and figures. This is how the kit names them, frames them and holds their
+state; the response (a channel widening, fingers closing, soft tissue
+compressing) and the clip-and-consume volumes are built on top of it.
+
+**Use cases.** A developer puts a sword in a hand: they need the hand's grip
+frame on the posed figure, set its closure and what it holds, and read back
+where it touches. A figure eats an apple: the mouth's aperture frame, an
+opening, and how much of what is inside it is consumed. An earring hangs
+from a lobe and pulls on it: a mount's frame and its load. Two figures couple:
+an aperture of one and an insertable part of the other, through the same API,
+each answering for its own state. A foundation test asks every affordance for
+its frame on every permutation, and the age policy asks which ones a figure
+under 18 may have.
+
+**Requirements.** Every affordance is framed on the posed, morphed body as
+drawn, so it follows any shape and pose. State is plain values a developer
+sets and the kit reports, checked on the way in. The registry is open: the
+core declares the body's own, and a pack (the adult pack) declares its own
+the same way, so the core names no adult affordance. Under 18, no
+genital or anal affordance exists, and none of an adult pack's can be asked
+for.
+
+**Decisions.**
+
+- *An affordance is data*: `{ id, kind, at, … }`, where `kind` is `aperture`,
+  `grip`, `mount` or `contact`, and `at` is where its frame comes from: a
+  landmark (`src/foundation/landmarks.ts`) or the midpoint of two (the mouth,
+  between the lips). Each kind fixes what its frame means: an aperture's
+  normal points out of the opening and its channel runs the other way; a
+  grip's normal leaves the gripping surface and its tangent runs along the
+  grip; a mount's normal leaves the skin it hangs from.
+- *The core registry* is a typed constant (`CORE_AFFORDANCES`); a pack's
+  affordances arrive in its manifest and join it when the pack loads, as its
+  piercing sites do. `affordances(assets, recipe)` is the registry a figure
+  has, and refuses a pack's to a figure under 18.
+- *State is a value per affordance*, validated by kind (an opening and a
+  closure are 0 to 1; an occupancy is a depth and a radius, neither negative;
+  a load is a non-negative mass). It lives with the figure, not in the
+  registry, so two figures with one registry have their own.
+- *Frames are evaluated, not stored*: `affordanceFrames(model, posedBody)`
+  reads the landmarks of that body, so an affordance is never out of step with
+  the skin it belongs to.
+
+The registry is built in steps: the kinds, the core's apertures, grips and
+mounts whose landmarks exist, state, and frames first; the channels' geometry,
+the ear canals' landmarks and the adult pack's affordances follow.
 
 ## Invariants
 
