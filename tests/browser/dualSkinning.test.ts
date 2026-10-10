@@ -47,6 +47,7 @@ import {
   skinPositionsBlended,
   skinVertex,
 } from "../../src/rig/dual.ts";
+import { toHalf } from "../../src/rig/half.ts";
 import {
   addFold,
   addFoldNormal,
@@ -58,6 +59,8 @@ import {
   type HipFold,
   hipFlexion,
   hipRotation,
+  renderFold,
+  type SurfaceFold,
 } from "../../src/rig/hipFold.ts";
 import { type BoneRotations, restBonesFrom } from "../../src/rig/pose.ts";
 import { rotate } from "../../src/rig/quat.ts";
@@ -289,18 +292,28 @@ describe("the vertex shader's hip fold", () => {
       slot: Int32Array.from({ length: rows }, (_, i) => i),
       vectors: new Float32Array(rows * K * 3).map(() => (rand() - 0.5) * 0.2),
       normals: new Float32Array(rows * K * 3).map(() => (rand() - 0.5) * 1.5),
-      // The left hip's alone, the right's alone, and mixes of the two.
-      side: Float32Array.from({ length: rows }, (_, i) => (i < 2 ? i : rand())),
+      // The left hip's alone, the right's alone, and mixes of the two: in 1024ths, which a half float holds
+      // exactly, so that the read against these unrounded values below measures the values' rounding alone.
+      side: Float32Array.from({ length: rows }, (_, i) =>
+        i < 2 ? i : Math.round(rand() * 1024) / 1024,
+      ),
     };
     // The renderer's rows: per opening and key, the displacement's texel (x, y, z, 0) and the normal's; the side in the first's fourth place.
-    const data = new Float32Array(rows * FOLD_ROW_TEXELS * 4);
+    const values = new Float32Array(rows * FOLD_ROW_TEXELS * 4);
     for (let i = 0; i < rows * K; i++) {
-      data.set(fold.vectors.subarray(i * 3, i * 3 + 3), i * 8);
-      data.set(fold.normals.subarray(i * 3, i * 3 + 3), i * 8 + 4);
+      values.set(fold.vectors.subarray(i * 3, i * 3 + 3), i * 8);
+      values.set(fold.normals.subarray(i * 3, i * 3 + 3), i * 8 + 4);
     }
-    for (let r = 0; r < rows; r++) data[r * FOLD_ROW_TEXELS * 4 + 3] = fold.side[r] as number;
+    for (let r = 0; r < rows; r++) values[r * FOLD_ROW_TEXELS * 4 + 3] = fold.side[r] as number;
+    // Half floats, as the texture holds them; the CPU's fold (`renderFold`) reads the same halves.
+    const surface: SurfaceFold = {
+      slot: Float32Array.from({ length: rows }, (_, i) => i),
+      rows,
+      data: Uint16Array.from(values, toHalf),
+    };
+    const shown = renderFold(surface);
     const dual = new DualBones(HIP_NAMES.length, 0);
-    dual.setFold({ slot: new Float32Array(0), rows, data });
+    dual.setFold(surface);
     // A row per vertex: the left hip's and the right's alone, the last row, and rows from every line between.
     const asked = new Float32Array(count * 4);
     for (let v = 0; v < count; v++)
@@ -366,7 +379,7 @@ describe("the vertex shader's hip fold", () => {
       // The angles each row is read at: the left hip's for side 1, the right's for side 0, and the greater flexion of the two, each weighed by its side, between.
       const angles = draw(2);
       for (let v = 0; v < count; v++) {
-        const cpu = foldAngles(fold, asked[v * 4] as number, hips);
+        const cpu = foldAngles(shown, asked[v * 4] as number, hips);
         expect(angles[v * 4], `${left}/${right}: vertex ${v}`).toBeCloseTo(
           cpu?.flexion as number,
           3,
@@ -389,26 +402,36 @@ describe("the vertex shader's hip fold", () => {
       ] as const) {
         dual.foldBlend.value = blend;
         const px = draw(part);
-        let worst = 0;
-        for (let v = 0; v < count; v++) {
-          const cpu = new Float32Array(3);
-          const slot = asked[v * 4] as number;
-          const at = foldAngles(fold, slot, hips);
-          read(fold, slot, at?.flexion as number, at?.opening as number, cpu, 0);
-          const turned = rotate(
-            root as [number, number, number, number],
-            cpu[0] as number,
-            cpu[1] as number,
-            cpu[2] as number,
-          );
-          const want = turned.map((x) => x * blend);
-          if (blend === 1 && part === 0 && Math.hypot(...turned) > 0) moved++;
-          for (let k = 0; k < 3; k++)
-            worst = Math.max(worst, Math.abs((px[v * 4 + k] as number) - (want[k] as number)));
-        }
-        // The normal's change is some seven times the displacement's in size, so float error is too.
-        expect(worst, `${left}/${right}: part ${part} at ${blend}`).toBeLessThan(
+        /** The GPU's read against the CPU's of `of` (the halves it draws, or the values before they were rounded). */
+        const against = (of: HipFold) => {
+          let worst = 0;
+          for (let v = 0; v < count; v++) {
+            const cpu = new Float32Array(3);
+            const slot = asked[v * 4] as number;
+            const at = foldAngles(of, slot, hips);
+            read(of, slot, at?.flexion as number, at?.opening as number, cpu, 0);
+            const turned = rotate(
+              root as [number, number, number, number],
+              cpu[0] as number,
+              cpu[1] as number,
+              cpu[2] as number,
+            );
+            const want = turned.map((x) => x * blend);
+            if (of === shown && blend === 1 && part === 0 && Math.hypot(...turned) > 0) moved++;
+            for (let k = 0; k < 3; k++)
+              worst = Math.max(worst, Math.abs((px[v * 4 + k] as number) - (want[k] as number)));
+          }
+          return worst;
+        };
+        // The same halves: float error alone. The normal's change is some seven times the displacement's in size, so float error is too.
+        expect(against(shown), `${left}/${right}: part ${part} at ${blend}`).toBeLessThan(
           part === 0 ? 2e-6 : 1e-5,
+        );
+        // The values before rounding: each within 2⁻¹¹ of its largest (0.1 and 0.75), a mix of them no further, and
+        // turned, a vector's three no further than √3 of that between them.
+        const largest = part === 0 ? 0.1 : 0.75;
+        expect(against(fold), `${left}/${right}: part ${part} at ${blend}, unrounded`).toBeLessThan(
+          largest * 2 ** -11 * Math.sqrt(3) * blend + (part === 0 ? 2e-6 : 1e-5),
         );
       }
     }

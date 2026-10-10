@@ -12,6 +12,7 @@ import { BODY_TYPES } from "../scripts/lib/skinBench.ts";
 import { bodyTriangles } from "../scripts/lib/skinMeasure.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { fromHalf } from "../src/rig/half.ts";
 import {
   addFold,
   addFoldNormal,
@@ -275,26 +276,30 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
     expect([...surface.slot]).toEqual([0, 0, -1, 1, 1]);
     expect(surface.data.length).toBe(2 * FOLD_ROW_TEXELS * 4);
     expect(FOLD_ROW_TEXELS).toBe(K * 2);
+    // Each value a half float: the nearest to the mix, within 2⁻¹¹ of it.
+    const held = (i: number) => fromHalf(surface.data[i] as number);
+    const rounded = (got: number, want: number) =>
+      expect(Math.abs(got - want)).toBeLessThanOrEqual(Math.abs(want) * 2 ** -11 + 1e-9);
     // A row's side is in its first texel: the mix of its moved vertices' sides.
-    expect(surface.data[3]).toBeCloseTo(0.6, 6);
-    expect(surface.data[K * 8 + 3]).toBeCloseTo(0.2, 6);
-    expect([...renderFold(surface).side].map((s) => +s.toFixed(6))).toEqual([0.6, 0.2]);
+    rounded(held(3), 0.6);
+    rounded(held(K * 8 + 3), 0.2);
     const back = renderFold(surface);
+    expect(Array.from(back.side)).toEqual([held(3), held(K * 8 + 3)]);
     for (let key = 0; key < K; key++)
       for (let k = 0; k < 3; k++) {
         const a = fold.vectors[key * 3 + k] as number;
         const b = fold.vectors[(K + key) * 3 + k] as number;
-        expect(surface.data[key * 8 + k] as number).toBeCloseTo(0.5 * a + 0.5 * b, 6);
-        expect(surface.data[(K + key) * 8 + k] as number).toBeCloseTo(b, 6);
-        if (key > 0) expect(surface.data[key * 8 + 3]).toBe(0);
+        rounded(held(key * 8 + k), 0.5 * a + 0.5 * b);
+        rounded(held((K + key) * 8 + k), b);
+        if (key > 0) expect(held(key * 8 + 3)).toBe(0);
         // The normal's change is mixed the same way, in the texel after the displacement's.
         const an = fold.normals[key * 3 + k] as number;
         const bn = fold.normals[(K + key) * 3 + k] as number;
-        expect(surface.data[key * 8 + 4 + k] as number).toBeCloseTo(0.5 * an + 0.5 * bn, 6);
-        expect(surface.data[(K + key) * 8 + 4 + k] as number).toBeCloseTo(bn, 6);
-        expect(surface.data[key * 8 + 7]).toBe(0);
-        // And read back as the fold of the render vertices.
-        expect(back.vectors[(K + key) * 3 + k] as number).toBeCloseTo(b, 6);
+        rounded(held(key * 8 + 4 + k), 0.5 * an + 0.5 * bn);
+        rounded(held((K + key) * 8 + 4 + k), bn);
+        expect(held(key * 8 + 7)).toBe(0);
+        // And read back as the fold of the render vertices: the very values the texture holds.
+        expect(back.vectors[(K + key) * 3 + k]).toBe(held((K + key) * 8 + k));
       }
   });
 

@@ -1,4 +1,5 @@
 import type { BoneRotations, RestBones } from "./bones.ts";
+import { fromHalf, toHalf } from "./half.ts";
 import { rotate } from "./quat.ts";
 
 /**
@@ -484,9 +485,11 @@ export interface SurfaceFold {
    * FOLD_KEYS + k) * 2` holds the displacement (x, y, z, 0) and the next the
    * normal's change (x, y, z, 0). A row is `FOLD_ROW_TEXELS` texels. Its first
    * texel holds the row's side (`HipFold.side`) in its fourth place:
-   * `data[r * FOLD_ROW_TEXELS * 4 + 3]`.
+   * `data[r * FOLD_ROW_TEXELS * 4 + 3]`. Each value a half float (`toHalf`'s
+   * 16 bits), as the texture holds it, so that the CPU's fold (`renderFold`) is
+   * the GPU's exactly; rounded, a displacement is within 2⁻¹¹ of the solve's.
    */
-  data: Float32Array;
+  data: Uint16Array;
 }
 
 /** Texels per row of a surface fold: two (a displacement and a normal's change) per key, per opening. */
@@ -546,7 +549,7 @@ export function surfaceFold(
     data[row * keys * 8 + 3] = held > 0 ? side / held : 0;
   }
   const slot = Float32Array.from(renderToSurface, (s) => rowOf[s] as number);
-  return { slot, rows, data };
+  return { slot, rows, data: Uint16Array.from(data, toHalf) };
 }
 
 /**
@@ -564,12 +567,12 @@ export function renderFold(fold: SurfaceFold): HipFold {
   const normals = new Float32Array(fold.rows * keys * 3);
   const side = new Float32Array(fold.rows);
   for (let r = 0; r < fold.rows; r++) {
-    side[r] = fold.data[r * keys * 8 + 3] as number;
+    side[r] = fromHalf(fold.data[r * keys * 8 + 3] as number);
     for (let key = 0; key < keys; key++)
       for (let k = 0; k < 3; k++) {
         const from = (r * keys + key) * 8 + k;
-        vectors[(r * keys + key) * 3 + k] = fold.data[from] as number;
-        normals[(r * keys + key) * 3 + k] = fold.data[from + 4] as number;
+        vectors[(r * keys + key) * 3 + k] = fromHalf(fold.data[from] as number);
+        normals[(r * keys + key) * 3 + k] = fromHalf(fold.data[from + 4] as number);
       }
   }
   return { vertices, slot, vectors, normals, side };

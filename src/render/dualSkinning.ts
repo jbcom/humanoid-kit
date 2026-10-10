@@ -18,6 +18,7 @@
 import {
   DataTexture,
   FloatType,
+  HalfFloatType,
   type Material,
   MeshDepthMaterial,
   MeshDistanceMaterial,
@@ -105,10 +106,14 @@ export function foldTexel(
   return [texel % FOLD_LINE_TEXELS, Math.floor(texel / FOLD_LINE_TEXELS)];
 }
 
-/** A fold texture of `rows` rows from their data (`SurfaceFold.data`), padded out to whole lines. */
-function foldTexture(data: Float32Array, rows: number): DataTexture {
+/**
+ * A fold texture of `rows` rows from their data (`SurfaceFold.data`), padded out
+ * to whole lines: half floats, as the data is, eight bytes a texel. As 32-bit
+ * floats an adult's fold took 48.4 MB (18005 rows with its organ's own); as halves, 24.2.
+ */
+function foldTexture(data: Uint16Array, rows: number): DataTexture {
   const lines = Math.max(1, Math.ceil(rows / FOLD_ROWS_PER_LINE));
-  const texels = new Float32Array(lines * FOLD_LINE_TEXELS * 4);
+  const texels = new Uint16Array(lines * FOLD_LINE_TEXELS * 4);
   for (let row = 0; row < rows; row++)
     for (let opening = 0; opening < FOLD_OPENINGS; opening++)
       for (let key = 0; key < FOLD_KEYS; key++)
@@ -117,7 +122,7 @@ function foldTexture(data: Float32Array, rows: number): DataTexture {
           const from = (((row * FOLD_OPENINGS + opening) * FOLD_KEYS + key) * 2 + part) * 4;
           texels.set(data.subarray(from, from + 4), (y * FOLD_LINE_TEXELS + x) * 4);
         }
-  const t = new DataTexture(texels, FOLD_LINE_TEXELS, lines, RGBAFormat, FloatType);
+  const t = new DataTexture(texels, FOLD_LINE_TEXELS, lines, RGBAFormat, HalfFloatType);
   t.minFilter = NearestFilter;
   t.magFilter = NearestFilter;
   t.generateMipmaps = false;
@@ -127,7 +132,7 @@ function foldTexture(data: Float32Array, rows: number): DataTexture {
 
 /** A texture of no fold: one row, all zeros, that no vertex refers to. */
 export const noFoldTexture = (): DataTexture =>
-  foldTexture(new Float32Array(FOLD_ROW_TEXELS * 4), 1);
+  foldTexture(new Uint16Array(FOLD_ROW_TEXELS * 4), 1);
 
 /**
  * A figure's bones as dual quaternions, shared by the materials that skin by

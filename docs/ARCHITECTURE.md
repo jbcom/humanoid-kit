@@ -1352,10 +1352,24 @@ side by the same weights over the moved vertices alone), and the patched
 at its flexion and opening (`hkFoldAngles`), the `skinnormal_vertex` chunk
 `hkFoldNormal`. The browser project holds the shader's angles to the CPU's
 (`foldAngles`) and its read to `addFold` and `addFoldNormal` to 2·10⁻⁶ and 10⁻⁵,
-with the hips flexed and opened apart. The texture is four 32-bit floats a texel:
-on an adult's drawn surface about 15000 rows (14796 for the average figure, 15200
-for the heavy man), 40 MB; on a child's base surface 4075 rows, 11 MB. The second
-opening doubled it.
+with the hips flexed and opened apart, and to the values the fold held before
+they were rounded within the rounding's bound.
+
+**The fold as half floats (decision, 2026-10-10).** The texture is four half
+floats a texel (`HalfFloatType`), and so is the fold itself (`SurfaceFold.data`,
+rounded to nearest by `toHalf` in `src/rig/half.ts`; three's `DataUtils.toHalfFloat`
+truncates, a whole step, 61 µm at 66 mm): the CPU's fold (`renderFold`) reads
+the very halves the GPU does, so the two still agree to float error. As 32-bit
+floats an adult's drawn surface took 48.4 MB (the average figure, 18005 rows with
+its organ's own), the heavy man's 49.4 MB, a child's base surface 11.0 MB (4075
+rows), too much for a phone; as halves 24.2, 24.7 and 5.5 MB. A half keeps 11
+significant bits, so a value is within 2⁻¹¹ of itself: at most 31 µm of a 66 mm
+displacement, and a shading normal within 0.2° (the normal's change is up to 1.6).
+Posed, every value moved by a whole rounding step at once moves the drawn surface
+at most 24 µm (the heavy man, `tucked`; 11 µm the average figure). Normal changes
+as 8-bit values were measured and not taken: 2.0° to 3.9° of shading. Rows whose
+fold is negligible are not dropped: under 0.1 mm at every key are only 8 to 10%
+of the rows, and dropping them would leave a seam where the fold ends.
 
 **Where it runs.** The thigh pushed alone took 0.7 to 1.5 s of one core for a
 figure on a desktop (1.8 s with the CPU throttled 4× in Chromium, the proxy for a

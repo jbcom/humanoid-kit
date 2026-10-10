@@ -22,6 +22,7 @@
  * organ) keeps its topology's weights, the very arrays.
  */
 import type { SurfaceMesh } from "../build/surfaceMesh.ts";
+import { fromHalf, toHalf } from "../rig/half.ts";
 import { FOLD_ROW_TEXELS, type SurfaceFold } from "../rig/hipFold.ts";
 
 /** A surface's skin weights: four bones and four weights per render vertex. */
@@ -218,6 +219,8 @@ export function evaluatedFold(
 ): SurfaceFold {
   const row = FOLD_ROW_TEXELS * 4;
   const { owner, loops } = skinning;
+  /** The fold's value at `i` (it is held as half floats). */
+  const value = (i: number) => fromHalf(fold.data[i] as number);
   /** Per reservoir, its root's row (lazily), or null while not needed. */
   const roots: (Float32Array | null)[] = loops.map(() => null);
   const rootOf = (s: number): Float32Array => {
@@ -230,8 +233,7 @@ export function evaluatedFold(
       const r = fold.slot[v] as number;
       if (r < 0) continue;
       held++;
-      for (let i = 0; i < row; i++)
-        sum[i] = (sum[i] as number) + (fold.data[r * row + i] as number);
+      for (let i = 0; i < row; i++) sum[i] = (sum[i] as number) + value(r * row + i);
     }
     // The side (the first texel's fourth place) is a mean of the rows there are; the values count the rest as none.
     const side = held ? (sum[3] as number) / held : 0.5;
@@ -249,7 +251,7 @@ export function evaluatedFold(
   }
   if (!blended.length) return fold;
   // Each blended vertex its own row after the surface's: the blend is the vertex's, not its row's.
-  const data = new Float32Array((fold.rows + blended.length) * row);
+  const data = new Uint16Array((fold.rows + blended.length) * row);
   data.set(fold.data.subarray(0, fold.rows * row));
   const slot = Float32Array.from(fold.slot);
   blended.forEach(({ v, e, s }, i) => {
@@ -257,13 +259,13 @@ export function evaluatedFold(
     const own = fold.slot[v] as number;
     const root = rootOf(s);
     for (let k = 0; k < row; k++)
-      data[at + k] =
-        (1 - e) * (own < 0 ? 0 : (fold.data[own * row + k] as number)) + e * (root[k] as number);
+      data[at + k] = toHalf(
+        (1 - e) * (own < 0 ? 0 : value(own * row + k)) + e * (root[k] as number),
+      );
     // A vertex the fold left reads the root's side; one it moved, the two sides mixed as the rows are.
-    data[at + 3] =
-      own < 0
-        ? (root[3] as number)
-        : (1 - e) * (fold.data[own * row + 3] as number) + e * (root[3] as number);
+    data[at + 3] = toHalf(
+      own < 0 ? (root[3] as number) : (1 - e) * value(own * row + 3) + e * (root[3] as number),
+    );
     slot[v] = fold.rows + i;
   });
   return { slot, rows: fold.rows + blended.length, data };
