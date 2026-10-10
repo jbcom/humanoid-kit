@@ -2,7 +2,8 @@
  * The authored hair styles (scripts/lib/hairCards): ropes placed from angles round the head, lying on
  * and hanging over the default figure's body, bound to its base mesh.
  */
-import { Vector3 } from "three";
+import { BufferAttribute, BufferGeometry, DoubleSide, Ray, Vector3 } from "three";
+import { MeshBVH } from "three-mesh-bvh";
 import { beforeAll, describe, expect, it } from "vitest";
 import { compileAuthored } from "../scripts/lib/hairCards/compile.ts";
 import { BodySurface, HeadFrame } from "../scripts/lib/hairCards/head.ts";
@@ -52,6 +53,83 @@ describe("the head frame", () => {
     expect(hairlineElevation(40)).toBeLessThan(hairlineElevation(0));
     expect(hairlineElevation(-40)).toBe(hairlineElevation(40));
   });
+});
+
+/** Each rope's vertices: a rope is one tube, from its first ring (a run of `roots`) to the next one's. */
+function ropeRuns(cards: Cards): { first: number; last: number }[] {
+  const starts: number[] = [];
+  for (let i = 0; i < cards.roots.length; i++)
+    if (i === 0 || cards.roots[i] !== (cards.roots[i - 1] as number) + 1)
+      starts.push(cards.roots[i] as number);
+  const end = cards.positions.length / 3;
+  return starts.map((first, k) => ({ first, last: (starts[k + 1] ?? end) - 1 }));
+}
+
+describe.each([
+  ["braids01", 100, 200, 0.9],
+  ["locs01", 40, 80, 0.85],
+  ["twists01", 100, 250, 0.85],
+] as const)("the rope grid %s", (id, fewest, most, crownCover) => {
+  let cards: Cards;
+  beforeAll(() => {
+    const spec = AUTHORED_STYLES.find((s) => s.id === id);
+    if (!spec) throw new Error(`no ${id}`);
+    cards = spec.build({ head, body });
+  });
+
+  it(`parts the head into ${fewest} to ${most} sections, one rope each`, () => {
+    const n = ropeRuns(cards).length;
+    expect(n).toBeGreaterThanOrEqual(fewest);
+    expect(n).toBeLessThanOrEqual(most);
+  });
+
+  it("covers the crown: no bare starburst of partings where the ropes leave the top of the head", () => {
+    // Looking in at the scalp from outside, along the direction from the skull's centre: from 50
+    // degrees of elevation up, nearly every look meets a rope before the scalp.
+    const tris: number[] = [];
+    for (let f = 0; f < cards.faceVerts.length; f += 4) {
+      const q = cards.faceVerts.slice(f, f + 4) as [number, number, number, number];
+      tris.push(q[0], q[1], q[2], q[0], q[2], q[3]);
+    }
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(new Float32Array(cards.positions), 3));
+    geometry.setIndex(tris);
+    const bvh = new MeshBVH(geometry);
+    let looks = 0;
+    let covered = 0;
+    for (let az = -180; az < 180; az += 4)
+      for (let el = 50; el <= 88; el += 3) {
+        const scalp = head.surface((az * Math.PI) / 180, (el * Math.PI) / 180);
+        if (!scalp) continue;
+        const out = new Vector3().subVectors(scalp.point, head.centre).normalize();
+        const from = scalp.point.clone().addScaledVector(out, 0.3);
+        const hit = bvh.raycastFirst(new Ray(from, out.negate()), DoubleSide);
+        looks++;
+        if (hit && hit.distance < 0.299) covered++;
+      }
+    expect(covered / looks).toBeGreaterThanOrEqual(crownCover);
+  });
+
+  if (id !== "twists01")
+    it("drapes: the ropes from the sides and the lower rows come to rest on the shoulders, neck and back", () => {
+      // (The crown's ropes are the outer layer: combed back, they hang over these, and with no
+      // rope-on-rope contact modelled, a little way off the back.)
+      const at = (v: number) =>
+        new Vector3(
+          cards.positions[v * 3] as number,
+          cards.positions[v * 3 + 1] as number,
+          cards.positions[v * 3 + 2] as number,
+        );
+      let lower = 0;
+      let resting = 0;
+      for (const { first, last } of ropeRuns(cards)) {
+        const out = at(first).sub(head.centre).normalize();
+        if (Math.asin(out.y) > (45 * Math.PI) / 180) continue;
+        lower++;
+        if (body.probe(at(last)).distance < 0.025) resting++;
+      }
+      expect(resting / lower).toBeGreaterThanOrEqual(0.8);
+    });
 });
 
 describe("bantu knots", () => {

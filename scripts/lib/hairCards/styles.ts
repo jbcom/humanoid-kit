@@ -39,10 +39,15 @@ export interface StyleContext {
   body: BodySurface;
 }
 
-/** One tile per rope in turn, so neighbouring ropes do not wear the same pattern. */
-const tileOf = (index: number, metresPerV = METRES_PER_V) => {
+/**
+ * One tile per rope in turn, so neighbouring ropes do not wear the same pattern, starting a little
+ * way down it (up to 0.3 of V) as far as a rope of `length` metres leaves room for: it must still end
+ * inside the atlas, with 3% to spare for the stretch settling leaves.
+ */
+const tileOf = (index: number, metresPerV = METRES_PER_V, length = 0) => {
   const { u0, u1 } = tileRange(index % TILE_COUNT);
-  return { u0, u1, metresPerV, v0: ((index * 0.37) % 1) * 0.3 };
+  const room = Math.min(0.3, Math.max(0, 1 - (1.03 * length) / metresPerV));
+  return { u0, u1, metresPerV, v0: ((index * 0.37) % 1) * room };
 };
 
 /** The scalp where a plane `x` = constant meets it, from `fromE` to `toE` (radians) over the top: one parting, front to back. */
@@ -113,10 +118,10 @@ export function cornrows({ head, body }: StyleContext): Cards {
       cards,
       {
         root: { point: end.point.clone().addScaledVector(end.normal, radius * 0.7), normal: along },
+        hang: { kind: "marched", lift: 0.02 },
         length: 0.2 + 0.04 * rand(),
         radius,
         tipRadius: 0.0032,
-        lift: 0.02,
         sides: 5,
         segments: 10,
         tile,
@@ -165,104 +170,100 @@ export function gridRoots(
 }
 
 /**
- * A grid of ropes over the head, brick-wise as sections are parted: the one thing twists, locs and box
- * braids differ in is how thick, long, stiff and numerous the ropes are.
+ * A grid of ropes over the head, brick-wise as sections are parted, each combed along the scalp and
+ * settled (`RopeHang` "combed"): the one thing twists, locs and box braids differ in is how thick,
+ * long, stiff and numerous the ropes are.
  */
-function ropeGrid(
-  { head, body }: StyleContext,
-  rope: {
-    seed: number;
-    spacing: number;
-    length: number;
-    radius: number;
-    tipRadius: number;
-    lift: number;
-    sides: number;
-    segments: number;
-    /** How far a rope strays from the straight hang, as drift (see `RopeSpec`). */
-    stray: number;
-  },
-): Cards {
+export interface RopeGridSpec {
+  seed: number;
+  /** Metres between partings. */
+  spacing: number;
+  length: number;
+  radius: number;
+  tipRadius: number;
+  sides: number;
+  segments: number;
+  /** How far a rope strays from the straight hang, as drift (see `RopeSpec`). */
+  stray: number;
+  /** Radians off the scalp a rope leaves its root at. */
+  rise: number;
+  /** How much it resists bending as it settles. */
+  stiffness: number;
+}
+
+function ropeGrid({ head, body }: StyleContext, rope: RopeGridSpec): Cards {
   const cards = newCards();
   const rand = random(rope.seed);
   let index = 0;
-  const place = (root: ScalpPoint, a: number) => {
-    // Braids from the front hairline fall to the side of the face; over the crown there is no front.
-    const rise = Math.atan2(
-      root.point.y - head.centre.y,
-      Math.hypot(root.point.x - head.centre.x, root.point.z - head.centre.z),
-    );
-    const high = Math.min(1, Math.max(0, (rise - 35 * DEG) / (25 * DEG)));
-    const front = Math.max(0, 1 - Math.abs(a) / (40 * DEG)) * (1 - high * high * (3 - 2 * high));
+  for (const { root } of gridRoots(head, rope.spacing)) {
+    const length = rope.length * (0.85 + 0.3 * rand());
     addRope(
       cards,
       {
         root,
-        length: rope.length * (0.85 + 0.3 * rand()),
+        hang: { kind: "combed", rise: rope.rise, stiffness: rope.stiffness },
+        length,
         radius: rope.radius,
         collar: 0.7,
         tipRadius: rope.tipRadius,
-        lift: rope.lift,
         sides: rope.sides,
         segments: rope.segments,
-        drift: new Vector3(
-          Math.sign(root.point.x) * 1.3 * front + rope.stray * (rand() - 0.5),
-          0,
-          -0.5 * front + rope.stray * (rand() - 0.5),
-        ),
-        tile: tileOf(index++),
+        drift: new Vector3(rope.stray * (rand() - 0.5), 0, rope.stray * (rand() - 0.5)),
+        tile: tileOf(index++, METRES_PER_V, length),
       },
       body,
     );
-  };
-  for (const { root, azimuth } of gridRoots(head, rope.spacing)) place(root, azimuth);
+  }
   return cards;
 }
 
-/** Two-strand twists: thinner, shorter and more of them than braids, standing off the scalp before they fall. */
-export const twists = (context: StyleContext): Cards =>
-  ropeGrid(context, {
-    seed: 31,
-    spacing: 0.017,
-    length: 0.17,
-    radius: 0.0048,
-    tipRadius: 0.0028,
-    lift: 0.03,
-    sides: 5,
-    segments: 9,
-    stray: 0.35,
-  });
+/** Two-strand twists: thinner, shorter and more of them than braids, springier. */
+export const TWISTS: RopeGridSpec = {
+  seed: 31,
+  spacing: 0.017,
+  length: 0.17,
+  radius: 0.0048,
+  tipRadius: 0.0028,
+  sides: 5,
+  segments: 12,
+  stray: 0.35,
+  rise: 0.35,
+  stiffness: 0.25,
+};
+export const twists = (context: StyleContext): Cards => ropeGrid(context, TWISTS);
 
-/** Locs: thick matted ropes, long, falling heavily. */
-export const locs = (context: StyleContext): Cards =>
-  ropeGrid(context, {
-    seed: 41,
-    spacing: 0.026,
-    length: 0.36,
-    radius: 0.0088,
-    tipRadius: 0.0055,
-    lift: 0.01,
-    sides: 6,
-    segments: 12,
-    stray: 0.2,
-  });
+/** Locs: thick matted ropes, long, falling heavily; 40 to 80 of them on a head. */
+export const LOCS: RopeGridSpec = {
+  seed: 41,
+  spacing: 0.027,
+  length: 0.36,
+  radius: 0.0088,
+  tipRadius: 0.0055,
+  sides: 6,
+  segments: 18,
+  stray: 0.2,
+  rise: 0.25,
+  stiffness: 0.15,
+};
+export const locs = (context: StyleContext): Cards => ropeGrid(context, LOCS);
 
 /**
  * Box braids: plaits from the roots all the way down, one from each section of a grid of partings
- * over the head, shoulder-blade length, hanging under their own weight.
+ * over the head (100 to 200 of them), shoulder-blade length, lying over the shoulders and the back.
  */
-export const boxBraids = (context: StyleContext): Cards =>
-  ropeGrid(context, {
-    seed: 11,
-    spacing: 0.02,
-    length: 0.3,
-    radius: 0.0072,
-    tipRadius: 0.0035,
-    lift: 0.012,
-    sides: 5,
-    segments: 12,
-    stray: 0.1,
-  });
+export const BOX_BRAIDS: RopeGridSpec = {
+  seed: 11,
+  spacing: 0.018,
+  length: 0.3,
+  radius: 0.0072,
+  tipRadius: 0.0035,
+  sides: 5,
+  segments: 14,
+  stray: 0.1,
+  rise: 0.3,
+  stiffness: 0.3,
+};
+export const boxBraids = (context: StyleContext): Cards => ropeGrid(context, BOX_BRAIDS);
 
 /**
  * Bantu knots: the head parted into square sections, each section's hair twisted into a rope and

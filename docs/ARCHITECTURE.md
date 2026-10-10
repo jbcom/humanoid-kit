@@ -1301,11 +1301,23 @@ a coloured texture; everything in the pure core is testable in Node.
   (`docs/licence-history.md`), so `scripts/lib/hairCards` builds them: **ropes**, tubes of
   quads along a centreline (`ropes.ts`) that leaves the scalp at an angle read from the head
   (`HeadFrame`: azimuth and elevation from the skull's centre, a ray to the head's own
-  triangles), lifts a little, then falls under gravity and lies over the body
-  (`BodySurface.probe`, signed distance from the whole body, winding taken from the skull); a
-  **grid of partings** (brick-wise rows, a hairline that recedes at the temples and runs up over
-  the ear and down at the nape) places box braids, twists and locs, and cornrows are parallel
-  parting lines on the scalp with a braid hanging from each end. The cards are bound to the
+  triangles) and lies over the body (`BodySurface.probe`, signed distance from the whole
+  body, winding taken from the skull); a **grid of partings** (brick-wise rows, a hairline
+  that recedes at the temples and runs up over the ear and down at the nape) places box braids
+  (179), twists (197) and locs (78), and cornrows are parallel parting lines on the scalp with
+  a braid hanging from each end. A grid's ropes are *combed* (`RopeHang`): each leaves its
+  root at a shallow angle, then lies along the scalp the way hair is combed (`combAlong`: back
+  over the top and from the front hairline, down on the sides and the back), held at its
+  clearance, until the comb runs steeply down; from there it hangs and settles
+  (`relaxRope`: gravity, follow-the-leader inextensibility, a stiffness per style, the body
+  as a collider with friction, so it rests on a shoulder or down the back instead of sliding
+  off to hang plumb). The first ropes stood up out of their roots and fell radially, a bare
+  starburst of partings round the crown; combed, each row lies over the roots of the row
+  behind, and a test that looks in at the scalp from 50 degrees up finds a rope first at
+  least 90% of the time (85% for the thicker, sparser locs and the short twists). Ropes from
+  the sides and the lower rows come to rest on the shoulders, neck and back (tested at 80%);
+  the crown's, combed back, are the outer layer over them (rope-on-rope contact is not
+  modelled). The cards are bound to the
   base mesh by the MHCLO scheme (`bindToBody`: the nearest triangle's corners, barycentric
   weights, an offset) with the head's extents as the scale references, so they go through the
   same pack, worker and renderer as a MakeHuman style and fit other heads. Each style's strand

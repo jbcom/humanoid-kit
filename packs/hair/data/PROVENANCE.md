@@ -57,10 +57,10 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | bob01.webp | hair/bob01/bob01_diffuse.png | 2048 | face | 2048 | 2048 | the source |
 | braid01.webp | hair/braid01/braid01_diffuse.png | 2048 | face | 2816 | 2048 | the source |
 | crop01.webp | drawn in the cut-out of hair/short04/short04_diffuse.png | 2048 | face | 1664 | 1664 | the source, downsampled |
-| braids01.webp | authored by the packer | 1024 | face | 1152 | 1024 | the source, 128 texels short; not upscaled |
+| braids01.webp | authored by the packer | 1024 | face | 1280 | 1024 | the source, 256 texels short; not upscaled |
 | cornrows01.webp | authored by the packer | 1024 | face | 1024 | 1024 | the source |
-| twists01.webp | authored by the packer | 1024 | face | 896 | 1024 | the source |
-| locs01.webp | authored by the packer | 1024 | face | 1280 | 1024 | the source, 256 texels short; not upscaled |
+| twists01.webp | authored by the packer | 1024 | face | 1024 | 1024 | the source |
+| locs01.webp | authored by the packer | 1024 | face | 1408 | 1024 | the source, 384 texels short; not upscaled |
 | bantu01.webp | authored by the packer | 1024 | face | 1024 | 1024 | the source |
 | eyebrow001.webp | eyebrows/eyebrow001/eyebrow001.png | 512 | face | 384 | 512 | the source |
 | eyebrow002.webp | eyebrows/eyebrow002/eyebrow002.png | 512 | face | 384 | 512 | the source |
@@ -105,13 +105,13 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | braid01.webp | `27266249661a1e01ef64503173475bc7848bb2a29c1b9aa5ddf4d0bbd23d6cd5` |
 | crop01.bin.gz | `09b0cf3d310add9c9a9df9ab20eb2bce5215b6ed9beb39e4770bbc7246452ea4` |
 | crop01.webp | `9aea68b712b58448cf3571cc0f47f09b0abcd8c7811bf1d3437499580116b3a6` |
-| braids01.bin.gz | `6547e228ee121ef1db4e09c58eda2e81aee16c20bc506d829604a52ce6c66b8a` |
+| braids01.bin.gz | `d76cdc6173951d87370a2863a24ece6e87039bac9113854c2e6e4be61524fd9c` |
 | braids01.webp | `35de9774062d8fe7b48bb82a33eea917acc198307f16acf85fb61f1192509c65` |
 | cornrows01.bin.gz | `66c787e9e097a2be6e77df75ee912811c9fbb7cc8ae738dd6d14baa142cd0122` |
 | cornrows01.webp | `c7eeb5c51225b493a7d0707ef3a38038ff00171767e930079560f97d269db867` |
-| twists01.bin.gz | `4372565e047fc9f521ad3be68343af2278bfcc6e2f8c8f7e335b2f1aa167778d` |
+| twists01.bin.gz | `48371e24799baa5fb6f8b375ec18a773526581352966a15fc8e38fc892664591` |
 | twists01.webp | `c7f300fb5c66fc549323076dd5a1f36702045a4573e269845c8585fca650f472` |
-| locs01.bin.gz | `a2198947a6ca1ba5549baa9254c44c59342e2b2a9b4c79495b02f4659ce35161` |
+| locs01.bin.gz | `f58300f17f0b11991c1c59973247a42ddf508d1179fb60673743186271b31783` |
 | locs01.webp | `606f9cfbd2119a7eda05340ed8dfa1f19c3acba6f6f7774054e3ed09c530e586` |
 | bantu01.bin.gz | `4ed2060f0917dd95465fabdcb03b1b85f4dc6d77c7b71bea9ac770be3f4f551d` |
 | bantu01.webp | `3409ce0dcba009bac44141c70e2686ae06289a0dbec8fb9e120021b14a0b9a8e` |
