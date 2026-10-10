@@ -35,6 +35,7 @@ import {
   type ToneMapping,
   Vector3,
 } from "three";
+import { QaShade } from "./qaShade";
 import { tattooImages } from "./tattooImages";
 import { Walk } from "./Walk";
 
@@ -433,6 +434,7 @@ function Shot() {
       >
         <StudioStage {...(background ? { background } : {})} />
         <SceneProbe />
+        <QaShade />
         {frame && frameView.length === 3 && frameView.every(Number.isFinite) && (
           <AutoFrame
             bone={frame}
