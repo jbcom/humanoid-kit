@@ -135,8 +135,38 @@ describe("a style's strand map", () => {
   /** What each map measures, decoded once: size, grey-ness, mean linear luminance, share of clear texels. */
   const measured = new Map<
     string,
-    { size: number; maxChannelGap: number; mean: number; clearShare: number }
+    {
+      size: number;
+      maxChannelGap: number;
+      mean: number;
+      clearShare: number;
+      /** Share of edge texels (faint, beside an opaque one) darker than every opaque neighbour by over 24 levels. */
+      darkEdgeShare: number;
+    }
   >();
+  /** Edge texels darker than every opaque neighbour by over 24 levels, as a share of the edge texels. */
+  const darkEdges = (data: Uint8Array, w: number, h: number) => {
+    let edges = 0;
+    let dark = 0;
+    for (let y = 1; y < h - 1; y++)
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        if ((data[i * 4 + 3] as number) >= 250) continue;
+        let lo = 255;
+        let n = 0;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const j = i + dy * w + dx;
+            if ((data[j * 4 + 3] as number) < 250) continue;
+            lo = Math.min(lo, data[j * 4] as number);
+            n++;
+          }
+        if (!n) continue;
+        edges++;
+        if (lo - (data[i * 4] as number) > 24) dark++;
+      }
+    return edges ? dark / edges : 0;
+  };
   beforeAll(async () => {
     for (const s of scalpStyles) {
       const { data, info } = await sharp(path.join(hairDir, s.material.texture as string))
@@ -160,9 +190,18 @@ describe("a style's strand map", () => {
         maxChannelGap: gap,
         mean: sum / weight,
         clearShare: clear / (data.length / 4),
+        darkEdgeShare: darkEdges(new Uint8Array(data), info.width, info.height),
       });
     }
   }, 120_000);
+
+  // A card's faint edge texels once carried the atlas's black backdrop, which
+  // the GPU's filtering drew as a dark wire along the card (bob01 at 2048: 3.5%
+  // of its edge texels; 5.4% at 1024). The packer bleeds the strands' grey into
+  // them (scripts/lib/edgeBleed.ts); what is left is lossy WebP's own rounding.
+  it("draws no dark wire at a card's edge: its faint texels are no darker than the strands beside them", () => {
+    for (const s of scalpStyles) expect(measured.get(s.id)?.darkEdgeShare, s.id).toBeLessThan(0.01);
+  });
 
   it("is grey, and as large as its closest framing needs and its source has, as PROVENANCE.md records", () => {
     const provenance = fs.readFileSync(path.join(hairDir, "PROVENANCE.md"), "utf8");
