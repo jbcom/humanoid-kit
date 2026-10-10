@@ -11,7 +11,7 @@
 import { type LandmarkFrame, landmarks, type Vec3 } from "../foundation/landmarks.ts";
 import type { PosedBody } from "../foundation/posed.ts";
 import type { HumanoidModel } from "../model/humanoidModel.ts";
-import type { Affordance } from "./registry.ts";
+import type { FigureAffordances } from "./registry.ts";
 
 const unit = (a: Vec3): Vec3 => {
   const l = Math.hypot(a[0], a[1], a[2]);
@@ -30,15 +30,18 @@ function frame(position: Vec3, normal: Vec3, along: Vec3): LandmarkFrame {
   return { position, normal: n, tangent: t, bitangent: cross(n, t) };
 }
 
-/** Each affordance of `registry` framed on a posed body (`posedSurface`) of this model. */
+/**
+ * Each of a figure's own affordances (`affordances(recipe)`) framed on its
+ * posed body (`posedSurface`) of this model.
+ */
 export function affordanceFrames(
   model: HumanoidModel,
   body: PosedBody,
-  registry: readonly Affordance[],
+  own: FigureAffordances,
 ): Readonly<Record<string, LandmarkFrame>> {
   const marks = landmarks(model, body);
   const out: Record<string, LandmarkFrame> = {};
-  for (const a of registry) {
+  for (const a of own) {
     if ("between" in a.at) {
       // An opening between two landmarks (the lips) lies across the line from one to the
       // other: the tangent runs along that line, from the second to the first, and the

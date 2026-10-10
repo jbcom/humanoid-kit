@@ -5,7 +5,7 @@
  * with a figure (`AffordanceStates`), not in the registry, so two figures with
  * one registry have their own.
  */
-import type { Affordance, AffordanceKind } from "./registry.ts";
+import type { AffordanceKind, FigureAffordances } from "./registry.ts";
 
 /** What is inside an aperture: how deep it reaches and how wide it is there, metres. */
 export interface Occupancy {
@@ -44,9 +44,12 @@ export type AffordanceState =
     };
 
 type StateOf<K extends AffordanceKind> = Extract<AffordanceState, { kind: K }>;
-/** A change to an affordance's state: any of its kind's values. */
-export type AffordanceChange = Partial<Omit<AffordanceState, "kind">> &
-  Partial<Omit<StateOf<"aperture">, "kind">> &
+/**
+ * A change to an affordance's state: any of its kind's values. An id does not
+ * say its kind to the type checker, so the type admits every kind's values and
+ * `changeState` refuses any its kind does not have.
+ */
+export type AffordanceChange = Partial<Omit<StateOf<"aperture">, "kind">> &
   Partial<Omit<StateOf<"grip">, "kind">> &
   Partial<Omit<StateOf<"mount">, "kind">> &
   Partial<Omit<StateOf<"contact">, "kind">>;
@@ -62,13 +65,27 @@ export function restState<K extends AffordanceKind>(kind: K): StateOf<K> {
   return { ...rest[kind] } as StateOf<K>;
 }
 
-const unit = (name: string, x: number) => {
-  if (!(x >= 0 && x <= 1)) throw new RangeError(`${name} must be 0 to 1, not ${x}`);
+// A developer's values arrive from plain JavaScript as often as from typed code, so
+// each is checked for what it is, not only for its range.
+const unit = (name: string, x: unknown) => {
+  if (typeof x !== "number" || !(x >= 0 && x <= 1))
+    throw new RangeError(`${name} must be a number from 0 to 1, not ${String(x)}`);
 };
-const nonNegative = (name: string, x: number) => {
-  if (!(x >= 0 && Number.isFinite(x)))
-    throw new RangeError(`${name} must be a finite number of at least 0, not ${x}`);
+const nonNegative = (name: string, x: unknown) => {
+  if (typeof x !== "number" || !(x >= 0 && Number.isFinite(x)))
+    throw new RangeError(`${name} must be a finite number of at least 0, not ${String(x)}`);
 };
+const nameOrNull = (name: string, x: unknown) => {
+  if (x !== null && typeof x !== "string")
+    throw new RangeError(`${name} must be a name or null, not ${String(x)}`);
+};
+
+/** A copy of a state, so neither what was set nor what is read can change it afterwards. */
+function copy(state: AffordanceState): AffordanceState {
+  return state.kind === "aperture" && state.occupancy
+    ? { ...state, occupancy: { ...state.occupancy } }
+    : { ...state };
+}
 
 /** The values each kind takes: a change naming any other is refused. */
 const FIELDS: { readonly [K in AffordanceKind]: readonly string[] } = {
@@ -87,20 +104,26 @@ export function changeState(
   for (const key of Object.keys(change))
     if (!FIELDS[state.kind].includes(key))
       throw new RangeError(`${id} is a ${state.kind}: it has no ${key}`);
-  const next = { ...state, ...change } as AffordanceState;
+  const next = copy({ ...state, ...change } as AffordanceState);
   switch (next.kind) {
-    case "aperture":
+    case "aperture": {
       unit(`${id} opening`, next.opening);
       unit(`${id} consumed`, next.consumed);
-      if (next.occupancy) {
-        nonNegative(`${id} occupancy depth`, next.occupancy.depth);
-        nonNegative(`${id} occupancy radius`, next.occupancy.radius);
+      const o: unknown = next.occupancy;
+      if (o !== null) {
+        if (typeof o !== "object" || o === undefined)
+          throw new RangeError(`${id} occupancy must be a depth and a radius, or null`);
+        nonNegative(`${id} occupancy depth`, (o as Occupancy).depth);
+        nonNegative(`${id} occupancy radius`, (o as Occupancy).radius);
       }
       break;
+    }
     case "grip":
       unit(`${id} closure`, next.closure);
+      nameOrNull(`${id} holding`, next.holding);
       break;
     case "mount":
+      nameOrNull(`${id} attached`, next.attached);
       nonNegative(`${id} load`, next.load);
       break;
     case "contact":
@@ -110,26 +133,30 @@ export function changeState(
   return next;
 }
 
-/** One figure's affordance states, each at rest until set. */
+/**
+ * One figure's affordance states, each at rest until set: made from the
+ * figure's own affordances (`affordances(recipe)`), so it holds none the
+ * figure may not have.
+ */
 export class AffordanceStates {
   private readonly kinds: ReadonlyMap<string, AffordanceKind>;
   private readonly states = new Map<string, AffordanceState>();
 
-  constructor(registry: readonly Affordance[]) {
-    this.kinds = new Map(registry.map((a) => [a.id, a.kind]));
+  constructor(own: FigureAffordances) {
+    this.kinds = new Map(own.map((a) => [a.id, a.kind]));
   }
 
-  /** The affordance's state; throws `RangeError` for one the figure does not have. */
+  /** A copy of the affordance's state; throws `RangeError` for one the figure does not have. */
   get(id: string): AffordanceState {
     const kind = this.kinds.get(id);
     if (!kind) throw new RangeError(`the figure has no affordance ${id}`);
-    return this.states.get(id) ?? restState(kind);
+    return copy(this.states.get(id) ?? restState(kind));
   }
 
-  /** Merges `change` into the affordance's state, checked (`changeState`). */
+  /** Merges `change` into the affordance's state, checked (`changeState`); returns a copy. */
   set(id: string, change: AffordanceChange): AffordanceState {
     const next = changeState(id, this.get(id), change);
     this.states.set(id, next);
-    return next;
+    return copy(next);
   }
 }

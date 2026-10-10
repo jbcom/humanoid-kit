@@ -2227,9 +2227,9 @@ where it touches. A figure eats an apple: the mouth's aperture frame, an
 opening, and how much of what is inside it is consumed. An earring hangs
 from a lobe and pulls on it: a mount's frame and its load. Two figures couple:
 an aperture of one and an insertable part of the other, through the same API,
-each answering for its own state. A foundation test asks every affordance for
-its frame on every permutation, and the age policy asks which ones a figure
-under 18 may have.
+each answering for its own state. The foundation's tests ask every affordance
+for its frame across the permutations, and the age policy asks which ones a
+figure under 18 may have.
 
 **Requirements.** Every affordance is framed on the posed, morphed body as
 drawn, so it follows any shape and pose. State is plain values a developer
@@ -2250,15 +2250,22 @@ for.
   grip; a mount's normal leaves the skin it hangs from.
 - *The core registry* is a typed constant (`CORE_AFFORDANCES`); a pack's
   affordances arrive in its manifest and join it when the pack loads, as its
-  piercing sites do. `affordances(assets, recipe)` is the registry a figure
-  has, and refuses a pack's to a figure under 18.
-- *State is a value per affordance*, validated by kind (an opening and a
-  closure are 0 to 1; an occupancy is a depth and a radius, neither negative;
-  a load is a non-negative mass). It lives with the figure, not in the
-  registry, so two figures with one registry have their own.
-- *Frames are evaluated, not stored*: `affordanceFrames(model, posedBody)`
-  reads the landmarks of that body, so an affordance is never out of step with
-  the skin it belongs to.
+  piercing sites do. `affordances(recipe, registry)` is the list a figure
+  has (`FigureAffordances`): under 18, only those that say they are not the
+  adult anatomy's, so one that says nothing is refused. A figure's state and
+  frames are made from that list alone (the type admits no other), so no
+  route reaches an adult affordance under 18.
+- *State is a value per affordance*, validated by kind and by type, since a
+  developer's values arrive from plain JavaScript too (an opening and a closure
+  are numbers from 0 to 1; an occupancy is a depth and a radius, neither
+  negative; a load is a non-negative mass; what is held or attached is a name
+  or nothing). It lives with the figure, not in the registry, so two figures
+  with one registry have their own, and it is copied in and out, so nothing
+  outside can change it unchecked.
+- *Frames are evaluated, not stored*: `affordanceFrames(model, posedBody,
+  own)` reads the landmarks of that body, so an affordance is never out of
+  step with the skin it belongs to. A test frames every one on the smoke
+  tier's bodies and poses.
 
 The registry is built in steps: the kinds, the core's apertures (the mouth,
 nostrils and ear canals), grips, mounts and contacts, state, and frames

@@ -64,14 +64,25 @@ export const CORE_AFFORDANCES: readonly Affordance[] = [
   core("sole.R", "contact", { landmark: "sole.R" }),
 ];
 
+declare const forFigure: unique symbol;
+
 /**
- * The affordances a figure has from a registry (the core's, and a pack's
- * once packs declare theirs): every one for a figure 18 or over, none of the
- * adult anatomy's for one under 18.
+ * The affordances one figure has (`affordances`): the only list a figure's state
+ * (`AffordanceStates`) and frames (`affordanceFrames`) are made from, so none of
+ * the adult anatomy's can reach a figure under 18 by any route.
+ */
+export type FigureAffordances = readonly Affordance[] & { readonly [forFigure]: true };
+
+/**
+ * The affordances a figure has from a registry (the core's, and a pack's once
+ * packs declare theirs): every one for a figure 18 or over; under 18, only those
+ * that say they are not the adult anatomy's (one that says nothing is refused,
+ * as an unknown piercing site is).
  */
 export function affordances(
   recipe: Recipe,
   registry: readonly Affordance[] = CORE_AFFORDANCES,
-): readonly Affordance[] {
-  return isAdult(recipe) ? registry : registry.filter((a) => !a.adult);
+): FigureAffordances {
+  const own = isAdult(recipe) ? [...registry] : registry.filter((a) => a.adult === false);
+  return Object.freeze(own) as unknown as FigureAffordances;
 }

@@ -22,6 +22,14 @@ const sub = (a: V, b: V): V => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const model = new HumanoidModel(loadFixtureAssets(), { subdivision: 1 });
 const recipeOf = (name: (typeof BATTERY_CROSS.bodies)[number]) =>
   createRecipe({ macros: { ...batteryBody(name).macros } });
+/** A pack's adult aperture, as a pack will declare one. */
+const packAperture = {
+  id: "a-pack-aperture",
+  kind: "aperture",
+  at: { landmark: "pubic-point" },
+  adult: true,
+} as const;
+const withPack = [...CORE_AFFORDANCES, packAperture];
 
 describe("the affordance registry", () => {
   it("names each affordance once, anchored on landmarks that exist", () => {
@@ -45,24 +53,32 @@ describe("the affordance registry", () => {
       expect(affordances(createRecipe({ macros: { age } })).map((a) => a.id)).toEqual(
         CORE_AFFORDANCES.map((a) => a.id),
       );
-    const adultOnly = {
-      id: "a-pack-aperture",
-      kind: "aperture",
-      at: { landmark: "pubic-point" },
-      adult: true,
-    } as const;
-    const registry = [...CORE_AFFORDANCES, adultOnly];
-    expect(affordances(createRecipe({ macros: { age: 17 } }), registry)).not.toContain(adultOnly);
-    expect(affordances(createRecipe({ macros: { age: 18 } }), registry)).toContain(adultOnly);
+    expect(affordances(createRecipe({ macros: { age: 17 } }), withPack)).not.toContain(
+      packAperture,
+    );
+    expect(affordances(createRecipe({ macros: { age: 18 } }), withPack)).toContain(packAperture);
+    // One that does not say whether it is the adult anatomy's is refused under 18.
+    const unsaid = { ...packAperture, id: "unsaid", adult: undefined as unknown as boolean };
+    expect(affordances(createRecipe({ macros: { age: 17 } }), [unsaid]).length).toBe(0);
+  });
+
+  it("frames and holds no adult affordance for a figure under 18, by any route", () => {
+    const minor = createRecipe({ macros: { age: 16 } });
+    const own = affordances(minor, withPack);
+    expect(() => new AffordanceStates(own).get(packAperture.id)).toThrow(RangeError);
+    const frames = affordanceFrames(model, posedSurface(model, minor, REST_POSE), own);
+    expect(frames[packAperture.id]).toBeUndefined();
   });
 });
 
 describe("affordance frames", { timeout: 300_000 }, () => {
-  it("frames every affordance on every smoke body and pose, orthonormal and on the body", () => {
+  it("frames every affordance on every smoke body and pose, orthonormal, at its landmark", () => {
     for (const name of BATTERY_CROSS.bodies)
       for (const pose of SMOKE_POSES) {
-        const body = posedSurface(model, recipeOf(name), pose);
-        const frames = affordanceFrames(model, body, CORE_AFFORDANCES);
+        const recipe = recipeOf(name);
+        const body = posedSurface(model, recipe, pose);
+        const frames = affordanceFrames(model, body, affordances(recipe));
+        const marks = landmarks(model, body);
         for (const a of CORE_AFFORDANCES) {
           const f = frames[a.id];
           const label = `${name} ${pose} ${a.id}`;
@@ -73,13 +89,17 @@ describe("affordance frames", { timeout: 300_000 }, () => {
           expect(dot(f.normal, f.normal), label).toBeCloseTo(1, 6);
           expect(dot(f.normal, f.tangent), label).toBeCloseTo(0, 6);
           expect(dot(f.tangent, f.bitangent), label).toBeCloseTo(0, 6);
+          if ("landmark" in a.at)
+            for (let k = 0; k < 3; k++)
+              expect(f.position[k], label).toBe(marks[a.at.landmark].position[k]);
         }
       }
   });
 
   it("opens the mouth forward between the lips, the nostrils down and the ear canals out to the sides", () => {
-    const body = posedSurface(model, recipeOf("f-slim"), REST_POSE);
-    const frames = affordanceFrames(model, body, CORE_AFFORDANCES);
+    const recipe = recipeOf("f-slim");
+    const body = posedSurface(model, recipe, REST_POSE);
+    const frames = affordanceFrames(model, body, affordances(recipe));
     const marks = landmarks(model, body);
     const mouth = frames.mouth;
     expect(mouth?.normal[2]).toBeGreaterThan(0.8);
@@ -92,17 +112,18 @@ describe("affordance frames", { timeout: 300_000 }, () => {
     }
   });
 
-  it("grips from the palm, along the hand toward the fingers, in every pose", () => {
+  it("grips with the palm, facing in toward the thigh at rest, along the hand toward the fingers in every pose", () => {
     for (const pose of SMOKE_POSES) {
-      const body = posedSurface(model, recipeOf("m-muscular"), pose);
-      const frames = affordanceFrames(model, body, CORE_AFFORDANCES);
+      const recipe = recipeOf("m-muscular");
+      const body = posedSurface(model, recipe, pose);
+      const frames = affordanceFrames(model, body, affordances(recipe));
       const marks = landmarks(model, body);
       for (const side of ["L", "R"] as const) {
         const grip = frames[`hand.${side}`];
-        const palm = marks[`palm.${side}`];
         if (!grip) throw new Error(`no grip hand.${side}`);
-        expect(dot(grip.normal, palm.normal), `${pose} ${side}`).toBeGreaterThan(0.99);
-        const along = sub(palm.position, marks[`wrist.${side}`].position);
+        if (pose === REST_POSE)
+          expect(grip.normal[0] * (side === "L" ? 1 : -1), side).toBeLessThan(-0.3);
+        const along = sub(marks[`palm.${side}`].position, marks[`wrist.${side}`].position);
         expect(dot(grip.tangent, along) / Math.hypot(...along), `${pose} ${side}`).toBeGreaterThan(
           0.5,
         );
@@ -112,7 +133,7 @@ describe("affordance frames", { timeout: 300_000 }, () => {
 });
 
 describe("affordance state", () => {
-  const states = new AffordanceStates(CORE_AFFORDANCES);
+  const states = new AffordanceStates(affordances(createRecipe({ macros: { age: 30 } })));
 
   it("starts at rest: a closed, empty mouth, open hands, nothing worn, no pressure", () => {
     expect(states.get("mouth")).toEqual(restState("aperture"));
@@ -134,7 +155,22 @@ describe("affordance state", () => {
     expect(states.get("hand.R")).toMatchObject({ closure: 1, holding: "sword" });
   });
 
-  it("refuses what no body can do: out of range, the wrong kind, or an affordance it does not have", () => {
+  it("keeps what it holds: neither the object set nor the state read can change it afterwards", () => {
+    const occupancy = { depth: 0.02, radius: 0.01 };
+    states.set("mouth", { occupancy });
+    occupancy.depth = -5;
+    const read = states.get("mouth");
+    if (read.kind === "aperture") {
+      read.opening = 9;
+      if (read.occupancy) read.occupancy.radius = Number.NaN;
+    }
+    expect(states.get("mouth")).toMatchObject({
+      opening: 0.6,
+      occupancy: { depth: 0.02, radius: 0.01 },
+    });
+  });
+
+  it("refuses what no body can do: out of range, not a number, the wrong kind, or an affordance it does not have", () => {
     expect(() => states.set("mouth", { opening: 1.5 })).toThrow(RangeError);
     expect(() => states.set("mouth", { occupancy: { depth: -0.01, radius: 0.01 } })).toThrow(
       RangeError,
@@ -142,7 +178,18 @@ describe("affordance state", () => {
     expect(() => states.set("mouth", { consumed: 2 })).toThrow(RangeError);
     expect(() => states.set("hand.L", { closure: -0.1 })).toThrow(RangeError);
     expect(() => states.set("ear-lobe.L", { load: -1 })).toThrow(RangeError);
-    expect(() => states.set("hand.L", { opening: 0.5 } as never)).toThrow(RangeError);
+    expect(() => states.set("hand.L", { opening: 0.5 })).toThrow(RangeError);
     expect(() => states.set("tail", { closure: 1 })).toThrow(RangeError);
+    // Values from plain JavaScript are checked for what they are.
+    for (const bad of [null, "0.5", false, Number.NaN])
+      expect(() => states.set("hand.L", { closure: bad as never }), String(bad)).toThrow(
+        RangeError,
+      );
+    for (const bad of [undefined, 0, "deep"])
+      expect(() => states.set("mouth", { occupancy: bad as never }), String(bad)).toThrow(
+        RangeError,
+      );
+    expect(() => states.set("hand.L", { holding: 3 as never })).toThrow(RangeError);
+    expect(() => states.set("ear-lobe.L", { attached: {} as never })).toThrow(RangeError);
   });
 });
