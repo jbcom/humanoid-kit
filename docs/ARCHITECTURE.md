@@ -1600,7 +1600,10 @@ module.
   it by the share of its pixel the strands cover at that shell's height, so
   the hair's colour, its darkening toward the root and its sheen all arrive as
   a fraction of the pixel. Where a strand is wider than about a pixel the
-  share is the strand's disc under a pixel-wide box filter; where it is
+  share is the strand's disc under the strand footprint (`STRAND_FOOTPRINT`,
+  its width under a tent a pixel either side, the one function the skin's
+  strand layers draw with too, so a strand about a pixel wide is soft-edged
+  and not a hard dash); where it is
   narrower it is the strands' mean cover at that height (their expected area,
   spread so the shells together cover what the strands do seen from above),
   crossfading as the strand's width goes from half a pixel to a pixel and a
