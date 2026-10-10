@@ -14,6 +14,10 @@
  *   its edge, where a finer noise peaks.
  * - A scar is a line: an ellipse with harmonics on its radius and its x
  *   wandering along its length.
+ *
+ * A naevus, a few millimetres across, is no baked mark: it is a decal, a
+ * round, slightly raised dot the skin shader draws exactly
+ * (`src/render/bodyArtDecals.ts`).
  */
 import { seededRandom } from "../random.ts";
 import type { PlacedMark } from "./decals.ts";
@@ -39,12 +43,11 @@ export interface PatchOutlineKind {
  * Per patch kind: vitiligo's border scalloped, its transition 1 to 3 mm, with
  * satellite flecks; a café-au-lait macule an oval with a soft, gently
  * irregular edge; a port-wine stain geographic, in soft lobes; a Mongolian
- * spot ill-defined; a naevus round and well defined.
+ * spot ill-defined. A naevus is a decal, a round dot drawn exactly.
  */
 export const PATCH_OUTLINE: Readonly<
-  Record<Exclude<PlacedMark["kind"], "scar">, PatchOutlineKind>
+  Record<Exclude<PlacedMark["kind"], "scar" | "naevus">, PatchOutlineKind>
 > = {
-  naevus: { irregular: 0.04, cell: 0.8, edge: 0.0003, edgeShare: 0, flecks: false },
   vitiligo: { irregular: 0.3, cell: 0.45, edge: 0.0009, edgeShare: 0, flecks: true },
   "cafe-au-lait": { irregular: 0.16, cell: 0.7, edge: 0.0011, edgeShare: 0, flecks: false },
   "port-wine": { irregular: 0.32, cell: 0.4, edge: 0.0011, edgeShare: 0, flecks: false },
@@ -123,6 +126,8 @@ export function markOutline(mark: PlacedMark): MarkOutline {
       wanderPhase: rand() * Math.PI * 2,
       soft: SCAR_OUTLINE.edge / Math.max(1e-6, half),
     };
+  if (mark.kind === "naevus")
+    throw new RangeError("a naevus is a decal (bodyArtDecals.ts), not a baked mark");
   const o = PATCH_OUTLINE[mark.kind];
   return {
     ...base,

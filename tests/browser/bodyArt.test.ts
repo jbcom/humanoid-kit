@@ -23,9 +23,13 @@ import { markOutline, markShape } from "../../src/bodyArt/markShape.ts";
 import {
   markChannels,
   markedAlbedo,
+  NAEVUS_MELANIN,
+  NAEVUS_RAISE,
+  SCAR_RAISE,
   vitiligoAlbedo,
   vitiligoLipAlbedo,
 } from "../../src/bodyArt/marks.ts";
+import { DECAL_MARGIN } from "../../src/render/bodyArtDecals.ts";
 import {
   type BodyArtImages,
   type BodyArtSurface,
@@ -34,7 +38,6 @@ import {
 } from "../../src/render/bodyArtTexture.ts";
 import { buildLayerAtlas } from "../../src/render/layerAtlas.ts";
 import { SkinMaterial } from "../../src/render/skinMaterial.ts";
-import { TATTOO_MARGIN } from "../../src/render/tattooDecals.ts";
 import { planAtlas } from "../../src/surface/atlasPlan.ts";
 import type { SkinLayer, SkinPaintInput } from "../../src/surface/layers.ts";
 import { LIPS_LAYER, NAIL_GLOSS_LAYER } from "../../src/surface/regions/index.ts";
@@ -139,8 +142,8 @@ interface Decal {
  */
 function bake(surface: BodyArtSurface, art: Baked, using: BodyArtImages = images) {
   const t = bakeBodyArt(renderer, surface, art, using, SIZE);
-  const layers = Array.from({ length: t.tattoos?.layers ?? 0 }, (_, l) =>
-    readPage(renderer, t.tattoos?.coordinates as Texture, l, SIZE),
+  const layers = Array.from({ length: t.decals?.layers ?? 0 }, (_, l) =>
+    readPage(renderer, t.decals?.coordinates as Texture, l, SIZE),
   );
   const ink = readPage(renderer, t.texture, 0, SIZE);
   const marks = readPage(renderer, t.texture, 1, SIZE);
@@ -176,7 +179,7 @@ describe("baking a tattoo", () => {
         const d = art.decal(x, y);
         const s = place(x) / 0.1 + 0.5;
         const t = place(y) / 0.05 + 0.5;
-        const margin = [TATTOO_MARGIN / 0.1, TATTOO_MARGIN / 0.05] as const;
+        const margin = [DECAL_MARGIN / 0.1, DECAL_MARGIN / 0.05] as const;
         if (Math.abs(s - 0.5) > 0.5 + margin[0] || Math.abs(t - 0.5) > 0.5 + margin[1]) {
           expect(d.tattoo, `${x}, ${y}`).toBe(-1);
           continue;
@@ -506,6 +509,30 @@ describe("ink in the skin shader", () => {
       }
   });
 
+  it("draws a naevus as a round, slightly raised dot, finer than the bake's texels", () => {
+    // 2 cm across, baked at 8 texels over the skin's 20 cm (25 mm each), drawn
+    // at 64 pixels (3.1 mm each): a bake of its colour would be a blur a texel square.
+    const naevus = mark("naevus", { width: 0.02, length: 0.02 });
+    const body = { tattoos: [], marks: [naevus] };
+    const tone = appearance(0.3).tone;
+    const base = skinAlbedo(tone);
+    const dark = markedAlbedo(tone, { melanin: NAEVUS_MELANIN, haemoglobin: 0 });
+    const row = shade(0.3, body, images, { width: 64, size: 8 });
+    const raise = shade(0.3, body, images, { width: 64, size: 8, output: "surface" }); // Row 32's centre is 1.6 mm above the naevus's centre.
+    const r = (x: number) => Math.hypot(((x + 0.5) / 64 - 0.5) * 0.2, (0.5 / 64) * 0.2) / 0.01;
+    for (let x = 0; x < 64; x++) {
+      const want = r(x) < 0.8 ? dark : r(x) > 1.2 ? base : null;
+      if (want)
+        (row[x] as Rgb).forEach((c, k) => {
+          expect(Math.abs(c - (want[k] as number)), `pixel ${x}, r ${r(x)}`).toBeLessThan(0.01);
+        });
+      const dome = Math.max(0, 1 - r(x) ** 2) ** 2;
+      expect(Math.abs((raise[x] as Rgb)[1] - (NAEVUS_RAISE / SCAR_RAISE) * dome)).toBeLessThan(
+        0.01,
+      );
+    }
+  });
+
   it("draws a tattoo over dermal pigment", () => {
     const red = [180, 30, 40];
     const solid = quadrants(red, red, red, red);
@@ -595,23 +622,27 @@ describe("ink in the skin shader", () => {
     const m = new SkinMaterial([]);
     const plain = m.customProgramCacheKey();
     expect(m.defines?.HK_BODY_ART).toBeUndefined();
-    const marked = bakeBodyArt(renderer, skin(), { tattoos: [], marks: [mark("naevus")] }, {}, 16);
+    const marked = bakeBodyArt(renderer, skin(), { tattoos: [], marks: [mark("scar")] }, {}, 16);
     m.setBodyArt(marked);
     expect(m.defines?.HK_BODY_ART).toBe("");
-    expect(m.defines?.HK_TATTOO_LAYERS).toBeUndefined();
+    expect(m.defines?.HK_DECAL_LAYERS).toBeUndefined();
     const art = m.customProgramCacheKey();
     expect(art).not.toBe(plain);
-    // Tattoos add their decal layers, one per layer of overlap.
+    // Tattoos and naevi add their decal layers, one per layer of overlap.
     const inked = bakeBodyArt(renderer, skin(), placement(tattoo(), tattoo()), images, 16);
     m.setBodyArt(inked);
-    expect(m.defines?.HK_TATTOO_LAYERS).toBe("2");
+    expect(m.defines?.HK_DECAL_LAYERS).toBe("2");
     expect(m.customProgramCacheKey()).not.toBe(art);
+    const naevus = bakeBodyArt(renderer, skin(), { tattoos: [], marks: [mark("naevus")] }, {}, 16);
+    m.setBodyArt(naevus);
+    expect(m.defines?.HK_DECAL_LAYERS).toBe("1");
     m.setBodyArt(null);
     expect(m.defines?.HK_BODY_ART).toBeUndefined();
-    expect(m.defines?.HK_TATTOO_LAYERS).toBeUndefined();
+    expect(m.defines?.HK_DECAL_LAYERS).toBeUndefined();
     expect(m.customProgramCacheKey()).toBe(plain);
     marked.dispose();
     inked.dispose();
+    naevus.dispose();
     m.dispose();
   });
 });

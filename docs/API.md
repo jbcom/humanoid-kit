@@ -359,7 +359,9 @@ interface BodyArtRecipe {
   channels: added melanin as a table of `MARK_DARK_STEPS` along the measured
   axis (`deeperAlbedo(tone, up)`). `markedAlbedo(tone, channels)` gives the
   skin under them. Constants: `VITILIGO_RESIDUAL`, `CAFE_AU_LAIT_MELANIN`,
-  `NAEVUS_MELANIN`, `SCAR_HAEMOGLOBIN` (the keloids' erythema ratio),
+  `NAEVUS_MELANIN`, `NAEVUS_EDGE` and `NAEVUS_RAISE` (a naevus is a round,
+  slightly raised dot, drawn exactly as a decal), `SCAR_HAEMOGLOBIN` (the
+  keloids' erythema ratio),
   `SCAR_RAISE`, `SCAR_SMOOTHNESS` and `DERMAL_MELANIN_INK`.
 - `markOutline(mark)` and `markShape(mark, outline, x, y, z?)`
   (`src/bodyArt/markShape.ts`) give the seeded outline the bake draws. A patch

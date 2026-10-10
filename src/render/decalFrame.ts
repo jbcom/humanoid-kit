@@ -1,6 +1,6 @@
 /**
  * Projecting a decal onto the body in UV space, shared by the body-art bakes
- * (`bodyArtTexture.ts` for marks, `tattooDecals.ts` for tattoos): the body is
+ * (`bodyArtTexture.ts` for marks, `bodyArtDecals.ts` for tattoos and naevi): the body is
  * drawn at its UVs, and each fragment finds its place in the decal's frame
  * (`DecalFrame`) from the figure's morphed rest surface, so a decal crosses a
  * UV seam whole: both sides of the seam are the same place on the body.

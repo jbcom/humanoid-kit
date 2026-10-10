@@ -56,13 +56,16 @@ describe("the marks' noise", () => {
 });
 
 describe("a patch's shape", () => {
+  it("is not a naevus's: a naevus is a decal", () => {
+    expect(() => markOutline(mark("naevus"))).toThrow(RangeError);
+  });
+
   it("is full at its centre and empty well beyond it, with an edge that is not a circle", () => {
     for (const kind of Object.keys(PATCH_OUTLINE) as (keyof typeof PATCH_OUTLINE)[]) {
       const m = mark(kind);
       const o = markOutline(m);
       expect(markShape(m, o, 0, 0), kind).toBeGreaterThan(0.99);
       expect(markShape(m, o, 0.06, 0), kind).toBe(0);
-      if (kind === "naevus") continue;
       // The radius where the shape crosses one half, round the patch, varies.
       const radii = Array.from({ length: 24 }, (_, a) => {
         const t = (a / 24) * Math.PI * 2;

@@ -2380,7 +2380,7 @@ age.
 - `<Humanoid>` bakes the texture from that placement and the evaluated
   surface (`bakeBodyArt`, `src/render/bodyArtTexture.ts`) with the images the
   application passes (`bodyArtImages`).
-- A tattoo is a decal, not baked colour (`src/render/tattooDecals.ts`). At
+- A tattoo is a decal, not baked colour (`src/render/bodyArtDecals.ts`). At
   1024² the body's UV texels are 1.2–2.3 mm on a forearm (measured), so a
   6 cm compass baked as colour had 27 texels across and its line work
   pixelated on the sheets. No size of one texture for the whole body fixes
@@ -2392,13 +2392,16 @@ age.
     blend of four texels is exact inside one.
   - The texels round each UV island are extrapolated linearly from the two
     inside next to them, so a tattoo stays exact across a seam.
-  - Tattoos that overlap go on separate decal layers (two at most), the
-    later above, so one composites over the other in the shader.
+  - Decals that overlap go on separate decal layers (two at most), the later
+    above, so one composites over the other in the shader.
   - The ink page keeps only dermal pigment, which is soft enough for the
     body's texels.
+  - A naevus is a decal too: a round, slightly raised dot the shader draws
+    exactly. It adds melanin and raise to the marks. Baked into the 1 mm
+    texels round a brow, the sheets' 8 mm naevus read as a dark rectangle.
 - A new evaluation rebakes into new textures that replace the old in the
   same uniforms, so only a figure gaining or losing body art, or a layer of
-  overlapping tattoos, rebuilds its shader.
+  overlapping decals, rebuilds its shader.
 - The projection reaches half the decal's longer side off the skin's plane
   (at least 1 cm) and skips skin facing away from it, so a tattoo on a
   forearm never lands on the hip behind it. Both limits fade rather than cut:

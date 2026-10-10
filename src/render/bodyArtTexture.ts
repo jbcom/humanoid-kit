@@ -1,8 +1,8 @@
 /**
  * A figure's body-art texture (docs/ARCHITECTURE.md, "Body art"): its marks
  * baked into the body's UV space, per figure, since placement is per figure
- * while the field atlas is shared, with its tattoos' decals beside them
- * (`tattooDecals.ts`). Two pages of an RGBA8 array:
+ * while the field atlas is shared, with its tattoos' and naevi's decals
+ * beside them (`bodyArtDecals.ts`). Two pages of an RGBA8 array:
  *
  * - page 0, ink: dermal pigment (a Mongolian spot), colour sRGB-encoded (dark
  *   pigment keeps its precision in eight bits) and coverage in alpha. The
@@ -56,8 +56,8 @@ import {
   markOutline,
 } from "../bodyArt/markShape.ts";
 import { markChannels } from "../bodyArt/marks.ts";
+import { type BodyArtDecals, bakeDecals, naevusDecal, tattooDecal } from "./bodyArtDecals.ts";
 import { DECAL_FRAME, DECAL_VERTEX, frameUniforms, setFrame } from "./decalFrame.ts";
-import { bakeTattooDecals, type TattooDecals } from "./tattooDecals.ts";
 import { COVER_FRAGMENT, NEAREST_COVERED, QUAD_VERTEX, UV_RASTER_VERTEX } from "./uvRaster.ts";
 
 /** Pages of a body-art texture: ink, then marks. */
@@ -84,8 +84,8 @@ export type BodyArtImages = Readonly<Record<string, TexImageSource>>;
 export interface BodyArtTexture {
   /** The ink and marks pages. */
   texture: Texture;
-  /** The tattoos' decals, or null for a figure without tattoos. */
-  tattoos: TattooDecals | null;
+  /** The tattoos' and naevi's decals, or null for a figure without either. */
+  decals: BodyArtDecals | null;
   dispose(): void;
 }
 
@@ -355,7 +355,15 @@ export function bakeBodyArt(
   renderer.setClearColor(0x000000, 0);
   // Pigment composites over and marks add to one another: each pass must keep what is drawn.
   renderer.autoClear = false;
-  let tattoos: TattooDecals | null = null;
+  let decals: BodyArtDecals | null = null;
+  // A naevus is a decal; the other marks are baked.
+  const naevi = placement.marks.filter((m) => m.kind === "naevus");
+  const baked = placement.marks.filter((m) => m.kind !== "naevus");
+  const dims = (key: string) => images[key] as TexImageSource & { width: number; height: number };
+  const decalList = [
+    ...naevi.map(naevusDecal),
+    ...placement.tattoos.map((t) => tattooDecal(t, dims(t.image))),
+  ];
   try {
     renderer.setRenderTarget(cover);
     renderer.clear();
@@ -365,7 +373,7 @@ export function bakeBodyArt(
     renderer.setRenderTarget(inkComposite);
     renderer.clear();
     // Dermal pigment is ink; the other marks change the skin.
-    for (const m of placement.marks) {
+    for (const m of baked) {
       const c = setMark(m);
       mu.toInk.value = c.ink ? 1 : 0;
       mesh.material = c.ink ? markInk : markAdd;
@@ -380,10 +388,11 @@ export function bakeBodyArt(
     renderer.clear();
     quadMesh.material = markPage;
     renderer.render(quadScene, camera);
-    if (placement.tattoos.length)
-      tattoos = bakeTattooDecals(
+    // Naevi first: a tattoo over one is drawn above it.
+    if (decalList.length)
+      decals = bakeDecals(
         { renderer, camera, body: mesh, bodyScene: scene, quad: quadMesh, quadScene, cover, size },
-        placement.tattoos,
+        decalList,
         images,
       );
   } catch (e) {
@@ -399,10 +408,10 @@ export function bakeBodyArt(
   }
   return {
     texture: art.texture,
-    tattoos,
+    decals,
     dispose() {
       art.dispose();
-      tattoos?.dispose();
+      decals?.dispose();
     },
   };
 }

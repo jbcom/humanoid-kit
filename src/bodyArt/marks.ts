@@ -52,6 +52,14 @@ export function markMelaninSpan(): number {
 /** Melanin added, shares of `markMelaninSpan()`: a café-au-lait macule (CHOICE: light brown) and a naevus (CHOICE: dark brown). */
 export const CAFE_AU_LAIT_MELANIN = 0.12;
 export const NAEVUS_MELANIN = 0.55;
+/**
+ * A naevus is a round dot (drawn as a decal, `src/render/bodyArtDecals.ts`):
+ * its edge's half-width and its dome's height at the centre, metres. CHOICES:
+ * acquired naevi are round, well defined and 3 to 5 mm across, a compound
+ * naevus slightly raised (BODY-ART.md A4).
+ */
+export const NAEVUS_EDGE = 0.0003;
+export const NAEVUS_RAISE = 0.0005;
 /** Steps of the measured haemoglobin axis a port-wine stain adds (`haemoglobin` = 1). CHOICE. */
 export const PORT_WINE_HAEMOGLOBIN = 4;
 
