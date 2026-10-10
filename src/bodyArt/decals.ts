@@ -9,8 +9,15 @@ import { quadVertexNormals } from "../build/normals.ts";
 import type { HumanoidAssets } from "../format/assetFormat.ts";
 import type { Vec3 } from "../presence/presence.ts";
 import { type BirthmarkKind, type BodyArtRecipe, isBodyPiercingSite } from "../recipe/bodyArt.ts";
-import { holeFrame, type PlacedPiercing, TISSUE_DEPTH } from "./jewellery.ts";
+import {
+  barbellEnds,
+  holeFrame,
+  type PlacedPiercing,
+  SEAT_REACH,
+  TISSUE_DEPTH,
+} from "./jewellery.ts";
 import { bodySites, resolveAnchor } from "./sites.ts";
+import { skinNear } from "./skinDistance.ts";
 import { vitiligoPatches } from "./vitiligo.ts";
 
 export interface DecalFrame {
@@ -178,11 +185,14 @@ export function placeBodyArt(
       const normal = controlNormal(normals, v);
       const skin = (a: ArrayLike<number>) =>
         [0, 1, 2, 3].map((k) => a[v * 4 + k] as number) as [number, number, number, number];
+      const frame = holeFrame(hole, normal, site.channel, TISSUE_DEPTH[p.site]);
+      const near = skinNear(control, normals, assets.faceVerts, hole, SEAT_REACH);
       return {
         ...p,
         hole,
         normal,
-        ...holeFrame(hole, normal, site.channel, TISSUE_DEPTH[p.site]),
+        ...frame,
+        ends: barbellEnds({ ...frame, size: p.size }, near),
         skinIndex: skin(assets.skinIndex),
         skinWeight: skin(assets.skinWeight),
       };

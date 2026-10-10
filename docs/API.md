@@ -386,7 +386,8 @@ interface BodyArtRecipe {
   `jewelleryMesh(piercing): { positions, normals, index }`:
   - a stud: a ball seated on the skin;
   - a ring: a torus through the hole's middle;
-  - a barbell: a bar along the channel with a ball at each end.
+  - a barbell: a ball at each of its `ends`, seated on the skin at placement
+    (`barbellEnds`), the bar bending through the hole's middle.
 
   `<Humanoid>` draws each as a skinned mesh, `METAL_REFLECTANCE[metal]` at
   `JEWELLERY_ROUGHNESS`, skinned rigidly by the site vertex's bones, so it
