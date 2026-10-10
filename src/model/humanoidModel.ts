@@ -45,6 +45,7 @@ import {
 } from "../morph/evaluate.ts";
 import type { Vec3 } from "../presence/presence.ts";
 import { AgePolicyError, assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
+import { withAnatomyDefaults } from "../recipe/anatomy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
@@ -1376,6 +1377,11 @@ export class HumanoidModel {
    * The target files a recipe (in a skin state) needs that have not arrived
    * (empty when it can be evaluated now). Validates the recipe first.
    */
+  /** The recipe with the adult pack's anatomy defaults filled in (`withAnatomyDefaults`). */
+  withDefaults(recipe: Recipe): Recipe {
+    return withAnatomyDefaults(recipe, this.assets.adultAnatomyManifest?.anatomy?.defaults);
+  }
+
   pendingTargetFiles(recipe: Recipe, signals: Readonly<Record<string, number>> = {}): Set<string> {
     return this.pendingFor(this.contributions(recipe, signals));
   }
@@ -1385,7 +1391,8 @@ export class HumanoidModel {
    * weights the adult pack derives from modifiers and signals
    * (`AdultDetailSpec.drives`, an adult's alone), after the age policy.
    */
-  private contributions(recipe: Recipe, signals: Readonly<Record<string, number>>) {
+  private contributions(given: Recipe, signals: Readonly<Record<string, number>>) {
+    const recipe = this.withDefaults(given);
     const fromRecipe = recipeContributions(recipe, this.assets.modifiers);
     assertSignalPolicy(recipe, signals);
     const driven: Contribution[] = [];
@@ -1609,7 +1616,9 @@ export class HumanoidModel {
    * are detail targets (`AdultDetailSpec`), which are not morphs of the control
    * mesh but displacements of the adult surface, applied by `evaluate`.
    */
-  private evaluateShape(recipe: Recipe, signals: Readonly<Record<string, number>>) {
+  private evaluateShape(given: Recipe, signals: Readonly<Record<string, number>>) {
+    // The gates below read the recipe too, so they see the anatomy's defaults as the morph does.
+    const recipe = this.withDefaults(given);
     const all = this.contributions(recipe, signals);
     const pending = this.pendingFor(all);
     if (pending.size)

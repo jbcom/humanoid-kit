@@ -58,7 +58,7 @@ import type {
 import { groundOffsetOf, posedControl } from "../presence/posed.ts";
 import type { Vec3 } from "../presence/presence.ts";
 import { isAdult } from "../recipe/agePolicy.ts";
-import { appliedAnatomy } from "../recipe/anatomy.ts";
+import { appliedAnatomy, withAnatomyDefaults } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import {
   createAttachmentMaterial,
@@ -1277,7 +1277,11 @@ export function Humanoid({
       // Which adult layers paint: only for an adult, only for the anatomy applied
       // (the adult pack's own list of features; none without the pack).
       adult: isAdult(recipe),
-      anatomy: appliedAnatomy(recipe, ready?.anatomy?.features ?? []),
+      // The anatomy the figure is drawn with: its defaults included, as the model morphs it.
+      anatomy: appliedAnatomy(
+        withAnatomyDefaults(recipe, ready?.anatomy?.defaults),
+        ready?.anatomy?.features ?? [],
+      ),
       // Body hair: its amount from the androgen axis and age, its colour from the hair's.
       gender: recipe.macros.gender,
       ...(recipe.hair && { hairColour: recipe.hair.colour }),

@@ -2140,6 +2140,14 @@ topology and the field atlas exist. Decisions:
   layers read their spec by id; a pack without a spec adds no layers and no
   states. `tests/adultStack.test.ts` scans the source for any adult name, so the
   slip fails before a build does.
+- **An adult with the pack is anatomically complete by default.** The pack's
+  `anatomy.defaults` gives each adult-only modifier a value as a
+  piecewise-linear function of the gender macro; `withAnatomyDefaults` fills
+  the modifiers a recipe leaves unset, for an adult only, and the model (morph,
+  gates, drives) and the paint input both read the filled recipe. A value the
+  recipe sets, 0 included, wins, so a developer can still draw an adult without
+  some feature. The core stays anatomy-free: it knows a curve over gender, not
+  what the curve shapes (docs/FOUNDATION.md, "both forms").
 - Until the adult stage arrives their fields are zero (empty atlas pages).
   When it arrives the worker derives the fields from the pack's targets and
   posts them; the main thread re-rasterises those pages of the shared atlas.
