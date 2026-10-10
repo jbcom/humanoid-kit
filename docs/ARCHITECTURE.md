@@ -1903,6 +1903,54 @@ built output (`dist-playground` and `docs/dist` by default) and fails if it
 contains an adult anatomy file (by SHA-256), the package name `humanoid-kit-adult-anatomy`,
 or the name of any of its targets or modifiers.
 
+## The foundation harness (design, 2026-10-09)
+
+What docs/FOUNDATION.md's first item builds: the one place the nude-form
+permutations are enumerated, the body posed on the CPU exactly as the
+renderer draws it, landmarks and surface queries on that posed body, and the
+invariant suite that measures it.
+
+**Use cases.** A foundation lane (correctives, adult anatomy, skin) runs the
+smoke tier in its unit tests and reads which permutations fail which
+invariant; a layer lane (garments, hair, body art) anchors to a landmark on
+any permutation and asks the posed body for closest points; evidence for any
+of them is one sheet request (`{"$foundation": "smoke"}`). **Requirements.**
+One source for bodies, tones, poses and anatomy, shared by tests and sheets;
+the posed surface identical to the drawn one; no adult target or modifier
+named in the core; no anatomy for anyone under 18, by type and by test;
+measurements cheap enough for the smoke tier to run in every local test pass.
+
+**Decisions.**
+
+- *The battery's data moves into the core* (`src/foundation/battery.ts`):
+  bodies, tones and the cross set as typed constants. `scripts/sheets/battery.json`,
+  which `hk-sheets` reads, is written from them (`scripts/write-battery.ts`)
+  and a test holds the file to the module, so there is one source.
+- *A permutation is data, not geometry*: `{ id, body, tone, pose, anatomy }`,
+  where the body and tone are battery entries, the pose a whole-body pose of
+  the body pack by name (or an animation clip and time), and the anatomy a
+  size (`"default" | "min" | "max"`) the adult pack resolves through its own
+  `anatomy.features` when a figure is evaluated, so the core names no adult
+  modifier. The type allows an anatomy only on a body whose `adult` is the
+  literal `true`; `foundationPermutations` builds none otherwise, and a test
+  walks every tier for it.
+- *Poses are authored like the existing eight* (`scripts/poses/*.json`, packed
+  into the body pack), and animation frames are sampled from the animation pack
+  by clip and time; a pose's correctness is a geometric test of its intent
+  (overhead: the hands above the crown; squat: the hips below the knees, the
+  soles flat).
+- *The posed body is the renderer's*: `posedSurface` evaluates the recipe, fits
+  the rest skeleton from the evaluation's bone heads and skins the render
+  surface with `skinPositions`, the CPU reference of the shader's blend of
+  linear and dual quaternion skinning with its pose-dependent shares. A
+  corrective added to the renderer is added there, or the harness measures a
+  body nobody draws.
+- *Geometry is shared across tones*: tone changes no position, so the invariant
+  suite poses each body × pose × anatomy once and reports it for every tone.
+
+The invariants, landmarks and surface queries are recorded below as they are
+built.
+
 ## Invariants
 
 1. One base mesh; no second skeleton or per-species geometry.
