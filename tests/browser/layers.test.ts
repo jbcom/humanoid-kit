@@ -27,6 +27,7 @@ import {
   type SkinPaintInput,
 } from "../../src/surface/layers.ts";
 import { SKIN_LAYERS } from "../../src/surface/regions/index.ts";
+import { AREOLA_LAYER } from "../../src/surface/regions/torso.ts";
 import { type Rgb, skinAlbedo } from "../../src/surface/skinTone.ts";
 import { createTestRenderer } from "./gl.ts";
 import { readPage as readAtlasPage } from "./readPage.ts";
@@ -227,6 +228,22 @@ describe("the skin shader's layer stack", () => {
   it("matches applyLayers per pixel", () => {
     // 8-bit fields and half-float stops: within 1% of full scale.
     expect(worstDifference(layers, appearance, fields)).toBeLessThan(0.01);
+  });
+
+  it("draws the areola on a tone with a channel of exactly zero, with no NaN anywhere on the skin", () => {
+    // A cyan override has no red: the areola's ratio to the skin there was 0 / 0, and one NaN in
+    // the stop table blanked the whole skin. A NaN pixel makes the difference NaN, which fails.
+    const cyan: SkinPaintInput = {
+      ...appearance,
+      tone: { melanin: 0.5, haemoglobin: 0.5, undertone: 0, override: [0, 0.234, 0.377] },
+      age: 30,
+      build: { gender: 0, breastSize: 0.5 },
+    };
+    // The areola's radial coordinate across the quad, its mask whole.
+    const areola = (u: number): [number, number][] => [[1, u]];
+    const difference = worstDifference([AREOLA_LAYER], cyan, areola);
+    expect(Number.isFinite(difference), `difference ${difference}`).toBe(true);
+    expect(difference).toBeLessThan(0.01);
   });
 
   it("reads each layer's own fields from a channel that layers on separate patches of the skin share", () => {
