@@ -2422,7 +2422,19 @@ age.
   its raise.
 - The shader multiplies the skin by per-tone ratios raised to those channels.
   Melanin's density is linear in log albedo, so `ratio^t` moves the density
-  linearly in t. The smoothness and raise go to roughness and relief.
+  linearly in t. Added melanin reads its ratio from a table along the measured
+  tone axis instead. The axis is not straight in log albedo, so one ratio
+  raised to a power cut across it and greyed the sheets' café-au-lait. The
+  smoothness and raise go to roughness and relief.
+- A patch's shape (`markShape`) is an ellipsoid thresholded by seeded noise in
+  its frame's own 3D space. Its edge is the noise field over its gradient, a
+  distance, softened over 1–3 mm. Vitiligo throws flecks just outside its
+  border. A scar keeps its harmonic line.
+  - Measured in 3D, a patch is whole across a UV seam and ends by its own
+    depth where the skin curves away.
+  - The planar projection's reach had cut the sheets' café-au-lait and
+    port-wine in straight lines, and its polar outline read as the UV
+    island's shape round the mouth.
 - Marks add in the bake, so overlapping marks net out; dermal pigment is ink,
   composited under the tattoos.
 - Vitiligo's patches are seeded marks at the sites non-segmental vitiligo

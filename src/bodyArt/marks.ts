@@ -18,7 +18,6 @@
  *   like tattoo ink, so it is drawn as ink (`DERMAL_MELANIN_INK`).
  */
 
-import { seededRandom } from "../random.ts";
 import {
   haemoglobinRatio,
   melaninDensity,
@@ -107,10 +106,31 @@ export interface MarkChannels {
 export interface MarkRatios {
   /** Vitiligo's albedo over the skin's (the melanin channel at -1). */
   light: Rgb;
-  /** The skin with `markMelaninSpan()` more density, over the skin (the melanin channel at 1). */
-  dark: Rgb;
+  /**
+   * The skin with more melanin density, over the skin, at `MARK_DARK_STEPS`
+   * steps of the melanin channel from 0 to 1 (`markMelaninSpan()` more):
+   * along the measured tone axis, which warms as it deepens, so the shader
+   * interpolates the table rather than raising one ratio to a power, which
+   * would cut straight across to the deepest skin and grey the light marks.
+   */
+  dark: Rgb[];
   /** `PORT_WINE_HAEMOGLOBIN` steps of haemoglobin, over the skin (the haemoglobin channel at 1). */
   blood: Rgb;
+}
+
+/**
+ * Steps of `MarkRatios.dark`, at the squares of even steps of 0 to 1: the
+ * measured axis is piecewise linear between its anchors, which crowd at small
+ * added densities on fair skin. Interpolating the steps stays within ΔE*ab 0.5
+ * of the axis at every tone, below what is visible.
+ */
+export const MARK_DARK_STEPS = 16;
+
+/** The skin carrying `up` × `markMelaninSpan()` more melanin density, on the measured axis. */
+export function deeperAlbedo(tone: SkinTone, up: number): Rgb {
+  if (tone.override || up <= 0) return skinAlbedo(tone);
+  const own = melaninDensity(tone);
+  return melaninDensityAlbedo(tone, (own + up * markMelaninSpan()) / own, tone.haemoglobin);
 }
 
 /** Depigmented skin at this tone: vitiligo's absolute residual melanin, never more than the skin's own. */
@@ -128,13 +148,11 @@ export function markRatios(tone: SkinTone): MarkRatios {
   const skin = skinAlbedo(tone);
   const over = (c: Rgb) => c.map((x, k) => x / Math.max(1e-6, skin[k] as number)) as Rgb;
   const blood = haemoglobinRatio(tone, 1).map((r) => r ** PORT_WINE_HAEMOGLOBIN) as Rgb;
-  if (tone.override) return { light: [1, 1, 1], dark: [1, 1, 1], blood };
-  const own = melaninDensity(tone);
-  return {
-    light: over(vitiligoAlbedo(tone)),
-    dark: over(melaninDensityAlbedo(tone, (own + markMelaninSpan()) / own, tone.haemoglobin)),
-    blood,
-  };
+  const dark = Array.from({ length: MARK_DARK_STEPS }, (_, i) =>
+    over(deeperAlbedo(tone, (i / (MARK_DARK_STEPS - 1)) ** 2)),
+  );
+  if (tone.override) return { light: [1, 1, 1], dark, blood };
+  return { light: over(vitiligoAlbedo(tone)), dark, blood };
 }
 
 /** The skin's albedo under a mark's channels (the reference the shader is held to). */
@@ -144,13 +162,9 @@ export function markedAlbedo(
 ): Rgb {
   const r = markRatios(tone);
   const down = Math.max(0, -c.melanin);
-  const up = Math.max(0, c.melanin);
-  return skinAlbedo(tone).map(
-    (x, k) =>
-      x *
-      (r.light[k] as number) ** down *
-      (r.dark[k] as number) ** up *
-      (r.blood[k] as number) ** c.haemoglobin,
+  const deeper = deeperAlbedo(tone, Math.min(1, Math.max(0, c.melanin)));
+  return deeper.map(
+    (x, k) => x * (r.light[k] as number) ** down * (r.blood[k] as number) ** c.haemoglobin,
   ) as Rgb;
 }
 
@@ -198,74 +212,4 @@ export function markChannels(mark: PlacedMark): MarkChannels {
         ink: null,
       };
   }
-}
-
-/**
- * How irregular each kind's outline is (harmonic amplitude, the k-th harmonic
- * at this over k), how much a scar's line wanders across (share of its
- * half-width), and how soft its edge is: metres, or a share of the mark's
- * half-size where `edgeShare` is set (dermal pigment's edge is diffuse).
- * CHOICES, after the clinical descriptions in BODY-ART.md A2 to A4: vitiligo's
- * borders scalloped and sharp, café-au-lait smooth ovals, a naevus well
- * defined, a port-wine stain geographic, a Mongolian spot ill-defined.
- */
-export const MARK_OUTLINE: Readonly<
-  Record<PlacedMark["kind"], { irregular: number; wander: number; edge: number; edgeShare: number }>
-> = {
-  vitiligo: { irregular: 0.36, wander: 0, edge: 0.0006, edgeShare: 0 },
-  "cafe-au-lait": { irregular: 0.2, wander: 0, edge: 0.0004, edgeShare: 0 },
-  naevus: { irregular: 0.1, wander: 0, edge: 0.0003, edgeShare: 0 },
-  "port-wine": { irregular: 0.4, wander: 0, edge: 0.0005, edgeShare: 0 },
-  "dermal-melanocytosis": { irregular: 0.2, wander: 0, edge: 0, edgeShare: 0.3 },
-  scar: { irregular: 0, wander: 0.15, edge: 0.00025, edgeShare: 0 },
-};
-
-/** A mark's outline: harmonics 2 to 5 of its radius, its line's wander, and its edge (a share of its half-size). */
-export interface MarkOutline {
-  amplitude: [number, number, number, number];
-  phase: [number, number, number, number];
-  wander: number;
-  wanderPhase: number;
-  soft: number;
-}
-
-/** The outline a mark's kind and seed give it (deterministic). */
-export function markOutline(mark: PlacedMark): MarkOutline {
-  const o = MARK_OUTLINE[mark.kind];
-  const rand = seededRandom(mark.seed);
-  const amplitude = [0, 1, 2, 3].map(
-    (i) => (o.irregular * (0.5 + rand())) / (i + 2),
-  ) as MarkOutline["amplitude"];
-  const phase = [0, 1, 2, 3].map(() => rand() * Math.PI * 2) as MarkOutline["phase"];
-  const half = Math.min(Math.abs(mark.width), mark.length) / 2;
-  return {
-    amplitude,
-    phase,
-    wander: o.wander,
-    wanderPhase: rand() * Math.PI * 2,
-    soft: o.edgeShare || o.edge / Math.max(1e-6, half),
-  };
-}
-
-const smoothstep = (lo: number, hi: number, x: number) => {
-  const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
-  return t * t * (3 - 2 * t);
-};
-
-/**
- * How much of a mark covers the point (`x`, `y`) metres along its right and up
- * from its centre, 0 to 1: an ellipse `width` by `length` (a negative width
- * mirrors it) with the outline's harmonics on its radius, its x wandering along
- * its length, and a soft edge. The bake draws exactly this.
- */
-export function markShape(mark: PlacedMark, outline: MarkOutline, x: number, y: number): number {
-  const px = x / (mark.width / 2);
-  const py = y / (mark.length / 2);
-  const qx = px - outline.wander * Math.sin(Math.PI * 1.5 * py + outline.wanderPhase);
-  const theta = Math.atan2(py, qx);
-  let r = 1;
-  for (let i = 0; i < 4; i++)
-    r +=
-      (outline.amplitude[i] as number) * Math.sin((i + 2) * theta + (outline.phase[i] as number));
-  return 1 - smoothstep(r - outline.soft, r + outline.soft, Math.hypot(qx, py));
 }

@@ -19,7 +19,8 @@ import {
 import { afterAll, describe, expect, it } from "vitest";
 import type { BodyArtPlacement, PlacedMark, PlacedTattoo } from "../../src/bodyArt/decals.ts";
 import { inkSeen } from "../../src/bodyArt/ink.ts";
-import { markChannels, markedAlbedo, markOutline, markShape } from "../../src/bodyArt/marks.ts";
+import { markOutline, markShape } from "../../src/bodyArt/markShape.ts";
+import { markChannels, markedAlbedo } from "../../src/bodyArt/marks.ts";
 import {
   type BodyArtImages,
   type BodyArtSurface,
@@ -69,9 +70,14 @@ const BARE = [0, 0, 0, 0];
  * in one UV island (uv = position / 0.2 + 0.5), or split at x = 0 into two
  * islands far apart in UV: the left half at u 0..0.4, the right at 0.6..1.
  */
-function skin(options: { z?: number; facing?: 1 | -1; split?: boolean } = {}): BodyArtSurface {
+function skin(
+  options: { z?: number; facing?: 1 | -1; split?: boolean; tilt?: number } = {},
+): BodyArtSurface {
   const z = options.z ?? 0;
   const f = options.facing ?? 1;
+  // Tilted, the skin's depth rises `tilt` per metre along x (its UVs unchanged).
+  const tilt = options.tilt ?? 0;
+  const normal = [-tilt * f, 0, f].map((c) => c / Math.hypot(tilt, 1));
   const xs = options.split ? [-0.1, 0, 0, 0.1] : [-0.1, 0.1];
   const us = options.split ? [0, 0.4, 0.6, 1] : [0, 1];
   const positions: number[] = [];
@@ -81,7 +87,8 @@ function skin(options: { z?: number; facing?: 1 | -1; split?: boolean } = {}): B
     const [x0, x1] = [xs[q * 2] as number, xs[q * 2 + 1] as number];
     const [u0, u1] = [us[q * 2] as number, us[q * 2 + 1] as number];
     const b = positions.length / 3;
-    positions.push(x0, -0.1, z, x1, -0.1, z, x1, 0.1, z, x0, 0.1, z);
+    const [z0, z1] = [z + tilt * x0, z + tilt * x1];
+    positions.push(x0, -0.1, z0, x1, -0.1, z1, x1, 0.1, z1, x0, 0.1, z0);
     uvs.push(u0, 0, u1, 0, u1, 1, u0, 1);
     index.push(b, b + 1, b + 2, b, b + 2, b + 3);
   }
@@ -91,7 +98,7 @@ function skin(options: { z?: number; facing?: 1 | -1; split?: boolean } = {}): B
     index: new Uint32Array(index),
     vertexCount: n,
     positions: new Float32Array(positions),
-    normals: new Float32Array(Array.from({ length: n }, () => [0, 0, f]).flat()),
+    normals: new Float32Array(Array.from({ length: n }, () => normal).flat()),
   };
 }
 
@@ -265,8 +272,8 @@ const mark = (kind: PlacedMark["kind"], more: Partial<PlacedMark> = {}): PlacedM
 
 describe("baking marks", () => {
   /** Both pages of a bake, read back. */
-  function pages(art: Baked) {
-    const t = bakeBodyArt(renderer, skin(), art, images, SIZE);
+  function pages(art: Baked, surface = skin()) {
+    const t = bakeBodyArt(renderer, surface, art, images, SIZE);
     const out = [readPage(renderer, t.texture, 0, SIZE), readPage(renderer, t.texture, 1, SIZE)];
     t.dispose();
     const at = (page: Float32Array, x: number, y: number) =>
@@ -282,17 +289,23 @@ describe("baking marks", () => {
   const place = (i: number) => ((i + 0.5) / SIZE - 0.5) * 0.2;
 
   it("draws each mark's outline as markShape does, its channels scaled by it", () => {
-    for (const m of [
-      mark("cafe-au-lait"),
-      mark("scar", { width: 0.01, length: 0.1, maturity: 0, raised: 1 }),
-    ]) {
+    for (const [m, tilt] of [
+      [mark("cafe-au-lait"), 0],
+      [mark("port-wine"), 0],
+      [mark("vitiligo"), 0],
+      // Mirrored, and on skin turning away, which a patch measures as depth.
+      [mark("vitiligo", { width: -0.08 }), 0],
+      [mark("vitiligo", { seed: 9 }), 0.8],
+      [mark("scar", { width: 0.01, length: 0.1, maturity: 0, raised: 1 }), 0],
+    ] as const) {
       const c = markChannels(m);
       const outline = markOutline(m);
-      const art = pages({ tattoos: [], marks: [m] });
+      const art = pages({ tattoos: [], marks: [m] }, skin({ tilt }));
       let worst = 0;
       for (let y = 0; y < SIZE; y += 3)
         for (let x = 0; x < SIZE; x += 3) {
-          const s = markShape(m, outline, place(x), place(y));
+          // The texel's place in the mark's frame: along the skin's own x, its depth.
+          const s = markShape(m, outline, place(x), place(y), tilt * place(x));
           const got = art.marks(x, y);
           const want = [
             MARK_NEUTRAL + 127 * Math.max(-1, Math.min(1, c.melanin * s)),
@@ -304,7 +317,7 @@ describe("baking marks", () => {
             worst = Math.max(worst, Math.abs((got[k] as number) - Math.round(want[k] as number)));
         }
       // Eight bits, and the outline's edge between texel centres: within two steps.
-      expect(worst, m.kind).toBeLessThanOrEqual(2);
+      expect(worst, `${m.kind} width ${m.width} tilt ${tilt}`).toBeLessThanOrEqual(2);
     }
   });
 

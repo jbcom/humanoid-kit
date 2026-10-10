@@ -117,7 +117,7 @@ b\* about 2. The body-art texture's texels are 1.2–2.3 mm on a forearm at
 tattoos are therefore decals sampled from their own images at the screen's
 detail (ARCHITECTURE, "Tattoos, as built").
 
-### C2. Marks (`src/bodyArt/marks.ts`, `src/bodyArt/vitiligo.ts`)
+### C2. Marks (`src/bodyArt/marks.ts`, `src/bodyArt/markShape.ts`, `src/bodyArt/vitiligo.ts`)
 
 Marks change what is in the skin (melanin, haemoglobin) through the skin
 model, never its colour directly, so each reads at every tone. Melanin moves
@@ -130,14 +130,18 @@ its melanocytes and a naevus is a nest of them, whatever the skin round them.
 | Below the lightest measured skin | each channel's log moves with density toward the melanin-free albedo (C1) | Beer–Lambert; continuous with the measured axis |
 | Check | patch L\* ≈ 70 at every tone; ΔE\*ab 8.5 (melanin 0.1) to 12.4 (0.2), and larger on deeper skin; b\* below the skin's at fair to medium tones | Toriyama 2021 (ΔE\* mostly 9–13); Brazzelli 2008 (L\* up, b\* down) |
 | Melanin added at full (`markMelaninSpan`) | the measured axis's density span, lightest to deepest | CHOICE of scale |
-| Café-au-lait, naevus | 0.12 and 0.55 of that span | CHOICES: light brown (fair skin L\* 65 → 58) and dark brown (deepest skin L\* 22 → 11, not black) |
+| Café-au-lait, naevus | 0.12 and 0.55 of that span | CHOICES: light brown (fair skin L\* 65 → 56, b\* 13 → 19) and dark brown (deepest skin L\* 22 → 11, not black) |
+| Melanin added, its colour | the skin on the measured axis with that much more density, from a table of 16 steps at squares, within ΔE\*ab 0.5 of it | Measured axis (warms as it deepens on fair and light skin). One ratio raised to a power cut straight across to the deepest skin and turned the sheets' café-au-lait grey-taupe |
 | Port-wine stain | 4 steps of the measured haemoglobin axis | CHOICE (fair skin a\* 11 → 32) |
 | Fresh or raised scar's redness | log(red ÷ green) 1.96 × the skin's, at melanin 0.2 | Aoki 2016: keloid erythema index 1.96 × the forearm's; the cohort's tone a CHOICE |
 | Raised scar's melanin | + 0.32 × the density of skin at melanin 0.2 | Aoki 2016: keloid melanin index 1.32 × |
 | Mature flat scar | 0.35 of the way to vitiligo's residual | CHOICE: paler than its skin |
 | Scar smoothness, raise | roughness −0.15; 1.5 mm at `raised` 1 | CHOICES |
 | Dermal melanocytosis | ink of [0.06, 0.04, 0.03] (linear) at 0.75 coverage, through C1's optics | CHOICE; its blue-grey follows from the dermal veil |
-| Outlines | radius harmonics 2–5, edge 0.25–0.6 mm (dermal pigment: 30% of its half-size) | CHOICES after the clinical descriptions in A2–A4 |
+| Patch outlines (`markShape`) | an ellipsoid, its smaller half-size deep, thresholded by three octaves of seeded value noise in the frame's own 3D space: vitiligo ±30% in cells 0.45 of its half-size, café-au-lait ±16% (0.7), port-wine ±32% (0.4), naevus ±4% | CHOICES after A2–A4. Measured in 3D, a patch is the same either side of a UV seam and ends where the skin curves away by its own depth; the planar projection's reach cut the sheets' café-au-lait and port-wine in straight lines, and its polar outline read as the UV island's shape round the mouth |
+| Patch edges | the noise field over its gradient (a distance, metres) through a smoothstep of half-width 0.9 mm (vitiligo), 1.1 mm (café-au-lait, port-wine), 0.3 mm (naevus), each ±35% along the outline; dermal pigment 30% of its half-size | CHOICE for a soft 1–3 mm border; the unit tests hold the mean width across the edge to 1–3 mm |
+| Vitiligo's flecks | a finer noise (2.5 mm cells) above 0.45 (its top 5% or so), within half the patch's half-size outside its edge | CHOICE: confetti depigmentation round a border (A2) |
+| Scar outlines | radius harmonics 2–5, edge 0.25 mm, wandering 15% of the half-width | CHOICES after A3 |
 | Vitiligo's sites | round the eyes and mouth (15% each), backs of the hands (30%), wrists, elbows, knees, tops of the feet (10% each); mirrored left to right | CHOICE following where non-segmental vitiligo is reported |
 | Vitiligo's extent | 2 to 14 mirrored pairs, 1.5 to 6 cm across, scaled by site: round the eyes and mouth 0.4, wrists and the backs of the hands 0.7, feet 0.8, elbows and knees 1 | CHOICE: a full-size patch round the mouth read as a mask on the sheets |
 

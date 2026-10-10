@@ -2,6 +2,7 @@ export * from "./animation/index.ts";
 export * from "./bodyArt/decals.ts";
 export * from "./bodyArt/ink.ts";
 export * from "./bodyArt/jewellery.ts";
+export * from "./bodyArt/markShape.ts";
 export * from "./bodyArt/marks.ts";
 export * from "./bodyArt/sites.ts";
 export * from "./bodyArt/vitiligo.ts";

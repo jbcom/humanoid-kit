@@ -33,7 +33,7 @@ import {
   Vector4,
 } from "three";
 import { inkOptics } from "../bodyArt/ink.ts";
-import { markRatios, SCAR_RAISE, SCAR_SMOOTHNESS } from "../bodyArt/marks.ts";
+import { MARK_DARK_STEPS, markRatios, SCAR_RAISE, SCAR_SMOOTHNESS } from "../bodyArt/marks.ts";
 import { type AtlasPlan, OWNER_GRID, planAtlas } from "../surface/atlasPlan.ts";
 import {
   CREASE_SHARPNESS,
@@ -534,10 +534,17 @@ uniform vec3 hkInkThrough;
 uniform vec3 hkInkVeil;
 uniform vec3 hkInkKeep;
 uniform vec3 hkMarkLight;
-uniform vec3 hkMarkDark;
+uniform vec3 hkMarkDark[ ${MARK_DARK_STEPS} ];
 uniform vec3 hkMarkBlood;
 vec3 hkSrgbToLinear( vec3 c ) {
 	return mix( c / 12.92, pow( ( c + 0.055 ) / 1.055, vec3( 2.4 ) ), step( vec3( 0.04045 ), c ) );
+}
+// Melanin added, 0 to 1: the ratio table along the measured tone axis (its
+// steps at squares), interpolated.
+vec3 hkMarkDarkRatio( float up ) {
+	float x = sqrt( clamp( up, 0.0, 1.0 ) ) * ${glslFloat(MARK_DARK_STEPS - 1)};
+	int i = min( int( x ), ${MARK_DARK_STEPS - 2} );
+	return mix( hkMarkDark[ i ], hkMarkDark[ i + 1 ], x - float( i ) );
 }
 ${TATTOO_FUNCTIONS}
 vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
@@ -550,7 +557,7 @@ vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
 	vec4 mark = texture( hkBodyArt, vec3( uv, 1.0 ) );
 	hkMarkSurface = mark.ba * skin;
 	float melanin = skin * ( mark.r * 255.0 - ${MARK_NEUTRAL.toFixed(1)} ) / 127.0;
-	c *= pow( hkMarkLight, vec3( max( - melanin, 0.0 ) ) ) * pow( hkMarkDark, vec3( max( melanin, 0.0 ) ) ) * pow( hkMarkBlood, vec3( mark.g * skin ) );
+	c *= pow( hkMarkLight, vec3( max( - melanin, 0.0 ) ) ) * hkMarkDarkRatio( melanin ) * pow( hkMarkBlood, vec3( mark.g * skin ) );
 	vec4 pigment = texture( hkBodyArt, vec3( uv, 0.0 ) );
 	vec4 ink = vec4( hkSrgbToLinear( pigment.rgb ) * pigment.a, pigment.a );
 	#ifdef HK_TATTOO_LAYERS
@@ -758,7 +765,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkInkKeep: { value: Vector3 };
     /** What marks multiply this skin by (`markRatios`). */
     hkMarkLight: { value: Vector3 };
-    hkMarkDark: { value: Vector3 };
+    hkMarkDark: { value: Vector3[] };
     hkMarkBlood: { value: Vector3 };
   };
   private readonly stopTable: Float32Array;
@@ -873,7 +880,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkInkVeil: { value: new Vector3() },
       hkInkKeep: { value: new Vector3() },
       hkMarkLight: { value: new Vector3() },
-      hkMarkDark: { value: new Vector3() },
+      hkMarkDark: { value: Array.from({ length: MARK_DARK_STEPS }, () => new Vector3(1, 1, 1)) },
       hkMarkBlood: { value: new Vector3() },
     };
     setChannels(this.hkUniforms.hkChannel.value, plan);
@@ -909,7 +916,9 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     this.hkUniforms.hkInkKeep.value.fromArray(ink.keep);
     const marks = markRatios(a.tone);
     this.hkUniforms.hkMarkLight.value.fromArray(marks.light);
-    this.hkUniforms.hkMarkDark.value.fromArray(marks.dark);
+    marks.dark.forEach((r, i) => {
+      this.hkUniforms.hkMarkDark.value[i]?.fromArray(r);
+    });
     this.hkUniforms.hkMarkBlood.value.fromArray(marks.blood);
     // Regional colour: each layer's paint from its own model (measured for lips),
     // blended in by the atlas's soft-edged masks.
