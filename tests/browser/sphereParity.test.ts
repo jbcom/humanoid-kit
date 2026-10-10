@@ -23,7 +23,6 @@ import {
   OrthographicCamera,
   Scene,
   SphereGeometry,
-  WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
@@ -39,6 +38,7 @@ import { STUDIO_EXPOSURE, STUDIO_TONE_MAPPING } from "../../src/react/StudioStag
 import { CURVATURE_ATTRIBUTE, SkinMaterial } from "../../src/render/skinMaterial.ts";
 import { SKIN_SCATTER, scatterDistance, scatterTableDiffuse } from "../../src/surface/scatter.ts";
 import type { Rgb, SkinTone } from "../../src/surface/skinTone.ts";
+import { createTestRenderer } from "./gl.ts";
 
 interface Swatch {
   name: string;
@@ -115,8 +115,7 @@ const BINS = [
 ] as const;
 type BinName = (typeof BINS)[number]["name"];
 
-const canvas = document.createElement("canvas");
-const renderer = new WebGLRenderer({ canvas, antialias: false });
+const renderer = createTestRenderer({ antialias: false });
 renderer.setPixelRatio(1);
 renderer.setSize(SIZE, SIZE, false);
 const target = new WebGLRenderTarget(SIZE, SIZE, { type: FloatType });
@@ -147,7 +146,6 @@ afterAll(() => {
   geometry.dispose();
   material.dispose();
   target.dispose();
-  renderer.dispose();
 });
 
 type Mode = "lambert" | "scatter" | "specular" | "production";
@@ -400,8 +398,9 @@ describe("skin material on an analytic sphere", () => {
       const m = measure(45, (n) => A.map((c) => c * Math.max(n, 0)) as Rgb);
       lit.push({ name: s.name, de: deltaE2000(lab(m.rendered.lit), lab(m.expected.lit)) });
     }
-    // BabelColor's ColorChecker comparisons flag a CIEDE2000 difference above 1.3.
-    expect(lit.filter((x) => x.de > 1.3)).toEqual([]);
+    // BabelColor's ColorChecker comparisons flag a CIEDE2000 difference above 1.3. Written as
+    // "not within" so a NaN (a lost context reads as one) fails, which `de > 1.3` lets through.
+    expect(lit.filter((x) => !(x.de <= 1.3))).toEqual([]);
   });
 
   // Stage 2 (§5.3): given correct shading, the display path. The canvas is read

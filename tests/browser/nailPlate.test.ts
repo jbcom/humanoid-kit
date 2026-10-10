@@ -10,10 +10,9 @@ import {
   OrthographicCamera,
   PlaneGeometry,
   Scene,
-  WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { NAIL_EDGE_ATTRIBUTE, NailPlateMaterial } from "../../src/render/attachmentLook.ts";
 import { setOcclusionAttributes } from "../../src/render/occlusion.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../../src/rig/occlusionKeys.ts";
@@ -22,9 +21,9 @@ import {
   NAIL_FREE_EDGE_OPACITY,
   NAIL_PLATE_OPACITY,
 } from "../../src/surface/regions/hands/index.ts";
+import { createTestRenderer } from "./gl.ts";
 
-const renderer = new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
-afterAll(() => renderer.dispose());
+const renderer = createTestRenderer({ antialias: false });
 
 describe("a nail plate", () => {
   it("lets the bed show through and covers it along the free edge", () => {

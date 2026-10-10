@@ -14,7 +14,6 @@ import {
   OrthographicCamera,
   PlaneGeometry,
   Scene,
-  WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
@@ -24,15 +23,15 @@ import { labFromLinear, lchFromLab } from "../../src/surface/cielab.ts";
 import { COAT_REGION_LIMIT, paintCoat } from "../../src/surface/coat.ts";
 import { hairAlbedo } from "../../src/surface/hairTone.ts";
 import { BODY_HAIR_COAT } from "../../src/surface/regions/bodyHairCoat.ts";
+import { createTestRenderer } from "./gl.ts";
 
 const SIZE = 128;
 /** The patch's side, metres (its metres per UV unit). */
 const SIDE = 0.04;
-let renderer: WebGLRenderer | null = null;
+const renderer = createTestRenderer({ antialias: false });
 const target = new WebGLRenderTarget(SIZE, SIZE, { type: FloatType });
 afterAll(() => {
   target.dispose();
-  renderer?.dispose();
 });
 
 interface Paint {
@@ -86,7 +85,6 @@ interface View {
 function render(paint: Paint | null, options: View = {}) {
   const { view = "front", shells = 8, side = SIDE, span = SIDE / 2, offset = 0 } = options;
   const { background = 1, key = false, lobes = true, channel = 0 } = options;
-  renderer ??= new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
   renderer.setSize(SIZE, SIZE, false);
   const body = new PlaneGeometry(side, side, 16, 16);
   body.translate(offset, 0, 0);
@@ -222,7 +220,6 @@ describe("the coat's shells", () => {
   // The coat's geometry shares the body's vertex buffers: disposing it must not
   // free them under the body, which would go on drawing the shape it had.
   it("leave the body's own buffers when disposed", () => {
-    renderer ??= new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
     renderer.setSize(SIZE, SIZE, false);
     const body = new PlaneGeometry(SIDE, SIDE, 4, 4);
     const n = body.getAttribute("position").count;

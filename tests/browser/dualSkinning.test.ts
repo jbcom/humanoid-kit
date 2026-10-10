@@ -24,10 +24,9 @@ import {
   SkinnedMesh,
   UnsignedByteType,
   Vector3,
-  WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import * as pkg from "../../src/react/index.ts";
 import {
   applyDualSkinning,
@@ -62,9 +61,9 @@ import {
 import { kneeRotation } from "../../src/rig/kneeFold.ts";
 import { type BoneRotations, IDENTITY_POSE, restBonesFrom } from "../../src/rig/pose.ts";
 import { rotate } from "../../src/rig/quat.ts";
+import { createTestRenderer } from "./gl.ts";
 
-const renderer = new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
-afterAll(() => renderer.dispose());
+const renderer = createTestRenderer({ antialias: false });
 
 /** A small deterministic generator, so a failure repeats. */
 function random(seed: number): () => number {

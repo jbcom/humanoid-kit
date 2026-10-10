@@ -4,23 +4,13 @@
  * flow. Rendered on a flat plane facing the camera, whose flow (the bind pose's
  * downward direction) runs down the plane's v.
  */
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { DEFAULT_SKIN_APPEARANCE } from "../../src/render/skinMaterial.ts";
 import { labFromLinear } from "../../src/surface/cielab.ts";
 import type { StrandLayer, StrandPaint } from "../../src/surface/layers.ts";
 import { strandCover } from "../../src/surface/layers.ts";
 import { VELLUS_LAYER } from "../../src/surface/regions/bodyHair.ts";
-import {
-  disposeLayerRender,
-  mean,
-  noFields,
-  renderLayers,
-  renderLayersRgba,
-  SIZE,
-  variance,
-} from "./layerRender.ts";
-
-afterAll(disposeLayerRender);
+import { mean, noFields, renderLayers, renderLayersRgba, SIZE, variance } from "./layerRender.ts";
 
 const HAIR: StrandPaint = {
   strength: 1,

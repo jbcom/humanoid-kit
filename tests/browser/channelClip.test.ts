@@ -11,15 +11,15 @@ import {
   OrthographicCamera,
   PlaneGeometry,
   Scene,
-  WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
 import { type Channel, channelOf, knotHalfSize, placeIn } from "../../src/affordance/channel.ts";
 import { ChannelClip, clipMaterial } from "../../src/render/channelClip.ts";
+import { createTestRenderer } from "./gl.ts";
 
 const SIZE = 128;
-const renderer = new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
+const renderer = createTestRenderer({ antialias: false });
 renderer.setSize(SIZE, SIZE, false);
 const target = new WebGLRenderTarget(SIZE, SIZE);
 // The square from -1 to 1 in x and y, seen down -z.
@@ -27,7 +27,6 @@ const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
 camera.position.set(0, 0, 5);
 afterAll(() => {
   target.dispose();
-  renderer.dispose();
 });
 
 /** A channel lying in the z = 0 plane: in along +y from y = -0.8, wide in x, its cross-section's height along z. */

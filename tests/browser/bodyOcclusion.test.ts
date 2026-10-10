@@ -12,7 +12,6 @@ import {
   PlaneGeometry,
   Scene,
   Vector3,
-  WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
@@ -27,16 +26,16 @@ import {
   occlusionCorners,
   occlusionCornerWeights,
 } from "../../src/rig/occlusionKeys.ts";
+import { createTestRenderer } from "./gl.ts";
 
 const SIZE = 16;
-const renderer = new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
+const renderer = createTestRenderer({ antialias: false });
 renderer.setSize(SIZE, SIZE, false);
 const target = new WebGLRenderTarget(SIZE, SIZE, { type: FloatType });
 const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
 camera.position.set(0, 0, 5);
 afterAll(() => {
   target.dispose();
-  renderer.dispose();
 });
 
 const CORNERS = occlusionCorners(OCCLUSION_KEYS.length);

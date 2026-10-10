@@ -5,7 +5,7 @@
  * material's own parameters would.
  */
 import { DataUtils } from "three";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   creaseHeight,
   lineRelief,
@@ -29,16 +29,7 @@ import {
   striaeWeight,
   striaMark,
 } from "../../src/surface/striae.ts";
-import {
-  disposeLayerRender,
-  mean,
-  noFields,
-  renderLayers as render,
-  SIZE,
-  variance,
-} from "./layerRender.ts";
-
-afterAll(disposeLayerRender);
+import { mean, noFields, renderLayers as render, SIZE, variance } from "./layerRender.ts";
 
 describe("detail layers", () => {
   const creases = (height: number, size: number): SkinLayer => ({

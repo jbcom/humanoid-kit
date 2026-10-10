@@ -14,6 +14,7 @@ import type {
   AdultAnatomySpec,
   AdultDetailSpec,
   AdultReservoirSpec,
+  AdultSurfacePatch,
   HumanoidAssets,
 } from "../../src/format/assetFormat.ts";
 import { AUTHORED_MODIFIERS } from "./adultAuthored.ts";
@@ -69,10 +70,11 @@ export function adultAnatomySpec(
   base: HumanoidAssets,
   detail?: AdultDetailSpec,
   reservoirs?: AdultReservoirSpec[],
+  patches?: AdultSurfacePatch[],
 ): AdultAnatomySpec {
   return {
     ...ADULT_ANATOMY_SPEC,
-    surface: pelvicRefinement(base),
+    surface: { ...pelvicRefinement(base), ...(patches?.length && { patches }) },
     ...(reservoirs && { reservoirs }),
     ...(detail && { detail }),
     coatRegions: adultCoatRegions(base),

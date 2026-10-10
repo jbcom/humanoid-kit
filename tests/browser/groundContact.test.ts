@@ -3,7 +3,7 @@ import {
   OrthographicCamera,
   PlaneGeometry,
   Scene,
-  WebGLRenderer,
+  type WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -13,6 +13,7 @@ import {
   sampleGroundOcclusion,
 } from "../../src/presence/presence.ts";
 import { GroundContactMaterial, MAX_CONTACTS } from "../../src/render/groundContact.ts";
+import { createTestRenderer } from "./gl.ts";
 
 /**
  * The pooled contact shadow is a ground shader, so these tests render it from
@@ -28,13 +29,12 @@ const SPAN = 4;
 let renderer: WebGLRenderer;
 let target: WebGLRenderTarget;
 beforeAll(() => {
-  renderer = new WebGLRenderer({ antialias: false });
+  renderer = createTestRenderer({ antialias: false });
   renderer.setClearColor(0xffffff, 1);
   target = new WebGLRenderTarget(SIZE, SIZE);
 });
 afterAll(() => {
   target.dispose();
-  renderer.dispose();
 });
 
 /** Renders the contacts from above and returns the shadow (0 open … 1 black) per pixel. */

@@ -3,19 +3,12 @@
  * it is drawn in: before the eye's texture has arrived (no map) as well as
  * after, for each of its modes.
  */
-import {
-  DataTexture,
-  Mesh,
-  OrthographicCamera,
-  PlaneGeometry,
-  RGBAFormat,
-  Scene,
-  WebGLRenderer,
-} from "three";
-import { afterAll, describe, expect, it } from "vitest";
+import { DataTexture, Mesh, OrthographicCamera, PlaneGeometry, RGBAFormat, Scene } from "three";
+import { describe, expect, it } from "vitest";
 import { EyeMaterial } from "../../src/render/eyeMaterial.ts";
+import { createTestRenderer } from "./gl.ts";
 
-const renderer = new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
+const renderer = createTestRenderer({ antialias: false });
 renderer.setSize(8, 8, false);
 const errors: string[] = [];
 renderer.debug.onShaderError = (_gl, _program, vertex, fragment) => {
@@ -23,7 +16,6 @@ renderer.debug.onShaderError = (_gl, _program, vertex, fragment) => {
 };
 const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
 camera.position.set(0, 0, 5);
-afterAll(() => renderer.dispose());
 
 /** Draws a quad in an eye material in `mode`, with or without a map; the shader errors it raised. */
 function draw(mode: number, withMap: boolean): string[] {

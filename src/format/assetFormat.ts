@@ -599,10 +599,24 @@ export interface AdultDetailSpec {
   drives?: Record<string, string[]>;
 }
 
-/** Faces of the base body to refine and by how much: `levels[i]` for face `faces[i]`. */
+/**
+ * Faces of the base body to refine and by how much: `levels[i]` for face `faces[i]`;
+ * then, optionally, patches that replace some of the refined polygons with a mesh of
+ * the pack's own (`SurfacePatch`, src/build/patches.ts): a reservoir's smooth loop.
+ * A pack without them is refined as it always was.
+ */
 export interface AdultSurfaceSpec {
   faces: number[];
   levels: number[];
+  patches?: AdultSurfacePatch[];
+}
+
+/** One patch of the refined surface: see `SurfacePatch` (src/build/patches.ts). */
+export interface AdultSurfacePatch {
+  remove: number[];
+  vertices: { from: number[]; weights: number[] }[];
+  uvs: { from: number[]; weights: number[] }[];
+  polygons: { vertices: number[]; uvs: number[]; of: number }[];
 }
 
 /** A skin layer's mask is the union of these targets' footprints (`targetMask`). */

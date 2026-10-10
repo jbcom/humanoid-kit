@@ -30,6 +30,7 @@ import { gzipSync } from "node:zlib";
 import {
   type AdultAnatomySpec,
   type AdultReservoirSpec,
+  type AdultSurfacePatch,
   BODY_TARGET_FILES,
   type BodyManifest,
   groupFaces,
@@ -55,7 +56,7 @@ import {
   authorControl,
   authorDetail,
 } from "./lib/adultAuthored.ts";
-import { ISLAND_LAYERS, ISLAND_SIZES, reservoirSpecs } from "./lib/adultReservoirs.ts";
+import { ISLAND_LAYERS, ISLAND_SIZES, reservoirLayout } from "./lib/adultReservoirs.ts";
 import { authoredPoses } from "./lib/authoredPoses.ts";
 import { parseBvh } from "./lib/bvh.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
@@ -707,8 +708,8 @@ async function main() {
   // is generated on a model of this body with the pack's control targets and the
   // surface spec, before its own targets exist.
   const controlFile = writeTargetFile(adultControl);
-  /** A model of this body with the control targets and a surface spec with the given reservoirs. */
-  const interim = (given?: AdultReservoirSpec[]) =>
+  /** A model of this body with the control targets and a surface spec with the given patches and reservoirs. */
+  const interim = (given?: AdultReservoirSpec[], patches?: AdultSurfacePatch[]) =>
     new HumanoidModel(
       parseHumanoidAssets(
         {
@@ -735,7 +736,7 @@ async function main() {
             sliders: [],
             // No defaults: the interim model has none of the authored modifiers they name, and
             // the shapes are authored on the figure as its recipe says, with nothing filled in.
-            anatomy: withoutDefaults(adultAnatomySpec(packedFigure, undefined, given)),
+            anatomy: withoutDefaults(adultAnatomySpec(packedFigure, undefined, given, patches)),
           },
           targets: buffer(controlFile.raw),
         },
@@ -747,11 +748,15 @@ async function main() {
   const sculpted = maleParts(packedFigure, plain.controlShape(AUTHORING_FIGURE).control);
   const surfaceOnly = plain.adultDetailLattice(AUTHORING_FIGURE);
   if (!surfaceOnly) throw new Error("the adult pack has no refined surface to place reservoirs on");
-  const reservoirs = reservoirSpecs(surfaceOnly, sculpted);
+  const { patches, reservoirs } = reservoirLayout(surfaceOnly, sculpted, (given) => {
+    const lattice = interim(undefined, given).adultDetailLattice(AUTHORING_FIGURE);
+    if (!lattice) throw new Error("the adult pack has no refined surface to patch");
+    return lattice;
+  });
   // The control targets the pack authors (the mound) are generated on the
   // authoring figure's control mesh, and its detail targets (the organ and the sac)
   // on the lattice of the surface with the reservoirs, then written with the others.
-  const withReservoirs = interim(reservoirs);
+  const withReservoirs = interim(reservoirs, patches);
   const generated = authorControl(withReservoirs.controlShape(AUTHORING_FIGURE));
   const latticeWith = withReservoirs.adultDetailLattice(AUTHORING_FIGURE);
   if (!latticeWith) throw new Error("the adult pack has no refined surface to draw detail on");
@@ -821,7 +826,7 @@ async function main() {
     modifiers: [...modifiers.filter((m) => isAdultPackTarget(m.hi)), ...AUTHORED_MODIFIERS],
     sliders: sliders.adult,
     /** Features, skin-layer measurements and shape states: the core names none of these. */
-    anatomy: adultAnatomySpec(packedFigure, organ.detail, islanded),
+    anatomy: adultAnatomySpec(packedFigure, organ.detail, islanded, patches),
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 

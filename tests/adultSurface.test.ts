@@ -62,8 +62,12 @@ describe("the pelvic refinement the adult pack asks for", () => {
   });
 
   it("is the pack's own spec, the one in the shipped manifest", () => {
-    const spec = adultAnatomySpec(assets);
-    expect(spec.surface).toEqual({ faces: r.faces, levels: r.levels });
+    // The refinement is this body's choice of faces; the patches on it are the reservoirs'
+    // layout's (held to the generator in adultReservoirs.test.ts), so they are taken as shipped.
+    const patches = adultManifest.anatomy?.surface?.patches;
+    expect(patches?.length, "the reservoirs' smooth loops").toBe(2);
+    const spec = adultAnatomySpec(assets, undefined, undefined, patches);
+    expect(spec.surface).toEqual({ faces: r.faces, levels: r.levels, patches });
     // Its detail (the generated targets' pin) is held to the generator in moundPack.test.ts.
     const { detail: _detail, reservoirs: _reservoirs, ...rest } = adultManifest.anatomy ?? {};
     expect(rest).toEqual(spec);

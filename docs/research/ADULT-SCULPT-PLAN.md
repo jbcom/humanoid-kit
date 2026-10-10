@@ -591,8 +591,9 @@ gates were.
 - **Pages.** `scripts/check-pages-build.mjs` learns the new pack files (by
   SHA-256) and the feature, target and graft names, and still fails the build
   on any of them; the mutation check is adding one to a built site.
-- **Seen.** Contact sheets from `scripts/contact-sheet.mjs` with `?adult`, local
-  only, at both ends of the tone range and at the extremes of every control,
+- **Seen.** Contact sheets from the `sheets` Playwright project
+  (`e2e/sheets/render.sheet.ts`) with `?adult`, never published (moved out of the
+  render pool's returned artifacts to a private cache as soon as they arrive), at both ends of the tone range and at the extremes of every control,
   clothed and unclothed, read against the base figure for seams, tearing and
   shading breaks.
 - **Cost.** Per-figure cost for a figure with no anatomy applied is unchanged

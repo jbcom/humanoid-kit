@@ -13,10 +13,9 @@ import {
   PlaneGeometry,
   Scene,
   type Texture,
-  WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
-import { afterAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { BodyArtPlacement, PlacedMark, PlacedTattoo } from "../../src/bodyArt/decals.ts";
 import { inkSeen } from "../../src/bodyArt/ink.ts";
 import { markOutline, markShape } from "../../src/bodyArt/markShape.ts";
@@ -42,14 +41,14 @@ import { planAtlas } from "../../src/surface/atlasPlan.ts";
 import type { SkinLayer, SkinPaintInput } from "../../src/surface/layers.ts";
 import { LIPS_LAYER, NAIL_GLOSS_LAYER } from "../../src/surface/regions/index.ts";
 import { type Rgb, skinAlbedo, srgbToLinear } from "../../src/surface/skinTone.ts";
+import { createTestRenderer } from "./gl.ts";
 import { readPage } from "./readPage.ts";
 
 /** What the bake draws: tattoos and marks. */
 type Baked = Pick<BodyArtPlacement, "tattoos" | "marks">;
 
-const renderer = new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
+const renderer = createTestRenderer({ antialias: false });
 renderer.setPixelRatio(1);
-afterAll(() => renderer.dispose());
 
 /** An image with a colour per quadrant (sRGB 0..255; alpha 0 leaves a quadrant bare), 8 by 4 texels. */
 function quadrants(tl: number[], tr: number[], bl: number[], br: number[]): HTMLCanvasElement {

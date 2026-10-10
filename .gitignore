@@ -23,5 +23,8 @@ docs/dist/
 .agent-state/session-logs/
 .agent-state/session-state/
 .claude/
-# Artifacts the shared heavy-slot broker returns from remote renders.
+# Artifacts the shared heavy-slot broker returns from remote renders. Adult
+# sheets among them are moved out to ~/.cache/hk-adult as soon as they return.
 .heavy-slot/
+# The contact-sheet job the `sheets` Playwright project renders (e2e/sheets/).
+.sheets/

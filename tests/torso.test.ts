@@ -182,6 +182,38 @@ describe("the areola's colour", () => {
   it("paints with no age and no build, as for the default figure", () => {
     expect(() => stops(paint())).not.toThrow();
   });
+
+  it("leaves a channel in which the skin is exactly zero as the identity, with no NaN", () => {
+    // A cyan override has no red: the areola's ratio there is 0 / 0, and the shader's mix
+    // carries one NaN to every pixel of the skin.
+    const cyan = { ...tone, override: [0, 0.234, 0.377] as Rgb };
+    const t = paintStopTable([AREOLA_LAYER], paint({ ...adultFemale, tone: cyan }));
+    expect(t.every(Number.isFinite)).toBe(true);
+    for (let k = 0; k < STOP_COUNT; k++) expect(t[(k + 1) * 4]).toBe(1);
+    // The other channels are still the areola's own ratio: darker than the skin at the nipple.
+    expect(t[4 + 1]).toBeLessThan(1);
+    expect(t[4 + 2]).toBeLessThan(1);
+  });
+
+  it("is finite for any tone with a channel at zero", () => {
+    // A seeded fuzz over overrides with one, two or all three channels exactly zero.
+    let s = 0x9e3779b9;
+    const rand = () => {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      return s / 2 ** 32;
+    };
+    for (let n = 0; n < 200; n++) {
+      const override = [rand(), rand(), rand()] as Rgb;
+      const zeros = 1 + Math.floor(rand() * 3);
+      const order = [0, 1, 2].sort(() => rand() - 0.5);
+      for (let z = 0; z < zeros; z++) override[order[z] as number] = 0;
+      const tint = { ...tone, override };
+      for (const input of [paint({ ...adultFemale, tone: tint }), paint({ tone: tint })]) {
+        const t = paintStopTable([AREOLA_LAYER], input);
+        expect(t.every(Number.isFinite), `override ${override}`).toBe(true);
+      }
+    }
+  });
 });
 
 describe("the areola's relief", () => {

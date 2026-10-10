@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ISLAND_LAYERS, RESERVOIR_RINGS, reservoirSpecs } from "../scripts/lib/adultReservoirs.ts";
+import { ISLAND_LAYERS, RESERVOIR_RINGS, reservoirLayout } from "../scripts/lib/adultReservoirs.ts";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
 import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { cutOutline, maleParts, partAxis } from "../scripts/lib/detail/sculpt.ts";
 import { ATLAS_SIZE, bodyCoverage } from "../scripts/lib/uvIslands.ts";
-import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
+import { type AdultSurfacePatch, parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { surfaceTriangles } from "./detailPack.ts";
@@ -25,10 +25,29 @@ const shipped = adultManifest.anatomy?.reservoirs ?? [];
 const parts = maleParts(assets, model.controlShape(AUTHORING_FIGURE).control);
 
 describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
-  it("ships exactly what the generator places on the lattice", () => {
+  it("ships exactly what the generator places on the lattice, and the patches it sits in", () => {
     expect(shipped.map((r) => r.id)).toEqual(["phallic", "labioscrotal"]);
+    // The generator lays the reservoirs out on the refinement before any patch, and
+    // names them on the refinement with its patches (scripts/lib/detail/smoothLoop.ts).
+    const surface = adultManifest.anatomy?.surface;
+    if (!surface) throw new Error("no surface");
+    const latticeWith = (patches: AdultSurfacePatch[]) => {
+      const manifest = structuredClone(adultManifest);
+      const anatomy = manifest.anatomy as NonNullable<typeof manifest.anatomy>;
+      anatomy.surface = { faces: surface.faces, levels: surface.levels, patches };
+      delete anatomy.reservoirs;
+      delete anatomy.detail;
+      const on = new HumanoidModel(
+        parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest }),
+        { subdivision: 1 },
+      ).adultDetailLattice(AUTHORING_FIGURE);
+      if (!on) throw new Error("no adult surface");
+      return on;
+    };
+    const layout = reservoirLayout(latticeWith([]), parts, latticeWith);
+    expect(layout.patches).toEqual(surface.patches);
     // Placement is the generator's; the islands and layers are the packer's (below).
-    expect(reservoirSpecs(lattice, parts)).toEqual(
+    expect(layout.reservoirs).toEqual(
       shipped.map(({ island: _island, layer: _layer, ...placed }) => placed),
     );
     expect(shipped.map((r) => r.rings)).toEqual([
