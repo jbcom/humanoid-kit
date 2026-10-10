@@ -150,18 +150,26 @@ export class SculptedScrotum {
    * The one factor on the sculpt for a key: the one at which the sac as drawn
    * (resting on the skin round its root) is as wide as two testes of the key's volume
    * side by side, with skin round them. Its depth and hang are the sculpt's at that
-   * width. Taken as that width over the sculpt's own, the drawn sac missed it, as the
-   * root's fade and the skin it rests on move it.
+   * width, unless the hang is then too short to hold a testis with skin at both ends:
+   * then the sac is grown until it does, a little wider than the width asks. Taken
+   * as that width over the sculpt's own, the drawn sac missed it, as the root's fade
+   * and the skin it rests on move it.
    */
   factorOf(key: TestesKey): number {
     const known = this.factors.get(key.volume);
     if (known !== undefined) return known;
     const want = sacSize(key.volume).width;
-    const f = solveFactor(
+    const wide = solveFactor(
       (g) => measureSac(this.root, this.drawn(g)).width,
       want,
       want / this.width,
     );
+    const hold = testisDimensions(key.volume).length + 2 * SKIN;
+    const hang = measureSac(this.root, this.drawn(wide)).hang;
+    const f =
+      hang >= hold
+        ? wide
+        : solveFactor((g) => measureSac(this.root, this.drawn(g)).hang, hold, (wide * hold) / hang);
     this.factors.set(key.volume, f);
     return f;
   }

@@ -6,6 +6,7 @@ import { type ReservoirRoot, reservoirRoot } from "../scripts/lib/detail/root.ts
 import {
   measureSac,
   SculptedScrotum,
+  SKIN,
   sacSize,
   scrotumTargets,
   TESTES_KEYS,
@@ -79,20 +80,35 @@ describe("the sac's shape", () => {
     for (const key of TESTES_KEYS) {
       const got = measureSac(root, sac.shape(key));
       const want = sacSize(key.volume);
-      expect(got.width, `${key.volume} mL width`).toBeCloseTo(want.width, 5);
-      expect(want.width).toBeGreaterThan(2 * testisDimensions(key.volume).width);
+      const testis = testisDimensions(key.volume);
+      const hold = testis.length + 2 * SKIN;
+      // Exactly that wide, unless the sculpt's hang at that width could not hold a testis
+      // and the sac was grown to: then wider, by that growth and no more than a few per cent.
+      if (measureSac(root, sac.shape(key)).hang > hold * (1 + 1e-6))
+        expect(got.width, `${key.volume} mL width`).toBeCloseTo(want.width, 5);
+      else {
+        expect(got.width, `${key.volume} mL width`).toBeGreaterThan(want.width);
+        expect(got.width / want.width, `${key.volume} mL width`).toBeLessThan(1.05);
+      }
+      expect(want.width).toBeGreaterThan(2 * testis.width);
     }
   });
 
   it("is deep and long enough for its testes at that width: the sculpt's proportions hold them", () => {
-    // Scaled evenly, the depth and hang are the sculpt's. Each holds one testis with
-    // skin round it (sacSize), and neither is more than half as much again.
+    // Scaled evenly, the depth and hang are the sculpt's. Each must hold one testis with
+    // skin round it: the hang at least the testis's length with skin at both ends (the
+    // neck above it is the sculpt's own; sacSize's NECK is a modelled choice, not a
+    // measure to hold the sculpt to). Neither is more than half as much again as sacSize.
     for (const key of TESTES_KEYS) {
       const got = measureSac(root, sac.shape(key));
       const want = sacSize(key.volume);
+      const testis = testisDimensions(key.volume);
       expect(got.depth / want.depth, `${key.volume} mL depth`).toBeGreaterThan(0.85);
       expect(got.depth / want.depth, `${key.volume} mL depth`).toBeLessThan(1.5);
-      expect(got.hang / want.hang, `${key.volume} mL hang`).toBeGreaterThan(0.85);
+      // Sizing grows a sac to exactly hold its testis where the sculpt is short: to the solve's tolerance.
+      expect(got.hang, `${key.volume} mL hang`).toBeGreaterThan(
+        (testis.length + 2 * SKIN) * (1 - 1e-6),
+      );
       expect(got.hang / want.hang, `${key.volume} mL hang`).toBeLessThan(1.5);
     }
   });
