@@ -20,6 +20,7 @@ import {
   DataUtils,
   HalfFloatType,
   LinearFilter,
+  LinearMipmapLinearFilter,
   LinearSRGBColorSpace,
   MeshPhysicalMaterial,
   NoColorSpace,
@@ -842,6 +843,13 @@ function poreNormalMap(): DataTexture {
   poreTexture.wrapT = RepeatWrapping;
   poreTexture.repeat.set(48, 48);
   poreTexture.colorSpace = LinearSRGBColorSpace;
+  // A DataTexture samples with Nearest filters unless told otherwise, and Nearest ignores the
+  // mip chain: at 48 repeats a pixel of skin a body's length away spans many texels, each
+  // picked at random, and the pores sparkled in the specular as a frosty grain on deep skin.
+  // Trilinear and anisotropic filtering average the pores' normals toward flat with distance.
+  poreTexture.minFilter = LinearMipmapLinearFilter;
+  poreTexture.magFilter = LinearFilter;
+  poreTexture.anisotropy = 8;
   poreTexture.generateMipmaps = true;
   poreTexture.needsUpdate = true;
   return poreTexture;
