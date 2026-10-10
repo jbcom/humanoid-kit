@@ -45,9 +45,9 @@ export class EyeMaterial extends MeshPhysicalMaterial {
     hkSclera: { value: new Color() },
     /** 0: the built-in texture (a chroma mask), 1: a pack material with an iris, 2: one without. */
     hkEyeMode: { value: 0 },
-    hkEyeCentres: { value: new Vector4(0.707, 0.703, 0.289, 0.289) },
+    hkEyeCentres: { value: new Vector4() },
     /** The iris's radius (texture units), and the gains and tint the material was measured to need. */
-    hkEyeShape: { value: new Vector4(0.113, 1, 1, 0) },
+    hkEyeShape: { value: new Vector4(0, 1, 1, 0) },
     hkScleraTint: { value: new Vector3(1, 1, 1) },
   };
 
@@ -82,7 +82,7 @@ export class EyeMaterial extends MeshPhysicalMaterial {
     const u = this.hkUniforms;
     if (!entry || !manifest) {
       u.hkEyeMode.value = 0;
-      u.hkEyeShape.value.set(0.113, 1, 1, 0);
+      u.hkEyeShape.value.set(0, 1, 1, 0);
       u.hkScleraTint.value.set(1, 1, 1);
       return;
     }
