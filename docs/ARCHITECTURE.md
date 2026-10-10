@@ -1635,6 +1635,74 @@ volumes are out of band the same way, 0.50 to 0.75 in the squat.
 15), so a figure's folds take about a quarter longer; its texture on an adult's
 drawn surface is 2.4 MB (2924 rows) beside the hip's 25.5 MB (18115 rows).
 
+### Contact compression (design, 2026-10-10)
+
+**The fault.** A joint fold presses one part's skin into another's and puts the
+flesh it displaces nowhere: the press flattens it. Measured as the flesh the skin
+encloses round the joint (`jointVolume`, a ball on the joint's head of 0.3 of its
+limb segment's length; see the foundation's invariants), on the control mesh, in the
+nine bodies, the folds take this much of what the bones leave: the knee squatting
+0.08 to 0.19, tucked 0.04 to 0.07; the hips 0.01 to 0.03; seated, at most about
+0.02. (Measured first as a sum of cones from the joint's head, the knee seemed to
+lose a third: that sum counted the calf inside the thigh twice, 697 cm³ of it at the
+average figure's squatting knee, which a fold that separates them could not put
+back without inventing flesh. The foundation's invariant was switched for it.)
+
+**Use cases.** A knee bent past a right angle: the calf pressed on the back of the
+thigh spreads to the sides of the contact, and the crease is a tight line, not a
+flattened shelf. A hip flexed in a tuck or a squat: the belly pressed by the thigh
+rolls up above the crease and out to the flanks, the thigh's front spreads. Seated,
+little is pressed and nothing should change that is seen. One side flexed alone:
+its own side bulges. A figure in an app: all of it solved per figure in the worker
+with the folds, nothing more per frame than reading their tables.
+
+**Requirements.**
+
+- *Volume.* The folds take no more than 0.01 of the flesh the bones leave round a
+  hip or a knee, seated, tucked and squatting, in every body (`VOLUME_SLACK`, CHOICE:
+  above the measure's own noise, a body moved rigidly reading within 0.008 of
+  itself, and under every loss a press that bulges nothing leaves where it presses).
+  Seated, where the bones leave the knee within the foundation's band, the folds keep
+  it there; tucked and squatting the bones alone leave it out (0.68 to 0.75 and 0.57
+  to 0.64 of rest: thigh and shin, 50° and 30° apart, overlap within the ball), so
+  there the gate is the bones'.
+- *No new contact.* The hip and knee folds' contact gates hold: what bulges out does
+  not bulge into the other part.
+- *No flaps.* The folds' flap gates hold.
+- *Where it is pressed.* Skin far from any contact is not moved by it (as the belly's
+  press is held to the thigh, `PressReach`).
+- *Bounded.* No vertex is moved by the bulge further than a stated cap.
+- *Cost.* Within half again the folds' solve, and their rows.
+
+**Options.**
+
+1. *A bulge restoring the flesh the fold takes, in the solve.* At each key, on each
+   side, the flesh round the joint is measured as the gate measures it, by the bones
+   alone and with the fold so far; what the fold has taken is put back as an outward
+   displacement of the skin round the contact (the skin of either part within a
+   centimetre of the other's), falling smoothly to nothing a few centimetres along
+   the skin from it, and the last round's pushes keep both skins out of each other.
+   It is part of the joint folds' solve, so the hip and the knee have it, plays from
+   the same tables, and its target is a measured loss, not a guess: a first try
+   that took as lost every millimetre the contact's skin was pushed in counted the
+   calf pushed out of the thigh's inside as flesh lost, and ballooned the rim 27 mm.
+2. *A volume-preserving relaxation.* The skin near the joint solved for its edges'
+   lengths and its enclosed volume alongside the contacts (position-based
+   constraints, iterated per key). The most physical, and it would answer the
+   squashed skin too; but a second solver, iterations over the joint's skin at every
+   key, and the flap and contact gates to win again from scratch.
+3. *Pose-space bulges by bone.* A radial swelling of the limb near the joint by its
+   flexion, fitted to put the volume back. The cheapest; but it bulges where nothing
+   presses, and wherever the contact is not.
+
+**Decision: option 1** (ruling, 2026-10-10). It puts back what the fold takes where
+the fold takes it, in the solve that already shares the contact; option 2 is held for
+when the squashed skin needs answering by itself. The gates are written first
+(`tests/contactCompression.test.ts`) and fail: the average figure tucked keeps 0.741
+of its hip's rest flesh against the bones' 0.755. A fold that pulls the flesh round
+the average figure's squatting knee a fifth of the way toward its head fails the
+same gate, as it must.
+
 ### Reservoir skinning (2026-10-10)
 
 A reservoir's rings are copies of its loop's vertices and take the loop's skin
