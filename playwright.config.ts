@@ -26,7 +26,10 @@ export const selectsSheets = (argv: readonly string[]): boolean =>
   argv.some(
     (arg, i) => arg === "--project=sheets" || (arg === "--project" && argv[i + 1] === "sheets"),
   );
-const sheets = selectsSheets(process.argv);
+// The workers load this config again without the command line: the run that selected
+// the project tells them so through the environment they inherit.
+if (selectsSheets(process.argv)) process.env.HK_SHEETS_RUN = "1";
+const sheets = process.env.HK_SHEETS_RUN === "1";
 
 export default definePlaywrightConfig({
   testDir: "./e2e",
