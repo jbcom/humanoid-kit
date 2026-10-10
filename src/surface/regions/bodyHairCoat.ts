@@ -17,7 +17,7 @@
  * choices.
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
-import { ADULT_COAT_REGION_IDS, jointPosition } from "../../format/assetFormat.ts";
+import { ADULT_COAT_REGION_IDS, groupFaces, jointPosition } from "../../format/assetFormat.ts";
 import {
   type BeardStyle,
   BODY_HAIR_FIBRE,
@@ -149,6 +149,72 @@ export function beardMasks(assets: HumanoidAssets): Record<BeardPart, Float32Arr
   return out;
 }
 
+const neighbourCache = new WeakMap<HumanoidAssets, readonly number[][]>();
+
+/** Each base vertex's neighbours along the drawn skin's edges (none off it). */
+function neighbours(assets: HumanoidAssets): readonly number[][] {
+  const known = neighbourCache.get(assets);
+  if (known) return known;
+  const sets = Array.from({ length: assets.manifest.vertexCount }, () => new Set<number>());
+  for (const f of groupFaces(assets, "body"))
+    for (let k = 0; k < 4; k++) {
+      const a = assets.faceVerts[f * 4 + k] as number;
+      const b = assets.faceVerts[f * 4 + ((k + 1) % 4)] as number;
+      if (a === b) continue;
+      sets[a]?.add(b);
+      sets[b]?.add(a);
+    }
+  const out = sets.map((s) => [...s]);
+  neighbourCache.set(assets, out);
+  return out;
+}
+
+/**
+ * How many times a trunk or armpit mask is averaged with its neighbours: the
+ * strand layers' masks, which these share, end over a centimetre or less, and
+ * a coat's hair thins out over several (a full change over no less than 2 cm,
+ * which a unit test holds), so the coat eases its copy and leaves theirs, and
+ * the atlas they are packed by, as they are.
+ */
+const EASE_PASSES = 10;
+
+/** `mask` averaged with its neighbours `EASE_PASSES` times over the drawn skin. */
+function eased(assets: HumanoidAssets, mask: Float32Array): Float32Array {
+  const near = neighbours(assets);
+  let from = Float32Array.from(mask);
+  let to = new Float32Array(mask.length);
+  for (let pass = 0; pass < EASE_PASSES; pass++) {
+    for (let v = 0; v < from.length; v++) {
+      const ns = near[v] as number[];
+      let sum = from[v] as number;
+      for (const u of ns) sum += from[u] as number;
+      to[v] = sum / (1 + ns.length);
+    }
+    [from, to] = [to, from];
+  }
+  return from;
+}
+
+const easedCache = new WeakMap<HumanoidAssets, Map<string, Float32Array>>();
+
+/** A body hair mask (`bodyHairMasks`), eased for the coat, once per asset set. */
+function easedMask(
+  assets: HumanoidAssets,
+  group: "chest" | "abdomen" | "back" | "axillary",
+): Float32Array {
+  let known = easedCache.get(assets);
+  if (!known) {
+    known = new Map();
+    easedCache.set(assets, known);
+  }
+  let m = known.get(group);
+  if (!m) {
+    m = eased(assets, bodyHairMasks(assets)[group]);
+    known.set(group, m);
+  }
+  return m;
+}
+
 /** How far each kind of hair lies along the comb: stubble stands, grown hair lies. Choices. */
 const LIE = { stubble: 0.15, grown: 0.6, trunk: 0.75 } as const;
 
@@ -200,7 +266,7 @@ function trunkRegion(group: "chest" | "abdomen" | "back"): CoatRegion {
   return {
     id: `hair-${group}`,
     targets: [...LIPS_TARGETS, "breast/nipple-size-incr"],
-    mask: (assets) => bodyHairMasks(assets)[group],
+    mask: (assets) => easedMask(assets, group),
     paint: (input) => paintOf(group, input, BODY_HAIR_FIBRE[group].length, LIE.trunk),
   };
 }
@@ -214,7 +280,7 @@ const AXILLARY_REGION: CoatRegion = {
   id: "hair-axillary",
   targets: [...LIPS_TARGETS, "breast/nipple-size-incr"],
   adultOnly: true,
-  mask: (assets) => bodyHairMasks(assets).axillary,
+  mask: (assets) => easedMask(assets, "axillary"),
   paint: (input) => paintOf("axillary", input, BODY_HAIR_FIBRE.axillary.length, LIE.grown),
 };
 

@@ -159,6 +159,34 @@ describe("coat masks and paint", () => {
     expect(() => coatMasks(assets, nine)).toThrow(RangeError);
   });
 
+  // A region's hair thins out over centimetres at its edge, never along a line:
+  // walking any edge of the drawn skin, the trunk's and the armpits' masks
+  // change by no more than fully over 2 cm. (The beard's, whose lines are
+  // the face's, are held to a centimetre below.)
+  it("ease the trunk's and armpits' regions over several centimetres at every edge", () => {
+    const edges: [number, number][] = [];
+    for (const f of groupFaces(assets, "body"))
+      for (let k = 0; k < 4; k++)
+        edges.push([
+          assets.faceVerts[f * 4 + k] as number,
+          assets.faceVerts[f * 4 + ((k + 1) % 4)] as number,
+        ]);
+    for (const id of ["hair-chest", "hair-abdomen", "hair-back", "hair-axillary"]) {
+      const m = (BODY_HAIR_COAT.find((r) => r.id === id) as CoatRegion).mask(assets);
+      let worst = 0;
+      for (const [a, b] of edges) {
+        const length = Math.hypot(
+          (P[a * 3] as number) - (P[b * 3] as number),
+          (P[a * 3 + 1] as number) - (P[b * 3 + 1] as number),
+          (P[a * 3 + 2] as number) - (P[b * 3 + 2] as number),
+        );
+        if (length > 0)
+          worst = Math.max(worst, Math.abs((m[a] as number) - (m[b] as number)) / length);
+      }
+      expect(worst, id).toBeLessThan(50);
+    }
+  });
+
   it("measure their masks only from targets the body pack packs", () => {
     for (const r of COAT_REGIONS)
       for (const t of r.targets) expect(SKIN_LAYER_TARGETS).toContain(t);

@@ -1561,6 +1561,11 @@ module.
   tangent plane and smoothed by neighbour averaging, carried the same way.
   Rejected: atlas channels for the masks (the atlas is full, and a vertex
   attribute is exact where the shells need it, at their vertices).
+  A region's hair thins out over centimetres: the trunk's and armpits'
+  regions take the strand layers' masks averaged with their neighbours ten
+  times over the drawn skin, so they change by no more than fully over 2 cm
+  (a unit test walks every edge). The strand layers' own masks, and the atlas
+  packed by their support, are unchanged.
 - *Per figure, a paint per region*: coverage (the share of follicles that grow
   a hair), length, follicle density, how far the hair lies along the comb, and
   the pigment albedo, as uniforms. Body hair paints its regions from the body
