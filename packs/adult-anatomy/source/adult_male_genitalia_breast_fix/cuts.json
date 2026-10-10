@@ -1,0 +1,93 @@
+{
+  "source": "adult_male_genitalia_breast_fix.obj",
+  "sha256": "78092e99e7165d5ee6d0e48dca48ee360fbb73b61206325dca8746dcf65c8095",
+  "subdivisions": 2,
+  "parts": {
+    "phallus": {
+      "planes": [
+        [
+          [
+            0.0,
+            0.8,
+            0.115
+          ],
+          [
+            0.0,
+            -0.9535,
+            0.3011
+          ]
+        ],
+        [
+          [
+            0.0,
+            0.0,
+            0.097
+          ],
+          [
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      ],
+      "seed": [
+        0.0,
+        0.737,
+        0.13
+      ],
+      "vertices": 3726,
+      "faces": 3688,
+      "edges": 7413,
+      "boundaryLoops": 1,
+      "boundaryLoopEdges": [
+        72
+      ],
+      "nonManifoldEdges": 0,
+      "euler": 1,
+      "disc": true
+    },
+    "scrotum": {
+      "planes": [
+        [
+          [
+            0.0,
+            0.0,
+            0.097
+          ],
+          [
+            0.0,
+            0.0,
+            -1.0
+          ]
+        ],
+        [
+          [
+            0.0,
+            0.783,
+            0.0
+          ],
+          [
+            0.0,
+            -1.0,
+            0.0
+          ]
+        ]
+      ],
+      "seed": [
+        0.0,
+        0.737,
+        0.08
+      ],
+      "vertices": 3246,
+      "faces": 3182,
+      "edges": 6427,
+      "boundaryLoops": 1,
+      "boundaryLoopEdges": [
+        126
+      ],
+      "nonManifoldEdges": 0,
+      "euler": 1,
+      "disc": true
+    }
+  }
+}

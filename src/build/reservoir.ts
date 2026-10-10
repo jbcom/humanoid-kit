@@ -74,6 +74,10 @@ export interface SurfaceReservoir {
   chain: number;
   /** Final surface vertex of ring `j` (1 to `rings`), chain element `t`: `copies[(j - 1) * chain + t]`. */
   copies: Uint32Array;
+  /** The loop at the surface's level, in order: the chain's final surface vertices (the skin the rings copy). */
+  loopVertices: Uint32Array;
+  /** The cap's own final surface vertices, inside the loop, ascending: what a detail draws the tip from. */
+  capVertices: Uint32Array;
   /** Per chain element, the loop position at or before it. */
   slot: Uint32Array;
   /** Per chain element, the fraction of the way from that loop position to the next. */
@@ -342,12 +346,21 @@ export function applyReservoirs(
         fraction[t] = (t - t0) / (t1 - t0);
       }
     });
+    const onChain = new Set(cycle.vertices);
+    const inside = new Set<number>();
+    for (const q of quads)
+      for (let k = 0; k < 4; k++) {
+        const v = faces[q * 4 + k] as number;
+        if (!onChain.has(v)) inside.add(v);
+      }
     reservoirs.push({
       loop: Uint32Array.from(spec.loop),
       rings: spec.rings,
       base,
       chain: m,
       copies,
+      loopVertices: Uint32Array.from(cycle.vertices),
+      capVertices: Uint32Array.from([...inside].sort((a, b) => a - b)),
       slot,
       fraction,
       ...(island && { island: island.info }),

@@ -8,7 +8,7 @@ import {
   adultAnatomySpec,
 } from "../scripts/lib/adultAnatomySpec.ts";
 import { groupFaces, parseHumanoidAssets } from "../src/format/assetFormat.ts";
-import { HumanoidModel } from "../src/model/humanoidModel.ts";
+import { HumanoidModel, islandMask } from "../src/model/humanoidModel.ts";
 import {
   buildLayerFields,
   isAdultLayer,
@@ -252,31 +252,45 @@ describe("the model and the adult layers", () => {
       expect((extra?.index.length ?? 0) % 3).toBe(0);
     });
 
-    it("has mask 1 on each island vertex of its reservoir's layer and none of any other", () => {
-      const masks = new Map(layers.map((id) => [id, [] as number[]]));
-      for (const id of layers) {
-        const b = block(id);
-        for (let v = 0; v < count; v++) (masks.get(id) as number[]).push(b[v * 2] as number);
-      }
-      for (let v = 0; v < count; v++) {
-        const lit = layers.filter((id) => (masks.get(id) as number[])[v] === 1);
-        expect(lit, `vertex ${v}`).toHaveLength(1);
-        for (const id of layers)
-          if (!lit.includes(id)) expect((masks.get(id) as number[])[v]).toBe(0);
-      }
+    it("blends each reservoir's layer in on its island from the skin line, and lights no other there", () => {
       const used = new Set(reservoirs.map((r) => r.layer));
       for (const id of used) expect(layers).toContain(id);
+      // At most one layer is lit on any island vertex.
+      for (let v = 0; v < count; v++) {
+        const lit = layers.filter((id) => (block(id)[v * 2] as number) > 0);
+        expect(lit.length, `vertex ${v}`).toBeLessThanOrEqual(1);
+      }
+      // Each reservoir's layer: none on the loop and the skin line (ring 1), rising to 1 a few
+      // rings on, so its colour starts along a smooth line and not the loop's staircase.
+      for (const r of reservoirs) {
+        const b = block(r.layer as string);
+        let full = 0;
+        for (let v = 0; v < count; v++) {
+          const mask = b[v * 2] as number;
+          const along = b[v * 2 + 1] as number;
+          if (mask === 0 && along === 0) continue;
+          expect(mask, `${r.id} vertex ${v}`).toBeCloseTo(
+            islandMask(Math.round(along * r.rings)),
+            6,
+          );
+          if (mask === 1) full++;
+        }
+        expect(full, r.id).toBeGreaterThan(0);
+      }
     });
 
     it("runs the penis layer's coordinate from the loop (0) to the tip (1)", () => {
       const b = block("penis-skin");
+      // The loop's row is coordinate 0 and mask 0, as is every other layer's: the wall's
+      // other rows carry their coordinate.
       const along: number[] = [];
-      for (let v = 0; v < count; v++) if (b[v * 2] === 1) along.push(b[v * 2 + 1] as number);
-      expect(Math.min(...along)).toBe(0);
+      for (let v = 0; v < count; v++)
+        if ((b[v * 2 + 1] as number) > 0) along.push(b[v * 2 + 1] as number);
+      const rings = reservoirs.find((r) => r.id === "phallic")?.rings as number;
+      expect(Math.min(...along)).toBeCloseTo(1 / rings, 9);
       expect(Math.max(...along)).toBe(1);
       // The wall has a row of vertices for every ring.
-      const rings = reservoirs.find((r) => r.id === "phallic")?.rings as number;
-      expect(new Set(along.map((x) => Math.round(x * rings))).size).toBe(rings + 1);
+      expect(new Set(along.map((x) => Math.round(x * rings))).size).toBe(rings);
     });
 
     it("keeps every island triangle inside its island and gives the wall real area in UV", () => {

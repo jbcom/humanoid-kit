@@ -5,8 +5,10 @@
  * whether a point has passed the rim and is to be hidden (what a figure eats
  * dissolves past its lips).
  *
- * A channel runs straight in along its rim's inward normal. Its cross-section is
- * an ellipse: `across` along the rim frame's bitangent, `up` along its tangent.
+ * A channel runs straight in along `inward`: its rim's inward normal, turned
+ * toward the head's centre by its `towardHead` (the nostril's). Its
+ * cross-section is an ellipse: `across` along the rim frame's bitangent, `up`
+ * along its tangent, each made square to the path.
  * Every size is an adult's, scaled to the figure by the width of its head (its
  * ear canals' span over the default adult's), so a child's are a child's. The
  * mouth's width is the figure's own (between its corners) and its height is
@@ -22,10 +24,10 @@ export interface ChannelSpec {
   /** Its size at the rim, metres across (the rim's bitangent) and up (its tangent), an adult's. */
   rim: { across: number; up: number };
   /**
-   * Its size along its depth, as a share of the rim's: `[share of depth, factor]`
-   * pairs from 0 to 1, between which the size is interpolated.
+   * Its size along its depth, as a share of the rim's: `[share of depth, across
+   * factor, up factor]` from 0 to 1, between which the size is interpolated.
    */
-  profile: readonly (readonly [number, number])[];
+  profile: readonly (readonly [number, number, number])[];
   /**
    * How far its straight path turns from the rim's inward normal toward the
    * head's centre, 0 to 1: a channel that bends inside the head (the nostril's
@@ -36,15 +38,15 @@ export interface ChannelSpec {
 
 /** The channels' adult dimensions (docs/research/AFFORDANCE-CHANNELS.md: measured unless marked CHOICE there). */
 export const CHANNELS: Readonly<Record<ChannelId, ChannelSpec>> = {
-  // The ear canal: entry 7.75 by 6.1 mm, isthmus 6.8 by 5.2 a third of the way in (CHOICE
-  // of depth), 24 mm deep (cartilage 8 + bone 16).
+  // The ear canal: entry 7.75 high by 6.1 mm wide, isthmus 6.8 by 5.2 a third of the way in
+  // (CHOICE of depth) and so to its end, 24 mm deep (cartilage 8 + bone 16).
   auditory: {
     depth: 0.024,
     rim: { across: 0.0061, up: 0.00775 },
     profile: [
-      [0, 1],
-      [1 / 3, 0.86],
-      [1, 0.86],
+      [0, 1, 1],
+      [1 / 3, 5.2 / 6.1, 6.8 / 7.75],
+      [1, 5.2 / 6.1, 6.8 / 7.75],
     ],
     towardHead: 0,
   },
@@ -55,8 +57,8 @@ export const CHANNELS: Readonly<Record<ChannelId, ChannelSpec>> = {
     depth: 0.015,
     rim: { across: 0.0105, up: 0.015 },
     profile: [
-      [0, 1],
-      [1, 1],
+      [0, 1, 1],
+      [1, 1, 1],
     ],
     towardHead: 0.5,
   },
@@ -67,9 +69,9 @@ export const CHANNELS: Readonly<Record<ChannelId, ChannelSpec>> = {
     depth: 0.09,
     rim: { across: 0, up: 0.045 },
     profile: [
-      [0, 1],
-      [0.5, 1],
-      [1, 0.6],
+      [0, 1, 1],
+      [0.5, 1, 1],
+      [1, 0.6, 0.6],
     ],
     towardHead: 0,
   },
@@ -89,9 +91,18 @@ export interface Channel {
   up: Vec3;
   /** How deep it runs, metres. */
   depth: number;
+  /**
+   * Its size along it: `[depth, half across, half up]`, metres, from the rim
+   * (depth 0) to its end (`depth`), between which the size is interpolated.
+   * What `halfSize` reads and the renderer's clip (`ChannelClip`) uploads.
+   */
+  knots: readonly (readonly [number, number, number])[];
   /** Its half-sizes (across, up) at `d` metres in, metres; 0 past either end. */
   halfSize(d: number): [number, number];
 }
+
+/** The most knots a channel's profile has (`CHANNELS`' longest), which the renderer's clip is sized for. */
+export const CHANNEL_KNOTS = 3;
 
 /** Where a point is against a channel: how far in it is, and whether it is inside. */
 export interface ChannelPlace {
@@ -103,31 +114,58 @@ export interface ChannelPlace {
 
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
-/** The profile's factor at a share of the depth. */
-function factorAt(profile: ChannelSpec["profile"], share: number): number {
-  for (let i = 1; i < profile.length; i++) {
-    const [s0, f0] = profile[i - 1] as readonly [number, number];
-    const [s1, f1] = profile[i] as readonly [number, number];
-    if (share <= s1) return f0 + ((f1 - f0) * (share - s0)) / (s1 - s0 || 1);
+/** The half-sizes (across, up) at `d` metres along `knots`, interpolated; 0 past either end. */
+export function knotHalfSize(
+  knots: readonly (readonly [number, number, number])[],
+  d: number,
+): [number, number] {
+  const end = knots[knots.length - 1] as readonly [number, number, number];
+  if (d < 0 || d > end[0]) return [0, 0];
+  for (let i = 1; i < knots.length; i++) {
+    const [d0, a0, u0] = knots[i - 1] as readonly [number, number, number];
+    const [d1, a1, u1] = knots[i] as readonly [number, number, number];
+    if (d <= d1) {
+      const t = (d - d0) / (d1 - d0 || 1);
+      return [a0 + (a1 - a0) * t, u0 + (u1 - u0) * t];
+    }
   }
-  return (profile[profile.length - 1] as readonly [number, number])[1];
+  return [end[1], end[2]];
 }
 
-const unit = (a: Vec3): Vec3 => {
-  const l = Math.hypot(a[0], a[1], a[2]);
-  return [a[0] / l, a[1] / l, a[2] / l];
+/** A channel whose fields `channelOf` can write in place: its vectors and knots are its own, reused. */
+export function emptyChannel(): Channel {
+  const pool = Array.from({ length: CHANNEL_KNOTS }, () => [0, 0, 0] as [number, number, number]);
+  const c: Channel = {
+    origin: [0, 0, 0],
+    inward: [0, 0, 0],
+    across: [0, 0, 0],
+    up: [0, 0, 0],
+    depth: 0,
+    knots: [],
+    halfSize: (d) => knotHalfSize(c.knots, d),
+  };
+  knotPools.set(c, pool);
+  return c;
+}
+
+/** Each in-place channel's own knot triples. */
+const knotPools = new WeakMap<Channel, [number, number, number][]>();
+
+/** Sets a vector `channelOf` owns (one of `emptyChannel`'s). */
+const put = (v: Vec3, x: number, y: number, z: number) => {
+  const m = v as unknown as number[];
+  m[0] = x;
+  m[1] = y;
+  m[2] = z;
 };
-const cross = (a: Vec3, b: Vec3): Vec3 => [
-  a[1] * b[2] - a[2] * b[1],
-  a[2] * b[0] - a[0] * b[2],
-  a[0] * b[1] - a[1] * b[0],
-];
 
 /**
  * A channel behind a rim. `scale` is the figure's head width over the adult's
  * (`ADULT_EAR_SPAN`), `head` its centre (midway between its ear canals);
  * `opening` (0 to 1) opens a channel that opens (the mouth), whose rim is
- * `width` across (the figure's own mouth, metres).
+ * `width` across (the figure's own mouth, metres). Given `out` (from
+ * `emptyChannel`), it is written there and nothing is allocated, as a renderer
+ * needs each frame.
  */
 export function channelOf(
   id: ChannelId,
@@ -136,43 +174,55 @@ export function channelOf(
   head: Vec3,
   opening = 1,
   width?: number,
+  out: Channel = emptyChannel(),
 ): Channel {
   const spec = CHANNELS[id];
   if (!(scale > 0)) throw new RangeError(`channel ${id}: scale must be positive, not ${scale}`);
+  const pool = knotPools.get(out);
+  if (!pool) throw new RangeError("channelOf: out must be made by emptyChannel");
   const sizeAcross = id === "oral" ? (width ?? 0) : spec.rim.across * scale;
   const sizeUp = spec.rim.up * scale * (id === "oral" ? opening : 1);
   const depth = spec.depth * scale;
   const t = spec.towardHead;
-  const toHead = unit([
-    head[0] - rim.position[0],
-    head[1] - rim.position[1],
-    head[2] - rim.position[2],
-  ]);
-  const inward = unit([
-    -rim.normal[0] * (1 - t) + toHead[0] * t,
-    -rim.normal[1] * (1 - t) + toHead[1] * t,
-    -rim.normal[2] * (1 - t) + toHead[2] * t,
-  ]);
+  const [px, py, pz] = rim.position;
+  let hx = head[0] - px;
+  let hy = head[1] - py;
+  let hz = head[2] - pz;
+  const hl = Math.hypot(hx, hy, hz);
+  hx /= hl;
+  hy /= hl;
+  hz /= hl;
+  let ix = -rim.normal[0] * (1 - t) + hx * t;
+  let iy = -rim.normal[1] * (1 - t) + hy * t;
+  let iz = -rim.normal[2] * (1 - t) + hz * t;
+  const il = Math.hypot(ix, iy, iz);
+  ix /= il;
+  iy /= il;
+  iz /= il;
   // The rim's axes made square to the path, with their handedness kept (across = up × inward).
-  const d = dot(rim.tangent, inward);
-  const up = unit([
-    rim.tangent[0] - inward[0] * d,
-    rim.tangent[1] - inward[1] * d,
-    rim.tangent[2] - inward[2] * d,
-  ]);
-  const across = cross(up, inward);
-  return {
-    origin: rim.position,
-    inward,
-    across,
-    up,
-    depth,
-    halfSize(d) {
-      if (d < 0 || d > depth) return [0, 0];
-      const f = factorAt(spec.profile, d / depth);
-      return [(sizeAcross / 2) * f, (sizeUp / 2) * f];
-    },
-  };
+  const d = rim.tangent[0] * ix + rim.tangent[1] * iy + rim.tangent[2] * iz;
+  let ux = rim.tangent[0] - ix * d;
+  let uy = rim.tangent[1] - iy * d;
+  let uz = rim.tangent[2] - iz * d;
+  const ul = Math.hypot(ux, uy, uz);
+  ux /= ul;
+  uy /= ul;
+  uz /= ul;
+  put(out.origin, px, py, pz);
+  put(out.inward, ix, iy, iz);
+  put(out.up, ux, uy, uz);
+  put(out.across, uy * iz - uz * iy, uz * ix - ux * iz, ux * iy - uy * ix);
+  out.depth = depth;
+  const knots = out.knots as [number, number, number][];
+  knots.length = spec.profile.length;
+  spec.profile.forEach(([share, fa, fu], k) => {
+    const knot = pool[k] as [number, number, number];
+    knot[0] = share * depth;
+    knot[1] = (sizeAcross / 2) * fa;
+    knot[2] = (sizeUp / 2) * fu;
+    knots[k] = knot;
+  });
+  return out;
 }
 
 /** Where `p` is against `channel`. */

@@ -21,7 +21,7 @@
 import { groupFaces, type HumanoidAssets } from "../format/assetFormat.ts";
 import type { HumanoidModel } from "../model/humanoidModel.ts";
 import { MIDLINE, namedTarget, targetPeak } from "../model/targetPeak.ts";
-import { posedBones, restBones, rotateByBone } from "../rig/pose.ts";
+import { posedBones, restBones, rigData } from "../rig/pose.ts";
 import { handFrame } from "../surface/regions/hands/frame.ts";
 import { skinZones } from "../surface/regions/skinZones.ts";
 import type { PosedBody } from "./posed.ts";
@@ -61,6 +61,17 @@ export const SURFACE_LANDMARKS = [
   "pubic-point",
   "palm.L",
   "palm.R",
+  // The pulp of each digit's last segment, thumb (1) to little finger (5).
+  "finger-pad-1.L",
+  "finger-pad-2.L",
+  "finger-pad-3.L",
+  "finger-pad-4.L",
+  "finger-pad-5.L",
+  "finger-pad-1.R",
+  "finger-pad-2.R",
+  "finger-pad-3.R",
+  "finger-pad-4.R",
+  "finger-pad-5.R",
   "sole.L",
   "sole.R",
 ] as const;
@@ -120,11 +131,6 @@ const UP: Vec3 = [0, 1, 0];
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: Vec3, b: Vec3): Vec3 => [
-  a[1] * b[2] - a[2] * b[1],
-  a[2] * b[0] - a[0] * b[2],
-  a[0] * b[1] - a[1] * b[0],
-];
 const unit = (a: Vec3): Vec3 => {
   const l = Math.hypot(a[0], a[1], a[2]);
   return [a[0] / l, a[1] / l, a[2] / l];
@@ -298,6 +304,57 @@ function palmCentre(assets: HumanoidAssets, used: Uint8Array, side: 0 | 1): numb
 
 /** How nearly a vertex must face the palm's way to be on the palm (`HandFrame.volar`). */
 const PALM_FACING = 0.8;
+
+/**
+ * A finger pad's place on its digit's last segment, as a share of the segment
+ * from its joint to the tip: the pulp's centre, where the fingerprint's core
+ * lies (CHOICE: the pulp fills the segment's distal two thirds), and the band
+ * of the segment searched for it.
+ */
+const PAD_AT = 0.6;
+const PAD_BAND: readonly [number, number] = [0.4, 0.9];
+/** How far across the digit from its axis a pad may be, as a share of the fingertip's radius. */
+const PAD_ACROSS = 0.5;
+/** How much less nearly than the segment's most palmward vertex a pad may face the palm's way. */
+const PAD_FACING_SLACK = 0.15;
+
+/**
+ * A digit's pad on one side (0 left, 1 right; digit 1 the thumb to 5 the
+ * little finger): of the vertices on the middle of the digit's last segment
+ * (`PAD_BAND`, within `PAD_ACROSS` of its axis), those facing the palm's way
+ * nearly as much as the most palmward of them, the one nearest `PAD_AT` along
+ * it. The thumb's pad faces the palm's way least, turned toward the fingers, so
+ * the most palmward of its own segment is the measure, not a fixed facing.
+ */
+function fingerPad(assets: HumanoidAssets, used: Uint8Array, side: 0 | 1, digit: number): number {
+  const frame = handFrame(assets);
+  const joints = (frame.joints[side] as number[][])[digit] as number[];
+  const start = joints[2] as number;
+  const len = (joints[3] as number) - start;
+  const radius = ((frame.radius[side] as number[])[digit] as number) || 0.007;
+  const onPulp: number[] = [];
+  let facing = Number.NEGATIVE_INFINITY;
+  for (let v = 0; v < assets.manifest.vertexCount; v++) {
+    if (!used[v] || frame.side[v] !== side || frame.digit[v] !== digit) continue;
+    const u = ((frame.along[v] as number) - start) / len;
+    if (u < PAD_BAND[0] || u > PAD_BAND[1]) continue;
+    if (Math.abs(frame.across[v] as number) > PAD_ACROSS * radius) continue;
+    onPulp.push(v);
+    facing = Math.max(facing, frame.volar[v] as number);
+  }
+  let best = -1;
+  let dist = Number.POSITIVE_INFINITY;
+  for (const v of onPulp) {
+    if ((frame.volar[v] as number) < facing - PAD_FACING_SLACK) continue;
+    const d = Math.abs(((frame.along[v] as number) - start) / len - PAD_AT);
+    if (d < dist) {
+      dist = d;
+      best = v;
+    }
+  }
+  if (best < 0) throw new RangeError(`no pad vertex on digit ${digit}, side ${side}`);
+  return best;
+}
 /** How nearly a vertex must face down at rest to be on a sole. */
 const SOLE_FACING = 0.8;
 
@@ -405,6 +462,16 @@ export function landmarkVertices(
     "pubic-point": midlineInFront(assets, used, between("upperleg01.L", "upperleg01.R")),
     "palm.L": palmCentre(assets, used, 0),
     "palm.R": palmCentre(assets, used, 1),
+    "finger-pad-1.L": fingerPad(assets, used, 0, 1),
+    "finger-pad-2.L": fingerPad(assets, used, 0, 2),
+    "finger-pad-3.L": fingerPad(assets, used, 0, 3),
+    "finger-pad-4.L": fingerPad(assets, used, 0, 4),
+    "finger-pad-5.L": fingerPad(assets, used, 0, 5),
+    "finger-pad-1.R": fingerPad(assets, used, 1, 1),
+    "finger-pad-2.R": fingerPad(assets, used, 1, 2),
+    "finger-pad-3.R": fingerPad(assets, used, 1, 3),
+    "finger-pad-4.R": fingerPad(assets, used, 1, 4),
+    "finger-pad-5.R": fingerPad(assets, used, 1, 5),
     "sole.L": soleCentre(assets, used, head("foot.L"), head("toe1-1.L")),
     "sole.R": soleCentre(assets, used, head("foot.R"), head("toe1-1.R")),
   };
@@ -412,117 +479,327 @@ export function landmarkVertices(
   return out;
 }
 
+/*
+ * A landmark's frame is found in three stages, so a renderer can frame one on
+ * the figure as it draws it, each frame, without posing the whole body:
+ *
+ * - its anchors (`landmarkAnchors`), fixed by the model's topology: a surface
+ *   landmark's render vertex and the vertices round it, a joint landmark's bones;
+ * - the neighbour its tangent points to (`landmarkUps`), chosen on each
+ *   figure's rest shape;
+ * - its frame (`landmarkFrameInto`), from the posed skeleton and a callback that
+ *   skins a render vertex as the figure is drawn.
+ *
+ * `landmarks(model, body)` runs them on a `PosedBody`.
+ */
+
+/** A surface landmark on one body surface: its render vertex, and the welded vertices round it. */
+export interface SurfaceAnchor {
+  readonly vertex: number;
+  readonly around: readonly number[];
+}
+
+/** A joint landmark's bones, by index: whose head it is, and its limb, from `limb`'s head toward `to`'s. */
+export interface JointAnchor {
+  readonly at: number;
+  readonly limb: number;
+  readonly to: number;
+}
+
+/** Where every landmark is held on one body surface of a model (`landmarkAnchors`). */
+export interface LandmarkAnchors {
+  readonly surface: "base" | "adult";
+  readonly vertices: Readonly<Record<SurfaceLandmarkId, SurfaceAnchor>>;
+  readonly joints: Readonly<Record<JointLandmarkId, JointAnchor>>;
+}
+
+/** Fixed by the topology, so cached per model and surface. */
+const anchorCache = new WeakMap<HumanoidModel, Map<"base" | "adult", LandmarkAnchors>>();
+
 /**
  * Each surface landmark's render vertex on a body surface and its neighbours
- * (by welded vertex, so a landmark on a UV seam sees both sides): fixed by the
- * topology, so cached per model and surface.
+ * (by welded vertex, `renderWeld`, so a landmark on a UV seam sees both
+ * sides), and each joint landmark's bones. The model's target files must have
+ * loaded: the surface landmarks are found from the targets that shape them.
  */
-const anchorCache = new WeakMap<
-  HumanoidModel,
-  Map<"base" | "adult", Readonly<Record<SurfaceLandmarkId, { vertex: number; around: number[] }>>>
->();
-
-function surfaceAnchors(
+export function landmarkAnchors(
   model: HumanoidModel,
-  body: PosedBody,
-): Readonly<Record<SurfaceLandmarkId, { vertex: number; around: number[] }>> {
-  const byModel = anchorCache.get(model) ?? new Map();
+  surface: "base" | "adult" = "base",
+): LandmarkAnchors {
+  const byModel = anchorCache.get(model) ?? new Map<"base" | "adult", LandmarkAnchors>();
   anchorCache.set(model, byModel);
-  const known = byModel.get(body.surface);
+  const known = byModel.get(surface);
   if (known) return known;
-  const render = model.baseRenderVertices(body.surface);
+  const render = model.baseRenderVertices(surface);
+  const weld = model.renderWeld(surface);
+  const I = model.bodyIndex(surface);
   const bases = landmarkVertices(model.assets);
   const neighbours = new Map<number, Set<number>>();
-  const I = body.index;
   for (let t = 0; t < I.length; t += 3)
     for (let c = 0; c < 3; c++) {
-      const a = body.weld[I[t + c] as number] as number;
+      const a = weld[I[t + c] as number] as number;
       const set = neighbours.get(a) ?? new Set<number>();
       neighbours.set(a, set);
-      set.add(body.weld[I[t + ((c + 1) % 3)] as number] as number);
-      set.add(body.weld[I[t + ((c + 2) % 3)] as number] as number);
+      set.add(weld[I[t + ((c + 1) % 3)] as number] as number);
+      set.add(weld[I[t + ((c + 2) % 3)] as number] as number);
     }
-  const out = {} as Record<SurfaceLandmarkId, { vertex: number; around: number[] }>;
+  const vertices = {} as Record<SurfaceLandmarkId, SurfaceAnchor>;
   for (const id of SURFACE_LANDMARKS) {
     const vertex = render[bases[id]] as number;
     if (vertex < 0)
-      throw new RangeError(`landmark ${id}: the ${body.surface} surface does not draw its vertex`);
-    const around = [...(neighbours.get(body.weld[vertex] as number) ?? [])].sort((a, b) => a - b);
+      throw new RangeError(`landmark ${id}: the ${surface} surface does not draw its vertex`);
+    const around = [...(neighbours.get(weld[vertex] as number) ?? [])].sort((a, b) => a - b);
     if (around.length === 0) throw new RangeError(`landmark ${id}: its vertex has no neighbour`);
-    out[id] = { vertex, around };
+    vertices[id] = { vertex, around };
   }
-  byModel.set(body.surface, out);
+  const names = rigData(model.assets).bones;
+  const bone = (name: string) => {
+    const b = names.indexOf(name);
+    if (b < 0) throw new RangeError(`no bone ${name}`);
+    return b;
+  };
+  const joints = {} as Record<JointLandmarkId, JointAnchor>;
+  for (const id of JOINT_LANDMARKS) {
+    const j = JOINTS[id];
+    joints[id] = { at: bone(j.at), limb: bone(j.limb), to: bone(j.to) };
+  }
+  const out: LandmarkAnchors = { surface, vertices, joints };
+  byModel.set(surface, out);
+  return out;
+}
+
+/** Each surface landmark's place in `SURFACE_LANDMARKS`, which `landmarkUps` is in. */
+const SURFACE_INDEX: ReadonlyMap<LandmarkId, number> = new Map(
+  SURFACE_LANDMARKS.map((id, i) => [id, i]),
+);
+
+/**
+ * Of each surface landmark's neighbours (in `SURFACE_LANDMARKS` order), the one
+ * most nearly up the skin from it on this figure at rest (forward where the
+ * skin faces up or down, at the crown): which way its tangent points, chosen on
+ * the figure's own rest shape (`rest` and `restNormals`, its evaluated render
+ * vertices) so the frame never depends on which figure was asked about first.
+ */
+export function landmarkUps(
+  anchors: LandmarkAnchors,
+  rest: Float32Array,
+  restNormals: Float32Array,
+): Int32Array {
+  const restAt = (r: number): Vec3 => [
+    rest[r * 3] as number,
+    rest[r * 3 + 1] as number,
+    rest[r * 3 + 2] as number,
+  ];
+  return Int32Array.from(SURFACE_LANDMARKS, (id) => {
+    const { vertex, around } = anchors.vertices[id];
+    const p = restAt(vertex);
+    const n = unit([
+      restNormals[vertex * 3] as number,
+      restNormals[vertex * 3 + 1] as number,
+      restNormals[vertex * 3 + 2] as number,
+    ]);
+    const want = Math.abs(dot(n, UP)) > 0.9 ? FORWARD : UP;
+    let up = around[0] as number;
+    let best = Number.NEGATIVE_INFINITY;
+    for (const q of around) {
+      const d = dot(across(sub(restAt(q), p), n), want);
+      if (d > best) {
+        best = d;
+        up = q;
+      }
+    }
+    return up;
+  });
+}
+
+/**
+ * Skins render vertex `vertex` as the figure is drawn, writing its position
+ * (and, when `normal` is given, its unit normal) in the figure's own space.
+ */
+export type SkinRenderVertex = (
+  vertex: number,
+  position: Float32Array,
+  normal: Float32Array | null,
+) => void;
+
+/** The posed skeleton (`posedBones`): each bone's world rotation (`bones * 4`) and head (`bones * 3`). */
+export interface PosedSkeleton {
+  readonly world: Float32Array;
+  readonly heads: Float32Array;
+}
+
+/** A landmark frame to write into, so framing one each frame allocates nothing. */
+export interface FrameOut {
+  position: [number, number, number];
+  normal: [number, number, number];
+  tangent: [number, number, number];
+  bitangent: [number, number, number];
+}
+
+/** A frame to write into. */
+export const frameOut = (): FrameOut => ({
+  position: [0, 0, 0],
+  normal: [0, 0, 0],
+  tangent: [0, 0, 0],
+  bitangent: [0, 0, 0],
+});
+
+/** The skinned position and normal of a landmark's vertex, and of its up neighbour. */
+const P = new Float32Array(3);
+const N = new Float32Array(3);
+const Q = new Float32Array(3);
+
+/**
+ * Writes into `out` the frame on position (px, py, pz) whose normal is
+ * (nx, ny, nz) made unit and whose tangent is (ax, ay, az) made square to it
+ * and unit, its bitangent normal × tangent.
+ */
+function writeFrame(
+  out: FrameOut,
+  px: number,
+  py: number,
+  pz: number,
+  nx: number,
+  ny: number,
+  nz: number,
+  ax: number,
+  ay: number,
+  az: number,
+): FrameOut {
+  const nl = Math.hypot(nx, ny, nz);
+  const n0 = nx / nl;
+  const n1 = ny / nl;
+  const n2 = nz / nl;
+  const d = ax * n0 + ay * n1 + az * n2;
+  const sx = ax - n0 * d;
+  const sy = ay - n1 * d;
+  const sz = az - n2 * d;
+  const tl = Math.hypot(sx, sy, sz);
+  const t0 = sx / tl;
+  const t1 = sy / tl;
+  const t2 = sz / tl;
+  out.position[0] = px;
+  out.position[1] = py;
+  out.position[2] = pz;
+  out.normal[0] = n0;
+  out.normal[1] = n1;
+  out.normal[2] = n2;
+  out.tangent[0] = t0;
+  out.tangent[1] = t1;
+  out.tangent[2] = t2;
+  out.bitangent[0] = n1 * t2 - n2 * t1;
+  out.bitangent[1] = n2 * t0 - n0 * t2;
+  out.bitangent[2] = n0 * t1 - n1 * t0;
   return out;
 }
 
 /**
- * Of a landmark's neighbours, the one most nearly up the skin from it on this
- * figure at rest (forward where the skin faces up or down, at the crown):
- * which way its tangent points, chosen on the figure's own rest shape so the
- * frame never depends on which figure was asked about first.
+ * One landmark's frame on a posed figure, written into `out`: a surface
+ * landmark's from its render vertex as `skin` draws it, its normal there and
+ * the way to its up neighbour (`ups`, from `landmarkUps`); a joint landmark's
+ * from the posed skeleton. Allocates nothing.
  */
-function upNeighbour(body: PosedBody, vertex: number, around: readonly number[]): number {
-  const restAt = (r: number): Vec3 => [
-    body.rest[r * 3] as number,
-    body.rest[r * 3 + 1] as number,
-    body.rest[r * 3 + 2] as number,
-  ];
-  const p = restAt(vertex);
-  const n = unit([
-    body.restNormals[vertex * 3] as number,
-    body.restNormals[vertex * 3 + 1] as number,
-    body.restNormals[vertex * 3 + 2] as number,
-  ]);
-  const want = Math.abs(dot(n, UP)) > 0.9 ? FORWARD : UP;
-  let up = around[0] as number;
-  let best = Number.NEGATIVE_INFINITY;
-  for (const q of around) {
-    const d = dot(across(sub(restAt(q), p), n), want);
-    if (d > best) {
-      best = d;
-      up = q;
-    }
+export function landmarkFrameInto(
+  id: LandmarkId,
+  anchors: LandmarkAnchors,
+  ups: Int32Array,
+  skin: SkinRenderVertex,
+  skeleton: PosedSkeleton,
+  out: FrameOut,
+): FrameOut {
+  const s = SURFACE_INDEX.get(id);
+  if (s !== undefined) {
+    skin(anchors.vertices[id as SurfaceLandmarkId].vertex, P, N);
+    skin(ups[s] as number, Q, null);
+    const px = P[0] as number;
+    const py = P[1] as number;
+    const pz = P[2] as number;
+    return writeFrame(
+      out,
+      px,
+      py,
+      pz,
+      N[0] as number,
+      N[1] as number,
+      N[2] as number,
+      (Q[0] as number) - px,
+      (Q[1] as number) - py,
+      (Q[2] as number) - pz,
+    );
   }
-  return up;
+  const j = anchors.joints[id as JointLandmarkId];
+  const { world, heads } = skeleton;
+  const h = (b: number, k: number) => heads[b * 3 + k] as number;
+  // Along the limb, away from the body.
+  let t0 = h(j.to, 0) - h(j.limb, 0);
+  let t1 = h(j.to, 1) - h(j.limb, 1);
+  let t2 = h(j.to, 2) - h(j.limb, 2);
+  const tl = Math.hypot(t0, t1, t2);
+  t0 /= tl;
+  t1 /= tl;
+  t2 /= tl;
+  // The figure's forward (0, 0, 1) turned by the limb's bone, as `rotate` does it.
+  const qx = world[j.limb * 4] as number;
+  const qy = world[j.limb * 4 + 1] as number;
+  const qz = world[j.limb * 4 + 2] as number;
+  const qw = world[j.limb * 4 + 3] as number;
+  const rx = 2 * (qy * 1 - qz * 0);
+  const ry = 2 * (qz * 0 - qx * 1);
+  const rz = 2 * (qx * 0 - qy * 0);
+  const fx = 0 + qw * rx + (qy * rz - qz * ry);
+  const fy = 0 + qw * ry + (qz * rx - qx * rz);
+  const fz = 1 + qw * rz + (qx * ry - qy * rx);
+  // The normal is that made square to the limb, which the tangent runs along exactly.
+  const d = fx * t0 + fy * t1 + fz * t2;
+  const sx = fx - t0 * d;
+  const sy = fy - t1 * d;
+  const sz = fz - t2 * d;
+  const nl = Math.hypot(sx, sy, sz);
+  const n0 = sx / nl;
+  const n1 = sy / nl;
+  const n2 = sz / nl;
+  out.position[0] = h(j.at, 0);
+  out.position[1] = h(j.at, 1);
+  out.position[2] = h(j.at, 2);
+  out.normal[0] = n0;
+  out.normal[1] = n1;
+  out.normal[2] = n2;
+  out.tangent[0] = t0;
+  out.tangent[1] = t1;
+  out.tangent[2] = t2;
+  out.bitangent[0] = n1 * t2 - n2 * t1;
+  out.bitangent[1] = n2 * t0 - n0 * t2;
+  out.bitangent[2] = n0 * t1 - n1 * t0;
+  return out;
 }
 
-/** A frame from a normal and a direction along the skin. */
-const frameOf = (position: Vec3, normal: Vec3, along: Vec3): LandmarkFrame => {
-  const n = unit(normal);
-  const t = across(along, n);
-  return { position, normal: n, tangent: t, bitangent: cross(n, t) };
-};
+/** Every landmark's frame on a posed figure (`landmarkFrameInto` for each). */
+export function landmarkFrames(
+  anchors: LandmarkAnchors,
+  ups: Int32Array,
+  skin: SkinRenderVertex,
+  skeleton: PosedSkeleton,
+): Readonly<Record<LandmarkId, LandmarkFrame>> {
+  const out = {} as Record<LandmarkId, LandmarkFrame>;
+  for (const id of LANDMARK_IDS)
+    out[id] = landmarkFrameInto(id, anchors, ups, skin, skeleton, frameOut());
+  return out;
+}
 
 /** Every landmark of a posed body (`posedSurface`) of this model. */
 export function landmarks(
   model: HumanoidModel,
   body: PosedBody,
 ): Readonly<Record<LandmarkId, LandmarkFrame>> {
-  const at = (a: Float32Array, r: number): Vec3 => [
-    a[r * 3] as number,
-    a[r * 3 + 1] as number,
-    a[r * 3 + 2] as number,
-  ];
-  const out = {} as Record<LandmarkId, LandmarkFrame>;
-  const anchors = surfaceAnchors(model, body);
-  for (const id of SURFACE_LANDMARKS) {
-    const { vertex, around } = anchors[id];
-    const up = upNeighbour(body, vertex, around);
-    const p = at(body.positions, vertex);
-    out[id] = frameOf(p, at(body.normals, vertex), sub(at(body.positions, up), p));
-  }
-  const { world, heads } = posedBones(body.bones, body.rotations);
-  const bone = (name: string) => {
-    const b = body.bones.names.indexOf(name);
-    if (b < 0) throw new RangeError(`no bone ${name}`);
-    return b;
+  const anchors = landmarkAnchors(model, body.surface);
+  const skin: SkinRenderVertex = (v, position, normal) => {
+    position.set(body.positions.subarray(v * 3, v * 3 + 3));
+    normal?.set(body.normals.subarray(v * 3, v * 3 + 3));
   };
-  for (const id of JOINT_LANDMARKS) {
-    const j = JOINTS[id];
-    const limb = bone(j.limb);
-    const t = unit(sub(at(heads, bone(j.to)), at(heads, limb)));
-    const n = across(rotateByBone(world, limb, FORWARD), t);
-    out[id] = { position: at(heads, bone(j.at)), normal: n, tangent: t, bitangent: cross(n, t) };
-  }
-  return out;
+  return landmarkFrames(
+    anchors,
+    landmarkUps(anchors, body.rest, body.restNormals),
+    skin,
+    posedBones(body.bones, body.rotations),
+  );
 }

@@ -3,6 +3,7 @@
  * the page's own thread, so React tests exercise the whole evaluation path
  * (packs from the dev server, the model, the protocol) without a Worker.
  */
+import { adultAnatomyPack } from "humanoid-kit-adult-anatomy";
 import { bodyPack } from "humanoid-kit-body";
 import { hairPack } from "humanoid-kit-hair";
 import type { ModelOptions } from "../../src/model/humanoidModel.ts";
@@ -32,10 +33,14 @@ class InlineWorker {
 
 export function inlineWorkerClient(
   model: ModelOptions = { subdivision: 0 },
-  options: { withoutPresenceJoints?: boolean; hair?: boolean } = {},
+  options: { withoutPresenceJoints?: boolean; hair?: boolean; adultAnatomy?: boolean } = {},
 ) {
   return new HumanoidWorkerClient(
-    { body: bodyPack, ...(options.hair && { hair: hairPack }) },
+    {
+      body: bodyPack,
+      ...(options.hair && { hair: hairPack }),
+      ...(options.adultAnatomy && { adultAnatomy: adultAnatomyPack }),
+    },
     model,
     new InlineWorker(options.withoutPresenceJoints ?? false) as unknown as Worker,
   );

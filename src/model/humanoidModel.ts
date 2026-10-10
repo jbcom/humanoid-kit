@@ -45,6 +45,7 @@ import {
 } from "../morph/evaluate.ts";
 import type { Vec3 } from "../presence/presence.ts";
 import { AgePolicyError, assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
+import { withAnatomyDefaults } from "../recipe/anatomy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
 import { type HipFold, type SurfaceFold, surfaceFold } from "../rig/hipFold.ts";
 import { solveHipFoldSteps } from "../rig/hipFoldSolve.ts";
@@ -76,6 +77,13 @@ import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
 import { areolaStretch } from "../surface/regions/torso.ts";
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
+import {
+  evaluatedSkin,
+  type ReservoirSkinning,
+  reservoirSkinningOf,
+  type SkinWeights,
+  skinOfEvaluation,
+} from "./reservoirSkin.ts";
 import { tuckDepths } from "./tuck.ts";
 
 export interface ModelOptions {
@@ -353,6 +361,13 @@ export interface Evaluation extends SurfaceEvaluation {
    * A figure under 18 is always `"base"`, with exactly the base body's vertices.
    */
   surface: "base" | "adult";
+  /**
+   * The body surface's skin weights for this figure (`evaluatedSkin`), or null
+   * when they are its topology's: the base surface always, and the adult surface
+   * where no detail has pushed a reservoir out of the skin. Read through
+   * `skinOfEvaluation`.
+   */
+  skin: SkinWeights | null;
   /** One entry per attachment, in `ModelTopology.attachments` order. */
   attachments: SurfaceEvaluation[];
   /** The recipe's scalp hair, or null when it has none. */
@@ -417,6 +432,17 @@ const topologyOf = (m: SurfaceMesh): SurfaceTopology => ({
   skinWeight: m.skinWeight,
   vertexCount: m.renderToSurface.length,
 });
+
+/** Rings past a reservoir's first over which its island's layer blends in (`islandFields`). */
+const ISLAND_BLEND_ROWS = 2;
+
+/**
+ * A reservoir's layer mask on its island's wall at row `row` (0 the loop, 1 the first
+ * ring, the skin line a sculpt is attached at): none on the loop and the first ring,
+ * rising to 1 over `ISLAND_BLEND_ROWS` rings, and 1 from there to the tip.
+ */
+export const islandMask = (row: number): number =>
+  Math.min(1, Math.max(0, (row - 1) / ISLAND_BLEND_ROWS));
 
 /** Edges from what garments hide within which the skin is sunk under them (`edgeTuck`). */
 const TUCK_RING = 3;
@@ -483,9 +509,18 @@ export class HumanoidModel {
   private readonly hipFolds = new Map<string, HipFold>();
   /** Each body surface's `baseRenderVertices`, found on first use. */
   private readonly baseRender = new Map<"base" | "adult", Int32Array>();
+  /** Each body surface's `renderWeld`, found on first use. */
+  private readonly weldOf = new Map<"base" | "adult", Uint32Array>();
   /** The adult surface, built on first use (undefined: not yet; null: this pack has none). */
   private adultBody:
-    | { part: Part; edges: Uint32Array; faceTriangles: Uint32Array; topology: AdultSurfaceTopology }
+    | {
+        part: Part;
+        edges: Uint32Array;
+        faceTriangles: Uint32Array;
+        topology: AdultSurfaceTopology;
+        /** Its reservoirs' vertices and roots, for the weights an evaluation skins it by (`evaluatedSkin`). */
+        skinning: ReservoirSkinning;
+      }
     | null
     | undefined;
   /** The body's state morphs and, with the adult pack, its own (`AdultAnatomySpec.stateMorphs`). */
@@ -649,9 +684,17 @@ export class HumanoidModel {
   /**
    * The triangles of the adult surface on islands of their own in UV space
    * (`AdultReservoirSpec.island`), and each named layer's fields there: a
-   * reservoir's `layer` has mask 1 over its island, and its coordinate runs from
-   * the loop (0) along the rings to the tip (1), the cap at the tip. Null when
-   * there is no adult surface or none of its reservoirs has an island.
+   * reservoir's `layer` has mask 0 on its loop and first ring, rising to 1 over the
+   * next `ISLAND_BLEND_ROWS` rings and 1 from there to the tip, and its coordinate
+   * runs from the loop (0) along the rings to the tip (1), the cap at the tip. Null
+   * when there is no adult surface or none of its reservoirs has an island.
+   *
+   * The loop is a chain of lattice edges, a staircase where it crosses the lattice's
+   * rows, and the body's skin round it has no layer: a mask of 1 up to the loop drew
+   * the layer's colour with a torn edge round the root. The first ring is the skin line
+   * a sculpt is attached at, a smooth curve on the skin (scripts/lib/detail/transfer.ts,
+   * `skinLine`), and the band between it and the loop is skin; the layer starts there
+   * and blends in, as genital skin's colour does, along curves with no steps.
    */
   private islandFields(layers: readonly string[]): LayerFieldsExtra | null {
     const adult = this.adultBodySurface();
@@ -659,9 +702,10 @@ export class HumanoidModel {
     if (!adult) return null;
     const { mesh } = adult.part;
     const reservoirs = mesh.lattice?.reservoirs ?? [];
-    /** Per render vertex: -1, or the reservoir whose island it is on, and its place along it. */
+    /** Per render vertex: -1, or the reservoir whose island it is on, its place along it, and the layer's mask there. */
     const owner = new Int32Array(mesh.renderUv.length).fill(-1);
     const along = new Float32Array(mesh.renderUv.length);
+    const mask = new Float32Array(mesh.renderUv.length);
     reservoirs.forEach((r, s) => {
       const isle = r.island;
       if (!isle) return;
@@ -672,11 +716,14 @@ export class HumanoidModel {
         );
       mesh.renderUv.forEach((uv, v) => {
         if (uv >= isle.stripBase && uv < isle.stripBase + isle.columns * isle.rows) {
+          const row = Math.floor((uv - isle.stripBase) / isle.columns);
           owner[v] = s;
-          along[v] = Math.floor((uv - isle.stripBase) / isle.columns) / (isle.rows - 1);
+          along[v] = row / (isle.rows - 1);
+          mask[v] = islandMask(row);
         } else if (uv >= isle.capBase && uv < isle.capBase + isle.capCount) {
           owner[v] = s;
           along[v] = 1;
+          mask[v] = 1;
         }
       });
     });
@@ -694,7 +741,7 @@ export class HumanoidModel {
       uvs[at * 2] = mesh.uvs[v * 2] as number;
       uvs[at * 2 + 1] = mesh.uvs[v * 2 + 1] as number;
       const l = layers.indexOf(specs[s]?.layer as string);
-      fields[(l * count + at) * 2] = 1;
+      fields[(l * count + at) * 2] = mask[v] as number;
       fields[(l * count + at) * 2 + 1] = along[v] as number;
     });
     const triangles: number[] = [];
@@ -1395,6 +1442,11 @@ export class HumanoidModel {
    * The target files a recipe (in a skin state) needs that have not arrived
    * (empty when it can be evaluated now). Validates the recipe first.
    */
+  /** The recipe with the adult pack's anatomy defaults filled in (`withAnatomyDefaults`). */
+  withDefaults(recipe: Recipe): Recipe {
+    return withAnatomyDefaults(recipe, this.assets.adultAnatomyManifest?.anatomy?.defaults);
+  }
+
   pendingTargetFiles(recipe: Recipe, signals: Readonly<Record<string, number>> = {}): Set<string> {
     return this.pendingFor(this.contributions(recipe, signals));
   }
@@ -1404,7 +1456,8 @@ export class HumanoidModel {
    * weights the adult pack derives from modifiers and signals
    * (`AdultDetailSpec.drives`, an adult's alone), after the age policy.
    */
-  private contributions(recipe: Recipe, signals: Readonly<Record<string, number>>) {
+  private contributions(given: Recipe, signals: Readonly<Record<string, number>>) {
+    const recipe = this.withDefaults(given);
     const fromRecipe = recipeContributions(recipe, this.assets.modifiers);
     assertSignalPolicy(recipe, signals);
     const driven: Contribution[] = [];
@@ -1464,11 +1517,16 @@ export class HumanoidModel {
     const adult = isAdult(recipe) ? this.adultBodySurface() : null;
     const displacement =
       adult && detail.length ? this.detailDisplacement(detail, control) : undefined;
+    // How far the detail pushed each of the adult surface's vertices, for the weights it is skinned by.
+    const pushed =
+      displacement && adult ? new Float32Array(adult.part.mesh.renderToSurface.length) : undefined;
     const body = this.evaluatePart(
       adult ? adult.part : this.body,
       outfit.bodyTuck ? this.tucked(control, outfit.bodyTuck) : control,
       displacement,
+      pushed,
     );
+    const skin = adult && pushed ? evaluatedSkin(adult.topology, adult.skinning, pushed) : null;
     const attachments = this.attached.map((a) =>
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
     );
@@ -1511,6 +1569,7 @@ export class HumanoidModel {
     return {
       ...body,
       surface: adult ? "adult" : "base",
+      skin,
       attachments,
       hair,
       brows,
@@ -1539,7 +1598,8 @@ export class HumanoidModel {
             recipe.bodyArt,
             control,
             adult
-              ? (site) => this.adultSiteAnchor(site, adult, control, displacement, body)
+              ? (site) =>
+                  this.adultSiteAnchor(site, adult, control, displacement, { ...body, skin })
               : undefined,
           )
         : null,
@@ -1557,7 +1617,7 @@ export class HumanoidModel {
     adult: NonNullable<ReturnType<HumanoidModel["adultBodySurface"]>>,
     control: Float32Array,
     displacement: SurfaceDetail | undefined,
-    body: SurfaceEvaluation,
+    body: SurfaceEvaluation & { skin: SkinWeights | null },
   ): PiercingAnchor {
     const lattice = adult.part.mesh.lattice;
     if (!lattice)
@@ -1613,8 +1673,8 @@ export class HumanoidModel {
         (N[r * 3 + 2] as number) / l,
       ],
       skin: skinNear(P, N, adult.part.mesh.index, hole, SEAT_REACH),
-      skinIndex: bones(adult.topology.skinIndex),
-      skinWeight: bones(adult.topology.skinWeight),
+      skinIndex: bones(skinOfEvaluation(body, adult.topology).skinIndex),
+      skinWeight: bones(skinOfEvaluation(body, adult.topology).skinWeight),
     };
   }
 
@@ -1628,7 +1688,9 @@ export class HumanoidModel {
    * are detail targets (`AdultDetailSpec`), which are not morphs of the control
    * mesh but displacements of the adult surface, applied by `evaluate`.
    */
-  private evaluateShape(recipe: Recipe, signals: Readonly<Record<string, number>>) {
+  private evaluateShape(given: Recipe, signals: Readonly<Record<string, number>>) {
+    // The gates below read the recipe too, so they see the anatomy's defaults as the morph does.
+    const recipe = this.withDefaults(given);
     const all = this.contributions(recipe, signals);
     const pending = this.pendingFor(all);
     if (pending.size)
@@ -1812,6 +1874,41 @@ export class HumanoidModel {
   }
 
   /**
+   * Each render vertex of a body surface's representative among those a UV
+   * seam splits from one surface vertex: the lowest index of them. Two render
+   * vertices share one exactly when they are one point of the surface, in
+   * every shape and pose, so this is the surface's connectivity, fixed by the
+   * topology (`PosedBody.weld` finds the same by position).
+   */
+  renderWeld(surface: "base" | "adult" = "base"): Uint32Array {
+    const known = this.weldOf.get(surface);
+    if (known) return known;
+    const mesh = surface === "adult" ? this.adultBodySurface()?.part.mesh : this.body.mesh;
+    if (!mesh) throw new RangeError("there is no adult surface to weld");
+    const first = new Map<number, number>();
+    const out = new Uint32Array(mesh.renderToSurface.length);
+    mesh.renderToSurface.forEach((s, r) => {
+      const known = first.get(s);
+      if (known === undefined) first.set(s, r);
+      out[r] = known ?? r;
+    });
+    this.weldOf.set(surface, out);
+    return out;
+  }
+
+  /**
+   * A body surface's triangles over its render vertices, as its topology has
+   * them (`topology().body.index`, `adultSurface().index`), without building
+   * the rest of the topology.
+   */
+  bodyIndex(surface: "base" | "adult" = "base"): Uint32Array {
+    if (surface === "base") return this.mountedBodyIndex;
+    const adult = this.adultSurface();
+    if (!adult) throw new RangeError("there is no adult surface to index");
+    return adult.index;
+  }
+
+  /**
    * The hip fold of the figure a recipe makes in a skin state (docs/ARCHITECTURE.md,
    * "The hip fold"), on the body surface its evaluation is for
    * (`Evaluation.surface`): for the renderer, `DualBones.setFold` and the
@@ -1893,6 +1990,7 @@ export class HumanoidModel {
         occlusion: this.bodyOcclusionField(mesh),
         coat: this.coatOn(mesh),
       },
+      skinning: reservoirSkinningOf(mesh),
     };
     return this.adultBody;
   }
@@ -2184,11 +2282,16 @@ export class HumanoidModel {
     return out;
   }
 
-  private evaluatePart(p: Part, control: Float32Array, detail?: SurfaceDetail): SurfaceEvaluation {
+  private evaluatePart(
+    p: Part,
+    control: Float32Array,
+    detail?: SurfaceDetail,
+    outPushed?: Float32Array,
+  ): SurfaceEvaluation {
     const n = p.mesh.renderToSurface.length * 3;
     const positions = new Float32Array(n);
     const normals = new Float32Array(n);
-    evaluateSurface(p.mesh, control, positions, normals, p.scratch, detail);
+    evaluateSurface(p.mesh, control, positions, normals, p.scratch, detail, outPushed);
     return { positions, normals };
   }
 }

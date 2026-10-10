@@ -19,6 +19,7 @@ import {
   type LoadStage,
   loadHumanoidAssetsStaged,
 } from "../format/assetFormat.ts";
+import { landmarkAnchors } from "../foundation/landmarks.ts";
 import { buildFeatureMap } from "../makehuman/features.ts";
 import { HumanoidModel } from "../model/humanoidModel.ts";
 import { tryPresenceJoints } from "../presence/fromEvaluation.ts";
@@ -186,6 +187,18 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         ]);
         return;
       }
+      if (req.type === "landmarkAnchors") {
+        // The landmarks are found from targets that load in later stages.
+        await complete;
+        // Plain data, cached by the model, so the reply is a structured copy.
+        post({
+          type: "landmarkAnchors",
+          id: req.id,
+          base: landmarkAnchors(model, "base"),
+          adult: model.adultSurface() ? landmarkAnchors(model, "adult") : null,
+        });
+        return;
+      }
       if (req.type === "hipFold") {
         // A newer request for a fold supersedes this one, wherever it is: it stops at its next step.
         const run = ++foldRun;
@@ -233,6 +246,9 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         evaluation.curvature.buffer,
         evaluation.boneHeads.buffer,
       ];
+      // A figure's own skin weights are made for it (`evaluatedSkin`), never the topology's arrays.
+      if (evaluation.skin)
+        transfer.push(evaluation.skin.skinIndex.buffer, evaluation.skin.skinWeight.buffer);
       for (const a of evaluation.attachments) transfer.push(a.positions.buffer, a.normals.buffer);
       for (const h of [evaluation.hair, evaluation.brows, evaluation.lashes, evaluation.beard])
         if (h) transfer.push(h.positions.buffer, h.normals.buffer);

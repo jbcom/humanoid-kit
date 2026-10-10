@@ -7,6 +7,7 @@ import type {
   ShapeModifierEntry,
   SliderTask,
 } from "../format/assetFormat.ts";
+import type { LandmarkAnchors } from "../foundation/landmarks.ts";
 import type { FeatureRef } from "../makehuman/features.ts";
 import type {
   AdultSurfaceTopology,
@@ -62,6 +63,13 @@ export interface HairInfo {
   styles: { id: string; label: string; tags: string[]; kind: HairKind }[];
 }
 
+/** Where the landmarks are held on each body surface (`landmarkAnchors`). */
+export interface SurfaceAnchors {
+  base: LandmarkAnchors;
+  /** The adult surface's, or null without an adult pack that refines the body. */
+  adult: LandmarkAnchors | null;
+}
+
 /** Which controls shape each rendered vertex: what a tap on the figure opens. */
 export interface PickMap {
   features: FeatureRef[];
@@ -75,6 +83,12 @@ export type WorkerRequest =
   | { type: "complete"; id: number }
   /** Answered with the pick map once every target file (it needs the modifiers') has loaded. */
   | { type: "pickMap"; id: number }
+  /**
+   * Answered with the landmarks' anchors (`landmarkAnchors`) on the base surface
+   * and, with an adult pack that refines the body, the adult surface, once every
+   * target file (the landmarks are found from targets) has loaded.
+   */
+  | { type: "landmarkAnchors"; id: number }
   /** Answered with `HumanoidModel.bakePosedOcclusion`'s result, baked between evaluations. */
   | { type: "posedOcclusion"; id: number }
   /**
@@ -119,6 +133,7 @@ export type WorkerResponse =
   | ({ type: "ready"; id: number } & ReadyInfo)
   | { type: "completed"; id: number }
   | ({ type: "pickMap"; id: number } & PickMap)
+  | ({ type: "landmarkAnchors"; id: number } & SurfaceAnchors)
   /** Per worn attachment, its render vertices' occlusion at every corner; null when `ready`'s already was. */
   | { type: "posedOcclusion"; id: number; attachments: Float32Array[] | null }
   | { type: "adultLayers"; id: number; update: LayerFieldsUpdate | null }

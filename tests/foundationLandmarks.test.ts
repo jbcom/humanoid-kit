@@ -218,6 +218,35 @@ describe("landmarks", { timeout: 300_000 }, () => {
     }
   });
 
+  it("puts a pad at each fingertip, on the palm's side of its last segment", () => {
+    for (const { name, frames } of rest)
+      for (const side of ["L", "R"] as const) {
+        const palm = frames[`palm.${side}`];
+        const wrist = frames[`wrist.${side}`].position;
+        const pad = (d: number) => frames[`finger-pad-${d}.${side}` as LandmarkId];
+        const reach = (d: number) => length(sub(pad(d).position, wrist));
+        for (const d of [1, 2, 3, 4, 5]) {
+          const label = `${name} ${side} ${d}`;
+          // A fingertip is past the palm, a hand's length from the wrist at most.
+          expect(reach(d), label).toBeGreaterThan(length(sub(palm.position, wrist)));
+          expect(reach(d), label).toBeLessThan(0.22);
+        }
+        // The fingers' pads face the palm's way; the thumb's turns toward the fingers.
+        for (const d of [2, 3, 4, 5])
+          expect(dot(pad(d).normal, palm.normal), `${name} ${side} ${d}`).toBeGreaterThan(0.5);
+        expect(dot(pad(1).normal, palm.normal), `${name} ${side} thumb`).toBeGreaterThan(0);
+        // The middle finger reaches farthest, the thumb least; across the hand (from the index
+        // pad toward the little finger's) the pads run in order, the thumb's on the index's side.
+        expect(reach(3), name).toBeGreaterThan(reach(5));
+        expect(reach(1), name).toBeLessThan(reach(2));
+        const axis = sub(pad(5).position, pad(2).position);
+        const across = (d: number) => dot(sub(pad(d).position, pad(2).position), axis);
+        for (const d of [3, 4, 5])
+          expect(across(d), `${name} ${side} ${d}`).toBeGreaterThan(across(d - 1));
+        expect(across(1), `${name} ${side} thumb`).toBeLessThan(across(3));
+      }
+  });
+
   it("follows the pose: the joints' landmarks keep their bones' lengths, and the hands rise overhead", () => {
     const b = batteryBody("f-average");
     const at = (pose: string) => landmarks(core, posedSurface(core, recipeOf(b), pose));

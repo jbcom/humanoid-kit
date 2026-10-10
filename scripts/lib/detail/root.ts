@@ -12,6 +12,16 @@
 import type { AdultReservoirSpec } from "../../../src/format/assetFormat.ts";
 import type { AdultDetailLattice } from "../../../src/model/humanoidModel.ts";
 import type { Vec3 } from "./disc.ts";
+import type { SculptPart } from "./sculpt.ts";
+
+const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: Vec3, b: Vec3): Vec3 => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+];
+const len = (a: Vec3) => Math.hypot(a[0], a[1], a[2]);
 
 export interface ReservoirRoot {
   id: string;
@@ -22,6 +32,11 @@ export interface ReservoirRoot {
   loop: readonly Vec3[];
   /** The cap's interior vertices, by ascending detail index. */
   cap: readonly { index: number; position: Vec3 }[];
+  /**
+   * The cap's polygons, each corner either a loop vertex (`loop`: its place in `loop`)
+   * or an interior one (`cap`: its place in `cap`), in the lattice's winding.
+   */
+  capPolygons: readonly (readonly ({ loop: number } | { cap: number })[])[];
   /** Unit outward normal of the skin over the root. */
   normal: Vec3;
   /** Mean of the loop. */
@@ -74,12 +89,27 @@ export function reservoirRoot(
     }
   }
   const length = Math.hypot(...sum);
+  const capIndices = [...interior].sort((a, b) => a - b);
+  const capPlace = new Map(capIndices.map((r, j) => [r, j]));
+  const loopPlace = new Map(spec.loop.map((v, i) => [v, i]));
+  const capPolygons: ({ loop: number } | { cap: number })[][] = [];
+  for (let i = 0; i + 1 < poly.start.length; i++) {
+    if (!cap.has(poly.id[i] as number)) continue;
+    const corners: ({ loop: number } | { cap: number })[] = [];
+    for (let c = poly.start[i] as number; c < (poly.start[i + 1] as number); c++) {
+      const v = poly.vertices[c] as number;
+      const l = loopPlace.get(v);
+      corners.push(l !== undefined ? { loop: l } : { cap: capPlace.get(regionOf(v)) as number });
+    }
+    capPolygons.push(corners);
+  }
   return {
     id: spec.id,
     rings: info.rings,
     base: info.base,
     loop: loopRegion.map(at),
-    cap: [...interior].sort((a, b) => a - b).map((index) => ({ index, position: at(index) })),
+    cap: capIndices.map((index) => ({ index, position: at(index) })),
+    capPolygons,
     normal: [sum[0] / length, sum[1] / length, sum[2] / length],
     centre,
   };
@@ -129,4 +159,104 @@ export function shapeDifference(
     xyz.push(...d);
   });
   return { indices, xyz };
+}
+
+/** A reservoir's cap as a surface (the skin it covers at rest): the loop's vertices, then the interior's, its polygons fanned into triangles. */
+export function capSurface(root: ReservoirRoot): SculptPart {
+  const n = root.loop.length;
+  const positions = new Float64Array((n + root.cap.length) * 3);
+  root.loop.forEach((p, i) => {
+    positions.set(p, i * 3);
+  });
+  root.cap.forEach((c, j) => {
+    positions.set(c.position, (n + j) * 3);
+  });
+  const index = (corner: { loop: number } | { cap: number }) =>
+    "loop" in corner ? corner.loop : n + corner.cap;
+  const triangles: number[] = [];
+  for (const poly of root.capPolygons)
+    for (let k = 1; k + 1 < poly.length; k++)
+      triangles.push(
+        index(poly[0] as { loop: number } | { cap: number }),
+        index(poly[k] as { loop: number } | { cap: number }),
+        index(poly[k + 1] as { loop: number } | { cap: number }),
+      );
+  return {
+    positions,
+    triangles: Uint32Array.from(triangles),
+    boundary: root.loop.map((_, i) => i),
+  };
+}
+
+/**
+ * The point of a surface nearest `p` (by its triangles; a cap is a few hundred), and
+ * the unit normal of the triangle it is on, turned to the side `up` points to.
+ */
+export function nearestOnSurface(
+  surface: SculptPart,
+  p: Vec3,
+  up: Vec3,
+): { point: Vec3; normal: Vec3 } {
+  const P = surface.positions;
+  const T = surface.triangles;
+  const at = (v: number): Vec3 => [
+    P[v * 3] as number,
+    P[v * 3 + 1] as number,
+    P[v * 3 + 2] as number,
+  ];
+  let best = 0;
+  let point: Vec3 = at(T[0] as number);
+  let far = Number.POSITIVE_INFINITY;
+  for (let t = 0; t < T.length; t += 3) {
+    const q = closestOnTriangle(
+      p,
+      at(T[t] as number),
+      at(T[t + 1] as number),
+      at(T[t + 2] as number),
+    );
+    const d = len(sub(q, p));
+    if (d < far) {
+      far = d;
+      point = q;
+      best = t;
+    }
+  }
+  const a = at(T[best] as number);
+  const n = cross(sub(at(T[best + 1] as number), a), sub(at(T[best + 2] as number), a));
+  const l = len(n) * Math.sign(dot(n, up));
+  return { point, normal: [n[0] / l, n[1] / l, n[2] / l] };
+}
+
+/** The point of triangle abc nearest p (Ericson, "Real-Time Collision Detection", 5.1.5). */
+function closestOnTriangle(p: Vec3, a: Vec3, b: Vec3, c: Vec3): Vec3 {
+  const along = (o: Vec3, d: Vec3, t: number): Vec3 => [
+    o[0] + d[0] * t,
+    o[1] + d[1] * t,
+    o[2] + d[2] * t,
+  ];
+  const ab = sub(b, a);
+  const ac = sub(c, a);
+  const ap = sub(p, a);
+  const d1 = dot(ab, ap);
+  const d2 = dot(ac, ap);
+  if (d1 <= 0 && d2 <= 0) return a;
+  const bp = sub(p, b);
+  const d3 = dot(ab, bp);
+  const d4 = dot(ac, bp);
+  if (d3 >= 0 && d4 <= d3) return b;
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) return along(a, ab, d1 / (d1 - d3));
+  const cp = sub(p, c);
+  const d5 = dot(ab, cp);
+  const d6 = dot(ac, cp);
+  if (d6 >= 0 && d5 <= d6) return c;
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) return along(a, ac, d2 / (d2 - d6));
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0)
+    return along(b, sub(c, b), (d4 - d3) / (d4 - d3 + (d5 - d6)));
+  const denom = 1 / (va + vb + vc);
+  const v = vb * denom;
+  const w = vc * denom;
+  return [a[0] + ab[0] * v + ac[0] * w, a[1] + ab[1] * v + ac[1] * w, a[2] + ab[2] * v + ac[2] * w];
 }

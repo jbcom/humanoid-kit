@@ -21,6 +21,7 @@ class FakeWorker {
   posedOcclusions = 0;
   adultLayerRequests = 0;
   adultSurfaceRequests = 0;
+  anchorRequests = 0;
   /** The ages of the recipes whose hip fold was asked for. */
   folded: number[] = [];
   terminated = false;
@@ -49,6 +50,20 @@ class FakeWorker {
             id: msg.id,
             features: [{ task: "Face", group: "nose features", label: "Nose features" }],
             render: { body: Uint8Array.of(0, 255), attachments: [] },
+          }),
+        fail,
+      );
+      return;
+    }
+    if (msg.type === "landmarkAnchors") {
+      this.anchorRequests++;
+      this.later.then(
+        () =>
+          reply({
+            type: "landmarkAnchors",
+            id: msg.id,
+            base: { surface: "base", vertices: {} as never, joints: {} as never },
+            adult: null,
           }),
         fail,
       );
@@ -260,6 +275,25 @@ describe("HumanoidWorkerClient", () => {
     expect(map.features[0]?.group).toBe("nose features");
     expect([...map.render.body]).toEqual([0, 255]);
     expect(worker.pickMaps).toBe(1);
+  });
+
+  it("asks the worker for the landmarks' anchors once, after everything has loaded", async () => {
+    const later = gate();
+    const { client, worker } = make(false, later.promise);
+    const first = client.landmarkAnchors();
+    expect(client.landmarkAnchors()).toBe(first);
+    let settled = false;
+    void first.then(() => {
+      settled = true;
+    });
+    await client.ready;
+    await new Promise((r) => setTimeout(r, 5));
+    expect(settled).toBe(false);
+    later.release();
+    const anchors = await first;
+    expect(anchors.base.surface).toBe("base");
+    expect(anchors.adult).toBeNull();
+    expect(worker.anchorRequests).toBe(1);
   });
 
   it("asks the worker for the posed occlusion once", async () => {

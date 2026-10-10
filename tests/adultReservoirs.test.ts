@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ISLAND_LAYERS, RESERVOIR_RINGS, reservoirSpecs } from "../scripts/lib/adultReservoirs.ts";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
+import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
+import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
+import { cutOutline, maleParts, partAxis } from "../scripts/lib/detail/sculpt.ts";
 import { ATLAS_SIZE, bodyCoverage } from "../scripts/lib/uvIslands.ts";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -9,9 +12,9 @@ import { surfaceTriangles } from "./detailPack.ts";
 import { adultManifest, adultPackData, bodyPackData, loadFixtureAssets } from "./fixtures.ts";
 
 /**
- * The adult pack's real reservoirs: a phallic disc on the midline where the front
- * of the pelvis turns under, and a labioscrotal pair on the underside either side
- * of it, as the packer places them (scripts/lib/adultReservoirs.ts). The engine's
+ * The adult pack's real reservoirs, as the packer places them where the sculpted
+ * parts attach (scripts/lib/adultReservoirs.ts): a phallic disc where the shaft's
+ * cut meets the skin, and one labioscrotal disc where the sac's does. The engine's
  * behaviour is tested on synthetic packs in adultReservoir.test.ts.
  */
 const assets = loadFixtureAssets(true);
@@ -19,26 +22,22 @@ const model = new HumanoidModel(assets, { subdivision: 1 });
 const lattice = model.adultDetailLattice(AUTHORING_FIGURE);
 if (!lattice) throw new Error("no adult surface");
 const shipped = adultManifest.anatomy?.reservoirs ?? [];
+const parts = maleParts(assets, model.controlShape(AUTHORING_FIGURE).control);
 
 describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
   it("ships exactly what the generator places on the lattice", () => {
-    expect(shipped.map((r) => r.id)).toEqual([
-      "phallic",
-      "labioscrotal-left",
-      "labioscrotal-right",
-    ]);
+    expect(shipped.map((r) => r.id)).toEqual(["phallic", "labioscrotal"]);
     // Placement is the generator's; the islands and layers are the packer's (below).
-    expect(reservoirSpecs(lattice)).toEqual(
+    expect(reservoirSpecs(lattice, parts)).toEqual(
       shipped.map(({ island: _island, layer: _layer, ...placed }) => placed),
     );
     expect(shipped.map((r) => r.rings)).toEqual([
       RESERVOIR_RINGS.phallic,
       RESERVOIR_RINGS.labioscrotal,
-      RESERVOIR_RINGS.labioscrotal,
     ]);
   });
 
-  it("places the phallic disc on the midline and the pair either side of it, alike", () => {
+  it("centres both on the midline, the phallic root above and in front of the sac's", () => {
     const centre = (loop: readonly number[]) => {
       const c = [0, 0, 0];
       for (const v of loop)
@@ -46,25 +45,37 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
           c[k] = (c[k] as number) + (lattice.latticePositions[v * 3 + k] as number) / loop.length;
       return c as [number, number, number];
     };
-    const [phallic, left, right] = shipped as [
-      (typeof shipped)[number],
-      (typeof shipped)[number],
-      (typeof shipped)[number],
-    ];
-    expect(Math.abs(centre(phallic.loop)[0])).toBeLessThan(0.001);
-    expect(centre(left.loop)[0]).toBeLessThan(-0.005);
-    expect(centre(right.loop)[0]).toBeGreaterThan(0.005);
-    // The pair are mirror images: the same size, at mirrored places.
-    expect(left.loop.length).toBe(right.loop.length);
-    expect(left.cap.length).toBe(right.cap.length);
-    const l = centre(left.loop);
-    const r = centre(right.loop);
-    expect(l[0]).toBeCloseTo(-r[0], 3);
-    expect(l[1]).toBeCloseTo(r[1], 3);
-    expect(l[2]).toBeCloseTo(r[2], 3);
-    // The phallic root is above and in front of the pair, which hang below it between the legs.
-    expect(centre(phallic.loop)[1]).toBeGreaterThan(l[1]);
-    expect(centre(phallic.loop)[2]).toBeGreaterThan(l[2]);
+    const [phallic, sac] = shipped as [(typeof shipped)[number], (typeof shipped)[number]];
+    const p = centre(phallic.loop);
+    const s = centre(sac.loop);
+    expect(Math.abs(p[0])).toBeLessThan(0.002);
+    expect(Math.abs(s[0])).toBeLessThan(0.002);
+    expect(p[1]).toBeGreaterThan(s[1]);
+    expect(p[2]).toBeGreaterThan(s[2]);
+  });
+
+  it("sits each disc under its part's cut: the cut seen along the part's axis is the disc's outline", () => {
+    for (const [spec, part] of [
+      [shipped[0], parts.phallus.flaccid],
+      [shipped[1], parts.scrotum],
+    ] as const) {
+      if (!spec) throw new Error("missing reservoir");
+      const axis = partAxis(part);
+      const cut = cutOutline(part);
+      // The loop's and the cut's centres, seen along the axis, are within 15 mm: the sac's
+      // disc gives way at its front to a ring of skin round the phallic one.
+      const mean = (pts: readonly (readonly number[])[]) =>
+        [0, 1, 2].map((k) => pts.reduce((sum, q) => sum + (q[k] as number), 0) / pts.length);
+      const loopPoints = spec.loop.map((v) =>
+        [0, 1, 2].map((k) => lattice.latticePositions[v * 3 + k] as number),
+      );
+      const [dx, dy, dz] = [0, 1, 2].map(
+        (k) => (mean(loopPoints)[k] as number) - (mean(cut)[k] as number),
+      ) as [number, number, number];
+      const along = dx * axis[0] + dy * axis[1] + dz * axis[2];
+      const across = Math.hypot(dx - along * axis[0], dy - along * axis[1], dz - along * axis[2]);
+      expect(across, spec.id).toBeLessThan(spec.id === "phallic" ? 0.006 : 0.015);
+    }
   });
 
   it("shares no vertex or polygon between reservoirs, and keeps the detail within its 16 bits", () => {
@@ -80,7 +91,7 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
         caps.add(p);
       }
     }
-    expect(lattice.reservoirs.length).toBe(3);
+    expect(lattice.reservoirs.length).toBe(2);
     expect(lattice.vertexCount).toBe(
       lattice.regionCount + shipped.reduce((s, r) => s + r.loop.length * r.rings, 0),
     );
@@ -142,7 +153,12 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
       parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest: withoutAnatomy }),
       { subdivision: 1 },
     );
-    const adult = createRecipe({ macros: { age: 30, gender: 0.5 } });
+    // No organ and no testes: left unset, an adult takes the pack's default anatomy for its
+    // gender (`AdultAnatomySpec.defaults`), which the reservoirs draw and the pack without them cannot.
+    const adult = createRecipe({
+      macros: { age: 30, gender: 0.5 },
+      modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0 },
+    });
     const a = without.evaluate(adult);
     const b = model.evaluate(adult);
     const ta = surfaceTriangles(without.adultSurface()?.index as Uint32Array, a.positions);

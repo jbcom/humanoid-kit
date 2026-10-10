@@ -121,9 +121,21 @@ export interface DetailPaint {
    * along the layer's coordinate, 1 to `STOP_COUNT` of them, resampled like a
    * colour layer's stops. For `tubercles` it is the share of cells that raise
    * a tubercle. It is how a relief whose extent depends on the figure (an
-   * areola's, which grows with age) takes its window from the paint.
+   * areola's, which grows with age) takes its window from the paint. For
+   * `swell` it is the cross-section itself, signed (-1..1: a ridge above the
+   * skin, a hollow below it), the control values of the spline `swellProfile`
+   * draws through.
    */
   profile?: readonly number[];
+  /**
+   * For a `tubercles` layer, and only for one: the coordinate no bump's centre
+   * lies past (0..1; absent is 1, no limit). Each bump reads the coordinate,
+   * and so its occupancy and this limit, at its own centre, so it is drawn
+   * whole or not at all. A paint that wants no bump to cross an edge draws the
+   * limit in from the edge by a bump's radius (`TUBERCLE_RADIUS` of a cell):
+   * how the Montgomery tubercles keep inside the areola.
+   */
+  limit?: number;
   /**
    * For a `striae` layer, and only for one: the share of the skin marked (0..1,
    * `striaeAmount`) and the colour of a mark as a ratio to the skin it is on
@@ -237,23 +249,25 @@ export interface ColourLayer extends LayerBase {
  * layer's coordinate, as at a flexed joint) or `ridges` (friction ridges, a
  * pattern finer than any field: `src/surface/ridges.ts`): its coordinate is the
  * ridges' orientation (`ridgeOrientationCoordinate`) and `size` their spacing
- * in metres.
+ * in metres. `swell` is a smooth signed cross-section across the coordinate, a
+ * ridge over a bone with the hollow beside it (`swellHeight`): no period, no
+ * groove, and a falloff with no step at its mask's edge.
  */
 export interface DetailLayer extends LayerBase {
   kind: "detail";
-  pattern: "bumps" | "creases" | "ridges" | "tubercles" | "striae";
+  pattern: "bumps" | "creases" | "ridges" | "tubercles" | "striae" | "swell";
   /**
    * The layer's coordinate carries an amplitude profile (`DetailPaint.profile`):
-   * `bumps` only, as `tubercles` always do. A profiled layer's `paint` must
-   * give one, an unprofiled layer's must not.
+   * `bumps` only, as `tubercles` and `swell` always do. A profiled layer's
+   * `paint` must give one, an unprofiled layer's must not.
    */
   profiled?: boolean;
   paint(input: SkinPaintInput): DetailPaint;
 }
 
-/** Whether a detail layer's coordinate is an amplitude profile (a profiled `bumps` layer, or `tubercles`). */
+/** Whether a detail layer's coordinate is an amplitude profile (a profiled `bumps` layer, `tubercles` or `swell`). */
 const isProfiled = (layer: DetailLayer): boolean =>
-  layer.pattern === "tubercles" || layer.profiled === true;
+  layer.pattern === "tubercles" || layer.pattern === "swell" || layer.profiled === true;
 
 /** Changes how glossy and how specular the skin is (sweat, oil, wetness). */
 export interface SurfaceLayer extends LayerBase {
@@ -289,8 +303,10 @@ export const STOP_COUNT = 8;
  * diameter in mm, texel 2 (relief height in mm, 1 if the hair is in the skin's
  * albedo, 0, 0)), 7 bumps with a profile and 8 tubercles (detail; a height, b
  * spacing; the stops' red channel is the amplitude profile along the coordinate)
- * and 9 striae (detail; a depth, b spacing; stop 0 is the mark's colour ratio,
- * stop 1's red its amount; the coordinate is the marks' orientation). Lengths
+ * and 9 striae (detail; a depth, b a mark's typical width; stop 0 is the mark's colour ratio,
+ * stop 1's red its amount; the coordinate is the marks' orientation) and 10
+ * swell (detail; a height, b unused; the stops' red channel is the signed
+ * cross-section, `swellHeight`). Lengths
  * are in millimetres so the half-float table keeps their precision.
  */
 export const STOP_TABLE_WIDTH = STOP_COUNT + 1;
@@ -301,6 +317,7 @@ export function layerKindCode(layer: SkinLayer): number {
     if (layer.pattern === "bumps") return layer.profiled ? 7 : 2;
     if (layer.pattern === "tubercles") return 8;
     if (layer.pattern === "striae") return 9;
+    if (layer.pattern === "swell") return 10;
     if (layer.pattern === "ridges") return 5;
     return 3;
   }
@@ -603,14 +620,16 @@ function writeProfile(
   out: Float32Array,
   row: number,
 ): void {
+  // A swell's cross-section is signed (a ridge and a hollow); an amplitude is not.
+  const lo = layer.pattern === "swell" ? -1 : 0;
   if (
     !profile ||
     profile.length < 1 ||
     profile.length > STOP_COUNT ||
-    !profile.every((x) => x >= 0 && x <= 1)
+    !profile.every((x) => x >= lo && x <= 1)
   )
     throw new RangeError(
-      `skin layer ${layer.id}: a profile of 1 to ${STOP_COUNT} amplitudes in 0..1 is required`,
+      `skin layer ${layer.id}: a profile of 1 to ${STOP_COUNT} amplitudes in ${lo}..1 is required`,
     );
   for (let k = 0; k < STOP_COUNT; k++) {
     const x = (k / (STOP_COUNT - 1)) * (profile.length - 1);
@@ -619,6 +638,25 @@ function writeProfile(
     const b = profile[Math.min(i + 1, profile.length - 1)] as number;
     out.set([a + (b - a) * (x - i), 0, 0, 1], row + (k + 1) * 4);
   }
+}
+
+/** A bump's radius in a tubercle layer, in cells: it spans 0.7 of one. The shader's `hkTubercles` reads it. */
+export const TUBERCLE_RADIUS = 0.35;
+
+/** A tubercle layer's limit (`DetailPaint.limit`), in stop 0's green. */
+function writeLimit(
+  layer: DetailLayer,
+  limit: number | undefined,
+  out: Float32Array,
+  row: number,
+): void {
+  if (limit !== undefined && layer.pattern !== "tubercles")
+    throw new RangeError(`skin layer ${layer.id}: a limit on a layer that is not tubercles`);
+  if (layer.pattern !== "tubercles") return;
+  const l = limit ?? 1;
+  if (!(l >= 0 && l <= 1))
+    throw new RangeError(`skin layer ${layer.id}: a limit in 0..1 is required`);
+  out[row + 4 + 1] = l;
 }
 
 /** A striae layer's mark colour (stop 0) and amount (stop 1, red). */
@@ -682,6 +720,7 @@ export function paintStopTable(
         throw new RangeError(
           `skin layer ${layer.id}: a profile on a layer that did not declare one`,
         );
+      writeLimit(layer, p.limit, out, row);
       if (layer.pattern === "striae") writeStriae(layer, p.striae, out, row);
       else if (p.striae)
         throw new RangeError(
@@ -824,4 +863,53 @@ export const CREASE_SHARPNESS = 3;
 export function creaseHeight(height: number, size: number, coord: number): number {
   const c = 0.5 * (1 - Math.cos(2 * Math.PI * size * coord));
   return -height * c ** CREASE_SHARPNESS;
+}
+
+/**
+ * Perlin's smootherstep, 6t⁵ − 15t⁴ + 10t³ on 0..1: 0 and 1 at the ends with
+ * zero slope and zero curvature there, so a relief scaled by it has no step and
+ * no crease where it fades out.
+ */
+export function smootherstep(t: number): number {
+  const x = Math.min(1, Math.max(0, t));
+  return x * x * x * (x * (6 * x - 15) + 10);
+}
+
+/**
+ * A swell's cross-section at a coordinate (unitless, -1..1): the uniform cubic
+ * B-spline through the `STOP_COUNT` control values the stop table holds (the
+ * end values repeated past the ends). A B-spline has a continuous slope and
+ * curvature everywhere, so the light finds no kink in it; with two zero
+ * controls at each end it meets the flat skin with neither a step nor a slope.
+ */
+export function swellProfile(controls: readonly number[], coord: number): number {
+  const last = controls.length - 1;
+  const at = (k: number) => controls[Math.min(last, Math.max(0, k))] as number;
+  const x = Math.min(1, Math.max(0, coord)) * last;
+  const i = Math.min(Math.floor(x), last - 1);
+  const f = x - i;
+  const f2 = f * f;
+  const f3 = f2 * f;
+  return (
+    ((1 - f) ** 3 * at(i - 1) +
+      (3 * f3 - 6 * f2 + 4) * at(i) +
+      (-3 * f3 + 3 * f2 + 3 * f + 1) * at(i + 1) +
+      f3 * at(i + 2)) /
+    6
+  );
+}
+
+/**
+ * A swell layer's relief at a point (metres; positive raises the skin): the
+ * cross-section (`swellProfile`) at the coordinate, faded by the smootherstep
+ * of the mask, per pixel, so the relief leaves the skin with no outline at the
+ * mask's edge. The reference the shader's kind 10 is held to.
+ */
+export function swellHeight(
+  height: number,
+  controls: readonly number[],
+  coord: number,
+  mask: number,
+): number {
+  return height * smootherstep(mask) * swellProfile(controls, coord);
 }

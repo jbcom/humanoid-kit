@@ -1,0 +1,6 @@
+Asset: adult_male_genitalia_breast_fix
+Page: http://www.makehumancommunity.org/proxy/adult_male_genitalia_breast_fix.html
+Page states: "License: CC0 - Creative Commons Zero"; the proxy's own header says "license: CC0"
+Submitted: ieroglif, 2026-05-04 (updated 2026-05-18 and 2026-05-22)
+Files from: http://www.makehumancommunity.org/sites/default/files/proxies/8961/1779410898/adult_male_genitalia_breast_fix.obj, http://www.makehumancommunity.org/sites/default/files/proxies/8961/1779410898/adult_male_genitalia_breast_fix.proxy
+Retrieved: 2026-10-09

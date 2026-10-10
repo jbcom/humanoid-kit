@@ -85,14 +85,19 @@ describe("the hair pack's brows and lashes", () => {
     const provenance = fs.readFileSync(path.join(hairDir, "PROVENANCE.md"), "utf8");
     expect(provenance).toContain("`eyebrows/`");
     expect(provenance).toContain("`eyelashes/`");
-    // Each style's texture is accepted only through the .mhmat that proves CC0, named in the line.
-    for (const id of BROWS)
-      expect(provenance, id).toContain(
-        `texture referenced by ${id}.mhmat, which proves CC0: eyebrows/${id}/${id}.png`,
-      );
-    for (const id of LASHES)
-      expect(provenance, id).toContain(
-        `texture referenced by ${id}.mhmat, which proves CC0: eyelashes/${id}/${id}.png`,
-      );
+    // Each style's texture is admitted as a binary file of a team asset (every text file of the
+    // style carries the CC0 header), and its own .mhmat by that header: both named on their lines.
+    const line = (evidence: string) =>
+      provenance.split("\n").find((l) => l.includes(`— ${evidence}:`)) ?? "";
+    const binaries = line("A: binary file of a team asset");
+    const headers = line('A: file header "This asset was explicitly released as CC0"');
+    for (const [dir, ids] of [
+      ["eyebrows", BROWS],
+      ["eyelashes", LASHES],
+    ] as const)
+      for (const id of ids) {
+        expect(binaries, id).toContain(`${dir}/${id}/${id}.png`);
+        expect(headers, id).toContain(`${dir}/${id}/${id}.mhmat`);
+      }
   });
 });

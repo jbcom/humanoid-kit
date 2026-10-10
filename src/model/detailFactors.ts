@@ -21,6 +21,8 @@
 import {
   type AdultAnatomySpec,
   AssetFormatError,
+  curveAt,
+  parseCurve,
   type ShapeModifierEntry,
 } from "../format/assetFormat.ts";
 import type { Recipe } from "../recipe/recipe.ts";
@@ -75,26 +77,13 @@ export function compileFactor(
 
 /** A piecewise-linear function from `x,w;x,w;…`, holding its end values outside its points. */
 function piecewise(text: string, fail: (why: string) => never): (x: number) => number {
-  const points = text.split(";").map((p) => p.split(",").map(Number) as [number, number]);
-  if (points.length < 2 || points.some((p) => p.length !== 2 || p.some((x) => !Number.isFinite(x))))
-    return fail("needs at least two numeric x,w points");
-  for (let i = 1; i < points.length; i++)
-    if ((points[i] as [number, number])[0] <= (points[i - 1] as [number, number])[0])
-      return fail("has points that do not ascend in x");
-  const first = points[0] as [number, number];
-  const last = points[points.length - 1] as [number, number];
-  return (v) => {
-    if (v <= first[0]) return first[1];
-    if (v >= last[0]) return last[1];
-    for (let i = 1; i < points.length; i++) {
-      const b = points[i] as [number, number];
-      if (v <= b[0]) {
-        const a = points[i - 1] as [number, number];
-        return a[1] + ((v - a[0]) / (b[0] - a[0])) * (b[1] - a[1]);
-      }
-    }
-    return last[1];
-  };
+  let points: [number, number][];
+  try {
+    points = parseCurve(text);
+  } catch (e) {
+    return fail((e as Error).message);
+  }
+  return (v) => curveAt(points, v);
 }
 
 /** The product of factors for a recipe in a skin state (1 for none). */

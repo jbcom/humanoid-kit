@@ -277,7 +277,10 @@ function hipsPose(
 describe("the vertex shader's hip fold", () => {
   it("reads each vertex's displacement and normal change at the flexion and opening of the hips on its side, turned with the root, exactly as the CPU reference does", () => {
     const rand = random(11);
-    const rows = 40;
+    // More rows than a texture a row a line could hold on many GPUs (8192 on the render
+    // host), and than an adult surface's fold has (14796 rows for the average figure,
+    // 15200 for the heavy man), each row both openings wide.
+    const rows = 16000;
     const count = 200;
     // Every key of every opening, per row.
     const K = FOLD_OPENINGS * FOLD_KEYS;
@@ -298,9 +301,10 @@ describe("the vertex shader's hip fold", () => {
     for (let r = 0; r < rows; r++) data[r * FOLD_ROW_TEXELS * 4 + 3] = fold.side[r] as number;
     const dual = new DualBones(HIP_NAMES.length, 0);
     dual.setFold({ slot: new Float32Array(0), rows, data });
-    // A row per vertex.
+    // A row per vertex: the left hip's and the right's alone, the last row, and rows from every line between.
     const asked = new Float32Array(count * 4);
-    for (let v = 0; v < count; v++) asked[v * 4] = v < rows ? v : Math.floor(rand() * rows);
+    for (let v = 0; v < count; v++)
+      asked[v * 4] = v < 2 ? v : v === 2 ? rows - 1 : Math.floor(rand() * rows);
     const input = new DataTexture(asked, count, 1, RGBAFormat, FloatType);
     input.minFilter = NearestFilter;
     input.magFilter = NearestFilter;

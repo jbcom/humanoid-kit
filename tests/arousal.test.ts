@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
+import { skinOf } from "../scripts/lib/detail/contact.ts";
 import {
-  ERECT_ANGLE,
   ERECT_GIRTH,
   ERECT_LENGTH,
   keyShape,
@@ -9,8 +9,11 @@ import {
   PHALLUS_KEYS,
   PHALLUS_LENGTH,
   PHALLUS_SIZE,
+  SculptedPhallus,
 } from "../scripts/lib/detail/phallus.ts";
 import { type RootShape, reservoirRoot, restShape } from "../scripts/lib/detail/root.ts";
+import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
+import { maleParts } from "../scripts/lib/detail/sculpt.ts";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { STATE_MORPHS } from "../src/makehuman/stateMorphs.ts";
 import { shapeSignalNames } from "../src/model/detailFactors.ts";
@@ -29,10 +32,18 @@ const core = loadFixtureAssets();
 const adultModel = new HumanoidModel(withAdult, { subdivision: 1 });
 const coreModel = new HumanoidModel(core, { subdivision: 0 });
 const adult = createRecipe({ macros: AUTHORING_FIGURE.macros });
-/** An adult with the organ at its default size (Veale's pooled means, flaccid). */
+/**
+ * An adult with no organ and no testes. Left unset, an adult with the pack takes its
+ * default anatomy for its gender (`AdultAnatomySpec.defaults`) and has both.
+ */
+const bare = createRecipe({
+  macros: AUTHORING_FIGURE.macros,
+  modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0 },
+});
+/** An adult with the organ at its default size (Veale's pooled means, flaccid), and no testes. */
 const organ = createRecipe({
   macros: AUTHORING_FIGURE.macros,
-  modifiers: { [PHALLUS_SIZE]: (PHALLUS_KEYS[2] as { size: number }).size },
+  modifiers: { [PHALLUS_SIZE]: (PHALLUS_KEYS[2] as { size: number }).size, [TESTES_SIZE]: 0 },
 });
 
 /**
@@ -40,7 +51,7 @@ const organ = createRecipe({
  * displacement any vertex of the adult surface has from the figure with no organ.
  */
 function reach(signals: Record<string, number>) {
-  const a = adultModel.evaluate(adult).positions;
+  const a = adultModel.evaluate(bare).positions;
   const b = adultModel.evaluate(organ, signals).positions;
   let far = 0;
   for (let v = 0; v < a.length / 3; v++)
@@ -65,38 +76,48 @@ describe("engorgement as a drive of the organ's targets", { timeout: 300_000 }, 
   it("raises the organ by the measured growth at full arousal: the authored erect shape, not a fixed size", () => {
     // Erect against flaccid, measured: length +43% and circumference +25% (Veale's pooled
     // means, 13.12 / 9.16 and 11.66 / 9.31 cm; docs/research/ADULT-ANATOMY-DATA.md, F).
-    // scripts/lib/detail/phallus.ts builds both shapes from those numbers, and the
-    // surface must show the one it built, so the surface's reach grows as the shapes' does.
+    // scripts/lib/detail/phallus.ts scales its flaccid and erect sculpts to those numbers,
+    // and the surface must show what it built, so the surface's reach grows as the shapes' does.
     const lattice = adultModel.adultDetailLattice(AUTHORING_FIGURE);
     const spec = adultManifest.anatomy?.reservoirs?.find((r) => r.id === "phallic");
     if (!lattice || !spec) throw new Error("no phallic reservoir");
     const root = reservoirRoot(lattice, spec);
+    const parts = maleParts(adultModel.assets, adultModel.controlShape(AUTHORING_FIGURE).control);
+    const skin = skinOf(
+      lattice,
+      (adultManifest.anatomy?.reservoirs ?? []).map((r) => r.cap),
+    );
+    const sculpted = new SculptedPhallus(root, parts.phallus, skin);
     const key = PHALLUS_KEYS[2] as (typeof PHALLUS_KEYS)[number];
     const rest = restShape(root);
     const expected =
-      authoredReach(keyShape(root, key, { state: 1 }), rest) /
-      authoredReach(keyShape(root, key), rest);
+      authoredReach(keyShape(sculpted, key, { state: 1 }), rest) /
+      authoredReach(keyShape(sculpted, key), rest);
     expect(reach({ arousal: 1 }) / reach({})).toBeCloseTo(expected, 3);
     // The numbers the shapes were built from.
     expect(ERECT_LENGTH).toBeCloseTo(1.43, 2);
     expect(ERECT_GIRTH).toBeCloseTo(1.25, 2);
-    expect(ERECT_ANGLE).toBeGreaterThan(0);
   });
 
   it("scales with the signal and leaves the figure exactly as it is without one", () => {
+    // Half the signal moves the organ, and not to where the full one does. (The tip's
+    // straight reach need not grow from midway to erect: the erect shaft rises in a curve
+    // from a root that faces down; its length does, phallus.test.ts.)
     const rest = reach({});
     const half = reach({ arousal: 0.5 });
     const full = reach({ arousal: 1 });
     expect(half).toBeGreaterThan(rest);
-    expect(half).toBeLessThan(full);
+    expect(full).toBeGreaterThan(rest);
+    const at = (arousal: number) => Array.from(adultModel.evaluate(organ, { arousal }).positions);
+    expect(at(0.5)).not.toEqual(at(1));
     const a = adultModel.evaluate(organ).positions;
     const b = adultModel.evaluate(organ, { arousal: 0 }).positions;
     expect(Array.from(b)).toEqual(Array.from(a));
   });
 
   it("moves nothing in a figure that has no organ, whatever the signal", () => {
-    const rest = adultModel.evaluate(adult);
-    const aroused = adultModel.evaluate(adult, { arousal: 1 });
+    const rest = adultModel.evaluate(bare);
+    const aroused = adultModel.evaluate(bare, { arousal: 1 });
     expect(Array.from(aroused.positions)).toEqual(Array.from(rest.positions));
     expect(Array.from(aroused.control)).toEqual(Array.from(rest.control));
   });
@@ -136,7 +157,7 @@ describe("engorgement as a drive of the organ's targets", { timeout: 300_000 }, 
     const model = new HumanoidModel(pending, { subdivision: 0 });
     expect([...model.pendingTargetFiles(organ, { arousal: 1 })]).toEqual(["adult"]);
     // A figure without it needs nothing of the adult file for the signal.
-    expect([...model.pendingTargetFiles(adult, { arousal: 1 })]).toEqual([]);
+    expect([...model.pendingTargetFiles(bare, { arousal: 1 })]).toEqual([]);
     expect([...model.pendingTargetFiles(organ, { cold: 1 })]).toEqual(["adult"]);
     expect(() => model.evaluate(organ, { arousal: 1 })).toThrow(/have not loaded yet/);
   });

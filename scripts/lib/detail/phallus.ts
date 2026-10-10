@@ -1,40 +1,59 @@
 /**
- * The phallic organ, drawn out of the phallic reservoir (docs/research/
- * ADULT-SCULPT-PLAN.md, sections 6b and 6c): a tube whose rings leave the
- * reservoir's loop on the skin, bend from the skin's normal toward the way the
- * organ lies, and close in a rounded glans on the cap (`tube.ts`). One
- * construction covers a clitoral glans to a large penis; what differs is the
- * numbers, so size is a blend of shapes baked at several sizes (a small organ
- * is not a scaled-down large one: the root's loop is 1.3 cm in radius whatever
- * the organ drawn from it).
+ * The phallic organ, out of the phallic reservoir (docs/research/
+ * ADULT-SCULPT-PLAN.md, sections 6b, 6c and 6d). Size is a blend of shapes baked
+ * at several sizes (a small organ is not a scaled-down large one: the root's loop
+ * is the same whatever the organ drawn from it).
  *
- * Measured: the length and girth of the default organ, flaccid and erect, and
- * their spread (docs/research/ADULT-ANATOMY-DATA.md, section F). Modelled and
- * labelled so: the glans (its share of the length, its coronal ridge, its
- * taper), the hang and erect angles, the bend and the flare at the root.
+ * The keys of a penis take their form from two CC0 sculpts, both projected onto the
+ * reservoir (`transfer.ts`): the flaccid shaft, glans and corona of ieroglif's
+ * `adult_male_genitalia_breast_fix`, and the erect ones of Slayer227's
+ * `Male_Gen-Heal1`. Nothing reshapes them: a key is a sculpt scaled along its own
+ * centreline and across it, each factor the key's measured dorsal length or
+ * mid-shaft girth over the sculpt's own, and arousal goes from the flaccid sculpt to
+ * the erect one along their centrelines (`blendForms`), at the length and girth the
+ * literature gives for that share of the way. A small organ is not a large one
+ * shrunk evenly (its girth is a larger share of its length), so one factor would
+ * not do. The measurements label the sculpts; nothing is fitted on the drawn shape.
  *
- * Everything here is authored by us from those numbers and the reservoir's
- * geometry. No third-party mesh, texture or target is read, traced or copied;
- * the only inputs are the base body's own loop and the figures cited above.
+ * Measured: the length and girth of the default organ, flaccid and erect, and their
+ * spread (docs/research/ADULT-ANATOMY-DATA.md, section F). The clitoral key is still
+ * drawn (`phallusGeometry`) until the female transfer gives it a sculpted form.
  */
+import type { Skin } from "./contact.ts";
 import type { Vec3 } from "./disc.ts";
+import {
+  blendForms,
+  type Form,
+  formOf,
+  type Pose,
+  ringPerimeter,
+  sectionPerimeter,
+  solveFactor,
+  sweep,
+} from "./form.ts";
 import { type DetailTarget, deg, shapeSum, sizeHat, targetCollector } from "./keys.ts";
 import { type ReservoirRoot, type RootShape, restShape } from "./root.ts";
+import type { SculptPart } from "./sculpt.ts";
+import { projectPart } from "./transfer.ts";
 import { smooth, tubeShape, turnAngle } from "./tube.ts";
 
-/** The glans' share of the length (corona to tip over the whole; Mehraban 2007: 3.04 of 11.58 cm stretched). */
+/** Alternations of the length and girth factors a key's size is found in (`SculptedPhallus.scalesFor`). */
+const SIZE_PASSES = 8;
+
+/** The glans' share of the length of the drawn organ (Mehraban 2007: 3.04 of 11.58 cm stretched). */
 export const GLANS_FRACTION = 0.26;
-/** The coronal ridge's radius over the shaft's (modelled). */
+/** The drawn organ's coronal ridge over its shaft, tip over corona and dome over tip (modelled). */
 const CORONA = 1.08;
-/** The tip ring's radius over the corona's (modelled). */
 const TIP = 0.55;
-/** The dome's height over the tip ring's radius (modelled). */
 const DOME = 0.6;
 /** The distance over which the root's loop narrows or widens to the shaft, metres (modelled). */
 const FLARE = 0.025;
-/** Where the glans' ridge is reached and the taper begins, over the glans' length (modelled). */
+/** Where the drawn glans' ridge is reached and its taper begins, over the glans' length (modelled). */
 const RIDGE_AT = 0.25;
 const TAPER_FROM = 0.3;
+
+/** The dorsal side, where the loop's reference vertex and the dorsal length are: up. */
+export const DORSAL: Vec3 = [0, 1, 0];
 
 export interface PhallusParams {
   /**
@@ -51,23 +70,63 @@ export interface PhallusParams {
   angle: number;
 }
 
+/** Loop index of the root's dorsal vertex: the loop's highest. */
+export const dorsalIndex = (root: ReservoirRoot): number =>
+  root.loop.reduce(
+    (best, p, i) =>
+      p[0] * DORSAL[0] + p[1] * DORSAL[1] + p[2] * DORSAL[2] >
+      (root.loop[best] as Vec3)[0] * DORSAL[0] +
+        (root.loop[best] as Vec3)[1] * DORSAL[1] +
+        (root.loop[best] as Vec3)[2] * DORSAL[2]
+        ? i
+        : best,
+    0,
+  );
+
 /**
- * The shape of the organ for these parameters on this root: a position for
- * every vertex a target of the root may move (`RootShape`), with the dorsal
- * length the shape has and the length of its centreline.
+ * The dorsal length of a shape: along the top of the organ from where it leaves the
+ * skin (the skin line's dorsal vertex) through each ring's to the cap's furthest
+ * point from the root.
+ */
+export function dorsalLength(root: ReservoirRoot, shape: RootShape): number {
+  const n = root.loop.length;
+  const top = dorsalIndex(root);
+  // From the skin line (ring 1, `transfer.ts`, `skinLine`): the band from the loop to it
+  // is the body's skin, not the organ's.
+  let prev = shape[root.cap.length + top] as Vec3;
+  let length = 0;
+  for (let k = 2; k <= root.rings; k++) {
+    const p = shape[root.cap.length + (k - 1) * n + top] as Vec3;
+    length += Math.hypot(p[0] - prev[0], p[1] - prev[1], p[2] - prev[2]);
+    prev = p;
+  }
+  const c = root.centre;
+  const apex = shape
+    .slice(0, root.cap.length)
+    .reduce(
+      (best, p) =>
+        Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) >
+        Math.hypot(best[0] - c[0], best[1] - c[1], best[2] - c[2])
+          ? p
+          : best,
+      prev,
+    );
+  return length + Math.hypot(apex[0] - prev[0], apex[1] - prev[1], apex[2] - prev[2]);
+}
+
+/**
+ * The drawn organ (the clitoral key's form until the female transfer): a tube out of
+ * the loop that bends toward the way it lies and closes in a rounded glans.
  */
 export function phallusGeometry(
   root: ReservoirRoot,
   p: PhallusParams,
 ): { shape: RootShape; dorsal: number; axial: number } {
-  // The organ lies in the sagittal plane: it points forward and up or down.
   const direction: Vec3 = [0, Math.sin(p.angle), Math.cos(p.angle)];
-  // The glans is a share of the length drawn; an axial length is already that of the free organ.
   const glans = GLANS_FRACTION * p.length;
   const tipRadius = TIP * CORONA * p.radius;
   const dome = DOME * tipRadius;
   const turn = turnAngle(root, direction);
-
   const build = (axial: number) => {
     const sulcus = axial - Math.max(glans - dome, 0);
     const profile = (s: number) => {
@@ -88,17 +147,8 @@ export function phallusGeometry(
       tip: { across: tipRadius, up: tipRadius },
       dome,
     });
-    // The dorsal length: along the top of the organ from the root's junction to the apex.
-    let length = 0;
-    let prev = root.loop[tube.top] as Vec3;
-    for (const r of [...tube.rings.map((v) => v[tube.top] as Vec3), tube.apex]) {
-      length += Math.hypot(r[0] - prev[0], r[1] - prev[1], r[2] - prev[2]);
-      prev = r;
-    }
-    return { tube, length };
+    return { tube, length: dorsalLength(root, tube.shape) };
   };
-
-  // The centreline's length that makes the dorsal length asked for (an axial one is the centreline's).
   let axial = p.length - dome;
   if (p.measure === "dorsal") {
     let lo = 0.002;
@@ -118,84 +168,286 @@ export function phallusGeometry(
   return { shape: done.tube.shape, dorsal: done.length, axial };
 }
 
-/** The shape alone (`phallusGeometry`). */
-export const phallusShape = (root: ReservoirRoot, p: PhallusParams): RootShape =>
-  phallusGeometry(root, p).shape;
-
 /** One size the organ is baked at; sizes in between blend two of these. */
 export interface PhallusKey {
   /** The size modifier's value at which this key is exact. */
   size: number;
-  /** Flaccid dorsal length and circumference at the shaft, metres. */
+  /** Flaccid dorsal length and mid-shaft circumference, metres. */
   length: number;
   circumference: number;
-  /** The flaccid hang, degrees above forward. */
-  hang: number;
-  /** How `length` is measured (`PhallusParams.measure`). */
-  measure: "dorsal" | "axial";
+  /** Whether the key takes the sculpt's form; a drawn key gives its hang in degrees above forward. */
+  form: "sculpt" | { hang: number; measure: "dorsal" | "axial" };
   /** Whether the organ erects: a key too small to be a penis has no erect state. */
   erects: boolean;
 }
 
 /**
- * The keys. The middle two bracket the default organ (flaccid 9.16 cm long and 9.31 cm
- * round; Veale 2015), the largest is 3 SD above it, the smaller ones step down to
- * a clitoral glans. Lengths and girths between are interpolated by the blend, so
- * the measured values are exact at the key whose size they are.
+ * The keys. The pooled mean (flaccid 9.16 cm long, 9.31 cm round; Veale 2015) is
+ * exact at its key, the largest is 3 SD above it, and the smaller ones step down to
+ * a clitoral glans.
  */
 export const PHALLUS_KEYS: readonly PhallusKey[] = [
-  { size: 0.08, length: 0.012, measure: "axial", circumference: 0.022, hang: -45, erects: false },
-  { size: 0.25, length: 0.045, measure: "dorsal", circumference: 0.06, hang: -55, erects: true },
-  { size: 0.65, length: 0.0916, measure: "dorsal", circumference: 0.0931, hang: -70, erects: true },
-  { size: 1, length: 0.145, measure: "dorsal", circumference: 0.115, hang: -75, erects: true },
+  {
+    size: 0.08,
+    length: 0.012,
+    circumference: 0.022,
+    form: { hang: -45, measure: "axial" },
+    erects: false,
+  },
+  { size: 0.25, length: 0.045, circumference: 0.06, form: "sculpt", erects: true },
+  { size: 0.65, length: 0.0916, circumference: 0.0931, form: "sculpt", erects: true },
+  { size: 1, length: 0.145, circumference: 0.115, form: "sculpt", erects: true },
 ];
 
 /** Erect over flaccid: length 13.12 / 9.16 and circumference 11.66 / 9.31 (Veale 2015, pooled means). */
 export const ERECT_LENGTH = 13.12 / 9.16;
 export const ERECT_GIRTH = 11.66 / 9.31;
-/** The erect tangent, degrees above forward (provisional: the literature gives no angle). */
-export const ERECT_ANGLE = 30;
-/**
- * What a full step of the length and girth modifiers is: two standard deviations
- * of the pooled flaccid values, as a share of their mean (SD 1.57 of 9.16 cm,
- * 0.90 of 9.31 cm).
- */
+/** Two standard deviations of the pooled flaccid values over their mean: a full step of length and girth. */
 export const LENGTH_RANGE = (2 * 1.57) / 9.16;
 export const GIRTH_RANGE = (2 * 0.9) / 9.31;
+/**
+ * The arclength over which a pose fades in from the loop, metres, for the
+ * default key (modelled: the root's own flare). A shorter organ's root flare is
+ * shorter in proportion (`rootBlend`): a fixed one held the first 1.2 cm at
+ * the sculpt's length and put a floor of about 3 cm under every size.
+ */
+const ROOT_BLEND = 0.012;
+/** The dorsal length the root blend is drawn for: the default key's, Veale's pooled flaccid mean. */
+const ROOT_BLEND_AT = 0.0916;
+
+/** The root flare for an organ of dorsal length `dorsal`: in proportion, never wider than the default's. */
+export function rootBlend(dorsal: number): number {
+  return ROOT_BLEND * Math.min(1, dorsal / ROOT_BLEND_AT);
+}
 
 /** How one key's organ is varied for a variant of it. */
 export interface Variation {
   /** Length and girth multipliers, 1 for the key's own. */
   length?: number;
   girth?: number;
-  /**
-   * How far along the way to erect, 0 (flaccid) to 1 (erect): length, girth and
-   * the angle of the tip all go that share of the way.
-   */
+  /** How far along the way from the flaccid sculpt to the erect one, 0 to 1. */
   state?: number;
 }
 
-/** The shape of key `key` with a variation applied. */
-export function keyShape(root: ReservoirRoot, key: PhallusKey, v: Variation = {}): RootShape {
-  const s = v.state ?? 0;
-  const length = key.length * (v.length ?? 1);
-  const girth = key.circumference * (v.girth ?? 1);
-  return phallusShape(root, {
-    length: length * (1 + s * (ERECT_LENGTH - 1)),
-    measure: key.measure,
-    radius: (girth * (1 + s * (ERECT_GIRTH - 1))) / (2 * Math.PI),
-    angle: deg(key.hang + s * (ERECT_ANGLE - key.hang)),
-  });
+/**
+ * Where the shaft's girth is taken on a shape: halfway along the centreline from
+ * ring 1 (the sculpt's cut, where the free shaft begins) to the sulcus (the
+ * narrowest ring behind the corona, which is the widest of the last 40% of rings).
+ * Returns the point, the centreline's tangent there, and the fractional ring it
+ * falls at.
+ */
+export function midShaft(
+  root: ReservoirRoot,
+  shape: RootShape,
+  /** The sulcus' index among the rings, 0-based (`sulcusIndex`); found on `shape` when not given. */
+  sulcusAt?: number,
+): { point: Vec3; tangent: Vec3; ring: number } {
+  const R = root.rings;
+  const sulcus = sulcusAt ?? sulcusIndex(root, shape);
+  const n = root.loop.length;
+  const centre = (k: number): Vec3 => {
+    if (k === 0) return root.centre;
+    const r = shape.slice(root.cap.length + (k - 1) * n, root.cap.length + k * n);
+    return r.reduce<Vec3>((s, q) => [s[0] + q[0] / n, s[1] + q[1] / n, s[2] + q[2] / n], [0, 0, 0]);
+  };
+  const arc = [0];
+  for (let k = 1; k <= R; k++) {
+    const a = centre(k - 1);
+    const b = centre(k);
+    arc.push((arc[k - 1] as number) + Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
+  }
+  // `sulcus` indexes ring sulcus + 1.
+  const half = ((arc[sulcus + 1] as number) + (arc[1] as number)) / 2;
+  let k = 1;
+  while (k + 1 < R && (arc[k + 1] as number) < half) k++;
+  const a0 = arc[k] as number;
+  const a1 = arc[k + 1] as number;
+  const t = a1 > a0 ? (half - a0) / (a1 - a0) : 0;
+  const c0 = centre(k);
+  const c1 = centre(k + 1);
+  const d: Vec3 = [c1[0] - c0[0], c1[1] - c0[1], c1[2] - c0[2]];
+  const dl = Math.hypot(...d);
+  return {
+    point: [c0[0] + d[0] * t, c0[1] + d[1] * t, c0[2] + d[2] * t],
+    tangent: [d[0] / dl, d[1] / dl, d[2] / dl],
+    ring: k + t,
+  };
+}
+
+/**
+ * The sulcus' index among a shape's rings, 0-based: the narrowest ring behind the
+ * corona, which is the widest of the last 40% of rings.
+ */
+export function sulcusIndex(root: ReservoirRoot, shape: RootShape): number {
+  const R = root.rings;
+  const p = Array.from({ length: R }, (_, k) => ringPerimeter(root, shape, k + 1));
+  const from = Math.floor(0.6 * R);
+  let corona = from;
+  for (let k = from; k < R; k++) if ((p[k] as number) > (p[corona] as number)) corona = k;
+  let sulcus = Math.floor(0.4 * R);
+  for (let k = sulcus; k < corona; k++) if ((p[k] as number) < (p[sulcus] as number)) sulcus = k;
+  return sulcus;
+}
+
+/** The girth at mid-shaft: the length round the wall across the centreline there. */
+export function midShaftGirth(root: ReservoirRoot, shape: RootShape, sulcusAt?: number): number {
+  const m = midShaft(root, shape, sulcusAt);
+  const ring = Math.round(m.ring);
+  // The rings are oblique to the shaft, so the plane crosses many of them: take the
+  // whole wall, within a reach of a few radii so the wall elsewhere is not counted. The
+  // wall starts at the skin line (ring 1): the band inside the loop is the body's skin,
+  // which a short, narrowed organ's middle can come within reach of.
+  const radius =
+    ringPerimeter(root, shape, Math.max(1, Math.min(root.rings, ring))) / (2 * Math.PI);
+  return sectionPerimeter(root, shape, m.point, m.tangent, 1, root.rings, 2 * radius);
+}
+
+/** The dorsal length at a share of the way to erect, over the flaccid one. */
+export const stateLength = (state: number): number => 1 + state * (ERECT_LENGTH - 1);
+
+/** The organ's two sculpted forms on this root, flaccid and erect, and each sculpted key's shapes. */
+export class SculptedPhallus {
+  readonly root: ReservoirRoot;
+  /** Each sculpt projected onto the reservoir, before any scaling: the forms as sculpted. */
+  readonly flaccid: RootShape;
+  readonly erect: RootShape;
+  private readonly forms: { flaccid: Form; erect: Form };
+  /** Each sculpt's dorsal length and mid-shaft girth on the reservoir, as sculpted. */
+  private readonly measured: Record<"flaccid" | "erect", { dorsal: number; girth: number }>;
+  private readonly skin: Skin;
+  /** The factors found for each dorsal length, girth and state (`scalesFor`). */
+  private readonly scales = new Map<string, { length: number; girth: number }>();
+
+  /** `skin`: the lattice round the reservoirs (`contact.ts`), which the organ rests on. */
+  constructor(root: ReservoirRoot, parts: { flaccid: SculptPart; erect: SculptPart }, skin: Skin) {
+    this.root = root;
+    this.skin = skin;
+    this.flaccid = projectPart(root, parts.flaccid, { reference: DORSAL, skin });
+    this.erect = projectPart(root, parts.erect, { reference: DORSAL, skin });
+    this.forms = {
+      flaccid: formOf(root, this.flaccid, DORSAL),
+      erect: formOf(root, this.erect, DORSAL),
+    };
+    const measure = (shape: RootShape) => ({
+      dorsal: dorsalLength(root, shape),
+      girth: this.girthOf(shape),
+    });
+    this.measured = { flaccid: measure(this.flaccid), erect: measure(this.erect) };
+  }
+
+  /** The form share `state` of the way from the flaccid sculpt to the erect one. */
+  formAt(state: number): Form {
+    return blendForms(this.forms.flaccid, this.forms.erect, state);
+  }
+
+  /** The girth at mid-shaft of a shape of this organ. */
+  girthOf(shape: RootShape): number {
+    return midShaftGirth(this.root, shape);
+  }
+
+  /**
+   * The form at a state with factors on its length and girth, resting on the skin,
+   * for an organ whose flaccid dorsal length is `flaccid`: its root flare's size, the
+   * same in every state, so arousal does not move the root.
+   */
+  private drawn(state: number, length: number, girth: number, flaccid: number): RootShape {
+    const pose: Pose = {
+      blend: rootBlend(flaccid),
+      length,
+      across: girth,
+      up: girth,
+      rootFollows: true,
+    };
+    return this.skin.rest(this.root, sweep(this.formAt(state), pose));
+  }
+
+  /**
+   * The form at a state as sculpted, before any scaling: its dorsal length and
+   * mid-shaft girth, each sculpt's measured on its own shape and between them in
+   * proportion, as the blended segments and offsets are.
+   */
+  sculpted(state: number): { dorsal: number; girth: number } {
+    const { flaccid, erect } = this.measured;
+    return {
+      dorsal: flaccid.dorsal + (erect.dorsal - flaccid.dorsal) * state,
+      girth: flaccid.girth + (erect.girth - flaccid.girth) * state,
+    };
+  }
+
+  /**
+   * The factors along the form's centreline and across it that give a dorsal length
+   * and a mid-shaft girth at a state, measured on the shape as drawn (resting on the
+   * skin, which can move it) as the literature measures an organ: from the skin line
+   * to the tip, round the middle of the shaft. Each factor is found in turn with the
+   * other held, until both hold: the length moves a little with the girth (the glans'
+   * dome), the girth's place with the length. Taken as the measurement over the
+   * sculpt's own, a key fell short of its label by up to 14 %, as the root's fade
+   * leaves its first rings unscaled.
+   */
+  scalesFor(
+    dorsal: number,
+    circumference: number,
+    state: number,
+  ): { length: number; girth: number } {
+    const id = `${dorsal}:${circumference}:${state}`;
+    const known = this.scales.get(id);
+    if (known) return known;
+    const flaccid = dorsal / stateLength(state);
+    const drawn = (l: number, g: number) => this.drawn(state, l, g, flaccid);
+    const own = this.sculpted(state);
+    let length = dorsal / own.dorsal;
+    let girth = circumference / own.girth;
+    for (let pass = 0; pass < SIZE_PASSES; pass++) {
+      girth = solveFactor((f) => this.girthOf(drawn(length, f)), circumference, girth);
+      length = solveFactor((f) => dorsalLength(this.root, drawn(f, girth)), dorsal, length);
+      if (Math.abs(this.girthOf(drawn(length, girth)) / circumference - 1) < 1e-5) break;
+    }
+    const out = { length, girth };
+    this.scales.set(id, out);
+    return out;
+  }
+
+  /** The dorsal length and mid-shaft girth a key has with a variation, as measured. */
+  static measures(key: PhallusKey, v: Variation = {}): { dorsal: number; circumference: number } {
+    const state = v.state ?? 0;
+    return {
+      dorsal: key.length * (v.length ?? 1) * stateLength(state),
+      circumference: key.circumference * (v.girth ?? 1) * (1 + state * (ERECT_GIRTH - 1)),
+    };
+  }
+
+  /** The shape of a sculpted key with a variation applied. */
+  shape(key: PhallusKey, v: Variation = {}): RootShape {
+    const state = v.state ?? 0;
+    const want = SculptedPhallus.measures(key, v);
+    const s = this.scalesFor(want.dorsal, want.circumference, state);
+    return this.drawn(state, s.length, s.girth, want.dorsal / stateLength(state));
+  }
+}
+
+/** The shape of key `key` with a variation applied: sculpted, or drawn for the clitoral key, which does not erect. */
+export function keyShape(organ: SculptedPhallus, key: PhallusKey, v: Variation = {}): RootShape {
+  if (key.form === "sculpt") return organ.shape(key, v);
+  if (v.state) throw new Error(`phallus key ${key.size}: a drawn key has no erect state`);
+  return phallusGeometry(organ.root, {
+    length: key.length * (v.length ?? 1),
+    measure: key.form.measure,
+    radius: (key.circumference * (v.girth ?? 1)) / (2 * Math.PI),
+    angle: deg(key.form.hang),
+  }).shape;
 }
 
 /**
  * The states between flaccid and erect the organ is drawn at, and the target-name
- * suffix of each. A morph moves a vertex in a straight line, so a tube that swings from
- * hanging to rising would shorten on the way between the two; drawn at the midpoint too
- * it swings through it, and the blend between each pair is short enough to stay a tube.
+ * suffix of each. A morph moves a vertex in a straight line, so a shaft that swings from
+ * the flaccid sculpt's hang to the erect sculpt's rise would shorten on the way between
+ * two states; blended at each quarter of the way (`blendForms`), it swings through
+ * them, and the morph between each pair is short enough that the shaft keeps lengthening.
  */
 export const STATES: readonly { name: string; state: number }[] = [
+  { name: "rising", state: 0.25 },
   { name: "mid", state: 0.5 },
+  { name: "lifted", state: 0.75 },
   { name: "erect", state: 1 },
 ];
 
@@ -217,17 +469,22 @@ export const keyTarget = (n: number, part: string, state?: string) =>
  * through, the shape's difference from flaccid, and that of each variation, worth
  * the hat of the arousal signal for that state times the same factors.
  */
-export function phallusTargets(root: ReservoirRoot): {
+export function phallusTargets(
+  root: ReservoirRoot,
+  parts: { flaccid: SculptPart; erect: SculptPart },
+  skin: Skin,
+): {
   targets: PhallusTarget[];
   drives: Record<string, string[]>;
 } {
+  const organ = new SculptedPhallus(root, parts, skin);
   const rest = restShape(root);
   const { targets, drives, add } = targetCollector(root);
   const sizes = PHALLUS_KEYS.map((k) => k.size);
   PHALLUS_KEYS.forEach((key, k) => {
     const n = k + 1;
     const hat = sizeHat(PHALLUS_SIZE, sizes, k);
-    const flaccid = keyShape(root, key);
+    const flaccid = keyShape(organ, key);
     add(keyTarget(n, "base"), rest, flaccid, [hat]);
     for (const [part, mod, mul] of [
       ["length", PHALLUS_LENGTH, "length"],
@@ -236,22 +493,22 @@ export function phallusTargets(root: ReservoirRoot): {
       const range = mul === "length" ? LENGTH_RANGE : GIRTH_RANGE;
       const up = { [mul]: 1 + range } as Variation;
       const down = { [mul]: 1 - range } as Variation;
-      add(keyTarget(n, `${part}-incr`), flaccid, keyShape(root, key, up), [`mod:${mod}`, hat]);
-      add(keyTarget(n, `${part}-decr`), flaccid, keyShape(root, key, down), [`mod-:${mod}`, hat]);
+      add(keyTarget(n, `${part}-incr`), flaccid, keyShape(organ, key, up), [`mod:${mod}`, hat]);
+      add(keyTarget(n, `${part}-decr`), flaccid, keyShape(organ, key, down), [`mod-:${mod}`, hat]);
       if (!key.erects) continue;
       // In a state the length and girth change by more than the flaccid ones do (the share they
       // grow by), and in another direction: the variation's own target is the difference.
       for (const { name, state } of STATES) {
         const arousal = arousalHat(name);
-        const shaped = keyShape(root, key, { state });
+        const shaped = keyShape(organ, key, { state });
         for (const [side, v, sign] of [
           ["incr", up, "mod"],
           ["decr", down, "mod-"],
         ] as const) {
           add(
             keyTarget(n, `${part}-${side}`, name),
-            shapeSum(root, shaped, flaccid, keyShape(root, key, v)),
-            keyShape(root, key, { ...v, state }),
+            shapeSum(root, shaped, flaccid, keyShape(organ, key, v)),
+            keyShape(organ, key, { ...v, state }),
             [`${sign}:${mod}`, arousal, hat],
           );
         }
@@ -259,7 +516,7 @@ export function phallusTargets(root: ReservoirRoot): {
     }
     if (key.erects)
       for (const { name, state } of STATES)
-        add(keyTarget(n, "base", name), flaccid, keyShape(root, key, { state }), [
+        add(keyTarget(n, "base", name), flaccid, keyShape(organ, key, { state }), [
           arousalHat(name),
           hat,
         ]);

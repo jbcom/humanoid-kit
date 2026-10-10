@@ -23,3 +23,5 @@ docs/dist/
 .agent-state/session-logs/
 .agent-state/session-state/
 .claude/
+# Artifacts the shared heavy-slot broker returns from remote renders.
+.heavy-slot/

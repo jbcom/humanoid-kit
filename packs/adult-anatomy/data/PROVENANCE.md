@@ -10,14 +10,15 @@ Every packed source file was checked for CC0 from its own content before packing
 
 - 10 file(s) — file header: "This asset was explicitly released as CC0"
 
-Authored for this pack by code from the base mesh and published measurements, not read from any source file;
-dedicated to the public domain under CC0 1.0 with the rest of the pack. No third-party model, image,
-texture or target was opened, traced or copied for any of it:
+Authored for this pack by code, from the base mesh, published measurements and the CC0 community sculpts
+named below (their pages, licences and file hashes are in `packs/adult-anatomy/source/PROVENANCE.md`);
+dedicated to the public domain under CC0 1.0 with the rest of the pack. Nothing else third-party was
+opened, traced or copied for any of it:
 
 - `pelvis/mound-decr`, `pelvis/mound-incr` (control targets): authored by `scripts/lib/control/mound.ts` on the CC0 hm08 base mesh; sized from published soft-tissue measurements (docs/research/ADULT-ANATOMY-DATA.md, section E).
-- `genitals/phallus-k*` (detail targets) and the modifiers `genitals/phallus-size`, `-length-decr|incr`, `-girth-decr|incr`: authored by `scripts/lib/detail/phallus.ts` out of the phallic reservoir, whose loop and cap `scripts/lib/adultReservoirs.ts` places on the base mesh's own refinement. The inputs are the base body's vertices and published measurements (length, girth, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F); the glans' shape, the hang and the erect angle are modelled and labelled so there.
-- `genitals/testes-k*` (detail targets) and the modifier `genitals/testes-size`: authored by `scripts/lib/detail/scrotum.ts` out of the labioscrotal pair of reservoirs. The inputs are the base body's vertices and published testis volumes and dimensions (docs/research/ADULT-ANATOMY-DATA.md, section F); the sac's skin, neck and hang are modelled and labelled so there.
+- `genitals/phallus-k2..k4*` (detail targets) and the modifiers `genitals/phallus-size`, `-length-decr|incr`, `-girth-decr|incr`: the flaccid shaft, glans and corona of ieroglif's CC0 `adult_male_genitalia_breast_fix` (<http://www.makehumancommunity.org/proxy/adult_male_genitalia_breast_fix.html>) and the erect ones of Slayer227's CC0 `Male_Gen-Heal1` (<http://www.makehumancommunity.org/proxy/erect_penis_only_works_with_males.html>), cut by `scripts/blender/cut_male.py`, placed by `scripts/lib/detail/sculpt.ts` and projected onto the phallic reservoir by `scripts/lib/detail/transfer.ts`. `scripts/lib/detail/phallus.ts` grows or shrinks each by one uniform factor to a published dorsal length, and blends the flaccid sculpt into the erect one for arousal (length, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F). `genitals/phallus-k1*` (the clitoral glans) is drawn by `scripts/lib/detail/phallus.ts` from the reservoir's loop and published measurements.
+- `genitals/testes-k*` (detail targets) and the modifier `genitals/testes-size`: the sac of the same CC0 `adult_male_genitalia_breast_fix`, cut, placed and projected onto the labioscrotal reservoir the same way and grown or shrunk by `scripts/lib/detail/scrotum.ts` by one uniform factor to the width of two testes of a published volume (docs/research/ADULT-ANATOMY-DATA.md, section F); the skin's thickness is modelled and labelled so there.
 
 | Output | SHA-256 |
 | --- | --- |
-| targets.bin.gz | `4088540d801ea28818c6bf16b889acac56136b719e31847af36f1478a035057a` |
+| targets.bin.gz | `98f26a18f823e576aaec3996b1a24fe0b839850dc46cefd4fb1849291ce40aee` |

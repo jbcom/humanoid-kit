@@ -28,7 +28,9 @@ child's channels are a child's size.
   segments' sum. **Measured** (a range; the value taken is its documented
   segment sum).
 - The isthmus is placed at the junction of the two segments, a third of the
-  way in. **CHOICE**: the sources give its size, not its depth.
+  way in, and the canal keeps its size from there to its end. **CHOICE**: the
+  sources give its size, not its depth. Its two axes narrow by their own
+  measured ratios (6.8 / 7.75 high, 5.2 / 6.1 wide).
 
 ## The nostril (the nasal vestibule)
 

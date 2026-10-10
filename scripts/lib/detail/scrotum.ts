@@ -1,29 +1,35 @@
 /**
- * The scrotal lobes and the testes in them, drawn out of the labioscrotal pair of
- * reservoirs (docs/research/ADULT-SCULPT-PLAN.md, section 6c): each lobe is a
- * tube from its loop on the skin that hangs and swells to the sac of one testis
- * (`tube.ts`). The pair is the same structure the vulva's labia majora will be
- * drawn from, so a figure between them is a point on the same continuum.
+ * The scrotum, out of the labioscrotal reservoir (docs/research/
+ * ADULT-SCULPT-PLAN.md, section 6d): one sac with two lobes and a median raphe,
+ * whose form is a CC0 sculpt's (ieroglif's `adult_male_genitalia_breast_fix`),
+ * projected onto the reservoir (`transfer.ts`). Nothing reshapes it: the lobes,
+ * the raphe and any asymmetry are the sculpt's, and a key is the sculpt grown or
+ * shrunk by one uniform factor.
  *
- * Measured: testis volume by ultrasound, European men, 17.2 mL (SD 4.1), right
- * larger than left (17.9 and 16.5); the proportions of length to width to depth
- * from the one full-text source with dimensions (Chinese fertile men, 37.5 x 19.0
- * x 22.0 mm), applied at every volume (docs/research/ADULT-ANATOMY-DATA.md,
- * section F). Modelled and labelled so: the sac's skin thickness, the neck, the
- * hang direction and the outward lean that keeps the lobes apart.
+ * Measured: testis volume by ultrasound, European men, 17.2 mL (SD 4.1); the
+ * proportions of length to width to depth from the one full-text source with
+ * dimensions (Chinese fertile men, 37.5 x 19.0 x 22.0 mm), applied at every volume
+ * (docs/research/ADULT-ANATOMY-DATA.md, section F). They label each key with the
+ * sac's width (two testes side by side, with skin round them), and the factor is
+ * the one that gives it; the depth and hang are the sculpt's at that width.
+ * Modelled and labelled so: the skin's thickness, and the neck above the testes
+ * (in `sacSize`, the size the sculpt's depth and hang are compared to).
  *
  * The sac has no arousal response here: its change is unmeasured, and this
  * library carries it as absent rather than guessed.
  */
+import type { Skin } from "./contact.ts";
 import type { Vec3 } from "./disc.ts";
+import { type Form, formOf, solveFactor, sweep } from "./form.ts";
 import { sizeHat, targetCollector } from "./keys.ts";
 import { type ReservoirRoot, type RootShape, restShape } from "./root.ts";
-import { smooth, tubeShape, turnAngle } from "./tube.ts";
+import type { SculptPart } from "./sculpt.ts";
+import { projectPart } from "./transfer.ts";
 
 /** The size modifier: a virtual, one-sided one, 0 (none) to 1. */
 export const TESTES_SIZE = "genitals/testes-size";
 
-/** A size the lobes are baked at, as the volume of one testis in millilitres. */
+/** A size the sac is baked at, as the volume of one testis in millilitres. */
 export interface TestesKey {
   size: number;
   volume: number;
@@ -39,25 +45,24 @@ export const TESTES_KEYS: readonly TestesKey[] = [
   { size: 1, volume: 38 },
 ];
 
-/** Right and left testis volume over the mean of the pair (EAA: 17.9, 16.5 over 17.2). */
-export const RIGHT_OVER_MEAN = 17.9 / 17.2;
-export const LEFT_OVER_MEAN = 16.5 / 17.2;
-
 /** Length and depth over width, from the one full-text dimensions (37.5 x 19.0 x 22.0 mm). */
 const LENGTH_OVER_WIDTH = 37.5 / 19;
 const DEPTH_OVER_WIDTH = 22 / 19;
 /** The ellipsoid formula the volumes were measured with: V = 0.52 x length x width x depth. */
 const ELLIPSOID = 0.52;
-/** Skin and dartos around the testis, each side, metres (modelled). */
-const SKIN = 0.004;
-/** Length of the neck between the root and the sac, metres (modelled). */
-const NECK = 0.015;
-/** The neck's section over the sac's widest (modelled). */
-const NECK_SECTION = 0.6;
-/** How far along its ellipse the last ring is: past it the dome closes (modelled). */
-const LAST = 0.97;
-/** The lobe's outward lean: the hang direction's sideways part, away from the midline (modelled). */
-const LEAN = 0.25;
+/** Skin and dartos round a testis, each side, metres (modelled). */
+export const SKIN = 0.004;
+/** The neck between the root and the top of the testes, metres (modelled). */
+export const NECK = 0.015;
+/** The sac's body, where its width and depth are taken: below this share of its hang. */
+const BODY_FROM = 0.4;
+/** The arclength over which the sizing fades in from the loop, metres (modelled). */
+const ROOT_BLEND = 0.01;
+
+/** Across the figure: +x is its left (it faces +z), so the sac's frames start from it. */
+export const LATERAL: Vec3 = [1, 0, 0];
+/** Forward: where both loops start. */
+export const FORWARD: Vec3 = [0, 0, 1];
 
 /** The dimensions of a testis of this volume, metres (width across, length, depth front to back). */
 export function testisDimensions(volumeMl: number): {
@@ -69,71 +74,128 @@ export function testisDimensions(volumeMl: number): {
   return { width, length: width * LENGTH_OVER_WIDTH, depth: width * DEPTH_OVER_WIDTH };
 }
 
-/**
- * The shape of one lobe for a testis of this volume: a position for every vertex a
- * target of the root may move. The lobe leans away from the midline by the sign of
- * its root's x.
- */
-export function lobeShape(root: ReservoirRoot, volumeMl: number): RootShape {
+/** The sac's size for a mean testis volume: its width, depth and hang, metres. */
+export function sacSize(volumeMl: number): { width: number; depth: number; hang: number } {
   const t = testisDimensions(volumeMl);
-  const a = t.width / 2 + SKIN;
-  const b = t.depth / 2 + SKIN;
-  const length = t.length + 2 * SKIN;
-  const axial = length + NECK;
-  const outward = Math.sign(root.centre[0]) || 1;
-  const direction: Vec3 = [outward * LEAN, -1, 0];
-  const norm = Math.hypot(...direction);
-  const down: Vec3 = [direction[0] / norm, direction[1] / norm, direction[2] / norm];
-  const f = (s: number) => {
-    const q = Math.min(1, Math.max(0, (s - NECK) / length));
-    const xi = LAST * (2 * q - 1);
-    // Above the equator the wall comes from the neck's section; below it, an ellipse.
-    return xi < 0 ? NECK_SECTION + (1 - NECK_SECTION) * smooth(1 + xi) : Math.sqrt(1 - xi * xi);
+  return {
+    width: 2 * (t.width + 2 * SKIN),
+    depth: t.depth + 2 * SKIN,
+    hang: NECK + t.length + 2 * SKIN,
   };
-  const end = f(axial);
-  const dome = ((1 - LAST) * length) / 2;
-  const turn = turnAngle(root, down);
-  return tubeShape(root, {
-    axial,
-    direction: down,
-    bend: Math.min(1.3 * Math.max(a, b) * turn, 0.6 * axial),
-    flare: NECK,
-    section: (s) => ({ across: a * f(s), up: b * f(s) }),
-    tip: { across: a * end, up: b * end },
-    dome,
-  }).shape;
 }
 
-/** The targets' names: key number (1-based) and the anatomical side. */
-export const testesTarget = (n: number, side: "right" | "left") => `genitals/testes-k${n}-${side}`;
-
 /**
- * The targets of the two lobes and the factors that drive each: a lobe's shape at
- * a key, worth that key's hat of the size. The figure faces +z, so its right side
- * is -x: the root with x negative gets the right testis, the larger.
+ * A sac's measured size in its own frame: its hang along the way it hangs (from
+ * the loop's centre to the centroid of its lowest ring), its width across the
+ * figure, and its depth across both, the last two over its body (beyond
+ * `BODY_FROM` of the hang).
  */
-export function scrotumTargets(roots: [ReservoirRoot, ReservoirRoot]) {
-  const sides = roots.map((root) => ({
-    root,
-    side: ((root.centre[0] as number) < 0 ? "right" : "left") as "right" | "left",
-  }));
-  if (sides[0]?.side === sides[1]?.side) throw new Error("the two lobes are on the same side");
-  const collected = sides.map(({ root, side }) => ({
-    root,
-    side,
-    ...targetCollector(root),
-    rest: restShape(root),
-  }));
-  const sizes = TESTES_KEYS.map((k) => k.size);
-  for (const c of collected)
-    TESTES_KEYS.forEach((key, k) => {
-      const volume = key.volume * (c.side === "right" ? RIGHT_OVER_MEAN : LEFT_OVER_MEAN);
-      c.add(testesTarget(k + 1, c.side), c.rest, lobeShape(c.root, volume), [
-        sizeHat(TESTES_SIZE, sizes, k),
-      ]);
-    });
-  return {
-    targets: collected.flatMap((c) => c.targets),
-    drives: Object.assign({}, ...collected.map((c) => c.drives)) as Record<string, string[]>,
+export function measureSac(
+  root: ReservoirRoot,
+  shape: RootShape,
+): {
+  width: number;
+  depth: number;
+  hang: number;
+} {
+  const n = root.loop.length;
+  const last = shape.slice(root.cap.length + (root.rings - 1) * n);
+  const end = [0, 1, 2].map((k) => last.reduce((s, p) => s + (p[k] as number), 0) / n);
+  const c = root.centre;
+  const down = [0, 1, 2].map((k) => (end[k] as number) - (c[k] as number));
+  const dl = Math.hypot(...down);
+  const h: Vec3 = [(down[0] as number) / dl, (down[1] as number) / dl, (down[2] as number) / dl];
+  const across: Vec3 = [1 - h[0] * h[0], -h[0] * h[1], -h[0] * h[2]];
+  const al = Math.hypot(...across);
+  const w: Vec3 = [across[0] / al, across[1] / al, across[2] / al];
+  const d: Vec3 = [h[1] * w[2] - h[2] * w[1], h[2] * w[0] - h[0] * w[2], h[0] * w[1] - h[1] * w[0]];
+  const along = (p: Vec3, axis: Vec3) =>
+    (p[0] - c[0]) * axis[0] + (p[1] - c[1]) * axis[1] + (p[2] - c[2]) * axis[2];
+  const hang = Math.max(...shape.map((p) => along(p, h)));
+  const body = shape.filter((p) => along(p, h) >= BODY_FROM * hang);
+  const extent = (axis: Vec3) => {
+    const v = body.map((p) => along(p, axis));
+    return Math.max(...v) - Math.min(...v);
   };
+  return { width: extent(w), depth: extent(d), hang };
+}
+
+/** The sac's sculpted form on this root, and each key's shape. */
+export class SculptedScrotum {
+  readonly root: ReservoirRoot;
+  /** The sculpt projected onto the reservoir, before any sizing. */
+  readonly projected: RootShape;
+  readonly form: Form;
+  /** The sculpt's width on the reservoir, as sculpted (`measureSac`). */
+  private readonly width: number;
+  private readonly skin: Skin;
+  /** The factor found for each key's volume (`factorOf`). */
+  private readonly factors = new Map<number, number>();
+
+  /** `skin`: the lattice round the reservoirs (`contact.ts`), which the sac rests on. */
+  constructor(root: ReservoirRoot, part: SculptPart, skin: Skin) {
+    this.root = root;
+    this.skin = skin;
+    this.projected = projectPart(root, part, { reference: FORWARD, skin });
+    this.form = formOf(root, this.projected, LATERAL);
+    this.width = measureSac(root, this.projected).width;
+  }
+
+  /** The sculpt grown or shrunk by one factor on every axis, fading in from the loop. */
+  private sized(f: number): RootShape {
+    return sweep(this.form, { blend: ROOT_BLEND, length: f, across: f, up: f });
+  }
+
+  /**
+   * The one factor on the sculpt for a key: the one at which the sac as drawn
+   * (resting on the skin round its root) is as wide as two testes of the key's volume
+   * side by side, with skin round them. Its depth and hang are the sculpt's at that
+   * width, unless the hang is then too short to hold a testis with skin at both ends:
+   * then the sac is grown until it does, a little wider than the width asks. Taken
+   * as that width over the sculpt's own, the drawn sac missed it, as the root's fade
+   * and the skin it rests on move it.
+   */
+  factorOf(key: TestesKey): number {
+    const known = this.factors.get(key.volume);
+    if (known !== undefined) return known;
+    const want = sacSize(key.volume).width;
+    const wide = solveFactor(
+      (g) => measureSac(this.root, this.drawn(g)).width,
+      want,
+      want / this.width,
+    );
+    const hold = testisDimensions(key.volume).length + 2 * SKIN;
+    const hang = measureSac(this.root, this.drawn(wide)).hang;
+    const f =
+      hang >= hold
+        ? wide
+        : solveFactor((g) => measureSac(this.root, this.drawn(g)).hang, hold, (wide * hold) / hang);
+    this.factors.set(key.volume, f);
+    return f;
+  }
+
+  /** The sac grown or shrunk by `f`, resting on the skin round its root. */
+  private drawn(f: number): RootShape {
+    return this.skin.rest(this.root, this.sized(f));
+  }
+
+  /** The sac at a key, resting on the skin round its root. */
+  shape(key: TestesKey): RootShape {
+    return this.drawn(this.factorOf(key));
+  }
+}
+
+/** The targets' names: key number (1-based). */
+export const testesTarget = (n: number) => `genitals/testes-k${n}`;
+
+/** The targets of the sac and the factors that drive each: its shape at a key, worth that key's hat of the size. */
+export function scrotumTargets(root: ReservoirRoot, part: SculptPart, skin: Skin) {
+  const sac = new SculptedScrotum(root, part, skin);
+  const { targets, drives, add } = targetCollector(root);
+  const rest = restShape(root);
+  const sizes = TESTES_KEYS.map((k) => k.size);
+  TESTES_KEYS.forEach((key, k) => {
+    add(testesTarget(k + 1), rest, sac.shape(key), [sizeHat(TESTES_SIZE, sizes, k)]);
+  });
+  return { targets, drives };
 }

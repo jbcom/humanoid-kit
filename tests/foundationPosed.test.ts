@@ -76,4 +76,17 @@ describe("the posed body", () => {
     expect(seams).toBeGreaterThan(100);
     expect(worst).toBeLessThan(1e-6);
   });
+
+  it("welds as the model's topology does: the seams found by position are the surface's own", () => {
+    const adultModel = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
+    for (const [m, r] of [
+      [model, recipe],
+      [adultModel, createRecipe({ macros: { age: 30 } })],
+    ] as const) {
+      const body = posedSurface(m, r, REST_POSE);
+      expect(body.surface).toBe(m === model ? "base" : "adult");
+      expect(m.renderWeld(body.surface)).toEqual(body.weld);
+      expect(m.bodyIndex(body.surface)).toBe(body.index);
+    }
+  });
 });

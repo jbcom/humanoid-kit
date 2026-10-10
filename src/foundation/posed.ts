@@ -8,6 +8,7 @@
  * a body nobody draws.
  */
 import type { HumanoidModel } from "../model/humanoidModel.ts";
+import { skinOfEvaluation } from "../model/reservoirSkin.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { renderFold, type SurfaceFold } from "../rig/hipFold.ts";
 import {
@@ -85,7 +86,8 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
   const rotations =
     pose === REST_POSE ? IDENTITY_POSE(rig.bones.length) : bodyPoseRotations(rig, pose);
   const fold = renderFold(solvedHipFold(model, recipe));
-  const { skinIndex, skinWeight } = topology;
+  // The weights this figure is skinned by: a reservoir its detail drew out moves with its root.
+  const { skinIndex, skinWeight } = skinOfEvaluation(ev, topology);
   const n = rest.length;
   return {
     surface: ev.surface,

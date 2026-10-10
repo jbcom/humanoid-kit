@@ -42,6 +42,18 @@ describe("the affordance registry", () => {
     }
   });
 
+  it("offers each fingertip's pad as a contact, on its own pad, at any age", () => {
+    for (const side of ["L", "R"])
+      for (const digit of [1, 2, 3, 4, 5]) {
+        const id = `finger-pad-${digit}.${side}`;
+        const pad = CORE_AFFORDANCES.find((a) => a.id === id);
+        expect(pad, id).toEqual({ id, kind: "contact", at: { landmark: id }, adult: false });
+      }
+    expect(affordances(createRecipe({ macros: { age: 6 } })).map((a) => a.id)).toContain(
+      "finger-pad-1.L",
+    );
+  });
+
   it("has every kind in the core, and none of the adult anatomy's", () => {
     const kinds = new Set(CORE_AFFORDANCES.map((a) => a.kind));
     expect([...kinds].sort()).toEqual(["aperture", "contact", "grip", "mount"]);
@@ -93,6 +105,8 @@ describe("affordance frames", { timeout: 300_000 }, () => {
             for (let k = 0; k < 3; k++)
               expect(f.position[k], label).toBe(marks[a.at.landmark].position[k]);
         }
+        // Framed from the landmarks alone, however they were found, the frames are the same.
+        expect(affordanceFrames(marks, affordances(recipe)), `${name} ${pose}`).toEqual(frames);
       }
   });
 

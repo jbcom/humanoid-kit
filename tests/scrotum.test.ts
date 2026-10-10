@@ -1,37 +1,44 @@
 import { describe, expect, it } from "vitest";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
-import { type ReservoirRoot, type RootShape, reservoirRoot } from "../scripts/lib/detail/root.ts";
+import { skinOf } from "../scripts/lib/detail/contact.ts";
+import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
+import { type ReservoirRoot, reservoirRoot } from "../scripts/lib/detail/root.ts";
 import {
-  LEFT_OVER_MEAN,
-  lobeShape,
-  RIGHT_OVER_MEAN,
+  measureSac,
+  SculptedScrotum,
+  SKIN,
+  sacSize,
   scrotumTargets,
   TESTES_KEYS,
   TESTES_SIZE,
   testisDimensions,
 } from "../scripts/lib/detail/scrotum.ts";
+import { maleParts } from "../scripts/lib/detail/sculpt.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { adultManifest, loadFixtureAssets } from "./fixtures.ts";
+import { readSac } from "./sacShape.ts";
 
 /**
- * The scrotal lobes and testes (scripts/lib/detail/scrotum.ts), drawn out of the
- * labioscrotal pair of reservoirs and sized from the testis volumes and
- * dimensions of the literature (docs/research/ADULT-ANATOMY-DATA.md, section F).
+ * The scrotum (scripts/lib/detail/scrotum.ts): the CC0 sculpt's sac, with its own
+ * two lobes and median raphe, projected onto the labioscrotal reservoir and scaled
+ * evenly to the width of two testes of the literature's volumes
+ * (docs/research/ADULT-ANATOMY-DATA.md, section F).
  */
 const assets = loadFixtureAssets(true);
 const model = new HumanoidModel(assets, { subdivision: 1 });
 const lattice = model.adultDetailLattice(AUTHORING_FIGURE);
 if (!lattice) throw new Error("no adult surface");
-const rootOf = (id: string): ReservoirRoot => {
-  const spec = adultManifest.anatomy?.reservoirs?.find((r) => r.id === id);
-  if (!spec) throw new Error(`no reservoir ${id}`);
-  return reservoirRoot(lattice, spec);
-};
-/** The reservoir with x negative: the figure faces +z, so that is its right side. */
-const negative = rootOf("labioscrotal-left");
-const positive = rootOf("labioscrotal-right");
+const spec = adultManifest.anatomy?.reservoirs?.find((r) => r.id === "labioscrotal");
+if (!spec) throw new Error("no labioscrotal reservoir");
+const root: ReservoirRoot = reservoirRoot(lattice, spec);
+const parts = maleParts(assets, model.controlShape(AUTHORING_FIGURE).control);
+const skin = skinOf(
+  lattice,
+  (adultManifest.anatomy?.reservoirs ?? []).map((r) => r.cap),
+);
+const sac = new SculptedScrotum(root, parts.scrotum, skin);
 
 /** Extent (hi - lo) per axis of a set of points. */
 function span(points: Iterable<readonly number[]>): number[] {
@@ -44,8 +51,6 @@ function span(points: Iterable<readonly number[]>): number[] {
     }
   return lo.map((l, k) => (hi[k] as number) - l);
 }
-const centroid = (shape: RootShape) =>
-  [0, 1, 2].map((k) => shape.reduce((s, p) => s + (p[k] as number), 0) / shape.length);
 
 describe("a testis against the literature", () => {
   it("has the volume it was sized for, by the formula the volumes were measured with", () => {
@@ -65,81 +70,82 @@ describe("a testis against the literature", () => {
     expect(d.width * 1000).toBeCloseTo(19, 1);
   });
 
-  it("is the European mean at the middle key, and the right is larger than the left (17.9 and 16.5)", () => {
+  it("is the European mean at the middle key", () => {
     expect(TESTES_KEYS[1]?.volume).toBe(17.2);
-    expect(RIGHT_OVER_MEAN * 17.2).toBeCloseTo(17.9, 6);
-    expect(LEFT_OVER_MEAN * 17.2).toBeCloseTo(16.5, 6);
-    expect(RIGHT_OVER_MEAN).toBeGreaterThan(LEFT_OVER_MEAN);
   });
 });
 
-describe("the lobes' shape", () => {
-  it("hangs: taller than it is wide or deep, and bigger for a bigger testis", () => {
+describe("the sac's shape", () => {
+  it("is as wide as two testes of each key's volume side by side, with their skin", () => {
+    for (const key of TESTES_KEYS) {
+      const got = measureSac(root, sac.shape(key));
+      const want = sacSize(key.volume);
+      const testis = testisDimensions(key.volume);
+      const hold = testis.length + 2 * SKIN;
+      // Exactly that wide, unless the sculpt's hang at that width could not hold a testis
+      // and the sac was grown to: then wider, by that growth and no more than a few per cent.
+      if (measureSac(root, sac.shape(key)).hang > hold * (1 + 1e-6))
+        expect(got.width, `${key.volume} mL width`).toBeCloseTo(want.width, 5);
+      else {
+        expect(got.width, `${key.volume} mL width`).toBeGreaterThan(want.width);
+        expect(got.width / want.width, `${key.volume} mL width`).toBeLessThan(1.05);
+      }
+      expect(want.width).toBeGreaterThan(2 * testis.width);
+    }
+  });
+
+  it("is deep and long enough for its testes at that width: the sculpt's proportions hold them", () => {
+    // Scaled evenly, the depth and hang are the sculpt's. Each must hold one testis with
+    // skin round it: the hang at least the testis's length with skin at both ends (the
+    // neck above it is the sculpt's own; sacSize's NECK is a modelled choice, not a
+    // measure to hold the sculpt to). Neither is more than half as much again as sacSize.
+    for (const key of TESTES_KEYS) {
+      const got = measureSac(root, sac.shape(key));
+      const want = sacSize(key.volume);
+      const testis = testisDimensions(key.volume);
+      expect(got.depth / want.depth, `${key.volume} mL depth`).toBeGreaterThan(0.85);
+      expect(got.depth / want.depth, `${key.volume} mL depth`).toBeLessThan(1.5);
+      // Sizing grows a sac to exactly hold its testis where the sculpt is short: to the solve's tolerance.
+      expect(got.hang, `${key.volume} mL hang`).toBeGreaterThan(
+        (testis.length + 2 * SKIN) * (1 - 1e-6),
+      );
+      expect(got.hang / want.hang, `${key.volume} mL hang`).toBeLessThan(1.5);
+    }
+  });
+
+  it("hangs, and is bigger for a bigger testis", () => {
     let previous = 0;
     for (const key of TESTES_KEYS) {
-      const [width, height, depth] = span(lobeShape(negative, key.volume)) as [
-        number,
-        number,
-        number,
-      ];
-      expect(height).toBeGreaterThan(width);
-      expect(height).toBeGreaterThan(depth);
-      expect(height).toBeGreaterThan(previous);
-      previous = height;
+      const got = measureSac(root, sac.shape(key));
+      expect(got.hang).toBeGreaterThan(got.depth);
+      expect(got.hang).toBeGreaterThan(previous);
+      previous = got.hang;
     }
   });
 
-  it("holds a sac of the testis' size and skin: at least its width and length across the widest ring", () => {
-    const key = TESTES_KEYS[1];
-    if (!key) throw new Error("no key");
-    const d = testisDimensions(key.volume);
-    const [width, height] = span(lobeShape(negative, key.volume)) as [number, number, number];
-    // The lobe's width reaches past the testis' width (skin), and its height past its length plus the neck.
-    expect(width).toBeGreaterThan(d.width);
-    expect(height).toBeGreaterThan(d.length);
-  });
-
-  it("keeps each lobe on its own side of the midline, and the pair apart by more than their roots are", () => {
-    // The root's skin faces the midline, so a lobe leaves it inward and turns down; the lean
-    // keeps the pair from collapsing onto one another (they overlap a little, as a bilobed sac does).
+  it("reads as two lobes with a median raphe: the midline lies in behind both lobes at the front and above them at the bottom", () => {
     for (const key of TESTES_KEYS) {
-      const [rightCentroid, leftCentroid] = [negative, positive].map((root) =>
-        centroid(lobeShape(root, key.volume)),
-      );
-      expect(rightCentroid?.[0]).toBeLessThan(0);
-      expect(leftCentroid?.[0]).toBeGreaterThan(0);
-      const apart = (leftCentroid?.[0] as number) - (rightCentroid?.[0] as number);
-      expect(apart, `volume ${key.volume}`).toBeGreaterThan(0.015);
+      const r = readSac(sac.shape(key), root.centre[0]);
+      expect(r.front, `${key.volume} mL front`).toBeGreaterThan(0.0015);
+      expect(r.bottom, `${key.volume} mL bottom`).toBeGreaterThan(0);
     }
-  });
-
-  it("is a mirror image across the midline at equal volume", () => {
-    const key = TESTES_KEYS[1] as (typeof TESTES_KEYS)[number];
-    const a = lobeShape(negative, key.volume);
-    const b = lobeShape(positive, key.volume);
-    const ca = centroid(a);
-    const cb = centroid(b);
-    expect(ca[0]).toBeCloseTo(-(cb[0] as number), 3);
-    expect(ca[1]).toBeCloseTo(cb[1] as number, 3);
-    expect(ca[2]).toBeCloseTo(cb[2] as number, 3);
-    const sa = span(a);
-    const sb = span(b);
-    for (let k = 0; k < 3; k++) expect(sa[k]).toBeCloseTo(sb[k] as number, 3);
+    const mean = readSac(sac.shape(TESTES_KEYS[1] as (typeof TESTES_KEYS)[number]), root.centre[0]);
+    expect(mean.front).toBeGreaterThan(0.0025);
+    expect(mean.bottom).toBeGreaterThan(0.0004);
   });
 
   it("has only finite positions, at every key", () => {
     for (const key of TESTES_KEYS)
-      for (const root of [negative, positive])
-        for (const p of lobeShape(root, key.volume)) expect(p.every(Number.isFinite)).toBe(true);
+      for (const p of sac.shape(key)) expect(p.every(Number.isFinite)).toBe(true);
   });
 });
 
 describe("the pack's testes", () => {
   const detail = adultManifest.anatomy?.detail;
 
-  it("names a target per key and side, each driven by the size alone and on the lattice they were authored on", () => {
-    const made = scrotumTargets([negative, positive]);
-    expect(made.targets).toHaveLength(TESTES_KEYS.length * 2);
+  it("names a target per key, each driven by the size alone and on the lattice they were authored on", () => {
+    const made = scrotumTargets(root, parts.scrotum, skin);
+    expect(made.targets).toHaveLength(TESTES_KEYS.length);
     for (const t of made.targets) {
       expect(detail?.targets).toContain(t.name);
       expect(detail?.drives?.[t.name]).toEqual(made.drives[t.name]);
@@ -157,8 +163,13 @@ describe("the pack's testes", () => {
 });
 
 describe("the testes on the adult surface", { timeout: 300_000 }, () => {
+  // No testes and no organ unless asked for: left unset, an adult takes the pack's default
+  // anatomy for its gender (`AdultAnatomySpec.defaults`).
   const figure = (modifiers: Record<string, number> = {}) =>
-    createRecipe({ macros: AUTHORING_FIGURE.macros, modifiers });
+    createRecipe({
+      macros: AUTHORING_FIGURE.macros,
+      modifiers: { [TESTES_SIZE]: 0, [PHALLUS_SIZE]: 0, ...modifiers },
+    });
   const rest = model.evaluate(figure()).positions;
   const moved = (positions: Float32Array) => {
     const out: number[][] = [];
@@ -179,10 +190,7 @@ describe("the testes on the adult surface", { timeout: 300_000 }, () => {
   it("is the generator's shape at each key's size: the pipeline keeps what was authored", () => {
     for (const key of TESTES_KEYS) {
       const surface = span(moved(model.evaluate(figure({ [TESTES_SIZE]: key.size })).positions));
-      const generated = span([
-        ...lobeShape(negative, key.volume * RIGHT_OVER_MEAN),
-        ...lobeShape(positive, key.volume * LEFT_OVER_MEAN),
-      ]);
+      const generated = span(sac.shape(key));
       for (let k = 0; k < 3; k++)
         expect(surface[k], `axis ${k}`).toBeCloseTo(generated[k] as number, 3);
     }

@@ -20,6 +20,7 @@ import { Humanoid, HumanoidProvider } from "../../src/react/index.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import {
   type DualBones,
+  FOLD_ROWS_PER_LINE,
   FOLD_SLOT_ATTRIBUTE,
   noFoldTexture,
 } from "../../src/render/dualSkinning.ts";
@@ -54,7 +55,7 @@ function bonesOf(scene: Scene): DualBones | null {
   return found;
 }
 
-/** How many vertices of the scene's geometries have a fold slot, and how many rows the fold texture has. */
+/** How many vertices of the scene's geometries have a fold slot, and how many rows the fold texture holds (`FOLD_ROWS_PER_LINE` a line). */
 function foldOf(scene: Scene) {
   let slots = 0;
   scene.traverse((o: Object3D) => {
@@ -64,7 +65,10 @@ function foldOf(scene: Scene) {
     if (a) for (const s of a.array) if ((s as number) >= 0) slots++;
   });
   const dual = bonesOf(scene);
-  return { slots, rows: dual ? (dual.fold.value.image as { height: number }).height : 0 };
+  return {
+    slots,
+    rows: dual ? (dual.fold.value.image as { height: number }).height * FOLD_ROWS_PER_LINE : 0,
+  };
 }
 
 /** Light for the figure to be seen by: unlit, a skin draws black. */
@@ -183,7 +187,10 @@ describe("the hip fold in <Humanoid>", () => {
         </HumanoidProvider>,
       );
       await expect.poll(() => settled, LOAD).toBe(true);
-      expect(foldOf((get as unknown as () => RootState)().scene)).toEqual({ slots: 0, rows: 1 });
+      expect(foldOf((get as unknown as () => RootState)().scene)).toEqual({
+        slots: 0,
+        rows: FOLD_ROWS_PER_LINE,
+      });
     },
     LOAD.timeout,
   );

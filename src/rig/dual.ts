@@ -16,7 +16,15 @@
  * by the mean of its bones' shares.
  */
 import { type BoneRotations, posedBones, type RestBones } from "./bones.ts";
-import { addFold, addFoldNormal, foldAngles, folds, type HipFold, hipFlexion } from "./hipFold.ts";
+import {
+  addFold,
+  addFoldNormal,
+  foldAngles,
+  folds,
+  type HipFlexion,
+  type HipFold,
+  hipFlexion,
+} from "./hipFold.ts";
 import { mul, type Quat, rotate } from "./quat.ts";
 
 /** Floats per bone in `dualBones`: the rotation (x, y, z, w), then the dual part (x, y, z, w). */
@@ -221,7 +229,7 @@ export function skinVertex(
   x: number,
   y: number,
   z: number,
-  out: number[] | Float32Array,
+  out: number[] | Float32Array | Float64Array,
   at = 0,
 ): void {
   const a = shareOf(pose, skinIndex, skinWeight, v);
@@ -276,7 +284,7 @@ export function skinVertex(
 }
 
 /** The figure's root rotation, which the hip fold's displacements turn with. */
-function rootTurn(rest: RestBones, rotations: BoneRotations): Quat {
+export function rootTurn(rest: RestBones, rotations: BoneRotations): Quat {
   const root = rest.parents.indexOf(-1);
   return [
     rotations[root * 4] as number,
@@ -287,10 +295,123 @@ function rootTurn(rest: RestBones, rotations: BoneRotations): Quat {
 }
 
 /**
+ * A pose's hip fold, prepared for skinning vertices one at a time
+ * (`skinPositionAt`, `skinNormalAt`): the fold over the vertices being skinned
+ * (`renderFold` of a surface's), how far each hip is flexed and opened, the
+ * root's turn the displacements follow, and how much of the fold shows (the
+ * renderer's `foldBlend`, 1 once it has faded in).
+ */
+export interface SkinFold {
+  fold: HipFold;
+  hips: HipFlexion;
+  turn: Quat;
+  blend: number;
+}
+
+/** `fold` in this pose, or null when it adds nothing (none given, or no hip flexed far enough). */
+export function skinFold(
+  rest: RestBones,
+  rotations: BoneRotations,
+  fold: HipFold | null | undefined,
+  blend = 1,
+): SkinFold | null {
+  if (!fold) return null;
+  const hips = hipFlexion(rest, rotations);
+  if (!folds(hips)) return null;
+  return { fold, hips, turn: rootTurn(rest, rotations), blend };
+}
+
+/** What the fold adds to the vertex being skinned, before it is turned with the root. */
+const shown = new Float32Array(3);
+
+/**
+ * The fold's value for the vertex whose row in the fold is `foldVertex`, from
+ * `table` (`addFold`, `addFoldNormal`), read at the flexion and opening of the
+ * hip on its side (`foldAngles`), turned with the root and scaled by the fold's
+ * blend, as the shader's `hkFoldValue`, written to `shown`; false when it adds
+ * nothing.
+ */
+function foldValue(fold: SkinFold, add: typeof addFold, foldVertex: number): boolean {
+  const read = foldAngles(fold.fold, foldVertex, fold.hips);
+  if (!read) return false;
+  shown.fill(0);
+  add(fold.fold, foldVertex, read.flexion, read.opening, shown, 0);
+  const [qx, qy, qz, qw] = fold.turn;
+  const x = shown[0] as number;
+  const y = shown[1] as number;
+  const z = shown[2] as number;
+  // As `rotate`, without its tuple: this runs per vertex, and per frame for a landmark.
+  const tx = 2 * (qy * z - qz * y);
+  const ty = 2 * (qz * x - qx * z);
+  const tz = 2 * (qx * y - qy * x);
+  shown[0] = (x + qw * tx + (qy * tz - qz * ty)) * fold.blend;
+  shown[1] = (y + qw * ty + (qz * tx - qx * tz)) * fold.blend;
+  shown[2] = (z + qw * tz + (qx * ty - qy * tx)) * fold.blend;
+  return true;
+}
+
+/**
+ * Vertex `v` at rest position (x, y, z) exactly as the renderer's shader
+ * draws it: `skinVertex`, then, with `fold`, the hip fold's displacement at
+ * the flexion its thigh bones have, turned with the root and scaled by the
+ * fold's blend. `foldVertex` is its row in `fold.fold` when `skinIndex` and
+ * `skinWeight` hold it at some other `v` (a single vertex's copy). Writes
+ * into `out` at `at`; allocates nothing.
+ */
+export function skinPositionAt(
+  pose: SkinPose,
+  skinIndex: SkinIndex,
+  skinWeight: Float32Array,
+  v: number,
+  x: number,
+  y: number,
+  z: number,
+  out: number[] | Float32Array | Float64Array,
+  at = 0,
+  fold: SkinFold | null = null,
+  foldVertex = v,
+): void {
+  skinVertex(pose, skinIndex, skinWeight, v, x, y, z, out, at);
+  if (!fold || !foldValue(fold, addFold, foldVertex)) return;
+  out[at] = (out[at] as number) + (shown[0] as number);
+  out[at + 1] = (out[at + 1] as number) + (shown[1] as number);
+  out[at + 2] = (out[at + 2] as number) + (shown[2] as number);
+}
+
+/**
+ * The normal at vertex `v` that goes with `skinPositionAt`: `skinNormal`, then,
+ * with `fold`, the fold's turn of it added (scaled by its blend) and the sum
+ * made a unit vector again, as the shader does. Allocates nothing.
+ */
+export function skinNormalAt(
+  pose: SkinPose,
+  skinIndex: SkinIndex,
+  skinWeight: Float32Array,
+  v: number,
+  x: number,
+  y: number,
+  z: number,
+  out: number[] | Float32Array | Float64Array,
+  at = 0,
+  fold: SkinFold | null = null,
+  foldVertex = v,
+): void {
+  skinNormal(pose, skinIndex, skinWeight, v, x, y, z, out, at);
+  if (!fold || !foldValue(fold, addFoldNormal, foldVertex)) return;
+  const nx = (out[at] as number) + (shown[0] as number);
+  const ny = (out[at + 1] as number) + (shown[1] as number);
+  const nz = (out[at + 2] as number) + (shown[2] as number);
+  const len = Math.hypot(nx, ny, nz) || 1;
+  out[at] = nx / len;
+  out[at + 1] = ny / len;
+  out[at + 2] = nz / len;
+}
+
+/**
  * The renderer's skinning of `positions` (base-mesh vertices) by `rotations`:
  * each vertex skinned linearly and by dual quaternions, the two mixed by the
  * mean of its bones' `share`. A share of 0 is linear blend skinning, of 1 dual
- * quaternion skinning.
+ * quaternion skinning. With `fold`, the hip fold whole (`skinPositionAt`).
  */
 export function skinPositionsBlended(
   rest: RestBones,
@@ -303,14 +424,10 @@ export function skinPositionsBlended(
   fold?: HipFold,
 ): Float32Array {
   const pose = skinPose(rest, rotations, share);
+  const folding = skinFold(rest, rotations, fold);
   const count = positions.length / 3;
-  // The hip fold's displacement is read at the flexion and opening of the hip on the vertex's side (`foldAngles`), and turns with the figure's root.
-  const hips = fold ? hipFlexion(rest, rotations) : null;
-  const folding = fold !== undefined && hips !== null && folds(hips);
-  const turn = rootTurn(rest, rotations);
-  const shown = new Float32Array(3);
-  for (let v = 0; v < count; v++) {
-    skinVertex(
+  for (let v = 0; v < count; v++)
+    skinPositionAt(
       pose,
       skinIndex,
       skinWeight,
@@ -320,17 +437,8 @@ export function skinPositionsBlended(
       positions[v * 3 + 2] as number,
       out,
       v * 3,
+      folding,
     );
-    if (!folding) continue;
-    const read = foldAngles(fold, v, hips);
-    if (!read) continue;
-    shown.fill(0);
-    addFold(fold, v, read.flexion, read.opening, shown, 0);
-    const [dx, dy, dz] = rotate(turn, shown[0] as number, shown[1] as number, shown[2] as number);
-    out[v * 3] = (out[v * 3] as number) + dx;
-    out[v * 3 + 1] = (out[v * 3 + 1] as number) + dy;
-    out[v * 3 + 2] = (out[v * 3 + 2] as number) + dz;
-  }
   return out;
 }
 
@@ -356,7 +464,7 @@ export function skinNormal(
   x: number,
   y: number,
   z: number,
-  out: number[] | Float32Array,
+  out: number[] | Float32Array | Float64Array,
   at = 0,
 ): void {
   const a = shareOf(pose, skinIndex, skinWeight, v);
@@ -413,14 +521,10 @@ export function skinNormalsBlended(
   fold?: HipFold,
 ): Float32Array {
   const pose = skinPose(rest, rotations, share);
+  const folding = skinFold(rest, rotations, fold);
   const count = normals.length / 3;
-  // As the shader: the fold's turn added to the skinned normal, made a unit vector again.
-  const hips = fold ? hipFlexion(rest, rotations) : null;
-  const folding = fold !== undefined && hips !== null && folds(hips);
-  const turn = rootTurn(rest, rotations);
-  const shown = new Float32Array(3);
-  for (let v = 0; v < count; v++) {
-    skinNormal(
+  for (let v = 0; v < count; v++)
+    skinNormalAt(
       pose,
       skinIndex,
       skinWeight,
@@ -430,21 +534,8 @@ export function skinNormalsBlended(
       normals[v * 3 + 2] as number,
       out,
       v * 3,
+      folding,
     );
-    if (!folding) continue;
-    const read = foldAngles(fold, v, hips);
-    if (!read) continue;
-    shown.fill(0);
-    addFoldNormal(fold, v, read.flexion, read.opening, shown, 0);
-    const [dx, dy, dz] = rotate(turn, shown[0] as number, shown[1] as number, shown[2] as number);
-    const x = (out[v * 3] as number) + dx;
-    const y = (out[v * 3 + 1] as number) + dy;
-    const z = (out[v * 3 + 2] as number) + dz;
-    const len = Math.hypot(x, y, z) || 1;
-    out[v * 3] = x / len;
-    out[v * 3 + 1] = y / len;
-    out[v * 3 + 2] = z / len;
-  }
   return out;
 }
 

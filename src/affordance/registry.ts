@@ -43,10 +43,15 @@ const core = (
   channel?: ChannelId,
 ): Affordance => ({ id, kind, at, adult: false, ...(channel && { channel }) });
 
-/**
- * The core's affordances. The finger pads join the grips as their landmarks
- * are built.
- */
+/** The finger pads, thumb (1) to little finger (5), each side: what a fingertip touches and presses with. */
+const FINGER_PADS: readonly Affordance[] = (["L", "R"] as const).flatMap((side) =>
+  ([1, 2, 3, 4, 5] as const).map((digit) => {
+    const id = `finger-pad-${digit}.${side}` as const;
+    return core(id, "contact", { landmark: id });
+  }),
+);
+
+/** The core's affordances. */
 export const CORE_AFFORDANCES: readonly Affordance[] = [
   core("mouth", "aperture", { between: ["upper-lip", "lower-lip"] }, "oral"),
   core("nostril.L", "aperture", { landmark: "nostril.L" }, "nasal"),
@@ -65,6 +70,7 @@ export const CORE_AFFORDANCES: readonly Affordance[] = [
   core("wrist.R", "mount", { landmark: "wrist.R" }),
   core("sole.L", "contact", { landmark: "sole.L" }),
   core("sole.R", "contact", { landmark: "sole.R" }),
+  ...FINGER_PADS,
 ];
 
 declare const forFigure: unique symbol;
@@ -75,6 +81,9 @@ declare const forFigure: unique symbol;
  * the adult anatomy's can reach a figure under 18 by any route.
  */
 export type FigureAffordances = readonly Affordance[] & { readonly [forFigure]: true };
+
+/** The affordances of a figure not yet known: none. */
+export const NO_AFFORDANCES = Object.freeze([]) as unknown as FigureAffordances;
 
 /**
  * The affordances a figure has from a registry (the core's, and a pack's once
