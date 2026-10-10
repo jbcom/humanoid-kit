@@ -16,7 +16,15 @@
  * by the mean of its bones' shares.
  */
 import { type BoneRotations, posedBones, type RestBones } from "./bones.ts";
-import { addFold, addFoldNormal, folds, type HipFold, type HipPose, hipPose } from "./hipFold.ts";
+import {
+  addFold,
+  addFoldNormal,
+  foldAngles,
+  folds,
+  type HipFlexion,
+  type HipFold,
+  hipFlexion,
+} from "./hipFold.ts";
 import { mul, type Quat, rotate } from "./quat.ts";
 
 /** Floats per bone in `dualBones`: the rotation (x, y, z, w), then the dual part (x, y, z, w). */
@@ -70,23 +78,21 @@ export const DUAL_TEXELS = 3;
 
 /**
  * The renderer's bone texture, `bones * DUAL_TEXELS` RGBA texels: each bone's
- * dual quaternion (`dualBones`), its share of dual quaternion skinning, and,
- * when `hips` is given, the hip fold's terms (`hipPose`): the bone's flexion
- * in degrees, and 1 for a bone of the thigh.
+ * dual quaternion (`dualBones`) and its share of dual quaternion skinning (the
+ * third texel's first place; the rest of it is zero).
  */
 export function dualBoneTexels(
   rest: RestBones,
   rotations: BoneRotations,
   share: DualShare,
   out: Float32Array = new Float32Array(rest.names.length * DUAL_TEXELS * 4),
-  hips?: HipPose,
 ): Float32Array {
   const dual = dualBones(rest, rotations);
   for (let b = 0; b < rest.names.length; b++) {
     out.set(dual.subarray(b * DUAL_STRIDE, (b + 1) * DUAL_STRIDE), b * DUAL_TEXELS * 4);
     out[b * DUAL_TEXELS * 4 + 8] = typeof share === "number" ? share : (share[b] as number);
-    out[b * DUAL_TEXELS * 4 + 9] = hips ? (hips.flexion[b] as number) : 0;
-    out[b * DUAL_TEXELS * 4 + 10] = hips ? (hips.thigh[b] as number) : 0;
+    out[b * DUAL_TEXELS * 4 + 9] = 0;
+    out[b * DUAL_TEXELS * 4 + 10] = 0;
     out[b * DUAL_TEXELS * 4 + 11] = 0;
   }
   return out;
@@ -288,35 +294,16 @@ export function rootTurn(rest: RestBones, rotations: BoneRotations): Quat {
   ];
 }
 
-/** The flexion vertex `v`'s thigh bones have, weighted by its skin, or null if no thigh holds it. */
-export function thighFlexion(
-  hips: HipPose,
-  skinIndex: SkinIndex,
-  skinWeight: Float32Array,
-  v: number,
-): number | null {
-  let held = 0;
-  let flexion = 0;
-  for (let k = 0; k < 4; k++) {
-    const b = skinIndex[v * 4 + k] as number;
-    if (!hips.thigh[b]) continue;
-    const w = skinWeight[v * 4 + k] as number;
-    held += w;
-    flexion += w * (hips.flexion[b] as number);
-  }
-  return held ? flexion / held : null;
-}
-
 /**
  * A pose's hip fold, prepared for skinning vertices one at a time
  * (`skinPositionAt`, `skinNormalAt`): the fold over the vertices being skinned
- * (`renderFold` of a surface's), the flexion each thigh bone has, the root's
- * turn the displacements follow, and how much of the fold shows (the
+ * (`renderFold` of a surface's), how far each hip is flexed and opened, the
+ * root's turn the displacements follow, and how much of the fold shows (the
  * renderer's `foldBlend`, 1 once it has faded in).
  */
 export interface SkinFold {
   fold: HipFold;
-  hips: HipPose;
+  hips: HipFlexion;
   turn: Quat;
   blend: number;
 }
@@ -329,7 +316,7 @@ export function skinFold(
   blend = 1,
 ): SkinFold | null {
   if (!fold) return null;
-  const hips = hipPose(rest, rotations);
+  const hips = hipFlexion(rest, rotations);
   if (!folds(hips)) return null;
   return { fold, hips, turn: rootTurn(rest, rotations), blend };
 }
@@ -338,23 +325,17 @@ export function skinFold(
 const shown = new Float32Array(3);
 
 /**
- * The fold's value for vertex `v` (its skin's thigh flexion; `foldVertex` its
- * row in the fold) from `table` (`addFold`, `addFoldNormal`), turned with the
- * root and scaled by the fold's blend, as the shader's `hkFoldValue`, written
- * to `shown`; false when it adds nothing.
+ * The fold's value for the vertex whose row in the fold is `foldVertex`, from
+ * `table` (`addFold`, `addFoldNormal`), read at the flexion and opening of the
+ * hip on its side (`foldAngles`), turned with the root and scaled by the fold's
+ * blend, as the shader's `hkFoldValue`, written to `shown`; false when it adds
+ * nothing.
  */
-function foldValue(
-  fold: SkinFold,
-  add: typeof addFold,
-  skinIndex: SkinIndex,
-  skinWeight: Float32Array,
-  v: number,
-  foldVertex: number,
-): boolean {
-  const flexion = thighFlexion(fold.hips, skinIndex, skinWeight, v);
-  if (flexion === null) return false;
+function foldValue(fold: SkinFold, add: typeof addFold, foldVertex: number): boolean {
+  const read = foldAngles(fold.fold, foldVertex, fold.hips);
+  if (!read) return false;
   shown.fill(0);
-  add(fold.fold, foldVertex, flexion, shown, 0);
+  add(fold.fold, foldVertex, read.flexion, read.opening, shown, 0);
   const [qx, qy, qz, qw] = fold.turn;
   const x = shown[0] as number;
   const y = shown[1] as number;
@@ -391,7 +372,7 @@ export function skinPositionAt(
   foldVertex = v,
 ): void {
   skinVertex(pose, skinIndex, skinWeight, v, x, y, z, out, at);
-  if (!fold || !foldValue(fold, addFold, skinIndex, skinWeight, v, foldVertex)) return;
+  if (!fold || !foldValue(fold, addFold, foldVertex)) return;
   out[at] = (out[at] as number) + (shown[0] as number);
   out[at + 1] = (out[at + 1] as number) + (shown[1] as number);
   out[at + 2] = (out[at + 2] as number) + (shown[2] as number);
@@ -416,7 +397,7 @@ export function skinNormalAt(
   foldVertex = v,
 ): void {
   skinNormal(pose, skinIndex, skinWeight, v, x, y, z, out, at);
-  if (!fold || !foldValue(fold, addFoldNormal, skinIndex, skinWeight, v, foldVertex)) return;
+  if (!fold || !foldValue(fold, addFoldNormal, foldVertex)) return;
   const nx = (out[at] as number) + (shown[0] as number);
   const ny = (out[at + 1] as number) + (shown[1] as number);
   const nz = (out[at + 2] as number) + (shown[2] as number);

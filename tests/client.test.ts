@@ -158,7 +158,7 @@ class FakeWorker {
             type: "hipFold",
             id: msg.id,
             surface: "adult",
-            fold: { slot: Float32Array.of(-1, 0), rows: 1, data: new Float32Array(4 * 48) },
+            fold: { slot: Float32Array.of(-1, 0), rows: 1, data: new Uint16Array(4 * 48) },
           }),
         1,
       );

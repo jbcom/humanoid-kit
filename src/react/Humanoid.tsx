@@ -94,7 +94,7 @@ import {
 } from "../render/skinMaterial.ts";
 import { faceSignalBasis, faceSignals } from "../rig/faceSignals.ts";
 import { flexionRig, jointFlexion } from "../rig/flexion.ts";
-import { HIP_FOLD, hipPose } from "../rig/hipFold.ts";
+import { folds, hipFlexion } from "../rig/hipFold.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
 import {
   type BoneRotations,
@@ -1269,9 +1269,16 @@ export function Humanoid({
   const hipsFlexed = useMemo(() => {
     if (!figure || !ready || !rotations) return false;
     const rest = restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads);
-    return hipPose(rest, rotations).flexion.some((f) => f > HIP_FOLD.from);
+    return folds(hipFlexion(rest, rotations));
   }, [figure, ready, rotations]);
-  const figureKey = useMemo(() => (figure ? controlKey(figure.control) : ""), [figure]);
+  // The fold follows the shape, and an organ's push too (`evaluatedFold`), which the evaluated weights follow.
+  const figureKey = useMemo(
+    () =>
+      figure
+        ? `${controlKey(figure.control)}/${figure.skin ? controlKey(figure.skin.skinWeight) : ""}`
+        : "",
+    [figure],
+  );
   /** Ends the hold on the settle that the fold's fade-in keeps, while it fades. */
   const fading = useRef<(() => void) | null>(null);
   /** Counts the folds that have faded in whole: the meshes' bounds follow each (`shape`). */
