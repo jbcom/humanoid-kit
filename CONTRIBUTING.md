@@ -44,8 +44,12 @@ Browser tests (the Vitest browser project and the Playwright suite) run headed
 Chromium through [game-harness](https://www.npmjs.com/package/game-harness), on
 your native GPU by default, so they test what people see; the playground spec
 fails if a run that expects a GPU falls back to software rendering. CI has no
-GPU and selects SwiftShader explicitly under `xvfb-run`. Set `HK_GPU` to
-`auto`, `software` or `linux-hardware-vulkan` to choose.
+GPU and selects SwiftShader explicitly under `xvfb-run`; the agents' render Macs
+(`heavy-slot --remote-render`) run headless on their Apple GPU through ANGLE
+Metal; heavy-slot's priority lane chooses for itself, and the project opts in to
+it (`heavySlot.priorityLane` in package.json). `scripts/lib/browserRun.ts` holds
+the whole rule for both configs. Set `HK_GPU` to `auto`, `software`,
+`macos-hardware-metal` or `linux-hardware-vulkan`, or `HK_HEADED=1`, to override.
 `pnpm exec playwright test --project sheets` renders the contact sheets in
 `.sheets/job.json` for review (`e2e/sheets/render.sheet.ts` describes the job;
 on the agents' machines it runs on the render pool through
