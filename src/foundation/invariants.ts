@@ -15,9 +15,10 @@
  * Colour and relief continuity across layers, and fair rendering by tone,
  * are measured where they are drawn (the browser tier).
  */
-import { BufferAttribute, BufferGeometry, DoubleSide, Ray, Vector3 } from "three";
-import { INTERSECTED, MeshBVH, NOT_INTERSECTED } from "three-mesh-bvh";
+import { DoubleSide, Ray, Vector3 } from "three";
+import { INTERSECTED, NOT_INTERSECTED } from "three-mesh-bvh";
 import type { PosedBody } from "./posed.ts";
+import { BodySurface } from "./surface.ts";
 
 /** How far skin may pass through skin, metres, outside a named contact. */
 export const PENETRATION_LIMIT = 0.002;
@@ -150,12 +151,8 @@ function areaNormal(p: Float32Array, i: number, j: number, k: number, out: Vecto
  * `REACH`, and the other part is the one the ray leaves through.
  */
 function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(body.positions, 3));
-  geometry.setIndex(new BufferAttribute(Uint32Array.from(body.index), 1));
-  const bvh = new MeshBVH(geometry, { verbose: false });
-  // The BVH orders the index anew; triangle `t` is these three vertices.
-  const tri = geometry.getIndex()?.array as Uint32Array;
+  const surface = new BodySurface(body);
+  const { bvh, triangles: tri } = surface;
   const p = new Vector3();
   const near = new Vector3();
   const rest = new Vector3();
@@ -215,7 +212,7 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
       }
     }
   }
-  geometry.dispose();
+  surface.dispose();
   return { penetrating, deepest, deepestParts, contacts, deepestContact };
 }
 
