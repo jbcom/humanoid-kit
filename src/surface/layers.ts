@@ -303,7 +303,7 @@ export const STOP_COUNT = 8;
  * diameter in mm, texel 2 (relief height in mm, 1 if the hair is in the skin's
  * albedo, 0, 0)), 7 bumps with a profile and 8 tubercles (detail; a height, b
  * spacing; the stops' red channel is the amplitude profile along the coordinate)
- * and 9 striae (detail; a depth, b spacing; stop 0 is the mark's colour ratio,
+ * and 9 striae (detail; a depth, b a mark's typical width; stop 0 is the mark's colour ratio,
  * stop 1's red its amount; the coordinate is the marks' orientation) and 10
  * swell (detail; a height, b unused; the stops' red channel is the signed
  * cross-section, `swellHeight`). Lengths

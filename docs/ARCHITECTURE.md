@@ -3300,20 +3300,37 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   those that lie apart from it, a cell of the 64 by 64 grid and a cell's margin
   all round).
 - *Stretch marks are a detail layer that also colours.* Kind 9 in the stop table
-  (`pattern: "striae"`): the sole's friction ridges' noise (`ridgeHeight`, one
-  function in TypeScript and in the shader) past a threshold the figure's
-  amount sets (`striaMark`: coverage 2.5% of the sites' skin at an amount of a
-  quarter, 7.6% at half, 19% at 1; the edge soft by a fifth of the noise's range), as streaks 9 mm apart (marks of 3 to 5 mm) that run for
-  centimetres and end, in groups. A mark multiplies the skin by the layer's
-  colour ratio and sinks it a fifth of a millimetre; the header carries the
-  depth and the spacing, stop 0 the ratio and stop 1 the amount, and the
-  coordinate the streaks' direction. The mask is the site's weight and scales the
-  amount, so the belly, flank, hip and thigh differ in density; a mark is never
-  more opaque than the layer's strength. *Where:* the lower trunk, hips,
+  (`pattern: "striae"`): scattered spindles (`striaMark`, one function in
+  TypeScript and in the shader's `hkStriae`, sharing the sole ridges' hash).
+  On a grid of 12 cm cells, a cell holds at most one cluster: up to eight
+  parallel marks side by side, 6 to 12 mm apart, each 3 to 16 cm long and 1 to
+  7.5 mm wide with long sides tapering to points (its half-width goes as
+  1 − t⁴), bowed a little and meandering, the whole cluster turned up to 8°
+  off the skin's direction. Clusters group in patches of three by three cells,
+  each with its own share of them, so groups of marks lie with bare skin
+  between. Each cluster has its own threshold and appears as the figure's amount
+  passes it, so a growing amount adds clusters and never moves one, and the
+  share of skin marked grows in proportion to the amount (`striaeMeanCover`: 8%
+  at 1, half that at half). A pixel's coverage is box-filtered over its
+  footprint, so the marks are antialiased at any distance, and where a pixel no
+  longer resolves them (`STRIAE_DETAIL_FADE`, from half a typical width to one
+  and a half) the colour blends to the mean cover rather than shimmering. A
+  mark multiplies the skin by the layer's colour ratio and sinks it a fifth of
+  a millimetre, its relief with softer edges (`STRIA_RELIEF_SOFT`) that fades
+  out sooner (`STRIAE_RELIEF_FADE`). The header carries the depth and a mark's
+  typical width (3 mm, `STRIA_WIDTH`, the unit of every size above), stop 0 the
+  ratio and stop 1 the amount, and the coordinate the marks' direction. The
+  mask is the site's weight: it scales the amount, so the belly, flank, hip and
+  thigh differ in density, and fades the marks where it falls below 0.3
+  (`STRIA_MASK_EDGE`), so a cluster at a site's edge tapers out; a mark is
+  never more opaque than the layer's strength. *Where:* the lower trunk, hips,
   buttocks and the outer and back of the thigh, not the breast, groin, inner thigh,
-  skin that faces up or down or the midline's few centimetres (the body's UV islands meet
-  there, the noise is drawn in UV, and a mark that crossed would be cut and offset:
-  a limit of drawing in UV that the sole's ridges share). *Direction:* round the body, horizontal in the
+  skin that faces up or down or the midline's 1.5 to 4.5 cm (the body's UV islands meet
+  there, the marks are drawn in UV, and a mark that crossed would be cut and offset,
+  while the seam's vertices measure an orientation mixed from both islands that
+  tilts the marks into chevrons: a limit of drawing in UV that the sole's ridges
+  share). The pattern is seeded by the UV position, and the body's left islands
+  are the right's reflected, so each side has its own marks. *Direction:* round the body, horizontal in the
   skin's plane, across the stretch; the UV angle that gives it comes from
   `uvOrientation`, the code the feet's ridges use, stored about a seam
   (`STRIAE_ORIENTATION_SEAM`) at the angle the fewest neighbours straddle. *How much:*

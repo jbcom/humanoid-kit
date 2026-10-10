@@ -10,15 +10,16 @@ docs/ARCHITECTURE.md, "Torso", and docs/research/SKIN-STATES.md, C7.
 Each item stays here, with the sheet that failed it, until a new sheet passes; the
 sections below describe what was drawn, not a passed verdict.
 
-- **Stretch marks: open, failing.** They read as a barcode: horizontal, evenly
-  spaced, dashed straight lines tiled over the flank, buttock and back, where real
-  striae come in clusters at the sites of stretch, run across the local stretch
-  and curve with the body, and are spindle-shaped, of varied length and sometimes
-  forked. A clustered-spindle pattern (feat/area-torso 53cbfd2) did not pass its
-  sheet and is not drawn here: its seeding mirrored, its marks were short and
-  wide, and its sheet framed the flank from the front.
+- **A pale haze on the deep-toned figure's lower back.** Under the camera light
+  the heavy deep-toned woman's lumbar skin shows a broad whitish blotch (the
+  back sheet, top right). It is on integration before the stretch marks were
+  redrawn and is not their shape; its cause is not yet found.
 
-Passed on the integrator's sheets (2026-10-09) and landed: the collarbone as a
+Passed on the integrator's sheets (2026-10-09) and landed: the stretch marks,
+redrawn as clusters of long, thin spindles (they had read as a barcode:
+horizontal, evenly spaced, dashed straight lines tiled over the flank, buttock and
+back; a clustered-spindle attempt, feat/area-torso 53cbfd2, failed its sheet for
+mirrored seeding, short and wide marks and a flank framed from the front); the collarbone as a
 smooth swell with the supraclavicular hollow above it, no groove (it had
 rendered as a raised crescent with a hard outline, the crease layer's two
 grooves); and the areola with its coordinate held at 1 past its disc (the ring
@@ -101,28 +102,38 @@ to full strength.
 
 ## Stretch marks
 
-![Stretch marks from behind: women 25, 15 and 60, a man, a tall girl](./torso-striae-back.webp)
+![Stretch marks on the left hip and flank, from the side](./torso-striae-side.webp)
 
-`frame=root&at=0,0.08,-0.12&view=0,0.1,-1&span=0.3`, lit from the camera. Heavy woman
-25, heavy girl 15 (new marks, red), heavy woman 25 at melanin 0.85 (old marks, pale
-against the skin), heavy woman 60, heavy man 30, a tall girl of 15 at average
-weight (few). The marks run across the stretch, round the body, in groups, and are
-a fifth of a millimetre sunk (lit on one side).
+`frame=root&at=0.1,0.0,0.0&view=1,0.1,0.2&span=0.4`, lit from the camera, 40 cm
+across. Heavy woman 25, heavy girl 15 (new marks, red), heavy woman 25 at melanin 0.85
+(old marks, lighter than the skin, the hypopigmented marks the clinical descriptions
+give), heavy woman 60, heavy man 30, a tall girl of 15 at average weight (fewer, red).
+The marks are clusters of long, thin spindles, several to a cluster, a centimetre or
+so apart, of varied length, running round the body across the stretch and following
+its curve, with bare skin between the clusters; each side of the body has its own.
 
-![Stretch marks from the side-front](./torso-striae-side.webp)
+![Stretch marks from behind](./torso-striae-back.webp)
 
-The same figures from the side-front at 40 cm across. On light skin the old marks
-are a pale peach, a little lighter; on deep skin they are the lighter, hypopigmented
-marks the clinical descriptions give.
+`frame=root&at=0,0.05,-0.1&view=0,0.1,-1&span=0.6`, the same figures. The lumbar
+back's site weight is lower than the flank's, so it carries fewer clusters, and the
+marks stop 1.5 to 4.5 cm short of the spine.
+
+![Stretch marks close up](./torso-striae-close.webp)
+
+`frame=root&at=0.14,0.02,0.02&view=1,0.05,0.1&span=0.18`: the spindles' tapered ends,
+their gentle meander and the soft, shallow dip of their relief (a fifth of a
+millimetre). At the distance of a whole figure the marks blend to their mean cover
+rather than shimmering, and barely show, as on a person.
 
 ## Not drawn, and limits
 
-- The marks stop two centimetres short of the back's midline: the body's UV islands
-  meet there and the noise is drawn in UV, so a mark that crossed it would be cut and
-  offset. The soles' ridges share the limit.
-- The marks are slightly dashed (the noise's kernels interfere along a streak) where
-  real ones are mostly continuous: a different noise for them would cost the shader a
-  second pattern.
+- The marks stop short of the back's midline: the body's UV islands meet there and
+  the marks are drawn in UV, so a mark that crossed it would be cut and offset, and
+  the seam's vertices measure an orientation mixed from both islands (at 2 cm it
+  tilted the marks into chevrons). The soles' ridges share the limit.
+- The marks do not fork, and their direction is round the body everywhere on the
+  sites: on the inner thigh and the breast, where real marks run other ways, they
+  are not drawn.
 - None of the layers adds shape: the nipple's height, the navel's dimple and the rib
   cage are the mesh's; a layer colours and shades.
 - The base mesh's vertices are about a centimetre apart, so the linea nigra and the

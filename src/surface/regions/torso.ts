@@ -20,7 +20,7 @@ import {
   skinAlbedo,
 } from "../skinTone.ts";
 import {
-  STRIA_SPACING,
+  STRIA_WIDTH,
   STRIAE_ORIENTATION_SEAM,
   striaeAmount,
   striaeColour,
@@ -845,9 +845,10 @@ function striaeDirections(assets: HumanoidAssets): {
       (1 - smoothstep(0.2, 0.6, inner)) *
       facing *
       (1 - groin) *
-      // The body's UV islands meet on the midline, and the noise is drawn in UV: marks that crossed
-      // it would be cut and offset there, so they stop a little short of it.
-      smoothstep(0.004, 0.02, Math.abs(x)) *
+      // The body's UV islands meet on the midline, and the marks are drawn in UV: a mark that
+      // crossed it would be cut and offset there, and the orientation measured on the seam's
+      // vertices mixes the two islands' (it tilts the marks into chevrons), so they stop short of it.
+      smoothstep(0.015, 0.045, Math.abs(x)) *
       (1 - smoothstep(0.2, 0.5, breast[v] as number));
     if (w <= 0 || len < 1e-6) continue;
     weight[v] = w;
@@ -876,12 +877,12 @@ export const STRIAE_DEPTH = 0.00015;
 export const STRIAE_OPACITY = 0.9;
 
 /**
- * Stretch marks: parallel streaks round the lower trunk, hips and thighs, red
- * and then silver on light skin and violet-brown and then pale on deep skin,
- * slightly sunk, as many as the figure's weight, height and age make
- * (`striaeAmount`), of the colour their age gives (`striaeColour`). Drawn in
- * the shader as the sole's friction ridges are: sparse Gabor noise past a
- * threshold, its orientation stored in the layer's coordinate.
+ * Stretch marks: clusters of long, thin, parallel spindles round the lower
+ * trunk, hips and thighs, red and then silver on light skin and violet-brown
+ * and then pale on deep skin, slightly sunk, as many as the figure's weight,
+ * height and age make (`striaeAmount`), of the colour their age gives
+ * (`striaeColour`). Drawn in the shader per pixel (`striaMark`), as the sole's
+ * friction ridges are, their orientation stored in the layer's coordinate.
  */
 export const STRIAE_LAYER: DetailLayer = {
   id: "striae",
@@ -894,7 +895,7 @@ export const STRIAE_LAYER: DetailLayer = {
     return {
       strength: STRIAE_OPACITY,
       height: STRIAE_DEPTH,
-      size: STRIA_SPACING,
+      size: STRIA_WIDTH,
       striae: {
         amount: striaeAmount(b),
         ratio: striaeColour(input.tone, striaeMaturity(b.age)),

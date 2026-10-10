@@ -42,7 +42,7 @@ import {
 import { orientationAtCoordinate } from "../src/surface/ridges.ts";
 import { areolaAlbedo, luminance, type Rgb, skinAlbedo } from "../src/surface/skinTone.ts";
 import {
-  STRIA_SPACING,
+  STRIA_WIDTH,
   STRIAE_ORIENTATION_SEAM,
   striaeAmount,
   striaeColour,
@@ -866,7 +866,7 @@ describe("the stretch marks", () => {
     expect(t[1]).toBe(9);
     expect(t[2]).toBeGreaterThan(0.00005);
     expect(t[2]).toBeLessThan(0.0004);
-    expect(t[3]).toBeCloseTo(STRIA_SPACING, 9);
+    expect(t[3]).toBeCloseTo(STRIA_WIDTH, 9);
     // The amount is the figure's.
     expect(t[8]).toBeCloseTo(striaeAmount({ ...heavy }), 6);
     // The ratio is the marks' colour at that age and tone.
@@ -920,6 +920,18 @@ describe("the stretch marks", () => {
       (v) => (f.mask[v] as number) > 0.05 && (P[v * 3] as number) < -0.01,
     ).length;
     expect(Math.abs(left - right) / (left + right)).toBeLessThan(0.05);
+  });
+
+  it("stops short of the midline, where the UV islands meet", () => {
+    // A mark drawn across the seam is cut and offset there, and the seam's own vertices measure an
+    // orientation mixed from both islands: within a centimetre and a half of it, no marks.
+    let near = 0;
+    for (let v = 0; v < n; v++) {
+      if (!onBody[v] || Math.abs(P[v * 3] as number) >= 0.015) continue;
+      near++;
+      expect(f.mask[v], `vertex ${v}`).toBe(0);
+    }
+    expect(near).toBeGreaterThan(20);
   });
 
   it("orients the marks round the body: horizontal on the skin, whatever way its UV map turns", () => {

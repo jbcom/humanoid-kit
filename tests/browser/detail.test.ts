@@ -20,7 +20,15 @@ import {
   ridgeOrientation,
   ridgeOrientationCoordinate,
 } from "../../src/surface/ridges.ts";
-import { STRIAE_ORIENTATION_SEAM, striaMark } from "../../src/surface/striae.ts";
+import {
+  STRIA_RELIEF_SOFT,
+  STRIAE_ORIENTATION_SEAM,
+  STRIAE_RELIEF_FADE,
+  striaeDetail,
+  striaeMeanCover,
+  striaeWeight,
+  striaMark,
+} from "../../src/surface/striae.ts";
 import {
   disposeLayerRender,
   mean,
@@ -341,8 +349,13 @@ describe("swell layers", () => {
 });
 
 describe("stretch marks", () => {
-  const SPACING = 0.1;
+  // A mark's typical width: 3 pixels of the 2-metre square, so a pixel's footprint is under the
+  // half-width at which the colour starts to blend to the mean (STRIAE_DETAIL_FADE), and a few dozen
+  // clusters lie in it.
+  const SPACING = 0.012;
   const PX = 512;
+  // The pixel's footprint as the shader measures it, length( fwidth( p ) ) on an axis-aligned map.
+  const FOOTPRINT = Math.SQRT2 * (2 / PX);
   const stria = (
     amount: number,
     ratio: [number, number, number],
@@ -363,14 +376,14 @@ describe("stretch marks", () => {
 
   it("darkens the skin exactly where the reference has a mark", () => {
     const flat = render([], { size: PX });
-    const cut = render([stria(0.7, [0.4, 0.4, 0.4], 0)], { size: PX, coordinate });
+    const cut = render([stria(1, [0.4, 0.4, 0.4], 0)], { size: PX, coordinate });
     const marks: number[] = [];
     const got: number[] = [];
     for (let y = 2; y < PX - 2; y += 3)
       for (let x = 2; x < PX - 2; x += 3) {
         const px = ((x + 0.5) / PX) * 2;
         const py = ((y + 0.5) / PX) * 2;
-        marks.push(striaMark(px, py, theta, SPACING, 0.7));
+        marks.push(striaeWeight(px, py, theta, SPACING, 1, 1, FOOTPRINT));
         got.push((cut[y * PX + x] as number) / (flat[y * PX + x] as number));
       }
     const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
@@ -399,20 +412,35 @@ describe("stretch marks", () => {
   it("sinks the marks: the shading follows the slope of a dip", () => {
     const flat = render([], { size: PX });
     // A millimetre deep, so the slopes stay within the range the shading answers linearly.
-    const cut = render([stria(0.7, [1, 1, 1], 0.001)], { size: PX, coordinate });
-    const y = Math.floor(PX / 4);
+    const cut = render([stria(1, [1, 1, 1], 0.001)], { size: PX, coordinate });
     const change: number[] = [];
     const slope: number[] = [];
-    // The dip's depth at a pixel.
-    const depth = (x: number) =>
-      -0.001 * striaMark(((x + 0.5) / PX) * 2, ((y + 0.5) / PX) * 2, theta, SPACING, 0.7);
-    for (let x = 2; x < PX - 2; x++) {
-      change.push((cut[y * PX + x] as number) - (flat[y * PX + x] as number));
-      // The shader's slope is a derivative over the pixel's 2 x 2 block, taken from its left pixel
-      // to its right: a mark's edge is about a pixel wide, so the sampled slope is what to expect.
-      const left = x - (x % 2);
-      slope.push((depth(left + 1) - depth(left)) / (2 / PX));
+    // The relief's share of the marks at this footprint, and its softer edges.
+    const shown = striaeDetail(FOOTPRINT / SPACING, STRIAE_RELIEF_FADE);
+    for (let y = 8; y < PX - 8; y += 32) {
+      // The dip's depth at a pixel.
+      const depth = (x: number) =>
+        -0.001 *
+        shown *
+        striaMark(
+          ((x + 0.5) / PX) * 2,
+          ((y + 0.5) / PX) * 2,
+          theta,
+          SPACING,
+          1,
+          FOOTPRINT,
+          STRIA_RELIEF_SOFT,
+        );
+      for (let x = 2; x < PX - 2; x++) {
+        change.push((cut[y * PX + x] as number) - (flat[y * PX + x] as number));
+        // The shader's slope is a derivative over the pixel's 2 x 2 block, taken from its left
+        // pixel to its right: a mark's edge is about a pixel wide, so the sampled slope is what to
+        // expect.
+        const left = x - (x % 2);
+        slope.push((depth(left + 1) - depth(left)) / (2 / PX));
+      }
     }
+    expect(slope.filter((s) => s !== 0).length).toBeGreaterThan(100);
     let sxy = 0;
     let sxx = 0;
     let syy = 0;
@@ -435,7 +463,8 @@ describe("stretch marks", () => {
     expect(dark(1)).toBeGreaterThan(dark(0.4));
   });
 
-  it("fades marks finer than a pixel, as for any relief", () => {
+  it("blends marks finer than a pixel to their mean cover: no shimmer, and the same colour on average", () => {
+    const flat = render([], { size: PX });
     const coarse = render([stria(0.7, [0.4, 0.4, 0.4], 0)], { size: PX, coordinate });
     const fineLayer: SkinLayer = {
       id: "striae",
@@ -452,6 +481,11 @@ describe("stretch marks", () => {
     };
     const fine = render([fineLayer], { size: PX, coordinate });
     expect(variance(fine)).toBeLessThan(variance(coarse) / 50);
+    // Each pixel is the skin multiplied toward the ratio by the marks' mean cover.
+    const darkening = 1 - fine.reduce((s, v, i) => s + v / (flat[i] as number), 0) / fine.length;
+    const expected = (1 - 0.4) * striaeMeanCover(0.7);
+    expect(darkening).toBeGreaterThan(0.8 * expected);
+    expect(darkening).toBeLessThan(1.2 * expected);
   });
 });
 
