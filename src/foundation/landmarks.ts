@@ -61,6 +61,17 @@ export const SURFACE_LANDMARKS = [
   "pubic-point",
   "palm.L",
   "palm.R",
+  // The pulp of each digit's last segment, thumb (1) to little finger (5).
+  "finger-pad-1.L",
+  "finger-pad-2.L",
+  "finger-pad-3.L",
+  "finger-pad-4.L",
+  "finger-pad-5.L",
+  "finger-pad-1.R",
+  "finger-pad-2.R",
+  "finger-pad-3.R",
+  "finger-pad-4.R",
+  "finger-pad-5.R",
   "sole.L",
   "sole.R",
 ] as const;
@@ -298,6 +309,57 @@ function palmCentre(assets: HumanoidAssets, used: Uint8Array, side: 0 | 1): numb
 
 /** How nearly a vertex must face the palm's way to be on the palm (`HandFrame.volar`). */
 const PALM_FACING = 0.8;
+
+/**
+ * A finger pad's place on its digit's last segment, as a share of the segment
+ * from its joint to the tip: the pulp's centre, where the fingerprint's core
+ * lies (CHOICE: the pulp fills the segment's distal two thirds), and the band
+ * of the segment searched for it.
+ */
+const PAD_AT = 0.6;
+const PAD_BAND: readonly [number, number] = [0.4, 0.9];
+/** How far across the digit from its axis a pad may be, as a share of the fingertip's radius. */
+const PAD_ACROSS = 0.5;
+/** How much less nearly than the segment's most palmward vertex a pad may face the palm's way. */
+const PAD_FACING_SLACK = 0.15;
+
+/**
+ * A digit's pad on one side (0 left, 1 right; digit 1 the thumb to 5 the
+ * little finger): of the vertices on the middle of the digit's last segment
+ * (`PAD_BAND`, within `PAD_ACROSS` of its axis), those facing the palm's way
+ * nearly as much as the most palmward of them, the one nearest `PAD_AT` along
+ * it. The thumb's pad faces the palm's way least, turned toward the fingers, so
+ * the most palmward of its own segment is the measure, not a fixed facing.
+ */
+function fingerPad(assets: HumanoidAssets, used: Uint8Array, side: 0 | 1, digit: number): number {
+  const frame = handFrame(assets);
+  const joints = (frame.joints[side] as number[][])[digit] as number[];
+  const start = joints[2] as number;
+  const len = (joints[3] as number) - start;
+  const radius = ((frame.radius[side] as number[])[digit] as number) || 0.007;
+  const onPulp: number[] = [];
+  let facing = Number.NEGATIVE_INFINITY;
+  for (let v = 0; v < assets.manifest.vertexCount; v++) {
+    if (!used[v] || frame.side[v] !== side || frame.digit[v] !== digit) continue;
+    const u = ((frame.along[v] as number) - start) / len;
+    if (u < PAD_BAND[0] || u > PAD_BAND[1]) continue;
+    if (Math.abs(frame.across[v] as number) > PAD_ACROSS * radius) continue;
+    onPulp.push(v);
+    facing = Math.max(facing, frame.volar[v] as number);
+  }
+  let best = -1;
+  let dist = Number.POSITIVE_INFINITY;
+  for (const v of onPulp) {
+    if ((frame.volar[v] as number) < facing - PAD_FACING_SLACK) continue;
+    const d = Math.abs(((frame.along[v] as number) - start) / len - PAD_AT);
+    if (d < dist) {
+      dist = d;
+      best = v;
+    }
+  }
+  if (best < 0) throw new RangeError(`no pad vertex on digit ${digit}, side ${side}`);
+  return best;
+}
 /** How nearly a vertex must face down at rest to be on a sole. */
 const SOLE_FACING = 0.8;
 
@@ -405,6 +467,16 @@ export function landmarkVertices(
     "pubic-point": midlineInFront(assets, used, between("upperleg01.L", "upperleg01.R")),
     "palm.L": palmCentre(assets, used, 0),
     "palm.R": palmCentre(assets, used, 1),
+    "finger-pad-1.L": fingerPad(assets, used, 0, 1),
+    "finger-pad-2.L": fingerPad(assets, used, 0, 2),
+    "finger-pad-3.L": fingerPad(assets, used, 0, 3),
+    "finger-pad-4.L": fingerPad(assets, used, 0, 4),
+    "finger-pad-5.L": fingerPad(assets, used, 0, 5),
+    "finger-pad-1.R": fingerPad(assets, used, 1, 1),
+    "finger-pad-2.R": fingerPad(assets, used, 1, 2),
+    "finger-pad-3.R": fingerPad(assets, used, 1, 3),
+    "finger-pad-4.R": fingerPad(assets, used, 1, 4),
+    "finger-pad-5.R": fingerPad(assets, used, 1, 5),
     "sole.L": soleCentre(assets, used, head("foot.L"), head("toe1-1.L")),
     "sole.R": soleCentre(assets, used, head("foot.R"), head("toe1-1.R")),
   };
