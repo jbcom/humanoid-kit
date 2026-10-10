@@ -3,12 +3,15 @@ import {
   BARE_NEAR,
   COVERED_BY,
   FADE_LENGTH,
+  fillScalpHoles,
   GROWTH_SCALE,
   HAIRLINE_NEAR,
   hairFields,
   SCALP_DEPTH,
   SCALP_FALLOFF,
   SCALP_FULL,
+  SCALP_HOLE_FACING_UP,
+  SCALP_HOLE_MAX,
   scalpShade,
   UV_SCALE_STEPS,
 } from "../src/surface/hairFields.ts";
@@ -92,9 +95,67 @@ describe("scalpShade", () => {
   });
 });
 
+describe("fillScalpHoles", () => {
+  const body = scalp();
+  const side = GRID + 1;
+  const index = (i: number, j: number) => j * side + i;
+  /** The outer ring of the grid is skin outside the scalp (a face, a neck); the rest is scalp. */
+  const eligible = Uint8Array.from({ length: body.count }, (_, v) => {
+    const i = v % side;
+    const j = Math.floor(v / side);
+    return i === 0 || j === 0 || i === GRID || j === GRID ? 0 : 1;
+  });
+  /** Full density over the scalp except the vertices `bare` picks. */
+  const densityWith = (bare: (i: number, j: number) => boolean) =>
+    Float64Array.from({ length: body.count }, (_, v) => {
+      const i = v % side;
+      const j = Math.floor(v / side);
+      return eligible[v] && !bare(i, j) ? 1 : 0;
+    });
+
+  /** Every vertex's outward normal straight up (the top of a head), or along +z (an ear, a forehead). */
+  const facing = (y: number) =>
+    Float64Array.from({ length: body.count * 3 }, (_, k) =>
+      k % 3 === 1 ? y : k % 3 === 2 ? Math.sqrt(1 - y * y) : 0,
+    );
+  const UP = facing(1);
+
+  it("fills a patch of bare scalp that hair encloses on the top of the head: a gap between cards, not a hairline", () => {
+    const density = densityWith((i, j) => Math.abs(i - 6) <= 1 && Math.abs(j - 6) <= 1);
+    fillScalpHoles(body, eligible, density, UP);
+    for (let j = 5; j <= 7; j++)
+      for (let i = 5; i <= 7; i++) expect(density[index(i, j)], `${i},${j}`).toBe(1);
+  });
+
+  it("leaves the same patch bare where the skin faces sideways: an ear, or a forehead under a fringe", () => {
+    const density = densityWith((i, j) => Math.abs(i - 6) <= 1 && Math.abs(j - 6) <= 1);
+    expect(0.3).toBeLessThan(SCALP_HOLE_FACING_UP);
+    fillScalpHoles(body, eligible, density, facing(0.3));
+    expect(density[index(6, 6)]).toBe(0);
+  });
+
+  it("leaves a parting that runs out to skin outside the scalp bare: a style's partings are drawn on purpose", () => {
+    const density = densityWith((i, j) => i === 6 && j >= 1);
+    fillScalpHoles(body, eligible, density, UP);
+    for (let j = 1; j < GRID; j++) expect(density[index(6, j)], `6,${j}`).toBe(0);
+  });
+
+  it("leaves a bare patch bigger than SCALP_HOLE_MAX: a style that leaves skin bare, not a hole", () => {
+    const density = densityWith((i, j) => i >= 2 && i <= 10 && j >= 2 && j <= 10);
+    expect(9 * 9).toBeGreaterThan(SCALP_HOLE_MAX);
+    fillScalpHoles(body, eligible, density, UP);
+    expect(density[index(6, 6)]).toBe(0);
+  });
+});
+
 describe("hairFields", () => {
   const body = scalp();
-  const eligibleAll = new Uint8Array(body.count).fill(1);
+  // The scalp, ringed (as on a head) by skin outside it: the grid's outer ring is a face or a neck.
+  const eligibleAll = Uint8Array.from({ length: body.count }, (_, v) => {
+    const i = v % (GRID + 1);
+    const j = Math.floor(v / (GRID + 1));
+    return i === 0 || j === 0 || i === GRID || j === GRID ? 0 : 1;
+  });
   const run = (card: ReturnType<typeof strip>, eligible = eligibleAll) =>
     hairFields({
       positions: card.positions,
@@ -241,7 +302,10 @@ describe("hairFields", () => {
     it("puts a hairline inside a card's mesh where its painted hair ends over bare skin", () => {
       // A 0.4 m sheet of 2x2 quads 2 mm above the scalp: its centre vertex is interior, 0.2 m from
       // any edge. Where the texture is opaque everywhere the centre is well inside the hair; where
-      // it is clear across the middle, the skin under the centre is bare and the centre is on a hairline.
+      // it is clear from a quarter of the way across to the far edge (the painted hair ends there,
+      // and the bare skin runs on out past the sheet to skin outside the scalp), the skin under the
+      // centre is bare and the centre is on a hairline. (Bare skin the painted hair encloses is a
+      // hole, not a hairline: `fillScalpHoles`.)
       const h = 0.2;
       const positions: number[] = [];
       const uvs: number[] = [];
@@ -251,13 +315,9 @@ describe("hairFields", () => {
           uvs.push(i / 2, j / 2);
         }
       const faceVerts = new Uint32Array([0, 1, 4, 3, 1, 2, 5, 4, 3, 4, 7, 6, 4, 5, 8, 7]);
-      const alphaOf = (clearMiddle: boolean) =>
-        Uint8Array.from({ length: 16 }, (_, k) => {
-          const x = k % 4;
-          const y = Math.floor(k / 4);
-          return clearMiddle && x >= 1 && x <= 2 && y >= 1 && y <= 2 ? 0 : 255;
-        });
-      const fadeAt = (clearMiddle: boolean) =>
+      const alphaOf = (clearPart: boolean) =>
+        Uint8Array.from({ length: 16 }, (_, k) => (clearPart && k % 4 >= 1 ? 0 : 255));
+      const fadeAt = (clearPart: boolean) =>
         hairFields({
           positions: new Float32Array(positions),
           faceVerts,
@@ -268,7 +328,7 @@ describe("hairFields", () => {
             uvs: new Float32Array(uvs),
             width: 4,
             height: 4,
-            alpha: alphaOf(clearMiddle),
+            alpha: alphaOf(clearPart),
           },
         }).fade[4];
       expect(fadeAt(false)).toBe(255);

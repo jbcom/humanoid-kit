@@ -1407,7 +1407,16 @@ a coloured texture; everything in the pure core is testable in Node.
   of bare skin (a body triangle with a corner under a quarter density,
   `BARE_NEAR`). Cards that meet edge to edge at a part or a crown leave edges no
   other card lies over, but the skin around them is all under hair: seeded as
-  hairlines, they thinned into skin-coloured gaps there. A card's mesh reaches well
+  hairlines, they thinned into skin-coloured gaps there. Before any of this the
+  scalp density's **holes are filled** (`fillScalpHoles`): a patch of bare skin
+  on the top of the head (every vertex's outward normal at least 0.6 up) that
+  hair encloses, reaching no skin outside the scalp and no bigger than 60 body
+  vertices, is a gap between cards (`short02`'s crown, `bob02`'s part), not a
+  hairline. It takes full density, so it is tinted as scalp under hair and never
+  seeds a hairline that thins the hair round it into a bigger hole. An ear or a
+  forehead under a fringe is enclosed skin too, which the facing rule leaves
+  alone; the rope styles' partings run out to the hairline, and they opt out
+  besides (`fillHoles: false`). A card's mesh reaches well
   past the hair painted on it, so the visible hairline is the painted edge
   inside the mesh, and a fade measured from the mesh's own boundary ran out over
   transparent texels (6-8% of its zero vertices sat on opaque hair): the first

@@ -24,9 +24,13 @@ export interface AuthoredStyleSpec {
   atlas: () => Promise<Buffer>;
   /** What the provenance record says made it. */
   provenance: string;
-  /** Written into the style's measurements (`HairStyleSpec`): ropes are solid from every side. */
+  /**
+   * Written into the style's measurements (`HairStyleSpec`): ropes are solid from every side, and
+   * the scalp between them is parted on purpose, so no gap there is filled as a hole.
+   */
   feather: false;
   fins: false;
+  fillHoles: false;
 }
 
 const AUTHORED = (what: string) =>
@@ -44,6 +48,7 @@ export const AUTHORED_STYLES: readonly AuthoredStyleSpec[] = [
     ),
     feather: false,
     fins: false,
+    fillHoles: false,
   },
   {
     id: "cornrows01",
@@ -56,6 +61,7 @@ export const AUTHORED_STYLES: readonly AuthoredStyleSpec[] = [
     ),
     feather: false,
     fins: false,
+    fillHoles: false,
   },
   {
     id: "twists01",
@@ -66,6 +72,7 @@ export const AUTHORED_STYLES: readonly AuthoredStyleSpec[] = [
     provenance: AUTHORED("two-strand twist tubes from a grid of partings (scripts/lib/hairCards)"),
     feather: false,
     fins: false,
+    fillHoles: false,
   },
   {
     id: "locs01",
@@ -76,6 +83,7 @@ export const AUTHORED_STYLES: readonly AuthoredStyleSpec[] = [
     provenance: AUTHORED("matted rope tubes from a grid of partings (scripts/lib/hairCards)"),
     feather: false,
     fins: false,
+    fillHoles: false,
   },
   {
     id: "bantu01",
@@ -88,6 +96,7 @@ export const AUTHORED_STYLES: readonly AuthoredStyleSpec[] = [
     ),
     feather: false,
     fins: false,
+    fillHoles: false,
   },
 ];
 
