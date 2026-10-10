@@ -36,6 +36,7 @@ import {
   writeGarments,
   writePackEntry,
 } from "./lib/packWriter.ts";
+import { textureAlphaUse } from "./lib/textureAlpha.ts";
 import { textureProvenance } from "./lib/textureSizing.ts";
 
 const USAGE = "usage: node scripts/pack-clothing.ts <system-assets-dir> <community-archives-dir>";
@@ -200,6 +201,19 @@ function evidenceLines(all: Record<string, string>): string[] {
   return [...byKind].map(([ev, files]) => `- ${files.length} file(s) — ${ev}`);
 }
 
+/**
+ * A garment's material with its transparency as its packed diffuse texture's
+ * alpha asks (`textureAlphaUse`): holes cut clean through are alpha-to-coverage
+ * (a cutout), a see-through cloth is blended, and a texture with no alpha to
+ * speak of is opaque whatever the `.mhmat` says, since its flags then do
+ * nothing. The community's materials rarely name their transparency.
+ */
+async function withTextureAlpha(m: GarmentEntry["material"]): Promise<GarmentEntry["material"]> {
+  if (!m.texture) return m;
+  const use = await textureAlphaUse(path.join(OUT, m.texture));
+  return { ...m, transparent: use === "sheer", alphaToCoverage: use === "cutout" };
+}
+
 function main(): Promise<void> {
   fs.mkdirSync(OUT, { recursive: true });
   const { manifest: bodyManifest, assets: body } = readBodyPack(BODY_DIR);
@@ -214,11 +228,14 @@ function main(): Promise<void> {
       TEXTURES,
     );
     const packed = writeGarments(OUT, GARMENTS_FILE, assets);
-    const entries: GarmentEntry[] = packed.entries.map((e, i) => ({
-      ...e,
-      label: (compiled[i] as (typeof compiled)[number]).label,
-      tags: (compiled[i] as (typeof compiled)[number]).tags,
-    }));
+    const entries: GarmentEntry[] = await Promise.all(
+      packed.entries.map(async (e, i) => ({
+        ...e,
+        material: await withTextureAlpha(e.material),
+        label: (compiled[i] as (typeof compiled)[number]).label,
+        tags: (compiled[i] as (typeof compiled)[number]).tags,
+      })),
+    );
     const manifest: ClothingManifest = {
       format: 1,
       kind: "clothing",
