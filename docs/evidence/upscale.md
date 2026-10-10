@@ -47,9 +47,10 @@ is in [upscale-inventory.md](./upscale-inventory.md). Measured 2026-10-09.
   explains is carried across as a residual. Back-projection then settles the
   round trip.
 - **Line-art tattoos**: the playground draws its tattoo images from vector paths
-  (`playground/src/tattooImages.ts`), which re-rasterise exactly at any size.
-  The forearm's pixels are lost in the body-art bake, not in the image
-  ([upscale-inventory.md](./upscale-inventory.md)).
+  (`playground/src/tattooImages.ts`), which re-rasterise exactly at any size,
+  now at 512 px, the ink's own resolution. The forearm's pixels were lost in
+  the body-art bake, not in the image; the body-art lane has since moved the
+  ink out of that bake ([upscale-inventory.md](./upscale-inventory.md)).
 
 An anti-ringing clamp (each texel held to the range of the 2×2 source texels
 around it) was tried and rejected. It made every gate worse: on the sportsuit,
