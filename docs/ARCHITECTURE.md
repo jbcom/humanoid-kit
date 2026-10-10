@@ -1636,9 +1636,16 @@ entry.
 draw). A full beard (its coat and its cards) with doubled chest, abdomen and
 back hair at 360 × 420 measured 10.52 ms a frame against 9.91 ms without
 (`e2e/bodyhair.spec.ts`, recorded; the coat alone, before the cards, measured
-8.33 against 8.29). These are frame intervals on a desktop browser near its
-display's rate, so they bound the cost rather than measure it. A GPU timer
-measurement on a phone is the open item.
+8.33 against 8.29; with coverage shading, which blends rather than discards,
+9.76 against 8.70 on the software renderer). These are frame intervals on a
+desktop browser near its display's rate, so they bound the cost rather than
+measure it. A GPU timer measurement on a phone is the open item.
+
+**Sheen.** At its peak, with light and view both square to the comb, the
+coat's Kajiya-Kay lobes add 0.23 to 0.34 of the hair's diffuse at a beard's
+close framing and at a chest's (a cell about a pixel), across the sheets'
+hair colours, from blond to black: the lightest hair has the most. A browser
+test holds it under three times the diffuse.
 
 ## Presence
 

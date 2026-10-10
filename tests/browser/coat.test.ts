@@ -7,6 +7,7 @@ import {
   AmbientLight,
   BufferAttribute,
   Color,
+  DirectionalLight,
   FloatType,
   Mesh,
   MeshBasicMaterial,
@@ -20,6 +21,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { CoatMaterial, coatGeometry } from "../../src/render/coat.ts";
 import { UV_SCALE_ATTRIBUTE } from "../../src/render/skinMaterial.ts";
 import { COAT_REGION_LIMIT } from "../../src/surface/coat.ts";
+import { hairAlbedo } from "../../src/surface/hairTone.ts";
 
 const SIZE = 128;
 /** The patch's side, metres (its metres per UV unit). */
@@ -58,16 +60,25 @@ interface View {
   span?: number;
   /** How far the patch is slid along x, metres. */
   offset?: number;
-  /** The skin under the coat, a grey drawn unlit; default none, on white. */
+  /** The skin under the coat, a grey drawn unlit; default none, on `background`. */
   skin?: number;
+  /** The grey behind the patch; default white. */
+  background?: number;
+  /** Lit by one light from the camera instead of an ambient light. */
+  key?: boolean;
+  /** Whether the strands' Kajiya-Kay lobes are drawn; default true. */
+  lobes?: boolean;
+  /** Which channel is returned; default red. */
+  channel?: 0 | 1 | 2;
 }
 
 /**
  * Renders the patch (facing +z, the camera looking down -z) with one region
- * painted `paint`. Returns red, row-major.
+ * painted `paint`. Returns one channel, row-major.
  */
 function render(paint: Paint | null, options: View = {}) {
   const { view = "front", shells = 8, side = SIDE, span = SIDE / 2, offset = 0 } = options;
+  const { background = 1, key = false, lobes = true, channel = 0 } = options;
   renderer ??= new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
   renderer.setSize(SIZE, SIZE, false);
   const body = new PlaneGeometry(side, side, 16, 16);
@@ -91,8 +102,9 @@ function render(paint: Paint | null, options: View = {}) {
     );
   material.setPaint(table);
   material.setShells(shells);
+  if (!lobes) material.hkUniforms.hkLobes.value.set(0, 0, 0, 0);
   const scene = new Scene();
-  scene.background = new Color(1, 1, 1);
+  scene.background = new Color(background, background, background);
   const skin =
     options.skin === undefined
       ? null
@@ -101,7 +113,6 @@ function render(paint: Paint | null, options: View = {}) {
   const coat = new Mesh(geometry, material);
   coat.renderOrder = 1;
   scene.add(coat);
-  scene.add(new AmbientLight(0xffffff, 3));
   const half = span / 2;
   // Far enough back that a tilted patch of any size lies between the clip planes.
   const distance = 0.5 + side;
@@ -111,6 +122,11 @@ function render(paint: Paint | null, options: View = {}) {
   if (view === "front") camera.position.set(0, 0, distance);
   else camera.position.set(0, -distance * Math.sin(1.22), distance * Math.cos(1.22));
   camera.lookAt(0, 0, 0);
+  if (key) {
+    const light = new DirectionalLight(0xffffff, 3);
+    light.position.copy(camera.position);
+    scene.add(light);
+  } else scene.add(new AmbientLight(0xffffff, 3));
   renderer.setRenderTarget(target);
   renderer.render(scene, camera);
   const px = new Float32Array(SIZE * SIZE * 4);
@@ -120,7 +136,7 @@ function render(paint: Paint | null, options: View = {}) {
   body.dispose();
   material.dispose();
   skin?.dispose();
-  return px.filter((_, i) => i % 4 === 0);
+  return px.filter((_, i) => i % 4 === channel);
 }
 
 const share = (px: Float32Array, test: (x: number) => boolean) =>
@@ -279,6 +295,36 @@ describe("the coat's shells", () => {
         expect(worst, `${f} cells a pixel`).toBeLessThan(0.02);
       }
     });
+  });
+
+  // The sheen must read as hair's, not as a glare over it: at its peak (the
+  // light and view both square to the comb) the Kajiya-Kay lobes add at most
+  // three times what the hair's diffuse gives, for every hair colour on the
+  // sheets, at a beard's close framing and a chest's.
+  it("keep their highlight within three times their diffuse, at every hair colour", () => {
+    const colours = [
+      { eumelanin: 0.22, pheomelanin: 0.2, grey: 0, override: null },
+      { eumelanin: 0.5, pheomelanin: 0.15, grey: 0, override: null },
+      { eumelanin: 0.62, pheomelanin: 0.05, grey: 0, override: null },
+      { eumelanin: 0.9, pheomelanin: 0, grey: 0, override: null },
+    ];
+    const ratios: string[] = [];
+    for (const [framing, footprint] of [
+      ["beard", 0.15],
+      ["chest", 1],
+    ] as const)
+      for (const c of colours) {
+        const paint = { ...HAIR, colour: hairAlbedo(c) };
+        // On black, with no skin: the coat's own light alone.
+        const { skin: _, ...view } = atFootprint(footprint);
+        const lit = { ...view, background: 0, key: true };
+        const both = average(render(paint, { ...lit, channel: 1 }));
+        const diffuse = average(render(paint, { ...lit, channel: 1, lobes: false }));
+        const ratio = (both - diffuse) / diffuse;
+        ratios.push(`${framing} eu ${c.eumelanin}: ${ratio.toFixed(2)}`);
+        expect(ratio, ratios.join("; ")).toBeLessThanOrEqual(3);
+      }
+    console.log(`coat highlight / diffuse: ${ratios.join("; ")}`);
   });
 
   it("thin with cover: half the cover draws about half the strands", () => {
