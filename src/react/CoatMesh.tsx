@@ -42,11 +42,11 @@ function coatInput(recipe: Recipe) {
 }
 
 /**
- * The coat's paint for a recipe, or null when the recipe asks for no body
- * hair: a figure grows a coat only when its recipe says so.
+ * The coat's paint for a recipe, or null when it paints nothing: a region
+ * grows only where the recipe enables it (`coatEnabled`), so a recipe silent
+ * on body hair grows no coat.
  */
 export function coatPaintFor(recipe: Recipe): Float32Array | null {
-  if (!recipe.bodyHair) return null;
   const paint = paintCoat(COAT_REGIONS, coatInput(recipe));
   return coatPainted(paint) ? paint : null;
 }

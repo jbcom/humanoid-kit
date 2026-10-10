@@ -124,6 +124,22 @@ Beard lengths: stubble is about 1 mm, a few days at the roughly 0.3 mm a day
 beard hair grows (recalled, not verified here); grown styles' 10 to 20 mm are
 **choices**.
 
+## Pubic hair
+
+Where it grows is the adult anatomy pack's data, measured on the base mesh by
+`scripts/lib/adultCoat.ts` in the frame of the mons (its target's
+displacement-weighted centre). The shape is the adult pattern Tanner stage 5
+describes (the Tanner staging cited above): a triangle over the mons,
+level along its top, narrowing to the crotch and spreading onto the inner
+thighs' edges, on to the perineum. Its numbers are **choices** fitted to that
+description and this mesh, not measurements: the hairline 7.5 cm above the
+mons' centre (the mons target reaches 5.4 cm above it), a half-width of 7.5 cm
+there narrowing to 2 cm at the crotch 5 cm below the centre, the hair ending
+11 cm below it, and every edge easing over at least a centimetre. The male
+pattern's climb up the linea toward the navel is not this mask's: the trunk's
+abdomen region holds it, and the model's coverage by sex and age says how much
+grows on either.
+
 ## What is not here
 
 - Ethnic variation in body hair density is real (less on average in East Asian

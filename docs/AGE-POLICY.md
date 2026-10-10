@@ -204,6 +204,15 @@ surface on its own request, never with the topology every session receives. This
 is not done by hiding adult geometry in a shared surface
 (docs/research/ADULT-SCULPT-PLAN.md).
 
+**Genital piercings follow the same rule.** The body's own piercing sites
+(ears, nose, brows, lip, navel) apply at every age. Every other site is the
+adult pack's (`AdultAnatomySpec.piercingSites`), which the core never names,
+so an unknown site fails closed: `ADULT_ONLY_PIERCING` in
+`src/recipe/agePolicy.ts` refuses it under 18 whether or not the pack is
+loaded, and `withAge` removes it. Structurally too, such a site is placed only
+on the adult surface, which a minor's evaluation never has
+(`tests/adultPiercingSites.test.ts`).
+
 **Skin states follow the same rule.** A figure's skin responds to named
 signals (docs/ARCHITECTURE.md, "Skin states"). Cold, heat, exertion, blush and
 fear are the body's physiological responses at every age, so they apply at

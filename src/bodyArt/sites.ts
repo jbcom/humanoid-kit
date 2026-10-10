@@ -6,8 +6,11 @@
  * feature's most prominent point (the same reading `targetMask` makes). A site
  * is a base-mesh vertex, so it follows every shape and pose of the figure.
  */
-import type { HumanoidAssets } from "../format/assetFormat.ts";
-import { AssetFormatError } from "../format/assetFormat.ts";
+import {
+  type AdultPiercingSiteSpec,
+  AssetFormatError,
+  type HumanoidAssets,
+} from "../format/assetFormat.ts";
 import {
   type BodyAnchor,
   isBodyPiercingSite,
@@ -124,6 +127,17 @@ export function bodySites(assets: HumanoidAssets): Readonly<Record<PiercingSite,
   };
   cache.set(assets, out);
   return out;
+}
+
+/**
+ * The adult anatomy's piercing site `name`, as the loaded adult pack declares
+ * it (`AdultAnatomySpec.piercingSites`), or null: the core names none itself.
+ */
+export function adultPiercingSite(
+  assets: HumanoidAssets,
+  name: string,
+): AdultPiercingSiteSpec | null {
+  return assets.adultAnatomyManifest?.anatomy?.piercingSites?.find((s) => s.name === name) ?? null;
 }
 
 /**

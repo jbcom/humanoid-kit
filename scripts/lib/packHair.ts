@@ -39,6 +39,7 @@ import {
 } from "./bodyHairCards.ts";
 import { readBodyPack } from "./bodyPack.ts";
 import { type CompiledAsset, compileAsset } from "./compileAsset.ts";
+import { bleedEdges } from "./edgeBleed.ts";
 import { compileAuthored } from "./hairCards/compile.ts";
 import { BodySurface, HeadFrame } from "./hairCards/head.ts";
 import {
@@ -158,17 +159,25 @@ export async function writeStrandMap(src: string, dest: string, edge: number, fl
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
+  // A card's faint edge texels carry the atlas's dark backdrop; bled from the
+  // strands beside them, the edge filters toward the strands' own colour rather
+  // than drawing a dark wire. Bled before the map is made, so its normalisation
+  // to the strand mean counts the faint edge as it will be drawn; and again
+  // after, so its clear texels carry their neighbours' grey rather than the
+  // map's one flat fill (they weigh nothing in its mean).
   const map = strandMapFromRgba(
-    new Uint8Array(data),
+    bleedEdges(new Uint8Array(data), info.width, info.height),
     info.width,
     info.height,
     flatten === undefined ? {} : { flatten },
   );
+  bleedEdges(map.rgba, info.width, info.height);
   await sharp(Buffer.from(map.rgba), {
     raw: { width: info.width, height: info.height, channels: 4 },
   })
     // Lossy alpha: a strand's edge moving by a level is invisible, and lossless alpha is most of a curly style's size.
-    .webp({ quality: 80, alphaQuality: 85, effort: 4 })
+    // `exact` keeps the bled colour under clear texels, which the encoder would otherwise rewrite.
+    .webp({ quality: 80, alphaQuality: 85, effort: 4, exact: true })
     .toFile(dest);
   return { angle: map.strandAngle, coherence: map.coherence };
 }

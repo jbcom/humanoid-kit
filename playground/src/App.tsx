@@ -3,8 +3,10 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   type AnimationLibrary,
   createRecipe,
+  type EyeLibrary,
   HumanoidWorkerClient,
   loadAnimationLibrary,
+  loadEyeLibrary,
   type Recipe,
 } from "humanoid-kit";
 import { HumanoidCreator } from "humanoid-kit/editor";
@@ -18,6 +20,7 @@ import {
 } from "humanoid-kit/react";
 import { animationsPack } from "humanoid-kit-animations";
 import { bodyPack } from "humanoid-kit-body";
+import { eyesPack } from "humanoid-kit-eyes";
 import { hairPack } from "humanoid-kit-hair";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -335,6 +338,17 @@ function Shot() {
       live = false;
     };
   }, [wantsAnimation, library]);
+  // The eye pack's library, fetched once and only for a shot whose recipe names an eye material.
+  const [eyeLibrary, setEyeLibrary] = useState<EyeLibrary | null>(null);
+  const wantsEyes = recipe.eyes.material !== undefined;
+  useEffect(() => {
+    if (!wantsEyes || eyeLibrary) return;
+    let live = true;
+    void loadEyeLibrary(eyesPack).then((l) => live && setEyeLibrary(l));
+    return () => {
+      live = false;
+    };
+  }, [wantsEyes, eyeLibrary]);
   const [playing, setPlaying] = useState<string | null>(null);
   const [signals, setSignals] = useState<Record<string, number>>(initialSignals);
   const [lift, setLift] = useState(0);
@@ -345,7 +359,10 @@ function Shot() {
   // test can render many figures from one page load.
   const [settled, setSettled] = useState(false);
   // A shot that plays a clip is ready once the figure follows it.
-  const ready = settled && (animation === undefined || playing === animation.clip);
+  const ready =
+    settled &&
+    (animation === undefined || playing === animation.clip) &&
+    (!wantsEyes || eyeLibrary !== null);
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
     window.hkSetRecipe = (init, next, nextSignals) => {
@@ -431,6 +448,7 @@ function Shot() {
             animation && {
               animation: { library, ...animation, onStart: setPlaying },
             })}
+          {...(eyeLibrary && { eyeMaterials: eyeLibrary })}
           signals={signals}
           position={[0, animation ? 0 : lift, 0]}
           onGroundOffset={setLift}
