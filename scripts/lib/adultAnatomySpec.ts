@@ -17,6 +17,7 @@ import type {
   HumanoidAssets,
 } from "../../src/format/assetFormat.ts";
 import { AUTHORED_MODIFIERS } from "./adultAuthored.ts";
+import { adultCoatRegions } from "./adultCoat.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE } from "./detail/phallus.ts";
 import { TESTES_SIZE } from "./detail/scrotum.ts";
 import { pelvicRefinement } from "./pelvicRegion.ts";
@@ -64,6 +65,7 @@ export function adultAnatomySpec(
     surface: pelvicRefinement(base),
     ...(reservoirs && { reservoirs }),
     ...(detail && { detail }),
+    coatRegions: adultCoatRegions(base),
   };
 }
 

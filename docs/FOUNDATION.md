@@ -79,10 +79,85 @@ Each is a measured test over the permutations, not a look at a sheet:
 - **The sheet set**: `hk-sheets` expands `{"$foundation": "<tier>"}` into the
   permutations, so evidence for any layer is one line.
 
+## Affordances: a body that can interact, not a solid statue
+
+A body whose mouth, nostrils, ears, hands and genitals are only surface
+decoration is a solid statue: a developer who wants a figure to eat an apple,
+hold a sword, wear an earring or couple with another figure would have to hack
+the mesh or ship a clip for every case. The kit instead exposes the body's
+**affordances**: every place another object or another figure can enter, grip,
+hang from or rest against. Each one carries its own geometry, signals its state
+and deforms to what it holds. Interactions are then composed by manipulating
+the model space at runtime, not anticipated as animations.
+
+### Kinds
+
+- **Apertures and channels**: the mouth (lips, oral cavity, throat entrance),
+  nostrils, ear canals; in the adult pack only, the vagina and anus (and the
+  urethral meatus as a landmark). An aperture is a rim on the skin plus a
+  channel behind it: a path with a measured radius profile and depth, scaled
+  by the figure's macros, ending in a real interior surface. It is geometry
+  that exists and renders, not a painted mark.
+- **Grips**: each hand (palm, finger pads, thumb opposition), the mouth's bite
+  (teeth and lips), the feet's plantar surfaces, the arms' crook and the
+  knees' hollow for clasping.
+- **Mounts**: where things hang or are worn and must follow the skin: ear
+  lobes and helix, nose, brow, lips, navel, neck, wrists, fingers, waist,
+  shoulders, back; the genital mounts in the adult pack.
+- **Contact surfaces**: where the body rests on or against something (seat,
+  back, palms, soles, knees, another body), which drive soft deformation.
+
+### What each affordance gives a developer
+
+- **A frame** that follows the posed, morphed skin (from the landmarks).
+- **State** the developer can set and the kit reports, as plain values:
+  - aperture: opening 0..1 (driving the rim and the channel's entrance), and
+    occupancy: what is inserted, to what depth, with what cross-section;
+  - grip: closure 0..1, the held object, contact points and pressure;
+  - mount: what is attached, and its load (a hanging earring swings, a heavy
+    one pulls the lobe).
+- **Response**: the body deforms to the state:
+  - a channel widens to an inserted object's cross-section along its depth (a
+    parametric deformer along the channel's path, with the rim and the tissue
+    round it following), within measured tissue limits;
+  - a grip closes the fingers onto the object's surface by inverse kinematics
+    against its closest points, with finger pads flattening at contact;
+  - contact surfaces compress soft tissue against what they rest on.
+- **Occlusion and consumption**: whatever passes inside an aperture is clipped
+  at its rim and hidden inside the channel (a clip volume per aperture), so a
+  developer makes a figure eat by moving an apple into the mouth and
+  advancing a `consumed` fraction that dissolves the held part, with no new
+  animation.
+
+### Interacting with other objects and other figures
+
+- A **solid model** joins an interaction by registering as an insertable,
+  grippable or mountable object: a cross-section profile and grip surfaces,
+  derived automatically from its mesh or declared by the developer.
+- **Two figures** interact through matched affordances (an aperture with an
+  insertable part, a grip with a limb, contact surface with contact surface),
+  through the same API, each figure signalling and responding to its own
+  state.
+- **Age policy**: genital and anal affordances exist only in the adult pack;
+  any pairing that involves them refuses a participant under 18, and the core
+  pack names none of them.
+
+### In the foundation
+
+Affordances are part of the foundation, not a later layer: an anatomy that
+passes as a closed surface and is reopened later is rebuilt twice. The
+foundation's adult figures render with the adult pack, so a female or male
+body is anatomically one; apertures are built with their channels when the
+anatomy is built; and the invariants extend to them (a channel never
+self-intersects or punches through the body wall at any opening or pose; a
+grip never lets fingers pass into the held object).
+
 ## Order of work
 
 1. The harness: `foundationPermutations`, the pose set, landmarks, surface
-   queries, the `$foundation` sheet expansion and the invariant test suite.
-2. The foundation passes: deformation and correctives, adult anatomy, skin and
-   its details, the face and hands, across the full tier.
+   queries, the `$foundation` sheet expansion and the invariant test suite,
+   and the affordance registry with its state and frames.
+2. The foundation passes: deformation and correctives, adult anatomy with its
+   channels, the mouth and hands as working apertures and grips, skin and its
+   details, across the full tier.
 3. Only then layers above the skin, each tested by iterating the foundation.
