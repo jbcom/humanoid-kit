@@ -48,18 +48,34 @@ const HAIR: Paint = {
   width: 0.0004,
 };
 
+interface View {
+  /** Straight down at the patch, or 70° off its normal. */
+  view?: "front" | "slant";
+  shells?: number;
+  /** The patch's side, metres (and its metres per UV unit); default `SIDE`. */
+  side?: number;
+  /** The width the camera sees, metres; default half of `SIDE`. */
+  span?: number;
+  /** How far the patch is slid along x, metres. */
+  offset?: number;
+  /** The skin under the coat, a grey drawn unlit; default none, on white. */
+  skin?: number;
+}
+
 /**
- * Renders the patch (facing +z, the camera looking down -z from `from`) with
- * one region painted `paint`, against a white background. Returns red, row-major.
+ * Renders the patch (facing +z, the camera looking down -z) with one region
+ * painted `paint`. Returns red, row-major.
  */
-function render(paint: Paint | null, view: "front" | "slant" = "front", shells = 8) {
+function render(paint: Paint | null, options: View = {}) {
+  const { view = "front", shells = 8, side = SIDE, span = SIDE / 2, offset = 0 } = options;
   renderer ??= new WebGLRenderer({ canvas: document.createElement("canvas"), antialias: false });
   renderer.setSize(SIZE, SIZE, false);
-  const body = new PlaneGeometry(SIDE, SIDE, 16, 16);
+  const body = new PlaneGeometry(side, side, 16, 16);
+  body.translate(offset, 0, 0);
   const n = body.getAttribute("position").count;
   body.setAttribute("skinIndex", new BufferAttribute(new Uint16Array(n * 4), 4));
   body.setAttribute("skinWeight", new BufferAttribute(new Float32Array(n * 4), 4));
-  body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(new Float32Array(n).fill(SIDE), 1));
+  body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(new Float32Array(n).fill(side), 1));
   const comb = new Float32Array(n * 3);
   for (let v = 0; v < n; v++) comb[v * 3 + 1] = -1;
   const masks = new Uint8Array(n * COAT_REGION_LIMIT);
@@ -77,14 +93,23 @@ function render(paint: Paint | null, view: "front" | "slant" = "front", shells =
   material.setShells(shells);
   const scene = new Scene();
   scene.background = new Color(1, 1, 1);
-  scene.add(new Mesh(geometry, material));
+  const skin =
+    options.skin === undefined
+      ? null
+      : new MeshBasicMaterial({ color: new Color(options.skin, options.skin, options.skin) });
+  if (skin) scene.add(new Mesh(body, skin));
+  const coat = new Mesh(geometry, material);
+  coat.renderOrder = 1;
+  scene.add(coat);
   scene.add(new AmbientLight(0xffffff, 3));
-  const half = SIDE / 4;
-  const camera = new OrthographicCamera(-half, half, half, -half, 0.001, 1);
+  const half = span / 2;
+  // Far enough back that a tilted patch of any size lies between the clip planes.
+  const distance = 0.5 + side;
+  const camera = new OrthographicCamera(-half, half, half, -half, 0.001, 2 * distance);
   // Straight down at the patch, or 70° off its normal, where each shell's strands
   // are seen side on and longer ones overlap more of the skin.
-  if (view === "front") camera.position.set(0, 0, 0.5);
-  else camera.position.set(0, -0.5 * Math.sin(1.22), 0.5 * Math.cos(1.22));
+  if (view === "front") camera.position.set(0, 0, distance);
+  else camera.position.set(0, -distance * Math.sin(1.22), distance * Math.cos(1.22));
   camera.lookAt(0, 0, 0);
   renderer.setRenderTarget(target);
   renderer.render(scene, camera);
@@ -94,11 +119,50 @@ function render(paint: Paint | null, view: "front" | "slant" = "front", shells =
   geometry.dispose();
   body.dispose();
   material.dispose();
+  skin?.dispose();
   return px.filter((_, i) => i % 4 === 0);
 }
 
 const share = (px: Float32Array, test: (x: number) => boolean) =>
   px.filter(test).length / px.length;
+
+const average = (px: Float32Array) => px.reduce((s, x) => s + x, 0) / px.length;
+
+/**
+ * The share of pixels that differ from all eight neighbours by more than
+ * `step`, all on the same side: lone points, the coat v2 pepper.
+ */
+function lonePixels(px: Float32Array, step: number): number {
+  let lone = 0;
+  for (let y = 1; y + 1 < SIZE; y++)
+    for (let x = 1; x + 1 < SIZE; x++) {
+      const p = px[y * SIZE + x] as number;
+      let above = 0;
+      let below = 0;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const q = px[(y + dy) * SIZE + x + dx] as number;
+          if (p - q > step) above++;
+          if (q - p > step) below++;
+        }
+      if (above === 8 || below === 8) lone++;
+    }
+  return lone / ((SIZE - 2) * (SIZE - 2));
+}
+
+/** The skin under the coat in the coverage tests: a mid grey, unlit. */
+const SKIN = 0.6;
+/** A follicle cell's side for `HAIR`, metres: the follicle spacing. */
+const CELL = 0.01 / Math.sqrt(HAIR.density);
+/**
+ * A view `cells` follicle cells a pixel across, on a patch wide enough to fill
+ * it even foreshortened at a slant (cos 70° ≈ 0.34).
+ */
+const atFootprint = (cells: number, offset = 0): View => {
+  const span = cells * CELL * SIZE;
+  return { span, side: Math.max(SIDE, 4 * span), skin: SKIN, offset };
+};
 
 describe("the coat's shells", () => {
   it("draw nothing where no region is painted", () => {
@@ -115,8 +179,8 @@ describe("the coat's shells", () => {
   });
 
   it("stand off the skin: seen at a slant, longer hair hides more of the skin", () => {
-    const short = share(render({ ...HAIR, length: 0.0005 }, "slant"), (x) => x < 0.5);
-    const long = share(render(HAIR, "slant"), (x) => x < 0.5);
+    const short = share(render({ ...HAIR, length: 0.0005 }, { view: "slant" }), (x) => x < 0.5);
+    const long = share(render(HAIR, { view: "slant" }), (x) => x < 0.5);
     expect(long).toBeGreaterThan(1.5 * short);
   });
 
@@ -174,6 +238,47 @@ describe("the coat's shells", () => {
     expect(after.right).toBeGreaterThan(0.2);
     body.dispose();
     material.dispose();
+  });
+
+  // Coat v2 kept or dropped each fragment whole, so below a pixel its strands
+  // became lone dots that moved with the screen. Coverage blends them instead.
+  describe("as coverage", () => {
+    /** Near (a cell 7 pixels across), about a pixel a cell, and far (6 cells a pixel). */
+    const FOOTPRINTS = [0.15, 1, 6];
+
+    it("darken the skin about as much at every distance, seen from above or at a slant", () => {
+      for (const view of ["front", "slant"] as const) {
+        const dark = FOOTPRINTS.map(
+          (f) => 1 - average(render(HAIR, { ...atFootprint(f), view })) / SKIN,
+        );
+        for (const d of dark) expect(d, `${view} ${dark}`).toBeGreaterThan(0.1);
+        expect(Math.max(...dark) / Math.min(...dark), `${view} ${dark}`).toBeLessThan(1.25);
+      }
+    });
+
+    it("draw no lone pixels at any distance", () => {
+      for (const f of FOOTPRINTS)
+        expect(lonePixels(render(HAIR, atFootprint(f)), 0.08), `${f} cells a pixel`).toBeLessThan(
+          0.002,
+        );
+    });
+
+    it("draw the same image of the skin wherever it is on screen: slid 4 pixels, it moves 4", () => {
+      for (const f of FOOTPRINTS) {
+        const view = atFootprint(f);
+        const pixel = (view.span as number) / SIZE;
+        const here = render(HAIR, view);
+        const slid = render(HAIR, atFootprint(f, 4 * pixel));
+        let worst = 0;
+        for (let y = 8; y < SIZE - 8; y++)
+          for (let x = 8; x < SIZE - 12; x++)
+            worst = Math.max(
+              worst,
+              Math.abs((slid[y * SIZE + x + 4] as number) - (here[y * SIZE + x] as number)),
+            );
+        expect(worst, `${f} cells a pixel`).toBeLessThan(0.02);
+      }
+    });
   });
 
   it("thin with cover: half the cover draws about half the strands", () => {

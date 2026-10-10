@@ -1540,9 +1540,6 @@ module.
   (outfit-masked) index cut to the triangles whose corners carry a painted
   region; built when the outfit or the set of painted regions changes, so a
   figure without a coat draws nothing and stubble draws only the face.
-  A recipe without `bodyHair` grows no coat at all (`coatPaintFor`): until the
-  coat's sub-pixel strands resolve as coverage rather than single-pixel
-  points, default figures stay bare instead of speckled.
 - *One instanced draw.* The coat is a skinned mesh on the body's own geometry
   and skeleton, instanced N times; shell `i` is the skin offset along the rest
   normal by `(i + 1) / N` of the hair's length, leaning along the comb, before
@@ -1553,19 +1550,33 @@ module.
   masks, its index). Three frees every attribute of a disposed geometry, and a
   body whose buffers were freed under it draws nothing, or the shape it had
   before: a woman's eyes hanging at a man's throat.
-- *A recipe asks for it.* Until the coat's shading is reworked, a region grows
-  only where the recipe enables it (`coatEnabled`): the beard by a style, any
-  other group by its density. A recipe silent on body hair draws no coat.
+- *A recipe asks for it.* A recipe without `bodyHair` grows no coat
+  (`coatPaintFor`), and within one a region grows only where the recipe
+  enables it (`coatEnabled`): the beard by a style, any other group by its
+  density. Default figures stay bare.
 - *Strands from a tileable density texture* at true scale (`uv × uvScale`
-  over the follicle spacing), generated from a seed: per cell a strand's
-  length, its radius profile and an id; a shell keeps a fragment inside a
-  strand that reaches its height and whose id is under the coverage, so
-  coverage thins the hair rather than fading it.
+  over the follicle spacing), generated from a seed: per follicle cell a
+  strand's root, its reach (the share of the hair's length it grows), its
+  radius tapering to the tip, and an id; the strand is there when its id is
+  under the coverage, so coverage thins the hair rather than fading it.
+- *Coverage, not points (2026-10-09, after coat v2 was rejected).* A shell's
+  fragment is never kept or dropped whole; it is blended over what is under
+  it by the share of its pixel the strands cover at that shell's height, so
+  the hair's colour, its darkening toward the root and its sheen all arrive as
+  a fraction of the pixel. Where a strand is wider than about a pixel the
+  share is the strand's disc under a pixel-wide box filter; where it is
+  narrower it is the strands' mean cover at that height (their expected area,
+  spread so the shells together cover what the strands do seen from above),
+  crossfading as the strand's width goes from half a pixel to a pixel and a
+  half. The footprint is the pixel's size in follicle cells, from the cells'
+  derivatives: it depends on how the skin lies on screen, never on where, so
+  sliding a figure across the screen moves its coat's image with it and does
+  not change it. The shells blend inner to outer, the order they lie in seen
+  from outside, and do not write depth. (Rejected: v2's interleaved-gradient
+  dither of the mean below a pixel. Its single-pixel points read as pepper,
+  not hair, and moved with the screen rather than the skin.)
 - *Shading is Kajiya-Kay along the skinned comb*, two lobes as the hair cards
   use, with the pigment albedo, darker toward the root (self-shadow).
-- *A far LOD by dither.* Where a follicle cell is finer than a pixel the shells
-  cannot resolve strands; a fragment is then kept by an interleaved-gradient
-  dither of the strands' mean cover at its height.
 
 **Built (2026-10-09).** `src/surface/coat.ts` (fields, paint, triangles, shell
 count), `src/render/coat.ts` (`CoatMaterial`, `coatGeometry`) and
