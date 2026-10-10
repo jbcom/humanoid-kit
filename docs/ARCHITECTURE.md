@@ -2487,6 +2487,14 @@ topology and the field atlas exist. Decisions:
   layers read their spec by id; a pack without a spec adds no layers and no
   states. `tests/adultStack.test.ts` scans the source for any adult name, so the
   slip fails before a build does.
+- **An adult with the pack is anatomically complete by default.** The pack's
+  `anatomy.defaults` gives each adult-only modifier a value as a
+  piecewise-linear function of the gender macro; `withAnatomyDefaults` fills
+  the modifiers a recipe leaves unset, for an adult only, and the model (morph,
+  gates, drives) and the paint input both read the filled recipe. A value the
+  recipe sets, 0 included, wins, so a developer can still draw an adult without
+  some feature. The core stays anatomy-free: it knows a curve over gender, not
+  what the curve shapes (docs/FOUNDATION.md, "both forms").
 - Until the adult stage arrives their fields are zero (empty atlas pages).
   When it arrives the worker derives the fields from the pack's targets and
   posts them; the main thread re-rasterises those pages of the shared atlas.
@@ -3193,7 +3201,12 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   edge), so one set of fields serves a child's 13 mm areola and a woman's 38,
   and a puberty that grows it, without a field per age. The resolution is the
   eight stops across the reach (a stop every 3.1 mm); the edge position is
-  continuous, its softness is not finer than that.
+  continuous, its softness is not finer than that. The coordinate runs on past
+  the disc, held at 1 (the skin's stop), as the ribs' and collarbones' do. It
+  once fell to 0 there, so each triangle on the mask's edge swept the whole
+  profile back to the nipple's stop. That drew a faint ring of the nipple's
+  colour and texture round every areola, the step under a man's (his nipple is
+  lighter than his areola), and a ring of small tubercles outside it.
 - *Sizes in metres are put on the base mesh by the measured stretch.* The fields
   are measured on the base mesh and the figure's mesh is that mesh morphed, so a
   nipple's surroundings are 0.68 times as big on a seven year old and 2.09 on the
@@ -3227,8 +3240,15 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   the body hair's strands, and kinds 2, 3 and 5 are unchanged.
 - *Montgomery tubercles are a share of cells, not a count.* Their relief is
   `hkTubercles`: bumps in the cells of a 2.2 mm grid, each raised once the
-  profile's occupancy at the pixel passes the cell's own random draw, by a short
-  ramp so a bump does not lose a side where the occupancy changes across it. A
+  profile's occupancy at its own centre passes the cell's random draw. Each
+  bump reads the layer's coordinate from the atlas at its centre's UV, so all
+  its pixels decide alike and it is drawn whole or not at all (a screen-space
+  gradient of the 8-bit coordinate was too coarse to extrapolate from). A bump
+  is drawn only if its centre lies inside the paint's `limit`
+  (`DetailPaint.limit`). Montgomery's limit is the areola's solid colour as
+  the stops draw it (`areolaSolid`: where the interpolated colour first fades
+  below nine tenths), less a millimetre and a bump's radius, so no tubercle
+  sits on the areola's fading edge or outside it. A
   ring profile (from a quarter of the areola's radius to nine tenths) and
   an occupancy of about 8% in a woman give about a dozen on an areola. Each is a
   1.5 mm bump (a bump spans 0.7 of a cell), where measured tubercles are 1 to 2
@@ -3241,10 +3261,21 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   of that between a fat at which it does not (`CLAVICLE_VISIBLE_FAT`,
   `RIB_VISIBLE_FAT`: ribs only on the leanest) and one at which it does, so the
   relief's strength is the figure's own; a heavy figure's collarbones and ribs
-  are flat. The collarbone is two periods of a crease layer across the bone: a
-  ridge on the clavicle's axis between the fossae above and below it, the
-  coordinate the distance up the bone's own cross-section, so a point straight
-  out from the bone is the ridge; a rib is the groove between two, nine
+  are flat. The collarbone is a swell layer (detail kind 10, `swellHeight`): a
+  smooth signed cross-section, the cubic B-spline through eight control values
+  in the stops, with a rounded ridge over the bone and the supraclavicular
+  fossa's hollow 2 to 3 cm above it, flat at both ends. Its coordinate is the
+  distance up the bone's own cross-section, from 2 cm below the bone to 4 cm
+  above, measured from the S-shaped bone (bowed forward over its inner two
+  thirds, back over its outer third), not its straight axis. The bone runs
+  from the rig's clavicle head out to the acromion (`clavicleLateralEnd`): the
+  rig's clavicle bone stops halfway, at the shoulder bone's head, so the first
+  layer drew only the inner half. It was two
+  grooves of a crease layer, and the grooves read as a hard outline round a
+  raised crescent; a swell has no groove, and the shader fades it by the
+  smootherstep of the mask per pixel, so the mask's edge leaves no step (a test
+  walks every edge the mask touches in half-millimetre pixels and bounds the
+  change between neighbours). A rib is the groove between two, nine
   periods down a window from the second rib to the tenth, along lines that fall
   25 degrees outward from the breastbone, and the breast, the arms and the
   breastbone's strip are left out.

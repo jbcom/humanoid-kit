@@ -43,6 +43,7 @@ import {
   type SkinPaintInput,
   STOP_COUNT,
   STOP_TABLE_WIDTH,
+  TUBERCLE_RADIUS,
 } from "../surface/layers.ts";
 import { LIPS_LAYER, NAIL_GLOSS_LAYER, SKIN_LAYERS } from "../surface/regions/index.ts";
 import {
@@ -319,19 +320,27 @@ float hkBumps( vec2 p ) {
 		}
 	return h;
 }
-// Tubercles: bumps in a share of the cells, the share (0..1) being the layer's occupancy where
-// the pixel is. A cell raises a bump once the occupancy passes its own random draw, by a ramp
-// rather than a step, so the bump does not lose a side where the occupancy changes across it.
-float hkTubercles( vec2 p, float occupancy ) {
+// Tubercles: bumps in a share of the cells, the share (0..1) being layer l's occupancy (its
+// profile) at the bump's own centre: the layer's coordinate is read from the atlas at the
+// centre's UV (cellUv: UV per cell), so every pixel of a bump makes the same decision and a
+// bump is drawn whole or not at all. A cell raises a bump once the occupancy passes its own
+// random draw, and only if its centre lies inside the limit, which the paint has drawn in by a
+// bump's radius (DetailPaint.limit in layers.ts): none crosses the edge it stands for.
+float hkTubercles( vec2 p, int l, vec2 uv, float cellUv, float limit ) {
 	vec2 i = floor( p );
 	float h = 0.0;
 	for ( int y = -1; y <= 1; y ++ )
 		for ( int x = -1; x <= 1; x ++ ) {
 			vec2 c = i + vec2( float( x ), float( y ) );
-			float present = smoothstep( 0.0, 0.02, occupancy - hkHash( c + 41.7 ) );
 			vec2 centre = c + 0.2 + 0.6 * vec2( hkHash( c ), hkHash( c + 17.31 ) );
-			float d = length( p - centre ) / 0.35;
-			h = max( h, present * pow( max( 1.0 - d * d, 0.0 ), 2.0 ) );
+			vec2 at2 = hkFields( l, uv + ( centre - p ) * cellUv );
+			float at = at2.y;
+			if ( at2.x <= 0.0 || at > limit ) continue;
+			float u = ( 1.5 + clamp( at, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
+			float occupancy = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
+			if ( occupancy <= hkHash( c + 41.7 ) ) continue;
+			float d = length( p - centre ) / ${glslFloat(TUBERCLE_RADIUS)};
+			h = max( h, pow( max( 1.0 - d * d, 0.0 ), 2.0 ) );
 		}
 	return h;
 }
@@ -375,6 +384,32 @@ float hkRidges( vec2 p, float theta, float spacing ) {
 // the ridges fade by.
 float hkFootprintFade( float periodsPerPixel ) {
 	return 1.0 - smoothstep( 0.1, 0.3, periodsPerPixel );
+}
+// Perlin's smootherstep on 0..1 (smootherstep in layers.ts).
+float hkSmootherstep( float t ) {
+	float x = clamp( t, 0.0, 1.0 );
+	return x * x * x * ( x * ( 6.0 * x - 15.0 ) + 10.0 );
+}
+// Layer l's control value k of a swell's cross-section: stop k's red, clamped to the ends.
+float hkSwellControl( int l, int k ) {
+	float u = ( 1.5 + float( clamp( k, 0, ${STOP_COUNT - 1} ) ) ) / ${glslFloat(STOP_TABLE_WIDTH)};
+	return texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
+}
+// A swell's cross-section at the coordinate: the uniform cubic B-spline through the
+// controls (swellProfile in layers.ts), smooth in slope and curvature everywhere.
+float hkSwellProfile( int l, float coord ) {
+	float x = clamp( coord, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)};
+	int i = min( int( floor( x ) ), ${STOP_COUNT - 2} );
+	float f = x - float( i );
+	float f2 = f * f;
+	float f3 = f2 * f;
+	float g = 1.0 - f;
+	return (
+		g * g * g * hkSwellControl( l, i - 1 ) +
+		( 3.0 * f3 - 6.0 * f2 + 4.0 ) * hkSwellControl( l, i ) +
+		( -3.0 * f3 + 3.0 * f2 + 3.0 * f + 1.0 ) * hkSwellControl( l, i + 1 ) +
+		f3 * hkSwellControl( l, i + 2 )
+	) / 6.0;
 }
 // The stretch marks' weight at this pixel, 0 to 1: the mask and the layer's strength, the
 // marks where the ridge noise passes the threshold that the amount sets (the mask scales the
@@ -430,12 +465,16 @@ float hkDetailHeight( vec2 uv ) {
 			H -= g.x * head.x * head.z * lineFade * s * s * ( 3.0 - 2.0 * s );
 			continue;
 		}
-		if ( kind != 2 && kind != 3 && kind != 5 && kind != 7 && kind != 8 && kind != 9 ) continue;
+		if ( kind != 2 && kind != 3 && kind != 5 && kind != 7 && kind != 8 && kind != 9 && kind != 10 ) continue;
 		// A layer at no strength (a joint that is not bent) adds nothing: skip its field fetch.
 		if ( head.x <= 0.0 ) continue;
 		vec2 f = hkFields( l, uv );
 		float a = f.x * head.x;
-		if ( kind == 9 ) {
+		if ( kind == 10 ) {
+			// A swell: the smooth cross-section, faded by the smootherstep of the mask per pixel, so
+			// it leaves the skin with no outline where the mask ends (swellHeight in layers.ts).
+			H += head.x * head.z * hkSmootherstep( f.x ) * hkSwellProfile( l, f.y );
+		} else if ( kind == 9 ) {
 			// A stretch mark is a shallow atrophic dip: depth is the layer's height.
 			H -= head.z * hkStriaeWeight( l, head, f, uv );
 		} else if ( kind == 2 || kind == 7 || kind == 8 ) {
@@ -448,7 +487,11 @@ float hkDetailHeight( vec2 uv ) {
 				float u = ( 1.5 + clamp( f.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
 				float profile = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
 				if ( kind == 7 ) H += a * profile * head.z * fade * hkBumps( p );
-				else H += f.x * head.x * head.z * fade * hkTubercles( p, profile );
+				else {
+					// The coordinate no bump's centre lies past (stop 0, green).
+					float limit = texture( hkLayerStops, vec2( 1.5 / ${glslFloat(STOP_TABLE_WIDTH)}, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).g;
+					H += f.x * head.x * head.z * fade * hkTubercles( p, l, uv, head.w / vHkUvScale, limit );
+				}
 			}
 		} else if ( kind == 5 ) {
 			vec2 p = uv * vHkUvScale;

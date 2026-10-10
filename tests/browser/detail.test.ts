@@ -6,7 +6,13 @@
  */
 import { DataUtils } from "three";
 import { afterAll, describe, expect, it } from "vitest";
-import { creaseHeight, lineRelief, type SkinLayer, STOP_COUNT } from "../../src/surface/layers.ts";
+import {
+  creaseHeight,
+  lineRelief,
+  type SkinLayer,
+  STOP_COUNT,
+  swellHeight,
+} from "../../src/surface/layers.ts";
 import {
   orientationAtCoordinate,
   orientationCoordinate,
@@ -210,13 +216,13 @@ describe("profiled detail layers", () => {
     fields: noFields,
     paint: () => ({ strength: 1, height: 0.0004, size: 0.002, profile }),
   });
-  const tubercles = (occupancy: number): SkinLayer => ({
+  const tubercles = (occupancy: number, limit = 1): SkinLayer => ({
     id: "tubercles",
     kind: "detail",
     pattern: "tubercles",
     targets: [],
     fields: noFields,
-    paint: () => ({ strength: 1, height: 0.0004, size: 0.002, profile: [occupancy] }),
+    paint: () => ({ strength: 1, height: 0.0004, size: 0.002, profile: [occupancy], limit }),
   });
   /** A constant coordinate: the profile is read at that point of it. */
   const at = (c: number) => ({ view, coordinate: () => c });
@@ -252,6 +258,85 @@ describe("profiled detail layers", () => {
     expect(Array.from(render([tubercles(0.4)], at(0)))).toEqual(
       Array.from(render([tubercles(0.4)], at(0))),
     );
+  });
+
+  it("draws no bump whose centre is past the limit, and none cut by it: each is whole or absent", () => {
+    // The coordinate runs along u (0.5 at the view's middle column), the limit at 0.5. A bump's
+    // radius is 0.35 of a 2 mm cell, 0.7 mm: 2.2 of the view's 0.31 mm pixels.
+    const limited = tubercles(1, 0.5);
+    // A 4 cm plane seen whole: the coordinate runs 0..1 across it, so the atlas's 8-bit
+    // coordinate places the limit to a sixth of a millimetre, as it does across an areola.
+    const small = { plane: 0.04 };
+    const flat = render([], small);
+    const got = render([limited], small);
+    const unlimited = render([tubercles(1)], small);
+    let past = 0;
+    let before = 0;
+    let neither = 0;
+    for (let y = 0; y < SIZE; y++)
+      for (let x = 0; x < SIZE; x++) {
+        const i = y * SIZE + x;
+        const g = got[i] as number;
+        const d = Math.abs(g - (flat[i] as number));
+        // Past the limit by more than a bump's radius: flat.
+        if (x >= SIZE / 2 + 3) past = Math.max(past, d);
+        else if (x < SIZE / 2 - 12) before = Math.max(before, d);
+        // Everywhere, a pixel is the unlimited layer's bump or the flat skin: never a cut bump.
+        if (d > 1e-4 && Math.abs(g - (unlimited[i] as number)) > 1e-4) neither++;
+      }
+    expect(past).toBeLessThan(1e-4);
+    expect(before).toBeGreaterThan(1e-3);
+    // Where two bumps overlap, the one left may differ from the pair: a pixel or two.
+    expect(neither).toBeLessThan(0.002 * SIZE * SIZE);
+  });
+});
+
+describe("swell layers", () => {
+  const PROFILE = [0, 0, 0.9, 0.8, -0.3, -0.6, 0, 0];
+  const swell = (height: number, strength = 1): SkinLayer => ({
+    id: "swell",
+    kind: "detail",
+    pattern: "swell",
+    targets: [],
+    fields: noFields,
+    paint: () => ({ strength, height, size: 1, profile: PROFILE }),
+  });
+
+  it("raises the cross-section the reference gives: the shading follows its slope", () => {
+    const flat = render([]);
+    const raised = render([swell(0.05)]);
+    const change = Array.from(
+      { length: SIZE },
+      (_, x) => (raised[(SIZE / 2) * SIZE + x] as number) - (flat[(SIZE / 2) * SIZE + x] as number),
+    );
+    // The plane is 2 m across and its coordinate runs 0..1 along it; the mask is 1.
+    const slope = Array.from({ length: SIZE }, (_, x) => {
+      const c = (x + 0.5) / SIZE;
+      const e = 1e-4;
+      return (
+        (swellHeight(0.05, PROFILE, c + e, 1) - swellHeight(0.05, PROFILE, c - e, 1)) / (2 * e * 2)
+      );
+    });
+    let sxy = 0;
+    let sxx = 0;
+    for (let x = 0; x < SIZE; x++) {
+      sxy += (slope[x] as number) * (change[x] as number);
+      sxx += (slope[x] as number) ** 2;
+    }
+    const scale = sxy / sxx;
+    let residual = 0;
+    let energy = 0;
+    for (let x = 0; x < SIZE; x++) {
+      residual += ((change[x] as number) - scale * (slope[x] as number)) ** 2;
+      energy += (change[x] as number) ** 2;
+    }
+    // Light from +x: where the relief rises along x it faces away, and darkens.
+    expect(scale).toBeLessThan(0);
+    expect(Math.sqrt(residual / energy)).toBeLessThan(0.12);
+  });
+
+  it("draws nothing at no strength", () => {
+    expect(Array.from(render([swell(0.05, 0)]))).toEqual(Array.from(render([])));
   });
 });
 

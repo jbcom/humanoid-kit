@@ -484,6 +484,14 @@ export interface AdultAnatomySpec {
    * Absent, the adult anatomy has none.
    */
   piercingSites?: AdultPiercingSiteSpec[];
+  /**
+   * What an adult figure's anatomy is when its recipe sets none of it: per
+   * adult-only modifier, its value as a piecewise-linear function of the gender
+   * macro, written `x,w;x,w;…` (`withAnatomyDefaults`). With the pack loaded an
+   * adult is anatomically complete by default; a recipe's own value always wins.
+   * Absent, unset modifiers stay at 0.
+   */
+  defaults?: Record<string, string>;
 }
 
 /**
@@ -746,6 +754,58 @@ function checkAdultCoatRegions(regions: readonly AdultCoatRegionSpec[], vertexCo
       if (!(m >= 0 && m <= 1)) throw new AssetFormatError(`${what}: mask ${m} is outside 0..1`);
     }
   }
+}
+
+/**
+ * Refuses anatomy defaults the core could not apply: one for a modifier the
+ * pack does not declare or that is not adult-only (a default must never shape a
+ * minor's figure), or a curve that is not ascending `x,w` points within the
+ * modifier's range.
+ */
+function checkAnatomyDefaults(
+  anatomy: AdultAnatomySpec | undefined,
+  modifiers: readonly ShapeModifierEntry[],
+): void {
+  for (const [id, curve] of Object.entries(anatomy?.defaults ?? {})) {
+    const what = `adult anatomy default for ${id}`;
+    const m = modifiers.find((x) => x.id === id);
+    if (!m) throw new AssetFormatError(`${what}: the pack declares no such modifier`);
+    if (!m.adultOnly) throw new AssetFormatError(`${what}: the modifier is not adult-only`);
+    const lo = m.lo === null ? 0 : -1;
+    try {
+      for (const [, w] of parseCurve(curve))
+        if (!(w >= lo && w <= 1)) throw new Error(`value ${w} is outside ${lo}..1`);
+    } catch (e) {
+      throw new AssetFormatError(`${what}: ${(e as Error).message}`);
+    }
+  }
+}
+
+/** Ascending `x,w;x,w;…` points, at least two; throws a plain Error naming what is wrong. */
+export function parseCurve(text: string): [number, number][] {
+  const points = text.split(";").map((p) => p.split(",").map(Number) as [number, number]);
+  if (points.length < 2 || points.some((p) => p.length !== 2 || p.some((x) => !Number.isFinite(x))))
+    throw new Error("needs at least two numeric x,w points");
+  for (let i = 1; i < points.length; i++)
+    if ((points[i] as [number, number])[0] <= (points[i - 1] as [number, number])[0])
+      throw new Error("has points that do not ascend in x");
+  return points;
+}
+
+/** The piecewise-linear function through `points`, holding its end values outside them. */
+export function curveAt(points: readonly (readonly [number, number])[], v: number): number {
+  const first = points[0] as readonly [number, number];
+  const last = points[points.length - 1] as readonly [number, number];
+  if (v <= first[0]) return first[1];
+  if (v >= last[0]) return last[1];
+  for (let i = 1; i < points.length; i++) {
+    const b = points[i] as readonly [number, number];
+    if (v <= b[0]) {
+      const a = points[i - 1] as readonly [number, number];
+      return a[1] + ((v - a[0]) / (b[0] - a[0])) * (b[1] - a[1]);
+    }
+  }
+  return last[1];
 }
 
 /**
@@ -1115,6 +1175,7 @@ export function parseHumanoidAssets(
     }
     checkAdultCoatRegions(a.anatomy?.coatRegions ?? [], manifest.vertexCount);
     checkAdultPiercingSites(a.anatomy);
+    checkAnatomyDefaults(a.anatomy, a.modifiers);
     for (const m of a.modifiers) modifiers.set(m.id, m);
   }
   // Merging also orders tasks by sortOrder; the manifest keeps upstream's file order.

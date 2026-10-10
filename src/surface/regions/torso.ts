@@ -5,7 +5,13 @@
  * a CHOICE there.
  */
 import { AssetFormatError, type HumanoidAssets, jointPosition } from "../../format/assetFormat.ts";
-import type { ColourLayer, DetailLayer, SkinLayerFields, SkinPaintInput } from "../layers.ts";
+import {
+  type ColourLayer,
+  type DetailLayer,
+  type SkinLayerFields,
+  type SkinPaintInput,
+  TUBERCLE_RADIUS,
+} from "../layers.ts";
 import {
   areolaAlbedo,
   haemoglobinRatio,
@@ -60,7 +66,11 @@ export const AREOLA_REACH = 0.022;
 export interface AreolaZone {
   /** 1 within the reach's inner part, easing to 0 at the reach. */
   mask: Float32Array;
-  /** Distance from the nipple's centre in reaches, 0..1, where the mask lies. */
+  /**
+   * Distance from the nearer nipple's centre in reaches, held at 1 past the
+   * reach: continuous everywhere, so a triangle on the mask's edge reads the
+   * outer stops, never the nipple's.
+   */
   radial: Float32Array;
 }
 
@@ -85,13 +95,20 @@ function nippleCentres(assets: HumanoidAssets): [number, number, number][] {
   });
 }
 
-/** The disk of `AREOLA_REACH` round each nipple, with its radial coordinate. */
+/**
+ * The disk of `AREOLA_REACH` round each nipple, with its radial coordinate. The
+ * coordinate runs on past the disk, held at 1 (the skin's own stops): it once
+ * fell to 0 outside it, so every triangle on the mask's edge swept through
+ * the whole profile back to the nipple's stop, and drew a ring of the
+ * nipple's colour and relief round the areola (the step under a man's
+ * areola, where his nipple is lighter than it) and a ring of small tubercles.
+ */
 export function areolaZone(assets: HumanoidAssets): AreolaZone {
   return once(assets, "areola-zone", () => {
     const P = assets.positions;
     const n = assets.manifest.vertexCount;
     const mask = new Float32Array(n);
-    const radial = new Float32Array(n);
+    const radial = new Float32Array(n).fill(1);
     for (const c of nippleCentres(assets)) {
       for (let v = 0; v < n; v++) {
         const d = Math.hypot(
@@ -100,10 +117,8 @@ export function areolaZone(assets: HumanoidAssets): AreolaZone {
           (P[v * 3 + 2] as number) - c[2],
         );
         const w = 1 - smoothstep(0.85 * AREOLA_REACH, AREOLA_REACH, d);
-        if (w > (mask[v] as number)) {
-          mask[v] = w;
-          radial[v] = Math.min(1, d / AREOLA_REACH);
-        }
+        if (w > (mask[v] as number)) mask[v] = w;
+        radial[v] = Math.min(radial[v] as number, d / AREOLA_REACH);
       }
     }
     return { mask, radial };
@@ -121,16 +136,18 @@ export const AREOLA_CHILD_DEPTH = 0.3;
 const STOP_RADII = Array.from({ length: 8 }, (_, i) => (i / 7) * AREOLA_REACH);
 
 /** Where a figure's nipple and areola end, and how soft the areola's edge is, metres, and its stage. */
-interface AreolaShape {
+export interface AreolaShape {
   edge: number;
   soft: number;
   tip: number;
   /** Puberty, 0..1 (`pubertyProgress`). */
   stage: number;
   gender: number;
+  /** How much larger the figure's skin is than the field's (`areolaScale`): a metre on the figure is 1 / scale in the field. */
+  scale: number;
 }
 
-function areolaShape(input: SkinPaintInput): AreolaShape {
+export function areolaShape(input: SkinPaintInput): AreolaShape {
   const b = figureBuild(input);
   // The figure's own lengths, in the field's: the mesh round the nipple is this much bigger.
   const k = input.areolaScale && input.areolaScale > 0 ? input.areolaScale : 1;
@@ -141,11 +158,32 @@ function areolaShape(input: SkinPaintInput): AreolaShape {
     tip: nippleRadius(b.age, b.gender) / k,
     stage: pubertyProgress(b.age, b.gender),
     gender: b.gender,
+    scale: k,
   };
 }
 
 /** 1 within the areola, 0 beyond it, at radius `r` from the nipple's centre. */
 const onAreola = (s: AreolaShape, r: number) => 1 - smoothstep(s.edge - s.soft, s.edge + s.soft, r);
+/**
+ * How far out the areola's colour is solid, field metres: the radius where the
+ * colour as the shader draws it (`onAreola` at the eight stops, linearly between
+ * them) first falls below nine tenths. The stops are 3 mm apart, so this is up
+ * to a stop inside the edge's own smooth fade: what the eye takes as the areola.
+ */
+export function areolaSolid(s: AreolaShape): number {
+  const a = STOP_RADII.map((r) => onAreola(s, r));
+  for (let k = 1; k < a.length; k++) {
+    const lo = a[k - 1] as number;
+    const hi = a[k] as number;
+    if (hi < 0.9) {
+      const r0 = STOP_RADII[k - 1] as number;
+      const r1 = STOP_RADII[k] as number;
+      return lo <= 0.9 ? r0 : r0 + ((lo - 0.9) / (lo - hi)) * (r1 - r0);
+    }
+  }
+  return AREOLA_REACH;
+}
+
 /** 1 on the nipple, 0 beyond it. */
 const onNipple = (s: AreolaShape, r: number) => 1 - smoothstep(s.tip - 0.0008, s.tip + 0.0012, r);
 
@@ -244,6 +282,12 @@ export const MONTGOMERY_SPACING = 0.0022;
 export const MONTGOMERY_HEIGHT = 0.0004;
 export const MONTGOMERY_RING: readonly [number, number, number, number] = [0.25, 0.4, 0.75, 0.92];
 export const MONTGOMERY_OCCUPANCY = { female: 0.08, male: 0.05 } as const;
+/**
+ * How far inside the areola's edge every tubercle stays, metres on the figure
+ * (the integrator's ruling: tubercles sat just outside the edge, where the
+ * coarse profile's interpolation and bumps cut at the pixel let them through).
+ */
+export const MONTGOMERY_EDGE_MARGIN = 0.001;
 
 export const MONTGOMERY_LAYER: DetailLayer = {
   id: "montgomery",
@@ -265,6 +309,18 @@ export const MONTGOMERY_LAYER: DetailLayer = {
       strength: 1,
       height: MONTGOMERY_HEIGHT,
       size: MONTGOMERY_SPACING,
+      // No bump reaches past where the areola's colour starts to fade (its edge less its
+      // softness) less the margin: the limit on a bump's centre is that, less its radius, in
+      // the field's coordinate (the bumps are drawn at the figure's size).
+      limit: Math.min(
+        1,
+        Math.max(
+          0,
+          (areolaSolid(shape) -
+            (MONTGOMERY_EDGE_MARGIN + TUBERCLE_RADIUS * MONTGOMERY_SPACING) / shape.scale) /
+            AREOLA_REACH,
+        ),
+      ),
       profile: STOP_RADII.map(
         (r) =>
           occupancy *
@@ -337,22 +393,64 @@ function joint(assets: HumanoidAssets, name: string): [number, number, number] {
 }
 
 /**
- * The collarbones: a ridge on each clavicle's axis between two grooves, the
- * fossae above and below it, drawn as two periods of a crease layer across the
- * bone. The coordinate is the signed distance up from the axis, in the skin's
- * plane, in periods (`CLAVICLE_PERIOD`): the ridge is at coordinate 0.5, the
- * grooves at 0.25 and 0.75, and the window is flat at 0 and 1. The mask
- * tapers where the bone meets the breastbone and the shoulder, and over skin
- * that does not face up and forward.
+ * The collarbones: a swell layer (`swellHeight`), a smooth rounded ridge over
+ * each clavicle with the supraclavicular fossa, a hollow, above it, and no
+ * groove or outline anywhere. The coordinate is the signed distance up from
+ * the bone across the skin, from `CLAVICLE_BELOW` under it (0) to
+ * `CLAVICLE_ABOVE` over it (1); the cross-section (`CLAVICLE_PROFILE`) is flat
+ * at both ends. The bone is S-shaped, bowed forward over its inner two thirds
+ * and back over its outer third (`clavicleBow`), so the ridge follows the S.
+ * The mask tapers where the bone meets the breastbone and the shoulder, and
+ * over skin that does not face up and forward; the shader fades the relief by
+ * the smootherstep of the mask per pixel, so its edge leaves no step.
  */
-export const CLAVICLE_PERIODS = 2;
-/** Groove to ridge to groove, metres (CHOICE: a collarbone's width, with the hollows either side). */
-const CLAVICLE_PERIOD = 0.016;
+/** The window's reach below the bone's line across the skin, metres (CHOICE: the ridge's lower flank). */
+const CLAVICLE_BELOW = 0.02;
+/** The window's reach above the bone's line, metres (CHOICE: the ridge's upper flank and the supraclavicular fossa, 2 to 3 cm wide). */
+const CLAVICLE_ABOVE = 0.04;
+/**
+ * The cross-section, below to above (CHOICE, shaped on lean figures' photographs): flat,
+ * the ridge over the bone a millimetre above its line (the spline's peak, about 0.75),
+ * then the fossa's hollow (about -0.45) 2 to 3 cm above it, and flat again.
+ */
+export const CLAVICLE_PROFILE = [0, 0, 0.9, 0.8, -0.3, -0.6, 0, 0] as const;
 /** The relief of a collarbone on a lean figure, metres (CHOICE: bone is 6 to 10 mm proud of the hollows; a shading cue is a fraction of it). */
 export const CLAVICLE_RELIEF_HEIGHT = 0.0012;
+/** How far the clavicle bows forward over its inner part and back over its outer part, metres (CHOICE from its S shape seen from above). */
+const CLAVICLE_BOW_MEDIAL = 0.008;
+const CLAVICLE_BOW_LATERAL = 0.005;
+/** Where along the bone (0 at the breastbone) the bow turns from forward to back (its inner two thirds and outer third). */
+const CLAVICLE_BOW_TURN = 0.6;
 
 /** The direction from a collarbone out through the skin over it: forward and up (a unit vector). */
 const CLAVICLE_OUTWARD = [0, 0.5, 0.866] as const;
+
+/** How far forward of its straight axis the S-shaped clavicle lies at `t` along it (0 at the breastbone), metres. */
+export function clavicleBow(t: number): number {
+  if (t <= 0 || t >= 1) return 0;
+  return t < CLAVICLE_BOW_TURN
+    ? CLAVICLE_BOW_MEDIAL * Math.sin((Math.PI * t) / CLAVICLE_BOW_TURN)
+    : -CLAVICLE_BOW_LATERAL *
+        Math.sin((Math.PI * (t - CLAVICLE_BOW_TURN)) / (1 - CLAVICLE_BOW_TURN));
+}
+
+/**
+ * The clavicle's outer (acromial) end. The rig's clavicle bone stops at the shoulder
+ * bone's head, about halfway along the real collarbone, and the shoulder bone runs on
+ * down to the head of the humerus; the collarbone itself runs out over it to the
+ * acromion, at the shoulder bone's tail's width, rising on along its own slope by half
+ * as much again (CHOICE: the bone's outer end is a little higher than its middle).
+ */
+export function clavicleLateralEnd(
+  assets: HumanoidAssets,
+  side: "L" | "R",
+): [number, number, number] {
+  const head = joint(assets, `clavicle.${side}____head`);
+  const mid = joint(assets, `clavicle.${side}____tail`);
+  const shoulder = joint(assets, `shoulder01.${side}____tail`);
+  const run = Math.abs(shoulder[0] - mid[0]) / Math.max(1e-6, Math.abs(mid[0] - head[0]));
+  return [shoulder[0], mid[1] + 0.5 * run * (mid[1] - head[1]), mid[2]];
+}
 
 export function clavicleFields(assets: HumanoidAssets): SkinLayerFields {
   return once(assets, "clavicles", () => {
@@ -361,11 +459,12 @@ export function clavicleFields(assets: HumanoidAssets): SkinLayerFields {
     const onBody = bodySurface(assets);
     const mask = new Float32Array(n);
     const coord = new Float32Array(n);
+    const window = CLAVICLE_BELOW + CLAVICLE_ABOVE;
     // The skin lies in front of and above the bone: out from the bone along this.
     const out = CLAVICLE_OUTWARD;
-    for (const side of ["L", "R"]) {
+    for (const side of ["L", "R"] as const) {
       const head = joint(assets, `clavicle.${side}____head`);
-      const tail = joint(assets, `clavicle.${side}____tail`);
+      const tail = clavicleLateralEnd(assets, side);
       const axis = [0, 1, 2].map((k) => (tail[k] as number) - (head[k] as number));
       const len2 = axis.reduce((a, x) => a + x * x, 0);
       // Up across the bone, in the cross-section the outward direction and the axis leave: a
@@ -383,18 +482,23 @@ export function clavicleFields(assets: HumanoidAssets): SkinLayerFields {
         if ((P[v * 3] as number) >= 0 !== (side === "L")) continue;
         const p = [0, 1, 2].map((k) => (P[v * 3 + k] as number) - (head[k] as number));
         const t = p.reduce((a, x, k) => a + x * (axis[k] as number), 0) / len2;
+        // Relative to the S-shaped bone at this place along it, not its straight axis.
+        p[2] = (p[2] as number) - clavicleBow(t);
         const d = p.reduce((a, x, k) => a + x * (across[k] as number), 0);
-        // The coordinate is the height over the bone's own line, held at 0 and 1 (a flat) far above
-        // and below it, so no triangle on the mask's edge sweeps through grooves it skips.
-        coord[v] = Math.min(1, Math.max(0, 0.5 + d / (CLAVICLE_PERIODS * CLAVICLE_PERIOD)));
+        // The coordinate is the height over the bone's own line, held at 0 and 1 (the flat ends of
+        // the cross-section) beyond the window, so no triangle on the mask's edge sweeps through it.
+        coord[v] = Math.min(1, Math.max(0, (d + CLAVICLE_BELOW) / window));
         if (t < 0 || t > 1) continue;
         const height = p.reduce((a, x, k) => a + x * (out[k] as number), 0);
-        // Over the bone, not behind it: the skin is a few millimetres to three centimetres out.
-        const over = smoothstep(0, 0.008, height) * (1 - smoothstep(0.03, 0.045, height));
+        // Over the bone and the fossa, not the back: the skin over the bone is a few millimetres
+        // to three centimetres out, and the fossa lies above and a little behind it (its skin up
+        // to 1.5 cm behind the bone's line along the outward direction).
+        const over = smoothstep(-0.02, -0.008, height) * (1 - smoothstep(0.03, 0.045, height));
         const w =
           smoothstep(0.04, 0.18, t) *
           (1 - smoothstep(0.78, 0.96, t)) *
-          (1 - smoothstep(0.75 * CLAVICLE_PERIOD, CLAVICLE_PERIOD, Math.abs(d))) *
+          smoothstep(-CLAVICLE_BELOW, -0.6 * CLAVICLE_BELOW, d) *
+          (1 - smoothstep(0.75 * CLAVICLE_ABOVE, CLAVICLE_ABOVE, d)) *
           over;
         if (w > (mask[v] as number)) mask[v] = w;
       }
@@ -406,13 +510,15 @@ export function clavicleFields(assets: HumanoidAssets): SkinLayerFields {
 export const CLAVICLE_LAYER: DetailLayer = {
   id: "clavicles",
   kind: "detail",
-  pattern: "creases",
+  pattern: "swell",
   targets: [],
   fields: clavicleFields,
   paint: (input) => ({
     strength: clavicleDefinition(figureBuild(input)),
     height: CLAVICLE_RELIEF_HEIGHT,
-    size: CLAVICLE_PERIODS,
+    // A swell has no period; the size is unused.
+    size: 1,
+    profile: CLAVICLE_PROFILE,
   }),
 };
 

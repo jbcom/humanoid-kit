@@ -205,7 +205,9 @@ describe("flaccid and erect", () => {
       expect(reach(surfaced, withOrgan({}, macros), { arousal: 1 })).toBeGreaterThan(
         reach(surfaced, withOrgan({}, macros), { arousal: 0 }),
       );
-      const recipe = createRecipe({ macros });
+      // A figure with no organ: its size set to none. Left unset, an adult takes the pack's
+      // default anatomy for its gender (`AdultAnatomySpec.defaults`) and has one.
+      const recipe = createRecipe({ macros, modifiers: { [SIZE]: 0, "genitals/testes-size": 0 } });
       const rest = surfaced.evaluate(recipe).positions;
       expect(Array.from(surfaced.evaluate(recipe, { arousal: 1 }).positions)).toEqual(
         Array.from(rest),

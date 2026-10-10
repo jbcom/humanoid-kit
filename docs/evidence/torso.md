@@ -5,6 +5,29 @@ playground with `?frame=` (the camera aims at a bone by name, `at=` moves the ai
 a world offset) on 2026-10-09. What each layer is and where its numbers come from:
 docs/ARCHITECTURE.md, "Torso", and docs/research/SKIN-STATES.md, C7.
 
+## Open, failing
+
+Each item stays here, with the sheet that failed it, until a new sheet passes; the
+sections below describe what was drawn, not a passed verdict.
+
+- **Stretch marks: open, failing.** They read as a barcode: horizontal, evenly
+  spaced, dashed straight lines tiled over the flank, buttock and back, where real
+  striae come in clusters at the sites of stretch, run across the local stretch
+  and curve with the body, and are spindle-shaped, of varied length and sometimes
+  forked. A clustered-spindle pattern (feat/area-torso 53cbfd2) did not pass its
+  sheet and is not drawn here: its seeding mirrored, its marks were short and
+  wide, and its sheet framed the flank from the front.
+
+Passed on the integrator's sheets (2026-10-09) and landed: the collarbone as a
+smooth swell with the supraclavicular hollow above it, no groove (it had
+rendered as a raised crescent with a hard outline, the crease layer's two
+grooves); and the areola with its coordinate held at 1 past its disc (the ring
+step and the tubercles outside it had one cause, the edge triangles sweeping back
+to the nipple's stop) and each tubercle drawn whole inside its solid colour less a
+millimetre. The bright streak above the deep-toned areola under the on-axis
+camera light is the skin's own specular along the base mesh's breast crest (a
+render without any torso layer keeps it), not a torso layer's.
+
 ## Nipple and areola
 
 ![Women: default, deep, fair and 60 years](./torso-areola-women.webp)
