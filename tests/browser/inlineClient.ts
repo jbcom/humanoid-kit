@@ -4,6 +4,7 @@
  * (packs from the dev server, the model, the protocol) without a Worker.
  */
 import { bodyPack } from "humanoid-kit-body";
+import { hairPack } from "humanoid-kit-hair";
 import type { ModelOptions } from "../../src/model/humanoidModel.ts";
 import { HumanoidWorkerClient } from "../../src/worker/client.ts";
 import { createWorkerHandler } from "../../src/worker/handler.ts";
@@ -31,10 +32,10 @@ class InlineWorker {
 
 export function inlineWorkerClient(
   model: ModelOptions = { subdivision: 0 },
-  options: { withoutPresenceJoints?: boolean } = {},
+  options: { withoutPresenceJoints?: boolean; hair?: boolean } = {},
 ) {
   return new HumanoidWorkerClient(
-    { body: bodyPack },
+    { body: bodyPack, ...(options.hair && { hair: hairPack }) },
     model,
     new InlineWorker(options.withoutPresenceJoints ?? false) as unknown as Worker,
   );

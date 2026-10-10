@@ -1639,8 +1639,11 @@ grows none.
 **A grown beard's length is cards, on the hair pack's machinery (2026-10-09).**
 Past the coat's few centimetres, hair is cards. The hair pack gains a kind,
 `beard`, whose entries the packer generates (`scripts/lib/bodyHairCards.ts`)
-rather than packs from a MakeHuman file: narrow strips rooted on the beard's
-area, running along the coat's comb, lifting off the skin, bound to the base
+rather than packs from a MakeHuman file: narrow strips rooted where the
+beard's area is solid (`ROOT_SOLID`: none under a mask of 0.4, its full
+density from 0.7; a card is drawn whole, so one rooted in the mask's faint
+edge was a lone strip down the neck, and the coat carries that thinning
+instead), running along the coat's comb, lifting off the skin, bound to the base
 mesh's triangles as MakeHuman binds hair, with a generated strand map. They are
 the project's own bytes, so the licence gate (which proves MakeHuman files CC0)
 has nothing to prove; `PROVENANCE.md` says so. An entry is tagged with the
