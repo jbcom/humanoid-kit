@@ -451,6 +451,7 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
         ? model.bakeHairFields(boundFrom(compiled), {
             ...(spec.feather !== undefined && { feather: spec.feather }),
             ...("fins" in spec && { fins: spec.fins }),
+            ...("fillHoles" in spec && { fillHoles: spec.fillHoles }),
             ...(roots && { roots }),
             cutout: await cutoutOf(path.join(outDir, textureFile)),
           })

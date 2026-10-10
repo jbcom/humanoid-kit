@@ -71,6 +71,7 @@ import {
   applyDualSkinning,
   DualBones,
   dualShadowMaterials,
+  FOLD_SLOT_ATTRIBUTE,
   followDualSkinning,
 } from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
@@ -91,6 +92,7 @@ import {
 } from "../render/skinMaterial.ts";
 import { faceSignalBasis, faceSignals } from "../rig/faceSignals.ts";
 import { flexionRig, jointFlexion } from "../rig/flexion.ts";
+import { HIP_FOLD, hipPose } from "../rig/hipFold.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
 import {
   bodyPoseRotations,
@@ -292,6 +294,11 @@ function makeBodyGeometry(
   setBodyOcclusionAttributes(g, t.occlusion);
   // Where the worn hair style grows from the skin; none until a style is worn.
   g.setAttribute(SCALP_ATTRIBUTE, new BufferAttribute(new Float32Array(t.vertexCount), 1));
+  // Each vertex's row in the hip fold, which is solved after the figure is drawn; -1 is none.
+  g.setAttribute(
+    FOLD_SLOT_ATTRIBUTE,
+    new BufferAttribute(new Float32Array(t.vertexCount).fill(-1), 1),
+  );
   return g;
 }
 
@@ -338,6 +345,14 @@ function fitSkeleton(skeleton: Skeleton, parents: Int16Array, heads: Float32Arra
     // Bones and meshes share the figure's group, so mesh space is bind space.
     skeleton.boneInverses[i]?.makeTranslation(-x, -y, -z);
   });
+}
+
+/** A short key of a figure's control vertices: what changes when its shape does. */
+function controlKey(control: Float32Array): string {
+  let h = 0;
+  for (let i = 0; i < control.length; i += 7)
+    h = (Math.imul(h, 31) + Math.round((control[i] as number) * 1e5)) | 0;
+  return `${control.length}:${h}`;
 }
 
 function writeGeometry(g: BufferGeometry, s: SurfaceEvaluation): void {
@@ -523,7 +538,8 @@ function SkinnedPart({
   // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
   useEffect(() => {
     if (!dual) return;
-    const shadows = dualShadowMaterials(dual);
+    // The body's carries the hip fold, which its shadow follows too.
+    const shadows = dualShadowMaterials(dual, part === "body" || part === "adultBody");
     mesh.customDepthMaterial = shadows.depth;
     mesh.customDistanceMaterial = shadows.distance;
     const applyBoneTransform = mesh.applyBoneTransform;
@@ -535,7 +551,7 @@ function SkinnedPart({
       shadows.depth.dispose();
       shadows.distance.dispose();
     };
-  }, [mesh, dual]);
+  }, [mesh, dual, part]);
   // A skinned mesh caches its own (posed) bounds: three computes them once and
   // never again, so a new pose or a re-evaluated (say, taller) figure would
   // keep the old ones, and picking and culling would miss whatever lies
@@ -1027,6 +1043,7 @@ export function Humanoid({
   );
   // Alpha-to-coverage needs a multisampled framebuffer; hair falls back to a plain alpha test.
   const multisampled = useThree((s) => isMultisampled(s.gl.getContext()));
+  const invalidate = useThree((s) => s.invalidate);
   /** Which style's scalp each body geometry holds (null: none), so it is written when it changes. */
   const scalpOf = useRef(new WeakMap<BufferGeometry, string | null>());
   // The scalp shows the hair's own colour under it, so it follows the recipe's hair colour.
@@ -1092,6 +1109,68 @@ export function Humanoid({
       rotations ?? IDENTITY_POSE(ready.rig.bones.length),
     );
   }, [dual, ready, figure, rotations]);
+  // The hip fold (docs/ARCHITECTURE.md, "The hip fold") is solved for the figure when a
+  // hip is flexed far enough to need it, in the worker between other requests; until it
+  // arrives, or when the figure changes shape, the last one stays.
+  const foldedFor = useRef<{
+    recipe: Recipe;
+    signals: Readonly<Record<string, number>>;
+  } | null>(null);
+  const hipsFlexed = useMemo(() => {
+    if (!figure || !ready || !rotations) return false;
+    const rest = restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads);
+    return hipPose(rest, rotations).flexion.some((f) => f > HIP_FOLD.from);
+  }, [figure, ready, rotations]);
+  const figureKey = useMemo(() => (figure ? controlKey(figure.control) : ""), [figure]);
+  /** Ends the hold on the settle that the fold's fade-in keeps, while it fades. */
+  const fading = useRef<(() => void) | null>(null);
+  useFrame((_, delta) => {
+    if (!dual) return;
+    if (dual.advanceFold(delta)) invalidate();
+    else if (fading.current) {
+      fading.current();
+      fading.current = null;
+    }
+  });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: figureKey stands for the figure; foldedFor holds what it was evaluated from
+  useEffect(() => {
+    const wanted = foldedFor.current;
+    if (!hipsFlexed || !wanted || !dual || !geometries) return;
+    let live = true;
+    // The figure is not settled until the fold that shapes it has been drawn.
+    const end = settle.begin();
+    client.hipFold(wanted.recipe, wanted.signals).then(
+      ({ surface, fold }) => {
+        end();
+        if (!live) return;
+        const [target, other] =
+          surface === "adult" ? [adultGeometry, geometries.body] : [geometries.body, adultGeometry];
+        if (!target) return;
+        (target.getAttribute(FOLD_SLOT_ATTRIBUTE) as BufferAttribute).copyArray(
+          fold.slot,
+        ).needsUpdate = true;
+        // The rows are of the surface drawn; the other has none.
+        const left = other?.getAttribute(FOLD_SLOT_ATTRIBUTE) as BufferAttribute | undefined;
+        if (left) {
+          left.array.fill(-1);
+          left.needsUpdate = true;
+        }
+        dual.setFold(fold);
+        // It fades in over the next frames (`DualBones.advanceFold`), and the figure is not settled before it has.
+        fading.current?.();
+        fading.current = settle.begin();
+        invalidate();
+      },
+      (e: Error) => {
+        end();
+        if (live && e.name !== "AbortError") report(e);
+      },
+    );
+    return () => {
+      live = false;
+      end();
+    };
+  }, [client, hipsFlexed, figureKey, dual, geometries, adultGeometry, report, settle]);
   // A new identity whenever the figure or its pose changes: the meshes' bounds follow it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: figure and rotations are the triggers
   const shape = useMemo(() => ({}), [figure, rotations]);
@@ -1417,6 +1496,7 @@ export function Humanoid({
           const g = wornRef.current?.geometries[i];
           if (g) writeGeometry(g, a);
         });
+        foldedFor.current = { recipe, signals: shapeSignals };
         setFigure(ev);
         setAreolaScale(Math.round(ev.areolaScale * 100) / 100);
         ground(ev);

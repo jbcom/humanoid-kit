@@ -7,6 +7,9 @@ import { defineConfig } from "vitest/config";
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 const gpuMode = (process.env.HK_GPU ?? (process.env.CI ? "software" : "auto")) as ChromiumGpuMode;
+// Unattended runs (CI, the dedicated render Mac's service account) have no window
+// session, so a headed browser cannot open: they run headless. HK_HEADED=1 overrides.
+const headless = Boolean(process.env.CI) && !process.env.HK_HEADED;
 
 // Three projects:
 // - unit: the pure core in Node (tests/**/*.test.ts, outside tests/browser
@@ -88,6 +91,7 @@ export default defineConfig({
             name: "browser",
             include: ["tests/browser/**/*.test.{ts,tsx}"],
             gpuMode,
+            headless,
           }),
           // Software rendering (CI) runs the shading measurements about seven
           // times slower than a GPU: the scatter-parity sweep takes 3 s on a

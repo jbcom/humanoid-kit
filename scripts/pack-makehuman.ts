@@ -28,6 +28,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
 import {
+  type AdultAnatomySpec,
   type AdultReservoirSpec,
   BODY_TARGET_FILES,
   type BodyManifest,
@@ -141,6 +142,12 @@ const REPO_CATEGORIES: Record<string, string> = {
   "poseunits/face-poseunits.bvh": "* Poses and expressions",
 };
 const licenseEvidence: Record<string, string> = {};
+
+/** An anatomy spec without its defaults (`AdultAnatomySpec.defaults`). */
+function withoutDefaults(spec: AdultAnatomySpec): AdultAnatomySpec {
+  const { defaults: _, ...rest } = spec;
+  return rest;
+}
 
 function requireCc0(rel: string, text: string): void {
   if (/released as CC0/.test(text.slice(0, 2000))) {
@@ -726,7 +733,9 @@ async function main() {
             },
             modifiers: modifiers.filter((m) => isAdultPackTarget(m.hi)),
             sliders: [],
-            anatomy: adultAnatomySpec(packedFigure, undefined, given),
+            // No defaults: the interim model has none of the authored modifiers they name, and
+            // the shapes are authored on the figure as its recipe says, with nothing filled in.
+            anatomy: withoutDefaults(adultAnatomySpec(packedFigure, undefined, given)),
           },
           targets: buffer(controlFile.raw),
         },
