@@ -21,6 +21,7 @@ import { AUTHORED_MODIFIERS } from "./adultAuthored.ts";
 import { adultCoatRegions } from "./adultCoat.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE } from "./detail/phallus.ts";
 import { TESTES_SIZE } from "./detail/scrotum.ts";
+import { VULVA_SIZE } from "./detail/vulva.ts";
 import { pelvicRefinement } from "./pelvicRegion.ts";
 
 /** The part of the spec that does not depend on the base mesh. */
@@ -34,6 +35,8 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "
     },
     // The sacs and testes drawn out of the labioscrotal pair (scripts/lib/detail/scrotum.ts).
     { id: "scrotum", modifiers: [TESTES_SIZE] },
+    // The labia and the cleft, folds of the skin itself (scripts/lib/detail/vulva.ts).
+    { id: "vulva", modifiers: [VULVA_SIZE] },
     // The mound has MakeHuman's one control (the body's bulge, a control target) and this
     // pack's own (a generated control target, scripts/lib/control/mound.ts).
     { id: "mound", modifiers: ["pelvis/bulge-decr|incr", "pelvis/mound-decr|incr"] },
@@ -53,12 +56,14 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "
   // An adult with this pack loaded is anatomically complete without the recipe naming any of
   // it (docs/FOUNDATION.md, "both forms"): the organ's size runs from the clitoral glans key
   // (0.08) at the female end to the pooled mean (0.65, 9.2 cm, Veale 2015) at the male end,
-  // and the testes from none to their mean key. Between gender 0.35 and 0.65 both blend, so an
+  // the testes from none to their mean key, and the vulva from the whole sculpt to none.
+  // Between gender 0.35 and 0.65 they blend, the vulva fading as the sac grows, so an
   // androgynous figure is drawn with an intermediate, intersex anatomy by default. A recipe's
   // own value always wins.
   defaults: {
     [PHALLUS_SIZE]: "0.35,0.08;0.65,0.65",
     [TESTES_SIZE]: "0.35,0;0.65,0.6",
+    [VULVA_SIZE]: "0.35,1;0.65,0",
   },
 };
 

@@ -4,6 +4,7 @@ import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
 import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { cutOutline, maleParts, partAxis } from "../scripts/lib/detail/sculpt.ts";
+import { VULVA_SIZE } from "../scripts/lib/detail/vulva.ts";
 import { ATLAS_SIZE, bodyCoverage } from "../scripts/lib/uvIslands.ts";
 import { type AdultSurfacePatch, parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -172,11 +173,11 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
       parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest: withoutAnatomy }),
       { subdivision: 1 },
     );
-    // No organ and no testes: left unset, an adult takes the pack's default anatomy for its
-    // gender (`AdultAnatomySpec.defaults`), which the reservoirs draw and the pack without them cannot.
+    // No organ, no testes and no vulva: left unset, an adult takes the pack's default anatomy
+    // for its gender (`AdultAnatomySpec.defaults`), which the detail draws and the pack without it cannot.
     const adult = createRecipe({
       macros: { age: 30, gender: 0.5 },
-      modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0 },
+      modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0 },
     });
     const a = without.evaluate(adult);
     const b = model.evaluate(adult);

@@ -27,7 +27,8 @@ import { skinOf } from "./detail/contact.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE, phallusTargets } from "./detail/phallus.ts";
 import { reservoirRoot } from "./detail/root.ts";
 import { scrotumTargets, TESTES_SIZE } from "./detail/scrotum.ts";
-import type { MaleParts } from "./detail/sculpt.ts";
+import type { MaleParts, SculptPart } from "./detail/sculpt.ts";
+import { VULVA_SIZE, vulvaTarget } from "./detail/vulva.ts";
 import { type EncodedTarget, encodeSparseTarget } from "./targetEncoding.ts";
 
 /**
@@ -47,6 +48,7 @@ export const AUTHORED_MODIFIERS: readonly ShapeModifierEntry[] = [
   { id: PHALLUS_LENGTH, group: "genitals", lo: "", hi: "", adultOnly: true },
   { id: PHALLUS_GIRTH, group: "genitals", lo: "", hi: "", adultOnly: true },
   { id: TESTES_SIZE, group: "genitals", lo: null, hi: "", adultOnly: true },
+  { id: VULVA_SIZE, group: "genitals", lo: null, hi: "", adultOnly: true },
 ];
 
 /**
@@ -86,6 +88,12 @@ const AUTHORED_SLIDERS = [
     description:
       "From none to a large testis, in one sac of two lobes; the right a little larger than the left, as measured.",
   },
+  {
+    mod: VULVA_SIZE,
+    after: TESTES_SIZE,
+    label: "Vulva",
+    description: "From none to the full labia majora and minora, with the cleft between them.",
+  },
 ] as const;
 
 /** Upstream sliders the authored ones replace: the CC0 penis targets, whose shape the phallus supersedes. */
@@ -118,6 +126,10 @@ export const AUTHORED_PROVENANCE: readonly string[] = [
     "`adult_male_genitalia_breast_fix`, cut, placed and projected onto the labioscrotal reservoir the same way and grown " +
     "or shrunk by `scripts/lib/detail/scrotum.ts` by one uniform factor to the width of two testes of a published volume " +
     "(docs/research/ADULT-ANATOMY-DATA.md, section F); the skin's thickness is modelled and labelled so there.",
+  "- `genitals/vulva-k1` (a detail target of the skin) and the modifier `genitals/vulva-size`: the labia majora and " +
+    "minora and the cleft between them of bogdan666's CC0 `adult_female_2020_v_01` " +
+    "(<http://www.makehumancommunity.org/proxy/adult_female_2020.html>), cut by `scripts/blender/cut_sculpt.py`, " +
+    "placed and transferred onto the skin by `scripts/lib/detail/vulva.ts`.",
 ];
 
 /** Every target name the pack authors as a control target (a virtual modifier has none). */
@@ -181,7 +193,8 @@ export function addAuthoredSliders(tasks: SliderTask[]): void {
 
 /**
  * The detail targets the pack authors on the adult surface's lattice, encoded,
- * and the spec that names them (`AdultDetailSpec`): the phallic organ on the
+ * and the spec that names them (`AdultDetailSpec`): the vulva's folds on the skin
+ * (`vulva` is its sheet placed on the authoring figure), the phallic organ on the
  * phallic reservoir. `lattice` is the lattice of a model with the pack's
  * reservoirs, on the authoring figure.
  */
@@ -189,6 +202,7 @@ export function authorDetail(
   lattice: AdultDetailLattice,
   reservoirs: readonly AdultReservoirSpec[],
   parts: MaleParts,
+  vulva: SculptPart,
 ): { targets: EncodedTarget[]; detail: AdultDetailSpec } {
   const rootOf = (id: string) => {
     const spec = reservoirs.find((r) => r.id === id);
@@ -202,7 +216,8 @@ export function authorDetail(
   );
   const organ = phallusTargets(rootOf("phallic"), parts.phallus, skin);
   const sac = scrotumTargets(rootOf("labioscrotal"), parts.scrotum, skin);
-  const made = [...organ.targets, ...sac.targets];
+  const folds = vulvaTarget(lattice, reservoirs, vulva);
+  const made = [...organ.targets, ...sac.targets, folds];
   return {
     targets: made.map((t) => encodeSparseTarget(t.name, t.indices, t.xyz)),
     detail: {
@@ -210,7 +225,9 @@ export function authorDetail(
       surfaceKey: lattice.key,
       // The figure the lattice was evaluated on: a reservoir's organ is carried from it.
       authoredOn: { macros: AUTHORING_FIGURE.macros },
-      drives: { ...organ.drives, ...sac.drives },
+      // The vulva is the skin's own fold, not an organ out of it.
+      skin: [folds.name],
+      drives: { ...organ.drives, ...sac.drives, [folds.name]: [`mod:${VULVA_SIZE}`] },
     },
   };
 }
