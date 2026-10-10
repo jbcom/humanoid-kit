@@ -37,6 +37,7 @@ import {
   TextureLoader,
   Vector3,
 } from "three";
+import type { HumanoidAffordances } from "../affordance/live.ts";
 import {
   JEWELLERY_ROUGHNESS,
   jewelleryMesh,
@@ -95,6 +96,7 @@ import { flexionRig, jointFlexion } from "../rig/flexion.ts";
 import { HIP_FOLD, hipPose } from "../rig/hipFold.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
 import {
+  type BoneRotations,
   bodyPoseRotations,
   composeRotations,
   faceUnitRotations,
@@ -108,6 +110,7 @@ import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface
 import { DEFAULT_HAIR_COLOUR, type HairColour, hairAlbedo } from "../surface/hairTone.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 import { CoatMesh } from "./CoatMesh.tsx";
+import { FIGURE_FRAME_PRIORITY } from "./framePriority.ts";
 import { type PresenceSource, usePresenceContext, usePublishPresence } from "./presence.tsx";
 import { sameEntries } from "./sameEntries.ts";
 import { Settle, SettleContext, useSettle } from "./settle.ts";
@@ -247,6 +250,14 @@ export type HumanoidProps = Omit<ThreeElements["group"], "children"> & {
    * drawn without its body art.
    */
   bodyArtImages?: BodyArtImages;
+  /**
+   * A handle on the figure's affordances (`useHumanoidAffordances`), which the
+   * figure keeps current: its own affordances by the recipe's age, and frames,
+   * channels and the clip on the figure as drawn. Setting the mouth's opening
+   * opens the drawn jaw too (`JawDrop` = the larger of the pose's and the
+   * opening), without a React render.
+   */
+  affordances?: HumanoidAffordances;
 };
 
 export interface HumanoidPresenceProps {
@@ -538,12 +549,13 @@ function SkinnedPart({
   // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
   useEffect(() => {
     if (!dual) return;
-    // The body's carries the hip fold, which its shadow follows too.
-    const shadows = dualShadowMaterials(dual, part === "body" || part === "adultBody");
+    // The body's carries the hip fold, which its shadow, bounds and picking follow too.
+    const body = part === "body" || part === "adultBody";
+    const shadows = dualShadowMaterials(dual, body);
     mesh.customDepthMaterial = shadows.depth;
     mesh.customDistanceMaterial = shadows.distance;
     const applyBoneTransform = mesh.applyBoneTransform;
-    followDualSkinning(mesh, dual);
+    followDualSkinning(mesh, dual, body);
     return () => {
       mesh.customDepthMaterial = undefined as never;
       mesh.customDistanceMaterial = undefined as never;
@@ -900,12 +912,35 @@ export function Humanoid({
   signals,
   onGroundOffset,
   bodyArtImages,
+  affordances,
+  ref: callerRef,
   ...group
 }: HumanoidProps) {
   const client = useHumanoidClient();
   const ready = useHumanoidReady();
   const key = useId();
   const groupRef = useRef<Group>(null);
+  /** The group the meshes are drawn in, lifted onto the ground: the figure's own space. */
+  const liftedRef = useRef<Group>(null);
+  // The caller's ref and the figure's own both hold the group: presence and root
+  // motion read it through the figure's.
+  const callerCleanup = useRef<(() => void) | null>(null);
+  const setGroup = useCallback(
+    (g: Group | null) => {
+      groupRef.current = g;
+      if (typeof callerRef === "function") {
+        // A callback ref may return its own cleanup, which React would call in place of it with null.
+        if (g) {
+          const cleanup = callerRef(g);
+          callerCleanup.current = typeof cleanup === "function" ? cleanup : null;
+        } else if (callerCleanup.current) {
+          callerCleanup.current();
+          callerCleanup.current = null;
+        } else callerRef(null);
+      } else if (callerRef) (callerRef as { current: Group | null }).current = g;
+    },
+    [callerRef],
+  );
   const presenceSource = useRef<PresenceSource | null>(null);
   const presenceContext = usePresenceContext();
   if (presence && !presenceContext)
@@ -1074,14 +1109,10 @@ export function Humanoid({
     const face = faceUnitRotations(ready.rig, faceUnits ?? {});
     return body ? composeRotations(bodyPoseRotations(ready.rig, body), face) : face;
   }, [ready, body, faceUnits]);
-  useEffect(() => {
-    if (!rig || !ready || !keyBasis) return;
-    const q = rotations ?? IDENTITY_POSE(ready.rig.bones.length);
-    rig.skeleton.bones.forEach((bone, i) => {
-      bone.quaternion.fromArray(q, i * 4);
-    });
-    occlusionKeys.fromArray(occlusionKeyWeights(keyBasis, q));
-  }, [rig, ready, keyBasis, occlusionKeys, rotations]);
+  const bodyRotations = useMemo(
+    () => (ready && body ? bodyPoseRotations(ready.rig, body) : null),
+    [ready, body],
+  );
 
   // The garments worn: their geometry is built when an evaluation brings the
   // outfit's masks, and replaced when a different outfit does. The body's own
@@ -1101,14 +1132,112 @@ export function Humanoid({
   // How much larger the skin round the nipples is than the base mesh's, to a hundredth, so the
   // skin is repainted when the figure's shape changes it and not on every evaluation.
   const [areolaScale, setAreolaScale] = useState(1);
-  // The same pose, as dual quaternions over the evaluated figure's rest skeleton.
+  const figureRef = useLatest(figure);
+  const affordancesRef = useLatest(affordances);
+  /**
+   * The mouth's opening laid over the jaw (`HumanoidProps.affordances`), and the
+   * handle and its `jawVersion` it was read from.
+   */
+  const jaw = useRef<{ opening: number; of: HumanoidAffordances | null; version: number }>({
+    opening: 0,
+    of: null,
+    version: -1,
+  });
+  /** The face units' rotations with the jaw laid over, which a playing clip composes with. */
+  const faceRef = useRef<BoneRotations | null>(null);
+  /**
+   * Writes the pose as drawn: the face units (with the mouth's opening laid over
+   * the jaw) over the body's pose, to the skeleton, the attachments' occlusion
+   * keys and, over the rest skeleton of `ev` (the figure shown, or one about to
+   * be), the skin's dual quaternions.
+   */
+  const writePose = useCallback(
+    (ev: Evaluation | null) => {
+      if (!rig || !ready || !keyBasis) return;
+      const opening = jaw.current.opening;
+      const units =
+        opening > (faceUnits?.JawDrop ?? 0) ? { ...faceUnits, JawDrop: opening } : faceUnits;
+      faceRef.current = units ? faceUnitRotations(ready.rig, units) : null;
+      let q: BoneRotations;
+      if (!body && !units) q = IDENTITY_POSE(ready.rig.bones.length);
+      else {
+        const face = faceRef.current ?? faceUnitRotations(ready.rig, {});
+        q = bodyRotations ? composeRotations(bodyRotations, face) : face;
+      }
+      rig.skeleton.bones.forEach((bone, i) => {
+        bone.quaternion.fromArray(q, i * 4);
+      });
+      occlusionKeys.fromArray(occlusionKeyWeights(keyBasis, q));
+      if (dual && ev)
+        dual.update(restBonesFrom(ready.rig.bones, ready.rig.parents, ev.boneHeads), q);
+    },
+    [rig, ready, keyBasis, occlusionKeys, dual, body, bodyRotations, faceUnits],
+  );
+  const writePoseRef = useLatest(writePose);
+  useEffect(() => writePose(figure), [writePose, figure]);
+  const materialRef = useLatest(material);
+  /**
+   * Gives the affordances the figure `ev` of `evaluated` as it is drawn: its rest
+   * surface and skin weights, and the live pose, fold and lifted group. With a
+   * custom material the figure skins linearly with no fold, and so do they.
+   */
+  const feedAffordances = useCallback(
+    (ev: Evaluation, evaluated: Recipe) => {
+      const of = affordancesRef.current;
+      if (!of || !ready || !dual) return;
+      of.setRecipe(evaluated);
+      const t = ev.surface === "adult" ? adultSurface : ready.topology.body;
+      if (!t) return;
+      of.attach({
+        surface: ev.surface,
+        rest: ev.positions,
+        restNormals: ev.normals,
+        skinIndex: t.skinIndex,
+        skinWeight: t.skinWeight,
+        pose: () => (materialRef.current ? dual.linearPose() : dual.pose()),
+        fold: () =>
+          materialRef.current || dual.foldSurface !== ev.surface ? null : dual.skinFold(),
+        skeleton: () => dual.skeleton(),
+        world: liftedRef.current,
+      });
+    },
+    [affordancesRef, ready, dual, adultSurface, materialRef],
+  );
+  // A handle given after the figure is drawn, or a new one, is fed the figure shown;
+  // one taken away is left with none.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: affordances is the trigger; the figure and its recipe are read
   useEffect(() => {
-    if (!dual || !ready || !figure) return;
-    dual.update(
-      restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads),
-      rotations ?? IDENTITY_POSE(ready.rig.bones.length),
+    const shown = figureRef.current;
+    const evaluated = foldedFor.current?.recipe;
+    if (shown && evaluated) feedAffordances(shown, evaluated);
+    return () => affordances?.attach(null);
+  }, [affordances, feedAffordances]);
+  // The mouth's opening is applied in a frame: a figure drawn only on demand is asked for one.
+  useEffect(() => affordances?.onJawChange(invalidate), [affordances, invalidate]);
+  // Where the landmarks are held, which the affordances' frames need: the figure is not
+  // settled until they have arrived.
+  useEffect(() => {
+    if (!affordances || !ready) return;
+    let live = true;
+    const end = settle.begin();
+    client.landmarkAnchors().then(
+      (anchors) => {
+        end();
+        if (live) affordances.setAnchors(anchors);
+      },
+      (e: Error) => {
+        end();
+        if (live) report(e);
+      },
     );
-  }, [dual, ready, figure, rotations]);
+    return () => {
+      live = false;
+      end();
+      // Another client's (or no) figure is coming: its anchors are not these, so until its own
+      // arrive the frames are null rather than these anchors read on its figure.
+      affordances.setAnchors(null);
+    };
+  }, [client, affordances, ready, report, settle]);
   // The hip fold (docs/ARCHITECTURE.md, "The hip fold") is solved for the figure when a
   // hip is flexed far enough to need it, in the worker between other requests; until it
   // arrives, or when the figure changes shape, the last one stays.
@@ -1124,14 +1253,30 @@ export function Humanoid({
   const figureKey = useMemo(() => (figure ? controlKey(figure.control) : ""), [figure]);
   /** Ends the hold on the settle that the fold's fade-in keeps, while it fades. */
   const fading = useRef<(() => void) | null>(null);
+  /** Counts the folds that have faded in whole: the meshes' bounds follow each (`shape`). */
+  const [foldsShown, setFoldsShown] = useState(0);
   useFrame((_, delta) => {
     if (!dual) return;
     if (dual.advanceFold(delta)) invalidate();
     else if (fading.current) {
       fading.current();
       fading.current = null;
+      setFoldsShown((n) => n + 1);
     }
-  });
+    // The mouth's opening, set on the affordances, opens the jaw drawn: without a render.
+    const of = affordancesRef.current ?? null;
+    const version = of?.jawVersion ?? -1;
+    if (of !== jaw.current.of || version !== jaw.current.version) {
+      jaw.current.of = of;
+      jaw.current.version = version;
+      const opening = of?.jawOpening() ?? 0;
+      if (opening !== jaw.current.opening) {
+        jaw.current.opening = opening;
+        writePoseRef.current(figureRef.current);
+        invalidate();
+      }
+    }
+  }, FIGURE_FRAME_PRIORITY);
   // biome-ignore lint/correctness/useExhaustiveDependencies: figureKey stands for the figure; foldedFor holds what it was evaluated from
   useEffect(() => {
     const wanted = foldedFor.current;
@@ -1155,7 +1300,7 @@ export function Humanoid({
           left.array.fill(-1);
           left.needsUpdate = true;
         }
-        dual.setFold(fold);
+        dual.setFold(fold, surface);
         // It fades in over the next frames (`DualBones.advanceFold`), and the figure is not settled before it has.
         fading.current?.();
         fading.current = settle.begin();
@@ -1171,16 +1316,13 @@ export function Humanoid({
       end();
     };
   }, [client, hipsFlexed, figureKey, dual, geometries, adultGeometry, report, settle]);
-  // A new identity whenever the figure or its pose changes: the meshes' bounds follow it.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: figure and rotations are the triggers
-  const shape = useMemo(() => ({}), [figure, rotations]);
+  // A new identity whenever the figure or its pose changes, or a fold has faded in: the
+  // meshes' bounds follow it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: figure, rotations and foldsShown are the triggers
+  const shape = useMemo(() => ({}), [figure, rotations, foldsShown]);
   const onGroundOffsetRef = useLatest(onGroundOffset);
-  // A clip's pose is written each frame (`useFigureAnimation`), the face units over it.
-  const liftedRef = useRef<Group>(null);
-  const faceRotations = useMemo(
-    () => (ready && faceUnits ? faceUnitRotations(ready.rig, faceUnits) : null),
-    [ready, faceUnits],
-  );
+  // A clip's pose is written each frame (`useFigureAnimation`), the face units (with the
+  // jaw laid over, `writePose`) over it.
   useFigureAnimation({
     animation,
     ready,
@@ -1189,7 +1331,7 @@ export function Humanoid({
     dual,
     keyBasis,
     occlusionKeys,
-    face: faceRotations,
+    face: faceRef,
     group: groupRef,
     lifted: liftedRef,
     lifts: Boolean(presence) || animation !== undefined,
@@ -1197,6 +1339,8 @@ export function Humanoid({
     presenceSource,
     report,
   });
+  // Once the pose of the frame is written, the affordances' clip is set to the channels it opens.
+  useFrame(() => affordancesRef.current?.refreshClip(), FIGURE_FRAME_PRIORITY);
   const rotationsRef = useLatest(rotations);
   /** Reports the ground offset of `ev` in the current pose. */
   const ground = useMemo(
@@ -1510,6 +1654,10 @@ export function Humanoid({
                 : undefined,
             }
           : null;
+        // The skin's bones over this figure's rest, and the affordances on it, from now:
+        // a frame read before the next render is of the figure drawn.
+        writePoseRef.current(ev);
+        feedAffordances(ev, recipe);
         setShown(true);
         onEvaluatedRef.current?.(ev);
         setUnsettled(ev);
@@ -1535,6 +1683,8 @@ export function Humanoid({
     report,
     ground,
     wear,
+    feedAffordances,
+    writePoseRef,
   ]);
 
   // Settled: the evaluation is written and everything it brought has loaded and been drawn.
@@ -1569,7 +1719,7 @@ export function Humanoid({
   return (
     <SettleContext.Provider value={settle}>
       <group
-        ref={groupRef}
+        ref={setGroup}
         {...group}
         {...(placed && { position: placed })}
         {...(heading && { rotation: [0, Math.atan2(heading[0], heading[2]), 0] as Vec3 })}

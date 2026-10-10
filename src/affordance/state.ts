@@ -153,6 +153,17 @@ export class AffordanceStates {
     return copy(this.states.get(id) ?? restState(kind));
   }
 
+  /**
+   * How open an aperture is (0 for one never set, or for an affordance that
+   * is not an aperture), read without a copy: what a renderer reads each frame.
+   * Throws `RangeError` for one the figure does not have.
+   */
+  opening(id: string): number {
+    if (!this.kinds.has(id)) throw new RangeError(`the figure has no affordance ${id}`);
+    const s = this.states.get(id);
+    return s?.kind === "aperture" ? s.opening : 0;
+  }
+
   /** Merges `change` into the affordance's state, checked (`changeState`); returns a copy. */
   set(id: string, change: AffordanceChange): AffordanceState {
     const next = changeState(id, this.get(id), change);

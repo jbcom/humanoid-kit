@@ -2267,9 +2267,10 @@ for.
   or nothing). It lives with the figure, not in the registry, so two figures
   with one registry have their own, and it is copied in and out, so nothing
   outside can change it unchecked.
-- *Frames are evaluated, not stored*: `affordanceFrames(model, posedBody,
-  own)` reads the landmarks of that body, so an affordance is never out of
-  step with the skin it belongs to. A test frames every one on the smoke
+- *Frames are evaluated, not stored*: `affordanceFrames(landmarkFrames, own)`
+  reads a figure's landmarks however they were found (`affordanceFrames(model,
+  posedBody, own)` finds them on a posed body), so an affordance is never out
+  of step with the skin it belongs to. A test frames every one on the smoke
   tier's bodies and poses.
 
 - *Channels* (`src/affordance/channel.ts`, numbers and their sources in
@@ -2284,24 +2285,92 @@ for.
   read.
 
 - *The clip at the rim* (`src/render/channelClip.ts`): a `ChannelClip` holds a
-  figure's channels in world space (`set(channels, figure.matrixWorld)`, the
-  figure's scale carried into their sizes) and `clipMaterial(material, clip)`
-  has any material of an object that may enter them discard each fragment
-  `placeIn` puts inside one, so a bite dissolves past the lips and an earbud's
-  stem vanishes into the canal. A channel's size along it is its `knots`, the
-  one profile `halfSize` and the shader both read. A browser test holds the
-  discarded pixels to `placeIn`'s inside, pixel for pixel away from the walls.
+  figure's channels, given in the space its meshes are drawn in (the group
+  `<Humanoid>` lifts them in), and carries them to world space by that group's
+  `matrixWorld` (`set(channels, lifted.matrixWorld)`, the scale carried into
+  their sizes; or `follow(lifted)`, read as each patched material is drawn, so
+  the clip moves with the figure on the frame it moves).
+  `clipMaterial(material, clip)` has any material of an object that may enter
+  them discard each fragment `placeIn` puts inside one, so a bite dissolves
+  past the lips and an earbud's stem vanishes into the canal. A channel's size
+  along it is its `knots`, the one profile `halfSize` and the shader both read.
+  A browser test holds the discarded pixels to `placeIn`'s inside, pixel for
+  pixel away from the walls, and shows a fragment just inside opened lips
+  discarded.
 - *The finger pads are contacts* (`finger-pad-1.L` to `finger-pad-5.R`, thumb
   to little finger): what a fingertip touches and presses with, each framed on
   its pad landmark. A hand's grip keeps its palm frame; a pinch or a press is
   told by the pads it uses.
 
+**The public API** (`humanoid-kit/react`, `src/react/affordances.tsx`,
+`src/affordance/live.ts`). A developer asks for a handle and gives it to the
+figure:
+
+```tsx
+const hands = useHumanoidAffordances();
+<Humanoid recipe={recipe} affordances={hands} />
+<AffordanceAnchor of={hands} at="hand.R"><Sword /></AffordanceAnchor>
+```
+
+- `useHumanoidAffordances(registry?)` returns a stable `HumanoidAffordances`.
+  `own` is `affordances(recipe)` of the recipe the figure last drew, rebuilt
+  when the recipe changes it (a figure crossing 18 gains or loses the adult
+  anatomy's, and its states start again). `get(id)` and `set(id, change)` are
+  `AffordanceStates`' on that list, so an id the figure does not have throws
+  `RangeError`, an adult affordance under 18 included.
+- `frame(id, "figure" | "world", out?)` is an affordance's frame on the
+  figure as the GPU draws it, worked out when it is read, from the live pose:
+  in the figure's own space (the lifted group's, standing on its ground) or in
+  world space. Given `out` (`frameOut()`) it allocates nothing, so it can be
+  read every frame; it is null until the figure has been drawn and its
+  anchors have arrived (the figure settles only once they have).
+  `landmark(id, space, out?)` frames a landmark the same way, and
+  `vertex(v, space, out?)` places a render vertex of the body drawn (a tap's
+  `HumanoidPick.vertex`). `channel(id)` is an aperture's channel in the figure's
+  space, opened as its state says, and `place(id, worldPoint)` says how far
+  into it a world point is and whether it is inside (`ChannelPlace`).
+- `clip` is a `ChannelClip` that keeps itself current: the figure sets it to
+  its apertures' channels after it poses each frame, and it follows the
+  lifted group, so `clipMaterial(material, hands.clip)` is all an object that
+  enters the figure needs.
+- `<AffordanceAnchor of={handle} at={id}>` draws its children in the lifted
+  group (a portal), placed each frame on the affordance's frame: +x along the
+  tangent, +y along the bitangent, +z out along the normal.
+- Setting the mouth's `opening` opens the drawn jaw too: the figure lays
+  `JawDrop = max(the pose's JawDrop, opening)` over its face units and writes
+  the bones, the dual quaternions and the occlusion keys on the next frame,
+  without a React render, so the jaw drawn and the channel agree.
+
+*Exactness.* An affordance's frame is what the GPU draws, not a second
+posing: the figure's posed body on the CPU (`posedSurface`) has no face
+units, no clip pose, no skin signals, no ground lift, and always the whole
+hip fold, so it cannot be it. A frame is skinned on the main thread from the
+GPU's own inputs: the evaluated rest positions and normals `<Humanoid>` draws
+from, the topology's skin weights, the pose `DualBones` was last given
+(`pose()`, the blend of linear and dual quaternion skinning by the same
+shares), the hip fold it was given (`setFold`, kept on the CPU too) at the
+share faded in (`foldBlend`), and the lifted group's `matrixWorld`. A
+landmark's frame needs only its render vertex, its one "up" neighbour and its
+normal, so a read skins three vertices (`skinPositionAt`, `skinNormalAt`,
+the single-vertex path `skinPositionsBlended` loops over), and a joint
+landmark only the posed skeleton. The landmarks are found in three stages to
+allow it: their anchors (`landmarkAnchors`, fixed by the topology, which the
+worker serves, `HumanoidWorkerClient.landmarkAnchors`), each figure's up
+neighbours (`landmarkUps`, from its rest shape), and the frame
+(`landmarkFrameInto`, from a skin-a-vertex callback and the posed skeleton).
+With a custom `material` the figure skins linearly with no fold, and so does
+the handle. The figure runs its per-frame work at `useFrame` priority -1
+(auto-render stays on), so a caller's own `useFrame` reads the pose of the
+frame about to be drawn. A browser test holds `frame(id, "world")` within
+2e-5 m of the landmark vertices the GPU draws, seated (the fold), with the jaw
+dropped, lifted by presence, halfway through the fold's fade, and with a
+custom material.
+
 The registry is built in steps: the kinds, the core's apertures (the mouth,
 nostrils and ear canals) with their channels, grips, mounts, contacts and the
-finger pads, state, frames and the clip at the rim first. Next: the public
-API through `Humanoid` (frames each frame, the clip fed the figure's own
-channels), the response (a channel widening to what it holds), the adult
-pack's affordances, and curved channel paths. The canals' bends are placed
+finger pads, state, frames, the clip at the rim and the public API through
+`Humanoid`. Next: the response (a channel widening to what it holds), the
+adult pack's affordances, and curved channel paths. The canals' bends are placed
 by a CT study of 221 ears (PMC12198549: the first bend at the concha's
 junction, the second at the bony junction), but their angles were not found
 in an open source (Stinson and Lawton, JASA 85:2492, 1989, has them), so the

@@ -28,16 +28,26 @@ import {
   type Vector3,
   type Vector4,
 } from "three";
+import type { PosedSkeleton } from "../foundation/landmarks.ts";
 import {
   DUAL_TEXELS,
   type DualShare,
   dualBoneTexels,
+  type SkinFold,
   type SkinPose,
+  skinFold,
   skinPose,
-  skinVertex,
+  skinPositionAt,
 } from "../rig/dual.ts";
-import { FOLD_KEYS, HIP_FOLD, hipPose, type SurfaceFold } from "../rig/hipFold.ts";
-import type { BoneRotations, RestBones } from "../rig/pose.ts";
+import {
+  FOLD_KEYS,
+  HIP_FOLD,
+  type HipFold,
+  hipPose,
+  renderFold,
+  type SurfaceFold,
+} from "../rig/hipFold.ts";
+import { type BoneRotations, posedBones, type RestBones } from "../rig/pose.ts";
 import { poseShare } from "../rig/skinShare.ts";
 
 /** The bone texture's uniform, in every patched shader. */
@@ -87,6 +97,14 @@ export class DualBones {
   /** The pose last written, for the CPU reference (`pose`), with the shares it was written with. */
   private posed: { rest: RestBones; rotations: BoneRotations; share: Float32Array } | null = null;
   private cached: SkinPose | null = null;
+  private cachedLinear: SkinPose | null = null;
+  private cachedSkeleton: PosedSkeleton | null = null;
+  /** The fold set (`setFold`) over its surface's render vertices, for the CPU reference; null for none. */
+  private cpuFold: HipFold | null = null;
+  /** `cpuFold` in the pose last written (`skinFold`), once asked for: undefined until then. */
+  private cachedFold: SkinFold | null | undefined;
+  /** Which body surface the fold set is for. */
+  foldSurface: "base" | "adult" = "base";
 
   /** `share`: each bone's share of dual quaternion skinning (`skinDualShare`). */
   constructor(bones: number, share: DualShare) {
@@ -117,17 +135,25 @@ export class DualBones {
       this.data.set(rotations.subarray(root * 4, root * 4 + 4), this.bones * DUAL_TEXELS * 4);
     this.posed = { rest, rotations, share };
     this.cached = null;
+    this.cachedLinear = null;
+    this.cachedSkeleton = null;
+    this.cachedFold = undefined;
     this.texture.needsUpdate = true;
   }
 
   /**
    * Sets the hip fold of the surface being drawn (`surfaceFold`), or none: its
-   * rows are what the geometry's `FOLD_SLOT_ATTRIBUTE` points into.
+   * rows are what the geometry's `FOLD_SLOT_ATTRIBUTE` points into. `surface`
+   * says which body surface it is for; the CPU reference keeps it too
+   * (`skinFold`), so what is skinned on the CPU is what the shader draws.
    */
-  setFold(fold: SurfaceFold | null): void {
+  setFold(fold: SurfaceFold | null, surface: "base" | "adult" = "base"): void {
     const old = this.fold.value;
     const had = this.hasFold;
     this.hasFold = !!fold && fold.rows > 0;
+    this.cpuFold = fold && this.hasFold ? renderFold(fold) : null;
+    this.cachedFold = undefined;
+    this.foldSurface = surface;
     // A fold that arrives where there was none fades in; one that replaces another (the figure's shape changed) does not.
     this.foldBlend.value = this.hasFold && !had ? 0 : 1;
     if (!fold || fold.rows === 0) this.fold.value = noFoldTexture();
@@ -160,6 +186,37 @@ export class DualBones {
     if (!this.cached && this.posed)
       this.cached = skinPose(this.posed.rest, this.posed.rotations, this.posed.share);
     return this.cached;
+  }
+
+  /**
+   * The same pose skinned linearly alone, as three skins a mesh whose material
+   * does not follow these bones (a custom material): null before the first.
+   */
+  linearPose(): SkinPose | null {
+    if (!this.cachedLinear && this.posed)
+      this.cachedLinear = skinPose(this.posed.rest, this.posed.rotations, 0);
+    return this.cachedLinear;
+  }
+
+  /** The pose's skeleton (`posedBones`): each bone's world rotation and posed head; null before the first. */
+  skeleton(): PosedSkeleton | null {
+    if (!this.cachedSkeleton && this.posed)
+      this.cachedSkeleton = posedBones(this.posed.rest, this.posed.rotations);
+    return this.cachedSkeleton;
+  }
+
+  /**
+   * The fold set, in the pose last written, at the share of it showing now
+   * (`foldBlend`), for `skinPositionAt` on the render vertices of
+   * `foldSurface`: null when there is none, or the pose flexes no hip enough.
+   */
+  skinFold(): SkinFold | null {
+    if (this.cachedFold === undefined)
+      this.cachedFold = this.posed
+        ? skinFold(this.posed.rest, this.posed.rotations, this.cpuFold)
+        : null;
+    if (this.cachedFold) this.cachedFold.blend = this.foldBlend.value;
+    return this.cachedFold;
   }
 
   dispose(): void {
@@ -370,9 +427,10 @@ export function dualShadowMaterials(
 /**
  * Makes the mesh's own CPU skinning (its bounds and ray picking, which three
  * does with linear skinning alone) follow the dual quaternion pose, as the
- * shader does.
+ * shader does; with `fold`, for a geometry with `FOLD_SLOT_ATTRIBUTE` (the
+ * body's), the hip fold too, as much of it as shows.
  */
-export function followDualSkinning(mesh: SkinnedMesh, bones: DualBones): void {
+export function followDualSkinning(mesh: SkinnedMesh, bones: DualBones, fold = false): void {
   const index = new Uint16Array(4);
   const weight = new Float32Array(4);
   const out: [number, number, number] = [0, 0, 0];
@@ -385,7 +443,10 @@ export function followDualSkinning(mesh: SkinnedMesh, bones: DualBones): void {
       index[k] = skinIndex.getComponent(vertex, k);
       weight[k] = skinWeight.getComponent(vertex, k);
     }
-    skinVertex(pose, index, weight, 0, target.x, target.y, target.z, out);
+    // As the shader: a vertex with a row in the fold (the geometry's slot) takes it.
+    const slot = fold ? mesh.geometry.getAttribute(FOLD_SLOT_ATTRIBUTE)?.getX(vertex) : undefined;
+    const folding = slot !== undefined && slot >= 0 ? bones.skinFold() : null;
+    skinPositionAt(pose, index, weight, 0, target.x, target.y, target.z, out, 0, folding, vertex);
     target.x = out[0];
     target.y = out[1];
     target.z = out[2];

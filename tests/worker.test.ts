@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
+import { landmarkAnchors } from "../src/foundation/landmarks.ts";
 import { shapeSignalNames } from "../src/model/detailFactors.ts";
+import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { presenceJoints } from "../src/presence/fromEvaluation.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { ADULT_SKIN_LAYERS } from "../src/surface/regions/index.ts";
@@ -341,6 +343,54 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
       const pick = replies.get(5);
       if (pick?.type !== "pickMap") throw new Error("no pick map");
       expect(pick.render.adultBody?.length).toBe(topology.vertexCount);
+    },
+  );
+
+  it("serves the landmarks' anchors once every target has loaded, as the model finds them", async () => {
+    let release = () => {};
+    const old = new Promise<void>((r) => {
+      release = r;
+    });
+    stubFetch({ hold: { file: "targets-old.bin.gz", until: old } });
+    const { handle, replies } = start();
+    await handle({
+      type: "init",
+      id: 1,
+      load: { body: "http://packs/body" },
+      model: { subdivision: 1 },
+    });
+    const asked = handle({ type: "landmarkAnchors", id: 2 });
+    await settle();
+    // The landmarks are found from targets: a stage still loading holds the answer back.
+    expect(replies.has(2)).toBe(false);
+    release();
+    await asked;
+    const reply = replies.get(2);
+    if (reply?.type !== "landmarkAnchors") throw new Error("no anchors");
+    const model = new HumanoidModel(loadFixtureAssets(), { subdivision: 1 });
+    expect(reply.base).toEqual(landmarkAnchors(model, "base"));
+    expect(reply.adult).toBeNull();
+  });
+
+  it(
+    "serves the landmarks' anchors on the adult surface too, with an adult pack that refines the body",
+    ADULT_BUILD,
+    async () => {
+      stubFetch();
+      const { handle, replies } = start();
+      await handle({
+        type: "init",
+        id: 1,
+        load: { body: "http://packs/body", adultAnatomy: "http://packs/adult" },
+        model: { subdivision: 1 },
+      });
+      await handle({ type: "landmarkAnchors", id: 2 });
+      const reply = replies.get(2);
+      if (reply?.type !== "landmarkAnchors" || !reply.adult) throw new Error("no adult anchors");
+      const model = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
+      expect(reply.base).toEqual(landmarkAnchors(model, "base"));
+      expect(reply.adult).toEqual(landmarkAnchors(model, "adult"));
+      expect(reply.adult.surface).toBe("adult");
     },
   );
 

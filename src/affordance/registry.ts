@@ -82,6 +82,9 @@ declare const forFigure: unique symbol;
  */
 export type FigureAffordances = readonly Affordance[] & { readonly [forFigure]: true };
 
+/** The affordances of a figure not yet known: none. */
+export const NO_AFFORDANCES = Object.freeze([]) as unknown as FigureAffordances;
+
 /**
  * The affordances a figure has from a registry (the core's, and a pack's once
  * packs declare theirs): every one for a figure 18 or over; under 18, only those

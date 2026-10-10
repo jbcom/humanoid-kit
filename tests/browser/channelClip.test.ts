@@ -4,6 +4,7 @@
  * everything else as it was.
  */
 import {
+  Group,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -14,7 +15,7 @@ import {
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
-import { type Channel, knotHalfSize, placeIn } from "../../src/affordance/channel.ts";
+import { type Channel, channelOf, knotHalfSize, placeIn } from "../../src/affordance/channel.ts";
 import { ChannelClip, clipMaterial } from "../../src/render/channelClip.ts";
 
 const SIZE = 128;
@@ -51,6 +52,11 @@ function channel(): Channel {
 function drawn(channels: Channel[], toWorld?: Matrix4): boolean[] {
   const clip = new ChannelClip();
   clip.set(channels, toWorld);
+  return drawnBy(clip);
+}
+
+/** Which pixels of a white quad over the square `clip` lets be drawn. */
+function drawnBy(clip: ChannelClip): boolean[] {
   const material = clipMaterial(new MeshBasicMaterial({ color: 0xffffff }), clip);
   const scene = new Scene();
   scene.add(new Mesh(new PlaneGeometry(2, 2), material));
@@ -107,6 +113,73 @@ describe("the clip at a channel's rim", () => {
     expect(got[index(0, 0)]).toBe(true);
     expect(got[index(0.5, -0.6)]).toBe(true);
     expect(got[index(0.5, -0.3)]).toBe(false);
+  });
+
+  it("follows the group it is told to as it moves, without being set again", () => {
+    const c = channel();
+    const clip = new ChannelClip();
+    const group = new Group();
+    clip.follow(group);
+    clip.set([c]);
+    const index = (x: number, y: number) =>
+      Math.floor(((y + 1) / 2) * SIZE) * SIZE + Math.floor(((x + 1) / 2) * SIZE);
+    // Where it was set: the hole straight up the middle.
+    let got = drawnBy(clip);
+    expect(got[index(0, 0)]).toBe(false);
+    // The group moves half a unit right and shrinks by half; the clip is drawn there next.
+    group.position.set(0.5, 0, 0);
+    group.scale.setScalar(0.5);
+    got = drawnBy(clip);
+    expect(got[index(0.5, 0)]).toBe(false);
+    expect(got[index(0, 0)]).toBe(true);
+    expect(got[index(0.5, -0.6)]).toBe(true);
+    expect(got[index(0.5, -0.3)]).toBe(false);
+    // And on to the left, under a parent that moves it back up.
+    const parent = new Group();
+    parent.position.set(0, 0.2, 0);
+    parent.add(group);
+    group.position.set(-0.5, 0, 0);
+    got = drawnBy(clip);
+    expect(got[index(-0.5, 0.2)]).toBe(false);
+    expect(got[index(0.5, 0)]).toBe(true);
+    expect(got[index(-0.5, -0.4)]).toBe(true);
+    // Followed no longer, it stays where it was last drawn.
+    clip.follow(null);
+    group.position.set(0.5, 0, 0);
+    got = drawnBy(clip);
+    expect(got[index(-0.5, 0.2)]).toBe(false);
+    expect(got[index(0.5, 0.2)]).toBe(true);
+  });
+
+  it("discards a fragment just inside opened lips, and draws it when they close", () => {
+    // An adult mouth facing the camera (+z) at the square's centre: its rim's tangent runs
+    // between the lips (along y), so the opening is the channel's height up and down.
+    const rim = {
+      position: [0, 0, 0] as const,
+      normal: [0, 0, 1] as const,
+      tangent: [0, 1, 0] as const,
+      bitangent: [-1, 0, 0] as const,
+    };
+    const head = [0, 0, -0.09] as const;
+    const width = 0.05;
+    const mouth = (opening: number) => channelOf("oral", rim, 1, head, opening, width);
+    // Seen down -z, the quad is a slice through the channel 1 mm behind the rim.
+    const behind = new Matrix4().makeTranslation(0, 0, 0.001);
+    const open = mouth(1);
+    expect(placeIn(open, [0, 0, -0.001]).inside).toBe(true);
+    const slice = (opening: number) => {
+      const clip = new ChannelClip();
+      // The quad stays at z = 0; the channel is moved forward by a millimetre, so the
+      // quad lies a millimetre inside it, and scaled up so the mouth fills the square.
+      clip.set([mouth(opening)], new Matrix4().makeScale(20, 20, 20).multiply(behind));
+      return drawnBy(clip);
+    };
+    const centre = Math.floor(SIZE / 2) * SIZE + Math.floor(SIZE / 2);
+    expect(slice(1)[centre], "inside open lips").toBe(false);
+    expect(slice(0)[centre], "behind closed lips").toBe(true);
+    // Outside the mouth's width, open lips or not, nothing is discarded.
+    const corner = Math.floor(SIZE / 2) * SIZE + Math.floor(SIZE * 0.95);
+    expect(slice(1)[corner]).toBe(true);
   });
 
   it("draws everything with no channel, and with a closed one", () => {

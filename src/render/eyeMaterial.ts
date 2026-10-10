@@ -139,6 +139,9 @@ export class EyeMaterial extends MeshPhysicalMaterial {
 			// Chromatic and not too bright: iris (and the dark pupil inside it).
 			iris = smoothstep( 0.25, 0.55, sat ) * ( 1.0 - smoothstep( 0.35, 0.6, lum ) );
 		} else {
+			// The iris is a disc in the texture's space, so it exists only once the texture does:
+			// before it arrives (no map, no map UVs) the eye is drawn as sclera.
+			#ifdef USE_MAP
 			if ( hkEyeMode < 1.5 ) {
 				// A disc around the nearer eye's centre; a bright, grey spot in it (a painted catchlight) is sclera.
 				vec2 uv = vMapUv;
@@ -146,6 +149,7 @@ export class EyeMaterial extends MeshPhysicalMaterial {
 				iris = 1.0 - smoothstep( 0.93 * hkEyeShape.x, 1.05 * hkEyeShape.x, d );
 				iris *= 1.0 - smoothstep( 0.55, 0.8, lum ) * ( 1.0 - smoothstep( 0.1, 0.3, sat ) );
 			}
+			#endif
 			irisGain = hkEyeShape.y;
 			scleraGain = hkEyeShape.z;
 			tint = hkScleraTint;

@@ -18,9 +18,16 @@ import type {
 import type { Recipe } from "../recipe/recipe.ts";
 import type { SurfaceFold } from "../rig/hipFold.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
-import type { HairInfo, PickMap, ReadyInfo, WorkerRequest, WorkerResponse } from "./protocol.ts";
+import type {
+  HairInfo,
+  PickMap,
+  ReadyInfo,
+  SurfaceAnchors,
+  WorkerRequest,
+  WorkerResponse,
+} from "./protocol.ts";
 
-export type { HairInfo, PickMap, ReadyInfo };
+export type { HairInfo, PickMap, ReadyInfo, SurfaceAnchors };
 
 export class HumanoidWorkerError extends Error {
   override name = "HumanoidWorkerError";
@@ -119,6 +126,26 @@ export class HumanoidWorkerClient {
       return map;
     });
     return this.pickMapRequest;
+  }
+
+  private landmarkAnchorsRequest: Promise<SurfaceAnchors> | null = null;
+
+  /**
+   * Where each landmark is held on the body surfaces (`landmarkAnchors`): a
+   * surface landmark's render vertex and its neighbours, a joint landmark's
+   * bones, on the base surface and, with an adult pack that refines the body,
+   * the adult one. What frames a landmark or an affordance on the figure as
+   * drawn (`useHumanoidAffordances`). Found by the worker on the first call,
+   * once the target files the landmarks are found from have loaded; later
+   * calls share that answer, so treat it as read-only.
+   */
+  landmarkAnchors(): Promise<SurfaceAnchors> {
+    this.landmarkAnchorsRequest ??= this.ready.then(async () => {
+      const r = await this.request({ type: "landmarkAnchors", id: 0 });
+      if (r.type !== "landmarkAnchors") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+      return { base: r.base, adult: r.adult };
+    });
+    return this.landmarkAnchorsRequest;
   }
 
   private posedOcclusionRequest: Promise<Float32Array[] | null> | null = null;

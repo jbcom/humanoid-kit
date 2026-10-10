@@ -19,6 +19,7 @@ import {
   type LoadStage,
   loadHumanoidAssetsStaged,
 } from "../format/assetFormat.ts";
+import { landmarkAnchors } from "../foundation/landmarks.ts";
 import { buildFeatureMap } from "../makehuman/features.ts";
 import { HumanoidModel } from "../model/humanoidModel.ts";
 import { tryPresenceJoints } from "../presence/fromEvaluation.ts";
@@ -184,6 +185,18 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           ...(render.adultBody ? [render.adultBody.buffer] : []),
           ...render.attachments.map((a) => a.buffer),
         ]);
+        return;
+      }
+      if (req.type === "landmarkAnchors") {
+        // The landmarks are found from targets that load in later stages.
+        await complete;
+        // Plain data, cached by the model, so the reply is a structured copy.
+        post({
+          type: "landmarkAnchors",
+          id: req.id,
+          base: landmarkAnchors(model, "base"),
+          adult: model.adultSurface() ? landmarkAnchors(model, "adult") : null,
+        });
         return;
       }
       if (req.type === "hipFold") {

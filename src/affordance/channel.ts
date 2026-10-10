@@ -132,21 +132,40 @@ export function knotHalfSize(
   return [end[1], end[2]];
 }
 
-const unit = (a: Vec3): Vec3 => {
-  const l = Math.hypot(a[0], a[1], a[2]);
-  return [a[0] / l, a[1] / l, a[2] / l];
+/** A channel whose fields `channelOf` can write in place: its vectors and knots are its own, reused. */
+export function emptyChannel(): Channel {
+  const pool = Array.from({ length: CHANNEL_KNOTS }, () => [0, 0, 0] as [number, number, number]);
+  const c: Channel = {
+    origin: [0, 0, 0],
+    inward: [0, 0, 0],
+    across: [0, 0, 0],
+    up: [0, 0, 0],
+    depth: 0,
+    knots: [],
+    halfSize: (d) => knotHalfSize(c.knots, d),
+  };
+  knotPools.set(c, pool);
+  return c;
+}
+
+/** Each in-place channel's own knot triples. */
+const knotPools = new WeakMap<Channel, [number, number, number][]>();
+
+/** Sets a vector `channelOf` owns (one of `emptyChannel`'s). */
+const put = (v: Vec3, x: number, y: number, z: number) => {
+  const m = v as unknown as number[];
+  m[0] = x;
+  m[1] = y;
+  m[2] = z;
 };
-const cross = (a: Vec3, b: Vec3): Vec3 => [
-  a[1] * b[2] - a[2] * b[1],
-  a[2] * b[0] - a[0] * b[2],
-  a[0] * b[1] - a[1] * b[0],
-];
 
 /**
  * A channel behind a rim. `scale` is the figure's head width over the adult's
  * (`ADULT_EAR_SPAN`), `head` its centre (midway between its ear canals);
  * `opening` (0 to 1) opens a channel that opens (the mouth), whose rim is
- * `width` across (the figure's own mouth, metres).
+ * `width` across (the figure's own mouth, metres). Given `out` (from
+ * `emptyChannel`), it is written there and nothing is allocated, as a renderer
+ * needs each frame.
  */
 export function channelOf(
   id: ChannelId,
@@ -155,43 +174,55 @@ export function channelOf(
   head: Vec3,
   opening = 1,
   width?: number,
+  out: Channel = emptyChannel(),
 ): Channel {
   const spec = CHANNELS[id];
   if (!(scale > 0)) throw new RangeError(`channel ${id}: scale must be positive, not ${scale}`);
+  const pool = knotPools.get(out);
+  if (!pool) throw new RangeError("channelOf: out must be made by emptyChannel");
   const sizeAcross = id === "oral" ? (width ?? 0) : spec.rim.across * scale;
   const sizeUp = spec.rim.up * scale * (id === "oral" ? opening : 1);
   const depth = spec.depth * scale;
   const t = spec.towardHead;
-  const toHead = unit([
-    head[0] - rim.position[0],
-    head[1] - rim.position[1],
-    head[2] - rim.position[2],
-  ]);
-  const inward = unit([
-    -rim.normal[0] * (1 - t) + toHead[0] * t,
-    -rim.normal[1] * (1 - t) + toHead[1] * t,
-    -rim.normal[2] * (1 - t) + toHead[2] * t,
-  ]);
+  const [px, py, pz] = rim.position;
+  let hx = head[0] - px;
+  let hy = head[1] - py;
+  let hz = head[2] - pz;
+  const hl = Math.hypot(hx, hy, hz);
+  hx /= hl;
+  hy /= hl;
+  hz /= hl;
+  let ix = -rim.normal[0] * (1 - t) + hx * t;
+  let iy = -rim.normal[1] * (1 - t) + hy * t;
+  let iz = -rim.normal[2] * (1 - t) + hz * t;
+  const il = Math.hypot(ix, iy, iz);
+  ix /= il;
+  iy /= il;
+  iz /= il;
   // The rim's axes made square to the path, with their handedness kept (across = up × inward).
-  const d = dot(rim.tangent, inward);
-  const up = unit([
-    rim.tangent[0] - inward[0] * d,
-    rim.tangent[1] - inward[1] * d,
-    rim.tangent[2] - inward[2] * d,
-  ]);
-  const across = cross(up, inward);
-  const knots = spec.profile.map(
-    ([share, fa, fu]) => [share * depth, (sizeAcross / 2) * fa, (sizeUp / 2) * fu] as const,
-  );
-  return {
-    origin: rim.position,
-    inward,
-    across,
-    up,
-    depth,
-    knots,
-    halfSize: (d) => knotHalfSize(knots, d),
-  };
+  const d = rim.tangent[0] * ix + rim.tangent[1] * iy + rim.tangent[2] * iz;
+  let ux = rim.tangent[0] - ix * d;
+  let uy = rim.tangent[1] - iy * d;
+  let uz = rim.tangent[2] - iz * d;
+  const ul = Math.hypot(ux, uy, uz);
+  ux /= ul;
+  uy /= ul;
+  uz /= ul;
+  put(out.origin, px, py, pz);
+  put(out.inward, ix, iy, iz);
+  put(out.up, ux, uy, uz);
+  put(out.across, uy * iz - uz * iy, uz * ix - ux * iz, ux * iy - uy * ix);
+  out.depth = depth;
+  const knots = out.knots as [number, number, number][];
+  knots.length = spec.profile.length;
+  spec.profile.forEach(([share, fa, fu], k) => {
+    const knot = pool[k] as [number, number, number];
+    knot[0] = share * depth;
+    knot[1] = (sizeAcross / 2) * fa;
+    knot[2] = (sizeUp / 2) * fu;
+    knots[k] = knot;
+  });
+  return out;
 }
 
 /** Where `p` is against `channel`. */
