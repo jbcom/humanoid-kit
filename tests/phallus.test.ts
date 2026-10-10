@@ -15,11 +15,17 @@ import {
   PHALLUS_LENGTH,
   PHALLUS_SIZE,
   phallusTargets,
-  STATES,
   SculptedPhallus,
+  STATES,
   type Variation,
 } from "../scripts/lib/detail/phallus.ts";
-import { type ReservoirRoot, type RootShape, reservoirRoot } from "../scripts/lib/detail/root.ts";
+import {
+  capSurface,
+  type ReservoirRoot,
+  type RootShape,
+  reservoirRoot,
+} from "../scripts/lib/detail/root.ts";
+import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { maleParts } from "../scripts/lib/detail/sculpt.ts";
 import { skirtOnto } from "../scripts/lib/detail/transfer.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -28,11 +34,12 @@ import { createRecipe } from "../src/recipe/recipe.ts";
 import { adultManifest, loadFixtureAssets } from "./fixtures.ts";
 
 /**
- * The phallic organ (scripts/lib/detail/phallus.ts): the CC0 sculpt's shaft and
- * glans projected onto the reservoir, sized to the measured length, girth and
- * growth of the literature (docs/research/ADULT-ANATOMY-DATA.md, section F). The
- * projection is held to the sculpt, the sized shapes to those numbers, and the
- * surface a figure gets to the generator's shape for every variant it can ask for.
+ * The phallic organ (scripts/lib/detail/phallus.ts): two CC0 sculpts' shafts and
+ * glans, flaccid and erect, projected onto the reservoir, scaled to the measured
+ * length, girth and growth of the literature (docs/research/ADULT-ANATOMY-DATA.md,
+ * section F) and blended between for arousal. The projections are held to the
+ * sculpts, the scaled shapes to those numbers, and the surface a figure gets to the
+ * generator's shape for every variant it can ask for.
  */
 const assets = loadFixtureAssets(true);
 const model = new HumanoidModel(assets, { subdivision: 1 });
@@ -58,43 +65,87 @@ function span(points: Iterable<readonly number[]>): number[] {
 const DEFAULT = PHALLUS_KEYS[2];
 if (!DEFAULT) throw new Error("no default key");
 const parts = maleParts(assets, model.controlShape(AUTHORING_FIGURE).control);
-const skin = skinOf(lattice, (adultManifest.anatomy?.reservoirs ?? []).map((r) => r.cap));
+const skin = skinOf(
+  lattice,
+  (adultManifest.anatomy?.reservoirs ?? []).map((r) => r.cap),
+);
 const organ = new SculptedPhallus(root, parts.phallus, skin);
 
-describe("the sculpt on the reservoir", () => {
-  it("lies on the sculpted part and its skirt, and the glans is the sculpt's own", () => {
-    const distances = (surface: { positions: Float64Array; triangles: Uint32Array }) => {
-      const geometry = new BufferGeometry();
-      geometry.setAttribute("position", new BufferAttribute(Float32Array.from(surface.positions), 3));
-      geometry.setIndex(new BufferAttribute(surface.triangles, 1));
-      const bvh = new MeshBVH(geometry);
-      const hit = { point: new Vector3(), distance: 0, faceIndex: 0 };
-      return organ.projected.map((p) => {
-        bvh.closestPointToPoint(new Vector3(p[0], p[1], p[2]), hit);
-        return hit.distance;
-      });
-    };
-    const { skirted } = skirtOnto(root, parts.phallus, { reference: DORSAL });
-    // Every vertex reads the skirted part (to single precision).
-    expect(Math.max(...distances(skirted))).toBeLessThan(1e-5);
-    // The cap and the last fifth of the rings, the glans, are on the sculpt itself.
-    const onSculpt = distances(parts.phallus);
-    const glans = onSculpt.filter(
-      (_, i) => i < root.cap.length || i >= root.cap.length + Math.floor(0.8 * root.rings) * LOOP,
-    );
-    expect(Math.max(...glans)).toBeLessThan(1e-5);
+describe("the sculpts on the reservoir", () => {
+  const sculpts = [
+    { name: "flaccid", projected: organ.flaccid, part: parts.phallus.flaccid, state: 0 },
+    { name: "erect", projected: organ.erect, part: parts.phallus.erect, state: 1 },
+  ] as const;
+
+  it("starts on the skin line and lies on each sculpted part and its skirt beyond it, and the glans is the sculpt's own", () => {
+    for (const { name, projected, part } of sculpts) {
+      const distances = (surface: { positions: Float64Array; triangles: Uint32Array }) => {
+        const geometry = new BufferGeometry();
+        geometry.setAttribute(
+          "position",
+          new BufferAttribute(Float32Array.from(surface.positions), 3),
+        );
+        geometry.setIndex(new BufferAttribute(surface.triangles, 1));
+        const bvh = new MeshBVH(geometry);
+        const hit = { point: new Vector3(), distance: 0, faceIndex: 0 };
+        return projected.map((p) => {
+          bvh.closestPointToPoint(new Vector3(p[0], p[1], p[2]), hit);
+          return hit.distance;
+        });
+      };
+      const { skirted, line } = skirtOnto(root, part, { reference: DORSAL, skin });
+      // Ring 1 is the skin line, on the skin the cap covers at rest.
+      const ring1 = projected.slice(root.cap.length, root.cap.length + LOOP);
+      expect(ring1, name).toEqual(line);
+      const onCap = distances(capSurface(root)).slice(root.cap.length, root.cap.length + LOOP);
+      expect(Math.max(...onCap), name).toBeLessThan(1e-5);
+      // Every vertex past it reads the skirted part (to single precision).
+      const read = distances(skirted).filter(
+        (_, i) => i < root.cap.length || i >= root.cap.length + LOOP,
+      );
+      expect(Math.max(...read), name).toBeLessThan(1e-5);
+      // The cap and the last fifth of the rings, the glans, are on the sculpt itself.
+      const glans = distances(part).filter(
+        (_, i) => i < root.cap.length || i >= root.cap.length + Math.floor(0.8 * root.rings) * LOOP,
+      );
+      expect(Math.max(...glans), name).toBeLessThan(1e-5);
+    }
   });
 
-  it("is its own form swept back unchanged: the form keeps the shape exactly", () => {
-    const back = sweep(organ.form, { blend: 0.01 });
-    organ.projected.forEach((p, i) => {
-      const q = back[i] as readonly number[];
-      for (let k = 0; k < 3; k++) expect(q[k] as number).toBeCloseTo(p[k] as number, 9);
+  it("is each sculpt at the ends of arousal: the blended form swept back unchanged is the sculpt exactly", () => {
+    for (const { name, projected, state } of sculpts) {
+      const back = sweep(organ.formAt(state), { blend: 0.01 });
+      projected.forEach((p, i) => {
+        const q = back[i] as readonly number[];
+        for (let k = 0; k < 3; k++) expect(q[k] as number, name).toBeCloseTo(p[k] as number, 9);
+      });
+    }
+  });
+
+  it("swings between the sculpts rather than cutting across: halfway, every segment is as long as the two average", () => {
+    const [a, b, mid] = [0, 1, 0.5].map((s) => organ.formAt(s));
+    mid?.lengths.forEach((l, k) => {
+      expect(l).toBeCloseTo(((a?.lengths[k] as number) + (b?.lengths[k] as number)) / 2, 12);
+    });
+    // Halfway along the great circle: each direction makes equal angles with the two.
+    mid?.directions.forEach((d, k) => {
+      const angle = (u: readonly number[]) =>
+        Math.acos(
+          Math.min(
+            1,
+            d.reduce((s, c, i) => s + c * (u[i] as number), 0),
+          ),
+        );
+      expect(angle(a?.directions[k] as readonly number[])).toBeCloseTo(
+        angle(b?.directions[k] as readonly number[]),
+        9,
+      );
     });
   });
 });
 
-describe("the organ's shape against the literature", () => {
+// Each key, state and variation is sized on its drawn shape (`SculptedPhallus.scalesFor`).
+describe("the organ's shape against the literature", { timeout: 300_000 }, () => {
   const flaccid = keyShape(organ, DEFAULT);
   const erect = keyShape(organ, DEFAULT, { state: 1 });
 
@@ -157,16 +208,25 @@ describe("the organ's shape against the literature", () => {
     );
   });
 
-  it("has only finite positions, for every key and variation", () => {
-    for (const key of PHALLUS_KEYS)
-      for (const v of [
+  it("has only finite positions, for every key and variation it offers", () => {
+    for (const key of PHALLUS_KEYS) {
+      const variations: Variation[] = [
         {},
-        { state: 0.5 },
-        { state: 1 },
         { length: 1 + LENGTH_RANGE },
-        { girth: 1 - GIRTH_RANGE, state: 1 },
-      ])
+        { girth: 1 - GIRTH_RANGE },
+      ];
+      // A sculpted key erects; a drawn key (the clitoral glans) has no erect state.
+      if (key.form === "sculpt")
+        variations.push({ state: 0.5 }, { state: 1 }, { girth: 1 - GIRTH_RANGE, state: 1 });
+      for (const v of variations)
         for (const p of keyShape(organ, key, v)) expect(p.every(Number.isFinite)).toBe(true);
+    }
+  });
+
+  it("refuses an erect state for a drawn key", () => {
+    const glans = PHALLUS_KEYS.find((k) => k.form !== "sculpt");
+    if (!glans) throw new Error("no drawn key");
+    expect(() => keyShape(organ, glans, { state: 1 })).toThrow(/no erect state/);
   });
 
   it("keeps the loop where the skin is: a ring's first vertices stay near the root", () => {
@@ -182,7 +242,8 @@ describe("the organ's shape against the literature", () => {
   });
 });
 
-describe("the pack's organ", () => {
+// Generating the targets sizes every key, state and variation on the drawn shape.
+describe("the pack's organ", { timeout: 300_000 }, () => {
   const detail = adultManifest.anatomy?.detail;
 
   it("names its targets, all driven, on the lattice they were authored on", () => {
@@ -219,8 +280,13 @@ describe("the pack's organ", () => {
 });
 
 describe("the organ on the adult surface", { timeout: 300_000 }, () => {
+  // No organ and no testes unless asked for: left unset, an adult takes the pack's default
+  // anatomy for its gender (`AdultAnatomySpec.defaults`).
   const figure = (modifiers: Record<string, number> = {}) =>
-    createRecipe({ macros: AUTHORING_FIGURE.macros, modifiers });
+    createRecipe({
+      macros: AUTHORING_FIGURE.macros,
+      modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, ...modifiers },
+    });
   const rest = model.evaluate(figure()).positions;
   const moved = (positions: Float32Array) => {
     const out: number[][] = [];
@@ -315,7 +381,10 @@ describe("the organ on the adult surface", { timeout: 300_000 }, () => {
     const key = PHALLUS_KEYS[2] as (typeof PHALLUS_KEYS)[number];
     const shapes = drawn.map((state) => keyShape(organ, key, { state }));
     const blended = (a: number) => {
-      const i = Math.min(drawn.length - 2, drawn.findIndex((s) => s >= a) - 1 < 0 ? 0 : drawn.findIndex((s) => s >= a) - 1);
+      const i = Math.min(
+        drawn.length - 2,
+        drawn.findIndex((s) => s >= a) - 1 < 0 ? 0 : drawn.findIndex((s) => s >= a) - 1,
+      );
       const s0 = drawn[i] as number;
       const s1 = drawn[i + 1] as number;
       const t = (a - s0) / (s1 - s0);
@@ -341,13 +410,25 @@ describe("the organ on the adult surface", { timeout: 300_000 }, () => {
   });
 
   it("grows smoothly between keys: more size is further out, with no jump at a key", () => {
-    // How far the organ reaches down: its height from top to bottom.
-    const reach = (size: number) => surfaceSpan({ [PHALLUS_SIZE]: size })[1] as number;
+    // How far the organ reaches out: the furthest any vertex stands from where it is without
+    // it. (Not the moved vertices' height: at a small size every ring moves a little and all
+    // still lie on the loop, so that is the loop's height, which narrows as the glans draws in.)
+    const reach = (size: number) => {
+      const p = model.evaluate(figure({ [PHALLUS_SIZE]: size })).positions;
+      let far = 0;
+      for (let v = 0; v < p.length / 3; v++)
+        far = Math.max(
+          far,
+          Math.hypot(
+            ...[0, 1, 2].map((k) => (p[v * 3 + k] as number) - (rest[v * 3 + k] as number)),
+          ),
+        );
+      return far;
+    };
     let prev = 0;
     for (let s = 0.04; s <= 1.0001; s += 0.04) {
       const r = reach(s);
-      // A nub on its skirt may thin by a fraction of a millimetre as it grows; it never shrinks more.
-      expect(r, `size ${s}`).toBeGreaterThanOrEqual(prev - 5e-4);
+      expect(r, `size ${s}`).toBeGreaterThanOrEqual(prev);
       prev = r;
     }
   });

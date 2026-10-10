@@ -68,7 +68,11 @@ function wallCoordinates(id: string): ({ ring: number; round: number } | null)[]
     const dv = (topology.uvs[v * 2 + 1] as number) - island.origin[1];
     const ring = ((du * along[0] + dv * along[1]) / aa) * rings;
     const round = (du * across[0] + dv * across[1]) / cc;
-    out.push(ring >= -1e-6 && ring <= rings + 1e-6 && round >= -1e-6 && round <= 1 + 1e-6 ? { ring, round } : null);
+    out.push(
+      ring >= -1e-6 && ring <= rings + 1e-6 && round >= -1e-6 && round <= 1 + 1e-6
+        ? { ring, round }
+        : null,
+    );
   }
   return out;
 }
@@ -116,7 +120,11 @@ function isoLine(
       const t = fa / (fa - fb);
       const pa = vertex(p, a);
       const pb = vertex(p, b);
-      ends.push([pa[0] + (pb[0] - pa[0]) * t, pa[1] + (pb[1] - pa[1]) * t, pa[2] + (pb[2] - pa[2]) * t]);
+      ends.push([
+        pa[0] + (pb[0] - pa[0]) * t,
+        pa[1] + (pb[1] - pa[1]) * t,
+        pa[2] + (pb[2] - pa[2]) * t,
+      ]);
     }
     if (ends.length !== 2) continue;
     const [e0, e1] = ends as [V3, V3];
@@ -147,7 +155,11 @@ function planeSection(
       const fb = dot(sub(pb, point), normal);
       if (fa < 0 === fb < 0) continue;
       const t = fa / (fa - fb);
-      ends.push([pa[0] + (pb[0] - pa[0]) * t, pa[1] + (pb[1] - pa[1]) * t, pa[2] + (pb[2] - pa[2]) * t]);
+      ends.push([
+        pa[0] + (pb[0] - pa[0]) * t,
+        pa[1] + (pb[1] - pa[1]) * t,
+        pa[2] + (pb[2] - pa[2]) * t,
+      ]);
     }
     if (ends.length !== 2) continue;
     const [e0, e1] = ends as [V3, V3];
@@ -176,7 +188,10 @@ describe("the shaft as drawn", { timeout: 300_000 }, () => {
     const path = lines.filter((l) => l.level >= 1 && l.level <= sulcus.level);
     const arc = [0];
     for (let i = 1; i < path.length; i++)
-      arc.push((arc[i - 1] as number) + len(sub((path[i] as { centre: V3 }).centre, (path[i - 1] as { centre: V3 }).centre)));
+      arc.push(
+        (arc[i - 1] as number) +
+          len(sub((path[i] as { centre: V3 }).centre, (path[i - 1] as { centre: V3 }).centre)),
+      );
     const half = (arc[arc.length - 1] as number) / 2;
     const i = arc.findIndex((a) => a >= half);
     const a = path[Math.max(0, i - 1)] as { centre: V3; length: number };
@@ -205,8 +220,8 @@ describe("the sac as drawn", { timeout: 300_000 }, () => {
     const weld = new Map<string, number>();
     const welded = (v: number) => {
       const key = `${p[v * 3]},${p[v * 3 + 1]},${p[v * 3 + 2]}`;
-      let id = weld.get(key);
-      if (id === undefined) weld.set(key, (id = weld.size));
+      const id = weld.get(key) ?? weld.size;
+      weld.set(key, id);
       return id;
     };
     const tris = triangles(onSac).map((t) => t.map(welded) as [number, number, number]);
@@ -246,9 +261,7 @@ describe("the sac as drawn", { timeout: 300_000 }, () => {
       }
     expect(Math.max(...edges.values())).toBe(2);
     expect(new Set(tris.flat()).size - edges.size + tris.length).toBe(1);
-    const bodyVertices = new Set(
-      triangles((v) => !onSac(v)).flatMap((t) => t.map(welded)),
-    );
+    const bodyVertices = new Set(triangles((v) => !onSac(v)).flatMap((t) => t.map(welded)));
     const border = [...edges].filter(([, n]) => n === 1).flatMap(([k]) => k.split(",").map(Number));
     expect(border.length).toBeGreaterThan(0);
     for (const v of border) expect(bodyVertices.has(v), `border vertex ${v}`).toBe(true);
@@ -278,7 +291,8 @@ describe("the sac as drawn", { timeout: 300_000 }, () => {
     const wall = wallCoordinates("labioscrotal");
     const cap = onCap("labioscrotal");
     const points: V3[] = [];
-    for (let v = 0; v < topology.vertexCount; v++) if (wall[v] !== null || cap[v]) points.push(vertex(p, v));
+    for (let v = 0; v < topology.vertexCount; v++)
+      if (wall[v] !== null || cap[v]) points.push(vertex(p, v));
     const read = readSac(points, 0);
     expect(read.front, `front ${(read.front * 1000).toFixed(1)} mm`).toBeGreaterThan(0.002);
     expect(read.bottom, `bottom ${(read.bottom * 1000).toFixed(1)} mm`).toBeGreaterThan(0.0003);
@@ -341,13 +355,21 @@ function edgesCross(e: [V3, V3, V3], t: [V3, V3, V3]): boolean {
   for (let k = 0; k < 3; k++) {
     const o = e[k] as V3;
     const d = sub(e[(k + 1) % 3] as V3, o);
-    const h: V3 = [d[1] * e2[2] - d[2] * e2[1], d[2] * e2[0] - d[0] * e2[2], d[0] * e2[1] - d[1] * e2[0]];
+    const h: V3 = [
+      d[1] * e2[2] - d[2] * e2[1],
+      d[2] * e2[0] - d[0] * e2[2],
+      d[0] * e2[1] - d[1] * e2[0],
+    ];
     const det = dot(e1, h);
     if (Math.abs(det) < 1e-14) continue;
     const s = sub(o, t0);
     const u = dot(s, h) / det;
     if (u <= 1e-6 || u >= 1 - 1e-6) continue;
-    const q: V3 = [s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0]];
+    const q: V3 = [
+      s[1] * e1[2] - s[2] * e1[1],
+      s[2] * e1[0] - s[0] * e1[2],
+      s[0] * e1[1] - s[1] * e1[0],
+    ];
     const v = dot(d, q) / det;
     if (v <= 1e-6 || u + v >= 1 - 1e-6) continue;
     const w = dot(e2, q) / det;

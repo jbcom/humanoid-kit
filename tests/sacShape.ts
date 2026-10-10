@@ -38,18 +38,14 @@ export function readSac(points: readonly (readonly number[])[], midline: number)
     const y = low + share * (high - low);
     const band = points.filter((p) => Math.abs((p[1] as number) - y) < 0.003);
     const max = (keep: (x: number) => boolean) =>
-      Math.max(
-        ...band.filter((p) => keep((p[0] as number) - midline)).map((p) => p[2] as number),
-      );
+      Math.max(...band.filter((p) => keep((p[0] as number) - midline)).map((p) => p[2] as number));
     const r = max((x) => x < 0 && lobe(x));
     const l = max((x) => x > 0 && lobe(x));
     const m = max(raphe);
     if ([r, l, m].every(Number.isFinite)) front = Math.max(front, Math.min(r, l) - m);
   }
   const lowest = (keep: (x: number) => boolean) =>
-    Math.min(
-      ...points.filter((p) => keep((p[0] as number) - midline)).map((p) => p[1] as number),
-    );
+    Math.min(...points.filter((p) => keep((p[0] as number) - midline)).map((p) => p[1] as number));
   const bottom =
     lowest(raphe) -
     Math.max(

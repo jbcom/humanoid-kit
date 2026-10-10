@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
+import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { shapeSignalNames } from "../src/model/detailFactors.ts";
 import { presenceJoints } from "../src/presence/fromEvaluation.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
@@ -263,7 +265,13 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
       expect(ready.anatomy?.features.map((f) => f.id)).toEqual(["phallus", "scrotum", "mound"]);
       expect(shapeSignalNames([], ready.anatomy)).toEqual(["arousal"]);
       const layers = handle({ type: "adultLayers", id: 2 });
-      await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
+      // A figure that needs nothing of the adult stage: no organ and no testes. Left unset, an
+      // adult with the pack takes its default anatomy (`AdultAnatomySpec.defaults`), which waits.
+      await handle({
+        type: "evaluate",
+        id: 3,
+        recipe: createRecipe({ modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0 } }),
+      });
       expect(replies.get(3)?.type).toBe("evaluated");
       await settle();
       expect(replies.has(2)).toBe(false);
@@ -353,7 +361,12 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
         type: "error",
         message: expect.stringMatching(/targets\.bin\.gz failed/),
       });
-      await handle({ type: "evaluate", id: 3, recipe: createRecipe() });
+      // A figure that needs nothing of the failed stage: no organ and no testes.
+      await handle({
+        type: "evaluate",
+        id: 3,
+        recipe: createRecipe({ modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0 } }),
+      });
       expect(replies.get(3)?.type).toBe("evaluated");
     },
   );

@@ -167,8 +167,17 @@ describe("the surface the mound makes", { timeout: 600_000 }, () => {
   const MOD = "pelvis/mound-decr|incr";
   const edgeShading = (gender: number, value: number) => {
     const surface = model.adultSurface() as NonNullable<ReturnType<typeof model.adultSurface>>;
+    // The mound alone: no organ and no testes. Left unset, an adult with the pack takes its
+    // default anatomy for its gender (`AdultAnatomySpec.defaults`).
     const recipe = (v: number) =>
-      createRecipe({ macros: { age: 30, gender }, modifiers: v ? { [MOD]: v } : {} });
+      createRecipe({
+        macros: { age: 30, gender },
+        modifiers: {
+          "genitals/phallus-size": 0,
+          "genitals/testes-size": 0,
+          ...(v ? { [MOD]: v } : {}),
+        },
+      });
     const base = model.evaluate(recipe(0));
     const moved = model.evaluate(recipe(value));
     const count = base.positions.length / 3;

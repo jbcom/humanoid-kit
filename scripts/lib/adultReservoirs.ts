@@ -10,12 +10,17 @@
  * A reservoir sits where a sculpted part attaches (`detail/sculpt.ts`): its disc
  * is the skin inside the part's cut, seen along the way the part leaves the body
  * (`findFootprint`). The phallic disc is placed first; the labioscrotal one keeps
- * clear of it by a ring of polygons, so the two share no vertex.
+ * clear of it by a ring of polygons, so the two share no vertex, and reaches up to
+ * it: seen along the sac's axis, its outline is grown to take in the half of the
+ * shaft's cut that faces the sac, as the scrotum's root meets the shaft's ventral
+ * root at the penoscrotal junction. By the sac's cut alone the two discs' loops lay
+ * 16 mm apart there, and a band of the body's skin showed between the shaft's root
+ * and the sac's neck in every state, plain under an erect shaft.
  */
 import type { AdultReservoirSpec } from "../../src/format/assetFormat.ts";
 import type { AdultDetailLattice } from "../../src/model/humanoidModel.ts";
 import { discVertices, findFootprint, type Vec3 } from "./detail/disc.ts";
-import { cutOutline, partAxis, type SculptPart } from "./detail/sculpt.ts";
+import { cutOutline, type MaleParts, partAxis, type SculptPart } from "./detail/sculpt.ts";
 import type { IslandSize } from "./uvIslands.ts";
 
 /** Collapsed rings between each loop and cap: the length a detail can draw a tube out to, in steps. */
@@ -44,32 +49,52 @@ export type ReservoirLattice = Pick<
   "regionCount" | "regionIds" | "positions" | "normals" | "polygons" | "latticePositions"
 >;
 
-/** The sculpted parts the reservoirs are placed for. */
-export interface ReservoirParts {
-  phallus: SculptPart;
-  scrotum: SculptPart;
+/** The points of cut `a` on the side facing cut `b`'s centre. */
+function facing(a: readonly Vec3[], b: readonly Vec3[]): Vec3[] {
+  const mean = (ps: readonly Vec3[]): Vec3 =>
+    [0, 1, 2].map(
+      (k) => ps.reduce((s, p) => s + (p[k] as number), 0) / ps.length,
+    ) as unknown as Vec3;
+  const ca = mean(a);
+  const cb = mean(b);
+  const toward: Vec3 = [cb[0] - ca[0], cb[1] - ca[1], cb[2] - ca[2]];
+  return a.filter(
+    (p) => (p[0] - ca[0]) * toward[0] + (p[1] - ca[1]) * toward[1] + (p[2] - ca[2]) * toward[2] > 0,
+  );
 }
 
-/** The reservoirs for this lattice, in the order phallic, labioscrotal. */
-export function reservoirSpecs(
-  lattice: ReservoirLattice,
-  parts: ReservoirParts,
-): AdultReservoirSpec[] {
+/**
+ * The reservoirs for this lattice, in the order phallic, labioscrotal: each where
+ * its part attaches, the phallic one at the flaccid shaft's cut (the erect sculpt is
+ * projected onto the same loop).
+ */
+export function reservoirSpecs(lattice: ReservoirLattice, parts: MaleParts): AdultReservoirSpec[] {
   const at = (v: number): Vec3 => [
     lattice.latticePositions[v * 3] as number,
     lattice.latticePositions[v * 3 + 1] as number,
     lattice.latticePositions[v * 3 + 2] as number,
   ];
-  const disc = (part: SculptPart, avoid?: ReadonlySet<number>) =>
+  const disc = (
+    part: SculptPart,
+    axis: Vec3,
+    avoid?: ReadonlySet<number>,
+    reach?: readonly Vec3[],
+  ) =>
     findFootprint(lattice.polygons, at, {
       outline: cutOutline(part),
-      axis: partAxis(part),
+      axis,
       inset: 1,
       depth: FOOTPRINT_DEPTH,
       ...(avoid && { avoid }),
+      ...(reach && { reach }),
     });
-  const phallic = disc(parts.phallus);
-  const labioscrotal = disc(parts.scrotum, discVertices(lattice.polygons, phallic, 1));
+  const phallic = disc(parts.phallus.flaccid, partAxis(parts.phallus.flaccid));
+  const labioscrotal = disc(
+    parts.scrotum,
+    partAxis(parts.scrotum),
+    discVertices(lattice.polygons, phallic, 1),
+    facing(cutOutline(parts.phallus.flaccid), cutOutline(parts.scrotum)),
+  );
   return [
     { id: "phallic", loop: phallic.loop, cap: phallic.cap, rings: RESERVOIR_RINGS.phallic },
     {

@@ -419,6 +419,17 @@ const topologyOf = (m: SurfaceMesh): SurfaceTopology => ({
   vertexCount: m.renderToSurface.length,
 });
 
+/** Rings past a reservoir's first over which its island's layer blends in (`islandFields`). */
+const ISLAND_BLEND_ROWS = 2;
+
+/**
+ * A reservoir's layer mask on its island's wall at row `row` (0 the loop, 1 the first
+ * ring, the skin line a sculpt is attached at): none on the loop and the first ring,
+ * rising to 1 over `ISLAND_BLEND_ROWS` rings, and 1 from there to the tip.
+ */
+export const islandMask = (row: number): number =>
+  Math.min(1, Math.max(0, (row - 1) / ISLAND_BLEND_ROWS));
+
 /** Edges from what garments hide within which the skin is sunk under them (`edgeTuck`). */
 const TUCK_RING = 3;
 /** Cloth further than this (metres) over the skin does not sink it. */
@@ -648,9 +659,17 @@ export class HumanoidModel {
   /**
    * The triangles of the adult surface on islands of their own in UV space
    * (`AdultReservoirSpec.island`), and each named layer's fields there: a
-   * reservoir's `layer` has mask 1 over its island, and its coordinate runs from
-   * the loop (0) along the rings to the tip (1), the cap at the tip. Null when
-   * there is no adult surface or none of its reservoirs has an island.
+   * reservoir's `layer` has mask 0 on its loop and first ring, rising to 1 over the
+   * next `ISLAND_BLEND_ROWS` rings and 1 from there to the tip, and its coordinate
+   * runs from the loop (0) along the rings to the tip (1), the cap at the tip. Null
+   * when there is no adult surface or none of its reservoirs has an island.
+   *
+   * The loop is a chain of lattice edges, a staircase where it crosses the lattice's
+   * rows, and the body's skin round it has no layer: a mask of 1 up to the loop drew
+   * the layer's colour with a torn edge round the root. The first ring is the skin line
+   * a sculpt is attached at, a smooth curve on the skin (scripts/lib/detail/transfer.ts,
+   * `skinLine`), and the band between it and the loop is skin; the layer starts there
+   * and blends in, as genital skin's colour does, along curves with no steps.
    */
   private islandFields(layers: readonly string[]): LayerFieldsExtra | null {
     const adult = this.adultBodySurface();
@@ -658,9 +677,10 @@ export class HumanoidModel {
     if (!adult) return null;
     const { mesh } = adult.part;
     const reservoirs = mesh.lattice?.reservoirs ?? [];
-    /** Per render vertex: -1, or the reservoir whose island it is on, and its place along it. */
+    /** Per render vertex: -1, or the reservoir whose island it is on, its place along it, and the layer's mask there. */
     const owner = new Int32Array(mesh.renderUv.length).fill(-1);
     const along = new Float32Array(mesh.renderUv.length);
+    const mask = new Float32Array(mesh.renderUv.length);
     reservoirs.forEach((r, s) => {
       const isle = r.island;
       if (!isle) return;
@@ -671,11 +691,14 @@ export class HumanoidModel {
         );
       mesh.renderUv.forEach((uv, v) => {
         if (uv >= isle.stripBase && uv < isle.stripBase + isle.columns * isle.rows) {
+          const row = Math.floor((uv - isle.stripBase) / isle.columns);
           owner[v] = s;
-          along[v] = Math.floor((uv - isle.stripBase) / isle.columns) / (isle.rows - 1);
+          along[v] = row / (isle.rows - 1);
+          mask[v] = islandMask(row);
         } else if (uv >= isle.capBase && uv < isle.capBase + isle.capCount) {
           owner[v] = s;
           along[v] = 1;
+          mask[v] = 1;
         }
       });
     });
@@ -693,7 +716,7 @@ export class HumanoidModel {
       uvs[at * 2] = mesh.uvs[v * 2] as number;
       uvs[at * 2 + 1] = mesh.uvs[v * 2 + 1] as number;
       const l = layers.indexOf(specs[s]?.layer as string);
-      fields[(l * count + at) * 2] = 1;
+      fields[(l * count + at) * 2] = mask[v] as number;
       fields[(l * count + at) * 2 + 1] = along[v] as number;
     });
     const triangles: number[] = [];

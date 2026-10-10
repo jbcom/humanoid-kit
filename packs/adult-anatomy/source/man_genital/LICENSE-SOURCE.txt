@@ -1,6 +1,0 @@
-Asset: man_genital
-Page: http://www.makehumancommunity.org/clothes/man_genital.html
-Page states: "License: CC0 - Creative Commons Zero"
-Page excerpt (quoted): "man genital Submitted by ukiyoe on Sat, 11/05/2022 - 11:46 Description: man's genital that I think more realistic status: OK License: CC0 - Creative Commons Zero Category: Genitalia Compatibility: 1.1.x MHCLO file: man_genital.mhclo OBJ file: man_genital.obj MHMAT file: man_genital.mhmat"
-Files from: http://www.makehumancommunity.org/sites/default/files/clothes/7580/128345475/man_genital.mhmat, http://www.makehumancommunity.org/sites/default/files/clothes/7580/1366233569/man_genital.mhclo, http://www.makehumancommunity.org/sites/default/files/clothes/7580/1518244446/man_genital.obj
-Retrieved: 2026-10-08

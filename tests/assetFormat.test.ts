@@ -132,6 +132,8 @@ describe("parseHumanoidAssets", () => {
     // An adult slider merged without its modifier, e.g. from a mismatched manifest.
     const adult = structuredClone(adultManifest);
     adult.modifiers = [];
+    // Its anatomy defaults name the dropped modifiers too, and are refused for that first.
+    if (adult.anatomy) delete adult.anatomy.defaults;
     expect(() => parseHumanoidAssets(pack(), { ...adultPackData(), manifest: adult })).toThrow(
       /drives nothing/,
     );

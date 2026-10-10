@@ -29,12 +29,15 @@ export function findDisc(
   radius: number | Vec3,
 ): Disc {
   const axes: Vec3 = typeof radius === "number" ? [radius, radius, radius] : radius;
-  return discOf(polygons, position, (c) =>
-    Math.hypot(
-      (c[0] - centre[0]) / axes[0],
-      (c[1] - centre[1]) / axes[1],
-      (c[2] - centre[2]) / axes[2],
-    ) <= 1,
+  return discOf(
+    polygons,
+    position,
+    (c) =>
+      Math.hypot(
+        (c[0] - centre[0]) / axes[0],
+        (c[1] - centre[1]) / axes[1],
+        (c[2] - centre[2]) / axes[2],
+      ) <= 1,
   );
 }
 
@@ -50,6 +53,12 @@ export interface Footprint {
   depth: number;
   /** Vertices claimed already (another reservoir's disc and a margin round it): no polygon of the disc may use one. */
   avoid?: ReadonlySet<number>;
+  /**
+   * Points of a neighbouring part's cut the disc reaches to: seen along the axis, the
+   * outline is grown to the convex hull of itself and these, and `avoid` keeps the
+   * neighbour's own disc out of it.
+   */
+  reach?: readonly Vec3[];
 }
 
 /** The vertices of a disc's polygons and `margin` rings of polygons round it. */
@@ -83,7 +92,7 @@ export function findFootprint(
   position: (vertex: number) => Vec3,
   footprint: Footprint,
 ): Disc {
-  const { outline, axis, inset, depth, avoid } = footprint;
+  const { outline, axis, inset, depth, avoid, reach } = footprint;
   const m = outline.length;
   const centre: Vec3 = [
     outline.reduce((s, p) => s + p[0] / m, 0),
@@ -106,34 +115,138 @@ export function findFootprint(
     const o: Vec3 = [p[0] - centre[0], p[1] - centre[1], p[2] - centre[2]];
     return [dot(o, e1), dot(o, e2)];
   };
-  const shape = outline.map((p) => flat(p).map((x) => x * inset) as [number, number]);
+  const own = outline.map((p) => flat(p).map((x) => x * inset) as [number, number]);
+  const shape = reach?.length ? convexHull([...own, ...reach.map(flat)]) : own;
   const inside = ([x, y]: [number, number]) => {
     let odd = false;
-    for (let i = 0, j = m - 1; i < m; j = i++) {
+    for (let i = 0, j = shape.length - 1; i < shape.length; j = i++) {
       const [xi, yi] = shape[i] as [number, number];
       const [xj, yj] = shape[j] as [number, number];
       if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) odd = !odd;
     }
     return odd;
   };
-  return discOf(polygons, position, (c, normal, vertices) => {
+  const allowed = (c: Vec3, normal: Vec3, vertices: number[]) => {
     if (avoid && vertices.some((v) => avoid.has(v))) return false;
     const behind = -dot([c[0] - centre[0], c[1] - centre[1], c[2] - centre[2]], axis);
-    return behind >= -depth && behind <= depth && dot(normal, axis) > 0 && inside(flat(c));
-  });
+    return behind >= -depth && behind <= depth && dot(normal, axis) > 0;
+  };
+  return discOf(
+    polygons,
+    position,
+    (c, normal, vertices) => allowed(c, normal, vertices) && inside(flat(c)),
+    // Filling the loop's turns may reach a little past the cut, never further.
+    (c, normal, vertices) => {
+      const [x, y] = flat(c);
+      return allowed(c, normal, vertices) && inside([x / (1 + FILL_MARGIN), y / (1 + FILL_MARGIN)]);
+    },
+  );
 }
 
-/** The disc of the polygons `keep` accepts by their centre, unit normal and vertices; throws unless one disc. */
+/** The convex hull of points in the plane, counter-clockwise (Andrew's monotone chain). */
+function convexHull(points: readonly [number, number][]): [number, number][] {
+  const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const turn = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = (list: [number, number][]) => {
+    const out: [number, number][] = [];
+    for (const p of list) {
+      while (
+        out.length >= 2 &&
+        turn(out[out.length - 2] as [number, number], out[out.length - 1] as [number, number], p) <=
+          0
+      )
+        out.pop();
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  return [...half(sorted), ...half([...sorted].reverse())];
+}
+
+/** How far past a footprint's outline, as a share of its size, its turns may be filled (`regularised`). */
+const FILL_MARGIN = 0.15;
+
+/** Passes that take in a disc's notches and let go of its spurs (`regularised`). */
+const REGULARISE_PASSES = 20;
+
+/**
+ * The polygons `kept` (by index) without notches or spurs: a polygon the set meets on
+ * two of its sides or more, and `may` allows, is taken in, and one of the set that the
+ * rest meets on one side or none is let go, until neither changes it.
+ *
+ * A disc chosen by its polygons' centres has a boundary that steps in and out of the
+ * lattice, and where it turns sharply (the tips of the horns of a disc that gives way
+ * round another) a one-polygon notch or spur makes the loop step back on itself. The
+ * first ring runs on along a smooth line inside it (`transfer.ts`, `skinLine`), and
+ * the quad between a step back and a step on turns over, whatever the line. Where it
+ * turns, the loop doubles back along a whole staircase, not a single polygon, and only
+ * taking in polygons met on two sides fills it; but each one taken in makes the next
+ * step a polygon met on two sides, and unbounded the disc grew to the lattice's box
+ * round it, half as wide again as the cut. `may` bounds it (`findFootprint`: a polygon
+ * past the cut by more than `FILL_MARGIN` is never taken in).
+ */
+function regularised(
+  polygons: LatticePolygons,
+  kept: ReadonlySet<number>,
+  may: (polygon: number) => boolean,
+): Set<number> {
+  const count = polygons.start.length - 1;
+  const owners = new Map<string, number[]>();
+  const sides: string[][] = [];
+  for (let i = 0; i < count; i++) {
+    const s = polygons.start[i] as number;
+    const e = polygons.start[i + 1] as number;
+    const own: string[] = [];
+    for (let c = s; c < e; c++) {
+      const a = polygons.vertices[c] as number;
+      const b = polygons.vertices[c + 1 < e ? c + 1 : s] as number;
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+      own.push(key);
+      const list = owners.get(key);
+      if (list) list.push(i);
+      else owners.set(key, [i]);
+    }
+    sides.push(own);
+  }
+  const set = new Set(kept);
+  const met = (i: number) =>
+    (sides[i] as string[]).filter((key) =>
+      (owners.get(key) as number[]).some((j) => j !== i && set.has(j)),
+    ).length;
+  for (let pass = 0; pass < REGULARISE_PASSES; pass++) {
+    let changed = false;
+    const near = new Set<number>();
+    for (const i of set)
+      for (const key of sides[i] as string[])
+        for (const j of owners.get(key) as number[]) near.add(j);
+    for (const i of near)
+      if (!set.has(i) && met(i) >= 2 && may(i)) {
+        set.add(i);
+        changed = true;
+      }
+    for (const i of [...set])
+      if (met(i) <= 1) {
+        set.delete(i);
+        changed = true;
+      }
+    if (!changed) break;
+  }
+  return set;
+}
+
+/**
+ * The disc of the polygons `keep` accepts by their centre, unit normal and vertices,
+ * without notches or spurs where `may` allows (`regularised`); throws unless one disc.
+ */
 function discOf(
   polygons: LatticePolygons,
   position: (vertex: number) => Vec3,
   keep: (centre: Vec3, normal: Vec3, vertices: number[]) => boolean,
+  may?: (centre: Vec3, normal: Vec3, vertices: number[]) => boolean,
 ): Disc {
-  const cap: number[] = [];
-  const edges = new Map<string, { from: number; to: number; count: number }>();
-  const vertexSet = new Set<number>();
-  let faces = 0;
-  for (let i = 0; i + 1 < polygons.start.length; i++) {
+  const shape = (i: number) => {
     const s = polygons.start[i] as number;
     const e = polygons.start[i + 1] as number;
     let x = 0;
@@ -155,8 +268,30 @@ function discOf(
     }
     const n = e - s;
     const nl = Math.hypot(nx, ny, nz) || 1;
-    const corners = Array.from(polygons.vertices.subarray(s, e));
-    if (!keep([x / n, y / n, z / n], [nx / nl, ny / nl, nz / nl], corners)) continue;
+    return {
+      centre: [x / n, y / n, z / n] as Vec3,
+      normal: [nx / nl, ny / nl, nz / nl] as Vec3,
+      corners: Array.from(polygons.vertices.subarray(s, e)),
+    };
+  };
+  let chosen = new Set<number>();
+  for (let i = 0; i + 1 < polygons.start.length; i++) {
+    const { centre, normal, corners } = shape(i);
+    if (keep(centre, normal, corners)) chosen.add(i);
+  }
+  if (may)
+    chosen = regularised(polygons, chosen, (i) => {
+      const { centre, normal, corners } = shape(i);
+      return may(centre, normal, corners);
+    });
+  const cap: number[] = [];
+  const edges = new Map<string, { from: number; to: number; count: number }>();
+  const vertexSet = new Set<number>();
+  let faces = 0;
+  for (let i = 0; i + 1 < polygons.start.length; i++) {
+    if (!chosen.has(i)) continue;
+    const s = polygons.start[i] as number;
+    const e = polygons.start[i + 1] as number;
     cap.push(polygons.id[i] as number);
     faces++;
     for (let c = s; c < e; c++) {

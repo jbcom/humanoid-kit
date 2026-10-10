@@ -22,12 +22,12 @@ import type {
   SliderTask,
 } from "../../src/format/assetFormat.ts";
 import type { AdultDetailLattice, ControlShape } from "../../src/model/humanoidModel.ts";
-import type { ReservoirParts } from "./adultReservoirs.ts";
-import { skinOf } from "./detail/contact.ts";
 import { moundTargets } from "./control/mound.ts";
+import { skinOf } from "./detail/contact.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE, phallusTargets } from "./detail/phallus.ts";
 import { reservoirRoot } from "./detail/root.ts";
 import { scrotumTargets, TESTES_SIZE } from "./detail/scrotum.ts";
+import type { MaleParts } from "./detail/sculpt.ts";
 import { type EncodedTarget, encodeSparseTarget } from "./targetEncoding.ts";
 
 /**
@@ -106,16 +106,18 @@ export const AUTHORED_PROVENANCE: readonly string[] = [
   "- `pelvis/mound-decr`, `pelvis/mound-incr` (control targets): authored by `scripts/lib/control/mound.ts` " +
     "on the CC0 hm08 base mesh; sized from published soft-tissue measurements (docs/research/ADULT-ANATOMY-DATA.md, section E).",
   "- `genitals/phallus-k2..k4*` (detail targets) and the modifiers `genitals/phallus-size`, `-length-decr|incr`, `-girth-decr|incr`: " +
-    "the shaft, glans and corona of ukiyoe's CC0 `man_genital` (<http://www.makehumancommunity.org/clothes/man_genital.html>), " +
-    "cut by `scripts/blender/cut_male.py`, placed by `scripts/lib/detail/sculpt.ts`, projected onto the phallic reservoir " +
-    "by `scripts/lib/detail/transfer.ts` and sized by `scripts/lib/detail/phallus.ts` to published measurements " +
-    "(length, girth, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F). The erect angle and the bend " +
-    "toward it are modelled and labelled so there. `genitals/phallus-k1*` (the clitoral glans) is drawn by " +
-    "`scripts/lib/detail/phallus.ts` from the reservoir's loop and published measurements.",
+    "the flaccid shaft, glans and corona of ieroglif's CC0 `adult_male_genitalia_breast_fix` " +
+    "(<http://www.makehumancommunity.org/proxy/adult_male_genitalia_breast_fix.html>) and the erect ones of Slayer227's CC0 " +
+    "`Male_Gen-Heal1` (<http://www.makehumancommunity.org/proxy/erect_penis_only_works_with_males.html>), " +
+    "cut by `scripts/blender/cut_male.py`, placed by `scripts/lib/detail/sculpt.ts` and projected onto the phallic reservoir " +
+    "by `scripts/lib/detail/transfer.ts`. `scripts/lib/detail/phallus.ts` grows or shrinks each by one uniform factor to a " +
+    "published dorsal length, and blends the flaccid sculpt into the erect one for arousal " +
+    "(length, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F). `genitals/phallus-k1*` (the clitoral glans) " +
+    "is drawn by `scripts/lib/detail/phallus.ts` from the reservoir's loop and published measurements.",
   "- `genitals/testes-k*` (detail targets) and the modifier `genitals/testes-size`: the sac of the same CC0 " +
-    "`man_genital`, cut, placed and projected onto the labioscrotal reservoir the same way and sized by " +
-    "`scripts/lib/detail/scrotum.ts` to published testis volumes and dimensions (docs/research/ADULT-ANATOMY-DATA.md, " +
-    "section F); the skin's thickness and the neck are modelled and labelled so there.",
+    "`adult_male_genitalia_breast_fix`, cut, placed and projected onto the labioscrotal reservoir the same way and grown " +
+    "or shrunk by `scripts/lib/detail/scrotum.ts` by one uniform factor to the width of two testes of a published volume " +
+    "(docs/research/ADULT-ANATOMY-DATA.md, section F); the skin's thickness is modelled and labelled so there.",
 ];
 
 /** Every target name the pack authors as a control target (a virtual modifier has none). */
@@ -186,7 +188,7 @@ export function addAuthoredSliders(tasks: SliderTask[]): void {
 export function authorDetail(
   lattice: AdultDetailLattice,
   reservoirs: readonly AdultReservoirSpec[],
-  parts: ReservoirParts,
+  parts: MaleParts,
 ): { targets: EncodedTarget[]; detail: AdultDetailSpec } {
   const rootOf = (id: string) => {
     const spec = reservoirs.find((r) => r.id === id);

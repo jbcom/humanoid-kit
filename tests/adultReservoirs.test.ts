@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ISLAND_LAYERS, RESERVOIR_RINGS, reservoirSpecs } from "../scripts/lib/adultReservoirs.ts";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
+import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
+import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { cutOutline, maleParts, partAxis } from "../scripts/lib/detail/sculpt.ts";
 import { ATLAS_SIZE, bodyCoverage } from "../scripts/lib/uvIslands.ts";
 import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
@@ -54,7 +56,7 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
 
   it("sits each disc under its part's cut: the cut seen along the part's axis is the disc's outline", () => {
     for (const [spec, part] of [
-      [shipped[0], parts.phallus],
+      [shipped[0], parts.phallus.flaccid],
       [shipped[1], parts.scrotum],
     ] as const) {
       if (!spec) throw new Error("missing reservoir");
@@ -64,10 +66,14 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
       // disc gives way at its front to a ring of skin round the phallic one.
       const mean = (pts: readonly (readonly number[])[]) =>
         [0, 1, 2].map((k) => pts.reduce((sum, q) => sum + (q[k] as number), 0) / pts.length);
-      const loopPoints = spec.loop.map((v) => [0, 1, 2].map((k) => lattice.latticePositions[v * 3 + k] as number));
-      const d = [0, 1, 2].map((k) => (mean(loopPoints)[k] as number) - (mean(cut)[k] as number));
-      const along = d[0]! * axis[0] + d[1]! * axis[1] + d[2]! * axis[2];
-      const across = Math.hypot(d[0]! - along * axis[0], d[1]! - along * axis[1], d[2]! - along * axis[2]);
+      const loopPoints = spec.loop.map((v) =>
+        [0, 1, 2].map((k) => lattice.latticePositions[v * 3 + k] as number),
+      );
+      const [dx, dy, dz] = [0, 1, 2].map(
+        (k) => (mean(loopPoints)[k] as number) - (mean(cut)[k] as number),
+      ) as [number, number, number];
+      const along = dx * axis[0] + dy * axis[1] + dz * axis[2];
+      const across = Math.hypot(dx - along * axis[0], dy - along * axis[1], dz - along * axis[2]);
       expect(across, spec.id).toBeLessThan(spec.id === "phallic" ? 0.006 : 0.015);
     }
   });
@@ -147,7 +153,12 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
       parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest: withoutAnatomy }),
       { subdivision: 1 },
     );
-    const adult = createRecipe({ macros: { age: 30, gender: 0.5 } });
+    // No organ and no testes: left unset, an adult takes the pack's default anatomy for its
+    // gender (`AdultAnatomySpec.defaults`), which the reservoirs draw and the pack without them cannot.
+    const adult = createRecipe({
+      macros: { age: 30, gender: 0.5 },
+      modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0 },
+    });
     const a = without.evaluate(adult);
     const b = model.evaluate(adult);
     const ta = surfaceTriangles(without.adultSurface()?.index as Uint32Array, a.positions);

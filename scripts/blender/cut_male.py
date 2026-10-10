@@ -4,8 +4,9 @@ Run headless (the adult lane runs it through `heavy`):
 
     Blender -b --factory-startup --python scripts/blender/cut_male.py -- <src.obj> <out-dir>
 
-The source is a MakeHuman-format mesh in its own coordinates (decimetres, y up,
-the figure facing +z), fitted to the hm08 base. Nothing is moved or scaled
+The source is a MakeHuman-format mesh in its own coordinates and units (y up,
+the figure facing +z; decimetres for a clothes piece, metres for some whole-body
+proxies), fitted to the hm08 base. Nothing is moved or scaled
 here: a part leaves in the source's coordinates, and the packer binds it to our
 base (docs/research/ADULT-SCULPT-PLAN.md, section 6d).
 
@@ -30,32 +31,53 @@ import sys
 
 import bmesh
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 # Half-spaces are (point, normal): a vertex is kept where (v - point) . normal >= 0.
-# Coordinates are the source's (decimetres, y up, +z forward).
+# Coordinates are the source's (its own units, y up, +z forward).
 CUTS = {
-    "man_genital.obj": {
-        # The page: http://www.makehumancommunity.org/clothes/man_genital.html (ukiyoe, CC0).
+    "adult_male_genitalia_breast_fix.obj": {
+        # The page: http://www.makehumancommunity.org/proxy/adult_male_genitalia_breast_fix.html
+        # (ieroglif, CC0). A whole-body proxy in metres; the flaccid shaft hangs in front of
+        # the sac, its back about 1.5 cm forward of the sac's front.
         "phallus": {
-            # The plane through the root: the dorsal junction (y 0.6, z 1.14) and the
-            # ventral one with the sac (y 0.13, z 1.06), a little forward of both, so
-            # the free shaft and glans are cut off in one ring.
-            "planes": [((0.0, 0.35, 1.13), (0.0, -0.16, 0.987))],
+            # Across the shaft's own axis (down and a little forward from the root,
+            # (0, -0.95, 0.3)) about a centimetre below the root, so the cut is one ring
+            # round the free shaft and none of the skin round the root comes with it;
+            # and forward of the gap between the shaft and the sac, whose top comes up
+            # close behind it.
+            "planes": [
+                ((0.0, 0.80, 0.115), (0.0, -0.9535, 0.3011)),
+                ((0.0, 0.0, 0.097), (0.0, 0.0, 1.0)),
+            ],
             # The underside of the glans.
-            "seed": (0.0, -0.25, 1.40),
+            "seed": (0.0, 0.737, 0.13),
         },
         "scrotum": {
-            # One plane below the groin folds (the sac's sides meet the thighs at
-            # y 0.2 and above), so the sac's cut runs level round it and the thighs'
-            # skin below the plane comes away with the folds; and behind the shaft's
-            # root plane, so the hanging shaft stays out.
+            # The sac hangs free, closed behind as well as in front, from its neck at
+            # y 0.785 to 0.80. One plane just below the neck makes the cut one ring round
+            # it; the inner thighs' skin, which meets the sac only above the neck, is
+            # then not connected to it and stays out. Behind the gap to the shaft too.
             "planes": [
-                ((0.0, 0.16, 0.0), (0.0, -1.0, 0.0)),
-                ((0.0, 0.35, 1.13), (0.0, 0.16, -0.987)),
+                ((0.0, 0.0, 0.097), (0.0, 0.0, -1.0)),
+                ((0.0, 0.783, 0.0), (0.0, -1.0, 0.0)),
             ],
             # The bottom of the sac on the midline.
-            "seed": (0.0, 0.01, 0.85),
+            "seed": (0.0, 0.737, 0.08),
+        },
+    },
+    "Male_Gen-Heal1.obj": {
+        # The page: http://www.makehumancommunity.org/proxy/erect_penis_only_works_with_males.html
+        # (Slayer227, CC0). A whole-body proxy in metres; the erect shaft runs forward
+        # from z 0.13, above the sac, whose front is at z 0.12.
+        "phallus": {
+            # Forward of the root's junctions with the pubis and the sac, below the belly.
+            "planes": [
+                ((0.0, 0.0, 0.135), (0.0, 0.0, 1.0)),
+                ((0.0, 0.905, 0.0), (0.0, -1.0, 0.0)),
+            ],
+            # The tip of the glans.
+            "seed": (0.0, 0.855, 0.32),
         },
     },
 }
@@ -186,9 +208,10 @@ def render(bm, stem):
     for name, (d, up) in views.items():
         d = d.normalized()
         cam.location = centre + d * size * 4
-        cam.rotation_euler = (-d).to_track_quat("-Z", "Y").to_euler()
-        if abs(d.dot(Vector((0, 1, 0)))) > 0.9:
-            cam.rotation_euler = (-d).to_track_quat("-Z", "Z").to_euler()
+        # The camera looks down its -z with its +y up: build that basis from the view's own
+        # up, since the source is y up and Blender's tracking assumes z up.
+        y = (up - d * up.dot(d)).normalized()
+        cam.rotation_euler = Matrix((y.cross(d), y, d)).transposed().to_euler()
         scene.render.filepath = os.path.join(renders, f"{stem}-{name}.png")
         bpy.ops.render.render(write_still=True)
     ob.hide_render = True

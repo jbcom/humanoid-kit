@@ -1,29 +1,30 @@
 /**
  * The scrotum, out of the labioscrotal reservoir (docs/research/
  * ADULT-SCULPT-PLAN.md, section 6d): one sac with two lobes and a median raphe,
- * whose form is a CC0 sculpt's (ukiyoe's `man_genital`), projected onto the
- * reservoir (`transfer.ts`) and sized from the testis volume (`form.ts`).
+ * whose form is a CC0 sculpt's (ieroglif's `adult_male_genitalia_breast_fix`),
+ * projected onto the reservoir (`transfer.ts`). Nothing reshapes it: the lobes,
+ * the raphe and any asymmetry are the sculpt's, and a key is the sculpt grown or
+ * shrunk by one uniform factor.
  *
- * Measured: testis volume by ultrasound, European men, 17.2 mL (SD 4.1), right
- * larger than left (17.9 and 16.5); the proportions of length to width to depth
- * from the one full-text source with dimensions (Chinese fertile men, 37.5 x 19.0
- * x 22.0 mm), applied at every volume (docs/research/ADULT-ANATOMY-DATA.md,
- * section F). These set only the sac's size, as scale factors on the sculpt: its
- * width holds two testes side by side, its depth one, its hang one testis'
- * length, each with skin round it. Modelled and labelled so: the skin's
- * thickness and the neck above the testes.
+ * Measured: testis volume by ultrasound, European men, 17.2 mL (SD 4.1); the
+ * proportions of length to width to depth from the one full-text source with
+ * dimensions (Chinese fertile men, 37.5 x 19.0 x 22.0 mm), applied at every volume
+ * (docs/research/ADULT-ANATOMY-DATA.md, section F). They label each key with the
+ * sac's width (two testes side by side, with skin round them), and the factor is
+ * the one that gives it; the depth and hang are the sculpt's at that width.
+ * Modelled and labelled so: the skin's thickness, and the neck above the testes
+ * (in `sacSize`, the size the sculpt's depth and hang are compared to).
  *
  * The sac has no arousal response here: its change is unmeasured, and this
  * library carries it as absent rather than guessed.
  */
 import type { Skin } from "./contact.ts";
 import type { Vec3 } from "./disc.ts";
-import { type Form, formOf, type Pose, solveFactor, sweep } from "./form.ts";
+import { type Form, formOf, solveFactor, sweep } from "./form.ts";
 import { sizeHat, targetCollector } from "./keys.ts";
 import { type ReservoirRoot, type RootShape, restShape } from "./root.ts";
 import type { SculptPart } from "./sculpt.ts";
 import { projectPart } from "./transfer.ts";
-import { smooth } from "./tube.ts";
 
 /** The size modifier: a virtual, one-sided one, 0 (none) to 1. */
 export const TESTES_SIZE = "genitals/testes-size";
@@ -44,10 +45,6 @@ export const TESTES_KEYS: readonly TestesKey[] = [
   { size: 1, volume: 38 },
 ];
 
-/** Right and left testis volume over the mean of the pair (EAA: 17.9, 16.5 over 17.2). */
-export const RIGHT_OVER_MEAN = 17.9 / 17.2;
-export const LEFT_OVER_MEAN = 16.5 / 17.2;
-
 /** Length and depth over width, from the one full-text dimensions (37.5 x 19.0 x 22.0 mm). */
 const LENGTH_OVER_WIDTH = 37.5 / 19;
 const DEPTH_OVER_WIDTH = 22 / 19;
@@ -61,25 +58,6 @@ export const NECK = 0.015;
 const BODY_FROM = 0.4;
 /** The arclength over which the sizing fades in from the loop, metres (modelled). */
 const ROOT_BLEND = 0.01;
-/** Across the midline, the width over which one side's factor gives way to the other's, metres. */
-const MIDLINE = 0.01;
-
-/**
- * The median raphe's groove (modelled: the septum between the testes ties the skin
- * in along the midline, and no measurement of the groove was found): its depth and
- * its half-width across, over the testis' width, and where along the sac it comes in
- * (a share of the arclength from the root, rising to full over the next share).
- */
-const RAPHE_DEPTH = 0.45;
-const RAPHE_WIDTH = 0.35;
-const RAPHE_FROM = 0.15;
-const RAPHE_RISE = 0.4;
-
-/** The raphe's groove for a key, metres. */
-export function rapheOf(key: TestesKey): { depth: number; width: number } {
-  const w = testisDimensions(key.volume).width;
-  return { depth: RAPHE_DEPTH * w, width: RAPHE_WIDTH * w };
-}
 
 /** Across the figure: +x is its left (it faces +z), so the sac's frames start from it. */
 export const LATERAL: Vec3 = [1, 0, 0];
@@ -112,7 +90,10 @@ export function sacSize(volumeMl: number): { width: number; depth: number; hang:
  * figure, and its depth across both, the last two over its body (beyond
  * `BODY_FROM` of the hang).
  */
-export function measureSac(root: ReservoirRoot, shape: RootShape): {
+export function measureSac(
+  root: ReservoirRoot,
+  shape: RootShape,
+): {
   width: number;
   depth: number;
   hang: number;
@@ -145,79 +126,54 @@ export class SculptedScrotum {
   /** The sculpt projected onto the reservoir, before any sizing. */
   readonly projected: RootShape;
   readonly form: Form;
-  private readonly scales = new Map<TestesKey, { across: number; up: number; length: number }>();
+  /** The sculpt's width on the reservoir, as sculpted (`measureSac`). */
+  private readonly width: number;
   private readonly skin: Skin;
+  /** The factor found for each key's volume (`factorOf`). */
+  private readonly factors = new Map<number, number>();
 
   /** `skin`: the lattice round the reservoirs (`contact.ts`), which the sac rests on. */
   constructor(root: ReservoirRoot, part: SculptPart, skin: Skin) {
     this.root = root;
     this.skin = skin;
-    this.projected = projectPart(root, part, { reference: FORWARD });
+    this.projected = projectPart(root, part, { reference: FORWARD, skin });
     this.form = formOf(root, this.projected, LATERAL);
+    this.width = measureSac(root, this.projected).width;
   }
 
-  private pose(s: { across: number; up: number; length: number }, key: TestesKey): Pose {
-    const right = Math.cbrt(RIGHT_OVER_MEAN);
-    const left = Math.cbrt(LEFT_OVER_MEAN);
-    const raphe = rapheOf(key);
-    return {
-      blend: ROOT_BLEND,
-      length: s.length,
-      across: s.across,
-      up: s.up,
-      // Offsets across are along +x, the figure's left: negative is its right, the larger.
-      side: (across) => left + (right - left) * smooth(0.5 - across / (2 * MIDLINE)),
-      relief: (o, share) => {
-        const w = Math.exp(-((o[0] / raphe.width) ** 2)) * smooth((share - RAPHE_FROM) / RAPHE_RISE);
-        // Toward the centreline within the midline's plane: in from the front and the
-        // back, and up from the bottom (the cap's offset along is past the last ring).
-        // The pull is d w r^2 / (r^2 + d^2) at distance r from the centreline: the full
-        // depth well out from it, and little near it, so the new distance still grows
-        // with the old one and the skin never folds over itself.
-        const along = share >= 1 ? Math.max(0, o[2]) : 0;
-        const r = Math.hypot(o[1], along);
-        if (r < 1e-9) return o;
-        const d = raphe.depth;
-        const k = 1 - (d * w * r) / (r * r + d * d);
-        return [o[0], o[1] * k, o[2] - along * (1 - k)];
-      },
-    };
+  /** The sculpt grown or shrunk by one factor on every axis, fading in from the loop. */
+  private sized(f: number): RootShape {
+    return sweep(this.form, { blend: ROOT_BLEND, length: f, across: f, up: f });
   }
 
-  /** The factors on the sculpt's width (across), depth (up) and hang (length) for a key. */
-  scalesOf(key: TestesKey): { across: number; up: number; length: number } {
-    const known = this.scales.get(key);
-    if (known) return known;
-    const want = sacSize(key.volume);
-    const s = { across: 1, up: 1, length: 1 };
-    // Each factor in turn with the others held, until all hold: the raphe's groove ties
-    // the depth to the width, so a factor's effect is not its own alone.
-    const solve = (axis: "across" | "up" | "length", measure: "width" | "depth" | "hang") => {
-      s[axis] = solveFactor(
-        (f) => measureSac(this.root, sweep(this.form, this.pose({ ...s, [axis]: f }, key)))[measure],
-        want[measure],
-        s[axis],
-      );
-    };
-    for (let pass = 0; pass < 8; pass++) {
-      solve("length", "hang");
-      solve("across", "width");
-      solve("up", "depth");
-      const got = measureSac(this.root, sweep(this.form, this.pose(s, key)));
-      if (
-        Math.abs(got.width / want.width - 1) < 1e-5 &&
-        Math.abs(got.depth / want.depth - 1) < 1e-5 &&
-        Math.abs(got.hang / want.hang - 1) < 1e-5
-      )
-        break;
-    }
-    this.scales.set(key, s);
-    return s;
+  /**
+   * The one factor on the sculpt for a key: the one at which the sac as drawn
+   * (resting on the skin round its root) is as wide as two testes of the key's volume
+   * side by side, with skin round them. Its depth and hang are the sculpt's at that
+   * width. Taken as that width over the sculpt's own, the drawn sac missed it, as the
+   * root's fade and the skin it rests on move it.
+   */
+  factorOf(key: TestesKey): number {
+    const known = this.factors.get(key.volume);
+    if (known !== undefined) return known;
+    const want = sacSize(key.volume).width;
+    const f = solveFactor(
+      (g) => measureSac(this.root, this.drawn(g)).width,
+      want,
+      want / this.width,
+    );
+    this.factors.set(key.volume, f);
+    return f;
+  }
+
+  /** The sac grown or shrunk by `f`, resting on the skin round its root. */
+  private drawn(f: number): RootShape {
+    return this.skin.rest(this.root, this.sized(f));
   }
 
   /** The sac at a key, resting on the skin round its root. */
   shape(key: TestesKey): RootShape {
-    return this.skin.rest(this.root, sweep(this.form, this.pose(this.scalesOf(key), key)));
+    return this.drawn(this.factorOf(key));
   }
 }
 

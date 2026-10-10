@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { findDisc } from "../scripts/lib/detail/disc.ts";
 import { type AdultReservoirSpec, parseHumanoidAssets } from "../src/format/assetFormat.ts";
-import { HumanoidModel } from "../src/model/humanoidModel.ts";
+import { HumanoidModel, islandMask } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { adultPackWith, surfaceTriangles } from "./detailPack.ts";
 import { adultPackData, bodyPackData, clothingPackData, loadFixtureAssets } from "./fixtures.ts";
@@ -388,7 +388,7 @@ describe("a reservoir with an island of its own in UV space", { timeout: 600_000
     }
   });
 
-  it("posts the layer's fields on the island's triangles: mask 1, the coordinate along the rings", () => {
+  it("posts the layer's fields on the island's triangles: the mask blending in from the skin line, the coordinate along the rings", () => {
     const update = model.adultLayerFields();
     const extra = update?.extra;
     expect(extra).toBeDefined();
@@ -396,7 +396,12 @@ describe("a reservoir with an island of its own in UV space", { timeout: 600_000
     const count = (extra?.uvs.length ?? 0) / 2;
     if (!extra) throw new Error("no extra");
     const block = extra.layerFields.subarray(l * count * 2, (l + 1) * count * 2);
-    for (let v = 0; v < count; v++) expect(block[v * 2]).toBe(1);
+    // None on the loop and the first ring (the skin line), rising to 1 over the next rings.
+    for (let v = 0; v < count; v++)
+      expect(block[v * 2]).toBeCloseTo(
+        islandMask(Math.round((block[v * 2 + 1] as number) * RINGS)),
+        6,
+      );
     const along = Array.from({ length: count }, (_, v) => block[v * 2 + 1] as number);
     expect(Math.min(...along)).toBe(0);
     expect(Math.max(...along)).toBe(1);

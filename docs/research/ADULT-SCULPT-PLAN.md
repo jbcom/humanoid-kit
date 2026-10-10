@@ -448,7 +448,57 @@ It is outside the published pack's `files` and outside anything the site builds 
 **What stays modelled.** The erect tangent (30 degrees above forward) and the
 bend over which the shaft swings to it are modelled, as in 6c. The clitoral key
 of the phallic reservoir stays drawn until the female transfer (step 4 of the
-work list) gives it a sculpted form.
+work list) gives it a sculpted form. (Superseded by 6e.)
+
+## 6e. Decision 8: every form from a sculpt, nothing drawn (2026-10-09, supersedes 6d steps 5 and the modelled erection)
+
+The owner ruled that with the licence rule's clause B and clause M there is CC0
+enough for every form, so nothing is drawn: no posed erection, no drawn raphe, no
+drawn asymmetry, no calibration on the drawn shape. The sheets also showed the
+6d forms still wrong where 6d drew them: a sac with no free scrotum and a plain
+glans.
+
+**Sources.** Two whole-body CC0 proxies (packs/adult-anatomy/source/PROVENANCE.md),
+chosen side by side from renders of every CC0 male sculpt:
+
+- ieroglif's `adult_male_genitalia_breast_fix` gives the flaccid shaft, with a glans
+  that has its corona and meatus, and the sac: free-hanging, two lobes, a median
+  raphe.
+- Slayer227's `Male_Gen-Heal1` gives the erect shaft, glans, corona and meatus.
+
+`man_genital`, the 6d source, is retired: its sac is merged with the skin round it.
+
+**Cuts.** Each cut is one ring round the free part, so the projection reads only
+the part: the flaccid shaft across its own axis a centimetre below the root, the
+erect one in front of its root, the sac just below its neck (the thighs' skin
+meets the sac only above it).
+
+**Placement.** Each proxy is placed by its own binding, as in 6d. The two authors
+put the root about 4 cm apart, so the erect shaft is then moved, without turning or
+reshaping, until its cut is centred on the flaccid shaft's: one organ, one root.
+The phallic reservoir is placed at the flaccid cut.
+
+**Keys are scaled sculpts.** A phallic key is the sculpt scaled along its own
+centreline and across it: each factor is the key's measured dorsal length or
+mid-shaft girth over the sculpt's own, measured once on the unscaled projection,
+where the measures are stable. Nothing is fitted on the drawn shape: solving for a
+length there chased a measure that jumps where the farthest point of the cap
+changes, and the skin the organ rests on holds a short organ's length near 4.8 cm,
+so the solve had no answer for the small keys. Two factors, not one, because a
+small organ is not a large one shrunk evenly. The sac takes one factor: two testes
+of the key's volume side by side, with their skin, over the sculpt's width; its
+depth and hang are the sculpt's.
+
+**Arousal blends the sculpts.** Both shafts are projected onto the same reservoir,
+so they share its vertices, and their forms (`form.ts`) are blended: each segment's
+direction along the great circle between the two, lengths and frame offsets in a
+straight line (`blendForms`). At the ends the shape is the sculpt exactly. The four
+drawn states stay, so the morph between neighbours is short and the shaft swings
+rather than cutting the corner.
+
+**What stays modelled.** The skin thickness in the sac's labelled width; where the
+smallest keys sit on the size axis. The clitoral key stays drawn until the female
+sculpts are transferred, which is next.
 
 ## 7. How the patch stays bound to hm08
 
