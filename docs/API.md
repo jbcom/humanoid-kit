@@ -1529,6 +1529,31 @@ animator.root;                // how far the figure has been carried: [x across,
 - `frameRotations(rig, joints, frame)` (from `src/rig/pose.ts`) is a BVH frame's
   rotations in the figure's axes, which the packer and `bodyPoseRotations` share.
 
+## `humanoid-kit-eyes`
+
+```ts
+import { eyesPack } from "humanoid-kit-eyes";
+import { loadEyeLibrary } from "humanoid-kit";
+
+const eyes = await loadEyeLibrary(eyesPack);
+<Humanoid recipe={createRecipe({ eyes: { material: "nyloseth_green_cat_eyes" } })} eyeMaterials={eyes} />;
+```
+
+`eyesPack` is `{ manifest, files }` like `bodyPack`: one WebP texture per material
+(about 100 KB, loaded when a figure first wears it). 32 CC0 materials of the MakeHuman
+community's `system_eye_materials01` and `02`: human irises (`bobby_03_diffuse_*`,
+`mindfront_brown_eye_02`, `nyloseth_sapphire_blue_eyes`), cats' slit pupils
+(`nyloseth_*_cat_eyes`), toon and anime eyes, and creatures'. `loadEyeLibrary(pack)`
+fetches the manifest and returns an `EyeLibrary`: `entry(id)` (an `EyeMaterialEntry`:
+`title`, `author`, `tags`, `hasIris`, the measured `irisRadius`, `irisGain`,
+`scleraGain`, `scleraTint`, `paintedIris` and its `source`), `textureUrl(id)` and the
+`manifest` (with the iris `centres` every material shares). `createEyeLibrary(manifest,
+url)` builds one over any locator. `recipe.eyes.material` names a material, optional
+like every recipe addition; a material supplies pattern and detail and the colours stay
+`eyes.iris` and `eyes.scleraWarmth`'s. `<Humanoid eyeMaterials>` is the library; keep
+it stable. Without it, or for an id it does not have (reported through `onError`), the
+built-in eye is shown.
+
 ## `humanoid-kit-animations`
 
 ```ts

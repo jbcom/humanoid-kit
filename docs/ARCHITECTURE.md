@@ -41,6 +41,7 @@ needs more, up to its source's size and at most 2048 px, and never upscaled
 | `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, and the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion") |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
 | `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | Walk, idle and swim clips as local bone rotations per frame, on the default skeleton (see "Animation") |
+| `humanoid-kit-eyes` | `manifest.json`, then per material `<id>.webp` | 32 CC0 eye materials (human, slit-pupil, toon, creature) whose textures add iris pattern and sclera detail to the eye shader's own colours (see "Attachment colour") |
 | `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | Ten scalp hair styles bound to the base mesh, each with its baked occlusion and a strand map (see "Scalp hair") |
 | `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 19 garments from MakeHuman's system assets (suits, shoes, a hat), each bound to the base mesh with the vertices it hides |
 
@@ -630,6 +631,39 @@ toward `GUM_PIGMENT_LAB` by `gumPigmentAmount(melanin)` (none up to melanin
 gum texel lands on the albedo and a test re-measures the texture. Tooth texels
 are untouched. `Humanoid` passes `recipe.skin.melanin` to the teeth, as it does
 the eye appearance to the eyes.
+
+**Eye materials (`humanoid-kit-eyes`).** The built-in eye has one texture, brown, and
+the shader recolours it: the iris is the chromatic, not-too-bright region, and the
+recipe's `eyes.iris` times nine times the texture's luminance is its colour, so
+`eyes.iris` is the iris's mean colour and the texture is its fibres, pupil and limbal
+ring. 32 materials of the community's `system_eye_materials01` and `02` (the third pack
+is CC-BY and is not used) add pattern without changing that model. A recipe names one
+(`eyes.material`, validated as a non-empty string; `<Humanoid eyeMaterials={library}>`
+supplies the library from `loadEyeLibrary`, and without a library, or for an id it
+does not have, the built-in eye is shown and the unknown id is reported). The eye
+shader (`EyeMaterial.setMaterial`) then draws the iris as a disc around the two
+known centres, with a soft edge at the material's radius (a chroma mask fails a
+bright, grey or painted iris, and a painted catchlight in the iris is sclera), and
+multiplies the luminance by the material's measured gains, so a material's iris is
+the recipe's colour at the built-in iris's mean brightness, whatever its own
+brightness. The sclera is the recipe's warm white times the material's measured
+tint and gain (human materials are within 45 % of neutral; a yellow or a zombie's is
+what it was painted). A material with no iris edge to measure is all sclera detail:
+the eyes of a single glowing or blank colour.
+
+The numbers are measured from each texture's pixels by `scripts/lib/packEyes.ts`
+(`measureEye`), never authored: the iris's radius is where the disc inside differs
+most from the ring around it (a plateau test, which a slit pupil or a limbal ring does
+not upset), the gains are the built-in texture's mean luminance over the material's
+in the same iris ring (0.45 to 0.92 of the radius) and sclera ring (1.25 to 1.9), and
+the tint is the sclera ring's colour against the built-in's. `paintedIris` is the
+recipe colour at which the material shows the colour it was painted in. Each
+material passed the licence rule (`judgeAsset`, clause B) with the community's page
+record before it was packed; a texture that is opaque everywhere (the toon eyes) takes
+the built-in texture's alpha, because the cornea dome is cut by the transparent disc
+of the texture and would otherwise be drawn over the iris. `docs/evidence/eyes.md`
+holds the close-ups at three tones, and `tests/eyes.test.ts` the pack, the
+measurement and the colour model.
 
 **Choice, not measurement.** "Coral pink" and "brown, patchy melanosis on
 deeper complexions" are the periodontology descriptors of healthy gingiva (the
