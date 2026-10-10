@@ -1301,11 +1301,23 @@ a coloured texture; everything in the pure core is testable in Node.
   (`docs/licence-history.md`), so `scripts/lib/hairCards` builds them: **ropes**, tubes of
   quads along a centreline (`ropes.ts`) that leaves the scalp at an angle read from the head
   (`HeadFrame`: azimuth and elevation from the skull's centre, a ray to the head's own
-  triangles), lifts a little, then falls under gravity and lies over the body
-  (`BodySurface.probe`, signed distance from the whole body, winding taken from the skull); a
-  **grid of partings** (brick-wise rows, a hairline that recedes at the temples and runs up over
-  the ear and down at the nape) places box braids, twists and locs, and cornrows are parallel
-  parting lines on the scalp with a braid hanging from each end. The cards are bound to the
+  triangles) and lies over the body (`BodySurface.probe`, signed distance from the whole
+  body, winding taken from the skull); a **grid of partings** (brick-wise rows, a hairline
+  that recedes at the temples and runs up over the ear and down at the nape) places box braids
+  (179), twists (197) and locs (78), and cornrows are parallel parting lines on the scalp with
+  a braid hanging from each end. A grid's ropes are *combed* (`RopeHang`): each leaves its
+  root at a shallow angle, then lies along the scalp the way hair is combed (`combAlong`: back
+  over the top and from the front hairline, down on the sides and the back), held at its
+  clearance, until the comb runs steeply down; from there it hangs and settles
+  (`relaxRope`: gravity, follow-the-leader inextensibility, a stiffness per style, the body
+  as a collider with friction, so it rests on a shoulder or down the back instead of sliding
+  off to hang plumb). The first ropes stood up out of their roots and fell radially, a bare
+  starburst of partings round the crown; combed, each row lies over the roots of the row
+  behind, and a test that looks in at the scalp from 50 degrees up finds a rope first at
+  least 90% of the time (85% for the thicker, sparser locs and the short twists). Ropes from
+  the sides and the lower rows come to rest on the shoulders, neck and back (tested at 80%);
+  the crown's, combed back, are the outer layer over them (rope-on-rope contact is not
+  modelled). The cards are bound to the
   base mesh by the MHCLO scheme (`bindToBody`: the nearest triangle's corners, barycentric
   weights, an offset) with the head's extents as the scale references, so they go through the
   same pack, worker and renderer as a MakeHuman style and fit other heads. Each style's strand
@@ -1318,7 +1330,14 @@ a coloured texture; everything in the pure core is testable in Node.
   angles, its soft edge broken into ragged fuzz, the loose cards below the cap cleared, and a
   fade (`keepAt`: full on top, tapering over the ears and round to bare skin at the nape) taken
   from where each texel lies on the head (`uvField.ts` rasterises the cards into the texture). Bantu
-  knots are a spiral rope coiled round its root. Not yet: tight curls in the longer styles.
+  knots (`BANTU_KNOT`) part the head into 4.5 cm sections, each one's hair a 4.5 mm twisted rope
+  that leaves its root, lies out to a 1.1 cm bottom coil, then winds about three times round the
+  scalp's normal there, each turn 1.7 rope radii above the last and drawn in toward the axis, into a
+  raised cone 2.5 to 3.5 cm tall with the end tucked into its top. Every root sits far enough behind
+  the hairline that the whole bottom coil does. The first knots were a flat spiral lying outward
+  across the scalp, about 1 cm high, which read as snail-shell decals on the forehead; tests now
+  hold every apex 15 to 45 mm off the scalp, every knot's footprint behind the hairline, and every
+  knot taller than it is wide. Not yet: tight curls in the longer styles.
 
 **Costs and limits.** The pack is 3.5 MB for ten styles, mostly strand maps at
 1024 px (and 0.3 to 0.5 MB for each authored one); the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
@@ -1561,6 +1580,11 @@ module.
   tangent plane and smoothed by neighbour averaging, carried the same way.
   Rejected: atlas channels for the masks (the atlas is full, and a vertex
   attribute is exact where the shells need it, at their vertices).
+  A region's hair thins out over centimetres: the trunk's and armpits'
+  regions take the strand layers' masks averaged with their neighbours ten
+  times over the drawn skin, so they change by no more than fully over 2 cm
+  (a unit test walks every edge). The strand layers' own masks, and the atlas
+  packed by their support, are unchanged.
 - *Per figure, a paint per region*: coverage (the share of follicles that grow
   a hair), length, follicle density, how far the hair lies along the comb, and
   the pigment albedo, as uniforms. Body hair paints its regions from the body
@@ -1580,10 +1604,11 @@ module.
   masks, its index). Three frees every attribute of a disposed geometry, and a
   body whose buffers were freed under it draws nothing, or the shape it had
   before: a woman's eyes hanging at a man's throat.
-- *A recipe asks for it.* A recipe without `bodyHair` grows no coat
-  (`coatPaintFor`), and within one a region grows only where the recipe
-  enables it (`coatEnabled`): the beard by a style, any other group by its
-  density. Default figures stay bare.
+- *A recipe asks for it, region by region.* A region grows only where the
+  recipe enables it (`coatEnabled`): the beard by a style other than none, any
+  other group by setting its density. A recipe silent on body hair, or one
+  that names no region, grows no coat (`coatPaintFor` is null), so default
+  figures stay bare.
 - *Strands from a tileable density texture* at true scale (`uv × uvScale`
   over the follicle spacing), generated from a seed: per follicle cell a
   strand's root, its reach (the share of the hair's length it grows), its
@@ -1594,7 +1619,10 @@ module.
   it by the share of its pixel the strands cover at that shell's height, so
   the hair's colour, its darkening toward the root and its sheen all arrive as
   a fraction of the pixel. Where a strand is wider than about a pixel the
-  share is the strand's disc under a pixel-wide box filter; where it is
+  share is the strand's disc under the strand footprint (`STRAND_FOOTPRINT`,
+  its width under a tent a pixel either side, the one function the skin's
+  strand layers draw with too, so a strand about a pixel wide is soft-edged
+  and not a hard dash); where it is
   narrower it is the strands' mean cover at that height (their expected area,
   spread so the shells together cover what the strands do seen from above),
   crossfading as the strand's width goes from half a pixel to a pixel and a
@@ -1606,7 +1634,13 @@ module.
   dither of the mean below a pixel. Its single-pixel points read as pepper,
   not hair, and moved with the screen rather than the skin.)
 - *Shading is Kajiya-Kay along the skinned comb*, two lobes as the hair cards
-  use, with the pigment albedo, darker toward the root (self-shadow).
+  use, with the pigment albedo, darker toward the root (self-shadow). Where
+  the comb blends to nothing between vertices (it is zero at some and turns
+  back on itself between others) the strand has no direction and no lobe:
+  normalising zero gave a NaN that blending spread as pastel green and pink
+  blotches with hard edges. A browser test holds the lit coat's hue to 20°–80°
+  in LCh, its chroma under 40 and every pixel finite, at four tones and four
+  hair colours on such a comb.
 
 **Built (2026-10-09).** `src/surface/coat.ts` (fields, paint, triangles, shell
 count), `src/render/coat.ts` (`CoatMaterial`, `coatGeometry`) and
@@ -1627,8 +1661,11 @@ grows none.
 **A grown beard's length is cards, on the hair pack's machinery (2026-10-09).**
 Past the coat's few centimetres, hair is cards. The hair pack gains a kind,
 `beard`, whose entries the packer generates (`scripts/lib/bodyHairCards.ts`)
-rather than packs from a MakeHuman file: narrow strips rooted on the beard's
-area, running along the coat's comb, lifting off the skin, bound to the base
+rather than packs from a MakeHuman file: narrow strips rooted where the
+beard's area is solid (`ROOT_SOLID`: none under a mask of 0.4, its full
+density from 0.7; a card is drawn whole, so one rooted in the mask's faint
+edge was a lone strip down the neck, and the coat carries that thinning
+instead), running along the coat's comb, lifting off the skin, bound to the base
 mesh's triangles as MakeHuman binds hair, with a generated strand map. They are
 the project's own bytes, so the licence gate (which proves MakeHuman files CC0)
 has nothing to prove; `PROVENANCE.md` says so. An entry is tagged with the
@@ -2449,7 +2486,7 @@ age.
 - `<Humanoid>` bakes the texture from that placement and the evaluated
   surface (`bakeBodyArt`, `src/render/bodyArtTexture.ts`) with the images the
   application passes (`bodyArtImages`).
-- A tattoo is a decal, not baked colour (`src/render/tattooDecals.ts`). At
+- A tattoo is a decal, not baked colour (`src/render/bodyArtDecals.ts`). At
   1024² the body's UV texels are 1.2–2.3 mm on a forearm (measured), so a
   6 cm compass baked as colour had 27 texels across and its line work
   pixelated on the sheets. No size of one texture for the whole body fixes
@@ -2461,20 +2498,25 @@ age.
     blend of four texels is exact inside one.
   - The texels round each UV island are extrapolated linearly from the two
     inside next to them, so a tattoo stays exact across a seam.
-  - Tattoos that overlap go on separate decal layers (two at most), the
-    later above, so one composites over the other in the shader.
+  - Decals that overlap go on separate decal layers (two at most), the later
+    above, so one composites over the other in the shader.
   - The ink page keeps only dermal pigment, which is soft enough for the
     body's texels.
+  - A naevus is a decal too: a round, slightly raised dot the shader draws
+    exactly. It adds melanin and raise to the marks. Baked into the 1 mm
+    texels round a brow, the sheets' 8 mm naevus read as a dark rectangle.
 - A new evaluation rebakes into new textures that replace the old in the
   same uniforms, so only a figure gaining or losing body art, or a layer of
-  overlapping tattoos, rebuilds its shader.
+  overlapping decals, rebuilds its shader.
 - The projection reaches half the decal's longer side off the skin's plane
   (at least 1 cm) and skips skin facing away from it, so a tattoo on a
   forearm never lands on the hip behind it. Both limits fade rather than cut:
   a hard end sliced a cheek's port-wine stain in a straight line on the
   contact sheets, where the skin curved out of reach.
-- No ink or mark acts on the nail plate, the nail-gloss layer's mask: it is
-  not skin (the sheets showed vitiligo whitening the nail beds).
+- No ink or mark acts on the nail plate, the nail-gloss layer's mask, neither
+  its colour nor its surface: it is not skin (the sheets showed vitiligo
+  whitening the nail beds). A browser test holds every mark kind and a tattoo
+  to that.
 - The ink's colour is stored sRGB-encoded so dark inks keep their precision
   in eight bits.
 - The browser tests hold the decal coordinates to the frame (orientation,
@@ -2491,7 +2533,22 @@ age.
   its raise.
 - The shader multiplies the skin by per-tone ratios raised to those channels.
   Melanin's density is linear in log albedo, so `ratio^t` moves the density
-  linearly in t. The smoothness and raise go to roughness and relief.
+  linearly in t. Added melanin reads its ratio from a table along the measured
+  tone axis instead. The axis is not straight in log albedo, so one ratio
+  raised to a power cut across it and greyed the sheets' café-au-lait. The
+  smoothness and raise go to roughness and relief.
+- A patch's shape (`markShape`) is an ellipsoid thresholded by seeded noise in
+  its frame's own 3D space. Its edge is the noise field over its gradient, a
+  distance, softened over 1–3 mm. Vitiligo throws flecks just outside its
+  border. A scar keeps its harmonic line.
+  - Measured in 3D, a patch is whole across a UV seam and ends by its own
+    depth where the skin curves away.
+  - The planar projection's reach had cut the sheets' café-au-lait and
+    port-wine in straight lines, and its polar outline read as the UV
+    island's shape round the mouth.
+- On the lips vitiligo pales the lip to a depigmented lip
+  (`vitiligoLipAlbedo`), mixed as the lips' layer mixes in. The skin's ratio
+  scaled the lip's colour channel by channel and turned deep lips lavender.
 - Marks add in the bake, so overlapping marks net out; dermal pigment is ink,
   composited under the tattoos.
 - Vitiligo's patches are seeded marks at the sites non-segmental vitiligo
@@ -2508,16 +2565,33 @@ age.
 - `<Humanoid>` builds the stud, ring or barbell there and skins every one of
   its vertices with those weights. It moves as one rigid piece with the skin at
   its site, which a piece a centimetre across does in life.
+- A barbell's balls are seated on the skin at placement, each moved out along
+  the skin's normal from the morphed mesh near the site, so the bar bends
+  through the hole as a navel's or brow's curved bar does. Straight under a
+  flat belly, both balls sat 4.5 mm inside it and the sheets showed none.
 - The part inside the tissue is hidden by the skin in front of it, and hair
   and garments hide the rest as depth does, so no occlusion bake is needed.
   The metals are measured reflectances.
-- Genital sites wait on the adult pack: its manifest must name its sites
-  (found from its targets as the body's are) before they can be placed. Until
-  then such a piercing is refused at evaluation for an adult, and by the age
-  policy for anyone under 18.
+- Genital sites are the adult pack's data, the core's code
+  (`AdultAnatomySpec.piercingSites`), as pubic hair's area is.
+  - A declared site names a detail-lattice vertex (the space the pack's detail
+    targets address, the refined region's vertices then each reservoir's
+    rings), its channel and its tissue depth. The anatomy is shaped on the
+    adult surface by that detail, so a base-mesh vertex could not follow it.
+  - On an adult drawn with the adult surface, the core takes the vertex's
+    rest position on the lattice, adds the detail displacing it, and takes
+    the evaluated surface's nearest render vertex there: the hole, its normal
+    and its bones. The jewellery seats against that surface.
+  - A site no loaded pack declares is refused at evaluation, a malformed
+    declaration when the pack is parsed (a vertex past the lattice when the
+    adult surface is built), and every such site by the age policy under 18,
+    whose evaluation never has the adult surface.
+  - A fixture test declares a site on the shipped pack's phallic reservoir:
+    it resolves on the drawn surface and moves with the phallus's size.
 
 **Landed:** the recipe field, its validation, the age policy, the sites,
-tattoos, marks and piercings. Still to do: the adult pack's piercing sites.
+tattoos, marks, piercings and the adult piercing-site contract. The adult
+pack's sites themselves are its lane's data.
 
 ### Joint creases (2026-10-09)
 

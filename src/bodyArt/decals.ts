@@ -6,11 +6,23 @@
  * there, and the decal's right and up directions in that plane.
  */
 import { quadVertexNormals } from "../build/normals.ts";
-import type { HumanoidAssets } from "../format/assetFormat.ts";
+import type { AdultPiercingSiteSpec, HumanoidAssets } from "../format/assetFormat.ts";
 import type { Vec3 } from "../presence/presence.ts";
-import { type BirthmarkKind, type BodyArtRecipe, isBodyPiercingSite } from "../recipe/bodyArt.ts";
-import { holeFrame, type PlacedPiercing, TISSUE_DEPTH } from "./jewellery.ts";
-import { bodySites, resolveAnchor } from "./sites.ts";
+import {
+  type BirthmarkKind,
+  type BodyArtRecipe,
+  isBodyPiercingSite,
+  type PiercingSite,
+} from "../recipe/bodyArt.ts";
+import {
+  barbellEnds,
+  holeFrame,
+  type PlacedPiercing,
+  SEAT_REACH,
+  TISSUE_DEPTH,
+} from "./jewellery.ts";
+import { adultPiercingSite, bodySites, type PiercingChannel, resolveAnchor } from "./sites.ts";
+import { quadTriangles, type SkinPatch, skinNear } from "./skinDistance.ts";
 import { vitiligoPatches } from "./vitiligo.ts";
 
 export interface DecalFrame {
@@ -107,12 +119,15 @@ function controlNormal(normals: Float32Array, v: number): Vec3 {
 
 /**
  * The figure's body art placed on its morphed control mesh (`control`, base
- * topology). Throws `RangeError` for an anchor that names no site or vertex.
+ * topology); a piercing at an adult anatomy site through `adultSite`, given
+ * for a figure drawn with the adult surface. Throws `RangeError` for an anchor
+ * that names no site or vertex, and for an adult site without `adultSite`.
  */
 export function placeBodyArt(
   assets: HumanoidAssets,
   art: BodyArtRecipe,
   control: Float32Array,
+  adultSite?: AdultSiteAnchor,
 ): BodyArtPlacement {
   const normals = quadVertexNormals(control, assets.faceVerts);
   const frame = (at: BodyArtRecipe["tattoos"][number]["at"], rotation: number) => {
@@ -164,28 +179,91 @@ export function placeBodyArt(
       ),
     ],
     piercings: art.piercings.map((p) => {
-      if (!isBodyPiercingSite(p.site))
-        throw new RangeError(
-          `piercing site ${p.site} is not one of the body's; the adult anatomy pack names no sites yet`,
-        );
-      const site = bodySites(assets)[p.site];
-      const v = site.vertex;
-      const hole: Vec3 = [
-        control[v * 3] as number,
-        control[v * 3 + 1] as number,
-        control[v * 3 + 2] as number,
-      ];
-      const normal = controlNormal(normals, v);
-      const skin = (a: ArrayLike<number>) =>
-        [0, 1, 2, 3].map((k) => a[v * 4 + k] as number) as [number, number, number, number];
+      const { anchor, channel, depth } = isBodyPiercingSite(p.site)
+        ? bodyAnchor(assets, p.site, control, normals)
+        : adultAnchor(assets, p.site, adultSite);
+      const frame = holeFrame(anchor.hole, anchor.normal, channel, depth);
       return {
         ...p,
-        hole,
-        normal,
-        ...holeFrame(hole, normal, site.channel, TISSUE_DEPTH[p.site]),
-        skinIndex: skin(assets.skinIndex),
-        skinWeight: skin(assets.skinWeight),
+        hole: anchor.hole,
+        normal: anchor.normal,
+        ...frame,
+        ends: barbellEnds({ ...frame, size: p.size }, anchor.skin),
+        skinIndex: anchor.skinIndex,
+        skinWeight: anchor.skinWeight,
       };
     }),
   };
+}
+
+/**
+ * Where a piercing's hole is on a figure: the point and the skin's outward
+ * normal there, the skin round it to seat jewellery on, and the bones that
+ * carry it.
+ */
+export interface PiercingAnchor {
+  hole: Vec3;
+  normal: Vec3;
+  skin: SkinPatch;
+  skinIndex: [number, number, number, number];
+  skinWeight: [number, number, number, number];
+}
+
+/**
+ * Finds a declared adult piercing site on the figure: the evaluated adult
+ * surface where it carries the site's detail-lattice vertex
+ * (`HumanoidModel.evaluate` gives it, for a figure drawn with that surface).
+ */
+export type AdultSiteAnchor = (site: AdultPiercingSiteSpec) => PiercingAnchor;
+
+/** A body site's hole: its vertex on the morphed control mesh. */
+function bodyAnchor(
+  assets: HumanoidAssets,
+  name: PiercingSite,
+  control: Float32Array,
+  normals: Float32Array,
+): { anchor: PiercingAnchor; channel: PiercingChannel; depth: number } {
+  const site = bodySites(assets)[name];
+  const v = site.vertex;
+  const hole: Vec3 = [
+    control[v * 3] as number,
+    control[v * 3 + 1] as number,
+    control[v * 3 + 2] as number,
+  ];
+  const bones = (a: ArrayLike<number>) =>
+    [0, 1, 2, 3].map((k) => a[v * 4 + k] as number) as [number, number, number, number];
+  return {
+    anchor: {
+      hole,
+      normal: controlNormal(normals, v),
+      skin: skinNear(control, normals, quadTriangles(assets.faceVerts), hole, SEAT_REACH),
+      skinIndex: bones(assets.skinIndex),
+      skinWeight: bones(assets.skinWeight),
+    },
+    channel: site.channel,
+    depth: TISSUE_DEPTH[name],
+  };
+}
+
+/**
+ * An adult anatomy site's hole: one the adult pack declares
+ * (`AdultAnatomySpec.piercingSites`), found by `adultSite` on a figure drawn
+ * with the adult surface. Any other site, or a figure without that surface
+ * (a minor's never has it), is refused.
+ */
+function adultAnchor(
+  assets: HumanoidAssets,
+  name: string,
+  adultSite: AdultSiteAnchor | undefined,
+): { anchor: PiercingAnchor; channel: PiercingChannel; depth: number } {
+  const spec = adultPiercingSite(assets, name);
+  if (!spec)
+    throw new RangeError(
+      `piercing site ${name} is neither the body's nor one the adult anatomy pack declares`,
+    );
+  if (!adultSite)
+    throw new RangeError(
+      `piercing site ${name} is on the adult anatomy, which this figure is not drawn with`,
+    );
+  return { anchor: adultSite(spec), channel: spec.channel, depth: spec.depth };
 }

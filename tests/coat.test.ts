@@ -2,6 +2,8 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { groupFaces, jointPosition } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
+import { coatPaintFor } from "../src/react/CoatMesh.tsx";
+import { createRecipe } from "../src/recipe/recipe.ts";
 import {
   COAT_REGION_LIMIT,
   COAT_SHELLS,
@@ -155,6 +157,34 @@ describe("coat masks and paint", () => {
     expect(masks.length).toBe(assets.manifest.vertexCount * COAT_REGION_LIMIT);
     const nine = Array.from({ length: 9 }, () => COAT_REGIONS[0] as CoatRegion);
     expect(() => coatMasks(assets, nine)).toThrow(RangeError);
+  });
+
+  // A region's hair thins out over centimetres at its edge, never along a line:
+  // walking any edge of the drawn skin, the trunk's and the armpits' masks
+  // change by no more than fully over 2 cm. (The beard's, whose lines are
+  // the face's, are held to a centimetre below.)
+  it("ease the trunk's and armpits' regions over several centimetres at every edge", () => {
+    const edges: [number, number][] = [];
+    for (const f of groupFaces(assets, "body"))
+      for (let k = 0; k < 4; k++)
+        edges.push([
+          assets.faceVerts[f * 4 + k] as number,
+          assets.faceVerts[f * 4 + ((k + 1) % 4)] as number,
+        ]);
+    for (const id of ["hair-chest", "hair-abdomen", "hair-back", "hair-axillary"]) {
+      const m = (BODY_HAIR_COAT.find((r) => r.id === id) as CoatRegion).mask(assets);
+      let worst = 0;
+      for (const [a, b] of edges) {
+        const length = Math.hypot(
+          (P[a * 3] as number) - (P[b * 3] as number),
+          (P[a * 3 + 1] as number) - (P[b * 3 + 1] as number),
+          (P[a * 3 + 2] as number) - (P[b * 3 + 2] as number),
+        );
+        if (length > 0)
+          worst = Math.max(worst, Math.abs((m[a] as number) - (m[b] as number)) / length);
+      }
+      expect(worst, id).toBeLessThan(50);
+    }
   });
 
   it("measure their masks only from targets the body pack packs", () => {
@@ -333,5 +363,27 @@ describe("the beard's masks", () => {
       }
     expect(left).toBeGreaterThan(40);
     expect(Math.abs(left - right)).toBeLessThan(0.1 * left);
+  });
+});
+
+describe("which figures grow a coat, from their recipe", () => {
+  it("grows none where the recipe enables no region, whatever the age or sex", () => {
+    for (const gender of [0, 0.5, 1])
+      for (const age of [8, 25, 60]) {
+        expect(coatPaintFor(createRecipe({ macros: { age, gender } }))).toBeNull();
+        // Saying something of body hair is not asking for a coat: no beard, no density.
+        const silent = createRecipe({ macros: { age, gender }, bodyHair: { beard: "none" } });
+        expect(coatPaintFor(silent)).toBeNull();
+      }
+  });
+
+  it("grows one when the recipe enables a region", () => {
+    const beard = createRecipe({ macros: { age: 30, gender: 1 }, bodyHair: { beard: "full" } });
+    const chest = createRecipe({
+      macros: { age: 30, gender: 1 },
+      bodyHair: { density: { chest: 1 } },
+    });
+    expect(coatPaintFor(beard)).not.toBeNull();
+    expect(coatPaintFor(chest)).not.toBeNull();
   });
 });

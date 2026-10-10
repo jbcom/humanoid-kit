@@ -33,7 +33,7 @@ import {
   Vector4,
 } from "three";
 import { inkOptics } from "../bodyArt/ink.ts";
-import { markRatios, SCAR_RAISE, SCAR_SMOOTHNESS } from "../bodyArt/marks.ts";
+import { MARK_DARK_STEPS, markRatios, SCAR_RAISE, SCAR_SMOOTHNESS } from "../bodyArt/marks.ts";
 import { type AtlasPlan, OWNER_GRID, planAtlas } from "../surface/atlasPlan.ts";
 import {
   CREASE_SHARPNESS,
@@ -44,7 +44,7 @@ import {
   STOP_COUNT,
   STOP_TABLE_WIDTH,
 } from "../surface/layers.ts";
-import { NAIL_GLOSS_LAYER, SKIN_LAYERS } from "../surface/regions/index.ts";
+import { LIPS_LAYER, NAIL_GLOSS_LAYER, SKIN_LAYERS } from "../surface/regions/index.ts";
 import {
   RIDGE_ACROSS,
   RIDGE_ALONG,
@@ -63,11 +63,12 @@ import {
   STRIA_THRESHOLD_SLOPE,
   STRIAE_ORIENTATION_SEAM,
 } from "../surface/striae.ts";
+import { DECAL_FUNCTIONS } from "./bodyArtDecals.ts";
 import { type BodyArtTexture, MARK_NEUTRAL } from "./bodyArtTexture.ts";
 import { DUAL_SKINNING_KEY, type DualBones, patchDualSkinning } from "./dualSkinning.ts";
 import { emptyLayerAtlas, emptyOwners, type SkinLayerAtlas } from "./layerAtlas.ts";
 import { BODY_OCCLUSION_FLOOR, BODY_OCCLUSION_POWER, patchOcclusion } from "./occlusion.ts";
-import { TATTOO_FUNCTIONS } from "./tattooDecals.ts";
+import { STRAND_FOOTPRINT } from "./strandFootprint.ts";
 
 /** What the skin material is painted from: the recipe's skin and the figure's state signals. */
 export type SkinAppearance = Omit<SkinPaintInput, "signals"> & {
@@ -132,9 +133,10 @@ export const STRAND_FAR_START = 0.66;
  * is under the layer's coverage times its mask, so a mask's soft edge thins
  * the hair rather than fading it. A strand is a segment of random length
  * (half to all of the layer's), tilted a little, thinning to its tip; its
- * coverage of the pixel is the overlap of its width with the pixel's footprint
- * across it (a box filter, exact for strands finer than a pixel), so a far
- * strand is a faint line rather than a flickering one.
+ * coverage of the pixel is the strand footprint across it (`STRAND_FOOTPRINT`,
+ * its width under a tent a pixel either side, shared with the coat), so a
+ * strand about a pixel wide is soft-edged rather than a hard dash, and a far
+ * one a faint line rather than a flickering one.
  *
  * The flow is the bind pose's downward direction carried through the
  * skinning (`vHkFlow`, view space), so hair runs down the limbs and trunk and
@@ -154,6 +156,7 @@ export const STRAND_FAR_START = 0.66;
  * and speckle.
  */
 const STRAND_FUNCTIONS = (count: number) => `
+${STRAND_FOOTPRINT}
 varying vec3 vHkFlow;
 // The strands' relief at this pixel, metres, left by hkApplyStrands for the normal.
 float hkStrandHeight = 0.0;
@@ -186,7 +189,7 @@ float hkStrandGrid( vec2 p, float angle, float seed, float keep, float cover, fl
 			if ( t < - px || t > slen + px ) continue;
 			float d = dot( rel, vec2( - dir.y, dir.x ) );
 			float w = width * ( 1.0 - 0.6 * clamp( t / slen, 0.0, 1.0 ) );
-			float across = max( 0.0, min( d + 0.5 * px, 0.5 * w ) - max( d - 0.5 * px, - 0.5 * w ) ) / px;
+			float across = hkStrandFootprint( d, w, px );
 			float along = clamp( ( t + 0.5 * px ) / px, 0.0, 1.0 ) * clamp( ( slen - t + 0.5 * px ) / px, 0.0, 1.0 );
 			clear *= 1.0 - across * along;
 		}
@@ -526,10 +529,10 @@ float hkPreintegrated( float nDotL, float x ) {
  * layer stack and before scattering: the marks page's melanin and haemoglobin
  * multiply the skin by this tone's ratios raised to them (`markedAlbedo`), and
  * the ink (the ink page's dermal pigment with the tattoos' decals over it,
- * `hkTattooInk`), seen through this skin (`inkSeen`), mixes in by its
- * coverage, as ink lies in the dermis. A scar's smoothness and raise
- * (`hkMarkSurface`) go to the roughness and the relief; they are 0 without
- * body art.
+ * `hkDecals`), seen through this skin (`inkSeen`), mixes in by its coverage,
+ * as ink lies in the dermis. Naevi, decals too, add to the melanin and the
+ * raise. A scar's smoothness and raise (`hkMarkSurface`) go to the roughness
+ * and the relief; they are 0 without body art.
  */
 const BODY_ART_FUNCTIONS = `
 vec2 hkMarkSurface = vec2( 0.0 );
@@ -539,12 +542,22 @@ uniform vec3 hkInkThrough;
 uniform vec3 hkInkVeil;
 uniform vec3 hkInkKeep;
 uniform vec3 hkMarkLight;
-uniform vec3 hkMarkDark;
+uniform vec3 hkMarkDark[ ${MARK_DARK_STEPS} ];
 uniform vec3 hkMarkBlood;
+uniform vec3 hkMarkSkin;
+uniform vec3 hkMarkLip;
+uniform vec3 hkMarkLipLight;
 vec3 hkSrgbToLinear( vec3 c ) {
 	return mix( c / 12.92, pow( ( c + 0.055 ) / 1.055, vec3( 2.4 ) ), step( vec3( 0.04045 ), c ) );
 }
-${TATTOO_FUNCTIONS}
+// Melanin added, 0 to 1: the ratio table along the measured tone axis (its
+// steps at squares), interpolated.
+vec3 hkMarkDarkRatio( float up ) {
+	float x = sqrt( clamp( up, 0.0, 1.0 ) ) * ${glslFloat(MARK_DARK_STEPS - 1)};
+	int i = min( int( x ), ${MARK_DARK_STEPS - 2} );
+	return mix( hkMarkDark[ i ], hkMarkDark[ i + 1 ], x - float( i ) );
+}
+${DECAL_FUNCTIONS}
 vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
 	// The nail plate is not skin: no mark or ink acts on it.
 	#ifdef HK_NAIL_PLATE
@@ -553,24 +566,40 @@ vec3 hkApplyBodyArt( vec3 c, vec2 uv ) {
 		float skin = 1.0;
 	#endif
 	vec4 mark = texture( hkBodyArt, vec3( uv, 1.0 ) );
-	hkMarkSurface = mark.ba * skin;
-	float melanin = skin * ( mark.r * 255.0 - ${MARK_NEUTRAL.toFixed(1)} ) / 127.0;
-	c *= pow( hkMarkLight, vec3( max( - melanin, 0.0 ) ) ) * pow( hkMarkDark, vec3( max( melanin, 0.0 ) ) ) * pow( hkMarkBlood, vec3( mark.g * skin ) );
+	float melanin = ( mark.r * 255.0 - ${MARK_NEUTRAL.toFixed(1)} ) / 127.0;
+	vec2 surface = mark.ba;
 	vec4 pigment = texture( hkBodyArt, vec3( uv, 0.0 ) );
 	vec4 ink = vec4( hkSrgbToLinear( pigment.rgb ) * pigment.a, pigment.a );
-	#ifdef HK_TATTOO_LAYERS
-		ink = hkTattooInk( uv, ink );
+	// The decals: tattoos over the dermal pigment, naevi into the marks.
+	#ifdef HK_DECAL_LAYERS
+		hkDecals( uv, ink, melanin, surface );
 	#endif
+	melanin *= skin;
+	hkMarkSurface = surface * skin;
+	// Where the lips' layer mixes in (at its mask times its strength), vitiligo
+	// takes the skin and the lip each to its own depigmented colour.
+	#ifdef HK_LIPS
+		float lip = clamp( hkFields( HK_LIPS, uv ).x, 0.0, 1.0 ) * hkHeader( HK_LIPS ).x;
+		vec3 light = mix( hkMarkSkin * hkMarkLight, hkMarkLip * hkMarkLipLight, lip ) / max( mix( hkMarkSkin, hkMarkLip, lip ), vec3( 1e-4 ) );
+	#else
+		vec3 light = hkMarkLight;
+	#endif
+	c *= pow( light, vec3( max( - melanin, 0.0 ) ) ) * hkMarkDarkRatio( melanin ) * pow( hkMarkBlood, vec3( mark.g * skin ) );
 	vec3 colour = ink.a > 0.0 ? ink.rgb / ink.a : vec3( 0.0 );
 	return mix( c, hkInkThrough * ( hkInkVeil + hkInkKeep * colour ), ink.a * skin );
 }
 #endif
 `;
 
-/** Which of `layers` is the nail plate's (`NAIL_GLOSS_LAYER`, whose mask is the plate), for body art to leave alone. */
-function nailPlateDefine(layers: readonly SkinLayer[]): string {
-  const l = layers.findIndex((layer) => layer.id === NAIL_GLOSS_LAYER.id);
-  return l < 0 ? "" : `#define HK_NAIL_PLATE ${l}\n`;
+/**
+ * Which of `layers` body art treats apart: the nail plate's (`NAIL_GLOSS_LAYER`,
+ * whose mask is the plate), which it leaves alone, and the lips'
+ * (`LIPS_LAYER`), which vitiligo pales to a depigmented lip.
+ */
+function bodyArtLayerDefines(layers: readonly SkinLayer[]): string {
+  const nail = layers.findIndex((layer) => layer.id === NAIL_GLOSS_LAYER.id);
+  const lips = layers.findIndex((layer) => layer.id === LIPS_LAYER.id);
+  return `${nail < 0 ? "" : `#define HK_NAIL_PLATE ${nail}\n`}${lips < 0 ? "" : `#define HK_LIPS ${lips}\n`}`;
 }
 
 const BODY_ART_COLOUR = `
@@ -754,17 +783,21 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     /** The figure's body-art texture (`bakeBodyArt`); read only while one is set (`setBodyArt`). */
     hkBodyArt: { value: Texture | null };
     /** Its tattoos' decals (`TattooDecals`); read only while it has some. */
-    hkTattooDecals: { value: Texture | null };
-    hkTattooImages: { value: Texture | null };
-    hkTattooTable: { value: Texture | null };
+    hkDecalCoordinates: { value: Texture | null };
+    hkDecalImages: { value: Texture | null };
+    hkDecalTable: { value: Texture | null };
     /** How ink looks through this figure's skin (`inkOptics`). */
     hkInkThrough: { value: Vector3 };
     hkInkVeil: { value: Vector3 };
     hkInkKeep: { value: Vector3 };
     /** What marks multiply this skin by (`markRatios`). */
     hkMarkLight: { value: Vector3 };
-    hkMarkDark: { value: Vector3 };
+    hkMarkDark: { value: Vector3[] };
     hkMarkBlood: { value: Vector3 };
+    /** The skin's and the lips' albedo, and a depigmented lip's over the lip's (`markRatios`). */
+    hkMarkSkin: { value: Vector3 };
+    hkMarkLip: { value: Vector3 };
+    hkMarkLipLight: { value: Vector3 };
   };
   private readonly stopTable: Float32Array;
   private dualBones: DualBones | null = null;
@@ -815,30 +848,29 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     setChannels(this.hkUniforms.hkChannel.value, plan);
   }
 
-  /** The decal layers of the figure's tattoos the shader is built for (0 without). */
-  private tattooLayers = 0;
+  /** The decal layers of the figure's tattoos and naevi the shader is built for (0 without). */
+  private decalLayers = 0;
 
   /**
    * Draws the figure's body art (`bakeBodyArt`), or none. The shader reads it
    * only while one is set, so a figure without body art pays nothing for it,
-   * and reads tattoo decals only for the layers it has; a change in either
-   * rebuilds the shader once, and replacing one bake with another like it
-   * does not.
+   * and reads decals only for the layers it has; a change in either rebuilds
+   * the shader once, and replacing one bake with another like it does not.
    */
-  setBodyArt(art: Pick<BodyArtTexture, "texture" | "tattoos"> | null): void {
+  setBodyArt(art: Pick<BodyArtTexture, "texture" | "decals"> | null): void {
     const u = this.hkUniforms;
-    const had = [u.hkBodyArt.value !== null, this.tattooLayers] as const;
+    const had = [u.hkBodyArt.value !== null, this.decalLayers] as const;
     u.hkBodyArt.value = art?.texture ?? null;
-    u.hkTattooDecals.value = art?.tattoos?.coordinates ?? null;
-    u.hkTattooImages.value = art?.tattoos?.images ?? null;
-    u.hkTattooTable.value = art?.tattoos?.table ?? null;
-    this.tattooLayers = art?.tattoos?.layers ?? 0;
-    if (had[0] === (art !== null) && had[1] === this.tattooLayers) return;
-    const { HK_BODY_ART: _, HK_TATTOO_LAYERS: __, ...rest } = this.defines ?? {};
+    u.hkDecalCoordinates.value = art?.decals?.coordinates ?? null;
+    u.hkDecalImages.value = art?.decals?.images ?? null;
+    u.hkDecalTable.value = art?.decals?.table ?? null;
+    this.decalLayers = art?.decals?.layers ?? 0;
+    if (had[0] === (art !== null) && had[1] === this.decalLayers) return;
+    const { HK_BODY_ART: _, HK_DECAL_LAYERS: __, ...rest } = this.defines ?? {};
     this.defines = {
       ...rest,
       ...(art && { HK_BODY_ART: "" }),
-      ...(this.tattooLayers && { HK_TATTOO_LAYERS: String(this.tattooLayers) }),
+      ...(this.decalLayers && { HK_DECAL_LAYERS: String(this.decalLayers) }),
     };
     this.needsUpdate = true;
   }
@@ -871,15 +903,18 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       // A GLSL array has at least one element, so a stack with no layers still gets one.
       hkChannel: { value: Array.from({ length: Math.max(1, layers.length) }, () => new Vector4()) },
       hkBodyArt: { value: null },
-      hkTattooDecals: { value: null },
-      hkTattooImages: { value: null },
-      hkTattooTable: { value: null },
+      hkDecalCoordinates: { value: null },
+      hkDecalImages: { value: null },
+      hkDecalTable: { value: null },
       hkInkThrough: { value: new Vector3() },
       hkInkVeil: { value: new Vector3() },
       hkInkKeep: { value: new Vector3() },
       hkMarkLight: { value: new Vector3() },
-      hkMarkDark: { value: new Vector3() },
+      hkMarkDark: { value: Array.from({ length: MARK_DARK_STEPS }, () => new Vector3(1, 1, 1)) },
       hkMarkBlood: { value: new Vector3() },
+      hkMarkSkin: { value: new Vector3(1, 1, 1) },
+      hkMarkLip: { value: new Vector3(1, 1, 1) },
+      hkMarkLipLight: { value: new Vector3(1, 1, 1) },
     };
     setChannels(this.hkUniforms.hkChannel.value, plan);
     this.normalMap = poreNormalMap();
@@ -912,10 +947,15 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     this.hkUniforms.hkInkThrough.value.fromArray(ink.through);
     this.hkUniforms.hkInkVeil.value.fromArray(ink.veil);
     this.hkUniforms.hkInkKeep.value.fromArray(ink.keep);
-    const marks = markRatios(a.tone);
+    const marks = markRatios(a.tone, a.lips);
     this.hkUniforms.hkMarkLight.value.fromArray(marks.light);
-    this.hkUniforms.hkMarkDark.value.fromArray(marks.dark);
+    marks.dark.forEach((r, i) => {
+      this.hkUniforms.hkMarkDark.value[i]?.fromArray(r);
+    });
     this.hkUniforms.hkMarkBlood.value.fromArray(marks.blood);
+    this.hkUniforms.hkMarkSkin.value.fromArray(marks.skin);
+    this.hkUniforms.hkMarkLip.value.fromArray(marks.lip);
+    this.hkUniforms.hkMarkLipLight.value.fromArray(marks.lipLight);
     // Regional colour: each layer's paint from its own model (measured for lips),
     // blended in by the atlas's soft-edged masks.
     paintStopTable(this.layers, { ...a, signals: a.signals ?? {} }, this.stopTable);
@@ -958,7 +998,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${nailPlateDefine(this.layers)}${BODY_ART_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
+        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${bodyArtLayerDefines(this.layers)}${BODY_ART_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
       )
       .replace(
         "#include <color_fragment>",
@@ -998,7 +1038,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
-    const art = this.hkUniforms.hkBodyArt.value ? `-art${this.tattooLayers}` : "";
+    const art = this.hkUniforms.hkBodyArt.value ? `-art${this.decalLayers}` : "";
     return `humanoid-kit-skin-10-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}` : ""}${art}`;
   }
 }

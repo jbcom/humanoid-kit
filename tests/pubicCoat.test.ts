@@ -4,11 +4,14 @@
  * adult whose recipe asks for it. Without the pack it is nothing at all.
  */
 import { describe, expect, it } from "vitest";
+import { adultCoatRegions } from "../scripts/lib/adultCoat.ts";
 import {
   type AdultCoatRegionSpec,
   type HumanoidAssets,
   parseHumanoidAssets,
 } from "../src/format/assetFormat.ts";
+import { HumanoidModel } from "../src/model/humanoidModel.ts";
+import { createRecipe } from "../src/recipe/recipe.ts";
 import { COAT_REGION_LIMIT, coatMasks, paintCoat } from "../src/surface/coat.ts";
 import type { SkinPaintInput } from "../src/surface/layers.ts";
 import { BODY_HAIR_COAT, PUBIC_REGION } from "../src/surface/regions/bodyHairCoat.ts";
@@ -78,6 +81,23 @@ describe("pubic hair's coat region", () => {
     expect(cover(paintCoat(BODY_HAIR_COAT, input(16, asked)))).toBe(0);
     const { adult: _, ...unsaid } = input(30, asked);
     expect(cover(paintCoat(BODY_HAIR_COAT, unsaid as SkinPaintInput))).toBe(0);
+  });
+
+  it("reaches the adult surface's coat fields, through its refinement, at the pack's area", {
+    timeout: 300_000,
+  }, () => {
+    // The area the packer measures, carried as the shipped pack will carry it.
+    const assets = withRegions(adultCoatRegions(loadFixtureAssets(true)));
+    const model = new HumanoidModel(assets, { subdivision: 1 });
+    model.evaluate(createRecipe({ macros: { age: 30 } }));
+    const surface = model.adultSurface();
+    expect(surface).not.toBeNull();
+    const { masks, regions } = (surface as NonNullable<typeof surface>).coat;
+    expect(regions[k]).toBe(PUBIC_REGION.id);
+    let full = 0;
+    for (let r = 0; r < masks.length / COAT_REGION_LIMIT; r++)
+      if ((masks[r * COAT_REGION_LIMIT + k] as number) > 230) full++;
+    expect(full).toBeGreaterThan(100);
   });
 
   it("refuses a pack whose regions are malformed", () => {

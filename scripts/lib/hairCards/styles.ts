@@ -39,10 +39,15 @@ export interface StyleContext {
   body: BodySurface;
 }
 
-/** One tile per rope in turn, so neighbouring ropes do not wear the same pattern. */
-const tileOf = (index: number, metresPerV = METRES_PER_V) => {
+/**
+ * One tile per rope in turn, so neighbouring ropes do not wear the same pattern, starting a little
+ * way down it (up to 0.3 of V) as far as a rope of `length` metres leaves room for: it must still end
+ * inside the atlas, with 3% to spare for the stretch settling leaves.
+ */
+const tileOf = (index: number, metresPerV = METRES_PER_V, length = 0) => {
   const { u0, u1 } = tileRange(index % TILE_COUNT);
-  return { u0, u1, metresPerV, v0: ((index * 0.37) % 1) * 0.3 };
+  const room = Math.min(0.3, Math.max(0, 1 - (1.03 * length) / metresPerV));
+  return { u0, u1, metresPerV, v0: ((index * 0.37) % 1) * room };
 };
 
 /** The scalp where a plane `x` = constant meets it, from `fromE` to `toE` (radians) over the top: one parting, front to back. */
@@ -113,10 +118,10 @@ export function cornrows({ head, body }: StyleContext): Cards {
       cards,
       {
         root: { point: end.point.clone().addScaledVector(end.normal, radius * 0.7), normal: along },
+        hang: { kind: "marched", lift: 0.02 },
         length: 0.2 + 0.04 * rand(),
         radius,
         tipRadius: 0.0032,
-        lift: 0.02,
         sides: 5,
         segments: 10,
         tile,
@@ -129,12 +134,13 @@ export function cornrows({ head, body }: StyleContext): Cards {
 
 /**
  * Roots on a grid over the whole scalp above the hairline, `spacing` apart, brick-wise as sections
- * are parted. Over the crown the rows of a ring would crowd into a point, so there a flat grid, read
- * from above and projected onto the scalp, takes over.
+ * are parted, at least `margin` degrees above it. Over the crown the rows of a ring would crowd into
+ * a point, so there a flat grid, read from above and projected onto the scalp, takes over.
  */
 export function gridRoots(
   head: HeadFrame,
   spacing: number,
+  margin = 3,
 ): { root: ScalpPoint; azimuth: number }[] {
   const roots: { root: ScalpPoint; azimuth: number }[] = [];
   const radiusOfHead = (head.extent.max.x - head.extent.min.x) / 2;
@@ -146,7 +152,7 @@ export function gridRoots(
     for (let n = 0; n < count; n++) {
       const a =
         ((n + 0.5 * (Math.round((crownFrom - e) / rowStep) % 2)) / count) * 2 * Math.PI - Math.PI;
-      if (e / DEG < hairlineElevation(a / DEG) + 3) continue;
+      if (e / DEG < hairlineElevation(a / DEG) + margin) continue;
       const root = head.surface(a, e);
       if (root) roots.push({ root, azimuth: a });
     }
@@ -164,142 +170,175 @@ export function gridRoots(
 }
 
 /**
- * A grid of ropes over the head, brick-wise as sections are parted: the one thing twists, locs and box
- * braids differ in is how thick, long, stiff and numerous the ropes are.
+ * A grid of ropes over the head, brick-wise as sections are parted, each combed along the scalp and
+ * settled (`RopeHang` "combed"): the one thing twists, locs and box braids differ in is how thick,
+ * long, stiff and numerous the ropes are.
  */
-function ropeGrid(
-  { head, body }: StyleContext,
-  rope: {
-    seed: number;
-    spacing: number;
-    length: number;
-    radius: number;
-    tipRadius: number;
-    lift: number;
-    sides: number;
-    segments: number;
-    /** How far a rope strays from the straight hang, as drift (see `RopeSpec`). */
-    stray: number;
-  },
-): Cards {
+export interface RopeGridSpec {
+  seed: number;
+  /** Metres between partings. */
+  spacing: number;
+  length: number;
+  radius: number;
+  tipRadius: number;
+  sides: number;
+  segments: number;
+  /** How far a rope strays from the straight hang, as drift (see `RopeSpec`). */
+  stray: number;
+  /** Radians off the scalp a rope leaves its root at. */
+  rise: number;
+  /** How much it resists bending as it settles. */
+  stiffness: number;
+}
+
+function ropeGrid({ head, body }: StyleContext, rope: RopeGridSpec): Cards {
   const cards = newCards();
   const rand = random(rope.seed);
   let index = 0;
-  const place = (root: ScalpPoint, a: number) => {
-    // Braids from the front hairline fall to the side of the face; over the crown there is no front.
-    const rise = Math.atan2(
-      root.point.y - head.centre.y,
-      Math.hypot(root.point.x - head.centre.x, root.point.z - head.centre.z),
-    );
-    const high = Math.min(1, Math.max(0, (rise - 35 * DEG) / (25 * DEG)));
-    const front = Math.max(0, 1 - Math.abs(a) / (40 * DEG)) * (1 - high * high * (3 - 2 * high));
+  for (const { root } of gridRoots(head, rope.spacing)) {
+    const length = rope.length * (0.85 + 0.3 * rand());
     addRope(
       cards,
       {
         root,
-        length: rope.length * (0.85 + 0.3 * rand()),
+        hang: { kind: "combed", rise: rope.rise, stiffness: rope.stiffness },
+        length,
         radius: rope.radius,
         collar: 0.7,
         tipRadius: rope.tipRadius,
-        lift: rope.lift,
         sides: rope.sides,
         segments: rope.segments,
-        drift: new Vector3(
-          Math.sign(root.point.x) * 1.3 * front + rope.stray * (rand() - 0.5),
-          0,
-          -0.5 * front + rope.stray * (rand() - 0.5),
-        ),
-        tile: tileOf(index++),
+        drift: new Vector3(rope.stray * (rand() - 0.5), 0, rope.stray * (rand() - 0.5)),
+        tile: tileOf(index++, METRES_PER_V, length),
       },
       body,
     );
-  };
-  for (const { root, azimuth } of gridRoots(head, rope.spacing)) place(root, azimuth);
+  }
   return cards;
 }
 
-/** Two-strand twists: thinner, shorter and more of them than braids, standing off the scalp before they fall. */
-export const twists = (context: StyleContext): Cards =>
-  ropeGrid(context, {
-    seed: 31,
-    spacing: 0.017,
-    length: 0.17,
-    radius: 0.0048,
-    tipRadius: 0.0028,
-    lift: 0.03,
-    sides: 5,
-    segments: 9,
-    stray: 0.35,
-  });
+/** Two-strand twists: thinner, shorter and more of them than braids, springier. */
+export const TWISTS: RopeGridSpec = {
+  seed: 31,
+  spacing: 0.017,
+  length: 0.17,
+  radius: 0.0048,
+  tipRadius: 0.0028,
+  sides: 5,
+  segments: 12,
+  stray: 0.35,
+  rise: 0.35,
+  stiffness: 0.25,
+};
+export const twists = (context: StyleContext): Cards => ropeGrid(context, TWISTS);
 
-/** Locs: thick matted ropes, long, falling heavily. */
-export const locs = (context: StyleContext): Cards =>
-  ropeGrid(context, {
-    seed: 41,
-    spacing: 0.026,
-    length: 0.36,
-    radius: 0.0088,
-    tipRadius: 0.0055,
-    lift: 0.01,
-    sides: 6,
-    segments: 12,
-    stray: 0.2,
-  });
+/** Locs: thick matted ropes, long, falling heavily; 40 to 80 of them on a head. */
+export const LOCS: RopeGridSpec = {
+  seed: 41,
+  spacing: 0.027,
+  length: 0.36,
+  radius: 0.0088,
+  tipRadius: 0.0055,
+  sides: 6,
+  segments: 18,
+  stray: 0.2,
+  rise: 0.25,
+  stiffness: 0.15,
+};
+export const locs = (context: StyleContext): Cards => ropeGrid(context, LOCS);
 
 /**
  * Box braids: plaits from the roots all the way down, one from each section of a grid of partings
- * over the head, shoulder-blade length, hanging under their own weight.
+ * over the head (100 to 200 of them), shoulder-blade length, lying over the shoulders and the back.
  */
-export const boxBraids = (context: StyleContext): Cards =>
-  ropeGrid(context, {
-    seed: 11,
-    spacing: 0.02,
-    length: 0.3,
-    radius: 0.0072,
-    tipRadius: 0.0035,
-    lift: 0.012,
-    sides: 5,
-    segments: 12,
-    stray: 0.1,
-  });
+export const BOX_BRAIDS: RopeGridSpec = {
+  seed: 11,
+  spacing: 0.018,
+  length: 0.3,
+  radius: 0.0072,
+  tipRadius: 0.0035,
+  sides: 5,
+  segments: 14,
+  stray: 0.1,
+  rise: 0.3,
+  stiffness: 0.3,
+};
+export const boxBraids = (context: StyleContext): Cards => ropeGrid(context, BOX_BRAIDS);
 
 /**
- * Bantu knots: a section of hair twisted into a rope and coiled round its own root into a dome,
- * each a spiral that starts at the scalp and winds outward, rising a little less with every turn.
+ * Bantu knots: the head parted into square sections, each section's hair twisted into a rope and
+ * wound round its own root into a raised bun. `spacing` is the sections' size; `rope` the twisted
+ * rope's radius; `base` the radius of the bun's bottom coil (to the rope's centre); `turns` how many
+ * times it winds (varied by `vary` either way per knot), each turn sitting `pitch` rope radii above
+ * the last and a little inside it (`taper` of the base over the whole bun), so the coil stacks into
+ * a cone 2.5 to 3.5 cm tall; the rope's end tucks into the top.
  */
+export const BANTU_KNOT = {
+  spacing: 0.045,
+  rope: 0.0045,
+  base: 0.011,
+  turns: 3,
+  vary: 0.3,
+  pitch: 1.7,
+  taper: 0.75,
+  pointsPerTurn: 16,
+  sides: 6,
+} as const;
+
 export function bantuKnots({ head }: StyleContext): Cards {
   const cards = newCards();
   const rand = random(53);
-  const radius = 0.0046;
-  const turns = 2.4;
-  const pointsPerTurn = 14;
+  const { spacing, rope, base, turns, vary, pitch, taper, pointsPerTurn, sides } = BANTU_KNOT;
+  // A knot's bottom coil reaches its base plus the rope round the root: the whole of it sits behind
+  // the hairline, so its root is that far (as an angle over the head) and three degrees more above it.
+  const radiusOfHead = (head.extent.max.x - head.extent.min.x) / 2;
+  const margin = (base * 1.1 + rope) / radiusOfHead / DEG + 3;
   let index = 0;
-  for (const { root } of gridRoots(head, 0.04)) {
-    // A frame on the scalp at the root: the two directions along it.
-    const up = Math.abs(root.normal.y) > 0.9 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0);
-    const u = new Vector3().crossVectors(root.normal, up).normalize();
-    const v = new Vector3().crossVectors(root.normal, u).normalize();
+  for (const { root } of gridRoots(head, spacing, margin)) {
+    // The knot's axis is the scalp's normal at its root; two directions across the scalp there.
+    const axis = root.normal;
+    const up = Math.abs(axis.y) > 0.9 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0);
+    const u = new Vector3().crossVectors(axis, up).normalize();
+    const v = new Vector3().crossVectors(axis, u).normalize();
     const start = rand() * Math.PI * 2;
     const direction = rand() < 0.5 ? 1 : -1;
-    const count = Math.round(turns * pointsPerTurn);
+    const knotTurns = turns + vary * (2 * rand() - 1);
+    const knotBase = base * (0.9 + 0.2 * rand());
+    const at = (angle: number, r: number, h: number) =>
+      root.point
+        .clone()
+        .addScaledVector(u, r * Math.cos(start + direction * angle))
+        .addScaledVector(v, r * Math.sin(start + direction * angle))
+        .addScaledVector(axis, h);
     const points: Vector3[] = [];
     const radii: number[] = [];
+    // Out of the scalp at the root (sunk 2 mm, as every rope's first ring) and out to the bottom coil
+    // over a quarter turn, lying on the scalp.
+    const out = Math.round(pointsPerTurn / 4);
+    for (let i = 0; i < out; i++) {
+      const s = i / out;
+      points.push(at((s * Math.PI) / 2, knotBase * s, -0.002 + (rope + 0.002) * s));
+      radii.push(rope * (0.8 + 0.2 * s));
+    }
+    // The coil: up by `pitch` rope radii a turn, in toward the axis as it rises.
+    const count = Math.round(knotTurns * pointsPerTurn);
     for (let i = 0; i <= count; i++) {
       const t = i / count;
-      // Out from the root by the width of one turn each time round, a dome that falls away to the rim.
-      const r = 0.002 + 1.75 * radius * turns * t;
-      const angle = start + direction * turns * 2 * Math.PI * t;
-      const lift = radius * 0.7 + 0.007 * (1 - t) ** 1.2;
-      points.push(
-        root.point
-          .clone()
-          .addScaledVector(u, r * Math.cos(angle))
-          .addScaledVector(v, r * Math.sin(angle))
-          .addScaledVector(root.normal, lift),
-      );
-      radii.push(radius * (1 - 0.35 * t ** 3));
+      const angle = Math.PI / 2 + knotTurns * 2 * Math.PI * t;
+      points.push(at(angle, knotBase * (1 - taper * t), rope + pitch * rope * knotTurns * t));
+      radii.push(rope * (1 - 0.15 * t));
     }
-    addTube(cards, points, radii, 5, tileOf(index++, METRES_PER_V), root.normal);
+    // The end tucks into the top of the bun.
+    const top = rope + pitch * rope * knotTurns;
+    const last = Math.PI / 2 + knotTurns * 2 * Math.PI;
+    for (let i = 1; i <= 3; i++) {
+      const s = i / 3;
+      points.push(
+        at(last + (s * Math.PI) / 2, knotBase * (1 - taper) * (1 - s), top + 0.3 * rope * s),
+      );
+      radii.push(rope * 0.85 * (1 - 0.4 * s));
+    }
+    addTube(cards, points, radii, sides, tileOf(index++, METRES_PER_V), axis);
   }
   return cards;
 }

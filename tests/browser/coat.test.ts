@@ -20,8 +20,10 @@ import {
 import { afterAll, describe, expect, it } from "vitest";
 import { CoatMaterial, coatGeometry } from "../../src/render/coat.ts";
 import { UV_SCALE_ATTRIBUTE } from "../../src/render/skinMaterial.ts";
-import { COAT_REGION_LIMIT } from "../../src/surface/coat.ts";
+import { labFromLinear, lchFromLab } from "../../src/surface/cielab.ts";
+import { COAT_REGION_LIMIT, paintCoat } from "../../src/surface/coat.ts";
 import { hairAlbedo } from "../../src/surface/hairTone.ts";
+import { BODY_HAIR_COAT } from "../../src/surface/regions/bodyHairCoat.ts";
 
 const SIZE = 128;
 /** The patch's side, metres (its metres per UV unit). */
@@ -70,6 +72,11 @@ interface View {
   lobes?: boolean;
   /** Which channel is returned; default red. */
   channel?: 0 | 1 | 2;
+  /**
+   * The comb: straight down the patch everywhere (default), or as a figure's
+   * can be, zero at some vertices and turning back on itself at others.
+   */
+  comb?: "down" | "mixed";
 }
 
 /**
@@ -88,7 +95,11 @@ function render(paint: Paint | null, options: View = {}) {
   body.setAttribute("skinWeight", new BufferAttribute(new Float32Array(n * 4), 4));
   body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(new Float32Array(n).fill(side), 1));
   const comb = new Float32Array(n * 3);
-  for (let v = 0; v < n; v++) comb[v * 3 + 1] = -1;
+  // 17 vertices a row: in the mixed comb every third vertex has none, and every
+  // other row runs up instead of down.
+  for (let v = 0; v < n; v++)
+    comb[v * 3 + 1] =
+      options.comb !== "mixed" ? -1 : v % 3 === 0 ? 0 : Math.floor(v / 17) % 2 ? 1 : -1;
   const masks = new Uint8Array(n * COAT_REGION_LIMIT);
   for (let v = 0; v < n; v++) masks[v * COAT_REGION_LIMIT] = 255;
   const index = body.getIndex()?.array as Uint16Array;
@@ -143,6 +154,14 @@ const share = (px: Float32Array, test: (x: number) => boolean) =>
   px.filter(test).length / px.length;
 
 const average = (px: Float32Array) => px.reduce((s, x) => s + x, 0) / px.length;
+
+/** The adults sheet's hair colours, blond to black. */
+const HAIR_COLOURS = [
+  { eumelanin: 0.22, pheomelanin: 0.2, grey: 0, override: null },
+  { eumelanin: 0.5, pheomelanin: 0.15, grey: 0, override: null },
+  { eumelanin: 0.62, pheomelanin: 0.05, grey: 0, override: null },
+  { eumelanin: 0.9, pheomelanin: 0, grey: 0, override: null },
+];
 
 /**
  * The share of pixels that differ from all eight neighbours by more than
@@ -302,18 +321,12 @@ describe("the coat's shells", () => {
   // three times what the hair's diffuse gives, for every hair colour on the
   // sheets, at a beard's close framing and a chest's.
   it("keep their highlight within three times their diffuse, at every hair colour", () => {
-    const colours = [
-      { eumelanin: 0.22, pheomelanin: 0.2, grey: 0, override: null },
-      { eumelanin: 0.5, pheomelanin: 0.15, grey: 0, override: null },
-      { eumelanin: 0.62, pheomelanin: 0.05, grey: 0, override: null },
-      { eumelanin: 0.9, pheomelanin: 0, grey: 0, override: null },
-    ];
     const ratios: string[] = [];
     for (const [framing, footprint] of [
       ["beard", 0.15],
       ["chest", 1],
     ] as const)
-      for (const c of colours) {
+      for (const c of HAIR_COLOURS) {
         const paint = { ...HAIR, colour: hairAlbedo(c) };
         // On black, with no skin: the coat's own light alone.
         const { skin: _, ...view } = atFootprint(footprint);
@@ -325,6 +338,50 @@ describe("the coat's shells", () => {
         expect(ratio, ratios.join("; ")).toBeLessThanOrEqual(3);
       }
     console.log(`coat highlight / diffuse: ${ratios.join("; ")}`);
+  });
+
+  // Hair's colour is the melanin model's, a brown to black of eumelanin and
+  // pheomelanin: lit, sheened and blended, it keeps that hue (about 20° to 80°
+  // in LCh) and a bounded chroma, never green or pink, wherever the comb is
+  // zero or turns back on itself as a figure's does.
+  it("keep the hair's own hue, at every tone and hair colour, whatever the comb", () => {
+    const k = BODY_HAIR_COAT.findIndex((r) => r.id === "hair-chest");
+    for (const melanin of [0.05, 0.35, 0.65, 0.95])
+      for (const colour of HAIR_COLOURS) {
+        const table = paintCoat(BODY_HAIR_COAT, {
+          tone: { melanin, haemoglobin: 0.5, undertone: 0, override: null },
+          flush: 0.45,
+          lips: 0.55,
+          areola: 0.5,
+          signals: {},
+          age: 35,
+          gender: 1,
+          adult: true,
+          hairColour: colour,
+          bodyHair: { density: { chest: 1 } },
+        });
+        const paint = {
+          ...HAIR,
+          colour: Array.from(table.subarray(k * 8 + 4, k * 8 + 7)) as [number, number, number],
+        };
+        const view = { ...atFootprint(1), background: 0, key: true, comb: "mixed" } as const;
+        const { skin: _, ...lit } = view;
+        const [r, g, b] = ([0, 1, 2] as const).map((channel) => render(paint, { ...lit, channel }));
+        const label = `melanin ${melanin}, eumelanin ${colour.eumelanin}`;
+        for (let i = 0; i < (r as Float32Array).length; i++) {
+          const rgb: [number, number, number] = [
+            (r as Float32Array)[i] as number,
+            (g as Float32Array)[i] as number,
+            (b as Float32Array)[i] as number,
+          ];
+          expect(rgb.every(Number.isFinite), label).toBe(true);
+          const [L, C, h] = lchFromLab(labFromLinear(rgb));
+          if (L < 1 || C < 3) continue;
+          expect(C, label).toBeLessThan(40);
+          expect(h, `${label}: L ${L.toFixed(1)} C ${C.toFixed(1)}`).toBeGreaterThan(20);
+          expect(h, `${label}: L ${L.toFixed(1)} C ${C.toFixed(1)}`).toBeLessThan(80);
+        }
+      }
   });
 
   it("thin with cover: half the cover draws about half the strands", () => {

@@ -38,6 +38,7 @@ import {
 import { COAT_REGION_LIMIT } from "../surface/coat.ts";
 import { HAIR_LOBES } from "./hairMaterial.ts";
 import { UV_SCALE_ATTRIBUTE } from "./skinMaterial.ts";
+import { STRAND_FOOTPRINT } from "./strandFootprint.ts";
 
 /** The comb attribute: three floats a vertex, rest space. */
 export const COAT_COMB_ATTRIBUTE = "hkCoatComb";
@@ -119,6 +120,7 @@ const VERTEX_COMB = /* glsl */ `
 `;
 
 const FRAGMENT_PARS = /* glsl */ `
+${STRAND_FOOTPRINT}
 varying vec2 vCoatP;
 varying float vCoatT;
 varying float vCoatCover;
@@ -138,8 +140,9 @@ float hkCoatHash( vec2 p ) {
 
 /**
  * The share of the pixel the strands cover at this shell, as the fragment's
- * alpha: a strand wider than about a pixel is its disc under a pixel-wide box
- * filter, a narrower one the strands' mean cover, spread over the shells so
+ * alpha: a strand wider than about a pixel is its disc under the strand
+ * footprint (`STRAND_FOOTPRINT`, shared with the skin's strand layers), a
+ * narrower one the strands' mean cover, spread over the shells so
  * that together they cover what the strands' bases do seen from above. The
  * pixel's footprint comes from the cells' derivatives, so the image follows
  * the skin, never the screen.
@@ -156,7 +159,7 @@ const FRAGMENT_STRANDS = /* glsl */ `
 		float hkPresent = step( hkCoatHash( hkId + 9.13 ), vCoatCover );
 		float hkRadius = vCoatRadius * ( 1.0 - 0.75 * clamp( vCoatT / hkReach, 0.0, 1.0 ) );
 		float hkNear = hkPresent * step( vCoatT, hkReach )
-			* clamp( ( hkRadius - length( hkF - hkRoot ) ) / hkPx + 0.5, 0.0, 1.0 );
+			* hkDiscFootprint( length( hkF - hkRoot ), hkRadius, hkPx );
 		// The strands as upright cylinders, one a cell at the cover's odds. Seen
 		// at an angle θ off the skin's normal each hides its base, π r², which no
 		// neighbour's overlaps (a root keeps to its cell's middle), and its side,
@@ -177,9 +180,15 @@ const FRAGMENT_STRANDS = /* glsl */ `
 	}
 `;
 
-/** The two Kajiya-Kay lobes of one light along the comb, as the hair cards' (`HAIR_LOBES`). */
+/**
+ * The two Kajiya-Kay lobes of one light along the comb, as the hair cards'
+ * (`HAIR_LOBES`). The comb is zero at some vertices and turns back on itself
+ * between others, so between them it can blend to nothing; a strand with no
+ * direction there, or a light straight behind the view, adds no lobe rather
+ * than normalising zero (a NaN, which blending spreads as green and pink).
+ */
 const STRAND_LOBES = /* glsl */ `
-	{
+	if ( dot( vCoatComb, vCoatComb ) > 1e-8 && dot( directLight.direction + geometryViewDir, directLight.direction + geometryViewDir ) > 1e-8 ) {
 		vec3 hkT = normalize( vCoatComb );
 		vec3 hkH = normalize( directLight.direction + geometryViewDir );
 		vec3 hkT1 = normalize( hkT + geometryNormal * ${HAIR_LOBES.primaryShift.toFixed(3)} );
