@@ -52,7 +52,10 @@ import { poseShare } from "../rig/skinShare.ts";
 
 /** The bone texture's uniform, in every patched shader. */
 export const DUAL_BONES_UNIFORM = "hkDualBones";
-/** The hip fold texture's uniform: a row per vertex the fold moves, two texels per key (the displacement, the normal's change). */
+/**
+ * The hip fold texture's uniform: a row per vertex the fold moves, two texels per
+ * key (the displacement, the normal's change), `FOLD_ROWS_PER_LINE` rows a line.
+ */
 export const FOLD_UNIFORM = "hkFoldTexture";
 /** Which texel of the bone texture holds the root's rotation (after every bone's own). */
 export const ROOT_UNIFORM = "hkRootTexel";
@@ -63,21 +66,33 @@ export const FOLD_FADE = 0.15;
 /** The vertex attribute holding a vertex's row in the fold texture, or -1. */
 export const FOLD_SLOT_ATTRIBUTE = "hkFoldSlot";
 
-/** A texture of no fold: one row, all zeros, that no vertex refers to. */
-export const noFoldTexture = (): DataTexture => {
-  const t = new DataTexture(
-    new Float32Array(FOLD_KEYS * 8),
-    FOLD_KEYS * 2,
-    1,
-    RGBAFormat,
-    FloatType,
-  );
+/**
+ * Fold rows laid side by side on one line of the fold texture. A row per line
+ * made the texture as tall as the rows, and the adult surface's fold has near ten
+ * thousand: past a GPU's largest texture (8192 on the render host) the texture
+ * never uploads, and every vertex there read no fold, or garbage, three
+ * centimetres from where the CPU put it. Lines of 2048 texels, the size every
+ * WebGL 2 device takes, hold any fold of up to 2048 lines of rows.
+ */
+export const FOLD_ROWS_PER_LINE = Math.floor(2048 / (FOLD_KEYS * 2));
+/** Texels on a line of the fold texture. */
+const FOLD_LINE = FOLD_ROWS_PER_LINE * FOLD_KEYS * 2;
+
+/** A fold texture of `rows` rows from their data (`SurfaceFold.data`), padded out to whole lines. */
+function foldTexture(data: Float32Array, rows: number): DataTexture {
+  const lines = Math.max(1, Math.ceil(rows / FOLD_ROWS_PER_LINE));
+  const texels = new Float32Array(lines * FOLD_LINE * 4);
+  texels.set(data.subarray(0, Math.min(data.length, texels.length)));
+  const t = new DataTexture(texels, FOLD_LINE, lines, RGBAFormat, FloatType);
   t.minFilter = NearestFilter;
   t.magFilter = NearestFilter;
   t.generateMipmaps = false;
   t.needsUpdate = true;
   return t;
-};
+}
+
+/** A texture of no fold: one row, all zeros, that no vertex refers to. */
+export const noFoldTexture = (): DataTexture => foldTexture(new Float32Array(FOLD_KEYS * 8), 1);
 
 /**
  * A figure's bones as dual quaternions, shared by the materials that skin by
@@ -157,14 +172,7 @@ export class DualBones {
     // A fold that arrives where there was none fades in; one that replaces another (the figure's shape changed) does not.
     this.foldBlend.value = this.hasFold && !had ? 0 : 1;
     if (!fold || fold.rows === 0) this.fold.value = noFoldTexture();
-    else {
-      const t = new DataTexture(fold.data, FOLD_KEYS * 2, fold.rows, RGBAFormat, FloatType);
-      t.minFilter = NearestFilter;
-      t.magFilter = NearestFilter;
-      t.generateMipmaps = false;
-      t.needsUpdate = true;
-      this.fold.value = t;
-    }
+    else this.fold.value = foldTexture(fold.data, fold.rows);
     old.dispose();
   }
 
@@ -294,7 +302,8 @@ uniform highp sampler2D ${FOLD_UNIFORM};
 uniform int ${ROOT_UNIFORM};
 uniform float ${FOLD_BLEND_UNIFORM};
 vec3 hkFoldKey( int key, int slot, int part ) {
-	return texelFetch( ${FOLD_UNIFORM}, ivec2( key * 2 + part, slot ), 0 ).xyz;
+	int texel = slot * ${FOLD_KEYS * 2} + key * 2 + part;
+	return texelFetch( ${FOLD_UNIFORM}, ivec2( texel % ${FOLD_LINE}, texel / ${FOLD_LINE} ), 0 ).xyz;
 }
 // part 0: the vertex's displacement; part 1: what its normal gains.
 vec3 hkFoldValue( float slotValue, float flexion, int part ) {

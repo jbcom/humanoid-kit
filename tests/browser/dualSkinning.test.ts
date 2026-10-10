@@ -342,7 +342,9 @@ describe("the vertex shader's reading of a hip's flexion", () => {
 describe("the vertex shader's hip fold", () => {
   it("reads each vertex's displacement and normal change at its flexion, turned with the root, exactly as the CPU reference does", () => {
     const rand = random(11);
-    const rows = 7;
+    // More rows than a texture a row a line could hold on many GPUs (8192 on the render
+    // host); the adult surface's fold has near ten thousand.
+    const rows = 9000;
     const count = 200;
     const fold: HipFold = {
       vertices: Uint32Array.from({ length: rows }, (_, i) => i),
