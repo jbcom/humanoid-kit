@@ -10,10 +10,13 @@ docs/ARCHITECTURE.md, "Torso", and docs/research/SKIN-STATES.md, C7.
 Each item stays here, with the sheet that failed it, until a new sheet passes; the
 sections below describe what was drawn, not a passed verdict.
 
-- **A pale haze on the deep-toned figure's lower back.** Under the camera light
-  the heavy deep-toned woman's lumbar skin shows a broad whitish blotch (the
-  back sheet, top right). It is on integration before the stretch marks were
-  redrawn and is not their shape; its cause is not yet found.
+- **A pale veil on the deep-toned figure's lower back.** Under the camera light
+  the lumbar skin, which faces it squarely, shows a soft whitish veil (the back
+  sheet, top right): the skin's specular lobe on the base mesh's own uneven
+  lower-back normals, over dark diffuse. Its frosty grain was the pore normal
+  map sampled without its mips (fixed 0225b32); the smooth veil remains, much
+  weaker under the default light. Open until the lighting rig's review rules on
+  it.
 
 Passed on the integrator's sheets (2026-10-09) and landed: the stretch marks,
 redrawn as clusters of long, thin spindles (they had read as a barcode:
