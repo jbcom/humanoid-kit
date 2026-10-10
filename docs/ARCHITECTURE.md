@@ -3641,8 +3641,14 @@ says; nothing here is sexualised, and the adult anatomy's own layers
   edge, so the layer leaves whatever skin is under it as it is. (The first
   version mixed to the tone's flat albedo, and the sheet showed a pale halo
   outside the areola on a man and on deep skin: the base colour is shaded where
-  it lies, and a mix replaces that shading.) Goosebumps leave the whole zone out,
-  as the areola's smooth muscle wrinkles it (the cold state morph draws that).
+  it lies, and a mix replaces that shading.) A channel in which the tone's skin is
+  exactly zero (a cyan override) has no ratio: the skin there is zero, the shader's
+  product with any ratio is zero, and 0 / 0 is NaN, which the shader's mix carries
+  to every pixel of the skin. That channel's ratio is the identity, 1, which is
+  also what the product comes to. `paintStopTable` throws a `RangeError` for any
+  stop that is not finite, as it does for a detail or strand paint that is not
+  valid. Goosebumps leave the whole zone out, as the areola's smooth muscle
+  wrinkles it (the cold state morph draws that).
 - *An amplitude profile lets a relief's extent follow the figure.* The areola's
   texture and its Montgomery tubercles must end at this figure's areola, which
   is 6.5 mm in radius in a child and 19 in a woman, from fields that are the

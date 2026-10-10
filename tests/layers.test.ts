@@ -163,6 +163,29 @@ describe("the stop table", () => {
       paintStopTable([{ ...ramp, paint: () => ({ strength: 1, stops: [] }) }], input()),
     ).toThrow(/1 to 8 stops/);
   });
+
+  it("throws on a colour stop or a relief depth that is not finite: one NaN blanks the skin", () => {
+    const layer = (stops: Rgb[], relief?: number[]): SkinLayer => ({
+      id: "bad-stops",
+      kind: "colour",
+      blend: "multiply",
+      targets: [],
+      fields: () => ({ mask: new Float32Array(0), coord: null }),
+      paint: () => (relief ? { strength: 1, stops, relief } : { strength: 1, stops }),
+    });
+    const ok: Rgb = [1, 1, 1];
+    expect(() => paintStopTable([layer([ok, ok])], input())).not.toThrow();
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])
+      for (let c = 0; c < 3; c++) {
+        const stop = [1, 1, 1];
+        stop[c] = bad;
+        expect(() => paintStopTable([layer([ok, stop as Rgb])], input())).toThrow(RangeError);
+        expect(() => paintStopTable([layer([stop as Rgb])], input())).toThrow(/not finite/);
+      }
+    expect(() => paintStopTable([layer([ok, ok], [0, Number.POSITIVE_INFINITY])], input())).toThrow(
+      RangeError,
+    );
+  });
 });
 
 describe("applyLayers", () => {

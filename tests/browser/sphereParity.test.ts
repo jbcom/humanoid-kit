@@ -400,8 +400,9 @@ describe("skin material on an analytic sphere", () => {
       const m = measure(45, (n) => A.map((c) => c * Math.max(n, 0)) as Rgb);
       lit.push({ name: s.name, de: deltaE2000(lab(m.rendered.lit), lab(m.expected.lit)) });
     }
-    // BabelColor's ColorChecker comparisons flag a CIEDE2000 difference above 1.3.
-    expect(lit.filter((x) => x.de > 1.3)).toEqual([]);
+    // BabelColor's ColorChecker comparisons flag a CIEDE2000 difference above 1.3. Written as
+    // "not within" so a NaN (a lost context reads as one) fails, which `de > 1.3` lets through.
+    expect(lit.filter((x) => !(x.de <= 1.3))).toEqual([]);
   });
 
   // Stage 2 (§5.3): given correct shading, the display path. The canvas is read

@@ -653,7 +653,9 @@ compute what the renderer will do.
   displacement,
   `buildLayerFields` (a layer that is not `available`, an adult layer whose
   targets have not loaded, stays zero), `paintStopTable(layers, input)` (the figure's stop table,
-  `STOP_COUNT` stops in rows of `STOP_TABLE_WIDTH` texels) and
+  `STOP_COUNT` stops in rows of `STOP_TABLE_WIDTH` texels; it throws a `RangeError`
+  for a colour stop or relief depth that is not finite, since one NaN blanks every pixel of the
+  skin) and
   `applyLayers(base, table, fields)`, the per-pixel blend the shader performs.
   A layer is one of three kinds: a `ColourLayer` (the default: `blend`, and
   `paint` giving `strength` and colour `stops`, and optionally `relief`: a groove

@@ -213,15 +213,20 @@ export const AREOLA_LAYER: ColourLayer = {
     const skin = skinAlbedo(tone);
     // As ratios to the tone's own skin, so the layer multiplies whatever skin is under it (the
     // base colour carries its own shading, which a mix to the tone's flat albedo would show as
-    // a halo) and the skin beyond the areola is the identity.
+    // a halo) and the skin beyond the areola is the identity. A channel in which the skin is
+    // exactly zero (a cyan override has no red) has no ratio to take: there the skin is zero,
+    // so the shader's product with any ratio is zero, and 0 / 0 would be a NaN that its mix
+    // carries to every pixel. That channel is the identity, 1, which is what the product comes to.
     const stops = STOP_RADII.map((r) => {
       const a = onAreola(shape, r);
       const n = onNipple(shape, r);
       return [0, 1, 2].map((c) => {
+        const under = skin[c] as number;
+        if (!(under > 0)) return 1;
         const inside =
           (areolaColour[c] as number) +
           ((nippleColour[c] as number) - (areolaColour[c] as number)) * n;
-        return 1 + (inside / (skin[c] as number) - 1) * a;
+        return 1 + (inside / under - 1) * a;
       }) as Rgb;
     });
     return { strength: 1, stops };

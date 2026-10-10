@@ -681,7 +681,7 @@ function writeStriae(
 /** A colour layer's relief depths, one per stop (0 where none is given); each must be >= 0. */
 function paintedRelief(id: string, count: number, relief: readonly number[] | undefined): number[] {
   const out = Array.from({ length: count }, (_, k) => relief?.[k] ?? 0);
-  if ((relief?.length ?? 0) > count || out.some((d) => !(d >= 0)))
+  if ((relief?.length ?? 0) > count || out.some((d) => !(d >= 0 && Number.isFinite(d))))
     throw new RangeError(`skin layer ${id}: relief is one depth >= 0 per stop`);
   return out;
 }
@@ -749,6 +749,10 @@ export function paintStopTable(
     if (stops.length < 1 || stops.length > STOP_COUNT)
       throw new RangeError(`skin layer ${layer.id}: 1 to ${STOP_COUNT} stops, got ${stops.length}`);
     const relief = paintedRelief(layer.id, stops.length, paint.relief);
+    // One NaN in a stop would reach every pixel of the skin (the shader's mix keeps it), so a
+    // layer that paints one is refused here, where its id is known.
+    if (!stops.every((s) => s.every(Number.isFinite)))
+      throw new RangeError(`skin layer ${layer.id}: a colour stop is not finite`);
     const peak = Math.max(0, ...relief);
     // A colour layer's header z is the deepest groove it draws (0: no relief, which the
     // shader skips); the stops' alpha holds each stop's depth.
