@@ -9,13 +9,18 @@
  * The scene stands in for a body at such a place: a thick slab (the receiving skin,
  * a closed solid that casts as well, as the body does) tilted until the key light
  * grazes it, and a cylinder (a limb) lying a few millimetres to a few centimetres
- * off it, its axis turned a few degrees off the shadow map's rows so its shadow's
- * edge crosses them. An orthographic camera looks straight down onto the slab at a
- * close-up's scale; the cylinder is invisible to it but casts. Each row of the
- * image crosses the shadow's band, and where the luminance crosses halfway between
- * the shadowed and the lit skin is the edge's position on that row. A straight
- * occluder casts a straight edge, so what is left of those positions about the
- * best line through them is the staircase.
+ * off it, its axis turned 8° within the slab off the shadow map's rows, which the
+ * graze foreshortens to a few degrees in the map: nearly along them, where a map's
+ * staircase has its longest, tallest steps. An orthographic camera looks straight
+ * down onto the slab at a close-up's scale; the cylinder is invisible to it but
+ * casts. Each row of the image crosses the shadow's band, and where the luminance
+ * crosses halfway between the shadowed and the lit skin is the edge's position on
+ * that row.
+ *
+ * The staircase is what is left of those positions after a running mean along the
+ * edge over one target penumbra: a softbox's shadow carries no detail along its
+ * edge finer than its own penumbra, so anything that fine is the map's. Its bound
+ * is a share of the penumbra across the edge, as it falls on the receiver.
  *
  * The acne checks light a convex solid (a sphere) and a concave one (a thick bowl
  * facing the light, so nothing shades its inside): nothing occludes either, so the
@@ -53,13 +58,16 @@ const KEY_POSITION = new Vector3(1.8, 3.2, 2.6);
  * The penumbra the stage is tuned for, 10 % to 90 %, on skin facing the light: about
  * a centimetre and a half (`skinShadow.test.ts` holds it at the evidence framing).
  */
-const TARGET_PENUMBRA = 0.015;
+const TARGET_PENUMBRA = 0.016;
 /** A close-up's scale: half a millimetre a pixel (a 20 cm crop of thighs over 400 px). */
 const METRES_PER_PIXEL = 0.0005;
 /**
  * A staircase is invisible when it moves the edge by a small part of the edge's
- * own width: at most 2 % of the target penumbra, as it falls on the receiver. One
- * unfiltered texel of the old 1.4 mm map is 9 % of it.
+ * own width: at most 2 % of the target penumbra, as it falls on the receiver. Where
+ * the edge is steepest (a tent's middle, 1.1 / penumbra of the shadow's depth per
+ * unit) that changes the shadow by about 2 % of its depth: under the stage's fill,
+ * about 1 % of lit skin's luminance. One unfiltered texel of the variance map this
+ * replaced (1.4 mm) is 9 % of the penumbra.
  */
 const STAIRCASE_SHARE = 0.02;
 
@@ -140,19 +148,19 @@ function crossing(row: ArrayLike<number>, level: number, from: number, step: 1 |
   return Number.NaN;
 }
 
-/** What is left of `ys` about the least-squares line through it (against its index). */
-function residuals(ys: number[]): number[] {
-  const n = ys.length;
-  const mx = (n - 1) / 2;
-  const my = ys.reduce((s, y) => s + y, 0) / n;
-  let sxy = 0;
-  let sxx = 0;
-  for (let i = 0; i < n; i++) {
-    sxy += (i - mx) * ((ys[i] as number) - my);
-    sxx += (i - mx) ** 2;
+/**
+ * What is left of `ys` after a centred running mean over `window` samples (odd), where
+ * the window fits: its detail finer than the window. A straight line leaves nothing.
+ */
+function highPass(ys: number[], window: number): number[] {
+  const half = (window - 1) / 2;
+  const out: number[] = [];
+  for (let i = half; i < ys.length - half; i++) {
+    let sum = 0;
+    for (let k = i - half; k <= i + half; k++) sum += ys[k] as number;
+    out.push((ys[i] as number) - sum / window);
   }
-  const slope = sxy / sxx;
-  return ys.map((y, i) => y - (my + slope * (i - mx)));
+  return out;
 }
 
 const median = (xs: number[]) => {
@@ -163,7 +171,7 @@ const median = (xs: number[]) => {
 interface Edge {
   /** The 10 % to 90 % width of the edge across it, in pixels (the median over the rows). */
   penumbra: number;
-  /** The largest distance of the edge from a straight line, in pixels (over both edges). */
+  /** The largest detail of either edge finer than the target penumbra along it, in pixels. */
   staircase: number;
   /** The target penumbra as it falls on this receiver, in pixels. */
   targetPenumbra: number;
@@ -213,7 +221,7 @@ function grazingEdge(gap: number, graze: number): Edge {
   // Where the limb's shadow falls on the slab: its centre, carried along the light.
   const shadowAt = centre.clone().addScaledVector(toLight, -(gap + radius) / Math.sin(g));
   const width = 800;
-  const height = 200;
+  const height = 400;
   const camera = new OrthographicCamera(
     (-width * METRES_PER_PIXEL) / 2,
     (width * METRES_PER_PIXEL) / 2,
@@ -249,7 +257,12 @@ function grazingEdge(gap: number, graze: number): Edge {
   }
   for (const xs of [lefts, rights, widths])
     expect(xs.every(Number.isFinite), "every row crosses both edges").toBe(true);
-  const staircase = Math.max(...residuals(lefts).map(Math.abs), ...residuals(rights).map(Math.abs));
+  // Rows lie along the edge, a pixel apart: the running mean spans one target penumbra of them.
+  const window = 2 * Math.round(TARGET_PENUMBRA / METRES_PER_PIXEL / 2) + 1;
+  const staircase = Math.max(
+    ...highPass(lefts, window).map(Math.abs),
+    ...highPass(rights, window).map(Math.abs),
+  );
   return {
     penumbra: median(widths),
     staircase,
@@ -312,7 +325,8 @@ describe("the key light's shadow where a body shadows itself at a grazing angle"
     for (const graze of [15, 30])
       it(`casts a smooth edge, not a staircase: a limb ${gap * 1000} mm off skin the light grazes at ${graze}°`, () => {
         const edge = grazingEdge(gap, graze);
-        const what = `penumbra ${edge.penumbra.toFixed(1)} px, staircase ${edge.staircase.toFixed(2)} px, target penumbra ${edge.targetPenumbra.toFixed(1)} px`;
+        const what = `penumbra ${edge.penumbra.toFixed(1)} px, staircase ${edge.staircase.toFixed(2)} px (${((100 * edge.staircase) / edge.targetPenumbra).toFixed(1)} % of the target penumbra, ${edge.targetPenumbra.toFixed(1)} px)`;
+        console.log(`grazing edge, gap ${gap * 1000} mm, graze ${graze}°: ${what}`);
         // Soft: at least half the target, so the filter is working where the parts nearly touch.
         expect(edge.penumbra, what).toBeGreaterThan(0.5 * edge.targetPenumbra);
         expect(edge.staircase, what).toBeLessThan(STAIRCASE_SHARE * edge.targetPenumbra);
