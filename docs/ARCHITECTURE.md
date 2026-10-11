@@ -1543,6 +1543,70 @@ up to 30 mm from the CPU's, unseen while the parity test sampled only the first
 rows. The parity test now holds 16000 rows, both openings each, and reads the last
 row and rows from every line.
 
+### Angular hip weights: measured and shelved (2026-10-11)
+
+**The idea.** MakeHuman's hip weights fall from trunk to thigh in bands of height,
+but the groin's skin lies 10 to 15 cm in front of the hip's centre, so a deep hip
+carries skin the trunk still holds through the trunk's and the crease collapses
+(the bones alone leave 869 crease triangles turned over at 120°, nine bodies). Skin
+round a hinge folds smoothly when its weight changes over the arc the joint turns
+through. The fan set a vertex's thigh share by its angle about the hip's centre,
+from the trunk's axis (none) to the thigh's (all), blended by dual quaternions, keyed
+in by the hip's flexion. It was built as core skinning with a CPU reference, a shader
+twin at GPU/CPU parity (3.0e-7 position, 4.8e-7 normal on Metal), weights blended
+rather than positions so the dual quaternion half was exact, and every vertex outside
+its mask skinned bit for bit as before.
+
+**What it took to keep it from doing harm**, each term held by a measurement:
+
+- *One hip per vertex*, the one the hip fold reads it by, with the vertex's side from
+  its rest position alone (the crotch's weights alternate between the thighs): a fan
+  blending both hips' zones skinned the midline differently with one hip flexed than
+  with both, and the fold, solved with both, turned it over (one hip at 120°: 52
+  crease triangles left, against 43 before the fan).
+- *The other thigh's weight left alone*: moved, the flexed thigh carried crotch skin
+  the straight one holds.
+- *In front of the hip only* (a 3 cm band at its coronal plane): behind it, the
+  trunk's skin given thigh weight ran the buttocks into the lower back in a squat
+  (f-heavy, trunk through trunk 3.7 to 54 cm²) and dual quaternions rounded them out
+  (girth p95 1.44 at 120°, against 1.11).
+- *The band from 30° and a cap 6 to 12 cm above the hip's centre*: from 0° the lower
+  belly took a share of the thigh, rolled, and ran through itself in a squat; uncapped
+  it moved the navel (the surface probe 0.67 mm off, seated).
+- *Weight on other bones fading it out*: a child's knee lies within the fan's 28 cm
+  reach, and its shin's skin turned over in a squat (30 to 181 triangles).
+- *Keyed out as the hip opens* (5° to 20°): opened, the thighs do not meet the belly
+  and the fold reads the opening itself; keyed in, the squat turned the groin over
+  (f-heavy 139 to 352 triangles, f-elder 83 to 222).
+- *Organs read at their roots*: an organ's vertex took the fan where its root is,
+  lerped by its root share; read at its own place, the sac hanging below the hip
+  wanted two thirds of the thigh (the heavy man's squat, 208 inverted triangles on the
+  bones alone, 1277 with the fan, 326 with this).
+
+**Why it was shelved.** The crease count fell from 55 / 67 / 69 / 43 / 53 (seated,
+120°, 135°, one hip at 120°, squat) to 4 / 21 / 58 / 14 / 74 keyed in from 60°, and
+seated penetration fell in most smoke rows (f-slim 7.95 to 0.31 cm²). But the sheets
+showed a dark pit at the front crease where the bones alone close a clean fold line:
+seated on the heavy man (`docs/evidence/hip-fan-seated.webp`; base left, fan right),
+and, keyed in only from 90° so seated was the base skin's, tucked on both heavy
+bodies (`docs/evidence/hip-fan-deep.webp`: tucked, squat, seated; base left, fan
+right). The squat and seated rows there match the base skin. The front drag that wins
+the count is the drag that opens the pit: every attempt to thin it lost the crease
+(fading it near the midline, over the pubis, or with the hip opened), and limiting
+it by the vertex's rest distance from the thigh's skin made the heavy man's seated
+belly run deeper into his pubis (31.7 cm² on the bones, 49.8 with the fan, 139 with
+that limit): the gradient of the drag shears the region. It also gave back girth at a
+one-hip 120° (the short full woman's mean 0.78 and fifth percentile 0.30, against
+0.86 and 0.46, and linear skinning's 0.80 and 0.37). With the 90° key the smoke rows
+were the base skin's within a few percent (f-slim squat 18.9 to 19.6 cm², m-heavy
+squat 330 to 337 inverted), and the pit stayed.
+
+**The lesson.** Crease triangles counted turned over on the control mesh did not
+predict what is seen: the bones' counted inversions render as clean fold lines, and
+the fan's lower count rendered a pit. A skinning change is gated on side-view sheets
+of the heavy bodies seated, tucked and squatting against the shipped skin, not on
+counts alone. The skinning stays as "Skinning artefacts" and "The hip fold" describe.
+
 ### The knee fold (2026-10-10)
 
 **The fault.** A knee bent to a right angle collapses the skin at its back through
@@ -1752,6 +1816,12 @@ when the squashed skin needs answering by itself. The gates are written first
 of its hip's rest flesh against the bones' 0.755. A fold that pulls the flesh round
 the average figure's squatting knee a fifth of the way toward its head fails the
 same gate, as it must.
+
+**Named pairs after the bulge.** Trunk self-contact: a heavy belly's overhang
+pressed into the pubis, seated (the heavy man's smoke row, 31.7 cm² of trunk through
+trunk on the bones alone, at the hip's height in front). Neither hip fold nor knee
+fold owns skin pressing skin within the trunk, so it is its own contact pair for
+this unit, after the bulge.
 
 ### Reservoir skinning (2026-10-10)
 
