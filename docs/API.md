@@ -1405,7 +1405,8 @@ and camera.
 | `onChange?(recipe, change)` | Called with every new recipe, including undo, redo and loads; `change.cause` says which |
 | `onBeforeChange?(proposed, context)` | Synchronous veto: returns the recipe to accept (clamped or as proposed) or `false` |
 | `controls?` | `ControlLimits`: slider ranges, and sliders, tasks and panels to hide |
-| `onReject?(rejection)` | Called when a change was refused (`rejection.reason`, `cause` and the `proposed` recipe) |
+| `coverPolicy?` | `CoverPolicy`: what counts as covered, and who may allow an uncovered figure (maybe asynchronously); see "Cover policy" |
+| `onReject?(rejection)` | Called when a change was refused (`rejection.reason` is `"veto"` or `"cover"`, with `cause` and the `proposed` recipe) |
 | `title?` | Heading shown above the controls |
 | `className?` | Added to the root element |
 | `children?` | Extra scene content rendered beside the figure |
@@ -1450,7 +1451,9 @@ anything is drawn or reported:
    `false` to refuse; anything else that is not a valid recipe
    (`recipeProblems`) throws a `TypeError`. A recipe equal to the current figure
    changes nothing.
-3. The accepted figure replaces the current one: in the creator's own state when
+3. `coverPolicy` (below) decides whether a figure that would be uncovered may be
+   shown, asking the host if it must.
+4. The accepted figure replaces the current one: in the creator's own state when
    it is uncontrolled, or through `onChange` when it is controlled.
 
 A refusal leaves the figure as it was and calls `onReject`. `cause` is one of
@@ -1503,12 +1506,83 @@ not identity, so undo and redo still work. Uncontrolled, `onChange` also reports
 the starting figure when the creator mounts; controlled, it reports only
 what the creator proposed.
 
+### Cover policy
+
+A host may need a person's explicit confirmation before a figure is shown
+uncovered (Anyself asks for an 18+ confirmation and refuses it under 25). The
+library does not judge that, it enforces the host's answer: **nothing is
+evaluated, drawn or reported for an uncovered figure until the policy allows
+it.** The creator holds a figure back from `<Humanoid>` (the worker never sees
+its recipe) while it waits.
+
+```ts
+interface CoverPolicy {
+  /** Whether a figure is covered. Pure and synchronous. Default: `wearsCover`. */
+  covered?(recipe: Recipe, wardrobe: readonly WardrobeEntry[]): boolean;
+  /**
+   * Asked before a figure that would be uncovered is shown. `true` allows it;
+   * anything else, a rejection or a throw refuses it. May be async. Without it,
+   * no uncovered figure is ever allowed.
+   */
+  allowUncover?(request: UncoverRequest): boolean | Promise<boolean>;
+}
+
+interface UncoverRequest {
+  cause: ChangeCause | "initial" | "value";
+  current: Recipe | null; // the figure being left; null when none is shown yet
+  proposed: Recipe;       // the uncovered figure
+  signal: AbortSignal;    // aborts when the answer no longer matters
+}
+```
+
+- `wearsCover(recipe, wardrobe)` is the default and the building block: the
+  figure wears at least one garment of kind `underwear` or `clothes` (`COVERING_KINDS`;
+  the clothing pack's kinds are `clothes`, `shoes` and `hat`, so a figure in
+  shoes and a hat is uncovered). A host with another idea passes `covered`.
+  Without a clothing pack nothing is worn, so every figure is uncovered.
+- **When it asks.** `allowUncover` is asked when a proposed figure is uncovered
+  and the figure shown is covered, or none is shown yet: stepping out of cover,
+  by taking a garment off, reset, redo, a loaded file or a `value` from the
+  host. It is not asked again while the figure stays uncovered, and never for a
+  covered figure. Putting a garment back needs no answer.
+- **When it asks first.** The starting figure counts: `initialRecipe` or `value`
+  that is uncovered is asked about (`cause: "initial"`) once the packs are
+  loaded and the wardrobe is known. Until it is allowed the creator shows a
+  message instead of the figure, and controls still work: putting a garment on
+  ends the wait. A figure that is covered is shown as soon as the packs are loaded.
+- **Waiting.** While an answer is pending the creator ignores its own controls
+  (they are inert, and a status says it is waiting) and keeps showing the figure
+  it had. A new `value` from the host, or unmounting, aborts the request's
+  `signal`, so the host can close its dialog, and the answer is dropped. Unmounting
+  while asked does not leave the creator waiting.
+- **The order.** After the host's ranges and `onBeforeChange`, so a person is
+  never asked about a figure the host would refuse anyway.
+- **Refusing.** A refusal changes nothing and calls `onReject` with
+  `reason: "cover"`; if the policy threw or rejected, `rejection.error` holds the
+  error (and without an `onReject` it is logged: a failing policy is a bug).
+  Without `allowUncover` the Wardrobe disables the garments that would uncover
+  the figure, with the reason, rather than offering what will be refused.
+- **Controlled.** A change the creator proposes is asked about before `onChange`,
+  so the host's state never holds a figure the person has not confirmed. A
+  `value` the host sets is asked about as well: the host is trusted with what it
+  means, not with whether to skip the person.
+
+```tsx
+<HumanoidCreator
+  coverPolicy={{
+    allowUncover: ({ proposed }) =>
+      proposed.macros.age >= 25 && confirmAdult(), // a modal that resolves true or false
+  }}
+  initialRecipe={createRecipe({ outfit: ["suits/female_casualsuit01"] })}
+/>;
+```
+
 ### `useHumanoidEditor(initial?, options?): HumanoidEditor`
 
 The creator's state for the provided client, for building your own editor UI.
 `useEditorState(ready, initial?, options?)` is the same over any `ReadyInfo`,
 without a worker. `options` is `EditorOptions`: `value`, `onChange`,
-`onBeforeChange`, `controls` and `onReject`, as on the creator.
+`onBeforeChange`, `controls`, `coverPolicy` and `onReject`, as on the creator.
 
 ```ts
 interface HumanoidEditor {
@@ -1519,6 +1593,9 @@ interface HumanoidEditor {
   range(entry: SliderEntry): SliderRange;      // the slider's range, narrowed by `controls.ranges`
   macroRange(key: RegionalMacro): { min: number; max: number }; // the same for a regional override
   panels: ReadonlySet<CreatorPanel>;           // the panels `controls` leaves in
+  pending: boolean;         // the cover policy is being asked; changes are ignored until it answers
+  withheld: boolean;        // the figure is held back from evaluation until the cover policy allows it
+  blocksUncover(proposed: Recipe): boolean;    // true when no answer to `allowUncover` could allow `proposed`
   canUndo: boolean;
   canRedo: boolean;
   setSlider(entry: SliderEntry, value: number, gesture?: string): void;
@@ -1534,10 +1611,13 @@ interface HumanoidEditor {
 
 `update`, `setSlider`, `undo`, `redo`, `randomize`, `resetAll` and `load` all
 propose a figure and go through the steps in "Hosting the creator". `load`
-returns `Not allowed here` as its problem when `onBeforeChange` refuses the
-loaded figure. The pure parts are exported too (`humanoid-kit`):
-`limitRecipe(recipe, controls, modifiers)`, `limitedRange`, `visibleTasks`,
-`assertControls`, `sameRecipe` and `beforeChange`.
+returns `Not allowed here` as its problem when `onBeforeChange` or an
+`allowUncover` that answers at once refuses the loaded figure; one that is
+still being asked is not a problem. The pure parts are exported too
+(`humanoid-kit`): `limitRecipe(recipe, controls, modifiers)`, `limitedRange`,
+`visibleTasks`, `assertControls`, `sameRecipe`, `beforeChange`, `wearsCover`,
+`isCovered(policy, recipe, wardrobe)` and `mustConfirm(policy, wardrobe,
+proposed, shown)`.
 
 Changes that share a `gesture` key form one undo step. `randomize` is
 deterministic for a seed and never sets adult-only modifiers unless

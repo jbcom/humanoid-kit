@@ -35,6 +35,11 @@ export const CREATOR_CSS = /* css */ `
   position: absolute; inset: 0; display: grid; place-items: center;
   color: var(--hk-muted); pointer-events: none; letter-spacing: 0.02em;
 }
+.hk-banner {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  padding: 6px 14px; border: 1px solid var(--hk-border); border-radius: 999px;
+  background: var(--hk-panel); color: var(--hk-text); pointer-events: none;
+}
 .hk-panel {
   display: flex; flex-direction: column; min-height: 0;
   background: var(--hk-panel);
@@ -168,6 +173,7 @@ export const CREATOR_CSS = /* css */ `
   border-radius: 50%; background: var(--hk-accent); box-shadow: 0 0 0 2px var(--hk-panel);
 }
 .hk-chip[aria-pressed="true"][data-overridden]::after { background: var(--hk-accent-ink); }
+.hk-chip:disabled { opacity: 0.4; cursor: default; }
 .hk-chip:focus-visible { outline: 2px solid var(--hk-accent); outline-offset: 1px; }
 .hk-hit-path { margin: 8px 0 0; color: var(--hk-muted); font-size: 12px; }
 .hk-empty { padding: 24px 16px; color: var(--hk-muted); text-align: center; }

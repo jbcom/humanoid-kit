@@ -29,6 +29,7 @@ import {
 } from "../../react/StudioStage.tsx";
 import type { Recipe } from "../../recipe/recipe.ts";
 import type { PickMap } from "../../worker/client.ts";
+import type { CoverPolicy } from "../cover.ts";
 import { type FrameRequest, frameRequest } from "../framing.ts";
 import type { BeforeChange, ChangeInfo, Rejection } from "../gate.ts";
 import type { ControlLimits } from "../limits.ts";
@@ -65,6 +66,11 @@ export interface HumanoidCreatorProps {
   onBeforeChange?: BeforeChange;
   /** Ranges for sliders, and sliders, tasks and panels left out. */
   controls?: ControlLimits;
+  /**
+   * What counts as covered, and who may allow an uncovered figure, perhaps after asking a
+   * person. Nothing uncovered is evaluated, drawn or reported until it allows it.
+   */
+  coverPolicy?: CoverPolicy;
   /** Called when a change was refused. */
   onReject?: (rejection: Rejection) => void;
   /** Heading shown above the controls. */
@@ -188,6 +194,7 @@ function CreatorBody({
   onChange,
   onBeforeChange,
   controls,
+  coverPolicy,
   onReject,
   title = "Create",
   children,
@@ -197,6 +204,7 @@ function CreatorBody({
     ...(onChange && { onChange }),
     ...(onBeforeChange && { onBeforeChange }),
     ...(controls && { controls }),
+    ...(coverPolicy && { coverPolicy }),
     ...(onReject && { onReject }),
   });
   const client = useHumanoidClient();
@@ -309,16 +317,19 @@ function CreatorBody({
           aria-label="Figure preview"
         >
           <StudioStage />
-          <Humanoid
-            recipe={recipe}
-            position={[0, lift, 0]}
-            onPick={onPick}
-            onGroundOffset={setLift}
-            onEvaluated={(ev) => {
-              positions.current = ev.positions;
-              setHasFigure(true);
-            }}
-          />
+          {/* A withheld figure is never handed on: the worker is not asked to evaluate it. */}
+          {!editor.withheld && (
+            <Humanoid
+              recipe={recipe}
+              position={[0, lift, 0]}
+              onPick={onPick}
+              onGroundOffset={setLift}
+              onEvaluated={(ev) => {
+                positions.current = ev.positions;
+                setHasFigure(true);
+              }}
+            />
+          )}
           {ready && (
             <CameraRig
               ready={ready}
@@ -330,11 +341,27 @@ function CreatorBody({
           )}
           {children}
         </Canvas>
-        {!hasFigure && <div className="hk-status">Loading figure…</div>}
+        {editor.withheld ? (
+          <div className="hk-status" role="status">
+            {editor.pending
+              ? "Waiting for confirmation…"
+              : "This figure is not shown until it is covered or confirmed."}
+          </div>
+        ) : (
+          !hasFigure && <div className="hk-status">Loading figure…</div>
+        )}
+        {editor.pending && !editor.withheld && (
+          <div className="hk-banner" role="status">
+            Waiting for confirmation…
+          </div>
+        )}
       </div>
       <section
         className="hk-panel"
         aria-label="Figure controls"
+        // While the cover policy is asked the controls do nothing: inert, not merely ignored.
+        inert={editor.pending || undefined}
+        aria-busy={editor.pending || undefined}
         onKeyDown={(e) => {
           const mod = e.metaKey || e.ctrlKey;
           if (!mod || e.key.toLowerCase() !== "z") return;

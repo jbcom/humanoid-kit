@@ -819,6 +819,55 @@ host that wants a region different does it in `onBeforeChange`), and an async
 `onBeforeChange` (the next section is the one place the host's answer may take a
 person, and it is asked before the figure is drawn, not instead of the figure).
 
+### The cover policy (design, 2026-10-11)
+
+Anyself shows no figure uncovered without an explicit 18+ confirmation, and none
+under 25. The library's own age policy is a different, narrower rule (no adult
+anatomy under 18, enforced inside evaluation, `docs/AGE-POLICY.md`) and stays as
+it is. What the host asks for here is a gate it controls, in front of the
+worker: **no uncovered figure is evaluated until the host allows it.** Before this
+the creator drew whatever the recipe said, and the host could only re-dress the
+figure after it had been evaluated and shown.
+
+*Use cases.* (1) A covered figure is shown, as before, with nothing asked. (2)
+Taking a garment off, reset, redo, a loaded file and a host `value` that would
+uncover ask the host first; the person sees the figure they had until the answer
+comes, and a refusal leaves it. (3) The starting figure is uncovered: nothing is
+drawn until the host allows it, but the controls work, so putting a garment on
+ends the wait. (4) The answer takes a person: it may be async, and the creator
+neither blocks the page nor races: its own controls are inert while it waits.
+(5) The host cannot be asked (no `allowUncover`): the Wardrobe does not offer
+what will be refused.
+
+*What covered means* is the host's to say, and the library supplies a default that
+needs no clothing pack knowledge beyond the manifest's kinds: a garment of kind
+`underwear` or `clothes` is cover (`wearsCover`). The kinds are the clothing
+pack's own (`GARMENT_LAYERS`); the pack ships `clothes`, `shoes` and `hat`, so shoes
+and a hat leave a figure uncovered. A figure is "covered" by a function of the
+recipe and the wardrobe, not by a flag the recipe carries: the recipe format has
+no notion of cover, and adding one would put the host's rule into every saved file.
+
+*Where the gate sits.* It is in `useEditorState`, one step after the host's veto
+and before the commit, and for a controlled `value` before the figure is adopted.
+`<Humanoid recipe>` is handed the shown figure, never a held one, so the worker
+is never asked to evaluate one: the check is a property of what reaches
+`<Humanoid>`, tested by counting the recipes the worker receives. The rule is a
+transition: ask when the proposed figure is uncovered and the figure shown is
+covered or there is none, so a person who has confirmed is not asked at every
+slider, and one who puts a garment on and takes it off is asked again.
+
+*Decisions.* (a) Hold the figure back versus draw it behind a veil: held, because
+a veil still evaluates it, which is exactly what the host asked us not to do. (b)
+A pending answer blocks the creator's own changes rather than queueing them: a
+queued change was computed from a figure the person is no longer looking at, and
+the dialog the host shows is modal anyway; a host `value` aborts the request
+instead (`signal`), because then the figure it was about is gone. (c) A sync
+answer applies at once: no pending state, no extra frame. (d) Only `true`
+allows: a policy that returns a truthy object, throws or rejects refuses, and
+the error is reported, because a failing confirmation that allowed would fail
+open. (e) Without `allowUncover` every uncovering is refused, which is the right
+default for a host that never wants one (an under-25 game build).
+
 ## Skeleton, poses and expressions (milestone 2)
 
 The body pack carries the MakeHuman default skeleton (163 bones with parents,

@@ -12,6 +12,7 @@ export * from "./bodyArt/sites.ts";
 export * from "./bodyArt/vitiligo.ts";
 export * from "./build/surfaceMesh.ts";
 export * from "./editor/controls.ts";
+export * from "./editor/cover.ts";
 export * from "./editor/framing.ts";
 export * from "./editor/gate.ts";
 export * from "./editor/history.ts";

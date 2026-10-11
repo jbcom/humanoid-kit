@@ -8,6 +8,8 @@
 import { wardrobeGroups, wearGarment, wornIn } from "../wardrobe.ts";
 import type { HumanoidEditor } from "./useHumanoidEditor.ts";
 
+const COVER_REQUIRED = "This figure has to stay covered.";
+
 export function WardrobePanel({ editor }: { editor: HumanoidEditor }) {
   const wardrobe = editor.ready?.wardrobe ?? [];
   const worn = new Set(wornIn(editor.recipe));
@@ -25,17 +27,24 @@ export function WardrobePanel({ editor }: { editor: HumanoidEditor }) {
             </summary>
             <fieldset className="hk-chips">
               <legend className="hk-visually-hidden">{group.label}</legend>
-              {group.garments.map((g) => (
-                <button
-                  key={g.id}
-                  type="button"
-                  className="hk-chip"
-                  aria-pressed={worn.has(g.id)}
-                  onClick={() => editor.update((r) => wearGarment(r, g, wardrobe))}
-                >
-                  {g.label}
-                </button>
-              ))}
+              {group.garments.map((g) => {
+                // A host that cannot be asked refuses taking this off: do not offer it.
+                const blocked = editor.blocksUncover(wearGarment(editor.recipe, g, wardrobe));
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    className="hk-chip"
+                    aria-pressed={worn.has(g.id)}
+                    disabled={blocked}
+                    title={blocked ? COVER_REQUIRED : undefined}
+                    aria-description={blocked ? COVER_REQUIRED : undefined}
+                    onClick={() => editor.update((r) => wearGarment(r, g, wardrobe))}
+                  >
+                    {g.label}
+                  </button>
+                );
+              })}
             </fieldset>
           </details>
         );

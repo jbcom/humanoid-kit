@@ -45,13 +45,21 @@ export interface ChangeInfo {
   cause: ChangeCause | "initial";
 }
 
+/**
+ * Which route brought a figure to the cover policy: a change the creator proposed, the
+ * figure it started with (`"initial"`), or one the host set as `value`.
+ */
+export type PolicyCause = ChangeCause | "initial" | "value";
+
 /** A change that was refused, as `onReject` hears of it. */
 export interface Rejection {
-  /** `"veto"`: `onBeforeChange` returned `false`. */
-  reason: "veto";
-  cause: ChangeCause;
+  /** `"veto"`: `onBeforeChange` returned `false`. `"cover"`: the cover policy refused an uncovered figure. */
+  reason: "veto" | "cover";
+  cause: PolicyCause;
   /** The figure as it was proposed, after the ranges. */
   proposed: Recipe;
+  /** The error the cover policy threw or rejected with, when that is why it refused. */
+  error?: unknown;
 }
 
 export type Judgement = { accepted: true; recipe: Recipe } | { accepted: false };
