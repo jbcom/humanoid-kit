@@ -85,6 +85,17 @@ export interface ReservoirSkinning {
   };
 }
 
+/** A built surface's canals (`AdultSurfaceTopology.canals`): each render vertex's canal reservoir or -1, and the gaps. */
+export function canalsOf(
+  mesh: SurfaceMesh,
+  skinning: ReservoirSkinning,
+): { of: Int16Array; gap: readonly number[] } {
+  const reservoirs = mesh.lattice?.reservoirs ?? [];
+  const gap = reservoirs.map((r) => r.canal?.gap ?? 0);
+  const of = Int16Array.from(skinning.owner, (s) => (s >= 0 && reservoirs[s]?.canal ? s : -1));
+  return { of, gap };
+}
+
 /** A built surface's reservoirs as `evaluatedSkin` reads them; none without a lattice. */
 export function reservoirSkinningOf(mesh: SurfaceMesh): ReservoirSkinning {
   const reservoirs = mesh.lattice?.reservoirs ?? [];

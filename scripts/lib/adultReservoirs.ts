@@ -19,7 +19,7 @@
  */
 import type { AdultReservoirSpec, AdultSurfacePatch } from "../../src/format/assetFormat.ts";
 import type { AdultDetailLattice } from "../../src/model/humanoidModel.ts";
-import { OPENING as CANAL_OPENING } from "./detail/canal.ts";
+import { ANUS, OPENING as CANAL_OPENING, type CanalForm, VAGINA } from "./detail/canal.ts";
 import { type Disc, discVertices, findDisc, findFootprint, type Vec3 } from "./detail/disc.ts";
 import { cutOutline, type MaleParts, partAxis, type SculptPart } from "./detail/sculpt.ts";
 import { smoothLoopPatch } from "./detail/smoothLoop.ts";
@@ -142,19 +142,19 @@ export function reservoirLayout(
   const spec = (
     id: keyof typeof RESERVOIR_RINGS,
     smooth: { loop: number[]; capVertices: number[] },
-    canal = false,
+    canal?: CanalForm,
   ): AdultReservoirSpec => {
     const disc = capOn(on, smooth);
     const base = { id, loop: disc.loop, cap: disc.cap, rings: RESERVOIR_RINGS[id] };
-    return canal ? { ...base, canal: { opening: CANAL_OPENING } } : base;
+    return canal ? { ...base, canal: { opening: CANAL_OPENING, gap: canal.gap } } : base;
   };
   return {
     patches,
     reservoirs: [
       spec("phallic", shaft),
       spec("labioscrotal", sac),
-      spec("vaginal", vaginal, true),
-      spec("anal", anal, true),
+      spec("vaginal", vaginal, VAGINA),
+      spec("anal", anal, ANUS),
     ],
   };
 }

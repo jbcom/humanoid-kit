@@ -7,7 +7,7 @@
  * corrective added to the renderer is added here, or the foundation measures
  * a body nobody draws.
  */
-import type { HumanoidModel } from "../model/humanoidModel.ts";
+import type { AdultSurfaceTopology, HumanoidModel } from "../model/humanoidModel.ts";
 import { skinOfEvaluation } from "../model/reservoirSkin.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { renderFold, type SurfaceFold } from "../rig/hipFold.ts";
@@ -56,6 +56,8 @@ export interface PosedBody {
   readonly heads: Float32Array;
   /** Morphed control positions (base topology), as the evaluation gives them. */
   readonly control: Float32Array;
+  /** The adult surface's canals (`AdultSurfaceTopology.canals`); null on the base surface. */
+  readonly canals: AdultSurfaceTopology["canals"] | null;
 }
 
 /** The lowest render index at each rest position: the seams' duplicates share one. */
@@ -120,6 +122,7 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
     rotations,
     heads: posedBoneHeads(bones, rotations),
     control,
+    canals: "canals" in topology ? topology.canals : null,
   };
 }
 

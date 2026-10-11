@@ -87,6 +87,7 @@ import {
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 import {
+  canalsOf,
   evaluatedFold,
   evaluatedSkin,
   type ReservoirSkinning,
@@ -281,6 +282,12 @@ export interface AdultSurfaceTopology extends SurfaceTopology {
   occlusion: Uint8Array;
   /** The coat's fields at these render vertices, as for the base body. */
   coat: CoatFields;
+  /**
+   * The canals (`AdultReservoirSpec.canal`): per render vertex, the reservoir (by its
+   * place) of the canal it is drawn from, or -1; per reservoir, its closed lumen's gap,
+   * metres (0 for an organ). The invariants count walls that close as lumen self-contact.
+   */
+  canals: { of: Int16Array; gap: readonly number[] };
 }
 
 /**
@@ -2143,6 +2150,7 @@ export class HumanoidModel {
       faceVisibility(this.assets.faceVerts, this.bodyFaces, this.mountedVisible),
       faceTriangles,
     );
+    const skinning = reservoirSkinningOf(mesh);
     this.adultBody = {
       part: part(mesh),
       edges: triangleEdges(mesh.index),
@@ -2153,8 +2161,9 @@ export class HumanoidModel {
         uvScale: Float32Array.from(mesh.renderToSurface, (s) => surface[s * 3] as number),
         occlusion: this.bodyOcclusionField(mesh),
         coat: this.coatOn(mesh),
+        canals: canalsOf(mesh, skinning),
       },
-      skinning: reservoirSkinningOf(mesh),
+      skinning,
     };
     return this.adultBody;
   }

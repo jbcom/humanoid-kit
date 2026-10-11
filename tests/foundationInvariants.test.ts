@@ -4,7 +4,12 @@
  * defect is put there on purpose.
  */
 import { describe, expect, it } from "vitest";
-import { isContact, measureInvariants, partOfBone } from "../src/foundation/invariants.ts";
+import {
+  isContact,
+  isLumenContact,
+  measureInvariants,
+  partOfBone,
+} from "../src/foundation/invariants.ts";
 import { REST_POSE } from "../src/foundation/permutations.ts";
 import { type PosedBody, posedSurface } from "../src/foundation/posed.ts";
 import { creaseMask } from "../src/foundation/suite.ts";
@@ -70,6 +75,28 @@ describe("the foundation's invariants", () => {
     expect(m.deepestParts).toMatch(/forearm\.L|head/);
     expect(isContact("forearm.L", "head")).toBe(false);
     expect(isContact("thigh.L", "shin.L")).toBe(true);
+  });
+
+  it("count a canal's walls closing on each other as lumen self-contact, inside the canal only", () => {
+    // Vertices 0..5 are canal 1 (gap 2 mm), 6..8 canal 2, 9..11 skin. Triangles: 0 the
+    // canal's own (3, 4, 5); 1 a mix of canal 1 and skin (3, 4, 9); 2 canal 2's (6, 7, 8).
+    const canals = {
+      of: Int16Array.of(1, 1, 1, 1, 1, 1, 2, 2, 2, -1, -1, -1),
+      gap: [0, 0.002, 0.003],
+    };
+    const index = Uint32Array.of(3, 4, 5, 3, 4, 9, 6, 7, 8);
+    // Its own canal's wall within the gap: contact.
+    expect(isLumenContact(canals, index, 0, 0, 0.0015)).toBe(true);
+    // Past the gap, it has crossed out of the canal: penetration.
+    expect(isLumenContact(canals, index, 0, 0, 0.0025)).toBe(false);
+    // Out through skin beside the canal, or another canal: penetration.
+    expect(isLumenContact(canals, index, 0, 1, 0.001)).toBe(false);
+    expect(isLumenContact(canals, index, 0, 2, 0.001)).toBe(false);
+    // Skin into a canal, and a surface without canals: penetration.
+    expect(isLumenContact(canals, index, 9, 0, 0.001)).toBe(false);
+    expect(isLumenContact(null, index, 0, 0, 0.001)).toBe(false);
+    // The base surface has none.
+    expect(atRest.canals).toBeNull();
   });
 
   it("find a triangle turned inside out and one crushed flat", () => {

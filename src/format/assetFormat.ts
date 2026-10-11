@@ -558,8 +558,10 @@ export interface AdultReservoirSpec {
    * A canal, drawn into the body, not an organ drawn out of it: `opening`, metres
    * along it, is how far in its opening closes into its lumen. Its vertices take
    * their root's weights over that length (`rootShares`), not over an organ's band.
+   * `gap`, metres, is its closed lumen's: its walls that close lie in contact, not
+   * in each other (the invariants' lumen self-contact).
    */
-  canal?: { opening: number };
+  canal?: { opening: number; gap: number };
 }
 
 /**
