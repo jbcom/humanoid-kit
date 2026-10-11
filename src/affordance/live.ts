@@ -29,8 +29,13 @@ import type { Recipe } from "../recipe/recipe.ts";
 import { ChannelClip, CLIP_CHANNELS } from "../render/channelClip.ts";
 import { type SkinFold, type SkinPose, skinNormalAt, skinPositionAt } from "../rig/dual.ts";
 import type { SurfaceAnchors } from "../worker/protocol.ts";
-import { type Channel, type ChannelPlace, emptyChannel, placeIn } from "./channel.ts";
-import { affordanceChannel, affordanceFrameInto, type LandmarkReader } from "./frames.ts";
+import { type Channel, type ChannelPlace, emptyChannel, openingFor, placeIn } from "./channel.ts";
+import {
+  affordanceChannel,
+  affordanceFrameInto,
+  headScale,
+  type LandmarkReader,
+} from "./frames.ts";
 import {
   type Affordance,
   affordances,
@@ -160,6 +165,12 @@ export class HumanoidAffordances {
     this.figure = figure;
     this.ups = null;
     this.version++;
+    // Another figure's head may need another opening for what its mouth holds.
+    if (
+      figure &&
+      this.list.some((a) => a.channel === "oral" && this.states.occupantRadius(a.id) > 0)
+    )
+      this.jawUnmeasured = true;
     if (!figure && this.clipped) {
       this.clipped.follow(null);
       this.clipList.length = 0;
@@ -196,12 +207,19 @@ export class HumanoidAffordances {
    */
   set(id: string, change: AffordanceChange): AffordanceState {
     const next = this.states.set(id, change);
-    if (this.byId.get(id)?.channel === "oral" && "opening" in change) {
-      this.jawVersion++;
-      for (const l of this.jawListeners) l();
-    }
+    if (this.byId.get(id)?.channel === "oral" && ("opening" in change || "occupancy" in change))
+      this.jawChanged();
     return next;
   }
+
+  /** Tells the figure the mouth's opening may have changed. */
+  private jawChanged(): void {
+    this.jawVersion++;
+    for (const l of this.jawListeners) l();
+  }
+
+  /** Whether the jaw was last read with an occupant to fit before the figure's head could be measured. */
+  private jawUnmeasured = false;
 
   /**
    * Calls `listener` whenever the mouth's opening is set, so a figure drawn only
@@ -212,13 +230,22 @@ export class HumanoidAffordances {
     return () => this.jawListeners.delete(listener);
   }
 
-  /** How open the mouth is, 0 to 1: the most any of the figure's oral apertures is. */
+  /**
+   * How open the mouth is drawn, 0 to 1: the most any of the figure's oral
+   * apertures is, each opened as set or as far as its occupant needs
+   * (`openingFor`). An occupant held before the figure's head can be measured
+   * is fitted once it can be: the figure is told then (`refreshClip`).
+   */
   jawOpening(): number {
     let open = 0;
     for (const a of this.list) {
       if (a.channel !== "oral") continue;
-      const s = this.states.get(a.id);
-      if (s.kind === "aperture") open = Math.max(open, s.opening);
+      const opening = this.states.opening(a.id);
+      const radius = this.states.occupantRadius(a.id);
+      if (radius > 0 && !this.prepare()) this.jawUnmeasured = true;
+      else if (radius > 0)
+        open = Math.max(open, openingFor("oral", opening, radius, headScale(this.read)));
+      open = Math.max(open, opening);
     }
     return open;
   }
@@ -300,7 +327,13 @@ export class HumanoidAffordances {
   channel(id: string): Channel | null {
     const a = this.affordance(id);
     if (!a.channel || !this.prepare()) return null;
-    return affordanceChannel(a, this.read, this.states.opening(id));
+    return affordanceChannel(
+      a,
+      this.read,
+      this.states.opening(id),
+      undefined,
+      this.states.occupantRadius(id),
+    );
   }
 
   /**
@@ -337,10 +370,16 @@ export class HumanoidAffordances {
   }
 
   /**
-   * Sets the clip, if there is one, to the figure's channels as drawn now. Run
-   * each frame, so it allocates nothing: each channel is written in place.
+   * Sets the clip, if there is one, to the figure's channels as drawn now, and
+   * tells the figure when an occupant held before its head could be measured
+   * can now be fitted (`jawOpening`). Run each frame, so it allocates nothing:
+   * each channel is written in place.
    */
   refreshClip(): void {
+    if (this.jawUnmeasured && this.prepare()) {
+      this.jawUnmeasured = false;
+      this.jawChanged();
+    }
     const clip = this.clipped;
     if (!clip) return;
     clip.follow(this.figure?.world ?? null);
@@ -350,7 +389,13 @@ export class HumanoidAffordances {
       for (const a of this.list) {
         if (!a.channel || list.length === CLIP_CHANNELS) continue;
         const out = this.clipChannels[list.length] as Channel;
-        const c = affordanceChannel(a, this.read, this.states.opening(a.id), out);
+        const c = affordanceChannel(
+          a,
+          this.read,
+          this.states.opening(a.id),
+          out,
+          this.states.occupantRadius(a.id),
+        );
         if (c) list.push(c);
       }
     clip.set(list);

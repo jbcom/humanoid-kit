@@ -11,6 +11,7 @@
  */
 import { Group, Matrix4, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
+import { ADULT_EAR_SPAN, CHANNELS } from "../src/affordance/channel.ts";
 import { affordanceChannels, affordanceFrames } from "../src/affordance/frames.ts";
 import { HumanoidAffordances, type LiveFigure } from "../src/affordance/live.ts";
 import { affordances, CORE_AFFORDANCES } from "../src/affordance/registry.ts";
@@ -296,5 +297,41 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
     h.set("mouth", { opening: 0.7 });
     expect(h.jawVersion).not.toBe(seen);
     expect(h.jawOpening()).toBe(0.7);
+  });
+
+  it("opens the mouth to fit what it holds, on the jaw and the channel, reporting the opening set", () => {
+    const recipe = createRecipe();
+    const h = new HumanoidAffordances();
+    h.setRecipe(recipe);
+    // A pen 10 mm across held before the figure can be measured: the fit waits for it.
+    const seen = h.jawVersion;
+    h.set("mouth", { occupancy: { depth: 0.03, radius: 0.005 } });
+    expect(h.jawVersion).not.toBe(seen);
+    expect(h.jawOpening()).toBe(0);
+    h.attach(liveFigure(recipe, REST_POSE));
+    h.setAnchors(anchors);
+    const before = h.jawVersion;
+    h.refreshClip();
+    expect(h.jawVersion, "measured, the figure is told again").not.toBe(before);
+    const ears = [h.landmark("ear-canal.L"), h.landmark("ear-canal.R")];
+    const scale = distance(ears[0]?.position ?? [], ears[1]?.position ?? []) / ADULT_EAR_SPAN;
+    const fit = 0.01 / (CHANNELS.oral.rim.up * scale);
+    expect(h.jawOpening()).toBeCloseTo(fit, 9);
+    // The channel opens as far: its rim as tall as the pen.
+    expect(2 * (h.channel("mouth")?.halfSize(0)[1] ?? 0)).toBeCloseTo(0.01, 9);
+    // What was set is what is reported.
+    expect(h.get("mouth")).toMatchObject({ opening: 0 });
+    // Opened wider than the pen needs, the mouth opens as set; emptied, it closes.
+    h.set("mouth", { opening: 0.8 });
+    expect(h.jawOpening()).toBe(0.8);
+    h.set("mouth", { opening: 0, occupancy: null });
+    expect(h.jawOpening()).toBe(0);
+    // An ear canal does not open, whatever it holds.
+    h.set("ear-canal.L", { occupancy: { depth: 0.01, radius: 0.006 } });
+    expect(h.jawOpening()).toBe(0);
+    expect(h.channel("ear-canal.L")?.halfSize(0)[1]).toBeCloseTo(
+      (CHANNELS.auditory.rim.up * scale) / 2,
+      9,
+    );
   });
 });

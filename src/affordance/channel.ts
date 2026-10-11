@@ -421,6 +421,17 @@ export function channelOf(
 }
 
 /**
+ * The opening an aperture is drawn at (docs/ARCHITECTURE.md, "Affordances: the
+ * response"): the one set, or, if larger, the one its occupant (`radius`
+ * metres) needs at the rim, at most 1, on a head `scale` times the default
+ * adult's. Only the mouth opens: any other channel's is the one set.
+ */
+export function openingFor(id: ChannelId, opening: number, radius: number, scale: number): number {
+  if (id !== "oral" || !(radius > 0)) return opening;
+  return Math.max(opening, Math.min(1, (2 * radius) / (CHANNELS.oral.rim.up * scale)));
+}
+
+/**
  * The head's frame from its landmarks: the ear canals (left, right), the crown
  * and the nose's tip, written into `out`. Across runs from the left ear canal
  * to the right, up from their midpoint toward the crown (made square to

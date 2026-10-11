@@ -393,7 +393,7 @@ function Shot() {
   const qaLight = params.get("light");
   // `?channels`, `?probe=…`, `?cut=…`, `?open=…`: the affordances' channels for review (`ChannelQa`).
   const affordances = useHumanoidAffordances();
-  const channelQa = ["channels", "probe", "cut", "open"].some((k) => params.has(k));
+  const channelQa = ["channels", "probe", "cut", "open", "hold"].some((k) => params.has(k));
   const preset: Record<
     string,
     { position: [number, number, number]; target: [number, number, number] }

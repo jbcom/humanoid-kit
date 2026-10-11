@@ -22,7 +22,7 @@ import {
 } from "../foundation/landmarks.ts";
 import type { PosedBody } from "../foundation/posed.ts";
 import type { HumanoidModel } from "../model/humanoidModel.ts";
-import { ADULT_EAR_SPAN, type Channel, channelOf, headFrameOf } from "./channel.ts";
+import { ADULT_EAR_SPAN, type Channel, channelOf, headFrameOf, openingFor } from "./channel.ts";
 import type { Affordance, FigureAffordances } from "./registry.ts";
 import type { AffordanceStates } from "./state.ts";
 
@@ -163,14 +163,16 @@ const span = (p: Vec3, q: Vec3) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q
  * An aperture's channel (`channel.ts`) on a posed figure, from its landmarks as
  * `mark` reads them: along its path in the head's frame (`headFrameOf`), sized
  * to its head (its ear canals' span) and, for the mouth, to its own mouth
- * (between its corners) and how open it is. Given `out` (`emptyChannel`), it
- * is written there and nothing is allocated.
+ * (between its corners) and how open it is: as `opening` says, or wider where
+ * its occupant (`radius` metres) needs it (`openingFor`). Given `out`
+ * (`emptyChannel`), it is written there and nothing is allocated.
  */
 export function affordanceChannel(
   a: Affordance,
   mark: LandmarkReader,
   opening: number,
   out?: Channel,
+  radius = 0,
 ): Channel | null {
   if (!a.channel) return null;
   const rim = affordanceFrameInto(a, mark, scratch.rim);
@@ -181,7 +183,17 @@ export function affordanceChannel(
   const crown = mark("crown", scratch.crown).position;
   const nose = mark("nose-tip", scratch.nose).position;
   const head = headFrameOf(l, r, crown, nose, scratch.head);
-  return channelOf(a.channel, rim, span(l, r) / ADULT_EAR_SPAN, head, opening, span(ml, mr), out);
+  const scale = span(l, r) / ADULT_EAR_SPAN;
+  const open = openingFor(a.channel, opening, radius, scale);
+  return channelOf(a.channel, rim, scale, head, open, span(ml, mr), out);
+}
+
+/** A figure's head width over the default adult's: its ear canals' span over `ADULT_EAR_SPAN`. */
+export function headScale(mark: LandmarkReader): number {
+  return (
+    span(mark("ear-canal.L", scratch.earL).position, mark("ear-canal.R", scratch.earR).position) /
+    ADULT_EAR_SPAN
+  );
 }
 
 /** `affordanceChannel`'s working frames, reused: a channel copies what it keeps of them. */
@@ -198,7 +210,8 @@ const scratch = {
 
 /**
  * Each of a figure's own apertures' channels on its posed figure's landmarks,
- * opened as `states` say (the mouth by its `opening`); or, given a model and a
+ * opened as `states` say (the mouth by its `opening`, or wider for its
+ * occupant); or, given a model and a
  * posed body (`posedSurface`), on that body's.
  */
 export function affordanceChannels(
@@ -224,10 +237,13 @@ export function affordanceChannels(
   for (const a of own) {
     if (!a.channel) continue;
     const state = states.get(a.id);
+    const aperture = state.kind === "aperture";
     out[a.id] = affordanceChannel(
       a,
       read,
-      state.kind === "aperture" ? state.opening : 0,
+      aperture ? state.opening : 0,
+      undefined,
+      aperture ? (state.occupancy?.radius ?? 0) : 0,
     ) as Channel;
   }
   return out;

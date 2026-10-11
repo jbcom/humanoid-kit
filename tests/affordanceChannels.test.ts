@@ -14,6 +14,7 @@ import {
   type ChannelId,
   channelKnots,
   channelThrough,
+  openingFor,
   placeIn,
 } from "../src/affordance/channel.ts";
 import { affordanceChannels } from "../src/affordance/frames.ts";
@@ -341,6 +342,25 @@ describe("the core channels", { timeout: 300_000 }, () => {
     expect(degrees(end.normal, head(open.marks).up)).toBeGreaterThan(150);
     expect(mouth.depth / scale / MM).toBeGreaterThan(90);
     expect(mouth.depth / scale / MM).toBeLessThan(95);
+  });
+
+  it("open the mouth to fit what it holds, and no other channel", () => {
+    // A 10 mm pen needs a 10 mm opening: on the default adult, 10 / 45.7 of the way.
+    expect(openingFor("oral", 0, 0.005, 1)).toBeCloseTo(0.01 / 0.0457, 12);
+    expect(openingFor("oral", 0.5, 0.005, 1)).toBe(0.5);
+    expect(openingFor("oral", 0, 0.05, 1)).toBe(1);
+    // A smaller head opens further for the same pen.
+    expect(openingFor("oral", 0, 0.005, 0.8)).toBeCloseTo(0.01 / (0.0457 * 0.8), 12);
+    expect(openingFor("auditory", 0, 0.005, 1)).toBe(0);
+    expect(openingFor("nasal", 0.3, 0.005, 1)).toBe(0.3);
+    // The posed body's channels read the occupancy too.
+    const recipe = createRecipe({ macros: { age: 25 } });
+    const own = affordances(recipe);
+    const states = new AffordanceStates(own);
+    states.set("mouth", { occupancy: { depth: 0.04, radius: 0.005 } });
+    const body = posedSurface(model, recipe, REST_POSE);
+    const mouth = affordanceChannels(model, body, own, states).mouth;
+    expect(2 * (mouth?.halfSize(0)[1] ?? 0)).toBeCloseTo(0.01, 9);
   });
 
   it("scale with the head: a child's are an adult's, shrunk by its head's width", () => {

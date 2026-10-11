@@ -185,7 +185,8 @@ function Cut({ of, id, normal }: { of: HumanoidAffordances; id: string; normal: 
  * (`?channels=solid`: hidden by it, for a cut view); `?probe=<id>:<length>:<radius>`
  * pushes a straight rod into an aperture, drawn with the figure's clip;
  * `?cut=<id>:nx,ny,nz` cuts the scene by a plane through an affordance's rim,
- * keeping the side its normal points to; `?open=<0..1>` opens the mouth.
+ * keeping the side its normal points to; `?open=<0..1>` opens the mouth;
+ * `?hold` tells the probed aperture it holds the probe (its occupancy).
  */
 export function ChannelQa({ of, params }: { of: HumanoidAffordances; params: URLSearchParams }) {
   const lifted = useLifted(of);
@@ -199,11 +200,21 @@ export function ChannelQa({ of, params }: { of: HumanoidAffordances; params: URL
       : null;
   }, [cutNormal]);
   const open = Number(params.get("open") ?? Number.NaN);
-  // The mouth opens once the figure has one (its affordances follow its recipe).
+  const hold = params.has("hold");
+  // The mouth opens once the figure has one (its affordances follow its recipe), and with
+  // `?hold` the probed aperture is told it holds the probe.
   useFrame(() => {
-    if (!Number.isFinite(open) || !of.has("mouth")) return;
-    const state = of.get("mouth");
-    if (state.kind === "aperture" && state.opening !== open) of.set("mouth", { opening: open });
+    if (Number.isFinite(open) && of.has("mouth")) {
+      const state = of.get("mouth");
+      if (state.kind === "aperture" && state.opening !== open) of.set("mouth", { opening: open });
+    }
+    const id = probe?.[0];
+    if (!hold || !id || !of.has(id)) return;
+    const state = of.get(id);
+    if (state.kind === "aperture" && !state.occupancy)
+      of.set(id, {
+        occupancy: { depth: Number(probe[1] ?? 0.03), radius: Number(probe[2] ?? 0.002) },
+      });
   });
   const ids = ["mouth", "nostril.L", "nostril.R", "ear-canal.L", "ear-canal.R"];
   return (
