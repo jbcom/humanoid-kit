@@ -47,6 +47,7 @@ import type { AdultDetailLattice } from "../../../src/model/humanoidModel.ts";
 import { MH_UNIT } from "../compileAsset.ts";
 import { bindToBody } from "../hairCards/bind.ts";
 import type { Vec3 } from "./disc.ts";
+import { regionIndex, regionNeighbours } from "./region.ts";
 import {
   boundaryLoop,
   boundSource,
@@ -263,11 +264,7 @@ export interface VulvaTarget {
  */
 export function vulvaTarget(lattice: AdultDetailLattice, sheet: SculptPart): VulvaTarget {
   const n = lattice.regionCount;
-  const regionOf = new Map<number, number>();
-  lattice.regionIds.forEach((id, i) => {
-    regionOf.set(id, i);
-  });
-  const nb = regionNeighbours(lattice, regionOf);
+  const nb = regionNeighbours(lattice, regionIndex(lattice));
   const seen = seenFrom(sheet);
   // What each vertex's sight line meets, and whether that is inside the sheet (off the
   // triangles at its edge).
@@ -423,27 +420,6 @@ function seenFrom(part: SculptPart): (p: Vec3, n: Vec3) => { point: Vec3; inside
       inside: [0, 1, 2].every((c) => !onEdge.has(T[face * 3 + c] as number)),
     };
   };
-}
-
-/** Each region vertex's neighbours along the lattice's polygons' edges, by region index. */
-function regionNeighbours(
-  lattice: AdultDetailLattice,
-  regionOf: ReadonlyMap<number, number>,
-): number[][] {
-  const sets = Array.from({ length: lattice.regionCount }, () => new Set<number>());
-  const { start, vertices } = lattice.polygons;
-  for (let p = 0; p + 1 < start.length; p++) {
-    const s = start[p] as number;
-    const e = start[p + 1] as number;
-    for (let c = s; c < e; c++) {
-      const a = regionOf.get(vertices[c] as number);
-      const b = regionOf.get(vertices[c + 1 < e ? c + 1 : s] as number);
-      if (a === undefined || b === undefined) continue;
-      (sets[a] as Set<number>).add(b);
-      (sets[b] as Set<number>).add(a);
-    }
-  }
-  return sets.map((s) => [...s]);
 }
 
 /** Each vertex's neighbours along the triangles' edges. */
