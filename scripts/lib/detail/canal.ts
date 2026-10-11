@@ -67,8 +67,12 @@ export const ANUS: CanalForm = {
   lean: 1,
 };
 
-/** Over how far along the canal its opening's outline turns into its closed section, metres. */
-const OPENING = 0.012;
+/**
+ * Over how far along the canal its opening's outline turns into its closed section,
+ * metres. The canal's walls take their root's weights over the same length
+ * (`AdultReservoirSpec.canal`).
+ */
+export const OPENING = 0.012;
 
 /** Linear interpolation of evenly spaced values at share `t` (0..1). */
 function along(values: readonly number[], t: number): number {

@@ -554,6 +554,12 @@ export interface AdultReservoirSpec {
    * over all of it, and the layer's coordinate running from the loop (0) to the tip (1).
    */
   layer?: string;
+  /**
+   * A canal, drawn into the body, not an organ drawn out of it: `opening`, metres
+   * along it, is how far in its opening closes into its lumen. Its vertices take
+   * their root's weights over that length (`rootShares`), not over an organ's band.
+   */
+  canal?: { opening: number };
 }
 
 /**
