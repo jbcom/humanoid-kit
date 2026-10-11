@@ -402,4 +402,21 @@ describe("which figures grow a coat, from their recipe", () => {
     expect(coatPaintFor(beard)).not.toBeNull();
     expect(coatPaintFor(chest)).not.toBeNull();
   });
+
+  it("uses explicit coverage for a gender-independent coat and keeps follicle spacing separate", () => {
+    const baseline = createRecipe({
+      macros: { age: 35, gender: 0 },
+      bodyHair: { coverage: { chest: 0.6 } },
+    });
+    const dense = createRecipe({
+      macros: { age: 35, gender: 0 },
+      bodyHair: { coverage: { chest: 0.6 }, follicleDensity: { chest: 2 } },
+    });
+    const baselinePaint = coatPaintFor(baseline);
+    const densePaint = coatPaintFor(dense);
+    expect(baselinePaint).not.toBeNull();
+    expect(densePaint).not.toBeNull();
+    expect(densePaint?.[0]).toBeCloseTo(baselinePaint?.[0] ?? 0);
+    expect(densePaint?.[2]).toBeCloseTo((baselinePaint?.[2] ?? 0) * 2);
+  });
 });

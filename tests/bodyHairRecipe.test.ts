@@ -22,17 +22,32 @@ describe("the recipe's optional body hair", () => {
 
   it("keeps only the fields given and copies them", () => {
     const density = { chest: 0.5 };
-    const r = createRecipe({ bodyHair: { density } });
-    expect(r.bodyHair).toEqual({ density: { chest: 0.5 } });
+    const coverage = { back: 0.4 };
+    const follicleDensity = { back: 1.5 };
+    const r = createRecipe({ bodyHair: { density, coverage, follicleDensity } });
+    expect(r.bodyHair).toEqual({
+      density: { chest: 0.5 },
+      coverage: { back: 0.4 },
+      follicleDensity: { back: 1.5 },
+    });
     density.chest = 2;
+    coverage.back = 0.8;
+    follicleDensity.back = 0.25;
     expect(r.bodyHair?.density?.chest).toBe(0.5);
+    expect(r.bodyHair?.coverage?.back).toBe(0.4);
+    expect(r.bodyHair?.follicleDensity?.back).toBe(1.5);
     expect(createRecipe({ bodyHair: { beard: "goatee" } }).bodyHair).toEqual({ beard: "goatee" });
   });
 
   it("round-trips through JSON and validates", () => {
     const r = createRecipe({
       macros: { age: 30 },
-      bodyHair: { density: { legs: 0, face: 1.5, pubic: 1 }, beard: "full" },
+      bodyHair: {
+        density: { legs: 0, face: 1.5 },
+        coverage: { pubic: 0.8 },
+        follicleDensity: { pubic: 1.25 },
+        beard: "full",
+      },
     });
     expect(JSON.parse(JSON.stringify(r))).toEqual(r);
     expect(recipeProblems(r)).toEqual([]);
@@ -55,6 +70,26 @@ describe("the recipe's optional body hair", () => {
     expect(recipeProblems({ ...createRecipe(), bodyHair: 1 })).toEqual([
       "bodyHair must be an object",
     ]);
+  });
+
+  it("accepts independent coverage and follicle-density controls, while rejecting ambiguous coverage semantics", () => {
+    expect(
+      recipeProblems({
+        ...createRecipe(),
+        bodyHair: {
+          density: { chest: 1 },
+          coverage: { chest: 0.6, elbows: 0.5 },
+          follicleDensity: { chest: 0.2, elbows: 3 },
+        },
+      }).sort(),
+    ).toEqual(
+      [
+        "bodyHair.chest cannot set both density and coverage",
+        "bodyHair.coverage.elbows is not a body hair group",
+        "bodyHair.follicleDensity.chest must be a number in [0.25, 2]",
+        "bodyHair.follicleDensity.elbows is not a body hair group",
+      ].sort(),
+    );
   });
 
   it("does not change what the body evaluates to", () => {

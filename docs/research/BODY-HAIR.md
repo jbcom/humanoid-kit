@@ -112,7 +112,7 @@ Otberg et al. (J Invest Dermatol 122:14, 2004), as quoted by McPhetres et al.
 32 (upper arm), with the forehead far higher. The strand layers place one root
 per follicle and draw a strand from a share of them equal to the terminal
 coverage. The figures per region beyond those two ends could not be read from
-the paper (not retrieved), so the kit's (`BODY_HAIR_DENSITY`: chest and
+the paper (not retrieved), so the kit's (`BODY_HAIR_FOLLICLE_DENSITY`: chest and
 abdomen 22, back 26, buttocks 20, arms 25, legs 16) are **choices** on that
 range, and the beard's 60, the armpit's 60 and the pubis's 40 are **choices**
 above it, for the denser, coarser hair there.
