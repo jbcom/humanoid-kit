@@ -70,15 +70,16 @@ export function RegionPanel({
         <div className="hk-group-body">
           {REGIONAL_MACROS.map((k) => {
             const own = isOverridden(recipe, region, k);
+            const { min, max } = editor.macroRange(k);
             return (
               <SliderRow
                 key={`${region}/${k}`}
                 label={REGIONAL_MACRO_LABELS[k]}
                 value={regionalValue(recipe, region, k)}
-                min={0}
-                max={1}
+                min={min}
+                max={max}
                 step={0.005}
-                neutral={recipe.macros[k]}
+                neutral={Math.min(max, Math.max(min, recipe.macros[k]))}
                 changed={own}
                 format={(v) => (own ? pct(v) : `${pct(v)} · whole body`)}
                 onChange={(v, g) => update((r) => withRegionalValue(r, region, k, v), g)}

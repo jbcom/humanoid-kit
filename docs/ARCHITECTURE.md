@@ -742,6 +742,83 @@ attachment render vertex the feature of the first base vertex it is bound to
 `client.pickMap()`; a tap, as opposed to an orbit drag, on a figure rendered by
 `<Humanoid onPick>` reports the render vertex it hit.
 
+### Hosting the creator (design, 2026-10-11)
+
+The creator was written as the library's demo and was uncontrolled: it owned the
+figure, told the host after the fact, and had no way to say no. Its first
+in-house consumer, Anyself, embeds it under rules of its own (an age floor of 25,
+ranges for the macros, controls it does not offer, no uncovered figure without an
+explicit 18+ confirmation, its own eye pack, a themed stage) and met the limit
+at once: to refuse a change it remounted the creator with the previous recipe, so
+the figure it had refused existed, briefly, inside the creator, and was drawn.
+Four issues came out of that (jbcom/humanoid-kit #16 to #19). This section is the
+design they share; the cover policy, the eye picker and the stage's colour are
+described as they land below.
+
+**Use cases**, the ones the design is held to:
+
+1. *Floor.* A player drags age below 25, taps Random, resets, undoes into an
+   older save or loads a file of a 19-year-old. None is drawn, none reaches the
+   host's state, and the slider shows only 25 to 90.
+2. *Narrowed macros.* The host limits the breast macros to a band; a regional
+   override of the same macro is limited by the same band.
+3. *Fewer controls.* A host leaves out a slider, a task (a tab and every slider
+   in it, search included) or a panel it has no use for.
+4. *Own the state.* The host keeps the figure in its store (`value` and
+   `onChange`), as it does for every input, and may refuse or amend a change by
+   what it puts back in `value`.
+5. *A rule that is code.* "Nobody under 25 from a file, whatever the sliders say"
+   is not a range: a synchronous `onBeforeChange` sees the proposed figure and the
+   cause, and returns the figure to take or `false`.
+6. *Why.* The host learns that something was refused (`onReject`) so it can say so.
+
+**Decision: one gate in front of the state, not a veto after it.** The options
+were (a) an `onChange` that returns the figure to keep, the way the issue first
+put it; (b) a controlled `value` alone, the host refusing by not updating it; (c)
+a gate in the editor state that every proposed figure passes before it becomes
+the figure. (a) breaks the convention that `onChange` is a notification, and it
+still draws the proposal if the hook runs in an effect. (b) alone cannot give the
+creator's own controls, random and reset the same limits without the host
+rewriting them, and gives it no cause to tell a random figure from a slider.
+(c) with (b) on top keeps both: the gate is the one place limits live, in both
+modes, and a controlled host still decides what `value` is. The gate is a plain
+function of the proposed recipe (`src/editor/limits.ts`, `src/editor/gate.ts`),
+so Node tests it; `useEditorState` applies it to every route that changes the
+figure (`update`, `setSlider`, `undo`, `redo`, `randomize`, `resetAll`, `load`),
+and no route reaches the history or `onChange` without it.
+
+- *Order.* Limits first, so the host's hook sees a figure already inside the
+  ranges and only has to decide what the ranges cannot say; then the hook; then
+  the commit. The hook's answer is not clamped again: it is the host's.
+- *Clamping a recipe.* `limitRecipe` clamps each limited macro (age through
+  `withAge`, which keeps the age policy's removal of adult-only values), each
+  regional override of a limited macro, and each limited modifier; a modifier
+  that clamps to 0 is dropped as everywhere else. It returns the same recipe when
+  nothing moved, which lets an unchanged figure stop at the gate. Ranges on the
+  three ethnic macros are refused: they sum to one, so clamping one moves the
+  others and no range says what is wanted.
+- *Hiding is not locking.* `visibleTasks` filters the taxonomy once, in the editor
+  state, so the tabs, the search and the pick map's `onPick` all see the same
+  smaller creator. A hidden slider keeps its value.
+- *Controlled.* The creator's state keeps the history (undo needs it) and the host
+  keeps the figure. A change that passes the gate is reported through `onChange`
+  and, with `value`, adopted when `value` comes back equal to it; `value` is
+  compared by content, because a host that round-trips the recipe through a store
+  or `structuredClone` returns an equal copy, not the object it was given. A
+  `value` that is neither the figure nor the figure's undo or redo neighbour
+  replaces it as a new step. Undo and redo are applied by moving along the history
+  when the echoed `value` is the history's neighbour, never by reasoning about
+  what changed.
+- *The host's value is not vetoed.* `value` is the host speaking; the gate is for
+  the creator's own proposals. A host that wants its own rules applied to its own
+  values applies them itself.
+
+Not done, and why: a `lock` for hidden sliders (a range of one value is the same
+and already exists), per-region ranges (the macro's range covers the regions; a
+host that wants a region different does it in `onBeforeChange`), and an async
+`onBeforeChange` (the next section is the one place the host's answer may take a
+person, and it is asked before the figure is drawn, not instead of the figure).
+
 ## Skeleton, poses and expressions (milestone 2)
 
 The body pack carries the MakeHuman default skeleton (163 bones with parents,

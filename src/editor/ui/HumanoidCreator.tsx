@@ -30,6 +30,8 @@ import {
 import type { Recipe } from "../../recipe/recipe.ts";
 import type { PickMap } from "../../worker/client.ts";
 import { type FrameRequest, frameRequest } from "../framing.ts";
+import type { BeforeChange, ChangeInfo, Rejection } from "../gate.ts";
+import type { ControlLimits } from "../limits.ts";
 import { AppearancePanel } from "./AppearancePanel.tsx";
 import { CameraRig } from "./CameraRig.tsx";
 import { scrollBehavior } from "./motion.ts";
@@ -40,9 +42,31 @@ import { type HumanoidEditor, useHumanoidEditor } from "./useHumanoidEditor.ts";
 import { WardrobePanel } from "./WardrobePanel.tsx";
 
 export interface HumanoidCreatorProps {
+  /**
+   * The figure, when the host owns it (as with any controlled input): the creator
+   * shows `value`, reports each change through `onChange` and changes the figure
+   * when `value` does. Compared by content; the host's own value is never clamped
+   * or vetoed.
+   */
+  value?: Recipe;
+  /** The figure to start from when uncontrolled; ignored with `value`. */
   initialRecipe?: Recipe;
-  /** Called with every new recipe (including undo, redo and loads). */
-  onChange?: (recipe: Recipe) => void;
+  /**
+   * Called with every new recipe (including undo, redo and loads), and the cause.
+   * Uncontrolled that includes the starting figure; controlled, only what the
+   * creator proposed and its gate accepted.
+   */
+  onChange?: (recipe: Recipe, change: ChangeInfo) => void;
+  /**
+   * A synchronous veto on a figure the creator proposes (a slider, random, reset, undo,
+   * redo, a load), after `controls.ranges`: returns the recipe to accept, clamped or as
+   * proposed, or `false`. A refused figure is never drawn, held or reported.
+   */
+  onBeforeChange?: BeforeChange;
+  /** Ranges for sliders, and sliders, tasks and panels left out. */
+  controls?: ControlLimits;
+  /** Called when a change was refused. */
+  onReject?: (rejection: Rejection) => void;
   /** Heading shown above the controls. */
   title?: string;
   className?: string;
@@ -159,12 +183,22 @@ function Toolbar({
 }
 
 function CreatorBody({
+  value,
   initialRecipe,
   onChange,
+  onBeforeChange,
+  controls,
+  onReject,
   title = "Create",
   children,
 }: HumanoidCreatorProps) {
-  const editor = useHumanoidEditor(initialRecipe);
+  const editor = useHumanoidEditor(initialRecipe, {
+    ...(value && { value }),
+    ...(onChange && { onChange }),
+    ...(onBeforeChange && { onBeforeChange }),
+    ...(controls && { controls }),
+    ...(onReject && { onReject }),
+  });
   const client = useHumanoidClient();
   const { ready, recipe, tasks } = editor;
   const [tab, setTab] = useState<string | null>(null);
@@ -178,22 +212,22 @@ function CreatorBody({
   const positions = useRef<Float32Array | null>(null);
   const [hasFigure, setHasFigure] = useState(false);
   const tabsId = useId();
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
 
-  useEffect(() => {
-    onChangeRef.current?.(recipe);
-  }, [recipe]);
-
-  const activeTab = tab ?? tasks[0]?.id ?? APPEARANCE_TAB;
-  const task = tasks.find((t) => t.id === activeTab) ?? null;
   const tabs = [
     ...tasks.map((t) => ({ id: t.id, label: t.label })),
-    { id: REGIONS_TAB, label: "Regions" },
-    { id: APPEARANCE_TAB, label: ready?.hair ? "Skin, eyes & hair" : "Skin & eyes" },
+    ...(editor.panels.has("regions") ? [{ id: REGIONS_TAB, label: "Regions" }] : []),
+    ...(editor.panels.has("appearance")
+      ? [{ id: APPEARANCE_TAB, label: ready?.hair ? "Skin, eyes & hair" : "Skin & eyes" }]
+      : []),
     // Only with a clothing pack: without one there is nothing to wear.
-    ...(ready?.wardrobe.length ? [{ id: WARDROBE_TAB, label: "Wardrobe" }] : []),
+    ...(editor.panels.has("wardrobe") && ready?.wardrobe.length
+      ? [{ id: WARDROBE_TAB, label: "Wardrobe" }]
+      : []),
   ];
+  // The tab asked for, unless the host hides it; with none left to show, nothing is selected.
+  const wanted = tab ?? tasks[0]?.id ?? APPEARANCE_TAB;
+  const activeTab = tabs.some((t) => t.id === wanted) ? wanted : (tabs[0]?.id ?? "");
+  const task = tasks.find((t) => t.id === activeTab) ?? null;
   // Task ids contain spaces, so element ids use the tab's position.
   const tabElementId = (id: string) => `${tabsId}-tab-${tabs.findIndex((t) => t.id === id)}`;
   // The selected tab is always on screen in the sideways-scrolling strip,
@@ -370,6 +404,8 @@ function CreatorBody({
           >
             {!ready ? (
               <p className="hk-empty">Loading controls…</p>
+            ) : !activeTab ? (
+              <p className="hk-empty">There are no controls to show.</p>
             ) : activeTab === REGIONS_TAB ? (
               <RegionPanel editor={editor} onFocus={reframe} />
             ) : activeTab === APPEARANCE_TAB ? (

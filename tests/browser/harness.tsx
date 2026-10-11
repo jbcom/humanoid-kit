@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import adultManifest from "../../packs/adult-anatomy/data/manifest.json";
 import bodyManifest from "../../packs/body/data/manifest.json";
 import clothingManifest from "../../packs/clothing/data/manifest.json";
-import type { HumanoidEditor } from "../../src/editor/ui/useHumanoidEditor.ts";
+import type { EditorOptions, HumanoidEditor } from "../../src/editor/ui/useHumanoidEditor.ts";
 import { useEditorState } from "../../src/editor/ui/useHumanoidEditor.ts";
 import { wardrobeOf } from "../../src/editor/wardrobe.ts";
 import {
@@ -50,15 +50,17 @@ export function readyInfo(
 export function EditorHarness({
   ready,
   initial,
+  options,
   children,
   onEditor,
 }: {
-  ready: ReadyInfo;
+  ready: ReadyInfo | null;
   initial?: Recipe;
+  options?: EditorOptions;
   children: (editor: HumanoidEditor) => ReactNode;
   onEditor?: (editor: HumanoidEditor) => void;
 }) {
-  const editor = useEditorState(ready, initial);
+  const editor = useEditorState(ready, initial, options);
   onEditor?.(editor);
   return <>{children(editor)}</>;
 }

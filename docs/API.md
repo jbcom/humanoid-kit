@@ -1400,8 +1400,12 @@ and camera.
 
 | Prop | Meaning |
 | --- | --- |
-| `initialRecipe?` | The figure to start from; defaults to `createRecipe()` |
-| `onChange?` | Called with every new recipe, including undo, redo and loads |
+| `value?` | The figure, when the host owns it (controlled); see "Hosting the creator" |
+| `initialRecipe?` | The figure to start from when uncontrolled; defaults to `createRecipe()`. Ignored when `value` is set |
+| `onChange?(recipe, change)` | Called with every new recipe, including undo, redo and loads; `change.cause` says which |
+| `onBeforeChange?(proposed, context)` | Synchronous veto: returns the recipe to accept (clamped or as proposed) or `false` |
+| `controls?` | `ControlLimits`: slider ranges, and sliders, tasks and panels to hide |
+| `onReject?(rejection)` | Called when a change was refused (`rejection.reason`, `cause` and the `proposed` recipe) |
 | `title?` | Heading shown above the controls |
 | `className?` | Added to the root element |
 | `children?` | Extra scene content rendered beside the figure |
@@ -1429,18 +1433,92 @@ and camera.
 - On narrow screens the controls become a bottom sheet over the figure.
 - Styles are scoped under `.hk-creator` and themed by `--hk-*` CSS variables.
 
-### `useHumanoidEditor(initial?): HumanoidEditor`
+### Hosting the creator
+
+A game that embeds the creator has rules of its own: an age floor, ranges for
+the macros, controls it does not offer. The creator takes them as props, so an
+out-of-policy figure is never drawn and never reaches the host's state, rather
+than being drawn and undone by remounting the creator.
+
+Every figure the creator itself proposes (a slider, a random figure, reset,
+undo, redo, a loaded file) goes through the same steps, in this order, before
+anything is drawn or reported:
+
+1. `controls.ranges` clamps the proposed figure's sliders.
+2. `onBeforeChange(proposed, { cause, current })` runs. It is synchronous. It
+   returns the recipe to accept (`proposed` itself, or a clamped copy) or
+   `false` to refuse; anything else that is not a valid recipe
+   (`recipeProblems`) throws a `TypeError`. A recipe equal to the current figure
+   changes nothing.
+3. The accepted figure replaces the current one: in the creator's own state when
+   it is uncontrolled, or through `onChange` when it is controlled.
+
+A refusal leaves the figure as it was and calls `onReject`. `cause` is one of
+`"edit"` (a control), `"undo"`, `"redo"`, `"randomize"`, `"reset"` or `"load"`;
+a veto that only wants random figures older than 25 reads it. A refused load
+reports why in the creator's own message (`Not allowed here`).
+
+```tsx
+const FLOOR = 25;
+<HumanoidCreator
+  controls={{
+    ranges: { age: { min: FLOOR }, breastSize: { min: 0.2, max: 0.8 } },
+    hide: ["head/head-age-decr|incr"],
+    hideTasks: ["Measure"],
+    hidePanels: ["regions"],
+  }}
+  onBeforeChange={(proposed, { cause }) =>
+    cause === "load" && proposed.macros.age < FLOOR ? false : proposed
+  }
+/>;
+```
+
+**Controls** (`ControlLimits`, all optional):
+
+- `ranges`: slider id to `{ min?, max? }`. A slider id is a macro (`age`,
+  `gender`, `muscle`, `weight`, `height`, `proportions`, `breastSize`,
+  `breastFirmness`) or a shape modifier id. The slider shows only the range, the
+  change that would leave it is clamped, and so is every other way a value can
+  arrive (random, load, undo, a regional override of that macro). `min` equal to
+  `max` pins the value. Age is clamped through `withAge`, so moving it below 18
+  still removes the adult-only values. A range outside the slider's own, one
+  with `min` above `max` or not finite, and a range on one of the three
+  ethnic macros (they are normalised together; hide them or pin all three with
+  `onBeforeChange`) throws a `RangeError`.
+- `hide`: slider ids left out of the tabs and the search.
+- `hideTasks`: tasks, by id or by the label on the tab (`Main`, `Gender`, `Face`,
+  ...), left out, tab and sliders.
+- `hidePanels`: `"regions"`, `"appearance"` or `"wardrobe"`.
+
+Hiding is not locking: a hidden slider keeps its value and a random figure or a
+loaded file may still set it. Pin it with a range, or veto it.
+
+**Controlled use.** With `value` the host owns the figure, as with any React
+input: the creator draws `value`, a change it proposes goes to `onChange`, and
+the figure changes when `value` does. A host that ignores the change leaves the
+figure as it was. `value` is the host's own: it is neither clamped nor vetoed,
+and a `value` that differs from the figure replaces it as an undoable step. A
+host that stores a copy of the recipe is fine: recipes are compared by content,
+not identity, so undo and redo still work. Uncontrolled, `onChange` also reports
+the starting figure when the creator mounts; controlled, it reports only
+what the creator proposed.
+
+### `useHumanoidEditor(initial?, options?): HumanoidEditor`
 
 The creator's state for the provided client, for building your own editor UI.
-`useEditorState(ready, initial?)` is the same over any `ReadyInfo`, without a
-worker.
+`useEditorState(ready, initial?, options?)` is the same over any `ReadyInfo`,
+without a worker. `options` is `EditorOptions`: `value`, `onChange`,
+`onBeforeChange`, `controls` and `onReject`, as on the creator.
 
 ```ts
 interface HumanoidEditor {
   ready: ReadyInfo | null;  // null while the packs load
   recipe: Recipe;
-  tasks: SliderTask[];      // the slider taxonomy
+  tasks: SliderTask[];      // the slider taxonomy, less what `controls` hides
   modifiers: ModifierTable; // id -> ShapeModifierEntry
+  range(entry: SliderEntry): SliderRange;      // the slider's range, narrowed by `controls.ranges`
+  macroRange(key: RegionalMacro): { min: number; max: number }; // the same for a regional override
+  panels: ReadonlySet<CreatorPanel>;           // the panels `controls` leaves in
   canUndo: boolean;
   canRedo: boolean;
   setSlider(entry: SliderEntry, value: number, gesture?: string): void;
@@ -1453,6 +1531,13 @@ interface HumanoidEditor {
   load(value: unknown): string[]; // problems that stopped it; [] once loaded
 }
 ```
+
+`update`, `setSlider`, `undo`, `redo`, `randomize`, `resetAll` and `load` all
+propose a figure and go through the steps in "Hosting the creator". `load`
+returns `Not allowed here` as its problem when `onBeforeChange` refuses the
+loaded figure. The pure parts are exported too (`humanoid-kit`):
+`limitRecipe(recipe, controls, modifiers)`, `limitedRange`, `visibleTasks`,
+`assertControls`, `sameRecipe` and `beforeChange`.
 
 Changes that share a `gesture` key form one undo step. `randomize` is
 deterministic for a seed and never sets adult-only modifiers unless

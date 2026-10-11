@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef } from "react";
 import type { SliderEntry, SliderGroup, SliderTask } from "../../format/assetFormat.ts";
-import { formatSliderValue, sliderAvailability, sliderRange, sliderValue } from "../controls.ts";
+import { formatSliderValue, sliderAvailability, sliderValue } from "../controls.ts";
 import type { FrameRequest } from "../framing.ts";
 import { frameRequest } from "../framing.ts";
 import { scrollBehavior } from "./motion.ts";
@@ -35,7 +35,7 @@ function ShapeSlider({
   task: SliderTask;
   onFocus: (frame: FrameRequest) => void;
 }) {
-  const range = sliderRange(entry, editor.modifiers);
+  const range = editor.range(entry);
   const availability = sliderAvailability(editor.recipe, entry, editor.modifiers);
   return (
     <SliderRow
