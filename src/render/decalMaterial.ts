@@ -35,6 +35,7 @@ import {
   type WebGLProgramParametersWithUniforms,
 } from "three";
 import type { Rgb } from "../surface/skinTone.ts";
+import { patchShadowFilter, SHADOW_FILTER_KEY } from "./shadowFilter.ts";
 
 /** Texels below this alpha (after the opacity) are dropped. */
 export const DECAL_ALPHA_CUTOFF = 0.01;
@@ -104,9 +105,10 @@ export class DecalMaterial extends MeshPhysicalMaterial {
 	}
 	#endif`,
     );
+    patchShadowFilter(shader);
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-decal-3";
+    return `humanoid-kit-decal-3|${SHADOW_FILTER_KEY}`;
   }
 }

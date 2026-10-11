@@ -1367,6 +1367,18 @@ the canvas settings it was measured with: `STUDIO_TONE_MAPPING`
 colour (`null` leaves the canvas background alone); `intensity` scales every
 light together. It restores the scene environment it replaced on unmount.
 
+The key light's shadow is a fitted map read through a tent filter
+(ARCHITECTURE.md, "The key light's shadow"). The filter belongs to the kit's own
+materials: the stage changes no global of three's, and your own lights and
+materials are drawn exactly as three draws them. A material of yours that should
+agree with the figures' shadows (a prop, a floor, an accessory) opts in with
+`applyShadowFilter(material)`, from `humanoid-kit/react`. It keeps the material's
+own `onBeforeCompile` and `customProgramCacheKey`, is idempotent and returns the
+material. A material with its own `onBeforeCompile` can call
+`patchShadowFilter(shader)` there instead, and add `SHADOW_FILTER_KEY` to its
+program key. A material that has the filter reads every directional and spot
+light's shadow through the tent at that light's `shadow.radius` (1 to 16).
+
 The contact shadow under the figures follows presence. Inside a
 `PresenceProvider` it is one ground field built from every published figure's
 footprint (`groundOcclusion`), drawn by a single shader that takes the

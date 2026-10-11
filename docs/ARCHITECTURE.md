@@ -2524,6 +2524,152 @@ pixels with `sampleGroundOcclusion`; the Playwright spec `e2e/presence.spec.ts`
 does the same on the playground's `?scene=walk` (two figures walking, parting
 and overlapping), measuring the canvas against the model.
 
+## The key light's shadow (2026-10-10)
+
+The stage's key light is the only light that casts, and its shadow map falls on the
+body itself: a thigh beside the groin, the back of a knee, an arm across a chest.
+It was a variance map (`VSMShadowMap`, a 2048² map over a fixed 2.8 m box,
+blurred 28 texels), and where one part shadowed another at a grazing angle it drew
+hard, stair-stepped light and dark wedges that `?noshadow` removed. Two things
+broke there. three stores a variance map's moments at half precision, a step of
+about 2 mm in depth over the light's 8 m range, and decides by Chebyshev's bound,
+which fails exactly where occluder and receiver nearly touch, at every crease. And
+a shadow map knows an outline only to the texel, so an edge that runs nearly along
+the map's rows steps a whole texel every so often; on skin the light grazes, the
+step is stretched by the angle.
+
+**Use cases.** One figure close up in the creator (texels stretched across a
+crease fill the frame); several figures in a presence scene (the map must cover
+all of them, wherever they walk); a figure on the ground (its contact shadow is
+the pooled ground field, `GroundContactMaterial`, not this map, and must not lift
+off the feet); a phone (a shaded pixel's reads and the map's size are the cost).
+
+**Options weighed.** A variance map at full precision is not something three
+offers (its moments target is fixed), and every prefiltered map (variance,
+exponential, moments) leaks or darkens where occluder and receiver nearly touch.
+three's own percentage-closer filter reads five comparisons on a noise-turned disc:
+grain at any useful radius. PCSS (a blocker search, then a filter sized by it)
+hardens contact shadows, which at a crease is the hard edge being removed, and
+doubles the reads; the stage's light is a softbox, whose penumbra over the
+centimetres a body shadows itself across is close to constant. Fitting the
+frustum alone shrinks the texel but leaves an unfiltered edge; a bigger map alone
+does the same at more cost.
+
+**Decision.** three's percentage-closer map (`STUDIO_SHADOWS = "percentage"`), read
+through a tent filter that the kit's own materials carry in their shaders
+(`render/shadowFilter.ts`), with the penumbra set in metres and the map fitted to the
+casters every frame (`render/studioShadow.ts`):
+
+- *The filter* is a tent `shadow.radius` texels to each side, read as radius²
+  hardware bilinear comparisons, each placed where its two texels' tent weights
+  split, so the sum is the exact convolution: no noise, no banding, one edge
+  profile everywhere. It is scoped to what the kit owns (see "Scope" below).
+  A material that has it reads every directional and spot light's shadow through
+  it at that light's `shadow.radius`, and a light at three's default radius of 1
+  gets one hardware comparison.
+- *The penumbra* is 16 mm (10 % to 90 %, on skin facing the light: a few pixels at
+  a body framing, as before), so the texel is the penumbra over the tent's edge
+  width (1.1 radius): 1.2 mm at the stage's radius of 12.
+- *The fit* (`keyShadowFitter`, in the stage's `useFrame`) bounds every visible
+  caster in the light's view (each mesh's box, and a skinned mesh's bones with
+  25 cm of reach, so a limb an animation swings past its last-computed bounds is
+  still in the map), snaps the window to the texel's grid (a figure that moves does
+  not make its shadow swim) and sizes the map to the window in steps of 128
+  texels, kept while it fits (no reallocation as a figure drifts). One standing
+  figure takes about 1400 × 1800 texels at radius 12 (about a ninth as many at 4); past `shadowMapSize` (2048) the texel, and
+  the penumbra with it, coarsens by eighths of an octave instead, so a crowd gets a
+  softer shadow rather than a bigger map. With nothing casting, the window is the
+  old 2.8 m box about the origin.
+- *Bias.* Depth is compared against the casters' back faces (three's PCF
+  default), which keeps a lit surface off its own depth; a normal offset of one
+  texel (scaled with the texel, never a flat bias) covers the terminator; there is
+  no constant depth bias. The pooled contact shadow on the ground is separate and
+  unchanged.
+- *The radius* is the quality-for-cost knob (`<StudioStage shadowFilterRadius>`).
+  The tent cannot erase the map's staircase, only spread each step along the edge,
+  so what is left shrinks as the radius grows. 12 is the stage's: the narrowest
+  that keeps it under the gate. 4 is the phone setting (16 reads a pixel, a map a
+  third the size on each side).
+
+**Scope (2026-10-10, replacing the first version's global patch).** The first version
+installed the tent by rewriting `ShaderChunk.shadowmap_pars_fragment`, three's one
+copy of the shadow read, as `<StudioStage>`'s key light mounted. That chunk is shared
+by every lit material in the page, so a host app that put a figure on a board with
+its own `SunLight` (a directional light with its own fitted shadow, radius left at
+three's default 1) found the board, and everything else it drew, silently reading
+the tent instead of three's filter, from the moment the stage mounted and for the
+rest of the page's life. A library must not change global state of three's that
+alters its host's own lights and materials. The use cases the global patch served
+were that skin, clothing, hair and anything a consumer adds agree on one shadow,
+and that nobody has to remember to opt in.
+
+Options weighed:
+
+- *A per-light flag the shader checks.* The shader reads a light by its position in
+  an array of structs three owns; there is no per-light slot to carry a flag in
+  without a second patch of the same chunk, and the chunk would still be global.
+- *Rewriting the chunk and restoring it around the kit's draws.* The host's and the
+  kit's materials compile in whatever order the renderer meets them, and a program
+  is cached by its parameters, not its source, so the swap would race with
+  three's own cache. Rejected as a global with extra steps.
+- *Per-material injection in `onBeforeCompile`, with a program key of its own.*
+  Changes nothing outside the material. Costs a program per material class that
+  would otherwise share three's (a handful, compiled once each), and each of the
+  kit's materials has its own program already. Chosen.
+
+**What it is.** `patchShadowFilter(shader)` replaces the `#include
+<shadowmap_pars_fragment>` in one material's fragment shader with a copy of three's
+chunk whose PCF `getShadow` is the tent (built once from the stock chunk, which is
+read and never written; it throws if three's chunk no longer has the one function it
+replaces). Every material the kit makes calls it in its `onBeforeCompile`
+(`SkinMaterial`, `CoatMaterial`, `HairMaterial`, `EyeMaterial`, `DecalMaterial`, the
+attachments `AttachmentStandardMaterial`, `TeethMaterial` and `NailPlateMaterial`),
+and adds `SHADOW_FILTER_KEY` to its `customProgramCacheKey` so its program is never
+taken for three's. The garments and jewellery `<Humanoid>` makes from stock three
+materials opt in with `applyShadowFilter`, which wraps a material's own
+`onBeforeCompile` and key (as `applyDualSkinning` and `clipMaterial` do), is
+idempotent and returns the material. So the kit's figures agree with one another,
+and a consumer's prop, floor or accessory that should agree with the figure calls
+`applyShadowFilter(material)` explicitly. Nothing is implicit, and `<StudioStage>`
+mounting, like `configureKeyShadow`, changes only its own light.
+
+Consequences. The host's lights and materials compile three's chunk and draw as
+three does without the kit. The kit's materials read every directional and spot
+shadow in the scene through the tent, the host's included, at that light's radius:
+at the default 1 that is one hardware comparison, an edge about as sharp as three's
+own at radius 1; a host that wants its sun soft on a figure raises the light's
+`shadow.radius` (up to 16). Point lights' shadows are three's, for everyone. The
+kit's shadow look and cost are unchanged: its materials compile the same GLSL as
+before, so GPU time per frame on the kit's materials is the same, and the host's
+own materials no longer pay for the tent. Programs compiled before an opt-in need
+`material.needsUpdate`, which `applyShadowFilter` sets.
+
+**Gates.** `tests/browser/shadowScope.test.tsx`: a scene with a host sun casting
+onto a plain `MeshStandardMaterial` draws the same pixels with the kit's key light
+mounted as without the kit, bit for bit against a stock light in the key's place
+(the same shader) and within a float's ulp against no second light, at the sun's
+default radius and at 6; a mounted `<StudioStage>` leaves every `ShaderChunk` as
+three ships it; an opted-in material and `SkinMaterial` do read the tent, so the
+equality is not vacuous. `tests/shadowScope.test.ts`: no `ShaderChunk` moves when the
+key is set up or the kit's materials compile, and every material the kit makes
+carries the filter and the key.
+
+**Measured.** `tests/browser/shadowEdge.test.ts` renders a limb 4 mm and 30 mm off
+skin the key grazes at 15° and 30°, its edge nearly along the map's rows, at a
+close-up's 0.5 mm a pixel; the staircase is the edge's detail finer than one
+penumbra along it, bounded at 2 % of the penumbra across it (at the edge's
+steepest that is about 1 % of lit skin's luminance). Worst case (4 mm, 30°): the
+variance map 4.0 % (and 3.6 % at 4 mm), the tent at radius 4 7.6 %, 8 3.5 %,
+12 1.3 %, 16 0.8 %. A sphere and a thick bowl facing the light, which nothing
+occludes, render the same with and without shadows where the key reaches (acne);
+`groundContact` and `skinShadow` (the penumbra at a body framing, 4 to 16 px)
+pass. GPU time per frame on the render Mac (M1 Pro, ANGLE Metal, 1280 × 720, a
+heavy man, the second of two passes in one job), with the shadow off, the variance
+map, then the tent at radius 4, 8, 12 and 16: body framing 5.3, 8.0, 6.3, 7.4,
+8.7 and 10.4 ms; a close-up 9.7, 11.0, 10.0, 10.8, 12.5 and 15.1 ms. The stage's
+radius 12 costs 0.7 to 1.5 ms more than the variance map did; radius 4 costs a
+fifth to a third of what the variance map cost over no shadow.
+
 ## Animation (milestone 8, 2026-10-09)
 
 **Use cases.** A figure walks, idles and swims, whatever its size, shape or age.

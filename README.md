@@ -91,7 +91,8 @@ Requirements:
 
 - Node.js 24 or newer for tooling; a browser with WebGL 2 and module workers at
   runtime
-- `three` 0.180 or newer
+- `three` 0.182 or newer (the kit's materials swap the percentage-closer shadow
+  read three has had since 0.182 in their own shaders, and change nothing else in three)
 - `react` 19, `@react-three/fiber` 9 and `@react-three/drei` 10 for
   `humanoid-kit/react` (optional; the core works without React)
 
@@ -221,7 +222,7 @@ Planned, in order. None of this exists in the code yet.
 
 | Dependency | Supported |
 | --- | --- |
-| three | `>=0.180` |
+| three | `>=0.182` |
 | react | `>=19` (optional) |
 | @react-three/fiber | `>=9` (optional) |
 | @react-three/drei | `>=10` (optional) |

@@ -86,6 +86,7 @@ import { type BodyArtTexture, MARK_NEUTRAL } from "./bodyArtTexture.ts";
 import { DUAL_SKINNING_KEY, type DualBones, patchDualSkinning } from "./dualSkinning.ts";
 import { emptyLayerAtlas, emptyOwners, type SkinLayerAtlas } from "./layerAtlas.ts";
 import { BODY_OCCLUSION_FLOOR, BODY_OCCLUSION_POWER, patchOcclusion } from "./occlusion.ts";
+import { patchShadowFilter, SHADOW_FILTER_KEY } from "./shadowFilter.ts";
 import { STRAND_FOOTPRINT } from "./strandFootprint.ts";
 
 /** What the skin material is painted from: the recipe's skin and the figure's state signals. */
@@ -1301,11 +1302,12 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       power: BODY_OCCLUSION_POWER,
       body: true,
     });
+    patchShadowFilter(shader);
   };
 
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
     const art = this.hkUniforms.hkBodyArt.value ? `-art${this.decalLayers}` : "";
-    return `humanoid-kit-skin-11-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}-fold` : ""}${art}`;
+    return `humanoid-kit-skin-11-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}-fold` : ""}${art}|${SHADOW_FILTER_KEY}`;
   }
 }

@@ -2,9 +2,10 @@
  * The studio key light's shadow on skin (`render/studioShadow.ts`): the edge of
  * a cast shadow must be a penumbra, not a step. A hard, stepped shadow-map edge on
  * a thigh under a belly reads as dirt, and it is what the shadow map's texel does
- * unless the map is fitted to the figure and blurred.
+ * unless the map is filtered to a penumbra set in metres.
  *
- * The scene is the stage's own: its key light with `configureKeyShadow`, a
+ * The scene is the stage's own: its key light with `configureKeyShadow`, fitted to
+ * the scene's casters as the stage fits it before each frame (`keyShadowFitter`), a
  * receiving plane (lit as skin is, a physical material of skin's albedo) and a thin
  * occluder a few centimetres above it, the distance a thigh lies under a belly. An
  * orthographic camera looks straight down at the evidence framing of a body (1.8 m
@@ -24,11 +25,19 @@ import {
   OrthographicCamera,
   PlaneGeometry,
   Scene,
-  VSMShadowMap,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
-import { configureKeyShadow, KEY_SHADOW, STUDIO_SHADOWS } from "../../src/render/studioShadow.ts";
+import { applyShadowFilter, tentEdgeWidth } from "../../src/render/shadowFilter.ts";
+import {
+  configureKeyShadow,
+  KEY_POSITION,
+  KEY_SHADOW,
+  keyShadowFitter,
+  keyShadowTexel,
+  STUDIO_SHADOW_MAP_TYPE,
+  STUDIO_SHADOWS,
+} from "../../src/render/studioShadow.ts";
 import { createTestRenderer } from "./gl.ts";
 
 const WIDTH = 480;
@@ -41,7 +50,7 @@ const renderer = createTestRenderer({ antialias: false });
 renderer.setPixelRatio(1);
 renderer.setSize(WIDTH, HEIGHT, false);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = VSMShadowMap;
+renderer.shadowMap.type = STUDIO_SHADOW_MAP_TYPE;
 const target = new WebGLRenderTarget(WIDTH, HEIGHT, { type: FloatType });
 afterAll(() => {
   target.dispose();
@@ -52,13 +61,14 @@ function penumbra(height: number): number {
   const scene = new Scene();
   scene.background = new Color(0);
   const key = new DirectionalLight("#fff6ef", 2.4);
-  key.position.set(1.8, 3.2, 2.6);
+  key.position.set(...KEY_POSITION);
   key.castShadow = true;
   configureKeyShadow(key);
   scene.add(key, key.target, new AmbientLight("#ffffff", 0.1));
   const plane = new Mesh(
     new PlaneGeometry(4, 4),
-    new MeshPhysicalMaterial({ color: "#c68e6e", roughness: 0.5 }),
+    // Skin's stand-in: a physical material of skin's albedo, with the filter the kit's skin has.
+    applyShadowFilter(new MeshPhysicalMaterial({ color: "#c68e6e", roughness: 0.5 })),
   );
   plane.rotation.x = -Math.PI / 2;
   plane.receiveShadow = true;
@@ -82,6 +92,7 @@ function penumbra(height: number): number {
   camera.up.set(0, 0, -1);
   camera.lookAt(0, 0, 0);
   renderer.toneMapping = NoToneMapping;
+  keyShadowFitter()(key, scene);
   renderer.setRenderTarget(target);
   renderer.render(scene, camera);
   const px = new Float32Array(WIDTH * HEIGHT * 4);
@@ -125,10 +136,10 @@ function penumbra(height: number): number {
 }
 
 describe("the studio key light's shadow on skin", () => {
-  it("is the variance shadow map the stage is validated with, fitted to the figure", () => {
-    expect(STUDIO_SHADOWS).toBe("variance");
-    // A texel is about a millimetre or two: the map covers a figure's box, not the light's default.
-    expect((2 * KEY_SHADOW.extent) / KEY_SHADOW.mapSize).toBeLessThan(0.0015);
+  it("is the percentage-closer map the stage is validated with, read through the tent filter", () => {
+    expect(STUDIO_SHADOWS).toBe("percentage");
+    // The texel is what the tent needs to draw the penumbra.
+    expect(keyShadowTexel() * tentEdgeWidth(KEY_SHADOW.radius)).toBeCloseTo(KEY_SHADOW.penumbra, 9);
   });
 
   it("has a penumbra of at least four pixels at the evidence framing, under a belly's few centimetres or a hand's ten", () => {

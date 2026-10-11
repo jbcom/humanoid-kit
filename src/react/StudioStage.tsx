@@ -9,8 +9,13 @@
  * the figures stand), and only of those; without a provider it falls back to
  * drei's `ContactShadows` around the origin.
  *
- * The key's shadow is fitted to the figure and blurred to a skin-like penumbra
- * (`render/studioShadow.ts`): render with `shadows={STUDIO_SHADOWS}` on the canvas.
+ * The key's shadow is fitted, every frame, to whatever casts one, and filtered to a
+ * skin-like penumbra of about a centimetre and a half (`render/studioShadow.ts`):
+ * render with `shadows={STUDIO_SHADOWS}` on the canvas. `shadowMapSize` caps its
+ * map (one figure needs well under the default 2048 texels a side; a crowd past the
+ * cap gets a softer shadow rather than a bigger map), and `shadowFilterRadius` sets
+ * what it costs a pixel: 12 (144 reads, the default) or 4 for a phone (16 reads, with
+ * a faint staircase, up to 8 % of the penumbra, where an edge runs along the map's rows).
  *
  * Fill and ambient are neutral on purpose: cool fill pushes deep skin toward
  * grey ("ashy"). Render it with `STUDIO_TONE_MAPPING` and `STUDIO_EXPOSURE`.
@@ -24,13 +29,18 @@
  * security policies, and renders the same everywhere.
  */
 import { ContactShadows } from "@react-three/drei";
-import { useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
-import { type Mesh, NeutralToneMapping, PMREMGenerator } from "three";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { type DirectionalLight, type Mesh, NeutralToneMapping, PMREMGenerator } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { type ContactPoint, groundOcclusion } from "../presence/presence.ts";
 import { GroundContactMaterial } from "../render/groundContact.ts";
-import { configureKeyShadow } from "../render/studioShadow.ts";
+import {
+  configureKeyShadow,
+  KEY_POSITION,
+  KEY_SHADOW,
+  keyShadowFitter,
+} from "../render/studioShadow.ts";
 import { usePresenceContext } from "./presence.tsx";
 
 /** The tone mapping the stage is validated with. */
@@ -46,6 +56,47 @@ export interface StudioStageProps {
   intensity?: number;
   /** Darkness of the contact shadow under the figures at its centre, 0 to 1. Default 0.5. */
   contactShadowOpacity?: number;
+  /** The largest the key light's shadow map may grow, texels a side. Default 2048. */
+  shadowMapSize?: number;
+  /** The key light's shadow filter's half-width, texels (1 to 16; radius² reads a pixel). Default 12; 4 for a phone. */
+  shadowFilterRadius?: number;
+}
+
+/**
+ * The key light, its shadow fitted to the scene's casters before each frame is drawn
+ * (`keyShadowFitter`), and set up as it mounts (`configureKeyShadow`). Mounting it
+ * changes nothing in three: the figures' materials read its tent filter themselves
+ * (`render/shadowFilter.ts`), and the host's own lights and materials are drawn as before.
+ */
+function KeyLight({
+  intensity,
+  maxMapSize,
+  radius,
+}: {
+  intensity: number;
+  maxMapSize: number;
+  radius: number;
+}) {
+  const light = useRef<DirectionalLight>(null);
+  const scene = useThree((s) => s.scene);
+  const fitShadow = useMemo(() => keyShadowFitter({ maxMapSize, radius }), [maxMapSize, radius]);
+  // Stable, so it runs once as the light mounts, not on every render; the fitter takes over from the next frame.
+  const mount = useCallback((l: DirectionalLight | null) => {
+    light.current = l;
+    if (l) configureKeyShadow(l);
+  }, []);
+  useFrame(() => {
+    if (light.current) fitShadow(light.current, scene);
+  });
+  return (
+    <directionalLight
+      ref={mount}
+      position={KEY_POSITION}
+      intensity={2.4 * intensity}
+      color="#fff6ef"
+      castShadow
+    />
+  );
 }
 
 /** Image-based lighting from a procedural studio room, prefiltered once. */
@@ -157,21 +208,15 @@ export function StudioStage({
   background = "#1b2530",
   intensity = 1,
   contactShadowOpacity = 0.5,
+  shadowMapSize = KEY_SHADOW.maxMapSize,
+  shadowFilterRadius = KEY_SHADOW.radius,
 }: StudioStageProps) {
   const pooled = usePresenceContext() !== null;
   return (
     <>
       {background !== null && <color attach="background" args={[background]} />}
       <hemisphereLight args={["#eceeee", "#3a342e", 0.22 * intensity]} />
-      <directionalLight
-        position={[1.8, 3.2, 2.6]}
-        intensity={2.4 * intensity}
-        color="#fff6ef"
-        castShadow
-        ref={(light) => {
-          if (light) configureKeyShadow(light);
-        }}
-      />
+      <KeyLight intensity={intensity} maxMapSize={shadowMapSize} radius={shadowFilterRadius} />
       <directionalLight position={[-2.6, 1.6, 2.2]} intensity={0.7 * intensity} color="#ffffff" />
       <directionalLight position={[-1.2, 2.4, -3]} intensity={1.6 * intensity} color="#ffffff" />
       <RoomLighting intensity={0.22 * intensity} />

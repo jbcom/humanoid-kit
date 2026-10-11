@@ -37,6 +37,7 @@ import {
 } from "three";
 import { COAT_REGION_LIMIT } from "../surface/coat.ts";
 import { HAIR_LOBES } from "./hairMaterial.ts";
+import { patchShadowFilter, SHADOW_FILTER_KEY } from "./shadowFilter.ts";
 import { UV_SCALE_ATTRIBUTE } from "./skinMaterial.ts";
 import { STRAND_FOOTPRINT } from "./strandFootprint.ts";
 
@@ -274,10 +275,11 @@ export class CoatMaterial extends MeshStandardMaterial {
         "#include <lights_physical_pars_fragment>",
         lighting.replace(DIRECT_SPECULAR, `${DIRECT_SPECULAR}${STRAND_LOBES}`),
       );
+    patchShadowFilter(shader);
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-coat-2";
+    return `humanoid-kit-coat-2|${SHADOW_FILTER_KEY}`;
   }
 }
 
