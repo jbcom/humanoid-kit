@@ -181,6 +181,7 @@ export const CREATOR_CSS = /* css */ `
   display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; padding: 0; border: 0;
 }
 .hk-swatches legend { padding: 6px 0 8px; }
+.hk-chips > legend:not(.hk-visually-hidden) { padding: 4px 4px 6px; color: var(--hk-muted); font-size: 13px; }
 .hk-swatch {
   position: relative; width: var(--hk-touch); height: var(--hk-touch);
   border: 2px solid transparent; border-radius: 50%;

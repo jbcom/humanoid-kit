@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { EyeLibrary } from "../../eyes/library.ts";
 import { NO_FEATURE } from "../../makehuman/features.ts";
 import { Humanoid, type HumanoidPick, useHumanoidClient } from "../../react/Humanoid.tsx";
 import {
@@ -71,6 +72,12 @@ export interface HumanoidCreatorProps {
    * person. Nothing uncovered is evaluated, drawn or reported until it allows it.
    */
   coverPolicy?: CoverPolicy;
+  /**
+   * The eye pack's library (`humanoid-kit-eyes`, `loadEyeLibrary`; keep it stable). The
+   * figure wears the material its recipe names, and Appearance offers the pack's
+   * materials as an eye texture. Without it, there is no choice and the built-in eye shows.
+   */
+  eyeMaterials?: EyeLibrary;
   /** Called when a change was refused. */
   onReject?: (rejection: Rejection) => void;
   /** Heading shown above the controls. */
@@ -195,6 +202,7 @@ function CreatorBody({
   onBeforeChange,
   controls,
   coverPolicy,
+  eyeMaterials,
   onReject,
   title = "Create",
   children,
@@ -205,6 +213,7 @@ function CreatorBody({
     ...(onBeforeChange && { onBeforeChange }),
     ...(controls && { controls }),
     ...(coverPolicy && { coverPolicy }),
+    ...(eyeMaterials && { eyeMaterials }),
     ...(onReject && { onReject }),
   });
   const client = useHumanoidClient();
@@ -321,6 +330,7 @@ function CreatorBody({
           {!editor.withheld && (
             <Humanoid
               recipe={recipe}
+              {...(eyeMaterials && { eyeMaterials })}
               position={[0, lift, 0]}
               onPick={onPick}
               onGroundOffset={setLift}
@@ -436,7 +446,11 @@ function CreatorBody({
             ) : activeTab === REGIONS_TAB ? (
               <RegionPanel editor={editor} onFocus={reframe} />
             ) : activeTab === APPEARANCE_TAB ? (
-              <AppearancePanel editor={editor} onFocus={reframe} />
+              <AppearancePanel
+                editor={editor}
+                onFocus={reframe}
+                {...(eyeMaterials && { eyeMaterials })}
+              />
             ) : activeTab === WARDROBE_TAB ? (
               <WardrobePanel editor={editor} />
             ) : (

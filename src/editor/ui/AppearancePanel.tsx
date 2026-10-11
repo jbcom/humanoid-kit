@@ -8,6 +8,8 @@
  * default for the figure's age and sex; underarm and pubic hair only for an
  * adult.
  */
+import { useMemo } from "react";
+import type { EyeLibrary } from "../../eyes/library.ts";
 import { isAdult } from "../../recipe/agePolicy.ts";
 import {
   DEFAULT_EYES,
@@ -30,6 +32,7 @@ import {
   hairAlbedo,
 } from "../../surface/hairTone.ts";
 import { type Rgb, skinAlbedo } from "../../surface/skinTone.ts";
+import { eyeMaterialGroups, withEyeMaterial } from "../eyeMaterials.ts";
 import type { FrameRequest } from "../framing.ts";
 import { IRIS_PALETTE } from "../randomize.ts";
 import { cssColour as css, fromCssColour as fromCss, cssRamp as ramp } from "./cssColour.ts";
@@ -77,9 +80,12 @@ const SKIN_SLIDERS: { key: SkinNumber; label: string; min: number; description: 
 export function AppearancePanel({
   editor,
   onFocus,
+  eyeMaterials,
 }: {
   editor: HumanoidEditor;
   onFocus: (frame: FrameRequest) => void;
+  /** The eye pack's library; without it there is no eye texture to choose. */
+  eyeMaterials?: EyeLibrary;
 }) {
   const { recipe, update, settle } = editor;
   const skin = recipe.skin;
@@ -199,6 +205,16 @@ export function AppearancePanel({
             onSettle={settle}
             onFocus={() => onFocus(face)}
           />
+          {eyeMaterials && (
+            <EyeTexturePicker
+              library={eyeMaterials}
+              worn={recipe.eyes.material ?? null}
+              onPick={(id) => {
+                onFocus(face);
+                update((r) => withEyeMaterial(r, id));
+              }}
+            />
+          )}
         </div>
       </details>
       {hairStyles && (
@@ -354,6 +370,57 @@ export function AppearancePanel({
         </div>
       </details>
     </div>
+  );
+}
+
+/**
+ * The eye pack's materials as chips, by kind, after the built-in eye. A material
+ * supplies the iris's pattern and the sclera's detail; the colours above stay in force.
+ */
+function EyeTexturePicker({
+  library,
+  worn,
+  onPick,
+}: {
+  library: EyeLibrary;
+  worn: string | null;
+  onPick: (id: string | null) => void;
+}) {
+  const groups = useMemo(() => eyeMaterialGroups(library), [library]);
+  const entry = worn === null ? undefined : library.entry(worn);
+  return (
+    <>
+      <fieldset className="hk-chips">
+        <legend>Eye texture</legend>
+        <button
+          type="button"
+          className="hk-chip"
+          aria-pressed={worn === null}
+          onClick={() => onPick(null)}
+        >
+          Built-in
+        </button>
+      </fieldset>
+      {entry && !entry.hasIris && (
+        <p className="hk-note">This eye has no iris, so its colour has no effect.</p>
+      )}
+      {groups.map((group) => (
+        <fieldset key={group.kind} className="hk-chips">
+          <legend>{group.label}</legend>
+          {group.materials.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className="hk-chip"
+              aria-pressed={worn === m.id}
+              onClick={() => onPick(m.id)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </fieldset>
+      ))}
+    </>
   );
 }
 

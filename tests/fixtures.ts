@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
+import type { EyeManifest } from "../src/eyes/library.ts";
 import {
   type AdultAnatomyManifest,
   type BodyManifest,
@@ -69,6 +70,11 @@ export const clothingDir = path.join(root, "packs/clothing/data");
 export const clothingManifest = JSON.parse(
   fs.readFileSync(path.join(clothingDir, "manifest.json"), "utf8"),
 ) as ClothingManifest;
+
+/** The eye pack's manifest, as shipped. */
+export const eyeManifest = JSON.parse(
+  fs.readFileSync(path.join(root, "packs/eyes/data/manifest.json"), "utf8"),
+) as EyeManifest;
 
 /** The clothing pack's manifest and, unless `withGarments` is false, its decompressed binary. */
 export const clothingPackData = (withGarments = true) => ({

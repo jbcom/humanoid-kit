@@ -141,7 +141,8 @@ const recipe = createRecipe({ eyes: { material: "bobby_03_diffuse_blue_eyes", ir
 ```
 
 `eyes.iris` is the iris's mean colour whatever the material; `library.entry(id).paintedIris`
-is the colour the material was painted in.
+is the colour the material was painted in. `<HumanoidCreator eyeMaterials={eyes} />` takes
+the same library and adds an Eye texture choice to its Appearance tab.
 
 ## 4b. Animation (optional)
 

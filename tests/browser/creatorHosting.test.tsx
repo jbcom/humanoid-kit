@@ -2,6 +2,8 @@
  * The whole creator, mounted by a host: the real component over the real worker handler
  * (no Worker), the packs from the dev server, the controls as a person meets them.
  */
+
+import { eyesPack } from "humanoid-kit-eyes";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
@@ -11,6 +13,7 @@ import {
   type HumanoidCreatorProps,
 } from "../../src/editor/ui/HumanoidCreator.tsx";
 import type { WardrobeEntry } from "../../src/editor/wardrobe.ts";
+import { type EyeLibrary, loadEyeLibrary } from "../../src/eyes/library.ts";
 import { HumanoidProvider } from "../../src/react/index.ts";
 import { createRecipe, type Recipe } from "../../src/recipe/recipe.ts";
 import { readyInfo } from "./harness.tsx";
@@ -242,6 +245,71 @@ describe("<HumanoidCreator coverPolicy>", () => {
       await expect.element(screen.getByRole("button", { name: SUIT.label }), LOAD).toBeDisabled();
       const other = wardrobe.find((g) => g.kind === "shoes") as WardrobeEntry;
       await expect.element(screen.getByRole("button", { name: other.label })).toBeEnabled();
+    },
+    LOAD.timeout,
+  );
+});
+
+describe("<HumanoidCreator eyeMaterials>", () => {
+  /** The real pack, which records the textures the figure asks for. */
+  async function recordingLibrary() {
+    const real = await loadEyeLibrary(eyesPack);
+    const asked: string[] = [];
+    const library: EyeLibrary = {
+      manifest: real.manifest,
+      entry: (id) => real.entry(id),
+      textureUrl: (id) => {
+        asked.push(id);
+        return real.textureUrl(id);
+      },
+    };
+    return { library, asked };
+  }
+
+  it(
+    "gives the figure the library, so it wears the material its recipe names",
+    async () => {
+      const { library, asked } = await recordingLibrary();
+      await render(
+        <Host
+          eyeMaterials={library}
+          initialRecipe={createRecipe({
+            macros: { age: 30 },
+            eyes: { material: "bobby_03_diffuse_blue_eyes" },
+          })}
+        />,
+      );
+      await expect.poll(() => asked, LOAD).toContain("bobby_03_diffuse_blue_eyes");
+    },
+    LOAD.timeout,
+  );
+
+  it(
+    "offers the pack in Appearance, and the figure wears what is picked",
+    async () => {
+      const { library, asked } = await recordingLibrary();
+      const told: Recipe[] = [];
+      const screen = await render(
+        <Host eyeMaterials={library} initialRecipe={thirty} onChange={(r) => told.push(r)} />,
+      );
+      await screen.getByRole("tab", { name: "Skin & eyes" }).click({ timeout: LOAD.timeout });
+      expect(asked).toEqual([]);
+      await screen.getByRole("button", { name: "Green cat eyes", exact: true }).click();
+      await expect.poll(() => told.at(-1)?.eyes.material).toBe("nyloseth_green_cat_eyes");
+      await expect.poll(() => asked, LOAD).toContain("nyloseth_green_cat_eyes");
+    },
+    LOAD.timeout,
+  );
+
+  it(
+    "offers no choice without the library",
+    async () => {
+      const screen = await render(<Host initialRecipe={thirty} />);
+      await screen.getByRole("tab", { name: "Skin & eyes" }).click({ timeout: LOAD.timeout });
+      await expect.element(screen.getByRole("group", { name: "Iris colour" })).toBeVisible();
+      await expect
+        .element(screen.getByRole("group", { name: "Eye texture" }))
+        .not.toBeInTheDocument();
     },
     LOAD.timeout,
   );

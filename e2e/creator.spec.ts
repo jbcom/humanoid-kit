@@ -111,3 +111,32 @@ test("tapping a part of the figure opens the controls that shape it", async ({ p
 
   expect(errors).toEqual([]);
 });
+
+test("an eye material picked in Appearance is worn by the figure", async ({ page }) => {
+  test.setTimeout(budget(180_000));
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  await openSilentGame(page, "./");
+  await page.locator('.hk-stage[data-pick="ready"]').waitFor({ timeout: 120_000 });
+  await page.getByRole("tab", { name: /^Skin, eyes/ }).click();
+  // The pack's textures load only when a figure wears them: nothing yet.
+  const texture = (url: string) => /nyloseth_green_cat_eyes[^/]*\.webp/.test(url);
+  const requested = new Set<string>();
+  page.on("request", (r) => {
+    if (texture(r.url())) requested.add(r.url());
+  });
+  const group = page.getByRole("group", { name: "Slit pupil", exact: true });
+  const chip = group.getByRole("button", { name: "Green cat eyes", exact: true });
+  await expect(chip).toHaveAttribute("aria-pressed", "false");
+  expect(requested.size).toBe(0);
+  await chip.click();
+  await expect(chip).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => requested.size, { timeout: 60_000 }).toBeGreaterThan(0);
+  // Back to the built-in eye.
+  await page.getByRole("button", { name: "Built-in", exact: true }).click();
+  await expect(chip).toHaveAttribute("aria-pressed", "false");
+  expect(errors).toEqual([]);
+});

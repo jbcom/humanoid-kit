@@ -54,7 +54,10 @@ the whole rule for both configs. Set `HK_GPU` to `auto`, `software`,
 `.sheets/job.json` for review (`e2e/sheets/render.sheet.ts` describes the job;
 on the agents' machines it runs on the render pool through
 `heavy-slot --remote-render`), and `node scripts/measure-load.mjs [fast4g|cable]` times a cold load of the built
-playground.
+playground. To look at the creator itself after a change to its panels or stage, run
+`pnpm exec playwright test e2e/sheets/creator.sheet.ts --project sheets [-g <scene>]` (the file
+goes first, because `--project` takes every name after it): each scene in that file
+writes a full screenshot of the creator, with a clothed figure, for you to read.
 
 ## Making a change
 

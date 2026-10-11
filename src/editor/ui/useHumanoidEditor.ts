@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { EyeLibrary } from "../../eyes/library.ts";
 import type { SliderEntry, SliderTask } from "../../format/assetFormat.ts";
 import { useHumanoidReady } from "../../react/Humanoid.tsx";
 import { agePolicyViolations } from "../../recipe/agePolicy.ts";
@@ -82,6 +83,11 @@ export interface EditorOptions {
    * uncovered figure is held, reported or handed to `<Humanoid>` until it allows it.
    */
   coverPolicy?: CoverPolicy;
+  /**
+   * The eye pack's library. `load` refuses a saved figure whose `eyes.material` it does
+   * not have (or any, without it), as it refuses a hair style the hair pack lacks.
+   */
+  eyeMaterials?: EyeLibrary;
   /** A change that was refused. */
   onReject?: (rejection: Rejection) => void;
 }
@@ -516,12 +522,16 @@ export function useEditorState(
       const lashes = loaded.hair?.lashes;
       const noBrows = brows !== undefined && !browStyles?.includes(brows);
       const noLashes = lashes !== undefined && !lashStyles?.includes(lashes);
-      if (unknown.length || policyProblems.length || noStyle || noBrows || noLashes)
+      // ... and its eye material one the eye pack has.
+      const material = loaded.eyes.material;
+      const noMaterial = material !== undefined && !options.eyeMaterials?.entry(material);
+      if (unknown.length || policyProblems.length || noStyle || noBrows || noLashes || noMaterial)
         return [
           ...unknown.map((id) => `modifier ${id} is not in the loaded packs`),
           ...(noStyle ? [`hair style ${style} is not in the loaded packs`] : []),
           ...(noBrows ? [`eyebrows ${brows} are not in the loaded packs`] : []),
           ...(noLashes ? [`eyelashes ${lashes} are not in the loaded packs`] : []),
+          ...(noMaterial ? [`eye material ${material} is not in the loaded eye pack`] : []),
           ...policyProblems,
         ];
       return propose(() => structuredClone(loaded), "load") === "rejected"

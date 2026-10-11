@@ -868,6 +868,37 @@ the error is reported, because a failing confirmation that allowed would fail
 open. (e) Without `allowUncover` every uncovering is refused, which is the right
 default for a host that never wants one (an under-25 game build).
 
+### Eye materials in the creator (design, 2026-10-11)
+
+The eye pack's 32 materials were a recipe field (`eyes.material`) and a
+`<Humanoid eyeMaterials>` prop with no way to reach either from the creator, so a
+game that mounted the creator dropped the pack. The creator now takes the library
+(`eyeMaterials`), passes it to its figure, and offers the choice.
+
+*Use cases.* (1) A player picks a material and sees it on the figure, keeping the
+iris colour and sclera warmth they chose, because a material supplies pattern and
+detail, never colour (see "Attachment colour"). (2) A player goes back to the
+built-in eye. (3) A saved figure with a material loads where the library has it.
+(4) A host that never passes the pack gets exactly the creator it had.
+
+*Decisions.* The library is a prop, not something the creator loads: the pack is
+the host's to locate (a CDN, a bundler's asset URL, an app's own bytes), the way
+the clothing and hair packs are passed to the client, and a creator that fetched
+it would need to know where. It is a prop of the creator and not of the
+provider because `<Humanoid>` already takes it per figure and the creator is the
+one figure it owns. The choice is chips grouped by the pack's own tags, in the
+pack's order, with no thumbnails: a chip's title is enough to choose among 32 and
+a thumbnail would be a second texture fetch per chip (about 100 KB each, 3 MB for
+the list) to show a pattern the figure shows in place the moment it is picked.
+The label drops the author's name the title was built from (`Bobby 03 diffuse
+amber eyes` is `Diffuse amber eyes`), which is a fact of the pack's manifest and
+checked against it: the labels must stay distinct. A material is chosen through
+`withEyeMaterial`, which leaves the rest of `eyes` alone and, for the built-in,
+leaves no `material` key (a recipe saved before eye materials existed is
+unchanged). `load` refuses a figure whose material the library lacks, as it does
+a hair style the hair pack lacks: a quiet fallback to the built-in eye would
+save a figure that does not look as it was made.
+
 ## Skeleton, poses and expressions (milestone 2)
 
 The body pack carries the MakeHuman default skeleton (163 bones with parents,

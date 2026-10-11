@@ -240,9 +240,31 @@ export function App() {
       ) : params.has("view") || params.has("cam") ? (
         <Shot />
       ) : (
-        <HumanoidCreator title="humanoid-kit" initialRecipe={initialRecipe()} />
+        <Creator />
       )}
     </HumanoidProvider>
+  );
+}
+
+/**
+ * The creator with the eye pack. The library is only the pack's manifest, fetched once;
+ * a material's texture loads when a figure first wears it.
+ */
+function Creator() {
+  const [eyeMaterials, setEyeMaterials] = useState<EyeLibrary | null>(null);
+  useEffect(() => {
+    let live = true;
+    void loadEyeLibrary(eyesPack).then((l) => live && setEyeMaterials(l));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <HumanoidCreator
+      title="humanoid-kit"
+      initialRecipe={initialRecipe()}
+      {...(eyeMaterials && { eyeMaterials })}
+    />
   );
 }
 

@@ -1406,6 +1406,7 @@ and camera.
 | `onBeforeChange?(proposed, context)` | Synchronous veto: returns the recipe to accept (clamped or as proposed) or `false` |
 | `controls?` | `ControlLimits`: slider ranges, and sliders, tasks and panels to hide |
 | `coverPolicy?` | `CoverPolicy`: what counts as covered, and who may allow an uncovered figure (maybe asynchronously); see "Cover policy" |
+| `eyeMaterials?` | The eye pack's `EyeLibrary` (`humanoid-kit-eyes`, `loadEyeLibrary`): worn by the figure, and offered as an Eye texture choice in Appearance; see "Eye materials" |
 | `onReject?(rejection)` | Called when a change was refused (`rejection.reason` is `"veto"` or `"cover"`, with `cause` and the `proposed` recipe) |
 | `title?` | Heading shown above the controls |
 | `className?` | Added to the root element |
@@ -1413,7 +1414,8 @@ and camera.
 
 - One tab per MakeHuman modelling task (Main, Gender, Face, Torso, ...,
   Measure), in upstream order, with MakeHuman's groups and slider labels, plus
-  Appearance (skin, iris, sclera; hair when the client loaded a hair pack: a
+  Appearance (skin, iris, sclera, and an eye texture from the eye pack when the
+  host passes `eyeMaterials`; hair when the client loaded a hair pack: a
   style from the pack or none, twelve natural colours, a picker for dyed hair
   and the pigment sliders behind the colours; and body hair: a beard style, or
   Natural for the default for age and sex, and a density per region from none
@@ -1577,12 +1579,39 @@ interface UncoverRequest {
 />;
 ```
 
+### Eye materials
+
+`humanoid-kit-eyes` ships 32 materials; a creator that is given the library can
+show and choose them.
+
+```tsx
+const eyeMaterials = await loadEyeLibrary(eyesPack); // once, and keep it stable
+<HumanoidCreator eyeMaterials={eyeMaterials} />;
+```
+
+- The library goes to the figure (`<Humanoid eyeMaterials>`), so a recipe whose
+  `eyes.material` names a material is drawn with it.
+- Appearance gets an **Eye texture** choice under the iris colour: Built-in (the
+  default; it takes `eyes.material` out of the recipe) and then the materials, by
+  kind in the pack's own tags: Human, Slit pupil, Toon, Creature, Blank. A chip's
+  name is the material's title less its author's name. The colours stay
+  `eyes.iris` and `eyes.scleraWarmth`, the swatches and the slider still work
+  with every material, and a material with no iris (`hasIris` false) says so.
+- A saved figure is loaded only if its `eyes.material` is in the library; without
+  the library it is refused, like a hair style the hair pack lacks.
+- Without `eyeMaterials` there is no choice and nothing changes. A host that
+  does not offer the pack still opens a figure that names a material, with the
+  built-in eye shown (`onError` reports it).
+- Helpers, exported from `humanoid-kit`: `eyeMaterialGroups(library)`,
+  `eyeMaterialLabel(entry)` and `withEyeMaterial(recipe, id | null)`. The hook
+  takes `eyeMaterials` in its options for the load check.
+
 ### `useHumanoidEditor(initial?, options?): HumanoidEditor`
 
 The creator's state for the provided client, for building your own editor UI.
 `useEditorState(ready, initial?, options?)` is the same over any `ReadyInfo`,
 without a worker. `options` is `EditorOptions`: `value`, `onChange`,
-`onBeforeChange`, `controls`, `coverPolicy` and `onReject`, as on the creator.
+`onBeforeChange`, `controls`, `coverPolicy`, `eyeMaterials` and `onReject`, as on the creator.
 
 ```ts
 interface HumanoidEditor {
