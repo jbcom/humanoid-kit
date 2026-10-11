@@ -288,6 +288,8 @@ describe("a reservoir in the adult surface", { timeout: 600_000 }, () => {
     expect(shipped.adultDetailLattice(adult)?.reservoirs.map((r) => r.id)).toEqual([
       "phallic",
       "labioscrotal",
+      "vaginal",
+      "anal",
     ]);
   });
 });

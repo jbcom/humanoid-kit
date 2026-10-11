@@ -239,7 +239,8 @@ describe("the model and the adult layers", () => {
     const update = adultModel.adultLayerFields();
     const extra = update?.extra;
     const layers = update?.layers ?? [];
-    const reservoirs = adultManifest.anatomy?.reservoirs ?? [];
+    // The reservoirs with islands (the canals draw inward and have none).
+    const reservoirs = (adultManifest.anatomy?.reservoirs ?? []).filter((r) => r.island);
     const count = (extra?.uvs.length ?? 0) / 2;
     const block = (id: string) => {
       const l = layers.indexOf(id);

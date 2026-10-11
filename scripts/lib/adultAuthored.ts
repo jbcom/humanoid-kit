@@ -23,6 +23,14 @@ import type {
 } from "../../src/format/assetFormat.ts";
 import type { AdultDetailLattice, ControlShape } from "../../src/model/humanoidModel.ts";
 import { AUTHORING_FIGURE, moundTargets } from "./control/mound.ts";
+import {
+  ANAL_CANAL,
+  ANUS,
+  ANUS_TARGET,
+  canalTarget,
+  VAGINA,
+  VAGINA_TARGET,
+} from "./detail/canal.ts";
 import { skinOf } from "./detail/contact.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE, phallusTargets } from "./detail/phallus.ts";
 import { reservoirRoot } from "./detail/root.ts";
@@ -49,6 +57,7 @@ export const AUTHORED_MODIFIERS: readonly ShapeModifierEntry[] = [
   { id: PHALLUS_GIRTH, group: "genitals", lo: "", hi: "", adultOnly: true },
   { id: TESTES_SIZE, group: "genitals", lo: null, hi: "", adultOnly: true },
   { id: VULVA_SIZE, group: "genitals", lo: null, hi: "", adultOnly: true },
+  { id: ANAL_CANAL, group: "genitals", lo: null, hi: "", adultOnly: true },
 ];
 
 /**
@@ -92,7 +101,14 @@ const AUTHORED_SLIDERS = [
     mod: VULVA_SIZE,
     after: TESTES_SIZE,
     label: "Vulva",
-    description: "From none to the full labia majora and minora, with the cleft between them.",
+    description:
+      "From none to the full labia majora and minora, with the cleft between them and the vaginal canal behind it.",
+  },
+  {
+    mod: ANAL_CANAL,
+    after: VULVA_SIZE,
+    label: "Anal canal",
+    description: "The anal canal, closed at rest, on every adult by default.",
   },
 ] as const;
 
@@ -130,6 +146,9 @@ export const AUTHORED_PROVENANCE: readonly string[] = [
     "minora and the cleft between them of bogdan666's CC0 `adult_female_2020_v_01` " +
     "(<http://www.makehumancommunity.org/proxy/adult_female_2020.html>), cut by `scripts/blender/cut_sculpt.py`, " +
     "placed and transferred onto the skin by `scripts/lib/detail/vulva.ts`.",
+  "- `genitals/vagina-k1` and `genitals/anus-k1` (detail targets) and the modifier `genitals/anal-canal`: the vaginal " +
+    "and anal canals, drawn inward from reservoirs by `scripts/lib/detail/canal.ts` from published measurements " +
+    "(docs/research/ADULT-ANATOMY-DATA.md, section G); no source models them.",
 ];
 
 /** Every target name the pack authors as a control target (a virtual modifier has none). */
@@ -217,7 +236,10 @@ export function authorDetail(
   const organ = phallusTargets(rootOf("phallic"), parts.phallus, skin);
   const sac = scrotumTargets(rootOf("labioscrotal"), parts.scrotum, skin);
   const folds = vulvaTarget(lattice, vulva);
-  const made = [...organ.targets, ...sac.targets, folds];
+  // The canals, inward: the vagina with the vulva, the anal canal on its own control.
+  const vagina = canalTarget(rootOf("vaginal"), VAGINA_TARGET, VAGINA, [`mod:${VULVA_SIZE}`]);
+  const anus = canalTarget(rootOf("anal"), ANUS_TARGET, ANUS, [`mod:${ANAL_CANAL}`]);
+  const made = [...organ.targets, ...sac.targets, folds, ...vagina.targets, ...anus.targets];
   return {
     vulva: folds,
     targets: made.map((t) => encodeSparseTarget(t.name, t.indices, t.xyz)),
@@ -228,7 +250,13 @@ export function authorDetail(
       authoredOn: { macros: AUTHORING_FIGURE.macros },
       // The vulva is the skin's own fold, not an organ out of it.
       skin: [folds.name],
-      drives: { ...organ.drives, ...sac.drives, [folds.name]: [`mod:${VULVA_SIZE}`] },
+      drives: {
+        ...organ.drives,
+        ...sac.drives,
+        [folds.name]: [`mod:${VULVA_SIZE}`],
+        ...vagina.drives,
+        ...anus.drives,
+      },
     },
   };
 }

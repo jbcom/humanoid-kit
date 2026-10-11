@@ -751,7 +751,7 @@ async function main() {
   const vulva = placeVulva(packedFigure, authoringControl);
   const surfaceOnly = plain.adultDetailLattice(AUTHORING_FIGURE);
   if (!surfaceOnly) throw new Error("the adult pack has no refined surface to place reservoirs on");
-  const { patches, reservoirs } = reservoirLayout(surfaceOnly, sculpted, (given) => {
+  const { patches, reservoirs } = reservoirLayout(surfaceOnly, sculpted, vulva, (given) => {
     const lattice = interim(undefined, given).adultDetailLattice(AUTHORING_FIGURE);
     if (!lattice) throw new Error("the adult pack has no refined surface to patch");
     return lattice;

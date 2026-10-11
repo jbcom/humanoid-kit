@@ -19,13 +19,24 @@
  */
 import type { AdultReservoirSpec, AdultSurfacePatch } from "../../src/format/assetFormat.ts";
 import type { AdultDetailLattice } from "../../src/model/humanoidModel.ts";
-import { type Disc, discVertices, findFootprint, type Vec3 } from "./detail/disc.ts";
+import { type Disc, discVertices, findDisc, findFootprint, type Vec3 } from "./detail/disc.ts";
 import { cutOutline, type MaleParts, partAxis, type SculptPart } from "./detail/sculpt.ts";
 import { smoothLoopPatch } from "./detail/smoothLoop.ts";
 import type { IslandSize } from "./uvIslands.ts";
 
 /** Collapsed rings between each loop and cap: the length a detail can draw a tube out to, in steps. */
-export const RESERVOIR_RINGS = { phallic: 32, labioscrotal: 16 } as const;
+export const RESERVOIR_RINGS = { phallic: 32, labioscrotal: 16, vaginal: 16, anal: 8 } as const;
+
+/**
+ * The canals' openings on the skin (`detail/canal.ts`): the disc round each landmark
+ * (`PlacedVulva`), as an ellipsoid's semi-axes (x across, y up, z front to back),
+ * metres. The vagina's opening is the introitus, 28 mm long by Kreklau's mean, its
+ * disc 24 by 12 mm inside the vestibule; the anus's a 12 mm disc.
+ */
+const CANAL_DISCS = {
+  vaginal: [0.006, 0.03, 0.012],
+  anal: [0.006, 0.03, 0.006],
+} as const satisfies Record<string, Vec3>;
 
 /** How far behind its cut's centre, along its axis, a part's skin may lie, metres. */
 const FOOTPRINT_DEPTH = 0.03;
@@ -104,6 +115,7 @@ function footprintOn(
 export function reservoirLayout(
   lattice: ReservoirLattice,
   parts: MaleParts,
+  openings: { introitus: Vec3; anus: Vec3 },
   patched: (patches: AdultSurfacePatch[]) => ReservoirLattice,
 ): { patches: AdultSurfacePatch[]; reservoirs: AdultReservoirSpec[] } {
   const shaft = smoothLoopPatch(lattice, footprintOn(lattice, parts.phallus.flaccid));
@@ -117,22 +129,51 @@ export function reservoirLayout(
       facing(cutOutline(parts.phallus.flaccid), cutOutline(parts.scrotum)),
     ),
   );
-  const patches = [shaft.patch, sac.patch];
+  const withSac = patched([shaft.patch, sac.patch]);
+  const vaginal = smoothLoopPatch(
+    withSac,
+    canalDisc(withSac, openings.introitus, CANAL_DISCS.vaginal),
+  );
+  const withVagina = patched([shaft.patch, sac.patch, vaginal.patch]);
+  const anal = smoothLoopPatch(withVagina, canalDisc(withVagina, openings.anus, CANAL_DISCS.anal));
+  const patches = [shaft.patch, sac.patch, vaginal.patch, anal.patch];
   const on = patched(patches);
-  const phallic = capOn(on, shaft);
-  const labioscrotal = capOn(on, sac);
+  const spec = (
+    id: keyof typeof RESERVOIR_RINGS,
+    smooth: { loop: number[]; capVertices: number[] },
+  ) => {
+    const disc = capOn(on, smooth);
+    return { id, loop: disc.loop, cap: disc.cap, rings: RESERVOIR_RINGS[id] };
+  };
   return {
     patches,
     reservoirs: [
-      { id: "phallic", loop: phallic.loop, cap: phallic.cap, rings: RESERVOIR_RINGS.phallic },
-      {
-        id: "labioscrotal",
-        loop: labioscrotal.loop,
-        cap: labioscrotal.cap,
-        rings: RESERVOIR_RINGS.labioscrotal,
-      },
+      spec("phallic", shaft),
+      spec("labioscrotal", sac),
+      spec("vaginal", vaginal),
+      spec("anal", anal),
     ],
   };
+}
+
+/** The disc of a canal's opening: the polygons within `radii` of the skin nearest `landmark` (`findDisc`). */
+function canalDisc(lattice: ReservoirLattice, landmark: Vec3, radii: Vec3): Disc {
+  const at = (v: number): Vec3 => [
+    lattice.latticePositions[v * 3] as number,
+    lattice.latticePositions[v * 3 + 1] as number,
+    lattice.latticePositions[v * 3 + 2] as number,
+  ];
+  let near = 0;
+  let far = Number.POSITIVE_INFINITY;
+  for (const v of lattice.regionIds) {
+    const p = at(v);
+    const d = Math.hypot(p[0] - landmark[0], p[1] - landmark[1], p[2] - landmark[2]);
+    if (d < far) {
+      far = d;
+      near = v;
+    }
+  }
+  return findDisc(lattice.polygons, at, at(near), radii);
 }
 
 /** A smooth loop's disc on a patched lattice: its loop, and the polygons inside it (every corner a loop or cap vertex). */

@@ -27,10 +27,18 @@ import { skinNormals } from "../src/rig/pose.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
-const man = createRecipe({ macros: { age: 30, gender: 1 } });
+// The organ and the sac alone: the anal canal pushes its own reservoir (canal.test.ts).
+const man = createRecipe({
+  macros: { age: 30, gender: 1 },
+  modifiers: { "genitals/anal-canal": 0 },
+});
 const bare = createRecipe({
   macros: { age: 30, gender: 1 },
-  modifiers: { "genitals/phallus-size": 0, "genitals/testes-size": 0 },
+  modifiers: {
+    "genitals/phallus-size": 0,
+    "genitals/testes-size": 0,
+    "genitals/anal-canal": 0,
+  },
 });
 
 /** One vertex's four bones and weights, as a map. */

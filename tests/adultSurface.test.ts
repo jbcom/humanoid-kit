@@ -65,7 +65,7 @@ describe("the pelvic refinement the adult pack asks for", () => {
     // The refinement is this body's choice of faces; the patches on it are the reservoirs'
     // layout's (held to the generator in adultReservoirs.test.ts), so they are taken as shipped.
     const patches = adultManifest.anatomy?.surface?.patches;
-    expect(patches?.length, "the reservoirs' smooth loops").toBe(2);
+    expect(patches?.length, "the reservoirs' smooth loops").toBe(4);
     // The vulva layer's mask is the generator's, held to it in vulva.test.ts.
     const vulvaMask = adultManifest.anatomy?.skinLayers.find(
       (l) => l.id === "vulva-skin",

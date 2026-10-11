@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { deltaE2000, labFromLinear } from "../e2e/lib/colour.ts";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
+import { VAGINA_TARGET } from "../scripts/lib/detail/canal.ts";
 import { VULVA_SIZE, VULVA_TARGET, vulvaSkinMask } from "../scripts/lib/detail/vulva.ts";
+import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { VULVA_LAYER } from "../src/surface/regions/adult.ts";
 import { DEFAULT_SKIN_TONE, skinAlbedo } from "../src/surface/skinTone.ts";
-import { adultManifest, loadFixtureAssets } from "./fixtures.ts";
+import { adultManifest, adultPackData, bodyPackData, loadFixtureAssets } from "./fixtures.ts";
 
 /**
  * The vulva (scripts/lib/detail/vulva.ts): the labia and the cleft of bogdan666's CC0
@@ -113,8 +115,14 @@ describe("the vulva on the skin", () => {
     const authored = Math.max(...[...displaced.values()].map((d) => Math.hypot(...d)));
     const recipe = (size: number) =>
       createRecipe({ macros: AUTHORING_FIGURE.macros, modifiers: { [VULVA_SIZE]: size } });
-    const without = model.evaluate(recipe(0)).positions;
-    const withIt = model.evaluate(recipe(1)).positions;
+    // The vulva's skin alone: the vaginal canal, which the same size drives, left out.
+    const pack = adultPackData();
+    delete pack.manifest.anatomy?.detail?.drives?.[VAGINA_TARGET];
+    const skinOnly = new HumanoidModel(parseHumanoidAssets(bodyPackData(), pack), {
+      subdivision: 1,
+    });
+    const without = skinOnly.evaluate(recipe(0)).positions;
+    const withIt = skinOnly.evaluate(recipe(1)).positions;
     let drawn = 0;
     for (let v = 0; v < without.length / 3; v++)
       drawn = Math.max(

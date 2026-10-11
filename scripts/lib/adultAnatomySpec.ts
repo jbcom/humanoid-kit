@@ -19,6 +19,7 @@ import type {
 } from "../../src/format/assetFormat.ts";
 import { AUTHORED_MODIFIERS } from "./adultAuthored.ts";
 import { adultCoatRegions } from "./adultCoat.ts";
+import { ANAL_CANAL } from "./detail/canal.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE } from "./detail/phallus.ts";
 import { TESTES_SIZE } from "./detail/scrotum.ts";
 import { VULVA_SIZE } from "./detail/vulva.ts";
@@ -37,6 +38,8 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "
     { id: "scrotum", modifiers: [TESTES_SIZE] },
     // The labia and the cleft, folds of the skin itself (scripts/lib/detail/vulva.ts).
     { id: "vulva", modifiers: [VULVA_SIZE] },
+    // The anal canal, drawn inward from its reservoir (scripts/lib/detail/canal.ts).
+    { id: "anus", modifiers: [ANAL_CANAL] },
     // The mound has MakeHuman's one control (the body's bulge, a control target) and this
     // pack's own (a generated control target, scripts/lib/control/mound.ts).
     { id: "mound", modifiers: ["pelvis/bulge-decr|incr", "pelvis/mound-decr|incr"] },
@@ -67,6 +70,8 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "
     [PHALLUS_SIZE]: "0.35,0.08;0.65,0.65",
     [TESTES_SIZE]: "0.35,0;0.65,0.6",
     [VULVA_SIZE]: "0.35,1;0.65,0",
+    // Every adult has an anal canal, whatever the gender.
+    [ANAL_CANAL]: "0,1;1,1",
   },
 };
 

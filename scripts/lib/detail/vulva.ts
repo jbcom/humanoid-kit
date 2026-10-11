@@ -101,12 +101,31 @@ const point3 = (p: ArrayLike<number>, i: number): Vec3 => [
 ];
 
 /**
+ * Landmarks on the source, in its own units (as `VULVA_SHEET`), from its midline: the
+ * mouth of the vestibule's pit (the pit spans z 0.24 to 0.36 and sinks to y -0.585;
+ * its mouth is at the cleft's floor, y -0.75), and the anus, which the source does
+ * not model: on the midline 21.3 mm (Kreklau's mean perineum, 0.227 of the source's
+ * units at the placement's 0.0938 m each) behind the pit's back edge, on the skin
+ * (y -0.73 there).
+ */
+const LANDMARKS = {
+  introitus: [0, -0.75, 0.3],
+  anus: [0, -0.73, 0.013],
+} as const;
+
+/** The vulva's sheet on a figure, and its landmarks there (`LANDMARKS`). */
+export interface PlacedVulva extends SculptPart {
+  introitus: Vec3;
+  anus: Vec3;
+}
+
+/**
  * The vulva's sheet from its source (`VULVA_SHEET`), placed on the figure whose base
  * positions are `figure`: a similarity fitted from the source to where its binding
  * puts it on our rest body, over the source's vertices inside the cut's box, then
  * carried rigidly with its edge. Its boundary is its edge, in order.
  */
-export function placeVulva(assets: HumanoidAssets, figure: Float32Array): SculptPart {
+export function placeVulva(assets: HumanoidAssets, figure: Float32Array): PlacedVulva {
   const cuts = sourceCuts(VULVA_SOURCE);
   if (!cuts.parts.vulva?.disc) throw new Error(`sculpt ${VULVA_SOURCE}: no vulva cut as a disc`);
   const body = restBody(assets);
@@ -160,7 +179,16 @@ export function placeVulva(assets: HumanoidAssets, figure: Float32Array): Sculpt
   );
   const positions = new Float64Array(n * 3);
   for (let v = 0; v < n; v++) positions.set(applySimilarity(carry, point3(atRest, v)), v * 3);
-  return { positions, triangles: sheet.triangles, boundary };
+  // A landmark goes where the sheet does: `readObj` scales the source's units by MH_UNIT.
+  const landmark = (p: readonly number[]) =>
+    applySimilarity(carry, applySimilarity(fit, p.map((x) => x * MH_UNIT) as unknown as Vec3));
+  return {
+    positions,
+    triangles: sheet.triangles,
+    boundary,
+    introitus: landmark(LANDMARKS.introitus),
+    anus: landmark(LANDMARKS.anus),
+  };
 }
 
 /**

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { ISLAND_LAYERS, RESERVOIR_RINGS, reservoirLayout } from "../scripts/lib/adultReservoirs.ts";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
+import { ANAL_CANAL } from "../scripts/lib/detail/canal.ts";
 import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { cutOutline, maleParts, partAxis } from "../scripts/lib/detail/sculpt.ts";
-import { VULVA_SIZE } from "../scripts/lib/detail/vulva.ts";
+import { placeVulva, VULVA_SIZE } from "../scripts/lib/detail/vulva.ts";
 import { ATLAS_SIZE, bodyCoverage } from "../scripts/lib/uvIslands.ts";
 import { type AdultSurfacePatch, parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -27,7 +28,7 @@ const parts = maleParts(assets, model.controlShape(AUTHORING_FIGURE).control);
 
 describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
   it("ships exactly what the generator places on the lattice, and the patches it sits in", () => {
-    expect(shipped.map((r) => r.id)).toEqual(["phallic", "labioscrotal"]);
+    expect(shipped.map((r) => r.id)).toEqual(["phallic", "labioscrotal", "vaginal", "anal"]);
     // The generator lays the reservoirs out on the refinement before any patch, and
     // names them on the refinement with its patches (scripts/lib/detail/smoothLoop.ts).
     const surface = adultManifest.anatomy?.surface;
@@ -45,7 +46,8 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
       if (!on) throw new Error("no adult surface");
       return on;
     };
-    const layout = reservoirLayout(latticeWith([]), parts, latticeWith);
+    const openings = placeVulva(assets, model.controlShape(AUTHORING_FIGURE).control);
+    const layout = reservoirLayout(latticeWith([]), parts, openings, latticeWith);
     expect(layout.patches).toEqual(surface.patches);
     // Placement is the generator's; the islands and layers are the packer's (below).
     expect(layout.reservoirs).toEqual(
@@ -54,6 +56,8 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
     expect(shipped.map((r) => r.rings)).toEqual([
       RESERVOIR_RINGS.phallic,
       RESERVOIR_RINGS.labioscrotal,
+      RESERVOIR_RINGS.vaginal,
+      RESERVOIR_RINGS.anal,
     ]);
   });
 
@@ -111,7 +115,7 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
         caps.add(p);
       }
     }
-    expect(lattice.reservoirs.length).toBe(2);
+    expect(lattice.reservoirs.length).toBe(4);
     expect(lattice.vertexCount).toBe(
       lattice.regionCount + shipped.reduce((s, r) => s + r.loop.length * r.rings, 0),
     );
@@ -123,7 +127,10 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
     const body = model.topology().body;
     const covered = bodyCoverage(body.uvs, body.index, size);
     const taken = new Uint8Array(size * size);
-    for (const r of shipped) {
+    // The canals draw inward and keep their skin's UVs: no island, no layer.
+    for (const r of shipped.filter((s) => ISLAND_LAYERS[s.id] === undefined))
+      expect(r.island ?? r.layer, r.id).toBeUndefined();
+    for (const r of shipped.filter((s) => ISLAND_LAYERS[s.id] !== undefined)) {
       expect(r.layer, r.id).toBe(ISLAND_LAYERS[r.id]);
       const isle = r.island;
       if (!isle) throw new Error(`${r.id} has no island`);
@@ -173,11 +180,11 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
       parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest: withoutAnatomy }),
       { subdivision: 1 },
     );
-    // No organ, no testes and no vulva: left unset, an adult takes the pack's default anatomy
-    // for its gender (`AdultAnatomySpec.defaults`), which the detail draws and the pack without it cannot.
+    // No organ, no testes, no vulva and no anal canal: left unset, an adult takes the pack's
+    // default anatomy (`AdultAnatomySpec.defaults`), which the detail draws and the pack without it cannot.
     const adult = createRecipe({
       macros: { age: 30, gender: 0.5 },
-      modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0 },
+      modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0, [ANAL_CANAL]: 0 },
     });
     const a = without.evaluate(adult);
     const b = model.evaluate(adult);

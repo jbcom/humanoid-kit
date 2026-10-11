@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
+import { ANAL_CANAL } from "../scripts/lib/detail/canal.ts";
 import { skinOf } from "../scripts/lib/detail/contact.ts";
 import {
   ERECT_GIRTH,
@@ -39,7 +40,7 @@ const adult = createRecipe({ macros: AUTHORING_FIGURE.macros });
  */
 const bare = createRecipe({
   macros: AUTHORING_FIGURE.macros,
-  modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0 },
+  modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0, [ANAL_CANAL]: 0 },
 });
 /** An adult with the organ at its default size (Veale's pooled means, flaccid), and no testes. */
 const organ = createRecipe({

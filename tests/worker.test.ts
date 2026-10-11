@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ANAL_CANAL } from "../scripts/lib/detail/canal.ts";
 import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { VULVA_SIZE } from "../scripts/lib/detail/vulva.ts";
@@ -269,6 +270,7 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
         "phallus",
         "scrotum",
         "vulva",
+        "anus",
         "mound",
       ]);
       expect(shapeSignalNames([], ready.anatomy)).toEqual(["arousal"]);
@@ -279,7 +281,7 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
         type: "evaluate",
         id: 3,
         recipe: createRecipe({
-          modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0 },
+          modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0, [ANAL_CANAL]: 0 },
         }),
       });
       expect(replies.get(3)?.type).toBe("evaluated");
@@ -419,12 +421,12 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
         type: "error",
         message: expect.stringMatching(/targets\.bin\.gz failed/),
       });
-      // A figure that needs nothing of the failed stage: no organ, no testes and no vulva.
+      // A figure that needs nothing of the failed stage: no organ, testes, vulva or anal canal.
       await handle({
         type: "evaluate",
         id: 3,
         recipe: createRecipe({
-          modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0 },
+          modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0, [ANAL_CANAL]: 0 },
         }),
       });
       expect(replies.get(3)?.type).toBe("evaluated");

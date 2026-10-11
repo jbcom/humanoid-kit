@@ -131,6 +131,8 @@ export function placeIslands(
   return specs.map((spec) => {
     const want = sizes[spec.id];
     const layer = layers[spec.id];
+    // A reservoir with no island size draws inward (a canal) and keeps its skin's UVs.
+    if (!want && !layer) return spec;
     const scale = metresPerUv[spec.id];
     if (!want || !layer || !scale)
       throw new Error(`reservoir ${spec.id}: no island size, layer or scale`);
