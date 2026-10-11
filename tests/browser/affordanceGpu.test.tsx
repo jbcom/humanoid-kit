@@ -451,12 +451,12 @@ describe("the affordance handle against the GPU", () => {
       const apertures = h.own.filter((a) => a.channel).length;
       await expect.poll(() => clip.uniforms.hkClipCount.value, LOAD).toBe(apertures);
       const rim = new Vector3(...mouth.origin).applyMatrix4(world);
-      expect(clip.uniforms.hkClipOrigin.value[0]?.distanceTo(rim)).toBeLessThan(1e-5);
-      const halfUp = (clip.uniforms.hkClipKnot.value[0] as Vector3).z;
+      expect(clip.sectionOf(0, 0).centre.distanceTo(rim)).toBeLessThan(1e-5);
+      const halfUp = clip.sectionOf(0, 0).halfUp;
       expect(halfUp, "the mouth's rim open in the clip").toBeGreaterThan(0.01);
       // It keeps itself current: the mouth closed, the clip's rim closes on the next frame.
       h.set("mouth", { opening: 0 });
-      await expect.poll(() => (clip.uniforms.hkClipKnot.value[0] as Vector3).z, LOAD).toBe(0);
+      await expect.poll(() => clip.sectionOf(0, 0).halfUp, LOAD).toBe(0);
     },
     LOAD.timeout,
   );

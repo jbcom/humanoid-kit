@@ -22,7 +22,7 @@ import {
 } from "../foundation/landmarks.ts";
 import type { PosedBody } from "../foundation/posed.ts";
 import type { HumanoidModel } from "../model/humanoidModel.ts";
-import { ADULT_EAR_SPAN, type Channel, channelOf } from "./channel.ts";
+import { ADULT_EAR_SPAN, type Channel, channelOf, headFrameOf } from "./channel.ts";
 import type { Affordance, FigureAffordances } from "./registry.ts";
 import type { AffordanceStates } from "./state.ts";
 
@@ -157,11 +157,14 @@ export function affordanceFrames(
   return out;
 }
 
+const span = (p: Vec3, q: Vec3) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+
 /**
  * An aperture's channel (`channel.ts`) on a posed figure, from its landmarks as
- * `mark` reads them: sized to its head (its ear canals' span) and, for the
- * mouth, to its own mouth (between its corners) and how open it is. Given
- * `out` (`emptyChannel`), it is written there and nothing is allocated.
+ * `mark` reads them: along its path in the head's frame (`headFrameOf`), sized
+ * to its head (its ear canals' span) and, for the mouth, to its own mouth
+ * (between its corners) and how open it is. Given `out` (`emptyChannel`), it
+ * is written there and nothing is allocated.
  */
 export function affordanceChannel(
   a: Affordance,
@@ -175,11 +178,9 @@ export function affordanceChannel(
   const r = mark("ear-canal.R", scratch.earR).position;
   const ml = mark("mouth-corner.L", scratch.mouthL).position;
   const mr = mark("mouth-corner.R", scratch.mouthR).position;
-  const span = (p: Vec3, q: Vec3) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
-  const head = scratch.head;
-  head[0] = (l[0] + r[0]) / 2;
-  head[1] = (l[1] + r[1]) / 2;
-  head[2] = (l[2] + r[2]) / 2;
+  const crown = mark("crown", scratch.crown).position;
+  const nose = mark("nose-tip", scratch.nose).position;
+  const head = headFrameOf(l, r, crown, nose, scratch.head);
   return channelOf(a.channel, rim, span(l, r) / ADULT_EAR_SPAN, head, opening, span(ml, mr), out);
 }
 
@@ -190,7 +191,9 @@ const scratch = {
   earR: frameOut(),
   mouthL: frameOut(),
   mouthR: frameOut(),
-  head: [0, 0, 0] as [number, number, number],
+  crown: frameOut(),
+  nose: frameOut(),
+  head: headFrameOf([-1, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]),
 };
 
 /**

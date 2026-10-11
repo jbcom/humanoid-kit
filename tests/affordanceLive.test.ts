@@ -146,9 +146,13 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
           if (!live) throw new Error(`${id}: no channel`);
           expect(distance(live.origin, c.origin), id).toBeLessThan(1e-6);
           expect(distance(live.inward, c.inward), id).toBeLessThan(1e-6);
-          expect(live.knots.flat().map((x) => Number(x.toFixed(9)))).toEqual(
-            c.knots.flat().map((x) => Number(x.toFixed(9))),
-          );
+          live.sections.forEach((s, k) => {
+            const want = c.sections[k];
+            if (!want) throw new Error(`${id}: no section ${k}`);
+            expect(distance(s.centre, want.centre), `${id} ${k}`).toBeLessThan(1e-6);
+            expect(s.halfAcross).toBeCloseTo(want.halfAcross, 9);
+            expect(s.halfUp).toBeCloseTo(want.halfUp, 9);
+          });
         }
       }
     }
@@ -180,17 +184,17 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
         expect(distance(world[k], d.toArray()), `${id} ${k}`).toBeLessThan(1e-9);
       }
     }
-    // A point a centimetre into the open mouth, given in world space, is inside it.
+    // A point on the open mouth's path, given in world space, is inside it.
     h.set("mouth", { opening: 1 });
     const mouth = h.channel("mouth");
     if (!mouth) throw new Error("no mouth");
-    const inside = new Vector3(...mouth.origin)
-      .addScaledVector(new Vector3(...mouth.inward), 0.01)
-      .applyMatrix4(toWorld);
+    const on = mouth.sections[4];
+    if (!on) throw new Error("no section");
+    const inside = new Vector3(...on.centre).applyMatrix4(toWorld);
     const place = h.place("mouth", inside.toArray());
     expect(place?.inside).toBe(true);
-    // Its depth is in world metres: the figure is scaled by 1.25.
-    expect(place?.depth).toBeCloseTo(0.0125, 9);
+    // Its depth along the path is in world metres: the figure is scaled by 1.25.
+    expect(place?.depth).toBeCloseTo(on.depth * 1.25, 9);
     const outside = new Vector3(...mouth.origin)
       .addScaledVector(new Vector3(...mouth.inward), -0.01)
       .applyMatrix4(toWorld);
@@ -224,9 +228,9 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
     expect(count).toBe(5);
     // The channels the clip holds are the handle's own, written again in place: the mouth's
     // rim is where a fresh read puts it.
-    const origin = clip.uniforms.hkClipOrigin.value[0]?.clone();
+    const origin = clip.sectionOf(0, 0).centre;
     h.refreshClip();
-    expect(clip.uniforms.hkClipOrigin.value[0]?.equals(origin as Vector3)).toBe(true);
+    expect(clip.sectionOf(0, 0).centre.equals(origin)).toBe(true);
     const mouth = h.channel("mouth");
     expect(mouth?.depth).toBeGreaterThan(0);
     // A figure drawn on demand is told the mouth changed, so it draws the opened jaw.
