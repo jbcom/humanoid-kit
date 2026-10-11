@@ -44,6 +44,37 @@ export interface FigurePresence {
 /** A figure as published, with the velocity the registry measured. */
 export type PublishedPresence = FigurePresence & { velocity: Vec3 };
 
+/** A named place on an object, in world space: a chair's "seat", an apple's "bite". */
+export interface Frame {
+  position: Vec3;
+  /** Quaternion (x, y, z, w). */
+  rotation: [number, number, number, number];
+}
+
+/**
+ * A thing in the world that is not a figure: a prop (an apple, a cup) or a
+ * fixture (a chair, a door). It joins presence so interactions find, pair and
+ * claim it as they do figures (docs/INTERACTIONS.md). An object has no age.
+ */
+export interface ObjectPresence {
+  id: string;
+  kind: "object";
+  position: Vec3;
+  /** Quaternion (x, y, z, w). */
+  rotation: [number, number, number, number];
+  bounds: { min: Vec3; max: Vec3 };
+  frames: Record<string, Frame>;
+  /** Dotted lower-case tags: "food.fruit.apple". */
+  tags: readonly string[];
+  /** State the application owns and an interaction may advance ("stage", "open"). */
+  state: Record<string, number | string | boolean>;
+}
+
+/** Something advanced by the registry's tick, after proximity: the interaction runtime. */
+export interface PresenceChannel {
+  tick(seconds: number): void;
+}
+
 export interface ProximityEvent {
   type: "enter" | "leave";
   /** The two figures, in id order. */
@@ -77,6 +108,14 @@ export interface PresenceRegistry {
    * and when they part beyond 1.1 × radius. Returns the unsubscribe function.
    */
   onProximity(radius: number, listener: (e: ProximityEvent) => void): () => void;
+  /** Publishes or replaces an object; kept by reference, like a figure. */
+  setObject(object: ObjectPresence): void;
+  removeObject(id: string): void;
+  getObject(id: string): ObjectPresence | undefined;
+  /** Every published object; the same array until one joins or leaves. */
+  objects(): readonly ObjectPresence[];
+  /** Advances `channel` on every tick, after proximity. Returns the detach function. */
+  attach(channel: PresenceChannel): () => void;
 }
 
 /** Leaving takes this much more distance than entering, so edges do not flicker. */
@@ -105,6 +144,9 @@ export function createPresenceRegistry(): PresenceRegistry {
     listener: (e: ProximityEvent) => void;
     near: Set<number>;
   }>();
+  const things = new Map<string, ObjectPresence>();
+  let thingList: readonly ObjectPresence[] = [];
+  const channels = new Set<PresenceChannel>();
 
   const idOf = (slot: number) => slots[slot]?.id ?? (retiredId[slot] as string);
   const pairIds = (a: number, b: number): [string, string] => {
@@ -200,11 +242,30 @@ export function createPresenceRegistry(): PresenceRegistry {
         freeSlots.push(s);
       }
       retired.length = 0;
+      for (const c of channels) c.tick(seconds);
     },
     onProximity(radius, listener) {
       const sub = { radius, listener, near: new Set<number>() };
       proximity.add(sub);
       return () => proximity.delete(sub);
+    },
+    setObject(object) {
+      const existing = things.get(object.id);
+      if (existing) {
+        Object.assign(existing, object);
+        return;
+      }
+      things.set(object.id, object);
+      thingList = [...things.values()];
+    },
+    removeObject(id) {
+      if (things.delete(id)) thingList = [...things.values()];
+    },
+    getObject: (id) => things.get(id),
+    objects: () => thingList,
+    attach(channel) {
+      channels.add(channel);
+      return () => channels.delete(channel);
     },
   };
 }

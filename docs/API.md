@@ -165,7 +165,7 @@ interface HairRecipe {
 
 interface BodyHairRecipe {
   // per BODY_HAIR_GROUPS entry, a multiplier on the default, 0..2 (1 = default);
-  // axillary and pubic are adult-only: any value but 0 under 18 is refused
+  // pubic is adult-only: any value but 0 under 18 is refused
   density?: Partial<Record<BodyHairGroup, number>>;
   beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = none (clean-shaven)
 }
@@ -264,7 +264,7 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
   policy; empty when valid.
 - `assertAgePolicy(recipe)`: throws `AgePolicyError` listing the violations.
 - `withAge(recipe, age): Recipe`: a copy at a new age. Moving below 18 deletes
-  the adult anatomy pack's modifiers, the axillary and pubic body hair densities
+  the adult anatomy pack's modifiers, the pubic body hair density
   and the adult-only piercings. The breast macros and the body pack's `breast/*`
   modifiers stay: the body follows MakeHuman at every age, breast development
   through adolescence included (owner direction, `docs/AGE-POLICY.md`). The input
@@ -284,7 +284,7 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
   `SkinPaintInput.anatomy`.
 
 Under 18, a recipe is invalid if an adult-only modifier is non-zero, if
-`bodyHair.density.axillary` or `.pubic` is non-zero (`ADULT_ONLY_BODY_HAIR`), or
+`bodyHair.density.pubic` is non-zero (`ADULT_ONLY_BODY_HAIR`), or
 if a piercing is at an adult-only site. Refused, never clamped. The breast macros
 (`breastSize`, `breastFirmness`, and the regional overrides of them) are not
 gated: they follow MakeHuman at every age, as its breast targets do.
@@ -624,8 +624,8 @@ compute what the renderer will do.
   `hairTint(colour)` is the material colour that makes a packed strand map
   (mean `HAIR_STRAND_MEAN`) render as that albedo.
 - Body hair (research/BODY-HAIR.md): `BODY_HAIR_GROUPS` (`face`, `chest`,
-  `abdomen`, `back`, `buttocks`, `arms`, `legs`, and the adult-only `axillary`
-  and `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`),
+  `abdomen`, `back`, `buttocks`, `arms`, `legs`, `axillary` (from puberty, 13),
+  and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`),
   `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
   `defaultBodyHairCoverage(group, age, gender)` is a group's terminal-hair
   coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years and
@@ -724,7 +724,7 @@ compute what the renderer will do.
   `SkinPaintInput.adult` is true, so an input that does not say fails closed);
   `COAT_REGIONS` (at most `COAT_REGION_LIMIT`; today `BODY_HAIR_COAT`:
   `beard-moustache`, `beard-chin`, `beard-cheeks`, `hair-chest`, `hair-abdomen`,
-  `hair-back` and the adult-only `hair-axillary` and `hair-pubic`
+  `hair-back`, `hair-axillary` and the adult-only `hair-pubic`
   (`PUBIC_REGION`, whose mask is the adult anatomy pack's
   `anatomy.coatRegions` entry of that id, `AdultCoatRegionSpec`: ascending base
   vertices and their mask, checked when the pack is parsed against
@@ -1056,6 +1056,43 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
   until a figure joins or leaves, and entries are updated in place as figures
   move, so copy what you keep. `set`, `tick` and `all` allocate nothing once a
   figure has joined.
+- Objects and fixtures join the same registry as `ObjectPresence` (`{ id,
+  kind: "object", position, rotation, bounds, frames, tags, state }`):
+  `setObject`, `removeObject`, `getObject`, `objects()`. An object has no age.
+- `attach(channel)`: advances a `PresenceChannel` (`{ tick(seconds) }`) on
+  every tick, after proximity; returns the detach function. The interaction
+  runtime is one.
+
+### Interactions
+
+Figures, objects and places acting together (INTERACTIONS.md). Framework-free;
+slice 1 of its build plan.
+
+- `InteractionDefinition`: `id`, `tags`, `audience` (`"all"` or `"adult"`;
+  anything else is adult), `roles` (`{ name, takes: "figure" | "object",
+  requires?, affordances?, uses?, slot?, track? }`), `reference?`,
+  `contacts?`, `couplings?`, `beats?` (`{ name, at, effects? }`: an
+  affordance change on a figure, or an object-state change with `{ add }`),
+  `repeatWhile?` (`{ object, state, below }`), `alignSeconds?`,
+  `releaseSeconds?`, `priority?`.
+- `tagMatches(required, tag)`, `audienceOf(definition, affordanceAdult?)`
+  (adult unless declared `all` and no figure affordance it names is adult; an
+  affordance the core does not know counts as adult), `definitionProblems`.
+- `createInteractions(registry, { seed, clipLength, affordanceAdult?,
+  applyChange? })` returns the runtime: `define(definitions)` (throws
+  `InteractionDefinitionError` on a malformed one), `offer(offer)`,
+  `offersFor(participant, tags?)` (never returns an adult offer to a figure who
+  is not an adult), `propose(definition, roles)` (throws on a wrong role kind or
+  missing tag, and `AgePolicyError` before anyone is asked for an adult
+  definition with a participant under 18), `policy(participant, accept)`
+  (without one, `all` is accepted and `adult` declined: consent is explicit),
+  `on(participant, listener)` (`accepted`, `declined`, `phase`, `beat`,
+  `ended`, `cancelled` with a reason), `running()`, `detach()`.
+- An interaction claims its roles' body parts all-or-nothing, then runs
+  approach (only when a role has a slot), align, act (repeating while
+  `repeatWhile` holds) and release on the registry's clock. It is cancelled
+  with `left` when a participant leaves presence, and aborted with
+  `age-policy` on any tick an adult definition has a participant under 18.
 - `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
   chest, hands, feet), `footprint`, `appearance` (measured albedo, luminance,
   specular), `faceRadius`, `adult`.
@@ -1461,8 +1498,7 @@ and camera.
   style from the pack or none, twelve natural colours, a picker for dyed hair
   and the pigment sliders behind the colours; and body hair: a beard style, or
   Natural for the default for age and sex, and a density per region from none
-  to twice the default, with underarm and pubic density offered to adults
-  only), Regions (per-region macro overrides) and, when the client loaded a
+  to twice the default, with pubic density offered to adults only), Regions (per-region macro overrides) and, when the client loaded a
   clothing pack, a Wardrobe: the garments by kind, one worn at a time per kind,
   layered across kinds. Tapping the hair opens Appearance.
 - Tapping the figure opens the controls that shape the tapped part (its tab,

@@ -111,25 +111,24 @@ describe("the comb field", () => {
   });
 });
 
-describe("the adult-only gate on the armpits' and the pubic coat", () => {
+describe("the adult-only gate on the pubic coat", () => {
   const adultOnly = BODY_HAIR_COAT.filter((r) => r.adultOnly);
   /** Each adult-only region's cover in a table painted for `adultOnly`. */
   const covers = (table: Float32Array) => adultOnly.map((_, k) => table[k * 8] as number);
-  /** A recipe asking for both groups at `m`. */
-  const asking = (m: number) => ({ bodyHair: { density: { axillary: m, pubic: m } } });
+  const asking = (m: number) => ({ bodyHair: { density: { pubic: m } } });
 
-  it("is exactly the axillary and pubic regions", () => {
-    expect(adultOnly.map((r) => r.id)).toEqual(["hair-axillary", "hair-pubic"]);
+  it("is exactly the pubic region", () => {
+    expect(adultOnly.map((r) => r.id)).toEqual(["hair-pubic"]);
   });
 
-  it("paints them at zero for any figure under 18, whatever the recipe asks", () => {
+  it("paints it at zero for any figure under 18, whatever the recipe asks", () => {
     fc.assert(
       fc.property(
         fc.double({ min: 1, max: 17.999, noNaN: true }),
         fc.double({ min: 0, max: 1, noNaN: true }),
         fc.double({ min: 0, max: 2, noNaN: true }),
         (age, gender, m) => {
-          expect(covers(paintCoat(adultOnly, input(age, gender, asking(m))))).toEqual([0, 0]);
+          expect(covers(paintCoat(adultOnly, input(age, gender, asking(m))))).toEqual([0]);
         },
       ),
     );
@@ -137,17 +136,34 @@ describe("the adult-only gate on the armpits' and the pubic coat", () => {
 
   it("fails closed: an input that does not say the figure is an adult paints none, even at 40", () => {
     const { adult: _, ...unsaid } = input(40, 1, asking(1));
-    expect(covers(paintCoat(adultOnly, unsaid))).toEqual([0, 0]);
+    expect(covers(paintCoat(adultOnly, unsaid))).toEqual([0]);
     // An input claiming a child is an adult still gets none: the model gives a child no coverage.
-    expect(covers(paintCoat(adultOnly, { ...input(12, 1, asking(1)), adult: true }))).toEqual([
-      0, 0,
-    ]);
+    expect(covers(paintCoat(adultOnly, { ...input(12, 1, asking(1)), adult: true }))).toEqual([0]);
   });
 
-  it("paints them for an adult, man or woman", () => {
+  it("paints it for an adult, man or woman", () => {
     for (const gender of [0, 1])
       for (const c of covers(paintCoat(adultOnly, input(30, gender, asking(1)))))
         expect(c).toBeGreaterThan(0.5);
+  });
+});
+
+describe("the armpits' coat comes with puberty", () => {
+  const armpits = BODY_HAIR_COAT.filter((r) => r.id === "hair-axillary");
+  // The coat draws only regions a recipe enables (`coatEnabled`), so this asks for the default density.
+  const cover = (age: number, gender: number) =>
+    paintCoat(armpits, {
+      ...input(age, gender, { bodyHair: { density: { axillary: 1 } } }),
+      adult: age >= 18,
+    })[0] as number;
+
+  it("is none before 13 and grows through the teens, for both sexes", () => {
+    for (const gender of [0, 1]) {
+      expect(cover(12, gender)).toBe(0);
+      expect(cover(15, gender)).toBeGreaterThan(0.1);
+      expect(cover(17, gender)).toBeGreaterThan(cover(15, gender));
+      expect(cover(30, gender)).toBeGreaterThan(0.5);
+    }
   });
 });
 

@@ -272,14 +272,13 @@ function trunkRegion(group: "chest" | "abdomen" | "back"): CoatRegion {
 }
 
 /**
- * Axillary hair: dense and a couple of centimetres long, so the coat's. Adult
- * only under the age policy: `paintCoat` paints it only for an input that says
- * the figure is an adult, and the body hair model gives it no coverage under 18.
+ * Axillary hair: dense and a couple of centimetres long, so the coat's. It
+ * comes in with puberty from 13 (the body hair model's maturity), not at the
+ * age policy's line, so it is not an adult-only region.
  */
 const AXILLARY_REGION: CoatRegion = {
   id: "hair-axillary",
   targets: [...LIPS_TARGETS, "breast/nipple-size-incr"],
-  adultOnly: true,
   mask: (assets) => easedMask(assets, "axillary"),
   paint: (input) => paintOf("axillary", input, BODY_HAIR_FIBRE.axillary.length, LIE.grown),
 };

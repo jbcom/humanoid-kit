@@ -7,10 +7,11 @@
  * region group. It is pure data and arithmetic: the skin layers and the hair
  * cards that draw body hair read it, and nothing here knows how it is drawn.
  *
- * Axillary and pubic hair are adult-only under the age policy
- * (`src/recipe/agePolicy.ts`): their coverage is 0 for any figure that is not
- * an adult, whatever the recipe says, and a recipe that sets them under 18 is
- * refused there.
+ * Pubic hair is adult-only under the age policy (`src/recipe/agePolicy.ts`):
+ * its coverage is 0 for any figure that is not an adult, whatever the recipe
+ * says, and a recipe that sets it under 18 is refused there. Axillary hair is
+ * puberty's, not the policy's: it comes in from 13 like the face's, the arms'
+ * and the legs' (owner ruling 2026-10-11).
  */
 import { ADULT_AGE } from "../makehuman/macro.ts";
 import type { HairColour } from "./hairTone.ts";
@@ -31,7 +32,7 @@ export const BODY_HAIR_GROUPS = [
 export type BodyHairGroup = (typeof BODY_HAIR_GROUPS)[number];
 
 /** Groups drawn only for adults (the age policy's line, not puberty's). */
-export const ADULT_ONLY_BODY_HAIR: readonly BodyHairGroup[] = ["axillary", "pubic"];
+export const ADULT_ONLY_BODY_HAIR: readonly BodyHairGroup[] = ["pubic"];
 
 export const isAdultOnlyBodyHair = (group: string): boolean =>
   (ADULT_ONLY_BODY_HAIR as readonly string[]).includes(group);
@@ -89,7 +90,9 @@ export const BODY_HAIR_MATURITY: Readonly<Record<BodyHairGroup, readonly [number
   buttocks: [18, 45],
   arms: [11, 20],
   legs: [11, 20],
-  axillary: [12, 18],
+  // Axillary stage 2 at about 11.7 to 13.1 in girls and 13.6 to 14 in boys
+  // (BODY-HAIR.md): onset 13, the owner's "around 13".
+  axillary: [13, 18],
   pubic: [11, 17],
 };
 

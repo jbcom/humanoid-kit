@@ -128,13 +128,17 @@ describe("age policy", () => {
 });
 
 describe("adult-only body hair", () => {
-  it("is exactly axillary and pubic hair", () => {
-    expect([...ADULT_ONLY_BODY_HAIR].sort()).toEqual(["axillary", "pubic"]);
-    for (const g of BODY_HAIR_GROUPS)
-      expect(isAdultOnlyBodyHair(g)).toBe(g === "axillary" || g === "pubic");
+  it("is exactly pubic hair: axillary hair is puberty's, not the policy's", () => {
+    expect([...ADULT_ONLY_BODY_HAIR]).toEqual(["pubic"]);
+    for (const g of BODY_HAIR_GROUPS) expect(isAdultOnlyBodyHair(g)).toBe(g === "pubic");
   });
 
-  it("refuses any axillary or pubic density but 0 under 18, never clamping it", () => {
+  it("lets a teen's recipe set an axillary density", () => {
+    const r = createRecipe({ macros: { age: 15 }, bodyHair: { density: { axillary: 1.5 } } });
+    expect(agePolicyViolations(r)).toEqual([]);
+  });
+
+  it("refuses any pubic density but 0 under 18, never clamping it", () => {
     fc.assert(
       fc.property(
         minorAge,
@@ -175,7 +179,7 @@ describe("adult-only body hair", () => {
     });
     const minor = withAge(adult, 15);
     expect(agePolicyViolations(minor)).toEqual([]);
-    expect(minor.bodyHair).toEqual({ density: { chest: 0.5 }, beard: "full" });
+    expect(minor.bodyHair).toEqual({ density: { axillary: 1, chest: 0.5 }, beard: "full" });
     expect(adult.bodyHair?.density).toEqual({ axillary: 1, pubic: 1, chest: 0.5 });
     expect(withAge(adult, 40).bodyHair).toEqual(adult.bodyHair);
   });

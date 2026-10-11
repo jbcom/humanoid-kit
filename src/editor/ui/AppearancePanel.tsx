@@ -129,7 +129,7 @@ export function AppearancePanel({
         ? rest
         : { ...rest, bodyHair: next };
     }, gesture);
-  // Axillary and pubic hair are offered for adults only (the age policy).
+  // Pubic hair is offered for adults only (the age policy).
   const adult = isAdult(recipe);
 
   return (
@@ -454,7 +454,7 @@ const BODY_HAIR_SLIDERS: { group: BodyHairGroup; label: string; description: str
   { group: "buttocks", label: "Buttocks", description: "Hair on the buttocks." },
   { group: "arms", label: "Arms", description: "Hair on the arms." },
   { group: "legs", label: "Legs", description: "Hair on the legs." },
-  { group: "axillary", label: "Underarms", description: "Underarm hair (adults only)." },
+  { group: "axillary", label: "Underarms", description: "Underarm hair." },
   { group: "pubic", label: "Pubic", description: "Pubic hair (adults only)." },
 ];
 

@@ -42,7 +42,7 @@ export interface CoatRegion {
   mask(assets: HumanoidAssets): Float32Array;
   paint(input: SkinPaintInput): CoatPaint;
   /**
-   * A region only an adult grows (axillary hair, under the age policy):
+   * A region only an adult grows (pubic hair, under the age policy):
    * `paintCoat` leaves it unpainted, without asking its `paint`, unless the
    * input says the figure is an adult, so an input that does not say fails
    * closed, as for an `adultOnly` skin layer.
