@@ -47,7 +47,17 @@ const chromeFlags = [
 const config = {
   ci: {
     ...ci,
-    collect: { ...ci.collect, settings: { ...ci.collect.settings, chromeFlags } },
+    collect: {
+      ...ci.collect,
+      settings: {
+        ...ci.collect.settings,
+        chromeFlags,
+        // The rendered WebGL canvas can make Lighthouse's optional full-page
+        // screenshot hang in Linux CI. Keep the audits and their assertions;
+        // only omit that non-gating artifact.
+        disableFullPageScreenshot: true,
+      },
+    },
     upload: { target: "filesystem", outputDir: `./${root}/reports` },
   },
 };
