@@ -1609,6 +1609,32 @@ triangles. Penetration counted on every vertex moves within a square centimetre 
 every row (m-heavy seated 51.43 → 52.38 cm², m-muscular seated 43.64 → 44.44); on
 the worklist's stride of four, m-heavy seated reads 48.21 → 49.58.
 
+**A canal (2026-10-10).** The vaginal and anal canals are reservoirs drawn into the
+body. Each one's opening closes over its first 12 mm into a lumen a few millimetres
+across (`scripts/lib/detail/canal.ts`, `OPENING`). They rise steeply, so they took the
+narrow band, about 2 mm. Each wall of the opening then went from its own side's
+share of the thigh (0.16 of one) to the root's (0.10 of each) across the first ring,
+and a flexed hip folded it over. In f-slim squat that was 113 more folded edges than
+without the canals' drives, every one within 7 mm of the loop. A spec names a canal and
+its opening length (`AdultReservoirSpec.canal`), and a canal takes its root over that
+length. The bands tried (folded edges, all within a band of noise of about 20):
+
+| Band | f-slim squat | f-heavy seated | m-heavy squat |
+| --- | --- | --- | --- |
+| organ (≈ 2 mm) | 381 | 201 | 486 |
+| 8 mm | 276 | 192 | 479 |
+| 12 mm (the opening) | 292 | 196 | 498 |
+| 18 mm | 284 | 203 | 451 |
+| the whole canal | 281 | 202 | 452 |
+| without the drives | 268 | 137 | 407 |
+
+Over the whole canal, the lumen's middle kept half its side's thigh and swung out
+through the skin: 53.9 cm² penetrating in f-slim squat against 27.2, and 22.4 of it
+through other skin. The rigid pelvis as the root was worse at every band (f-slim
+squat 485 at 24 mm), because its share of the thigh drops from 0.2 to none. The
+folds left are on the openings' lips, in clefts the pose presses shut, plus about 20
+a row from the patches round the openings.
+
 **An organ carried by its loop (2026-10-10).** A detail target is a displacement of
 the lattice vertices under a reservoir, authored on one figure (the default adult)
 and added to each figure's own skin. A body morph moves the skin inside a loop by 2
