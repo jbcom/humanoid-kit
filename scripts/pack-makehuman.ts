@@ -38,7 +38,11 @@ import {
   type ShapeModifierEntry,
   TARGET_ENCODING,
 } from "../src/format/assetFormat.ts";
-import { macroTargetAgeAnchor, macroTargetNames } from "../src/makehuman/macro.ts";
+import {
+  macroTargetAgeAnchor,
+  macroTargetNames,
+  upstreamAgeAnchor,
+} from "../src/makehuman/macro.ts";
 import { STATE_MORPH_TARGETS } from "../src/makehuman/stateMorphs.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { OCCLUSION_KEYS, occlusionCorners } from "../src/rig/occlusionKeys.ts";
@@ -538,7 +542,10 @@ async function main() {
   // targets in a small core file, and the other modifier targets last.
   const inPack = [...packed.values()].filter((t) => driven.has(t.name));
   const fileOf = (name: string): string => {
-    if (macroNames.has(name)) return macroTargetAgeAnchor(name) ?? "core";
+    if (macroNames.has(name)) {
+      const anchor = macroTargetAgeAnchor(name);
+      return anchor ? upstreamAgeAnchor(anchor) : "core";
+    }
     return SKIN_LAYER_TARGETS.includes(name) ? "core" : "modifiers";
   };
   const bodyFiles = BODY_TARGET_FILES.map((id) => ({

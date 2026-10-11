@@ -11,7 +11,7 @@ import {
   type TargetFile,
   targetLoadOrder,
 } from "../src/format/assetFormat.ts";
-import { macroTargetAgeAnchor, macroTargetNames } from "../src/makehuman/macro.ts";
+import { AGE_ANCHORS, macroTargetAgeAnchor, macroTargetNames } from "../src/makehuman/macro.ts";
 import { SKIN_LAYER_TARGETS } from "../src/surface/regions/index.ts";
 import {
   adultManifest,
@@ -168,10 +168,10 @@ describe("the target files", () => {
   });
 
   it("put each macro target with its age anchor, and only what needs no anchor in the core", () => {
-    for (const id of ["baby", "child", "young", "old"] as const)
-      for (const n of names(id)) {
+    for (const { anchor, upstream } of AGE_ANCHORS)
+      for (const n of names(upstream)) {
         expect(macros.has(n), n).toBe(true);
-        expect(macroTargetAgeAnchor(n), n).toBe(id);
+        expect(macroTargetAgeAnchor(n), n).toBe(anchor);
       }
     for (const n of names("core"))
       expect(SKIN_LAYER_TARGETS.includes(n) || (macros.has(n) && !macroTargetAgeAnchor(n)), n).toBe(

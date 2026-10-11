@@ -17,7 +17,13 @@
  * compresses about 3.4 times better than interleaved data; `gunzip` and the
  * parser turn it back into ordinary index and xyz arrays.
  */
-import { AGE_ANCHORS, ageAnchorsOf, DEFAULT_MACROS } from "../makehuman/macro.ts";
+import {
+  AGE_ANCHORS,
+  type AgeAnchor,
+  ageAnchorsOf,
+  DEFAULT_MACROS,
+  upstreamAgeAnchor,
+} from "../makehuman/macro.ts";
 import type { StateMorph } from "../makehuman/stateMorphs.ts";
 import type { AnatomyFeature } from "../recipe/anatomy.ts";
 import { isBodyPiercingSite } from "../recipe/bodyArt.ts";
@@ -1411,17 +1417,28 @@ export const fetchGzip = (url: string) =>
  */
 export function targetLoadOrder(age: number): string[][] {
   const own = ageAnchorsOf(age);
-  const anchors = AGE_ANCHORS.map(([a]) => a as string);
+  const anchors = AGE_ANCHORS.map((a) => a.anchor as AgeAnchor);
   const ownIndex = own.map((a) => anchors.indexOf(a));
   // Neighbouring anchors first: any drag of the age slider past the figure's
   // own anchors needs a neighbour, and the far ones only after a long drag.
   // Equal steps away, the anchor nearer in years goes first.
-  const steps = (a: string) => Math.min(...ownIndex.map((i) => Math.abs(anchors.indexOf(a) - i)));
-  const years = (a: string) => Math.abs((AGE_ANCHORS.find(([x]) => x === a)?.[1] ?? 0) - age);
+  const steps = (a: AgeAnchor) =>
+    Math.min(...ownIndex.map((i) => Math.abs(anchors.indexOf(a) - i)));
+  const years = (a: AgeAnchor) => {
+    const { from, to } = AGE_ANCHORS[anchors.indexOf(a)] as (typeof AGE_ANCHORS)[number];
+    return age < from ? from - age : age > to ? age - to : 0;
+  };
   const rest = anchors
-    .filter((a) => !own.includes(a as never))
+    .filter((a) => !own.includes(a))
     .sort((p, q) => steps(p) - steps(q) || years(p) - years(q));
-  return [["core", ...own], ["modifiers"], ...rest.map((a) => [a]), [ADULT_TARGET_FILE]];
+  // Pack files keep MakeHuman's names for the age bodies (`targets-young`).
+  const file = upstreamAgeAnchor;
+  return [
+    ["core", ...own.map(file)],
+    ["modifiers"],
+    ...rest.map((a) => [file(a)]),
+    [ADULT_TARGET_FILE],
+  ];
 }
 
 /**

@@ -6,8 +6,12 @@
  * and a target's weight is the product of its anchors' weights. Each axis is
  * linear interpolation between its anchors, so one axis's weights sum to 1.
  *
- * The age axis spans MakeHuman's four anchors: baby (1 year), child (11),
- * young (25) and old (90).
+ * The age axis uses MakeHuman's four age bodies, but not quite its timeline.
+ * MakeHuman puts its child body at 10 years and its one adult body, which its
+ * files call `young`, at 25, and blends the two in between, so its "18" is
+ * still 47% child. Here the adult body holds from 18 to 25 (`AGE_ANCHORS`):
+ * nobody 18 or over carries any child shape, and from 25 on the axis is
+ * MakeHuman's own. See docs/AGE-POLICY.md.
  */
 
 export type Anchor = string;
@@ -38,33 +42,52 @@ export const genderAxis = (gender: number): AxisWeights => {
   ];
 };
 
-export const AGE_ANCHORS = [
-  ["baby", 1],
-  ["child", 11],
-  ["young", 25],
-  ["old", 90],
-] as const;
-export const MIN_AGE = 1;
-export const MAX_AGE = 90;
 /** Adult-only controls and packs apply from this age. See `recipe/agePolicy.ts`. */
 export const ADULT_AGE = 18;
 
-/** Age in years, piecewise linear between MakeHuman's anchors. */
+/**
+ * The age bodies: each holds full weight from `from` to `to` years, and the
+ * axis blends linearly between one body's `to` and the next one's `from`.
+ * `upstream` is MakeHuman's name for the body in its target files.
+ */
+export const AGE_ANCHORS = [
+  { anchor: "baby", from: 1, to: 1, upstream: "baby" },
+  { anchor: "child", from: 10, to: 10, upstream: "child" },
+  { anchor: "adult", from: ADULT_AGE, to: 25, upstream: "young" },
+  { anchor: "old", from: 90, to: 90, upstream: "old" },
+] as const;
+export const MIN_AGE = 1;
+export const MAX_AGE = 90;
+
+export type AgeAnchor = (typeof AGE_ANCHORS)[number]["anchor"];
+/** MakeHuman's name for an age body, as it appears in target and pack file names. */
+export type UpstreamAgeAnchor = (typeof AGE_ANCHORS)[number]["upstream"];
+
+/** Age in years, as weights on the age bodies (`AGE_ANCHORS`). */
 export const ageAxis = (years: number): AxisWeights => {
   const y = Math.min(MAX_AGE, Math.max(MIN_AGE, years));
-  for (let i = 0; i + 1 < AGE_ANCHORS.length; i++) {
-    const [a, ya] = AGE_ANCHORS[i] as readonly [string, number];
-    const [b, yb] = AGE_ANCHORS[i + 1] as readonly [string, number];
-    if (y <= yb) {
-      const t = (y - ya) / (yb - ya);
+  for (let i = 0; i < AGE_ANCHORS.length; i++) {
+    const a = AGE_ANCHORS[i] as (typeof AGE_ANCHORS)[number];
+    if (y <= a.to && y >= a.from) return [[a.anchor, 1]];
+    const b = AGE_ANCHORS[i + 1];
+    if (b && y < b.from) {
+      const t = (y - a.to) / (b.from - a.to);
       return [
-        [a, 1 - t],
-        [b, t],
+        [a.anchor, 1 - t],
+        [b.anchor, t],
       ];
     }
   }
   return [["old", 1]];
 };
+
+/** MakeHuman's file name for an age body (`adult` → `young`). */
+export const upstreamAgeAnchor = (anchor: AgeAnchor): UpstreamAgeAnchor =>
+  (AGE_ANCHORS.find((a) => a.anchor === anchor) as (typeof AGE_ANCHORS)[number]).upstream;
+
+/** The age axis in MakeHuman's target-name terms. */
+const upstreamAgeAxis = (years: number): AxisWeights =>
+  ageAxis(years).map(([anchor, w]) => [upstreamAgeAnchor(anchor as AgeAnchor), w] as const);
 
 export const muscleAxis = (v: number) => threeAnchor(v, "minmuscle", "averagemuscle", "maxmuscle");
 export const weightAxis = (v: number) => threeAnchor(v, "minweight", "averageweight", "maxweight");
@@ -159,7 +182,7 @@ export const isEmptyUpstreamCombination = (name: string) =>
 /** Target name → weight for a set of macro values. Names match the packed target names. */
 export function macroTargetWeights(m: MacroValues): Map<string, number> {
   const g = genderAxis(m.gender);
-  const a = ageAxis(m.age);
+  const a = upstreamAgeAxis(m.age);
   const mu = muscleAxis(m.muscle);
   const we = weightAxis(m.weight);
   const out = new Map<string, number>();
@@ -199,20 +222,21 @@ export function macroTargetWeights(m: MacroValues): Map<string, number> {
   return out;
 }
 
-/** The age anchor a macro target belongs to (`baby`, `child`, `young`, `old`), or null. */
+/**
+ * The age body a macro target belongs to (`baby`, `child`, `adult`, `old`), or
+ * null. Reads MakeHuman's name in the target (`young` for the adult body).
+ */
 export function macroTargetAgeAnchor(name: string): AgeAnchor | null {
-  for (const [anchor] of AGE_ANCHORS)
-    if (new RegExp(`(^|[/-])${anchor}(-|$)`).test(name)) return anchor;
+  for (const { anchor, upstream } of AGE_ANCHORS)
+    if (new RegExp(`(^|[/-])${upstream}(-|$)`).test(name)) return anchor;
   return null;
 }
 
-/** The age anchors whose targets a figure of this age weights. */
+/** The age bodies whose targets a figure of this age weights. */
 export const ageAnchorsOf = (years: number): AgeAnchor[] =>
   ageAxis(years)
     .filter(([, weight]) => weight > 0)
     .map(([anchor]) => anchor as AgeAnchor);
-
-export type AgeAnchor = (typeof AGE_ANCHORS)[number][0];
 
 /**
  * Every target name `macroTargetWeights` can weight, found by evaluating it
@@ -228,7 +252,7 @@ export function macroTargetNames(): Set<string> {
     [0, 0, 1],
   ] as const;
   for (const gender of ends)
-    for (const [, age] of AGE_ANCHORS)
+    for (const { from: age } of AGE_ANCHORS)
       for (const muscle of thirds)
         for (const weight of thirds)
           for (const height of ends)

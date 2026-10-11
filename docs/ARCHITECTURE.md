@@ -73,7 +73,7 @@ Age is the macro axis people change least while shaping a figure, and every
 other macro (gender, muscle, weight, height, proportions, ethnicity, breast)
 blends combinations within the same age anchors, so an anchor's file serves
 every edit that keeps the age between its neighbours. The default figure (25
-years) needs only the young file: about 1.9 MB with the body and attachments,
+years) needs only the adult body's file (`targets-young`, MakeHuman's name): about 1.9 MB with the body and attachments,
 against 5.1 MB for everything.
 
 `loadHumanoidAssetsStaged(options)` loads in stages over one link, each
@@ -153,8 +153,10 @@ anchor per axis (`african-male-young`,
 its anchors' weights. Each axis is a linear interpolation between anchors:
 
 - gender: female at 0, male at 1;
-- age: baby (1 year), child (11), young (25) and old (90), piecewise linear, so
-  every age from 1 to 90 is a blend of two anchors, clamped to that range;
+- age: baby (1 year), child (10), adult (held from 18 to 25; MakeHuman's
+  `young` files) and old (90), piecewise linear between them, clamped to 1 to
+  90. MakeHuman itself puts its adult at 25 and blends child into it until
+  then; why the kit holds it from 18 is in [AGE-POLICY.md](AGE-POLICY.md);
 - muscle and weight: three anchors each, 0, 0.5 and 1;
 - height and proportions: one-sided from the base mesh, which is the average;
 - the three ethnic anchors, normalised to sum to 1 (equal thirds if all are 0).
@@ -194,7 +196,7 @@ shown with or without clothing.
 
 The breast macros (`breastSize`, `breastFirmness`, and their regional overrides)
 are not gated: the breast targets are weighted from age 1 up as MakeHuman's are
-(none at the baby anchor, then the child, young and old anchors interpolated), so
+(none at the baby anchor, then the child, adult and old anchors interpolated), so
 a minor's breasts follow the age and the sliders as upstream's do. An earlier
 version of this document and of `docs/API.md` said they had to equal their
 defaults under 18 and that `withAge` reset them; no code did either, and

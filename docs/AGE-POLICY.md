@@ -174,13 +174,23 @@ treats it as the operative line for anything it publishes.
 | Sexually explicit conduct by a figure under 18 | Not produced anywhere in the library; the planned animation packages refuse it. |
 | Posing, framing, scene, intent (Dost; § 1466A "appears to be") | Downstream application's responsibility. |
 
-**The core body mirrors MakeHuman at every age.** `src/makehuman/macro.ts`
-interpolates MakeHuman's age anchors (baby 1, child 11, young 25, old 90).
-Breast targets exist, as in MakeHuman, for the female anchor at the child, young
+**The core body uses MakeHuman's four age bodies, with an adult from 18.**
+MakeHuman has one adult body, which its files call `young`. It places it at
+25 years and the child body at 10, and blends the two in between
+(`human.py`, `_setAgeVals`), so its "18" is 53% adult and 47% child. That leaves
+no adult distinct from a fading child, which is wrong at the very age adult-only
+content starts. `src/makehuman/macro.ts` (`AGE_ANCHORS`) therefore holds the
+adult body at full weight from `ADULT_AGE` (18) to 25 and blends child to adult
+over 10 to 18. From 25 to 90 the axis is MakeHuman's own, so every figure 25 or
+over is drawn exactly as upstream draws it. A test asserts that no figure 18 or
+over carries any child or baby weight. The kit calls the body `adult`; MakeHuman's
+`young` survives only in target and pack file names.
+
+Breast targets exist, as in MakeHuman, for the female body at the child, adult
 and old anchors (none for baby), so breast development through adolescence comes
 from the age interpolation itself. Nipples and areolae are part of the base mesh
-and skin layers (`src/surface/regions/rest.ts`). humanoid-kit adds no judgement of
-its own to MakeHuman's body.
+and skin layers (`src/surface/regions/rest.ts`). Under 18 nothing is added and
+the adult-only parts are refused (below); the body is otherwise MakeHuman's.
 
 **Genital anatomy is a separate install.** `scripts/pack-makehuman.ts` routes
 every target under `genitals/`, `pelvis/bulge-` and `stomach/stomach-pregnant-`

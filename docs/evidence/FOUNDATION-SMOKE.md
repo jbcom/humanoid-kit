@@ -25,9 +25,9 @@ file in its commit.
 | f-elder | seated | default | 20.92 (99, 21.1, trunk~trunk) | 15 (19.1) | 580 | 112.90 (448) | - | 138 (175) | 0.0 |
 | f-elder | overhead | default | 35.94 (14, 27.5, trunk~trunk) | 15 (26.7) | 228 | 8.61 (30) | shoulder.L 0.52, shoulder.R 0.52 | 144 (172) | 0.0 |
 | f-elder | squat | default | 23.54 (118, 27.1, trunk~trunk) | 179 (29.8) | 985 | 196.66 (745) | hip.L 0.73, hip.R 0.74 | 192 (180) | 0.0 |
-| child | seated | none | 2.66 (3, 20.6, shin.L~shin.L) | 48 (21.1) | 158 | 47.23 (243) | - | 47 (150) | 0.0 |
-| child | overhead | none | 14.64 (15, 24.7, head~head) | 27 (23.7) | 284 | 10.80 (86) | shoulder.L 0.49, shoulder.R 0.49 | 126 (173) | 0.0 |
-| child | squat | none | 15.38 (17, 23.2, trunk~trunk) | 209 (29.7) | 329 | 62.17 (330) | hip.L 0.69, hip.R 0.69 | 114 (172) | 0.0 |
+| child | seated | none | 4.03 (4, 21.3, shin.L~shin.L) | 46 (21.8) | 146 | 51.82 (249) | - | 44 (128) | 0.0 |
+| child | overhead | none | 15.01 (14, 26.1, head~trunk) | 27 (19.2) | 274 | 11.13 (82) | shoulder.L 0.49, shoulder.R 0.49 | 122 (179) | 0.0 |
+| child | squat | none | 19.00 (18, 24.5, trunk~trunk) | 205 (29.5) | 332 | 67.78 (331) | hip.L 0.69, hip.R 0.69 | 114 (162) | 0.0 |
 | f-slim | rest | default | 0 | 0 | 0 | 0 | - | 0 | 0.0 |
 | f-heavy | rest | default | 0 | 0 | 0 | 0 | - | 0 | 0.0 |
 | m-muscular | rest | default | 0 | 0 | 0 | 0 | - | 0 | 0.0 |

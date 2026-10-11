@@ -1,8 +1,10 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  ADULT_AGE,
   ageAxis,
   cupAxis,
+  DEFAULT_MACROS,
   genderAxis,
   isEmptyUpstreamCombination,
   type MacroValues,
@@ -45,23 +47,43 @@ describe("macro axes", () => {
     );
   });
 
-  it("hits MakeHuman's age anchors exactly", () => {
-    expect(ageAxis(1)).toEqual([
-      ["baby", 1],
-      ["child", 0],
+  it("hits the age anchors exactly", () => {
+    expect(ageAxis(1)).toEqual([["baby", 1]]);
+    // MakeHuman's own years for its child anchor: 1 + 48 * 0.1875.
+    expect(ageAxis(10)).toEqual([["child", 1]]);
+    expect(ageAxis(14)).toEqual([
+      ["child", 0.5],
+      ["adult", 0.5],
     ]);
-    expect(ageAxis(11)).toEqual([
-      ["baby", 0],
-      ["child", 1],
-    ]);
-    expect(ageAxis(25)).toEqual([
-      ["child", 0],
-      ["young", 1],
-    ]);
-    expect(ageAxis(90)).toEqual([
-      ["young", 0],
-      ["old", 1],
-    ]);
+    expect(ageAxis(18)).toEqual([["adult", 1]]);
+    expect(ageAxis(25)).toEqual([["adult", 1]]);
+    expect(ageAxis(90)).toEqual([["old", 1]]);
+  });
+
+  it("gives no figure aged 18 or over any child or baby shape", () => {
+    fc.assert(
+      fc.property(fc.double({ min: ADULT_AGE, max: 150, noNaN: true }), (y) => {
+        for (const [anchor, w] of ageAxis(y))
+          if (anchor === "child" || anchor === "baby") expect(w, `${anchor} at ${y}`).toBe(0);
+      }),
+    );
+  });
+
+  it("leaves every figure aged 25 or over as MakeHuman draws it", () => {
+    fc.assert(
+      fc.property(fc.double({ min: 25, max: 90, noNaN: true }), (y) => {
+        const old = (y - 25) / (90 - 25);
+        const w = new Map(ageAxis(y));
+        expect(w.get("old") ?? 0).toBeCloseTo(old, 9);
+        expect(w.get("adult") ?? 0).toBeCloseTo(1 - old, 9);
+      }),
+    );
+  });
+
+  it("names MakeHuman's young targets for the adult anchor", () => {
+    const names = [...macroTargetWeights({ ...DEFAULT_MACROS, age: 20 }).keys()];
+    expect(names.some((n) => /(^|[/-])young(-|$)/.test(n))).toBe(true);
+    expect(names.some((n) => /(^|[/-])(adult|child)(-|$)/.test(n))).toBe(false);
   });
 });
 
