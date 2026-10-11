@@ -164,6 +164,17 @@ export class AffordanceStates {
     return s?.kind === "aperture" ? s.opening : 0;
   }
 
+  /**
+   * The radius of what is inside an aperture (0 for none, or for an affordance
+   * that is not an aperture), read without a copy, as `opening` is. Throws
+   * `RangeError` for one the figure does not have.
+   */
+  occupantRadius(id: string): number {
+    if (!this.kinds.has(id)) throw new RangeError(`the figure has no affordance ${id}`);
+    const s = this.states.get(id);
+    return s?.kind === "aperture" ? (s.occupancy?.radius ?? 0) : 0;
+  }
+
   /** Merges `change` into the affordance's state, checked (`changeState`); returns a copy. */
   set(id: string, change: AffordanceChange): AffordanceState {
     const next = changeState(id, this.get(id), change);

@@ -29,8 +29,13 @@ import type { Recipe } from "../recipe/recipe.ts";
 import { ChannelClip, CLIP_CHANNELS } from "../render/channelClip.ts";
 import { type SkinFold, type SkinPose, skinNormalAt, skinPositionAt } from "../rig/dual.ts";
 import type { SurfaceAnchors } from "../worker/protocol.ts";
-import { type Channel, type ChannelPlace, emptyChannel, placeIn } from "./channel.ts";
-import { affordanceChannel, affordanceFrameInto, type LandmarkReader } from "./frames.ts";
+import { type Channel, type ChannelPlace, emptyChannel, openingFor, placeIn } from "./channel.ts";
+import {
+  affordanceChannel,
+  affordanceFrameInto,
+  headScale,
+  type LandmarkReader,
+} from "./frames.ts";
 import {
   type Affordance,
   affordances,
@@ -67,6 +72,29 @@ const LANDMARK_SET: ReadonlySet<string> = new Set(LANDMARK_IDS);
 
 /** Where a frame is given: in the figure's own space (the lifted group's), or in world space. */
 export type AffordanceSpace = "figure" | "world";
+
+/**
+ * What a grip holds or a pad touches, as `contact` measures it: the points
+ * within `radius` of the segment from `from` to `to` (a finger, a hilt, a bar).
+ */
+export interface Capsule {
+  from: Vec3;
+  to: Vec3;
+  radius: number;
+}
+
+/** How far `p` is from `c`'s surface: negative inside it. */
+function toCapsule(p: Vec3, c: Capsule): number {
+  const dx = c.to[0] - c.from[0];
+  const dy = c.to[1] - c.from[1];
+  const dz = c.to[2] - c.from[2];
+  const px = p[0] - c.from[0];
+  const py = p[1] - c.from[1];
+  const pz = p[2] - c.from[2];
+  const ll = dx * dx + dy * dy + dz * dz;
+  const t = ll > 0 ? Math.min(1, Math.max(0, (px * dx + py * dy + pz * dz) / ll)) : 0;
+  return Math.hypot(px - dx * t, py - dy * t, pz - dz * t) - c.radius;
+}
 
 /**
  * A figure's own affordances, their state and their frames on the figure as
@@ -160,6 +188,12 @@ export class HumanoidAffordances {
     this.figure = figure;
     this.ups = null;
     this.version++;
+    // Another figure's head may need another opening for what its mouth holds.
+    if (
+      figure &&
+      this.list.some((a) => a.channel === "oral" && this.states.occupantRadius(a.id) > 0)
+    )
+      this.jawUnmeasured = true;
     if (!figure && this.clipped) {
       this.clipped.follow(null);
       this.clipList.length = 0;
@@ -196,12 +230,19 @@ export class HumanoidAffordances {
    */
   set(id: string, change: AffordanceChange): AffordanceState {
     const next = this.states.set(id, change);
-    if (this.byId.get(id)?.channel === "oral" && "opening" in change) {
-      this.jawVersion++;
-      for (const l of this.jawListeners) l();
-    }
+    if (this.byId.get(id)?.channel === "oral" && ("opening" in change || "occupancy" in change))
+      this.jawChanged();
     return next;
   }
+
+  /** Tells the figure the mouth's opening may have changed. */
+  private jawChanged(): void {
+    this.jawVersion++;
+    for (const l of this.jawListeners) l();
+  }
+
+  /** Whether the jaw was last read with an occupant to fit before the figure's head could be measured. */
+  private jawUnmeasured = false;
 
   /**
    * Calls `listener` whenever the mouth's opening is set, so a figure drawn only
@@ -212,13 +253,22 @@ export class HumanoidAffordances {
     return () => this.jawListeners.delete(listener);
   }
 
-  /** How open the mouth is, 0 to 1: the most any of the figure's oral apertures is. */
+  /**
+   * How open the mouth is drawn, 0 to 1: the most any of the figure's oral
+   * apertures is, each opened as set or as far as its occupant needs
+   * (`openingFor`). An occupant held before the figure's head can be measured
+   * is fitted once it can be: the figure is told then (`refreshClip`).
+   */
   jawOpening(): number {
     let open = 0;
     for (const a of this.list) {
       if (a.channel !== "oral") continue;
-      const s = this.states.get(a.id);
-      if (s.kind === "aperture") open = Math.max(open, s.opening);
+      const opening = this.states.opening(a.id);
+      const radius = this.states.occupantRadius(a.id);
+      if (radius > 0 && !this.prepare()) this.jawUnmeasured = true;
+      else if (radius > 0)
+        open = Math.max(open, openingFor("oral", opening, radius, headScale(this.read)));
+      open = Math.max(open, opening);
     }
     return open;
   }
@@ -300,7 +350,13 @@ export class HumanoidAffordances {
   channel(id: string): Channel | null {
     const a = this.affordance(id);
     if (!a.channel || !this.prepare()) return null;
-    return affordanceChannel(a, this.read, this.states.opening(id));
+    return affordanceChannel(
+      a,
+      this.read,
+      this.states.opening(id),
+      undefined,
+      this.states.occupantRadius(id),
+    );
   }
 
   /**
@@ -323,6 +379,48 @@ export class HumanoidAffordances {
   }
 
   /**
+   * How far a contact affordance's skin (its landmark, a finger pad's pulp) is
+   * from the surface of `held`, a capsule given in `space`, in that space's
+   * metres: negative where the skin is pressed into it, so a pad touches where
+   * it is at most 0 (docs/ARCHITECTURE.md, "Affordances: the response"). Null
+   * until the figure is drawn and its anchors have arrived; throws `RangeError`
+   * for an affordance the figure does not have, one that is not a contact, or
+   * a capsule without a radius. Allocates nothing.
+   */
+  contact(id: string, held: Capsule, space: AffordanceSpace = "world"): number | null {
+    if (this.affordance(id).kind !== "contact")
+      throw new RangeError(`${id} is not a contact: it reports no contact`);
+    if (!(held.radius >= 0 && Number.isFinite(held.radius)))
+      throw new RangeError(`a held capsule's radius must be a finite number of at least 0`);
+    const f = this.frame(id, space, this.contactScratch);
+    return f ? toCapsule(f.position, held) : null;
+  }
+
+  /**
+   * Each of a grip's pads' contacts with `held` (`contact`), thumb to little
+   * finger, written into `out`. Null until the figure is drawn; throws
+   * `RangeError` for an affordance that is not a grip with pads.
+   */
+  gripContacts(
+    id: string,
+    held: Capsule,
+    space: AffordanceSpace = "world",
+    out: number[] = [],
+  ): number[] | null {
+    const pads = this.affordance(id).pads;
+    if (!pads) throw new RangeError(`${id} is not a grip with pads`);
+    out.length = pads.length;
+    for (let k = 0; k < pads.length; k++) {
+      const gap = this.contact(pads[k] as string, held, space);
+      if (gap === null) return null;
+      out[k] = gap;
+    }
+    return out;
+  }
+
+  private readonly contactScratch = frameOut();
+
+  /**
    * A clip of the figure's apertures' channels (`ChannelClip`) that keeps
    * itself current: the figure sets it after posing each frame (`refreshClip`)
    * and it follows the lifted group, so `clipMaterial(material, clip)` is all
@@ -337,10 +435,16 @@ export class HumanoidAffordances {
   }
 
   /**
-   * Sets the clip, if there is one, to the figure's channels as drawn now. Run
-   * each frame, so it allocates nothing: each channel is written in place.
+   * Sets the clip, if there is one, to the figure's channels as drawn now, and
+   * tells the figure when an occupant held before its head could be measured
+   * can now be fitted (`jawOpening`). Run each frame, so it allocates nothing:
+   * each channel is written in place.
    */
   refreshClip(): void {
+    if (this.jawUnmeasured && this.prepare()) {
+      this.jawUnmeasured = false;
+      this.jawChanged();
+    }
     const clip = this.clipped;
     if (!clip) return;
     clip.follow(this.figure?.world ?? null);
@@ -350,7 +454,13 @@ export class HumanoidAffordances {
       for (const a of this.list) {
         if (!a.channel || list.length === CLIP_CHANNELS) continue;
         const out = this.clipChannels[list.length] as Channel;
-        const c = affordanceChannel(a, this.read, this.states.opening(a.id), out);
+        const c = affordanceChannel(
+          a,
+          this.read,
+          this.states.opening(a.id),
+          out,
+          this.states.occupantRadius(a.id),
+        );
         if (c) list.push(c);
       }
     clip.set(list);

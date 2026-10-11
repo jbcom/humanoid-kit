@@ -11,6 +11,7 @@
  */
 import { Group, Matrix4, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
+import { ADULT_EAR_SPAN, CHANNELS } from "../src/affordance/channel.ts";
 import { affordanceChannels, affordanceFrames } from "../src/affordance/frames.ts";
 import { HumanoidAffordances, type LiveFigure } from "../src/affordance/live.ts";
 import { affordances, CORE_AFFORDANCES } from "../src/affordance/registry.ts";
@@ -146,9 +147,13 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
           if (!live) throw new Error(`${id}: no channel`);
           expect(distance(live.origin, c.origin), id).toBeLessThan(1e-6);
           expect(distance(live.inward, c.inward), id).toBeLessThan(1e-6);
-          expect(live.knots.flat().map((x) => Number(x.toFixed(9)))).toEqual(
-            c.knots.flat().map((x) => Number(x.toFixed(9))),
-          );
+          live.sections.forEach((s, k) => {
+            const want = c.sections[k];
+            if (!want) throw new Error(`${id}: no section ${k}`);
+            expect(distance(s.centre, want.centre), `${id} ${k}`).toBeLessThan(1e-6);
+            expect(s.halfAcross).toBeCloseTo(want.halfAcross, 9);
+            expect(s.halfUp).toBeCloseTo(want.halfUp, 9);
+          });
         }
       }
     }
@@ -180,17 +185,17 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
         expect(distance(world[k], d.toArray()), `${id} ${k}`).toBeLessThan(1e-9);
       }
     }
-    // A point a centimetre into the open mouth, given in world space, is inside it.
+    // A point on the open mouth's path, given in world space, is inside it.
     h.set("mouth", { opening: 1 });
     const mouth = h.channel("mouth");
     if (!mouth) throw new Error("no mouth");
-    const inside = new Vector3(...mouth.origin)
-      .addScaledVector(new Vector3(...mouth.inward), 0.01)
-      .applyMatrix4(toWorld);
+    const on = mouth.sections[4];
+    if (!on) throw new Error("no section");
+    const inside = new Vector3(...on.centre).applyMatrix4(toWorld);
     const place = h.place("mouth", inside.toArray());
     expect(place?.inside).toBe(true);
-    // Its depth is in world metres: the figure is scaled by 1.25.
-    expect(place?.depth).toBeCloseTo(0.0125, 9);
+    // Its depth along the path is in world metres: the figure is scaled by 1.25.
+    expect(place?.depth).toBeCloseTo(on.depth * 1.25, 9);
     const outside = new Vector3(...mouth.origin)
       .addScaledVector(new Vector3(...mouth.inward), -0.01)
       .applyMatrix4(toWorld);
@@ -224,9 +229,9 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
     expect(count).toBe(5);
     // The channels the clip holds are the handle's own, written again in place: the mouth's
     // rim is where a fresh read puts it.
-    const origin = clip.uniforms.hkClipOrigin.value[0]?.clone();
+    const origin = clip.sectionOf(0, 0).centre;
     h.refreshClip();
-    expect(clip.uniforms.hkClipOrigin.value[0]?.equals(origin as Vector3)).toBe(true);
+    expect(clip.sectionOf(0, 0).centre.equals(origin)).toBe(true);
     const mouth = h.channel("mouth");
     expect(mouth?.depth).toBeGreaterThan(0);
     // A figure drawn on demand is told the mouth changed, so it draws the opened jaw.
@@ -292,5 +297,95 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
     h.set("mouth", { opening: 0.7 });
     expect(h.jawVersion).not.toBe(seen);
     expect(h.jawOpening()).toBe(0.7);
+  });
+
+  it("reports how far each finger pad is from a held capsule, alone and as its grip's five", () => {
+    const recipe = createRecipe();
+    const h = new HumanoidAffordances();
+    h.setRecipe(recipe);
+    const finger = { from: [0, 0, 0] as const, to: [0, 0.01, 0] as const, radius: 0.008 };
+    expect(h.contact("finger-pad-2.R", finger)).toBeNull();
+    const group = new Group();
+    group.position.set(0.3, 0, -0.5);
+    group.rotation.set(0, 0.6, 0);
+    group.scale.setScalar(1.25);
+    h.setAnchors(anchors);
+    h.attach(liveFigure(recipe, "relaxed", group));
+    group.updateWorldMatrix(true, false);
+    const pad = h.frame("finger-pad-2.R", "world");
+    if (!pad) throw new Error("no pad");
+    // A finger lying across the index pad, its axis 9 mm out along the pad's normal: a
+    // radius of 8 mm leaves a millimetre's gap, one of 10 presses a millimetre in.
+    const axis = new Vector3(...pad.position).addScaledVector(new Vector3(...pad.normal), 0.009);
+    const across = new Vector3(...pad.bitangent);
+    const held = (radius: number) => ({
+      from: axis.clone().addScaledVector(across, -0.02).toArray(),
+      to: axis.clone().addScaledVector(across, 0.02).toArray(),
+      radius,
+    });
+    expect(h.contact("finger-pad-2.R", held(0.008))).toBeCloseTo(0.001, 9);
+    expect(h.contact("finger-pad-2.R", held(0.01))).toBeCloseTo(-0.001, 9);
+    // Beyond the capsule's end, the distance is to its rounded cap.
+    const capped = {
+      from: axis.toArray(),
+      to: axis.clone().addScaledVector(across, 0.02).toArray(),
+      radius: 0,
+    };
+    expect(h.contact("finger-pad-2.R", capped)).toBeCloseTo(0.009, 9);
+    // In the figure's own space, the same capsule given there.
+    const toFigure = new Matrix4().copy(group.matrixWorld).invert();
+    const local = held(0.008);
+    const inFigure = {
+      from: new Vector3(...local.from).applyMatrix4(toFigure).toArray(),
+      to: new Vector3(...local.to).applyMatrix4(toFigure).toArray(),
+      radius: 0.008 / 1.25,
+    };
+    expect(h.contact("finger-pad-2.R", inFigure, "figure")).toBeCloseTo(0.001 / 1.25, 9);
+    // The grip's five, written in place, each its pad's.
+    const out = [0, 0, 0, 0, 0];
+    expect(h.gripContacts("hand.R", held(0.008), "world", out)).toBe(out);
+    for (const [k, d] of [1, 2, 3, 4, 5].entries())
+      expect(out[k]).toBeCloseTo(h.contact(`finger-pad-${d}.R`, held(0.008)) as number, 12);
+    expect(out[1]).toBeCloseTo(0.001, 9);
+    // Only a contact reports one, and only a grip its pads; a capsule must have a radius.
+    expect(() => h.contact("mouth", held(0.008))).toThrow(RangeError);
+    expect(() => h.gripContacts("finger-pad-2.R", held(0.008))).toThrow(RangeError);
+    expect(() => h.contact("finger-pad-2.R", held(-1))).toThrow(RangeError);
+  });
+
+  it("opens the mouth to fit what it holds, on the jaw and the channel, reporting the opening set", () => {
+    const recipe = createRecipe();
+    const h = new HumanoidAffordances();
+    h.setRecipe(recipe);
+    // A pen 10 mm across held before the figure can be measured: the fit waits for it.
+    const seen = h.jawVersion;
+    h.set("mouth", { occupancy: { depth: 0.03, radius: 0.005 } });
+    expect(h.jawVersion).not.toBe(seen);
+    expect(h.jawOpening()).toBe(0);
+    h.attach(liveFigure(recipe, REST_POSE));
+    h.setAnchors(anchors);
+    const before = h.jawVersion;
+    h.refreshClip();
+    expect(h.jawVersion, "measured, the figure is told again").not.toBe(before);
+    const ears = [h.landmark("ear-canal.L"), h.landmark("ear-canal.R")];
+    const scale = distance(ears[0]?.position ?? [], ears[1]?.position ?? []) / ADULT_EAR_SPAN;
+    const fit = 0.01 / (CHANNELS.oral.rim.up * scale);
+    expect(h.jawOpening()).toBeCloseTo(fit, 9);
+    // The channel opens as far: its rim as tall as the pen.
+    expect(2 * (h.channel("mouth")?.halfSize(0)[1] ?? 0)).toBeCloseTo(0.01, 9);
+    // What was set is what is reported.
+    expect(h.get("mouth")).toMatchObject({ opening: 0 });
+    // Opened wider than the pen needs, the mouth opens as set; emptied, it closes.
+    h.set("mouth", { opening: 0.8 });
+    expect(h.jawOpening()).toBe(0.8);
+    h.set("mouth", { opening: 0, occupancy: null });
+    expect(h.jawOpening()).toBe(0);
+    // An ear canal does not open, whatever it holds.
+    h.set("ear-canal.L", { occupancy: { depth: 0.01, radius: 0.006 } });
+    expect(h.jawOpening()).toBe(0);
+    expect(h.channel("ear-canal.L")?.halfSize(0)[1]).toBeCloseTo(
+      (CHANNELS.auditory.rim.up * scale) / 2,
+      9,
+    );
   });
 });

@@ -2993,8 +2993,8 @@ for.
 
 - *Channels* (`src/affordance/channel.ts`, numbers and their sources in
   `docs/research/AFFORDANCE-CHANNELS.md`): each aperture names a channel
-  behind its rim, a straight path in with an elliptical cross-section along a
-  size profile. Every size is an adult's, scaled by the figure's head width
+  behind its rim, a curved path in with an elliptical cross-section along it
+  ("Affordances: curved channels"). Every size is an adult's, scaled by the figure's head width
   (its ear canals' span over the default adult's); the mouth's width is the
   figure's own (between its corners) and its height its opening.
   `affordanceChannels(model, posedBody, own, states)` gives a figure's, and
@@ -3010,8 +3010,9 @@ for.
   the clip moves with the figure on the frame it moves).
   `clipMaterial(material, clip)` has any material of an object that may enter
   them discard each fragment `placeIn` puts inside one, so a bite dissolves
-  past the lips and an earbud's stem vanishes into the canal. A channel's size
-  along it is its `knots`, the one profile `halfSize` and the shader both read.
+  past the lips and an earbud's stem vanishes into the canal. A channel's path
+  and size along it are its `sections`, the one sweep `placeIn`, `halfSize` and
+  the shader all read.
   A browser test holds the discarded pixels to `placeIn`'s inside, pixel for
   pixel away from the walls, and shows a fragment just inside opened lips
   discarded.
@@ -3051,6 +3052,12 @@ const hands = useHumanoidAffordances();
   its apertures' channels after it poses each frame, and it follows the
   lifted group, so `clipMaterial(material, hands.clip)` is all an object that
   enters the figure needs.
+- `contact(id, held, space?)` is how far a contact affordance's skin (a
+  finger pad's) is from a held `Capsule` (two points and a radius, in world
+  space by default), negative where it presses in; `gripContacts(id, held,
+  space?, out?)` gives a grip's pads' five at once ("Affordances: the
+  response"). An oral aperture's `occupancy` opens the mouth drawn as far as
+  its occupant needs, on the jaw and the channel.
 - `<AffordanceAnchor of={handle} at={id}>` draws its children in the lifted
   group (a portal), placed each frame on the affordance's frame: +x along the
   tangent, +y along the bitangent, +z out along the normal.
@@ -3087,12 +3094,149 @@ custom material.
 The registry is built in steps: the kinds, the core's apertures (the mouth,
 nostrils and ear canals) with their channels, grips, mounts, contacts and the
 finger pads, state, frames, the clip at the rim and the public API through
-`Humanoid`. Next: the response (a channel widening to what it holds), the
-adult pack's affordances, and curved channel paths. The canals' bends are placed
-by a CT study of 221 ears (PMC12198549: the first bend at the concha's
-junction, the second at the bony junction), but their angles were not found
-in an open source (Stinson and Lawton, JASA 85:2492, 1989, has them), so the
-paths stay straight until they are.
+`Humanoid`; then curved channels and the response ("Affordances: curved
+channels", "Affordances: the response"). Next: the adult pack's affordances.
+
+## Affordances: curved channels (design, 2026-10-11)
+
+A straight channel was the first step; the real ones bend. The ear canal runs
+in an S, the nasal vestibule rises from the nostril and turns back into the
+nose, and the mouth runs back over the tongue and turns down into the throat.
+An earbud seated past the ear canal's first bend, or a swab along the nasal
+floor, leaves a straight channel through the side of the canal, where the clip
+no longer hides it.
+
+**Use cases.** The clip hides what has passed an opening along the path the
+channel really takes, for any figure's head size and pose. A developer asks
+how far into a channel a point is, measured along that path (an earbud's depth
+past the rim), and whether it is inside. Tests hold the path to its cited
+shape: its length, where it bends and by how much, and its cross-section along
+the way.
+
+**Requirements.** The path is anatomical, so it is set in the head's own
+directions (forward, up, toward the midline), not the skin's: a rim's normal
+says which way the skin faces, not which way the canal behind it runs. It
+follows the head as it poses and scales with its size. The clip discards
+exactly what `placeIn` puts inside, now along a curve, and the per-frame path
+(`refreshClip`) still allocates nothing.
+
+**Options.** (a) A chain of circular arcs: an exact tube, but the clip's
+closest-point test on an arc and the knot's sizes along it make every
+fragment solve a small system. (b) The channel as a signed-distance field
+baked to a 3D texture: any shape, but a texture per channel per frame as the
+figure poses, and its resolution (a 7 mm canal in a head-sized box) is the
+error. (c) A centreline through a few anatomical knots, sampled to a fixed
+number of sections, each a plane (the bisector of its two neighbouring
+segments) holding an ellipse: a point lies between two consecutive section
+planes, the fraction of the way it is from one to the other interpolates the
+ellipse, and it is inside when it falls within it. The test is a handful of
+dot products per section, the same on the CPU and in GLSL; the sections
+upload as a small float texture; the knots stay the cited numbers.
+
+**Decisions.**
+
+- *A channel is a swept ellipse along a centreline* (option c). Its spec is a
+  few knots: each a point in the head's frame (metres forward, up and toward
+  the midline from the rim, an adult's), with the cross-section's size there
+  as a share of the rim's. A centripetal Catmull-Rom spline through the knots
+  (which has no cusps and is unchanged by a move, turn or even scale) is
+  sampled to `CHANNEL_SECTIONS` sections, the same number of steps across each
+  span between knots. Each section holds its centre, its plane's normal (the
+  bisector of its two segments; the path's own direction at either end), its
+  cross-section's axes and half-sizes, and its depth: the path's length from
+  the rim. The axes start as the rim's (its tangent made square to the path,
+  so an ear canal is taller than wide at its mouth) and are carried along by
+  parallel transport (each section's taken from the last's, made square to its
+  own plane), so the cross-section does not twist.
+- *The head's frame* is read from landmarks on the skull: across between the
+  ear canals, up from their midpoint to the crown, forward square to both and
+  toward the nose's tip; toward the midline is across, signed for the rim's
+  side. It turns with the head and every size scales with its width (the ear
+  canals' span over the default adult's), as before.
+- *Where a point is* (`placeIn`): it is in front of the rim when it is behind
+  the first section's plane, and past the end when it is beyond the last's.
+  Otherwise each pair of consecutive sections whose planes it lies between
+  (the first at or in front of it, the next behind) gives a fraction (its
+  distance from the first plane over its distance between the two), the
+  ellipse there (centre, axes and half-sizes interpolated, the axes made unit)
+  and its depth (interpolated). It is inside when it falls within that
+  ellipse for any such pair, in order from the rim; its depth is that pair's,
+  or the first pair's when it is inside none. The renderer's clip runs the
+  same loop in GLSL over the sections uploaded as an RGBA float texture (four
+  texels a section, a row a channel), after a bounding sphere per channel
+  that never culls an inside point, so the GPU discards what the CPU calls
+  inside.
+- *The numbers* are in `docs/research/AFFORDANCE-CHANNELS.md`, each measured
+  or labelled CHOICE.
+
+A unit test holds each core channel to its cited length, bend positions,
+bend angles and cross-sections, and to the head's size; a browser test holds
+the clip to `placeIn` pixel for pixel on a curved channel, away from its wall.
+
+## Affordances: the response (design, 2026-10-11)
+
+The clip hides what has entered an opening. What else must the figure do when
+something occupies an aperture or a grip? Three uses decide it for now.
+
+**Use cases.**
+
+1. *A figure bites or holds something in its mouth*: a pen across the teeth,
+   a rose's stem, the first bite of an apple. The developer places the object
+   at the mouth (`<AffordanceAnchor at="mouth">`) and says what is in it
+   (`occupancy`: its depth and radius). The lips must part round it: a mouth
+   left closed draws its lips through the pen. The part past the lips is
+   hidden (the clip, along the curved oral channel).
+2. *An earbud*: placed at the ear canal and pushed in. The part inside the
+   canal is hidden along the canal's S (the clip on the curved channel), and
+   the developer reads how deep its tip is (`place(id, tip)`). An ear canal
+   does not open, and an eartip wider than the canal's mouth lies in the
+   concha and inside the head, behind skin the depth test already draws over.
+3. *A finger in a grip*: one figure's hand closes round another's finger, or
+   round a sword's hilt. The developer poses the fingers and sets the grip's
+   `closure` and what it is `holding`; they need to know which finger pads
+   touch what is held, to stop closing, to call the grasp made, or to drive
+   haptics. A finger, a hilt and a bar are each a capsule (a segment and a
+   radius) closely enough for that.
+
+**Requirements.** (1) An aperture that opens opens at least as far as its
+occupant needs, on the jaw drawn and on the channel alike, without the
+developer working the opening out. (2) The clip follows the curved channel
+(the previous design). (3) Each finger pad reports how far its skin is from a
+held capsule, given in world space (so another figure's finger counts), and a
+grip reports its own hand's five pads at once, allocating nothing given
+somewhere to write them.
+
+**Decisions.**
+
+- *The opening fits its occupant*: an aperture's drawn opening is the larger
+  of the opening set and the one its occupant's diameter needs at the rim
+  (`openingFor`: twice the radius over the full opening, 45 mm on the default
+  adult, scaled by the head; at most 1). The jaw drawn (`jawOpening`) and the
+  channel and clip read the drawn one; `get(id)` still reports what was set.
+  A channel that does not open (an ear canal, a nostril) ignores it. Setting
+  an oral aperture's occupancy tells the figure, as setting its opening does,
+  and the fit is worked out again once the figure's head can be measured.
+- *A finger pad reports its contact*: `contact(id, held, space?)` is the
+  distance from a contact affordance's skin (its landmark) to a capsule's
+  surface (`Capsule`: two points and a radius), in metres, negative where the
+  skin is pressed into it; a pad touches where it is at most 0. A grip names
+  the pads it closes with (`Affordance.pads`: its hand's five, thumb to
+  little finger), and `gripContacts(id, held, space?, out?)` gives their five
+  distances. They are evaluated when read, like a frame, never stored.
+
+**Not built, and why.** The `consumed` fraction stays a value the developer
+sets and reads: the part of a bitten apple that is gone after the apple leaves
+the mouth lives in the apple's own space, which the kit learns only when solid
+models register as insertable objects (docs/FOUNDATION.md, "Interacting with
+other objects"); while the apple is in the mouth, the clip already hides what
+has passed the lips. A channel widening to what it holds (and the clip with
+it) is for occupants wider than a channel whose wall is thin, a finger in a
+nostril above all; none of these uses has one, since the earbud's wider part
+sits behind thick skin. Fingers closing onto what they hold by inverse
+kinematics, pads flattening at contact and tissue compressing under a load
+(docs/FOUNDATION.md, "Response") need a hand pose solver and soft
+deformation the kit does not have yet; the contact report is what that solver
+will read, so it comes first.
 
 ## Invariants
 

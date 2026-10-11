@@ -1388,6 +1388,43 @@ at the centre of a contact. Its limits:
 Outside a provider the stage falls back to drei's `ContactShadows` around the
 origin.
 
+### Affordances
+
+The body's interaction points (docs/ARCHITECTURE.md, "Affordances: the
+registry", "Affordances: curved channels", "Affordances: the response").
+
+```tsx
+const hands = useHumanoidAffordances();
+<Humanoid recipe={recipe} affordances={hands} />
+<AffordanceAnchor of={hands} at="hand.R"><Sword /></AffordanceAnchor>
+```
+
+- `useHumanoidAffordances(registry?)`: a stable `HumanoidAffordances` the
+  figure keeps current. `own`, `has(id)`, `get(id)` and `set(id, change)` read
+  and set state by kind (an aperture's `opening`, `occupancy` and `consumed`; a
+  grip's `closure` and `holding`; a mount's `attached` and `load`; a contact's
+  `pressure`).
+- `frame(id, space?, out?)`, `landmark(id, space?, out?)` and `vertex(v,
+  space?, out?)`: frames on the figure as the GPU draws it, in `"figure"` or
+  `"world"` space; null until it is drawn.
+- `channel(id)`: an aperture's channel in the figure's space, a curved path of
+  `CHANNEL_SECTIONS` sections (`Channel.sections`: centre, plane normal, axes,
+  half-sizes, depth along the path). `place(id, worldPoint)`: how far along it
+  a point is and whether it is inside.
+- An oral aperture's `occupancy` opens the mouth drawn as far as its
+  occupant's diameter needs (`openingFor`); `get` still reports the opening set.
+- `contact(id, held, space?)`: a contact affordance's distance from a held
+  `Capsule` (`{ from, to, radius }`, world space by default), negative where
+  the skin presses in. `gripContacts(id, held, space?, out?)`: a grip's
+  `pads`, thumb to little finger.
+- `clip`: a `ChannelClip` of the figure's channels; `clipMaterial(material,
+  clip)` has an object's material discard what lies inside them.
+- `<AffordanceAnchor of at>`: draws its children on an affordance's frame.
+
+From `humanoid-kit`: `CORE_AFFORDANCES`, `affordances(recipe, registry?)`,
+`AffordanceStates`, `affordanceFrames`, `affordanceChannels`, `CHANNELS`,
+`channelOf`, `channelThrough`, `headFrameOf`, `placeIn`, `openingFor`.
+
 ## `humanoid-kit/editor`
 
 A complete character creator built on `humanoid-kit/react`, and the hooks it

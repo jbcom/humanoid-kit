@@ -54,6 +54,14 @@ describe("the affordance registry", () => {
     );
   });
 
+  it("names the pads each hand's grip closes with, its own hand's, thumb to little finger", () => {
+    for (const side of ["L", "R"]) {
+      const grip = CORE_AFFORDANCES.find((a) => a.id === `hand.${side}`);
+      expect(grip?.pads).toEqual([1, 2, 3, 4, 5].map((d) => `finger-pad-${d}.${side}`));
+    }
+    expect(CORE_AFFORDANCES.filter((a) => a.pads).map((a) => a.kind)).toEqual(["grip", "grip"]);
+  });
+
   it("has every kind in the core, and none of the adult anatomy's", () => {
     const kinds = new Set(CORE_AFFORDANCES.map((a) => a.kind));
     expect([...kinds].sort()).toEqual(["aperture", "contact", "grip", "mount"]);
