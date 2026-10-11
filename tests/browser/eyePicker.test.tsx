@@ -65,7 +65,9 @@ describe("the eye texture choice", () => {
     let latest: HumanoidEditor | undefined;
     const start = createRecipe({ eyes: { iris: [0.05, 0.1, 0.25], scleraWarmth: 0.8 } });
     const screen = await render(panel(start, true, (e) => (latest = e)));
-    const amber = screen.getByRole("button", { name: "Diffuse amber eyes", exact: true });
+    const amber = screen
+      .getByRole("group", { name: "Human", exact: true })
+      .getByRole("button", { name: "Amber", exact: true });
     await amber.click();
     await expect.poll(() => latest?.recipe.eyes.material).toBe("bobby_03_diffuse_amber_eyes");
     expect(latest?.recipe.eyes.iris).toEqual([0.05, 0.1, 0.25]);
@@ -87,7 +89,11 @@ describe("the eye texture choice", () => {
       panel(createRecipe({ eyes: { material: "nyloseth_green_cat_eyes" } })),
     );
     await expect
-      .element(screen.getByRole("button", { name: "Green cat eyes", exact: true }))
+      .element(
+        screen
+          .getByRole("group", { name: "Slit pupil", exact: true })
+          .getByRole("button", { name: "Green", exact: true }),
+      )
       .toHaveAttribute("aria-pressed", "true");
     await expect
       .element(screen.getByRole("button", { name: "Built-in" }))
@@ -108,7 +114,11 @@ describe("the eye texture choice", () => {
       panel(createRecipe({ eyes: { material: "bobby_03_diffuse_amber_eyes" } })),
     );
     await expect
-      .element(screen.getByRole("button", { name: "Diffuse amber eyes", exact: true }))
+      .element(
+        screen
+          .getByRole("group", { name: "Human", exact: true })
+          .getByRole("button", { name: "Amber", exact: true }),
+      )
       .toHaveAttribute("aria-pressed", "true");
     await expect
       .element(screen.getByText("This eye has no iris, so its colour has no effect."))

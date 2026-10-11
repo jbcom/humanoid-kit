@@ -1,45 +1,50 @@
 import { describe, expect, it } from "vitest";
-import {
-  eyeMaterialGroups,
-  eyeMaterialLabel,
-  withEyeMaterial,
-} from "../src/editor/eyeMaterials.ts";
+import { eyeMaterialGroups, withEyeMaterial } from "../src/editor/eyeMaterials.ts";
 import { createEyeLibrary, type EyeManifest } from "../src/eyes/library.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { eyeManifest } from "./fixtures.ts";
 
 const library = createEyeLibrary(eyeManifest, (file) => file);
-const labelOf = (id: string) => {
-  const entry = library.entry(id);
-  if (!entry) throw new Error(`the eye pack has no ${id}`);
-  return eyeMaterialLabel(entry);
-};
 
-describe("eyeMaterialLabel", () => {
-  it("drops the author's name the title was built from, and capitalises what is left", () => {
-    expect(labelOf("bobby_03_diffuse_amber_eyes")).toBe("Diffuse amber eyes");
-    expect(labelOf("bobby_03_daz_dragon_eyes")).toBe("Daz dragon eyes");
-    expect(labelOf("hatshj_alien_eye_2")).toBe("Alien eye 2");
-    expect(labelOf("wojackowl_blue_eyes_toon")).toBe("Blue eyes toon");
-    expect(labelOf("mindfront_brown_eye_02")).toBe("Brown eye 02");
-    expect(labelOf("culturalibre_6_eyes")).toBe("6 eyes");
-  });
+/** The words of an author's or a source's name that must not lead a label. */
+const sourceWords = (m: EyeManifest["materials"][number]) =>
+  [m.author, m.source.archive.replace(/\.zip$/, ""), ...m.id.split("_").slice(0, 1)]
+    .flatMap((s) => s.toLowerCase().split(/[^a-z]+/))
+    .filter((w) => w.length > 2);
 
-  it("keeps a title that does not begin with its author, or is only the author", () => {
-    expect(eyeMaterialLabel({ title: "Blue sky eyes", author: "someone" })).toBe("Blue sky eyes");
-    expect(eyeMaterialLabel({ title: "Someone", author: "someone" })).toBe("Someone");
-    expect(eyeMaterialLabel({ title: "Some eyes", author: "someone else" })).toBe("Some eyes");
-  });
+describe("the eye pack's labels", () => {
+  const materials = library.manifest.materials;
 
-  it("names every material of the shipped pack, each differently", () => {
-    const labels = library.manifest.materials.map(eyeMaterialLabel);
-    expect(new Set(labels).size).toBe(labels.length);
-    for (const label of labels) {
-      expect(label).toMatch(/^[A-Z0-9]/);
-      expect(label.length).toBeGreaterThan(2);
+  it("gives every material a curated, non-empty label that is not its file name", () => {
+    for (const m of materials) {
+      expect(m.label, m.id).toBe(m.label.trim());
+      expect(m.label.length, m.id).toBeGreaterThan(2);
+      expect(m.label.length, m.id).toBeLessThanOrEqual(16);
+      expect(m.label, m.id).toMatch(/^[A-Z]/);
+      expect(m.label.toLowerCase(), m.id).not.toBe(m.title.toLowerCase());
     }
-    for (const m of library.manifest.materials)
-      expect(eyeMaterialLabel(m).toLowerCase().startsWith(m.author.toLowerCase())).toBe(false);
+  });
+
+  it("is unique within its group, which is what a picker lists together", () => {
+    for (const group of eyeMaterialGroups(library)) {
+      const labels = group.materials.map((m) => m.label);
+      expect(new Set(labels).size, `${group.label}: ${labels.join(", ")}`).toBe(labels.length);
+    }
+  });
+
+  it("has no underscore, digit-only suffix, or author or source prefix", () => {
+    for (const m of materials) {
+      expect(m.label, m.id).not.toMatch(/[_]/);
+      expect(m.label, m.id).not.toMatch(/\d+$/);
+      expect(m.label, m.id).not.toMatch(/\b0\d\b/);
+      const first = m.label.toLowerCase().split(/\s+/)[0] ?? "";
+      expect(sourceWords(m), `${m.id}: "${m.label}"`).not.toContain(first);
+    }
+  });
+
+  it("comes from the pack's manifest unchanged, not from a rewrite of the title", () => {
+    const listed = eyeMaterialGroups(library).flatMap((g) => g.materials);
+    for (const m of materials) expect(listed.find((c) => c.id === m.id)?.label, m.id).toBe(m.label);
   });
 });
 

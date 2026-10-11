@@ -50,7 +50,8 @@ repository's licence rule (`scripts/lib/licenceRule.ts`) before packing:
 
 Each texture is re-encoded as WebP (quality 88, lossless alpha). The numbers in the manifest (the iris's radius, its
 and the sclera's brightness against the built-in eye's, the sclera's tint, the iris colour as painted) are measured
-from the pixels by `measureEye`; nothing is authored.
+from the pixels by `measureEye`; nothing is authored. The one authored field is each material's `label`, its name in a
+picker (`EYE_LABELS` in `scripts/lib/packEyes.ts`); `title` is the asset's own name, made from its file name.
 
 ## Outputs
 

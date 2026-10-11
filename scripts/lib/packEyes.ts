@@ -266,6 +266,55 @@ const title = (id: string) =>
     .replace(/\b(\d)\b/g, "$1")
     .replace(/^./, (c) => c.toUpperCase());
 
+/**
+ * What each material is called in a picker: authored here, after looking at the texture,
+ * because a file name is not a name (`bluecateyes`, `sr_anime_maid-san_blue_eyes`,
+ * `mindfront_brown_eye_02`). Short, since a picker groups by kind already (the first tag)
+ * and so a name need not say "cat" under Slit pupil or "toon" under Toon; without the
+ * author's name or a character's; without a number a person cannot tell apart; and
+ * distinct within a kind. `packEyes` refuses a material with no label here, a label here
+ * for no material, and two of a kind that are the same.
+ */
+export const EYE_LABELS: Readonly<Record<string, string>> = {
+  // Human
+  bobby_03_diffuse_amber_eyes: "Amber",
+  bobby_03_diffuse_blue_eyes: "Blue",
+  bobby_03_diffuse_grey_eyes: "Grey",
+  bobby_03_diffuse_hazel_eyes: "Hazel",
+  bobby_03_diffuse_sea_breeze_eyes: "Sea breeze",
+  mindfront_brown_eye_02: "Deep brown",
+  nyloseth_sapphire_blue_eyes: "Sapphire",
+  // Slit pupil
+  nyloseth_bluecateyes: "Blue",
+  nyloseth_brown_cat_eyes: "Brown",
+  nyloseth_green_cat_eyes: "Green",
+  nyloseth_sapphire_cat_eyes: "Sapphire",
+  nyloseth_yellow_cat_eyes: "Yellow",
+  // Toon
+  spamrakuen_sr_anime_eyes_navy: "Navy anime",
+  "spamrakuen_sr_anime_maid-san_blue_eyes": "Blue anime",
+  "spamrakuen_sr_anime_maid-san_red_eyes": "Red anime",
+  wojackowl_blue_eyes_toon: "Blue",
+  wojackowl_brown_eyes_toon: "Brown",
+  wojackowl_green_eyes_toon: "Green",
+  // Creature
+  bobby_03_daz_dragon_eyes: "Dragon",
+  culturalibre_6_eyes: "Triple",
+  culturalibre_zombie_eyes: "Zombie",
+  hatshj_alien_eye_2: "Lizard",
+  hatshj_alien_eyes: "Green slit",
+  hatshj_cross_eye: "Cross pupil",
+  hatshj_facette_eye: "Compound",
+  hatshj_facette_eye_2: "Pink compound",
+  hatshj_reptile_eyes: "Fire",
+  sonntag78_orcifyhead_eye: "Orc",
+  titleknown_trans_eyes: "Rose",
+  // Blank
+  culturalibre_hero_white_eyes: "White",
+  culturalibre_hero_yellow_eyes: "Yellow",
+  gpedroso_blank_eye: "Grey",
+};
+
 const tagsOf = (id: string): string[] => {
   const tags: string[] = [];
   if (/cat/.test(id)) tags.push("slit pupil");
@@ -333,9 +382,12 @@ export async function packEyes(options: PackEyesOptions): Promise<EyeManifest> {
         rel.scleraTint = rel.scleraTint.map((c) =>
           clamp(c, SCLERA_TINT_RANGE[0], SCLERA_TINT_RANGE[1]),
         ) as Rgb;
+      const label = EYE_LABELS[id];
+      if (!label) throw new Error(`${id}: it has no label in EYE_LABELS`);
       materials.push({
         id,
         title: title(id),
+        label,
         author: rec.author,
         created: rec.created,
         tags,
@@ -363,6 +415,15 @@ export async function packEyes(options: PackEyesOptions): Promise<EyeManifest> {
   const ids = materials.map((m) => m.id);
   const dup = ids.find((id, i) => ids.indexOf(id) !== i);
   if (dup) throw new Error(`two eye materials are called ${dup}`);
+  const unused = Object.keys(EYE_LABELS).filter((id) => !ids.includes(id));
+  if (unused.length) throw new Error(`EYE_LABELS names no material: ${unused.join(", ")}`);
+  const kinds = new Set<string>();
+  for (const m of materials) {
+    const key = `${m.tags[0] ?? "other"}/${m.label}`;
+    if (kinds.has(key))
+      throw new Error(`${m.id}: another ${m.tags[0] ?? "other"} eye is called ${m.label}`);
+    kinds.add(key);
+  }
   const manifest: EyeManifest = {
     version: 1,
     centres: CENTRES_PX.map(([x, y]) => [round(x / SIDE), round(1 - y / SIDE)]) as [
@@ -406,7 +467,8 @@ function writeProvenance(dir: string, evidence: [string, string][], outputs: [st
     "",
     "Each texture is re-encoded as WebP (quality 88, lossless alpha). The numbers in the manifest (the iris's radius, its",
     "and the sclera's brightness against the built-in eye's, the sclera's tint, the iris colour as painted) are measured",
-    "from the pixels by `measureEye`; nothing is authored.",
+    "from the pixels by `measureEye`; nothing is authored. The one authored field is each material's `label`, its name in a",
+    "picker (`EYE_LABELS` in `scripts/lib/packEyes.ts`); `title` is the asset's own name, made from its file name.",
     "",
     "## Outputs",
     "",

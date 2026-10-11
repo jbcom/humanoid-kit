@@ -51,7 +51,7 @@ const SCENES: Scene[] = [
       await page.getByRole("tab", { name: /^Skin, eyes/ }).click();
       await page
         .getByRole("group", { name: "Slit pupil", exact: true })
-        .getByRole("button", { name: "Green cat eyes", exact: true })
+        .getByRole("button", { name: "Green", exact: true })
         .click();
       // The camera glides to the face, and the texture loads.
       await page.waitForTimeout(3000);

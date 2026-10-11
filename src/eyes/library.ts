@@ -16,7 +16,13 @@ import type { Rgb } from "../surface/skinTone.ts";
 /** One material of the pack. */
 export interface EyeMaterialEntry {
   id: string;
+  /** The asset's own name, made from its file name: for provenance, not for a list. */
   title: string;
+  /**
+   * What to call it in a list: curated, short, and without the author's name, since a
+   * picker groups by `tags` already. Distinct within a kind (its first tag).
+   */
+  label: string;
   author: string;
   /** ISO date its page says it was created. */
   created: string;

@@ -294,7 +294,10 @@ describe("<HumanoidCreator eyeMaterials>", () => {
       );
       await screen.getByRole("tab", { name: "Skin & eyes" }).click({ timeout: LOAD.timeout });
       expect(asked).toEqual([]);
-      await screen.getByRole("button", { name: "Green cat eyes", exact: true }).click();
+      await screen
+        .getByRole("group", { name: "Slit pupil", exact: true })
+        .getByRole("button", { name: "Green", exact: true })
+        .click();
       await expect.poll(() => told.at(-1)?.eyes.material).toBe("nyloseth_green_cat_eyes");
       await expect.poll(() => asked, LOAD).toContain("nyloseth_green_cat_eyes");
     },
