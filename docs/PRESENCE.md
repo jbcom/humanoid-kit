@@ -30,7 +30,7 @@ dictated by them.
 | Lighting | Face position and size, skin reflectance (albedo luminance, specular level) | Face-priority exposure that keeps deep skin readable; a key light aimed at the speaker |
 | Shadows and ambient occlusion | Ground footprint (feet, contact area), height | Contact shadows of figures walking together pool into one field and separate as they part, instead of double-darkening where they overlap |
 | Other figures (awareness) | Transform, velocity, anchors (head, hands, feet), proximity | Look at whoever approaches; match a walking partner's pace; reach for a hand |
-| Interactions (animations) | Anchors plus a participant contract | Handing an object over; running together; intimate animations (adults only, enforced by the adult animations package) |
+| Interactions (animations) | Anchors plus the [participant contract](INTERACTIONS.md) | Handing an object over; running together; intimate animations (adults only, enforced by the adult animations package) |
 | Cameras | Bounds, face anchors, groups | Frame a conversation; keep a group in shot |
 | Game logic and audio | Proximity enter/leave events, groups | Trigger dialogue on approach; mix footsteps of a crowd |
 

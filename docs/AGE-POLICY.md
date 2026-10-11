@@ -253,7 +253,9 @@ No layer implements the gate itself, so none can omit it.
 (sexual and intimate animations) will refuse any participant under 18. The
 general animations package's interaction contracts tagged `intimate` will also
 refuse any participant under 18. Both will throw, as `AgePolicyError` does,
-rather than skip.
+rather than skip. The interaction contract ([Interactions](INTERACTIONS.md),
+"Age policy enforcement points") carries this as a required `audience`, fail
+closed and derived from the affordances an interaction names.
 
 **The public demo ships without the adult pack.**
 `scripts/check-pages-build.mjs` (`pnpm check:pages`) fails if any built site

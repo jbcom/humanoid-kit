@@ -2637,7 +2637,9 @@ clip is loaded when first played, and the pack is optional, like the hair pack.
 every body. A planted foot stays planted on any body: no skating. Nothing is
 allocated per frame once a figure is playing. Only clips whose licence is proven
 are packed, by the repository's licence rule. The adult animations are a separate
-later package that refuses participants under 18, and are not here.
+later package that refuses participants under 18, and are not here. Interactions
+between participants (roles, slots, synchronised tracks, contacts and signals)
+are the contract in [Interactions](INTERACTIONS.md).
 
 **Decisions.**
 
@@ -3279,7 +3281,10 @@ Milestones, in the order each is proven (built in parallel lanes; see
    `.mhclo` assets with `delete_verts`; fur, scales and feathers as layers.
 8. **Animation packs.** `humanoid-kit-animations`, and a separate
    `humanoid-kit-adult-animations` that refuses any participant under 18, plus
-   spatial awareness for multi-person interactions.
+   spatial awareness for multi-person interactions. How figures, objects and
+   fixtures offer, claim and play interactions together, and where the age
+   policy is enforced in them, is designed in
+   [Interactions](INTERACTIONS.md).
 
 **Skin states**, across milestones 2 to 8. Skin is not a set of uniformly
 coloured regions at rest. A nipple differs from its areola, the vermilion from
