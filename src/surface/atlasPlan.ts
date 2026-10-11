@@ -10,7 +10,7 @@
  * (one id per cell of a coarse grid, read exactly) says. Layers that overlap
  * never share, so the broad state layers keep a channel each.
  */
-import { layerUsesCoordinate, type SkinLayer } from "./layers.ts";
+import { type LayerFieldsExtra, layerUsesCoordinate, type SkinLayer } from "./layers.ts";
 
 /** Cells along each side of the owner map. */
 export const OWNER_GRID = 64;
@@ -116,18 +116,34 @@ interface Group {
  * that has no coordinate channel one more channel, so it goes first to a group that
  * has one. A group has a value channel,
  * a coordinate channel if any member reads one, and, with two or more members,
- * an owner map. Without a surface, or for an adult layer (whose fields arrive
- * after the plan) or one that reaches nothing, a layer is its own group. A
- * layer on all the skin (`everywhere`) takes no channel at all: its `value` is
- * -1, and the shader reads its mask as 1.
+ * an owner map. The surface holds every layer's footprint the plan can know, the
+ * adult layers' included (their islands are triangles of it); a layer `pending`
+ * names (its fields arrive after the plan, so its footprint is unknown) is a group
+ * of its own, as every layer is without a surface. A layer whose footprint is
+ * known to be empty lies apart from every group and joins the first that costs it
+ * nothing. A layer on all the skin (`everywhere`) takes no channel at all: its
+ * `value` is -1, and the shader reads its mask as 1.
  */
-export function planAtlas(layers: readonly SkinLayer[], surface?: AtlasSurface): AtlasPlan {
+export function planAtlas(
+  layers: readonly SkinLayer[],
+  surface?: AtlasSurface,
+  pending: (layer: number) => boolean = () => false,
+): AtlasPlan {
   const groups: Group[] = [];
   layers.forEach((layer, l) => {
     // A layer on all the skin has no field to store: the shader reads its mask as 1.
     if (layer.everywhere) return;
-    const cells = surface && !layer.adult ? supportCells(surface, l) : null;
+    const cells = surface && !pending(l) ? supportCells(surface, l) : null;
     const reads = layerUsesCoordinate(layer);
+    if (cells && !cells.some((c) => c === 1)) {
+      // Known to reach nothing: any group takes it without overlap.
+      const g = groups.find((x) => x.cells && (x.reads || !reads)) ?? groups.find((x) => x.cells);
+      if (g) {
+        g.members.push(l);
+        g.reads ||= reads;
+        return;
+      }
+    }
     if (cells?.some((c) => c === 1)) {
       const apart = groups.filter((g) => {
         const union = g.cells;
@@ -211,4 +227,41 @@ export function vertexOwners(surface: AtlasSurface, members: readonly number[]):
     }
   });
   return out;
+}
+
+/**
+ * The surface with extra triangles after its own (the adult surface's islands, in UV
+ * space of their own): their vertices follow its, and each layer's block holds its
+ * fields and then the extra's, the extra's layer `k` going to layer `at[k]` (zero for
+ * a layer the extra does not hold). The plan lays the islands out from this, and the
+ * atlas draws them from it.
+ */
+export function withExtra<S extends AtlasSurface>(
+  surface: S,
+  at: readonly number[],
+  extra: LayerFieldsExtra,
+): S {
+  const n = surface.vertexCount;
+  const ne = extra.uvs.length / 2;
+  const total = n + ne;
+  const layers = surface.layerFields.length / (n * 2);
+  const uvs = new Float32Array(total * 2);
+  uvs.set(surface.uvs);
+  uvs.set(extra.uvs, n * 2);
+  const index = new Uint32Array(surface.index.length + extra.index.length);
+  index.set(surface.index);
+  extra.index.forEach((v, i) => {
+    index[surface.index.length + i] = v + n;
+  });
+  const layerFields = new Float32Array(layers * total * 2);
+  for (let l = 0; l < layers; l++) {
+    layerFields.set(surface.layerFields.subarray(l * n * 2, (l + 1) * n * 2), l * total * 2);
+    const k = at.indexOf(l);
+    if (k >= 0)
+      layerFields.set(
+        extra.layerFields.subarray(k * ne * 2, (k + 1) * ne * 2),
+        (l * total + n) * 2,
+      );
+  }
+  return { ...surface, uvs, index, vertexCount: total, layerFields };
 }

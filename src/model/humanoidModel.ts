@@ -53,7 +53,7 @@ import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/o
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { solvedSurfaceFold } from "../rig/solvedSurface.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
-import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
+import { type AtlasPlan, planAtlas, withExtra } from "../surface/atlasPlan.ts";
 import { beardStyle, bodyHairCoverage } from "../surface/bodyHair.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
 import { COAT_REGION_LIMIT, type CoatFields, coatMasks, combField } from "../surface/coat.ts";
@@ -70,6 +70,7 @@ import {
   isAdultLayer,
   type LayerFieldsExtra,
   type LayerFieldsUpdate,
+  type SkinLayer,
   uvScale,
 } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
@@ -694,11 +695,23 @@ export class HumanoidModel {
   adultLayerFields(): LayerFieldsUpdate | null {
     const adult = SKIN_LAYERS.filter(isAdultLayer);
     if (!adult.every((l) => l.available?.(this.assets))) return null;
+    return this.adultFieldsOf(adult, () => true);
+  }
+
+  /**
+   * The adult layers' fields per render vertex and on the islands, those `include`
+   * accepts measured and the rest zero (`buildLayerFields`).
+   */
+  private adultFieldsOf(
+    adult: readonly SkinLayer[],
+    include: (layer: SkinLayer) => boolean,
+  ): LayerFieldsUpdate {
     const layers = adult.map((l) => l.id);
-    const extra = this.islandFields(layers);
+    const base = buildLayerFields(this.assets, adult, include);
+    const extra = this.islandFields(layers, base);
     return {
       layers,
-      layerFields: this.renderLayerFields(buildLayerFields(this.assets, adult), adult.length),
+      layerFields: this.renderLayerFields(base, adult.length),
       ...(extra && { extra }),
     };
   }
@@ -717,8 +730,14 @@ export class HumanoidModel {
    * a sculpt is attached at, a smooth curve on the skin (scripts/lib/detail/transfer.ts,
    * `skinLine`), and the band between it and the loop is skin; the layer starts there
    * and blends in, as genital skin's colour does, along curves with no steps.
+   *
+   * Every other layer's fields on an island are the body's where the island's skin
+   * lies (`base`, the layers' fields per base vertex, carried through the surface's
+   * own stencil): an island is the skin's too. With none there, a woman's collapsed
+   * sac's cap, which lies in her vulva, drew without the vulva's colour, a patch
+   * edged by the sac's loop.
    */
-  private islandFields(layers: readonly string[]): LayerFieldsExtra | null {
+  private islandFields(layers: readonly string[], base: Float32Array): LayerFieldsExtra | null {
     const adult = this.adultBodySurface();
     const specs = this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? [];
     if (!adult) return null;
@@ -757,14 +776,31 @@ export class HumanoidModel {
     if (!count) return null;
     const uvs = new Float32Array(count * 2);
     const fields = new Float32Array(layers.length * count * 2);
+    // The body's fields on the adult surface, per surface vertex, layer by layer.
+    const n = this.assets.manifest.vertexCount;
+    const onSurface = layers.map((_, l) =>
+      applyStencil(
+        mesh.stencil,
+        base.subarray(l * n * 3, (l + 1) * n * 3),
+        new Float32Array(mesh.topology.vertexCount * 3),
+      ),
+    );
     owner.forEach((s, v) => {
       const at = local[v] as number;
       if (at < 0) return;
       uvs[at * 2] = mesh.uvs[v * 2] as number;
       uvs[at * 2 + 1] = mesh.uvs[v * 2 + 1] as number;
-      const l = layers.indexOf(specs[s]?.layer as string);
-      fields[(l * count + at) * 2] = mask[v] as number;
-      fields[(l * count + at) * 2 + 1] = along[v] as number;
+      const own = layers.indexOf(specs[s]?.layer as string);
+      const sv = mesh.renderToSurface[v] as number;
+      // The surface's stencil can overshoot a 0..1 field a little; a field stays in it.
+      const unit = (x: number) => Math.min(1, Math.max(0, x));
+      layers.forEach((_, l) => {
+        const body = onSurface[l] as Float32Array;
+        fields[(l * count + at) * 2] =
+          l === own ? (mask[v] as number) : unit(body[sv * 3] as number);
+        fields[(l * count + at) * 2 + 1] =
+          l === own ? (along[v] as number) : unit(body[sv * 3 + 1] as number);
+      });
     });
     const triangles: number[] = [];
     for (let t = 0; t < mesh.index.length; t += 3) {
@@ -1355,17 +1391,38 @@ export class HumanoidModel {
 
   /**
    * Where the skin layers' fields lie in the atlas (`planAtlas`): layers whose
-   * support on the body's UV layout lies apart share channels. Laid out once, from
-   * the whole body's triangles and the layers' fields as built (the adult layers'
-   * arrive later and are never shared).
+   * support on the UV layout lies apart share channels. Laid out once, from every
+   * footprint known now: the body's layers as built, and the adult layers whose
+   * fields need nothing still to load (an island's, a mask the pack authors), on the
+   * body's triangles and the adult surface's islands. An adult layer measured from
+   * targets still loading is pending, a group of its own; without an adult pack every
+   * adult layer is known to reach nothing, and takes no channel of its own.
    */
   private atlasPlan(): AtlasPlan {
-    this.planned ??= planAtlas(SKIN_LAYERS, {
+    if (this.planned) return this.planned;
+    const body = {
       uvs: this.body.mesh.uvs,
       index: this.body.mesh.index,
       vertexCount: this.body.mesh.uvs.length / 2,
       layerFields: this.layerFields,
-    });
+    };
+    const pack = this.assets.adultAnatomyManifest != null;
+    const known = (l: SkinLayer) =>
+      !isAdultLayer(l) || !pack || (l.available?.(this.assets) ?? false);
+    let surface: typeof body = body;
+    if (pack) {
+      const adult = SKIN_LAYERS.filter(isAdultLayer);
+      const at = adult.map((l) => SKIN_LAYERS.indexOf(l));
+      const fields = this.adultFieldsOf(adult, known);
+      const n = body.vertexCount;
+      const layerFields = Float32Array.from(this.layerFields);
+      at.forEach((l, k) => {
+        layerFields.set(fields.layerFields.subarray(k * n * 2, (k + 1) * n * 2), l * n * 2);
+      });
+      surface = { ...body, layerFields };
+      if (fields.extra) surface = withExtra(surface, at, fields.extra);
+    }
+    this.planned = planAtlas(SKIN_LAYERS, surface, (l) => !known(SKIN_LAYERS[l] as SkinLayer));
     return this.planned;
   }
 

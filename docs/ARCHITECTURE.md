@@ -4004,8 +4004,17 @@ fields as built:
   `hkChannel` uniform. The atlas is rasterised from each vertex's owner
   (`vertexOwners`), so a shared channel holds, at a vertex, its member's
   mask and coordinate.
-- The adult layers are never shared: their fields arrive after the atlas
-  exists, so their support is unknown. Three layers of two channels each.
+- The adult layers are laid out by their footprints too (ruled 2026-10-10: the
+  adult stack keeps growing, and a page more each time is drift that phones
+  pay for). The plan is made from every footprint known before layout: the
+  body's layers, and each adult layer whose fields need nothing still to load
+  (an island, which the manifest places; a mask the pack authors per base
+  vertex), on the body's triangles and the adult surface's islands together
+  (`withExtra`, which the atlas draws them with too). An adult layer measured
+  from targets still loading (the mound's) is pending, a group of its own;
+  without an adult pack every adult layer is known to reach nothing and joins a
+  group at no cost. The stack is 30 channels, 8 pages, loaded or staged (32
+  before): the penis's island shares a body layer's channels.
 - Alternatives set aside: sharing by banding the value (layer *k* of *K* in
   `[k/K, (k+1)/K)`, which bilinear filtering between regions turns into other
   layers' bands, and loses bits); sharing by UV island (nine islands: only the

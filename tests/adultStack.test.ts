@@ -254,12 +254,13 @@ describe("the model and the adult layers", () => {
       expect((extra?.index.length ?? 0) % 3).toBe(0);
     });
 
-    it("blends each reservoir's layer in on its island from the skin line, and lights no other there", () => {
+    it("blends each reservoir's layer in on its island from the skin line, and lights no other reservoir's there", () => {
       const used = new Set(reservoirs.map((r) => r.layer));
       for (const id of used) expect(layers).toContain(id);
-      // At most one layer is lit on any island vertex.
+      // At most one reservoir's layer is lit on any island vertex. The others (the mound's)
+      // are the body's own there, as on the skin the island lies in.
       for (let v = 0; v < count; v++) {
-        const lit = layers.filter((id) => (block(id)[v * 2] as number) > 0);
+        const lit = [...used].filter((id) => (block(id as string)[v * 2] as number) > 0);
         expect(lit.length, `vertex ${v}`).toBeLessThanOrEqual(1);
       }
       // Each reservoir's layer: none on the loop and the skin line (ring 1), rising to 1 a few
