@@ -8,8 +8,14 @@
  * before anyone is asked, and again on every tick.
  */
 import type { AffordanceChange } from "../affordance/state.ts";
-import type { ObjectPresence, PresenceRegistry, Vec3 } from "../presence/presence.ts";
+import type {
+  FigureMeasures,
+  ObjectPresence,
+  PresenceRegistry,
+  Vec3,
+} from "../presence/presence.ts";
 import { AgePolicyError } from "../recipe/agePolicy.ts";
+import { gripMeeting } from "./contacts.ts";
 import {
   type Audience,
   audienceOf,
@@ -21,6 +27,8 @@ import {
   InteractionDefinitionError,
   type Phase,
   type RoleName,
+  type RoleSpec,
+  resolveLength,
   splitPoint,
   type Tag,
   tagMatches,
@@ -36,6 +44,14 @@ export type CancelReason =
 
 export type InteractionPhase = "proposed" | Phase | "ended";
 
+/** Where a figure should stand and which way to face, in world space. */
+export interface SlotPlacement {
+  /** The slot's point in world space: the reference's, moved by the offset. */
+  position: Vec3;
+  /** Unit vector on the ground. */
+  facing: Vec3;
+}
+
 export interface Interaction {
   readonly id: string;
   readonly definition: InteractionDefinition;
@@ -48,6 +64,33 @@ export interface Interaction {
   /** Passes of the act completed. */
   readonly passes: number;
   readonly seed: number;
+  /**
+   * Where `role`'s figure should stand and face: its slot against the
+   * reference, in world space, written into `out` (pass one to allocate
+   * nothing). Moving the figure there is the application's; the approach phase
+   * ends when it is within the slot's tolerance. A `between` reference is
+   * pinned when approach begins (the midpoint and line of the two figures then),
+   * so the targets hold still while they walk; before that it follows them.
+   * Null for a role with no slot, or while the reference cannot be found.
+   */
+  slot(role: RoleName, out?: SlotPlacement): SlotPlacement | null;
+  /**
+   * Where `role`'s side of a contact must be, in world space, written into `out`
+   * (pass one to allocate nothing): the contact by its `name` or its index in the
+   * definition. The two roles of a hand-to-hand contact get the one point where
+   * their grips meet (`gripMeeting`), refitted each call to the figures' current
+   * positions and measures. Null outside the contact's `during` phases, for a
+   * role that is not one of its two, for a contact that is not hand to hand
+   * (the other pairings arrive with their slices) and for a figure that has left.
+   */
+  contactTarget(contact: string | number, role: RoleName, out?: Vec3): Vec3 | null;
+  /**
+   * Seconds into `role`'s clip for the current phase, on the interaction's one
+   * clock: `time` scaled by the track's rate, wrapped at the clip's length when
+   * it loops and held at its end when it does not. Roles on one clip and rate
+   * agree exactly. Null when the role plays nothing in this phase.
+   */
+  trackTime(role: RoleName): number | null;
   cancel(reason?: CancelReason): void;
 }
 
@@ -134,6 +177,25 @@ function seedOf(seed: number, parts: readonly (string | number)[]): number {
 const DEFAULT_BLEND = 0.3;
 const groundDistance = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 
+/** The midpoint of two figures and the unit line from the first toward the second, on the ground. */
+interface Pin {
+  x: number;
+  y: number;
+  z: number;
+  ux: number;
+  uz: number;
+}
+
+/** A contact's two roles, split once at proposal so asking for its target splits nothing. */
+interface ContactInfo {
+  name: string | undefined;
+  a: RoleName;
+  b: RoleName;
+  during: readonly Phase[];
+  /** Both ends are figure hands: the one pairing slice 2 solves. */
+  handToHand: boolean;
+}
+
 interface Running extends Interaction {
   phase: InteractionPhase;
   time: number;
@@ -144,6 +206,30 @@ interface Running extends Interaction {
   pending: number;
   refused: boolean;
   claims: { participant: string; part: BodyPart }[];
+  /** The `between` reference as it was when approach began. */
+  pin: Pin | null;
+  contactInfo: readonly ContactInfo[];
+  /** A role's measures, for resolving the definition's lengths; made once per interaction. */
+  measuresOf: (role: RoleName) => FigureMeasures | undefined;
+}
+
+/**
+ * The reference frame a slot is measured in, held between calls so resolving a
+ * slot allocates nothing: an origin, and the unit heading on the ground (x to
+ * the frame's left is `(fz, -fx)`).
+ */
+const refFrame = { x: 0, y: 0, z: 0, fx: 0, fz: 1 };
+const livePin: Pin = { x: 0, y: 0, z: 0, ux: 0, uz: 1 };
+const slotScratch: SlotPlacement = { position: [0, 0, 0], facing: [0, 0, 1] };
+
+function setFrame(x: number, y: number, z: number, fx: number, fz: number) {
+  const len = Math.hypot(fx, fz);
+  refFrame.x = x;
+  refFrame.y = y;
+  refFrame.z = z;
+  // A heading with no ground component (a frame lying flat) falls back to +z.
+  refFrame.fx = len > 1e-9 ? fx / len : 0;
+  refFrame.fz = len > 1e-9 ? fz / len : 1;
 }
 
 export function createInteractions(
@@ -249,33 +335,115 @@ export function createInteractions(
     return typeof v === "number" && v < p.below;
   };
 
+  /**
+   * The midpoint of a `between` reference's two figures and the line from the
+   * first toward the second, into `out`; false when either has left. Two
+   * figures on one spot have no line, so the first one's heading stands in.
+   */
+  const betweenInto = (i: Running, out: Pin): boolean => {
+    const ref = i.definition.reference;
+    if (!ref || !("between" in ref)) return false;
+    const a = presence.get(i.roles[ref.between[0]] as string);
+    const b = presence.get(i.roles[ref.between[1]] as string);
+    if (!a || !b) return false;
+    out.x = (a.position[0] + b.position[0]) / 2;
+    out.y = (a.position[1] + b.position[1]) / 2;
+    out.z = (a.position[2] + b.position[2]) / 2;
+    const dx = b.position[0] - a.position[0];
+    const dz = b.position[2] - a.position[2];
+    const len = Math.hypot(dx, dz);
+    out.ux = len > 1e-9 ? dx / len : a.facing[0];
+    out.uz = len > 1e-9 ? dz / len : a.facing[2];
+    return true;
+  };
+
+  /** Fills `refFrame` with the frame `role`'s slot is measured in; false when it cannot be found. */
+  const frameFor = (i: Running, role: RoleName): boolean => {
+    const ref = i.definition.reference;
+    if (!ref) return false;
+    if ("frameOf" in ref) {
+      const f = object(i.roles[ref.frameOf] as string)?.frames[ref.frame];
+      if (!f) return false;
+      // The frame's own +z, turned by its quaternion, on the ground.
+      const [qx, qy, qz, qw] = f.rotation;
+      setFrame(
+        f.position[0],
+        f.position[1],
+        f.position[2],
+        2 * (qx * qz + qw * qy),
+        1 - 2 * (qx * qx + qy * qy),
+      );
+      return true;
+    }
+    if ("anchorOf" in ref) {
+      const p = presence.get(i.roles[ref.anchorOf] as string);
+      if (!p) return false;
+      const a = p.anchors[ref.anchor];
+      setFrame(a[0], a[1], a[2], p.facing[0], p.facing[2]);
+      return true;
+    }
+    const pin = i.pin ?? (betweenInto(i, livePin) ? livePin : null);
+    if (!pin) return false;
+    // Each figure faces the other: the second looks back along the line.
+    const sign = role === ref.between[1] ? -1 : 1;
+    setFrame(pin.x, pin.y, pin.z, pin.ux * sign, pin.uz * sign);
+    return true;
+  };
+
+  /** `role`'s slot in world space into `out`, or null (no slot, or the reference is missing). */
+  const slotInto = (i: Running, r: RoleSpec, out: SlotPlacement): SlotPlacement | null => {
+    const s = r.slot;
+    if (!s || !frameFor(i, r.name)) return null;
+    const x = resolveLength(s.offset[0], i.measuresOf);
+    const y = resolveLength(s.offset[1], i.measuresOf);
+    const z = resolveLength(s.offset[2], i.measuresOf);
+    if (x === undefined || y === undefined || z === undefined) return null;
+    const { fx, fz } = refFrame;
+    // The frame's left is (fz, -fx): x to the left, z along the heading.
+    out.position[0] = refFrame.x + fz * x + fx * z;
+    out.position[1] = refFrame.y + y;
+    out.position[2] = refFrame.z - fx * x + fz * z;
+    const cos = Math.cos(s.yaw);
+    const sin = Math.sin(s.yaw);
+    out.facing[0] = fx * cos + fz * sin;
+    out.facing[1] = 0;
+    out.facing[2] = fz * cos - fx * sin;
+    return out;
+  };
+
   /** Slotted figures are placed: within tolerance of their slot around the reference. */
   const placed = (i: Running) => {
-    const ref = i.definition.reference;
-    if (!ref) return true;
-    let origin: Vec3 | undefined;
-    if ("frameOf" in ref)
-      origin = object(i.roles[ref.frameOf] as string)?.frames[ref.frame]?.position;
-    else if ("anchorOf" in ref)
-      origin = presence.get(i.roles[ref.anchorOf] as string)?.anchors[ref.anchor];
-    else {
-      const a = presence.get(i.roles[ref.between[0]] as string)?.position;
-      const b = presence.get(i.roles[ref.between[1]] as string)?.position;
-      if (a && b) origin = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
-    }
-    if (!origin) return false;
+    if (!i.definition.reference) return true;
     for (const r of i.definition.roles) {
       if (!r.slot) continue;
       const at = presence.get(i.roles[r.name] as string)?.position;
-      if (!at) return false;
-      const target: Vec3 = [
-        origin[0] + r.slot.offset[0],
-        origin[1] + r.slot.offset[1],
-        origin[2] + r.slot.offset[2],
-      ];
-      if (groundDistance(at, target) > r.slot.tolerance) return false;
+      const target = at && slotInto(i, r, slotScratch);
+      if (!at || !target || groundDistance(at, target.position) > r.slot.tolerance) return false;
     }
     return true;
+  };
+
+  const roleSpec = (i: Running, role: RoleName) => i.definition.roles.find((r) => r.name === role);
+
+  const contactTarget = (i: Running, contact: string | number, role: RoleName, out: Vec3) => {
+    let c: ContactInfo | undefined;
+    if (typeof contact === "number") c = i.contactInfo[contact];
+    else for (const k of i.contactInfo) if (k.name === contact) c = k;
+    if (!c?.handToHand || (role !== c.a && role !== c.b)) return null;
+    if (!c.during.includes(i.phase as Phase)) return null;
+    const a = presence.get(i.roles[c.a] as string);
+    const b = presence.get(i.roles[c.b] as string);
+    return a && b ? gripMeeting(a, b, out) : null;
+  };
+
+  const trackTime = (i: Running, role: RoleName): number | null => {
+    if (i.phase === "proposed" || i.phase === "ended") return null;
+    const track = roleSpec(i, role)?.track?.[i.phase];
+    if (!track) return null;
+    const seconds = i.time * (track.rate ?? 1);
+    const length = options.clipLength(track.clip);
+    if (!(length > 0)) return seconds;
+    return track.loop ? seconds % length : Math.min(seconds, length);
   };
 
   /** Claims every role's body parts, all or none. */
@@ -308,6 +476,7 @@ export function createInteractions(
       if (!claim(i)) return end(i, "preempted");
       emit(i, { type: "accepted" });
       const slotted = i.definition.roles.some((r) => r.slot);
+      if (slotted && betweenInto(i, livePin)) i.pin = { ...livePin };
       enter(i, slotted ? "approach" : "act");
       return;
     }
@@ -420,6 +589,28 @@ export function createInteractions(
         pending: 0,
         refused: false,
         claims: [],
+        pin: null,
+        contactInfo: (def.contacts ?? []).map((c) => {
+          const [a, an] = splitPoint(c.a);
+          const [b, bn] = splitPoint(c.b);
+          const isHand = (role: RoleName, name: string) =>
+            def.roles.find((r) => r.name === role)?.takes === "figure" &&
+            (name === "hand.L" || name === "hand.R");
+          return {
+            name: c.name,
+            a,
+            b,
+            during: c.during,
+            handToHand: a !== b && isHand(a, an) && isHand(b, bn),
+          };
+        }),
+        measuresOf: (role) => presence.get(i.roles[role] as string)?.measures,
+        slot: (role, out = { position: [0, 0, 0], facing: [0, 0, 1] }) => {
+          const r = roleSpec(i, role);
+          return r ? slotInto(i, r, out) : null;
+        },
+        contactTarget: (contact, role, out = [0, 0, 0]) => contactTarget(i, contact, role, out),
+        trackTime: (role) => trackTime(i, role),
         cancel: (reason = "cancelled") => end(i, reason),
       };
       live.push(i);

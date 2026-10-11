@@ -11,60 +11,10 @@ import {
   createInteractions,
   type InteractionEvent,
 } from "../src/interaction/runtime.ts";
-import {
-  createPresenceRegistry,
-  type FigureMeasures,
-  type FigurePresence,
-  type ObjectPresence,
-} from "../src/presence/presence.ts";
+import { createPresenceRegistry } from "../src/presence/presence.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
-
-const v = (x = 0, y = 0, z = 0): [number, number, number] => [x, y, z];
-
-const AVERAGE: FigureMeasures = {
-  reach: 0.7,
-  shoulderHeight: 1.45,
-  hipHeight: 0.9,
-  eyeHeight: 1.58,
-};
-
-const figure = (
-  id: string,
-  adult: boolean,
-  x = 0,
-  measures: FigureMeasures = AVERAGE,
-): FigurePresence => ({
-  id,
-  measures: { ...measures },
-  position: v(x),
-  facing: v(0, 0, 1),
-  bounds: { min: v(x - 0.3, 0, -0.2), max: v(x + 0.3, 1.7, 0.2) },
-  anchors: {
-    head: v(x, 1.6),
-    face: v(x, 1.55, 0.1),
-    chest: v(x, 1.3, 0.1),
-    leftHand: v(x - 0.3, 1),
-    rightHand: v(x + 0.3, 1),
-    leftFoot: v(x - 0.1),
-    rightFoot: v(x + 0.1),
-  },
-  footprint: { points: [[x, 0]], radius: 0.15 },
-  appearance: { albedo: v(0.4, 0.3, 0.25), luminance: 0.3, specular: 0.028 },
-  faceRadius: 0.1,
-  adult,
-});
-
-const apple = (id = "apple"): ObjectPresence => ({
-  id,
-  kind: "object",
-  position: v(0.3, 1),
-  rotation: [0, 0, 0, 1],
-  bounds: { min: v(0.26, 0.96, -0.04), max: v(0.34, 1.04, 0.04) },
-  frames: {},
-  tags: ["food.fruit.apple"],
-  state: { stage: 0 },
-});
+import { apple, figure, run } from "./interactionHarness.ts";
 
 /** The apple of docs/INTERACTIONS.md: three bites, each bite → chew → swallow. */
 const EAT: InteractionDefinition = {
@@ -120,11 +70,6 @@ function setup(seed = 1) {
   const runtime = createInteractions(presence, { seed, clipLength });
   runtime.define([EAT, ADULT]);
   return { presence, runtime };
-}
-
-/** Ticks at 10 Hz from `from` for `seconds`. */
-function run(presence: ReturnType<typeof createPresenceRegistry>, from: number, seconds: number) {
-  for (let i = 0; i <= Math.round(seconds * 10); i++) presence.tick(from + i / 10);
 }
 
 describe("interaction definitions", () => {

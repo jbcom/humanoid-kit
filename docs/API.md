@@ -1066,7 +1066,7 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
 ### Interactions
 
 Figures, objects and places acting together (INTERACTIONS.md). Framework-free;
-slice 1 of its build plan.
+slices 1 and 2 of its build plan.
 
 - `InteractionDefinition`: `id`, `tags`, `audience` (`"all"` or `"adult"`;
   anything else is adult), `roles` (`{ name, takes: "figure" | "object",
@@ -1096,6 +1096,23 @@ slice 1 of its build plan.
   `repeatWhile` holds) and release on the registry's clock. It is cancelled
   with `left` when a participant leaves presence, and aborted with
   `age-policy` on any tick an adult definition has a participant under 18.
+- `Length` is either metres or `{ of, measure, times }`, where `of` names a
+  figure role and `measure` is `reach`, `shoulderHeight`, `hipHeight` or
+  `eyeHeight`; `resolveLength` reads it from the roles' published measures.
+  A role's optional slot uses three lengths, a finite yaw and a non-negative,
+  finite ground tolerance.
+- `Interaction.slot(role, out?)` supplies that role's world-space placement
+  from the definition's frame, anchor or between-role midpoint. `between`
+  references pin when approach starts, so the target does not drift as figures
+  walk. `contactTarget(contact, role, out?)` supplies the single solved target
+  for the named or indexed hand-to-hand contact only while it is active;
+  `trackTime(role)` supplies the phase track's shared-clock time, including
+  rate, loop wrapping and non-loop clamping. Each returns `null` when it has
+  no meaningful value. Supplying `out` keeps per-frame reads allocation-free.
+- `InteractionEvent` is delivered through `on(participant, listener)` to both
+  participants. It reports acceptance, decline, phase, beat, normal end and
+  cancellation; cancellation includes its `declined`, `cancelled`, `left`,
+  `preempted`, `precondition` or `age-policy` reason.
 - `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
   chest, hands, feet), `measures`, `footprint`, `appearance` (measured albedo,
   luminance, specular), `faceRadius`, `adult`.

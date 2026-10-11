@@ -37,6 +37,7 @@ import {
   Vector3,
 } from "three";
 import { ChannelQa } from "./ChannelQa";
+import { HandshakeLab } from "./HandshakeLab";
 import { tattooImages } from "./tattooImages";
 import { Walk } from "./Walk";
 
@@ -237,7 +238,9 @@ export function App() {
   if (!client) return null;
   return (
     <HumanoidProvider client={client}>
-      {params.get("scene") === "walk" ? (
+      {params.get("scene") === "handshake" ? (
+        <HandshakeLab />
+      ) : params.get("scene") === "walk" ? (
         <Walk />
       ) : params.has("view") || params.has("cam") ? (
         <Shot />

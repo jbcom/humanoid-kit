@@ -1,7 +1,11 @@
 # Interactions: how figures, objects and places act together
 
-Status: being built (2026-10-11). Presence has `measures` (reach, shoulder,
-hip and eye height; slice 2). Slice 1's framework-free core is in
+Status: being built (2026-10-11). Slices 1 and 2 are implemented in the
+framework-free core: presence has `measures` (reach, shoulder, hip and eye
+height); two figures can agree a handshake, claim their hands and arms, walk to
+measure-relative slots around a pinned midpoint, share a clock, and pull their
+hand meeting point during `act`. The remaining visual proof for slice 2 is a
+tall/short capture before it is integrated. The framework-free core is in
 `src/interaction/` and `src/presence/presence.ts`: `ObjectPresence` and
 channels in the registry, definitions with validation and the fail-closed
 audience (`audienceOf`), offers filtered by the age policy, proposals with role
@@ -279,6 +283,184 @@ first-order filter (`SkinStateFilter`). The kit evaluates a route only when the
 interaction is acting and only for signals it names. Routes into `arousal` are
 written only in the adult package and pass through `assertSignalPolicy` on
 every write.
+
+### Handshake runtime API
+
+Slice 2 exposes the alignment and animation values as pull APIs. They are
+ordinary framework-free methods so a renderer, an animation controller or game
+logic can read them in its own frame loop without a React state update. Pass an
+output object or vector on the hot path to avoid an allocation.
+
+```ts
+const interaction = interactions.propose("greeting.handshake", {
+  initiator: "figure-a",
+  responder: "figure-b",
+});
+
+// During approach, steer each figure to its own measured slot.
+const placement = {
+  position: [0, 0, 0] as [number, number, number],
+  facing: [0, 0, 1] as [number, number, number],
+};
+interaction.slot("initiator", placement);
+
+// During the contact's declared phases, constrain both right hands here.
+const grip = [0, 0, 0] as [number, number, number];
+interaction.contactTarget("grip", "initiator", grip);
+
+// Sample a role's clip on the interaction's shared clock.
+const secondsIntoClip = interaction.trackTime("initiator");
+
+// Discrete lifecycle and cancellation notices go to each participant.
+interactions.on("figure-a", (event) => {
+  if (event.type === "cancelled") reportInteractionStop(event.reason);
+});
+```
+
+`slot` returns `null` when a role has no slot or its reference is unavailable.
+`contactTarget` returns `null` outside the contact's declared phases, for an
+unknown contact or role, or when either figure has left. `trackTime` returns
+`null` when that role has no track in the current phase. `on` delivers
+`accepted`, `declined`, phase, beat, normal end and cancellation events to both
+participants, with every cancellation carrying its reason. The runtime stays
+framework-free: a consumer that needs per-pad contact gaps wraps the returned
+target in its contact capsule and supplies it to each posed hand's
+`HumanoidAffordances.gripContacts` call.
+
+### Consumer patterns: figures and the environment
+
+The runtime describes a coordinated act. A consumer owns locomotion, animation
+application, object presentation and gameplay outcomes; it can react at the
+same lifecycle boundary for a figure, an object or a fixture.
+
+```ts
+import type { Interaction } from "humanoid-kit";
+
+const placement = {
+  position: [0, 0, 0] as [number, number, number],
+  facing: [0, 0, 1] as [number, number, number],
+};
+const handTarget = [0, 0, 0] as [number, number, number];
+const padGaps: number[] = [];
+
+const stopFixtureEvents = interactions.on("bench-7", (event) => {
+  if (event.type === "phase" && event.phase === "act") bench.showOccupied(true);
+  if (event.type === "cancelled" || event.type === "ended") bench.showOccupied(false);
+});
+
+const stopFigureEvents = interactions.on("figure-a", (event) => {
+  if (event.type === "phase") animation.enter(event.phase);
+  if (event.type === "beat") effects.play(event.beat);
+  if (event.type === "cancelled") animation.stopInteraction(event.reason);
+});
+
+function updateHandshake(interaction: Interaction) {
+  const slot = interaction.slot("initiator", placement);
+  if (slot && interaction.phase === "approach") navigation.moveTo(slot.position, slot.facing);
+
+  const grip = interaction.contactTarget("grip", "initiator", handTarget);
+  if (grip) {
+    pose.constrainHand("hand.R", grip);
+    const held = { from: grip, to: grip, radius: 0.02 };
+    hands.gripContacts("hand.R", held, "world", padGaps);
+  }
+
+  const clipSeconds = interaction.trackTime("initiator");
+  if (clipSeconds !== null) animation.sample("handshake.shake", clipSeconds);
+}
+
+// Remove listeners when their world objects are removed.
+stopFixtureEvents();
+stopFigureEvents();
+```
+
+`bench`, `animation`, `effects`, `navigation`, `pose` and `hands` are consumer
+objects in this example. Their inventory, combat, dialogue, sound and pathing
+rules deliberately remain outside the package. A fixture gets its own listener
+only when it is bound to an object role; it does not consent on behalf of a
+figure. This lets a door animate its handle at a beat, a chair show reservation
+state, and a figure cancel without the core choosing any game outcome.
+
+### Slice 2 visual review recipe
+
+This is the remaining acceptance evidence for the handshake implementation; it
+is deliberately separate from the pure unit geometry checks.
+
+1. Publish an adult all-audience pair at `(-3, 0, 0)` and `(3, 0, 0)`. Give
+   the initiator `{ reach: 0.8, shoulderHeight: 1.55, hipHeight: 1.0,
+   eyeHeight: 1.7 }` and the responder `{ reach: 0.6, shoulderHeight: 1.25,
+   hipHeight: 0.8, eyeHeight: 1.38 }`.
+2. Use the `handshake` definition from `tests/interactionHandshake.test.ts`:
+   both roles claim `arm.R` and `hand.R`, have a slot offset of `-0.7 ×` their
+   own reach against the `between` reference, and use the `grip` contact during
+   `act`. Keep both figures clothed for the capture.
+3. The review fixture is `e2e/sheets/handshake.sheet.ts`. A reviewer runs it
+   explicitly with `heavy-slot pnpm exec playwright test
+   e2e/sheets/handshake.sheet.ts --project sheets`; it is not part of ordinary
+   browser testing. It fails before saving a cell unless the route is muted,
+   both adult recipes draw their clothes, the animation package supplies its
+   source clip, and the target and both hand frames come from the live presence
+   registry and interaction runtime.
+4. It records approach, grip, release and cancel from front, three-quarter and
+   side views. The yellow point is the shared `contactTarget`; the two RGB axes
+   are the live, posed right-hand frames. Its review-only definition leaves the
+   planning contact queryable through each row so the same target is visible;
+   the production handshake's contact remains active during `act` only. Capture
+   the resulting sheet and record its location and reviewer conclusion before
+   integration.
+5. Accept only if both hands reach the same target within 1 cm, neither arm
+   overextends, the difference in body height reads naturally from every view,
+   and release removes the constraint cleanly.
+
+The core does not yet ship the authored handshake clip, a hand pose constraint
+or automatic stimulus/reaction rules. The fixture intentionally samples the
+packaged `idle1` clip on the shared clock so a review exposes that missing
+animation and IK work instead of hiding it with synthesized arm placement.
+Consumers can use the framework-free lifecycle and pull APIs above in the
+meantime.
+
+#### Review-fixture evidence and binding gate
+
+The first headed, silent hardware attempt on 2026-10-11 (`job5195`) failed
+before visual review: `RangeError: the figure has no affordance hand.R` came
+from the marker's render-loop frame query. Its raw error context and attachment
+remain in the local test output for that failed job; no capture was accepted.
+The lab now treats a frame as pending until that figure's `onSettled` callback,
+then requires `HumanoidAffordances.has("hand.R")` before it reads the live
+frame. A missing hand after settle is exposed once through `bindingFailure` and
+stops the sheet before any cell is written; it is not accepted as a null frame.
+
+A root-reviewed silent headed rerun (`job5217`) accepted that mounting repair:
+there was no missing-hand error and the sheet was produced. It rejected the
+physical handshake and framing. Both live hand frames remained down at the
+figures' sides, far from the yellow runtime target; for the short figure the
+target was near the face while the hand was substantially lower. The approach
+front and three-quarter cells also crop the participants. This is evidence that
+the fixture reads live state correctly, not evidence that the figures make
+contact. The reviewed capture is retained at
+`~/.cache/hk-coverage/root-handshake-job5217.png`.
+
+#### Next milestone: target-to-hand closure and uncropped review
+
+Do not call the models physically interacting until this milestone has a fresh,
+root-reviewed sheet.
+
+1. Add a real handshake clip and an interaction-driven hand pose/IK constraint.
+   It must consume `trackTime` and `contactTarget` to alter the rendered arm and
+   hand bones; moving a group, marker or presence anchor is not a substitute.
+2. Sample the final posed `hand.R` frames and the shared target on the same
+   render tick. Expose each hand's target-to-frame distance in the lab state and
+   make the sheet fail before capture if either exceeds **0.01 m** during grip.
+   Keep the existing `bindingFailure` gate separate so a missing binding cannot
+   pass as a distance of zero.
+3. Frame every approach, grip, release and cancel cell so both complete
+   clothed adult figures, their hands and the target stay inside the camera
+   bounds in front, three-quarter and side views. Add a deterministic framing
+   assertion before capturing the sheet.
+4. Root reruns the silent headed sheet and accepts it only after inspecting the
+   closeness, natural tall/short arm reach, release and cancellation. Record
+   the result beside this evidence; until then the clip/IK/contact milestone is
+   incomplete.
 
 ### Stimuli and reactions
 
@@ -753,6 +935,12 @@ document's status and [API](API.md) as it lands.
    hand-to-hand contact solve and `gripContacts` during act, cancel when a
    participant leaves. A Playwright spec with a tall and a short figure: the
    grips meet within tolerance and the two tracks agree to the frame.
+   The framework-free implementation, unit contract and silent contact-sheet
+   fixture are reviewable. `job5217` proved the fixture mounting path but
+   rejected physical contact and approach framing; it is not an acceptance.
+   Before integration, the target-to-hand closure and framing milestone above
+   must pass a new root-reviewed tall/short capture. Authored handshake
+   animation and hand pose/IK remain unfinished.
 3. **React bindings.** `<Interactable>`, `<Interaction>`, the event props,
    `useInteractions`, `useInteraction`, `useInteractionEvents`; tests that
    reading signals does not re-render.
