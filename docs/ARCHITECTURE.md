@@ -868,6 +868,36 @@ the error is reported, because a failing confirmation that allowed would fail
 open. (e) Without `allowUncover` every uncovering is refused, which is the right
 default for a host that never wants one (an under-25 game build).
 
+### The stage follows the theme (design, 2026-10-11)
+
+The creator's custom properties (`--hk-*`, `styles.ts`) were advertised as its
+theme, and `--hk-bg` was the first of them, but the stage drew over it: the canvas
+painted its own `#1b2530` through `StudioStage`'s `background`, so a themed host
+had a purple panel and a navy stage, and no prop to change it.
+
+*Use cases.* (1) A host themes the creator from its stylesheet and the stage
+matches. (2) A host passes a colour it has in code. (3) A host changes the theme at
+run time (a dark and a light mode, a chapter's palette) and the stage follows
+without the creator re-rendering. (4) A host that sets nothing sees what it saw.
+
+*Decision: a transparent canvas over `--hk-bg`, not a colour read into three.* The
+alternative reads the variable with `getComputedStyle` and gives it to the scene
+(`<color attach="background">`). It needs a re-read on every theme change, which
+nothing announces (a media query, a class on an ancestor and a transition all change
+a computed colour with no event), parses whatever CSS colour syntax the host wrote
+(`oklch()`, `color-mix()`, a `var()` chain) into something three understands, and
+leaves a frame of the old colour. With the canvas transparent, the browser composites
+it over the root's background, which is `var(--hk-bg)`: every syntax CSS has works,
+transitions animate the stage with everything else, and nothing is read. The cost is
+that the page composites the canvas (its alpha channel is react-three-fiber's
+default, and the creator already keeps its drawing buffer). Lights, tone mapping and the contact shadow do not touch the background,
+so the figure is unchanged; the contact shadow, drawn with alpha, now tints the
+host's colour rather than navy. The `background` prop is `--hk-bg` set inline on the
+root, so there is one mechanism and a host can mix the two. The default of the
+variable becomes the stage's old `#1b2530`, so nothing changes for a host that sets
+neither; `StudioStage` keeps its own `background` prop for scenes that are not the
+creator's.
+
 ### Eye materials in the creator (design, 2026-10-11)
 
 The eye pack's 32 materials were a recipe field (`eyes.material`) and a

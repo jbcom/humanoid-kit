@@ -68,6 +68,10 @@ const SCENES: Scene[] = [
   },
 ];
 
+// One page at a time: the first compiles the playground on the dev server, and a second
+// page opened beside it meets the half-built server and fails its wait for the page.
+test.describe.configure({ mode: "serial" });
+
 for (const scene of SCENES) {
   test(scene.name, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: scene.width ?? 1280, height: scene.height ?? 800 });

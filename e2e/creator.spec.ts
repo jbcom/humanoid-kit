@@ -112,6 +112,46 @@ test("tapping a part of the figure opens the controls that shape it", async ({ p
   expect(errors).toEqual([]);
 });
 
+/**
+ * The colour of the screenshot's top-left pixels, decoded in the page: what a person sees
+ * there once the page has composited the canvas over what is behind it.
+ */
+const cornerColour = (page: Page) =>
+  page
+    .locator(".hk-stage")
+    .screenshot()
+    .then((png) =>
+      page.evaluate(async (b64) => {
+        const image = await createImageBitmap(
+          await (await fetch(`data:image/png;base64,${b64}`)).blob(),
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 8;
+        const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+        ctx.drawImage(image, 0, 0, 8, 8, 0, 0, 8, 8);
+        return Array.from(ctx.getImageData(4, 4, 1, 1).data);
+      }, png.toString("base64")),
+    );
+
+test("the stage behind the figure is the theme's colour", async ({ page }) => {
+  test.setTimeout(budget(180_000));
+  await openSilentGame(page, "./");
+  await page.locator('.hk-stage[data-pick="ready"]').waitFor({ timeout: 120_000 });
+  await expect(page.locator(".hk-status")).toHaveCount(0);
+  // Out of the box it is the colour the stage always was.
+  const near = (got: number[], want: number[]) =>
+    got.slice(0, 3).every((v, i) => Math.abs(v - (want[i] as number)) <= 1);
+  expect(near(await cornerColour(page), [27, 37, 48])).toBe(true);
+  // A host's theme moves it, with no re-render of the creator.
+  await page.evaluate(() => {
+    (document.querySelector(".hk-creator") as HTMLElement).style.setProperty(
+      "--hk-bg",
+      "rgb(59, 42, 85)",
+    );
+  });
+  await expect.poll(async () => near(await cornerColour(page), [59, 42, 85])).toBe(true);
+});
+
 test("an eye material picked in Appearance is worn by the figure", async ({ page }) => {
   test.setTimeout(budget(180_000));
   const errors: string[] = [];

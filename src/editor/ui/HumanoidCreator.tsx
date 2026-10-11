@@ -12,6 +12,7 @@
 import { Canvas } from "@react-three/fiber";
 import {
   Component,
+  type CSSProperties,
   type ErrorInfo,
   type ReactNode,
   useEffect,
@@ -78,6 +79,11 @@ export interface HumanoidCreatorProps {
    * materials as an eye texture. Without it, there is no choice and the built-in eye shows.
    */
   eyeMaterials?: EyeLibrary;
+  /**
+   * A CSS colour for the stage behind the figure: `--hk-bg` set on the creator's root.
+   * Without it the stage follows `--hk-bg` from your stylesheet (default `#1b2530`).
+   */
+  background?: string;
   /** Called when a change was refused. */
   onReject?: (rejection: Rejection) => void;
   /** Heading shown above the controls. */
@@ -325,7 +331,8 @@ function CreatorBody({
           role="img"
           aria-label="Figure preview"
         >
-          <StudioStage />
+          {/* No colour of its own: the canvas is transparent over the root's `--hk-bg`. */}
+          <StudioStage background={null} />
           {/* A withheld figure is never handed on: the worker is not asked to evaluate it. */}
           {!editor.withheld && (
             <Humanoid
@@ -465,7 +472,12 @@ function CreatorBody({
 
 export function HumanoidCreator(props: HumanoidCreatorProps) {
   return (
-    <div className={props.className ? `hk-creator ${props.className}` : "hk-creator"}>
+    <div
+      className={props.className ? `hk-creator ${props.className}` : "hk-creator"}
+      // The stage is the root's background seen through the transparent canvas, so a colour
+      // given here and one from a stylesheet are the same thing: `--hk-bg`.
+      {...(props.background && { style: { "--hk-bg": props.background } as CSSProperties })}
+    >
       <style href="humanoid-kit-creator" precedence="default">
         {CREATOR_CSS}
       </style>

@@ -314,3 +314,74 @@ describe("<HumanoidCreator eyeMaterials>", () => {
     LOAD.timeout,
   );
 });
+
+describe("<HumanoidCreator background>", () => {
+  const root = () => document.querySelector(".hk-creator") as HTMLElement;
+  const canvas = () => document.querySelector(".hk-stage canvas") as HTMLCanvasElement;
+  const backgroundOf = (el: Element) => getComputedStyle(el).backgroundColor;
+
+  /** The canvas's alpha at a corner, and whether anything opaque is drawn down its middle. */
+  function pixels(): { corner: number; figure: boolean } {
+    const c = canvas();
+    const copy = document.createElement("canvas");
+    copy.width = 64;
+    copy.height = 64;
+    const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
+    ctx.drawImage(c, 0, 0, 64, 64);
+    const column = ctx.getImageData(32, 0, 1, 64).data;
+    return {
+      corner: ctx.getImageData(2, 2, 1, 1).data[3] as number,
+      figure: Array.from({ length: 64 }, (_, y) => column[y * 4 + 3]).includes(255),
+    };
+  }
+
+  /** Waits until the figure has been drawn, so an empty canvas does not pass for a transparent one. */
+  async function drawn(screen: Awaited<ReturnType<typeof render>>) {
+    await expect.element(screen.getByText("Loading figure…"), LOAD).not.toBeInTheDocument();
+    await expect.poll(() => pixels().figure, LOAD).toBe(true);
+  }
+
+  it(
+    "shows the stage in --hk-bg, by leaving the canvas transparent over it",
+    async () => {
+      const screen = await render(<Host initialRecipe={thirty} />);
+      await drawn(screen);
+      expect(backgroundOf(root())).toBe("rgb(27, 37, 48)");
+      expect(pixels().corner).toBe(0);
+      // Nothing between the canvas and the root paints over it.
+      for (let el: Element | null = canvas(); el && el !== root(); el = el.parentElement)
+        expect(backgroundOf(el), el.className || el.tagName).toBe("rgba(0, 0, 0, 0)");
+    },
+    LOAD.timeout,
+  );
+
+  it(
+    "follows a host's stylesheet, and a change of the variable at run time",
+    async () => {
+      const screen = await render(
+        <>
+          <style>{".hk-creator.themed { --hk-bg: rgb(59, 42, 85); }"}</style>
+          <Host initialRecipe={thirty} className="themed" />
+        </>,
+      );
+      await drawn(screen);
+      expect(backgroundOf(root())).toBe("rgb(59, 42, 85)");
+      expect(pixels().corner).toBe(0);
+      // No render: the variable alone moves the stage.
+      root().style.setProperty("--hk-bg", "rgb(200, 180, 20)");
+      expect(backgroundOf(root())).toBe("rgb(200, 180, 20)");
+    },
+    LOAD.timeout,
+  );
+
+  it(
+    "takes a colour as a prop",
+    async () => {
+      const screen = await render(<Host initialRecipe={thirty} background="rgb(10, 200, 30)" />);
+      await drawn(screen);
+      expect(backgroundOf(root())).toBe("rgb(10, 200, 30)");
+      expect(pixels().corner).toBe(0);
+    },
+    LOAD.timeout,
+  );
+});

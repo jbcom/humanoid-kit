@@ -6,7 +6,7 @@
  */
 export const CREATOR_CSS = /* css */ `
 .hk-creator {
-  --hk-bg: #141b22;
+  --hk-bg: #1b2530;
   --hk-panel: rgba(16, 22, 29, 0.94);
   --hk-raised: rgba(255, 255, 255, 0.04);
   --hk-border: rgba(255, 255, 255, 0.08);

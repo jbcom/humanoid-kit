@@ -1406,6 +1406,7 @@ and camera.
 | `onBeforeChange?(proposed, context)` | Synchronous veto: returns the recipe to accept (clamped or as proposed) or `false` |
 | `controls?` | `ControlLimits`: slider ranges, and sliders, tasks and panels to hide |
 | `coverPolicy?` | `CoverPolicy`: what counts as covered, and who may allow an uncovered figure (maybe asynchronously); see "Cover policy" |
+| `background?` | A CSS colour for the stage; sets `--hk-bg` on the creator's root. Without it the stage follows `--hk-bg` from your CSS (default `#1b2530`); see "Theming the stage" |
 | `eyeMaterials?` | The eye pack's `EyeLibrary` (`humanoid-kit-eyes`, `loadEyeLibrary`): worn by the figure, and offered as an Eye texture choice in Appearance; see "Eye materials" |
 | `onReject?(rejection)` | Called when a change was refused (`rejection.reason` is `"veto"` or `"cover"`, with `cause` and the `proposed` recipe) |
 | `title?` | Heading shown above the controls |
@@ -1578,6 +1579,33 @@ interface UncoverRequest {
   initialRecipe={createRecipe({ outfit: ["suits/female_casualsuit01"] })}
 />;
 ```
+
+### Theming the stage
+
+The creator is themed by `--hk-*` custom properties on `.hk-creator`
+(`--hk-bg`, `--hk-panel`, `--hk-text`, `--hk-accent`, ...). The stage behind the
+figure is `--hk-bg`: the canvas is transparent and the creator's own background
+shows through it, so a theme needs no JavaScript and a change to the variable
+repaints the stage at once, with no re-render. Set it from your stylesheet, with a
+selector at least as specific as the creator's own (`.my-game .hk-creator`, or
+`.hk-creator.my-theme` for a `className`), or pass `background` for a colour you
+have in code:
+
+```css
+.my-game .hk-creator {
+  --hk-bg: #2a1f3a;
+}
+```
+
+```tsx
+<HumanoidCreator background={theme.stage} />;
+```
+
+`background` takes any CSS colour, `transparent` included (the creator's own
+background is then what shows, so give it one, or put the creator over your own
+scene). Lights, the shadow and the figure are unchanged by it. The default is
+`#1b2530`, the stage's old colour, so a host that sets nothing sees what it saw.
+`StudioStage`'s own `background` prop is unchanged for your own scenes.
 
 ### Eye materials
 
