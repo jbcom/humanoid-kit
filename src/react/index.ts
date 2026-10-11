@@ -2,6 +2,15 @@ export type { AffordanceSpace, LiveFigure } from "../affordance/live.ts";
 export type { BodyArtImages } from "../render/bodyArtTexture.ts";
 export { ChannelClip, CLIP_CHANNELS, clipMaterial } from "../render/channelClip.ts";
 export { applyDualSkinning, DualBones } from "../render/dualSkinning.ts";
+export { installShadowFilter } from "../render/shadowFilter.ts";
+export {
+  configureKeyShadow,
+  KEY_SHADOW,
+  type KeyShadowFrame,
+  type KeyShadowOptions,
+  keyShadowFitter,
+  STUDIO_SHADOW_MAP_TYPE,
+} from "../render/studioShadow.ts";
 export {
   AffordanceAnchor,
   HumanoidAffordances,

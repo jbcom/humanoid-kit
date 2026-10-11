@@ -29,6 +29,7 @@ import {
   striaeWeight,
   striaMark,
 } from "../../src/surface/striae.ts";
+import { expectSameArray } from "./arrays.ts";
 import { mean, noFields, renderLayers as render, SIZE, variance } from "./layerRender.ts";
 
 describe("detail layers", () => {
@@ -117,7 +118,7 @@ describe("detail layers", () => {
       }),
     });
     const flat = render([]);
-    expect(render([line()])).toEqual(flat);
+    expectSameArray(render([line()]), flat, { what: "a line layer with no relief" });
     const cut = render([line(depths)]);
     const change = Array.from(
       { length: SIZE },
@@ -189,7 +190,7 @@ describe("detail layers", () => {
     });
     const none = render([]);
     for (const pattern of ["bumps", "creases"] as const)
-      expect(render([off(pattern)])).toEqual(none);
+      expectSameArray(render([off(pattern)]), none, { what: `${pattern} at no strength` });
   });
 
   it("raises bumps at their true size, and fades them where they are finer than a pixel", () => {
@@ -254,9 +255,9 @@ describe("profiled detail layers", () => {
   });
 
   it("is the same relief at the same occupancy: deterministic, not shimmering", () => {
-    expect(Array.from(render([tubercles(0.4)], at(0)))).toEqual(
-      Array.from(render([tubercles(0.4)], at(0))),
-    );
+    expectSameArray(render([tubercles(0.4)], at(0)), render([tubercles(0.4)], at(0)), {
+      what: "two draws of the same tubercles",
+    });
   });
 
   it("draws no bump whose centre is past the limit, and none cut by it: each is whole or absent", () => {
@@ -335,7 +336,7 @@ describe("swell layers", () => {
   });
 
   it("draws nothing at no strength", () => {
-    expect(Array.from(render([swell(0.05, 0)]))).toEqual(Array.from(render([])));
+    expectSameArray(render([swell(0.05, 0)]), render([]), { what: "a swell at no strength" });
   });
 });
 
@@ -592,6 +593,10 @@ describe("friction ridges", () => {
         ? { ...l, paint: () => ({ strength: 0, height: 0.004, size: SPACING }) }
         : l,
     );
-    expect(render(off, { size: PX, coordinate: coordinate(0) })).toEqual(render([], { size: PX }));
+    expectSameArray(
+      render(off, { size: PX, coordinate: coordinate(0) }),
+      render([], { size: PX }),
+      { what: "ridges at no strength" },
+    );
   });
 });

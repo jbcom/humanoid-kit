@@ -2075,7 +2075,13 @@ Old recipes evaluate and serialise as before.
   cells), so the direction is quantised to eight fixed grids over a half turn,
   and each root belongs to one of the two round the flow by a hash weighted by
   closeness, so the density holds and no strand is drawn twice at half
-  strength.
+  strength. A grid is named by its direction (angle and seed), not by the side
+  of the flow it lies on, so the same grid is drawn from just under it and from
+  just over it and the hair is continuous as the flow turns through a boundary.
+  Seeded by side, the same direction drew two different sets of roots; hair
+  running straight down is exactly on a boundary, and ANGLE Metal's rounding of
+  the derivatives put blocks of pixels either side, cutting strands off at a
+  step of 0.58 of the skin where the footprint allows 0.386.
 - *Vellus is a strand layer on all the skin, and takes no atlas channel.*
   Vellus grows almost everywhere, so its mask would be a whole channel of ones;
   a layer may declare `everywhere`, which `planAtlas` gives no channel (`value`
@@ -2329,6 +2335,90 @@ pixels with `sampleGroundOcclusion`; the Playwright spec `e2e/presence.spec.ts`
 does the same on the playground's `?scene=walk` (two figures walking, parting
 and overlapping), measuring the canvas against the model.
 
+## The key light's shadow (2026-10-10)
+
+The stage's key light is the only light that casts, and its shadow map falls on the
+body itself: a thigh beside the groin, the back of a knee, an arm across a chest.
+It was a variance map (`VSMShadowMap`, a 2048² map over a fixed 2.8 m box,
+blurred 28 texels), and where one part shadowed another at a grazing angle it drew
+hard, stair-stepped light and dark wedges that `?noshadow` removed. Two things
+broke there. three stores a variance map's moments at half precision, a step of
+about 2 mm in depth over the light's 8 m range, and decides by Chebyshev's bound,
+which fails exactly where occluder and receiver nearly touch, at every crease. And
+a shadow map knows an outline only to the texel, so an edge that runs nearly along
+the map's rows steps a whole texel every so often; on skin the light grazes, the
+step is stretched by the angle.
+
+**Use cases.** One figure close up in the creator (texels stretched across a
+crease fill the frame); several figures in a presence scene (the map must cover
+all of them, wherever they walk); a figure on the ground (its contact shadow is
+the pooled ground field, `GroundContactMaterial`, not this map, and must not lift
+off the feet); a phone (a shaded pixel's reads and the map's size are the cost).
+
+**Options weighed.** A variance map at full precision is not something three
+offers (its moments target is fixed), and every prefiltered map (variance,
+exponential, moments) leaks or darkens where occluder and receiver nearly touch.
+three's own percentage-closer filter reads five comparisons on a noise-turned disc:
+grain at any useful radius. PCSS (a blocker search, then a filter sized by it)
+hardens contact shadows, which at a crease is the hard edge being removed, and
+doubles the reads; the stage's light is a softbox, whose penumbra over the
+centimetres a body shadows itself across is close to constant. Fitting the
+frustum alone shrinks the texel but leaves an unfiltered edge; a bigger map alone
+does the same at more cost.
+
+**Decision.** three's percentage-closer map (`STUDIO_SHADOWS = "percentage"`), read
+through a tent filter that replaces three's PCF `getShadow` in `ShaderChunk`
+(`render/shadowFilter.ts`), with the penumbra set in metres and the map fitted to the
+casters every frame (`render/studioShadow.ts`):
+
+- *The filter* is a tent `shadow.radius` texels to each side, read as radius²
+  hardware bilinear comparisons, each placed where its two texels' tent weights
+  split, so the sum is the exact convolution: no noise, no banding, one edge
+  profile everywhere. It is a global of three's, the one place every lit material
+  (skin, clothing, hair, coat shells, anything a consumer adds) reads a directional
+  or spot light's shadow, so they all agree; it is installed before the first
+  frame compiles (`configureKeyShadow`, which `StudioStage` calls as its key
+  mounts), and a light at three's default radius of 1 gets plain hardware PCF.
+- *The penumbra* is 16 mm (10 % to 90 %, on skin facing the light: a few pixels at
+  a body framing, as before), so the texel is the penumbra over the tent's edge
+  width (1.1 radius): 1.2 mm at the stage's radius of 12.
+- *The fit* (`keyShadowFitter`, in the stage's `useFrame`) bounds every visible
+  caster in the light's view (each mesh's box, and a skinned mesh's bones with
+  25 cm of reach, so a limb an animation swings past its last-computed bounds is
+  still in the map), snaps the window to the texel's grid (a figure that moves does
+  not make its shadow swim) and sizes the map to the window in steps of 128
+  texels, kept while it fits (no reallocation as a figure drifts). One standing
+  figure takes about 1400 × 1800 texels at radius 12 (about a ninth as many at 4); past `shadowMapSize` (2048) the texel, and
+  the penumbra with it, coarsens by eighths of an octave instead, so a crowd gets a
+  softer shadow rather than a bigger map. With nothing casting, the window is the
+  old 2.8 m box about the origin.
+- *Bias.* Depth is compared against the casters' back faces (three's PCF
+  default), which keeps a lit surface off its own depth; a normal offset of one
+  texel (scaled with the texel, never a flat bias) covers the terminator; there is
+  no constant depth bias. The pooled contact shadow on the ground is separate and
+  unchanged.
+- *The radius* is the quality-for-cost knob (`<StudioStage shadowFilterRadius>`).
+  The tent cannot erase the map's staircase, only spread each step along the edge,
+  so what is left shrinks as the radius grows. 12 is the stage's: the narrowest
+  that keeps it under the gate. 4 is the phone setting (16 reads a pixel, a map a
+  third the size on each side).
+
+**Measured.** `tests/browser/shadowEdge.test.ts` renders a limb 4 mm and 30 mm off
+skin the key grazes at 15° and 30°, its edge nearly along the map's rows, at a
+close-up's 0.5 mm a pixel; the staircase is the edge's detail finer than one
+penumbra along it, bounded at 2 % of the penumbra across it (at the edge's
+steepest that is about 1 % of lit skin's luminance). Worst case (4 mm, 30°): the
+variance map 4.0 % (and 3.6 % at 4 mm), the tent at radius 4 7.6 %, 8 3.5 %,
+12 1.3 %, 16 0.8 %. A sphere and a thick bowl facing the light, which nothing
+occludes, render the same with and without shadows where the key reaches (acne);
+`groundContact` and `skinShadow` (the penumbra at a body framing, 4 to 16 px)
+pass. GPU time per frame on the render Mac (M1 Pro, ANGLE Metal, 1280 × 720, a
+heavy man, the second of two passes in one job), with the shadow off, the variance
+map, then the tent at radius 4, 8, 12 and 16: body framing 5.3, 8.0, 6.3, 7.4,
+8.7 and 10.4 ms; a close-up 9.7, 11.0, 10.0, 10.8, 12.5 and 15.1 ms. The stage's
+radius 12 costs 0.7 to 1.5 ms more than the variance map did; radius 4 costs a
+fifth to a third of what the variance map cost over no shadow.
+
 ## Animation (milestone 8, 2026-10-09)
 
 **Use cases.** A figure walks, idles and swims, whatever its size, shape or age.
@@ -2486,6 +2576,19 @@ renderer and then loses its context when its file ends, and fails the test
 running when a context is lost under it: the next draw or read throws, and the
 test is failed afterwards whatever it did with the result.
 `tests/browserRenderers.test.ts` holds every file to it.
+
+A browser test compares a render or any other long numeric buffer with
+`expectSameArray` (`tests/browser/arrays.ts`), never `toEqual` or
+`toStrictEqual`. When a `toEqual` on a 16k-element `Float32Array` fails, vitest
+formats a diff of every element, and that holds the browser run until the render
+pool's job timeout kills it, so one failed assertion loses the whole job.
+`expectSameArray` compares length and then element by element, exactly or within
+an explicit `tolerance`, and fails with the count of differing elements, the
+largest gap and the first few indices with their values.
+`tests/browserArrayComparison.test.ts` fails a browser test that passes a typed
+array, an `Array.from`, a render result or a literal of more than sixteen
+elements to a raw `toEqual`. It reads source text, so it cannot see a large
+array that arrives out of a function declared in another file.
 
 ## Public demo
 
