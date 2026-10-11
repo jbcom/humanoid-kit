@@ -40,25 +40,26 @@ import {
   NoToneMapping,
   type Object3D,
   OrthographicCamera,
-  PCFShadowMap,
   Scene,
   SphereGeometry,
   Vector2,
   Vector3,
-  VSMShadowMap,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
-import { configureKeyShadow, STUDIO_SHADOWS } from "../../src/render/studioShadow.ts";
+import {
+  configureKeyShadow,
+  KEY_POSITION as KEY_AT,
+  KEY_SHADOW,
+  keyShadowFitter,
+  STUDIO_SHADOW_MAP_TYPE,
+} from "../../src/render/studioShadow.ts";
 import { createTestRenderer } from "./gl.ts";
 
-/** Where the stage's key light stands (`StudioStage`), aimed at the origin. */
-const KEY_POSITION = new Vector3(1.8, 3.2, 2.6);
-/**
- * The penumbra the stage is tuned for, 10 % to 90 %, on skin facing the light: about
- * a centimetre and a half (`skinShadow.test.ts` holds it at the evidence framing).
- */
-const TARGET_PENUMBRA = 0.016;
+/** Where the stage's key light stands, aimed at the origin. */
+const KEY_POSITION = new Vector3(...KEY_AT);
+/** The penumbra the stage is tuned for, 10 % to 90 %, on skin facing the light. */
+const TARGET_PENUMBRA = KEY_SHADOW.penumbra;
 /** A close-up's scale: half a millimetre a pixel (a 20 cm crop of thighs over 400 px). */
 const METRES_PER_PIXEL = 0.0005;
 /**
@@ -74,7 +75,7 @@ const STAIRCASE_SHARE = 0.02;
 const renderer = createTestRenderer({ antialias: false });
 renderer.setPixelRatio(1);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = STUDIO_SHADOWS === "variance" ? VSMShadowMap : PCFShadowMap;
+renderer.shadowMap.type = STUDIO_SHADOW_MAP_TYPE;
 renderer.toneMapping = NoToneMapping;
 const targets: WebGLRenderTarget[] = [];
 afterAll(() => {
@@ -104,13 +105,18 @@ function place(object: Object3D, x: Vector3, y: Vector3, z: Vector3, at: Vector3
   object.updateMatrixWorld(true);
 }
 
-/** Luminance per pixel (row 0 at the bottom) of `scene` through `camera`. */
+/**
+ * Luminance per pixel (row 0 at the bottom) of `scene` through `camera`, the key's
+ * shadow fitted to the scene's casters first, as the stage fits it before each frame.
+ */
 function renderLuminance(
   scene: Scene,
+  key: DirectionalLight,
   camera: OrthographicCamera,
   width: number,
   height: number,
 ): Float32Array {
+  keyShadowFitter()(key, scene);
   const target = new WebGLRenderTarget(width, height, { type: FloatType });
   targets.push(target);
   renderer.setSize(width, height, false);
@@ -234,7 +240,7 @@ function grazingEdge(gap: number, graze: number): Edge {
   camera.up.copy(axis);
   camera.lookAt(shadowAt);
   camera.updateMatrixWorld(true);
-  const lum = renderLuminance(scene, camera, width, height);
+  const lum = renderLuminance(scene, key, camera, width, height);
   disposeScene(scene, key);
 
   const lefts: number[] = [];
@@ -298,9 +304,9 @@ function selfShadow(
   camera.lookAt(0, 0, 0);
   camera.updateMatrixWorld(true);
   solid.castShadow = true;
-  const shadowed = renderLuminance(scene, camera, size, size);
+  const shadowed = renderLuminance(scene, key, camera, size, size);
   solid.castShadow = false;
-  const open = renderLuminance(scene, camera, size, size);
+  const open = renderLuminance(scene, key, camera, size, size);
   disposeScene(scene, key);
   let measured = 0;
   let speckled = 0;
