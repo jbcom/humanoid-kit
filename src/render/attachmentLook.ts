@@ -28,6 +28,7 @@ import {
 } from "../surface/regions/hands/index.ts";
 import { DEFAULT_SKIN_TONE, type Rgb, type SkinTone } from "../surface/skinTone.ts";
 import { AttachmentStandardMaterial, patchOcclusion } from "./occlusion.ts";
+import { patchShadowFilter } from "./shadowFilter.ts";
 
 /**
  * A natural tooth's CIELAB colour: ivory, lighter than any skin and a little
@@ -148,6 +149,7 @@ float hkNoise( vec2 p ) {
 	}
 	#endif`,
       );
+    patchShadowFilter(shader);
   };
 
   override customProgramCacheKey(): string {
@@ -194,6 +196,7 @@ export class NailPlateMaterial extends AttachmentStandardMaterial {
         "#include <color_fragment>",
         `#include <color_fragment>\n\tdiffuseColor.a *= mix( ${glslNumber(NAIL_PLATE_OPACITY)}, ${glslNumber(NAIL_FREE_EDGE_OPACITY)}, clamp( vHkNailEdge, 0.0, 1.0 ) );`,
       );
+    patchShadowFilter(shader);
   };
 
   override customProgramCacheKey(): string {

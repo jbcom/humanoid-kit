@@ -64,8 +64,9 @@ export interface StudioStageProps {
 
 /**
  * The key light, its shadow fitted to the scene's casters before each frame is drawn
- * (`keyShadowFitter`). Its filter is installed as it mounts, before the first frame
- * compiles a material (`configureKeyShadow`).
+ * (`keyShadowFitter`), and set up as it mounts (`configureKeyShadow`). Mounting it
+ * changes nothing in three: the figures' materials read its tent filter themselves
+ * (`render/shadowFilter.ts`), and the host's own lights and materials are drawn as before.
  */
 function KeyLight({
   intensity,

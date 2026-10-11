@@ -21,7 +21,6 @@ import {
   Vector3,
 } from "three";
 import { describe, expect, it } from "vitest";
-import { installShadowFilter, shadowFilterInstalled } from "../src/render/shadowFilter.ts";
 import {
   applyKeyShadowFrame,
   casterBounds,
@@ -240,19 +239,14 @@ describe("keyShadowFitter and configureKeyShadow", () => {
     expect(cam.top - cam.bottom).toBeGreaterThan(2 * KEY_SHADOW.defaultHalfExtent);
   });
 
-  it("install the filter once: configureKeyShadow installs it, and installing twice changes nothing", () => {
+  it("configureKeyShadow sets up the light alone: it frames and filters its map, and mutates nothing of three's", () => {
+    const chunk = ShaderChunk.shadowmap_pars_fragment;
     const light = key();
     configureKeyShadow(light);
-    expect(shadowFilterInstalled()).toBe(true);
-    const chunk = ShaderChunk.shadowmap_pars_fragment;
-    installShadowFilter();
+    expect(light.shadow.radius).toBe(KEY_SHADOW.radius);
+    expect(light.shadow.mapSize.x).toBeGreaterThan(0);
+    // The tent is the materials' own (`tests/shadowScope.test.ts`), not three's chunk's.
     expect(ShaderChunk.shadowmap_pars_fragment).toBe(chunk);
-    // It replaced three's PCF reads for directional and spot lights, and left the
-    // other filters (variance, basic, point lights' PCF) alone.
-    expect(chunk).toContain("humanoid-kit: tent PCF");
-    expect(chunk).not.toContain("vogelDiskSample( 0, 5, phi ) * radius");
-    expect(chunk).toContain("SHADOWMAP_TYPE_VSM");
-    expect(chunk).toContain("float getPointShadow( samplerCubeShadow");
   });
 
   it("frame applied by hand is the frame the light has", () => {

@@ -33,7 +33,7 @@ import {
   type SkinnedMesh,
   Vector3,
 } from "three";
-import { installShadowFilter, MAX_TENT_RADIUS, tentEdgeWidth } from "./shadowFilter.ts";
+import { MAX_TENT_RADIUS, tentEdgeWidth } from "./shadowFilter.ts";
 
 /** The canvas's `shadows` prop the stage is validated with (react-three-fiber's name for `PCFShadowMap`). */
 export const STUDIO_SHADOWS = "percentage" as const;
@@ -238,12 +238,14 @@ function defaultBounds(light: DirectionalLight, out: Box3): Box3 {
 }
 
 /**
- * Sets up the key light's shadow for skin: installs the tent filter (`shadowFilter.ts`;
- * do it before the first frame compiles a material) and frames the map on the stage's
- * figure box about the origin. `keyShadowFitter` then fits it to the casters each frame.
+ * Sets up the key light's shadow for skin: frames the map on the stage's figure box about
+ * the origin, with the light's radius set for the tent. `keyShadowFitter` then fits it to
+ * the casters each frame. It changes nothing but `light`: the tent is read only by the
+ * materials that have the filter (`shadowFilter.ts`: the kit's own, and a consumer's
+ * through `applyShadowFilter`), so the host's other lights and materials are drawn as
+ * three draws them.
  */
 export function configureKeyShadow(light: DirectionalLight, options: KeyShadowOptions = {}): void {
-  installShadowFilter();
   applyKeyShadowFrame(light, frameKeyShadow(defaultBounds(light, new Box3()), null, options));
 }
 

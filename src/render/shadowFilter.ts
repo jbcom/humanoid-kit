@@ -23,15 +23,24 @@
  * texel's two tent weights split, one read takes both at their exact weights, so
  * `radius` reads an axis cover the 2 radius texels the tent reaches.
  *
- * The filter replaces the body of three's PCF `getShadow` in `ShaderChunk`, the one
- * place every lit material (skin, clothing, hair, anything a consumer adds) reads a
- * directional or spot light's shadow from, so they all agree. A light left at three's
- * default radius of 1 gets one bilinear comparison, three's plain hardware PCF. It is a
- * global of three's, so it is installed once and before any material is compiled: a
- * program compiled earlier keeps three's filter, because three caches programs by
- * their parameters, not their source.
+ * three reads every directional and spot light's shadow in one function, `getShadow`
+ * in the shared `ShaderChunk.shadowmap_pars_fragment`. The filter never touches that
+ * chunk: a library that rewrote it would change how every lit material in the host
+ * app, and every light of its own, is drawn. It is spliced into the shader of one
+ * material instead, in that material's `onBeforeCompile` (`patchShadowFilter`), which
+ * swaps the PCF `getShadow` in the copy of the chunk that material's program is built
+ * from. The kit's materials do it themselves, so skin, clothing, hair, eyes and
+ * attachments agree; a consumer's own material opts in with `applyShadowFilter`; and
+ * every other material compiles three's chunk untouched.
+ *
+ * A material that has the filter reads every directional and spot light's shadow
+ * through the tent, the host's lights included, at that light's `shadow.radius`: one
+ * bilinear comparison at three's default radius of 1, so a figure on a game's board
+ * keeps a shadow edge as sharp as the board's own. three caches a program by its
+ * parameters, not its source, so the patched program is keyed apart (`SHADOW_FILTER_KEY`)
+ * and cannot be taken for the stock one.
  */
-import { ShaderChunk } from "three";
+import { type Material, ShaderChunk } from "three";
 
 /** The widest tent the filter reads, in texels to each side: 16² = 256 reads. */
 export const MAX_TENT_RADIUS = 16;
@@ -47,8 +56,12 @@ export function tentEdgeWidth(radius: number): number {
   return 2 * (1 - Math.sqrt(0.2)) * radius;
 }
 
-/** Marks the patched chunk, so installing twice is a no-op. */
-const MARK = "/* humanoid-kit: tent PCF */";
+/** Marks a shader that has the tent, so patching twice is a no-op. */
+export const SHADOW_FILTER_MARK = "/* humanoid-kit: tent PCF */";
+const MARK = SHADOW_FILTER_MARK;
+
+/** Part of the program key of every material that has the filter: its program differs from three's. */
+export const SHADOW_FILTER_KEY = "humanoid-kit-tent-shadow-1";
 
 const SIGNATURE =
   "float getShadow( sampler2DShadow shadowMap, vec2 shadowMapSize, float shadowIntensity, float shadowBias, float shadowRadius, vec4 shadowCoord ) {";
@@ -108,25 +121,62 @@ const TENT_PCF = /* glsl */ `${MARK}
 
 	`;
 
+const INCLUDE = "#include <shadowmap_pars_fragment>";
+
+/** three's shadow chunk with the tent in place of its PCF read, built once per source. */
+let built: { from: string; chunk: string } | null = null;
+
 /**
- * Installs the tent filter into three's PCF shadow chunk (idempotent). Call it before
- * the first frame that compiles a lit material; `configureKeyShadow` does.
- * Throws if three's chunk no longer has the function it replaces, so an upgrade of
- * three that moves it fails loudly instead of silently drawing three's filter.
+ * Three's `shadowmap_pars_fragment` with its PCF `getShadow` swapped for the tent. A new
+ * string: the chunk itself is read, never written. Throws if three's chunk no longer has
+ * the function it replaces, so an upgrade of three that moves it fails loudly instead of
+ * silently drawing three's filter.
  */
-export function installShadowFilter(): void {
-  const chunk = ShaderChunk.shadowmap_pars_fragment;
-  if (chunk.includes(MARK)) return;
-  const start = chunk.indexOf(SIGNATURE);
-  const end = chunk.indexOf(NEXT_BRANCH, start);
-  if (start < 0 || end < 0 || chunk.indexOf(SIGNATURE, start + 1) >= 0)
+function tentShadowChunk(): string {
+  const stock = ShaderChunk.shadowmap_pars_fragment;
+  if (built?.from === stock) return built.chunk;
+  const start = stock.indexOf(SIGNATURE);
+  const end = stock.indexOf(NEXT_BRANCH, start);
+  if (start < 0 || end < 0 || stock.indexOf(SIGNATURE, start + 1) >= 0)
     throw new Error(
-      "installShadowFilter: three's shadowmap_pars_fragment no longer has the one PCF getShadow it replaces",
+      "patchShadowFilter: three's shadowmap_pars_fragment no longer has the one PCF getShadow it replaces",
     );
-  ShaderChunk.shadowmap_pars_fragment = chunk.slice(0, start) + TENT_PCF + chunk.slice(end);
+  built = { from: stock, chunk: stock.slice(0, start) + TENT_PCF + stock.slice(end) };
+  return built.chunk;
 }
 
-/** Whether the tent filter is installed. */
-export function shadowFilterInstalled(): boolean {
-  return ShaderChunk.shadowmap_pars_fragment.includes(MARK);
+/**
+ * Has the shader in `shader` (as `onBeforeCompile` receives it, its includes not yet
+ * resolved) read directional and spot lights' shadows through the tent. Idempotent, and a
+ * shader with no shadow read (an unlit material) is left as it is. Pair it with
+ * `SHADOW_FILTER_KEY` in the material's `customProgramCacheKey`, or use
+ * `applyShadowFilter`, which does both.
+ */
+export function patchShadowFilter(shader: { fragmentShader: string }): void {
+  if (shader.fragmentShader.includes(MARK) || !shader.fragmentShader.includes(INCLUDE)) return;
+  shader.fragmentShader = shader.fragmentShader.replace(INCLUDE, () => tentShadowChunk());
+}
+
+/** The materials `applyShadowFilter` has already wrapped. */
+const applied = new WeakSet<Material>();
+
+/**
+ * Opts `material` in to the tent filter the kit's own materials draw shadows with, so a
+ * consumer's own garment, prop or floor agrees with the figure beside it. It keeps the
+ * `onBeforeCompile` and `customProgramCacheKey` the material already has, is idempotent,
+ * and touches no other material: three's own materials, and the host's, compile three's
+ * chunk. Returns the material.
+ */
+export function applyShadowFilter<M extends Material>(material: M): M {
+  if (applied.has(material)) return material;
+  applied.add(material);
+  const before = material.onBeforeCompile.bind(material);
+  material.onBeforeCompile = (shader, renderer) => {
+    before(shader, renderer);
+    patchShadowFilter(shader);
+  };
+  const key = material.customProgramCacheKey.bind(material);
+  material.customProgramCacheKey = () => `${key()}|${SHADOW_FILTER_KEY}`;
+  material.needsUpdate = true;
+  return material;
 }

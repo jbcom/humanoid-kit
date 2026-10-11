@@ -48,6 +48,7 @@ import {
 } from "three";
 import { type HairColour, hairTint } from "../surface/hairTone.ts";
 import { patchOcclusionFragment } from "./occlusion.ts";
+import { patchShadowFilter, SHADOW_FILTER_KEY } from "./shadowFilter.ts";
 
 /** One float per vertex: how open the card is to light. */
 export const HAIR_OCCLUSION_ATTRIBUTE = "hkHairOcclusion";
@@ -513,10 +514,11 @@ ${CELL_KEEP}`,
         `${SPECULAR_BUDGET}\n#include <transmission_fragment>`,
       );
     patchOcclusionFragment(shader, HAIR_OCCLUSION_FLOOR);
+    patchShadowFilter(shader);
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-hair-6";
+    return `humanoid-kit-hair-6|${SHADOW_FILTER_KEY}`;
   }
 }
 

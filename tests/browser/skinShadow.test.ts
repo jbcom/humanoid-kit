@@ -28,7 +28,7 @@ import {
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
-import { shadowFilterInstalled, tentEdgeWidth } from "../../src/render/shadowFilter.ts";
+import { applyShadowFilter, tentEdgeWidth } from "../../src/render/shadowFilter.ts";
 import {
   configureKeyShadow,
   KEY_POSITION,
@@ -67,7 +67,8 @@ function penumbra(height: number): number {
   scene.add(key, key.target, new AmbientLight("#ffffff", 0.1));
   const plane = new Mesh(
     new PlaneGeometry(4, 4),
-    new MeshPhysicalMaterial({ color: "#c68e6e", roughness: 0.5 }),
+    // Skin's stand-in: a physical material of skin's albedo, with the filter the kit's skin has.
+    applyShadowFilter(new MeshPhysicalMaterial({ color: "#c68e6e", roughness: 0.5 })),
   );
   plane.rotation.x = -Math.PI / 2;
   plane.receiveShadow = true;
@@ -137,9 +138,6 @@ function penumbra(height: number): number {
 describe("the studio key light's shadow on skin", () => {
   it("is the percentage-closer map the stage is validated with, read through the tent filter", () => {
     expect(STUDIO_SHADOWS).toBe("percentage");
-    // configureKeyShadow (in `penumbra`, and here) installs the filter.
-    configureKeyShadow(new DirectionalLight());
-    expect(shadowFilterInstalled()).toBe(true);
     // The texel is what the tent needs to draw the penumbra.
     expect(keyShadowTexel() * tentEdgeWidth(KEY_SHADOW.radius)).toBeCloseTo(KEY_SHADOW.penumbra, 9);
   });

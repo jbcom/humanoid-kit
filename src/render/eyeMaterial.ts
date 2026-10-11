@@ -21,6 +21,7 @@ import { Color, LinearSRGBColorSpace, MeshPhysicalMaterial, Vector3, Vector4 } f
 import type { EyeManifest, EyeMaterialEntry } from "../eyes/library.ts";
 import type { Rgb } from "../surface/skinTone.ts";
 import { patchOcclusion } from "./occlusion.ts";
+import { patchShadowFilter, SHADOW_FILTER_KEY } from "./shadowFilter.ts";
 
 export interface EyeAppearance {
   /** Linear-RGB iris colour. */
@@ -159,9 +160,10 @@ export class EyeMaterial extends MeshPhysicalMaterial {
 		diffuseColor.rgb = mix( sclera, irisColour, iris );
 	}`,
       );
+    patchShadowFilter(shader);
   };
 
   override customProgramCacheKey(): string {
-    return "humanoid-kit-eye-5";
+    return `humanoid-kit-eye-5|${SHADOW_FILTER_KEY}`;
   }
 }
