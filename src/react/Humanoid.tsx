@@ -86,6 +86,7 @@ import {
 } from "../render/hairMaterial.ts";
 import { acquireLayerAtlas } from "../render/layerAtlas.ts";
 import { setBodyOcclusionAttributes, setOcclusionAttributes } from "../render/occlusion.ts";
+import { applyShadowFilter } from "../render/shadowFilter.ts";
 import {
   CURVATURE_ATTRIBUTE,
   SCALP_ATTRIBUTE,
@@ -477,7 +478,8 @@ function useGarmentMaterial(
     });
     // Skinned as the body is, so a sleeve does not part from the arm at a joint.
     if (dual) applyDualSkinning(made, dual);
-    return made;
+    // Drawn with the skin's shadow filter, so a sleeve and the arm in it agree.
+    return applyShadowFilter(made);
   }, [t, dual]);
   const reportRef = useLatest(report);
   const settle = useSettle();
@@ -786,7 +788,8 @@ function PiercingMesh({
     return g;
   }, [piercing]);
   const material = useMemo(
-    () => new MeshPhysicalMaterial({ metalness: 1, roughness: JEWELLERY_ROUGHNESS }),
+    () =>
+      applyShadowFilter(new MeshPhysicalMaterial({ metalness: 1, roughness: JEWELLERY_ROUGHNESS })),
     [],
   );
   useEffect(() => {

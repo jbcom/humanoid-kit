@@ -2367,18 +2367,17 @@ frustum alone shrinks the texel but leaves an unfiltered edge; a bigger map alon
 does the same at more cost.
 
 **Decision.** three's percentage-closer map (`STUDIO_SHADOWS = "percentage"`), read
-through a tent filter that replaces three's PCF `getShadow` in `ShaderChunk`
+through a tent filter that the kit's own materials carry in their shaders
 (`render/shadowFilter.ts`), with the penumbra set in metres and the map fitted to the
 casters every frame (`render/studioShadow.ts`):
 
 - *The filter* is a tent `shadow.radius` texels to each side, read as radius²
   hardware bilinear comparisons, each placed where its two texels' tent weights
   split, so the sum is the exact convolution: no noise, no banding, one edge
-  profile everywhere. It is a global of three's, the one place every lit material
-  (skin, clothing, hair, coat shells, anything a consumer adds) reads a directional
-  or spot light's shadow, so they all agree; it is installed before the first
-  frame compiles (`configureKeyShadow`, which `StudioStage` calls as its key
-  mounts), and a light at three's default radius of 1 gets plain hardware PCF.
+  profile everywhere. It is scoped to what the kit owns (see "Scope" below).
+  A material that has it reads every directional and spot light's shadow through
+  it at that light's `shadow.radius`, and a light at three's default radius of 1
+  gets one hardware comparison.
 - *The penumbra* is 16 mm (10 % to 90 %, on skin facing the light: a few pixels at
   a body framing, as before), so the texel is the penumbra over the tent's edge
   width (1.1 radius): 1.2 mm at the stage's radius of 12.
@@ -2402,6 +2401,69 @@ casters every frame (`render/studioShadow.ts`):
   so what is left shrinks as the radius grows. 12 is the stage's: the narrowest
   that keeps it under the gate. 4 is the phone setting (16 reads a pixel, a map a
   third the size on each side).
+
+**Scope (2026-10-10, replacing the first version's global patch).** The first version
+installed the tent by rewriting `ShaderChunk.shadowmap_pars_fragment`, three's one
+copy of the shadow read, as `<StudioStage>`'s key light mounted. That chunk is shared
+by every lit material in the page, so a host app that put a figure on a board with
+its own `SunLight` (a directional light with its own fitted shadow, radius left at
+three's default 1) found the board, and everything else it drew, silently reading
+the tent instead of three's filter, from the moment the stage mounted and for the
+rest of the page's life. A library must not change global state of three's that
+alters its host's own lights and materials. The use cases the global patch served
+were that skin, clothing, hair and anything a consumer adds agree on one shadow,
+and that nobody has to remember to opt in.
+
+Options weighed:
+
+- *A per-light flag the shader checks.* The shader reads a light by its position in
+  an array of structs three owns; there is no per-light slot to carry a flag in
+  without a second patch of the same chunk, and the chunk would still be global.
+- *Rewriting the chunk and restoring it around the kit's draws.* The host's and the
+  kit's materials compile in whatever order the renderer meets them, and a program
+  is cached by its parameters, not its source, so the swap would race with
+  three's own cache. Rejected as a global with extra steps.
+- *Per-material injection in `onBeforeCompile`, with a program key of its own.*
+  Changes nothing outside the material. Costs a program per material class that
+  would otherwise share three's (a handful, compiled once each), and each of the
+  kit's materials has its own program already. Chosen.
+
+**What it is.** `patchShadowFilter(shader)` replaces the `#include
+<shadowmap_pars_fragment>` in one material's fragment shader with a copy of three's
+chunk whose PCF `getShadow` is the tent (built once from the stock chunk, which is
+read and never written; it throws if three's chunk no longer has the one function it
+replaces). Every material the kit makes calls it in its `onBeforeCompile`
+(`SkinMaterial`, `CoatMaterial`, `HairMaterial`, `EyeMaterial`, `DecalMaterial`, the
+attachments `AttachmentStandardMaterial`, `TeethMaterial` and `NailPlateMaterial`),
+and adds `SHADOW_FILTER_KEY` to its `customProgramCacheKey` so its program is never
+taken for three's. The garments and jewellery `<Humanoid>` makes from stock three
+materials opt in with `applyShadowFilter`, which wraps a material's own
+`onBeforeCompile` and key (as `applyDualSkinning` and `clipMaterial` do), is
+idempotent and returns the material. So the kit's figures agree with one another,
+and a consumer's prop, floor or accessory that should agree with the figure calls
+`applyShadowFilter(material)` explicitly. Nothing is implicit, and `<StudioStage>`
+mounting, like `configureKeyShadow`, changes only its own light.
+
+Consequences. The host's lights and materials compile three's chunk and draw as
+three does without the kit. The kit's materials read every directional and spot
+shadow in the scene through the tent, the host's included, at that light's radius:
+at the default 1 that is one hardware comparison, an edge about as sharp as three's
+own at radius 1; a host that wants its sun soft on a figure raises the light's
+`shadow.radius` (up to 16). Point lights' shadows are three's, for everyone. The
+kit's shadow look and cost are unchanged: its materials compile the same GLSL as
+before, so GPU time per frame on the kit's materials is the same, and the host's
+own materials no longer pay for the tent. Programs compiled before an opt-in need
+`material.needsUpdate`, which `applyShadowFilter` sets.
+
+**Gates.** `tests/browser/shadowScope.test.tsx`: a scene with a host sun casting
+onto a plain `MeshStandardMaterial` draws the same pixels with the kit's key light
+mounted as without the kit, bit for bit against a stock light in the key's place
+(the same shader) and within a float's ulp against no second light, at the sun's
+default radius and at 6; a mounted `<StudioStage>` leaves every `ShaderChunk` as
+three ships it; an opted-in material and `SkinMaterial` do read the tent, so the
+equality is not vacuous. `tests/shadowScope.test.ts`: no `ShaderChunk` moves when the
+key is set up or the kit's materials compile, and every material the kit makes
+carries the filter and the key.
 
 **Measured.** `tests/browser/shadowEdge.test.ts` renders a limb 4 mm and 30 mm off
 skin the key grazes at 15° and 30°, its edge nearly along the map's rows, at a

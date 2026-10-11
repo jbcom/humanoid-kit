@@ -47,6 +47,7 @@ import {
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
+import { applyShadowFilter } from "../../src/render/shadowFilter.ts";
 import {
   configureKeyShadow,
   KEY_POSITION as KEY_AT,
@@ -82,7 +83,9 @@ afterAll(() => {
   for (const t of targets) t.dispose();
 });
 
-const skin = () => new MeshPhysicalMaterial({ color: "#c68e6e", roughness: 0.5 });
+/** Skin's stand-in: a physical material of skin's albedo, with the filter the kit's skin has. */
+const skin = () =>
+  applyShadowFilter(new MeshPhysicalMaterial({ color: "#c68e6e", roughness: 0.5 }));
 /** Casts, but the camera sees through it: the shadow pass does not use its material. */
 const unseen = () => new MeshPhysicalMaterial({ colorWrite: false, depthWrite: false });
 

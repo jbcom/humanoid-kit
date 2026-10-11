@@ -22,6 +22,7 @@ import {
   type WebGLProgramParametersWithUniforms,
 } from "three";
 import { OCCLUSION_KEYS, occlusionCorners } from "../rig/occlusionKeys.ts";
+import { patchShadowFilter, SHADOW_FILTER_KEY } from "./shadowFilter.ts";
 
 if (OCCLUSION_KEYS.length !== 3)
   throw new Error("occlusion: the shader blends three keys; update it with OCCLUSION_KEYS");
@@ -232,10 +233,13 @@ export class AttachmentStandardMaterial extends MeshStandardMaterial {
     super(parameters);
   }
 
-  override onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) =>
+  override onBeforeCompile = (shader: WebGLProgramParametersWithUniforms) => {
     patchOcclusion(shader, this.occlusionKeys);
+    patchShadowFilter(shader);
+  };
 
+  /** The subclasses (`TeethMaterial`, `NailPlateMaterial`) extend this key and patch the shadow filter themselves. */
   override customProgramCacheKey(): string {
-    return "humanoid-kit-attachment-occlusion-2";
+    return `humanoid-kit-attachment-occlusion-2|${SHADOW_FILTER_KEY}`;
   }
 }
