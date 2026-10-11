@@ -84,16 +84,20 @@ describe("the posed body", () => {
     expect(worst).toBeLessThan(1e-6);
   });
 
-  it("welds as the model's topology does: the seams found by position are the surface's own", () => {
+  it("welds as the model's topology does: a seam's duplicates, each one point of the surface", () => {
     const adultModel = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
     for (const [m, r] of [
       [model, recipe],
-      [adultModel, createRecipe({ macros: { age: 30 } })],
+      [adultModel, createRecipe({ macros: { age: 30, gender: 0 } })],
     ] as const) {
       const body = posedSurface(m, r, REST_POSE);
       expect(body.surface).toBe(m === model ? "base" : "adult");
-      expect(m.renderWeld(body.surface)).toEqual(body.weld);
+      expect(body.weld).toBe(m.renderWeld(body.surface));
       expect(m.bodyIndex(body.surface)).toBe(body.index);
+      // A seam's duplicates are one point of the surface.
+      const at = (v: number) => [0, 1, 2].map((k) => body.rest[v * 3 + k]).join(",");
+      for (let v = 0; v < body.vertexCount; v++)
+        if (body.weld[v] !== v) expect(at(v)).toBe(at(body.weld[v] as number));
     }
   });
 });
