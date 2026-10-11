@@ -194,6 +194,9 @@ export function applyKeyShadowFrame(light: DirectionalLight, frame: KeyShadowFra
  * still covered. Empty when nothing casts.
  */
 export function casterBounds(root: Object3D, light: DirectionalLight, out: Box3): Box3 {
+  // The fitter runs before the frame is drawn, so before three brings world matrices up
+  // to date: on a figure's first frame, or after it jumps, they would still be old.
+  root.updateMatrixWorld();
   aimShadowCamera(light);
   const view = light.shadow.camera.matrixWorldInverse;
   out.makeEmpty();

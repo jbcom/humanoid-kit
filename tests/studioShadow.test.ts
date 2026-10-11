@@ -150,6 +150,21 @@ describe("casterBounds", () => {
     expect(centre.distanceTo(new Vector3(3, 0, 0))).toBeLessThan(1e-6);
   });
 
+  it("brings world matrices up to date first: a figure on its first frame, or one that jumped, is where it is", () => {
+    const light = key();
+    const scene = new Group();
+    const caster = new Mesh(new BoxGeometry(0.2, 0.2, 0.2), new MeshBasicMaterial());
+    caster.castShadow = true;
+    scene.add(caster);
+    scene.updateMatrixWorld(true);
+    // Moved after the last frame's matrices were computed, and not updated since.
+    caster.position.set(-4, 1, 2);
+    const centre = casterBounds(scene, light, new Box3())
+      .getCenter(new Vector3())
+      .applyMatrix4(light.shadow.camera.matrixWorld);
+    expect(centre.distanceTo(new Vector3(-4, 1, 2))).toBeLessThan(1e-6);
+  });
+
   it("is empty when nothing casts", () => {
     const scene = new Group();
     scene.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial()));
