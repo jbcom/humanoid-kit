@@ -253,11 +253,10 @@ export function carriedDetail(
  * The skin's own detail (`AdultDetailSpec.skin`) where an organ is drawn out of it:
  * a reservoir's vertex takes the skin's displacement as far as the organ leaves it
  * where it is, and none where the organ is carried (`CARRIED_FROM` to `CARRIED_FULLY`
- * of the organ's push, `organ` before the carriage). A ring lies on its loop vertex at
- * rest and the skin's target moves it with that vertex, so a collapsed reservoir stays
- * in the skin; added to every ring of a sac hanging from a vulva's cleft too, it
- * sheared each column of the sac by its root vertex's sink, and the sac's notch on a
- * figure between the sexes deepened from 11% of its width to 14%.
+ * of the organ's push, `organ` before the carriage). Added in full to the cap of a sac
+ * hanging from a vulva's cleft, it pressed the cleft into the sac's bottom, and the
+ * sac's notch on a figure between the sexes deepened from 11% of its width to 14.5%.
+ * (A ring's vertices are copies of their loop vertices and follow them, `displace`.)
  */
 export function skinUnderOrgans(
   skin: Pick<SurfaceDetail, "indices" | "xyz">,

@@ -1636,12 +1636,13 @@ organ drawn out of it (`scripts/lib/detail/vulva.ts`), so the pack names its tar
 as the skin's (`AdultDetailSpec.skin`). The model adds it first, to the figure's own
 skin (`SurfaceDetail.skin`): it is never carried, and it is no push of a reservoir
 out of the skin, so a woman's sac reservoir keeps the skin's weights. An organ is
-measured from the skin it shapes. A reservoir ring takes its loop vertex's share of
-the skin's detail, so a collapsed sac stays in the vulva's skin; an organ drawn out
-of it gives that share up as far as it is carried (`skinUnderOrgans`): added to every
-ring of a sac hanging from the cleft, it sheared each column of the sac by its root
-vertex's sink, and the sac's notch on a figure between the sexes went from 11% of
-its width to 14%.
+measured from the skin it shapes. A collapsed reservoir's rings follow their loop
+vertices, as every copy does, so a collapsed sac stays in the vulva's skin; the skin's
+target names no ring (named as well, a collapsed sac's wall sank twice as far, a step
+across the vulva at the sac's loop). An organ's vertices give the skin's detail up as
+far as they are carried (`skinUnderOrgans`): added in full to the cap of a sac hanging
+from the cleft, it pressed the cleft into the sac's bottom, and the sac's notch on a
+figure between the sexes went from 11% of its width to 14.5%.
 
 ## Scalp hair (milestone 4)
 

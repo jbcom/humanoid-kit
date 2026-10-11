@@ -216,7 +216,7 @@ export function authorDetail(
   );
   const organ = phallusTargets(rootOf("phallic"), parts.phallus, skin);
   const sac = scrotumTargets(rootOf("labioscrotal"), parts.scrotum, skin);
-  const folds = vulvaTarget(lattice, reservoirs, vulva);
+  const folds = vulvaTarget(lattice, vulva);
   const made = [...organ.targets, ...sac.targets, folds];
   return {
     targets: made.map((t) => encodeSparseTarget(t.name, t.indices, t.xyz)),

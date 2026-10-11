@@ -41,7 +41,7 @@
  */
 import { BufferAttribute, BufferGeometry, DoubleSide, Ray, Vector3 } from "three";
 import { MeshBVH } from "three-mesh-bvh";
-import type { AdultReservoirSpec, HumanoidAssets } from "../../../src/format/assetFormat.ts";
+import type { HumanoidAssets } from "../../../src/format/assetFormat.ts";
 import { evaluateBinding } from "../../../src/mhclo/bound.ts";
 import type { AdultDetailLattice } from "../../../src/model/humanoidModel.ts";
 import { MH_UNIT } from "../compileAsset.ts";
@@ -230,14 +230,10 @@ export interface VulvaTarget {
 
 /**
  * The vulva's form as a displacement of the lattice's region, on the figure the
- * lattice was evaluated on; the reservoirs' rings take their loop vertex's, so a
- * collapsed reservoir moves with the skin it lies in.
+ * lattice was evaluated on. A collapsed reservoir's rings follow their loop vertices
+ * with it, as the surface moves every copy (`displace`).
  */
-export function vulvaTarget(
-  lattice: AdultDetailLattice,
-  reservoirs: readonly AdultReservoirSpec[],
-  sheet: SculptPart,
-): VulvaTarget {
+export function vulvaTarget(lattice: AdultDetailLattice, sheet: SculptPart): VulvaTarget {
   const n = lattice.regionCount;
   const regionOf = new Map<number, number>();
   lattice.regionIds.forEach((id, i) => {
@@ -297,16 +293,10 @@ export function vulvaTarget(
     ];
     if (Math.hypot(d[0], d[1], d[2]) > 1e-6) out.set(v, d);
   }
-  // A ring vertex lies on its loop vertex at rest and takes its displacement.
-  for (const r of lattice.reservoirs) {
-    const loop = reservoirs.find((s) => s.id === r.id)?.loop;
-    if (!loop) throw new Error(`vulva: the pack has no reservoir ${r.id}`);
-    for (let j = 0; j < r.rings; j++)
-      loop.forEach((id, i) => {
-        const d = out.get(regionOf.get(id) as number);
-        if (d) out.set(r.base + j * r.loop + i, d);
-      });
-  }
+  // No ring of a reservoir: a ring's vertices are copies of their loop vertices, and the
+  // surface moves a copy with whatever moves the vertex it copies (`displace`). Given the
+  // loop vertex's displacement as well, a collapsed sac's wall sank twice as far, 9 mm
+  // in the 4.5 mm cleft, a step across the vulva at the sac's loop.
   const indices = [...out.keys()].sort((a, b) => a - b);
   return {
     name: VULVA_TARGET,

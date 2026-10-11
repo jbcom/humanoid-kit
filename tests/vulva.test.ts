@@ -102,19 +102,26 @@ describe("the vulva on the skin", () => {
     expect(worst).toBeLessThan(0.0005);
   });
 
-  it("moves a reservoir's ring with its loop vertex, so a collapsed one stays in the skin", () => {
-    let rings = 0;
-    for (const r of lattice.reservoirs) {
-      const loop = anatomy?.reservoirs?.find((s) => s.id === r.id)?.loop ?? [];
-      for (let j = 0; j < r.rings; j++)
-        loop.forEach((id, i) => {
-          const ring = displaced.get(r.base + j * r.loop + i);
-          const own = displaced.get(regionOf.get(id) as number);
-          expect(ring).toEqual(own);
-          if (ring) rings++;
-        });
-    }
-    expect(rings).toBeGreaterThan(0);
+  it("moves no ring itself, and the drawn surface no further than the target does", () => {
+    // A ring's vertices copy their loop vertices and move with them (`displace`); given the
+    // loop's displacement too, a collapsed sac's wall sank twice as far, a step at its loop.
+    for (const r of lattice.reservoirs)
+      for (let m = r.base; m < r.base + r.loop * r.rings; m++) expect(displaced.has(m)).toBe(false);
+    const authored = Math.max(...[...displaced.values()].map((d) => Math.hypot(...d)));
+    const recipe = (size: number) =>
+      createRecipe({ macros: AUTHORING_FIGURE.macros, modifiers: { [VULVA_SIZE]: size } });
+    const without = model.evaluate(recipe(0)).positions;
+    const withIt = model.evaluate(recipe(1)).positions;
+    let drawn = 0;
+    for (let v = 0; v < without.length / 3; v++)
+      drawn = Math.max(
+        drawn,
+        Math.hypot(
+          ...[0, 1, 2].map((k) => (withIt[v * 3 + k] as number) - (without[v * 3 + k] as number)),
+        ),
+      );
+    expect(drawn).toBeGreaterThan(0.003);
+    expect(drawn).toBeLessThanOrEqual(authored * 1.01);
   });
 
   it("is drawn by default on a woman, not on a man, and half on a figure between", () => {
