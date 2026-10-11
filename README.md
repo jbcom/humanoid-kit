@@ -91,8 +91,8 @@ Requirements:
 
 - Node.js 24 or newer for tooling; a browser with WebGL 2 and module workers at
   runtime
-- `three` 0.182 or newer (the studio's shadow filter replaces the percentage-closer
-  shadow read three has had since 0.182)
+- `three` 0.182 or newer (the kit's materials swap the percentage-closer shadow
+  read three has had since 0.182 in their own shaders, and change nothing else in three)
 - `react` 19, `@react-three/fiber` 9 and `@react-three/drei` 10 for
   `humanoid-kit/react` (optional; the core works without React)
 
