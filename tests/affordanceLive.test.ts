@@ -299,6 +299,60 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
     expect(h.jawOpening()).toBe(0.7);
   });
 
+  it("reports how far each finger pad is from a held capsule, alone and as its grip's five", () => {
+    const recipe = createRecipe();
+    const h = new HumanoidAffordances();
+    h.setRecipe(recipe);
+    const finger = { from: [0, 0, 0] as const, to: [0, 0.01, 0] as const, radius: 0.008 };
+    expect(h.contact("finger-pad-2.R", finger)).toBeNull();
+    const group = new Group();
+    group.position.set(0.3, 0, -0.5);
+    group.rotation.set(0, 0.6, 0);
+    group.scale.setScalar(1.25);
+    h.setAnchors(anchors);
+    h.attach(liveFigure(recipe, "relaxed", group));
+    group.updateWorldMatrix(true, false);
+    const pad = h.frame("finger-pad-2.R", "world");
+    if (!pad) throw new Error("no pad");
+    // A finger lying across the index pad, its axis 9 mm out along the pad's normal: a
+    // radius of 8 mm leaves a millimetre's gap, one of 10 presses a millimetre in.
+    const axis = new Vector3(...pad.position).addScaledVector(new Vector3(...pad.normal), 0.009);
+    const across = new Vector3(...pad.bitangent);
+    const held = (radius: number) => ({
+      from: axis.clone().addScaledVector(across, -0.02).toArray(),
+      to: axis.clone().addScaledVector(across, 0.02).toArray(),
+      radius,
+    });
+    expect(h.contact("finger-pad-2.R", held(0.008))).toBeCloseTo(0.001, 9);
+    expect(h.contact("finger-pad-2.R", held(0.01))).toBeCloseTo(-0.001, 9);
+    // Beyond the capsule's end, the distance is to its rounded cap.
+    const capped = {
+      from: axis.toArray(),
+      to: axis.clone().addScaledVector(across, 0.02).toArray(),
+      radius: 0,
+    };
+    expect(h.contact("finger-pad-2.R", capped)).toBeCloseTo(0.009, 9);
+    // In the figure's own space, the same capsule given there.
+    const toFigure = new Matrix4().copy(group.matrixWorld).invert();
+    const local = held(0.008);
+    const inFigure = {
+      from: new Vector3(...local.from).applyMatrix4(toFigure).toArray(),
+      to: new Vector3(...local.to).applyMatrix4(toFigure).toArray(),
+      radius: 0.008 / 1.25,
+    };
+    expect(h.contact("finger-pad-2.R", inFigure, "figure")).toBeCloseTo(0.001 / 1.25, 9);
+    // The grip's five, written in place, each its pad's.
+    const out = [0, 0, 0, 0, 0];
+    expect(h.gripContacts("hand.R", held(0.008), "world", out)).toBe(out);
+    for (const [k, d] of [1, 2, 3, 4, 5].entries())
+      expect(out[k]).toBeCloseTo(h.contact(`finger-pad-${d}.R`, held(0.008)) as number, 12);
+    expect(out[1]).toBeCloseTo(0.001, 9);
+    // Only a contact reports one, and only a grip its pads; a capsule must have a radius.
+    expect(() => h.contact("mouth", held(0.008))).toThrow(RangeError);
+    expect(() => h.gripContacts("finger-pad-2.R", held(0.008))).toThrow(RangeError);
+    expect(() => h.contact("finger-pad-2.R", held(-1))).toThrow(RangeError);
+  });
+
   it("opens the mouth to fit what it holds, on the jaw and the channel, reporting the opening set", () => {
     const recipe = createRecipe();
     const h = new HumanoidAffordances();

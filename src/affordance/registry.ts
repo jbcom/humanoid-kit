@@ -34,6 +34,8 @@ export interface Affordance {
   readonly adult: boolean;
   /** An aperture's channel behind its rim (`channel.ts`). */
   readonly channel?: ChannelId;
+  /** A grip's contact pads, the affordances it closes with (a hand's five, thumb to little finger). */
+  readonly pads?: readonly string[];
 }
 
 const core = (
@@ -42,6 +44,12 @@ const core = (
   at: AffordanceAnchor,
   channel?: ChannelId,
 ): Affordance => ({ id, kind, at, adult: false, ...(channel && { channel }) });
+
+/** A hand's grip, closing with its own finger pads. */
+const hand = (side: "L" | "R"): Affordance => ({
+  ...core(`hand.${side}`, "grip", { landmark: `palm.${side}` }),
+  pads: [1, 2, 3, 4, 5].map((digit) => `finger-pad-${digit}.${side}`),
+});
 
 /** The finger pads, thumb (1) to little finger (5), each side: what a fingertip touches and presses with. */
 const FINGER_PADS: readonly Affordance[] = (["L", "R"] as const).flatMap((side) =>
@@ -58,8 +66,8 @@ export const CORE_AFFORDANCES: readonly Affordance[] = [
   core("nostril.R", "aperture", { landmark: "nostril.R" }, "nasal"),
   core("ear-canal.L", "aperture", { landmark: "ear-canal.L" }, "auditory"),
   core("ear-canal.R", "aperture", { landmark: "ear-canal.R" }, "auditory"),
-  core("hand.L", "grip", { landmark: "palm.L" }),
-  core("hand.R", "grip", { landmark: "palm.R" }),
+  hand("L"),
+  hand("R"),
   core("ear-lobe.L", "mount", { landmark: "ear-lobe.L" }),
   core("ear-lobe.R", "mount", { landmark: "ear-lobe.R" }),
   core("nipple.L", "mount", { landmark: "nipple.L" }),

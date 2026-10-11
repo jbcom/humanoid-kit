@@ -74,6 +74,29 @@ const LANDMARK_SET: ReadonlySet<string> = new Set(LANDMARK_IDS);
 export type AffordanceSpace = "figure" | "world";
 
 /**
+ * What a grip holds or a pad touches, as `contact` measures it: the points
+ * within `radius` of the segment from `from` to `to` (a finger, a hilt, a bar).
+ */
+export interface Capsule {
+  from: Vec3;
+  to: Vec3;
+  radius: number;
+}
+
+/** How far `p` is from `c`'s surface: negative inside it. */
+function toCapsule(p: Vec3, c: Capsule): number {
+  const dx = c.to[0] - c.from[0];
+  const dy = c.to[1] - c.from[1];
+  const dz = c.to[2] - c.from[2];
+  const px = p[0] - c.from[0];
+  const py = p[1] - c.from[1];
+  const pz = p[2] - c.from[2];
+  const ll = dx * dx + dy * dy + dz * dz;
+  const t = ll > 0 ? Math.min(1, Math.max(0, (px * dx + py * dy + pz * dz) / ll)) : 0;
+  return Math.hypot(px - dx * t, py - dy * t, pz - dz * t) - c.radius;
+}
+
+/**
  * A figure's own affordances, their state and their frames on the figure as
  * drawn. Made by `useHumanoidAffordances` and fed by `<Humanoid affordances>`;
  * the figure keeps it current, and every read is of the frame being drawn.
@@ -354,6 +377,48 @@ export class HumanoidAffordances {
     const place = placeIn(c, [p.x, p.y, p.z]);
     return { depth: place.depth * scale, inside: place.inside };
   }
+
+  /**
+   * How far a contact affordance's skin (its landmark, a finger pad's pulp) is
+   * from the surface of `held`, a capsule given in `space`, in that space's
+   * metres: negative where the skin is pressed into it, so a pad touches where
+   * it is at most 0 (docs/ARCHITECTURE.md, "Affordances: the response"). Null
+   * until the figure is drawn and its anchors have arrived; throws `RangeError`
+   * for an affordance the figure does not have, one that is not a contact, or
+   * a capsule without a radius. Allocates nothing.
+   */
+  contact(id: string, held: Capsule, space: AffordanceSpace = "world"): number | null {
+    if (this.affordance(id).kind !== "contact")
+      throw new RangeError(`${id} is not a contact: it reports no contact`);
+    if (!(held.radius >= 0 && Number.isFinite(held.radius)))
+      throw new RangeError(`a held capsule's radius must be a finite number of at least 0`);
+    const f = this.frame(id, space, this.contactScratch);
+    return f ? toCapsule(f.position, held) : null;
+  }
+
+  /**
+   * Each of a grip's pads' contacts with `held` (`contact`), thumb to little
+   * finger, written into `out`. Null until the figure is drawn; throws
+   * `RangeError` for an affordance that is not a grip with pads.
+   */
+  gripContacts(
+    id: string,
+    held: Capsule,
+    space: AffordanceSpace = "world",
+    out: number[] = [],
+  ): number[] | null {
+    const pads = this.affordance(id).pads;
+    if (!pads) throw new RangeError(`${id} is not a grip with pads`);
+    out.length = pads.length;
+    for (let k = 0; k < pads.length; k++) {
+      const gap = this.contact(pads[k] as string, held, space);
+      if (gap === null) return null;
+      out[k] = gap;
+    }
+    return out;
+  }
+
+  private readonly contactScratch = frameOut();
 
   /**
    * A clip of the figure's apertures' channels (`ChannelClip`) that keeps

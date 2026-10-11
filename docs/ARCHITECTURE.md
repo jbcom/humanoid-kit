@@ -2865,6 +2865,12 @@ const hands = useHumanoidAffordances();
   its apertures' channels after it poses each frame, and it follows the
   lifted group, so `clipMaterial(material, hands.clip)` is all an object that
   enters the figure needs.
+- `contact(id, held, space?)` is how far a contact affordance's skin (a
+  finger pad's) is from a held `Capsule` (two points and a radius, in world
+  space by default), negative where it presses in; `gripContacts(id, held,
+  space?, out?)` gives a grip's pads' five at once ("Affordances: the
+  response"). An oral aperture's `occupancy` opens the mouth drawn as far as
+  its occupant needs, on the jaw and the channel.
 - `<AffordanceAnchor of={handle} at={id}>` draws its children in the lifted
   group (a portal), placed each frame on the affordance's frame: +x along the
   tangent, +y along the bitangent, +z out along the normal.
