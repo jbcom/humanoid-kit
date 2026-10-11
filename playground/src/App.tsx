@@ -18,6 +18,7 @@ import {
   STUDIO_SHADOWS,
   STUDIO_TONE_MAPPING,
   StudioStage,
+  useHumanoidAffordances,
 } from "humanoid-kit/react";
 import { animationsPack } from "humanoid-kit-animations";
 import { bodyPack } from "humanoid-kit-body";
@@ -35,6 +36,7 @@ import {
   type ToneMapping,
   Vector3,
 } from "three";
+import { ChannelQa } from "./ChannelQa";
 import { tattooImages } from "./tattooImages";
 import { Walk } from "./Walk";
 
@@ -317,7 +319,8 @@ function QaLight({ kind }: { kind: "camera" | "under" }) {
  * does not reach; `?tm=agx|neutral|aces`
  * and `?exp=<number>` override tone mapping and exposure for comparisons;
  * `?bg=rrggbb` sets a background key colour; `?face=JawDrop:1,LipsKiss:0.5`
- * poses the face with MakeHuman's face units.
+ * poses the face with MakeHuman's face units; `?channels`, `?probe`, `?cut`
+ * and `?open` show the apertures' channels and their clip (`ChannelQa`).
  */
 function Shot() {
   const toneMapping = TONE_MAPPERS[params.get("tm") ?? ""] ?? STUDIO_TONE_MAPPING;
@@ -388,6 +391,9 @@ function Shot() {
   const frameOffset: [number, number, number] =
     at?.length === 3 && at.every(Number.isFinite) ? (at as [number, number, number]) : [0, 0, 0];
   const qaLight = params.get("light");
+  // `?channels`, `?probe=…`, `?cut=…`, `?open=…`: the affordances' channels for review (`ChannelQa`).
+  const affordances = useHumanoidAffordances();
+  const channelQa = ["channels", "probe", "cut", "open"].some((k) => params.has(k));
   const preset: Record<
     string,
     { position: [number, number, number]; target: [number, number, number] }
@@ -442,9 +448,11 @@ function Shot() {
           />
         )}
         {(qaLight === "camera" || qaLight === "under") && <QaLight kind={qaLight} />}
+        {channelQa && <ChannelQa of={affordances} params={params} />}
         <Humanoid
           recipe={recipe}
           pose={bodyPose}
+          {...(channelQa && { affordances })}
           {...(library &&
             animation && {
               animation: { library, ...animation, onStart: setPlaying },
