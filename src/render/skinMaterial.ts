@@ -181,7 +181,13 @@ export const STRAND_FAR_START = 0.66;
  * are thousands of cells), so it is quantised to `STRAND_DIRECTIONS` fixed
  * grids over a half turn, and each root belongs to the nearer of the two
  * grids round the flow by a hash weighted by closeness: the density is kept
- * and no strand is drawn faint twice.
+ * and no strand is drawn faint twice. A grid is named by its direction, not by
+ * which side of the flow it lies on: the grid at a direction (its angle, its
+ * seed) is the same one whether the flow is just under it or just over it, so
+ * the hair is continuous as the flow turns through a boundary between two
+ * directions. Seeded by the side instead, the same direction drew two different
+ * sets of roots, and strands were cut off wherever a GPU's rounding of the
+ * flow put neighbouring pixels either side of a boundary (tests/browser/strands.test.ts).
  *
  * Where a cell across is smaller than a pixel the grid cannot be sampled, and
  * the strands become their mean cover (`strandCover`, what `applyLayers`
@@ -252,6 +258,11 @@ vec3 hkApplyStrands( vec3 c, vec2 uv ) {
 	float i0 = floor( f );
 	float wNext = f - i0;
 	float turn = 3.14159265 / ${glslFloat(STRAND_DIRECTIONS)};
+	// The two grids round the flow, each named by its direction: the grid at a bin is the
+	// same one (the same angle, the same roots) whether the flow is just under it or just
+	// over it, and bin ${STRAND_DIRECTIONS} is bin 0 again, a half turn on.
+	float bin0 = mod( i0, ${glslFloat(STRAND_DIRECTIONS)} );
+	float bin1 = mod( i0 + 1.0, ${glslFloat(STRAND_DIRECTIONS)} );
 	for ( int l = 0; l < ${count}; l ++ ) {
 		vec4 head = hkHeader( l );
 		if ( hkKind( head ) != 6 || head.x <= 0.0 ) continue;
@@ -271,8 +282,8 @@ vec3 hkApplyStrands( vec3 c, vec2 uv ) {
 		float a = mean;
 		if ( far < 1.0 ) {
 			float seed = float( l ) * 101.0;
-			float a0 = hkStrandGrid( p, i0 * turn, seed, 1.0 - wNext, cover, density, len, width, px );
-			float a1 = hkStrandGrid( p, ( i0 + 1.0 ) * turn, seed + 53.0, wNext, cover, density, len, width, px );
+			float a0 = hkStrandGrid( p, bin0 * turn, seed + 53.0 * bin0, 1.0 - wNext, cover, density, len, width, px );
+			float a1 = hkStrandGrid( p, bin1 * turn, seed + 53.0 * bin1, wNext, cover, density, len, width, px );
 			float near = 1.0 - ( 1.0 - a0 ) * ( 1.0 - a1 );
 			a = mix( near, mean, far );
 			hkStrandHeight += ( 1.0 - far ) * near * relief;

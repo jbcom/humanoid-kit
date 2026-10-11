@@ -30,22 +30,17 @@ import {
   striaeWeight,
   striaMark,
 } from "../../src/surface/striae.ts";
+import { expectSameArray } from "./arrays.ts";
 import { mean, noFields, renderLayers as render, SIZE, variance } from "./layerRender.ts";
 
 /**
- * `got` is `want` but for rounding: within a millionth of the light at every
- * pixel. A render with a layer that draws nothing is still a different program
- * from one with none, and the GPU's compiler may round a shared step of the
- * shading one ulp apart between them (ANGLE on Metal did, uniformly over the
- * plane, once the relief tilt took the uv's derivatives).
+ * How far a render with a layer that draws nothing may differ from one with no
+ * layer, at every pixel: a millionth of the light. They are different programs,
+ * and the GPU's compiler may round a shared step of the shading one ulp apart
+ * between them (ANGLE on Metal did, uniformly over the plane, once the relief
+ * tilt took the uv's derivatives).
  */
-function expectSameRender(got: Float32Array, want: Float32Array) {
-  expect(got.length).toBe(want.length);
-  let most = 0;
-  for (let i = 0; i < got.length; i++)
-    most = Math.max(most, Math.abs((got[i] as number) - (want[i] as number)));
-  expect(most).toBeLessThan(1e-6);
-}
+const RENDER_ROUNDING = 1e-6;
 
 describe("detail layers", () => {
   const creases = (height: number, size: number): SkinLayer => ({
@@ -133,7 +128,10 @@ describe("detail layers", () => {
       }),
     });
     const flat = render([]);
-    expectSameRender(render([line()]), flat);
+    expectSameArray(render([line()]), flat, {
+      what: "a line layer with no relief",
+      tolerance: RENDER_ROUNDING,
+    });
     const cut = render([line(depths)]);
     const change = Array.from(
       { length: SIZE },
@@ -205,7 +203,10 @@ describe("detail layers", () => {
     });
     const none = render([]);
     for (const pattern of ["bumps", "creases"] as const)
-      expectSameRender(render([off(pattern)]), none);
+      expectSameArray(render([off(pattern)]), none, {
+        what: `${pattern} at no strength`,
+        tolerance: RENDER_ROUNDING,
+      });
   });
 
   it("raises bumps at their true size, and fades them where they are finer than a pixel", () => {
@@ -414,9 +415,9 @@ describe("profiled detail layers", () => {
   });
 
   it("is the same relief at the same occupancy: deterministic, not shimmering", () => {
-    expect(Array.from(render([tubercles(0.4)], at(0)))).toEqual(
-      Array.from(render([tubercles(0.4)], at(0))),
-    );
+    expectSameArray(render([tubercles(0.4)], at(0)), render([tubercles(0.4)], at(0)), {
+      what: "two draws of the same tubercles",
+    });
   });
 
   it("draws no bump whose centre is past the limit, and none cut by it: each is whole or absent", () => {
@@ -495,7 +496,10 @@ describe("swell layers", () => {
   });
 
   it("draws nothing at no strength", () => {
-    expectSameRender(render([swell(0.05, 0)]), render([]));
+    expectSameArray(render([swell(0.05, 0)]), render([]), {
+      what: "a swell at no strength",
+      tolerance: RENDER_ROUNDING,
+    });
   });
 });
 
@@ -752,9 +756,10 @@ describe("friction ridges", () => {
         ? { ...l, paint: () => ({ strength: 0, height: 0.004, size: SPACING }) }
         : l,
     );
-    expectSameRender(
+    expectSameArray(
       render(off, { size: PX, coordinate: coordinate(0) }),
       render([], { size: PX }),
+      { what: "ridges at no strength", tolerance: RENDER_ROUNDING },
     );
   });
 });

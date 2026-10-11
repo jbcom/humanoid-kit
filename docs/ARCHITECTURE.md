@@ -2214,7 +2214,13 @@ Old recipes evaluate and serialise as before.
   cells), so the direction is quantised to eight fixed grids over a half turn,
   and each root belongs to one of the two round the flow by a hash weighted by
   closeness, so the density holds and no strand is drawn twice at half
-  strength.
+  strength. A grid is named by its direction (angle and seed), not by the side
+  of the flow it lies on, so the same grid is drawn from just under it and from
+  just over it and the hair is continuous as the flow turns through a boundary.
+  Seeded by side, the same direction drew two different sets of roots; hair
+  running straight down is exactly on a boundary, and ANGLE Metal's rounding of
+  the derivatives put blocks of pixels either side, cutting strands off at a
+  step of 0.58 of the skin where the footprint allows 0.386.
 - *Vellus is a strand layer on all the skin, and takes no atlas channel.*
   Vellus grows almost everywhere, so its mask would be a whole channel of ones;
   a layer may declare `everywhere`, which `planAtlas` gives no channel (`value`
@@ -2625,6 +2631,19 @@ renderer and then loses its context when its file ends, and fails the test
 running when a context is lost under it: the next draw or read throws, and the
 test is failed afterwards whatever it did with the result.
 `tests/browserRenderers.test.ts` holds every file to it.
+
+A browser test compares a render or any other long numeric buffer with
+`expectSameArray` (`tests/browser/arrays.ts`), never `toEqual` or
+`toStrictEqual`. When a `toEqual` on a 16k-element `Float32Array` fails, vitest
+formats a diff of every element, and that holds the browser run until the render
+pool's job timeout kills it, so one failed assertion loses the whole job.
+`expectSameArray` compares length and then element by element, exactly or within
+an explicit `tolerance`, and fails with the count of differing elements, the
+largest gap and the first few indices with their values.
+`tests/browserArrayComparison.test.ts` fails a browser test that passes a typed
+array, an `Array.from`, a render result or a literal of more than sixteen
+elements to a raw `toEqual`. It reads source text, so it cannot see a large
+array that arrives out of a function declared in another file.
 
 ## Public demo
 

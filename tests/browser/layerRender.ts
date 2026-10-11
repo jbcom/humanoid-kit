@@ -55,6 +55,13 @@ export interface LayerRenderOptions {
   geometry?: BufferGeometry;
   /** Turns the plane about its vertical axis, radians: its u axis is foreshortened by the cosine. */
   tilt?: number;
+  /**
+   * Turns the plane's positions about the view axis, radians, its UVs staying where they
+   * are. The hair's flow is fixed in the view (straight down), so across the UV plane it
+   * turns by the same angle the other way: a way to put it just either side of a
+   * direction boundary.
+   */
+  turn?: number;
 }
 
 let renderer: WebGLRenderer | null = null;
@@ -100,6 +107,7 @@ export function renderLayersRgba(layers: readonly SkinLayer[], options: LayerRen
   camera.position.set(cx, cy, 5);
   const plane = options.geometry ?? new PlaneGeometry(side, side);
   if (options.tilt) plane.rotateY(options.tilt);
+  if (options.turn) plane.rotateZ(options.turn);
   const uv = plane.getAttribute("uv");
   plane.setAttribute(
     UV_SCALE_ATTRIBUTE,
