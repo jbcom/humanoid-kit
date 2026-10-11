@@ -63,6 +63,14 @@ export interface JointFold {
   normals: Float32Array;
   /** Per vertex, by slot: how much of it is the left joint's, the right's the rest, which says the joint it is read by. */
   side: Float32Array;
+  /**
+   * Per vertex, per opening, per key, as `vectors` but one value: the skin's
+   * strain there, its area round the vertex (the triangles it is a corner of) as
+   * the bones and the fold pose it over the same at rest, less 1: below 0 where
+   * the pose compresses the skin (the skin strain channel, docs/ARCHITECTURE.md,
+   * "Skin strain").
+   */
+  strains: Float32Array;
 }
 
 /** A fold of `joint` that moves nothing, for a mesh of `n` vertices. */
@@ -73,6 +81,7 @@ export const noFold = (n: number, joint: FoldJoint): JointFold => ({
   vectors: new Float32Array(0),
   normals: new Float32Array(0),
   side: new Float32Array(0),
+  strains: new Float32Array(0),
 });
 
 /** How far each side's joint is flexed and opened in a pose, in degrees (`hipFlexion`, `kneeFlexion`). */
@@ -137,6 +146,7 @@ function addKeyed(
   opening: number,
   out: Float32Array,
   at: number,
+  width = 3,
 ): void {
   if (slot < 0) return;
   const t = (flexion - joint.from) / joint.step;
@@ -148,12 +158,12 @@ function addKeyed(
   const hi = Math.min(i, keys - 1);
   const open = joint.openings > 1 ? Math.min(1, Math.max(0, opening / joint.opened)) : 0;
   const value = (o: number, k: number) => {
-    const base = (slot * joint.openings + o) * keys * 3;
-    const to = table[base + hi * 3 + k] as number;
-    const was = i === 0 || i >= keys ? 0 : (table[base + (i - 1) * 3 + k] as number);
+    const base = (slot * joint.openings + o) * keys * width;
+    const to = table[base + hi * width + k] as number;
+    const was = i === 0 || i >= keys ? 0 : (table[base + (i - 1) * width + k] as number);
     return i >= keys ? to : was + (to - was) * along;
   };
-  for (let k = 0; k < 3; k++)
+  for (let k = 0; k < width; k++)
     out[at + k] =
       (out[at + k] as number) +
       (joint.openings > 1 ? value(0, k) * (1 - open) + value(1, k) * open : value(0, k));
@@ -181,6 +191,13 @@ export function addFoldNormal(
   at: number,
 ): void {
   addKeyed(fold.joint, fold.normals, fold.slot[v] as number, flexion, opening, out, at);
+}
+
+/** Vertex `v`'s strain (`JointFold.strains`) at flexion `flexion` and opening `opening` degrees: 0 where the fold leaves it. */
+export function foldStrain(fold: JointFold, v: number, flexion: number, opening: number): number {
+  const out = new Float32Array(1);
+  addKeyed(fold.joint, fold.strains, fold.slot[v] as number, flexion, opening, out, 0, 1);
+  return out[0] as number;
 }
 
 /** Each vertex's skin weight on the bones whose names `test` accepts. */
@@ -217,7 +234,7 @@ export interface SurfaceFold {
   /**
    * Row `r`, opening `o`, key `k`, as two texels: `((r * openings + o) * keys +
    * k) * 2` holds the displacement (x, y, z, 0) and the next the normal's
-   * change (x, y, z, 0). A row is `rowTexels(joint)` texels. Its first texel
+   * change and the skin's strain (x, y, z, strain; `JointFold.strains`). A row is `rowTexels(joint)` texels. Its first texel
    * holds the row's side (`JointFold.side`) in its fourth place:
    * `data[r * rowTexels(joint) * 4 + 3]`. Each value a half float (`toHalf`'s
    * 16 bits), as the texture holds it, so that the CPU's fold (`renderFold`) is
@@ -279,6 +296,11 @@ export function surfaceFold(
           data[at] = (data[at] as number) + w * (fold.vectors[from] as number);
           data[at + 4] = (data[at + 4] as number) + w * (fold.normals[from] as number);
         }
+      // The strain in the normal's texel's fourth place, mixed as the displacements are.
+      for (let key = 0; key < keys; key++) {
+        const at = (row * keys + key) * 8 + 7;
+        data[at] = (data[at] as number) + w * (fold.strains[slot * keys + key] as number);
+      }
     }
     data[row * keys * 8 + 3] = held > 0 ? side / held : 0;
   }
@@ -300,8 +322,11 @@ export function renderFold(fold: SurfaceFold): JointFold {
   const vectors = new Float32Array(fold.rows * keys * 3);
   const normals = new Float32Array(fold.rows * keys * 3);
   const side = new Float32Array(fold.rows);
+  const strains = new Float32Array(fold.rows * keys);
   for (let r = 0; r < fold.rows; r++) {
     side[r] = fromHalf(fold.data[r * keys * 8 + 3] as number);
+    for (let key = 0; key < keys; key++)
+      strains[r * keys + key] = fromHalf(fold.data[(r * keys + key) * 8 + 7] as number);
     for (let key = 0; key < keys; key++)
       for (let k = 0; k < 3; k++) {
         const from = (r * keys + key) * 8 + k;
@@ -309,5 +334,5 @@ export function renderFold(fold: SurfaceFold): JointFold {
         normals[(r * keys + key) * 3 + k] = fromHalf(fold.data[from + 4] as number);
       }
   }
-  return { joint: fold.joint, vertices, slot, vectors, normals, side };
+  return { joint: fold.joint, vertices, slot, vectors, normals, side, strains };
 }

@@ -22,6 +22,7 @@ import {
   addFoldNormal,
   flexedPast,
   foldAngles,
+  foldStrain,
   type JointFlexion,
   type JointFold,
 } from "./jointFold.ts";
@@ -356,6 +357,22 @@ function foldValue(fold: SkinFold, add: typeof addFold, foldVertex: number): boo
   shown[1] = (y + qw * ty + (qz * tx - qx * tz)) * fold.blend;
   shown[2] = (z + qw * tz + (qx * ty - qy * tx)) * fold.blend;
   return true;
+}
+
+/**
+ * The skin's strain at the vertex whose row in `folds` is `foldVertex`, as the
+ * renderer's shader has it (`vHkStrain`, docs/ARCHITECTURE.md, "Skin strain"):
+ * 1, and each fold's strain at the flexion and opening of the joint on its side
+ * (`foldStrain`), scaled by the fold's blend.
+ */
+export function skinStrainAt(folds: readonly SkinFold[], foldVertex: number): number {
+  let strain = 1;
+  for (const fold of folds) {
+    const read = foldAngles(fold.fold, foldVertex, fold.flexion);
+    if (!read) continue;
+    strain += foldStrain(fold.fold, foldVertex, read.flexion, read.opening) * fold.blend;
+  }
+  return strain;
 }
 
 /**

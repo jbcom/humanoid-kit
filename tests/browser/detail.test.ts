@@ -4,8 +4,9 @@
  * pixel, and surface layers changing roughness and specular exactly as the
  * material's own parameters would.
  */
-import { BufferGeometry, DataUtils, Float32BufferAttribute } from "three";
+import { BufferGeometry, DataUtils, Float32BufferAttribute, PlaneGeometry } from "three";
 import { describe, expect, it } from "vitest";
+import { CREASE_CRUSH, STRAIN_ATTRIBUTE } from "../../src/render/skinMaterial.ts";
 import {
   creaseHeight,
   lineRelief,
@@ -199,6 +200,43 @@ describe("detail layers", () => {
     expect(strip(grazing) - strip(none)).toBeLessThan(variance(faceOn) / 100);
   });
 
+  it("hides a crease where the pose crushes the skin into its fold, and draws it whole where it does not", () => {
+    // The plane's skin at a strain of its own (STRAIN_ATTRIBUTE): crushed as a bent knee's
+    // crease band is (0.4 of its rest area), and only pressed (0.9).
+    const strained = (strain: number) => {
+      const plane = new PlaneGeometry(2, 2);
+      plane.setAttribute(
+        STRAIN_ATTRIBUTE,
+        new Float32BufferAttribute(
+          new Array(plane.getAttribute("position").count).fill(strain - 1),
+          1,
+        ),
+      );
+      return plane;
+    };
+    const none = render([]);
+    const whole = render([creases(0.01, 8)]);
+    expect(variance(whole)).toBeGreaterThan(100 * Math.max(variance(none), 1e-8));
+    // Crushed below CREASE_CRUSH.from: no crease, the skin as it is with none.
+    expectSameArray(
+      render([creases(0.01, 8)], { geometry: strained(CREASE_CRUSH.from - 0.15) }),
+      none,
+      {
+        what: "a crease on crushed skin",
+        tolerance: RENDER_ROUNDING,
+      },
+    );
+    // Pressed no further than CREASE_CRUSH.to: the crease unchanged.
+    expectSameArray(
+      render([creases(0.01, 8)], { geometry: strained(CREASE_CRUSH.to + 0.1) }),
+      whole,
+      {
+        what: "a crease on pressed skin",
+        tolerance: RENDER_ROUNDING,
+      },
+    );
+  });
+
   it("draws nothing for a layer with no strength, as for none at all", () => {
     const off = (pattern: "bumps" | "creases"): SkinLayer => ({
       id: "off",
@@ -271,6 +309,11 @@ describe("relief on crushed skin", () => {
     g.setAttribute("position", new Float32BufferAttribute(positions, 3));
     g.setAttribute("normal", new Float32BufferAttribute(normals, 3));
     g.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+    // Its strain as a fold would give it: the skin's area over its area at rest, less 1.
+    g.setAttribute(
+      STRAIN_ATTRIBUTE,
+      new Float32BufferAttribute(new Array(uvs.length / 2).fill(squeeze - 1), 1),
+    );
     g.setIndex(index);
     return g;
   };

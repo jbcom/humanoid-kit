@@ -1635,6 +1635,56 @@ volumes are out of band the same way, 0.50 to 0.75 in the squat.
 15), so a figure's folds take about a quarter longer; its texture on an adult's
 drawn surface is 2.4 MB (2924 rows) beside the hip's 25.5 MB (18115 rows).
 
+### Skin strain (2026-10-10)
+
+**What it is.** How compressed the skin is at each vertex in a pose: its area
+round the vertex (a third of each triangle it is a corner of) as the bones and the
+fold place it, over the same at rest. It is 1 at rest and below 1 where the pose
+crushes the skin. It is a general channel, not any one layer's. Anything that asks
+"how compressed is this skin" reads it. Today that is the creases' kept depth and
+their band-limit; later, wrinkle intensity and pallor or sweat in folds.
+
+**Where it comes from.** The fold solve already has each key's displaced mesh. At
+the end of every key it writes each moved vertex's strain, less 1
+(`JointFold.strains`), beside the vertex's displacement and normal change. The
+surface rows mix it by the subdivision stencil as they mix the displacements
+(`surfaceFold`). It goes in the fourth place of the normal's texel, which was
+free, so the fold textures do not grow and an adult's hip and knee cost no more
+memory. The vertex shader reads it at the flexion and opening of the joint on the
+vertex's side (`hkFoldStrain_<joint>`), as much as the fold has faded in, and adds
+it to 1 in a varying (`vHkStrain`). Per vertex, it is smooth across the triangles a
+pose crushes.
+
+- Before it, the creases measured compression per pixel from the phase's screen
+  derivatives. That stepped from triangle to triangle in a crushed band and dashed
+  the grooves.
+- The CPU reads it the same way (`skinStrainAt`), and the dual-skinning parity
+  test holds the two to float error.
+
+**Limit.** Only skin a joint fold moves has a strain. Everywhere else reads 1,
+including a joint without a fold corrective: the elbow and the armpit compress
+their skin, but read 1 until they get folds. A geometry may carry a strain of its
+own (`STRAIN_ATTRIBUTE`, added to the folds'), which the tests' strips use; the
+body carries none.
+
+**Its first reader: the creases hide in a crushed fold.** Where the pose crushes
+skin into the joint's own fold, the fold is the crease, and fine grooves drawn into
+a band a few pixels wide only stepped along the raster, dashing the crease. Skin
+folded into a deep flexion crease hides its fine lines in the fold. So a crease's
+relief goes with the strain: none below 0.55, all of it from 0.8 (`CREASE_CRUSH`).
+
+- Below 0.55 is the strain across a bent knee's crushed band: 0.39 to 0.47 at the
+  median, 0.53 to 0.57 for its least crushed tenth.
+- Above 0.8 is the skin round it: 0.83 to 0.91 for its most compressed tenth.
+- Both ranges are the muscular and heavy man and the slim woman, seated and tucked.
+- It replaces nothing else: the crease's kept depth and its band-limit stay the
+  per-pixel shares they were.
+- A coarse signal is right for "is this skin crushed". The strain comes from the
+  control mesh's one-ring, several times the band's width.
+- It was first wired as the kept depth itself, and as the band-limit's metres per
+  pixel. That reported moderate compression where the drawn crease is crushed hard,
+  and brought the 90° dashes back.
+
 ### Contact compression (design, 2026-10-10)
 
 **The fault.** A joint fold presses one part's skin into another's and puts the

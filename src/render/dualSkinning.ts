@@ -372,8 +372,8 @@ ivec2 hkFoldTexel_${n}( int slot, int opening, int key, int part ) {
 	int texel = slot * ${rowTexels(joint)} + ( opening * ${keys} + key ) * 2 + part;
 	return ivec2( texel % ${line}, texel / ${line} );
 }
-vec3 hkFoldKey_${n}( int opening, int key, int slot, int part ) {
-	return texelFetch( ${foldUniform(joint)}, hkFoldTexel_${n}( slot, opening, key, part ), 0 ).xyz;
+vec4 hkFoldKey_${n}( int opening, int key, int slot, int part ) {
+	return texelFetch( ${foldUniform(joint)}, hkFoldTexel_${n}( slot, opening, key, part ), 0 );
 }
 // The flexion, opening (degrees) and side (1 left) row slot is read at (foldAngles): each side's flexion counted by twice its side's share, to all of it from half, the greater, with that side's opening.
 vec3 hkFoldAngles_${n}( int slot ) {
@@ -383,17 +383,18 @@ vec3 hkFoldAngles_${n}( int slot ) {
 	float right = min( 1.0, 2.0 * ( 1.0 - side ) ) * flexion.y;
 	return left >= right ? vec3( left, flexion.z, 1.0 ) : vec3( right, flexion.w, 0.0 );
 }
-// Row slot's value at flexion and opening degrees, in the axes it was solved in. part 0: the vertex's displacement; part 1: what its normal gains.
-vec3 hkFoldAt_${n}( int slot, float flexion, float opening, int part ) {
+// Row slot's value at flexion and opening degrees, in the axes it was solved in. part 0: the vertex's displacement
+// (x, y, z; the row's side in the first key's w); part 1: what its normal gains (x, y, z) and the skin's strain (w).
+vec4 hkFoldAt_${n}( int slot, float flexion, float opening, int part ) {
 	float t = ( flexion - ${glFloat(joint.from)} ) / ${glFloat(joint.step)};
-	if ( ! ( t > 0.0 ) ) return vec3( 0.0 );
+	if ( ! ( t > 0.0 ) ) return vec4( 0.0 );
 	float i = min( floor( t ), ${glFloat(keys)} );
 	float along = i >= ${glFloat(keys)} ? 1.0 : t - i;
 	int hi = min( int( i ), ${keys - 1} );
-	vec3 d[ ${joint.openings} ];
+	vec4 d[ ${joint.openings} ];
 	for ( int o = 0; o < ${joint.openings}; o ++ ) {
-		vec3 to = hkFoldKey_${n}( o, hi, slot, part );
-		vec3 was = int( i ) == 0 || i >= ${glFloat(keys)} ? vec3( 0.0 ) : hkFoldKey_${n}( o, int( i ) - 1, slot, part );
+		vec4 to = hkFoldKey_${n}( o, hi, slot, part );
+		vec4 was = int( i ) == 0 || i >= ${glFloat(keys)} ? vec4( 0.0 ) : hkFoldKey_${n}( o, int( i ) - 1, slot, part );
 		d[ o ] = i >= ${glFloat(keys)} ? to : was + ( to - was ) * along;
 	}
 	${
@@ -407,9 +408,15 @@ vec3 hkFoldAt_${n}( int slot, float flexion, float opening, int part ) {
 vec3 hkFoldValue_${n}( float slotValue, int part ) {
 	int slot = int( slotValue + 0.5 );
 	vec3 angles = hkFoldAngles_${n}( slot );
-	vec3 d = hkFoldAt_${n}( slot, angles.x, angles.y, part );
+	vec3 d = hkFoldAt_${n}( slot, angles.x, angles.y, part ).xyz;
 	vec4 turn = texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( ${own} + ( angles.z > 0.5 ? 0 : 1 ), 0 ), 0 );
 	return hkQRotate( turn, d ) * ${FOLD_BLEND_UNIFORM};
+}
+// Row slotValue's strain (the skin's area there over its area at rest, less 1) at the angles it is read at, as much as has faded in.
+float hkFoldStrain_${n}( float slotValue ) {
+	int slot = int( slotValue + 0.5 );
+	vec3 angles = hkFoldAngles_${n}( slot );
+	return hkFoldAt_${n}( slot, angles.x, angles.y, 1 ).w * ${FOLD_BLEND_UNIFORM};
 }
 `;
 };
@@ -443,6 +450,17 @@ const position = (fold: boolean): string => /* glsl */ `
           (joint) =>
             `if ( ${foldSlotAttribute(joint)} >= 0.0 ) transformed += hkFoldValue_${joint.name}( ${foldSlotAttribute(joint)}, 0 );`,
         ).join("\n\t")
+      : ""
+  }
+	${
+    // A material that reads the skin's strain (HK_STRAIN: the skin's) has it from the folds, 1 where none reaches.
+    fold
+      ? `#ifdef HK_STRAIN
+	${FOLD_JOINTS.map(
+    (joint) =>
+      `if ( ${foldSlotAttribute(joint)} >= 0.0 ) vHkStrain += hkFoldStrain_${joint.name}( ${foldSlotAttribute(joint)} );`,
+  ).join("\n\t")}
+	#endif`
       : ""
   }
 #endif

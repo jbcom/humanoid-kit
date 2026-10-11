@@ -348,6 +348,15 @@ export function* solveFold(
     for (let k = 0; k < 3; k++) sum[k] = (sum[k] as number) / length;
     return sum;
   };
+  /** Vertex `v`'s share of the skin's area on `pos`: a third of each of its triangles'. */
+  const areaAt = (pos: Float32Array, v: number): number => {
+    let sum = 0;
+    for (const t of incident.get(v) ?? []) {
+      const f = faceOf(pos, tris, t);
+      sum += Math.hypot(f[0], f[1], f[2]) / 6;
+    }
+    return sum;
+  };
   // The affected vertices' rest normals (the control mesh's, as the renderer's are the surface's) and weights, to skin at each key.
   const affectedRest = new Float32Array(affected.length * 3);
   const affectedIndex = new Uint16Array(affected.length * 4);
@@ -362,6 +371,7 @@ export function* solveFold(
   /** Per affected vertex, per key, x, y, z: the displacement (movers only), and the change of the normal. */
   const keyed = new Float32Array(affected.length * OPENINGS * KEYS * 3);
   const keyedNormal = new Float32Array(affected.length * OPENINGS * KEYS * 3);
+  const keyedStrain = new Float32Array(affected.length * OPENINGS * KEYS);
   // Only the vertices the solve reads are skinned: the movers, the trunk's skin, the ends of the edges, and the corners of the triangles whose normals turn.
   const wanted = new Uint8Array(n);
   for (const v of movers) wanted[v] = 1;
@@ -888,6 +898,10 @@ export function* solveFold(
           (was[1] as number) * (skinned[a * 3 + 1] as number) +
           (was[2] as number) * (skinned[a * 3 + 2] as number);
         const crumpled = 1 - smoothstep(CRUMPLED.from, CRUMPLED.to, agree);
+        // The skin's strain round the vertex as the bones and the fold leave it.
+        const restArea = areaAt(control, v);
+        keyedStrain[(a * OPENINGS + o) * KEYS + key] =
+          restArea > 0 ? areaAt(displaced, v) / restArea - 1 : 0;
         for (let k = 0; k < 3; k++) {
           if (a < movers.length)
             keyed[at + k] = (shown[v * 3 + k] as number) * (taper[v] as number);
@@ -910,12 +924,15 @@ export function* solveFold(
   const vectors = new Float32Array(kept.length * stride);
   const normals = new Float32Array(kept.length * stride);
   const side = Float32Array.from(vertices, (v) => sides[v] as number);
+  const strainStride = OPENINGS * KEYS;
+  const strains = new Float32Array(kept.length * strainStride);
   kept.forEach((a, s) => {
     fold.slot[affected[a] as number] = s;
     vectors.set(keyed.subarray(a * stride, (a + 1) * stride), s * stride);
     normals.set(keyedNormal.subarray(a * stride, (a + 1) * stride), s * stride);
+    strains.set(keyedStrain.subarray(a * strainStride, (a + 1) * strainStride), s * strainStride);
   });
-  return { joint, vertices, slot: fold.slot, vectors, normals, side };
+  return { joint, vertices, slot: fold.slot, vectors, normals, side, strains };
 }
 
 /** The trunk's triangles by where their centres are, to find those near a point without testing them all. */

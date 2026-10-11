@@ -41,9 +41,11 @@ import {
 } from "../../src/render/dualSkinning.ts";
 import {
   DUAL_TEXELS,
+  skinFolds,
   skinNormalsBlended,
   skinPose,
   skinPositionsBlended,
+  skinStrainAt,
   skinVertex,
 } from "../../src/rig/dual.ts";
 import { FOLD_JOINTS, foldFlexion, jointTurns } from "../../src/rig/folds.ts";
@@ -312,12 +314,14 @@ describe.each(FOLD_JOINTS.map((joint) => [joint.name, joint] as const))(
         side: Float32Array.from({ length: rows }, (_, i) =>
           i < 2 ? i : Math.round(rand() * 1024) / 1024,
         ),
+        strains: new Float32Array(rows * K).map(() => (rand() - 0.7) * 0.9),
       };
       // The renderer's rows: per opening and key, the displacement's texel (x, y, z, 0) and the normal's; the side in the first's fourth place.
       const values = new Float32Array(rows * row4);
       for (let i = 0; i < rows * K; i++) {
         values.set(fold.vectors.subarray(i * 3, i * 3 + 3), i * 8);
         values.set(fold.normals.subarray(i * 3, i * 3 + 3), i * 8 + 4);
+        values[i * 8 + 7] = fold.strains[i] as number;
       }
       for (let r = 0; r < rows; r++) values[r * row4 + 3] = fold.side[r] as number;
       // Half floats, as the texture holds them; the CPU's fold (`renderFold`) reads the same halves.
@@ -359,7 +363,9 @@ describe.each(FOLD_JOINTS.map((joint) => [joint.name, joint] as const))(
         void main() {
           vec4 a = texelFetch( tAsked, ivec2( gl_FragCoord.xy ), 0 );
           int slot = int( a.x + 0.5 );
-          outColor = tPart == 2
+          outColor = tPart == 3
+            ? vec4( hkFoldStrain_${name}( a.x ), 0.0, 0.0, 1.0 )
+            : tPart == 2
             ? vec4( hkFoldAngles_${name}( slot ), 1.0 )
             : vec4( hkFoldValue_${name}( a.x, tPart ), 1.0 );
         }`,
@@ -383,6 +389,7 @@ describe.each(FOLD_JOINTS.map((joint) => [joint.name, joint] as const))(
       const past = joint.to + 12;
       const short = joint.from - 5;
       let moved = 0;
+      let strained = 0;
       for (const legs of [
         [120, 0, 0, 0, 90, 0],
         [-10, 75, 5, 12, 0, 135],
@@ -457,9 +464,24 @@ describe.each(FOLD_JOINTS.map((joint) => [joint.name, joint] as const))(
             `${left}/${right}: part ${part} at ${blend}, unrounded`,
           ).toBeLessThan(largest * 2 ** -11 * Math.sqrt(3) * blend + (part === 0 ? 2e-6 : 1e-5));
         }
+        // The skin's strain, whole and half faded in: the GPU's read is the CPU's (`skinStrainAt`) of the same halves.
+        for (const blend of [1, 0.5]) {
+          dual.foldBlend.value = blend;
+          const px = draw(3);
+          const folds = skinFolds(legRest, rotations, [shown], blend);
+          let worst = 0;
+          for (let v = 0; v < count; v++) {
+            const cpu = skinStrainAt(folds, asked[v * 4] as number) - 1;
+            if (blend === 1 && Math.abs(cpu) > 1e-3) strained++;
+            worst = Math.max(worst, Math.abs((px[v * 4] as number) - cpu));
+          }
+          // Float error alone: the strains run to 0.6, as the normal's changes to 0.75, and are held to the same.
+          expect(worst, `${left}/${right}: strain at ${blend}`).toBeLessThan(1e-5);
+        }
       }
       // Most of what was asked is in the fold's range, so this compares displacements, not zeros.
       expect(moved).toBeGreaterThan(count * 2);
+      expect(strained).toBeGreaterThan(count * 2);
       target.dispose();
       input.dispose();
       material.dispose();

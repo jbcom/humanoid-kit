@@ -278,6 +278,10 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
       vectors: Float32Array.from([...vector(0.1), ...vector(-0.3)]),
       normals: Float32Array.from([...vector(0.7), ...vector(-0.9)]),
       side: Float32Array.of(1, 0.2),
+      strains: Float32Array.from(
+        { length: 2 * K },
+        (_, i) => (i < K ? -0.2 : -0.6) + (i % K) * 1e-4,
+      ),
     };
     // Surface vertex 0 is half of control 0 and half of control 1; 1 is control 2 (not moved); 2 is control 1.
     const stencil = {
@@ -311,7 +315,12 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
         const bn = fold.normals[(K + key) * 3 + k] as number;
         rounded(held(key * 8 + 4 + k), 0.5 * an + 0.5 * bn);
         rounded(held((K + key) * 8 + 4 + k), bn);
-        expect(held(key * 8 + 7)).toBe(0);
+        // The strain in the normal's texel's fourth place, mixed the same way, and read back.
+        const as = fold.strains[key] as number;
+        const bs = fold.strains[K + key] as number;
+        rounded(held(key * 8 + 7), 0.5 * as + 0.5 * bs);
+        rounded(held((K + key) * 8 + 7), bs);
+        expect(back.strains[key]).toBe(held(key * 8 + 7));
         // And read back as the fold of the render vertices: the very values the texture holds.
         expect(back.vectors[(K + key) * 3 + k]).toBe(held((K + key) * 8 + k));
       }
@@ -329,6 +338,7 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
       ),
       normals: new Float32Array(K * 3),
       side: Float32Array.of(1),
+      strains: Float32Array.from({ length: K }, (_, i) => (i < FOLD_KEYS ? -0.1 : -0.3)),
     };
     const at = (opening: number) => {
       const out = new Float32Array(3);

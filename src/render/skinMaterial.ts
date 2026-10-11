@@ -127,6 +127,24 @@ export const SCALP_HAIR_SHARE = 0.15;
 /** A GLSL float literal. */
 const glslFloat = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
 
+/**
+ * Name of the per-vertex attribute holding a strain the geometry carries of its
+ * own (the skin's area over its area at rest, less 1), added to the folds'
+ * (docs/ARCHITECTURE.md, "Skin strain"). A body has none: its strain is its
+ * folds'. An absent attribute reads 0.
+ */
+export const STRAIN_ATTRIBUTE = "hkStrain";
+
+/**
+ * The skin's strain (docs/ARCHITECTURE.md, "Skin strain") between which a
+ * crease's relief goes: none below `from`, all of it from `to`. CHOICE: 0.55 to
+ * 0.8, between the strain across a bent knee's crushed band (render triangles
+ * under half their rest area: 0.39 to 0.47 at the median, 0.53 to 0.57 for the
+ * least crushed tenth, the muscular and heavy man and the slim woman, seated and
+ * tucked) and round it (0.83 to 0.91 for its most compressed tenth).
+ */
+export const CREASE_CRUSH = { from: 0.55, to: 0.8 } as const;
+
 /** Name of the per-vertex attribute holding metres of skin per UV unit. */
 export const UV_SCALE_ATTRIBUTE = "hkUvScale";
 
@@ -310,6 +328,9 @@ vec3 hkApplyStrands( vec3 c, vec2 uv ) {
 const layerFunctions = (count: number) => `
 varying vec2 vHkUv;
 varying float vHkUvScale;
+// The skin's strain: its area here over its area at rest, as the folds solved it (docs/ARCHITECTURE.md,
+// "Skin strain"), 1 where none reaches. Per vertex, so smooth across the triangles a pose crushes.
+varying float vHkStrain;
 uniform highp sampler2DArray hkLayerAtlas;
 uniform sampler2D hkLayerStops;
 // Which cell of the body's UV plane owns each texel of a channel that layers share.
@@ -690,7 +711,10 @@ vec2 hkDetailSlope( vec2 uv ) {
 			float drawn = g2 > 0.0 ? length( hkFootX * g.x + hkFootY * g.y ) / g2 : 0.0;
 			float rest = g2 > 0.0 ? length( dFdx( uv ) * g.x + dFdy( uv ) * g.y ) * vHkUvScale / g2 : 0.0;
 			float keep = rest > 0.0 ? hkCreaseKeep( drawn / rest ) : 1.0;
-			S -= keep * fade * hkSlope( a * head.z * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} ) );
+			// Skin a pose crushes into the joint's own fold hides its fine lines in the fold: drawn into a band a few
+			// pixels wide they only stepped along the raster. They go with the skin's strain (CREASE_CRUSH).
+			float crushed = smoothstep( ${glslFloat(CREASE_CRUSH.from)}, ${glslFloat(CREASE_CRUSH.to)}, vHkStrain );
+			S -= crushed * keep * fade * hkSlope( a * head.z * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} ) );
 		}
 	}
 	return S;
@@ -1213,11 +1237,13 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
-        `#include <common>\nvarying vec2 vHkUv;\nattribute float ${UV_SCALE_ATTRIBUTE};\nvarying float vHkUvScale;\nattribute float ${SCALP_ATTRIBUTE};\nvarying float vHkScalp;`,
+        `#include <common>\nvarying vec2 vHkUv;\nattribute float ${UV_SCALE_ATTRIBUTE};\nvarying float vHkUvScale;\nattribute float ${SCALP_ATTRIBUTE};\nvarying float vHkScalp;\n#define HK_STRAIN\nattribute float ${STRAIN_ATTRIBUTE};\nvarying float vHkStrain;`,
       )
+      // The skin's strain (docs/ARCHITECTURE.md, "Skin strain"): 1 (as at rest) and what the geometry's own strain
+      // attribute adds (none where it has none: an absent attribute reads 0), then what the folds add where they reach (patchDualSkinning).
       .replace(
         "#include <color_vertex>",
-        `#include <color_vertex>\n\tvHkUv = uv;\n\tvHkUvScale = ${UV_SCALE_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};\n\tvHkScalp = ${SCALP_ATTRIBUTE};`,
+        `#include <color_vertex>\n\tvHkStrain = 1.0 + ${STRAIN_ATTRIBUTE};\n\tvHkUv = uv;\n\tvHkUvScale = ${UV_SCALE_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};\n\tvHkScalp = ${SCALP_ATTRIBUTE};`,
       )
       .replace(
         "#include <common>",
