@@ -1,7 +1,19 @@
 # Interactions: how figures, objects and places act together
 
-Status: design (2026-10-11). Nothing here is implemented yet; the build plan at
-the end orders the work. It builds on [Presence](PRESENCE.md) (what a figure
+Status: being built (2026-10-11). Slice 1's framework-free core is in
+`src/interaction/` and `src/presence/presence.ts`: `ObjectPresence` and
+channels in the registry, definitions with validation and the fail-closed
+audience (`audienceOf`), offers filtered by the age policy, proposals with role
+kinds, tags and the age check before anyone is asked, explicit consent for
+adult definitions, all-or-nothing body-part claims, the phases on the presence
+clock with beats and object-state effects, `repeatWhile` (the apple's bite
+loop), cancel on a participant leaving, and the per-tick age re-check. Still to
+come in slice 1: the rendered bite (the mouth's `occupancy` reaching the
+figure's `AffordanceStates` through `applyChange`) and its browser test. Two
+choices made while building: a slot's offset is in metres for now (lengths in a
+body's own measures arrive with `measures`, slice 2), and the act's repeat is
+the definition's `repeatWhile` rather than a beat. The build plan at the end
+orders the rest. It builds on [Presence](PRESENCE.md) (what a figure
 tells the world), the affordance registry, channels and response
 ([Architecture](ARCHITECTURE.md), "Affordances: the registry", "Affordances:
 curved channels", "Affordances: the response"), the skin states

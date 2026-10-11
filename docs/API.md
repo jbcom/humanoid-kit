@@ -1056,6 +1056,43 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
   until a figure joins or leaves, and entries are updated in place as figures
   move, so copy what you keep. `set`, `tick` and `all` allocate nothing once a
   figure has joined.
+- Objects and fixtures join the same registry as `ObjectPresence` (`{ id,
+  kind: "object", position, rotation, bounds, frames, tags, state }`):
+  `setObject`, `removeObject`, `getObject`, `objects()`. An object has no age.
+- `attach(channel)`: advances a `PresenceChannel` (`{ tick(seconds) }`) on
+  every tick, after proximity; returns the detach function. The interaction
+  runtime is one.
+
+### Interactions
+
+Figures, objects and places acting together (INTERACTIONS.md). Framework-free;
+slice 1 of its build plan.
+
+- `InteractionDefinition`: `id`, `tags`, `audience` (`"all"` or `"adult"`;
+  anything else is adult), `roles` (`{ name, takes: "figure" | "object",
+  requires?, affordances?, uses?, slot?, track? }`), `reference?`,
+  `contacts?`, `couplings?`, `beats?` (`{ name, at, effects? }`: an
+  affordance change on a figure, or an object-state change with `{ add }`),
+  `repeatWhile?` (`{ object, state, below }`), `alignSeconds?`,
+  `releaseSeconds?`, `priority?`.
+- `tagMatches(required, tag)`, `audienceOf(definition, affordanceAdult?)`
+  (adult unless declared `all` and no figure affordance it names is adult; an
+  affordance the core does not know counts as adult), `definitionProblems`.
+- `createInteractions(registry, { seed, clipLength, affordanceAdult?,
+  applyChange? })` returns the runtime: `define(definitions)` (throws
+  `InteractionDefinitionError` on a malformed one), `offer(offer)`,
+  `offersFor(participant, tags?)` (never returns an adult offer to a figure who
+  is not an adult), `propose(definition, roles)` (throws on a wrong role kind or
+  missing tag, and `AgePolicyError` before anyone is asked for an adult
+  definition with a participant under 18), `policy(participant, accept)`
+  (without one, `all` is accepted and `adult` declined: consent is explicit),
+  `on(participant, listener)` (`accepted`, `declined`, `phase`, `beat`,
+  `ended`, `cancelled` with a reason), `running()`, `detach()`.
+- An interaction claims its roles' body parts all-or-nothing, then runs
+  approach (only when a role has a slot), align, act (repeating while
+  `repeatWhile` holds) and release on the registry's clock. It is cancelled
+  with `left` when a participant leaves presence, and aborted with
+  `age-policy` on any tick an adult definition has a participant under 18.
 - `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
   chest, hands, feet), `footprint`, `appearance` (measured albedo, luminance,
   specular), `faceRadius`, `adult`.
