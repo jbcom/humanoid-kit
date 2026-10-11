@@ -48,6 +48,9 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "
     { id: "penis-skin", masks: [], lo: 0.05, hi: 0.4 },
     { id: "testes-skin", masks: [], lo: 0.05, hi: 0.4 },
     { id: "mound-skin", masks: ["pelvis/bulge-incr"], lo: 0.25, hi: 0.8 },
+    // The vulva's mask is authored per base vertex from its detail target (`vulvaSkinMask`),
+    // which moves the lattice and leaves no footprint on the base to measure.
+    { id: "vulva-skin", masks: [], lo: 0, hi: 1 },
   ],
   // Arousal changes the organ through the detail's drives (`detail/phallus.ts`: erect against
   // flaccid is length +43% and circumference +25%, docs/research/ADULT-ANATOMY-DATA.md, F), which
@@ -69,16 +72,21 @@ export const ADULT_ANATOMY_SPEC: Omit<AdultAnatomySpec, "surface" | "detail" | "
 
 /**
  * The whole spec for a base body: the fixed part and the surface refinement
- * round the pelvis (`pelvicRefinement`), which is a choice of that body's faces.
+ * round the pelvis (`pelvicRefinement`), which is a choice of that body's faces;
+ * with `vulvaMask`, the vulva layer's authored mask (`vulvaSkinMask`).
  */
 export function adultAnatomySpec(
   base: HumanoidAssets,
   detail?: AdultDetailSpec,
   reservoirs?: AdultReservoirSpec[],
   patches?: AdultSurfacePatch[],
+  vulvaMask?: { indices: number[]; weights: number[] },
 ): AdultAnatomySpec {
   return {
     ...ADULT_ANATOMY_SPEC,
+    skinLayers: ADULT_ANATOMY_SPEC.skinLayers.map((l) =>
+      l.id === "vulva-skin" && vulvaMask ? { ...l, vertexMask: vulvaMask } : l,
+    ),
     surface: { ...pelvicRefinement(base), ...(patches?.length && { patches }) },
     ...(reservoirs && { reservoirs }),
     ...(detail && { detail }),

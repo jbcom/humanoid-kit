@@ -28,7 +28,7 @@ import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE, phallusTargets } from "./d
 import { reservoirRoot } from "./detail/root.ts";
 import { scrotumTargets, TESTES_SIZE } from "./detail/scrotum.ts";
 import type { MaleParts, SculptPart } from "./detail/sculpt.ts";
-import { VULVA_SIZE, vulvaTarget } from "./detail/vulva.ts";
+import { VULVA_SIZE, type VulvaTarget, vulvaTarget } from "./detail/vulva.ts";
 import { type EncodedTarget, encodeSparseTarget } from "./targetEncoding.ts";
 
 /**
@@ -203,7 +203,7 @@ export function authorDetail(
   reservoirs: readonly AdultReservoirSpec[],
   parts: MaleParts,
   vulva: SculptPart,
-): { targets: EncodedTarget[]; detail: AdultDetailSpec } {
+): { targets: EncodedTarget[]; detail: AdultDetailSpec; vulva: VulvaTarget } {
   const rootOf = (id: string) => {
     const spec = reservoirs.find((r) => r.id === id);
     if (!spec) throw new Error(`the pack has no reservoir ${id} to draw from`);
@@ -219,6 +219,7 @@ export function authorDetail(
   const folds = vulvaTarget(lattice, vulva);
   const made = [...organ.targets, ...sac.targets, folds];
   return {
+    vulva: folds,
     targets: made.map((t) => encodeSparseTarget(t.name, t.indices, t.xyz)),
     detail: {
       targets: made.map((t) => t.name),

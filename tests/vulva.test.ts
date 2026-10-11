@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { deltaE2000, labFromLinear } from "../e2e/lib/colour.ts";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
-import { VULVA_SIZE, VULVA_TARGET } from "../scripts/lib/detail/vulva.ts";
+import { VULVA_SIZE, VULVA_TARGET, vulvaSkinMask } from "../scripts/lib/detail/vulva.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { VULVA_LAYER } from "../src/surface/regions/adult.ts";
+import { DEFAULT_SKIN_TONE, skinAlbedo } from "../src/surface/skinTone.ts";
 import { adultManifest, loadFixtureAssets } from "./fixtures.ts";
 
 /**
@@ -132,5 +135,73 @@ describe("the vulva on the skin", () => {
     expect(weight(0)).toBeCloseTo(1, 6);
     expect(weight(1)).toBe(0);
     expect(weight(0.5)).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe("the vulva's skin colour", () => {
+  const spec = anatomy?.skinLayers.find((l) => l.id === "vulva-skin");
+  const mask = spec?.vertexMask;
+  if (!mask) throw new Error("the pack authors no vulva-skin mask");
+  const shape = model.controlShape(AUTHORING_FIGURE);
+
+  it("is the generator's mask, from the vulva's form on the authoring figure", () => {
+    const form = {
+      name: VULVA_TARGET,
+      indices: Array.from(target.indices),
+      xyz: Array.from(target.deltas, (d) => d * target.scale),
+    };
+    const want = vulvaSkinMask(lattice, form, shape.control, shape.body);
+    expect(mask.indices).toEqual(want.indices);
+    for (const [i, w] of mask.weights.entries())
+      expect(w).toBeCloseTo(want.weights[i] as number, 5);
+    expect(mask.weights.filter((w) => w > 0.99).length).toBeGreaterThan(0);
+  });
+
+  it("has no edge: along any base edge it changes by at most 50 per metre", () => {
+    const w = new Map(mask.indices.map((v, i) => [v, mask.weights[i] as number] as const));
+    const P = shape.control;
+    const fv = assets.faceVerts;
+    let steepest = 0;
+    for (let f = 0; f < fv.length / 4; f++)
+      for (let c = 0; c < 4; c++) {
+        const a = fv[f * 4 + c] as number;
+        const b = fv[f * 4 + ((c + 1) % 4)] as number;
+        const l = Math.hypot(
+          (P[a * 3] as number) - (P[b * 3] as number),
+          (P[a * 3 + 1] as number) - (P[b * 3 + 1] as number),
+          (P[a * 3 + 2] as number) - (P[b * 3 + 2] as number),
+        );
+        if (l > 0) steepest = Math.max(steepest, Math.abs((w.get(a) ?? 0) - (w.get(b) ?? 0)) / l);
+      }
+    expect(steepest).toBeLessThanOrEqual(50);
+  });
+
+  it("is the body's skin, mildly deepened, at every tone: 1 to 6 CIEDE2000 from the skin round it", () => {
+    for (const melanin of [0, 0.1, 0.2, 0.35, 0.5, 0.7, 0.85, 1]) {
+      const tone = { ...DEFAULT_SKIN_TONE, melanin };
+      const skin = skinAlbedo(tone);
+      const paint = VULVA_LAYER.paint({ tone, signals: {}, age: 30, gender: 0 } as never);
+      if (!("stops" in paint)) throw new Error("the vulva layer paints no stops");
+      const drawn = skin.map(
+        (c, k) => c + paint.strength * (((paint.stops[0] as number[])[k] as number) - c),
+      ) as [number, number, number];
+      const dE = deltaE2000(labFromLinear(skin), labFromLinear(drawn));
+      expect(dE, `melanin ${melanin}`).toBeGreaterThanOrEqual(1);
+      expect(dE, `melanin ${melanin}`).toBeLessThanOrEqual(6);
+      // Deeper, not another hue: no channel rises above the skin's but red.
+      expect(drawn[0]).toBeLessThanOrEqual(skin[0] + 1e-9);
+    }
+  });
+
+  it("lies on the islands too: a collapsed sac's cap in the vulva carries its colour", () => {
+    const fields = model.adultLayerFields();
+    const extra = fields?.extra;
+    if (!fields || !extra) throw new Error("no island fields");
+    const l = fields.layers.indexOf("vulva-skin");
+    const count = extra.uvs.length / 2;
+    let most = 0;
+    for (let i = 0; i < count; i++)
+      most = Math.max(most, extra.layerFields[(l * count + i) * 2] as number);
+    expect(most).toBeGreaterThan(0.9);
   });
 });

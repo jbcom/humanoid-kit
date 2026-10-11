@@ -66,7 +66,11 @@ describe("the pelvic refinement the adult pack asks for", () => {
     // layout's (held to the generator in adultReservoirs.test.ts), so they are taken as shipped.
     const patches = adultManifest.anatomy?.surface?.patches;
     expect(patches?.length, "the reservoirs' smooth loops").toBe(2);
-    const spec = adultAnatomySpec(assets, undefined, undefined, patches);
+    // The vulva layer's mask is the generator's, held to it in vulva.test.ts.
+    const vulvaMask = adultManifest.anatomy?.skinLayers.find(
+      (l) => l.id === "vulva-skin",
+    )?.vertexMask;
+    const spec = adultAnatomySpec(assets, undefined, undefined, patches, vulvaMask);
     expect(spec.surface).toEqual({ faces: r.faces, levels: r.levels, patches });
     // Its detail (the generated targets' pin) is held to the generator in moundPack.test.ts.
     const { detail: _detail, reservoirs: _reservoirs, ...rest } = adultManifest.anatomy ?? {};

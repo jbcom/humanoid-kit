@@ -305,6 +305,54 @@ export function vulvaTarget(lattice: AdultDetailLattice, sheet: SculptPart): Vul
   };
 }
 
+/**
+ * Where the vulva's skin colour lies, metres from its form (`vulvaSkinMask`): the
+ * whole colour within `inner` of a vertex the form moves by more than `moved`,
+ * falling to none at `outer` by a smootherstep. The fall spans several of the base's
+ * edges there, so the atlas draws it as a gradient: the mask changes by at most 40
+ * per metre along any base edge (the whole colour over 25 mm). Falling by 30 mm, it
+ * changed by 63 per metre, nearly all of it across one 8 mm edge.
+ */
+export const VULVA_SKIN = { moved: 0.0005, inner: 0.004, outer: 0.045 } as const;
+
+/**
+ * The vulva layer's mask per base vertex (`AdultSkinLayerSpec.vertexMask`), on the
+ * authoring figure: each body vertex's distance (`control`, its positions there) from
+ * the lattice vertices the vulva's target moves, eased by `VULVA_SKIN`. Only the
+ * vertices it reaches are listed.
+ */
+export function vulvaSkinMask(
+  lattice: AdultDetailLattice,
+  target: VulvaTarget,
+  control: Float32Array,
+  body: ArrayLike<number>,
+): { indices: number[]; weights: number[] } {
+  const form: Vec3[] = [];
+  target.indices.forEach((v, i) => {
+    if (v >= lattice.regionCount) return;
+    const d = Math.hypot(
+      target.xyz[i * 3] as number,
+      target.xyz[i * 3 + 1] as number,
+      target.xyz[i * 3 + 2] as number,
+    );
+    if (d > VULVA_SKIN.moved) form.push(point3(lattice.positions, v));
+  });
+  const indices: number[] = [];
+  const weights: number[] = [];
+  const { inner, outer } = VULVA_SKIN;
+  for (let i = 0; i < body.length; i++) {
+    const v = body[i] as number;
+    const p = point3(control, v);
+    let near = Number.POSITIVE_INFINITY;
+    for (const q of form) near = Math.min(near, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]));
+    if (near >= outer) continue;
+    const t = Math.min(1, Math.max(0, (outer - near) / (outer - inner)));
+    indices.push(v);
+    weights.push(t * t * t * (t * (6 * t - 15) + 10));
+  }
+  return { indices, weights };
+}
+
 /** A part's triangles in a bounding-volume hierarchy. */
 function bvhOf(part: SculptPart): MeshBVH {
   const geometry = new BufferGeometry();

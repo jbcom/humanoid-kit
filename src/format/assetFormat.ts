@@ -644,6 +644,12 @@ export interface AdultSkinLayerSpec {
   hi: number;
   /** The target the layer's 0..1 coordinate is measured from (`targetCoordinate`), if it has one. */
   coordinate?: string;
+  /**
+   * A mask the pack authors per base vertex (0..1 each), joined with the targets'
+   * (the larger wins): for a feature whose form is a detail target, which moves the
+   * adult surface's lattice and so has no footprint on the base to measure.
+   */
+  vertexMask?: { indices: number[]; weights: number[] };
 }
 
 export interface AdultAnatomyManifest {

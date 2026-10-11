@@ -283,7 +283,7 @@ describe("the atlas plan with the adult pack", () => {
     : base;
 
   it("keeps every layer, every adult one present, to eight pages, staged or loaded", () => {
-    expect(adult.length).toBeGreaterThanOrEqual(3);
+    expect(adult.length).toBeGreaterThanOrEqual(4);
     expect(plan.pages).toBeLessThanOrEqual(8);
     // The adult stage's targets not yet loaded: a layer measured from them is pending.
     const staged = new HumanoidModel(

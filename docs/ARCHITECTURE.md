@@ -1644,6 +1644,16 @@ far as they are carried (`skinUnderOrgans`): added in full to the cap of a sac h
 from the cleft, it pressed the cleft into the sac's bottom, and the sac's notch on a
 figure between the sexes went from 11% of its width to 14.5%.
 
+**The vulva's colour (2026-10-10).** Vulvar skin is the body's skin, mildly more
+pigmented and pinker, not a colour of its own: the `vulva-skin` layer paints each
+figure's tone with 1.25 times its melanin optical density and a little more blood
+(`vulvaAlbedo`, the areola's reasoning), 2 to 4.5 CIEDE2000 from the skin round it
+at every tone (gated 1 to 6). Its mask is the pack's own per base vertex
+(`AdultSkinLayerSpec.vertexMask`, `vulvaSkinMask`): the vulva's form is a detail
+target, which leaves no footprint on the base to measure. It falls off over 4.5 cm,
+changing by at most 40 per metre along any base edge, and an island carries it
+where its skin lies, so a woman's collapsed sac does not interrupt it.
+
 ## Scalp hair (milestone 4)
 
 **Use cases.** A creator offers a hair style and a colour beside skin and eyes,
@@ -4014,7 +4024,8 @@ fields as built:
   from targets still loading (the mound's) is pending, a group of its own;
   without an adult pack every adult layer is known to reach nothing and joins a
   group at no cost. The stack is 30 channels, 8 pages, loaded or staged (32
-  before): the penis's island shares a body layer's channels.
+  before): the penis's island shares a body layer's channels. With the vulva's
+  layer (a mask the pack authors, known before layout) it is 32.
 - Alternatives set aside: sharing by banding the value (layer *k* of *K* in
   `[k/K, (k+1)/K)`, which bilinear filtering between regions turns into other
   layers' bands, and loses bits); sharing by UV island (nine islands: only the

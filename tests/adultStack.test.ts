@@ -41,7 +41,12 @@ describe("the adult anatomy spec in the pack's manifest", () => {
     // The surface's patches are the reservoirs' layout's, held to the generator in
     // adultReservoirs.test.ts; the refinement under them is the packer's spec for this body.
     const { detail: _detail, reservoirs: _reservoirs, ...rest } = spec ?? {};
-    expect(rest).toEqual(adultAnatomySpec(core, undefined, undefined, spec?.surface?.patches));
+    // The vulva layer's mask is the generator's too, held to it in vulva.test.ts.
+    const vulvaMask = spec?.skinLayers.find((l) => l.id === "vulva-skin")?.vertexMask;
+    expect(vulvaMask).toBeDefined();
+    expect(rest).toEqual(
+      adultAnatomySpec(core, undefined, undefined, spec?.surface?.patches, vulvaMask),
+    );
     expect(spec).toMatchObject(ADULT_ANATOMY_SPEC);
   });
 
@@ -257,8 +262,8 @@ describe("the model and the adult layers", () => {
     it("blends each reservoir's layer in on its island from the skin line, and lights no other reservoir's there", () => {
       const used = new Set(reservoirs.map((r) => r.layer));
       for (const id of used) expect(layers).toContain(id);
-      // At most one reservoir's layer is lit on any island vertex. The others (the mound's)
-      // are the body's own there, as on the skin the island lies in.
+      // At most one reservoir's layer is lit on any island vertex. The others (the mound's,
+      // the vulva's) are the body's own there, as on the skin the island lies in.
       for (let v = 0; v < count; v++) {
         const lit = [...used].filter((id) => (block(id as string)[v * 2] as number) > 0);
         expect(lit.length, `vertex ${v}`).toBeLessThanOrEqual(1);

@@ -63,7 +63,7 @@ import { compileAsset } from "./lib/compileAsset.ts";
 import { AUTHORING_FIGURE } from "./lib/control/mound.ts";
 import { reservoirRoot } from "./lib/detail/root.ts";
 import { maleParts } from "./lib/detail/sculpt.ts";
-import { placeVulva } from "./lib/detail/vulva.ts";
+import { placeVulva, vulvaSkinMask } from "./lib/detail/vulva.ts";
 import { symmetrizeFaceUnits } from "./lib/faceUnits.ts";
 import { NAIL_PLATES, VENDOR_BODYPARTS04 } from "./lib/nailPlates.ts";
 import { packHair } from "./lib/packHair.ts";
@@ -829,7 +829,13 @@ async function main() {
     modifiers: [...modifiers.filter((m) => isAdultPackTarget(m.hi)), ...AUTHORED_MODIFIERS],
     sliders: sliders.adult,
     /** Features, skin-layer measurements and shape states: the core names none of these. */
-    anatomy: adultAnatomySpec(packedFigure, organ.detail, islanded, patches),
+    anatomy: adultAnatomySpec(
+      packedFigure,
+      organ.detail,
+      islanded,
+      patches,
+      vulvaSkinMask(latticeWith, organ.vulva, control.control, control.body),
+    ),
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 
