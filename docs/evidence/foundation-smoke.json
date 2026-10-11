@@ -35,19 +35,19 @@
       "tone-6"
     ],
     "measure": {
-      "penetrating": 54,
-      "penetratingArea": 12.754560816574667,
-      "deepest": 0.019598556559302097,
+      "penetrating": 56,
+      "penetratingArea": 12.925503765472968,
+      "deepest": 0.020829234959261003,
       "deepestParts": "trunk~trunk",
       "contacts": 22,
       "deepestContact": 0.02049391397710171,
-      "inverted": 337,
-      "squashed": 632,
-      "squashedArea": 83.10811772999541,
+      "inverted": 333,
+      "squashed": 650,
+      "squashedArea": 83.28836918514791,
       "volumeOut": [],
       "worstVolume": 0.9010942696460608,
-      "folds": 184,
-      "sharpest": 178.6599815035141,
+      "folds": 195,
+      "sharpest": 179.23454717089075,
       "seamGap": 0
     }
   },
@@ -90,21 +90,21 @@
       "tone-6"
     ],
     "measure": {
-      "penetrating": 75,
-      "penetratingArea": 21.003577894589398,
-      "deepest": 0.023945663275463176,
+      "penetrating": 76,
+      "penetratingArea": 21.438614321596106,
+      "deepest": 0.02394504450709046,
       "deepestParts": "trunk~trunk",
       "contacts": 161,
       "deepestContact": 0.02985155744711806,
-      "inverted": 700,
-      "squashed": 814,
-      "squashedArea": 178.21943402356743,
+      "inverted": 703,
+      "squashed": 804,
+      "squashedArea": 177.97884775300096,
       "volumeOut": [
         "hip.L 0.71",
         "hip.R 0.71"
       ],
       "worstVolume": 0.7118683846722315,
-      "folds": 212,
+      "folds": 244,
       "sharpest": 179.0363462120239,
       "seamGap": 0
     }
@@ -145,19 +145,19 @@
       "tone-6"
     ],
     "measure": {
-      "penetrating": 97,
-      "penetratingArea": 23.015782223865244,
-      "deepest": 0.019075115105000477,
+      "penetrating": 100,
+      "penetratingArea": 23.449707400686748,
+      "deepest": 0.0190013261788248,
       "deepestParts": "trunk~trunk",
-      "contacts": 45,
+      "contacts": 44,
       "deepestContact": 0.01679761540876809,
-      "inverted": 700,
-      "squashed": 569,
-      "squashedArea": 167.94821983424055,
+      "inverted": 708,
+      "squashed": 559,
+      "squashedArea": 167.83360882144584,
       "volumeOut": [],
       "worstVolume": 0.840614098624097,
-      "folds": 152,
-      "sharpest": 166.99422587945324,
+      "folds": 121,
+      "sharpest": 171.37070651361734,
       "seamGap": 0
     }
   },
@@ -200,21 +200,21 @@
       "tone-6"
     ],
     "measure": {
-      "penetrating": 147,
-      "penetratingArea": 37.17193818602027,
-      "deepest": 0.027999898408629032,
+      "penetrating": 152,
+      "penetratingArea": 37.67590060760995,
+      "deepest": 0.02780828629096367,
       "deepestParts": "trunk~trunk",
       "contacts": 213,
       "deepestContact": 0.02992552111564785,
-      "inverted": 1309,
+      "inverted": 1322,
       "squashed": 572,
-      "squashedArea": 214.14358363515225,
+      "squashedArea": 214.14268698701153,
       "volumeOut": [
         "hip.L 0.66",
         "hip.R 0.66"
       ],
       "worstVolume": 0.6573649927954456,
-      "folds": 230,
+      "folds": 228,
       "sharpest": 176.63901029683407,
       "seamGap": 0
     }
@@ -481,19 +481,19 @@
       "tone-6"
     ],
     "measure": {
-      "penetrating": 91,
-      "penetratingArea": 20.652021485147998,
-      "deepest": 0.019979830783712387,
+      "penetrating": 93,
+      "penetratingArea": 21.045228040748043,
+      "deepest": 0.020867893253181728,
       "deepestParts": "trunk~trunk",
       "contacts": 15,
       "deepestContact": 0.019053192824130902,
-      "inverted": 470,
-      "squashed": 520,
-      "squashedArea": 113.99931909814,
+      "inverted": 499,
+      "squashed": 476,
+      "squashedArea": 113.26685510000624,
       "volumeOut": [],
       "worstVolume": 0.921183037759453,
-      "folds": 178,
-      "sharpest": 179.56378491594145,
+      "folds": 163,
+      "sharpest": 174.61490188974798,
       "seamGap": 0
     }
   },
@@ -536,21 +536,21 @@
       "tone-6"
     ],
     "measure": {
-      "penetrating": 122,
-      "penetratingArea": 25.584143741070875,
-      "deepest": 0.02720016565481153,
+      "penetrating": 124,
+      "penetratingArea": 25.8115159931549,
+      "deepest": 0.027200029468052136,
       "deepestParts": "trunk~trunk",
       "contacts": 179,
       "deepestContact": 0.029788359871987045,
-      "inverted": 986,
-      "squashed": 744,
-      "squashedArea": 196.63185490137244,
+      "inverted": 1007,
+      "squashed": 736,
+      "squashedArea": 196.50990490329775,
       "volumeOut": [
         "hip.L 0.73",
         "hip.R 0.74"
       ],
       "worstVolume": 0.73263308493518,
-      "folds": 198,
+      "folds": 193,
       "sharpest": 178.9199102247426,
       "seamGap": 0
     }
