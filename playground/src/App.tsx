@@ -471,21 +471,27 @@ function Shot() {
         )}
         {(qaLight === "camera" || qaLight === "under") && <QaLight kind={qaLight} />}
         {channelQa && <ChannelQa of={affordances} params={params} />}
-        <Humanoid
-          recipe={recipe}
-          pose={bodyPose}
-          {...(channelQa && { affordances })}
-          {...(library &&
-            animation && {
-              animation: { library, ...animation, onStart: setPlaying },
-            })}
-          {...(eyeLibrary && { eyeMaterials: eyeLibrary })}
-          signals={signals}
-          position={[0, animation ? 0 : lift, 0]}
-          onGroundOffset={setLift}
-          onSettled={() => setSettled(true)}
-          bodyArtImages={tattooImages()}
-        />
+        {/* QA-only rigid orientation: no anatomy, gravity or tissue deformation is changed. */}
+        <group
+          rotation={params.has("supineQa") ? [-Math.PI / 2, 0, 0] : [0, 0, 0]}
+          position={params.has("supineQa") ? [0, 0.35, 0] : [0, 0, 0]}
+        >
+          <Humanoid
+            recipe={recipe}
+            pose={bodyPose}
+            {...(channelQa && { affordances })}
+            {...(library &&
+              animation && {
+                animation: { library, ...animation, onStart: setPlaying },
+              })}
+            {...(eyeLibrary && { eyeMaterials: eyeLibrary })}
+            signals={signals}
+            position={[0, animation ? 0 : lift, 0]}
+            onGroundOffset={setLift}
+            onSettled={() => setSettled(true)}
+            bodyArtImages={tattooImages()}
+          />
+        </group>
         <OrbitControls makeDefault target={target} />
       </Canvas>
     </div>
