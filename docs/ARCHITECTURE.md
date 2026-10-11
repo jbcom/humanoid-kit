@@ -4025,7 +4025,11 @@ fields as built:
   without an adult pack every adult layer is known to reach nothing and joins a
   group at no cost. The stack is 30 channels, 8 pages, loaded or staged (32
   before): the penis's island shares a body layer's channels. With the vulva's
-  layer (a mask the pack authors, known before layout) it is 32.
+  layer (a mask the pack authors, known before layout) it was 32, until the
+  islands were placed in owner-map cells no body triangle reaches
+  (`scripts/lib/uvIslands.ts`): placed by texels, the testes island shared cells
+  with the palms, the mouth and every broad flush layer, and so no channel. Both
+  islands share now, and the stack is 30 channels, 8 pages.
 - Alternatives set aside: sharing by banding the value (layer *k* of *K* in
   `[k/K, (k+1)/K)`, which bilinear filtering between regions turns into other
   layers' bands, and loses bits); sharing by UV island (nine islands: only the
