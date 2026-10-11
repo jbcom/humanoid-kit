@@ -914,7 +914,7 @@ tone's multiply is the deeper). And the lines shade: a colour layer's paint may 
 `relief` (a groove depth at each stop, the deepest in the stop table's header and
 each stop's depth in its alpha), and the shader tilts the normal per pixel by the
 gradient of that smoothed profile along the layer's own coordinate
-(`hkDetailHeight`, `lineRelief` its reference), so a line catches light on one
+(`hkDetailSlope`, `lineRelief` its reference), so a line catches light on one
 side and shadows on the other whatever the colour. It is per pixel only, from the
 exact coordinate: no vertex relief, so a line cannot bend as the first relief did.
 The grooves are 0.6 mm (forehead) and 0.7 mm (furrows) at 40, times the age factor
@@ -3765,6 +3765,17 @@ the joint's skin takes, which is measured.
   ends, so a window starts and ends flat (`CREASE_SHARPNESS`, `creaseHeight`;
   the shader and its reference changed together, and the browser project holds
   the shader's shading to the reference's slope).
+- *A share of the relief is not relief.* Every detail layer's relief is
+  scaled by shares measured from the pixel's footprint: the fade where it is
+  finer than a pixel, and a crease's kept depth where a pose compresses it
+  (`hkCreaseKeep`). The normal is tilted by the share times the relief's screen
+  gradient (`hkDetailSlope`), never by the gradient of the product. A share
+  comes from screen derivatives, so it steps from quad to quad (and row to row
+  within one) with the triangles and field texels under it; differentiated
+  with the relief, those steps drew a speckle 2 to 4 px across over a bent
+  knee's calf, where the creases keep part of their depth. The browser project
+  reads the slope out of the shader on a plane whose kept depth changes pixel
+  by pixel along the creases and holds the slope along them to none.
 - *Wrists have none.* They were drawn at the same rules (2 creases across 6 cm,
   the forearm's strain, 2.5 mm deep) and, once deep enough to see, read as a
   pale bracelet round the palm side; a real wrist has a few fine lines a

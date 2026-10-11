@@ -31,7 +31,14 @@ import {
   striaMark,
 } from "../../src/surface/striae.ts";
 import { expectSameArray } from "./arrays.ts";
-import { mean, noFields, renderLayers as render, SIZE, variance } from "./layerRender.ts";
+import {
+  mean,
+  noFields,
+  renderLayers as render,
+  renderLayersRgba,
+  SIZE,
+  variance,
+} from "./layerRender.ts";
 
 /**
  * How far a render with a layer that draws nothing may differ from one with no
@@ -361,6 +368,83 @@ describe("relief on crushed skin", () => {
       squeezed,
       `compressed ${squeezed.toFixed(4)} against designed ${reference.toFixed(4)}`,
     ).toBeLessThan(1.25 * reference);
+  });
+
+  it("tilts the skin by a crease's slope alone, not by the change of its kept depth from pixel to pixel", () => {
+    // A flat plane square to the view, compressed to 1/1.2 of its rest skin, the knee's
+    // creases running along x, their coordinate the plane's y alone: the relief is the same
+    // all along x. Its vertex normals lean up and down the plane, by none in every other
+    // column of vertices (4 px apart) and by 40° in the rest, so the footprint on the smooth
+    // surface the normals describe, and with it the share of its depth a crease keeps
+    // (hkCreaseKeep, from screen derivatives), changes along x pixel by pixel. That share
+    // scales the relief's slope; it is not relief, so the slope along x is none. Taken
+    // through the derivative with the relief, its change from pixel to pixel drew a speckle
+    // 2 to 4 px across over a bent knee's calf (2026-10-10). The shader's slope is read out
+    // directly (hkDetailSlope), metres per pixel.
+    const SIDE = 0.04;
+    const PLANE = 0.08;
+    const COLUMNS = 32;
+    const ROWS = 4;
+    const SQUEEZE = 1.2;
+    const LEAN = (40 * Math.PI) / 180;
+    const leaning = () => {
+      const positions: number[] = [];
+      const normals: number[] = [];
+      const uvs: number[] = [];
+      for (let j = 0; j <= ROWS; j++)
+        for (let i = 0; i <= COLUMNS; i++) {
+          const x = (i / COLUMNS) * SIDE;
+          const y = (j / ROWS) * SIDE;
+          const lean = i % 2 ? LEAN : 0;
+          positions.push(x - SIDE / 2, y - SIDE / 2, 0);
+          normals.push(0, Math.sin(lean), Math.cos(lean));
+          uvs.push((SQUEEZE * x) / PLANE, (SQUEEZE * y) / PLANE);
+        }
+      const index: number[] = [];
+      for (let j = 0; j < ROWS; j++)
+        for (let i = 0; i < COLUMNS; i++) {
+          const a = j * (COLUMNS + 1) + i;
+          const b = a + COLUMNS + 1;
+          index.push(a, a + 1, b, a + 1, b + 1, b);
+        }
+      const g = new BufferGeometry();
+      g.setAttribute("position", new Float32BufferAttribute(positions, 3));
+      g.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+      g.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+      g.setIndex(index);
+      return g;
+    };
+    const slope = renderLayersRgba([kneeCreases], {
+      geometry: leaning(),
+      plane: PLANE,
+      view: { span: SIDE, centre: [0, 0] },
+      coordinate: (_, __, v) => v,
+      tune: (m) => {
+        const compile = m.onBeforeCompile;
+        m.onBeforeCompile = (shader, r) => {
+          compile.call(m, shader, r);
+          shader.fragmentShader = shader.fragmentShader.replace(
+            "#include <dithering_fragment>",
+            "#include <dithering_fragment>\n\tgl_FragColor = vec4( hkDetailSlope( vHkUv ), 0.0, 1.0 );",
+          );
+        };
+        m.customProgramCacheKey = () => "humanoid-kit-skin-test-detail-slope";
+      },
+    });
+    // A pixel clear of the plane's edges.
+    let along = 0;
+    let across = 0;
+    for (let y = 1; y < SIZE - 1; y++)
+      for (let x = 1; x < SIZE - 1; x++) {
+        const i = (y * SIZE + x) * 4;
+        along = Math.max(along, Math.abs(slope[i] as number));
+        across = Math.max(across, Math.abs(slope[i + 1] as number));
+      }
+    const said = `slope along ${along.toExponential(3)}, across ${across.toExponential(3)}`;
+    // The grooves are drawn: they slope down the plane.
+    expect(across, said).toBeGreaterThan(1e-5);
+    // Along them there is no slope, but for rounding.
+    expect(along, said).toBeLessThan(across * 1e-4);
   });
 });
 
