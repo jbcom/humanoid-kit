@@ -85,8 +85,8 @@ describe("the vulva on the skin", () => {
   });
 
   it("meets the skin round it without a step", () => {
-    // Its outermost vertices (with a region neighbour it does not move) move by under 1 mm,
-    // half the region's edge there: as built, 9 of 176 move more than 0.3 mm, at most 0.74.
+    // Its outermost vertices (with a region neighbour it does not move) move by under 0.5 mm,
+    // a quarter of the region's 2 mm edge there: no kink at its rim shows.
     const { start, vertices } = lattice.polygons;
     let worst = 0;
     for (let p = 0; p + 1 < start.length; p++) {
@@ -99,7 +99,7 @@ describe("the vulva on the skin", () => {
         if (d) worst = Math.max(worst, Math.hypot(...d));
       }
     }
-    expect(worst).toBeLessThan(0.001);
+    expect(worst).toBeLessThan(0.0005);
   });
 
   it("moves a reservoir's ring with its loop vertex, so a collapsed one stays in the skin", () => {

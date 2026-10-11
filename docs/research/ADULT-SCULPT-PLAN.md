@@ -555,11 +555,13 @@ authoring figure rigidly by its edge, as the male parts are; carried vertex by
 vertex, the perineum twisted. Each region vertex takes the point of the sheet seen
 from just outside along its normal, no more than 6 mm under the skin (the
 vestibule's 17 mm pit is the canal's to draw), less the two bodies' difference
-carried in harmonically from the rim, faded in over five rings. Four other transfers
+carried in harmonically from the rim, faded in over five rings by a smootherstep;
+the sheet's rim lies past the fourchette and the majora, on plain skin, so no vertex
+next to it moves by more than 0.5 mm. Four other transfers
 were built and rendered and rejected (each named in `vulva.ts`): the nearest
 surface either way along the normal (streaks), the nearest point (faceted),
 matched disc maps (blurred) and a biharmonic fill under the vulva (buckled). As
-built, the cleft is 4 mm deep and runs 75 mm on the midline, against the majora's
+built, the cleft is 4 to 5 mm deep and runs 70 mm on the midline, against the majora's
 80 ± 15 mm (Kreklau); the labia do not rise above our skin, whose crotch is already
 as full as the proxy's.
 

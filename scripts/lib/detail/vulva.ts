@@ -72,9 +72,12 @@ export const VULVA_TARGET = "genitals/vulva-k1";
  * (y up, +z forward): an ellipse across the crotch, seen from below, round the majora,
  * the minora and the vestibule (they span x -0.20 to 0.20, z -0.17 to 1.00 and y -0.82
  * to -0.45) with a margin of plain skin, above the cleft's floor, below which the
- * inner thighs' skin hangs. What it encloses comes with it.
+ * inner thighs' skin hangs. What it encloses comes with it. Its back reaches past the
+ * fourchette over the perineum and its sides past the majora: ending at -0.22 and
+ * 0.21, its rim crossed the cleft's end and the majora's slope, and the vertices next
+ * to it moved by up to 0.74 mm, a kink.
  */
-const VULVA_SHEET = { x: 0.21, z: [-0.22, 1.06], floor: -0.86 } as const;
+const VULVA_SHEET = { x: 0.24, z: [-0.4, 1.06], floor: -0.86 } as const;
 
 /** How far outside the skin a sight line starts, and how far past it it looks, metres (`seenFrom`). */
 const SIGHT = 0.025;
@@ -283,7 +286,10 @@ export function vulvaTarget(
   for (let v = 0; v < n; v++) {
     if (!zone[v] || rim[v]) continue;
     const t = Math.min(1, (ring[v] as number) / FADE_RINGS);
-    const fade = t * t * (3 - 2 * t);
+    // Smootherstep: flat in slope and in curvature at the rim. The sheet's back edge crosses
+    // the perineal groove, where the form is 7 mm one ring in; a smoothstep, flat in slope
+    // alone, still moved the vertices next to the rim by up to 0.74 mm.
+    const fade = t * t * t * (t * (6 * t - 15) + 10);
     const d: Vec3 = [
       fade * ((raw[v * 3] as number) - (body[v * 3] as number)),
       fade * ((raw[v * 3 + 1] as number) - (body[v * 3 + 1] as number)),
