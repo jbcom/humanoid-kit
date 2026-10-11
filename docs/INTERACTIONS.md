@@ -7,9 +7,12 @@ audience (`audienceOf`), offers filtered by the age policy, proposals with role
 kinds, tags and the age check before anyone is asked, explicit consent for
 adult definitions, all-or-nothing body-part claims, the phases on the presence
 clock with beats and object-state effects, `repeatWhile` (the apple's bite
-loop), cancel on a participant leaving, and the per-tick age re-check. Still to
-come in slice 1: the rendered bite (the mouth's `occupancy` reaching the
-figure's `AffordanceStates` through `applyChange`) and its browser test. Two
+loop), cancel on a participant leaving, and the per-tick age re-check. The
+bite reaches the figure: `applyToAffordances` sets each beat's change on the
+participant's `HumanoidAffordances`, so the mouth holds the bite (its
+occupancy opens the drawn jaw) and empties at the chew; the rim clip that
+dissolves what passes the lips is the affordance work's, tested in
+`tests/browser/channelClip.test.ts`. Two
 choices made while building: a slot's offset is in metres for now (lengths in a
 body's own measures arrive with `measures`, slice 2), and the act's repeat is
 the definition's `repeatWhile` rather than a beat. The build plan at the end

@@ -1,17 +1,23 @@
 import { describe, expect, it } from "vitest";
+import { HumanoidAffordances } from "../src/affordance/live.ts";
 import {
   audienceOf,
   definitionProblems,
   type InteractionDefinition,
   tagMatches,
 } from "../src/interaction/definition.ts";
-import { createInteractions, type InteractionEvent } from "../src/interaction/runtime.ts";
+import {
+  applyToAffordances,
+  createInteractions,
+  type InteractionEvent,
+} from "../src/interaction/runtime.ts";
 import {
   createPresenceRegistry,
   type FigurePresence,
   type ObjectPresence,
 } from "../src/presence/presence.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
+import { createRecipe } from "../src/recipe/recipe.ts";
 
 const v = (x = 0, y = 0, z = 0): [number, number, number] => [x, y, z];
 
@@ -69,7 +75,14 @@ const EAT: InteractionDefinition = {
       at: 0.5,
       effects: [{ set: "eater:mouth", change: { occupancy: { radius: 0.02, depth: 0.01 } } }],
     },
-    { name: "chew", at: 1, effects: [{ object: "food", state: { stage: { add: 1 } } }] },
+    {
+      name: "chew",
+      at: 1,
+      effects: [
+        { set: "eater:mouth", change: { occupancy: null } },
+        { object: "food", state: { stage: { add: 1 } } },
+      ],
+    },
     { name: "swallow", at: 1.8 },
   ],
   repeatWhile: { object: "food", state: "stage", below: 3 },
@@ -173,7 +186,30 @@ describe("the interaction runtime", () => {
     presence.setObject(apple());
     runtime.propose("eat", { eater: "ana", food: "apple" });
     run(presence, 0, 8);
-    expect(changes).toEqual(["ana:mouth", "ana:mouth", "ana:mouth"]);
+    expect(changes).toEqual(Array(6).fill("ana:mouth"));
+  });
+
+  it("fills a real figure's mouth at each bite and empties it at each chew", () => {
+    const presence = createPresenceRegistry();
+    const mouth = new HumanoidAffordances();
+    mouth.setRecipe(createRecipe({ macros: { age: 30 } }));
+    const runtime = createInteractions(presence, {
+      seed: 1,
+      clipLength,
+      applyChange: applyToAffordances(new Map([["ana", mouth]])),
+    });
+    runtime.define([EAT]);
+    presence.set(figure("ana", true));
+    presence.setObject(apple());
+    runtime.propose("eat", { eater: "ana", food: "apple" });
+    const occupant = () => {
+      const s = mouth.get("mouth");
+      return s.kind === "aperture" ? (s.occupancy?.radius ?? 0) : -1;
+    };
+    run(presence, 0, 0.7); // past the first bite (act starts at the first tick)
+    expect(occupant()).toBe(0.02);
+    run(presence, 0.8, 0.4); // past the first chew
+    expect(occupant()).toBe(0);
   });
 
   it("is deterministic: the same seed and ticks give the same event log", () => {

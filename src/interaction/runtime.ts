@@ -104,6 +104,22 @@ export interface InteractionRuntime {
   detach(): void;
 }
 
+/** What a beat's affordance change is applied to: a figure's `HumanoidAffordances`. */
+export interface AffordanceTarget {
+  set(id: string, change: AffordanceChange): unknown;
+}
+
+/**
+ * An `applyChange` that sets the change on each participant's live affordances
+ * (`HumanoidAffordances`), so a bite fills the mouth and opens the drawn jaw.
+ * A participant with no entry is skipped.
+ */
+export const applyToAffordances =
+  (figures: ReadonlyMap<string, AffordanceTarget>) =>
+  (participant: string, affordance: string, change: AffordanceChange): void => {
+    figures.get(participant)?.set(affordance, change);
+  };
+
 /** 32-bit FNV-1a, mixed with the runtime seed: a stable per-interaction seed. */
 function seedOf(seed: number, parts: readonly (string | number)[]): number {
   let h = (0x811c9dc5 ^ seed) >>> 0;

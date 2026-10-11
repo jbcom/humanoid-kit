@@ -1088,6 +1088,9 @@ slice 1 of its build plan.
   (without one, `all` is accepted and `adult` declined: consent is explicit),
   `on(participant, listener)` (`accepted`, `declined`, `phase`, `beat`,
   `ended`, `cancelled` with a reason), `running()`, `detach()`.
+- `applyToAffordances(figures)`: an `applyChange` that sets each beat's
+  affordance change on the participant's `HumanoidAffordances` (a `Map` of
+  participant id to handle), so a bite fills the mouth and opens the jaw.
 - An interaction claims its roles' body parts all-or-nothing, then runs
   approach (only when a role has a slot), align, act (repeating while
   `repeatWhile` holds) and release on the registry's clock. It is cancelled
