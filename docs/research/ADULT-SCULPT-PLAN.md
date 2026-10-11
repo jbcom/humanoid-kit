@@ -502,6 +502,16 @@ sculpts are transferred, which is next.
 
 ## 6f. Decision 9: the female form (2026-10-10)
 
+**Recovery status (2026-10-11).** The labial skin transfer and canal reservoirs
+exist, but this decision is not complete. The retained pack sources contain the
+2020 vulva cut; they contain no NIH hood/glans cuts or their landmark fit.
+The smallest phallic key still uses `phallusGeometry`, so the default female
+hood/glans transfer described below remains planned. Fresh silent close-ups
+still reject its raised rim and the closure's pinched seams. The closure's
+mathematical and visibility tests pass, but thirteen posed foundation checks
+regress against the recorded worklist. Do not treat the source list or transfer
+design below as evidence that the female form has been accepted.
+
 The default woman drew the phallic reservoir's small key: a raised square plate with
 a nub and a frayed rim, nothing like a vulva.
 

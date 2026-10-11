@@ -1,9 +1,10 @@
 # Sculpted sources of the adult anatomy pack
 
-The adult pack's genital forms are transferred from CC0 community sculpts and one
-CC-BY 4.0 anatomical model (docs/research/ADULT-SCULPT-PLAN.md, sections 6d, 6e and
-6f). This directory holds
-each source as downloaded and the parts cut from it. It is not part of the
+The adult pack's sculpt transfers currently use CC0 community sources. A
+CC-BY 4.0 anatomical model is recorded for the planned female hood/glans transfer
+(docs/research/ADULT-SCULPT-PLAN.md, sections 6d, 6e and 6f). This directory holds
+the retained community downloads and their cuts; the table also identifies the
+NIH download whose cuts have not been retained. It is not part of the
 published package (`packs/adult-anatomy/package.json` ships `data/` only), and
 nothing the public site builds from reads it.
 
@@ -49,10 +50,12 @@ URLs the files came from.
   come out of the fit), and the majora and minora are transferred from it onto the
   skin as detail targets (ADULT-SCULPT-PLAN.md, 6f).
 - NIH 3D `3DPX-017321`: a closed anatomical sculpt of a female pelvis with the
-  perineal structures, in its own units. Only the parts cut from it are kept here
-  (the clitoral glans, the hood's separation, the vestibule's depth), with the
-  download's hash in their `cuts.json`; it is fitted to landmarks of our base. It is
-  CC-BY 4.0: the pack's licence names it, and its NOTICE carries the attribution.
+  perineal structures, in its own units. The download was recovered in the prior
+  session's private scratch directory, but no NIH cuts, `cuts.json`, landmark fit
+  or transfer implementation are retained here as of the 2026-10-11 recovery.
+  Its proposed use for the clitoral glans, hood separation and vestibule depth
+  remains planned. The reported licence is CC-BY 4.0; the existing licence and
+  NOTICE entries do not establish that this source is used by the generated pack.
 - No material (`.mhmat`) or weights (`.mhw`) file is used or kept.
 
 ## Not used, and why
