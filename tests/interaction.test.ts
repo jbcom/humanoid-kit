@@ -13,6 +13,7 @@ import {
 } from "../src/interaction/runtime.ts";
 import {
   createPresenceRegistry,
+  type FigureMeasures,
   type FigurePresence,
   type ObjectPresence,
 } from "../src/presence/presence.ts";
@@ -21,8 +22,21 @@ import { createRecipe } from "../src/recipe/recipe.ts";
 
 const v = (x = 0, y = 0, z = 0): [number, number, number] => [x, y, z];
 
-const figure = (id: string, adult: boolean, x = 0): FigurePresence => ({
+const AVERAGE: FigureMeasures = {
+  reach: 0.7,
+  shoulderHeight: 1.45,
+  hipHeight: 0.9,
+  eyeHeight: 1.58,
+};
+
+const figure = (
+  id: string,
+  adult: boolean,
+  x = 0,
+  measures: FigureMeasures = AVERAGE,
+): FigurePresence => ({
   id,
+  measures: { ...measures },
   position: v(x),
   facing: v(0, 0, 1),
   bounds: { min: v(x - 0.3, 0, -0.2), max: v(x + 0.3, 1.7, 0.2) },

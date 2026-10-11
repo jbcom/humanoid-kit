@@ -1,6 +1,7 @@
 # Interactions: how figures, objects and places act together
 
-Status: being built (2026-10-11). Slice 1's framework-free core is in
+Status: being built (2026-10-11). Presence has `measures` (reach, shoulder,
+hip and eye height; slice 2). Slice 1's framework-free core is in
 `src/interaction/` and `src/presence/presence.ts`: `ObjectPresence` and
 channels in the registry, definitions with validation and the fail-closed
 audience (`audienceOf`), offers filtered by the age policy, proposals with role

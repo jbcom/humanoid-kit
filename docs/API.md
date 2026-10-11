@@ -1097,8 +1097,14 @@ slice 1 of its build plan.
   with `left` when a participant leaves presence, and aborted with
   `age-policy` on any tick an adult definition has a participant under 18.
 - `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
-  chest, hands, feet), `footprint`, `appearance` (measured albedo, luminance,
-  specular), `faceRadius`, `adult`.
+  chest, hands, feet), `measures`, `footprint`, `appearance` (measured albedo,
+  luminance, specular), `faceRadius`, `adult`.
+- `FigureMeasures` (`measures`, metres): `reach` (shoulder to grip along the
+  arm's bones, the mean of both arms; the same in any pose), `shoulderHeight`,
+  `hipHeight` and `eyeHeight` (above the floor, as posed). `MEASURE_NAMES` lists
+  the keys. Derived with the anchors from the joint centroids, by
+  `presenceFromEvaluation` and `presenceFromPose`; `placePresence` and
+  `clonePresence` carry them.
 - `presenceFromEvaluation({ evaluation, recipe, joints, placement })`: a
   figure's presence from its evaluation. Anchors are joint centroids of the
   morphed control mesh lifted onto the ground, the footprint is the extent of
