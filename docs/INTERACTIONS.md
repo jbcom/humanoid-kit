@@ -711,16 +711,14 @@ and their decisions beside what they describe ("Decisions" in
 `docs/adr/0001` would start a second convention for one decision; this section
 follows the existing one.
 
-## Open questions for the owner
+## Owner rulings (2026-10-11)
 
-1. **Which everyday interactions are adult-only?** The age policy says the
-   general package's intimate contracts refuse under 18. A kiss on the lips, a
-   slow dance and a caress could each be `all` (a parent's kiss, a family
-   dance) or `adult`. Proposed: a romantic kiss and a caress are `adult` and
-   ship in the adult package; a cheek kiss, a hug and a dance are `all`.
-2. **Interactions between an adult and a minor in `all` definitions**: a parent
-   carrying a child, holding hands. Proposed: allowed, as the policy only
-   restricts sexual content; confirm.
+1. **Adult-only everyday interactions.** A romantic kiss and a caress are
+   `adult` and ship in the adult package; a cheek kiss, a hug and a dance are
+   `all`.
+2. **Adult and minor together in `all` definitions** (a parent carrying a
+   child, holding hands) are allowed: the policy restricts sexual content, and
+   no `all` definition may carry any.
 
 ## Build plan
 
