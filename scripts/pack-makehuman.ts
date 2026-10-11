@@ -787,7 +787,8 @@ async function main() {
     return metresPerUv[best] as number;
   };
   const islanded = placeIslands(
-    reservoirs,
+    // With each canal's closure, which `authorDetail` finds on the lattice.
+    organ.reservoirs,
     ISLAND_SIZES,
     ISLAND_LAYERS,
     Object.fromEntries(reservoirs.map((r) => [r.id, scaleAt(r.id)])),

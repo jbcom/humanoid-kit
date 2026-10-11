@@ -1680,6 +1680,34 @@ target, which leaves no footprint on the base to measure. It falls off over 4.5 
 changing by at most 40 per metre along any base edge, and an island carries it
 where its skin lies, so a woman's collapsed sac does not interrupt it.
 
+### A canal's closure (2026-10-11)
+
+The vaginal and anal openings close at the skin at rest. A closure is evaluated
+on each figure's own opening loop after its skin targets, rather than applying
+the authoring figure's displacement to a differently shaped body
+(`src/model/canalClosure.ts`). `CanalClosureSpec` records the loop's detail
+indices, its outward normal, the gap across it and an optional slit length.
+Without a specified length, the slit keeps the loop's front-to-back extent;
+with one, it shortens that extent and the depth of the skin curve in proportion.
+Both sides meet on one centreline: at each front-to-back coordinate, its depth
+is the mean of the two sides' interpolated depths. Keeping each side's original
+depth closes only the across coordinate and can leave a gap through the skin's
+normal. The centreline retains the skin's longitudinal curve.
+It never lengthens the opening. A short slit keeps a usable surface around the
+anal opening where collapsing the whole loop to a point inverted triangles.
+
+The pack computes fixed harmonic weights for the surrounding skin zone. At
+evaluation, those weights spread the loop's displacement into the zone, with
+the authored folds added there. The closure reaches its full share at a canal
+target weight of 0.1 and fades smoothly to zero as that weight reaches zero
+(`CLOSED_FROM`, a chosen transition). A zero-weight reservoir stays on the skin.
+
+`tests/canalClosure.test.ts` checks the loop and displacement contract.
+`tests/canalSight.test.ts` checks the generated pack's canal walls from below
+and front-low across six adult body variants. These checks complement the
+foundation and close-view rendering gates; they do not establish visual
+acceptance on their own.
+
 ## Scalp hair (milestone 4)
 
 **Use cases.** A creator offers a hair style and a colour beside skin and eyes,

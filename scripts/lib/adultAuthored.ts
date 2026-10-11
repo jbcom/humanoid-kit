@@ -17,6 +17,7 @@
 import type {
   AdultDetailSpec,
   AdultReservoirSpec,
+  CanalClosureSpec,
   ShapeModifierEntry,
   SliderEntry,
   SliderTask,
@@ -27,13 +28,17 @@ import {
   ANAL_CANAL,
   ANUS,
   ANUS_TARGET,
+  type CanalForm,
+  canalClosure,
   canalTarget,
+  rootClosed,
   VAGINA,
   VAGINA_TARGET,
 } from "./detail/canal.ts";
 import { skinOf } from "./detail/contact.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE, phallusTargets } from "./detail/phallus.ts";
-import { reservoirRoot } from "./detail/root.ts";
+import { displacedBy, regionIndex } from "./detail/region.ts";
+import { type ReservoirRoot, reservoirRoot } from "./detail/root.ts";
 import { scrotumTargets, TESTES_SIZE } from "./detail/scrotum.ts";
 import type { MaleParts, SculptPart } from "./detail/sculpt.ts";
 import { VULVA_SIZE, type VulvaTarget, vulvaTarget } from "./detail/vulva.ts";
@@ -222,7 +227,12 @@ export function authorDetail(
   reservoirs: readonly AdultReservoirSpec[],
   parts: MaleParts,
   vulva: SculptPart,
-): { targets: EncodedTarget[]; detail: AdultDetailSpec; vulva: VulvaTarget } {
+): {
+  targets: EncodedTarget[];
+  detail: AdultDetailSpec;
+  vulva: VulvaTarget;
+  reservoirs: AdultReservoirSpec[];
+} {
   const rootOf = (id: string) => {
     const spec = reservoirs.find((r) => r.id === id);
     if (!spec) throw new Error(`the pack has no reservoir ${id} to draw from`);
@@ -236,12 +246,58 @@ export function authorDetail(
   const organ = phallusTargets(rootOf("phallic"), parts.phallus, skin);
   const sac = scrotumTargets(rootOf("labioscrotal"), parts.scrotum, skin);
   const folds = vulvaTarget(lattice, vulva);
-  // The canals, inward: the vagina with the vulva, the anal canal on its own control.
-  const vagina = canalTarget(rootOf("vaginal"), VAGINA_TARGET, VAGINA, [`mod:${VULVA_SIZE}`]);
-  const anus = canalTarget(rootOf("anal"), ANUS_TARGET, ANUS, [`mod:${ANAL_CANAL}`]);
-  const made = [...organ.targets, ...sac.targets, folds, ...vagina.targets, ...anus.targets];
+  // The canals, inward: the vagina with the vulva, the anal canal on its own control. Each
+  // opening is closed at the skin on every figure (`canalClosure`, evaluated by
+  // `closureDisplacement`), and the canal's rings leave from the closed loop. The vagina
+  // is drawn on the skin as the vulva's folds leave it: both on the vulva's control.
+  const regionOf = regionIndex(lattice);
+  const roots = new Map(reservoirs.map((r) => [r.id, reservoirRoot(lattice, r)]));
+  /** Every other reservoir's loop and cap, and this one's cap: the skin a closure leaves. */
+  const heldFor = (id: string) => {
+    const held = new Set<number>();
+    for (const r of reservoirs) {
+      const root = roots.get(r.id) as ReservoirRoot;
+      for (const c of root.cap) held.add(c.index);
+      if (r.id !== id) for (const v of r.loop) held.add(regionOf.get(v) as number);
+    }
+    return held;
+  };
+  const closedCanal = (
+    id: string,
+    on: AdultDetailLattice,
+    form: CanalForm,
+    target: string,
+    factor: string,
+  ) => {
+    const spec = reservoirs.find((r) => r.id === id) as AdultReservoirSpec;
+    const root = reservoirRoot(on, spec);
+    const loopRegion = spec.loop.map((v) => regionOf.get(v) as number);
+    return {
+      closure: canalClosure(on, root, loopRegion, form.closure, heldFor(id), target),
+      canal: canalTarget(root, target, form, [factor], rootClosed(root, form.closure)),
+    };
+  };
+  const withFolds = displacedBy(lattice, folds);
+  const vagina = closedCanal("vaginal", withFolds, VAGINA, VAGINA_TARGET, `mod:${VULVA_SIZE}`);
+  const anus = closedCanal("anal", lattice, ANUS, ANUS_TARGET, `mod:${ANAL_CANAL}`);
+  const closures: Record<string, CanalClosureSpec> = {
+    vaginal: vagina.closure,
+    anal: anus.closure,
+  };
+  const made = [
+    ...organ.targets,
+    ...sac.targets,
+    folds,
+    ...vagina.canal.targets,
+    ...anus.canal.targets,
+  ];
   return {
     vulva: folds,
+    // The reservoirs with each canal's closure, which the lattice was needed for.
+    reservoirs: reservoirs.map((r) => {
+      const closure = closures[r.id];
+      return closure && r.canal ? { ...r, canal: { ...r.canal, closure } } : r;
+    }),
     targets: made.map((t) => encodeSparseTarget(t.name, t.indices, t.xyz)),
     detail: {
       targets: made.map((t) => t.name),
@@ -254,8 +310,8 @@ export function authorDetail(
         ...organ.drives,
         ...sac.drives,
         [folds.name]: [`mod:${VULVA_SIZE}`],
-        ...vagina.drives,
-        ...anus.drives,
+        ...vagina.canal.drives,
+        ...anus.canal.drives,
       },
     },
   };

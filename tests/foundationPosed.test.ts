@@ -98,6 +98,16 @@ describe("the posed body", () => {
       const at = (v: number) => [0, 1, 2].map((k) => body.rest[v * 3 + k]).join(",");
       for (let v = 0; v < body.vertexCount; v++)
         if (body.weld[v] !== v) expect(at(v)).toBe(at(body.weld[v] as number));
+      if (body.surface !== "adult") continue;
+      // A closed canal's two lips meet at rest, and are not one vertex: posed, they part.
+      const first = new Map<string, number>();
+      let meeting = 0;
+      for (let v = 0; v < body.vertexCount; v++) {
+        const w = first.get(at(v));
+        if (w === undefined) first.set(at(v), v);
+        else if (body.weld[v] !== body.weld[w]) meeting++;
+      }
+      expect(meeting).toBeGreaterThan(0);
     }
   });
 });

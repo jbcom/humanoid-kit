@@ -529,6 +529,31 @@ export interface AdultCoatRegionSpec {
 }
 
 /** A reservoir (`Reservoir` in src/build/reservoir.ts) with the id detail refers to it by. */
+/**
+ * A canal's opening closed at the skin, evaluated on each figure
+ * (`src/model/canalClosure.ts`): its loop moved onto the closed shape, the skin
+ * round it by fixed weights on the loop's displacements, and any radial folds.
+ */
+export interface CanalClosureSpec {
+  /** The detail target of the canal: its weight is how far the opening is closed (`closureShare`). */
+  target: string;
+  /** What is left open across the slit it closes to, metres. */
+  gap: number;
+  /** The slit's length front to back, metres; absent, the loop's own (`closedLoop`). */
+  length?: number;
+  /** The skin's outward normal over the opening on the authoring figure: the closure's frame. */
+  normal: [number, number, number];
+  /** The loop's region (detail) indices, in the spec's loop order. */
+  loopRegion: number[];
+  /** The zone round the loop, region indices; each one's weights on the loop's places, CSR (`zoneStart`, `zoneLoop`, `zoneWeight`). */
+  zone: number[];
+  zoneStart: number[];
+  zoneLoop: number[];
+  zoneWeight: number[];
+  /** Radial folds round the opening (the anus's): a displacement of region vertices, metres, at full closure. */
+  folds?: { indices: number[]; xyz: number[] };
+}
+
 export interface AdultReservoirSpec {
   id: string;
   /** Vertices of the refinement mesh round the cap, in order. */
@@ -559,9 +584,11 @@ export interface AdultReservoirSpec {
    * along it, is how far in its opening closes into its lumen. Its vertices take
    * their root's weights over that length (`rootShares`), not over an organ's band.
    * `gap`, metres, is its closed lumen's: its walls that close lie in contact, not
-   * in each other (the invariants' lumen self-contact).
+   * in each other (the invariants' lumen self-contact). `closure` closes its opening
+   * at the skin on each figure; the pack's generator adds it once the detail lattice
+   * is known, and an opening without one is left open.
    */
-  canal?: { opening: number; gap: number };
+  canal?: { opening: number; gap: number; closure?: CanalClosureSpec };
 }
 
 /**

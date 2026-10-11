@@ -32,12 +32,26 @@ export const RESERVOIR_RINGS = { phallic: 32, labioscrotal: 16, vaginal: 16, ana
  * The canals' openings on the skin (`detail/canal.ts`): the disc round each landmark
  * (`PlacedVulva`), as an ellipsoid's semi-axes (x across, y up, z front to back),
  * metres. The vagina's opening is the introitus, 28 mm long by Kreklau's mean, its
- * disc 24 by 12 mm inside the vestibule; the anus's a 12 mm disc.
+ * disc 24 mm long and 4 mm across inside the vestibule; the anus's a 4 mm disc. Each is
+ * closed at the skin (`canalClosure`), gathered across by its own width: 12 mm wide, the
+ * gather stretched the skin round it into slivers (within 15 mm of the anus, triangles
+ * under 5° from 165 to 322, m-muscular seated) that turned over in the pose. A disc
+ * this narrow keeps no polygon inside its band (lattice edges are 1.6 to 2 mm here), so
+ * its cap is a fan to a centre (`smoothLoopPatch`), and its loop keeps the vertices
+ * round it the canal needs (`CANAL_SAMPLES`).
  */
 const CANAL_DISCS = {
-  vaginal: [0.006, 0.03, 0.012],
-  anal: [0.006, 0.03, 0.006],
+  vaginal: [0.002, 0.03, 0.012],
+  anal: [0.002, 0.03, 0.002],
 } as const satisfies Record<string, Vec3>;
+
+/**
+ * Vertices round each canal's loop: the vagina's lumen widens to 45 mm, the anal canal's is a
+ * 3 mm tube (half a millimetre apart round it). At 60 round the anus's 4 mm opening, the
+ * strip from the skin's coarse staircase to the loop fanned into slivers that turned over
+ * in the pose (m-heavy seated, 14 more inverted round it).
+ */
+const CANAL_SAMPLES = { vaginal: 64, anal: 20 } as const;
 
 /** How far behind its cut's centre, along its axis, a part's skin may lie, metres. */
 const FOOTPRINT_DEPTH = 0.03;
@@ -134,9 +148,14 @@ export function reservoirLayout(
   const vaginal = smoothLoopPatch(
     withSac,
     canalDisc(withSac, openings.introitus, CANAL_DISCS.vaginal),
+    CANAL_SAMPLES.vaginal,
   );
   const withVagina = patched([shaft.patch, sac.patch, vaginal.patch]);
-  const anal = smoothLoopPatch(withVagina, canalDisc(withVagina, openings.anus, CANAL_DISCS.anal));
+  const anal = smoothLoopPatch(
+    withVagina,
+    canalDisc(withVagina, openings.anus, CANAL_DISCS.anal),
+    CANAL_SAMPLES.anal,
+  );
   const patches = [shaft.patch, sac.patch, vaginal.patch, anal.patch];
   const on = patched(patches);
   const spec = (

@@ -77,6 +77,7 @@ import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/regions/hands/index.ts";
 import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
 import { areolaStretch } from "../surface/regions/torso.ts";
+import { closureDisplacement, closureShare } from "./canalClosure.ts";
 import {
   carriedDetail,
   latticePositions,
@@ -1829,11 +1830,13 @@ export class HumanoidModel {
     const skinTargets = new Set(this.assets.adultAnatomyManifest?.anatomy?.detail?.skin ?? []);
     const organ = { indices: [] as number[], xyz: [] as number[] };
     const skin = { indices: [] as number[], xyz: [] as number[] };
+    const weightOf = new Map<string, number>();
     for (const c of detail) {
       if (typeof c.weight !== "number")
         throw new MorphError(`detail target ${c.target} cannot be weighted by region`);
       const t = this.assets.targets.get(c.target);
       if (!t) throw new MorphError(`unknown detail target ${c.target}`);
+      weightOf.set(c.target, (weightOf.get(c.target) ?? 0) + c.weight);
       const into = skinTargets.has(c.target) ? skin : organ;
       const w = c.weight * t.scale * figure;
       for (let i = 0; i < t.indices.length; i++) {
@@ -1845,6 +1848,8 @@ export class HumanoidModel {
         );
       }
     }
+    // Each canal's opening closed at the skin on this figure, after the skin's own targets.
+    this.closeCanals(weightOf, skin, control);
     if (!organ.indices.length && !skin.indices.length) return undefined;
     const ofSkin = skin.indices.length
       ? { skin: { indices: skin.indices, xyz: Float32Array.from(skin.xyz) } }
@@ -1874,6 +1879,46 @@ export class HumanoidModel {
       ),
       ...(ofSkin.skin && { skin: skinUnderOrgans(ofSkin.skin, displaced, carried.carriages) }),
     };
+  }
+
+  /**
+   * Adds to `skin` (region indices, xyz) each canal's closure (`closureDisplacement`):
+   * its loop on this figure, from `control` through the lattice's stencil plus what
+   * `skin` already moves it by, closed in place, as far as its target's weight in
+   * `weightOf` gives (`closureShare`).
+   */
+  private closeCanals(
+    weightOf: ReadonlyMap<string, number>,
+    skin: { indices: number[]; xyz: number[] },
+    control: Float32Array,
+  ): void {
+    const lattice = this.adultBodySurface()?.part.mesh.lattice;
+    if (!lattice) return;
+    for (const r of this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? []) {
+      const closure = r.canal?.closure;
+      if (!closure) continue;
+      const share = closureShare(weightOf.get(closure.target) ?? 0);
+      if (share <= 0) continue;
+      const moved = new Map<number, [number, number, number]>();
+      for (const v of closure.loopRegion) moved.set(v, [0, 0, 0]);
+      skin.indices.forEach((v, i) => {
+        const d = moved.get(v);
+        if (!d) return;
+        for (let k = 0; k < 3; k++) d[k] = (d[k] as number) + (skin.xyz[i * 3 + k] as number);
+      });
+      const at = latticePositions(lattice.stencil, control, r.loop);
+      const loopNow = closure.loopRegion.map((v, i) => {
+        const d = moved.get(v) as [number, number, number];
+        return [
+          (at[i * 3] as number) + d[0],
+          (at[i * 3 + 1] as number) + d[1],
+          (at[i * 3 + 2] as number) + d[2],
+        ] as const;
+      });
+      const add = closureDisplacement(closure, loopNow, share);
+      skin.indices.push(...add.indices);
+      skin.xyz.push(...add.xyz);
+    }
   }
 
   /**

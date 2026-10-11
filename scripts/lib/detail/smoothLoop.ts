@@ -310,10 +310,18 @@ function strip(
   return out;
 }
 
-/** A patch for the footprint `disc` on `lattice`: its new loop (new vertex ids) and the cap's vertices inside it. */
+/**
+ * A patch for the footprint `disc` on `lattice`: its new loop (new vertex ids) and the
+ * cap's vertices inside it. The loop has `samples` vertices, by default one per old loop
+ * vertex. A footprint too small to keep any polygon inside its band (a canal's opening,
+ * a few millimetres across, closed at the skin by a gather of no more than its own
+ * width) gets one new vertex at the disc's centre, and the cap is the fan from the loop
+ * to it.
+ */
 export function smoothLoopPatch(
   lattice: Pick<AdultDetailLattice, "polygons" | "latticePositions" | "uvCount">,
   disc: Disc,
+  samples: number = disc.loop.length,
 ): { patch: AdultSurfacePatch; loop: number[]; capVertices: number[] } {
   const L = lattice.polygons;
   const P = lattice.latticePositions;
@@ -341,7 +349,8 @@ export function smoothLoopPatch(
     else continue;
     region.push(p);
   }
-  if (!inside.length) throw new Error("smooth loop: the footprint has no polygons inside its band");
+  // No polygon inside the band: the cap is a fan to a new vertex at the disc's centre.
+  const centred = inside.length === 0;
   // The region's UV charts: polygons joined across an edge whose two ends have the same
   // UV entries on both sides. A region on the midline of the crotch crosses the seam
   // between the body's halves, so a vertex on it has an entry in each chart.
@@ -440,16 +449,20 @@ export function smoothLoopPatch(
     return a < 0 ? a + 2 * Math.PI : a;
   };
   const radiusOf = (v: number) => Math.hypot(...discOf(v));
-  // The staircase inside the band, the boundary of the polygons kept in the cap.
-  const innerStair = boundaryOf(inside.map(corners));
-  // The new loop: one vertex per old one, at even angles, at the old loop's radius
-  // averaged over the angles near it, kept clear of both staircases.
-  const n = disc.loop.length;
+  // The staircase inside the band, the boundary of the polygons kept in the cap; for a
+  // centred cap, its centre.
+  const innerStair = centred ? [] : boundaryOf(inside.map(corners));
+  const innerPolar: Polar[] = centred
+    ? [{ a: 0, r: 0 }]
+    : innerStair.map((v) => ({ a: angleOf(v), r: radiusOf(v) }));
+  // The new loop: `samples` vertices at even angles, at the old loop's radius averaged
+  // over the angles near it, kept clear of both staircases.
+  const n = samples;
   const old = disc.loop.map((v) => ({ a: angleOf(v), r: radiusOf(v) }));
   const angles = Array.from({ length: n }, (_, j) => (2 * Math.PI * (j + 0.5)) / n);
   const bounds = loopBounds(
     angles,
-    innerStair.map((v) => ({ a: angleOf(v), r: radiusOf(v) })),
+    innerPolar,
     outer.map((v) => ({ a: angleOf(v), r: radiusOf(v) })),
   );
   const radii = angles.map((angle, j) => {
@@ -509,6 +522,8 @@ export function smoothLoopPatch(
     triangles.length / 3,
     (t, k) => at(ids[triangles[t * 3 + k] as number] as number),
   );
+  // A centred cap's centre: new vertex `n`, after the loop's, where the disc's centre falls.
+  if (centred) onRegion.push(locate(0, 0));
   const discPlaces = onRegion.map(({ tri, w }): [number, number] => {
     let x = 0;
     let y = 0;
@@ -525,9 +540,8 @@ export function smoothLoopPatch(
     return a < 0 ? a + 2 * Math.PI : a;
   };
   // The faired loop must still run round the disc in order, strictly between the staircases.
-  const innerPolar = innerStair.map((v) => ({ a: angleOf(v), r: radiusOf(v) }));
   const outerPolar = outer.map((v) => ({ a: angleOf(v), r: radiusOf(v) }));
-  discPlaces.forEach(([x, y], j) => {
+  discPlaces.slice(0, n).forEach(([x, y], j) => {
     const a = loopAngle(j);
     const r = Math.hypot(x, y);
     if (!(r > radiusOn(innerPolar, a) && r < radiusOn(outerPolar, a)))
@@ -541,7 +555,8 @@ export function smoothLoopPatch(
   const uvs: AdultSurfacePatch["uvs"] = [];
   const base = P.length / 3;
   // Six decimals: a micrometre on a ten-centimetre triangle.
-  const round6 = (w: readonly number[]) => w.map((x) => Math.round(x * 1e6) / 1e6);
+  // `|| 0`: a weight rounding to minus zero is zero, as the manifest's JSON writes it.
+  const round6 = (w: readonly number[]) => w.map((x) => Math.round(x * 1e6) / 1e6 || 0);
   for (const { tri, w } of onRegion) {
     const c = [0, 1, 2].map((k) => ids[triangles[tri * 3 + k] as number] as number);
     vertices.push({ from: c, weights: round6(w) });
@@ -654,6 +669,18 @@ export function smoothLoopPatch(
   const distance = (a: number, b: number) => len(where(a), where(b));
   for (const tri of strip(outer, (i) => angleOf(outer[i] as number), loop, loopAngle, distance))
     addPolygon(tri);
+  if (centred) {
+    // The fan from the loop to the centre, wound as the strip winds ([outer, next, inner]).
+    const centre = base + n;
+    loop.forEach((v, j) => {
+      addPolygon([v, loop[(j + 1) % n] as number, centre]);
+    });
+    return {
+      patch: { remove: band.map((p) => L.id[p] as number), vertices, uvs, polygons },
+      loop,
+      capVertices: [centre],
+    };
+  }
   for (const tri of strip(
     loop,
     loopAngle,
