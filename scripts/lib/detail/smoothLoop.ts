@@ -342,15 +342,57 @@ export function smoothLoopPatch(
     region.push(p);
   }
   if (!inside.length) throw new Error("smooth loop: the footprint has no polygons inside its band");
-  // Each vertex's UV entry in the region; a region over a UV seam has two at a vertex and is refused.
-  const uvOf = new Map<number, number>();
+  // The region's UV charts: polygons joined across an edge whose two ends have the same
+  // UV entries on both sides. A region on the midline of the crotch crosses the seam
+  // between the body's halves, so a vertex on it has an entry in each chart.
+  const chartOf = new Map<number, number>();
+  {
+    const edgeUv = new Map<string, { p: number; a: number; b: number }[]>();
+    for (const p of region) {
+      const c = corners(p);
+      const u = cornerUvs(p);
+      c.forEach((v, k) => {
+        const w = c[(k + 1) % c.length] as number;
+        const key = v < w ? `${v}:${w}` : `${w}:${v}`;
+        const uvA = (v < w ? u[k] : u[(k + 1) % c.length]) as number;
+        const uvB = (v < w ? u[(k + 1) % c.length] : u[k]) as number;
+        const list = edgeUv.get(key);
+        if (list) list.push({ p, a: uvA, b: uvB });
+        else edgeUv.set(key, [{ p, a: uvA, b: uvB }]);
+      });
+    }
+    const joined = new Map<number, number[]>();
+    for (const list of edgeUv.values())
+      for (const x of list)
+        for (const y of list)
+          if (x.p !== y.p && x.a === y.a && x.b === y.b)
+            joined.set(x.p, [...(joined.get(x.p) ?? []), y.p]);
+    let charts = 0;
+    for (const p of region) {
+      if (chartOf.has(p)) continue;
+      const stack = [p];
+      chartOf.set(p, charts);
+      while (stack.length) {
+        const q = stack.pop() as number;
+        for (const r of joined.get(q) ?? [])
+          if (!chartOf.has(r)) {
+            chartOf.set(r, charts);
+            stack.push(r);
+          }
+      }
+      charts++;
+    }
+  }
+  /** Each vertex's UV entry in each chart it is in. */
+  const uvIn = new Map<string, number>();
+  const chartsOfVertex = new Map<number, Set<number>>();
   for (const p of region)
     corners(p).forEach((v, k) => {
-      const uv = cornerUvs(p)[k] as number;
-      const had = uvOf.get(v);
-      if (had !== undefined && had !== uv)
-        throw new Error(`smooth loop: the region crosses a UV seam at vertex ${v}`);
-      uvOf.set(v, uv);
+      const chart = chartOf.get(p) as number;
+      uvIn.set(`${v}:${chart}`, cornerUvs(p)[k] as number);
+      const s = chartsOfVertex.get(v) ?? new Set<number>();
+      s.add(chart);
+      chartsOfVertex.set(v, s);
     });
   // The region's surface, fanned into triangles, and its map to the disc.
   const local = new Map<number, number>();
@@ -498,15 +540,83 @@ export function smoothLoopPatch(
   const vertices: AdultSurfacePatch["vertices"] = [];
   const uvs: AdultSurfacePatch["uvs"] = [];
   const base = P.length / 3;
+  // Six decimals: a micrometre on a ten-centimetre triangle.
+  const round6 = (w: readonly number[]) => w.map((x) => Math.round(x * 1e6) / 1e6);
   for (const { tri, w } of onRegion) {
     const c = [0, 1, 2].map((k) => ids[triangles[tri * 3 + k] as number] as number);
-    // Six decimals: a micrometre on a ten-centimetre triangle.
-    const weights = w.map((x) => Math.round(x * 1e6) / 1e6);
-    vertices.push({ from: c, weights });
-    uvs.push({ from: c.map((v) => uvOf.get(v) as number), weights });
+    vertices.push({ from: c, weights: round6(w) });
   }
   const loop = angles.map((_, j) => base + j);
-  const loopUv = (v: number) => lattice.uvCount + (v - base);
+  /**
+   * A loop vertex's UV entry in a chart, made when first asked for: the combination of
+   * the UVs of the triangle it lies on, in its own chart; in the chart across a seam,
+   * of the triangle of that chart nearest its place in the disc, extended past its edge
+   * (the weights stay affine), so a polygon across the seam reads one chart's UVs.
+   */
+  const loopUvs = new Map<string, number>();
+  const loopUv = (v: number, chart: number): number => {
+    const j = v - base;
+    const key = `${j}:${chart}`;
+    const had = loopUvs.get(key);
+    if (had !== undefined) return had;
+    const { tri, w } = onRegion[j] as { tri: number; w: number[] };
+    let from: number[];
+    let weights: number[];
+    if (chartOf.get(triPolygon[tri] as number) === chart) {
+      from = [0, 1, 2].map((k) => ids[triangles[tri * 3 + k] as number] as number);
+      weights = w;
+    } else {
+      const [x, y] = discPlaces[j] as [number, number];
+      let best = -1;
+      let bestW: number[] = [];
+      let bestOut = Number.POSITIVE_INFINITY;
+      for (let t = 0; t < triangles.length / 3; t++) {
+        if (chartOf.get(triPolygon[t] as number) !== chart) continue;
+        const [a, b, c] = [0, 1, 2].map((k) => triangles[t * 3 + k] as number) as [
+          number,
+          number,
+          number,
+        ];
+        const ax = uv[a * 2] as number;
+        const ay = uv[a * 2 + 1] as number;
+        const v0x = (uv[b * 2] as number) - ax;
+        const v0y = (uv[b * 2 + 1] as number) - ay;
+        const v1x = (uv[c * 2] as number) - ax;
+        const v1y = (uv[c * 2 + 1] as number) - ay;
+        const den = v0x * v1y - v1x * v0y;
+        const s = ((x - ax) * v1y - v1x * (y - ay)) / den;
+        const r = (v0x * (y - ay) - (x - ax) * v0y) / den;
+        const ww = [1 - s - r, s, r];
+        const out = -Math.min(...ww);
+        if (out < bestOut) {
+          bestOut = out;
+          best = t;
+          bestW = ww;
+        }
+      }
+      if (best < 0) throw new Error(`smooth loop: no triangle in chart ${chart}`);
+      from = [0, 1, 2].map((k) => ids[triangles[best * 3 + k] as number] as number);
+      weights = bestW;
+    }
+    uvs.push({
+      from: from.map((u) => uvIn.get(`${u}:${chart}`) as number),
+      weights: round6(weights),
+    });
+    const index = lattice.uvCount + uvs.length - 1;
+    loopUvs.set(key, index);
+    return index;
+  };
+  // Each loop vertex's entry in its own chart first, in loop order: a patch on one chart
+  // gets the same UV entries, in the same order, as before charts were told apart.
+  for (const v of loop)
+    loopUv(
+      v,
+      chartOf.get(triPolygon[(onRegion[v - base] as { tri: number }).tri] as number) as number,
+    );
+  /** An old vertex's UV entry in a chart, or in its own when it has none in that one. */
+  const oldUv = (v: number, chart: number) =>
+    uvIn.get(`${v}:${chart}`) ??
+    (uvIn.get(`${v}:${[...(chartsOfVertex.get(v) ?? [])][0]}`) as number);
   /** A new polygon, owned by the band polygon under its centre in the disc. */
   const polygons: AdultSurfacePatch["polygons"] = [];
   const place = (v: number): [number, number] => {
@@ -518,12 +628,18 @@ export function smoothLoopPatch(
     const pts = vs.map(place);
     const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
     const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
-    let owner = triPolygon[locate(cx, cy).tri] as number;
+    const under = triPolygon[locate(cx, cy).tri] as number;
     // A centre in a kept polygon (a strip's corner reaching round it) is owned by a band polygon beside it.
-    if (!bandSet.has(owner)) owner = band[0] as number;
+    const owner = bandSet.has(under) ? under : (band[0] as number);
+    // Its UVs are one chart's: the one every old corner is in, else the chart under its centre.
+    const olds = vs.filter((v) => v < base);
+    const chart =
+      [...new Set(olds.flatMap((v) => [...(chartsOfVertex.get(v) ?? [])]))].find((c) =>
+        olds.every((v) => chartsOfVertex.get(v)?.has(c)),
+      ) ?? (chartOf.get(under) as number);
     polygons.push({
       vertices: vs,
-      uvs: vs.map((v) => (v >= base ? loopUv(v) : (uvOf.get(v) as number))),
+      uvs: vs.map((v) => (v >= base ? loopUv(v, chart) : oldUv(v, chart))),
       of: L.id[owner] as number,
     });
   };
