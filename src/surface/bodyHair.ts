@@ -14,7 +14,7 @@
  * and the legs' (owner ruling 2026-10-11).
  */
 import { ADULT_AGE } from "../makehuman/macro.ts";
-import type { HairColour } from "./hairTone.ts";
+import { ageGrey, type HairColour } from "./hairTone.ts";
 import type { Rgb } from "./skinTone.ts";
 
 /** The region groups a recipe can set a density for, after the Ferriman-Gallwey regions. */
@@ -130,22 +130,11 @@ export const BODY_HAIR_FIBRE: Readonly<
   pubic: { eumelanin: 0.12, greyLag: 12, diameter: 100e-6, length: 0.025 },
 };
 
-/**
- * The fraction of grey fibres by age: a smoothstep from 35 to 95 years, which
- * gives 26 % at 55, the middle of Panhard et al. 2012's 45 to 65 cohort (mean
- * intensity 27 %), and 98 % at 90. A fit, not a curve they publish.
- */
-export const GREY_ONSET = 35;
-export const GREY_FULL = 95;
-
 const unit = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const smoothstep = (lo: number, hi: number, x: number) => {
   const t = unit((x - lo) / (hi - lo));
   return t * t * (3 - 2 * t);
 };
-
-/** The fraction of grey fibres at this age from ageing alone. */
-export const ageGrey = (age: number): number => smoothstep(GREY_ONSET, GREY_FULL, age);
 
 /**
  * A group's default coverage (0..1) for an age and androgen level, before the

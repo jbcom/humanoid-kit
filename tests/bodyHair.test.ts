@@ -2,7 +2,6 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   ADULT_ONLY_BODY_HAIR,
-  ageGrey,
   BODY_HAIR_GROUPS,
   type BodyHairInput,
   beardStyle,
@@ -11,7 +10,12 @@ import {
   DEFAULT_BEARD,
   defaultBodyHairCoverage,
 } from "../src/surface/bodyHair.ts";
-import { DEFAULT_HAIR_COLOUR, HAIR_COLOURS, type HairColour } from "../src/surface/hairTone.ts";
+import {
+  ageGrey,
+  DEFAULT_HAIR_COLOUR,
+  HAIR_COLOURS,
+  type HairColour,
+} from "../src/surface/hairTone.ts";
 
 const input = (age: number, gender: number, extra: Partial<BodyHairInput> = {}): BodyHairInput => ({
   age,

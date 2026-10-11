@@ -622,7 +622,12 @@ compute what the renderer will do.
   colours are measured and which modelled). `HAIR_COLOURS` names twelve natural colours as pigment
   values (`black` to `white`), `DEFAULT_HAIR_COLOUR` is `brown`, and
   `hairTint(colour)` is the material colour that makes a packed strand map
-  (mean `HAIR_STRAND_MEAN`) render as that albedo.
+  (mean `HAIR_STRAND_MEAN`) render as that albedo. `ageGrey(age)` is the
+  fraction of grey fibres from ageing alone (a smoothstep from `GREY_ONSET` 35 to
+  `GREY_FULL` 95), and `agedHairColour(colour, age, part)` the colour a head part
+  (`scalp`, `brows`, `lashes`) wears by default: at least as grey as
+  `ageGrey(age − GREY_LAG[part])`, the recipe's grey a floor and an override
+  kept. `<Humanoid>` draws the hair, the scalp, the brows and the lashes with it.
 - Body hair (research/BODY-HAIR.md): `BODY_HAIR_GROUPS` (`face`, `chest`,
   `abdomen`, `back`, `buttocks`, `arms`, `legs`, `axillary` (from puberty, 13),
   and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`),
