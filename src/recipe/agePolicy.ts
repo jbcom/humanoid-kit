@@ -12,9 +12,10 @@
  * 18 or over. A recipe that sets any of them for a younger figure is invalid;
  * it is rejected, never silently clamped, so a mistake cannot be hidden.
  *
- * Axillary and pubic hair follow the same line: a recipe under 18 may not set
- * their density (`recipe.bodyHair.density`) to anything but 0, and the body
- * hair model draws none of them for a figure that is not an adult.
+ * Pubic hair follows the same line: a recipe under 18 may not set its density
+ * (`recipe.bodyHair.density`) to anything but 0, and the body hair model draws
+ * none for a figure that is not an adult. Axillary hair is puberty's, not the
+ * policy's: it comes in from 13 like facial and limb hair.
  */
 import { ADULT_AGE } from "../makehuman/macro.ts";
 import { ADULT_ONLY_BODY_HAIR, isAdultOnlyBodyHair } from "../surface/bodyHair.ts";

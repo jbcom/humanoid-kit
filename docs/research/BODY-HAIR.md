@@ -29,7 +29,7 @@ coverage value directly: **coverage = score / 4**.
 The kit's region groups follow the FG regions, merged to what a picker can
 offer: `face` (upper lip, chin, sideburns), `chest`, `abdomen` (upper and lower,
 the linea), `back` (upper and lower), `buttocks`, `arms` (upper arm, forearm),
-`legs` (thigh, lower leg), and the adult-only `axillary` and `pubic`.
+`legs` (thigh, lower leg), `axillary`, and the adult-only `pubic`.
 
 The scores per group at maturity (`BODY_HAIR_COVERAGE`), at both ends of the
 androgen axis, are **choices** read off the FG scale's own descriptions: the
@@ -63,10 +63,12 @@ still.
 
 The kit's ramps (`BODY_HAIR_MATURITY`, a smoothstep from onset to full) are
 **choices** placed on those ages: legs and arms 11 to 20, face 13 to 25, chest
-and abdomen 15 to 35, back and buttocks 18 to 45. Axillary and pubic hair are
-**adult-only under the kit's age policy** (`src/recipe/agePolicy.ts`), so their
-ramps would start before 18 but nothing of them is drawn below it: the gate is
-the policy's line, not the biology's.
+and abdomen 15 to 35, back and buttocks 18 to 45, axillary 13 to 18 (the
+middle of the axillary stage 2 means above; the owner's "around 13",
+2026-10-11). Pubic hair is **adult-only under the kit's age policy**
+(`src/recipe/agePolicy.ts`), so its ramp would start before 18 but nothing of
+it is drawn below it: that gate is the policy's line, not the biology's.
+Axillary hair is not sexual content and follows the biology.
 
 **Old age** (`BODY_HAIR_SENESCENCE`): terminal hair on the limbs and trunk
 thins in old age, the lower legs most. The size is a **choice**: limbs and

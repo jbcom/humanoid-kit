@@ -210,9 +210,10 @@ Under 18:
   clamped, so a mistake cannot be hidden;
 - adult-only targets are not in the body pack at all; the adult anatomy pack's
   modifiers are adult-only, so a recipe under 18 that sets one is rejected;
-- axillary and pubic hair are adult-only: a recipe under 18 whose
-  `bodyHair.density` sets either to anything but 0 is rejected, and the body
-  hair model draws neither for a figure that is not an adult (see "Body hair");
+- pubic hair is adult-only: a recipe under 18 whose `bodyHair.density` sets it
+  to anything but 0 is rejected, and the body hair model draws none for a
+  figure that is not an adult (see "Body hair"). Axillary hair is puberty's,
+  not the policy's: it comes in from 13 (owner ruling 2026-10-11);
 - a piercing may only be at one of the body's own sites (`PIERCING_SITES`):
   any other is the adult pack's and adult-only (`ADULT_ONLY_PIERCING`, "Body
   art").
@@ -220,7 +221,7 @@ Under 18:
 The policy is enforced inside `recipeContributions`, so no caller can evaluate
 an invalid recipe by skipping validation. `withAge(recipe, age)` returns a copy
 at a new age; moving below 18 explicitly removes the adult-only values (adult
-modifiers, axillary and pubic densities, and adult-only piercings) and leaves
+modifiers, the pubic density, and adult-only piercings) and leaves
 the input untouched.
 
 An adult-only modifier id that is not loaded (the adult pack is absent) fails
@@ -2177,10 +2178,10 @@ Old recipes evaluate and serialise as before.
   the recipe's multipliers; and what colour (the figure's hair pigments, darker
   on the face and pubis, lighter on the limbs, greyed with age later on the
   body than the beard). The groups follow the modified FG regions, merged to
-  what a picker offers: face, chest, abdomen, back, buttocks, arms, legs, and the
-  adult-only axillary and pubic.
+  what a picker offers: face, chest, abdomen, back, buttocks, arms, legs,
+  axillary, and the adult-only pubic.
 - *Adult-only groups are gated in the model itself.* `defaultBodyHairCoverage`
-  returns 0 for axillary and pubic hair unless the age is an adult's (`age >=
+  returns 0 for pubic hair unless the age is an adult's (`age >=
   ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
   scales the default, so no recipe value can add them under 18.
 - *The recipe holds multipliers, not densities.* `recipe.bodyHair` is optional
@@ -2262,7 +2263,8 @@ Old recipes evaluate and serialise as before.
   layers crowd the atlas.
 - *The beard defaults to none.* Clean-shaven is the neutral recipe; terminal
   body hair and vellus are on by default for age and sex.
-- *Axillary hair is an adult-only coat region; pubic hair is the adult pack's.*
+- *Axillary hair is a coat region that comes with puberty (from 13); pubic hair
+  is the adult pack's.*
   The armpit's hair is dense and a couple of centimetres long, so it is the
   coat's; its mask comes from the base mesh, so the region lives in the core,
   where a region flag, `adultOnly`, makes `paintCoat` leave it unpainted, without

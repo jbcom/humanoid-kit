@@ -101,8 +101,8 @@ export interface Recipe {
    * Body hair: per region group a multiplier on the default for the figure's age
    * and sex, and a beard style. Optional: absent is the default for age and sex
    * (`bodyHairCoverage`, `beardStyle`), so recipes saved before body hair
-   * existed are unchanged. Axillary and pubic densities are adult-only (the age
-   * policy refuses them under 18).
+   * existed are unchanged. The pubic density is adult-only (the age policy
+   * refuses it under 18).
    */
   bodyHair?: BodyHairRecipe;
   /**
