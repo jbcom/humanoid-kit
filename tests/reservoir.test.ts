@@ -180,13 +180,11 @@ describe("reservoirs on the refined surface", { timeout: 600_000 }, () => {
     expect(owners).toBeLessThanOrEqual(chain);
   });
 
-  it("extrudes into a watertight tube: the rings follow the pull and the cap rides on the last", () => {
-    const mesh = withReservoir(1);
+  /** The test reservoir pulled `height` along z: ring j of 3 j/3 of the way, the cap's own vertices all of it. */
+  const extrusion = (mesh: SurfaceMesh, height: number) => {
     const lattice = mesh.lattice as NonNullable<SurfaceMesh["lattice"]>;
-    const r = lattice.reservoirs[0] as (typeof lattice.reservoirs)[number];
+    const r = firstReservoir(mesh);
     const n = r.loop.length;
-    const height = 0.03;
-    // Ring j (1..3) moves j/3 of the way; the cap's own vertices move the full height.
     const d = disc(0.012);
     const capVertices = new Set<number>();
     const polygons = lattice.polygons;
@@ -209,7 +207,14 @@ describe("reservoirs on the refined surface", { timeout: 600_000 }, () => {
         xyz.push(0, 0, height);
       }
     });
-    const at = evaluate(mesh, { indices, xyz: Float32Array.from(xyz) });
+    return { indices, xyz: Float32Array.from(xyz) };
+  };
+
+  it("extrudes into a watertight tube: the rings follow the pull and the cap rides on the last", () => {
+    const mesh = withReservoir(1);
+    const n = firstReservoir(mesh).loop.length;
+    const height = 0.03;
+    const at = evaluate(mesh, extrusion(mesh, height));
     const rest = evaluate(mesh);
     // The loop vertices themselves have not moved; the last ring has moved the full height.
     let moved = 0;
@@ -242,6 +247,27 @@ describe("reservoirs on the refined surface", { timeout: 600_000 }, () => {
     // The wall is no longer collapsed: the strips now have area.
     const tri = triangles(mesh, at.positions);
     expect(tri.degenerate).toBeLessThan(triangles(mesh, rest.positions).degenerate);
+  });
+
+  it("shades a drawn wall by its own faces, not halfway to the skin it was drawn from", () => {
+    // The wall of a tube pulled along z faces across the pull. A copy's strips have no
+    // area at rest, so it had no face normal to take the change from, and its normal
+    // was the skin's (here facing forward, along the pull) plus the wall's: about
+    // 45 degrees off, a canal's opening shading as a rosette of petals.
+    const mesh = withReservoir(1);
+    const r = firstReservoir(mesh);
+    const at = evaluate(mesh, extrusion(mesh, 0.03));
+    const middle = new Set(r.copies.subarray(r.chain, 2 * r.chain));
+    let worst = 0;
+    let count = 0;
+    mesh.renderToSurface.forEach((s, v) => {
+      if (!middle.has(s)) return;
+      count++;
+      worst = Math.max(worst, Math.abs(at.normals[v * 3 + 2] as number));
+    });
+    expect(count).toBeGreaterThanOrEqual(r.chain);
+    // Across the pull to within 20 degrees (sin 20° = 0.34); the bisector is 0.7.
+    expect(worst).toBeLessThan(0.34);
   });
 
   it("moves the skin by a skin displacement without pushing its reservoir out, and measures a push from it", () => {

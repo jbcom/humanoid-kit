@@ -782,8 +782,22 @@ function displace(
  * Adds to `sn` the change in each vertex's face-derived unit normal between two
  * positions of the same surface (`before`, `after`). Vertices no moved face
  * touches get exactly zero.
+ *
+ * A reservoir's copy (`copyOf`, the copies being the surface's last vertices) lies
+ * on strips with no area until they are drawn, so it has no face normal there. Taken
+ * as zero, a drawn wall's shading normal was the loop's skin normal plus its own,
+ * about 45 degrees off a shaft's or a canal's wall: a canal's opening shaded as a
+ * rosette of petals. Where a copy has no face normal, it takes that of the vertex it
+ * copies, before: drawn, it shades by its own faces' normal plus its loop vertex's
+ * smoothing; undrawn, exactly as its loop vertex.
  */
-function reshade(faces: Uint32Array, before: Float32Array, after: Float32Array, sn: Float32Array) {
+function reshade(
+  faces: Uint32Array,
+  before: Float32Array,
+  after: Float32Array,
+  sn: Float32Array,
+  copyOf: Uint32Array,
+) {
   const unit = (positions: Float32Array) => {
     const n = new Float32Array(positions.length);
     addQuadNormals(faces, positions, n);
@@ -799,6 +813,13 @@ function reshade(faces: Uint32Array, before: Float32Array, after: Float32Array, 
   };
   const a = unit(before);
   const b = unit(after);
+  const free = sn.length / 3 - copyOf.length;
+  const none = (n: Float32Array, v: number) => n[v] === 0 && n[v + 1] === 0 && n[v + 2] === 0;
+  copyOf.forEach((rep, i) => {
+    const v = (free + i) * 3;
+    for (const n of [a, b])
+      if (none(n, v)) for (let k = 0; k < 3; k++) n[v + k] = a[rep * 3 + k] as number;
+  });
   for (let i = 0; i < sn.length; i++)
     sn[i] = (sn[i] as number) + (b[i] as number) - (a[i] as number);
 }
@@ -846,7 +867,14 @@ export function evaluateSurface(
     sn = smoothNormals(mesh.smoothNormals, control, sCount);
     // The new form turns the normals it touches: add the change in the faces' own
     // normals, which is zero wherever nothing moved, so no seam appears at its edge.
-    if (undisplaced) reshade(mesh.topology.faces, undisplaced, surface, sn);
+    if (undisplaced)
+      reshade(
+        mesh.topology.faces,
+        undisplaced,
+        surface,
+        sn,
+        mesh.lattice?.copyOf ?? new Uint32Array(0),
+      );
   } else {
     sn.fill(0);
     addQuadNormals(mesh.topology.faces, surface, sn);
