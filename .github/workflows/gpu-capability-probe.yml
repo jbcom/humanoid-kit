@@ -26,7 +26,7 @@ jobs:
       - name: Require a hardware WebGL renderer
         run: |
           node --input-type=module <<'NODE'
-          import { chromium } from 'playwright';
+          import { chromium } from '@playwright/test';
 
           const browser = await chromium.launch({
             headless: true,
