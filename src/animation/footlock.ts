@@ -61,6 +61,8 @@ export class FootLock {
   /** Per foot, the contact point index pinned (-1: none) and where, in the world (x, z). */
   private readonly pinned = new Int8Array(2).fill(-1);
   private readonly pin = new Float64Array(4);
+  /** Per foot, how fully the owned contact is held: 1 on the ground, 0 released. */
+  private readonly held = new Float64Array(2);
   /**
    * How far (x, z) the last `apply` found a planted foot out of its leg's reach: the figure
    * is that far ahead of where its planted feet let it be, and the caller moves it by this
@@ -92,6 +94,15 @@ export class FootLock {
   /** Forgets every pin: call when the figure is moved by hand, or its root reset. */
   reset(): void {
     this.pinned.fill(-1);
+    this.held.fill(0);
+  }
+
+  /** The actual contact owner and its current hold, left then right. Ownership may fade before release. */
+  contactOwnership(): readonly [{ index: number; hold: number }, { index: number; hold: number }] {
+    return [
+      { index: this.pinned[0] as number, hold: this.held[0] as number },
+      { index: this.pinned[1] as number, hold: this.held[1] as number },
+    ];
   }
 
   /**
@@ -149,6 +160,7 @@ export class FootLock {
         hold = 1 - smoothstep(PLANT_FULL, PLANT_NONE, rel(pinned));
       }
       this.pinned[s] = pinned;
+      this.held[s] = hold;
       if (target === null || hold <= 0) return;
       const gx = ankle[0] + hold * (target[0] - ankle[0]);
       const gz = ankle[2] + hold * (target[1] - ankle[2]);

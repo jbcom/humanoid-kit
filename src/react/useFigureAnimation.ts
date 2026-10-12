@@ -1,11 +1,4 @@
-/**
- * Plays a clip on a `<Humanoid>` (docs/ARCHITECTURE.md, "Animation"): per frame,
- * the animator's body pose (with the face units laid over it) goes to the
- * skeleton, the attachments' occlusion keys, the skin's dual quaternions, the
- * figure's lift onto the ground, its presence, and, if the clip carries it, the
- * group along. None of it goes through React state, so a figure animates without
- * re-rendering.
- */
+/** Animation frame integration for React Three Fiber figures. */
 import { useFrame } from "@react-three/fiber";
 import { type RefObject, useCallback, useEffect, useMemo, useRef } from "react";
 import type { Group, Skeleton, Vector3 } from "three";
@@ -29,6 +22,44 @@ import { FIGURE_FRAME_PRIORITY } from "./framePriority.ts";
 import type { PresenceSource } from "./presence.tsx";
 
 /** A clip playing on a figure. */
+export type AnimationContactPoint = "heel" | "ballInner" | "ballOuter";
+
+/** A completed grounded-contact sample in figure-local space, measured in metres. */
+export interface HumanoidAnimationContact {
+  /** Left or right foot. */
+  side: "left" | "right";
+  /** The sole point: ankle/heel, inner ball, or outer ball. */
+  point: AnimationContactPoint;
+  /** Figure-local point after ground lift, before any caller group transform. */
+  position: readonly [number, number, number];
+  /** Whether this point is the real FootLock owner; ownership can fade during rollover/release. */
+  owned: boolean;
+  /** FootLock's continuous hold for this owner, from 0 (released) to 1 (fully planted). */
+  hold: number;
+}
+
+/** A completed clip frame for gameplay observers; distances are metres and `time` is seconds. */
+export interface HumanoidAnimationFrame {
+  /** Monotonic rest/evaluation binding version for this mounted humanoid. */
+  generation: number;
+  /** The clip currently playing and its seconds into that clip. */
+  clip: string;
+  time: number;
+  /** Cumulative figure-local root carry, x then forward z. */
+  root: readonly [number, number];
+  /** This render frame's root carry before a caller group's heading transform. */
+  delta: readonly [number, number];
+  /** Ground-lifted figure-local sole contacts after FootLock completes. */
+  contacts: readonly HumanoidAnimationContact[];
+}
+
+/** A clip playing on a `<Humanoid>` (docs/ARCHITECTURE.md, "Animation"): per frame,
+ * the animator's body pose (with the face units laid over it) goes to the
+ * skeleton, the attachments' occlusion keys, the skin's dual quaternions, the
+ * figure's lift onto the ground, its presence, and, if the clip carries it, the
+ * group along. None of it goes through React state, so a figure animates without
+ * re-rendering.
+ */
 export interface HumanoidAnimation {
   /** The animation pack's library (`loadAnimationLibrary`). */
   library: AnimationLibrary;
@@ -56,6 +87,13 @@ export interface HumanoidAnimation {
    * again whenever a new figure, or a new `time`, has been put to it.
    */
   onStart?: (clip: string) => void;
+  /**
+   * Receives each completed animation frame without a React render. `contacts` are
+   * figure-local after the clip's ground lift; transform them through the rendered
+   * group to obtain world coordinates. `generation` changes after each evaluation/rest
+   * binding, so callers can discard a callback from a prior asynchronous recipe update.
+   */
+  onFrame?: (frame: Readonly<HumanoidAnimationFrame>) => void;
 }
 
 /** How often (in frames) the figure's presence is derived again from its pose: it skins the body once. */
@@ -92,6 +130,8 @@ export function useFigureAnimation(args: Args): void {
   /** A clip that arrived before the animator did. */
   const pending = useRef<AnimationClip | null>(null);
   const lastRoot = useRef<[number, number]>([0, 0]);
+  /** Increments after an evaluation gets its own rest/contact binding. */
+  const evaluationGeneration = useRef(0);
   const frame = useRef(0);
   const posed = useMemo(
     () => ({ q: new Float32Array(0), mesh: new Float32Array(0), soles: new Float32Array(18) }),
@@ -120,6 +160,7 @@ export function useFigureAnimation(args: Args): void {
     const rest = restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads);
     const ground = -figure.groundOffset;
     rig.current = { rest, contacts: contactBones(rest) };
+    evaluationGeneration.current++;
     posed.q = new Float32Array(ready.rig.bones.length * 4);
     if (animator.current) animator.current.setRest(rest, ground);
     else animator.current = new Animator(ready.rig.bones.length, rest, ground);
@@ -211,9 +252,9 @@ export function useFigureAnimation(args: Args): void {
     if (cur.lifts && cur.lifted.current) cur.lifted.current.position.y = offset;
     // Root motion: the group is carried forward in its own frame by what the clips did this frame.
     const g = cur.group.current;
+    const dx = a.root[0] - lastRoot.current[0];
+    const dz = a.root[1] - lastRoot.current[1];
     if (g && cur.animation.rootMotion !== false) {
-      const dx = a.root[0] - lastRoot.current[0];
-      const dz = a.root[1] - lastRoot.current[1];
       if (dx !== 0 || dz !== 0) {
         const s = Math.sin(g.rotation.y);
         const c = Math.cos(g.rotation.y);
@@ -230,5 +271,35 @@ export function useFigureAnimation(args: Args): void {
         ...source,
         pose: { rig: info.rig, rotations: Float32Array.from(q) },
       };
+    // Internal root and presence state is complete before a consumer can observe or throw.
+    const observer = cur.animation.onFrame;
+    if (observer) {
+      const ownership = a.contactOwnership;
+      const points: readonly AnimationContactPoint[] = ["heel", "ballInner", "ballOuter"];
+      observer({
+        generation: evaluationGeneration.current,
+        clip: a.playing.clip.id,
+        time: a.playing.time,
+        root: [a.root[0], a.root[1]],
+        delta: [dx, dz],
+        contacts: points.flatMap((point, pointIndex) =>
+          (["left", "right"] as const).map((side, sideIndex) => {
+            const k = sideIndex * 3 + pointIndex;
+            const owner = ownership[sideIndex] as { index: number; hold: number };
+            return {
+              side,
+              point,
+              position: [
+                posed.soles[k * 3] as number,
+                (posed.soles[k * 3 + 1] as number) + offset,
+                posed.soles[k * 3 + 2] as number,
+              ],
+              owned: owner.index === k,
+              hold: owner.index === k ? owner.hold : 0,
+            };
+          }),
+        ),
+      });
+    }
   }, FIGURE_FRAME_PRIORITY);
 }
