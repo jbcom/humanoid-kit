@@ -35,6 +35,7 @@ import { sampleRequiredHandFrame } from "./handFrame";
 
 type Stage = "approach" | "grip" | "release" | "cancel";
 type View = "front" | "three-quarter" | "side";
+type ReviewMode = "inspect" | "play";
 
 const params = new URLSearchParams(window.location.search);
 const stageOptions: readonly Stage[] = ["approach", "grip", "release", "cancel"];
@@ -138,6 +139,11 @@ interface Control {
   view: View;
   interaction: Interaction | null;
   restart: boolean;
+  runEpoch: number;
+  restartRun: (() => void) | null;
+  mode: ReviewMode;
+  held: boolean;
+  animationTime: number;
   cancelled: boolean;
   settled: { tall: boolean; short: boolean };
   animationStarted: { tall: boolean; short: boolean };
@@ -156,6 +162,11 @@ interface GateSnapshot {
   readonly view: View;
   readonly phase: string;
   readonly ready: boolean;
+  readonly held: boolean;
+  readonly mode: ReviewMode;
+  readonly animationTime: number;
+  readonly settled: { readonly tall: boolean; readonly short: boolean };
+  readonly animationStarted: { readonly tall: boolean; readonly short: boolean };
   readonly clothed: boolean;
   readonly target: Vec3 | null;
   readonly hands: { readonly tall: Vec3; readonly short: Vec3 } | null;
@@ -168,6 +179,11 @@ const INITIAL_GATE_SNAPSHOT: GateSnapshot = {
   view: "front",
   phase: "loading",
   ready: false,
+  held: false,
+  mode: "inspect",
+  animationTime: 0,
+  settled: { tall: false, short: false },
+  animationStarted: { tall: false, short: false },
   clothed: false,
   target: null,
   hands: null,
@@ -178,11 +194,18 @@ const INITIAL_GATE_SNAPSHOT: GateSnapshot = {
 export interface HandshakeLabApi {
   setStage(stage: Stage): void;
   setView(view: View): void;
+  inspect(): void;
+  play(): void;
   state(): {
     stage: Stage;
     view: View;
     phase: string;
     ready: boolean;
+    held: boolean;
+    mode: ReviewMode;
+    animationTime: number;
+    settled: { tall: boolean; short: boolean };
+    animationStarted: { tall: boolean; short: boolean };
     muted: boolean;
     adults: boolean;
     clothed: boolean;
@@ -220,18 +243,40 @@ function moveToSlot(group: Group | null, slot: SlotPlacement | null, delta: numb
   group.rotation.y = MathUtils.damp(group.rotation.y, yaw, 12, delta);
 }
 
-/** A lab-only state change. The interaction runtime remains the source of phase state. */
+/** A lab-only stage request. The interaction runtime remains the source of phase state. */
+function resetReviewRun(control: Control): void {
+  // A held review freezes the values sampled from the runtime, while that
+  // runtime remains attached to the presence clock. Resetting cancels the old
+  // interaction and asks the same live runtime for a fresh run.
+  control.restart = true;
+  control.cancelled = false;
+  control.held = false;
+  control.ready = false;
+  control.phase = "preparing";
+  control.target = null;
+  control.hands = null;
+  control.animationTime = 0;
+  // These describe mounted figure sources, not an interaction run. Their
+  // callbacks fire once, so retain the already-proven source readiness.
+  control.bindingFailure = null;
+}
+
 function selectStage(control: Control, stage: Stage): void {
   control.stage = stage;
-  control.restart = true;
-  control.ready = false;
   persistReviewParam("stage", stage);
+  resetReviewRun(control);
   publishGate(control);
 }
 
 function selectView(control: Control, view: View): void {
   control.view = view;
   persistReviewParam("view", view);
+  publishGate(control);
+}
+
+function selectMode(control: Control, mode: ReviewMode): void {
+  control.mode = mode;
+  resetReviewRun(control);
   publishGate(control);
 }
 
@@ -252,6 +297,11 @@ function snapshotOf(control: Control): GateSnapshot {
     view: control.view,
     phase: control.phase,
     ready: control.ready,
+    held: control.held,
+    mode: control.mode,
+    animationTime: control.animationTime,
+    settled: { ...control.settled },
+    animationStarted: { ...control.animationStarted },
     clothed: control.clothed,
     target,
     hands,
@@ -410,11 +460,13 @@ function Controller({
   registry,
   tallGroup,
   shortGroup,
+  runEpoch,
 }: {
   control: Control;
   registry: ReturnType<typeof createPresenceRegistry>;
   tallGroup: React.RefObject<Group | null>;
   shortGroup: React.RefObject<Group | null>;
+  runEpoch: number;
 }) {
   const runtime = useMemo(
     () =>
@@ -437,23 +489,33 @@ function Controller({
     };
   }, [runtime]);
   useFrame((_, delta) => {
+    if (control.runEpoch !== runEpoch) return;
     if (control.restart) {
       control.interaction?.cancel("cancelled");
       control.interaction = null;
       control.cancelled = false;
       control.target = null;
+      control.animationTime = 0;
       resetGroup(tallGroup.current, -3, Math.PI / 2);
       resetGroup(shortGroup.current, 3, -Math.PI / 2);
       control.restart = false;
     }
-    if (!control.interaction && registry.get("tall") && registry.get("short") && !control.cancelled)
+    if (
+      !control.held &&
+      !control.interaction &&
+      registry.get("tall") &&
+      registry.get("short") &&
+      !control.cancelled
+    )
       control.interaction = runtime.propose(HANDSHAKE_REVIEW.id, {
         initiator: "tall",
         responder: "short",
       });
     const interaction = control.interaction;
-    if (interaction) {
+    if (interaction && !control.held) {
       control.phase = interaction.phase;
+      const clock = interaction.trackTime("initiator");
+      if (clock !== null) control.animationTime = clock;
       if (control.stage !== "approach" && interaction.phase === "approach") {
         moveToSlot(tallGroup.current, interaction.slot("initiator"), delta);
         moveToSlot(shortGroup.current, interaction.slot("responder"), delta);
@@ -464,25 +526,41 @@ function Controller({
         interaction.cancel("cancelled");
         control.interaction = null;
         control.cancelled = true;
+        control.target = null;
         control.phase = "cancelled";
+        if (control.mode === "inspect") control.held = true;
+      } else {
+        const selectedPhase =
+          control.stage === "approach"
+            ? interaction.phase === "approach"
+            : control.stage === "grip"
+              ? interaction.phase === "act" && interaction.time >= 0.3
+              : control.stage === "release"
+                ? interaction.phase === "release"
+                : false;
+        // Stop copying values at the selected real runtime phase. The runtime
+        // stays attached so a later selection can begin a fresh run.
+        if (control.mode === "inspect" && selectedPhase) {
+          control.held = true;
+        }
       }
     }
     const phaseReady =
       control.stage === "approach"
         ? control.phase === "approach"
         : control.stage === "grip"
-          ? interaction?.phase === "act" && interaction.time >= 0.3
+          ? control.phase === "act" && control.held
           : control.stage === "release"
-            ? interaction?.phase === "release"
-            : control.cancelled;
+            ? control.phase === "release" && control.held
+            : control.cancelled && control.held;
     control.ready =
-      phaseReady === true &&
+      phaseReady &&
       control.settled.tall &&
       control.settled.short &&
       control.animationStarted.tall &&
       control.animationStarted.short &&
       control.clothed &&
-      control.target !== null &&
+      (control.stage === "cancel" || control.target !== null) &&
       control.bindingFailure === null;
   });
   return null;
@@ -505,7 +583,9 @@ function StageFigures({ control }: { control: Control }) {
       live = false;
     };
   }, []);
-  useFrame((state) => setTime(Math.floor(state.clock.elapsedTime * 30) / 30));
+  useFrame(() =>
+    setTime((previous) => (previous === control.animationTime ? previous : control.animationTime)),
+  );
   const animation = library
     ? {
         library,
@@ -544,6 +624,7 @@ function StageFigures({ control }: { control: Control }) {
         registry={registry}
         tallGroup={tallGroup}
         shortGroup={shortGroup}
+        runEpoch={control.runEpoch}
       />
       <Markers
         control={control}
@@ -571,6 +652,8 @@ function Api({ control }: { control: Control }) {
       setView: (view) => {
         selectView(control, view);
       },
+      inspect: () => selectMode(control, "inspect"),
+      play: () => selectMode(control, "play"),
       state: () => ({
         ...snapshotOf(control),
         muted: params.has("muted"),
@@ -632,16 +715,67 @@ function GatePanel({ control }: { control: Control }) {
         </dd>
         <dt>view</dt>
         <dd>{snapshot.view}</dd>
+        <dt>inspection</dt>
+        <dd>
+          {snapshot.held
+            ? "held on actual runtime state"
+            : snapshot.mode === "play"
+              ? "playing"
+              : "seeking"}
+        </dd>
+        <dt>clock</dt>
+        <dd>{snapshot.animationTime.toFixed(3)} s</dd>
         <dt>fixture</dt>
-        <dd>{snapshot.clothed ? "clothed" : "checking clothing"}</dd>
+        <dd>
+          {snapshot.clothed ? "clothed" : "checking clothing"}; settled{" "}
+          {String(snapshot.settled.tall)}/{String(snapshot.settled.short)}; clip{" "}
+          {String(snapshot.animationStarted.tall)}/{String(snapshot.animationStarted.short)}
+        </dd>
         <dt>hand→target</dt>
         <dd>
           tall {fmt(gap?.tall)}, short {fmt(gap?.short)}
         </dd>
-        <dt>binding</dt>
-        <dd>{snapshot.bindingFailure ?? (snapshot.ready ? "ready" : "settling")}</dd>
+        <dt>capture</dt>
+        <dd>
+          {snapshot.bindingFailure ??
+            (snapshot.ready
+              ? "ready"
+              : snapshot.held
+                ? "held; waiting for source readiness"
+                : "seeking runtime state")}
+        </dd>
       </dl>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+        <button
+          type="button"
+          onClick={() => selectMode(control, "inspect")}
+          style={{
+            border: `1px solid ${snapshot.mode === "inspect" ? "#9bc7ff" : "#79808b"}`,
+            borderRadius: 4,
+            background: snapshot.mode === "inspect" ? "#19334b" : "#252a33",
+            color: "#f4ecda",
+            cursor: "pointer",
+            padding: "4px 7px",
+          }}
+        >
+          Inspect hold
+        </button>
+        <button
+          type="button"
+          onClick={() => selectMode(control, "play")}
+          style={{
+            border: `1px solid ${snapshot.mode === "play" ? "#9bc7ff" : "#79808b"}`,
+            borderRadius: 4,
+            background: snapshot.mode === "play" ? "#19334b" : "#252a33",
+            color: "#f4ecda",
+            cursor: "pointer",
+            padding: "4px 7px",
+          }}
+        >
+          Play once
+        </button>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
         {(["approach", "grip", "release", "cancel"] as const).map((stage) => (
           <button
             key={stage}
@@ -748,6 +882,11 @@ export function HandshakeLab() {
       view: viewFromQuery(),
       interaction: null,
       restart: false,
+      runEpoch: 0,
+      restartRun: null,
+      mode: "inspect",
+      held: false,
+      animationTime: 0,
       cancelled: false,
       settled: { tall: false, short: false },
       animationStarted: { tall: false, short: false },

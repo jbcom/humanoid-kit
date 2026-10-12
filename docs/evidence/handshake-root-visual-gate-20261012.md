@@ -26,13 +26,17 @@ acceptance of an all-audience definition.
 
 The presenter includes stage buttons (`approach`, `grip`, `release`,
 `cancel`) and front, three-quarter and side views. `stage` and `view` are
-preserved in the URL, so each review state can be linked directly. The panel
-occupies a dedicated sidebar on desktop and a separate lower row on narrow
-screens; it never overlays a figure. The camera fits the full clothed pair in
-the remaining stage. Its panel reports:
+preserved in the URL, so each review state can be linked directly. **Inspect
+hold** is the default: after the selected actual runtime phase is reached, it
+stops copying runtime values into the review surface. The panel therefore keeps
+that phase's `trackTime` and contact target while the underlying runtime stays
+attached, so the next requested stage begins a fresh interaction. **Play once** is separate and deliberately runs through its normal
+lifecycle. The panel occupies a dedicated sidebar on desktop and a separate
+lower row on narrow screens; it never overlays a figure. The camera fits the
+full clothed pair in the remaining stage. Its panel reports:
 
-- current requested stage and runtime phase;
-- that both source outfits are present;
+- current requested stage, actual runtime phase, inspect/play state and frozen runtime clock;
+- independent clothing, settled-geometry and animation-source readiness signals;
 - the yellow shared `contactTarget` and the live RGB right-hand frames;
 - each live hand-frame-to-target gap in centimetres;
 - settled/binding failure state.
@@ -51,9 +55,11 @@ root records a fresh review conclusion.
 `e2e/sheets/handshake.sheet.ts` remains an explicit review command. It checks
 the mute marker, adult/clothed source, explicit fixture-consent state, a mounted
 R3F canvas, absence of the visible boot-error boundary, the direct-link
-stage/view restore and URL updates, the diagnostic region, runtime target, both live hand frames and finite gaps for all four stages and
-three views. The canvas probe publishes snapshots to the DOM panel through an
-external subscription; the panel never calls an R3F hook. It intentionally does
+stage/view restore and URL updates, the diagnostic region, runtime target, both live hand frames and finite gaps for the non-cancelled
+stages, and a held actual phase for all four stages and three views. The
+cancelled state asserts that it has no stale target. The canvas probe publishes
+snapshots to the DOM panel through an external subscription; the panel never
+calls an R3F hook. It intentionally does
 **not** accept a gap as physical contact while the real clip/IK is absent.
 
 ```sh
