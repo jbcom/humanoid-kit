@@ -128,11 +128,26 @@ describe("<HumanoidCreator controls>", () => {
 
 // The worker is the point of these: every recipe it is ever sent is recorded.
 const sent: Recipe[] = [];
+type CoverTracePhase =
+  | "evaluatePost"
+  | "posedOcclusionRequest"
+  | "posedOcclusionResolved"
+  | "posedOcclusionRejected"
+  | "initialWorkerPost"
+  | "firstBanner"
+  | "rejectionSettled"
+  | "secondBanner"
+  | "allowDom"
+  | "uncoveredWorkerPost";
+
+/** Set only while the timing diagnostic test is active. */
+let activeCoverTrace: ((phase: CoverTracePhase) => void) | null = null;
 const clothed = inlineWorkerClient(
   { subdivision: 0 },
   {
     clothing: true,
     onRequest: (request) => {
+      if (request.type === "evaluate") activeCoverTrace?.("evaluatePost");
       if ("recipe" in request) sent.push(request.recipe as Recipe);
     },
   },
@@ -200,39 +215,75 @@ describe("<HumanoidCreator coverPolicy>", () => {
   it(
     "keeps drawing the covered figure while an uncovering is asked about, and refuses it",
     async () => {
+      const started = performance.now();
+      const marks: Partial<Record<CoverTracePhase, number>> = {};
+      const mark = (phase: CoverTracePhase) => {
+        if (marks[phase] !== undefined) return;
+        const ms = performance.now() - started;
+        marks[phase] = ms;
+        console.info("creator-cover-phase-diagnostic", JSON.stringify({ phase, ms }));
+      };
+      const originalPosedOcclusion = clothed.posedOcclusion;
+      const tracedPosedOcclusion = function (this: typeof clothed) {
+        mark("posedOcclusionRequest");
+        const pending = originalPosedOcclusion.call(this);
+        void pending.then(
+          () => mark("posedOcclusionResolved"),
+          () => mark("posedOcclusionRejected"),
+        );
+        return pending;
+      };
+      clothed.posedOcclusion = tracedPosedOcclusion;
+      activeCoverTrace = mark;
       const answers = [defer<boolean>(), defer<boolean>()];
       let asked = 0;
-      const screen = await render(
-        <Clothed
-          initialRecipe={suited}
-          coverPolicy={{
-            allowUncover: () => (answers[asked++] as { promise: Promise<boolean> }).promise,
-          }}
-        />,
-      );
-      await expect.poll(() => sent.length, LOAD).toBeGreaterThan(0);
-      expect(sent.every((r) => !uncovered(r))).toBe(true);
-      await screen.getByRole("tab", { name: "Wardrobe" }).click();
-      const chip = screen.getByRole("button", { name: SUIT.label });
-      await expect.element(chip).toHaveAttribute("aria-pressed", "true");
-      await chip.click();
-      await expect.element(screen.getByText("Waiting for confirmation…")).toBeVisible();
-      // The controls are inert while the host is asked.
-      expect(
-        screen.getByRole("tab", { name: "Wardrobe" }).element().closest("[inert]"),
-      ).not.toBeNull();
-      await pause(1000);
-      expect(sent.some(uncovered)).toBe(false);
-      (answers[0] as { resolve: (v: boolean) => void }).resolve(false);
-      await expect.element(screen.getByText("Waiting for confirmation…")).not.toBeInTheDocument();
-      await expect.element(chip).toHaveAttribute("aria-pressed", "true");
-      await pause(1000);
-      expect(sent.some(uncovered)).toBe(false);
-      // Asked again, and allowed this time.
-      await chip.click();
-      (answers[1] as { resolve: (v: boolean) => void }).resolve(true);
-      await expect.element(chip).toHaveAttribute("aria-pressed", "false");
-      await expect.poll(() => sent.some(uncovered), LOAD).toBe(true);
+      try {
+        const screen = await render(
+          <Clothed
+            initialRecipe={suited}
+            coverPolicy={{
+              allowUncover: () => (answers[asked++] as { promise: Promise<boolean> }).promise,
+            }}
+          />,
+        );
+        await expect.poll(() => sent.length, LOAD).toBeGreaterThan(0);
+        mark("initialWorkerPost");
+        expect(sent.every((r) => !uncovered(r))).toBe(true);
+        await screen.getByRole("tab", { name: "Wardrobe" }).click();
+        const chip = screen.getByRole("button", { name: SUIT.label });
+        await expect.element(chip).toHaveAttribute("aria-pressed", "true");
+        await chip.click();
+        await expect.element(screen.getByText("Waiting for confirmation…")).toBeVisible();
+        mark("firstBanner");
+        // The controls are inert while the host is asked.
+        expect(
+          screen.getByRole("tab", { name: "Wardrobe" }).element().closest("[inert]"),
+        ).not.toBeNull();
+        await pause(1000);
+        expect(sent.some(uncovered)).toBe(false);
+        (answers[0] as { resolve: (v: boolean) => void }).resolve(false);
+        await expect.element(screen.getByText("Waiting for confirmation…")).not.toBeInTheDocument();
+        mark("rejectionSettled");
+        await expect.element(chip).toHaveAttribute("aria-pressed", "true");
+        await pause(1000);
+        expect(sent.some(uncovered)).toBe(false);
+        // Asked again, and allowed this time.
+        await chip.click();
+        await expect.element(screen.getByText("Waiting for confirmation…")).toBeVisible();
+        mark("secondBanner");
+        (answers[1] as { resolve: (v: boolean) => void }).resolve(true);
+        await expect.element(chip).toHaveAttribute("aria-pressed", "false");
+        mark("allowDom");
+        await expect.poll(() => sent.some(uncovered), LOAD).toBe(true);
+        mark("uncoveredWorkerPost");
+      } finally {
+        if (activeCoverTrace === mark) activeCoverTrace = null;
+        if (clothed.posedOcclusion === tracedPosedOcclusion) {
+          // Another writer should never be overwritten by test cleanup.
+          clothed.posedOcclusion = originalPosedOcclusion;
+        }
+        console.info("creator-cover-phase-diagnostic", JSON.stringify(marks));
+      }
     },
     LOAD.timeout,
   );
