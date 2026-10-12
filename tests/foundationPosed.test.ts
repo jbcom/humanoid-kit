@@ -9,7 +9,14 @@ import { REST_POSE } from "../src/foundation/permutations.ts";
 import { posedSurface } from "../src/foundation/posed.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
-import { FOLD_KEYS, FOLD_OPENINGS, type HipFold } from "../src/rig/hipFold.ts";
+import { toHalf } from "../src/rig/half.ts";
+import {
+  FOLD_KEYS,
+  FOLD_OPENINGS,
+  FOLD_ROW_TEXELS,
+  type HipFold,
+  type SurfaceFold,
+} from "../src/rig/hipFold.ts";
 import { bodyPoseRotations, rigData, skinNormals, skinPositions } from "../src/rig/pose.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
@@ -41,6 +48,19 @@ function restFoldWitness(vertexCount: number): HipFold {
     ),
     side: Float32Array.of(0.5),
   };
+}
+
+/** A nonzero renderer-surface fold for dispatch testing, not a replacement for the native solve. */
+function activeFoldWitness(vertexCount: number): SurfaceFold {
+  const slot = new Float32Array(vertexCount).fill(-1);
+  slot[0] = 0;
+  const data = new Uint16Array(FOLD_ROW_TEXELS * 4);
+  for (let key = 0; key < FOLD_OPENINGS * FOLD_KEYS; key++) {
+    data[key * 8] = toHalf(0.02);
+    data[key * 8 + 5] = toHalf(-0.01);
+  }
+  data[3] = toHalf(0.5);
+  return { slot, rows: 1, data };
 }
 
 const maxY = (p: Float32Array) => {
@@ -196,37 +216,38 @@ describe("the posed body", () => {
   });
 
   it("carries the renderer's hip fold where the hips flex, and nowhere at rest", () => {
-    const hipFold = vi.spyOn(model, "hipFold");
-    let seated: ReturnType<typeof posedSurface>;
+    const hipFold = vi.spyOn(model, "hipFold").mockImplementation(function* () {
+      yield;
+      return { surface: "base", fold: activeFoldWitness(body.vertexCount) };
+    });
     try {
-      // Seated performs the existing physical fold check below; flexed reuses
-      // that shape's cached native table, proving both active ranges request it.
-      seated = posedSurface(model, recipe, "seated");
+      const seated = posedSurface(model, recipe, "seated");
       expect(hipFold).toHaveBeenCalledTimes(1);
+      const unfolded = skinPositions(
+        seated.bones,
+        seated.rotations,
+        seated.rest,
+        seated.skinIndex,
+        seated.skinWeight,
+        new Float32Array(seated.rest.length),
+      );
+      expect(seated.positions).not.toEqual(unfolded);
       hipFold.mockClear();
-      posedSurface(model, recipe, "flexed");
+      const flexed = posedSurface(model, recipe, "flexed");
       expect(hipFold).toHaveBeenCalledTimes(1);
+      expect(flexed.positions).not.toEqual(
+        skinPositions(
+          flexed.bones,
+          flexed.rotations,
+          flexed.rest,
+          flexed.skinIndex,
+          flexed.skinWeight,
+          new Float32Array(flexed.rest.length),
+        ),
+      );
     } finally {
       hipFold.mockRestore();
     }
-    const unfolded = skinPositions(
-      seated.bones,
-      seated.rotations,
-      seated.rest,
-      seated.skinIndex,
-      seated.skinWeight,
-      new Float32Array(seated.rest.length),
-    );
-    let moved = 0;
-    for (let v = 0; v < seated.vertexCount; v++) {
-      const d = Math.hypot(
-        (seated.positions[v * 3] as number) - (unfolded[v * 3] as number),
-        (seated.positions[v * 3 + 1] as number) - (unfolded[v * 3 + 1] as number),
-        (seated.positions[v * 3 + 2] as number) - (unfolded[v * 3 + 2] as number),
-      );
-      if (d > 0.001) moved++;
-    }
-    expect(moved).toBeGreaterThan(50);
   });
 
   it("keeps the seams' duplicates together in a pose", () => {
