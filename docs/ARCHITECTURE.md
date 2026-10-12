@@ -2266,21 +2266,17 @@ Old recipes evaluate and serialise as before.
 - *Axillary hair is a coat region that comes with puberty (from 13); pubic hair
   is the adult pack's.*
   The armpit's hair is dense and a couple of centimetres long, so it is the
-  coat's; its mask comes from the base mesh, so the region lives in the core,
-  where a region flag, `adultOnly`, makes `paintCoat` leave it unpainted, without
-  asking its paint, unless the input says the figure is an adult, failing
-  closed when it does not say. The model's coverage is zero for it under 18 as
-  well, the age policy refuses a recipe that asks for it, and every other
-  group's mask is cut out where it lies. (A first version drew it as a strand
-  layer with the same flag on skin layers; with it moved, the layer flag had no
-  user and went.) Pubic hair is a coat region too (dense, up to a few
-  centimetres), adult-only by the same flag, and the adult pack's data like
-  every genital-region feature: the core holds its paint (`PUBIC_REGION`, the
-  model's `pubic` group), the pack where it grows (`AdultAnatomySpec.coatRegions`,
-  a sparse mask over base vertices, refused at parse unless it is ascending,
-  within the body, 0..1 and for a region the core has), so without the pack it
-  has no area and the core names no adult target. It takes the coat's eighth
-  and last region.
+  coat's; its mask comes from the base mesh and remains core biology. Its
+  coverage follows the age ramp from 13 and a recipe may set its density below
+  18. The creator deliberately hides that sensitive regional density control
+  for minors, which is an editor boundary only; it does not change the recipe
+  policy or rendering. Pubic hair is a coat region too (dense, up to a few
+  centimetres), adult-only in policy and adult-pack data: the core holds its
+  paint (`PUBIC_REGION`, the model's `pubic` group), the pack where it grows
+  (`AdultAnatomySpec.coatRegions`, a sparse mask over base vertices, refused at
+  parse unless it is ascending, within the body, 0..1 and for a region the core
+  has), so without the pack it has no area and the core names no adult target.
+  It takes the coat's eighth and last region.
 - *Body hair costs no atlas channel.* The eight strand layers fit the stack's
   eight pages: vellus takes no channel, and each terminal layer shares one with
   layers it lies apart from (the beard's strand layers, which touched the

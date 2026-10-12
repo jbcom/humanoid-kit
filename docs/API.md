@@ -625,7 +625,9 @@ compute what the renderer will do.
   (mean `HAIR_STRAND_MEAN`) render as that albedo.
 - Body hair (research/BODY-HAIR.md): `BODY_HAIR_GROUPS` (`face`, `chest`,
   `abdomen`, `back`, `buttocks`, `arms`, `legs`, `axillary` (from puberty, 13),
-  and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`),
+  and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`).
+  The creator hides the axillary and pubic density controls below 18; that UI
+  boundary does not change recipe validity or axillary's age-derived coverage.
   `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
   `defaultBodyHairCoverage(group, age, gender)` is a group's terminal-hair
   coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years and

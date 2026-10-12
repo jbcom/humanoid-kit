@@ -5,8 +5,9 @@
  * a picker, and hair (when a hair pack is loaded) a style, a palette of natural
  * colours, a picker for dyed hair and the pigment sliders behind the palette.
  * Body hair offers a beard style and a density per region, relative to the
- * default for the figure's age and sex; underarm and pubic hair only for an
- * adult.
+ * default for the figure's age and sex. The creator exposes the sensitive
+ * underarm and pubic density controls only to adults; that editor boundary does
+ * not alter the core age policy or the figure's rendered default coverage.
  */
 import { useMemo } from "react";
 import type { EyeLibrary } from "../../eyes/library.ts";
@@ -129,7 +130,8 @@ export function AppearancePanel({
         ? rest
         : { ...rest, bodyHair: next };
     }, gesture);
-  // Pubic hair is offered for adults only (the age policy).
+  // The editor keeps its two sensitive regional density controls adult-only.
+  // This is narrower than recipe policy: only pubic density is invalid below 18.
   const adult = isAdult(recipe);
 
   return (
@@ -351,22 +353,24 @@ export function AppearancePanel({
               </button>
             ))}
           </fieldset>
-          {BODY_HAIR_SLIDERS.filter((s) => adult || !isAdultOnlyBodyHair(s.group)).map((s) => (
-            <SliderRow
-              key={s.group}
-              label={s.label}
-              value={recipe.bodyHair?.density?.[s.group] ?? 1}
-              min={0}
-              max={MAX_BODY_HAIR_DENSITY}
-              step={0.01}
-              neutral={1}
-              format={pct}
-              description={s.description}
-              onChange={(v, g) => setBodyHair((b) => withDensity(b, s.group, v), g)}
-              onSettle={settle}
-              onFocus={() => onFocus(s.group === "face" ? face : body)}
-            />
-          ))}
+          {BODY_HAIR_SLIDERS.filter((s) => adult || !isAdultOnlyEditorBodyHair(s.group)).map(
+            (s) => (
+              <SliderRow
+                key={s.group}
+                label={s.label}
+                value={recipe.bodyHair?.density?.[s.group] ?? 1}
+                min={0}
+                max={MAX_BODY_HAIR_DENSITY}
+                step={0.01}
+                neutral={1}
+                format={pct}
+                description={s.description}
+                onChange={(v, g) => setBodyHair((b) => withDensity(b, s.group, v), g)}
+                onSettle={settle}
+                onFocus={() => onFocus(s.group === "face" ? face : body)}
+              />
+            ),
+          )}
         </div>
       </details>
     </div>
@@ -446,6 +450,14 @@ const BEARD_CHOICES: readonly (readonly [BeardStyle | null, string])[] = [
   ["full", "Full beard"],
 ];
 
+/**
+ * The editor hides sensitive regional density controls for minors. This does
+ * not widen `ADULT_ONLY_BODY_HAIR`: axillary hair remains valid biology in a
+ * recipe and the renderer keeps its age-derived default coverage.
+ */
+const isAdultOnlyEditorBodyHair = (group: BodyHairGroup) =>
+  group === "axillary" || isAdultOnlyBodyHair(group);
+
 const BODY_HAIR_SLIDERS: { group: BodyHairGroup; label: string; description: string }[] = [
   { group: "face", label: "Facial hair", description: "Beard and moustache density." },
   { group: "chest", label: "Chest", description: "Hair on the chest." },
@@ -454,7 +466,11 @@ const BODY_HAIR_SLIDERS: { group: BodyHairGroup; label: string; description: str
   { group: "buttocks", label: "Buttocks", description: "Hair on the buttocks." },
   { group: "arms", label: "Arms", description: "Hair on the arms." },
   { group: "legs", label: "Legs", description: "Hair on the legs." },
-  { group: "axillary", label: "Underarms", description: "Underarm hair." },
+  {
+    group: "axillary",
+    label: "Underarms",
+    description: "Underarm hair (adults only in the creator).",
+  },
   { group: "pubic", label: "Pubic", description: "Pubic hair (adults only)." },
 ];
 
