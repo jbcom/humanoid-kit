@@ -58,3 +58,18 @@ and ran all five `affordanceGpu.test.tsx` checks in 49.793 seconds (56.72 second
 for the Vitest process). The required jobs repeat the renderer assertion; they do
 not infer GPU availability from the runner label. The paid larger macOS runners
 are not used.
+
+## Hair fixture timing evidence
+
+The 2026-10-12 coverage-unit failure was a real V8 instrumentation cost, not a
+weakened assertion: the independent braids and twists builds took 19.777 and
+16.065 seconds, respectively, against the unchanged 10-second hook budget.
+The settlement loop performed nearest-body queries for every projection and
+friction sample, allocating a result and three vectors at each query. Its
+caller-owned probe result and bounded friction query retain the 60 settlement
+passes, four projection passes, physical thresholds and mesh determinism
+checks. On the `.201` remote test host, the focused V8 run completed all 36
+hair checks; the independent braids rebuild took 9.998 seconds and twists took
+8.143 seconds. A one-file coverage run still fails the repository-wide
+aggregate threshold by design; the required merged coverage job remains the
+coverage verdict.

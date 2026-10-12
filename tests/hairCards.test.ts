@@ -86,6 +86,29 @@ describe("the head frame", () => {
     ).toBeLessThan(-0.01);
   });
 
+  it("writes an explicit probe result exactly as the public allocating probe does", () => {
+    const scratch = { point: new Vector3(), normal: new Vector3(), distance: 0 };
+    for (const point of [
+      new Vector3(0, 1.85, 0),
+      new Vector3(0.11, 1.62, -0.08),
+      new Vector3(-0.2, 1.4, 0.12),
+    ]) {
+      const allocating = body.probe(point);
+      const reused = body.probeInto(point, scratch);
+      expect(reused).toBe(scratch);
+      expect(reused.distance).toBe(allocating.distance);
+      expect(reused.point.toArray()).toEqual(allocating.point.toArray());
+      expect(reused.normal.toArray()).toEqual(allocating.normal.toArray());
+      const within = body.probeWithin(point, scratch, 0.02);
+      expect(within).toBe(Math.abs(allocating.distance) <= 0.02);
+      if (within) {
+        expect(scratch.distance).toBe(allocating.distance);
+        expect(scratch.point.toArray()).toEqual(allocating.point.toArray());
+        expect(scratch.normal.toArray()).toEqual(allocating.normal.toArray());
+      }
+    }
+  });
+
   it("puts the hairline lowest at the nape and the front's middle higher than the temples", () => {
     expect(hairlineElevation(180)).toBeLessThan(hairlineElevation(0));
     expect(hairlineElevation(40)).toBeLessThan(hairlineElevation(0));
