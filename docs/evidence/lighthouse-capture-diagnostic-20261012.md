@@ -14,42 +14,40 @@ on `chore/lighthouse-capture-diagnostic` when the pushed commit message contains
 dispatch; ordinary pushes, pull requests, `main`, and existing CI stay out of
 scope.
 
-The protocol probe builds the real production playground, generates the normal
+The current probe builds the real production playground, generates the normal
 Lighthouse configuration, and rejects the run if full-page screenshots are
-disabled. It takes one capture in each fresh browser process:
+disabled. It launches the same headless Chrome flags that LHCI passes to the
+installed Lighthouse CLI and runs one navigation at the generated production
+URL. It does not retry.
 
-1. the production creator route;
-2. the production `view=front` shot route;
-3. the production creator after only its canvas is hidden at runtime.
-
-Each probe uses the generated Lighthouse Chrome flags and mirrors the
-`Page.getLayoutMetrics` / resized-viewport / WebP quality-30 capture commands
-used by Lighthouse 12.6.1. It deliberately takes the gatherer's five-second
-post-resize branch instead of reproducing Lighthouse's trace and network-idle
-driver, so it is a bounded CDP protocol probe, not an lhci replacement. It has
-one 45-second watchdog and never retries a case.
+The diagnostic copies Lighthouse 12.6.1's installed desktop default config,
+replaces only the `FullPageScreenshot` artifact implementation, and retains
+the artifact ID. Its subclass inherits `getArtifact` and `_resizeViewport`, so
+the installed resize, network-idle, double-rAF, default protocol timeout and
+parallel `Promise.all([_takeScreenshot(), _resolveNodes()])` lifecycle remain
+unchanged. It adds `finally` timing receipts only around the two capture
+protocol commands and the page/isolated-context node reads.
 
 ## Evidence recorded
 
-`capture-diagnostic.json` is overwritten incrementally before and after each
-bounded browser operation. It records Chrome's executable and version, exact
-generated flags, document/content/viewport metrics, canvas CSS and backing
-dimensions, and context attributes only when the application itself created the
-WebGL context. It does not call `canvas.getContext()` while sampling, because
-that could create a different context first. It also records creator and figure
-lifecycle attributes, cold-start samples at 0, 2, 10, and 27.7 seconds after
-navigation, and each exact stage/error, including cleanup.
+`capture-diagnostic.json` is overwritten after every timed stage settles,
+including if its concurrent counterpart rejects. It records generated Chrome
+flags and settings, the actual artifact ID, static-server preflight and the
+timings/outcomes for `Page.getLayoutMetrics`, `Page.captureScreenshot`, page
+context node resolution and isolated-context node resolution. A successful
+Lighthouse run also writes its real `capture-full-page.webp` from the returned
+artifact and records decoded byte size; base64 is never printed.
 
-Every successful `Page.captureScreenshot` also writes a binary
-`capture-<case>.webp` beside the JSON receipt. The workflow uploads those files
-without printing their base64 payload, so visual review can inspect exactly what
-the protocol returned before drawing conclusions from an apparent success. Its
-`bytes` field is the decoded WebP size, not the length of Chrome's base64 text.
+The receipt records its diagnostic source commit and the failed product head
+`c57d29cbbf89160e627d258bf93af1a6904252f0`; the script refuses to run unless
+that product commit is in its ancestry. It also records the installed and
+diagnostic gatherer prototype method lists and which methods are inherited.
+`LH_FPS_TEST` is rejected so this run must retain production WebP quality 30.
 
-Before Chrome starts, the diagnostic's Node static server fetches the production
-entry page and the emitted JavaScript entry asset. Both must return HTTP 200
-with the expected content type; `HK_CAPTURE_DIAGNOSTIC_PREFLIGHT_ONLY=1` runs
-that deterministic build/server check without launching a browser.
+Before Chrome starts, the diagnostic uses LHCI's own fallback static server to
+fetch the production entry page and emitted JavaScript asset. Both must return
+HTTP 200 with the expected content type. This preflight prevents a server-path
+failure from being misreported as capture evidence.
 
 ## First dispatch result
 
@@ -75,22 +73,20 @@ one changed-code diagnostic push. It is not a rerun of the navigation-failure
 revision and it does not change product source, Lighthouse budgets, or screenshot
 requirements.
 
-The `FullPageScreenshot` gatherer begins at 27.7 seconds because the reproduced
-CI receipt navigated at 08:03:24.180 and began that gatherer at 08:03:51.911.
-The probe samples there, then follows its five-second post-resize branch before
-issuing `Page.captureScreenshot`. It does not wait for model settlement, so a
-warm-after-settle result cannot hide the original failure.
+The direct CDP probe was useful renderer evidence but cannot distinguish a
+capture command that blocks from Lighthouse's concurrent node-resolution work.
+The installed-gatherer diagnostic is the bounded next step: its receipt makes
+that distinction without disabling screenshots, extending a timeout, changing
+budgets or fabricating a substitute image.
 
 ## Interpretation
 
-- A bounded content height with a creator-only timeout narrows the issue to the
-  creator renderer or compositor path.
-- A bounded content height with both visible WebGL routes timing out but the
-  hidden-canvas route completing implicates the WebGL compositor/readback path.
-- A very large content height implicates viewport expansion before capture.
-- A timeout after hiding the canvas leaves the current evidence insufficient to
-  attribute the failure to WebGL; inspect the recorded dimensions and CSS
-  compositor work before proposing a change.
+- A failing `capture-webp` with timely node reads attributes the observed timeout
+  to the capture/compositor path under the unchanged Lighthouse lifecycle.
+- A failing page or isolated node stage with a successful capture attributes the
+  failure to execution-context work, not screenshot generation.
+- Timely stages in a completed run provide a real artifact for visual review,
+  but do not by themselves accept anatomy or rendering quality.
 
 Do not respond by disabling the screenshot, extending a timeout, or changing
 Lighthouse budgets. A production visual proof belongs in the normal visual QA

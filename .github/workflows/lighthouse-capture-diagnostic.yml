@@ -25,7 +25,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # This runs only the three cold protocol probes. It does not run the full CI suite.
+      # This runs one installed-gatherer protocol diagnostic, not the full CI suite.
       - run: node scripts/lighthouse-capture-diagnostic.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
