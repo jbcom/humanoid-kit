@@ -13,6 +13,7 @@ import {
 import { HumanoidCreator } from "humanoid-kit/editor";
 import {
   Humanoid,
+  type HumanoidAnimationFrame,
   type HumanoidPose,
   HumanoidProvider,
   STUDIO_EXPOSURE,
@@ -27,7 +28,7 @@ import { animationsPack } from "humanoid-kit-animations";
 import { bodyPack } from "humanoid-kit-body";
 import { eyesPack } from "humanoid-kit-eyes";
 import { hairPack } from "humanoid-kit-hair";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
@@ -256,7 +257,11 @@ function coatAngles(mesh: SkinnedMesh, camera: Object3D): CoatRuntimeProbe["angl
 }
 
 /** Exposes `window.hkDrawn` while mounted: the triangles each part of the figure draws. */
-function SceneProbe() {
+function SceneProbe({
+  animationFrame,
+}: {
+  animationFrame: React.RefObject<HumanoidAnimationFrame | null>;
+}) {
   const scene = useThree((s) => s.scene);
   const camera = useThree((s) => s.camera);
   const renderer = useThree((s) => s.gl);
@@ -269,6 +274,7 @@ function SceneProbe() {
       material?.setCompileProbe(true);
     });
   });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the probe intentionally reads the latest ref on each QA call.
   useEffect(() => {
     window.hkDrawn = () => {
       const out: DrawnPart[] = [];
@@ -295,6 +301,25 @@ function SceneProbe() {
       (found as Object3D).updateWorldMatrix(true, false);
       const v = new Vector3().setFromMatrixPosition((found as Object3D).matrixWorld);
       return [v.x, v.y, v.z];
+    };
+    window.hkContacts = () => {
+      const frame = animationFrame.current;
+      if (!frame) return null;
+      let figure: Object3D | null = null;
+      scene.traverse((o) => {
+        if (!figure && o.userData.groundOffset !== undefined) figure = o;
+      });
+      const figureGroup = figure as Object3D | null;
+      if (!figureGroup) return null;
+      figureGroup.updateWorldMatrix(true, false);
+      return {
+        generation: frame.generation,
+        time: frame.time,
+        contacts: frame.contacts.map((contact) => {
+          const point = figureGroup.localToWorld(new Vector3(...contact.position));
+          return { ...contact, position: [point.x, point.y, point.z] as [number, number, number] };
+        }),
+      };
     };
     window.hkFigure = () => {
       let found: Object3D | null = null;
@@ -363,6 +388,7 @@ function SceneProbe() {
     return () => {
       delete window.hkDrawn;
       delete window.hkBone;
+      delete window.hkContacts;
       delete window.hkFigure;
       delete window.hkCoatProbe;
     };
@@ -376,6 +402,18 @@ declare global {
     hkDrawn?: () => DrawnPart[];
     /** QA only: a bone's head in world space (see `SceneProbe`). */
     hkBone?: (name: string) => [number, number, number] | null;
+    /** QA only: exact current sole contacts in world space, from the animation frame observer. */
+    hkContacts?: () => {
+      generation: number;
+      time: number;
+      contacts: Array<{
+        side: "left" | "right";
+        point: "heel" | "ballInner" | "ballOuter";
+        position: [number, number, number];
+        owned: boolean;
+        hold: number;
+      }>;
+    } | null;
     /** QA only: where the figure's group stands, and the lift it was given. */
     hkFigure?: () => { position: [number, number, number]; groundOffset: number } | null;
     /** QA only: swaps the shot's recipe (and pose) without reloading (see `Shot`). */
@@ -706,6 +744,11 @@ function Shot() {
     (!wantsEyes || eyeLibrary !== null);
   const [generation, setGeneration] = useState(0);
   const client = useHumanoidClient();
+  // Playground-only bridge from the package's neutral frame observer to SceneProbe.
+  const animationFrame = useRef<HumanoidAnimationFrame | null>(null);
+  const onAnimationFrame = useCallback((frame: Readonly<HumanoidAnimationFrame>) => {
+    animationFrame.current = frame;
+  }, []);
   useEffect(() => {
     window.hkSetRecipe = (given, next, nextSignals) => {
       // `$customTargets` registers MakeHuman custom targets first, so a recipe can
@@ -788,7 +831,7 @@ function Shot() {
       >
         <StudioStage {...(background ? { background } : {})} />
         {params.has("groundQa") && <GroundQa />}
-        <SceneProbe />
+        <SceneProbe animationFrame={animationFrame} />
         <QaShade />
         {frame && frameView.length === 3 && frameView.every(Number.isFinite) && (
           <AutoFrame
@@ -811,7 +854,12 @@ function Shot() {
             {...(channelQa && { affordances })}
             {...(library &&
               animation && {
-                animation: { library, ...animation, onStart: setPlaying },
+                animation: {
+                  library,
+                  ...animation,
+                  onStart: setPlaying,
+                  onFrame: onAnimationFrame,
+                },
               })}
             {...(eyeLibrary && { eyeMaterials: eyeLibrary })}
             signals={signals}

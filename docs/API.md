@@ -1970,7 +1970,7 @@ animator.root;                // how far the figure has been carried: [x across,
   `PLANT_SWITCH`), `root` giving way by what a planted foot's leg could not reach
   (`FootLock.correction`). `contactPoints` and `CONTACT_BONES` are the points on the soles
   they work from.
-- `<Humanoid animation={{ library, clip, speed, fade, paused, time, rootMotion, onStart }}>`
+- `<Humanoid animation={{ library, clip, speed, fade, paused, time, rootMotion, onStart, onFrame }}>`
   (`HumanoidAnimation`, from `humanoid-kit/react`) plays a clip on the figure, frame by
   frame without React state: the body follows it with `pose.faceUnits` laid over,
   `pose.body` standing aside; the figure lifts itself onto the ground (do not lift the
@@ -1979,6 +1979,12 @@ animator.root;                // how far the figure has been carried: [x across,
   render-clock step, including after a slow frame; and the
   figure's presence follows. `time` puts it at a time in the clip. `onStart(clip)` is
   called once the figure follows the clip, and again for a new figure or `time`.
+  `onFrame(frame)` receives the completed pose and real FootLock contact owner for each sole,
+  without a React render: `owned` identifies the current owner while `hold` says whether it is
+  fully planted (1) or fading through rollover/release (0..1). Contacts are figure-local metres after ground lift and before
+  cumulative root carry, group heading or any caller transform; `root` is cumulative x/forward-z
+  carry and `delta` is this render frame's carry. `generation` increments after each evaluation/rest
+  binding so an integration can reject a callback from an earlier asynchronous recipe update.
 - `bodySegments(assets, rest, control, skinIndex, skinWeight, bodyVertices)` (a figure's 14
   capsules, radii measured from its skin) and `overlaps(rest, segments, rotations)` (every
   pair of parts that are not neighbours, with how deep they overlap in the pose, negative

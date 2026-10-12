@@ -9,6 +9,15 @@ import { openSilentGame } from "game-harness/playwright";
 import { budget } from "./budget.ts";
 
 type Vec3 = [number, number, number];
+type ContactPoint = "heel" | "ballInner" | "ballOuter";
+type ContactFrame = { generation: number; time: number; contacts: Contact[] };
+type Contact = {
+  side: "left" | "right";
+  point: ContactPoint;
+  position: Vec3;
+  owned: boolean;
+  hold: number;
+};
 
 async function bone(page: Page, name: string): Promise<Vec3> {
   const at = await page.evaluate((n) => window.hkBone?.(n) ?? null, name);
@@ -86,17 +95,22 @@ test.describe("a clip on the figure", () => {
     await openSilentGame(page, "./", { bg: "00ff00", cam: "0,0.95,3.2,0,0.88,0" });
     await show(page, { clip: "walk_normal" });
     const start = await page.evaluate(() => window.hkFigure?.()?.position as Vec3);
-    // Sample both balls of the feet on every rendered frame for a few cycles.
+    // Sample FootLock's actual, world-space sole contacts every rendered frame.
+    // A gait rolls heel -> inner/outer ball, so a particular toe joint is not a stance contract.
     const samples = await page.evaluate(
       (seconds) =>
-        new Promise<{ t: number; l: Vec3; r: Vec3; at: Vec3 }[]>((done) => {
-          const out: { t: number; l: Vec3; r: Vec3; at: Vec3 }[] = [];
+        new Promise<{ t: number; contacts: Contact[]; at: Vec3 }[]>((done) => {
+          const out: { t: number; contacts: Contact[]; at: Vec3 }[] = [];
           const t0 = performance.now();
           const tick = () => {
-            const l = window.hkBone?.("toe1-1.L");
-            const r = window.hkBone?.("toe1-1.R");
+            const contacts = window.hkContacts?.() as ContactFrame | null | undefined;
             const at = window.hkFigure?.()?.position;
-            if (l && r && at) out.push({ t: performance.now() - t0, l, r, at: at as Vec3 });
+            if (contacts && at)
+              out.push({
+                t: performance.now() - t0,
+                contacts: contacts.contacts,
+                at: at as Vec3,
+              });
             if (performance.now() - t0 < seconds * 1000) requestAnimationFrame(tick);
             else done(out);
           };
@@ -109,37 +123,72 @@ test.describe("a clip on the figure", () => {
     expect(end[2] - start[2], "carried forward, metres").toBeGreaterThan(1.5);
     expect(Math.abs(end[0] - start[0]), "sideways").toBeLessThan(0.1);
     expect(samples.length, "frames sampled").toBeGreaterThan(20);
-    // A planted ball: the joint's height is within 6 mm of the lowest it reaches, over at least 5 frames
-    // (the joint rolls over the sole as the foot does, so this is looser than the unit test's sole points).
-    for (const side of ["l", "r"] as const) {
-      const heights = samples.map((s) => s[side][1]);
-      const low = Math.min(...heights);
+    // FootLock pins from the first frame; its own unit contract samples after the first
+    // full cycle, once those initial pins have settled. Keep the five-second observation
+    // window and the same 40 mm limit for every subsequent held contact.
+    const settledSamples = samples.filter((sample) => sample.t >= 1000);
+    for (const side of ["left", "right"] as const) {
       let start0 = -1;
+      let point: ContactPoint | null = null;
       let worst = 0;
       let stances = 0;
-      for (let i = 0; i <= samples.length; i++) {
-        const planted = i < samples.length && (heights[i] as number) - low < 0.006;
-        if (planted && start0 < 0) start0 = i;
-        if (!planted && start0 >= 0) {
+      for (let i = 0; i <= settledSamples.length; i++) {
+        const contact =
+          i < settledSamples.length
+            ? settledSamples[i]?.contacts.find(
+                (candidate) => candidate.side === side && candidate.owned && candidate.hold === 1,
+              )
+            : undefined;
+        const held = contact !== undefined && contact.point === point;
+        if (contact && (start0 < 0 || !held)) {
+          if (start0 >= 0 && i - start0 >= 5) {
+            stances++;
+            for (let k = start0; k < i; k++) {
+              const at = settledSamples[k]?.contacts.find(
+                (candidate) => candidate.side === side && candidate.point === point,
+              );
+              const first = settledSamples[start0]?.contacts.find(
+                (candidate) => candidate.side === side && candidate.point === point,
+              );
+              if (at && first)
+                worst = Math.max(
+                  worst,
+                  Math.hypot(
+                    at.position[0] - first.position[0],
+                    at.position[2] - first.position[2],
+                  ),
+                );
+            }
+          }
+          start0 = i;
+          point = contact.point;
+        } else if (!contact && start0 >= 0) {
           if (i - start0 >= 5) {
             stances++;
-            for (let k = start0; k < i; k++)
-              worst = Math.max(
-                worst,
-                Math.hypot(
-                  (samples[k] as (typeof samples)[number])[side][0] -
-                    (samples[start0] as (typeof samples)[number])[side][0],
-                  (samples[k] as (typeof samples)[number])[side][2] -
-                    (samples[start0] as (typeof samples)[number])[side][2],
-                ),
+            for (let k = start0; k < i; k++) {
+              const at = settledSamples[k]?.contacts.find(
+                (candidate) => candidate.side === side && candidate.point === point,
               );
+              const first = settledSamples[start0]?.contacts.find(
+                (candidate) => candidate.side === side && candidate.point === point,
+              );
+              if (at && first)
+                worst = Math.max(
+                  worst,
+                  Math.hypot(
+                    at.position[0] - first.position[0],
+                    at.position[2] - first.position[2],
+                  ),
+                );
+            }
           }
           start0 = -1;
+          point = null;
         }
       }
-      expect(stances, `${side} planted stretches`).toBeGreaterThanOrEqual(2);
-      // The figure's group moves in the world with the bones in it, so a planted ball's world position is fixed.
-      expect(worst, `${side} ball moved while planted, metres`).toBeLessThan(0.04);
+      expect(stances, `${side} fully planted stretches`).toBeGreaterThanOrEqual(2);
+      // The figure's group moves in the world with the feet in it, so a fully held sole stays fixed.
+      expect(worst, `${side} fully planted sole moved, metres`).toBeLessThan(0.04);
     }
   });
 
@@ -149,8 +198,14 @@ test.describe("a clip on the figure", () => {
       groundQa: 1,
     });
     await show(page, { clip: "walk_normal", time: 0, paused: true, rootMotion: false });
+    const priorGeneration = await page.evaluate(() => window.hkContacts?.()?.generation ?? -1);
     await captureAnimationState(page, testInfo, "walk-pre-hitch");
     await show(page, { clip: "walk_normal" });
+    const currentGeneration = await page.evaluate(() => window.hkContacts?.()?.generation ?? -1);
+    expect(
+      currentGeneration,
+      "the resumed same-id clip is bound to its replacement evaluation",
+    ).toBeGreaterThan(priorGeneration);
     const moved = await page.evaluate(
       (stall) =>
         new Promise<number>((done) => {
