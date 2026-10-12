@@ -47,3 +47,7 @@ jobs:
             await browser.close();
           }
           NODE
+      - name: Run the GPU affordance proof on the verified renderer
+        env:
+          HK_GPU: macos-hardware-metal
+        run: pnpm exec vitest run --project browser tests/browser/affordanceGpu.test.tsx
