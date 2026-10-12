@@ -161,6 +161,14 @@ test("tall/short clothed handshake", async ({ page }, testInfo) => {
   });
   await page.setViewportSize({ width: 520, height: 520 });
   await openSilentGame(page, "/?scene=handshake&clothing=1", {}, { markerTimeout: 120_000 });
+  await expect(
+    page.locator("canvas"),
+    "the mounted review route renders its R3F canvas",
+  ).toBeVisible();
+  await expect(
+    page.locator("[data-handshake-error]"),
+    "the mounted review route does not fall back to a blank-screen boot error",
+  ).toHaveCount(0);
   const source = await waitForReady(page, "initial handshake source");
   expect(source.muted, "the harness supplied the non-persistent mute route").toBe(true);
   expect(source.adults, "both recipe ages are adult").toBe(true);

@@ -45,10 +45,12 @@ root records a fresh review conclusion.
 ## Automated presenter checks
 
 `e2e/sheets/handshake.sheet.ts` remains an explicit review command. It checks
-the mute marker, adult/clothed source, explicit fixture-consent state, visible
-diagnostic region, runtime target, both live hand frames and finite gaps for
-all four stages and three views. It intentionally does **not** accept a gap as
-physical contact while the real clip/IK is absent.
+the mute marker, adult/clothed source, explicit fixture-consent state, a mounted
+R3F canvas, absence of the visible boot-error boundary, the diagnostic region,
+runtime target, both live hand frames and finite gaps for all four stages and
+three views. The canvas probe publishes snapshots to the DOM panel through an
+external subscription; the panel never calls an R3F hook. It intentionally does
+**not** accept a gap as physical contact while the real clip/IK is absent.
 
 ```sh
 heavy-slot pnpm exec playwright test e2e/sheets/handshake.sheet.ts --project sheets

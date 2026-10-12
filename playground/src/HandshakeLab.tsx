@@ -21,7 +21,15 @@ import {
   useHumanoidAffordances,
 } from "humanoid-kit/react";
 import { animationsPack } from "humanoid-kit-animations";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Component,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { type Group, MathUtils, type Object3D, Vector3 } from "three";
 import { sampleRequiredHandFrame } from "./handFrame";
 
@@ -121,6 +129,8 @@ interface Control {
   bindingFailure: string | null;
   phase: string;
   ready: boolean;
+  gateSnapshot: GateSnapshot;
+  gateListeners: Set<() => void>;
 }
 
 interface GateSnapshot {
@@ -134,6 +144,18 @@ interface GateSnapshot {
   readonly targetGap: { readonly tall: number; readonly short: number } | null;
   readonly bindingFailure: string | null;
 }
+
+const INITIAL_GATE_SNAPSHOT: GateSnapshot = {
+  stage: "approach",
+  view: "front",
+  phase: "loading",
+  ready: false,
+  clothed: false,
+  target: null,
+  hands: null,
+  targetGap: null,
+  bindingFailure: null,
+};
 
 export interface HandshakeLabApi {
   setStage(stage: Stage): void;
@@ -185,6 +207,7 @@ function selectStage(control: Control, stage: Stage): void {
   control.stage = stage;
   control.restart = true;
   control.ready = false;
+  publishGate(control);
 }
 
 function snapshotOf(control: Control): GateSnapshot {
@@ -210,6 +233,25 @@ function snapshotOf(control: Control): GateSnapshot {
     targetGap: tallGap === null || shortGap === null ? null : { tall: tallGap, short: shortGap },
     bindingFailure: control.bindingFailure,
   };
+}
+
+function publishGate(control: Control): void {
+  control.gateSnapshot = snapshotOf(control);
+  for (const listener of control.gateListeners) listener();
+}
+
+/** Samples rendered state inside Canvas and publishes a stable external snapshot for DOM diagnostics. */
+function GateProbe({ control }: { control: Control }) {
+  const last = useRef(-Infinity);
+  useFrame((state) => {
+    // The outside diagnostic must never use R3F hooks. Publishing at a readable
+    // cadence preserves a cached snapshot between subscriptions and frames.
+    if (state.clock.elapsedTime - last.current >= 0.15) {
+      last.current = state.clock.elapsedTime;
+      publishGate(control);
+    }
+  });
+  return null;
 }
 
 function Camera({ control }: { control: Control }) {
@@ -481,6 +523,7 @@ function StageFigures({ control }: { control: Control }) {
       />
       <ClothingProbe control={control} />
       <Camera control={control} />
+      <GateProbe control={control} />
     </PresenceProvider>
   );
 }
@@ -498,6 +541,7 @@ function Api({ control }: { control: Control }) {
       },
       setView: (view) => {
         control.view = view;
+        publishGate(control);
       },
       state: () => ({
         ...snapshotOf(control),
@@ -521,16 +565,14 @@ function Api({ control }: { control: Control }) {
  * frames are live values from the interaction runtime and rendered figures.
  */
 function GatePanel({ control }: { control: Control }) {
-  const [snapshot, setSnapshot] = useState<GateSnapshot>(() => snapshotOf(control));
-  const last = useRef(-Infinity);
-  useFrame((state) => {
-    // A small UI refresh rate keeps this diagnostic readable without putting
-    // the interaction's continuous values into React state every render frame.
-    if (state.clock.elapsedTime - last.current >= 0.15) {
-      last.current = state.clock.elapsedTime;
-      setSnapshot(snapshotOf(control));
-    }
-  });
+  const snapshot = useSyncExternalStore(
+    (notify) => {
+      control.gateListeners.add(notify);
+      return () => control.gateListeners.delete(notify);
+    },
+    () => control.gateSnapshot,
+    () => control.gateSnapshot,
+  );
   const gap = snapshot.targetGap;
   const fmt = (value: number | null | undefined) =>
     value === null || value === undefined ? "—" : `${(value * 100).toFixed(1)} cm`;
@@ -601,7 +643,7 @@ function GatePanel({ control }: { control: Control }) {
             type="button"
             onClick={() => {
               control.view = view;
-              setSnapshot(snapshotOf(control));
+              publishGate(control);
             }}
             style={{
               border: `1px solid ${snapshot.view === view ? "#9bc7ff" : "#79808b"}`,
@@ -620,6 +662,50 @@ function GatePanel({ control }: { control: Control }) {
   );
 }
 
+interface HandshakeErrorBoundaryState {
+  error: Error | null;
+}
+
+/** A lab boot failure must name itself in the review surface instead of leaving a blank screen. */
+class HandshakeErrorBoundary extends Component<
+  { children: ReactNode },
+  HandshakeErrorBoundaryState
+> {
+  state: HandshakeErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): HandshakeErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error): void {
+    console.error("handshake visual gate failed to mount", error);
+  }
+
+  render() {
+    if (this.state.error)
+      return (
+        <section
+          role="alert"
+          aria-label="Handshake diagnostic failed to mount"
+          data-handshake-error
+          style={{
+            minHeight: "100vh",
+            boxSizing: "border-box",
+            padding: 32,
+            color: "#f4ecda",
+            background: "#171b22",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          }}
+        >
+          <h1>Handshake diagnostic failed to mount</h1>
+          <p>Reload after correcting the lab error; this review route must never fail silently.</p>
+          <pre style={{ whiteSpace: "pre-wrap", color: "#ffb4a7" }}>{this.state.error.message}</pre>
+        </section>
+      );
+    return this.props.children;
+  }
+}
+
 export function HandshakeLab() {
   const control = useMemo<Control>(
     () => ({
@@ -636,27 +722,31 @@ export function HandshakeLab() {
       bindingFailure: null,
       phase: "loading",
       ready: false,
+      gateSnapshot: INITIAL_GATE_SNAPSHOT,
+      gateListeners: new Set(),
     }),
     [],
   );
   return (
-    <div
-      style={{ position: "absolute", inset: 0 }}
-      data-handshake-lab
-      data-figure={control.ready ? "ready" : "loading"}
-    >
-      <Canvas
-        camera={{ position: [0, 1.1, 4.9], fov: 35 }}
-        gl={{
-          preserveDrawingBuffer: true,
-          toneMapping: STUDIO_TONE_MAPPING,
-          toneMappingExposure: STUDIO_EXPOSURE,
-        }}
+    <HandshakeErrorBoundary>
+      <div
+        style={{ position: "absolute", inset: 0 }}
+        data-handshake-lab
+        data-figure={control.ready ? "ready" : "loading"}
       >
-        <StageFigures control={control} />
-        <Api control={control} />
-      </Canvas>
-      <GatePanel control={control} />
-    </div>
+        <Canvas
+          camera={{ position: [0, 1.1, 4.9], fov: 35 }}
+          gl={{
+            preserveDrawingBuffer: true,
+            toneMapping: STUDIO_TONE_MAPPING,
+            toneMappingExposure: STUDIO_EXPOSURE,
+          }}
+        >
+          <StageFigures control={control} />
+          <Api control={control} />
+        </Canvas>
+        <GatePanel control={control} />
+      </div>
+    </HandshakeErrorBoundary>
   );
 }
