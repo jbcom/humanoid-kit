@@ -123,6 +123,18 @@ interface Control {
   ready: boolean;
 }
 
+interface GateSnapshot {
+  readonly stage: Stage;
+  readonly view: View;
+  readonly phase: string;
+  readonly ready: boolean;
+  readonly clothed: boolean;
+  readonly target: Vec3 | null;
+  readonly hands: { readonly tall: Vec3; readonly short: Vec3 } | null;
+  readonly targetGap: { readonly tall: number; readonly short: number } | null;
+  readonly bindingFailure: string | null;
+}
+
 export interface HandshakeLabApi {
   setStage(stage: Stage): void;
   setView(view: View): void;
@@ -134,10 +146,12 @@ export interface HandshakeLabApi {
     muted: boolean;
     adults: boolean;
     clothed: boolean;
+    consent: { tall: true; short: true };
     source: "presence-registry+interaction-runtime+animation-library";
     animation: string;
     target: number[] | null;
     hands: { tall: number[]; short: number[] } | null;
+    targetGap: { tall: number; short: number } | null;
     bindingFailure: string | null;
   };
 }
@@ -164,6 +178,38 @@ function moveToSlot(group: Group | null, slot: SlotPlacement | null, delta: numb
     group.position.addScaledVector(new Vector3(dx / distance, 0, dz / distance), step);
   const yaw = Math.atan2(slot.facing[0], slot.facing[2]);
   group.rotation.y = MathUtils.damp(group.rotation.y, yaw, 12, delta);
+}
+
+/** A lab-only state change. The interaction runtime remains the source of phase state. */
+function selectStage(control: Control, stage: Stage): void {
+  control.stage = stage;
+  control.restart = true;
+  control.ready = false;
+}
+
+function snapshotOf(control: Control): GateSnapshot {
+  const target = control.target && ([...control.target] as Vec3);
+  const hands = control.hands && {
+    tall: [...control.hands.tall] as Vec3,
+    short: [...control.hands.short] as Vec3,
+  };
+  const gap = (hand: Vec3) =>
+    target === null
+      ? null
+      : Math.hypot(hand[0] - target[0], hand[1] - target[1], hand[2] - target[2]);
+  const tallGap = hands ? gap(hands.tall) : null;
+  const shortGap = hands ? gap(hands.short) : null;
+  return {
+    stage: control.stage,
+    view: control.view,
+    phase: control.phase,
+    ready: control.ready,
+    clothed: control.clothed,
+    target,
+    hands,
+    targetGap: tallGap === null || shortGap === null ? null : { tall: tallGap, short: shortGap },
+    bindingFailure: control.bindingFailure,
+  };
 }
 
 function Camera({ control }: { control: Control }) {
@@ -309,7 +355,15 @@ function Controller({
   );
   useEffect(() => {
     runtime.define([HANDSHAKE_REVIEW]);
-    return () => runtime.detach();
+    // The fixture makes both participants explicitly consent. It must not rely
+    // on the runtime's permissive default for an "all" interaction.
+    const unconsentTall = runtime.policy("tall", () => true);
+    const unconsentShort = runtime.policy("short", () => true);
+    return () => {
+      unconsentTall();
+      unconsentShort();
+      runtime.detach();
+    };
   }, [runtime]);
   useFrame((_, delta) => {
     if (control.restart) {
@@ -440,26 +494,18 @@ function Api({ control }: { control: Control }) {
   useEffect(() => {
     window.hkHandshake = {
       setStage: (stage) => {
-        control.stage = stage;
-        control.restart = true;
-        control.ready = false;
+        selectStage(control, stage);
       },
       setView: (view) => {
         control.view = view;
       },
       state: () => ({
-        stage: control.stage,
-        view: control.view,
-        phase: control.phase,
-        ready: control.ready,
+        ...snapshotOf(control),
         muted: params.has("muted"),
         adults: tall.macros.age >= 18 && short.macros.age >= 18,
-        clothed: control.clothed,
+        consent: { tall: true, short: true },
         source: "presence-registry+interaction-runtime+animation-library",
         animation: IDLE_CLIP,
-        target: control.target && [...control.target],
-        hands: control.hands && { tall: [...control.hands.tall], short: [...control.hands.short] },
-        bindingFailure: control.bindingFailure,
       }),
     };
     return () => {
@@ -467,6 +513,111 @@ function Api({ control }: { control: Control }) {
     };
   }, [control]);
   return null;
+}
+
+/**
+ * A visible diagnostic readout for root review. It does not move a hand or
+ * decide whether the figures have made contact: the yellow point and two hand
+ * frames are live values from the interaction runtime and rendered figures.
+ */
+function GatePanel({ control }: { control: Control }) {
+  const [snapshot, setSnapshot] = useState<GateSnapshot>(() => snapshotOf(control));
+  const last = useRef(-Infinity);
+  useFrame((state) => {
+    // A small UI refresh rate keeps this diagnostic readable without putting
+    // the interaction's continuous values into React state every render frame.
+    if (state.clock.elapsedTime - last.current >= 0.15) {
+      last.current = state.clock.elapsedTime;
+      setSnapshot(snapshotOf(control));
+    }
+  });
+  const gap = snapshot.targetGap;
+  const fmt = (value: number | null | undefined) =>
+    value === null || value === undefined ? "—" : `${(value * 100).toFixed(1)} cm`;
+  return (
+    <section
+      aria-label="Tall and short handshake diagnostic"
+      style={{
+        position: "absolute",
+        top: 16,
+        left: 16,
+        width: 300,
+        padding: 14,
+        color: "#f4ecda",
+        background: "rgba(20, 23, 29, 0.9)",
+        border: "1px solid rgba(255, 210, 63, 0.65)",
+        borderRadius: 8,
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        fontSize: 12,
+        lineHeight: 1.45,
+      }}
+    >
+      <strong style={{ display: "block", color: "#ffd23f", fontSize: 14 }}>
+        Tall / short handshake gate
+      </strong>
+      <p style={{ margin: "6px 0 10px" }}>
+        Neutral, clothed adult pair. Both fixture policies explicitly consent. Yellow = runtime grip
+        target; RGB = live hand frames.
+      </p>
+      <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 10px", margin: 0 }}>
+        <dt>stage</dt>
+        <dd>
+          {snapshot.stage} / {snapshot.phase}
+        </dd>
+        <dt>view</dt>
+        <dd>{snapshot.view}</dd>
+        <dt>fixture</dt>
+        <dd>{snapshot.clothed ? "clothed" : "checking clothing"}</dd>
+        <dt>hand→target</dt>
+        <dd>
+          tall {fmt(gap?.tall)}, short {fmt(gap?.short)}
+        </dd>
+        <dt>binding</dt>
+        <dd>{snapshot.bindingFailure ?? (snapshot.ready ? "ready" : "settling")}</dd>
+      </dl>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+        {(["approach", "grip", "release", "cancel"] as const).map((stage) => (
+          <button
+            key={stage}
+            type="button"
+            onClick={() => selectStage(control, stage)}
+            style={{
+              border: `1px solid ${snapshot.stage === stage ? "#ffd23f" : "#79808b"}`,
+              borderRadius: 4,
+              background: snapshot.stage === stage ? "#473c11" : "#252a33",
+              color: "#f4ecda",
+              cursor: "pointer",
+              padding: "4px 7px",
+            }}
+          >
+            {stage}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+        {(["front", "three-quarter", "side"] as const).map((view) => (
+          <button
+            key={view}
+            type="button"
+            onClick={() => {
+              control.view = view;
+              setSnapshot(snapshotOf(control));
+            }}
+            style={{
+              border: `1px solid ${snapshot.view === view ? "#9bc7ff" : "#79808b"}`,
+              borderRadius: 4,
+              background: snapshot.view === view ? "#19334b" : "#252a33",
+              color: "#f4ecda",
+              cursor: "pointer",
+              padding: "4px 7px",
+            }}
+          >
+            {view}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 export function HandshakeLab() {
@@ -505,6 +656,7 @@ export function HandshakeLab() {
         <StageFigures control={control} />
         <Api control={control} />
       </Canvas>
+      <GatePanel control={control} />
     </div>
   );
 }

@@ -36,10 +36,12 @@ interface LabState {
   muted: boolean;
   adults: boolean;
   clothed: boolean;
+  consent: { tall: true; short: true };
   source: string;
   animation: string;
   target: number[] | null;
   hands: { tall: number[]; short: number[] } | null;
+  targetGap: { tall: number; short: number } | null;
   bindingFailure: string | null;
 }
 
@@ -96,6 +98,13 @@ async function show(page: Page, stage: Stage, view: View): Promise<string> {
   expect(checked.view).toBe(view);
   expect(checked.target, `${stage}/${view} has a runtime target`).not.toBeNull();
   expect(checked.hands, `${stage}/${view} has both live hand frames`).not.toBeNull();
+  expect(checked.targetGap, `${stage}/${view} exposes both target-to-hand gaps`).not.toBeNull();
+  expect(Number.isFinite(checked.targetGap?.tall), `${stage}/${view} tall gap is finite`).toBe(
+    true,
+  );
+  expect(Number.isFinite(checked.targetGap?.short), `${stage}/${view} short gap is finite`).toBe(
+    true,
+  );
   return (await page.locator("canvas").screenshot()).toString("base64");
 }
 
@@ -156,6 +165,13 @@ test("tall/short clothed handshake", async ({ page }, testInfo) => {
   expect(source.muted, "the harness supplied the non-persistent mute route").toBe(true);
   expect(source.adults, "both recipe ages are adult").toBe(true);
   expect(source.clothed, "both source garments are drawn").toBe(true);
+  expect(source.consent, "both neutral fixture participants explicitly consent").toEqual({
+    tall: true,
+    short: true,
+  });
+  await expect(
+    page.getByRole("region", { name: "Tall and short handshake diagnostic" }),
+  ).toBeVisible();
   expect(source.source, "the lab samples live runtime state").toBe(
     "presence-registry+interaction-runtime+animation-library",
   );
