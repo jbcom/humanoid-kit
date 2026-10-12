@@ -138,8 +138,77 @@ describe("the posed body", () => {
     expect(maxY(body.positions)).toBeGreaterThan(maxY(body.rest) + 0.05);
   });
 
+  it("does not solve a fold for an upper-body pose below the hip-fold onset", () => {
+    for (const [m, r, surface] of [
+      [model, recipe, body],
+      [adultModel, adultRecipe, adultBody],
+    ] as const) {
+      const rotations = bodyPoseRotations(rigData(m.assets), "overhead");
+      const positionsWithoutFold = skinPositions(
+        surface.bones,
+        rotations,
+        surface.rest,
+        surface.skinIndex,
+        surface.skinWeight,
+        new Float32Array(surface.rest.length),
+      );
+      const normalsWithoutFold = skinNormals(
+        surface.bones,
+        rotations,
+        surface.restNormals,
+        surface.skinIndex,
+        surface.skinWeight,
+        new Float32Array(surface.restNormals.length),
+      );
+      const witness = restFoldWitness(surface.vertexCount);
+      expect(
+        skinPositions(
+          surface.bones,
+          rotations,
+          surface.rest,
+          surface.skinIndex,
+          surface.skinWeight,
+          new Float32Array(surface.rest.length),
+          witness,
+        ),
+      ).toEqual(positionsWithoutFold);
+      expect(
+        skinNormals(
+          surface.bones,
+          rotations,
+          surface.restNormals,
+          surface.skinIndex,
+          surface.skinWeight,
+          new Float32Array(surface.restNormals.length),
+          witness,
+        ),
+      ).toEqual(normalsWithoutFold);
+      const hipFold = vi.spyOn(m, "hipFold").mockImplementation(() => {
+        throw new Error("an upper-body pose must not solve a hip fold");
+      });
+      try {
+        expect(() => posedSurface(m, r, "overhead")).not.toThrow();
+        expect(hipFold).not.toHaveBeenCalled();
+      } finally {
+        hipFold.mockRestore();
+      }
+    }
+  });
+
   it("carries the renderer's hip fold where the hips flex, and nowhere at rest", () => {
-    const seated = posedSurface(model, recipe, "seated");
+    const hipFold = vi.spyOn(model, "hipFold");
+    let seated: ReturnType<typeof posedSurface>;
+    try {
+      // Seated performs the existing physical fold check below; flexed reuses
+      // that shape's cached native table, proving both active ranges request it.
+      seated = posedSurface(model, recipe, "seated");
+      expect(hipFold).toHaveBeenCalledTimes(1);
+      hipFold.mockClear();
+      posedSurface(model, recipe, "flexed");
+      expect(hipFold).toHaveBeenCalledTimes(1);
+    } finally {
+      hipFold.mockRestore();
+    }
     const unfolded = skinPositions(
       seated.bones,
       seated.rotations,
