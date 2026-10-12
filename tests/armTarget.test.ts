@@ -352,6 +352,80 @@ describe("arm target constraints", { timeout: 300_000 }, () => {
     expect(orientationError).toBeLessThanOrEqual(0.04);
   });
 
+  it("uses an orientation supplied by a skinned-frame effector without requiring a tip orientation", () => {
+    const fixture = adult();
+    const chain = armChain(fixture.rest, "R");
+    const wrist = chain.at(-1) as number;
+    const before = handFrame(fixture.recipe, fixture.evaluation, base, fixture.world, "figure");
+    const sourceOrientation = orientation(before);
+    const desired = new Quaternion(...sourceOrientation).multiply(
+      new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.1),
+    );
+    const result = solveArmTarget({
+      rest: fixture.rest,
+      rotations: base,
+      chain,
+      // The sampler owns the measured frame; the arm tip has no orientation.
+      tip: armTip(fixture.rest, base, chain, before.position),
+      target: {
+        position: before.position,
+        orientation: [desired.x, desired.y, desired.z, desired.w],
+      },
+      effector: (rotations) => {
+        const frame = handFrame(
+          fixture.recipe,
+          fixture.evaluation,
+          rotations,
+          fixture.world,
+          "figure",
+        );
+        return { position: frame.position, orientation: orientation(frame) };
+      },
+      tolerance: 0.01,
+      orientationTolerance: 0.04,
+    });
+    expect(result.status, JSON.stringify(result)).toBe("reached");
+    expect(result.orientationError).toBeLessThanOrEqual(0.04);
+    expect(result.rotations[wrist * 4 + 3]).not.toBe(base[wrist * 4 + 3]);
+  });
+
+  it("reapplies wrist orientation after ancestors refine a displaced contact", () => {
+    const fixture = adult();
+    const before = handFrame(fixture.recipe, fixture.evaluation, base, fixture.world, "figure");
+    const desired = new Quaternion(...orientation(before)).multiply(
+      new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.1),
+    );
+    const result = solveActualHand({
+      ...fixture,
+      target: [before.position[0] + 0.04, before.position[1] + 0.02, before.position[2] - 0.04],
+      orientation: [desired.x, desired.y, desired.z, desired.w],
+      orientationTolerance: 0.05,
+    });
+    expect(result.status, JSON.stringify(result)).toBe("reached");
+    expect(result.orientationError).toBeLessThanOrEqual(0.05);
+  });
+
+  it("keeps non-arm source rotations byte-identical at partial weight", () => {
+    const fixture = adult();
+    const chain = armChain(fixture.rest, "R");
+    const source = Float32Array.from(base);
+    const head = fixture.rest.names.indexOf("head");
+    source[head * 4 + 3] = 2;
+    const before = handFrame(fixture.recipe, fixture.evaluation, source, fixture.world, "figure");
+    const result = solveArmTarget({
+      rest: fixture.rest,
+      rotations: source,
+      chain,
+      tip: armTip(fixture.rest, source, chain, before.position),
+      target: { position: [before.position[0] + 0.04, before.position[1], before.position[2]] },
+      weight: 0,
+    });
+    expect(result.rotations[head * 4 + 3]).toBe(2);
+    expect([...result.rotations.slice(head * 4, head * 4 + 4)]).toEqual([
+      ...source.slice(head * 4, head * 4 + 4),
+    ]);
+  });
+
   it("keeps the elbow on the declared pole side for nearby rendered-hand targets", () => {
     const fixture = adult();
     const chain = armChain(fixture.rest, "R");

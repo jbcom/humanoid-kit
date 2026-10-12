@@ -257,37 +257,32 @@ export function solveArmTarget(input: ArmTargetInput): ArmTargetResult {
     );
   }
 
-  if (target.orientation && tip.orientation) {
-    const final = chain.at(-1) as number;
-    const posed = posedBones(rest, out);
-    const parent = rest.parents[final] as number;
-    const parentWorld = parent < 0 ? IDENTITY : quatAt(posed.world, parent);
-    const desiredWorld = mul(target.orientation, conjugate(tip.orientation));
-    const desiredLocal = mul(conjugate(parentWorld), desiredWorld);
-    setLimitedLocal(source, out, final, desiredLocal, limits.at(-1) as ArmJointLimit);
-    // Wrist orientation changes a non-zero hand offset. Refine position without
-    // revisiting the final wrist, so requested orientation remains intact.
-    for (let pass = 0; pass < Math.ceil(iterations / 3); pass++)
-      for (let offset = chain.length - 2; offset >= 0; offset--) {
-        const joint = chain[offset] as number;
-        const posedNow = posedBones(rest, out);
-        const from = pointAt(posedNow.heads, joint);
-        const end = sampledEnd(posedNow, out, chain, tip, input.effector).position;
-        const toEnd = subtract(end, from);
-        const toTarget = subtract(target.position, from);
-        if (length(toEnd) >= 1e-9 && length(toTarget) >= 1e-9)
-          applyWorldDelta(
-            rest,
-            source,
-            out,
-            joint,
-            between(toEnd, toTarget),
-            limits[offset] as ArmJointLimit,
-          );
-      }
+  if (target.orientation) {
+    // A sampler may measure a final frame without exposing a separately-authored
+    // tip orientation. In that case correct the measured frame's world delta.
+    // Reapply after each ancestor pass because moving an ancestor changes the
+    // wrist's world frame after its local correction was calculated.
+    const orientationPasses = Math.ceil(iterations / 3);
+    for (let pass = 0; pass < orientationPasses; pass++) {
+      correctOrientation(rest, source, out, chain, tip, target.orientation, input.effector, limits);
+      refinePosition(
+        rest,
+        source,
+        out,
+        chain,
+        tip,
+        target.position,
+        input.effector,
+        limits,
+        1,
+        0,
+        chain.length - 2,
+      );
+    }
+    correctOrientation(rest, source, out, chain, tip, target.orientation, input.effector, limits);
   }
 
-  if (weight < 1) blendInto(source, out, weight);
+  if (weight < 1) blendArmInto(source, out, chain, weight);
   const finalPose = posedBones(rest, out);
   const finalEffector = sampledEnd(finalPose, out, chain, tip, input.effector);
   const end = finalEffector.position;
@@ -457,9 +452,10 @@ function refinePosition(
   limits: readonly ArmJointLimit[],
   passes: number,
   firstJoint: number,
+  lastJoint = chain.length - 1,
 ): void {
   for (let pass = 0; pass < passes; pass++)
-    for (let offset = chain.length - 1; offset >= firstJoint; offset--) {
+    for (let offset = lastJoint; offset >= firstJoint; offset--) {
       const joint = chain[offset] as number;
       const posed = posedBones(rest, out);
       const from = pointAt(posed.heads, joint);
@@ -476,6 +472,31 @@ function refinePosition(
         limits[offset] as ArmJointLimit,
       );
     }
+}
+
+/** Correct the final local bone from either its fixed tip or a measured frame. */
+function correctOrientation(
+  rest: RestBones,
+  source: BoneRotations,
+  out: BoneRotations,
+  chain: readonly number[],
+  tip: ArmTip,
+  target: Quat,
+  effector: ArmTargetInput["effector"],
+  limits: readonly ArmJointLimit[],
+): void {
+  const final = chain.at(-1) as number;
+  const posed = posedBones(rest, out);
+  const frame = sampledEnd(posed, out, chain, tip, effector);
+  if (!frame.orientation) return;
+  const parent = rest.parents[final] as number;
+  const parentWorld = parent < 0 ? IDENTITY : quatAt(posed.world, parent);
+  const finalWorld = quatAt(posed.world, final);
+  const desiredWorld = tip.orientation
+    ? mul(target, conjugate(tip.orientation))
+    : mul(mul(target, conjugate(frame.orientation)), finalWorld);
+  const desiredLocal = mul(conjugate(parentWorld), desiredWorld);
+  setLimitedLocal(source, out, final, desiredLocal, limits.at(-1) as ArmJointLimit);
 }
 
 function applyWorldDelta(
@@ -542,8 +563,13 @@ function normalizeQuat(q: Quat): Quat {
   return [q[0] / n, q[1] / n, q[2] / n, q[3] / n];
 }
 
-function blendInto(source: BoneRotations, out: BoneRotations, weight: number): void {
-  for (let bone = 0; bone < out.length / 4; bone++)
+function blendArmInto(
+  source: BoneRotations,
+  out: BoneRotations,
+  chain: readonly number[],
+  weight: number,
+): void {
+  for (const bone of chain)
     out.set(slerp(quatAt(source, bone), quatAt(out, bone), weight), bone * 4);
 }
 

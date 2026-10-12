@@ -292,7 +292,10 @@ and either a wrist-local `armTip` or an `effector` that samples the final hand
 frame. A rendered contact must use the latter: a wrist head or interaction
 marker is not a proof that the final skinned hand reached a target. The
 primitive is not wired into the interaction runtime, React bindings, or an
-authored clip.
+authored clip. For an orientation target, either the tip or the measured
+effector frame must report an orientation; ancestor position refinement and
+the final wrist correction are alternated before the measured result is
+reported.
 
 `createArmSkinnedFrameSampler` is the allocation-bounded `effector` adapter for
 one solve. It owns transient skeleton and skinning scratch, borrows one

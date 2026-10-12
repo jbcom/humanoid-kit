@@ -978,7 +978,9 @@ and expressions"). Framework-free.
   and `solveArmTarget(input)` are an experimental, framework-free arm-target
   primitive. It changes local rotations only, preserves the rest skeleton and
   segment lengths, and returns measured reach and orientation results. Its
-  limits are spherical source-angle budgets, not anatomical joint limits.
+  limits are spherical source-angle budgets, not anatomical joint limits. An
+  orientation target uses either `armTip`'s orientation or the final measured
+  effector-frame orientation.
   `createArmSkinnedFrameSampler(input)` supplies a final CPU-skinned hand frame
   to a solve without per-sample typed-array allocation. It borrows immutable
   evaluation inputs for one generation and rejects stale, malformed or
