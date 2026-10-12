@@ -217,14 +217,76 @@ type Expectation = (nDotL: number, offset: number) => Rgb;
  */
 type Path = "linear" | "display";
 
-function render(path: Path): ArrayLike<number> {
+interface PhaseMetrics {
+  calls: number;
+  renderMs: number;
+  readbackMs: number;
+  cpuBinAndReferenceMs: number;
+  referenceReplayMs: number;
+  deltaEMs: number;
+}
+
+interface PhaseProfile extends PhaseMetrics {
+  first: PhaseMetrics | null;
+}
+
+function phaseProfile(): PhaseProfile {
+  return {
+    calls: 0,
+    renderMs: 0,
+    readbackMs: 0,
+    cpuBinAndReferenceMs: 0,
+    referenceReplayMs: 0,
+    deltaEMs: 0,
+    first: null,
+  };
+}
+
+function phaseSnapshot(profile: PhaseProfile): PhaseMetrics {
+  return {
+    calls: profile.calls,
+    renderMs: profile.renderMs,
+    readbackMs: profile.readbackMs,
+    cpuBinAndReferenceMs: profile.cpuBinAndReferenceMs,
+    referenceReplayMs: profile.referenceReplayMs,
+    deltaEMs: profile.deltaEMs,
+  };
+}
+
+function phaseDelta(after: PhaseMetrics, before: PhaseMetrics): PhaseMetrics {
+  return {
+    calls: after.calls - before.calls,
+    renderMs: after.renderMs - before.renderMs,
+    readbackMs: after.readbackMs - before.readbackMs,
+    cpuBinAndReferenceMs: after.cpuBinAndReferenceMs - before.cpuBinAndReferenceMs,
+    referenceReplayMs: after.referenceReplayMs - before.referenceReplayMs,
+    deltaEMs: after.deltaEMs - before.deltaEMs,
+  };
+}
+
+function reportPhaseProfile(profile: PhaseProfile, phase: "representative" | "progress" | "full") {
+  console.info(
+    "sphere-parity-phase-profile",
+    JSON.stringify({
+      phase,
+      ...phaseSnapshot(profile),
+      first: profile.first,
+    }),
+  );
+}
+
+function render(path: Path, profile?: PhaseProfile): ArrayLike<number> {
   renderer.setClearColor(0x000000, 0);
   if (path === "linear") {
     renderer.toneMapping = NoToneMapping;
     renderer.setRenderTarget(target);
     renderer.clear();
+    const renderStarted = performance.now();
     renderer.render(scene, camera);
+    if (profile) profile.renderMs += performance.now() - renderStarted;
+    const readbackStarted = performance.now();
     renderer.readRenderTargetPixels(target, 0, 0, SIZE, SIZE, pixels);
+    if (profile) profile.readbackMs += performance.now() - readbackStarted;
     renderer.setRenderTarget(null);
     return pixels;
   }
@@ -232,16 +294,48 @@ function render(path: Path): ArrayLike<number> {
   renderer.toneMappingExposure = STUDIO_EXPOSURE;
   renderer.setRenderTarget(null);
   renderer.clear();
+  const renderStarted = performance.now();
   renderer.render(scene, camera);
+  if (profile) profile.renderMs += performance.now() - renderStarted;
   // Read in the same task as the render, before the canvas is composited.
   const gl = renderer.getContext();
+  const readbackStarted = performance.now();
   gl.readPixels(0, 0, SIZE, SIZE, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+  if (profile) profile.readbackMs += performance.now() - readbackStarted;
   return bytes;
 }
 
+/** Measures the same analytic expectation calls without changing the assertion's result. */
+function replayReference(angle: number, expect: Expectation, path: Path): number {
+  const started = performance.now();
+  const a = (angle * Math.PI) / 180;
+  const l = [Math.sin(a), 0, Math.cos(a)] as const;
+  const shown = (e: Rgb): Rgb =>
+    path === "linear" ? e : (neutralToneMap(e, STUDIO_EXPOSURE).map(srgb8FromLinear) as Rgb);
+  for (let py = 0; py < SIZE; py++) {
+    for (let px = 0; px < SIZE; px++) {
+      const x = ((px + 0.5) / SIZE) * 2 - 1;
+      const y = ((py + 0.5) / SIZE) * 2 - 1;
+      const r2 = x * x + y * y;
+      if (r2 > 0.96 * 0.96) continue;
+      const nDotL = x * l[0] + y * l[1] + Math.sqrt(1 - r2) * l[2];
+      if (!BINS.some((bin) => nDotL >= bin.lo && nDotL < bin.hi)) continue;
+      const offset = (py * SIZE + px) * 4;
+      void shown(expect(nDotL, offset));
+    }
+  }
+  return performance.now() - started;
+}
+
 /** Renders the sphere lit from `angle` degrees off the view axis and bins it by N·L. */
-function measure(angle: number, expect: Expectation, path: Path = "linear"): Measured {
-  const pixels = renderAt(angle, path);
+function measure(
+  angle: number,
+  expect: Expectation,
+  path: Path = "linear",
+  profile?: PhaseProfile,
+): Measured {
+  const before = profile ? phaseSnapshot(profile) : null;
+  const pixels = renderAt(angle, path, profile);
   const a = (angle * Math.PI) / 180;
   const l = [Math.sin(a), 0, Math.cos(a)] as const;
   let worst = 0;
@@ -252,6 +346,7 @@ function measure(angle: number, expect: Expectation, path: Path = "linear"): Mea
   ) as Record<BinName, { r: number[]; e: number[]; n: number }>;
   const disc = [0, 0, 0];
   let discN = 0;
+  const binsStarted = performance.now();
   for (let py = 0; py < SIZE; py++) {
     for (let px = 0; px < SIZE; px++) {
       const x = ((px + 0.5) / SIZE) * 2 - 1;
@@ -275,6 +370,17 @@ function measure(angle: number, expect: Expectation, path: Path = "linear"): Mea
       s.n++;
     }
   }
+  if (profile) {
+    profile.cpuBinAndReferenceMs += performance.now() - binsStarted;
+    profile.calls++;
+    if (!profile.first && before) {
+      profile.referenceReplayMs += replayReference(angle, expect, path);
+      profile.first = phaseDelta(phaseSnapshot(profile), before);
+      reportPhaseProfile(profile, "representative");
+    } else if (profile.calls === 16 || profile.calls === 64 || profile.calls === 128) {
+      reportPhaseProfile(profile, "progress");
+    }
+  }
   const mean = (v: number[], n: number) => v.map((c) => c / Math.max(1, n)) as Rgb;
   return {
     rendered: Object.fromEntries(
@@ -289,14 +395,21 @@ function measure(angle: number, expect: Expectation, path: Path = "linear"): Mea
 }
 
 /** Lights the sphere from `angle` degrees off the view axis and renders it. */
-function renderAt(angle: number, path: Path): ArrayLike<number> {
+function renderAt(angle: number, path: Path, profile?: PhaseProfile): ArrayLike<number> {
   const a = (angle * Math.PI) / 180;
   light.position.set(Math.sin(a) * 10, 0, Math.cos(a) * 10);
-  return render(path);
+  return render(path, profile);
 }
 
 const lab = (c: Rgb): Lab => labFromLinear(c);
 const albedoOf = (): Rgb => [material.color.r, material.color.g, material.color.b];
+
+function measuredDeltaE(a: Lab, b: Lab, profile?: PhaseProfile): number {
+  const started = performance.now();
+  const result = deltaE2000(a, b);
+  if (profile) profile.deltaEMs += performance.now() - started;
+  return result;
+}
 
 /** The material's own model for the current swatch on a feature of `radius`: radiance at N·L, per channel. */
 function modelRadiance(radius = FEATURE_RADIUS): (nDotL: number) => Rgb {
@@ -315,17 +428,19 @@ function modelRadiance(radius = FEATURE_RADIUS): (nDotL: number) => Rgb {
 describe("skin material on an analytic sphere", () => {
   it("renders Lambert's A·N·L for every colour when scatter is off", () => {
     const failures: string[] = [];
+    const profile = phaseProfile();
     for (const s of PALETTE) {
       configure(s, "lambert");
       const A = albedoOf();
       for (const angle of ANGLES) {
-        const m = measure(angle, (n) => A.map((c) => c * Math.max(n, 0)) as Rgb);
+        const m = measure(angle, (n) => A.map((c) => c * Math.max(n, 0)) as Rgb, "linear", profile);
         for (const bin of ["lit", "shoulder"] as const) {
-          const de = deltaE2000(lab(m.rendered[bin]), lab(m.expected[bin]));
+          const de = measuredDeltaE(lab(m.rendered[bin]), lab(m.expected[bin]), profile);
           if (!(de <= 0.5)) failures.push(`${s.name} ${angle}° ${bin}: ΔE00 ${de.toFixed(2)}`);
         }
       }
     }
+    reportPhaseProfile(profile, "full");
     expect(failures).toEqual([]);
   });
 
