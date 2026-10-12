@@ -14,7 +14,7 @@ Run the playground from the isolated worktree, then open the silent route:
 
 ```sh
 pnpm dev -- --host 0.0.0.0
-# http://<host>:5173/?scene=handshake&clothing=1&muted=1
+# http://<host>:5173/?scene=handshake&clothing=1&muted=1&stage=grip&view=side
 ```
 
 The route refuses to mount without `muted` and `clothing`. It uses one neutral,
@@ -25,7 +25,11 @@ acceptance of an all-audience definition.
 ## What root should inspect
 
 The presenter includes stage buttons (`approach`, `grip`, `release`,
-`cancel`) and front, three-quarter and side views. Its panel reports:
+`cancel`) and front, three-quarter and side views. `stage` and `view` are
+preserved in the URL, so each review state can be linked directly. The panel
+occupies a dedicated sidebar on desktop and a separate lower row on narrow
+screens; it never overlays a figure. The camera fits the full clothed pair in
+the remaining stage. Its panel reports:
 
 - current requested stage and runtime phase;
 - that both source outfits are present;
@@ -46,8 +50,8 @@ root records a fresh review conclusion.
 
 `e2e/sheets/handshake.sheet.ts` remains an explicit review command. It checks
 the mute marker, adult/clothed source, explicit fixture-consent state, a mounted
-R3F canvas, absence of the visible boot-error boundary, the diagnostic region,
-runtime target, both live hand frames and finite gaps for all four stages and
+R3F canvas, absence of the visible boot-error boundary, the direct-link
+stage/view restore and URL updates, the diagnostic region, runtime target, both live hand frames and finite gaps for all four stages and
 three views. The canvas probe publishes snapshots to the DOM panel through an
 external subscription; the panel never calls an R3F hook. It intentionally does
 **not** accept a gap as physical contact while the real clip/IK is absent.

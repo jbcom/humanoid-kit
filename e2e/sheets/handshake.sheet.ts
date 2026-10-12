@@ -96,6 +96,13 @@ async function show(page: Page, stage: Stage, view: View): Promise<string> {
   const checked = await state(page);
   expect(checked.stage).toBe(stage);
   expect(checked.view).toBe(view);
+  const reviewUrl = new URL(page.url());
+  expect(reviewUrl.searchParams.get("stage"), `${stage}/${view} persists a linkable stage`).toBe(
+    stage,
+  );
+  expect(reviewUrl.searchParams.get("view"), `${stage}/${view} persists a linkable view`).toBe(
+    view,
+  );
   expect(checked.target, `${stage}/${view} has a runtime target`).not.toBeNull();
   expect(checked.hands, `${stage}/${view} has both live hand frames`).not.toBeNull();
   expect(checked.targetGap, `${stage}/${view} exposes both target-to-hand gaps`).not.toBeNull();
@@ -159,8 +166,13 @@ test("tall/short clothed handshake", async ({ page }, testInfo) => {
     if (message.type() === "error" && !message.text().includes("Outdated Optimize Dep"))
       errors.push(message.text());
   });
-  await page.setViewportSize({ width: 520, height: 520 });
-  await openSilentGame(page, "/?scene=handshake&clothing=1", {}, { markerTimeout: 120_000 });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openSilentGame(
+    page,
+    "/?scene=handshake&clothing=1&stage=grip&view=side",
+    {},
+    { markerTimeout: 120_000 },
+  );
   await expect(
     page.locator("canvas"),
     "the mounted review route renders its R3F canvas",
@@ -170,6 +182,8 @@ test("tall/short clothed handshake", async ({ page }, testInfo) => {
     "the mounted review route does not fall back to a blank-screen boot error",
   ).toHaveCount(0);
   const source = await waitForReady(page, "initial handshake source");
+  expect(source.stage, "the direct review link restores its requested stage").toBe("grip");
+  expect(source.view, "the direct review link restores its requested view").toBe("side");
   expect(source.muted, "the harness supplied the non-persistent mute route").toBe(true);
   expect(source.adults, "both recipe ages are adult").toBe(true);
   expect(source.clothed, "both source garments are drawn").toBe(true);

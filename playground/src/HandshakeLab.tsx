@@ -37,6 +37,24 @@ type Stage = "approach" | "grip" | "release" | "cancel";
 type View = "front" | "three-quarter" | "side";
 
 const params = new URLSearchParams(window.location.search);
+const stageOptions: readonly Stage[] = ["approach", "grip", "release", "cancel"];
+const viewOptions: readonly View[] = ["front", "three-quarter", "side"];
+
+function stageFromQuery(): Stage {
+  const stage = params.get("stage");
+  return stageOptions.includes(stage as Stage) ? (stage as Stage) : "approach";
+}
+
+function viewFromQuery(): View {
+  const view = params.get("view");
+  return viewOptions.includes(view as View) ? (view as View) : "front";
+}
+
+function persistReviewParam(name: "stage" | "view", value: Stage | View): void {
+  const url = new URL(window.location.href);
+  url.searchParams.set(name, value);
+  window.history.replaceState(null, "", url);
+}
 const IDLE_CLIP = "idle1";
 const IDLE_SECONDS = 2.5;
 const TALL_OUTFIT = "suits/male_casualsuit06";
@@ -207,6 +225,13 @@ function selectStage(control: Control, stage: Stage): void {
   control.stage = stage;
   control.restart = true;
   control.ready = false;
+  persistReviewParam("stage", stage);
+  publishGate(control);
+}
+
+function selectView(control: Control, view: View): void {
+  control.view = view;
+  persistReviewParam("view", view);
   publishGate(control);
 }
 
@@ -256,20 +281,24 @@ function GateProbe({ control }: { control: Control }) {
 
 function Camera({ control }: { control: Control }) {
   const camera = useThree((s) => s.camera);
+  const aspect = useThree((s) => s.size.width / s.size.height);
   const target = useMemo(() => new Vector3(0, 1.05, 0), []);
   useFrame(() => {
+    // The figures start six metres apart. Calculate the distance from the
+    // actual stage aspect instead of letting a diagnostic layout crop either
+    // clothed body in a review view.
+    const distance = 11.9 / Math.max(aspect, 1);
     const position: [number, number, number] =
       control.view === "front"
-        ? [0, 1.1, 4.9]
+        ? [0, 1.1, distance]
         : control.view === "three-quarter"
-          ? [3.6, 1.2, 3.6]
-          : [4.9, 1.1, 0];
+          ? [distance * Math.SQRT1_2, 1.2, distance * Math.SQRT1_2]
+          : [distance, 1.1, 0];
     camera.position.set(...position);
     camera.lookAt(target);
   });
   return null;
 }
-
 function Markers({
   control,
   tallAffordances,
@@ -540,8 +569,7 @@ function Api({ control }: { control: Control }) {
         selectStage(control, stage);
       },
       setView: (view) => {
-        control.view = view;
-        publishGate(control);
+        selectView(control, view);
       },
       state: () => ({
         ...snapshotOf(control),
@@ -580,10 +608,6 @@ function GatePanel({ control }: { control: Control }) {
     <section
       aria-label="Tall and short handshake diagnostic"
       style={{
-        position: "absolute",
-        top: 16,
-        left: 16,
-        width: 300,
         padding: 14,
         color: "#f4ecda",
         background: "rgba(20, 23, 29, 0.9)",
@@ -642,8 +666,7 @@ function GatePanel({ control }: { control: Control }) {
             key={view}
             type="button"
             onClick={() => {
-              control.view = view;
-              publishGate(control);
+              selectView(control, view);
             }}
             style={{
               border: `1px solid ${snapshot.view === view ? "#9bc7ff" : "#79808b"}`,
@@ -659,6 +682,17 @@ function GatePanel({ control }: { control: Control }) {
         ))}
       </div>
     </section>
+  );
+}
+
+function useCompactLayout(): boolean {
+  return useSyncExternalStore(
+    (notify) => {
+      window.addEventListener("resize", notify);
+      return () => window.removeEventListener("resize", notify);
+    },
+    () => window.innerWidth < 980,
+    () => false,
   );
 }
 
@@ -707,10 +741,11 @@ class HandshakeErrorBoundary extends Component<
 }
 
 export function HandshakeLab() {
+  const compact = useCompactLayout();
   const control = useMemo<Control>(
     () => ({
-      stage: "approach",
-      view: "front",
+      stage: stageFromQuery(),
+      view: viewFromQuery(),
       interaction: null,
       restart: false,
       cancelled: false,
@@ -730,22 +765,42 @@ export function HandshakeLab() {
   return (
     <HandshakeErrorBoundary>
       <div
-        style={{ position: "absolute", inset: 0 }}
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "grid",
+          gridTemplateColumns: compact ? "minmax(0, 1fr)" : "minmax(0, 1fr) 332px",
+          gridTemplateRows: compact ? "minmax(0, 1fr) auto" : "minmax(0, 1fr)",
+          background: "#171b22",
+        }}
         data-handshake-lab
         data-figure={control.ready ? "ready" : "loading"}
       >
-        <Canvas
-          camera={{ position: [0, 1.1, 4.9], fov: 35 }}
-          gl={{
-            preserveDrawingBuffer: true,
-            toneMapping: STUDIO_TONE_MAPPING,
-            toneMappingExposure: STUDIO_EXPOSURE,
+        <div style={{ minWidth: 0, minHeight: 0, position: "relative" }}>
+          <Canvas
+            camera={{ position: [0, 1.1, 8.5], fov: 35 }}
+            gl={{
+              preserveDrawingBuffer: true,
+              toneMapping: STUDIO_TONE_MAPPING,
+              toneMappingExposure: STUDIO_EXPOSURE,
+            }}
+          >
+            <StageFigures control={control} />
+            <Api control={control} />
+          </Canvas>
+        </div>
+        <aside
+          aria-label="Handshake review controls"
+          style={{
+            minWidth: 0,
+            overflowY: "auto",
+            borderLeft: compact ? undefined : "1px solid rgba(255, 210, 63, 0.35)",
+            borderTop: compact ? "1px solid rgba(255, 210, 63, 0.35)" : undefined,
+            background: "rgba(20, 23, 29, 0.98)",
           }}
         >
-          <StageFigures control={control} />
-          <Api control={control} />
-        </Canvas>
-        <GatePanel control={control} />
+          <GatePanel control={control} />
+        </aside>
       </div>
     </HandshakeErrorBoundary>
   );
