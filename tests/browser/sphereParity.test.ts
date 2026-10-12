@@ -305,6 +305,34 @@ function render(path: Path, profile?: PhaseProfile): ArrayLike<number> {
   return bytes;
 }
 
+/**
+ * The linear target is RGBA FloatType. Three supports asynchronous target
+ * readback for that type; retain the synchronous path only long enough to
+ * make an unsupported implementation fail this diagnostic explicitly.
+ */
+let asyncReadbackFallbackUsed = false;
+
+async function renderLinearAsync(profile?: PhaseProfile): Promise<Float32Array> {
+  renderer.toneMapping = NoToneMapping;
+  renderer.setRenderTarget(target);
+  renderer.clear();
+  const renderStarted = performance.now();
+  renderer.render(scene, camera);
+  if (profile) profile.renderMs += performance.now() - renderStarted;
+  const readbackStarted = performance.now();
+  try {
+    await renderer.readRenderTargetPixelsAsync(target, 0, 0, SIZE, SIZE, pixels);
+  } catch {
+    // Keep cleanup/state restoration deterministic, but never mistake this
+    // fallback for an asynchronous result: the owning test asserts this flag.
+    asyncReadbackFallbackUsed = true;
+    renderer.readRenderTargetPixels(target, 0, 0, SIZE, SIZE, pixels);
+  }
+  if (profile) profile.readbackMs += performance.now() - readbackStarted;
+  renderer.setRenderTarget(null);
+  return pixels;
+}
+
 /** Measures the same analytic expectation calls without changing the assertion's result. */
 function replayReference(angle: number, expect: Expectation, path: Path): number {
   const started = performance.now();
@@ -327,15 +355,15 @@ function replayReference(angle: number, expect: Expectation, path: Path): number
   return performance.now() - started;
 }
 
-/** Renders the sphere lit from `angle` degrees off the view axis and bins it by N·L. */
-function measure(
+/** Bins a completed sphere readback by N·L. */
+function measurePixels(
   angle: number,
   expect: Expectation,
-  path: Path = "linear",
+  path: Path,
+  pixels: ArrayLike<number>,
   profile?: PhaseProfile,
+  before?: PhaseMetrics | null,
 ): Measured {
-  const before = profile ? phaseSnapshot(profile) : null;
-  const pixels = renderAt(angle, path, profile);
   const a = (angle * Math.PI) / 180;
   const l = [Math.sin(a), 0, Math.cos(a)] as const;
   let worst = 0;
@@ -394,6 +422,29 @@ function measure(
   };
 }
 
+/** Renders the sphere lit from `angle` degrees off the view axis and bins it by N·L. */
+function measure(
+  angle: number,
+  expect: Expectation,
+  path: Path = "linear",
+  profile?: PhaseProfile,
+): Measured {
+  const before = profile ? phaseSnapshot(profile) : null;
+  return measurePixels(angle, expect, path, renderAt(angle, path, profile), profile, before);
+}
+
+async function measureAsync(
+  angle: number,
+  expect: Expectation,
+  profile?: PhaseProfile,
+): Promise<Measured> {
+  const a = (angle * Math.PI) / 180;
+  light.position.set(Math.sin(a) * 10, 0, Math.cos(a) * 10);
+  const before = profile ? phaseSnapshot(profile) : null;
+  const pixels = await renderLinearAsync(profile);
+  return measurePixels(angle, expect, "linear", pixels, profile, before);
+}
+
 /** Lights the sphere from `angle` degrees off the view axis and renders it. */
 function renderAt(angle: number, path: Path, profile?: PhaseProfile): ArrayLike<number> {
   const a = (angle * Math.PI) / 180;
@@ -426,14 +477,30 @@ function modelRadiance(radius = FEATURE_RADIUS): (nDotL: number) => Rgb {
 }
 
 describe("skin material on an analytic sphere", () => {
-  it("renders Lambert's A·N·L for every colour when scatter is off", () => {
+  it("matches synchronous Float readback for one Lambert case, then renders Lambert's A·N·L for every colour asynchronously", async () => {
+    const firstSwatch = PALETTE[0];
+    const parityAngle = ANGLES[1];
+    if (!firstSwatch || parityAngle === undefined)
+      throw new Error("sphere parity constants are empty");
+    configure(firstSwatch, "lambert");
+    const sync = Float32Array.from(renderAt(parityAngle, "linear"));
+    const a = (parityAngle * Math.PI) / 180;
+    light.position.set(Math.sin(a) * 10, 0, Math.cos(a) * 10);
+    const asynchronous = Float32Array.from(await renderLinearAsync());
+    expect(asyncReadbackFallbackUsed).toBe(false);
+    expect(asynchronous).toEqual(sync);
+
     const failures: string[] = [];
     const profile = phaseProfile();
     for (const s of PALETTE) {
       configure(s, "lambert");
       const A = albedoOf();
       for (const angle of ANGLES) {
-        const m = measure(angle, (n) => A.map((c) => c * Math.max(n, 0)) as Rgb, "linear", profile);
+        const m = await measureAsync(
+          angle,
+          (n) => A.map((c) => c * Math.max(n, 0)) as Rgb,
+          profile,
+        );
         for (const bin of ["lit", "shoulder"] as const) {
           const de = measuredDeltaE(lab(m.rendered[bin]), lab(m.expected[bin]), profile);
           if (!(de <= 0.5)) failures.push(`${s.name} ${angle}° ${bin}: ΔE00 ${de.toFixed(2)}`);
@@ -441,6 +508,7 @@ describe("skin material on an analytic sphere", () => {
       }
     }
     reportPhaseProfile(profile, "full");
+    expect(asyncReadbackFallbackUsed).toBe(false);
     expect(failures).toEqual([]);
   });
 
