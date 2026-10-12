@@ -113,6 +113,22 @@ describe("the hip fold in <Humanoid>", () => {
       let watched: DualBones | null = null;
       let restoreDraw = () => {};
       const restoreStepNext: Array<() => void> = [];
+      let solveNextCalls = 0;
+      let solveNextMs = 0;
+      const traceNext = (phase: "enter" | "exit", call: number, elapsed?: number) => {
+        // Keep CI output bounded while retaining the first resumption and progress through later keys.
+        if (call > 2 && (call & (call - 1)) !== 0) return;
+        console.info(
+          "hip-fold-inline-phase-diagnostic",
+          JSON.stringify({
+            phase: `solveNext${phase}`,
+            call,
+            wallMs: performance.now() - started,
+            elapsed,
+            cumulativeMs: solveNextMs,
+          }),
+        );
+      };
       const originalHipFold = client.hipFold;
       const originalModelHipFold = HumanoidModel.prototype.hipFold;
       const originalSetFold = DualBones.prototype.setFold;
@@ -130,9 +146,18 @@ describe("the hip fold in <Humanoid>", () => {
         const originalNext = steps.next;
         const originalNextDescriptor = Object.getOwnPropertyDescriptor(steps, "next");
         const tracedNext = (...nextArgs: Parameters<typeof steps.next>) => {
-          const result = originalNext.apply(steps, nextArgs);
-          mark(result.done ? "solveDone" : "solveYield");
-          return result;
+          const call = ++solveNextCalls;
+          if (call <= 2) traceNext("enter", call);
+          const started = performance.now();
+          try {
+            const result = originalNext.apply(steps, nextArgs);
+            mark(result.done ? "solveDone" : "solveYield");
+            return result;
+          } finally {
+            const elapsed = performance.now() - started;
+            solveNextMs += elapsed;
+            traceNext("exit", call, elapsed);
+          }
         };
         steps.next = tracedNext;
         restoreStepNext.push(() => {
@@ -260,7 +285,10 @@ describe("the hip fold in <Humanoid>", () => {
         HumanoidModel.prototype.hipFold = originalModelHipFold;
         DualBones.prototype.setFold = originalSetFold;
         DualBones.prototype.advanceFold = originalAdvanceFold;
-        console.info("hip-fold-inline-phase-diagnostic", JSON.stringify(marks));
+        console.info(
+          "hip-fold-inline-phase-diagnostic",
+          JSON.stringify({ ...marks, solveNextCalls, solveNextMs }),
+        );
       }
     },
     LOAD.timeout,
