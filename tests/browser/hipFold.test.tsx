@@ -6,6 +6,7 @@
  * The picture shows it.
  */
 import { Canvas, type RootState, useThree } from "@react-three/fiber";
+import { bodyPack } from "humanoid-kit-body";
 import { useLayoutEffect } from "react";
 import {
   type BufferAttribute,
@@ -16,7 +17,6 @@ import {
 } from "three";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
-import { HumanoidModel } from "../../src/model/humanoidModel.ts";
 import { Humanoid, HumanoidProvider } from "../../src/react/index.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import {
@@ -25,7 +25,7 @@ import {
   FOLD_SLOT_ATTRIBUTE,
   noFoldTexture,
 } from "../../src/render/dualSkinning.ts";
-import { yieldWorkerTask } from "../../src/worker/task.ts";
+import { HumanoidWorkerClient } from "../../src/worker/client.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
 const LOAD = { timeout: 180_000 };
@@ -37,6 +37,14 @@ beforeAll(async () => {
   await client.ready;
 });
 afterAll(() => client.dispose());
+
+/** The production transport used by the playground: a distinct module Worker, not the inline test handler. */
+function moduleWorkerClient() {
+  const worker = new Worker(new URL("../../src/worker/index.ts", import.meta.url), {
+    type: "module",
+  });
+  return new HumanoidWorkerClient({ body: bodyPack }, { subdivision: 1 }, worker);
+}
 
 /** Hands the test the canvas's state before its first browser paint. */
 function Probe({ onReady }: { onReady: (state: RootState) => (() => void) | undefined }) {
@@ -88,13 +96,14 @@ describe("the hip fold in <Humanoid>", () => {
     "reaches the geometry and the bone texture before the figure settles, and the picture shows it, when the hips are flexed",
     async () => {
       const started = performance.now();
+      // This path deliberately uses the same dedicated module Worker construction as the playground.
+      // The relaxed-pose test below retains the lightweight inline handler coverage.
+      const workerClient = moduleWorkerClient();
+      await workerClient.ready;
       const marks: Partial<
         Record<
           | "request"
           | "reply"
-          | "modelHipFold"
-          | "solveYield"
-          | "solveDone"
           | "setFold"
           | "fadeDone"
           | "settled"
@@ -111,87 +120,29 @@ describe("the hip fold in <Humanoid>", () => {
         if (marks[phase] !== undefined) return;
         const ms = performance.now() - started;
         marks[phase] = ms;
-        console.info("hip-fold-inline-phase-diagnostic", JSON.stringify({ phase, ms }));
+        console.info("hip-fold-worker-phase-diagnostic", JSON.stringify({ phase, ms }));
       };
       let watched: DualBones | null = null;
       let restoreDraw = () => {};
-      const restoreStepNext: Array<() => void> = [];
-      let solveNextCalls = 0;
-      let solveNextMs = 0;
       let waitingRenderCount = 0;
       let waitingRenderMs = 0;
       let waitingRenderMaxMs = 0;
-      const traceNext = (phase: "enter" | "exit", call: number, elapsed?: number) => {
-        // Keep CI output bounded while retaining the first resumption and progress through later keys.
-        if (call > 2 && (call & (call - 1)) !== 0) return;
-        console.info(
-          "hip-fold-inline-phase-diagnostic",
-          JSON.stringify({
-            phase: `solveNext${phase}`,
-            call,
-            wallMs: performance.now() - started,
-            elapsed,
-            cumulativeMs: solveNextMs,
-          }),
-        );
-      };
-      const originalHipFold = client.hipFold;
-      const originalModelHipFold = HumanoidModel.prototype.hipFold;
+      const originalHipFold = workerClient.hipFold;
       const originalSetFold = DualBones.prototype.setFold;
       const originalAdvanceFold = DualBones.prototype.advanceFold;
       console.info(
-        "hip-fold-inline-runtime-diagnostic",
+        "hip-fold-worker-runtime-diagnostic",
         JSON.stringify({
           visibility: document.visibilityState,
           focused: document.hasFocus(),
-          messageChannelAvailable: typeof MessageChannel !== "undefined",
+          dedicatedModuleWorker: true,
         }),
       );
-      const controlStarted = performance.now();
-      await yieldWorkerTask();
-      const firstControlYieldMs = performance.now() - controlStarted;
-      const secondControlStarted = performance.now();
-      await yieldWorkerTask();
-      console.info(
-        "hip-fold-inline-yield-control",
-        JSON.stringify({
-          firstControlYieldMs,
-          secondControlYieldMs: performance.now() - secondControlStarted,
-        }),
-      );
-      client.hipFold = async (...args) => {
+      workerClient.hipFold = async (...args) => {
         mark("request");
-        const result = await originalHipFold.call(client, ...args);
+        const result = await originalHipFold.call(workerClient, ...args);
         mark("reply");
         return result;
-      };
-      // This inline test invokes the handler in this realm, rather than crossing Worker/IPC.
-      HumanoidModel.prototype.hipFold = function (...args) {
-        mark("modelHipFold");
-        const steps = originalModelHipFold.apply(this, args);
-        const originalNext = steps.next;
-        const originalNextDescriptor = Object.getOwnPropertyDescriptor(steps, "next");
-        const tracedNext = (...nextArgs: Parameters<typeof steps.next>) => {
-          const call = ++solveNextCalls;
-          if (call <= 2) traceNext("enter", call);
-          const started = performance.now();
-          try {
-            const result = originalNext.apply(steps, nextArgs);
-            mark(result.done ? "solveDone" : "solveYield");
-            return result;
-          } finally {
-            const elapsed = performance.now() - started;
-            solveNextMs += elapsed;
-            traceNext("exit", call, elapsed);
-          }
-        };
-        steps.next = tracedNext;
-        restoreStepNext.push(() => {
-          if (steps.next !== tracedNext) return;
-          if (originalNextDescriptor) Object.defineProperty(steps, "next", originalNextDescriptor);
-          else delete (steps as unknown as Record<string, unknown>).next;
-        });
-        return steps;
       };
       DualBones.prototype.setFold = function (...args) {
         watched ??= this;
@@ -208,7 +159,7 @@ describe("the hip fold in <Humanoid>", () => {
       let atSettle = { slots: 0, rows: 0, blend: -1 };
       try {
         await render(
-          <HumanoidProvider client={client}>
+          <HumanoidProvider client={workerClient}>
             <div style={{ width: 240, height: 240 }}>
               <Canvas>
                 <Probe
@@ -316,17 +267,14 @@ describe("the hip fold in <Humanoid>", () => {
         ).toBeGreaterThan(40);
       } finally {
         restoreDraw();
-        client.hipFold = originalHipFold;
-        for (const restore of restoreStepNext) restore();
-        HumanoidModel.prototype.hipFold = originalModelHipFold;
+        workerClient.hipFold = originalHipFold;
+        workerClient.dispose();
         DualBones.prototype.setFold = originalSetFold;
         DualBones.prototype.advanceFold = originalAdvanceFold;
         console.info(
-          "hip-fold-inline-phase-diagnostic",
+          "hip-fold-worker-phase-diagnostic",
           JSON.stringify({
             ...marks,
-            solveNextCalls,
-            solveNextMs,
             waitingRenderCount,
             waitingRenderMs,
             waitingRenderMaxMs,
