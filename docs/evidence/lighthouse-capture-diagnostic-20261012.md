@@ -82,6 +82,16 @@ explicit marker commit authorizes exactly one run of this changed diagnostic.
 It is neither a retry of a previous result nor a change to normal Lighthouse
 CI, screenshot requirements, budgets or application behavior.
 
+## Setup-failure correction authorization
+
+Run `38238222246` at `ea3f3f8` failed before the production build, Chrome or
+Lighthouse began: checkout's default depth of one omitted `c57d29c`, so the
+provenance guard correctly rejected its unavailable commit. It produced no
+capture attempt or evidence. Commit `70da58e` sets the diagnostic checkout to
+the documented `fetch-depth: 0`; its local depth-one simulation reproduced the
+missing-object rejection, while full history passes the same guard. The next
+explicit marker commit authorizes exactly one changed-setup diagnostic run.
+
 The direct CDP probe was useful renderer evidence but cannot distinguish a
 capture command that blocks from Lighthouse's concurrent node-resolution work.
 The installed-gatherer diagnostic is the bounded next step: its receipt makes
