@@ -349,10 +349,11 @@ async function captureCase({ base, browserPath, flags, id, persist, query, resul
     );
     if (captured.ok) {
       const image = path.join(lighthouseRoot, `capture-${id}.webp`);
-      fs.writeFileSync(image, Buffer.from(captured.value.data, "base64"));
+      const bytes = Buffer.from(captured.value.data, "base64");
+      fs.writeFileSync(image, bytes);
       run.capture = {
         artifact: path.basename(image),
-        bytes: captured.value.data.length,
+        bytes: bytes.length,
         elapsedMs: Date.now() - captureStarted,
         fullHeight,
         status: "ok",

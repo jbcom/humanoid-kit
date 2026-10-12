@@ -43,7 +43,8 @@ navigation, and each exact stage/error, including cleanup.
 Every successful `Page.captureScreenshot` also writes a binary
 `capture-<case>.webp` beside the JSON receipt. The workflow uploads those files
 without printing their base64 payload, so visual review can inspect exactly what
-the protocol returned before drawing conclusions from an apparent success.
+the protocol returned before drawing conclusions from an apparent success. Its
+`bytes` field is the decoded WebP size, not the length of Chrome's base64 text.
 
 Before Chrome starts, the diagnostic's Node static server fetches the production
 entry page and the emitted JavaScript entry asset. Both must return HTTP 200
