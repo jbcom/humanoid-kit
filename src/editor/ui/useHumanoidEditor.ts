@@ -79,8 +79,8 @@ export function useEditorState(ready: ReadyInfo | null, initial?: Recipe): Human
   );
   const setSlider = useCallback(
     (entry: SliderEntry, value: number, gesture?: string) =>
-      update((r) => withSliderValue(r, entry, value, modifiers), gesture),
-    [update, modifiers],
+      update((r) => withSliderValue(r, entry, value, modifiers, ready?.anatomy?.defaults), gesture),
+    [update, modifiers, ready?.anatomy?.defaults],
   );
 
   return {

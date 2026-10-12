@@ -3231,6 +3231,12 @@ topology and the field atlas exist. Decisions:
   recipe sets, 0 included, wins, so a developer can still draw an adult without
   some feature. The core stays anatomy-free: it knows a curve over gender, not
   what the curve shapes (docs/FOUNDATION.md, "both forms").
+- **Creator rows use the same effective value.** An adult modifier named by
+  `anatomy.defaults` displays the value from `withAnatomyDefaults`, rather than
+  treating an absent recipe key as zero. A saved explicit value, including
+  zero, remains exactly that value. Resetting one of those rows removes its
+  explicit override and returns it to the pack default; other rows retain the
+  ordinary neutral-value reset behavior.
 - Until the adult stage arrives their fields are zero (empty atlas pages).
   When it arrives the worker derives the fields from the pack's targets and
   posts them; the main thread re-rasterises those pages of the shared atlas.

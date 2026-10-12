@@ -2,6 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   formatSliderValue,
+  resetSliderValue,
   sliderAvailability,
   sliderRange,
   sliderValue,
@@ -19,12 +20,14 @@ import { randomRecipe } from "../src/editor/randomize.ts";
 import type { SliderEntry } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError, agePolicyViolations } from "../src/recipe/agePolicy.ts";
+import { withAnatomyDefaults } from "../src/recipe/anatomy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { recipeProblems } from "../src/recipe/validate.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets(true);
 const modifiers = assets.modifiers;
+const anatomyDefaults = assets.adultAnatomyManifest?.anatomy?.defaults;
 const allSliders = assets.sliders.flatMap((t) => t.groups.flatMap((g) => g.sliders));
 const slider = (id: string) => {
   const s = allSliders.find((x) => x.id === id);
@@ -122,6 +125,87 @@ describe("editor controls", () => {
     const s = slider("nose/nose-scale-horiz-decr|incr");
     const r = withSliderValue(createRecipe(), s, 0.4, modifiers);
     expect(Object.keys(withSliderValue(r, s, 0, modifiers).modifiers)).toEqual([]);
+  });
+
+  it("shows the evaluator's adult defaults for each body-form anchor", () => {
+    if (!anatomyDefaults) throw new Error("fixture has no anatomy defaults");
+    const expected = [
+      {
+        gender: 0,
+        values: {
+          "genitals/phallus-size": 0.08,
+          "genitals/testes-size": 0,
+          "genitals/vulva-size": 1,
+          "genitals/anal-canal": 1,
+        },
+      },
+      {
+        gender: 0.5,
+        values: {
+          "genitals/phallus-size": 0.365,
+          "genitals/testes-size": 0.3,
+          "genitals/vulva-size": 0.5,
+          "genitals/anal-canal": 1,
+        },
+      },
+      {
+        gender: 1,
+        values: {
+          "genitals/phallus-size": 0.65,
+          "genitals/testes-size": 0.6,
+          "genitals/vulva-size": 0,
+          "genitals/anal-canal": 1,
+        },
+      },
+    ] as const;
+
+    for (const { gender, values } of expected) {
+      const recipe = createRecipe({ macros: { age: 30, gender } });
+      const evaluated = withAnatomyDefaults(recipe, anatomyDefaults);
+      for (const [id, value] of Object.entries(values)) {
+        const entry = slider(id);
+        expect(sliderValue(recipe, entry, anatomyDefaults), `${gender}: ${id}`).toBeCloseTo(value);
+        expect(evaluated.modifiers[id] ?? 0, `${gender}: evaluated ${id}`).toBeCloseTo(value);
+      }
+    }
+  });
+
+  it("keeps an explicit adult zero visible and clears it back to the pack default on reset", () => {
+    if (!anatomyDefaults) throw new Error("fixture has no anatomy defaults");
+    const entry = slider("genitals/phallus-size");
+    const recipe = createRecipe({ macros: { age: 30, gender: 0.5 } });
+    const explicitZero = withSliderValue(recipe, entry, 0, modifiers, anatomyDefaults);
+
+    expect(explicitZero.modifiers[entry.id]).toBe(0);
+    expect(sliderValue(explicitZero, entry, anatomyDefaults)).toBe(0);
+
+    const reset = resetSliderValue(explicitZero, entry, modifiers, anatomyDefaults);
+    expect(reset.modifiers).not.toHaveProperty(entry.id);
+    expect(sliderValue(reset, entry, anatomyDefaults)).toBeCloseTo(0.365);
+  });
+
+  it("keeps no-pack slider reads and resets neutral", () => {
+    const entry = slider("genitals/phallus-size");
+    const changed = withSliderValue(
+      createRecipe({ macros: { age: 30, gender: 0.5 } }),
+      entry,
+      0.4,
+      modifiers,
+    );
+
+    expect(sliderValue(createRecipe({ macros: { age: 30, gender: 0.5 } }), entry)).toBe(0);
+    const reset = resetSliderValue(changed, entry, modifiers);
+    expect(reset.modifiers).not.toHaveProperty(entry.id);
+    expect(sliderValue(reset, entry)).toBe(0);
+
+    const ordinary = slider("nose/nose-scale-horiz-decr|incr");
+    const ordinaryReset = resetSliderValue(
+      withSliderValue(createRecipe({ macros: { age: 30 } }), ordinary, 0.4, modifiers),
+      ordinary,
+      modifiers,
+      anatomyDefaults,
+    );
+    expect(ordinaryReset.modifiers).not.toHaveProperty(ordinary.id);
   });
 
   it("formats values for display", () => {
