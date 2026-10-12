@@ -240,24 +240,23 @@ async function sample(run, persist, page, cdp, atMs, started) {
   const remaining = atMs - (Date.now() - started);
   if (remaining > 0) {
     const slept = await observe(run, persist, `sample-${atMs}:wait`, () => wait(remaining));
-    if (!slept.ok) return;
+    if (!slept.ok) return false;
   }
   sampleReceipt.atMs = Date.now() - started;
   persist();
   const pageState = await observe(run, persist, `sample-${atMs}:page-evaluate`, () =>
     page.evaluate(currentState),
   );
-  if (pageState.ok) {
-    sampleReceipt.page = pageState.value;
-    persist();
-  }
+  if (!pageState.ok) return false;
+  sampleReceipt.page = pageState.value;
+  persist();
   const layout = await observe(run, persist, `sample-${atMs}:layout-metrics`, () =>
     cdp.send("Page.getLayoutMetrics"),
   );
-  if (layout.ok) {
-    sampleReceipt.layout = layout.value;
-    persist();
-  }
+  if (!layout.ok) return false;
+  sampleReceipt.layout = layout.value;
+  persist();
+  return true;
 }
 
 async function captureCase({ base, browserPath, flags, id, persist, query, result, hideCanvas }) {
@@ -309,8 +308,10 @@ async function captureCase({ base, browserPath, flags, id, persist, query, resul
       page.goto(`${base}index.html?muted${query}`, { waitUntil: "load" }),
     );
     if (!navigation.ok) return;
-    for (const atMs of [0, 2_000, 10_000, gathererStartAtMs])
-      await sample(run, persist, page, cdp, atMs, started);
+    for (const atMs of [0, 2_000, 10_000, gathererStartAtMs]) {
+      const sampled = await sample(run, persist, page, cdp, atMs, started);
+      if (!sampled) return;
+    }
     if (hideCanvas) {
       const hidden = await observe(run, persist, "hide-canvas", () =>
         page.evaluate(() => {
