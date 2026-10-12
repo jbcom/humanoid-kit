@@ -275,7 +275,11 @@ session that never asks for the surface.
   parametric forms placed in the zones of section 5 and sized from the measured
   dimensions (ADULT-ANATOMY-DATA.md), then written to the pack by the packer. No
   mesh is sculpted by hand or imported, so the geometry is ours and
-  reproducible, and the pack is byte-identical on rebuild.
+  reproducible, and the pack is byte-identical on rebuild. The phallus generator
+  owns one pure catalogue of its target names; it uses that catalogue while it
+  generates the targets, and the shipped-detail contract checks the packed names
+  against it separately from the geometry, drive and lattice witnesses. Reading
+  that catalogue never reconstructs a target surface.
 - **Recipe.** The `anatomy` record of section 6 (feature id to presence and
   controls) selects detail targets and their weights; the age policy covers it in
   the three places of section 6.
