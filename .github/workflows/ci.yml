@@ -47,7 +47,92 @@ jobs:
       # needs the browser and a display. Hosted runners have no GPU, so the
       # configs select SwiftShader explicitly when CI is set.
       - run: pnpm exec playwright install --with-deps chromium
-      - run: xvfb-run --auto-servernum pnpm verify
+      # `pnpm verify` remains the local all-in-one command. In CI coverage is
+      # proved once by the required shard/merge path below, so both supported
+      # Node versions validate the same source without running instrumentation
+      # a second time.
+      - run: pnpm run lint
+      - run: pnpm run lint:docs
+      - run: pnpm run typecheck
+      - run: xvfb-run --auto-servernum pnpm test
+      - run: pnpm run build
+      - run: pnpm run package:check
+
+  coverage-shard:
+    name: Coverage shard ${{ matrix.shard }}/3
+    if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      # Vitest splits test files, not individual assertions. The blob label
+      # prevents a shard archive from overwriting another during the merge.
+      - name: Run instrumented shard
+        env:
+          VITEST_BLOB_LABEL: coverage-shard-${{ matrix.shard }}
+          VITEST_COVERAGE_SHARD: "true"
+        run: >-
+          xvfb-run --auto-servernum pnpm exec vitest run --coverage
+          --project unit --project browser --shard=${{ matrix.shard }}/3
+          --reporter=blob
+      - name: Upload coverage shard
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-blob-${{ matrix.shard }}
+          path: .vitest/blob
+          include-hidden-files: true
+          if-no-files-found: error
+
+  coverage-merge:
+    name: Coverage merge and threshold gate
+    needs: coverage-shard
+    if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Names are downloaded one-by-one deliberately. A missing shard is a
+      # failed required gate, never a partial coverage report.
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-1
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-2
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-3
+          path: .vitest/blob
+      - name: Merge coverage and enforce configured thresholds
+        run: |
+          test -n "$(find .vitest/blob -type f -print -quit)"
+          pnpm exec vitest --merge-reports .vitest/blob --coverage
+          test -s coverage/lcov.info
+      - name: Upload merged LCOV
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: error
 
   docs:
     name: Docs build
@@ -109,6 +194,7 @@ jobs:
 
   sonarcloud:
     name: SonarCloud analysis
+    needs: coverage-merge
     # Organization secrets are deliberately unavailable to external pull requests.
     if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major'))))
     runs-on: ubuntu-24.04
@@ -123,9 +209,13 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Coverage includes the browser project (the shader-side render code).
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: xvfb-run --auto-servernum pnpm coverage
+      # The required merge job has already enforced Vitest's existing coverage
+      # thresholds and created this same lcov path for Sonar.
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-lcov
+          path: coverage
+      - run: test -s coverage/lcov.info
       - name: SonarCloud scan
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
@@ -142,7 +232,7 @@ jobs:
 
   gate:
     name: CI / gate
-    needs: [verify, docs, e2e, lighthouse, sonarcloud, pre-commit]
+    needs: [verify, coverage-merge, docs, e2e, lighthouse, sonarcloud, pre-commit]
     if: >-
       always() && (github.event_name != 'pull_request' ||
       !(startsWith(github.event.pull_request.head.ref, 'release-please--') ||
@@ -152,6 +242,7 @@ jobs:
       - name: Require every native validation job
         env:
           VERIFY_RESULT: ${{ needs.verify.result }}
+          COVERAGE_MERGE_RESULT: ${{ needs.coverage-merge.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
           LIGHTHOUSE_RESULT: ${{ needs.lighthouse.result }}
@@ -159,6 +250,7 @@ jobs:
           PRE_COMMIT_RESULT: ${{ needs.pre-commit.result }}
         run: |
           test "$VERIFY_RESULT" = success
+          test "$COVERAGE_MERGE_RESULT" = success
           test "$DOCS_RESULT" = success
           test "$E2E_RESULT" = success
           test "$LIGHTHOUSE_RESULT" = success

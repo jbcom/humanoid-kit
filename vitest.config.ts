@@ -10,6 +10,9 @@ const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 // other CI; the priority lane's own choice there (scripts/lib/browserRun.ts).
 const { gpuMode, headless } = browserRun(process.env, process.platform);
 const constrainedCi = Boolean(process.env.CI);
+// A shard covers only a subset of test files. Coverage thresholds are meaningful
+// only after the required CI merge job combines every labelled shard.
+const partialCoverageShard = process.env.VITEST_COVERAGE_SHARD === "true";
 
 // Three projects:
 // - unit: the pure core in Node (tests/**/*.test.ts, outside tests/browser
@@ -54,12 +57,16 @@ export default defineConfig({
         "src/surface/**/*.ts",
       ],
       exclude: ["src/**/*.d.ts"],
-      thresholds: {
-        lines: 90,
-        functions: 90,
-        statements: 90,
-        branches: 85,
-      },
+      ...(partialCoverageShard
+        ? {}
+        : {
+            thresholds: {
+              lines: 90,
+              functions: 90,
+              statements: 90,
+              branches: 85,
+            },
+          }),
     },
     projects: [
       {
