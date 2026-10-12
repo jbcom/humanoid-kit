@@ -54,7 +54,11 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run lint:docs
       - run: pnpm run typecheck
-      - run: xvfb-run --auto-servernum pnpm test
+      # Run projects independently: unit intentionally has a bounded worker
+      # count in CI while bake and browser use their own valid scheduling.
+      - run: xvfb-run --auto-servernum pnpm exec vitest run --project unit
+      - run: xvfb-run --auto-servernum pnpm exec vitest run --project browser
+      - run: pnpm exec vitest run --project bake
       - run: pnpm run build
       - run: pnpm run package:check
 

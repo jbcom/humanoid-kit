@@ -8,8 +8,8 @@ instead of timing out while proving it three times.
 ## Required gates
 
 - **Node 24 and 26** each install from the lockfile, run lint and documentation
-  lint, typecheck, the complete uninstrumented Vitest suite (unit, browser and
-  bake), build and package validation. This keeps source, runtime and published
+  lint, typecheck, each uninstrumented Vitest project (unit, browser and bake)
+  in its own scheduler invocation, build and package validation. This keeps source, runtime and published
   package proof on both supported Node releases.
 - **Coverage shards 1/3, 2/3 and 3/3** run the unit and browser projects with
   V8 coverage. Vitest shards test *files*, and every shard writes a labelled
