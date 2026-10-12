@@ -301,8 +301,10 @@ describe("<StudioStage>", () => {
       }, [invalidate]);
       useFrame(() => {
         // useFrame runs before the renderer; the mesh's onAfterRender below is
-        // the paired proof that each requested frame really drew.
+        // the paired proof that each requested frame really drew. An invalidate
+        // from a subscriber requests precisely one more demand frame.
         frames++;
+        if (frames < 6) invalidate();
       });
       return null;
     }
