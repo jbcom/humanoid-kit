@@ -73,6 +73,15 @@ one changed-code diagnostic push. It is not a rerun of the navigation-failure
 revision and it does not change product source, Lighthouse budgets, or screenshot
 requirements.
 
+## Installed-gatherer dispatch authorization
+
+The bounded installed-gatherer diagnostic is based on product head
+`c57d29cbbf89160e627d258bf93af1a6904252f0`, brought into this isolated branch
+through merge commit `602daa12a82050441b3138b2fc753fa192d4e0d8`. The next
+explicit marker commit authorizes exactly one run of this changed diagnostic.
+It is neither a retry of a previous result nor a change to normal Lighthouse
+CI, screenshot requirements, budgets or application behavior.
+
 The direct CDP probe was useful renderer evidence but cannot distinguish a
 capture command that blocks from Lighthouse's concurrent node-resolution work.
 The installed-gatherer diagnostic is the bounded next step: its receipt makes
