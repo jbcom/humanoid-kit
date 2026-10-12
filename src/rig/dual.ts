@@ -57,15 +57,16 @@ export function dualBones(
 /**
  * Writes skinning dual quaternions from an already-posed skeleton. This keeps
  * a constraint sampler from posing the same rig once for its landmark and once
- * for its skin transform.
+ * for its skin transform. An oversized `out` is allowed: its required prefix is
+ * written and its tail is left untouched.
  */
 export function dualBonesFromPosedInto(
   rest: RestBones,
   posed: PosedBonesScratch,
   out: Float32Array = new Float32Array(rest.names.length * DUAL_STRIDE),
 ): Float32Array {
-  if (out.length !== rest.names.length * DUAL_STRIDE)
-    throw new RangeError("dual bones: output does not match the rest skeleton");
+  if (out.length < rest.names.length * DUAL_STRIDE)
+    throw new RangeError("dual bones: output is smaller than the rest skeleton");
   if (posed.world.length !== rest.names.length * 4 || posed.heads.length !== rest.names.length * 3)
     throw new RangeError("dual bones: posed skeleton does not match the rest skeleton");
   assertDisjointViews("dual bones", out, [
