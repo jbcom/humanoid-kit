@@ -2,7 +2,6 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { groupFaces, jointPosition } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
-import { coatPaintFor } from "../src/react/CoatMesh.tsx";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import {
   COAT_REGION_LIMIT,
@@ -15,6 +14,7 @@ import {
   combField,
   paintCoat,
 } from "../src/surface/coat.ts";
+import { coatPaintFor } from "../src/surface/coatPaint.ts";
 import type { SkinPaintInput } from "../src/surface/layers.ts";
 import { BODY_HAIR_COAT, beardMasks } from "../src/surface/regions/bodyHairCoat.ts";
 import {

@@ -6,50 +6,12 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo } from "react";
 import { type BufferGeometry, Matrix4, type Skeleton, SkinnedMesh, Vector3 } from "three";
-import { isAdult } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { CoatMaterial, coatGeometry } from "../render/coat.ts";
 import { applyDualSkinning, type DualBones } from "../render/dualSkinning.ts";
-import {
-  type CoatFields,
-  coatPainted,
-  coatShellCount,
-  coatTriangles,
-  paintCoat,
-} from "../surface/coat.ts";
+import { type CoatFields, coatShellCount, coatTriangles } from "../surface/coat.ts";
+import { coatPaintFor } from "../surface/coatPaint.ts";
 import { COAT_REGIONS } from "../surface/regions/index.ts";
-
-/** The coat's paint input from a recipe: what body hair is painted from. */
-function coatInput(recipe: Recipe) {
-  const s = recipe.skin;
-  return {
-    tone: {
-      melanin: s.melanin,
-      haemoglobin: s.haemoglobin,
-      undertone: s.undertone,
-      override: s.override,
-    },
-    flush: s.flush,
-    lips: s.lips,
-    areola: s.areola,
-    signals: {},
-    age: recipe.macros.age,
-    gender: recipe.macros.gender,
-    adult: isAdult(recipe),
-    ...(recipe.hair && { hairColour: recipe.hair.colour }),
-    ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
-  };
-}
-
-/**
- * The coat's paint for a recipe, or null when it paints nothing: a region
- * grows only where the recipe enables it (`coatEnabled`), so a recipe silent
- * on body hair grows no coat.
- */
-export function coatPaintFor(recipe: Recipe): Float32Array | null {
-  const paint = paintCoat(COAT_REGIONS, coatInput(recipe));
-  return coatPainted(paint) ? paint : null;
-}
 
 /** The figure's height on screen is about its world height over this many metres. */
 const FIGURE_HEIGHT = 1.8;
@@ -94,7 +56,12 @@ export function CoatMesh({
     const index = body.getIndex();
     if (!index || !paint) return null;
     const triangles = coatTriangles(index.array, fields.masks, paint);
-    return triangles.length ? coatGeometry(body, fields, triangles, coatShellCount(0)) : null;
+    if (!triangles.length) return null;
+    const coat = coatGeometry(body, fields, triangles, coatShellCount(0));
+    // QA probes can name material rows without importing the package's private
+    // region registry into a playground. This is geometry metadata only.
+    coat.userData.hkCoatRegions = [...fields.regions];
+    return coat;
   }, [body, fields, growing, shape]);
   useEffect(() => () => geometry?.dispose(), [geometry]);
   const mesh = useMemo(() => {

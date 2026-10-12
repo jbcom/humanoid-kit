@@ -20,9 +20,9 @@ import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
 import { ADULT_AGE } from "../../src/makehuman/macro.ts";
-import { coatPaintFor } from "../../src/react/CoatMesh.tsx";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import type { BodyHairRecipe } from "../../src/surface/bodyHair.ts";
+import { coatPaintFor } from "../../src/surface/coatPaint.ts";
 import { HAIR_COLOURS } from "../../src/surface/hairTone.ts";
 
 // Never a trace, video or framework failure screenshot: only the review sheets are written.
@@ -52,6 +52,8 @@ interface Column {
 interface Cell {
   label: string;
   png: string;
+  /** QA-only material/program capture from this exact response camera and recipe. */
+  coat: unknown;
 }
 
 interface Sheet {
@@ -156,6 +158,54 @@ async function assertDrawn(page: Page, input: Input, label: string): Promise<voi
   ).toBe(false);
 }
 
+/** The response-shot-only live material/program evidence, after its QA recompilation has landed. */
+async function assertRuntimeCoat(page: Page, input: Input, label: string): Promise<unknown> {
+  const expected = coatPaintFor(createRecipe(input));
+  if (!expected) throw new Error(`${label}: explicit coat request unexpectedly empty`);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () => window.hkCoatProbe?.().filter((coat) => coat.program.alphaPath !== null) ?? [],
+        ),
+      { timeout: 30_000, message: `${label}: QA coat program did not recompile` },
+    )
+    .toHaveLength(1);
+  // Read the same live material after its compiled alpha capture proved ready.
+  const coats = await page.evaluate(() => window.hkCoatProbe?.() ?? []);
+  expect(coats, `${label}: one coat material`).toHaveLength(1);
+  const coat = coats[0];
+  if (!coat) throw new Error(`${label}: missing coat after length assertion`);
+  expect(coat.material).toMatchObject({
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    forceSinglePass: true,
+  });
+  expect(coat.geometry.instanceCount, `${label}: shell instances`).toBeGreaterThanOrEqual(4);
+  expect(coat.program.found, `${label}: material has a live WebGL program`).toBe(true);
+  expect(coat.program.alphaPath, `${label}: compiled alpha path`).toContain("float hkBases");
+  expect(coat.program.alphaPath, `${label}: compiled alpha path`).toContain("float hkSides");
+  expect(coat.program.alphaPath, `${label}: compiled alpha path`).toContain("float hkFar");
+  expect(coat.program.alphaPath, `${label}: compiled alpha path`).toContain(
+    "diffuseColor.a = hkCover;",
+  );
+  coat.uniforms.rows.forEach((row, index) => {
+    expect(row.cover, `${label}/${row.region}: runtime coverage`).toBeCloseTo(
+      expected[index * 8] as number,
+    );
+    expect(row.density, `${label}/${row.region}: runtime follicle density`).toBeCloseTo(
+      expected[index * 8 + 2] as number,
+    );
+  });
+  coat.angles.forEach((angle) => {
+    expect(angle.samples, `${label}/${angle.region}: live normal samples`).toBeGreaterThan(0);
+    expect(angle.minCos, `${label}/${angle.region}: cosine range`).toBeGreaterThanOrEqual(0);
+    expect(angle.maxCos, `${label}/${angle.region}: cosine range`).toBeLessThanOrEqual(1);
+  });
+  return coat;
+}
+
 async function showCell(page: Page, column: Column, view: View): Promise<Cell> {
   assertAdult(column.input, column.label);
   const generation = await page.evaluate(
@@ -177,6 +227,7 @@ async function showCell(page: Page, column: Column, view: View): Promise<Cell> {
   return {
     label: column.label,
     png: (await page.locator("canvas").screenshot()).toString("base64"),
+    coat: await assertRuntimeCoat(page, column.input, `${view.name}/${column.label}`),
   };
 }
 
@@ -253,7 +304,7 @@ async function renderSheet(
     const lead = sheet.columns[0];
     if (!lead) throw new Error(`${sheet.file} has no response columns`);
     assertAdult(lead.input, `${sheet.file}/${view.name}`);
-    const query = `adult&${view.camera}&recipe=${encodeURIComponent(JSON.stringify(lead.input))}`;
+    const query = `adult&coatprobe=1&${view.camera}&recipe=${encodeURIComponent(JSON.stringify(lead.input))}`;
     await openSilentGame(page, `/?${query}`, {}, { markerTimeout: 120_000 });
     await page.locator('[data-figure="ready"]').waitFor({ timeout: 300_000 });
     const cells: Cell[] = [];
@@ -266,9 +317,20 @@ async function renderSheet(
   }
   const png = Buffer.from(await composite(page, rows, sheet.title), "base64");
   if (outDir) fs.writeFileSync(path.join(outDir, `${sheet.file}.png`), png);
+  const runtime = rows.flatMap((row) =>
+    row.cells.map((cell) => ({ row: row.label, column: cell.label, coat: cell.coat })),
+  );
+  const runtimeText = `${JSON.stringify(runtime, null, 2)}\n`;
+  if (outDir) fs.writeFileSync(path.join(outDir, `${sheet.file}.runtime.json`), runtimeText);
   const output = info.outputPath(`${sheet.file}.png`);
   fs.writeFileSync(output, png);
   await info.attach(sheet.file, { path: output, contentType: "image/png" });
+  const runtimeOutput = info.outputPath(`${sheet.file}.runtime.json`);
+  fs.writeFileSync(runtimeOutput, runtimeText);
+  await info.attach(`${sheet.file}.runtime`, {
+    path: runtimeOutput,
+    contentType: "application/json",
+  });
   expect(errors, `${sheet.file}: page errors while drawing`).toEqual([]);
 }
 
