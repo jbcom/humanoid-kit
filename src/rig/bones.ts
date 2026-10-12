@@ -21,6 +21,24 @@ export interface RestBones {
 export type BoneRotations = Float32Array;
 
 /**
+ * Reusable storage for a posed skeleton. Callers that sample a transient pose
+ * many times (for example a constraint solver) own this storage and must not
+ * share it across simultaneous reads.
+ */
+export interface PosedBonesScratch {
+  readonly world: Float32Array;
+  readonly heads: Float32Array;
+}
+
+/** Allocates one reusable posed-skeleton buffer for this rest rig. */
+export function posedBonesScratch(rest: Pick<RestBones, "names">): PosedBonesScratch {
+  return {
+    world: new Float32Array(rest.names.length * 4),
+    heads: new Float32Array(rest.names.length * 3),
+  };
+}
+
+/**
  * Each bone's head in the pose (`bones * 3`): where the joints are, for
  * anchors (hands, feet, face) and joint-angle signals.
  */
@@ -36,8 +54,63 @@ export function posedBones(
   rest: RestBones,
   rotations: BoneRotations,
 ): { world: Float32Array; heads: Float32Array } {
-  const { world, origin } = boneTransforms(rest, rotations);
-  return { world, heads: origin };
+  return posedBonesInto(rest, rotations, posedBonesScratch(rest));
+}
+
+/**
+ * Writes a posed skeleton into caller-owned storage. It has the same result as
+ * `posedBones`, without allocating world/head typed arrays for each sample.
+ */
+export function posedBonesInto(
+  rest: RestBones,
+  rotations: BoneRotations,
+  out: PosedBonesScratch,
+): PosedBonesScratch {
+  const n = rest.names.length;
+  if (rotations.length !== n * 4)
+    throw new RangeError("posed bones: rotations do not match the rest skeleton");
+  if (out.world.length !== n * 4 || out.heads.length !== n * 3)
+    throw new RangeError("posed bones: scratch does not match the rest skeleton");
+  const { world, heads } = out;
+  for (const b of rest.order) {
+    const r = b * 4;
+    const h = b * 3;
+    const rx = rotations[r] as number;
+    const ry = rotations[r + 1] as number;
+    const rz = rotations[r + 2] as number;
+    const rw = rotations[r + 3] as number;
+    const p = rest.parents[b] as number;
+    if (p < 0) {
+      world[r] = rx;
+      world[r + 1] = ry;
+      world[r + 2] = rz;
+      world[r + 3] = rw;
+      heads[h] = rest.heads[h] as number;
+      heads[h + 1] = rest.heads[h + 1] as number;
+      heads[h + 2] = rest.heads[h + 2] as number;
+      continue;
+    }
+    const pr = p * 4;
+    const ph = p * 3;
+    const px = world[pr] as number;
+    const py = world[pr + 1] as number;
+    const pz = world[pr + 2] as number;
+    const pw = world[pr + 3] as number;
+    world[r] = pw * rx + px * rw + py * rz - pz * ry;
+    world[r + 1] = pw * ry - px * rz + py * rw + pz * rx;
+    world[r + 2] = pw * rz + px * ry - py * rx + pz * rw;
+    world[r + 3] = pw * rw - px * rx - py * ry - pz * rz;
+    const x = (rest.heads[h] as number) - (rest.heads[ph] as number);
+    const y = (rest.heads[h + 1] as number) - (rest.heads[ph + 1] as number);
+    const z = (rest.heads[h + 2] as number) - (rest.heads[ph + 2] as number);
+    const tx = 2 * (py * z - pz * y);
+    const ty = 2 * (pz * x - px * z);
+    const tz = 2 * (px * y - py * x);
+    heads[h] = (heads[ph] as number) + x + pw * tx + (py * tz - pz * ty);
+    heads[h + 1] = (heads[ph + 1] as number) + y + pw * ty + (pz * tx - px * tz);
+    heads[h + 2] = (heads[ph + 2] as number) + z + pw * tz + (px * ty - py * tx);
+  }
+  return out;
 }
 
 /** Rotates a vector by bone `b`'s world rotation in `world` (from `posedBones`). */

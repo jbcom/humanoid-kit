@@ -21,8 +21,11 @@ import { poseShare, skinDualShare } from "./skinShare.ts";
 
 export {
   type BoneRotations,
+  type PosedBonesScratch,
   posedBoneHeads,
   posedBones,
+  posedBonesInto,
+  posedBonesScratch,
   type RestBones,
   rotateByBone,
 } from "./bones.ts";

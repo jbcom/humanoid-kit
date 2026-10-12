@@ -1,3 +1,4 @@
+export * from "./affordance/armSkinnedFrameSampler.ts";
 export * from "./affordance/channel.ts";
 export * from "./affordance/frames.ts";
 export * from "./affordance/registry.ts";
