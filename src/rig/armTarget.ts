@@ -8,7 +8,7 @@
  * responsible for choosing an interaction target and for applying the returned
  * rotations to a renderer.
  */
-import { type BoneRotations, posedBones, type RestBones } from "./bones.ts";
+import { assertDisjointViews, type BoneRotations, posedBones, type RestBones } from "./bones.ts";
 import { between, conjugate, mul, type Quat, rotate } from "./quat.ts";
 
 /** Whether the measured final effector satisfies every requested tolerance. */
@@ -208,7 +208,9 @@ export function solveArmTarget(input: ArmTargetInput): ArmTargetResult {
   });
 
   const out = input.out ?? new Float32Array(rotations.length);
-  if (overlaps(out, rotations)) throw new RangeError("arm target: out must not overlap rotations");
+  if (out.length !== rotations.length)
+    throw new RangeError("arm target: out must exactly match the rotation buffer length");
+  assertDisjointViews("arm target", out, [rotations, rest.heads, rest.parents, rest.order]);
   out.set(rotations);
   const source = Float32Array.from(rotations);
   const lengths = segmentLengths(rest, source, chain, tip);
@@ -342,11 +344,6 @@ function assertUnitQuaternion(name: string, value: Quat): void {
   const magnitude = Math.hypot(value[0], value[1], value[2], value[3]);
   if (Math.abs(magnitude - 1) > 0.001)
     throw new RangeError(`arm target: ${name} must be a unit quaternion`);
-}
-
-function overlaps(a: Float32Array, b: Float32Array): boolean {
-  if (a.buffer !== b.buffer) return false;
-  return a.byteOffset < b.byteOffset + b.byteLength && b.byteOffset < a.byteOffset + a.byteLength;
 }
 
 function assertChain(rest: RestBones, chain: readonly number[], rotations: BoneRotations): void {

@@ -541,6 +541,41 @@ describe("arm target constraints", { timeout: 300_000 }, () => {
         target: { position: before.position },
       }),
     ).toThrow(RangeError);
+
+    const sourceHeads = Float32Array.from(fixture.rest.heads);
+    const shared = new Float32Array(base.length);
+    const guardedRest = { ...fixture.rest, heads: shared.subarray(0, sourceHeads.length) };
+    guardedRest.heads.set(sourceHeads);
+    shared.fill(-17, sourceHeads.length);
+    const overlappingBefore = Float32Array.from(shared);
+    expect(() =>
+      solveArmTarget({
+        rest: guardedRest,
+        rotations: base,
+        out: shared,
+        chain: armChain(guardedRest, "R"),
+        tip: armTip(guardedRest, base, armChain(guardedRest, "R"), before.position),
+        target: { position: before.position },
+      }),
+    ).toThrow(RangeError);
+    expect(guardedRest.heads).toEqual(sourceHeads);
+    expect(shared).toEqual(overlappingBefore);
+
+    const oversized = new Float32Array(base.length + 1).fill(-23);
+    const restBefore = Float32Array.from(fixture.rest.heads);
+    expect(() =>
+      solveArmTarget({
+        rest: fixture.rest,
+        rotations: base,
+        out: oversized,
+        chain,
+        tip,
+        target: { position: before.position },
+      }),
+    ).toThrow(RangeError);
+    expect(fixture.rest.heads).toEqual(restBefore);
+    expect(oversized).toEqual(new Float32Array(base.length + 1).fill(-23));
+
     expect(() =>
       solveArmTarget({
         rest: fixture.rest,
