@@ -1,10 +1,11 @@
 import { act as reactAct, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
+import adultManifest from "../../packs/adult-anatomy/data/manifest.json";
 import type { ChangeCause } from "../../src/editor/gate.ts";
 import type { HumanoidEditor } from "../../src/editor/ui/useHumanoidEditor.ts";
 import { type EditorOptions, useEditorState } from "../../src/editor/ui/useHumanoidEditor.ts";
-import type { SliderEntry } from "../../src/format/assetFormat.ts";
+import type { AdultAnatomyManifest, SliderEntry } from "../../src/format/assetFormat.ts";
 import { createRecipe, type Recipe } from "../../src/recipe/recipe.ts";
 import { EditorHarness, readyInfo } from "./harness.tsx";
 
@@ -40,11 +41,11 @@ interface Probe {
 }
 
 /** Mounts the editor state and returns a handle on its latest value and everything it ever held. */
-async function mount(options: EditorOptions, initial?: Recipe): Promise<Probe> {
+async function mount(options: EditorOptions, initial?: Recipe, readyInfo = ready): Promise<Probe> {
   const probe = { held: [] as Recipe[] } as Probe;
   await render(
     <EditorHarness
-      ready={ready}
+      ready={readyInfo}
       {...(initial && { initial })}
       options={options}
       onEditor={(e) => {
@@ -59,6 +60,22 @@ async function mount(options: EditorOptions, initial?: Recipe): Promise<Probe> {
 }
 
 const thirty = () => createRecipe({ macros: { age: 30 } });
+
+describe("the adult anatomy default contract", () => {
+  it("retains an explicit editor zero instead of making the default apply again", async () => {
+    const anatomy = (adultManifest as unknown as AdultAnatomyManifest).anatomy;
+    const phallus = slider("genitals/phallus-size");
+    const probe = await mount(
+      {},
+      createRecipe({ macros: { age: 30, gender: 0.5 } }),
+      anatomy ? { ...ready, anatomy } : ready,
+    );
+
+    act(() => probe.editor.setSlider(phallus, 0));
+
+    expect(probe.editor.recipe.modifiers[phallus.id]).toBe(0);
+  });
+});
 
 describe("the change gate, uncontrolled", () => {
   it("never holds a refused figure: a veto leaves the figure, the history and the host untouched", async () => {
