@@ -243,6 +243,26 @@ describe("recipe history", () => {
     expect(h.present.macros.age).toBe(23);
   });
 
+  it("applies defaulted-adult resets from the current recipe during a rapid sequence", () => {
+    if (!anatomyDefaults) throw new Error("fixture has no anatomy defaults");
+    const ids = Object.keys(anatomyDefaults);
+    let history = createHistory(
+      createRecipe({
+        macros: { age: 30, gender: 0.5 },
+        modifiers: Object.fromEntries(ids.map((id) => [id, 0])),
+      }),
+    );
+    for (const id of ids) {
+      const entry = slider(id);
+      history = historyReducer(history, {
+        type: "apply",
+        change: (current) => resetSliderValue(current, entry, modifiers, anatomyDefaults),
+      });
+    }
+    expect(history.present.modifiers).toEqual({});
+    expect(history.past).toHaveLength(ids.length);
+  });
+
   it("clears redo on a new change and caps the undo stack", () => {
     let h = createHistory(r(1));
     for (let i = 0; i < HISTORY_LIMIT + 20; i++)

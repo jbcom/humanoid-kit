@@ -26,36 +26,58 @@ export const selectsSheets = (argv: readonly string[]): boolean =>
   argv.some(
     (arg, i) => arg === "--project=sheets" || (arg === "--project" && argv[i + 1] === "sheets"),
   );
+const selectsAdultDefaultsLab = (argv: readonly string[]): boolean =>
+  argv.some(
+    (arg, i) =>
+      arg === "--project=adult-defaults-lab" ||
+      (arg === "--project" && argv[i + 1] === "adult-defaults-lab"),
+  );
 // The workers load this config again without the command line: the run that selected
 // the project tells them so through the environment they inherit.
 if (selectsSheets(process.argv)) process.env.HK_SHEETS_RUN = "1";
+if (selectsAdultDefaultsLab(process.argv)) process.env.HK_ADULT_DEFAULTS_LAB_RUN = "1";
 const sheets = process.env.HK_SHEETS_RUN === "1";
+const adultDefaultsLab = process.env.HK_ADULT_DEFAULTS_LAB_RUN === "1";
 
 export default definePlaywrightConfig({
   testDir: "./e2e",
-  basePath: sheets ? "/" : "/humanoid-kit/playground/",
+  basePath: sheets || adultDefaultsLab ? "/" : "/humanoid-kit/playground/",
   // A second checkout (a worktree, another agent) runs its own server beside this one.
   port: Number(process.env.HK_E2E_PORT ?? 4173),
   gpuMode,
   headless,
   webServerCommand: (port) =>
-    sheets
+    sheets || adultDefaultsLab
       ? `pnpm exec vite --config playground/vite.config.ts --host 127.0.0.1 --port ${port} --strictPort`
       : `pnpm build:playground && pnpm exec vite preview --config playground/vite.config.ts --base /humanoid-kit/playground/ --host 127.0.0.1 --port ${port} --strictPort`,
-  extraProjects: sheets
-    ? [
-        {
-          name: "sheets",
-          // A sheet is a review render, not a test: it never matches the suite's `*.spec.ts`.
-          testMatch: /sheets\/.*\.sheet\.ts$/,
-          // One sheet at a time in one page: two rendered side by side in software
-          // starved each other (a mute marker unseen in two minutes, a canvas never still).
-          fullyParallel: false,
-          // A sheet of many figures waits on each one's evaluation in turn.
-          timeout: 30 * 60_000,
-        },
-      ]
-    : [],
+  extraProjects: [
+    ...(sheets
+      ? [
+          {
+            name: "sheets",
+            // A sheet is a review render, not a test: it never matches the suite's `*.spec.ts`.
+            testMatch: /sheets\/.*\.sheet\.ts$/,
+            // One sheet at a time in one page: two rendered side by side in software
+            // starved each other (a mute marker unseen in two minutes, a canvas never still).
+            fullyParallel: false,
+            // A sheet of many figures waits on each one's evaluation in turn.
+            timeout: 30 * 60_000,
+          },
+        ]
+      : []),
+    ...(adultDefaultsLab
+      ? [
+          {
+            name: "adult-defaults-lab",
+            // Adult anatomy intentionally remains development-only. This lab's
+            // proof runs against Vite dev without adding the pack to Pages.
+            testMatch: /effective-adult-defaults\.spec\.ts$/,
+            fullyParallel: false,
+            timeout: 4 * 60_000,
+          },
+        ]
+      : []),
+  ],
   overrides: {
     outputDir: "./test-results",
     fullyParallel: true,
