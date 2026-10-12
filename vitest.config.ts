@@ -9,6 +9,7 @@ const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 // Headed native GPU locally; headless Metal on the render Macs; headless SwiftShader in
 // other CI; the priority lane's own choice there (scripts/lib/browserRun.ts).
 const { gpuMode, headless } = browserRun(process.env, process.platform);
+const constrainedCi = Boolean(process.env.CI);
 
 // Three projects:
 // - unit: the pure core in Node (tests/**/*.test.ts, outside tests/browser
@@ -80,6 +81,11 @@ export default defineConfig({
           // instrumentation and the parallel suites stretch it several times;
           // 30 s still catches a hang.
           testTimeout: 30_000,
+          // A full set of model fixtures is memory- and CPU-heavy.  Two workers
+          // preserve independent-file coverage without oversubscribing a hosted
+          // runner (which otherwise turns deterministic geometry assertions into
+          // timeouts under concurrent pack loading).
+          ...(constrainedCi && { maxWorkers: 2 }),
         },
       },
       {
@@ -104,6 +110,10 @@ export default defineConfig({
           // times slower than a GPU: the scatter-parity sweep takes 3 s on a
           // GPU and 20 s under SwiftShader.
           testTimeout: gpuMode === "software" ? 120_000 : 30_000,
+          // A software renderer already spreads one WebGL context across the
+          // host. Keep its browser files independent but sequential, matching
+          // the Playwright suite's software-runner policy.
+          ...(gpuMode === "software" && { fileParallelism: false }),
         },
       },
     ],
