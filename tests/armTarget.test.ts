@@ -7,10 +7,7 @@ import { Group, Matrix4, Quaternion, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { HumanoidAffordances, type LiveFigure } from "../src/affordance/live.ts";
 import { type FrameOut, frameOut, landmarkAnchors } from "../src/foundation/landmarks.ts";
-import { gripMeeting } from "../src/interaction/contacts.ts";
 import { type Evaluation, HumanoidModel } from "../src/model/humanoidModel.ts";
-import { presenceJoints } from "../src/presence/fromEvaluation.ts";
-import { type PosedRig, presenceFromPose } from "../src/presence/posed.ts";
 import { createRecipe, type Recipe } from "../src/recipe/recipe.ts";
 import { armChain, armTip, solveArmTarget } from "../src/rig/armTarget.ts";
 import { skinPose } from "../src/rig/dual.ts";
@@ -21,11 +18,6 @@ import { loadFixtureAssets } from "./fixtures.ts";
 const assets = loadFixtureAssets();
 const model = new HumanoidModel(assets, { subdivision: 1 });
 const rigDataFor = rigData(assets);
-const rig: PosedRig = {
-  bones: rigDataFor.bones,
-  parents: model.boneParents(),
-  skin: model.rigSkin(),
-};
 const base = IDENTITY_POSE(rigDataFor.bones.length);
 const anchors = { base: landmarkAnchors(model, "base"), adult: null };
 
@@ -192,36 +184,23 @@ function elbowSide(
 }
 
 describe("arm target constraints", { timeout: 300_000 }, () => {
-  it("puts both unequal-height adults' final skinned right hands on the same handshake target", () => {
+  it("puts both unequal-height adults' final skinned right hands on the same shared target", () => {
     const tallRecipe = createRecipe({ macros: { age: 25, gender: 0.85, height: 0.8 } });
     const shortRecipe = createRecipe({ macros: { age: 25, gender: 0.15, height: 0.2 } });
     const tallEval = model.evaluate(tallRecipe);
     const shortEval = model.evaluate(shortRecipe);
     const tallRest = restBones(assets, tallEval.control);
     const shortRest = restBones(assets, shortEval.control);
-    const tallPresence = presenceFromPose({
-      evaluation: tallEval,
-      recipe: tallRecipe,
-      joints: presenceJoints(assets),
-      rig,
-      rotations: base,
-      placement: { id: "tall", position: [-0.3, 0, 0], facing: [1, 0, 0] },
-    });
-    const shortPresence = presenceFromPose({
-      evaluation: shortEval,
-      recipe: shortRecipe,
-      joints: presenceJoints(assets),
-      rig,
-      rotations: base,
-      placement: { id: "short", position: [0.3, 0, 0], facing: [-1, 0, 0] },
-    });
-    const target = gripMeeting(tallPresence, shortPresence, [0, 0, 0]);
+    // This is a fixed world-space target chosen inside both evaluated arm
+    // spans. Contact selection belongs to an interaction layer, not this rig
+    // solver test.
+    const target: [number, number, number] = [0.043, 1.15, 0];
     const tallWorld = new Group();
-    tallWorld.position.set(...tallPresence.position);
+    tallWorld.position.set(-0.3, 0, 0);
     tallWorld.position.y += tallEval.groundOffset;
     tallWorld.rotation.y = Math.PI / 2;
     const shortWorld = new Group();
-    shortWorld.position.set(...shortPresence.position);
+    shortWorld.position.set(0.3, 0, 0);
     shortWorld.position.y += shortEval.groundOffset;
     shortWorld.rotation.y = -Math.PI / 2;
 

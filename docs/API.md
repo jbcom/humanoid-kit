@@ -974,6 +974,16 @@ and expressions"). Framework-free.
   `poseShare(rest, rotations, base)` gives every bone's share for a pose: the
   table's, moved by each such bone's swing (its rotation less its twist about
   its own axis). `skinPositions` and `DualBones` use it.
+- `armChain(rest, side)`, `armTip(rest, rotations, chain, position, orientation?)`
+  and `solveArmTarget(input)` are an experimental, framework-free arm-target
+  primitive. It changes local rotations only, preserves the rest skeleton and
+  segment lengths, and returns measured reach and orientation results. Its
+  limits are spherical source-angle budgets, not anatomical joint limits.
+  `createArmSkinnedFrameSampler(input)` supplies a final CPU-skinned hand frame
+  to a solve without per-sample typed-array allocation. It borrows immutable
+  evaluation inputs for one generation and rejects stale, malformed or
+  non-arm-only trial poses. Neither export drives an interaction, clip, React
+  prop or live figure automatically.
 - `solveHipFold(rest, control, skinIndex, skinWeight, triangles)` solves a
   figure's hip fold (ARCHITECTURE.md, "The hip fold"): where a thigh flexed past
   a right angle would pass through the belly, the displacement (per flexion

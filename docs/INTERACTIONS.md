@@ -279,6 +279,30 @@ interaction is acting and only for signals it names. Routes into `arousal` are
 written only in the adult package and pass through `assertSignalPolicy` on
 every write.
 
+### Experimental arm-target primitive
+
+`solveArmTarget` is a framework-free, local-rotation primitive for a consumer
+that has already selected a target. It preserves the rest skeleton and segment
+lengths; it never translates joints or claims that its current spherical
+source-angle budgets are anatomical joint limits. An unreached result reports
+its measured distance and reason instead of stretching an arm.
+
+The caller supplies the complete named shoulder-to-wrist chain, a source pose,
+and either a wrist-local `armTip` or an `effector` that samples the final hand
+frame. A rendered contact must use the latter: a wrist head or interaction
+marker is not a proof that the final skinned hand reached a target. The
+primitive is not wired into the interaction runtime, React bindings, or an
+authored clip.
+
+`createArmSkinnedFrameSampler` is the allocation-bounded `effector` adapter for
+one solve. It owns transient skeleton and skinning scratch, borrows one
+immutable evaluated generation, and rejects stale generations, malformed shapes
+and trial changes outside the declared arm chain. Its lower-level `Into` helpers
+remain trusted rig math: callers provide finite unit rotations and independent,
+non-overlapping output buffers. This seam deliberately makes an integration
+choose when it has a final live hand frame to close, rather than quietly moving
+a marker.
+
 ### Stimuli and reactions
 
 Any participant can be **stimulated**, inside an interaction or not:
