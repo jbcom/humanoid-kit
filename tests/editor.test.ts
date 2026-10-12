@@ -2,6 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   formatSliderValue,
+  resetSliderValue,
   sliderAvailability,
   sliderRange,
   sliderValue,
@@ -25,6 +26,7 @@ import { loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets(true);
 const modifiers = assets.modifiers;
+const anatomyDefaults = assets.adultAnatomyManifest?.anatomy?.defaults;
 const allSliders = assets.sliders.flatMap((t) => t.groups.flatMap((g) => g.sliders));
 const slider = (id: string) => {
   const s = allSliders.find((x) => x.id === id);
@@ -122,6 +124,42 @@ describe("editor controls", () => {
     const s = slider("nose/nose-scale-horiz-decr|incr");
     const r = withSliderValue(createRecipe(), s, 0.4, modifiers);
     expect(Object.keys(withSliderValue(r, s, 0, modifiers).modifiers)).toEqual([]);
+  });
+
+  it("shows the loaded adult defaults at every gender anchor, and lets an explicit zero override them", () => {
+    if (!anatomyDefaults) throw new Error("fixture has no adult anatomy defaults");
+    expect(Object.keys(anatomyDefaults).sort()).toEqual([
+      "genitals/phallus-size",
+      "genitals/testes-size",
+    ]);
+
+    const phallus = slider("genitals/phallus-size");
+    const testes = slider("genitals/testes-size");
+    for (const [gender, expected] of [
+      [0, [0.08, 0]],
+      [0.5, [0.365, 0.3]],
+      [1, [0.65, 0.6]],
+    ] as const) {
+      const recipe = createRecipe({ macros: { age: 30, gender } });
+      expect(sliderValue(recipe, phallus, anatomyDefaults)).toBeCloseTo(expected[0], 9);
+      expect(sliderValue(recipe, testes, anatomyDefaults)).toBeCloseTo(expected[1], 9);
+    }
+
+    const recipe = createRecipe({ macros: { age: 30, gender: 0.5 } });
+    const hidden = withSliderValue(recipe, phallus, 0, modifiers, anatomyDefaults);
+    expect(hidden.modifiers[phallus.id]).toBe(0);
+    expect(sliderValue(hidden, phallus, anatomyDefaults)).toBe(0);
+    const reset = resetSliderValue(hidden, phallus, modifiers, anatomyDefaults);
+    expect(reset.modifiers[phallus.id]).toBeUndefined();
+    expect(sliderValue(reset, phallus, anatomyDefaults)).toBeCloseTo(0.365, 9);
+  });
+
+  it("keeps neutral reset semantics when no loaded default owns a control", () => {
+    const nose = slider("nose/nose-scale-horiz-decr|incr");
+    const changed = withSliderValue(createRecipe(), nose, 0.4, modifiers, anatomyDefaults);
+    const reset = resetSliderValue(changed, nose, modifiers, anatomyDefaults);
+    expect(reset.modifiers[nose.id]).toBeUndefined();
+    expect(sliderValue(reset, nose, anatomyDefaults)).toBe(0);
   });
 
   it("formats values for display", () => {

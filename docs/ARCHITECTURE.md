@@ -3458,6 +3458,13 @@ topology and the field atlas exist. Decisions:
   recipe sets, 0 included, wins, so a developer can still draw an adult without
   some feature. The core stays anatomy-free: it knows a curve over gender, not
   what the curve shapes (docs/FOUNDATION.md, "both forms").
+- **Creator values use that same resolver.** A creator row receives the loaded
+  defaults when it reads a modifier, so an absent recipe key displays the value
+  the model evaluates rather than a misleading zero. Editing a defaulted adult
+  modifier to zero retains an explicit zero; resetting that row removes the
+  explicit override so the pack default applies again. Controls without a
+  loaded default retain their ordinary neutral-value behavior. This is generic
+  editor plumbing: it consumes the pack's map and names no adult modifier.
 - Until the adult stage arrives their fields are zero (empty atlas pages).
   When it arrives the worker derives the fields from the pack's targets and
   posts them; the main thread re-rasterises those pages of the shared atlas.
