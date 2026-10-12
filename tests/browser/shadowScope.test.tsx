@@ -293,24 +293,24 @@ describe("<StudioStage>", () => {
     let frames = 0;
     let draws = 0;
     function FrameWitness() {
-      const invalidate = useThree((state) => state.invalidate);
+      const advance = useThree((state) => state.advance);
       useEffect(() => {
-        // The test renderer uses demand frames. Request the six-frame late-mount
-        // witness explicitly, then stop; production's stage keeps its own loop.
-        invalidate(6);
-      }, [invalidate]);
+        // game-harness collapses RAF invalidations to one frame. `advance` is
+        // R3F's public manual-render API, so the fixture drives exactly six
+        // late-mount frames and then stops; production keeps its own loop.
+        const start = performance.now();
+        for (let frame = 0; frame < 6; frame++) advance(start + frame);
+      }, [advance]);
       useFrame(() => {
         // useFrame runs before the renderer; the mesh's onAfterRender below is
-        // the paired proof that each requested frame really drew. An invalidate
-        // from a subscriber requests precisely one more demand frame.
+        // the paired proof that every manual frame really drew.
         frames++;
-        if (frames < 6) invalidate();
       });
       return null;
     }
     await render(
       <div style={{ width: 160, height: 160 }}>
-        <Canvas frameloop="demand" shadows={STUDIO_SHADOWS} camera={{ position: [0, 1.5, 4] }}>
+        <Canvas frameloop="never" shadows={STUDIO_SHADOWS} camera={{ position: [0, 1.5, 4] }}>
           <StudioStage />
           <FrameWitness />
           <mesh
