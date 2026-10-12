@@ -66,7 +66,8 @@ function ropeRuns(cards: Cards): { first: number; last: number }[] {
 }
 
 describe.each([
-  ["braids01", 100, 200, 0.9],
+  // Three physical strands leave every unchanged box section.
+  ["braids01", 300, 600, 0.9],
   ["locs01", 40, 80, 0.85],
   ["twists01", 100, 250, 0.85],
 ] as const)("the rope grid %s", (id, fewest, most, crownCover) => {

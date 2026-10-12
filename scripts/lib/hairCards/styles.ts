@@ -8,7 +8,7 @@
 import { Vector3 } from "three";
 import { METRES_PER_V, random, TILE_COUNT, tileRange } from "./atlas.ts";
 import type { BodySurface, HeadFrame, ScalpPoint } from "./head.ts";
-import { addRope, addTube, type Cards, newCards } from "./ropes.ts";
+import { addRope, addThreeStrandPlait, addTube, type Cards, newCards } from "./ropes.ts";
 
 const DEG = Math.PI / 180;
 
@@ -263,7 +263,45 @@ export const BOX_BRAIDS: RopeGridSpec = {
   rise: 0.3,
   stiffness: 0.3,
 };
-export const boxBraids = (context: StyleContext): Cards => ropeGrid(context, BOX_BRAIDS);
+
+/** The carrier retains the existing root grid and body settling; the visible braid is three tubes. */
+const BOX_BRAIDS_PLAIT = {
+  strandRadius: 0.002,
+  tipRadius: 0.001,
+  laneRadius: 0.0053,
+  crossingLift: 0.0036,
+  crossings: 7,
+  segments: 21,
+  sides: 4,
+} as const;
+
+export const boxBraids = ({ head, body }: StyleContext): Cards => {
+  const cards = newCards();
+  const rand = random(BOX_BRAIDS.seed);
+  let index = 0;
+  // Keep the original 18 mm parting grid. The carrier is smaller than the former single rope;
+  // its radius only supplies clearance while the three visible strands form the silhouette.
+  for (const { root } of gridRoots(head, BOX_BRAIDS.spacing)) {
+    const length = BOX_BRAIDS.length * (0.85 + 0.3 * rand());
+    addThreeStrandPlait(
+      cards,
+      {
+        root,
+        hang: { kind: "combed", rise: BOX_BRAIDS.rise, stiffness: BOX_BRAIDS.stiffness },
+        length,
+        radius: 0.006,
+        tipRadius: 0.002,
+        sides: BOX_BRAIDS.sides,
+        segments: BOX_BRAIDS.segments,
+        drift: new Vector3(BOX_BRAIDS.stray * (rand() - 0.5), 0, BOX_BRAIDS.stray * (rand() - 0.5)),
+        tile: tileOf(index++, METRES_PER_V, length),
+      },
+      BOX_BRAIDS_PLAIT,
+      body,
+    );
+  }
+  return cards;
+};
 
 /**
  * Bantu knots: the head parted into square sections, each section's hair twisted into a rope and

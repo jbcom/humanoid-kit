@@ -69,6 +69,24 @@ export interface RopeSpec {
   tile: { u0: number; u1: number; metresPerV: number; v0?: number };
 }
 
+/** Internal geometry for a three-strand plait. These are authored dimensions, not user controls. */
+export interface ThreeStrandPlaitSpec {
+  /** The radius of each physical strand after its short root taper. */
+  strandRadius: number;
+  /** The strand radius at the tip. */
+  tipRadius: number;
+  /** The radius of the three strand centres from the carrier centreline. */
+  laneRadius: number;
+  /** Out-of-plane clearance at each alternating crossing. */
+  crossingLift: number;
+  /** Adjacent crossings from root to tip. */
+  crossings: number;
+  /** Rings along each strand. Must give each crossing at least three samples. */
+  segments: number;
+  /** Tube sides per physical strand. */
+  sides: number;
+}
+
 const GRAVITY = new Vector3(0, -1, 0);
 const BACK = new Vector3(0, 0, -1);
 /** Metres of free-hanging rope over which its drift acts before gravity alone decides. */
@@ -126,6 +144,153 @@ export function ropePath(
   const combed = combRope(spec, spec.hang.rise, body);
   relaxRope(combed.points, combed.radii, combed.lying, spec, spec.hang.stiffness, body);
   return combed;
+}
+
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/** A point and tangent sampled by distance along a polyline. */
+function samplePolyline(
+  points: readonly Vector3[],
+  t: number,
+): { point: Vector3; tangent: Vector3 } {
+  const lengths = points.slice(1).map((p, i) => p.distanceTo(points[i] as Vector3));
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  const target = total * t;
+  let walked = 0;
+  for (let i = 0; i < lengths.length; i++) {
+    const length = lengths[i] as number;
+    if (target <= walked + length || i === lengths.length - 1) {
+      const f = length > 1e-8 ? (target - walked) / length : 0;
+      const a = points[i] as Vector3;
+      const b = points[i + 1] as Vector3;
+      return { point: a.clone().lerp(b, f), tangent: b.clone().sub(a).normalize() };
+    }
+    walked += length;
+  }
+  throw new Error("A plait needs two distinct carrier points");
+}
+
+/**
+ * Builds three continuous tubes whose adjacent crossings alternate over/under.
+ *
+ * The braid word is sigma1 sigma2^-1 repeated: the left/middle pair crosses with
+ * the left strand above, then the middle/right pair crosses with the right strand
+ * above. It is deliberately not a three-phase helix (a twist): lanes exchange at
+ * discrete crossings and the depth term gives each exchange a measurable over/under
+ * order. `carrier` has already been combed and settled on the body.
+ */
+export function threeStrandPlait(
+  carrier: readonly Vector3[],
+  rootNormal: Vector3,
+  spec: ThreeStrandPlaitSpec,
+): {
+  paths: Vector3[][];
+  radii: number[][];
+  crossingOrders: { at: number; over: number; under: number }[];
+} {
+  if (spec.segments < spec.crossings * 3)
+    throw new Error("A plait needs at least three samples per crossing");
+  if (spec.laneRadius <= 2 * spec.strandRadius + 0.0002)
+    throw new Error("Plait lanes do not leave physical strand clearance");
+
+  const paths = [[], [], []] as Vector3[][];
+  const radii = [[], [], []] as number[][];
+  const crossingOrders: { at: number; over: number; under: number }[] = [];
+  let previousTangent: Vector3 | null = null;
+  let side = new Vector3();
+
+  for (let sample = 0; sample <= spec.segments; sample++) {
+    const t = sample / spec.segments;
+    const { point: centre, tangent } = samplePolyline(carrier, t);
+    if (!previousTangent) {
+      side = rootNormal.clone().addScaledVector(tangent, -rootNormal.dot(tangent)).normalize();
+      if (side.lengthSq() < 1e-8)
+        side.set(1, 0, 0).addScaledVector(tangent, -tangent.x).normalize();
+    } else {
+      const axis = new Vector3().crossVectors(previousTangent, tangent);
+      const sin = axis.length();
+      if (sin > 1e-9) side.applyAxisAngle(axis.normalize(), Math.asin(Math.min(1, sin)));
+      side.addScaledVector(tangent, -side.dot(tangent)).normalize();
+    }
+    previousTangent = tangent;
+    const across = new Vector3().crossVectors(tangent, side).normalize();
+
+    // `order` lists the strand occupying each left/centre/right lane immediately
+    // before the next crossing. Apply completed crossings, then interpolate one.
+    const order = [0, 1, 2];
+    let active: {
+      left: number;
+      right: number;
+      leftFrom: number;
+      leftTo: number;
+      rightFrom: number;
+      rightTo: number;
+      progress: number;
+      over: number;
+    } | null = null;
+    for (let crossing = 0; crossing < spec.crossings; crossing++) {
+      const start = (crossing + 0.12) / spec.crossings;
+      const end = (crossing + 0.88) / spec.crossings;
+      const lanes: readonly [number, number] = crossing % 2 === 0 ? [0, 1] : [1, 2];
+      if (t >= end) {
+        const first = order[lanes[0]] as number;
+        order[lanes[0]] = order[lanes[1]] as number;
+        order[lanes[1]] = first;
+        continue;
+      }
+      if (t >= start) {
+        const progress = smoothstep(start, end, t);
+        const left = order[lanes[0]] as number;
+        const right = order[lanes[1]] as number;
+        // sigma1 then sigma2^-1: explicitly alternate which crossing strand is above.
+        active = {
+          left,
+          right,
+          leftFrom: (lanes[0] as number) - 1,
+          leftTo: (lanes[1] as number) - 1,
+          rightFrom: (lanes[1] as number) - 1,
+          rightTo: (lanes[0] as number) - 1,
+          progress,
+          over: crossing % 2 === 0 ? left : right,
+        };
+        if (sample === Math.round((start + end) * 0.5 * spec.segments))
+          crossingOrders.push({
+            at: t,
+            over: active.over,
+            under: active.over === left ? right : left,
+          });
+      }
+      break;
+    }
+
+    const laneOf = [0, 0, 0];
+    for (let lane = 0; lane < order.length; lane++) laneOf[order[lane] as number] = lane - 1;
+    const rootTaper = 1.1 - 0.1 * smoothstep(0, 0.1, t);
+    const tipTaper = smoothstep(0.78, 1, t);
+    const radius = spec.strandRadius * rootTaper * (1 - tipTaper) + spec.tipRadius * tipTaper;
+    for (let strand = 0; strand < 3; strand++) {
+      let lane = laneOf[strand] as number;
+      let depth = 0;
+      if (active && (strand === active.left || strand === active.right)) {
+        const from = strand === active.left ? active.leftFrom : active.rightFrom;
+        const to = strand === active.left ? active.leftTo : active.rightTo;
+        lane = from + (to - from) * active.progress;
+        const sign = strand === active.over ? 1 : -1;
+        depth = sign * spec.crossingLift * Math.sin(Math.PI * active.progress);
+      }
+      paths[strand]?.push(
+        centre
+          .clone()
+          .addScaledVector(across, lane * spec.laneRadius)
+          .addScaledVector(side, depth),
+      );
+      radii[strand]?.push(radius);
+    }
+  }
+  return { paths, radii, crossingOrders };
 }
 
 /**
@@ -316,6 +481,28 @@ export function ropeRadius(spec: RopeSpec, t: number): number {
 export function addRope(cards: Cards, spec: RopeSpec, body: BodySurface): number {
   const { points, radii } = ropePath(spec, body);
   return addTube(cards, points, radii, spec.sides, spec.tile, spec.root.normal);
+}
+
+/** Adds three physically separate, alternating strands around one settled carrier path. */
+export function addThreeStrandPlait(
+  cards: Cards,
+  carrier: RopeSpec,
+  plait: ThreeStrandPlaitSpec,
+  body: BodySurface,
+): { first: number[]; crossingOrders: { at: number; over: number; under: number }[] } {
+  const path = ropePath(carrier, body);
+  const made = threeStrandPlait(path.points, carrier.root.normal, plait);
+  const first = made.paths.map((points, strand) =>
+    addTube(
+      cards,
+      points,
+      made.radii[strand] as number[],
+      plait.sides,
+      { ...carrier.tile, v0: (carrier.tile.v0 ?? 0) + strand * 0.07 },
+      carrier.root.normal,
+    ),
+  );
+  return { first, crossingOrders: made.crossingOrders };
 }
 
 /**
