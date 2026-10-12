@@ -295,9 +295,10 @@ describe("<StudioStage>", () => {
     function FrameWitness() {
       const advance = useThree((state) => state.advance);
       useEffect(() => {
-        // game-harness collapses RAF invalidations to one frame. `advance` is
-        // R3F's public manual-render API, so the fixture drives exactly six
-        // late-mount frames and then stops; production keeps its own loop.
+        // Demand invalidation is RAF-scheduled and can coalesce in this browser
+        // fixture. `advance` is R3F's public manual-render API, so the fixture
+        // drives exactly six late-mount frames and then stops; production keeps
+        // its own loop.
         const start = performance.now();
         for (let frame = 0; frame < 6; frame++) advance(start + frame);
       }, [advance]);
