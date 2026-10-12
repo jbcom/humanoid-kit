@@ -453,8 +453,8 @@ function Shot() {
       <Canvas
         shadows={params.has("noshadow") ? false : STUDIO_SHADOWS}
         camera={{ position, fov }}
+        // Compositor screenshots do not need a retained WebGL drawing buffer.
         gl={{
-          preserveDrawingBuffer: true,
           toneMapping,
           toneMappingExposure: Number.isFinite(exposure) ? exposure : STUDIO_EXPOSURE,
         }}

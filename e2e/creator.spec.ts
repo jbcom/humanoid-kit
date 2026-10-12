@@ -23,19 +23,24 @@ async function tap(page: Page, fx: number, fy: number) {
 }
 
 /**
- * The canvas, scaled down to 64 × 64 RGBA in the page (the creator preserves
- * its drawing buffer): enough to tell one framing from another, small to ship.
+ * A compositor screenshot, scaled down to 64 × 64 RGBA in the page: enough to
+ * tell one framing from another without relying on a retained WebGL buffer.
  */
-const canvasPixels = (page: Page) =>
-  page.evaluate(() => {
-    const canvas = document.querySelector(".hk-stage canvas") as HTMLCanvasElement;
+const screenshotPixels = (page: Page, png: Buffer) =>
+  page.evaluate(async (base64) => {
+    const image = await createImageBitmap(
+      await (await fetch(`data:image/png;base64,${base64}`)).blob(),
+    );
     const copy = document.createElement("canvas");
     copy.width = 64;
     copy.height = 64;
-    const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
-    ctx.drawImage(canvas, 0, 0, 64, 64);
-    return Array.from(ctx.getImageData(0, 0, 64, 64).data);
-  });
+    const context = copy.getContext("2d");
+    if (!context) throw new Error("the screenshot decoder did not create a 2D context");
+    context.drawImage(image, 0, 0, 64, 64);
+    const pixels = Array.from(context.getImageData(0, 0, 64, 64).data);
+    image.close();
+    return pixels;
+  }, png.toString("base64"));
 
 /** Mean absolute difference per channel, 0–255. */
 const meanDifference = (a: number[], b: number[]) => {
@@ -47,7 +52,9 @@ const meanDifference = (a: number[], b: number[]) => {
 const selectedTab = (page: Page) => page.locator('[role="tab"][aria-selected="true"]');
 const revealedGroup = (page: Page) => page.locator("details[data-revealed] > summary span").first();
 
-test("tapping a part of the figure opens the controls that shape it", async ({ page }) => {
+test("tapping a part of the figure opens the controls that shape it", async ({
+  page,
+}, testInfo) => {
   // Each step waits for the camera to glide; the figure load is the rest.
   test.setTimeout(budget(180_000));
   const errors: string[] = [];
@@ -58,6 +65,19 @@ test("tapping a part of the figure opens the controls that shape it", async ({ p
   await openSilentGame(page, "./");
   await page.locator('.hk-stage[data-pick="ready"]').waitFor({ timeout: 120_000 });
   await expect(page.locator(".hk-status")).toHaveCount(0);
+  // R3F created this WebGL2 context before `data-pick` can be ready; querying it
+  // here cannot choose creation attributes. Browser screenshots use the compositor,
+  // so the product canvas must not retain its drawing buffer for them.
+  await expect
+    .poll(() =>
+      page.locator(".hk-stage canvas").evaluate((element) => {
+        const context = (element as HTMLCanvasElement).getContext("webgl2");
+        const attributes = context?.getContextAttributes();
+        if (!attributes) throw new Error("the creator did not create a WebGL2 context");
+        return attributes.preserveDrawingBuffer;
+      }),
+    )
+    .toBe(false);
 
   for (const { at, task, group } of [
     { at: [0.499, 0.204], task: "Face", group: /^Nose/ },
@@ -79,7 +99,9 @@ test("tapping a part of the figure opens the controls that shape it", async ({ p
   await wholeFigure(page);
   await tap(page, 0.499, 0.204);
   await page.waitForTimeout(2000);
-  const framed = await canvasPixels(page);
+  const framedImage = await page.locator(".hk-stage canvas").screenshot();
+  await testInfo.attach("creator-framed.png", { body: framedImage, contentType: "image/png" });
+  const framed = await screenshotPixels(page, framedImage);
   const stage = await page.locator(".hk-stage canvas").boundingBox();
   if (!stage) throw new Error("no canvas");
   await page.mouse.move(stage.x + stage.width * 0.35, stage.y + stage.height * 0.6);
@@ -87,12 +109,22 @@ test("tapping a part of the figure opens the controls that shape it", async ({ p
   await page.mouse.move(stage.x + stage.width * 0.65, stage.y + stage.height * 0.6, { steps: 10 });
   await page.mouse.up();
   await page.waitForTimeout(1500);
-  expect(meanDifference(await canvasPixels(page), framed)).toBeGreaterThan(5);
+  expect(
+    meanDifference(
+      await screenshotPixels(page, await page.locator(".hk-stage canvas").screenshot()),
+      framed,
+    ),
+  ).toBeGreaterThan(5);
   // The orbit keeps the head at the centre of the view.
   await tap(page, 0.5, 0.5);
   await page.waitForTimeout(2500);
   await expect(selectedTab(page)).toHaveText("Face");
-  expect(meanDifference(await canvasPixels(page), framed)).toBeLessThan(1);
+  expect(
+    meanDifference(
+      await screenshotPixels(page, await page.locator(".hk-stage canvas").screenshot()),
+      framed,
+    ),
+  ).toBeLessThan(1);
 
   // Dragging to orbit is not a tap: nothing opens. The drag starts and ends on
   // the figure (three only clicks when press and release hit the same object),
