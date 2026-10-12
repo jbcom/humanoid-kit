@@ -210,6 +210,45 @@ describe("arm skinned-frame sampler", () => {
     );
   });
 
+  it("copies its source baseline and preserves output when candidate validation fails", () => {
+    const recipe = createRecipe({ macros: { age: 30 } });
+    const evaluation = model.evaluate(recipe);
+    const rest = restBones(assets, evaluation.control);
+    const source = IDENTITY_POSE(rest.names.length);
+    const chain = armChain(rest, "R");
+    const generation = {};
+    const sampler = createArmSkinnedFrameSampler({
+      generation,
+      rest: evaluation.positions,
+      restNormals: evaluation.normals,
+      skinIndex: model.topology().body.skinIndex,
+      skinWeight: model.topology().body.skinWeight,
+      anchors,
+      restBones: rest,
+      sourceRotations: source,
+      armBones: chain,
+      side: "R",
+    });
+    const hip = rest.names.indexOf("upperleg01.R");
+    source[hip * 4] = Math.sin(0.11);
+    source[hip * 4 + 3] = Math.cos(0.11);
+    expect(sampler.frame(generation, IDENTITY_POSE(rest.names.length), frameOut())).toBeTruthy();
+
+    const candidate = IDENTITY_POSE(rest.names.length);
+    candidate[(chain[0] as number) * 4] = Number.NaN;
+    const out: FrameOut = {
+      position: [1, 2, 3],
+      normal: [4, 5, 6],
+      tangent: [7, 8, 9],
+      bitangent: [10, 11, 12],
+    };
+    const before = structuredClone(out);
+    expect(() => sampler.frame(generation, candidate, out)).toThrow(
+      "candidate rotations must be finite",
+    );
+    expect(out).toEqual(before);
+  });
+
   it("matches a folded seated source pose through an allowed arm candidate", () => {
     const recipe = createRecipe({ macros: { age: 31, gender: 0.76, height: 0.78 } });
     const evaluation = model.evaluate(recipe);

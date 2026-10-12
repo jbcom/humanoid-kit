@@ -49,6 +49,47 @@ describe("scratch skin pose", () => {
     expect(next.trans).toBe(scratch.pose.trans);
   });
 
+  it("rejects malformed posed, scratch and share shapes before writing output", () => {
+    const rotations = IDENTITY_POSE(rest.names.length);
+    const posed = posedBones(rest, rotations);
+    const output = new Float32Array(rest.names.length * DUAL_STRIDE).fill(17);
+    const outputBefore = Float32Array.from(output);
+    expect(() =>
+      dualBonesFromPosedInto(
+        rest,
+        { world: new Float32Array(rest.names.length * 4 - 1), heads: posed.heads },
+        output,
+      ),
+    ).toThrow("posed skeleton does not match");
+    expect(output).toEqual(outputBefore);
+
+    const malformedScratch = skinPoseScratch(rest, share);
+    malformedScratch.pose.matrix = new Float32Array(rest.names.length * 9 - 1).fill(23);
+    const scratchOutputs = [
+      Float32Array.from(malformedScratch.pose.dual),
+      Float32Array.from(malformedScratch.pose.matrix),
+      Float32Array.from(malformedScratch.pose.trans),
+      Float32Array.from(malformedScratch.skeleton.world),
+      Float32Array.from(malformedScratch.skeleton.heads),
+    ];
+    expect(() => skinPoseInto(rest, rotations, share, malformedScratch)).toThrow(
+      "scratch does not match",
+    );
+    expect(malformedScratch.pose.dual).toEqual(scratchOutputs[0]);
+    expect(malformedScratch.pose.matrix).toEqual(scratchOutputs[1]);
+    expect(malformedScratch.pose.trans).toEqual(scratchOutputs[2]);
+    expect(malformedScratch.skeleton.world).toEqual(scratchOutputs[3]);
+    expect(malformedScratch.skeleton.heads).toEqual(scratchOutputs[4]);
+
+    const malformedShareScratch = skinPoseScratch(rest, share);
+    malformedShareScratch.pose.dual.fill(29);
+    const dualBefore = Float32Array.from(malformedShareScratch.pose.dual);
+    expect(() =>
+      skinPoseInto(rest, rotations, new Float32Array(rest.names.length - 1), malformedShareScratch),
+    ).toThrow("share does not match");
+    expect(malformedShareScratch.pose.dual).toEqual(dualBefore);
+  });
+
   it("rejects offset overlapping views in dual and combined pose scratch", () => {
     const rotations = IDENTITY_POSE(rest.names.length);
     const skeleton = posedBones(rest, rotations);
