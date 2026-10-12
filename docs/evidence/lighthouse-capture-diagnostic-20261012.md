@@ -61,6 +61,19 @@ although the generated configuration placed the bundle below
 any page sample or CDP screenshot command. This is navigation-failure evidence
 for the diagnostic server only, not Lighthouse screenshot or renderer evidence.
 
+## Second dispatch authorization
+
+The root review accepted the forward static-root fix in
+`6e067418395dcae7722147a7da217459d1df948e` and the local production HTTP
+preflight that proved the entry page and emitted script return 200 with their
+expected content types. The separate forward change
+`244993d45ea04ad298b65b333fe587af5ca1b09d` stops an individual case after a
+failed sampled operation, after its receipt has been persisted and before the
+next 45-second sample wait; bounded cleanup still runs. This commit authorizes
+one changed-code diagnostic push. It is not a rerun of the navigation-failure
+revision and it does not change product source, Lighthouse budgets, or screenshot
+requirements.
+
 The `FullPageScreenshot` gatherer begins at 27.7 seconds because the reproduced
 CI receipt navigated at 08:03:24.180 and began that gatherer at 08:03:51.911.
 The probe samples there, then follows its five-second post-resize branch before
