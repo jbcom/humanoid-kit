@@ -4,18 +4,26 @@
  * the bones, and the seams' duplicates move together. That `skinPositions` is
  * what the shader draws is tests/browser/dualSkinning.test.ts's.
  */
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { REST_POSE } from "../src/foundation/permutations.ts";
 import { posedSurface } from "../src/foundation/posed.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
-import { skinPositions } from "../src/rig/pose.ts";
+import { renderFold, type SurfaceFold } from "../src/rig/hipFold.ts";
+import { skinNormals, skinPositions } from "../src/rig/pose.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(), { subdivision: 1 });
 const recipe = createRecipe({ macros: { age: 25, gender: 1 } });
 const adultModel = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
 const adultRecipe = createRecipe({ macros: { age: 30 } });
+
+function solvedFold(model: HumanoidModel, recipe: ReturnType<typeof createRecipe>) {
+  const solve = model.hipFold(recipe);
+  let step = solve.next();
+  while (!step.done) step = solve.next();
+  return renderFold((step.value as { fold: SurfaceFold }).fold);
+}
 
 const maxY = (p: Float32Array) => {
   let m = Number.NEGATIVE_INFINITY;
@@ -48,6 +56,45 @@ describe("the posed body", () => {
     expect(worst).toBeLessThan(1e-6);
     expect(body.positions.length).toBe(body.vertexCount * 3);
     expect(body.index.reduce((m, i) => Math.max(m, i), 0)).toBeLessThan(body.vertexCount);
+  });
+
+  it("does not solve a hip fold at rest, where a solved fold changes neither surface", () => {
+    for (const [m, r] of [
+      [model, recipe],
+      [adultModel, adultRecipe],
+    ] as const) {
+      const surface = posedSurface(m, r, REST_POSE);
+      const fold = solvedFold(m, r);
+      const withFold = skinPositions(
+        surface.bones,
+        surface.rotations,
+        surface.rest,
+        surface.skinIndex,
+        surface.skinWeight,
+        new Float32Array(surface.rest.length),
+        fold,
+      );
+      const normalsWithFold = skinNormals(
+        surface.bones,
+        surface.rotations,
+        surface.restNormals,
+        surface.skinIndex,
+        surface.skinWeight,
+        new Float32Array(surface.restNormals.length),
+        fold,
+      );
+      expect(surface.positions).toEqual(withFold);
+      expect(surface.normals).toEqual(normalsWithFold);
+      const hipFold = vi.spyOn(m, "hipFold").mockImplementation(() => {
+        throw new Error("a rest pose must not solve a hip fold");
+      });
+      try {
+        expect(() => posedSurface(m, r, REST_POSE)).not.toThrow();
+        expect(hipFold).not.toHaveBeenCalled();
+      } finally {
+        hipFold.mockRestore();
+      }
+    }
   });
 
   it("raises the hands above the head in the overhead pose", () => {

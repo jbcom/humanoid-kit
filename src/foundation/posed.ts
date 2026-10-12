@@ -85,7 +85,10 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
   const bones = restBones(model.assets, control);
   const rotations =
     pose === REST_POSE ? IDENTITY_POSE(rig.bones.length) : bodyPoseRotations(rig, pose);
-  const fold = renderFold(solvedHipFold(model, recipe));
+  // At rest the hips have zero flexion, so `addFold` returns before reading
+  // any fold data. Solving every collision key would therefore do work that
+  // cannot affect the surface this function returns.
+  const fold = pose === REST_POSE ? undefined : renderFold(solvedHipFold(model, recipe));
   // The weights this figure is skinned by: a reservoir its detail drew out moves with its root.
   const { skinIndex, skinWeight } = skinOfEvaluation(ev, topology);
   const n = rest.length;
