@@ -14,8 +14,9 @@ instead of timing out while proving it three times.
   source, runtime and published-package check on both supported releases.
 - **Coverage unit shards 1/3 through 3/3** and **coverage browser shards 1/6
   through 6/6** run their projects with V8 coverage. Every shard writes a
-  labelled blob artifact. A partial shard cannot meet suite-wide coverage by
-  itself, so it deliberately defers threshold evaluation to the required merge
+  labelled blob artifact and the normal terminal reporter, so a failed test
+  retains its witness in the job log. A partial shard cannot meet suite-wide
+  coverage by itself, so it deliberately defers threshold evaluation to the required merge
   job.
 - **Coverage merge and threshold gate** downloads every named artifact
   separately. A failed shard or a missing artifact stops this job. It merges the
