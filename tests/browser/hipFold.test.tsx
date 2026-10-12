@@ -16,6 +16,7 @@ import {
 } from "three";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
+import { HumanoidModel } from "../../src/model/humanoidModel.ts";
 import { Humanoid, HumanoidProvider } from "../../src/react/index.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import {
@@ -90,6 +91,9 @@ describe("the hip fold in <Humanoid>", () => {
         Record<
           | "request"
           | "reply"
+          | "modelHipFold"
+          | "solveYield"
+          | "solveDone"
           | "setFold"
           | "fadeDone"
           | "settled"
@@ -104,11 +108,13 @@ describe("the hip fold in <Humanoid>", () => {
         if (marks[phase] !== undefined) return;
         const ms = performance.now() - started;
         marks[phase] = ms;
-        console.info("hip-fold-phase-diagnostic", JSON.stringify({ phase, ms }));
+        console.info("hip-fold-inline-phase-diagnostic", JSON.stringify({ phase, ms }));
       };
       let watched: DualBones | null = null;
       let restoreDraw = () => {};
+      const restoreStepNext: Array<() => void> = [];
       const originalHipFold = client.hipFold;
+      const originalModelHipFold = HumanoidModel.prototype.hipFold;
       const originalSetFold = DualBones.prototype.setFold;
       const originalAdvanceFold = DualBones.prototype.advanceFold;
       client.hipFold = async (...args) => {
@@ -116,6 +122,25 @@ describe("the hip fold in <Humanoid>", () => {
         const result = await originalHipFold.call(client, ...args);
         mark("reply");
         return result;
+      };
+      // This inline test invokes the handler in this realm, rather than crossing Worker/IPC.
+      HumanoidModel.prototype.hipFold = function (...args) {
+        mark("modelHipFold");
+        const steps = originalModelHipFold.apply(this, args);
+        const originalNext = steps.next;
+        const originalNextDescriptor = Object.getOwnPropertyDescriptor(steps, "next");
+        const tracedNext = (...nextArgs: Parameters<typeof steps.next>) => {
+          const result = originalNext.apply(steps, nextArgs);
+          mark(result.done ? "solveDone" : "solveYield");
+          return result;
+        };
+        steps.next = tracedNext;
+        restoreStepNext.push(() => {
+          if (steps.next !== tracedNext) return;
+          if (originalNextDescriptor) Object.defineProperty(steps, "next", originalNextDescriptor);
+          else delete (steps as unknown as Record<string, unknown>).next;
+        });
+        return steps;
       };
       DualBones.prototype.setFold = function (...args) {
         watched ??= this;
@@ -231,9 +256,11 @@ describe("the hip fold in <Humanoid>", () => {
       } finally {
         restoreDraw();
         client.hipFold = originalHipFold;
+        for (const restore of restoreStepNext) restore();
+        HumanoidModel.prototype.hipFold = originalModelHipFold;
         DualBones.prototype.setFold = originalSetFold;
         DualBones.prototype.advanceFold = originalAdvanceFold;
-        console.info("hip-fold-phase-diagnostic", JSON.stringify(marks));
+        console.info("hip-fold-inline-phase-diagnostic", JSON.stringify(marks));
       }
     },
     LOAD.timeout,

@@ -421,8 +421,8 @@ describe("the stage's pooled contact shadow", () => {
           <Humanoid recipe={average} position={[0, 0.82, 0]} />
         </Scene>,
       );
-      await new Promise((r) => setTimeout(r, 1500));
-      expect(quad()).toBeDefined();
+      // The pooled field mounts with the stage; wait for that real scene object, not wall time.
+      await expect.poll(quad, LOAD).toBeDefined();
       expect(quad()?.visible).toBe(false);
     },
     LOAD.timeout,
