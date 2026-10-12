@@ -1500,8 +1500,9 @@ request. `assertRegionalContact(contact, own)` is the implemented pure
 validator: it checks a finite location, unit normal, non-negative force and
 duration, phase, and whether `surface` versus `aperture-entry` agrees with the
 registered affordance. It does not create a response, animation, deformation or
-injury. See [Regional contact and injury contract](REGIONAL-CONTACTS.md) for
-the region-specific opening, recovery, injury and persistence gaps.
+injury. There is no exported `InjuryState` today. See [Regional contact and
+injury contract](REGIONAL-CONTACTS.md) for the planned region-specific opening,
+recovery, injury, persistence and renderer-proof gates.
 
 ## `humanoid-kit/editor`
 

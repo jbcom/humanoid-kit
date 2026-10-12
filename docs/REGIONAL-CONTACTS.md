@@ -73,35 +73,81 @@ unless that pack declares a distinct aperture. Numerical response calibration,
 medical limits and tissue laws are not approved by this contract and belong in
 separate evidence-backed work.
 
-## Injury and deformation contract
+## Planned injury-state design and test contract
 
-These are planned, distinct records; none is implemented by `RegionalContact`:
+No injury state is exported or rendered today. The following is a bounded design
+contract for a future neutral record; it is not an API declaration and does not
+promise a solver, medical calibration, or a particular visual effect.
 
-| Record | Topology and visual meaning | Lifetime |
+### Record classes
+
+A record must choose exactly one class, keep its class through its lifecycle,
+and carry a schema version, stable body-space anchor, consumer-owned identity,
+explicit lifecycle transition and persistence policy.
+
+| Planned class | Meaning and hard boundary | Persistence |
 | --- | --- | --- |
-| Surface injury effect | An anchored material or decal effect on intact skin. It cannot create a channel, alter an affordance, or imply a hole in the mesh. | Created, updated, resolved or retained by a consumer. |
-| Transient deformation | A bounded displacement keyed to a stable anatomical anchor and a region-owned recovery policy. It must return to its rest surface on resolution. | Runtime-only unless a consumer explicitly persists it. |
-| Persistent body-space change or scar | A versioned, anchored body-space record that survives save/reload and can be cleared only by the consumer's reset policy. | Persists only when a consumer stores it. |
+| Surface marking | An anchored material or decal effect on intact skin. It cannot make a passage, channel, aperture, collision volume or affordance. | Session or saved only if the consumer requests it. |
+| Transient deformation | A bounded, anchored presentation displacement with a region-owned recovery policy. It returns to its resolved rest surface; this contract sets no numeric curve or tissue law. | Runtime only unless an explicit later policy makes it saveable. |
+| Persistent body-space change or scar | A versioned anchored change that can survive save/reload. It is a body-space record, not a replacement mesh, and cannot be silently left behind after reset. | Saved only when the consumer stores it and supplies reset policy. |
 
-The existing body-art system demonstrates the required anchoring direction:
-named sites or frozen base-mesh vertices resolve on each morphed figure, and
-garments follow the same skinned body binding. It is not yet a dynamic injury
-API. A future injury record therefore needs a topology-stable anchor,
-body-space reconstruction across morphing and animation, a garment/wrapping
-coverage policy, and explicit rules for collision and affordance behavior. A
-garment or wrapping may cover an injury only through that same stable body
-binding; it must not drift, float above a transient deformation or silently
-hide a persistent body-space change. Neither collision nor affordance clearance
-changes automatically when an injury record is created; both need their own
-validated implementation.
+The minimal future record contract is structural rather than anatomical:
 
-Event lifecycle, save/reload/reset and game outcomes remain consumer-owned:
-Curse and Prayers can choose damage sources, balance, tone, persistence format
-and presentation. The kit must only provide neutral, deterministic records and
-must not choose combat, narrative or gameplay effects. A future persistent
-record needs explicit `created`, `updated`, `resolved`, `restored` and `reset`
-lifecycle states; save/reload must preserve its version and anchor, while reset
-must remove it by policy rather than leaving an unowned visual change.
+| Required field or relation | Planned rule |
+| --- | --- |
+| `schemaVersion` and `id` | A loader rejects an unsupported version or duplicate identity rather than guessing migration. |
+| Class and lifecycle | The class is one of the three rows above. A record is explicitly created, updated, resolved, restored from persistence or reset; transitions are observable and idempotence is specified before implementation. |
+| Stable body-space anchor | The anchor identifies one compatible body topology and resolves on the current morphed, posed, skinned surface. It cannot be an arbitrary world coordinate, UV-only point, or unversioned triangle index. |
+| Presentation parameters | The class owns only the data needed by its renderer. It never carries an implicit wound aperture, response profile, collision override or combat outcome. |
+| Persistence policy | Session data is not accidentally serialized. Saved data retains its schema version and anchor. Reset removes records selected by the consumer policy. |
+
+The existing body-art system establishes the desired anchor direction: named
+sites or frozen base-mesh vertices resolve on each morphed figure, and garments
+already follow the same skinned body binding. Body art's scars remain authored
+appearance; they are not runtime injury records. A dynamic system will need a
+new topology-stable anchor representation rather than reusing a cosmetic record
+without proof.
+
+### Anchoring, clothing and collision boundaries
+
+A future resolver must evaluate an injury anchor after morphing and skinning so
+its presentation stays with the same anatomical region during animation. A
+consumer cannot attach it to a world-space point and call the result stable.
+Garments and wrappings must declare how their existing base-body binding covers
+the anchored region. They may occlude a record according to that coverage, but
+may not drift, float above a transient deformation, or silently discard a
+persistent record.
+
+Collision and affordances remain unchanged by default. A surface marking never
+creates a channel. A transient or persistent body-space record is also not an
+aperture merely because it follows a projectile or blade event. Any future
+collision, clearance, contact or affordance override needs an explicit,
+independently validated contract; it cannot be inferred from an injury class.
+
+### Consumer ownership
+
+Curse and Prayers may interpret their local projectile or blade damage events,
+choose visible art, decide balance and tone, and decide what to save. Those
+choices stay in the games. The kit's future responsibility is limited to a
+neutral, deterministic state representation and resolver. It does not classify
+damage, choose an effect, create combat outcomes, or model physiology.
+
+### Required proof before implementation
+
+The only current tests cover `RegionalContact` input validation. They do **not**
+cover injury state, rendering, recovery, skinning or persistence. Any future
+implementation must add focused red/green tests for the applicable rows before
+it claims support:
+
+| Test area | Required evidence |
+| --- | --- |
+| Record validation | Reject an unsupported schema, duplicate id, invalid lifecycle transition, missing compatible anchor and class-specific forbidden fields. Mutation checks must prove each rejection guard matters. |
+| Anchor resolution | Resolve the same record across morphs and posed/skinned animation without changing its anatomical target. Reject topology mismatch rather than retargeting. |
+| Class isolation | Prove a surface marking creates no channel, aperture, collision or affordance change; prove no contact input automatically emits a regional response or injury state. |
+| Recovery and persistence | Prove a transient record resolves under its declared policy; round-trip a saved persistent record with version and anchor intact; prove reset removes exactly the records selected by policy. |
+| Clothing and wrapping | Exercise bound garments and any wrapping implementation across morph and pose, verifying coverage remains coherent and does not drift or hide state without its declared coverage rule. |
+| Collision and affordances | Prove defaults are unchanged. A later explicit override requires its own behavior and regression suite. |
+| Renderer lab | Root must inspect marked, transient and persistent candidates through relevant morphs, animation, clothing/wrapping, save/reload and reset. This proof is currently absent. |
 
 ## Remaining implementation gates
 

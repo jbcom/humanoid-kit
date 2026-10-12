@@ -3244,6 +3244,32 @@ kinematics, pads flattening at contact and tissue compressing under a load
 deformation the kit does not have yet; the contact report is what that solver
 will read, so it comes first.
 
+## Regional contact and injury-state boundary (design, 2026-10-11)
+
+`RegionalContact` is the implemented pure evidence boundary: it checks a
+registered surface or aperture entry without choosing a response. It does not
+create animation, physiology, a wound, deformation, collision change or visual
+state. A surface remains intact skin; only a registered aperture can report an
+entry. This prevents a contact sample, including a future injury location, from
+becoming a universal opening.
+
+Dynamic injury state is planned and is deliberately outside the current public
+API. Its record must distinguish an intact-surface marking, a recoverable
+body-space deformation, and a persistent body-space change or scar. Each record
+needs a version, a stable anatomical anchor, an explicit lifecycle, and an
+explicit persistence policy. It must resolve through the morphed and posed
+skinned body, while garments and wrappings use their existing body binding to
+show coherent coverage. Creation changes neither collision nor affordance
+clearance unless a later, separately specified feature opts in and proves it.
+
+Consumers own event interpretation. Curse and Prayers may map their own
+projectile or blade events to neutral records and select art, pacing, damage and
+save policy locally. The kit does not classify a gameplay event, synthesize a
+visual injury, or claim a physical or medical response. The detailed planned
+record, lifecycle and test gates are in
+[Regional contact and injury contract](REGIONAL-CONTACTS.md); no renderer proof
+exists yet.
+
 ## Invariants
 
 1. One base mesh; no second skeleton or per-species geometry.
