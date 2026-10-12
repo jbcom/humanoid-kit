@@ -1,5 +1,6 @@
 export * from "./affordance/channel.ts";
 export * from "./affordance/frames.ts";
+export * from "./affordance/regionalContact.ts";
 export * from "./affordance/registry.ts";
 export * from "./affordance/state.ts";
 export * from "./animation/index.ts";

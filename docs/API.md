@@ -1492,6 +1492,17 @@ From `humanoid-kit`: `CORE_AFFORDANCES`, `affordances(recipe, registry?)`,
 `AffordanceStates`, `affordanceFrames`, `affordanceChannels`, `CHANNELS`,
 `channelOf`, `channelThrough`, `headFrameOf`, `placeIn`, `openingFor`.
 
+### Regional contact
+
+`RegionalContact`, `RegionalPhysiologyInput` and `RegionalAnimationIntent`
+separate a neutral contact sample, a physiology input and a presentation
+request. `assertRegionalContact(contact, own)` is the implemented pure
+validator: it checks a finite location, unit normal, non-negative force and
+duration, phase, and whether `surface` versus `aperture-entry` agrees with the
+registered affordance. It does not create a response, animation, deformation or
+injury. See [Regional contact and injury contract](REGIONAL-CONTACTS.md) for
+the region-specific opening, recovery, injury and persistence gaps.
+
 ## `humanoid-kit/editor`
 
 A complete character creator built on `humanoid-kit/react`, and the hooks it

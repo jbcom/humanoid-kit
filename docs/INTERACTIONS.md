@@ -473,6 +473,14 @@ Any participant can be **stimulated**, inside an interaction or not:
 - `look`: a figure's gaze target landing on another's face;
 - `custom`: anything the application reports.
 
+This is an interaction-level proposal, not a universal body-response rule. The
+current core has no dispatcher from contact to stimulus, animation or skin
+state. A caller must select a region-specific policy after validating its
+contact evidence; see [Regional contact and injury contract](REGIONAL-CONTACTS.md).
+In particular, a surface touch is never promoted to an aperture entry, and a
+contact does not imply a common motion, dilation, sensory or physiological
+response.
+
 A **reaction rule** maps a stimulus to a one-role interaction: flinch (an
 additive clip on `torso` and `arm`), turn to look (gaze and head toward the
 source, VRM `lookAt` style: yaw and pitch, clamped by range maps), or the

@@ -1,0 +1,116 @@
+# Regional contact and injury contract
+
+Status: **contact payload validation is implemented; regional response,
+animation, injury and persistence are planned.** This note keeps those states
+separate so a caller cannot mistake an affordance frame or a visual scar for a
+physiological simulation.
+
+## What exists now
+
+| Concern | Current support | Deliberate limit |
+| --- | --- | --- |
+| Core openings | The mouth, ear canals and nostrils are `aperture` affordances with posed frames, measured curved channels, `place()` queries and clipping. | The channel only establishes an entry path and clearance query. It does not emit a sensory or physiological response. |
+| Opening motion | Oral occupancy can drive the existing jaw opening. | Ear and nasal channels do not widen from occupancy. No contact may infer a shared `dilation` response. |
+| Surface contact | Finger-pad and grip capsule gaps are available through `contact()` and `gripContacts()`. | There is no general external-region registry, contact-event stream, pressure solver or tissue deformation. |
+| Adult canal geometry | The adult lane has a separately authored, age-gated canal-closure model; its resting wall contact is geometry validation. | It is not a core regional-contact response, and it does not grant an application an interaction, sensory signal or animation. |
+| External adult regions | No external adult region is registered in the core. | A future adult-pack surface region is distinct from its canal and from ear contact; it needs its own registration and response profile. |
+| Persistent skin marks | Recipes can already contain stable, base-surface-anchored scars as body art. | They are authored appearance, not runtime injuries, and they do not alter collision, affordances or clothing. |
+| Time response | `SkinStateFilter` can filter application-provided signals. | It has no regional contact mapping and must not be used to imply one. |
+
+`canalClosure` and `closedLoop` are specifically a rest-geometry operation in
+the adult lane. They close a named canal loop against its own wall and classify
+that named lumen contact for geometry checks. They do not model an external
+region, a core aperture response, or a general-purpose wound.
+
+## Implemented payload boundary
+
+`RegionalContact` is a plain, framework-free report. It names the registered
+region and supplies exactly one world or figure-space sample:
+
+```ts
+type RegionalContact = {
+  region: string;
+  topology: "surface" | "aperture-entry";
+  location: readonly [number, number, number];
+  normal: readonly [number, number, number]; // unit direction
+  force: number;       // newtons, non-negative
+  duration: number;    // seconds in the current contact, non-negative
+  contactPhase: "begin" | "sustain" | "end";
+  depth?: number;      // metres, required only for aperture-entry
+};
+```
+
+`assertRegionalContact(contact, own)` checks finite geometry and time values,
+a unit normal, a known region, and its topology against the figure's own
+affordances. A `surface` sample cannot name an aperture. An `aperture-entry`
+sample must name an aperture and include a non-negative depth. It validates
+input only: it neither applies state nor alters the model.
+
+This distinction is structural. A surface contact has no channel and never
+becomes an opening. An aperture entry must use that opening's own channel and
+clearance query; it does not turn arbitrary surface contact into an entry.
+
+## Inputs, intent and responses
+
+The next layers have separate owners and are **not implemented**:
+
+1. A consumer may translate a validated `RegionalContact` into a
+   `RegionalPhysiologyInput`. This is evidence and timing, not a presentation
+   command.
+2. A consumer independently chooses `RegionalAnimationIntent` for clips, jaw
+   poses, gaze or other presentation. Animation intent cannot be inferred from
+   contact alone.
+3. A region-owned response profile may accept specific physiology inputs,
+   enforce its own lower and upper bounds, and define its own transient
+   recovery. There is no global response profile and no universal
+   contact-to-response dispatcher.
+
+The categories are intentionally different: mouth motion is jaw and lip
+control around the oral rim; ear and nasal openings retain their own anchored,
+curved clearance; adult canals retain their own adult-pack, wall and
+age-policy semantics; an external region, once registered, is surface contact
+unless that pack declares a distinct aperture. Numerical response calibration,
+medical limits and tissue laws are not approved by this contract and belong in
+separate evidence-backed work.
+
+## Injury and deformation contract
+
+These are planned, distinct records; none is implemented by `RegionalContact`:
+
+| Record | Topology and visual meaning | Lifetime |
+| --- | --- | --- |
+| Surface injury effect | An anchored material or decal effect on intact skin. It cannot create a channel, alter an affordance, or imply a hole in the mesh. | Created, updated, resolved or retained by a consumer. |
+| Transient deformation | A bounded displacement keyed to a stable anatomical anchor and a region-owned recovery policy. It must return to its rest surface on resolution. | Runtime-only unless a consumer explicitly persists it. |
+| Persistent body-space change or scar | A versioned, anchored body-space record that survives save/reload and can be cleared only by the consumer's reset policy. | Persists only when a consumer stores it. |
+
+The existing body-art system demonstrates the required anchoring direction:
+named sites or frozen base-mesh vertices resolve on each morphed figure, and
+garments follow the same skinned body binding. It is not yet a dynamic injury
+API. A future injury record therefore needs a topology-stable anchor,
+body-space reconstruction across morphing and animation, a garment/wrapping
+coverage policy, and explicit rules for collision and affordance behavior. A
+garment or wrapping may cover an injury only through that same stable body
+binding; it must not drift, float above a transient deformation or silently
+hide a persistent body-space change. Neither collision nor affordance clearance
+changes automatically when an injury record is created; both need their own
+validated implementation.
+
+Event lifecycle, save/reload/reset and game outcomes remain consumer-owned:
+Curse and Prayers can choose damage sources, balance, tone, persistence format
+and presentation. The kit must only provide neutral, deterministic records and
+must not choose combat, narrative or gameplay effects. A future persistent
+record needs explicit `created`, `updated`, `resolved`, `restored` and `reset`
+lifecycle states; save/reload must preserve its version and anchor, while reset
+must remove it by policy rather than leaving an unowned visual change.
+
+## Remaining implementation gates
+
+- Register external surface regions before accepting them as `RegionalContact`
+  targets; do not borrow adult canal identifiers or infer them from geometry.
+- Add region-specific response/recovery implementations only with their own
+  pure lifecycle tests and evidence-backed calibration.
+- Add a stable injury-anchor representation before dynamic effects, then test
+  morphing, animation, clothing/wrapping coverage, save, reload, reset,
+  collision and affordance behavior independently.
+- Root reviews any eventual rendered opening, response, injury or deformation
+  change. This document is not visual acceptance evidence.
