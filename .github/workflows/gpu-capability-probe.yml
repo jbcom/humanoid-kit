@@ -1,6 +1,9 @@
 name: GPU capability probe
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/gpu-capability-probe.yml
   workflow_dispatch:
 
 permissions:
