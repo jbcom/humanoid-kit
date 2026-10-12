@@ -4,7 +4,7 @@
  * staying planted. Read from the bones the renderer skins (`window.hkBone`) and
  * the group that carries the figure (`window.hkFigure`), frame by frame.
  */
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, type TestInfo, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
 import { budget } from "./budget.ts";
 
@@ -44,6 +44,13 @@ async function show(
         requestAnimationFrame(tick);
       }),
   );
+}
+
+/** Retained only with the hitch regression, so a passing run still leaves reviewable motion states. */
+async function captureAnimationState(page: Page, testInfo: TestInfo, name: string): Promise<void> {
+  const out = testInfo.outputPath(`${name}.png`);
+  await page.locator("canvas").screenshot({ path: out });
+  await testInfo.attach(name, { path: out, contentType: "image/png" });
 }
 
 test.describe("a clip on the figure", () => {
@@ -134,6 +141,39 @@ test.describe("a clip on the figure", () => {
       // The figure's group moves in the world with the bones in it, so a planted ball's world position is fixed.
       expect(worst, `${side} ball moved while planted, metres`).toBeLessThan(0.04);
     }
+  });
+
+  test("keeps the walk's distance when one render frame is slow", async ({ page }, testInfo) => {
+    await openSilentGame(page, "./", {
+      cam: "0,1.15,5.8,0,0.88,0",
+      groundQa: 1,
+    });
+    await show(page, { clip: "walk_normal", time: 0, paused: true, rootMotion: false });
+    await captureAnimationState(page, testInfo, "walk-pre-hitch");
+    await show(page, { clip: "walk_normal" });
+    const moved = await page.evaluate(
+      (stall) =>
+        new Promise<number>((done) => {
+          requestAnimationFrame(() => {
+            const before = window.hkFigure?.()?.position[2];
+            const until = performance.now() + stall;
+            while (performance.now() < until) {
+              // Deliberately reproduce a render hitch without changing the animation clock.
+            }
+            requestAnimationFrame(() => {
+              const after = window.hkFigure?.()?.position[2];
+              done((after ?? Number.NaN) - (before ?? Number.NaN));
+            });
+          });
+        }),
+      300,
+    );
+    // `walk_normal` carries an average figure about 0.665 m/s. A 300 ms frame must
+    // advance more than the 100 ms cap that would make the renderer fall behind its clock.
+    expect(moved, "walk distance across a 300 ms render frame").toBeGreaterThan(0.15);
+    await captureAnimationState(page, testInfo, "walk-after-hitch");
+    await show(page, { clip: "walk_normal", time: 0.3, paused: true, rootMotion: false });
+    await captureAnimationState(page, testInfo, "walk-foot-contact");
   });
 
   test("plays a retargeted Quaternius clip: a walk carries the figure on its feet, a swim lays it flat", async ({

@@ -2726,8 +2726,9 @@ the solver: a clip that planted its feet would leave nothing to hold.
 keys, the skin's dual quaternions, the figure's lift onto the ground (from its soles
 for a clip that stands on the ground, from its lowest vertex for one that does not),
 its presence (derived again every third frame) and, for a clip that carries it, the
-group (moved forward in its own frame by the root motion of each frame, so a parent's
-transform and a new `position` still compose). None of it goes through React state,
+group (moved forward in its own frame by the root motion of each render-clock step, so a parent's
+transform and a new `position` still compose). Root motion advances by the full render-clock
+step: a slow frame must not make a walk cover less distance than that clock records. None of it goes through React state,
 so a figure animates without re-rendering, and while it plays the figure lifts itself
 and `onGroundOffset` is not called. `time` puts the figure at a time in the clip
 (held, with `paused`), which the QA shots and sheets use (`?anim=walk_normal&t=0.4`).

@@ -1867,7 +1867,8 @@ animator.root;                // how far the figure has been carried: [x across,
   frame without React state: the body follows it with `pose.faceUnits` laid over,
   `pose.body` standing aside; the figure lifts itself onto the ground (do not lift the
   group; `onGroundOffset` is not called while a clip plays); a clip that carries the
-  figure (`rootMotion`, default true) moves the group forward in its own frame; and the
+  figure (`rootMotion`, default true) moves the group forward in its own frame by the full
+  render-clock step, including after a slow frame; and the
   figure's presence follows. `time` puts it at a time in the clip. `onStart(clip)` is
   called once the figure follows the clip, and again for a new figure or `time`.
 - `bodySegments(assets, rest, control, skinIndex, skinWeight, bodyVertices)` (a figure's 14

@@ -318,6 +318,19 @@ function AutoFrame({
   return null;
 }
 
+/** QA-only floor: a visible world-space grid and surface for contact review. */
+function GroundQa() {
+  return (
+    <>
+      <mesh rotation-x={-Math.PI / 2} receiveShadow>
+        <planeGeometry args={[8, 8]} />
+        <meshStandardMaterial color="#c9c3b8" roughness={0.9} />
+      </mesh>
+      <gridHelper args={[8, 16, "#6d675e", "#aaa398"]} position-y={0.002} />
+    </>
+  );
+}
+
 /** `?light=camera`: a light that follows the camera, and `?light=under`: one from below. */
 function QaLight({ kind }: { kind: "camera" | "under" }) {
   const camera = useThree((s) => s.camera);
@@ -460,6 +473,7 @@ function Shot() {
         }}
       >
         <StudioStage {...(background ? { background } : {})} />
+        {params.has("groundQa") && <GroundQa />}
         <SceneProbe />
         {frame && frameView.length === 3 && frameView.every(Number.isFinite) && (
           <AutoFrame
