@@ -25,6 +25,7 @@ import {
   FOLD_SLOT_ATTRIBUTE,
   noFoldTexture,
 } from "../../src/render/dualSkinning.ts";
+import { yieldWorkerTask } from "../../src/worker/task.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
 const LOAD = { timeout: 180_000 };
@@ -99,6 +100,8 @@ describe("the hip fold in <Humanoid>", () => {
           | "settled"
           | "initialDrawStart"
           | "initialDrawComplete"
+          | "bodyAttachedDrawStart"
+          | "bodyAttachedDrawComplete"
           | "postFoldDrawStart"
           | "postFoldDrawComplete",
           number
@@ -115,6 +118,9 @@ describe("the hip fold in <Humanoid>", () => {
       const restoreStepNext: Array<() => void> = [];
       let solveNextCalls = 0;
       let solveNextMs = 0;
+      let waitingRenderCount = 0;
+      let waitingRenderMs = 0;
+      let waitingRenderMaxMs = 0;
       const traceNext = (phase: "enter" | "exit", call: number, elapsed?: number) => {
         // Keep CI output bounded while retaining the first resumption and progress through later keys.
         if (call > 2 && (call & (call - 1)) !== 0) return;
@@ -133,6 +139,26 @@ describe("the hip fold in <Humanoid>", () => {
       const originalModelHipFold = HumanoidModel.prototype.hipFold;
       const originalSetFold = DualBones.prototype.setFold;
       const originalAdvanceFold = DualBones.prototype.advanceFold;
+      console.info(
+        "hip-fold-inline-runtime-diagnostic",
+        JSON.stringify({
+          visibility: document.visibilityState,
+          focused: document.hasFocus(),
+          messageChannelAvailable: typeof MessageChannel !== "undefined",
+        }),
+      );
+      const controlStarted = performance.now();
+      await yieldWorkerTask();
+      const firstControlYieldMs = performance.now() - controlStarted;
+      const secondControlStarted = performance.now();
+      await yieldWorkerTask();
+      console.info(
+        "hip-fold-inline-yield-control",
+        JSON.stringify({
+          firstControlYieldMs,
+          secondControlYieldMs: performance.now() - secondControlStarted,
+        }),
+      );
       client.hipFold = async (...args) => {
         mark("request");
         const result = await originalHipFold.call(client, ...args);
@@ -192,9 +218,19 @@ describe("the hip fold in <Humanoid>", () => {
                     state.gl.render = function (...args) {
                       const phase = marks.setFold === undefined ? "initialDraw" : "postFoldDraw";
                       mark(`${phase}Start`);
+                      const bodyAttached = bonesOf(state.scene) !== null;
+                      if (bodyAttached) mark("bodyAttachedDrawStart");
+                      const renderStarted = performance.now();
                       try {
                         return originalRender.apply(this, args);
                       } finally {
+                        const renderMs = performance.now() - renderStarted;
+                        if (marks.request !== undefined && marks.reply === undefined) {
+                          waitingRenderCount++;
+                          waitingRenderMs += renderMs;
+                          waitingRenderMaxMs = Math.max(waitingRenderMaxMs, renderMs);
+                        }
+                        if (bodyAttached) mark("bodyAttachedDrawComplete");
                         mark(`${phase}Complete`);
                       }
                     };
@@ -287,7 +323,14 @@ describe("the hip fold in <Humanoid>", () => {
         DualBones.prototype.advanceFold = originalAdvanceFold;
         console.info(
           "hip-fold-inline-phase-diagnostic",
-          JSON.stringify({ ...marks, solveNextCalls, solveNextMs }),
+          JSON.stringify({
+            ...marks,
+            solveNextCalls,
+            solveNextMs,
+            waitingRenderCount,
+            waitingRenderMs,
+            waitingRenderMaxMs,
+          }),
         );
       }
     },
