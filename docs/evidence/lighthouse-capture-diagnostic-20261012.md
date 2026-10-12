@@ -45,6 +45,22 @@ Every successful `Page.captureScreenshot` also writes a binary
 without printing their base64 payload, so visual review can inspect exactly what
 the protocol returned before drawing conclusions from an apparent success.
 
+Before Chrome starts, the diagnostic's Node static server fetches the production
+entry page and the emitted JavaScript entry asset. Both must return HTTP 200
+with the expected content type; `HK_CAPTURE_DIAGNOSTIC_PREFLIGHT_ONLY=1` runs
+that deterministic build/server check without launching a browser.
+
+## First dispatch result
+
+Commit `7b5190c6043c2fe55e9a124e1ba8937c6c88bd5f` dispatched run
+`38229927385` once. Its receipt recorded Chrome 154 and the generated flags,
+but each case stopped during navigation with `ERR_HTTP_RESPONSE_CODE_FAILURE`.
+The original probe served its requested base path from `.lighthouse/site`,
+although the generated configuration placed the bundle below
+`.lighthouse/site/humanoid-kit/playground`. It therefore returned 404 before
+any page sample or CDP screenshot command. This is navigation-failure evidence
+for the diagnostic server only, not Lighthouse screenshot or renderer evidence.
+
 The `FullPageScreenshot` gatherer begins at 27.7 seconds because the reproduced
 CI receipt navigated at 08:03:24.180 and began that gatherer at 08:03:51.911.
 The probe samples there, then follows its five-second post-resize branch before

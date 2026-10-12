@@ -23,6 +23,7 @@ const root = path.resolve(here, "..");
 const lighthouseRoot = path.join(root, ".lighthouse");
 const site = path.join(lighthouseRoot, "site");
 const basePath = "/humanoid-kit/playground/";
+const servedRoot = path.join(site, "humanoid-kit", "playground");
 const output = path.join(lighthouseRoot, "capture-diagnostic.json");
 const gathererStartAtMs = 27_700;
 const watchdogMs = 45_000;
@@ -106,9 +107,9 @@ function startServer() {
     }
     let relative = decodeURIComponent(url.pathname.slice(basePath.length));
     if (!relative || relative.endsWith("/")) relative += "index.html";
-    const file = path.resolve(site, relative);
+    const file = path.resolve(servedRoot, relative);
     if (
-      !file.startsWith(`${site}${path.sep}`) ||
+      !file.startsWith(`${servedRoot}${path.sep}`) ||
       !fs.existsSync(file) ||
       !fs.statSync(file).isFile()
     ) {
@@ -122,6 +123,46 @@ function startServer() {
     fs.createReadStream(file).pipe(response);
   });
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
+}
+
+async function fetchText(url) {
+  const response = await fetch(url);
+  return {
+    contentType: response.headers.get("content-type") ?? "",
+    status: response.status,
+    text: await response.text(),
+    url,
+  };
+}
+
+async function fetchBytes(url) {
+  const response = await fetch(url);
+  return {
+    bytes: (await response.arrayBuffer()).byteLength,
+    contentType: response.headers.get("content-type") ?? "",
+    status: response.status,
+    url,
+  };
+}
+
+function requireHttpResponse(receipt, type) {
+  if (receipt.status !== 200 || !receipt.contentType.startsWith(type))
+    throw new Error(
+      `${receipt.url} returned ${receipt.status} ${receipt.contentType || "without content type"}; expected 200 ${type}`,
+    );
+}
+
+function entryScriptUrl(index) {
+  const sources = [...index.text.matchAll(/<script[^>]+src=["']([^"']+\.js)["']/g)].map(
+    (match) => match[1],
+  );
+  const source = sources[0];
+  if (!source)
+    throw new Error("production index did not contain an emitted JavaScript entry script");
+  const url = new URL(source, index.url);
+  if (!url.pathname.startsWith(basePath))
+    throw new Error(`entry script falls outside the Playground base path: ${url.pathname}`);
+  return url.href;
 }
 
 /**
@@ -339,14 +380,20 @@ const flags = config.ci.collect.settings.chromeFlags.split(" ").filter(Boolean);
 if (config.ci.collect.settings.disableFullPageScreenshot === true)
   throw new Error("diagnostic requires the real FullPageScreenshot gatherer to remain enabled");
 const browserPath = process.env.HK_CHROME_PATH ?? "/usr/bin/google-chrome";
-if (!fs.existsSync(browserPath)) throw new Error(`Chrome not found at ${browserPath}`);
+const preflightOnly = process.env.HK_CAPTURE_DIAGNOSTIC_PREFLIGHT_ONLY === "1";
+if (!preflightOnly && !fs.existsSync(browserPath))
+  throw new Error(`Chrome not found at ${browserPath}`);
 const result = {
-  browser: { path: browserPath, version: shell(browserPath, ["--version"]) },
+  browser: {
+    path: browserPath,
+    version: preflightOnly ? null : shell(browserPath, ["--version"]),
+  },
   chromeFlags: flags,
   gathererStartAtMs,
   generatedAt: new Date().toISOString(),
   lighthouseDesktop,
   lifecycle: { errors: [], lastStage: "new", status: "in-progress" },
+  preflight: { asset: null, index: null, status: "pending" },
   protocol: { format: "webp", quality: 30, watchdogMs },
   runs: [],
   status: "in-progress",
@@ -364,14 +411,52 @@ try {
     if (!address || typeof address === "string")
       throw new Error("diagnostic server did not expose TCP");
     const base = `http://127.0.0.1:${address.port}${basePath}`;
-    const cases = [
-      { id: "creator", query: "", hideCanvas: false },
-      { id: "shot-front", query: "&view=front", hideCanvas: false },
-      { id: "creator-canvas-hidden", query: "", hideCanvas: true },
-    ];
-    for (const testCase of cases)
-      await captureCase({ base, browserPath, flags, persist, result, ...testCase });
-    result.status = result.runs.every((run) => run.status === "ok") ? "ok" : "failed";
+    const index = await observe(result.lifecycle, persist, "preflight-index", () =>
+      fetchText(`${base}index.html`),
+    );
+    if (!index.ok) {
+      result.preflight.status = "failed";
+      result.status = "failed";
+    } else {
+      try {
+        requireHttpResponse(index.value, "text/html");
+        result.preflight.index = {
+          bytes: Buffer.byteLength(index.value.text),
+          contentType: index.value.contentType,
+          status: index.value.status,
+          url: index.value.url,
+        };
+        persist();
+        const asset = await observe(result.lifecycle, persist, "preflight-entry-script", () =>
+          fetchBytes(entryScriptUrl(index.value)),
+        );
+        if (!asset.ok) {
+          result.preflight.status = "failed";
+          result.status = "failed";
+        } else {
+          requireHttpResponse(asset.value, "text/javascript");
+          result.preflight.asset = asset.value;
+          result.preflight.status = "ok";
+          persist();
+          if (preflightOnly) {
+            result.status = "ok";
+          } else {
+            const cases = [
+              { id: "creator", query: "", hideCanvas: false },
+              { id: "shot-front", query: "&view=front", hideCanvas: false },
+              { id: "creator-canvas-hidden", query: "", hideCanvas: true },
+            ];
+            for (const testCase of cases)
+              await captureCase({ base, browserPath, flags, persist, result, ...testCase });
+            result.status = result.runs.every((run) => run.status === "ok") ? "ok" : "failed";
+          }
+        }
+      } catch (error) {
+        result.preflight.status = "failed";
+        result.status = "failed";
+        result.error = errorReceipt(error, "preflight-validate");
+      }
+    }
   }
 } catch (error) {
   result.status = "failed";
