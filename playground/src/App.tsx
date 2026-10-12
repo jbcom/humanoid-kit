@@ -19,6 +19,7 @@ import {
   STUDIO_TONE_MAPPING,
   StudioStage,
   useHumanoidAffordances,
+  useHumanoidReady,
 } from "humanoid-kit/react";
 import { animationsPack } from "humanoid-kit-animations";
 import { bodyPack } from "humanoid-kit-body";
@@ -29,10 +30,13 @@ import {
   ACESFilmicToneMapping,
   AgXToneMapping,
   type Bone,
+  Box3,
   type DirectionalLight,
   type Mesh,
   NeutralToneMapping,
   type Object3D,
+  type PerspectiveCamera,
+  SkinnedMesh,
   type ToneMapping,
   Vector3,
 } from "three";
@@ -265,9 +269,91 @@ function Creator() {
     <HumanoidCreator
       title="humanoid-kit"
       initialRecipe={initialRecipe()}
+      frameloop="demand"
       {...(eyeMaterials && { eyeMaterials })}
-    />
+    >
+      {params.has("e2eEyeRegion") && <EyeRegionProbe />}
+    </HumanoidCreator>
   );
+}
+
+interface EyeRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** E2E-only projected bounds for evidence that an actual eye attachment changed. */
+function EyeRegionProbe() {
+  const ready = useHumanoidReady();
+  const gl = useThree((state) => state.gl);
+  const scene = useThree((state) => state.scene);
+  const camera = useThree((state) => state.camera) as PerspectiveCamera;
+  const size = useThree((state) => state.size);
+
+  useEffect(() => {
+    const stage = gl.domElement.closest(".hk-stage");
+    if (!(stage instanceof HTMLElement) || !ready) return;
+    let frame = 0;
+    const report = () => {
+      frame = 0;
+      if (stage.dataset.framing !== "settled") return;
+      scene.updateMatrixWorld(true);
+      camera.updateMatrixWorld();
+      const bounds = new Box3();
+      let found = false;
+      scene.traverse((node) => {
+        if (!(node instanceof SkinnedMesh)) return;
+        const index = node.userData.hkPart;
+        if (typeof index !== "number" || ready.topology.attachments[index]?.kind !== "eyes") return;
+        node.computeBoundingBox();
+        if (!node.boundingBox) return;
+        bounds.union(node.boundingBox.clone().applyMatrix4(node.matrixWorld));
+        found = true;
+      });
+      if (!found || bounds.isEmpty()) {
+        delete stage.dataset.eyeRegion;
+        return;
+      }
+      const corners = [
+        [bounds.min.x, bounds.min.y, bounds.min.z],
+        [bounds.min.x, bounds.min.y, bounds.max.z],
+        [bounds.min.x, bounds.max.y, bounds.min.z],
+        [bounds.min.x, bounds.max.y, bounds.max.z],
+        [bounds.max.x, bounds.min.y, bounds.min.z],
+        [bounds.max.x, bounds.min.y, bounds.max.z],
+        [bounds.max.x, bounds.max.y, bounds.min.z],
+        [bounds.max.x, bounds.max.y, bounds.max.z],
+      ].map(([x, y, z]) => new Vector3(x, y, z).project(camera));
+      const xs = corners.map((point) => (point.x * 0.5 + 0.5) * size.width);
+      const ys = corners.map((point) => (1 - (point.y * 0.5 + 0.5)) * size.height);
+      const left = Math.max(0, Math.min(...xs));
+      const right = Math.min(size.width, Math.max(...xs));
+      const top = Math.max(0, Math.min(...ys));
+      const bottom = Math.min(size.height, Math.max(...ys));
+      const region: EyeRegion | null =
+        right > left && bottom > top
+          ? { x: left, y: top, width: right - left, height: bottom - top }
+          : null;
+      if (region) stage.dataset.eyeRegion = JSON.stringify(region);
+      else delete stage.dataset.eyeRegion;
+    };
+    const schedule = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(report);
+    };
+    const observer = new MutationObserver(schedule);
+    observer.observe(stage, { attributes: true, attributeFilter: ["data-framing"] });
+    schedule();
+    return () => {
+      observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+      delete stage.dataset.eyeRegion;
+    };
+  }, [camera, gl, ready, scene, size.height, size.width]);
+
+  return null;
 }
 
 /** Tone mappers QA can compare with `?tm=` (the stage's own is the default). */
