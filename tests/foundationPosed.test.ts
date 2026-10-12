@@ -9,8 +9,8 @@ import { REST_POSE } from "../src/foundation/permutations.ts";
 import { posedSurface } from "../src/foundation/posed.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
-import { renderFold, type SurfaceFold } from "../src/rig/hipFold.ts";
-import { skinNormals, skinPositions } from "../src/rig/pose.ts";
+import { FOLD_KEYS, FOLD_OPENINGS, type HipFold } from "../src/rig/hipFold.ts";
+import { bodyPoseRotations, rigData, skinNormals, skinPositions } from "../src/rig/pose.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(), { subdivision: 1 });
@@ -18,11 +18,29 @@ const recipe = createRecipe({ macros: { age: 25, gender: 1 } });
 const adultModel = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
 const adultRecipe = createRecipe({ macros: { age: 30 } });
 
-function solvedFold(model: HumanoidModel, recipe: ReturnType<typeof createRecipe>) {
-  const solve = model.hipFold(recipe);
-  let step = solve.next();
-  while (!step.done) step = solve.next();
-  return renderFold((step.value as { fold: SurfaceFold }).fold);
+/**
+ * A structurally valid, nonzero fold for one rendered vertex. The rest pose
+ * must ignore it before reading its data; a flexed pose must not. Keeping this
+ * small lets the rest contract cover the core and adult surfaces without
+ * rebuilding either model's expensive collision table inside one assertion.
+ * The native table's collision and interpolation semantics belong to
+ * `tests/hipFold.test.ts`.
+ */
+function restFoldWitness(vertexCount: number): HipFold {
+  const slot = new Int32Array(vertexCount).fill(-1);
+  slot[0] = 0;
+  const entries = FOLD_OPENINGS * FOLD_KEYS * 3;
+  return {
+    vertices: Uint32Array.of(0),
+    slot,
+    vectors: Float32Array.from({ length: entries }, (_, i) =>
+      i % 3 === 0 ? 0.02 : i % 3 === 1 ? -0.01 : 0.015,
+    ),
+    normals: Float32Array.from({ length: entries }, (_, i) =>
+      i % 3 === 0 ? 0.03 : i % 3 === 1 ? -0.02 : 0.01,
+    ),
+    side: Float32Array.of(0.5),
+  };
 }
 
 const maxY = (p: Float32Array) => {
@@ -58,13 +76,12 @@ describe("the posed body", () => {
     expect(body.index.reduce((m, i) => Math.max(m, i), 0)).toBeLessThan(body.vertexCount);
   });
 
-  it("does not solve a hip fold at rest, where a solved fold changes neither surface", () => {
-    for (const [m, r] of [
-      [model, recipe],
-      [adultModel, adultRecipe],
+  it("at rest, ignores a valid nonzero fold and does not solve one", () => {
+    for (const [m, r, surface] of [
+      [model, recipe, body],
+      [adultModel, adultRecipe, adultBody],
     ] as const) {
-      const surface = posedSurface(m, r, REST_POSE);
-      const fold = solvedFold(m, r);
+      const fold = restFoldWitness(surface.vertexCount);
       const withFold = skinPositions(
         surface.bones,
         surface.rotations,
@@ -85,6 +102,25 @@ describe("the posed body", () => {
       );
       expect(surface.positions).toEqual(withFold);
       expect(surface.normals).toEqual(normalsWithFold);
+      const flexedRotations = bodyPoseRotations(rigData(m.assets), "seated");
+      const flexedWithFold = skinPositions(
+        surface.bones,
+        flexedRotations,
+        surface.rest,
+        surface.skinIndex,
+        surface.skinWeight,
+        new Float32Array(surface.rest.length),
+        restFoldWitness(surface.vertexCount),
+      );
+      const flexedWithoutFold = skinPositions(
+        surface.bones,
+        flexedRotations,
+        surface.rest,
+        surface.skinIndex,
+        surface.skinWeight,
+        new Float32Array(surface.rest.length),
+      );
+      expect(flexedWithoutFold).not.toEqual(flexedWithFold);
       const hipFold = vi.spyOn(m, "hipFold").mockImplementation(() => {
         throw new Error("a rest pose must not solve a hip fold");
       });
