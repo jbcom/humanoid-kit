@@ -321,10 +321,10 @@ function CreatorBody({
         <Canvas
           shadows={STUDIO_SHADOWS}
           camera={{ position: [0, 1, 3.4], fov: 32 }}
+          // Compositor screenshots do not need a retained WebGL drawing buffer.
           gl={{
             toneMapping: STUDIO_TONE_MAPPING,
             toneMappingExposure: STUDIO_EXPOSURE,
-            preserveDrawingBuffer: true,
           }}
           // An image of the figure to assistive technology: tapping and orbiting
           // are pointer shortcuts to what the tabs already offer.
