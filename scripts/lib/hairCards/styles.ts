@@ -268,8 +268,8 @@ export const BOX_BRAIDS: RopeGridSpec = {
 const BOX_BRAIDS_PLAIT = {
   strandRadius: 0.002,
   tipRadius: 0.001,
-  laneRadius: 0.0053,
-  crossingLift: 0.0036,
+  laneRadius: 0.0056,
+  crossingLift: 0.0045,
   crossings: 7,
   segments: 21,
   sides: 4,
