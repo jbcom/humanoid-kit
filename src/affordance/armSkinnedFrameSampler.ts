@@ -105,6 +105,9 @@ export function createArmSkinnedFrameSampler(
   const bones = restBones.names.length;
   if (input.sourceRotations.length !== bones * 4)
     throw new RangeError("arm sampler: source rotations do not match rest bones");
+  for (const component of input.sourceRotations)
+    if (!Number.isFinite(component))
+      throw new RangeError("arm sampler: source rotations must be finite");
   if (
     rest.length !== restNormals.length ||
     rest.length / 3 !== skinIndex.length / 4 ||
@@ -158,11 +161,14 @@ export function createArmSkinnedFrameSampler(
       if (rotations.length !== source.length)
         throw new RangeError("arm sampler: candidate rotations do not match rest bones");
       for (let bone = 0; bone < bones; bone++) {
-        if (allowed[bone]) continue;
         const at = bone * 4;
-        for (let component = 0; component < 4; component++)
+        for (let component = 0; component < 4; component++) {
+          if (!Number.isFinite(rotations[at + component] as number))
+            throw new RangeError("arm sampler: candidate rotations must be finite");
+          if (allowed[bone]) continue;
           if (rotations[at + component] !== source[at + component])
             throw new RangeError("arm sampler: candidate changed a non-arm pose bone");
+        }
       }
       skinPoseInto(restBones, rotations, share, scratch);
       return affordanceFrameInto(affordance, read, out);

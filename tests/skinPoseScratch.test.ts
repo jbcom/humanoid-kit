@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import {
+  DUAL_STRIDE,
   dualBones,
   dualBonesFromPosedInto,
   skinPose,
@@ -46,5 +47,48 @@ describe("scratch skin pose", () => {
     expect(next.dual).toBe(scratch.pose.dual);
     expect(next.matrix).toBe(scratch.pose.matrix);
     expect(next.trans).toBe(scratch.pose.trans);
+  });
+
+  it("rejects offset overlapping views in dual and combined pose scratch", () => {
+    const rotations = IDENTITY_POSE(rest.names.length);
+    const skeleton = posedBones(rest, rotations);
+    const dualBuffer = new ArrayBuffer(
+      (rest.names.length * 12 + 1) * Float32Array.BYTES_PER_ELEMENT,
+    );
+    const overlappingDual = new Float32Array(
+      dualBuffer,
+      Float32Array.BYTES_PER_ELEMENT,
+      rest.names.length * 8,
+    );
+    const worldAlias = new Float32Array(dualBuffer, 0, rest.names.length * 4);
+    expect(() =>
+      dualBonesFromPosedInto(rest, { world: worldAlias, heads: skeleton.heads }, overlappingDual),
+    ).toThrow("output overlaps an input view");
+
+    const scratch = skinPoseScratch(rest, share);
+    const poseBuffer = new ArrayBuffer(
+      (rest.names.length * (DUAL_STRIDE + 9 + 3) + 1) * Float32Array.BYTES_PER_ELEMENT,
+    );
+    scratch.pose.dual = new Float32Array(poseBuffer, 0, rest.names.length * DUAL_STRIDE);
+    scratch.pose.matrix = new Float32Array(
+      poseBuffer,
+      Float32Array.BYTES_PER_ELEMENT,
+      rest.names.length * 9,
+    );
+    scratch.pose.trans = new Float32Array(
+      poseBuffer,
+      rest.names.length * (DUAL_STRIDE + 9) * Float32Array.BYTES_PER_ELEMENT,
+      rest.names.length * 3,
+    );
+    expect(() => skinPoseInto(rest, rotations, share, scratch)).toThrow(
+      "output overlaps an input view",
+    );
+
+    const duplicated = skinPoseScratch(rest, share);
+    const writableSkeleton = duplicated.skeleton as { world: Float32Array; heads: Float32Array };
+    writableSkeleton.heads = duplicated.pose.trans;
+    expect(() => skinPoseInto(rest, rotations, share, duplicated)).toThrow(
+      "output overlaps an input view",
+    );
   });
 });

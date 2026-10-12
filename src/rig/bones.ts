@@ -20,6 +20,28 @@ export interface RestBones {
 /** Per bone, a rotation quaternion (x, y, z, w): `bones * 4`. */
 export type BoneRotations = Float32Array;
 
+type BufferView = {
+  readonly buffer: ArrayBufferLike;
+  readonly byteOffset: number;
+  readonly byteLength: number;
+};
+
+/** Whether two typed-array views touch any of the same backing-buffer bytes. */
+export function viewsOverlap(a: BufferView, b: BufferView): boolean {
+  if (a.buffer !== b.buffer) return false;
+  return a.byteOffset < b.byteOffset + b.byteLength && b.byteOffset < a.byteOffset + a.byteLength;
+}
+
+/** Reject a public output view that would overwrite any input before it is read. */
+export function assertDisjointViews(
+  name: string,
+  output: BufferView,
+  inputs: readonly BufferView[],
+): void {
+  if (inputs.some((input) => viewsOverlap(output, input)))
+    throw new RangeError(`${name}: output overlaps an input view`);
+}
+
 /**
  * Reusable storage for a posed skeleton. Callers that sample a transient pose
  * many times (for example a constraint solver) own this storage and must not
@@ -71,6 +93,14 @@ export function posedBonesInto(
     throw new RangeError("posed bones: rotations do not match the rest skeleton");
   if (out.world.length !== n * 4 || out.heads.length !== n * 3)
     throw new RangeError("posed bones: scratch does not match the rest skeleton");
+  assertDisjointViews("posed bones", out.world, [
+    out.heads,
+    rotations,
+    rest.heads,
+    rest.parents,
+    rest.order,
+  ]);
+  assertDisjointViews("posed bones", out.heads, [rotations, rest.heads, rest.parents, rest.order]);
   const { world, heads } = out;
   for (const b of rest.order) {
     const r = b * 4;

@@ -6,8 +6,15 @@ import { type FrameOut, frameOut, landmarkAnchors } from "../src/foundation/land
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe, type Recipe } from "../src/recipe/recipe.ts";
 import { armChain, armTip, solveArmTarget } from "../src/rig/armTarget.ts";
-import { skinPose } from "../src/rig/dual.ts";
-import { IDENTITY_POSE, posedBones, restBones } from "../src/rig/pose.ts";
+import { type SkinFold, skinFold, skinPose } from "../src/rig/dual.ts";
+import { renderFold } from "../src/rig/hipFold.ts";
+import {
+  bodyPoseRotations,
+  IDENTITY_POSE,
+  posedBones,
+  restBones,
+  rigData,
+} from "../src/rig/pose.ts";
 import { poseShare, skinDualShare } from "../src/rig/skinShare.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
@@ -19,6 +26,7 @@ function live(
   evaluation: ReturnType<typeof model.evaluate>,
   rotations: Float32Array,
   world: Group,
+  fold: SkinFold | null = null,
 ): LiveFigure {
   const rest = restBones(assets, evaluation.control);
   const pose = skinPose(rest, rotations, poseShare(rest, rotations, skinDualShare(rest.names)));
@@ -29,7 +37,7 @@ function live(
     skinIndex: model.topology().body.skinIndex,
     skinWeight: model.topology().body.skinWeight,
     pose: () => pose,
-    fold: () => null,
+    fold: () => fold,
     skeleton: () => posedBones(rest, rotations),
     world,
   };
@@ -40,14 +48,22 @@ function slowFrame(
   evaluation: ReturnType<typeof model.evaluate>,
   rotations: Float32Array,
   side: "L" | "R",
+  fold: SkinFold | null = null,
 ): FrameOut {
   const affordances = new HumanoidAffordances();
   affordances.setRecipe(recipe);
   affordances.setAnchors({ base: anchors, adult: null });
-  affordances.attach(live(evaluation, rotations, new Group()));
+  affordances.attach(live(evaluation, rotations, new Group(), fold));
   const frame = affordances.frame(`hand.${side}`, "figure", frameOut());
   if (!frame) throw new Error("slow hand frame was unavailable");
   return frame;
+}
+
+function solvedFold(recipe: Recipe) {
+  const steps = model.hipFold(recipe);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value.fold;
 }
 
 const orientation = (frame: FrameOut) => {
@@ -144,6 +160,88 @@ describe("arm skinned-frame sampler", () => {
     candidate[hip * 4] = Math.sin(0.1);
     candidate[hip * 4 + 3] = Math.cos(0.1);
     expect(() => sampler.frame(generation, candidate, out)).toThrow("non-arm pose bone");
+  });
+
+  it("rejects non-finite source and candidate rotations before a frame is written", () => {
+    const recipe = createRecipe({ macros: { age: 30 } });
+    const evaluation = model.evaluate(recipe);
+    const rest = restBones(assets, evaluation.control);
+    const chain = armChain(rest, "R");
+    const source = IDENTITY_POSE(rest.names.length);
+    const hip = rest.names.indexOf("upperleg01.R");
+    source[hip * 4] = Number.NaN;
+    expect(() =>
+      createArmSkinnedFrameSampler({
+        generation: {},
+        rest: evaluation.positions,
+        restNormals: evaluation.normals,
+        skinIndex: model.topology().body.skinIndex,
+        skinWeight: model.topology().body.skinWeight,
+        anchors,
+        restBones: rest,
+        sourceRotations: source,
+        armBones: chain,
+        side: "R",
+      }),
+    ).toThrow("source rotations must be finite");
+
+    const validSource = IDENTITY_POSE(rest.names.length);
+    const generation = {};
+    const sampler = createArmSkinnedFrameSampler({
+      generation,
+      rest: evaluation.positions,
+      restNormals: evaluation.normals,
+      skinIndex: model.topology().body.skinIndex,
+      skinWeight: model.topology().body.skinWeight,
+      anchors,
+      restBones: rest,
+      sourceRotations: validSource,
+      armBones: chain,
+      side: "R",
+    });
+    const candidate = Float32Array.from(validSource);
+    candidate[(chain[0] as number) * 4] = Number.NaN;
+    expect(() => sampler.frame(generation, candidate, frameOut())).toThrow(
+      "candidate rotations must be finite",
+    );
+    candidate[(chain[0] as number) * 4] = Number.POSITIVE_INFINITY;
+    expect(() => sampler.frame(generation, candidate, frameOut())).toThrow(
+      "candidate rotations must be finite",
+    );
+  });
+
+  it("matches a folded seated source pose through an allowed arm candidate", () => {
+    const recipe = createRecipe({ macros: { age: 31, gender: 0.76, height: 0.78 } });
+    const evaluation = model.evaluate(recipe);
+    const rest = restBones(assets, evaluation.control);
+    const source = bodyPoseRotations(rigData(assets), "seated");
+    const fold = skinFold(rest, source, renderFold(solvedFold(recipe)), 1);
+    expect(fold).not.toBeNull();
+    if (!fold) throw new Error("expected seated fold");
+    const side = "R" as const;
+    const chain = armChain(rest, side);
+    const generation = {};
+    const sampler = createArmSkinnedFrameSampler({
+      generation,
+      rest: evaluation.positions,
+      restNormals: evaluation.normals,
+      skinIndex: model.topology().body.skinIndex,
+      skinWeight: model.topology().body.skinWeight,
+      anchors,
+      restBones: rest,
+      sourceRotations: source,
+      armBones: chain,
+      side,
+      fold,
+    });
+    const candidate = Float32Array.from(source);
+    const wrist = chain.at(-1) as number;
+    candidate[wrist * 4 + 1] = Math.sin(0.09);
+    candidate[wrist * 4 + 3] = Math.cos(0.09);
+    const actual = sampler.frame(generation, candidate, frameOut());
+    const expected = slowFrame(recipe, evaluation, candidate, side, fold);
+    expect(distance(actual.position, expected.position)).toBeLessThanOrEqual(1e-6);
+    expect(orientation(actual).angleTo(orientation(expected))).toBeLessThanOrEqual(1e-6);
   });
 
   it("keeps final sampled hand position within one centimetre and orientation equal to the trusted path", () => {

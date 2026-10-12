@@ -16,6 +16,7 @@
  * by the mean of its bones' shares.
  */
 import {
+  assertDisjointViews,
   type BoneRotations,
   type PosedBonesScratch,
   posedBones,
@@ -65,6 +66,15 @@ export function dualBonesFromPosedInto(
 ): Float32Array {
   if (out.length !== rest.names.length * DUAL_STRIDE)
     throw new RangeError("dual bones: output does not match the rest skeleton");
+  if (posed.world.length !== rest.names.length * 4 || posed.heads.length !== rest.names.length * 3)
+    throw new RangeError("dual bones: posed skeleton does not match the rest skeleton");
+  assertDisjointViews("dual bones", out, [
+    posed.world,
+    posed.heads,
+    rest.heads,
+    rest.parents,
+    rest.order,
+  ]);
   const { world, heads } = posed;
   for (let b = 0; b < rest.names.length; b++) {
     const x = world[b * 4] as number;
@@ -172,10 +182,30 @@ export function skinPoseInto(
 ): SkinPose {
   const { pose, skeleton } = scratch;
   const { dual, matrix, trans } = pose;
+  const n = rest.names.length;
+  if (dual.length !== n * DUAL_STRIDE || matrix.length !== n * 9 || trans.length !== n * 3)
+    throw new RangeError("skin pose: scratch does not match the rest skeleton");
+  if (typeof share !== "number" && share.length !== n)
+    throw new RangeError("skin pose: share does not match the rest skeleton");
+  const shareViews: Array<{
+    readonly buffer: ArrayBufferLike;
+    readonly byteOffset: number;
+    readonly byteLength: number;
+  }> = [];
+  if (typeof share !== "number" && ArrayBuffer.isView(share)) shareViews.push(share);
+  const outputs = [dual, matrix, trans, skeleton.world, skeleton.heads];
+  for (let outputIndex = 0; outputIndex < outputs.length; outputIndex++)
+    assertDisjointViews("skin pose", outputs[outputIndex] as Float32Array, [
+      rotations,
+      rest.heads,
+      rest.parents,
+      rest.order,
+      ...shareViews,
+      ...outputs.filter((_, otherIndex) => otherIndex !== outputIndex),
+    ]);
   posedBonesInto(rest, rotations, skeleton);
   dualBonesFromPosedInto(rest, skeleton, dual);
   pose.share = share;
-  const n = dual.length / DUAL_STRIDE;
   for (let b = 0; b < n; b++) {
     const o = b * DUAL_STRIDE;
     const x = dual[o] as number;
