@@ -52,6 +52,11 @@ targets, breast development through adolescence, nipples and areolae. The one
 boundary is the one MakeHuman itself draws, which keeps genital assets out of its
 core:
 
+- The age axis is MakeHuman's own timeline, with no deviation (owner ruling,
+  2026-10-13): baby at 1 year, child at 10, the adult body (`young` in its
+  files) at 25, old at 90, linear between them. A figure of 18 is about 47%
+  child shape, as in MakeHuman. The earlier hold of the adult body from 18 to
+  25 is reversed; `ADULT_AGE` (18) gates content only, never the body's shape.
 - Adult-only: the adult anatomy pack (genital, bulge and pregnancy targets and
   modifiers) and pubic hair density, evaluated only for figures aged 18 or over.
 - Not restricted at any age: nipples and areolae (relief and surface), breast
@@ -88,3 +93,24 @@ figure actually has, never from its frame value. Each region has its own contact
 and response channel: the mouth, ingestion and egress, other adult openings, and
 birth are separate functions and are never one shared "opening". Adult interactions
 refuse any participant under 18, and consent is never assumed.
+
+## 7. An adult anatomy value that is absent means its default; an explicit zero means zero
+
+Recorded 2026-10-13 as the semantic the code already implements (issue 26, commit
+cb2e5c17), with the owner's confirmation of the wording still to come. It is a
+maintainer design decision, not an owner ruling.
+
+- A recipe that does not name an adult anatomy modifier gets the adult pack's
+  default for it when the figure is an adult and the pack is loaded.
+- A recipe that names the modifier with 0 gets 0: the default is overridden, and
+  the editor preserves that explicit zero.
+- A control shows the effective value, the same one evaluation applies, so it never
+  reads 0 while the default is drawn (`sliderValue` with the loaded anatomy
+  defaults). Resetting a row removes the override so the default resumes.
+- Under 18 nothing changes: adult modifiers are refused or removed as ruling 4
+  says, whatever the defaults are.
+
+Decisions are appended with the next number and never renumbered, since code and
+docs cite the numbers. A decision that comes from a design section (dated, in the
+architecture notes or a research document) is summarised here with a pointer, so
+this file is the index of what was decided and why.

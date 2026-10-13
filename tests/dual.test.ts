@@ -57,6 +57,16 @@ const skin = (
   );
 
 describe("dual quaternion skinning", () => {
+  it("writes an oversized dual output prefix without touching its tail", () => {
+    const rotations = posing(1, turn(0, 0, 1, 35));
+    const required = limb().names.length * 8;
+    const out = new Float32Array(required + 3).fill(-17);
+    const returned = dualBones(limb(), rotations, out);
+    expect(returned).toBe(out);
+    expect(Array.from(out.subarray(0, required))).toEqual(Array.from(dualBones(limb(), rotations)));
+    expect(Array.from(out.subarray(required))).toEqual([-17, -17, -17]);
+  });
+
   it("leaves a body at rest where it is", () => {
     const out = skin(skinPositionsDual, IDENTITY_POSE(2), [0.3, 0.7, -0.2], both(0.4));
     expect(Array.from(out)).toEqual([

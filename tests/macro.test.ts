@@ -51,25 +51,24 @@ describe("macro axes", () => {
     expect(ageAxis(1)).toEqual([["baby", 1]]);
     // MakeHuman's own years for its child anchor: 1 + 48 * 0.1875.
     expect(ageAxis(10)).toEqual([["child", 1]]);
-    expect(ageAxis(14)).toEqual([
-      ["child", 0.5],
-      ["adult", 0.5],
-    ]);
-    expect(ageAxis(18)).toEqual([["adult", 1]]);
     expect(ageAxis(25)).toEqual([["adult", 1]]);
     expect(ageAxis(90)).toEqual([["old", 1]]);
   });
 
-  it("gives no figure aged 18 or over any child or baby shape", () => {
+  it("blends child into adult from 10 to 25, as MakeHuman does", () => {
     fc.assert(
-      fc.property(fc.double({ min: ADULT_AGE, max: 150, noNaN: true }), (y) => {
-        for (const [anchor, w] of ageAxis(y))
-          if (anchor === "child" || anchor === "baby") expect(w, `${anchor} at ${y}`).toBe(0);
+      fc.property(fc.double({ min: 10, max: 25, noNaN: true }), (y) => {
+        const t = (y - 10) / 15;
+        const w = new Map(ageAxis(y));
+        expect(w.get("child") ?? 0).toBeCloseTo(1 - t, 9);
+        expect(w.get("adult") ?? 0).toBeCloseTo(t, 9);
       }),
     );
+    // ADULT_AGE gates content only; the body at 18 is still part child.
+    expect(new Map(ageAxis(ADULT_AGE)).get("child")).toBeCloseTo(7 / 15, 12);
   });
 
-  it("leaves every figure aged 25 or over as MakeHuman draws it", () => {
+  it("blends adult into old from 25 to 90, as MakeHuman does", () => {
     fc.assert(
       fc.property(fc.double({ min: 25, max: 90, noNaN: true }), (y) => {
         const old = (y - 25) / (90 - 25);
@@ -81,7 +80,7 @@ describe("macro axes", () => {
   });
 
   it("names MakeHuman's young targets for the adult anchor", () => {
-    const names = [...macroTargetWeights({ ...DEFAULT_MACROS, age: 20 }).keys()];
+    const names = [...macroTargetWeights({ ...DEFAULT_MACROS, age: 30 }).keys()];
     expect(names.some((n) => /(^|[/-])young(-|$)/.test(n))).toBe(true);
     expect(names.some((n) => /(^|[/-])(adult|child)(-|$)/.test(n))).toBe(false);
   });

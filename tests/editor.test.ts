@@ -142,7 +142,7 @@ describe("editor controls", () => {
     expect(sliderValue(limitedReset, phallus, anatomyDefaults)).toBe(0.2);
     const reset = resetSliderValue(hidden, phallus, modifiers, anatomyDefaults);
     expect(reset.modifiers[phallus.id]).toBeUndefined();
-    expect(sliderValue(reset, phallus, anatomyDefaults)).toBeCloseTo(0.365, 9);
+    expect(sliderValue(reset, phallus, anatomyDefaults)).toBeCloseTo(0.325, 9);
   });
 
   it("keeps neutral reset semantics when no loaded default owns a control", () => {
@@ -159,7 +159,7 @@ describe("editor controls", () => {
       {
         gender: 0,
         values: {
-          "genitals/phallus-size": 0.08,
+          "genitals/phallus-size": 0,
           "genitals/testes-size": 0,
           "genitals/vulva-size": 1,
           "genitals/anal-canal": 1,
@@ -168,7 +168,7 @@ describe("editor controls", () => {
       {
         gender: 0.5,
         values: {
-          "genitals/phallus-size": 0.365,
+          "genitals/phallus-size": 0.325,
           "genitals/testes-size": 0.3,
           "genitals/vulva-size": 0.5,
           "genitals/anal-canal": 1,
@@ -207,7 +207,7 @@ describe("editor controls", () => {
 
     const reset = resetSliderValue(explicitZero, entry, modifiers, anatomyDefaults);
     expect(reset.modifiers).not.toHaveProperty(entry.id);
-    expect(sliderValue(reset, entry, anatomyDefaults)).toBeCloseTo(0.365);
+    expect(sliderValue(reset, entry, anatomyDefaults)).toBeCloseTo(0.325);
   });
 
   it("keeps no-pack slider reads and resets neutral", () => {

@@ -800,8 +800,16 @@ export function* solveFold(
         // The last rounds share nothing: the step ends with them.
         if (round >= ROUNDS - 1) continue;
         // A round that did not settle (a thigh wedged against a belly with nowhere to go) has
-        // pushes that are no contact's, and nothing of them is shared: the step ends as it is.
-        if (!settled) break;
+        // pushes that are no contact's, and nothing of them is shared: the step goes on to its
+        // last rounds as it is. Those are what undo what wedged it: the smoothing of skin the
+        // bones folded over itself (the short full woman's knee at 135° was left with the thigh's
+        // skin folded flat on itself, two facets back to back, from which a calf vertex between
+        // them could be pushed out of neither: 6 mm through, where 132.5° and 137.5° were clear),
+        // the press back and the last pushes.
+        if (!settled) {
+          round = ROUNDS - 2;
+          continue;
+        }
         // The patch gives its share: what the round pushed the movers' skin out by, the movers'
         // skin gives back `setup.give` of, and the patch's triangle it met is pressed in as far
         // (its corners by their share of the point nearest the mover's skin, the least press

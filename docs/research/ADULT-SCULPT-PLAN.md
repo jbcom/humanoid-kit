@@ -516,6 +516,15 @@ mathematical and visibility tests pass, but thirteen posed foundation checks
 regress against the recorded worklist. Do not treat the source list or transfer
 design below as evidence that the female form has been accepted.
 
+**Interim default (2026-10-13).** The #22 permutation matrix showed that any
+share of the drawn smallest key raises a plate with a hard rim and a nub on the
+mons, at sizes from 0.02 to 0.12. The female end of the default `phallus-size`
+curve is therefore 0 (`"0.35,0;0.65,0.65"`), the reservoir at rest, until the
+sculpted hood and glans fill that key. Explicit sizes under 0.25, and the
+default's ramp just above gender 0.35, still reach the drawn key (#75). The
+pack is CC0 only; whether the NIH model below may be used waits on an owner
+ruling (#22).
+
 The default woman drew the phallic reservoir's small key: a raised square plate with
 a nub and a frayed rim, nothing like a vulva.
 

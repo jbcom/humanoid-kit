@@ -36,7 +36,7 @@ hair colour is the only colour it takes; they carry no growth, hairline, fin or 
 Each style's binary also carries what the packer measured of its cards against the body at rest: growth,
 hairline fade, fin and scalp (`src/surface/hairFields.ts`).
 
-The body hair cards (kind `beard`) come from no source file: `scripts/lib/bodyHairCards.ts` generates them over the body pack's
+The body hair cards (kind `beard`) come from no source file: `src/surface/bodyHairCards.ts` generates them over the body pack's
 base mesh from a seed, with their strand map, so they are this project's own work under its licence.
 
 ## Texture sizes

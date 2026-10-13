@@ -77,6 +77,7 @@ import {
   writeAttachmentTextures,
   writeBodyOcclusion,
   writePackEntry,
+  writeProxies,
 } from "./lib/packWriter.ts";
 import { buildSliders } from "./lib/sliders.ts";
 import { type EncodedTarget, encodeSparseTarget } from "./lib/targetEncoding.ts";
@@ -100,6 +101,17 @@ const ESSENTIALS: [string, string, string, string?][] = [
   ["teeth/base", "teeth", "teeth/teeth_base/teeth_base.mhclo"],
   ["tongue/base", "tongue", "tongue/tongue01/tongue01.mhclo"],
 ];
+/**
+ * MakeHuman's low-poly proxy bodies from the system assets pack, by their own
+ * names: alternative topologies bound to the base mesh, for miniatures and for
+ * parity with a figure built on a proxy (docs/MINIATURES.md). Geometry only: a
+ * proxy is drawn with the body's own skin.
+ */
+const PROXIES: [string, string][] = [
+  ["proxy741", "proxymeshes/proxy741/proxy741.proxy"],
+  ["male1591", "proxymeshes/male1591/male1591.proxy"],
+  ["female1605", "proxymeshes/female1605/female1605.proxy"],
+];
 const BODY_OUT = path.resolve(import.meta.dirname, "../packs/body/data");
 const ADULT_OUT = path.resolve(import.meta.dirname, "../packs/adult-anatomy/data");
 const HAIR_OUT = path.resolve(import.meta.dirname, "../packs/hair/data");
@@ -110,6 +122,7 @@ const BODY_FILE = "body.bin.gz";
 const TARGETS_FILE = "targets.bin.gz";
 const ATTACHMENTS_FILE = "attachments.bin.gz";
 const BODY_OCCLUSION_FILE = "body-occlusion.bin.gz";
+const PROXIES_FILE = "proxies.bin.gz";
 /** MakeHuman units are decimetres; the runtime works in metres. */
 const UNIT = 0.1;
 /** MakeHuman's modifier tables, each with a `_modifiers`, `_sliders` and `_modifiers_desc` file. */
@@ -633,6 +646,14 @@ async function main() {
     for (const [file, ev] of Object.entries(c.evidence))
       systemEvidence[path.relative(SYSTEM, file)] = ev;
   }
+  const proxies = PROXIES.map(([id, file]) =>
+    compileAsset(path.join(SYSTEM, file), id, "proxy", { geometryOnly: true }),
+  );
+  const packedProxies = writeProxies(BODY_OUT, PROXIES_FILE, proxies);
+  for (const c of proxies) {
+    for (const [file, ev] of Object.entries(c.evidence))
+      systemEvidence[path.relative(SYSTEM, file)] = ev;
+  }
   const vendorEvidence: Record<string, string> = {};
   for (const c of plates) {
     for (const [file, ev] of Object.entries(c.evidence))
@@ -675,6 +696,11 @@ async function main() {
       sha256: attachments.sha256,
       occlusionKeys: OCCLUSION_KEYS.map((k) => k.id),
       entries: attachments.entries,
+    },
+    proxies: {
+      file: PROXIES_FILE,
+      sha256: packedProxies.sha256,
+      entries: packedProxies.entries,
     },
     skeleton: {
       bones: boneNames.map((name) => {
@@ -860,6 +886,7 @@ async function main() {
       ...bodyFiles.map((f): [string, string] => [f.file, sha(f.bin)]),
       [ATTACHMENTS_FILE, attachments.sha256],
       [BODY_OCCLUSION_FILE, bodyOcclusion.sha256],
+      [PROXIES_FILE, packedProxies.sha256],
       ...textures.map((t): [string, string] => [
         t.texture,
         sha(new Uint8Array(fs.readFileSync(path.join(BODY_OUT, t.texture)))),
