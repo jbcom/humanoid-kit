@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { GARMENT_DUST, garmentFinish } from "../src/model/garmentLook.ts";
+import { GARMENT_DUST, garmentFinish, wornAlbedo } from "../src/model/garmentLook.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { recipeProblems } from "../src/recipe/validate.ts";
+import type { Rgb } from "../src/surface/skinTone.ts";
 
 /** Chroma: how far a colour is from the grey of its own mean. */
 const chroma = (c: readonly number[]) => Math.max(...c) - Math.min(...c);
@@ -12,8 +13,10 @@ describe("a garment's look on a figure", () => {
   const base = { color: [0.6, 0.6, 0.6] as [number, number, number], roughness: 0.7 };
 
   it("leaves the pack's material exactly as it is when there is no look", () => {
-    expect(garmentFinish(base, undefined)).toEqual(base);
-    expect(garmentFinish(base, {})).toEqual(base);
+    const plain = { ...base, fade: 0, dust: 0 };
+    expect(garmentFinish(base, undefined)).toEqual(plain);
+    expect(garmentFinish(base, {})).toEqual(plain);
+    expect(wornAlbedo([0.2, 0.3, 0.4], plain)).toEqual([0.2, 0.3, 0.4]);
   });
 
   it("multiplies its tint into the pack's colour", () => {
@@ -23,16 +26,32 @@ describe("a garment's look on a figure", () => {
     expect(color[2]).toBeCloseTo(0.15);
   });
 
-  it("fades with wear: less saturated and nearer the dust, more so the more it is worn", () => {
+  it("wears the cloth's own colour, not its tint: wear never changes the multiplier", () => {
     const sky = { tint: [0.25, 0.45, 0.75] as [number, number, number] };
-    const fresh = garmentFinish(base, sky).color;
-    const half = garmentFinish(base, { ...sky, wear: 0.5 }).color;
-    const worn = garmentFinish(base, { ...sky, wear: 1 }).color;
+    expect(garmentFinish(base, { ...sky, wear: 1 }).color).toEqual(garmentFinish(base, sky).color);
+  });
+
+  // The first version faded the tint, a multiplier: pulled toward the dust it
+  // only darkened the cloth, so worn sky-blue trousers drew darker than new ones.
+  it.each([
+    ["dark dyed wool", [0.03, 0.05, 0.12]],
+    ["light dyed wool", [0.35, 0.45, 0.7]],
+  ])("fades %s toward its own grey and the dust, more the more it is worn", (_, texel) => {
+    const at = (wear: number) => wornAlbedo(texel as Rgb, garmentFinish(base, { wear }));
+    const [fresh, half, worn] = [at(0), at(0.5), at(1)];
     expect(chroma(half)).toBeLessThan(chroma(fresh));
     expect(chroma(worn)).toBeLessThan(chroma(half));
-    expect(distance(worn, GARMENT_DUST)).toBeLessThan(distance(fresh, GARMENT_DUST));
+    expect(distance(half, GARMENT_DUST)).toBeLessThan(distance(fresh, GARMENT_DUST));
+    expect(distance(worn, GARMENT_DUST)).toBeLessThan(distance(half, GARMENT_DUST));
     // Worn cloth is still the colour it was dyed, not the dust.
     expect(worn[2]).toBeGreaterThan(worn[0]);
+  });
+
+  it("lightens dark cloth as it wears", () => {
+    const luminance = ([r, g, b]: Rgb) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const navy: Rgb = [0.03, 0.05, 0.12];
+    const worn = wornAlbedo(navy, garmentFinish(base, { wear: 1 }));
+    expect(luminance(worn)).toBeGreaterThan(luminance(navy));
   });
 
   it("roughens with wear unless the look sets its own roughness", () => {

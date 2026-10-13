@@ -159,25 +159,35 @@ export const defaultAffordanceAdult = (id: string): boolean => !CORE_NOT_ADULT.h
 
 /**
  * A definition's audience: "adult" unless it declares "all" AND none of the
- * figure affordances its contacts or couplings name is adult (age-policy
- * points 1 and 2 in docs/INTERACTIONS.md).
+ * figure affordances its contacts, couplings, beat effects or roles name is
+ * adult (age-policy points 1 and 2 in docs/INTERACTIONS.md). `affordanceAdult`
+ * can only add adult ids to `defaultAffordanceAdult`; it cannot clear one.
  */
 export function audienceOf(
   def: InteractionDefinition,
   affordanceAdult: (id: string) => boolean = defaultAffordanceAdult,
 ): Audience {
   if (def.audience !== "all") return "adult";
+  // The host's answer is joined with the default, never in place of it: a predicate
+  // that says "not adult" for an id the core does not know cannot clear it.
+  const adult = (id: string) => defaultAffordanceAdult(id) || affordanceAdult(id) === true;
   const figureRoles = new Set(def.roles.filter((r) => r.takes === "figure").map((r) => r.name));
+  const roles = new Set(def.roles.map((r) => r.name));
   const points: RolePoint[] = [
     ...(def.contacts ?? []).flatMap((c) => [c.a, c.b]),
     ...(def.couplings ?? []).flatMap((c) => [c.aperture, c.insertable]),
+    ...(def.beats ?? []).flatMap((b) =>
+      (b.effects ?? []).flatMap((e) => ("set" in e ? [e.set] : [])),
+    ),
   ];
   for (const p of points) {
+    // A point that is not `role:name`, or names no role, cannot be shown not to be adult.
+    if (!p.includes(":")) return "adult";
     const [role, name] = splitPoint(p);
-    if (figureRoles.has(role) && affordanceAdult(name)) return "adult";
+    if (!roles.has(role)) return "adult";
+    if (figureRoles.has(role) && adult(name)) return "adult";
   }
-  for (const r of def.roles)
-    for (const a of r.affordances ?? []) if (affordanceAdult(a)) return "adult";
+  for (const r of def.roles) for (const a of r.affordances ?? []) if (adult(a)) return "adult";
   return "all";
 }
 

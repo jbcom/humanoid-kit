@@ -44,15 +44,15 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 
 | Output | SHA-256 |
 | --- | --- |
-| body.bin.gz | `33e8502236f56d532abbaa2d0adbffb28af56a3f5313763feb9881c9ede668df` |
+| body.bin.gz | `6b78609d31cd8db52cd43be177cd1681c7981b515bc17fbf0b671c98c083d238` |
 | targets-core.bin.gz | `8b356cd998e6102ed07335107f805660781c29f46cbbf53f164aa704234cf362` |
 | targets-baby.bin.gz | `144d9c7eef03232136367a2e87bf99568cd539c7d7581baab8382aba8d809fbc` |
 | targets-child.bin.gz | `f6f9a24e5e0722ba89b989794abb4b97853a728be3bf0ec15fde8decfffdaafc` |
 | targets-young.bin.gz | `85a75f8583f4a17c77069ae1120f5e03bdc4a30268be90cc896dedecc38bec8b` |
 | targets-old.bin.gz | `f30339db2635f35617c5c46a266df0a21d8ee392040f83be00133083f351549b` |
 | targets-modifiers.bin.gz | `6c2c5713c5c1d3b52dfbe30e15de8e0bc6d3920cd906ea32072a9160152ea581` |
-| attachments.bin.gz | `8d3752662467717b3fa913b86c612d365e1839bc1d41c7fc9d68e4ad6adadff6` |
-| body-occlusion.bin.gz | `c9a5b960fc63fe1808f845d41c19ee983c0d70a99b4c7abc5c94ff86866b274f` |
+| attachments.bin.gz | `ff3f8078d8d6d5e2972c14452557087bf653413c50fa0cf198f1323624d35b8b` |
+| body-occlusion.bin.gz | `c4b8c47650d69233495d21abd123b65c5cbb5817147bc8cadca2ce1154da5ce8` |
 | proxies.bin.gz | `e1e824c034c39440728bc667ff6db71677efbe0aa01b0e78de76d627fd3d6d22` |
 | eyes_high-poly_brown_eye.webp | `82343d661e02db8c6fd8e4ea526c8f8c5fdcdf74f96107f9af3401af86ac5b53` |
 | teeth_base_teeth.webp | `90f929b92d2e1a92716a87e646d92cdc97be7e407899835cc6c64e7f0e8e502a` |

@@ -4,7 +4,7 @@
  * surface an evaluation draws, the first time it draws it.
  */
 import { evaluateSurface, type SurfaceMesh } from "../build/surfaceMesh.ts";
-import { type HumanoidAssets, jointPosition } from "../format/assetFormat.ts";
+import { type HumanoidAssets, jointPosition, SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import type { Evaluation } from "../model/humanoidModel.ts";
 import { restBones } from "../rig/pose.ts";
 import { type ControlMesh, type ResolvedCut, resolveFaceCut, resolvePlaneCut } from "./cut.ts";
@@ -187,8 +187,9 @@ export function graftOnModel(input: ModelGraftInput, spec: GraftSpec): ModelGraf
         const t = g.topology;
         const skinIndex = Uint16Array.from(t.skinIndex);
         const skinWeight = Float32Array.from(t.skinWeight);
-        skinIndex.set(evaluation.skin.skinIndex.subarray(0, t.bodyVertexCount * 4));
-        skinWeight.set(evaluation.skin.skinWeight.subarray(0, t.bodyVertexCount * 4));
+        const n = t.bodyVertexCount * SKIN_INFLUENCES;
+        skinIndex.set(evaluation.skin.skinIndex.subarray(0, n));
+        skinWeight.set(evaluation.skin.skinWeight.subarray(0, n));
         skin = { skinIndex, skinWeight };
       }
       return { ...out, surface: evaluation.surface, skin };

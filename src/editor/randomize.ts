@@ -12,9 +12,8 @@
  * unless asked for and the figure is 18 or over.
  */
 import { ARCHETYPE_MODIFIER_GROUPS } from "../makehuman/features.ts";
-import { ADULT_AGE } from "../makehuman/macro.ts";
 import { seededRandom } from "../random.ts";
-import { withAge } from "../recipe/agePolicy.ts";
+import { isAdult, withAge } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { randomEthnicMix } from "../sampling.ts";
 import { BEARD_STYLES, type BeardStyle } from "../surface/bodyHair.ts";
@@ -60,9 +59,14 @@ export interface RandomizeOptions {
 export const BEARD_ODDS: Readonly<Record<BeardStyle, number>> = {
   none: 0.55,
   stubble: 0.2,
-  moustache: 0.07,
-  goatee: 0.08,
-  full: 0.1,
+  moustache: 0.06,
+  goatee: 0.06,
+  imperial: 0.02,
+  "mutton-chops": 0.02,
+  "chin-curtain": 0.02,
+  full: 0.05,
+  forked: 0.01,
+  longstreet: 0.01,
 };
 
 /** A beard style from one draw in [0, 1), by `BEARD_ODDS`. */
@@ -142,7 +146,7 @@ export function randomRecipe(
     age,
   );
 
-  const adultAllowed = options.includeAdultAnatomy === true && recipe.macros.age >= ADULT_AGE;
+  const adultAllowed = options.includeAdultAnatomy === true && isAdult(recipe);
   const values: Record<string, number> = {};
   // Code-unit order, not localeCompare: the same seed must give the same figure on every machine.
   for (const m of [...modifiers.values()].sort((a, b) =>

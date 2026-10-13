@@ -5,6 +5,7 @@
  * cache. A factory belongs to one immutable evaluated-geometry generation; its
  * candidate rotations are held only in caller-owned solve buffers.
  */
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import {
   type FrameOut,
   landmarkFrameInto,
@@ -111,7 +112,7 @@ export function createArmSkinnedFrameSampler(
       throw new RangeError("arm sampler: source rotations must be finite");
   if (
     rest.length !== restNormals.length ||
-    rest.length / 3 !== skinIndex.length / 4 ||
+    rest.length / 3 !== skinIndex.length / SKIN_INFLUENCES ||
     skinIndex.length !== skinWeight.length
   )
     throw new RangeError("arm sampler: evaluated geometry and skin weights do not agree");

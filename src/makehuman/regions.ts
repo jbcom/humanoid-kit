@@ -6,7 +6,7 @@
  * neighbour averaging widen the transitions so regional shape differences
  * never leave a visible step.
  */
-import type { HumanoidAssets } from "../format/assetFormat.ts";
+import { type HumanoidAssets, SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import type { RegionField } from "../morph/evaluate.ts";
 
 export const BODY_REGIONS = [
@@ -98,10 +98,10 @@ export function buildBoneField(
   let masks = names.map(() => new Float32Array(n));
   for (let v = 0; v < n; v++) {
     let sum = 0;
-    for (let k = 0; k < 4; k++) {
-      const w = assets.skinWeight[v * 4 + k] as number;
+    for (let k = 0; k < SKIN_INFLUENCES; k++) {
+      const w = assets.skinWeight[v * SKIN_INFLUENCES + k] as number;
       if (w <= 0) continue;
-      const r = boneRegion[assets.skinIndex[v * 4 + k] as number] as number;
+      const r = boneRegion[assets.skinIndex[v * SKIN_INFLUENCES + k] as number] as number;
       (masks[r] as Float32Array)[v] = ((masks[r] as Float32Array)[v] as number) + w;
       sum += w;
     }

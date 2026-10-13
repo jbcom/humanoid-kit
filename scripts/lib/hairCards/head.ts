@@ -8,8 +8,9 @@
  * meets the head's own triangles (the vertices the head bone moves most: not the neck, not the
  * shoulders), and the hit is the scalp point there with its outward normal.
  */
-import { BufferAttribute, BufferGeometry, DoubleSide, Ray, Vector3 } from "three";
-import { MeshBVH } from "three-mesh-bvh";
+import { DoubleSide, Ray, Vector3 } from "three";
+import type { MeshBVH } from "three-mesh-bvh";
+import { meshBvh } from "../../../src/surface/meshBvh.ts";
 import type { BodyMesh } from "./bind.ts";
 
 export interface ScalpPoint {
@@ -70,10 +71,7 @@ export class HeadFrame {
       max.y - radius,
       (min.z + (max.z - FOREHEAD_BEHIND_NOSE)) / 2,
     );
-    const geometry = new BufferGeometry();
-    geometry.setAttribute("position", new BufferAttribute(rest.positions, 3));
-    geometry.setIndex(new BufferAttribute(this.triangles, 1));
-    this.bvh = new MeshBVH(geometry, { verbose: false });
+    this.bvh = meshBvh(rest.positions, this.triangles);
   }
 
   /** The scalp point in a direction from the skull's centre, or null where the head has none (the face's underside, the neck). */
@@ -123,10 +121,7 @@ export class BodySurface {
   constructor(body: BodyMesh, head: HeadFrame) {
     this.positions = body.positions;
     this.triangles = body.triangles;
-    const geometry = new BufferGeometry();
-    geometry.setAttribute("position", new BufferAttribute(body.positions, 3));
-    geometry.setIndex(new BufferAttribute(body.triangles, 1));
-    this.bvh = new MeshBVH(geometry, { verbose: false });
+    this.bvh = meshBvh(body.positions, body.triangles);
     this.faceNormals = Array.from({ length: this.triangles.length / 3 }, (_, face) =>
       this.faceNormalRaw(face),
     );

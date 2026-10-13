@@ -5,7 +5,7 @@ import { budget } from "./budget.ts";
 test.use({ viewport: { width: 1040, height: 433 } });
 
 const CONTROLS = [
-  { id: "genitals/phallus-size", label: "Phallus size", restored: "0.365" },
+  { id: "genitals/phallus-size", label: "Phallus size", restored: "0.325" },
   { id: "genitals/testes-size", label: "Testes size", restored: "0.300" },
   { id: "genitals/vulva-size", label: "Vulva", restored: "0.500" },
   { id: "genitals/anal-canal", label: "Anal canal", restored: "1.000" },

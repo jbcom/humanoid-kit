@@ -5,18 +5,22 @@
  * fold").
  *
  * Three skins on the GPU from a texture of bone matrices. This keeps that
- * (it is the linear half, and carries morph targets and bind matrices) and adds
- * a second texture, `DualBones`: each bone's dual quaternion and its share of
- * dual quaternion skinning, computed on the CPU from the same bone rotations as
- * `skinPositionsBlended`, the reference this shader is tested against. The
+ * texture (it is the linear half, and carries bind matrices) but reads it over
+ * all of a vertex's `SKIN_INFLUENCES` places, where three's chunks read four:
+ * places 4 to 7 come in a second pair of attributes (`setSkinAttributes`). It
+ * adds a second texture, `DualBones`: each bone's dual quaternion and its share
+ * of dual quaternion skinning, computed on the CPU from the same bone rotations
+ * as `skinPositionsBlended`, the reference this shader is tested against. The
  * vertex shader blends the vertex's bones' dual quaternions, skins by the
- * result, and mixes it with three's linear result by the vertex's share.
+ * result, and mixes it with the linear result by the vertex's share.
  *
  * The rig's skinned meshes are bound at the identity in the figure's own space,
  * so a dual quaternion built from the rest heads and rotations is the bone's
  * whole skinning transform; a mesh bound any other way is not supported.
  */
 import {
+  BufferAttribute,
+  type BufferGeometry,
   DataTexture,
   FloatType,
   HalfFloatType,
@@ -30,6 +34,7 @@ import {
   type Vector3,
   type Vector4,
 } from "three";
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import type { PosedSkeleton } from "../foundation/landmarks.ts";
 import {
   DUAL_TEXELS,
@@ -71,6 +76,101 @@ export const FOLD_BLEND_UNIFORM = "hkFoldBlend";
 export const FOLD_FADE = 0.15;
 /** The vertex attribute holding a vertex's row in a joint fold's texture, or -1. */
 export const foldSlotAttribute = (joint: FoldJoint): string => `hkFoldSlot_${joint.name}`;
+
+/**
+ * A vertex's influences past the first four (`SKIN_INFLUENCES`, eight): three's
+ * `skinIndex` and `skinWeight` hold places 0 to 3, these 4 to 7. Every geometry
+ * a patched shader draws must have them (`setSkinAttributes`): WebGL reads a
+ * missing attribute as (0, 0, 0, 1), a full weight on bone 0.
+ */
+export const SKIN_INDEX_ATTRIBUTE_1 = "hkSkinIndex1";
+export const SKIN_WEIGHT_ATTRIBUTE_1 = "hkSkinWeight1";
+
+/** The skin attributes of a skinned geometry, the places of `SKIN_INFLUENCES` split four and four. */
+const SKIN_ATTRIBUTES = [
+  ["skinIndex", "skinWeight", 0],
+  [SKIN_INDEX_ATTRIBUTE_1, SKIN_WEIGHT_ATTRIBUTE_1, 4],
+] as const;
+
+/** `count` vertices' `SKIN_INFLUENCES`-wide `from` as one attribute's four places from `place`. */
+function fourPlaces<T extends Uint8Array | Uint16Array | Float32Array>(
+  from: T,
+  place: number,
+  make: (n: number) => T,
+): T {
+  const count = from.length / SKIN_INFLUENCES;
+  const out = make(count * 4);
+  for (let v = 0; v < count; v++)
+    out.set(from.subarray(v * SKIN_INFLUENCES + place, v * SKIN_INFLUENCES + place + 4), v * 4);
+  return out;
+}
+
+/**
+ * Sets `geometry`'s skin attributes from `SKIN_INFLUENCES`-wide `skinIndex` and
+ * `skinWeight`: three's `skinIndex` and `skinWeight` (places 0 to 3) and the
+ * patched shader's `hkSkinIndex1` and `hkSkinWeight1` (4 to 7). With attributes
+ * already there of the right size, writes into them instead.
+ */
+export function setSkinAttributes(
+  geometry: BufferGeometry,
+  skinIndex: Uint8Array | Uint16Array,
+  skinWeight: Float32Array,
+): void {
+  for (const [indexName, weightName, place] of SKIN_ATTRIBUTES) {
+    const index =
+      skinIndex instanceof Uint8Array
+        ? fourPlaces(skinIndex, place, (n) => new Uint8Array(n))
+        : fourPlaces(skinIndex, place, (n) => new Uint16Array(n));
+    const weight = fourPlaces(skinWeight, place, (n) => new Float32Array(n));
+    for (const [name, array] of [
+      [indexName, index],
+      [weightName, weight],
+    ] as const) {
+      const had = geometry.getAttribute(name) as BufferAttribute | undefined;
+      if (had && had.array.length === array.length && had.array.constructor === array.constructor) {
+        had.copyArray(array);
+        had.needsUpdate = true;
+      } else geometry.setAttribute(name, new BufferAttribute(array, 4));
+    }
+  }
+}
+
+/**
+ * Gives a skinned `geometry` that has only three's four places (`skinIndex`,
+ * `skinWeight`) empty places 4 to 7, so a patched shader reads none there.
+ */
+export function ensureSkinPlaces(geometry: BufferGeometry): void {
+  const index = geometry.getAttribute("skinIndex");
+  if (!index || geometry.getAttribute(SKIN_WEIGHT_ATTRIBUTE_1)) return;
+  geometry.setAttribute(
+    SKIN_INDEX_ATTRIBUTE_1,
+    new BufferAttribute(new Uint16Array(index.count * 4), 4),
+  );
+  geometry.setAttribute(
+    SKIN_WEIGHT_ATTRIBUTE_1,
+    new BufferAttribute(new Float32Array(index.count * 4), 4),
+  );
+}
+
+/**
+ * Vertex `vertex`'s influences on `geometry` (`setSkinAttributes`'), all
+ * `SKIN_INFLUENCES` of them, into `index` and `weight`.
+ */
+export function readSkinAttributes(
+  geometry: BufferGeometry,
+  vertex: number,
+  index: Uint16Array,
+  weight: Float32Array,
+): void {
+  for (const [indexName, weightName, place] of SKIN_ATTRIBUTES) {
+    const i = geometry.getAttribute(indexName);
+    const w = geometry.getAttribute(weightName);
+    for (let k = 0; k < 4; k++) {
+      index[place + k] = i ? i.getComponent(vertex, k) : 0;
+      weight[place + k] = w ? w.getComponent(vertex, k) : 0;
+    }
+  }
+}
 
 /**
  * Texels the bone texture gives each fold joint after the bones', in order: the
@@ -311,8 +411,9 @@ const glFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`)
 
 /**
  * GLSL for the blend, mirroring `blend` and `skinVertex` in src/rig/dual.ts:
- * the motion a vertex follows under dual quaternion skinning, and its share of
- * the scheme.
+ * the motion a vertex follows under dual quaternion skinning over all of its
+ * `SKIN_INFLUENCES` places (bones `i0`, `i1` and weights `w0`, `w1`, four
+ * each), and its share of the scheme. Pure, so a test can run it anywhere.
  */
 export const DUAL_SKINNING_FUNCTIONS = /* glsl */ `
 #ifdef USE_SKINNING
@@ -320,17 +421,21 @@ uniform highp sampler2D ${DUAL_BONES_UNIFORM};
 vec3 hkQRotate( vec4 q, vec3 v ) {
 	return v + 2.0 * cross( q.xyz, cross( q.xyz, v ) + q.w * v );
 }
+// Place k (0 to ${SKIN_INFLUENCES - 1}) of the eight held four in a and four in b.
+float hkPlace( vec4 a, vec4 b, int k ) {
+	return k < 4 ? a[ k ] : b[ k - 4 ];
+}
 // The rotation q and translation t of the vertex's blended dual quaternion, and its share of the scheme.
-void hkDualMotion( vec4 index, vec4 weight, out vec4 q, out vec3 t, out float share ) {
+void hkDualMotion( vec4 i0, vec4 w0, vec4 i1, vec4 w1, out vec4 q, out vec3 t, out float share ) {
 	vec4 r = vec4( 0.0 );
 	vec4 d = vec4( 0.0 );
 	vec4 pivot = vec4( 0.0 );
 	bool pivoted = false;
 	share = 0.0;
-	for ( int k = 0; k < 4; k ++ ) {
-		float w = weight[ k ];
+	for ( int k = 0; k < ${SKIN_INFLUENCES}; k ++ ) {
+		float w = hkPlace( w0, w1, k );
 		if ( w == 0.0 ) continue;
-		int j = int( index[ k ] ) * ${DUAL_TEXELS};
+		int j = int( hkPlace( i0, i1, k ) ) * ${DUAL_TEXELS};
 		vec4 bq = texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( j, 0 ), 0 );
 		vec4 bd = texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( j + 1, 0 ), 0 );
 		vec4 bs = texelFetch( ${DUAL_BONES_UNIFORM}, ivec2( j + 2, 0 ), 0 );
@@ -349,6 +454,32 @@ void hkDualMotion( vec4 index, vec4 weight, out vec4 q, out vec3 t, out float sh
 	q = r;
 	t = 2.0 * ( r.w * d.xyz - d.w * r.xyz - cross( d.xyz, r.xyz ) );
 	share = clamp( share, 0.0, 1.0 );
+}
+#endif
+`;
+
+/**
+ * GLSL for a vertex shader's own places: the attributes holding places 4 to 7,
+ * and the linear half over all eight (three's chunk reads four). It reads
+ * three's `getBoneMatrix`, so it goes after three's `skinning_pars_vertex`.
+ */
+const VERTEX_SKIN_FUNCTIONS = /* glsl */ `
+#ifdef USE_SKINNING
+attribute vec4 ${SKIN_INDEX_ATTRIBUTE_1};
+attribute vec4 ${SKIN_WEIGHT_ATTRIBUTE_1};
+// The vertex's bones' matrices summed by weight over all its places, in bind space as three's.
+mat4 hkLinearMatrix() {
+	mat4 m = mat4( 0.0 );
+	for ( int k = 0; k < ${SKIN_INFLUENCES}; k ++ ) {
+		float w = hkPlace( skinWeight, ${SKIN_WEIGHT_ATTRIBUTE_1}, k );
+		if ( w == 0.0 ) continue;
+		m += w * getBoneMatrix( hkPlace( skinIndex, ${SKIN_INDEX_ATTRIBUTE_1}, k ) );
+	}
+	return m;
+}
+// hkDualMotion over this vertex's places.
+void hkVertexDualMotion( out vec4 q, out vec3 t, out float share ) {
+	hkDualMotion( skinIndex, skinWeight, ${SKIN_INDEX_ATTRIBUTE_1}, ${SKIN_WEIGHT_ATTRIBUTE_1}, q, t, share );
 }
 #endif
 `;
@@ -430,18 +561,23 @@ ${FOLD_JOINTS.map((joint, j) => jointFoldFunctions(joint, j)).join("")}
 #endif
 `;
 
-/** The blend of the vertex's position, after three's linear skinning has run; with the folds, each joint's after it. */
+/**
+ * The blend of the vertex's position, in place of three's `skinning_vertex`: the
+ * linear half over every place (as three's, which reads four), mixed with the
+ * dual quaternion motion by the share; with the folds, each joint's after it.
+ */
 const position = (fold: boolean): string => /* glsl */ `
 #ifdef USE_SKINNING
 	vec3 hkRestPosition = transformed;
-#endif
-#include <skinning_vertex>
-#ifdef USE_SKINNING
+	#ifndef HK_LINEAR_MATRIX
+		mat4 hkLinear = hkLinearMatrix();
+	#endif
+	transformed = ( bindMatrixInverse * hkLinear * bindMatrix * vec4( transformed, 1.0 ) ).xyz;
 	#ifndef HK_DUAL_MOTION
 		vec4 hkQ;
 		vec3 hkT;
 		float hkShare;
-		hkDualMotion( skinIndex, skinWeight, hkQ, hkT, hkShare );
+		hkVertexDualMotion( hkQ, hkT, hkShare );
 	#endif
 	if ( hkShare > 0.0 ) transformed = mix( transformed, hkQRotate( hkQ, hkRestPosition ) + hkT, hkShare );
 	${
@@ -466,18 +602,27 @@ const position = (fold: boolean): string => /* glsl */ `
 #endif
 `;
 
-/** The blend of the vertex's normal; the motion it finds is the position's too. With the folds, each joint's change added, and the sum made unit again. */
+/**
+ * The blend of the vertex's normal, in place of three's `skinnormal_vertex`: the
+ * linear half over every place (its tangent too), mixed with the dual quaternion
+ * turn by the share; the matrix and motion it finds are the position's too.
+ * With the folds, each joint's change added, and the sum made unit again.
+ */
 const normal = (fold: boolean): string => /* glsl */ `
 #ifdef USE_SKINNING
 	vec3 hkRestNormal = objectNormal;
+	mat4 hkLinear = hkLinearMatrix();
+	#define HK_LINEAR_MATRIX
+	mat4 hkNormalMatrix = bindMatrixInverse * hkLinear * bindMatrix;
+	objectNormal = vec4( hkNormalMatrix * vec4( objectNormal, 0.0 ) ).xyz;
+	#ifdef USE_TANGENT
+		objectTangent = vec4( hkNormalMatrix * vec4( objectTangent, 0.0 ) ).xyz;
+	#endif
 	vec4 hkQ;
 	vec3 hkT;
 	float hkShare;
-	hkDualMotion( skinIndex, skinWeight, hkQ, hkT, hkShare );
+	hkVertexDualMotion( hkQ, hkT, hkShare );
 	#define HK_DUAL_MOTION
-#endif
-#include <skinnormal_vertex>
-#ifdef USE_SKINNING
 	if ( hkShare > 0.0 ) objectNormal = mix( objectNormal, hkQRotate( hkQ, hkRestNormal ), hkShare );
 	${
     fold
@@ -498,7 +643,7 @@ const normal = (fold: boolean): string => /* glsl */ `
  * geometry that carries each joint's slot attribute (`foldSlotAttribute`: the body's).
  */
 export function patchDualSkinning(shader: PatchableShader, bones: DualBones, fold = false): void {
-  const needs = ["#include <common>", "#include <skinning_vertex>"];
+  const needs = ["#include <skinning_pars_vertex>", "#include <skinning_vertex>"];
   for (const chunk of needs)
     if (!shader.vertexShader.includes(chunk))
       throw new Error(`dual skinning: three's ${chunk} chunk moved`);
@@ -513,15 +658,15 @@ export function patchDualSkinning(shader: PatchableShader, bones: DualBones, fol
   ).join("");
   shader.vertexShader = shader.vertexShader
     .replace(
-      "#include <common>",
-      `#include <common>\n${DUAL_SKINNING_FUNCTIONS}${fold ? `${attributes}${FOLD_FUNCTIONS}` : ""}`,
+      "#include <skinning_pars_vertex>",
+      `#include <skinning_pars_vertex>\n${DUAL_SKINNING_FUNCTIONS}${VERTEX_SKIN_FUNCTIONS}${fold ? `${attributes}${FOLD_FUNCTIONS}` : ""}`,
     )
     .replace("#include <skinnormal_vertex>", normal(fold))
     .replace("#include <skinning_vertex>", position(fold));
 }
 
 /** Part of the program's cache key: a shader patched for dual skinning differs from one that is not. */
-export const DUAL_SKINNING_KEY = "dual-skinning-6";
+export const DUAL_SKINNING_KEY = "dual-skinning-7";
 
 /**
  * Makes `material` skin by `bones`, for materials this library does not make
@@ -536,6 +681,12 @@ export function applyDualSkinning(material: Material, bones: DualBones, fold = f
   material.onBeforeCompile = (shader, renderer) => {
     before.call(material, shader, renderer);
     patchDualSkinning(shader as unknown as PatchableShader, bones, fold);
+  };
+  // A geometry skinned by four places (three's own, a consumer's) draws with places 4 to 7 empty.
+  const render = material.onBeforeRender;
+  material.onBeforeRender = (renderer, scene, camera, geometry, object, group) => {
+    ensureSkinPlaces(geometry);
+    render.call(material, renderer, scene, camera, geometry, object, group);
   };
   material.customProgramCacheKey = () =>
     `${key.call(material)}|${DUAL_SKINNING_KEY}${fold ? "-fold" : ""}`;
@@ -568,18 +719,13 @@ export function dualShadowMaterials(
  * (`foldSlotAttribute`: the body's), the joint folds too, as much of them as shows.
  */
 export function followDualSkinning(mesh: SkinnedMesh, bones: DualBones, fold = false): void {
-  const index = new Uint16Array(4);
-  const weight = new Float32Array(4);
+  const index = new Uint16Array(SKIN_INFLUENCES);
+  const weight = new Float32Array(SKIN_INFLUENCES);
   const out: [number, number, number] = [0, 0, 0];
   const skin = (vertex: number, target: Vector3 | Vector4): Vector3 | Vector4 => {
     const pose = bones.pose();
     if (!pose) return target;
-    const skinIndex = mesh.geometry.getAttribute("skinIndex");
-    const skinWeight = mesh.geometry.getAttribute("skinWeight");
-    for (let k = 0; k < 4; k++) {
-      index[k] = skinIndex.getComponent(vertex, k);
-      weight[k] = skinWeight.getComponent(vertex, k);
-    }
+    readSkinAttributes(mesh.geometry, vertex, index, weight);
     // As the shader: a vertex the geometry gives a row in a joint's fold (its attribute of the joint) takes it.
     const folding =
       fold &&

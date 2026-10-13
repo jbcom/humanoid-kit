@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { groupFaces } from "../src/format/assetFormat.ts";
+import { evaluateBinding } from "../src/mhclo/bound.ts";
 import {
   type CardSpec,
   generateCards,
@@ -7,9 +9,7 @@ import {
   rootShare,
   SEGMENTS,
   STRAND_COLUMNS,
-} from "../scripts/lib/bodyHairCards.ts";
-import { groupFaces } from "../src/format/assetFormat.ts";
-import { evaluateBinding } from "../src/mhclo/bound.ts";
+} from "../src/surface/bodyHairCards.ts";
 import { HAIR_STRAND_MEAN } from "../src/surface/hairTone.ts";
 import { bodyHairMasks } from "../src/surface/regions/bodyHair.ts";
 import { loadFixtureAssets } from "./fixtures.ts";

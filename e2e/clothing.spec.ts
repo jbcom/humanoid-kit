@@ -6,6 +6,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
 import { budget } from "./budget.ts";
+import { framePixels } from "./lib/framePixels.ts";
 
 /** The whole figure in frame, on a key colour no figure uses. */
 const FULL = { cam: "0,0.95,4.2,0,0.9,0", bg: "ff00ff", clothing: "1" } as const;
@@ -57,32 +58,22 @@ async function count(
   rows: [number, number],
   columns: [number, number] = [0, 1],
 ): Promise<Counts> {
-  return page.locator("canvas").evaluate(
-    (el, [r, c]) => {
-      const canvas = el as HTMLCanvasElement;
-      const copy = document.createElement("canvas");
-      copy.width = canvas.width;
-      copy.height = canvas.height;
-      const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
-      ctx.drawImage(canvas, 0, 0);
-      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const out = { blue: 0, figure: 0, total: 0 };
-      // The background is whatever colour the frame's corner is: the key colour as
-      // this renderer draws it (software GL tone-maps it slightly differently).
-      const [r0, g0, b0] = [data[0] as number, data[1] as number, data[2] as number];
-      for (let y = Math.floor(r[0] * canvas.height); y < Math.floor(r[1] * canvas.height); y++)
-        for (let x = Math.floor(c[0] * canvas.width); x < Math.floor(c[1] * canvas.width); x++) {
-          const i = (y * canvas.width + x) * 4;
-          const [R, G, B] = [data[i] as number, data[i + 1] as number, data[i + 2] as number];
-          out.total++;
-          if (Math.abs(R - r0) + Math.abs(G - g0) + Math.abs(B - b0) < 60) continue;
-          out.figure++;
-          if (B > R + 35 && B > G + 15) out.blue++;
-        }
-      return out;
-    },
-    [rows, columns] as const,
-  );
+  // The composited frame: the QA shot does not retain its drawing buffer.
+  const { width, height, data } = await framePixels(page.locator("canvas"));
+  const out = { blue: 0, figure: 0, total: 0 };
+  // The background is whatever colour the frame's corner is: the key colour as
+  // this renderer draws it (software GL tone-maps it slightly differently).
+  const [r0, g0, b0] = [data[0] as number, data[1] as number, data[2] as number];
+  for (let y = Math.floor(rows[0] * height); y < Math.floor(rows[1] * height); y++)
+    for (let x = Math.floor(columns[0] * width); x < Math.floor(columns[1] * width); x++) {
+      const i = (y * width + x) * 4;
+      const [R, G, B] = [data[i] as number, data[i + 1] as number, data[i + 2] as number];
+      out.total++;
+      if (Math.abs(R - r0) + Math.abs(G - g0) + Math.abs(B - b0) < 60) continue;
+      out.figure++;
+      if (B > R + 35 && B > G + 15) out.blue++;
+    }
+  return out;
 }
 
 test.describe("clothing", () => {

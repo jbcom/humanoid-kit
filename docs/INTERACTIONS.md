@@ -635,9 +635,15 @@ policy requires, and none clamps.
 1. **Audience is required, and unknown means adult.** A definition without a
    valid `audience` is treated as `adult` (fail closed), as an affordance that
    does not say it is not adult is refused under 18.
-2. **Audience is derived as well as declared.** A definition whose contacts or
-   couplings name any affordance marked `adult` (the adult pack's) is adult,
-   whatever it declares.
+2. **Audience is derived as well as declared.** A definition whose contacts,
+   couplings, beat effects or role affordances name any figure affordance that
+   is adult is adult, whatever it declares. An affordance is adult unless it is
+   one of the core's that says it is not, so an id the core does not know (a
+   pack's) is adult. The host's `affordanceAdult` predicate can only add
+   adult ids: its answer is joined with that default, never replacing it, so a
+   predicate that answers `false` by default cannot open an adult act to a
+   minor. A contact or coupling point that is not `role:name`, or names no role,
+   is adult.
 3. **Offers are not shown.** A query by or for a figure whose presence is not
    `adult` never returns an adult offer.
 4. **Proposals refuse.** `propose` of an adult definition with any figure
@@ -1064,20 +1070,20 @@ document's status and [API](API.md) as it lands.
    Before integration, the target-to-hand closure and framing milestone above
    must pass a new root-reviewed tall/short capture. Authored handshake
    animation and hand pose/IK remain unfinished.
-3. **React bindings.** `<Interactable>`, `<Interaction>`, the event props,
+3. **React bindings** (issue 100). `<Interactable>`, `<Interaction>`, the event props,
    `useInteractions`, `useInteraction`, `useInteractionEvents`; tests that
    reading signals does not re-render.
-4. **Reactions.** Stimuli (touch from contact distances, approach from
+4. **Reactions** (issue 101). Stimuli (touch from contact distances, approach from
    proximity), reaction rules, gaze with VRM-style range maps; flinch and turn
    to look in `humanoid-kit-animations`.
-5. **The chair.** Fixture slots, approach targets, the align warp, contention
+5. **The chair** (issue 102). Fixture slots, approach targets, the align warp, contention
    for one chair by two figures (a deterministic loser), a sofa's three slots.
-6. **Signal routes.** Routes into skin signals through `SkinStateFilter`
+6. **Signal routes** (issue 103). Routes into skin signals through `SkinStateFilter`
    (exertion from a dance), the per-frame cost measured and held allocation-free.
-7. **The adult package.** `insertable` in the core, the adult pack's
+7. **The adult package** (blocked on an owner ruling, issue 105). `insertable` in the core, the adult pack's
    affordances (the canals' channels and insertables, which the affordance
    work lists as next), `humanoid-kit-adult-animations` with its definitions,
    and one test per age-policy enforcement point showing a figure under 18
    fails closed; `check:pages` extended to the package.
-8. **glTF.** `HK_interaction` import and export, and the `KHR_interactivity`
+8. **glTF** (issue 104). `HK_interaction` import and export, and the `KHR_interactivity`
    custom-event bridge.

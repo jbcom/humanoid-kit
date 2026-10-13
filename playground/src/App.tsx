@@ -4,19 +4,23 @@ import {
   type AnimationLibrary,
   type BodyHairGroup,
   type CustomTarget,
+  copyAnimationFrame,
   createRecipe,
   type EyeLibrary,
+  frameContactWorld,
+  type HumanoidAnimationFrame,
   HumanoidWorkerClient,
   loadAnimationLibrary,
   loadEyeLibrary,
   type Recipe,
+  SKIN_INFLUENCES,
 } from "humanoid-kit";
 import { HumanoidCreator } from "humanoid-kit/editor";
 import {
   Humanoid,
-  type HumanoidAnimationFrame,
   type HumanoidPose,
   HumanoidProvider,
+  readSkinAttributes,
   STUDIO_EXPOSURE,
   STUDIO_SHADOWS,
   STUDIO_TONE_MAPPING,
@@ -195,9 +199,9 @@ const maskAt = (mesh: SkinnedMesh, region: number, vertex: number): number => {
 function coatAngles(mesh: SkinnedMesh, camera: Object3D): CoatRuntimeProbe["angles"] {
   const regions = (mesh.geometry.userData.hkCoatRegions as string[] | undefined) ?? [];
   const normal = mesh.geometry.getAttribute("normal");
-  const skinIndex = mesh.geometry.getAttribute("skinIndex");
-  const skinWeight = mesh.geometry.getAttribute("skinWeight");
-  if (!normal || !skinIndex || !skinWeight) return [];
+  if (!normal || !mesh.geometry.getAttribute("skinWeight")) return [];
+  const places = new Uint16Array(SKIN_INFLUENCES);
+  const weights = new Float32Array(SKIN_INFLUENCES);
   mesh.updateWorldMatrix(true, false);
   camera.updateWorldMatrix(true, false);
   const worldNormal = new Matrix3().getNormalMatrix(mesh.matrixWorld);
@@ -219,9 +223,10 @@ function coatAngles(mesh: SkinnedMesh, camera: Object3D): CoatRuntimeProbe["angl
       if (!(maskAt(mesh, group, vertex) > 0)) continue;
       weighted.elements.fill(0);
       let totalWeight = 0;
-      for (let k = 0; k < 4; k++) {
-        const weight = skinWeight.getComponent(vertex, k);
-        const bone = mesh.skeleton.bones[skinIndex.getComponent(vertex, k)];
+      readSkinAttributes(mesh.geometry, vertex, places, weights);
+      for (let k = 0; k < SKIN_INFLUENCES; k++) {
+        const weight = weights[k] as number;
+        const bone = mesh.skeleton.bones[places[k] as number];
         if (!bone || !(weight > 0)) continue;
         totalWeight += weight;
         for (let element = 0; element < 16; element++)
@@ -312,20 +317,14 @@ function SceneProbe({
     window.hkContacts = () => {
       const frame = animationFrame.current;
       if (!frame) return null;
-      let figure: Object3D | null = null;
-      scene.traverse((o) => {
-        if (!figure && o.userData.groundOffset !== undefined) figure = o;
-      });
-      const figureGroup = figure as Object3D | null;
-      if (!figureGroup) return null;
-      figureGroup.updateWorldMatrix(true, false);
+      // The frame carries its own figure-local to world transform, as of that frame.
       return {
         generation: frame.generation,
         time: frame.time,
-        contacts: frame.contacts.map((contact) => {
-          const point = figureGroup.localToWorld(new Vector3(...contact.position));
-          return { ...contact, position: [point.x, point.y, point.z] as [number, number, number] };
-        }),
+        contacts: frame.contacts.map((contact, index) => ({
+          ...contact,
+          position: frameContactWorld(frame, index),
+        })),
       };
     };
     window.hkFigure = () => {
@@ -1042,7 +1041,8 @@ function Shot() {
   // Playground-only bridge from the package's neutral frame observer to SceneProbe.
   const animationFrame = useRef<HumanoidAnimationFrame | null>(null);
   const onAnimationFrame = useCallback((frame: Readonly<HumanoidAnimationFrame>) => {
-    animationFrame.current = frame;
+    // The figure reuses its frame object: keep a copy of the latest.
+    animationFrame.current = copyAnimationFrame(frame, animationFrame.current ?? undefined);
   }, []);
   useEffect(() => {
     window.hkSetRecipe = (given, next, nextSignals) => {

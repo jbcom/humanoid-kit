@@ -654,14 +654,15 @@ function setLimitedLocal(
   candidate: Quat,
   limit: ArmJointLimit,
 ): void {
-  const base = quatAt(source, bone);
-  // Composed deltas drift off unit length a little each CCD step; a non-unit
-  // local rotation scales every child offset, so it would lengthen the limb.
+  // `posedBones` and `rotate` assume unit rotations, and the slerp clamp below
+  // amplifies any norm error: a drifted candidate would scale every child offset
+  // and the solver would steer a stretched rigid arm, not the skinned one.
+  const base = normalizeQuat(quatAt(source, bone));
   const unit = normalizeQuat(candidate);
   const delta = mul(unit, conjugate(base));
   const angle = quaternionAngle(delta, IDENTITY);
   const allowed = angle <= limit.maxRadians ? unit : slerp(base, unit, limit.maxRadians / angle);
-  out.set(allowed, bone * 4);
+  out.set(normalizeQuat(allowed), bone * 4);
 }
 
 function blendArmInto(

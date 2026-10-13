@@ -5,7 +5,11 @@
  * figure. Because membership is by vertex index, the support follows any body, and
  * "the boundary does not move" is a topological fact, not a coordinate test.
  */
-import type { BodyManifest, HumanoidAssets } from "../../../src/format/assetFormat.ts";
+import {
+  type BodyManifest,
+  type HumanoidAssets,
+  SKIN_INFLUENCES,
+} from "../../../src/format/assetFormat.ts";
 import type { Anchors } from "./figure.ts";
 import { type BodyMesh, hopDistance, vertexNormals } from "./mesh.ts";
 
@@ -56,9 +60,9 @@ export function trunkMask(assets: HumanoidAssets, manifest: BodyManifest): Uint8
   const out = new Uint8Array(manifest.vertexCount);
   for (let v = 0; v < manifest.vertexCount; v++) {
     let w = 0;
-    for (let k = 0; k < 4; k++)
-      if (armBones.has(assets.skinIndex[v * 4 + k] as number))
-        w += assets.skinWeight[v * 4 + k] as number;
+    for (let k = 0; k < SKIN_INFLUENCES; k++)
+      if (armBones.has(assets.skinIndex[v * SKIN_INFLUENCES + k] as number))
+        w += assets.skinWeight[v * SKIN_INFLUENCES + k] as number;
     out[v] = w <= 0.3 ? 1 : 0;
   }
   return out;

@@ -7,6 +7,7 @@ import {
   TISSUE_DEPTH,
 } from "../src/bodyArt/jewellery.ts";
 import { bodySites } from "../src/bodyArt/sites.ts";
+import { SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import type { Vec3 } from "../src/presence/presence.ts";
 import { createBodyArt, JEWELLERY, METALS, PIERCING_SITES } from "../src/recipe/bodyArt.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
@@ -39,8 +40,12 @@ describe("placing piercings", () => {
         assets.positions[v * 3 + 1],
         assets.positions[v * 3 + 2],
       ]);
-      expect(p.skinIndex).toEqual(Array.from(assets.skinIndex.slice(v * 4, v * 4 + 4)));
-      expect(p.skinWeight).toEqual(Array.from(assets.skinWeight.slice(v * 4, v * 4 + 4)));
+      expect(p.skinIndex).toEqual(
+        Array.from(assets.skinIndex.slice(v * SKIN_INFLUENCES, (v + 1) * SKIN_INFLUENCES)),
+      );
+      expect(p.skinWeight).toEqual(
+        Array.from(assets.skinWeight.slice(v * SKIN_INFLUENCES, (v + 1) * SKIN_INFLUENCES)),
+      );
     }
   });
 

@@ -1,10 +1,14 @@
 {
   "name": "overhead",
   "title": "Arms overhead",
-  "description": "Both arms raised straight overhead from the rest A-pose, a little apart, the elbows straight. The check for the shoulder, the armpit and the side of the chest where the upper arm lifts past the head.",
+  "description": "Both arms raised straight overhead from the rest A-pose, a little apart, the elbows straight, the raise shared along the shoulder as MakeHuman's benchmark shares it: a quarter on the clavicle, a tenth on the shoulder, the rest on the upper arm. The check for the shoulder, the armpit and the side of the chest where the upper arm lifts past the head.",
   "base": "tpose",
   "rotations": {
-    "upperarm01.L": { "Xrotation": -22, "Yrotation": -138 },
-    "upperarm01.R": { "Xrotation": -22, "Yrotation": 138 }
+    "clavicle.L": { "Yrotation": -34 },
+    "clavicle.R": { "Yrotation": 34 },
+    "shoulder01.L": { "Yrotation": -14 },
+    "shoulder01.R": { "Yrotation": 14 },
+    "upperarm01.L": { "Xrotation": -30, "Yrotation": -90 },
+    "upperarm01.R": { "Xrotation": -30, "Yrotation": 90 }
   }
 }
