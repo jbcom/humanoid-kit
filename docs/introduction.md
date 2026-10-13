@@ -19,7 +19,7 @@ replay.
 | --- | --- | --- |
 | `humanoid-kit` | MIT | Asset loading, recipes, the age policy, evaluation, subdivision, rig and poses, animation playback, presence, interactions, the worker client, the React bindings and the creator |
 | `humanoid-kit-body` | CC0 1.0 | The base mesh, shape targets for every age MakeHuman models (1 to 90 years), the 163-bone skeleton and skin weights, facial pose units and 275 shape modifiers |
-| `humanoid-kit-adult-anatomy` | CC0 1.0 AND CC BY 4.0 | 98 adult-only targets and 12 modifiers (9 with sliders; 3 retained legacy ids). A separate install |
+| `humanoid-kit-adult-anatomy` | CC0 1.0 | 98 adult-only targets and 12 modifiers (9 with sliders; 3 retained legacy ids). A separate install |
 | `humanoid-kit-hair` | CC0 1.0 | 33 hair entries bound to the base body: 16 scalp styles, 12 eyebrows, 4 eyelashes and a beard. A separate install |
 | `humanoid-kit-eyes` | CC0 1.0 | 32 eye materials: human irises, cats' slit pupils, toon and creature eyes. A separate install |
 | `humanoid-kit-animations` | CC0 1.0 | 98 clips (walks, idles, swims, combat, sitting and more) on the default skeleton, played on any figure. A separate install |
@@ -55,9 +55,9 @@ into geometry yourself, and it runs in Node, which is how its tests run.
 
 ## What is planned
 
-Anthro traits, fur, scales and feathers as layers, a doll form, moustaches and
-larger beards, and an adult animation package (pending an owner ruling on its
-scope) are planned. Clothing, scalp and body hair, animation, rig and poses,
+Anthro traits, fur, scales and feathers as layers, a doll form and an adult
+animation package (pending an owner ruling on its
+scope) are planned, and beards are in progress. Clothing, scalp and body hair, animation, rig and poses,
 expressions, presence, the creator and the first interaction slices ship. The
 [architecture notes](ARCHITECTURE.md) list the roadmap with each milestone's
 status.
