@@ -134,6 +134,7 @@ createRecipe(init?: {
   };
   bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
+  outfitLook?: Readonly<Record<string, GarmentLook>>;
   bodyArt?: BodyArtInit;
 }): Recipe
 ```
@@ -155,6 +156,7 @@ interface Recipe {
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
   bodyHair?: BodyHairRecipe; // optional: absent means the default for age and sex
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
+  outfitLook?: Readonly<Record<string, GarmentLook>>; // per garment id; absent = as the pack made it
   bodyArt?: BodyArtRecipe; // optional: absent means none, as in recipes saved before body art
 }
 
@@ -565,6 +567,15 @@ body and of each garment are drawn.
   `underwear`, `hosiery`, `armwear`, `socks`, `bottoms`, `clothes`, `top`,
   `sweater`, `jacket`, `gloves`, `shoes`, `coat`, `mask`, `glasses`, `hat`,
   `backpack`, `held`.
+- `recipe.outfitLook`: a figure's own finish per worn garment id, without a
+  second copy of the mesh. A `GarmentLook` is `{ tint?, roughness?, wear? }`.
+  `tint` is linear RGB (each ≥ 0) multiplied into the pack's colour and
+  texture, and `roughness` in [0, 1] overrides the pack's. `wear` in [0, 1]
+  fades the colour toward its own grey and the road dust (`GARMENT_DUST`) and
+  roughens it. `garmentFinish(material, look)` is the pure function the
+  renderer applies, and it returns the pack's material unchanged when there is
+  no look. A look for a garment the figure does not wear is ignored, and
+  validation lists every malformed field.
 - The arithmetic behind it, pure and exported: `layerOrder(entries)`,
   `stackVisibility(vertexCount, garments, visible?)`,
   `transferVisibility(visible, garment)`, `faceVisibility(faceVerts, faces,

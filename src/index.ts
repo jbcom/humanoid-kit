@@ -42,6 +42,7 @@ export * from "./makehuman/macro.ts";
 export * from "./makehuman/recipeMorph.ts";
 export * from "./makehuman/regions.ts";
 export * from "./makehuman/stateMorphs.ts";
+export * from "./model/garmentLook.ts";
 export * from "./model/humanoidModel.ts";
 export * from "./model/outfit.ts";
 export * from "./morph/evaluate.ts";

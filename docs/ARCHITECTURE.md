@@ -477,6 +477,66 @@ from each file.
   and are evaluated lazily: the model builds a garment's surface the first time
   an outfit names it.
 
+### Garments a consumer brings (issue #13)
+
+**Use cases.** A game dresses a regiment in its own period uniforms (sack coat,
+shell jacket, frock coat, kersey trousers, kepi, accoutrements), which are
+consumer data under the 2026-10-12 ownership ruling: humanoid-kit ships the
+capability and the CC0 pack, and the game ships its cuts. Its uniform garments
+are worn next to the kit's CC0 ones (period brogans are the pack's `shoes01`
+in rough-out leather). One mesh is worn in several colours (a sky-blue and a
+butternut pair of trousers) and, per soldier, faded or soiled to a different
+degree. A canteen, cartridge box or cap box hangs from the belt and stays
+rigid as the body's shape and pose change, while the strap that carries it
+follows the body.
+
+**Requirements.**
+
+1. More than one clothing pack loads beside the body pack, each checked
+   against the body as the first one is. One outfit can name garments from
+   any of them.
+2. A figure can wear a garment in its own colour and finish without a second
+   copy of the mesh. The recipe stays plain data, and an outfit with no look
+   renders exactly as before.
+3. A garment can be rigid. Its shape and pose move it as one piece, and
+   nothing bends it.
+4. A consumer can pack its own `.mhclo` garments with the same packer and
+   proofs as the CC0 pack, with the licence check left to the consumer.
+
+**Decisions (2026-10-13).**
+
+- *Packs are listed, not merged.* `LoadOptions.clothing` takes one pack or a
+  list. A garment id must be unique across the loaded packs, and a clash is an
+  `AssetFormatError` at load naming both packs. Rejected: having the consumer
+  repack the kit's garments into its own pack, which makes a second copy of
+  the CC0 data that would drift from the kit's. Also rejected: namespacing
+  ids by pack (`pack:id`), which would change every saved recipe that names a
+  CC0 garment today for a clash a consumer prefix already avoids.
+- *A look is per figure and keyed by garment id.* `recipe.outfitLook` maps a
+  worn id to a `GarmentLook`: a linear-RGB `tint` that multiplies the diffuse
+  texture, a `roughness` override and a `wear` in [0, 1] that greys and
+  lightens the colour toward the faded, dusty value of field-worn wool.
+  `outfit` stays a list of ids, so every recipe saved today still validates.
+  A look for an id the figure does not wear is ignored, which lets the
+  consumer swap garments without editing the looks. Rejected: entries of
+  `string | { id, look }` in `outfit`, which breaks the `readonly string[]`
+  every caller reads. Also rejected: colour variants as separate pack
+  entries, because a per-soldier fade cannot be enumerated in a pack.
+- *A rigid garment is bound like any other, then fitted.* A garment entry
+  declares `rigid: true`. Its vertices are evaluated through the binding as
+  usual, and the rigid transform that best maps its authored rest positions
+  onto those bound positions (Kabsch, rotation and translation, no scale) is
+  applied to the authored mesh. For skinning, every vertex takes the single
+  bone that carries the most of the garment's total weight. The canteen moves
+  with the hip and keeps its shape. Rejected: landmark mounts, which need a
+  new authored frame per accessory where the binding already says where the
+  piece sits.
+- *The packer is a library function before it is a CLI.* `packGarments`
+  (from `scripts/pack-clothing.ts`) takes `.mhclo` files and a provenance
+  record and writes a format-1 pack whose manifest has the consumer's
+  `name`. This step builds only the function and its tests. A bin entry
+  waits for a consumer that needs one.
+
 ## Body occlusion
 
 Attachment occlusion darkens what the body encloses; the body's own surface
