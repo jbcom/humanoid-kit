@@ -96,7 +96,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] E10 #65 heavy-slot remote-run on the third pool host exits 125.
 - [ ] E11 #87 Measure `scheduler.yield` in `yieldWorkerTask` before adopting it.
 - [ ] E12 #93 Lane liveness counts pool leases and issue comments, not only worktree changes; the watchdog prints state changes.
-- [x] E13 #94 contactCompression: the hip-crease unit was unfinished (misses its volume gate on two knees, breaks the hip contact gate), so its volume gate is held off integration; the unit is kept as `wip/contact-compression-bulge` and continues as C14 (#107).
+- [x] E13 #94 contactCompression: the hip-crease unit was unfinished (misses its volume gate on two knees, breaks the hip contact gate), so its volume gate is held off integration (kept as `wip/contact-compression-bulge`, continuing as C14 and #107) and the test is narrowed; landed on integration at cc89b942 with a full unit run green (2275 passed). `humanoid-kit-fold` can retire under H1.
 - [ ] E14 #106 Full e2e suite: body-hair-lab chest cover expectation, and effective-adult-defaults running in the default project against the preview build.
 
 ### F. Documentation and decisions

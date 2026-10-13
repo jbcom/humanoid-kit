@@ -62,10 +62,5 @@ export {
   StudioStage,
   type StudioStageProps,
 } from "./StudioStage.tsx";
-export type {
-  AnimationContactPoint,
-  HumanoidAnimation,
-  HumanoidAnimationContact,
-  HumanoidAnimationFrame,
-} from "./useFigureAnimation.ts";
+export type { HumanoidAnimation } from "./useFigureAnimation.ts";
 export { type SkinStateFilterOptions, useSkinStateFilter } from "./useSkinStateFilter.ts";

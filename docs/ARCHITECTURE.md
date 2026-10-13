@@ -3598,6 +3598,20 @@ and `onGroundOffset` is not called. `time` puts the figure at a time in the clip
 at a time, a walking figure is carried forward on its feet, and the planted ball's
 world position holds.
 
+**Frames for consumers.** The lift, the carry and the sole contacts of each frame are
+written by `AnimationFrameWriter` (`src/animation/frameWriter.ts`), which is
+framework-free, so `<Humanoid>` and a headless producer (a worker, a server, a test)
+publish the same frame for the same pose. Frames travel on the channel each
+`PresenceRegistry` owns (`frames`, `src/animation/frames.ts`), keyed by presence id: a
+producer binds an id and a new binding (a new client, a remount) supersedes the old one
+and raises the generation, so no stale frame is published after a client changes; an
+interaction's `observeFrames` ends with the interaction. The frame object is reused,
+so nothing is allocated per frame. The full contract, with every consumer and
+lifecycle moment, is docs/INTERACTION-SESSION.md, "Animation frames";
+`tests/animationFrames.test.ts` holds it on real figures and clips in Node and
+`tests/browser/animationObserver.test.tsx` holds `<Humanoid>`'s publishing,
+placement, unmount and client replacement.
+
 **Clearance.** (The 98 clips: 74 of them, every locomotion and standing idle among them,
 stay within the tolerance; the 24 where a limb rests on or crosses the body, sitting,
 kneeling, a roll, a landing, a sword's swing, a musket or flagstaff held across the

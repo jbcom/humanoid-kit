@@ -2218,12 +2218,31 @@ animator.root;                // how far the figure has been carried: [x across,
   render-clock step, including after a slow frame; and the
   figure's presence follows. `time` puts it at a time in the clip. `onStart(clip)` is
   called once the figure follows the clip, and again for a new figure or `time`.
-  `onFrame(frame)` receives the completed pose and real FootLock contact owner for each sole,
-  without a React render: `owned` identifies the current owner while `hold` says whether it is
-  fully planted (1) or fading through rollover/release (0..1). Contacts are figure-local metres after ground lift and before
-  cumulative root carry, group heading or any caller transform; `root` is cumulative x/forward-z
-  carry and `delta` is this render frame's carry. `generation` increments after each evaluation/rest
-  binding so an integration can reject a callback from an earlier asynchronous recipe update.
+  `onFrame(frame)` receives the completed `HumanoidAnimationFrame` without a React render,
+  and a figure with `presence` publishes the same frame into its registry's `frames` under its
+  presence id: `owned` identifies each sole's real FootLock owner while `hold` says whether it is
+  fully planted (1) or fading through rollover/release (0..1). Contacts are figure-local metres
+  after ground lift and before cumulative root carry, group heading or any caller transform;
+  `toWorld` (the group's world matrix after this frame's carry) places them in the world.
+  `root` is cumulative x/forward-z carry, `delta` this render frame's and `lift` the ground lift.
+  `generation` rises with each new client or evaluation. The frame object is reused: copy what
+  you keep (`copyAnimationFrame`).
+- Animation frames (`src/animation/frames.ts`, `src/animation/frameWriter.ts`;
+  docs/INTERACTION-SESSION.md, "Animation frames"): `createAnimationFrames()` is the
+  framework-free channel every `PresenceRegistry` owns as `frames`.
+  `frames.observe(figure, onFrame, onRelease?)` returns the unsubscribe function;
+  `onRelease(reason, figure)` hears `"released"` or `"superseded"`. `frames.bind(figure)`
+  returns a `FrameBinding` (`publish(frame)`, `false` once not live; `rebind()`; `release()`;
+  `live`; `generation`); binding an id again supersedes its producer. An observer's exception
+  is rethrown to the producer after every observer has the frame. `AnimationFrameWriter`
+  fills a frame from an `Animator` and a `FrameFigure` (`rest`, `groundOffset`, `contacts`,
+  optional `skin`), outside any renderer; `setFramePlacement(frame, position, facing)` places
+  a headless producer's frame, `frameContactWorld(frame, index, out?)` is a contact in world
+  space, `createAnimationFrame` and `copyAnimationFrame` make and copy frames, and
+  `ANIMATION_CONTACTS` is the contacts' order.
+- `interaction.observeFrames(role, onFrame, onRelease?)` observes a figure role's frames for
+  that interaction only; the subscription ends with the interaction (end, decline, cancel,
+  detach), and a frame from another figure that took the participant's id is never delivered.
 - `bodySegments(assets, rest, control, skinIndex, skinWeight, bodyVertices)` (a figure's 14
   capsules, radii measured from its skin) and `overlaps(rest, segments, rotations)` (every
   pair of parts that are not neighbours, with how deep they overlap in the pose, negative
