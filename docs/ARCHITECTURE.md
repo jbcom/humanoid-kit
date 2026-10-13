@@ -3158,11 +3158,13 @@ the side, (-2.6, 0.6, -2.4), where it grazes the form's edge and the shoulder sl
 no longer its mirror; and it is 0.7 instead of 1.6, so what the specular lobe cannot
 avoid is a sheen, not a blotch. Measured on contact sheets (front, and both
 three-quarters; light and dark skin, male and female, at rest and arms overhead),
-bright pixels on dark skin at the armpit and clavicle went from 90 to 160 per tile
-(275 at worst) to under 40 in the front views, and the large white patches are gone.
-What is left is a thin, intensity-independent sliver in one view (a raised arm seen from
-the right three-quarter, at the far shoulder through the neck gap), a skin material
-matter and not the stage's.
+the pale, glossy patches at the armpit and clavicle are gone: bright pixels on dark skin
+in the front views fell from 90 to 107 a tile to 31 at rest and 4 to 12 with the arms
+overhead, and from 275 to 3 in the male's right three-quarter with the arms overhead.
+What is left is a thin sliver in one view (a raised arm seen from the right
+three-quarter, at the far shoulder through the neck gap), as bright at an intensity of
+0.4 as at 0.7: a skin material matter (a surface whose specular saturates), not the
+stage's.
 
 ## Animation (milestone 8, 2026-10-09)
 
