@@ -34,6 +34,8 @@ import {
   type Bone,
   Box3,
   type DirectionalLight,
+  Matrix3,
+  Matrix4,
   type Mesh,
   NeutralToneMapping,
   type Object3D,
@@ -112,9 +114,160 @@ export interface DrawnPart {
   triangles: number;
 }
 
+/** A response-shot-only reading of a live coat material and its current camera relationship. */
+export interface CoatRuntimeProbe {
+  material: {
+    transparent: boolean;
+    depthWrite: boolean;
+    depthTest: boolean;
+    forceSinglePass: boolean;
+    blending: number;
+    blendSrc: number;
+    blendDst: number;
+    blendEquation: number;
+    opacity: number;
+  };
+  geometry: { indexCount: number; instanceCount: number; vertexCount: number };
+  uniforms: { shells: number; rows: { region: string; cover: number; density: number }[] };
+  program: {
+    key: string;
+    found: boolean;
+    usedTimes: number | null;
+    alphaPath: string | null;
+  };
+  /**
+   * Camera-facing normal samples at the current response shot. They use the
+   * live skinned surface and standard skinning; dual-quaternion share is named
+   * separately because this QA readback does not duplicate that shader branch.
+   */
+  angleMethod: "skinned-normal-no-dual-correction";
+  angles: {
+    region: string;
+    samples: number;
+    minCos: number;
+    meanCos: number;
+    maxCos: number;
+    clampedSamples: number;
+  }[];
+}
+
+type CoatProbeMaterial = {
+  transparent: boolean;
+  depthWrite: boolean;
+  depthTest: boolean;
+  forceSinglePass: boolean;
+  blending: number;
+  blendSrc: number;
+  blendDst: number;
+  blendEquation: number;
+  opacity: number;
+  hkUniforms: {
+    hkCoatPaint: { value: { x: number; z: number }[] };
+    hkCoatShells: { value: number };
+  };
+  customProgramCacheKey(): string;
+  setCompileProbe(enabled: boolean): void;
+  compiledAlphaProbe(): { programKey: string; alphaPath: string } | null;
+};
+
+const asCoatMaterial = (value: unknown): CoatProbeMaterial | null => {
+  const material = value as Partial<CoatProbeMaterial> | null;
+  if (!material || typeof material.customProgramCacheKey !== "function") return null;
+  return material.customProgramCacheKey().startsWith("humanoid-kit-coat-")
+    ? (material as CoatProbeMaterial)
+    : null;
+};
+
+const maskAt = (mesh: SkinnedMesh, region: number, vertex: number): number => {
+  const attribute = mesh.geometry.getAttribute(region < 4 ? "hkCoatMaskA" : "hkCoatMaskB");
+  if (!attribute) return 0;
+  const value = attribute.array[vertex * 4 + (region % 4)] as number;
+  return attribute.normalized ? value / 255 : value;
+};
+
+/** The shader's ordinary linear-skinning normal path, read against its live camera. */
+function coatAngles(mesh: SkinnedMesh, camera: Object3D): CoatRuntimeProbe["angles"] {
+  const regions = (mesh.geometry.userData.hkCoatRegions as string[] | undefined) ?? [];
+  const normal = mesh.geometry.getAttribute("normal");
+  const skinIndex = mesh.geometry.getAttribute("skinIndex");
+  const skinWeight = mesh.geometry.getAttribute("skinWeight");
+  if (!normal || !skinIndex || !skinWeight) return [];
+  mesh.updateWorldMatrix(true, false);
+  camera.updateWorldMatrix(true, false);
+  const worldNormal = new Matrix3().getNormalMatrix(mesh.matrixWorld);
+  const weighted = new Matrix4();
+  const skin = new Matrix4();
+  const skinNormal = new Matrix3();
+  const n = new Vector3();
+  const position = new Vector3();
+  const view = new Vector3();
+  const cameraDirection = new Vector3();
+  camera.getWorldDirection(cameraDirection).negate();
+  return regions.map((region, group) => {
+    let samples = 0;
+    let sum = 0;
+    let min = 1;
+    let max = 0;
+    let clampedSamples = 0;
+    for (let vertex = 0; vertex < normal.count; vertex++) {
+      if (!(maskAt(mesh, group, vertex) > 0)) continue;
+      weighted.elements.fill(0);
+      let totalWeight = 0;
+      for (let k = 0; k < 4; k++) {
+        const weight = skinWeight.getComponent(vertex, k);
+        const bone = mesh.skeleton.bones[skinIndex.getComponent(vertex, k)];
+        if (!bone || !(weight > 0)) continue;
+        totalWeight += weight;
+        for (let element = 0; element < 16; element++)
+          weighted.elements[element] =
+            (weighted.elements[element] as number) +
+            weight * (bone.matrixWorld.elements[element] as number);
+      }
+      if (!(totalWeight > 0)) continue;
+      skin.copy(mesh.bindMatrixInverse).multiply(weighted).multiply(mesh.bindMatrix);
+      skinNormal.getNormalMatrix(skin);
+      n.fromBufferAttribute(normal, vertex)
+        .applyMatrix3(skinNormal)
+        .applyMatrix3(worldNormal)
+        .normalize();
+      mesh.applyBoneTransform(vertex, position).applyMatrix4(mesh.matrixWorld);
+      // The playground uses a perspective camera; retain the orthographic case
+      // so a future response camera matches the shader's `isOrthographic` path.
+      if ((camera as { isOrthographicCamera?: boolean }).isOrthographicCamera)
+        view.copy(cameraDirection);
+      else view.copy(camera.position).sub(position).normalize();
+      const cosine = Math.abs(n.dot(view));
+      min = Math.min(min, cosine);
+      max = Math.max(max, cosine);
+      sum += cosine;
+      if (cosine < 0.2) clampedSamples++;
+      samples++;
+    }
+    return {
+      region,
+      samples,
+      minCos: samples ? min : 0,
+      meanCos: samples ? sum / samples : 0,
+      maxCos: samples ? max : 0,
+      clampedSamples,
+    };
+  });
+}
+
 /** Exposes `window.hkDrawn` while mounted: the triangles each part of the figure draws. */
 function SceneProbe() {
   const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
+  const renderer = useThree((s) => s.gl);
+  const wantsCoatProbe = params.has("coatprobe");
+  useFrame(() => {
+    if (!wantsCoatProbe) return;
+    scene.traverse((object) => {
+      if (!(object instanceof SkinnedMesh)) return;
+      const material = asCoatMaterial(object.material);
+      material?.setCompileProbe(true);
+    });
+  });
   useEffect(() => {
     window.hkDrawn = () => {
       const out: DrawnPart[] = [];
@@ -152,12 +305,67 @@ function SceneProbe() {
       const v = new Vector3().setFromMatrixPosition((found as Object3D).matrixWorld);
       return { position: [v.x, v.y, v.z], groundOffset: (found as Object3D).userData.groundOffset };
     };
+    if (wantsCoatProbe) {
+      window.hkCoatProbe = () => {
+        const out: CoatRuntimeProbe[] = [];
+        const programs = (
+          renderer.info as unknown as { programs?: { cacheKey?: string; usedTimes?: number }[] }
+        ).programs;
+        scene.traverse((object) => {
+          if (!(object instanceof SkinnedMesh)) return;
+          const material = asCoatMaterial(object.material);
+          if (!material) return;
+          const key = material.customProgramCacheKey();
+          // Three appends a material's custom key to its full renderer program
+          // cache key (`WebGLPrograms.getProgramCacheKey`), rather than storing
+          // the custom part alone.
+          const program = programs?.find((candidate) => candidate.cacheKey?.endsWith(key));
+          const compiled = material.compiledAlphaProbe();
+          const regions = (object.geometry.userData.hkCoatRegions as string[] | undefined) ?? [];
+          out.push({
+            material: {
+              transparent: material.transparent,
+              depthWrite: material.depthWrite,
+              depthTest: material.depthTest,
+              forceSinglePass: material.forceSinglePass,
+              blending: material.blending,
+              blendSrc: material.blendSrc,
+              blendDst: material.blendDst,
+              blendEquation: material.blendEquation,
+              opacity: material.opacity,
+            },
+            geometry: {
+              indexCount: object.geometry.index?.count ?? 0,
+              instanceCount: object.geometry.instanceCount,
+              vertexCount: object.geometry.getAttribute("position").count,
+            },
+            uniforms: {
+              shells: material.hkUniforms.hkCoatShells.value,
+              rows: regions.map((region, index) => {
+                const row = material.hkUniforms.hkCoatPaint.value[index * 2];
+                return { region, cover: row?.x ?? 0, density: row?.z ?? 0 };
+              }),
+            },
+            program: {
+              key,
+              found: program !== undefined,
+              usedTimes: program?.usedTimes ?? null,
+              alphaPath: compiled?.alphaPath ?? null,
+            },
+            angleMethod: "skinned-normal-no-dual-correction",
+            angles: coatAngles(object, camera),
+          });
+        });
+        return out;
+      };
+    }
     return () => {
       delete window.hkDrawn;
       delete window.hkBone;
       delete window.hkFigure;
+      delete window.hkCoatProbe;
     };
-  }, [scene]);
+  }, [camera, renderer, scene, wantsCoatProbe]);
   return null;
 }
 
@@ -175,6 +383,8 @@ declare global {
       pose?: ShotPose,
       signals?: Record<string, number>,
     ) => void;
+    /** QA only: live coat material/program state and current response-camera angles. */
+    hkCoatProbe?: () => CoatRuntimeProbe[];
   }
 }
 

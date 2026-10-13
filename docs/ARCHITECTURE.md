@@ -226,10 +226,12 @@ Under 18:
   clamped, so a mistake cannot be hidden;
 - adult-only targets are not in the body pack at all; the adult anatomy pack's
   modifiers are adult-only, so a recipe under 18 that sets one is rejected;
-- pubic hair is adult-only: a recipe under 18 whose `bodyHair.density` sets it
-  to anything but 0 is rejected, and the body hair model draws none for a
-  figure that is not an adult (see "Body hair"). Axillary hair is puberty's,
-  not the policy's: it comes in from 13 (owner ruling 2026-10-11);
+- pubic hair is adult-only: a recipe under 18 whose legacy `bodyHair.density`
+  or explicit `bodyHair.coverage` sets it to anything but 0, or whose
+  `bodyHair.follicleDensity` names it, is rejected, and the body-hair model
+  draws none for a figure that is not an adult (see "Body hair"). Axillary
+  hair is puberty's, not the policy's: it comes in from 13 (owner ruling
+  2026-10-11);
 - a piercing may only be at one of the body's own sites (`PIERCING_SITES`):
   any other is the adult pack's and adult-only (`ADULT_ONLY_PIERCING`, "Body
   art").
@@ -2295,23 +2297,26 @@ Old recipes evaluate and serialise as before.
   much terminal hair each region group carries (coverage 0..1, the
   Ferriman-Gallwey grade over 4), from the gender macro read as the androgen
   level, the age (a ramp per group on the Tanner ages, a thinning after 55) and
-  the recipe's multipliers; and what colour (the figure's hair pigments, darker
-  on the face and pubis, lighter on the limbs, greyed with age later on the
-  body than the beard). The groups follow the modified FG regions, merged to
-  what a picker offers: face, chest, abdomen, back, buttocks, arms, legs,
-  axillary, and the adult-only pubic.
+  the recipe's controls; and what colour (the figure's hair pigments, darker on
+  the face and pubis, lighter on the limbs, greyed with age later on the body
+  than the beard). The groups follow the modified FG regions, merged to what a
+  picker offers: face, chest, abdomen, back, buttocks, arms, legs, axillary,
+  and the adult-only pubic.
 - *Adult-only groups are gated in the model itself.* `defaultBodyHairCoverage`
   returns 0 for pubic hair unless the age is an adult's (`age >=
   ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
   scales the default, so no recipe value can add them under 18.
-- *The recipe holds multipliers, not densities.* `recipe.bodyHair` is optional
-  (the recipe schema grows only by optional fields): `density` is a multiplier
-  per group on the default for age and sex (0 shaves a region, 2 doubles it,
-  clamped to full coverage), and `beard` a style. A multiplier, not an absolute
-  value, keeps a saved recipe right as the figure ages: the same recipe at 12,
-  30 and 80 shows each age's hair. Absent fields are not filled in by
-  `createRecipe`, so a recipe that never set body hair serialises exactly as
-  before.
+- *Legacy multipliers and explicit controls have separate meanings.*
+  `recipe.bodyHair` is optional (the recipe schema grows only by optional
+  fields). `density` remains a multiplier per group on the physiological
+  default for age and androgen axis (0 shaves a region, 2 doubles it, clamped
+  to full coverage), so saved recipes retain their results as a figure ages.
+  `coverage` is a new explicit mature coverage at every gender value, still
+  subject to the same age ramp and senescence; it cannot coexist with legacy
+  `density` for a group. `follicleDensity` independently changes physical
+  follicles per cm² and therefore strand spacing, never the covered fraction.
+  `beard` is a style. Absent fields are not filled in by `createRecipe`, so a
+  recipe that never set body hair serialises exactly as before.
 - *Hair lying on the skin is a strand layer, not geometry.* A new layer kind,
   `strands` (`src/surface/regions/bodyHair.ts`), draws hair in the skin
   shader at true scale: roots on a grid in the skin's plane (metres, `uv ×

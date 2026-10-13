@@ -164,9 +164,12 @@ interface HairRecipe {
 }
 
 interface BodyHairRecipe {
-  // per BODY_HAIR_GROUPS entry, a multiplier on the default, 0..2 (1 = default);
-  // pubic is adult-only: any value but 0 under 18 is refused
+  // legacy per BODY_HAIR_GROUPS entry multiplier on the physiological default, 0..2 (1 = default)
   density?: Partial<Record<BodyHairGroup, number>>;
+  // explicit mature coverage at every gender value, 0..1; cannot coexist with density for the same group
+  coverage?: Partial<Record<BodyHairGroup, number>>;
+  // physical follicles-per-cm2 multiplier, 0.25..2; changes spacing, not coverage
+  follicleDensity?: Partial<Record<BodyHairGroup, number>>;
   beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = none (clean-shaven)
 }
 
@@ -284,7 +287,8 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
   `SkinPaintInput.anatomy`.
 
 Under 18, a recipe is invalid if an adult-only modifier is non-zero, if
-`bodyHair.density.pubic` is non-zero (`ADULT_ONLY_BODY_HAIR`), or
+`bodyHair.density.pubic` or `bodyHair.coverage.pubic` is non-zero, or
+`bodyHair.follicleDensity.pubic` is present (`ADULT_ONLY_BODY_HAIR`), or
 if a piercing is at an adult-only site. Refused, never clamped. The breast macros
 (`breastSize`, `breastFirmness`, and the regional overrides of them) are not
 gated: they follow MakeHuman at every age, as its breast targets do.
@@ -646,10 +650,15 @@ compute what the renderer will do.
   adolescence (`BODY_HAIR_MATURITY`), thinning in old age
   (`BODY_HAIR_SENESCENCE`), between `BODY_HAIR_COVERAGE`'s female and male
   ends. An adult-only group is 0 under 18 and for an age that is not a number.
-  `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's density
-  multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage; it never
-  adds hair where the default has none). `beardStyle(input)` is the recipe's
-  style, or `DEFAULT_BEARD` (`none`, clean-shaven). `bodyHairColour(group, input)` is the figure's hair pigments
+  `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's legacy
+  `density` multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage;
+  it never adds hair where the default has none), or its explicit `coverage`
+  (0..1, independent of the gender anchor but still age-matured). A group may
+  name one of those two controls, never both. `bodyHairFollicleDensity(group,
+  input)` applies the independent `follicleDensity` multiplier (0.25..2) to
+  `BODY_HAIR_FOLLICLE_DENSITY`, changing strand spacing without changing
+  coverage. `beardStyle(input)` is the recipe's style, or `DEFAULT_BEARD`
+  (`none`, clean-shaven). `bodyHairColour(group, input)` is the figure's hair pigments
   darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
   fibre diameter and drawn length) and at least as grey as ageing makes them
   (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an
@@ -723,7 +732,7 @@ compute what the renderer will do.
   Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
   hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
   `VELLUS`, flat: no relief) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
-  densities `BODY_HAIR_DENSITY`. Dense, short hair standing off the skin (the
+  densities `BODY_HAIR_FOLLICLE_DENSITY`. Dense, short hair standing off the skin (the
   beard, the chest, abdomen and back, and the adult-only armpits) is the
   coat's, long hair the cards', and pubic hair the adult pack's.
   `bodyHairMasks(assets)` gives the masks per base vertex and

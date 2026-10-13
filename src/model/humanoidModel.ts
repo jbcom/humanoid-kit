@@ -2261,6 +2261,22 @@ export class HumanoidModel {
           );
       });
     }
+    const pubic = COAT_REGIONS.findIndex((region) => region.id === "hair-pubic");
+    const reservoirs = mesh.lattice?.reservoirs ?? [];
+    if (pubic >= 0 && reservoirs.length > 0) {
+      // `coatRegions` paints the body's mons/perineal surface. Reservoir walls
+      // and caps inherit its base stencil only to establish their geometry; they
+      // are not an automatic continuation of that painted region. A later
+      // anatomy-specific region may opt into one explicitly.
+      const excluded = new Set<number>();
+      for (const reservoir of reservoirs) {
+        for (const surface of reservoir.copies) excluded.add(surface);
+        for (const surface of reservoir.capVertices) excluded.add(surface);
+      }
+      r2s.forEach((surface, render) => {
+        if (excluded.has(surface)) masks[render * COAT_REGION_LIMIT + pubic] = 0;
+      });
+    }
     const out: CoatFields = { regions: COAT_REGIONS.map((r) => r.id), comb, masks };
     this.coats.set(mesh, out);
     return out;

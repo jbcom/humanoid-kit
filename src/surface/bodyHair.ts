@@ -46,13 +46,32 @@ export type BeardStyle = (typeof BEARD_STYLES)[number];
 
 /** The recipe's optional `bodyHair`. Every field is optional; absent is the default for age and sex. */
 export interface BodyHairRecipe {
-  /** Per group, a multiplier on the default coverage, 0..`MAX_BODY_HAIR_DENSITY` (1 is the default). */
+  /**
+   * Legacy per-group multiplier on the physiological default coverage,
+   * 0..`MAX_BODY_HAIR_DENSITY` (1 is the default). It cannot enable a group
+   * whose physiological anchor is zero; use `coverage` for that explicit choice.
+   */
   density?: Partial<Record<BodyHairGroup, number>>;
+  /**
+   * Explicit mature terminal-hair coverage, 0..1. This replaces a group's
+   * androgen-derived coverage anchor but still follows age maturation and
+   * senescence. It is mutually exclusive with that group's legacy `density`.
+   */
+  coverage?: Partial<Record<BodyHairGroup, number>>;
+  /**
+   * Per-group multiplier on physical follicles per cm², 0.25..2. This changes
+   * strand spacing only; it does not alter the covered fraction.
+   */
+  follicleDensity?: Partial<Record<BodyHairGroup, number>>;
   beard?: BeardStyle;
 }
 
 /** The largest density multiplier: twice a group's default, clamped to full coverage. */
 export const MAX_BODY_HAIR_DENSITY = 2;
+/** The smallest supported physical follicle-density multiplier. */
+export const MIN_BODY_HAIR_FOLLICLE_DENSITY = 0.25;
+/** The largest supported physical follicle-density multiplier. */
+export const MAX_BODY_HAIR_FOLLICLE_DENSITY = 2;
 
 /** What body hair is computed from: the figure's age, androgen axis and hair pigments. */
 export interface BodyHairInput {
@@ -131,6 +150,23 @@ export const BODY_HAIR_FIBRE: Readonly<
 };
 
 /**
+ * Follicles per cm² by region group. Otberg et al. 2004 measured 14 (calf) to
+ * 32 (upper arm); the values between, and the beard's, armpit's and pubis's,
+ * are choices (BODY-HAIR.md).
+ */
+export const BODY_HAIR_FOLLICLE_DENSITY: Readonly<Record<BodyHairGroup, number>> = {
+  face: 60,
+  chest: 22,
+  abdomen: 22,
+  back: 26,
+  buttocks: 20,
+  arms: 25,
+  legs: 16,
+  axillary: 60,
+  pubic: 40,
+};
+
+/**
  * The fraction of grey fibres by age: a smoothstep from 35 to 95 years, which
  * gives 26 % at 55, the middle of Panhard et al. 2012's 45 to 65 cohort (mean
  * intensity 27 %), and 98 % at 90. A fit, not a curve they publish.
@@ -144,6 +180,19 @@ const smoothstep = (lo: number, hi: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
+/**
+ * The fraction of a group's mature coverage present at this age. This is kept
+ * separate from the androgen anchor so an explicit coverage can work at every
+ * gender value without bypassing maturation or age-related thinning.
+ */
+function bodyHairAgeFactor(group: BodyHairGroup, age: number): number {
+  if (isAdultOnlyBodyHair(group) && !(age >= ADULT_AGE)) return 0;
+  const [onset, full] = BODY_HAIR_MATURITY[group];
+  const old = BODY_HAIR_SENESCENCE[group];
+  const factor = smoothstep(onset, full, age) * (1 - old.loss * smoothstep(old.from, old.to, age));
+  return Number.isFinite(factor) ? factor : 0;
+}
+
 /** The fraction of grey fibres at this age from ageing alone. */
 export const ageGrey = (age: number): number => smoothstep(GREY_ONSET, GREY_FULL, age);
 
@@ -153,28 +202,37 @@ export const ageGrey = (age: number): number => smoothstep(GREY_ONSET, GREY_FULL
  * an age that is not a number fails closed.
  */
 export function defaultBodyHairCoverage(group: BodyHairGroup, age: number, gender: number): number {
-  if (isAdultOnlyBodyHair(group) && !(age >= ADULT_AGE)) return 0;
   const [female, male] = BODY_HAIR_COVERAGE[group];
   const a = unit(gender);
-  const [onset, full] = BODY_HAIR_MATURITY[group];
-  const old = BODY_HAIR_SENESCENCE[group];
-  const coverage =
-    (female + (male - female) * a) *
-    smoothstep(onset, full, age) *
-    (1 - old.loss * smoothstep(old.from, old.to, age));
+  const coverage = (female + (male - female) * a) * bodyHairAgeFactor(group, age);
   return Number.isFinite(coverage) ? coverage : 0;
 }
 
 /**
  * A group's terminal-hair coverage, 0..1: the default for the figure's age and
- * androgen level times the recipe's density multiplier. Adult-only groups are 0
- * for any figure that is not an adult, whatever the multiplier.
+ * androgen level times the recipe's legacy density multiplier, or an explicit
+ * mature coverage times the same age factor. Adult-only groups are 0 for any
+ * figure that is not an adult, whatever the control.
  */
 export function bodyHairCoverage(group: BodyHairGroup, input: BodyHairInput): number {
+  const explicit = input.bodyHair?.coverage?.[group];
+  if (explicit !== undefined) return unit(explicit) * bodyHairAgeFactor(group, input.age);
   const base = defaultBodyHairCoverage(group, input.age, input.gender);
   if (base === 0) return 0;
   const m = input.bodyHair?.density?.[group] ?? 1;
   return unit(base * Math.min(MAX_BODY_HAIR_DENSITY, Math.max(0, m)));
+}
+
+/**
+ * Physical follicles per cm² for this group. Unlike `bodyHairCoverage`, this
+ * changes strand spacing without changing the mask's covered fraction.
+ */
+export function bodyHairFollicleDensity(group: BodyHairGroup, input: BodyHairInput): number {
+  const requested = input.bodyHair?.follicleDensity?.[group] ?? 1;
+  const multiplier = Number.isFinite(requested)
+    ? Math.min(MAX_BODY_HAIR_FOLLICLE_DENSITY, Math.max(MIN_BODY_HAIR_FOLLICLE_DENSITY, requested))
+    : 1;
+  return BODY_HAIR_FOLLICLE_DENSITY[group] * multiplier;
 }
 
 /** The beard a recipe that names none wears: clean-shaven, the neutral recipe. */

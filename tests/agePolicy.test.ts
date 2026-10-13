@@ -154,6 +154,17 @@ describe("adult-only body hair", () => {
     );
   });
 
+  it("refuses explicit pubic coverage and follicle controls under 18", () => {
+    const r = createRecipe({
+      macros: { age: 15 },
+      bodyHair: { coverage: { pubic: 0.6 }, follicleDensity: { pubic: 1.5 } },
+    });
+    expect(agePolicyViolations(r)).toEqual([
+      "body hair pubic coverage is adult-only",
+      "body hair pubic follicleDensity is adult-only",
+    ]);
+  });
+
   it("allows a 0 under 18 (shaven is not adult-only) and every group at 18", () => {
     const shaven = createRecipe({
       macros: { age: 12 },
@@ -175,12 +186,23 @@ describe("adult-only body hair", () => {
   it("withAge strips them when moving under 18, keeps the rest, and leaves the input untouched", () => {
     const adult = createRecipe({
       macros: { age: 30 },
-      bodyHair: { density: { axillary: 1, pubic: 1, chest: 0.5 }, beard: "full" },
+      bodyHair: {
+        density: { axillary: 1, chest: 0.5 },
+        coverage: { pubic: 0.8, back: 0.3 },
+        follicleDensity: { pubic: 1.5, back: 0.75 },
+        beard: "full",
+      },
     });
     const minor = withAge(adult, 15);
     expect(agePolicyViolations(minor)).toEqual([]);
-    expect(minor.bodyHair).toEqual({ density: { axillary: 1, chest: 0.5 }, beard: "full" });
-    expect(adult.bodyHair?.density).toEqual({ axillary: 1, pubic: 1, chest: 0.5 });
+    expect(minor.bodyHair).toEqual({
+      density: { axillary: 1, chest: 0.5 },
+      coverage: { back: 0.3 },
+      follicleDensity: { back: 0.75 },
+      beard: "full",
+    });
+    expect(adult.bodyHair?.coverage).toEqual({ pubic: 0.8, back: 0.3 });
+    expect(adult.bodyHair?.follicleDensity).toEqual({ pubic: 1.5, back: 0.75 });
     expect(withAge(adult, 40).bodyHair).toEqual(adult.bodyHair);
   });
 });

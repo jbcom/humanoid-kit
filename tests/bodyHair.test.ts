@@ -8,6 +8,7 @@ import {
   beardStyle,
   bodyHairColour,
   bodyHairCoverage,
+  bodyHairFollicleDensity,
   DEFAULT_BEARD,
   defaultBodyHairCoverage,
 } from "../src/surface/bodyHair.ts";
@@ -79,6 +80,39 @@ describe("body hair coverage", () => {
     expect(bodyHairCoverage("face", input(40, 1, { bodyHair: { density: { face: 9 } } }))).toBe(1);
     // A multiplier never conjures hair where the default has none.
     expect(bodyHairCoverage("chest", input(8, 1, { bodyHair: { density: { chest: 2 } } }))).toBe(0);
+  });
+
+  it("lets an explicit coverage value enable every region at every androgen value", () => {
+    for (const gender of [0, 0.5, 1]) {
+      expect(
+        bodyHairCoverage("chest", input(35, gender, { bodyHair: { coverage: { chest: 0.6 } } })),
+      ).toBeCloseTo(0.6);
+      expect(
+        bodyHairCoverage("back", input(45, gender, { bodyHair: { coverage: { back: 0.4 } } })),
+      ).toBeCloseTo(0.4);
+    }
+  });
+
+  it("keeps explicit coverage subject to the same age maturation as every other body-hair control", () => {
+    expect(bodyHairCoverage("chest", input(8, 0, { bodyHair: { coverage: { chest: 0.6 } } }))).toBe(
+      0,
+    );
+    expect(
+      bodyHairCoverage("chest", input(20, 0, { bodyHair: { coverage: { chest: 0.6 } } })),
+    ).toBeLessThan(
+      bodyHairCoverage("chest", input(35, 0, { bodyHair: { coverage: { chest: 0.6 } } })),
+    );
+  });
+
+  it("changes follicle spacing without changing regional coverage", () => {
+    const baseline = input(35, 0, { bodyHair: { coverage: { chest: 0.6 } } });
+    const dense = input(35, 0, {
+      bodyHair: { coverage: { chest: 0.6 }, follicleDensity: { chest: 2 } },
+    });
+    expect(bodyHairCoverage("chest", dense)).toBeCloseTo(bodyHairCoverage("chest", baseline));
+    expect(bodyHairFollicleDensity("chest", dense)).toBeCloseTo(
+      bodyHairFollicleDensity("chest", baseline) * 2,
+    );
   });
 });
 
