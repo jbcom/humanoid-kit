@@ -80,10 +80,12 @@ export function assertAgePolicy(recipe: Recipe): void {
 
 /**
  * Skin-state signals that only apply to adults: sexual arousal, in any
- * channel (colour, relief or shape). Cold, heat, exertion, blush and fear are
- * physiological at every age, as the body's own responses are.
+ * channel (colour, relief or shape), and the genital skin's surface moisture
+ * (`GENITAL_MOISTURE_SIGNAL`, src/surface/regions/adult.ts; named here, not
+ * imported, so the policy depends on nothing it judges). Cold, heat, exertion,
+ * blush and fear are physiological at every age, as the body's own responses are.
  */
-export const ADULT_ONLY_SIGNALS: readonly string[] = ["arousal"];
+export const ADULT_ONLY_SIGNALS: readonly string[] = ["arousal", "genitalMoisture"];
 
 /** Refuses an adult-only signal for a figure under 18 (never clamps it). */
 export function assertSignalPolicy(

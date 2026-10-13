@@ -61,8 +61,11 @@ describe("the adult anatomy spec in the pack's manifest", () => {
   });
 
   it("describes exactly the core's adult layers, each gated by a feature the spec lists", () => {
+    // Each spec is read by a core layer, and each core layer reads one (its own id's, or
+    // the one it names: the vulva's moisture lies over the vulva's colour mask).
     const layers = spec?.skinLayers.map((l) => l.id).sort();
-    expect(layers).toEqual(ADULT_SKIN_LAYERS.map((l) => l.id).sort());
+    const read = new Set(ADULT_SKIN_LAYERS.map((l) => l.adult?.spec ?? l.id));
+    expect(layers).toEqual([...read].sort());
     const features = new Set(spec?.features.map((f) => f.id));
     for (const l of ADULT_SKIN_LAYERS)
       expect(features.has(l.adult?.feature ?? ""), l.id).toBe(true);

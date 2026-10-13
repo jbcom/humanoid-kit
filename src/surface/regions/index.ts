@@ -6,7 +6,14 @@
 
 import type { CoatRegion } from "../coat.ts";
 import { isAdultLayer, type SkinLayer } from "../layers.ts";
-import { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER, VULVA_LAYER } from "./adult.ts";
+import {
+  GENITAL_MOISTURE_SIGNAL,
+  MOUND_LAYER,
+  PENIS_LAYER,
+  TESTES_LAYER,
+  VULVA_LAYER,
+  VULVA_MOISTURE_LAYER,
+} from "./adult.ts";
 import { AREA_SKIN_LAYERS } from "./areas.ts";
 import { BODY_HAIR_LAYERS } from "./bodyHair.ts";
 import { BODY_HAIR_COAT } from "./bodyHairCoat.ts";
@@ -64,6 +71,7 @@ export const ADULT_SKIN_LAYERS: readonly SkinLayer[] = [
   TESTES_LAYER,
   MOUND_LAYER,
   VULVA_LAYER,
+  VULVA_MOISTURE_LAYER,
 ];
 
 /**
@@ -99,4 +107,11 @@ export * from "./rest.ts";
 export * from "./skinZones.ts";
 export * from "./states.ts";
 export * from "./torso.ts";
-export { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER, VULVA_LAYER };
+export {
+  GENITAL_MOISTURE_SIGNAL,
+  MOUND_LAYER,
+  PENIS_LAYER,
+  TESTES_LAYER,
+  VULVA_LAYER,
+  VULVA_MOISTURE_LAYER,
+};
