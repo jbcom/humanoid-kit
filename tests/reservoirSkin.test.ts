@@ -257,6 +257,58 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     expect(evaluatedSkin(skin, skinning, null)).toBeNull();
   });
 
+  it("moves a closed canal's lips with its root, so a spread hip cannot part them, as far as the opening is closed", () => {
+    // Two lips of a closed opening, each on its own thigh and the pelvis (bone 0), a
+    // vertex half way into the closure's zone, and one outside it. The root is the
+    // loop's mean, so both thighs at a quarter.
+    const I = SKIN_INFLUENCES;
+    const lip = (thigh: number) => [0, thigh, 0, 0, 0, 0, 0, 0];
+    const skin: SkinWeights = {
+      skinIndex: Uint16Array.from([...lip(1), ...lip(2), ...lip(1), ...lip(2)]),
+      skinWeight: Float32Array.from([0, 1, 2, 3].flatMap(() => [0.5, 0.5, 0, 0, 0, 0, 0, 0])),
+    };
+    const root = { index: new Uint16Array(I), weight: new Float32Array(I) };
+    root.index.set([0, 1, 2]);
+    root.weight.set([0.5, 0.25, 0.25]);
+    const skinning: ReservoirSkinning = {
+      owner: Int16Array.from([-1, -1, -1, -1]),
+      roots: [root],
+      loops: [Uint32Array.of(0, 1)],
+      openings: [0.01],
+      graph: reservoirGraph(
+        [],
+        [0, 1, 2, 3],
+        Int16Array.of(-1, -1, -1, -1),
+        Int16Array.of(0, 0, -1, -1),
+      ),
+      closure: {
+        canal: Int16Array.from([0, 0, 0, -1]),
+        follows: Float32Array.from([1, 1, 0.5, 0]),
+      },
+    };
+    const of = row;
+    const closed = evaluatedSkin(skin, skinning, null, [1]);
+    if (!closed) throw new Error("a closed canal left its lips' weights as they were");
+    // Closed: both lips take the root's weights, the same, so no pose parts them.
+    for (const v of [0, 1]) {
+      expect(of(closed, v).get(0)).toBeCloseTo(0.5, 6);
+      expect(of(closed, v).get(1)).toBeCloseTo(0.25, 6);
+      expect(of(closed, v).get(2)).toBeCloseTo(0.25, 6);
+    }
+    // Half way into the zone: half its own, half the root's.
+    expect(of(closed, 2).get(1)).toBeCloseTo(0.375, 6);
+    expect(of(closed, 2).get(2)).toBeCloseTo(0.125, 6);
+    // Outside the zone: as it was.
+    expect(of(closed, 3).get(2)).toBeCloseTo(0.5, 6);
+    expect(of(closed, 3).has(1)).toBe(false);
+    // Half closed: the lips half way to the root.
+    const half = evaluatedSkin(skin, skinning, null, [0.5]);
+    expect(half && of(half, 0).get(1)).toBeCloseTo(0.375, 6);
+    // Open (not closed at all), or no closure asked: the topology's arrays themselves.
+    expect(evaluatedSkin(skin, skinning, null, [0])).toBeNull();
+    expect(evaluatedSkin(skin, skinning, null)).toBeNull();
+  });
+
   it("moves a pushed reservoir vertex's hip fold to its root's as its weights, and leaves the rest as they were", () => {
     // Render vertices 0 and 1 are the loop (rows 0 and 1, the left hip's and the right's);
     // 2 is a ring copy with a row of its own, 3 a cap vertex the fold left; 4 is skin elsewhere.
