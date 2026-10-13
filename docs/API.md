@@ -656,7 +656,14 @@ compute what the renderer will do.
   chinHeight)` (`src/surface/beard.ts`) fills every absent control from the
   style's `BEARD_SHAPES` entry (which parts it grows, as fractions of the
   longest, its default length, fork and part) and clamps each to its range:
-  the length to 0..`chinHeight`, so no beard grows past the floor. `bodyHairColour(group, input)` is the figure's hair pigments
+  the length to 0..`chinHeight`, so no beard grows past the floor.
+  `generateBeardCards(assets, beard: ResolvedBeard)`
+  (`src/surface/beardCards.ts`) is the beard's alpha cards, bound to the base
+  mesh at rest and draped (long hair falls, forks and parts, and lies on the
+  body). It is null for a beard that grows none: clean-shaven, stubble, no part
+  `BEARD_CARD_MIN_LENGTH` long, or a volume of 0. `beardCardSpec(assets, beard)`
+  is the spec it generates from. `beardCardKey(beard)` is equal exactly when
+  two beards give the same cards. `bodyHairColour(group, input)` is the figure's hair pigments
   darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
   fibre diameter and drawn length) and at least as grey as ageing makes them
   (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an

@@ -19,6 +19,8 @@
  * figure's coverage, so density follows age, sex and the recipe without new
  * geometry.
  */
+import { BufferAttribute, BufferGeometry, Vector3 } from "three";
+import { MeshBVH } from "three-mesh-bvh";
 import type { AttachmentMaterial, HumanoidAssets } from "../format/assetFormat.ts";
 import { groupFaces } from "../format/assetFormat.ts";
 import { combField } from "./coat.ts";
@@ -84,6 +86,30 @@ export interface CardSpec {
   /** How far each card's direction may turn from the flow, radians. */
   spread: number;
   seed: number;
+  /**
+   * Per base vertex, metres: a card's length where it roots, in place of
+   * `length` (which stays the longest any card grows).
+   */
+  lengthField?: Float32Array;
+  /** Lets long cards fall and lie on the body (`CardDrape`); short ones are unchanged. */
+  drape?: CardDrape;
+}
+
+/**
+ * How long hair hangs: past a few centimetres a card turns from its comb to
+ * fall under gravity, and lies on the body rather than through it. The chin's
+ * hair may fork into two points, and the moustache may part and sweep out
+ * from the middle.
+ */
+export interface CardDrape {
+  /** The body at rest, as the cards are generated on it: base positions and triangles. */
+  body: { positions: Float32Array; triangles: Uint32Array };
+  /** Per base vertex, 0..1, where the fork acts (the chin), and its strength, 0..1. */
+  forkMask: Float32Array;
+  fork: number;
+  /** Per base vertex, 0..1, where the part acts (the moustache), and its strength, 0..1. */
+  partMask: Float32Array;
+  part: number;
 }
 
 export interface Cards {
@@ -93,6 +119,86 @@ export interface Cards {
   /** Per card vertex, metres along its card from the root. */
   growth: Float32Array;
   cardCount: number;
+  /** Per card, its first vertex, and the vertex count at the end (`cardCount + 1` entries). */
+  cardStart: Uint32Array;
+  /**
+   * How deep any draped card point past `DRAPE.clearFrom` still lies inside the
+   * body, metres (0 without a drape): the drape's own check.
+   */
+  inside: number;
+}
+
+/** A draped card's numbers (`CardDrape`); all are choices, in metres. */
+export const DRAPE = {
+  /** A card's quads are about this long, from `SEGMENTS` up to `maxSegments`. */
+  segmentLength: 0.025,
+  maxSegments: 14,
+  /** Along a card, gravity takes over from the comb between these distances from the root. */
+  fallFrom: 0.01,
+  fallTo: 0.05,
+  /** How far forward of straight down hair falls (it clears the chest), per unit drop. */
+  fallForward: 0.12,
+  /** How far a full fork turns the chin's hair sideways, per unit drop. */
+  forkTurn: 0.7,
+  /** How far a full part turns the moustache's hair out from the middle, against its comb. */
+  partTurn: 1.5,
+  /** Past this far from the root a card keeps this clear of the body. */
+  clearFrom: 0.01,
+  clearance: 0.003,
+  /** At most this many pushes clear a point. */
+  pushes: 4,
+} as const;
+
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * The body's BVH for a drape, built once per body, with its triangles in the
+ * BVH's order (a BVH reorders the index it is built on, so its `faceIndex`
+ * counts these, not the body's) and each one's normal.
+ */
+const bodyCache = new WeakMap<
+  Uint32Array,
+  { bvh: MeshBVH; triangles: Uint32Array; normals: Float32Array }
+>();
+
+function bodyOf(body: CardDrape["body"]) {
+  const known = bodyCache.get(body.triangles);
+  if (known) return known;
+  const g = new BufferGeometry();
+  g.setAttribute("position", new BufferAttribute(body.positions, 3));
+  const triangles = body.triangles.slice();
+  g.setIndex(new BufferAttribute(triangles, 1));
+  const bvh = new MeshBVH(g, { verbose: false });
+  const normals = new Float32Array(triangles.length);
+  const P = body.positions;
+  for (let t = 0; t < triangles.length / 3; t++) {
+    const [a, b, c] = [0, 1, 2].map((k) => (triangles[t * 3 + k] as number) * 3) as [
+      number,
+      number,
+      number,
+    ];
+    const n = norm(
+      cross(
+        [
+          (P[b] as number) - (P[a] as number),
+          (P[b + 1] as number) - (P[a + 1] as number),
+          (P[b + 2] as number) - (P[a + 2] as number),
+        ],
+        [
+          (P[c] as number) - (P[a] as number),
+          (P[c + 1] as number) - (P[a + 1] as number),
+          (P[c + 2] as number) - (P[a + 2] as number),
+        ],
+      ),
+    );
+    normals.set(n, t * 3);
+  }
+  const out = { bvh, triangles, normals };
+  bodyCache.set(body.triangles, out);
+  return out;
 }
 
 /** A deterministic generator in [0, 1) (mulberry32). */
@@ -122,6 +228,130 @@ const norm = (a: Vec3): Vec3 => {
   return scale(a, 1 / l);
 };
 
+/** A card's spine, root to tip, and the direction across it at each point. */
+interface CardPath {
+  centres: Vec3[];
+  sides: Vec3[];
+}
+
+/**
+ * A short card: `SEGMENTS` quads along `dir` that leave the skin and curve
+ * back toward it, the lift rising as t(1 - t / 2).
+ */
+function liftPath(
+  spec: CardSpec,
+  root: Vec3,
+  normal: Vec3,
+  dir: Vec3,
+  side: Vec3,
+  len: number,
+): CardPath {
+  const centres: Vec3[] = [];
+  const sides: Vec3[] = [];
+  for (let s = 0; s <= SEGMENTS; s++) {
+    const t = s / SEGMENTS;
+    centres.push(
+      add(add(root, scale(dir, len * t)), scale(normal, spec.lift * len * t * (1 - t / 2) + 2e-4)),
+    );
+    sides.push(side);
+  }
+  return { centres, sides };
+}
+
+/**
+ * A draped card (`CardDrape`): it leaves the skin along its comb at the lift's
+ * slope, parted out from the middle on the moustache, and past `DRAPE.fallFrom`
+ * turns to fall, forked to its side of the chin, kept `DRAPE.clearance` off
+ * the body. Its quads are about `DRAPE.segmentLength` long, so long hair bends.
+ */
+function drapePath(
+  spec: CardSpec,
+  drape: CardDrape,
+  root: Vec3,
+  normal: Vec3,
+  dir: Vec3,
+  side0: Vec3,
+  len: number,
+  rand: () => number,
+  report: (inside: number) => void,
+): CardPath {
+  const { bvh, triangles, normals } = bodyOf(drape.body);
+  const segments = Math.min(
+    DRAPE.maxSegments,
+    Math.max(SEGMENTS, Math.round(len / DRAPE.segmentLength)),
+  );
+  // The side of the face the root is on; a root on the middle picks one.
+  const sign = Math.abs(root[0]) > 0.004 ? Math.sign(root[0]) : rand() < 0.5 ? -1 : 1;
+  const near = bvh.closestPointToPoint(new Vector3(...root));
+  const at = (mask: Float32Array) => {
+    // The masks are per base vertex; the root's nearest body triangle carries them.
+    const t = near?.faceIndex ?? -1;
+    if (t < 0) return 0;
+    let m = 0;
+    for (let k = 0; k < 3; k++) m += mask[triangles[t * 3 + k] as number] as number;
+    return m / 3;
+  };
+  const forkW = at(drape.forkMask) * drape.fork;
+  const partW = at(drape.partMask) * drape.part;
+  let start = dir;
+  if (partW > 0) {
+    const outward = sub([sign, 0, 0], scale(normal, normal[0] * sign));
+    if (Math.hypot(...outward) > 1e-6)
+      start = norm(add(dir, scale(norm(outward), partW * DRAPE.partTurn)));
+  }
+  start = norm(add(start, scale(normal, spec.lift)));
+  const fall = norm([forkW * DRAPE.forkTurn * sign, -1, DRAPE.fallForward]);
+  const step = len / segments;
+  const target = { point: new Vector3(), distance: 0, faceIndex: 0 };
+  const q = new Vector3();
+  /** How far `p` lies outside the body along its nearest triangle's normal, and that normal. */
+  const clear = (p: Vec3): [number, Vec3] => {
+    q.set(...p);
+    const hit = bvh.closestPointToPoint(q, target);
+    if (!hit) return [Number.POSITIVE_INFINITY, [0, 0, 0]];
+    const n: Vec3 = [
+      normals[hit.faceIndex * 3] as number,
+      normals[hit.faceIndex * 3 + 1] as number,
+      normals[hit.faceIndex * 3 + 2] as number,
+    ];
+    return [dot(sub(p, [hit.point.x, hit.point.y, hit.point.z]), n), n];
+  };
+  let p = add(root, scale(normal, 2e-4));
+  const centres: Vec3[] = [p];
+  const dirs: Vec3[] = [start];
+  // The surface the card last lay on: it slides along it rather than falling into it.
+  let resting: Vec3 | null = null;
+  for (let s = 1; s <= segments; s++) {
+    const travelled = (s - 1) * step;
+    const g = smoothstep(DRAPE.fallFrom, DRAPE.fallTo, travelled);
+    let d = norm(add(scale(start, 1 - g), scale(fall, g)));
+    if (resting) {
+      const into = dot(d, resting);
+      if (into < 0) d = norm(sub(d, scale(resting, into)));
+    }
+    p = add(p, scale(d, step));
+    if (s * step > DRAPE.clearFrom) {
+      // Out along the nearest surface's normal; a crease may need another push.
+      let [depth, n] = clear(p);
+      resting = null;
+      for (let k = 0; k < DRAPE.pushes && depth < DRAPE.clearance; k++) {
+        p = add(p, scale(n, DRAPE.clearance - depth));
+        resting = resting ? norm(add(resting, n)) : n;
+        [depth, n] = clear(p);
+      }
+      report(Math.max(0, -depth));
+    }
+    centres.push(p);
+    dirs.push(d);
+  }
+  // Across the card: the root's side, square to the spine at each point.
+  const sides = dirs.map((d) => {
+    const s = sub(side0, scale(d, dot(side0, d)));
+    return Math.hypot(...s) > 1e-6 ? norm(s) : side0;
+  });
+  return { centres, sides };
+}
+
 /** Columns of the strand map: each card draws one, chosen at random. */
 export const STRAND_COLUMNS = 8;
 
@@ -148,6 +378,8 @@ export function generateCards(assets: HumanoidAssets, spec: CardSpec): Cards {
   const uvs: number[] = [];
   const rank: number[] = [];
   const growth: number[] = [];
+  const cardStart: number[] = [];
+  let inside = 0;
   let cards = 0;
   // Cards run along the coat's comb, the one direction body hair lies in.
   const comb = combField(assets);
@@ -195,20 +427,28 @@ export function generateCards(assets: HumanoidAssets, spec: CardSpec): Cards {
         const turn = (rand() * 2 - 1) * spec.spread;
         const dir = norm(add(scale(flow, Math.cos(turn)), scale(side0, Math.sin(turn))));
         const side = norm(cross(normal, dir));
-        const len = spec.length * (0.7 + 0.3 * rand());
+        const rootLength = spec.lengthField
+          ? w0 * (spec.lengthField[a] as number) +
+            u * (spec.lengthField[b] as number) +
+            v * (spec.lengthField[c] as number)
+          : spec.length;
+        const len = Math.min(spec.length, rootLength) * (0.7 + 0.3 * rand());
         const column = Math.floor(rand() * STRAND_COLUMNS);
         const r = rand();
         const base = refVerts.length / 3;
-        for (let s = 0; s <= SEGMENTS; s++) {
-          const t = s / SEGMENTS;
-          // The strip leaves the skin and curves back toward it: lift rises as t(1 - t / 2).
-          const centre = add(
-            add(root, scale(dir, len * t)),
-            scale(normal, spec.lift * len * t * (1 - t / 2) + 2e-4),
-          );
+        cardStart.push(base);
+        const path = spec.drape
+          ? drapePath(spec, spec.drape, root, normal, dir, side, len, rand, (d) => {
+              inside = Math.max(inside, d);
+            })
+          : liftPath(spec, root, normal, dir, side, len);
+        const segments = path.centres.length - 1;
+        for (let s = 0; s <= segments; s++) {
+          const t = s / segments;
+          const centre = path.centres[s] as Vec3;
           const half = (spec.width / 2) * (1 - 0.5 * t);
           for (const k of [-1, 1]) {
-            const p = add(centre, scale(side, k * half));
+            const p = add(centre, scale(path.sides[s] as Vec3, k * half));
             refVerts.push(a, b, c);
             weights.push(w0, u, v);
             offsets.push(...sub(p, root));
@@ -217,7 +457,7 @@ export function generateCards(assets: HumanoidAssets, spec: CardSpec): Cards {
             growth.push(len * t);
           }
         }
-        for (let s = 0; s < SEGMENTS; s++) {
+        for (let s = 0; s < segments; s++) {
           const i0 = base + s * 2;
           faceVerts.push(i0, i0 + 1, i0 + 3, i0 + 2);
           faceUvs.push(i0, i0 + 1, i0 + 3, i0 + 2);
@@ -227,8 +467,11 @@ export function generateCards(assets: HumanoidAssets, spec: CardSpec): Cards {
     }
   }
   const vertexCount = refVerts.length / 3;
+  cardStart.push(vertexCount);
   return {
     cardCount: cards,
+    cardStart: Uint32Array.from(cardStart),
+    inside,
     rank: Float32Array.from(rank),
     growth: Float32Array.from(growth),
     compiled: {

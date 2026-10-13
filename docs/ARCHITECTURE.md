@@ -2432,9 +2432,21 @@ a game's months without swapping assets, and `resolveBeard` clamps it to the
 chin's height above the floor. The coat is the beard's dense base:
 each part's coat length is the shorter of the style's base (`BEARD_LENGTHS`)
 and the resolved part length, so a shorter `length` trims it and a longer one
-is left to the cards. Status: the cards still draw one fixed length
-(`FULL_BEARD_CARD_LENGTH`); drawing the resolved length, volume, grey, fork and
-part with cards is the next step of issue #14. The use cases decided it: a close-up portrait
+is left to the cards. `generateBeardCards(assets, beard)`
+(`src/surface/beardCards.ts`) makes the cards from the resolved beard: they
+root on the parts at least `BEARD_CARD_MIN_LENGTH` (5 mm) long, each card at
+its part's length, and volume scales their number and their lift. Long cards
+drape (`CardDrape`, numbers in `DRAPE`). Their quads are about 2.5 cm long, so
+they bend. Between 1 and 5 cm from the root they turn from the comb to fall,
+a little forward. The chin's hair forks toward its side by `fork`, and the
+moustache parts out from the middle by `part`. Past the first centimetre each
+point is pushed off the body's nearest surface and slides along it, so a
+chest-length beard lies on the chest instead of passing through it. The beard
+is quantised before generating (lengths floored to the millimetre, the other
+controls to a twentieth), so `beardCardKey` names equal cards, and growing a
+beard by a hair does not regenerate them. Grey is the material's, not the
+geometry's. Status: the model still wears the pack's `beard-full`, and wearing
+the generated cards is the next step of issue #14. The use cases decided it: a close-up portrait
 needs the style legible at a glance (cards), a beard growing during play
 needs one continuous length (no per-length pack), painted miniatures need a
 closed solid mass (no fur shader), and a character colour needs the grey

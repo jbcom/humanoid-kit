@@ -80,6 +80,7 @@ export * from "./rig/pose.ts";
 export * from "./rig/skinShare.ts";
 export * from "./subdiv/catmullClark.ts";
 export * from "./surface/beard.ts";
+export * from "./surface/beardCards.ts";
 export * from "./surface/bodyHair.ts";
 export * from "./surface/bodyOcclusion.ts";
 export * from "./surface/cielab.ts";
