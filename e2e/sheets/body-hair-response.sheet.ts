@@ -7,7 +7,7 @@
  *
  * Root runs it manually after reviewing this branch:
  *
- *   HK_BODY_HAIR_RESPONSE_OUT="/Users/jbogaty/.cache/hk-body-hair-response" \
+ *   HK_BODY_HAIR_RESPONSE_OUT="$HOME/.cache/hk-body-hair-response" \
  *     heavy-slot --priority --rule hardware --reason "Issue #21 body-hair visual gate" \
  *     pnpm exec playwright test e2e/sheets/body-hair-response.sheet.ts --project sheets
  *
