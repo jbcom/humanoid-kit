@@ -24,6 +24,12 @@ export interface LabSetup {
 /** The average-tissue frame at an age: MakeHuman's female anchor, every other macro average. */
 export const cellRecipeAt = (age: number): Recipe => frameRecipe({ gender: 0, age });
 
+/**
+ * The bare frame at an age: MakeHuman's male anchor, which carries no breast tissue
+ * (its breast weight is 0). Library data only; the generator never sees a recipe.
+ */
+export const bareRecipeAt = (age: number): Recipe => frameRecipe({ gender: 1, age });
+
 export function labSetup(): LabSetup {
   const assets = loadFixtureAssets();
   const lab: Lab = {
@@ -40,7 +46,7 @@ export function labSetup(): LabSetup {
     trunkMask(assets, bodyManifest),
   );
   const ctx: TissueCtx = { mesh, support, manifest: bodyManifest };
-  return { lab, ctx, ages: ageLibrary(ctx, lab, cellRecipeAt) };
+  return { lab, ctx, ages: ageLibrary(ctx, lab, cellRecipeAt, bareRecipeAt) };
 }
 
 /** A frame direction at an age, as a recipe (breast macros left at MakeHuman's average). */
