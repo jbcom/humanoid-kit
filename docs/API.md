@@ -1628,8 +1628,10 @@ what the creator proposed.
 ### Cover policy
 
 A host may need a person's explicit confirmation before a figure is shown
-uncovered (Anyself asks for an 18+ confirmation and refuses it under 25). The
-library does not judge that, it enforces the host's answer: **nothing is
+uncovered (an adults-only application, say, that asks for an age confirmation
+first). The kit has no policy of its own: with no `coverPolicy` nothing is asked
+and nothing is refused, as in MakeHuman. The library does not judge, it enforces
+the host's answer: **nothing is
 evaluated, drawn or reported for an uncovered figure until the policy allows
 it.** The creator holds a figure back from `<Humanoid>` (the worker never sees
 its recipe) while it waits.
