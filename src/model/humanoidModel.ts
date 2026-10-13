@@ -2365,7 +2365,7 @@ export class HumanoidModel {
       );
       // An organ the detail draws out of a reservoir moves with where it is rooted, and a closed canal's lips with
       // their canal's root, its fold as its weights (`evaluatedFold`).
-      return adult ? evaluatedFold(onSurface, adult.skinning, shares, closed) : onSurface;
+      return adult ? evaluatedFold(onSurface, adult.skinning, shares, (globalThis as any).process?.env?.HK_PROBE_FOLD === "weights" ? null : closed) : onSurface;
     });
     return { surface: adult ? "adult" : "base", folds };
   }
@@ -2405,6 +2405,7 @@ export class HumanoidModel {
     const skinning = reservoirSkinningOf(
       mesh,
       this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? [],
+      applyStencil(mesh.stencil, this.assets.positions, new Float32Array(mesh.topology.vertexCount * 3)),
     );
     this.adultBody = {
       part: part(mesh),

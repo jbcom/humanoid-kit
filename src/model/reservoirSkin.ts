@@ -90,9 +90,11 @@ export interface ReservoirSkinning {
    * outside every reservoir, the canal whose opening it closes (-1 for none) and how
    * far it follows the closed opening, 1 on the loop falling to 0 across the zone
    * (the zone's harmonic weights on the loop, summed, through the lattice's stencil).
-   * Absent on a surface without closures.
+   * Absent on a surface without closures. `mirror`: per render vertex of a zone or of
+   * a closed canal's own walls, the render vertex at its mirror image across the
+   * body's midline (`closureMirrors`), itself on the midline, -1 where none is.
    */
-  closure?: { canal: Int16Array; follows: Float32Array };
+  closure?: { canal: Int16Array; follows: Float32Array; mirror: Int32Array };
 }
 
 /** A built surface's canals (`AdultSurfaceTopology.canals`): each render vertex's canal reservoir or -1, and the gaps. */
@@ -119,6 +121,7 @@ function closureSkinning(
   mesh: SurfaceMesh,
   owner: Int16Array,
   specs: readonly { canal?: { closure?: CanalClosureSpec } }[],
+  template: Float32Array,
 ): ReservoirSkinning["closure"] {
   const lattice = mesh.lattice;
   if (!lattice || !specs.some((s) => s.canal?.closure)) return undefined;
@@ -147,16 +150,96 @@ function closureSkinning(
       }
     });
   });
-  return { canal, follows };
+  const closed = specs.map((spec) => !!spec.canal?.closure);
+  return { canal, follows, mirror: closureMirrors(mesh, canal, closed, template) };
+}
+
+/**
+ * How far, metres, a vertex's mirror image may be from the vertex taken as its mirror:
+ * half the shortest edge of a closure zone on the template (0.41 mm), so that no
+ * neighbour along the opening is taken for a mirror (99% lie within 0.15 mm).
+ */
+const MIRROR_REACH = 2e-4;
+
+/**
+ * Each closure zone's and closed canal's render vertices' mirrors
+ * (`ReservoirSkinning.closure`): on the template surface (`template`, per surface
+ * vertex), where the lips are apart and the base mesh is symmetric, a zone or cap
+ * vertex's is the one of the same zone or cap nearest its image across the midline
+ * (x = 0), itself on the midline, none farther than `MIRROR_REACH`. A ring copies the
+ * loop (`SurfaceReservoir.copies`), each of its vertices lying on the template where the
+ * loop vertex it copies does, so a ring vertex's mirror is the same ring's copy of its
+ * loop vertex's mirror. -1 where there is none.
+ */
+function closureMirrors(
+  mesh: SurfaceMesh,
+  canal: Int16Array,
+  closed: readonly boolean[],
+  template: Float32Array,
+): Int32Array {
+  const surfaceMirror = new Int32Array(mesh.topology.vertexCount).fill(-1);
+  const nearest = (group: ArrayLike<number>) => {
+    for (let a = 0; a < group.length; a++) {
+      const v = group[a] as number;
+      let best = MIRROR_REACH;
+      for (let b = 0; b < group.length; b++) {
+        const u = group[b] as number;
+        const d = Math.hypot(
+          (template[u * 3] as number) + (template[v * 3] as number),
+          (template[u * 3 + 1] as number) - (template[v * 3 + 1] as number),
+          (template[u * 3 + 2] as number) - (template[v * 3 + 2] as number),
+        );
+        if (d < best) {
+          best = d;
+          surfaceMirror[v] = u;
+        }
+      }
+    }
+    // Mirrors are mutual: one whose mirror is another is none.
+    const found = new Map(Array.from(group, (v) => [v, surfaceMirror[v] as number]));
+    for (const [v, m] of found) if (m >= 0 && found.get(m) !== v) surfaceMirror[v] = -1;
+  };
+  const reservoirs = mesh.lattice?.reservoirs ?? [];
+  closed.forEach((isClosed, s) => {
+    if (!isClosed) return;
+    const zone = new Set<number>();
+    mesh.renderToSurface.forEach((v, r) => {
+      if (canal[r] === s) zone.add(v);
+    });
+    nearest([...zone]);
+    const reservoir = reservoirs[s];
+    if (!reservoir) return;
+    nearest(reservoir.capVertices);
+    const { loopVertices, copies, chain, rings } = reservoir;
+    const along = new Map<number, number>();
+    loopVertices.forEach((v, t) => along.set(v, t));
+    for (let t = 0; t < chain; t++) {
+      const m = along.get(surfaceMirror[loopVertices[t] as number] as number);
+      if (m === undefined) continue;
+      for (let j = 0; j < rings; j++)
+        surfaceMirror[copies[j * chain + t] as number] = copies[j * chain + m] as number;
+    }
+  });
+  // A render vertex's mirror is a render vertex of its surface vertex's mirror.
+  const renderOf = new Int32Array(mesh.topology.vertexCount).fill(-1);
+  mesh.renderToSurface.forEach((v, r) => {
+    if ((renderOf[v] as number) < 0) renderOf[v] = r;
+  });
+  return Int32Array.from(mesh.renderToSurface, (v) => {
+    const m = surfaceMirror[v] as number;
+    return m < 0 ? -1 : (renderOf[m] as number);
+  });
 }
 
 /**
  * A built surface's reservoirs as `evaluatedSkin` reads them; none without a
- * lattice. `specs` are the pack's reservoirs, for their canals' closures.
+ * lattice. `specs` are the pack's reservoirs, for their canals' closures, and
+ * `template` the surface's vertices on the template figure, for their mirrors.
  */
 export function reservoirSkinningOf(
   mesh: SurfaceMesh,
-  specs: readonly { canal?: { closure?: CanalClosureSpec } }[] = [],
+  specs: readonly { canal?: { closure?: CanalClosureSpec } }[],
+  template: Float32Array,
 ): ReservoirSkinning {
   const reservoirs = mesh.lattice?.reservoirs ?? [];
   const bySurface = new Int16Array(mesh.topology.vertexCount).fill(-1);
@@ -175,7 +258,7 @@ export function reservoirSkinningOf(
     return Uint32Array.from(loop);
   });
   const roots = loops.map((loop) => rootSkin(mesh, loop));
-  const closure = closureSkinning(mesh, owner, specs);
+  const closure = closureSkinning(mesh, owner, specs, template);
   return {
     owner,
     roots,
@@ -613,39 +696,74 @@ export function evaluatedFold(
     roots[s] = root;
     return root;
   };
-  const blended: { v: number; e: number; s: number; lip: boolean }[] = [];
+  /**
+   * `v`'s row with its mirror's (`ReservoirSkinning.closure`) mixed in by `c`, half of
+   * each at `c` 1: where it moves agreeing with its mirror's, so the two sides of a
+   * closed opening move alike; its normal change its own, its crease's turn being what
+   * shades it. A vertex the fold leaves counts as none, and the side is a mean of the
+   * rows there are. Null where there is no other vertex to agree with (on the midline,
+   * no mirror) or the fold moves neither.
+   */
+  const closedRow = (v: number, mirror: number, c: number): Float32Array | null => {
+    const own = fold.slot[v] as number;
+    if (c <= 0 || mirror < 0 || (fold.slot[mirror] as number) === own) return null;
+    const rows = [own, fold.slot[mirror] as number].filter((r) => r >= 0);
+    if (!rows.length) return null;
+    const out = new Float32Array(row);
+    for (let k = 0; k < row; k++) {
+      const mine = own < 0 ? 0 : value(own * row + k);
+      const pair = rows.reduce((t, r) => t + value(r * row + k), 0) / 2;
+      out[k] = k % 8 >= 4 ? mine : (1 - c) * mine + c * pair;
+    }
+    const pairSide = rows.reduce((t, r) => t + value(r * row + 3), 0) / rows.length;
+    out[3] = own < 0 ? pairSide : (1 - c) * value(own * row + 3) + c * pairSide;
+    return out;
+  };
+  const blended: { v: number; to: Float32Array }[] = [];
   for (let v = 0; v < owner.length; v++) {
-    let s = owner[v] as number;
-    let e: number;
-    const lip = s < 0;
-    if (!lip) e = shares ? (shares[v] as number) : 0;
-    else if (closure && closed) {
-      s = closure.canal[v] as number;
-      e = s < 0 ? 0 : (closure.follows[v] as number) * ((closed[s] as number | undefined) ?? 0);
-    } else continue;
-    // A vertex neither the fold nor its root's fold moves (a fold whose reach is elsewhere, the knee's) needs no row.
-    if (e > 0 && ((fold.slot[v] as number) >= 0 || rootOf(s).reached))
-      blended.push({ v, e, s, lip });
+    const s = owner[v] as number;
+    if (s >= 0) {
+      // A closed canal's walls agree with their mirrors as its lips do, all of them: inside,
+      // the walls meet the loop, and walls parted by the fold where their lips are not
+      // creased the skin between.
+      const closing = closure && closed ? ((closed[s] as number | undefined) ?? 0) : 0;
+      const mirrored = closure ? closedRow(v, closure.mirror[v] as number, closing) : null;
+      const e = shares ? (shares[v] as number) : 0;
+      // A vertex neither the fold nor its root's fold moves (a fold whose reach is elsewhere, the knee's) needs no row.
+      const toRoot = e > 0 && ((fold.slot[v] as number) >= 0 || rootOf(s).reached);
+      if (!toRoot) {
+        if (mirrored) blended.push({ v, to: mirrored });
+        continue;
+      }
+      const own = fold.slot[v] as number;
+      const root = rootOf(s).sum;
+      const to = new Float32Array(row);
+      for (let k = 0; k < row; k++) {
+        const mine = mirrored ? (mirrored[k] as number) : own < 0 ? 0 : value(own * row + k);
+        to[k] = (1 - e) * mine + e * (root[k] as number);
+      }
+      // A vertex the fold left reads the root's side; one it moved, the two sides mixed as the rows are.
+      to[3] =
+        own < 0 && !mirrored
+          ? (root[3] as number)
+          : (1 - e) * (mirrored ? (mirrored[3] as number) : value(own * row + 3)) +
+            e * (root[3] as number);
+      blended.push({ v, to });
+    } else if (closure && closed) {
+      const c = closure.canal[v] as number;
+      const e = c < 0 ? 0 : (closure.follows[v] as number) * ((closed[c] as number | undefined) ?? 0);
+      const to = closedRow(v, closure.mirror[v] as number, e);
+      if (to) blended.push({ v, to });
+    }
   }
   if (!blended.length) return fold;
   // Each blended vertex its own row after the surface's: the blend is the vertex's, not its row's.
   const data = new Uint16Array((fold.rows + blended.length) * row);
   data.set(fold.data.subarray(0, fold.rows * row));
   const slot = Float32Array.from(fold.slot);
-  blended.forEach(({ v, e, s, lip }, i) => {
+  blended.forEach(({ v, to }, i) => {
     const at = (fold.rows + i) * row;
-    const own = fold.slot[v] as number;
-    const root = rootOf(s).sum;
-    for (let k = 0; k < row; k++) {
-      const mine = own < 0 ? 0 : value(own * row + k);
-      // A lip keeps its own normal change (each opening and key's second texel): the root's
-      // has none, and its crease's turn is what shades it; only where it moves must agree.
-      data[at + k] = toHalf(lip && k % 8 >= 4 ? mine : (1 - e) * mine + e * (root[k] as number));
-    }
-    // A vertex the fold left reads the root's side; one it moved, the two sides mixed as the rows are.
-    data[at + 3] = toHalf(
-      own < 0 ? (root[3] as number) : (1 - e) * value(own * row + 3) + e * (root[3] as number),
-    );
+    for (let k = 0; k < row; k++) data[at + k] = toHalf(to[k] as number);
     slot[v] = fold.rows + i;
   });
   return { joint: fold.joint, slot, rows: fold.rows + blended.length, data };

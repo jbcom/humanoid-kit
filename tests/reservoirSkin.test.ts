@@ -284,6 +284,7 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
       closure: {
         canal: Int16Array.from([0, 0, 0, -1]),
         follows: Float32Array.from([1, 1, 0.5, 0]),
+        mirror: Int32Array.from([1, 0, -1, -1]),
       },
     };
     const of = row;
@@ -411,7 +412,15 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
       const k = key(v);
       moved.set(k, [...(moved.get(k) ?? []), v]);
     }
-    const onRoots = [...moved.values()].filter((vs) => vs.length >= 100).flat();
+    // A closed canal's lips take its root's weights too (`evaluatedSkin`), but they are skin
+    // the closure draws together, not an organ: each keeps its own crease's normal change.
+    const { owner } = (
+      model as unknown as { adultBodySurface(): { skinning: ReservoirSkinning } }
+    ).adultBodySurface().skinning;
+    const onRoots = [...moved.values()]
+      .filter((vs) => vs.length >= 100)
+      .flat()
+      .filter((v) => (owner[v] as number) >= 0);
     expect(onRoots.length).toBeGreaterThan(100);
     for (const v of onRoots) {
       const dot = [0, 1, 2].reduce(

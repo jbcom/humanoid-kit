@@ -248,6 +248,7 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
     hits.sort((x, y) => x.distance - y.distance);
     const exit = hits[0]?.faceIndex;
     if (exit === undefined || exit === null) continue;
+    (globalThis as any).__hkProbe?.odd.push([v, hits.length, hits[0]?.distance, tri[exit * 3], tri[exit * 3 + 1], tri[exit * 3 + 2]]);
     const other = parts[tri[exit * 3] as number] as BodyPart;
     v3(body.rest, v, rest);
     let depth = REACH;
@@ -275,6 +276,7 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
     } else {
       penetrating++;
       penetratingArea += (areas[v] as number) * stride * CM2;
+      (globalThis as any).__hkProbe?.pen.push([v, (areas[v] as number) * stride * CM2, depth, `${mine}~${other}`]);
       if (depth > deepest) {
         deepest = depth;
         deepestParts = `${mine}~${other}`;
@@ -377,6 +379,7 @@ function folds(body: PosedBody, crease: Float32Array) {
     const posed = angle(body.positions, s, u);
     if (posed <= DIHEDRAL_LIMIT || angle(body.rest, s, u) >= DIHEDRAL_REST) continue;
     count++;
+    (globalThis as any).__hkProbe?.fold.push([p, q, posed]);
     sharpest = Math.max(sharpest, posed);
   }
   return { folds: count, sharpest };
