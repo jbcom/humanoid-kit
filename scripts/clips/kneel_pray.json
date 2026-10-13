@@ -42,6 +42,20 @@
       }
     },
     {
+      "t": 1.6,
+      "rotations": {
+        "spine03": { "Xrotation": 5 },
+        "upperarm01.L": { "Xrotation": -4, "Yrotation": 33 },
+        "lowerarm01.L": { "Xrotation": -60 },
+        "upperarm01.R": { "Xrotation": -4, "Yrotation": -30 },
+        "lowerarm01.R": { "Xrotation": -60 },
+        "upperleg01.L": { "Xrotation": -90 },
+        "lowerleg01.L": { "Xrotation": 90 },
+        "upperleg01.R": { "Xrotation": 0 },
+        "lowerleg01.R": { "Xrotation": 90 }
+      }
+    },
+    {
       "t": 2,
       "rotations": {
         "spine03": { "Xrotation": 6 },

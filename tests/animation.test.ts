@@ -8,8 +8,14 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { AUTHORED_CLIPS_DIR, AUTHORED_LICENCE } from "../scripts/lib/authoredClips.ts";
 import { readRig } from "../scripts/lib/gltf.ts";
-import { ADDITIONAL_ASSETS, encodeClip, PUNKDUCK_CLIPS } from "../scripts/lib/packAnimations.ts";
+import {
+  ADDITIONAL_ASSETS,
+  AUTHORED_AUTHOR,
+  encodeClip,
+  PUNKDUCK_CLIPS,
+} from "../scripts/lib/packAnimations.ts";
 import { QUATERNIUS_LIBRARIES, retargetTarget } from "../scripts/lib/packQuaternius.ts";
 import { retarget } from "../scripts/lib/retarget.ts";
 import { readZip } from "../scripts/lib/zip.ts";
@@ -61,6 +67,17 @@ describe("the animation pack", () => {
     }
     for (const id of ["walk_loop", "jog_fwd_loop", "idle_loop", "swim_fwd_loop", "sprint_loop"])
       expect(ids, id).toContain(id);
+    // The clips authored for the package, one for each file in `scripts/clips/`.
+    const authored = manifest.clips.filter((c) => c.source.author === AUTHORED_AUTHOR);
+    expect(authored.map((c) => c.id).sort()).toEqual(
+      fs
+        .readdirSync(AUTHORED_CLIPS_DIR)
+        .filter((f) => f.endsWith(".json"))
+        .map((f) => f.slice(0, -5))
+        .sort(),
+    );
+    expect(entry("march_quick")).toMatchObject({ rootMotion: true, grounded: true, loop: true });
+    expect(entry("kneel_pray")).toMatchObject({ rootMotion: false, loop: false });
     expect(entry("swim_fwd_loop").grounded).toBe(false);
     expect(entry("walk_loop")).toMatchObject({ rootMotion: true, grounded: true, loop: true });
   });
@@ -79,6 +96,12 @@ describe("the animation pack", () => {
         expect(c.source.archiveSha256, c.id).toBe(ADDITIONAL_ASSETS.sha256);
         expect(c.source.licence, c.id).toBe("CC0");
         expect(provenance, c.id).toMatch(new RegExp(`- ${c.id}: clause B`));
+      } else if (c.source.author === AUTHORED_AUTHOR) {
+        // The source is the clip's own file, hashed as it stands in the repository.
+        const text = fs.readFileSync(path.join(import.meta.dirname, "..", c.source.file));
+        expect(c.source.archiveSha256, c.id).toBe(createHash("sha256").update(text).digest("hex"));
+        expect(c.source.licence, c.id).toBe(AUTHORED_LICENCE);
+        expect(provenance, c.id).toContain(`- ${c.id}: \`${c.source.file}\``);
       } else {
         const lib = QUATERNIUS_LIBRARIES.find((l) => l.archive === c.source.archive);
         expect(lib, c.id).toBeDefined();
@@ -459,8 +482,10 @@ describe("a walking figure's feet", () => {
  * The clips in which the body touches itself or rests on the ground, with the deepest
  * overlap of the coarse capsules, metres, on any of the nine figures (to the next
  * centimetre and one more): sitting and kneeling with the hands on the thighs, a roll,
- * a landing, a sword's swing across the body. A capsule is a coarse stand-in for a
- * limb, so these are bounds to hold the clips to, not collisions to fix.
+ * a landing, a sword's swing across the body, and the package's own drill clips, where a
+ * forearm lies across the chest under a musket or a flagstaff and the praying palms
+ * meet. A capsule is a coarse stand-in for a limb, so these are bounds to hold the
+ * clips to, not collisions to fix.
  */
 const CONTACT_CLIPS: Record<string, number> = {
   death01: 0.047,
@@ -481,6 +506,12 @@ const CONTACT_CLIPS: Record<string, number> = {
   sword_regular_c: 0.079,
   sword_regular_combo: 0.093,
   zombie_scratch: 0.088,
+  charge_advance: 0.1,
+  colour_bearer: 0.08,
+  kneel_pray: 0.05,
+  musket_fire: 0.12,
+  musket_load: 0.09,
+  pray_standing: 0.05,
 };
 
 describe("clearance: no part of the body through another", () => {
@@ -541,9 +572,9 @@ describe("clearance: no part of the body through another", () => {
   });
 
   it("is clean in every walk, idle, jog, sprint and swim: only the clips where a limb rests on or crosses the body overlap it", () => {
-    // 72 of the 90 clips (every locomotion and standing idle among them) stay within the tolerance.
+    // 74 of the 98 clips (every locomotion and standing idle among them) stay within the tolerance.
     const touching = Object.keys(CONTACT_CLIPS);
-    expect(touching).toHaveLength(18);
+    expect(touching).toHaveLength(24);
     for (const c of manifest.clips)
       if (/walk|jog|sprint|^idle|swim|crouch/i.test(c.id) && !/fold_arms/.test(c.id))
         expect(touching, c.id).not.toContain(c.id);
