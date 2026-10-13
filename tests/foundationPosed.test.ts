@@ -14,6 +14,8 @@ import { loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(), { subdivision: 1 });
 const recipe = createRecipe({ macros: { age: 25, gender: 1 } });
+const adultModel = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
+const adultRecipe = createRecipe({ macros: { age: 30, gender: 0 } });
 
 const maxY = (p: Float32Array) => {
   let m = Number.NEGATIVE_INFINITY;
@@ -24,10 +26,19 @@ const maxY = (p: Float32Array) => {
 describe("the posed body", () => {
   // The first posed evaluation builds the model's subdivided surface and its
   // fold tables, about 8 s alone and over 30 s when the whole unit project
-  // runs at once, so it is built here rather than charged to the first test.
+  // runs at once, so both immutable rest surfaces are built here rather than
+  // charged to an individual assertion.
   let body: ReturnType<typeof posedSurface>;
+  let adultBody: ReturnType<typeof posedSurface>;
+  let restAtSetup: Float32Array;
+  let adultRestAtSetup: Float32Array;
   beforeAll(() => {
     body = posedSurface(model, recipe, REST_POSE);
+    adultBody = posedSurface(adultModel, adultRecipe, REST_POSE);
+    // `posedSurface` copies the evaluator's scratch arrays. Retain snapshots so
+    // later pose cases prove they did not mutate either shared rest witness.
+    restAtSetup = body.rest.slice();
+    adultRestAtSetup = adultBody.rest.slice();
   }, 120_000);
 
   it("is the evaluated body itself at rest", () => {
@@ -85,29 +96,29 @@ describe("the posed body", () => {
   });
 
   it("welds as the model's topology does: a seam's duplicates, each one point of the surface", () => {
-    const adultModel = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
-    for (const [m, r] of [
-      [model, recipe],
-      [adultModel, createRecipe({ macros: { age: 30, gender: 0 } })],
+    for (const [m, b] of [
+      [model, body],
+      [adultModel, adultBody],
     ] as const) {
-      const body = posedSurface(m, r, REST_POSE);
-      expect(body.surface).toBe(m === model ? "base" : "adult");
-      expect(body.weld).toBe(m.renderWeld(body.surface));
-      expect(m.bodyIndex(body.surface)).toBe(body.index);
+      expect(b.surface).toBe(m === model ? "base" : "adult");
+      expect(m.renderWeld(b.surface)).toEqual(b.weld);
+      expect(m.bodyIndex(b.surface)).toBe(b.index);
       // A seam's duplicates are one point of the surface.
-      const at = (v: number) => [0, 1, 2].map((k) => body.rest[v * 3 + k]).join(",");
-      for (let v = 0; v < body.vertexCount; v++)
-        if (body.weld[v] !== v) expect(at(v)).toBe(at(body.weld[v] as number));
-      if (body.surface !== "adult") continue;
+      const at = (v: number) => [0, 1, 2].map((k) => b.rest[v * 3 + k]).join(",");
+      for (let v = 0; v < b.vertexCount; v++)
+        if (b.weld[v] !== v) expect(at(v)).toBe(at(b.weld[v] as number));
+      if (b.surface !== "adult") continue;
       // A closed canal's two lips meet at rest, and are not one vertex: posed, they part.
       const first = new Map<string, number>();
       let meeting = 0;
-      for (let v = 0; v < body.vertexCount; v++) {
+      for (let v = 0; v < b.vertexCount; v++) {
         const w = first.get(at(v));
         if (w === undefined) first.set(at(v), v);
-        else if (body.weld[v] !== body.weld[w]) meeting++;
+        else if (b.weld[v] !== b.weld[w]) meeting++;
       }
       expect(meeting).toBeGreaterThan(0);
     }
+    expect(body.rest).toEqual(restAtSetup);
+    expect(adultBody.rest).toEqual(adultRestAtSetup);
   });
 });

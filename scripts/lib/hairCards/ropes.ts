@@ -8,7 +8,7 @@
  * The geometry is authored here from nothing: no mesh of anyone's is read.
  */
 import { Vector3 } from "three";
-import type { BodySurface, ScalpPoint } from "./head.ts";
+import type { BodyProbe, BodySurface, ScalpPoint } from "./head.ts";
 
 /** Geometry accumulated over a style's ropes, in the arrays a compiled asset holds. */
 export interface Cards {
@@ -29,6 +29,8 @@ export const newCards = (): Cards => ({
   uvs: [],
   roots: [],
 });
+
+const newProbe = (): BodyProbe => ({ point: new Vector3(), normal: new Vector3(), distance: 0 });
 
 /**
  * How a rope finds its shape.
@@ -123,8 +125,9 @@ export function ropePath(
   body: BodySurface,
 ): { points: Vector3[]; radii: number[] } {
   if (spec.hang.kind === "marched") return marchRope(spec, spec.hang.lift, body);
-  const combed = combRope(spec, spec.hang.rise, body);
-  relaxRope(combed.points, combed.radii, combed.lying, spec, spec.hang.stiffness, body);
+  const probe = newProbe();
+  const combed = combRope(spec, spec.hang.rise, body, probe);
+  relaxRope(combed.points, combed.radii, combed.lying, spec, spec.hang.stiffness, body, probe);
   return combed;
 }
 
@@ -142,6 +145,7 @@ function marchRope(
   const points: Vector3[] = [root.point.clone().addScaledVector(root.normal, -0.002)];
   const radii: number[] = [spec.radius];
   const dir = root.normal.clone();
+  const probe = newProbe();
   for (let i = 1; i <= segments; i++) {
     const s = i * step;
     const radius = ropeRadius(spec, s / length);
@@ -154,7 +158,7 @@ function marchRope(
       .normalize();
     dir.lerp(want, 0.55).normalize();
     points.push(
-      lieOver(body, (points[i - 1] as Vector3).clone().addScaledVector(dir, step), radius),
+      lieOver(body, (points[i - 1] as Vector3).clone().addScaledVector(dir, step), radius, probe),
     );
     dir.subVectors(points[i] as Vector3, points[i - 1] as Vector3).normalize();
     radii.push(radius);
@@ -163,8 +167,8 @@ function marchRope(
 }
 
 /** `p`, moved out of the body to `radius * CLEARANCE` from it where it is nearer. */
-function lieOver(body: BodySurface, p: Vector3, radius: number): Vector3 {
-  const probe = body.probe(p);
+function lieOver(body: BodySurface, p: Vector3, radius: number, probe: BodyProbe): Vector3 {
+  body.probeInto(p, probe);
   const clear = radius * CLEARANCE;
   if (probe.distance < clear) p.addScaledVector(probe.normal, clear - probe.distance);
   return p;
@@ -180,6 +184,7 @@ function combRope(
   spec: RopeSpec,
   rise: number,
   body: BodySurface,
+  probe: BodyProbe,
 ): { points: Vector3[]; radii: number[]; lying: number } {
   const { root, length, segments } = spec;
   const first = Math.min(ROOT_SEGMENT, length / segments);
@@ -203,17 +208,17 @@ function combRope(
     let p: Vector3;
     if (i === 1) p = prev.clone().addScaledVector(leave, segment);
     else {
-      const under = body.probe(prev);
-      const comb = combAlong(under.normal);
+      body.probeInto(prev, probe);
+      const comb = combAlong(probe.normal);
       onScalp &&=
-        comb.dot(GRAVITY) <= LIES_UNTIL_STEEP && under.distance < radius * CLEARANCE + LIES_WITHIN;
+        comb.dot(GRAVITY) <= LIES_UNTIL_STEEP && probe.distance < radius * CLEARANCE + LIES_WITHIN;
       if (onScalp) {
         dir.lerp(comb, 0.7).normalize();
         p = prev.clone().addScaledVector(dir, segment);
         // Held at its clearance from the scalp, pulled in as well as pushed out, and still a
         // segment long (the rope does not stretch to wrap the head).
-        const at = body.probe(p);
-        p.addScaledVector(at.normal, radius * CLEARANCE - at.distance);
+        body.probeInto(p, probe);
+        p.addScaledVector(probe.normal, radius * CLEARANCE - probe.distance);
         p.sub(prev).setLength(segment).add(prev);
         lying = i + 1;
       } else {
@@ -222,7 +227,7 @@ function combRope(
           .addScaledVector(spec.drift ?? new Vector3(), Math.max(0, 1 - free / DRIFT_LENGTH))
           .normalize();
         dir.lerp(want, 0.55).normalize();
-        p = lieOver(body, prev.clone().addScaledVector(dir, segment), radius);
+        p = lieOver(body, prev.clone().addScaledVector(dir, segment), radius, probe);
       }
     }
     dir.subVectors(p, prev).normalize();
@@ -246,6 +251,7 @@ export function relaxRope(
   spec: RopeSpec,
   stiffness: number,
   body: BodySurface,
+  probe: BodyProbe,
 ): void {
   const fixed = Math.max(2, Math.min(points.length, fixedCount));
   if (fixed >= points.length) return;
@@ -284,13 +290,17 @@ export function relaxRope(
           .add(a);
       }
       for (let i = fixed; i < points.length; i++)
-        lieOver(body, points[i] as Vector3, radii[i] as number);
+        lieOver(body, points[i] as Vector3, radii[i] as number, probe);
     }
     // Friction: of a touching point's move this pass, the part along the body is mostly lost.
     for (let i = fixed; i < points.length; i++) {
       const p = points[i] as Vector3;
-      const probe = body.probe(p);
-      if (probe.distance > (radii[i] as number) * CLEARANCE * 1.05) continue;
+      const contactDistance = (radii[i] as number) * CLEARANCE * 1.05;
+      if (
+        !body.probeWithin(p, probe, contactDistance + Number.EPSILON) ||
+        probe.distance > contactDistance
+      )
+        continue;
       const moved = toward.subVectors(p, before[i] as Vector3);
       const along = moved.addScaledVector(probe.normal, -moved.dot(probe.normal));
       p.addScaledVector(along, -ROPE_SETTLE.friction);

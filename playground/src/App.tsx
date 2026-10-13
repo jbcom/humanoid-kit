@@ -406,6 +406,19 @@ function AutoFrame({
   return null;
 }
 
+/** QA-only floor: a visible world-space grid and surface for contact review. */
+function GroundQa() {
+  return (
+    <>
+      <mesh rotation-x={-Math.PI / 2} receiveShadow>
+        <planeGeometry args={[8, 8]} />
+        <meshStandardMaterial color="#c9c3b8" roughness={0.9} />
+      </mesh>
+      <gridHelper args={[8, 16, "#6d675e", "#aaa398"]} position-y={0.002} />
+    </>
+  );
+}
+
 /** `?light=camera`: a light that follows the camera, and `?light=under`: one from below. */
 function QaLight({ kind }: { kind: "camera" | "under" }) {
   const camera = useThree((s) => s.camera);
@@ -560,6 +573,7 @@ function Shot() {
         }}
       >
         <StudioStage {...(background ? { background } : {})} />
+        {params.has("groundQa") && <GroundQa />}
         <SceneProbe />
         {frame && frameView.length === 3 && frameView.every(Number.isFinite) && (
           <AutoFrame
@@ -571,21 +585,27 @@ function Shot() {
         )}
         {(qaLight === "camera" || qaLight === "under") && <QaLight kind={qaLight} />}
         {channelQa && <ChannelQa of={affordances} params={params} />}
-        <Humanoid
-          recipe={recipe}
-          pose={bodyPose}
-          {...(channelQa && { affordances })}
-          {...(library &&
-            animation && {
-              animation: { library, ...animation, onStart: setPlaying },
-            })}
-          {...(eyeLibrary && { eyeMaterials: eyeLibrary })}
-          signals={signals}
-          position={[0, animation ? 0 : lift, 0]}
-          onGroundOffset={setLift}
-          onSettled={() => setSettled(true)}
-          bodyArtImages={tattooImages()}
-        />
+        {/* QA-only rigid orientation: no anatomy, gravity or tissue deformation is changed. */}
+        <group
+          rotation={params.has("supineQa") ? [-Math.PI / 2, 0, 0] : [0, 0, 0]}
+          position={params.has("supineQa") ? [0, 0.35, 0] : [0, 0, 0]}
+        >
+          <Humanoid
+            recipe={recipe}
+            pose={bodyPose}
+            {...(channelQa && { affordances })}
+            {...(library &&
+              animation && {
+                animation: { library, ...animation, onStart: setPlaying },
+              })}
+            {...(eyeLibrary && { eyeMaterials: eyeLibrary })}
+            signals={signals}
+            position={[0, animation ? 0 : lift, 0]}
+            onGroundOffset={setLift}
+            onSettled={() => setSettled(true)}
+            bodyArtImages={tattooImages()}
+          />
+        </group>
         <OrbitControls makeDefault target={target} />
       </Canvas>
     </div>

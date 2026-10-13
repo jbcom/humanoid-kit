@@ -169,7 +169,10 @@ export function useFigureAnimation(args: Args): void {
     const a = animator.current;
     const cur = argsRef.current;
     if (!a?.playing || !cur.animation || !cur.ready || !cur.skeleton || !cur.figure) return;
-    if (!cur.animation.paused) a.update(Math.min(delta, 0.1));
+    // Root motion is measured against R3F's render clock. Capping this step makes
+    // a slow frame visibly shorten a walk, so the animator receives that clock's
+    // full elapsed step.
+    if (!cur.animation.paused) a.update(delta);
     const { ready: info, figure: ev, skeleton: sk } = cur;
     const fit = rig.current;
     if (!fit) return;

@@ -636,7 +636,9 @@ compute what the renderer will do.
   (mean `HAIR_STRAND_MEAN`) render as that albedo.
 - Body hair (research/BODY-HAIR.md): `BODY_HAIR_GROUPS` (`face`, `chest`,
   `abdomen`, `back`, `buttocks`, `arms`, `legs`, `axillary` (from puberty, 13),
-  and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`),
+  and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`).
+  The creator hides the axillary and pubic density controls below 18; that UI
+  boundary does not change recipe validity or axillary's age-derived coverage.
   `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
   `defaultBodyHairCoverage(group, age, gender)` is a group's terminal-hair
   coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years and
@@ -1911,7 +1913,8 @@ animator.root;                // how far the figure has been carried: [x across,
   frame without React state: the body follows it with `pose.faceUnits` laid over,
   `pose.body` standing aside; the figure lifts itself onto the ground (do not lift the
   group; `onGroundOffset` is not called while a clip plays); a clip that carries the
-  figure (`rootMotion`, default true) moves the group forward in its own frame; and the
+  figure (`rootMotion`, default true) moves the group forward in its own frame by the full
+  render-clock step, including after a slow frame; and the
   figure's presence follows. `time` puts it at a time in the clip. `onStart(clip)` is
   called once the figure follows the clip, and again for a new figure or `time`.
 - `bodySegments(assets, rest, control, skinIndex, skinWeight, bodyVertices)` (a figure's 14

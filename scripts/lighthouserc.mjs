@@ -52,8 +52,9 @@ const config = {
       settings: {
         ...ci.collect.settings,
         chromeFlags,
-        // On Linux SwiftShader, this optional report artifact can hang after
-        // audit collection. Keep the audits and their assertions intact.
+        // The rendered WebGL canvas can make Lighthouse's optional full-page
+        // screenshot hang after audit collection on Linux SwiftShader CI. Keep
+        // the audits and their assertions; only omit that non-gating artifact.
         disableFullPageScreenshot: true,
       },
     },

@@ -2,9 +2,10 @@
  * The authored hair styles (scripts/lib/hairCards): ropes placed from angles round the head, lying on
  * and hanging over the default figure's body, bound to its base mesh.
  */
+import { createHash } from "node:crypto";
 import { BufferAttribute, BufferGeometry, DoubleSide, Ray, Vector3 } from "three";
 import { MeshBVH } from "three-mesh-bvh";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { compileAuthored } from "../scripts/lib/hairCards/compile.ts";
 import { BodySurface, HeadFrame } from "../scripts/lib/hairCards/head.ts";
 import { AUTHORED_STYLES } from "../scripts/lib/hairCards/index.ts";
@@ -17,10 +18,47 @@ import { loadHairFixtureAssets } from "./hairFixtures.ts";
 let rest: ReturnType<HumanoidModel["restHead"]>;
 let head: HeadFrame;
 let body: BodySurface;
+const fixtureCards = new Map<string, Cards>();
+const fixtureCardSnapshots = new Map<string, string>();
+
+function snapshotCards(cards: Cards): string {
+  const hash = createHash("sha256");
+  for (const values of [cards.positions, cards.faceVerts, cards.faceUvs, cards.uvs, cards.roots])
+    hash.update(new Uint8Array(Float64Array.from(values).buffer));
+  return hash.digest("hex");
+}
+
+/**
+ * The rope-grid and compiled-asset suites inspect the same rest-pose output.
+ * Keep one frozen test fixture per style; the determinism assertion still asks
+ * its authoring function for a separate second build.
+ */
+function cardsForFixture(spec: (typeof AUTHORED_STYLES)[number]): Cards {
+  const existing = fixtureCards.get(spec.id);
+  if (existing) return existing;
+  const cards = spec.build({ head, body });
+  Object.freeze(cards.positions);
+  Object.freeze(cards.faceVerts);
+  Object.freeze(cards.faceUvs);
+  Object.freeze(cards.uvs);
+  Object.freeze(cards.roots);
+  Object.freeze(cards);
+  fixtureCards.set(spec.id, cards);
+  fixtureCardSnapshots.set(spec.id, snapshotCards(cards));
+  return cards;
+}
+
 beforeAll(() => {
   rest = new HumanoidModel(loadHairFixtureAssets(), { subdivision: 0 }).restHead();
   head = new HeadFrame(rest);
   body = new BodySurface(rest, head);
+});
+
+afterAll(() => {
+  for (const [id, cards] of fixtureCards)
+    expect(snapshotCards(cards), `${id} fixture cards changed during inspection`).toBe(
+      fixtureCardSnapshots.get(id),
+    );
 });
 
 describe("the head frame", () => {
@@ -46,6 +84,29 @@ describe("the head frame", () => {
     expect(
       body.probe(crown.point.clone().addScaledVector(crown.normal, -0.02)).distance,
     ).toBeLessThan(-0.01);
+  });
+
+  it("writes an explicit probe result exactly as the public allocating probe does", () => {
+    const scratch = { point: new Vector3(), normal: new Vector3(), distance: 0 };
+    for (const point of [
+      new Vector3(0, 1.85, 0),
+      new Vector3(0.11, 1.62, -0.08),
+      new Vector3(-0.2, 1.4, 0.12),
+    ]) {
+      const allocating = body.probe(point);
+      const reused = body.probeInto(point, scratch);
+      expect(reused).toBe(scratch);
+      expect(reused.distance).toBe(allocating.distance);
+      expect(reused.point.toArray()).toEqual(allocating.point.toArray());
+      expect(reused.normal.toArray()).toEqual(allocating.normal.toArray());
+      const within = body.probeWithin(point, scratch, 0.02);
+      expect(within).toBe(Math.abs(allocating.distance) <= 0.02);
+      if (within) {
+        expect(scratch.distance).toBe(allocating.distance);
+        expect(scratch.point.toArray()).toEqual(allocating.point.toArray());
+        expect(scratch.normal.toArray()).toEqual(allocating.normal.toArray());
+      }
+    }
   });
 
   it("puts the hairline lowest at the nape and the front's middle higher than the temples", () => {
@@ -74,7 +135,7 @@ describe.each([
   beforeAll(() => {
     const spec = AUTHORED_STYLES.find((s) => s.id === id);
     if (!spec) throw new Error(`no ${id}`);
-    cards = spec.build({ head, body });
+    cards = cardsForFixture(spec);
   });
 
   it(`parts the head into ${fewest} to ${most} sections, one rope each`, () => {
@@ -217,7 +278,7 @@ describe.each(AUTHORED_STYLES.map((s) => [s.id, s] as const))(
   (_id, spec) => {
     let cards: ReturnType<typeof spec.build>;
     beforeAll(() => {
-      cards = spec.build({ head, body });
+      cards = cardsForFixture(spec);
     });
 
     it("is a whole mesh: finite positions, every face's corners and UVs in range", () => {
