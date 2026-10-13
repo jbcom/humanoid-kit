@@ -9,6 +9,7 @@
 import { groupFaces, type HumanoidAssets } from "../format/assetFormat.ts";
 import type { ResolvedBeard } from "./beard.ts";
 import { type CardSpec, type Cards, generateCards } from "./bodyHairCards.ts";
+import { SCALP_DEPTH } from "./hairFields.ts";
 import { type BeardPart, beardMasks } from "./regions/bodyHairCoat.ts";
 
 /** The shortest part that grows cards, metres: below it the coat alone draws the hair. */
@@ -125,6 +126,22 @@ export function beardCardSpec(assets: HumanoidAssets, resolved: ResolvedBeard): 
       part: beard.part,
     },
   };
+}
+
+/** How open a card's root is to light, inside the beard's mass: a choice, as the scalp's shade. */
+const ROOT_SHADE = 0.35;
+
+/**
+ * Per card vertex, how open it is to light, 0..1: `ROOT_SHADE` at the root,
+ * brightening to 1 over `SCALP_DEPTH` along the card, as scalp hair brightens
+ * away from the scalp. Generated beards change with every millimetre grown, so
+ * this stands in for the packer's ray bake (seconds a beard) at no cost.
+ */
+export function beardCardOcclusion(cards: Cards): Float32Array {
+  return Float32Array.from(cards.growth, (g) => {
+    const t = Math.min(1, Math.max(0, g / SCALP_DEPTH));
+    return ROOT_SHADE + (1 - ROOT_SHADE) * t * t * (3 - 2 * t);
+  });
 }
 
 /** The beard's cards, bound to the base mesh at rest, or null when it grows none (`beardCardSpec`). */

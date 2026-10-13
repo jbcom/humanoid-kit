@@ -5,6 +5,7 @@ import { type ResolvedBeard, resolveBeard } from "../src/surface/beard.ts";
 import {
   BEARD_CARD_MIN_LENGTH,
   beardCardKey,
+  beardCardOcclusion,
   beardCardSpec,
   generateBeardCards,
 } from "../src/surface/beardCards.ts";
@@ -173,6 +174,18 @@ describe("beard cards", () => {
     expect(roots).toBeLessThan(1e-6);
     expect(low).toBeGreaterThan(50);
     expect(lowFollow / low).toBeGreaterThan(0.9);
+  });
+
+  it("are shaded at their roots inside the beard and open toward their tips, without a ray bake", () => {
+    const cards = generateBeardCards(assets, beard("longstreet")) as Cards;
+    const occ = beardCardOcclusion(cards);
+    expect(occ.length).toBe(cards.compiled.vertexCount);
+    const first = cards.cardStart[0] as number;
+    const last = (cards.cardStart[1] as number) - 1;
+    expect(occ[first]).toBeGreaterThan(0.2);
+    expect(occ[first]).toBeLessThan(0.6);
+    expect(occ[last]).toBe(1);
+    for (const o of occ) expect(o >= 0 && o <= 1).toBe(true);
   });
 
   it("fork the chin's hair into two points", () => {

@@ -110,7 +110,8 @@ import {
   wornGroundOffset,
 } from "../rig/pose.ts";
 import { skinDualShare } from "../rig/skinShare.ts";
-import { bodyHairColour, bodyHairCoverage } from "../surface/bodyHair.ts";
+import { beardCoverage, resolveBeard } from "../surface/beard.ts";
+import { bodyHairColour } from "../surface/bodyHair.ts";
 import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
 import {
   agedHairColour,
@@ -724,6 +725,7 @@ function HairMesh({
   report,
   shape,
   density = 1,
+  white = 0,
 }: {
   topology: HairTopology;
   geometry: BufferGeometry;
@@ -735,6 +737,8 @@ function HairMesh({
   shape: object;
   /** For body hair cards, how many are drawn (the figure's coverage); scalp hair is whole. */
   density?: number;
+  /** For body hair cards, the share of them drawn white (a beard's grey); scalp hair has none. */
+  white?: number;
 }) {
   const material = useMemo(() => new HairMaterial(), []);
   useEffect(() => material.setDensity(density), [material, density]);
@@ -745,7 +749,8 @@ function HairMesh({
   // biome-ignore lint/correctness/useExhaustiveDependencies: overrideKey stands for override's values
   useEffect(() => {
     material.setColour({ eumelanin, pheomelanin, grey, override });
-  }, [material, eumelanin, pheomelanin, grey, overrideKey]);
+    material.setWhite(white, { eumelanin, pheomelanin, grey, override });
+  }, [material, eumelanin, pheomelanin, grey, overrideKey, white]);
   useEffect(() => material.setStrand(topology.strand), [material, topology]);
   useEffect(() => material.setMultisampled(multisampled), [material, multisampled]);
   useEffect(() => () => material.dispose(), [material]);
@@ -1145,7 +1150,8 @@ export function Humanoid({
   useEffect(() => {
     skin.setScalp(wornHair ? hairAlbedo(wornColour) : null);
   }, [skin, wornHair, wornColour.eumelanin, wornColour.pheomelanin, wornColour.grey, overrideKey]);
-  // A grown beard's cards: their colour and how many show are the body hair model's.
+  // A grown beard's cards: their colour is the face's body hair, how many show
+  // the beard's coverage, and the share of them white its grey.
   const beardLook = useMemo(() => {
     const input = {
       age: recipe.macros.age,
@@ -1153,8 +1159,23 @@ export function Humanoid({
       colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
       ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     };
-    return { colour: bodyHairColour("face", input), density: bodyHairCoverage("face", input) };
+    return {
+      colour: bodyHairColour("face", input),
+      density: beardCoverage(input),
+      white: resolveBeard(input, Number.POSITIVE_INFINITY).grey,
+    };
   }, [recipe]);
+  // A generated beard's geometry goes when the beard changes: a growing one
+  // makes new cards every millimetre, and nothing else holds them.
+  useEffect(() => {
+    if (!beard) return;
+    const { topology, geometry } = beard;
+    return () => {
+      if (!topology.id.startsWith("beard:")) return;
+      geometries?.hair.delete(topology.id);
+      geometry.dispose();
+    };
+  }, [beard, geometries]);
 
   // The pose: face units blended into bone rotations (rest when absent), and
   // the attachments' occlusion following it.
@@ -1897,6 +1918,7 @@ export function Humanoid({
                 skeleton={rig.skeleton}
                 colour={beardLook.colour}
                 density={beardLook.density}
+                white={beardLook.white}
                 multisampled={multisampled}
                 visible={shown}
                 report={report}

@@ -2923,9 +2923,9 @@ goatee are the coat's alone). Each card carries a rank, a byte per vertex
 its density (`setDensity`, the face's coverage), whole, beside the hairline
 test and outside the alpha-to-coverage term, so the beard thins with age, sex
 and the recipe with the same geometry, and scalp hair, with no ranks (0) and
-the default density (1), is untouched. The model wears a style's cards
-(`wornBeardCards`) only where the face grows terminal hair, so a child's figure
-loads none; they ride the scalp hair's chain (`Evaluation.beard`, sent once like
+the default density (1), is untouched. The model wears generated cards (see
+"Beards" below) only where the face grows a beard (`beardCoverage`), so a
+child's figure has none; they ride the scalp hair's chain (`Evaluation.beard`, sent once like
 the brows' and lashes' topology) and are coloured by the face's body hair
 colour. Their scalp fields are neutral (no hairline fade, no scalp tint: the
 coat shades the skin under them). Rebuilding the hair pack with them leaves
@@ -2964,8 +2964,15 @@ bend all the way down. The beard
 is quantised before generating (lengths floored to the millimetre, the other
 controls to a twentieth), so `beardCardKey` names equal cards, and growing a
 beard by a hair does not regenerate them. Grey is the material's, not the
-geometry's. Status: the model still wears the pack's `beard-full`, and wearing
-the generated cards is the next step of issue #14. The use cases decided it: a close-up portrait
+geometry's: `HairMaterial.setWhite` draws that share of whole cards white,
+chosen by an integer hash of their rank, so a greying beard is salt and
+pepper rather than a uniform tint. The model wears the generated cards
+(`Evaluation.beard`, id `beard:` and the key), made at evaluation on the
+worker in about 0.1 to 0.3 s a new key: drawn unsubdivided and shaded by
+`beardCardOcclusion` rather than the packer's ray bake, which took seconds a
+beard. The pack's `beard-full` entry now serves only its strand map. A beard
+grown or trimmed keeps few sets alive: the model the last 3, worker and
+client the last 4 topologies, `<Humanoid>` disposing the old geometry. The use cases decided it: a close-up portrait
 needs the style legible at a glance (cards), a beard growing during play
 needs one continuous length (no per-length pack), painted miniatures need a
 closed solid mass (no fur shader), and a character colour needs the grey

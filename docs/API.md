@@ -549,12 +549,24 @@ and throws `RangeError` for anything else.
   and the worker's `evaluated` reply carries `decalTopologies` for the brows',
   lashes' and beard cards' static data (`HairTopology.kind` is `scalp`, `brows`,
   `lashes` or `beard`; a decal's fade is all 1, fin and growth 0, scalp none).
-  `Evaluation.beard` is the hair pack's cards for the recipe's beard style
-  (`model.wornBeardCards(recipe)`: the `beard` entry tagged with the style, or
-  null when there is none or the face grows no terminal hair), evaluated as
-  scalp hair is; `HairTopology.rank` is its cards' ranks per render vertex (null
-  for every other kind), and `<Humanoid>` draws the cards whose rank is under the
-  face's coverage (`HairMaterial.setDensity`), in the face's body hair colour.
+  `Evaluation.beard` is the recipe's beard as cards generated for it at
+  evaluation (`beardCardSpec`, `generateCards`; no beard file is loaded, so
+  `pendingHairStyles` never lists one), with its length capped at the chin's
+  height above the figure's lowest point; null when `beardCoverage` is 0, the
+  beard is too short for cards, or the hair pack has no `beard` entry, whose
+  strand map and strand statistics the cards are drawn with. Its id is
+  `beard:` and `beardCardKey`, so equal beards share cards and topology; the
+  model keeps the last 3 it generated and the worker and client the last
+  `BEARD_TOPOLOGIES_KEPT` (4) topologies, both forgetting in the order sent
+  (`SentHairTopologies`), and a forgotten one is sent again if worn again.
+  Generated cards are drawn unsubdivided, their shade the cheap
+  `beardCardOcclusion` (dark roots, open tips) in place of the ray bake.
+  `HairTopology.rank` is its cards' ranks per render vertex (null for every
+  other kind), and `<Humanoid>` draws the cards whose rank is under
+  `beardCoverage` (`HairMaterial.setDensity`), in the face's body hair colour,
+  with the beard's `grey` share of them white (`HairMaterial.setWhite(white,
+  colour)`: whole cards chosen by a hash of their rank, white being the colour
+  at grey 1). It disposes a generated beard's geometry when the beard changes.
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
