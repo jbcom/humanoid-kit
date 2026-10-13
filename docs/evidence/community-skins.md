@@ -44,9 +44,12 @@ three dark ones is painted with a suit. The six dark system skins are the
 `*_african_*` set (young, middle-aged and old, female and male).
 
 The deepest human skin measured, the system `young_african_male`, has an ITA of
-−52. The kit's melanin axis passes it at melanin 0.85 and runs to −70 at 1. Every
-human skin in the packs lies inside the range the kit draws procedurally, and
-the deep end of that range has no texture in the packs at all.
+−52. The kit's melanin axis passes it at melanin 0.85 and runs to −70 at 1, so no
+skin in the packs is deeper than the kit draws procedurally, and the deepest
+fifth of that range has no texture in the packs at all. The light end is not
+compared: a texture's `L*` carries baked shading, and a few stylised light skins
+(`toigo_light_skin_male_with_goth_makeup`, ITA 62) measure lighter than melanin
+0 (56).
 
 ## Reading
 
