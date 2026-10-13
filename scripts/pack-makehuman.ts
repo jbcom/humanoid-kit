@@ -18,9 +18,9 @@
  * the separate humanoid-kit-adult-anatomy pack, which the runtime loads only on
  * request and only evaluates for figures 18 and over.
  *
- * Height and proportion targets are kept for average muscle and weight only:
- * the dense per-muscle/weight variants triple the package size for a shape
- * difference the universal muscle/weight targets already carry.
+ * Height and proportion targets are kept for every muscle and weight, as
+ * MakeHuman applies them; dropping the per-muscle/weight variants would cut the
+ * age files to a third but move the figure away from MakeHuman's own shape.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";

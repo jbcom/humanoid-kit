@@ -50,7 +50,7 @@ then their `int16` xyz deltas, plus a per-target scale in metres per step.
 Evaluation multiplies a delta by `weight * scale`. For transfer, the targets
 file stores each target's indices as ascending deltas and its x, y and z
 deltas as separate planes, then gzips the whole file (`delta-planar-gzip`).
-That takes the body targets from 18.1 MB to 5.4 MB; the loader decompresses
+That takes the body targets from 46.0 MB to 14.3 MB; the loader decompresses
 with the platform's `DecompressionStream` and decodes in one pass.
 
 Only targets that something drives are packed: the macro combinations
@@ -66,15 +66,15 @@ once its own targets have arrived rather than all of them
 | File | Holds | Size |
 | --- | --- | --- |
 | `targets-core.bin.gz` | the skin layers' mask targets (`SKIN_LAYER_TARGETS`, `src/surface/regions`), and any macro target with no age anchor (MakeHuman has none) | 0.01 MB |
-| `targets-baby.bin.gz`, `-child`, `-young`, `-old` | the macro targets of one age anchor (ethnic, universal, height, proportions and breast combinations) | 0.83, 1.14, 1.25, 1.20 MB |
+| `targets-baby.bin.gz`, `-child`, `-young`, `-old` | the macro targets of one age anchor (ethnic, universal, height, proportions and breast combinations) | 2.45, 3.52, 3.78, 3.63 MB |
 | `targets-modifiers.bin.gz` | the other shape-modifier targets | 1.0 MB |
 
 Age is the macro axis people change least while shaping a figure, and every
 other macro (gender, muscle, weight, height, proportions, ethnicity, breast)
 blends combinations within the same age anchors, so an anchor's file serves
 every edit that keeps the age between its neighbours. The default figure (25
-years) needs only the adult body's file (`targets-young`, MakeHuman's name): about 1.9 MB with the body and attachments,
-against 5.1 MB for everything.
+years) needs only the adult body's file (`targets-young`, MakeHuman's name): about 4.6 MB with the body and attachments,
+against 15.2 MB for everything.
 
 `loadHumanoidAssetsStaged(options)` loads in stages over one link, each
 starting when the previous one has settled (`targetLoadOrder`): first the body,
@@ -162,9 +162,22 @@ its anchors' weights. Each axis is a linear interpolation between anchors:
 - the three ethnic anchors, normalised to sum to 1 (equal thirds if all are 0).
 
 Upstream ships no file for some combinations because the base mesh already is
-that shape; those are never named. Height and proportion targets are packed for
-average muscle and weight only, and upstream has no baby proportion targets, so
-proportions do not apply at the baby anchor.
+that shape; those are never named. Height and proportion targets combine over
+muscle and weight, gender and age as the universal targets do, which is how
+MakeHuman applies them. Upstream has no baby proportion targets, so proportions
+do not apply at the baby anchor.
+
+`tests/macroParityGolden.test.ts` holds this to MakeHuman's own output: the
+fixture `tests/fixtures/macro-parity.json` records the macro target weights
+MakeHuman 1.x computes for 140 macro settings (spread over every axis's
+anchors, midpoints and breakpoints, plus seeded random mixes), and the kit must
+match each weight to 1e-9. MakeHuman puts its adult at 25 years where the kit
+holds it from 18, so the fixture's ages are confined to where the two agree
+(under 10 and 25 and over). Keeping the per-muscle/weight height and proportion
+variants roughly triples the age-anchor files (5.1 MB to 15.2 MB for the whole
+body pack); averaging them instead put single vertices up to 33 mm away from
+what MakeHuman builds, worst for proportions at 1 with muscle or weight at an
+extreme.
 
 ### Regions
 

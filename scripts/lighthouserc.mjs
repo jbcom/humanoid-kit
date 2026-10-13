@@ -24,7 +24,7 @@ const { ci } = lighthouseAssertions("game-default", {
   // The base preset (lighthouse:no-pwa) errors on audits this demo fails by
   // design or upstream; they stay visible as warnings.
   assertions: {
-    // The packs stream every age's targets after the first figure (6.7 MB).
+    // The packs stream every age's targets after the first figure (15.2 MB).
     "total-byte-weight": "warn",
     "network-dependency-tree-insight": "warn",
     // three and R3F ship code a single page does not run, and R3F's own
