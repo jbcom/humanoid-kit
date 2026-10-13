@@ -48,6 +48,8 @@ export interface Reservoir {
   rings: number;
   /** Where its skin lies in UV space; absent, the UVs of the surface it was cut from. */
   island?: ReservoirIsland;
+  /** A canal, drawn into the body (`AdultReservoirSpec.canal`). */
+  canal?: { opening: number; gap: number };
 }
 
 /** Where an island's UVs are among the surface's (`SurfaceReservoir.island`). */
@@ -84,6 +86,8 @@ export interface SurfaceReservoir {
   fraction: Float32Array;
   /** Where the island's UVs are, when the reservoir has one. */
   island?: SurfaceIsland;
+  /** A canal, drawn into the body (`Reservoir.canal`). */
+  canal?: { opening: number; gap: number };
 }
 
 export interface ReservoirInput {
@@ -364,6 +368,7 @@ export function applyReservoirs(
       slot,
       fraction,
       ...(island && { island: island.info }),
+      ...(spec.canal && { canal: { opening: spec.canal.opening, gap: spec.canal.gap } }),
     });
   });
 

@@ -1,0 +1,8 @@
+Asset: adult_female_2020 (files adult_female_2020_v_01.*)
+Page: http://www.makehumancommunity.org/proxy/adult_female_2020.html
+Page states: "License: CC0 - Creative Commons Zero"
+Submitted: bogdan666, 2019-11-17
+Files from: http://www.makehumancommunity.org/sites/default/files/proxies/3606/1574005210/adult_female_2020_v_01.obj, http://www.makehumancommunity.org/sites/default/files/proxies/3606/1574002150/adult_female_2020_v_01.proxy
+Retrieved: 2026-10-09
+Licence followed: the page's, CC0 (owner ruling 2026-10-10: an upload's page licence governs, whatever its parent's).
+History, not a licence condition: the page says the proxy and obj "were taken from 'Adult Female Genitalia (new) HEALED' by 'geyser'" with the weights re-done; the proxy file's own header still reads "author MHteam / license AGPL3".

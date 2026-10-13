@@ -25,18 +25,31 @@
  * API's table: body 31, underwear 39, socks 43, shirt and trousers 47, sweater
  * 50, indoor jacket 53, shoes 57, coat 61, backpack 69); only their order
  * matters here. Hats sit outside everything: they hide no skin, and nothing
- * sits over them.
+ * sits over them. The community garments add categories MakeHuman's table
+ * has no entry for, placed between its own: hosiery (stockings, tights) 41
+ * and arm sleeves 42 under socks; a separate bottom 46 and top 48 either side
+ * of a whole outfit's 47, so a tunic goes over its trousers; gloves 55 over a
+ * jacket's cuffs; a mask 62 and glasses 63 under a hat or hood; and a held
+ * prop (a staff, a bow) 73, outside everything.
  */
 export const GARMENT_LAYERS = {
   underwear: 39,
+  hosiery: 41,
+  armwear: 42,
   socks: 43,
+  bottoms: 46,
   clothes: 47,
+  top: 48,
   sweater: 50,
   jacket: 53,
+  gloves: 55,
   shoes: 57,
   coat: 61,
+  mask: 62,
+  glasses: 63,
   hat: 65,
   backpack: 69,
+  held: 73,
 } as const;
 
 export type GarmentKind = keyof typeof GARMENT_LAYERS;

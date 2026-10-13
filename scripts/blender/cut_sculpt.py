@@ -1,8 +1,9 @@
-"""Cut the phallus and the scrotum out of a CC0 sculpted genital mesh.
+"""Cut the parts the adult pack transfers out of a sculpted genital mesh: the
+phallus and the scrotum of the male sources, the vulva of the female one.
 
 Run headless (the adult lane runs it through `heavy`):
 
-    Blender -b --factory-startup --python scripts/blender/cut_male.py -- <src.obj> <out-dir>
+    Blender -b --factory-startup --python scripts/blender/cut_sculpt.py -- <src.obj> <out-dir>
 
 The source is a MakeHuman-format mesh in its own coordinates and units (y up,
 the figure facing +z; decimetres for a clothes piece, metres for some whole-body
@@ -13,9 +14,9 @@ base (docs/research/ADULT-SCULPT-PLAN.md, section 6d).
 Each part is cut from the surface subdivided twice (Catmull-Clark, the limit
 the sculpt was made to be seen at), by a set of half-spaces; what is kept is
 the piece connected to a seed point inside the part. A part must come out a
-topological disc: one boundary loop (the cut, where it will meet the
-reservoir's loop), no non-manifold edge, Euler characteristic 1. The script
-fails otherwise.
+topological disc: one boundary loop (the cut, where it meets the reservoir's
+loop or, for skin, the skin round it), no non-manifold edge, Euler
+characteristic 1. The script fails otherwise.
 
 Writes, per part, `<out-dir>/<part>.obj` (positions and quads, no normals or
 UVs) and `<out-dir>/cuts.json` (the source's sha256, the planes, and each
@@ -80,6 +81,30 @@ CUTS = {
             "seed": (0.0, 0.855, 0.32),
         },
     },
+    "adult_female_2020_v_01.obj": {
+        # The page: http://www.makehumancommunity.org/proxy/adult_female_2020.html
+        # (bogdan666, CC0). A whole-body proxy in decimetres; the vulva lies between the
+        # thighs from z -0.17 (the back of the vestibule's fork) to 1.0 (the front of the
+        # majora), within 0.21 of the midline, and from y -0.82 at the cleft to -0.45.
+        "vulva": {
+            # A box round it with a margin of plain skin, which the transfer reads the
+            # body's own shape from: within 0.35 of the midline, from behind the perineum
+            # to the front of the mons, below the hips, and above the cleft's floor by
+            # less than the inner thighs hang below it, so their medial skin, which the
+            # box would otherwise take down to the knees, stays out. The skin it takes is
+            # one sheet, so the cut is one ring.
+            "planes": [
+                ((0.35, 0.0, 0.0), (-1.0, 0.0, 0.0)),
+                ((-0.35, 0.0, 0.0), (1.0, 0.0, 0.0)),
+                ((0.0, 0.0, -0.45), (0.0, 0.0, 1.0)),
+                ((0.0, 0.0, 1.3), (0.0, 0.0, -1.0)),
+                ((0.0, -0.2, 0.0), (0.0, -1.0, 0.0)),
+                ((0.0, -0.9, 0.0), (0.0, 1.0, 0.0)),
+            ],
+            # The floor of the cleft, between the minora.
+            "seed": (0.0, -0.82, 0.4),
+        },
+    },
 }
 
 SUBDIVISIONS = 2
@@ -88,7 +113,7 @@ SUBDIVISIONS = 2
 def args():
     argv = sys.argv[sys.argv.index("--") + 1 :]
     if len(argv) != 2:
-        raise SystemExit("usage: cut_male.py -- <src.obj> <out-dir>")
+        raise SystemExit("usage: cut_sculpt.py -- <src.obj> <out-dir>")
     return argv[0], argv[1]
 
 
@@ -221,7 +246,7 @@ def main():
     src, out = args()
     name = os.path.basename(src)
     if name not in CUTS:
-        raise SystemExit(f"cut_male.py: no cuts for {name}")
+        raise SystemExit(f"cut_sculpt.py: no cuts for {name}")
     with open(src, "rb") as f:
         sha = hashlib.sha256(f.read()).hexdigest()
     os.makedirs(out, exist_ok=True)
@@ -237,7 +262,7 @@ def main():
         if not ok:
             failed.append(part)
         header = (
-            f"# {part}, cut by scripts/blender/cut_male.py from {name} (sha256 {sha})\n"
+            f"# {part}, cut by scripts/blender/cut_sculpt.py from {name} (sha256 {sha})\n"
             "# CC0: the source's page states CC0; see packs/adult-anatomy/source/PROVENANCE.md\n"
         )
         write_obj(bm, os.path.join(out, f"{part}.obj"), header)
@@ -247,7 +272,7 @@ def main():
         json.dump(report, f, indent=2)
         f.write("\n")
     if failed:
-        raise SystemExit(f"cut_male.py: not a disc: {', '.join(failed)}")
+        raise SystemExit(f"cut_sculpt.py: not a disc: {', '.join(failed)}")
 
 
 main()

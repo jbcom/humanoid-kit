@@ -43,7 +43,14 @@ import {
   useHumanoidAffordances,
 } from "../../src/react/index.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
-import { FOLD_SLOT_ATTRIBUTE } from "../../src/render/dualSkinning.ts";
+import { foldSlotAttribute } from "../../src/render/dualSkinning.ts";
+import { FOLD_JOINTS } from "../../src/rig/folds.ts";
+import { HIP_FOLD } from "../../src/rig/hipFold.ts";
+
+/** Whether render vertex `v` of `geometry` has a row in any joint's fold. */
+const inAFold = (geometry: BufferGeometry, v: number) =>
+  FOLD_JOINTS.some((joint) => geometry.getAttribute(foldSlotAttribute(joint)).getX(v) >= 0);
+
 import type { SurfaceAnchors } from "../../src/worker/protocol.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
@@ -52,12 +59,23 @@ const LOAD = { timeout: 300_000 };
 const EXACT = 2e-5;
 
 const client = inlineWorkerClient({ subdivision: 1 });
+/** A client with the adult pack, for the organ's test. */
+const adult = inlineWorkerClient({ subdivision: 1 }, { adultAnatomy: true });
 let anchors: SurfaceAnchors;
 beforeAll(async () => {
   await client.ready;
   anchors = await client.landmarkAnchors();
+  // The seated figures' joint folds, solved once before any canvas draws: the model keeps them by shape, so
+  // a figure asking for them is answered at once. Solved in the page while a canvas renders, the solve's
+  // steps wait on the frames between them, and a figure took longer than a test is given to settle.
+  await client.folds(createRecipe());
+  await adult.ready;
+  await adult.folds(createRecipe({ macros: { gender: 1 } }));
 }, LOAD.timeout);
-afterAll(() => client.dispose());
+afterAll(() => {
+  client.dispose();
+  adult.dispose();
+});
 
 /** Hands the test the canvas's state, and the handle the figure is given. */
 function Probe({ onReady }: { onReady: (get: () => RootState) => void }) {
@@ -154,7 +172,8 @@ function gpuPositions(state: RootState, vertices: readonly number[], linear = fa
   points.setAttribute("position", pick("position", 3));
   points.setAttribute("skinIndex", pick("skinIndex", 4));
   points.setAttribute("skinWeight", pick("skinWeight", 4));
-  points.setAttribute(FOLD_SLOT_ATTRIBUTE, pick(FOLD_SLOT_ATTRIBUTE, 1));
+  for (const joint of FOLD_JOINTS)
+    points.setAttribute(foldSlotAttribute(joint), pick(foldSlotAttribute(joint), 1));
   points.setAttribute(
     "aPixel",
     new BufferAttribute(
@@ -234,10 +253,10 @@ function worstAgainstGpu(shown: Shown, linear = false, foldVertices = 0) {
   const marks = anchors[surface];
   if (!marks) throw new Error(`no anchors on the ${surface} surface`);
   const ids = Object.keys(marks.vertices) as (keyof typeof marks.vertices)[];
-  const slots = body.geometry.getAttribute(FOLD_SLOT_ATTRIBUTE);
   const folded: number[] = [];
-  for (let v = 0; v < slots.count && folded.length < foldVertices; v++)
-    if (slots.getX(v) >= 0) folded.push(v);
+  const count = body.geometry.getAttribute("position").count;
+  for (let v = 0; v < count && folded.length < foldVertices; v++)
+    if (inAFold(body.geometry, v)) folded.push(v);
   const vertices = [...ids.map((id) => marks.vertices[id].vertex), ...folded];
   const gpu = gpuPositions(state, vertices, linear);
   const at = (i: number) => gpu.subarray(i * 3, i * 3 + 3);
@@ -294,8 +313,6 @@ describe("the affordance handle against the GPU", () => {
   it(
     "skins an organ's vertices by the figure's own weights where the GPU does, seated",
     async () => {
-      const adult = inlineWorkerClient({ subdivision: 1 }, { adultAnatomy: true });
-      await adult.ready;
       const shown = await show(
         (h, onSettled) => (
           <Humanoid
@@ -331,12 +348,11 @@ describe("the affordance handle against the GPU", () => {
         if (!p) throw new Error(`vertex ${v}: none`);
         worst = Math.max(worst, gap(p, gpu.subarray(i * 3, i * 3 + 3)));
       });
-      // The organ lies where the seated thighs flex: the fold moves it, on rows past what a
+      // The organ lies where the seated thighs flex: the hip fold moves it, on rows past what a
       // texture a row a line could hold, so this compares the fold too.
-      const slots = body.geometry.getAttribute(FOLD_SLOT_ATTRIBUTE);
+      const slots = body.geometry.getAttribute(foldSlotAttribute(HIP_FOLD));
       expect(sample.filter((v) => slots.getX(v) >= 0).length).toBeGreaterThan(sample.length / 2);
       expect(worst).toBeLessThan(EXACT);
-      adult.dispose();
     },
     LOAD.timeout,
   );

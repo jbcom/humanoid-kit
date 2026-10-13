@@ -1,15 +1,16 @@
 /**
  * What a host that embeds the creator may take away from it, as data: a range
- * for any slider, and sliders, tasks and panels left out. Pure functions over
+ * for any slider, and sliders, groups, tasks and panels left out. Pure functions over
  * recipes and the slider taxonomy, so the creator, an application's own editor
  * and a test all apply the same limits.
  *
  * Hiding is not locking: a hidden slider keeps its value. To hold a value, give
  * it a range of one.
  */
-import type { SliderTask } from "../format/assetFormat.ts";
+import type { SliderGroup, SliderTask } from "../format/assetFormat.ts";
 import { DEFAULT_MACROS, MAX_AGE, MIN_AGE } from "../makehuman/macro.ts";
-import { withAge } from "../recipe/agePolicy.ts";
+import { isAdult, withAge } from "../recipe/agePolicy.ts";
+import { withAnatomyDefaults } from "../recipe/anatomy.ts";
 import type { Recipe, RegionalMacroValues } from "../recipe/recipe.ts";
 import type { ModifierTable, SliderRange } from "./controls.ts";
 import type { RegionalMacro } from "./regional.ts";
@@ -36,6 +37,13 @@ export interface ControlLimits {
   hide?: readonly string[];
   /** Tasks (by id or label: `Main`, `Face`, ...) left out, tab and sliders. */
   hideTasks?: readonly string[];
+  /**
+   * Groups of a task's sliders left out, as `"<task>/<group>"`, each by id or label
+   * (`"Face/Nose features"`). The task is named because group names repeat across
+   * tasks. The key is split at its first `/`, so a group with a slash in its own name
+   * (`"Face/Chin/jaw"`) is written as it is. A task left with no group is left out.
+   */
+  hideGroups?: readonly string[];
   /** Panels left out. */
   hidePanels?: readonly CreatorPanel[];
 }
@@ -101,14 +109,16 @@ export function macroRange(
 /**
  * `recipe` with every limited slider inside its range: macros (age through
  * `withAge`, so moving it under 18 still removes the adult-only values), a
- * regional override of a limited macro, and modifiers (a modifier the recipe does
- * not set is 0, and is set to the nearest value if 0 is outside the range). The
- * input is not modified; the very same recipe comes back when nothing moved.
+ * regional override of a limited macro, and modifiers. A modifier the recipe does
+ * not set is 0 unless the loaded anatomy defaults resolve it; either value is
+ * set to the nearest allowed value when it falls outside the range. The input is
+ * not modified; the very same recipe comes back when nothing moved.
  */
 export function limitRecipe(
   recipe: Recipe,
   controls: ControlLimits | undefined,
   modifiers: ModifierTable,
+  anatomyDefaults?: Readonly<Record<string, string>>,
 ): Recipe {
   const ranges = controls?.ranges;
   if (!ranges) return recipe;
@@ -143,12 +153,18 @@ export function limitRecipe(
     const entry = modifiers.get(id);
     const base = { min: entry ? (entry.lo !== null ? -1 : 0) : -1, max: 1 };
     const { min, max } = narrowed(id, base, controls);
-    const before = out.modifiers[id] ?? 0;
+    const before = withAnatomyDefaults(out, anatomyDefaults).modifiers[id] ?? 0;
     const value = clamp(before, min, max);
     if (value === before) continue;
     const next = { ...out.modifiers };
-    // Neutral values are dropped so recipes stay small, as everywhere else.
-    if (value === 0) delete next[id];
+    // Neutral values are dropped so recipes stay small, except an adult pack's
+    // defaulted modifier: omitting that zero would restore the out-of-range default.
+    const retainsAdultZero =
+      value === 0 &&
+      isAdult(out) &&
+      anatomyDefaults !== undefined &&
+      Object.hasOwn(anatomyDefaults, id);
+    if (value === 0 && !retainsAdultZero) delete next[id];
     else next[id] = value;
     out = { ...out, modifiers: next };
   }
@@ -166,11 +182,17 @@ export function visibleTasks(
 ): SliderTask[] {
   const hide = new Set(controls?.hide);
   const hideTasks = new Set(controls?.hideTasks);
-  if (hide.size === 0 && hideTasks.size === 0) return tasks;
+  const hideGroups = new Set(controls?.hideGroups);
+  if (hide.size === 0 && hideTasks.size === 0 && hideGroups.size === 0) return tasks;
   const out: SliderTask[] = [];
   for (const task of tasks) {
     if (hideTasks.has(task.id) || hideTasks.has(task.label)) continue;
+    const groupHidden = (g: SliderGroup) =>
+      [task.id, task.label].some((t) =>
+        [g.id, g.label].some((name) => hideGroups.has(`${t}/${name}`)),
+      );
     const groups = task.groups
+      .filter((g) => !groupHidden(g))
       .map((g) => {
         const sliders = g.sliders.filter((s) => !hide.has(s.id));
         return sliders.length === g.sliders.length ? g : { ...g, sliders };

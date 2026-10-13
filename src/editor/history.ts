@@ -7,6 +7,7 @@
  * key) starts a new step.
  */
 import type { Recipe } from "../recipe/recipe.ts";
+import { jsonEqual } from "./equal.ts";
 
 export interface RecipeHistory {
   past: Recipe[];
@@ -24,6 +25,12 @@ export type HistoryAction =
   | { type: "settle" }
   | { type: "undo" }
   | { type: "redo" }
+  /**
+   * Rewrites an already-held timeline through a newly available constraint.
+   * This is not a person-facing edit: adjacent recipes that become equivalent
+   * occupy one undo position.
+   */
+  | { type: "reconcile"; normalize: (recipe: Recipe) => Recipe; present?: Recipe }
   /** Replaces the whole history (loading a saved figure, say). */
   | { type: "reset"; recipe: Recipe };
 
@@ -31,6 +38,21 @@ export const HISTORY_LIMIT = 200;
 
 export function createHistory(recipe: Recipe): RecipeHistory {
   return { past: [], present: recipe, future: [], gesture: null };
+}
+
+function sameRecipes(left: readonly Recipe[], right: readonly Recipe[]): boolean {
+  return (
+    left.length === right.length && left.every((recipe, index) => jsonEqual(recipe, right[index]))
+  );
+}
+
+/** Drops consecutive positions that now describe the same figure. */
+function compact(recipes: readonly Recipe[]): Recipe[] {
+  const out: Recipe[] = [];
+  for (const recipe of recipes) {
+    if (out.length === 0 || !jsonEqual(out.at(-1), recipe)) out.push(recipe);
+  }
+  return out;
 }
 
 export function historyReducer(state: RecipeHistory, action: HistoryAction): RecipeHistory {
@@ -65,6 +87,31 @@ export function historyReducer(state: RecipeHistory, action: HistoryAction): Rec
       const [next, ...future] = state.future;
       if (!next) return state;
       return { past: [...state.past, state.present], present: next, future, gesture: null };
+    }
+    case "reconcile": {
+      const pastAndPresent = compact([
+        ...state.past.map(action.normalize),
+        action.present ?? action.normalize(state.present),
+      ]);
+      const present = pastAndPresent.at(-1);
+      if (!present) return state;
+      const past = pastAndPresent.slice(0, -1);
+      const future: Recipe[] = [];
+      let previous = present;
+      for (const recipe of state.future) {
+        const normalized = action.normalize(recipe);
+        if (jsonEqual(previous, normalized)) continue;
+        future.push(normalized);
+        previous = normalized;
+      }
+      if (
+        state.gesture === null &&
+        sameRecipes(state.past, past) &&
+        jsonEqual(state.present, present) &&
+        sameRecipes(state.future, future)
+      )
+        return state;
+      return { past, present, future, gesture: null };
     }
     case "reset":
       return createHistory(action.recipe);

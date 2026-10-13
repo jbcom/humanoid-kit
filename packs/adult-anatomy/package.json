@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "description": "Adult-only anatomy pack for humanoid-kit. Evaluated only for figures aged 18 or over; install it only if your application needs adult anatomy.",
   "type": "module",
-  "license": "CC0-1.0",
+  "license": "CC0-1.0 AND CC-BY-4.0",
   "author": "Jon Bogaty <jon@jonbogaty.com>",
   "publishConfig": {
     "access": "public",
@@ -18,7 +18,15 @@
     "./data/*": "./data/*",
     "./package.json": "./package.json"
   },
-  "files": ["index.js", "index.d.ts", "data", "README.md", "LICENSE"],
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "data",
+    "README.md",
+    "LICENSE",
+    "LICENSE-CC-BY-4.0",
+    "NOTICE.md"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jbcom/humanoid-kit.git",

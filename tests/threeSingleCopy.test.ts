@@ -9,6 +9,7 @@
  * packages (vitest.config.ts, `server.deps.inline`) so Vite resolves their ESM
  * `module` build, which imports the one ESM three.
  */
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
@@ -16,7 +17,43 @@ const requireCache = () => createRequire(import.meta.url).cache;
 const loaded = (pattern: RegExp) =>
   Object.keys(requireCache()).filter((file) => pattern.test(file));
 
+/**
+ * A fresh Node process has neither Vitest's ESM resolver nor this file's module
+ * cache. That is the boundary the response-sheet fixture used to cross by
+ * importing `react/CoatMesh` just to reach its pure assertion helper.
+ */
+function freshWarningCodes(specifier: string): string[] {
+  const run = spawnSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      `
+        const codes = [];
+        process.on("warning", (warning) => codes.push(warning.code));
+        await import(process.argv[1]);
+        await new Promise((done) => setImmediate(done));
+        process.stdout.write(JSON.stringify(codes));
+      `,
+      specifier,
+    ],
+    { cwd: process.cwd(), encoding: "utf8" },
+  );
+  expect(run.status, run.stderr).toBe(0);
+  return JSON.parse(run.stdout) as string[];
+}
+
 describe("the unit project loads one ESM copy of three", () => {
+  it("keeps the response-sheet assertion on the green side of the Node CJS boundary", () => {
+    // RED witness: the old `react/CoatMesh` fixture path imports this root,
+    // whose Node `main` is its CJS build and requires three's deprecated CJS
+    // entry. It must keep warning in a fresh process, or this test no longer
+    // demonstrates the boundary that motivated the extraction.
+    expect(freshWarningCodes("@react-three/fiber")).toContain("THREE_CJS_DEPRECATED");
+    // GREEN assertion: the extracted pure ESM helper crosses none of it.
+    expect(freshWarningCodes("./src/surface/coatPaint.ts")).not.toContain("THREE_CJS_DEPRECATED");
+  });
+
   it("raises no THREE_CJS_DEPRECATED warning when the react entry loads", async () => {
     const codes: string[] = [];
     const onWarning = (warning: Error & { code?: string }) => {

@@ -69,7 +69,7 @@ const COVER = ["suits/female_casualsuit02"] as const;
 const manifest = JSON.parse(
   fs.readFileSync(path.join(root, "packs/clothing/data/manifest.json"), "utf8"),
 ) as ClothingManifest;
-const wardrobe = wardrobeOf(manifest);
+const wardrobe = wardrobeOf([manifest]);
 
 const BROWN_IRIS = IRIS_PALETTE.find((c) => c.name === "Brown");
 if (!BROWN_IRIS) throw new Error("the iris palette has no Brown");

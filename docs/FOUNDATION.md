@@ -65,7 +65,13 @@ Each is a measured test over the permutations, not a look at a sheet:
 
 1. **No interpenetration**: skin does not pass through skin beyond 2 mm,
    except named contact pairs (thigh on calf in a squat, arm on chest when
-   crossed), which must stay continuous.
+   crossed), which must stay continuous. A canal's walls closing on each other
+   are lumen self-contact (ruling, 2026-10-10), reported apart from penetration.
+   A collapsed canal is a potential space whose walls touch at rest. A wall
+   counts as lumen self-contact only while it stays inside its canal: the skin
+   it leaves through is its own canal's, within the canal's closed gap
+   (`isLumenContact`). A wall that has crossed out of the canal, and skin
+   passing through skin beside it, are penetration.
 2. **No collapse**: no triangle inverts or loses more than 70% of its rest
    area; volume near each joint stays within a band of rest.
 3. **Smooth surface**: no dihedral angle between adjacent faces above a bound

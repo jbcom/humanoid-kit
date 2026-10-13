@@ -95,6 +95,51 @@ export function hairTint(colour: HairColour): Rgb {
   return hairAlbedo(colour).map((c) => c / HAIR_STRAND_MEAN) as Rgb;
 }
 
+/**
+ * The fraction of grey fibres by age: a smoothstep from 35 to 95 years, which
+ * gives 26 % at 55, the middle of Panhard et al. 2012's 45 to 65 cohort (mean
+ * intensity 27 %), 74 % at 75 and 98 % at 90. A fit, not a curve they publish
+ * (docs/research/BODY-HAIR.md, "Grey").
+ */
+export const GREY_ONSET = 35;
+export const GREY_FULL = 95;
+
+/** The fraction of grey fibres at this age from ageing alone. */
+export function ageGrey(age: number): number {
+  if (Number.isNaN(age)) return 0;
+  const t = clamp01((age - GREY_ONSET) / (GREY_FULL - GREY_ONSET));
+  return t * t * (3 - 2 * t);
+}
+
+/** The head's hair, each greying on its own clock. */
+export type HeadHairPart = "scalp" | "brows" | "lashes";
+
+/**
+ * Years each head part's greying lags the scalp's. Brows grey after the scalp and
+ * lashes last, often never fully; the sizes are choices from common observation,
+ * not measurements (docs/research/BODY-HAIR.md, "Grey").
+ */
+export const GREY_LAG: Readonly<Record<HeadHairPart, number>> = {
+  scalp: 0,
+  brows: 10,
+  lashes: 25,
+};
+
+/**
+ * The colour a head part of a figure this age wears: the recipe's pigments, at
+ * least as grey as ageing makes that part (`ageGrey`, lagged by `GREY_LAG`). The
+ * recipe's own grey is a floor, so a recipe can grey early but never keeps a
+ * young colour by default; an override (dyed hair) is kept as it is.
+ */
+export function agedHairColour(colour: HairColour, age: number, part: HeadHairPart): HairColour {
+  return {
+    eumelanin: colour.eumelanin,
+    pheomelanin: colour.pheomelanin,
+    grey: Math.max(clamp01(colour.grey), ageGrey(age - GREY_LAG[part])),
+    override: colour.override ? ([...colour.override] as Rgb) : null,
+  };
+}
+
 const natural = (eumelanin: number, pheomelanin: number, grey = 0): Readonly<HairColour> => ({
   eumelanin,
   pheomelanin,

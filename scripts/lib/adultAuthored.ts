@@ -17,17 +17,31 @@
 import type {
   AdultDetailSpec,
   AdultReservoirSpec,
+  CanalClosureSpec,
   ShapeModifierEntry,
   SliderEntry,
   SliderTask,
 } from "../../src/format/assetFormat.ts";
 import type { AdultDetailLattice, ControlShape } from "../../src/model/humanoidModel.ts";
-import { moundTargets } from "./control/mound.ts";
+import { AUTHORING_FIGURE, moundTargets } from "./control/mound.ts";
+import {
+  ANAL_CANAL,
+  ANUS,
+  ANUS_TARGET,
+  type CanalForm,
+  canalClosure,
+  canalTarget,
+  rootClosed,
+  VAGINA,
+  VAGINA_TARGET,
+} from "./detail/canal.ts";
 import { skinOf } from "./detail/contact.ts";
 import { PHALLUS_GIRTH, PHALLUS_LENGTH, PHALLUS_SIZE, phallusTargets } from "./detail/phallus.ts";
-import { reservoirRoot } from "./detail/root.ts";
+import { displacedBy, regionIndex } from "./detail/region.ts";
+import { type ReservoirRoot, reservoirRoot } from "./detail/root.ts";
 import { scrotumTargets, TESTES_SIZE } from "./detail/scrotum.ts";
-import type { MaleParts } from "./detail/sculpt.ts";
+import type { MaleParts, SculptPart } from "./detail/sculpt.ts";
+import { VULVA_SIZE, type VulvaTarget, vulvaTarget } from "./detail/vulva.ts";
 import { type EncodedTarget, encodeSparseTarget } from "./targetEncoding.ts";
 
 /**
@@ -47,6 +61,8 @@ export const AUTHORED_MODIFIERS: readonly ShapeModifierEntry[] = [
   { id: PHALLUS_LENGTH, group: "genitals", lo: "", hi: "", adultOnly: true },
   { id: PHALLUS_GIRTH, group: "genitals", lo: "", hi: "", adultOnly: true },
   { id: TESTES_SIZE, group: "genitals", lo: null, hi: "", adultOnly: true },
+  { id: VULVA_SIZE, group: "genitals", lo: null, hi: "", adultOnly: true },
+  { id: ANAL_CANAL, group: "genitals", lo: null, hi: "", adultOnly: true },
 ];
 
 /**
@@ -86,6 +102,19 @@ const AUTHORED_SLIDERS = [
     description:
       "From none to a large testis, in one sac of two lobes; the right a little larger than the left, as measured.",
   },
+  {
+    mod: VULVA_SIZE,
+    after: TESTES_SIZE,
+    label: "Vulva",
+    description:
+      "From none to the full labia majora and minora, with the cleft between them and the vaginal canal behind it.",
+  },
+  {
+    mod: ANAL_CANAL,
+    after: VULVA_SIZE,
+    label: "Anal canal",
+    description: "The anal canal, closed at rest, on every adult by default.",
+  },
 ] as const;
 
 /** Upstream sliders the authored ones replace: the CC0 penis targets, whose shape the phallus supersedes. */
@@ -109,7 +138,7 @@ export const AUTHORED_PROVENANCE: readonly string[] = [
     "the flaccid shaft, glans and corona of ieroglif's CC0 `adult_male_genitalia_breast_fix` " +
     "(<http://www.makehumancommunity.org/proxy/adult_male_genitalia_breast_fix.html>) and the erect ones of Slayer227's CC0 " +
     "`Male_Gen-Heal1` (<http://www.makehumancommunity.org/proxy/erect_penis_only_works_with_males.html>), " +
-    "cut by `scripts/blender/cut_male.py`, placed by `scripts/lib/detail/sculpt.ts` and projected onto the phallic reservoir " +
+    "cut by `scripts/blender/cut_sculpt.py`, placed by `scripts/lib/detail/sculpt.ts` and projected onto the phallic reservoir " +
     "by `scripts/lib/detail/transfer.ts`. `scripts/lib/detail/phallus.ts` grows or shrinks each by one uniform factor to a " +
     "published dorsal length, and blends the flaccid sculpt into the erect one for arousal " +
     "(length, growth and spread: docs/research/ADULT-ANATOMY-DATA.md, section F). `genitals/phallus-k1*` (the clitoral glans) " +
@@ -118,6 +147,13 @@ export const AUTHORED_PROVENANCE: readonly string[] = [
     "`adult_male_genitalia_breast_fix`, cut, placed and projected onto the labioscrotal reservoir the same way and grown " +
     "or shrunk by `scripts/lib/detail/scrotum.ts` by one uniform factor to the width of two testes of a published volume " +
     "(docs/research/ADULT-ANATOMY-DATA.md, section F); the skin's thickness is modelled and labelled so there.",
+  "- `genitals/vulva-k1` (a detail target of the skin) and the modifier `genitals/vulva-size`: the labia majora and " +
+    "minora and the cleft between them of bogdan666's CC0 `adult_female_2020_v_01` " +
+    "(<http://www.makehumancommunity.org/proxy/adult_female_2020.html>), cut by `scripts/blender/cut_sculpt.py`, " +
+    "placed and transferred onto the skin by `scripts/lib/detail/vulva.ts`.",
+  "- `genitals/vagina-k1` and `genitals/anus-k1` (detail targets) and the modifier `genitals/anal-canal`: the vaginal " +
+    "and anal canals, drawn inward from reservoirs by `scripts/lib/detail/canal.ts` from published measurements " +
+    "(docs/research/ADULT-ANATOMY-DATA.md, section G); no source models them.",
 ];
 
 /** Every target name the pack authors as a control target (a virtual modifier has none). */
@@ -181,7 +217,8 @@ export function addAuthoredSliders(tasks: SliderTask[]): void {
 
 /**
  * The detail targets the pack authors on the adult surface's lattice, encoded,
- * and the spec that names them (`AdultDetailSpec`): the phallic organ on the
+ * and the spec that names them (`AdultDetailSpec`): the vulva's folds on the skin
+ * (`vulva` is its sheet placed on the authoring figure), the phallic organ on the
  * phallic reservoir. `lattice` is the lattice of a model with the pack's
  * reservoirs, on the authoring figure.
  */
@@ -189,7 +226,13 @@ export function authorDetail(
   lattice: AdultDetailLattice,
   reservoirs: readonly AdultReservoirSpec[],
   parts: MaleParts,
-): { targets: EncodedTarget[]; detail: AdultDetailSpec } {
+  vulva: SculptPart,
+): {
+  targets: EncodedTarget[];
+  detail: AdultDetailSpec;
+  vulva: VulvaTarget;
+  reservoirs: AdultReservoirSpec[];
+} {
   const rootOf = (id: string) => {
     const spec = reservoirs.find((r) => r.id === id);
     if (!spec) throw new Error(`the pack has no reservoir ${id} to draw from`);
@@ -202,13 +245,74 @@ export function authorDetail(
   );
   const organ = phallusTargets(rootOf("phallic"), parts.phallus, skin);
   const sac = scrotumTargets(rootOf("labioscrotal"), parts.scrotum, skin);
-  const made = [...organ.targets, ...sac.targets];
+  const folds = vulvaTarget(lattice, vulva);
+  // The canals, inward: the vagina with the vulva, the anal canal on its own control. Each
+  // opening is closed at the skin on every figure (`canalClosure`, evaluated by
+  // `closureDisplacement`), and the canal's rings leave from the closed loop. The vagina
+  // is drawn on the skin as the vulva's folds leave it: both on the vulva's control.
+  const regionOf = regionIndex(lattice);
+  const roots = new Map(reservoirs.map((r) => [r.id, reservoirRoot(lattice, r)]));
+  /** Every other reservoir's loop and cap, and this one's cap: the skin a closure leaves. */
+  const heldFor = (id: string) => {
+    const held = new Set<number>();
+    for (const r of reservoirs) {
+      const root = roots.get(r.id) as ReservoirRoot;
+      for (const c of root.cap) held.add(c.index);
+      if (r.id !== id) for (const v of r.loop) held.add(regionOf.get(v) as number);
+    }
+    return held;
+  };
+  const closedCanal = (
+    id: string,
+    on: AdultDetailLattice,
+    form: CanalForm,
+    target: string,
+    factor: string,
+  ) => {
+    const spec = reservoirs.find((r) => r.id === id) as AdultReservoirSpec;
+    const root = reservoirRoot(on, spec);
+    const loopRegion = spec.loop.map((v) => regionOf.get(v) as number);
+    return {
+      closure: canalClosure(on, root, loopRegion, form.closure, heldFor(id), target),
+      canal: canalTarget(root, target, form, [factor], rootClosed(root, form.closure)),
+    };
+  };
+  const withFolds = displacedBy(lattice, folds);
+  const vagina = closedCanal("vaginal", withFolds, VAGINA, VAGINA_TARGET, `mod:${VULVA_SIZE}`);
+  const anus = closedCanal("anal", lattice, ANUS, ANUS_TARGET, `mod:${ANAL_CANAL}`);
+  const closures: Record<string, CanalClosureSpec> = {
+    vaginal: vagina.closure,
+    anal: anus.closure,
+  };
+  const made = [
+    ...organ.targets,
+    ...sac.targets,
+    folds,
+    ...vagina.canal.targets,
+    ...anus.canal.targets,
+  ];
   return {
+    vulva: folds,
+    // The reservoirs with each canal's closure, which the lattice was needed for.
+    reservoirs: reservoirs.map((r) => {
+      const closure = closures[r.id];
+      return closure && r.canal ? { ...r, canal: { ...r.canal, closure } } : r;
+    }),
     targets: made.map((t) => encodeSparseTarget(t.name, t.indices, t.xyz)),
     detail: {
       targets: made.map((t) => t.name),
       surfaceKey: lattice.key,
-      drives: { ...organ.drives, ...sac.drives },
+      // The figure the lattice was evaluated on: a reservoir's organ is carried from it.
+      authoredOn: { macros: AUTHORING_FIGURE.macros },
+      // The vulva is the skin's own fold, not an organ out of it.
+      skin: [folds.name],
+      drives: {
+        ...organ.drives,
+        ...sac.drives,
+        [folds.name]: [`mod:${VULVA_SIZE}`],
+        ...vagina.canal.drives,
+        ...anus.canal.drives,
+      },
     },
   };
 }
