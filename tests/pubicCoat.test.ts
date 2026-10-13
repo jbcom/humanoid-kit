@@ -43,7 +43,6 @@ const input = (age: number, extra: Partial<SkinPaintInput> = {}): SkinPaintInput
   areola: 0.5,
   signals: {},
   age,
-  gender: 1,
   adult: age >= 18,
   ...extra,
 });

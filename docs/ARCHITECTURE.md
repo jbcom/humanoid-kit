@@ -2671,7 +2671,7 @@ it by a polygon offset.
 
 ## Body hair
 
-**Use cases.** Every figure carries the body hair of its age and sex, at every
+**Use cases.** Every figure carries the body hair of its age and its recipe, at every
 skin tone, without a choice being made: vellus everywhere from infancy, and
 terminal hair coming in through adolescence and thinning and greying in old
 age. A creator can thin, thicken or shave a region and pick a beard. Axillary
@@ -2687,25 +2687,28 @@ Old recipes evaluate and serialise as before.
 
 - *One pure model, two ways of drawing.* `src/surface/bodyHair.ts` says how
   much terminal hair each region group carries (coverage 0..1, the
-  Ferriman-Gallwey grade over 4), from the gender macro read as the androgen
-  level, the age (a ramp per group on the Tanner ages, a thinning after 55) and
-  the recipe's controls; and what colour (the figure's hair pigments, darker on
+  Ferriman-Gallwey grade over 4), from the age (a ramp per group on the Tanner
+  ages, a thinning after 55) and the recipe's controls, never from the gender
+  macro (DECISIONS ruling 1, 2026-10-13: the androgen-axis anchors were a
+  gender multiplier on a trait, removed); and what colour (the figure's hair pigments, darker on
   the face and pubis, lighter on the limbs, greyed with age later on the body
   than the beard). The groups follow the modified FG regions, merged to what a
   picker offers: face, chest, abdomen, back, buttocks, arms, legs, axillary,
   and the adult-only pubic.
 - *Adult-only groups are gated in the model itself.* `defaultBodyHairCoverage`
   returns 0 for pubic hair unless the age is an adult's (`age >=
-  ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
-  scales the default, so no recipe value can add them under 18.
+  ADULT_AGE`, so an age that is not a number fails closed), a multiplier
+  scales the default, and an explicit coverage is 0 for them under 18, so no
+  recipe value can add them under 18.
 - *Legacy multipliers and explicit controls have separate meanings.*
   `recipe.bodyHair` is optional (the recipe schema grows only by optional
   fields). `density` remains a multiplier per group on the physiological
-  default for age and androgen axis (0 shaves a region, 2 doubles it, clamped
-  to full coverage), so saved recipes retain their results as a figure ages.
-  `coverage` is a new explicit mature coverage at every gender value, still
-  subject to the same age ramp and senescence; it cannot coexist with legacy
-  `density` for a group. `follicleDensity` independently changes physical
+  default for age (0 shaves a region, 2 doubles it, clamped to full coverage),
+  so saved recipes still read; it plateaus on a dense default, which is why the
+  creator writes `coverage` instead. `coverage` is the explicit choice: an
+  adult gets exactly that value, with no age ramp or senescence (those shape
+  the unset default only); before 18 it comes in over the group's puberty
+  onset, complete at 18. It cannot coexist with legacy `density` for a group. `follicleDensity` independently changes physical
   follicles per cm² and therefore strand spacing, never the covered fraction.
   `beard` is a style. Absent fields are not filled in by `createRecipe`, so a
   recipe that never set body hair serialises exactly as before.
@@ -2778,8 +2781,9 @@ Old recipes evaluate and serialise as before.
   their region), the vertex normals, and the armpits' hollows. The limbs stop
   short of the hands and feet, which carry little terminal hair and whose
   layers crowd the atlas.
-- *The beard defaults to none.* Clean-shaven is the neutral recipe; terminal
-  body hair and vellus are on by default for age and sex.
+- *The beard defaults to none.* Clean-shaven is the neutral recipe; vellus and
+  the limbs' and buttocks' terminal strands are on by default for age, while
+  the coat's groups draw only when the recipe enables them.
 - *Axillary hair is a coat region that comes with puberty (from 13); pubic hair
   is the adult pack's.*
   The armpit's hair is dense and a couple of centimetres long, so it is the
@@ -2853,7 +2857,8 @@ module.
   before: a woman's eyes hanging at a man's throat.
 - *A recipe asks for it, region by region.* A region grows only where the
   recipe enables it (`coatEnabled`): the beard by a style other than none, any
-  other group by setting its density. A recipe silent on body hair, or one
+  other group by setting its explicit coverage or its legacy density
+  (`drawnBodyHairCoverage` is what is drawn). A recipe silent on body hair, or one
   that names no region, grows no coat (`coatPaintFor` is null), so default
   figures stay bare.
 - *Strands from a tileable density texture* at true scale (`uv × uvScale`
@@ -2920,7 +2925,7 @@ beard style it serves; today `beard-full` (a full beard; a moustache and a
 goatee are the coat's alone). Each card carries a rank, a byte per vertex
 (`CARD_FIELD_KEYS`); `HairMaterial` discards a card whose rank is at or over
 its density (`setDensity`, the face's coverage), whole, beside the hairline
-test and outside the alpha-to-coverage term, so the beard thins with age, sex
+test and outside the alpha-to-coverage term, so the beard thins with age
 and the recipe with the same geometry, and scalp hair, with no ranks (0) and
 the default density (1), is untouched. The model wears a style's cards
 (`wornBeardCards`) only where the face grows terminal hair, so a child's figure
@@ -3804,6 +3809,32 @@ kinematics, pads flattening at contact and tissue compressing under a load
 (docs/FOUNDATION.md, "Response") need a hand pose solver and soft
 deformation the kit does not have yet; the contact report is what that solver
 will read, so it comes first.
+
+## Regional contact and injury-state boundary (design, 2026-10-11)
+
+`RegionalContact` is the implemented pure evidence boundary: it checks a
+registered surface or aperture entry without choosing a response. It does not
+create animation, physiology, a wound, deformation, collision change or visual
+state. A surface remains intact skin; only a registered aperture can report an
+entry. This prevents a contact sample, including a future injury location, from
+becoming a universal opening.
+
+Dynamic injury state is planned and is deliberately outside the current public
+API. Its record must distinguish an intact-surface marking, a recoverable
+body-space deformation, and a persistent body-space change or scar. Each record
+needs a version, a stable anatomical anchor, an explicit lifecycle, and an
+explicit persistence policy. It must resolve through the morphed and posed
+skinned body, while garments and wrappings use their existing body binding to
+show coherent coverage. Creation changes neither collision nor affordance
+clearance unless a later, separately specified feature opts in and proves it.
+
+Consumers own event interpretation. Curse and Prayers may map their own
+projectile or blade events to neutral records and select art, pacing, damage and
+save policy locally. The kit does not classify a gameplay event, synthesize a
+visual injury, or claim a physical or medical response. The detailed planned
+record, lifecycle and test gates are in
+[Regional contact and injury contract](REGIONAL-CONTACTS.md); no renderer proof
+exists yet.
 
 ## Invariants
 

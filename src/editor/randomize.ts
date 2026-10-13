@@ -2,6 +2,10 @@
  * Seeded random figures. The same seed and options always give the same
  * recipe, so a random figure can be shared as its seed.
  *
+ * The ethnic mix is drawn over the whole simplex, pure frames, edges and the
+ * middle included (`randomEthnicMix`), and melanin over its whole range, each
+ * independent of the other.
+ *
  * Values cluster around the middle of each range (sums of uniforms), so most
  * figures look ordinary and extremes stay rare. Age is kept from the base
  * recipe unless an age range is given, and adult anatomy is never randomised
@@ -12,6 +16,7 @@ import { ADULT_AGE } from "../makehuman/macro.ts";
 import { seededRandom } from "../random.ts";
 import { withAge } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { randomEthnicMix } from "../sampling.ts";
 import { BEARD_STYLES, type BeardStyle } from "../surface/bodyHair.ts";
 import { DEFAULT_HAIR_COLOUR } from "../surface/hairTone.ts";
 import type { Rgb } from "../surface/skinTone.ts";
@@ -43,7 +48,7 @@ export interface RandomizeOptions {
    * Draw a beard style (`randomBeard`), last of all so a seed's figure is the
    * same with or without it; omitted, the base recipe's body hair is kept. The
    * body hair model grows it only where the face carries terminal hair, so a
-   * child or a woman drawn a beard shows none.
+   * child drawn a beard shows none; the draw is the same at every frame.
    */
   beards?: boolean;
 }
@@ -92,8 +97,8 @@ export function randomRecipe(
   const chance = options.modifierChance ?? 0.3;
   const intensity = options.modifierIntensity ?? 0.45;
 
-  const e = [rand(), rand(), rand()].map((u) => -Math.log(1 - u * 0.999));
-  const eSum = (e[0] as number) + (e[1] as number) + (e[2] as number);
+  // Three draws, first in the stream as ever, so a seed's other values are unchanged.
+  const mix = randomEthnicMix(rand(), rand(), rand());
   const age = options.ageRange
     ? options.ageRange[0] + (options.ageRange[1] - options.ageRange[0]) * rand()
     : base.macros.age;
@@ -108,9 +113,9 @@ export function randomRecipe(
         weight: centred(0.15, 0.85),
         height: centred(0.1, 0.9),
         proportions: centred(0.25, 1),
-        african: (e[0] as number) / eSum,
-        asian: (e[1] as number) / eSum,
-        caucasian: (e[2] as number) / eSum,
+        african: mix[0],
+        asian: mix[1],
+        caucasian: mix[2],
         breastSize: centred(0.1, 0.9),
         breastFirmness: centred(0.2, 0.9),
       },

@@ -49,6 +49,7 @@ import {
 import { ChannelQa } from "./ChannelQa";
 import { EffectiveAdultDefaultsLab } from "./EffectiveAdultDefaultsLab";
 import { GraftQa } from "./GraftQa";
+import { HandshakeLab } from "./HandshakeLab";
 import { MiniatureLab } from "./MiniatureLab";
 import { QaShade } from "./qaShade";
 import { tattooImages } from "./tattooImages";
@@ -511,6 +512,8 @@ function WorkerApp() {
         <EffectiveAdultDefaultsLab />
       ) : params.has("bodyHairLab") ? (
         <BodyHairLab />
+      ) : params.get("scene") === "handshake" ? (
+        <HandshakeLab />
       ) : params.get("scene") === "walk" ? (
         <Walk />
       ) : params.has("view") || params.has("cam") ? (

@@ -15,7 +15,15 @@
  * each scheme it takes (`SKIN_DUAL_SHARE`) and a vertex mixes the two results
  * by the mean of its bones' shares.
  */
-import { type BoneRotations, posedBones, type RestBones } from "./bones.ts";
+import {
+  assertDisjointViews,
+  type BoneRotations,
+  type PosedBonesScratch,
+  posedBones,
+  posedBonesInto,
+  posedBonesScratch,
+  type RestBones,
+} from "./bones.ts";
 import { foldFlexion, jointTurns } from "./folds.ts";
 import {
   addFold,
@@ -26,7 +34,7 @@ import {
   type JointFlexion,
   type JointFold,
 } from "./jointFold.ts";
-import { mul, type Quat, rotate } from "./quat.ts";
+import type { Quat } from "./quat.ts";
 
 /** Floats per bone in `dualBones`: the rotation (x, y, z, w), then the dual part (x, y, z, w). */
 export const DUAL_STRIDE = 8;
@@ -44,32 +52,58 @@ export function dualBones(
   rotations: BoneRotations,
   out: Float32Array = new Float32Array(rest.names.length * DUAL_STRIDE),
 ): Float32Array {
-  const { world, heads } = posedBones(rest, rotations);
+  return dualBonesFromPosedInto(rest, posedBones(rest, rotations), out);
+}
+
+/**
+ * Writes skinning dual quaternions from an already-posed skeleton. This keeps
+ * a constraint sampler from posing the same rig once for its landmark and once
+ * for its skin transform. An oversized `out` is allowed: its required prefix is
+ * written and its tail is left untouched.
+ */
+export function dualBonesFromPosedInto(
+  rest: RestBones,
+  posed: PosedBonesScratch,
+  out: Float32Array = new Float32Array(rest.names.length * DUAL_STRIDE),
+): Float32Array {
+  if (out.length < rest.names.length * DUAL_STRIDE)
+    throw new RangeError("dual bones: output is smaller than the rest skeleton");
+  if (posed.world.length !== rest.names.length * 4 || posed.heads.length !== rest.names.length * 3)
+    throw new RangeError("dual bones: posed skeleton does not match the rest skeleton");
+  assertDisjointViews("dual bones", out, [
+    posed.world,
+    posed.heads,
+    rest.heads,
+    rest.parents,
+    rest.order,
+  ]);
+  const { world, heads } = posed;
   for (let b = 0; b < rest.names.length; b++) {
-    const q: Quat = [
-      world[b * 4] as number,
-      world[b * 4 + 1] as number,
-      world[b * 4 + 2] as number,
-      world[b * 4 + 3] as number,
-    ];
+    const x = world[b * 4] as number;
+    const y = world[b * 4 + 1] as number;
+    const z = world[b * 4 + 2] as number;
+    const w = world[b * 4 + 3] as number;
     // A point p moves to R(p - head) + posedHead = R p + t.
-    const r = rotate(
-      q,
-      rest.heads[b * 3] as number,
-      rest.heads[b * 3 + 1] as number,
-      rest.heads[b * 3 + 2] as number,
-    );
-    const half = mul(
-      [
-        (heads[b * 3] as number) - r[0],
-        (heads[b * 3 + 1] as number) - r[1],
-        (heads[b * 3 + 2] as number) - r[2],
-        0,
-      ],
-      q,
-    );
-    out.set(q, b * DUAL_STRIDE);
-    out.set([half[0] * 0.5, half[1] * 0.5, half[2] * 0.5, half[3] * 0.5], b * DUAL_STRIDE + 4);
+    const px = rest.heads[b * 3] as number;
+    const py = rest.heads[b * 3 + 1] as number;
+    const pz = rest.heads[b * 3 + 2] as number;
+    const tx = 2 * (y * pz - z * py);
+    const ty = 2 * (z * px - x * pz);
+    const tz = 2 * (x * py - y * px);
+    const rx = px + w * tx + (y * tz - z * ty);
+    const ry = py + w * ty + (z * tx - x * tz);
+    const rz = pz + w * tz + (x * ty - y * tx);
+    const dx = (heads[b * 3] as number) - rx;
+    const dy = (heads[b * 3 + 1] as number) - ry;
+    const dz = (heads[b * 3 + 2] as number) - rz;
+    out[b * DUAL_STRIDE] = x;
+    out[b * DUAL_STRIDE + 1] = y;
+    out[b * DUAL_STRIDE + 2] = z;
+    out[b * DUAL_STRIDE + 3] = w;
+    out[b * DUAL_STRIDE + 4] = (dx * w + dy * z - dz * y) * 0.5;
+    out[b * DUAL_STRIDE + 5] = (-dx * z + dy * w + dz * x) * 0.5;
+    out[b * DUAL_STRIDE + 6] = (dx * y - dy * x + dz * w) * 0.5;
+    out[b * DUAL_STRIDE + 7] = (-dx * x - dy * y - dz * z) * 0.5;
   }
   return out;
 }
@@ -112,11 +146,68 @@ export interface SkinPose {
   share: DualShare;
 }
 
+/** Reusable CPU skinning storage for one transient, full-rig pose. */
+export interface SkinPoseScratch {
+  readonly pose: SkinPose;
+  readonly skeleton: PosedBonesScratch;
+}
+
+/** Allocates a reusable pose/skeleton scratch pair for one rest rig. */
+export function skinPoseScratch(rest: RestBones, share: DualShare): SkinPoseScratch {
+  const bones = rest.names.length;
+  return {
+    pose: {
+      dual: new Float32Array(bones * DUAL_STRIDE),
+      matrix: new Float32Array(bones * 9),
+      trans: new Float32Array(bones * 3),
+      share,
+    },
+    skeleton: posedBonesScratch(rest),
+  };
+}
+
 export function skinPose(rest: RestBones, rotations: BoneRotations, share: DualShare): SkinPose {
-  const dual = dualBones(rest, rotations);
-  const n = dual.length / DUAL_STRIDE;
-  const matrix = new Float32Array(n * 9);
-  const trans = new Float32Array(n * 3);
+  const scratch = skinPoseScratch(rest, share);
+  return skinPoseInto(rest, rotations, share, scratch);
+}
+
+/**
+ * Writes a CPU skin pose and its matching skeleton into caller-owned storage.
+ * `share` must be the skin-share field for this source pose; callers changing
+ * bones that drive a dynamic share must provide a freshly derived share.
+ */
+export function skinPoseInto(
+  rest: RestBones,
+  rotations: BoneRotations,
+  share: DualShare,
+  scratch: SkinPoseScratch,
+): SkinPose {
+  const { pose, skeleton } = scratch;
+  const { dual, matrix, trans } = pose;
+  const n = rest.names.length;
+  if (dual.length !== n * DUAL_STRIDE || matrix.length !== n * 9 || trans.length !== n * 3)
+    throw new RangeError("skin pose: scratch does not match the rest skeleton");
+  if (typeof share !== "number" && share.length !== n)
+    throw new RangeError("skin pose: share does not match the rest skeleton");
+  const shareViews: Array<{
+    readonly buffer: ArrayBufferLike;
+    readonly byteOffset: number;
+    readonly byteLength: number;
+  }> = [];
+  if (typeof share !== "number" && ArrayBuffer.isView(share)) shareViews.push(share);
+  const outputs = [dual, matrix, trans, skeleton.world, skeleton.heads];
+  for (let outputIndex = 0; outputIndex < outputs.length; outputIndex++)
+    assertDisjointViews("skin pose", outputs[outputIndex] as Float32Array, [
+      rotations,
+      rest.heads,
+      rest.parents,
+      rest.order,
+      ...shareViews,
+      ...outputs.filter((_, otherIndex) => otherIndex !== outputIndex),
+    ]);
+  posedBonesInto(rest, rotations, skeleton);
+  dualBonesFromPosedInto(rest, skeleton, dual);
+  pose.share = share;
   for (let b = 0; b < n; b++) {
     const o = b * DUAL_STRIDE;
     const x = dual[o] as number;
@@ -138,15 +229,15 @@ export function skinPose(rest: RestBones, rotations: BoneRotations, share: DualS
       b * 9,
     );
     // t = 2 d q*, the vector part of the product.
-    const m = mul(
-      [dual[o + 4] as number, dual[o + 5] as number, dual[o + 6] as number, dual[o + 7] as number],
-      [-x, -y, -z, w],
-    );
-    trans[b * 3] = 2 * m[0];
-    trans[b * 3 + 1] = 2 * m[1];
-    trans[b * 3 + 2] = 2 * m[2];
+    const dx = dual[o + 4] as number;
+    const dy = dual[o + 5] as number;
+    const dz = dual[o + 6] as number;
+    const dw = dual[o + 7] as number;
+    trans[b * 3] = 2 * (-dw * x + dx * w - dy * z + dz * y);
+    trans[b * 3 + 1] = 2 * (-dw * y + dx * z + dy * w - dz * x);
+    trans[b * 3 + 2] = 2 * (-dw * z - dx * y + dy * x + dz * w);
   }
-  return { dual, matrix, trans, share };
+  return pose;
 }
 
 /** What `blend` finds, read straight after it: the rotation (x, y, z, w) and translation (x, y, z). */

@@ -1,5 +1,7 @@
+export * from "./affordance/armSkinnedFrameSampler.ts";
 export * from "./affordance/channel.ts";
 export * from "./affordance/frames.ts";
+export * from "./affordance/regionalContact.ts";
 export * from "./affordance/registry.ts";
 export * from "./affordance/state.ts";
 export * from "./animation/index.ts";
@@ -63,6 +65,7 @@ export * from "./recipe/anatomy.ts";
 export * from "./recipe/bodyArt.ts";
 export * from "./recipe/recipe.ts";
 export * from "./recipe/validate.ts";
+export * from "./rig/armTarget.ts";
 export * from "./rig/dual.ts";
 export * from "./rig/expressions.ts";
 export * from "./rig/faceMirror.ts";
@@ -96,6 +99,7 @@ export { kneeFoldSetup, solveKneeFold, solveKneeFoldSteps } from "./rig/kneeFold
 export * from "./rig/occlusionKeys.ts";
 export * from "./rig/pose.ts";
 export * from "./rig/skinShare.ts";
+export * from "./sampling.ts";
 export * from "./subdiv/catmullClark.ts";
 export * from "./surface/bodyHair.ts";
 export * from "./surface/bodyOcclusion.ts";

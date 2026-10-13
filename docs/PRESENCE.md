@@ -71,6 +71,8 @@ interface FigurePresence {
   bounds: { min: Vec3; max: Vec3 };
   /** Named anchors in world space. */
   anchors: Record<"head" | "face" | "chest" | "leftHand" | "rightHand" | "leftFoot" | "rightFoot", Vec3>;
+  /** The body's own measurements (metres): heights follow the pose, reach does not. */
+  measures: { reach: number; shoulderHeight: number; hipHeight: number; eyeHeight: number };
   /** Ground contact: foot positions and an approximate footprint radius. */
   footprint: { points: [number, number][]; radius: number };
   /** Measured skin appearance (linear). */
@@ -91,6 +93,13 @@ const meter = faceMetering(registry.all(), { position: cameraPosition });
 
 In React, `<Humanoid presence>` registers the figure; `usePresence()` and
 `useProximity()` read it.
+
+`measures` is what a definition's lengths are written in
+([Interactions](INTERACTIONS.md), "Alignment on bodies of any size"). They come
+from the same joint centroids as the anchors, so a posed figure's heights are
+its posed heights (a crouch lowers `shoulderHeight`). `reach` is the sum of the
+arm's bone lengths (shoulder, elbow, wrist, grip), the mean of both arms, so a
+bent arm measures what a straight one does.
 
 ## Decisions (2026-10-09)
 

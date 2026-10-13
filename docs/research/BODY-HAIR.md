@@ -31,24 +31,34 @@ offer: `face` (upper lip, chin, sideburns), `chest`, `abdomen` (upper and lower,
 the linea), `back` (upper and lower), `buttocks`, `arms` (upper arm, forearm),
 `legs` (thigh, lower leg), `axillary`, and the adult-only `pubic`.
 
-The scores per group at maturity (`BODY_HAIR_COVERAGE`), at both ends of the
-androgen axis, are **choices** read off the FG scale's own descriptions: the
-FG regions are what is measured, and that the kit's gender macro stands for the
-androgen level linearly is also a choice. Typical adult men score 2 to 4 on most
-regions; a non-hirsute woman scores at most 1 on the upper lip, lower abdomen,
-forearms and lower legs, and 0 elsewhere.
+The FG scale's own descriptions span a wide range in every region: typical
+adult men score 2 to 4 on most regions, and a non-hirsute woman scores at most
+1 on the upper lip, lower abdomen, forearms and lower legs, and 0 elsewhere.
+The kit does not read that range off the gender macro (DECISIONS ruling 1: the
+macro is a skeletal frame blend, not an androgen level, and no trait is
+multiplied by it). Each group's hair is an independent recipe choice
+(`bodyHair.coverage`, 0..1), and a group the recipe leaves unset takes one
+default (`BODY_HAIR_COVERAGE`) for every figure. Those defaults are **choices**:
+the middle of the range below, which records the FG reading they came from,
+except the beard area, which is full because the beard style (default shaven)
+decides whether a face grows one.
 
-| Group | Female end | Male end | Note |
+| Group | Default | FG range read | Note |
 | --- | --- | --- | --- |
-| face | 0.1 | 1.0 | a fine upper-lip shadow at the female end |
-| chest | 0 | 0.6 | chest hair varies widely between men |
-| abdomen | 0.1 | 0.65 | the linea first |
-| back | 0 | 0.25 | sparse in most men |
-| buttocks | 0.05 | 0.35 | |
-| arms | 0.3 | 0.6 | the forearms carry more than the upper arms |
-| legs | 0.45 | 0.85 | unshaved, at both ends |
-| axillary | 0.85 | 0.95 | barely androgen-dependent once mature |
-| pubic | 0.85 | 0.95 | the male pattern also climbs the linea, drawn by `abdomen` |
+| face | 1.0 | 0.1 to 1.0 | drawn only where a beard style grows it |
+| chest | 0.3 | 0 to 0.6 | chest hair varies widely |
+| abdomen | 0.375 | 0.1 to 0.65 | the linea first |
+| back | 0.125 | 0 to 0.25 | sparse in most people who have it |
+| buttocks | 0.2 | 0.05 to 0.35 | |
+| arms | 0.45 | 0.3 to 0.6 | the forearms carry more than the upper arms |
+| legs | 0.65 | 0.45 to 0.85 | unshaved |
+| axillary | 0.9 | 0.85 to 0.95 | |
+| pubic | 0.9 | 0.85 to 0.95 | the pattern that climbs the linea is drawn by `abdomen` |
+
+An explicit coverage is an adult's exactly: the age course below shapes the
+unset default (and the legacy `density` multiplier on it), not an adult's
+choice. Before 18 an explicit coverage comes in over the group's puberty onset,
+complete at 18, and the adult-only pubic group is 0.
 
 ## When it grows: puberty and age
 
@@ -146,10 +156,10 @@ thighs' edges, on to the perineum. Its numbers are **choices** fitted to that
 description and this mesh, not measurements: the hairline 7.5 cm above the
 mons' centre (the mons target reaches 5.4 cm above it), a half-width of 7.5 cm
 there narrowing to 2 cm at the crotch 5 cm below the centre, the hair ending
-11 cm below it, and every edge easing over at least a centimetre. The male
+11 cm below it, and every edge easing over at least a centimetre. The
 pattern's climb up the linea toward the navel is not this mask's: the trunk's
-abdomen region holds it, and the model's coverage by sex and age says how much
-grows on either.
+abdomen region holds it, and the model's coverage by age and the recipe's
+controls says how much grows on either.
 
 ## What is not here
 

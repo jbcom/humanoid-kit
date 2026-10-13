@@ -25,7 +25,7 @@ function figure(id: string, x: number, z: number, luminance = 0.2): FigurePresen
       leftFoot: [x + 0.1, 0.05, z],
       rightFoot: [x - 0.1, 0.05, z],
     },
-    measures: { reach: 0.7, shoulderHeight: 1.5, hipHeight: 0.95, eyeHeight: 1.6 },
+    measures: { reach: 0.7, shoulderHeight: 1.45, hipHeight: 0.9, eyeHeight: 1.58 },
     footprint: {
       points: [
         [x + 0.1, z],
