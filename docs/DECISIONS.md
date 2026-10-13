@@ -63,6 +63,23 @@ core:
 - The review sheets put every figure under 18 in a cover garment. That is how the
   sheets were designed, not a legal requirement, and it needs no change.
 
+## 6. Judge by intent and by what MakeHuman already decided
+
+Before a feature, a layer or an asset is questioned, restricted or refused, two
+questions settle it:
+
+1. Is the layer already adjudicated by MakeHuman? MakeHuman's core and community
+   assets define what exists and what is allowed at every age. A layer MakeHuman
+   ships or leaves unrestricted (a child's natural form, nipples, tattoos and other
+   body marks, clothing, hair) is not restricted by the kit.
+2. What is the intent? Depicting the natural human form is not sexualised content.
+   Only content made to be sexual is, and the kit keeps that in the adult pack,
+   for adult figures, as ruling 4 says.
+
+Neither a body region's presence nor a figure's age is a reason to raise a
+restriction question. Where an audit finds no gate in MakeHuman for a layer, that
+is the answer.
+
 ## 5. Adult interaction is for all-adult participants, with explicit consent
 
 Interaction between figures is a multi-party contract, not a pair and not a
