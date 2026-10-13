@@ -6,7 +6,7 @@ import {
   type QuadSource,
   type SurfaceMesh,
 } from "../src/build/surfaceMesh.ts";
-import { groupFaces } from "../src/format/assetFormat.ts";
+import { groupFaces, SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets();
@@ -329,13 +329,13 @@ describe("a body surface with local refinement", { timeout: 600_000 }, () => {
   it("follows the base's skin weights: normalised, bones in range, none lost", () => {
     const fine = fineSurface(1);
     const n = fine.renderToSurface.length;
-    expect(fine.skinIndex.length).toBe(n * 4);
+    expect(fine.skinIndex.length).toBe(n * SKIN_INFLUENCES);
     const bones = assets.manifest.skeleton.bones.length;
     for (let r = 0; r < n; r++) {
       let sum = 0;
-      for (let k = 0; k < 4; k++) {
-        sum += fine.skinWeight[r * 4 + k] as number;
-        expect(fine.skinIndex[r * 4 + k] as number).toBeLessThan(bones);
+      for (let k = 0; k < SKIN_INFLUENCES; k++) {
+        sum += fine.skinWeight[r * SKIN_INFLUENCES + k] as number;
+        expect(fine.skinIndex[r * SKIN_INFLUENCES + k] as number).toBeLessThan(bones);
       }
       expect(sum).toBeCloseTo(1, 4);
     }

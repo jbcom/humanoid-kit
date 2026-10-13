@@ -6,6 +6,10 @@ texts that bear on figures of minors, and how the library is built against
 them. It is written for maintainers and integrators. It is not legal advice;
 see [What this policy is not](#what-this-policy-is-not).
 
+The maintainers' rulings behind this policy (the age line, judging by intent and
+by what MakeHuman already decided, adult interaction and consent) are recorded
+in [DECISIONS.md](DECISIONS.md), rulings 1, 4, 5 and 6.
+
 ## The rule
 
 Nothing in humanoid-kit produces sexually explicit conduct, or adult genital
@@ -197,6 +201,16 @@ into `humanoid-kit-adult-anatomy`; none of them is in `humanoid-kit-body`. This
 mirrors MakeHuman's own separation of genital assets from its core. An
 application that never installs the adult pack cannot render them.
 
+**One predicate decides who is an adult.** `isAdultAge` (`src/makehuman/macro.ts`,
+beside `ADULT_AGE`) is true only for a finite number of 18 or more, and `isAdult`
+asks it of a recipe. NaN, a missing or non-numeric age, a negative age and
+Infinity are all not adult, so every route that skips recipe validation
+(a figure's affordances, its signals, anatomy defaults, the editor's controls)
+fails closed together. No code compares an age to `ADULT_AGE` itself: a `<`
+comparison would pass NaN as an adult, and `>=` would pass Infinity. A test
+(`tests/ageGateSource.test.ts`) scans `src/` and `playground/src/` for a raw
+comparison.
+
 **The adult pack refuses any figure under 18.** `src/recipe/agePolicy.ts`
 defines `ADULT_AGE = 18`. Every recipe is checked before evaluation
 (`assertAgePolicy` in `src/makehuman/recipeMorph.ts`); a recipe under 18 that
@@ -262,7 +276,9 @@ general animations package's interaction contracts tagged `intimate` will also
 refuse any participant under 18. Both will throw, as `AgePolicyError` does,
 rather than skip. The interaction contract ([Interactions](INTERACTIONS.md),
 "Age policy enforcement points") carries this as a required `audience`, fail
-closed and derived from the affordances an interaction names.
+closed and derived from the affordances an interaction names. Whether
+`humanoid-kit-adult-animations` belongs in this repository at all is an open
+owner question (issue 105); nothing of it exists.
 
 **The public demo ships without the adult pack.**
 `scripts/check-pages-build.mjs` (`pnpm check:pages`) fails if any built site

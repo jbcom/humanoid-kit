@@ -9,15 +9,21 @@ import {
   Color,
   DirectionalLight,
   FloatType,
+  LinearSRGBColorSpace,
   Mesh,
   MeshBasicMaterial,
+  MeshStandardMaterial,
   OrthographicCamera,
   PlaneGeometry,
+  PMREMGenerator,
   Scene,
+  type Texture,
   WebGLRenderTarget,
 } from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { afterAll, describe, expect, it } from "vitest";
 import { CoatMaterial, coatGeometry } from "../../src/render/coat.ts";
+import { ensureSkinPlaces } from "../../src/render/dualSkinning.ts";
 import { UV_SCALE_ATTRIBUTE } from "../../src/render/skinMaterial.ts";
 import { labFromLinear, lchFromLab } from "../../src/surface/cielab.ts";
 import { COAT_REGION_LIMIT, paintCoat } from "../../src/surface/coat.ts";
@@ -76,6 +82,15 @@ interface View {
    * can be, zero at some vertices and turning back on itself at others.
    */
   comb?: "down" | "mixed";
+  /**
+   * The skin under the coat lit as skin is, a standard material of this linear
+   * albedo under the same light as the coat (with `key`), instead of `skin`.
+   */
+  litSkin?: [number, number, number];
+  /** The studio's environment (three's RoomEnvironment) lights the scene too. */
+  environment?: boolean;
+  /** The region's mask at a vertex of the patch, by its position (metres); default 1. */
+  mask?: (x: number, y: number) => number;
 }
 
 /**
@@ -91,6 +106,7 @@ function render(paint: Paint | null, options: View = {}) {
   const n = body.getAttribute("position").count;
   body.setAttribute("skinIndex", new BufferAttribute(new Uint16Array(n * 4), 4));
   body.setAttribute("skinWeight", new BufferAttribute(new Float32Array(n * 4), 4));
+  ensureSkinPlaces(body);
   body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(new Float32Array(n).fill(side), 1));
   const comb = new Float32Array(n * 3);
   // 17 vertices a row: in the mixed comb every third vertex has none, and every
@@ -99,7 +115,11 @@ function render(paint: Paint | null, options: View = {}) {
     comb[v * 3 + 1] =
       options.comb !== "mixed" ? -1 : v % 3 === 0 ? 0 : Math.floor(v / 17) % 2 ? 1 : -1;
   const masks = new Uint8Array(n * COAT_REGION_LIMIT);
-  for (let v = 0; v < n; v++) masks[v * COAT_REGION_LIMIT] = 255;
+  const position = body.getAttribute("position");
+  for (let v = 0; v < n; v++)
+    masks[v * COAT_REGION_LIMIT] = Math.round(
+      255 * (options.mask ? options.mask(position.getX(v), position.getY(v)) : 1),
+    );
   const index = body.getIndex()?.array as Uint16Array;
   const geometry = coatGeometry(body, { comb, masks }, Uint32Array.from(index), shells);
   const material = new CoatMaterial();
@@ -114,11 +134,17 @@ function render(paint: Paint | null, options: View = {}) {
   if (!lobes) material.hkUniforms.hkLobes.value.set(0, 0, 0, 0);
   const scene = new Scene();
   scene.background = new Color(background, background, background);
-  const skin =
-    options.skin === undefined
+  const skin = options.litSkin
+    ? new MeshStandardMaterial({
+        color: new Color().setRGB(...options.litSkin, LinearSRGBColorSpace),
+        roughness: 0.5,
+        metalness: 0,
+      })
+    : options.skin === undefined
       ? null
       : new MeshBasicMaterial({ color: new Color(options.skin, options.skin, options.skin) });
   if (skin) scene.add(new Mesh(body, skin));
+  if (options.environment) scene.environment = studioEnvironment();
   const coat = new Mesh(geometry, material);
   coat.renderOrder = 1;
   scene.add(coat);
@@ -147,6 +173,19 @@ function render(paint: Paint | null, options: View = {}) {
   skin?.dispose();
   return px.filter((_, i) => i % 4 === channel);
 }
+
+let environment: Texture | null = null;
+/** The studio's environment (`StudioStage`: three's RoomEnvironment), made once. */
+function studioEnvironment(): Texture {
+  if (environment) return environment;
+  const pmrem = new PMREMGenerator(renderer);
+  const room = new RoomEnvironment();
+  environment = pmrem.fromScene(room, 0.04).texture;
+  pmrem.dispose();
+  room.clear();
+  return environment;
+}
+afterAll(() => environment?.dispose());
 
 const share = (px: Float32Array, test: (x: number) => boolean) =>
   px.filter(test).length / px.length;
@@ -225,6 +264,7 @@ describe("the coat's shells", () => {
     const n = body.getAttribute("position").count;
     body.setAttribute("skinIndex", new BufferAttribute(new Uint16Array(n * 4), 4));
     body.setAttribute("skinWeight", new BufferAttribute(new Float32Array(n * 4), 4));
+    ensureSkinPlaces(body);
     body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(new Float32Array(n).fill(SIDE), 1));
     const masks = new Uint8Array(n * COAT_REGION_LIMIT);
     const index = Uint32Array.from(body.getIndex()?.array as Uint16Array);
@@ -385,5 +425,100 @@ describe("the coat's shells", () => {
     const half = share(render({ ...HAIR, cover: 0.5 }), (x) => x < 0.5);
     expect(half / full).toBeGreaterThan(0.3);
     expect(half / full).toBeLessThan(0.7);
+  });
+});
+
+/**
+ * Body hair as the trunk grows it (issue #21): fine, long and lying along the
+ * comb, at its true width. Brown chest hair at three quarters' cover.
+ */
+describe("the coat's lying body hair", () => {
+  const CHEST: Paint = {
+    cover: 0.75,
+    length: 0.02,
+    density: 22,
+    lie: 0.75,
+    colour: hairAlbedo({ eumelanin: 0.5, pheomelanin: 0.15, grey: 0, override: null }),
+    width: 120e-6,
+  };
+  const cell = 0.01 / Math.sqrt(CHEST.density);
+  /** A patch whose camera sees `cells` follicle cells a pixel, filled even at a slant. */
+  const framed = (cells: number): View => {
+    const span = cells * cell * SIZE;
+    return { span, side: Math.max(SIDE, 4 * span) };
+  };
+  /**
+   * Lying strands seen from above hide the skin under their length along it:
+   * `n` follicles a m², each `cover` likely to grow a strand `length × lie`
+   * long along the skin and `width` wide, leave e^-(n cover l w) of it clear.
+   */
+  const lyingCover = (p: Paint) =>
+    1 - Math.exp(-p.cover * p.density * 1e4 * p.length * p.lie * p.width);
+  /** The skins of the sheets' three tones, linear albedo. */
+  const SKINS: [number, number, number][] = [
+    [0.4485, 0.266, 0.1925],
+    [0.274, 0.132, 0.068],
+    [0.11, 0.047, 0.026],
+  ];
+
+  it("hide about as much skin seen from above as their length lying along it covers", () => {
+    const expected = lyingCover(CHEST);
+    for (const cells of [0.15, 1, 6]) {
+      const dark = 1 - average(render(CHEST, { ...framed(cells), skin: SKIN })) / SKIN;
+      expect(dark, `${cells} cells a pixel, expected about ${expected.toFixed(3)}`).toBeGreaterThan(
+        0.6 * expected,
+      );
+      expect(dark, `${cells} cells a pixel, expected about ${expected.toFixed(3)}`).toBeLessThan(
+        1.4 * expected,
+      );
+    }
+  });
+
+  it("are never lighter than the skin they lie on, lit as it is, from above or at a slant", () => {
+    for (const albedo of SKINS)
+      for (const view of ["front", "slant"] as const) {
+        const lit = { ...framed(1), litSkin: albedo, key: true, environment: true, view };
+        const bare = average(render(null, { ...lit, channel: 1 }));
+        const haired = average(render(CHEST, { ...lit, channel: 1 }));
+        expect(haired, `skin ${albedo[1]} ${view}: bare ${bare.toFixed(4)}`).toBeLessThan(bare);
+      }
+  });
+
+  it("are lines along the comb up close, not a tint or dots", () => {
+    // A cell eight pixels across: each strand, half a pixel wide, is its own line.
+    const px = render(CHEST, { ...framed(0.125), skin: SKIN });
+    const dark = (x: number, y: number) => (px[y * SIZE + x] as number) < SKIN - 0.08;
+    let hair = 0;
+    let along = 0;
+    let across = 0;
+    for (let y = 1; y + 1 < SIZE; y++)
+      for (let x = 1; x + 1 < SIZE; x++) {
+        if (!dark(x, y)) continue;
+        hair++;
+        // The comb runs down the patch (y): a strand's pixel has strand above or below it.
+        if (dark(x, y - 1) || dark(x, y + 1)) along++;
+        if (dark(x - 1, y) || dark(x + 1, y)) across++;
+      }
+    // Strands, not a uniform tint: some pixels a strand crosses read as hair.
+    expect(hair / (SIZE * SIZE)).toBeGreaterThan(0.02);
+    // And they run along the comb.
+    expect(along / hair, `along ${along}, across ${across} of ${hair}`).toBeGreaterThan(0.8);
+    expect(along).toBeGreaterThan(2 * across);
+  });
+
+  it("thin out at a mask's edge, never darker there than inside it", () => {
+    // Painted on the left of the patch, unpainted on the right: the triangles
+    // between have unpainted corners.
+    const view = { ...framed(0.5), skin: SKIN, mask: (x: number) => (x < 0 ? 1 : 0) };
+    const px = render(CHEST, view);
+    const column = (x: number) => {
+      let s = 0;
+      for (let y = 0; y < SIZE; y++) s += SKIN - (px[y * SIZE + x] as number);
+      return s / SIZE;
+    };
+    const inside = column(SIZE / 8) + column(SIZE / 8 + 1) + column(SIZE / 8 + 2);
+    // The patch's triangles are a quarter of the view wide: the edge's lie left of the middle.
+    for (let x = SIZE / 4 - 4; x < SIZE / 2 + 8; x++)
+      expect(column(x), `column ${x}`).toBeLessThan((1.5 * inside) / 3 + 0.005);
   });
 });

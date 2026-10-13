@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jointPosition } from "../src/format/assetFormat.ts";
+import { jointPosition, SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import {
@@ -37,7 +37,11 @@ function ownedBy(name: string, min = 0.6): number[] {
   const b = bone(name);
   const out: number[] = [];
   for (let v = 0; v < assets.manifest.vertexCount; v++)
-    if (assets.skinIndex[v * 4] === b && (assets.skinWeight[v * 4] as number) > min) out.push(v);
+    if (
+      assets.skinIndex[v * SKIN_INFLUENCES] === b &&
+      (assets.skinWeight[v * SKIN_INFLUENCES] as number) > min
+    )
+      out.push(v);
   return out;
 }
 

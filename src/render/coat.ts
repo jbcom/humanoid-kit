@@ -36,6 +36,7 @@ import {
   Vector4,
 } from "three";
 import { COAT_REGION_LIMIT } from "../surface/coat.ts";
+import { SKIN_INDEX_ATTRIBUTE_1, SKIN_WEIGHT_ATTRIBUTE_1 } from "./dualSkinning.ts";
 import { HAIR_LOBES } from "./hairMaterial.ts";
 import { patchShadowFilter, SHADOW_FILTER_KEY } from "./shadowFilter.ts";
 import { UV_SCALE_ATTRIBUTE } from "./skinMaterial.ts";
@@ -83,6 +84,7 @@ varying float vCoatRadius;
 varying vec3 vCoatColour;
 varying vec3 vCoatComb;
 varying float vCoatHeight;
+varying float vCoatCosLean;
 `;
 
 /** The regions blended at this vertex, the shell's height, and the shell's offset before skinning. */
@@ -115,6 +117,8 @@ const VERTEX_REGIONS = /* glsl */ `
 	vCoatColour = hkLookMean.rgb;
 	// How far the strands stand off the skin, in follicle cells (a strand reaches 0.8 of the length on average).
 	vCoatHeight = 0.8 * hkLength * ( 1.0 - 0.7 * hkLie ) / vCoatSpacing;
+	// How far a strand's axis leans off the skin's normal: the tip stands (1 - 0.7 lie) up and lie along.
+	vCoatCosLean = ( 1.0 - 0.7 * hkLie ) / max( length( vec2( 1.0 - 0.7 * hkLie, hkLie ) ), 1e-4 );
 	vCoatP = uv * ${UV_SCALE_ATTRIBUTE};
 `;
 
@@ -145,6 +149,7 @@ varying float vCoatRadius;
 varying vec3 vCoatColour;
 varying vec3 vCoatComb;
 varying float vCoatHeight;
+varying float vCoatCosLean;
 uniform vec4 hkLobes;
 uniform float hkCoatShells;
 float hkCoatHash( vec2 p ) {
@@ -184,12 +189,19 @@ const FRAGMENT_STRANDS = /* glsl */ `
 		// that, compounded over N, makes it.
 		vec3 hkView = isOrthographic ? vec3( 0.0, 0.0, 1.0 ) : normalize( vViewPosition );
 		float hkCos = clamp( abs( dot( normalize( vNormal ), hkView ) ), 0.2, 1.0 );
-		float hkTan = sqrt( 1.0 - hkCos * hkCos ) / hkCos;
+		// A strand's axis leans cosLean off the normal, so its length l = height / cosLean
+		// is seen at sin β = sqrt(1 - cosLean² cos² θ) off the view, averaged round the
+		// comb; a strand lying down hides its length even seen straight on (θ = 0).
+		float hkAxis = vCoatHeight / max( vCoatCosLean, 1e-3 );
+		float hkSeen = sqrt( max( 0.0, 1.0 - vCoatCosLean * vCoatCosLean * hkCos * hkCos ) ) / hkCos;
 		float hkBases = min( 0.95, vCoatCover * 3.14159 * vCoatRadius * vCoatRadius );
-		float hkSides = vCoatCover * 2.0 * 0.6 * vCoatRadius * vCoatHeight * hkTan;
+		float hkSides = vCoatCover * 2.0 * 0.6 * vCoatRadius * hkAxis * hkSeen;
 		float hkFar = 1.0 - pow( ( 1.0 - hkBases ) * exp( - hkSides ), 1.0 / hkCoatShells );
-		// Resolved from a pixel and a half across down to half a pixel, by this cell's own strand.
-		float hkCover = mix( hkFar, hkNear, smoothstep( 0.5, 1.5, 2.0 * hkRadius / hkPx ) );
+		// Resolved by this cell's own strand where it is a pixel or more across, and wherever the
+		// follicle grid is resolved (a cell of 2.5 pixels or more): a strand narrower than a pixel
+		// then still draws as itself, its disc's share of the pixel, not as the average tint.
+		float hkResolved = max( smoothstep( 0.5, 1.5, 2.0 * hkRadius / hkPx ), 1.0 - smoothstep( 0.12, 0.4, hkPx ) );
+		float hkCover = mix( hkFar, hkNear, hkResolved );
 		if ( hkCover <= 0.0 ) discard;
 		diffuseColor.rgb = vCoatColour * mix( ${COAT_ROOT_SHADE.toFixed(3)}, 1.0, vCoatT );
 		diffuseColor.a = hkCover;
@@ -328,7 +340,16 @@ export class CoatMaterial extends MeshStandardMaterial {
 }
 
 /** The body's attributes the coat's geometry draws with: the body's, not the coat's. */
-const BODY_ATTRIBUTES = ["position", "normal", "uv", "skinIndex", "skinWeight", UV_SCALE_ATTRIBUTE];
+const BODY_ATTRIBUTES = [
+  "position",
+  "normal",
+  "uv",
+  "skinIndex",
+  "skinWeight",
+  SKIN_INDEX_ATTRIBUTE_1,
+  SKIN_WEIGHT_ATTRIBUTE_1,
+  UV_SCALE_ATTRIBUTE,
+];
 
 /**
  * The coat's geometry. Disposing it frees only the coat's own buffers: three

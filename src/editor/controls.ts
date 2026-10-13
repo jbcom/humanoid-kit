@@ -13,7 +13,7 @@
  */
 import type { ShapeModifierEntry, SliderEntry } from "../format/assetFormat.ts";
 import { ADULT_AGE, MAX_AGE, type MacroValues, MIN_AGE } from "../makehuman/macro.ts";
-import { AgePolicyError, withAge } from "../recipe/agePolicy.ts";
+import { AgePolicyError, isAdult, withAge } from "../recipe/agePolicy.ts";
 import { withAnatomyDefaults } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 
@@ -80,7 +80,7 @@ export function withSliderValue(
   const v = clamp(value, range.min, range.max);
   if (entry.kind === "modifier") {
     // Rejected, never clamped: a caller that skipped sliderAvailability learns it here.
-    if (v !== 0 && modifierOf(entry, modifiers).adultOnly && recipe.macros.age < ADULT_AGE)
+    if (v !== 0 && modifierOf(entry, modifiers).adultOnly && !isAdult(recipe))
       throw new AgePolicyError(`${entry.id}: adult anatomy is not available under ${ADULT_AGE}`);
     const next = { ...recipe, modifiers: { ...recipe.modifiers } };
     // Neutral values are normally dropped so recipes stay small and diff cleanly.
@@ -88,7 +88,7 @@ export function withSliderValue(
     // a defaulted adult modifier is an explicit override, not an omission.
     const retainsAdultZero =
       v === 0 &&
-      recipe.macros.age >= ADULT_AGE &&
+      isAdult(recipe) &&
       anatomyDefaults !== undefined &&
       Object.hasOwn(anatomyDefaults, entry.id);
     if (v === 0 && !retainsAdultZero) delete next.modifiers[entry.id];
@@ -151,7 +151,7 @@ export function sliderAvailability(
   modifiers: ModifierTable,
 ): Availability {
   if (entry.kind === "modifier" && modifierOf(entry, modifiers).adultOnly) {
-    if (recipe.macros.age < ADULT_AGE)
+    if (!isAdult(recipe))
       return { enabled: false, reason: `Adult anatomy is available from age ${ADULT_AGE}.` };
   }
   return { enabled: true };

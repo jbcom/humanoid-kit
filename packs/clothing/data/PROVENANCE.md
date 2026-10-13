@@ -7,7 +7,7 @@ Source: the MakeHuman system assets pack (`makehuman_system_assets_cc0.zip`, SHA
 MakeHuman code. "MakeHuman" is the upstream project's name; this package is not affiliated with it, and CC0
 does not license trademarks (CC0 1.0 §4a).
 
-Built against the body pack with `body.sha256` `33e8502236f56d532abbaa2d0adbffb28af56a3f5313763feb9881c9ede668df`; the loader refuses any other.
+Built against the body pack with `body.sha256` `6b78609d31cd8db52cd43be177cd1681c7981b515bc17fbf0b671c98c083d238`; the loader refuses any other.
 
 Community garments come from the MakeHuman community's asset packs, each archive pinned by its SHA-256:
 
