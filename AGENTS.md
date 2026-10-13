@@ -63,7 +63,9 @@ Full detail in `docs/ARCHITECTURE.md`.
    follows MakeHuman at every age it models, breast development and nipples
    included. The one gate is the adult pack: under 18, adult-only modifiers throw
    `AgePolicyError`; they are never clamped. `withAge` strips adult-only values
-   explicitly. Keep `ADULT_ONLY_MODIFIER` in step with the packer's
+   explicitly. Compare an age to the line only through `isAdultAge`
+   (`tests/ageGateSource.test.ts` fails on a raw comparison). Keep
+   `ADULT_ONLY_MODIFIER` in step with the packer's
    `isAdultPackTarget`; `tests/agePolicy.test.ts` checks they agree. The same
    policy also refuses, under 18, pubic body hair, any piercing site that is not
    one of the body's own, and the `arousal` skin-state signal. See

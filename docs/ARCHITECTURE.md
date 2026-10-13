@@ -41,7 +41,7 @@ needs more, up to its source's size and at most 2048 px, and never upscaled
 
 | Pack | Files | Contents |
 | --- | --- | --- |
-| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, `proxies.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 1077 sparse targets (564 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion"), and MakeHuman's three low-poly proxy bodies, fetched only on first use (see docs/MINIATURES.md) |
+| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, `proxies.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to eight skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 1077 sparse targets (564 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion"), and MakeHuman's three low-poly proxy bodies, fetched only on first use (see docs/MINIATURES.md) |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 98 adult-only targets and 12 adult-only modifiers; 9 have sliders and 3 (`genitals/penis-*`) are retained legacy ids, hidden from the sliders and still accepted in saved recipes (`HIDDEN_SLIDERS`) |
 | `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | 98 clips (walks, idles, swims, combat, sitting and more) as local bone rotations per frame, on the default skeleton (see "Animation") |
 | `humanoid-kit-eyes` | `manifest.json`, then per material `<id>.webp` | 32 CC0 eye materials (human, slit-pupil, toon, creature) whose textures add iris pattern and sclera detail to the eye shader's own colours (see "Attachment colour") |
@@ -404,7 +404,8 @@ has seams that smoothing would smear.
 `buildSurfaceMesh` takes a subset of faces (the model uses the `body` group) and
 produces the renderable form: the composed stencil, render vertices split at UV
 seams, a triangle index buffer, UVs, and skin indices and weights interpolated
-through the stencil and reduced to the top four per vertex. Static render data
+through the stencil and reduced to the heaviest `SKIN_INFLUENCES` (eight) per
+vertex. Static render data
 (`SurfaceTopology`) is sent once; only positions and normals change per
 evaluation.
 
@@ -1233,7 +1234,8 @@ save a figure that does not look as it was made.
 
 The body pack carries the MakeHuman default skeleton (163 bones with parents,
 head and tail joints and roll planes), the joint vertex lists, the skin weights
-(up to four bones per vertex, indexed in the manifest's bone order) and 60
+(up to eight bones per vertex, `SKIN_INFLUENCES`, indexed in the manifest's bone
+order; see "Skinning artefacts" for why eight) and 60
 facial pose units (named frames of a BVH).
 
 **Use cases.** The creator previews expressions and poses to judge shape and
@@ -1459,21 +1461,26 @@ below it is a pinch, 0 the collapsed neck of a candy wrapper. *ΔV*: the change
 in the whole body's volume in thousandths of it (an adult is 55 L, so 1‰ is
 55 mL), which is that joint's alone since nothing else moves (the body mesh is
 one closed surface, wound consistently, so the volume is exact). Worst body for
-ΔV and for the 5th percentile of girth `p5`; mean girth is over the bodies:
+ΔV and for the 5th percentile of girth `p5`; mean girth is over the bodies. The
+numbers are re-measured on the pack's eight influences a vertex (2026-10-13,
+issue #67; the first run kept four): every row moves by a few tenths at most,
+except the arm raised sideways past 150°, whose worst body is now the child
+gaining 5‰ (its bulge, the girth 95th percentile, is 1.09) where the four
+influences lost 1.2‰:
 
 | Case | Linear: mean / p5 / ΔV | Dual quaternion: mean / p5 / ΔV | Shipped: mean / p5 / ΔV |
 | --- | --- | --- | --- |
 | forearm twisted 135° | 0.98 / 0.87 / −1.2‰ | 1.00 / 1.00 / −0.1‰ | 0.99 / 0.94 / −0.6‰ |
-| upper arm twisted 135° | 0.93 / 0.52 / −13.8‰ | 1.00 / 1.00 / −5.5‰ | 0.99 / 0.88 / −6.8‰ |
-| thigh twisted 90° | 0.93 / 0.72 / −34.1‰ | 1.00 / 1.00 / −8.9‰ | 0.97 / 0.83 / −13.9‰ |
-| arm raised forward 130° | 0.81 / 0.41 / −19.4‰ | 0.97 / 0.57 / −2.3‰ | 0.94 / 0.53 / −10.5‰ |
-| arm raised sideways 130° | 0.87 / 0.48 / −9.6‰ | 0.97 / 0.67 / −12.5‰ | 0.96 / 0.67 / −4.6‰ |
-| arm raised forward 170° | 0.76 / 0.17 / −24.1‰ | 0.94 / 0.42 / −3.3‰ | 0.91 / 0.41 / −14.6‰ |
-| arm raised sideways 170° | 0.84 / 0.28 / −8.0‰ | 0.96 / 0.70 / −16.3‰ | 0.95 / 0.63 / −1.2‰ |
-| hip flexed 120° | 0.80 / 0.30 / −35.2‰ | 0.97 / 0.47 / −17.4‰ | 0.86 / 0.36 / −24.0‰ |
-| spine folded forward 90° | 1.02 / 0.88 / −72.6‰ | 1.03 / 0.89 / −66.2‰ | 1.02 / 0.88 / −71.3‰ |
-| hip abducted 45° | 0.98 / 0.70 / −17.1‰ | 1.00 / 0.74 / −15.2‰ | 0.99 / 0.73 / −15.6‰ |
-| knee flexed 120° | 0.81 / 0.22 / −6.4‰ | 0.93 / 0.26 / −2.5‰ | 0.81 / 0.22 / −6.4‰ |
+| upper arm twisted 135° | 0.92 / 0.51 / −14.0‰ | 1.00 / 1.00 / −5.3‰ | 0.99 / 0.87 / −7.3‰ |
+| thigh twisted 90° | 0.93 / 0.71 / −36.2‰ | 1.00 / 1.00 / −9.6‰ | 0.97 / 0.83 / −15.5‰ |
+| arm raised forward 130° | 0.80 / 0.40 / −21.0‰ | 0.96 / 0.54 / −2.5‰ | 0.93 / 0.50 / −11.5‰ |
+| arm raised sideways 130° | 0.87 / 0.50 / −9.2‰ | 0.97 / 0.66 / −11.1‰ | 0.95 / 0.66 / −4.6‰ |
+| arm raised forward 170° | 0.75 / 0.18 / −25.9‰ | 0.93 / 0.43 / −3.6‰ | 0.90 / 0.41 / −15.3‰ |
+| arm raised sideways 170° | 0.83 / 0.28 / −8.1‰ | 0.96 / 0.68 / −14.6‰ | 0.94 / 0.61 / +5.0‰ |
+| hip flexed 120° | 0.79 / 0.28 / −37.7‰ | 0.97 / 0.47 / −17.7‰ | 0.86 / 0.34 / −25.5‰ |
+| spine folded forward 90° | 1.02 / 0.88 / −73.3‰ | 1.03 / 0.89 / −66.2‰ | 1.02 / 0.88 / −71.7‰ |
+| hip abducted 45° | 0.98 / 0.70 / −17.0‰ | 1.00 / 0.74 / −14.9‰ | 0.99 / 0.72 / −15.7‰ |
+| knee flexed 120° | 0.81 / 0.23 / −6.4‰ | 0.93 / 0.29 / −2.5‰ | 0.81 / 0.23 / −6.4‰ |
 | elbow flexed 120° | 0.84 / 0.33 / −3.8‰ | 0.91 / 0.31 / −3.9‰ | 0.90 / 0.31 / −3.9‰ |
 
 **The shoulder past 150° and the spine (2026-10-09).** The benchmark pose sends
@@ -1612,6 +1619,37 @@ it keeps; the thigh's share falling as it swings (above, "The flexed hip,
 corrected") brings that to 1.12, and a bent knee's no longer bulges past
 linear skinning's. The crease detail layers (`flex.*` signals) paint the fold's
 skin on top of it. The groin's loss was not what it seemed: see "The hip fold".
+
+**The shoulder under a raised arm (2026-10-13, issue #67).** In the `overhead`
+pose, on every frame and tone, the top of each shoulder tore: a flat plate with a
+notch between the clavicle and the deltoid, and the upper arms smeared. It had
+two causes, both departures from MakeHuman, and neither was the blend's.
+
+- *Four influences.* The packer kept each vertex's four heaviest MakeHuman
+  weights and renormalised them. MakeHuman skins with every weight its rig
+  gives: 3,665 of the base mesh's vertices have five or more, up to 12 on the
+  shoulder, where the clavicle, shoulder, upper arm, neck and spine overlap. A
+  cap vertex at the notch lost its 0.144 on `upperarm01` and stayed behind
+  while its neighbours followed the arm. Measured on the left shoulder's cap
+  (`shoulderCap`, `patchCreases` in `scripts/lib/skinMeasure.ts`: the fold each
+  edge gains over rest), the 99th percentile at MakeHuman's own `tpose` was 15°
+  with all the weights and 38° with four, and at its `benchmark` (arms up) 42°
+  against 91°, the cap stretched to 4.2 times its area against 2.1. Six or
+  eight influences match all of them. **Decision: `SKIN_INFLUENCES` = 8**
+  (`src/format/assetFormat.ts`), carried through the pack, the CPU reference,
+  every builder of weights (`src/rig/influences.ts`) and the shader, which reads
+  places 4 to 7 from a second pair of attributes and does the linear half
+  itself, since three's chunk reads four. Only 51 vertices have more than eight.
+- *A raise on one bone.* The authored `overhead` put the whole 139° raise on
+  `upperarm01`, where MakeHuman's `benchmark` shares it (clavicle 43°, shoulder
+  13°, upper arm 75°). With every weight, one bone's raise still folds the cap
+  over (99th percentile 135°); shared a quarter to the clavicle and a tenth to
+  the shoulder, the arm pointing within 4° of where it did, 48°. The pose file
+  now shares it so.
+
+`tests/shoulderSkin.test.ts` holds the pack's eight influences, the cap's
+creases at `tpose`, `benchmark` and `overhead` on both frames, and the shared
+raise. The before and after sheets are in `docs/evidence/skinning.md`.
 
 ### The hip fold (2026-10-09)
 
@@ -2319,11 +2357,24 @@ with the folds, nothing more per frame than reading their tables.
 
 **Decision: option 1** (ruling, 2026-10-10). It puts back what the fold takes where
 the fold takes it, in the solve that already shares the contact; option 2 is held for
-when the squashed skin needs answering by itself. The gates are written first
-(`tests/contactCompression.test.ts`) and fail: the average figure tucked keeps 0.741
-of its hip's rest flesh against the bones' 0.755. A fold that pulls the flesh round
-the average figure's squatting knee a fifth of the way toward its head fails the
-same gate, as it must.
+when the squashed skin needs answering by itself. The volume gate was written first
+and failed, as it should: the average figure tucked keeps 0.741 of its hip's rest
+flesh against the bones' 0.755. A fold that pulls the flesh round the average
+figure's squatting knee a fifth of the way toward its head fails the same gate, as
+it must.
+
+**Status (2026-10-13): not built.** A first bulge (each step ending with a layer
+over its contact, at most 20 mm, falling to nothing 12 cm along the skin, taken back
+where it puts skin through skin) was left unfinished by its lane and is kept off
+integration (issue 107). It missed the volume gate on two squatting knees (the
+average figure's left knee keeps 0.594 of rest against the bones' 0.601, the slim
+woman's right 0.614 against 0.621: 0.011 taken each), and it broke the hip fold's
+contact gate, which holds without it: the tall lean man's thigh 13.9 mm behind the
+belly's skin at 135°, closed (the gate is 2 mm). So `tests/contactCompression.test.ts`
+keeps what holds now: the knee seated within the foundation's band, and the fold
+flattened by a fifth failing the measure. The volume gate itself lands with the bulge
+that meets it, with no wider slack. Until then the folds take what the fault above
+says they do.
 
 **Named pairs after the bulge.** Trunk self-contact: a heavy belly's overhang
 pressed into the pubis, seated (the heavy man's smoke row, 31.7 cm² of trunk through
@@ -2345,9 +2396,9 @@ faces on the organ, 246 before the new sculpt's wider loop).
 So an evaluation's weights are its own (`src/model/reservoirSkin.ts`): each
 reservoir vertex takes its root's weights (the mean of its loop's) in proportion
 to how far the detail pushed it out of the skin, smoothly from `PUSH_STARTS` (1 mm)
-to `PUSHED_FULLY` (5 mm), both CHOICES documented there; four bones are kept by
-taking the fifth largest off all, so the blend is continuous where the kept four
-change. They are found once, with the evaluation (`Evaluation.skin`, null where
+to `PUSHED_FULLY` (5 mm), both CHOICES documented there; `SKIN_INFLUENCES` bones
+are kept by taking the next largest off all, so the blend is continuous where the
+kept ones change. They are found once, with the evaluation (`Evaluation.skin`, null where
 they are the topology's: the base surface, an adult with no organ), and every
 consumer reads them through `skinOfEvaluation`: the body geometry's attributes
 (written per evaluation, and so the coat's and `followDualSkinning`'s), the posed
@@ -3546,6 +3597,20 @@ and `onGroundOffset` is not called. `time` puts the figure at a time in the clip
 `e2e/animation.spec.ts` proves it in a browser: the feet are where the clip has them
 at a time, a walking figure is carried forward on its feet, and the planted ball's
 world position holds.
+
+**Frames for consumers.** The lift, the carry and the sole contacts of each frame are
+written by `AnimationFrameWriter` (`src/animation/frameWriter.ts`), which is
+framework-free, so `<Humanoid>` and a headless producer (a worker, a server, a test)
+publish the same frame for the same pose. Frames travel on the channel each
+`PresenceRegistry` owns (`frames`, `src/animation/frames.ts`), keyed by presence id: a
+producer binds an id and a new binding (a new client, a remount) supersedes the old one
+and raises the generation, so no stale frame is published after a client changes; an
+interaction's `observeFrames` ends with the interaction. The frame object is reused,
+so nothing is allocated per frame. The full contract, with every consumer and
+lifecycle moment, is docs/INTERACTION-SESSION.md, "Animation frames";
+`tests/animationFrames.test.ts` holds it on real figures and clips in Node and
+`tests/browser/animationObserver.test.tsx` holds `<Humanoid>`'s publishing,
+placement, unmount and client replacement.
 
 **Clearance.** (The 98 clips: 74 of them, every locomotion and standing idle among them,
 stay within the tolerance; the 24 where a limb rests on or crosses the body, sitting,

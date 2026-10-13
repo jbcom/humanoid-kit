@@ -23,6 +23,7 @@ import {
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { afterAll, describe, expect, it } from "vitest";
 import { CoatMaterial, coatGeometry } from "../../src/render/coat.ts";
+import { ensureSkinPlaces } from "../../src/render/dualSkinning.ts";
 import { UV_SCALE_ATTRIBUTE } from "../../src/render/skinMaterial.ts";
 import { labFromLinear, lchFromLab } from "../../src/surface/cielab.ts";
 import { COAT_REGION_LIMIT, paintCoat } from "../../src/surface/coat.ts";
@@ -105,6 +106,7 @@ function render(paint: Paint | null, options: View = {}) {
   const n = body.getAttribute("position").count;
   body.setAttribute("skinIndex", new BufferAttribute(new Uint16Array(n * 4), 4));
   body.setAttribute("skinWeight", new BufferAttribute(new Float32Array(n * 4), 4));
+  ensureSkinPlaces(body);
   body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(new Float32Array(n).fill(side), 1));
   const comb = new Float32Array(n * 3);
   // 17 vertices a row: in the mixed comb every third vertex has none, and every
@@ -262,6 +264,7 @@ describe("the coat's shells", () => {
     const n = body.getAttribute("position").count;
     body.setAttribute("skinIndex", new BufferAttribute(new Uint16Array(n * 4), 4));
     body.setAttribute("skinWeight", new BufferAttribute(new Float32Array(n * 4), 4));
+    ensureSkinPlaces(body);
     body.setAttribute(UV_SCALE_ATTRIBUTE, new BufferAttribute(new Float32Array(n).fill(SIDE), 1));
     const masks = new Uint8Array(n * COAT_REGION_LIMIT);
     const index = Uint32Array.from(body.getIndex()?.array as Uint16Array);

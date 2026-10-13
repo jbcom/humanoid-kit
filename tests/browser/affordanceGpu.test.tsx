@@ -30,6 +30,7 @@ import {
 } from "three";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
+import { SKIN_INFLUENCES } from "../../src/format/assetFormat.ts";
 import { createPresenceRegistry } from "../../src/presence/presence.ts";
 import {
   AffordanceAnchor,
@@ -43,7 +44,12 @@ import {
   useHumanoidAffordances,
 } from "../../src/react/index.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
-import { foldSlotAttribute } from "../../src/render/dualSkinning.ts";
+import {
+  foldSlotAttribute,
+  readSkinAttributes,
+  SKIN_INDEX_ATTRIBUTE_1,
+  SKIN_WEIGHT_ATTRIBUTE_1,
+} from "../../src/render/dualSkinning.ts";
 import { FOLD_JOINTS } from "../../src/rig/folds.ts";
 import { HIP_FOLD } from "../../src/rig/hipFold.ts";
 
@@ -170,8 +176,8 @@ function gpuPositions(state: RootState, vertices: readonly number[], linear = fa
   };
   const points = new BufferGeometry();
   points.setAttribute("position", pick("position", 3));
-  points.setAttribute("skinIndex", pick("skinIndex", 4));
-  points.setAttribute("skinWeight", pick("skinWeight", 4));
+  for (const name of ["skinIndex", "skinWeight", SKIN_INDEX_ATTRIBUTE_1, SKIN_WEIGHT_ATTRIBUTE_1])
+    points.setAttribute(name, pick(name, 4));
   for (const joint of FOLD_JOINTS)
     points.setAttribute(foldSlotAttribute(joint), pick(foldSlotAttribute(joint), 1));
   points.setAttribute(
@@ -330,14 +336,18 @@ describe("the affordance handle against the GPU", () => {
       const topology = await adult.adultSurface();
       if (!topology) throw new Error("no adult surface");
       // The organ's vertices: where the weights drawn are not the topology's (`evaluatedSkin`).
-      const drawn = body.geometry.getAttribute("skinWeight");
+      const count = body.geometry.getAttribute("skinWeight").count;
+      const places = new Uint16Array(SKIN_INFLUENCES);
+      const drawn = new Float32Array(SKIN_INFLUENCES);
       const organ: number[] = [];
-      for (let v = 0; v < drawn.count; v++)
-        for (let k = 0; k < 4; k++)
-          if (drawn.getComponent(v, k) !== topology.skinWeight[v * 4 + k]) {
+      for (let v = 0; v < count; v++) {
+        readSkinAttributes(body.geometry, v, places, drawn);
+        for (let k = 0; k < SKIN_INFLUENCES; k++)
+          if (drawn[k] !== topology.skinWeight[v * SKIN_INFLUENCES + k]) {
             organ.push(v);
             break;
           }
+      }
       expect(organ.length, "vertices skinned by their root's weights").toBeGreaterThan(1000);
       const step = Math.ceil(organ.length / 400);
       const sample = organ.filter((_, i) => i % step === 0);

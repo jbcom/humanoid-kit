@@ -23,8 +23,8 @@ pelvis and external anatomy, body and facial hair, skin and fur.
 
 For every body region, the first step is to use what MakeHuman's core data and the
 CC0 community assets already provide, grafted onto the base mesh, and to accept it
-on rendered images. A procedural substitute is a documented last resort for a gap
-no CC0 source fills (for example the relaxation that gives a flat chest baseline).
+on rendered images. Procedural substitutes are no longer an agent's call: see
+ruling 8, which supersedes the earlier "documented last resort" allowance.
 Grafting a foreign part so that it is one continuous surface is a core capability
 of the kit (issue 11), not an optional extra.
 
@@ -109,6 +109,26 @@ maintainer design decision, not an owner ruling.
   defaults). Resetting a row removes the override so the default resumes.
 - Under 18 nothing changes: adult modifiers are refused or removed as ruling 4
   says, whatever the defaults are.
+
+## 8. Procedural geometry is for internal canals only; anything else is vetted by the owner
+
+Owner ruling, 2026-10-13. Hair, beards, moustaches, body hair, eyebrows, skin
+detail, outer anatomy and every other visible surface come from CC0 (or
+otherwise permitted) assets, grafted and bound the MakeHuman way (`.mhclo`
+attachments, `src/graft`), and are accepted on rendered images. Procedural
+generation (cards or shells made by code, code-drawn forms, painted-in-shader
+substitutes) is approved only for internal canals (urethra, vagina, anus and
+their apertures), where no asset exists.
+
+- Any other procedural element needs the owner's explicit vetting before it is
+  built or kept: the issue states what asset search was done (catalogue, packs,
+  community pages), why nothing fits, and what the procedural piece is; the owner
+  answers; the answer is recorded here with the element it covers.
+- Work already on the shared line that violates this is audited and replaced by
+  grafts, or listed here with the owner's vetting. Until an element is vetted it
+  is not extended, polished or defended.
+- A surface that looks wrong is first checked for being procedural: a failing
+  look is a reason to switch to an asset, not to tune the generator.
 
 Decisions are appended with the next number and never renumbered, since code and
 docs cite the numbers. A decision that comes from a design section (dated, in the

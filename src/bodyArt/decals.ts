@@ -6,7 +6,11 @@
  * there, and the decal's right and up directions in that plane.
  */
 import { quadVertexNormals } from "../build/normals.ts";
-import type { AdultPiercingSiteSpec, HumanoidAssets } from "../format/assetFormat.ts";
+import {
+  type AdultPiercingSiteSpec,
+  type HumanoidAssets,
+  SKIN_INFLUENCES,
+} from "../format/assetFormat.ts";
 import type { Vec3 } from "../presence/presence.ts";
 import {
   type BirthmarkKind,
@@ -205,8 +209,9 @@ export interface PiercingAnchor {
   hole: Vec3;
   normal: Vec3;
   skin: SkinPatch;
-  skinIndex: [number, number, number, number];
-  skinWeight: [number, number, number, number];
+  /** The bones and weights that carry the hole, `SKIN_INFLUENCES` of each. */
+  skinIndex: number[];
+  skinWeight: number[];
 }
 
 /**
@@ -231,7 +236,7 @@ function bodyAnchor(
     control[v * 3 + 2] as number,
   ];
   const bones = (a: ArrayLike<number>) =>
-    [0, 1, 2, 3].map((k) => a[v * 4 + k] as number) as [number, number, number, number];
+    Array.from({ length: SKIN_INFLUENCES }, (_, k) => a[v * SKIN_INFLUENCES + k] as number);
   return {
     anchor: {
       hole,

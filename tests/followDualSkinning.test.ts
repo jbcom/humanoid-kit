@@ -10,7 +10,12 @@ import { describe, expect, it } from "vitest";
 import { posedSurface } from "../src/foundation/posed.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
-import { DualBones, foldSlotAttribute, followDualSkinning } from "../src/render/dualSkinning.ts";
+import {
+  DualBones,
+  foldSlotAttribute,
+  followDualSkinning,
+  setSkinAttributes,
+} from "../src/render/dualSkinning.ts";
 import type { SurfaceFold } from "../src/rig/jointFold.ts";
 import { skinDualShare } from "../src/rig/skinShare.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
@@ -30,8 +35,7 @@ function solved() {
 function geometryOf(body: ReturnType<typeof posedSurface>, folds: readonly SurfaceFold[]) {
   const g = new BufferGeometry();
   g.setAttribute("position", new BufferAttribute(body.rest, 3));
-  g.setAttribute("skinIndex", new BufferAttribute(body.skinIndex, 4));
-  g.setAttribute("skinWeight", new BufferAttribute(body.skinWeight, 4));
+  setSkinAttributes(g, body.skinIndex, body.skinWeight);
   for (const fold of folds)
     g.setAttribute(
       foldSlotAttribute(fold.joint),

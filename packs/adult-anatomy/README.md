@@ -21,6 +21,18 @@ import { bodyPack } from "humanoid-kit-body";
 const assets = await loadHumanoidAssets({ body: bodyPack, adultAnatomy: adultAnatomyPack });
 ```
 
+## Public deploys
+
+Nothing in this pack stops a host app from shipping it to the public. The
+gate in the library is on the figure's age; whether this package reaches a
+build is the host's, and a build-time constant such as `import.meta.env.DEV` is
+not proof. Any app or fork that deploys publicly must check the built output
+and fail the deploy when it contains the pack. humanoid-kit does this with
+[`scripts/check-pages-build.mjs`](https://github.com/jbcom/humanoid-kit/blob/main/scripts/check-pages-build.mjs)
+(`pnpm check:pages`): it fails when any built file matches this pack's data by
+SHA-256, or when an app build names the package, its targets or its modifiers.
+Copy it, or run it, before every upload.
+
 ## Licence
 
 CC0 1.0 ([LICENSE](LICENSE)). The pack holds MakeHuman's own adult-only targets

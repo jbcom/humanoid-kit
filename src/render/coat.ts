@@ -36,6 +36,7 @@ import {
   Vector4,
 } from "three";
 import { COAT_REGION_LIMIT } from "../surface/coat.ts";
+import { SKIN_INDEX_ATTRIBUTE_1, SKIN_WEIGHT_ATTRIBUTE_1 } from "./dualSkinning.ts";
 import { HAIR_LOBES } from "./hairMaterial.ts";
 import { patchShadowFilter, SHADOW_FILTER_KEY } from "./shadowFilter.ts";
 import { UV_SCALE_ATTRIBUTE } from "./skinMaterial.ts";
@@ -339,7 +340,16 @@ export class CoatMaterial extends MeshStandardMaterial {
 }
 
 /** The body's attributes the coat's geometry draws with: the body's, not the coat's. */
-const BODY_ATTRIBUTES = ["position", "normal", "uv", "skinIndex", "skinWeight", UV_SCALE_ATTRIBUTE];
+const BODY_ATTRIBUTES = [
+  "position",
+  "normal",
+  "uv",
+  "skinIndex",
+  "skinWeight",
+  SKIN_INDEX_ATTRIBUTE_1,
+  SKIN_WEIGHT_ATTRIBUTE_1,
+  UV_SCALE_ATTRIBUTE,
+];
 
 /**
  * The coat's geometry. Disposing it frees only the coat's own buffers: three
