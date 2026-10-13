@@ -88,7 +88,10 @@ describe("a style's binding", () => {
       expect(a, s.id).toBeDefined();
       if (!a) continue;
       expect(a.refVerts.length).toBe(s.vertexCount * 3);
-      expect(Math.max(...a.refVerts), s.id).toBeLessThan(n);
+      expect(
+        a.refVerts.reduce((m, v) => Math.max(m, v), 0),
+        s.id,
+      ).toBeLessThan(n);
       let worst = 0;
       for (let v = 0; v < s.vertexCount; v++) {
         const w =
@@ -279,7 +282,7 @@ describe("provenance", () => {
     // their own header. Body hair cards and the authored styles are generated, and come from no file;
     // a derived style reads the files of the style it keeps the cards of.
     const fromFiles = hairManifest.styles.filter(
-      (s) => s.kind !== "beard" && !AUTHORED.has(s.id) && !DERIVED.has(s.id),
+      (s) => s.kind !== "beard" && s.kind !== "facial" && !AUTHORED.has(s.id) && !DERIVED.has(s.id),
     ).length;
     expect(text).toMatch(new RegExp(`${fromFiles * 3} file\\(s\\) — (A: )?file header`));
     expect(text).toMatch(/body hair cards \(kind `beard`\) come from no source file/);

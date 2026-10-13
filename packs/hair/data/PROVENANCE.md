@@ -39,6 +39,38 @@ hairline fade, fin and scalp (`src/surface/hairFields.ts`).
 The body hair cards (kind `beard`) come from no source file: `src/surface/bodyHairCards.ts` generates them over the body pack's
 base mesh from a seed, with their strand map, so they are this project's own work under its licence.
 
+The facial hair (kind `facial`) is the community pack `bodyparts05` (<https://files.makehumancommunity.org/asset_packs/bodyparts05/bodyparts05_cc0.zip>, sha256
+`262bba42246f85b2a91f493dd920296b258a3b4544eb495c91c4d08e57c528fd`), whose record and asset pages state CC0 (the asset page is the licence, clause B of
+the licence rule). Each is bound to the base mesh by its own `.mhclo` and packed like scalp hair: its texture is a
+strand map (luminance normalised, alpha unchanged), so the figure's hair colour is the only colour it takes.
+
+- `beard-faun` from `culturalibre_faun_beard`
+- `beard-sigmund` from `grinsegold_beard_sigmund_wip`
+- `beard-viking` from `rehmanpolanski_beard_viking`
+- `moustache-viking` from `rehmanpolanski_moustache_viking`
+- `beard-scruffy` from `wdg_scruffy_beard`
+
+- bodyparts05_cc0.zip: clothes/culturalibre_faun_beard/culturalibre_faun_beard.mhclo — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2356>, submitted 2020-03-19)
+- bodyparts05_cc0.zip: clothes/culturalibre_faun_beard/faun_beard.obj — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2356>, submitted 2020-03-19)
+- bodyparts05_cc0.zip: clothes/culturalibre_faun_beard/faun_beard.mhmat — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2356>, submitted 2020-03-19)
+- bodyparts05_cc0.zip: clothes/culturalibre_faun_beard/brown.png — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2356>, submitted 2020-03-19)
+- bodyparts05_cc0.zip: clothes/grinsegold_beard_sigmund_wip/grinsegold_beard_sigmund_wip.mhclo — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/877>, submitted 2017-07-19)
+- bodyparts05_cc0.zip: clothes/grinsegold_beard_sigmund_wip/beard_sigmund.obj — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/877>, submitted 2017-07-19)
+- bodyparts05_cc0.zip: clothes/grinsegold_beard_sigmund_wip/beard_sigmund.mhmat — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/877>, submitted 2017-07-19)
+- bodyparts05_cc0.zip: clothes/grinsegold_beard_sigmund_wip/Material_Diffuse_Color1_d.png — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/877>, submitted 2017-07-19)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_beard_viking/rehmanpolanski_beard_viking.mhclo — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2614>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_beard_viking/beardviking.obj — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2614>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_beard_viking/beardviking.mhmat — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2614>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_beard_viking/BeardViking.png — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2614>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_moustache_viking/rehmanpolanski_moustache_viking.mhclo — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2615>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_moustache_viking/moustacheviking.obj — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2615>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_moustache_viking/moustacheviking.mhmat — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2615>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/rehmanpolanski_moustache_viking/MoustacheViking.png — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/2615>, submitted 2020-07-12)
+- bodyparts05_cc0.zip: clothes/wdg_scruffy_beard/wdg_scruffy_beard.mhclo — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)
+- bodyparts05_cc0.zip: clothes/wdg_scruffy_beard/scruffy_beard.obj — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)
+- bodyparts05_cc0.zip: clothes/wdg_scruffy_beard/scruffy_beard.mhmat — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)
+- bodyparts05_cc0.zip: clothes/wdg_scruffy_beard/beard2_texture-SMUDGE2.png — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1769>, submitted 2019-02-03)
+
 ## Texture sizes
 
 Each texture ships at the edge its closest QA framing needs, re-sourced from the original wherever the original
@@ -58,7 +90,7 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | bob01.webp | hair/bob01/bob01_diffuse.png | 2048 | face | 2048 | 2048 | the source |
 | braid01.webp | hair/braid01/braid01_diffuse.png | 2048 | face | 2816 | 2048 | the source |
 | crop01.webp | drawn in the cut-out of hair/short04/short04_diffuse.png | 2048 | face | 1664 | 1664 | the source, downsampled |
-| braids01.webp | authored by the packer | 1024 | face | 1280 | 1024 | the source, 256 texels short; not upscaled |
+| braids01.webp | authored by the packer | 1024 | face | 640 | 1024 | the source |
 | cornrows01.webp | authored by the packer | 1024 | face | 1024 | 1024 | the source |
 | twists01.webp | authored by the packer | 1024 | face | 1024 | 1024 | the source |
 | locs01.webp | authored by the packer | 1024 | face | 1408 | 1024 | the source, 384 texels short; not upscaled |
@@ -79,6 +111,11 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | eyelashes02.webp | eyelashes/eyelashes02/eyelashes02.png | 512 | face | 256 | 512 | the source |
 | eyelashes03.webp | eyelashes/eyelashes03/eyelashes03.png | 512 | face | 384 | 512 | the source |
 | eyelashes04.webp | eyelashes/eyelashes04/eyelashes04.png | 512 | face | 256 | 512 | the source |
+| beard-faun.webp | culturalibre_faun_beard/brown.png | 2048 | face | 1920 | 1920 | the source, downsampled |
+| beard-sigmund.webp | grinsegold_beard_sigmund_wip/Material_Diffuse_Color1_d.png | 1024 | face | 1024 | 1024 | the source |
+| beard-viking.webp | rehmanpolanski_beard_viking/BeardViking.png | 1024 | face | 896 | 1024 | the source |
+| moustache-viking.webp | rehmanpolanski_moustache_viking/MoustacheViking.png | 512 | face | 256 | 512 | the source |
+| beard-scruffy.webp | wdg_scruffy_beard/beard2_texture-SMUDGE2.png | 1024 | face | 128 | 1024 | the source |
 
 ## Outputs
 
@@ -86,35 +123,35 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | --- | --- |
 | short02.bin.gz | `d2670495f8a78f1b3171d3be57653cbacabe858f134061ddff61e58aab8c469a` |
 | short02.webp | `3fe64b9a68b43ad675b745da7f63c74b724efcee6e19ee9375c6d11da1fc523d` |
-| bob02.bin.gz | `e43f75a40c5a329a26c447b196bfd73417aa882f31ac997958cae001fd1a0fd5` |
+| bob02.bin.gz | `c062d738344b22a8746f27839fce4cb7fe0a64eb1c6f9f064e8001916ef9ef00` |
 | bob02.webp | `fca88b391ae573291bce61fb66323531d77fb37738ac316cee0ec8ffb7e206f8` |
-| long01.bin.gz | `735a3ad73aafe1731fcccbccf64b6b5ec09d21c658e6a05b2792a6d1f824a8a3` |
+| long01.bin.gz | `a722ec2e0e7c3f059c921421e582a6035e6ab0c576830c1b2db269627c9a2808` |
 | long01.webp | `16ddcd9875b4ad841fb9e5001897964d7a38755f04efeaa49b592ae36783c6d8` |
 | afro01.bin.gz | `1347638bac9a0b6c25361031fbe7635a59325d3dbdc5c54bf1f3e74deaed5a10` |
 | afro01.webp | `5538a0c35c42ae81d636ca98dac617a2b2a33308f1deba5f13bd4446f876336f` |
 | short04.bin.gz | `fc84fe68ca8acfafbb3467f119c24d2ea382b8cf76e17e5391a40962171302fc` |
 | short04.webp | `675135b72c7f8261cc8908e71eb7aecc563adf16a71def6a0ab233b5600e5445` |
-| short03.bin.gz | `60139d787680904c9e935f8de098afcaab69602d3407739d2c6f8ea7a225775b` |
+| short03.bin.gz | `0f094ac983841d709f2c53c058d8b00b110d264f9ad1d2da327def4c2a9332b5` |
 | short03.webp | `f614f39955b5e955e2e5f05c6995641ee696a6453e41383e39cb6895dc4f88d2` |
 | ponytail01.bin.gz | `10f9816d101d0b5e68a21bb5972b01bbaee40b7c0ed95b3f50cc8089463ff3af` |
 | ponytail01.webp | `b60dbec1b1dc48750af41c825c73e68f37d9edfc3633c2602ddd8b3c466f9aba` |
 | short01.bin.gz | `92955db94f115f1f5e6031e01d497ca5a5f8d5cdce2285142d2aa09d8e7589a9` |
 | short01.webp | `534604cd44ad63db2b25f2176ab366bfc020ae4284cd09b0202814dfb72045c9` |
-| bob01.bin.gz | `8e636e6e074188791ade550139fb591d26fc67fbeb5e8ea2bea80afe134f0417` |
+| bob01.bin.gz | `8fc1fc4cf99c0e8eb60c71b66a4887667af2d4da58e8b42487a935726ab8437f` |
 | bob01.webp | `d9d0383baa65675e958e247b157d87c79d1e871f81804e86ada9f9ac7926d7c3` |
-| braid01.bin.gz | `6b843fee78e6a27e14137b6e10eaebdfca08110c2d158af3137104e460ad6b16` |
+| braid01.bin.gz | `4c359f3d87daa233772fcb184d09a3305e8b3b4c84f51a1e266b03532973d673` |
 | braid01.webp | `ebda0c0fc0572ab7cdc7d101b5ceb1095ae8a5ff60c8e908e93b4804cacb10e2` |
 | crop01.bin.gz | `23eb292fbb6e1665538e8abf5c9113bc6a857cc808a19778f9a1782c8216c96f` |
 | crop01.webp | `5a2b22578ba66a6f216a707c07494bac9c6fbfcfbf63fc2d49869b01f60a2770` |
-| braids01.bin.gz | `d76cdc6173951d87370a2863a24ece6e87039bac9113854c2e6e4be61524fd9c` |
+| braids01.bin.gz | `3d68feee83d5c622f49008bede143fb826d5f8e7e93cf2b43b6e3cf932a2d4b9` |
 | braids01.webp | `35de9774062d8fe7b48bb82a33eea917acc198307f16acf85fb61f1192509c65` |
-| cornrows01.bin.gz | `66c787e9e097a2be6e77df75ee912811c9fbb7cc8ae738dd6d14baa142cd0122` |
+| cornrows01.bin.gz | `60bfd219a133f88bf99f1230a5142fe044f1877caa71a324657d540ec8849b77` |
 | cornrows01.webp | `c7eeb5c51225b493a7d0707ef3a38038ff00171767e930079560f97d269db867` |
-| twists01.bin.gz | `48371e24799baa5fb6f8b375ec18a773526581352966a15fc8e38fc892664591` |
+| twists01.bin.gz | `63e833f72b8ec941e4be18fb82800327c01eeb467689fd064069d2567b842ee7` |
 | twists01.webp | `c7f300fb5c66fc549323076dd5a1f36702045a4573e269845c8585fca650f472` |
-| locs01.bin.gz | `f58300f17f0b11991c1c59973247a42ddf508d1179fb60673743186271b31783` |
+| locs01.bin.gz | `abb1c0ea8049cc0310c6ecc808cd2506a3689cc9e2074ccec4b14dfb1fb6b243` |
 | locs01.webp | `606f9cfbd2119a7eda05340ed8dfa1f19c3acba6f6f7774054e3ed09c530e586` |
-| bantu01.bin.gz | `4ed2060f0917dd95465fabdcb03b1b85f4dc6d77c7b71bea9ac770be3f4f551d` |
+| bantu01.bin.gz | `e597ed20b505bbf7927bbb2c9f197a503710409ab359bfd63592aaa7b94fe326` |
 | bantu01.webp | `3409ce0dcba009bac44141c70e2686ae06289a0dbec8fb9e120021b14a0b9a8e` |
 | eyebrow001.bin.gz | `eca8142f0c21815a2b1bd204b4c32888b71325cc3e0ab3d0013cf42f9b803b96` |
 | eyebrow001.webp | `63e0b84acd5b168e9bd5af4d9f949a21b53250142366ee1879c61748993c5758` |
@@ -148,5 +185,15 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | eyelashes03.webp | `3264a9da33053d5fd3b80747548e1c962f4abeaa20e311367bbcb2bb04ad3d4d` |
 | eyelashes04.bin.gz | `a405197a9dc7f361e9b5946b0d134aaf64e31b0072cc75151dd8bdd5b41f412c` |
 | eyelashes04.webp | `d545d987b615d55a23b4e637b193ba81ce41cf5edf0c87883cc00a6de5094059` |
-| beard-full.bin.gz | `1660723c1963bcf3a32d6f1bb17fa295f4e8484e7b3f1142e2da919e02333c99` |
-| beard-full.webp | `b54fbb4eb11a3a1170e6f406276cb363d8b4d4fdf4b530ca9e8f462f07551d2f` |
+| beard-faun.bin.gz | `007ab2e25836f6af594b78952cde28a148e6bfa7f981b65933df8f0f8b89de44` |
+| beard-faun.webp | `536a88e7762bc5eb73eccdd3f7ae58078ce78ed2f48a4af9f74739d647fa834e` |
+| beard-sigmund.bin.gz | `a4c05d7905cffe689c55e72a90523e358b3cc6bc1e49df1ab60e096d69242d13` |
+| beard-sigmund.webp | `d47a28eed536235f7f7d11c059d1d6805e7dd4b8e02e0c4f88ea1e304b448625` |
+| beard-viking.bin.gz | `0aea300af034f0f39b8b69e06a17980cad95837c9358a2e188c129a4bff27ba8` |
+| beard-viking.webp | `f61d1fc201b411208b510a98efad3f91fb1029fa37df49864a48ddc5b44820fc` |
+| moustache-viking.bin.gz | `933701834e3055581353a5a1097e53c949d8317bf6e1bcdb3d64b83665dd08ae` |
+| moustache-viking.webp | `861dfc6fb1889ab41b7aeab965a77b06aa221ebea14515c0e6ca30ae478af968` |
+| beard-scruffy.bin.gz | `714960c3ba3645c54b5e1f1c5b612f51b26986a3b75b4c6b1ba48b395945d772` |
+| beard-scruffy.webp | `d7809b38dca100fdec0d788a880062ea9990f8559742c30bd563cd8f0f485e44` |
+| beard-full.bin.gz | `d7e1ff014d25c382479da340fcc407118729eb909d796282c0a114ca38ccd828` |
+| beard-full.webp | `ff192dfe1743ba0c9a49726b4f5de0cbb367c809be42877314e434e9a729f281` |

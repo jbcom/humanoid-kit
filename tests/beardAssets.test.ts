@@ -23,11 +23,12 @@ const ASSET_BEARDS = [
 const provenance = fs.readFileSync(path.join(hairDir, "PROVENANCE.md"), "utf8");
 
 describe("the grafted facial hair", () => {
-  it("ships the five bodyparts05 assets as beard entries", () => {
+  it("ships the five bodyparts05 assets as facial hair entries, tagged for their slot", () => {
     for (const [id] of ASSET_BEARDS) {
       const entry = hairManifest.styles.find((s) => s.id === id);
       expect(entry, id).toBeDefined();
-      expect(entry?.kind, id).toBe("beard");
+      expect(entry?.kind, id).toBe("facial");
+      expect(entry?.tags[0], id).toBe(id.startsWith("moustache") ? "moustache" : "beard");
     }
   });
 
