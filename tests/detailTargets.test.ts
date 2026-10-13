@@ -17,13 +17,14 @@ import { bodyPackData } from "./fixtures.ts";
  * tests use a synthetic detail target on real adult-pack data, so the engine is
  * proven before any anatomy is authored on it.
  */
-const BUMP = "detail/test-bump";
-const DENT = "detail/test-dent";
-const MODIFIER = "detail/test-bump-decr|incr";
-const GATE = "detail/test-gate";
+// Adult pack modifiers carry ids the age policy gates (`ADULT_ONLY_MODIFIER`), or the loader refuses the pack.
+const BUMP = "genitals/test-bump";
+const DENT = "genitals/test-dent";
+const MODIFIER = "genitals/test-bump-decr|incr";
+const GATE = "genitals/test-gate";
 /** A virtual two-sided modifier (no targets of its own) and the target a pack derives from it. */
-const SIZE = "detail/test-size";
-const DRIVEN = "detail/test-driven";
+const SIZE = "genitals/test-size";
+const DRIVEN = "genitals/test-driven";
 const DRIVEN_Z = 0.004;
 const BUMP_Z = 0.005;
 const DENT_Z = -0.003;
