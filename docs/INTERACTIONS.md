@@ -293,9 +293,12 @@ frame. A rendered contact must use the latter: a wrist head or interaction
 marker is not a proof that the final skinned hand reached a target. The
 primitive is not wired into the interaction runtime, React bindings, or an
 authored clip. For an orientation target, either the tip or the measured
-effector frame must report an orientation; ancestor position refinement and
-the final wrist correction are alternated before the measured result is
-reported.
+effector frame must report an orientation. A measured orientation takes
+precedence; a position-only sampler falls back to the rigid tip orientation.
+Ancestor position refinement and the final wrist correction are alternated
+before the measured result is reported. The rigid-tip annulus stays diagnostic
+for a skinned sampler: measured position and orientation tolerances determine
+whether that sampler reached its target.
 
 `createArmSkinnedFrameSampler` is the allocation-bounded `effector` adapter for
 one solve. It owns transient skeleton and skinning scratch, borrows one

@@ -100,6 +100,11 @@ export interface ArmTargetResult {
   readonly segmentLengths: readonly number[];
 }
 
+interface SampledArmEnd extends ArmTargetFrame {
+  /** True when `orientation` came from the measured effector rather than `tip`. */
+  readonly measuredOrientation: boolean;
+}
+
 /**
  * Temporary source-angle budgets for the split MakeHuman chain. They are not
  * biomechanical limits: a CCD step may still use a twist carrier as a bend.
@@ -299,8 +304,11 @@ export function solveArmTarget(input: ArmTargetInput): ArmTargetResult {
     finalOrientation && target.orientation
       ? quaternionAngle(finalOrientation, target.orientation)
       : null;
+  // A skinned sample may have a blended palm offset that is not represented by
+  // the rigid wrist-local tip used for the annulus diagnostic. Its measured
+  // tolerance therefore decides status; the annulus remains useful metadata.
   const reached =
-    geometricallyReachable &&
+    (input.effector !== undefined || geometricallyReachable) &&
     finalDistance <= tolerance &&
     (!target.orientation ||
       (orientationError !== null && orientationError <= orientationTolerance));
@@ -425,17 +433,28 @@ function sampledEnd(
   chain: readonly number[],
   tip: ArmTip,
   effector: ArmTargetInput["effector"],
-): ArmTargetFrame {
+): SampledArmEnd {
+  const final = chain.at(-1) as number;
   if (effector) {
     const frame = effector(rotations);
     assertPoint("effector.position", frame.position);
     if (frame.orientation) assertUnitQuaternion("effector.orientation", frame.orientation);
-    return frame;
+    if (frame.orientation) return { ...frame, measuredOrientation: true };
+    if (tip.orientation)
+      return {
+        position: frame.position,
+        orientation: mul(quatAt(posed.world, final), tip.orientation),
+        measuredOrientation: false,
+      };
+    return { position: frame.position, measuredOrientation: false };
   }
   const position = endPoint(posed, chain, tip);
-  if (!tip.orientation) return { position };
-  const final = chain.at(-1) as number;
-  return { position, orientation: mul(quatAt(posed.world, final), tip.orientation) };
+  if (!tip.orientation) return { position, measuredOrientation: false };
+  return {
+    position,
+    orientation: mul(quatAt(posed.world, final), tip.orientation),
+    measuredOrientation: false,
+  };
 }
 
 function refinePosition(
@@ -489,9 +508,9 @@ function correctOrientation(
   const parent = rest.parents[final] as number;
   const parentWorld = parent < 0 ? IDENTITY : quatAt(posed.world, parent);
   const finalWorld = quatAt(posed.world, final);
-  const desiredWorld = tip.orientation
-    ? mul(target, conjugate(tip.orientation))
-    : mul(mul(target, conjugate(frame.orientation)), finalWorld);
+  const desiredWorld = frame.measuredOrientation
+    ? mul(mul(target, conjugate(frame.orientation)), finalWorld)
+    : mul(target, conjugate(tip.orientation as Quat));
   const desiredLocal = mul(conjugate(parentWorld), desiredWorld);
   setLimitedLocal(source, out, final, desiredLocal, limits.at(-1) as ArmJointLimit);
 }
@@ -598,5 +617,14 @@ function biasPole(
   const current = project(elbow);
   const wanted = project(pole);
   if (length(current) < 1e-8 || length(wanted) < 1e-8) return;
-  applyWorldDelta(rest, source, out, chain[0] as number, between(current, wanted), limit);
+  const currentLength = length(current);
+  const wantedLength = length(wanted);
+  const alignment =
+    (current[0] * wanted[0] + current[1] * wanted[1] + current[2] * wanted[2]) /
+    (currentLength * wantedLength);
+  const delta =
+    alignment < -0.999999
+      ? ([axis[0] / axisLength, axis[1] / axisLength, axis[2] / axisLength, 0] as Quat)
+      : between(current, wanted);
+  applyWorldDelta(rest, source, out, chain[0] as number, delta, limit);
 }

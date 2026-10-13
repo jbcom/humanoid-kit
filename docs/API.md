@@ -980,7 +980,10 @@ and expressions"). Framework-free.
   segment lengths, and returns measured reach and orientation results. Its
   limits are spherical source-angle budgets, not anatomical joint limits. An
   orientation target uses either `armTip`'s orientation or the final measured
-  effector-frame orientation.
+  effector-frame orientation (the measured frame wins; a position-only sampler
+  falls back to the tip). The returned rigid-tip reachability value is
+  diagnostic when an effector samples a blended skinned hand; measured
+  tolerances decide its result.
   `createArmSkinnedFrameSampler(input)` supplies a final CPU-skinned hand frame
   to a solve without per-sample typed-array allocation. It borrows immutable
   evaluation inputs for one generation and rejects stale, malformed or

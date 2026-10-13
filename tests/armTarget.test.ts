@@ -389,6 +389,98 @@ describe("arm target constraints", { timeout: 300_000 }, () => {
     expect(result.rotations[wrist * 4 + 3]).not.toBe(base[wrist * 4 + 3]);
   });
 
+  it("falls back to its oriented tip when an effector samples position only", () => {
+    const fixture = adult();
+    const chain = armChain(fixture.rest, "R");
+    const before = handFrame(fixture.recipe, fixture.evaluation, base, fixture.world, "figure");
+    const sourceOrientation = orientation(before);
+    const desired = new Quaternion(...sourceOrientation).multiply(
+      new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.1),
+    );
+    const result = solveArmTarget({
+      rest: fixture.rest,
+      rotations: base,
+      chain,
+      tip: armTip(fixture.rest, base, chain, before.position, sourceOrientation),
+      target: {
+        position: before.position,
+        orientation: [desired.x, desired.y, desired.z, desired.w],
+      },
+      effector: (rotations) => ({
+        position: handFrame(fixture.recipe, fixture.evaluation, rotations, fixture.world, "figure")
+          .position,
+      }),
+      tolerance: 0.01,
+      orientationTolerance: 0.04,
+    });
+    expect(result.status, JSON.stringify(result)).toBe("reached");
+    expect(result.orientationError).toBeLessThanOrEqual(0.04);
+  });
+
+  it("uses a measured skinned orientation over a concurrent rigid tip", () => {
+    const fixture = adult();
+    const chain = armChain(fixture.rest, "R");
+    const before = handFrame(fixture.recipe, fixture.evaluation, base, fixture.world, "figure");
+    const measured = new Quaternion(...orientation(before)).multiply(
+      new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.1),
+    );
+    const rigidTip = new Quaternion(...orientation(before)).multiply(
+      new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 0.1),
+    );
+    const result = solveArmTarget({
+      rest: fixture.rest,
+      rotations: base,
+      chain,
+      tip: armTip(fixture.rest, base, chain, before.position, [
+        rigidTip.x,
+        rigidTip.y,
+        rigidTip.z,
+        rigidTip.w,
+      ]),
+      target: {
+        position: before.position,
+        orientation: [measured.x, measured.y, measured.z, measured.w],
+      },
+      effector: (rotations) => {
+        const frame = handFrame(
+          fixture.recipe,
+          fixture.evaluation,
+          rotations,
+          fixture.world,
+          "figure",
+        );
+        return { position: frame.position, orientation: orientation(frame) };
+      },
+      tolerance: 0.01,
+      orientationTolerance: 0.04,
+    });
+    expect(result.status, JSON.stringify(result)).toBe("reached");
+    expect(result.orientationError).toBeLessThanOrEqual(0.04);
+  });
+
+  it("reports a reached measured hand frame even when its rigid-tip annulus is only diagnostic", () => {
+    const fixture = adult();
+    const chain = armChain(fixture.rest, "R");
+    const before = handFrame(fixture.recipe, fixture.evaluation, base, fixture.world, "figure");
+    const target: [number, number, number] = [
+      before.position[0] + 2,
+      before.position[1],
+      before.position[2],
+    ];
+    const result = solveArmTarget({
+      rest: fixture.rest,
+      rotations: base,
+      chain,
+      tip: armTip(fixture.rest, base, chain, before.position),
+      target: { position: target },
+      effector: () => ({ position: target }),
+      tolerance: 0.001,
+    });
+    expect(result.geometricallyReachable).toBe(false);
+    expect(result.status).toBe("reached");
+    expect(result.reason).toBe("reached");
+  });
+
   it("reapplies wrist orientation after ancestors refine a displaced contact", () => {
     const fixture = adult();
     const before = handFrame(fixture.recipe, fixture.evaluation, base, fixture.world, "figure");
@@ -444,6 +536,45 @@ describe("arm target constraints", { timeout: 300_000 }, () => {
     expect(Math.sign(elbowSide(fixture.rest, a.rotations, chain, targetA, pole))).toBe(
       Math.sign(elbowSide(fixture.rest, b.rotations, chain, targetB, pole)),
     );
+  });
+
+  it("keeps contact when an antipodal pole reverses the elbow side", () => {
+    const fixture = adult();
+    const chain = armChain(fixture.rest, "R");
+    const before = handFrame(fixture.recipe, fixture.evaluation, base, fixture.world, "figure");
+    const heads = posedBones(fixture.rest, base).heads;
+    const root = point(heads, chain[0] as number);
+    const elbow = point(heads, chain[3] as number);
+    const axis: [number, number, number] = [
+      before.position[0] - root[0],
+      before.position[1] - root[1],
+      before.position[2] - root[2],
+    ];
+    const axisLength = Math.hypot(...axis);
+    const elbowOffset: [number, number, number] = [
+      elbow[0] - root[0],
+      elbow[1] - root[1],
+      elbow[2] - root[2],
+    ];
+    const along =
+      (elbowOffset[0] * axis[0] + elbowOffset[1] * axis[1] + elbowOffset[2] * axis[2]) /
+      (axisLength * axisLength);
+    const projected: [number, number, number] = [
+      elbowOffset[0] - axis[0] * along,
+      elbowOffset[1] - axis[1] * along,
+      elbowOffset[2] - axis[2] * along,
+    ];
+    const oppositePole: [number, number, number] = [
+      root[0] - projected[0],
+      root[1] - projected[1],
+      root[2] - projected[2],
+    ];
+    const result = solveActualHand({ ...fixture, target: before.position, pole: oppositePole });
+    expect(result.status, JSON.stringify(result)).toBe("reached");
+    expect(result.distance).toBeLessThanOrEqual(0.01);
+    expect(
+      elbowSide(fixture.rest, result.rotations, chain, before.position, oppositePole),
+    ).toBeGreaterThan(0);
   });
 
   it("rejects an orientation request without a measurable orientation frame", () => {
