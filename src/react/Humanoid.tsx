@@ -30,6 +30,7 @@ import {
   type Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
+  NoColorSpace,
   Skeleton,
   SkinnedMesh,
   SRGBColorSpace,
@@ -115,6 +116,7 @@ import {
   wornGroundOffset,
 } from "../rig/pose.ts";
 import { skinDualShare } from "../rig/skinShare.ts";
+import { ageSurfaceStrength } from "../surface/ageSurface.ts";
 import { beardCoverage, resolveBeard } from "../surface/beard.ts";
 import { bodyHairColour } from "../surface/bodyHair.ts";
 import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
@@ -1035,6 +1037,43 @@ export function Humanoid({
     m.occlusionKeys = occlusionKeys;
     return m;
   }, [occlusionKeys]);
+  // The age surface's map, fetched the first time the figure is old enough to
+  // show it and kept (a younger age turns it off in the material); a figure that
+  // never ages past the adult body never fetches it.
+  const ageSurfaceUrl = ready?.ageSurfaceUrl ?? null;
+  const showsAge = ageSurfaceStrength(recipe.macros.age) > 0;
+  const [ageWanted, setAgeWanted] = useState(false);
+  if (showsAge && ageSurfaceUrl && !ageWanted) setAgeWanted(true);
+  useEffect(() => {
+    if (!ageWanted || !ageSurfaceUrl) return;
+    let live = true;
+    const end = settle.begin();
+    let loaded: Texture | null = null;
+    new TextureLoader().loadAsync(ageSurfaceUrl).then(
+      (tex) => {
+        end();
+        if (!live) {
+          tex.dispose();
+          return;
+        }
+        // Heights, not colours.
+        tex.colorSpace = NoColorSpace;
+        tex.anisotropy = 8;
+        loaded = tex;
+        skin.setAgeSurface(tex);
+      },
+      (e: unknown) => {
+        end();
+        if (live) report(new Error(`age surface ${ageSurfaceUrl} failed to load: ${String(e)}`));
+      },
+    );
+    return () => {
+      live = false;
+      end();
+      skin.setAgeSurface(null);
+      loaded?.dispose();
+    };
+  }, [ageWanted, ageSurfaceUrl, skin, settle, report]);
   // A body pack without the joints presence reads still renders the figure; it
   // is reported (not thrown, which would take the canvas down) and not published.
   const lacksPresenceJoints = Boolean(presence && ready && !ready.presenceJoints);
@@ -1444,6 +1483,8 @@ export function Humanoid({
     lifts: Boolean(presence) || animation !== undefined,
     staticLift: lift,
     presenceSource,
+    frames: presence ? (presenceContext?.registry.frames ?? null) : null,
+    figureId: presence?.id,
     report,
   });
   // Once the pose of the frame is written, the affordances' clip is set to the channels it opens.

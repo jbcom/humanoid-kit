@@ -11,6 +11,8 @@
  * allocate nothing once figures have joined. Framework-free.
  */
 
+import { type AnimationFrames, createAnimationFrames } from "../animation/frames.ts";
+
 export type Vec3 = [number, number, number];
 
 export type AnchorName =
@@ -135,6 +137,11 @@ export interface PresenceRegistry {
   objects(): readonly ObjectPresence[];
   /** Advances `channel` on every tick, after proximity. Returns the detach function. */
   attach(channel: PresenceChannel): () => void;
+  /**
+   * The figures' animation frames, keyed by the same ids as their presence
+   * (docs/INTERACTION-SESSION.md, "Animation frames").
+   */
+  readonly frames: AnimationFrames;
 }
 
 /** Leaving takes this much more distance than entering, so edges do not flicker. */
@@ -286,6 +293,7 @@ export function createPresenceRegistry(): PresenceRegistry {
       channels.add(channel);
       return () => channels.delete(channel);
     },
+    frames: createAnimationFrames(),
   };
 }
 

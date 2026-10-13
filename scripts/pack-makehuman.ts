@@ -62,7 +62,9 @@ import {
   authorDetail,
 } from "./lib/adultAuthored.ts";
 import { ISLAND_LAYERS, ISLAND_SIZES, reservoirLayout } from "./lib/adultReservoirs.ts";
+import { ageSurfaceProvenance, writeAgeSurfaceMap } from "./lib/ageSurfaceMap.ts";
 import { authoredPoses } from "./lib/authoredPoses.ts";
+import { readBodyPack } from "./lib/bodyPack.ts";
 import { parseBvh } from "./lib/bvh.ts";
 import { compileAsset } from "./lib/compileAsset.ts";
 import { AUTHORING_FIGURE } from "./lib/control/mound.ts";
@@ -385,6 +387,7 @@ function writeProvenance(
   vendorEvidence: Record<string, string> = {},
   authored: readonly string[] = [],
   textures: readonly TextureRecord[] = [],
+  sections: readonly string[] = [],
 ): void {
   const group = (evidence: Record<string, string>, keep: (f: string) => boolean) => {
     const byKind = new Map<string, string[]>();
@@ -442,6 +445,7 @@ function writeProvenance(
         ]
       : []),
     "",
+    ...sections,
     ...(textures.length ? [...textureProvenance(textures), "## Outputs", ""] : []),
     "| Output | SHA-256 |",
     "| --- | --- |",
@@ -854,6 +858,10 @@ async function main() {
   );
   manifest.bodyOcclusion = bodyOcclusion;
   fs.writeFileSync(path.join(BODY_OUT, "manifest.json"), `${JSON.stringify(manifest)}\n`);
+  // The age surface's creases are measured on the packed body (its cavities included).
+  const ageSurface = await writeAgeSurfaceMap(readBodyPack(BODY_OUT).assets, SYSTEM, BODY_OUT);
+  manifest.ageSurface = ageSurface.entry;
+  fs.writeFileSync(path.join(BODY_OUT, "manifest.json"), `${JSON.stringify(manifest)}\n`);
 
   const adultManifest = {
     format: 1,
@@ -898,11 +906,13 @@ async function main() {
         t.texture,
         sha(new Uint8Array(fs.readFileSync(path.join(BODY_OUT, t.texture)))),
       ]),
+      [ageSurface.entry.file, ageSurface.entry.sha256],
     ],
     systemEvidence,
     vendorEvidence,
     [],
     textures,
+    ageSurfaceProvenance(ageSurface),
   );
   writeProvenance(
     ADULT_OUT,

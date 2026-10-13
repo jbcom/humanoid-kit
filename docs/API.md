@@ -304,7 +304,9 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 
 ### Age policy
 
-- `ADULT_AGE` (18) and `isAdult(recipe)`.
+- `ADULT_AGE` (18), `isAdultAge(age)` (true only for a finite number of 18 or
+  more: NaN, Infinity, a missing or non-numeric age and a negative age are not
+  adult) and `isAdult(recipe)` (asks it of the recipe's age).
 - `agePolicyViolations(recipe): string[]`: every reason the recipe breaks the
   policy; empty when valid.
 - `assertAgePolicy(recipe)`: throws `AgePolicyError` listing the violations.
@@ -1210,8 +1212,9 @@ and expressions"). Framework-free.
   `createArmSkinnedFrameSampler(input)` supplies a final CPU-skinned hand frame
   to a solve without per-sample typed-array allocation. It borrows immutable
   evaluation inputs for one generation and rejects stale, malformed or
-  non-arm-only trial poses. Neither export drives an interaction, clip, React
-  prop or live figure automatically.
+  non-arm-only trial poses. `createHandContact` (Interactions, below) is what
+  drives them from an interaction's contact, and `<Humanoid handContact>`
+  applies that to a live figure.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
@@ -1299,7 +1302,8 @@ slices 1 and 2 of its build plan.
   `releaseSeconds?`, `priority?`.
 - `tagMatches(required, tag)`, `audienceOf(definition, affordanceAdult?)`
   (adult unless declared `all` and no figure affordance it names is adult; an
-  affordance the core does not know counts as adult), `definitionProblems`.
+  affordance the core does not know counts as adult, and `affordanceAdult` can
+  only add adult ids to that, never clear one), `definitionProblems`.
 - `createInteractions(registry, { seed, clipLength, affordanceAdult?,
   applyChange? })` returns the runtime: `define(definitions)` (throws
   `InteractionDefinitionError` on a malformed one), `offer(offer)`,
@@ -1340,6 +1344,25 @@ slices 1 and 2 of its build plan.
   `trackTime(role)` supplies the phase track's shared-clock time, including
   rate, loop wrapping and non-loop clamping. Each returns `null` when it has
   no meaningful value. Supplying `out` keeps per-frame reads allocation-free.
+- `Interaction.endReason` is `null` while it runs and after a normal end, and
+  its `CancelReason` once cancelled, declined or aborted.
+- `createHandContact(options?)`: the hand contact constraint (INTERACTIONS.md,
+  "Hand contact constraint"). Options: `blendIn` (default 0.25 s of the phase
+  clock), `blendOut` (default 0.3 s, after a graceful cancel only),
+  `tolerance` (default 0.01 m), `orientationTolerance` (default 0.35 rad),
+  `iterations`. `update({ binding, figure, source, dt, out })` writes the
+  constrained pose into `out` (the source pose, byte for byte, at weight 0)
+  and returns the reused `HandContactReport`. `binding` is `{ interaction,
+  role, contact }` or null; `figure` is `{ participant, generation,
+  restBones, rest, restNormals, skinIndex, skinWeight, anchors, folds?,
+  figureToWorld }`, the figure's evaluated surface as drawn and its lifted
+  group's column-major world matrix. The report's `state` is `idle`,
+  `refused`, `blending-in`, `holding`, `releasing` or `fading`; `reason` is
+  the solver's `ArmTargetReason` or a refusal (`not-a-participant`,
+  `not-claimed`, `not-a-hand-contact`, `unknown-contact`); `distance` is the
+  measured final hand frame to the target in metres; `target` and `hand` are
+  world points. `handContactSide(definition, contact, role)` reads which hand
+  a contact asks of a role, or null.
 - `InteractionEvent` is delivered through `on(participant, listener)` to both
   participants. It reports acceptance, decline, phase, beat, normal end and
   cancellation; cancellation includes its `declined`, `cancelled`, `left`,
@@ -1538,6 +1561,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `bodyArtImages?` | `BodyArtImages`: the decoded images (`ImageBitmap`, loaded `HTMLImageElement`, canvas) the recipe's tattoos name by key. Keep the object stable: a new one bakes the figure's body art again. A tattoo whose image is missing is reported through `onError`, and the figure is drawn without its body art |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, `"piercing"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |
+| `handContact?` | `HumanoidHandContact`: `{ interaction, role, contact, blendIn?, blendOut?, tolerance?, orientationTolerance?, onReport? }`. Binds the figure to a running interaction's hand-to-hand contact: each frame the figure closes the contact's hand (its side from the contact's endpoint for `role`) on the runtime's `contactTarget`, over its clip or static pose, with `createHandContact` (INTERACTIONS.md, "Hand contact constraint"). Needs `presence` (the binding is checked against `interaction.roles[role]`); `interaction: null` releases it. `onReport` receives the reused `HandContactReport` every frame it changes the pose or settles back to idle |
 | other props | Passed to the wrapping `<group>` |
 
 - Hidden until the first evaluation arrives.
@@ -2215,12 +2239,31 @@ animator.root;                // how far the figure has been carried: [x across,
   render-clock step, including after a slow frame; and the
   figure's presence follows. `time` puts it at a time in the clip. `onStart(clip)` is
   called once the figure follows the clip, and again for a new figure or `time`.
-  `onFrame(frame)` receives the completed pose and real FootLock contact owner for each sole,
-  without a React render: `owned` identifies the current owner while `hold` says whether it is
-  fully planted (1) or fading through rollover/release (0..1). Contacts are figure-local metres after ground lift and before
-  cumulative root carry, group heading or any caller transform; `root` is cumulative x/forward-z
-  carry and `delta` is this render frame's carry. `generation` increments after each evaluation/rest
-  binding so an integration can reject a callback from an earlier asynchronous recipe update.
+  `onFrame(frame)` receives the completed `HumanoidAnimationFrame` without a React render,
+  and a figure with `presence` publishes the same frame into its registry's `frames` under its
+  presence id: `owned` identifies each sole's real FootLock owner while `hold` says whether it is
+  fully planted (1) or fading through rollover/release (0..1). Contacts are figure-local metres
+  after ground lift and before cumulative root carry, group heading or any caller transform;
+  `toWorld` (the group's world matrix after this frame's carry) places them in the world.
+  `root` is cumulative x/forward-z carry, `delta` this render frame's and `lift` the ground lift.
+  `generation` rises with each new client or evaluation. The frame object is reused: copy what
+  you keep (`copyAnimationFrame`).
+- Animation frames (`src/animation/frames.ts`, `src/animation/frameWriter.ts`;
+  docs/INTERACTION-SESSION.md, "Animation frames"): `createAnimationFrames()` is the
+  framework-free channel every `PresenceRegistry` owns as `frames`.
+  `frames.observe(figure, onFrame, onRelease?)` returns the unsubscribe function;
+  `onRelease(reason, figure)` hears `"released"` or `"superseded"`. `frames.bind(figure)`
+  returns a `FrameBinding` (`publish(frame)`, `false` once not live; `rebind()`; `release()`;
+  `live`; `generation`); binding an id again supersedes its producer. An observer's exception
+  is rethrown to the producer after every observer has the frame. `AnimationFrameWriter`
+  fills a frame from an `Animator` and a `FrameFigure` (`rest`, `groundOffset`, `contacts`,
+  optional `skin`), outside any renderer; `setFramePlacement(frame, position, facing)` places
+  a headless producer's frame, `frameContactWorld(frame, index, out?)` is a contact in world
+  space, `createAnimationFrame` and `copyAnimationFrame` make and copy frames, and
+  `ANIMATION_CONTACTS` is the contacts' order.
+- `interaction.observeFrames(role, onFrame, onRelease?)` observes a figure role's frames for
+  that interaction only; the subscription ends with the interaction (end, decline, cancel,
+  detach), and a frame from another figure that took the participant's id is never delivered.
 - `bodySegments(assets, rest, control, skinIndex, skinWeight, bodyVertices)` (a figure's 14
   capsules, radii measured from its skin) and `overlaps(rest, segments, rotations)` (every
   pair of parts that are not neighbours, with how deep they overlap in the pose, negative

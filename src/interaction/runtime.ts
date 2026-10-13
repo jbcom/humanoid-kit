@@ -8,6 +8,7 @@
  * before anyone is asked, and again on every tick.
  */
 import type { AffordanceChange } from "../affordance/state.ts";
+import type { FrameObserver, FrameReleaseObserver } from "../animation/frames.ts";
 import type {
   FigureMeasures,
   FigurePresence,
@@ -66,6 +67,12 @@ export interface Interaction {
   readonly passes: number;
   readonly seed: number;
   /**
+   * Why it was cancelled, declined or aborted; null while it runs and after a
+   * normal end. A reader that polls (a hand contact constraint) tells a
+   * graceful cancel from an `age-policy` abort by it.
+   */
+  readonly endReason: CancelReason | null;
+  /**
    * Where `role`'s figure should stand and face: its slot against the
    * reference, in world space, written into `out` (pass one to allocate
    * nothing). Moving the figure there is the application's; the approach phase
@@ -92,6 +99,20 @@ export interface Interaction {
    * agree exactly. Null when the role plays nothing in this phase.
    */
   trackTime(role: RoleName): number | null;
+  /**
+   * Observes the animation frames of `role`'s figure (the presence registry's
+   * `frames`) for this interaction only: the subscription ends by itself when the
+   * interaction ends, is declined or cancelled, or the runtime is detached, before
+   * that call returns. A frame published under the role's id by a figure other
+   * than the one bound at proposal (it left and another joined) is never
+   * delivered. Returns the unsubscribe function; on an ended interaction it
+   * observes nothing. Throws for a role that does not take a figure.
+   */
+  observeFrames(
+    role: RoleName,
+    onFrame: FrameObserver,
+    onRelease?: FrameReleaseObserver,
+  ): () => void;
   cancel(reason?: CancelReason): void;
 }
 
@@ -127,7 +148,11 @@ export interface InteractionOptions {
   seed: number;
   /** Seconds a clip lasts at rate 1: the animation library's answer. */
   clipLength: (clip: string) => number;
-  /** Whether a figure affordance id is the adult anatomy's; unknown ids should answer true. */
+  /**
+   * Whether a figure affordance id is the adult anatomy's, for ids the host knows
+   * more about than the core. It can only add adult ids: an id the core does not
+   * know is adult whatever this answers (`defaultAffordanceAdult`).
+   */
   affordanceAdult?: (id: string) => boolean;
   /** Applies a beat's affordance change to a participant (its `AffordanceStates`). */
   applyChange?: (participant: string, affordance: string, change: AffordanceChange) => void;
@@ -175,7 +200,9 @@ function seedOf(seed: number, parts: readonly (string | number)[]): number {
   return h;
 }
 
-const DEFAULT_BLEND = 0.3;
+/** Seconds an align or release phase lasts when its definition does not say. */
+export const DEFAULT_PHASE_SECONDS = 0.3;
+const DEFAULT_BLEND = DEFAULT_PHASE_SECONDS;
 const groundDistance = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 
 /** The midpoint of two figures and the unit line from the first toward the second, on the ground. */
@@ -201,6 +228,7 @@ interface Running extends Interaction {
   phase: InteractionPhase;
   time: number;
   passes: number;
+  endReason: CancelReason | null;
   /** Beats already fired in this pass. */
   fired: number;
   /** Consent answers still awaited, and those given. */
@@ -214,6 +242,8 @@ interface Running extends Interaction {
   participants: Readonly<Record<RoleName, FigurePresence | ObjectPresence>>;
   /** A role's measures, for resolving the definition's lengths; made once per interaction. */
   measuresOf: (role: RoleName) => FigureMeasures | undefined;
+  /** The unsubscribe functions of this interaction's frame observers, all called when it ends. */
+  frameStops: Set<() => void>;
 }
 
 /**
@@ -286,8 +316,11 @@ export function createInteractions(
 
   const end = (i: Running, reason?: CancelReason) => {
     if (i.phase === "ended") return;
+    // No frame observer outlives its interaction, not even into the end event's listeners.
+    for (const stop of [...i.frameStops]) stop();
     release(i);
     i.phase = "ended";
+    i.endReason = reason ?? null;
     i.time = 0;
     remove(i);
     emit(
@@ -461,6 +494,36 @@ export function createInteractions(
     return track.loop ? seconds % length : Math.min(seconds, length);
   };
 
+  const observeFrames = (
+    i: Running,
+    role: RoleName,
+    onFrame: FrameObserver,
+    onRelease: FrameReleaseObserver | undefined,
+  ): (() => void) => {
+    const r = roleSpec(i, role);
+    if (r?.takes !== "figure")
+      throw new InteractionDefinitionError(
+        `${i.definition.id}: role ${role} does not take a figure`,
+      );
+    if (i.phase === "ended") return () => {};
+    const id = i.roles[role] as string;
+    const bound = i.participants[role];
+    const unsubscribe = presence.frames.observe(
+      id,
+      (frame) => {
+        // The id may already name another figure before the next tick ends the interaction.
+        if (presence.get(id) === bound) onFrame(frame);
+      },
+      onRelease,
+    );
+    const stop = () => {
+      i.frameStops.delete(stop);
+      unsubscribe();
+    };
+    i.frameStops.add(stop);
+    return stop;
+  };
+
   /** Claims every role's body parts, all or none. */
   const claim = (i: Running): boolean => {
     const wanted: { participant: string; part: BodyPart }[] = [];
@@ -616,6 +679,7 @@ export function createInteractions(
         phase: "proposed",
         time: 0,
         passes: 0,
+        endReason: null,
         seed: seedOf(options.seed, [def.id, ...Object.values(roles).sort(), clock]),
         fired: 0,
         pending: 0,
@@ -644,6 +708,8 @@ export function createInteractions(
         },
         contactTarget: (contact, role, out = [0, 0, 0]) => contactTarget(i, contact, role, out),
         trackTime: (role) => trackTime(i, role),
+        frameStops: new Set(),
+        observeFrames: (role, onFrame, onRelease) => observeFrames(i, role, onFrame, onRelease),
         cancel: (reason = "cancelled") => end(i, reason),
       };
       live.push(i);

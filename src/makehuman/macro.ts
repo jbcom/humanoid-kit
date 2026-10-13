@@ -44,6 +44,15 @@ export const genderAxis = (gender: number): AxisWeights => {
 export const ADULT_AGE = 18;
 
 /**
+ * Whether an age is an adult's: a finite number of `ADULT_AGE` or more. The one
+ * place an age is compared to the line, so NaN, a missing or non-numeric age, a
+ * negative age and Infinity are all not adult, wherever the question is asked
+ * and whether or not the recipe was validated (docs/AGE-POLICY.md).
+ */
+export const isAdultAge = (age: unknown): boolean =>
+  typeof age === "number" && Number.isFinite(age) && age >= ADULT_AGE;
+
+/**
  * The age bodies at MakeHuman's ages (`human.py`, `_setAgeVals`; its child is at
  * slider 0.1875, 1 + 48 * 0.1875 = 10 years); the axis blends linearly between
  * neighbours. `upstream` is MakeHuman's name for the body in its target files.

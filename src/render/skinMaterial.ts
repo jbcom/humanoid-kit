@@ -35,6 +35,12 @@ import {
 } from "three";
 import { inkOptics } from "../bodyArt/ink.ts";
 import { MARK_DARK_STEPS, markRatios, SCAR_RAISE, SCAR_SMOOTHNESS } from "../bodyArt/marks.ts";
+import {
+  AGE_CREASE_DARKEN,
+  AGE_CREASE_DEPTH,
+  ageSurfaceSex,
+  ageSurfaceStrength,
+} from "../surface/ageSurface.ts";
 import { type AtlasPlan, OWNER_GRID, planAtlas } from "../surface/atlasPlan.ts";
 import {
   CREASE_SHARPNESS,
@@ -1009,6 +1015,41 @@ function setChannels(table: Vector4[], plan: AtlasPlan): void {
     );
 }
 
+/**
+ * The age surface's creases (`src/surface/ageSurface.ts`), compiled in only while
+ * a figure shows them (`HK_AGE_SURFACE`): a figure too young for any draws with
+ * exactly the shader it had without them.
+ *
+ * The map holds a signed height per texel in the body's UV space. Its gradient is
+ * taken in UV, from samples a texel either side (bilinearly filtered, so it varies
+ * smoothly across a texel rather than stepping at each one, as a screen derivative
+ * of the sampled height would), and carried to the screen through the UVs' own
+ * screen derivatives, which also turn it the right way on a mirrored island.
+ * Farther away the samples come from a coarser mip level and the difference fades.
+ */
+const AGE_SURFACE_FUNCTIONS = /* glsl */ `
+#ifdef HK_AGE_SURFACE
+uniform sampler2D hkAgeMap;
+// x: strength (0..1), y: the gender macro (1 the man's photograph, 0 the woman's), z: one texel in UV.
+uniform vec3 hkAgeSurface;
+float hkAgeHeight( vec2 uv ) {
+	vec2 rg = texture( hkAgeMap, uv ).rg;
+	return mix( rg.g, rg.r, hkAgeSurface.y ) * 2.0 - 1.0;
+}
+vec3 hkAgeColour( vec3 c, vec2 uv ) {
+	return c * ( 1.0 - ${glslFloat(AGE_CREASE_DARKEN)} * hkAgeSurface.x * max( 0.0, - hkAgeHeight( uv ) ) );
+}
+vec2 hkAgeSlope( vec2 uv ) {
+	float e = hkAgeSurface.z;
+	vec2 g = vec2(
+		hkAgeHeight( uv + vec2( e, 0.0 ) ) - hkAgeHeight( uv - vec2( e, 0.0 ) ),
+		hkAgeHeight( uv + vec2( 0.0, e ) ) - hkAgeHeight( uv - vec2( 0.0, e ) )
+	) / ( 2.0 * e );
+	return hkAgeSurface.x * ${glslFloat(AGE_CREASE_DEPTH)} * vec2( dot( g, dFdx( uv ) ), dot( g, dFdy( uv ) ) );
+}
+#endif
+`;
+
 /** One all-zero atlas per page count, shared by every material without its atlas. */
 const noLayers = new Map<number, Texture>();
 function noLayersFor(pages: number): Texture {
@@ -1063,6 +1104,10 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkMarkSkin: { value: Vector3 };
     hkMarkLip: { value: Vector3 };
     hkMarkLipLight: { value: Vector3 };
+    /** The age surface map (`setAgeSurface`); read only while the figure shows it. */
+    hkAgeMap: { value: Texture | null };
+    /** The age surface's strength, the map's mix by gender and one of its texels in UV. */
+    hkAgeSurface: { value: Vector3 };
   };
   private readonly stopTable: Float32Array;
   private dualBones: DualBones | null = null;
@@ -1140,6 +1185,34 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     this.needsUpdate = true;
   }
 
+  /**
+   * Draws the age surface's creases from this map (the body pack's
+   * `ageSurface`, loaded), or none. They show only while the figure's age gives
+   * them strength (`ageSurfaceStrength`, from `setAppearance`); the shader reads
+   * the map only then, so a young figure, or one without the map, pays nothing.
+   */
+  setAgeSurface(map: Texture | null): void {
+    const u = this.hkUniforms;
+    u.hkAgeMap.value = map;
+    const width = (map?.image as { width?: number } | undefined)?.width;
+    u.hkAgeSurface.value.z = width ? 1 / width : 0;
+    this.updateAgeSurfaceDefine();
+  }
+
+  /** Whether the shader draws the age surface: a map and an age that shows it. */
+  get showsAgeSurface(): boolean {
+    return this.hkUniforms.hkAgeMap.value !== null && this.hkUniforms.hkAgeSurface.value.x > 0;
+  }
+
+  private updateAgeSurfaceDefine(): void {
+    const on = this.showsAgeSurface;
+    const had = this.defines?.HK_AGE_SURFACE !== undefined;
+    if (on === had) return;
+    const { HK_AGE_SURFACE: _, ...rest } = this.defines ?? {};
+    this.defines = { ...rest, ...(on && { HK_AGE_SURFACE: "" }) };
+    this.needsUpdate = true;
+  }
+
   constructor(layers: readonly SkinLayer[] = SKIN_LAYERS) {
     super({
       // Measured skin: roughness ≈ 0.5 (Weyrich et al. 2006) and an index of
@@ -1180,6 +1253,8 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkMarkSkin: { value: new Vector3(1, 1, 1) },
       hkMarkLip: { value: new Vector3(1, 1, 1) },
       hkMarkLipLight: { value: new Vector3(1, 1, 1) },
+      hkAgeMap: { value: null },
+      hkAgeSurface: { value: new Vector3() },
     };
     setChannels(this.hkUniforms.hkChannel.value, plan);
     this.normalMap = poreNormalMap();
@@ -1221,6 +1296,10 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     this.hkUniforms.hkMarkSkin.value.fromArray(marks.skin);
     this.hkUniforms.hkMarkLip.value.fromArray(marks.lip);
     this.hkUniforms.hkMarkLipLight.value.fromArray(marks.lipLight);
+    const age = this.hkUniforms.hkAgeSurface.value;
+    age.x = ageSurfaceStrength(a.age);
+    age.y = ageSurfaceSex(a.build?.gender);
+    this.updateAgeSurfaceDefine();
     // Regional colour: each layer's paint from its own model (measured for lips),
     // blended in by the atlas's soft-edged masks.
     paintStopTable(this.layers, { ...a, signals: a.signals ?? {} }, this.stopTable);
@@ -1266,12 +1345,13 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${bodyArtLayerDefines(this.layers)}${BODY_ART_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
+        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${bodyArtLayerDefines(this.layers)}${BODY_ART_FUNCTIONS}\n${AGE_SURFACE_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
       )
       .replace(
         "#include <color_fragment>",
         // Hair lies over the skin's ink, so strands follow the body art.
-        `#include <color_fragment>\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n${BODY_ART_COLOUR}\n\tdiffuseColor.rgb = hkApplyStrands( diffuseColor.rgb, vHkUv );\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, mix( diffuseColor.rgb * ${glslFloat(SCALP_SHADE)}, hkScalpColour, ${glslFloat(SCALP_HAIR_SHARE)} ), clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );`,
+        // The age surface's creases are in the skin itself, under its regional colour.
+        `#include <color_fragment>\n#ifdef HK_AGE_SURFACE\n\tdiffuseColor.rgb = hkAgeColour( diffuseColor.rgb, vHkUv );\n#endif\n\tdiffuseColor.rgb = hkApplyLayers( diffuseColor.rgb, vHkUv );\n${BODY_ART_COLOUR}\n\tdiffuseColor.rgb = hkApplyStrands( diffuseColor.rgb, vHkUv );\n\tdiffuseColor.rgb = mix( diffuseColor.rgb, mix( diffuseColor.rgb * ${glslFloat(SCALP_SHADE)}, hkScalpColour, ${glslFloat(SCALP_HAIR_SHARE)} ), clamp( vHkScalp, 0.0, 1.0 ) * hkScalpStrength );`,
       )
       // Surface layers: roughness here, specular once the material is set up.
       .replace(
@@ -1281,7 +1361,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       // Detail layers: relief on top of the pore map.
       .replace(
         "#include <normal_fragment_maps>",
-        `#include <normal_fragment_maps>\n\thkSurfaceFootprint( normal, - vViewPosition );\n\tnormal = hkPerturbNormal( normal, hkDetailSlope( vHkUv ) + ${glslFloat(SCAR_RAISE)} * hkSlope( hkMarkSurface.y ), faceDirection );`,
+        `#include <normal_fragment_maps>\n\thkSurfaceFootprint( normal, - vViewPosition );\n\tvec2 hkSlopeAll = hkDetailSlope( vHkUv ) + ${glslFloat(SCAR_RAISE)} * hkSlope( hkMarkSurface.y );\n#ifdef HK_AGE_SURFACE\n\thkSlopeAll += hkAgeSlope( vHkUv );\n#endif\n\tnormal = hkPerturbNormal( normal, hkSlopeAll, faceDirection );`,
       )
       .replace(
         "#include <lights_physical_fragment>",
@@ -1308,6 +1388,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
   override customProgramCacheKey(): string {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
     const art = this.hkUniforms.hkBodyArt.value ? `-art${this.decalLayers}` : "";
-    return `humanoid-kit-skin-11-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}-fold` : ""}${art}|${SHADOW_FILTER_KEY}`;
+    const age = this.showsAgeSurface ? "-age" : "";
+    return `humanoid-kit-skin-11-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}-fold` : ""}${art}${age}|${SHADOW_FILTER_KEY}`;
   }
 }

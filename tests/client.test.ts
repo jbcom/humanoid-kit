@@ -138,6 +138,7 @@ class FakeWorker {
             adultAnatomyLoaded: false,
             hair: null,
             wardrobe: [],
+            ageSurfaceUrl: null,
           });
       }, 1);
       return;

@@ -9,7 +9,16 @@
  * rotations to a renderer.
  */
 import { assertDisjointViews, type BoneRotations, posedBones, type RestBones } from "./bones.ts";
-import { between, conjugate, mul, type Quat, rotate } from "./quat.ts";
+import {
+  between,
+  conjugate,
+  mul,
+  normalizeQuat,
+  type Quat,
+  quaternionAngle,
+  rotate,
+  slerp,
+} from "./quat.ts";
 
 /** Whether the measured final effector satisfies every requested tolerance. */
 export type ArmTargetStatus = "reached" | "unreached";
@@ -333,6 +342,113 @@ export function solveArmTarget(input: ArmTargetInput): ArmTargetResult {
   };
 }
 
+/**
+ * A two-bone starting pose for `solveArmTarget`, written into `out`: the
+ * elbow (`lowerarm01`) flexed so the shoulder-to-hand distance matches the
+ * target's (clamped inside the arm's span), the upper arm (`upperarm01`) aimed
+ * at the target, and the arm swung about the shoulder-to-target line so the
+ * elbow lies toward `pole`. Cyclic descent from an authored pose converges
+ * poorly on a nearly straight arm; from this seed it only refines. The chain
+ * must be `armChain`'s six bones and `tip` the hand point on the wrist. Only
+ * those two bones change; segment lengths and joint positions at rest do not.
+ */
+export function seedArmTwoBone(
+  rest: RestBones,
+  rotations: BoneRotations,
+  chain: readonly number[],
+  tip: ArmTip,
+  target: readonly [number, number, number],
+  pole: ArmPole,
+  out: BoneRotations,
+): BoneRotations {
+  assertChain(rest, chain, rotations);
+  if (chain.length !== 6) throw new RangeError("arm seed: the chain must be the six-bone arm");
+  assertPoint("target", target);
+  assertPoint("pole", pole);
+  if (out.length !== rotations.length)
+    throw new RangeError("arm seed: out must exactly match the rotation buffer length");
+  assertDisjointViews("arm seed", out, [rotations, rest.heads, rest.parents, rest.order]);
+  out.set(rotations);
+  const upper = chain[1] as number;
+  const elbow = chain[3] as number;
+  const unlimited: ArmJointLimit = { maxRadians: Math.PI };
+  // 1. Flex the elbow so |hand - shoulder| is the target's distance.
+  {
+    const posed = posedBones(rest, out);
+    const s = pointAt(posed.heads, upper);
+    const e = pointAt(posed.heads, elbow);
+    const h = endPoint(posed, chain, tip);
+    const u = subtract(s, e);
+    const v = subtract(h, e);
+    const a = length(u);
+    const b = length(v);
+    const span = Math.min(a + b, Math.max(Math.abs(a - b), distance(s, target)));
+    // Keep a sliver of bend: a locked-straight arm has no hinge plane to swing.
+    const wanted = Math.max(Math.abs(a - b) + 1e-4, Math.min(a + b - 1e-3, span));
+    const cosine = (a * a + b * b - wanted * wanted) / (2 * a * b);
+    const desired = Math.acos(Math.min(1, Math.max(-1, cosine)));
+    const current = Math.acos(
+      Math.min(1, Math.max(-1, (u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (a * b))),
+    );
+    let axis = cross(u, v);
+    if (length(axis) < 1e-8) axis = cross(u, subtract(pole, e));
+    const n = length(axis);
+    if (n > 1e-8) {
+      const half = (desired - current) / 2;
+      const k = Math.sin(half) / n;
+      applyWorldDelta(
+        rest,
+        out,
+        out,
+        elbow,
+        [axis[0] * k, axis[1] * k, axis[2] * k, Math.cos(half)],
+        unlimited,
+      );
+    }
+  }
+  // 2. Aim the upper arm so the hand lies on the shoulder-to-target line.
+  {
+    const posed = posedBones(rest, out);
+    const s = pointAt(posed.heads, upper);
+    const toHand = subtract(endPoint(posed, chain, tip), s);
+    const toTarget = subtract(target, s);
+    if (length(toHand) > 1e-9 && length(toTarget) > 1e-9)
+      applyWorldDelta(rest, out, out, upper, between(toHand, toTarget), unlimited);
+  }
+  // 3. Swing the elbow toward the pole about that line.
+  {
+    const posed = posedBones(rest, out);
+    const s = pointAt(posed.heads, upper);
+    const e = pointAt(posed.heads, elbow);
+    const axis = subtract(target, s);
+    const al = length(axis);
+    if (al > 1e-8) {
+      const project = (point: readonly number[]) => {
+        const p = subtract(point, s);
+        const along = (p[0] * axis[0] + p[1] * axis[1] + p[2] * axis[2]) / (al * al);
+        return [p[0] - axis[0] * along, p[1] - axis[1] * along, p[2] - axis[2] * along] as [
+          number,
+          number,
+          number,
+        ];
+      };
+      const current = project(e);
+      const wanted = project(pole);
+      if (length(current) > 1e-8 && length(wanted) > 1e-8)
+        applyWorldDelta(rest, out, out, upper, between(current, wanted), unlimited);
+    }
+  }
+  return out;
+}
+
+function cross(a: readonly number[], b: readonly number[]): [number, number, number] {
+  return [
+    (a[1] as number) * (b[2] as number) - (a[2] as number) * (b[1] as number),
+    (a[2] as number) * (b[0] as number) - (a[0] as number) * (b[2] as number),
+    (a[0] as number) * (b[1] as number) - (a[1] as number) * (b[0] as number),
+  ];
+}
+
 const IDENTITY: Quat = [0, 0, 0, 1];
 
 function defaultLimits(count: number): readonly ArmJointLimit[] {
@@ -539,47 +655,14 @@ function setLimitedLocal(
   limit: ArmJointLimit,
 ): void {
   // `posedBones` and `rotate` assume unit rotations, and the slerp clamp below
-  // amplifies any norm error, so a drifted candidate would scale every child
-  // offset and the solver would steer a stretched rigid arm, not the skinned one.
+  // amplifies any norm error: a drifted candidate would scale every child offset
+  // and the solver would steer a stretched rigid arm, not the skinned one.
   const base = normalizeQuat(quatAt(source, bone));
   const unit = normalizeQuat(candidate);
   const delta = mul(unit, conjugate(base));
   const angle = quaternionAngle(delta, IDENTITY);
   const allowed = angle <= limit.maxRadians ? unit : slerp(base, unit, limit.maxRadians / angle);
   out.set(normalizeQuat(allowed), bone * 4);
-}
-
-function quaternionAngle(a: Quat, b: Quat): number {
-  const dot = Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]);
-  return 2 * Math.acos(Math.min(1, Math.max(-1, dot)));
-}
-
-function slerp(a: Quat, b: Quat, t: number): Quat {
-  let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
-  const end: Quat = dot < 0 ? [-b[0], -b[1], -b[2], -b[3]] : b;
-  dot = Math.abs(dot);
-  if (dot > 0.9995) {
-    const q: Quat = [
-      a[0] + (end[0] - a[0]) * t,
-      a[1] + (end[1] - a[1]) * t,
-      a[2] + (end[2] - a[2]) * t,
-      a[3] + (end[3] - a[3]) * t,
-    ];
-    return normalizeQuat(q);
-  }
-  const theta = Math.acos(Math.min(1, Math.max(-1, dot)));
-  const sin = Math.sin(theta);
-  return [
-    (Math.sin((1 - t) * theta) * a[0] + Math.sin(t * theta) * end[0]) / sin,
-    (Math.sin((1 - t) * theta) * a[1] + Math.sin(t * theta) * end[1]) / sin,
-    (Math.sin((1 - t) * theta) * a[2] + Math.sin(t * theta) * end[2]) / sin,
-    (Math.sin((1 - t) * theta) * a[3] + Math.sin(t * theta) * end[3]) / sin,
-  ];
-}
-
-function normalizeQuat(q: Quat): Quat {
-  const n = Math.hypot(q[0], q[1], q[2], q[3]);
-  return [q[0] / n, q[1] / n, q[2] / n, q[3] / n];
 }
 
 function blendArmInto(

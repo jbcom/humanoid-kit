@@ -8,16 +8,17 @@
 import { Canvas, type RootState, useFrame, useThree } from "@react-three/fiber";
 import { animationsPack } from "humanoid-kit-animations";
 import { useEffect } from "react";
+import { Vector3 } from "three";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
+import {
+  copyAnimationFrame,
+  frameContactWorld,
+  type HumanoidAnimationFrame,
+} from "../../src/animation/frames.ts";
 import { type AnimationLibrary, loadAnimationLibrary } from "../../src/animation/library.ts";
 import { createPresenceRegistry } from "../../src/presence/presence.ts";
-import {
-  Humanoid,
-  type HumanoidAnimationFrame,
-  HumanoidProvider,
-  PresenceProvider,
-} from "../../src/react/index.ts";
+import { Humanoid, HumanoidProvider, PresenceProvider } from "../../src/react/index.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
@@ -118,7 +119,7 @@ describe("<Humanoid animation onFrame>", () => {
                     },
                     onFrame: (frame) => {
                       observed.push({
-                        frame,
+                        frame: copyAnimationFrame(frame),
                         at: [ref.current?.position.x ?? NaN, ref.current?.position.z ?? NaN],
                       });
                       if (throwNext) throw sentinel;
@@ -197,7 +198,8 @@ describe("<Humanoid animation onFrame>", () => {
                       started = true;
                     },
                     onFrame: (frame) => {
-                      observed.push(frame);
+                      // The figure reuses its frame: the reentrant frame would overwrite a kept reference.
+                      observed.push(copyAnimationFrame(frame));
                       if (observed.length === 2) drive?.();
                     },
                   }}
@@ -232,6 +234,213 @@ describe("<Humanoid animation onFrame>", () => {
         6,
       );
       expect(presence.get("walker")?.position[2]).toBeCloseTo(ref.current?.position.z ?? NaN, 6);
+    },
+    LOAD.timeout,
+  );
+});
+
+/** One recipe for every render, so a rerender is not a new evaluation. */
+const RECIPE = createRecipe();
+
+/** A walker under a turned, moved parent, in a registry, on the given client. */
+function Walker({
+  on,
+  mounted,
+  presence,
+  canvas,
+  figure,
+  onFrame,
+}: {
+  on: ReturnType<typeof inlineWorkerClient>;
+  mounted: boolean;
+  presence: ReturnType<typeof createPresenceRegistry>;
+  canvas: Harness;
+  figure: { current: import("three").Group | null };
+  onFrame: (frame: Readonly<HumanoidAnimationFrame>) => void;
+}) {
+  return (
+    <HumanoidProvider client={on}>
+      <div style={{ width: 160, height: 160 }}>
+        <Canvas frameloop="never">
+          <Probe state={canvas} />
+          <PresenceProvider registry={presence}>
+            <group position={[0.5, 0, -0.25]} rotation={[0, 0.6, 0]}>
+              {mounted && (
+                <Humanoid
+                  ref={figure}
+                  recipe={RECIPE}
+                  presence={{ id: "walker" }}
+                  animation={{ library, clip: "walk_normal", onFrame }}
+                />
+              )}
+            </group>
+          </PresenceProvider>
+        </Canvas>
+      </div>
+    </HumanoidProvider>
+  );
+}
+
+describe("a figure's frames in its presence registry", () => {
+  it(
+    "publishes the onFrame frame under the presence id, placed in the world through every parent, and releases it on unmount",
+    async () => {
+      const presence = createPresenceRegistry();
+      const canvas = emptyHarness();
+      const figure = { current: null as import("three").Group | null };
+      const fromChannel: HumanoidAnimationFrame[] = [];
+      const releases: string[] = [];
+      /** Worst gap between the frame's world contacts and the group's own `localToWorld`, metres. */
+      let worstPlacement = 0;
+      /** The lowest world contact of each frame: a walking figure stands on the ground. */
+      const lowest: number[] = [];
+      let sameObject = true;
+      let lastChannelFrame: Readonly<HumanoidAnimationFrame> | null = null;
+      const stop = presence.frames.observe(
+        "walker",
+        (frame) => {
+          lastChannelFrame = frame;
+          fromChannel.push(copyAnimationFrame(frame));
+          const g = figure.current;
+          if (!g) return;
+          g.updateWorldMatrix(true, false);
+          let low = Number.POSITIVE_INFINITY;
+          for (let k = 0; k < frame.contacts.length; k++) {
+            const world = frameContactWorld(frame, k);
+            const local = frame.contacts[k]?.position ?? [NaN, NaN, NaN];
+            const expected = g.localToWorld(new Vector3(local[0], local[1], local[2]));
+            worstPlacement = Math.max(
+              worstPlacement,
+              Math.hypot(world[0] - expected.x, world[1] - expected.y, world[2] - expected.z),
+            );
+            low = Math.min(low, world[1]);
+          }
+          lowest.push(low);
+        },
+        (reason) => releases.push(reason),
+      );
+      const onFrame = (frame: Readonly<HumanoidAnimationFrame>) => {
+        if (frame !== lastChannelFrame) sameObject = false;
+      };
+      const screen = await render(
+        <Walker
+          on={client}
+          mounted
+          presence={presence}
+          canvas={canvas}
+          figure={figure}
+          onFrame={onFrame}
+        />,
+      );
+      await expect.poll(() => canvas.get && canvas.advance, LOAD).toBeTruthy();
+      const drive = clockDriver(canvas);
+      await expect
+        .poll(() => {
+          drive();
+          return fromChannel.length;
+        }, LOAD)
+        .toBeGreaterThan(0);
+      for (let k = 0; k < 30; k++) drive();
+      expect(fromChannel.length).toBeGreaterThan(30);
+      expect(sameObject, "onFrame receives the very frame the channel published").toBe(true);
+      expect(new Set(fromChannel.map((f) => f.figure))).toEqual(new Set(["walker"]));
+      expect(worstPlacement, "toWorld is the group's world matrix after the carry").toBeLessThan(
+        1e-5,
+      );
+      expect(Math.max(...lowest.map(Math.abs)), "the lowest sole is on the ground").toBeLessThan(
+        1e-4,
+      );
+      // The parent turned the figure: its world carry is along the parent's heading.
+      const first = fromChannel[0] as HumanoidAnimationFrame;
+      const last = fromChannel[fromChannel.length - 1] as HumanoidAnimationFrame;
+      const dx = (last.toWorld[12] as number) - (first.toWorld[12] as number);
+      const dz = (last.toWorld[14] as number) - (first.toWorld[14] as number);
+      expect(Math.hypot(dx, dz)).toBeGreaterThan(0.2);
+      expect(Math.atan2(dx, dz)).toBeCloseTo(0.6, 1);
+
+      await screen.rerender(
+        <Walker
+          on={client}
+          mounted={false}
+          presence={presence}
+          canvas={canvas}
+          figure={figure}
+          onFrame={onFrame}
+        />,
+      );
+      expect(releases).toEqual(["released"]);
+      const before = fromChannel.length;
+      for (let k = 0; k < 10; k++) drive();
+      expect(fromChannel.length, "no frame after unmount").toBe(before);
+      stop();
+    },
+    LOAD.timeout,
+  );
+
+  it(
+    "publishes no frame of the old client after the client is replaced, and a higher generation from the new one",
+    async () => {
+      const presence = createPresenceRegistry();
+      const canvas = emptyHarness();
+      const figure = { current: null as import("three").Group | null };
+      const second = inlineWorkerClient();
+      const frames: HumanoidAnimationFrame[] = [];
+      const releases: string[] = [];
+      presence.frames.observe(
+        "walker",
+        (frame) => frames.push(copyAnimationFrame(frame)),
+        (reason) => releases.push(reason),
+      );
+      const screen = await render(
+        <Walker
+          on={client}
+          mounted
+          presence={presence}
+          canvas={canvas}
+          figure={figure}
+          onFrame={() => {}}
+        />,
+      );
+      await expect.poll(() => canvas.get && canvas.advance, LOAD).toBeTruthy();
+      const drive = clockDriver(canvas);
+      await expect
+        .poll(() => {
+          drive();
+          return frames.length;
+        }, LOAD)
+        .toBeGreaterThan(2);
+      const old = Math.max(...frames.map((f) => f.generation));
+      const swappedAt = frames.length;
+      await screen.rerender(
+        <Walker
+          on={second}
+          mounted
+          presence={presence}
+          canvas={canvas}
+          figure={figure}
+          onFrame={() => {}}
+        />,
+      );
+      expect(releases, "the old client's binding is released at the swap").toEqual(["released"]);
+      await expect
+        .poll(() => {
+          drive();
+          return frames.length - swappedAt;
+        }, LOAD)
+        .toBeGreaterThan(5);
+      const after = frames.slice(swappedAt);
+      expect(
+        after.filter((f) => f.generation <= old),
+        "a frame of the old client after the swap",
+      ).toEqual([]);
+      // The new client's figure walks from where it stands, on the ground.
+      for (const f of after) {
+        let low = Number.POSITIVE_INFINITY;
+        for (let k = 0; k < f.contacts.length; k++) low = Math.min(low, frameContactWorld(f, k)[1]);
+        expect(Math.abs(low)).toBeLessThan(1e-4);
+      }
+      await screen.unmount();
+      second.dispose();
     },
     LOAD.timeout,
   );

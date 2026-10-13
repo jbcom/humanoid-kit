@@ -6,7 +6,7 @@
  * this module (`scripts/write-battery.ts`) and a test holds it to it.
  */
 import type { MacroValues } from "../makehuman/macro.ts";
-import { ADULT_AGE } from "../recipe/agePolicy.ts";
+import { isAdultAge } from "../recipe/agePolicy.ts";
 import { type ScatterFigure, scatterFigures } from "./scatter.ts";
 
 /** A battery tone: a skin melanin on the average adult body. */
@@ -90,7 +90,7 @@ export function batteryTone(name: BatteryToneName): BatteryTone {
 }
 
 /** Whether the age policy counts a body's age as an adult's: what its `adult` flag must say. */
-export const isAdultBody = (body: BatteryBody): boolean => body.macros.age >= ADULT_AGE;
+export const isAdultBody = (body: BatteryBody): boolean => isAdultAge(body.macros.age);
 
 /**
  * The battery as `scripts/sheets/battery.json` holds it: recipe inputs named

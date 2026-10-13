@@ -5,10 +5,10 @@
  */
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect } from "react";
-import { applyQaDraw, type BodyFoldNote, foldNotes, qaDraw } from "./qaDraw";
+import { applyQaDraw, type BodyFoldNote, foldNotes, qaDraw, qaDrawActive } from "./qaDraw";
 
 const draw = qaDraw(new URLSearchParams(window.location.search));
-const active = draw.off.size > 0 || draw.shade !== "lit";
+const active = qaDrawActive(draw);
 
 export function QaShade() {
   const scene = useThree((s) => s.scene);
