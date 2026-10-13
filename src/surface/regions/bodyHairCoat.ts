@@ -18,13 +18,14 @@
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
 import { ADULT_COAT_REGION_IDS, groupFaces, jointPosition } from "../../format/assetFormat.ts";
+import { beardCoverage, resolveBeard } from "../beard.ts";
 import {
   type BeardStyle,
   BODY_HAIR_FIBRE,
   type BodyHairGroup,
   type BodyHairInput,
   type BodyHairRecipe,
-  beardStyle,
+  beardSpec,
   bodyHairColour,
   bodyHairCoverage,
   bodyHairFollicleDensity,
@@ -56,7 +57,12 @@ export const BEARD_LENGTHS: Readonly<Record<BeardStyle, Readonly<Record<BeardPar
   stubble: { moustache: 0.0015, chin: 0.0015, cheeks: 0.0015 },
   moustache: { moustache: 0.012, chin: 0, cheeks: 0 },
   goatee: { moustache: 0.012, chin: 0.015, cheeks: 0 },
+  imperial: { moustache: 0.012, chin: 0.015, cheeks: 0 },
+  "mutton-chops": { moustache: 0.012, chin: 0, cheeks: 0.012 },
+  "chin-curtain": { moustache: 0, chin: 0.015, cheeks: 0.012 },
   full: { moustache: 0.012, chin: 0.015, cheeks: 0.012 },
+  forked: { moustache: 0.012, chin: 0.015, cheeks: 0.012 },
+  longstreet: { moustache: 0.012, chin: 0.015, cheeks: 0.012 },
 };
 
 /** Per vertex, `f(|x|, y, z, v)` (the face is symmetric about x = 0). */
@@ -238,7 +244,7 @@ export const COAT_BODY_HAIR_GROUPS: readonly BodyHairGroup[] = [
  * its legacy density. A recipe that says nothing of body hair draws no coat.
  */
 export function coatEnabled(group: BodyHairGroup, bodyHair: BodyHairRecipe | undefined): boolean {
-  if (group === "face") return (bodyHair?.beard ?? "none") !== "none";
+  if (group === "face") return beardSpec(bodyHair ? { bodyHair } : {}).style !== "none";
   return bodyHair?.density?.[group] !== undefined || bodyHair?.coverage?.[group] !== undefined;
 }
 
@@ -249,6 +255,8 @@ export function coatEnabled(group: BodyHairGroup, bodyHair: BodyHairRecipe | und
  */
 export function drawnBodyHairCoverage(group: BodyHairGroup, hair: BodyHairInput): number {
   if (COAT_BODY_HAIR_GROUPS.includes(group) && !coatEnabled(group, hair.bodyHair)) return 0;
+  // A chosen beard grows by its style, not the androgen level (`beardCoverage`).
+  if (group === "face") return beardCoverage(hair);
   return bodyHairCoverage(group, hair);
 }
 
@@ -278,8 +286,16 @@ function beardRegion(part: BeardPart): CoatRegion {
     targets: LIPS_TARGETS,
     mask: (assets) => beardMasks(assets)[part],
     paint: (input) => {
-      const length = BEARD_LENGTHS[beardStyle(bodyHairInput(input))][part];
-      return paintOf("face", input, length, length <= 0.002 ? LIE.stubble : LIE.grown);
+      // The coat is the beard's dense base: a shorter beard length trims it,
+      // a longer one is the cards' and never grows the coat past its base.
+      const beard = resolveBeard(bodyHairInput(input), Number.POSITIVE_INFINITY);
+      const length = Math.min(BEARD_LENGTHS[beard.style][part], beard.parts[part]);
+      const paint = paintOf("face", input, length, length <= 0.002 ? LIE.stubble : LIE.grown);
+      // A chosen beard covers by the style, not the androgen level (`beardCoverage`).
+      return {
+        ...paint,
+        cover: length > 0 ? drawnBodyHairCoverage("face", bodyHairInput(input)) : 0,
+      };
     },
   };
 }

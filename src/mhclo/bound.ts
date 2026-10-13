@@ -5,7 +5,8 @@
  * on the body has grown or shrunk since the asset was fitted, so attachments
  * keep their proportions on every body shape.
  */
-import type { AttachmentEntry, BoundAsset } from "../format/assetFormat.ts";
+import { type AttachmentEntry, type BoundAsset, SKIN_INFLUENCES } from "../format/assetFormat.ts";
+import { addInfluences, writeStrongest } from "../rig/influences.ts";
 
 const AXES = ["x", "y", "z"] as const;
 
@@ -61,39 +62,24 @@ export function evaluateBinding(
   return out;
 }
 
-/** Skin weights for an attachment: each vertex blends the weights of its three base vertices; top four kept. */
+/** Skin weights for an attachment: each vertex blends the weights of its three base vertices, the heaviest `SKIN_INFLUENCES` kept. */
 export function bindingSkin(
   asset: Bound,
   baseIndex: Uint8Array,
   baseWeight: Float32Array,
 ): { index: Uint8Array; weight: Float32Array } {
   const n = asset.entry.vertexCount;
-  const index = new Uint8Array(n * 4);
-  const weight = new Float32Array(n * 4);
+  const index = new Uint8Array(n * SKIN_INFLUENCES);
+  const weight = new Float32Array(n * SKIN_INFLUENCES);
   const acc = new Map<number, number>();
   for (let v = 0; v < n; v++) {
     acc.clear();
     for (let j = 0; j < 3; j++) {
       const bw = asset.weights[v * 3 + j] as number;
       if (bw === 0) continue;
-      const base = asset.refVerts[v * 3 + j] as number;
-      for (let k = 0; k < 4; k++) {
-        const sw = baseWeight[base * 4 + k] as number;
-        if (sw > 0) {
-          const bone = baseIndex[base * 4 + k] as number;
-          acc.set(bone, (acc.get(bone) ?? 0) + sw * bw);
-        }
-      }
+      addInfluences(acc, baseIndex, baseWeight, asset.refVerts[v * 3 + j] as number, bw);
     }
-    const top = [...acc]
-      .filter((e) => e[1] > 0)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 4);
-    const sum = top.reduce((t, e) => t + e[1], 0);
-    top.forEach(([bone, wt], k) => {
-      index[v * 4 + k] = bone;
-      weight[v * 4 + k] = sum > 0 ? wt / sum : 0;
-    });
+    writeStrongest(acc, index, weight, v * SKIN_INFLUENCES);
   }
   return { index, weight };
 }

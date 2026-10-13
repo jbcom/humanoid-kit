@@ -10,7 +10,7 @@
  * the edge's end lies, behind meaning on the body's inside: against the
  * triangle's face, unless the pose has turned it inside out.
  */
-import type { HumanoidAssets } from "../../src/format/assetFormat.ts";
+import { type HumanoidAssets, SKIN_INFLUENCES } from "../../src/format/assetFormat.ts";
 import { DIHEDRAL_LIMIT, DIHEDRAL_REST } from "../../src/foundation/invariants.ts";
 import { SurfaceDistance, TriangleCrossings } from "../../src/rig/contact.ts";
 import {
@@ -149,10 +149,10 @@ export function carriedFaces(
     let z = 0;
     for (let c = 0; c < 3; c++) {
       const v = skin[t * 3 + c] as number;
-      for (let k = 0; k < 4; k++) {
-        const w = skinWeight[v * 4 + k] as number;
+      for (let k = 0; k < SKIN_INFLUENCES; k++) {
+        const w = skinWeight[v * SKIN_INFLUENCES + k] as number;
         if (w === 0) continue;
-        const [rx, ry, rz] = rotateByBone(world, skinIndex[v * 4 + k] as number, n0);
+        const [rx, ry, rz] = rotateByBone(world, skinIndex[v * SKIN_INFLUENCES + k] as number, n0);
         x += w * rx;
         y += w * ry;
         z += w * rz;

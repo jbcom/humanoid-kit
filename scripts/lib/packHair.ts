@@ -36,7 +36,7 @@ import {
   cardFields,
   generateCards,
   generateStrandMap,
-} from "./bodyHairCards.ts";
+} from "../../src/surface/bodyHairCards.ts";
 import { readBodyPack } from "./bodyPack.ts";
 import { type CompiledAsset, compileAsset } from "./compileAsset.ts";
 import { bleedEdges } from "./edgeBleed.ts";
@@ -121,7 +121,7 @@ export const LASH_STYLES: readonly HairStyleSpec[] = [
   { id: "eyelashes04", label: "Eyelashes 04, full", tags: ["full"], kind: "lashes" },
 ];
 
-/** The kinds packed from MakeHuman's files (body hair cards are generated: `bodyHairCards.ts`). */
+/** The kinds packed from MakeHuman's files (body hair cards are generated: `src/surface/bodyHairCards.ts`). */
 type AssetHairKind = Exclude<HairKind, "beard">;
 
 /** The folder of the system assets each kind of entry lives in. */
@@ -294,7 +294,7 @@ function writeProvenance(
     "hairline fade, fin and scalp (`src/surface/hairFields.ts`).",
     "",
     "The body hair cards (" +
-      "kind `beard`) come from no source file: `scripts/lib/bodyHairCards.ts` generates them over the body pack's",
+      "kind `beard`) come from no source file: `src/surface/bodyHairCards.ts` generates them over the body pack's",
     "base mesh from a seed, with their strand map, so they are this project's own work under its licence.",
     "",
     ...textureProvenance(textures),
@@ -478,7 +478,7 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
   fs.rmSync(scratch, { recursive: true, force: true });
 
   // Body hair cards: generated over the base mesh from a seed, this project's own
-  // bytes (`bodyHairCards.ts`), so nothing of them passes the licence gate.
+  // bytes (`src/surface/bodyHairCards.ts`), so nothing of them passes the licence gate.
   for (const spec of BODY_HAIR_CARDS(assets)) {
     const cards = generateCards(assets, spec);
     const textureFile = `${spec.id}.webp`;

@@ -1,3 +1,4 @@
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import { jointRotations } from "./folds.ts";
 import { fromHalf, toHalf } from "./half.ts";
 import { type JointFold, rowTexels, type StencilRows, type SurfaceFold } from "./jointFold.ts";
@@ -64,20 +65,19 @@ export function solvedSurfaceFold(
   }
   const sources = [...sourceIndex.keys()];
   const sourceRest = new Float32Array(sources.length * 3);
-  const sourceSkinIndex = new Uint16Array(sources.length * 4);
-  const sourceSkinWeight = new Float32Array(sources.length * 4);
+  const n = SKIN_INFLUENCES;
+  const sourceSkinIndex = new Uint16Array(sources.length * n);
+  const sourceSkinWeight = new Float32Array(sources.length * n);
   sources.forEach((v, i) => {
     sourceRest.set(control.subarray(v * 3, v * 3 + 3), i * 3);
-    for (let k = 0; k < 4; k++) {
-      sourceSkinIndex[i * 4 + k] = controlSkin.skinIndex[v * 4 + k] as number;
-      sourceSkinWeight[i * 4 + k] = controlSkin.skinWeight[v * 4 + k] as number;
-    }
+    sourceSkinIndex.set(controlSkin.skinIndex.subarray(v * n, v * n + n), i * n);
+    sourceSkinWeight.set(controlSkin.skinWeight.subarray(v * n, v * n + n), i * n);
   });
   // Each row's surface vertex at rest (the stencil's mix of the control mesh, without any detail), its weights,
   // and how much of its stencil the fold reaches.
   const rowRest = new Float32Array(surface.rows * 3);
-  const rowSkinIndex = new Uint16Array(surface.rows * 4);
-  const rowSkinWeight = new Float32Array(surface.rows * 4);
+  const rowSkinIndex = new Uint16Array(surface.rows * n);
+  const rowSkinWeight = new Float32Array(surface.rows * n);
   const reached = new Float32Array(surface.rows);
   for (let row = 0; row < surface.rows; row++) {
     const s = surfaceOf[row] as number;
@@ -91,10 +91,8 @@ export function solvedSurfaceFold(
       if ((fold.slot[v] as number) >= 0) reached[row] = (reached[row] as number) + w;
     }
     const r = renderOf[row] as number;
-    for (let k = 0; k < 4; k++) {
-      rowSkinIndex[row * 4 + k] = drawn.skinIndex[r * 4 + k] as number;
-      rowSkinWeight[row * 4 + k] = drawn.skinWeight[r * 4 + k] as number;
-    }
+    rowSkinIndex.set(drawn.skinIndex.subarray(r * n, r * n + n), row * n);
+    rowSkinWeight.set(drawn.skinWeight.subarray(r * n, r * n + n), row * n);
   }
   const { joint } = surface;
   const data = Uint16Array.from(surface.data);

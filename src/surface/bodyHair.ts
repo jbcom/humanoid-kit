@@ -41,10 +41,43 @@ export const isAdultOnlyBodyHair = (group: string): boolean =>
 
 /**
  * How the face's terminal hair is worn: `none` is shaven, `stubble` a few days'
- * growth over the whole beard area, the rest grown out where they name.
+ * growth over the whole beard area, the rest grown out where they name
+ * (`src/surface/beard.ts` has each style's parts and default length).
  */
-export const BEARD_STYLES = ["none", "stubble", "moustache", "goatee", "full"] as const;
+export const BEARD_STYLES = [
+  "none",
+  "stubble",
+  "moustache",
+  "goatee",
+  "imperial",
+  "mutton-chops",
+  "chin-curtain",
+  "full",
+  "forked",
+  "longstreet",
+] as const;
 export type BeardStyle = (typeof BEARD_STYLES)[number];
+
+/**
+ * A beard with its continuous controls. Every field but `style` is optional,
+ * and absent is the style's default (`BEARD_SHAPES`).
+ */
+export interface BeardSpec {
+  style: BeardStyle;
+  /** The longest part's length, metres: 0 up to the chin's height above the floor. */
+  length?: number;
+  /** How full it is, 0..`MAX_BEARD_VOLUME`: the cards' density and how far they stand off the skin. */
+  volume?: number;
+  /** The fraction of its hairs that are white, 0..1, on top of the colour's own grey. */
+  grey?: number;
+  /** How far the chin's hair parts into two points, 0..1. */
+  fork?: number;
+  /** How far the moustache parts at the middle and sweeps out, 0..1. */
+  part?: number;
+}
+
+/** The largest beard volume: twice the default fullness. */
+export const MAX_BEARD_VOLUME = 2;
 
 /** The recipe's optional `bodyHair`. Every field is optional; absent is the default for age. */
 export interface BodyHairRecipe {
@@ -67,7 +100,8 @@ export interface BodyHairRecipe {
    * strand spacing only; it does not alter the covered fraction.
    */
   follicleDensity?: Partial<Record<BodyHairGroup, number>>;
-  beard?: BeardStyle;
+  /** A style by name, or a style with its continuous controls. */
+  beard?: BeardStyle | BeardSpec;
 }
 
 /** The largest density multiplier: twice a group's default, clamped to full coverage. */
@@ -248,9 +282,14 @@ export function bodyHairFollicleDensity(group: BodyHairGroup, input: BodyHairInp
 /** The beard a recipe that names none wears: clean-shaven, the neutral recipe. */
 export const DEFAULT_BEARD: BeardStyle = "none";
 
+/** The recipe's beard with its controls, the style alone if it names only that, or the default. */
+export function beardSpec(input: Pick<BodyHairInput, "bodyHair">): BeardSpec {
+  const beard = input.bodyHair?.beard ?? DEFAULT_BEARD;
+  return typeof beard === "string" ? { style: beard } : beard;
+}
+
 /** The beard style: the recipe's, or `DEFAULT_BEARD`. */
-export const beardStyle = (input: BodyHairInput): BeardStyle =>
-  input.bodyHair?.beard ?? DEFAULT_BEARD;
+export const beardStyle = (input: BodyHairInput): BeardStyle => beardSpec(input).style;
 
 /**
  * A group's hair colour: the figure's pigments, darker or lighter by region,

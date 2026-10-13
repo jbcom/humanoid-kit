@@ -62,11 +62,6 @@ const IDLE_SECONDS = 2.5;
 const TALL_OUTFIT = "suits/male_casualsuit06";
 const SHORT_OUTFIT = "suits/female_casualsuit01";
 
-// This lab refuses to mount unless its test route is silent and the clothing pack
-// is requested. It is intentionally a review source, not a general playground scene.
-if (!params.has("muted")) throw new Error("handshake lab requires the silent ?muted route");
-if (!params.has("clothing")) throw new Error("handshake lab requires ?clothing for both figures");
-
 const tall = createRecipe({
   macros: { age: 25, gender: 0.85, height: 0.8 },
   skin: { melanin: 0.32 },
@@ -78,9 +73,20 @@ const short = createRecipe({
   outfit: [SHORT_OUTFIT],
 });
 
-if (!isAdult(tall) || !isAdult(short)) throw new Error("handshake lab requires adult figures");
-if (!tall.outfit?.includes(TALL_OUTFIT) || !short.outfit?.includes(SHORT_OUTFIT))
-  throw new Error("handshake lab requires both figures to stay clothed");
+/**
+ * This lab refuses to mount unless its test route is silent, the clothing pack is
+ * requested, and both figures are clothed adults. It is intentionally a review
+ * source, not a general playground scene. The refusal runs when the lab mounts,
+ * never when its module loads: the playground imports every scene, so a throw at
+ * load would take down every other route with it.
+ */
+function requireReviewRoute(): void {
+  if (!params.has("muted")) throw new Error("handshake lab requires the silent ?muted route");
+  if (!params.has("clothing")) throw new Error("handshake lab requires ?clothing for both figures");
+  if (!isAdult(tall) || !isAdult(short)) throw new Error("handshake lab requires adult figures");
+  if (!tall.outfit?.includes(TALL_OUTFIT) || !short.outfit?.includes(SHORT_OUTFIT))
+    throw new Error("handshake lab requires both figures to stay clothed");
+}
 
 const standBack = (of: string) => ({ of, measure: "reach" as const, times: -0.7 });
 
@@ -874,7 +880,17 @@ class HandshakeErrorBoundary extends Component<
   }
 }
 
+/** The lab inside its boundary, so a refused route names itself instead of blanking the page. */
 export function HandshakeLab() {
+  return (
+    <HandshakeErrorBoundary>
+      <HandshakeReview />
+    </HandshakeErrorBoundary>
+  );
+}
+
+function HandshakeReview() {
+  requireReviewRoute();
   const compact = useCompactLayout();
   const control = useMemo<Control>(
     () => ({
@@ -902,45 +918,43 @@ export function HandshakeLab() {
     [],
   );
   return (
-    <HandshakeErrorBoundary>
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "grid",
-          gridTemplateColumns: compact ? "minmax(0, 1fr)" : "minmax(0, 1fr) 332px",
-          gridTemplateRows: compact ? "minmax(0, 1fr) auto" : "minmax(0, 1fr)",
-          background: "#171b22",
-        }}
-        data-handshake-lab
-        data-figure={control.ready ? "ready" : "loading"}
-      >
-        <div style={{ minWidth: 0, minHeight: 0, position: "relative" }}>
-          <Canvas
-            camera={{ position: [0, 1.1, 8.5], fov: 35 }}
-            gl={{
-              preserveDrawingBuffer: true,
-              toneMapping: STUDIO_TONE_MAPPING,
-              toneMappingExposure: STUDIO_EXPOSURE,
-            }}
-          >
-            <StageFigures control={control} />
-            <Api control={control} />
-          </Canvas>
-        </div>
-        <aside
-          aria-label="Handshake review controls"
-          style={{
-            minWidth: 0,
-            overflowY: "auto",
-            borderLeft: compact ? undefined : "1px solid rgba(255, 210, 63, 0.35)",
-            borderTop: compact ? "1px solid rgba(255, 210, 63, 0.35)" : undefined,
-            background: "rgba(20, 23, 29, 0.98)",
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        display: "grid",
+        gridTemplateColumns: compact ? "minmax(0, 1fr)" : "minmax(0, 1fr) 332px",
+        gridTemplateRows: compact ? "minmax(0, 1fr) auto" : "minmax(0, 1fr)",
+        background: "#171b22",
+      }}
+      data-handshake-lab
+      data-figure={control.ready ? "ready" : "loading"}
+    >
+      <div style={{ minWidth: 0, minHeight: 0, position: "relative" }}>
+        <Canvas
+          camera={{ position: [0, 1.1, 8.5], fov: 35 }}
+          gl={{
+            preserveDrawingBuffer: true,
+            toneMapping: STUDIO_TONE_MAPPING,
+            toneMappingExposure: STUDIO_EXPOSURE,
           }}
         >
-          <GatePanel control={control} />
-        </aside>
+          <StageFigures control={control} />
+          <Api control={control} />
+        </Canvas>
       </div>
-    </HandshakeErrorBoundary>
+      <aside
+        aria-label="Handshake review controls"
+        style={{
+          minWidth: 0,
+          overflowY: "auto",
+          borderLeft: compact ? undefined : "1px solid rgba(255, 210, 63, 0.35)",
+          borderTop: compact ? "1px solid rgba(255, 210, 63, 0.35)" : undefined,
+          background: "rgba(20, 23, 29, 0.98)",
+        }}
+      >
+        <GatePanel control={control} />
+      </aside>
+    </div>
   );
 }
