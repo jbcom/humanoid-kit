@@ -43,6 +43,10 @@
 - [Regional contact and injury contract](https://github.com/jbcom/humanoid-kit/blob/main/docs/REGIONAL-CONTACTS.md):
   implemented validation for neutral contact evidence, plus planned regional
   response and injury-state proof boundaries.
+- [Interaction sessions](https://github.com/jbcom/humanoid-kit/blob/main/docs/INTERACTION-SESSION.md):
+  the framework-free session lifecycle, contact targets and clip time, and the
+  animation-frame channel (`registry.frames`, `interaction.observeFrames`) with
+  its payload, ownership and subscription lifecycle.
 - [NOTICE.md](https://github.com/jbcom/humanoid-kit/blob/main/NOTICE.md):
   provenance, the CC0 licence gate and trademark notice.
 - [AGENTS.md](https://github.com/jbcom/humanoid-kit/blob/main/AGENTS.md):

@@ -8,6 +8,7 @@
  * before anyone is asked, and again on every tick.
  */
 import type { AffordanceChange } from "../affordance/state.ts";
+import type { FrameObserver, FrameReleaseObserver } from "../animation/frames.ts";
 import type {
   FigureMeasures,
   FigurePresence,
@@ -92,6 +93,20 @@ export interface Interaction {
    * agree exactly. Null when the role plays nothing in this phase.
    */
   trackTime(role: RoleName): number | null;
+  /**
+   * Observes the animation frames of `role`'s figure (the presence registry's
+   * `frames`) for this interaction only: the subscription ends by itself when the
+   * interaction ends, is declined or cancelled, or the runtime is detached, before
+   * that call returns. A frame published under the role's id by a figure other
+   * than the one bound at proposal (it left and another joined) is never
+   * delivered. Returns the unsubscribe function; on an ended interaction it
+   * observes nothing. Throws for a role that does not take a figure.
+   */
+  observeFrames(
+    role: RoleName,
+    onFrame: FrameObserver,
+    onRelease?: FrameReleaseObserver,
+  ): () => void;
   cancel(reason?: CancelReason): void;
 }
 
@@ -214,6 +229,8 @@ interface Running extends Interaction {
   participants: Readonly<Record<RoleName, FigurePresence | ObjectPresence>>;
   /** A role's measures, for resolving the definition's lengths; made once per interaction. */
   measuresOf: (role: RoleName) => FigureMeasures | undefined;
+  /** The unsubscribe functions of this interaction's frame observers, all called when it ends. */
+  frameStops: Set<() => void>;
 }
 
 /**
@@ -286,6 +303,8 @@ export function createInteractions(
 
   const end = (i: Running, reason?: CancelReason) => {
     if (i.phase === "ended") return;
+    // No frame observer outlives its interaction, not even into the end event's listeners.
+    for (const stop of [...i.frameStops]) stop();
     release(i);
     i.phase = "ended";
     i.time = 0;
@@ -459,6 +478,36 @@ export function createInteractions(
     const length = options.clipLength(track.clip);
     if (!(length > 0)) return seconds;
     return track.loop ? seconds % length : Math.min(seconds, length);
+  };
+
+  const observeFrames = (
+    i: Running,
+    role: RoleName,
+    onFrame: FrameObserver,
+    onRelease: FrameReleaseObserver | undefined,
+  ): (() => void) => {
+    const r = roleSpec(i, role);
+    if (r?.takes !== "figure")
+      throw new InteractionDefinitionError(
+        `${i.definition.id}: role ${role} does not take a figure`,
+      );
+    if (i.phase === "ended") return () => {};
+    const id = i.roles[role] as string;
+    const bound = i.participants[role];
+    const unsubscribe = presence.frames.observe(
+      id,
+      (frame) => {
+        // The id may already name another figure before the next tick ends the interaction.
+        if (presence.get(id) === bound) onFrame(frame);
+      },
+      onRelease,
+    );
+    const stop = () => {
+      i.frameStops.delete(stop);
+      unsubscribe();
+    };
+    i.frameStops.add(stop);
+    return stop;
   };
 
   /** Claims every role's body parts, all or none. */
@@ -644,6 +693,8 @@ export function createInteractions(
         },
         contactTarget: (contact, role, out = [0, 0, 0]) => contactTarget(i, contact, role, out),
         trackTime: (role) => trackTime(i, role),
+        frameStops: new Set(),
+        observeFrames: (role, onFrame, onRelease) => observeFrames(i, role, onFrame, onRelease),
         cancel: (reason = "cancelled") => end(i, reason),
       };
       live.push(i);

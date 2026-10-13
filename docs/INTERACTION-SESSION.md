@@ -75,7 +75,7 @@ observer channel that needs no React, DOM or renderer.
 | Gameplay observer of one figure (footsteps, decals, stamina) | Subscribe by figure id and keep the subscription across remounts of that figure; stop with the returned function. |
 | Interaction consumer (a motion layer comparing a session's `contactTarget` with where the figure actually is) | Receive frames of a role's figure only while the session runs; the subscription ends by itself on `ended`, `cancelled`, `declined` and `detach`, with no call after `cancel()` or `detach()` returns. |
 | Mount and unmount of a figure | A frame is published only while a producer is bound. Unmount releases the binding and tells observers once (`released`). |
-| Client replacement (a new `HumanoidWorkerClient`, a remount under the same id, a second producer claiming the id) | Binding a figure supersedes the previous producer: its later `publish` calls are dropped and return `false`, its observers are told `superseded`, and `generation` rises, so no stale frame reaches a consumer after the change. |
+| Client replacement (a new `HumanoidWorkerClient`, a remount under the same id, a second producer claiming the id) | The old producer stops before the new one starts. `<Humanoid>` releases its binding as soon as its client changes (observers hear `released`) and binds again once the new client is ready. A second producer that binds an id still bound supersedes the first: its later `publish` calls are dropped and return `false`, and observers hear `superseded`. Either way `generation` rises, so no stale frame reaches a consumer after the change. |
 | Worker evaluation (a new recipe evaluated asynchronously) | The producer rebinds its rest skeleton and `generation` rises; every later frame carries the new value. |
 | Pose change with no clip | No frame: frames describe a playing clip, not a static pose. |
 | Clip start, stop, seek and pause | Start publishes from the next frame. Stop (no clip) releases the binding. Seek moves `time` (it may go backwards) without carrying the root; the next frame's `delta` is only that frame's carry. A paused clip still publishes, with zero carry. |
@@ -117,7 +117,9 @@ Units are metres and seconds throughout.
 - Observers subscribed during a delivery start with the next frame; one
   unsubscribed during a delivery receives nothing further, not even the rest of
   that delivery. An observer may drive the clock again (reentrancy): the inner
-  frame is delivered completely before the outer delivery continues.
+  frame is delivered completely before the outer delivery continues, and since
+  the object is reused the observers after it then read the inner frame; copy
+  before driving the clock from an observer.
 - An observer's exception does not starve the others: every observer receives
   the frame, then the first exception is rethrown to the producer, synchronously.
 

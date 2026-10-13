@@ -1411,6 +1411,8 @@ export function Humanoid({
     lifts: Boolean(presence) || animation !== undefined,
     staticLift: lift,
     presenceSource,
+    frames: presence ? (presenceContext?.registry.frames ?? null) : null,
+    figureId: presence?.id,
     report,
   });
   // Once the pose of the frame is written, the affordances' clip is set to the channels it opens.
