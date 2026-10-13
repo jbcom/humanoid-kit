@@ -282,7 +282,7 @@ function phaseDelta(after: PhaseMetrics, before: PhaseMetrics): PhaseMetrics {
   };
 }
 
-function reportPhaseProfile(profile: PhaseProfile, phase: "representative" | "progress" | "full") {
+function reportPhaseProfile(profile: PhaseProfile, phase: string) {
   console.info(
     "sphere-parity-phase-profile",
     JSON.stringify({
@@ -547,6 +547,7 @@ function modelRadiance(radius = FEATURE_RADIUS): (nDotL: number) => Rgb {
 
 describe("skin material on an analytic sphere", () => {
   it("matches synchronous, asynchronous, and every 4×2 tile Float cell before checking Lambert's A·N·L", async () => {
+    const profile = phaseProfile();
     const firstSwatch = PALETTE[0];
     const parityAngle = ANGLES[1];
     if (!firstSwatch || parityAngle === undefined)
@@ -556,31 +557,34 @@ describe("skin material on an analytic sphere", () => {
       return { swatch, angle: ANGLES[index % ANGLES.length] as number, albedo: albedoOf() };
     });
     configure(firstSwatch, "lambert");
-    const sync = Float32Array.from(renderAt(parityAngle, "linear"));
+    const sync = Float32Array.from(renderAt(parityAngle, "linear", profile));
     const a = (parityAngle * Math.PI) / 180;
     light.position.set(Math.sin(a) * 10, 0, Math.cos(a) * 10);
-    const asynchronous = Float32Array.from(await renderLinearAsync());
+    const asynchronous = Float32Array.from(await renderLinearAsync(profile));
     expect(asyncReadbackFallbackUsed).toBe(false);
     expectSameArray(asynchronous, sync, { what: "asynchronous Float readback" });
+    reportPhaseProfile(profile, "after-async-single");
     const individual = parityCases.map((entry) => {
       configure(entry.swatch, "lambert");
-      return Float32Array.from(renderAt(entry.angle, "linear"));
+      return Float32Array.from(renderAt(entry.angle, "linear", profile));
     });
-    const tiled = renderLambertTile(parityCases);
+    reportPhaseProfile(profile, "after-individual-references");
+    const tiled = renderLambertTile(parityCases, profile);
     tiled.forEach((cell, index) => {
       expectSameArray(cell, individual[index] as Float32Array, {
         what: `full tile Float cell ${index}`,
       });
     });
-    const partial = renderLambertTile(parityCases.slice(0, 3));
+    reportPhaseProfile(profile, "after-full-tile-parity");
+    const partial = renderLambertTile(parityCases.slice(0, 3), profile);
     partial.forEach((cell, index) => {
       expectSameArray(cell, individual[index] as Float32Array, {
         what: `partial tile Float cell ${index}`,
       });
     });
+    reportPhaseProfile(profile, "after-partial-tile-parity");
 
     const failures: string[] = [];
-    const profile = phaseProfile();
     const cases = PALETTE.flatMap((swatch) => {
       configure(swatch, "lambert");
       const albedo = albedoOf();
