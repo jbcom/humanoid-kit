@@ -561,9 +561,12 @@ body and of each garment are drawn.
 
 - `model.outfit(ids): Outfit`: `{ key, order, masks }` for a set of garment
   ids in any order. `order` is innermost first (by `z_depth`, then category,
-  then id) and `masks` is `{ bodyIndex, garmentIndex }`: the triangle indices to
-  draw in place of `topology().body.index` and each garment's
-  `GarmentTopology.index`. Garments stack as MakeHuman does: processed from the
+  then id) and `masks` is `{ bodyIndex, garmentIndex, attachmentIndex }`: the
+  triangle indices to draw in place of `topology().body.index`, each garment's
+  `GarmentTopology.index` and each attachment's index in
+  `topology().attachments` (null to draw it whole). An attachment loses what
+  lies on body the garments delete, as a toenail in a boot; what the
+  attachments themselves delete, as a nail its bed, does not count. Garments stack as MakeHuman does: processed from the
   outermost in, each is hidden only where the garments over it delete, and a
   face hides only when every corner is hidden. Beyond MakeHuman, a garment's
   vertices behind one over it are hidden too, and `garmentTuck` (per garment in

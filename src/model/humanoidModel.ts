@@ -77,7 +77,14 @@ import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/region
 import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
 import { areolaStretch } from "../surface/regions/torso.ts";
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
-import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
+import {
+  faceVisibility,
+  layerOrder,
+  maskIndex,
+  OutfitError,
+  stackVisibility,
+  transferVisibility,
+} from "./outfit.ts";
 import {
   evaluatedFold,
   evaluatedSkin,
@@ -205,6 +212,12 @@ export interface OutfitMasks {
   bodyIndex: Uint32Array;
   /** Replaces each garment's `GarmentTopology.index`, in `Outfit.order`. */
   garmentIndex: Uint32Array[];
+  /**
+   * Per attachment in `ModelTopology.attachments`, the index to draw in place
+   * of its own, leaving out what lies on body the garments delete (a toenail
+   * in a boot), or null to draw it whole.
+   */
+  attachmentIndex: (Uint32Array | null)[];
 }
 
 /**
@@ -1628,6 +1641,7 @@ export class HumanoidModel {
             : {
                 bodyIndex: adult ? this.adultBodyIndex(outfit, adult) : outfit.masks.bodyIndex,
                 garmentIndex: outfit.masks.garmentIndex,
+                attachmentIndex: outfit.masks.attachmentIndex,
               },
       },
       groundOffset: -minY,
@@ -2264,7 +2278,7 @@ export class HumanoidModel {
       key,
       order,
       bodyVisible: stack.base,
-      masks: { bodyIndex, garmentIndex },
+      masks: { bodyIndex, garmentIndex, attachmentIndex: this.attachmentMasks(stack.base) },
       bodyTuck: order.length ? this.edgeTuck(order, stack.base) : null,
       garmentTuck: under.map((u) => u.tuck),
     };
@@ -2316,6 +2330,27 @@ export class HumanoidModel {
     });
     const tuck = tuckDepths({ positions: rest, normals, candidates, cloth, cap: TUCK_CAP });
     return tuck.some((t) => t > 0) ? tuck : null;
+  }
+
+  /**
+   * Per attachment, the index to draw once the garments hide the body under it
+   * (`OutfitMasks.attachmentIndex`), or null where they hide none of it. Only
+   * what the garments delete counts: a nail deletes its own bed, and the nail
+   * is drawn over it.
+   */
+  private attachmentMasks(base: Uint8Array): (Uint32Array | null)[] {
+    // 1 where the body shows or only an attachment hides it; 0 where a garment does.
+    const bare = Uint8Array.from(base, (s, v) => (s || !this.mountedVisible[v] ? 1 : 0));
+    if (bare.every((s) => s === 1)) return this.attached.map(() => null);
+    return this.attached.map(({ asset, part: p }) => {
+      const visible = transferVisibility(bare, asset);
+      if (visible.every((s) => s === 1)) return null;
+      return maskIndex(
+        p.mesh.index,
+        faceVisibility(asset.faceVerts, null, visible),
+        2 * 4 ** this.attachmentLevel,
+      );
+    });
   }
 
   /**

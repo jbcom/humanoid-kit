@@ -1609,6 +1609,11 @@ export function Humanoid({
         if (!target) return;
         if (masks) {
           target.setIndex(new BufferAttribute(masks.bodyIndex, 1));
+          // What the garments hide of an attachment (a toenail in a boot) is not drawn.
+          geometries.attachments.forEach((g, i) => {
+            const index = masks.attachmentIndex[i] ?? ready?.topology.attachments[i]?.index;
+            if (index) g.setIndex(new BufferAttribute(index, 1));
+          });
           wear({
             key: ev.outfit.key,
             topologies,

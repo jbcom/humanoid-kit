@@ -259,9 +259,11 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         const sent = {
           bodyIndex: masks.bodyIndex.slice(),
           garmentIndex: masks.garmentIndex.map((i) => i.slice()),
+          attachmentIndex: masks.attachmentIndex.map((i) => i?.slice() ?? null),
         };
         evaluation.outfit = { ...evaluation.outfit, masks: sent };
         transfer.push(sent.bodyIndex.buffer, ...sent.garmentIndex.map((i) => i.buffer));
+        for (const i of sent.attachmentIndex) if (i) transfer.push(i.buffer);
       }
       // A style's static data goes once per worker: the client keeps it by id.
       const hairId = evaluation.hair?.id;

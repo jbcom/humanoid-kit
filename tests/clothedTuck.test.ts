@@ -113,6 +113,21 @@ describe("a garment under another", { timeout: 120_000 }, () => {
     expect(outfit.masks.garmentIndex[1]?.length).toBe(boots);
   });
 
+  it("hides an attachment's faces where the garments delete the body under it", () => {
+    const attachments = model.topology().attachments;
+    const toes = attachments.findIndex((a) => /toe/i.test(a.id));
+    const fingers = attachments.findIndex((a) => /nail/i.test(a.id) && !/toe/i.test(a.id));
+    expect(toes).toBeGreaterThanOrEqual(0);
+    expect(fingers).toBeGreaterThanOrEqual(0);
+    // Nothing worn, or only a suit: every attachment draws whole.
+    expect(model.outfit([]).masks.attachmentIndex.every((i) => i === null)).toBe(true);
+    // Boots over the feet: the toenails go, and the fingernails stay.
+    const booted = model.outfit([BOOTS]).masks.attachmentIndex;
+    const full = attachments[toes]?.index.length ?? 0;
+    expect((booted[toes]?.length ?? full) < full).toBe(true);
+    expect(booted[fingers]).toBeNull();
+  });
+
   it("moves the inner garment, never the one over it", () => {
     const outfit = model.outfit([SUIT, BOOTS]);
     const dressed = model.evaluate(createRecipe({ outfit: [SUIT, BOOTS] }));
