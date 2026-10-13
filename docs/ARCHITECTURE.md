@@ -985,6 +985,15 @@ mean what they meant there; everything must be testable in Node.
   correction is the packer's, since the data is MakeHuman's and the asymmetry is
   in it, over a runtime fix that every consumer would have to repeat. Averaging
   over choosing a side, because nothing says which side was the intended one.
+- *MakeHuman's body pose units are not packed* (2026-10-13). Upstream's
+  `body-poseunits.json` is bone-local quaternions for a retired skeleton (24 of its
+  joint names are not among the 163 bones), several units' names contradict the
+  joints they move, there is no BVH for it, and MakeHuman's application never reads
+  it, so packing it would not be parity and would need a bone map and relabelling
+  the kit would have to invent. MakeHuman's expression library (32 `.mhpose` files,
+  face unit weights) needs nothing the pack lacks: all 43 units it uses are among
+  the 60. Decision: pack the face units only. The audit is in
+  `docs/evidence/body-poseunits.md` and `docs/evidence/expressions.md`.
 - *A CPU reference* (`skinPositions`) poses control vertices exactly as the
   shader does, for tests, presence anchors, grounding and pose-keyed occlusion
   bakes. The browser project holds the shader to it.
