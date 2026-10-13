@@ -54,6 +54,22 @@ function restFoldWitness(vertexCount: number): HipFold {
 function activeFoldWitness(vertexCount: number): SurfaceFold {
   const slot = new Float32Array(vertexCount).fill(-1);
   slot[0] = 0;
+  return foldWitness(slot);
+}
+
+/**
+ * A nonzero row on every render vertex: enough to exercise the seam invariant
+ * under the same folded skinning path without rebuilding the collision solve.
+ * `tests/hipFold.test.ts` owns the native table's many-vertex contact and
+ * interpolation evidence.
+ */
+function seamFoldWitness(vertexCount: number, omitted = -1): SurfaceFold {
+  const slot = new Float32Array(vertexCount);
+  if (omitted >= 0) slot[omitted] = -1;
+  return foldWitness(slot);
+}
+
+function foldWitness(slot: Float32Array): SurfaceFold {
   const data = new Uint16Array(FOLD_ROW_TEXELS * 4);
   for (let key = 0; key < FOLD_OPENINGS * FOLD_KEYS; key++) {
     data[key * 8] = toHalf(0.02);
@@ -251,21 +267,49 @@ describe("the posed body", () => {
   });
 
   it("keeps the seams' duplicates together in a pose", () => {
-    const body = posedSurface(model, recipe, "squat");
-    let seams = 0;
-    let worst = 0;
-    for (let v = 0; v < body.vertexCount; v++) {
-      const w = body.weld[v] as number;
-      if (w === v) continue;
-      seams++;
-      for (let k = 0; k < 3; k++)
-        worst = Math.max(
-          worst,
-          Math.abs((body.positions[v * 3 + k] as number) - (body.positions[w * 3 + k] as number)),
+    const firstSeam = body.weld.findIndex((w, v) => w !== v);
+    expect(firstSeam).toBeGreaterThanOrEqual(0);
+    const hipFold = vi.spyOn(model, "hipFold").mockImplementation(function* () {
+      yield;
+      return { surface: "base", fold: seamFoldWitness(body.vertexCount) };
+    });
+    try {
+      const posed = posedSurface(model, recipe, "squat");
+      const unfolded = skinPositions(
+        posed.bones,
+        posed.rotations,
+        posed.rest,
+        posed.skinIndex,
+        posed.skinWeight,
+        new Float32Array(posed.rest.length),
+      );
+      expect(hipFold).toHaveBeenCalledTimes(1);
+      let foldDisplacement = 0;
+      for (let i = 0; i < posed.positions.length; i++)
+        foldDisplacement = Math.max(
+          foldDisplacement,
+          Math.abs((posed.positions[i] as number) - (unfolded[i] as number)),
         );
+      expect(foldDisplacement).toBeGreaterThan(1e-6);
+      let seams = 0;
+      let worst = 0;
+      for (let v = 0; v < posed.vertexCount; v++) {
+        const w = posed.weld[v] as number;
+        if (w === v) continue;
+        seams++;
+        for (let k = 0; k < 3; k++)
+          worst = Math.max(
+            worst,
+            Math.abs(
+              (posed.positions[v * 3 + k] as number) - (posed.positions[w * 3 + k] as number),
+            ),
+          );
+      }
+      expect(seams).toBeGreaterThan(100);
+      expect(worst).toBeLessThan(1e-6);
+    } finally {
+      hipFold.mockRestore();
     }
-    expect(seams).toBeGreaterThan(100);
-    expect(worst).toBeLessThan(1e-6);
   });
 
   it("welds as the model's topology does: the seams found by position are the surface's own", () => {
