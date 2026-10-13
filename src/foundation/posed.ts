@@ -126,7 +126,7 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
  * to the end at once: the renderer's correctives for a flexed hip and a bent
  * knee, which the posed body must carry as the drawn one does.
  */
-function solvedFolds(model: HumanoidModel, recipe: Recipe): SurfaceFold[] {
+export function solvedFolds(model: HumanoidModel, recipe: Recipe): SurfaceFold[] {
   const solve = model.folds(recipe);
   let step = solve.next();
   while (!step.done) step = solve.next();

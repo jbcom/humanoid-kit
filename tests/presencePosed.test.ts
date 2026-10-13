@@ -92,6 +92,15 @@ describe("presence from the posed skeleton", () => {
     expect(tallKneeling.anchors.head[1]).toBeGreaterThan(a.anchors.head[1] + 0.02);
   });
 
+  it("measures the posed body: heights follow the pose, the arm's reach does not", () => {
+    const kneeling = posedIn(body("benchmark"));
+    expect(kneeling.measures.shoulderHeight).toBeLessThan(standing.measures.shoulderHeight - 0.25);
+    expect(kneeling.measures.eyeHeight).toBeLessThan(standing.measures.eyeHeight - 0.25);
+    const t = posedIn(body("tpose"));
+    expect(Math.abs(t.measures.reach - standing.measures.reach)).toBeLessThan(0.02);
+    expect(Math.abs(kneeling.measures.reach - standing.measures.reach)).toBeLessThan(0.02);
+  });
+
   it("places like any presence", () => {
     const rest = posedIn(body("benchmark"));
     const moved = presenceFromPose({

@@ -52,6 +52,11 @@ targets, breast development through adolescence, nipples and areolae. The one
 boundary is the one MakeHuman itself draws, which keeps genital assets out of its
 core:
 
+- The age axis is MakeHuman's own timeline, with no deviation (owner ruling,
+  2026-10-13): baby at 1 year, child at 10, the adult body (`young` in its
+  files) at 25, old at 90, linear between them. A figure of 18 is about 47%
+  child shape, as in MakeHuman. The earlier hold of the adult body from 18 to
+  25 is reversed; `ADULT_AGE` (18) gates content only, never the body's shape.
 - Adult-only: the adult anatomy pack (genital, bulge and pregnancy targets and
   modifiers) and pubic hair density, evaluated only for figures aged 18 or over.
 - Not restricted at any age: nipples and areolae (relief and surface), breast

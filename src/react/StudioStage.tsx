@@ -1,8 +1,10 @@
 /**
  * A portrait-studio stage for showing figures: a slightly warm key high and to
- * the front-left (casting the only shadow), a neutral fill front-right at about
- * 3.4:1, a rim light behind, a faint studio environment for reflections, and a
- * contact shadow on the floor.
+ * the front-left (casting the main shadow), a neutral fill front-right at about
+ * 3.4:1, a rim light behind that casts its own shadow (so it models the form's edge
+ * and does not reach the hollow of an armpit or the underside of a raised arm past the
+ * limb that covers it), a faint studio environment for reflections, and a contact
+ * shadow on the floor.
  *
  * Inside a `PresenceProvider` the contact shadow is the pooled ground field of
  * every figure that publishes presence (presence is what tells the stage where
@@ -40,6 +42,9 @@ import {
   KEY_POSITION,
   KEY_SHADOW,
   keyShadowFitter,
+  RIM_INTENSITY,
+  RIM_POSITION,
+  RIM_SHADOW_RADIUS,
 } from "../render/studioShadow.ts";
 import { usePresenceContext } from "./presence.tsx";
 
@@ -63,37 +68,45 @@ export interface StudioStageProps {
 }
 
 /**
- * The key light, its shadow fitted to the scene's casters before each frame is drawn
- * (`keyShadowFitter`), and set up as it mounts (`configureKeyShadow`). Mounting it
- * changes nothing in three: the figures' materials read its tent filter themselves
- * (`render/shadowFilter.ts`), and the host's own lights and materials are drawn as before.
+ * A studio light that casts a shadow (the key, and the rim): its shadow fitted to the
+ * scene's casters before each frame is drawn (`keyShadowFitter`), and set up as it
+ * mounts (`configureKeyShadow`). Mounting it changes nothing in three: the figures'
+ * materials read its tent filter themselves (`render/shadowFilter.ts`), and the host's
+ * own lights and materials are drawn as before.
  */
-function KeyLight({
+function ShadowedLight({
+  position,
   intensity,
+  color,
   maxMapSize,
   radius,
 }: {
+  position: readonly [number, number, number];
   intensity: number;
+  color: string;
   maxMapSize: number;
   radius: number;
 }) {
   const light = useRef<DirectionalLight>(null);
   const scene = useThree((s) => s.scene);
   const fitShadow = useMemo(() => keyShadowFitter({ maxMapSize, radius }), [maxMapSize, radius]);
-  // Stable, so it runs once as the light mounts, not on every render; the fitter takes over from the next frame.
-  const mount = useCallback((l: DirectionalLight | null) => {
-    light.current = l;
-    if (l) configureKeyShadow(l);
-  }, []);
+  // Stable per radius and map size, so it runs once as the light mounts, not on every render; the fitter takes over from the next frame.
+  const mount = useCallback(
+    (l: DirectionalLight | null) => {
+      light.current = l;
+      if (l) configureKeyShadow(l, { maxMapSize, radius });
+    },
+    [maxMapSize, radius],
+  );
   useFrame(() => {
     if (light.current) fitShadow(light.current, scene);
   });
   return (
     <directionalLight
       ref={mount}
-      position={KEY_POSITION}
-      intensity={2.4 * intensity}
-      color="#fff6ef"
+      position={position as [number, number, number]}
+      intensity={intensity}
+      color={color}
       castShadow
     />
   );
@@ -216,9 +229,21 @@ export function StudioStage({
     <>
       {background !== null && <color attach="background" args={[background]} />}
       <hemisphereLight args={["#eceeee", "#3a342e", 0.22 * intensity]} />
-      <KeyLight intensity={intensity} maxMapSize={shadowMapSize} radius={shadowFilterRadius} />
+      <ShadowedLight
+        position={KEY_POSITION}
+        intensity={2.4 * intensity}
+        color="#fff6ef"
+        maxMapSize={shadowMapSize}
+        radius={shadowFilterRadius}
+      />
       <directionalLight position={[-2.6, 1.6, 2.2]} intensity={0.7 * intensity} color="#ffffff" />
-      <directionalLight position={[-1.2, 2.4, -3]} intensity={1.6 * intensity} color="#ffffff" />
+      <ShadowedLight
+        position={RIM_POSITION}
+        intensity={RIM_INTENSITY * intensity}
+        color="#ffffff"
+        maxMapSize={shadowMapSize}
+        radius={Math.min(shadowFilterRadius, RIM_SHADOW_RADIUS)}
+      />
       <RoomLighting intensity={0.22 * intensity} />
       {pooled ? (
         <PooledContactShadows opacity={contactShadowOpacity} />
