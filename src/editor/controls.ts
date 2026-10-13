@@ -117,6 +117,7 @@ export function resetSliderValue(
   entry: SliderEntry,
   modifiers: ModifierTable,
   anatomyDefaults?: Readonly<Record<string, string>>,
+  range?: Pick<SliderRange, "min" | "max">,
 ): Recipe {
   if (
     entry.kind === "modifier" &&
@@ -126,7 +127,12 @@ export function resetSliderValue(
     if (!Object.hasOwn(recipe.modifiers, entry.id)) return recipe;
     const next = { ...recipe, modifiers: { ...recipe.modifiers } };
     delete next.modifiers[entry.id];
-    return next;
+    if (!range) return next;
+    const effective = sliderValue(next, entry, anatomyDefaults);
+    const limited = clamp(effective, range.min, range.max);
+    return limited === effective
+      ? next
+      : withSliderValue(recipe, entry, limited, modifiers, anatomyDefaults);
   }
   return withSliderValue(
     recipe,

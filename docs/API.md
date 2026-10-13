@@ -1774,6 +1774,22 @@ leaves out; the Appearance panel uses it, offering the brows and lashes in
 groups of their own, and `load` refuses a saved figure whose brows or lashes the
 loaded pack lacks. Every change is undoable.
 
+### Slider helpers
+
+The pure shape-control helpers are exported from `humanoid-kit`, for a host UI
+that uses the kit's slider taxonomy:
+
+- `sliderValue(recipe, entry, anatomyDefaults?)`: the effective row value. With
+  loaded anatomy defaults it uses the same resolver as evaluation, so an absent
+  adult modifier can read as its pack default rather than zero.
+- `withSliderValue(recipe, entry, value, modifiers, anatomyDefaults?)`: returns
+  a recipe with the row set. A zero for a loaded defaulted adult modifier is an
+  explicit override; other neutral modifier values are omitted as usual.
+- `resetSliderValue(recipe, entry, modifiers, anatomyDefaults?, range?)`:
+  removes an explicit defaulted-adult override so the pack default resumes. If
+  `range` excludes that effective value, it instead keeps the nearest allowed
+  explicit value. Other rows reset to their ordinary neutral value.
+
 ### Wardrobe helpers
 
 Pure functions behind the Wardrobe tab, also exported from `humanoid-kit`:

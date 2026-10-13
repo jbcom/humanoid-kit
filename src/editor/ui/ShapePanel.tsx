@@ -71,7 +71,7 @@ function ShapeSlider({
         changed: Object.hasOwn(editor.recipe.modifiers, entry.id),
         onReset: () =>
           editor.update((recipe) =>
-            resetSliderValue(recipe, entry, editor.modifiers, anatomyDefaults),
+            resetSliderValue(recipe, entry, editor.modifiers, anatomyDefaults, range),
           ),
       })}
       onSettle={editor.settle}

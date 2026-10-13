@@ -149,6 +149,12 @@ describe("editor controls", () => {
     const hidden = withSliderValue(recipe, phallus, 0, modifiers, anatomyDefaults);
     expect(hidden.modifiers[phallus.id]).toBe(0);
     expect(sliderValue(hidden, phallus, anatomyDefaults)).toBe(0);
+    const limitedReset = resetSliderValue(hidden, phallus, modifiers, anatomyDefaults, {
+      min: 0,
+      max: 0.2,
+    });
+    expect(limitedReset.modifiers[phallus.id]).toBe(0.2);
+    expect(sliderValue(limitedReset, phallus, anatomyDefaults)).toBe(0.2);
     const reset = resetSliderValue(hidden, phallus, modifiers, anatomyDefaults);
     expect(reset.modifiers[phallus.id]).toBeUndefined();
     expect(sliderValue(reset, phallus, anatomyDefaults)).toBeCloseTo(0.365, 9);

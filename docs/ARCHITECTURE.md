@@ -3462,9 +3462,11 @@ topology and the field atlas exist. Decisions:
   defaults when it reads a modifier, so an absent recipe key displays the value
   the model evaluates rather than a misleading zero. Editing a defaulted adult
   modifier to zero retains an explicit zero; resetting that row removes the
-  explicit override so the pack default applies again. Controls without a
-  loaded default retain their ordinary neutral-value behavior. This is generic
-  editor plumbing: it consumes the pack's map and names no adult modifier.
+  explicit override so the pack default applies again, unless that default is
+  outside the host's allowed range, in which case the reset retains the nearest
+  allowed explicit value. Controls without a loaded default retain their
+  ordinary neutral-value behavior. This is generic editor plumbing: it consumes
+  the pack's map and names no adult modifier.
 - Until the adult stage arrives their fields are zero (empty atlas pages).
   When it arrives the worker derives the fields from the pack's targets and
   posts them; the main thread re-rasterises those pages of the shared atlas.
