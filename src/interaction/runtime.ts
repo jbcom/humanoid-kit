@@ -66,6 +66,12 @@ export interface Interaction {
   readonly passes: number;
   readonly seed: number;
   /**
+   * Why it was cancelled, declined or aborted; null while it runs and after a
+   * normal end. A reader that polls (a hand contact constraint) tells a
+   * graceful cancel from an `age-policy` abort by it.
+   */
+  readonly endReason: CancelReason | null;
+  /**
    * Where `role`'s figure should stand and face: its slot against the
    * reference, in world space, written into `out` (pass one to allocate
    * nothing). Moving the figure there is the application's; the approach phase
@@ -175,7 +181,9 @@ function seedOf(seed: number, parts: readonly (string | number)[]): number {
   return h;
 }
 
-const DEFAULT_BLEND = 0.3;
+/** Seconds an align or release phase lasts when its definition does not say. */
+export const DEFAULT_PHASE_SECONDS = 0.3;
+const DEFAULT_BLEND = DEFAULT_PHASE_SECONDS;
 const groundDistance = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 
 /** The midpoint of two figures and the unit line from the first toward the second, on the ground. */
@@ -201,6 +209,7 @@ interface Running extends Interaction {
   phase: InteractionPhase;
   time: number;
   passes: number;
+  endReason: CancelReason | null;
   /** Beats already fired in this pass. */
   fired: number;
   /** Consent answers still awaited, and those given. */
@@ -288,6 +297,7 @@ export function createInteractions(
     if (i.phase === "ended") return;
     release(i);
     i.phase = "ended";
+    i.endReason = reason ?? null;
     i.time = 0;
     remove(i);
     emit(
@@ -616,6 +626,7 @@ export function createInteractions(
         phase: "proposed",
         time: 0,
         passes: 0,
+        endReason: null,
         seed: seedOf(options.seed, [def.id, ...Object.values(roles).sort(), clock]),
         fired: 0,
         pending: 0,
