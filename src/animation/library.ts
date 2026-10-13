@@ -6,6 +6,7 @@
  */
 import {
   AssetFormatError,
+  type FetchLike,
   fetchGzip,
   fetchOk,
   type PackLocation,
@@ -84,10 +85,15 @@ export function createAnimationLibrary(
  *     import { animationsPack } from "humanoid-kit-animations";
  *     const animations = await loadAnimationLibrary(animationsPack);
  */
-export async function loadAnimationLibrary(pack: PackLocation): Promise<AnimationLibrary> {
+export async function loadAnimationLibrary(
+  pack: PackLocation,
+  options: { fetch?: FetchLike } = {},
+): Promise<AnimationLibrary> {
   const where = packResolver(pack);
-  const manifest = (await (await fetchOk(where.manifest)).json()) as AnimationManifest;
+  const manifest = (await (
+    await fetchOk(where.manifest, options.fetch)
+  ).json()) as AnimationManifest;
   if (manifest.version !== 1)
     throw new AssetFormatError(`animation pack version ${String(manifest.version)} is not 1`);
-  return createAnimationLibrary(manifest, (e) => fetchGzip(where.file(e.file)));
+  return createAnimationLibrary(manifest, (e) => fetchGzip(where.file(e.file), options.fetch));
 }

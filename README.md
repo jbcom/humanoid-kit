@@ -138,7 +138,9 @@ const { positions, normals, groundOffset } = await client.evaluate(recipe);
 ```
 
 To run the same evaluation on the calling thread, or in Node, use
-`loadHumanoidAssets` and `HumanoidModel`:
+`loadHumanoidAssets` and `HumanoidModel`. In Node the packs' `file:` URLs are read
+from disk; pass `fetch` to `loadHumanoidAssets` (or `loadAnimationLibrary`) to supply
+your own:
 
 ```ts
 import { createRecipe, HumanoidModel, loadHumanoidAssets } from "humanoid-kit";
