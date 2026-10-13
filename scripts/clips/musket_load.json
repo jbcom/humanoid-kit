@@ -1,0 +1,113 @@
+{
+  "id": "musket_load",
+  "title": "Musket, load",
+  "description": "Standing, the drill's loading counts condensed: the musket stands butt-down before the left foot, the left hand holding the barrel; the right hand takes a cartridge from the waist, bites it at the mouth, pours at the muzzle, draws the rammer up, rams twice and returns the rammer, then primes at the lock.",
+  "tags": ["idle", "combat", "musket", "1860s", "drill"],
+  "base": "tpose",
+  "fps": 30,
+  "duration": 4.2,
+  "loop": false,
+  "rootMotion": false,
+  "grounded": true,
+  "keys": [
+    {
+      "t": 0,
+      "rotations": {
+        "neck01": { "Xrotation": 10 },
+        "upperarm01.R": { "Xrotation": 127.7, "Yrotation": -83.7, "Zrotation": -205.9 },
+        "lowerarm01.R": { "Xrotation": -68, "Zrotation": -11.7 },
+        "wrist.R": { "Xrotation": 86.4, "Yrotation": 4.8, "Zrotation": 77.8 },
+        "upperarm01.L": { "Xrotation": -36.7, "Yrotation": 71.7, "Zrotation": 30.4 },
+        "lowerarm01.L": { "Xrotation": -30, "Zrotation": 1.5 }
+      }
+    },
+    {
+      "t": 0.6,
+      "rotations": {
+        "neck01": { "Xrotation": -4 },
+        "upperarm01.R": { "Xrotation": 102.1, "Yrotation": -78.2, "Zrotation": -174.7 },
+        "lowerarm01.R": { "Xrotation": -80.5, "Zrotation": 27.5 },
+        "wrist.R": { "Xrotation": 86.4, "Yrotation": 4.8, "Zrotation": 77.8 },
+        "upperarm01.L": { "Xrotation": -36.7, "Yrotation": 71.7, "Zrotation": 30.4 },
+        "lowerarm01.L": { "Xrotation": -30, "Zrotation": 1.5 }
+      }
+    },
+    {
+      "t": 1.2,
+      "rotations": {
+        "neck01": { "Xrotation": 12 },
+        "upperarm01.R": { "Xrotation": 114.7, "Yrotation": -66.2, "Zrotation": -192.4 },
+        "lowerarm01.R": { "Xrotation": -66.5, "Zrotation": 0.3 },
+        "wrist.R": { "Xrotation": 86.4, "Yrotation": 4.8, "Zrotation": 77.8 },
+        "upperarm01.L": { "Xrotation": -36.7, "Yrotation": 71.7, "Zrotation": 30.4 },
+        "lowerarm01.L": { "Xrotation": -30, "Zrotation": 1.5 }
+      }
+    },
+    {
+      "t": 1.8,
+      "rotations": {
+        "neck01": { "Xrotation": 6 },
+        "upperarm01.R": { "Xrotation": 86, "Yrotation": -90.3, "Zrotation": -164 },
+        "lowerarm01.R": { "Xrotation": -47.6, "Zrotation": -26.2 },
+        "wrist.R": { "Xrotation": 86.4, "Yrotation": 4.8, "Zrotation": 77.8 },
+        "upperarm01.L": { "Xrotation": -36.7, "Yrotation": 71.7, "Zrotation": 30.4 },
+        "lowerarm01.L": { "Xrotation": -30, "Zrotation": 1.5 }
+      }
+    },
+    {
+      "t": 2.2,
+      "rotations": {
+        "neck01": { "Xrotation": 12 },
+        "upperarm01.R": { "Xrotation": 114.7, "Yrotation": -66.2, "Zrotation": -192.4 },
+        "lowerarm01.R": { "Xrotation": -66.5, "Zrotation": 0.3 },
+        "wrist.R": { "Xrotation": 86.4, "Yrotation": 4.8, "Zrotation": 77.8 },
+        "upperarm01.L": { "Xrotation": -36.7, "Yrotation": 71.7, "Zrotation": 30.4 },
+        "lowerarm01.L": { "Xrotation": -30, "Zrotation": 1.5 }
+      }
+    },
+    {
+      "t": 2.5,
+      "rotations": {
+        "neck01": { "Xrotation": 6 },
+        "upperarm01.R": { "Xrotation": 86, "Yrotation": -90.3, "Zrotation": -164 },
+        "lowerarm01.R": { "Xrotation": -47.6, "Zrotation": -26.2 },
+        "wrist.R": { "Xrotation": 86.4, "Yrotation": 4.8, "Zrotation": 77.8 },
+        "upperarm01.L": { "Xrotation": -36.7, "Yrotation": 71.7, "Zrotation": 30.4 },
+        "lowerarm01.L": { "Xrotation": -30, "Zrotation": 1.5 }
+      }
+    },
+    {
+      "t": 2.8,
+      "rotations": {
+        "neck01": { "Xrotation": 12 },
+        "upperarm01.R": { "Xrotation": 114.7, "Yrotation": -66.2, "Zrotation": -192.4 },
+        "lowerarm01.R": { "Xrotation": -66.5, "Zrotation": 0.3 },
+        "wrist.R": { "Xrotation": 86.4, "Yrotation": 4.8, "Zrotation": 77.8 },
+        "upperarm01.L": { "Xrotation": -36.7, "Yrotation": 71.7, "Zrotation": 30.4 },
+        "lowerarm01.L": { "Xrotation": -30, "Zrotation": 1.5 }
+      }
+    },
+    {
+      "t": 3.3,
+      "rotations": {
+        "neck01": { "Xrotation": 6 },
+        "upperarm01.R": { "Xrotation": 86, "Yrotation": -90.3, "Zrotation": -164 },
+        "lowerarm01.R": { "Xrotation": -47.6, "Zrotation": -26.2 },
+        "wrist.R": { "Xrotation": 86.4, "Yrotation": 4.8, "Zrotation": 77.8 },
+        "upperarm01.L": { "Xrotation": -36.7, "Yrotation": 71.7, "Zrotation": 30.4 },
+        "lowerarm01.L": { "Xrotation": -30, "Zrotation": 1.5 }
+      }
+    },
+    {
+      "t": 4.2,
+      "rotations": {
+        "neck01": { "Xrotation": 10 },
+        "upperarm01.R": { "Xrotation": 127.7, "Yrotation": -83.7, "Zrotation": -205.9 },
+        "lowerarm01.R": { "Xrotation": -68, "Zrotation": -11.7 },
+        "wrist.R": { "Xrotation": 86.4, "Yrotation": 4.8, "Zrotation": 77.8 },
+        "upperarm01.L": { "Xrotation": -36.7, "Yrotation": 71.7, "Zrotation": 30.4 },
+        "lowerarm01.L": { "Xrotation": -30, "Zrotation": 1.5 }
+      }
+    }
+  ]
+}
