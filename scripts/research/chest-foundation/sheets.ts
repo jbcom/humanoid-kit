@@ -290,8 +290,85 @@ function main() {
     { id: "g50", age: 13, melanin: 0.7, ethnic: [1 / 3, 1 / 3, 1 / 3] },
     { id: "g0", age: 70, melanin: 0.3, ethnic: [0.5, 0.5, 0] },
   ] as const;
+  // Age strips: the same two figures through MakeHuman's child-to-adult blend (10 to
+  // 25), where 18 is about 47 % child, so the blend's tail can be read row by row.
+  const ageStrips = [13, 18, 21, 25].flatMap((age) => [
+    { id: "g0", age, melanin: 0.5, ethnic: [1 / 3, 1 / 3, 1 / 3] },
+    { id: "g50", age, melanin: 0.8, ethnic: [0.5, 0, 0.5] },
+  ]);
   const sizes = [0, 0.2, 0.4, 0.6, 0.8, 1];
   const firms = [0, 0.25, 0.5, 0.75, 1];
+  const stripTiles = stripSweep(setup, "chestlab-strip", strips, sizes, firms);
+  const ageStripTiles = stripSweep(setup, "chestlab-agestrip", ageStrips, sizes, firms);
+  for (const [name, tiles] of [
+    ["strips", stripTiles],
+    ["age-strips", ageStripTiles],
+  ] as const)
+    fs.writeFileSync(
+      path.join(dir, `${name}.conditions.json`),
+      JSON.stringify(
+        tiles.map((t) => ({
+          label: t.label,
+          recipe: t.input,
+          share: t.share,
+          reliefRms: t.reliefRms,
+        })),
+        null,
+        1,
+      ),
+    );
+  // Sweep strips: each row one figure, size 0 to 1 at firmness .5, then firmness 0 to
+  // 1 at size 1, the controlled comparison the scatter cannot give.
+  for (const view of ["front", "side"] as const) {
+    job.push(jobSheet(`chest-strips-${view}`, view, stripTiles, sizes.length + firms.length));
+    job.push(
+      jobSheet(`chest-age-strips-${view}`, view, ageStripTiles, sizes.length + firms.length),
+    );
+  }
+
+  // The labels of every sheet's tiles, by sheet name, for label-sheet.ts. Longer
+  // prefixes first, so `chest-age-strips` is not read as `chest-...`.
+  const labelsOf: Record<string, string[][]> = {
+    ...Object.fromEntries(
+      sheets.map(([kind, sample]) => [sheetPrefix(kind), sample.conditions.map(conditionLabel)]),
+    ),
+    "chest-posed": posedTiles.map((t) => t.label),
+    "chest-strips": stripTiles.map((t) => t.label),
+    "chest-age-strips": ageStripTiles.map((t) => t.label),
+  };
+  // `--only=a,b` keeps the job sheets whose names start with one of the prefixes.
+  const only = args
+    .find((a) => a.startsWith("--only="))
+    ?.slice("--only=".length)
+    .split(",");
+  const kept = only ? job.filter((s) => only.some((p) => s.name.startsWith(p))) : job;
+  const labels = Object.fromEntries(
+    kept.map((s) => {
+      const key = Object.keys(labelsOf)
+        .sort((a, b) => b.length - a.length)
+        .find((k) => s.name.startsWith(`${k}-`));
+      if (!key) throw new Error(`no labels for ${s.name}`);
+      return [s.name, labelsOf[key]];
+    }),
+  );
+  fs.writeFileSync(path.join(dir, "labels.json"), JSON.stringify(labels, null, 1));
+  const file = path.join(dir, "job.json");
+  fs.writeFileSync(file, JSON.stringify({ sheets: kept }));
+  console.log(
+    `${file} (${(fs.statSync(file).size / 1e6).toFixed(1)} MB): ${kept.map((s) => `${s.name} ${s.recipes.length}`).join(", ")}`,
+  );
+}
+
+type StripFigure = { id: string; age: number; melanin: number; ethnic: readonly number[] };
+
+/** One row per figure: size 0 to 1 at firmness .5, then firmness 0 to 1 at size 1. */
+function stripSweep(
+  setup: ReturnType<typeof labSetup>,
+  prefix: string,
+  strips: readonly StripFigure[],
+  sizes: number[],
+  firms: number[],
+): Tile[] {
   const stripTiles: Tile[] = [];
   for (const [si, s] of strips.entries()) {
     const frame = FRAME_DIRECTIONS.find((f) => f.id === s.id) as FrameDirection;
@@ -312,7 +389,7 @@ function main() {
       stripTiles.push(
         makeTile(
           setup,
-          `chestlab-strip-${si}-s${k}`,
+          `${prefix}-${si}-s${k}`,
           {
             age: s.age,
             frame,
@@ -326,7 +403,7 @@ function main() {
       stripTiles.push(
         makeTile(
           setup,
-          `chestlab-strip-${si}-f${k}`,
+          `${prefix}-${si}-f${k}`,
           {
             age: s.age,
             frame,
@@ -337,45 +414,7 @@ function main() {
         ),
       );
   }
-  fs.writeFileSync(
-    path.join(dir, "strips.conditions.json"),
-    JSON.stringify(
-      stripTiles.map((t) => ({
-        label: t.label,
-        recipe: t.input,
-        share: t.share,
-        reliefRms: t.reliefRms,
-      })),
-      null,
-      1,
-    ),
-  );
-  // Sweep strips: each row one figure, size 0 to 1 at firmness .5, then firmness 0 to
-  // 1 at size 1, the controlled comparison the scatter cannot give.
-  for (const view of ["front", "side"] as const)
-    job.push(jobSheet(`chest-strips-${view}`, view, stripTiles, sizes.length + firms.length));
-
-  // The labels of every sheet's tiles, by sheet name, for label-sheet.ts.
-  const labelsOf: Record<string, string[][]> = {
-    ...Object.fromEntries(
-      sheets.map(([kind, sample]) => [sheetPrefix(kind), sample.conditions.map(conditionLabel)]),
-    ),
-    "chest-posed": posedTiles.map((t) => t.label),
-    "chest-strips": stripTiles.map((t) => t.label),
-  };
-  const labels = Object.fromEntries(
-    job.map((s) => {
-      const key = Object.keys(labelsOf).find((k) => s.name.startsWith(`${k}-`));
-      if (!key) throw new Error(`no labels for ${s.name}`);
-      return [s.name, labelsOf[key]];
-    }),
-  );
-  fs.writeFileSync(path.join(dir, "labels.json"), JSON.stringify(labels, null, 1));
-  const file = path.join(dir, "job.json");
-  fs.writeFileSync(file, JSON.stringify({ sheets: job }));
-  console.log(
-    `${file} (${(fs.statSync(file).size / 1e6).toFixed(1)} MB): ${job.map((s) => `${s.name} ${s.recipes.length}`).join(", ")}`,
-  );
+  return stripTiles;
 }
 
 if (import.meta.main) main();
