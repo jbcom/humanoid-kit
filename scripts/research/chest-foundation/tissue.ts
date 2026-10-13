@@ -172,8 +172,8 @@ export function tissueLibrary(
 /**
  * The tissue library over age. MakeHuman's breast targets exist for its child,
  * young and old bodies (none for the baby), and the evaluator weights the age
- * bodies linearly in years between the kit's anchors (`AGE_ANCHORS`: 1, 10, 18-25,
- * 90). Every library quantity (the evaluated cells, their fill, the grid, the
+ * bodies linearly in years between the kit's anchors (`AGE_ANCHORS`: 1, 10, 25,
+ * 90, MakeHuman's own). Every library quantity (the evaluated cells, their fill, the grid, the
  * joint-derived halfSpan) is linear in the evaluated vertices, so it is linear
  * in years between anchors: cells at the anchors, linear between, reproduce
  * MakeHuman at EVERY age, not only at the sampled ones. The cells also sit at the
