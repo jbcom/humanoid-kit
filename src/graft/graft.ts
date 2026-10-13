@@ -17,7 +17,6 @@ import {
   loopPoints,
   newellNormal,
   orderLoops,
-  sampleLoop,
   weldByPosition,
 } from "./loops.ts";
 import {
@@ -60,9 +59,11 @@ export interface GraftCutInput {
   removedFaces: Uint32Array;
   droppedAttachments: string[];
   removedBones: string[];
+  /** The removed bones' indices: inside the part, their weight counts as the root bone's. */
+  removedBoneIndices: readonly number[];
 }
 
-const DEFAULTS = { samples: 64, rings: 4, gap: 0.3, band: 0.5, maxTurn: 40 } as const;
+const DEFAULTS = { samples: 64, rings: 8, gap: 0.3, band: 1.5, maxTurn: 40 } as const;
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -98,6 +99,59 @@ function rmsRadius(points: ArrayLike<number>): number {
   let s = 0;
   for (let i = 0; i < n; i++) s += dot(sub(at3(points, i), c), sub(at3(points, i), c));
   return Math.sqrt(s / n);
+}
+
+/**
+ * Per sample of a closed ring, the unit direction along the surface across
+ * the ring (the surface normal crossed with the ring's tangent), turned to
+ * point along `axis`.
+ */
+function onwardRing(ring: ArrayLike<number>, normals: ArrayLike<number>, axis: Vec3): Float64Array {
+  const n = ring.length / 3;
+  const out = new Float64Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const tan = sub(at3(ring, (i + 1) % n), at3(ring, (i + n - 1) % n));
+    let g = unit(cross(unit(at3(normals, i)), tan));
+    if (dot(g, axis) < 0) g = g.map((v) => -v) as Vec3;
+    out.set(g, i * 3);
+  }
+  return out;
+}
+
+/** How far past each ring `continuationFit` also matches, in units of the ring's RMS radius. */
+const CONTINUATION = 0.3;
+
+/**
+ * The similarity carrying the part's rim samples `x` onto the body's loop
+ * samples `a` (docs/GRAFT.md, "The fit"), matching each ring's continuation
+ * as well as the ring: the points a little way on from the rim into the part
+ * (`xOnward`) go to the points as far on from the loop out of the body
+ * (`aOnward`). A ring alone fixes the part's tilt only to its own plane, so a
+ * neck that leans more than the body's would leave the band a knee; with the
+ * continuation the part carries on in the body's direction.
+ */
+function continuationFit(
+  x: ArrayLike<number>,
+  xOnward: ArrayLike<number>,
+  a: ArrayLike<number>,
+  aOnward: ArrayLike<number>,
+): Similarity {
+  const n = x.length / 3;
+  const rx = CONTINUATION * rmsRadius(x);
+  const ra = CONTINUATION * rmsRadius(a);
+  const from = new Float64Array(n * 6);
+  const to = new Float64Array(n * 6);
+  from.set(x);
+  to.set(a);
+  for (let i = 0; i < n; i++) {
+    const p = at3(x, i);
+    addTo(p, at3(xOnward, i), rx);
+    from.set(p, (n + i) * 3);
+    const q = at3(a, i);
+    addTo(q, at3(aOnward, i), ra);
+    to.set(q, (n + i) * 3);
+  }
+  return similarityFit(from, to);
 }
 
 /** Rotates a loop (an array of ids) so it starts at the entry maximising `score`. */
@@ -189,6 +243,163 @@ function blendSkin(
     outI[o * 4 + k] = e ? e[0] : 0;
     outW[o * 4 + k] = e ? e[1] / sum : 0;
   }
+}
+
+/** Rounds of `smoothPartSkin`: enough to settle a jump between two neighbours, too few to blur the skin. */
+const SKIN_SMOOTHING = 3;
+
+/**
+ * Evens out the part's inherited skin over its own surface: each vertex takes
+ * the mean of itself and its neighbours, a few rounds, its rim held. A part
+ * vertex whose nearest body was across a fold (the jaw over the throat) no
+ * longer differs sharply from its neighbours, which in a pose would tear.
+ */
+function smoothPartSkin(
+  triangles: Uint32Array,
+  weld: Uint32Array,
+  rim: Set<number>,
+  partStart: number,
+  skinIndex: Uint16Array,
+  skinWeight: Float32Array,
+): void {
+  const adj = new Map<number, Set<number>>();
+  for (let t = 0; t < triangles.length; t += 3)
+    for (let k = 0; k < 3; k++) {
+      const a = weld[triangles[t + k] as number] as number;
+      const b = weld[triangles[t + ((k + 1) % 3)] as number] as number;
+      if (a === b) continue;
+      (adj.get(a) ?? adj.set(a, new Set()).get(a))?.add(b);
+      (adj.get(b) ?? adj.set(b, new Set()).get(b))?.add(a);
+    }
+  const skinOf = (v: number) => {
+    const m = new Map<number, number>();
+    for (let q = 0; q < 4; q++) {
+      const w = skinWeight[(partStart + v) * 4 + q] as number;
+      if (w > 0) m.set(skinIndex[(partStart + v) * 4 + q] as number, w);
+    }
+    return m;
+  };
+  const welded = [...adj.keys()];
+  for (let round = 0; round < SKIN_SMOOTHING; round++) {
+    const next = new Map<number, Map<number, number>>();
+    for (const v of welded) {
+      if (rim.has(v)) continue;
+      const m = skinOf(v);
+      const ns = adj.get(v) as Set<number>;
+      for (const u of ns) for (const [b, w] of skinOf(u)) m.set(b, (m.get(b) ?? 0) + w);
+      next.set(v, m);
+    }
+    for (const [v, m] of next) {
+      const top = [...m].sort((x, y) => y[1] - x[1] || x[0] - y[0]).slice(0, 4);
+      const sum = top.reduce((s, [, w]) => s + w, 0) || 1;
+      for (let k = 0; k < 4; k++) {
+        const e = top[k];
+        skinIndex[(partStart + v) * 4 + k] = e ? e[0] : 0;
+        skinWeight[(partStart + v) * 4 + k] = e ? e[1] / sum : 0;
+      }
+    }
+  }
+  // A vertex a UV seam split takes its welded twin's skin.
+  for (let v = 0; v < weld.length; v++) {
+    const w = weld[v] as number;
+    if (w === v) continue;
+    skinIndex.set(
+      skinIndex.subarray((partStart + w) * 4, (partStart + w) * 4 + 4),
+      (partStart + v) * 4,
+    );
+    skinWeight.set(
+      skinWeight.subarray((partStart + w) * 4, (partStart + w) * 4 + 4),
+      (partStart + v) * 4,
+    );
+  }
+}
+
+/**
+ * The skin of the body the cut removes, at any point near it at rest: the
+ * weights of the four removed render vertices nearest, by inverse squared
+ * distance, with the removed bones' weight given to the root bone (they are
+ * not the part's, and what was theirs moves with the part).
+ */
+function removedSkin(
+  body: GraftBody,
+  cut: GraftCutInput,
+  start: (f: number) => number,
+): (p: Vec3, normal: Vec3, outI: Uint16Array, outW: Float32Array) => void {
+  const inside = new Set(cut.removedBoneIndices);
+  const verts: number[] = [];
+  const seen = new Set<number>();
+  for (let f = 0; f < cut.removed.length; f++) {
+    if (cut.removed[f] !== 1) continue;
+    for (let t = start(f) * 3; t < start(f + 1) * 3; t++) {
+      const v = body.index[t] as number;
+      if (!seen.has(v)) {
+        seen.add(v);
+        verts.push(v);
+      }
+    }
+  }
+  if (verts.length === 0) throw new GraftError("the cut removes no render vertex");
+  // A uniform grid over the removed vertices, a cell a fiftieth of their extent.
+  const lo: Vec3 = [Infinity, Infinity, Infinity];
+  const hi: Vec3 = [-Infinity, -Infinity, -Infinity];
+  for (const v of verts)
+    for (let k = 0; k < 3; k++) {
+      const x = body.restPositions[v * 3 + k] as number;
+      lo[k] = Math.min(lo[k] as number, x);
+      hi[k] = Math.max(hi[k] as number, x);
+    }
+  const cell = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1e-9) / 50;
+  const cellOf = (p: Vec3) => p.map((x, k) => Math.floor((x - (lo[k] as number)) / cell)) as Vec3;
+  const grid = new Map<string, number[]>();
+  for (const v of verts) {
+    const c = cellOf(at3(body.restPositions, v));
+    const id = c.join(",");
+    (grid.get(id) ?? grid.set(id, []).get(id))?.push(v);
+  }
+  return (p, normal, outI, outW) => {
+    const c = cellOf(p);
+    let near: [number, number][] = [];
+    // Widen the search shell by shell until four are found and the nearest
+    // cells outside it cannot hold a closer one.
+    for (let r = 0; ; r++) {
+      for (let x = c[0] - r; x <= c[0] + r; x++)
+        for (let y = c[1] - r; y <= c[1] + r; y++)
+          for (let z = c[2] - r; z <= c[2] + r; z++) {
+            if (Math.max(Math.abs(x - c[0]), Math.abs(y - c[1]), Math.abs(z - c[2])) !== r)
+              continue;
+            for (const v of grid.get(`${x},${y},${z}`) ?? []) {
+              // Facing the other way, it is another surface (the jaw's
+              // underside above the throat): its skin is not this point's.
+              if (dot(unit(at3(body.restNormals, v)), normal) < 0.3) continue;
+              const d = sub(at3(body.restPositions, v), p);
+              near.push([dot(d, d), v]);
+            }
+          }
+      near.sort((a, b) => a[0] - b[0]);
+      near = near.slice(0, 4);
+      if (near.length === 4 && Math.sqrt((near[3] as [number, number])[0]) <= r * cell) break;
+      if (r > 60) break;
+    }
+    const m = new Map<number, number>();
+    for (const [d2, v] of near) {
+      const w = 1 / (d2 + 1e-12);
+      for (let q = 0; q < 4; q++) {
+        let b = body.skinIndex[v * 4 + q] as number;
+        const bw = (body.skinWeight[v * 4 + q] as number) * w;
+        if (bw <= 0) continue;
+        if (inside.has(b)) b = cut.rootBone;
+        m.set(b, (m.get(b) ?? 0) + bw);
+      }
+    }
+    const top = [...m].sort((x, y) => y[1] - x[1] || x[0] - y[0]).slice(0, 4);
+    const sum = top.reduce((s, [, w]) => s + w, 0) || 1;
+    for (let k = 0; k < 4; k++) {
+      const e = top[k];
+      outI[k] = e ? e[0] : cut.rootBone;
+      outW[k] = e ? e[1] / sum : 0;
+    }
+    if (top.length === 0) outW[0] = 1;
+  };
 }
 
 /** The body side: the cut's loop on the surface, ordered, oriented and parameterised at rest. */
@@ -451,12 +662,12 @@ export function buildGraft(
   part: GraftPart,
   options: GraftOptions = {},
 ): Graft {
-  const N = options.samples ?? DEFAULTS.samples;
+  const samples = options.samples ?? DEFAULTS.samples;
   const R = options.rings ?? DEFAULTS.rings;
   const gap = options.gap ?? DEFAULTS.gap;
   const bandFraction = options.band ?? DEFAULTS.band;
   const turnLimit = ((options.maxTurn ?? DEFAULTS.maxTurn) * Math.PI) / 180;
-  if (!Number.isInteger(N) || N < 8)
+  if (!Number.isInteger(samples) || samples < 8)
     throw new GraftError("samples must be an integer of at least 8");
   if (!Number.isInteger(R) || R < 2) throw new GraftError("rings must be an integer of at least 2");
   if (!(gap > 0) || !Number.isFinite(gap)) throw new GraftError("gap must be a positive number");
@@ -466,6 +677,17 @@ export function buildGraft(
     throw new GraftError("maxTurn must be a positive number");
   const B = bodyLoop(body, cut);
   const P = partRim(part);
+  // The band's rings: a sample on every loop vertex, so the band meets the body
+  // quad for quad, and `m` evenly between each two, so a ring has at least `samples`.
+  const L0 = B.loop.length;
+  const m = Math.ceil(samples / L0);
+  const N = L0 * m;
+  const ringParams = new Float64Array(N);
+  for (let j = 0; j < L0; j++) {
+    const ta = B.params[j] as number;
+    const tb = j + 1 === L0 ? 1 : (B.params[j + 1] as number);
+    for (let s = 0; s < m; s++) ringParams[j * m + s] = ta + ((tb - ta) * s) / m;
+  }
   const bodyCount = body.renderToSurface.length;
   const bridgeStart = bodyCount;
   const partStart = bridgeStart + (R - 1) * N;
@@ -517,11 +739,10 @@ export function buildGraft(
   }
   const bodyTriangles = index.length / 3;
   const ring = (k: number) => Array.from({ length: N }, (_, i) => bridgeStart + (k - 1) * N + i);
-  const uniform = Float64Array.from({ length: N }, (_, i) => i / N);
-  zip(B.loop, B.params, ring(1), uniform, index);
-  for (let k = 1; k + 1 < R; k++) zip(ring(k), uniform, ring(k + 1), uniform, index);
+  zip(B.loop, B.params, ring(1), ringParams, index);
+  for (let k = 1; k + 1 < R; k++) zip(ring(k), ringParams, ring(k + 1), ringParams, index);
   const rimMerged = P.rim.map((v) => partStart + v);
-  zip(ring(R - 1), uniform, rimMerged, rimParams, index);
+  zip(ring(R - 1), ringParams, rimMerged, rimParams, index);
   const bridgeTriangles = index.length / 3 - bodyTriangles;
   const groups = [
     { name: "body", start: 0, count: bodyTriangles },
@@ -555,42 +776,88 @@ export function buildGraft(
   if (body.uvs.length === bodyCount * 2) uvs.set(body.uvs);
   if (part.uvs && part.uvs.length === P.n * 2) uvs.set(Float32Array.from(part.uvs), partStart * 2);
 
-  // Skin: the body's own; the band blends the loop's into the root bone; the part is the root bone's.
+  // The rim sampled at the rings' arc parameters: sample i of each corresponds.
+  const atRing = (points: ArrayLike<number>, params: ArrayLike<number>) => {
+    const out = new Float64Array(N * 3);
+    for (let i = 0; i < N; i++) atParam(points, params, ringParams[i] as number, out, i * 3);
+    return out;
+  };
+  const rimSamplesRest = atRing(rimPts, rimParams);
+  const rimNormalSamples = atRing(rimNormals, rimParams);
+  /** The part's surface leaving its rim, into the part, at each sample (fixed: the part is rigid). */
+  const rimOnward = onwardRing(rimSamplesRest, rimNormalSamples, P.axis);
+
+  // Skin (docs/GRAFT.md, "Rig binding"): the body's own; the part inherits the
+  // skin of the body it replaces, nearest it at rest; the band blends the loop's
+  // into the part's.
   const skinIndex = new Uint16Array(vertexCount * 4);
   const skinWeight = new Float32Array(vertexCount * 4);
   skinIndex.set(body.skinIndex.subarray(0, bodyCount * 4));
   skinWeight.set(body.skinWeight.subarray(0, bodyCount * 4));
-  const rootI = [cut.rootBone, 0, 0, 0];
-  const rootW = [1, 0, 0, 0];
+  const restLoop = loopPoints(B.loop, body.restPositions);
+  /** The loop's skin at arc parameter `t`, between the two loop vertices round it. */
+  const loopSkin = (t: number, mi: Uint16Array, mw: Float32Array) => {
+    let j = 0;
+    while (j + 1 < L0 && (B.params[j + 1] as number) <= t) j++;
+    const j1 = (j + 1) % L0;
+    const tj = B.params[j] as number;
+    const tk = j1 === 0 ? 1 : (B.params[j1] as number);
+    const va = B.loop[j] as number;
+    const vb = B.loop[j1] as number;
+    blendSkin(
+      body.skinIndex.subarray(va * 4, va * 4 + 4),
+      body.skinWeight.subarray(va * 4, va * 4 + 4),
+      body.skinIndex.subarray(vb * 4, vb * 4 + 4),
+      body.skinWeight.subarray(vb * 4, vb * 4 + 4),
+      tk > tj ? (t - tj) / (tk - tj) : 0,
+      mi,
+      mw,
+      0,
+    );
+  };
+  // The part placed on the body at rest by the rest loop's fit, so each of its
+  // vertices can take the skin of the removed body nearest it.
+  const restSamples = atRing(restLoop, B.params);
+  fairLoop(restSamples, turnLimit);
+  const rimFaired = Float64Array.from(rimSamplesRest);
+  fairLoop(rimFaired, turnLimit);
+  const restFit = continuationFit(
+    rimFaired,
+    rimOnward,
+    restSamples,
+    onwardRing(
+      restSamples,
+      atRing(loopPoints(B.loop, body.restNormals), B.params),
+      unit(newellNormal(restSamples)),
+    ),
+  );
+  const atRest = (p: Vec3): Vec3 => {
+    const r = rotate(restFit.rotation, p);
+    return [
+      restFit.scale * r[0] + restFit.translation[0],
+      restFit.scale * r[1] + restFit.translation[1],
+      restFit.scale * r[2] + restFit.translation[2],
+    ];
+  };
+  const inherit = removedSkin(body, cut, start);
+  const mi = new Uint16Array(4);
+  const mw = new Float32Array(4);
+  const ri = new Uint16Array(4);
+  const rw = new Float32Array(4);
   for (let k = 1; k < R; k++)
     for (let i = 0; i < N; i++) {
-      const t = i / N;
-      // The two loop vertices the sample lies between.
-      let j = 0;
-      while (j + 1 < B.loop.length && (B.params[j + 1] as number) <= t) j++;
-      const j1 = (j + 1) % B.loop.length;
-      const tj = B.params[j] as number;
-      const tk = j1 === 0 ? 1 : (B.params[j1] as number);
-      const f = tk > tj ? (t - tj) / (tk - tj) : 0;
-      const va = B.loop[j] as number;
-      const vb = B.loop[j1] as number;
-      const mi = new Uint16Array(4);
-      const mw = new Float32Array(4);
-      blendSkin(
-        body.skinIndex.subarray(va * 4, va * 4 + 4),
-        body.skinWeight.subarray(va * 4, va * 4 + 4),
-        body.skinIndex.subarray(vb * 4, vb * 4 + 4),
-        body.skinWeight.subarray(vb * 4, vb * 4 + 4),
-        f,
-        mi,
-        mw,
-        0,
+      loopSkin(ringParams[i] as number, mi, mw);
+      inherit(
+        atRest(at3(rimSamplesRest, i)),
+        rotate(restFit.rotation, unit(at3(rimNormalSamples, i))),
+        ri,
+        rw,
       );
       blendSkin(
         mi,
         mw,
-        rootI,
-        rootW,
+        ri,
+        rw,
         smoothstep(k / R),
         skinIndex,
         skinWeight,
@@ -598,10 +865,12 @@ export function buildGraft(
       );
     }
   for (let v = 0; v < P.n; v++) {
-    skinIndex[(partStart + v) * 4] = cut.rootBone;
-    skinWeight[(partStart + v) * 4] = 1;
+    const w = P.weld[v] as number;
+    inherit(atRest(at3(restPart, w)), rotate(restFit.rotation, at3(partNormalsRest, w)), ri, rw);
+    skinIndex.set(ri, (partStart + v) * 4);
+    skinWeight.set(rw, (partStart + v) * 4);
   }
-
+  smoothPartSkin(P.triangles, P.weld, new Set(P.rim), partStart, skinIndex, skinWeight);
   const topology: GraftTopology = {
     index: Uint32Array.from(index),
     groups,
@@ -622,24 +891,29 @@ export function buildGraft(
 
   const graftIndex = topology.index.subarray(bodyTriangles * 3);
   const suppliedNormals = part.normals && part.normals.length === P.n * 3 ? part.normals : null;
-  const rimSamplesRest = sampleLoop(rimPts, rimParams, N);
-  const rimNormalSamples = sampleLoop(rimNormals, rimParams, N);
 
   function evaluate(positions: ArrayLike<number>, normals: ArrayLike<number>): GraftSurface {
     const out = new Float32Array(vertexCount * 3);
     out.set(Float32Array.from({ length: bodyCount * 3 }, (_, i) => positions[i] as number));
     // 1–2. The body's loop, sampled and faired; its axis and size.
     const loopPts = loopPoints(B.loop, positions);
-    const a = sampleLoop(loopPts, B.params, N);
+    // The loop as it is, where the band leaves the body; faired, where the part arrives.
+    const raw = atRing(loopPts, B.params);
+    const a = Float64Array.from(raw);
     const bodyTurn = fairLoop(a, turnLimit);
     const axis = unit(newellNormal(a));
     const radius = rmsRadius(a);
     // 3. The similarity, from the part's faired rim samples to the body's.
     const x = Float64Array.from(rimSamplesRest);
     const partTurn = fairLoop(x, turnLimit);
-    const fit: Similarity = similarityFit(x, a);
-    // 4. The gap along the loop's axis.
-    const lift = axis.map((v) => v * gap * radius) as Vec3;
+    // 4. The gap: each sample carried on along the body's own surface, away
+    // from the body (its continuation across the loop), so the band runs
+    // straight on from the body instead of bending to the axis and back.
+    const bodyNormalSamples = atRing(loopPoints(B.loop, normals), B.params);
+    const onward = onwardRing(raw, bodyNormalSamples, axis);
+    const fit: Similarity = continuationFit(x, rimOnward, a, onward);
+    const lift: Vec3 = [0, 0, 0];
+    for (let i = 0; i < N; i++) addTo(lift, at3(onward, i), (gap * radius) / N);
     const t: Vec3 = [
       fit.translation[0] + lift[0],
       fit.translation[1] + lift[1],
@@ -652,7 +926,7 @@ export function buildGraft(
     const target = new Float64Array(N * 3);
     for (let i = 0; i < N; i++) {
       const p = at3(a, i);
-      addTo(p, lift);
+      addTo(p, at3(onward, i), gap * radius);
       target.set(p, i * 3);
     }
     // 5. The part placed, its rim blended onto the target by the falloff band.
@@ -661,42 +935,50 @@ export function buildGraft(
     const residual = new Float64Array(P.rim.length * 3);
     const tmp = new Float64Array(3);
     P.rim.forEach((v, j) => {
-      atParam(target, uniform, rimParams[j] as number, tmp);
+      atParam(target, ringParams, rimParams[j] as number, tmp);
       for (let k = 0; k < 3; k++)
         residual[j * 3 + k] = (tmp[k] as number) - (placed[v * 3 + k] as number);
     });
+    // The lean: per sample, how the body's onward direction differs from the
+    // placed part's. Added in the band as `lean · s·d · (1 − d/reach)²`, it turns
+    // the part's surface at its rim to leave along the body's continuation and
+    // fades out within the band, so a neck that leans otherwise than the
+    // body's bends into it instead of meeting it at a knee.
+    const lean = new Float64Array(N * 3);
+    for (let i = 0; i < N; i++)
+      lean.set(sub(at3(onward, i), rotate(fit.rotation, at3(rimOnward, i))), i * 3);
     const blend = new Float64Array(3);
+    const bend = new Float64Array(3);
     for (let v = 0; v < P.n; v++) {
       const w = P.weld[v] as number;
       const d = field.distance[w] as number;
       if (!(d < bandReach)) continue;
       const weight = d === 0 ? 1 : smoothstep(1 - d / bandReach);
+      const bendWeight = fit.scale * d * (1 - d / bandReach) ** 2;
       atParam(residual, rimParams, field.param[w] as number, blend);
+      atParam(lean, ringParams, field.param[w] as number, bend);
       for (let k = 0; k < 3; k++)
-        placed[v * 3 + k] = (placed[v * 3 + k] as number) + weight * (blend[k] as number);
+        placed[v * 3 + k] =
+          (placed[v * 3 + k] as number) +
+          weight * (blend[k] as number) +
+          bendWeight * (bend[k] as number);
     }
     // The rim exactly on the target, whatever the blend's interpolation.
     P.rim.forEach((v, j) => {
-      atParam(target, uniform, rimParams[j] as number, tmp);
+      atParam(target, ringParams, rimParams[j] as number, tmp);
       placed.set(tmp, v * 3);
     });
     for (let v = 0; v < P.n; v++) {
       const w = P.weld[v] as number;
       for (let k = 0; k < 3; k++) out[(partStart + v) * 3 + k] = placed[w * 3 + k] as number;
     }
-    // 6. The band: Hermite curves leaving the body and arriving at the part along each surface.
-    const bodyNormalSamples = sampleLoop(loopPoints(B.loop, normals), B.params, N);
+    // 6. The band: Hermite curves leaving the body and arriving at the part,
+    // whose rim the lean has turned to leave along the body's continuation too.
     for (let i = 0; i < N; i++) {
-      const p0 = at3(a, i);
+      const p0 = at3(raw, i);
       const p1 = at3(target, i);
-      const prev = (i + N - 1) % N;
-      const next = (i + 1) % N;
-      const tanA = sub(at3(a, next), at3(a, prev));
-      const tanB = sub(at3(target, next), at3(target, prev));
-      let g0 = unit(cross(unit(at3(bodyNormalSamples, i)), tanA));
-      if (dot(g0, axis) < 0) g0 = g0.map((v) => -v) as Vec3;
-      let g1 = unit(cross(unit(rotate(fit.rotation, at3(rimNormalSamples, i))), tanB));
-      if (dot(g1, axis) < 0) g1 = g1.map((v) => -v) as Vec3;
+      const g0 = at3(onward, i);
+      const g1 = g0;
       const L = Math.hypot(...sub(p1, p0));
       for (let k = 1; k < R; k++) {
         const s = k / R;
