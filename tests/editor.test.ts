@@ -20,6 +20,7 @@ import { randomRecipe } from "../src/editor/randomize.ts";
 import type { SliderEntry } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError, agePolicyViolations } from "../src/recipe/agePolicy.ts";
+import { withAnatomyDefaults } from "../src/recipe/anatomy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { recipeProblems } from "../src/recipe/validate.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
@@ -126,25 +127,9 @@ describe("editor controls", () => {
     expect(Object.keys(withSliderValue(r, s, 0, modifiers).modifiers)).toEqual([]);
   });
 
-  it("shows the loaded adult defaults at every gender anchor, and lets an explicit zero override them", () => {
+  it("clamps a defaulted reset into the host's allowed range, and resets freely without one", () => {
     if (!anatomyDefaults) throw new Error("fixture has no adult anatomy defaults");
-    expect(Object.keys(anatomyDefaults).sort()).toEqual([
-      "genitals/phallus-size",
-      "genitals/testes-size",
-    ]);
-
     const phallus = slider("genitals/phallus-size");
-    const testes = slider("genitals/testes-size");
-    for (const [gender, expected] of [
-      [0, [0.08, 0]],
-      [0.5, [0.365, 0.3]],
-      [1, [0.65, 0.6]],
-    ] as const) {
-      const recipe = createRecipe({ macros: { age: 30, gender } });
-      expect(sliderValue(recipe, phallus, anatomyDefaults)).toBeCloseTo(expected[0], 9);
-      expect(sliderValue(recipe, testes, anatomyDefaults)).toBeCloseTo(expected[1], 9);
-    }
-
     const recipe = createRecipe({ macros: { age: 30, gender: 0.5 } });
     const hidden = withSliderValue(recipe, phallus, 0, modifiers, anatomyDefaults);
     expect(hidden.modifiers[phallus.id]).toBe(0);
@@ -166,6 +151,87 @@ describe("editor controls", () => {
     const reset = resetSliderValue(changed, nose, modifiers, anatomyDefaults);
     expect(reset.modifiers[nose.id]).toBeUndefined();
     expect(sliderValue(reset, nose, anatomyDefaults)).toBe(0);
+  });
+
+  it("shows the evaluator's adult defaults for each body-form anchor", () => {
+    if (!anatomyDefaults) throw new Error("fixture has no anatomy defaults");
+    const expected = [
+      {
+        gender: 0,
+        values: {
+          "genitals/phallus-size": 0.08,
+          "genitals/testes-size": 0,
+          "genitals/vulva-size": 1,
+          "genitals/anal-canal": 1,
+        },
+      },
+      {
+        gender: 0.5,
+        values: {
+          "genitals/phallus-size": 0.365,
+          "genitals/testes-size": 0.3,
+          "genitals/vulva-size": 0.5,
+          "genitals/anal-canal": 1,
+        },
+      },
+      {
+        gender: 1,
+        values: {
+          "genitals/phallus-size": 0.65,
+          "genitals/testes-size": 0.6,
+          "genitals/vulva-size": 0,
+          "genitals/anal-canal": 1,
+        },
+      },
+    ] as const;
+
+    for (const { gender, values } of expected) {
+      const recipe = createRecipe({ macros: { age: 30, gender } });
+      const evaluated = withAnatomyDefaults(recipe, anatomyDefaults);
+      for (const [id, value] of Object.entries(values)) {
+        const entry = slider(id);
+        expect(sliderValue(recipe, entry, anatomyDefaults), `${gender}: ${id}`).toBeCloseTo(value);
+        expect(evaluated.modifiers[id] ?? 0, `${gender}: evaluated ${id}`).toBeCloseTo(value);
+      }
+    }
+  });
+
+  it("keeps an explicit adult zero visible and clears it back to the pack default on reset", () => {
+    if (!anatomyDefaults) throw new Error("fixture has no anatomy defaults");
+    const entry = slider("genitals/phallus-size");
+    const recipe = createRecipe({ macros: { age: 30, gender: 0.5 } });
+    const explicitZero = withSliderValue(recipe, entry, 0, modifiers, anatomyDefaults);
+
+    expect(explicitZero.modifiers[entry.id]).toBe(0);
+    expect(sliderValue(explicitZero, entry, anatomyDefaults)).toBe(0);
+
+    const reset = resetSliderValue(explicitZero, entry, modifiers, anatomyDefaults);
+    expect(reset.modifiers).not.toHaveProperty(entry.id);
+    expect(sliderValue(reset, entry, anatomyDefaults)).toBeCloseTo(0.365);
+  });
+
+  it("keeps no-pack slider reads and resets neutral", () => {
+    const entry = slider("genitals/phallus-size");
+    const changed = withSliderValue(
+      createRecipe({ macros: { age: 30, gender: 0.5 } }),
+      entry,
+      0.4,
+      modifiers,
+    );
+
+    expect(sliderValue(createRecipe({ macros: { age: 30, gender: 0.5 } }), entry)).toBe(0);
+    const reset = resetSliderValue(changed, entry, modifiers);
+    expect(reset.modifiers).not.toHaveProperty(entry.id);
+    expect(sliderValue(reset, entry)).toBe(0);
+
+    const ordinary = slider("nose/nose-scale-horiz-decr|incr");
+    const ordinaryReset = resetSliderValue(
+      withSliderValue(createRecipe({ macros: { age: 30 } }), ordinary, 0.4, modifiers),
+      ordinary,
+      modifiers,
+      anatomyDefaults,
+    );
+    expect(ordinaryReset.modifiers).not.toHaveProperty(ordinary.id);
   });
 
   it("formats values for display", () => {
@@ -201,6 +267,26 @@ describe("recipe history", () => {
     expect(h.past.map((x) => x.macros.age)).toEqual([20, 23]);
     h = historyReducer(h, { type: "undo" });
     expect(h.present.macros.age).toBe(23);
+  });
+
+  it("applies defaulted-adult resets from the current recipe during a rapid sequence", () => {
+    if (!anatomyDefaults) throw new Error("fixture has no anatomy defaults");
+    const ids = Object.keys(anatomyDefaults);
+    let history = createHistory(
+      createRecipe({
+        macros: { age: 30, gender: 0.5 },
+        modifiers: Object.fromEntries(ids.map((id) => [id, 0])),
+      }),
+    );
+    for (const id of ids) {
+      const entry = slider(id);
+      history = historyReducer(history, {
+        type: "apply",
+        change: (current) => resetSliderValue(current, entry, modifiers, anatomyDefaults),
+      });
+    }
+    expect(history.present.modifiers).toEqual({});
+    expect(history.past).toHaveLength(ids.length);
   });
 
   it("clears redo on a new change and caps the undo stack", () => {

@@ -27,6 +27,8 @@ export default defineConfig({
     include: ["three-mesh-bvh", "three/examples/jsm/environments/RoomEnvironment.js"],
   },
   server: {
+    // The owner's VPN hostname is deliberate: this local QA route is reviewed remotely.
+    allowedHosts: ["jon-laptop.ts.jonbogaty.com"],
     fs: { allow: [here("..")] },
   },
   build: {
