@@ -46,6 +46,21 @@ Research only: nothing here ships. The generator is `tissue.ts`; the gates are
 | wrong-age library | the 25 y library used on a 13 y figure | fails (> 1 mm), as the test asserts |
 | bare frame keeps its chest (pinch) | the bare shape zeroed, back to the mound-only fit | fails: share 0.97 at 13 y |
 | no gender input | (byte-identity across frame evaluations) | holds; a recipe read would break it |
+| simplex corners hit (sampler) | normalised uniforms instead of the area-preserving map | 2 to 3 tiles per pure vertex, fails (>= 5) |
+| simplex corners hit (sampler) | independent per-coordinate LHS instead of the 2D low-discrepancy set | 3 asian tiles at seed 7, fails |
+| neighbours apart (sampler) | separation target 0 (no swaps) | every seed fails the 0.2 gap |
+| custom target applied (kit) | scale off by 1 % | the value and replacement tests fail |
+
+## Sheets
+
+`sheets.ts` builds hk-sheets requests (the integrator renders them on the real
+playground): the generator's output for each tile is a MakeHuman custom target the
+page registers before the figure is evaluated (`$customTargets`), so skin, rig,
+subdivision and the cover garment all come from the kit. Rows are ages, columns frame
+directions; every other axis is sampled (`sampler.ts`), the seed and the condition
+list go to `<sheet>.conditions.json`, and `label-sheet.ts` prints each tile's values
+under it once the sheet returns. `plot.ts` draws relief against age from the same
+samples. Every figure under 18 wears the sheets' cover garment (asserted).
 
 ## Findings
 
