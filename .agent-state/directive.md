@@ -30,6 +30,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 ### A. Lanes in flight (agent, branch, acceptance)
 
 - [x] A0 #13 Period garments landed on integration (466949c): hats over hair, layering contract, wear/dust/colour looks, boots-through-jeans, toenail mask. Remainder is #88.
+- [ ] A0b Quality settings as API (owner 2026-10-13): where fidelity trades against speed, a documented, typed setting on `<Humanoid>`/the model (skin influences used, 4 to 8; occlusion and fold detail next), tests first for each setting's measured cost and error, default at full MakeHuman fidelity. The 16-attribute budget is held by packing (`tests/vertexAttributeBudget.test.ts`).
 - [ ] A1 #14 Facial hair layer (agent aab735df, `feat/facial-hair`): moustaches and beards incl. very large beards, CC0 hair pieces, drape in the #71 forward fold; sheets read by root.
 - [ ] A2 #21 Explicit regional body hair (agent ac0a7235, `fix/body-hair-render`): diagnose why hair renders pale without strands, then make armpit, pubic, arm, leg and chest hair visible and gender-free; check #68 first.
 - [ ] A3 #22 Female anatomy gate (agent a655e4b4, `fix/female-anatomy-gate`): source-to-pack reproducibility, NIH CC-BY attribution, permutation matrix over builds/skins/sizes, underside and oblique views; spawns #75–#83.
