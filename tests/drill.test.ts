@@ -32,10 +32,14 @@ function groundDistanceNear(
   joint: readonly number[],
   radius: number,
 ): number {
+  // `body.positions` are before the renderer's ground lift; landmarks from the
+  // drill harness already include it. Keep the nearest-skin search in the
+  // body's frame, then measure the returned point in the grounded frame.
+  const unliftedJoint = [joint[0] as number, (joint[1] as number) - lift, joint[2] as number];
   let best = Number.POSITIVE_INFINITY;
   for (let i = 0; i < positions.length; i += 3) {
     const point = [positions[i] as number, positions[i + 1] as number, positions[i + 2] as number];
-    if (distance(point, joint) <= radius) best = Math.min(best, Math.abs(point[1] + lift));
+    if (distance(point, unliftedJoint) <= radius) best = Math.min(best, Math.abs(point[1] + lift));
   }
   return best;
 }
