@@ -130,9 +130,10 @@ their apertures), where no asset exists.
 - A surface that looks wrong is first checked for being procedural: a failing
   look is a reason to switch to an asset, not to tune the generator.
 - **Fluids are exempt (owner, 2026-10-13).** Tears, sweat, saliva, mucus, blood,
-  pus, vomit, urine, breast milk, genital moisture, lubrication, semen and every
-  other body fluid cannot come from an asset: they move, so they
-  are simulated, as the canals are drawn. A thin film is a material state, a skin
+  pus, vomit, urine, breast milk, genital moisture, lubrication, semen, feces and
+  every other body fluid or excretion cannot come from an asset: they move and
+  deform, so they are simulated, as the canals are drawn. Feces is a soft solid,
+  not a liquid, so its simulation covers plastic deformation as well as flow. A thin film is a material state, a skin
   layer that changes roughness and specular over a mask (sweat sheen,
   `VULVA_MOISTURE_LAYER`); beads, runs, drips, pooling and flow are a separate
   simulated system over the posed surface, specified and tested on its own issue.
