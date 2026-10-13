@@ -215,8 +215,9 @@ export function useEditorState(
 
   // What the callbacks below read: the latest props, and a history that a change updates
   // at once, so two changes in one event each start from the figure the last one left.
-  const live = useRef({ options, controls, modifiers, wardrobe });
-  live.current = { options, controls, modifiers, wardrobe };
+  const anatomyDefaults = ready?.anatomy?.defaults;
+  const live = useRef({ options, controls, modifiers, wardrobe, anatomyDefaults });
+  live.current = { options, controls, modifiers, wardrobe, anatomyDefaults };
   const now = useRef<RecipeHistory>(history);
   now.current = history;
   const approvedNow = useRef(approved);
@@ -314,8 +315,8 @@ export function useEditorState(
 
   /** The gate: the figure to take for a proposed one (limits, then the hook), or null when refused. */
   const judge = useCallback((proposed: Recipe, why: ChangeCause): Recipe | null => {
-    const { options: o, controls: c, modifiers: m } = live.current;
-    const limited = limitRecipe(proposed, c, m);
+    const { options: o, controls: c, modifiers: m, anatomyDefaults: defaults } = live.current;
+    const limited = limitRecipe(proposed, c, m, defaults);
     const verdict = beforeChange(
       limited,
       { cause: why, current: now.current.present },
@@ -382,6 +383,15 @@ export function useEditorState(
     },
     [judge, submit],
   );
+
+  // Defaults arrive with the ready payload, after an uncontrolled creator may
+  // already hold its initial recipe. Bring that recipe through the same limit
+  // gate before the browser paints the newly resolved default.
+  useLayoutEffect(() => {
+    if (controlled || ready === null) return;
+    const limited = limitRecipe(now.current.present, controls, modifiers, anatomyDefaults);
+    if (!sameRecipe(limited, now.current.present)) void propose(() => limited, "edit");
+  }, [controlled, ready, controls, modifiers, anatomyDefaults, propose]);
 
   const step = useCallback(
     (why: "undo" | "redo") => {

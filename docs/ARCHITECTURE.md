@@ -3466,7 +3466,10 @@ topology and the field atlas exist. Decisions:
   outside the host's allowed range, in which case the reset retains the nearest
   allowed explicit value. Controls without a loaded default retain their
   ordinary neutral-value behavior. This is generic editor plumbing: it consumes
-  the pack's map and names no adult modifier.
+  the pack's map and names no adult modifier. The creator's host-limit gate
+  resolves the same effective values before clamping, so an untouched default
+  outside a host range becomes an explicit in-range override before it can be
+  drawn or reported.
 - Until the adult stage arrives their fields are zero (empty atlas pages).
   When it arrives the worker derives the fields from the pack's targets and
   posts them; the main thread re-rasterises those pages of the shared atlas.

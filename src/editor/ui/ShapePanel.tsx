@@ -51,24 +51,28 @@ function ShapeSlider({
     ? { ...editor.recipe, modifiers: { ...editor.recipe.modifiers } }
     : editor.recipe;
   if (defaultedAdultModifier) delete withoutOverride.modifiers[entry.id];
+  const value = sliderValue(editor.recipe, entry, anatomyDefaults);
+  const defaultValue = defaultedAdultModifier
+    ? sliderValue(withoutOverride, entry, anatomyDefaults)
+    : range.neutral;
+  const neutral = Math.min(range.max, Math.max(range.min, defaultValue));
+  const defaultFitsRange = defaultValue === neutral;
   return (
     <SliderRow
       label={entry.label}
-      value={sliderValue(editor.recipe, entry, anatomyDefaults)}
+      value={value}
       min={range.min}
       max={range.max}
       step={range.step}
-      neutral={
-        defaultedAdultModifier
-          ? sliderValue(withoutOverride, entry, anatomyDefaults)
-          : range.neutral
-      }
+      neutral={neutral}
       format={(v) => formatSliderValue(entry, v, range)}
       description={entry.description}
       disabledReason={availability.enabled ? null : availability.reason}
       onChange={(v, gesture) => editor.setSlider(entry, v, gesture)}
       {...(defaultedAdultModifier && {
-        changed: Object.hasOwn(editor.recipe.modifiers, entry.id),
+        changed:
+          Object.hasOwn(editor.recipe.modifiers, entry.id) &&
+          (defaultFitsRange || Math.abs(value - neutral) > range.step / 2),
         onReset: () =>
           editor.update((recipe) =>
             resetSliderValue(recipe, entry, editor.modifiers, anatomyDefaults, range),

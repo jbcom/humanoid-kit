@@ -1567,7 +1567,9 @@ const FLOOR = 25;
   change that would leave it is clamped, and so is every other way a value can
   arrive (random, load, undo, a regional override of that macro). `min` equal to
   `max` pins the value. Age is clamped through `withAge`, so moving it below 18
-  still removes the adult-only values. A range outside the slider's own, one
+  still removes the adult-only values. When an adult pack supplies a default for
+  an absent modifier, the creator clamps that effective value and writes an
+  explicit in-range override if needed. A range outside the slider's own, one
   with `min` above `max` or not finite, and a range on one of the three
   ethnic macros (they are normalised together; hide them or pin all three with
   `onBeforeChange`) throws a `RangeError`.
@@ -1751,7 +1753,9 @@ propose a figure and go through the steps in "Hosting the creator". `load`
 returns `Not allowed here` as its problem when `onBeforeChange` or an
 `allowUncover` that answers at once refuses the loaded figure; one that is
 still being asked is not a problem. The pure parts are exported too
-(`humanoid-kit`): `limitRecipe(recipe, controls, modifiers)`, `limitedRange`,
+(`humanoid-kit`): `limitRecipe(recipe, controls, modifiers, anatomyDefaults?)`,
+which applies loaded anatomy defaults before clamping modifier ranges,
+`limitedRange`,
 `visibleTasks`, `assertControls`, `sameRecipe`, `beforeChange`, `wearsCover`,
 `isCovered(policy, recipe, wardrobe)` and `mustConfirm(policy, wardrobe,
 proposed, shown)`.

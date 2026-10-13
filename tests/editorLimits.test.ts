@@ -19,6 +19,7 @@ import { loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets(true);
 const modifiers = assets.modifiers;
+const anatomyDefaults = assets.adultAnatomyManifest?.anatomy?.defaults;
 const tasks = assets.sliders;
 const allSliders = tasks.flatMap((t) => t.groups.flatMap((g) => g.sliders));
 const slider = (id: string): SliderEntry => {
@@ -150,6 +151,16 @@ describe("limitRecipe", () => {
         "not/in-packs"
       ],
     ).toBe(0.4);
+  });
+
+  it("clamps an absent loaded anatomy default and records the allowed override", () => {
+    if (!anatomyDefaults) throw new Error("fixture has no adult anatomy defaults");
+    const id = "genitals/phallus-size";
+    const controls: ControlLimits = { ranges: { [id]: { max: 0.2 } } };
+    const recipe = createRecipe({ macros: { age: 30, gender: 1 } });
+    const out = limitRecipe(recipe, controls, modifiers, anatomyDefaults);
+    expect(out.modifiers[id]).toBe(0.2);
+    expect(limitRecipe(out, controls, modifiers, anatomyDefaults)).toBe(out);
   });
 
   it("still drops adult-only values when the floor leaves an age under 18", () => {
