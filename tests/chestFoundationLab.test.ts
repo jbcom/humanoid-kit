@@ -82,7 +82,7 @@ describe("chest foundation lab: age", () => {
     expect(maxDiff(got, legacyControl(lab, recipe, 1, 0.5))).toBeGreaterThan(1e-3);
   });
 
-  it("gives the review ages measurably different tissue, except the adult hold 18 to 25", () => {
+  it("gives the review ages measurably different tissue", () => {
     const tissueAt = (age: number) =>
       chestTissue(
         ctx,
@@ -95,12 +95,12 @@ describe("chest foundation lab: age", () => {
     for (const [a, b] of [
       [5, 13],
       [13, 25],
+      // MakeHuman's 18 is about 47% child, so it differs from 25 (owner ruling, 2026-10-13).
+      [18, 25],
       [25, 40],
       [40, 70],
     ] as const)
       expect(fieldRms(get(a), get(b)), `${a} y vs ${b} y`).toBeGreaterThan(0.003);
-    // The kit holds the adult body from 18 to 25 (AGE_ANCHORS), so these are one figure.
-    expect(fieldRms(get(18), get(25))).toBeLessThan(1e-6);
   });
 });
 

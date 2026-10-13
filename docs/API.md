@@ -249,8 +249,8 @@ interface MacroValues {
 - Axis functions returning `AxisWeights`: `genderAxis`, `ageAxis`, `muscleAxis`,
   `weightAxis`, `heightAxis`, `proportionAxis`, `cupAxis`, `firmnessAxis` and
   `ethnicAxis`; `combine(prefix, axes)` takes their Cartesian product.
-- Constants: `AGE_ANCHORS` (`{ anchor, from, to, upstream }`: baby 1, child 10,
-  adult 18 to 25, old 90; `upstream` is MakeHuman's file name, `young` for
+- Constants: `AGE_ANCHORS` (`{ anchor, years, upstream }`: baby 1, child 10,
+  adult 25, old 90, MakeHuman's own ages; `upstream` is MakeHuman's file name, `young` for
   the adult body), `MIN_AGE` 1, `MAX_AGE` 90, `ADULT_AGE` 18.
 - `upstreamAgeAnchor(anchor)`: MakeHuman's name for an age body (`adult` →
   `young`), as used in target and pack file names. Types `AgeAnchor` and
@@ -1494,7 +1494,8 @@ The nearest provider's registry, for `groundOcclusion`, `faceMetering` and
 
 A neutral studio for showing figures: a procedural room environment
 (three.js `RoomEnvironment`, prefiltered once, no network request), a key light
-casting shadows, fill and rim lights, and a soft hemisphere light. Pair it with
+casting shadows, a fill light, a rim light that casts its own shadow (at a lower
+filter radius), and a soft hemisphere light. Pair it with
 the canvas settings it was measured with: `STUDIO_TONE_MAPPING`
 (`NeutralToneMapping`) and `STUDIO_EXPOSURE` (1.15). `background` is a CSS
 colour (`null` leaves the canvas background alone); `intensity` scales every

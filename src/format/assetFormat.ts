@@ -1580,10 +1580,8 @@ export function targetLoadOrder(age: number): string[][] {
   // Equal steps away, the anchor nearer in years goes first.
   const steps = (a: AgeAnchor) =>
     Math.min(...ownIndex.map((i) => Math.abs(anchors.indexOf(a) - i)));
-  const years = (a: AgeAnchor) => {
-    const { from, to } = AGE_ANCHORS[anchors.indexOf(a)] as (typeof AGE_ANCHORS)[number];
-    return age < from ? from - age : age > to ? age - to : 0;
-  };
+  const years = (a: AgeAnchor) =>
+    Math.abs(age - (AGE_ANCHORS[anchors.indexOf(a)] as (typeof AGE_ANCHORS)[number]).years);
   const rest = anchors
     .filter((a) => !own.includes(a))
     .sort((p, q) => steps(p) - steps(q) || years(p) - years(q));
