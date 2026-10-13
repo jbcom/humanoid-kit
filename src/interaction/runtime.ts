@@ -278,11 +278,17 @@ export function createInteractions(
     i.claims.length = 0;
   };
 
+  const remove = (i: Running) => {
+    const index = live.indexOf(i);
+    if (index >= 0) live.splice(index, 1);
+  };
+
   const end = (i: Running, reason?: CancelReason) => {
     if (i.phase === "ended") return;
     release(i);
     i.phase = "ended";
     i.time = 0;
+    remove(i);
     emit(
       i,
       reason
@@ -523,7 +529,17 @@ export function createInteractions(
       for (let k = live.length - 1; k >= 0; k--) if (live[k]?.phase === "ended") live.splice(k, 1);
     },
   };
-  const detach = presence.attach(channel);
+  const detachChannel = presence.attach(channel);
+  let detached = false;
+  const detach = () => {
+    if (detached) return;
+    detached = true;
+    for (const i of [...live]) end(i, "cancelled");
+    detachChannel();
+    listeners.clear();
+    policies.clear();
+    offers.length = 0;
+  };
 
   return {
     define(defs) {
@@ -550,6 +566,7 @@ export function createInteractions(
       });
     },
     propose(definition, roles) {
+      if (detached) throw new InteractionDefinitionError("interaction runtime is detached");
       const d = definitions.get(definition);
       if (!d) throw new InteractionDefinitionError(`no definition ${definition}`);
       const { def, audience } = d;

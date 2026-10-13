@@ -70,6 +70,17 @@ const HANDOFF: InteractionDefinition = {
 };
 
 describe("neutral interaction session", () => {
+  const activeSession = () => {
+    const presence = createPresenceRegistry();
+    const runtime = createInteractions(presence, { seed: 4, clipLength: () => 2 });
+    runtime.define([HANDOFF]);
+    presence.set(figure("tall", -1, tall));
+    presence.set(figure("short", 1, short));
+    const session = runtime.propose("handoff", { giver: "tall", receiver: "short" });
+    presence.tick(0);
+    return { presence, runtime, session };
+  };
+
   it("emits lifecycle events and exposes a shared, body-scaled hand target", () => {
     const presence = createPresenceRegistry();
     const runtime = createInteractions(presence, { seed: 4, clipLength: () => 2 });
@@ -79,7 +90,6 @@ describe("neutral interaction session", () => {
     const events: string[] = [];
     runtime.on("tall", (event) => events.push(event.type));
     const session = runtime.propose("handoff", { giver: "tall", receiver: "short" });
-
     presence.tick(0);
     expect(session.phase).toBe("act");
     expect(events).toEqual(["accepted", "phase"]);
@@ -92,5 +102,39 @@ describe("neutral interaction session", () => {
     if (!tallPresence || !shortPresence) throw new Error("test figures must be present");
     expect(target).toEqual(gripMeeting(tallPresence, shortPresence, [0, 0, 0]));
     expect(session.contactTarget("hands", "receiver")).toEqual(target);
+  });
+
+  it("releases claims and prunes an ended session immediately on cancellation", () => {
+    const { presence, runtime, session } = activeSession();
+    expect(runtime.running()).toEqual([session]);
+
+    session.cancel();
+    expect(session.phase).toBe("ended");
+    expect(runtime.running()).toEqual([]);
+
+    const replacement = runtime.propose("handoff", { giver: "tall", receiver: "short" });
+    presence.tick(0);
+    expect(replacement.phase).toBe("act");
+  });
+
+  it("cancels active sessions and releases their claims when detached", () => {
+    const { presence, runtime, session } = activeSession();
+    const events: string[] = [];
+    runtime.on("tall", (event) => events.push(event.type));
+
+    runtime.detach();
+    runtime.detach();
+    expect(session.phase).toBe("ended");
+    expect(runtime.running()).toEqual([]);
+    expect(events).toEqual(["cancelled"]);
+    expect(() => runtime.propose("handoff", { giver: "tall", receiver: "short" })).toThrow(
+      "interaction runtime is detached",
+    );
+
+    const replacement = createInteractions(presence, { seed: 5, clipLength: () => 2 });
+    replacement.define([HANDOFF]);
+    const next = replacement.propose("handoff", { giver: "tall", receiver: "short" });
+    presence.tick(1);
+    expect(next.phase).toBe("act");
   });
 });

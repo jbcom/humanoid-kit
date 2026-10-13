@@ -17,7 +17,10 @@ definitions, seed and ticks gives the same lifecycle.
 
 Applications choose their own animation, audio, UI and gameplay reactions to
 these events. The subscription returns an unsubscribe function; calling
-`runtime.detach()` stops the channel and releases active claims.
+`runtime.detach()` cancels every active session, releases its claims and stops
+the channel. Detach is idempotent; a detached runtime cannot propose another
+session. A cancelled session is removed from `running()` before
+`cancel()` returns.
 
 ## Contacts and motion consumers
 
