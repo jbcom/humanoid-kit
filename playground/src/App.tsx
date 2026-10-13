@@ -37,6 +37,7 @@ import {
   Vector3,
 } from "three";
 import { ChannelQa } from "./ChannelQa";
+import { GraftQa } from "./GraftQa";
 import { tattooImages } from "./tattooImages";
 import { Walk } from "./Walk";
 
@@ -233,6 +234,12 @@ function initialPose(): ShotPose {
 }
 
 export function App() {
+  // The graft scene builds its own model on the main thread: it needs no worker.
+  if (params.get("scene") === "graft") return <GraftQa />;
+  return <WorkerApp />;
+}
+
+function WorkerApp() {
   const client = useClient();
   if (!client) return null;
   return (

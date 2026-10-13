@@ -32,8 +32,13 @@ import {
   type HumanoidAssets,
   pendingTargetFiles,
 } from "../format/assetFormat.ts";
-import { graftOnModel, type ModelGraft } from "../graft/onModel.ts";
-import type { GraftSpec } from "../graft/types.ts";
+import {
+  cutAwayOnModel,
+  graftOnModel,
+  type ModelGraft,
+  type ModelGraftInput,
+} from "../graft/onModel.ts";
+import type { GraftPart, GraftSpec } from "../graft/types.ts";
 import { NO_FEATURE } from "../makehuman/features.ts";
 import { RecipeError, recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
@@ -1834,23 +1839,32 @@ export class HumanoidModel {
    * once; `evaluate` refits the part to each evaluation's loop.
    */
   graft(spec: GraftSpec): ModelGraft {
+    return graftOnModel(this.graftInput(), spec);
+  }
+
+  /**
+   * What a cut takes off an evaluated figure, as a part another figure can
+   * graft (docs/GRAFT.md, "Donor parts"): one figure's head, grafted onto another.
+   */
+  cutAway(at: GraftSpec["at"], evaluation: Evaluation): GraftPart {
+    return cutAwayOnModel(this.graftInput(), at, evaluation);
+  }
+
+  private graftInput(): ModelGraftInput {
     const visible = faceVisibility(this.assets.faceVerts, this.bodyFaces, this.mountedVisible);
-    return graftOnModel(
-      {
-        assets: this.assets,
-        bodyFaces: this.bodyFaces,
-        base: { mesh: this.body.mesh, trianglesPerFace: this.bodyTrianglesPerFace, visible },
-        adult: () => {
-          const a = this.adultBodySurface();
-          return a ? { mesh: a.part.mesh, trianglesPerFace: a.faceTriangles, visible } : null;
-        },
-        attachments: this.attached.map(({ asset }) => ({
-          id: asset.entry.id,
-          refVerts: asset.refVerts,
-        })),
+    return {
+      assets: this.assets,
+      bodyFaces: this.bodyFaces,
+      base: { mesh: this.body.mesh, trianglesPerFace: this.bodyTrianglesPerFace, visible },
+      adult: () => {
+        const a = this.adultBodySurface();
+        return a ? { mesh: a.part.mesh, trianglesPerFace: a.faceTriangles, visible } : null;
       },
-      spec,
-    );
+      attachments: this.attached.map(({ asset }) => ({
+        id: asset.entry.id,
+        refVerts: asset.refVerts,
+      })),
+    };
   }
 
   /**
