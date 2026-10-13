@@ -137,6 +137,15 @@ export function writeGarments(dataDir: string, file: string, assets: readonly Co
   return writePacked<GarmentEntry>(dataDir, file, assets, () => []);
 }
 
+/**
+ * Packs MakeHuman proxy bodies (docs/MINIATURES.md): bound meshes laid out as
+ * garments are, with no occlusion, since a proxy replaces the body it would be
+ * baked against.
+ */
+export function writeProxies(dataDir: string, file: string, assets: readonly CompiledAsset[]) {
+  return writePacked<GarmentEntry>(dataDir, file, assets, () => []);
+}
+
 function writePacked<E extends GarmentEntry>(
   dataDir: string,
   file: string,
