@@ -413,6 +413,7 @@ function useAttachmentMaterial(
   }, [t, occlusionKeys]);
   const reportRef = useLatest(report);
   const settle = useSettle();
+  const invalidate = useThree((s) => s.invalidate);
   // An eye wears a material of the eye pack when the recipe names one the library has.
   const library = eyeMaterial?.library ?? null;
   const wanted = eyeMaterial ? library?.entry(eyeMaterial.id) : undefined;
@@ -440,6 +441,8 @@ function useAttachmentMaterial(
         tex.colorSpace = SRGBColorSpace;
         material.map = tex;
         material.needsUpdate = true;
+        // A late material map changes outside React; an idle demand canvas needs one draw.
+        invalidate();
       },
       (e: unknown) => {
         end();
@@ -452,7 +455,7 @@ function useAttachmentMaterial(
       material.map?.dispose();
       material.map = null;
     };
-  }, [t, material, reportRef, settle, wanted, library]);
+  }, [t, material, reportRef, settle, wanted, library, invalidate]);
   useEffect(() => () => material.dispose(), [material]);
   return material;
 }
@@ -1247,7 +1250,10 @@ export function Humanoid({
     client.landmarkAnchors().then(
       (anchors) => {
         end();
-        if (live) affordances.setAnchors(anchors);
+        if (!live) return;
+        affordances.setAnchors(anchors);
+        // Landmark data arrives outside React; wake a demand canvas so its anchors can place themselves.
+        invalidate();
       },
       (e: Error) => {
         end();
@@ -1261,7 +1267,7 @@ export function Humanoid({
       // arrive the frames are null rather than these anchors read on its figure.
       affordances.setAnchors(null);
     };
-  }, [client, affordances, ready, report, settle]);
+  }, [client, affordances, ready, report, settle, invalidate]);
   // The hip fold (docs/ARCHITECTURE.md, "The hip fold") is solved for the figure when a
   // hip is flexed far enough to need it, in the worker between other requests; until it
   // arrives, or when the figure changes shape, the last one stays.
@@ -1444,7 +1450,12 @@ export function Humanoid({
     let live = true;
     if (ready.adultAnatomyLoaded)
       client.adultLayers().then(
-        (update) => live && update && atlas.refresh(update),
+        (update) => {
+          if (!live || !update) return;
+          atlas.refresh(update);
+          // Atlas pages change outside React; a demand canvas needs one frame to sample them.
+          invalidate();
+        },
         (e: Error) => live && report(e),
       );
     return () => {
@@ -1452,7 +1463,7 @@ export function Humanoid({
       skin.setLayerAtlas(null);
       atlas.release();
     };
-  }, [client, gl, ready, skin, report]);
+  }, [client, gl, ready, skin, report, invalidate]);
   // The figure's body art, baked into a texture of its own from each evaluation
   // that brings some (the placement follows the shape). A new bake replaces the
   // last without rebuilding the shader; only a figure gaining or losing body art,

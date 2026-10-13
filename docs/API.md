@@ -1506,6 +1506,7 @@ and camera.
 | `eyeMaterials?` | The eye pack's `EyeLibrary` (`humanoid-kit-eyes`, `loadEyeLibrary`): worn by the figure, and offered as an Eye texture choice in Appearance; see "Eye materials" |
 | `onReject?(rejection)` | Called when a change was refused (`rejection.reason` is `"veto"` or `"cover"`, with `cause` and the `proposed` recipe) |
 | `title?` | Heading shown above the controls |
+| `frameloop?` | `"always"` (default) or `"demand"`. Demand rendering stops after the creator settles and resumes for creator work. Extra animated scene children must call R3F `invalidate`, or retain the default. |
 | `className?` | Added to the root element |
 | `children?` | Extra scene content rendered beside the figure |
 

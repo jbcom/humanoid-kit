@@ -466,8 +466,8 @@ export function useEditorState(
   );
   const setSlider = useCallback(
     (entry: SliderEntry, value: number, gesture?: string) =>
-      update((r) => withSliderValue(r, entry, value, modifiers), gesture),
-    [update, modifiers],
+      update((r) => withSliderValue(r, entry, value, modifiers, ready?.anatomy?.defaults), gesture),
+    [update, modifiers, ready?.anatomy?.defaults],
   );
   const range = useCallback(
     (entry: SliderEntry) => limitedRange(entry, sliderRange(entry, modifiers), controls),

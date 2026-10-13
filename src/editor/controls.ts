@@ -63,6 +63,7 @@ export function withSliderValue(
   entry: SliderEntry,
   value: number,
   modifiers: ModifierTable,
+  anatomyDefaults?: Readonly<Record<string, string>>,
 ): Recipe {
   if (!Number.isFinite(value)) throw new RangeError(`${entry.id}: ${value} is not a number`);
   const range = sliderRange(entry, modifiers);
@@ -72,8 +73,15 @@ export function withSliderValue(
     if (v !== 0 && modifierOf(entry, modifiers).adultOnly && recipe.macros.age < ADULT_AGE)
       throw new AgePolicyError(`${entry.id}: adult anatomy is not available under ${ADULT_AGE}`);
     const next = { ...recipe, modifiers: { ...recipe.modifiers } };
-    // Neutral values are dropped so recipes stay small and diff cleanly.
-    if (v === 0) delete next.modifiers[entry.id];
+    // Neutral values are normally dropped so recipes stay small and diff cleanly.
+    // Adult packs apply a default only when a modifier is absent, so a zero for
+    // a defaulted adult modifier is an explicit override, not an omission.
+    const retainsAdultZero =
+      v === 0 &&
+      recipe.macros.age >= ADULT_AGE &&
+      anatomyDefaults !== undefined &&
+      Object.hasOwn(anatomyDefaults, entry.id);
+    if (v === 0 && !retainsAdultZero) delete next.modifiers[entry.id];
     else next.modifiers[entry.id] = v;
     return next;
   }

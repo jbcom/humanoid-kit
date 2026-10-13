@@ -91,7 +91,7 @@ describe("the hip fold in <Humanoid>", () => {
       await render(
         <HumanoidProvider client={client}>
           <div style={{ width: 240, height: 240 }}>
-            <Canvas>
+            <Canvas frameloop="demand">
               <Probe onReady={(g) => (get = g)} />
               <Lights />
               <Humanoid
