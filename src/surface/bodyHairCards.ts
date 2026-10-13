@@ -130,9 +130,12 @@ export interface Cards {
 
 /** A draped card's numbers (`CardDrape`); all are choices, in metres. */
 export const DRAPE = {
-  /** A card's quads are about this long, from `SEGMENTS` up to `maxSegments`. */
+  /**
+   * A card's quads are about this long, from `SEGMENTS` up to `maxSegments`:
+   * enough for a floor-length beard (1.6 m) to bend over chest, belly and thighs.
+   */
   segmentLength: 0.025,
-  maxSegments: 14,
+  maxSegments: 64,
   /** Along a card, gravity takes over from the comb between these distances from the root. */
   fallFrom: 0.01,
   fallTo: 0.05,

@@ -9,7 +9,7 @@ import {
   generateBeardCards,
 } from "../src/surface/beardCards.ts";
 import type { BeardSpec, BeardStyle } from "../src/surface/bodyHair.ts";
-import type { Cards } from "../src/surface/bodyHairCards.ts";
+import { type Cards, DRAPE } from "../src/surface/bodyHairCards.ts";
 import { beardMasks } from "../src/surface/regions/bodyHairCoat.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
@@ -109,6 +109,35 @@ describe("beard cards", () => {
     for (let c = 0; c < cards.cardCount; c++) lowest = Math.min(lowest, ends(cards, p, c).tip[1]);
     expect(chinY - lowest).toBeGreaterThan(0.2);
     // Nothing past its first centimetre lies inside the body.
+    expect(cards.inside).toBeLessThan(0.002);
+  });
+
+  it("drape a floor-length beard in short quads that follow the body down", () => {
+    const b = beard({ style: "longstreet", length: CHIN });
+    const cards = generateBeardCards(assets, b) as Cards;
+    const p = rest(cards);
+    let longestQuad = 0;
+    let lowest = Number.POSITIVE_INFINITY;
+    for (let c = 0; c < cards.cardCount; c++) {
+      const first = cards.cardStart[c] as number;
+      const end = cards.cardStart[c + 1] as number;
+      for (let v = first; v + 3 < end; v += 2) {
+        const d = [0, 1, 2].map(
+          (k) =>
+            ((p[(v + 2) * 3 + k] as number) +
+              (p[(v + 3) * 3 + k] as number) -
+              (p[v * 3 + k] as number) -
+              (p[(v + 1) * 3 + k] as number)) /
+            2,
+        ) as [number, number, number];
+        longestQuad = Math.max(longestQuad, Math.hypot(...d));
+      }
+      lowest = Math.min(lowest, ends(cards, p, c).tip[1]);
+    }
+    // Quads about DRAPE.segmentLength long (pushing a point off the body can
+    // stretch one a little), so the beard bends over chest, belly and thighs.
+    expect(longestQuad).toBeLessThan(DRAPE.segmentLength * 2);
+    expect(chinY - lowest).toBeGreaterThan(CHIN * 0.8);
     expect(cards.inside).toBeLessThan(0.002);
   });
 
