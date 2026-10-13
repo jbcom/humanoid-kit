@@ -1,13 +1,13 @@
 /**
  * What a host that embeds the creator may take away from it, as data: a range
- * for any slider, and sliders, tasks and panels left out. Pure functions over
+ * for any slider, and sliders, groups, tasks and panels left out. Pure functions over
  * recipes and the slider taxonomy, so the creator, an application's own editor
  * and a test all apply the same limits.
  *
  * Hiding is not locking: a hidden slider keeps its value. To hold a value, give
  * it a range of one.
  */
-import type { SliderTask } from "../format/assetFormat.ts";
+import type { SliderGroup, SliderTask } from "../format/assetFormat.ts";
 import { DEFAULT_MACROS, MAX_AGE, MIN_AGE } from "../makehuman/macro.ts";
 import { withAge } from "../recipe/agePolicy.ts";
 import type { Recipe, RegionalMacroValues } from "../recipe/recipe.ts";
@@ -36,6 +36,13 @@ export interface ControlLimits {
   hide?: readonly string[];
   /** Tasks (by id or label: `Main`, `Face`, ...) left out, tab and sliders. */
   hideTasks?: readonly string[];
+  /**
+   * Groups of a task's sliders left out, as `"<task>/<group>"`, each by id or label
+   * (`"Face/Nose features"`). The task is named because group names repeat across
+   * tasks. The key is split at its first `/`, so a group with a slash in its own name
+   * (`"Face/Chin/jaw"`) is written as it is. A task left with no group is left out.
+   */
+  hideGroups?: readonly string[];
   /** Panels left out. */
   hidePanels?: readonly CreatorPanel[];
 }
@@ -166,11 +173,17 @@ export function visibleTasks(
 ): SliderTask[] {
   const hide = new Set(controls?.hide);
   const hideTasks = new Set(controls?.hideTasks);
-  if (hide.size === 0 && hideTasks.size === 0) return tasks;
+  const hideGroups = new Set(controls?.hideGroups);
+  if (hide.size === 0 && hideTasks.size === 0 && hideGroups.size === 0) return tasks;
   const out: SliderTask[] = [];
   for (const task of tasks) {
     if (hideTasks.has(task.id) || hideTasks.has(task.label)) continue;
+    const groupHidden = (g: SliderGroup) =>
+      [task.id, task.label].some((t) =>
+        [g.id, g.label].some((name) => hideGroups.has(`${t}/${name}`)),
+      );
     const groups = task.groups
+      .filter((g) => !groupHidden(g))
       .map((g) => {
         const sliders = g.sliders.filter((s) => !hide.has(s.id));
         return sliders.length === g.sliders.length ? g : { ...g, sliders };

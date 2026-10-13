@@ -85,6 +85,27 @@ describe("<HumanoidCreator controls>", () => {
   );
 
   it(
+    "leaves out a hidden group of one task, and shows the same name in another",
+    async () => {
+      const screen = await render(
+        <Host initialRecipe={thirty} controls={{ hideGroups: ["Face/Nose features"] }} />,
+      );
+      await expect.element(screen.getByRole("tab", { name: "Face" }), LOAD).toBeVisible();
+      await screen.getByRole("tab", { name: "Face" }).click();
+      await expect.element(screen.getByText("Nose size", { exact: true }).first()).toBeVisible();
+      await expect
+        .element(screen.getByText("Nose features", { exact: true }))
+        .not.toBeInTheDocument();
+      // The sliders of a hidden group are not found by search either.
+      await userEvent.fill(screen.getByRole("searchbox", { name: "Search sliders" }), "nose");
+      await expect
+        .element(screen.getByText("Nose features", { exact: true }))
+        .not.toBeInTheDocument();
+    },
+    LOAD.timeout,
+  );
+
+  it(
     "refuses through onBeforeChange before anything is drawn, and reports the refusal",
     async () => {
       const told: Recipe[] = [];

@@ -76,7 +76,7 @@ export interface EditorOptions {
   onChange?: (recipe: Recipe, change: ChangeInfo) => void;
   /** The host's synchronous veto; see `BeforeChange`. */
   onBeforeChange?: BeforeChange;
-  /** Ranges for sliders, and sliders, tasks and panels left out. */
+  /** Ranges for sliders, and sliders, groups, tasks and panels left out. */
   controls?: ControlLimits;
   /**
    * What counts as covered, and who may allow an uncovered figure. With it, no
