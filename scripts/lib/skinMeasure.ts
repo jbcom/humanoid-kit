@@ -246,6 +246,95 @@ export function girthRatios(
   return out;
 }
 
+/** How sharply a patch of skin creases in a pose: what each edge's fold gained over rest, in degrees. */
+export interface Creases {
+  /** The 99th percentile and the largest gain over the patch's interior edges. */
+  p99: number;
+  max: number;
+  /** Edges that gained more than 60°: a step or a notch, where a smooth patch has none. */
+  over60: number;
+  edges: number;
+}
+
+const faceNormal = (p: Float32Array, tris: Uint32Array, t: number): Vec3 => {
+  const [a, b, c] = [tris[t] as number, tris[t + 1] as number, tris[t + 2] as number];
+  const u = [0, 1, 2].map((k) => (p[b * 3 + k] as number) - (p[a * 3 + k] as number));
+  const v = [0, 1, 2].map((k) => (p[c * 3 + k] as number) - (p[a * 3 + k] as number));
+  const n: Vec3 = [
+    (u[1] as number) * (v[2] as number) - (u[2] as number) * (v[1] as number),
+    (u[2] as number) * (v[0] as number) - (u[0] as number) * (v[2] as number),
+    (u[0] as number) * (v[1] as number) - (u[1] as number) * (v[0] as number),
+  ];
+  const l = Math.hypot(...n) || 1;
+  return [n[0] / l, n[1] / l, n[2] / l];
+};
+const between = (a: Vec3, b: Vec3) =>
+  (Math.acos(Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]))) * 180) / Math.PI;
+
+/**
+ * The creases a pose draws in the patch of `tris` whose vertices `inPatch`
+ * keeps: for each edge two of its triangles share, the angle between their
+ * normals posed less the angle at rest. A skin that bends smoothly gains a few
+ * degrees an edge; a torn or stepped one, where neighbours follow different
+ * bones, gains tens.
+ */
+export function patchCreases(
+  rest: Float32Array,
+  posed: Float32Array,
+  tris: Uint32Array,
+  inPatch: (v: number) => boolean,
+): Creases {
+  const edges = new Map<number, number[]>();
+  for (let t = 0; t < tris.length; t += 3)
+    for (let e = 0; e < 3; e++) {
+      const a = tris[t + e] as number;
+      const b = tris[t + ((e + 1) % 3)] as number;
+      if (!inPatch(a) || !inPatch(b)) continue;
+      const key = Math.min(a, b) * 0x100000 + Math.max(a, b);
+      const list = edges.get(key);
+      if (list) list.push(t);
+      else edges.set(key, [t]);
+    }
+  const gains: number[] = [];
+  for (const ts of edges.values()) {
+    if (ts.length !== 2) continue;
+    const [s, t] = ts as [number, number];
+    gains.push(
+      between(faceNormal(posed, tris, s), faceNormal(posed, tris, t)) -
+        between(faceNormal(rest, tris, s), faceNormal(rest, tris, t)),
+    );
+  }
+  gains.sort((a, b) => a - b);
+  return {
+    p99: gains[Math.floor(0.99 * (gains.length - 1))] ?? 0,
+    max: gains[gains.length - 1] ?? 0,
+    over60: gains.filter((g) => g > 60).length,
+    edges: gains.length,
+  };
+}
+
+/**
+ * The left shoulder's cap, as a patch for `patchCreases`: the vertices of `tris`
+ * at most `radius` (14 cm) from the head of `upperarm01.L` and no more than a
+ * centimetre below it, on the left of the midline. It is the skin over the
+ * clavicle, the top of the shoulder and the deltoid, where a raised arm's
+ * weights blend the clavicle, shoulder and upper arm.
+ */
+export function shoulderCap(
+  rest: Float32Array,
+  tris: Uint32Array,
+  head: Vec3,
+  radius = 0.14,
+): (v: number) => boolean {
+  const cap = new Set<number>();
+  for (const v of tris) {
+    const d = [0, 1, 2].map((k) => (rest[v * 3 + k] as number) - (head[k] as number));
+    if ((d[1] as number) > -0.01 && Math.hypot(...d) < radius && (rest[v * 3] as number) > 0.02)
+      cap.add(v);
+  }
+  return (v) => cap.has(v);
+}
+
 /** The visible body's faces (its `body` group), as triangles. */
 export function bodyTriangles(assets: HumanoidAssets): Uint32Array {
   const group = assets.manifest.groups.find((g) => g.name === "body");
