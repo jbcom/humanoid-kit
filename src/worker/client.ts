@@ -8,6 +8,7 @@
  * whose recipe needs target files that are still loading holds up no other.
  */
 import type { LoadOptions } from "../format/assetFormat.ts";
+import type { CustomTarget } from "../makehuman/customTargets.ts";
 import type {
   AdultSurfaceTopology,
   Evaluation,
@@ -16,7 +17,7 @@ import type {
   ModelOptions,
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import type { SurfaceFold } from "../rig/hipFold.ts";
+import type { SurfaceFold } from "../rig/jointFold.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
 import type {
   HairInfo,
@@ -185,6 +186,18 @@ export class HumanoidWorkerClient {
     return this.adultLayersRequest;
   }
 
+  /**
+   * Registers MakeHuman custom targets in the worker (`addCustomTargets`):
+   * resolves once every later evaluation can name `custom/<name>`. Evaluations
+   * already queued are not held back, so await this before evaluating a recipe
+   * that names one.
+   */
+  async addCustomTargets(targets: readonly CustomTarget[]): Promise<void> {
+    await this.ready;
+    const r = await this.request({ type: "customTargets", id: 0, targets });
+    if (r.type !== "customTargetsAdded") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+  }
+
   private adultSurfaceRequest: Promise<AdultSurfaceTopology | null> | null = null;
 
   /**
@@ -240,20 +253,20 @@ export class HumanoidWorkerClient {
   }
 
   /**
-   * The hip fold of the figure a recipe makes (`HumanoidModel.hipFold`), for
-   * `DualBones.setFold` and the body geometry's fold slots, on the body surface
-   * that figure's evaluation is for. The worker solves it between other
-   * requests; asking again supersedes a solve still under way, which rejects
-   * with an `AbortError`.
+   * The joint folds of the figure a recipe makes (`HumanoidModel.folds`: the
+   * hip's and the knee's), for `DualBones.setFolds` and the body geometry's
+   * fold slots, on the body surface that figure's evaluation is for. The
+   * worker solves them between other requests; asking again supersedes a
+   * solve still under way, which rejects with an `AbortError`.
    */
-  async hipFold(
+  async folds(
     recipe: Recipe,
     signals: Readonly<Record<string, number>> = {},
-  ): Promise<{ surface: "base" | "adult"; fold: SurfaceFold }> {
+  ): Promise<{ surface: "base" | "adult"; folds: SurfaceFold[] }> {
     await this.ready;
-    const r = await this.request({ type: "hipFold", id: 0, recipe, signals });
-    if (r.type !== "hipFold") throw new HumanoidWorkerError(`unexpected ${r.type}`);
-    return { surface: r.surface, fold: r.fold };
+    const r = await this.request({ type: "folds", id: 0, recipe, signals });
+    if (r.type !== "folds") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+    return { surface: r.surface, folds: r.folds };
   }
 
   private readonly garmentRequests = new Map<string, Promise<GarmentTopology>>();

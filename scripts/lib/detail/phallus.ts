@@ -463,6 +463,27 @@ export const keyTarget = (n: number, part: string, state?: string) =>
   `genitals/phallus-k${n}-${part}${state ? `-${state}` : ""}`;
 
 /**
+ * The phallus targets' stable pack order, without constructing any geometry.
+ * `phallusTargets` consumes this same catalogue while it constructs the
+ * surfaces, and the shipped-pack test reads it without repeating that work.
+ */
+export function phallusTargetNames(): readonly string[] {
+  const names: string[] = [];
+  PHALLUS_KEYS.forEach((key, k) => {
+    const n = k + 1;
+    names.push(keyTarget(n, "base"));
+    for (const part of ["length", "girth"] as const) {
+      names.push(keyTarget(n, `${part}-incr`), keyTarget(n, `${part}-decr`));
+      if (!key.erects) continue;
+      for (const { name } of STATES)
+        names.push(keyTarget(n, `${part}-incr`, name), keyTarget(n, `${part}-decr`, name));
+    }
+    if (key.erects) for (const { name } of STATES) names.push(keyTarget(n, "base", name));
+  });
+  return names;
+}
+
+/**
  * Every target of the organ and its weight, as `drives` factor lists: a key's
  * base shape worth its hat of the size, its length and girth variations worth
  * the modifier's two sides times the hat; and for each state the organ erects
@@ -480,12 +501,22 @@ export function phallusTargets(
   const organ = new SculptedPhallus(root, parts, skin);
   const rest = restShape(root);
   const { targets, drives, add } = targetCollector(root);
+  const names = phallusTargetNames();
+  let nextName = 0;
+  const addTarget = (name: string, from: RootShape, to: RootShape, factors: string[]) => {
+    const expected = names[nextName++];
+    if (expected !== name)
+      throw new Error(
+        `phallus target ${name} disagrees with catalogue entry ${expected ?? "<end>"}`,
+      );
+    add(name, from, to, factors);
+  };
   const sizes = PHALLUS_KEYS.map((k) => k.size);
   PHALLUS_KEYS.forEach((key, k) => {
     const n = k + 1;
     const hat = sizeHat(PHALLUS_SIZE, sizes, k);
     const flaccid = keyShape(organ, key);
-    add(keyTarget(n, "base"), rest, flaccid, [hat]);
+    addTarget(keyTarget(n, "base"), rest, flaccid, [hat]);
     for (const [part, mod, mul] of [
       ["length", PHALLUS_LENGTH, "length"],
       ["girth", PHALLUS_GIRTH, "girth"],
@@ -493,8 +524,14 @@ export function phallusTargets(
       const range = mul === "length" ? LENGTH_RANGE : GIRTH_RANGE;
       const up = { [mul]: 1 + range } as Variation;
       const down = { [mul]: 1 - range } as Variation;
-      add(keyTarget(n, `${part}-incr`), flaccid, keyShape(organ, key, up), [`mod:${mod}`, hat]);
-      add(keyTarget(n, `${part}-decr`), flaccid, keyShape(organ, key, down), [`mod-:${mod}`, hat]);
+      addTarget(keyTarget(n, `${part}-incr`), flaccid, keyShape(organ, key, up), [
+        `mod:${mod}`,
+        hat,
+      ]);
+      addTarget(keyTarget(n, `${part}-decr`), flaccid, keyShape(organ, key, down), [
+        `mod-:${mod}`,
+        hat,
+      ]);
       if (!key.erects) continue;
       // In a state the length and girth change by more than the flaccid ones do (the share they
       // grow by), and in another direction: the variation's own target is the difference.
@@ -505,7 +542,7 @@ export function phallusTargets(
           ["incr", up, "mod"],
           ["decr", down, "mod-"],
         ] as const) {
-          add(
+          addTarget(
             keyTarget(n, `${part}-${side}`, name),
             shapeSum(root, shaped, flaccid, keyShape(organ, key, v)),
             keyShape(organ, key, { ...v, state }),
@@ -516,11 +553,13 @@ export function phallusTargets(
     }
     if (key.erects)
       for (const { name, state } of STATES)
-        add(keyTarget(n, "base", name), flaccid, keyShape(organ, key, { state }), [
+        addTarget(keyTarget(n, "base", name), flaccid, keyShape(organ, key, { state }), [
           arousalHat(name),
           hat,
         ]);
   });
+  if (nextName !== names.length)
+    throw new Error(`phallus target catalogue has ${names.length - nextName} unused names`);
   return { targets, drives };
 }
 

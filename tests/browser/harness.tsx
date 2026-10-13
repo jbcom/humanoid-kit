@@ -41,7 +41,7 @@ export function readyInfo(
     rig: EMPTY_RIG,
     presenceJoints: {} as never,
     adultAnatomyLoaded: withAdultPack,
-    wardrobe: withClothingPack ? wardrobeOf(clothingManifest as unknown as ClothingManifest) : [],
+    wardrobe: withClothingPack ? wardrobeOf([clothingManifest as unknown as ClothingManifest]) : [],
     hair,
   };
 }

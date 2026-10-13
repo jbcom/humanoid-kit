@@ -10,7 +10,7 @@ import { type WardrobeEntry, wardrobeOf } from "../src/editor/wardrobe.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { clothingManifest } from "./fixtures.ts";
 
-const wardrobe = wardrobeOf(clothingManifest);
+const wardrobe = wardrobeOf([clothingManifest]);
 const ofKind = (kind: string) => {
   const g = wardrobe.find((w) => w.kind === kind);
   if (!g) throw new Error(`the clothing pack has no ${kind}`);

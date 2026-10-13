@@ -39,7 +39,8 @@ const pose = bodyPoseRotations(rig, poseName);
 // Every garment texture, decoded before the (synchronous) bakes.
 const textures = new Map<string, DecodedTexture>();
 for (const [dir, entries] of [
-  [clothingDir, assets.clothingManifest?.garments.entries ?? []],
+  // loadMiniatureAssets loads the one CC0 clothing pack, from clothingDir.
+  [clothingDir, assets.clothingManifests.flatMap((m) => m.garments.entries)],
   [bodyDir, assets.manifest.attachments.entries],
 ] as const)
   for (const g of entries) {

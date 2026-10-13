@@ -5,7 +5,7 @@
  * garment in `outfit.order` and any attachments asked for (the eyes), each
  * skinned by the kit's own skinning
  * (`skinPositions`: the shader's blend of linear and dual quaternion skinning,
- * with the hip fold on the body surface) and lifted so the lowest point of the
+ * with the hip and knee folds on the body surface) and lifted so the lowest point of the
  * figure stands on y = 0.
  *
  * `figureAtRest` evaluates once; `poseFigure` poses that rest figure for any
@@ -13,13 +13,13 @@
  * needs. `posedFigure` is both in one call.
  */
 import type { AttachmentMaterial } from "../format/assetFormat.ts";
-import { solvedHipFold } from "../foundation/posed.ts";
+import { solvedFolds } from "../foundation/posed.ts";
 import { BODY_REGIONS, regionOfBone } from "../makehuman/regions.ts";
 import type { HumanoidModel } from "../model/humanoidModel.ts";
 import { fitProxy, proxyIndex, proxyTopology } from "../model/proxy.ts";
 import { skinOfEvaluation } from "../model/reservoirSkin.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import { type HipFold, renderFold } from "../rig/hipFold.ts";
+import { type JointFold, renderFold } from "../rig/jointFold.ts";
 import {
   type BoneRotations,
   posedGroundOffset,
@@ -77,8 +77,8 @@ export interface FigureRest {
   bones: RestBones;
   /** Morphed control positions (base topology). */
   control: Float32Array;
-  /** The hip fold on the body surface, or null for a proxy body. */
-  fold: HipFold | null;
+  /** The joint folds (hip and knee) on the body surface; none for a proxy body. */
+  folds: readonly JointFold[];
   /** What grounding needs (`posedGroundOffset`). */
   model: HumanoidModel;
 }
@@ -174,13 +174,13 @@ export function figureAtRest(
   const bones = restBones(model.assets, control);
   const names = bones.names;
   let body: FigurePartRest;
-  let fold: HipFold | null = null;
+  let folds: readonly JointFold[] = [];
   let bodyName: string;
   if (bodyChoice === "surface") {
     const topology = ev.surface === "adult" ? model.adultSurface() : model.topology().body;
     if (!topology) throw new Error("an adult evaluation without the adult surface");
     const { skinIndex, skinWeight } = skinOfEvaluation(ev, topology);
-    fold = renderFold(solvedHipFold(model, recipe));
+    folds = solvedFolds(model, recipe).map(renderFold);
     bodyName = ev.surface;
     body = {
       id: "body",
@@ -260,7 +260,7 @@ export function figureAtRest(
     body: bodyName,
     bones,
     control,
-    fold,
+    folds,
     model,
   };
 }
@@ -268,7 +268,7 @@ export function figureAtRest(
 /** `rest` posed by `rotations`: every part skinned, then lifted with the figure onto the ground. */
 export function poseFigure(rest: FigureRest, rotations: BoneRotations): PosedFigure {
   const posed = rest.parts.map((p, i) => {
-    const fold = i === 0 ? (rest.fold ?? undefined) : undefined;
+    const folds = i === 0 ? rest.folds : undefined;
     const n = p.rest.length;
     return {
       ...p,
@@ -279,7 +279,7 @@ export function poseFigure(rest: FigureRest, rotations: BoneRotations): PosedFig
         p.skinIndex,
         p.skinWeight,
         new Float32Array(n),
-        fold,
+        folds,
       ),
       normals: skinNormals(
         rest.bones,
@@ -288,7 +288,7 @@ export function poseFigure(rest: FigureRest, rotations: BoneRotations): PosedFig
         p.skinIndex,
         p.skinWeight,
         new Float32Array(n),
-        fold,
+        folds,
       ),
     };
   });

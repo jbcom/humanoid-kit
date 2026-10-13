@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ANAL_CANAL } from "../scripts/lib/detail/canal.ts";
 import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
+import { VULVA_SIZE } from "../scripts/lib/detail/vulva.ts";
 import { landmarkAnchors } from "../src/foundation/landmarks.ts";
 import { shapeSignalNames } from "../src/model/detailFactors.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -69,7 +71,7 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
     expect(replies.get(2)?.type).toBe("evaluated");
   });
 
-  it("solves a figure's hip fold between other requests, and lets a newer ask supersede an older", async () => {
+  it("solves a figure's joint folds between other requests, and lets a newer ask supersede an older", async () => {
     stubFetch();
     const { handle, replies, transfers } = start();
     await handle({
@@ -78,24 +80,27 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
       load: { body: "http://packs/body" },
       model: { subdivision: 1 },
     });
-    const first = handle({ type: "hipFold", id: 2, recipe: createRecipe({ macros: { age: 30 } }) });
-    // A newer ask for a fold stops the older one at its next flexion.
-    const second = handle({ type: "hipFold", id: 3, recipe: createRecipe() });
+    const first = handle({ type: "folds", id: 2, recipe: createRecipe({ macros: { age: 30 } }) });
+    // A newer ask for folds stops the older one at its next flexion.
+    const second = handle({ type: "folds", id: 3, recipe: createRecipe() });
     // An evaluation is not held up behind either.
     const evaluated = handle({ type: "evaluate", id: 4, recipe: createRecipe() });
     await Promise.all([first, second, evaluated]);
     expect(replies.get(4)?.type).toBe("evaluated");
     expect(replies.get(2)).toMatchObject({ type: "error", name: "AbortError" });
-    const fold = replies.get(3);
-    expect(fold?.type).toBe("hipFold");
-    if (fold?.type !== "hipFold") return;
-    expect(fold.surface).toBe("base");
-    expect(fold.fold.rows).toBeGreaterThan(50);
-    expect(fold.fold.slot.length).toBe(
-      (replies.get(1) as Extract<WorkerResponse, { type: "ready" }>).topology.body.vertexCount,
-    );
+    const reply = replies.get(3);
+    expect(reply?.type).toBe("folds");
+    if (reply?.type !== "folds") return;
+    expect(reply.surface).toBe("base");
+    expect(reply.folds.map((f) => f.joint.name)).toEqual(["hip", "knee"]);
+    const vertices = (replies.get(1) as Extract<WorkerResponse, { type: "ready" }>).topology.body
+      .vertexCount;
+    for (const fold of reply.folds) {
+      expect(fold.rows, fold.joint.name).toBeGreaterThan(50);
+      expect(fold.slot.length).toBe(vertices);
+    }
     // The slots and the rows are transferred, not copied.
-    expect(transfers.get(3)).toEqual([fold.fold.slot.buffer, fold.fold.data.buffer]);
+    expect(transfers.get(3)).toEqual(reply.folds.flatMap((f) => [f.slot.buffer, f.data.buffer]));
   });
 
   it("bakes a partial attachment set against the default figure, whatever the first figure's age", async () => {
@@ -118,6 +123,28 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
     release();
     await init;
     expect(replies.get(1)).toMatchObject({ type: "ready" });
+  });
+
+  it("keeps serving evaluations while posed occlusion yields between corners", async () => {
+    stubFetch();
+    const { handle, replies } = start();
+    await handle({
+      type: "init",
+      id: 1,
+      load: { body: "http://packs/body" },
+      model: { subdivision: 0, attachments: ["eyes/high-poly"] },
+    });
+    const occlusion = handle({ type: "posedOcclusion", id: 2 });
+    const evaluation = handle({ type: "evaluate", id: 3, recipe: createRecipe() });
+    await evaluation;
+    expect(replies.get(3)?.type).toBe("evaluated");
+    // The task boundary lets the request queued after the first occlusion corner run first.
+    expect(replies.has(2)).toBe(false);
+    await occlusion;
+    expect(replies.get(2)).toMatchObject({
+      type: "posedOcclusion",
+      attachments: expect.any(Array),
+    });
   });
 
   describe("with the clothing pack", () => {
@@ -264,15 +291,23 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
       // The pack's manifest arrives with the first stage: ready already names its features.
       const ready = replies.get(1);
       if (ready?.type !== "ready") throw new Error("not ready");
-      expect(ready.anatomy?.features.map((f) => f.id)).toEqual(["phallus", "scrotum", "mound"]);
+      expect(ready.anatomy?.features.map((f) => f.id)).toEqual([
+        "phallus",
+        "scrotum",
+        "vulva",
+        "anus",
+        "mound",
+      ]);
       expect(shapeSignalNames([], ready.anatomy)).toEqual(["arousal"]);
       const layers = handle({ type: "adultLayers", id: 2 });
-      // A figure that needs nothing of the adult stage: no organ and no testes. Left unset, an
-      // adult with the pack takes its default anatomy (`AdultAnatomySpec.defaults`), which waits.
+      // A figure that needs nothing of the adult stage: no organ, no testes and no vulva. Left
+      // unset, an adult with the pack takes its default anatomy (`AdultAnatomySpec.defaults`), which waits.
       await handle({
         type: "evaluate",
         id: 3,
-        recipe: createRecipe({ modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0 } }),
+        recipe: createRecipe({
+          modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0, [ANAL_CANAL]: 0 },
+        }),
       });
       expect(replies.get(3)?.type).toBe("evaluated");
       await settle();
@@ -411,11 +446,13 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
         type: "error",
         message: expect.stringMatching(/targets\.bin\.gz failed/),
       });
-      // A figure that needs nothing of the failed stage: no organ and no testes.
+      // A figure that needs nothing of the failed stage: no organ, testes, vulva or anal canal.
       await handle({
         type: "evaluate",
         id: 3,
-        recipe: createRecipe({ modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0 } }),
+        recipe: createRecipe({
+          modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0, [ANAL_CANAL]: 0 },
+        }),
       });
       expect(replies.get(3)?.type).toBe("evaluated");
     },

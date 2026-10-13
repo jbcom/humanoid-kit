@@ -207,6 +207,62 @@ describe("the testes on the adult surface", { timeout: 300_000 }, () => {
     }
   });
 
+  it("keeps the sculpt's notch between the lobes on every body, at the sculpt's share of the sac's width", () => {
+    // The midline's lowest point above the lobes', over the width across the figure. On
+    // the man the drawn sac read 16.6% against the sculpt's 10.9%: its delta was added to
+    // the man's own skin under the sac, which his body shape moves off his loop's by up
+    // to 3.6 mm, and the notch deepened by as much.
+    const notch = (points: readonly (readonly number[])[]) => {
+      const xs = points.map((p) => p[0] as number);
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const width = Math.max(...xs) - Math.min(...xs);
+      const lowest = Math.min(...points.map((p) => p[1] as number));
+      const mid = Math.min(
+        ...points
+          .filter((p) => Math.abs((p[0] as number) - cx) <= 0.003)
+          .map((p) => p[1] as number),
+      );
+      return (mid - lowest) / width;
+    };
+    const sculpt: number[][] = [];
+    for (let i = 0; i < parts.scrotum.positions.length; i += 3)
+      sculpt.push(Array.from(parts.scrotum.positions.subarray(i, i + 3)));
+    const drawnNotch = (macros: typeof AUTHORING_FIGURE.macros) => {
+      const bare = createRecipe({ macros, modifiers: { [TESTES_SIZE]: 0, [PHALLUS_SIZE]: 0 } });
+      const drawn = createRecipe({ macros, modifiers: { [TESTES_SIZE]: 0.6, [PHALLUS_SIZE]: 0 } });
+      const at = model.evaluate(bare).positions;
+      const to = model.evaluate(drawn).positions;
+      const points: number[][] = [];
+      for (let v = 0; v < to.length / 3; v++)
+        if (
+          [0, 1, 2].some(
+            (k) => Math.abs((to[v * 3 + k] as number) - (at[v * 3 + k] as number)) > 1e-7,
+          )
+        )
+          points.push([0, 1, 2].map((k) => to[v * 3 + k] as number));
+      return notch(points);
+    };
+    // The transfer: on the figure it was authored on, within a tenth of the sculpt's share
+    // (the reservoir samples the sculpt more coarsely than the sculpt's own vertices).
+    const want = notch(sculpt);
+    const authored = drawnNotch(AUTHORING_FIGURE.macros);
+    expect(Math.abs(authored - want) / want, `${authored} against ${want}`).toBeLessThanOrEqual(
+      0.1,
+    );
+    // Every other body: the sac is carried from that figure, not reshaped by the body's skin.
+    for (const macros of [
+      { ...AUTHORING_FIGURE.macros, gender: 1 },
+      { ...AUTHORING_FIGURE.macros, gender: 0 },
+      { ...AUTHORING_FIGURE.macros, gender: 1, weight: 1 },
+    ]) {
+      const got = drawnNotch(macros);
+      expect(
+        Math.abs(got - authored) / authored,
+        `${JSON.stringify(macros)}: ${got} against ${authored}`,
+      ).toBeLessThanOrEqual(0.05);
+    }
+  });
+
   it("does not answer the arousal signal: its change is unmeasured, so the sac holds still", () => {
     const sac = figure({ [TESTES_SIZE]: 0.6 });
     expect(Array.from(model.evaluate(sac, { arousal: 1 }).positions)).toEqual(

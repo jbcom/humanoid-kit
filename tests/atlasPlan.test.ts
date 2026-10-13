@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import {
   type AtlasSurface,
@@ -6,10 +7,11 @@ import {
   OWNER_GRID,
   planAtlas,
   vertexOwners,
+  withExtra,
 } from "../src/surface/atlasPlan.ts";
 import { layerUsesCoordinate, type SkinLayer } from "../src/surface/layers.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
-import { loadFixtureAssets } from "./fixtures.ts";
+import { adultManifest, bodyPackData, loadFixtureAssets } from "./fixtures.ts";
 
 const none = new Float32Array(0);
 type Kind = "colour" | "bumps" | "creases" | "surface";
@@ -130,17 +132,30 @@ describe("the atlas plan", () => {
     expect(planAtlas(layers, near).value[1]).toBe(planAtlas(layers, near).value[0]);
   });
 
-  it("leaves adult layers alone, whose fields arrive after the plan", () => {
+  it("places an adult layer whose footprint it knows like any other: apart, it shares; overlapping, never", () => {
     const layers = [stub("a", "colour"), stub("b", "colour", true), stub("c", "colour", true)];
-    const plan = planAtlas(layers, strip(3, [[0], [1], [2]]));
-    expect(new Set(plan.value).size).toBe(3);
-    expect(plan.owner[1]).toBe(-1);
+    // b and c are islands apart from a and from each other.
+    const apart = planAtlas(layers, strip(3, [[0], [1], [2]]));
+    expect(new Set(apart.value).size).toBe(1);
+    expect(apart.owner[1]).toBeGreaterThanOrEqual(0);
+    // c overlaps b: they never share, though c may share with a.
+    const overlapping = planAtlas(layers, strip(3, [[0], [1], [1, 2]]));
+    expect(overlapping.value[2]).not.toBe(overlapping.value[1]);
   });
 
-  it("leaves a layer with no support (not loaded, or zero) in channels of its own", () => {
+  it("gives a layer whose fields are still pending a group of its own", () => {
+    const layers = [stub("a", "colour"), stub("b", "colour", true), stub("c", "colour", true)];
+    const plan = planAtlas(layers, strip(3, [[0], [1], [2]]), (l) => l === 2);
+    expect(plan.value[1]).toBe(plan.value[0]);
+    expect(new Set([plan.value[0], plan.value[2]]).size).toBe(2);
+    expect(plan.owner[2]).toBe(-1);
+  });
+
+  it("lets a layer known to reach nothing join a group, at no cost", () => {
     const layers = [stub("a", "colour"), stub("b", "colour")];
     const plan = planAtlas(layers, strip(2, [[0], []]));
-    expect(plan.value[1]).not.toBe(plan.value[0]);
+    expect(plan.value[1]).toBe(plan.value[0]);
+    expect(plan.channels).toBe(2);
   });
 
   it("marks, in the owner map, the cells each member lies in and no others", () => {
@@ -236,5 +251,66 @@ describe("the atlas plan of the shipped stack", () => {
       for (let b = a + 1; b < SKIN_LAYERS.length; b++)
         if ((plan.coord[a] as number) >= 0 && plan.coord[a] === plan.coord[b])
           expect(plan.value[a]).toBe(plan.value[b]);
+  });
+});
+
+describe("the atlas plan with the adult pack", () => {
+  const assets = loadFixtureAssets(true);
+  const model = new HumanoidModel(assets, { subdivision: 1 });
+  const body = model.topology().body;
+  const plan = body.plan;
+  const ids = SKIN_LAYERS.map((l) => l.id);
+  const adult = SKIN_LAYERS.filter((l) => l.adult).map((l) => ids.indexOf(l.id));
+  // Every footprint as the atlas draws it: the body's fields with the adult layers' and
+  // the islands' triangles after them.
+  const update = model.adultLayerFields();
+  if (!update) throw new Error("the adult layers' fields have not loaded");
+  const n = body.uvs.length / 2;
+  const layerFields = Float32Array.from(body.layerFields);
+  update.layers.forEach((id, k) => {
+    layerFields.set(
+      update.layerFields.subarray(k * n * 2, (k + 1) * n * 2),
+      ids.indexOf(id) * n * 2,
+    );
+  });
+  const base: AtlasSurface = { uvs: body.uvs, index: body.index, vertexCount: n, layerFields };
+  const drawn = update.extra
+    ? withExtra(
+        base,
+        update.layers.map((id) => ids.indexOf(id)),
+        update.extra,
+      )
+    : base;
+
+  it("keeps every layer, every adult one present, to eight pages, staged or loaded", () => {
+    expect(adult.length).toBeGreaterThanOrEqual(4);
+    expect(plan.pages).toBeLessThanOrEqual(8);
+    // The adult stage's targets not yet loaded: a layer measured from them is pending.
+    const staged = new HumanoidModel(
+      parseHumanoidAssets(bodyPackData(), { manifest: adultManifest }),
+      {
+        subdivision: 1,
+      },
+    );
+    expect(staged.topology().body.plan.pages).toBeLessThanOrEqual(8);
+  });
+
+  it("shares a channel between an adult island and layers it lies apart from", () => {
+    const shared = adult.filter(
+      (l) => plan.owner[l] !== undefined && (plan.owner[l] as number) >= 0,
+    );
+    expect(shared.length).toBeGreaterThan(0);
+  });
+
+  it("never puts two layers that lie on one vertex, of the body or an island, in one value channel", () => {
+    const m = drawn.vertexCount;
+    const lit = (l: number, v: number) => (drawn.layerFields[(l * m + v) * 2] as number) > 1 / 512;
+    for (const a of adult)
+      for (let b = 0; b < SKIN_LAYERS.length; b++) {
+        if (b === a || plan.value[a] !== plan.value[b] || (plan.value[a] as number) < 0) continue;
+        let both = 0;
+        for (let v = 0; v < m; v++) if (lit(a, v) && lit(b, v)) both++;
+        expect(both, `${ids[a]} and ${ids[b]}`).toBe(0);
+      }
   });
 });

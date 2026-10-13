@@ -43,14 +43,14 @@ needs more, up to its source's size and at most 2048 px, and never upscaled
 | `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | Walk, idle and swim clips as local bone rotations per frame, on the default skeleton (see "Animation") |
 | `humanoid-kit-eyes` | `manifest.json`, then per material `<id>.webp` | 32 CC0 eye materials (human, slit-pupil, toon, creature) whose textures add iris pattern and sclera detail to the eye shader's own colours (see "Attachment colour") |
 | `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | Ten scalp hair styles bound to the base mesh, each with its baked occlusion and a strand map (see "Scalp hair") |
-| `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 19 garments from MakeHuman's system assets (suits, shoes, a hat), each bound to the base mesh with the vertices it hides |
+| `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 87 garments: 19 from MakeHuman's system assets (suits, shoes, a hat) and 68 from the community's clothing packs, CC0 by their pages; each bound to the base mesh with the vertices it hides |
 
 A target is stored sparsely: the indices of the vertices it moves (`uint16`),
 then their `int16` xyz deltas, plus a per-target scale in metres per step.
 Evaluation multiplies a delta by `weight * scale`. For transfer, the targets
 file stores each target's indices as ascending deltas and its x, y and z
 deltas as separate planes, then gzips the whole file (`delta-planar-gzip`).
-That takes the body targets from 18.1 MB to 5.4 MB; the loader decompresses
+That takes the body targets from 46.0 MB to 14.3 MB; the loader decompresses
 with the platform's `DecompressionStream` and decodes in one pass.
 
 Only targets that something drives are packed: the macro combinations
@@ -66,15 +66,15 @@ once its own targets have arrived rather than all of them
 | File | Holds | Size |
 | --- | --- | --- |
 | `targets-core.bin.gz` | the skin layers' mask targets (`SKIN_LAYER_TARGETS`, `src/surface/regions`), and any macro target with no age anchor (MakeHuman has none) | 0.01 MB |
-| `targets-baby.bin.gz`, `-child`, `-young`, `-old` | the macro targets of one age anchor (ethnic, universal, height, proportions and breast combinations) | 0.83, 1.14, 1.25, 1.20 MB |
+| `targets-baby.bin.gz`, `-child`, `-young`, `-old` | the macro targets of one age anchor (ethnic, universal, height, proportions and breast combinations) | 2.45, 3.52, 3.78, 3.63 MB |
 | `targets-modifiers.bin.gz` | the other shape-modifier targets | 1.0 MB |
 
 Age is the macro axis people change least while shaping a figure, and every
 other macro (gender, muscle, weight, height, proportions, ethnicity, breast)
 blends combinations within the same age anchors, so an anchor's file serves
 every edit that keeps the age between its neighbours. The default figure (25
-years) needs only the adult body's file (`targets-young`, MakeHuman's name): about 1.9 MB with the body and attachments,
-against 5.1 MB for everything.
+years) needs only the adult body's file (`targets-young`, MakeHuman's name): about 4.6 MB with the body and attachments,
+against 15.2 MB for everything.
 
 `loadHumanoidAssetsStaged(options)` loads in stages over one link, each
 starting when the previous one has settled (`targetLoadOrder`): first the body,
@@ -107,14 +107,15 @@ one specific base mesh.
 The clothing pack's garments binary is large next to the first figure (2.3 MB
 of bindings and meshes), and a figure that wears nothing never needs it, so it
 loads as a stage of its own, after the body's modifier targets
-(`GARMENTS_FILE`); its manifest, which lists the garments and names their
-textures, arrives with the first stage. A garment is an attachment without
+(`garmentsFile(i)`, every loaded clothing pack's binary in the one stage); its
+manifest, which lists the garments and names their textures, arrives with the
+first stage. A garment is an attachment without
 baked occlusion: the same bindings (three base vertices, weights and an offset
 per vertex, per-axis scale references) and mesh, plus `delete_verts`, a
 category (`kind`, below) and the asset's tags. The packer
 (`scripts/pack-clothing.ts`) packs diffuse and normal maps as WebP, each sized
 by what a clothed figure's framing needs (1024 to 2048 px on a side; 3.5 MB
-for all nineteen), and reads the same `.mhclo`
+for the nineteen system garments, 12.4 MB with the community's 68), and reads the same `.mhclo`
 syntax as the attachments: the system shoes write `material` and
 `vertexboneweights_file` between `verts` and its data, so a keyword line does
 not end a vertex or `delete_verts` block, and only the other section keyword
@@ -139,7 +140,10 @@ interface Recipe {
 and `breastFirmness`. `modifiers` maps a shape modifier id to a value in
 `[-1, 1]` (one-sided modifiers take `[0, 1]`); a missing id is 0. A recipe holds
 no functions, no three.js objects and no references into the assets, so
-`JSON.stringify` round-trips it. The skin, eyes and the optional `hair` (a style
+`JSON.stringify` round-trips it. As in MakeHuman, user-supplied custom targets
+(its `data/custom` folder) are registered on the model, not carried in the recipe
+(`addCustomTargets`), and a recipe names one as the one-sided modifier
+`custom/<name>`. The skin, eyes and the optional `hair` (a style
 id of the hair pack and a pigment colour) are appearance: they never change the
 shape. `hair` is an optional field on purpose, since the recipe schema is
 frozen except for added optional fields: a recipe without it has no hair and
@@ -162,9 +166,22 @@ its anchors' weights. Each axis is a linear interpolation between anchors:
 - the three ethnic anchors, normalised to sum to 1 (equal thirds if all are 0).
 
 Upstream ships no file for some combinations because the base mesh already is
-that shape; those are never named. Height and proportion targets are packed for
-average muscle and weight only, and upstream has no baby proportion targets, so
-proportions do not apply at the baby anchor.
+that shape; those are never named. Height and proportion targets combine over
+muscle and weight, gender and age as the universal targets do, which is how
+MakeHuman applies them. Upstream has no baby proportion targets, so proportions
+do not apply at the baby anchor.
+
+`tests/macroParityGolden.test.ts` holds this to MakeHuman's own output: the
+fixture `tests/fixtures/macro-parity.json` records the macro target weights
+MakeHuman 1.x computes for 140 macro settings (spread over every axis's
+anchors, midpoints and breakpoints, plus seeded random mixes), and the kit must
+match each weight to 1e-9. MakeHuman puts its adult at 25 years where the kit
+holds it from 18, so the fixture's ages are confined to where the two agree
+(under 10 and 25 and over). Keeping the per-muscle/weight height and proportion
+variants roughly triples the age-anchor files (5.1 MB to 15.2 MB for the whole
+body pack); averaging them instead put single vertices up to 33 mm away from
+what MakeHuman builds, worst for proportions at 1 with muscle or weight at an
+extreme.
 
 ### Regions
 
@@ -210,10 +227,12 @@ Under 18:
   clamped, so a mistake cannot be hidden;
 - adult-only targets are not in the body pack at all; the adult anatomy pack's
   modifiers are adult-only, so a recipe under 18 that sets one is rejected;
-- pubic hair is adult-only: a recipe under 18 whose `bodyHair.density` sets it
-  to anything but 0 is rejected, and the body hair model draws none for a
-  figure that is not an adult (see "Body hair"). Axillary hair is puberty's,
-  not the policy's: it comes in from 13 (owner ruling 2026-10-11);
+- pubic hair is adult-only: a recipe under 18 whose legacy `bodyHair.density`
+  or explicit `bodyHair.coverage` sets it to anything but 0, or whose
+  `bodyHair.follicleDensity` names it, is rejected, and the body-hair model
+  draws none for a figure that is not an adult (see "Body hair"). Axillary
+  hair is puberty's, not the policy's: it comes in from 13 (owner ruling
+  2026-10-11);
 - a piercing may only be at one of the body's own sites (`PIERCING_SITES`):
   any other is the adult pack's and adult-only (`ADULT_ONLY_PIERCING`, "Body
   art").
@@ -388,7 +407,10 @@ from each file.
   garment therefore also declares a category (`kind`, `GARMENT_LAYERS`, whose
   order is MakeHuman's own table of conventional values: underwear 39, socks
   43, shirt and trousers 47, sweater 50, indoor jacket 53, shoes 57, coat 61,
-  backpack 69), which decides between garments of equal `z_depth`, and the id
+  backpack 69, with the community garments' categories between them: hosiery
+  41, arm sleeves 42, a separate bottom 46 and top 48 either side of a whole
+  outfit, gloves 55, a mask 62, glasses 63 and a held prop 73), which decides
+  between garments of equal `z_depth`, and the id
   decides what is left, so an outfit always stacks the same way. The
   stack is processed from the outermost in; each garment is masked by the
   deletions of the garments over it only, then adds its own. A jacket's
@@ -473,6 +495,69 @@ from each file.
 - *Garments load as a stage of their own* (see "Packs and the binary format")
   and are evaluated lazily: the model builds a garment's surface the first time
   an outfit names it.
+
+### Garments a consumer brings (issue #13)
+
+**Use cases.** A game dresses a regiment in its own period uniforms (sack coat,
+shell jacket, frock coat, kersey trousers, kepi, accoutrements), which are
+consumer data under the 2026-10-12 ownership ruling: humanoid-kit ships the
+capability and the CC0 pack, and the game ships its cuts. Its uniform garments
+are worn next to the kit's CC0 ones (period brogans are the pack's `shoes01`
+in rough-out leather). One mesh is worn in several colours (a sky-blue and a
+butternut pair of trousers) and, per soldier, faded or soiled to a different
+degree. A canteen, cartridge box or cap box hangs from the belt and stays
+rigid as the body's shape and pose change, while the strap that carries it
+follows the body.
+
+**Requirements.**
+
+1. More than one clothing pack loads beside the body pack, each checked
+   against the body as the first one is. One outfit can name garments from
+   any of them.
+2. A figure can wear a garment in its own colour and finish without a second
+   copy of the mesh. The recipe stays plain data, and an outfit with no look
+   renders exactly as before.
+3. A garment can be rigid. Its shape and pose move it as one piece, and
+   nothing bends it.
+4. A consumer can pack its own `.mhclo` garments with the same packer and
+   proofs as the CC0 pack, with the licence check left to the consumer.
+
+**Decisions (2026-10-13).**
+
+- *Packs are listed, not merged.* `LoadOptions.clothing` takes one pack or a
+  list. A garment id must be unique across the loaded packs, and a clash is an
+  `AssetFormatError` at load naming both packs. Rejected: having the consumer
+  repack the kit's garments into its own pack, which makes a second copy of
+  the CC0 data that would drift from the kit's. Also rejected: namespacing
+  ids by pack (`pack:id`), which would change every saved recipe that names a
+  CC0 garment today for a clash a consumer prefix already avoids.
+- *A look is per figure and keyed by garment id.* `recipe.outfitLook` maps a
+  worn id to a `GarmentLook`: a linear-RGB `tint` that multiplies the diffuse
+  texture, a `roughness` override and a `wear` in [0, 1] that greys and
+  lightens the colour toward the faded, dusty value of field-worn wool.
+  `outfit` stays a list of ids, so every recipe saved today still validates.
+  A look for an id the figure does not wear is ignored, which lets the
+  consumer swap garments without editing the looks. Rejected: entries of
+  `string | { id, look }` in `outfit`, which breaks the `readonly string[]`
+  every caller reads. Also rejected: colour variants as separate pack
+  entries, because a per-soldier fade cannot be enumerated in a pack.
+- *A rigid garment is bound like any other, then fitted.* A garment entry
+  declares `rigid: true`. Its vertices are evaluated through the binding as
+  usual, and the rigid transform that best maps its authored rest positions
+  onto those bound positions (rotation and translation, no scale) is applied
+  to the authored mesh. The authored positions are the garment's binding on
+  the base mesh. The fit is Horn's closed form: the rotation is the top
+  eigenvector of a 4×4 symmetric matrix, found by Jacobi rotations, so it
+  needs no SVD and cannot return a reflection. For skinning, every vertex takes the single
+  bone that carries the most of the garment's total weight. The canteen moves
+  with the hip and keeps its shape. Rejected: landmark mounts, which need a
+  new authored frame per accessory where the binding already says where the
+  piece sits.
+- *The packer is a library function before it is a CLI.* `packGarments`
+  (from `scripts/pack-clothing.ts`) takes `.mhclo` files and a provenance
+  record and writes a format-1 pack whose manifest has the consumer's
+  `name`. This step builds only the function and its tests. A bin entry
+  waits for a consumer that needs one.
 
 ## Body occlusion
 
@@ -681,6 +766,17 @@ texture, because the gum is part of the teeth texture's UV layout, the pack
 stays MakeHuman's data, and the tone must reach the gum without baking one
 texture per tone.
 
+## Grafting (issue 11)
+
+A foreign part (a head, a prosthetic hand, a creature foot) is welded onto a
+figure as one surface by `src/graft/`. `HumanoidModel.graft(spec)` cuts the
+control mesh at a registered site (`CUT_SITES`), at a supplied plane or at a
+supplied face set. It fits the part's seam to the cut loop by a similarity
+(Horn 1987) and bridges the two loops with a band of Hermite rings. The part
+is refit on every evaluation, so it follows the figure's age, shape and pose.
+The full design, the options that were weighed and the use cases are in
+[`docs/GRAFT.md`](GRAFT.md).
+
 ## Worker
 
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one
@@ -749,9 +845,9 @@ attachment render vertex the feature of the first base vertex it is bound to
 
 The creator was written as the library's demo and was uncontrolled: it owned the
 figure, told the host after the fact, and had no way to say no. Its first
-in-house consumer, Anyself, embeds it under rules of its own (an age floor of 25,
-ranges for the macros, controls it does not offer, no uncovered figure without an
-explicit 18+ confirmation, its own eye pack, a themed stage) and met the limit
+in-house consumer embeds it under rules of its own (an age floor, ranges for the
+macros, controls it does not offer, no uncovered figure without an explicit
+confirmation, its own eye pack, a themed stage) and met the limit
 at once: to refuse a change it remounted the creator with the previous recipe, so
 the figure it had refused existed, briefly, inside the creator, and was drawn.
 Four issues came out of that (jbcom/humanoid-kit #16 to #19). This section is the
@@ -803,6 +899,11 @@ and no route reaches the history or `onChange` without it.
 - *Hiding is not locking.* `visibleTasks` filters the taxonomy once, in the editor
   state, so the tabs, the search and the pick map's `onPick` all see the same
   smaller creator. A hidden slider keeps its value.
+- *Late defaults do not become an edit.* When a loaded pack resolves a default
+  that a host range narrows, the uncontrolled creator reconciles its existing
+  history through that same range before it paints. Adjacent recipes that now
+  describe the same constrained figure are one history position, so undo never
+  remains available for a step that cannot change the figure.
 - *Controlled.* The creator's state keeps the history (undo needs it) and the host
   keeps the figure. A change that passes the gate is reported through `onChange`
   and, with `value`, adopted when `value` comes back equal to it; `value` is
@@ -824,11 +925,12 @@ person, and it is asked before the figure is drawn, not instead of the figure).
 
 ### The cover policy (design, 2026-10-11)
 
-Anyself shows no figure uncovered without an explicit 18+ confirmation, and none
-under 25. The library's own age policy is a different, narrower rule (no adult
-anatomy under 18, enforced inside evaluation, `docs/AGE-POLICY.md`) and stays as
-it is. What the host asks for here is a gate it controls, in front of the
-worker: **no uncovered figure is evaluated until the host allows it.** Before this
+A host may show no figure uncovered without an explicit confirmation from the
+person. The kit adds no restriction beyond MakeHuman's (`docs/DECISIONS.md`,
+rulings 3 and 6), so the policy is the host's and there is none by default. The
+library's own age policy is a different, narrower rule (no adult anatomy under
+18, enforced inside evaluation, `docs/AGE-POLICY.md`) and stays as it is. What
+the host asks for here is a gate it controls, in front of the worker: **no uncovered figure is evaluated until the host allows it.** Before this
 the creator drew whatever the recipe said, and the host could only re-dress the
 figure after it had been evaluated and shown.
 
@@ -985,6 +1087,15 @@ mean what they meant there; everything must be testable in Node.
   correction is the packer's, since the data is MakeHuman's and the asymmetry is
   in it, over a runtime fix that every consumer would have to repeat. Averaging
   over choosing a side, because nothing says which side was the intended one.
+- *MakeHuman's body pose units are not packed* (2026-10-13). Upstream's
+  `body-poseunits.json` is quaternions that read as bone-local, for a retired skeleton (24 of its
+  joint names are not among the 163 bones), several units' names contradict the
+  joints they move, there is no BVH for it, and MakeHuman's application never reads
+  it, so packing it would not be parity and would need a bone map and relabelling
+  the kit would have to invent. MakeHuman's expression library (32 `.mhpose` files,
+  face unit weights) needs nothing the pack lacks: all 43 units it uses are among
+  the 60. Decision: pack the face units only. The audit is in
+  `docs/evidence/body-poseunits.md` and `docs/evidence/expressions.md`.
 - *A CPU reference* (`skinPositions`) poses control vertices exactly as the
   shader does, for tests, presence anchors, grounding and pose-keyed occlusion
   bakes. The browser project holds the shader to it.
@@ -1104,7 +1215,7 @@ tone's multiply is the deeper). And the lines shade: a colour layer's paint may 
 `relief` (a groove depth at each stop, the deepest in the stop table's header and
 each stop's depth in its alpha), and the shader tilts the normal per pixel by the
 gradient of that smoothed profile along the layer's own coordinate
-(`hkDetailHeight`, `lineRelief` its reference), so a line catches light on one
+(`hkDetailSlope`, `lineRelief` its reference), so a line catches light on one
 side and shadows on the other whatever the colour. It is per pixel only, from the
 exact coordinate: no vertex relief, so a line cannot bend as the first relief did.
 The grooves are 0.6 mm (forehead) and 0.7 mm (furrows) at 40, times the age factor
@@ -1314,7 +1425,7 @@ the hip into the belly and through it, and the groin collapses into a slit. It
 is not skinning's blend: linear, dual quaternion and the shipped mix put every
 vertex in the same place to within a few millimetres, because it is where the
 weights and the pose put the thigh's front skin. Measured as skin through skin
-(`scripts/lib/hipContact.ts`): an edge of the mesh whose end the thigh holds
+(`scripts/lib/foldContact.ts`): an edge of the mesh whose end the thigh holds
 most of (a vertex over half on `upperleg01`/`upperleg02`, no more than 3 cm
 behind the hip joint and within 0.7 of a thigh of it) that crosses a triangle whose corners the
 trunk holds as much of as the thigh and some of (`root`, `spine`, `pelvis`),
@@ -1344,7 +1455,8 @@ leave the thin ones alone. Options, by total fit:
    figure that is drawn, and what the shader and the CPU reference do is read a
    table. Both do exactly the same thing, so tests hold them together.
 
-**How it is solved** (`src/rig/hipFoldSolve.ts`, `src/rig/contact.ts`). The hips
+**How it is solved** (`src/rig/foldSolve.ts`, the joint folds' solve, from the
+hip's setup in `src/rig/hipFoldSolve.ts`; `src/rig/contact.ts`). The hips
 are flexed together from `HIP_FOLD.from` (30°) in steps of `HIP_FOLD.step`
 (2.5°) to `HIP_FOLD.to` (140°, a margin past the 135° a hip reaches; past it a
 heavy body's thigh is wedged against a belly with nowhere to go and the solve
@@ -1388,7 +1500,7 @@ back, settles.
 pasted its skin against a belly that did not move: in a deep squat the inguinal
 crease showed jagged flaps with lit edges on both sides, the thigh's skin folded
 over the belly like paper. Measured in the crease (the skin within 0.7 of a
-thigh of a hip and in front of it, `CreaseFlaps`, control mesh, nine bodies at
+thigh of a hip and in front of it, `Flaps` over `creaseZone`, control mesh, nine bodies at
 90°, 120°, 135°, one hip at 120°, `seated`, `squat` and `tucked`): the bones
 alone leave 5020 triangles turned against their skinned normals, 1803 edges
 folded past the folds invariant and 4550 thigh edges through the trunk; the
@@ -1534,6 +1646,23 @@ the unit normal on the mesh the bones pose (area-weighted, over the control mesh
 and the shader adds that to the skinned normal and normalises it. (The bones' normal
 is not the control mesh's exactly, so it is a change that is stored, not a normal.)
 
+**Where the bones crumple the skin, the normal is taken from the skinned one
+(2026-10-10, with the knee fold).** The change was the displaced mesh's normal less
+the posed mesh's, added to the skinned normal: right where the bones leave the mesh
+smooth, for there the posed mesh's normal is near the skinned. Where they crumple
+it, it is not: at the corners of triangles the bones turn over the two are 75°
+apart at the median at a knee bent 90° and 97° at hips flexed 120° (over the rest
+of the skin the folds move, 0° at the median and under 15° for nine vertices in
+ten). There the change took the skinned normal somewhere else than the displaced
+mesh's, and a triangle the fold had put right still shaded as a flap. So the change
+is now taken from a mix of the two (`CRUMPLED`): the posed mesh's normal where it is
+within 26° of the skinned, the skinned where it is 45° and more away, smoothly
+between, and at a crumple the shaded normal is the displaced mesh's own. At the
+hip, over the flap gate's nine bodies and seven poses, the crease's inverted
+triangles went from 1500 of the bones' 5020 (0.30, with the crease smoothed) to
+409 (0.08); the hip fold
+keeps 0.6 % more rows (18115 for the average figure's adult surface, 18005 before).
+
 **How it plays.** `hipFlexion` reads each hip's flexion and opening from the
 direction the bone's rotation turns the thigh's length to: the flexion is the
 angle it is swung forward in the sagittal plane, the opening the angle it leans
@@ -1564,20 +1693,23 @@ the thighs together (or drawn in across the body) to `HIP_FOLD.opened`, the
 opened fold past it; and the skin adds it *after* skinning, turned with the root (the fold is made in
 the figure's own axes). Applied after skinning, not to the rest figure, because
 the push is a way out of the belly, which is the same way whichever way the thigh
-is turned. `skinPositions(…, fold)` is the CPU reference; `DualBones` carries
-the root's rotation and the two hips' flexions and openings in the two texels after
-the bones', the fold is a texture of a row of 176 texels (`FOLD_ROW_TEXELS`: a
-displacement and a normal change per opening and key, the row's side in the first
-texel's fourth place) per vertex of the surface it moves, laid out as below
-(`surfaceFold`: the control vertices' values mixed by the subdivision's
-stencil, so a rendered vertex is displaced as the surface it lies on is, and the
-side by the same weights over the moved vertices alone), and the patched
-`skinning_vertex` chunk adds `hkFoldDisplacement` of its row (`FOLD_SLOT_ATTRIBUTE`)
-at its flexion and opening (`hkFoldAngles`), the `skinnormal_vertex` chunk
-`hkFoldNormal`. The browser project holds the shader's angles to the CPU's
-(`foldAngles`) and its read to `addFold` and `addFoldNormal` to 2·10⁻⁶ and 10⁻⁵,
-with the hips flexed and opened apart, and to the values the fold held before
-they were rounded within the rounding's bound.
+is turned. `skinPositions(…, folds)` is the CPU reference. Every joint fold plays
+the same way (`src/rig/jointFold.ts`, `src/render/dualSkinning.ts`): `DualBones`
+carries, after the bones' texels, three a joint (`FOLD_JOINT_TEXELS`: the left
+side's turn, the right's, and both sides' flexions and openings; the hip's turns
+are the root's), each joint's fold is a texture of a row of `rowTexels(joint)`
+texels (176 at the hip: a displacement and a normal change per opening and key,
+the row's side in the first texel's fourth place) per vertex of the surface it
+moves, laid out as below (`surfaceFold`: the control vertices' values mixed by
+the subdivision's stencil, so a rendered vertex is displaced as the surface it
+lies on is, and the side by the same weights over the moved vertices alone), and
+the patched `skinning_vertex` chunk adds `hkFoldValue_<joint>` of its row (the
+geometry's `foldSlotAttribute(joint)`) at its flexion and opening
+(`hkFoldAngles_<joint>`), turned by its side's turn, the `skinnormal_vertex`
+chunk the normal's change. The browser project holds each joint's shader angles
+to the CPU's (`foldAngles`) and its read to `addFold` and `addFoldNormal` to
+2·10⁻⁶ and 10⁻⁵, with the joints flexed and opened apart, and to the values the
+fold held before they were rounded within the rounding's bound.
 
 **The fold as half floats (decision, 2026-10-10).** The texture is four half
 floats a texel (`HalfFloatType`), and so is the fold itself (`SurfaceFold.data`,
@@ -1608,12 +1740,13 @@ average near 25), some six times the thigh pushed alone. Solving the openings
 together, with the poses between them looked at, took on a quieter machine (a
 load average near 8) 9.7 s of wall time for the average figure and 10.3 s for the
 heavy man, against 7.2 and 4.2 s for the openings solved apart. It is not part of
-`evaluate`: `HumanoidWorkerClient.hipFold(recipe)` asks the worker, which solves a
+`evaluate`: `HumanoidWorkerClient.folds(recipe)` asks the worker for the figure's
+joint folds (the hip's, then the knee's), which it solves a
 flexion at a time with a macrotask between (an evaluation is never held up behind
 it) and answers a newer request by stopping the older (`AbortError`). A solved fold
 is kept by a hash of the figure's control vertices (the last six), so a shape seen
 again (an edit undone, a pose changed) is answered at once (50 ms). `<Humanoid>`
-asks once a hip in the pose is flexed past the fold's start, whenever the figure's
+asks once a hip or a knee in the pose is flexed past its fold's start, whenever the figure's
 shape changes. Until it arrives the figure draws without it, and the fold then
 fades in over 150 ms (`FOLD_FADE`, the `hkFoldBlend` uniform, `DualBones.advanceFold`)
 so that it does not pop; a fold that replaces another, for a figure whose shape
@@ -1635,10 +1768,11 @@ unchanged at rest and below the fold's start, folds one hip alone, and turns wit
 the root. It moves only the thigh's skin and the trunk's in front of the hips;
 at 120° it presses over 40 of the trunk's vertices by more than 2 mm, over 90% of
 them inward, by over 5 mm at the deepest; and it adds no flaps to the crease
-(`CreaseFlaps`): in every body at 90°, 120°, 135°, one hip at 120°, `seated`,
+(`Flaps` over `creaseZone`): in every body at 90°, 120°, 135°, one hip at 120°, `seated`,
 `squat` and `tucked` it leaves no more inverted triangles than the bones alone,
 and over all of them under 0.6 of theirs (the shared solve 0.50, the thigh
-pushed alone 0.68, which the gate fails). It presses the belly only where a thigh
+pushed alone 0.68, which the gate fails; with the crease smoothed 0.30, and with
+the normal taken from the skinned one at a crumple 0.08). It presses the belly only where a thigh
 is (`PressReach`): in the `squat`, `tucked` and `seated` the deepest press on
 trunk skin more than 3 cm from the posed thigh's skin is under 0.05 of the
 deepest press (`PRESS_APART`, CHOICE over the measured 0.00 in the squat and at
@@ -1695,19 +1829,300 @@ thigh 12 to 56 mm behind the belly (median 27) where each figure's own solve lea
 none, and 18 adult corners alone are 1.1 MB, so the solve stays per figure, in the
 worker.
 
-The fold's texture holds `FOLD_ROWS_PER_LINE` rows side by side on each line,
-`FOLD_LINE_TEXELS` texels wide (whole rows, at most 2048, the size every WebGL 2
-device takes: with a row of both openings, 176 texels, 11 rows and 1936 texels a
-line, and an adult surface's 15000 rows near 1350 lines). `foldTexel(row, opening,
-key, part)` in `src/render/dualSkinning.ts` is the
+A fold's texture holds `foldRowsPerLine(joint)` rows side by side on each line,
+`foldLineTexels(joint)` texels wide (whole rows, at most 2048, the size every
+WebGL 2 device takes: at the hip, a row of both openings, 176 texels, 11 rows and
+1936 texels a line, and an adult surface's 18000 rows near 1650 lines; at the
+knee, 100 texels, 20 rows a line). `foldTexel(joint, row, opening, key, part)` in
+`src/render/dualSkinning.ts` is the
 layout's one definition: `foldTexture` writes each row where it says, and the
-shader's `hkFoldTexel` is the same arithmetic. A change to the layout changes those
+shader's `hkFoldTexel_<joint>` is the same arithmetic. A change to the layout changes those
 two together. A row a line made the texture as tall as the fold has rows, and the
 adult surface's has near ten thousand: past the GPU's largest texture (8192 on the
 render host) it never uploaded, and every adult figure drew its fold from nothing,
 up to 30 mm from the CPU's, unseen while the parity test sampled only the first
 rows. The parity test now holds 16000 rows, both openings each, and reads the last
 row and rows from every line.
+
+### Angular hip weights: measured and shelved (2026-10-11)
+
+**The idea.** MakeHuman's hip weights fall from trunk to thigh in bands of height,
+but the groin's skin lies 10 to 15 cm in front of the hip's centre, so a deep hip
+carries skin the trunk still holds through the trunk's and the crease collapses
+(the bones alone leave 869 crease triangles turned over at 120°, nine bodies). Skin
+round a hinge folds smoothly when its weight changes over the arc the joint turns
+through. The fan set a vertex's thigh share by its angle about the hip's centre,
+from the trunk's axis (none) to the thigh's (all), blended by dual quaternions, keyed
+in by the hip's flexion. It was built as core skinning with a CPU reference, a shader
+twin at GPU/CPU parity (3.0e-7 position, 4.8e-7 normal on Metal), weights blended
+rather than positions so the dual quaternion half was exact, and every vertex outside
+its mask skinned bit for bit as before.
+
+**What it took to keep it from doing harm**, each term held by a measurement:
+
+- *One hip per vertex*, the one the hip fold reads it by, with the vertex's side from
+  its rest position alone (the crotch's weights alternate between the thighs): a fan
+  blending both hips' zones skinned the midline differently with one hip flexed than
+  with both, and the fold, solved with both, turned it over (one hip at 120°: 52
+  crease triangles left, against 43 before the fan).
+- *The other thigh's weight left alone*: moved, the flexed thigh carried crotch skin
+  the straight one holds.
+- *In front of the hip only* (a 3 cm band at its coronal plane): behind it, the
+  trunk's skin given thigh weight ran the buttocks into the lower back in a squat
+  (f-heavy, trunk through trunk 3.7 to 54 cm²) and dual quaternions rounded them out
+  (girth p95 1.44 at 120°, against 1.11).
+- *The band from 30° and a cap 6 to 12 cm above the hip's centre*: from 0° the lower
+  belly took a share of the thigh, rolled, and ran through itself in a squat; uncapped
+  it moved the navel (the surface probe 0.67 mm off, seated).
+- *Weight on other bones fading it out*: a child's knee lies within the fan's 28 cm
+  reach, and its shin's skin turned over in a squat (30 to 181 triangles).
+- *Keyed out as the hip opens* (5° to 20°): opened, the thighs do not meet the belly
+  and the fold reads the opening itself; keyed in, the squat turned the groin over
+  (f-heavy 139 to 352 triangles, f-elder 83 to 222).
+- *Organs read at their roots*: an organ's vertex took the fan where its root is,
+  lerped by its root share; read at its own place, the sac hanging below the hip
+  wanted two thirds of the thigh (the heavy man's squat, 208 inverted triangles on the
+  bones alone, 1277 with the fan, 326 with this).
+
+**Why it was shelved.** The crease count fell from 55 / 67 / 69 / 43 / 53 (seated,
+120°, 135°, one hip at 120°, squat) to 4 / 21 / 58 / 14 / 74 keyed in from 60°, and
+seated penetration fell in most smoke rows (f-slim 7.95 to 0.31 cm²). But the sheets
+showed a dark pit at the front crease where the bones alone close a clean fold line:
+seated on the heavy man (`docs/evidence/hip-fan-seated.webp`; base left, fan right),
+and, keyed in only from 90° so seated was the base skin's, tucked on both heavy
+bodies (`docs/evidence/hip-fan-deep.webp`: tucked, squat, seated; base left, fan
+right). The squat and seated rows there match the base skin. The front drag that wins
+the count is the drag that opens the pit: every attempt to thin it lost the crease
+(fading it near the midline, over the pubis, or with the hip opened), and limiting
+it by the vertex's rest distance from the thigh's skin made the heavy man's seated
+belly run deeper into his pubis (31.7 cm² on the bones, 49.8 with the fan, 139 with
+that limit): the gradient of the drag shears the region. It also gave back girth at a
+one-hip 120° (the short full woman's mean 0.78 and fifth percentile 0.30, against
+0.86 and 0.46, and linear skinning's 0.80 and 0.37). With the 90° key the smoke rows
+were the base skin's within a few percent (f-slim squat 18.9 to 19.6 cm², m-heavy
+squat 330 to 337 inverted), and the pit stayed.
+
+**The lesson.** Crease triangles counted turned over on the control mesh did not
+predict what is seen: the bones' counted inversions render as clean fold lines, and
+the fan's lower count rendered a pit. A skinning change is gated on side-view sheets
+of the heavy bodies seated, tucked and squatting against the shipped skin, not on
+counts alone. The skinning stays as "Skinning artefacts" and "The hip fold" describe.
+
+### The knee fold (2026-10-10)
+
+**The fault.** A knee bent to a right angle collapses the skin at its back through
+itself: the bones carry the calf's skin and the thigh's toward each other faster
+than skinning's blend moves the skin between them, and the triangles there turn
+over (the dark "pocket" behind a seated figure's knee). Bent further, the calf
+presses into the back of the thigh and through it. Measured on the control mesh,
+both knees bent and nothing else, in the nine bodies of the hip fold's tests
+(`Flaps` over `kneeZone`, the skin within 0.3 of a thigh's length of a knee;
+`KneeContact`, the calf's skin and the thigh's within 0.6 of a thigh, each through
+the other): 4 to 40 triangles turned over at 90°, 204 in all, 48 to 72 at 135°,
+540 in all; the calf and the thigh 9 to 24 mm through each other at 90° (the back
+of the knee through itself) and 18 to 51 mm from 120° to 150°. `KneeContact`
+judges a calf triangle by where the shin turned its rest face (`carriedFaces`),
+not by its rest face: the shin turns the calf's skin with it, and judged by its
+rest face a calf triangle at 150° faces backwards, which read skin in front of
+it as through it.
+
+**The fix: the hip fold's machinery, a second joint.** The fold is a joint fold
+(`src/rig/jointFold.ts`), keyed by the knee's flexion (`KNEE_FOLD`: from 30°
+every 2.5° to 155°, a margin past the 150° of the deep squat; no openings), solved
+by the joint folds' solve (`solveFold`) from the knee's setup (`kneeFoldSetup`,
+`src/rig/kneeFoldSolve.ts`): the calf's skin (over a quarter on the shin and more
+than on the thigh) is pushed out of the thigh's (at least a fifth on the thigh and
+as much as on the shin), the thigh's gives half of each contact (`KNEE_GIVE`,
+CHOICE: the hamstrings and the calf are muscle alike), and the press is let go
+where no calf is near. What differs from the hip, each a `FoldSetup` term and each
+measured on the gates below:
+
+- *The reach.* The fold keeps all its displacement within 0.6 of a thigh's length
+  of a knee and none past 0.85 (`KNEE_FULL_REACH`, `KNEE_REACH`): at 150° the calf
+  lies along the back of the thigh past half its length, and a taper from 0.4 to
+  0.6 cut the pushes there, leaving the calf 9 to 27 mm through the thigh at 150°
+  (the average figure, the short full woman, the heavy man).
+- *The thigh's skin is smoothed wherever it is folded* (`patchSmooths: "folded"`),
+  not only where the calf is within a centimetre as the belly is at the hip: at a
+  right angle the back of the knee is folded by the bones with no calf near it,
+  and held to touched skin the solve left 70 triangles turned over at 90°.
+- *Both skins are kept out of each other* (`mutual`): where calf and thigh are
+  both crumpled, past 140°, pushing the calf out of the thigh left the thigh 12 to
+  16 mm through the calf in the heavy and the short full woman. The last round presses the thigh's skin back out of the
+  calf's (along the calf's normal as the shin carries it, spread over its
+  neighbours) before the calf's pushes, and repeats twice more (`MUTUAL_ROUNDS`),
+  for each undoes a little of the other.
+- *Folded is judged as it is shaded* (`smoothsShaded`): a triangle at the back of
+  the knee could face out again as the bones carry it while the skin round it
+  stayed folded, its corners' normals against it, and shaded as a flap (4 left at
+  90° without it, one a leg in two bodies).
+
+And for both joints, the normal's change is taken from the skinned normal where the
+bones crumple the skin ("The hip fold", above): taken from the crumpled mesh's
+normal, 12 triangles stayed turned at 90°.
+
+In a pose the knee's displacements, solved with the thigh at rest, turn with each
+side's thigh (`upperleg02`, `jointTurns`), where the hip's turn with the root: a
+seated figure's knee is under a thigh turned 90°. Each vertex reads the knee on
+its leg (`kneeSides`: the left leg's share of what it holds on the two legs).
+
+**Gates** (`tests/kneeFold.test.ts`, control mesh, the nine bodies; watched failing
+first, with the bones alone): no triangle of the knee turned over at 90° in any
+body (bare 204, now 0); at 135° under a quarter of the bones' 540 and fewer in
+every body (now 28); the calf and the thigh under 2 mm through each other at 90°,
+105°, 120°, 135° and 150° in every body (now 0.0 mm wherever measured from 60° to
+150°). The hip fold's gates hold with the shared solve (`tests/hipFold.test.ts`),
+and the hip's solved fold is the same to the bit as before the solve was shared,
+but for the normal's change at a crumple.
+
+**On the drawn surface** (the smoke tier, the six bodies seated and in the deep
+squat, against the worklist with the hip crease, dbf5374): inverted triangles
+13301 → 4119, the rest skin penetrating 568 → 355 cm², named contacts 1590 → 404
+(the deep squat's deepest 30 mm → 0 to 9 mm), folded edges 4648 → 4544. Squashed
+skin rises 2088 → 2962 cm², all of it at the back of the knee (the heavy man's
+squat 65 → 280 cm² there, the slim woman's 44 → 143; the hips and the knees' fronts
+unchanged), and in every squat the knee's volume leaves its band (0.56 to 0.68 of
+rest; before, 0.8 and over with the calf through the thigh): the press flattens
+calf and thigh against each other and displaces nothing, where flesh would bulge to
+the sides.
+
+**Limit, stated (ruling, 2026-10-10).** The squashed skin and the knee's volume are
+accepted for this fold and are not waived: the smoke tier's squashed rest skin
+2088 → 2962 cm², all of the rise at the back of the knee, and the knee's volume
+0.56 to 0.68 of rest in every squat (the band is 0.8 to 1.2; on the volume measured
+as what the skin encloses, since 2026-10-10, 0.50 to 0.56). Keeping the volume, so
+that a press bulges the flesh out to the sides rather than flattening it, is the
+contact-compression unit, the next one this lane owns, for both joints: the hips'
+volumes are out of band the same way, 0.50 to 0.75 in the squat.
+
+**Costs.** The knee's solve took 1.5 to 2.1 s of one core against the hip's 7.3 to
+7.8 s (the average figure and the heavy man, on a machine at a load average near
+15), so a figure's folds take about a quarter longer; its texture on an adult's
+drawn surface is 2.4 MB (2924 rows) beside the hip's 25.5 MB (18115 rows).
+
+### Skin strain (2026-10-10)
+
+**What it is.** How compressed the skin is at each vertex in a pose: its area
+round the vertex (a third of each triangle it is a corner of) as the bones and the
+fold place it, over the same at rest. It is 1 at rest and below 1 where the pose
+crushes the skin. It is a general channel, not any one layer's. Anything that asks
+"how compressed is this skin" reads it. Today that is the creases' kept depth and
+their band-limit; later, wrinkle intensity and pallor or sweat in folds.
+
+**Where it comes from.** The fold solve already has each key's displaced mesh. At
+the end of every key it writes each moved vertex's strain, less 1
+(`JointFold.strains`), beside the vertex's displacement and normal change. The
+surface rows mix it by the subdivision stencil as they mix the displacements
+(`surfaceFold`). It goes in the fourth place of the normal's texel, which was
+free, so the fold textures do not grow and an adult's hip and knee cost no more
+memory. The vertex shader reads it at the flexion and opening of the joint on the
+vertex's side (`hkFoldStrain_<joint>`), as much as the fold has faded in, and adds
+it to 1 in a varying (`vHkStrain`). Per vertex, it is smooth across the triangles a
+pose crushes.
+
+- Before it, the creases measured compression per pixel from the phase's screen
+  derivatives. That stepped from triangle to triangle in a crushed band and dashed
+  the grooves.
+- The CPU reads it the same way (`skinStrainAt`), and the dual-skinning parity
+  test holds the two to float error.
+
+**Limit.** Only skin a joint fold moves has a strain. Everywhere else reads 1,
+including a joint without a fold corrective: the elbow and the armpit compress
+their skin, but read 1 until they get folds. A geometry may carry a strain of its
+own (`STRAIN_ATTRIBUTE`, added to the folds'), which the tests' strips use; the
+body carries none.
+
+**Its first reader: the creases hide in a crushed fold.** Where the pose crushes
+skin into the joint's own fold, the fold is the crease, and fine grooves drawn into
+a band a few pixels wide only stepped along the raster, dashing the crease. Skin
+folded into a deep flexion crease hides its fine lines in the fold. So a crease's
+relief goes with the strain: none below 0.55, all of it from 0.8 (`CREASE_CRUSH`).
+
+- Below 0.55 is the strain across a bent knee's crushed band: 0.39 to 0.47 at the
+  median, 0.53 to 0.57 for its least crushed tenth.
+- Above 0.8 is the skin round it: 0.83 to 0.91 for its most compressed tenth.
+- Both ranges are the muscular and heavy man and the slim woman, seated and tucked.
+- It replaces nothing else: the crease's kept depth and its band-limit stay the
+  per-pixel shares they were.
+- A coarse signal is right for "is this skin crushed". The strain comes from the
+  control mesh's one-ring, several times the band's width.
+- It was first wired as the kept depth itself, and as the band-limit's metres per
+  pixel. That reported moderate compression where the drawn crease is crushed hard,
+  and brought the 90° dashes back.
+
+### Contact compression (design, 2026-10-10)
+
+**The fault.** A joint fold presses one part's skin into another's and puts the
+flesh it displaces nowhere: the press flattens it. Measured as the flesh the skin
+encloses round the joint (`jointVolume`, a ball on the joint's head of 0.3 of its
+limb segment's length; see the foundation's invariants), on the control mesh, in the
+nine bodies, the folds take this much of what the bones leave: the knee squatting
+0.08 to 0.19, tucked 0.04 to 0.07; the hips 0.01 to 0.03; seated, at most about
+0.02. (Measured first as a sum of cones from the joint's head, the knee seemed to
+lose a third: that sum counted the calf inside the thigh twice, 697 cm³ of it at the
+average figure's squatting knee, which a fold that separates them could not put
+back without inventing flesh. The foundation's invariant was switched for it.)
+
+**Use cases.** A knee bent past a right angle: the calf pressed on the back of the
+thigh spreads to the sides of the contact, and the crease is a tight line, not a
+flattened shelf. A hip flexed in a tuck or a squat: the belly pressed by the thigh
+rolls up above the crease and out to the flanks, the thigh's front spreads. Seated,
+little is pressed and nothing should change that is seen. One side flexed alone:
+its own side bulges. A figure in an app: all of it solved per figure in the worker
+with the folds, nothing more per frame than reading their tables.
+
+**Requirements.**
+
+- *Volume.* The folds take no more than 0.01 of the flesh the bones leave round a
+  hip or a knee, seated, tucked and squatting, in every body (`VOLUME_SLACK`, CHOICE:
+  above the measure's own noise, a body moved rigidly reading within 0.008 of
+  itself, and under every loss a press that bulges nothing leaves where it presses).
+  Seated, where the bones leave the knee within the foundation's band, the folds keep
+  it there; tucked and squatting the bones alone leave it out (0.68 to 0.75 and 0.57
+  to 0.64 of rest: thigh and shin, 50° and 30° apart, overlap within the ball), so
+  there the gate is the bones'.
+- *No new contact.* The hip and knee folds' contact gates hold: what bulges out does
+  not bulge into the other part.
+- *No flaps.* The folds' flap gates hold.
+- *Where it is pressed.* Skin far from any contact is not moved by it (as the belly's
+  press is held to the thigh, `PressReach`).
+- *Bounded.* No vertex is moved by the bulge further than a stated cap.
+- *Cost.* Within half again the folds' solve, and their rows.
+
+**Options.**
+
+1. *A bulge restoring the flesh the fold takes, in the solve.* At each key, on each
+   side, the flesh round the joint is measured as the gate measures it, by the bones
+   alone and with the fold so far; what the fold has taken is put back as an outward
+   displacement of the skin round the contact (the skin of either part within a
+   centimetre of the other's), falling smoothly to nothing a few centimetres along
+   the skin from it, and the last round's pushes keep both skins out of each other.
+   It is part of the joint folds' solve, so the hip and the knee have it, plays from
+   the same tables, and its target is a measured loss, not a guess: a first try
+   that took as lost every millimetre the contact's skin was pushed in counted the
+   calf pushed out of the thigh's inside as flesh lost, and ballooned the rim 27 mm.
+2. *A volume-preserving relaxation.* The skin near the joint solved for its edges'
+   lengths and its enclosed volume alongside the contacts (position-based
+   constraints, iterated per key). The most physical, and it would answer the
+   squashed skin too; but a second solver, iterations over the joint's skin at every
+   key, and the flap and contact gates to win again from scratch.
+3. *Pose-space bulges by bone.* A radial swelling of the limb near the joint by its
+   flexion, fitted to put the volume back. The cheapest; but it bulges where nothing
+   presses, and wherever the contact is not.
+
+**Decision: option 1** (ruling, 2026-10-10). It puts back what the fold takes where
+the fold takes it, in the solve that already shares the contact; option 2 is held for
+when the squashed skin needs answering by itself. The gates are written first
+(`tests/contactCompression.test.ts`) and fail: the average figure tucked keeps 0.741
+of its hip's rest flesh against the bones' 0.755. A fold that pulls the flesh round
+the average figure's squatting knee a fifth of the way toward its head fails the
+same gate, as it must.
+
+**Named pairs after the bulge.** Trunk self-contact: a heavy belly's overhang
+pressed into the pubis, seated (the heavy man's smoke row, 31.7 cm² of trunk through
+trunk on the bones alone, at the hip's height in front). Neither hip fold nor knee
+fold owns skin pressing skin within the trunk, so it is its own contact pair for
+this unit, after the bulge.
 
 ### Reservoir skinning (2026-10-10)
 
@@ -1740,7 +2155,7 @@ elder woman's squashed triangles 299 → 567. So the fold follows the weights' r
 (`evaluatedFold`, 2026-10-10): each reservoir vertex's row is blended toward its
 root's (the mean of its loop's rows) by the same `rootShare`, the blended vertices
 taking rows of their own after the surface's. It is per evaluation, as the weights
-are: `HumanoidModel.hipFold` finds the push with the fold, and `<Humanoid>` asks
+are: `HumanoidModel.folds` finds the push with the folds, and `<Humanoid>` asks
 again when the evaluated weights change. The heavy woman's row is then 991 and 427,
 the elder woman's 280 squashed.
 
@@ -1798,6 +2213,105 @@ m-heavy squat 264 → 246; outside the hip and knee, m-muscular seated inverts 6
 triangles. Penetration counted on every vertex moves within a square centimetre on
 every row (m-heavy seated 51.43 → 52.38 cm², m-muscular seated 43.64 → 44.44); on
 the worklist's stride of four, m-heavy seated reads 48.21 → 49.58.
+
+**A canal (2026-10-10).** The vaginal and anal canals are reservoirs drawn into the
+body. Each one's opening closes over its first 12 mm into a lumen a few millimetres
+across (`scripts/lib/detail/canal.ts`, `OPENING`). They rise steeply, so they took the
+narrow band, about 2 mm. Each wall of the opening then went from its own side's
+share of the thigh (0.16 of one) to the root's (0.10 of each) across the first ring,
+and a flexed hip folded it over. In f-slim squat that was 113 more folded edges than
+without the canals' drives, every one within 7 mm of the loop. A spec names a canal and
+its opening length (`AdultReservoirSpec.canal`), and a canal takes its root over that
+length. The bands tried (folded edges, all within a band of noise of about 20):
+
+| Band | f-slim squat | f-heavy seated | m-heavy squat |
+| --- | --- | --- | --- |
+| organ (≈ 2 mm) | 381 | 201 | 486 |
+| 8 mm | 276 | 192 | 479 |
+| 12 mm (the opening) | 292 | 196 | 498 |
+| 18 mm | 284 | 203 | 451 |
+| the whole canal | 281 | 202 | 452 |
+| without the drives | 268 | 137 | 407 |
+
+Over the whole canal, the lumen's middle kept half its side's thigh and swung out
+through the skin: 53.9 cm² penetrating in f-slim squat against 27.2, and 22.4 of it
+through other skin. The rigid pelvis as the root was worse at every band (f-slim
+squat 485 at 24 mm), because its share of the thigh drops from 0.2 to none. The
+folds left are on the openings' lips, in clefts the pose presses shut, plus about 20
+a row from the patches round the openings.
+
+**An organ carried by its loop (2026-10-10).** A detail target is a displacement of
+the lattice vertices under a reservoir, authored on one figure (the default adult)
+and added to each figure's own skin. A body morph moves the skin inside a loop by 2
+to 5 mm more than it moves the loop (the sac's disc, from the default adult to a man,
+a woman or a heavy man), and the organ took that shape on: the sac's notch between
+its lobes, 10.9% of its width in the sculpt and 11.8% as transferred, was 16.6% on a
+man. An organ's shape is its own, so a pushed vertex is now placed where the
+authoring figure's skin plus its displacement put it, moved rigidly from that
+figure's loop to this one's (`src/model/detailCarry.ts`; the pack names the figure,
+`AdultDetailSpec.authoredOn`), blended in from 5 to 20 mm of push
+(`CARRIED_FROM`, `CARRIED_FULLY`): a vertex pushed less stays on this figure's skin,
+so a reservoir with no organ is the skin exactly. The fit has no scale: the organ
+keeps its measured size on every body. The notch is then 11.5 to 12.1% of the width
+on every body tested. Carried from the skin up (0 to 5 mm), the root's first
+millimetres jumped between the skin and the carried organ and the men's rows
+inverted 66 to 116 more triangles; fitted on the cap's skin as well as the loop, no
+row was better. The cost is the muscular man's sac meeting his thighs: counted on
+every vertex, m-muscular seated penetrates 44.44 → 52.33 cm² (2.7 into the thighs,
+5.2 through the sac's own fold) and m-muscular squat 71.27 → 75.17, while the heavy
+man's rows fall. The sac against the thigh is a contact pair of the contact
+compression work (ruled 2026-10-10).
+
+**The skin's own detail (2026-10-10).** The vulva is a fold of the skin, not an
+organ drawn out of it (`scripts/lib/detail/vulva.ts`), so the pack names its target
+as the skin's (`AdultDetailSpec.skin`). The model adds it first, to the figure's own
+skin (`SurfaceDetail.skin`): it is never carried, and it is no push of a reservoir
+out of the skin, so a woman's sac reservoir keeps the skin's weights. An organ is
+measured from the skin it shapes. A collapsed reservoir's rings follow their loop
+vertices, as every copy does, so a collapsed sac stays in the vulva's skin; the skin's
+target names no ring (named as well, a collapsed sac's wall sank twice as far, a step
+across the vulva at the sac's loop). An organ's vertices give the skin's detail up as
+far as they are carried (`skinUnderOrgans`): added in full to the cap of a sac hanging
+from the cleft, it pressed the cleft into the sac's bottom, and the sac's notch on a
+figure between the sexes went from 11% of its width to 14.5%.
+
+**The vulva's colour (2026-10-10).** Vulvar skin is the body's skin, mildly more
+pigmented and pinker, not a colour of its own: the `vulva-skin` layer paints each
+figure's tone with 1.25 times its melanin optical density and a little more blood
+(`vulvaAlbedo`, the areola's reasoning), 2 to 4.5 CIEDE2000 from the skin round it
+at every tone (gated 1 to 6). Its mask is the pack's own per base vertex
+(`AdultSkinLayerSpec.vertexMask`, `vulvaSkinMask`): the vulva's form is a detail
+target, which leaves no footprint on the base to measure. It falls off over 4.5 cm,
+changing by at most 40 per metre along any base edge, and an island carries it
+where its skin lies, so a woman's collapsed sac does not interrupt it.
+
+### A canal's closure (2026-10-11)
+
+The vaginal and anal openings close at the skin at rest. A closure is evaluated
+on each figure's own opening loop after its skin targets, rather than applying
+the authoring figure's displacement to a differently shaped body
+(`src/model/canalClosure.ts`). `CanalClosureSpec` records the loop's detail
+indices, its outward normal, the gap across it and an optional slit length.
+Without a specified length, the slit keeps the loop's front-to-back extent;
+with one, it shortens that extent and the depth of the skin curve in proportion.
+Both sides meet on one centreline: at each front-to-back coordinate, its depth
+is the mean of the two sides' interpolated depths. Keeping each side's original
+depth closes only the across coordinate and can leave a gap through the skin's
+normal. The centreline retains the skin's longitudinal curve.
+It never lengthens the opening. A short slit keeps a usable surface around the
+anal opening where collapsing the whole loop to a point inverted triangles.
+
+The pack computes fixed harmonic weights for the surrounding skin zone. At
+evaluation, those weights spread the loop's displacement into the zone, with
+the authored folds added there. The closure reaches its full share at a canal
+target weight of 0.1 and fades smoothly to zero as that weight reaches zero
+(`CLOSED_FROM`, a chosen transition). A zero-weight reservoir stays on the skin.
+
+`tests/canalClosure.test.ts` checks the loop and displacement contract.
+`tests/canalSight.test.ts` checks the generated pack's canal walls from below
+and front-low across six adult body variants. These checks complement the
+foundation and close-view rendering gates; they do not establish visual
+acceptance on their own.
 
 ## Scalp hair (milestone 4)
 
@@ -2175,23 +2689,26 @@ Old recipes evaluate and serialise as before.
   much terminal hair each region group carries (coverage 0..1, the
   Ferriman-Gallwey grade over 4), from the gender macro read as the androgen
   level, the age (a ramp per group on the Tanner ages, a thinning after 55) and
-  the recipe's multipliers; and what colour (the figure's hair pigments, darker
-  on the face and pubis, lighter on the limbs, greyed with age later on the
-  body than the beard). The groups follow the modified FG regions, merged to
-  what a picker offers: face, chest, abdomen, back, buttocks, arms, legs,
-  axillary, and the adult-only pubic.
+  the recipe's controls; and what colour (the figure's hair pigments, darker on
+  the face and pubis, lighter on the limbs, greyed with age later on the body
+  than the beard). The groups follow the modified FG regions, merged to what a
+  picker offers: face, chest, abdomen, back, buttocks, arms, legs, axillary,
+  and the adult-only pubic.
 - *Adult-only groups are gated in the model itself.* `defaultBodyHairCoverage`
   returns 0 for pubic hair unless the age is an adult's (`age >=
   ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
   scales the default, so no recipe value can add them under 18.
-- *The recipe holds multipliers, not densities.* `recipe.bodyHair` is optional
-  (the recipe schema grows only by optional fields): `density` is a multiplier
-  per group on the default for age and sex (0 shaves a region, 2 doubles it,
-  clamped to full coverage), and `beard` a style. A multiplier, not an absolute
-  value, keeps a saved recipe right as the figure ages: the same recipe at 12,
-  30 and 80 shows each age's hair. Absent fields are not filled in by
-  `createRecipe`, so a recipe that never set body hair serialises exactly as
-  before.
+- *Legacy multipliers and explicit controls have separate meanings.*
+  `recipe.bodyHair` is optional (the recipe schema grows only by optional
+  fields). `density` remains a multiplier per group on the physiological
+  default for age and androgen axis (0 shaves a region, 2 doubles it, clamped
+  to full coverage), so saved recipes retain their results as a figure ages.
+  `coverage` is a new explicit mature coverage at every gender value, still
+  subject to the same age ramp and senescence; it cannot coexist with legacy
+  `density` for a group. `follicleDensity` independently changes physical
+  follicles per cm² and therefore strand spacing, never the covered fraction.
+  `beard` is a style. Absent fields are not filled in by `createRecipe`, so a
+  recipe that never set body hair serialises exactly as before.
 - *Hair lying on the skin is a strand layer, not geometry.* A new layer kind,
   `strands` (`src/surface/regions/bodyHair.ts`), draws hair in the skin
   shader at true scale: roots on a grid in the skin's plane (metres, `uv ×
@@ -2266,21 +2783,17 @@ Old recipes evaluate and serialise as before.
 - *Axillary hair is a coat region that comes with puberty (from 13); pubic hair
   is the adult pack's.*
   The armpit's hair is dense and a couple of centimetres long, so it is the
-  coat's; its mask comes from the base mesh, so the region lives in the core,
-  where a region flag, `adultOnly`, makes `paintCoat` leave it unpainted, without
-  asking its paint, unless the input says the figure is an adult, failing
-  closed when it does not say. The model's coverage is zero for it under 18 as
-  well, the age policy refuses a recipe that asks for it, and every other
-  group's mask is cut out where it lies. (A first version drew it as a strand
-  layer with the same flag on skin layers; with it moved, the layer flag had no
-  user and went.) Pubic hair is a coat region too (dense, up to a few
-  centimetres), adult-only by the same flag, and the adult pack's data like
-  every genital-region feature: the core holds its paint (`PUBIC_REGION`, the
-  model's `pubic` group), the pack where it grows (`AdultAnatomySpec.coatRegions`,
-  a sparse mask over base vertices, refused at parse unless it is ascending,
-  within the body, 0..1 and for a region the core has), so without the pack it
-  has no area and the core names no adult target. It takes the coat's eighth
-  and last region.
+  coat's; its mask comes from the base mesh and remains core biology. Its
+  coverage follows the age ramp from 13 and a recipe may set its density below
+  18. The creator deliberately hides that sensitive regional density control
+  for minors, which is an editor boundary only; it does not change the recipe
+  policy or rendering. Pubic hair is a coat region too (dense, up to a few
+  centimetres), adult-only in policy and adult-pack data: the core holds its
+  paint (`PUBIC_REGION`, the model's `pubic` group), the pack where it grows
+  (`AdultAnatomySpec.coatRegions`, a sparse mask over base vertices, refused at
+  parse unless it is ascending, within the body, 0..1 and for a region the core
+  has), so without the pack it has no area and the core names no adult target.
+  It takes the coat's eighth and last region.
 - *Body hair costs no atlas channel.* The eight strand layers fit the stack's
   eight pages: vellus takes no channel, and each terminal layer shares one with
   layers it lies apart from (the beard's strand layers, which touched the
@@ -2726,8 +3239,9 @@ the solver: a clip that planted its feet would leave nothing to hold.
 keys, the skin's dual quaternions, the figure's lift onto the ground (from its soles
 for a clip that stands on the ground, from its lowest vertex for one that does not),
 its presence (derived again every third frame) and, for a clip that carries it, the
-group (moved forward in its own frame by the root motion of each frame, so a parent's
-transform and a new `position` still compose). None of it goes through React state,
+group (moved forward in its own frame by the root motion of each render-clock step, so a parent's
+transform and a new `position` still compose). Root motion advances by the full render-clock
+step: a slow frame must not make a walk cover less distance than that clock records. None of it goes through React state,
 so a figure animates without re-rendering, and while it plays the figure lifts itself
 and `onGroundOffset` is not called. `time` puts the figure at a time in the clip
 (held, with `paused`), which the QA shots and sheets use (`?anim=walk_normal&t=0.4`).
@@ -2869,8 +3383,14 @@ measurements cheap enough for the smoke tier to run in every local test pass.
   reported apart.
 - *Collapse*: a triangle that turns against its skinned normals where at rest
   it agreed with them (a lip's or a lid's edge disagrees at rest, by its
-  shape), or keeps under 30% of its rest area; and the volume each shoulder,
-  elbow, hip and knee closes with its joint's head, held to 0.8–1.2 of rest.
+  shape), or keeps under 30% of its rest area; and the flesh round each
+  shoulder, elbow, hip and knee, held to 0.8–1.2 of rest (`jointVolume`: what
+  the skin encloses, at least once, within a ball on the joint's head of 0.3 of
+  its limb segment's length; a limb turned rigidly keeps as much of itself in
+  it). Until 2026-10-10 it was the sum of the cones from the joint's head to
+  the skin its two bones hold most, which counts skin that passes through skin
+  twice: the average figure's squatting knee read 0.89 of rest by the bones with
+  697 cm³ of calf inside the thigh, flesh that is not there.
 - *Folds*: an edge sharper than 60° in the pose where it was under 30° at
   rest, outside the named creases (the crease layers' masks).
 - *Seams*: a UV seam's duplicates stay together.
@@ -2886,6 +3406,20 @@ they cover, in cm² (a sampled vertex standing for its share of its triangles'
 area times the stride, a squashed triangle for its own), and their counts are
 recorded as information only: a finer surface has more vertices and triangles
 over the same skin, so a count rises where nothing got worse (2026-10-10).
+A lane judges its change by penetrating area counted on every vertex, not the
+worklist's stride of four, and a row may grow by a square centimetre or 1 % of its
+area, whichever is larger (ruled 2026-10-10); a growth past that is recorded here
+when it is accepted.
+
+*Accepted, with the organ carried by its loop (2026-10-10, "Reservoir
+skinning").* m-muscular seated penetrates 44.44 → 52.33 cm² counted on every vertex
+(50.34 on the worklist's stride), and m-muscular squat 71.27 → 75.17 (74.62): 2.7
+cm² of the seated row and 3.9 of the squat's is the sac in the thigh, a contact pair
+(sac–thigh) of the contact compression work, to be solved there with volume kept;
+the seated row's other 5.2 cm² is the sac's skin passing through its own fold where
+it meets the thighs, accepted with it because the seated renders from front-low and
+from below show no fold (`carry-sac-seated-*` against `nocarry-sac-seated-*`, the
+heavy man's sac smoother than before).
 
 **The landmarks (built 2026-10-09).** `landmarks(model, posedBody)`
 (`src/foundation/landmarks.ts`) gives every named place on a posed body as a
@@ -3079,7 +3613,7 @@ hip fold, so it cannot be it. A frame is skinned on the main thread from the
 GPU's own inputs: the evaluated rest positions and normals `<Humanoid>` draws
 from, the topology's skin weights, the pose `DualBones` was last given
 (`pose()`, the blend of linear and dual quaternion skinning by the same
-shares), the hip fold it was given (`setFold`, kept on the CPU too) at the
+shares), the joint folds it was given (`setFolds`, kept on the CPU too) at the
 share faded in (`foldBlend`), and the lifted group's `matrixWorld`. A
 landmark's frame needs only its render vertex, its one "up" neighbour and its
 normal, so a read skins three vertices (`skinPositionAt`, `skinNormalAt`,
@@ -3458,6 +3992,21 @@ topology and the field atlas exist. Decisions:
   recipe sets, 0 included, wins, so a developer can still draw an adult without
   some feature. The core stays anatomy-free: it knows a curve over gender, not
   what the curve shapes (docs/FOUNDATION.md, "both forms").
+- **Creator values use that same resolver.** `withSliderValue` and the creator
+  rows receive the loaded `anatomy.defaults` map (the React editor passes
+  `ReadyInfo.anatomy.defaults` when available), so an absent recipe key
+  displays the value the model evaluates rather than a misleading zero.
+  Consumers that do not load an adult pack keep the compact neutral-recipe
+  behavior. Editing a defaulted adult modifier to zero retains an explicit
+  zero; resetting that row removes the
+  explicit override so the pack default applies again, unless that default is
+  outside the host's allowed range, in which case the reset retains the nearest
+  allowed explicit value. Controls without a loaded default retain their
+  ordinary neutral-value behavior. This is generic editor plumbing: it consumes
+  the pack's map and names no adult modifier. The creator's host-limit gate
+  resolves the same effective values before clamping, so an untouched default
+  outside a host range becomes an explicit in-range override before it can be
+  drawn or reported.
 - Until the adult stage arrives their fields are zero (empty atlas pages).
   When it arrives the worker derives the fields from the pack's targets and
   posts them; the main thread re-rasterises those pages of the shared atlas.
@@ -4061,6 +4610,17 @@ the joint's skin takes, which is measured.
   ends, so a window starts and ends flat (`CREASE_SHARPNESS`, `creaseHeight`;
   the shader and its reference changed together, and the browser project holds
   the shader's shading to the reference's slope).
+- *A share of the relief is not relief.* Every detail layer's relief is
+  scaled by shares measured from the pixel's footprint: the fade where it is
+  finer than a pixel, and a crease's kept depth where a pose compresses it
+  (`hkCreaseKeep`). The normal is tilted by the share times the relief's screen
+  gradient (`hkDetailSlope`), never by the gradient of the product. A share
+  comes from screen derivatives, so it steps from quad to quad (and row to row
+  within one) with the triangles and field texels under it; differentiated
+  with the relief, those steps drew a speckle 2 to 4 px across over a bent
+  knee's calf, where the creases keep part of their depth. The browser project
+  reads the slope out of the shader on a plane whose kept depth changes pixel
+  by pixel along the creases and holds the slope along them to none.
 - *Wrists have none.* They were drawn at the same rules (2 creases across 6 cm,
   the forearm's strain, 2.5 mm deep) and, once deep enough to see, read as a
   pale bracelet round the palm side; a real wrist has a few fine lines a
@@ -4460,8 +5020,22 @@ fields as built:
   `hkChannel` uniform. The atlas is rasterised from each vertex's owner
   (`vertexOwners`), so a shared channel holds, at a vertex, its member's
   mask and coordinate.
-- The adult layers are never shared: their fields arrive after the atlas
-  exists, so their support is unknown. Three layers of two channels each.
+- The adult layers are laid out by their footprints too (ruled 2026-10-10: the
+  adult stack keeps growing, and a page more each time is drift that phones
+  pay for). The plan is made from every footprint known before layout: the
+  body's layers, and each adult layer whose fields need nothing still to load
+  (an island, which the manifest places; a mask the pack authors per base
+  vertex), on the body's triangles and the adult surface's islands together
+  (`withExtra`, which the atlas draws them with too). An adult layer measured
+  from targets still loading (the mound's) is pending, a group of its own;
+  without an adult pack every adult layer is known to reach nothing and joins a
+  group at no cost. The stack is 30 channels, 8 pages, loaded or staged (32
+  before): the penis's island shares a body layer's channels. With the vulva's
+  layer (a mask the pack authors, known before layout) it was 32, until the
+  islands were placed in owner-map cells no body triangle reaches
+  (`scripts/lib/uvIslands.ts`): placed by texels, the testes island shared cells
+  with the palms, the mouth and every broad flush layer, and so no channel. Both
+  islands share now, and the stack is 30 channels, 8 pages.
 - Alternatives set aside: sharing by banding the value (layer *k* of *K* in
   `[k/K, (k+1)/K)`, which bilinear filtering between regions turns into other
   layers' bands, and loses bits); sharing by UV island (nine islands: only the

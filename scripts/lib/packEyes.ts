@@ -13,31 +13,35 @@
  * that a material supplies pattern and detail on the recipe's own colours, which
  * are the measured colour model.
  */
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
 import type { EyeManifest, EyeMaterialEntry } from "../../src/eyes/library.ts";
 import type { Rgb } from "../../src/surface/skinTone.ts";
+import {
+  type CommunityPackPin,
+  communityPackPage,
+  communityPackUrl,
+  openCommunityPack,
+} from "./communityPacks.ts";
 import { type CommunityPage, judgeAsset, type SourceFile } from "./licenceRule.ts";
 import { sha256, writePackEntry } from "./packWriter.ts";
-import { readZip } from "./zip.ts";
 
 /** The two packs of CC0 eye materials, pinned. */
-export const EYE_PACKS = [
+export const EYE_PACKS: readonly CommunityPackPin[] = [
   {
     id: "system_eye_materials01",
     sha256: "acad4636c08ff96ac8a27775cfa071052c8cba9b21e0029b649bdd6ec7aeb332",
-    url: "https://files.makehumancommunity.org/asset_packs/system_eye_materials01/system_eye_materials01_cc0.zip",
-    page: "https://static.makehumancommunity.org/assets/assetpacks/system_eye_materials01.html",
+    url: communityPackUrl("system_eye_materials01"),
+    page: communityPackPage("system_eye_materials01"),
   },
   {
     id: "system_eye_materials02",
     sha256: "239e6565e56011da6298953a110e5cdca231ab98d96fda49616096df33112d11",
-    url: "https://files.makehumancommunity.org/asset_packs/system_eye_materials02/system_eye_materials02_cc0.zip",
-    page: "https://static.makehumancommunity.org/assets/assetpacks/system_eye_materials02.html",
+    url: communityPackUrl("system_eye_materials02"),
+    page: communityPackPage("system_eye_materials02"),
   },
-] as const;
+];
 
 /** The date the asset pages were read (docs/licence-history.md, §4.3). */
 const RETRIEVED = "2026-10-09";
@@ -252,14 +256,6 @@ async function encode(png: Buffer, cornea: Buffer): Promise<Buffer> {
     .toBuffer();
 }
 
-interface PackRecord {
-  author: string;
-  created: string;
-  license: string;
-  source: string;
-  description: string;
-}
-
 const title = (id: string) =>
   id
     .replace(/_/g, " ")
@@ -342,15 +338,7 @@ export async function packEyes(options: PackEyesOptions): Promise<EyeManifest> {
   const evidence: [string, string][] = [];
   const outputs: [string, string][] = [];
   for (const pack of EYE_PACKS) {
-    const file = fs.readFileSync(path.join(options.archives, pack.id, `${pack.id}_cc0.zip`));
-    const hash = createHash("sha256").update(file).digest("hex");
-    if (hash !== pack.sha256)
-      throw new Error(`${pack.id} is ${hash}, not the pinned ${pack.sha256}`);
-    const zip = readZip(file);
-    const records = JSON.parse(zip.read(`packs/${pack.id}.json`).toString("utf8")) as Record<
-      string,
-      PackRecord
-    >;
+    const { zip, records } = openCommunityPack(options.archives, pack);
     for (const [id, rec] of Object.entries(records)) {
       const dir = `eyes/materials/${id}`;
       const mhmat = zip.read(`${dir}/${id}.mhmat`).toString("utf8");

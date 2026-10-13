@@ -18,9 +18,9 @@
  * the separate humanoid-kit-adult-anatomy pack, which the runtime loads only on
  * request and only evaluates for figures 18 and over.
  *
- * Height and proportion targets are kept for average muscle and weight only:
- * the dense per-muscle/weight variants triple the package size for a shape
- * difference the universal muscle/weight targets already carry.
+ * Height and proportion targets are kept for every muscle and weight, as
+ * MakeHuman applies them; dropping the per-muscle/weight variants would cut the
+ * age files to a third but move the figure away from MakeHuman's own shape.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -67,6 +67,7 @@ import { compileAsset } from "./lib/compileAsset.ts";
 import { AUTHORING_FIGURE } from "./lib/control/mound.ts";
 import { reservoirRoot } from "./lib/detail/root.ts";
 import { maleParts } from "./lib/detail/sculpt.ts";
+import { placeVulva, vulvaSkinMask } from "./lib/detail/vulva.ts";
 import { symmetrizeFaceUnits } from "./lib/faceUnits.ts";
 import { NAIL_PLATES, VENDOR_BODYPARTS04 } from "./lib/nailPlates.ts";
 import { packHair } from "./lib/packHair.ts";
@@ -778,10 +779,12 @@ async function main() {
   // The sculpted parts (packs/adult-anatomy/source), placed on the authoring figure;
   // the reservoirs are placed where they attach, on the surface as it is without them.
   const plain = interim();
-  const sculpted = maleParts(packedFigure, plain.controlShape(AUTHORING_FIGURE).control);
+  const authoringControl = plain.controlShape(AUTHORING_FIGURE).control;
+  const sculpted = maleParts(packedFigure, authoringControl);
+  const vulva = placeVulva(packedFigure, authoringControl);
   const surfaceOnly = plain.adultDetailLattice(AUTHORING_FIGURE);
   if (!surfaceOnly) throw new Error("the adult pack has no refined surface to place reservoirs on");
-  const { patches, reservoirs } = reservoirLayout(surfaceOnly, sculpted, (given) => {
+  const { patches, reservoirs } = reservoirLayout(surfaceOnly, sculpted, vulva, (given) => {
     const lattice = interim(undefined, given).adultDetailLattice(AUTHORING_FIGURE);
     if (!lattice) throw new Error("the adult pack has no refined surface to patch");
     return lattice;
@@ -793,7 +796,7 @@ async function main() {
   const generated = authorControl(withReservoirs.controlShape(AUTHORING_FIGURE));
   const latticeWith = withReservoirs.adultDetailLattice(AUTHORING_FIGURE);
   if (!latticeWith) throw new Error("the adult pack has no refined surface to draw detail on");
-  const organ = authorDetail(latticeWith, reservoirs, sculpted);
+  const organ = authorDetail(latticeWith, reservoirs, sculpted, vulva);
   // Each reservoir's skin gets an island of its own in free space of the body's UV layout,
   // at the skin's own scale, so a skin layer can colour a tube and not the skin round its root.
   const bodyTopology = plain.topology().body;
@@ -817,7 +820,8 @@ async function main() {
     return metresPerUv[best] as number;
   };
   const islanded = placeIslands(
-    reservoirs,
+    // With each canal's closure, which `authorDetail` finds on the lattice.
+    organ.reservoirs,
     ISLAND_SIZES,
     ISLAND_LAYERS,
     Object.fromEntries(reservoirs.map((r) => [r.id, scaleAt(r.id)])),
@@ -859,7 +863,13 @@ async function main() {
     modifiers: [...modifiers.filter((m) => isAdultPackTarget(m.hi)), ...AUTHORED_MODIFIERS],
     sliders: sliders.adult,
     /** Features, skin-layer measurements and shape states: the core names none of these. */
-    anatomy: adultAnatomySpec(packedFigure, organ.detail, islanded, patches),
+    anatomy: adultAnatomySpec(
+      packedFigure,
+      organ.detail,
+      islanded,
+      patches,
+      vulvaSkinMask(latticeWith, organ.vulva, control.control, control.body),
+    ),
   };
   fs.writeFileSync(path.join(ADULT_OUT, "manifest.json"), `${JSON.stringify(adultManifest)}\n`);
 

@@ -2,6 +2,8 @@ import { OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   type AnimationLibrary,
+  type BodyHairGroup,
+  type CustomTarget,
   createRecipe,
   type EyeLibrary,
   HumanoidWorkerClient,
@@ -12,6 +14,7 @@ import {
 import { HumanoidCreator } from "humanoid-kit/editor";
 import {
   Humanoid,
+  type HumanoidAnimationFrame,
   type HumanoidPose,
   HumanoidProvider,
   STUDIO_EXPOSURE,
@@ -19,25 +22,34 @@ import {
   STUDIO_TONE_MAPPING,
   StudioStage,
   useHumanoidAffordances,
+  useHumanoidClient,
+  useHumanoidReady,
 } from "humanoid-kit/react";
 import { animationsPack } from "humanoid-kit-animations";
 import { bodyPack } from "humanoid-kit-body";
 import { eyesPack } from "humanoid-kit-eyes";
 import { hairPack } from "humanoid-kit-hair";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
   type Bone,
+  Box3,
   type DirectionalLight,
+  Matrix3,
+  Matrix4,
   type Mesh,
   NeutralToneMapping,
   type Object3D,
+  type PerspectiveCamera,
+  SkinnedMesh,
   type ToneMapping,
   Vector3,
 } from "three";
 import { ChannelQa } from "./ChannelQa";
+import { EffectiveAdultDefaultsLab } from "./EffectiveAdultDefaultsLab";
 import { MiniatureLab } from "./MiniatureLab";
+import { QaShade } from "./qaShade";
 import { tattooImages } from "./tattooImages";
 import { Walk } from "./Walk";
 
@@ -106,9 +118,168 @@ export interface DrawnPart {
   triangles: number;
 }
 
+/** A response-shot-only reading of a live coat material and its current camera relationship. */
+export interface CoatRuntimeProbe {
+  material: {
+    transparent: boolean;
+    depthWrite: boolean;
+    depthTest: boolean;
+    forceSinglePass: boolean;
+    blending: number;
+    blendSrc: number;
+    blendDst: number;
+    blendEquation: number;
+    opacity: number;
+  };
+  geometry: { indexCount: number; instanceCount: number; vertexCount: number };
+  uniforms: { shells: number; rows: { region: string; cover: number; density: number }[] };
+  program: {
+    key: string;
+    found: boolean;
+    usedTimes: number | null;
+    alphaPath: string | null;
+  };
+  /**
+   * Camera-facing normal samples at the current response shot. They use the
+   * live skinned surface and standard skinning; dual-quaternion share is named
+   * separately because this QA readback does not duplicate that shader branch.
+   */
+  angleMethod: "skinned-normal-no-dual-correction";
+  angles: {
+    region: string;
+    samples: number;
+    minCos: number;
+    meanCos: number;
+    maxCos: number;
+    clampedSamples: number;
+  }[];
+}
+
+type CoatProbeMaterial = {
+  transparent: boolean;
+  depthWrite: boolean;
+  depthTest: boolean;
+  forceSinglePass: boolean;
+  blending: number;
+  blendSrc: number;
+  blendDst: number;
+  blendEquation: number;
+  opacity: number;
+  hkUniforms: {
+    hkCoatPaint: { value: { x: number; z: number }[] };
+    hkCoatShells: { value: number };
+  };
+  customProgramCacheKey(): string;
+  setCompileProbe(enabled: boolean): void;
+  compiledAlphaProbe(): { programKey: string; alphaPath: string } | null;
+};
+
+const asCoatMaterial = (value: unknown): CoatProbeMaterial | null => {
+  const material = value as Partial<CoatProbeMaterial> | null;
+  if (!material || typeof material.customProgramCacheKey !== "function") return null;
+  return material.customProgramCacheKey().startsWith("humanoid-kit-coat-")
+    ? (material as CoatProbeMaterial)
+    : null;
+};
+
+const maskAt = (mesh: SkinnedMesh, region: number, vertex: number): number => {
+  const attribute = mesh.geometry.getAttribute(region < 4 ? "hkCoatMaskA" : "hkCoatMaskB");
+  if (!attribute) return 0;
+  const value = attribute.array[vertex * 4 + (region % 4)] as number;
+  return attribute.normalized ? value / 255 : value;
+};
+
+/** The shader's ordinary linear-skinning normal path, read against its live camera. */
+function coatAngles(mesh: SkinnedMesh, camera: Object3D): CoatRuntimeProbe["angles"] {
+  const regions = (mesh.geometry.userData.hkCoatRegions as string[] | undefined) ?? [];
+  const normal = mesh.geometry.getAttribute("normal");
+  const skinIndex = mesh.geometry.getAttribute("skinIndex");
+  const skinWeight = mesh.geometry.getAttribute("skinWeight");
+  if (!normal || !skinIndex || !skinWeight) return [];
+  mesh.updateWorldMatrix(true, false);
+  camera.updateWorldMatrix(true, false);
+  const worldNormal = new Matrix3().getNormalMatrix(mesh.matrixWorld);
+  const weighted = new Matrix4();
+  const skin = new Matrix4();
+  const skinNormal = new Matrix3();
+  const n = new Vector3();
+  const position = new Vector3();
+  const view = new Vector3();
+  const cameraDirection = new Vector3();
+  camera.getWorldDirection(cameraDirection).negate();
+  return regions.map((region, group) => {
+    let samples = 0;
+    let sum = 0;
+    let min = 1;
+    let max = 0;
+    let clampedSamples = 0;
+    for (let vertex = 0; vertex < normal.count; vertex++) {
+      if (!(maskAt(mesh, group, vertex) > 0)) continue;
+      weighted.elements.fill(0);
+      let totalWeight = 0;
+      for (let k = 0; k < 4; k++) {
+        const weight = skinWeight.getComponent(vertex, k);
+        const bone = mesh.skeleton.bones[skinIndex.getComponent(vertex, k)];
+        if (!bone || !(weight > 0)) continue;
+        totalWeight += weight;
+        for (let element = 0; element < 16; element++)
+          weighted.elements[element] =
+            (weighted.elements[element] as number) +
+            weight * (bone.matrixWorld.elements[element] as number);
+      }
+      if (!(totalWeight > 0)) continue;
+      skin.copy(mesh.bindMatrixInverse).multiply(weighted).multiply(mesh.bindMatrix);
+      skinNormal.getNormalMatrix(skin);
+      n.fromBufferAttribute(normal, vertex)
+        .applyMatrix3(skinNormal)
+        .applyMatrix3(worldNormal)
+        .normalize();
+      mesh.applyBoneTransform(vertex, position).applyMatrix4(mesh.matrixWorld);
+      // The playground uses a perspective camera; retain the orthographic case
+      // so a future response camera matches the shader's `isOrthographic` path.
+      if ((camera as { isOrthographicCamera?: boolean }).isOrthographicCamera)
+        view.copy(cameraDirection);
+      else view.copy(camera.position).sub(position).normalize();
+      const cosine = Math.abs(n.dot(view));
+      min = Math.min(min, cosine);
+      max = Math.max(max, cosine);
+      sum += cosine;
+      if (cosine < 0.2) clampedSamples++;
+      samples++;
+    }
+    return {
+      region,
+      samples,
+      minCos: samples ? min : 0,
+      meanCos: samples ? sum / samples : 0,
+      maxCos: samples ? max : 0,
+      clampedSamples,
+    };
+  });
+}
+
+/** The frame a scene that plays no animation reports: none, so its `hkContacts` answers null. */
+const NO_ANIMATION_FRAME: React.RefObject<HumanoidAnimationFrame | null> = { current: null };
+
 /** Exposes `window.hkDrawn` while mounted: the triangles each part of the figure draws. */
-function SceneProbe() {
+function SceneProbe({
+  animationFrame,
+}: {
+  animationFrame: React.RefObject<HumanoidAnimationFrame | null>;
+}) {
   const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
+  const renderer = useThree((s) => s.gl);
+  const wantsCoatProbe = params.has("coatprobe");
+  useFrame(() => {
+    if (!wantsCoatProbe) return;
+    scene.traverse((object) => {
+      if (!(object instanceof SkinnedMesh)) return;
+      const material = asCoatMaterial(object.material);
+      material?.setCompileProbe(true);
+    });
+  });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the probe intentionally reads the latest ref on each QA call.
   useEffect(() => {
     window.hkDrawn = () => {
       const out: DrawnPart[] = [];
@@ -136,6 +307,25 @@ function SceneProbe() {
       const v = new Vector3().setFromMatrixPosition((found as Object3D).matrixWorld);
       return [v.x, v.y, v.z];
     };
+    window.hkContacts = () => {
+      const frame = animationFrame.current;
+      if (!frame) return null;
+      let figure: Object3D | null = null;
+      scene.traverse((o) => {
+        if (!figure && o.userData.groundOffset !== undefined) figure = o;
+      });
+      const figureGroup = figure as Object3D | null;
+      if (!figureGroup) return null;
+      figureGroup.updateWorldMatrix(true, false);
+      return {
+        generation: frame.generation,
+        time: frame.time,
+        contacts: frame.contacts.map((contact) => {
+          const point = figureGroup.localToWorld(new Vector3(...contact.position));
+          return { ...contact, position: [point.x, point.y, point.z] as [number, number, number] };
+        }),
+      };
+    };
     window.hkFigure = () => {
       let found: Object3D | null = null;
       scene.traverse((o) => {
@@ -146,12 +336,68 @@ function SceneProbe() {
       const v = new Vector3().setFromMatrixPosition((found as Object3D).matrixWorld);
       return { position: [v.x, v.y, v.z], groundOffset: (found as Object3D).userData.groundOffset };
     };
+    if (wantsCoatProbe) {
+      window.hkCoatProbe = () => {
+        const out: CoatRuntimeProbe[] = [];
+        const programs = (
+          renderer.info as unknown as { programs?: { cacheKey?: string; usedTimes?: number }[] }
+        ).programs;
+        scene.traverse((object) => {
+          if (!(object instanceof SkinnedMesh)) return;
+          const material = asCoatMaterial(object.material);
+          if (!material) return;
+          const key = material.customProgramCacheKey();
+          // Three appends a material's custom key to its full renderer program
+          // cache key (`WebGLPrograms.getProgramCacheKey`), rather than storing
+          // the custom part alone.
+          const program = programs?.find((candidate) => candidate.cacheKey?.endsWith(key));
+          const compiled = material.compiledAlphaProbe();
+          const regions = (object.geometry.userData.hkCoatRegions as string[] | undefined) ?? [];
+          out.push({
+            material: {
+              transparent: material.transparent,
+              depthWrite: material.depthWrite,
+              depthTest: material.depthTest,
+              forceSinglePass: material.forceSinglePass,
+              blending: material.blending,
+              blendSrc: material.blendSrc,
+              blendDst: material.blendDst,
+              blendEquation: material.blendEquation,
+              opacity: material.opacity,
+            },
+            geometry: {
+              indexCount: object.geometry.index?.count ?? 0,
+              instanceCount: object.geometry.instanceCount,
+              vertexCount: object.geometry.getAttribute("position").count,
+            },
+            uniforms: {
+              shells: material.hkUniforms.hkCoatShells.value,
+              rows: regions.map((region, index) => {
+                const row = material.hkUniforms.hkCoatPaint.value[index * 2];
+                return { region, cover: row?.x ?? 0, density: row?.z ?? 0 };
+              }),
+            },
+            program: {
+              key,
+              found: program !== undefined,
+              usedTimes: program?.usedTimes ?? null,
+              alphaPath: compiled?.alphaPath ?? null,
+            },
+            angleMethod: "skinned-normal-no-dual-correction",
+            angles: coatAngles(object, camera),
+          });
+        });
+        return out;
+      };
+    }
     return () => {
       delete window.hkDrawn;
       delete window.hkBone;
+      delete window.hkContacts;
       delete window.hkFigure;
+      delete window.hkCoatProbe;
     };
-  }, [scene]);
+  }, [camera, renderer, scene, wantsCoatProbe]);
   return null;
 }
 
@@ -161,6 +407,18 @@ declare global {
     hkDrawn?: () => DrawnPart[];
     /** QA only: a bone's head in world space (see `SceneProbe`). */
     hkBone?: (name: string) => [number, number, number] | null;
+    /** QA only: exact current sole contacts in world space, from the animation frame observer. */
+    hkContacts?: () => {
+      generation: number;
+      time: number;
+      contacts: Array<{
+        side: "left" | "right";
+        point: "heel" | "ballInner" | "ballOuter";
+        position: [number, number, number];
+        owned: boolean;
+        hold: number;
+      }>;
+    } | null;
     /** QA only: where the figure's group stands, and the lift it was given. */
     hkFigure?: () => { position: [number, number, number]; groundOffset: number } | null;
     /** QA only: swaps the shot's recipe (and pose) without reloading (see `Shot`). */
@@ -169,6 +427,8 @@ declare global {
       pose?: ShotPose,
       signals?: Record<string, number>,
     ) => void;
+    /** QA only: live coat material/program state and current response-camera angles. */
+    hkCoatProbe?: () => CoatRuntimeProbe[];
   }
 }
 
@@ -243,7 +503,11 @@ function Studio() {
   if (!client) return null;
   return (
     <HumanoidProvider client={client}>
-      {params.get("scene") === "walk" ? (
+      {params.get("lab") === "effective-adult-values" ? (
+        <EffectiveAdultDefaultsLab />
+      ) : params.has("bodyHairLab") ? (
+        <BodyHairLab />
+      ) : params.get("scene") === "walk" ? (
         <Walk />
       ) : params.has("view") || params.has("cam") ? (
         <Shot />
@@ -253,6 +517,282 @@ function Studio() {
     </HumanoidProvider>
   );
 }
+
+/** The four regional probes frame the current posed skeleton rather than world coordinates. */
+interface BodyHairLabRegion {
+  id: BodyHairGroup;
+  label: string;
+  bone: string;
+  view: [number, number, number];
+  span: number;
+  offset?: [number, number, number];
+  pose?: string;
+}
+
+const BODY_HAIR_LAB_REGIONS: readonly BodyHairLabRegion[] = [
+  { id: "face", label: "Face", bone: "head", view: [0, 0.05, 1], span: 0.32 },
+  { id: "chest", label: "Chest", bone: "spine02", view: [0, 0.1, 1], span: 0.6 },
+  {
+    id: "axillary",
+    label: "Axillary",
+    bone: "upperarm01.L",
+    view: [0.7, -0.3, 1],
+    span: 0.5,
+    pose: "overhead",
+  },
+  { id: "legs", label: "Legs", bone: "lowerleg01.L", view: [0, 0, 1], span: 0.62 },
+] as const;
+
+const BODY_HAIR_LAB_FORMS = [
+  { label: "Feminine", gender: 0 },
+  { label: "Mixed", gender: 0.5 },
+  { label: "Masculine", gender: 1 },
+] as const;
+
+const BODY_HAIR_LAB_COVERAGE = [
+  { label: "None", value: 0 },
+  { label: "Sparse", value: 0.25 },
+  { label: "Medium", value: 0.5 },
+  { label: "Full", value: 1 },
+] as const;
+
+const BODY_HAIR_LAB_FOLLICLES = [
+  { label: "Sparse follicles", value: 0.25 },
+  { label: "Standard follicles", value: 1 },
+  { label: "Dense follicles", value: 2 },
+] as const;
+
+const BODY_HAIR_LAB_HAIR = { eumelanin: 0.85, pheomelanin: 0.02, grey: 0, override: null };
+
+function bodyHairLabRegion(id: BodyHairGroup): BodyHairLabRegion {
+  const region = BODY_HAIR_LAB_REGIONS.find((candidate) => candidate.id === id);
+  if (!region) throw new Error(`No direct body-hair lab region for ${id}`);
+  return region;
+}
+
+function bodyHairLabForm(gender: number) {
+  const form = BODY_HAIR_LAB_FORMS.find((candidate) => candidate.gender === gender);
+  if (!form) throw new Error(`No direct body-hair lab form for ${gender}`);
+  return form;
+}
+
+/**
+ * A compact acceptance workbench for the existing independent regional API.
+ * It intentionally does not reuse the creator's slider bank: each button has
+ * a finite, named recipe outcome and the selected recipe remains inspectable.
+ */
+function BodyHairLab() {
+  const [regionId, setRegionId] = useState<BodyHairGroup>("chest");
+  const [gender, setGender] = useState(0.5);
+  const [coverage, setCoverage] = useState(0.5);
+  const [follicleDensity, setFollicleDensity] = useState(1);
+  const [generation, setGeneration] = useState(0);
+  const [settled, setSettled] = useState(false);
+  const region = bodyHairLabRegion(regionId);
+  const form = bodyHairLabForm(gender);
+  const recipe = useMemo(
+    () =>
+      createRecipe({
+        macros: { age: 30, gender },
+        skin: { melanin: 0.5 },
+        hair: { style: null, colour: BODY_HAIR_LAB_HAIR },
+        bodyHair: {
+          coverage: { [region.id]: coverage },
+          follicleDensity: { [region.id]: follicleDensity },
+          // The face coat selects existing beard geometry; other regions do not.
+          beard: region.id === "face" ? "full" : "none",
+        },
+      }),
+    [coverage, follicleDensity, gender, region.id],
+  );
+  const recipeSummary = JSON.stringify({
+    age: recipe.macros.age,
+    gender: recipe.macros.gender,
+    bodyHair: recipe.bodyHair,
+  });
+  const select = (change: () => void) => {
+    setSettled(false);
+    setGeneration((value) => value + 1);
+    change();
+  };
+  const choice = <T extends { label: string; value: number }>(
+    heading: string,
+    choices: readonly T[],
+    selected: number,
+    choose: (value: number) => void,
+  ) => (
+    <section aria-label={heading} style={{ display: "grid", gap: 8 }}>
+      <h2 style={bodyHairLabHeadingStyle}>{heading}</h2>
+      <div style={bodyHairLabChoicesStyle}>
+        {choices.map((choice) => (
+          <button
+            key={choice.label}
+            type="button"
+            aria-pressed={selected === choice.value}
+            onClick={() => select(() => choose(choice.value))}
+            style={bodyHairLabButtonStyle(selected === choice.value)}
+          >
+            {choice.label}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+  return (
+    <main style={bodyHairLabLayoutStyle}>
+      <section data-body-hair-stage style={bodyHairLabStageStyle} aria-label="Body hair model">
+        <div
+          data-body-hair-figure={settled ? "ready" : "loading"}
+          data-body-hair-generation={generation}
+          style={{ position: "absolute", inset: 0 }}
+        >
+          <Canvas
+            shadows={STUDIO_SHADOWS}
+            camera={{ position: [0, 0.95, 3.2], fov: 35 }}
+            gl={{
+              preserveDrawingBuffer: true,
+              toneMapping: STUDIO_TONE_MAPPING,
+              toneMappingExposure: STUDIO_EXPOSURE,
+            }}
+          >
+            <StudioStage />
+            <SceneProbe animationFrame={NO_ANIMATION_FRAME} />
+            <AutoFrame
+              bone={region.bone}
+              view={region.view}
+              span={region.span}
+              offset={region.offset ?? [0, 0, 0]}
+            />
+            <Humanoid
+              recipe={recipe}
+              {...(region.pose && { pose: { body: region.pose } })}
+              onSettled={() => setSettled(true)}
+              bodyArtImages={tattooImages()}
+            />
+          </Canvas>
+        </div>
+      </section>
+      <aside
+        data-body-hair-controls
+        style={bodyHairLabControlsStyle}
+        aria-label="Body hair controls"
+      >
+        <header style={{ display: "grid", gap: 6 }}>
+          <p
+            style={{
+              color: "#a9bfd6",
+              fontSize: 12,
+              letterSpacing: "0.12em",
+              margin: 0,
+              textTransform: "uppercase",
+            }}
+          >
+            Adult 30 direct controls
+          </p>
+          <h1 style={{ fontSize: 26, margin: 0 }}>Body hair controls</h1>
+          <p style={{ color: "#c8d2dd", lineHeight: 1.5, margin: 0 }}>
+            Inspect one regional coverage choice and one follicle-spacing choice at a time.
+          </p>
+        </header>
+        <section style={{ display: "grid", gap: 6 }}>
+          <h2 style={bodyHairLabHeadingStyle}>What changes</h2>
+          <p style={{ color: "#c8d2dd", lineHeight: 1.5, margin: 0 }}>
+            Coverage changes occupied skin area. Follicle density changes strand spacing while
+            keeping that selected coverage. Region selection also uses its own inspection camera.
+          </p>
+        </section>
+        <section aria-label="Region" style={{ display: "grid", gap: 8 }}>
+          <h2 style={bodyHairLabHeadingStyle}>Region</h2>
+          <div style={bodyHairLabChoicesStyle}>
+            {BODY_HAIR_LAB_REGIONS.map((candidate) => (
+              <button
+                key={candidate.id}
+                type="button"
+                aria-pressed={region.id === candidate.id}
+                onClick={() => select(() => setRegionId(candidate.id))}
+                style={bodyHairLabButtonStyle(region.id === candidate.id)}
+              >
+                {candidate.label}
+              </button>
+            ))}
+          </div>
+        </section>
+        <section aria-label="Form" style={{ display: "grid", gap: 8 }}>
+          <h2 style={bodyHairLabHeadingStyle}>Form</h2>
+          <div style={bodyHairLabChoicesStyle}>
+            {BODY_HAIR_LAB_FORMS.map((candidate) => (
+              <button
+                key={candidate.label}
+                type="button"
+                aria-pressed={form.gender === candidate.gender}
+                onClick={() => select(() => setGender(candidate.gender))}
+                style={bodyHairLabButtonStyle(form.gender === candidate.gender)}
+              >
+                {candidate.label}
+              </button>
+            ))}
+          </div>
+          <output>Form: {form.label}</output>
+        </section>
+        {choice("Coverage", BODY_HAIR_LAB_COVERAGE, coverage, setCoverage)}
+        {choice("Follicle density", BODY_HAIR_LAB_FOLLICLES, follicleDensity, setFollicleDensity)}
+        <section style={{ display: "grid", gap: 8 }}>
+          <h2 style={bodyHairLabHeadingStyle}>Rendered recipe</h2>
+          <code
+            data-body-hair-recipe={recipeSummary}
+            style={{
+              background: "#07111f",
+              border: "1px solid #29415c",
+              borderRadius: 8,
+              color: "#d9e9fb",
+              fontSize: 12,
+              overflowWrap: "anywhere",
+              padding: 12,
+            }}
+          >
+            {recipeSummary}
+          </code>
+        </section>
+        <section style={{ display: "grid", gap: 6 }}>
+          <h2 style={bodyHairLabHeadingStyle}>Evidence boundary</h2>
+          <p style={{ color: "#c8d2dd", lineHeight: 1.5, margin: 0 }}>
+            A settled recipe and visible figure prove handoff. They do not accept strand
+            readability, regional placement, or a density response: capture each region and review
+            it at its intended camera before treating the renderer as finished.
+          </p>
+        </section>
+      </aside>
+    </main>
+  );
+}
+
+const bodyHairLabLayoutStyle = {
+  background: "#07101c",
+  color: "#f2f6fb",
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) minmax(19rem, 26rem)",
+  height: "100vh",
+  overflow: "hidden",
+} as const;
+const bodyHairLabStageStyle = { minHeight: 0, position: "relative" } as const;
+const bodyHairLabControlsStyle = {
+  borderLeft: "1px solid #29415c",
+  display: "grid",
+  gap: 24,
+  overflowY: "auto",
+  padding: 24,
+} as const;
+const bodyHairLabHeadingStyle = { fontSize: 14, letterSpacing: "0.04em", margin: 0 } as const;
+const bodyHairLabChoicesStyle = { display: "flex", flexWrap: "wrap", gap: 8 } as const;
+const bodyHairLabButtonStyle = (selected: boolean) => ({
+  background: selected ? "#4d8dcc" : "#14253a",
+  border: `1px solid ${selected ? "#a9d4ff" : "#42617f"}`,
+  borderRadius: 7,
+  color: "#f2f6fb",
+  cursor: "pointer",
+  font: "inherit",
+  padding: "8px 10px",
+});
 
 /**
  * The creator with the eye pack. The library is only the pack's manifest, fetched once;
@@ -271,9 +811,91 @@ function Creator() {
     <HumanoidCreator
       title="humanoid-kit"
       initialRecipe={initialRecipe()}
+      frameloop="demand"
       {...(eyeMaterials && { eyeMaterials })}
-    />
+    >
+      {params.has("e2eEyeRegion") && <EyeRegionProbe />}
+    </HumanoidCreator>
   );
+}
+
+interface EyeRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** E2E-only projected bounds for evidence that an actual eye attachment changed. */
+function EyeRegionProbe() {
+  const ready = useHumanoidReady();
+  const gl = useThree((state) => state.gl);
+  const scene = useThree((state) => state.scene);
+  const camera = useThree((state) => state.camera) as PerspectiveCamera;
+  const size = useThree((state) => state.size);
+
+  useEffect(() => {
+    const stage = gl.domElement.closest(".hk-stage");
+    if (!(stage instanceof HTMLElement) || !ready) return;
+    let frame = 0;
+    const report = () => {
+      frame = 0;
+      if (stage.dataset.framing !== "settled") return;
+      scene.updateMatrixWorld(true);
+      camera.updateMatrixWorld();
+      const bounds = new Box3();
+      let found = false;
+      scene.traverse((node) => {
+        if (!(node instanceof SkinnedMesh)) return;
+        const index = node.userData.hkPart;
+        if (typeof index !== "number" || ready.topology.attachments[index]?.kind !== "eyes") return;
+        node.computeBoundingBox();
+        if (!node.boundingBox) return;
+        bounds.union(node.boundingBox.clone().applyMatrix4(node.matrixWorld));
+        found = true;
+      });
+      if (!found || bounds.isEmpty()) {
+        delete stage.dataset.eyeRegion;
+        return;
+      }
+      const corners = [
+        [bounds.min.x, bounds.min.y, bounds.min.z],
+        [bounds.min.x, bounds.min.y, bounds.max.z],
+        [bounds.min.x, bounds.max.y, bounds.min.z],
+        [bounds.min.x, bounds.max.y, bounds.max.z],
+        [bounds.max.x, bounds.min.y, bounds.min.z],
+        [bounds.max.x, bounds.min.y, bounds.max.z],
+        [bounds.max.x, bounds.max.y, bounds.min.z],
+        [bounds.max.x, bounds.max.y, bounds.max.z],
+      ].map(([x, y, z]) => new Vector3(x, y, z).project(camera));
+      const xs = corners.map((point) => (point.x * 0.5 + 0.5) * size.width);
+      const ys = corners.map((point) => (1 - (point.y * 0.5 + 0.5)) * size.height);
+      const left = Math.max(0, Math.min(...xs));
+      const right = Math.min(size.width, Math.max(...xs));
+      const top = Math.max(0, Math.min(...ys));
+      const bottom = Math.min(size.height, Math.max(...ys));
+      const region: EyeRegion | null =
+        right > left && bottom > top
+          ? { x: left, y: top, width: right - left, height: bottom - top }
+          : null;
+      if (region) stage.dataset.eyeRegion = JSON.stringify(region);
+      else delete stage.dataset.eyeRegion;
+    };
+    const schedule = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(report);
+    };
+    const observer = new MutationObserver(schedule);
+    observer.observe(stage, { attributes: true, attributeFilter: ["data-framing"] });
+    schedule();
+    return () => {
+      observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+      delete stage.dataset.eyeRegion;
+    };
+  }, [camera, gl, ready, scene, size.height, size.width]);
+
+  return null;
 }
 
 /** Tone mappers QA can compare with `?tm=` (the stage's own is the default). */
@@ -322,6 +944,19 @@ function AutoFrame({
     camera.lookAt(at.current);
   });
   return null;
+}
+
+/** QA-only floor: a visible world-space grid and surface for contact review. */
+function GroundQa() {
+  return (
+    <>
+      <mesh rotation-x={-Math.PI / 2} receiveShadow>
+        <planeGeometry args={[8, 8]} />
+        <meshStandardMaterial color="#c9c3b8" roughness={0.9} />
+      </mesh>
+      <gridHelper args={[8, 16, "#6d675e", "#aaa398"]} position-y={0.002} />
+    </>
+  );
 }
 
 /** `?light=camera`: a light that follows the camera, and `?light=under`: one from below. */
@@ -396,19 +1031,36 @@ function Shot() {
     (animation === undefined || playing === animation.clip) &&
     (!wantsEyes || eyeLibrary !== null);
   const [generation, setGeneration] = useState(0);
+  const client = useHumanoidClient();
+  // Playground-only bridge from the package's neutral frame observer to SceneProbe.
+  const animationFrame = useRef<HumanoidAnimationFrame | null>(null);
+  const onAnimationFrame = useCallback((frame: Readonly<HumanoidAnimationFrame>) => {
+    animationFrame.current = frame;
+  }, []);
   useEffect(() => {
-    window.hkSetRecipe = (init, next, nextSignals) => {
-      setSignals(nextSignals ?? initialSignals());
-      setSettled(false);
-      setPlaying(null);
-      setRecipe(createRecipe(init));
-      setPose(next ?? initialPose());
-      setGeneration((g) => g + 1);
+    window.hkSetRecipe = (given, next, nextSignals) => {
+      // `$customTargets` registers MakeHuman custom targets first, so a recipe can
+      // name `custom/<name>` (a lab's specimen rendered by the real evaluator).
+      const { $customTargets, ...init } = given as typeof given & {
+        $customTargets?: CustomTarget[];
+      };
+      const show = () => {
+        setSignals(nextSignals ?? initialSignals());
+        setSettled(false);
+        setPlaying(null);
+        setRecipe(createRecipe(init));
+        setPose(next ?? initialPose());
+        setGeneration((g) => g + 1);
+      };
+      if (!$customTargets?.length) return show();
+      client.addCustomTargets($customTargets).then(show, (e: unknown) => {
+        console.error(`custom targets refused: ${e instanceof Error ? e.message : String(e)}`);
+      });
     };
     return () => {
       delete window.hkSetRecipe;
     };
-  }, []);
+  }, [client]);
   const view = params.get("view") ?? "front";
   const cam = params.get("cam")?.split(",").map(Number);
   const exact = cam?.length === 6 && cam.every(Number.isFinite);
@@ -459,14 +1111,16 @@ function Shot() {
       <Canvas
         shadows={params.has("noshadow") ? false : STUDIO_SHADOWS}
         camera={{ position, fov }}
+        // Compositor screenshots do not need a retained WebGL drawing buffer.
         gl={{
-          preserveDrawingBuffer: true,
           toneMapping,
           toneMappingExposure: Number.isFinite(exposure) ? exposure : STUDIO_EXPOSURE,
         }}
       >
         <StudioStage {...(background ? { background } : {})} />
-        <SceneProbe />
+        {params.has("groundQa") && <GroundQa />}
+        <SceneProbe animationFrame={animationFrame} />
+        <QaShade />
         {frame && frameView.length === 3 && frameView.every(Number.isFinite) && (
           <AutoFrame
             bone={frame}
@@ -477,21 +1131,32 @@ function Shot() {
         )}
         {(qaLight === "camera" || qaLight === "under") && <QaLight kind={qaLight} />}
         {channelQa && <ChannelQa of={affordances} params={params} />}
-        <Humanoid
-          recipe={recipe}
-          pose={bodyPose}
-          {...(channelQa && { affordances })}
-          {...(library &&
-            animation && {
-              animation: { library, ...animation, onStart: setPlaying },
-            })}
-          {...(eyeLibrary && { eyeMaterials: eyeLibrary })}
-          signals={signals}
-          position={[0, animation ? 0 : lift, 0]}
-          onGroundOffset={setLift}
-          onSettled={() => setSettled(true)}
-          bodyArtImages={tattooImages()}
-        />
+        {/* QA-only rigid orientation: no anatomy, gravity or tissue deformation is changed. */}
+        <group
+          rotation={params.has("supineQa") ? [-Math.PI / 2, 0, 0] : [0, 0, 0]}
+          position={params.has("supineQa") ? [0, 0.35, 0] : [0, 0, 0]}
+        >
+          <Humanoid
+            recipe={recipe}
+            pose={bodyPose}
+            {...(channelQa && { affordances })}
+            {...(library &&
+              animation && {
+                animation: {
+                  library,
+                  ...animation,
+                  onStart: setPlaying,
+                  onFrame: onAnimationFrame,
+                },
+              })}
+            {...(eyeLibrary && { eyeMaterials: eyeLibrary })}
+            signals={signals}
+            position={[0, animation ? 0 : lift, 0]}
+            onGroundOffset={setLift}
+            onSettled={() => setSettled(true)}
+            bodyArtImages={tattooImages()}
+          />
+        </group>
         <OrbitControls makeDefault target={target} />
       </Canvas>
     </div>

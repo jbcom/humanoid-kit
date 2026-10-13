@@ -7,10 +7,11 @@
  * corrective added to the renderer is added here, or the foundation measures
  * a body nobody draws.
  */
-import type { HumanoidModel } from "../model/humanoidModel.ts";
+import type { AdultSurfaceTopology, HumanoidModel } from "../model/humanoidModel.ts";
 import { skinOfEvaluation } from "../model/reservoirSkin.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import { renderFold, type SurfaceFold } from "../rig/hipFold.ts";
+import { FOLD_JOINTS, foldFlexion } from "../rig/folds.ts";
+import { flexedPast, renderFold, type SurfaceFold } from "../rig/jointFold.ts";
 import {
   type BoneRotations,
   bodyPoseRotations,
@@ -39,9 +40,12 @@ export interface PosedBody {
   /** Render vertex normals in the pose, skinned as the renderer skins them. */
   readonly normals: Float32Array;
   /**
-   * Each render vertex's representative among those at its rest position: the
-   * lowest index of them. Vertices a UV seam splits share one, so `weld` gives
-   * the surface's connectivity, and its seams are where two differ.
+   * Each render vertex's representative among those a UV seam splits from one
+   * surface vertex (`HumanoidModel.renderWeld`): the surface's connectivity, its
+   * seams where two differ. Found by rest position instead, distinct vertices that
+   * meet at rest were welded too: a closed canal's two lips, a collapsed
+   * reservoir's rings on their loop, and their separating in a pose read as a
+   * torn seam.
    */
   readonly weld: Uint32Array;
   /** Render vertex count. */
@@ -56,20 +60,8 @@ export interface PosedBody {
   readonly heads: Float32Array;
   /** Morphed control positions (base topology), as the evaluation gives them. */
   readonly control: Float32Array;
-}
-
-/** The lowest render index at each rest position: the seams' duplicates share one. */
-function weldOf(rest: Float32Array): Uint32Array {
-  const n = rest.length / 3;
-  const first = new Map<string, number>();
-  const out = new Uint32Array(n);
-  for (let v = 0; v < n; v++) {
-    const key = `${rest[v * 3]},${rest[v * 3 + 1]},${rest[v * 3 + 2]}`;
-    const known = first.get(key);
-    if (known === undefined) first.set(key, v);
-    out[v] = known ?? v;
-  }
-  return out;
+  /** The adult surface's canals (`AdultSurfaceTopology.canals`); null on the base surface. */
+  readonly canals: AdultSurfaceTopology["canals"] | null;
 }
 
 /** The body of `recipe` in `pose`: `REST_POSE`, or a whole-body pose of the body pack by name. */
@@ -85,7 +77,12 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
   const bones = restBones(model.assets, control);
   const rotations =
     pose === REST_POSE ? IDENTITY_POSE(rig.bones.length) : bodyPoseRotations(rig, pose);
-  const fold = renderFold(solvedHipFold(model, recipe));
+  // The folds as the renderer has them: asked for once a joint of the pose is flexed past its fold's start
+  // (`<Humanoid>` asks so), and adding nothing in a pose that flexes none, which is not solved for.
+  const flexed = FOLD_JOINTS.some((joint) =>
+    flexedPast(joint, foldFlexion(joint, bones, rotations)),
+  );
+  const folds = flexed ? solvedFolds(model, recipe).map(renderFold) : [];
   // The weights this figure is skinned by: a reservoir its detail drew out moves with its root.
   const { skinIndex, skinWeight } = skinOfEvaluation(ev, topology);
   const n = rest.length;
@@ -101,7 +98,7 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
       skinIndex,
       skinWeight,
       new Float32Array(n),
-      fold,
+      folds,
     ),
     normals: skinNormals(
       bones,
@@ -110,9 +107,9 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
       skinIndex,
       skinWeight,
       new Float32Array(n),
-      fold,
+      folds,
     ),
-    weld: weldOf(rest),
+    weld: model.renderWeld(ev.surface),
     vertexCount: topology.vertexCount,
     skinIndex,
     skinWeight,
@@ -120,17 +117,18 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
     rotations,
     heads: posedBoneHeads(bones, rotations),
     control,
+    canals: "canals" in topology ? topology.canals : null,
   };
 }
 
 /**
- * The figure's hip fold on its body surface (`HumanoidModel.hipFold`), solved
- * to the end at once: the renderer's corrective for a flexed hip, which the
- * posed body must carry as the drawn one does.
+ * The figure's joint folds on its body surface (`HumanoidModel.folds`), solved
+ * to the end at once: the renderer's correctives for a flexed hip and a bent
+ * knee, which the posed body must carry as the drawn one does.
  */
-export function solvedHipFold(model: HumanoidModel, recipe: Recipe): SurfaceFold {
-  const solve = model.hipFold(recipe);
+export function solvedFolds(model: HumanoidModel, recipe: Recipe): SurfaceFold[] {
+  const solve = model.folds(recipe);
   let step = solve.next();
   while (!step.done) step = solve.next();
-  return step.value.fold;
+  return step.value.folds;
 }

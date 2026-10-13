@@ -111,6 +111,11 @@ export interface SurfaceDetail {
   indices: ArrayLike<number>;
   /** xyz per index. */
   xyz: Float32Array;
+  /**
+   * A displacement of the skin itself (a vulva's folds), added first: what the rest
+   * is measured from, so it pushes no reservoir out of the skin (`outPushed`).
+   */
+  skin?: { indices: ArrayLike<number>; xyz: Float32Array };
 }
 
 /**
@@ -715,7 +720,11 @@ export function latticeNormals(mesh: SurfaceMesh, control: Float32Array): Float3
 }
 
 /** Adds a detail displacement of the lattice to the final surface's positions. */
-function displace(mesh: SurfaceMesh, surface: Float32Array, detail: SurfaceDetail): void {
+function displace(
+  mesh: SurfaceMesh,
+  surface: Float32Array,
+  detail: Pick<SurfaceDetail, "indices" | "xyz">,
+): void {
   const lattice = mesh.lattice;
   if (!lattice) throw new Error("detail displacement needs a refined surface (internal)");
   const d = new Float32Array(lattice.vertexCount * 3);
@@ -773,8 +782,22 @@ function displace(mesh: SurfaceMesh, surface: Float32Array, detail: SurfaceDetai
  * Adds to `sn` the change in each vertex's face-derived unit normal between two
  * positions of the same surface (`before`, `after`). Vertices no moved face
  * touches get exactly zero.
+ *
+ * A reservoir's copy (`copyOf`, the copies being the surface's last vertices) lies
+ * on strips with no area until they are drawn, so it has no face normal there. Taken
+ * as zero, a drawn wall's shading normal was the loop's skin normal plus its own,
+ * about 45 degrees off a shaft's or a canal's wall: a canal's opening shaded as a
+ * rosette of petals. Where a copy has no face normal, it takes that of the vertex it
+ * copies, before: drawn, it shades by its own faces' normal plus its loop vertex's
+ * smoothing; undrawn, exactly as its loop vertex.
  */
-function reshade(faces: Uint32Array, before: Float32Array, after: Float32Array, sn: Float32Array) {
+function reshade(
+  faces: Uint32Array,
+  before: Float32Array,
+  after: Float32Array,
+  sn: Float32Array,
+  copyOf: Uint32Array,
+) {
   const unit = (positions: Float32Array) => {
     const n = new Float32Array(positions.length);
     addQuadNormals(faces, positions, n);
@@ -790,6 +813,13 @@ function reshade(faces: Uint32Array, before: Float32Array, after: Float32Array, 
   };
   const a = unit(before);
   const b = unit(after);
+  const free = sn.length / 3 - copyOf.length;
+  const none = (n: Float32Array, v: number) => n[v] === 0 && n[v + 1] === 0 && n[v + 2] === 0;
+  copyOf.forEach((rep, i) => {
+    const v = (free + i) * 3;
+    for (const n of [a, b])
+      if (none(n, v)) for (let k = 0; k < 3; k++) n[v + k] = a[rep * 3 + k] as number;
+  });
   for (let i = 0; i < sn.length; i++)
     sn[i] = (sn[i] as number) + (b[i] as number) - (a[i] as number);
 }
@@ -810,14 +840,20 @@ export function evaluateSurface(
   let sn = scratch?.normals ?? new Float32Array(sCount * 3);
   applyStencil(mesh.stencil, control, surface);
   let undisplaced: Float32Array | null = null;
-  if (detail && detail.indices.length > 0) {
+  let unpushed: Float32Array | null = null;
+  if (detail?.skin && detail.skin.indices.length > 0) {
     undisplaced = surface.slice();
+    displace(mesh, surface, detail.skin);
+  }
+  if (detail && detail.indices.length > 0) {
+    undisplaced ??= surface.slice();
+    unpushed = surface.slice();
     displace(mesh, surface, detail);
   }
   if (outPushed) {
     outPushed.fill(0);
-    if (undisplaced) {
-      const before = undisplaced;
+    if (unpushed) {
+      const before = unpushed;
       mesh.renderToSurface.forEach((s, r) => {
         outPushed[r] = Math.hypot(
           (surface[s * 3] as number) - (before[s * 3] as number),
@@ -831,7 +867,14 @@ export function evaluateSurface(
     sn = smoothNormals(mesh.smoothNormals, control, sCount);
     // The new form turns the normals it touches: add the change in the faces' own
     // normals, which is zero wherever nothing moved, so no seam appears at its edge.
-    if (undisplaced) reshade(mesh.topology.faces, undisplaced, surface, sn);
+    if (undisplaced)
+      reshade(
+        mesh.topology.faces,
+        undisplaced,
+        surface,
+        sn,
+        mesh.lattice?.copyOf ?? new Uint32Array(0),
+      );
   } else {
     sn.fill(0);
     addQuadNormals(mesh.topology.faces, surface, sn);

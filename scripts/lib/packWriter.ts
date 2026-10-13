@@ -74,6 +74,8 @@ export interface TextureSizingContext {
   base: Float32Array;
   /** The system assets directory the sources lie in. */
   systemDir: string;
+  /** What provenance names a source as, for one outside `systemDir` (a community pack's); default its path from `systemDir`. */
+  sourceLabel?: (source: string) => string;
 }
 
 /**
@@ -99,6 +101,7 @@ export async function writeAttachmentTextures(
         floor: options.floor ?? TEXTURE_FLOOR,
         base: context.base,
         systemDir: context.systemDir,
+        ...(context.sourceLabel && { sourceLabel: context.sourceLabel(source) }),
         encode: (src, dest, edge) => writeTexture(src, dest, edge, options),
       });
       records.push(record);
