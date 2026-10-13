@@ -699,6 +699,17 @@ texture, because the gum is part of the teeth texture's UV layout, the pack
 stays MakeHuman's data, and the tone must reach the gum without baking one
 texture per tone.
 
+## Grafting (issue 11)
+
+A foreign part (a head, a prosthetic hand, a creature foot) is welded onto a
+figure as one surface by `src/graft/`. `HumanoidModel.graft(spec)` cuts the
+control mesh at a registered site (`CUT_SITES`), at a supplied plane or at a
+supplied face set. It fits the part's seam to the cut loop by a similarity
+(Horn 1987) and bridges the two loops with a band of Hermite rings. The part
+is refit on every evaluation, so it follows the figure's age, shape and pose.
+The full design, the options that were weighed and the use cases are in
+[`docs/GRAFT.md`](GRAFT.md).
+
 ## Worker
 
 `HumanoidWorkerClient` is the main-thread handle to a Web Worker that owns one

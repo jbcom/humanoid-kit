@@ -32,6 +32,8 @@ import {
   type HumanoidAssets,
   pendingTargetFiles,
 } from "../format/assetFormat.ts";
+import { graftOnModel, type ModelGraft } from "../graft/onModel.ts";
+import type { GraftSpec } from "../graft/types.ts";
 import { addCustomTargets, type CustomTarget } from "../makehuman/customTargets.ts";
 import { NO_FEATURE } from "../makehuman/features.ts";
 import { RecipeError, recipeContributions } from "../makehuman/recipeMorph.ts";
@@ -2017,6 +2019,31 @@ export class HumanoidModel {
       normals: unitNormals(quadVertexNormals(control, this.assets.faceVerts)),
       body: this.bodyVertices,
     };
+  }
+
+  /**
+   * Grafts a foreign part onto the figure at a cut (docs/GRAFT.md): the cut is
+   * resolved on the base mesh at rest and the merged surface's topology built
+   * once; `evaluate` refits the part to each evaluation's loop.
+   */
+  graft(spec: GraftSpec): ModelGraft {
+    const visible = faceVisibility(this.assets.faceVerts, this.bodyFaces, this.mountedVisible);
+    return graftOnModel(
+      {
+        assets: this.assets,
+        bodyFaces: this.bodyFaces,
+        base: { mesh: this.body.mesh, trianglesPerFace: this.bodyTrianglesPerFace, visible },
+        adult: () => {
+          const a = this.adultBodySurface();
+          return a ? { mesh: a.part.mesh, trianglesPerFace: a.faceTriangles, visible } : null;
+        },
+        attachments: this.attached.map(({ asset }) => ({
+          id: asset.entry.id,
+          refVerts: asset.refVerts,
+        })),
+      },
+      spec,
+    );
   }
 
   /**
