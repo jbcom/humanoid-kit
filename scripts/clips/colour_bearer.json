@@ -1,0 +1,112 @@
+{
+  "id": "colour_bearer",
+  "title": "Colour-bearer, marching",
+  "description": "Common time, about 100 steps to the minute, carrying the colours: the flagstaff stands upright in front of the right shoulder, the right hand high on it and the left hand at the waist below, the chest a little back to bear the weight.",
+  "tags": ["locomotion", "flag", "1860s", "drill"],
+  "base": "tpose",
+  "fps": 30,
+  "duration": 1.2,
+  "loop": true,
+  "rootMotion": true,
+  "grounded": true,
+  "keys": [
+    {
+      "t": 0,
+      "rotations": {
+        "spine03": { "Xrotation": -4 },
+        "neck01": { "Xrotation": -4 },
+        "upperarm01.L": { "Xrotation": 34.4, "Yrotation": 48.6, "Zrotation": -71.8 },
+        "lowerarm01.L": { "Xrotation": 0 },
+        "upperarm01.R": { "Xrotation": -13.8, "Yrotation": -37.2, "Zrotation": 90.6 },
+        "lowerarm01.R": { "Xrotation": -113.7 },
+        "upperleg01.L": { "Xrotation": -20 },
+        "lowerleg01.L": { "Xrotation": 6 },
+        "foot.L": { "Xrotation": -12 },
+        "upperleg01.R": { "Xrotation": 12 },
+        "lowerleg01.R": { "Xrotation": 34 },
+        "foot.R": { "Xrotation": 26 }
+      }
+    },
+    {
+      "t": 0.16,
+      "rotations": {
+        "upperleg01.L": { "Xrotation": -15 },
+        "lowerleg01.L": { "Xrotation": 12 },
+        "foot.L": { "Xrotation": -2 },
+        "upperleg01.R": { "Xrotation": 8 },
+        "lowerleg01.R": { "Xrotation": 50 },
+        "foot.R": { "Xrotation": 26 }
+      }
+    },
+    {
+      "t": 0.3,
+      "rotations": {
+        "upperleg01.L": { "Xrotation": -2 },
+        "lowerleg01.L": { "Xrotation": 6 },
+        "foot.L": { "Xrotation": 0 },
+        "upperleg01.R": { "Xrotation": -20 },
+        "lowerleg01.R": { "Xrotation": 58 },
+        "foot.R": { "Xrotation": -6 }
+      }
+    },
+    {
+      "t": 0.46,
+      "rotations": {
+        "upperleg01.L": { "Xrotation": 10 },
+        "lowerleg01.L": { "Xrotation": 18 },
+        "foot.L": { "Xrotation": 6 },
+        "upperleg01.R": { "Xrotation": -30 },
+        "lowerleg01.R": { "Xrotation": 18 },
+        "foot.R": { "Xrotation": -12 }
+      }
+    },
+    {
+      "t": 0.6,
+      "mirror": 0,
+      "rotations": {
+        "spine03": { "Xrotation": -4 },
+        "neck01": { "Xrotation": -4 },
+        "upperarm01.L": { "Xrotation": 34.4, "Yrotation": 48.6, "Zrotation": -71.8 },
+        "lowerarm01.L": { "Xrotation": 0 },
+        "upperarm01.R": { "Xrotation": -13.8, "Yrotation": -37.2, "Zrotation": 90.6 },
+        "lowerarm01.R": { "Xrotation": -113.7 }
+      }
+    },
+    {
+      "t": 0.76,
+      "mirror": 1,
+      "rotations": {
+        "spine03": { "Xrotation": -4 },
+        "neck01": { "Xrotation": -4 },
+        "upperarm01.L": { "Xrotation": 34.4, "Yrotation": 48.6, "Zrotation": -71.8 },
+        "lowerarm01.L": { "Xrotation": 0 },
+        "upperarm01.R": { "Xrotation": -13.8, "Yrotation": -37.2, "Zrotation": 90.6 },
+        "lowerarm01.R": { "Xrotation": -113.7 }
+      }
+    },
+    {
+      "t": 0.9,
+      "mirror": 2,
+      "rotations": {
+        "spine03": { "Xrotation": -4 },
+        "neck01": { "Xrotation": -4 },
+        "upperarm01.L": { "Xrotation": 34.4, "Yrotation": 48.6, "Zrotation": -71.8 },
+        "lowerarm01.L": { "Xrotation": 0 },
+        "upperarm01.R": { "Xrotation": -13.8, "Yrotation": -37.2, "Zrotation": 90.6 },
+        "lowerarm01.R": { "Xrotation": -113.7 }
+      }
+    },
+    {
+      "t": 1.06,
+      "mirror": 3,
+      "rotations": {
+        "spine03": { "Xrotation": -4 },
+        "neck01": { "Xrotation": -4 },
+        "upperarm01.L": { "Xrotation": 34.4, "Yrotation": 48.6, "Zrotation": -71.8 },
+        "lowerarm01.L": { "Xrotation": 0 },
+        "upperarm01.R": { "Xrotation": -13.8, "Yrotation": -37.2, "Zrotation": 90.6 },
+        "lowerarm01.R": { "Xrotation": -113.7 }
+      }
+    }
+  ]
+}
