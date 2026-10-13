@@ -10,7 +10,7 @@
  * `COAT_REGION_LIMIT`), and a region's paint is the only thing that differs.
  */
 import type { HumanoidAssets } from "../format/assetFormat.ts";
-import { groupFaces, jointPosition } from "../format/assetFormat.ts";
+import { groupFaces, jointPosition, SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import type { SkinPaintInput } from "./layers.ts";
 import { skinZones, zoneOfBone } from "./regions/skinZones.ts";
 import type { Rgb } from "./skinTone.ts";
@@ -128,9 +128,9 @@ export function combField(assets: HumanoidAssets): Float32Array {
   for (let v = 0; v < n; v++) {
     if (!onBody[v]) continue;
     const d: Vec3 = [0, 0, 0];
-    for (let k = 0; k < 4; k++) {
-      const w = assets.skinWeight[v * 4 + k] as number;
-      const b = boneDir[assets.skinIndex[v * 4 + k] as number];
+    for (let k = 0; k < SKIN_INFLUENCES; k++) {
+      const w = assets.skinWeight[v * SKIN_INFLUENCES + k] as number;
+      const b = boneDir[assets.skinIndex[v * SKIN_INFLUENCES + k] as number];
       if (!b || w <= 0) continue;
       for (let c = 0; c < 3; c++) d[c] = (d[c] as number) + w * (b[c] as number);
     }

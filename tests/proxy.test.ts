@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addProxies, parseHumanoidAssets } from "../src/format/assetFormat.ts";
+import { addProxies, parseHumanoidAssets, SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { BODY_REGIONS } from "../src/makehuman/regions.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import {
@@ -72,12 +72,9 @@ describe("MakeHuman proxy bodies", { timeout: 120_000 }, () => {
   it("skins each proxy vertex by its base vertices' weights, normalised", () => {
     for (const id of PROXY_IDS) {
       const { skinWeight } = proxyTopology(assets, id);
-      for (let v = 0; v < skinWeight.length; v += 4) {
-        const sum =
-          (skinWeight[v] as number) +
-          (skinWeight[v + 1] as number) +
-          (skinWeight[v + 2] as number) +
-          (skinWeight[v + 3] as number);
+      for (let v = 0; v < skinWeight.length; v += SKIN_INFLUENCES) {
+        let sum = 0;
+        for (let k = 0; k < SKIN_INFLUENCES; k++) sum += skinWeight[v + k] as number;
         expect(sum).toBeCloseTo(1, 5);
       }
     }

@@ -11,6 +11,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { heaviestBone } from "../../src/rig/influences.ts";
 import {
   COVERAGE,
   FRAMINGS,
@@ -49,13 +50,8 @@ const packsDir = path.resolve(import.meta.dirname, "../../packs");
 const BAKE = 1024;
 const assets = readPacks(packsDir);
 const bones = assets.manifest.skeleton.bones.map((b) => b.name);
-const vertexRegion = (v: number) => {
-  let best = 0;
-  for (let k = 1; k < 4; k++)
-    if ((assets.skinWeight[v * 4 + k] as number) > (assets.skinWeight[v * 4 + best] as number))
-      best = k;
-  return regionOfBone(bones[assets.skinIndex[v * 4 + best] as number] ?? "");
-};
+const vertexRegion = (v: number) =>
+  regionOfBone(bones[heaviestBone(assets.skinIndex, assets.skinWeight, v)] ?? "");
 const bodyGroup = assets.manifest.groups.find((g) => g.name === "body");
 if (!bodyGroup) throw new Error("no body group");
 const bodyTris = triangles(

@@ -12,13 +12,14 @@
  * rotations without evaluating again, which is what a bake sampling many frames
  * needs. `posedFigure` is both in one call.
  */
-import type { AttachmentMaterial } from "../format/assetFormat.ts";
+import { type AttachmentMaterial, SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import { solvedFolds } from "../foundation/posed.ts";
 import { BODY_REGIONS, regionOfBone } from "../makehuman/regions.ts";
 import type { HumanoidModel } from "../model/humanoidModel.ts";
 import { fitProxy, proxyIndex, proxyTopology } from "../model/proxy.ts";
 import { skinOfEvaluation } from "../model/reservoirSkin.ts";
 import type { Recipe } from "../recipe/recipe.ts";
+import { heaviestBone } from "../rig/influences.ts";
 import { type JointFold, renderFold } from "../rig/jointFold.ts";
 import {
   type BoneRotations,
@@ -105,14 +106,9 @@ function regionsOf(
   bones: readonly string[],
 ): Uint8Array {
   const byBone = Uint8Array.from(bones, (b) => BODY_REGIONS.indexOf(regionOfBone(b)));
-  const n = skinWeight.length / 4;
+  const n = skinWeight.length / SKIN_INFLUENCES;
   const out = new Uint8Array(n);
-  for (let v = 0; v < n; v++) {
-    let best = 0;
-    for (let k = 1; k < 4; k++)
-      if ((skinWeight[v * 4 + k] as number) > (skinWeight[v * 4 + best] as number)) best = k;
-    out[v] = byBone[skinIndex[v * 4 + best] as number] as number;
-  }
+  for (let v = 0; v < n; v++) out[v] = byBone[heaviestBone(skinIndex, skinWeight, v)] as number;
   return out;
 }
 

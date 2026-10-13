@@ -592,8 +592,8 @@ interface Evaluation {
 interface SurfaceTopology {
   index: Uint32Array;       // triangles
   uvs: Float32Array;
-  skinIndex: Uint16Array;   // four bone indices per render vertex
-  skinWeight: Float32Array; // four normalised weights per render vertex
+  skinIndex: Uint16Array;   // SKIN_INFLUENCES (8) bone indices per render vertex
+  skinWeight: Float32Array; // SKIN_INFLUENCES normalised weights per render vertex
   vertexCount: number;
 }
 ```
@@ -1532,7 +1532,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation`, as its geometry is written |
 | `onSettled?` | Called with an `Evaluation` once everything the recipe wears is drawn: the geometry is written and the hair style's strand map, the attachments' and garments' textures and the attachments' posed occlusion have loaded (then two frames). Wait for this, not `onEvaluated`, before a screenshot. The playground's `data-figure="ready"` is this |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`, `"bowed"`, `"overhead"`, `"squat"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`, `"bowed"`, `"overhead"`, `"squat"`), `joints`, joints posed by hand and laid over `body` (BVH channel degrees per joint, as in the authored pose files: `{ "upperarm01.L": { Xrotation: -22, Yrotation: -138 } }`; a joint named there takes these channels instead of the body pose's), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `bodyArtImages?` | `BodyArtImages`: the decoded images (`ImageBitmap`, loaded `HTMLImageElement`, canvas) the recipe's tattoos name by key. Keep the object stable: a new one bakes the figure's body art again. A tattoo whose image is missing is reported through `onError`, and the figure is drawn without its body art |

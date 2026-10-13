@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { type Quat, rotate } from "../src/graft/fit.ts";
 import {
   arcParams,
@@ -285,8 +286,9 @@ describe("a graft on a figure", { timeout: 120_000 }, () => {
     const head = bones.indexOf("head");
     const weightOn = (v: number, bone: number) => {
       let w = 0;
-      for (let k = 0; k < 4; k++)
-        if (topology.skinIndex[v * 4 + k] === bone) w += topology.skinWeight[v * 4 + k] as number;
+      for (let k = 0; k < SKIN_INFLUENCES; k++)
+        if (topology.skinIndex[v * SKIN_INFLUENCES + k] === bone)
+          w += topology.skinWeight[v * SKIN_INFLUENCES + k] as number;
       return w;
     };
     // The sphere's pole, its first vertex, is the crown: the head's alone.
@@ -298,7 +300,8 @@ describe("a graft on a figure", { timeout: 120_000 }, () => {
     expect(rimHead / topology.rim.length).toBeLessThan(0.95);
     for (let v = 0; v < topology.vertexCount; v++) {
       let w = 0;
-      for (let k = 0; k < 4; k++) w += topology.skinWeight[v * 4 + k] as number;
+      for (let k = 0; k < SKIN_INFLUENCES; k++)
+        w += topology.skinWeight[v * SKIN_INFLUENCES + k] as number;
       expect(w).toBeCloseTo(1, 4);
     }
   });

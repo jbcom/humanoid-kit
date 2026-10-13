@@ -32,6 +32,7 @@ import {
   type HumanoidAssets,
   jointPosition,
   pendingTargetFiles,
+  SKIN_INFLUENCES,
 } from "../format/assetFormat.ts";
 import {
   cutAwayOnModel,
@@ -1185,8 +1186,9 @@ export class HumanoidModel {
     const onHead = new Uint8Array(this.assets.manifest.vertexCount);
     for (let v = 0; v < onHead.length; v++) {
       let weight = 0;
-      for (let k = 0; k < 4; k++)
-        if (skinIndex[v * 4 + k] === head) weight += skinWeight[v * 4 + k] as number;
+      for (let k = 0; k < SKIN_INFLUENCES; k++)
+        if (skinIndex[v * SKIN_INFLUENCES + k] === head)
+          weight += skinWeight[v * SKIN_INFLUENCES + k] as number;
       onHead[v] = weight >= HEAD_WEIGHT ? 1 : 0;
     }
     return { positions, triangles: this.bodyControlTriangles, head: onHead };
@@ -1904,7 +1906,7 @@ export class HumanoidModel {
     const N = body.normals;
     const l = Math.hypot(N[r * 3] as number, N[r * 3 + 1] as number, N[r * 3 + 2] as number) || 1;
     const bones = (a: ArrayLike<number>) =>
-      [0, 1, 2, 3].map((k) => a[r * 4 + k] as number) as [number, number, number, number];
+      Array.from({ length: SKIN_INFLUENCES }, (_, k) => a[r * SKIN_INFLUENCES + k] as number);
     return {
       hole,
       normal: [
