@@ -1512,7 +1512,7 @@ and camera.
 | `initialRecipe?` | The figure to start from when uncontrolled; defaults to `createRecipe()`. Ignored when `value` is set |
 | `onChange?(recipe, change)` | Called with every new recipe, including undo, redo and loads; `change.cause` says which |
 | `onBeforeChange?(proposed, context)` | Synchronous veto: returns the recipe to accept (clamped or as proposed) or `false` |
-| `controls?` | `ControlLimits`: slider ranges, and sliders, tasks and panels to hide |
+| `controls?` | `ControlLimits`: slider ranges, and sliders, groups, tasks and panels to hide |
 | `coverPolicy?` | `CoverPolicy`: what counts as covered, and who may allow an uncovered figure (maybe asynchronously); see "Cover policy" |
 | `background?` | A CSS colour for the stage; sets `--hk-bg` on the creator's root. Without it the stage follows `--hk-bg` from your CSS (default `#1b2530`); see "Theming the stage" |
 | `eyeMaterials?` | The eye pack's `EyeLibrary` (`humanoid-kit-eyes`, `loadEyeLibrary`): worn by the figure, and offered as an Eye texture choice in Appearance; see "Eye materials" |
@@ -1577,6 +1577,7 @@ const FLOOR = 25;
   controls={{
     ranges: { age: { min: FLOOR }, breastSize: { min: 0.2, max: 0.8 } },
     hide: ["head/head-age-decr|incr"],
+    hideGroups: ["Face/Nose features"],
     hideTasks: ["Measure"],
     hidePanels: ["regions"],
   }}
@@ -1601,6 +1602,12 @@ const FLOOR = 25;
 - `hide`: slider ids left out of the tabs and the search.
 - `hideTasks`: tasks, by id or by the label on the tab (`Main`, `Gender`, `Face`,
   ...), left out, tab and sliders.
+- `hideGroups`: one group of a task's sliders left out, as `"<task>/<group>"`,
+  each by id or by label (`"Face/Nose features"`, `"Torso/Hip"`). The task is
+  named too because group names repeat across tasks (`Neck` is in Face and in
+  Measure); the split is at the first `/`, so a group that has one in its name
+  (`"Face/Chin/jaw"`) is written as it is. A task left with no group is left out
+  with its tab, as with `hide`.
 - `hidePanels`: `"regions"`, `"appearance"` or `"wardrobe"`.
 
 Hiding is not locking: a hidden slider keeps its value and a random figure or a
