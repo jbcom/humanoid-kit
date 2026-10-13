@@ -7,6 +7,7 @@
 import { ShaderLib, type WebGLProgramParametersWithUniforms, type WebGLRenderer } from "three";
 import { describe, expect, it } from "vitest";
 import { CoatMaterial } from "../src/render/coat.ts";
+import { applyDualSkinning, DualBones } from "../src/render/dualSkinning.ts";
 
 function shaderFor(): WebGLProgramParametersWithUniforms {
   return {
@@ -18,6 +19,24 @@ function shaderFor(): WebGLProgramParametersWithUniforms {
 }
 
 describe("the coat runtime probe", () => {
+  it("skins the comb through the same eight-place normal matrix as the coat", () => {
+    const material = new CoatMaterial();
+    const bones = new DualBones(1, 1);
+    applyDualSkinning(material, bones);
+    const shader = shaderFor();
+    material.onBeforeCompile(shader, {} as WebGLRenderer);
+
+    const declaration = shader.vertexShader.indexOf("mat4 hkNormalMatrix =");
+    const comb = shader.vertexShader.indexOf(
+      "hkComb = ( hkNormalMatrix * vec4( hkComb, 0.0 ) ).xyz;",
+    );
+    expect(declaration).toBeGreaterThanOrEqual(0);
+    expect(comb).toBeGreaterThan(declaration);
+    expect(shader.vertexShader).toContain("#ifdef HK_LINEAR_MATRIX");
+    material.dispose();
+    bones.dispose();
+  });
+
   it("captures the patched alpha path only under its separate QA program key", () => {
     const material = new CoatMaterial();
     const normalKey = material.customProgramCacheKey();
