@@ -37,6 +37,7 @@ import {
   Vector3,
 } from "three";
 import { ChannelQa } from "./ChannelQa";
+import { MiniatureLab } from "./MiniatureLab";
 import { tattooImages } from "./tattooImages";
 import { Walk } from "./Walk";
 
@@ -232,7 +233,12 @@ function initialPose(): ShotPose {
   };
 }
 
+/** `?miniatures=N` is the miniature stress lab (docs/MINIATURES.md); it needs no worker. */
 export function App() {
+  return params.has("miniatures") ? <MiniatureLab /> : <Studio />;
+}
+
+function Studio() {
   const client = useClient();
   if (!client) return null;
   return (
