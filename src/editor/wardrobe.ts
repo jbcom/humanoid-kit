@@ -30,14 +30,22 @@ export interface WardrobeGroup {
 /** Headings for the categories; one not named here is listed under its own name. */
 const LABELS: Record<string, string> = {
   underwear: "Underwear",
+  hosiery: "Stockings and tights",
+  armwear: "Arm sleeves",
   socks: "Socks",
+  bottoms: "Trousers and skirts",
   clothes: "Outfits",
+  top: "Tops",
   sweater: "Sweaters",
   jacket: "Jackets",
+  gloves: "Gloves",
   shoes: "Shoes",
   coat: "Coats",
-  hat: "Hats",
+  mask: "Masks",
+  glasses: "Glasses",
+  hat: "Hats and hoods",
   backpack: "Backpacks",
+  held: "Held",
 };
 
 /** The garments a clothing pack's manifest lists; none without a clothing pack. */

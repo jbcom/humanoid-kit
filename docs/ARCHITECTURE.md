@@ -43,7 +43,7 @@ needs more, up to its source's size and at most 2048 px, and never upscaled
 | `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | Walk, idle and swim clips as local bone rotations per frame, on the default skeleton (see "Animation") |
 | `humanoid-kit-eyes` | `manifest.json`, then per material `<id>.webp` | 32 CC0 eye materials (human, slit-pupil, toon, creature) whose textures add iris pattern and sclera detail to the eye shader's own colours (see "Attachment colour") |
 | `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | Ten scalp hair styles bound to the base mesh, each with its baked occlusion and a strand map (see "Scalp hair") |
-| `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 19 garments from MakeHuman's system assets (suits, shoes, a hat), each bound to the base mesh with the vertices it hides |
+| `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 87 garments: 19 from MakeHuman's system assets (suits, shoes, a hat) and 68 from the community's clothing packs, CC0 by their pages; each bound to the base mesh with the vertices it hides |
 
 A target is stored sparsely: the indices of the vertices it moves (`uint16`),
 then their `int16` xyz deltas, plus a per-target scale in metres per step.
@@ -114,7 +114,7 @@ per vertex, per-axis scale references) and mesh, plus `delete_verts`, a
 category (`kind`, below) and the asset's tags. The packer
 (`scripts/pack-clothing.ts`) packs diffuse and normal maps as WebP, each sized
 by what a clothed figure's framing needs (1024 to 2048 px on a side; 3.5 MB
-for all nineteen), and reads the same `.mhclo`
+for the nineteen system garments, 12.4 MB with the community's 68), and reads the same `.mhclo`
 syntax as the attachments: the system shoes write `material` and
 `vertexboneweights_file` between `verts` and its data, so a keyword line does
 not end a vertex or `delete_verts` block, and only the other section keyword
@@ -406,7 +406,10 @@ from each file.
   garment therefore also declares a category (`kind`, `GARMENT_LAYERS`, whose
   order is MakeHuman's own table of conventional values: underwear 39, socks
   43, shirt and trousers 47, sweater 50, indoor jacket 53, shoes 57, coat 61,
-  backpack 69), which decides between garments of equal `z_depth`, and the id
+  backpack 69, with the community garments' categories between them: hosiery
+  41, arm sleeves 42, a separate bottom 46 and top 48 either side of a whole
+  outfit, gloves 55, a mask 62, glasses 63 and a held prop 73), which decides
+  between garments of equal `z_depth`, and the id
   decides what is left, so an outfit always stacks the same way. The
   stack is processed from the outermost in; each garment is masked by the
   deletions of the garments over it only, then adds its own. A jacket's

@@ -64,6 +64,7 @@ import { appliedAnatomy, withAnatomyDefaults } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import {
   createAttachmentMaterial,
+  garmentAlpha,
   NAIL_EDGE_ATTRIBUTE,
   TeethMaterial,
 } from "../render/attachmentLook.ts";
@@ -476,7 +477,7 @@ function useGarmentMaterial(
       color: new Color(m.color[0], m.color[1], m.color[2]),
       roughness: m.roughness,
       metalness: 0,
-      alphaToCoverage: m.alphaToCoverage,
+      ...garmentAlpha(m),
       side: m.backfaceCull ? FrontSide : DoubleSide,
     });
     // Skinned as the body is, so a sleeve does not part from the arm at a joint.

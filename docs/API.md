@@ -577,8 +577,9 @@ body and of each garment are drawn.
   (`SurfaceTopology` plus `id`, `kind`, `zDepth`, `tags`, `material`,
   `textureUrl`, `normalTextureUrl`), built once. Its `index` draws every face.
 - `GARMENT_LAYERS`: the categories (`kind`) a garment can have and their order:
-  `underwear`, `socks`, `clothes`, `sweater`, `jacket`, `shoes`, `coat`, `hat`,
-  `backpack`.
+  `underwear`, `hosiery`, `armwear`, `socks`, `bottoms`, `clothes`, `top`,
+  `sweater`, `jacket`, `gloves`, `shoes`, `coat`, `mask`, `glasses`, `hat`,
+  `backpack`, `held`.
 - The arithmetic behind it, pure and exported: `layerOrder(entries)`,
   `stackVisibility(vertexCount, garments, visible?)`,
   `transferVisibility(visible, garment)`, `faceVisibility(faceVerts, faces,
@@ -2056,11 +2057,15 @@ import { clothingPack } from "humanoid-kit-clothing";
 ```
 
 `clothingPack` is `{ manifest, files: { "garments.bin.gz", ...WebP textures } }`.
-Pass it as `clothing`. It ships nineteen CC0 garments from MakeHuman's system
-assets, bound to the base mesh: twelve casual, sport, work and elegant suits
-(`suits/…`, category `clothes`; each a complete outfit, so one is worn at a
-time), six pairs of shoes (`shoes/shoes01` to `06`, category `shoes`) and a
-fedora (`hats/fedora01`, category `hat`). Loading it fails unless
+Pass it as `clothing`. It ships 87 CC0 garments bound to the base mesh.
+Nineteen are from MakeHuman's system assets: twelve casual, sport, work and
+elegant suits (`suits/…`, category `clothes`; each a complete outfit, so one
+is worn at a time), six pairs of shoes (`shoes/shoes01` to `06`, category
+`shoes`) and a fedora (`hats/fedora01`, category `hat`). 68 are from the
+MakeHuman community's clothing packs, each CC0 by its asset page, under ids
+`<group>/<asset>`: `bottoms/`, `tops/`, `suits/` (hero suits, a tunic),
+`underwear/`, `hosiery/`, `armwear/`, `gloves/`, `shoes/`, `masks/`,
+`glasses/`, `hats/` and `held/` (a staff, a bow, a dagger). Loading it fails unless
 it was built against the exact body pack. A figure wears garments by id in
 `recipe.outfit`.
 
