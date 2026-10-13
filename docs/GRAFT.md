@@ -164,13 +164,14 @@ evaluation of the body (`Graft.evaluate`).
      the band. A donor neck that leans otherwise than the body's (a heavy man's head on a
      slim woman) therefore bends into it instead of meeting it at a knee. Without the lean
      the test's donor shows a 20° crease at the rim; with it the crease stays under 8°.
-6. **Build the bridge.** The band has `rings` rings (4 by default):
+6. **Build the bridge.** The band has `rings` rings (8 by default):
    - **Ring 0** is the body's own loop vertices.
    - **The last ring** is the part's rim vertices.
    - **The interior rings** are cubic Hermite curves from the body loop to the rim. Each
      curve leaves along the body surface's continuation (the body normal crossed with the
      loop's tangent). It arrives along the same direction, which the lean has made the
-     part's too. Both tangents are scaled to the gap.
+     part's too. Both tangents are scaled to the distance from the loop point to its
+     rim point.
    - **The two zippers** (body loop to ring 1, last interior ring to the rim) are
      triangulated by merging the loops' rest arc-length parameters, so the band's triangles
      are fixed at build time.
@@ -290,6 +291,8 @@ used seven recipes:
 - relaxed, with the head turned the other way and tilted down.
 
 They were drawn whole and at the seam (front, back and side, lit and in wire). The join
-reads as one surface in all of them. Across the same grid at rest, the largest dihedral
+reads as one surface in all of them. In the front view of the overhead pose, the shoulders
+tear and the upper arms smear. That is the base figure's overhead pose, the same without
+the graft (#67), not the seam. Across the same grid at rest, the largest dihedral
 angle on any one figure's band edges is 2–7°, and on its rim edges 4–9°. The ungrafted
 figure's own loop edges reach 4–9°.
