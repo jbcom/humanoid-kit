@@ -241,6 +241,83 @@ whose weight is equal in every region is applied uniformly; the others get one
 weight per region and are blended by the masks, so a trait set differently on the
 face and the hips blends across the neck and waist instead of tearing.
 
+### Chest tissue (issue 27, design 2026-10-13)
+
+**Status: design only.** Nothing below is implemented yet: no `chest` recipe
+field, no `chest` target file and no bake script exist. The measured numbers come
+from the research probe named below.
+
+MakeHuman's breast targets are deltas around its female body's own average breast:
+upstream has no `averagecup-averagefirmness` file because the female base mesh
+already is that breast. It weights them by the female share of the frame
+(`1 - gender`), so `breastSize` and `breastFirmness` do nothing on a male frame and
+half on a mixed one. Deleting that factor is not a repair: on a male frame the
+deltas would land on a chest with no breast to be a delta of (size 0 digs a crater
+where the average nipple was). The kit keeps that path as it is, for MakeHuman
+parity (ruling 3). Beside it, an optional recipe field, `chest`, gives a breast on
+any frame, with no gender input (ruling 1).
+
+**Absent `chest`:** the macro model is MakeHuman's, byte for byte, including the
+female-share factor. Every saved recipe keeps its shape.
+
+**Present `chest`:** the breast is chest tissue over a flat baseline, and the legacy
+breast macros (`breastSize`, `breastFirmness`, and their regional overrides) no
+longer shape the body. Per body region, the macro model emits:
+
+- MakeHuman's own `breast/female-*` targets at full weight: the size and firmness
+  deltas, combined over age, muscle and weight as upstream combines them. Below size
+  .5 no cup target is weighted; the average-cup firmness deltas are scaled by `2s`.
+- The chest-tissue targets `chest/tissue-<age>-<muscle>-<weight>` (age anchors
+  baby, child, young and old; three muscle and three weight anchors: 36 targets),
+  weighted by `min(1, 2s) - (1 - gender)`. Each target is the average mound of
+  MakeHuman's female body at that anchor: its relief over its own biharmonic
+  membrane fill on a fixed chest support, so the target's sum with the female
+  base is the flat chest. The `+min(1, 2s)` part adds the mound the size asks
+  for. The `-(1 - gender)` part takes away the share of that same mound the frame's
+  macro bodies already carry, so it reads the frame macro only to undo the
+  frame's own female-anchor tissue, never to scale the trait.
+
+All of a region's chest contributions are then scaled by `k`, the frame's chest
+width over the width of the same figure at the female anchor: half the distance
+between the `breast.L` and `breast.R` bone tails. This keeps the mound in
+proportion on a wider or narrower chest, where a fixed size in metres would not.
+Both widths are linear in the target weights, so `k` comes from per-target joint
+deltas and needs no second evaluation pass. At gender 0, `k = 1` and the tissue
+weight is `0` at every size from .5 up, so a gender-0 figure with `chest` at
+size ≥ .5 is MakeHuman's figure with those breast values, byte for byte.
+
+Size is 0 = flat (no tissue on any frame), .5 = MakeHuman's average breast, 1 =
+MakeHuman's largest. Firmness is MakeHuman's own 0 to 1. Both are clamped to
+`[0, 1]` as MakeHuman clamps its sliders, and nothing is extrapolated past
+upstream's targets. Size below .5 is the average mound scaled down, not
+MakeHuman's `mincup`, which is a reduction of a body that already has a breast.
+On a flat chest it would dent the chest.
+
+**Sides.** `chest.left` and `chest.right` override the size and firmness on one
+side. They reach the evaluator through the `breastL` and `breastR` region masks,
+like any regional value, and every other region takes the global values. One side
+changes; the other stays within the masks' blend at the sternum.
+
+**Measured against the lab.** `scripts/research/chest-foundation/linear-check.ts`
+compares these weighted targets with the lab's measured generator, which fits the
+carried tissue on the mesh itself, on nine frame directions at eight ages from 5 to 70. The
+two agree to 0.6 mm RMS and 2.4 mm at most over the tissue's reach, worst on the
+regional frame splits. Without `k` they would differ by up to 12.5 mm.
+
+**Data.** The 36 chest-tissue targets are derived data: `scripts/bake-chest-tissue.ts`
+builds them from the body pack's own MakeHuman targets with the biharmonic fill.
+They ship as the body pack's target file `chest` (`targets-chest.bin.gz`, the
+same delta encoding as every target file). That file is outside the staged load
+order: it is fetched only when a recipe with `chest` is evaluated, so no legacy
+figure and no miniature bake loads it. Without it, a recipe with `chest` is
+pending, never evaluated through the old path.
+
+**Surface.** With `chest` present, the areola's adult size and its growth with
+the breast follow the tissue instead of the frame: the female areola where the
+chest carries the average mound or more, the male one on a flat chest, linear
+between (`min(1, 2s)`). The frame's own reads stay with the frame: puberty
+timing, nipple contrast, and the clavicle and rib visibility that follow body fat.
+
 ## Age policy
 
 `src/recipe/agePolicy.ts` supports all ages. The body follows MakeHuman at every
