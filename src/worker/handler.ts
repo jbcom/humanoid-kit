@@ -98,6 +98,9 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
             anatomy: assets.adultAnatomyManifest.anatomy,
           }),
           wardrobe: wardrobeOf(assets.clothingManifests),
+          ageSurfaceUrl: assets.manifest.ageSurface
+            ? (assets.fileUrls.get(assets.manifest.ageSurface.file) ?? null)
+            : null,
         });
         return;
       }

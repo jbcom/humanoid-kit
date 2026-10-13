@@ -201,6 +201,12 @@ export interface BodyManifest {
    */
   bodyOcclusion?: BodyOcclusionEntry;
   /**
+   * The age surface map (`src/surface/ageSurface.ts`), a texture in the body's
+   * UV space fetched only for a figure old enough to show it. Absent from packs
+   * that predate it, whose figures then age in shape alone.
+   */
+  ageSurface?: { file: string; sha256: string; size: number };
+  /**
    * MakeHuman's low-poly proxy bodies (`proxy741`, `male1591`, `female1605`):
    * other topologies for the body, bound to the base mesh like garments
    * (docs/MINIATURES.md). Absent from packs that predate them.
@@ -1727,6 +1733,8 @@ export async function loadHumanoidAssetsStaged(
   for (const a of manifest.attachments.entries) {
     if (a.material.texture) fileUrls.set(a.material.texture, body.file(a.material.texture));
   }
+  if (manifest.ageSurface)
+    fileUrls.set(manifest.ageSurface.file, body.file(manifest.ageSurface.file));
   clothingManifests.forEach((m, i) => {
     const pack = clothing[i] as ReturnType<typeof packResolver>;
     for (const g of m.garments.entries) {
