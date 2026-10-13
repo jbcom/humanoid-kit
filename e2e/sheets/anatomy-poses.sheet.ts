@@ -181,7 +181,8 @@ const SHEETS: { name: string; pose: Joints; seed: number; size: number; views: V
     size: 300,
     views: [
       { name: "front", camera: `frame=root&view=0,-0.2,1&span=1.5&at=0,-0.3,0&${LIGHT}` },
-      { name: "chest", camera: `frame=spine02&view=0,-0.6,1&span=0.6&${LIGHT}` },
+      // Folded, the chest faces the thighs: seen from the side and a little below.
+      { name: "chest", camera: `frame=spine02&view=1,-0.3,0.15&span=0.55&${LIGHT}` },
       { name: "side", camera: `frame=root&view=1,0,0&span=1.6&at=0,-0.3,0.2&${LIGHT}` },
     ],
   },
@@ -191,9 +192,12 @@ const SHEETS: { name: string; pose: Joints; seed: number; size: number; views: V
     seed: 7301,
     size: 300,
     views: [
-      { name: "foot end", camera: `frame=root&view=0,0.1,1&span=0.35&${LIGHT}` },
-      { name: "below", camera: `frame=root&view=0,-0.6,1&span=0.35&${LIGHT}` },
-      { name: "oblique", camera: `frame=root&view=0.6,0.3,0.75&span=0.35&${LIGHT}` },
+      // Laid back, the figure's front faces up (+y) and the perineum the foot end (+z);
+      // the external anatomy sits about 7 cm above the root's head.
+      { name: "wide", camera: `frame=root&view=0.35,0.5,1&span=1.5&at=0,0.2,0.2&${LIGHT}` },
+      { name: "foot end", camera: `frame=root&view=0,0.25,1&span=0.3&at=0,0.07,0.03&${LIGHT}` },
+      { name: "below", camera: `frame=root&view=0,-0.35,1&span=0.3&at=0,0.06,0.03&${LIGHT}` },
+      { name: "oblique", camera: `frame=root&view=0.6,0.45,0.65&span=0.3&at=0,0.07,0.03&${LIGHT}` },
     ],
   },
 ];
