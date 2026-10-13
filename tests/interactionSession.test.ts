@@ -191,4 +191,25 @@ describe("neutral interaction session", () => {
     expect(session.phase).toBe("ended");
     expect(runtime.running()).toEqual([]);
   });
+
+  it("cancels when an object participant id is removed and replaced", () => {
+    const presence = createPresenceRegistry();
+    const runtime = createInteractions(presence, { seed: 4, clipLength: () => 2 });
+    runtime.define([LOOPING_HANDOFF]);
+    presence.set(figure("tall", -1, tall));
+    presence.set(figure("short", 1, short));
+    presence.setObject(counter());
+    const session = runtime.propose("looping-handoff", {
+      giver: "tall",
+      receiver: "short",
+      counter: "counter",
+    });
+    presence.tick(0);
+    presence.removeObject("counter");
+    presence.setObject(counter());
+
+    presence.tick(1);
+    expect(session.phase).toBe("ended");
+    expect(runtime.running()).toEqual([]);
+  });
 });

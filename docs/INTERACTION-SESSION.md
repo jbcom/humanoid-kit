@@ -13,7 +13,8 @@ register definitions, then call `registry.tick(seconds)` from the simulation
 clock. Subscribe with `runtime.on(participant, listener)`. Listeners receive
 `accepted`, `declined`, `phase`, `beat`, `cancelled`, and `ended`
 events. The event and session carry no wall-clock values, so replaying the same
-definitions, seed and ticks gives the same lifecycle.
+definitions, seed, consent-policy answers at the same tick boundaries and ticks
+gives the same lifecycle.
 
 Applications choose their own animation, audio, UI and gameplay reactions to
 these events. The subscription returns an unsubscribe function; calling
