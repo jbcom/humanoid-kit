@@ -23,6 +23,7 @@ import { gzipSync } from "node:zlib";
 import type { AnimationManifest, ClipEntry, ClipSource } from "../../src/animation/clip.ts";
 import type { BodyManifest } from "../../src/format/assetFormat.ts";
 import { frameRotations } from "../../src/rig/pose.ts";
+import { AUTHORED_LICENCE, authoredClips } from "./authoredClips.ts";
 import { parseBvh } from "./bvh.ts";
 import { type CommunityPage, isCc0, judgeAsset, type SourceFile } from "./licenceRule.ts";
 import { quaterniusClips, retargetTarget } from "./packQuaternius.ts";
@@ -229,7 +230,12 @@ export interface PackAnimationsOptions {
   /** The directory holding the vendored Quaternius archives; without it only punkduck's clips are packed. */
   quaternius?: string;
   clips?: readonly ClipSpec[];
+  /** The directory of clips authored for this package (`AUTHORED_CLIPS_DIR` by default). */
+  authored?: string;
 }
+
+/** The author every clip authored for this package names. */
+export const AUTHORED_AUTHOR = "humanoid-kit";
 
 const metaField = (meta: string, key: string) =>
   meta.match(new RegExp(`^${key}\\s+(.*)$`, "m"))?.[1]?.trim() ?? "";
@@ -357,6 +363,30 @@ export function packAnimations(options: PackAnimationsOptions): void {
       );
     }
   }
+  // Clips authored for this package: key poses in `scripts/clips/`, sampled on the
+  // body's own skeleton, so no retarget. The source is the file itself, by its hash.
+  const authored = authoredClips(body.poses, rigBones, options.authored);
+  for (const a of authored) {
+    emit(
+      {
+        id: a.id,
+        title: a.title,
+        description: a.description,
+        tags: a.tags,
+        loop: a.loop,
+        rootMotion: a.rootMotion,
+        grounded: a.grounded,
+        source: {
+          archive: "humanoid-kit",
+          archiveSha256: a.sha256,
+          file: a.file,
+          author: AUTHORED_AUTHOR,
+          licence: AUTHORED_LICENCE,
+        },
+      },
+      encodeFrames(rigBones, a.fps, a.frames, (f, b) => a.frame(f).get(b)),
+    );
+  }
   const ids = clips.map((c) => c.id);
   const dup = ids.find((id, i) => ids.indexOf(id) !== i);
   if (dup) throw new Error(`two clips are called ${dup}`);
@@ -379,6 +409,7 @@ function writeProvenance(
   clips: ClipEntry[],
 ) {
   const fromQuaternius = clips.filter((c) => c.source.author === "Quaternius");
+  const fromAuthored = clips.filter((c) => c.source.author === AUTHORED_AUTHOR);
   const lines = [
     "# humanoid-kit-animations data provenance",
     "",
@@ -417,6 +448,20 @@ function writeProvenance(
           "rigs (`scripts/lib/retarget.ts`): a source bone's turn from its T-pose in the world is applied to the target bone",
           "from its own T-pose, the spine's by height, the pelvis to both legs' pelvis bones and the lowest spine bone. Only",
           "rotations are packed; where a clip carries a figure is derived from the figure's feet.",
+          "",
+        ]
+      : []),
+    ...(fromAuthored.length
+      ? [
+          "## Clips authored for this package",
+          "",
+          `${fromAuthored.length} clips, each a JSON file of key poses in \`scripts/clips/\` written for humanoid-kit and`,
+          `dedicated to the public domain (${AUTHORED_LICENCE}). Each is sampled at 30 fps on the body's own skeleton`,
+          "(`scripts/lib/authoredClips.ts`); its source hash is the file's:",
+          "",
+          ...fromAuthored.map(
+            (c) => `- ${c.id}: \`${c.source.file}\` (sha256 \`${c.source.archiveSha256}\`)`,
+          ),
           "",
         ]
       : []),

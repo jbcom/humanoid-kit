@@ -48,6 +48,7 @@ import {
 } from "three";
 import { ChannelQa } from "./ChannelQa";
 import { EffectiveAdultDefaultsLab } from "./EffectiveAdultDefaultsLab";
+import { GraftQa } from "./GraftQa";
 import { MiniatureLab } from "./MiniatureLab";
 import { QaShade } from "./qaShade";
 import { tattooImages } from "./tattooImages";
@@ -493,12 +494,15 @@ function initialPose(): ShotPose {
   };
 }
 
-/** `?miniatures=N` is the miniature stress lab (docs/MINIATURES.md); it needs no worker. */
 export function App() {
-  return params.has("miniatures") ? <MiniatureLab /> : <Studio />;
+  // `?miniatures=N` is the miniature stress lab (docs/MINIATURES.md); it needs no worker.
+  if (params.has("miniatures")) return <MiniatureLab />;
+  // The graft scene builds its own model on the main thread: it needs no worker.
+  if (params.get("scene") === "graft") return <GraftQa />;
+  return <WorkerApp />;
 }
 
-function Studio() {
+function WorkerApp() {
   const client = useClient();
   if (!client) return null;
   return (

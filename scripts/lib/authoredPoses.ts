@@ -30,11 +30,33 @@ export function authoredPose(
   if (shipped.some((p) => p.name === name)) return fail(`${name} is a MakeHuman pose's name`);
   const base = shipped.find((p) => p.name === baseName);
   if (!base) return fail(`unknown base ${String(baseName)}`);
+  const values = poseChannels(rotations, base, bones, fail);
+  // An empty file would pack as the rest pose under a name promising another.
+  if (![...values.values()].some((v) => v !== 0)) fail("rotates nothing");
+  return {
+    name,
+    title,
+    description,
+    joints: base.joints,
+    frame: poseFrame(base, values),
+  };
+}
+
+/**
+ * Authored rotations (`{ joint: { channel: degrees } }`) checked against a
+ * base pose's joint layout and the skeleton: channel values keyed `joint/channel`.
+ */
+export function poseChannels(
+  rotations: unknown,
+  base: BodyPoseEntry,
+  bones: readonly string[],
+  fail: (why: string) => never,
+): Map<string, number> {
   if (typeof rotations !== "object" || rotations === null) return fail("needs rotations");
   const values = new Map<string, number>();
   for (const [joint, channels] of Object.entries(rotations)) {
     const j = base.joints.find((b) => b.name === joint);
-    if (!j) return fail(`${String(baseName)} has no joint ${joint}`);
+    if (!j) return fail(`${base.name} has no joint ${joint}`);
     // A BVH joint with no bone of the same name would move nothing.
     if (!bones.includes(joint)) return fail(`${joint} is not a bone of the skeleton`);
     if (typeof channels !== "object" || channels === null) return fail(`${joint}: not an object`);
@@ -45,15 +67,12 @@ export function authoredPose(
       values.set(`${joint}/${c}`, v as number);
     }
   }
-  // An empty file would pack as the rest pose under a name promising another.
-  if (![...values.values()].some((v) => v !== 0)) fail("rotates nothing");
-  return {
-    name,
-    title,
-    description,
-    joints: base.joints,
-    frame: base.joints.flatMap((j) => j.channels.map((c) => values.get(`${j.name}/${c}`) ?? 0)),
-  };
+  return values;
+}
+
+/** A BVH frame over `base`'s joint layout: the given channel values, every other channel zero. */
+export function poseFrame(base: BodyPoseEntry, values: ReadonlyMap<string, number>): number[] {
+  return base.joints.flatMap((j) => j.channels.map((c) => values.get(`${j.name}/${c}`) ?? 0));
 }
 
 /** Every authored pose, in file-name order. */
