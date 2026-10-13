@@ -73,6 +73,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 
 - [ ] C12 #95 Land the default skin ageing (age spots, crepe, dryness) parked in the `humanoid-kit-ageing` worktree (owner: the #86 lane; design in docs first, `docs/research/SKIN-AGEING.md` is missing from integration).
 - [ ] C13 #96 Head-hair hairline renders stair-stepped above the forehead (owner: the #68 lane; check the scalp-coverage cause first).
+- [ ] C14 #107 Contact compression bulge: finish `wip/contact-compression-bulge` (volume gate back with no wider slack, hip contact gate green, cost, rim sheets read by root).
 
 ### D. Interaction and animation
 
@@ -95,7 +96,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] E10 #65 heavy-slot remote-run on the third pool host exits 125.
 - [ ] E11 #87 Measure `scheduler.yield` in `yieldWorkerTask` before adopting it.
 - [ ] E12 #93 Lane liveness counts pool leases and issue comments, not only worktree changes; the watchdog prints state changes.
-- [ ] E13 #94 contactCompression: land the hip-crease unit with its gate or narrow the test (lane `fix/contact-compression`, reads the dirty `humanoid-kit-fold` worktree read-only).
+- [x] E13 #94 contactCompression: the hip-crease unit was unfinished (misses its volume gate on two knees, breaks the hip contact gate), so its volume gate is held off integration; the unit is kept as `wip/contact-compression-bulge` and continues as C14 (#107).
 - [ ] E14 #106 Full e2e suite: body-hair-lab chest cover expectation, and effective-adult-defaults running in the default project against the preview build.
 
 ### F. Documentation and decisions
