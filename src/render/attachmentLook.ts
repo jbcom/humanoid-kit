@@ -209,6 +209,29 @@ export const NAIL_PLATE_ROUGHNESS = 0.15;
 
 const glslNumber = (x: number) => (Number.isInteger(x) ? `${x}.0` : `${x}`);
 
+/** Below this alpha a cutout garment's texel is a hole (three's `alphaTest`). */
+export const GARMENT_CUTOUT = 0.5;
+
+/**
+ * How a garment's material takes its texture's alpha, as the pack measured it:
+ * a cutout (a fishnet) is cut at `GARMENT_CUTOUT`, its edge smoothed by
+ * alpha-to-coverage where the canvas is multisampled, and opaque elsewhere, so
+ * it needs no sorting; a sheer cloth (tights) is blended over what it covers,
+ * drawn after the opaque skin, as three draws transparent objects (alpha
+ * hashing was tried and left tights a speckle of white noise); anything else
+ * is opaque.
+ */
+export function garmentAlpha(m: Pick<AttachmentMaterial, "transparent" | "alphaToCoverage">): {
+  alphaToCoverage: boolean;
+  alphaTest: number;
+  transparent: boolean;
+} {
+  if (m.alphaToCoverage)
+    return { alphaToCoverage: true, alphaTest: GARMENT_CUTOUT, transparent: false };
+  if (m.transparent) return { alphaToCoverage: false, alphaTest: 0, transparent: true };
+  return { alphaToCoverage: false, alphaTest: 0, transparent: false };
+}
+
 /**
  * A standard material for an attachment the way the pack describes it (its
  * roughness, transparency and culling), coloured by `attachmentColour`; teeth
