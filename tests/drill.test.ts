@@ -55,22 +55,25 @@ describe("period drill acceptance", () => {
   });
 
   it.each(DRILLS)("$clip meets every Hardee contact at every authored count", (drill) => {
+    const failures: string[] = [];
     for (const figure of DRILL_FIGURES) {
       const frameAt = drillFigure(figure.macros);
       const animation = clip(drill.clip);
       for (const count of drill.counts) {
         const result = judgeCount(drill, count, frameAt(animation, count.t).marks);
         for (const finding of result.findings)
-          expect(
-            finding.measured,
-            `${figure.name} ${drill.clip} ${finding.what}: ${(finding.measured * 1000).toFixed(1)} mm (limit ${(finding.bound * 1000).toFixed(1)} mm)`,
-          ).toBeLessThanOrEqual(finding.bound);
+          if (finding.measured > finding.bound)
+            failures.push(
+              `${figure.name} ${drill.clip} ${finding.what}: ${(finding.measured * 1000).toFixed(1)} mm (limit ${(finding.bound * 1000).toFixed(1)} mm)`,
+            );
       }
     }
+    expect(failures).toEqual([]);
   });
 
   it("grounds the rear knee and each supporting sole in the held kneeling prayer", () => {
     const animation = clip("kneel_pray");
+    const failures: string[] = [];
     for (const figure of DRILL_FIGURES) {
       const frame = drillFigure(figure.macros)(animation, animation.duration);
       const rearKnee = groundDistanceNear(
@@ -79,18 +82,21 @@ describe("period drill acceptance", () => {
         frame.marks("knee.R").position,
         0.1,
       );
-      expect(rearKnee, `${figure.name}: rear knee skin`).toBeLessThanOrEqual(0.015);
+      if (rearKnee > 0.015)
+        failures.push(`${figure.name}: rear knee skin: ${(rearKnee * 1000).toFixed(1)} mm`);
       // Left foot is forward: heel plus the two ball contacts. The kneeling right
       // foot rests on its two toe contacts while its heel is raised.
       for (const index of [0, 1, 2, 4, 5])
-        expect(
-          frame.soles[index * 3 + 1],
-          `${figure.name}: sole contact ${index}`,
-        ).toBeLessThanOrEqual(0.015);
+        if ((frame.soles[index * 3 + 1] as number) > 0.015)
+          failures.push(
+            `${figure.name}: sole contact ${index}: ${((frame.soles[index * 3 + 1] as number) * 1000).toFixed(1)} mm`,
+          );
     }
+    expect(failures).toEqual([]);
   });
 
   it("joins opposed prayer palms in front of the sternum", () => {
+    const failures: string[] = [];
     for (const id of ["kneel_pray", "pray_standing"]) {
       const animation = clip(id);
       for (const figure of DRILL_FIGURES) {
@@ -106,18 +112,18 @@ describe("period drill acceptance", () => {
           left.normal[0] * right.normal[0] +
           left.normal[1] * right.normal[1] +
           left.normal[2] * right.normal[2];
-        expect(
-          distance(left.position, right.position),
-          `${figure.name} ${id}: palm gap`,
-        ).toBeLessThanOrEqual(0.035);
-        expect(normalAgreement, `${figure.name} ${id}: palms face each other`).toBeLessThanOrEqual(
-          -0.5,
-        );
-        expect(middle[2], `${figure.name} ${id}: palms in front of sternum`).toBeGreaterThan(
-          marks("sternum-notch").position[2],
-        );
+        const gap = distance(left.position, right.position);
+        if (gap > 0.035)
+          failures.push(`${figure.name} ${id}: palm gap: ${(gap * 1000).toFixed(1)} mm`);
+        if (normalAgreement > -0.5)
+          failures.push(
+            `${figure.name} ${id}: palms face each other: ${normalAgreement.toFixed(3)}`,
+          );
+        if (middle[2] <= marks("sternum-notch").position[2])
+          failures.push(`${figure.name} ${id}: palms in front of sternum`);
       }
     }
+    expect(failures).toEqual([]);
   });
 
   it("keeps every non-locomotion period clip from skating on each reference figure", () => {
