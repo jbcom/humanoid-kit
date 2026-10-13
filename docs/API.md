@@ -494,7 +494,7 @@ and throws `RangeError` for anything else.
   the morphs in force, limited to targets `exists` accepts; the model passes
   the body's and the adult pack's morphs and the loaded packs' targets, so a
   state of the adult anatomy does nothing, rather than fails, without the adult
-  pack. `ADULT_ONLY_SIGNALS` (`arousal`) throw `AgePolicyError` under 18
+  pack. `ADULT_ONLY_SIGNALS` (`arousal`, `genitalMoisture`) throw `AgePolicyError` under 18
   (`assertSignalPolicy`), before any target is named. The organ is detail on the
   adult surface (drawn out of a reservoir), so engorgement moves drawn vertices
   of an adult figure with an organ and nothing in one without.
@@ -886,6 +886,12 @@ compute what the renderer will do.
   `genitalAlbedo(tone, site, arousal?)` is the adult layers' colour: modelled
   along the melanin and haemoglobin axes, **uncalibrated** (no measured genital
   colorimetry exists; research/SKIN-STATES.md, A4).
+  `VULVA_MOISTURE_LAYER` is the vulva's surface moisture (#82): a surface layer
+  over the vulva layer's own soft mask, glossier (`VULVA_MOISTURE_ROUGHNESS`) and
+  more specular (`VULVA_MOISTURE_SPECULAR`) as its own signal
+  `GENITAL_MOISTURE_SIGNAL` (`genitalMoisture`, adult-only) rises, independent of
+  `arousal`, nothing at 0; both sizes are choices (no measured gloss of wet
+  genital skin), the sweat film's, glossier for the inner surfaces.
   `model.adultLayerFields(): LayerFieldsUpdate | null` gives the adult layers'
   fields per render vertex once the adult pack's targets have loaded (null
   before, and without the pack); the topology always carries those layers as
@@ -1557,7 +1563,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onSettled?` | Called with an `Evaluation` once everything the recipe wears is drawn: the geometry is written and the hair style's strand map, the attachments' and garments' textures and the attachments' posed occlusion have loaded (then two frames). Wait for this, not `onEvaluated`, before a screenshot. The playground's `data-figure="ready"` is this |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
 | `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`, `"bowed"`, `"overhead"`, `"squat"`), `joints`, joints posed by hand and laid over `body` (BVH channel degrees per joint, as in the authored pose files: `{ "upperarm01.L": { Xrotation: -22, Yrotation: -138 } }`; a joint named there takes these channels instead of the body pose's), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
-| `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
+| `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` and `genitalMoisture` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat, `genitalMoisture` wets the vulva's skin); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `bodyArtImages?` | `BodyArtImages`: the decoded images (`ImageBitmap`, loaded `HTMLImageElement`, canvas) the recipe's tattoos name by key. Keep the object stable: a new one bakes the figure's body art again. A tattoo whose image is missing is reported through `onError`, and the figure is drawn without its body art |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, `"piercing"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
