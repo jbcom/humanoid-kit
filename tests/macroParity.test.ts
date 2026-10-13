@@ -16,8 +16,8 @@ import {
  * Parity with MakeHuman's macro model. The reference below restates MakeHuman's
  * documented slider-to-weight curves (its macro variables: each slider is a piecewise
  * linear partition of unity over its anchors) independently of the kit's code, so a
- * change to `macro.ts` that moves a weight away from MakeHuman fails here. The kit's
- * one documented deviation, the adult body held from 18 to 25, is pinned separately.
+ * change to `macro.ts` that moves a weight away from MakeHuman fails here. The kit has
+ * no deviation: the age axis is MakeHuman's at every age (owner ruling, 2026-10-13).
  */
 
 /** MakeHuman's age slider position for an age in years (1 to 25 maps to 0..0.5, 25 to 90 to 0.5..1). */
@@ -85,10 +85,10 @@ describe("macro parity with MakeHuman", () => {
     expect(weight(axis, "caucasian")).toBeCloseTo(0.25, 12);
   });
 
-  it("age follows MakeHuman's weights outside the 10 to 25 band", () => {
+  it("age follows MakeHuman's weights at every age", () => {
     // MakeHuman's constants (5.333) leave a baby residue of ~6e-5 at 10 years and the
     // kit snaps it to 0, so compare to a tolerance of 1e-3 rather than exactly.
-    for (const years of [1, 2, 4, 6, 8, 9, 25, 30, 40, 55, 70, 90]) {
+    for (let years = 1; years <= 90; years += 0.5) {
       const up = upstreamAge(years);
       const kit = asMap(ageAxis(years));
       expect(kit.get("baby") ?? 0).toBeCloseTo(up.baby, 2);
@@ -98,12 +98,10 @@ describe("macro parity with MakeHuman", () => {
     }
   });
 
-  it("DEVIATION (documented, docs/AGE-POLICY.md): the adult body holds from 18 to 25", () => {
-    // MakeHuman at 18 years is still about 47% child; the kit's adult body is full from 18.
-    expect(upstreamAge(18).young).toBeCloseTo(0.533, 2);
+  it("an 18-year-old is about 47% child, as in MakeHuman (owner ruling, 2026-10-13)", () => {
     expect(upstreamAge(18).child).toBeCloseTo(0.467, 2);
-    expect(weight(ageAxis(18), "adult")).toBe(1);
-    expect(weight(ageAxis(18), "child")).toBe(0);
+    expect(weight(ageAxis(18), "adult")).toBeCloseTo(8 / 15, 12);
+    expect(weight(ageAxis(18), "child")).toBeCloseTo(7 / 15, 12);
     expect(weight(ageAxis(25), "adult")).toBe(1);
   });
 

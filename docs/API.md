@@ -231,8 +231,8 @@ interface MacroValues {
 - Axis functions returning `AxisWeights`: `genderAxis`, `ageAxis`, `muscleAxis`,
   `weightAxis`, `heightAxis`, `proportionAxis`, `cupAxis`, `firmnessAxis` and
   `ethnicAxis`; `combine(prefix, axes)` takes their Cartesian product.
-- Constants: `AGE_ANCHORS` (`{ anchor, from, to, upstream }`: baby 1, child 10,
-  adult 18 to 25, old 90; `upstream` is MakeHuman's file name, `young` for
+- Constants: `AGE_ANCHORS` (`{ anchor, years, upstream }`: baby 1, child 10,
+  adult 25, old 90, MakeHuman's own ages; `upstream` is MakeHuman's file name, `young` for
   the adult body), `MIN_AGE` 1, `MAX_AGE` 90, `ADULT_AGE` 18.
 - `upstreamAgeAnchor(anchor)`: MakeHuman's name for an age body (`adult` →
   `young`), as used in target and pack file names. Types `AgeAnchor` and

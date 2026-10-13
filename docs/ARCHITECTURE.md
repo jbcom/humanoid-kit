@@ -157,10 +157,10 @@ anchor per axis (`african-male-young`,
 its anchors' weights. Each axis is a linear interpolation between anchors:
 
 - gender: female at 0, male at 1;
-- age: baby (1 year), child (10), adult (held from 18 to 25; MakeHuman's
-  `young` files) and old (90), piecewise linear between them, clamped to 1 to
-  90. MakeHuman itself puts its adult at 25 and blends child into it until
-  then; why the kit holds it from 18 is in [AGE-POLICY.md](AGE-POLICY.md);
+- age: baby (1 year), child (10), adult (25; MakeHuman's `young` files) and
+  old (90), piecewise linear between them, clamped to 1 to 90: MakeHuman's own
+  timeline, so a figure of 18 is about 47% child (see
+  [AGE-POLICY.md](AGE-POLICY.md));
 - muscle and weight: three anchors each, 0, 0.5 and 1;
 - height and proportions: one-sided from the base mesh, which is the average;
 - the three ethnic anchors, normalised to sum to 1 (equal thirds if all are 0).
