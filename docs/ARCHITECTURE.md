@@ -38,7 +38,7 @@ needs more, up to its source's size and at most 2048 px, and never upscaled
 
 | Pack | Files | Contents |
 | --- | --- | --- |
-| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, and the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion") |
+| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, `proxies.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion"), and MakeHuman's three low-poly proxy bodies, fetched only on first use (see docs/MINIATURES.md) |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
 | `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | Walk, idle and swim clips as local bone rotations per frame, on the default skeleton (see "Animation") |
 | `humanoid-kit-eyes` | `manifest.json`, then per material `<id>.webp` | 32 CC0 eye materials (human, slit-pupil, toon, creature) whose textures add iris pattern and sclera detail to the eye shader's own colours (see "Attachment colour") |
@@ -157,10 +157,10 @@ anchor per axis (`african-male-young`,
 its anchors' weights. Each axis is a linear interpolation between anchors:
 
 - gender: female at 0, male at 1;
-- age: baby (1 year), child (10), adult (held from 18 to 25; MakeHuman's
-  `young` files) and old (90), piecewise linear between them, clamped to 1 to
-  90. MakeHuman itself puts its adult at 25 and blends child into it until
-  then; why the kit holds it from 18 is in [AGE-POLICY.md](AGE-POLICY.md);
+- age: baby (1 year), child (10), adult (25; MakeHuman's `young` files) and
+  old (90), piecewise linear between them, clamped to 1 to 90: MakeHuman's own
+  timeline, so a figure of 18 is about 47% child (see
+  [AGE-POLICY.md](AGE-POLICY.md));
 - muscle and weight: three anchors each, 0, 0.5 and 1;
 - height and proportions: one-sided from the base mesh, which is the average;
 - the three ethnic anchors, normalised to sum to 1 (equal thirds if all are 0).
@@ -2747,7 +2747,7 @@ it by a polygon offset.
 
 ## Body hair
 
-**Use cases.** Every figure carries the body hair of its age and sex, at every
+**Use cases.** Every figure carries the body hair of its age and its recipe, at every
 skin tone, without a choice being made: vellus everywhere from infancy, and
 terminal hair coming in through adolescence and thinning and greying in old
 age. A creator can thin, thicken or shave a region and pick a beard. Axillary
@@ -2763,25 +2763,28 @@ Old recipes evaluate and serialise as before.
 
 - *One pure model, two ways of drawing.* `src/surface/bodyHair.ts` says how
   much terminal hair each region group carries (coverage 0..1, the
-  Ferriman-Gallwey grade over 4), from the gender macro read as the androgen
-  level, the age (a ramp per group on the Tanner ages, a thinning after 55) and
-  the recipe's controls; and what colour (the figure's hair pigments, darker on
+  Ferriman-Gallwey grade over 4), from the age (a ramp per group on the Tanner
+  ages, a thinning after 55) and the recipe's controls, never from the gender
+  macro (DECISIONS ruling 1, 2026-10-13: the androgen-axis anchors were a
+  gender multiplier on a trait, removed); and what colour (the figure's hair pigments, darker on
   the face and pubis, lighter on the limbs, greyed with age later on the body
   than the beard). The groups follow the modified FG regions, merged to what a
   picker offers: face, chest, abdomen, back, buttocks, arms, legs, axillary,
   and the adult-only pubic.
 - *Adult-only groups are gated in the model itself.* `defaultBodyHairCoverage`
   returns 0 for pubic hair unless the age is an adult's (`age >=
-  ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
-  scales the default, so no recipe value can add them under 18.
+  ADULT_AGE`, so an age that is not a number fails closed), a multiplier
+  scales the default, and an explicit coverage is 0 for them under 18, so no
+  recipe value can add them under 18.
 - *Legacy multipliers and explicit controls have separate meanings.*
   `recipe.bodyHair` is optional (the recipe schema grows only by optional
   fields). `density` remains a multiplier per group on the physiological
-  default for age and androgen axis (0 shaves a region, 2 doubles it, clamped
-  to full coverage), so saved recipes retain their results as a figure ages.
-  `coverage` is a new explicit mature coverage at every gender value, still
-  subject to the same age ramp and senescence; it cannot coexist with legacy
-  `density` for a group. `follicleDensity` independently changes physical
+  default for age (0 shaves a region, 2 doubles it, clamped to full coverage),
+  so saved recipes still read; it plateaus on a dense default, which is why the
+  creator writes `coverage` instead. `coverage` is the explicit choice: an
+  adult gets exactly that value, with no age ramp or senescence (those shape
+  the unset default only); before 18 it comes in over the group's puberty
+  onset, complete at 18. It cannot coexist with legacy `density` for a group. `follicleDensity` independently changes physical
   follicles per cm² and therefore strand spacing, never the covered fraction.
   `beard` is a style. Absent fields are not filled in by `createRecipe`, so a
   recipe that never set body hair serialises exactly as before.
@@ -2854,8 +2857,9 @@ Old recipes evaluate and serialise as before.
   their region), the vertex normals, and the armpits' hollows. The limbs stop
   short of the hands and feet, which carry little terminal hair and whose
   layers crowd the atlas.
-- *The beard defaults to none.* Clean-shaven is the neutral recipe; terminal
-  body hair and vellus are on by default for age and sex.
+- *The beard defaults to none.* Clean-shaven is the neutral recipe; vellus and
+  the limbs' and buttocks' terminal strands are on by default for age, while
+  the coat's groups draw only when the recipe enables them.
 - *Axillary hair is a coat region that comes with puberty (from 13); pubic hair
   is the adult pack's.*
   The armpit's hair is dense and a couple of centimetres long, so it is the
@@ -2929,7 +2933,8 @@ module.
   before: a woman's eyes hanging at a man's throat.
 - *A recipe asks for it, region by region.* A region grows only where the
   recipe enables it (`coatEnabled`): the beard by a style other than none, any
-  other group by setting its density. A recipe silent on body hair, or one
+  other group by setting its explicit coverage or its legacy density
+  (`drawnBodyHairCoverage` is what is drawn). A recipe silent on body hair, or one
   that names no region, grows no coat (`coatPaintFor` is null), so default
   figures stay bare.
 - *Strands from a tileable density texture* at true scale (`uv × uvScale`
@@ -2996,7 +3001,7 @@ beard style it serves; today `beard-full` (a full beard; a moustache and a
 goatee are the coat's alone). Each card carries a rank, a byte per vertex
 (`CARD_FIELD_KEYS`); `HairMaterial` discards a card whose rank is at or over
 its density (`setDensity`, the face's coverage), whole, beside the hairline
-test and outside the alpha-to-coverage term, so the beard thins with age, sex
+test and outside the alpha-to-coverage term, so the beard thins with age
 and the recipe with the same geometry, and scalp hair, with no ranks (0) and
 the default density (1), is untouched. The model wears a style's cards
 (`wornBeardCards`) only where the face grows terminal hair, so a child's figure
@@ -3072,8 +3077,8 @@ and overlapping), measuring the canvas against the model.
 
 ## The key light's shadow (2026-10-10)
 
-The stage's key light is the only light that casts, and its shadow map falls on the
-body itself: a thigh beside the groin, the back of a knee, an arm across a chest.
+The stage's key light (and, since 2026-10-13, its rim light, at radius 4: see "The rim
+light" below) casts, and the key's shadow map falls on the body itself: a thigh beside the groin, the back of a knee, an arm across a chest.
 It was a variance map (`VSMShadowMap`, a 2048² map over a fixed 2.8 m box,
 blurred 28 texels), and where one part shadowed another at a grazing angle it drew
 hard, stair-stepped light and dark wedges that `?noshadow` removed. Two things
@@ -3215,6 +3220,32 @@ map, then the tent at radius 4, 8, 12 and 16: body framing 5.3, 8.0, 6.3, 7.4,
 8.7 and 10.4 ms; a close-up 9.7, 11.0, 10.0, 10.8, 12.5 and 15.1 ms. The stage's
 radius 12 costs 0.7 to 1.5 ms more than the variance map did; radius 4 costs a
 fifth to a third of what the variance map cost over no shadow.
+
+### The rim light (2026-10-13)
+
+The stage's rim light was unshadowed, high and behind at (-1.2, 2.4, -3), intensity 1.6
+(jbcom/humanoid-kit#63). A light behind a figure and above it is nearly the mirror
+direction for any surface that faces up and a little forward: the clavicle, the slope of
+the shoulder, the underside of a raised arm and the hollow of the armpit. Skin's
+specular lobe is narrow and bright there, so the rim painted a white blotch on skin
+that no limb or torso had shaded from it (it was the only light that did this; every
+other skin and material toggle left it in place, and with all lights off it was gone).
+
+**Decision.** The rim casts a shadow, through the same fitted map and tent as the key
+(`ShadowedLight`), at radius 4 (`RIM_SHADOW_RADIUS`: 16 reads a pixel and a map a ninth
+of the key's, since a rim shades a silhouette and the hollows behind it, where a
+penumbra of about 1.5 cm is as good as the key's); it stands lower and farther out to
+the side, (-2.6, 0.6, -2.4), where it grazes the form's edge and the shoulder slope is
+no longer its mirror; and it is 0.7 instead of 1.6, so what the specular lobe cannot
+avoid is a sheen, not a blotch. Measured on contact sheets (front, and both
+three-quarters; light and dark skin, male and female, at rest and arms overhead),
+the pale, glossy patches at the armpit and clavicle are gone: bright pixels on dark skin
+in the front views fell from 90 to 107 a tile to 31 at rest and 4 to 12 with the arms
+overhead, and from 275 to 3 in the male's right three-quarter with the arms overhead.
+What is left is a thin sliver in one view (a raised arm seen from the right
+three-quarter, at the far shoulder through the neck gap), as bright at an intensity of
+0.4 as at 0.7: a skin material matter (a surface whose specular saturates), not the
+stage's.
 
 ## Animation (milestone 8, 2026-10-09)
 
@@ -3854,6 +3885,32 @@ kinematics, pads flattening at contact and tissue compressing under a load
 (docs/FOUNDATION.md, "Response") need a hand pose solver and soft
 deformation the kit does not have yet; the contact report is what that solver
 will read, so it comes first.
+
+## Regional contact and injury-state boundary (design, 2026-10-11)
+
+`RegionalContact` is the implemented pure evidence boundary: it checks a
+registered surface or aperture entry without choosing a response. It does not
+create animation, physiology, a wound, deformation, collision change or visual
+state. A surface remains intact skin; only a registered aperture can report an
+entry. This prevents a contact sample, including a future injury location, from
+becoming a universal opening.
+
+Dynamic injury state is planned and is deliberately outside the current public
+API. Its record must distinguish an intact-surface marking, a recoverable
+body-space deformation, and a persistent body-space change or scar. Each record
+needs a version, a stable anatomical anchor, an explicit lifecycle, and an
+explicit persistence policy. It must resolve through the morphed and posed
+skinned body, while garments and wrappings use their existing body binding to
+show coherent coverage. Creation changes neither collision nor affordance
+clearance unless a later, separately specified feature opts in and proves it.
+
+Consumers own event interpretation. Curse and Prayers may map their own
+projectile or blade events to neutral records and select art, pacing, damage and
+save policy locally. The kit does not classify a gameplay event, synthesize a
+visual injury, or claim a physical or medical response. The detailed planned
+record, lifecycle and test gates are in
+[Regional contact and injury contract](REGIONAL-CONTACTS.md); no renderer proof
+exists yet.
 
 ## Invariants
 

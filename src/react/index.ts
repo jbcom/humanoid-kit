@@ -4,6 +4,15 @@ export type { BodyArtImages } from "../render/bodyArtTexture.ts";
 export { ChannelClip, CLIP_CHANNELS, clipMaterial } from "../render/channelClip.ts";
 export { applyDualSkinning, DualBones, foldSlotAttribute } from "../render/dualSkinning.ts";
 export {
+  MiniatureCrowd,
+  type MiniatureCrowdOptions,
+  type MiniatureFigure,
+  type MiniatureFrameStats,
+  type MiniatureTint,
+  projectedPixels,
+  VAT_WIDTH,
+} from "../render/miniature.ts";
+export {
   applyShadowFilter,
   patchShadowFilter,
   SHADOW_FILTER_KEY,
@@ -31,6 +40,7 @@ export {
   useHumanoidClient,
   useHumanoidReady,
 } from "./Humanoid.tsx";
+export { Miniatures, type MiniaturesProps } from "./Miniatures.tsx";
 export {
   PresenceProvider,
   type PresenceRef,

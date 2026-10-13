@@ -41,7 +41,6 @@ const DEFAULT_AGE = 25;
 export function bodyHairInput(input: SkinPaintInput): BodyHairInput {
   return {
     age: input.age ?? DEFAULT_AGE,
-    gender: input.gender ?? 0.5,
     colour: input.hairColour ?? DEFAULT_HAIR_COLOUR,
     ...(input.bodyHair && { bodyHair: input.bodyHair }),
   };

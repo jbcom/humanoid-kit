@@ -1389,7 +1389,6 @@ export class HumanoidModel {
     if (!styles) return null;
     const input = {
       age: recipe.macros.age,
-      gender: recipe.macros.gender,
       colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
       ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     };

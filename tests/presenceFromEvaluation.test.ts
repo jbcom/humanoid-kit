@@ -72,6 +72,32 @@ describe("presenceFromEvaluation", () => {
     expect(child.anchors.head[1]).toBeLessThan(adult.anchors.head[1]);
   });
 
+  it("measures the body: heights stack hip, shoulder, eye, and a taller figure measures more", () => {
+    const p = presence(createRecipe());
+    const m = p.measures;
+    expect(m.hipHeight).toBeGreaterThan(0.7);
+    expect(m.hipHeight).toBeLessThan(m.shoulderHeight);
+    expect(m.shoulderHeight).toBeLessThan(m.eyeHeight);
+    expect(m.eyeHeight).toBeLessThan(p.anchors.head[1] + 0.1);
+    // Shoulder to grip: an arm, about two-fifths of the height.
+    expect(m.reach).toBeGreaterThan(0.5);
+    expect(m.reach).toBeLessThan(0.9);
+    const short = presence(createRecipe({ macros: { height: 0 } })).measures;
+    const tall = presence(createRecipe({ macros: { height: 1 } })).measures;
+    for (const key of ["reach", "shoulderHeight", "hipHeight", "eyeHeight"] as const)
+      expect(tall[key]).toBeGreaterThan(short[key]);
+  });
+
+  it("keeps a figure's measures through placing and cloning", () => {
+    const recipe = createRecipe();
+    const home = presence(recipe);
+    const moved = presence(recipe, { id: "m", position: [2, 0.5, -3], facing: [1, 0, 0] });
+    expect(moved.measures).toEqual(home.measures);
+    const copy = clonePresence(home);
+    expect(copy.measures).toEqual(home.measures);
+    expect(copy.measures).not.toBe(home.measures);
+  });
+
   it("places the figure: translated onto its ground position and turned to face its heading", () => {
     const recipe = createRecipe();
     const home = presence(recipe);

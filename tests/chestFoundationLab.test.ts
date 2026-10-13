@@ -57,23 +57,31 @@ describe("chest foundation lab: legacy identity", () => {
 describe("chest foundation lab: age", () => {
   // The knots and ages between them: linear interpolation over the knots is exact
   // because every library quantity is linear in years between MakeHuman's anchors.
-  const checked = [...new Set([...AGE_KNOTS, 7, 15, 33, 60])];
-  it.each(checked)("reproduces MakeHuman at age %i, at the average and maximum size", (age) => {
-    const recipe = cellRecipeAt(age);
-    const control = lab.model.evaluate(recipe).control;
-    const at = libraryAt(ages, age);
-    for (const [s, f] of [
-      [0.5, 0.5],
-      [1, 0.5],
-      [1, 0],
-    ] as const)
-      expect(
-        maxDiff(
-          chestTissue(ctx, at, control, both(s, f)).positions,
-          legacyControl(lab, recipe, s, f),
-        ),
-      ).toBeLessThan(1e-5);
-  });
+  // 19 to 24 cover the span MakeHuman blends child into adult (10 to 25).
+  const checked = [...new Set([...AGE_KNOTS, 7, 15, 19, 21, 22, 24, 33, 60])];
+  it.each(checked)(
+    "reproduces MakeHuman at age %i, at the average and every grid corner",
+    (age) => {
+      const recipe = cellRecipeAt(age);
+      const control = lab.model.evaluate(recipe).control;
+      const at = libraryAt(ages, age);
+      // The average and every corner of the library's size x firmness grid.
+      for (const [s, f] of [
+        [0.5, 0.5],
+        [0.5, 0],
+        [0.5, 1],
+        [1, 0],
+        [1, 0.5],
+        [1, 1],
+      ] as const)
+        expect(
+          maxDiff(
+            chestTissue(ctx, at, control, both(s, f)).positions,
+            legacyControl(lab, recipe, s, f),
+          ),
+        ).toBeLessThan(1e-5);
+    },
+  );
 
   it("fails the age identity gate with the wrong age's library (the gate can see a miss)", () => {
     const recipe = cellRecipeAt(13);
@@ -82,7 +90,7 @@ describe("chest foundation lab: age", () => {
     expect(maxDiff(got, legacyControl(lab, recipe, 1, 0.5))).toBeGreaterThan(1e-3);
   });
 
-  it("gives the review ages measurably different tissue, except the adult hold 18 to 25", () => {
+  it("gives the review ages measurably different tissue", () => {
     const tissueAt = (age: number) =>
       chestTissue(
         ctx,
@@ -95,12 +103,12 @@ describe("chest foundation lab: age", () => {
     for (const [a, b] of [
       [5, 13],
       [13, 25],
+      // MakeHuman's 18 is about 47% child, so it differs from 25 (owner ruling, 2026-10-13).
+      [18, 25],
       [25, 40],
       [40, 70],
     ] as const)
       expect(fieldRms(get(a), get(b)), `${a} y vs ${b} y`).toBeGreaterThan(0.003);
-    // The kit holds the adult body from 18 to 25 (AGE_ANCHORS), so these are one figure.
-    expect(fieldRms(get(18), get(25))).toBeLessThan(1e-6);
   });
 });
 

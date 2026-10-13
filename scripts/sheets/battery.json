@@ -193,5 +193,790 @@
     "$comment": "Every listed body at tones 1, 3, 5 and 6: the extremes of shape against light, mid and deep skin.",
     "bodies": ["f-slim", "f-heavy", "m-muscular", "m-heavy", "f-elder", "child"],
     "tones": ["tone-1", "tone-3", "tone-5", "tone-6"]
+  },
+  "scatter": {
+    "$comment": "The scatter set (src/foundation/scatter.ts): thirty adults spread over the ethnic simplex (each vertex, edge midpoint and the centre twice, the rest filling it), with melanin, undertone and six facial features each drawn independently over their whole range. The bodies, tones and cross sets are one mix against skin tones; this is the set that shows every look the model can make.",
+    "figures": [
+      {
+        "name": "scatter-01",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0.264,
+          "asian": 0.532,
+          "caucasian": 0.204
+        },
+        "skin": {
+          "melanin": 0.17,
+          "undertone": 1
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.55,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.562,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.562,
+          "chin/chin-width-decr|incr": 0.236,
+          "eyes/l-eye-epicanthus-in|out": -0.101,
+          "eyes/r-eye-epicanthus-in|out": -0.101,
+          "ears/l-ear-scale-decr|incr": -0.851,
+          "ears/r-ear-scale-decr|incr": -0.851,
+          "cheek/l-cheek-bones-decr|incr": -0.254,
+          "cheek/r-cheek-bones-decr|incr": -0.254
+        }
+      },
+      {
+        "name": "scatter-02",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0,
+          "asian": 0.5,
+          "caucasian": 0.5
+        },
+        "skin": {
+          "melanin": 0.624,
+          "undertone": -0.04
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.532,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.912,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.912,
+          "chin/chin-width-decr|incr": 0.483,
+          "eyes/l-eye-epicanthus-in|out": -0.605,
+          "eyes/r-eye-epicanthus-in|out": -0.605,
+          "ears/l-ear-scale-decr|incr": -0.72,
+          "ears/r-ear-scale-decr|incr": -0.72,
+          "cheek/l-cheek-bones-decr|incr": 0.051,
+          "cheek/r-cheek-bones-decr|incr": 0.051
+        }
+      },
+      {
+        "name": "scatter-03",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 1,
+          "asian": 0,
+          "caucasian": 0
+        },
+        "skin": {
+          "melanin": 0.3,
+          "undertone": -0.913
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.816,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.544,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.544,
+          "chin/chin-width-decr|incr": -0.046,
+          "eyes/l-eye-epicanthus-in|out": -0.368,
+          "eyes/r-eye-epicanthus-in|out": -0.368,
+          "ears/l-ear-scale-decr|incr": -0.213,
+          "ears/r-ear-scale-decr|incr": -0.213,
+          "cheek/l-cheek-bones-decr|incr": -0.415,
+          "cheek/r-cheek-bones-decr|incr": -0.415
+        }
+      },
+      {
+        "name": "scatter-04",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0.5,
+          "asian": 0,
+          "caucasian": 0.5
+        },
+        "skin": {
+          "melanin": 0.157,
+          "undertone": -0.566
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.41,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.292,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.292,
+          "chin/chin-width-decr|incr": -0.58,
+          "eyes/l-eye-epicanthus-in|out": -0.942,
+          "eyes/r-eye-epicanthus-in|out": -0.942,
+          "ears/l-ear-scale-decr|incr": 0.789,
+          "ears/r-ear-scale-decr|incr": 0.789,
+          "cheek/l-cheek-bones-decr|incr": -0.646,
+          "cheek/r-cheek-bones-decr|incr": -0.646
+        }
+      },
+      {
+        "name": "scatter-05",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0.183,
+          "asian": 0.386,
+          "caucasian": 0.431
+        },
+        "skin": {
+          "melanin": 0.892,
+          "undertone": -0.785
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.067,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.137,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.137,
+          "chin/chin-width-decr|incr": -0.495,
+          "eyes/l-eye-epicanthus-in|out": 0.046,
+          "eyes/r-eye-epicanthus-in|out": 0.046,
+          "ears/l-ear-scale-decr|incr": 0.055,
+          "ears/r-ear-scale-decr|incr": 0.055,
+          "cheek/l-cheek-bones-decr|incr": -0.767,
+          "cheek/r-cheek-bones-decr|incr": -0.767
+        }
+      },
+      {
+        "name": "scatter-06",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0,
+          "asian": 0,
+          "caucasian": 1
+        },
+        "skin": {
+          "melanin": 0.052,
+          "undertone": 0.804
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.236,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.419,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.419,
+          "chin/chin-width-decr|incr": -0.075,
+          "eyes/l-eye-epicanthus-in|out": -0.555,
+          "eyes/r-eye-epicanthus-in|out": -0.555,
+          "ears/l-ear-scale-decr|incr": 0.484,
+          "ears/r-ear-scale-decr|incr": 0.484,
+          "cheek/l-cheek-bones-decr|incr": 0.226,
+          "cheek/r-cheek-bones-decr|incr": 0.226
+        }
+      },
+      {
+        "name": "scatter-07",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0.01,
+          "asian": 0.838,
+          "caucasian": 0.152
+        },
+        "skin": {
+          "melanin": 0.101,
+          "undertone": 0.146
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.381,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.797,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.797,
+          "chin/chin-width-decr|incr": 0.725,
+          "eyes/l-eye-epicanthus-in|out": 0.353,
+          "eyes/r-eye-epicanthus-in|out": 0.353,
+          "ears/l-ear-scale-decr|incr": -0.397,
+          "ears/r-ear-scale-decr|incr": -0.397,
+          "cheek/l-cheek-bones-decr|incr": -0.955,
+          "cheek/r-cheek-bones-decr|incr": -0.955
+        }
+      },
+      {
+        "name": "scatter-08",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 1,
+          "asian": 0,
+          "caucasian": 0
+        },
+        "skin": {
+          "melanin": 0.577,
+          "undertone": -0.854
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.683,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.032,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.032,
+          "chin/chin-width-decr|incr": 0.883,
+          "eyes/l-eye-epicanthus-in|out": -0.77,
+          "eyes/r-eye-epicanthus-in|out": -0.77,
+          "ears/l-ear-scale-decr|incr": -0.31,
+          "ears/r-ear-scale-decr|incr": -0.31,
+          "cheek/l-cheek-bones-decr|incr": -0.074,
+          "cheek/r-cheek-bones-decr|incr": -0.074
+        }
+      },
+      {
+        "name": "scatter-09",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0,
+          "asian": 0,
+          "caucasian": 1
+        },
+        "skin": {
+          "melanin": 0.7,
+          "undertone": -0.468
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.765,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.781,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.781,
+          "chin/chin-width-decr|incr": 0.368,
+          "eyes/l-eye-epicanthus-in|out": -0.048,
+          "eyes/r-eye-epicanthus-in|out": -0.048,
+          "ears/l-ear-scale-decr|incr": -0.111,
+          "ears/r-ear-scale-decr|incr": -0.111,
+          "cheek/l-cheek-bones-decr|incr": 0.79,
+          "cheek/r-cheek-bones-decr|incr": 0.79
+        }
+      },
+      {
+        "name": "scatter-10",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0.076,
+          "asian": 0.09,
+          "caucasian": 0.834
+        },
+        "skin": {
+          "melanin": 0.392,
+          "undertone": -0.3
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.167,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.978,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.978,
+          "chin/chin-width-decr|incr": -0.239,
+          "eyes/l-eye-epicanthus-in|out": -0.318,
+          "eyes/r-eye-epicanthus-in|out": -0.318,
+          "ears/l-ear-scale-decr|incr": 0.432,
+          "ears/r-ear-scale-decr|incr": 0.432,
+          "cheek/l-cheek-bones-decr|incr": 0.836,
+          "cheek/r-cheek-bones-decr|incr": 0.836
+        }
+      },
+      {
+        "name": "scatter-11",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0.308,
+          "asian": 0.63,
+          "caucasian": 0.062
+        },
+        "skin": {
+          "melanin": 0.43,
+          "undertone": 0.052
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.499,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.625,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.625,
+          "chin/chin-width-decr|incr": -0.408,
+          "eyes/l-eye-epicanthus-in|out": -0.247,
+          "eyes/r-eye-epicanthus-in|out": -0.247,
+          "ears/l-ear-scale-decr|incr": -0.641,
+          "ears/r-ear-scale-decr|incr": -0.641,
+          "cheek/l-cheek-bones-decr|incr": -0.286,
+          "cheek/r-cheek-bones-decr|incr": -0.286
+        }
+      },
+      {
+        "name": "scatter-12",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0.042,
+          "asian": 0.332,
+          "caucasian": 0.626
+        },
+        "skin": {
+          "melanin": 0.799,
+          "undertone": -0.36
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.045,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.187,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.187,
+          "chin/chin-width-decr|incr": -0.348,
+          "eyes/l-eye-epicanthus-in|out": -0.517,
+          "eyes/r-eye-epicanthus-in|out": -0.517,
+          "ears/l-ear-scale-decr|incr": 0.321,
+          "ears/r-ear-scale-decr|incr": 0.321,
+          "cheek/l-cheek-bones-decr|incr": 0.185,
+          "cheek/r-cheek-bones-decr|incr": 0.185
+        }
+      },
+      {
+        "name": "scatter-13",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0.5,
+          "asian": 0.5,
+          "caucasian": 0
+        },
+        "skin": {
+          "melanin": 0.545,
+          "undertone": 0.918
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.156,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.677,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.677,
+          "chin/chin-width-decr|incr": 0.034,
+          "eyes/l-eye-epicanthus-in|out": 0.525,
+          "eyes/r-eye-epicanthus-in|out": 0.525,
+          "ears/l-ear-scale-decr|incr": -0.963,
+          "ears/r-ear-scale-decr|incr": -0.963,
+          "cheek/l-cheek-bones-decr|incr": -0.869,
+          "cheek/r-cheek-bones-decr|incr": -0.869
+        }
+      },
+      {
+        "name": "scatter-14",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0.333,
+          "asian": 0.333,
+          "caucasian": 0.334
+        },
+        "skin": {
+          "melanin": 0.681,
+          "undertone": 0.596
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.229,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.072,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.072,
+          "chin/chin-width-decr|incr": -0.314,
+          "eyes/l-eye-epicanthus-in|out": 0.247,
+          "eyes/r-eye-epicanthus-in|out": 0.247,
+          "ears/l-ear-scale-decr|incr": 0.887,
+          "ears/r-ear-scale-decr|incr": 0.887,
+          "cheek/l-cheek-bones-decr|incr": -0.469,
+          "cheek/r-cheek-bones-decr|incr": -0.469
+        }
+      },
+      {
+        "name": "scatter-15",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0.5,
+          "asian": 0,
+          "caucasian": 0.5
+        },
+        "skin": {
+          "melanin": 0.525,
+          "undertone": 0.348
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.911,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.505,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.505,
+          "chin/chin-width-decr|incr": -0.99,
+          "eyes/l-eye-epicanthus-in|out": -0.814,
+          "eyes/r-eye-epicanthus-in|out": -0.814,
+          "ears/l-ear-scale-decr|incr": 0.143,
+          "ears/r-ear-scale-decr|incr": 0.143,
+          "cheek/l-cheek-bones-decr|incr": 0.393,
+          "cheek/r-cheek-bones-decr|incr": 0.393
+        }
+      },
+      {
+        "name": "scatter-16",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0.5,
+          "asian": 0.5,
+          "caucasian": 0
+        },
+        "skin": {
+          "melanin": 0.094,
+          "undertone": 0.219
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.665,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.365,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.365,
+          "chin/chin-width-decr|incr": -0.894,
+          "eyes/l-eye-epicanthus-in|out": 0.463,
+          "eyes/r-eye-epicanthus-in|out": 0.463,
+          "ears/l-ear-scale-decr|incr": -0.585,
+          "ears/r-ear-scale-decr|incr": -0.585,
+          "cheek/l-cheek-bones-decr|incr": 0.977,
+          "cheek/r-cheek-bones-decr|incr": 0.977
+        }
+      },
+      {
+        "name": "scatter-17",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0.795,
+          "asian": 0.161,
+          "caucasian": 0.044
+        },
+        "skin": {
+          "melanin": 0.83,
+          "undertone": -0.126
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.684,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.216,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.216,
+          "chin/chin-width-decr|incr": -0.803,
+          "eyes/l-eye-epicanthus-in|out": 0.975,
+          "eyes/r-eye-epicanthus-in|out": 0.975,
+          "ears/l-ear-scale-decr|incr": -0.14,
+          "ears/r-ear-scale-decr|incr": -0.14,
+          "cheek/l-cheek-bones-decr|incr": 0.901,
+          "cheek/r-cheek-bones-decr|incr": 0.901
+        }
+      },
+      {
+        "name": "scatter-18",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0.521,
+          "asian": 0.017,
+          "caucasian": 0.462
+        },
+        "skin": {
+          "melanin": 0.439,
+          "undertone": 0.793
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.882,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.832,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.832,
+          "chin/chin-width-decr|incr": 0.828,
+          "eyes/l-eye-epicanthus-in|out": -0.73,
+          "eyes/r-eye-epicanthus-in|out": -0.73,
+          "ears/l-ear-scale-decr|incr": 0.549,
+          "ears/r-ear-scale-decr|incr": 0.549,
+          "cheek/l-cheek-bones-decr|incr": 0.604,
+          "cheek/r-cheek-bones-decr|incr": 0.604
+        }
+      },
+      {
+        "name": "scatter-19",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0.46,
+          "asian": 0.356,
+          "caucasian": 0.184
+        },
+        "skin": {
+          "melanin": 0.342,
+          "undertone": 0.699
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.448,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.452,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.452,
+          "chin/chin-width-decr|incr": -0.192,
+          "eyes/l-eye-epicanthus-in|out": 0.91,
+          "eyes/r-eye-epicanthus-in|out": 0.91,
+          "ears/l-ear-scale-decr|incr": 0.682,
+          "ears/r-ear-scale-decr|incr": 0.682,
+          "cheek/l-cheek-bones-decr|incr": 0.538,
+          "cheek/r-cheek-bones-decr|incr": 0.538
+        }
+      },
+      {
+        "name": "scatter-20",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0.354,
+          "asian": 0.264,
+          "caucasian": 0.382
+        },
+        "skin": {
+          "melanin": 0.009,
+          "undertone": 0.325
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.953,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.034,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.034,
+          "chin/chin-width-decr|incr": 0.584,
+          "eyes/l-eye-epicanthus-in|out": -0.177,
+          "eyes/r-eye-epicanthus-in|out": -0.177,
+          "ears/l-ear-scale-decr|incr": 0.118,
+          "ears/r-ear-scale-decr|incr": 0.118,
+          "cheek/l-cheek-bones-decr|incr": -0.011,
+          "cheek/r-cheek-bones-decr|incr": -0.011
+        }
+      },
+      {
+        "name": "scatter-21",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0,
+          "asian": 1,
+          "caucasian": 0
+        },
+        "skin": {
+          "melanin": 0.952,
+          "undertone": 0.625
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.268,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.239,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.239,
+          "chin/chin-width-decr|incr": 0.187,
+          "eyes/l-eye-epicanthus-in|out": 0.305,
+          "eyes/r-eye-epicanthus-in|out": 0.305,
+          "ears/l-ear-scale-decr|incr": -0.051,
+          "ears/r-ear-scale-decr|incr": -0.051,
+          "cheek/l-cheek-bones-decr|incr": 0.087,
+          "cheek/r-cheek-bones-decr|incr": 0.087
+        }
+      },
+      {
+        "name": "scatter-22",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0,
+          "asian": 1,
+          "caucasian": 0
+        },
+        "skin": {
+          "melanin": 0.262,
+          "undertone": 0.44
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.05,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.91,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.91,
+          "chin/chin-width-decr|incr": 0.44,
+          "eyes/l-eye-epicanthus-in|out": 0.541,
+          "eyes/r-eye-epicanthus-in|out": 0.541,
+          "ears/l-ear-scale-decr|incr": -0.891,
+          "ears/r-ear-scale-decr|incr": -0.891,
+          "cheek/l-cheek-bones-decr|incr": 0.274,
+          "cheek/r-cheek-bones-decr|incr": 0.274
+        }
+      },
+      {
+        "name": "scatter-23",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0.405,
+          "asian": 0.095,
+          "caucasian": 0.5
+        },
+        "skin": {
+          "melanin": 0.838,
+          "undertone": -0.181
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.07,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.504,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.504,
+          "chin/chin-width-decr|incr": 0.998,
+          "eyes/l-eye-epicanthus-in|out": -0.873,
+          "eyes/r-eye-epicanthus-in|out": -0.873,
+          "ears/l-ear-scale-decr|incr": 0.612,
+          "ears/r-ear-scale-decr|incr": 0.612,
+          "cheek/l-cheek-bones-decr|incr": -0.365,
+          "cheek/r-cheek-bones-decr|incr": -0.365
+        }
+      },
+      {
+        "name": "scatter-24",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0.223,
+          "asian": 0.173,
+          "caucasian": 0.604
+        },
+        "skin": {
+          "melanin": 0.665,
+          "undertone": -0.644
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.648,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.699,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.699,
+          "chin/chin-width-decr|incr": 0.073,
+          "eyes/l-eye-epicanthus-in|out": 0.757,
+          "eyes/r-eye-epicanthus-in|out": 0.757,
+          "ears/l-ear-scale-decr|incr": -0.766,
+          "ears/r-ear-scale-decr|incr": -0.766,
+          "cheek/l-cheek-bones-decr|incr": 0.456,
+          "cheek/r-cheek-bones-decr|incr": 0.456
+        }
+      },
+      {
+        "name": "scatter-25",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0,
+          "asian": 0.5,
+          "caucasian": 0.5
+        },
+        "skin": {
+          "melanin": 0.494,
+          "undertone": 0.526
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.759,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.989,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.989,
+          "chin/chin-width-decr|incr": -0.702,
+          "eyes/l-eye-epicanthus-in|out": 0.191,
+          "eyes/r-eye-epicanthus-in|out": 0.191,
+          "ears/l-ear-scale-decr|incr": 0.86,
+          "ears/r-ear-scale-decr|incr": 0.86,
+          "cheek/l-cheek-bones-decr|incr": -0.864,
+          "cheek/r-cheek-bones-decr|incr": -0.864
+        }
+      },
+      {
+        "name": "scatter-26",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0.677,
+          "asian": 0.092,
+          "caucasian": 0.231
+        },
+        "skin": {
+          "melanin": 0.926,
+          "undertone": -0.709
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.396,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.627,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.627,
+          "chin/chin-width-decr|incr": -0.8,
+          "eyes/l-eye-epicanthus-in|out": 0.61,
+          "eyes/r-eye-epicanthus-in|out": 0.61,
+          "ears/l-ear-scale-decr|incr": 0.396,
+          "ears/r-ear-scale-decr|incr": 0.396,
+          "cheek/l-cheek-bones-decr|incr": -0.693,
+          "cheek/r-cheek-bones-decr|incr": -0.693
+        }
+      },
+      {
+        "name": "scatter-27",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0.333,
+          "asian": 0.333,
+          "caucasian": 0.334
+        },
+        "skin": {
+          "melanin": 0.312,
+          "undertone": 0.081
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.949,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.109,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.109,
+          "chin/chin-width-decr|incr": 0.601,
+          "eyes/l-eye-epicanthus-in|out": 0.701,
+          "eyes/r-eye-epicanthus-in|out": 0.701,
+          "ears/l-ear-scale-decr|incr": 0.236,
+          "ears/r-ear-scale-decr|incr": 0.236,
+          "cheek/l-cheek-bones-decr|incr": -0.135,
+          "cheek/r-cheek-bones-decr|incr": -0.135
+        }
+      },
+      {
+        "name": "scatter-28",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0.591,
+          "asian": 0.218,
+          "caucasian": 0.191
+        },
+        "skin": {
+          "melanin": 0.982,
+          "undertone": -0.406
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.332,
+          "mouth/mouth-upperlip-volume-decr|incr": 0.301,
+          "mouth/mouth-lowerlip-volume-decr|incr": 0.301,
+          "chin/chin-width-decr|incr": 0.324,
+          "eyes/l-eye-epicanthus-in|out": 0.091,
+          "eyes/r-eye-epicanthus-in|out": 0.091,
+          "ears/l-ear-scale-decr|incr": 0.977,
+          "ears/r-ear-scale-decr|incr": 0.977,
+          "cheek/l-cheek-bones-decr|incr": 0.477,
+          "cheek/r-cheek-bones-decr|incr": 0.477
+        }
+      },
+      {
+        "name": "scatter-29",
+        "macros": {
+          "age": 25,
+          "gender": 0,
+          "african": 0.11,
+          "asian": 0.531,
+          "caucasian": 0.359
+        },
+        "skin": {
+          "melanin": 0.751,
+          "undertone": -0.26
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": -0.551,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.396,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.396,
+          "chin/chin-width-decr|incr": -0.628,
+          "eyes/l-eye-epicanthus-in|out": 0.824,
+          "eyes/r-eye-epicanthus-in|out": 0.824,
+          "ears/l-ear-scale-decr|incr": -0.524,
+          "ears/r-ear-scale-decr|incr": -0.524,
+          "cheek/l-cheek-bones-decr|incr": 0.67,
+          "cheek/r-cheek-bones-decr|incr": 0.67
+        }
+      },
+      {
+        "name": "scatter-30",
+        "macros": {
+          "age": 25,
+          "gender": 1,
+          "african": 0.146,
+          "asian": 0.83,
+          "caucasian": 0.024
+        },
+        "skin": {
+          "melanin": 0.229,
+          "undertone": -0.998
+        },
+        "modifiers": {
+          "nose/nose-scale-horiz-decr|incr": 0.858,
+          "mouth/mouth-upperlip-volume-decr|incr": -0.85,
+          "mouth/mouth-lowerlip-volume-decr|incr": -0.85,
+          "chin/chin-width-decr|incr": 0.743,
+          "eyes/l-eye-epicanthus-in|out": -0.416,
+          "eyes/r-eye-epicanthus-in|out": -0.416,
+          "ears/l-ear-scale-decr|incr": -0.403,
+          "ears/r-ear-scale-decr|incr": -0.403,
+          "cheek/l-cheek-bones-decr|incr": -0.546,
+          "cheek/r-cheek-bones-decr|incr": -0.546
+        }
+      }
+    ]
   }
 }

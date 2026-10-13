@@ -49,6 +49,11 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
   names what a figure wears (`outfit`); garments layer, hide the skin they cover
   without a gap at the cuff or neckline, and change without rebuilding the body.
   See [Clothing](./docs/ARCHITECTURE.md#clothing-milestone-7).
+- **Validated regional-contact evidence.** `RegionalContact` records a known
+  surface or aperture-entry sample and rejects a topology mismatch. It does not
+  trigger animation, physiology, injury or visual response. The planned,
+  neutral injury-state boundary and its renderer proof gates are in
+  [Regional contact and injury contract](./docs/REGIONAL-CONTACTS.md).
 - **Skeleton and facial pose data ship, ready for later work.** The packs carry
   the 163-bone default skeleton, skin weights and 60 facial pose units. Skin
   weights are interpolated onto the render surface. Posing, rigging and
