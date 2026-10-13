@@ -45,6 +45,7 @@ export * from "./makehuman/stateMorphs.ts";
 export * from "./model/garmentLook.ts";
 export * from "./model/humanoidModel.ts";
 export * from "./model/outfit.ts";
+export * from "./model/rigidFit.ts";
 export * from "./morph/evaluate.ts";
 export * from "./presence/fromEvaluation.ts";
 export * from "./presence/presence.ts";

@@ -526,8 +526,11 @@ follows the body.
 - *A rigid garment is bound like any other, then fitted.* A garment entry
   declares `rigid: true`. Its vertices are evaluated through the binding as
   usual, and the rigid transform that best maps its authored rest positions
-  onto those bound positions (Kabsch, rotation and translation, no scale) is
-  applied to the authored mesh. For skinning, every vertex takes the single
+  onto those bound positions (rotation and translation, no scale) is applied
+  to the authored mesh. The authored positions are the garment's binding on
+  the base mesh. The fit is Horn's closed form: the rotation is the top
+  eigenvector of a 4×4 symmetric matrix, found by Jacobi rotations, so it
+  needs no SVD and cannot return a reflection. For skinning, every vertex takes the single
   bone that carries the most of the garment's total weight. The canteen moves
   with the hip and keeps its shape. Rejected: landmark mounts, which need a
   new authored frame per accessory where the binding already says where the

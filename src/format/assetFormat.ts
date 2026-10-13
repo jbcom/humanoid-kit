@@ -429,6 +429,12 @@ export interface GarmentEntry extends Omit<AttachmentEntry, "layout"> {
   label: string;
   /** The asset's own tags (`Casual`, `Male`, ...). */
   tags: string[];
+  /**
+   * True for a piece that must not bend (a canteen, a cartridge box): it is
+   * bound as usual, then moved as one piece to where the binding put it, and
+   * skinned to one bone (`placeRigid`, `rigidSkin`). Absent is false.
+   */
+  rigid?: boolean;
   layout: Omit<AttachmentEntry["layout"], "occlusion">;
 }
 
@@ -1287,6 +1293,8 @@ function checkClothingPacks(body: BodyManifest, packs: readonly ClothingManifest
     for (const g of c.garments.entries) {
       if (attachments.has(g.id))
         throw new AssetFormatError(`garment ${g.id} is also an attachment`);
+      if (g.rigid !== undefined && typeof g.rigid !== "boolean")
+        throw new AssetFormatError(`garment ${g.id}: rigid must be true or false`);
       const other = packOf.get(g.id);
       if (other !== undefined && other !== i)
         throw new AssetFormatError(`garment ${g.id} is in clothing packs ${other} and ${i}`);
@@ -1595,19 +1603,34 @@ export async function loadHumanoidAssetsStaged(
   }
   // Each stage's bytes are fetched after the previous stage's settled; each is
   // added to the assets as soon as its own bytes are in. A failed stage fails
-  // only itself: the next one still fetches.
+  // only itself: the next one still fetches. In the garments stage each
+  // clothing pack also fails only itself: the packs that arrived and check are
+  // added, and the stage rejects with the first failure.
   let bytesBefore: Promise<unknown> = Promise.resolve();
   const stages = later.map((files) => {
-    const bytes = bytesBefore.then(() => fetchFiles(files));
-    bytesBefore = bytes.catch(() => {});
-    const loaded = bytes.then((fetched) => {
-      const targets: TargetFileData = {};
-      for (const [id, bin] of Object.entries(fetched)) {
-        const garmentPack = garmentFiles.indexOf(id);
-        if (garmentPack < 0) targets[id] = bin;
-        else if (bin) addGarments(assets, garmentPack, bin);
-      }
-      addTargetFiles(assets, targets);
+    const garmentIds = files.filter((id) => garmentFiles.includes(id));
+    const targetIds = files.filter((id) => !garmentFiles.includes(id));
+    const bytes = bytesBefore.then(() =>
+      Promise.allSettled([fetchFiles(targetIds), ...garmentIds.map((id) => fetchFiles([id]))]),
+    );
+    bytesBefore = bytes;
+    const loaded = bytes.then(([targets, ...garments]) => {
+      const failures: unknown[] = [];
+      garments.forEach((r, i) => {
+        const id = garmentIds[i] as string;
+        const bin = r.status === "fulfilled" ? r.value[id] : undefined;
+        if (r.status === "rejected") failures.push(r.reason);
+        else if (bin) {
+          try {
+            addGarments(assets, garmentFiles.indexOf(id), bin);
+          } catch (e) {
+            failures.push(e);
+          }
+        }
+      });
+      if (targets?.status === "rejected") failures.unshift(targets.reason);
+      else if (targets) addTargetFiles(assets, targets.value);
+      if (failures.length) throw failures[0];
       return assets;
     });
     // Observed here; callers that need a stage await it and see the failure.

@@ -87,6 +87,7 @@ import {
   type SkinWeights,
   skinOfEvaluation,
 } from "./reservoirSkin.ts";
+import { placeRigid, rigidSkin } from "./rigidFit.ts";
 import { tuckDepths } from "./tuck.ts";
 
 export interface ModelOptions {
@@ -496,7 +497,13 @@ export class HumanoidModel {
   /** Garments built so far, on first use. */
   private readonly garmentParts = new Map<
     string,
-    { asset: BoundGarment; part: Part; control: Float32Array }
+    {
+      asset: BoundGarment;
+      part: Part;
+      control: Float32Array;
+      /** A rigid garment's own shape (`GarmentEntry.rigid`); null for cloth. */
+      rigidShape: Float32Array | null;
+    }
   >();
   private readonly garmentTopologies = new Map<string, GarmentTopology>();
   /** Outfits worked out so far, most recent last; a handful, since few are worn at once. */
@@ -1546,6 +1553,8 @@ export class HumanoidModel {
     const garments = outfit.order.map((id) => {
       const g = this.garmentPart(id);
       const placed = evaluateBinding(g.asset, control, g.control);
+      // A rigid piece goes where its binding put it, in its own shape.
+      if (g.rigidShape) placeRigid(g.rigidShape, placed, placed);
       for (let i = 1; i < placed.length; i += 3) minY = Math.min(minY, placed[i] as number);
       return this.evaluatePart(g.part, placed);
     });
@@ -2140,10 +2149,22 @@ export class HumanoidModel {
     let g = this.garmentParts.get(id);
     if (!g) {
       const asset = this.garmentAsset(id);
+      const skin = bindingSkin(asset, this.assets.skinIndex, this.assets.skinWeight);
+      const n = asset.entry.vertexCount * 3;
       g = {
         asset,
-        part: part(this.attachmentSurface(asset, this.attachmentLevel)),
-        control: new Float32Array(asset.entry.vertexCount * 3),
+        part: part(
+          this.attachmentSurface(
+            asset,
+            this.attachmentLevel,
+            asset.entry.rigid ? rigidSkin(skin) : skin,
+          ),
+        ),
+        control: new Float32Array(n),
+        // A rigid piece's own shape: its binding on the base mesh, as it was drawn.
+        rigidShape: asset.entry.rigid
+          ? evaluateBinding(asset, this.assets.positions, new Float32Array(n))
+          : null,
       };
       this.garmentParts.set(id, g);
     }

@@ -84,7 +84,10 @@ fetched once the previous one has settled and is added to the same `assets`.
 Its `loaded` promise resolves, or rejects with the failure (an
 `AssetFormatError` for an HTTP or format error, the platform's `TypeError` for
 a network error or corrupt gzip). A failed stage fails only itself: every other
-stage still loads, and `complete` rejects with the first failure.
+stage still loads, and `complete` rejects with the first failure. In the
+garments stage a failed clothing pack also fails only itself. The other packs'
+garments are added, the failed pack stays in `pendingGarmentPacks`, and the
+stage rejects with its error.
 `loadHumanoidAssets` is this with `complete` awaited.
 
 Also exported:
@@ -572,6 +575,13 @@ body and of each garment are drawn.
   `underwear`, `hosiery`, `armwear`, `socks`, `bottoms`, `clothes`, `top`,
   `sweater`, `jacket`, `gloves`, `shoes`, `coat`, `mask`, `glasses`, `hat`,
   `backpack`, `held`.
+- `GarmentEntry.rigid`: true for a piece that must not bend, such as a canteen
+  or a cartridge box. It is bound like any garment, then moved as one piece to
+  where its binding put it (`rigidFit`, `placeRigid`: the least-squares
+  rotation and translation from its shape on the base mesh, with no scale).
+  It is skinned to the one bone that carries most of it (`rigidSkin`), so
+  neither the body's shape nor a pose bends it. A value other than true or
+  false is an `AssetFormatError` at load.
 - `recipe.outfitLook`: a figure's own finish per worn garment id, without a
   second copy of the mesh. A `GarmentLook` is `{ tint?, roughness?, wear? }`.
   `tint` is linear RGB (each ≥ 0) multiplied into the pack's colour and
