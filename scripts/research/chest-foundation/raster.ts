@@ -25,6 +25,8 @@ export interface Scene {
   index: ArrayLike<number>;
   /** Optional per-vertex rgb in 0..1 (lit mode multiplies the skin colour). */
   colours?: Float32Array;
+  /** How much of a shaded pixel's colour is `colours` rather than the study's skin (default 0.65). */
+  colourWeight?: number;
 }
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -47,6 +49,7 @@ export function render(
   height: number,
   ss = 2,
 ): Uint8Array {
+  const colourWeight = scene.colourWeight ?? 0.65;
   const W = width * ss;
   const H = height * ss;
   const up = camera.up ?? [0, 1, 0];
@@ -159,18 +162,18 @@ export function render(
         let col = skin;
         if (scene.colours)
           col = [
-            skin[0] * 0.35 +
-              0.65 *
+            skin[0] * (1 - colourWeight) +
+              colourWeight *
                 (w0 * (scene.colours[a * 3] as number) +
                   w1 * (scene.colours[b * 3] as number) +
                   w2 * (scene.colours[c * 3] as number)),
-            skin[1] * 0.35 +
-              0.65 *
+            skin[1] * (1 - colourWeight) +
+              colourWeight *
                 (w0 * (scene.colours[a * 3 + 1] as number) +
                   w1 * (scene.colours[b * 3 + 1] as number) +
                   w2 * (scene.colours[c * 3 + 1] as number)),
-            skin[2] * 0.35 +
-              0.65 *
+            skin[2] * (1 - colourWeight) +
+              colourWeight *
                 (w0 * (scene.colours[a * 3 + 2] as number) +
                   w1 * (scene.colours[b * 3 + 2] as number) +
                   w2 * (scene.colours[c * 3 + 2] as number)),
