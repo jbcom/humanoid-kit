@@ -806,6 +806,11 @@ and no route reaches the history or `onChange` without it.
 - *Hiding is not locking.* `visibleTasks` filters the taxonomy once, in the editor
   state, so the tabs, the search and the pick map's `onPick` all see the same
   smaller creator. A hidden slider keeps its value.
+- *Late defaults do not become an edit.* When a loaded pack resolves a default
+  that a host range narrows, the uncontrolled creator reconciles its existing
+  history through that same range before it paints. Adjacent recipes that now
+  describe the same constrained figure are one history position, so undo never
+  remains available for a step that cannot change the figure.
 - *Controlled.* The creator's state keeps the history (undo needs it) and the host
   keeps the figure. A change that passes the gate is reported through `onChange`
   and, with `value`, adopted when `value` comes back equal to it; `value` is
@@ -3461,12 +3466,21 @@ topology and the field atlas exist. Decisions:
   recipe sets, 0 included, wins, so a developer can still draw an adult without
   some feature. The core stays anatomy-free: it knows a curve over gender, not
   what the curve shapes (docs/FOUNDATION.md, "both forms").
-- **Creator neutral values preserve that distinction.** `withSliderValue` may
-  receive the loaded `anatomy.defaults` map. With it, an adult-only modifier
-  named by that map keeps an explicit zero in the recipe; other neutral
-  modifiers remain absent. The React editor passes `ReadyInfo.anatomy.defaults`
-  when available. Consumers that do not load an adult pack keep the existing
-  compact neutral-recipe behavior.
+- **Creator values use that same resolver.** `withSliderValue` and the creator
+  rows receive the loaded `anatomy.defaults` map (the React editor passes
+  `ReadyInfo.anatomy.defaults` when available), so an absent recipe key
+  displays the value the model evaluates rather than a misleading zero.
+  Consumers that do not load an adult pack keep the compact neutral-recipe
+  behavior. Editing a defaulted adult modifier to zero retains an explicit
+  zero; resetting that row removes the
+  explicit override so the pack default applies again, unless that default is
+  outside the host's allowed range, in which case the reset retains the nearest
+  allowed explicit value. Controls without a loaded default retain their
+  ordinary neutral-value behavior. This is generic editor plumbing: it consumes
+  the pack's map and names no adult modifier. The creator's host-limit gate
+  resolves the same effective values before clamping, so an untouched default
+  outside a host range becomes an explicit in-range override before it can be
+  drawn or reported.
 - Until the adult stage arrives their fields are zero (empty atlas pages).
   When it arrives the worker derives the fields from the pack's targets and
   posts them; the main thread re-rasterises those pages of the shared atlas.

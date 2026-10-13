@@ -14,6 +14,7 @@
 import type { ShapeModifierEntry, SliderEntry } from "../format/assetFormat.ts";
 import { ADULT_AGE, MAX_AGE, type MacroValues, MIN_AGE } from "../makehuman/macro.ts";
 import { AgePolicyError, withAge } from "../recipe/agePolicy.ts";
+import { withAnatomyDefaults } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 
 export interface SliderRange {
@@ -52,9 +53,18 @@ export function sliderRange(entry: SliderEntry, modifiers: ModifierTable): Slide
   return { min: two ? -1 : 0, max: 1, step: 0.005, neutral: 0 };
 }
 
-export function sliderValue(recipe: Recipe, entry: SliderEntry): number {
+/**
+ * The value a creator row presents. Adult anatomy defaults are evaluated with
+ * the same resolver as the model, so a missing recipe key is not mistaken for
+ * zero when the loaded pack supplies a default.
+ */
+export function sliderValue(
+  recipe: Recipe,
+  entry: SliderEntry,
+  anatomyDefaults?: Readonly<Record<string, string>>,
+): number {
   if (entry.kind === "macro") return recipe.macros[entry.id as keyof MacroValues];
-  return recipe.modifiers[entry.id] ?? 0;
+  return withAnatomyDefaults(recipe, anatomyDefaults).modifiers[entry.id] ?? 0;
 }
 
 /** A new recipe with the slider set; the input is not modified. */
@@ -95,6 +105,42 @@ export function withSliderValue(
       macros[k] = rest > 1e-9 ? ((1 - v) * recipe.macros[k]) / rest : (1 - v) / others.length;
   }
   return { ...recipe, macros };
+}
+
+/**
+ * Returns a recipe as though its row's reset button was pressed. A defaulted
+ * adult row clears its explicit value so the loaded pack can apply its default;
+ * every other row resets to its ordinary neutral value.
+ */
+export function resetSliderValue(
+  recipe: Recipe,
+  entry: SliderEntry,
+  modifiers: ModifierTable,
+  anatomyDefaults?: Readonly<Record<string, string>>,
+  range?: Pick<SliderRange, "min" | "max">,
+): Recipe {
+  if (
+    entry.kind === "modifier" &&
+    anatomyDefaults !== undefined &&
+    Object.hasOwn(anatomyDefaults, entry.id)
+  ) {
+    if (!Object.hasOwn(recipe.modifiers, entry.id)) return recipe;
+    const next = { ...recipe, modifiers: { ...recipe.modifiers } };
+    delete next.modifiers[entry.id];
+    if (!range) return next;
+    const effective = sliderValue(next, entry, anatomyDefaults);
+    const limited = clamp(effective, range.min, range.max);
+    return limited === effective
+      ? next
+      : withSliderValue(recipe, entry, limited, modifiers, anatomyDefaults);
+  }
+  return withSliderValue(
+    recipe,
+    entry,
+    sliderRange(entry, modifiers).neutral,
+    modifiers,
+    anatomyDefaults,
+  );
 }
 
 export type Availability = { enabled: true } | { enabled: false; reason: string };

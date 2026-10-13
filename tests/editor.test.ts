@@ -2,6 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   formatSliderValue,
+  resetSliderValue,
   sliderAvailability,
   sliderRange,
   sliderValue,
@@ -25,6 +26,7 @@ import { loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets(true);
 const modifiers = assets.modifiers;
+const anatomyDefaults = assets.adultAnatomyManifest?.anatomy?.defaults;
 const allSliders = assets.sliders.flatMap((t) => t.groups.flatMap((g) => g.sliders));
 const slider = (id: string) => {
   const s = allSliders.find((x) => x.id === id);
@@ -124,6 +126,48 @@ describe("editor controls", () => {
     expect(Object.keys(withSliderValue(r, s, 0, modifiers).modifiers)).toEqual([]);
   });
 
+  it("shows the loaded adult defaults at every gender anchor, and lets an explicit zero override them", () => {
+    if (!anatomyDefaults) throw new Error("fixture has no adult anatomy defaults");
+    expect(Object.keys(anatomyDefaults).sort()).toEqual([
+      "genitals/phallus-size",
+      "genitals/testes-size",
+    ]);
+
+    const phallus = slider("genitals/phallus-size");
+    const testes = slider("genitals/testes-size");
+    for (const [gender, expected] of [
+      [0, [0.08, 0]],
+      [0.5, [0.365, 0.3]],
+      [1, [0.65, 0.6]],
+    ] as const) {
+      const recipe = createRecipe({ macros: { age: 30, gender } });
+      expect(sliderValue(recipe, phallus, anatomyDefaults)).toBeCloseTo(expected[0], 9);
+      expect(sliderValue(recipe, testes, anatomyDefaults)).toBeCloseTo(expected[1], 9);
+    }
+
+    const recipe = createRecipe({ macros: { age: 30, gender: 0.5 } });
+    const hidden = withSliderValue(recipe, phallus, 0, modifiers, anatomyDefaults);
+    expect(hidden.modifiers[phallus.id]).toBe(0);
+    expect(sliderValue(hidden, phallus, anatomyDefaults)).toBe(0);
+    const limitedReset = resetSliderValue(hidden, phallus, modifiers, anatomyDefaults, {
+      min: 0,
+      max: 0.2,
+    });
+    expect(limitedReset.modifiers[phallus.id]).toBe(0.2);
+    expect(sliderValue(limitedReset, phallus, anatomyDefaults)).toBe(0.2);
+    const reset = resetSliderValue(hidden, phallus, modifiers, anatomyDefaults);
+    expect(reset.modifiers[phallus.id]).toBeUndefined();
+    expect(sliderValue(reset, phallus, anatomyDefaults)).toBeCloseTo(0.365, 9);
+  });
+
+  it("keeps neutral reset semantics when no loaded default owns a control", () => {
+    const nose = slider("nose/nose-scale-horiz-decr|incr");
+    const changed = withSliderValue(createRecipe(), nose, 0.4, modifiers, anatomyDefaults);
+    const reset = resetSliderValue(changed, nose, modifiers, anatomyDefaults);
+    expect(reset.modifiers[nose.id]).toBeUndefined();
+    expect(sliderValue(reset, nose, anatomyDefaults)).toBe(0);
+  });
+
   it("formats values for display", () => {
     const age = slider("age");
     expect(formatSliderValue(age, 34, sliderRange(age, modifiers))).toBe("34 yr");
@@ -167,6 +211,29 @@ describe("recipe history", () => {
     h = historyReducer(h, { type: "undo" });
     h = historyReducer(h, { type: "set", recipe: r(5) });
     expect(h.future).toEqual([]);
+  });
+
+  it("reconciles late constraints without keeping an equivalent undo step or losing a distinct edit", () => {
+    const initial = r(30);
+    const defaulted = (recipe: typeof initial) =>
+      recipe.modifiers.defaulted === undefined
+        ? { ...recipe, modifiers: { ...recipe.modifiers, defaulted: 0.2 } }
+        : recipe;
+    const constrained = defaulted(initial);
+
+    let equivalent = historyReducer(createHistory(initial), { type: "set", recipe: constrained });
+    equivalent = historyReducer(equivalent, { type: "reconcile", normalize: defaulted });
+    expect(equivalent.past).toEqual([]);
+    expect(equivalent.present).toEqual(constrained);
+
+    const edited = { ...initial, macros: { ...initial.macros, weight: 0.7 } };
+    let distinct = historyReducer(createHistory(initial), { type: "set", recipe: edited });
+    distinct = historyReducer(distinct, { type: "reconcile", normalize: defaulted });
+    expect(distinct.past).toEqual([constrained]);
+    expect(distinct.present).toEqual(defaulted(edited));
+    distinct = historyReducer(distinct, { type: "undo" });
+    expect(distinct.present).toEqual(constrained);
+    expect(distinct.past).toEqual([]);
   });
 
   it("ignores undo and redo at the ends", () => {
