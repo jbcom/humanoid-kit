@@ -47,7 +47,16 @@ const chromeFlags = [
 const config = {
   ci: {
     ...ci,
-    collect: { ...ci.collect, settings: { ...ci.collect.settings, chromeFlags } },
+    collect: {
+      ...ci.collect,
+      settings: {
+        ...ci.collect.settings,
+        chromeFlags,
+        // On Linux SwiftShader, this optional report artifact can hang after
+        // audit collection. Keep the audits and their assertions intact.
+        disableFullPageScreenshot: true,
+      },
+    },
     upload: { target: "filesystem", outputDir: `./${root}/reports` },
   },
 };
