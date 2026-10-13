@@ -82,15 +82,8 @@ const SHADOW_OPACITY = 0.6;
 /** How fast the gap eases, metres per second. */
 const GAP_RATE = 1.5;
 
-// The two walkers span the range: a pure asian frame on lighter skin, a pure african frame on deep.
-const alex = createRecipe({
-  macros: { gender: 0.2, height: 0.55, african: 0, asian: 1, caucasian: 0 },
-  skin: { melanin: 0.3 },
-});
-const sam = createRecipe({
-  macros: { gender: 0.8, height: 0.8, african: 1, asian: 0, caucasian: 0 },
-  skin: { melanin: 0.85 },
-});
+const alex = createRecipe({ macros: { gender: 0.2, height: 0.55 }, skin: { melanin: 0.25 } });
+const sam = createRecipe({ macros: { gender: 0.8, height: 0.8 }, skin: { melanin: 0.8 } });
 
 interface Control {
   gap: number;
