@@ -2357,11 +2357,24 @@ with the folds, nothing more per frame than reading their tables.
 
 **Decision: option 1** (ruling, 2026-10-10). It puts back what the fold takes where
 the fold takes it, in the solve that already shares the contact; option 2 is held for
-when the squashed skin needs answering by itself. The gates are written first
-(`tests/contactCompression.test.ts`) and fail: the average figure tucked keeps 0.741
-of its hip's rest flesh against the bones' 0.755. A fold that pulls the flesh round
-the average figure's squatting knee a fifth of the way toward its head fails the
-same gate, as it must.
+when the squashed skin needs answering by itself. The volume gate was written first
+and failed, as it should: the average figure tucked keeps 0.741 of its hip's rest
+flesh against the bones' 0.755. A fold that pulls the flesh round the average
+figure's squatting knee a fifth of the way toward its head fails the same gate, as
+it must.
+
+**Status (2026-10-13): not built.** A first bulge (each step ending with a layer
+over its contact, at most 20 mm, falling to nothing 12 cm along the skin, taken back
+where it puts skin through skin) was left unfinished by its lane and is kept off
+integration (issue 107). It missed the volume gate on two squatting knees (the
+average figure's left knee keeps 0.594 of rest against the bones' 0.601, the slim
+woman's right 0.614 against 0.621: 0.011 taken each), and it broke the hip fold's
+contact gate, which holds without it: the tall lean man's thigh 13.9 mm behind the
+belly's skin at 135°, closed (the gate is 2 mm). So `tests/contactCompression.test.ts`
+keeps what holds now: the knee seated within the foundation's band, and the fold
+flattened by a fifth failing the measure. The volume gate itself lands with the bulge
+that meets it, with no wider slack. Until then the folds take what the fault above
+says they do.
 
 **Named pairs after the bulge.** Trunk self-contact: a heavy belly's overhang
 pressed into the pubis, seated (the heavy man's smoke row, 31.7 cm² of trunk through
