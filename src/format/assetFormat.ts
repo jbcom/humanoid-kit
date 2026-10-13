@@ -22,6 +22,7 @@ import {
   type AgeAnchor,
   ageAnchorsOf,
   DEFAULT_MACROS,
+  type MacroValues,
   upstreamAgeAnchor,
 } from "../makehuman/macro.ts";
 import type { StateMorph } from "../makehuman/stateMorphs.ts";
@@ -68,8 +69,13 @@ export const BODY_TARGET_FILES = ["core", "baby", "child", "young", "old", "modi
 export type BodyTargetFileId = (typeof BODY_TARGET_FILES)[number];
 /** The adult anatomy pack's one target file. */
 export const ADULT_TARGET_FILE = "adult";
-/** The id of the clothing pack's garments binary among a staged load's files. */
-export const GARMENTS_FILE = "garments";
+/**
+ * The id of clothing pack `pack`'s garments binary among a staged load's files
+ * (`garments` for the first, `garments.1` for the second, ...).
+ */
+export function garmentsFile(pack: number): string {
+  return pack === 0 ? "garments" : `garments.${pack}`;
+}
 
 export interface TargetFile {
   /** A `BodyTargetFileId` in a body pack, `ADULT_TARGET_FILE` in the adult pack. */
@@ -424,6 +430,12 @@ export interface GarmentEntry extends Omit<AttachmentEntry, "layout"> {
   label: string;
   /** The asset's own tags (`Casual`, `Male`, ...). */
   tags: string[];
+  /**
+   * True for a piece that must not bend (a canteen, a cartridge box): it is
+   * bound as usual, then moved as one piece to where the binding put it, and
+   * skinned to one bone (`placeRigid`, `rigidSkin`). Absent is false.
+   */
+  rigid?: boolean;
   layout: Omit<AttachmentEntry["layout"], "occlusion">;
 }
 
@@ -535,6 +547,31 @@ export interface AdultCoatRegionSpec {
 }
 
 /** A reservoir (`Reservoir` in src/build/reservoir.ts) with the id detail refers to it by. */
+/**
+ * A canal's opening closed at the skin, evaluated on each figure
+ * (`src/model/canalClosure.ts`): its loop moved onto the closed shape, the skin
+ * round it by fixed weights on the loop's displacements, and any radial folds.
+ */
+export interface CanalClosureSpec {
+  /** The detail target of the canal: its weight is how far the opening is closed (`closureShare`). */
+  target: string;
+  /** What is left open across the slit it closes to, metres. */
+  gap: number;
+  /** The slit's length front to back, metres; absent, the loop's own (`closedLoop`). */
+  length?: number;
+  /** The skin's outward normal over the opening on the authoring figure: the closure's frame. */
+  normal: [number, number, number];
+  /** The loop's region (detail) indices, in the spec's loop order. */
+  loopRegion: number[];
+  /** The zone round the loop, region indices; each one's weights on the loop's places, CSR (`zoneStart`, `zoneLoop`, `zoneWeight`). */
+  zone: number[];
+  zoneStart: number[];
+  zoneLoop: number[];
+  zoneWeight: number[];
+  /** Radial folds round the opening (the anus's): a displacement of region vertices, metres, at full closure. */
+  folds?: { indices: number[]; xyz: number[] };
+}
+
 export interface AdultReservoirSpec {
   id: string;
   /** Vertices of the refinement mesh round the cap, in order. */
@@ -560,6 +597,16 @@ export interface AdultReservoirSpec {
    * over all of it, and the layer's coordinate running from the loop (0) to the tip (1).
    */
   layer?: string;
+  /**
+   * A canal, drawn into the body, not an organ drawn out of it: `opening`, metres
+   * along it, is how far in its opening closes into its lumen. Its vertices take
+   * their root's weights over that length (`rootShares`), not over an organ's band.
+   * `gap`, metres, is its closed lumen's: its walls that close lie in contact, not
+   * in each other (the invariants' lumen self-contact). `closure` closes its opening
+   * at the skin on each figure; the pack's generator adds it once the detail lattice
+   * is known, and an opening without one is left open.
+   */
+  canal?: { opening: number; gap: number; closure?: CanalClosureSpec };
 }
 
 /**
@@ -582,6 +629,21 @@ export interface AdultDetailSpec {
    * scaled by the ratio of the figure's own distance to `rest`. Absent: none.
    */
   scale?: { a: number; b: number; rest: number };
+  /**
+   * The figure the targets were authored on, by its macros (`createRecipe` input).
+   * With it, a reservoir's organ is placed as that figure's skin under it plus the
+   * displacement, carried rigidly from that figure's loop to the evaluated one's,
+   * as far as it is pushed out of the skin (`src/model/detailCarry.ts`). Absent: the
+   * displacement is added to the evaluated figure's own skin.
+   */
+  authoredOn?: { macros: Partial<MacroValues> };
+  /**
+   * Targets that shape the skin itself (the vulva's folds), not an organ drawn out of
+   * it: added first, to the figure's own skin, never carried (`authoredOn`), and no
+   * push of a reservoir out of the skin, so they leave its skinning as it was. A ring
+   * of a reservoir lying in that skin takes its loop vertex's displacement. Absent: none.
+   */
+  skin?: string[];
   /**
    * Targets whose weight is multiplied by other values: `gates[target]` lists
    * factors (`src/model/detailFactors.ts`): `mod:<id>` (that modifier's positive
@@ -635,6 +697,12 @@ export interface AdultSkinLayerSpec {
   hi: number;
   /** The target the layer's 0..1 coordinate is measured from (`targetCoordinate`), if it has one. */
   coordinate?: string;
+  /**
+   * A mask the pack authors per base vertex (0..1 each), joined with the targets'
+   * (the larger wins): for a feature whose form is a detail target, which moves the
+   * adult surface's lattice and so has no footprint on the base to measure.
+   */
+  vertexMask?: { indices: number[]; weights: number[] };
 }
 
 export interface AdultAnatomyManifest {
@@ -684,14 +752,15 @@ export interface HumanoidAssets {
   /** The hair pack, when one was loaded. */
   hair: HairAssets | null;
   /**
-   * The clothing pack's garments by id; empty without that pack and until its
-   * binary has arrived (`garmentsPending`). The manifest lists them earlier.
+   * Every loaded clothing pack's garments by id, ids unique across the packs.
+   * A pack's garments arrive with its binary (`pendingGarmentPacks`); its
+   * manifest lists them earlier.
    */
   garments: Map<string, BoundGarment>;
-  /** The clothing pack's manifest, when that pack was loaded. */
-  clothingManifest: ClothingManifest | null;
-  /** True while the clothing pack is loaded but its garments binary has not arrived. */
-  garmentsPending: boolean;
+  /** The loaded clothing packs' manifests, in load order; empty without one. */
+  clothingManifests: readonly ClothingManifest[];
+  /** The indices into `clothingManifests` of the packs whose garments binary has not arrived. */
+  pendingGarmentPacks: Set<number>;
   /** The body's own cavity occlusion; null for a pack that predates it. */
   bodyOcclusion: BodyOcclusion | null;
   /** URL of each pack file by name (textures included); empty when parsed without URLs. */
@@ -1156,27 +1225,24 @@ export function mergeSliderTasks(...sources: SliderTask[][]): SliderTask[] {
  * Builds typed views over already-fetched packs. Pure; usable in workers and
  * tests. Target files left out of `pack.targets` (and the adult pack's, if
  * its `targets` is left out) are pending, and `addTargetFiles` adds them later.
+ * `clothing` is one clothing pack or a list of them; a pack whose `garments`
+ * is left out stays pending until `addGarments` adds them.
  */
 export function parseHumanoidAssets(
   pack: BodyPackData,
   adultAnatomy?: AdultAnatomyData,
-  clothing?: ClothingPackData,
+  clothing?: ClothingPackData | readonly ClothingPackData[],
   hair?: HairPackData,
 ): HumanoidAssets {
   const { manifest, body, targets } = pack;
   if (manifest.format !== 1 || manifest.kind !== "body")
     throw new AssetFormatError("not a format-1 body pack manifest");
-  if (clothing) {
-    const c = clothing.manifest;
-    if (c.format !== 1 || c.kind !== "clothing")
-      throw new AssetFormatError("not a format-1 clothing manifest");
-    if (c.topology !== manifest.topology || c.bodySha256 !== manifest.body.sha256) {
-      throw new AssetFormatError("the clothing pack was built for a different body pack");
-    }
-    const taken = new Set(manifest.attachments.entries.map((a) => a.id));
-    for (const g of c.garments.entries)
-      if (taken.has(g.id)) throw new AssetFormatError(`garment ${g.id} is also an attachment`);
-  }
+  const clothingPacks: readonly ClothingPackData[] =
+    clothing === undefined ? [] : "manifest" in clothing ? [clothing] : clothing;
+  checkClothingPacks(
+    manifest,
+    clothingPacks.map((c) => c.manifest),
+  );
   const { layout } = manifest.body;
   const positions = view(Float32Array, body, layout.positions, "body positions");
   if (positions.length !== manifest.vertexCount * 3) {
@@ -1234,8 +1300,8 @@ export function parseHumanoidAssets(
     attachments: parseAttachments(manifest, pack.attachments),
     hair: hair ? parseHairPack(manifest, hair) : null,
     garments: new Map(),
-    clothingManifest: clothing?.manifest ?? null,
-    garmentsPending: clothing !== undefined,
+    clothingManifests: clothingPacks.map((c) => c.manifest),
+    pendingGarmentPacks: new Set(clothingPacks.keys()),
     bodyOcclusion: manifest.bodyOcclusion
       ? parseBodyOcclusion(
           manifest.bodyOcclusion,
@@ -1261,22 +1327,57 @@ export function parseHumanoidAssets(
     ...targets,
     ...(adultAnatomy?.targets && { [ADULT_TARGET_FILE]: adultAnatomy.targets }),
   });
-  if (clothing?.garments) addGarments(assets, clothing.garments);
+  clothingPacks.forEach((c, i) => {
+    if (c.garments) addGarments(assets, i, c.garments);
+  });
   return assets;
 }
 
 /**
- * Adds the clothing pack's garments (its decompressed binary) to assets parsed
- * with a clothing manifest. The assets change only if every garment checks, so
+ * Checks clothing manifests against their body pack and each other: each is a
+ * format-1 clothing pack built for this body, and no garment id is taken by an
+ * attachment or by a garment of another pack.
+ */
+function checkClothingPacks(body: BodyManifest, packs: readonly ClothingManifest[]): void {
+  const attachments = new Set(body.attachments.entries.map((a) => a.id));
+  const packOf = new Map<string, number>();
+  packs.forEach((c, i) => {
+    const which = packs.length === 1 ? "the clothing pack" : `clothing pack ${i}`;
+    if (c.format !== 1 || c.kind !== "clothing")
+      throw new AssetFormatError(`${which} is not a format-1 clothing manifest`);
+    if (c.topology !== body.topology || c.bodySha256 !== body.body.sha256)
+      throw new AssetFormatError(`${which} was built for a different body pack`);
+    for (const g of c.garments.entries) {
+      if (attachments.has(g.id))
+        throw new AssetFormatError(`garment ${g.id} is also an attachment`);
+      if (g.rigid !== undefined && typeof g.rigid !== "boolean")
+        throw new AssetFormatError(`garment ${g.id}: rigid must be true or false`);
+      const other = packOf.get(g.id);
+      if (other !== undefined && other !== i)
+        throw new AssetFormatError(`garment ${g.id} is in clothing packs ${other} and ${i}`);
+      packOf.set(g.id, i);
+    }
+  });
+}
+
+/**
+ * Adds clothing pack `pack`'s garments (its decompressed binary) to assets
+ * parsed with its manifest. The assets change only if every garment checks, so
  * a failed add can be retried.
  */
-export function addGarments(assets: HumanoidAssets, bin: ArrayBuffer): void {
-  const manifest = assets.clothingManifest;
-  if (!manifest) throw new AssetFormatError("no clothing pack is loaded");
-  if (!assets.garmentsPending) throw new AssetFormatError("the garments are already loaded");
+export function addGarments(assets: HumanoidAssets, pack: number, bin: ArrayBuffer): void {
+  const manifest = assets.clothingManifests[pack];
+  if (!manifest)
+    throw new AssetFormatError(
+      assets.clothingManifests.length === 0
+        ? "no clothing pack is loaded"
+        : `there is no clothing pack ${pack}`,
+    );
+  if (!assets.pendingGarmentPacks.has(pack))
+    throw new AssetFormatError(`clothing pack ${pack}'s garments are already loaded`);
   for (const [id, g] of parseGarments(manifest, assets.manifest.vertexCount, bin))
     assets.garments.set(id, g);
-  assets.garmentsPending = false;
+  assets.pendingGarmentPacks.delete(pack);
 }
 
 /** Every target file of a body pack and, if given, an adult anatomy pack. */
@@ -1324,8 +1425,47 @@ export function pendingTargetFiles(assets: HumanoidAssets, names: Iterable<strin
   return out;
 }
 
-export async function fetchOk(url: string): Promise<Response> {
-  const res = await fetch(url);
+/** How a loader requests a file: the platform's `fetch` fits, and so does a host's own. */
+export type FetchLike = (url: string) => Promise<Response>;
+
+/** The part of `node:fs/promises` the `file:` reading uses. */
+interface NodeFileSystem {
+  readFile(url: URL): Promise<BodyInit>;
+}
+
+const isNode = (): boolean =>
+  (globalThis as { process?: { versions?: { node?: string } } }).process?.versions?.node !==
+  undefined;
+
+/**
+ * Reads a `file:` URL from disk as a `Response` (a missing file answers 404).
+ * Node's `fetch` does not implement the scheme, and a pack package imported in
+ * Node exports exactly such URLs. The module is imported by a name no bundler
+ * can see, so a browser build never resolves it and nothing here is reachable
+ * there: `fetchOk` only comes here when running in Node.
+ */
+async function readFileUrl(url: string): Promise<Response> {
+  const specifier = "node:fs/promises";
+  const { readFile } = (await import(
+    /* @vite-ignore */ /* webpackIgnore: true */ specifier
+  )) as NodeFileSystem;
+  try {
+    return new Response(await readFile(new URL(url)));
+  } catch (e) {
+    if ((e as { code?: string }).code === "ENOENT")
+      return new Response(null, { status: 404, statusText: "Not Found" });
+    throw e;
+  }
+}
+
+/**
+ * Requests `url` with `fetcher` when the host gave one. Otherwise the platform's
+ * `fetch`, except a `file:` URL in Node, which is read from disk.
+ */
+export async function fetchOk(url: string, fetcher?: FetchLike): Promise<Response> {
+  const res = await (
+    fetcher ?? (url.startsWith("file:") && isNode() ? readFileUrl : (u: string) => fetch(u))
+  )(url);
   if (!res.ok)
     throw new AssetFormatError(`fetching ${url} failed: ${res.status} ${res.statusText}`);
   return res;
@@ -1358,17 +1498,24 @@ export function packResolver(pack: PackLocation): {
   };
 }
 
-export interface LoadOptions {
+/**
+ * Which packs to load, as plain data (it crosses to the worker, which cannot
+ * be sent a function); `LoadOptions` adds how to fetch them.
+ */
+export interface LoadPacks {
   /** The body pack, e.g. `bodyPack` from `humanoid-kit-body`. */
   body: PackLocation;
   /** The adult anatomy pack. Its targets only evaluate for figures aged 18+. */
   adultAnatomy?: PackLocation;
   /**
-   * The clothing pack (`humanoid-kit-clothing`). Its manifest loads with the
-   * first stage, its garments binary in a later one (`GARMENTS_FILE`), so a
-   * figure that wears nothing is never held up by it.
+   * The clothing pack (`humanoid-kit-clothing`), or a list of clothing packs
+   * (the kit's and a consumer's own). Their manifests load with the first
+   * stage and their garments binaries together in a later one
+   * (`garmentsFile(i)` for pack `i`), so a figure that wears nothing is never
+   * held up by them. Garment ids must be unique across the packs, and two
+   * packs must not name one texture file at different URLs.
    */
-  clothing?: PackLocation;
+  clothing?: PackLocation | readonly PackLocation[];
   /**
    * The hair pack. Only its manifest loads up front; each style's geometry and
    * texture are fetched when a figure first wears it (`HairAssets.load`).
@@ -1379,6 +1526,15 @@ export interface LoadOptions {
    * first (`targetLoadOrder`). Default: the default figure's.
    */
   firstFigureAge?: number;
+}
+
+export interface LoadOptions extends LoadPacks {
+  /**
+   * How every file is requested. Default: the platform's `fetch`, and in Node a
+   * `file:` URL (what a pack package exports there) read from disk, which
+   * Node's `fetch` cannot do. Supplied, it is used for every request.
+   */
+  fetch?: FetchLike;
 }
 
 /** A later stage of a staged load: target files that arrive after the first figure. */
@@ -1400,8 +1556,8 @@ export interface StagedHumanoidAssets {
 
 /** Some hosts serve `.gz` files with `Content-Encoding: gzip`, so the browser has
  * already decompressed them; only data that still starts with gzip's magic is decoded. */
-export const fetchGzip = (url: string) =>
-  fetchOk(url)
+export const fetchGzip = (url: string, fetcher?: FetchLike) =>
+  fetchOk(url, fetcher)
     .then((r) => r.arrayBuffer())
     .then((b) => {
       const head = new Uint8Array(b, 0, Math.min(2, b.byteLength));
@@ -1424,10 +1580,8 @@ export function targetLoadOrder(age: number): string[][] {
   // Equal steps away, the anchor nearer in years goes first.
   const steps = (a: AgeAnchor) =>
     Math.min(...ownIndex.map((i) => Math.abs(anchors.indexOf(a) - i)));
-  const years = (a: AgeAnchor) => {
-    const { from, to } = AGE_ANCHORS[anchors.indexOf(a)] as (typeof AGE_ANCHORS)[number];
-    return age < from ? from - age : age > to ? age - to : 0;
-  };
+  const years = (a: AgeAnchor) =>
+    Math.abs(age - (AGE_ANCHORS[anchors.indexOf(a)] as (typeof AGE_ANCHORS)[number]).years);
   const rest = anchors
     .filter((a) => !own.includes(a))
     .sort((p, q) => steps(p) - steps(q) || years(p) - years(q));
@@ -1450,19 +1604,36 @@ export function targetLoadOrder(age: number): string[][] {
 export async function loadHumanoidAssetsStaged(
   options: LoadOptions,
 ): Promise<StagedHumanoidAssets> {
+  const hostFetch = options.fetch;
   const body = packResolver(options.body);
   const adult = options.adultAnatomy === undefined ? undefined : packResolver(options.adultAnatomy);
-  const clothing = options.clothing === undefined ? undefined : packResolver(options.clothing);
+  const clothing = (
+    options.clothing === undefined
+      ? []
+      : typeof options.clothing === "string" || "manifest" in options.clothing
+        ? [options.clothing]
+        : options.clothing
+  ).map(packResolver);
   const hairPack = options.hair === undefined ? undefined : packResolver(options.hair);
-  const [manifest, adultManifest, clothingManifest, hairManifest] = await Promise.all([
-    fetchOk(body.manifest).then((r) => r.json() as Promise<BodyManifest>),
-    adult && fetchOk(adult.manifest).then((r) => r.json() as Promise<AdultAnatomyManifest>),
-    clothing && fetchOk(clothing.manifest).then((r) => r.json() as Promise<ClothingManifest>),
-    hairPack && fetchOk(hairPack.manifest).then((r) => r.json() as Promise<HairManifest>),
+  const [manifest, adultManifest, clothingManifests, hairManifest] = await Promise.all([
+    fetchOk(body.manifest, hostFetch).then((r) => r.json() as Promise<BodyManifest>),
+    adult &&
+      fetchOk(adult.manifest, hostFetch).then((r) => r.json() as Promise<AdultAnatomyManifest>),
+    Promise.all(
+      clothing.map((c) =>
+        fetchOk(c.manifest, hostFetch).then((r) => r.json() as Promise<ClothingManifest>),
+      ),
+    ),
+    hairPack &&
+      fetchOk(hairPack.manifest, hostFetch).then((r) => r.json() as Promise<HairManifest>),
   ]);
+  const garmentFiles = clothing.map((_, i) => garmentsFile(i));
   const urlOf = (id: string): string | null => {
-    if (id === GARMENTS_FILE)
-      return clothing && clothingManifest ? clothing.file(clothingManifest.garments.file) : null;
+    const garmentPack = garmentFiles.indexOf(id);
+    if (garmentPack >= 0) {
+      const m = clothingManifests[garmentPack] as ClothingManifest;
+      return (clothing[garmentPack] as ReturnType<typeof packResolver>).file(m.garments.file);
+    }
     if (id === ADULT_TARGET_FILE)
       return adult && adultManifest ? adult.file(adultManifest.targets.file) : null;
     const f = manifest.targets.find((t) => t.id === id);
@@ -1475,29 +1646,40 @@ export async function loadHumanoidAssetsStaged(
       const url = urlOf(id);
       return url ? [[id, url] as const] : [];
     });
-    const bins = await Promise.all(present.map(([, url]) => fetchGzip(url)));
+    const bins = await Promise.all(present.map(([, url]) => fetchGzip(url, hostFetch)));
     return Object.fromEntries(present.map(([id], i) => [id, bins[i]]));
   };
   const [first, ...order] = targetLoadOrder(options.firstFigureAge ?? DEFAULT_MACROS.age);
   // The garments follow the body's modifier targets: every figure that is shaped
   // needs those, and a figure that wears nothing never waits for the garments.
-  const later = clothingManifest
-    ? [order[0] as string[], [GARMENTS_FILE], ...order.slice(1)]
-    : order;
+  const later =
+    garmentFiles.length > 0 ? [order[0] as string[], garmentFiles, ...order.slice(1)] : order;
   const [bodyBin, attachments, bodyOcclusion, firstTargets] = await Promise.all([
-    fetchGzip(body.file(manifest.body.file)),
-    fetchGzip(body.file(manifest.attachments.file)),
-    manifest.bodyOcclusion ? fetchGzip(body.file(manifest.bodyOcclusion.file)) : undefined,
+    fetchGzip(body.file(manifest.body.file), hostFetch),
+    fetchGzip(body.file(manifest.attachments.file), hostFetch),
+    manifest.bodyOcclusion
+      ? fetchGzip(body.file(manifest.bodyOcclusion.file), hostFetch)
+      : undefined,
     fetchFiles(first as string[]),
   ]);
   const fileUrls = new Map<string, string>();
   for (const a of manifest.attachments.entries) {
     if (a.material.texture) fileUrls.set(a.material.texture, body.file(a.material.texture));
   }
-  for (const g of clothingManifest?.garments.entries ?? []) {
-    for (const t of [g.material.texture, g.material.normalTexture])
-      if (t) fileUrls.set(t, (clothing as ReturnType<typeof packResolver>).file(t));
-  }
+  clothingManifests.forEach((m, i) => {
+    const pack = clothing[i] as ReturnType<typeof packResolver>;
+    for (const g of m.garments.entries) {
+      for (const t of [g.material.texture, g.material.normalTexture]) {
+        if (!t) continue;
+        const url = pack.file(t);
+        const had = fileUrls.get(t);
+        // Textures are found by file name, so two packs must not name one file two ways.
+        if (had !== undefined && had !== url)
+          throw new AssetFormatError(`texture ${t} is at both ${had} and ${url}`);
+        fileUrls.set(t, url);
+      }
+    }
+  });
   if (hairPack && hairManifest) {
     for (const s of hairManifest.styles)
       if (s.material.texture) fileUrls.set(s.material.texture, hairPack.file(s.material.texture));
@@ -1512,7 +1694,7 @@ export async function loadHumanoidAssetsStaged(
       fileUrls,
     },
     adultManifest && { manifest: adultManifest },
-    clothingManifest && { manifest: clothingManifest },
+    clothingManifests.map((m) => ({ manifest: m })),
     hairManifest && { manifest: hairManifest },
   );
   if (assets.hair && hairPack) {
@@ -1526,7 +1708,9 @@ export async function loadHumanoidAssetsStaged(
       if (!entry) return Promise.reject(new AssetFormatError(`no hair style ${id}`));
       let p = fetching.get(id);
       if (!p) {
-        p = fetchGzip(hairPack.file(entry.file)).then((bin) => addHairStyle(assets, id, bin));
+        p = fetchGzip(hairPack.file(entry.file), hostFetch).then((bin) =>
+          addHairStyle(assets, id, bin),
+        );
         fetching.set(id, p);
         p.catch(() => fetching.delete(id));
       }
@@ -1535,14 +1719,34 @@ export async function loadHumanoidAssetsStaged(
   }
   // Each stage's bytes are fetched after the previous stage's settled; each is
   // added to the assets as soon as its own bytes are in. A failed stage fails
-  // only itself: the next one still fetches.
+  // only itself: the next one still fetches. In the garments stage each
+  // clothing pack also fails only itself: the packs that arrived and check are
+  // added, and the stage rejects with the first failure.
   let bytesBefore: Promise<unknown> = Promise.resolve();
   const stages = later.map((files) => {
-    const bytes = bytesBefore.then(() => fetchFiles(files));
-    bytesBefore = bytes.catch(() => {});
-    const loaded = bytes.then(({ [GARMENTS_FILE]: garments, ...targets }) => {
-      addTargetFiles(assets, targets);
-      if (garments) addGarments(assets, garments);
+    const garmentIds = files.filter((id) => garmentFiles.includes(id));
+    const targetIds = files.filter((id) => !garmentFiles.includes(id));
+    const bytes = bytesBefore.then(() =>
+      Promise.allSettled([fetchFiles(targetIds), ...garmentIds.map((id) => fetchFiles([id]))]),
+    );
+    bytesBefore = bytes;
+    const loaded = bytes.then(([targets, ...garments]) => {
+      const failures: unknown[] = [];
+      garments.forEach((r, i) => {
+        const id = garmentIds[i] as string;
+        const bin = r.status === "fulfilled" ? r.value[id] : undefined;
+        if (r.status === "rejected") failures.push(r.reason);
+        else if (bin) {
+          try {
+            addGarments(assets, garmentFiles.indexOf(id), bin);
+          } catch (e) {
+            failures.push(e);
+          }
+        }
+      });
+      if (targets?.status === "rejected") failures.unshift(targets.reason);
+      else if (targets) addTargetFiles(assets, targets.value);
+      if (failures.length) throw failures[0];
       return assets;
     });
     // Observed here; callers that need a stage await it and see the failure.

@@ -30,7 +30,7 @@ Research only: nothing here ships. The generator is `tissue.ts`; the gates are
   proposed, not built.
 - **Age selects the library.** MakeHuman's breast targets exist for its child,
   young and old bodies (none for the baby) and the evaluator weights the age bodies
-  linearly in years between the kit's anchors (1, 10, 18 to 25, 90). Every library
+  linearly in years between the kit's anchors (1, 10, 25, 90, MakeHuman's own). Every library
   quantity is linear in the evaluated vertices, so cells at the anchors with linear
   interpolation reproduce MakeHuman at every age; the review ages are knots too, so
   each can be checked. Age is a development stage the caller states, not a frame
@@ -85,8 +85,9 @@ buried the chest under body-wide failures (tube arms, belly rolls at weight 1).
 
 ## Findings
 
-- 18 y and 25 y give identical tissue: the kit holds the adult body from 18 to 25
-  (`AGE_ANCHORS`), a documented deviation from MakeHuman's 10-to-25 blend.
+- 18 y and 25 y give different tissue: the age axis is MakeHuman's 10-to-25 blend,
+  so an 18-year-old is about 47% child (owner ruling, 2026-10-13, reversing an
+  earlier hold of the adult body from 18).
 - Identity off the knots is 1e-7 m or better at every age checked.
 - MakeHuman's own data gives a child figure tissue at size 1 (age 5: 44 mm peak), from
   its child breast targets weighted by the age interpolation. That is parity, not drift.

@@ -6,12 +6,10 @@
  * and a target's weight is the product of its anchors' weights. Each axis is
  * linear interpolation between its anchors, so one axis's weights sum to 1.
  *
- * The age axis uses MakeHuman's four age bodies, but not quite its timeline.
- * MakeHuman puts its child body at 10 years and its one adult body, which its
- * files call `young`, at 25, and blends the two in between, so its "18" is
- * still 47% child. Here the adult body holds from 18 to 25 (`AGE_ANCHORS`):
- * nobody 18 or over carries any child shape, and from 25 on the axis is
- * MakeHuman's own. See docs/AGE-POLICY.md.
+ * The age axis is MakeHuman's own, at every age: baby at 1 year, child at 10,
+ * its one adult body (`young` in its files) at 25 and old at 90, linear between
+ * neighbours, so a figure of 18 is about 47% child. `ADULT_AGE` gates content,
+ * never the body's shape. See docs/AGE-POLICY.md.
  */
 
 export type Anchor = string;
@@ -46,15 +44,15 @@ export const genderAxis = (gender: number): AxisWeights => {
 export const ADULT_AGE = 18;
 
 /**
- * The age bodies: each holds full weight from `from` to `to` years, and the
- * axis blends linearly between one body's `to` and the next one's `from`.
- * `upstream` is MakeHuman's name for the body in its target files.
+ * The age bodies at MakeHuman's ages (`human.py`, `_setAgeVals`; its child is at
+ * slider 0.1875, 1 + 48 * 0.1875 = 10 years); the axis blends linearly between
+ * neighbours. `upstream` is MakeHuman's name for the body in its target files.
  */
 export const AGE_ANCHORS = [
-  { anchor: "baby", from: 1, to: 1, upstream: "baby" },
-  { anchor: "child", from: 10, to: 10, upstream: "child" },
-  { anchor: "adult", from: ADULT_AGE, to: 25, upstream: "young" },
-  { anchor: "old", from: 90, to: 90, upstream: "old" },
+  { anchor: "baby", years: 1, upstream: "baby" },
+  { anchor: "child", years: 10, upstream: "child" },
+  { anchor: "adult", years: 25, upstream: "young" },
+  { anchor: "old", years: 90, upstream: "old" },
 ] as const;
 export const MIN_AGE = 1;
 export const MAX_AGE = 90;
@@ -68,10 +66,10 @@ export const ageAxis = (years: number): AxisWeights => {
   const y = Math.min(MAX_AGE, Math.max(MIN_AGE, years));
   for (let i = 0; i < AGE_ANCHORS.length; i++) {
     const a = AGE_ANCHORS[i] as (typeof AGE_ANCHORS)[number];
-    if (y <= a.to && y >= a.from) return [[a.anchor, 1]];
+    if (y === a.years) return [[a.anchor, 1]];
     const b = AGE_ANCHORS[i + 1];
-    if (b && y < b.from) {
-      const t = (y - a.to) / (b.from - a.to);
+    if (b && y < b.years) {
+      const t = (y - a.years) / (b.years - a.years);
       return [
         [a.anchor, 1 - t],
         [b.anchor, t],
@@ -137,7 +135,7 @@ export function combine(prefix: string, axes: readonly AxisWeights[]): Map<strin
     for (const [name, w] of acc) {
       for (const [anchor, aw] of axis) {
         const ww = w * aw;
-        if (ww > 1e-6) next.push([name ? `${name}-${anchor}` : anchor, ww]);
+        if (ww > 0) next.push([name ? `${name}-${anchor}` : anchor, ww]);
       }
     }
     acc = next;
@@ -194,19 +192,14 @@ export function macroTargetWeights(m: MacroValues): Map<string, number> {
   };
   add("macrodetails/", combine("", [ethnicAxis(m.african, m.asian, m.caucasian), g, a]));
   add("macrodetails/", combine("universal", [g, a, mu, we]));
-  const avg: AxisWeights[] = [g, a, [["averagemuscle", 1]], [["averageweight", 1]]];
-  add("macrodetails/height/", combine("", [...avg, heightAxis(m.height)]));
+  // As in MakeHuman, height and proportions are combined over muscle and weight
+  // too: a muscular or heavy figure takes the height variant authored for that build.
+  add("macrodetails/height/", combine("", [g, a, mu, we, heightAxis(m.height)]));
   // Upstream ships no baby proportion targets, so proportions do not apply at the baby anchor.
   const ageNoBaby = a.filter(([anchor]) => anchor !== "baby");
   add(
     "macrodetails/proportions/",
-    combine("", [
-      g,
-      ageNoBaby,
-      [["averagemuscle", 1]],
-      [["averageweight", 1]],
-      proportionAxis(m.proportions),
-    ]),
+    combine("", [g, ageNoBaby, mu, we, proportionAxis(m.proportions)]),
   );
   // As in MakeHuman: breast targets exist for the female anchor only and scale
   // with it, and for the child, young and old anchors (none for baby), so breast
@@ -252,7 +245,7 @@ export function macroTargetNames(): Set<string> {
     [0, 0, 1],
   ] as const;
   for (const gender of ends)
-    for (const { from: age } of AGE_ANCHORS)
+    for (const { years: age } of AGE_ANCHORS)
       for (const muscle of thirds)
         for (const weight of thirds)
           for (const height of ends)

@@ -22,15 +22,25 @@ import {
 } from "../src/model/reservoirSkin.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { fromHalf, toHalf } from "../src/rig/half.ts";
-import { FOLD_ROW_TEXELS, type SurfaceFold } from "../src/rig/hipFold.ts";
+import { HIP_FOLD } from "../src/rig/hipFold.ts";
+import { rowTexels, type SurfaceFold } from "../src/rig/jointFold.ts";
+import { KNEE_FOLD } from "../src/rig/kneeFold.ts";
 import { skinNormals } from "../src/rig/pose.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
-const man = createRecipe({ macros: { age: 30, gender: 1 } });
+// The organ and the sac alone: the anal canal pushes its own reservoir (canal.test.ts).
+const man = createRecipe({
+  macros: { age: 30, gender: 1 },
+  modifiers: { "genitals/anal-canal": 0 },
+});
 const bare = createRecipe({
   macros: { age: 30, gender: 1 },
-  modifiers: { "genitals/phallus-size": 0, "genitals/testes-size": 0 },
+  modifiers: {
+    "genitals/phallus-size": 0,
+    "genitals/testes-size": 0,
+    "genitals/anal-canal": 0,
+  },
 });
 
 /** One vertex's four bones and weights, as a map. */
@@ -121,7 +131,7 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     const sides = 24;
     const rings = 40;
     const radius = 0.015;
-    const cone = (slope: number) => {
+    const cone = (slope: number, opening: number | null = null) => {
       const positions: number[] = [];
       for (let r = 0; r <= rings; r++) {
         const along = r * 0.001;
@@ -147,6 +157,7 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
         owner: bySurface,
         roots: [{ index: new Uint16Array(4), weight: Float32Array.from([1, 0, 0, 0]) }],
         loops: [Uint32Array.from({ length: sides }, (_, k) => k)],
+        openings: [opening],
         graph: reservoirGraph(index, renderToSurface, bySurface, loopOf),
       };
       const pushed = Float32Array.from({ length: count }, (_, v) =>
@@ -172,6 +183,16 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     expect(Math.abs(shallow.whole * 0.001 - ROOT_BAND.wide * radius)).toBeLessThanOrEqual(0.0015);
     // A reservoir nothing pushes takes nothing: its topology's weights, exactly.
     expect(cone(0).whole).toBe(-1);
+    // A canal, as steep as the steep organ, takes its root over the length its opening
+    // closes in, not over the organ's band: half at half of it, all of it from there on.
+    // Over the band, its opening's walls went from each side's thigh to the root across one ring.
+    const opening = 0.01;
+    const canal = cone(0.9, opening).byRing;
+    for (let r = 1; r <= rings; r++)
+      expect(canal[r] as number).toBeGreaterThanOrEqual(canal[r - 1] as number);
+    expect(canal[opening / 0.002] as number).toBeCloseTo(0.5, 1);
+    expect(canal.findIndex((s) => s >= 1)).toBe(opening / 0.001);
+    expect(canal[steep.whole] as number).toBeLessThan(0.5);
   });
 
   it("widens the band continuously as an organ rises less steeply, between the narrow and the wide", () => {
@@ -214,6 +235,7 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
       owner: Int16Array.from([0]),
       roots,
       loops: [Uint32Array.of(0)],
+      openings: [null],
       graph: reservoirGraph([], [0], Int16Array.of(0), Int16Array.of(-1)),
     };
     const at = (e: number) => {
@@ -238,7 +260,7 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
   it("moves a pushed reservoir vertex's hip fold to its root's as its weights, and leaves the rest as they were", () => {
     // Render vertices 0 and 1 are the loop (rows 0 and 1, the left hip's and the right's);
     // 2 is a ring copy with a row of its own, 3 a cap vertex the fold left; 4 is skin elsewhere.
-    const row = FOLD_ROW_TEXELS * 4;
+    const row = rowTexels(HIP_FOLD) * 4;
     const values = new Float32Array(3 * row);
     for (let r = 0; r < 3; r++)
       for (let i = 0; i < row; i++) values[r * row + i] = (r + 1) * 0.01 + i * 1e-5;
@@ -248,11 +270,17 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     // Half floats, as a fold holds them, and what they hold.
     const data = Uint16Array.from(values, toHalf);
     const held = (i: number) => fromHalf(data[i] as number);
-    const fold: SurfaceFold = { slot: Float32Array.from([0, 1, 2, -1, -1]), rows: 3, data };
+    const fold: SurfaceFold = {
+      joint: HIP_FOLD,
+      slot: Float32Array.from([0, 1, 2, -1, -1]),
+      rows: 3,
+      data,
+    };
     const skinning: ReservoirSkinning = {
       owner: Int16Array.from([-1, -1, 0, 0, -1]),
       roots: [{ index: new Uint16Array(4), weight: Float32Array.from([1, 0, 0, 0]) }],
       loops: [Uint32Array.of(0, 1)],
+      openings: [null],
       graph: reservoirGraph(
         [],
         [0, 1, 2, 3, 4],
@@ -291,6 +319,14 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     const halfway = rowOf(3);
     for (let i = 0; i < row; i++)
       rounded(halfway[i] as number, i === 3 ? 0.5 : e * (root[i] as number));
+    // A fold that reaches neither the loop nor the vertices pushed (the knee's) gives them no rows.
+    const elsewhere: SurfaceFold = {
+      joint: KNEE_FOLD,
+      slot: Float32Array.from([-1, -1, -1, -1, 0]),
+      rows: 1,
+      data: new Uint16Array(rowTexels(KNEE_FOLD) * 4),
+    };
+    expect(evaluatedFold(elsewhere, skinning, Float32Array.from([0, 0, 1, e, 0]))).toBe(elsewhere);
   });
 
   it("gives an organ drawn all the way out its root's normals in a flexed hip, its faces facing them", () => {

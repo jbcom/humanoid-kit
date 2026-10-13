@@ -3,7 +3,10 @@
  * (no Worker), the packs from the dev server, the controls as a person meets them.
  */
 
+import { type RootState, useFrame, useThree } from "@react-three/fiber";
 import { eyesPack } from "humanoid-kit-eyes";
+import { useEffect } from "react";
+import { UnsignedByteType, WebGLRenderTarget } from "three";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
@@ -37,6 +40,55 @@ const Host = (props: HumanoidCreatorProps) => (
 );
 
 const thirty = createRecipe({ macros: { age: 30 } });
+
+function FrameProbe({ tick }: { tick: () => void }) {
+  useFrame(tick);
+  return null;
+}
+
+/** Exposes the actual creator scene and camera to an explicit test-only render target. */
+function StateProbe({ onReady }: { onReady: (get: () => RootState) => void }) {
+  const get = useThree((s) => s.get);
+  useEffect(() => onReady(get), [get, onReady]);
+  return null;
+}
+
+const browserFrames = async (count: number) => {
+  for (let i = 0; i < count; i++)
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+};
+
+async function reachesFramePlateau(read: () => number, stableFrames = 8, maximumFrames = 120) {
+  let previous = read();
+  let stable = 0;
+  for (let frame = 0; frame < maximumFrames; frame++) {
+    await browserFrames(1);
+    const current = read();
+    stable = current === previous ? stable + 1 : 0;
+    if (stable >= stableFrames) return true;
+    previous = current;
+  }
+  return false;
+}
+
+describe("<HumanoidCreator frameloop>", () => {
+  it(
+    "stops rendering after its static figure settles when demand is selected",
+    async () => {
+      let frames = 0;
+      const screen = await render(
+        <Host initialRecipe={thirty} frameloop="demand">
+          <FrameProbe tick={() => frames++} />
+        </Host>,
+      );
+      await expect.element(screen.getByText("Loading figure…"), LOAD).not.toBeInTheDocument();
+      // Count browser frames rather than sleeping: a demand Canvas may need a last
+      // settle frame, but must eventually leave its own counter unchanged.
+      expect(await reachesFramePlateau(() => frames)).toBe(true);
+    },
+    LOAD.timeout,
+  );
+});
 
 describe("<HumanoidCreator controls>", () => {
   it(
@@ -80,6 +132,27 @@ describe("<HumanoidCreator controls>", () => {
       await expect.element(screen.getByRole("slider", { name: "Weight" })).not.toBeInTheDocument();
       await userEvent.fill(screen.getByRole("searchbox", { name: "Search sliders" }), "nose");
       await expect.element(screen.getByText("No sliders match “nose”.")).toBeVisible();
+    },
+    LOAD.timeout,
+  );
+
+  it(
+    "leaves out a hidden group of one task, and shows the same name in another",
+    async () => {
+      const screen = await render(
+        <Host initialRecipe={thirty} controls={{ hideGroups: ["Face/Nose features"] }} />,
+      );
+      await expect.element(screen.getByRole("tab", { name: "Face" }), LOAD).toBeVisible();
+      await screen.getByRole("tab", { name: "Face" }).click();
+      await expect.element(screen.getByText("Nose size", { exact: true }).first()).toBeVisible();
+      await expect
+        .element(screen.getByText("Nose features", { exact: true }))
+        .not.toBeInTheDocument();
+      // The sliders of a hidden group are not found by search either.
+      await userEvent.fill(screen.getByRole("searchbox", { name: "Search sliders" }), "nose");
+      await expect
+        .element(screen.getByText("Nose features", { exact: true }))
+        .not.toBeInTheDocument();
     },
     LOAD.timeout,
   );
@@ -323,34 +396,59 @@ describe("<HumanoidCreator background>", () => {
   const canvas = () => document.querySelector(".hk-stage canvas") as HTMLCanvasElement;
   const backgroundOf = (el: Element) => getComputedStyle(el).backgroundColor;
 
-  /** The canvas's alpha at a corner, and whether anything opaque is drawn down its middle. */
-  function pixels(): { corner: number; figure: boolean } {
-    const c = canvas();
-    const copy = document.createElement("canvas");
-    copy.width = 64;
-    copy.height = 64;
-    const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
-    ctx.drawImage(c, 0, 0, 64, 64);
-    const column = ctx.getImageData(32, 0, 1, 64).data;
+  /**
+   * A product canvas does not retain pixels after presentation. Render its real
+   * scene/camera to an explicit target instead, leaving renderer state intact.
+   */
+  function pixels(get: () => RootState): { corner: number; figure: boolean } {
+    const state = get();
+    const target = new WebGLRenderTarget(64, 64, {
+      type: UnsignedByteType,
+      depthBuffer: true,
+      stencilBuffer: false,
+    });
+    target.texture.colorSpace = state.gl.outputColorSpace;
+    const previous = state.gl.getRenderTarget();
+    const previousCubeFace = state.gl.getActiveCubeFace();
+    const previousMipmapLevel = state.gl.getActiveMipmapLevel();
+    const pixels = new Uint8Array(64 * 64 * 4);
+    try {
+      state.gl.setRenderTarget(target);
+      state.gl.clear();
+      state.gl.render(state.scene, state.camera);
+      state.gl.readRenderTargetPixels(target, 0, 0, 64, 64, pixels);
+    } finally {
+      state.gl.setRenderTarget(previous, previousCubeFace, previousMipmapLevel);
+      target.dispose();
+    }
+    const alpha = (x: number, y: number) => pixels[(y * 64 + x) * 4 + 3] as number;
     return {
-      corner: ctx.getImageData(2, 2, 1, 1).data[3] as number,
-      figure: Array.from({ length: 64 }, (_, y) => column[y * 4 + 3]).includes(255),
+      corner: alpha(2, 2),
+      figure: Array.from({ length: 64 }, (_, y) => alpha(32, y)).includes(255),
     };
   }
 
   /** Waits until the figure has been drawn, so an empty canvas does not pass for a transparent one. */
-  async function drawn(screen: Awaited<ReturnType<typeof render>>) {
+  async function drawn(screen: Awaited<ReturnType<typeof render>>, get: () => RootState) {
     await expect.element(screen.getByText("Loading figure…"), LOAD).not.toBeInTheDocument();
-    await expect.poll(() => pixels().figure, LOAD).toBe(true);
+    await expect.poll(() => pixels(get).figure, LOAD).toBe(true);
   }
 
   it(
     "shows the stage in --hk-bg, by leaving the canvas transparent over it",
     async () => {
-      const screen = await render(<Host initialRecipe={thirty} />);
-      await drawn(screen);
+      let get: (() => RootState) | null = null;
+      const screen = await render(
+        <Host initialRecipe={thirty}>
+          <StateProbe onReady={(next) => (get = next)} />
+        </Host>,
+      );
+      await expect.poll(() => get, LOAD).not.toBeNull();
+      const canvasState = get;
+      if (!canvasState) throw new Error("the creator did not expose its canvas state");
+      await drawn(screen, canvasState);
       expect(backgroundOf(root())).toBe("rgb(27, 37, 48)");
-      expect(pixels().corner).toBe(0);
+      expect(pixels(canvasState).corner).toBe(0);
       // Nothing between the canvas and the root paints over it.
       for (let el: Element | null = canvas(); el && el !== root(); el = el.parentElement)
         expect(backgroundOf(el), el.className || el.tagName).toBe("rgba(0, 0, 0, 0)");
@@ -361,15 +459,21 @@ describe("<HumanoidCreator background>", () => {
   it(
     "follows a host's stylesheet, and a change of the variable at run time",
     async () => {
+      let get: (() => RootState) | null = null;
       const screen = await render(
         <>
           <style>{".hk-creator.themed { --hk-bg: rgb(59, 42, 85); }"}</style>
-          <Host initialRecipe={thirty} className="themed" />
+          <Host initialRecipe={thirty} className="themed">
+            <StateProbe onReady={(next) => (get = next)} />
+          </Host>
         </>,
       );
-      await drawn(screen);
+      await expect.poll(() => get, LOAD).not.toBeNull();
+      const canvasState = get;
+      if (!canvasState) throw new Error("the creator did not expose its canvas state");
+      await drawn(screen, canvasState);
       expect(backgroundOf(root())).toBe("rgb(59, 42, 85)");
-      expect(pixels().corner).toBe(0);
+      expect(pixels(canvasState).corner).toBe(0);
       // No render: the variable alone moves the stage.
       root().style.setProperty("--hk-bg", "rgb(200, 180, 20)");
       expect(backgroundOf(root())).toBe("rgb(200, 180, 20)");
@@ -380,10 +484,18 @@ describe("<HumanoidCreator background>", () => {
   it(
     "takes a colour as a prop",
     async () => {
-      const screen = await render(<Host initialRecipe={thirty} background="rgb(10, 200, 30)" />);
-      await drawn(screen);
+      let get: (() => RootState) | null = null;
+      const screen = await render(
+        <Host initialRecipe={thirty} background="rgb(10, 200, 30)">
+          <StateProbe onReady={(next) => (get = next)} />
+        </Host>,
+      );
+      await expect.poll(() => get, LOAD).not.toBeNull();
+      const canvasState = get;
+      if (!canvasState) throw new Error("the creator did not expose its canvas state");
+      await drawn(screen, canvasState);
       expect(backgroundOf(root())).toBe("rgb(10, 200, 30)");
-      expect(pixels().corner).toBe(0);
+      expect(pixels(canvasState).corner).toBe(0);
     },
     LOAD.timeout,
   );

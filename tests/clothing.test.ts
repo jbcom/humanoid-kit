@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { COMMUNITY_CLOTHING_PACKS, COMMUNITY_GARMENTS } from "../scripts/lib/communityGarments.ts";
 import { compileAsset } from "../scripts/lib/compileAsset.ts";
+import { garmentId } from "../scripts/lib/garmentIds.ts";
 import {
   AssetFormatError,
   addGarments,
@@ -25,7 +27,7 @@ import {
 describe("the clothing pack", () => {
   const assets = loadClothedAssets();
 
-  it("ships the nineteen garments the sourcing audit chose", () => {
+  it("ships the nineteen system garments the sourcing audit chose and the community garments CC0 by their pages", () => {
     expect([...assets.garments.keys()].sort()).toEqual(
       [
         ...["01", "02", "03", "04", "05", "06"].map((n) => `suits/male_casualsuit${n}`),
@@ -37,9 +39,32 @@ describe("the clothing pack", () => {
         "suits/male_worksuit01",
         ...["01", "02", "03", "04", "05", "06"].map((n) => `shoes/shoes${n}`),
         "hats/fedora01",
+        ...COMMUNITY_GARMENTS.map((g) => garmentId(g.kind, g.dir)),
       ].sort(),
     );
-    expect(assets.garmentsPending).toBe(false);
+    expect(COMMUNITY_GARMENTS).toHaveLength(68);
+    expect(assets.pendingGarmentPacks.size).toBe(0);
+  });
+
+  it("ships a community garment only on a page that states CC0, read and recorded", () => {
+    for (const g of COMMUNITY_GARMENTS) {
+      expect(g.page.licence, g.dir).toMatch(/^CC0\b/);
+      expect(g.page.url, g.dir).toMatch(/^http:\/\/www\.makehumancommunity\.org\/node\/\d+$/);
+      expect(g.page.submitted, g.dir).toMatch(/^\d{4}-\d\d-\d\d$/);
+      expect(g.page.submitter, g.dir).not.toBe("");
+      expect(
+        COMMUNITY_CLOTHING_PACKS.map((p) => p.id),
+        g.dir,
+      ).toContain(g.pack);
+    }
+    // The three whose packs' records say CC0 where their pages say CC-BY stay out.
+    const dirs = COMMUNITY_GARMENTS.map((g) => g.dir);
+    for (const out of [
+      "culturalibre_hero_boots_4",
+      "culturalibre_heroine_boots_4",
+      "culturalibre_hero_mask_5",
+    ])
+      expect(dirs).not.toContain(out);
   });
 
   it("gives every garment a category it can stack as, and no id an attachment has", () => {
@@ -64,16 +89,21 @@ describe("the clothing pack", () => {
     // none of shoes02, 03, 05 and 06.
     for (const g of assets.garments.values()) {
       expect(g.refVerts.length, g.entry.id).toBe(g.entry.vertexCount * 3);
-      expect(g.entry.vertexCount, g.entry.id).toBeGreaterThan(500);
+      // The smallest is a stick, a few dozen quads.
+      expect(g.entry.vertexCount, g.entry.id).toBeGreaterThan(60);
       const weightSum = g.weights.reduce((a, b) => a + b, 0);
       expect(weightSum / g.entry.vertexCount, g.entry.id).toBeCloseTo(1, 1);
     }
   });
 
-  it("hides skin under every garment that covers any, and never under a hat", () => {
+  it("hides skin under every system garment that covers any, and never under a hat, glasses or a held prop", () => {
+    const community = new Set(COMMUNITY_GARMENTS.map((g) => garmentId(g.kind, g.dir)));
     for (const g of assets.garments.values()) {
-      if (g.entry.kind === "hat") expect(g.deleteVerts.length).toBe(0);
-      else expect(g.deleteVerts.length, g.entry.id).toBeGreaterThan(1000);
+      if (["glasses", "held"].includes(g.entry.kind) || g.entry.id === "hats/fedora01")
+        expect(g.deleteVerts.length, g.entry.id).toBe(0);
+      // A community garment hides what its author chose: a tight or sheer one hides none.
+      else if (!community.has(g.entry.id))
+        expect(g.deleteVerts.length, g.entry.id).toBeGreaterThan(1000);
     }
   });
 
@@ -126,14 +156,14 @@ describe("parsing a clothing pack", () => {
       undefined,
       clothingPackData(false) as { manifest: ClothingManifest },
     );
-    expect(assets.garmentsPending).toBe(true);
+    expect([...assets.pendingGarmentPacks]).toEqual([0]);
     expect(assets.garments.size).toBe(0);
-    expect(assets.clothingManifest).toBe(clothingManifest);
+    expect(assets.clothingManifests).toEqual([clothingManifest]);
     const { garments } = clothingPackData();
-    addGarments(assets, garments as ArrayBuffer);
-    expect(assets.garmentsPending).toBe(false);
+    addGarments(assets, 0, garments as ArrayBuffer);
+    expect(assets.pendingGarmentPacks.size).toBe(0);
     expect(assets.garments.size).toBe(clothingManifest.garments.entries.length);
-    expect(() => addGarments(assets, garments as ArrayBuffer)).toThrow(/already loaded/);
+    expect(() => addGarments(assets, 0, garments as ArrayBuffer)).toThrow(/already loaded/);
   });
 
   it("changes nothing when a garment does not check", () => {
@@ -143,18 +173,18 @@ describe("parsing a clothing pack", () => {
       clothingPackData(false) as { manifest: ClothingManifest },
     );
     const { garments } = clothingPackData();
-    expect(() => addGarments(assets, (garments as ArrayBuffer).slice(0, 1000))).toThrow(
+    expect(() => addGarments(assets, 0, (garments as ArrayBuffer).slice(0, 1000))).toThrow(
       AssetFormatError,
     );
-    expect(assets.garmentsPending).toBe(true);
+    expect([...assets.pendingGarmentPacks]).toEqual([0]);
     expect(assets.garments.size).toBe(0);
   });
 
   it("refuses garments added to assets with no clothing pack", () => {
     const assets = parseHumanoidAssets(bodyPackData());
-    expect(assets.clothingManifest).toBeNull();
-    expect(assets.garmentsPending).toBe(false);
-    expect(() => addGarments(assets, new ArrayBuffer(0))).toThrow(/no clothing pack/);
+    expect(assets.clothingManifests).toEqual([]);
+    expect(assets.pendingGarmentPacks.size).toBe(0);
+    expect(() => addGarments(assets, 0, new ArrayBuffer(0))).toThrow(/no clothing pack/);
   });
 });
 
@@ -168,12 +198,12 @@ describe("loading the clothing pack", { timeout: 60_000 }, () => {
       body: "http://packs/body",
       clothing: "http://packs/clothing",
     });
-    expect(staged.assets.garmentsPending).toBe(true);
+    expect([...staged.assets.pendingGarmentPacks]).toEqual([0]);
     expect(staged.stages.map((s) => s.files).slice(0, 2)).toEqual([["modifiers"], ["garments"]]);
     expect(requested.some((u) => u.endsWith("garments.bin.gz"))).toBe(false);
     await staged.complete;
-    expect(staged.assets.garmentsPending).toBe(false);
-    expect(staged.assets.garments.size).toBe(19);
+    expect(staged.assets.pendingGarmentPacks.size).toBe(0);
+    expect(staged.assets.garments.size).toBe(19 + COMMUNITY_GARMENTS.length);
     // Texture URLs resolve against the clothing pack, for the renderer to load.
     const url = staged.assets.fileUrls.get("hats_fedora01_fedora_diffuse.webp");
     expect(url).toBe("http://packs/clothing/hats_fedora01_fedora_diffuse.webp");
@@ -183,7 +213,7 @@ describe("loading the clothing pack", { timeout: 60_000 }, () => {
     stubFetch();
     const staged = await loadHumanoidAssetsStaged({ body: "http://packs/body" });
     expect(staged.stages.flatMap((s) => s.files)).not.toContain("garments");
-    expect(staged.assets.garmentsPending).toBe(false);
+    expect(staged.assets.pendingGarmentPacks.size).toBe(0);
   });
 
   it("reports a failed garments fetch on that stage only", async () => {
@@ -196,7 +226,7 @@ describe("loading the clothing pack", { timeout: 60_000 }, () => {
     await expect(stage("garments")?.loaded).rejects.toThrow(/garments\.bin\.gz failed/);
     await expect(stage("modifiers")?.loaded).resolves.toBe(staged.assets);
     await expect(stage("baby")?.loaded).resolves.toBe(staged.assets);
-    expect(staged.assets.garmentsPending).toBe(true);
+    expect([...staged.assets.pendingGarmentPacks]).toEqual([0]);
   });
 });
 

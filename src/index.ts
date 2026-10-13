@@ -35,6 +35,8 @@ export {
   SURFACE_LANDMARKS,
 } from "./foundation/landmarks.ts";
 export { type PosedBody, posedSurface } from "./foundation/posed.ts";
+export * from "./graft/index.ts";
+export * from "./interaction/contacts.ts";
 export * from "./interaction/definition.ts";
 export * from "./interaction/runtime.ts";
 export * from "./makehuman/customTargets.ts";
@@ -43,8 +45,10 @@ export * from "./makehuman/macro.ts";
 export * from "./makehuman/recipeMorph.ts";
 export * from "./makehuman/regions.ts";
 export * from "./makehuman/stateMorphs.ts";
+export * from "./model/garmentLook.ts";
 export * from "./model/humanoidModel.ts";
 export * from "./model/outfit.ts";
+export * from "./model/rigidFit.ts";
 export * from "./morph/evaluate.ts";
 export * from "./presence/fromEvaluation.ts";
 export * from "./presence/presence.ts";
@@ -59,23 +63,31 @@ export * from "./rig/expressions.ts";
 export * from "./rig/faceMirror.ts";
 export * from "./rig/faceSignals.ts";
 export * from "./rig/flexion.ts";
+export { type FoldSetup, solveFold } from "./rig/foldSolve.ts";
+export {
+  FOLD_JOINTS,
+  type FoldJointName,
+  foldFlexion,
+  jointRotations,
+  jointTurns,
+} from "./rig/folds.ts";
+export { foldSides, HIP_FOLD, hipFlexion, hipRotation } from "./rig/hipFold.ts";
+export { hipFoldSetup, solveHipFold, solveHipFoldSteps } from "./rig/hipFoldSolve.ts";
 export {
   addFold,
   addFoldNormal,
-  FOLD_KEYS,
-  FOLD_OPENINGS,
+  type FoldJoint,
+  flexedPast,
   foldAngles,
-  foldSides,
-  folds,
-  HIP_FOLD,
-  type HipFlexion,
-  type HipFold,
-  hipFlexion,
-  hipRotation,
+  type JointFlexion,
+  type JointFold,
+  renderFold,
+  rowTexels,
   type SurfaceFold,
   surfaceFold,
-} from "./rig/hipFold.ts";
-export { solveHipFold, solveHipFoldSteps } from "./rig/hipFoldSolve.ts";
+} from "./rig/jointFold.ts";
+export { KNEE_FOLD, kneeFlexion, kneeRotation, kneeSides } from "./rig/kneeFold.ts";
+export { kneeFoldSetup, solveKneeFold, solveKneeFoldSteps } from "./rig/kneeFoldSolve.ts";
 export * from "./rig/occlusionKeys.ts";
 export * from "./rig/pose.ts";
 export * from "./rig/skinShare.ts";

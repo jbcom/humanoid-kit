@@ -7,7 +7,7 @@
  * slider never builds a backlog, and keys never wait on each other: a figure
  * whose recipe needs target files that are still loading holds up no other.
  */
-import type { LoadOptions } from "../format/assetFormat.ts";
+import type { LoadPacks } from "../format/assetFormat.ts";
 import type { CustomTarget } from "../makehuman/customTargets.ts";
 import type {
   AdultSurfaceTopology,
@@ -17,7 +17,7 @@ import type {
   ModelOptions,
 } from "../model/humanoidModel.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import type { SurfaceFold } from "../rig/hipFold.ts";
+import type { SurfaceFold } from "../rig/jointFold.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
 import type {
   HairInfo,
@@ -60,7 +60,7 @@ export class HumanoidWorkerClient {
   private readonly queue = new Map<string, Job>();
   /** Keys with an evaluation in the worker. */
   private readonly inFlight = new Set<string>();
-  /** Resolves when the worker can evaluate the first figure (`LoadOptions.firstFigureAge`). */
+  /** Resolves when the worker can evaluate the first figure (`LoadPacks.firstFigureAge`). */
   readonly ready: Promise<ReadyInfo>;
   /**
    * Resolves when every target file has loaded, or rejects with the error that
@@ -68,7 +68,7 @@ export class HumanoidWorkerClient {
    */
   readonly complete: Promise<void>;
 
-  constructor(load: LoadOptions, model: ModelOptions = {}, worker?: Worker) {
+  constructor(load: LoadPacks, model: ModelOptions = {}, worker?: Worker) {
     // A runtime URL, not an import: it names the built worker module next to this file in dist/.
     // Consumers bundling from source, like the playground, pass their own `worker`.
     this.worker = worker ?? new Worker(new URL("./index.js", import.meta.url), { type: "module" });
@@ -253,20 +253,20 @@ export class HumanoidWorkerClient {
   }
 
   /**
-   * The hip fold of the figure a recipe makes (`HumanoidModel.hipFold`), for
-   * `DualBones.setFold` and the body geometry's fold slots, on the body surface
-   * that figure's evaluation is for. The worker solves it between other
-   * requests; asking again supersedes a solve still under way, which rejects
-   * with an `AbortError`.
+   * The joint folds of the figure a recipe makes (`HumanoidModel.folds`: the
+   * hip's and the knee's), for `DualBones.setFolds` and the body geometry's
+   * fold slots, on the body surface that figure's evaluation is for. The
+   * worker solves them between other requests; asking again supersedes a
+   * solve still under way, which rejects with an `AbortError`.
    */
-  async hipFold(
+  async folds(
     recipe: Recipe,
     signals: Readonly<Record<string, number>> = {},
-  ): Promise<{ surface: "base" | "adult"; fold: SurfaceFold }> {
+  ): Promise<{ surface: "base" | "adult"; folds: SurfaceFold[] }> {
     await this.ready;
-    const r = await this.request({ type: "hipFold", id: 0, recipe, signals });
-    if (r.type !== "hipFold") throw new HumanoidWorkerError(`unexpected ${r.type}`);
-    return { surface: r.surface, fold: r.fold };
+    const r = await this.request({ type: "folds", id: 0, recipe, signals });
+    if (r.type !== "folds") throw new HumanoidWorkerError(`unexpected ${r.type}`);
+    return { surface: r.surface, folds: r.folds };
   }
 
   private readonly garmentRequests = new Map<string, Promise<GarmentTopology>>();

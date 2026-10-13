@@ -43,6 +43,24 @@ export const STUDIO_SHADOW_MAP_TYPE = PCFShadowMap;
 /** Where the stage's key light stands, high and to the front-left, aimed at the origin. */
 export const KEY_POSITION = [1.8, 3.2, 2.6] as const;
 
+/**
+ * Where the stage's rim light stands, high and behind to the left, aimed at the origin. It
+ * casts a shadow too (`RIM_SHADOW_RADIUS`): unshadowed, it reaches every surface that faces
+ * it past a limb or a torso, the underside of a raised arm and the hollow of the armpit,
+ * and paints them white (the specular of a grazing light), where a rim should only model the
+ * form's edge.
+ */
+export const RIM_POSITION = [-2.6, 0.6, -2.4] as const;
+/** The rim's intensity at the stage's own scale of 1. */
+export const RIM_INTENSITY = 0.7;
+
+/**
+ * The rim's shadow filter, a tent of this many texels to each side (16 reads a pixel, and a
+ * map a ninth the area of the key's): a rim shades the silhouette's edge and the hollows
+ * behind it, where a penumbra of about a centimetre and a half is as good as the key's.
+ */
+export const RIM_SHADOW_RADIUS = 4;
+
 export const KEY_SHADOW = {
   /** The penumbra, 10 % to 90 %, on skin facing the light, metres. */
   penumbra: 0.016,

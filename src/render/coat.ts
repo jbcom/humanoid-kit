@@ -52,6 +52,21 @@ const DIRECT_SPECULAR =
 
 /** How dark a strand is at its root against its tip: hair shades the hair under it. A choice. */
 export const COAT_ROOT_SHADE = 0.45;
+/** Metres represented by one follicle-density cell before its density adjustment. */
+export const COAT_FOLLICLE_CELL_METRES = 0.01;
+/** The strand-radius normalization used by the shader's occupancy and antialiasing math. */
+export const COAT_NORMALIZED_RADIUS = { factor: 1.5, min: 0.08, max: 0.35 } as const;
+
+/**
+ * The alpha section after Three has applied this material's shader patch. It is
+ * kept only when a QA harness requests it, never as production render state.
+ */
+export interface CoatCompiledAlphaProbe {
+  /** The material program cache key that compiled this source. */
+  programKey: string;
+  /** The actual patched fragment section from its base/side alpha through output alpha. */
+  alphaPath: string;
+}
 
 const VERTEX_PARS = /* glsl */ `
 attribute vec3 ${COAT_COMB_ATTRIBUTE};
@@ -95,8 +110,8 @@ const VERTEX_REGIONS = /* glsl */ `
 	float hkLie = hkMean.w;
 	vCoatT = ( float( gl_InstanceID ) + 1.0 ) / hkCoatShells;
 	vCoatCover = hkCoverHere;
-	vCoatSpacing = hkMean.z > 0.0 ? 0.01 / sqrt( hkMean.z ) : 1.0;
-	vCoatRadius = clamp( 1.5 * hkLookMean.w / vCoatSpacing, 0.08, 0.35 );
+	vCoatSpacing = hkMean.z > 0.0 ? ${COAT_FOLLICLE_CELL_METRES.toFixed(3)} / sqrt( hkMean.z ) : 1.0;
+	vCoatRadius = clamp( ${COAT_NORMALIZED_RADIUS.factor.toFixed(1)} * hkLookMean.w / vCoatSpacing, ${COAT_NORMALIZED_RADIUS.min.toFixed(2)}, ${COAT_NORMALIZED_RADIUS.max.toFixed(2)} );
 	vCoatColour = hkLookMean.rgb;
 	// How far the strands stand off the skin, in follicle cells (a strand reaches 0.8 of the length on average).
 	vCoatHeight = 0.8 * hkLength * ( 1.0 - 0.7 * hkLie ) / vCoatSpacing;
@@ -208,6 +223,8 @@ export class CoatMaterial extends MeshStandardMaterial {
     hkCoatShells: { value: number };
     hkLobes: { value: Vector4 };
   };
+  private hkCaptureCompileProbe = false;
+  private hkCompiledAlphaProbe: CoatCompiledAlphaProbe | null = null;
 
   constructor() {
     // Shells blend over the skin and each other, inner to outer (instance
@@ -253,6 +270,23 @@ export class CoatMaterial extends MeshStandardMaterial {
     this.hkUniforms.hkCoatShells.value = count;
   }
 
+  /**
+   * QA-only: retain the patched fragment alpha section after a fresh compile.
+   * Turning it on changes the program key so a normal cached program cannot be
+   * mistaken for this capture. It changes no production material or shader path.
+   */
+  setCompileProbe(enabled: boolean): void {
+    if (this.hkCaptureCompileProbe === enabled) return;
+    this.hkCaptureCompileProbe = enabled;
+    this.hkCompiledAlphaProbe = null;
+    this.needsUpdate = true;
+  }
+
+  /** QA-only: the most recent requested compiled alpha section, or null before compilation. */
+  compiledAlphaProbe(): CoatCompiledAlphaProbe | null {
+    return this.hkCompiledAlphaProbe && { ...this.hkCompiledAlphaProbe };
+  }
+
   override onBeforeCompile: MeshStandardMaterial["onBeforeCompile"] = (shader) => {
     Object.assign(shader.uniforms, this.hkUniforms);
     for (const chunk of ["skinnormal_vertex", "begin_vertex"])
@@ -276,10 +310,20 @@ export class CoatMaterial extends MeshStandardMaterial {
         lighting.replace(DIRECT_SPECULAR, `${DIRECT_SPECULAR}${STRAND_LOBES}`),
       );
     patchShadowFilter(shader);
+    if (this.hkCaptureCompileProbe) {
+      const from = shader.fragmentShader.indexOf("float hkBases");
+      const to = shader.fragmentShader.indexOf("diffuseColor.a = hkCover;", from);
+      if (from < 0 || to < 0)
+        throw new Error("CoatMaterial: compiled fragment lost the coat alpha section");
+      this.hkCompiledAlphaProbe = {
+        programKey: this.customProgramCacheKey(),
+        alphaPath: shader.fragmentShader.slice(from, to + "diffuseColor.a = hkCover;".length),
+      };
+    }
   };
 
   override customProgramCacheKey(): string {
-    return `humanoid-kit-coat-2|${SHADOW_FILTER_KEY}`;
+    return `humanoid-kit-coat-2|${SHADOW_FILTER_KEY}${this.hkCaptureCompileProbe ? "|qa-alpha" : ""}`;
   }
 }
 

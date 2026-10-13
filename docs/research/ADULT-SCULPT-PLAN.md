@@ -275,7 +275,11 @@ session that never asks for the surface.
   parametric forms placed in the zones of section 5 and sized from the measured
   dimensions (ADULT-ANATOMY-DATA.md), then written to the pack by the packer. No
   mesh is sculpted by hand or imported, so the geometry is ours and
-  reproducible, and the pack is byte-identical on rebuild.
+  reproducible, and the pack is byte-identical on rebuild. The phallus generator
+  owns one pure catalogue of its target names; it uses that catalogue while it
+  generates the targets, and the shipped-detail contract checks the packed names
+  against it separately from the geometry, drive and lattice witnesses. Reading
+  that catalogue never reconstructs a target surface.
 - **Recipe.** The `anatomy` record of section 6 (feature id to presence and
   controls) selects detail targets and their weights; the age policy covers it in
   the three places of section 6.
@@ -404,7 +408,7 @@ It is outside the published pack's `files` and outside anything the site builds 
 
 **Pipeline.**
 
-1. *Cut* (`scripts/blender/cut_male.py`, headless Blender). The source is subdivided
+1. *Cut* (`scripts/blender/cut_sculpt.py`, headless Blender). The source is subdivided
    twice (Catmull-Clark) and cut by half-spaces. The piece connected to a seed is kept.
    A part must be a topological disc: one boundary loop, no non-manifold edge, Euler
    characteristic 1. The script fails otherwise and writes its numbers to `cuts.json`.
@@ -499,6 +503,102 @@ rather than cutting the corner.
 **What stays modelled.** The skin thickness in the sac's labelled width; where the
 smallest keys sit on the size axis. The clitoral key stays drawn until the female
 sculpts are transferred, which is next.
+
+## 6f. Decision 9: the female form (2026-10-10)
+
+**Recovery status (2026-10-11).** The labial skin transfer and canal reservoirs
+exist, but this decision is not complete. The retained pack sources contain the
+2020 vulva cut; they contain no NIH hood/glans cuts or their landmark fit.
+The smallest phallic key still uses `phallusGeometry`, so the default female
+hood/glans transfer described below remains planned. Fresh silent close-ups
+still reject its raised rim and the closure's pinched seams. The closure's
+mathematical and visibility tests pass, but thirteen posed foundation checks
+regress against the recorded worklist. Do not treat the source list or transfer
+design below as evidence that the female form has been accepted.
+
+The default woman drew the phallic reservoir's small key: a raised square plate with
+a nub and a frayed rim, nothing like a vulva.
+
+**Use cases.** (1) An adult woman by default: mons, labia majora and minora, the
+clitoral hood and glans, the vestibule opening into a vaginal canal. (2) An adult man
+by default, unchanged. (3) Every gender between them blends the forms, never swaps
+one for the other. (4) Intersex anatomy: each feature its own control (section 2),
+so a woman with a phallus, a man with majora and no sac, or anything between, is a
+recipe. (5) An anal canal on both sexes. (6) Posing: the crease and the root's
+skinning hold (`Reservoir skinning`). (7) Under 18: nothing, as now. (8) Garments
+cover all of it.
+
+**Sources** (`packs/adult-anatomy/source/PROVENANCE.md`; licences by their pages,
+ruled 2026-10-10). bogdan666's `adult_female_2020` proxy (CC0): majora, minora, a
+cleft and a shallow vestibule, resolved only when subdivided twice; its hood and
+glans are one rod. NIH 3D 3DPX-017321, "Female Pelvis with Perineal Structures and
+Musculature" (CC-BY 4.0, Emullen45; attribution "National Institute of Allergy and
+Infectious Disease"): the clitoral glans, the hood's separation and the vestibule's
+depth, a closed sculpt in its own units, fitted to landmarks. No source has either
+canal, so both are reservoirs' walls sized from measurements (ADULT-ANATOMY-DATA.md,
+section G); a reservoir's rings are engine structure, not a drawn form.
+
+**Where it lies.** Placed by a similarity fitted to its own proxy's references and
+carried to the authoring figure, the 2020 vulva runs 12 cm front to back, from 8.1 cm
+in front of the root's head to 4.1 cm behind it, 4.6 cm across. The phallic loop sits
+at its front (9.2 to 10.8 cm), the labioscrotal loop over its first 3 cm (6.1 to 8.8
+cm). So:
+
+- *The labia majora and minora are the skin's own folds*, not a reservoir: detail
+  targets on the refined region's lattice, transferred from the 2020 surface onto the
+  skin along its normal. The sac's disc covers 3 of the vulva's 12 cm and cannot hold
+  a pair of folds that runs its length. Rejected: the labioscrotal reservoir as the
+  majora (homologous, but the wrong footprint), and a reservoir per labium (a fold
+  attached along its length is a displacement of the skin, not a tube out of it).
+- *The clitoral hood and glans are the phallic reservoir's female form*: a sculpt
+  projected onto it as the shaft is (`transfer.ts`), the glans from the NIH model and
+  the hood from the 2020 proxy, blended with the shaft's keys by the size axis.
+- *The vestibule and vaginal canal are a new reservoir*, drawn inward: its loop round
+  the vestibule behind the sac's disc (about 0 to 5 cm), its rings the canal, its cap
+  the canal's top. The anal canal is another, behind the vulva, on every adult.
+- *Blending, not swapping*: a gender between the defaults draws each feature at its
+  default for that gender (`AdultAnatomySpec.defaults`, ramps over gender), so the
+  sac shrinks as the majora rise and the shaft's keys give way to the clitoral form;
+  the features stay independent, as section 2 requires.
+
+**The transfer, as built.** The cut is the vulva with a margin of skin; the sheet
+taken from it is an ellipse round the labia (`scripts/lib/detail/vulva.ts`). It is
+placed by a similarity fitted over the cut's neighbourhood (5 mm off our rest body
+at the median, against 28 mm fitted over the whole proxy) and carried to the
+authoring figure rigidly by its edge, as the male parts are; carried vertex by
+vertex, the perineum twisted. Each region vertex takes the point of the sheet seen
+from just outside along its normal, no more than 6 mm under the skin (the
+vestibule's 17 mm pit is the canal's to draw), less the two bodies' difference
+carried in harmonically from the rim, faded in over five rings by a smootherstep;
+the sheet's rim lies past the fourchette and the majora, on plain skin, so no vertex
+next to it moves by more than 0.5 mm. Four other transfers
+were built and rendered and rejected (each named in `vulva.ts`): the nearest
+surface either way along the normal (streaks), the nearest point (faceted),
+matched disc maps (blurred) and a biharmonic fill under the vulva (buckled). As
+built, the cleft is 4 to 5 mm deep and runs 70 mm on the midline, against the majora's
+80 ± 15 mm (Kreklau); the labia do not rise above our skin, whose crotch is already
+as full as the proxy's.
+
+**The canals.** The vagina: its posterior wall 98 mm (anterior 63), its lumen 17 mm
+wide at the introitus widening to 45 at the top, its axis 90 degrees from horizontal
+at the introitus, 72 at the middle and 41 at the top (Luo 2016), its resting section a
+slit 2 mm across (derived, section G). The anal canal: 33 mm in a woman and 39 in a
+man (manometry, 2019), closed at rest. Each canal's loop is faired and gated as the
+male loops are (the 40 degree turn gate), and its walls take the root blend
+(`rootShares`) and the carriage (`detailCarry.ts`) as every reservoir's do.
+
+**Gates.** As for the male form: the smoke tier's worklist (penetration by area on
+every vertex), the reservoirs' inverted triangles, the loops' turn, the root's
+attachment, renders from the corner, the front and a seated close-up framed on the
+first millimetres; and for the female form, the vulva's length and labia measured
+against Kreklau (section A) at the default.
+
+**Order.** (1) This plan and the data (G). (2) The 2020 source, its placement, and
+the majora and minora as region targets, with their gates. (3) The vestibular and
+anal reservoirs: placement, patches, the turn gate, the canals from G. (4) The NIH
+glans and hood on the phallic reservoir. (5) Defaults by gender, the blend's gates,
+the mound's fixes (an overhang above the vulva, a shelf where its bulge meets the
+abdomen, a pocket in the fold beside it), sheets.
 
 ## 7. How the patch stays bound to hm08
 

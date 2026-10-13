@@ -2,7 +2,6 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { groupFaces, jointPosition } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
-import { coatPaintFor } from "../src/react/CoatMesh.tsx";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import {
   COAT_REGION_LIMIT,
@@ -15,6 +14,7 @@ import {
   combField,
   paintCoat,
 } from "../src/surface/coat.ts";
+import { coatPaintFor } from "../src/surface/coatPaint.ts";
 import type { SkinPaintInput } from "../src/surface/layers.ts";
 import { BODY_HAIR_COAT, beardMasks } from "../src/surface/regions/bodyHairCoat.ts";
 import {
@@ -401,5 +401,22 @@ describe("which figures grow a coat, from their recipe", () => {
     });
     expect(coatPaintFor(beard)).not.toBeNull();
     expect(coatPaintFor(chest)).not.toBeNull();
+  });
+
+  it("uses explicit coverage for a gender-independent coat and keeps follicle spacing separate", () => {
+    const baseline = createRecipe({
+      macros: { age: 35, gender: 0 },
+      bodyHair: { coverage: { chest: 0.6 } },
+    });
+    const dense = createRecipe({
+      macros: { age: 35, gender: 0 },
+      bodyHair: { coverage: { chest: 0.6 }, follicleDensity: { chest: 2 } },
+    });
+    const baselinePaint = coatPaintFor(baseline);
+    const densePaint = coatPaintFor(dense);
+    expect(baselinePaint).not.toBeNull();
+    expect(densePaint).not.toBeNull();
+    expect(densePaint?.[0]).toBeCloseTo(baselinePaint?.[0] ?? 0);
+    expect(densePaint?.[2]).toBeCloseTo((baselinePaint?.[2] ?? 0) * 2);
   });
 });

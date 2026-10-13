@@ -120,6 +120,7 @@ describe("the pooled ground contact shadow", () => {
           facing: [0, 0, 1],
           bounds: { min: [0, 0, 0], max: [0, 0, 0] },
           anchors: {} as never,
+          measures: { reach: 0, shoulderHeight: 0, hipHeight: 0, eyeHeight: 0 },
           footprint: { points: [[0.5, 0.5]], radius: 0.2 },
           appearance: { albedo: [0, 0, 0], luminance: 0, specular: 0 },
           faceRadius: 0,

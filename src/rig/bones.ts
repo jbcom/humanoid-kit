@@ -20,6 +20,13 @@ export interface RestBones {
 /** Per bone, a rotation quaternion (x, y, z, w): `bones * 4`. */
 export type BoneRotations = Float32Array;
 
+/** The rest pose: the identity rotation for each of `bones` bones. */
+export const IDENTITY_POSE = (bones: number): BoneRotations => {
+  const q = new Float32Array(bones * 4);
+  for (let b = 0; b < bones; b++) q[b * 4 + 3] = 1;
+  return q;
+};
+
 /**
  * Each bone's head in the pose (`bones * 3`): where the joints are, for
  * anchors (hands, feet, face) and joint-angle signals.

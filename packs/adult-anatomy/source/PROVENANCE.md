@@ -1,18 +1,25 @@
 # Sculpted sources of the adult anatomy pack
 
-The adult pack's genital forms are transferred from CC0 community sculpts
-(docs/research/ADULT-SCULPT-PLAN.md, sections 6d and 6e). This directory holds
-each source as downloaded and the parts cut from it. It is not part of the
+The adult pack's sculpt transfers currently use CC0 community sources. A
+CC-BY 4.0 anatomical model is recorded for the planned female hood/glans transfer
+(docs/research/ADULT-SCULPT-PLAN.md, sections 6d, 6e and 6f). This directory holds
+the retained community downloads and their cuts; the table also identifies the
+NIH download whose cuts have not been retained. It is not part of the
 published package (`packs/adult-anatomy/package.json` ships `data/` only), and
 nothing the public site builds from reads it.
 
 The licence rule's clause B governs: an asset's page licence is its licence
-(owner ruling, 2026-10-09). Each source below was judged from its page.
+(owner ruling, 2026-10-09). Each source below was judged from its page. An upload
+whose page says CC0 is CC0 even where it was derived from an AGPL parent (owner
+ruling, 2026-10-10: "It isn't on us to make determinations of the validity of a
+derived product"); a parent is recorded as history, not as a licence condition.
 
 | Source | Page | Submitted | Page licence | Read | Files (SHA-256) |
 | --- | --- | --- | --- | --- | --- |
 | `adult_male_genitalia_breast_fix` | <http://www.makehumancommunity.org/proxy/adult_male_genitalia_breast_fix.html> | ieroglif, 2026-05-04 (updated 2026-05-18, 2026-05-22) | "CC0 - Creative Commons Zero" (the proxy's own header says `license: CC0` too) | 2026-10-09 | `adult_male_genitalia_breast_fix.obj` `78092e99e7165d5ee6d0e48dca48ee360fbb73b61206325dca8746dcf65c8095`; `adult_male_genitalia_breast_fix.proxy` `fd4a710a4bcf7a9e7eefef70ce80a41419549bd4bab3fc1499cc0a91f2e414c1` |
 | `Male_Gen-Heal1` | <http://www.makehumancommunity.org/proxy/erect_penis_only_works_with_males.html> | Slayer227, 2022-01-06 | "CC0 - Creative Commons Zero" (the proxy's own header says `license: CC0` too) | 2026-10-09 | `Male_Gen-Heal1.obj` `716972d16f57ae478bf0d2b3d84a7d5d9418a078e5815db6c01a99eff0aec5a4`; `Male_Gen-Heal1.proxy` `d6a8b8e52570a910840af7148dafc49408d976ff341d907bb7b9b75b90524f5d` |
+| `adult_female_2020_v_01` | <http://www.makehumancommunity.org/proxy/adult_female_2020.html> | bogdan666, 2019-11-17 | "CC0 - Creative Commons Zero" (history: the page says its proxy and obj "were taken from 'Adult Female Genitalia (new) HEALED' by 'geyser'", reweighted; the proxy's own header still reads `author MHteam / license AGPL3`) | 2026-10-09 | `adult_female_2020_v_01.obj` `4e1371c5cfee0dd738a49ac814f8842e15ec82124aac2edb26f83688769ba09c`; `adult_female_2020_v_01.proxy` `968a699338ef819465ab9b6825afccfb5789001ba7335e5c199750020b244d15` |
+| NIH 3D `3DPX-017321` | <https://3d.nih.gov/entries/3DPX-017321>, "Female Pelvis with Perineal Structures and Musculature" | Emullen45; created 2022-06-28, published 2026-10-08 (version 3) | "Licensing: CC-BY", linking CC BY 4.0; attribution "National Institute of Allergy and Infectious Disease" (as the NIH 3D sourcing search reported it, 2026-10-10; the entry's attribution instructions are rendered by script and were not read as text) | 2026-10-10 | `pelvis.obj` (as downloaded, 31.7 MB, not kept here) `a00e6c0fcffe81e7f4ad8c9bf20645157df10c7177c2090deffaeddd8f95890c` |
 
 `LICENSE-SOURCE.txt` in each source's directory quotes its page and lists the
 URLs the files came from.
@@ -20,7 +27,7 @@ URLs the files came from.
 ## How each file is used
 
 - `adult_male_genitalia_breast_fix.obj`: a whole-body proxy in metres with
-  flaccid genitals. `scripts/blender/cut_male.py` subdivides it twice and cuts
+  flaccid genitals. `scripts/blender/cut_sculpt.py` subdivides it twice and cuts
   out the hanging shaft with its glans (`phallus.obj`, cut across the shaft's
   own axis a centimetre below the root) and the sac (`scrotum.obj`, cut just
   below its neck: the sac hangs free, with two lobes and a median raphe).
@@ -36,6 +43,19 @@ URLs the files came from.
   ships. The erect shaft is then moved, without turning, so its cut is centred on
   the flaccid shaft's: the two authors put the root in different places, and one
   organ has one root.
+- `adult_female_2020_v_01.obj`: a whole-body proxy in decimetres with a vulva:
+  majora, minora, a cleft and a shallow vestibule, resolved once subdivided twice;
+  its hood and glans are one rod. It is placed on our base by a similarity fitted
+  to where its own proxy's reference vertices put each vertex (the source's units
+  come out of the fit), and the majora and minora are transferred from it onto the
+  skin as detail targets (ADULT-SCULPT-PLAN.md, 6f).
+- NIH 3D `3DPX-017321`: a closed anatomical sculpt of a female pelvis with the
+  perineal structures, in its own units. The download was recovered in the prior
+  session's private scratch directory, but no NIH cuts, `cuts.json`, landmark fit
+  or transfer implementation are retained here as of the 2026-10-11 recovery.
+  Its proposed use for the clitoral glans, hood separation and vestibule depth
+  remains planned. The reported licence is CC-BY 4.0; the existing licence and
+  NOTICE entries do not establish that this source is used by the generated pack.
 - No material (`.mhmat`) or weights (`.mhw`) file is used or kept.
 
 ## Not used, and why

@@ -15,6 +15,7 @@ import {
   type CSSProperties,
   type ErrorInfo,
   type ReactNode,
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -66,7 +67,7 @@ export interface HumanoidCreatorProps {
    * proposed, or `false`. A refused figure is never drawn, held or reported.
    */
   onBeforeChange?: BeforeChange;
-  /** Ranges for sliders, and sliders, tasks and panels left out. */
+  /** Ranges for sliders, and sliders, groups, tasks and panels left out. */
   controls?: ControlLimits;
   /**
    * What counts as covered, and who may allow an uncovered figure, perhaps after asking a
@@ -89,6 +90,11 @@ export interface HumanoidCreatorProps {
   /** Heading shown above the controls. */
   title?: string;
   className?: string;
+  /**
+   * Render continuously (the default), or only while the creator has work to
+   * draw. Choose `"demand"` for a static creator surface.
+   */
+  frameloop?: "always" | "demand";
   /** Extra scene content rendered beside the figure. */
   children?: ReactNode;
 }
@@ -211,6 +217,7 @@ function CreatorBody({
   eyeMaterials,
   onReject,
   title = "Create",
+  frameloop = "always",
   children,
 }: HumanoidCreatorProps) {
   const editor = useHumanoidEditor(initialRecipe, {
@@ -234,7 +241,9 @@ function CreatorBody({
   const [lift, setLift] = useState(0);
   const positions = useRef<Float32Array | null>(null);
   const [hasFigure, setHasFigure] = useState(false);
+  const [framingSettled, setFramingSettled] = useState(false);
   const tabsId = useId();
+  const onFramingSettled = useCallback((settled: boolean) => setFramingSettled(settled), []);
 
   const tabs = [
     ...tasks.map((t) => ({ id: t.id, label: t.label })),
@@ -317,14 +326,19 @@ function CreatorBody({
   return (
     <>
       {/* data-pick: whether tapping the figure opens its controls yet (they need the modifier targets). */}
-      <div className="hk-stage" data-pick={pickMap ? "ready" : "loading"}>
+      <div
+        className="hk-stage"
+        data-pick={pickMap ? "ready" : "loading"}
+        data-framing={framingSettled ? "settled" : "moving"}
+      >
         <Canvas
+          frameloop={frameloop}
           shadows={STUDIO_SHADOWS}
           camera={{ position: [0, 1, 3.4], fov: 32 }}
+          // Compositor screenshots do not need a retained WebGL drawing buffer.
           gl={{
             toneMapping: STUDIO_TONE_MAPPING,
             toneMappingExposure: STUDIO_EXPOSURE,
-            preserveDrawingBuffer: true,
           }}
           // An image of the figure to assistive technology: tapping and orbiting
           // are pointer shortcuts to what the tabs already offer.
@@ -354,6 +368,7 @@ function CreatorBody({
               offsetY={lift}
               focus={focus}
               refocus={refocus}
+              onFramingSettled={onFramingSettled}
             />
           )}
           {children}

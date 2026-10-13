@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { HIP_FOLD } from "../src/rig/hipFold.ts";
+import { rowTexels } from "../src/rig/jointFold.ts";
 import { HumanoidWorkerClient, HumanoidWorkerError } from "../src/worker/client.ts";
 import type { WorkerRequest, WorkerResponse } from "../src/worker/protocol.ts";
 import { EMPTY_RIG } from "./emptyRig.ts";
@@ -113,6 +115,7 @@ class FakeWorker {
               uvScale: Float32Array.of(1, 2),
               occlusion: new Uint8Array(16).fill(255),
               coat: { regions: [], comb: new Float32Array(6), masks: new Uint8Array(16) },
+              canals: { of: Int16Array.of(-1, -1), gap: [] },
             },
           }),
         1,
@@ -157,15 +160,22 @@ class FakeWorker {
       );
       return;
     }
-    if (msg.type === "hipFold") {
+    if (msg.type === "folds") {
       this.folded.push(msg.recipe.macros.age);
       setTimeout(
         () =>
           reply({
-            type: "hipFold",
+            type: "folds",
             id: msg.id,
             surface: "adult",
-            fold: { slot: Float32Array.of(-1, 0), rows: 1, data: new Uint16Array(4 * 48) },
+            folds: [
+              {
+                joint: HIP_FOLD,
+                slot: Float32Array.of(-1, 0),
+                rows: 1,
+                data: new Uint16Array(rowTexels(HIP_FOLD) * 4),
+              },
+            ],
           }),
         1,
       );
@@ -372,13 +382,14 @@ describe("HumanoidWorkerClient", () => {
     expect(worker.adultSurfaceRequests).toBe(1);
   });
 
-  it("asks the worker for a recipe's hip fold, and says which surface it is for", async () => {
+  it("asks the worker for a recipe's joint folds, and says which surface they are for", async () => {
     const { client, worker } = make(false);
-    const { surface, fold } = await client.hipFold(createRecipe({ macros: { age: 33 } }));
+    const { surface, folds } = await client.folds(createRecipe({ macros: { age: 33 } }));
     expect(worker.folded).toEqual([33]);
     expect(surface).toBe("adult");
-    expect(fold.rows).toBe(1);
-    expect([...fold.slot]).toEqual([-1, 0]);
+    expect(folds.map((f) => f.joint.name)).toEqual(["hip"]);
+    expect(folds[0]?.rows).toBe(1);
+    expect([...(folds[0]?.slot ?? [])]).toEqual([-1, 0]);
   });
 
   it("fails queued evaluations when the worker cannot initialise", async () => {

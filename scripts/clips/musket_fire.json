@@ -1,0 +1,112 @@
+{
+  "id": "musket_fire",
+  "title": "Musket, ready, aim, fire",
+  "description": "From shoulder arms to ready, aim and fire, standing: the piece comes down in front at ready, the chest turns a third to the right at aim with the butt in the right shoulder and the left hand under the barrel, the shot kicks the shoulder back, and the piece returns to the shoulder.",
+  "tags": ["combat", "musket", "1860s", "drill"],
+  "base": "tpose",
+  "fps": 30,
+  "duration": 3,
+  "loop": false,
+  "rootMotion": false,
+  "grounded": true,
+  "keys": [
+    {
+      "t": 0,
+      "rotations": {
+        "spine03": { "Xrotation": 2 },
+        "upperarm01.L": { "Xrotation": 0, "Yrotation": 33 },
+        "lowerarm01.L": { "Xrotation": 6 },
+        "upperarm01.R": { "Xrotation": -6, "Yrotation": -30 },
+        "lowerarm01.R": { "Xrotation": 10 }
+      }
+    },
+    {
+      "t": 0.6,
+      "rotations": {
+        "spine03": { "Xrotation": 3, "Zrotation": -8 },
+        "spine01": { "Zrotation": -8 },
+        "neck01": { "Zrotation": 10 },
+        "upperarm01.L": { "Xrotation": -42.5, "Yrotation": 103.9, "Zrotation": -15.2 },
+        "lowerarm01.L": { "Xrotation": -78.6 },
+        "upperarm01.R": { "Xrotation": 4.3, "Yrotation": -69.6, "Zrotation": 8 },
+        "lowerarm01.R": { "Xrotation": -43.1 },
+        "upperleg01.R": { "Xrotation": 6 },
+        "upperleg01.L": { "Xrotation": -3 }
+      }
+    },
+    {
+      "t": 1.2,
+      "rotations": {
+        "spine03": { "Xrotation": 4, "Zrotation": -17.5 },
+        "spine01": { "Zrotation": -15 },
+        "neck01": { "Zrotation": 20 },
+        "head": { "Xrotation": 8 },
+        "upperarm01.L": { "Xrotation": -28.5, "Yrotation": 27.6, "Zrotation": -34.8 },
+        "lowerarm01.L": { "Xrotation": -33.5 },
+        "upperarm01.R": { "Xrotation": -54.6, "Yrotation": -132.7, "Zrotation": 4.6 },
+        "lowerarm01.R": { "Xrotation": -100.4 },
+        "upperleg01.R": { "Xrotation": 8 },
+        "upperleg01.L": { "Xrotation": -4 }
+      }
+    },
+    {
+      "t": 1.6,
+      "rotations": {
+        "spine03": { "Xrotation": 4, "Zrotation": -17.5 },
+        "spine01": { "Zrotation": -15 },
+        "neck01": { "Zrotation": 20 },
+        "head": { "Xrotation": 8 },
+        "upperarm01.L": { "Xrotation": -28.5, "Yrotation": 27.6, "Zrotation": -34.8 },
+        "lowerarm01.L": { "Xrotation": -33.5 },
+        "upperarm01.R": { "Xrotation": -54.6, "Yrotation": -132.7, "Zrotation": 4.6 },
+        "lowerarm01.R": { "Xrotation": -100.4 },
+        "upperleg01.R": { "Xrotation": 8 },
+        "upperleg01.L": { "Xrotation": -4 }
+      }
+    },
+    {
+      "t": 1.7,
+      "rotations": {
+        "spine03": { "Xrotation": -2, "Zrotation": -21 },
+        "spine01": { "Zrotation": -15 },
+        "neck01": { "Zrotation": 20 },
+        "head": { "Xrotation": 2 },
+        "upperarm01.L": { "Xrotation": -34, "Yrotation": 27.6, "Zrotation": -34.8 },
+        "lowerarm01.L": { "Xrotation": -33.5 },
+        "upperarm01.R": { "Xrotation": -54.6, "Yrotation": -132.7, "Zrotation": 4.6 },
+        "lowerarm01.R": { "Xrotation": -100.4 },
+        "upperleg01.R": { "Xrotation": 8 },
+        "upperleg01.L": { "Xrotation": -4 }
+      }
+    },
+    {
+      "t": 2.1,
+      "rotations": {
+        "spine03": { "Xrotation": 3, "Zrotation": -8 },
+        "spine01": { "Zrotation": -8 },
+        "neck01": { "Zrotation": 10 },
+        "head": { "Xrotation": 0 },
+        "upperarm01.L": { "Xrotation": -42.5, "Yrotation": 103.9, "Zrotation": -15.2 },
+        "lowerarm01.L": { "Xrotation": -78.6 },
+        "upperarm01.R": { "Xrotation": 4.3, "Yrotation": -69.6, "Zrotation": 8 },
+        "lowerarm01.R": { "Xrotation": -43.1 },
+        "upperleg01.R": { "Xrotation": 6 },
+        "upperleg01.L": { "Xrotation": -3 }
+      }
+    },
+    {
+      "t": 3,
+      "rotations": {
+        "spine03": { "Xrotation": 2, "Zrotation": 0 },
+        "spine01": { "Zrotation": 0 },
+        "neck01": { "Zrotation": 0 },
+        "upperarm01.L": { "Xrotation": 0, "Yrotation": 33, "Zrotation": 0 },
+        "lowerarm01.L": { "Xrotation": 6 },
+        "upperarm01.R": { "Xrotation": -6, "Yrotation": -30, "Zrotation": 0 },
+        "lowerarm01.R": { "Xrotation": 10 },
+        "upperleg01.R": { "Xrotation": 0 },
+        "upperleg01.L": { "Xrotation": 0 }
+      }
+    }
+  ]
+}

@@ -30,25 +30,35 @@ export interface WardrobeGroup {
 /** Headings for the categories; one not named here is listed under its own name. */
 const LABELS: Record<string, string> = {
   underwear: "Underwear",
+  hosiery: "Stockings and tights",
+  armwear: "Arm sleeves",
   socks: "Socks",
+  bottoms: "Trousers and skirts",
   clothes: "Outfits",
+  top: "Tops",
   sweater: "Sweaters",
   jacket: "Jackets",
+  gloves: "Gloves",
   shoes: "Shoes",
   coat: "Coats",
-  hat: "Hats",
+  mask: "Masks",
+  glasses: "Glasses",
+  hat: "Hats and hoods",
   backpack: "Backpacks",
+  held: "Held",
 };
 
-/** The garments a clothing pack's manifest lists; none without a clothing pack. */
-export function wardrobeOf(manifest: ClothingManifest | null): WardrobeEntry[] {
-  return (manifest?.garments.entries ?? []).map((g) => ({
-    id: g.id,
-    name: g.name,
-    label: g.label,
-    kind: g.kind,
-    tags: g.tags,
-  }));
+/** The garments the loaded clothing packs' manifests list, pack by pack; none without one. */
+export function wardrobeOf(manifests: readonly ClothingManifest[]): WardrobeEntry[] {
+  return manifests
+    .flatMap((m) => m.garments.entries)
+    .map((g) => ({
+      id: g.id,
+      name: g.name,
+      label: g.label,
+      kind: g.kind,
+      tags: g.tags,
+    }));
 }
 
 /** The wardrobe by category, in the order people dress: underwear first, backpacks last. */
