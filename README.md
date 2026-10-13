@@ -235,15 +235,16 @@ Status per milestone. The architecture notes carry the detail
 
 | Milestone | Status |
 | --- | --- |
-| Editor shell (`humanoid-kit/editor`) | Done. A doll form is planned |
+| Editor shell (`humanoid-kit/editor`) | Done. A doll form is planned (issue 98) |
 | Rig, poses and expressions | Done: fitted skeleton, posing, named expressions |
 | Adult anatomy sculpting | In progress: the layers, state plumbing and a refined adult surface ship; the own-sculpt phase is planned |
 | Scalp hair | Done: `humanoid-kit-hair` |
 | Body and facial hair | Body hair, eyebrows, eyelashes and one beard ship; moustaches and larger beards are planned |
 | Clothing | Done: `humanoid-kit-clothing`, bound `.mhclo` layers including `delete_verts` |
-| Anthro traits; fur, scales and feathers as layers | Planned. The shared coat module for body hair and fur is built |
-| Animation | `humanoid-kit-animations` is done; `humanoid-kit-adult-animations` waits on an owner ruling on its scope |
-| Interactions and spatial awareness | In progress: presence ships; the interaction core ships its first two slices |
+| Anthro traits | Planned (issue 97). The shared coat module for body hair and fur is built |
+| Fur, scales and feathers as layers | Planned (issue 99) |
+| Animation | `humanoid-kit-animations` is done; `humanoid-kit-adult-animations` waits on an owner ruling on its scope (issue 105) |
+| Interactions and spatial awareness | In progress: presence ships; the interaction core ships its first two slices and the rest are tracked (issues 100 to 104) |
 
 ## Compatibility
 

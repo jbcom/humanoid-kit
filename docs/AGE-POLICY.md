@@ -266,7 +266,9 @@ general animations package's interaction contracts tagged `intimate` will also
 refuse any participant under 18. Both will throw, as `AgePolicyError` does,
 rather than skip. The interaction contract ([Interactions](INTERACTIONS.md),
 "Age policy enforcement points") carries this as a required `audience`, fail
-closed and derived from the affordances an interaction names.
+closed and derived from the affordances an interaction names. Whether
+`humanoid-kit-adult-animations` belongs in this repository at all is an open
+owner question (issue 105); nothing of it exists.
 
 **The public demo ships without the adult pack.**
 `scripts/check-pages-build.mjs` (`pnpm check:pages`) fails if any built site

@@ -2903,7 +2903,7 @@ Old recipes evaluate and serialise as before.
 
 Short, dense hair standing off the skin (stubble, a dense chest, an animal's
 pelt) is one module shared by body hair and the anthro fur (the anthro design
-itself is not written yet; issue 54 tracks it): shells, the body surface drawn N times, each
+itself is not written yet; issue 97 tracks it): shells, the body surface drawn N times, each
 offset outward a little further and cut to strands by a density texture
 (Lengyel et al. 2001).
 
@@ -3959,7 +3959,8 @@ Milestones, in the order each is proven (built in parallel lanes; see
 "Parallel work: the base contract").
 
 1. **Doll form and editor shell.** Implemented: `humanoid-kit/editor`, a
-   tap-to-edit creator over the recipe (see Editor). Planned: the doll form.
+   tap-to-edit creator over the recipe (see Editor). Planned: the doll form
+   (issue 98).
 2. **Rig, poses and expressions.** Implemented: a skeleton fitted to the morphed
    body, posing, and the facial pose units with named expressions (see
    "Skeleton, poses and expressions"). MakeHuman's body pose units are not
@@ -3978,16 +3979,17 @@ Milestones, in the order each is proven (built in parallel lanes; see
    drawn as skin layers and a shared coat (see "Body hair"), and the hair pack's
    eyebrows, eyelashes and one beard (`beard-full`). Planned: moustaches and
    larger beards (issue 14).
-6. **Anthro traits.** Planned. The coat module is shared with body hair so that
-   fur can add its own regions and patterns (see "The coat").
+6. **Anthro traits.** Planned (issue 97). The coat module is shared with body
+   hair so that fur can add its own regions and patterns (see "The coat").
 7. **Clothing and surface layers.** Implemented: layers bound to the base mesh,
    including `.mhclo` assets with `delete_verts` (see "Clothing"). Planned: fur,
-   scales and feathers as layers.
+   scales and feathers as layers (issue 99).
 8. **Animation packs.** Implemented: `humanoid-kit-animations`. Pending an owner
-   ruling on whether it belongs in this repository (issue 54): a separate
+   ruling on whether it belongs in this repository (issue 105): a separate
    `humanoid-kit-adult-animations` that refuses any participant under 18.
    Presence is implemented ("Presence"); the interaction core is in progress,
-   with slices 1 and 2 built. How figures, objects and fixtures offer, claim and
+   with slices 1 and 2 built and the later slices tracked (issues 100 to 104).
+   How figures, objects and fixtures offer, claim and
    play interactions together, and where the age policy is enforced in them, is
    designed in [Interactions](INTERACTIONS.md).
 
