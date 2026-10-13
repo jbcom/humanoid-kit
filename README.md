@@ -225,8 +225,8 @@ const assets = await loadHumanoidAssets({ body: bodyPack, adultAnatomy: adultAna
 | `humanoid-kit/editor` | `HumanoidCreator`, `useHumanoidEditor`, `SliderRow` | yes |
 | `humanoid-kit/worker` | The worker module that `HumanoidWorkerClient` starts by default | no |
 
-See the [API reference](https://jbcom.github.io/humanoid-kit/API/) and the
-[architecture notes](https://jbcom.github.io/humanoid-kit/ARCHITECTURE/).
+See the [API reference](https://jbcom.github.io/humanoid-kit/api/) and the
+[architecture notes](https://jbcom.github.io/humanoid-kit/architecture/).
 
 ## Roadmap
 

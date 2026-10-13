@@ -59,8 +59,8 @@ Anthro traits, fur, scales and feathers as layers, a doll form, moustaches and
 larger beards, and an adult animation package (pending an owner ruling on its
 scope) are planned. Clothing, scalp and body hair, animation, rig and poses,
 expressions, presence, the creator and the first interaction slices ship. The
-[architecture notes](./ARCHITECTURE/) list the roadmap with each milestone's
+[architecture notes](ARCHITECTURE.md) list the roadmap with each milestone's
 status.
 
-Start with [Getting started](./getting-started/), then read the
-[API reference](./API/) and the [architecture notes](./ARCHITECTURE/).
+Start with [Getting started](getting-started.md), then read the
+[API reference](API.md) and the [architecture notes](ARCHITECTURE.md).
