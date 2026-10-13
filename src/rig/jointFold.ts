@@ -10,6 +10,7 @@
  * flexes, the skin that moves and the skin it meets, which side drives a
  * vertex) is the joint's own module's: src/rig/hipFold.ts, src/rig/kneeFold.ts.
  */
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import { fromHalf, toHalf } from "./half.ts";
 
 /** A joint fold's keys: the flexions (and openings) it is solved at and read between. */
@@ -208,11 +209,12 @@ export function boneMass(
   test: RegExp,
 ): Float32Array {
   const wanted = names.map((n) => test.test(n));
-  const out = new Float32Array(skinWeight.length / 4);
+  const n = SKIN_INFLUENCES;
+  const out = new Float32Array(skinWeight.length / n);
   for (let v = 0; v < out.length; v++) {
     let mass = 0;
-    for (let k = 0; k < 4; k++)
-      if (wanted[skinIndex[v * 4 + k] as number]) mass += skinWeight[v * 4 + k] as number;
+    for (let k = 0; k < n; k++)
+      if (wanted[skinIndex[v * n + k] as number]) mass += skinWeight[v * n + k] as number;
     out[v] = mass;
   }
   return out;

@@ -1,7 +1,7 @@
 {
   "name": "humanoid-kit-hair",
   "version": "0.0.0",
-  "description": "Scalp hair for humanoid-kit: ten alpha-card styles bound to the base body, packed from CC0 MakeHuman assets. Optional: install it only if your figures wear hair.",
+  "description": "Hair for humanoid-kit: 16 scalp styles, 12 eyebrows, 4 eyelashes and a beard as alpha cards bound to the base body, packed from CC0 MakeHuman assets and authored cards. Optional: install it only if your figures wear hair.",
   "type": "module",
   "license": "CC0-1.0",
   "author": "Jon Bogaty <jon@jonbogaty.com>",

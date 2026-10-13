@@ -7,6 +7,8 @@
  * Built once per (mesh, face subset, level); evaluated on every shape change
  * with `evaluateSurface`.
  */
+
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import {
   applyStencil,
   catmullClarkLevel,
@@ -584,11 +586,12 @@ function finishSurface(
 
   const skin = interpolateSkin(source, stencil);
   const renderToSurface = r2s.slice(0, renderCount);
-  const skinIndex = new Uint16Array(renderToSurface.length * 4);
-  const skinWeight = new Float32Array(renderToSurface.length * 4);
+  const I = SKIN_INFLUENCES;
+  const skinIndex = new Uint16Array(renderToSurface.length * I);
+  const skinWeight = new Float32Array(renderToSurface.length * I);
   renderToSurface.forEach((s, r) => {
-    skinIndex.set(skin.index.subarray(s * 4, s * 4 + 4), r * 4);
-    skinWeight.set(skin.weight.subarray(s * 4, s * 4 + 4), r * 4);
+    skinIndex.set(skin.index.subarray(s * I, s * I + I), r * I);
+    skinWeight.set(skin.weight.subarray(s * I, s * I + I), r * I);
   });
   return {
     stencil,
@@ -602,11 +605,12 @@ function finishSurface(
   };
 }
 
-/** Skin weights for surface vertices: stencil-weighted blend of control weights, top four kept. */
+/** Skin weights for surface vertices: stencil-weighted blend of control weights, the heaviest `SKIN_INFLUENCES` kept. */
 function interpolateSkin(assets: Pick<QuadSource, "skinIndex" | "skinWeight">, s: Stencil) {
   const n = s.offsets.length - 1;
-  const index = new Uint16Array(n * 4);
-  const weight = new Float32Array(n * 4);
+  const I = SKIN_INFLUENCES;
+  const index = new Uint16Array(n * I);
+  const weight = new Float32Array(n * I);
   // Per bone, its weight in the current row; bones in order of first touch,
   // so equal weights keep that order through the (stable) sort.
   const acc = new Float64Array(256);
@@ -617,10 +621,10 @@ function interpolateSkin(assets: Pick<QuadSource, "skinIndex" | "skinWeight">, s
     for (let k = s.offsets[i] as number; k < (s.offsets[i + 1] as number); k++) {
       const v = s.src[k] as number;
       const w = s.weights[k] as number;
-      for (let j = 0; j < 4; j++) {
-        const bw = assets.skinWeight[v * 4 + j] as number;
+      for (let j = 0; j < I; j++) {
+        const bw = assets.skinWeight[v * I + j] as number;
         if (bw > 0) {
-          const b = assets.skinIndex[v * 4 + j] as number;
+          const b = assets.skinIndex[v * I + j] as number;
           if (stamp[b] !== i + 1) {
             stamp[b] = i + 1;
             acc[b] = bw * w;
@@ -632,12 +636,12 @@ function interpolateSkin(assets: Pick<QuadSource, "skinIndex" | "skinWeight">, s
     const top = bones
       .filter((b) => (acc[b] as number) > 0)
       .sort((a, b) => (acc[b] as number) - (acc[a] as number))
-      .slice(0, 4);
+      .slice(0, I);
     let sum = 0;
     for (const b of top) sum += acc[b] as number;
     top.forEach((b, j) => {
-      index[i * 4 + j] = b;
-      weight[i * 4 + j] = sum > 0 ? (acc[b] as number) / sum : 0;
+      index[i * I + j] = b;
+      weight[i * I + j] = sum > 0 ? (acc[b] as number) / sum : 0;
     });
   }
   return { index, weight };

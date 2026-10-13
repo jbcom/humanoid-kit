@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
+import { parseHumanoidAssets, SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { buildFeatureMap } from "../src/makehuman/features.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
@@ -63,8 +63,8 @@ describe("the adult surface in the model", { timeout: 300_000 }, () => {
     const s = surface as NonNullable<typeof surface>;
     expect(s.vertexCount).toBeGreaterThan(base.vertexCount + 2000);
     expect(s.uvs.length).toBe(s.vertexCount * 2);
-    expect(s.skinIndex.length).toBe(s.vertexCount * 4);
-    expect(s.skinWeight.length).toBe(s.vertexCount * 4);
+    expect(s.skinIndex.length).toBe(s.vertexCount * SKIN_INFLUENCES);
+    expect(s.skinWeight.length).toBe(s.vertexCount * SKIN_INFLUENCES);
     expect(s.uvScale.length).toBe(s.vertexCount);
     expect(s.uvScale.every((x) => Number.isFinite(x) && x >= 0)).toBe(true);
     const ev = adultModel.evaluate(adult);

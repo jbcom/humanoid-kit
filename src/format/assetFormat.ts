@@ -753,6 +753,18 @@ export interface SparseTarget {
   scale: number;
 }
 
+/**
+ * The bone influences a skinned vertex carries: its `skinIndex` and `skinWeight`
+ * hold this many places each, heaviest first, unused places weight 0.
+ * MakeHuman skins a vertex with every weight its rig gives it, up to 12 on the
+ * shoulder; 3,665 of the base mesh's vertices have more than four, and only 51
+ * more than eight. Cut to four, a shoulder vertex can lose a fifth of its weight
+ * on the upper arm, and stays behind while its neighbours follow a raised arm
+ * (issue #67), so the rig keeps eight: the visible difference from MakeHuman's
+ * skinning ends there (docs/ARCHITECTURE.md, "Skinning artefacts").
+ */
+export const SKIN_INFLUENCES = 8;
+
 export interface HumanoidAssets {
   manifest: BodyManifest;
   /** Base positions in metres, `vertexCount * 3`. */
@@ -762,7 +774,7 @@ export interface HumanoidAssets {
   faceVerts: Uint32Array;
   /** Quad corner UV indices, `faceCount * 4`. */
   faceUvs: Uint32Array;
-  /** Up to four bone indices per vertex. */
+  /** `SKIN_INFLUENCES` bone indices per vertex. */
   skinIndex: Uint8Array;
   /** Normalised weights matching `skinIndex`. */
   skinWeight: Float32Array;
@@ -1318,8 +1330,8 @@ export function parseHumanoidAssets(
   expectLength(uvs, manifest.uvCount * 2, "body uvs");
   expectLength(faceVerts, manifest.faceCount * 4, "body faceVerts");
   expectLength(faceUvs, manifest.faceCount * 4, "body faceUvs");
-  expectLength(skinIndex, manifest.vertexCount * 4, "body skinIndex");
-  expectLength(skinWeight, manifest.vertexCount * 4, "body skinWeight");
+  expectLength(skinIndex, manifest.vertexCount * SKIN_INFLUENCES, "body skinIndex");
+  expectLength(skinWeight, manifest.vertexCount * SKIN_INFLUENCES, "body skinWeight");
   expectIndices(faceVerts, manifest.vertexCount, "body faceVerts");
   expectIndices(faceUvs, manifest.uvCount, "body faceUvs");
   expectIndices(skinIndex, manifest.skeleton.bones.length, "body skinIndex");

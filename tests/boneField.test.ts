@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import {
   BODY_REGIONS,
   buildBoneField,
@@ -30,10 +31,13 @@ describe("buildBoneField", () => {
     const bones = assets.manifest.skeleton.bones;
     for (const v of [0, 1000, 5000, 9000, 12000]) {
       let arm = 0;
-      for (let k = 0; k < 4; k++)
-        if (zoneOfBone(bones[assets.skinIndex[v * 4 + k] as number]?.name ?? "") === 0)
-          arm += assets.skinWeight[v * 4 + k] as number;
-      const total = [0, 1, 2, 3].reduce((s, k) => s + (assets.skinWeight[v * 4 + k] as number), 0);
+      const I = SKIN_INFLUENCES;
+      let total = 0;
+      for (let k = 0; k < I; k++) {
+        total += assets.skinWeight[v * I + k] as number;
+        if (zoneOfBone(bones[assets.skinIndex[v * I + k] as number]?.name ?? "") === 0)
+          arm += assets.skinWeight[v * I + k] as number;
+      }
       expect((field.masks[0] as Float32Array)[v]).toBeCloseTo(total > 0 ? arm / total : 0, 5);
     }
   });
@@ -42,7 +46,7 @@ describe("buildBoneField", () => {
     // The pack's own vertices all carry weight, so strip it from a block of them.
     const weights = Float32Array.from(assets.skinWeight);
     const bare = Array.from({ length: 50 }, (_, i) => 100 + i);
-    for (const v of bare) weights.fill(0, v * 4, v * 4 + 4);
+    for (const v of bare) weights.fill(0, v * SKIN_INFLUENCES, (v + 1) * SKIN_INFLUENCES);
     const field = buildBoneField({ ...assets, skinWeight: weights }, names, () => 0, 1, 0);
     for (const v of bare) {
       expect((field.masks[1] as Float32Array)[v]).toBe(1);

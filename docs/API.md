@@ -198,8 +198,22 @@ interface BodyHairRecipe {
   coverage?: Partial<Record<BodyHairGroup, number>>;
   // physical follicles-per-cm2 multiplier, 0.25..2; changes spacing, not coverage
   follicleDensity?: Partial<Record<BodyHairGroup, number>>;
-  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = none (clean-shaven)
+  // a style by name, or a style with its continuous controls; absent = none (clean-shaven)
+  beard?: BeardStyle | BeardSpec;
 }
+
+// none | stubble | moustache | goatee | imperial | mutton-chops | chin-curtain
+// | full | forked | longstreet
+type BeardStyle = (typeof BEARD_STYLES)[number];
+
+interface BeardSpec {
+  style: BeardStyle;
+  length?: number;  // the longest part, metres; clamped to the chin's height above the floor
+  volume?: number;  // 0..MAX_BEARD_VOLUME (2), 1 = the style's fullness
+  grey?: number;    // 0..1, white hairs on top of the colour's own grey
+  fork?: number;    // 0..1, the chin's hair parting into two points
+  part?: number;    // 0..1, the moustache parting at the middle and sweeping out
+}                   // every absent control is the style's default (BEARD_SHAPES)
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
 
@@ -535,12 +549,24 @@ and throws `RangeError` for anything else.
   and the worker's `evaluated` reply carries `decalTopologies` for the brows',
   lashes' and beard cards' static data (`HairTopology.kind` is `scalp`, `brows`,
   `lashes` or `beard`; a decal's fade is all 1, fin and growth 0, scalp none).
-  `Evaluation.beard` is the hair pack's cards for the recipe's beard style
-  (`model.wornBeardCards(recipe)`: the `beard` entry tagged with the style, or
-  null when there is none or the face grows no terminal hair), evaluated as
-  scalp hair is; `HairTopology.rank` is its cards' ranks per render vertex (null
-  for every other kind), and `<Humanoid>` draws the cards whose rank is under the
-  face's coverage (`HairMaterial.setDensity`), in the face's body hair colour.
+  `Evaluation.beard` is the recipe's beard as cards generated for it at
+  evaluation (`beardCardSpec`, `generateCards`; no beard file is loaded, so
+  `pendingHairStyles` never lists one), with its length capped at the chin's
+  height above the figure's lowest point; null when `beardCoverage` is 0, the
+  beard is too short for cards, or the hair pack has no `beard` entry, whose
+  strand map and strand statistics the cards are drawn with. Its id is
+  `beard:` and `beardCardKey`, so equal beards share cards and topology; the
+  model keeps the last 3 it generated and the worker and client the last
+  `BEARD_TOPOLOGIES_KEPT` (4) topologies, both forgetting in the order sent
+  (`SentHairTopologies`), and a forgotten one is sent again if worn again.
+  Generated cards are drawn unsubdivided, their shade the cheap
+  `beardCardOcclusion` (dark roots, open tips) in place of the ray bake.
+  `HairTopology.rank` is its cards' ranks per render vertex (null for every
+  other kind), and `<Humanoid>` draws the cards whose rank is under
+  `beardCoverage` (`HairMaterial.setDensity`), in the face's body hair colour,
+  with the beard's `grey` share of them white (`HairMaterial.setWhite(white,
+  colour)`: whole cards chosen by a hash of their rank, white being the colour
+  at grey 1). It disposes a generated beard's geometry when the beard changes.
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
@@ -566,8 +592,8 @@ interface Evaluation {
 interface SurfaceTopology {
   index: Uint32Array;       // triangles
   uvs: Float32Array;
-  skinIndex: Uint16Array;   // four bone indices per render vertex
-  skinWeight: Float32Array; // four normalised weights per render vertex
+  skinIndex: Uint16Array;   // SKIN_INFLUENCES (8) bone indices per render vertex
+  skinWeight: Float32Array; // SKIN_INFLUENCES normalised weights per render vertex
   vertexCount: number;
 }
 ```
@@ -763,7 +789,8 @@ compute what the renderer will do.
   and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`).
   The creator hides the pubic control below 18, as the age policy has it.
   Nothing in body hair reads the gender macro (DECISIONS ruling 1).
-  `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
+  `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `imperial`,
+  `mutton-chops`, `chin-curtain`, `full`, `forked`, `longstreet`).
   `defaultBodyHairCoverage(group, age)` is an unset group's terminal-hair
   coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years: 0
   before puberty, rising through adolescence (`BODY_HAIR_MATURITY`), thinning
@@ -779,11 +806,27 @@ compute what the renderer will do.
   which it draws only when the recipe enables them (`coatEnabled`: a beard
   style for the face, a coverage or density for the others), and
   `drawnBodyHairCoverage(group, input)` is the coverage actually drawn (0 for a
-  coat group left unset). `bodyHairFollicleDensity(group,
+  coat group left unset; for the face, `beardCoverage`). `bodyHairFollicleDensity(group,
   input)` applies the independent `follicleDensity` multiplier (0.25..2) to
   `BODY_HAIR_FOLLICLE_DENSITY`, changing strand spacing without changing
   coverage. `beardStyle(input)` is the recipe's style, or `DEFAULT_BEARD`
-  (`none`, clean-shaven). `bodyHairColour(group, input)` is the figure's hair pigments
+  (`none`, clean-shaven); `beardSpec(input)` is the
+  style with whatever controls the recipe gives. `resolveBeard(input,
+  chinHeight)` (`src/surface/beard.ts`) fills every absent control from the
+  style's `BEARD_SHAPES` entry (which parts it grows, as fractions of the
+  longest, its default length, fork and part) and clamps each to its range:
+  the length to 0..`chinHeight`, so no beard grows past the floor.
+  `beardCoverage(input)` is how much of the chosen beard grows, 0..1: 0
+  clean-shaven, else the face's `bodyHairCoverage` (all of it on an adult face,
+  coming in from puberty, or the recipe's own face `coverage` or `density`).
+  The beard's coat cover and the share of its cards drawn are it.
+  `generateBeardCards(assets, beard: ResolvedBeard)`
+  (`src/surface/beardCards.ts`) is the beard's alpha cards, bound to the base
+  mesh at rest and draped (long hair falls, forks and parts, and lies on the
+  body). It is null for a beard that grows none: clean-shaven, stubble, no part
+  `BEARD_CARD_MIN_LENGTH` long, or a volume of 0. `beardCardSpec(assets, beard)`
+  is the spec it generates from. `beardCardKey(beard)` is equal exactly when
+  two beards give the same cards. `bodyHairColour(group, input)` is the figure's hair pigments
   darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
   fibre diameter and drawn length) and at least as grey as ageing makes them
   (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an
@@ -1489,7 +1532,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation`, as its geometry is written |
 | `onSettled?` | Called with an `Evaluation` once everything the recipe wears is drawn: the geometry is written and the hair style's strand map, the attachments' and garments' textures and the attachments' posed occlusion have loaded (then two frames). Wait for this, not `onEvaluated`, before a screenshot. The playground's `data-figure="ready"` is this |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`, `"bowed"`, `"overhead"`, `"squat"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`, `"bowed"`, `"overhead"`, `"squat"`), `joints`, joints posed by hand and laid over `body` (BVH channel degrees per joint, as in the authored pose files: `{ "upperarm01.L": { Xrotation: -22, Yrotation: -138 } }`; a joint named there takes these channels instead of the body pose's), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `bodyArtImages?` | `BodyArtImages`: the decoded images (`ImageBitmap`, loaded `HTMLImageElement`, canvas) the recipe's tattoos name by key. Keep the object stable: a new one bakes the figure's body art again. A tattoo whose image is missing is reported through `onError`, and the figure is drawn without its body art |

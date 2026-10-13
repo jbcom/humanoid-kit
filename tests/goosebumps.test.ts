@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupFaces } from "../src/format/assetFormat.ts";
+import { groupFaces, SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { paintStopTable, STOP_TABLE_WIDTH } from "../src/surface/layers.ts";
 import { SKIN_LAYERS } from "../src/surface/regions/index.ts";
 import { LIPS_LAYER } from "../src/surface/regions/rest.ts";
@@ -32,9 +32,9 @@ const skin = (() => {
 function weight(v: number, re: RegExp): number {
   const bones = assets.manifest.skeleton.bones;
   let s = 0;
-  for (let k = 0; k < 4; k++)
-    if (re.test(bones[assets.skinIndex[v * 4 + k] as number]?.name ?? ""))
-      s += assets.skinWeight[v * 4 + k] as number;
+  for (let k = 0; k < SKIN_INFLUENCES; k++)
+    if (re.test(bones[assets.skinIndex[v * SKIN_INFLUENCES + k] as number]?.name ?? ""))
+      s += assets.skinWeight[v * SKIN_INFLUENCES + k] as number;
   return s;
 }
 const where = (re: RegExp, min = 0.95) => skin.filter((v) => weight(v, re) >= min);

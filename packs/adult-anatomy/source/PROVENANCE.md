@@ -54,8 +54,9 @@ URLs the files came from.
   session's private scratch directory, but no NIH cuts, `cuts.json`, landmark fit
   or transfer implementation are retained here as of the 2026-10-11 recovery.
   Its proposed use for the clitoral glans, hood separation and vestibule depth
-  remains planned. The reported licence is CC-BY 4.0; the existing licence and
-  NOTICE entries do not establish that this source is used by the generated pack.
+  remains planned. The reported licence is CC-BY 4.0, so the pack, which is CC0
+  1.0, ships nothing derived from it; using it needs an owner ruling on shipping
+  CC BY data in the adult pack first.
 - No material (`.mhmat`) or weights (`.mhw`) file is used or kept.
 
 ## Not used, and why

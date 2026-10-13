@@ -19,13 +19,14 @@ import type {
 import type { Recipe } from "../recipe/recipe.ts";
 import type { SurfaceFold } from "../rig/jointFold.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
-import type {
-  HairInfo,
-  PickMap,
-  ReadyInfo,
-  SurfaceAnchors,
-  WorkerRequest,
-  WorkerResponse,
+import {
+  type HairInfo,
+  type PickMap,
+  type ReadyInfo,
+  SentHairTopologies,
+  type SurfaceAnchors,
+  type WorkerRequest,
+  type WorkerResponse,
 } from "./protocol.ts";
 
 export type { HairInfo, PickMap, ReadyInfo, SurfaceAnchors };
@@ -100,6 +101,14 @@ export class HumanoidWorkerClient {
   }
 
   private readonly hairTopologies = new Map<string, HairTopology>();
+  /** Which of them are held, in the worker's order: it forgets old generated beards as the worker does. */
+  private readonly heldHair = new SentHairTopologies();
+
+  private keepHairTopology(t: HairTopology): void {
+    const forgotten = this.heldHair.add(t.id);
+    if (forgotten !== null) this.hairTopologies.delete(forgotten);
+    this.hairTopologies.set(t.id, t);
+  }
 
   /**
    * A hair style's static render data, once an evaluation that wears it has
@@ -318,8 +327,8 @@ export class HumanoidWorkerClient {
       });
       if (r.type !== "evaluated") throw new HumanoidWorkerError(`unexpected ${r.type}`);
       // Kept before the evaluation resolves, so whoever receives it can look the style up.
-      if (r.hairTopology) this.hairTopologies.set(r.hairTopology.id, r.hairTopology);
-      for (const t of r.decalTopologies ?? []) this.hairTopologies.set(t.id, t);
+      if (r.hairTopology) this.keepHairTopology(r.hairTopology);
+      for (const t of r.decalTopologies ?? []) this.keepHairTopology(t);
       job.resolve(r.evaluation);
     } catch (e) {
       job.reject(e instanceof Error ? e : new HumanoidWorkerError(String(e)));

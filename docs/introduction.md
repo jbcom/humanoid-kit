@@ -17,14 +17,15 @@ replay.
 
 | Package | Licence | Contents |
 | --- | --- | --- |
-| `humanoid-kit` | MIT | Asset loading, recipes, the age policy, evaluation, subdivision, the worker client and the React bindings |
-| `humanoid-kit-body` | CC0 1.0 | The base mesh, shape targets for every age MakeHuman models (1 to 90 years), the 163-bone skeleton and skin weights, facial pose units and 233 shape modifiers |
-| `humanoid-kit-adult-anatomy` | CC0 1.0 | Adult-only targets and 5 modifiers. A separate install |
-| `humanoid-kit-hair` | CC0 1.0 | Ten scalp hair styles as alpha cards bound to the base body. A separate install |
+| `humanoid-kit` | MIT | Asset loading, recipes, the age policy, evaluation, subdivision, rig and poses, animation playback, presence, interactions, the worker client, the React bindings and the creator |
+| `humanoid-kit-body` | CC0 1.0 | The base mesh, shape targets for every age MakeHuman models (1 to 90 years), the 163-bone skeleton and skin weights, facial pose units and 275 shape modifiers |
+| `humanoid-kit-adult-anatomy` | CC0 1.0 | 98 adult-only targets and 12 modifiers (9 with sliders; 3 retained legacy ids). A separate install |
+| `humanoid-kit-hair` | CC0 1.0 | 33 hair entries bound to the base body: 16 scalp styles, 12 eyebrows, 4 eyelashes and a beard. A separate install |
 | `humanoid-kit-eyes` | CC0 1.0 | 32 eye materials: human irises, cats' slit pupils, toon and creature eyes. A separate install |
-| `humanoid-kit-animations` | CC0 1.0 | Walk, idle and swim cycles on the default skeleton, played on any figure. A separate install |
+| `humanoid-kit-animations` | CC0 1.0 | 98 clips (walks, idles, swims, combat, sitting and more) on the default skeleton, played on any figure. A separate install |
+| `humanoid-kit-clothing` | CC0 1.0 | 87 garments bound to the base mesh, with the skin each hides. A separate install |
 
-The body and adult packs together carry 238 shape modifiers. An application that never
+The body and adult packs together carry 287 shape modifiers. An application that never
 installs the adult anatomy pack cannot render adult anatomy at all, and one that
 never installs the hair pack never downloads hair.
 
@@ -33,9 +34,9 @@ never installs the hair pack never downloads hair.
 | Entry point | Contents | Dependencies |
 | --- | --- | --- |
 | `humanoid-kit` | Loading, recipes, age policy, `HumanoidModel`, subdivision, surface builder, `HumanoidWorkerClient` | none beyond the packs |
-| `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady` | `react`, `@react-three/fiber`, `three` |
+| `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady`, the presence bindings (`PresenceProvider`, `usePresence`, `useProximity`), `Miniatures`, `StudioStage`, `HumanoidAffordances` | `react`, `@react-three/fiber`, `three` |
+| `humanoid-kit/editor` | `HumanoidCreator`, a tap-to-edit creator over the recipe, `useHumanoidEditor`, `SliderRow` | `react`, `@react-three/fiber`, `three` |
 | `humanoid-kit/worker` | The worker module the client starts by default | none |
-| `humanoid-kit/editor` | Declared in `package.json`; **not implemented yet** | |
 
 React, React Three Fiber and drei are optional peer dependencies. The core entry
 point imports no React or three.js; it returns typed arrays that you can turn
@@ -54,8 +55,12 @@ into geometry yourself, and it runs in Node, which is how its tests run.
 
 ## What is planned
 
-Clothing, body and facial hair, anthro traits and animation packs are not
-implemented. The [architecture notes](./ARCHITECTURE/) list the roadmap.
+Anthro traits, fur, scales and feathers as layers, a doll form and an adult
+animation package (pending an owner ruling on its
+scope) are planned, and beards are in progress. Clothing, scalp and body hair, animation, rig and poses,
+expressions, presence, the creator and the first interaction slices ship. The
+[architecture notes](ARCHITECTURE.md) list the roadmap with each milestone's
+status.
 
-Start with [Getting started](./getting-started/), then read the
-[API reference](./API/) and the [architecture notes](./ARCHITECTURE/).
+Start with [Getting started](getting-started.md), then read the
+[API reference](API.md) and the [architecture notes](ARCHITECTURE.md).

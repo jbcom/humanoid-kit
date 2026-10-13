@@ -45,6 +45,7 @@ import {
   type PlacedPiercing,
 } from "../bodyArt/jewellery.ts";
 import type { EyeLibrary } from "../eyes/library.ts";
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import { quantisedShapeSignals, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import { shapeSignalNames } from "../model/detailFactors.ts";
 import { type GarmentLook, garmentFinish } from "../model/garmentLook.ts";
@@ -78,6 +79,7 @@ import {
   dualShadowMaterials,
   foldSlotAttribute,
   followDualSkinning,
+  setSkinAttributes,
 } from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import {
@@ -107,11 +109,14 @@ import {
   composeRotations,
   faceUnitRotations,
   IDENTITY_POSE,
+  type JointChannels,
+  jointChannelRotations,
   restBonesFrom,
   wornGroundOffset,
 } from "../rig/pose.ts";
 import { skinDualShare } from "../rig/skinShare.ts";
-import { bodyHairColour, bodyHairCoverage } from "../surface/bodyHair.ts";
+import { beardCoverage, resolveBeard } from "../surface/beard.ts";
+import { bodyHairColour } from "../surface/bodyHair.ts";
 import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
 import {
   agedHairColour,
@@ -285,6 +290,13 @@ export interface HumanoidPresenceProps {
  */
 export interface HumanoidPose {
   body?: string;
+  /**
+   * Joints posed by hand, laid over `body` (or the rest pose): BVH channel
+   * degrees per joint, as in the authored pose files,
+   * `{ "upperarm01.L": { Xrotation: -22, Yrotation: -138 } }`. A joint named
+   * here takes these channels instead of the body pose's.
+   */
+  joints?: JointChannels;
   faceUnits?: Readonly<Record<string, number>>;
 }
 
@@ -339,8 +351,7 @@ function makeGeometry(t: SurfaceTopology): BufferGeometry {
   g.setAttribute("position", new BufferAttribute(new Float32Array(t.vertexCount * 3), 3));
   g.setAttribute("normal", new BufferAttribute(new Float32Array(t.vertexCount * 3), 3));
   g.setAttribute("uv", new BufferAttribute(t.uvs, 2));
-  g.setAttribute("skinIndex", new BufferAttribute(t.skinIndex, 4));
-  g.setAttribute("skinWeight", new BufferAttribute(t.skinWeight, 4));
+  setSkinAttributes(g, t.skinIndex, t.skinWeight);
   return g;
 }
 
@@ -393,8 +404,7 @@ const writtenSkin = new WeakMap<BufferGeometry, SkinWeights>();
 function writeSkin(g: BufferGeometry, skin: SkinWeights): void {
   if (writtenSkin.get(g) === skin) return;
   writtenSkin.set(g, skin);
-  (g.getAttribute("skinIndex") as BufferAttribute).copyArray(skin.skinIndex).needsUpdate = true;
-  (g.getAttribute("skinWeight") as BufferAttribute).copyArray(skin.skinWeight).needsUpdate = true;
+  setSkinAttributes(g, skin.skinIndex, skin.skinWeight);
 }
 
 function writeGeometry(g: BufferGeometry, s: SurfaceEvaluation): void {
@@ -727,6 +737,7 @@ function HairMesh({
   report,
   shape,
   density = 1,
+  white = 0,
 }: {
   topology: HairTopology;
   geometry: BufferGeometry;
@@ -738,6 +749,8 @@ function HairMesh({
   shape: object;
   /** For body hair cards, how many are drawn (the figure's coverage); scalp hair is whole. */
   density?: number;
+  /** For body hair cards, the share of them drawn white (a beard's grey); scalp hair has none. */
+  white?: number;
 }) {
   const material = useMemo(() => new HairMaterial(), []);
   useEffect(() => material.setDensity(density), [material, density]);
@@ -748,7 +761,8 @@ function HairMesh({
   // biome-ignore lint/correctness/useExhaustiveDependencies: overrideKey stands for override's values
   useEffect(() => {
     material.setColour({ eumelanin, pheomelanin, grey, override });
-  }, [material, eumelanin, pheomelanin, grey, overrideKey]);
+    material.setWhite(white, { eumelanin, pheomelanin, grey, override });
+  }, [material, eumelanin, pheomelanin, grey, overrideKey, white]);
   useEffect(() => material.setStrand(topology.strand), [material, topology]);
   useEffect(() => material.setMultisampled(multisampled), [material, multisampled]);
   useEffect(() => () => material.dispose(), [material]);
@@ -792,14 +806,13 @@ function PiercingMesh({
     g.setIndex(new BufferAttribute(m.index, 1));
     g.setAttribute("position", new BufferAttribute(m.positions, 3));
     g.setAttribute("normal", new BufferAttribute(m.normals, 3));
-    const index = new Uint8Array(n * 4);
-    const weight = new Float32Array(n * 4);
+    const index = new Uint8Array(n * SKIN_INFLUENCES);
+    const weight = new Float32Array(n * SKIN_INFLUENCES);
     for (let v = 0; v < n; v++) {
-      index.set(piercing.skinIndex, v * 4);
-      weight.set(piercing.skinWeight, v * 4);
+      index.set(piercing.skinIndex, v * SKIN_INFLUENCES);
+      weight.set(piercing.skinWeight, v * SKIN_INFLUENCES);
     }
-    g.setAttribute("skinIndex", new BufferAttribute(index, 4));
-    g.setAttribute("skinWeight", new BufferAttribute(weight, 4));
+    setSkinAttributes(g, index, weight);
     return g;
   }, [piercing]);
   const material = useMemo(
@@ -1149,29 +1162,49 @@ export function Humanoid({
   useEffect(() => {
     skin.setScalp(wornHair ? hairAlbedo(wornColour) : null);
   }, [skin, wornHair, wornColour.eumelanin, wornColour.pheomelanin, wornColour.grey, overrideKey]);
-  // A grown beard's cards: their colour and how many show are the body hair model's.
+  // A grown beard's cards: their colour is the face's body hair, how many show
+  // the beard's coverage, and the share of them white its grey.
   const beardLook = useMemo(() => {
     const input = {
       age: recipe.macros.age,
       colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
       ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     };
-    return { colour: bodyHairColour("face", input), density: bodyHairCoverage("face", input) };
+    return {
+      colour: bodyHairColour("face", input),
+      density: beardCoverage(input),
+      white: resolveBeard(input, Number.POSITIVE_INFINITY).grey,
+    };
   }, [recipe]);
+  // A generated beard's geometry goes when the beard changes: a growing one
+  // makes new cards every millimetre, and nothing else holds them.
+  useEffect(() => {
+    if (!beard) return;
+    const { topology, geometry } = beard;
+    return () => {
+      if (!topology.id.startsWith("beard:")) return;
+      geometries?.hair.delete(topology.id);
+      geometry.dispose();
+    };
+  }, [beard, geometries]);
 
   // The pose: face units blended into bone rotations (rest when absent), and
   // the attachments' occlusion following it.
   const faceUnits = useSameEntries(pose?.faceUnits);
   const body = pose?.body;
+  // Keyed by content, so joints passed inline do not re-pose on every render.
+  const jointsKey = pose?.joints ? JSON.stringify(pose.joints) : null;
+  // The body's pose: the pack's named pose with the hand-posed joints laid over, or null at rest.
+  const bodyRotations = useMemo(() => {
+    if (!ready || (!body && !jointsKey)) return null;
+    const named = body ? bodyPoseRotations(ready.rig, body) : IDENTITY_POSE(ready.rig.bones.length);
+    return jointsKey ? jointChannelRotations(ready.rig, JSON.parse(jointsKey), named) : named;
+  }, [ready, body, jointsKey]);
   const rotations = useMemo(() => {
-    if (!ready || (!body && !faceUnits)) return null; // rest
+    if (!ready || (!bodyRotations && !faceUnits)) return null; // rest
     const face = faceUnitRotations(ready.rig, faceUnits ?? {});
-    return body ? composeRotations(bodyPoseRotations(ready.rig, body), face) : face;
-  }, [ready, body, faceUnits]);
-  const bodyRotations = useMemo(
-    () => (ready && body ? bodyPoseRotations(ready.rig, body) : null),
-    [ready, body],
-  );
+    return bodyRotations ? composeRotations(bodyRotations, face) : face;
+  }, [ready, bodyRotations, faceUnits]);
 
   // The garments worn: their geometry is built when an evaluation brings the
   // outfit's masks, and replaced when a different outfit does. The body's own
@@ -1218,7 +1251,7 @@ export function Humanoid({
         opening > (faceUnits?.JawDrop ?? 0) ? { ...faceUnits, JawDrop: opening } : faceUnits;
       faceRef.current = units ? faceUnitRotations(ready.rig, units) : null;
       let q: BoneRotations;
-      if (!body && !units) q = IDENTITY_POSE(ready.rig.bones.length);
+      if (!bodyRotations && !units) q = IDENTITY_POSE(ready.rig.bones.length);
       else {
         const face = faceRef.current ?? faceUnitRotations(ready.rig, {});
         q = bodyRotations ? composeRotations(bodyRotations, face) : face;
@@ -1230,7 +1263,7 @@ export function Humanoid({
       if (dual && ev)
         dual.update(restBonesFrom(ready.rig.bones, ready.rig.parents, ev.boneHeads), q);
     },
-    [rig, ready, keyBasis, occlusionKeys, dual, body, bodyRotations, faceUnits],
+    [rig, ready, keyBasis, occlusionKeys, dual, bodyRotations, faceUnits],
   );
   const writePoseRef = useLatest(writePose);
   useEffect(() => writePose(figure), [writePose, figure]);
@@ -1904,6 +1937,7 @@ export function Humanoid({
                 skeleton={rig.skeleton}
                 colour={beardLook.colour}
                 density={beardLook.density}
+                white={beardLook.white}
                 multisampled={multisampled}
                 visible={shown}
                 report={report}

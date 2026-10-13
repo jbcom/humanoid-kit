@@ -18,6 +18,7 @@ import {
   labFromLinear,
   summarise,
 } from "./lib/colour.ts";
+import { framePixels } from "./lib/framePixels.ts";
 
 interface Swatch {
   name: string;
@@ -72,18 +73,19 @@ async function renderFace(page: Page, s: Swatch): Promise<Lab> {
         requestAnimationFrame(tick);
       }),
   );
-  const rgba = await page.locator("canvas").evaluate((el, box) => {
-    const c = el as HTMLCanvasElement;
-    const w = Math.round(c.width * (box.x1 - box.x0));
-    const h = Math.round(c.height * (box.y1 - box.y0));
-    const copy = document.createElement("canvas");
-    copy.width = w;
-    copy.height = h;
-    const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
-    ctx.drawImage(c, c.width * box.x0, c.height * box.y0, w, h, 0, 0, w, h);
-    return { width: w, data: Array.from(ctx.getImageData(0, 0, w, h).data) };
-  }, FACE);
-  const lab = summarise(rgba.data, rgba.width, BACKGROUND);
+  // The face region of the composited frame: the QA shot does not retain its drawing buffer.
+  const frame = await framePixels(page.locator("canvas"));
+  const x0 = Math.round(frame.width * FACE.x0);
+  const y0 = Math.round(frame.height * FACE.y0);
+  const w = Math.round(frame.width * (FACE.x1 - FACE.x0));
+  const h = Math.round(frame.height * (FACE.y1 - FACE.y0));
+  const face: number[] = [];
+  for (let y = y0; y < y0 + h; y++)
+    for (let x = x0; x < x0 + w; x++) {
+      const i = (y * frame.width + x) * 4;
+      for (let k = 0; k < 4; k++) face.push(frame.data[i + k] as number);
+    }
+  const lab = summarise(face, w, BACKGROUND);
   if (!lab) throw new Error(`${s.name}: no figure in the face region`);
   return lab;
 }
