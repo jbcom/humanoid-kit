@@ -8,8 +8,8 @@
  * same pack, worker and renderer as a MakeHuman one: nothing downstream can tell the two
  * apart, so their hair is skinned, occluded, faded and tinted by one set of code.
  */
-import { BufferAttribute, BufferGeometry, Vector3 } from "three";
-import { MeshBVH } from "three-mesh-bvh";
+import { Vector3 } from "three";
+import { meshBvh } from "../../../src/surface/meshBvh.ts";
 
 export interface BodyMesh {
   /** Control positions, metres, `x y z` per vertex. */
@@ -29,10 +29,8 @@ export interface Binding {
 
 /** The face a vertex binds to is its nearest by distance to the triangle itself. */
 export function bindToBody(points: Float32Array, body: BodyMesh): Binding {
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(body.positions, 3));
-  geometry.setIndex(new BufferAttribute(body.triangles, 1));
-  const bvh = new MeshBVH(geometry, { verbose: false });
+  // The body's triangles are the model's own, shared with every other BVH the packer builds.
+  const bvh = meshBvh(body.positions, body.triangles);
   const count = points.length / 3;
   const refVerts = new Uint32Array(count * 3);
   const weights = new Float32Array(count * 3);

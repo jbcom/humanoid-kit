@@ -16,7 +16,7 @@
   (`humanoid-kit/editor`).
 - `humanoid-kit-body` (CC0 1.0): base mesh, shape targets, skeleton, skin
   weights, facial pose units, 275 shape modifiers.
-- `humanoid-kit-adult-anatomy` (CC0 1.0 AND CC BY 4.0): 98 adult-only targets and
+- `humanoid-kit-adult-anatomy` (CC0 1.0): 98 adult-only targets and
   12 modifiers (9 with sliders; 3 retained legacy ids); separate install,
   refused unless built against the exact body pack.
 - `humanoid-kit-eyes` (CC0 1.0): 32 eye materials (human, slit-pupil, toon, creature) adding iris pattern and sclera detail
@@ -55,6 +55,10 @@
 - [Regional contact and injury contract](https://github.com/jbcom/humanoid-kit/blob/main/docs/REGIONAL-CONTACTS.md):
   implemented validation for neutral contact evidence, plus planned regional
   response and injury-state proof boundaries.
+- [Interaction sessions](https://github.com/jbcom/humanoid-kit/blob/main/docs/INTERACTION-SESSION.md):
+  the framework-free session lifecycle, contact targets and clip time, and the
+  animation-frame channel (`registry.frames`, `interaction.observeFrames`) with
+  its payload, ownership and subscription lifecycle.
 - [NOTICE.md](https://github.com/jbcom/humanoid-kit/blob/main/NOTICE.md):
   provenance, the CC0 licence gate and trademark notice.
 - [AGENTS.md](https://github.com/jbcom/humanoid-kit/blob/main/AGENTS.md):

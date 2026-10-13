@@ -49,7 +49,9 @@ export function addCustomTargets(assets: HumanoidAssets, targets: readonly Custo
     names.add(t.name);
     const id = customTargetId(t.name);
     const existing = assets.modifiers.get(id);
-    if (existing && existing.group !== CUSTOM_GROUP)
+    // An adult-only modifier is never replaced, whatever group it claims: the loader
+    // refuses such a pack, and this keeps the gate when one reached the table anyway.
+    if (existing && (existing.group !== CUSTOM_GROUP || existing.adultOnly))
       throw new CustomTargetError(`${id} is a pack modifier, not a custom target`);
     if (!(Number.isFinite(t.scale) && t.scale > 0))
       throw new CustomTargetError(`custom target ${t.name}: scale must be positive`);

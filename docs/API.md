@@ -304,7 +304,9 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 
 ### Age policy
 
-- `ADULT_AGE` (18) and `isAdult(recipe)`.
+- `ADULT_AGE` (18), `isAdultAge(age)` (true only for a finite number of 18 or
+  more: NaN, Infinity, a missing or non-numeric age and a negative age are not
+  adult) and `isAdult(recipe)` (asks it of the recipe's age).
 - `agePolicyViolations(recipe): string[]`: every reason the recipe breaks the
   policy; empty when valid.
 - `assertAgePolicy(recipe)`: throws `AgePolicyError` listing the violations.
@@ -592,8 +594,8 @@ interface Evaluation {
 interface SurfaceTopology {
   index: Uint32Array;       // triangles
   uvs: Float32Array;
-  skinIndex: Uint16Array;   // four bone indices per render vertex
-  skinWeight: Float32Array; // four normalised weights per render vertex
+  skinIndex: Uint16Array;   // SKIN_INFLUENCES (8) bone indices per render vertex
+  skinWeight: Float32Array; // SKIN_INFLUENCES normalised weights per render vertex
   vertexCount: number;
 }
 ```
@@ -1299,7 +1301,8 @@ slices 1 and 2 of its build plan.
   `releaseSeconds?`, `priority?`.
 - `tagMatches(required, tag)`, `audienceOf(definition, affordanceAdult?)`
   (adult unless declared `all` and no figure affordance it names is adult; an
-  affordance the core does not know counts as adult), `definitionProblems`.
+  affordance the core does not know counts as adult, and `affordanceAdult` can
+  only add adult ids to that, never clear one), `definitionProblems`.
 - `createInteractions(registry, { seed, clipLength, affordanceAdult?,
   applyChange? })` returns the runtime: `define(definitions)` (throws
   `InteractionDefinitionError` on a malformed one), `offer(offer)`,
@@ -1532,7 +1535,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation`, as its geometry is written |
 | `onSettled?` | Called with an `Evaluation` once everything the recipe wears is drawn: the geometry is written and the hair style's strand map, the attachments' and garments' textures and the attachments' posed occlusion have loaded (then two frames). Wait for this, not `onEvaluated`, before a screenshot. The playground's `data-figure="ready"` is this |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`, `"bowed"`, `"overhead"`, `"squat"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`, `"bowed"`, `"overhead"`, `"squat"`), `joints`, joints posed by hand and laid over `body` (BVH channel degrees per joint, as in the authored pose files: `{ "upperarm01.L": { Xrotation: -22, Yrotation: -138 } }`; a joint named there takes these channels instead of the body pose's), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `bodyArtImages?` | `BodyArtImages`: the decoded images (`ImageBitmap`, loaded `HTMLImageElement`, canvas) the recipe's tattoos name by key. Keep the object stable: a new one bakes the figure's body art again. A tattoo whose image is missing is reported through `onError`, and the figure is drawn without its body art |
@@ -2215,12 +2218,31 @@ animator.root;                // how far the figure has been carried: [x across,
   render-clock step, including after a slow frame; and the
   figure's presence follows. `time` puts it at a time in the clip. `onStart(clip)` is
   called once the figure follows the clip, and again for a new figure or `time`.
-  `onFrame(frame)` receives the completed pose and real FootLock contact owner for each sole,
-  without a React render: `owned` identifies the current owner while `hold` says whether it is
-  fully planted (1) or fading through rollover/release (0..1). Contacts are figure-local metres after ground lift and before
-  cumulative root carry, group heading or any caller transform; `root` is cumulative x/forward-z
-  carry and `delta` is this render frame's carry. `generation` increments after each evaluation/rest
-  binding so an integration can reject a callback from an earlier asynchronous recipe update.
+  `onFrame(frame)` receives the completed `HumanoidAnimationFrame` without a React render,
+  and a figure with `presence` publishes the same frame into its registry's `frames` under its
+  presence id: `owned` identifies each sole's real FootLock owner while `hold` says whether it is
+  fully planted (1) or fading through rollover/release (0..1). Contacts are figure-local metres
+  after ground lift and before cumulative root carry, group heading or any caller transform;
+  `toWorld` (the group's world matrix after this frame's carry) places them in the world.
+  `root` is cumulative x/forward-z carry, `delta` this render frame's and `lift` the ground lift.
+  `generation` rises with each new client or evaluation. The frame object is reused: copy what
+  you keep (`copyAnimationFrame`).
+- Animation frames (`src/animation/frames.ts`, `src/animation/frameWriter.ts`;
+  docs/INTERACTION-SESSION.md, "Animation frames"): `createAnimationFrames()` is the
+  framework-free channel every `PresenceRegistry` owns as `frames`.
+  `frames.observe(figure, onFrame, onRelease?)` returns the unsubscribe function;
+  `onRelease(reason, figure)` hears `"released"` or `"superseded"`. `frames.bind(figure)`
+  returns a `FrameBinding` (`publish(frame)`, `false` once not live; `rebind()`; `release()`;
+  `live`; `generation`); binding an id again supersedes its producer. An observer's exception
+  is rethrown to the producer after every observer has the frame. `AnimationFrameWriter`
+  fills a frame from an `Animator` and a `FrameFigure` (`rest`, `groundOffset`, `contacts`,
+  optional `skin`), outside any renderer; `setFramePlacement(frame, position, facing)` places
+  a headless producer's frame, `frameContactWorld(frame, index, out?)` is a contact in world
+  space, `createAnimationFrame` and `copyAnimationFrame` make and copy frames, and
+  `ANIMATION_CONTACTS` is the contacts' order.
+- `interaction.observeFrames(role, onFrame, onRelease?)` observes a figure role's frames for
+  that interaction only; the subscription ends with the interaction (end, decline, cancel,
+  detach), and a frame from another figure that took the participant's id is never delivered.
 - `bodySegments(assets, rest, control, skinIndex, skinWeight, bodyVertices)` (a figure's 14
   capsules, radii measured from its skin) and `overlaps(rest, segments, rotations)` (every
   pair of parts that are not neighbours, with how deep they overlap in the pose, negative

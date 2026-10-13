@@ -61,8 +61,10 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
 - **Animation, as an optional pack.** `humanoid-kit-animations` plays clips on
   any figure whatever its size, shape or age, with its planted feet held in
   place.
-- **Body and facial hair.** Body hair follows the figure's age and recipe, and
-  the hair pack carries eyebrows, eyelashes and a beard beside the scalp styles.
+- **Body hair, eyebrows and eyelashes.** Body hair follows the figure's age and
+  recipe, and the hair pack carries eyebrows and eyelashes beside the scalp
+  styles. A recipe can also name a beard (ten styles with length, volume and
+  grey controls); its rendering is still under visual review (issue 14).
 - **A tap-to-edit creator.** `humanoid-kit/editor` is a React creator over the
   recipe, with undo, randomisation, regional overrides and a wardrobe.
 - **Presence and interactions.** A figure publishes what the scene around it
@@ -79,7 +81,7 @@ library and six data packs.
 | --- | --- | --- | --- |
 | `humanoid-kit` | `.` | MIT | The code: asset loading, recipes, evaluation, subdivision, rig and poses, animation playback, presence, interactions, the worker client, the React bindings and the creator |
 | `humanoid-kit-body` | `packs/body` | CC0 1.0 | The base mesh, shape targets for ages 1 to 90, the 163-bone skeleton and skin weights, facial pose units, eyes, teeth and tongue, and 275 shape modifiers (modelling, measurement and body shapes) with their sliders |
-| `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 AND CC BY 4.0 | 98 adult-only targets and 12 modifiers (9 with sliders; 3 retained legacy ids, hidden from the sliders and still accepted in saved recipes). A separate install; refused unless built against the exact body pack |
+| `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 | 98 adult-only targets and 12 modifiers (9 with sliders; 3 retained legacy ids, hidden from the sliders and still accepted in saved recipes). A separate install; refused unless built against the exact body pack |
 | `humanoid-kit-hair` | `packs/hair` | CC0 1.0 | 33 hair entries bound to the base body, any colour from black to platinum: 16 scalp styles (short, bob, long, afro, ponytail, a side braid, box braids, cornrows, twists, locs, bantu knots, a close crop), 12 eyebrows, 4 eyelashes and a beard. A separate install; an entry's files load when a figure first wears it |
 | `humanoid-kit-eyes` | `packs/eyes` | CC0 1.0 | 32 eye materials (human irises, cats' slit pupils, toon and creature eyes) that add iris pattern and sclera detail to the eye shader's own colours. A separate install; a material's texture loads when a figure first wears it |
 | `humanoid-kit-animations` | `packs/animations` | CC0 1.0 | 98 clips (walks, a jog, idles, swims, crouches, combat, sitting, 1860s drill and prayer) on MakeHuman's default skeleton, played on any figure whatever its size, shape or age, its planted feet held in place. A separate install; a clip's file loads when a figure first plays it |
@@ -225,8 +227,8 @@ const assets = await loadHumanoidAssets({ body: bodyPack, adultAnatomy: adultAna
 | `humanoid-kit/editor` | `HumanoidCreator`, `useHumanoidEditor`, `SliderRow` | yes |
 | `humanoid-kit/worker` | The worker module that `HumanoidWorkerClient` starts by default | no |
 
-See the [API reference](https://jbcom.github.io/humanoid-kit/API/) and the
-[architecture notes](https://jbcom.github.io/humanoid-kit/ARCHITECTURE/).
+See the [API reference](https://jbcom.github.io/humanoid-kit/api/) and the
+[architecture notes](https://jbcom.github.io/humanoid-kit/architecture/).
 
 ## Roadmap
 
@@ -235,15 +237,16 @@ Status per milestone. The architecture notes carry the detail
 
 | Milestone | Status |
 | --- | --- |
-| Editor shell (`humanoid-kit/editor`) | Done. A doll form is planned |
+| Editor shell (`humanoid-kit/editor`) | Done. A doll form is planned (issue 98) |
 | Rig, poses and expressions | Done: fitted skeleton, posing, named expressions |
 | Adult anatomy sculpting | In progress: the layers, state plumbing and a refined adult surface ship; the own-sculpt phase is planned |
 | Scalp hair | Done: `humanoid-kit-hair` |
-| Body and facial hair | Body hair, eyebrows, eyelashes and one beard ship; moustaches and larger beards are planned |
+| Body and facial hair | Body hair, eyebrows and eyelashes ship. Beards are in progress: the recipe has ten styles with length, volume and grey controls, and their rendering is still under visual review (issue 14) |
 | Clothing | Done: `humanoid-kit-clothing`, bound `.mhclo` layers including `delete_verts` |
-| Anthro traits; fur, scales and feathers as layers | Planned. The shared coat module for body hair and fur is built |
-| Animation | `humanoid-kit-animations` is done; `humanoid-kit-adult-animations` waits on an owner ruling on its scope |
-| Interactions and spatial awareness | In progress: presence ships; the interaction core ships its first two slices |
+| Anthro traits | Planned (issue 97). The shared coat module for body hair and fur is built |
+| Fur, scales and feathers as layers | Planned (issue 99) |
+| Animation | `humanoid-kit-animations` is done; `humanoid-kit-adult-animations` waits on an owner ruling on its scope (issue 105) |
+| Interactions and spatial awareness | In progress: presence ships; the interaction core ships its first two slices and the rest are tracked (issues 100 to 104) |
 
 ## Compatibility
 
@@ -263,9 +266,9 @@ emitted JavaScript imports `.js`.
 
 The code is MIT licensed. The data packs are CC0 1.0 and derived from the
 MakeHuman project's assets, which were released under CC0 1.0 in September 2020,
-and from community assets whose pages state CC0. The adult anatomy pack also
-carries CC BY 4.0 detail with its attribution, and the skin colour anchors in
-the code derive from a CC BY 4.0 dataset (see `NOTICE.md`).
+and from community assets whose pages state CC0. The skin colour anchors in
+the code derive from a CC BY 4.0 dataset, with its attribution (see
+`NOTICE.md`).
 Only asset data is used, never MakeHuman program code. The packer refuses any
 source file that does not prove CC0 from its own content, and each pack's
 `data/PROVENANCE.md` records the upstream commit, the licence evidence and the
@@ -278,5 +281,7 @@ build names the pack's package, targets or modifiers.
 
 ## Contributing
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) and [AGENTS.md](./AGENTS.md). Security
-issues go through [SECURITY.md](./SECURITY.md).
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) and [AGENTS.md](./AGENTS.md). The
+maintainers' standing rulings, which a change must not contradict, are in
+[docs/DECISIONS.md](./docs/DECISIONS.md). Security issues go through
+[SECURITY.md](./SECURITY.md).

@@ -39,7 +39,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [x] A7 #72 Four unit failures on integration: kneeFold, nailPlates and browserArrayComparison fixed at the root (73bb2039, 5c696f48, 4128a86d); the fourth is E13 (#94).
 - [ ] A8 #86 Adult age surface (agent aa1eb596, `feat/age-surface`): forehead banding, faint hands at 70; wrinkles that read as skin.
 - [ ] A9 #15 Period animation clips: musket drill and fire, kneel-and-pray, march cadence, colour-bearer (lane `feat/period-clips-qa`). Packed and on integration; the lane renders each clip on three bodies, reads every sheet, fixes defects and asserts contact geometry.
-- [ ] A10 #84 Two e2e specs red on integration (lane `fix/e2e-presence-permutations`); same item as E1.
+- [x] A10 #84 Two e2e specs red on integration (lane `fix/e2e-presence-permutations`); same item as E1.
 - [ ] A11 #68 and #79 hairFields BVH index and braids01 reproducibility (lane `fix/hairfields-bvh-index`); same items as C9 and B11.
 - [ ] A12 #32 Observer lifecycle (lane `feat/observer-lifecycle`), #41 age gate (lane `fix/age-gate-fail-closed`), docs reconcile (lane `docs/scope-reconcile`); same items as D1, C8, F2–F8.
 
@@ -67,9 +67,13 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] C6 #59 Proxy meshes, teeth shapes, face and ear targets, community hair, brow and lash evaluation (asset-first program).
 - [ ] C7 #60 Policy-drift cleanups (editor age checks, adult-only id source of truth).
 - [ ] C8 #41 Age-gate edges fail closed and tested (NaN ages, affordance default, pack paths).
-- [ ] C9 #68 hairFields: card BVH faceIndex read as quad order after MeshBVH reorders the index.
+- [x] C9 #68 hairFields: card BVH faceIndex read as quad order after MeshBVH reorders the index.
 - [ ] C10 #88 Garments: hem and knee soiling that varies over the garment, wrinkle detail.
 - [ ] C11 #64 `feat/upscale` KTX2 clothing experiment as its own lane.
+
+- [ ] C12 #95 Land the default skin ageing (age spots, crepe, dryness) parked in the `humanoid-kit-ageing` worktree (owner: the #86 lane; design in docs first, `docs/research/SKIN-AGEING.md` is missing from integration).
+- [ ] C13 #96 Head-hair hairline renders stair-stepped above the forehead (owner: the #68 lane; check the scalp-coverage cause first).
+- [ ] C14 #107 Contact compression bulge: finish `wip/contact-compression-bulge` (volume gate back with no wider slack, hip contact gate green, cost, rim sheets read by root).
 
 ### D. Interaction and animation
 
@@ -80,7 +84,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 
 ### E. Gates, tests, CI and tooling
 
-- [ ] E1 #84 Two e2e specs fail on integration (presence canvas, permutations).
+- [x] E1 #84 Two e2e specs fail on integration (presence canvas, permutations): the handshake lab's load-time throw blanked every route (2711f20b, e7d4bf5f), and specs read the cleared WebGL buffer after c57d29cb (364a08fb, e2e/lib/framePixels.ts). Two unrelated adult-lab failures the full suite now shows are E14.
 - [ ] E2 #40 Foundation smoke gate ratchets against known-failing posed rows.
 - [ ] E3 #44 Negative controls and a mutation check for tuned-geometry gates.
 - [ ] E4 #42 Absolute-metre tolerances tuned on one figure scale.
@@ -92,28 +96,53 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] E10 #65 heavy-slot remote-run on the third pool host exits 125.
 - [ ] E11 #87 Measure `scheduler.yield` in `yieldWorkerTask` before adopting it.
 - [ ] E12 #93 Lane liveness counts pool leases and issue comments, not only worktree changes; the watchdog prints state changes.
-- [ ] E13 #94 contactCompression: land the hip-crease unit with its gate or narrow the test (lane `fix/contact-compression`, reads the dirty `humanoid-kit-fold` worktree read-only).
+- [x] E13 #94 contactCompression: the hip-crease unit was unfinished (misses its volume gate on two knees, breaks the hip contact gate), so its volume gate is held off integration (kept as `wip/contact-compression-bulge`, continuing as C14 and #107) and the test is narrowed; landed on integration at cc89b942 with a full unit run green (2275 passed). `humanoid-kit-fold` can retire under H1.
+- [ ] E14 #106 Full e2e suite: body-hair-lab chest cover expectation, and effective-adult-defaults running in the default project against the preview build.
 
 ### F. Documentation and decisions
 
 - [ ] F1 #38 Canonical branch and release path decision.
-- [ ] F2 #49 Length-constant classes; rename the head-width normaliser.
+- [ ] F2 #49 Length-constant classes; rename the head-width normaliser. The contract section and the `headScale` rename are done; the sweep tagging ~345 constants with their class remains, with #42 and #48.
 - [x] F3 #50 README, llms.txt and introduction describe shipped features as unimplemented.
 - [x] F4 #51 Reconcile package and modifier counts; NOTICE for eyes and animations packs.
 - [ ] F5 #52 Invariants and age-policy wording match the code. Items 1, 3, 4 done; item 2 (invariant 1 versus the adult refined surface) waits on the owner (`needs-decision`).
-- [ ] F6 #53 Record maintainer rulings and land research docs.
-- [ ] F7 #54 Track or drop untracked roadmap items; settle adult animation package scope.
-- [ ] F8 #56 Minor docs cleanups.
+- [ ] F6 #53 Record maintainer rulings and land research docs. Decision log, research docs and the adult-defaults semantic (ruling 7) are in; waits on the owner for the lab-authoring versus public-schema ruling and for confirming ruling 7's wording (`needs-decision`).
+- [ ] F7 #54 Track or drop untracked roadmap items; settle adult animation package scope. Trackers filed (#97 to #104); adult animation scope is #105 and the two interaction forks are on #54, all waiting on the owner (`needs-decision`).
+- [x] F8 #56 Minor docs cleanups.
 - [ ] F9 #91 Whole-project assessment report (shipped, proven, unproven, owned), regenerated per milestone.
 
-### G. Publication (owner-gated)
+### I. Roadmap features (from the #54 roadmap triage; each starts with use-case enumeration and spec docs)
 
-- [ ] G1 #69 Publish `integration` to `origin/integration`, never `main`. Neutrality scan is clean; waits on the owner's yes and on G2.
-- [ ] G2 #22 licence and provenance audit of the adult pack (CC-BY NIH-derived data) before any public push.
+- [ ] I1 #97 Anthro traits (ears, muzzle, tail, horns and related shape and graft parts).
+- [ ] I2 #98 Doll form for the creator and the kit.
+- [ ] I3 #99 Fur, scales and feathers as layers on the shared coat module.
+- [ ] I4 #100 Interaction React bindings (Interactable, Interaction, useInteractions).
+- [ ] I5 #101 Interaction stimuli, reactions and gaze.
+- [ ] I6 #102 The chair (fixture slots, approach, contention).
+- [ ] I7 #103 Signal routes into skin states.
+- [ ] I8 #104 glTF `HK_interaction` and the KHR_interactivity bridge.
+- [ ] I9 #105 Decision: is `humanoid-kit-adult-animations` in scope for this public repository? Owner decision (options a/b/c on the issue); everything the decision does not gate proceeds.
+
+### S. Ship gate: what done means (owner, 2026-10-13: "I don't care how things land provided they actually do land and ship to main at some point with all visual issues actually solved")
+
+The end state is `main` carrying everything on `integration`, with every visual issue solved. How a change lands is a lane's choice; that it lands and that its renders are accepted is not. Rules to keep spend proportional to that goal:
+
+- Only work that moves a visual defect to accepted, fixes a failing gate, or clears the publication path runs in a lane. Polish, reports and tooling without a visual defect behind them wait until the register is clear (stopped 2026-10-13: #88 soiling, #91 report, #92 cadence command, #39 CI timeouts, #74 corner combinations; their issues stay open, unstaffed).
+- At most twelve lanes at once, each with a named issue, branch, acceptance image set and issue comments instead of idle-polling. No watchdog process; root checks issue comments and commit age when a landing or a notification arrives.
+- **Procedural geometry (owner ruling 8, 2026-10-13): internal canals only. Everything else is a CC0 graft bound the MakeHuman way; any other procedural element needs the owner's explicit vetting first.** Police it on every lane and every render: a failing look is a reason to switch to an asset, not to tune a generator. Audit: #109.
+- **Priority order amended (owner, 2026-10-13): anatomy and poses first** (#108 wiring and two-layer hair, #22, #71, #73, #75 to #83), then the rest of Tier 1.
+- **Priority tiers (owner, 2026-10-13: work Codex can take back when root runs out of tokens is by nature lower priority than work where extreme visual accuracy matters).** Tier 1, root only, in this order: #14 beards, #21 body hair, #67 shoulders (8 skin weights, in unit run), #86 age surface (rebuild from the CC0 skin photos, see the #86 handoff), #96 hairline, #27 chest, #71 and #73 poses, #75 to #78 anatomy detail. Tier 2, Codex-takeable, each with a handoff comment on its issue and never worked by root while Tier 1 is open: #15 clip re-authoring (verdicts on the issue), #25 paired hand contact (handoff on the issue), #32 observer lifecycle, #41 age-gate edges, #94/#107 contact compression, #106 adult-lab e2e, #74 corner parity, #88 garment wear, docs and CI (#38, #39, #49 to #54), roadmap features (#97 to #105), assessment and cadence tooling (#91, #92), hygiene (#90).
+- **Visual defect register** (each is closed only when root has read the renders and accepted them): #14 beards, #21 body hair, #27 chest, #67 overhead shoulders, #86 age surface, #96 hairline, #95 skin ageing, #15 period clips, #71 forward fold, #73 lithotomy and canals, #75 to #78 vulva and root detail, #77 canal openings at rest, #80 aperture state, #82 moisture response, #85 ethnic simplex in defaults, #74 corner combinations (parity first), #88 garment wear detail.
+- Publication sequence once the register and the gates are clear: `integration` pushed to `origin/integration`, PR to `main`, required CI green, merge commit, release path from #38 (two-tier, decided 2026-10-13). Never a direct push to `main`.
+
+### G. Publication
+
+- [ ] G1 #69 Publish `integration` to `origin/integration`, never `main`. Neutrality scan is clean; sequence and gates are in section S. The owner has asked for it to ship to `main`; the push happens when the register is clear, G2 is done and CI is green.
+- [ ] G2 #22 licence and provenance audit of the adult pack before any public push. Pack relicensed CC0 (5d21909b) after root verified no code reads the NIH model; remaining: record the AGPL-parent history of the community sources in NOTICE and settle whether the NIH transfer lands.
 
 ### H. Hygiene
 
-- [ ] H1 #90 Retire the remaining registered Codex worktrees and old local branches (classify, land valuable work, snapshot, remove without force).
+- [ ] H1 #90 Retire the remaining registered Codex worktrees and old local branches. Done: bundle backup, fresh snapshots, 6 worktrees and 24 branches retired (archive tags kept). Open: the `hk-sculpt-head` force-remove question (owner), and the dirty worktrees owned by #22, #46, #95, #64 and #94, each removed when its owner lands.
 - [ ] H2 Keep `git worktree list` equal to the main checkout plus live lanes; each landed lane's worktree and branch are removed in the landing turn.
 
 ## Operating loop
