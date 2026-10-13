@@ -35,6 +35,7 @@ const figure = (id: string, adult: boolean, x = 0): FigurePresence => ({
     leftFoot: v(x - 0.1),
     rightFoot: v(x + 0.1),
   },
+  measures: { reach: 0.7, shoulderHeight: 1.5, hipHeight: 0.95, eyeHeight: 1.6 },
   footprint: { points: [[x, 0]], radius: 0.15 },
   appearance: { albedo: v(0.4, 0.3, 0.25), luminance: 0.3, specular: 0.028 },
   faceRadius: 0.1,

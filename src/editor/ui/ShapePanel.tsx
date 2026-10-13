@@ -5,7 +5,12 @@
  */
 import { useEffect, useRef } from "react";
 import type { SliderEntry, SliderGroup, SliderTask } from "../../format/assetFormat.ts";
-import { formatSliderValue, sliderAvailability, sliderValue } from "../controls.ts";
+import {
+  formatSliderValue,
+  resetSliderValue,
+  sliderAvailability,
+  sliderValue,
+} from "../controls.ts";
 import type { FrameRequest } from "../framing.ts";
 import { frameRequest } from "../framing.ts";
 import { scrollBehavior } from "./motion.ts";
@@ -37,18 +42,42 @@ function ShapeSlider({
 }) {
   const range = editor.range(entry);
   const availability = sliderAvailability(editor.recipe, entry, editor.modifiers);
+  const anatomyDefaults = editor.ready?.anatomy?.defaults;
+  const defaultedAdultModifier =
+    entry.kind === "modifier" &&
+    anatomyDefaults !== undefined &&
+    Object.hasOwn(anatomyDefaults, entry.id);
+  const withoutOverride = defaultedAdultModifier
+    ? { ...editor.recipe, modifiers: { ...editor.recipe.modifiers } }
+    : editor.recipe;
+  if (defaultedAdultModifier) delete withoutOverride.modifiers[entry.id];
+  const value = sliderValue(editor.recipe, entry, anatomyDefaults);
+  const defaultValue = defaultedAdultModifier
+    ? sliderValue(withoutOverride, entry, anatomyDefaults)
+    : range.neutral;
+  const neutral = Math.min(range.max, Math.max(range.min, defaultValue));
+  const defaultFitsRange = defaultValue === neutral;
   return (
     <SliderRow
       label={entry.label}
-      value={sliderValue(editor.recipe, entry)}
+      value={value}
       min={range.min}
       max={range.max}
       step={range.step}
-      neutral={range.neutral}
+      neutral={neutral}
       format={(v) => formatSliderValue(entry, v, range)}
       description={entry.description}
       disabledReason={availability.enabled ? null : availability.reason}
       onChange={(v, gesture) => editor.setSlider(entry, v, gesture)}
+      {...(defaultedAdultModifier && {
+        changed:
+          Object.hasOwn(editor.recipe.modifiers, entry.id) &&
+          (defaultFitsRange || Math.abs(value - neutral) > range.step / 2),
+        onReset: () =>
+          editor.update((recipe) =>
+            resetSliderValue(recipe, entry, editor.modifiers, anatomyDefaults, range),
+          ),
+      })}
       onSettle={editor.settle}
       onFocus={() => onFocus(frameRequest(entry.camera, task.camera))}
     />

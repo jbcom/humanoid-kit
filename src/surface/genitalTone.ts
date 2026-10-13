@@ -19,7 +19,7 @@
  * measurements, and a figure whose application needs measured genital colour
  * should override the layers' paint.
  */
-import { type Rgb, type SkinTone, skinAlbedo } from "./skinTone.ts";
+import { melaninDensityAlbedo, type Rgb, type SkinTone, skinAlbedo } from "./skinTone.ts";
 
 export type GenitalSite = "shaft" | "glans" | "scrotum" | "mound";
 
@@ -71,4 +71,39 @@ export function genitalAlbedo(tone: SkinTone, site: GenitalSite, arousal = 0): R
     melanin: Math.min(1, clamp01(tone.melanin) + s.melanin),
     haemoglobin: rest + (1 - rest) * s.arousal * a,
   });
+}
+
+/**
+ * The vulva's skin: the body's own, a little more pigmented and a little pinker,
+ * not a colour of its own. It is the tone with `VULVA.density` times its melanin
+ * optical density (`melaninDensityAlbedo`, the areola's reasoning), so the shift
+ * scales with each figure's own pigment and needs no channel above zero, and with
+ * `VULVA.haemoglobin` more blood showing through the thinner skin; arousal adds
+ * blood as at the other sites (modelled, uncalibrated: see the header).
+ */
+export const VULVA = {
+  /** Times the tone's melanin optical density (CHOICE: a mild hyperpigmentation). */
+  density: 1.25,
+  /** Added to the tone's haemoglobin (CHOICE). */
+  haemoglobin: 0.08,
+  /** How far full arousal moves haemoglobin toward its ceiling (as `SiteModel.arousal`). */
+  arousal: 0.4,
+  /** For a non-natural skin colour: per-channel factors on the override. */
+  override: [0.9, 0.82, 0.82] as Rgb,
+} as const;
+
+/** The albedo of vulvar skin for a skin tone; `arousal` 0..1 deepens it. */
+export function vulvaAlbedo(tone: SkinTone, arousal = 0): Rgb {
+  const a = clamp01(arousal);
+  if (tone.override) {
+    const base = skinAlbedo(tone);
+    const k = 1 - 0.2 * VULVA.arousal * a;
+    return [
+      base[0] * VULVA.override[0],
+      base[1] * VULVA.override[1] * k,
+      base[2] * VULVA.override[2] * k,
+    ];
+  }
+  const rest = Math.min(1, clamp01(tone.haemoglobin) + VULVA.haemoglobin);
+  return melaninDensityAlbedo(tone, VULVA.density, rest + (1 - rest) * VULVA.arousal * a);
 }

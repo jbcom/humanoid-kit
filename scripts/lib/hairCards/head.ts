@@ -18,6 +18,13 @@ export interface ScalpPoint {
   normal: Vector3;
 }
 
+/** A reusable closest-point result for high-frequency hair settlement probes. */
+export interface BodyProbe {
+  distance: number;
+  point: Vector3;
+  normal: Vector3;
+}
+
 /**
  * The skull's centre from the head's extent: the head is about as deep as it is wide behind the
  * face, so the centre sits a radius below the crown, midway between the back of the skull and the
@@ -104,7 +111,14 @@ export class BodySurface {
   private readonly bvh: MeshBVH;
   private readonly positions: Float32Array;
   private readonly triangles: Uint32Array;
+  /** Unit outward-or-inward normals of the immutable rest triangles, one per face. */
+  private readonly faceNormals: readonly Vector3[];
   private readonly sign: number;
+  /** Reused only while one synchronous nearest-point query is being resolved. */
+  private readonly probeA = new Vector3();
+  private readonly probeB = new Vector3();
+  private readonly probeC = new Vector3();
+  private readonly probeDelta = new Vector3();
 
   constructor(body: BodyMesh, head: HeadFrame) {
     this.positions = body.positions;
@@ -113,6 +127,9 @@ export class BodySurface {
     geometry.setAttribute("position", new BufferAttribute(body.positions, 3));
     geometry.setIndex(new BufferAttribute(body.triangles, 1));
     this.bvh = new MeshBVH(geometry, { verbose: false });
+    this.faceNormals = Array.from({ length: this.triangles.length / 3 }, (_, face) =>
+      this.faceNormalRaw(face),
+    );
     // Up from the skull's centre meets the crown from inside: a triangle there faces out when its
     // normal agrees with the ray, so the sign that makes it so is the mesh's winding.
     const crown = new Ray(head.centre.clone(), new Vector3(0, 1, 0));
@@ -120,33 +137,60 @@ export class BodySurface {
     const face = hit?.faceIndex;
     if (typeof face !== "number")
       throw new Error("hairCards: the body has no crown above the head's centre");
-    this.sign = this.faceNormal(face).dot(new Vector3(0, 1, 0)) >= 0 ? 1 : -1;
+    this.sign = (this.faceNormals[face] as Vector3).dot(new Vector3(0, 1, 0)) >= 0 ? 1 : -1;
   }
 
-  private faceNormal(face: number): Vector3 {
-    const at = (k: number) => {
+  private faceNormalRaw(face: number): Vector3 {
+    const a = this.probeA;
+    const b = this.probeB;
+    const c = this.probeC;
+    const at = (target: Vector3, k: number) => {
       const v = this.triangles[face * 3 + k] as number;
-      return new Vector3(
+      return target.set(
         this.positions[v * 3] as number,
         this.positions[v * 3 + 1] as number,
         this.positions[v * 3 + 2] as number,
       );
     };
-    const a = at(0);
-    return new Vector3().crossVectors(at(1).sub(a), at(2).sub(a)).normalize();
+    return new Vector3().crossVectors(at(b, 1).sub(at(a, 0)), at(c, 2).sub(a)).normalize();
+  }
+
+  private faceNormal(face: number, normal = new Vector3()): Vector3 {
+    return normal.copy(this.faceNormals[face] as Vector3);
   }
 
   /** Signed distance of `p` from the body (positive outside), the nearest body point and the outward normal there. */
-  probe(p: Vector3): { distance: number; point: Vector3; normal: Vector3 } {
-    const target = { point: new Vector3(), distance: 0, faceIndex: 0 };
-    const hit = this.bvh.closestPointToPoint(p, target);
-    if (!hit) throw new Error("hairCards: the body has no triangles");
-    const normal = this.faceNormal(hit.faceIndex).multiplyScalar(this.sign);
-    const outside = new Vector3().subVectors(p, hit.point).dot(normal) >= 0;
-    return {
-      distance: outside ? hit.distance : -hit.distance,
-      point: hit.point.clone(),
-      normal,
-    };
+  probe(p: Vector3): BodyProbe {
+    return this.probeInto(p, { point: new Vector3(), normal: new Vector3(), distance: 0 });
+  }
+
+  /**
+   * Writes the same result as `probe` into caller-owned vectors. Hair settlement calls this in its
+   * inner loops, where avoiding a short-lived result object and vectors keeps the physical solve
+   * deterministic without spending most of its time in allocation and collection.
+   */
+  probeInto(p: Vector3, target: BodyProbe): BodyProbe {
+    if (!this.probeWithin(p, target, Number.POSITIVE_INFINITY))
+      throw new Error("hairCards: the body has no triangles");
+    return target;
+  }
+
+  /**
+   * Like `probeInto`, but reports no hit when the nearest triangle is farther than `maxDistance`.
+   * A free-hanging rope's friction then has no surface to act on, so it can avoid resolving an
+   * exact nearest point that the caller would discard.
+   */
+  probeWithin(p: Vector3, target: BodyProbe, maxDistance: number): boolean {
+    const hit = this.bvh.closestPointToPoint(
+      p,
+      target as BodyProbe & { faceIndex: number },
+      0,
+      maxDistance,
+    );
+    if (!hit) return false;
+    const normal = this.faceNormal(hit.faceIndex, target.normal).multiplyScalar(this.sign);
+    const outside = this.probeDelta.subVectors(p, target.point).dot(normal) >= 0;
+    target.distance = outside ? hit.distance : -hit.distance;
+    return true;
   }
 }

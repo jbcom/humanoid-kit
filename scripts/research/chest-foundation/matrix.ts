@@ -42,7 +42,7 @@ const support = chooseSupport(
   trunkMask(assets, bodyManifest),
 );
 const ctx: TissueCtx = { mesh, support, manifest: bodyManifest };
-const library = tissueLibrary(ctx, lab, cellRecipe);
+const library = tissueLibrary(ctx, lab, cellRecipe, frameRecipe({ gender: 1 }));
 
 const W = 360,
   H = 360;

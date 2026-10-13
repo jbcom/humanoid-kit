@@ -128,8 +128,43 @@ export const SCALP_HAIR_SHARE = 0.15;
 /** A GLSL float literal. */
 const glslFloat = (n: number) => (Number.isInteger(n) ? `${n}.0` : `${n}`);
 
+/**
+ * Name of the per-vertex attribute holding a strain the geometry carries of its
+ * own (the skin's area over its area at rest, less 1), added to the folds'
+ * (docs/ARCHITECTURE.md, "Skin strain"). A body has none: its strain is its
+ * folds'. An absent attribute reads 0.
+ */
+export const STRAIN_ATTRIBUTE = "hkStrain";
+
+/**
+ * The skin's strain (docs/ARCHITECTURE.md, "Skin strain") between which a
+ * crease's relief goes: none below `from`, all of it from `to`. CHOICE: 0.55 to
+ * 0.8, between the strain across a bent knee's crushed band (render triangles
+ * under half their rest area: 0.39 to 0.47 at the median, 0.53 to 0.57 for the
+ * least crushed tenth, the muscular and heavy man and the slim woman, seated and
+ * tucked) and round it (0.83 to 0.91 for its most compressed tenth).
+ */
+export const CREASE_CRUSH = { from: 0.55, to: 0.8 } as const;
+
 /** Name of the per-vertex attribute holding metres of skin per UV unit. */
 export const UV_SCALE_ATTRIBUTE = "hkUvScale";
+
+/**
+ * How squarely the view must meet the skin's shading normal for the detail
+ * relief to tilt it (`hkPerturbNormal`), as the cosine between them: all of the
+ * tilt from `to`, none by `from`. CHOICE: 0.05 to 0.2 (87° to 78°): skin seen
+ * that nearly edge-on shows its outline, not its relief, and the footprint the
+ * tilt is measured in grows without bound there.
+ */
+export const RELIEF_GRAZE = { from: 0.05, to: 0.2 } as const;
+
+/**
+ * How far either side of a crease's rest period its kept depth turns from
+ * following the drawn period to all of the designed depth (`hkCreaseKeep`), as a
+ * share of that period. CHOICE: a quarter, a turn smooth enough not to draw an
+ * edge where skin starts to compress.
+ */
+export const CREASE_RATIO_BLEND = 0.25;
 
 /** How many directions strand layers quantise the hair flow to (over a half turn). */
 export const STRAND_DIRECTIONS = 8;
@@ -294,6 +329,9 @@ vec3 hkApplyStrands( vec3 c, vec2 uv ) {
 const layerFunctions = (count: number) => `
 varying vec2 vHkUv;
 varying float vHkUvScale;
+// The skin's strain: its area here over its area at rest, as the folds solved it (docs/ARCHITECTURE.md,
+// "Skin strain"), 1 where none reaches. Per vertex, so smooth across the triangles a pose crushes.
+varying float vHkStrain;
 uniform highp sampler2DArray hkLayerAtlas;
 uniform sampler2D hkLayerStops;
 // Which cell of the body's UV plane owns each texel of a channel that layers share.
@@ -516,21 +554,29 @@ float hkStriaeMean( float amount ) {
 // The stretch marks' weight at this pixel, 0 to 1, times the layer's strength: the mask scales the
 // amount, so the sites' density follows it, and fades the marks at the sites' edges. The colour (striaeWeight) shows the marks where a pixel
 // resolves them and their mean cover where it does not; the relief shows only the marks, with softer
-// edges, and fades out sooner.
+// edges, and fades out sooner (hkStriaeReliefFade, which the relief's weight leaves to its caller,
+// as a share of the relief rather than a part of it).
+float hkStriaeFootprint( vec4 head, vec2 uv ) {
+	return length( fwidth( uv * vHkUvScale ) ) / head.w;
+}
+float hkStriaeReliefFade( vec4 head, vec2 uv ) {
+	return 1.0 - smoothstep( ${glslFloat(STRIAE_RELIEF_FADE[0])}, ${glslFloat(STRIAE_RELIEF_FADE[1])}, hkStriaeFootprint( head, uv ) );
+}
 float hkStriaeWeight( int l, vec4 head, vec2 f, vec2 uv, bool relief ) {
 	vec2 p = uv * vHkUvScale;
-	float fw = length( fwidth( p ) ) / head.w;
+	float fw = hkStriaeFootprint( head, uv );
 	float amount = texture( hkLayerStops, vec2( 2.5 / ${glslFloat(STOP_TABLE_WIDTH)}, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r * f.x;
 	if ( amount <= 0.0 || head.x <= 0.0 ) return 0.0;
 	float edge = head.x * smoothstep( 0.0, ${glslFloat(STRIA_MASK_EDGE)}, f.x );
 	float detail = relief
-		? 1.0 - smoothstep( ${glslFloat(STRIAE_RELIEF_FADE[0])}, ${glslFloat(STRIAE_RELIEF_FADE[1])}, fw )
+		? hkStriaeReliefFade( head, uv )
 		: 1.0 - smoothstep( ${glslFloat(STRIAE_DETAIL_FADE[0])}, ${glslFloat(STRIAE_DETAIL_FADE[1])}, fw );
 	float mean = relief ? 0.0 : hkStriaeMean( amount );
 	if ( detail <= 0.0 ) return edge * mean;
 	float theta = f.y * 3.14159265359 + ${glslFloat(STRIAE_ORIENTATION_SEAM)};
 	float soft = relief ? ${glslFloat(STRIA_RELIEF_SOFT)} : ${glslFloat(STRIA_SOFT)};
-	return edge * mix( mean, hkStriae( p / head.w, theta, amount, fw, soft ), detail );
+	float marks = hkStriae( p / head.w, theta, amount, fw, soft );
+	return edge * ( relief ? marks : mix( mean, marks, detail ) );
 }
 vec3 hkApplyLayers( vec3 c, vec2 uv ) {
 	for ( int l = 0; l < ${count}; l ++ ) {
@@ -551,10 +597,51 @@ vec3 hkApplyLayers( vec3 c, vec2 uv ) {
 	}
 	return c;
 }
-// The detail layers' relief at this pixel, metres. Relief finer than a pixel
-// fades out rather than aliasing.
-float hkDetailHeight( vec2 uv ) {
-	float H = 0.0;
+// The pixel's footprint on the smooth surface the shading normal describes: each
+// screen derivative of the position carried along the view ray onto the plane
+// square to the normal, not taken on the faces. Skin crushed into a tight crease
+// has thin faces turned every way about its normals, and a footprint measured on
+// them swung from face to face. Set once per pixel (hkSurfaceFootprint), before
+// the relief is read.
+vec3 hkFootX = vec3( 0.0 );
+vec3 hkFootY = vec3( 0.0 );
+float hkFacing = 1.0;
+void hkSurfaceFootprint( vec3 n, vec3 position ) {
+	vec3 toEye = isOrthographic ? vec3( 0.0, 0.0, 1.0 ) : normalize( - position );
+	hkFacing = dot( toEye, n );
+	float along = abs( hkFacing ) > 1e-4 ? 1.0 / hkFacing : 0.0;
+	vec3 sx = dFdx( position );
+	vec3 sy = dFdy( position );
+	hkFootX = sx - dot( sx, n ) * along * toEye;
+	hkFootY = sy - dot( sy, n ) * along * toEye;
+}
+// A crease keeps its profile's depth to its width: skin a pose compresses folds
+// into a tighter groove, not a deeper and steeper one. Of a groove designed at its
+// rest period, the share of its depth kept where the drawn period is the share
+// c of that: c itself, but all of it from rest on, the two joined smoothly
+// over CREASE_RATIO_BLEND either side.
+float hkCreaseKeep( float c ) {
+	float w = ${glslFloat(CREASE_RATIO_BLEND)};
+	if ( c <= 1.0 - w ) return max( c, 0.0 );
+	if ( c >= 1.0 + w ) return 1.0;
+	return c - ( c - 1.0 + w ) * ( c - 1.0 + w ) / ( 4.0 * w );
+}
+// A height's screen gradient: its change a pixel across and a pixel down.
+vec2 hkSlope( float h ) {
+	return vec2( dFdx( h ), dFdy( h ) );
+}
+// The detail layers' relief at this pixel as its screen gradient (hkSlope of
+// metres). Relief finer than a pixel fades out rather than aliasing.
+//
+// Each layer is a relief drawn from its fields, scaled by a share that depends on
+// the pixel's footprint (a fade, a crease's kept depth): the share sets how much of
+// the relief is shown, and is not itself relief, so the gradient is the share times
+// the relief's gradient. Measured from screen derivatives, the share is constant
+// over each 2x2 quad on one GPU and per row or column on another, and steps from
+// quad to quad with the triangles and texels under it; taken through dFdx along
+// with the relief it drew those steps as a speckle 2 to 4 px across.
+vec2 hkDetailSlope( vec2 uv ) {
+	vec2 S = hkSlope( hkStrandHeight );
 	for ( int l = 0; l < ${count}; l ++ ) {
 		vec4 head = hkHeader( l );
 		int kind = hkKind( head );
@@ -570,7 +657,7 @@ float hkDetailHeight( vec2 uv ) {
 			float s = clamp( depth / head.z, 0.0, 1.0 );
 			// A line is a period of two stops of the coordinate: gone by the time that is ten pixels.
 			float lineFade = hkFootprintFade( fwidth( g.y ) * ${glslFloat((STOP_COUNT - 1) / 2)} );
-			H -= g.x * head.x * head.z * lineFade * s * s * ( 3.0 - 2.0 * s );
+			S -= lineFade * hkSlope( g.x * head.x * head.z * s * s * ( 3.0 - 2.0 * s ) );
 			continue;
 		}
 		if ( kind != 2 && kind != 3 && kind != 5 && kind != 7 && kind != 8 && kind != 9 && kind != 10 ) continue;
@@ -581,55 +668,75 @@ float hkDetailHeight( vec2 uv ) {
 		if ( kind == 10 ) {
 			// A swell: the smooth cross-section, faded by the smootherstep of the mask per pixel, so
 			// it leaves the skin with no outline where the mask ends (swellHeight in layers.ts).
-			H += head.x * head.z * hkSmootherstep( f.x ) * hkSwellProfile( l, f.y );
+			S += head.x * head.z * hkSlope( hkSmootherstep( f.x ) * hkSwellProfile( l, f.y ) );
 		} else if ( kind == 9 ) {
 			// A stretch mark is a shallow atrophic dip: depth is the layer's height.
-			H -= head.z * hkStriaeWeight( l, head, f, uv, true );
+			S -= head.z * hkStriaeReliefFade( head, uv ) * hkSlope( hkStriaeWeight( l, head, f, uv, true ) );
 		} else if ( kind == 2 || kind == 7 || kind == 8 ) {
 			vec2 p = uv * vHkUvScale / head.w;
 			float fade = 1.0 - smoothstep( 0.25, 0.75, length( fwidth( p ) ) );
+			float h;
 			if ( kind == 2 ) {
-				H += a * head.z * fade * hkBumps( p );
+				h = a * head.z * hkBumps( p );
 			} else {
 				// The amplitude profile along the coordinate, read from the stops' red channel.
 				float u = ( 1.5 + clamp( f.y, 0.0, 1.0 ) * ${glslFloat(STOP_COUNT - 1)} ) / ${glslFloat(STOP_TABLE_WIDTH)};
 				float profile = texture( hkLayerStops, vec2( u, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).r;
-				if ( kind == 7 ) H += a * profile * head.z * fade * hkBumps( p );
+				if ( kind == 7 ) h = a * profile * head.z * hkBumps( p );
 				else {
 					// The coordinate no bump's centre lies past (stop 0, green).
 					float limit = texture( hkLayerStops, vec2( 1.5 / ${glslFloat(STOP_TABLE_WIDTH)}, ( float( l ) + 0.5 ) / ${glslFloat(count)} ) ).g;
-					H += f.x * head.x * head.z * fade * hkTubercles( p, l, uv, head.w / vHkUvScale, limit );
+					h = f.x * head.x * head.z * hkTubercles( p, l, uv, head.w / vHkUvScale, limit );
 				}
 			}
+			S += fade * hkSlope( h );
 		} else if ( kind == 5 ) {
 			vec2 p = uv * vHkUvScale;
 			// Ridges within a pixel of one another blur to a flat; fade them out before they alias.
 			float fade = hkFootprintFade( length( fwidth( p ) ) / head.w );
-			// The derivatives above are taken in uniform flow; only the pattern is skipped off the ridged skin.
+			// Only the pattern is skipped off the ridged skin; its gradient is taken in uniform flow.
+			float h = 0.0;
 			if ( a > 0.002 && fade > 0.0 ) {
 				float theta = f.y * 3.14159265359 + ${glslFloat(RIDGE_ORIENTATION_SEAM)};
-				H += a * head.z * fade * ( hkRidges( p, theta, head.w ) - 0.5 );
+				h = a * head.z * ( hkRidges( p, theta, head.w ) - 0.5 );
 			}
+			S += fade * hkSlope( h );
 		} else {
 			float phase = f.y * head.w;
 			// A groove is a thin line: it goes by the time a period is ten pixels, not one, or
 			// seen end-on down a limb it shows as a dotted ring.
 			float fade = hkFootprintFade( fwidth( phase ) );
-			H -= a * head.z * fade * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} );
+			// The period as drawn and at rest, metres, along the phase's steepest direction.
+			vec2 g = vec2( dFdx( phase ), dFdy( phase ) );
+			float g2 = dot( g, g );
+			float drawn = g2 > 0.0 ? length( hkFootX * g.x + hkFootY * g.y ) / g2 : 0.0;
+			float rest = g2 > 0.0 ? length( dFdx( uv ) * g.x + dFdy( uv ) * g.y ) * vHkUvScale / g2 : 0.0;
+			float keep = rest > 0.0 ? hkCreaseKeep( drawn / rest ) : 1.0;
+			// Skin a pose crushes into the joint's own fold hides its fine lines in the fold: drawn into a band a few
+			// pixels wide they only stepped along the raster. They go with the skin's strain (CREASE_CRUSH).
+			float crushed = smoothstep( ${glslFloat(CREASE_CRUSH.from)}, ${glslFloat(CREASE_CRUSH.to)}, vHkStrain );
+			S -= crushed * keep * fade * hkSlope( a * head.z * pow( 0.5 * ( 1.0 - cos( 6.28318530718 * phase ) ), ${glslFloat(CREASE_SHARPNESS)} ) );
 		}
 	}
-	return H + hkStrandHeight;
+	return S;
 }
 // Tilts the normal by the gradient of a height field (metres) across the
-// surface (Mikkelsen's surface gradient, unnormalised so relief keeps its size).
-vec3 hkPerturbNormal( vec3 n, float h, vec3 position, float faceDirection ) {
-	vec3 sx = dFdx( position );
-	vec3 sy = dFdy( position );
+// surface (Mikkelsen's surface gradient, unnormalised so relief keeps its size),
+// measured in the pixel's footprint on the smooth surface (hkSurfaceFootprint).
+// Where the view grazes that surface the footprint grows without bound, and the
+// tilt fades to none (RELIEF_GRAZE), as relief seen edge-on is not seen.
+vec3 hkPerturbNormal( vec3 n, vec2 slope, float faceDirection ) {
+	float keep = smoothstep( ${glslFloat(RELIEF_GRAZE.from)}, ${glslFloat(RELIEF_GRAZE.to)}, abs( hkFacing ) );
+	vec3 sx = hkFootX;
+	vec3 sy = hkFootY;
 	vec3 r1 = cross( sy, n );
 	vec3 r2 = cross( n, sx );
 	float det = dot( sx, r1 ) * faceDirection;
-	vec3 grad = sign( det ) * ( dFdx( h ) * r1 + dFdy( h ) * r2 );
-	return normalize( abs( det ) * n - grad );
+	vec3 grad = sign( det ) * ( slope.x * r1 + slope.y * r2 );
+	// The tilt is the gradient over the footprint; no relief leaves the normal exactly as it was.
+	float share = abs( det ) > 0.0 ? keep / abs( det ) : 0.0;
+	vec3 tilt = share * grad;
+	return dot( tilt, tilt ) > 0.0 ? normalize( n - tilt ) : n;
 }`;
 
 /**
@@ -1131,11 +1238,13 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
-        `#include <common>\nvarying vec2 vHkUv;\nattribute float ${UV_SCALE_ATTRIBUTE};\nvarying float vHkUvScale;\nattribute float ${SCALP_ATTRIBUTE};\nvarying float vHkScalp;`,
+        `#include <common>\nvarying vec2 vHkUv;\nattribute float ${UV_SCALE_ATTRIBUTE};\nvarying float vHkUvScale;\nattribute float ${SCALP_ATTRIBUTE};\nvarying float vHkScalp;\n#define HK_STRAIN\nattribute float ${STRAIN_ATTRIBUTE};\nvarying float vHkStrain;`,
       )
+      // The skin's strain (docs/ARCHITECTURE.md, "Skin strain"): 1 (as at rest) and what the geometry's own strain
+      // attribute adds (none where it has none: an absent attribute reads 0), then what the folds add where they reach (patchDualSkinning).
       .replace(
         "#include <color_vertex>",
-        `#include <color_vertex>\n\tvHkUv = uv;\n\tvHkUvScale = ${UV_SCALE_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};\n\tvHkScalp = ${SCALP_ATTRIBUTE};`,
+        `#include <color_vertex>\n\tvHkStrain = 1.0 + ${STRAIN_ATTRIBUTE};\n\tvHkUv = uv;\n\tvHkUvScale = ${UV_SCALE_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};\n\tvHkScalp = ${SCALP_ATTRIBUTE};`,
       )
       .replace(
         "#include <common>",
@@ -1172,7 +1281,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       // Detail layers: relief on top of the pore map.
       .replace(
         "#include <normal_fragment_maps>",
-        `#include <normal_fragment_maps>\n\tnormal = hkPerturbNormal( normal, hkDetailHeight( vHkUv ) + ${glslFloat(SCAR_RAISE)} * hkMarkSurface.y, - vViewPosition, faceDirection );`,
+        `#include <normal_fragment_maps>\n\thkSurfaceFootprint( normal, - vViewPosition );\n\tnormal = hkPerturbNormal( normal, hkDetailSlope( vHkUv ) + ${glslFloat(SCAR_RAISE)} * hkSlope( hkMarkSurface.y ), faceDirection );`,
       )
       .replace(
         "#include <lights_physical_fragment>",

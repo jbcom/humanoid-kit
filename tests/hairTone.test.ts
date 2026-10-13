@@ -2,7 +2,10 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { labFromLinear } from "../src/surface/cielab.ts";
 import {
+  agedHairColour,
+  ageGrey,
   DEFAULT_HAIR_COLOUR,
+  GREY_LAG,
   HAIR_COLOURS,
   HAIR_STRAND_MEAN,
   type HairColour,
@@ -158,6 +161,42 @@ describe("HAIR_COLOURS", () => {
 
   it("has a default that is one of the presets", () => {
     expect(Object.values(HAIR_COLOURS)).toContainEqual(DEFAULT_HAIR_COLOUR);
+  });
+});
+
+describe("agedHairColour (the head's default greying)", () => {
+  const brown = HAIR_COLOURS.brown as HairColour;
+
+  it("greys a default 75-year-old's scalp past half, and a 90-year-old's nearly all", () => {
+    expect(agedHairColour(brown, 75, "scalp").grey).toBeGreaterThan(0.5);
+    expect(agedHairColour(brown, 90, "scalp").grey).toBeGreaterThan(0.9);
+    expect(agedHairColour(brown, 30, "scalp").grey).toBe(0);
+  });
+
+  it("greys the brows after the scalp and the lashes after the brows", () => {
+    for (const age of [60, 75, 90]) {
+      const scalp = agedHairColour(brown, age, "scalp").grey;
+      const brows = agedHairColour(brown, age, "brows").grey;
+      const lashes = agedHairColour(brown, age, "lashes").grey;
+      expect(brows, `${age}`).toBeLessThan(scalp);
+      expect(lashes, `${age}`).toBeLessThan(brows);
+    }
+    expect(agedHairColour(brown, 90, "brows").grey).toBeGreaterThan(0.5);
+  });
+
+  it("keeps the recipe's grey as a floor, and an override (dyed hair) as it is", () => {
+    const grey = { ...brown, grey: 0.6 };
+    expect(agedHairColour(grey, 25, "scalp").grey).toBe(0.6);
+    expect(agedHairColour(grey, 90, "scalp").grey).toBeCloseTo(ageGrey(90), 12);
+    const dyed: HairColour = { ...brown, override: [0.3, 0.05, 0.02] };
+    const old = agedHairColour(dyed, 90, "scalp");
+    expect(hairAlbedo(old)).toEqual([0.3, 0.05, 0.02]);
+  });
+
+  it("follows ageGrey, lagged by the part's GREY_LAG", () => {
+    expect(GREY_LAG.scalp).toBe(0);
+    for (const part of ["scalp", "brows", "lashes"] as const)
+      expect(agedHairColour(brown, 80, part).grey).toBeCloseTo(ageGrey(80 - GREY_LAG[part]), 12);
   });
 });
 

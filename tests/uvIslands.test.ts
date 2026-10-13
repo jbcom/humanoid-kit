@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { bodyCoverage, placeIslands, takeRect } from "../scripts/lib/uvIslands.ts";
+import { ATLAS_SIZE, bodyCoverage, placeIslands, takeRect } from "../scripts/lib/uvIslands.ts";
 import type { AdultReservoirSpec } from "../src/format/assetFormat.ts";
+import { OWNER_GRID } from "../src/surface/atlasPlan.ts";
 
 /** Free UV space for the reservoirs' islands (scripts/lib/uvIslands.ts), on a small grid. */
 const SIZE = 64;
@@ -10,16 +11,41 @@ const triangle = (x0: number, y0: number, x1: number, y1: number, x2: number, y2
 });
 
 describe("the body's coverage of UV space", () => {
-  it("marks a triangle and a gutter round it, and nothing far from it", () => {
+  it("marks the owner-map cells a triangle reaches and a cell round them, and nothing far from it", () => {
     const t = triangle(0.5, 0.5, 0.75, 0.5, 0.5, 0.75);
     const covered = bodyCoverage(t.uvs, t.index, SIZE);
     const at = (u: number, v: number) =>
       covered[Math.floor(v * SIZE) * SIZE + Math.floor(u * SIZE)];
     expect(at(0.55, 0.55)).toBe(1);
-    // Just outside an edge, within the gutter.
-    expect(at(0.5 - 3 / SIZE, 0.55)).toBe(1);
+    // A cell outside the triangle's box: the planner counts it as the triangle's too.
+    expect(at(0.5 - 1 / OWNER_GRID, 0.55)).toBe(1);
+    expect(at(0.5 - 2.5 / OWNER_GRID, 0.55)).toBe(0);
     expect(at(0.05, 0.05)).toBe(0);
     expect(at(0.95, 0.95)).toBe(0);
+  });
+
+  it("leaves an island in cells no body triangle's footprint shares, so the planner can share its channel", () => {
+    // The body's triangle, and an island taken beside it: their planned footprints
+    // (`planAtlas`: the cells of each triangle's box and one round) do not meet.
+    const t = triangle(0.5, 0.5, 0.75, 0.5, 0.5, 0.75);
+    const covered = bodyCoverage(t.uvs, t.index, ATLAS_SIZE);
+    const r = takeRect(covered, 40, 40, ATLAS_SIZE);
+    if (!r) throw new Error("no room");
+    const cells = (u0: number, v0: number, u1: number, v1: number) => {
+      const out = new Set<number>();
+      const c = (x: number) => Math.min(OWNER_GRID - 1, Math.max(0, Math.floor(x * OWNER_GRID)));
+      for (let y = c(v0) - 1; y <= c(v1) + 1; y++)
+        for (let x = c(u0) - 1; x <= c(u1) + 1; x++) out.add(y * OWNER_GRID + x);
+      return out;
+    };
+    const body = cells(0.5, 0.5, 0.75, 0.75);
+    const island = cells(
+      r.x / ATLAS_SIZE,
+      r.y / ATLAS_SIZE,
+      (r.x + r.width) / ATLAS_SIZE,
+      (r.y + r.height) / ATLAS_SIZE,
+    );
+    expect([...island].some((c) => body.has(c))).toBe(false);
   });
 });
 

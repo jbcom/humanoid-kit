@@ -13,14 +13,15 @@ import {
   type HumanoidAssets,
   jointPosition,
 } from "../format/assetFormat.ts";
-import type { BoneRotations, RestBones } from "./bones.ts";
+import { type BoneRotations, IDENTITY_POSE, type RestBones } from "./bones.ts";
 import { skinNormalsBlended, skinPositionsBlended } from "./dual.ts";
-import type { HipFold } from "./hipFold.ts";
+import type { JointFold } from "./jointFold.ts";
 import { mul, type Quat } from "./quat.ts";
 import { poseShare, skinDualShare } from "./skinShare.ts";
 
 export {
   type BoneRotations,
+  IDENTITY_POSE,
   posedBoneHeads,
   posedBones,
   type RestBones,
@@ -43,13 +44,6 @@ export const rigData = (assets: HumanoidAssets): RigData => ({
   faceUnits: assets.manifest.faceUnits,
   poses: assets.manifest.poses,
 });
-
-/** No rotation on any bone. */
-export const IDENTITY_POSE = (bones: number): BoneRotations => {
-  const q = new Float32Array(bones * 4);
-  for (let b = 0; b < bones; b++) q[b * 4 + 3] = 1;
-  return q;
-};
 
 /**
  * The rest skeleton from what an evaluation carries (its fitted bone heads)
@@ -326,7 +320,7 @@ export function skinPositions(
   skinIndex: Uint8Array | Uint16Array,
   skinWeight: Float32Array,
   out: Float32Array,
-  fold?: HipFold,
+  folds?: readonly JointFold[],
 ): Float32Array {
   return skinPositionsBlended(
     rest,
@@ -337,11 +331,11 @@ export function skinPositions(
     out,
     // The thigh's share falls as it swings (`poseShare`), as the renderer's bone texture has it.
     poseShare(rest, rotations, dualShareOf(rest.names)),
-    fold,
+    folds,
   );
 }
 
-/** The rig's skinning of rest `normals` by `rotations`, with the same shares and fold as `skinPositions`. */
+/** The rig's skinning of rest `normals` by `rotations`, with the same shares and folds as `skinPositions`. */
 export function skinNormals(
   rest: RestBones,
   rotations: BoneRotations,
@@ -349,7 +343,7 @@ export function skinNormals(
   skinIndex: Uint8Array | Uint16Array,
   skinWeight: Float32Array,
   out: Float32Array,
-  fold?: HipFold,
+  folds?: readonly JointFold[],
 ): Float32Array {
   return skinNormalsBlended(
     rest,
@@ -359,7 +353,7 @@ export function skinNormals(
     skinWeight,
     out,
     poseShare(rest, rotations, dualShareOf(rest.names)),
-    fold,
+    folds,
   );
 }
 

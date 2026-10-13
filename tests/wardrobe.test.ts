@@ -19,14 +19,16 @@ const [a, b, j, s] = wardrobe as [WardrobeEntry, WardrobeEntry, WardrobeEntry, W
 
 describe("the wardrobe", () => {
   it("lists a clothing pack's garments for browsing", () => {
-    const list = wardrobeOf(clothingManifest);
-    expect(list).toHaveLength(19);
+    const list = wardrobeOf([clothingManifest]);
+    expect(list).toHaveLength(clothingManifest.garments.entries.length);
+    // Every category the pack uses has a heading of its own, not its key.
+    for (const group of wardrobeGroups(list)) expect(group.label).not.toBe(group.kind);
     expect(list.find((g) => g.id === "shoes/shoes01")).toMatchObject({
       kind: "shoes",
       name: "shoes01",
       label: "Brown oxfords",
     });
-    expect(wardrobeOf(null)).toEqual([]);
+    expect(wardrobeOf([])).toEqual([]);
   });
 
   it("groups garments by what they are, in the order a person dresses", () => {

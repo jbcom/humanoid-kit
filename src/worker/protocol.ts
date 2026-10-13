@@ -8,6 +8,7 @@ import type {
   SliderTask,
 } from "../format/assetFormat.ts";
 import type { LandmarkAnchors } from "../foundation/landmarks.ts";
+import type { CustomTarget } from "../makehuman/customTargets.ts";
 import type { FeatureRef } from "../makehuman/features.ts";
 import type {
   AdultSurfaceTopology,
@@ -20,7 +21,7 @@ import type {
 } from "../model/humanoidModel.ts";
 import type { PresenceJoints } from "../presence/fromEvaluation.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import type { SurfaceFold } from "../rig/hipFold.ts";
+import type { SurfaceFold } from "../rig/jointFold.ts";
 import type { RigData, RigSkin } from "../rig/pose.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
 
@@ -102,6 +103,8 @@ export type WorkerRequest =
    * manifest, not its targets.
    */
   | { type: "adultSurface"; id: number }
+  /** Registers MakeHuman custom targets (`HumanoidModel.addCustomTargets`); answered once added. */
+  | { type: "customTargets"; id: number; targets: readonly CustomTarget[] }
   | {
       type: "evaluate";
       id: number;
@@ -118,12 +121,12 @@ export type WorkerRequest =
   /** Answered with a garment's static render data, once the garments have loaded. */
   | { type: "garment"; id: number; garment: string }
   /**
-   * Answered with the recipe's hip fold on its body surface (`HumanoidModel.hipFold`),
+   * Answered with the recipe's joint folds on its body surface (`HumanoidModel.folds`),
    * solved between other requests; a later request of this kind supersedes
    * one still being solved, which is answered with an `AbortError`.
    */
   | {
-      type: "hipFold";
+      type: "folds";
       id: number;
       recipe: Recipe;
       signals?: Readonly<Record<string, number>>;
@@ -132,6 +135,7 @@ export type WorkerRequest =
 export type WorkerResponse =
   | ({ type: "ready"; id: number } & ReadyInfo)
   | { type: "completed"; id: number }
+  | { type: "customTargetsAdded"; id: number }
   | ({ type: "pickMap"; id: number } & PickMap)
   | ({ type: "landmarkAnchors"; id: number } & SurfaceAnchors)
   /** Per worn attachment, its render vertices' occlusion at every corner; null when `ready`'s already was. */
@@ -149,5 +153,5 @@ export type WorkerResponse =
       decalTopologies?: HairTopology[];
     }
   | { type: "garment"; id: number; topology: GarmentTopology }
-  | { type: "hipFold"; id: number; surface: "base" | "adult"; fold: SurfaceFold }
+  | { type: "folds"; id: number; surface: "base" | "adult"; folds: SurfaceFold[] }
   | { type: "error"; id: number; message: string; name: string };

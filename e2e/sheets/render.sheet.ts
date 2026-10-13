@@ -19,7 +19,9 @@
  * Each sheet is one test, named by its sheet, so `-g` picks sheets; each writes
  * `<name>.png` to its test output (test-results/), which the pool returns. The page
  * renders every recipe in turn and waits for each figure to be evaluated and drawn,
- * so a sheet never shows a stale or half-loaded figure.
+ * so a sheet never shows a stale or half-loaded figure. Where the shot reports notes
+ * of what it drew (`window.hkShotNotes`), each figure's are written beside the sheet,
+ * `<name>.json`, in the recipes' order.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -62,6 +64,7 @@ for (const sheet of job.sheets) {
     await openSilentGame(page, `/?${sheet.query}`, {}, { markerTimeout: 120_000 });
     await page.locator('[data-figure="ready"]').waitFor({ timeout: 300_000 });
     const shots: string[] = [];
+    const notes: unknown[] = [];
     for (const recipe of recipes) {
       const generation = await page.evaluate((r) => {
         const set = window.hkSetRecipe;
@@ -85,6 +88,7 @@ for (const sheet of job.sheets) {
           }),
       );
       shots.push((await page.locator("canvas").screenshot()).toString("base64"));
+      notes.push(await page.evaluate(() => window.hkShotNotes?.() ?? null));
     }
     const png = await page.evaluate(
       async ({ shots, columns }) => {
@@ -118,6 +122,8 @@ for (const sheet of job.sheets) {
     const out = testInfo.outputPath(`${sheet.name}.png`);
     fs.writeFileSync(out, Buffer.from(png, "base64"));
     await testInfo.attach(sheet.name, { path: out, contentType: "image/png" });
+    if (notes.some((n) => n !== null))
+      fs.writeFileSync(testInfo.outputPath(`${sheet.name}.json`), JSON.stringify(notes, null, 1));
     // The sheet is written either way; a page that erred while drawing it is not to be trusted.
     expect(errors, `page errors while drawing ${sheet.name}`).toEqual([]);
   });
