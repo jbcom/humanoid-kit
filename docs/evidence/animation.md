@@ -88,10 +88,13 @@ The body is 14 capsules (head, torso, and each side's upper arm, forearm, hand,
 thigh, shin and foot), their radii measured from the figure's own skin. In every
 frame of every clip, on nine figures (slim, average and heavy at 6, 25 and 75),
 no two parts that are not neighbours overlap by more than 25 mm of capsule (a
-capsule is a coarse stand-in for a limb): 72 of the 90 clips hold that outright.
+capsule is a coarse stand-in for a limb): 74 of the 98 clips hold that outright.
 
-The other 18 are clips where a limb *rests on or crosses* the body: a hand on the
-knee, folded arms, a kneel, a roll, a sword swung across the chest. Each has its
+The other 24 are clips where a limb *rests on or crosses* the body: a hand on the
+knee, folded arms, a kneel, a roll, a sword swung across the chest, and the
+package's own drill clips, where a forearm lies across the chest under a musket
+or a flagstaff (`musket_fire`, 108 mm at the ready on the heavy adult) and the
+praying palms meet (40 mm). Each has its
 own bound in the test (`CONTACT_CLIPS`), from 47 mm (`death01`) to 127 mm
 (`slide_exit`, a body sliding with a leg folded under it), and the test fails on
 any frame past it. They are bounds to hold the clips to, not collisions to fix: a

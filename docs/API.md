@@ -2047,12 +2047,15 @@ import { animationsPack } from "humanoid-kit-animations";
 
 `animationsPack` is `{ manifest, files }` like `bodyPack`: per clip, `<id>.bin.gz` (the
 frames' bone rotations, a few tens of kilobytes). Pass it to `loadAnimationLibrary`.
-90 clips. Six are punkduck's, from the MakeHuman community's CC0 additional assets:
+98 clips. Six are punkduck's, from the MakeHuman community's CC0 additional assets:
 `walk_normal`, `walk_female`, `idle1`, `idle2`, `idlehips` and `swimcrawlstroke`. 84 are
 Quaternius's Universal Animation Libraries 1 and 2 (CC0), retargeted onto the default
 skeleton: `walk_loop`, `jog_fwd_loop`, `sprint_loop`, `idle_loop`, `swim_fwd_loop`,
 `crouch_idle_loop`, `sitting_idle_loop`, `sword_idle`, `punch_cross`, `dance_loop` and
-so on, each tagged `ual1` or `ual2`; the manifest's `rootMotion`, `grounded` and `loop`
+so on, each tagged `ual1` or `ual2`. Eight are the package's own (CC0), authored as key
+poses in `scripts/clips/` for 1860s infantry drill and prayer: `march_quick`,
+`charge_advance`, `colour_bearer`, `musket_load`, `musket_fire`, `officer_sword_raised`,
+`kneel_pray` and `pray_standing`. The manifest's `rootMotion`, `grounded` and `loop`
 say how each plays.
 Its `PROVENANCE.md` pins the archive by its SHA-256 and records each clip's licence
 evidence.

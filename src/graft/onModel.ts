@@ -12,6 +12,7 @@ import { buildGraft, type Graft, type GraftCutInput } from "./graft.ts";
 import { CUT_SITES } from "./sites.ts";
 import {
   GraftError,
+  type GraftPart,
   type GraftSpec,
   type GraftSurface,
   type GraftTopology,
@@ -58,13 +59,12 @@ const joint = (assets: HumanoidAssets, name: string): Vec3 => {
 };
 
 /** Resolves the cut a spec names, on the base mesh at rest. */
-function resolve(input: ModelGraftInput, spec: GraftSpec) {
+function resolve(input: ModelGraftInput, at: GraftSpec["at"]) {
   const control: ControlMesh = {
     faceVerts: input.assets.faceVerts,
     faces: input.bodyFaces,
     positions: input.assets.positions,
   };
-  const at = spec.at;
   let resolved: ResolvedCut;
   let rootBone: string;
   let forward: Vec3 = [0, 0, 1];
@@ -137,13 +137,14 @@ function resolve(input: ModelGraftInput, spec: GraftSpec) {
     removedFaces: Uint32Array.from(removedFaces),
     droppedAttachments,
     removedBones,
+    removedBoneIndices: removedBones.map((n) => names.indexOf(n)),
   };
   return cut;
 }
 
 /** Builds the graft a spec asks for on a model (`HumanoidModel.graft`). */
 export function graftOnModel(input: ModelGraftInput, spec: GraftSpec): ModelGraft {
-  const cut = resolve(input, spec);
+  const cut = resolve(input, spec.at);
   const { at: _at, part, ...options } = spec;
   const built = new Map<"base" | "adult", Graft>();
   const graftOf = (surface: "base" | "adult"): Graft => {
@@ -193,4 +194,49 @@ export function graftOnModel(input: ModelGraftInput, spec: GraftSpec): ModelGraf
       return { ...out, surface: evaluation.surface, skin };
     },
   };
+}
+
+/**
+ * What a cut takes off an evaluated figure, as a part another figure can graft:
+ * the removed faces' render triangles (hidden ones too, so the part has no
+ * holes the figure's attachments covered), compacted, in the evaluation's model
+ * space, with their normals, UVs and the site's forward.
+ */
+export function cutAwayOnModel(
+  input: ModelGraftInput,
+  at: GraftSpec["at"],
+  evaluation: Evaluation,
+): GraftPart {
+  const cut = resolve(input, at);
+  const s = evaluation.surface === "base" ? input.base : input.adult();
+  if (!s) throw new GraftError("the model has no adult surface");
+  const tri = s.trianglesPerFace;
+  const start = (f: number) => (typeof tri === "number" ? f * tri : (tri[f] as number));
+  const compact = new Map<number, number>();
+  const triangles: number[] = [];
+  for (let f = 0; f < cut.removed.length; f++) {
+    if (cut.removed[f] !== 1) continue;
+    for (let t = start(f) * 3; t < start(f + 1) * 3; t++) {
+      const r = s.mesh.index[t] as number;
+      let c = compact.get(r);
+      if (c === undefined) {
+        c = compact.size;
+        compact.set(r, c);
+      }
+      triangles.push(c);
+    }
+  }
+  const n = compact.size;
+  const positions = new Float32Array(n * 3);
+  const normals = new Float32Array(n * 3);
+  const uvs = new Float32Array(n * 2);
+  for (const [r, c] of compact) {
+    for (let k = 0; k < 3; k++) {
+      positions[c * 3 + k] = evaluation.positions[r * 3 + k] as number;
+      normals[c * 3 + k] = evaluation.normals[r * 3 + k] as number;
+    }
+    uvs[c * 2] = s.mesh.uvs[r * 2] as number;
+    uvs[c * 2 + 1] = s.mesh.uvs[r * 2 + 1] as number;
+  }
+  return { positions, triangles: Uint32Array.from(triangles), normals, uvs, forward: cut.forward };
 }

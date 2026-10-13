@@ -1,0 +1,36 @@
+{
+  "id": "officer_sword_raised",
+  "title": "Officer, sword raised",
+  "description": "Standing, an officer rallies the line: the sword hand rises high above the right shoulder, then sweeps forward and down to point the way at head height, and goes back up. The left hand rests at the scabbard by the left hip.",
+  "tags": ["idle", "combat", "sword", "1860s", "drill"],
+  "base": "tpose",
+  "fps": 30,
+  "duration": 1.6,
+  "loop": true,
+  "rootMotion": false,
+  "grounded": true,
+  "keys": [
+    {
+      "t": 0,
+      "rotations": {
+        "spine03": { "Xrotation": -6, "Yrotation": -8 },
+        "neck01": { "Xrotation": -10 },
+        "upperarm01.R": { "Xrotation": -110.7, "Yrotation": -43.6, "Zrotation": 19.7 },
+        "lowerarm01.R": { "Xrotation": -20 },
+        "upperarm01.L": { "Xrotation": 51.7, "Yrotation": 31.6, "Zrotation": -23.8 },
+        "lowerarm01.L": { "Xrotation": -39.4 }
+      }
+    },
+    {
+      "t": 0.8,
+      "rotations": {
+        "spine03": { "Xrotation": 4, "Yrotation": -12 },
+        "neck01": { "Xrotation": -6 },
+        "upperarm01.R": { "Xrotation": -97.8, "Yrotation": -58.4, "Zrotation": 17.8 },
+        "lowerarm01.R": { "Xrotation": -20.7 },
+        "upperarm01.L": { "Xrotation": 51.7, "Yrotation": 31.6, "Zrotation": -23.8 },
+        "lowerarm01.L": { "Xrotation": -39.4 }
+      }
+    }
+  ]
+}
