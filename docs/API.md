@@ -1154,8 +1154,9 @@ and expressions"). Framework-free.
   `createArmSkinnedFrameSampler(input)` supplies a final CPU-skinned hand frame
   to a solve without per-sample typed-array allocation. It borrows immutable
   evaluation inputs for one generation and rejects stale, malformed or
-  non-arm-only trial poses. Neither export drives an interaction, clip, React
-  prop or live figure automatically.
+  non-arm-only trial poses. `createHandContact` (Interactions, below) is what
+  drives them from an interaction's contact, and `<Humanoid handContact>`
+  applies that to a live figure.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
@@ -1284,6 +1285,25 @@ slices 1 and 2 of its build plan.
   `trackTime(role)` supplies the phase track's shared-clock time, including
   rate, loop wrapping and non-loop clamping. Each returns `null` when it has
   no meaningful value. Supplying `out` keeps per-frame reads allocation-free.
+- `Interaction.endReason` is `null` while it runs and after a normal end, and
+  its `CancelReason` once cancelled, declined or aborted.
+- `createHandContact(options?)`: the hand contact constraint (INTERACTIONS.md,
+  "Hand contact constraint"). Options: `blendIn` (default 0.25 s of the phase
+  clock), `blendOut` (default 0.3 s, after a graceful cancel only),
+  `tolerance` (default 0.01 m), `orientationTolerance` (default 0.35 rad),
+  `iterations`. `update({ binding, figure, source, dt, out })` writes the
+  constrained pose into `out` (the source pose, byte for byte, at weight 0)
+  and returns the reused `HandContactReport`. `binding` is `{ interaction,
+  role, contact }` or null; `figure` is `{ participant, generation,
+  restBones, rest, restNormals, skinIndex, skinWeight, anchors, folds?,
+  figureToWorld }`, the figure's evaluated surface as drawn and its lifted
+  group's column-major world matrix. The report's `state` is `idle`,
+  `refused`, `blending-in`, `holding`, `releasing` or `fading`; `reason` is
+  the solver's `ArmTargetReason` or a refusal (`not-a-participant`,
+  `not-claimed`, `not-a-hand-contact`, `unknown-contact`); `distance` is the
+  measured final hand frame to the target in metres; `target` and `hand` are
+  world points. `handContactSide(definition, contact, role)` reads which hand
+  a contact asks of a role, or null.
 - `InteractionEvent` is delivered through `on(participant, listener)` to both
   participants. It reports acceptance, decline, phase, beat, normal end and
   cancellation; cancellation includes its `declined`, `cancelled`, `left`,
@@ -1482,6 +1502,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `bodyArtImages?` | `BodyArtImages`: the decoded images (`ImageBitmap`, loaded `HTMLImageElement`, canvas) the recipe's tattoos name by key. Keep the object stable: a new one bakes the figure's body art again. A tattoo whose image is missing is reported through `onError`, and the figure is drawn without its body art |
 | `onPick?` | Called when the figure is tapped (pressed and released within 6 px, so an orbit drag is not a tap) with a `HumanoidPick`: `part` (`"body"`, `"adultBody"` for a tap on the adult surface, `"garment"` with the garment's `garment` id, `"hair"`, `"piercing"`, or an attachment index), the nearest render `vertex` and the world `point`. When set, it handles the group's clicks in place of `onClick` |
 | `presence?` | `{ id, position?, facing? }`: publishes the figure into the nearest `PresenceProvider` (see below). Throws without one |
+| `handContact?` | `HumanoidHandContact`: `{ interaction, role, contact, blendIn?, blendOut?, tolerance?, orientationTolerance?, onReport? }`. Binds the figure to a running interaction's hand-to-hand contact: each frame the figure closes the contact's hand (its side from the contact's endpoint for `role`) on the runtime's `contactTarget`, over its clip or static pose, with `createHandContact` (INTERACTIONS.md, "Hand contact constraint"). Needs `presence` (the binding is checked against `interaction.roles[role]`); `interaction: null` releases it. `onReport` receives the reused `HandContactReport` every frame it changes the pose or settles back to idle |
 | other props | Passed to the wrapping `<group>` |
 
 - Hidden until the first evaluation arrives.
