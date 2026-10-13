@@ -38,7 +38,7 @@ needs more, up to its source's size and at most 2048 px, and never upscaled
 
 | Pack | Files | Contents |
 | --- | --- | --- |
-| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, and the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion") |
+| `humanoid-kit-body` | `manifest.json`, `body.bin.gz`, six `targets-*.bin.gz` (below), `attachments.bin.gz`, `body-occlusion.bin.gz`, `proxies.bin.gz`, WebP textures | Base mesh (positions, UVs, quad faces, UV indices), up to four skin bone indices and weights per vertex, the 163-bone skeleton with 326 joint vertex lists, 60 facial pose units, 853 sparse targets (340 macro and skin-mask targets, 513 modifier targets), 275 shape modifiers with MakeHuman's slider taxonomy, the eyes, teeth and tongue, the body's cavity occlusion (the mouth's inside, nostrils, ear canals, eye sockets; see "Body occlusion"), and MakeHuman's three low-poly proxy bodies, fetched only on first use (see docs/MINIATURES.md) |
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 10 adult-only targets and 5 adult-only modifiers with their sliders |
 | `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | Walk, idle and swim clips as local bone rotations per frame, on the default skeleton (see "Animation") |
 | `humanoid-kit-eyes` | `manifest.json`, then per material `<id>.webp` | 32 CC0 eye materials (human, slit-pupil, toon, creature) whose textures add iris pattern and sclera detail to the eye shader's own colours (see "Attachment colour") |
@@ -437,7 +437,8 @@ from each file.
   rule, and it keeps the cloth that lies over a hidden region from being cut by
   one reference vertex alone.
 - *Hair, brows, lashes, eyes and teeth are not in the stack.* They are
-  attachments with no layer: they hide no skin and no garment masks them.
+  attachments with no layer: they hide no skin and no garment masks them. A
+  hat is the one garment that moves hair ("Hair under a hat", below).
 - *The attachments' occlusion does not depend on the outfit.* The body that
   occludes them is the full body (`bodyControlTriangles`), as in the pack's
   bake, and garments are not occluders or occludees: a worn outfit never forces
@@ -485,6 +486,65 @@ from each file.
   body under it), a shader depth bias on garments (it would also draw cloth over
   skin that is truly in front of it, such as a hand at a cuff), and a fixed
   offset of the garments (cloth floating off the skin at rest).
+- *A garment under another is sunk under it.* MakeHuman hides an inner
+  garment's faces only through the outer one's `delete_verts`, which name body
+  vertices: tall boots delete little more than the foot, so jeans worn under
+  them (shoes stack outside trousers) cut through the shaft wherever the leg is
+  wider than the boot. Two parts, both at rest, once per outfit, for every
+  garment but the outermost and rigid pieces (`HumanoidModel.underTuck`):
+  - `clothTuck` pulls an inner vertex under the cloth over it along its own
+    normal, by how far it pokes out plus a 3 mm gap (at most 5 cm out), or to
+    the gap if it is closer than that. A ray toward the inside only counts
+    outer cloth facing the vertex's way, so a boot shaft's far wall never pulls
+    jeans across the leg. `Outfit.garmentTuck` holds it, and `evaluate` applies
+    it along the posed normals; the outer garment does not move.
+  - `coveredBy` hides what lies behind the cloth over it, as if the outer
+    garment deleted it: a face goes when all its corners do. It is decided from
+    the skin, which is inside everything. At least half of an inner vertex's
+    binding weight must be on body vertices that meet outer cloth along their
+    normal within 12 cm (the flared outer calf of the pirate boots' shaft), or
+    just inside the skin when there is none outside (a snug shaft sits a
+    centimetre inside the shin it deletes). The vertex must also be no further
+    off the skin than that cloth plus 12 cm. Nothing of the jeans above the
+    knee is hidden even at 20 cm. From the cloth
+    vertex alone, a boot's lining facing the jeans inside it and the other
+    boot facing the jeans beside it look the same; each boot here is a shell
+    and a lining, half its vertices facing in. A hem's folds have normals
+    every way, so moving cloth alone left jeans showing at the ankle.
+  Rendered against tall culturalibre and pirate boots over the jeans suit,
+  front and back, on male, neutral and female figures: the shafts are whole,
+  and the jeans above them unchanged.
+  Rejected: hiding by the inner vertex's nearest outer triangle (the lining
+  problem above), and a shader depth bias (it would draw boots over the jeans
+  above the shaft too).
+- *Hair under a hat.* A style is bound to the scalp and knows nothing of the
+  outfit, so a fedora or a cap over an afro, a crop, long hair or a ponytail
+  showed 3 to 70% of the hair inside its crown through the felt. Every worn garment of kind
+  `hat` (hats and hoods) presses hair, and no other garment does
+  (`HumanoidModel.pressUnderHats`, `underHat`). A line from the middle of the
+  head bone out to each drawn hair vertex meets the hat where that hair would
+  come through it. A crown and band enclose the skull, so this holds for hair
+  on the scalp and for long hair bound to the hair helper alike. A vertex past
+  that point is drawn back along the line to 5 mm inside the hat, and half as
+  far again as it was past it. Without that extra depth, a card's straight
+  edge between two pressed ends cut through the felt where the fedora's crown
+  pinches in between them, a thin streak in the render. Hair the line
+  reaches before any hat (below the band, out of a hood's face) keeps its
+  place, so a ponytail still falls from under the brim. Unlike the garment
+  tuck, it is worked out per evaluation, between the drawn (subdivided) hair
+  and the drawn hat on the evaluated figure. Two shortcuts each left hair
+  through the felt in the renders. Control meshes failed because subdivision
+  moves a fedora's pinched crown and a curl's card by millimetres to
+  centimetres. Depths cached from the default figure failed because hat and
+  hair part by centimetres on a man's head, leaving a patch of a bob through
+  the crown. It costs about 30 ms an evaluation with an afro under a fedora,
+  and nothing without a hat. Rejected: sinking hair along the scalp normal it
+  is bound through. Long styles bind to the hair helper, a shell outside the
+  hat, so their crown hair was never pressed. Also rejected: hiding the hair
+  under the hat by a mask, which leaves a bald band where the brim is open.
+  `tests/hatOverHair.test.ts` checks it from outside: from inside the crown,
+  less than 1% of the hair inside it may lie past the drawn hat, none by 4 mm,
+  on the figure it is evaluated on.
 - *Garments skin as the body does.* Their material takes the figure's dual
   quaternion bones (`applyDualSkinning`, as for any material the library does
   not make), and so do their shadow materials and the mesh's bounds and
@@ -553,6 +613,22 @@ follows the body.
   with the hip and keeps its shape. Rejected: landmark mounts, which need a
   new authored frame per accessory where the binding already says where the
   piece sits.
+- *The layering contract is the kit's, and a consumer's garment states its
+  place in it.* A garment from any pack declares three things, and the kit
+  works out everything else per outfit:
+  - its `kind`, one of `GARMENT_LAYERS` (an unknown kind is an `OutfitError`);
+  - its `z_depth`, which leads the order (lower is nearer the skin);
+  - its `delete_verts`, the body vertices it hides.
+  From those, a garment hides the body and every garment under it, never one
+  over it. Cloth under another is sunk under it, and hidden where it lies
+  behind it ("A garment under another is sunk under it"). Skin at an edge is
+  sunk under the cloth, and a hat presses hair. A rigid piece is never sunk:
+  it keeps its shape, and what lies under it is sunk instead. A period cut
+  layers by the same rule as the kit's: a shell jacket is `jacket` over a
+  `top` shirt, a frock coat is `coat`, and a kepi is `hat`. Those cuts stay
+  the consumer's data. Rejected: per-garment layer overrides in the recipe.
+  Two figures in one outfit would then stack it differently, and the masks
+  and tucks are cached per outfit.
 - *The packer is a library function before it is a CLI.* `packGarments`
   (from `scripts/pack-clothing.ts`) takes `.mhclo` files and a provenance
   record and writes a format-1 pack whose manifest has the consumer's
@@ -2373,8 +2449,8 @@ a coloured texture; everything in the pure core is testable in Node.
   hair file that has one) and is not part of its clothing layer stack, so hair
   hides no skin and takes no clothing-style masking: the scalp skin stays under
   the cards. The `z_depth` (50 in every system hair) is kept as the render
-  order and decides nothing else. A later hat that must sit over hair will set
-  its own rule.
+  order and decides nothing else. A hat presses the hair under it, by its own
+  rule ("Clothing", "Hair under a hat").
 - *The colour is two pigments, and the texture is structure only.* Hair albedo
   comes from eumelanin, pheomelanin and a grey fraction (`src/surface/hairTone.ts`,
   `docs/research/HAIR-COLOUR.md`). The atlases are painted in colour, so the
@@ -2683,7 +2759,7 @@ it by a polygon offset.
 
 ## Body hair
 
-**Use cases.** Every figure carries the body hair of its age and sex, at every
+**Use cases.** Every figure carries the body hair of its age and its recipe, at every
 skin tone, without a choice being made: vellus everywhere from infancy, and
 terminal hair coming in through adolescence and thinning and greying in old
 age. A creator can thin, thicken or shave a region and pick a beard. Axillary
@@ -2699,25 +2775,28 @@ Old recipes evaluate and serialise as before.
 
 - *One pure model, two ways of drawing.* `src/surface/bodyHair.ts` says how
   much terminal hair each region group carries (coverage 0..1, the
-  Ferriman-Gallwey grade over 4), from the gender macro read as the androgen
-  level, the age (a ramp per group on the Tanner ages, a thinning after 55) and
-  the recipe's controls; and what colour (the figure's hair pigments, darker on
+  Ferriman-Gallwey grade over 4), from the age (a ramp per group on the Tanner
+  ages, a thinning after 55) and the recipe's controls, never from the gender
+  macro (DECISIONS ruling 1, 2026-10-13: the androgen-axis anchors were a
+  gender multiplier on a trait, removed); and what colour (the figure's hair pigments, darker on
   the face and pubis, lighter on the limbs, greyed with age later on the body
   than the beard). The groups follow the modified FG regions, merged to what a
   picker offers: face, chest, abdomen, back, buttocks, arms, legs, axillary,
   and the adult-only pubic.
 - *Adult-only groups are gated in the model itself.* `defaultBodyHairCoverage`
   returns 0 for pubic hair unless the age is an adult's (`age >=
-  ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
-  scales the default, so no recipe value can add them under 18.
+  ADULT_AGE`, so an age that is not a number fails closed), a multiplier
+  scales the default, and an explicit coverage is 0 for them under 18, so no
+  recipe value can add them under 18.
 - *Legacy multipliers and explicit controls have separate meanings.*
   `recipe.bodyHair` is optional (the recipe schema grows only by optional
   fields). `density` remains a multiplier per group on the physiological
-  default for age and androgen axis (0 shaves a region, 2 doubles it, clamped
-  to full coverage), so saved recipes retain their results as a figure ages.
-  `coverage` is a new explicit mature coverage at every gender value, still
-  subject to the same age ramp and senescence; it cannot coexist with legacy
-  `density` for a group. `follicleDensity` independently changes physical
+  default for age (0 shaves a region, 2 doubles it, clamped to full coverage),
+  so saved recipes still read; it plateaus on a dense default, which is why the
+  creator writes `coverage` instead. `coverage` is the explicit choice: an
+  adult gets exactly that value, with no age ramp or senescence (those shape
+  the unset default only); before 18 it comes in over the group's puberty
+  onset, complete at 18. It cannot coexist with legacy `density` for a group. `follicleDensity` independently changes physical
   follicles per cm² and therefore strand spacing, never the covered fraction.
   `beard` is a style. Absent fields are not filled in by `createRecipe`, so a
   recipe that never set body hair serialises exactly as before.
@@ -2790,8 +2869,9 @@ Old recipes evaluate and serialise as before.
   their region), the vertex normals, and the armpits' hollows. The limbs stop
   short of the hands and feet, which carry little terminal hair and whose
   layers crowd the atlas.
-- *The beard defaults to none.* Clean-shaven is the neutral recipe; terminal
-  body hair and vellus are on by default for age and sex.
+- *The beard defaults to none.* Clean-shaven is the neutral recipe; vellus and
+  the limbs' and buttocks' terminal strands are on by default for age, while
+  the coat's groups draw only when the recipe enables them.
 - *Axillary hair is a coat region that comes with puberty (from 13); pubic hair
   is the adult pack's.*
   The armpit's hair is dense and a couple of centimetres long, so it is the
@@ -2865,7 +2945,8 @@ module.
   before: a woman's eyes hanging at a man's throat.
 - *A recipe asks for it, region by region.* A region grows only where the
   recipe enables it (`coatEnabled`): the beard by a style other than none, any
-  other group by setting its density. A recipe silent on body hair, or one
+  other group by setting its explicit coverage or its legacy density
+  (`drawnBodyHairCoverage` is what is drawn). A recipe silent on body hair, or one
   that names no region, grows no coat (`coatPaintFor` is null), so default
   figures stay bare.
 - *Strands from a tileable density texture* at true scale (`uv × uvScale`
@@ -2932,7 +3013,7 @@ beard style it serves; today `beard-full` (a full beard; a moustache and a
 goatee are the coat's alone). Each card carries a rank, a byte per vertex
 (`CARD_FIELD_KEYS`); `HairMaterial` discards a card whose rank is at or over
 its density (`setDensity`, the face's coverage), whole, beside the hairline
-test and outside the alpha-to-coverage term, so the beard thins with age, sex
+test and outside the alpha-to-coverage term, so the beard thins with age
 and the recipe with the same geometry, and scalp hair, with no ranks (0) and
 the default density (1), is untouched. The model wears a style's cards
 (`wornBeardCards`) only where the face grows terminal hair, so a child's figure
@@ -3816,6 +3897,32 @@ kinematics, pads flattening at contact and tissue compressing under a load
 (docs/FOUNDATION.md, "Response") need a hand pose solver and soft
 deformation the kit does not have yet; the contact report is what that solver
 will read, so it comes first.
+
+## Regional contact and injury-state boundary (design, 2026-10-11)
+
+`RegionalContact` is the implemented pure evidence boundary: it checks a
+registered surface or aperture entry without choosing a response. It does not
+create animation, physiology, a wound, deformation, collision change or visual
+state. A surface remains intact skin; only a registered aperture can report an
+entry. This prevents a contact sample, including a future injury location, from
+becoming a universal opening.
+
+Dynamic injury state is planned and is deliberately outside the current public
+API. Its record must distinguish an intact-surface marking, a recoverable
+body-space deformation, and a persistent body-space change or scar. Each record
+needs a version, a stable anatomical anchor, an explicit lifecycle, and an
+explicit persistence policy. It must resolve through the morphed and posed
+skinned body, while garments and wrappings use their existing body binding to
+show coherent coverage. Creation changes neither collision nor affordance
+clearance unless a later, separately specified feature opts in and proves it.
+
+Consumers own event interpretation. Curse and Prayers may map their own
+projectile or blade events to neutral records and select art, pacing, damage and
+save policy locally. The kit does not classify a gameplay event, synthesize a
+visual injury, or claim a physical or medical response. The detailed planned
+record, lifecycle and test gates are in
+[Regional contact and injury contract](REGIONAL-CONTACTS.md); no renderer proof
+exists yet.
 
 ## Invariants
 

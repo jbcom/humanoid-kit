@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { evaluateBinding } from "../src/mhclo/bound.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { loadClothedAssets } from "./fixtures.ts";
@@ -62,5 +63,83 @@ describe("skin at the edge of a garment", { timeout: 120_000 }, () => {
     }
     expect(moved).toBeGreaterThan(0);
     expect(largest).toBeLessThanOrEqual(0.03 + 1e-4);
+  });
+});
+
+/**
+ * A garment under another is sunk wherever it pokes out of it, so jeans worn
+ * under tall boots go into the shaft instead of through it
+ * (docs/ARCHITECTURE.md, "A garment under another is sunk under it").
+ */
+describe("a garment under another", { timeout: 120_000 }, () => {
+  const assets = loadClothedAssets();
+  const model = new HumanoidModel(assets, { subdivision: 1 });
+  const BOOTS = "shoes/culturalibre_male_boots";
+
+  it("is sunk only under the garment over it, and the outermost never", () => {
+    expect(model.outfit([SUIT]).garmentTuck).toEqual([null]);
+    const outfit = model.outfit([SUIT, BOOTS]);
+    expect(outfit.order).toEqual([SUIT, BOOTS]);
+    const [jeans, boots] = outfit.garmentTuck;
+    expect(boots).toBeNull();
+    if (!jeans) throw new Error("the boots sink none of the suit");
+    const suit = assets.garments.get(SUIT);
+    if (!suit) throw new Error("the pack has no suit");
+    const rest = evaluateBinding(
+      suit,
+      assets.positions,
+      new Float32Array(suit.entry.vertexCount * 3),
+    );
+    let sunk = 0;
+    for (let v = 0; v < jeans.length; v++) {
+      const t = jeans[v] as number;
+      if (t === 0) continue;
+      sunk++;
+      expect(t).toBeLessThanOrEqual(0.05 + 0.004 + 1e-6);
+      // The boots reach the knee: nothing of the suit above it is moved.
+      expect(rest[v * 3 + 1] as number, `vertex ${v}`).toBeLessThan(0.62);
+    }
+    expect(sunk).toBeGreaterThan(50);
+  });
+
+  it("hides the inner garment's faces behind the one over it, and only those", () => {
+    const alone = model.outfit([SUIT]).masks.garmentIndex[0]?.length ?? 0;
+    const outfit = model.outfit([SUIT, BOOTS]);
+    const under = outfit.masks.garmentIndex[0]?.length ?? 0;
+    const boots = model.outfit([BOOTS]).masks.garmentIndex[0]?.length ?? 0;
+    expect(under).toBeLessThan(alone);
+    // Most of the suit is above the boots and stays.
+    expect(under).toBeGreaterThan(alone * 0.6);
+    expect(outfit.masks.garmentIndex[1]?.length).toBe(boots);
+  });
+
+  it("hides an attachment's faces where the garments delete the body under it", () => {
+    const attachments = model.topology().attachments;
+    const toes = attachments.findIndex((a) => /toe/i.test(a.id));
+    const fingers = attachments.findIndex((a) => /nail/i.test(a.id) && !/toe/i.test(a.id));
+    expect(toes).toBeGreaterThanOrEqual(0);
+    expect(fingers).toBeGreaterThanOrEqual(0);
+    // Nothing worn, or only a suit: every attachment draws whole.
+    expect(model.outfit([]).masks.attachmentIndex.every((i) => i === null)).toBe(true);
+    // Boots over the feet: the toenails go, and the fingernails stay.
+    const booted = model.outfit([BOOTS]).masks.attachmentIndex;
+    const full = attachments[toes]?.index.length ?? 0;
+    expect((booted[toes]?.length ?? full) < full).toBe(true);
+    expect(booted[fingers]).toBeNull();
+  });
+
+  it("moves the inner garment, never the one over it", () => {
+    const outfit = model.outfit([SUIT, BOOTS]);
+    const dressed = model.evaluate(createRecipe({ outfit: [SUIT, BOOTS] }));
+    const tuck = outfit.garmentTuck;
+    outfit.garmentTuck = [null, null];
+    const flat = model.evaluate(createRecipe({ outfit: [SUIT, BOOTS] }));
+    outfit.garmentTuck = tuck;
+    expect(Array.from(dressed.garments[1]?.positions ?? [])).toEqual(
+      Array.from(flat.garments[1]?.positions ?? []),
+    );
+    expect(Array.from(dressed.garments[0]?.positions ?? [])).not.toEqual(
+      Array.from(flat.garments[0]?.positions ?? []),
+    );
   });
 });

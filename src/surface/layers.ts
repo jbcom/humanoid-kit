@@ -59,14 +59,9 @@ export interface SkinPaintInput {
    * present; absent is none.
    */
   anatomy?: Readonly<Record<string, number>>;
-  /**
-   * The gender macro (`recipe.macros.gender`), read by body hair as the
-   * androgen level; absent is the default macro's 0.5.
-   */
-  gender?: number;
   /** The figure's hair pigments (`recipe.hair.colour`); absent is `DEFAULT_HAIR_COLOUR`. */
   hairColour?: HairColour;
-  /** The recipe's body hair (`recipe.bodyHair`); absent is the default for age and sex. */
+  /** The recipe's body hair (`recipe.bodyHair`); absent is the default for age. */
   bodyHair?: BodyHairRecipe;
 }
 

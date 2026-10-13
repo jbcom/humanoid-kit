@@ -106,7 +106,6 @@ describe("Issue #21 coat response probe", () => {
         for (const [group, ids] of GROUPS) {
           const expectedDensity = bodyHairFollicleDensity(group, {
             age: 35,
-            gender: 0.5,
             colour: input.hair?.colour ?? {
               eumelanin: 0.5,
               pheomelanin: 0.1,
@@ -170,7 +169,6 @@ describe("Issue #21 coat response probe", () => {
       areola: 0.5,
       signals: {},
       age: 35,
-      gender: 0.5,
       adult: true,
       bodyHair: hair(0.75, 1),
     });
@@ -199,7 +197,6 @@ describe("Issue #21 coat response probe", () => {
       areola: 0.5,
       signals: {},
       age: 35,
-      gender: 0.5,
       adult: true,
       bodyHair: hair(0.1, 1),
     });

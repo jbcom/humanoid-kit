@@ -14,9 +14,11 @@ import {
   DoubleSide,
   FrontSide,
   LinearSRGBColorSpace,
+  type Material,
   type WebGLProgramParametersWithUniforms,
 } from "three";
 import type { AttachmentMaterial } from "../format/assetFormat.ts";
+import { GARMENT_DUST, type GarmentFinish } from "../model/garmentLook.ts";
 import type { Lab } from "../surface/cielab.ts";
 import { linearFromLab } from "../surface/cielab.ts";
 import { GUM_SATURATION, gumAppearance } from "../surface/gumTone.ts";
@@ -230,6 +232,52 @@ export function garmentAlpha(m: Pick<AttachmentMaterial, "transparent" | "alphaT
     return { alphaToCoverage: true, alphaTest: GARMENT_CUTOUT, transparent: false };
   if (m.transparent) return { alphaToCoverage: false, alphaTest: 0, transparent: true };
   return { alphaToCoverage: false, alphaTest: 0, transparent: false };
+}
+
+/** Marks a garment material's wear in its program key. */
+const GARMENT_WEAR_KEY = "hk-garment-wear";
+
+/**
+ * Patches a garment material so a figure's wear (`GarmentFinish.fade` and
+ * `dust`) acts on its albedo, the texture times the colour, right after the
+ * texture is applied: the arithmetic of `wornAlbedo`. It keeps the material's
+ * own `onBeforeCompile` and program key. The returned `set` takes a new
+ * finish's wear through uniforms, so a change never recompiles.
+ */
+export function applyGarmentWear(material: Material): { set(finish: GarmentFinish): void } {
+  const uniforms = {
+    hkWearFade: { value: 0 },
+    hkWearDust: { value: 0 },
+    hkDustColor: { value: new Color(GARMENT_DUST[0], GARMENT_DUST[1], GARMENT_DUST[2]) },
+  };
+  const before = material.onBeforeCompile.bind(material);
+  material.onBeforeCompile = (shader, renderer) => {
+    before(shader, renderer);
+    Object.assign(shader.uniforms, uniforms);
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "void main() {",
+        "uniform float hkWearFade;\nuniform float hkWearDust;\nuniform vec3 hkDustColor;\nvoid main() {",
+      )
+      .replace(
+        "#include <map_fragment>",
+        [
+          "#include <map_fragment>",
+          "\tfloat hkWearY = dot( diffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );",
+          "\tdiffuseColor.rgb = mix( diffuseColor.rgb, vec3( hkWearY ), hkWearFade );",
+          "\tdiffuseColor.rgb = mix( diffuseColor.rgb, hkDustColor, hkWearDust );",
+        ].join("\n"),
+      );
+  };
+  const key = material.customProgramCacheKey.bind(material);
+  material.customProgramCacheKey = () => `${key()}|${GARMENT_WEAR_KEY}`;
+  material.needsUpdate = true;
+  return {
+    set(finish) {
+      uniforms.hkWearFade.value = finish.fade;
+      uniforms.hkWearDust.value = finish.dust;
+    },
+  };
 }
 
 /**

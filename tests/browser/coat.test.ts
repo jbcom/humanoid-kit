@@ -352,7 +352,6 @@ describe("the coat's shells", () => {
           areola: 0.5,
           signals: {},
           age: 35,
-          gender: 1,
           adult: true,
           hairColour: colour,
           bodyHair: { density: { chest: 1 } },

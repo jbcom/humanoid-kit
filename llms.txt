@@ -40,6 +40,9 @@
 - [Architecture](https://github.com/jbcom/humanoid-kit/blob/main/docs/ARCHITECTURE.md):
   the base mesh, packs, recipe and regions, age policy, evaluation pipeline,
   subdivision, worker and layers.
+- [Regional contact and injury contract](https://github.com/jbcom/humanoid-kit/blob/main/docs/REGIONAL-CONTACTS.md):
+  implemented validation for neutral contact evidence, plus planned regional
+  response and injury-state proof boundaries.
 - [NOTICE.md](https://github.com/jbcom/humanoid-kit/blob/main/NOTICE.md):
   provenance, the CC0 licence gate and trademark notice.
 - [AGENTS.md](https://github.com/jbcom/humanoid-kit/blob/main/AGENTS.md):

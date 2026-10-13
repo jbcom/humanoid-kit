@@ -180,7 +180,7 @@ interface Recipe {
   skin: SkinRecipe;
   eyes: EyesRecipe;
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
-  bodyHair?: BodyHairRecipe; // optional: absent means the default for age and sex
+  bodyHair?: BodyHairRecipe; // optional: absent means the default for age
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
   outfitLook?: Readonly<Record<string, GarmentLook>>; // per garment id; absent = as the pack made it
   bodyArt?: BodyArtRecipe; // optional: absent means none, as in recipes saved before body art
@@ -194,7 +194,7 @@ interface HairRecipe {
 interface BodyHairRecipe {
   // legacy per BODY_HAIR_GROUPS entry multiplier on the physiological default, 0..2 (1 = default)
   density?: Partial<Record<BodyHairGroup, number>>;
-  // explicit mature coverage at every gender value, 0..1; cannot coexist with density for the same group
+  // explicit coverage, 0..1: an adult's exactly; cannot coexist with density for the same group
   coverage?: Partial<Record<BodyHairGroup, number>>;
   // physical follicles-per-cm2 multiplier, 0.25..2; changes spacing, not coverage
   follicleDensity?: Partial<Record<BodyHairGroup, number>>;
@@ -594,11 +594,20 @@ body and of each garment are drawn.
 
 - `model.outfit(ids): Outfit`: `{ key, order, masks }` for a set of garment
   ids in any order. `order` is innermost first (by `z_depth`, then category,
-  then id) and `masks` is `{ bodyIndex, garmentIndex }`: the triangle indices to
-  draw in place of `topology().body.index` and each garment's
-  `GarmentTopology.index`. Garments stack as MakeHuman does: processed from the
+  then id) and `masks` is `{ bodyIndex, garmentIndex, attachmentIndex }`: the
+  triangle indices to draw in place of `topology().body.index`, each garment's
+  `GarmentTopology.index` and each attachment's index in
+  `topology().attachments` (null to draw it whole). An attachment loses what
+  lies on body the garments delete, as a toenail in a boot; what the
+  attachments themselves delete, as a nail its bed, does not count. Garments stack as MakeHuman does: processed from the
   outermost in, each is hidden only where the garments over it delete, and a
-  face hides only when every corner is hidden. Results are cached by key.
+  face hides only when every corner is hidden. Beyond MakeHuman, a garment's
+  vertices behind one over it are hidden too, and `garmentTuck` (per garment in
+  `order`, per vertex, metres, or null) sinks what would poke out of one, so
+  jeans go into a boot shaft instead of through it (docs/ARCHITECTURE.md,
+  "A garment under another is sunk under it"). A worn garment of kind `hat`
+  draws the hair its crown covers under it in `Evaluation.hair`, and hair
+  below it keeps its place ("Hair under a hat"). Results are cached by key.
   Throws `OutfitError` for an id the clothing pack lacks, one named twice,
   garments that have not loaded, or no clothing pack.
 - `model.garmentTopology(id): GarmentTopology`: a garment's static render data
@@ -620,9 +629,13 @@ body and of each garment are drawn.
   `tint` is linear RGB (each ≥ 0) multiplied into the pack's colour and
   texture, and `roughness` in [0, 1] overrides the pack's. `wear` in [0, 1]
   fades the colour toward its own grey and the road dust (`GARMENT_DUST`) and
-  roughens it. `garmentFinish(material, look)` is the pure function the
-  renderer applies, and it returns the pack's material unchanged when there is
-  no look. A look for a garment the figure does not wear is ignored, and
+  roughens it. `garmentFinish(material, look)` gives the tinted colour and the
+  roughness, and returns the pack's material unchanged when there is no look.
+  The fade itself is the cloth's final albedo, texture included, so it is done
+  in the shader: `applyGarmentWear(material)` (from `humanoid-kit/react`) patches a three.js
+  `MeshStandardMaterial` once and returns a `{ set(finish) }` that changes the
+  wear without recompiling. `wornAlbedo(albedo, wear)` is the same arithmetic
+  on the CPU. A consumer using their own garment material calls both. A look for a garment the figure does not wear is ignored, and
   validation lists every malformed field.
 - The arithmetic behind it, pure and exported: `layerOrder(entries)`,
   `stackVisibility(vertexCount, garments, visible?)`,
@@ -630,6 +643,63 @@ body and of each garment are drawn.
   visible)` and `maskIndex(index, faceVisible, trianglesPerFace)`.
 - The figure stands on what it wears: `groundOffset` counts the garments'
   lowest point, so a sole that reaches below the foot rests on the ground.
+
+### Proxy bodies
+
+MakeHuman's low-poly proxy bodies (`PROXY_IDS`: `proxy741`, `male1591`,
+`female1605`) ship in the body pack's `proxies.bin.gz` and load on first use
+(docs/MINIATURES.md). A proxy is bound to the base mesh as a garment is, so it
+follows every morph of the figure.
+
+- `assets.loadProxies(): Promise<Map<string, BoundProxy>>` fetches and adds them
+  once (null when the assets were parsed without pack URLs);
+  `addProxies(assets, bin)` adds a decompressed proxy file yourself.
+- `proxyTopology(assets, id): ProxyTopology`: its triangles (`index`, two per
+  quad, wound as the body's), `faceVerts`, `triangleFace` and its skin
+  (`bindingSkin` of the base vertices it is bound to).
+- `fitProxy(assets, id, control, out?)`: its positions on a figure's morphed
+  control positions (`Evaluation.control`).
+- `proxyIndex(assets, id, bodyVisible)`: the triangles that show under an
+  outfit (`Outfit.bodyVisible`): a vertex shows where two of its three base
+  vertices do, a face unless every corner is hidden.
+- `boundProxy(assets, id)`; `ProxyError` for a proxy the pack lacks or that has
+  not loaded.
+
+### Posed figures and miniatures
+
+Pure, with no rendering dependency; they run in Node, a worker or a page
+(docs/MINIATURES.md).
+
+- `posedFigure(model, recipe, rotations, options?): PosedFigure`: the whole
+  dressed figure in a pose, as `parts`: the body, then every garment in
+  `outfit.order`, then any attachments asked for (`options.attachments`, by
+  kind). Each part has `positions`, `normals` (skinned exactly as the renderer
+  skins, hip fold on the body surface), the triangles that show (`index`),
+  `uvs`, `skinIndex`/`skinWeight`, `material`, `textureUrl` and `bodyRegion`
+  (per vertex, an index into `BODY_REGIONS` by its dominant bone, so a one-piece
+  suit can be told coat from trousers). Every part is lifted so the lowest point
+  stands on y = 0 (`groundOffset`). `options.body` is `"surface"` (default) or
+  a proxy id. `figureAtRest` evaluates once and `poseFigure(rest, rotations)`
+  poses that again without evaluating, for many frames.
+- `bakeMiniature(model, recipe, options?): MiniatureBake`: the dressed figure
+  decimated to `options.lods` triangle counts (default `MINIATURE_LODS`, 1,500
+  and 400) over one shared vertex set, with its frames: one static casting
+  (`options.pose`) or every frame of `options.clips` (`{ name, clip, fps? }`,
+  sampled at `MINIATURE_FPS` by default). The body is `proxy741` unless
+  `options.body` says otherwise; the eyes are included. Colours are baked per
+  vertex (skin tone, scalp hair, and each garment's texture through
+  `options.texture`, which returns the decoded image) and each vertex has a
+  `TINT_CHANNELS` channel (`skin`, `upper`, `lower`, `accessory`) for
+  per-instance tints. It throws `MiniatureError` for a model built with the
+  adult anatomy pack: miniatures never carry it.
+- `encodeMiniature(bake): Uint8Array` and `decodeMiniature(bytes)`: the bake as
+  one deterministic binary (half-float positions, octahedral normals),
+  `MiniatureFormatError` for bytes that are not one; `miniatureTransferables`
+  lists its buffers for `postMessage`.
+- `decimate({ frames, index, targets, importance?, boundaryWeight? })`: the
+  multi-pose half-edge quadric decimation the bake uses, on any mesh: every
+  level is a subset of the input's vertices, and each level's `owner` maps
+  every input vertex to the vertex it merged into.
 
 Lower-level pieces, also exported:
 
@@ -691,20 +761,25 @@ compute what the renderer will do.
 - Body hair (research/BODY-HAIR.md): `BODY_HAIR_GROUPS` (`face`, `chest`,
   `abdomen`, `back`, `buttocks`, `arms`, `legs`, `axillary` (from puberty, 13),
   and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`).
-  The creator hides the axillary and pubic density controls below 18; that UI
-  boundary does not change recipe validity or axillary's age-derived coverage.
+  The creator hides the pubic control below 18, as the age policy has it.
+  Nothing in body hair reads the gender macro (DECISIONS ruling 1).
   `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
-  `defaultBodyHairCoverage(group, age, gender)` is a group's terminal-hair
-  coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years and
-  the gender macro read as the androgen level: 0 before puberty, rising through
-  adolescence (`BODY_HAIR_MATURITY`), thinning in old age
-  (`BODY_HAIR_SENESCENCE`), between `BODY_HAIR_COVERAGE`'s female and male
-  ends. An adult-only group is 0 under 18 and for an age that is not a number.
-  `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's legacy
-  `density` multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage;
-  it never adds hair where the default has none), or its explicit `coverage`
-  (0..1, independent of the gender anchor but still age-matured). A group may
-  name one of those two controls, never both. `bodyHairFollicleDensity(group,
+  `defaultBodyHairCoverage(group, age)` is an unset group's terminal-hair
+  coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years: 0
+  before puberty, rising through adolescence (`BODY_HAIR_MATURITY`), thinning
+  in old age (`BODY_HAIR_SENESCENCE`), toward `BODY_HAIR_COVERAGE`, one value
+  per group for every figure. An adult-only group is 0 under 18 and for an age
+  that is not a number. `bodyHairCoverage(group, input: BodyHairInput)` is the
+  recipe's explicit `coverage` (0..1: an adult's exactly, with no maturation or
+  thinning factor; before 18 it comes in over the group's puberty onset,
+  complete at 18), or else the default times the legacy `density` multiplier
+  (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage, so it plateaus on a
+  dense default; kept for saved recipes). A group may name one of those two
+  controls, never both. `COAT_BODY_HAIR_GROUPS` are the groups the coat draws,
+  which it draws only when the recipe enables them (`coatEnabled`: a beard
+  style for the face, a coverage or density for the others), and
+  `drawnBodyHairCoverage(group, input)` is the coverage actually drawn (0 for a
+  coat group left unset). `bodyHairFollicleDensity(group,
   input)` applies the independent `follicleDensity` multiplier (0.25..2) to
   `BODY_HAIR_FOLLICLE_DENSITY`, changing strand spacing without changing
   coverage. `beardStyle(input)` is the recipe's style, or `DEFAULT_BEARD`
@@ -776,9 +851,9 @@ compute what the renderer will do.
   `SkinPaintInput.age` is the figure's age in years (`recipe.macros.age`;
   `<Humanoid>` sets it), for layers that change with it: a layer that reads it
   must paint sensibly without it, since an input built without one has none.
-  `SkinPaintInput.gender` (the gender macro, default 0.5), `hairColour`
-  (`recipe.hair.colour`, default `DEFAULT_HAIR_COLOUR`) and `bodyHair`
-  (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
+  `SkinPaintInput.age`, `hairColour` (`recipe.hair.colour`, default
+  `DEFAULT_HAIR_COLOUR`) and `bodyHair` (`recipe.bodyHair`) are what body hair
+  paints from; `<Humanoid>` sets them.
   Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
   hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
   `VELLUS`, flat: no relief) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
@@ -1079,6 +1154,21 @@ and expressions"). Framework-free.
   under 2 mm through each other at 90° to 150°. `scripts/lib/foldContact.ts`
   (`HipContact`, `KneeContact`) measures how far a posed body's skin passes
   through itself at either joint, and `Flaps` the triangles it turns over.
+- `armChain(rest, side)`, `armTip(rest, rotations, chain, position, orientation?)`
+  and `solveArmTarget(input)` are an experimental, framework-free arm-target
+  primitive. It changes local rotations only, preserves the rest skeleton and
+  segment lengths, and returns measured reach and orientation results. Its
+  limits are spherical source-angle budgets, not anatomical joint limits. An
+  orientation target uses either `armTip`'s orientation or the final measured
+  effector-frame orientation (the measured frame wins; a position-only sampler
+  falls back to the tip). The returned rigid-tip reachability value is
+  diagnostic when an effector samples a blended skinned hand; measured
+  tolerances decide its result.
+  `createArmSkinnedFrameSampler(input)` supplies a final CPU-skinned hand frame
+  to a solve without per-sample typed-array allocation. It borrows immutable
+  evaluation inputs for one generation and rejects stale, malformed or
+  non-arm-only trial poses. Neither export drives an interaction, clip, React
+  prop or live figure automatically.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
@@ -1155,7 +1245,7 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
 ### Interactions
 
 Figures, objects and places acting together (INTERACTIONS.md). Framework-free;
-slice 1 of its build plan.
+slices 1 and 2 of its build plan.
 
 - `InteractionDefinition`: `id`, `tags`, `audience` (`"all"` or `"adult"`;
   anything else is adult), `roles` (`{ name, takes: "figure" | "object",
@@ -1194,10 +1284,32 @@ slice 1 of its build plan.
   with `left` when a participant leaves presence or its id is removed and
   replaced by a different published presence, and aborted with
   `age-policy` on any tick an adult definition has a participant under 18.
+- `Length` is either metres or `{ of, measure, times }`, where `of` names a
+  figure role and `measure` is `reach`, `shoulderHeight`, `hipHeight` or
+  `eyeHeight`; `resolveLength` reads it from the roles' published measures.
+  A role's optional slot uses three lengths, a finite yaw and a non-negative,
+  finite ground tolerance.
+- `Interaction.slot(role, out?)` supplies that role's world-space placement
+  from the definition's frame, anchor or between-role midpoint. `between`
+  references pin when approach starts, so the target does not drift as figures
+  walk. `contactTarget(contact, role, out?)` supplies the single solved target
+  for the named or indexed hand-to-hand contact only while it is active;
+  `trackTime(role)` supplies the phase track's shared-clock time, including
+  rate, loop wrapping and non-loop clamping. Each returns `null` when it has
+  no meaningful value. Supplying `out` keeps per-frame reads allocation-free.
+- `InteractionEvent` is delivered through `on(participant, listener)` to both
+  participants. It reports acceptance, decline, phase, beat, normal end and
+  cancellation; cancellation includes its `declined`, `cancelled`, `left`,
+  `preempted`, `precondition` or `age-policy` reason.
 - `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
-  chest, hands, feet), `footprint`, `appearance` (measured albedo, luminance,
-  specular), `measures` (reach, shoulder height, hip height, eye height),
-  `faceRadius`, `adult`.
+  chest, hands, feet), `measures`, `footprint`, `appearance` (measured albedo,
+  luminance, specular), `faceRadius`, `adult`.
+- `FigureMeasures` (`measures`, metres): `reach` (shoulder to grip along the
+  arm's bones, the mean of both arms; the same in any pose), `shoulderHeight`,
+  `hipHeight` and `eyeHeight` (above the floor, as posed). `MEASURE_NAMES` lists
+  the keys. Derived with the anchors from the joint centroids, by
+  `presenceFromEvaluation` and `presenceFromPose`; `placePresence` and
+  `clonePresence` carry them.
 - `presenceFromEvaluation({ evaluation, recipe, joints, placement })`: a
   figure's presence from its evaluation. Anchors are joint centroids of the
   morphed control mesh lifted onto the ground, the footprint is the extent of
@@ -1490,6 +1602,29 @@ change every render without resubscribing.
 The nearest provider's registry, for `groundOcclusion`, `faceMetering` and
 `presenceGroups`. All the presence hooks throw outside a `PresenceProvider`.
 
+### `<Miniatures archetypes figures />`
+
+Hundreds of baked miniatures (`bakeMiniature`, `decodeMiniature`) in one
+instanced draw per archetype and level of detail (docs/MINIATURES.md). Props:
+`archetypes` (the bakes, all with the same number of levels), `figures`
+(`MiniatureFigure`: `archetype` index, `x`, `y?`, `z`, `heading?`, `scale?`,
+`clip?` by baked name, `phase?` seconds, `speed?`, and `tints?` for the
+`upper`, `lower` and `accessory` channels in linear RGB), the crowd options
+`maxFigures` (1024), `triangleBudget` (250,000), `levelPixels` (finest level
+from 64 px tall) and `material`, and `onFrame(stats)` with each frame's
+`{ visible, perLevel, triangles, drawCalls }`.
+
+`MiniatureCrowd` is the same without React: `new MiniatureCrowd(bakes,
+options)`, add `crowd.object` to the scene, `setFigures(figures)`, then
+`update(camera, time, viewportHeight)` each frame; `textureBytes` is the GPU
+memory of its animation textures, and `dispose()` frees them. Each update culls
+figures outside the frustum and gives the nearest the finest level their size
+on screen (`projectedPixels`) warrants while the triangle budget lasts.
+`<Miniatures>` rebuilds its crowd when `miniatureMaterialKey(material)`
+changes: parameters by value, a three.js object (a texture) by its `uuid`, a
+colour by its hex, so an inline `material` object does not rebuild it every
+render.
+
 ### `<StudioStage background? intensity? contactShadowOpacity? />`
 
 A neutral studio for showing figures: a procedural room environment
@@ -1575,6 +1710,18 @@ From `humanoid-kit`: `CORE_AFFORDANCES`, `affordances(recipe, registry?)`,
 `AffordanceStates`, `affordanceFrames`, `affordanceChannels`, `CHANNELS`,
 `channelOf`, `channelThrough`, `headFrameOf`, `placeIn`, `openingFor`.
 
+### Regional contact
+
+`RegionalContact`, `RegionalPhysiologyInput` and `RegionalAnimationIntent`
+separate a neutral contact sample, a physiology input and a presentation
+request. `assertRegionalContact(contact, own)` is the implemented pure
+validator: it checks a finite location, unit normal, non-negative force and
+duration, phase, and whether `surface` versus `aperture-entry` agrees with the
+registered affordance. It does not create a response, animation, deformation or
+injury. There is no exported `InjuryState` today. See [Regional contact and
+injury contract](REGIONAL-CONTACTS.md) for the planned region-specific opening,
+recovery, injury, persistence and renderer-proof gates.
+
 ## `humanoid-kit/editor`
 
 A complete character creator built on `humanoid-kit/react`, and the hooks it
@@ -1607,8 +1754,9 @@ and camera.
   host passes `eyeMaterials`; hair when the client loaded a hair pack: a
   style from the pack or none, twelve natural colours, a picker for dyed hair
   and the pigment sliders behind the colours; and body hair: a beard style, or
-  Natural for the default for age and sex, and a density per region from none
-  to twice the default, with pubic density offered to adults only), Regions (per-region macro overrides) and, when the client loaded a
+  Natural for unset (shaven), and an explicit coverage per region from none to
+  full, the same at every frame, an unset region labelled "Not set" with what is
+  drawn for it, and pubic coverage offered to adults only), Regions (per-region macro overrides) and, when the client loaded a
   clothing pack, a Wardrobe: the garments by kind, one worn at a time per kind,
   layered across kinds. Tapping the hair opens Appearance.
 - Tapping the figure opens the controls that shape the tapped part (its tab,
@@ -1893,6 +2041,20 @@ brows or lashes of a recipe (`null` takes one away) and keeps whatever the patch
 leaves out; the Appearance panel uses it, offering the brows and lashes in
 groups of their own, and `load` refuses a saved figure whose brows or lashes the
 loaded pack lacks. Every change is undoable.
+
+A random figure's ethnic mix is drawn over the whole of MakeHuman's simplex by
+`randomEthnicMix(pick, u, v)` (`src/sampling.ts`): half the draws land near one
+of seven anchors in equal parts (the three pure vertices, the three edge
+midpoints and the centre; `SIMPLEX_ANCHORS`, spread by `ANCHOR_SPREAD`), half
+fill the simplex area-uniformly (`toSimplex`). An area-uniform draw alone gives
+a pure frame in about 1% of draws per vertex, however evenly it is spread, so
+the anchors are what put pure, mixed and middle looks in reach of a seed.
+Melanin is drawn over 0..1 independently of the mix, and no axis is clamped or
+reweighted. The same module measures a set of figures: `appearanceCoverage`
+counts the simplex regions (`simplexRegion`), the pure frames (`pureAnchor`),
+the melanin bands and the dark half. The three ethnic draws are first in the
+seed's stream, so a seed's other values are unchanged; a seed's mix is not what
+it was before the anchors.
 
 ### Slider helpers
 

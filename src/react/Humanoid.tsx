@@ -64,6 +64,7 @@ import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy, withAnatomyDefaults } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import {
+  applyGarmentWear,
   createAttachmentMaterial,
   garmentAlpha,
   NAIL_EDGE_ATTRIBUTE,
@@ -478,8 +479,8 @@ function useGarmentMaterial(
   t: GarmentTopology,
   dual: DualBones | null,
   report: (e: Error) => void,
-): MeshStandardMaterial {
-  const material = useMemo(() => {
+): { material: MeshStandardMaterial; wear: ReturnType<typeof applyGarmentWear> } {
+  const { material, wear } = useMemo(() => {
     const m = t.material;
     const made = new MeshStandardMaterial({
       color: new Color(m.color[0], m.color[1], m.color[2]),
@@ -490,8 +491,10 @@ function useGarmentMaterial(
     });
     // Skinned as the body is, so a sleeve does not part from the arm at a joint.
     if (dual) applyDualSkinning(made, dual);
+    // A figure's wear fades the cloth's albedo (`recipe.outfitLook`).
+    const worn = applyGarmentWear(made);
     // Drawn with the skin's shadow filter, so a sleeve and the arm in it agree.
-    return applyShadowFilter(made);
+    return { material: applyShadowFilter(made), wear: worn };
   }, [t, dual]);
   const reportRef = useLatest(report);
   const settle = useSettle();
@@ -537,7 +540,7 @@ function useGarmentMaterial(
     };
   }, [t, material, reportRef, settle]);
   useEffect(() => () => material.dispose(), [material]);
-  return material;
+  return { material, wear };
 }
 
 /** A mesh skinned to the figure's skeleton, bound once in mesh space. */
@@ -888,7 +891,7 @@ function GarmentMesh({
   /** The figure's own colour and finish for this garment (`recipe.outfitLook`). */
   look: GarmentLook | undefined;
 }) {
-  const material = useGarmentMaterial(topology, dual, report);
+  const { material, wear: worn } = useGarmentMaterial(topology, dual, report);
   // A look is a few numbers: the effect depends on their values, not the recipe's identity.
   const [tr, tg, tb] = look?.tint ?? [1, 1, 1];
   const lookRoughness = look?.roughness;
@@ -901,7 +904,8 @@ function GarmentMesh({
     });
     material.color.setRGB(finish.color[0], finish.color[1], finish.color[2]);
     material.roughness = finish.roughness;
-  }, [material, topology, tr, tg, tb, lookRoughness, wear]);
+    worn.set(finish);
+  }, [material, worn, topology, tr, tg, tb, lookRoughness, wear]);
   return (
     <SkinnedPart
       geometry={geometry}
@@ -1149,7 +1153,6 @@ export function Humanoid({
   const beardLook = useMemo(() => {
     const input = {
       age: recipe.macros.age,
-      gender: recipe.macros.gender,
       colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
       ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     };
@@ -1581,8 +1584,7 @@ export function Humanoid({
         withAnatomyDefaults(recipe, ready?.anatomy?.defaults),
         ready?.anatomy?.features ?? [],
       ),
-      // Body hair: its amount from the androgen axis and age, its colour from the hair's.
-      gender: recipe.macros.gender,
+      // Body hair: its amount from the recipe's regional controls and age, its colour from the hair's.
       ...(recipe.hair && { hairColour: recipe.hair.colour }),
       ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     });
@@ -1632,6 +1634,11 @@ export function Humanoid({
         if (!target) return;
         if (masks) {
           target.setIndex(new BufferAttribute(masks.bodyIndex, 1));
+          // What the garments hide of an attachment (a toenail in a boot) is not drawn.
+          geometries.attachments.forEach((g, i) => {
+            const index = masks.attachmentIndex[i] ?? ready?.topology.attachments[i]?.index;
+            if (index) g.setIndex(new BufferAttribute(index, 1));
+          });
           wear({
             key: ev.outfit.key,
             topologies,
