@@ -106,6 +106,11 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         post({ type: "completed", id: req.id });
         return;
       }
+      if (req.type === "customTargets") {
+        model.addCustomTargets(req.targets);
+        post({ type: "customTargetsAdded", id: req.id });
+        return;
+      }
       if (req.type === "posedOcclusion") {
         const m = model;
         posedOcclusion ??= (async () => {

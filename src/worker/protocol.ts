@@ -8,6 +8,7 @@ import type {
   SliderTask,
 } from "../format/assetFormat.ts";
 import type { LandmarkAnchors } from "../foundation/landmarks.ts";
+import type { CustomTarget } from "../makehuman/customTargets.ts";
 import type { FeatureRef } from "../makehuman/features.ts";
 import type {
   AdultSurfaceTopology,
@@ -102,6 +103,8 @@ export type WorkerRequest =
    * manifest, not its targets.
    */
   | { type: "adultSurface"; id: number }
+  /** Registers MakeHuman custom targets (`HumanoidModel.addCustomTargets`); answered once added. */
+  | { type: "customTargets"; id: number; targets: readonly CustomTarget[] }
   | {
       type: "evaluate";
       id: number;
@@ -132,6 +135,7 @@ export type WorkerRequest =
 export type WorkerResponse =
   | ({ type: "ready"; id: number } & ReadyInfo)
   | { type: "completed"; id: number }
+  | { type: "customTargetsAdded"; id: number }
   | ({ type: "pickMap"; id: number } & PickMap)
   | ({ type: "landmarkAnchors"; id: number } & SurfaceAnchors)
   /** Per worn attachment, its render vertices' occlusion at every corner; null when `ready`'s already was. */

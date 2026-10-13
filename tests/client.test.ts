@@ -22,6 +22,8 @@ class FakeWorker {
   adultLayerRequests = 0;
   adultSurfaceRequests = 0;
   anchorRequests = 0;
+  /** The names of the custom targets registered, in order. */
+  customTargets: string[] = [];
   /** The ages of the recipes whose hip fold was asked for. */
   folded: number[] = [];
   terminated = false;
@@ -67,6 +69,11 @@ class FakeWorker {
           }),
         fail,
       );
+      return;
+    }
+    if (msg.type === "customTargets") {
+      this.customTargets.push(...msg.targets.map((t) => t.name));
+      setTimeout(() => reply({ type: "customTargetsAdded", id: msg.id }), 1);
       return;
     }
     if (msg.type === "posedOcclusion") {
@@ -294,6 +301,14 @@ describe("HumanoidWorkerClient", () => {
     expect(anchors.base.surface).toBe("base");
     expect(anchors.adult).toBeNull();
     expect(worker.anchorRequests).toBe(1);
+  });
+
+  it("registers custom targets in the worker and resolves once they are added", async () => {
+    const { client, worker } = make(false);
+    await client.addCustomTargets([
+      { name: "probe", indices: [1], deltas: [0, 0, 1], scale: 1e-4 },
+    ]);
+    expect(worker.customTargets).toEqual(["probe"]);
   });
 
   it("asks the worker for the posed occlusion once", async () => {
