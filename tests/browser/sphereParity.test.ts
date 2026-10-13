@@ -39,6 +39,7 @@ import { STUDIO_EXPOSURE, STUDIO_TONE_MAPPING } from "../../src/react/StudioStag
 import { CURVATURE_ATTRIBUTE, SkinMaterial } from "../../src/render/skinMaterial.ts";
 import { SKIN_SCATTER, scatterDistance, scatterTableDiffuse } from "../../src/surface/scatter.ts";
 import type { Rgb, SkinTone } from "../../src/surface/skinTone.ts";
+import { expectSameArray } from "./arrays.ts";
 import { createTestRenderer } from "./gl.ts";
 
 interface Swatch {
@@ -560,13 +561,23 @@ describe("skin material on an analytic sphere", () => {
     light.position.set(Math.sin(a) * 10, 0, Math.cos(a) * 10);
     const asynchronous = Float32Array.from(await renderLinearAsync());
     expect(asyncReadbackFallbackUsed).toBe(false);
-    expect(asynchronous).toEqual(sync);
+    expectSameArray(asynchronous, sync, { what: "asynchronous Float readback" });
     const individual = parityCases.map((entry) => {
       configure(entry.swatch, "lambert");
       return Float32Array.from(renderAt(entry.angle, "linear"));
     });
-    expect(renderLambertTile(parityCases)).toEqual(individual);
-    expect(renderLambertTile(parityCases.slice(0, 3))).toEqual(individual.slice(0, 3));
+    const tiled = renderLambertTile(parityCases);
+    tiled.forEach((cell, index) => {
+      expectSameArray(cell, individual[index] as Float32Array, {
+        what: `full tile Float cell ${index}`,
+      });
+    });
+    const partial = renderLambertTile(parityCases.slice(0, 3));
+    partial.forEach((cell, index) => {
+      expectSameArray(cell, individual[index] as Float32Array, {
+        what: `partial tile Float cell ${index}`,
+      });
+    });
 
     const failures: string[] = [];
     const profile = phaseProfile();
