@@ -467,6 +467,34 @@ from each file.
   body under it), a shader depth bias on garments (it would also draw cloth over
   skin that is truly in front of it, such as a hand at a cuff), and a fixed
   offset of the garments (cloth floating off the skin at rest).
+- *A garment under another is sunk under it.* MakeHuman hides an inner
+  garment's faces only through the outer one's `delete_verts`, which name body
+  vertices: tall boots delete little more than the foot, so jeans worn under
+  them (shoes stack outside trousers) cut through the shaft wherever the leg is
+  wider than the boot. Two parts, both at rest, once per outfit, for every
+  garment but the outermost and rigid pieces (`HumanoidModel.underTuck`):
+  - `clothTuck` pulls an inner vertex under the cloth over it along its own
+    normal, by how far it pokes out plus a 3 mm gap (at most 5 cm out), or to
+    the gap if it is closer than that. A ray toward the inside only counts
+    outer cloth facing the vertex's way, so a boot shaft's far wall never pulls
+    jeans across the leg. `Outfit.garmentTuck` holds it, and `evaluate` applies
+    it along the posed normals; the outer garment does not move.
+  - `coveredBy` hides what lies behind the cloth over it, as if the outer
+    garment deleted it: a face goes when all its corners do. It is decided from
+    the skin, which is inside everything. At least half of an inner vertex's
+    binding weight must be on body vertices that meet outer cloth along their
+    normal within 8 cm, or just inside the skin when there is none outside (a
+    snug shaft sits a centimetre inside the shin it deletes). The vertex must
+    also be no further off the skin than that cloth plus 8 cm. From the cloth
+    vertex alone, a boot's lining facing the jeans inside it and the other
+    boot facing the jeans beside it look the same; each boot here is a shell
+    and a lining, half its vertices facing in. A hem's folds have normals
+    every way, so moving cloth alone left jeans showing at the ankle.
+  Rendered against tall culturalibre and pirate boots over the jeans suit,
+  front and back: the shafts are whole, and the jeans above them unchanged.
+  Rejected: hiding by the inner vertex's nearest outer triangle (the lining
+  problem above), and a shader depth bias (it would draw boots over the jeans
+  above the shaft too).
 - *Garments skin as the body does.* Their material takes the figure's dual
   quaternion bones (`applyDualSkinning`, as for any material the library does
   not make), and so do their shadow materials and the mesh's bounds and

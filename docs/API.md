@@ -565,7 +565,11 @@ body and of each garment are drawn.
   draw in place of `topology().body.index` and each garment's
   `GarmentTopology.index`. Garments stack as MakeHuman does: processed from the
   outermost in, each is hidden only where the garments over it delete, and a
-  face hides only when every corner is hidden. Results are cached by key.
+  face hides only when every corner is hidden. Beyond MakeHuman, a garment's
+  vertices behind one over it are hidden too, and `garmentTuck` (per garment in
+  `order`, per vertex, metres, or null) sinks what would poke out of one, so
+  jeans go into a boot shaft instead of through it (docs/ARCHITECTURE.md,
+  "A garment under another is sunk under it"). Results are cached by key.
   Throws `OutfitError` for an id the clothing pack lacks, one named twice,
   garments that have not loaded, or no clothing pack.
 - `model.garmentTopology(id): GarmentTopology`: a garment's static render data
@@ -587,9 +591,13 @@ body and of each garment are drawn.
   `tint` is linear RGB (each ≥ 0) multiplied into the pack's colour and
   texture, and `roughness` in [0, 1] overrides the pack's. `wear` in [0, 1]
   fades the colour toward its own grey and the road dust (`GARMENT_DUST`) and
-  roughens it. `garmentFinish(material, look)` is the pure function the
-  renderer applies, and it returns the pack's material unchanged when there is
-  no look. A look for a garment the figure does not wear is ignored, and
+  roughens it. `garmentFinish(material, look)` gives the tinted colour and the
+  roughness, and returns the pack's material unchanged when there is no look.
+  The fade itself is the cloth's final albedo, texture included, so it is done
+  in the shader: `applyGarmentWear(material)` (from `humanoid-kit/react`) patches a three.js
+  `MeshStandardMaterial` once and returns a `{ set(finish) }` that changes the
+  wear without recompiling. `wornAlbedo(albedo, wear)` is the same arithmetic
+  on the CPU. A consumer using their own garment material calls both. A look for a garment the figure does not wear is ignored, and
   validation lists every malformed field.
 - The arithmetic behind it, pure and exported: `layerOrder(entries)`,
   `stackVisibility(vertexCount, garments, visible?)`,

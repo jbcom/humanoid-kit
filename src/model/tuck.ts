@@ -31,6 +31,8 @@ export interface TuckInput {
 }
 
 const CELL = 0.03;
+/** The share of a cloth vertex's binding weight that must be under outer cloth for it to be covered. */
+const COVERED_SHARE = 0.5;
 
 /**
  * Per vertex, the distance (metres, at most `cap`) to the nearest cloth along
@@ -44,12 +46,151 @@ export function tuckDepths(input: TuckInput): Float32Array {
     const grid = triangleGrid(garment);
     for (let i = 0; i < candidates.length; i++) {
       const v = candidates[i] as number;
-      const t = firstHit(grid, garment, v, positions, normals, cap);
+      const t = firstHit(grid, garment, origin(positions, v), direction(normals, v, 1), cap);
       if (t !== null && t > (out[v] as number)) out[v] = t;
     }
   }
   return out;
 }
+
+export interface ClothTuckInput {
+  /** Rest positions of the inner garment's vertices, xyz. */
+  positions: Float32Array;
+  /** Its unit outward normals, same layout. */
+  normals: Float32Array;
+  /** The garments over it, at rest. */
+  outer: readonly TuckCloth[];
+  /** Cloth further than this (metres) inside the outer cloth is not pulled back. */
+  cap: number;
+  /** How far under the outer cloth (metres) the inner cloth is left. */
+  gap: number;
+}
+
+/**
+ * Per vertex of a garment worn under others, how far to sink it along its
+ * normal (metres) to lie `gap` under every garment over it (docs/ARCHITECTURE.md,
+ * "A garment under another is sunk under it"): by how far it pokes out of an
+ * outer cloth plus the gap, or what it lacks of the gap under one. Only outer
+ * cloth facing the way the vertex does counts, so the far wall of a boot shaft
+ * the vertex is inside never pulls it across. Zero for a vertex already clear.
+ */
+export function clothTuck(input: ClothTuckInput): Float32Array {
+  const { positions, normals, outer, cap, gap } = input;
+  const count = positions.length / 3;
+  const out = new Float32Array(count);
+  for (const garment of outer) {
+    const grid = triangleGrid(garment);
+    for (let v = 0; v < count; v++) {
+      const o = origin(positions, v);
+      const n = direction(normals, v, 1);
+      // Outer cloth below the vertex: the vertex pokes out of it.
+      const below = firstHit(grid, garment, o, direction(normals, v, -1), cap, n);
+      if (below !== null) out[v] = Math.max(out[v] as number, below + gap);
+      // Outer cloth above it, closer than the gap.
+      const above = firstHit(grid, garment, o, n, gap, n);
+      if (above !== null) out[v] = Math.max(out[v] as number, gap - above);
+    }
+  }
+  return out;
+}
+
+export interface CoveredInput {
+  /** Rest positions and unit normals of the body's vertices, xyz. */
+  skin: { positions: Float32Array; normals: Float32Array };
+  /** The inner garment's binding: three body vertices and weights per vertex. */
+  binding: { refVerts: Uint32Array; weights: Float32Array };
+  /** Rest positions of the inner garment's vertices (sunk by `clothTuck`), xyz. */
+  positions: Float32Array;
+  /** The garments over it, at rest. */
+  outer: readonly TuckCloth[];
+  /** Outer cloth further off the skin than this (metres) covers nothing. */
+  cap: number;
+  /**
+   * How far past the outer cloth (metres) a vertex may still be covered: as far
+   * as cloth is pulled back from (`ClothTuckInput.cap`), since what pokes out of
+   * a boot shaft is the boot's to show, not the jeans'.
+   */
+  beyond: number;
+}
+
+/**
+ * Per vertex of a garment worn under others, 1 where it lies behind a garment
+ * over it, so a face all of whose corners do can never show (docs/ARCHITECTURE.md,
+ * "A garment under another is sunk under it"). Worked out from the skin, which
+ * is inside everything: each body vertex the cloth vertex is bound to must meet
+ * outer cloth along its normal within `cap`, and the cloth vertex must be no
+ * further off the skin than that cloth (blended by the binding's weights), plus
+ * `beyond`. From the cloth vertex alone, a boot's lining facing the jeans inside
+ * it and the other boot facing the jeans beside it look the same.
+ */
+export function coveredBy(input: CoveredInput): Uint8Array {
+  const { skin, binding, positions, outer, cap, beyond } = input;
+  const count = positions.length / 3;
+  const out = new Uint8Array(count);
+  // Distance from each referenced body vertex out to the nearest outer cloth;
+  // negative for cloth just inside the skin, as a snug shaft over skin it
+  // deletes is, used only where none is outside it.
+  const under = new Map<number, number>();
+  const inside = new Map<number, number>();
+  for (const b of binding.refVerts) under.set(b, Number.POSITIVE_INFINITY);
+  for (const garment of outer) {
+    const grid = triangleGrid(garment);
+    for (const b of under.keys()) {
+      const o = origin(skin.positions, b);
+      const t = firstHit(grid, garment, o, direction(skin.normals, b, 1), cap);
+      if (t !== null && t < (under.get(b) as number)) under.set(b, t);
+      const s = firstHit(grid, garment, o, direction(skin.normals, b, -1), cap);
+      if (s !== null && s < (inside.get(b) ?? Number.POSITIVE_INFINITY)) inside.set(b, s);
+    }
+  }
+  for (const [b, s] of inside) if (!Number.isFinite(under.get(b) as number)) under.set(b, -s);
+  for (let v = 0; v < count; v++) {
+    // Over the body vertices under outer cloth only, weighted by the binding.
+    let held = 0;
+    let total = 0;
+    let reach = 0;
+    const s = [0, 0, 0];
+    const n = [0, 0, 0];
+    for (let j = 0; j < 3; j++) {
+      const b = binding.refVerts[v * 3 + j] as number;
+      const w = Math.abs(binding.weights[v * 3 + j] as number);
+      total += w;
+      const t = under.get(b) ?? Number.POSITIVE_INFINITY;
+      if (w === 0 || !Number.isFinite(t)) continue;
+      held += w;
+      reach += w * t;
+      for (let a = 0; a < 3; a++) {
+        s[a] = (s[a] as number) + w * (skin.positions[b * 3 + a] as number);
+        n[a] = (n[a] as number) + w * (skin.normals[b * 3 + a] as number);
+      }
+    }
+    // Most of the binding must be under outer cloth: one of three body vertices
+    // at a seam of the boot does not uncover the jeans there.
+    if (held === 0 || held < total * COVERED_SHARE) continue;
+    const length = Math.hypot(n[0] as number, n[1] as number, n[2] as number);
+    if (length === 0) continue;
+    let off = 0;
+    for (let a = 0; a < 3; a++)
+      off +=
+        ((positions[v * 3 + a] as number) - (s[a] as number) / held) * ((n[a] as number) / length);
+    if (off <= reach / held + beyond) out[v] = 1;
+  }
+  return out;
+}
+
+type Vec3 = [number, number, number];
+
+const origin = (p: Float32Array, v: number): Vec3 => [
+  p[v * 3] as number,
+  p[v * 3 + 1] as number,
+  p[v * 3 + 2] as number,
+];
+
+const direction = (n: Float32Array, v: number, sign: 1 | -1): Vec3 => [
+  sign * (n[v * 3] as number),
+  sign * (n[v * 3 + 1] as number),
+  sign * (n[v * 3 + 2] as number),
+];
 
 interface Grid {
   cells: Map<string, number[]>;
@@ -102,21 +243,19 @@ function triangleGrid(g: TuckCloth): Grid {
   return { cells };
 }
 
-/** The smallest t in (0, cap] at which the ray from vertex `v` along its normal meets the garment, or null. */
+/**
+ * The smallest t in (0, cap] at which the ray from `o` along unit `d` meets the
+ * garment, or null; with `facing`, only triangles whose normal points the way
+ * `facing` does count.
+ */
 function firstHit(
   grid: Grid,
   g: TuckCloth,
-  v: number,
-  positions: Float32Array,
-  normals: Float32Array,
+  o: Vec3,
+  d: Vec3,
   cap: number,
+  facing?: Vec3,
 ): number | null {
-  const o = [positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2]] as [
-    number,
-    number,
-    number,
-  ];
-  const d = [normals[v * 3], normals[v * 3 + 1], normals[v * 3 + 2]] as [number, number, number];
   let best: number | null = null;
   const seen = new Set<number>();
   // Walk the ray a cell at a time: a cap of 3 cm is a cell or two.
@@ -132,11 +271,26 @@ function firstHit(
       if (seen.has(tri)) continue;
       seen.add(tri);
       const [a, b, c] = corners(g, tri);
+      if (facing && !faces(g.positions, a, b, c, facing)) continue;
       const hit = rayTriangle(o, d, g.positions, a, b, c);
       if (hit !== null && hit > 0 && hit <= cap && (best === null || hit < best)) best = hit;
     }
   }
   return best;
+}
+
+/** Whether triangle abc's normal (counter-clockwise winding) points the way `f` does. */
+function faces(P: Float32Array, a: number, b: number, c: number, f: Vec3): boolean {
+  const e1x = (P[b * 3] as number) - (P[a * 3] as number);
+  const e1y = (P[b * 3 + 1] as number) - (P[a * 3 + 1] as number);
+  const e1z = (P[b * 3 + 2] as number) - (P[a * 3 + 2] as number);
+  const e2x = (P[c * 3] as number) - (P[a * 3] as number);
+  const e2y = (P[c * 3 + 1] as number) - (P[a * 3 + 1] as number);
+  const e2z = (P[c * 3 + 2] as number) - (P[a * 3 + 2] as number);
+  const nx = e1y * e2z - e1z * e2y;
+  const ny = e1z * e2x - e1x * e2z;
+  const nz = e1x * e2y - e1y * e2x;
+  return nx * f[0] + ny * f[1] + nz * f[2] > 0;
 }
 
 /** Möller–Trumbore: the distance along `d` from `o` to triangle abc, or null. */
