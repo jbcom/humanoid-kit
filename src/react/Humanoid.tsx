@@ -47,6 +47,7 @@ import {
 import type { EyeLibrary } from "../eyes/library.ts";
 import { quantisedShapeSignals, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import { shapeSignalNames } from "../model/detailFactors.ts";
+import { type GarmentLook, garmentFinish } from "../model/garmentLook.ts";
 import type {
   AdultSurfaceTopology,
   AttachmentTopology,
@@ -866,6 +867,7 @@ function GarmentMesh({
   report,
   shape,
   dual,
+  look,
 }: {
   topology: GarmentTopology;
   geometry: BufferGeometry;
@@ -875,8 +877,23 @@ function GarmentMesh({
   shape: object;
   /** The figure's bones as dual quaternions, which the garment skins by like the body. */
   dual: DualBones | null;
+  /** The figure's own colour and finish for this garment (`recipe.outfitLook`). */
+  look: GarmentLook | undefined;
 }) {
   const material = useGarmentMaterial(topology, dual, report);
+  // A look is a few numbers: the effect depends on their values, not the recipe's identity.
+  const [tr, tg, tb] = look?.tint ?? [1, 1, 1];
+  const lookRoughness = look?.roughness;
+  const wear = look?.wear;
+  useEffect(() => {
+    const finish = garmentFinish(topology.material, {
+      tint: [tr, tg, tb],
+      ...(lookRoughness !== undefined && { roughness: lookRoughness }),
+      ...(wear !== undefined && { wear }),
+    });
+    material.color.setRGB(finish.color[0], finish.color[1], finish.color[2]);
+    material.roughness = finish.roughness;
+  }, [material, topology, tr, tg, tb, lookRoughness, wear]);
   return (
     <SkinnedPart
       geometry={geometry}
@@ -1891,6 +1908,11 @@ export function Humanoid({
                   report={report}
                   shape={shape}
                   dual={dual}
+                  look={
+                    recipe.outfitLook && Object.hasOwn(recipe.outfitLook, t.id)
+                      ? recipe.outfitLook[t.id]
+                      : undefined
+                  }
                 />
               ) : null;
             })}

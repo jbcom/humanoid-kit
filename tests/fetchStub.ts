@@ -14,6 +14,11 @@ export function stubFetch(
     missing?: string;
     /** Answers this file only once `until` settles. */
     hold?: { file: string; until: Promise<void> };
+    /**
+     * More packs by name, served at http://packs/<name>/: a manifest given as
+     * an object and the other files from `dir`.
+     */
+    packs?: Record<string, { manifest: unknown; dir: string }>;
   } = {},
 ): string[] {
   const requested: string[] = [];
@@ -22,8 +27,11 @@ export function stubFetch(
     const url = new URL(input);
     const [, pack, file] = url.pathname.split("/");
     if (options.hold && file === options.hold.file) await options.hold.until;
-    const dir =
-      pack === "adult"
+    const extra = pack === undefined ? undefined : options.packs?.[pack];
+    if (extra && file === "manifest.json") return new Response(JSON.stringify(extra.manifest));
+    const dir = extra
+      ? extra.dir
+      : pack === "adult"
         ? adultDir
         : pack === "clothing"
           ? clothingDir

@@ -26,7 +26,7 @@ interface LoadOptions {
   body: PackLocation;           // e.g. bodyPack from humanoid-kit-body
   adultAnatomy?: PackLocation;  // e.g. adultAnatomyPack
   hair?: PackLocation;          // e.g. hairPack from humanoid-kit-hair; only its manifest loads up front
-  clothing?: PackLocation;      // e.g. clothingPack from humanoid-kit-clothing
+  clothing?: PackLocation | readonly PackLocation[]; // clothingPack from humanoid-kit-clothing, and/or a consumer's own
   firstFigureAge?: number;      // whose targets a staged load brings first; default 25
 }
 
@@ -58,10 +58,11 @@ type PackLocation =
   serve, whose layout adds a `rank` per vertex, `CARD_FIELD_KEYS`; `STRAND_KINDS`
   are the kinds with measured strand fields; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
   carries each entry's kind), its `file` and `sha256`, and the `strand` direction and
-  `coherence` measured from its strand map. With the clothing pack loaded,
-  `clothingManifest` lists its garments from the start; `garments` (a map of
-  `BoundGarment` by id) fills once the garments binary has arrived, and
-  `garmentsPending` is true until then.
+  `coherence` measured from its strand map. With clothing packs loaded,
+  `clothingManifests` lists them in load order, and their garments are listed
+  from the start. `garments` (a map of `BoundGarment` by id, ids unique across
+  the packs) fills as each pack's garments binary arrives.
+  `pendingGarmentPacks` holds the indices of the packs still to come.
 
 ```ts
 loadHumanoidAssetsStaged(options: LoadOptions): Promise<StagedHumanoidAssets>
@@ -75,14 +76,18 @@ interface StagedHumanoidAssets {
 
 Loads in stages over one link, in `targetLoadOrder(firstFigureAge)`: the first
 figure's age anchors with the core, then the body's modifier targets, then the
-clothing pack's garments (`GARMENTS_FILE`, only with a clothing pack), then the
+clothing packs' garments together (`garmentsFile(i)` for pack `i`: `garments`,
+`garments.1`, ...; only with a clothing pack), then the
 other age anchors, neighbours first, then the adult pack's targets on their
 own. All modifiers and sliders are listed from the start. Each later stage is
 fetched once the previous one has settled and is added to the same `assets`.
 Its `loaded` promise resolves, or rejects with the failure (an
 `AssetFormatError` for an HTTP or format error, the platform's `TypeError` for
 a network error or corrupt gzip). A failed stage fails only itself: every other
-stage still loads, and `complete` rejects with the first failure.
+stage still loads, and `complete` rejects with the first failure. In the
+garments stage a failed clothing pack also fails only itself. The other packs'
+garments are added, the failed pack stays in `pendingGarmentPacks`, and the
+stage rejects with its error.
 `loadHumanoidAssets` is this with `complete` awaited.
 
 Also exported:
@@ -90,13 +95,16 @@ Also exported:
 - `parseHumanoidAssets(pack, adultAnatomy?, clothing?, hair?)`: the same parsing
   from already-fetched, decompressed buffers. Pure; usable in workers and tests.
   `pack.targets` maps file ids (`BODY_TARGET_FILES`) to buffers; `core` is
-  required and any others may come later. `clothing` is `{ manifest, garments? }`;
-  without `garments` they are pending. `hair` is `{ manifest }`: the styles
-  are known, their geometry comes with `addHairStyle`.
-- `addGarments(assets, bin)`: adds the clothing pack's decompressed garments
-  binary. Throws `AssetFormatError` when no clothing pack is loaded, the
-  garments are already loaded, or one fails to check, and then leaves `assets`
-  unchanged.
+  required and any others may come later. `clothing` is `{ manifest, garments? }`
+  or a list of them; a pack without `garments` is pending. Each pack must be
+  built for the body pack, and a garment id taken by an attachment or by
+  another pack is an `AssetFormatError` that names both. `hair` is
+  `{ manifest }`: the styles are known, their geometry comes with
+  `addHairStyle`.
+- `addGarments(assets, pack, bin)`: adds clothing pack `pack`'s decompressed
+  garments binary. Throws `AssetFormatError` when there is no such clothing
+  pack, its garments are already loaded, or one fails to check, and then
+  leaves `assets` unchanged.
 - `addHairStyle(assets, id, bin)`: adds one hair style's decompressed binary.
   Throws `AssetFormatError` for a style the hair pack does not have or bytes
   that do not parse, and then leaves `assets` unchanged.
@@ -134,6 +142,7 @@ createRecipe(init?: {
   };
   bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
+  outfitLook?: Readonly<Record<string, GarmentLook>>;
   bodyArt?: BodyArtInit;
 }): Recipe
 ```
@@ -155,6 +164,7 @@ interface Recipe {
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
   bodyHair?: BodyHairRecipe; // optional: absent means the default for age and sex
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
+  outfitLook?: Readonly<Record<string, GarmentLook>>; // per garment id; absent = as the pack made it
   bodyArt?: BodyArtRecipe; // optional: absent means none, as in recipes saved before body art
 }
 
@@ -580,6 +590,22 @@ body and of each garment are drawn.
   `underwear`, `hosiery`, `armwear`, `socks`, `bottoms`, `clothes`, `top`,
   `sweater`, `jacket`, `gloves`, `shoes`, `coat`, `mask`, `glasses`, `hat`,
   `backpack`, `held`.
+- `GarmentEntry.rigid`: true for a piece that must not bend, such as a canteen
+  or a cartridge box. It is bound like any garment, then moved as one piece to
+  where its binding put it (`rigidFit`, `placeRigid`: the least-squares
+  rotation and translation from its shape on the base mesh, with no scale).
+  It is skinned to the one bone that carries most of it (`rigidSkin`), so
+  neither the body's shape nor a pose bends it. A value other than true or
+  false is an `AssetFormatError` at load.
+- `recipe.outfitLook`: a figure's own finish per worn garment id, without a
+  second copy of the mesh. A `GarmentLook` is `{ tint?, roughness?, wear? }`.
+  `tint` is linear RGB (each ≥ 0) multiplied into the pack's colour and
+  texture, and `roughness` in [0, 1] overrides the pack's. `wear` in [0, 1]
+  fades the colour toward its own grey and the road dust (`GARMENT_DUST`) and
+  roughens it. `garmentFinish(material, look)` is the pure function the
+  renderer applies, and it returns the pack's material unchanged when there is
+  no look. A look for a garment the figure does not wear is ignored, and
+  validation lists every malformed field.
 - The arithmetic behind it, pure and exported: `layerOrder(entries)`,
   `stackVisibility(vertexCount, garments, visible?)`,
   `transferVisibility(visible, garment)`, `faceVisibility(faceVerts, faces,
@@ -1838,8 +1864,8 @@ that uses the kit's slider taxonomy:
 
 Pure functions behind the Wardrobe tab, also exported from `humanoid-kit`:
 
-- `wardrobeOf(manifest): WardrobeEntry[]`: the garments a `ClothingManifest`
-  lists (none for null).
+- `wardrobeOf(manifests): WardrobeEntry[]`: the garments the loaded
+  `ClothingManifest`s list, pack by pack (none for an empty list).
 - `wardrobeGroups(wardrobe): WardrobeGroup[]`: by kind, in the order people
   dress, each with a heading.
 - `wearGarment(recipe, garment, wardrobe): Recipe`: the recipe wearing the

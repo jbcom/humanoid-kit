@@ -48,15 +48,17 @@ const LABELS: Record<string, string> = {
   held: "Held",
 };
 
-/** The garments a clothing pack's manifest lists; none without a clothing pack. */
-export function wardrobeOf(manifest: ClothingManifest | null): WardrobeEntry[] {
-  return (manifest?.garments.entries ?? []).map((g) => ({
-    id: g.id,
-    name: g.name,
-    label: g.label,
-    kind: g.kind,
-    tags: g.tags,
-  }));
+/** The garments the loaded clothing packs' manifests list, pack by pack; none without one. */
+export function wardrobeOf(manifests: readonly ClothingManifest[]): WardrobeEntry[] {
+  return manifests
+    .flatMap((m) => m.garments.entries)
+    .map((g) => ({
+      id: g.id,
+      name: g.name,
+      label: g.label,
+      kind: g.kind,
+      tags: g.tags,
+    }));
 }
 
 /** The wardrobe by category, in the order people dress: underwear first, backpacks last. */

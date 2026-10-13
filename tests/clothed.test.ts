@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { groupFaces, parseHumanoidAssets } from "../src/format/assetFormat.ts";
+import {
+  type ClothingManifest,
+  groupFaces,
+  parseHumanoidAssets,
+} from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { OutfitError } from "../src/model/outfit.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
@@ -110,7 +114,7 @@ describe("a figure wearing garments", { timeout: 120_000 }, () => {
 
     it("refuses garments whose binary has not arrived", () => {
       const pending = parseHumanoidAssets(bodyPackData(), undefined, {
-        manifest: assets.clothingManifest as NonNullable<typeof assets.clothingManifest>,
+        manifest: assets.clothingManifests[0] as ClothingManifest,
       });
       const m = new HumanoidModel(pending, { subdivision: 0 });
       expect(() => m.outfit([SUIT])).toThrow(/not loaded yet/);

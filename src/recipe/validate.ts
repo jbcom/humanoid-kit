@@ -116,7 +116,38 @@ export function recipeProblems(recipe: unknown): string[] {
       });
     }
   }
+  if (r.outfitLook !== undefined) outfitLookProblems(r.outfitLook, p);
   return p;
+}
+
+const LOOK_FIELDS = new Set(["tint", "roughness", "wear"]);
+
+function outfitLookProblems(looks: unknown, p: string[]): void {
+  if (typeof looks !== "object" || looks === null || Array.isArray(looks)) {
+    p.push("outfitLook must be an object of garment ids to looks");
+    return;
+  }
+  for (const [id, look] of Object.entries(looks)) {
+    const at = `outfitLook.${id}`;
+    if (typeof look !== "object" || look === null || Array.isArray(look)) {
+      p.push(`${at} must be an object`);
+      continue;
+    }
+    const l = look as Record<string, unknown>;
+    for (const k of Object.keys(l)) if (!LOOK_FIELDS.has(k)) p.push(`${at} has unknown field ${k}`);
+    if (
+      l.tint !== undefined &&
+      !(
+        Array.isArray(l.tint) &&
+        l.tint.length === 3 &&
+        l.tint.every((c) => typeof c === "number" && Number.isFinite(c) && c >= 0)
+      )
+    )
+      p.push(`${at}.tint must be three finite numbers ≥ 0`);
+    if (l.roughness !== undefined && !unit(l.roughness))
+      p.push(`${at}.roughness must be in [0, 1]`);
+    if (l.wear !== undefined && !unit(l.wear)) p.push(`${at}.wear must be in [0, 1]`);
+  }
 }
 
 const HAIR_KEYS = new Set(["style", "colour", "brows", "lashes"]);
