@@ -6,13 +6,15 @@
  * canvas and checked against what the presence model (`sampleGroundOcclusion`
  * over the registry) says the ground should be.
  *
- * Set HK_PRESENCE_SHOTS to a directory to also save each state's screenshot.
+ * Each state's screenshot is attached to the test; set HK_PRESENCE_SHOTS to a
+ * directory to also save them there.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
 import { budget } from "./budget.ts";
+import { framePixels } from "./lib/framePixels.ts";
 
 /** A light ground, so a shadow on it is measurable (the default studio ground is near black). */
 const GROUND = "c8c8c8";
@@ -108,33 +110,42 @@ async function stage(page: Page, gap: number, count: 1 | 2 = 2) {
   await frames(page);
 }
 
-/** How much darker than the open ground the canvas is at ground point (x, z): 0 none … 1 black. */
+/**
+ * How much darker than the open ground the canvas is at ground point (x, z): 0 none … 1 black.
+ * Read from the composited frame: the walk scene does not retain its drawing buffer.
+ */
 async function darkness(page: Page, x: number, z: number): Promise<number> {
-  return page.evaluate(
+  const { pixel, backing } = await page.evaluate(
     ([x, z]) => {
       const walk = window.hkWalk;
       const canvas = document.querySelector("canvas");
       if (!walk || !canvas) throw new Error("the walk scene is not mounted");
-      const luma = (cx: number, cy: number) => {
-        const copy = document.createElement("canvas");
-        copy.width = 5;
-        copy.height = 5;
-        const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
-        ctx.drawImage(canvas, Math.round(cx) - 2, Math.round(cy) - 2, 5, 5, 0, 0, 5, 5);
-        const px = ctx.getImageData(0, 0, 5, 5).data;
-        let sum = 0;
-        for (let i = 0; i < px.length; i += 4)
-          sum += ((px[i] as number) + (px[i + 1] as number) + (px[i + 2] as number)) / 3;
-        return sum / 25 / 255;
-      };
-      const [px, py] = walk.groundPixel(x as number, z as number);
-      // The top-left corner is open background: the ground's own brightness.
-      const ground = luma(4, 4);
-      if (!(ground > 0.1)) throw new Error(`the canvas holds no drawn frame (corner ${ground})`);
-      return 1 - luma(px, py) / ground;
+      return { pixel: walk.groundPixel(x as number, z as number), backing: canvas.width };
     },
     [x, z] as const,
   );
+  const frame = await framePixels(page.locator("canvas"));
+  // groundPixel is in backing-store pixels; the screenshot is in device pixels.
+  const scale = frame.width / backing;
+  const luma = (cx: number, cy: number) => {
+    const x0 = Math.round(cx * scale) - 2;
+    const y0 = Math.round(cy * scale) - 2;
+    let sum = 0;
+    for (let y = y0; y < y0 + 5; y++)
+      for (let x = x0; x < x0 + 5; x++) {
+        const i = (y * frame.width + x) * 4;
+        sum +=
+          ((frame.data[i] as number) +
+            (frame.data[i + 1] as number) +
+            (frame.data[i + 2] as number)) /
+          3;
+      }
+    return sum / 25 / 255;
+  };
+  // The top-left corner is open background: the ground's own brightness.
+  const ground = luma(4, 4);
+  if (!(ground > 0.1)) throw new Error(`the canvas holds no drawn frame (corner ${ground})`);
+  return 1 - luma(pixel[0] as number, pixel[1] as number) / ground;
 }
 
 const figures = (page: Page) => page.evaluate(() => window.hkWalk?.figures() ?? []);
@@ -144,10 +155,13 @@ const expectedShadow = (page: Page, x: number, z: number) =>
     z,
   ] as const);
 
+/** Attaches the state's frame to the test (it travels back from the render pool) and, with HK_PRESENCE_SHOTS, saves it. */
 async function save(page: Page, name: string) {
+  const png = await page.screenshot();
+  await test.info().attach(`${name}.png`, { body: png, contentType: "image/png" });
   if (!shots) return;
   fs.mkdirSync(shots, { recursive: true });
-  await page.screenshot({ path: path.join(shots, `${name}.png`) });
+  fs.writeFileSync(path.join(shots, `${name}.png`), png);
 }
 
 test.describe("presence in the studio", () => {

@@ -7,6 +7,7 @@
  */
 import { expect, type Page, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
+import sharp from "sharp";
 import { budget } from "./budget.ts";
 
 const STYLES = [
@@ -263,16 +264,16 @@ test.describe("hair in the creator", () => {
     await page.locator('.hk-stage[data-pick="ready"]').waitFor({ timeout: 120_000 });
     await page.getByRole("tab", { name: "Skin, eyes & hair" }).click();
 
-    const pixels = () =>
-      page.evaluate(() => {
-        const c = document.querySelector(".hk-stage canvas") as HTMLCanvasElement;
-        const copy = document.createElement("canvas");
-        copy.width = 96;
-        copy.height = 96;
-        const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
-        ctx.drawImage(c, 0, 0, 96, 96);
-        return Array.from(ctx.getImageData(0, 0, 96, 96).data);
-      });
+    // The composited frame, scaled to 96 × 96 RGBA: the creator does not retain
+    // its drawing buffer, so the canvas itself reads empty.
+    const pixels = async () =>
+      Array.from(
+        await sharp(await page.locator(".hk-stage canvas").screenshot())
+          .resize(96, 96, { fit: "fill" })
+          .ensureAlpha()
+          .raw()
+          .toBuffer(),
+      );
     const difference = (a: number[], b: number[]) =>
       a.reduce((s, v, i) => s + Math.abs(v - (b[i] as number)), 0) / a.length;
     const settle = () => page.waitForTimeout(2500);

@@ -1071,7 +1071,8 @@ leaves a frame of the old colour. With the canvas transparent, the browser compo
 it over the root's background, which is `var(--hk-bg)`: every syntax CSS has works,
 transitions animate the stage with everything else, and nothing is read. The cost is
 that the page composites the canvas (its alpha channel is react-three-fiber's
-default, and the creator already keeps its drawing buffer). Lights, tone mapping and the contact shadow do not touch the background,
+default; the creator does not keep its drawing buffer, so tests read its
+pixels from compositor screenshots, `e2e/lib/framePixels.ts`). Lights, tone mapping and the contact shadow do not touch the background,
 so the figure is unchanged; the contact shadow, drawn with alpha, now tints the
 host's colour rather than navy. The `background` prop is `--hk-bg` set inline on the
 root, so there is one mechanism and a host can mix the two. The default of the
