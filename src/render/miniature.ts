@@ -288,7 +288,11 @@ class Archetype {
   dispose() {
     for (const t of this.textures) t.dispose();
     for (const m of this.materials) m.dispose();
-    for (const m of this.meshes) m.geometry.dispose();
+    for (const m of this.meshes) {
+      m.geometry.dispose();
+      // Frees the instance matrices, which only the mesh's own dispose releases.
+      m.dispose();
+    }
   }
 }
 
@@ -443,9 +447,12 @@ export class MiniatureCrowd {
     }
   }
 
+  /**
+   * Frees the GPU resources. The meshes stay in `object`: three uploads them
+   * again if the crowd is drawn after (React's StrictMode disposes and reuses).
+   */
   dispose(): void {
     for (const a of this.archetypes) a.dispose();
-    this.object.clear();
   }
 }
 

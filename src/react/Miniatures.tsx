@@ -22,18 +22,31 @@ export interface MiniaturesProps extends MiniatureCrowdOptions {
   onFrame?: (stats: MiniatureFrameStats) => void;
 }
 
-/** Draws `figures` of the baked `archetypes`; see `MiniatureCrowd`. */
+/**
+ * Draws `figures` of the baked `archetypes`; see `MiniatureCrowd`. The crowd is
+ * rebuilt when `archetypes` or a crowd option changes by value (an inline
+ * `levelPixels` or `material` object does not rebuild it every render).
+ */
 export function Miniatures({ archetypes, figures, onFrame, ...options }: MiniaturesProps) {
-  const { maxFigures, triangleBudget, levelPixels, material } = options;
+  const { maxFigures, triangleBudget } = options;
+  const levelKey = options.levelPixels?.join(",") ?? "";
+  const materialKey = options.material ? JSON.stringify(options.material) : "";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rebuilt by value, through the keys.
   const crowd = useMemo(
-    () => new MiniatureCrowd(archetypes, { maxFigures, triangleBudget, levelPixels, material }),
-    [archetypes, maxFigures, triangleBudget, levelPixels, material],
+    () =>
+      new MiniatureCrowd(archetypes, {
+        maxFigures,
+        triangleBudget,
+        levelPixels: options.levelPixels,
+        material: options.material,
+      }),
+    [archetypes, maxFigures, triangleBudget, levelKey, materialKey],
   );
   useEffect(() => () => crowd.dispose(), [crowd]);
   useEffect(() => crowd.setFigures(figures), [crowd, figures]);
-  const size = useThree((s) => s.size);
+  const height = useThree((s) => s.size.height);
   useFrame(({ camera, clock }) => {
-    const stats = crowd.update(camera, clock.elapsedTime, size.height);
+    const stats = crowd.update(camera, clock.elapsedTime, height);
     onFrame?.(stats);
   });
   return <primitive object={crowd.object} />;
