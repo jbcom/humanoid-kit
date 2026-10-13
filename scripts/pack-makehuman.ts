@@ -84,7 +84,8 @@ import { type EncodedTarget, encodeSparseTarget } from "./lib/targetEncoding.ts"
 import { type TextureRecord, textureProvenance } from "./lib/textureSizing.ts";
 import { bodyCoverage, placeIslands } from "./lib/uvIslands.ts";
 
-const USAGE = "usage: node scripts/pack-makehuman.ts <makehuman-data-dir> <system-assets-dir>";
+const USAGE =
+  "usage: node scripts/pack-makehuman.ts <makehuman-data-dir> <system-assets-dir> <community-archives-dir>";
 const DATA: string = (() => {
   const arg = process.argv[2];
   if (!arg) throw new Error(USAGE);
@@ -92,6 +93,12 @@ const DATA: string = (() => {
 })();
 const SYSTEM: string = (() => {
   const arg = process.argv[3];
+  if (!arg) throw new Error(USAGE);
+  return path.resolve(arg);
+})();
+/** The community archives, `<id>/<id>_cc0.zip` (the hair pack's facial hair is from one). */
+const COMMUNITY_ARCHIVES: string = (() => {
+  const arg = process.argv[4];
   if (!arg) throw new Error(USAGE);
   return path.resolve(arg);
 })();
@@ -918,7 +925,12 @@ async function main() {
     "URLs of the humanoid-kit-adult-anatomy pack files. Pass to `loadHumanoidAssets({ adultAnatomy })`.",
   );
   // The hair pack binds to the body pack by hash, so it is rebuilt with it.
-  await packHair({ systemDir: SYSTEM, bodyDir: BODY_OUT, outDir: HAIR_OUT });
+  await packHair({
+    systemDir: SYSTEM,
+    bodyDir: BODY_OUT,
+    outDir: HAIR_OUT,
+    communityDir: COMMUNITY_ARCHIVES,
+  });
   const mb = (n: number) => `${(n / 1e6).toFixed(2)} MB`;
   console.log(
     `packed ${vertexCount} verts, ${manifest.faceCount} quads; targets: ` +

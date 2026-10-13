@@ -41,6 +41,14 @@ export const communityPackUrl = (id: string): string =>
 export const communityPackPage = (id: string): string =>
   `https://static.makehumancommunity.org/assets/assetpacks/${id}.html`;
 
+/** A community pack pinned by its archive's SHA-256, its URL and page by the site's convention. */
+export const pin = (id: string, sha256: string): CommunityPackPin => ({
+  id,
+  sha256,
+  url: communityPackUrl(id),
+  page: communityPackPage(id),
+});
+
 /** Where a pinned pack's archive lies under `archives`. */
 export const communityPackFile = (archives: string, id: string): string =>
   path.join(archives, id, `${id}_cc0.zip`);

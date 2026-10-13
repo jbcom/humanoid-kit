@@ -310,13 +310,14 @@ export interface BoundAsset {
 /**
  * The kinds of entry the hair pack lists: scalp hair, the brows and lashes
  * (decals), and generated body hair cards (`beard`: a grown beard's length,
- * over the coat's dense base; docs/ARCHITECTURE.md, "Body hair").
+ * over the coat's dense base; docs/ARCHITECTURE.md, "Body hair"), and authored
+ * facial hair (`facial`: a beard or a moustache from CC0 assets, bound like scalp hair).
  */
-export const HAIR_KINDS = ["scalp", "brows", "lashes", "beard"] as const;
+export const HAIR_KINDS = ["scalp", "brows", "lashes", "beard", "facial"] as const;
 export type HairKind = (typeof HAIR_KINDS)[number];
 
 /** Kinds whose entries carry the measured strand fields (`HAIR_FIELD_KEYS`). */
-export const STRAND_KINDS: readonly HairKind[] = ["scalp", "beard"];
+export const STRAND_KINDS: readonly HairKind[] = ["scalp", "beard", "facial"];
 
 /**
  * The buffer a body hair card entry carries beyond a scalp style's: per card

@@ -38,6 +38,7 @@ import {
   generateStrandMap,
 } from "../../src/surface/bodyHairCards.ts";
 import { readBodyPack } from "./bodyPack.ts";
+import { extractDirectory, openCommunityPack, pin } from "./communityPacks.ts";
 import { type CompiledAsset, compileAsset } from "./compileAsset.ts";
 import { bleedEdges } from "./edgeBleed.ts";
 import { compileAuthored } from "./hairCards/compile.ts";
@@ -121,8 +122,61 @@ export const LASH_STYLES: readonly HairStyleSpec[] = [
   { id: "eyelashes04", label: "Eyelashes 04, full", tags: ["full"], kind: "lashes" },
 ];
 
-/** The kinds packed from MakeHuman's files (body hair cards are generated: `src/surface/bodyHairCards.ts`). */
-type AssetHairKind = Exclude<HairKind, "beard">;
+/**
+ * The kinds packed from MakeHuman's system files (body hair cards are generated:
+ * `src/surface/bodyHairCards.ts`; facial hair comes from a community pack: `FACIAL_HAIR`).
+ */
+type AssetHairKind = Exclude<HairKind, "beard" | "facial">;
+
+/** The community pack the facial hair comes from, pinned (downloaded 2026-10-13). */
+export const FACIAL_HAIR_PACK = pin(
+  "bodyparts05",
+  "262bba42246f85b2a91f493dd920296b258a3b4544eb495c91c4d08e57c528fd",
+);
+
+/** A community facial hair asset: its folder in the pack, the id it ships as and what it is. */
+export interface FacialHairSpec {
+  /** The asset's directory under the pack's `clothes/`. */
+  dir: string;
+  id: string;
+  label: string;
+  /** `beard` or `moustache` first: the slot it is worn in. */
+  tags: [string, ...string[]];
+}
+
+/** Every Facialhair asset of the pack, each CC0 by its pack record and its page (licence clause B). */
+export const FACIAL_HAIR: readonly FacialHairSpec[] = [
+  {
+    dir: "culturalibre_faun_beard",
+    id: "beard-faun",
+    label: "Faun beard",
+    tags: ["beard", "long"],
+  },
+  {
+    dir: "grinsegold_beard_sigmund_wip",
+    id: "beard-sigmund",
+    label: "Sigmund beard",
+    tags: ["beard", "short", "full"],
+  },
+  {
+    dir: "rehmanpolanski_beard_viking",
+    id: "beard-viking",
+    label: "Viking beard",
+    tags: ["beard", "long", "full"],
+  },
+  {
+    dir: "rehmanpolanski_moustache_viking",
+    id: "moustache-viking",
+    label: "Viking moustache",
+    tags: ["moustache", "long"],
+  },
+  {
+    dir: "wdg_scruffy_beard",
+    id: "beard-scruffy",
+    label: "Scruffy beard",
+    tags: ["beard", "short"],
+  },
+];
 
 /** The folder of the system assets each kind of entry lives in. */
 const SOURCE_DIR: Record<AssetHairKind, string> = {
@@ -150,6 +204,8 @@ export interface PackHairOptions {
   bodyDir: string;
   /** The hair pack's data directory. */
   outDir: string;
+  /** The community archives (`<id>/<id>_cc0.zip`): the facial hair's pack, pinned (`FACIAL_HAIR_PACK`). */
+  communityDir: string;
 }
 
 /** Writes a style's strand map, at most `edge` texels a side, and measures its strand direction. */
@@ -247,6 +303,7 @@ function writeProvenance(
   evidence: Record<string, string>,
   outputs: [string, string][],
   textures: readonly TextureRecord[],
+  facialEvidence: readonly string[],
 ): void {
   const byKind = new Map<string, string[]>();
   for (const [file, ev] of Object.entries(evidence))
@@ -297,6 +354,15 @@ function writeProvenance(
       "kind `beard`) come from no source file: `src/surface/bodyHairCards.ts` generates them over the body pack's",
     "base mesh from a seed, with their strand map, so they are this project's own work under its licence.",
     "",
+    `The facial hair (kind \`facial\`) is the community pack \`${FACIAL_HAIR_PACK.id}\` (<${FACIAL_HAIR_PACK.url}>, sha256`,
+    `\`${FACIAL_HAIR_PACK.sha256}\`), whose record and asset pages state CC0 (the asset page is the licence, clause B of`,
+    "the licence rule). Each is bound to the base mesh by its own `.mhclo` and packed like scalp hair: its texture is a",
+    "strand map (luminance normalised, alpha unchanged), so the figure's hair colour is the only colour it takes.",
+    "",
+    ...FACIAL_HAIR.map((f) => `- \`${f.id}\` from \`${f.dir}\``),
+    "",
+    ...facialEvidence.map((line) => `- ${line}`),
+    "",
     ...textureProvenance(textures),
     "## Outputs",
     "",
@@ -310,7 +376,7 @@ function writeProvenance(
 
 /** Packs every style of `HAIR_STYLES` and returns the manifest it wrote. */
 export async function packHair(options: PackHairOptions): Promise<HairManifest> {
-  const { systemDir, bodyDir, outDir } = options;
+  const { systemDir, bodyDir, outDir, communityDir } = options;
   const { manifest: body, assets } = readBodyPack(bodyDir);
   fs.mkdirSync(outDir, { recursive: true });
   for (const f of fs.readdirSync(outDir))
@@ -475,6 +541,73 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
       sha256(new Uint8Array(fs.readFileSync(path.join(outDir, textureFile)))),
     ]);
   }
+  // Facial hair: authored CC0 meshes of a community pack, packed like scalp hair (a strand
+  // map, so the figure's hair colour tints them) and bound to the base mesh by their own .mhclo.
+  const community = openCommunityPack(communityDir, FACIAL_HAIR_PACK);
+  const facialEvidence: string[] = [];
+  for (const spec of FACIAL_HAIR) {
+    const record = community.records[spec.dir];
+    if (!record) throw new Error(`${FACIAL_HAIR_PACK.id} has no record of ${spec.dir}`);
+    if (record.license !== "CC0")
+      throw new Error(`${spec.dir}: the pack's record says ${record.license}, not CC0`);
+    const folder = path.join(scratch, FACIAL_HAIR_PACK.id, spec.dir);
+    extractDirectory(community.zip, `clothes/${spec.dir}`, folder);
+    const mhclo = fs.readdirSync(folder).find((f) => f.endsWith(".mhclo"));
+    if (!mhclo) throw new Error(`${spec.dir}: no .mhclo`);
+    const compiled = compileAsset(path.join(folder, mhclo), spec.id, "hair", {
+      page: {
+        url: record.source,
+        submitter: record.author,
+        submitted: record.created,
+        licence: "CC0 - Creative Commons Zero",
+        retrieved: "2026-10-13",
+      },
+    });
+    const [source] = [...compiled.textures.keys()];
+    if (!source || compiled.textures.size !== 1)
+      throw new Error(`${spec.id}: expected exactly one diffuse texture`);
+    const textureFile = `${spec.id}.webp`;
+    const { record: textureRecord, encoded: strand } = await packTexture({
+      asset: compiled,
+      source,
+      dest: path.join(outDir, textureFile),
+      floor: TEXTURE_FLOOR,
+      base: assets.positions,
+      systemDir: path.join(scratch, FACIAL_HAIR_PACK.id),
+      encode: (src, dest, edge) => writeStrandMap(src, dest, edge),
+    });
+    textures.push(textureRecord);
+    compiled.material.texture = textureFile;
+    const occlusion = Uint8Array.from(model.bakeHairOcclusion(boundFrom(compiled)), (v) =>
+      Math.round(Math.min(1, Math.max(0, v)) * 255),
+    );
+    const fields = model.bakeHairFields(boundFrom(compiled), {
+      feather: false,
+      cutout: await cutoutOf(path.join(outDir, textureFile)),
+    });
+    const file = `${spec.id}.bin.gz`;
+    const written = writeAttachments(outDir, file, [compiled], [occlusion], 1, [fields]);
+    const [entry] = written.entries;
+    if (!entry) throw new Error(`${spec.id}: nothing written`);
+    styles.push({
+      ...entry,
+      kind: "facial",
+      label: spec.label,
+      tags: spec.tags,
+      file,
+      sha256: written.sha256,
+      strand,
+    });
+    outputs.push([file, written.sha256]);
+    outputs.push([
+      textureFile,
+      sha256(new Uint8Array(fs.readFileSync(path.join(outDir, textureFile)))),
+    ]);
+    for (const [f, ev] of Object.entries(compiled.evidence))
+      facialEvidence.push(
+        `${FACIAL_HAIR_PACK.id}_cc0.zip: clothes/${spec.dir}/${path.basename(f)} — ${ev}`,
+      );
+  }
   fs.rmSync(scratch, { recursive: true, force: true });
 
   // Body hair cards: generated over the base mesh from a seed, this project's own
@@ -527,7 +660,7 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
     styles,
   };
   fs.writeFileSync(path.join(outDir, "manifest.json"), `${JSON.stringify(manifest)}\n`);
-  writeProvenance(outDir, evidence, outputs, textures);
+  writeProvenance(outDir, evidence, outputs, textures, facialEvidence);
   writePackEntry(
     path.dirname(outDir),
     "hairPack",
