@@ -15,15 +15,8 @@
  * triangles still single.
  */
 import type { GARMENT_LAYERS } from "../../src/model/outfit.ts";
-import { type CommunityPackPin, communityPackPage, communityPackUrl } from "./communityPacks.ts";
+import { type CommunityPackPin, pin } from "./communityPacks.ts";
 import type { CommunityPage } from "./licenceRule.ts";
-
-const pin = (id: string, sha256: string): CommunityPackPin => ({
-  id,
-  sha256,
-  url: communityPackUrl(id),
-  page: communityPackPage(id),
-});
 
 /** The community clothing packs, pinned (downloaded 2026-10-09). */
 export const COMMUNITY_CLOTHING_PACKS: readonly CommunityPackPin[] = [

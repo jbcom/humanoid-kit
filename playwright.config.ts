@@ -84,6 +84,13 @@ export default definePlaywrightConfig({
     // SwiftShader already spreads one page's rendering over every core (a lone
     // creator test uses ~8 locally); parallel workers only starve each other.
     ...(gpuMode === "software" && { workers: 1 }),
-    reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
+    // The JSON report is what scripts/ci/skipLedger.ts counts skips from.
+    reporter: process.env.CI
+      ? [
+          ["github"],
+          ["html", { open: "never" }],
+          ["json", { outputFile: "test-results/e2e-report.json" }],
+        ]
+      : "list",
   },
 });

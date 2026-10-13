@@ -16,6 +16,9 @@
  *   the normal per pixel). Each QA material skins by the figure's own dual bones
  *   and folds (`applyDualSkinning`), so the shape drawn is the shape the lit body
  *   has.
+ * - `?coat=<mode>` draws the coat (body hair's shells) one way changed
+ *   (`QaCoatMode`): off, without specular, without indirect light, unlit, its
+ *   alpha alone, opaque in a given colour, or flagging non-numbers.
  *
  * `foldNotes` (`window.hkShotNotes`) reports, per body mesh, how many of its
  * vertices each joint's fold gives a row and the size of that joint's fold
@@ -42,11 +45,38 @@ import {
 /** How a shot draws the body (`?shade=`): lit as the stage lights it, or one of the QA modes. */
 export type QaShadeMode = "lit" | "normal" | "flat" | "wire" | "matte" | "nopores" | "norelief";
 
+/**
+ * How a shot draws the coat (`?coat=`), each mode changing one thing so a
+ * sheet can tell the coat's shading from its geometry:
+ *
+ * - `lit`: as the figure draws it.
+ * - `off`: not at all (the bare skin under it, the same camera and light).
+ * - `nospec`: without any specular (three's GGX, the strand lobes, the environment's).
+ * - `noindirect`: without the environment's and the hemisphere's light (direct light only).
+ * - `unlit`: its albedo at its alpha, no light at all.
+ * - `alpha`: magenta at its alpha: where and how much it covers.
+ * - `parity`: opaque wherever it draws, in the colour `?coatrgb=r,g,b` (linear),
+ *   so lit as the coat is lit, it can be set beside skin of that albedo lit as skin.
+ * - `nan`: as drawn, but green where its light is not a number and blue where negative.
+ */
+export type QaCoatMode =
+  | "lit"
+  | "off"
+  | "nospec"
+  | "noindirect"
+  | "unlit"
+  | "alpha"
+  | "parity"
+  | "nan";
+
 /** The QA draw a shot's query asks for. */
 export interface QaDraw {
   /** The fold joints drawn without their fold (`?nofold=`). */
   off: ReadonlySet<string>;
   shade: QaShadeMode;
+  coat: QaCoatMode;
+  /** The `parity` mode's colour, linear RGB. */
+  coatRgb: readonly [number, number, number];
 }
 
 const SHADES: readonly QaShadeMode[] = [
@@ -69,7 +99,112 @@ export function qaDraw(params: URLSearchParams): QaDraw {
   const shade = params.get("shade") ?? "lit";
   if (!SHADES.includes(shade as QaShadeMode))
     throw new Error(`?shade=${shade}: not one of ${SHADES.join(", ")}`);
-  return { off, shade: shade as QaShadeMode };
+  const coat = params.get("coat") ?? "lit";
+  if (!COAT_MODES.includes(coat as QaCoatMode))
+    throw new Error(`?coat=${coat}: not one of ${COAT_MODES.join(", ")}`);
+  const rgb = (params.get("coatrgb") ?? "0.5,0.5,0.5").split(",").map(Number);
+  if (rgb.length !== 3 || !rgb.every((c) => c >= 0 && c <= 1))
+    throw new Error(`?coatrgb=${params.get("coatrgb")}: not three linear values in 0..1`);
+  return {
+    off,
+    shade: shade as QaShadeMode,
+    coat: coat as QaCoatMode,
+    coatRgb: rgb as [number, number, number],
+  };
+}
+
+const COAT_MODES: readonly QaCoatMode[] = [
+  "lit",
+  "off",
+  "nospec",
+  "noindirect",
+  "unlit",
+  "alpha",
+  "parity",
+  "nan",
+];
+
+/** Whether `draw` changes anything a frame must apply. */
+export const qaDrawActive = (draw: QaDraw): boolean =>
+  draw.off.size > 0 || draw.shade !== "lit" || draw.coat !== "lit";
+
+/** Where the coat's fragment has its lights summed, and where it writes its colour. */
+const COAT_ANCHORS = {
+  lights: "#include <aomap_fragment>",
+  out: "#include <opaque_fragment>",
+} as const;
+
+/** The GLSL each coat mode adds, before the lights are summed and before the colour is written. */
+function coatPatch(draw: QaDraw): { lights: string; out: string } {
+  switch (draw.coat) {
+    case "nospec":
+      return {
+        lights:
+          "reflectedLight.directSpecular = vec3( 0.0 ); reflectedLight.indirectSpecular = vec3( 0.0 );",
+        out: "",
+      };
+    case "noindirect":
+      return {
+        lights:
+          "reflectedLight.indirectDiffuse = vec3( 0.0 ); reflectedLight.indirectSpecular = vec3( 0.0 );",
+        out: "",
+      };
+    case "unlit":
+      return { lights: "", out: "outgoingLight = diffuseColor.rgb;" };
+    case "alpha":
+      return { lights: "", out: "outgoingLight = vec3( 1.0, 0.0, 1.0 );" };
+    case "nan":
+      return {
+        lights: "",
+        out: `if ( any( isnan( outgoingLight ) ) || any( isinf( outgoingLight ) ) ) { outgoingLight = vec3( 0.0, 1.0, 0.0 ); diffuseColor.a = 1.0; }
+	else if ( any( lessThan( outgoingLight, vec3( 0.0 ) ) ) ) { outgoingLight = vec3( 0.0, 0.0, 1.0 ); diffuseColor.a = 1.0; }`,
+      };
+    default:
+      return { lights: "", out: "" };
+  }
+}
+
+/** The coat's colour line (`src/render/coat.ts`): `parity` replaces the colour and alpha after it. */
+const COAT_COLOUR = "diffuseColor.a = hkCover;";
+
+/** Applies `draw.coat` to one coat material; throws at compile if an anchor moved. */
+function patchCoat(material: Material, draw: QaDraw): void {
+  const before = material.onBeforeCompile;
+  const key = material.customProgramCacheKey;
+  const patch = coatPatch(draw);
+  const [r, g, b] = draw.coatRgb.map((c) => c.toFixed(4));
+  material.onBeforeCompile = (shader, renderer) => {
+    before.call(material, shader, renderer);
+    for (const anchor of [...Object.values(COAT_ANCHORS), COAT_COLOUR])
+      if (!shader.fragmentShader.includes(anchor))
+        throw new Error(`?coat=${draw.coat}: the coat shader no longer has ${anchor}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace(COAT_ANCHORS.lights, `${patch.lights}\n\t${COAT_ANCHORS.lights}`)
+      .replace(COAT_ANCHORS.out, `${patch.out}\n\t${COAT_ANCHORS.out}`);
+    if (draw.coat === "parity")
+      shader.fragmentShader = shader.fragmentShader.replace(
+        COAT_COLOUR,
+        `${COAT_COLOUR}\n\t\tdiffuseColor = vec4( ${r}, ${g}, ${b}, 1.0 );`,
+      );
+  };
+  material.customProgramCacheKey = () => `${key.call(material)}|qa-coat-${draw.coat}`;
+  material.userData.qaCoat = draw.coat;
+  material.needsUpdate = true;
+}
+
+/** Applies `draw.coat` to every coat mesh under `root` (geometry tagged `hkCoatRegions`). */
+function applyQaCoat(root: Object3D, draw: QaDraw): void {
+  if (draw.coat === "lit") return;
+  root.traverse((o) => {
+    const mesh = o as SkinnedMesh;
+    if (!mesh.isSkinnedMesh || !mesh.geometry?.userData.hkCoatRegions) return;
+    if (draw.coat === "off") {
+      mesh.visible = false;
+      return;
+    }
+    const material = mesh.material as Material;
+    if (material.userData.qaCoat !== draw.coat) patchCoat(material, draw);
+  });
 }
 
 /** What `foldNotes` reports of one body mesh. */
@@ -135,6 +270,7 @@ const forced = new WeakMap<BufferAttribute, number>();
  * does nothing where it has already been applied.
  */
 export function applyQaDraw(root: Object3D, draw: QaDraw): void {
+  applyQaCoat(root, draw);
   for (const mesh of bodies(root)) {
     // One attribute holds every joint's slots, so they are forced together, once a version.
     const slots = mesh.geometry.getAttribute(FOLD_SLOTS_ATTRIBUTE) as BufferAttribute | undefined;

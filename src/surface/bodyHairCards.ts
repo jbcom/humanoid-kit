@@ -593,13 +593,15 @@ export function generateStrandMap(width: number, height: number, seed: number): 
   const alpha = new Float32Array(width * height);
   const colW = width / STRAND_COLUMNS;
   for (let col = 0; col < STRAND_COLUMNS; col++) {
-    const strands = 6 + Math.floor(rand() * 7);
+    // A lock of hair: strands packed across the column at the root, ending at
+    // lengths of their own so the tip thins to a few.
+    const strands = 20 + Math.floor(rand() * 9);
     for (let s = 0; s < strands; s++) {
-      const x0 = col * colW + colW * (0.15 + 0.7 * rand());
+      const x0 = col * colW + colW * (0.08 + 0.84 * rand());
       const lean = (rand() * 2 - 1) * colW * 0.25;
-      const reach = 0.6 + 0.4 * rand();
+      const reach = 0.55 + 0.45 * rand();
       const shade = 0.7 + 0.6 * rand();
-      const thick = 0.6 + 0.8 * rand();
+      const thick = 0.8 + 0.8 * rand();
       for (let y = 0; y < height; y++) {
         const t = y / (height - 1);
         if (t > reach) break;

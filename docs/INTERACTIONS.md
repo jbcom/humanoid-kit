@@ -322,10 +322,13 @@ interactions.on("figure-a", (event) => {
 unknown contact or role, or when either figure has left. `trackTime` returns
 `null` when that role has no track in the current phase. `on` delivers
 `accepted`, `declined`, phase, beat, normal end and cancellation events to both
-participants, with every cancellation carrying its reason. The runtime stays
-framework-free: a consumer that needs per-pad contact gaps wraps the returned
-target in its contact capsule and supplies it to each posed hand's
-`HumanoidAffordances.gripContacts` call.
+participants, with every cancellation carrying its reason. `endReason` is
+`null` while the interaction runs and after a normal end, and the cancellation
+reason after a cancel, so a reader that polls (the hand contact constraint
+below) can tell a graceful cancel from an `age-policy` abort without
+subscribing. The runtime stays framework-free: a consumer that needs per-pad
+contact gaps wraps the returned target in its contact capsule and supplies it
+to each posed hand's `HumanoidAffordances.gripContacts` call.
 
 ### Consumer patterns: figures and the environment
 
@@ -360,7 +363,6 @@ function updateHandshake(interaction: Interaction) {
 
   const grip = interaction.contactTarget("grip", "initiator", handTarget);
   if (grip) {
-    pose.constrainHand("hand.R", grip);
     const held = { from: grip, to: grip, radius: 0.02 };
     hands.gripContacts("hand.R", held, "world", padGaps);
   }
@@ -369,12 +371,16 @@ function updateHandshake(interaction: Interaction) {
   if (clipSeconds !== null) animation.sample("handshake.shake", clipSeconds);
 }
 
+// The figure itself closes its hand on the target (see "Hand contact constraint"):
+// <Humanoid presence={{ id: "figure-a" }} animation={...}
+//   handContact={{ interaction, role: "initiator", contact: "grip" }} />
+
 // Remove listeners when their world objects are removed.
 stopFixtureEvents();
 stopFigureEvents();
 ```
 
-`bench`, `animation`, `effects`, `navigation`, `pose` and `hands` are consumer
+`bench`, `animation`, `effects`, `navigation` and `hands` are consumer
 objects in this example. Their inventory, combat, dialogue, sound and pathing
 rules deliberately remain outside the package. A fixture gets its own listener
 only when it is bound to an object role; it does not consent on behalf of a
@@ -391,33 +397,40 @@ is deliberately separate from the pure unit geometry checks.
    eyeHeight: 1.7 }` and the responder `{ reach: 0.6, shoulderHeight: 1.25,
    hipHeight: 0.8, eyeHeight: 1.38 }`.
 2. Use the `handshake` definition from `tests/interactionHandshake.test.ts`:
-   both roles claim `arm.R` and `hand.R`, have a slot offset of `-0.7 ×` their
-   own reach against the `between` reference, and use the `grip` contact during
-   `act`. Keep both figures clothed for the capture.
-3. The review fixture is `e2e/sheets/handshake.sheet.ts`. A reviewer runs it
-   explicitly with `heavy-slot pnpm exec playwright test
-   e2e/sheets/handshake.sheet.ts --project sheets`; it is not part of ordinary
-   browser testing. It fails before saving a cell unless the route is muted,
-   both adult recipes draw their clothes, the animation package supplies its
-   source clip, and the target and both hand frames come from the live presence
-   registry and interaction runtime.
-4. It records approach, grip, release and cancel from front, three-quarter and
-   side views. The yellow point is the shared `contactTarget`; the two RGB axes
-   are the live, posed right-hand frames. Its review-only definition leaves the
-   planning contact queryable through each row so the same target is visible;
-   the production handshake's contact remains active during `act` only. Capture
-   the resulting sheet and record its location and reviewer conclusion before
-   integration.
-5. Accept only if both hands reach the same target within 1 cm, neither arm
-   overextends, the difference in body height reads naturally from every view,
-   and release removes the constraint cleanly.
+   both roles claim `arm.R` and `hand.R` (or `arm.L` and `hand.L` for the
+   left-handed variant), have a slot offset of `-0.7 ×` their own reach
+   against the `between` reference, and use the `grip` contact during `act`
+   only. Keep both figures clothed for the capture.
+3. Each `<Humanoid>` is bound to the interaction with `handContact={{
+   interaction, role, contact: "grip" }}`, so the figure itself closes its
+   hand on the runtime's target (see "Hand contact constraint"). The lab
+   supplies no arm pose, marker offset or target of its own.
+4. The review fixture is `e2e/sheets/handshake.sheet.ts`. A reviewer runs it
+   explicitly with `heavy-slot --remote-render pnpm exec playwright test
+   e2e/sheets/handshake.sheet.ts --project sheets -g <row>`; it is not part of
+   ordinary browser testing. It fails before saving a cell unless the route is
+   muted, both adult recipes draw their clothes, the animation package
+   supplies its source clip, the target and both hand frames come from the
+   live presence registry and interaction runtime, and, in a grip row, both
+   rendered hand frames lie within 1 cm of the target with both constraints
+   reporting `reached`.
+5. It records rest (approach), grip, release and cancel from front and side
+   views, for several height pairs (`?pair=`), both handedness variants
+   (`?hand=L|R`) and a moving contact (`?moving`, both figures carried
+   sideways together during `act`). An inspection hold pauses the presence
+   clock the lab feeds the registry, so the runtime itself is held rather than
+   a copy of its values. The yellow point is the shared `contactTarget`; the
+   two RGB axes are the live, posed hand frames. Capture the resulting sheet
+   and record its location and reviewer conclusion before integration.
+6. Accept only if both hands reach the same target within 1 cm, neither arm
+   overextends, the elbows bend down and out, the palms face each other, the
+   difference in body height reads naturally from every view, and release and
+   cancellation return both arms to the clip.
 
-The core does not yet ship the authored handshake clip, a hand pose constraint
-or automatic stimulus/reaction rules. The fixture intentionally samples the
-packaged `idle1` clip on the shared clock so a review exposes that missing
-animation and IK work instead of hiding it with synthesized arm placement.
-Consumers can use the framework-free lifecycle and pull APIs above in the
-meantime.
+The core does not yet ship an authored handshake clip (a shake belongs to
+`humanoid-kit-animations`) or automatic stimulus/reaction rules. The fixture
+samples the packaged `idle1` clip on the shared clock as the underlying
+animation, and the hand contact constraint closes each hand over it.
 
 #### Review-fixture evidence and binding gate
 
@@ -445,9 +458,11 @@ not committed.
 Do not call the models physically interacting until this milestone has a fresh,
 root-reviewed sheet.
 
-1. Add a real handshake clip and an interaction-driven hand pose/IK constraint.
-   It must consume `trackTime` and `contactTarget` to alter the rendered arm and
-   hand bones; moving a group, marker or presence anchor is not a substitute.
+1. An interaction-driven hand pose constraint (the "Hand contact constraint"
+   below; an authored shake clip remains the animation package's). It consumes
+   `contactTarget` and the interaction's phase clock to alter the rendered arm
+   and hand bones; moving a group, marker or presence anchor is not a
+   substitute.
 2. Sample the final posed `hand.R` frames and the shared target on the same
    render tick. Expose each hand's target-to-frame distance in the lab state and
    make the sheet fail before capture if either exceeds **0.01 m** during grip.
@@ -473,9 +488,9 @@ its measured distance and reason instead of stretching an arm.
 The caller supplies the complete named shoulder-to-wrist chain, a source pose,
 and either a wrist-local `armTip` or an `effector` that samples the final hand
 frame. A rendered contact must use the latter: a wrist head or interaction
-marker is not a proof that the final skinned hand reached a target. The
-primitive is not wired into the interaction runtime, React bindings, or an
-authored clip. For an orientation target, either the tip or the measured
+marker is not a proof that the final skinned hand reached a target. The hand
+contact constraint below is what wires it to the interaction runtime and to
+`<Humanoid>`. For an orientation target, either the tip or the measured
 effector frame must report an orientation. A measured orientation takes
 precedence; a position-only sampler falls back to the rigid tip orientation.
 Ancestor position refinement and the final wrist correction are alternated
@@ -491,6 +506,76 @@ remain trusted rig math: callers provide finite unit rotations and independent,
 non-overlapping output buffers. This seam deliberately makes an integration
 choose when it has a final live hand frame to close, rather than quietly moving
 a marker.
+
+### Hand contact constraint
+
+`createHandContact(options?)` (framework-free, `src/interaction/handContact.ts`)
+turns a running interaction's hand-to-hand contact into an arm pose on one
+figure. `<Humanoid presence handContact={{ interaction, role, contact }}>` owns
+one and applies it every frame; a framework-free renderer calls
+`update(input)` itself.
+
+**Use cases.** Two figures of any heights shake right hands or left hands;
+they hold the grip while both are carried along (a moving contact); the
+interaction releases, is cancelled gracefully, or is aborted by the age
+policy; a target is placed out of one figure's reach.
+
+**Requirements.**
+
+1. The constraint solves on this figure's own evaluated skeleton and closes on
+   its final skinned hand frame (`createArmSkinnedFrameSampler`), never on a
+   wrist head or a guessed point.
+2. Limb segments keep their evaluated lengths and no joint is translated. A
+   target the arm cannot reach is reported (`status: "unreached"`, with the
+   solver's reason and the measured gap), and the arm stays at the closest
+   pose found rather than stretching.
+3. The elbow bends down and out, toward a pole below and behind the shoulder
+   on the arm's own side, and the palm turns to face the partner: palm normal
+   toward the figure's midline, fingers forward.
+4. Only a figure bound to the role, whose role claims both `arm.X` and
+   `hand.X` for the contact's hand, is moved. Anything else is refused with a
+   reason (`not-a-participant`, `not-claimed`, `not-a-hand-contact`,
+   `unknown-contact`) and the underlying pose is left untouched.
+5. Blending: in over `blendIn` seconds of the interaction's phase clock from
+   the start of the contact's first active phase, held while the contact is
+   active (a repeating act stays held), out across the release phase on the
+   same clock (`time / releaseSeconds`). A graceful cancel jumps the runtime
+   straight to `ended`, so the constraint fades from the last target over
+   `blendOut` seconds of the caller's clock. An `age-policy` abort
+   (`endReason`) drops it in the same frame, with no blend.
+6. At weight 0 the output is the source pose byte for byte: the figure is
+   back on its animation.
+7. One pose for every reader: `<Humanoid>` writes the constrained rotations
+   before the skeleton, the occlusion keys, the skin's dual quaternions (which
+   the body, garments, shadows, CPU picking and `HumanoidAffordances` frames
+   read) and the presence pose, so none of them disagree.
+
+**Decisions.**
+
+- *The side comes from the contact, not a prop.* The role's endpoint
+  (`initiator:hand.L`) names the hand, so a left-handed variant is a
+  definition, not a consumer switch.
+- *The phase clock, not the render clock, drives blend in and release.* A
+  held presence clock holds the arm too, and two figures in one interaction
+  blend identically. Only the post-cancel fade, which has no interaction
+  clock left, uses the caller's step.
+- *The target is converted into the figure's lifted space* (the group the
+  meshes are drawn in, the space the sampler measures), so a ground lift or a
+  moving parent does not offset the hand.
+- *A new sampler per solve.* The sampler's source pose guard needs the frame's
+  composed pose, so one is made per frame; it allocates its scratch once per
+  solve, a cost bounded by the number of bound figures and paid only while a
+  contact is weighted. An interaction nobody binds costs nothing.
+- *Position decides contact; orientation is reported.* `status` is the
+  solver's measured result, including the palm orientation within
+  `orientationTolerance`; the report also carries the position gap alone, so
+  a grip that closed its position but not its palm is visible as such.
+
+`update` returns a `HandContactReport`: `state` (`idle`, `refused`,
+`blending-in`, `holding`, `releasing`, `fading`), `side`, `weight`,
+`status`, `reason`, `distance` (measured hand frame to target, metres),
+`orientationError`, `geometricallyReachable`, `target` and `hand` (world).
+The report object is reused between calls; copy what you keep.
 
 ### Stimuli and reactions
 
@@ -550,9 +635,15 @@ policy requires, and none clamps.
 1. **Audience is required, and unknown means adult.** A definition without a
    valid `audience` is treated as `adult` (fail closed), as an affordance that
    does not say it is not adult is refused under 18.
-2. **Audience is derived as well as declared.** A definition whose contacts or
-   couplings name any affordance marked `adult` (the adult pack's) is adult,
-   whatever it declares.
+2. **Audience is derived as well as declared.** A definition whose contacts,
+   couplings, beat effects or role affordances name any figure affordance that
+   is adult is adult, whatever it declares. An affordance is adult unless it is
+   one of the core's that says it is not, so an id the core does not know (a
+   pack's) is adult. The host's `affordanceAdult` predicate can only add
+   adult ids: its answer is joined with that default, never replacing it, so a
+   predicate that answers `false` by default cannot open an adult act to a
+   minor. A contact or coupling point that is not `role:name`, or names no role,
+   is adult.
 3. **Offers are not shown.** A query by or for a figure whose presence is not
    `adult` never returns an adult offer.
 4. **Proposals refuse.** `propose` of an adult definition with any figure
