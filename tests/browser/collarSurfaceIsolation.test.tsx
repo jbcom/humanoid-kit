@@ -174,9 +174,9 @@ function clavicleDisabledSurface(
   const fieldRowLength = body.vertexCount * 2;
   const fieldRowStart = layerIndex * fieldRowLength;
   expect(
-    fields.subarray(fieldRowStart, fieldRowStart + fieldRowLength),
+    fields.subarray(fieldRowStart, fieldRowStart + fieldRowLength).some((v) => v !== 0),
     "clavicle fields present",
-  ).not.toEqual(new Float32Array(fieldRowLength));
+  ).toBe(true);
   fields.fill(0, fieldRowStart, fieldRowStart + fieldRowLength);
   expectOnlyRowChanged(body.layerFields, fields, fieldRowStart, fieldRowLength, "layer fields");
 
@@ -202,9 +202,9 @@ function clavicleDisabledSurface(
   const stopRowStart = layerIndex * stopRowLength;
   const stopData = stops.image.data as Uint16Array;
   expect(
-    stopData.subarray(stopRowStart, stopRowStart + stopRowLength),
+    stopData.subarray(stopRowStart, stopRowStart + stopRowLength).some((v) => v !== 0),
     "clavicle stops present",
-  ).not.toEqual(new Uint16Array(stopRowLength));
+  ).toBe(true);
   stopData.fill(0, stopRowStart, stopRowStart + stopRowLength);
   expectOnlyRowChanged(originalData, stopData, stopRowStart, stopRowLength, "layer stops");
   stops.needsUpdate = true;
