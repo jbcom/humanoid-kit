@@ -197,6 +197,16 @@ into `humanoid-kit-adult-anatomy`; none of them is in `humanoid-kit-body`. This
 mirrors MakeHuman's own separation of genital assets from its core. An
 application that never installs the adult pack cannot render them.
 
+**One predicate decides who is an adult.** `isAdultAge` (`src/makehuman/macro.ts`,
+beside `ADULT_AGE`) is true only for a finite number of 18 or more, and `isAdult`
+asks it of a recipe. NaN, a missing or non-numeric age, a negative age and
+Infinity are all not adult, so every route that skips recipe validation
+(a figure's affordances, its signals, anatomy defaults, the editor's controls)
+fails closed together. No code compares an age to `ADULT_AGE` itself: a `<`
+comparison would pass NaN as an adult, and `>=` would pass Infinity. A test
+(`tests/ageGateSource.test.ts`) scans `src/` and `playground/src/` for a raw
+comparison.
+
 **The adult pack refuses any figure under 18.** `src/recipe/agePolicy.ts`
 defines `ADULT_AGE = 18`. Every recipe is checked before evaluation
 (`assertAgePolicy` in `src/makehuman/recipeMorph.ts`); a recipe under 18 that
