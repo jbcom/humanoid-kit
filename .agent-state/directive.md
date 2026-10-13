@@ -71,6 +71,9 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] C10 #88 Garments: hem and knee soiling that varies over the garment, wrinkle detail.
 - [ ] C11 #64 `feat/upscale` KTX2 clothing experiment as its own lane.
 
+- [ ] C12 #95 Land the default skin ageing (age spots, crepe, dryness) parked in the `humanoid-kit-ageing` worktree (owner: the #86 lane; design in docs first, `docs/research/SKIN-AGEING.md` is missing from integration).
+- [ ] C13 #96 Head-hair hairline renders stair-stepped above the forehead (owner: the #68 lane; check the scalp-coverage cause first).
+
 ### D. Interaction and animation
 
 - [ ] D1 #32 Animation-frame observer lifecycle for interaction consumers, defined and proven.
@@ -106,6 +109,18 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] F8 #56 Minor docs cleanups.
 - [ ] F9 #91 Whole-project assessment report (shipped, proven, unproven, owned), regenerated per milestone.
 
+### I. Roadmap features (from the #54 roadmap triage; each starts with use-case enumeration and spec docs)
+
+- [ ] I1 #97 Anthro traits (ears, muzzle, tail, horns and related shape and graft parts).
+- [ ] I2 #98 Doll form for the creator and the kit.
+- [ ] I3 #99 Fur, scales and feathers as layers on the shared coat module.
+- [ ] I4 #100 Interaction React bindings (Interactable, Interaction, useInteractions).
+- [ ] I5 #101 Interaction stimuli, reactions and gaze.
+- [ ] I6 #102 The chair (fixture slots, approach, contention).
+- [ ] I7 #103 Signal routes into skin states.
+- [ ] I8 #104 glTF `HK_interaction` and the KHR_interactivity bridge.
+- [ ] I9 #105 Decision: is `humanoid-kit-adult-animations` in scope for this public repository? Owner decision (options a/b/c on the issue); everything the decision does not gate proceeds.
+
 ### G. Publication (owner-gated)
 
 - [ ] G1 #69 Publish `integration` to `origin/integration`, never `main`. Neutrality scan is clean; waits on the owner's yes and on G2.
@@ -113,7 +128,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 
 ### H. Hygiene
 
-- [ ] H1 #90 Retire the remaining registered Codex worktrees and old local branches (classify, land valuable work, snapshot, remove without force).
+- [ ] H1 #90 Retire the remaining registered Codex worktrees and old local branches. Done: bundle backup, fresh snapshots, 6 worktrees and 24 branches retired (archive tags kept). Open: the `hk-sculpt-head` force-remove question (owner), and the dirty worktrees owned by #22, #46, #95, #64 and #94, each removed when its owner lands.
 - [ ] H2 Keep `git worktree list` equal to the main checkout plus live lanes; each landed lane's worktree and branch are removed in the landing turn.
 
 ## Operating loop
