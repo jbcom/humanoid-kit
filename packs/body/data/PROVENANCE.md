@@ -28,6 +28,18 @@ captured asset page:
 - 2 file(s) — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1368>, submitted 2018-02-15): mindfront_nails_01_short/mindfront_nails_01_short.mhclo, mindfront_nails_01_short/mind_nails_01_short.obj
 - 2 file(s) — B: page licence "CC0 - Creative Commons Zero" (<http://www.makehumancommunity.org/node/1371>, submitted 2018-02-15): mindfront_nails_toes_01/mindfront_nails_toes_01.mhclo, mindfront_nails_toes_01/mind_nails_toes_01.obj
 
+## Age surface map
+
+`age-surface.webp` (2048², `scripts/lib/ageSurfaceMap.ts`) is a crease height in the body's UV space,
+derived from two photographs of the MakeHuman system assets pack (makehuman_system_assets_cc0.zip,
+"System assets, shared under CC0"): each one's luminance band-passed to crease scale and masked to the
+face, the backs of the hands and the neck, whose lines are procedural. Red is the first source, green the second.
+
+| Channel | Source | SHA-256 | Licence |
+| --- | --- | --- | --- |
+| male | skins/old_caucasian_male/old_lightskinned_male_diffuse.png | `dfb2310ed3e0ad024ea7a3ad321215e2e9e2994cca64043d9f3d07c6543ec847` | CC0-1.0 (skins/old_caucasian_male/old_caucasian_male.mhmat: "This asset was explicitly released as CC0") |
+| female | skins/old_caucasian_female/old_lightskinned_female_diffuse.png | `00c45246c145562b917371e92de44a1fe394bc5f4bd91418addf24b6adff5e9d` | CC0-1.0 (skins/old_caucasian_female/old_caucasian_female.mhmat: "This asset was explicitly released as CC0") |
+
 ## Texture sizes
 
 Each texture ships at the edge its closest QA framing needs, re-sourced from the original wherever the original
@@ -57,3 +69,4 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | eyes_high-poly_brown_eye.webp | `82343d661e02db8c6fd8e4ea526c8f8c5fdcdf74f96107f9af3401af86ac5b53` |
 | teeth_base_teeth.webp | `90f929b92d2e1a92716a87e646d92cdc97be7e407899835cc6c64e7f0e8e502a` |
 | tongue_base_tongue01_diffuse.webp | `45fa5424bd0039d17abc6f4d26cf0acdf27e0e15ad37c794f3a165ee7f3e0c9f` |
+| age-surface.webp | `959b9743eb678ea0a6ee663a771a41cf0e2824679ea6359f789d387b75914d15` |
