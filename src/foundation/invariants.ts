@@ -20,6 +20,7 @@
 import { DoubleSide, Ray, Vector3 } from "three";
 import { INTERSECTED, NOT_INTERSECTED } from "three-mesh-bvh";
 import { SolidWinding } from "../rig/contact.ts";
+import { heaviestBone } from "../rig/influences.ts";
 import type { PosedBody } from "./posed.ts";
 import { BodySurface } from "./surface.ts";
 
@@ -158,13 +159,10 @@ const v3 = (p: Float32Array, i: number, out: Vector3) =>
 /** Each render vertex's part: the bone it follows most. */
 export function vertexParts(body: PosedBody): BodyPart[] {
   const bones = body.bones.names.map(partOfBone);
-  return Array.from({ length: body.vertexCount }, (_, v) => {
-    let best = 0;
-    for (let k = 1; k < 4; k++)
-      if ((body.skinWeight[v * 4 + k] as number) > (body.skinWeight[v * 4 + best] as number))
-        best = k;
-    return bones[body.skinIndex[v * 4 + best] as number] as BodyPart;
-  });
+  return Array.from(
+    { length: body.vertexCount },
+    (_, v) => bones[heaviestBone(body.skinIndex, body.skinWeight, v)] as BodyPart,
+  );
 }
 
 const a = new Vector3();

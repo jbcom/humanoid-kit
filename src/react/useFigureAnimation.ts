@@ -4,54 +4,22 @@ import { type RefObject, useCallback, useEffect, useMemo, useRef } from "react";
 import type { Group, Skeleton, Vector3 } from "three";
 import { Animator } from "../animation/animator.ts";
 import type { AnimationClip } from "../animation/clip.ts";
+import {
+  type AnimationFrames,
+  createAnimationFrames,
+  type FrameBinding,
+  type FrameObserver,
+} from "../animation/frames.ts";
+import { AnimationFrameWriter, type FrameFigure } from "../animation/frameWriter.ts";
 import type { AnimationLibrary } from "../animation/library.ts";
-import { contactBones, contactPoints } from "../animation/locomotion.ts";
+import { contactBones } from "../animation/locomotion.ts";
 import type { Evaluation } from "../model/humanoidModel.ts";
-import { groundOffsetOf } from "../presence/posed.ts";
 import type { DualBones } from "../render/dualSkinning.ts";
 import { type OcclusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
-import {
-  type BoneRotations,
-  composeRotations,
-  type RestBones,
-  restBonesFrom,
-  skinPositions,
-} from "../rig/pose.ts";
+import { type BoneRotations, composeRotations, restBonesFrom } from "../rig/pose.ts";
 import type { ReadyInfo } from "../worker/client.ts";
 import { FIGURE_FRAME_PRIORITY } from "./framePriority.ts";
 import type { PresenceSource } from "./presence.tsx";
-
-/** A clip playing on a figure. */
-export type AnimationContactPoint = "heel" | "ballInner" | "ballOuter";
-
-/** A completed grounded-contact sample in figure-local space, measured in metres. */
-export interface HumanoidAnimationContact {
-  /** Left or right foot. */
-  side: "left" | "right";
-  /** The sole point: ankle/heel, inner ball, or outer ball. */
-  point: AnimationContactPoint;
-  /** Figure-local point after ground lift, before any caller group transform. */
-  position: readonly [number, number, number];
-  /** Whether this point is the real FootLock owner; ownership can fade during rollover/release. */
-  owned: boolean;
-  /** FootLock's continuous hold for this owner, from 0 (released) to 1 (fully planted). */
-  hold: number;
-}
-
-/** A completed clip frame for gameplay observers; distances are metres and `time` is seconds. */
-export interface HumanoidAnimationFrame {
-  /** Monotonic rest/evaluation binding version for this mounted humanoid. */
-  generation: number;
-  /** The clip currently playing and its seconds into that clip. */
-  clip: string;
-  time: number;
-  /** Cumulative figure-local root carry, x then forward z. */
-  root: readonly [number, number];
-  /** This render frame's root carry before a caller group's heading transform. */
-  delta: readonly [number, number];
-  /** Ground-lifted figure-local sole contacts after FootLock completes. */
-  contacts: readonly HumanoidAnimationContact[];
-}
 
 /** A clip playing on a `<Humanoid>` (docs/ARCHITECTURE.md, "Animation"): per frame,
  * the animator's body pose (with the face units laid over it) goes to the
@@ -88,12 +56,13 @@ export interface HumanoidAnimation {
    */
   onStart?: (clip: string) => void;
   /**
-   * Receives each completed animation frame without a React render. `contacts` are
-   * figure-local after the clip's ground lift; transform them through the rendered
-   * group to obtain world coordinates. `generation` changes after each evaluation/rest
-   * binding, so callers can discard a callback from a prior asynchronous recipe update.
+   * Receives each completed animation frame without a React render: the same frame
+   * the figure publishes into its presence registry's `frames` (docs/INTERACTION-SESSION.md,
+   * "Animation frames"). The object is reused; copy what you keep. `contacts` are
+   * figure-local after the ground lift and `toWorld` places them in the world.
+   * `generation` rises after each new client or evaluation.
    */
-  onFrame?: (frame: Readonly<HumanoidAnimationFrame>) => void;
+  onFrame?: FrameObserver;
 }
 
 /** How often (in frames) the figure's presence is derived again from its pose: it skins the body once. */
@@ -116,6 +85,10 @@ interface Args {
   /** The lift of the figure in its static pose, which the group goes back to when no clip plays. */
   staticLift: number;
   presenceSource: RefObject<PresenceSource | null>;
+  /** The presence registry's frame channel the figure publishes into, when it has a presence. */
+  frames: AnimationFrames | null;
+  /** The figure's presence id. */
+  figureId: string | undefined;
   report: (e: Error) => void;
 }
 
@@ -125,30 +98,47 @@ export function useFigureAnimation(args: Args): void {
   const animator = useRef<Animator | null>(null);
   const argsRef = useRef(args);
   argsRef.current = args;
-  /** What the figure's skeleton is at rest, once per evaluation, and its contact bones. */
-  const rig = useRef<{ rest: RestBones; contacts: Int16Array } | null>(null);
+  /** What the figure's frames are measured on, once per evaluation. */
+  const rig = useRef<FrameFigure | null>(null);
   /** A clip that arrived before the animator did. */
   const pending = useRef<AnimationClip | null>(null);
-  const lastRoot = useRef<[number, number]>([0, 0]);
-  /** Increments after an evaluation gets its own rest/contact binding. */
-  const evaluationGeneration = useRef(0);
-  const frame = useRef(0);
-  const posed = useMemo(
-    () => ({ q: new Float32Array(0), mesh: new Float32Array(0), soles: new Float32Array(18) }),
-    [],
+  /** Counts frames, to derive the presence every `PRESENCE_EVERY`. */
+  const frameCount = useRef(0);
+  const posed = useMemo(() => ({ q: new Float32Array(0) }), []);
+  const writer = useMemo(() => new AnimationFrameWriter(), []);
+  // A figure with no presence still binds a channel of its own, so `onFrame`'s
+  // generation follows the same lifecycle as a registry's.
+  const own = useMemo(() => createAnimationFrames(), []);
+  const channel = args.frames ?? own;
+  const figureId = args.figureId ?? "";
+  const binding = useRef<FrameBinding | null>(null);
+
+  const start = useCallback(
+    (a: Animator, clip: AnimationClip) => {
+      const o = argsRef.current.animation;
+      // A paused figure's time does not run, so a fade would never end: the new clip replaces the old at once.
+      a.play(clip, {
+        ...(o?.paused ? { fade: 0 } : o?.fade !== undefined && { fade: o.fade }),
+        ...(o?.speed !== undefined && { speed: o.speed }),
+        time: o?.time ?? 0,
+      });
+      writer.resetCarry(a);
+      o?.onStart?.(clip.id);
+    },
+    [writer],
   );
 
-  const start = useCallback((a: Animator, clip: AnimationClip) => {
-    const o = argsRef.current.animation;
-    // A paused figure's time does not run, so a fade would never end: the new clip replaces the old at once.
-    a.play(clip, {
-      ...(o?.paused ? { fade: 0 } : o?.fade !== undefined && { fade: o.fade }),
-      ...(o?.speed !== undefined && { speed: o.speed }),
-      time: o?.time ?? 0,
-    });
-    lastRoot.current = [a.root[0], a.root[1]];
-    o?.onStart?.(clip.id);
-  }, []);
+  // The figure publishes while it plays a clip on a ready client: a new client, a new
+  // id or a stopped clip releases this binding, and the next one supersedes it.
+  useEffect(() => {
+    if (!active || !ready) return;
+    const b = channel.bind(figureId);
+    binding.current = b;
+    return () => {
+      if (binding.current === b) binding.current = null;
+      b.release();
+    };
+  }, [active, ready, channel, figureId]);
 
   // The animator follows the figure's own skeleton and ground, which the evaluation sets.
   useEffect(() => {
@@ -159,16 +149,30 @@ export function useFigureAnimation(args: Args): void {
     }
     const rest = restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads);
     const ground = -figure.groundOffset;
-    rig.current = { rest, contacts: contactBones(rest) };
-    evaluationGeneration.current++;
+    rig.current = {
+      rest,
+      groundOffset: figure.groundOffset,
+      contacts: contactBones(rest),
+      skin: {
+        control: figure.control,
+        skinIndex: ready.rig.skin.skinIndex,
+        skinWeight: ready.rig.skin.skinWeight,
+        bodyVertices: ready.rig.skin.bodyVertices,
+      },
+    };
+    // Frames from here on are measured on this evaluation.
+    binding.current?.rebind();
     posed.q = new Float32Array(ready.rig.bones.length * 4);
     if (animator.current) animator.current.setRest(rest, ground);
-    else animator.current = new Animator(ready.rig.bones.length, rest, ground);
+    else {
+      animator.current = new Animator(ready.rig.bones.length, rest, ground);
+      writer.resetCarry(animator.current);
+    }
     if (pending.current && !animator.current.playing) start(animator.current, pending.current);
     pending.current = null;
     const playing = animator.current.playing;
     if (playing) argsRef.current.animation?.onStart?.(playing.clip.id);
-  }, [active, ready, figure, posed, start]);
+  }, [active, ready, figure, posed, start, writer]);
 
   // The clip: loaded when first asked for, played when it arrives.
   const clipId = animation?.clip;
@@ -214,10 +218,9 @@ export function useFigureAnimation(args: Args): void {
     // a slow frame visibly shorten a walk, so the animator receives that clock's
     // full elapsed step.
     if (!cur.animation.paused) a.update(delta);
-    const { ready: info, figure: ev, skeleton: sk } = cur;
+    const { ready: info, skeleton: sk } = cur;
     const fit = rig.current;
     if (!fit) return;
-    const rest = fit.rest;
     const body = a.rotations;
     const face = cur.face.current;
     const q = face ? composeRotations(body, face, posed.q) : body;
@@ -226,34 +229,17 @@ export function useFigureAnimation(args: Args): void {
       bone.quaternion.fromArray(q, i * 4);
     });
     if (cur.keyBasis) cur.occlusionKeys.fromArray(occlusionKeyWeights(cur.keyBasis, q));
-    cur.dual?.update(rest, q);
-    // The figure's lift onto the ground. A figure on its feet stands on its soles, which
-    // follow the pose without skinning the body; one that is not (a swim) is grounded
-    // by its lowest vertex.
-    let offset: number;
-    if (a.playing.clip.grounded) {
-      contactPoints(rest, q, -ev.groundOffset, posed.soles, 0, fit.contacts);
-      let low = Number.POSITIVE_INFINITY;
-      for (let k = 0; k < 6; k++) low = Math.min(low, posed.soles[k * 3 + 1] as number);
-      offset = ev.groundOffset - low;
-    } else {
-      if (posed.mesh.length !== ev.control.length) posed.mesh = new Float32Array(ev.control.length);
-      skinPositions(
-        rest,
-        q,
-        ev.control,
-        info.rig.skin.skinIndex,
-        info.rig.skin.skinWeight,
-        posed.mesh,
-      );
-      offset = groundOffsetOf(posed.mesh, info.rig.skin.bodyVertices);
-    }
+    cur.dual?.update(fit.rest, q);
+    // The lift onto the ground (from the soles for a figure on its feet, from the lowest
+    // vertex for one that is not), the carry and the sole contacts (`AnimationFrameWriter`).
+    const out = writer.write(fit, a, q);
+    if (!out) return;
+    const offset = out.lift;
     if (cur.group.current) cur.group.current.userData.groundOffset = offset;
     if (cur.lifts && cur.lifted.current) cur.lifted.current.position.y = offset;
     // Root motion: the group is carried forward in its own frame by what the clips did this frame.
     const g = cur.group.current;
-    const dx = a.root[0] - lastRoot.current[0];
-    const dz = a.root[1] - lastRoot.current[1];
+    const [dx, dz] = out.delta;
     if (g && cur.animation.rootMotion !== false) {
       if (dx !== 0 || dz !== 0) {
         const s = Math.sin(g.rotation.y);
@@ -262,44 +248,37 @@ export function useFigureAnimation(args: Args): void {
         g.position.z += -dx * s + dz * c;
       }
     }
-    lastRoot.current[0] = a.root[0];
-    lastRoot.current[1] = a.root[1];
     // The presence follows the pose from the posed skeleton, derived anew every few frames.
     const source = cur.presenceSource.current;
-    if (source && frame.current++ % PRESENCE_EVERY === 0)
+    if (source && frameCount.current++ % PRESENCE_EVERY === 0)
       cur.presenceSource.current = {
         ...source,
         pose: { rig: info.rig, rotations: Float32Array.from(q) },
       };
-    // Internal root and presence state is complete before a consumer can observe or throw.
-    const observer = cur.animation.onFrame;
-    if (observer) {
-      const ownership = a.contactOwnership;
-      const points: readonly AnimationContactPoint[] = ["heel", "ballInner", "ballOuter"];
-      observer({
-        generation: evaluationGeneration.current,
-        clip: a.playing.clip.id,
-        time: a.playing.time,
-        root: [a.root[0], a.root[1]],
-        delta: [dx, dz],
-        contacts: points.flatMap((point, pointIndex) =>
-          (["left", "right"] as const).map((side, sideIndex) => {
-            const k = sideIndex * 3 + pointIndex;
-            const owner = ownership[sideIndex] as { index: number; hold: number };
-            return {
-              side,
-              point,
-              position: [
-                posed.soles[k * 3] as number,
-                (posed.soles[k * 3 + 1] as number) + offset,
-                posed.soles[k * 3 + 2] as number,
-              ],
-              owned: owner.index === k,
-              hold: owner.index === k ? owner.hold : 0,
-            };
-          }),
-        ),
-      });
+    // Where the figure-local frame is in the world after this frame's carry.
+    if (g) {
+      g.updateWorldMatrix(true, false);
+      const m = g.matrixWorld.elements;
+      for (let k = 0; k < 16; k++) out.toWorld[k] = m[k] as number;
     }
+    // Internal root and presence state is complete before a consumer can observe or throw.
+    // Both the channel's observers and `onFrame` receive the frame; the first throw is rethrown.
+    let failed = false;
+    let error: unknown;
+    try {
+      binding.current?.publish(out);
+    } catch (e) {
+      failed = true;
+      error = e;
+    }
+    try {
+      cur.animation.onFrame?.(out);
+    } catch (e) {
+      if (!failed) {
+        failed = true;
+        error = e;
+      }
+    }
+    if (failed) throw error;
   }, FIGURE_FRAME_PRIORITY);
 }

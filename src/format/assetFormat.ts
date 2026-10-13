@@ -17,6 +17,8 @@
  * compresses about 3.4 times better than interleaved data; `gunzip` and the
  * parser turn it back into ordinary index and xyz arrays.
  */
+
+import { CUSTOM_GROUP } from "../makehuman/customTargets.ts";
 import {
   AGE_ANCHORS,
   type AgeAnchor,
@@ -26,6 +28,7 @@ import {
   upstreamAgeAnchor,
 } from "../makehuman/macro.ts";
 import type { StateMorph } from "../makehuman/stateMorphs.ts";
+import { ADULT_ONLY_MODIFIER, ADULT_ONLY_SIGNALS } from "../recipe/agePolicy.ts";
 import type { AnatomyFeature } from "../recipe/anatomy.ts";
 import { isBodyPiercingSite } from "../recipe/bodyArt.ts";
 
@@ -759,6 +762,18 @@ export interface SparseTarget {
   scale: number;
 }
 
+/**
+ * The bone influences a skinned vertex carries: its `skinIndex` and `skinWeight`
+ * hold this many places each, heaviest first, unused places weight 0.
+ * MakeHuman skins a vertex with every weight its rig gives it, up to 12 on the
+ * shoulder; 3,665 of the base mesh's vertices have more than four, and only 51
+ * more than eight. Cut to four, a shoulder vertex can lose a fifth of its weight
+ * on the upper arm, and stays behind while its neighbours follow a raised arm
+ * (issue #67), so the rig keeps eight: the visible difference from MakeHuman's
+ * skinning ends there (docs/ARCHITECTURE.md, "Skinning artefacts").
+ */
+export const SKIN_INFLUENCES = 8;
+
 export interface HumanoidAssets {
   manifest: BodyManifest;
   /** Base positions in metres, `vertexCount * 3`. */
@@ -768,7 +783,7 @@ export interface HumanoidAssets {
   faceVerts: Uint32Array;
   /** Quad corner UV indices, `faceCount * 4`. */
   faceUvs: Uint32Array;
-  /** Up to four bone indices per vertex. */
+  /** `SKIN_INFLUENCES` bone indices per vertex. */
   skinIndex: Uint8Array;
   /** Normalised weights matching `skinIndex`. */
   skinWeight: Float32Array;
@@ -936,6 +951,44 @@ export function curveAt(points: readonly (readonly [number, number])[], v: numbe
     }
   }
   return last[1];
+}
+
+/**
+ * The loader does not trust the adult pack's own flags: every route its content
+ * can reach a figure by must already be one the age policy gates, or the pack is
+ * refused (docs/AGE-POLICY.md).
+ *
+ * - Each of the pack's modifiers is flagged adult-only and is one the policy
+ *   gates by id (`ADULT_ONLY_MODIFIER`, which `withAge` strips and the
+ *   violations list names), takes no id of a body modifier and is not in the
+ *   custom group, whose modifiers `addCustomTargets` replaces.
+ * - No body modifier drives a target of the adult pack's file.
+ * - Each state morph the pack adds runs on an adult-only signal
+ *   (`ADULT_ONLY_SIGNALS`), so no signal a figure under 18 may have drives it.
+ */
+function checkAdultGates(adult: AdultAnatomyManifest, body: BodyManifest): void {
+  const bodyIds = new Set(body.modifiers.map((m) => m.id));
+  const adultTargets = new Set(adult.targets.entries.map((e) => e.name));
+  for (const m of adult.modifiers) {
+    const what = `adult pack modifier ${m.id}`;
+    if (bodyIds.has(m.id)) throw new AssetFormatError(`${what} has the id of a body pack modifier`);
+    if (m.adultOnly !== true) throw new AssetFormatError(`${what} is not marked adult-only`);
+    if (!ADULT_ONLY_MODIFIER(m.id))
+      throw new AssetFormatError(`${what} is not an id the age policy treats as adult-only`);
+    if (m.group === CUSTOM_GROUP)
+      throw new AssetFormatError(`${what} is in the ${CUSTOM_GROUP} group, which is the host's`);
+  }
+  for (const m of body.modifiers)
+    for (const t of [m.lo, m.hi])
+      if (t && adultTargets.has(t))
+        throw new AssetFormatError(
+          `body pack modifier ${m.id} drives ${t}, a target of the adult pack`,
+        );
+  for (const s of adult.anatomy?.stateMorphs ?? [])
+    if (!ADULT_ONLY_SIGNALS.includes(s.signal))
+      throw new AssetFormatError(
+        `adult pack state morph on ${s.signal}: only an adult-only signal may drive the adult pack`,
+      );
 }
 
 /**
@@ -1304,6 +1357,7 @@ export function parseHumanoidAssets(
     }
     checkAdultCoatRegions(a.anatomy?.coatRegions ?? [], manifest.vertexCount);
     checkAdultPiercingSites(a.anatomy);
+    checkAdultGates(a, manifest);
     checkAnatomyDefaults(a.anatomy, a.modifiers);
     for (const m of a.modifiers) modifiers.set(m.id, m);
   }
@@ -1324,8 +1378,8 @@ export function parseHumanoidAssets(
   expectLength(uvs, manifest.uvCount * 2, "body uvs");
   expectLength(faceVerts, manifest.faceCount * 4, "body faceVerts");
   expectLength(faceUvs, manifest.faceCount * 4, "body faceUvs");
-  expectLength(skinIndex, manifest.vertexCount * 4, "body skinIndex");
-  expectLength(skinWeight, manifest.vertexCount * 4, "body skinWeight");
+  expectLength(skinIndex, manifest.vertexCount * SKIN_INFLUENCES, "body skinIndex");
+  expectLength(skinWeight, manifest.vertexCount * SKIN_INFLUENCES, "body skinWeight");
   expectIndices(faceVerts, manifest.vertexCount, "body faceVerts");
   expectIndices(faceUvs, manifest.uvCount, "body faceUvs");
   expectIndices(skinIndex, manifest.skeleton.bones.length, "body skinIndex");

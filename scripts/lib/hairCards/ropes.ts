@@ -568,7 +568,8 @@ export function addTube(
     for (let j = 0; j <= sides; j++)
       cards.uvs.push(
         tile.u0 + ((tile.u1 - tile.u0) * j) / sides,
-        (tile.v0 ?? 0) + along / tile.metresPerV,
+        // A rope longer than its tile's run holds the atlas's last row: the image ends at 1.
+        Math.min(1, (tile.v0 ?? 0) + along / tile.metresPerV),
       );
   }
   for (let j = 0; j < sides; j++) cards.roots.push(first + j);

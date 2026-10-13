@@ -198,8 +198,22 @@ interface BodyHairRecipe {
   coverage?: Partial<Record<BodyHairGroup, number>>;
   // physical follicles-per-cm2 multiplier, 0.25..2; changes spacing, not coverage
   follicleDensity?: Partial<Record<BodyHairGroup, number>>;
-  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = none (clean-shaven)
+  // a style by name, or a style with its continuous controls; absent = none (clean-shaven)
+  beard?: BeardStyle | BeardSpec;
 }
+
+// none | stubble | moustache | goatee | imperial | mutton-chops | chin-curtain
+// | full | forked | longstreet
+type BeardStyle = (typeof BEARD_STYLES)[number];
+
+interface BeardSpec {
+  style: BeardStyle;
+  length?: number;  // the longest part, metres; clamped to the chin's height above the floor
+  volume?: number;  // 0..MAX_BEARD_VOLUME (2), 1 = the style's fullness
+  grey?: number;    // 0..1, white hairs on top of the colour's own grey
+  fork?: number;    // 0..1, the chin's hair parting into two points
+  part?: number;    // 0..1, the moustache parting at the middle and sweeping out
+}                   // every absent control is the style's default (BEARD_SHAPES)
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
 
@@ -290,7 +304,9 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 
 ### Age policy
 
-- `ADULT_AGE` (18) and `isAdult(recipe)`.
+- `ADULT_AGE` (18), `isAdultAge(age)` (true only for a finite number of 18 or
+  more: NaN, Infinity, a missing or non-numeric age and a negative age are not
+  adult) and `isAdult(recipe)` (asks it of the recipe's age).
 - `agePolicyViolations(recipe): string[]`: every reason the recipe breaks the
   policy; empty when valid.
 - `assertAgePolicy(recipe)`: throws `AgePolicyError` listing the violations.
@@ -535,12 +551,24 @@ and throws `RangeError` for anything else.
   and the worker's `evaluated` reply carries `decalTopologies` for the brows',
   lashes' and beard cards' static data (`HairTopology.kind` is `scalp`, `brows`,
   `lashes` or `beard`; a decal's fade is all 1, fin and growth 0, scalp none).
-  `Evaluation.beard` is the hair pack's cards for the recipe's beard style
-  (`model.wornBeardCards(recipe)`: the `beard` entry tagged with the style, or
-  null when there is none or the face grows no terminal hair), evaluated as
-  scalp hair is; `HairTopology.rank` is its cards' ranks per render vertex (null
-  for every other kind), and `<Humanoid>` draws the cards whose rank is under the
-  face's coverage (`HairMaterial.setDensity`), in the face's body hair colour.
+  `Evaluation.beard` is the recipe's beard as cards generated for it at
+  evaluation (`beardCardSpec`, `generateCards`; no beard file is loaded, so
+  `pendingHairStyles` never lists one), with its length capped at the chin's
+  height above the figure's lowest point; null when `beardCoverage` is 0, the
+  beard is too short for cards, or the hair pack has no `beard` entry, whose
+  strand map and strand statistics the cards are drawn with. Its id is
+  `beard:` and `beardCardKey`, so equal beards share cards and topology; the
+  model keeps the last 3 it generated and the worker and client the last
+  `BEARD_TOPOLOGIES_KEPT` (4) topologies, both forgetting in the order sent
+  (`SentHairTopologies`), and a forgotten one is sent again if worn again.
+  Generated cards are drawn unsubdivided, their shade the cheap
+  `beardCardOcclusion` (dark roots, open tips) in place of the ray bake.
+  `HairTopology.rank` is its cards' ranks per render vertex (null for every
+  other kind), and `<Humanoid>` draws the cards whose rank is under
+  `beardCoverage` (`HairMaterial.setDensity`), in the face's body hair colour,
+  with the beard's `grey` share of them white (`HairMaterial.setWhite(white,
+  colour)`: whole cards chosen by a hash of their rank, white being the colour
+  at grey 1). It disposes a generated beard's geometry when the beard changes.
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
@@ -566,8 +594,8 @@ interface Evaluation {
 interface SurfaceTopology {
   index: Uint32Array;       // triangles
   uvs: Float32Array;
-  skinIndex: Uint16Array;   // four bone indices per render vertex
-  skinWeight: Float32Array; // four normalised weights per render vertex
+  skinIndex: Uint16Array;   // SKIN_INFLUENCES (8) bone indices per render vertex
+  skinWeight: Float32Array; // SKIN_INFLUENCES normalised weights per render vertex
   vertexCount: number;
 }
 ```
@@ -594,11 +622,20 @@ body and of each garment are drawn.
 
 - `model.outfit(ids): Outfit`: `{ key, order, masks }` for a set of garment
   ids in any order. `order` is innermost first (by `z_depth`, then category,
-  then id) and `masks` is `{ bodyIndex, garmentIndex }`: the triangle indices to
-  draw in place of `topology().body.index` and each garment's
-  `GarmentTopology.index`. Garments stack as MakeHuman does: processed from the
+  then id) and `masks` is `{ bodyIndex, garmentIndex, attachmentIndex }`: the
+  triangle indices to draw in place of `topology().body.index`, each garment's
+  `GarmentTopology.index` and each attachment's index in
+  `topology().attachments` (null to draw it whole). An attachment loses what
+  lies on body the garments delete, as a toenail in a boot; what the
+  attachments themselves delete, as a nail its bed, does not count. Garments stack as MakeHuman does: processed from the
   outermost in, each is hidden only where the garments over it delete, and a
-  face hides only when every corner is hidden. Results are cached by key.
+  face hides only when every corner is hidden. Beyond MakeHuman, a garment's
+  vertices behind one over it are hidden too, and `garmentTuck` (per garment in
+  `order`, per vertex, metres, or null) sinks what would poke out of one, so
+  jeans go into a boot shaft instead of through it (docs/ARCHITECTURE.md,
+  "A garment under another is sunk under it"). A worn garment of kind `hat`
+  draws the hair its crown covers under it in `Evaluation.hair`, and hair
+  below it keeps its place ("Hair under a hat"). Results are cached by key.
   Throws `OutfitError` for an id the clothing pack lacks, one named twice,
   garments that have not loaded, or no clothing pack.
 - `model.garmentTopology(id): GarmentTopology`: a garment's static render data
@@ -620,9 +657,13 @@ body and of each garment are drawn.
   `tint` is linear RGB (each ≥ 0) multiplied into the pack's colour and
   texture, and `roughness` in [0, 1] overrides the pack's. `wear` in [0, 1]
   fades the colour toward its own grey and the road dust (`GARMENT_DUST`) and
-  roughens it. `garmentFinish(material, look)` is the pure function the
-  renderer applies, and it returns the pack's material unchanged when there is
-  no look. A look for a garment the figure does not wear is ignored, and
+  roughens it. `garmentFinish(material, look)` gives the tinted colour and the
+  roughness, and returns the pack's material unchanged when there is no look.
+  The fade itself is the cloth's final albedo, texture included, so it is done
+  in the shader: `applyGarmentWear(material)` (from `humanoid-kit/react`) patches a three.js
+  `MeshStandardMaterial` once and returns a `{ set(finish) }` that changes the
+  wear without recompiling. `wornAlbedo(albedo, wear)` is the same arithmetic
+  on the CPU. A consumer using their own garment material calls both. A look for a garment the figure does not wear is ignored, and
   validation lists every malformed field.
 - The arithmetic behind it, pure and exported: `layerOrder(entries)`,
   `stackVisibility(vertexCount, garments, visible?)`,
@@ -750,7 +791,8 @@ compute what the renderer will do.
   and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`).
   The creator hides the pubic control below 18, as the age policy has it.
   Nothing in body hair reads the gender macro (DECISIONS ruling 1).
-  `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
+  `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `imperial`,
+  `mutton-chops`, `chin-curtain`, `full`, `forked`, `longstreet`).
   `defaultBodyHairCoverage(group, age)` is an unset group's terminal-hair
   coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years: 0
   before puberty, rising through adolescence (`BODY_HAIR_MATURITY`), thinning
@@ -766,11 +808,27 @@ compute what the renderer will do.
   which it draws only when the recipe enables them (`coatEnabled`: a beard
   style for the face, a coverage or density for the others), and
   `drawnBodyHairCoverage(group, input)` is the coverage actually drawn (0 for a
-  coat group left unset). `bodyHairFollicleDensity(group,
+  coat group left unset; for the face, `beardCoverage`). `bodyHairFollicleDensity(group,
   input)` applies the independent `follicleDensity` multiplier (0.25..2) to
   `BODY_HAIR_FOLLICLE_DENSITY`, changing strand spacing without changing
   coverage. `beardStyle(input)` is the recipe's style, or `DEFAULT_BEARD`
-  (`none`, clean-shaven). `bodyHairColour(group, input)` is the figure's hair pigments
+  (`none`, clean-shaven); `beardSpec(input)` is the
+  style with whatever controls the recipe gives. `resolveBeard(input,
+  chinHeight)` (`src/surface/beard.ts`) fills every absent control from the
+  style's `BEARD_SHAPES` entry (which parts it grows, as fractions of the
+  longest, its default length, fork and part) and clamps each to its range:
+  the length to 0..`chinHeight`, so no beard grows past the floor.
+  `beardCoverage(input)` is how much of the chosen beard grows, 0..1: 0
+  clean-shaven, else the face's `bodyHairCoverage` (all of it on an adult face,
+  coming in from puberty, or the recipe's own face `coverage` or `density`).
+  The beard's coat cover and the share of its cards drawn are it.
+  `generateBeardCards(assets, beard: ResolvedBeard)`
+  (`src/surface/beardCards.ts`) is the beard's alpha cards, bound to the base
+  mesh at rest and draped (long hair falls, forks and parts, and lies on the
+  body). It is null for a beard that grows none: clean-shaven, stubble, no part
+  `BEARD_CARD_MIN_LENGTH` long, or a volume of 0. `beardCardSpec(assets, beard)`
+  is the spec it generates from. `beardCardKey(beard)` is equal exactly when
+  two beards give the same cards. `bodyHairColour(group, input)` is the figure's hair pigments
   darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
   fibre diameter and drawn length) and at least as grey as ageing makes them
   (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an
@@ -1243,7 +1301,8 @@ slices 1 and 2 of its build plan.
   `releaseSeconds?`, `priority?`.
 - `tagMatches(required, tag)`, `audienceOf(definition, affordanceAdult?)`
   (adult unless declared `all` and no figure affordance it names is adult; an
-  affordance the core does not know counts as adult), `definitionProblems`.
+  affordance the core does not know counts as adult, and `affordanceAdult` can
+  only add adult ids to that, never clear one), `definitionProblems`.
 - `createInteractions(registry, { seed, clipLength, affordanceAdult?,
   applyChange? })` returns the runtime: `define(definitions)` (throws
   `InteractionDefinitionError` on a malformed one), `offer(offer)`,
@@ -1476,7 +1535,7 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
 | `onEvaluated?` | Called with each `Evaluation`, as its geometry is written |
 | `onSettled?` | Called with an `Evaluation` once everything the recipe wears is drawn: the geometry is written and the hair style's strand map, the attachments' and garments' textures and the attachments' posed occlusion have loaded (then two frames). Wait for this, not `onEvaluated`, before a screenshot. The playground's `data-figure="ready"` is this |
 | `onError?` | Called with evaluation and texture errors other than a superseded request; without it they are logged to the console |
-| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`, `"bowed"`, `"overhead"`, `"squat"`), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
+| `pose?` | A `HumanoidPose`: `body`, a whole-body pose from the pack by name (`"tpose"`, `"benchmark"`, `"relaxed"`, `"flexed"`, `"twisted"`, `"bent"`, `"abducted"`, `"seated"`, `"tucked"`, `"bowed"`, `"overhead"`, `"squat"`), `joints`, joints posed by hand and laid over `body` (BVH channel degrees per joint, as in the authored pose files: `{ "upperarm01.L": { Xrotation: -22, Yrotation: -138 } }`; a joint named there takes these channels instead of the body pose's), and `faceUnits`, MakeHuman's face units by name with weights 0..1 (`{ JawDrop: 1 }` opens the mouth), layered on top. Absent is the rest pose |
 | `signals?` | The skin's state, signals 0..1 (`cold`, `heat`, `exertion`, `blush`, `fear`; `arousal` adults only). Every signal reaches the skin layers (`cold` and `fear` raise goosebumps, `blush`, `exertion`, `heat`, `fear` and `cold` flush or blanch the skin, `heat` and `exertion` bring sweat); those with state morphs also reshape the figure (a re-evaluation, rounded to 50 steps). Never part of the recipe. They apply as given: pass `useSkinStateFilter(target)` to ease them at the pace of a body |
 | `onGroundOffset?` | Called with the lift (metres) that puts the figure's lowest body point on y = 0 whenever the figure or its pose changes it; place the group at that height so a crouch or kneel rests on the ground |
 | `bodyArtImages?` | `BodyArtImages`: the decoded images (`ImageBitmap`, loaded `HTMLImageElement`, canvas) the recipe's tattoos name by key. Keep the object stable: a new one bakes the figure's body art again. A tattoo whose image is missing is reported through `onError`, and the figure is drawn without its body art |
@@ -2159,12 +2218,31 @@ animator.root;                // how far the figure has been carried: [x across,
   render-clock step, including after a slow frame; and the
   figure's presence follows. `time` puts it at a time in the clip. `onStart(clip)` is
   called once the figure follows the clip, and again for a new figure or `time`.
-  `onFrame(frame)` receives the completed pose and real FootLock contact owner for each sole,
-  without a React render: `owned` identifies the current owner while `hold` says whether it is
-  fully planted (1) or fading through rollover/release (0..1). Contacts are figure-local metres after ground lift and before
-  cumulative root carry, group heading or any caller transform; `root` is cumulative x/forward-z
-  carry and `delta` is this render frame's carry. `generation` increments after each evaluation/rest
-  binding so an integration can reject a callback from an earlier asynchronous recipe update.
+  `onFrame(frame)` receives the completed `HumanoidAnimationFrame` without a React render,
+  and a figure with `presence` publishes the same frame into its registry's `frames` under its
+  presence id: `owned` identifies each sole's real FootLock owner while `hold` says whether it is
+  fully planted (1) or fading through rollover/release (0..1). Contacts are figure-local metres
+  after ground lift and before cumulative root carry, group heading or any caller transform;
+  `toWorld` (the group's world matrix after this frame's carry) places them in the world.
+  `root` is cumulative x/forward-z carry, `delta` this render frame's and `lift` the ground lift.
+  `generation` rises with each new client or evaluation. The frame object is reused: copy what
+  you keep (`copyAnimationFrame`).
+- Animation frames (`src/animation/frames.ts`, `src/animation/frameWriter.ts`;
+  docs/INTERACTION-SESSION.md, "Animation frames"): `createAnimationFrames()` is the
+  framework-free channel every `PresenceRegistry` owns as `frames`.
+  `frames.observe(figure, onFrame, onRelease?)` returns the unsubscribe function;
+  `onRelease(reason, figure)` hears `"released"` or `"superseded"`. `frames.bind(figure)`
+  returns a `FrameBinding` (`publish(frame)`, `false` once not live; `rebind()`; `release()`;
+  `live`; `generation`); binding an id again supersedes its producer. An observer's exception
+  is rethrown to the producer after every observer has the frame. `AnimationFrameWriter`
+  fills a frame from an `Animator` and a `FrameFigure` (`rest`, `groundOffset`, `contacts`,
+  optional `skin`), outside any renderer; `setFramePlacement(frame, position, facing)` places
+  a headless producer's frame, `frameContactWorld(frame, index, out?)` is a contact in world
+  space, `createAnimationFrame` and `copyAnimationFrame` make and copy frames, and
+  `ANIMATION_CONTACTS` is the contacts' order.
+- `interaction.observeFrames(role, onFrame, onRelease?)` observes a figure role's frames for
+  that interaction only; the subscription ends with the interaction (end, decline, cancel,
+  detach), and a frame from another figure that took the participant's id is never delivered.
 - `bodySegments(assets, rest, control, skinIndex, skinWeight, bodyVertices)` (a figure's 14
   capsules, radii measured from its skin) and `overlaps(rest, segments, rotations)` (every
   pair of parts that are not neighbours, with how deep they overlap in the pose, negative

@@ -11,6 +11,8 @@
  * Coordinates are the model's: the figure faces +z, its left side is +x and y
  * is up.
  */
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
+import { heaviestBone } from "../rig/influences.ts";
 
 export const FRAME_PARTS = [
   "body",
@@ -80,14 +82,9 @@ export function vertexFrameParts(
   const boneMask = bones.map((b) =>
     framePartsOfBone(b).reduce((m, p) => m | (1 << FRAME_PARTS.indexOf(p)), 0),
   );
-  const n = skinWeight.length / 4;
+  const n = skinWeight.length / SKIN_INFLUENCES;
   const out = new Uint16Array(n);
-  for (let v = 0; v < n; v++) {
-    let best = 0;
-    for (let k = 1; k < 4; k++)
-      if ((skinWeight[v * 4 + k] as number) > (skinWeight[v * 4 + best] as number)) best = k;
-    out[v] = boneMask[skinIndex[v * 4 + best] as number] ?? 1;
-  }
+  for (let v = 0; v < n; v++) out[v] = boneMask[heaviestBone(skinIndex, skinWeight, v)] ?? 1;
   return out;
 }
 

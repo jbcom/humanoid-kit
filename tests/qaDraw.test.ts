@@ -1,6 +1,6 @@
 /**
  * The playground shot's QA draw (playground/src/qaDraw.ts; CONTRIBUTING.md,
- * "Contact sheets"): `?nofold=` and `?shade=` read strictly, the folds forced off
+ * "Contact sheets"): `?nofold=`, `?shade=` and `?coat=` read strictly, the folds forced off
  * however often they arrive again, the body's material replaced by a QA one
  * skinned as the figure is, and the notes a sheet records of the folds drawn.
  */
@@ -48,14 +48,82 @@ const params = (query: string) => new URLSearchParams(query);
 
 describe("the shot's QA draw", () => {
   it("reads the query strictly, lit with every fold by default", () => {
-    expect(qaDraw(params(""))).toEqual({ off: new Set(), shade: "lit" });
-    expect(qaDraw(params("nofold=knee,hip&shade=flat"))).toEqual({
+    expect(qaDraw(params(""))).toEqual({
+      off: new Set(),
+      shade: "lit",
+      coat: "lit",
+      coatRgb: [0.5, 0.5, 0.5],
+    });
+    expect(qaDraw(params("nofold=knee,hip&shade=flat&coat=parity&coatrgb=0.2,0.1,0.05"))).toEqual({
       off: new Set(["knee", "hip"]),
       shade: "flat",
+      coat: "parity",
+      coatRgb: [0.2, 0.1, 0.05],
     });
     // A typo must not quietly draw the folds on, or lit.
     expect(() => qaDraw(params("nofold=kneee"))).toThrow(/no such fold joint/);
     expect(() => qaDraw(params("shade=normals"))).toThrow(/not one of/);
+    expect(() => qaDraw(params("coat=nospecular"))).toThrow(/not one of/);
+    expect(() => qaDraw(params("coat=parity&coatrgb=1,2"))).toThrow(/three linear values/);
+  });
+
+  /** A coat as `CoatMesh` draws one: a skinned mesh whose geometry names its regions. */
+  function coatFigure() {
+    const { group, body, material: skin } = figure({});
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(new Float32Array(3 * 3), 3));
+    geometry.userData.hkCoatRegions = ["hair-chest"];
+    const material = new MeshStandardMaterial();
+    const coat = new SkinnedMesh<BufferGeometry, Material>(geometry, material);
+    group.add(coat);
+    return { group, coat, material, body, skin };
+  }
+  const coatShader = () => ({
+    vertexShader: "",
+    fragmentShader:
+      "diffuseColor.a = hkCover;\n#include <aomap_fragment>\nvec3 outgoingLight = x;\n#include <opaque_fragment>",
+    uniforms: {},
+  });
+
+  it("hides the coat for its bare-skin pair, and changes nothing else", () => {
+    const { group, coat, body, skin } = coatFigure();
+    applyQaDraw(group, qaDraw(params("coat=off")));
+    expect(coat.visible).toBe(false);
+    expect(body.visible).toBe(true);
+    expect(body.material).toBe(skin);
+  });
+
+  it("changes one thing in the coat's shader per mode, once, under its own program key", () => {
+    for (const [mode, line] of [
+      ["nospec", "reflectedLight.directSpecular = vec3( 0.0 )"],
+      ["noindirect", "reflectedLight.indirectDiffuse = vec3( 0.0 )"],
+      ["unlit", "outgoingLight = diffuseColor.rgb;"],
+      ["alpha", "outgoingLight = vec3( 1.0, 0.0, 1.0 );"],
+      ["parity", "diffuseColor = vec4( 0.2000, 0.1000, 0.0500, 1.0 );"],
+      ["nan", "isnan( outgoingLight )"],
+    ] as const) {
+      const { group, material } = coatFigure();
+      const draw = qaDraw(params(`coat=${mode}&coatrgb=0.2,0.1,0.05`));
+      applyQaDraw(group, draw);
+      const version = material.version;
+      applyQaDraw(group, draw);
+      expect(material.version, mode).toBe(version);
+      expect(material.customProgramCacheKey(), mode).toContain(`qa-coat-${mode}`);
+      const shader = coatShader();
+      material.onBeforeCompile(shader as never, undefined as never);
+      expect(shader.fragmentShader, mode).toContain(line);
+    }
+  });
+
+  it("refuses a coat shader that has lost the lines a mode patches", () => {
+    const { group, material } = coatFigure();
+    applyQaDraw(group, qaDraw(params("coat=nospec")));
+    expect(() =>
+      material.onBeforeCompile(
+        { vertexShader: "", fragmentShader: "void main() {}", uniforms: {} } as never,
+        undefined as never,
+      ),
+    ).toThrow(/no longer has/);
   });
 
   it("notes, per body drawn, the vertices each joint's fold gives a row and its texture", () => {

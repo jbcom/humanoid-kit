@@ -66,58 +66,77 @@ export interface PosedBody {
 
 /** The body of `recipe` in `pose`: `REST_POSE`, or a whole-body pose of the body pack by name. */
 export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string): PosedBody {
+  const rig = rigData(model.assets);
+  const rotations =
+    pose === REST_POSE ? IDENTITY_POSE(rig.bones.length) : bodyPoseRotations(rig, pose);
+  return surfacePoser(model, recipe)(rotations);
+}
+
+/**
+ * Poses `recipe`'s body in any rotations (a clip's frame, as the animator
+ * writes it), evaluating the recipe once for every pose asked for: what
+ * `posedSurface` does for a named pose.
+ */
+export function surfacePoser(
+  model: HumanoidModel,
+  recipe: Recipe,
+): (rotations: BoneRotations) => PosedBody {
   const ev = model.evaluate(recipe);
   // The evaluation's arrays are the model's scratch: kept before anything else evaluates.
   const rest = Float32Array.from(ev.positions);
   const restNormals = Float32Array.from(ev.normals);
   const control = Float32Array.from(ev.control);
-  const topology = ev.surface === "adult" ? model.adultSurface() : model.topology().body;
+  const surface = ev.surface;
+  const topology = surface === "adult" ? model.adultSurface() : model.topology().body;
   if (!topology) throw new Error("an adult evaluation without the adult surface");
-  const rig = rigData(model.assets);
   const bones = restBones(model.assets, control);
-  const rotations =
-    pose === REST_POSE ? IDENTITY_POSE(rig.bones.length) : bodyPoseRotations(rig, pose);
-  // The folds as the renderer has them: asked for once a joint of the pose is flexed past its fold's start
-  // (`<Humanoid>` asks so), and adding nothing in a pose that flexes none, which is not solved for.
-  const flexed = FOLD_JOINTS.some((joint) =>
-    flexedPast(joint, foldFlexion(joint, bones, rotations)),
-  );
-  const folds = flexed ? solvedFolds(model, recipe).map(renderFold) : [];
   // The weights this figure is skinned by: a reservoir its detail drew out moves with its root.
   const { skinIndex, skinWeight } = skinOfEvaluation(ev, topology);
-  const n = rest.length;
-  return {
-    surface: ev.surface,
-    index: topology.index,
-    rest,
-    restNormals,
-    positions: skinPositions(
-      bones,
-      rotations,
+  const weld = model.renderWeld(surface);
+  let solved: ReturnType<typeof renderFold>[] | null = null;
+  return (pose) => {
+    const rotations = Float32Array.from(pose);
+    // The folds as the renderer has them: asked for once a joint of the pose is flexed past its fold's start
+    // (`<Humanoid>` asks so), and adding nothing in a pose that flexes none, which is not solved for.
+    const flexed = FOLD_JOINTS.some((joint) =>
+      flexedPast(joint, foldFlexion(joint, bones, rotations)),
+    );
+    if (flexed) solved ??= solvedFolds(model, recipe).map(renderFold);
+    const folds = flexed ? (solved ?? []) : [];
+    const n = rest.length;
+    return {
+      surface,
+      index: topology.index,
       rest,
+      restNormals,
+      positions: skinPositions(
+        bones,
+        rotations,
+        rest,
+        skinIndex,
+        skinWeight,
+        new Float32Array(n),
+        folds,
+      ),
+      normals: skinNormals(
+        bones,
+        rotations,
+        restNormals,
+        skinIndex,
+        skinWeight,
+        new Float32Array(n),
+        folds,
+      ),
+      weld,
+      vertexCount: topology.vertexCount,
       skinIndex,
       skinWeight,
-      new Float32Array(n),
-      folds,
-    ),
-    normals: skinNormals(
       bones,
       rotations,
-      restNormals,
-      skinIndex,
-      skinWeight,
-      new Float32Array(n),
-      folds,
-    ),
-    weld: model.renderWeld(ev.surface),
-    vertexCount: topology.vertexCount,
-    skinIndex,
-    skinWeight,
-    bones,
-    rotations,
-    heads: posedBoneHeads(bones, rotations),
-    control,
-    canals: "canals" in topology ? topology.canals : null,
+      heads: posedBoneHeads(bones, rotations),
+      control,
+      canals: "canals" in topology ? topology.canals : null,
+    };
   };
 }
 

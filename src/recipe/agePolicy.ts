@@ -18,12 +18,12 @@
  * hair is puberty's, not the policy's: it comes in from 13 like facial and limb
  * hair.
  */
-import { ADULT_AGE } from "../makehuman/macro.ts";
+import { ADULT_AGE, isAdultAge } from "../makehuman/macro.ts";
 import { ADULT_ONLY_BODY_HAIR, isAdultOnlyBodyHair } from "../surface/bodyHair.ts";
 import { isBodyPiercingSite } from "./bodyArt.ts";
 import type { Recipe } from "./recipe.ts";
 
-export { ADULT_AGE };
+export { ADULT_AGE, isAdultAge };
 
 /**
  * Shape modifiers that only apply to adults: the adult anatomy pack's genital,
@@ -36,7 +36,8 @@ export const ADULT_ONLY_MODIFIER = (id: string): boolean =>
   id.startsWith("pelvis/mound") ||
   id.startsWith("stomach/stomach-pregnant");
 
-export const isAdult = (recipe: Recipe): boolean => recipe.macros.age >= ADULT_AGE;
+/** Whether the recipe's age is an adult's (`isAdultAge`): a missing, non-finite or non-numeric age is not. */
+export const isAdult = (recipe: Recipe): boolean => isAdultAge(recipe.macros?.age);
 
 export class AgePolicyError extends Error {
   override name = "AgePolicyError";
@@ -105,7 +106,7 @@ export function assertSignalPolicy(
 export function withAge(recipe: Recipe, age: number): Recipe {
   const next: Recipe = structuredClone(recipe);
   next.macros.age = age;
-  if (age >= ADULT_AGE) return next;
+  if (isAdultAge(age)) return next;
   for (const id of Object.keys(next.modifiers))
     if (ADULT_ONLY_MODIFIER(id)) delete next.modifiers[id];
   const density = next.bodyHair?.density;

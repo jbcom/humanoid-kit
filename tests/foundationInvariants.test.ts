@@ -4,6 +4,7 @@
  * defect is put there on purpose.
  */
 import { describe, expect, it } from "vitest";
+import { SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import {
   isContact,
   isLumenContact,
@@ -47,7 +48,7 @@ describe("the foundation's invariants", () => {
     // The left hand, pushed 4 cm into the left thigh's side... is a named contact;
     // the left forearm pushed into the head is not.
     const parts = atRest.bones.names.map(partOfBone);
-    const owner = (v: number) => parts[atRest.skinIndex[v * 4] as number];
+    const owner = (v: number) => parts[atRest.skinIndex[v * SKIN_INFLUENCES] as number];
     let headX = 0;
     let headZ = 0;
     let count = 0;

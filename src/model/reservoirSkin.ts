@@ -35,10 +35,11 @@
  * organ) keeps its topology's weights, the very arrays.
  */
 import type { SurfaceMesh } from "../build/surfaceMesh.ts";
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import { fromHalf, toHalf } from "../rig/half.ts";
 import { rowTexels, type SurfaceFold } from "../rig/jointFold.ts";
 
-/** A surface's skin weights: four bones and four weights per render vertex. */
+/** A surface's skin weights: `SKIN_INFLUENCES` bones and weights per render vertex. */
 export interface SkinWeights {
   skinIndex: Uint16Array;
   skinWeight: Float32Array;
@@ -64,7 +65,7 @@ export function skinOfEvaluation(
 export interface ReservoirSkinning {
   /** Per render vertex, the reservoir it is drawn from (a ring copy or a cap vertex), or -1. */
   owner: Int16Array;
-  /** Per reservoir, its root's four bones and weights (`rootSkin`). */
+  /** Per reservoir, its root's bones and weights (`rootSkin`). */
   roots: readonly { index: Uint16Array; weight: Float32Array }[];
   /** Per reservoir, its loop's render vertices: where the organ meets the body. */
   loops: readonly Uint32Array[];
@@ -379,28 +380,30 @@ export function rootShares(
 }
 
 /**
- * A reservoir's root: the mean of its loop's render vertices' weights, its four
- * heaviest bones renormalised. The loop is where the organ meets the body.
+ * A reservoir's root: the mean of its loop's render vertices' weights, its
+ * `SKIN_INFLUENCES` heaviest bones renormalised. The loop is where the organ
+ * meets the body.
  */
 export function rootSkin(
   skin: SkinWeights,
   loopRenderVertices: ArrayLike<number>,
 ): { index: Uint16Array; weight: Float32Array } {
+  const I = SKIN_INFLUENCES;
   const sum = new Map<number, number>();
   for (let i = 0; i < loopRenderVertices.length; i++) {
     const v = loopRenderVertices[i] as number;
-    for (let k = 0; k < 4; k++) {
-      const w = skin.skinWeight[v * 4 + k] as number;
+    for (let k = 0; k < I; k++) {
+      const w = skin.skinWeight[v * I + k] as number;
       if (w > 0) {
-        const b = skin.skinIndex[v * 4 + k] as number;
+        const b = skin.skinIndex[v * I + k] as number;
         sum.set(b, (sum.get(b) ?? 0) + w);
       }
     }
   }
-  const top = [...sum].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, 4);
+  const top = [...sum].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, I);
   const total = top.reduce((s, [, w]) => s + w, 0);
-  const index = new Uint16Array(4);
-  const weight = new Float32Array(4);
+  const index = new Uint16Array(I);
+  const weight = new Float32Array(I);
   top.forEach(([b, w], k) => {
     index[k] = b;
     weight[k] = w / total;
@@ -409,17 +412,19 @@ export function rootSkin(
 }
 
 /**
- * Four weights from up to eight, continuously: each loses the fifth largest and
- * the four left are renormalised. Keeping the four largest as they are would jump
- * where the fourth and fifth swap; with the fifth taken off, both are zero there.
+ * `SKIN_INFLUENCES` weights from up to twice as many, continuously: each loses
+ * the next largest past them and those kept are renormalised. Keeping the
+ * largest as they are would jump where the last kept and the first dropped swap;
+ * with the first dropped taken off, both are zero there.
  */
-function fourOf(
+function strongestOf(
   bones: number[],
   weights: number[],
   index: Uint16Array,
   weight: Float32Array,
   at: number,
 ) {
+  const I = SKIN_INFLUENCES;
   const order = weights
     .map((_, i) => i)
     .sort(
@@ -427,16 +432,16 @@ function fourOf(
         (weights[b] as number) - (weights[a] as number) ||
         (bones[a] as number) - (bones[b] as number),
     );
-  const floor = order.length > 4 ? (weights[order[4] as number] as number) : 0;
+  const floor = order.length > I ? (weights[order[I] as number] as number) : 0;
   let total = 0;
-  for (let k = 0; k < 4; k++) {
+  for (let k = 0; k < I; k++) {
     const i = order[k];
     const w = i === undefined ? 0 : Math.max(0, (weights[i] as number) - floor);
     index[at + k] = i === undefined ? 0 : (bones[i] as number);
     weight[at + k] = w;
     total += w;
   }
-  for (let k = 0; k < 4; k++) weight[at + k] = total > 0 ? (weight[at + k] as number) / total : 0;
+  for (let k = 0; k < I; k++) weight[at + k] = total > 0 ? (weight[at + k] as number) / total : 0;
 }
 
 /**
@@ -475,10 +480,11 @@ export function evaluatedSkin(
         weights.push(w);
       } else weights[at] = (weights[at] as number) + w;
     };
-    for (let k = 0; k < 4; k++)
-      add(skin.skinIndex[v * 4 + k] as number, (1 - e) * (skin.skinWeight[v * 4 + k] as number));
-    for (let k = 0; k < 4; k++) add(root.index[k] as number, e * (root.weight[k] as number));
-    fourOf(bones, weights, out.skinIndex, out.skinWeight, v * 4);
+    const I = SKIN_INFLUENCES;
+    for (let k = 0; k < I; k++)
+      add(skin.skinIndex[v * I + k] as number, (1 - e) * (skin.skinWeight[v * I + k] as number));
+    for (let k = 0; k < I; k++) add(root.index[k] as number, e * (root.weight[k] as number));
+    strongestOf(bones, weights, out.skinIndex, out.skinWeight, v * I);
   }
   return out;
 }

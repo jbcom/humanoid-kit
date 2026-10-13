@@ -25,7 +25,7 @@ import { HumanoidModel } from "../model/humanoidModel.ts";
 import { tryPresenceJoints } from "../presence/fromEvaluation.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { rigData } from "../rig/pose.ts";
-import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
+import { SentHairTopologies, type WorkerRequest, type WorkerResponse } from "./protocol.ts";
 import { yieldWorkerTask } from "./task.ts";
 
 export type Post = (msg: WorkerResponse, transfer?: Transferable[]) => void;
@@ -37,8 +37,8 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
   let complete: Promise<unknown> = Promise.resolve();
   /** The corner bake of a worn set the pack did not bake, made once. */
   let posedOcclusion: Promise<Float32Array[] | null> | null = null;
-  /** Hair styles whose static data has gone to the client. */
-  const sentHair = new Set<string>();
+  /** Hair styles whose static data has gone to the client (and the client still holds). */
+  const sentHair = new SentHairTopologies();
   /** The joint folds request being solved, so that a newer one can supersede it. */
   let foldRun = 0;
 
@@ -268,9 +268,11 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         const sent = {
           bodyIndex: masks.bodyIndex.slice(),
           garmentIndex: masks.garmentIndex.map((i) => i.slice()),
+          attachmentIndex: masks.attachmentIndex.map((i) => i?.slice() ?? null),
         };
         evaluation.outfit = { ...evaluation.outfit, masks: sent };
         transfer.push(sent.bodyIndex.buffer, ...sent.garmentIndex.map((i) => i.buffer));
+        for (const i of sent.attachmentIndex) if (i) transfer.push(i.buffer);
       }
       // A style's static data goes once per worker: the client keeps it by id.
       const hairId = evaluation.hair?.id;

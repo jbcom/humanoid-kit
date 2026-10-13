@@ -64,12 +64,51 @@ describe("the recipe's optional body hair", () => {
         "bodyHair.density.chest must be a number in [0, 2]",
         "bodyHair.density.elbows is not a body hair group",
         "bodyHair.density.legs must be a number in [0, 2]",
-        "bodyHair.beard must be one of none, stubble, moustache, goatee, full",
+        "bodyHair.beard must be one of none, stubble, moustache, goatee, imperial, mutton-chops, chin-curtain, full, forked, longstreet",
       ].sort(),
     );
     expect(recipeProblems({ ...createRecipe(), bodyHair: 1 })).toEqual([
       "bodyHair must be an object",
     ]);
+  });
+
+  it("takes a beard with its continuous controls, and copies it", () => {
+    const beard = { style: "forked" as const, length: 0.2, volume: 1.4, grey: 0.3, fork: 0.9 };
+    const r = createRecipe({ bodyHair: { beard } });
+    expect(r.bodyHair?.beard).toEqual(beard);
+    beard.length = 0.5;
+    expect(r.bodyHair?.beard).toEqual({ ...beard, length: 0.2 });
+    expect(JSON.parse(JSON.stringify(r))).toEqual(r);
+    expect(recipeProblems(r)).toEqual([]);
+  });
+
+  it("lists every problem with a beard's controls", () => {
+    const styles =
+      "one of none, stubble, moustache, goatee, imperial, mutton-chops, chin-curtain, full, forked, longstreet";
+    const bad = (beard: unknown) => recipeProblems({ ...createRecipe(), bodyHair: { beard } });
+    expect(
+      bad({
+        style: "mutton",
+        length: -1,
+        volume: 3,
+        grey: 2,
+        fork: -0.1,
+        part: "x",
+        colour: 1,
+      }).sort(),
+    ).toEqual(
+      [
+        "bodyHair.beard.colour is not a beard field",
+        `bodyHair.beard.style must be ${styles}`,
+        "bodyHair.beard.length must be a number of metres, at least 0",
+        "bodyHair.beard.volume must be a number in [0, 2]",
+        "bodyHair.beard.grey must be a number in [0, 1]",
+        "bodyHair.beard.fork must be a number in [0, 1]",
+        "bodyHair.beard.part must be a number in [0, 1]",
+      ].sort(),
+    );
+    expect(bad([1])).toEqual([`bodyHair.beard must be ${styles}, or an object with a style`]);
+    expect(bad({ style: "full" })).toEqual([]);
   });
 
   it("accepts independent coverage and follicle-density controls, while rejecting ambiguous coverage semantics", () => {

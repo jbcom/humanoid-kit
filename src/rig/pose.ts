@@ -233,6 +233,49 @@ export function bodyPoseRotations(
   return out;
 }
 
+/** A BVH rotation channel's name. */
+export type RotationChannel = "Xrotation" | "Yrotation" | "Zrotation";
+
+/**
+ * Rotations for some joints in the pack's pose convention, the one the authored
+ * pose files use (`scripts/poses/`): BVH channel values in degrees per joint,
+ * `{ "upperarm01.L": { Xrotation: -22, Yrotation: -138 } }`. A channel left out is zero.
+ */
+export type JointChannels = Readonly<
+  Record<string, Readonly<Partial<Record<RotationChannel, number>>>>
+>;
+
+/** The pose whose joint layout (each joint's channel order) joint channels compose in, as authored poses do. */
+const CHANNEL_LAYOUT = "tpose";
+
+/**
+ * `joints` laid over `out` (a pose, the rest pose by default): each joint named
+ * there takes its channels instead of what `out` held, composed in the order the
+ * pack's `tpose` lists them, so an entry poses its bone exactly as the same entry
+ * in an authored pose file does. Throws on a joint or channel the rig does not have.
+ */
+export function jointChannelRotations(
+  rig: RigData,
+  joints: JointChannels,
+  out: BoneRotations = IDENTITY_POSE(rig.bones.length),
+): BoneRotations {
+  const layout = rig.poses.find((p) => p.name === CHANNEL_LAYOUT);
+  if (!layout)
+    throw new AssetFormatError(`the pack has no ${CHANNEL_LAYOUT} pose to lay joints over`);
+  const index = new Map(rig.bones.map((name, i) => [name, i]));
+  for (const [name, channels] of Object.entries(joints)) {
+    const b = index.get(name);
+    const joint = layout.joints.find((j) => j.name === name);
+    if (b === undefined || !joint) throw new AssetFormatError(`unknown joint ${name}`);
+    for (const c of Object.keys(channels))
+      if (!joint.channels.includes(c) || !c.endsWith("rotation"))
+        throw new AssetFormatError(`${name} has no rotation channel ${c}`);
+    const frame = joint.channels.map((c) => channels[c as RotationChannel] ?? 0);
+    out.set(frameRotations(rig, [joint], frame).get(b) ?? [0, 0, 0, 1], b * 4);
+  }
+  return out;
+}
+
 /** Applies `b` after `a` on every bone (a · b), into `out`: a body pose with an expression on top. */
 export function composeRotations(
   a: BoneRotations,
