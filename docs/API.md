@@ -71,10 +71,10 @@ type FetchLike = (url: string) => Promise<Response>; // the global `fetch` fits
   is already running (a failed fetch is forgotten, so the next wearer retries).
   A `HairStyleEntry` is an attachment entry (no `deleteVerts`,
   one occlusion value per vertex) with a `label`, `tags` (`short`, `bob`,
-  `curly`...), its `kind` (`scalp`, or `brows` or `lashes`, which share the pack's
-  loader, or `beard`, generated body hair cards tagged with the beard style they
-  serve, whose layout adds a `rank` per vertex, `CARD_FIELD_KEYS`; `STRAND_KINDS`
-  are the kinds with measured strand fields; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
+  `curly`...), its `kind` (`scalp`, `brows`, `lashes` or `facial`; every kind
+  shares the pack's loader and `facial` is an authored beard or moustache asset),
+  its `file` and `sha256`; `STRAND_KINDS` are the kinds with measured strand
+  fields; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
   carries each entry's kind), its `file` and `sha256`, and the `strand` direction and
   `coherence` measured from its strand map. With clothing packs loaded,
   `clothingManifests` lists them in load order, and their garments are listed
@@ -158,6 +158,7 @@ createRecipe(init?: {
     brows?: string; // a brows style id of the hair pack (`eyebrow001`…); absent = none
     lashes?: string; // a lashes style id (`eyelashes01`…); absent = none
   };
+  facialHair?: readonly string[]; // authored facial style ids; absent = none
   bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
   outfitLook?: Readonly<Record<string, GarmentLook>>;
@@ -180,6 +181,7 @@ interface Recipe {
   skin: SkinRecipe;
   eyes: EyesRecipe;
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
+  facialHair?: readonly string[]; // optional authored beard and moustache ids; absent means none
   bodyHair?: BodyHairRecipe; // optional: absent means the default for age
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
   outfitLook?: Readonly<Record<string, GarmentLook>>; // per garment id; absent = as the pack made it
@@ -527,55 +529,32 @@ and throws `RangeError` for anything else.
   `AttachmentTopology.occlusion`, or null for the pack's own set.
   `model.bakeAttachmentOcclusion()` is the whole bake at once, per control
   vertex (what the packer stores).
-- Hair: `model.pendingHair(recipe)` is the style id the recipe wears that has not
-  loaded yet (null when it has none or has what it needs; it throws
-  `RecipeError` for an id the hair pack lacks, or when no hair pack is loaded),
+- Hair: `model.pendingHair(recipe)` is the scalp style id the recipe wears that has not
+  loaded yet (null when it has none or has what it needs; it throws `RecipeError`
+  for an id the hair pack lacks, or when no hair pack is loaded), and
   `model.hairTopology(id): HairTopology` is a style's static render data (the
   mesh like an attachment's, `label`, `tags`, `material`, `textureUrl`, per
-  render vertex its `occlusion`, `fade` (0 where a hairline thins out), `fin` (1
-  on a card standing out of the scalp) and `growth` (metres from the root), the
-  `scalp` (per body render vertex, how densely the style grows from the skin
-  there) and the `strand` coherence), `model.bakeHairOcclusion(asset)` is the
-  packer's bake of a style's occlusion at rest, per control vertex, and
-  `model.bakeHairFields(asset)` its growth, fade, fin and scalp
-  (`hairFields`, `src/surface/hairFields.ts`). `evaluate` fills `Evaluation.hair` from
-  `recipe.hair.style` and throws `MorphError` for a style whose geometry has
-  not arrived (`assets.hair.load(id)` brings it); the style never changes the
-  body, which keeps every face (hair has no `delete_verts`). `Evaluation.brows` and
-  `Evaluation.lashes` are the worn `recipe.hair.brows` and `lashes` the same way
-  (an id of the wrong kind is a `RecipeError`: `hair.style` wears scalp styles,
-  `brows` brows, `lashes` lashes); a brow is lifted `DECAL_LIFT` (2 mm) off the
-  skin along its normal, since the smooth body surface can swallow a decal bound to
-  the coarse mesh by up to 1.8 mm at the brow ridge (a test holds it clear at ages
-  6 to 75). `model.pendingHairStyles(recipe)` lists every worn style not yet loaded,
-  and the worker's `evaluated` reply carries `decalTopologies` for the brows',
-  lashes' and beard cards' static data (`HairTopology.kind` is `scalp`, `brows`,
-  `lashes` or `beard`; a decal's fade is all 1, fin and growth 0, scalp none).
-  `Evaluation.beard` is the recipe's beard as cards generated for it at
-  evaluation (`beardCardSpec`, `generateCards`; no beard file is loaded, so
-  `pendingHairStyles` never lists one), with its length capped at the chin's
-  height above the figure's lowest point; null when `beardCoverage` is 0, the
-  beard is too short for cards, or the hair pack has no `beard` entry, whose
-  strand map and strand statistics the cards are drawn with. Its id is
-  `beard:` and `beardCardKey`, so equal beards share cards and topology; the
-  model keeps the last 3 it generated and the worker and client the last
-  `BEARD_TOPOLOGIES_KEPT` (4) topologies, both forgetting in the order sent
-  (`SentHairTopologies`), and a forgotten one is sent again if worn again.
-  Generated cards are drawn unsubdivided, their shade the cheap
-  `beardCardOcclusion` (dark roots, open tips) in place of the ray bake.
-  `HairTopology.rank` is its cards' ranks per render vertex (null for every
-  other kind), and `<Humanoid>` draws the cards whose rank is under
-  `beardCoverage` (`HairMaterial.setDensity`), in the face's body hair colour,
-  with the beard's `grey` share of them white (`HairMaterial.setWhite(white,
-  colour)`: whole cards chosen by a hash of their rank, white being the colour
-  at grey 1). It disposes a generated beard's geometry when the beard changes.
+  render vertex its `occlusion`, `fade`, `fin`, `growth`, `scalp` and measured
+  `strand` coherence). `evaluate` fills `Evaluation.hair` from
+  `recipe.hair.style`; `Evaluation.brows` and `Evaluation.lashes` from
+  `recipe.hair.brows` and `recipe.hair.lashes`; and `Evaluation.facialHair`
+  from every id in `recipe.facialHair`. A wrong-kind id is a `RecipeError`:
+  `hair.style` wears scalp styles, `brows` brows, `lashes` lashes, and
+  `facialHair` authored `facial` styles only. `model.pendingHairStyles(recipe)`
+  lists every worn style not yet loaded. The worker's `evaluated` reply sends
+  each newly needed brow, lash, or facial topology once through
+  `decalTopologies`; the React binding draws facial assets through
+  `HairMaterial`, with the recipe's hair colour. A brow is lifted `DECAL_LIFT`
+  (2 mm) off the skin along its normal, since the smooth body surface can
+  swallow a decal bound to the coarse mesh at the brow ridge.
 - `model.regions` and `model.body` (`SurfaceMesh`).
 
 ```ts
 interface Evaluation {
   positions: Float32Array;  // render vertices, xyz, metres
   normals: Float32Array;    // smooth, shared across UV seams
-  hair: HairEvaluation | null; // the worn style's { id, positions, normals }; null without hair
+  hair: HairEvaluation | null; // the worn scalp style; null without hair
+  facialHair: HairEvaluation[]; // every authored beard or moustache selected by recipe.facialHair
   groundOffset: number;     // lift that puts the lowest body point on y = 0
   control: Float32Array;    // morphed positions in the base topology
   curvature: Float32Array;  // per body render vertex, mean curvature (1/m)
@@ -821,14 +800,9 @@ compute what the renderer will do.
   `beardCoverage(input)` is how much of the chosen beard grows, 0..1: 0
   clean-shaven, else the face's `bodyHairCoverage` (all of it on an adult face,
   coming in from puberty, or the recipe's own face `coverage` or `density`).
-  The beard's coat cover and the share of its cards drawn are it.
-  `generateBeardCards(assets, beard: ResolvedBeard)`
-  (`src/surface/beardCards.ts`) is the beard's alpha cards, bound to the base
-  mesh at rest and draped (long hair falls, forks and parts, and lies on the
-  body). It is null for a beard that grows none: clean-shaven, stubble, no part
-  `BEARD_CARD_MIN_LENGTH` long, or a volume of 0. `beardCardSpec(assets, beard)`
-  is the spec it generates from. `beardCardKey(beard)` is equal exactly when
-  two beards give the same cards. `bodyHairColour(group, input)` is the figure's hair pigments
+  The beard's coat cover is its rendered body-hair effect. Authored beard and
+  moustache geometry is selected separately through `recipe.facialHair`.
+  `bodyHairColour(group, input)` is the figure's hair pigments
   darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
   fibre diameter and drawn length) and at least as grey as ageing makes them
   (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an
@@ -910,7 +884,8 @@ compute what the renderer will do.
   `VELLUS`, flat: no relief) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
   densities `BODY_HAIR_FOLLICLE_DENSITY`. Dense, short hair standing off the skin (the
   beard, the chest, abdomen and back, and the adult-only armpits) is the
-  coat's, long hair the cards', and pubic hair the adult pack's.
+  coat's, while authored beard and moustache geometry comes from the hair pack
+  through `recipe.facialHair`; pubic hair is the adult pack's.
   `bodyHairMasks(assets)` gives the masks per base vertex and
   `bodyHairInput(paintInput)` the body hair model's input.
 - The coat (`src/surface/coat.ts`, ARCHITECTURE.md "The coat"): short, dense hair
@@ -1615,8 +1590,9 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   skin material skins by linear blending mixed with dual quaternions, by each
   bone's share (`SKIN_DUAL_SHARE`; ARCHITECTURE.md, "Skinning artefacts"), so a
   twisted forearm or a raised shoulder keeps its volume, and its shadows, bounds
-  and picking follow. A `material` of your own skins by three's linear skinning
-  alone, and the attachments (eyes, teeth, tongue) follow single bones. With a
+  and picking follow. A `material` of your own skins linearly by all eight
+  stored influences (with no dual-quaternion blend or joint folds), and the
+  attachments (eyes, teeth, tongue) follow single bones. With a
   hip or a knee flexed past 30° it asks the worker for the figure's joint folds
   (`client.folds`) and the skin adds them, so the groin folds against the belly
   and the calf against the thigh without passing through, and the back of a
@@ -1826,9 +1802,9 @@ and camera.
   Measure), in upstream order, with MakeHuman's groups and slider labels, plus
   Appearance (skin, iris, sclera, and an eye texture from the eye pack when the
   host passes `eyeMaterials`; hair when the client loaded a hair pack: a
-  style from the pack or none, twelve natural colours, a picker for dyed hair
-  and the pigment sliders behind the colours; and body hair: a beard style, or
-  Natural for unset (shaven), and an explicit coverage per region from none to
+  style from the pack or none, natural colours, a picker for dyed hair and the
+  pigment sliders behind the colours; independently selectable authored beard
+  and moustache assets; and body hair coverage per region from none to
   full, the same at every frame, an unset region labelled "Not set" with what is
   drawn for it, and pubic coverage offered to adults only), Regions (per-region macro overrides) and, when the client loaded a
   clothing pack, a Wardrobe: the garments by kind, one worn at a time per kind,
@@ -2107,10 +2083,10 @@ takes the styles as `options.hairStyles`, and without them keeps the base
 recipe's hair. It also draws one of the pack's brows and one of its lashes
 (`options.browStyles`, `options.lashStyles`; after the hair, so a seed's hair and
 shape are the same without them), and a new head of hair keeps the brows and
-lashes the figure had. Last of all it draws a beard style (`options.beards`,
-which the creator sets; `randomBeard(draw)` by `BEARD_ODDS`: clean-shaven most
-often, then stubble), so old seeds keep their figures; the body hair model grows
-it only where the face carries terminal hair. `withHair(recipe, patch)` changes the scalp style, colour,
+lashes the figure had. When the loaded pack offers authored facial styles,
+`options.facialHairStyles` may choose one or none after the other random draws,
+so old seeds keep their figures. The legacy `options.beards` path still changes
+only the body-hair coat. `withHair(recipe, patch)` changes the scalp style, colour,
 brows or lashes of a recipe (`null` takes one away) and keeps whatever the patch
 leaves out; the Appearance panel uses it, offering the brows and lashes in
 groups of their own, and `load` refuses a saved figure whose brows or lashes the
@@ -2342,9 +2318,10 @@ styles are MakeHuman's own CC0 scalp hair: `short02`, `bob02`, `long01`,
 Its manifest records the hash of the body pack it binds to, and the loader
 refuses any other.
 
-It also lists generated body hair cards (kind `beard`, today `beard-full`, 64 kB
-the pair): a full beard's length over the coat, made by the packer from the
-body pack's mesh and a seed rather than from any MakeHuman file.
+The pack also lists authored CC0 facial-hair assets (kind `facial`): beard
+and moustache meshes bound to the base body, selected independently through
+`recipe.facialHair` and drawn with the same tint and strand material as scalp
+hair.
 
 The pack also lists MakeHuman's twelve eyebrows (`eyebrow001` to `eyebrow012`,
 kind `brows`) and four eyelashes (`eyelashes01` to `eyelashes04`, kind `lashes`),

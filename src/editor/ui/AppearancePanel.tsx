@@ -4,10 +4,10 @@
  * haemoglobin and undertone), eyes offer a palette of natural iris colours plus
  * a picker, and hair (when a hair pack is loaded) a style, a palette of natural
  * colours, a picker for dyed hair and the pigment sliders behind the palette.
- * Body hair offers a beard style and an explicit coverage per region, the same
- * control at every frame (DECISIONS ruling 1). An unset region shows what is
- * drawn for it, labelled as unset; the pubic control is offered only to adults,
- * as the age policy has it.
+ * Body hair offers authored facial-hair assets and explicit coverage per region,
+ * the same control at every frame (DECISIONS ruling 1). An unset region shows
+ * what is drawn for it, labelled as unset; the pubic control is offered only to
+ * adults, as the age policy has it.
  */
 import { useMemo } from "react";
 import type { EyeLibrary } from "../../eyes/library.ts";
@@ -20,10 +20,8 @@ import {
   withHair,
 } from "../../recipe/recipe.ts";
 import {
-  type BeardStyle,
   type BodyHairGroup,
   type BodyHairRecipe,
-  beardSpec,
   isAdultOnlyBodyHair,
 } from "../../surface/bodyHair.ts";
 import {
@@ -116,6 +114,7 @@ export function AppearancePanel({
   const hairColour = recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR;
   const brows = editor.ready?.hair?.styles.filter((s) => s.kind === "brows") ?? [];
   const lashes = editor.ready?.hair?.styles.filter((s) => s.kind === "lashes") ?? [];
+  const facialHair = editor.ready?.hair?.styles.filter((s) => s.kind === "facial") ?? [];
   const setHair = (
     patch: { style?: string | null; brows?: string | null; lashes?: string | null },
     gesture?: string,
@@ -129,6 +128,20 @@ export function AppearancePanel({
       const next = change(bodyHair ?? {});
       return Object.keys(next).length === 0 ? rest : { ...rest, bodyHair: next };
     }, gesture);
+  const toggleFacialHair = (id: string) =>
+    update((r) => {
+      const selected = r.facialHair ?? [];
+      const next = selected.includes(id)
+        ? selected.filter((selectedId) => selectedId !== id)
+        : [...selected, id];
+      const { facialHair: _, ...rest } = r;
+      return next.length === 0 ? rest : { ...rest, facialHair: next };
+    });
+  const clearFacialHair = () =>
+    update((r) => {
+      const { facialHair: _, ...rest } = r;
+      return rest;
+    });
   // The age policy's adult-only group (pubic) is offered only to adults.
   const adult = isAdult(recipe);
   const hairInput = {
@@ -339,27 +352,36 @@ export function AppearancePanel({
           <span>Body hair</span>
         </summary>
         <div className="hk-group-body">
-          <fieldset className="hk-chips">
-            <legend>Beard</legend>
-            {BEARD_CHOICES.map(([id, label]) => (
+          {facialHair.length > 0 && (
+            <fieldset className="hk-chips">
+              <legend>Facial hair</legend>
               <button
-                key={id ?? "default"}
                 type="button"
                 className="hk-chip"
-                aria-pressed={
-                  recipe.bodyHair?.beard === undefined
-                    ? id === null
-                    : beardSpec({ bodyHair: recipe.bodyHair }).style === id
-                }
+                aria-pressed={recipe.facialHair === undefined}
                 onClick={() => {
                   onFocus(face);
-                  setBodyHair((b) => withBeard(b, id));
+                  clearFacialHair();
                 }}
               >
-                {label}
+                None
               </button>
-            ))}
-          </fieldset>
+              {facialHair.map((style) => (
+                <button
+                  key={style.id}
+                  type="button"
+                  className="hk-chip"
+                  aria-pressed={recipe.facialHair?.includes(style.id) ?? false}
+                  onClick={() => {
+                    onFocus(face);
+                    toggleFacialHair(style.id);
+                  }}
+                >
+                  {style.label}
+                </button>
+              ))}
+            </fieldset>
+          )}
           {BODY_HAIR_SLIDERS.filter((s) => adult || !isAdultOnlyBodyHair(s.group)).map((s) => {
             const control = bodyHairControl(recipe.bodyHair, s.group);
             const drawn = drawnBodyHairCoverage(s.group, hairInput);
@@ -440,19 +462,6 @@ function EyeTexturePicker({
   );
 }
 
-/**
- * A body hair recipe with this beard style (null: unset, `DEFAULT_BEARD`). A
- * beard with controls keeps them: only its style changes.
- */
-function withBeard(b: BodyHairRecipe, style: BeardStyle | null): BodyHairRecipe {
-  const { beard: old, ...rest } = b;
-  if (style === null) return rest;
-  return {
-    ...rest,
-    beard: old !== undefined && typeof old !== "string" ? { ...old, style } : style,
-  };
-}
-
 /** How a recipe sets one group's body hair: not at all, by explicit coverage, or by the legacy multiplier. */
 type BodyHairControl = "unset" | "explicit" | "legacy";
 
@@ -516,26 +525,11 @@ function coverageLabel(control: BodyHairControl, value: number, drawn: number): 
   return `${pct(value)} (drawn ${pct(drawn)})`;
 }
 
-/** The beard choices: unset (`DEFAULT_BEARD`, shaven), then each style. */
-const BEARD_CHOICES: readonly (readonly [BeardStyle | null, string])[] = [
-  [null, "Natural"],
-  ["none", "Shaven"],
-  ["stubble", "Stubble"],
-  ["moustache", "Moustache"],
-  ["goatee", "Goatee"],
-  ["imperial", "Imperial"],
-  ["mutton-chops", "Mutton chops"],
-  ["chin-curtain", "Chin curtain"],
-  ["full", "Full beard"],
-  ["forked", "Forked"],
-  ["longstreet", "Longstreet"],
-];
-
 const BODY_HAIR_SLIDERS: { group: BodyHairGroup; label: string; description: string }[] = [
   {
     group: "face",
     label: "Facial hair",
-    description: "Beard and moustache coverage, drawn where the beard style grows it.",
+    description: "Fine facial coat coverage, independent of an authored beard or moustache asset.",
   },
   { group: "chest", label: "Chest", description: "Hair on the chest." },
   { group: "abdomen", label: "Abdomen", description: "Hair on the belly and down its midline." },

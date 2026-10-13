@@ -101,12 +101,11 @@ export class HumanoidWorkerClient {
   }
 
   private readonly hairTopologies = new Map<string, HairTopology>();
-  /** Which of them are held, in the worker's order: it forgets old generated beards as the worker does. */
+  /** Which authored style topologies the client already holds. */
   private readonly heldHair = new SentHairTopologies();
 
   private keepHairTopology(t: HairTopology): void {
-    const forgotten = this.heldHair.add(t.id);
-    if (forgotten !== null) this.hairTopologies.delete(forgotten);
+    this.heldHair.add(t.id);
     this.hairTopologies.set(t.id, t);
   }
 

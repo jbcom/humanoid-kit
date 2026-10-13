@@ -85,6 +85,9 @@ export interface HairRecipe {
   lashes?: string;
 }
 
+/** Authored beard and moustache ids from the hair pack, worn together when selected. */
+export type FacialHairRecipe = readonly string[];
+
 export interface Recipe {
   version: typeof RECIPE_VERSION;
   macros: MacroValues;
@@ -98,6 +101,8 @@ export interface Recipe {
    * hair existed are unchanged. It never changes the body's shape.
    */
   hair?: HairRecipe;
+  /** Authored facial hair (`humanoid-kit-hair`); absent means none. */
+  facialHair?: FacialHairRecipe;
   /**
    * Body hair: legacy per-region multipliers on the physiological default, or
    * explicit coverage and physical follicle-density controls, plus a beard
@@ -167,6 +172,7 @@ export function createRecipe(
       brows?: string;
       lashes?: string;
     };
+    facialHair?: FacialHairRecipe;
     bodyHair?: BodyHairRecipe;
     outfit?: readonly string[];
     outfitLook?: Readonly<Record<string, GarmentLook>>;
@@ -196,6 +202,7 @@ export function createRecipe(
         },
       },
     }),
+    ...(init.facialHair && { facialHair: [...init.facialHair] }),
     ...(init.bodyHair && {
       bodyHair: {
         ...(init.bodyHair.density && { density: { ...init.bodyHair.density } }),

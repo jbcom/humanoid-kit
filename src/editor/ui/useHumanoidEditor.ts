@@ -201,6 +201,10 @@ export function useEditorState(
     () => ready?.hair?.styles.filter((s) => s.kind === "lashes").map((s) => s.id),
     [ready],
   );
+  const facialHairStyles = useMemo(
+    () => ready?.hair?.styles.filter((s) => s.kind === "facial").map((s) => s.id),
+    [ready],
+  );
 
   // The cover policy. A figure is shown once something has been allowed (`approved`: any
   // figure that went through the gate, or an answer to the starting figure) or it is covered
@@ -545,7 +549,7 @@ export function useEditorState(
             ...(hairStyles && { hairStyles }),
             ...(browStyles?.length && { browStyles }),
             ...(lashStyles?.length && { lashStyles }),
-            beards: true,
+            ...(facialHairStyles?.length && { facialHairStyles }),
             ...randomOptions,
           }),
         "randomize",
@@ -564,15 +568,27 @@ export function useEditorState(
       const lashes = loaded.hair?.lashes;
       const noBrows = brows !== undefined && !browStyles?.includes(brows);
       const noLashes = lashes !== undefined && !lashStyles?.includes(lashes);
+      const noFacialHair = (loaded.facialHair ?? []).filter(
+        (id) => !facialHairStyles?.includes(id),
+      );
       // ... and its eye material one the eye pack has.
       const material = loaded.eyes.material;
       const noMaterial = material !== undefined && !options.eyeMaterials?.entry(material);
-      if (unknown.length || policyProblems.length || noStyle || noBrows || noLashes || noMaterial)
+      if (
+        unknown.length ||
+        policyProblems.length ||
+        noStyle ||
+        noBrows ||
+        noLashes ||
+        noFacialHair.length ||
+        noMaterial
+      )
         return [
           ...unknown.map((id) => `modifier ${id} is not in the loaded packs`),
           ...(noStyle ? [`hair style ${style} is not in the loaded packs`] : []),
           ...(noBrows ? [`eyebrows ${brows} are not in the loaded packs`] : []),
           ...(noLashes ? [`eyelashes ${lashes} are not in the loaded packs`] : []),
+          ...noFacialHair.map((id) => `facial hair ${id} is not in the loaded packs`),
           ...(noMaterial ? [`eye material ${material} is not in the loaded eye pack`] : []),
           ...policyProblems,
         ];

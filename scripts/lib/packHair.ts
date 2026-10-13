@@ -30,13 +30,6 @@ import type {
 } from "../../src/format/assetFormat.ts";
 import { evaluateBinding } from "../../src/mhclo/bound.ts";
 import { HumanoidModel } from "../../src/model/humanoidModel.ts";
-import {
-  BODY_HAIR_CARDS,
-  CARD_STRAND_MAP,
-  cardFields,
-  generateCards,
-  generateStrandMap,
-} from "../../src/surface/bodyHairCards.ts";
 import { readBodyPack } from "./bodyPack.ts";
 import { extractDirectory, openCommunityPack, pin } from "./communityPacks.ts";
 import { type CompiledAsset, compileAsset } from "./compileAsset.ts";
@@ -66,7 +59,7 @@ export interface HairStyleSpec {
    * volume as a band.
    */
   feather?: boolean;
-  /** What the entry is; default `scalp`. Body hair cards are generated, not packed from a file. */
+  /** What the entry is; default `scalp`. */
   kind?: AssetHairKind;
   /**
    * `strandMapFromRgba`'s `flatten`, for an atlas whose painted-in shading reads as a
@@ -122,10 +115,7 @@ export const LASH_STYLES: readonly HairStyleSpec[] = [
   { id: "eyelashes04", label: "Eyelashes 04, full", tags: ["full"], kind: "lashes" },
 ];
 
-/**
- * The kinds packed from MakeHuman's system files (body hair cards are generated:
- * `src/surface/bodyHairCards.ts`; facial hair comes from a community pack: `FACIAL_HAIR`).
- */
+/** The kinds packed from MakeHuman's system files; facial hair comes from `FACIAL_HAIR`. */
 type AssetHairKind = Exclude<HairKind, "beard" | "facial">;
 
 /** The community pack the facial hair comes from, pinned (downloaded 2026-10-13). */
@@ -349,10 +339,6 @@ function writeProvenance(
     "",
     "Each style's binary also carries what the packer measured of its cards against the body at rest: growth,",
     "hairline fade, fin and scalp (`src/surface/hairFields.ts`).",
-    "",
-    "The body hair cards (" +
-      "kind `beard`) come from no source file: `src/surface/bodyHairCards.ts` generates them over the body pack's",
-    "base mesh from a seed, with their strand map, so they are this project's own work under its licence.",
     "",
     `The facial hair (kind \`facial\`) is the community pack \`${FACIAL_HAIR_PACK.id}\` (<${FACIAL_HAIR_PACK.url}>, sha256`,
     `\`${FACIAL_HAIR_PACK.sha256}\`), whose record and asset pages state CC0 (the asset page is the licence, clause B of`,
@@ -609,42 +595,6 @@ export async function packHair(options: PackHairOptions): Promise<HairManifest> 
       );
   }
   fs.rmSync(scratch, { recursive: true, force: true });
-
-  // Body hair cards: generated over the base mesh from a seed, this project's own
-  // bytes (`src/surface/bodyHairCards.ts`), so nothing of them passes the licence gate.
-  for (const spec of BODY_HAIR_CARDS(assets)) {
-    const cards = generateCards(assets, spec);
-    const textureFile = `${spec.id}.webp`;
-    const [w, h] = CARD_STRAND_MAP;
-    const map = strandMapFromRgba(generateStrandMap(w, h, spec.seed), w, h);
-    await sharp(Buffer.from(map.rgba), { raw: { width: w, height: h, channels: 4 } })
-      .webp({ quality: 80, alphaQuality: 85, effort: 4 })
-      .toFile(path.join(outDir, textureFile));
-    cards.compiled.material.texture = textureFile;
-    const occlusion = Uint8Array.from(model.bakeHairOcclusion(boundFrom(cards.compiled)), (v) =>
-      Math.round(Math.min(1, Math.max(0, v)) * 255),
-    );
-    const file = `${spec.id}.bin.gz`;
-    const written = writeAttachments(outDir, file, [cards.compiled], [occlusion], 1, [
-      cardFields(cards, spec.lift),
-    ]);
-    const [entry] = written.entries;
-    if (!entry) throw new Error(`${spec.id}: nothing written`);
-    styles.push({
-      ...entry,
-      kind: "beard",
-      label: spec.label,
-      tags: [spec.style],
-      file,
-      sha256: written.sha256,
-      strand: { angle: map.strandAngle, coherence: map.coherence },
-    });
-    outputs.push([file, written.sha256]);
-    outputs.push([
-      textureFile,
-      sha256(new Uint8Array(fs.readFileSync(path.join(outDir, textureFile)))),
-    ]);
-  }
 
   const manifest: HairManifest = {
     format: 1,

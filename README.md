@@ -61,10 +61,12 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
 - **Animation, as an optional pack.** `humanoid-kit-animations` plays clips on
   any figure whatever its size, shape or age, with its planted feet held in
   place.
-- **Body hair, eyebrows and eyelashes.** Body hair follows the figure's age and
-  recipe, and the hair pack carries eyebrows and eyelashes beside the scalp
-  styles. A recipe can also name a beard (ten styles with length, volume and
-  grey controls); its rendering is still under visual review (issue 14).
+- **Body hair, eyebrows, eyelashes and facial hair.** Body hair follows the
+  figure's age and recipe, and the hair pack carries eyebrows, eyelashes and
+  authored CC0 beard and moustache assets beside the scalp styles. A recipe
+  selects zero or more facial assets through `recipe.facialHair`; they share
+  the hair colour and can be removed independently. Large-beard drape remains
+  under visual review (issue 14).
 - **A tap-to-edit creator.** `humanoid-kit/editor` is a React creator over the
   recipe, with undo, randomisation, regional overrides and a wardrobe.
 - **Presence and interactions.** A figure publishes what the scene around it
@@ -82,7 +84,7 @@ library and six data packs.
 | `humanoid-kit` | `.` | MIT | The code: asset loading, recipes, evaluation, subdivision, rig and poses, animation playback, presence, interactions, the worker client, the React bindings and the creator |
 | `humanoid-kit-body` | `packs/body` | CC0 1.0 | The base mesh, shape targets for ages 1 to 90, the 163-bone skeleton and skin weights, facial pose units, eyes, teeth and tongue, and 275 shape modifiers (modelling, measurement and body shapes) with their sliders |
 | `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 | 98 adult-only targets and 12 modifiers (9 with sliders; 3 retained legacy ids, hidden from the sliders and still accepted in saved recipes). A separate install; refused unless built against the exact body pack |
-| `humanoid-kit-hair` | `packs/hair` | CC0 1.0 | 33 hair entries bound to the base body, any colour from black to platinum: 16 scalp styles (short, bob, long, afro, ponytail, a side braid, box braids, cornrows, twists, locs, bantu knots, a close crop), 12 eyebrows, 4 eyelashes and a beard. A separate install; an entry's files load when a figure first wears it |
+| `humanoid-kit-hair` | `packs/hair` | CC0 1.0 | 37 hair entries: 16 scalp styles, 12 eyebrows, 4 eyelashes and 5 authored facial-hair assets bound to the base body, all tintable from black to platinum. A separate install; an entry's files load when a figure first wears it |
 | `humanoid-kit-eyes` | `packs/eyes` | CC0 1.0 | 32 eye materials (human irises, cats' slit pupils, toon and creature eyes) that add iris pattern and sclera detail to the eye shader's own colours. A separate install; a material's texture loads when a figure first wears it |
 | `humanoid-kit-animations` | `packs/animations` | CC0 1.0 | 98 clips (walks, a jog, idles, swims, crouches, combat, sitting, 1860s drill and prayer) on MakeHuman's default skeleton, played on any figure whatever its size, shape or age, its planted feet held in place. A separate install; a clip's file loads when a figure first plays it |
 | `humanoid-kit-clothing` | `packs/clothing` | CC0 1.0 | 87 garments (suits, shoes, hats, gloves, glasses, masks, held items and more) bound to the base mesh, with the skin each hides: 19 from MakeHuman's system assets and 68 from the community's clothing packs. A separate install; refused unless built against the exact body pack |

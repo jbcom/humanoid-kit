@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { type Quat, rotate } from "../src/graft/fit.ts";
+import { occupiedCellVisitCount } from "../src/graft/graft.ts";
 import {
   arcParams,
   boundaryEdges,
@@ -115,6 +116,21 @@ function ringCrease(
 }
 
 describe("the graft's loop utilities", () => {
+  it("searches occupied skin cells without enumerating empty space", () => {
+    // The earlier cubic-shell search examined 1,770,000 empty coordinates
+    // before it reached a matching cell 60 steps away on every axis.  The
+    // nearest-cell index visits each populated cell once, with no radius cap.
+    expect(
+      occupiedCellVisitCount(
+        [
+          [0, 0, 0],
+          [61, 61, 61],
+        ],
+        [30.5, 30.5, 30.5],
+      ),
+    ).toBe(2);
+  });
+
   it("welds coincident vertices and finds a part's one open loop, in order", () => {
     const part = openSphere(1);
     const weld = weldByPosition(part.positions);

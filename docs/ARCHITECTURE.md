@@ -45,7 +45,7 @@ needs more, up to its source's size and at most 2048 px, and never upscaled
 | `humanoid-kit-adult-anatomy` | `manifest.json`, `targets.bin.gz` | 98 adult-only targets and 12 adult-only modifiers; 9 have sliders and 3 (`genitals/penis-*`) are retained legacy ids, hidden from the sliders and still accepted in saved recipes (`HIDDEN_SLIDERS`) |
 | `humanoid-kit-animations` | `manifest.json`, then per clip `<id>.bin.gz` | 98 clips (walks, idles, swims, combat, sitting and more) as local bone rotations per frame, on the default skeleton (see "Animation") |
 | `humanoid-kit-eyes` | `manifest.json`, then per material `<id>.webp` | 32 CC0 eye materials (human, slit-pupil, toon, creature) whose textures add iris pattern and sclera detail to the eye shader's own colours (see "Attachment colour") |
-| `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | 33 hair entries bound to the base mesh: 16 scalp styles, 12 eyebrows, 4 eyelashes and a beard, each with its baked occlusion where it has one and a strand map or texture (see "Scalp hair") |
+| `humanoid-kit-hair` | `manifest.json`, then per style `<id>.bin.gz` and `<id>.webp` | 37 hair entries bound to the base mesh: 16 scalp styles, 12 eyebrows, 4 eyelashes and 5 CC0 facial-hair entries, each with its baked occlusion where it has one and a strand map or texture. `recipe.facialHair` selects authored facial assets independently (see "Scalp hair") |
 | `humanoid-kit-clothing` | `manifest.json`, `garments.bin.gz`, WebP textures | 87 garments: 19 from MakeHuman's system assets (suits, shoes, a hat) and 68 from the community's clothing packs, CC0 by their pages; each bound to the base mesh with the vertices it hides |
 
 A target is stored sparsely: the indices of the vertices it moves (`uint16`),
@@ -2590,8 +2590,8 @@ a coloured texture; everything in the pure core is testable in Node.
 - *A separate pack, `humanoid-kit-hair`, with one binary and one texture per
   style, fetched when a figure first wears the style.* The body pack's
   attachments (eyes, teeth, tongue) load in the first stage for every figure;
-  the hair would add 3.5 MB (the pack's size when it held ten styles; 11 MB for
-  its 33 entries today) to the body pack's 1.9, for
+  the hair would add 3.5 MB (the pack's size when it held ten styles; now
+  13,650,831 bytes of geometry and textures across 37 entries) to the body pack's 1.9 MB, for
   applications that never show hair. A single hair binary would load every
   entry to wear one. The pack follows the adult pack's model instead: its manifest
   records `topology` and the body pack's `bodySha256`, and the loader refuses a
@@ -2839,9 +2839,9 @@ a coloured texture; everything in the pure core is testable in Node.
   hold every apex 15 to 45 mm off the scalp, every knot's footprint behind the hairline, and every
   knot taller than it is wide. Not yet: tight curls in the longer styles.
 
-**Costs and limits.** The pack is 11 MB for its 33 entries, mostly strand maps at
-1024 px (and 0.3 to 0.5 MB for each authored one); the curly styles are the largest (`afro01` 730 kB, `short01` 579 kB)
-because their alpha is fine detail. Hair has no physics and no strand shadows
+**Costs and limits.** The pack's 37 entries contain 13,650,831 bytes of compressed
+geometry and textures. Entries load independently; authored styles retain their
+source fidelity, and their sizes vary. Hair has no physics and no strand shadows
 inside the volume beyond the baked occlusion. Red hair's chroma is limited by the
 pheomelanin spectrum, and blond, red and white are modelled, not measured
 (`docs/research/HAIR-COLOUR.md`).
@@ -4003,8 +4003,8 @@ allow it: their anchors (`landmarkAnchors`, fixed by the topology, which the
 worker serves, `HumanoidWorkerClient.landmarkAnchors`), each figure's up
 neighbours (`landmarkUps`, from its rest shape), and the frame
 (`landmarkFrameInto`, from a skin-a-vertex callback and the posed skeleton).
-With a custom `material` the figure skins linearly with no fold, and so does
-the handle. The figure runs its per-frame work at `useFrame` priority -1
+With a custom `material` the figure skins linearly with no fold, through all
+eight stored influences, and so does the handle. The figure runs its per-frame work at `useFrame` priority -1
 (auto-render stays on), so a caller's own `useFrame` reads the pose of the
 frame about to be drawn. A browser test holds `frame(id, "world")` within
 2e-5 m of the landmark vertices the GPU draws, seated (the fold), with the jaw

@@ -259,7 +259,12 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
       if (evaluation.skin)
         transfer.push(evaluation.skin.skinIndex.buffer, evaluation.skin.skinWeight.buffer);
       for (const a of evaluation.attachments) transfer.push(a.positions.buffer, a.normals.buffer);
-      for (const h of [evaluation.hair, evaluation.brows, evaluation.lashes, evaluation.beard])
+      for (const h of [
+        evaluation.hair,
+        evaluation.brows,
+        evaluation.lashes,
+        ...evaluation.facialHair,
+      ])
         if (h) transfer.push(h.positions.buffer, h.normals.buffer);
       for (const g of evaluation.garments) transfer.push(g.positions.buffer, g.normals.buffer);
       const masks = evaluation.outfit.masks;
@@ -278,9 +283,13 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
       const hairId = evaluation.hair?.id;
       const hairTopology = hairId && !sentHair.has(hairId) ? model.hairTopology(hairId) : undefined;
       if (hairId) sentHair.add(hairId);
-      // The brows', lashes' and beard cards' too, each once.
+      // The brows, lashes and authored facial-hair topologies too, each once.
       const current = model;
-      const decalTopologies = [evaluation.brows?.id, evaluation.lashes?.id, evaluation.beard?.id]
+      const decalTopologies = [
+        evaluation.brows?.id,
+        evaluation.lashes?.id,
+        ...evaluation.facialHair.map((facial) => facial.id),
+      ]
         .filter((id): id is string => id !== undefined && !sentHair.has(id))
         .map((id) => {
           sentHair.add(id);
