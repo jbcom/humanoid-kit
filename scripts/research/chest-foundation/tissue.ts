@@ -147,6 +147,72 @@ export function tissueLibrary(ctx: TissueCtx, lab: Lab, cellRecipe: Recipe): Tis
   return { halfSpan: anc.halfSpan, grid, cell, reach: Uint32Array.from(reach), side };
 }
 
+/**
+ * The tissue library over age. MakeHuman's breast targets exist for its child,
+ * young and old bodies (none for the baby), and the evaluator weights the age
+ * bodies linearly in years between the kit's anchors (`AGE_ANCHORS`: 1, 10, 18-25,
+ * 90). Every library quantity (the evaluated cells, their fill, the grid, the
+ * joint-derived halfSpan) is linear in the evaluated vertices, so it is linear
+ * in years between anchors: cells at the anchors, linear between, reproduce
+ * MakeHuman at EVERY age, not only at the sampled ones. The cells also sit at the
+ * review ages (5, 13, 40, 70), which changes nothing but lets each be checked.
+ */
+export const AGE_KNOTS = [1, 5, 10, 13, 18, 25, 40, 70, 90] as const;
+
+export interface AgeLibrary {
+  ages: readonly number[];
+  /** One library per age, every one with the same (union) `reach` and `side`. */
+  cells: TissueLibrary[];
+}
+
+/**
+ * Builds the library at every knot age from the average-tissue frame at that age
+ * (`cellRecipeAt(age)`), over one shared reach: the union of every age's.
+ */
+export function ageLibrary(
+  ctx: TissueCtx,
+  lab: Lab,
+  cellRecipeAt: (age: number) => Recipe,
+  ages: readonly number[] = AGE_KNOTS,
+): AgeLibrary {
+  const cells = ages.map((age) => tissueLibrary(ctx, lab, cellRecipeAt(age)));
+  const side = new Int8Array(ctx.mesh.vertexCount).fill(-1);
+  for (const lib of cells)
+    for (const v of lib.reach) if ((side[v] as number) < 0) side[v] = lib.side[v] as number;
+  const reach: number[] = [];
+  for (let v = 0; v < side.length; v++) if ((side[v] as number) >= 0) reach.push(v);
+  const shared = Uint32Array.from(reach);
+  return { ages, cells: cells.map((c) => ({ ...c, reach: shared, side })) };
+}
+
+const lerpArray = (a: Float32Array, b: Float32Array, t: number) => {
+  const out = new Float32Array(a.length);
+  for (let i = 0; i < a.length; i++)
+    out[i] = (a[i] as number) + ((b[i] as number) - (a[i] as number)) * t;
+  return out;
+};
+
+/** The library at `years`: linear between the two knots around it, clamped at the ends. */
+export function libraryAt(lib: AgeLibrary, years: number): TissueLibrary {
+  const { ages, cells } = lib;
+  let i = 0;
+  while (i < ages.length - 1 && years > (ages[i + 1] as number)) i++;
+  const a = cells[i] as TissueLibrary;
+  if (i === ages.length - 1 || years <= (ages[i] as number)) return a;
+  const b = cells[i + 1] as TissueLibrary;
+  const t = (years - (ages[i] as number)) / ((ages[i + 1] as number) - (ages[i] as number));
+  if (t === 1) return b;
+  const grid = new Map<string, Float32Array>();
+  for (const [key, ga] of a.grid) grid.set(key, lerpArray(ga, b.grid.get(key) as Float32Array, t));
+  return {
+    halfSpan: a.halfSpan + (b.halfSpan - a.halfSpan) * t,
+    grid,
+    cell: lerpArray(a.cell, b.cell, t),
+    reach: a.reach,
+    side: a.side,
+  };
+}
+
 /** Bilinear weights of (s, f) on the library grid, s clamped to [.5, 1]. */
 function gridWeights(s: number, f: number): [string, number][] {
   const sc = Math.max(0.5, Math.min(1, s));
