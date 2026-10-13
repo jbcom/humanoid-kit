@@ -10,6 +10,7 @@ export const bodyPack = {
 		"body-occlusion.bin.gz": new URL("./data/body-occlusion.bin.gz", import.meta.url).href,
 		"body.bin.gz": new URL("./data/body.bin.gz", import.meta.url).href,
 		"eyes_high-poly_brown_eye.webp": new URL("./data/eyes_high-poly_brown_eye.webp", import.meta.url).href,
+		"proxies.bin.gz": new URL("./data/proxies.bin.gz", import.meta.url).href,
 		"targets-baby.bin.gz": new URL("./data/targets-baby.bin.gz", import.meta.url).href,
 		"targets-child.bin.gz": new URL("./data/targets-child.bin.gz", import.meta.url).href,
 		"targets-core.bin.gz": new URL("./data/targets-core.bin.gz", import.meta.url).href,

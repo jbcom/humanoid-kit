@@ -49,6 +49,7 @@ import {
 import { ChannelQa } from "./ChannelQa";
 import { EffectiveAdultDefaultsLab } from "./EffectiveAdultDefaultsLab";
 import { GraftQa } from "./GraftQa";
+import { MiniatureLab } from "./MiniatureLab";
 import { QaShade } from "./qaShade";
 import { tattooImages } from "./tattooImages";
 import { Walk } from "./Walk";
@@ -494,6 +495,8 @@ function initialPose(): ShotPose {
 }
 
 export function App() {
+  // `?miniatures=N` is the miniature stress lab (docs/MINIATURES.md); it needs no worker.
+  if (params.has("miniatures")) return <MiniatureLab />;
   // The graft scene builds its own model on the main thread: it needs no worker.
   if (params.get("scene") === "graft") return <GraftQa />;
   return <WorkerApp />;
