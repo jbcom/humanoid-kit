@@ -753,6 +753,40 @@ describe("body hair cards' ranks", () => {
   });
 });
 
+describe("a beard's white cards", () => {
+  const DARK: HairColour = { eumelanin: 0.9, pheomelanin: 0.05, grey: 0, override: null };
+  /** The red channel of one dark card at `rank` with `white` of the cards white. */
+  const shade = (rank: number, white: number) => {
+    const { mesh, material } = card({ colour: DARK });
+    setHairRankAttribute(
+      mesh.geometry,
+      new Float32Array(mesh.geometry.getAttribute("position").count).fill(rank),
+    );
+    material.setWhite(white, DARK);
+    const px = render(mesh);
+    material.dispose();
+    return centre(px, 0);
+  };
+
+  it("draws every card in the hair's colour with none white", () => {
+    const dark = shade(0.3, 0);
+    for (const rank of [0.1, 0.5, 0.9]) expect(shade(rank, 0)).toBeCloseTo(dark, 3);
+  });
+
+  it("draws every card white with all of them white, much brighter than the colour", () => {
+    const dark = shade(0.3, 0);
+    for (const rank of [0.1, 0.5, 0.9]) expect(shade(rank, 1)).toBeGreaterThan(dark * 3);
+  });
+
+  it("draws about the white share of the cards white, each card whole", () => {
+    const dark = shade(0.3, 0);
+    const ranks = Array.from({ length: 24 }, (_, i) => (i + 0.5) / 24);
+    const white = ranks.filter((r) => shade(r, 0.4) > dark * 3).length;
+    expect(white).toBeGreaterThan(24 * 0.2);
+    expect(white).toBeLessThan(24 * 0.6);
+  });
+});
+
 describe("the material's own shader", () => {
   it("compiles beside a stock material in one scene, without clashing", () => {
     const { mesh, material } = card();

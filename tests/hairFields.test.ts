@@ -1,3 +1,5 @@
+import { BufferAttribute, BufferGeometry } from "three";
+import { MeshBVH } from "three-mesh-bvh";
 import { describe, expect, it } from "vitest";
 import {
   BARE_NEAR,
@@ -462,5 +464,134 @@ describe("hairFields", () => {
       const { scalpVerts } = run(strip(5, 0.002, 0.1, 0.1), none);
       expect(scalpVerts.length).toBe(0);
     });
+
+    it("reads the cut-out of the quad and the half a body vertex is under, among hundreds of cards", () => {
+      const field = cutoutField();
+      // The fixture is only a test of the quad lookup if a BVH over its cards reorders them:
+      // with a handful of triangles it builds one leaf and leaves the index as it was.
+      const cards = cardTriangles(field.faceVerts);
+      const probe = new BufferGeometry();
+      probe.setAttribute("position", new BufferAttribute(field.positions, 3));
+      probe.setIndex(new BufferAttribute(cards.slice(), 1));
+      new MeshBVH(probe, { verbose: false });
+      expect((probe.index as BufferAttribute).array).not.toEqual(cards);
+
+      const { scalpVerts, scalpWeights } = hairFields({
+        positions: field.positions,
+        faceVerts: field.faceVerts,
+        body: field.body,
+        scalpEligible: new Uint8Array(field.body.positions.length / 3).fill(1),
+        fillHoles: false,
+        cutout: field.cutout,
+      });
+      const weight = new Map<number, number>();
+      scalpVerts.forEach((v, i) => {
+        weight.set(v, scalpWeights[i] as number);
+      });
+      const wrong: string[] = [];
+      for (const { vertex, kind } of field.under) {
+        const w = weight.get(vertex) ?? 0;
+        if (kind === "clear" ? w !== 0 : w !== 255) wrong.push(`${vertex} (${kind}): ${w}`);
+      }
+      expect(wrong).toEqual([]);
+    });
+
+    it("leaves the caller's body triangles and quads as they were", () => {
+      const field = cutoutField();
+      const triangles = field.body.triangles.slice();
+      const faceVerts = field.faceVerts.slice();
+      hairFields({
+        positions: field.positions,
+        faceVerts: field.faceVerts,
+        body: field.body,
+        scalpEligible: new Uint8Array(field.body.positions.length / 3).fill(1),
+        cutout: field.cutout,
+      });
+      expect(field.body.triangles).toEqual(triangles);
+      expect(field.faceVerts).toEqual(faceVerts);
+    });
   });
 });
+
+/** A quad's two triangles in the order `hairFields` splits them: (0, 1, 2), then (0, 2, 3). */
+function cardTriangles(faceVerts: Uint32Array): Uint32Array {
+  const out = new Uint32Array((faceVerts.length / 4) * 6);
+  for (let f = 0; f < faceVerts.length / 4; f++)
+    for (const [k, corner] of [0, 1, 2, 0, 2, 3].entries())
+      out[f * 6 + k] = faceVerts[f * 4 + corner] as number;
+  return out;
+}
+
+/**
+ * A flat scalp of `side` x `side` vertices 5 cm apart, and one small square card 1 mm over each
+ * vertex not on its rim: some hundreds of quads. Each card is placed so its vertex is under one
+ * half of it, and its UVs are not affine across the quad, so the texel read depends on the half as
+ * well as the quad: a card whose vertex is under half (0, 1, 2) is opaque there and clear if read
+ * as half (0, 2, 3), and the reverse for a card whose vertex is under (0, 2, 3). A third kind of
+ * card is clear throughout. The cut-out is two texels, clear (u < 0.5) and opaque.
+ */
+function cutoutField(side = 20) {
+  const step = 0.05;
+  const h = 0.01;
+  const lift = 0.001;
+  const bodyPositions: number[] = [];
+  for (let j = 0; j < side; j++)
+    for (let i = 0; i < side; i++) bodyPositions.push(i * step, 0, j * step);
+  const triangles: number[] = [];
+  for (let j = 0; j < side - 1; j++)
+    for (let i = 0; i < side - 1; i++) {
+      const a = j * side + i;
+      triangles.push(a, a + side, a + 1, a + 1, a + side, a + side + 1);
+    }
+  const kinds = ["first", "second", "clear"] as const;
+  const positions: number[] = [];
+  const faceVerts: number[] = [];
+  const faceUvs: number[] = [];
+  const uvs: number[] = [];
+  const under: { vertex: number; kind: (typeof kinds)[number] }[] = [];
+  for (let j = 1; j < side - 1; j++)
+    for (let i = 1; i < side - 1; i++) {
+      const vertex = j * side + i;
+      const kind = kinds[(i * 7 + j * 3) % 3] as (typeof kinds)[number];
+      // Corners (-h, -h), (h, -h), (h, h), (-h, h) about the card's centre, in (x, z). Half
+      // (0, 1, 2) is where x > z about the centre; the vertex sits half-way into its half.
+      const [dx, dz] = kind === "second" ? [-h / 2, h / 2] : [h / 2, -h / 2];
+      const cx = i * step - dx;
+      const cz = j * step - dz;
+      const base = positions.length / 3;
+      for (const [sx, sz] of [
+        [-1, -1],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+      ] as const)
+        positions.push(cx + sx * h, lift, cz + sz * h);
+      faceVerts.push(base, base + 1, base + 2, base + 3);
+      // Corners 0 and 2 (the shared diagonal) clear; the opaque corner is the one in the vertex's
+      // half. A vertex half-way into half (0, 1, 2) reads u = 0.65 there, and 0.45 (clear) if
+      // its barycentre is taken in (0, 2, 3).
+      const u =
+        kind === "first"
+          ? [0.3, 1, 0.3, 0]
+          : kind === "second"
+            ? [0.3, 0, 0.3, 1]
+            : [0.1, 0.1, 0.1, 0.1];
+      const uvBase = uvs.length / 2;
+      for (const value of u) uvs.push(value, 0.5);
+      faceUvs.push(uvBase, uvBase + 1, uvBase + 2, uvBase + 3);
+      under.push({ vertex, kind });
+    }
+  return {
+    body: { positions: new Float32Array(bodyPositions), triangles: new Uint32Array(triangles) },
+    positions: new Float32Array(positions),
+    faceVerts: new Uint32Array(faceVerts),
+    cutout: {
+      faceUvs: new Uint32Array(faceUvs),
+      uvs: new Float32Array(uvs),
+      width: 2,
+      height: 1,
+      alpha: new Uint8Array([0, 255]),
+    },
+    under,
+  };
+}

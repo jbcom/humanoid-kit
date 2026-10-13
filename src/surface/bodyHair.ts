@@ -1,11 +1,13 @@
 /**
  * Body hair: where terminal hair grows, how much, and what colour, from the
- * figure's androgen axis (the gender macro), its age and its hair pigments
+ * recipe's regional controls, the figure's age and its hair pigments
  * (docs/research/BODY-HAIR.md, which cites every number or marks it a choice).
  *
  * Coverage is the Ferriman-Gallwey grade over 4 (0 none, 1 frank and dense), by
  * region group. It is pure data and arithmetic: the skin layers and the hair
  * cards that draw body hair read it, and nothing here knows how it is drawn.
+ * Nothing here reads the gender macro (DECISIONS ruling 1): it is a skeletal
+ * frame blend, and every region's hair is the recipe's own independent choice.
  *
  * Pubic hair is adult-only under the age policy (`src/recipe/agePolicy.ts`):
  * its coverage is 0 for any figure that is not an adult, whatever the recipe
@@ -39,23 +41,58 @@ export const isAdultOnlyBodyHair = (group: string): boolean =>
 
 /**
  * How the face's terminal hair is worn: `none` is shaven, `stubble` a few days'
- * growth over the whole beard area, the rest grown out where they name.
+ * growth over the whole beard area, the rest grown out where they name
+ * (`src/surface/beard.ts` has each style's parts and default length).
  */
-export const BEARD_STYLES = ["none", "stubble", "moustache", "goatee", "full"] as const;
+export const BEARD_STYLES = [
+  "none",
+  "stubble",
+  "moustache",
+  "goatee",
+  "imperial",
+  "mutton-chops",
+  "chin-curtain",
+  "full",
+  "forked",
+  "longstreet",
+] as const;
 export type BeardStyle = (typeof BEARD_STYLES)[number];
 
-/** The recipe's optional `bodyHair`. Every field is optional; absent is the default for age and sex. */
+/**
+ * A beard with its continuous controls. Every field but `style` is optional,
+ * and absent is the style's default (`BEARD_SHAPES`).
+ */
+export interface BeardSpec {
+  style: BeardStyle;
+  /** The longest part's length, metres: 0 up to the chin's height above the floor. */
+  length?: number;
+  /** How full it is, 0..`MAX_BEARD_VOLUME`: the cards' density and how far they stand off the skin. */
+  volume?: number;
+  /** The fraction of its hairs that are white, 0..1, on top of the colour's own grey. */
+  grey?: number;
+  /** How far the chin's hair parts into two points, 0..1. */
+  fork?: number;
+  /** How far the moustache parts at the middle and sweeps out, 0..1. */
+  part?: number;
+}
+
+/** The largest beard volume: twice the default fullness. */
+export const MAX_BEARD_VOLUME = 2;
+
+/** The recipe's optional `bodyHair`. Every field is optional; absent is the default for age. */
 export interface BodyHairRecipe {
   /**
    * Legacy per-group multiplier on the physiological default coverage,
-   * 0..`MAX_BODY_HAIR_DENSITY` (1 is the default). It cannot enable a group
-   * whose physiological anchor is zero; use `coverage` for that explicit choice.
+   * 0..`MAX_BODY_HAIR_DENSITY` (1 is the default). Kept so saved recipes still
+   * read; it follows the default's age course and clamps at full coverage, so
+   * high multipliers on a dense default plateau. New recipes use `coverage`.
    */
   density?: Partial<Record<BodyHairGroup, number>>;
   /**
-   * Explicit mature terminal-hair coverage, 0..1. This replaces a group's
-   * androgen-derived coverage anchor but still follows age maturation and
-   * senescence. It is mutually exclusive with that group's legacy `density`.
+   * Explicit terminal-hair coverage, 0..1. An adult gets exactly this value,
+   * with no age-course or senescence factor; before 18 it comes in over the
+   * group's puberty onset, and the adult-only groups are 0. It is mutually
+   * exclusive with that group's legacy `density`.
    */
   coverage?: Partial<Record<BodyHairGroup, number>>;
   /**
@@ -63,7 +100,8 @@ export interface BodyHairRecipe {
    * strand spacing only; it does not alter the covered fraction.
    */
   follicleDensity?: Partial<Record<BodyHairGroup, number>>;
-  beard?: BeardStyle;
+  /** A style by name, or a style with its continuous controls. */
+  beard?: BeardStyle | BeardSpec;
 }
 
 /** The largest density multiplier: twice a group's default, clamped to full coverage. */
@@ -73,31 +111,32 @@ export const MIN_BODY_HAIR_FOLLICLE_DENSITY = 0.25;
 /** The largest supported physical follicle-density multiplier. */
 export const MAX_BODY_HAIR_FOLLICLE_DENSITY = 2;
 
-/** What body hair is computed from: the figure's age, androgen axis and hair pigments. */
+/** What body hair is computed from: the figure's age, hair pigments and regional controls. */
 export interface BodyHairInput {
   /** Years (`recipe.macros.age`). */
   age: number;
-  /** 0 = female anchor, 1 = male anchor (`recipe.macros.gender`), read as the androgen level. */
-  gender: number;
   /** The figure's hair pigments (`recipe.hair.colour`, or the default). */
   colour: HairColour;
   bodyHair?: BodyHairRecipe;
 }
 
 /**
- * Coverage at maturity, at the female and the male end of the androgen axis
- * (Ferriman-Gallwey grade / 4). Choices read off the FG scale (BODY-HAIR.md).
+ * The physiological default coverage at maturity for a group a recipe leaves
+ * unset (Ferriman-Gallwey grade / 4), one value for every figure. Choices: the
+ * middle of the FG scale's typical adult range for each region (BODY-HAIR.md),
+ * except the beard area, which is full because the beard style (default
+ * shaven) is what decides whether a face grows one.
  */
-export const BODY_HAIR_COVERAGE: Readonly<Record<BodyHairGroup, readonly [number, number]>> = {
-  face: [0.1, 1],
-  chest: [0, 0.6],
-  abdomen: [0.1, 0.65],
-  back: [0, 0.25],
-  buttocks: [0.05, 0.35],
-  arms: [0.3, 0.6],
-  legs: [0.45, 0.85],
-  axillary: [0.85, 0.95],
-  pubic: [0.85, 0.95],
+export const BODY_HAIR_COVERAGE: Readonly<Record<BodyHairGroup, number>> = {
+  face: 1,
+  chest: 0.3,
+  abdomen: 0.375,
+  back: 0.125,
+  buttocks: 0.2,
+  arms: 0.45,
+  legs: 0.65,
+  axillary: 0.9,
+  pubic: 0.9,
 };
 
 /** Years over which a group's terminal hair comes in (a smoothstep from onset to full). Choices on the Tanner ages. */
@@ -168,16 +207,17 @@ export const BODY_HAIR_FOLLICLE_DENSITY: Readonly<Record<BodyHairGroup, number>>
   pubic: 40,
 };
 
-const unit = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+/** `x` clamped to 0..1; not a number is 0, so an unvalidated control fails closed. */
+const unit = (x: number) => (x > 0 ? (x < 1 ? x : 1) : 0);
 const smoothstep = (lo: number, hi: number, x: number) => {
   const t = unit((x - lo) / (hi - lo));
   return t * t * (3 - 2 * t);
 };
 
 /**
- * The fraction of a group's mature coverage present at this age. This is kept
- * separate from the androgen anchor so an explicit coverage can work at every
- * gender value without bypassing maturation or age-related thinning.
+ * The fraction of a group's default mature coverage present at this age: its
+ * puberty course and its old-age thinning. It shapes the default (and the
+ * legacy multiplier on it), never an adult's explicit coverage.
  */
 function bodyHairAgeFactor(group: BodyHairGroup, age: number): number {
   if (isAdultOnlyBodyHair(group) && !(age >= ADULT_AGE)) return 0;
@@ -188,27 +228,40 @@ function bodyHairAgeFactor(group: BodyHairGroup, age: number): number {
 }
 
 /**
- * A group's default coverage (0..1) for an age and androgen level, before the
- * recipe's multiplier. Adult-only groups are 0 unless `age` is an adult's, and
- * an age that is not a number fails closed.
+ * The fraction of an explicit coverage present at this age: all of it for an
+ * adult, and before 18 the group's puberty onset, brought to completion at 18
+ * (a group whose onset is 18 or later comes in at 18). Adult-only groups are 0
+ * below 18, and an age that is not a number fails closed.
  */
-export function defaultBodyHairCoverage(group: BodyHairGroup, age: number, gender: number): number {
-  const [female, male] = BODY_HAIR_COVERAGE[group];
-  const a = unit(gender);
-  const coverage = (female + (male - female) * a) * bodyHairAgeFactor(group, age);
+function explicitAgeFactor(group: BodyHairGroup, age: number): number {
+  if (Number.isNaN(age)) return 0;
+  if (age >= ADULT_AGE) return 1;
+  if (isAdultOnlyBodyHair(group)) return 0;
+  const onset = BODY_HAIR_MATURITY[group][0];
+  return onset >= ADULT_AGE ? 0 : smoothstep(onset, ADULT_AGE, age);
+}
+
+/**
+ * A group's default coverage (0..1) for an age, before the recipe's legacy
+ * multiplier. Adult-only groups are 0 unless `age` is an adult's, and an age
+ * that is not a number fails closed.
+ */
+export function defaultBodyHairCoverage(group: BodyHairGroup, age: number): number {
+  const coverage = BODY_HAIR_COVERAGE[group] * bodyHairAgeFactor(group, age);
   return Number.isFinite(coverage) ? coverage : 0;
 }
 
 /**
- * A group's terminal-hair coverage, 0..1: the default for the figure's age and
- * androgen level times the recipe's legacy density multiplier, or an explicit
- * mature coverage times the same age factor. Adult-only groups are 0 for any
- * figure that is not an adult, whatever the control.
+ * A group's terminal-hair coverage, 0..1. An explicit `coverage` is an
+ * adult's exactly (`explicitAgeFactor` before 18); otherwise it is the
+ * default for the figure's age times the recipe's legacy density multiplier.
+ * Adult-only groups are 0 for any figure that is not an adult, whatever the
+ * control.
  */
 export function bodyHairCoverage(group: BodyHairGroup, input: BodyHairInput): number {
   const explicit = input.bodyHair?.coverage?.[group];
-  if (explicit !== undefined) return unit(explicit) * bodyHairAgeFactor(group, input.age);
-  const base = defaultBodyHairCoverage(group, input.age, input.gender);
+  if (explicit !== undefined) return unit(explicit) * explicitAgeFactor(group, input.age);
+  const base = defaultBodyHairCoverage(group, input.age);
   if (base === 0) return 0;
   const m = input.bodyHair?.density?.[group] ?? 1;
   return unit(base * Math.min(MAX_BODY_HAIR_DENSITY, Math.max(0, m)));
@@ -229,9 +282,14 @@ export function bodyHairFollicleDensity(group: BodyHairGroup, input: BodyHairInp
 /** The beard a recipe that names none wears: clean-shaven, the neutral recipe. */
 export const DEFAULT_BEARD: BeardStyle = "none";
 
+/** The recipe's beard with its controls, the style alone if it names only that, or the default. */
+export function beardSpec(input: Pick<BodyHairInput, "bodyHair">): BeardSpec {
+  const beard = input.bodyHair?.beard ?? DEFAULT_BEARD;
+  return typeof beard === "string" ? { style: beard } : beard;
+}
+
 /** The beard style: the recipe's, or `DEFAULT_BEARD`. */
-export const beardStyle = (input: BodyHairInput): BeardStyle =>
-  input.bodyHair?.beard ?? DEFAULT_BEARD;
+export const beardStyle = (input: BodyHairInput): BeardStyle => beardSpec(input).style;
 
 /**
  * A group's hair colour: the figure's pigments, darker or lighter by region,

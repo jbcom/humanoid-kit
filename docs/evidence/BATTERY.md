@@ -17,6 +17,17 @@ cannot pass while failing on the rest of the people the kit draws.
   on an area is read here, because a placement or mask that holds on one body
   can drift off another and a contrast that reads on one tone can vanish on
   another.
+- **scatter**: thirty adults spread over the whole ethnic simplex, melanin,
+  undertone and six facial features (nose width, lip volume, chin width,
+  epicanthic fold, ear scale, cheekbones), each drawn independently over its
+  range (`src/foundation/scatter.ts`). The tones, bodies and cross sets hold
+  one ethnic mix (MakeHuman's equal thirds) except the three pure anchors at
+  one tone, so they cannot show a face the mix makes different. Each of the
+  simplex's seven anchors (the three pure vertices, three edge midpoints and the
+  centre) is a figure twice, one of each gender, one on lighter skin and one on
+  deeper; the rest fill the simplex. Anything that depends on a face, a nose,
+  an eye shape or a skin's undertone is read here too. `tests/foundationScatter.test.ts`
+  holds its coverage.
 
 ## The rules
 
@@ -37,4 +48,6 @@ cannot pass while failing on the rest of the people the kit draws.
 `hk-sheets request` expands `{"$battery": "tones" | "bodies" | "cross"}` in a
 request's `recipes` into the set's recipes, merging the request's `"$with"`
 object (the feature under test, as recipe fields) into each one; cells are in
-the set's order and their names go in the request's `why`.
+the set's order and their names go in the request's `why`. The scatter set is
+`scatter.figures` in the same file; until the tool expands `"scatter"` too, a
+request takes its figures as `recipes` (each is `createRecipe` input).

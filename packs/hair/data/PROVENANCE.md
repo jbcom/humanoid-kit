@@ -36,7 +36,7 @@ hair colour is the only colour it takes; they carry no growth, hairline, fin or 
 Each style's binary also carries what the packer measured of its cards against the body at rest: growth,
 hairline fade, fin and scalp (`src/surface/hairFields.ts`).
 
-The body hair cards (kind `beard`) come from no source file: `scripts/lib/bodyHairCards.ts` generates them over the body pack's
+The body hair cards (kind `beard`) come from no source file: `src/surface/bodyHairCards.ts` generates them over the body pack's
 base mesh from a seed, with their strand map, so they are this project's own work under its licence.
 
 ## Texture sizes
@@ -84,27 +84,27 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 
 | Output | SHA-256 |
 | --- | --- |
-| short02.bin.gz | `aa2d0b520ea593529e29e42d03cdab2f35edbfbecd74c270584aa753da70e1f3` |
+| short02.bin.gz | `d2670495f8a78f1b3171d3be57653cbacabe858f134061ddff61e58aab8c469a` |
 | short02.webp | `3fe64b9a68b43ad675b745da7f63c74b724efcee6e19ee9375c6d11da1fc523d` |
-| bob02.bin.gz | `d4b0306da0ad5f59be3e862b4f2917b926d970b5cce19e3361b0f772bcef849f` |
+| bob02.bin.gz | `e43f75a40c5a329a26c447b196bfd73417aa882f31ac997958cae001fd1a0fd5` |
 | bob02.webp | `fca88b391ae573291bce61fb66323531d77fb37738ac316cee0ec8ffb7e206f8` |
-| long01.bin.gz | `5aa3f775f24a93c1cc65491836af824944b59b2eff6f9368e659d48637586edf` |
+| long01.bin.gz | `735a3ad73aafe1731fcccbccf64b6b5ec09d21c658e6a05b2792a6d1f824a8a3` |
 | long01.webp | `16ddcd9875b4ad841fb9e5001897964d7a38755f04efeaa49b592ae36783c6d8` |
-| afro01.bin.gz | `0f39a05f6067c08e182dbe9a3b2a1b7d63bd38580f3abdd218f54a036e64290a` |
+| afro01.bin.gz | `1347638bac9a0b6c25361031fbe7635a59325d3dbdc5c54bf1f3e74deaed5a10` |
 | afro01.webp | `5538a0c35c42ae81d636ca98dac617a2b2a33308f1deba5f13bd4446f876336f` |
-| short04.bin.gz | `bf093d5d71a843d1c9270edfbd4953db91e47d1a3f59bc21360ab54bf476fc22` |
+| short04.bin.gz | `fc84fe68ca8acfafbb3467f119c24d2ea382b8cf76e17e5391a40962171302fc` |
 | short04.webp | `675135b72c7f8261cc8908e71eb7aecc563adf16a71def6a0ab233b5600e5445` |
-| short03.bin.gz | `0133d32fbf9d042c648bf4d676118610951f12814f16bf8532661c9c15480f38` |
+| short03.bin.gz | `60139d787680904c9e935f8de098afcaab69602d3407739d2c6f8ea7a225775b` |
 | short03.webp | `f614f39955b5e955e2e5f05c6995641ee696a6453e41383e39cb6895dc4f88d2` |
-| ponytail01.bin.gz | `a4febd28719d3859c4daac4640661166356145816f897148e47715254f1fe1d3` |
+| ponytail01.bin.gz | `10f9816d101d0b5e68a21bb5972b01bbaee40b7c0ed95b3f50cc8089463ff3af` |
 | ponytail01.webp | `b60dbec1b1dc48750af41c825c73e68f37d9edfc3633c2602ddd8b3c466f9aba` |
-| short01.bin.gz | `ceefb51165bbb609f3cb87deba9e85cb9d09a8e9d438e59d835521043f277c45` |
+| short01.bin.gz | `92955db94f115f1f5e6031e01d497ca5a5f8d5cdce2285142d2aa09d8e7589a9` |
 | short01.webp | `534604cd44ad63db2b25f2176ab366bfc020ae4284cd09b0202814dfb72045c9` |
-| bob01.bin.gz | `4721b2edee71738c7066ce5ba74377bc2769bf8b523bd6224173be0e14677895` |
+| bob01.bin.gz | `8e636e6e074188791ade550139fb591d26fc67fbeb5e8ea2bea80afe134f0417` |
 | bob01.webp | `d9d0383baa65675e958e247b157d87c79d1e871f81804e86ada9f9ac7926d7c3` |
 | braid01.bin.gz | `6b843fee78e6a27e14137b6e10eaebdfca08110c2d158af3137104e460ad6b16` |
 | braid01.webp | `ebda0c0fc0572ab7cdc7d101b5ceb1095ae8a5ff60c8e908e93b4804cacb10e2` |
-| crop01.bin.gz | `09b0cf3d310add9c9a9df9ab20eb2bce5215b6ed9beb39e4770bbc7246452ea4` |
+| crop01.bin.gz | `23eb292fbb6e1665538e8abf5c9113bc6a857cc808a19778f9a1782c8216c96f` |
 | crop01.webp | `5a2b22578ba66a6f216a707c07494bac9c6fbfcfbf63fc2d49869b01f60a2770` |
 | braids01.bin.gz | `d76cdc6173951d87370a2863a24ece6e87039bac9113854c2e6e4be61524fd9c` |
 | braids01.webp | `35de9774062d8fe7b48bb82a33eea917acc198307f16acf85fb61f1192509c65` |

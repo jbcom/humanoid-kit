@@ -10,9 +10,12 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { FRAME_DIRECTIONS, REVIEW_AGES } from "./conditions.ts";
+import { FRAME_DIRECTIONS, REVIEW_AGES as SHEET_AGES } from "./conditions.ts";
 import { candidateDir, cellRecipeAt, directionRecipe, labSetup } from "./setup.ts";
 import { AGE_KNOTS, chestTissue, legacyControl, libraryAt, type TissueResult } from "./tissue.ts";
+
+/** The sheets' review ages plus 21, inside MakeHuman's child-to-adult blend (10 to 25). */
+const REVIEW_AGES = [...SHEET_AGES, 21].sort((a, b) => a - b);
 
 const { lab, ctx, ages } = labSetup();
 const both = (size: number, firmness: number) => ({

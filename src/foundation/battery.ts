@@ -7,6 +7,7 @@
  */
 import type { MacroValues } from "../makehuman/macro.ts";
 import { ADULT_AGE } from "../recipe/agePolicy.ts";
+import { type ScatterFigure, scatterFigures } from "./scatter.ts";
 
 /** A battery tone: a skin melanin on the average adult body. */
 export interface BatteryTone {
@@ -100,6 +101,15 @@ export function batteryJson(): {
   tones: { name: string; skin: { melanin: number } }[];
   bodies: { name: string; macros: Record<string, number> }[];
   cross: { $comment: string; bodies: string[]; tones: string[] };
+  scatter: {
+    $comment: string;
+    figures: {
+      name: string;
+      macros: ScatterFigure["macros"];
+      skin: ScatterFigure["skin"];
+      modifiers: Record<string, number>;
+    }[];
+  };
 } {
   return {
     $comment:
@@ -111,6 +121,16 @@ export function batteryJson(): {
         "Every listed body at tones 1, 3, 5 and 6: the extremes of shape against light, mid and deep skin.",
       bodies: [...BATTERY_CROSS.bodies],
       tones: [...BATTERY_CROSS.tones],
+    },
+    scatter: {
+      $comment:
+        "The scatter set (src/foundation/scatter.ts): thirty adults spread over the ethnic simplex (each vertex, edge midpoint and the centre twice, the rest filling it), with melanin, undertone and six facial features each drawn independently over their whole range. The bodies, tones and cross sets are one mix against skin tones; this is the set that shows every look the model can make.",
+      figures: scatterFigures().map(({ name, macros, skin, modifiers }) => ({
+        name,
+        macros,
+        skin,
+        modifiers,
+      })),
     },
   };
 }

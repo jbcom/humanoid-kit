@@ -118,6 +118,25 @@ export function loadClothedAssets(): HumanoidAssets {
   return clothed;
 }
 
+/** The body pack's proxy file, decompressed. */
+export const proxyPackFile = (): ArrayBuffer => {
+  const listed = bodyManifest.proxies;
+  if (!listed) throw new Error("the body pack has no proxies");
+  return readGzipPackFile(path.join(bodyDir, listed.file));
+};
+
+let miniature: HumanoidAssets | undefined;
+
+/** The packed assets with the garments and the proxy bodies loaded, parsed once per test file. */
+export function loadMiniatureAssets(): HumanoidAssets {
+  miniature ??= parseHumanoidAssets(
+    { ...bodyPackData(), proxies: proxyPackFile() },
+    undefined,
+    clothingPackData(),
+  );
+  return miniature;
+}
+
 /** The packed assets read from disk, parsed once per test file. */
 export function loadFixtureAssets(adultAnatomy = false): HumanoidAssets {
   if (!adultAnatomy) {

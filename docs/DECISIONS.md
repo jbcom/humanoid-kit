@@ -23,8 +23,8 @@ pelvis and external anatomy, body and facial hair, skin and fur.
 
 For every body region, the first step is to use what MakeHuman's core data and the
 CC0 community assets already provide, grafted onto the base mesh, and to accept it
-on rendered images. A procedural substitute is a documented last resort for a gap
-no CC0 source fills (for example the relaxation that gives a flat chest baseline).
+on rendered images. Procedural substitutes are no longer an agent's call: see
+ruling 8, which supersedes the earlier "documented last resort" allowance.
 Grafting a foreign part so that it is one continuous surface is a core capability
 of the kit (issue 11), not an optional extra.
 
@@ -52,6 +52,11 @@ targets, breast development through adolescence, nipples and areolae. The one
 boundary is the one MakeHuman itself draws, which keeps genital assets out of its
 core:
 
+- The age axis is MakeHuman's own timeline, with no deviation (owner ruling,
+  2026-10-13): baby at 1 year, child at 10, the adult body (`young` in its
+  files) at 25, old at 90, linear between them. A figure of 18 is about 47%
+  child shape, as in MakeHuman. The earlier hold of the adult body from 18 to
+  25 is reversed; `ADULT_AGE` (18) gates content only, never the body's shape.
 - Adult-only: the adult anatomy pack (genital, bulge and pregnancy targets and
   modifiers) and pubic hair density, evaluated only for figures aged 18 or over.
 - Not restricted at any age: nipples and areolae (relief and surface), breast
@@ -88,3 +93,44 @@ figure actually has, never from its frame value. Each region has its own contact
 and response channel: the mouth, ingestion and egress, other adult openings, and
 birth are separate functions and are never one shared "opening". Adult interactions
 refuse any participant under 18, and consent is never assumed.
+
+## 7. An adult anatomy value that is absent means its default; an explicit zero means zero
+
+Recorded 2026-10-13 as the semantic the code already implements (issue 26, commit
+cb2e5c17), with the owner's confirmation of the wording still to come. It is a
+maintainer design decision, not an owner ruling.
+
+- A recipe that does not name an adult anatomy modifier gets the adult pack's
+  default for it when the figure is an adult and the pack is loaded.
+- A recipe that names the modifier with 0 gets 0: the default is overridden, and
+  the editor preserves that explicit zero.
+- A control shows the effective value, the same one evaluation applies, so it never
+  reads 0 while the default is drawn (`sliderValue` with the loaded anatomy
+  defaults). Resetting a row removes the override so the default resumes.
+- Under 18 nothing changes: adult modifiers are refused or removed as ruling 4
+  says, whatever the defaults are.
+
+## 8. Procedural geometry is for internal canals only; anything else is vetted by the owner
+
+Owner ruling, 2026-10-13. Hair, beards, moustaches, body hair, eyebrows, skin
+detail, outer anatomy and every other visible surface come from CC0 (or
+otherwise permitted) assets, grafted and bound the MakeHuman way (`.mhclo`
+attachments, `src/graft`), and are accepted on rendered images. Procedural
+generation (cards or shells made by code, code-drawn forms, painted-in-shader
+substitutes) is approved only for internal canals (urethra, vagina, anus and
+their apertures), where no asset exists.
+
+- Any other procedural element needs the owner's explicit vetting before it is
+  built or kept: the issue states what asset search was done (catalogue, packs,
+  community pages), why nothing fits, and what the procedural piece is; the owner
+  answers; the answer is recorded here with the element it covers.
+- Work already on the shared line that violates this is audited and replaced by
+  grafts, or listed here with the owner's vetting. Until an element is vetted it
+  is not extended, polished or defended.
+- A surface that looks wrong is first checked for being procedural: a failing
+  look is a reason to switch to an asset, not to tune the generator.
+
+Decisions are appended with the next number and never renumbered, since code and
+docs cite the numbers. A decision that comes from a design section (dated, in the
+architecture notes or a research document) is summarised here with a pointer, so
+this file is the index of what was decided and why.

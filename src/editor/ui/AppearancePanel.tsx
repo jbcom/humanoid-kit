@@ -4,10 +4,10 @@
  * haemoglobin and undertone), eyes offer a palette of natural iris colours plus
  * a picker, and hair (when a hair pack is loaded) a style, a palette of natural
  * colours, a picker for dyed hair and the pigment sliders behind the palette.
- * Body hair offers a beard style and a density per region, relative to the
- * default for the figure's age and sex. The creator exposes the sensitive
- * underarm and pubic density controls only to adults; that editor boundary does
- * not alter the core age policy or the figure's rendered default coverage.
+ * Body hair offers a beard style and an explicit coverage per region, the same
+ * control at every frame (DECISIONS ruling 1). An unset region shows what is
+ * drawn for it, labelled as unset; the pubic control is offered only to adults,
+ * as the age policy has it.
  */
 import { useMemo } from "react";
 import type { EyeLibrary } from "../../eyes/library.ts";
@@ -23,8 +23,8 @@ import {
   type BeardStyle,
   type BodyHairGroup,
   type BodyHairRecipe,
+  beardSpec,
   isAdultOnlyBodyHair,
-  MAX_BODY_HAIR_DENSITY,
 } from "../../surface/bodyHair.ts";
 import {
   DEFAULT_HAIR_COLOUR,
@@ -32,6 +32,7 @@ import {
   type HairColour,
   hairAlbedo,
 } from "../../surface/hairTone.ts";
+import { drawnBodyHairCoverage } from "../../surface/regions/bodyHairCoat.ts";
 import { type Rgb, skinAlbedo } from "../../surface/skinTone.ts";
 import { eyeMaterialGroups, withEyeMaterial } from "../eyeMaterials.ts";
 import type { FrameRequest } from "../framing.ts";
@@ -126,13 +127,15 @@ export function AppearancePanel({
     update((r) => {
       const { bodyHair, ...rest } = r;
       const next = change(bodyHair ?? {});
-      return next.beard === undefined && next.density === undefined
-        ? rest
-        : { ...rest, bodyHair: next };
+      return Object.keys(next).length === 0 ? rest : { ...rest, bodyHair: next };
     }, gesture);
-  // The editor keeps its two sensitive regional density controls adult-only.
-  // This is narrower than recipe policy: only pubic density is invalid below 18.
+  // The age policy's adult-only group (pubic) is offered only to adults.
   const adult = isAdult(recipe);
+  const hairInput = {
+    age: recipe.macros.age,
+    colour: hairColour,
+    ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
+  };
 
   return (
     <div className="hk-groups">
@@ -343,7 +346,11 @@ export function AppearancePanel({
                 key={id ?? "default"}
                 type="button"
                 className="hk-chip"
-                aria-pressed={(recipe.bodyHair?.beard ?? null) === id}
+                aria-pressed={
+                  recipe.bodyHair?.beard === undefined
+                    ? id === null
+                    : beardSpec({ bodyHair: recipe.bodyHair }).style === id
+                }
                 onClick={() => {
                   onFocus(face);
                   setBodyHair((b) => withBeard(b, id));
@@ -353,24 +360,29 @@ export function AppearancePanel({
               </button>
             ))}
           </fieldset>
-          {BODY_HAIR_SLIDERS.filter((s) => adult || !isAdultOnlyEditorBodyHair(s.group)).map(
-            (s) => (
+          {BODY_HAIR_SLIDERS.filter((s) => adult || !isAdultOnlyBodyHair(s.group)).map((s) => {
+            const control = bodyHairControl(recipe.bodyHair, s.group);
+            const drawn = drawnBodyHairCoverage(s.group, hairInput);
+            const asked = recipe.bodyHair?.coverage?.[s.group];
+            return (
               <SliderRow
                 key={s.group}
                 label={s.label}
-                value={recipe.bodyHair?.density?.[s.group] ?? 1}
+                value={asked ?? drawn}
                 min={0}
-                max={MAX_BODY_HAIR_DENSITY}
+                max={1}
                 step={0.01}
-                neutral={1}
-                format={pct}
+                neutral={drawn}
+                changed={control !== "unset"}
+                format={(v) => coverageLabel(control, v, drawn)}
                 description={s.description}
-                onChange={(v, g) => setBodyHair((b) => withDensity(b, s.group, v), g)}
+                onChange={(v, g) => setBodyHair((b) => withCoverage(b, s.group, v), g)}
+                onReset={() => setBodyHair((b) => withoutCoverage(b, s.group))}
                 onSettle={settle}
                 onFocus={() => onFocus(s.group === "face" ? face : body)}
               />
-            ),
-          )}
+            );
+          })}
         </div>
       </details>
     </div>
@@ -428,49 +440,110 @@ function EyeTexturePicker({
   );
 }
 
-/** A body hair recipe with this beard (null: the default for age and sex). */
-function withBeard(b: BodyHairRecipe, beard: BeardStyle | null): BodyHairRecipe {
-  const { beard: _, ...rest } = b;
-  return beard === null ? rest : { ...rest, beard };
+/**
+ * A body hair recipe with this beard style (null: unset, `DEFAULT_BEARD`). A
+ * beard with controls keeps them: only its style changes.
+ */
+function withBeard(b: BodyHairRecipe, style: BeardStyle | null): BodyHairRecipe {
+  const { beard: old, ...rest } = b;
+  if (style === null) return rest;
+  return {
+    ...rest,
+    beard: old !== undefined && typeof old !== "string" ? { ...old, style } : style,
+  };
 }
 
-/** A body hair recipe with one group's density multiplier set. */
-const withDensity = (b: BodyHairRecipe, group: BodyHairGroup, v: number): BodyHairRecipe => ({
-  ...b,
-  density: { ...b.density, [group]: v },
-});
+/** How a recipe sets one group's body hair: not at all, by explicit coverage, or by the legacy multiplier. */
+type BodyHairControl = "unset" | "explicit" | "legacy";
 
-/** The beard choices: the default for age and sex, then each style. */
+function bodyHairControl(b: BodyHairRecipe | undefined, group: BodyHairGroup): BodyHairControl {
+  if (b?.coverage?.[group] !== undefined) return "explicit";
+  return b?.density?.[group] !== undefined ? "legacy" : "unset";
+}
+
+/**
+ * A group's map with `group` set to `v`, or removed when `v` is undefined; the
+ * map itself is dropped when nothing is left in it.
+ */
+function withEntry(
+  map: Partial<Record<BodyHairGroup, number>> | undefined,
+  group: BodyHairGroup,
+  v: number | undefined,
+): Partial<Record<BodyHairGroup, number>> | undefined {
+  const { [group]: _, ...rest } = map ?? {};
+  const next = v === undefined ? rest : { ...rest, [group]: v };
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+/** `b` with `field` replaced by `map`, the field left out when the map is empty. */
+function withField(
+  b: BodyHairRecipe,
+  field: "coverage" | "density",
+  map: Partial<Record<BodyHairGroup, number>> | undefined,
+): BodyHairRecipe {
+  const { [field]: _, ...rest } = b;
+  return map ? { ...rest, [field]: map } : rest;
+}
+
+/**
+ * A body hair recipe with one group's explicit coverage set. It replaces that
+ * group's legacy multiplier, which the recipe may not hold beside it.
+ */
+const withCoverage = (b: BodyHairRecipe, group: BodyHairGroup, v: number): BodyHairRecipe =>
+  withField(
+    withField(b, "density", withEntry(b.density, group, undefined)),
+    "coverage",
+    withEntry(b.coverage, group, v),
+  );
+
+/** A body hair recipe with one group back to unset: neither coverage nor the legacy multiplier. */
+const withoutCoverage = (b: BodyHairRecipe, group: BodyHairGroup): BodyHairRecipe =>
+  withField(
+    withField(b, "density", withEntry(b.density, group, undefined)),
+    "coverage",
+    withEntry(b.coverage, group, undefined),
+  );
+
+/**
+ * What a body hair slider says: an unset group says so and what is drawn for
+ * it (nothing, for a coat group the recipe does not enable), so an unset group
+ * is never shown as an explicit 0 or as a choice.
+ */
+function coverageLabel(control: BodyHairControl, value: number, drawn: number): string {
+  if (control === "unset") return drawn > 0 ? `Not set (${pct(drawn)})` : "Not set (none)";
+  if (control === "legacy") return `${pct(drawn)} (legacy)`;
+  if (Math.abs(value - drawn) < 0.005) return pct(value);
+  return `${pct(value)} (drawn ${pct(drawn)})`;
+}
+
+/** The beard choices: unset (`DEFAULT_BEARD`, shaven), then each style. */
 const BEARD_CHOICES: readonly (readonly [BeardStyle | null, string])[] = [
   [null, "Natural"],
   ["none", "Shaven"],
   ["stubble", "Stubble"],
   ["moustache", "Moustache"],
   ["goatee", "Goatee"],
+  ["imperial", "Imperial"],
+  ["mutton-chops", "Mutton chops"],
+  ["chin-curtain", "Chin curtain"],
   ["full", "Full beard"],
+  ["forked", "Forked"],
+  ["longstreet", "Longstreet"],
 ];
 
-/**
- * The editor hides sensitive regional density controls for minors. This does
- * not widen `ADULT_ONLY_BODY_HAIR`: axillary hair remains valid biology in a
- * recipe and the renderer keeps its age-derived default coverage.
- */
-const isAdultOnlyEditorBodyHair = (group: BodyHairGroup) =>
-  group === "axillary" || isAdultOnlyBodyHair(group);
-
 const BODY_HAIR_SLIDERS: { group: BodyHairGroup; label: string; description: string }[] = [
-  { group: "face", label: "Facial hair", description: "Beard and moustache density." },
+  {
+    group: "face",
+    label: "Facial hair",
+    description: "Beard and moustache coverage, drawn where the beard style grows it.",
+  },
   { group: "chest", label: "Chest", description: "Hair on the chest." },
   { group: "abdomen", label: "Abdomen", description: "Hair on the belly and down its midline." },
   { group: "back", label: "Back", description: "Hair on the back." },
   { group: "buttocks", label: "Buttocks", description: "Hair on the buttocks." },
   { group: "arms", label: "Arms", description: "Hair on the arms." },
   { group: "legs", label: "Legs", description: "Hair on the legs." },
-  {
-    group: "axillary",
-    label: "Underarms",
-    description: "Underarm hair (adults only in the creator).",
-  },
+  { group: "axillary", label: "Underarms", description: "Underarm hair." },
   { group: "pubic", label: "Pubic", description: "Pubic hair (adults only)." },
 ];
 

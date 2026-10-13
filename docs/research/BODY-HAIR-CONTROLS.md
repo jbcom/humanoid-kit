@@ -1,15 +1,41 @@
 # Regional body-hair controls
 
-Status: the independent-control contract is accepted as a bounded API fix, but
-the renderer is not visually accepted for issue #21. This document records the
-compatibility contract before it changes the public recipe.
+Status: the independent-control contract is accepted and landed; the renderer
+is not visually accepted for issue #21. The first milestone (`a84cb31`) added
+explicit `coverage` and `follicleDensity`; the second ("Gender-free coverage"
+below) removed the remaining gender and age factors on explicit choices.
 
-Candidate worktree: `<worktree>/humanoid-kit-body-hair`, branch
-`fix/body-hair-independent-controls`, based on integration
-`ed8cd260ad168da5e464704575c048aaf04ff555`. The bounded API milestone is
-`a84cb31`; no integration merge has occurred.
+## Gender-free coverage (2026-10-13)
 
-## Problem
+Re-measured on integration after the first milestone, the pure model still had
+three defects, each now covered by a red/green test in
+`tests/bodyHair.test.ts`:
+
+- The creator's sliders wrote legacy `density`, a multiplier on a
+  gender-interpolated default. At gender 0 a chest or back density of 2 still
+  gave 0, and pubic and axillary density 1 and 2 gave `.85`/`.95` against `1`,
+  a plateau. DECISIONS ruling 1 (recorded after the first milestone) names this
+  body-hair gender multiplier a defect to remove.
+- An explicit adult `coverage` was multiplied by the age course: at age 30,
+  `coverage.back = 1` drew `.42` and `coverage.chest = 1` drew `.84`.
+- Unset coat groups drew nothing while unset strand groups drew a default, and
+  the creator labelled neither.
+
+Decision: body hair reads no gender at all. `BODY_HAIR_COVERAGE` is one default
+per group (the middle of the range the old female and male anchors spanned;
+the face is 1 because the beard style gates it), so the unset default and the
+legacy multiplier are the same at every frame. An adult's explicit `coverage`
+is drawn exactly; before 18 it comes in over the group's puberty onset,
+complete at 18, and pubic stays 0 below 18 (DECISIONS ruling 4). The creator
+writes `coverage`, replaces a group's legacy `density` when it is moved, labels
+an unset group "Not set" with what is drawn for it (`drawnBodyHairCoverage`),
+and offers underarms at every age (only pubic is adult-only).
+
+Saved recipes that use legacy `density` at a gender other than `.5`, and every
+unset strand group (arms, legs, buttocks), now draw the shared default rather
+than a gender-interpolated one. That change is the ruling's, not a regression.
+
+## Problem (first milestone)
 
 At integration `ed8cd260ad168da5e464704575c048aaf04ff555`,
 `bodyHair.density` is a multiplier on a gender-derived physiological default.
@@ -22,22 +48,23 @@ one, making 1 and 2 almost indistinguishable in the shell coat.
 
 ## Contract
 
-The recipe will have three independent regional controls:
+The recipe has three independent regional controls:
 
 | Field | Meaning | Compatibility |
 | --- | --- | --- |
-| `density[group]` | Legacy multiplier on the physiological default coverage, in `[0, 2]`. | Existing serialized recipes retain their result. It is not renamed or reinterpreted. |
-| `coverage[group]` | Explicit mature terminal-hair coverage, in `[0, 1]`. It replaces the gender-derived baseline for that group, while the age maturation and senescence factors still apply. | New optional field. An explicit coverage works at every gender value. |
-| `follicleDensity[group]` | Multiplier on the region's physical follicles-per-cm2 value, in `[0.25, 2]`. It changes strand spacing, not coverage. | New optional field; absent is `1`. |
+| `density[group]` | Legacy multiplier on the physiological default coverage, in `[0, 2]`. | Saved recipes still read. Since the gender-free milestone it multiplies the one shared default. |
+| `coverage[group]` | Explicit terminal-hair coverage, in `[0, 1]`. An adult gets exactly this value. | Optional. Works at every gender value. |
+| `follicleDensity[group]` | Multiplier on the region's physical follicles-per-cm2 value, in `[0.25, 2]`. It changes strand spacing, not coverage. | Optional; absent is `1`. |
 
 `coverage` and legacy `density` are mutually exclusive for the same group.
 This prevents a saved multiplier from silently acquiring a new meaning. Either
 may be combined with `follicleDensity`.
 
-An omitted group retains the existing age- and androgen-derived physiological
-default. An explicit `coverage` is still subject to maturation and senescence:
-it cannot produce terminal hair before the existing age ramp would allow it.
-The adult-only pubic group remains unavailable below 18: legacy `density` and
+An omitted group takes the age-shaped physiological default, the same for
+every figure. A coat group (face, chest, abdomen, back, axillary, pubic) left
+unset draws nothing, while the coat's shading is reworked; the face draws only
+under a beard style. An explicit `coverage` cannot produce terminal hair before
+the group's puberty onset. The adult-only pubic group remains unavailable below 18: legacy `density` and
 explicit `coverage` may only name zero, and `follicleDensity` may not name the
 group. `withAge` removes every one of its regional values on a transition below
 18.
