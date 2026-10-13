@@ -20,7 +20,7 @@ replay.
 | `humanoid-kit` | MIT | Asset loading, recipes, the age policy, evaluation, subdivision, rig and poses, animation playback, presence, interactions, the worker client, the React bindings and the creator |
 | `humanoid-kit-body` | CC0 1.0 | The base mesh, shape targets for every age MakeHuman models (1 to 90 years), the 163-bone skeleton and skin weights, facial pose units and 275 shape modifiers |
 | `humanoid-kit-adult-anatomy` | CC0 1.0 | 98 adult-only targets and 12 modifiers (9 with sliders; 3 retained legacy ids). A separate install |
-| `humanoid-kit-hair` | CC0 1.0 | 38 hair entries bound to the base body: 16 scalp styles, 12 eyebrows, 4 eyelashes, 5 CC0 facial-hair entries and 1 generated beard entry awaiting replacement. Facial runtime integration is in progress. A separate install |
+| `humanoid-kit-hair` | CC0 1.0 | 37 hair entries bound to the base body: 16 scalp styles, 12 eyebrows, 4 eyelashes and 5 CC0 facial-hair entries. Select beard and moustache assets independently through `recipe.facialHair`. A separate install |
 | `humanoid-kit-eyes` | CC0 1.0 | 32 eye materials: human irises, cats' slit pupils, toon and creature eyes. A separate install |
 | `humanoid-kit-animations` | CC0 1.0 | 98 clips (walks, idles, swims, combat, sitting and more) on the default skeleton, played on any figure. A separate install |
 | `humanoid-kit-clothing` | CC0 1.0 | 87 garments bound to the base mesh, with the skin each hides. A separate install |

@@ -1,12 +1,11 @@
 # humanoid-kit-hair
 
-Hair for [humanoid-kit](https://github.com/jbcom/humanoid-kit): 38 alpha-card
+Hair for [humanoid-kit](https://github.com/jbcom/humanoid-kit): 37 alpha-card
 entries that bind to the base body and follow every shape, rendered in any
 colour the recipe asks for. They are 16 scalp styles (short, bob, long, afro,
 ponytail, a side braid, box braids, cornrows, twists, locs, bantu knots and a
-close crop), 12 eyebrows, 4 eyelashes, 5 CC0 facial-hair entries and 1 generated
-beard entry awaiting replacement. The facial assets are packed; runtime
-integration remains in progress.
+close crop), 12 eyebrows, 4 eyelashes and 5 CC0 facial-hair entries. Select
+beard and moustache assets independently through `recipe.facialHair`.
 
 It is a separate install so that an application whose figures never wear hair
 does not download it. Only its small manifest loads up front; each style's
