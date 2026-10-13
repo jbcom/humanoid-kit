@@ -1,3 +1,4 @@
+export * from "./affordance/armSkinnedFrameSampler.ts";
 export * from "./affordance/channel.ts";
 export * from "./affordance/frames.ts";
 export * from "./affordance/regionalContact.ts";
@@ -64,6 +65,7 @@ export * from "./recipe/anatomy.ts";
 export * from "./recipe/bodyArt.ts";
 export * from "./recipe/recipe.ts";
 export * from "./recipe/validate.ts";
+export * from "./rig/armTarget.ts";
 export * from "./rig/dual.ts";
 export * from "./rig/expressions.ts";
 export * from "./rig/faceMirror.ts";

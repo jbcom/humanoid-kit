@@ -1136,6 +1136,21 @@ and expressions"). Framework-free.
   under 2 mm through each other at 90° to 150°. `scripts/lib/foldContact.ts`
   (`HipContact`, `KneeContact`) measures how far a posed body's skin passes
   through itself at either joint, and `Flaps` the triangles it turns over.
+- `armChain(rest, side)`, `armTip(rest, rotations, chain, position, orientation?)`
+  and `solveArmTarget(input)` are an experimental, framework-free arm-target
+  primitive. It changes local rotations only, preserves the rest skeleton and
+  segment lengths, and returns measured reach and orientation results. Its
+  limits are spherical source-angle budgets, not anatomical joint limits. An
+  orientation target uses either `armTip`'s orientation or the final measured
+  effector-frame orientation (the measured frame wins; a position-only sampler
+  falls back to the tip). The returned rigid-tip reachability value is
+  diagnostic when an effector samples a blended skinned hand; measured
+  tolerances decide its result.
+  `createArmSkinnedFrameSampler(input)` supplies a final CPU-skinned hand frame
+  to a solve without per-sample typed-array allocation. It borrows immutable
+  evaluation inputs for one generation and rejects stale, malformed or
+  non-arm-only trial poses. Neither export drives an interaction, clip, React
+  prop or live figure automatically.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the

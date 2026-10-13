@@ -437,8 +437,8 @@ figures' sides, far from the yellow runtime target; for the short figure the
 target was near the face while the hand was substantially lower. The approach
 front and three-quarter cells also crop the participants. This is evidence that
 the fixture reads live state correctly, not evidence that the figures make
-contact. The reviewed capture is retained at
-`~/.cache/hk-coverage/root-handshake-job5217.png`.
+contact. The reviewed capture stays with that job's local review output; it is
+not committed.
 
 #### Next milestone: target-to-hand closure and uncropped review
 
@@ -461,6 +461,36 @@ root-reviewed sheet.
    closeness, natural tall/short arm reach, release and cancellation. Record
    the result beside this evidence; until then the clip/IK/contact milestone is
    incomplete.
+
+### Experimental arm-target primitive
+
+`solveArmTarget` is a framework-free, local-rotation primitive for a consumer
+that has already selected a target. It preserves the rest skeleton and segment
+lengths; it never translates joints or claims that its current spherical
+source-angle budgets are anatomical joint limits. An unreached result reports
+its measured distance and reason instead of stretching an arm.
+
+The caller supplies the complete named shoulder-to-wrist chain, a source pose,
+and either a wrist-local `armTip` or an `effector` that samples the final hand
+frame. A rendered contact must use the latter: a wrist head or interaction
+marker is not a proof that the final skinned hand reached a target. The
+primitive is not wired into the interaction runtime, React bindings, or an
+authored clip. For an orientation target, either the tip or the measured
+effector frame must report an orientation. A measured orientation takes
+precedence; a position-only sampler falls back to the rigid tip orientation.
+Ancestor position refinement and the final wrist correction are alternated
+before the measured result is reported. The rigid-tip annulus stays diagnostic
+for a skinned sampler: measured position and orientation tolerances determine
+whether that sampler reached its target.
+
+`createArmSkinnedFrameSampler` is the allocation-bounded `effector` adapter for
+one solve. It owns transient skeleton and skinning scratch, borrows one
+immutable evaluated generation, and rejects stale generations, malformed shapes
+and trial changes outside the declared arm chain. Its lower-level `Into` helpers
+remain trusted rig math: callers provide finite unit rotations and independent,
+non-overlapping output buffers. This seam deliberately makes an integration
+choose when it has a final live hand frame to close, rather than quietly moving
+a marker.
 
 ### Stimuli and reactions
 
