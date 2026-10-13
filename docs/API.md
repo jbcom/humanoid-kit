@@ -22,7 +22,11 @@ loadHumanoidAssets(options: LoadOptions): Promise<HumanoidAssets>
 Fetches and parses the packs.
 
 ```ts
-interface LoadOptions {
+interface LoadOptions extends LoadPacks {
+  fetch?: FetchLike;            // how every file is requested; default: the platform's (see below)
+}
+
+interface LoadPacks {
   body: PackLocation;           // e.g. bodyPack from humanoid-kit-body
   adultAnatomy?: PackLocation;  // e.g. adultAnatomyPack
   hair?: PackLocation;          // e.g. hairPack from humanoid-kit-hair; only its manifest loads up front
@@ -33,7 +37,21 @@ interface LoadOptions {
 type PackLocation =
   | string // a directory URL holding manifest.json and the binaries
   | { manifest: string; files: Record<string, string> }; // what the packs export
+
+type FetchLike = (url: string) => Promise<Response>; // the global `fetch` fits
 ```
+
+- Files are requested with the global `fetch`, except that in Node a `file:` URL
+  (what a pack package exports when it is imported in Node, as
+  `new URL(..., import.meta.url)`) is read from disk, because Node's `fetch`
+  does not implement that scheme. A `file:` URL that does not exist answers like a
+  404 (an `AssetFormatError`). Pass `fetch` to take over every request instead (an
+  authenticated host, a cache, an in-memory store): it receives the URL and
+  returns a `Response`, and the Node `file:` reading is then not used. The
+  option is the same on `loadHumanoidAssetsStaged`; `loadAnimationLibrary` and
+  `loadEyeLibrary` take it as `{ fetch }` after the pack. It is a function, so it
+  is not part of what a `HumanoidWorkerClient` accepts (`LoadPacks`, the same
+  options without it): the worker uses its own platform's `fetch`.
 
 - Rejects with `AssetFormatError` when a request answers with an error status
   (a network failure rejects with the platform's `TypeError`), a buffer range exceeds
@@ -231,8 +249,8 @@ interface MacroValues {
 - Axis functions returning `AxisWeights`: `genderAxis`, `ageAxis`, `muscleAxis`,
   `weightAxis`, `heightAxis`, `proportionAxis`, `cupAxis`, `firmnessAxis` and
   `ethnicAxis`; `combine(prefix, axes)` takes their Cartesian product.
-- Constants: `AGE_ANCHORS` (`{ anchor, from, to, upstream }`: baby 1, child 10,
-  adult 18 to 25, old 90; `upstream` is MakeHuman's file name, `young` for
+- Constants: `AGE_ANCHORS` (`{ anchor, years, upstream }`: baby 1, child 10,
+  adult 25, old 90, MakeHuman's own ages; `upstream` is MakeHuman's file name, `young` for
   the adult body), `MIN_AGE` 1, `MAX_AGE` 90, `ADULT_AGE` 18.
 - `upstreamAgeAnchor(anchor)`: MakeHuman's name for an age body (`adult` →
   `young`), as used in target and pack file names. Types `AgeAnchor` and
@@ -1286,13 +1304,13 @@ slice 1 of its build plan.
 ### Worker client
 
 ```ts
-new HumanoidWorkerClient(load: LoadOptions, model?: ModelOptions, worker?: Worker)
+new HumanoidWorkerClient(load: LoadPacks, model?: ModelOptions, worker?: Worker)
 ```
 
 The main-thread handle to an evaluation worker.
 
 - `client.ready: Promise<ReadyInfo>` resolves when the worker can evaluate the
-  first figure (`LoadOptions.firstFigureAge`); later target files may still be
+  first figure (`LoadPacks.firstFigureAge`); later target files may still be
   arriving, and an evaluation that needs one waits in the worker for its stage.
 - `client.complete: Promise<void>` resolves when every target file has
   loaded, or rejects with the error that stopped one.
@@ -1556,7 +1574,8 @@ render.
 
 A neutral studio for showing figures: a procedural room environment
 (three.js `RoomEnvironment`, prefiltered once, no network request), a key light
-casting shadows, fill and rim lights, and a soft hemisphere light. Pair it with
+casting shadows, a fill light, a rim light that casts its own shadow (at a lower
+filter radius), and a soft hemisphere light. Pair it with
 the canvas settings it was measured with: `STUDIO_TONE_MAPPING`
 (`NeutralToneMapping`) and `STUDIO_EXPOSURE` (1.15). `background` is a CSS
 colour (`null` leaves the canvas background alone); `intensity` scales every
@@ -2040,7 +2059,9 @@ animator.rotations;           // the body's local rotation per bone, bones * 4
 animator.root;                // how far the figure has been carried: [x across, z forward], metres
 ```
 
-- `loadAnimationLibrary(pack)` and `createAnimationLibrary(manifest, fetchBinary)`
+- `loadAnimationLibrary(pack, { fetch }?)` (the optional `fetch` is a `FetchLike`;
+  in Node a `file:` pack URL is read from disk without it, as in
+  `loadHumanoidAssets`) and `createAnimationLibrary(manifest, fetchBinary)`
   give an `AnimationLibrary`: `manifest`, `entry(id)`, `load(id, bones)` (a clip
   bound to a rig's bone names, fetched once however many figures play it; a failed
   fetch is retried by the next call) and `loaded(id, bones)`.
@@ -2097,7 +2118,7 @@ const eyes = await loadEyeLibrary(eyesPack);
 (about 100 KB, loaded when a figure first wears it). 32 CC0 materials of the MakeHuman
 community's `system_eye_materials01` and `02`: human irises (`bobby_03_diffuse_*`,
 `mindfront_brown_eye_02`, `nyloseth_sapphire_blue_eyes`), cats' slit pupils
-(`nyloseth_*_cat_eyes`), toon and anime eyes, and creatures'. `loadEyeLibrary(pack)`
+(`nyloseth_*_cat_eyes`), toon and anime eyes, and creatures'. `loadEyeLibrary(pack, { fetch }?)`
 fetches the manifest and returns an `EyeLibrary`: `entry(id)` (an `EyeMaterialEntry`:
 `title`, `author`, `tags`, `hasIris`, the measured `irisRadius`, `irisGain`,
 `scleraGain`, `scleraTint`, `paintedIris` and its `source`), `textureUrl(id)` and the

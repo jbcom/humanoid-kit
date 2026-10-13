@@ -44,7 +44,7 @@ is visibility evidence for the diagnostic stage, not a sculpt-quality verdict.
 The same flow passes on the render pool with silent headless Metal:
 
 ```text
-heavy-slot --remote-render --render-host _gitea_render@192.168.1.202 --context gate -- \
+heavy-slot --remote-render --render-host <render-host> --context gate -- \
   pnpm exec playwright test --project=adult-defaults-lab e2e/effective-adult-defaults.spec.ts
 ```
 
