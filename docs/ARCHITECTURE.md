@@ -2902,8 +2902,8 @@ Old recipes evaluate and serialise as before.
 ### The coat (design, 2026-10-09)
 
 Short, dense hair standing off the skin (stubble, a dense chest, an animal's
-pelt) is one module shared by body hair and the anthro fur
-(`ANTHRO-DESIGN.md` §2.7): shells, the body surface drawn N times, each
+pelt) is one module shared by body hair and the anthro fur (the anthro design
+itself is not written yet; issue 54 tracks it): shells, the body surface drawn N times, each
 offset outward a little further and cut to strands by a density texture
 (Lengyel et al. 2001).
 

@@ -101,7 +101,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [x] F3 #50 README, llms.txt and introduction describe shipped features as unimplemented.
 - [x] F4 #51 Reconcile package and modifier counts; NOTICE for eyes and animations packs.
 - [ ] F5 #52 Invariants and age-policy wording match the code. Items 1, 3, 4 done; item 2 (invariant 1 versus the adult refined surface) waits on the owner (`needs-decision`).
-- [ ] F6 #53 Record maintainer rulings and land research docs.
+- [ ] F6 #53 Record maintainer rulings and land research docs. Decision log, research docs and the adult-defaults semantic (ruling 7) are in; waits on the owner for the lab-authoring versus public-schema ruling and for confirming ruling 7's wording (`needs-decision`).
 - [ ] F7 #54 Track or drop untracked roadmap items; settle adult animation package scope.
 - [ ] F8 #56 Minor docs cleanups.
 - [ ] F9 #91 Whole-project assessment report (shipped, proven, unproven, owned), regenerated per milestone.

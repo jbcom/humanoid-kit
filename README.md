@@ -278,5 +278,7 @@ build names the pack's package, targets or modifiers.
 
 ## Contributing
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) and [AGENTS.md](./AGENTS.md). Security
-issues go through [SECURITY.md](./SECURITY.md).
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) and [AGENTS.md](./AGENTS.md). The
+maintainers' standing rulings, which a change must not contradict, are in
+[docs/DECISIONS.md](./docs/DECISIONS.md). Security issues go through
+[SECURITY.md](./SECURITY.md).

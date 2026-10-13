@@ -6,6 +6,10 @@ texts that bear on figures of minors, and how the library is built against
 them. It is written for maintainers and integrators. It is not legal advice;
 see [What this policy is not](#what-this-policy-is-not).
 
+The maintainers' rulings behind this policy (the age line, judging by intent and
+by what MakeHuman already decided, adult interaction and consent) are recorded
+in [DECISIONS.md](DECISIONS.md), rulings 1, 4, 5 and 6.
+
 ## The rule
 
 Nothing in humanoid-kit produces sexually explicit conduct, or adult genital
