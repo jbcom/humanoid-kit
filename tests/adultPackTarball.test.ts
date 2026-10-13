@@ -29,9 +29,14 @@ const listing = (): string[] => {
 describe("the adult anatomy pack's tarball", () => {
   const files = listing();
 
-  it("carries the README that states the age rule, and the licences", () => {
-    for (const f of ["README.md", "LICENSE", "LICENSE-CC-BY-4.0", "NOTICE.md", "package.json"])
-      expect(files).toContain(f);
+  it("carries the README that states the age rule, and its one licence, CC0", () => {
+    for (const f of ["README.md", "LICENSE", "package.json"]) expect(files).toContain(f);
+    // The pack ships CC0 sources only (5d21909b): no attribution licence rides along unearned.
+    expect(files.filter((f) => /^LICENSE-|^NOTICE/.test(f))).toEqual([]);
+    const pkg = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf8")) as {
+      license: string;
+    };
+    expect(pkg.license).toBe("CC0-1.0");
   });
 
   it("carries its data and its entry point", () => {

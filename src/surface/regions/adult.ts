@@ -33,6 +33,7 @@ import {
   type SkinLayerFields,
   type SkinLayerPaint,
   type SkinPaintInput,
+  type SurfaceLayer,
   targetCoordinate,
   targetMask,
 } from "../layers.ts";
@@ -127,3 +128,44 @@ export const VULVA_LAYER: SkinLayer = adultLayer("vulva-skin", "vulva", ({ tone,
   strength: 0.85,
   stops: [vulvaAlbedo(tone, signals.arousal ?? 0)],
 }));
+
+/**
+ * The signal of the genital skin's surface moisture, 0 dry to 1 wet: its own,
+ * independent of arousal (an application drives the two together if it wants
+ * them together), and adult-only (`ADULT_ONLY_SIGNALS`).
+ */
+export const GENITAL_MOISTURE_SIGNAL = "genitalMoisture";
+
+/**
+ * Roughness change of the vulva's skin at full moisture. A film of fluid smooths
+ * the surface's microrelief as sweat's water does (`SWEAT_ROUGHNESS`); no
+ * measurement of the gloss of wet genital skin was found, so it is a CHOICE: the
+ * sweat film's change, glossier by a third for the non-keratinised inner surfaces
+ * the mask reaches, well short of the shader's 0.03 floor.
+ */
+export const VULVA_MOISTURE_ROUGHNESS = -0.27;
+
+/** Specular intensity added at full moisture: a CHOICE, the sweat film's (`SWEAT_SPECULAR`). */
+export const VULVA_MOISTURE_SPECULAR = 0.6;
+
+/**
+ * The vulva's surface moisture (#82): glossier and more specular skin over the
+ * vulva layer's own mask (the pack's `vulva-skin` spec, with its soft falloff), so
+ * the wet surface has no edge of its own; nothing at a signal of 0.
+ */
+export const VULVA_MOISTURE_LAYER: SurfaceLayer = {
+  id: "vulva-moisture",
+  kind: "surface",
+  adult: { feature: "vulva", spec: "vulva-skin" },
+  targets: [],
+  available: (assets) => {
+    const spec = specOf(assets, "vulva-skin");
+    return spec !== undefined && specTargets(spec).every((t) => assets.targets.has(t));
+  },
+  fields: (assets) => adultFields(assets, "vulva-skin"),
+  paint: ({ signals }) => ({
+    strength: Math.min(1, Math.max(0, signals[GENITAL_MOISTURE_SIGNAL] ?? 0)),
+    roughness: VULVA_MOISTURE_ROUGHNESS,
+    specular: VULVA_MOISTURE_SPECULAR,
+  }),
+};

@@ -1,16 +1,18 @@
 # humanoid-kit-hair
 
-Hair for [humanoid-kit](https://github.com/jbcom/humanoid-kit): 33 alpha-card
+Hair for [humanoid-kit](https://github.com/jbcom/humanoid-kit): 38 alpha-card
 entries that bind to the base body and follow every shape, rendered in any
 colour the recipe asks for. They are 16 scalp styles (short, bob, long, afro,
 ponytail, a side braid, box braids, cornrows, twists, locs, bantu knots and a
-close crop), 12 eyebrows, 4 eyelashes and a beard.
+close crop), 12 eyebrows, 4 eyelashes, 5 CC0 facial-hair entries and 1 generated
+beard entry awaiting replacement. The facial assets are packed; runtime
+integration remains in progress.
 
 It is a separate install so that an application whose figures never wear hair
 does not download it. Only its small manifest loads up front; each style's
 geometry and texture are fetched when a figure first wears that entry, from a
-few kilobytes (an eyebrow) to about 2 MB (the largest curly styles); 11 MB
-for all 33.
+few kilobytes (an eyebrow) to about 2 MB (the largest curly styles). Total download
+size depends on which entries the figure wears.
 
 ```ts
 import { HumanoidWorkerClient, createRecipe } from "humanoid-kit";

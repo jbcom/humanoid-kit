@@ -109,7 +109,10 @@ describe("the frame a headless producer writes", () => {
         worstGap = Math.max(
           worstGap,
           Math.abs(p[0] - (soles[k * 3] as number)),
-          Math.abs(p[1] - f.lift - (soles[k * 3 + 1] as number)),
+          // `contactPoints` measures height above the rest-ground plane. A frame
+          // publishes the mesh-local sole after its lift, so restore the raw
+          // mesh coordinate before applying that lift.
+          Math.abs(p[1] - f.lift - ((soles[k * 3 + 1] as number) + ADULT.ground)),
           Math.abs(p[2] - (soles[k * 3 + 2] as number)),
         );
       });
@@ -184,8 +187,14 @@ describe("the frame channel", () => {
     // The same clip carries each body by its own legs.
     expect(travelled(got.child)).toBeLessThan(0.8 * travelled(got.adult));
     // Their soles are where each figure is: the child's frames never carry the adult's place.
-    expect(got.child.every((f) => f.toWorld[12] === 1)).toBe(true);
-    expect(got.adult.every((f) => f.toWorld[12] === -1)).toBe(true);
+    // The placement keeps the initial world offset and the root carry. A walk
+    // may have lateral carry, so the x translation is not a fixed constant.
+    expect(
+      got.child.every((f) => Math.abs((f.toWorld[12] as number) - (1 + f.root[0])) < 1e-9),
+    ).toBe(true);
+    expect(
+      got.adult.every((f) => Math.abs((f.toWorld[12] as number) - (-1 + f.root[0])) < 1e-9),
+    ).toBe(true);
     // Each body's foot is its own size: the heel-to-ball span differs.
     const span = (f: HumanoidAnimationFrame) => {
       const heel = f.contacts[0]?.position ?? [0, 0, 0];
@@ -415,8 +424,14 @@ describe("an interaction's frame observers", () => {
     // Both participants' soles are on the ground where each stands.
     for (const f of [...got.giver, ...got.receiver])
       expect(Math.abs(lowestContact(f))).toBeLessThan(1e-6);
-    expect(got.giver[29]?.toWorld[12]).toBeCloseTo(-0.4, 9);
-    expect(got.receiver[29]?.toWorld[12]).toBeCloseTo(0.4, 9);
+    expect(got.giver[29]?.toWorld[12]).toBeCloseTo(
+      -0.4 + (got.giver[29]?.root[0] ?? Number.NaN),
+      9,
+    );
+    expect(got.receiver[29]?.toWorld[12]).toBeCloseTo(
+      0.4 + (got.receiver[29]?.root[0] ?? Number.NaN),
+      9,
+    );
 
     interaction.cancel();
     for (let i = 0; i < 10; i++) stepAll();

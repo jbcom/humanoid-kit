@@ -129,6 +129,28 @@ their apertures), where no asset exists.
   is not extended, polished or defended.
 - A surface that looks wrong is first checked for being procedural: a failing
   look is a reason to switch to an asset, not to tune the generator.
+- **Fluids are exempt (owner, 2026-10-13).** Tears, sweat, saliva, mucus, blood,
+  pus, vomit, urine, breast milk, genital moisture, lubrication, semen, feces and
+  every other body fluid or excretion cannot come from an asset: they move and
+  deform, so they are simulated, as the canals are drawn. Feces is a soft solid,
+  not a liquid, so its simulation covers plastic deformation as well as flow. A thin film is a material state, a skin
+  layer that changes roughness and specular over a mask (sweat sheen,
+  `VULVA_MOISTURE_LAYER`); beads, runs, drips, pooling and flow are a separate
+  simulated system over the posed surface, specified and tested on its own issue.
+
+## 9. Commercial-use asset licences are accepted with their required attribution
+
+Owner ruling, 2026-10-13: "any license permitting commercial use is totally
+acceptable. Documenting attribution is perfectly fine for OSS projects."
+
+Asset intake is not restricted to CC0. CC-BY assets, including NIH 3DPX-017321,
+may be evaluated and incorporated with their actual licence, source, author,
+attribution and modifications recorded in provenance and NOTICE. Verify that
+the licence permits commercial use and the redistribution being performed.
+Do not describe an attributed asset as CC0 or change the licences of existing
+pack entries. This ruling changes asset eligibility; source-to-pack validation
+and rendered anatomical acceptance still apply. The restriction against copying
+MakeHuman program code and ruling 8's procedural geometry boundaries remain.
 
 Decisions are appended with the next number and never renumbered, since code and
 docs cite the numbers. A decision that comes from a design section (dated, in the

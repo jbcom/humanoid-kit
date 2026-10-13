@@ -296,6 +296,171 @@ function smoothPartSkin(
   }
 }
 
+/** A populated grid cell, retained as a leaf in the nearest-cell index. */
+interface OccupiedCell {
+  coordinate: Vec3;
+  vertices: number[];
+}
+
+/**
+ * A deterministic kd tree of populated grid cells.  Searching cells by their
+ * enclosing boxes avoids enumerating every empty grid coordinate between a
+ * grafted part and the surface it replaces.
+ */
+interface OccupiedCellNode {
+  lo: Vec3;
+  hi: Vec3;
+  cell?: OccupiedCell;
+  left?: OccupiedCellNode;
+  right?: OccupiedCellNode;
+}
+
+const coordinateOrder = (a: Vec3, b: Vec3, axis: number): number => {
+  for (let d = 0; d < 3; d++) {
+    const k = (axis + d) % 3;
+    const delta = (a[k] as number) - (b[k] as number);
+    if (delta !== 0) return delta;
+  }
+  return 0;
+};
+
+function occupiedCellTree(cells: OccupiedCell[]): OccupiedCellNode {
+  if (cells.length === 1) {
+    const cell = cells[0] as OccupiedCell;
+    return { lo: [...cell.coordinate] as Vec3, hi: [...cell.coordinate] as Vec3, cell };
+  }
+  const lo: Vec3 = [Infinity, Infinity, Infinity];
+  const hi: Vec3 = [-Infinity, -Infinity, -Infinity];
+  for (const cell of cells)
+    for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k] as number, cell.coordinate[k] as number);
+      hi[k] = Math.max(hi[k] as number, cell.coordinate[k] as number);
+    }
+  let axis = 0;
+  if ((hi[1] as number) - (lo[1] as number) > (hi[axis] as number) - (lo[axis] as number)) axis = 1;
+  if ((hi[2] as number) - (lo[2] as number) > (hi[axis] as number) - (lo[axis] as number)) axis = 2;
+  cells.sort((a, b) => coordinateOrder(a.coordinate, b.coordinate, axis));
+  const mid = Math.floor(cells.length / 2);
+  return {
+    lo,
+    hi,
+    left: occupiedCellTree(cells.slice(0, mid)),
+    right: occupiedCellTree(cells.slice(mid)),
+  };
+}
+
+/** Squared distance from `p` to the union of a cell node's closed cell boxes. */
+function cellNodeDistance2(node: OccupiedCellNode, p: Vec3, origin: Vec3, cell: number): number {
+  let d2 = 0;
+  for (let k = 0; k < 3; k++) {
+    const lo = (origin[k] as number) + (node.lo[k] as number) * cell;
+    const hi = (origin[k] as number) + ((node.hi[k] as number) + 1) * cell;
+    const x = p[k] as number;
+    const d = x < lo ? lo - x : x > hi ? x - hi : 0;
+    d2 += d * d;
+  }
+  return d2;
+}
+
+/** Pushes a node into a distance-ordered binary heap, with a stable tie order. */
+function pushCellNode(
+  heap: Array<[number, number, OccupiedCellNode]>,
+  entry: [number, number, OccupiedCellNode],
+): void {
+  heap.push(entry);
+  for (let i = heap.length - 1; i > 0; ) {
+    const parent = Math.floor((i - 1) / 2);
+    const a = heap[i] as [number, number, OccupiedCellNode];
+    const b = heap[parent] as [number, number, OccupiedCellNode];
+    if (a[0] > b[0] || (a[0] === b[0] && a[1] >= b[1])) break;
+    heap[i] = b;
+    heap[parent] = a;
+    i = parent;
+  }
+}
+
+function popCellNode(
+  heap: Array<[number, number, OccupiedCellNode]>,
+): [number, number, OccupiedCellNode] {
+  const top = heap[0] as [number, number, OccupiedCellNode];
+  const last = heap.pop() as [number, number, OccupiedCellNode];
+  if (heap.length === 0) return top;
+  let i = 0;
+  while (i * 2 + 1 < heap.length) {
+    const left = i * 2 + 1;
+    const right = left + 1;
+    let child = left;
+    if (right < heap.length) {
+      const a = heap[right] as [number, number, OccupiedCellNode];
+      const b = heap[left] as [number, number, OccupiedCellNode];
+      if (a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])) child = right;
+    }
+    const next = heap[child] as [number, number, OccupiedCellNode];
+    if (last[0] < next[0] || (last[0] === next[0] && last[1] <= next[1])) break;
+    heap[i] = next;
+    i = child;
+  }
+  heap[i] = last;
+  return top;
+}
+
+/**
+ * Visits only populated cells, nearest possible cell first. `stop` sees the
+ * squared lower bound of the next unvisited cell and may end an exact search
+ * once its current fourth neighbour is nearer than that bound.
+ */
+function visitNearestOccupiedCells(
+  root: OccupiedCellNode,
+  point: Vec3,
+  origin: Vec3,
+  cell: number,
+  visit: (vertices: readonly number[]) => void,
+  stop: (nextDistance2: number) => boolean,
+): number {
+  const heap: Array<[number, number, OccupiedCellNode]> = [];
+  let serial = 0;
+  let visited = 0;
+  pushCellNode(heap, [cellNodeDistance2(root, point, origin, cell), serial++, root]);
+  while (heap.length) {
+    const [distance2, , node] = popCellNode(heap);
+    if (stop(distance2)) break;
+    if (node.cell) {
+      visited++;
+      visit(node.cell.vertices);
+    } else {
+      if (node.left)
+        pushCellNode(heap, [
+          cellNodeDistance2(node.left, point, origin, cell),
+          serial++,
+          node.left,
+        ]);
+      if (node.right)
+        pushCellNode(heap, [
+          cellNodeDistance2(node.right, point, origin, cell),
+          serial++,
+          node.right,
+        ]);
+    }
+  }
+  return visited;
+}
+
+/**
+ * Internal profiling seam: proves the nearest-cell traversal scales with
+ * occupied cells, even when their integer grid coordinates are far apart.
+ */
+export function occupiedCellVisitCount(cells: readonly Vec3[], point: Vec3): number {
+  const occupied = cells.map((coordinate, v) => ({ coordinate, vertices: [v] }));
+  return visitNearestOccupiedCells(
+    occupiedCellTree(occupied),
+    point,
+    [0, 0, 0],
+    1,
+    () => {},
+    () => false,
+  );
+}
+
 /**
  * The skin of the body the cut removes, at any point near it at rest: the
  * weights of the four removed render vertices nearest, by inverse squared
@@ -332,36 +497,38 @@ function removedSkin(
     }
   const cell = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1e-9) / 50;
   const cellOf = (p: Vec3) => p.map((x, k) => Math.floor((x - (lo[k] as number)) / cell)) as Vec3;
-  const grid = new Map<string, number[]>();
+  const grid = new Map<string, OccupiedCell>();
   for (const v of verts) {
     const c = cellOf(at3(body.restPositions, v));
     const id = c.join(",");
-    (grid.get(id) ?? grid.set(id, []).get(id))?.push(v);
+    const occupied = grid.get(id);
+    if (occupied) occupied.vertices.push(v);
+    else grid.set(id, { coordinate: c, vertices: [v] });
   }
+  const occupied = occupiedCellTree([...grid.values()]);
   return (p, normal, outI, outW) => {
-    const c = cellOf(p);
-    let near: [number, number][] = [];
-    // Widen the search shell by shell until four are found and the nearest
-    // cells outside it cannot hold a closer one.
-    for (let r = 0; ; r++) {
-      for (let x = c[0] - r; x <= c[0] + r; x++)
-        for (let y = c[1] - r; y <= c[1] + r; y++)
-          for (let z = c[2] - r; z <= c[2] + r; z++) {
-            if (Math.max(Math.abs(x - c[0]), Math.abs(y - c[1]), Math.abs(z - c[2])) !== r)
-              continue;
-            for (const v of grid.get(`${x},${y},${z}`) ?? []) {
-              // Facing the other way, it is another surface (the jaw's
-              // underside above the throat): its skin is not this point's.
-              if (dot(unit(at3(body.restNormals, v)), normal) < 0.3) continue;
-              const d = sub(at3(body.restPositions, v), p);
-              near.push([dot(d, d), v]);
-            }
-          }
-      near.sort((a, b) => a[0] - b[0]);
-      near = near.slice(0, 4);
-      if (near.length === 4 && Math.sqrt((near[3] as [number, number])[0]) <= r * cell) break;
-      if (r > 60) break;
-    }
+    const near: [number, number][] = [];
+    // Visit populated cells in nondecreasing lower-bound distance.  Unlike the
+    // old cubic shells, this does no work for empty coordinates, and it has no
+    // arbitrary radius at which a valid matching surface can be missed.
+    visitNearestOccupiedCells(
+      occupied,
+      p,
+      lo,
+      cell,
+      (vertices) => {
+        for (const v of vertices) {
+          // Facing the other way, it is another surface (the jaw's underside
+          // above the throat): its skin is not this point's.
+          if (dot(unit(at3(body.restNormals, v)), normal) < 0.3) continue;
+          const d = sub(at3(body.restPositions, v), p);
+          near.push([dot(d, d), v]);
+        }
+        near.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        if (near.length > 4) near.length = 4;
+      },
+      (nextDistance2) => near.length === 4 && nextDistance2 > (near[3] as [number, number])[0],
+    );
     const m = new Map<number, number>();
     for (const [d2, v] of near) {
       const w = 1 / (d2 + 1e-12);
