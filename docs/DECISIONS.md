@@ -152,6 +152,13 @@ pack entries. This ruling changes asset eligibility; source-to-pack validation
 and rendered anatomical acceptance still apply. The restriction against copying
 MakeHuman program code and ruling 8's procedural geometry boundaries remain.
 
+Owner extension, 2026-10-13: provide an explicit CC0-only asset build profile.
+It excludes attributed asset data and reports the corresponding features as
+unavailable. The commercial-use profile includes permitted attributed assets
+with their required notices. This profile governs asset data, not the code's
+MIT licence. Pack metadata, shipped files, attribution and feature availability
+must agree with the selected profile; no hidden procedural substitute is added.
+
 Decisions are appended with the next number and never renumbered, since code and
 docs cite the numbers. A decision that comes from a design section (dated, in the
 architecture notes or a research document) is summarised here with a pointer, so
