@@ -127,7 +127,11 @@ export interface InteractionOptions {
   seed: number;
   /** Seconds a clip lasts at rate 1: the animation library's answer. */
   clipLength: (clip: string) => number;
-  /** Whether a figure affordance id is the adult anatomy's; unknown ids should answer true. */
+  /**
+   * Whether a figure affordance id is the adult anatomy's, for ids the host knows
+   * more about than the core. It can only add adult ids: an id the core does not
+   * know is adult whatever this answers (`defaultAffordanceAdult`).
+   */
   affordanceAdult?: (id: string) => boolean;
   /** Applies a beat's affordance change to a participant (its `AffordanceStates`). */
   applyChange?: (participant: string, affordance: string, change: AffordanceChange) => void;

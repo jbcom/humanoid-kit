@@ -57,7 +57,9 @@ Full detail in `docs/ARCHITECTURE.md`.
    follows MakeHuman at every age it models, breast development and nipples
    included. The one gate is the adult pack: under 18, adult-only modifiers throw
    `AgePolicyError`; they are never clamped. `withAge` strips adult-only values
-   explicitly. Keep `ADULT_ONLY_MODIFIER` in step with the packer's
+   explicitly. Compare an age to the line only through `isAdultAge`
+   (`tests/ageGateSource.test.ts` fails on a raw comparison). Keep
+   `ADULT_ONLY_MODIFIER` in step with the packer's
    `isAdultOnlyTarget`; `tests/agePolicy.test.ts` checks they agree. See
    `docs/DECISIONS.md` rulings 3 and 4.
 3. Adult-only targets and modifiers ship only in `humanoid-kit-adult-anatomy`,
@@ -101,8 +103,8 @@ the roadmap, labelled as planned. `humanoid-kit/editor` is declared in
   (`data/hm08`, a `HumanoidEvaluator` export, a `humanoid-kit/editor` build and a
   baby/child target scan), so `pnpm package:check` cannot pass until it is
   updated to the current packages.
-- `pnpm check:pages` is not wired into any workflow; run it after
-  `pnpm build:playground` and `pnpm docs:build`.
+- `pnpm check:pages` runs in `cd.yml` before the Pages upload; run it yourself
+  after `pnpm build:playground` and `pnpm docs:build`.
 - The comment at the top of `scripts/pack-makehuman.ts` mentions an
   `adult-targets.bin`; the packer actually writes
   `packs/adult-anatomy/data/targets.bin`.

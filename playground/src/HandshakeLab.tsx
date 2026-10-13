@@ -7,6 +7,7 @@ import {
   frameOut,
   type Interaction,
   type InteractionDefinition,
+  isAdult,
   loadAnimationLibrary,
   type SlotPlacement,
   type Vec3,
@@ -77,8 +78,7 @@ const short = createRecipe({
   outfit: [SHORT_OUTFIT],
 });
 
-if (tall.macros.age < 18 || short.macros.age < 18)
-  throw new Error("handshake lab requires adult figures");
+if (!isAdult(tall) || !isAdult(short)) throw new Error("handshake lab requires adult figures");
 if (!tall.outfit?.includes(TALL_OUTFIT) || !short.outfit?.includes(SHORT_OUTFIT))
   throw new Error("handshake lab requires both figures to stay clothed");
 
@@ -657,7 +657,7 @@ function Api({ control }: { control: Control }) {
       state: () => ({
         ...snapshotOf(control),
         muted: params.has("muted"),
-        adults: tall.macros.age >= 18 && short.macros.age >= 18,
+        adults: isAdult(tall) && isAdult(short),
         consent: { tall: true, short: true },
         source: "presence-registry+interaction-runtime+animation-library",
         animation: IDLE_CLIP,

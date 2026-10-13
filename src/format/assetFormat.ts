@@ -17,6 +17,8 @@
  * compresses about 3.4 times better than interleaved data; `gunzip` and the
  * parser turn it back into ordinary index and xyz arrays.
  */
+
+import { CUSTOM_GROUP } from "../makehuman/customTargets.ts";
 import {
   AGE_ANCHORS,
   type AgeAnchor,
@@ -26,6 +28,7 @@ import {
   upstreamAgeAnchor,
 } from "../makehuman/macro.ts";
 import type { StateMorph } from "../makehuman/stateMorphs.ts";
+import { ADULT_ONLY_MODIFIER, ADULT_ONLY_SIGNALS } from "../recipe/agePolicy.ts";
 import type { AnatomyFeature } from "../recipe/anatomy.ts";
 import { isBodyPiercingSite } from "../recipe/bodyArt.ts";
 
@@ -933,6 +936,44 @@ export function curveAt(points: readonly (readonly [number, number])[], v: numbe
 }
 
 /**
+ * The loader does not trust the adult pack's own flags: every route its content
+ * can reach a figure by must already be one the age policy gates, or the pack is
+ * refused (docs/AGE-POLICY.md).
+ *
+ * - Each of the pack's modifiers is flagged adult-only and is one the policy
+ *   gates by id (`ADULT_ONLY_MODIFIER`, which `withAge` strips and the
+ *   violations list names), takes no id of a body modifier and is not in the
+ *   custom group, whose modifiers `addCustomTargets` replaces.
+ * - No body modifier drives a target of the adult pack's file.
+ * - Each state morph the pack adds runs on an adult-only signal
+ *   (`ADULT_ONLY_SIGNALS`), so no signal a figure under 18 may have drives it.
+ */
+function checkAdultGates(adult: AdultAnatomyManifest, body: BodyManifest): void {
+  const bodyIds = new Set(body.modifiers.map((m) => m.id));
+  const adultTargets = new Set(adult.targets.entries.map((e) => e.name));
+  for (const m of adult.modifiers) {
+    const what = `adult pack modifier ${m.id}`;
+    if (bodyIds.has(m.id)) throw new AssetFormatError(`${what} has the id of a body pack modifier`);
+    if (m.adultOnly !== true) throw new AssetFormatError(`${what} is not marked adult-only`);
+    if (!ADULT_ONLY_MODIFIER(m.id))
+      throw new AssetFormatError(`${what} is not an id the age policy treats as adult-only`);
+    if (m.group === CUSTOM_GROUP)
+      throw new AssetFormatError(`${what} is in the ${CUSTOM_GROUP} group, which is the host's`);
+  }
+  for (const m of body.modifiers)
+    for (const t of [m.lo, m.hi])
+      if (t && adultTargets.has(t))
+        throw new AssetFormatError(
+          `body pack modifier ${m.id} drives ${t}, a target of the adult pack`,
+        );
+  for (const s of adult.anatomy?.stateMorphs ?? [])
+    if (!ADULT_ONLY_SIGNALS.includes(s.signal))
+      throw new AssetFormatError(
+        `adult pack state morph on ${s.signal}: only an adult-only signal may drive the adult pack`,
+      );
+}
+
+/**
  * Refuses a declared piercing site the core could not place: one without the
  * detail lattice its vertex is numbered in, a name given twice or that is the
  * body's own, a channel it does not know, a vertex that is not an index, or a
@@ -1298,6 +1339,7 @@ export function parseHumanoidAssets(
     }
     checkAdultCoatRegions(a.anatomy?.coatRegions ?? [], manifest.vertexCount);
     checkAdultPiercingSites(a.anatomy);
+    checkAdultGates(a, manifest);
     checkAnatomyDefaults(a.anatomy, a.modifiers);
     for (const m of a.modifiers) modifiers.set(m.id, m);
   }

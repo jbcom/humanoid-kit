@@ -550,9 +550,15 @@ policy requires, and none clamps.
 1. **Audience is required, and unknown means adult.** A definition without a
    valid `audience` is treated as `adult` (fail closed), as an affordance that
    does not say it is not adult is refused under 18.
-2. **Audience is derived as well as declared.** A definition whose contacts or
-   couplings name any affordance marked `adult` (the adult pack's) is adult,
-   whatever it declares.
+2. **Audience is derived as well as declared.** A definition whose contacts,
+   couplings, beat effects or role affordances name any figure affordance that
+   is adult is adult, whatever it declares. An affordance is adult unless it is
+   one of the core's that says it is not, so an id the core does not know (a
+   pack's) is adult. The host's `affordanceAdult` predicate can only add
+   adult ids: its answer is joined with that default, never replacing it, so a
+   predicate that answers `false` by default cannot open an adult act to a
+   minor. A contact or coupling point that is not `role:name`, or names no role,
+   is adult.
 3. **Offers are not shown.** A query by or for a figure whose presence is not
    `adult` never returns an adult offer.
 4. **Proposals refuse.** `propose` of an adult definition with any figure

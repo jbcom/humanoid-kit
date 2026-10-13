@@ -290,7 +290,9 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
 
 ### Age policy
 
-- `ADULT_AGE` (18) and `isAdult(recipe)`.
+- `ADULT_AGE` (18), `isAdultAge(age)` (true only for a finite number of 18 or
+  more: NaN, Infinity, a missing or non-numeric age and a negative age are not
+  adult) and `isAdult(recipe)` (asks it of the recipe's age).
 - `agePolicyViolations(recipe): string[]`: every reason the recipe breaks the
   policy; empty when valid.
 - `assertAgePolicy(recipe)`: throws `AgePolicyError` listing the violations.
@@ -1256,7 +1258,8 @@ slices 1 and 2 of its build plan.
   `releaseSeconds?`, `priority?`.
 - `tagMatches(required, tag)`, `audienceOf(definition, affordanceAdult?)`
   (adult unless declared `all` and no figure affordance it names is adult; an
-  affordance the core does not know counts as adult), `definitionProblems`.
+  affordance the core does not know counts as adult, and `affordanceAdult` can
+  only add adult ids to that, never clear one), `definitionProblems`.
 - `createInteractions(registry, { seed, clipLength, affordanceAdult?,
   applyChange? })` returns the runtime: `define(definitions)` (throws
   `InteractionDefinitionError` on a malformed one), `offer(offer)`,

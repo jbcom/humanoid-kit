@@ -12,9 +12,8 @@
  * unless asked for and the figure is 18 or over.
  */
 import { ARCHETYPE_MODIFIER_GROUPS } from "../makehuman/features.ts";
-import { ADULT_AGE } from "../makehuman/macro.ts";
 import { seededRandom } from "../random.ts";
-import { withAge } from "../recipe/agePolicy.ts";
+import { isAdult, withAge } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { randomEthnicMix } from "../sampling.ts";
 import { BEARD_STYLES, type BeardStyle } from "../surface/bodyHair.ts";
@@ -142,7 +141,7 @@ export function randomRecipe(
     age,
   );
 
-  const adultAllowed = options.includeAdultAnatomy === true && recipe.macros.age >= ADULT_AGE;
+  const adultAllowed = options.includeAdultAnatomy === true && isAdult(recipe);
   const values: Record<string, number> = {};
   // Code-unit order, not localeCompare: the same seed must give the same figure on every machine.
   for (const m of [...modifiers.values()].sort((a, b) =>

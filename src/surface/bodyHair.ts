@@ -15,7 +15,7 @@
  * puberty's, not the policy's: it comes in from 13 like the face's, the arms'
  * and the legs' (owner ruling 2026-10-11).
  */
-import { ADULT_AGE } from "../makehuman/macro.ts";
+import { ADULT_AGE, isAdultAge } from "../makehuman/macro.ts";
 import { ageGrey, type HairColour } from "./hairTone.ts";
 import type { Rgb } from "./skinTone.ts";
 
@@ -186,7 +186,7 @@ const smoothstep = (lo: number, hi: number, x: number) => {
  * legacy multiplier on it), never an adult's explicit coverage.
  */
 function bodyHairAgeFactor(group: BodyHairGroup, age: number): number {
-  if (isAdultOnlyBodyHair(group) && !(age >= ADULT_AGE)) return 0;
+  if (isAdultOnlyBodyHair(group) && !isAdultAge(age)) return 0;
   const [onset, full] = BODY_HAIR_MATURITY[group];
   const old = BODY_HAIR_SENESCENCE[group];
   const factor = smoothstep(onset, full, age) * (1 - old.loss * smoothstep(old.from, old.to, age));
@@ -200,8 +200,8 @@ function bodyHairAgeFactor(group: BodyHairGroup, age: number): number {
  * below 18, and an age that is not a number fails closed.
  */
 function explicitAgeFactor(group: BodyHairGroup, age: number): number {
-  if (Number.isNaN(age)) return 0;
-  if (age >= ADULT_AGE) return 1;
+  if (!Number.isFinite(age)) return 0;
+  if (isAdultAge(age)) return 1;
   if (isAdultOnlyBodyHair(group)) return 0;
   const onset = BODY_HAIR_MATURITY[group][0];
   return onset >= ADULT_AGE ? 0 : smoothstep(onset, ADULT_AGE, age);

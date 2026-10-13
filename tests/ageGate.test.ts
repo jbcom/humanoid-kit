@@ -9,17 +9,23 @@ import { affordances } from "../src/affordance/registry.ts";
 import { sliderAvailability, withSliderValue } from "../src/editor/controls.ts";
 import { ADULT_AGE, isAdultAge } from "../src/makehuman/macro.ts";
 import { recipeContributions } from "../src/makehuman/recipeMorph.ts";
-import { assertSignalPolicy } from "../src/makehuman/stateMorphs.ts";
 import {
   AgePolicyError,
   agePolicyViolations,
   assertAgePolicy,
+  assertSignalPolicy,
   isAdult,
   withAge,
 } from "../src/recipe/agePolicy.ts";
 import { withAnatomyDefaults } from "../src/recipe/anatomy.ts";
 import { createRecipe, type Recipe } from "../src/recipe/recipe.ts";
 import { RecipeValidationError, recipeProblems } from "../src/recipe/validate.ts";
+import {
+  type BodyHairRecipe,
+  bodyHairCoverage,
+  defaultBodyHairCoverage,
+} from "../src/surface/bodyHair.ts";
+import { DEFAULT_HAIR_COLOUR } from "../src/surface/hairTone.ts";
 import { adultManifest, loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets(true);
@@ -126,6 +132,32 @@ describe.each(NOT_AGES)("a recipe whose age is %s", (_name, age) => {
     const moved = withAge(adult, age as number);
     expect(moved.modifiers).toEqual({});
     expect(moved.bodyHair?.density).toEqual({});
+  });
+});
+
+describe("pubic hair at an age that is not a finite number", () => {
+  const input = (age: number, bodyHair?: BodyHairRecipe) => ({
+    age,
+    colour: DEFAULT_HAIR_COLOUR,
+    ...(bodyHair && { bodyHair }),
+  });
+
+  it.each([
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["-Infinity", Number.NEGATIVE_INFINITY],
+  ])("is never drawn at %s, by default or by an explicit coverage", (_name, age) => {
+    expect(defaultBodyHairCoverage("pubic", age)).toBe(0);
+    expect(bodyHairCoverage("pubic", input(age))).toBe(0);
+    expect(bodyHairCoverage("pubic", input(age, { coverage: { pubic: 1 } }))).toBe(0);
+    expect(bodyHairCoverage("chest", input(age, { coverage: { chest: 1 } }))).toBe(0);
+  });
+
+  it("is drawn from 18, as an adult's explicit coverage asks", () => {
+    expect(bodyHairCoverage("pubic", input(ADULT_AGE, { coverage: { pubic: 0.5 } }))).toBe(0.5);
+    expect(bodyHairCoverage("pubic", input(ADULT_AGE - 0.01, { coverage: { pubic: 0.5 } }))).toBe(
+      0,
+    );
   });
 });
 
