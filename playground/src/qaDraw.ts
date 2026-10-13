@@ -230,7 +230,8 @@ export function dualOf(mesh: Object3D): DualBones | null {
 export function bodies(root: Object3D): SkinnedMesh[] {
   const out: SkinnedMesh[] = [];
   root.traverse((o) => {
-    if (o.userData.hkPart === "body" && (o as SkinnedMesh).isSkinnedMesh)
+    const part = o.userData.hkPart;
+    if ((part === "body" || part === "adultBody") && (o as SkinnedMesh).isSkinnedMesh)
       out.push(o as SkinnedMesh);
   });
   return out;
