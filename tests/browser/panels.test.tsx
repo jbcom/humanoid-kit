@@ -323,9 +323,9 @@ describe("AppearancePanel", () => {
         .element(screen.getByRole("slider", { name: "Chest" }))
         .toHaveAttribute("aria-valuetext", "Not set (none)");
       // The legs are strand layers: unset, they draw the physiological default.
-      await expect
-        .element(screen.getByRole("slider", { name: "Legs" }))
-        .toHaveAttribute("aria-valuetext", /^Not set \(\d+%\)$/);
+      const legs = screen.getByRole("slider", { name: "Legs" });
+      await expect.element(legs).toBeInTheDocument();
+      expect(legs.element().getAttribute("aria-valuetext")).toMatch(/^Not set \(\d+%\)$/);
     });
 
     for (const gender of [0, 0.5, 1])
@@ -362,7 +362,8 @@ describe("AppearancePanel", () => {
       );
       await screen.getByText("Body hair").click();
       const chest = screen.getByRole("slider", { name: "Chest" });
-      await expect.element(chest).toHaveAttribute("aria-valuetext", /\(legacy\)$/);
+      await expect.element(chest).toBeInTheDocument();
+      expect(chest.element().getAttribute("aria-valuetext")).toMatch(/^\d+% \(legacy\)$/);
       (chest.element() as HTMLElement).focus();
       await userKeys(chest, ["End"]);
       expect(seen.editor?.recipe.bodyHair).toEqual({
