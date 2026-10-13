@@ -35,6 +35,7 @@ export {
   SURFACE_LANDMARKS,
 } from "./foundation/landmarks.ts";
 export { type PosedBody, posedSurface } from "./foundation/posed.ts";
+export * from "./interaction/contacts.ts";
 export * from "./interaction/definition.ts";
 export * from "./interaction/runtime.ts";
 export * from "./makehuman/features.ts";

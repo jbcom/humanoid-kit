@@ -1088,6 +1088,12 @@ slice 1 of its build plan.
   (without one, `all` is accepted and `adult` declined: consent is explicit),
   `on(participant, listener)` (`accepted`, `declined`, `phase`, `beat`,
   `ended`, `cancelled` with a reason), `running()`, `detach()`.
+- A running interaction also has `trackTime(role)` and
+  `contactTarget(name, role)`. `trackTime` exposes a role clip's normalized
+  time on the registry clock. A declared hand contact returns a shared target
+  while its phase is active; `gripMeeting` and `armStretch` are pure,
+  body-measure-aware helpers for an application's motion layer. See
+  [Interaction sessions](INTERACTION-SESSION.md).
 - `applyToAffordances(figures)`: an `applyChange` that sets each beat's
   affordance change on the participant's `HumanoidAffordances` (a `Map` of
   participant id to handle), so a bite fills the mouth and opens the jaw.
@@ -1098,7 +1104,8 @@ slice 1 of its build plan.
   `age-policy` on any tick an adult definition has a participant under 18.
 - `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
   chest, hands, feet), `footprint`, `appearance` (measured albedo, luminance,
-  specular), `faceRadius`, `adult`.
+  specular), `measures` (reach, shoulder height, hip height, eye height),
+  `faceRadius`, `adult`.
 - `presenceFromEvaluation({ evaluation, recipe, joints, placement })`: a
   figure's presence from its evaluation. Anchors are joint centroids of the
   morphed control mesh lifted onto the ground, the footprint is the extent of
