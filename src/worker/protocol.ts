@@ -57,6 +57,12 @@ export interface ReadyInfo {
    * loaded; empty without that pack. A recipe wears them by `id`.
    */
   wardrobe: WardrobeEntry[];
+  /**
+   * Where the body pack's age surface map is (`src/surface/ageSurface.ts`), for
+   * the skin to fetch once a figure is old enough to show it; null when the
+   * pack has none or was loaded without file URLs.
+   */
+  ageSurfaceUrl: string | null;
 }
 
 /** What a picker needs of the hair pack before any style's geometry has loaded. */

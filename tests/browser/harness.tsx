@@ -43,6 +43,7 @@ export function readyInfo(
     adultAnatomyLoaded: withAdultPack,
     wardrobe: withClothingPack ? wardrobeOf([clothingManifest as unknown as ClothingManifest]) : [],
     hair,
+    ageSurfaceUrl: null,
   };
 }
 

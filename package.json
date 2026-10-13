@@ -70,6 +70,7 @@
     "pack:hair": "node scripts/pack-hair.ts",
     "pack:animations": "node scripts/pack-animations.ts",
     "pack:eyes": "node scripts/pack-eyes.ts",
+    "pack:age-surface": "node scripts/pack-age-surface.ts",
     "pack:clothing": "node scripts/pack-clothing.ts",
     "upscale": "node scripts/upscale.ts",
     "check:pages": "node scripts/check-pages-build.mjs",
