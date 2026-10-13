@@ -107,15 +107,16 @@ filed as issue #74.
   `StudioStage`'s unshadowed rim at (-1.2, 2.4, -3), intensity 1.6, which reaches
   the up- and back-facing planes of the shoulder and the raised arm's inner side from
   behind, through the body, and its hard terminator draws the streak's edge. A kit
-  render defect (src/react/StudioStage.tsx), reported, not patched in the lab.
+  render defect (src/react/StudioStage.tsx), issue #63, not patched in the lab.
 - Posed: the twisted and seated reads carry the tissue with the rig; the breast turns
   with the rib cage under the twist and stays at rest when seated, with no tear or
   seam at the support's edge on any of the 14 posed tiles.
 
-## Per age on the scatter sheets
+## Per age on the sheets
 
 Relief is RMS/peak in mm of the added tissue at size .5 and size 1 (firmness .5) on
 the average-tissue frame; neighbours' difference is the pairwise RMS at size 1.
+The 18, 21 and 25 reads come from the age strips (below); 21 is not a scatter row.
 
 | age | what the sheet shows | relief .5 / 1 | vs next age |
 | --- | --- | --- | --- |
@@ -140,7 +141,7 @@ is already a small mound. Firmness 0 gives the same low, long lower pole at ever
 age, and firmness 1 the same high round form. No seam, fold or tear on any of the
 176 tiles; skin and areola tone hold across ages for each figure.
 
-From 18 on, neighbouring ages read apart only side by side on matched size and
-firmness (the strips), not across the scatter, where size and firmness swamp a
-3.5 mm age step. The 9 y figure at size 1 carries 31 mm RMS of MakeHuman's own child
+From 13 on, neighbouring ages read apart only side by side on matched size and
+firmness (the strips), not across the scatter, where size and firmness swamp an
+age step of 1.5 to 3.5 mm. The 9 y figure at size 1 carries 31 mm RMS of MakeHuman's own child
 targets; that is parity (above), and it is the tile a reviewer will question first.
