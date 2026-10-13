@@ -12,10 +12,11 @@
  * 18 or over. A recipe that sets any of them for a younger figure is invalid;
  * it is rejected, never silently clamped, so a mistake cannot be hidden.
  *
- * Pubic hair follows the same line: a recipe under 18 may not set its density
- * (`recipe.bodyHair.density`) to anything but 0, and the body hair model draws
- * none for a figure that is not an adult. Axillary hair is puberty's, not the
- * policy's: it comes in from 13 like facial and limb hair.
+ * Pubic hair follows the same line: a recipe under 18 may not set its legacy
+ * density (`recipe.bodyHair.density`) to anything but 0, may not set explicit
+ * coverage or follicle density, and the body-hair model draws none. Axillary
+ * hair is puberty's, not the policy's: it comes in from 13 like facial and limb
+ * hair.
  */
 import { ADULT_AGE } from "../makehuman/macro.ts";
 import { ADULT_ONLY_BODY_HAIR, isAdultOnlyBodyHair } from "../surface/bodyHair.ts";
@@ -50,6 +51,11 @@ export function agePolicyViolations(recipe: Recipe): string[] {
   }
   for (const [group, v] of Object.entries(recipe.bodyHair?.density ?? {}))
     if (v !== 0 && isAdultOnlyBodyHair(group)) out.push(`body hair ${group} is adult-only`);
+  for (const [group, v] of Object.entries(recipe.bodyHair?.coverage ?? {}))
+    if (v !== 0 && isAdultOnlyBodyHair(group))
+      out.push(`body hair ${group} coverage is adult-only`);
+  for (const group of Object.keys(recipe.bodyHair?.follicleDensity ?? {}))
+    if (isAdultOnlyBodyHair(group)) out.push(`body hair ${group} follicleDensity is adult-only`);
   for (const p of recipe.bodyArt?.piercings ?? [])
     if (ADULT_ONLY_PIERCING(p.site)) out.push(`piercing site ${p.site} is adult-only`);
   return out;
@@ -104,6 +110,10 @@ export function withAge(recipe: Recipe, age: number): Recipe {
     if (ADULT_ONLY_MODIFIER(id)) delete next.modifiers[id];
   const density = next.bodyHair?.density;
   if (density) for (const group of ADULT_ONLY_BODY_HAIR) delete density[group];
+  const coverage = next.bodyHair?.coverage;
+  if (coverage) for (const group of ADULT_ONLY_BODY_HAIR) delete coverage[group];
+  const follicleDensity = next.bodyHair?.follicleDensity;
+  if (follicleDensity) for (const group of ADULT_ONLY_BODY_HAIR) delete follicleDensity[group];
   if (next.bodyArt)
     next.bodyArt.piercings = next.bodyArt.piercings.filter((p) => !ADULT_ONLY_PIERCING(p.site));
   return next;

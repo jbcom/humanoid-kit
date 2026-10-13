@@ -15,12 +15,16 @@
  *   MakeHuman's own 3 x 3 grid s, f in {0, .5, 1} plus the size-.75 midline the
  *   evaluator itself interpolates.
  * - CARRIED TISSUE (measured, per side): the frame's relief r = C - fill(C) over the
- *   support, projected on the library's average mound scaled to this frame:
- *   share = <r, k T(.5,.5)> / |k T(.5,.5)|^2, clamped to [0, 1]. A frame with the full
- *   legacy mound measures 1, a frame with none measures about 0.
+ *   support, least-squares fitted on two measured shapes scaled to this frame: the
+ *   average mound k T(.5,.5) and the BARE relief k B (MakeHuman's figure that carries
+ *   no breast tissue). share = the mound coefficient, clamped to [0, 1]. A frame with
+ *   the full legacy mound measures 1, the bare frame 0, and frames between follow
+ *   MakeHuman's own breast weight without reading any frame value.
  * - FLAT BASELINE: flat = C - share * k T(.5,.5) on the free vertices. Only the
- *   mound-shaped component leaves; the orthogonal remainder of r (pectoral relief,
- *   rib shape, a frame's own nipple position) stays. (Decision: NOTES.md.)
+ *   tissue leaves; the rest of r (pectoral relief, rib shape, the frame's own nipple)
+ *   stays. (Decision: NOTES.md.)
+ * - AGE: the library is built per age and interpolated (`ageLibrary`, `libraryAt`);
+ *   the caller picks the library at the figure's age, a development stage like size.
  * - TISSUE: final = flat + k * T_abs(s, f), k = halfSpan(C) / halfSpan(L) from the
  *   figure's own skeleton joints. T_abs is the ABSOLUTE tissue: s = 0 none,
  *   s in (0, .5] the average mound ramped linearly, s >= .5 MakeHuman's T(s, f)
@@ -64,6 +68,12 @@ export interface TissueLibrary {
   grid: Map<string, Float32Array>;
   /** The canonical cell's control mesh at the average cup (the identity reference). */
   cell: Float32Array;
+  /**
+   * The BARE relief over the support (zero elsewhere): the relief from its own fill of
+   * MakeHuman's figure that carries no breast tissue (its breast weight is 0), the
+   * second shape a frame's relief is fitted on so pectoral relief is not read as tissue.
+   */
+  bare: Float32Array;
   /** Every vertex the tissue may move: the support's free set plus the targets' reach. */
   reach: Uint32Array;
   /** Per vertex: the chest side (0 L, 1 R) it belongs to, -1 outside `reach`. */
@@ -71,7 +81,7 @@ export interface TissueLibrary {
 }
 
 export interface SideMeasure {
-  /** Measured fraction of the library's average mound the frame carries. */
+  /** Measured fraction of the library's average mound the frame carries (fitted beside the bare relief). */
   share: number;
   /** RMS (mm) over the side's free vertices of the frame's relief from its fill. */
   reliefRms: number;
@@ -107,9 +117,21 @@ export function legacyControl(lab: Lab, recipe: Recipe, size: number, firmness: 
  * Build the library from the canonical cell recipe (the evaluator figure that carries
  * the average legacy breast). Run once; the result is constant data.
  */
-export function tissueLibrary(ctx: TissueCtx, lab: Lab, cellRecipe: Recipe): TissueLibrary {
+export function tissueLibrary(
+  ctx: TissueCtx,
+  lab: Lab,
+  cellRecipe: Recipe,
+  bareRecipe: Recipe,
+): TissueLibrary {
+  const free = Array.from(ctx.support.free);
   const cell = legacyControl(lab, cellRecipe, 0.5, 0.5);
-  const fill = biharmonicFill(ctx.mesh, cell, Array.from(ctx.support.free));
+  const fill = biharmonicFill(ctx.mesh, cell, free);
+  const bareControl = lab.model.evaluate(bareRecipe).control;
+  const bareFill = biharmonicFill(ctx.mesh, bareControl, free);
+  const bare = new Float32Array(cell.length);
+  for (const v of free)
+    for (let a = 0; a < 3; a++)
+      bare[v * 3 + a] = (bareControl[v * 3 + a] as number) - (bareFill[v * 3 + a] as number);
   const grid = new Map<string, Float32Array>();
   const moved = new Uint8Array(ctx.mesh.vertexCount);
   for (const v of ctx.support.free) moved[v] = 1;
@@ -144,7 +166,75 @@ export function tissueLibrary(ctx: TissueCtx, lab: Lab, cellRecipe: Recipe): Tis
       side[v] = dl <= dr ? 0 : 1;
     }
   }
-  return { halfSpan: anc.halfSpan, grid, cell, reach: Uint32Array.from(reach), side };
+  return { halfSpan: anc.halfSpan, grid, cell, bare, reach: Uint32Array.from(reach), side };
+}
+
+/**
+ * The tissue library over age. MakeHuman's breast targets exist for its child,
+ * young and old bodies (none for the baby), and the evaluator weights the age
+ * bodies linearly in years between the kit's anchors (`AGE_ANCHORS`: 1, 10, 18-25,
+ * 90). Every library quantity (the evaluated cells, their fill, the grid, the
+ * joint-derived halfSpan) is linear in the evaluated vertices, so it is linear
+ * in years between anchors: cells at the anchors, linear between, reproduce
+ * MakeHuman at EVERY age, not only at the sampled ones. The cells also sit at the
+ * review ages (5, 13, 40, 70), which changes nothing but lets each be checked.
+ */
+export const AGE_KNOTS = [1, 5, 10, 13, 18, 25, 40, 70, 90] as const;
+
+export interface AgeLibrary {
+  ages: readonly number[];
+  /** One library per age, every one with the same (union) `reach` and `side`. */
+  cells: TissueLibrary[];
+}
+
+/**
+ * Builds the library at every knot age from the average-tissue frame at that age
+ * (`cellRecipeAt(age)`), over one shared reach: the union of every age's.
+ */
+export function ageLibrary(
+  ctx: TissueCtx,
+  lab: Lab,
+  cellRecipeAt: (age: number) => Recipe,
+  bareRecipeAt: (age: number) => Recipe,
+  ages: readonly number[] = AGE_KNOTS,
+): AgeLibrary {
+  const cells = ages.map((age) => tissueLibrary(ctx, lab, cellRecipeAt(age), bareRecipeAt(age)));
+  const side = new Int8Array(ctx.mesh.vertexCount).fill(-1);
+  for (const lib of cells)
+    for (const v of lib.reach) if ((side[v] as number) < 0) side[v] = lib.side[v] as number;
+  const reach: number[] = [];
+  for (let v = 0; v < side.length; v++) if ((side[v] as number) >= 0) reach.push(v);
+  const shared = Uint32Array.from(reach);
+  return { ages, cells: cells.map((c) => ({ ...c, reach: shared, side })) };
+}
+
+const lerpArray = (a: Float32Array, b: Float32Array, t: number) => {
+  const out = new Float32Array(a.length);
+  for (let i = 0; i < a.length; i++)
+    out[i] = (a[i] as number) + ((b[i] as number) - (a[i] as number)) * t;
+  return out;
+};
+
+/** The library at `years`: linear between the two knots around it, clamped at the ends. */
+export function libraryAt(lib: AgeLibrary, years: number): TissueLibrary {
+  const { ages, cells } = lib;
+  let i = 0;
+  while (i < ages.length - 1 && years > (ages[i + 1] as number)) i++;
+  const a = cells[i] as TissueLibrary;
+  if (i === ages.length - 1 || years <= (ages[i] as number)) return a;
+  const b = cells[i + 1] as TissueLibrary;
+  const t = (years - (ages[i] as number)) / ((ages[i + 1] as number) - (ages[i] as number));
+  if (t === 1) return b;
+  const grid = new Map<string, Float32Array>();
+  for (const [key, ga] of a.grid) grid.set(key, lerpArray(ga, b.grid.get(key) as Float32Array, t));
+  return {
+    halfSpan: a.halfSpan + (b.halfSpan - a.halfSpan) * t,
+    grid,
+    cell: lerpArray(a.cell, b.cell, t),
+    bare: lerpArray(a.bare, b.bare, t),
+    reach: a.reach,
+    side: a.side,
+  };
 }
 
 /** Bilinear weights of (s, f) on the library grid, s clamped to [.5, 1]. */
@@ -182,23 +272,45 @@ export function flatBaseline(
   const anc = anchors(ctx.manifest, control);
   const k = anc.halfSpan / lib.halfSpan;
   const avg = lib.grid.get("0.5/0.5") as Float32Array;
+  // The frame's relief is fitted, per side, on TWO measured shapes: the library's
+  // average mound (MakeHuman's figure that carries the average tissue) and its BARE
+  // relief (MakeHuman's figure that carries none: its breast weight is 0). Only the
+  // mound's coefficient is tissue. Projecting on the mound alone read a masculine
+  // frame's broad pectoral relief as 78 % tissue and dug a 14 mm crater at its
+  // nipple (the known pinch); with the bare shape in the basis that frame measures
+  // about 0 and keeps its own chest. On the average-tissue frame the fit is (1, 0).
+  const bare = lib.bare;
   const flat = new Float32Array(control);
   const sides = {} as Record<"L" | "R", SideMeasure>;
   for (const name of ["L", "R"] as const) {
     const sideId = name === "L" ? 0 : 1;
     const vs = free.filter((v) => ctx.support.side[v] === sideId);
-    let dot = 0,
-      nn = 0,
+    let tt = 0,
+      tb = 0,
+      bb = 0,
+      rt = 0,
+      rb = 0,
       rr = 0;
     for (const v of vs)
       for (let a = 0; a < 3; a++) {
-        const r = (control[v * 3 + a] as number) - (fill[v * 3 + a] as number);
-        const t = k * (avg[v * 3 + a] as number);
-        dot += r * t;
-        nn += t * t;
+        const i = v * 3 + a;
+        const r = (control[i] as number) - (fill[i] as number);
+        const t = k * (avg[i] as number);
+        const b = k * (bare[i] as number);
+        tt += t * t;
+        tb += t * b;
+        bb += b * b;
+        rt += r * t;
+        rb += r * b;
         rr += r * r;
       }
-    const share = nn > 0 ? clamp01(dot / nn) : 0;
+    // MakeHuman's frames are linear in the frame value, so a frame between the two
+    // references fits close to (1 - g, g): the measured share follows MakeHuman's own
+    // breast weight without reading g. The two shapes stay distinct at every age
+    // (children too); only a degenerate pair falls back to the one-shape fit.
+    const det = tt * bb - tb * tb;
+    const fitted = det > 1e-9 * tt * bb ? (rt * bb - rb * tb) / det : tt > 0 ? rt / tt : 0;
+    const share = clamp01(fitted);
     let rem = 0;
     for (const v of vs)
       for (let a = 0; a < 3; a++) {

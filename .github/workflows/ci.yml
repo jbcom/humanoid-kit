@@ -14,17 +14,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: Verify (${{ matrix.os }}, Node ${{ matrix.node }})
+  verify-unit:
+    name: Verify unit (${{ matrix.os }}, Node ${{ matrix.node }})
     if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        # The supported floor (engines.node >=24) and the toolchain release.
-        # The package touches no paths or processes at runtime, so Windows
-        # adds nothing here. The Node-side smoke test imports every entry point.
         include:
           - os: ubuntu-24.04
             node: "24"
@@ -39,15 +36,265 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Lockfile is in sync
-        if: matrix.os == 'ubuntu-24.04' && matrix.node == '24'
+        if: matrix.node == '24'
         run: |
           pnpm install --lockfile-only
           git diff --exit-code pnpm-lock.yaml
-      # The Vitest browser project runs headed Chromium (game-harness), so it
-      # needs the browser and a display. Hosted runners have no GPU, so the
-      # configs select SwiftShader explicitly when CI is set.
+      # `pnpm verify` remains the local all-in-one command. CI keeps the same
+      # checks but separates their schedulers so every supported Node version
+      # can finish below the unchanged 20-minute ceiling.
+      - run: pnpm run lint
+      - run: pnpm run lint:docs
+      - run: pnpm run typecheck
+      - run: pnpm exec vitest run --project unit
+      - run: pnpm run build
+      - run: pnpm run package:check
+
+  verify-browser:
+    name: Verify browser ${{ matrix.shard }}/6 (Node ${{ matrix.node }})
+    if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24", "26"]
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: xvfb-run --auto-servernum pnpm verify
+      # Vitest shards test files exactly once. Six shards isolate the observed
+      # 568-second SwiftShader sphere suite from Node's 448-second unit suite.
+      # Metal-only affordance readback is required separately below; SwiftShader cannot
+      # finish it within this unchanged job ceiling.
+      - run: >-
+          xvfb-run --auto-servernum pnpm exec vitest run --project browser
+          --shard=${{ matrix.shard }}/6 --exclude tests/browser/affordanceGpu.test.tsx
+
+  verify-affordance-gpu-metal:
+    name: Verify GPU affordance Metal (Node ${{ matrix.node }})
+    if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
+    runs-on: macos-15
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24", "26"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install chromium
+      - name: Require a Metal WebGL renderer
+        run: node scripts/ci/assertMetalRenderer.mjs
+      - name: Prove GPU affordance positions
+        env:
+          HK_GPU: macos-hardware-metal
+        run: pnpm exec vitest run --project browser tests/browser/affordanceGpu.test.tsx
+
+  verify-bake:
+    name: Verify bake (Node ${{ matrix.node }})
+    if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24", "26"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --project bake
+
+  coverage-unit-shard:
+    name: Coverage unit shard ${{ matrix.shard }}/3
+    if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run instrumented unit shard
+        env:
+          VITEST_BLOB_LABEL: coverage-unit-${{ matrix.shard }}
+          VITEST_COVERAGE_SHARD: "true"
+        run: >-
+          pnpm exec vitest run --coverage --project unit --shard=${{ matrix.shard }}/3
+          --reporter=default --reporter=blob
+      - name: Upload coverage unit shard
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-blob-unit-${{ matrix.shard }}
+          path: .vitest/blob
+          include-hidden-files: true
+          if-no-files-found: error
+
+  coverage-browser-shard:
+    name: Coverage browser shard ${{ matrix.shard }}/6
+    if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Run instrumented browser shard
+        env:
+          VITEST_BLOB_LABEL: coverage-browser-${{ matrix.shard }}
+          VITEST_COVERAGE_SHARD: "true"
+        run: >-
+          xvfb-run --auto-servernum pnpm exec vitest run --coverage --project browser
+          --shard=${{ matrix.shard }}/6 --exclude tests/browser/affordanceGpu.test.tsx
+          --reporter=default --reporter=blob
+      - name: Upload coverage browser shard
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-blob-browser-${{ matrix.shard }}
+          path: .vitest/blob
+          include-hidden-files: true
+          if-no-files-found: error
+
+  coverage-affordance-gpu-metal:
+    name: Coverage GPU affordance Metal
+    if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install chromium
+      - name: Require a Metal WebGL renderer
+        run: node scripts/ci/assertMetalRenderer.mjs
+      - name: Run instrumented GPU affordance proof
+        env:
+          HK_GPU: macos-hardware-metal
+          VITEST_BLOB_LABEL: coverage-browser-metal
+          VITEST_COVERAGE_SHARD: "true"
+        run: >-
+          pnpm exec vitest run --coverage --project browser tests/browser/affordanceGpu.test.tsx
+          --reporter=default --reporter=blob
+      - name: Upload GPU affordance coverage blob
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-blob-browser-metal
+          path: .vitest/blob
+          include-hidden-files: true
+          if-no-files-found: error
+
+  coverage-merge:
+    name: Coverage merge and threshold gate
+    needs: [coverage-unit-shard, coverage-browser-shard, coverage-affordance-gpu-metal]
+    if: github.event_name != 'pull_request' || !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Names are downloaded one-by-one deliberately. A missing shard is a
+      # failed required gate, never a partial coverage report.
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-unit-1
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-unit-2
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-unit-3
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-browser-1
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-browser-2
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-browser-3
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-browser-4
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-browser-5
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-browser-6
+          path: .vitest/blob
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-blob-browser-metal
+          path: .vitest/blob
+      # V8 blobs contain absolute source URLs. The standard macOS proof runs at
+      # /Users/runner while this merge runs on Ubuntu, so map both checkout roots
+      # to the merge checkout before Vitest filters coverage to existing sources.
+      - name: Normalize coverage blob source paths and require every shard
+        run: >-
+          node scripts/ci/normalizeCoverageBlobPaths.mjs .vitest/blob
+          coverage-unit-1 coverage-unit-2 coverage-unit-3
+          coverage-browser-1 coverage-browser-2 coverage-browser-3
+          coverage-browser-4 coverage-browser-5 coverage-browser-6 coverage-browser-metal
+      - name: Merge coverage and enforce configured thresholds
+        run: |
+          test -n "$(find .vitest/blob -type f -print -quit)"
+          pnpm exec vitest --merge-reports .vitest/blob --coverage
+          test -s coverage/lcov.info
+      - name: Upload merged LCOV
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: error
 
   docs:
     name: Docs build
@@ -109,6 +356,7 @@ jobs:
 
   sonarcloud:
     name: SonarCloud analysis
+    needs: coverage-merge
     # Organization secrets are deliberately unavailable to external pull requests.
     if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && !(startsWith(github.event.pull_request.head.ref, 'release-please--') || (github.event.pull_request.user.login == 'dependabot[bot]' && contains(github.event.pull_request.title, 'non-major'))))
     runs-on: ubuntu-24.04
@@ -123,9 +371,13 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Coverage includes the browser project (the shader-side render code).
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: xvfb-run --auto-servernum pnpm coverage
+      # The required merge job has already enforced Vitest's existing coverage
+      # thresholds and created this same lcov path for Sonar.
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: coverage-lcov
+          path: coverage
+      - run: test -s coverage/lcov.info
       - name: SonarCloud scan
         uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
@@ -142,7 +394,7 @@ jobs:
 
   gate:
     name: CI / gate
-    needs: [verify, docs, e2e, lighthouse, sonarcloud, pre-commit]
+    needs: [verify-unit, verify-browser, verify-affordance-gpu-metal, verify-bake, coverage-merge, docs, e2e, lighthouse, sonarcloud, pre-commit]
     if: >-
       always() && (github.event_name != 'pull_request' ||
       !(startsWith(github.event.pull_request.head.ref, 'release-please--') ||
@@ -151,14 +403,22 @@ jobs:
     steps:
       - name: Require every native validation job
         env:
-          VERIFY_RESULT: ${{ needs.verify.result }}
+          VERIFY_UNIT_RESULT: ${{ needs.verify-unit.result }}
+          VERIFY_BROWSER_RESULT: ${{ needs.verify-browser.result }}
+          VERIFY_GPU_AFFORDANCE_METAL_RESULT: ${{ needs.verify-affordance-gpu-metal.result }}
+          VERIFY_BAKE_RESULT: ${{ needs.verify-bake.result }}
+          COVERAGE_MERGE_RESULT: ${{ needs.coverage-merge.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
           LIGHTHOUSE_RESULT: ${{ needs.lighthouse.result }}
           SONARCLOUD_RESULT: ${{ needs.sonarcloud.result }}
           PRE_COMMIT_RESULT: ${{ needs.pre-commit.result }}
         run: |
-          test "$VERIFY_RESULT" = success
+          test "$VERIFY_UNIT_RESULT" = success
+          test "$VERIFY_BROWSER_RESULT" = success
+          test "$VERIFY_GPU_AFFORDANCE_METAL_RESULT" = success
+          test "$VERIFY_BAKE_RESULT" = success
+          test "$COVERAGE_MERGE_RESULT" = success
           test "$DOCS_RESULT" = success
           test "$E2E_RESULT" = success
           test "$LIGHTHOUSE_RESULT" = success

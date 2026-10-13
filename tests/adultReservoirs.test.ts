@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { ISLAND_LAYERS, RESERVOIR_RINGS, reservoirLayout } from "../scripts/lib/adultReservoirs.ts";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
+import { ANAL_CANAL } from "../scripts/lib/detail/canal.ts";
 import { PHALLUS_SIZE } from "../scripts/lib/detail/phallus.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { cutOutline, maleParts, partAxis } from "../scripts/lib/detail/sculpt.ts";
+import { placeVulva, VULVA_SIZE } from "../scripts/lib/detail/vulva.ts";
 import { ATLAS_SIZE, bodyCoverage } from "../scripts/lib/uvIslands.ts";
 import { type AdultSurfacePatch, parseHumanoidAssets } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
@@ -26,7 +28,7 @@ const parts = maleParts(assets, model.controlShape(AUTHORING_FIGURE).control);
 
 describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
   it("ships exactly what the generator places on the lattice, and the patches it sits in", () => {
-    expect(shipped.map((r) => r.id)).toEqual(["phallic", "labioscrotal"]);
+    expect(shipped.map((r) => r.id)).toEqual(["phallic", "labioscrotal", "vaginal", "anal"]);
     // The generator lays the reservoirs out on the refinement before any patch, and
     // names them on the refinement with its patches (scripts/lib/detail/smoothLoop.ts).
     const surface = adultManifest.anatomy?.surface;
@@ -44,16 +46,74 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
       if (!on) throw new Error("no adult surface");
       return on;
     };
-    const layout = reservoirLayout(latticeWith([]), parts, latticeWith);
+    const openings = placeVulva(assets, model.controlShape(AUTHORING_FIGURE).control);
+    const layout = reservoirLayout(latticeWith([]), parts, openings, latticeWith);
     expect(layout.patches).toEqual(surface.patches);
-    // Placement is the generator's; the islands and layers are the packer's (below).
+    // Placement is the layout's; islands, layers and evaluated closure stencils
+    // are added by the packer after the patched lattice exists (below).
     expect(layout.reservoirs).toEqual(
-      shipped.map(({ island: _island, layer: _layer, ...placed }) => placed),
+      shipped.map(({ island: _island, layer: _layer, canal, ...placed }) => {
+        if (!canal) return placed;
+        const { closure: _closure, ...opening } = canal;
+        return { ...placed, canal: opening };
+      }),
     );
     expect(shipped.map((r) => r.rings)).toEqual([
       RESERVOIR_RINGS.phallic,
       RESERVOIR_RINGS.labioscrotal,
+      RESERVOIR_RINGS.vaginal,
+      RESERVOIR_RINGS.anal,
     ]);
+  });
+
+  it("ships each canal's closure on its own loop with finite skin-following weights", () => {
+    for (const id of ["vaginal", "anal"]) {
+      const reservoir = shipped.find((r) => r.id === id);
+      const closure = reservoir?.canal?.closure;
+      if (!reservoir || !closure) throw new Error(`${id} has no packed closure`);
+      expect(closure.target).toBe(id === "vaginal" ? "genitals/vagina-k1" : "genitals/anus-k1");
+      expect(closure.gap).toBe(0);
+      // Each closes to a slit as long as its own opening (a shortened one pressed the skin
+      // round it into slivers): no length of its own.
+      expect(closure.length).toBeUndefined();
+      // A canal's small opening keeps the vertices round it its lumen needs. The anus's, 4 mm
+      // round, keeps no polygon of the lattice inside its band: its cap is a fan to one
+      // centre. The introitus's is 24 mm long and keeps a row of them.
+      expect(reservoir.loop).toHaveLength(id === "vaginal" ? 64 : 20);
+      const loop = new Set(reservoir.loop);
+      const cap = new Set(reservoir.cap);
+      const interior = new Set<number>();
+      const { start, vertices, id: polygonId } = lattice.polygons;
+      let fan = 0;
+      for (let p = 0; p + 1 < start.length; p++) {
+        if (!cap.has(polygonId[p] as number)) continue;
+        fan++;
+        for (let c = start[p] as number; c < (start[p + 1] as number); c++)
+          if (!loop.has(vertices[c] as number)) interior.add(vertices[c] as number);
+      }
+      if (id === "anal") {
+        expect(fan).toBe(reservoir.loop.length);
+        expect(interior.size).toBe(1);
+      } else expect(interior.size).toBeGreaterThan(1);
+      expect(closure.loopRegion.map((v) => lattice.regionIds[v])).toEqual(reservoir.loop);
+      expect(closure.zone.length).toBeGreaterThan(0);
+      expect(closure.zoneStart).toHaveLength(closure.zone.length + 1);
+      expect(closure.zoneStart[0]).toBe(0);
+      expect(closure.zoneStart.at(-1)).toBe(closure.zoneWeight.length);
+      expect(closure.zoneLoop).toHaveLength(closure.zoneWeight.length);
+      closure.zone.forEach((v) => {
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThan(lattice.regionCount);
+        expect(closure.loopRegion).not.toContain(v);
+      });
+      closure.zoneWeight.forEach((weight, i) => {
+        expect(Number.isFinite(weight)).toBe(true);
+        expect(weight).toBeGreaterThan(0);
+        expect(weight).toBeLessThanOrEqual(1);
+        expect(closure.zoneLoop[i]).toBeGreaterThanOrEqual(0);
+        expect(closure.zoneLoop[i]).toBeLessThan(closure.loopRegion.length);
+      });
+    }
   });
 
   it("centres both on the midline, the phallic root above and in front of the sac's", () => {
@@ -110,7 +170,7 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
         caps.add(p);
       }
     }
-    expect(lattice.reservoirs.length).toBe(2);
+    expect(lattice.reservoirs.length).toBe(4);
     expect(lattice.vertexCount).toBe(
       lattice.regionCount + shipped.reduce((s, r) => s + r.loop.length * r.rings, 0),
     );
@@ -122,7 +182,10 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
     const body = model.topology().body;
     const covered = bodyCoverage(body.uvs, body.index, size);
     const taken = new Uint8Array(size * size);
-    for (const r of shipped) {
+    // The canals draw inward and keep their skin's UVs: no island, no layer.
+    for (const r of shipped.filter((s) => ISLAND_LAYERS[s.id] === undefined))
+      expect(r.island ?? r.layer, r.id).toBeUndefined();
+    for (const r of shipped.filter((s) => ISLAND_LAYERS[s.id] !== undefined)) {
       expect(r.layer, r.id).toBe(ISLAND_LAYERS[r.id]);
       const isle = r.island;
       if (!isle) throw new Error(`${r.id} has no island`);
@@ -172,11 +235,11 @@ describe("the adult pack's reservoirs", { timeout: 300_000 }, () => {
       parseHumanoidAssets(bodyPackData(), { ...adultPackData(), manifest: withoutAnatomy }),
       { subdivision: 1 },
     );
-    // No organ and no testes: left unset, an adult takes the pack's default anatomy for its
-    // gender (`AdultAnatomySpec.defaults`), which the reservoirs draw and the pack without them cannot.
+    // No organ, no testes, no vulva and no anal canal: left unset, an adult takes the pack's
+    // default anatomy (`AdultAnatomySpec.defaults`), which the detail draws and the pack without it cannot.
     const adult = createRecipe({
       macros: { age: 30, gender: 0.5 },
-      modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0 },
+      modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0, [ANAL_CANAL]: 0 },
     });
     const a = without.evaluate(adult);
     const b = model.evaluate(adult);

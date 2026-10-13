@@ -14,7 +14,7 @@ import {
   PHALLUS_KEYS,
   PHALLUS_LENGTH,
   PHALLUS_SIZE,
-  phallusTargets,
+  phallusTargetNames,
   SculptedPhallus,
   STATES,
   type Variation,
@@ -251,7 +251,9 @@ describe("the pack's organ", { timeout: 300_000 }, () => {
     expect(detail.surfaceKey).toBe(lattice.key);
     expect(Object.keys(detail.drives ?? {}).sort()).toEqual([...detail.targets].sort());
     // The organ's targets come first; the sacs' follow (scrotum.test.ts).
-    const names = phallusTargets(root, parts.phallus, skin).targets.map((t) => t.name);
+    // Their names are a pure catalogue, so this contract does not redo the
+    // expensive surface projection just to read metadata.
+    const names = phallusTargetNames();
     expect(detail.targets.slice(0, names.length)).toEqual(names);
   });
 

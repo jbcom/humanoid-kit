@@ -7,33 +7,43 @@
  * fold the mesh over itself.
  */
 import { describe, expect, it } from "vitest";
-import { CreaseFlaps, HipContact, PressReach, vertexNormals } from "../scripts/lib/hipContact.ts";
+import {
+  creaseZone,
+  Flaps,
+  HipContact,
+  PressReach,
+  vertexNormals,
+} from "../scripts/lib/foldContact.ts";
 import { BODY_TYPES } from "../scripts/lib/skinBench.ts";
 import { bodyTriangles } from "../scripts/lib/skinMeasure.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { FOLD_JOINTS } from "../src/rig/folds.ts";
 import { fromHalf } from "../src/rig/half.ts";
 import {
-  addFold,
-  addFoldNormal,
-  boneMass,
   FOLD_BODIES,
   FOLD_KEYS,
   FOLD_OPENINGS,
-  FOLD_ROW_TEXELS,
   FOLD_THIGH_HOLD,
   FOLD_TRUNK_REACH,
   foldSides,
   HIP_FOLD,
-  type HipFold,
   hipFlexion,
   hipRotation,
   nearHips,
-  renderFold,
-  surfaceFold,
   TRUNK_SHARE,
 } from "../src/rig/hipFold.ts";
 import { solveHipFold } from "../src/rig/hipFoldSolve.ts";
+import {
+  addFold,
+  addFoldNormal,
+  boneMass,
+  type JointFold,
+  renderFold,
+  rowTexels,
+  type SurfaceFold,
+  surfaceFold,
+} from "../src/rig/jointFold.ts";
 import {
   bodyPoseRotations,
   IDENTITY_POSE,
@@ -43,6 +53,9 @@ import {
   skinPositions,
 } from "../src/rig/pose.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
+
+/** The steps a figure's folds are solved in, each yielded: every joint's keys at each of its openings. */
+const SOLVE_STEPS = FOLD_JOINTS.reduce((sum, j) => sum + j.keys * j.openings, 0);
 
 const assets = loadFixtureAssets();
 const names = assets.manifest.skeleton.bones.map((b) => b.name);
@@ -126,7 +139,7 @@ const pose = (
     assets.skinIndex,
     assets.skinWeight,
     new Float32Array(f.control.length),
-    withFold ? f.fold : undefined,
+    withFold ? [f.fold] : undefined,
   );
 
 describe("how far a hip is flexed (hipFlexion)", () => {
@@ -258,12 +271,17 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
     const K = FOLD_OPENINGS * FOLD_KEYS;
     const vector = (seed: number) =>
       Float32Array.from({ length: K * 3 }, (_, i) => seed + i * 0.001);
-    const fold: HipFold = {
+    const fold: JointFold = {
+      joint: HIP_FOLD,
       vertices: Uint32Array.of(0, 1),
       slot: Int32Array.of(0, 1, -1),
       vectors: Float32Array.from([...vector(0.1), ...vector(-0.3)]),
       normals: Float32Array.from([...vector(0.7), ...vector(-0.9)]),
       side: Float32Array.of(1, 0.2),
+      strains: Float32Array.from(
+        { length: 2 * K },
+        (_, i) => (i < K ? -0.2 : -0.6) + (i % K) * 1e-4,
+      ),
     };
     // Surface vertex 0 is half of control 0 and half of control 1; 1 is control 2 (not moved); 2 is control 1.
     const stencil = {
@@ -274,8 +292,8 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
     const surface = surfaceFold(fold, stencil, Uint32Array.of(0, 0, 1, 2, 2));
     expect(surface.rows).toBe(2);
     expect([...surface.slot]).toEqual([0, 0, -1, 1, 1]);
-    expect(surface.data.length).toBe(2 * FOLD_ROW_TEXELS * 4);
-    expect(FOLD_ROW_TEXELS).toBe(K * 2);
+    expect(surface.data.length).toBe(2 * rowTexels(HIP_FOLD) * 4);
+    expect(rowTexels(HIP_FOLD)).toBe(K * 2);
     // Each value a half float: the nearest to the mix, within 2⁻¹¹ of it.
     const held = (i: number) => fromHalf(surface.data[i] as number);
     const rounded = (got: number, want: number) =>
@@ -297,7 +315,12 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
         const bn = fold.normals[(K + key) * 3 + k] as number;
         rounded(held(key * 8 + 4 + k), 0.5 * an + 0.5 * bn);
         rounded(held((K + key) * 8 + 4 + k), bn);
-        expect(held(key * 8 + 7)).toBe(0);
+        // The strain in the normal's texel's fourth place, mixed the same way, and read back.
+        const as = fold.strains[key] as number;
+        const bs = fold.strains[K + key] as number;
+        rounded(held(key * 8 + 7), 0.5 * as + 0.5 * bs);
+        rounded(held((K + key) * 8 + 7), bs);
+        expect(back.strains[key]).toBe(held(key * 8 + 7));
         // And read back as the fold of the render vertices: the very values the texture holds.
         expect(back.vectors[(K + key) * 3 + k]).toBe(held((K + key) * 8 + k));
       }
@@ -306,7 +329,8 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
   it("reads the fold between its openings by how far the hip is opened", () => {
     // One vertex: 1 cm out along x with the thighs together, 3 cm opened, at every key.
     const K = FOLD_OPENINGS * FOLD_KEYS;
-    const fold: HipFold = {
+    const fold: JointFold = {
+      joint: HIP_FOLD,
       vertices: Uint32Array.of(0),
       slot: Int32Array.of(0),
       vectors: Float32Array.from({ length: K * 3 }, (_, i) =>
@@ -314,6 +338,7 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
       ),
       normals: new Float32Array(K * 3),
       side: Float32Array.of(1),
+      strains: Float32Array.from({ length: K }, (_, i) => (i < FOLD_KEYS ? -0.1 : -0.3)),
     };
     const at = (opening: number) => {
       const out = new Float32Array(3);
@@ -327,48 +352,49 @@ describe("the fold on the rendered surface (surfaceFold)", () => {
     expect(at(HIP_FOLD.opened * 2)).toBeCloseTo(0.03, 6);
   });
 
-  it("is made by the model a flexion at a time, on the surface the figure is drawn on, and moves skin by the hips alone", () => {
-    const steps = model.hipFold(createRecipe());
+  it("is made by the model a flexion at a time, on the surface the figure is drawn on, each joint's in order, the hip's moving skin by the hips alone", () => {
+    const steps = model.folds(createRecipe());
     let yielded = 0;
     for (;;) {
       const step = steps.next();
       if (step.done) {
-        const { surface, fold } = step.value;
+        const { surface, folds } = step.value;
         expect(surface).toBe("base");
-        expect(fold.rows).toBeGreaterThan(50);
-        expect(fold.data.length).toBe(fold.rows * FOLD_ROW_TEXELS * 4);
-        const moved = fold.slot.filter((s) => s >= 0).length;
-        expect(moved).toBeGreaterThanOrEqual(fold.rows);
-        expect(moved).toBeLessThan(fold.slot.length / 10);
-        for (const s of fold.slot) expect(s).toBeLessThan(fold.rows);
+        expect(folds.map((f) => f.joint.name)).toEqual(FOLD_JOINTS.map((j) => j.name));
+        for (const fold of folds) {
+          expect(fold.rows).toBeGreaterThan(50);
+          expect(fold.data.length).toBe(fold.rows * rowTexels(fold.joint) * 4);
+          const moved = fold.slot.filter((s) => s >= 0).length;
+          expect(moved).toBeGreaterThanOrEqual(fold.rows);
+          expect(moved).toBeLessThan(fold.slot.length / 10);
+          for (const s of fold.slot) expect(s).toBeLessThan(fold.rows);
+        }
         break;
       }
       yielded++;
     }
-    expect(yielded).toBe(FOLD_OPENINGS * FOLD_KEYS);
+    expect(yielded).toBe(SOLVE_STEPS);
   });
 
-  it("solves a shape once: asked again for the same figure it answers at once with the same fold, and a different one is solved", () => {
+  it("solves a shape once: asked again for the same figure it answers at once with the same folds, and a different one is solved", () => {
     const solved = (recipe: ReturnType<typeof createRecipe>) => {
-      const steps = model.hipFold(recipe);
+      const steps = model.folds(recipe);
       let yielded = 0;
       for (;;) {
         const step = steps.next();
-        if (step.done) return { yielded, fold: step.value.fold };
+        if (step.done) return { yielded, fold: step.value.folds[0] as SurfaceFold };
         yielded++;
       }
     };
     const first = solved(createRecipe({ macros: { weight: 0.8 } }));
-    expect(first.yielded).toBe(FOLD_OPENINGS * FOLD_KEYS);
+    expect(first.yielded).toBe(SOLVE_STEPS);
     const again = solved(createRecipe({ macros: { weight: 0.8 } }));
     expect(again.yielded).toBe(0);
     expect(again.fold.rows).toBe(first.fold.rows);
     expect([...again.fold.data]).toEqual([...first.fold.data]);
     // Not the same buffers: a reply transfers its own.
     expect(again.fold.data).not.toBe(first.fold.data);
-    expect(solved(createRecipe({ macros: { weight: 0.3 } })).yielded).toBe(
-      FOLD_OPENINGS * FOLD_KEYS,
-    );
+    expect(solved(createRecipe({ macros: { weight: 0.3 } })).yielded).toBe(SOLVE_STEPS);
     // Two figures solved whole, each at two openings: some seconds of one core each (docs/ARCHITECTURE.md, "Where it runs").
   }, 120_000);
 });
@@ -527,7 +553,7 @@ describe("the hip fold", () => {
     let folded = 0;
     for (const f of figures) {
       const restNormals = vertexNormals(f.control, tris);
-      const flaps = new CreaseFlaps(f.rest, f.control, restNormals, tris);
+      const flaps = new Flaps(f.control, restNormals, tris, creaseZone(f.rest, f.control));
       const count = (rotations: Float32Array, withFold: boolean) =>
         flaps.count(
           pose(f, rotations, withFold),
@@ -538,7 +564,7 @@ describe("the hip fold", () => {
             assets.skinIndex,
             assets.skinWeight,
             new Float32Array(f.control.length),
-            withFold ? f.fold : undefined,
+            withFold ? [f.fold] : undefined,
           ),
         );
       for (const [name, rotations] of poses) {
@@ -623,24 +649,42 @@ describe("the hip fold", () => {
       const bare = normalsOf(pose(f, flexed(120), false));
       const folded = normalsOf(pose(f, flexed(120), true));
       // What the shader does: the skinned normal plus the fold's change, made a unit vector again.
-      const shaded = Float64Array.from(bare);
+      const skinned = skinNormals(
+        f.rest,
+        flexed(120),
+        Float32Array.from(normalsOf(f.control)),
+        assets.skinIndex,
+        assets.skinWeight,
+        new Float32Array(f.control.length),
+      );
+      const shaded = Float64Array.from(skinned);
       let turned = 0;
+      let crumpled = 0;
       for (const v of f.fold.vertices) {
         const delta = new Float32Array(3);
         addFoldNormal(f.fold, v, 120, 0, delta, 0);
         let l = 0;
         for (let k = 0; k < 3; k++) {
-          shaded[v * 3 + k] = (bare[v * 3 + k] as number) + (delta[k] as number);
+          shaded[v * 3 + k] = (skinned[v * 3 + k] as number) + (delta[k] as number);
           l += (shaded[v * 3 + k] as number) ** 2;
         }
         for (let k = 0; k < 3; k++)
           shaded[v * 3 + k] = (shaded[v * 3 + k] as number) / Math.sqrt(l);
         // The bones' normal and the displaced mesh's differ where the fold changed the shape...
         if (angle(bare, folded, v) > 30) turned++;
-        // ... and the shader's is the displaced mesh's.
-        expect(angle(shaded, folded, v), `${f.name} vertex ${v}`).toBeLessThan(1);
+        // ... and where the bones crumpled the skin (the posed mesh's normal 45° and more from the
+        // skinned) the shader's is the displaced mesh's; elsewhere, no farther from it than the
+        // skinned normal is from the posed mesh's, the fold having turned it as the mesh turned.
+        if (angle(skinned, bare, v) >= 45) {
+          crumpled++;
+          expect(angle(shaded, folded, v), `${f.name} vertex ${v}`).toBeLessThan(1);
+        } else
+          expect(angle(shaded, folded, v), `${f.name} vertex ${v}`).toBeLessThan(
+            angle(skinned, bare, v) + 1,
+          );
       }
       expect(turned, f.name).toBeGreaterThan(20);
+      expect(crumpled, f.name).toBeGreaterThan(5);
     }
   });
 
@@ -654,7 +698,7 @@ describe("the hip fold", () => {
     upright.set([0, Math.sin(r / 2), 0, Math.cos(r / 2)], root * 4);
     const { depth } = average.contact.penetration(
       pose(average, turned, true),
-      pose(average, upright, false),
+      average.contact.facesOn(pose(average, upright, false)),
     );
     expect(depth).toBeLessThan(0.002);
   });

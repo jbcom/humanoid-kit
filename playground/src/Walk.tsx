@@ -232,8 +232,8 @@ export function Walk() {
     <div style={{ position: "absolute", inset: 0 }} data-figure={ready ? "ready" : "loading"}>
       <Canvas
         camera={{ position: [0, 1.4, 5.5], fov: 35 }}
+        // Compositor screenshots do not need a retained WebGL drawing buffer.
         gl={{
-          preserveDrawingBuffer: true,
           toneMapping: STUDIO_TONE_MAPPING,
           toneMappingExposure: STUDIO_EXPOSURE,
         }}

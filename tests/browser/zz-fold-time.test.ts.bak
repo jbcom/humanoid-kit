@@ -9,7 +9,7 @@ beforeAll(async () => {
 });
 afterAll(() => client.dispose());
 
-it("times the hip fold solve under CPU throttling", async () => {
+it("times the joint folds' solve under CPU throttling", async () => {
   const out: string[] = [];
   for (const rate of [1, 4]) {
     await cdp().send("Emulation.setCPUThrottlingRate", { rate });
@@ -18,8 +18,10 @@ it("times the hip fold solve under CPU throttling", async () => {
       ["heavy man", { age: 25, gender: 1, weight: 1, muscle: 0.3 }],
     ] as const) {
       const t0 = performance.now();
-      const r = await client.hipFold(createRecipe({ macros }));
-      out.push(`throttle ${rate}x ${name}: ${Math.round(performance.now() - t0)} ms, ${r.fold.rows} rows`);
+      const r = await client.folds(createRecipe({ macros }));
+      out.push(
+        `throttle ${rate}x ${name}: ${Math.round(performance.now() - t0)} ms, ${r.folds.map((f) => `${f.joint.name} ${f.rows}`).join(", ")} rows`,
+      );
     }
   }
   await cdp().send("Emulation.setCPUThrottlingRate", { rate: 1 });

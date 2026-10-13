@@ -26,7 +26,7 @@ interface LoadOptions {
   body: PackLocation;           // e.g. bodyPack from humanoid-kit-body
   adultAnatomy?: PackLocation;  // e.g. adultAnatomyPack
   hair?: PackLocation;          // e.g. hairPack from humanoid-kit-hair; only its manifest loads up front
-  clothing?: PackLocation;      // e.g. clothingPack from humanoid-kit-clothing
+  clothing?: PackLocation | readonly PackLocation[]; // clothingPack from humanoid-kit-clothing, and/or a consumer's own
   firstFigureAge?: number;      // whose targets a staged load brings first; default 25
 }
 
@@ -58,10 +58,11 @@ type PackLocation =
   serve, whose layout adds a `rank` per vertex, `CARD_FIELD_KEYS`; `STRAND_KINDS`
   are the kinds with measured strand fields; `recipe.hair.style` wears scalp hair only and `ReadyInfo.hair.styles`
   carries each entry's kind), its `file` and `sha256`, and the `strand` direction and
-  `coherence` measured from its strand map. With the clothing pack loaded,
-  `clothingManifest` lists its garments from the start; `garments` (a map of
-  `BoundGarment` by id) fills once the garments binary has arrived, and
-  `garmentsPending` is true until then.
+  `coherence` measured from its strand map. With clothing packs loaded,
+  `clothingManifests` lists them in load order, and their garments are listed
+  from the start. `garments` (a map of `BoundGarment` by id, ids unique across
+  the packs) fills as each pack's garments binary arrives.
+  `pendingGarmentPacks` holds the indices of the packs still to come.
 
 ```ts
 loadHumanoidAssetsStaged(options: LoadOptions): Promise<StagedHumanoidAssets>
@@ -75,14 +76,18 @@ interface StagedHumanoidAssets {
 
 Loads in stages over one link, in `targetLoadOrder(firstFigureAge)`: the first
 figure's age anchors with the core, then the body's modifier targets, then the
-clothing pack's garments (`GARMENTS_FILE`, only with a clothing pack), then the
+clothing packs' garments together (`garmentsFile(i)` for pack `i`: `garments`,
+`garments.1`, ...; only with a clothing pack), then the
 other age anchors, neighbours first, then the adult pack's targets on their
 own. All modifiers and sliders are listed from the start. Each later stage is
 fetched once the previous one has settled and is added to the same `assets`.
 Its `loaded` promise resolves, or rejects with the failure (an
 `AssetFormatError` for an HTTP or format error, the platform's `TypeError` for
 a network error or corrupt gzip). A failed stage fails only itself: every other
-stage still loads, and `complete` rejects with the first failure.
+stage still loads, and `complete` rejects with the first failure. In the
+garments stage a failed clothing pack also fails only itself. The other packs'
+garments are added, the failed pack stays in `pendingGarmentPacks`, and the
+stage rejects with its error.
 `loadHumanoidAssets` is this with `complete` awaited.
 
 Also exported:
@@ -90,13 +95,16 @@ Also exported:
 - `parseHumanoidAssets(pack, adultAnatomy?, clothing?, hair?)`: the same parsing
   from already-fetched, decompressed buffers. Pure; usable in workers and tests.
   `pack.targets` maps file ids (`BODY_TARGET_FILES`) to buffers; `core` is
-  required and any others may come later. `clothing` is `{ manifest, garments? }`;
-  without `garments` they are pending. `hair` is `{ manifest }`: the styles
-  are known, their geometry comes with `addHairStyle`.
-- `addGarments(assets, bin)`: adds the clothing pack's decompressed garments
-  binary. Throws `AssetFormatError` when no clothing pack is loaded, the
-  garments are already loaded, or one fails to check, and then leaves `assets`
-  unchanged.
+  required and any others may come later. `clothing` is `{ manifest, garments? }`
+  or a list of them; a pack without `garments` is pending. Each pack must be
+  built for the body pack, and a garment id taken by an attachment or by
+  another pack is an `AssetFormatError` that names both. `hair` is
+  `{ manifest }`: the styles are known, their geometry comes with
+  `addHairStyle`.
+- `addGarments(assets, pack, bin)`: adds clothing pack `pack`'s decompressed
+  garments binary. Throws `AssetFormatError` when there is no such clothing
+  pack, its garments are already loaded, or one fails to check, and then
+  leaves `assets` unchanged.
 - `addHairStyle(assets, id, bin)`: adds one hair style's decompressed binary.
   Throws `AssetFormatError` for a style the hair pack does not have or bytes
   that do not parse, and then leaves `assets` unchanged.
@@ -134,6 +142,7 @@ createRecipe(init?: {
   };
   bodyHair?: BodyHairRecipe;
   outfit?: readonly string[];
+  outfitLook?: Readonly<Record<string, GarmentLook>>;
   bodyArt?: BodyArtInit;
 }): Recipe
 ```
@@ -155,6 +164,7 @@ interface Recipe {
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
   bodyHair?: BodyHairRecipe; // optional: absent means the default for age and sex
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
+  outfitLook?: Readonly<Record<string, GarmentLook>>; // per garment id; absent = as the pack made it
   bodyArt?: BodyArtRecipe; // optional: absent means none, as in recipes saved before body art
 }
 
@@ -164,9 +174,12 @@ interface HairRecipe {
 }
 
 interface BodyHairRecipe {
-  // per BODY_HAIR_GROUPS entry, a multiplier on the default, 0..2 (1 = default);
-  // pubic is adult-only: any value but 0 under 18 is refused
+  // legacy per BODY_HAIR_GROUPS entry multiplier on the physiological default, 0..2 (1 = default)
   density?: Partial<Record<BodyHairGroup, number>>;
+  // explicit mature coverage at every gender value, 0..1; cannot coexist with density for the same group
+  coverage?: Partial<Record<BodyHairGroup, number>>;
+  // physical follicles-per-cm2 multiplier, 0.25..2; changes spacing, not coverage
+  follicleDensity?: Partial<Record<BodyHairGroup, number>>;
   beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = none (clean-shaven)
 }
 
@@ -284,7 +297,8 @@ type BodyRegion = (typeof BODY_REGIONS)[number];
   `SkinPaintInput.anatomy`.
 
 Under 18, a recipe is invalid if an adult-only modifier is non-zero, if
-`bodyHair.density.pubic` is non-zero (`ADULT_ONLY_BODY_HAIR`), or
+`bodyHair.density.pubic` or `bodyHair.coverage.pubic` is non-zero, or
+`bodyHair.follicleDensity.pubic` is present (`ADULT_ONLY_BODY_HAIR`), or
 if a piercing is at an adult-only site. Refused, never clamped. The breast macros
 (`breastSize`, `breastFirmness`, and the regional overrides of them) are not
 gated: they follow MakeHuman at every age, as its breast targets do.
@@ -420,6 +434,17 @@ new HumanoidModel(assets: HumanoidAssets, options?: { subdivision?: 0 | 1 | 2 })
 
 The framework-free pipeline for one loaded body pack. `subdivision` defaults to 1
 and throws `RangeError` for anything else.
+
+- `model.addCustomTargets(targets: CustomTarget[])`: MakeHuman's custom targets,
+  the files its Modelling > Custom tab lists from `data/custom`. Each
+  `{ name, indices, deltas, scale }` (ascending base-vertex indices, 16-bit
+  quantised xyz deltas, metres per unit, as in the packs) becomes the target and
+  the one-sided modifier `custom/<name>` (`customTargetId`), applied at its value
+  in [0, 1] exactly as MakeHuman applies one. Registering a name again replaces
+  it. A recipe that does not name a custom target is unchanged. Malformed input
+  throws `CustomTargetError` before anything is added, and so does a name whose
+  id is already a pack modifier. `customTargetOf(name, offsets)` quantises
+  per-vertex metre offsets into one.
 
 - `model.evaluate(recipe, signals?, haveOutfit?): Evaluation`: `signals` (0..1 each) set the
   skin's state; those with a state morph add their targets: `cold` (the nipple
@@ -562,8 +587,25 @@ body and of each garment are drawn.
   (`SurfaceTopology` plus `id`, `kind`, `zDepth`, `tags`, `material`,
   `textureUrl`, `normalTextureUrl`), built once. Its `index` draws every face.
 - `GARMENT_LAYERS`: the categories (`kind`) a garment can have and their order:
-  `underwear`, `socks`, `clothes`, `sweater`, `jacket`, `shoes`, `coat`, `hat`,
-  `backpack`.
+  `underwear`, `hosiery`, `armwear`, `socks`, `bottoms`, `clothes`, `top`,
+  `sweater`, `jacket`, `gloves`, `shoes`, `coat`, `mask`, `glasses`, `hat`,
+  `backpack`, `held`.
+- `GarmentEntry.rigid`: true for a piece that must not bend, such as a canteen
+  or a cartridge box. It is bound like any garment, then moved as one piece to
+  where its binding put it (`rigidFit`, `placeRigid`: the least-squares
+  rotation and translation from its shape on the base mesh, with no scale).
+  It is skinned to the one bone that carries most of it (`rigidSkin`), so
+  neither the body's shape nor a pose bends it. A value other than true or
+  false is an `AssetFormatError` at load.
+- `recipe.outfitLook`: a figure's own finish per worn garment id, without a
+  second copy of the mesh. A `GarmentLook` is `{ tint?, roughness?, wear? }`.
+  `tint` is linear RGB (each ≥ 0) multiplied into the pack's colour and
+  texture, and `roughness` in [0, 1] overrides the pack's. `wear` in [0, 1]
+  fades the colour toward its own grey and the road dust (`GARMENT_DUST`) and
+  roughens it. `garmentFinish(material, look)` is the pure function the
+  renderer applies, and it returns the pack's material unchanged when there is
+  no look. A look for a garment the figure does not wear is ignored, and
+  validation lists every malformed field.
 - The arithmetic behind it, pure and exported: `layerOrder(entries)`,
   `stackVisibility(vertexCount, garments, visible?)`,
   `transferVisibility(visible, garment)`, `faceVisibility(faceVerts, faces,
@@ -622,10 +664,17 @@ compute what the renderer will do.
   colours are measured and which modelled). `HAIR_COLOURS` names twelve natural colours as pigment
   values (`black` to `white`), `DEFAULT_HAIR_COLOUR` is `brown`, and
   `hairTint(colour)` is the material colour that makes a packed strand map
-  (mean `HAIR_STRAND_MEAN`) render as that albedo.
+  (mean `HAIR_STRAND_MEAN`) render as that albedo. `ageGrey(age)` is the
+  fraction of grey fibres from ageing alone (a smoothstep from `GREY_ONSET` 35 to
+  `GREY_FULL` 95), and `agedHairColour(colour, age, part)` the colour a head part
+  (`scalp`, `brows`, `lashes`) wears by default: at least as grey as
+  `ageGrey(age − GREY_LAG[part])`, the recipe's grey a floor and an override
+  kept. `<Humanoid>` draws the hair, the scalp, the brows and the lashes with it.
 - Body hair (research/BODY-HAIR.md): `BODY_HAIR_GROUPS` (`face`, `chest`,
   `abdomen`, `back`, `buttocks`, `arms`, `legs`, `axillary` (from puberty, 13),
-  and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`),
+  and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`).
+  The creator hides the axillary and pubic density controls below 18; that UI
+  boundary does not change recipe validity or axillary's age-derived coverage.
   `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
   `defaultBodyHairCoverage(group, age, gender)` is a group's terminal-hair
   coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years and
@@ -633,10 +682,15 @@ compute what the renderer will do.
   adolescence (`BODY_HAIR_MATURITY`), thinning in old age
   (`BODY_HAIR_SENESCENCE`), between `BODY_HAIR_COVERAGE`'s female and male
   ends. An adult-only group is 0 under 18 and for an age that is not a number.
-  `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's density
-  multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage; it never
-  adds hair where the default has none). `beardStyle(input)` is the recipe's
-  style, or `DEFAULT_BEARD` (`none`, clean-shaven). `bodyHairColour(group, input)` is the figure's hair pigments
+  `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's legacy
+  `density` multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage;
+  it never adds hair where the default has none), or its explicit `coverage`
+  (0..1, independent of the gender anchor but still age-matured). A group may
+  name one of those two controls, never both. `bodyHairFollicleDensity(group,
+  input)` applies the independent `follicleDensity` multiplier (0.25..2) to
+  `BODY_HAIR_FOLLICLE_DENSITY`, changing strand spacing without changing
+  coverage. `beardStyle(input)` is the recipe's style, or `DEFAULT_BEARD`
+  (`none`, clean-shaven). `bodyHairColour(group, input)` is the figure's hair pigments
   darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
   fibre diameter and drawn length) and at least as grey as ageing makes them
   (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an
@@ -710,7 +764,7 @@ compute what the renderer will do.
   Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
   hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
   `VELLUS`, flat: no relief) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
-  densities `BODY_HAIR_DENSITY`. Dense, short hair standing off the skin (the
+  densities `BODY_HAIR_FOLLICLE_DENSITY`. Dense, short hair standing off the skin (the
   beard, the chest, abdomen and back, and the adult-only armpits) is the
   coat's, long hair the cards', and pubic hair the adult pack's.
   `bodyHairMasks(assets)` gives the masks per base vertex and
@@ -947,18 +1001,22 @@ and expressions"). Framework-free.
   symmetric: each is the reflection of its partner (`mirrorUnit(unit)`: `Left`
   and `Right` swapped, `MouthLeftPullUp` ↔ `MouthRightPullUp`; a central unit
   such as `JawDrop` is its own), so a symmetric expression moves both sides alike.
+  MakeHuman 1's expression files are only unit weights, so any of them applies as
+  `faceUnitRotations(rig, weights)` (docs/evidence/expressions.md); its body pose
+  units are not packed (docs/evidence/body-poseunits.md).
 - `EXPRESSIONS`, `expressionUnits(id, intensity = 1)`: ten named expressions
   (`smile`, `grin`, `frown`, `surprise`, `anger`, `disgust`, `fear`, `sad`,
   `blink`, `squint`) as face unit weights, symmetric, for a pose's `faceUnits`
   (`pose={{ faceUnits: expressionUnits("surprise", 0.7) }}`). `intensity` scales
   the weights (0 to 1; above 1 is held at 1); an unknown id throws. The weights
   are authored choices (ARCHITECTURE.md, "Named expressions").
-- `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out, fold?)`:
+- `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out, folds?)`:
   the rig's skinning on the CPU, exactly as the renderer skins, for grounding,
   tests, anchors and pose-dependent bakes: linear blend skinning mixed with
   dual quaternion skinning vertex by vertex, by the share each bone asks for
-  (ARCHITECTURE.md, "Skinning artefacts"), and, with a `fold`
-  (`solveHipFold`, below), the hip fold added to the skinned vertex.
+  (ARCHITECTURE.md, "Skinning artefacts"), and, with `folds` (joint folds:
+  `solveHipFold`, `solveKneeFold`, below), each joint's fold added to the
+  skinned vertex.
   `posedBoneHeads(rest, rotations)`
   gives every joint's posed position. `skinPositionsLinear` is linear blending
   alone, `skinPositionsDual` dual quaternion skinning alone, and
@@ -974,22 +1032,35 @@ and expressions"). Framework-free.
   `poseShare(rest, rotations, base)` gives every bone's share for a pose: the
   table's, moved by each such bone's swing (its rotation less its twist about
   its own axis). `skinPositions` and `DualBones` use it.
-- `solveHipFold(rest, control, skinIndex, skinWeight, triangles)` solves a
-  figure's hip fold (ARCHITECTURE.md, "The hip fold"): where a thigh flexed past
-  a right angle would pass through the belly, the displacement (per flexion
-  from 32.5° to 140° in 2.5° steps, per vertex of the thigh's skin within 0.7
-  of its length of the hip) that holds it against the belly's skin instead. `solveHipFoldSteps` is the
-  same a flexion at a time (a generator). The result (`HipFold`) is passed to
-  `skinPositions` as `fold`; `hipPose(rest, rotations)` reads each hip's flexion
-  from a pose, `addFold(fold, vertex, flexion, out, at)` reads a vertex's
-  displacement at a flexion, `addFoldNormal` the change of its normal there, and
-  `HIP_FOLD` holds the fold's terms. It takes about a second of one core (under two
-  with the CPU throttled 4×): in an app it is asked of the worker
-  (`client.hipFold`, which keeps the last six folds by figure shape), never solved
-  per frame; `<Humanoid>` fades it in over `FOLD_FADE` (150 ms) when it arrives. The
-  thigh stays under 2 mm behind the belly at every flexion solved and halfway
-  between, in the nine bodies of the tests. `scripts/lib/hipContact.ts` (`HipContact.penetration(positions)`)
-  measures how far a posed body's thigh passes through its trunk.
+- Joint folds (ARCHITECTURE.md, "The hip fold", "The knee fold"): where a
+  joint bent far would pass one part's skin through another's, or fold the
+  skin at the joint over itself, a displacement solved once per figure at a
+  run of flexions (a `FoldJoint`'s keys) and read at the flexion a pose has.
+  `solveHipFold(rest, control, skinIndex, skinWeight, triangles)` solves the
+  hips' (the thigh held against the belly: per flexion from 32.5° to 140° in
+  2.5° steps, closed and opened 20°, per vertex of the thigh's skin within 0.7
+  of its length of the hip, and the belly's it meets), `solveKneeFold` the
+  knees' (the calf held against the back of the thigh, and the back of the
+  knee folded smooth: per flexion from 32.5° to 155° in 2.5° steps, within 0.85
+  of a thigh's length of the knee). `solveHipFoldSteps` and `solveKneeFoldSteps`
+  are the same a flexion at a time (generators); `solveFold(…, setup)` is the
+  solve both are made of, from a `FoldSetup` (`hipFoldSetup`, `kneeFoldSetup`).
+  The results (`JointFold`, each with its `joint`: `HIP_FOLD`, `KNEE_FOLD`) are
+  passed to `skinPositions` as `folds`. `foldFlexion(joint, rest, rotations)`
+  reads how far a joint's two sides are flexed and opened in a pose
+  (`hipFlexion`, `kneeFlexion`), `jointTurns` the turn each side's
+  displacements follow (the root's at the hips, each thigh's at the knees),
+  `addFold(fold, vertex, flexion, opening, out, at)` a vertex's displacement at
+  a flexion, and `addFoldNormal` the change of its normal there; `FOLD_JOINTS`
+  lists the joints in the order their folds are kept. A figure's folds take a
+  few seconds of one core: in an app they are asked of the worker
+  (`client.folds`, which keeps the last six figures' by shape), never solved
+  per frame; `<Humanoid>` fades them in over `FOLD_FADE` (150 ms) when they
+  arrive. In the nine bodies of the tests the thigh stays under 2 mm behind the
+  belly at every flexion solved and halfway between, and the calf and the thigh
+  under 2 mm through each other at 90° to 150°. `scripts/lib/foldContact.ts`
+  (`HipContact`, `KneeContact`) measures how far a posed body's skin passes
+  through itself at either joint, and `Flaps` the triangles it turns over.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
@@ -1088,17 +1159,27 @@ slice 1 of its build plan.
   (without one, `all` is accepted and `adult` declined: consent is explicit),
   `on(participant, listener)` (`accepted`, `declined`, `phase`, `beat`,
   `ended`, `cancelled` with a reason), `running()`, `detach()`.
+- A running interaction also has `trackTime(role)` and
+  `contactTarget(name, role)`. `trackTime` exposes elapsed clip seconds:
+  the registry clock scaled by the track rate, wrapped for looping tracks and
+  clamped for non-looping tracks. It is not a normalized fraction. A declared
+  hand contact returns a shared target while its phase is active;
+  `gripMeeting` and `armStretch` are pure, body-measure-aware helpers for
+  an application's motion layer. See
+  [Interaction sessions](INTERACTION-SESSION.md).
 - `applyToAffordances(figures)`: an `applyChange` that sets each beat's
   affordance change on the participant's `HumanoidAffordances` (a `Map` of
   participant id to handle), so a bite fills the mouth and opens the jaw.
 - An interaction claims its roles' body parts all-or-nothing, then runs
   approach (only when a role has a slot), align, act (repeating while
   `repeatWhile` holds) and release on the registry's clock. It is cancelled
-  with `left` when a participant leaves presence, and aborted with
+  with `left` when a participant leaves presence or its id is removed and
+  replaced by a different published presence, and aborted with
   `age-policy` on any tick an adult definition has a participant under 18.
 - `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
   chest, hands, feet), `footprint`, `appearance` (measured albedo, luminance,
-  specular), `faceRadius`, `adult`.
+  specular), `measures` (reach, shoulder height, hip height, eye height),
+  `faceRadius`, `adult`.
 - `presenceFromEvaluation({ evaluation, recipe, joints, placement })`: a
   figure's presence from its evaluation. Anchors are joint centroids of the
   morphed control mesh lifted onto the ground, the footprint is the extent of
@@ -1169,6 +1250,10 @@ The main-thread handle to an evaluation worker.
   `label`, `kind`, `tags`; empty without that pack). `label` is what to call a
   garment in a list ("Brown oxfords"); `name` is the asset's file name, which
   says whom it was drawn for. `hair` is the hair pack's entries (`HairInfo`: `{ styles: { id, label, tags, kind }[] }`, null without a hair pack), known before any style loads.
+- `client.addCustomTargets(targets): Promise<void>` registers MakeHuman custom
+  targets in the worker (`model.addCustomTargets`, under Evaluation) and resolves
+  once a later evaluation can name `custom/<name>`. Await it before evaluating
+  a recipe that does.
 - `client.hairTopology(id): HairTopology | undefined` is a worn style's static
   render data. The worker sends it with the first evaluation that wears the
   style and the client keeps it, so an `Evaluation` whose `hair.id` you
@@ -1219,16 +1304,17 @@ The main-thread handle to an evaluation worker.
   it once the figure is an adult and draws it, in place of the base body, from
   then on (`Evaluation.surface === "adult"`); the worker builds it once and
   later calls share it.
-- `client.hipFold(recipe, signals?): Promise<{ surface, fold }>` resolves with the
-  hip fold (ARCHITECTURE.md, "The hip fold") of the figure the recipe makes, on
-  the body surface its evaluation draws (`"base"` or `"adult"`): the
-  `SurfaceFold` (`slot` per render vertex, `rows`, `data`) for
-  `DualBones.setFold` and the geometry's `FOLD_SLOT_ATTRIBUTE`. The worker solves
-  it between other requests, so an evaluation is never held up behind it, and
+- `client.folds(recipe, signals?): Promise<{ surface, folds }>` resolves with the
+  joint folds (ARCHITECTURE.md, "The hip fold", "The knee fold") of the figure the
+  recipe makes, on the body surface its evaluation draws (`"base"` or `"adult"`):
+  a `SurfaceFold` per joint of `FOLD_JOINTS` (its `joint`, `slot` per render
+  vertex, `rows`, `data`) for `DualBones.setFolds` and the geometry's slot
+  attribute of each joint (`foldSlotAttribute(joint)`). The worker solves them
+  between other requests, so an evaluation is never held up behind them, and
   asking again supersedes a solve still under way, which rejects with an
-  `AbortError`. `<Humanoid>` asks once a hip in its pose is flexed past 30°,
-  whenever the figure's shape changes, and counts the wait in its settle; a figure
-  drawn by other means calls it itself.
+  `AbortError`. `<Humanoid>` asks once a hip or a knee in its pose is flexed past
+  30°, whenever the figure's shape changes, and counts the wait in its settle; a
+  figure drawn by other means calls it itself.
 - `client.dispose()` terminates the worker and rejects pending requests.
 - Errors from the worker arrive as `HumanoidWorkerError` with `name` set to the
   original error's name (for example `AgePolicyError`).
@@ -1327,10 +1413,11 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   twisted forearm or a raised shoulder keeps its volume, and its shadows, bounds
   and picking follow. A `material` of your own skins by three's linear skinning
   alone, and the attachments (eyes, teeth, tongue) follow single bones. With a
-  hip flexed past 30° it asks the worker for the figure's hip fold
-  (`client.hipFold`) and the skin adds it, so the groin folds against the belly
-  and does not pass through it (ARCHITECTURE.md, "The hip fold"); the figure
-  settles once it is drawn.
+  hip or a knee flexed past 30° it asks the worker for the figure's joint folds
+  (`client.folds`) and the skin adds them, so the groin folds against the belly
+  and the calf against the thigh without passing through, and the back of a
+  bent knee folds smooth (ARCHITECTURE.md, "The hip fold", "The knee fold"); the
+  figure settles once they are drawn.
 - Stores the figure's bones as dual quaternions on the group's
   `userData.dualBones` (a `DualBones`, null before the first evaluation), so
   clothing and materials of your own can follow its joints as its skin does:
@@ -1491,6 +1578,7 @@ and camera.
 | `eyeMaterials?` | The eye pack's `EyeLibrary` (`humanoid-kit-eyes`, `loadEyeLibrary`): worn by the figure, and offered as an Eye texture choice in Appearance; see "Eye materials" |
 | `onReject?(rejection)` | Called when a change was refused (`rejection.reason` is `"veto"` or `"cover"`, with `cause` and the `proposed` recipe) |
 | `title?` | Heading shown above the controls |
+| `frameloop?` | `"always"` (default) or `"demand"`. Demand rendering stops after the creator settles and resumes for creator work. Extra animated scene children must call R3F `invalidate`, or retain the default. |
 | `className?` | Added to the root element |
 | `children?` | Extra scene content rendered beside the figure |
 
@@ -1568,7 +1656,9 @@ const FLOOR = 25;
   change that would leave it is clamped, and so is every other way a value can
   arrive (random, load, undo, a regional override of that macro). `min` equal to
   `max` pins the value. Age is clamped through `withAge`, so moving it below 18
-  still removes the adult-only values. A range outside the slider's own, one
+  still removes the adult-only values. When an adult pack supplies a default for
+  an absent modifier, the creator clamps that effective value and writes an
+  explicit in-range override if needed. A range outside the slider's own, one
   with `min` above `max` or not finite, and a range on one of the three
   ethnic macros (they are normalised together; hide them or pin all three with
   `onBeforeChange`) throws a `RangeError`.
@@ -1599,8 +1689,10 @@ what the creator proposed.
 ### Cover policy
 
 A host may need a person's explicit confirmation before a figure is shown
-uncovered (Anyself asks for an 18+ confirmation and refuses it under 25). The
-library does not judge that, it enforces the host's answer: **nothing is
+uncovered (an adults-only application, say, that asks for an age confirmation
+first). The kit has no policy of its own: with no `coverPolicy` nothing is asked
+and nothing is refused, as in MakeHuman. The library does not judge, it enforces
+the host's answer: **nothing is
 evaluated, drawn or reported for an uncovered figure until the policy allows
 it.** The creator holds a figure back from `<Humanoid>` (the worker never sees
 its recipe) while it waits.
@@ -1758,7 +1850,9 @@ propose a figure and go through the steps in "Hosting the creator". `load`
 returns `Not allowed here` as its problem when `onBeforeChange` or an
 `allowUncover` that answers at once refuses the loaded figure; one that is
 still being asked is not a problem. The pure parts are exported too
-(`humanoid-kit`): `limitRecipe(recipe, controls, modifiers)`, `limitedRange`,
+(`humanoid-kit`): `limitRecipe(recipe, controls, modifiers, anatomyDefaults?)`,
+which applies loaded anatomy defaults before clamping modifier ranges,
+`limitedRange`,
 `visibleTasks`, `assertControls`, `sameRecipe`, `beforeChange`, `wearsCover`,
 `isCovered(policy, recipe, wardrobe)` and `mustConfirm(policy, wardrobe,
 proposed, shown)`.
@@ -1795,12 +1889,28 @@ the melanin bands and the dark half. The three ethnic draws are first in the
 seed's stream, so a seed's other values are unchanged; a seed's mix is not what
 it was before the anchors.
 
+### Slider helpers
+
+The pure shape-control helpers are exported from `humanoid-kit`, for a host UI
+that uses the kit's slider taxonomy:
+
+- `sliderValue(recipe, entry, anatomyDefaults?)`: the effective row value. With
+  loaded anatomy defaults it uses the same resolver as evaluation, so an absent
+  adult modifier can read as its pack default rather than zero.
+- `withSliderValue(recipe, entry, value, modifiers, anatomyDefaults?)`: returns
+  a recipe with the row set. A zero for a loaded defaulted adult modifier is an
+  explicit override; other neutral modifier values are omitted as usual.
+- `resetSliderValue(recipe, entry, modifiers, anatomyDefaults?, range?)`:
+  removes an explicit defaulted-adult override so the pack default resumes. If
+  `range` excludes that effective value, it instead keeps the nearest allowed
+  explicit value. Other rows reset to their ordinary neutral value.
+
 ### Wardrobe helpers
 
 Pure functions behind the Wardrobe tab, also exported from `humanoid-kit`:
 
-- `wardrobeOf(manifest): WardrobeEntry[]`: the garments a `ClothingManifest`
-  lists (none for null).
+- `wardrobeOf(manifests): WardrobeEntry[]`: the garments the loaded
+  `ClothingManifest`s list, pack by pack (none for an empty list).
 - `wardrobeGroups(wardrobe): WardrobeGroup[]`: by kind, in the order people
   dress, each with a heading.
 - `wearGarment(recipe, garment, wardrobe): Recipe`: the recipe wearing the
@@ -1819,9 +1929,10 @@ range input sized for touch. `onChange(value, gesture)` fires while dragging and
 ## `humanoid-kit/worker`
 
 The worker module that `HumanoidWorkerClient` starts by default. It owns one
-`HumanoidModel` and answers eight messages: `init` (replied to with `ready`
+`HumanoidModel` and answers its messages: `init` (replied to with `ready`
 once the first figure can be evaluated), `complete` (replied to once every
-target file has loaded, or with the error that stopped one), `pickMap`
+target file has loaded, or with the error that stopped one), `customTargets`
+(replied to once MakeHuman custom targets are registered), `pickMap`
 (replied to with the pick map once everything has loaded), `posedOcclusion`
 (replied to once the corner bake, made a corner at a time between other
 requests, is done), `adultLayers` (replied to with the adult anatomy layers'
@@ -1830,7 +1941,7 @@ fields once the adult pack's stage has loaded, or null without that pack),
 `evaluate`, which
 waits for exactly the load stages its recipe needs without holding up other
 requests, `garment` (replied to with a garment's static render data once
-the garments have loaded) and `hipFold` (replied to with a figure's hip fold,
+the garments have loaded) and `folds` (replied to with a figure's joint folds,
 solved a flexion at a time between other requests). Result buffers are transferred. Applications use it
 through the client, not directly.
 
@@ -1883,14 +1994,21 @@ animator.root;                // how far the figure has been carried: [x across,
   `PLANT_SWITCH`), `root` giving way by what a planted foot's leg could not reach
   (`FootLock.correction`). `contactPoints` and `CONTACT_BONES` are the points on the soles
   they work from.
-- `<Humanoid animation={{ library, clip, speed, fade, paused, time, rootMotion, onStart }}>`
+- `<Humanoid animation={{ library, clip, speed, fade, paused, time, rootMotion, onStart, onFrame }}>`
   (`HumanoidAnimation`, from `humanoid-kit/react`) plays a clip on the figure, frame by
   frame without React state: the body follows it with `pose.faceUnits` laid over,
   `pose.body` standing aside; the figure lifts itself onto the ground (do not lift the
   group; `onGroundOffset` is not called while a clip plays); a clip that carries the
-  figure (`rootMotion`, default true) moves the group forward in its own frame; and the
+  figure (`rootMotion`, default true) moves the group forward in its own frame by the full
+  render-clock step, including after a slow frame; and the
   figure's presence follows. `time` puts it at a time in the clip. `onStart(clip)` is
   called once the figure follows the clip, and again for a new figure or `time`.
+  `onFrame(frame)` receives the completed pose and real FootLock contact owner for each sole,
+  without a React render: `owned` identifies the current owner while `hold` says whether it is
+  fully planted (1) or fading through rollover/release (0..1). Contacts are figure-local metres after ground lift and before
+  cumulative root carry, group heading or any caller transform; `root` is cumulative x/forward-z
+  carry and `delta` is this render frame's carry. `generation` increments after each evaluation/rest
+  binding so an integration can reject a callback from an earlier asynchronous recipe update.
 - `bodySegments(assets, rest, control, skinIndex, skinWeight, bodyVertices)` (a figure's 14
   capsules, radii measured from its skin) and `overlaps(rest, segments, rotations)` (every
   pair of parts that are not neighbours, with how deep they overlap in the pose, negative
@@ -1932,12 +2050,15 @@ import { animationsPack } from "humanoid-kit-animations";
 
 `animationsPack` is `{ manifest, files }` like `bodyPack`: per clip, `<id>.bin.gz` (the
 frames' bone rotations, a few tens of kilobytes). Pass it to `loadAnimationLibrary`.
-90 clips. Six are punkduck's, from the MakeHuman community's CC0 additional assets:
+98 clips. Six are punkduck's, from the MakeHuman community's CC0 additional assets:
 `walk_normal`, `walk_female`, `idle1`, `idle2`, `idlehips` and `swimcrawlstroke`. 84 are
 Quaternius's Universal Animation Libraries 1 and 2 (CC0), retargeted onto the default
 skeleton: `walk_loop`, `jog_fwd_loop`, `sprint_loop`, `idle_loop`, `swim_fwd_loop`,
 `crouch_idle_loop`, `sitting_idle_loop`, `sword_idle`, `punch_cross`, `dance_loop` and
-so on, each tagged `ual1` or `ual2`; the manifest's `rootMotion`, `grounded` and `loop`
+so on, each tagged `ual1` or `ual2`. Eight are the package's own (CC0), authored as key
+poses in `scripts/clips/` for 1860s infantry drill and prayer: `march_quick`,
+`charge_advance`, `colour_bearer`, `musket_load`, `musket_fire`, `officer_sword_raised`,
+`kneel_pray` and `pray_standing`. The manifest's `rootMotion`, `grounded` and `loop`
 say how each plays.
 Its `PROVENANCE.md` pins the archive by its SHA-256 and records each clip's licence
 evidence.
@@ -2016,11 +2137,15 @@ import { clothingPack } from "humanoid-kit-clothing";
 ```
 
 `clothingPack` is `{ manifest, files: { "garments.bin.gz", ...WebP textures } }`.
-Pass it as `clothing`. It ships nineteen CC0 garments from MakeHuman's system
-assets, bound to the base mesh: twelve casual, sport, work and elegant suits
-(`suits/…`, category `clothes`; each a complete outfit, so one is worn at a
-time), six pairs of shoes (`shoes/shoes01` to `06`, category `shoes`) and a
-fedora (`hats/fedora01`, category `hat`). Loading it fails unless
+Pass it as `clothing`. It ships 87 CC0 garments bound to the base mesh.
+Nineteen are from MakeHuman's system assets: twelve casual, sport, work and
+elegant suits (`suits/…`, category `clothes`; each a complete outfit, so one
+is worn at a time), six pairs of shoes (`shoes/shoes01` to `06`, category
+`shoes`) and a fedora (`hats/fedora01`, category `hat`). 68 are from the
+MakeHuman community's clothing packs, each CC0 by its asset page, under ids
+`<group>/<asset>`: `bottoms/`, `tops/`, `suits/` (hero suits, a tunic),
+`underwear/`, `hosiery/`, `armwear/`, `gloves/`, `shoes/`, `masks/`,
+`glasses/`, `hats/` and `held/` (a staff, a bow, a dagger). Loading it fails unless
 it was built against the exact body pack. A figure wears garments by id in
 `recipe.outfit`.
 

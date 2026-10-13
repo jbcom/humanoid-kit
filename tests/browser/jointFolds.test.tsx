@@ -1,9 +1,9 @@
 /**
- * The hip fold through the whole path (docs/ARCHITECTURE.md, "The hip fold"): a
- * figure whose hips are flexed past the fold's start asks the worker for the
- * fold, which reaches the body's geometry (a slot per vertex) and the bone
- * texture's fold (a row per moved vertex), and the figure settles only after.
- * The picture shows it.
+ * The joint folds through the whole path (docs/ARCHITECTURE.md, "The hip
+ * fold", "The knee fold"): a figure whose hips or knees are flexed past where
+ * their folds start asks the worker for the folds, which reach the body's
+ * geometry (a slot per vertex, per joint) and the bone texture's folds (a row
+ * per moved vertex), and the figure settles only after. The picture shows it.
  */
 import { Canvas, type RootState, useThree } from "@react-three/fiber";
 import { useEffect } from "react";
@@ -20,10 +20,11 @@ import { Humanoid, HumanoidProvider } from "../../src/react/index.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import {
   type DualBones,
-  FOLD_ROWS_PER_LINE,
-  FOLD_SLOT_ATTRIBUTE,
+  foldRowsPerLine,
+  foldSlotAttribute,
   noFoldTexture,
 } from "../../src/render/dualSkinning.ts";
+import { FOLD_JOINTS, type FoldJointName } from "../../src/rig/folds.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
 const LOAD = { timeout: 180_000 };
@@ -33,7 +34,12 @@ const SIDE = 512;
 const client = inlineWorkerClient({ subdivision: 1 });
 beforeAll(async () => {
   await client.ready;
-});
+  // The tucked figure's joint folds, solved once before any canvas draws: the model keeps them by shape, so the
+  // figure's own request is answered at once. Solved in the page while a canvas renders, the solve's steps wait
+  // on the frames between them, and the figure took longer than the test is given to settle (as it did before
+  // the knee's fold, the hip's alone, on the render hosts).
+  await client.folds(createRecipe());
+}, LOAD.timeout);
 afterAll(() => client.dispose());
 
 /** Hands the test the canvas's state, to read the scene and draw it. */
@@ -55,20 +61,27 @@ function bonesOf(scene: Scene): DualBones | null {
   return found;
 }
 
-/** How many vertices of the scene's geometries have a fold slot, and how many rows the fold texture holds (`FOLD_ROWS_PER_LINE` a line). */
-function foldOf(scene: Scene) {
-  let slots = 0;
-  scene.traverse((o: Object3D) => {
-    const g = (o as { geometry?: { getAttribute(n: string): BufferAttribute | undefined } })
-      .geometry;
-    const a = g?.getAttribute(FOLD_SLOT_ATTRIBUTE);
-    if (a) for (const s of a.array) if ((s as number) >= 0) slots++;
-  });
+/**
+ * Per joint, how many vertices of the scene's geometries have a slot in its
+ * fold, and how many rows its fold texture holds (`foldRowsPerLine` a line).
+ */
+function foldsOf(scene: Scene): Record<FoldJointName, { slots: number; rows: number }> {
   const dual = bonesOf(scene);
-  return {
-    slots,
-    rows: dual ? (dual.fold.value.image as { height: number }).height * FOLD_ROWS_PER_LINE : 0,
+  const of = (joint: (typeof FOLD_JOINTS)[number]) => {
+    let slots = 0;
+    scene.traverse((o: Object3D) => {
+      const g = (o as { geometry?: { getAttribute(n: string): BufferAttribute | undefined } })
+        .geometry;
+      const a = g?.getAttribute(foldSlotAttribute(joint));
+      if (a) for (const s of a.array) if ((s as number) >= 0) slots++;
+    });
+    const image = dual?.folds[joint.name].value.image as { height: number } | undefined;
+    return { slots, rows: image ? image.height * foldRowsPerLine(joint) : 0 };
   };
+  return Object.fromEntries(FOLD_JOINTS.map((j) => [j.name, of(j)])) as Record<
+    FoldJointName,
+    { slots: number; rows: number }
+  >;
 }
 
 /** Light for the figure to be seen by: unlit, a skin draws black. */
@@ -81,17 +94,20 @@ function Lights() {
   );
 }
 
-describe("the hip fold in <Humanoid>", () => {
+describe("the joint folds in <Humanoid>", () => {
   it(
-    "reaches the geometry and the bone texture before the figure settles, and the picture shows it, when the hips are flexed",
+    "reach the geometry and the bone texture before the figure settles, and the picture shows them, when the hips and knees are flexed",
     async () => {
       let get: (() => RootState) | null = null;
       let settled = false;
-      let atSettle = { slots: 0, rows: 0, blend: -1 };
+      let atSettle: { folds: ReturnType<typeof foldsOf> | null; blend: number } = {
+        folds: null,
+        blend: -1,
+      };
       await render(
         <HumanoidProvider client={client}>
           <div style={{ width: 240, height: 240 }}>
-            <Canvas>
+            <Canvas frameloop="demand">
               <Probe onReady={(g) => (get = g)} />
               <Lights />
               <Humanoid
@@ -101,7 +117,10 @@ describe("the hip fold in <Humanoid>", () => {
                   settled = true;
                   if (get) {
                     const scene = get().scene;
-                    atSettle = { ...foldOf(scene), blend: bonesOf(scene)?.foldBlend.value ?? -1 };
+                    atSettle = {
+                      folds: foldsOf(scene),
+                      blend: bonesOf(scene)?.foldBlend.value ?? -1,
+                    };
                   }
                 }}
               />
@@ -110,11 +129,14 @@ describe("the hip fold in <Humanoid>", () => {
         </HumanoidProvider>,
       );
       await expect.poll(() => settled, LOAD).toBe(true);
-      expect(atSettle.slots).toBeGreaterThan(50);
-      expect(atSettle.rows).toBeGreaterThan(50);
-      // The fold fades in when it arrives, and the figure is not settled before it is whole.
+      // The tuck flexes the hips 120° and the knees 130°: both joints' folds arrive.
+      for (const joint of FOLD_JOINTS) {
+        expect(atSettle.folds?.[joint.name].slots, joint.name).toBeGreaterThan(50);
+        expect(atSettle.folds?.[joint.name].rows, joint.name).toBeGreaterThan(50);
+      }
+      // The folds fade in when they arrive, and the figure is not settled before they are whole.
       expect(atSettle.blend).toBe(1);
-      // The same figure drawn with the fold and without differs where the groin is: seen from the front, the side, above and below.
+      // The same figure drawn with the folds and without differs where the groin is: seen from the front, the side, above and below.
       const state = (get as unknown as () => RootState)();
       const dual = bonesOf(state.scene) as DualBones;
       const draw = (at: [number, number, number]) => {
@@ -136,11 +158,14 @@ describe("the hip fold in <Humanoid>", () => {
         [0.15, 1.5, 0.7],
         [0.3, -0.2, 0.9],
       ];
-      const held = dual.fold.value;
+      const held = FOLD_JOINTS.map((joint) => dual.folds[joint.name].value);
       const folded = views.map(draw);
-      dual.fold.value = noFoldTexture();
+      for (const joint of FOLD_JOINTS) dual.folds[joint.name].value = noFoldTexture(joint);
       const bare = views.map(draw);
-      dual.fold.value = held;
+      FOLD_JOINTS.forEach((joint, j) => {
+        dual.folds[joint.name].value.dispose();
+        dual.folds[joint.name].value = held[j] as (typeof held)[number];
+      });
       const seen = folded.map((px, view) => {
         let lit = 0;
         let differing = 0;
@@ -159,14 +184,14 @@ describe("the hip fold in <Humanoid>", () => {
       expect(Math.max(...seen.map((s) => s.lit)), "pixels the figure lights").toBeGreaterThan(1500);
       expect(
         Math.max(...seen.map((s) => s.differing)),
-        `pixels the fold changes, per view ${JSON.stringify(seen)}`,
+        `pixels the folds change, per view ${JSON.stringify(seen)}`,
       ).toBeGreaterThan(40);
     },
     LOAD.timeout,
   );
 
   it(
-    "asks for no fold while the hips are not flexed",
+    "asks for no fold while neither the hips nor the knees are flexed",
     async () => {
       let get: (() => RootState) | null = null;
       let settled = false;
@@ -187,10 +212,11 @@ describe("the hip fold in <Humanoid>", () => {
         </HumanoidProvider>,
       );
       await expect.poll(() => settled, LOAD).toBe(true);
-      expect(foldOf((get as unknown as () => RootState)().scene)).toEqual({
-        slots: 0,
-        rows: FOLD_ROWS_PER_LINE,
-      });
+      expect(foldsOf((get as unknown as () => RootState)().scene)).toEqual(
+        Object.fromEntries(
+          FOLD_JOINTS.map((joint) => [joint.name, { slots: 0, rows: foldRowsPerLine(joint) }]),
+        ),
+      );
     },
     LOAD.timeout,
   );

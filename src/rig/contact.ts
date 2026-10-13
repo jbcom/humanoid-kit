@@ -577,3 +577,143 @@ export class TriangleCrossings {
     return along >= 0 && along <= 1;
   }
 }
+
+/** The side (metres, in y and z) of `SolidWinding`'s cells, each holding the triangles a ray along x through it may cross. */
+const SOLID_CELL = 0.02;
+
+/**
+ * What the skin of a closed body mesh encloses: how many times it winds round a
+ * point (`winding`), by the signed crossings of a ray from the point along +x,
+ * each triangle crossed counting +1 where the ray leaves through it (its
+ * outward normal along +x) and -1 where it enters. A point outside every part
+ * of the body winds 0 times; inside one part, once; inside two that pass
+ * through each other (the calf through the thigh), twice. Counted so, skin that
+ * passes through itself does not count the flesh it overlaps twice, as the sum
+ * of cones from a point does. The mesh must be closed where the rays cross it
+ * (the body's is, but for the eyes' sockets and the mouth).
+ */
+export class SolidWinding {
+  private readonly P: Float32Array;
+  private readonly tris: ArrayLike<number>;
+  private readonly low: [number, number] = [0, 0];
+  private readonly size: [number, number] = [1, 1];
+  private readonly start: Uint32Array;
+  private readonly list: Uint32Array;
+
+  constructor(P: Float32Array, tris: ArrayLike<number>) {
+    this.P = P;
+    this.tris = tris;
+    const count = tris.length / 3;
+    const lo = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+    const hi = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+    const bounds = new Float64Array(count * 4);
+    for (let t = 0; t < count; t++) {
+      let y0 = Number.POSITIVE_INFINITY;
+      let y1 = Number.NEGATIVE_INFINITY;
+      let z0 = Number.POSITIVE_INFINITY;
+      let z1 = Number.NEGATIVE_INFINITY;
+      for (let c = 0; c < 3; c++) {
+        const v = tris[t * 3 + c] as number;
+        const y = P[v * 3 + 1] as number;
+        const z = P[v * 3 + 2] as number;
+        y0 = Math.min(y0, y);
+        y1 = Math.max(y1, y);
+        z0 = Math.min(z0, z);
+        z1 = Math.max(z1, z);
+      }
+      bounds.set([y0, y1, z0, z1], t * 4);
+      lo[0] = Math.min(lo[0] as number, y0);
+      hi[0] = Math.max(hi[0] as number, y1);
+      lo[1] = Math.min(lo[1] as number, z0);
+      hi[1] = Math.max(hi[1] as number, z1);
+    }
+    for (let k = 0; k < 2; k++) {
+      this.low[k] = lo[k] as number;
+      this.size[k] = Math.floor(((hi[k] as number) - (lo[k] as number)) / SOLID_CELL) + 1;
+    }
+    const [sy, sz] = this.size;
+    const cells: number[][] = Array.from({ length: sy * sz }, () => []);
+    for (let t = 0; t < count; t++) {
+      const [i0, i1] = this.span(bounds[t * 4] as number, bounds[t * 4 + 1] as number, 0);
+      const [j0, j1] = this.span(bounds[t * 4 + 2] as number, bounds[t * 4 + 3] as number, 1);
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) cells[i + sy * j]?.push(t);
+    }
+    this.start = new Uint32Array(cells.length + 1);
+    for (let c = 0; c < cells.length; c++)
+      this.start[c + 1] = (this.start[c] as number) + (cells[c]?.length ?? 0);
+    this.list = new Uint32Array(this.start[cells.length] as number);
+    for (let c = 0; c < cells.length; c++) this.list.set(cells[c] ?? [], this.start[c] as number);
+  }
+
+  /** The cells from `a` to `b` along axis `k` (0: y, 1: z), clamped to the grid. */
+  private span(a: number, b: number, k: 0 | 1): [number, number] {
+    const at = (x: number) =>
+      Math.min(
+        (this.size[k] as number) - 1,
+        Math.max(0, Math.floor((x - (this.low[k] as number)) / SOLID_CELL)),
+      );
+    return [at(a), at(b)];
+  }
+
+  /** How many times the skin winds round (x, y, z). */
+  winding(x: number, y: number, z: number): number {
+    const { P, tris } = this;
+    const [i] = this.span(y, y, 0);
+    const [j] = this.span(z, z, 1);
+    const c = i + (this.size[0] as number) * j;
+    let w = 0;
+    for (let e = this.start[c] as number; e < (this.start[c + 1] as number); e++) {
+      const t = this.list[e] as number;
+      const a = (tris[t * 3] as number) * 3;
+      const b = (tris[t * 3 + 1] as number) * 3;
+      const d = (tris[t * 3 + 2] as number) * 3;
+      // The triangle projected on the ray's plane (y, z): does it cover (y, z), and where along x?
+      const ay = (P[a + 1] as number) - y;
+      const az = (P[a + 2] as number) - z;
+      const by = (P[b + 1] as number) - y;
+      const bz = (P[b + 2] as number) - z;
+      const dy = (P[d + 1] as number) - y;
+      const dz = (P[d + 2] as number) - z;
+      const u = by * dz - bz * dy;
+      const v = dy * az - dz * ay;
+      const s = ay * bz - az * by;
+      if ((u < 0 || v < 0 || s < 0) && (u > 0 || v > 0 || s > 0)) continue;
+      const area = u + v + s;
+      if (area === 0) continue;
+      const hit = (u * (P[a] as number) + v * (P[b] as number) + s * (P[d] as number)) / area;
+      if (hit <= x) continue;
+      // The face's outward normal along x is the projected area's sign: leaving the solid counts +1.
+      w += area > 0 ? 1 : -1;
+    }
+    return w;
+  }
+
+  /**
+   * The volume (cubic metres) inside the skin within the ball of radius `r` at
+   * `centre`: the points of a grid of `cells` cells across the ball's diameter
+   * the skin winds round at least once, by their cells' volume.
+   */
+  ballVolume(centre: ArrayLike<number>, r: number, cells: number): number {
+    const step = (2 * r) / cells;
+    // Offsets no vertex lies on: a grid point level with an edge or a corner would be counted twice or not at all.
+    const jitter = [0.3713, 0.5179, 0.4361];
+    let inside = 0;
+    for (let i = 0; i < cells; i++)
+      for (let j = 0; j < cells; j++)
+        for (let k = 0; k < cells; k++) {
+          const x = -r + (i + (jitter[0] as number)) * step;
+          const y = -r + (j + (jitter[1] as number)) * step;
+          const z = -r + (k + (jitter[2] as number)) * step;
+          if (x * x + y * y + z * z > r * r) continue;
+          if (
+            this.winding(
+              (centre[0] as number) + x,
+              (centre[1] as number) + y,
+              (centre[2] as number) + z,
+            ) >= 1
+          )
+            inside++;
+        }
+    return inside * step ** 3;
+  }
+}
