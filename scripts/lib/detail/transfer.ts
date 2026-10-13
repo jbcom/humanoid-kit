@@ -842,20 +842,33 @@ export function projectPart(
   };
 
   const partArea = areaByRadius(skirted, uv);
-
-  // The reservoir's own disc: the skin line by its arclength from the same reference.
-  // The first ring is the line itself, on the skin; the part's area falls on the rest.
-  const n = root.loop.length;
-  const R = root.rings;
-  const capShare = root.cap.length / (root.cap.length + (R - 1) * n);
   const lookup = new DiscLookup(skirted, uv);
-  const at = (share: number, t: number) => {
+  return placedOnDisc(root, line, lineParam, (share, t) => {
     const r = partArea.radiusAt(share);
     const angle = turned(t);
     return lookup.point(r * Math.cos(angle), r * Math.sin(angle));
-  };
-  // The cap on a disc of its own: its boundary is the loop at the loop's shares, so a cap
-  // vertex's angle is its share round, and its area from the centre its share of the cap.
+  });
+}
+
+/**
+ * Each vertex of a reservoir at its place on a disc (`RootShape` order): the first ring
+ * is the skin line itself; a later ring and the cap's vertices are read by `at` at their
+ * share of the disc's area from its centre and their share round from the reference.
+ * The reservoir's own disc is the skin line by its arclength from the reference, and the
+ * part's area falls on its vertices evenly: ring k of R where the share of the area
+ * between it and the centre is the share of the vertices from ring k inward. The cap is
+ * on a disc of its own whose boundary is the loop at the loop's shares, so a cap vertex's
+ * angle is its share round, and its area from the centre its share of the cap.
+ */
+function placedOnDisc(
+  root: ReservoirRoot,
+  line: readonly Vec3[],
+  lineParam: { order: number[]; share: number[] },
+  at: (share: number, round: number) => Vec3,
+): RootShape {
+  const n = root.loop.length;
+  const R = root.rings;
+  const capShare = root.cap.length / (root.cap.length + (R - 1) * n);
   const capMesh = capSurface(root);
   const capBoundary = new Map(root.loop.map((_, i) => [i, lineParam.share[i] as number] as const));
   const capUv = meanValueDisc(capMesh, capBoundary);
@@ -873,4 +886,89 @@ export function projectPart(
     for (let i = 0; i < n; i++) shape.push(at(inside, lineParam.share[i] as number));
   }
   return shape;
+}
+
+/**
+ * The reservoir laid flat on the skin it covers (#75): each vertex where `projectPart`
+ * reads a part, at the same place on the disc, but read on the cap, the skin inside the
+ * skin line. It is skin, so it shows as the reservoir at rest does; but unlike rest, where
+ * every ring lies on its loop vertex and the cap is the whole disc, the rings lie in
+ * rings across the disc and the cap in its middle. A shape grown from it toward a
+ * projected part moves each vertex from its place on the skin to its place on the part,
+ * so the organ rises from the middle and narrows as it rises; grown from rest, the rings
+ * left the loop together and the cap was carried out flat, a cylinder as wide as the
+ * loop with a flat end.
+ */
+export function flatShape(root: ReservoirRoot, reference: Vec3): RootShape {
+  const line = skinLine(root, loopParameter(root.loop, root.normal, reference));
+  const lineParam = loopParameter(line, root.normal, reference);
+  // The skin inside the line: the cap's disc map, its boundary the loop at the line's
+  // shares, read at the radius that holds each share of its area.
+  const capMesh = capSurface(root);
+  const capBoundary = new Map(root.loop.map((_, i) => [i, lineParam.share[i] as number] as const));
+  const capUv = meanValueDisc(capMesh, capBoundary);
+  const capArea = areaByRadius(capMesh, capUv);
+  const lookup = new DiscLookup(capMesh, capUv);
+  // The line lies just inside the loop, so the disc inside it is the cap's but for the
+  // band between them: read the cap within the line's own share of its area.
+  const inner = Math.min(1, ...line.map((p) => discRadius(capMesh, capUv, p)));
+  return placedOnDisc(root, line, lineParam, (share, t) => {
+    const r = capArea.radiusAt(share * capArea.shareAt(inner));
+    const angle = 2 * Math.PI * t;
+    return lookup.point(r * Math.cos(angle), r * Math.sin(angle));
+  });
+}
+
+/**
+ * The disc radius of a point on a disc-mapped surface: its coordinate interpolated over
+ * the triangle it lies nearest, by that triangle's barycentric weights at its foot there.
+ */
+function discRadius(mesh: SculptPart, uv: Float64Array, p: Vec3): number {
+  const P = mesh.positions;
+  const T = mesh.triangles;
+  const at = (v: number): Vec3 => [
+    P[v * 3] as number,
+    P[v * 3 + 1] as number,
+    P[v * 3 + 2] as number,
+  ];
+  let best: [number, number, number, number] = [0, 1, 0, 0];
+  let far = Number.POSITIVE_INFINITY;
+  for (let t = 0; t < T.length; t += 3) {
+    const [a, b, c] = [T[t], T[t + 1], T[t + 2]] as [number, number, number];
+    const A = at(a);
+    const ab = sub(at(b), A);
+    const ac = sub(at(c), A);
+    const ap = sub(p, A);
+    // The foot in the triangle's plane, its weights clamped into the triangle.
+    const d00 = dot(ab, ab);
+    const d01 = dot(ab, ac);
+    const d11 = dot(ac, ac);
+    const d20 = dot(ap, ab);
+    const d21 = dot(ap, ac);
+    const den = d00 * d11 - d01 * d01;
+    if (!(den > 0)) continue;
+    let v = (d11 * d20 - d01 * d21) / den;
+    let w = (d00 * d21 - d01 * d20) / den;
+    v = Math.max(0, v);
+    w = Math.max(0, w);
+    const s = v + w > 1 ? v + w : 1;
+    v /= s;
+    w /= s;
+    const q: Vec3 = [
+      A[0] + ab[0] * v + ac[0] * w,
+      A[1] + ab[1] * v + ac[1] * w,
+      A[2] + ab[2] * v + ac[2] * w,
+    ];
+    const d = len(sub(q, p));
+    if (d < far) {
+      far = d;
+      best = [t, 1 - v - w, v, w];
+    }
+  }
+  const [t, wa, wb, wc] = best;
+  const coord = (k: number) =>
+    wa * (uv[(T[t] as number) * 2 + k] as number) +
+    wb * (uv[(T[t + 1] as number) * 2 + k] as number) +
+    wc * (uv[(T[t + 2] as number) * 2 + k] as number);
+  return Math.hypot(coord(0), coord(1));
 }

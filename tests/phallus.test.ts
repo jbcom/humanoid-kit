@@ -3,10 +3,12 @@ import { MeshBVH } from "three-mesh-bvh";
 import { describe, expect, it } from "vitest";
 import { AUTHORING_FIGURE } from "../scripts/lib/control/mound.ts";
 import { skinOf } from "../scripts/lib/detail/contact.ts";
+import type { Vec3 } from "../scripts/lib/detail/disc.ts";
 import { sweep } from "../scripts/lib/detail/form.ts";
 import {
   DORSAL,
   dorsalLength,
+  FLAT_SIZE,
   GIRTH_RANGE,
   LENGTH_RANGE,
   PHALLUS_GIRTH,
@@ -23,10 +25,11 @@ import {
   type ReservoirRoot,
   type RootShape,
   reservoirRoot,
+  restShape,
 } from "../scripts/lib/detail/root.ts";
 import { TESTES_SIZE } from "../scripts/lib/detail/scrotum.ts";
 import { maleParts } from "../scripts/lib/detail/sculpt.ts";
-import { skirtOnto } from "../scripts/lib/detail/transfer.ts";
+import { flatShape, skirtOnto } from "../scripts/lib/detail/transfer.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
@@ -216,6 +219,56 @@ describe("the organ's shape against the literature", { timeout: 300_000 }, () =>
     }
   });
 
+  it("narrows as it rises below the smallest key, never a cylinder as wide as its loop (#75)", () => {
+    // How much narrower the organ's end is than its base: the last ring's mean radius over
+    // the second's (the first is the skin line). A glans is a fraction of its base.
+    const smallest = PHALLUS_KEYS[0] as (typeof PHALLUS_KEYS)[number];
+    const key = organ.shape(smallest);
+    const taper = (from: RootShape, t: number) => {
+      const s = from.map((p, i) =>
+        [0, 1, 2].map(
+          (k) => (p[k] as number) + t * (((key[i] as Vec3)[k] as number) - (p[k] as number)),
+        ),
+      ) as unknown as RootShape;
+      const radius = (ring: number) => {
+        const r = s.slice(root.cap.length + (ring - 1) * LOOP, root.cap.length + ring * LOOP);
+        const c = [0, 1, 2].map((k) => r.reduce((a, p) => a + (p[k] as number), 0) / LOOP);
+        return (
+          r.reduce(
+            (a, p) => a + Math.hypot(...[0, 1, 2].map((k) => (p[k] as number) - (c[k] as number))),
+            0,
+          ) / LOOP
+        );
+      };
+      return radius(root.rings) / radius(2);
+    };
+    const flat = flatShape(root, DORSAL);
+    for (const t of [0.1, 0.3, 0.5]) {
+      expect(taper(flat, t), `from flat, ${t} of the way`).toBeLessThan(0.5);
+      // Grown from rest, every ring leaves its loop vertex together and the end stays as
+      // wide as the base: the cylinder this replaced.
+      expect(taper(restShape(root), t), `from rest, ${t} of the way`).toBeGreaterThan(0.8);
+    }
+  });
+
+  it("lays the flat reservoir on the skin it covers, as rest does", () => {
+    // Every vertex of the flat shape on the cap's surface, the skin at rest.
+    const cap = capSurface(root);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(Float32Array.from(cap.positions), 3));
+    geometry.setIndex(new BufferAttribute(cap.triangles, 1));
+    const bvh = new MeshBVH(geometry);
+    const hit = { point: new Vector3(), distance: 0, faceIndex: 0 };
+    let far = 0;
+    for (const p of flatShape(root, DORSAL)) {
+      bvh.closestPointToPoint(new Vector3(p[0], p[1], p[2]), hit);
+      far = Math.max(far, hit.distance);
+    }
+    expect(far).toBeLessThan(1e-5);
+    expect(FLAT_SIZE).toBeGreaterThan(0);
+    expect(FLAT_SIZE).toBeLessThan((PHALLUS_KEYS[0] as { size: number }).size / 10);
+  });
+
   it("keeps the loop where the skin is: a ring's first vertices stay near the root", () => {
     // Ring 1 is a sliver off the loop, not a jump.
     const g = flaccid;
@@ -388,19 +441,19 @@ describe("the organ on the adult surface", { timeout: 300_000 }, () => {
     expect(lengths[16] as number).toBeGreaterThan((lengths[0] as number) * 1.4);
   });
 
-  it("is the smallest key's own shape a share of the way out of rest below it, flaccid and erect (#75)", () => {
-    // No drawn key under the smallest sculpted one: the organ grows out of the reservoir at
-    // rest toward that key, so every vertex is the size's share of the way to it.
+  it("is the smallest key's own shape a share of the way out of the flat reservoir below it, flaccid and erect (#75)", () => {
+    // No drawn key under the smallest sculpted one: the organ grows out of the reservoir laid
+    // flat (`FLAT_SIZE`) toward that key, so every vertex is the size's share of the way to it.
     const smallest = PHALLUS_KEYS[0] as (typeof PHALLUS_KEYS)[number];
     for (const arousal of [0, 1]) {
       const key = model.evaluate(figure({ [PHALLUS_SIZE]: smallest.size }), { arousal }).positions;
+      const flat = model.evaluate(figure({ [PHALLUS_SIZE]: FLAT_SIZE }), { arousal }).positions;
       for (const share of [0.16, 0.48]) {
-        const p = model.evaluate(figure({ [PHALLUS_SIZE]: share * smallest.size }), {
-          arousal,
-        }).positions;
+        const size = FLAT_SIZE + share * (smallest.size - FLAT_SIZE);
+        const p = model.evaluate(figure({ [PHALLUS_SIZE]: size }), { arousal }).positions;
         let off = 0;
         for (let i = 0; i < p.length; i++) {
-          const want = (rest[i] as number) + share * ((key[i] as number) - (rest[i] as number));
+          const want = (flat[i] as number) + share * ((key[i] as number) - (flat[i] as number));
           off = Math.max(off, Math.abs((p[i] as number) - want));
         }
         // Within a quarter of a millimetre: the surface's path between rest and the key bends

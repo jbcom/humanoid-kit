@@ -24,8 +24,9 @@
  * the mons in front of that, 9.2 to 10.8 cm forward of the root's head on the
  * authoring figure, past the vulva's front. A clitoral key drawn from the loop grew a
  * second organ there: a plate as wide as the loop with a nub in it, at every share.
- * So below the smallest sculpted key the organ grows from the reservoir at rest, and
- * a size of 0 leaves the mons and the vulva's own clitoris as the sculpt made them.
+ * So below the smallest sculpted key the organ grows from the reservoir laid flat on the
+ * skin (`FLAT_SIZE`), and a size of 0 leaves the mons and the vulva's own clitoris as the
+ * sculpt made them.
  */
 import type { Skin } from "./contact.ts";
 import type { Vec3 } from "./disc.ts";
@@ -42,7 +43,7 @@ import {
 import { type DetailTarget, shapeSum, sizeHat, targetCollector } from "./keys.ts";
 import { type ReservoirRoot, type RootShape, restShape } from "./root.ts";
 import type { SculptPart } from "./sculpt.ts";
-import { projectPart } from "./transfer.ts";
+import { flatShape, projectPart } from "./transfer.ts";
 
 /** Alternations of the length and girth factors a key's size is found in (`SculptedPhallus.scalesFor`). */
 const SIZE_PASSES = 8;
@@ -94,7 +95,7 @@ export function dorsalLength(root: ReservoirRoot, shape: RootShape): number {
   return length + Math.hypot(apex[0] - prev[0], apex[1] - prev[1], apex[2] - prev[2]);
 }
 
-/** One size the organ is baked at; sizes in between blend two of these, and sizes under the first blend it with the reservoir at rest. */
+/** One size the organ is baked at; sizes in between blend two of these, and sizes under the first blend it with the reservoir laid flat (`FLAT_SIZE`). */
 export interface PhallusKey {
   /** The size modifier's value at which this key is exact. */
   size: number;
@@ -104,9 +105,19 @@ export interface PhallusKey {
 }
 
 /**
+ * The size at which the reservoir lies flat on the skin it covers (`flatShape`), the
+ * shape the smallest key grows out of. From rest to here the rings spread from their
+ * loop vertices across the skin, which shows nothing; from here to the smallest key the
+ * organ rises from the middle of the disc and narrows as it rises. Grown out of rest
+ * instead, a size under the smallest key was a cylinder as wide as the loop with a flat
+ * end (#75).
+ */
+export const FLAT_SIZE = 0.01;
+
+/**
  * The keys. The pooled mean (flaccid 9.16 cm long, 9.31 cm round; Veale 2015) is
  * exact at its key, the largest is 3 SD above it, and the smallest is a small
- * organ; below it the organ grows out of the reservoir at rest.
+ * organ; below it the organ grows out of the reservoir laid flat.
  */
 export const PHALLUS_KEYS: readonly PhallusKey[] = [
   { size: 0.25, length: 0.045, circumference: 0.06 },
@@ -371,7 +382,8 @@ export const keyTarget = (n: number, part: string, state?: string) =>
  * surfaces, and the shipped-pack test reads it without repeating that work.
  */
 export function phallusTargetNames(): readonly string[] {
-  const names: string[] = [];
+  // The reservoir laid flat (`FLAT_SIZE`) is key 0: a base shape and nothing else.
+  const names: string[] = [keyTarget(0, "base")];
   PHALLUS_KEYS.forEach((_, k) => {
     const n = k + 1;
     names.push(keyTarget(n, "base"));
@@ -413,10 +425,13 @@ export function phallusTargets(
       );
     add(name, from, to, factors);
   };
-  const sizes = PHALLUS_KEYS.map((k) => k.size);
+  // The flat reservoir is the first size: worth its hat, it is the shape the smallest key
+  // grows out of, and its hat and the keys' sum to one from it upward.
+  const sizes = [FLAT_SIZE, ...PHALLUS_KEYS.map((k) => k.size)];
+  addTarget(keyTarget(0, "base"), rest, flatShape(root, DORSAL), [sizeHat(PHALLUS_SIZE, sizes, 0)]);
   PHALLUS_KEYS.forEach((key, k) => {
     const n = k + 1;
-    const hat = sizeHat(PHALLUS_SIZE, sizes, k);
+    const hat = sizeHat(PHALLUS_SIZE, sizes, n);
     const flaccid = organ.shape(key);
     addTarget(keyTarget(n, "base"), rest, flaccid, [hat]);
     for (const [part, mod, mul] of [
