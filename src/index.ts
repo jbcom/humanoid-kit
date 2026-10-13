@@ -36,6 +36,7 @@ export {
 } from "./foundation/landmarks.ts";
 export { type PosedBody, posedSurface } from "./foundation/posed.ts";
 export * from "./graft/index.ts";
+export * from "./interaction/contacts.ts";
 export * from "./interaction/definition.ts";
 export * from "./interaction/runtime.ts";
 export * from "./makehuman/customTargets.ts";
