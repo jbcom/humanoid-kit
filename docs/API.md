@@ -180,7 +180,7 @@ interface Recipe {
   skin: SkinRecipe;
   eyes: EyesRecipe;
   hair?: HairRecipe;    // optional: absent means no hair, as in recipes saved before hair
-  bodyHair?: BodyHairRecipe; // optional: absent means the default for age and sex
+  bodyHair?: BodyHairRecipe; // optional: absent means the default for age
   outfit?: readonly string[]; // garment ids from the clothing pack, in any order; absent = nothing worn
   outfitLook?: Readonly<Record<string, GarmentLook>>; // per garment id; absent = as the pack made it
   bodyArt?: BodyArtRecipe; // optional: absent means none, as in recipes saved before body art
@@ -194,7 +194,7 @@ interface HairRecipe {
 interface BodyHairRecipe {
   // legacy per BODY_HAIR_GROUPS entry multiplier on the physiological default, 0..2 (1 = default)
   density?: Partial<Record<BodyHairGroup, number>>;
-  // explicit mature coverage at every gender value, 0..1; cannot coexist with density for the same group
+  // explicit coverage, 0..1: an adult's exactly; cannot coexist with density for the same group
   coverage?: Partial<Record<BodyHairGroup, number>>;
   // physical follicles-per-cm2 multiplier, 0.25..2; changes spacing, not coverage
   follicleDensity?: Partial<Record<BodyHairGroup, number>>;
@@ -691,20 +691,25 @@ compute what the renderer will do.
 - Body hair (research/BODY-HAIR.md): `BODY_HAIR_GROUPS` (`face`, `chest`,
   `abdomen`, `back`, `buttocks`, `arms`, `legs`, `axillary` (from puberty, 13),
   and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`).
-  The creator hides the axillary and pubic density controls below 18; that UI
-  boundary does not change recipe validity or axillary's age-derived coverage.
+  The creator hides the pubic control below 18, as the age policy has it.
+  Nothing in body hair reads the gender macro (DECISIONS ruling 1).
   `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
-  `defaultBodyHairCoverage(group, age, gender)` is a group's terminal-hair
-  coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years and
-  the gender macro read as the androgen level: 0 before puberty, rising through
-  adolescence (`BODY_HAIR_MATURITY`), thinning in old age
-  (`BODY_HAIR_SENESCENCE`), between `BODY_HAIR_COVERAGE`'s female and male
-  ends. An adult-only group is 0 under 18 and for an age that is not a number.
-  `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's legacy
-  `density` multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage;
-  it never adds hair where the default has none), or its explicit `coverage`
-  (0..1, independent of the gender anchor but still age-matured). A group may
-  name one of those two controls, never both. `bodyHairFollicleDensity(group,
+  `defaultBodyHairCoverage(group, age)` is an unset group's terminal-hair
+  coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years: 0
+  before puberty, rising through adolescence (`BODY_HAIR_MATURITY`), thinning
+  in old age (`BODY_HAIR_SENESCENCE`), toward `BODY_HAIR_COVERAGE`, one value
+  per group for every figure. An adult-only group is 0 under 18 and for an age
+  that is not a number. `bodyHairCoverage(group, input: BodyHairInput)` is the
+  recipe's explicit `coverage` (0..1: an adult's exactly, with no maturation or
+  thinning factor; before 18 it comes in over the group's puberty onset,
+  complete at 18), or else the default times the legacy `density` multiplier
+  (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage, so it plateaus on a
+  dense default; kept for saved recipes). A group may name one of those two
+  controls, never both. `COAT_BODY_HAIR_GROUPS` are the groups the coat draws,
+  which it draws only when the recipe enables them (`coatEnabled`: a beard
+  style for the face, a coverage or density for the others), and
+  `drawnBodyHairCoverage(group, input)` is the coverage actually drawn (0 for a
+  coat group left unset). `bodyHairFollicleDensity(group,
   input)` applies the independent `follicleDensity` multiplier (0.25..2) to
   `BODY_HAIR_FOLLICLE_DENSITY`, changing strand spacing without changing
   coverage. `beardStyle(input)` is the recipe's style, or `DEFAULT_BEARD`
@@ -776,9 +781,9 @@ compute what the renderer will do.
   `SkinPaintInput.age` is the figure's age in years (`recipe.macros.age`;
   `<Humanoid>` sets it), for layers that change with it: a layer that reads it
   must paint sensibly without it, since an input built without one has none.
-  `SkinPaintInput.gender` (the gender macro, default 0.5), `hairColour`
-  (`recipe.hair.colour`, default `DEFAULT_HAIR_COLOUR`) and `bodyHair`
-  (`recipe.bodyHair`) are what body hair paints from; `<Humanoid>` sets them.
+  `SkinPaintInput.age`, `hairColour` (`recipe.hair.colour`, default
+  `DEFAULT_HAIR_COLOUR`) and `bodyHair` (`recipe.bodyHair`) are what body hair
+  paints from; `<Humanoid>` sets them.
   Body hair's layers (`src/surface/regions/bodyHair.ts`, ARCHITECTURE.md "Body
   hair"): `BODY_HAIR_LAYERS` is `VELLUS_LAYER` (everywhere, every age,
   `VELLUS`, flat: no relief) and `TERMINAL_HAIR_LAYERS` (buttocks, arms, legs), with follicle
@@ -1606,8 +1611,9 @@ and camera.
   host passes `eyeMaterials`; hair when the client loaded a hair pack: a
   style from the pack or none, twelve natural colours, a picker for dyed hair
   and the pigment sliders behind the colours; and body hair: a beard style, or
-  Natural for the default for age and sex, and a density per region from none
-  to twice the default, with pubic density offered to adults only), Regions (per-region macro overrides) and, when the client loaded a
+  Natural for unset (shaven), and an explicit coverage per region from none to
+  full, the same at every frame, an unset region labelled "Not set" with what is
+  drawn for it, and pubic coverage offered to adults only), Regions (per-region macro overrides) and, when the client loaded a
   clothing pack, a Wardrobe: the garments by kind, one worn at a time per kind,
   layered across kinds. Tapping the hair opens Appearance.
 - Tapping the figure opens the controls that shape the tapped part (its tab,

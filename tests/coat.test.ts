@@ -47,7 +47,7 @@ const input = (
   areola: 0.5,
   signals: {},
   age,
-  gender,
+  build: { gender },
   adult: age >= 18,
   ...extra,
 });
@@ -215,13 +215,13 @@ describe("coat masks and paint", () => {
   });
 
   it("paint a region the recipe enables, and nothing on a child", () => {
-    const chest = { bodyHair: { density: { chest: 1 } } };
+    const chest = { bodyHair: { coverage: { chest: 0.6 } } };
     expect(coatPainted(paintCoat(BODY_HAIR_COAT, input(8, 1, chest)))).toBe(false);
-    const man = paintCoat(BODY_HAIR_COAT, input(35, 1, chest));
+    const adult = paintCoat(BODY_HAIR_COAT, input(35, 0, chest));
     for (const part of ["moustache", "chin", "cheeks"])
-      expect(row(man, `beard-${part}`)[0]).toBe(0);
-    expect(row(man, "hair-chest")[0]).toBeGreaterThan(0.4);
-    expect(row(man, "hair-back")[0]).toBe(0);
+      expect(row(adult, `beard-${part}`)[0]).toBe(0);
+    expect(row(adult, "hair-chest")[0]).toBeCloseTo(0.6, 6);
+    expect(row(adult, "hair-back")[0]).toBe(0);
   });
 
   it("grow the parts each beard style names, stubble short and standing", () => {

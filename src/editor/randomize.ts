@@ -43,7 +43,7 @@ export interface RandomizeOptions {
    * Draw a beard style (`randomBeard`), last of all so a seed's figure is the
    * same with or without it; omitted, the base recipe's body hair is kept. The
    * body hair model grows it only where the face carries terminal hair, so a
-   * child or a woman drawn a beard shows none.
+   * child drawn a beard shows none; the draw is the same at every frame.
    */
   beards?: boolean;
 }

@@ -2687,25 +2687,28 @@ Old recipes evaluate and serialise as before.
 
 - *One pure model, two ways of drawing.* `src/surface/bodyHair.ts` says how
   much terminal hair each region group carries (coverage 0..1, the
-  Ferriman-Gallwey grade over 4), from the gender macro read as the androgen
-  level, the age (a ramp per group on the Tanner ages, a thinning after 55) and
-  the recipe's controls; and what colour (the figure's hair pigments, darker on
+  Ferriman-Gallwey grade over 4), from the age (a ramp per group on the Tanner
+  ages, a thinning after 55) and the recipe's controls, never from the gender
+  macro (DECISIONS ruling 1, 2026-10-13: the androgen-axis anchors were a
+  gender multiplier on a trait, removed); and what colour (the figure's hair pigments, darker on
   the face and pubis, lighter on the limbs, greyed with age later on the body
   than the beard). The groups follow the modified FG regions, merged to what a
   picker offers: face, chest, abdomen, back, buttocks, arms, legs, axillary,
   and the adult-only pubic.
 - *Adult-only groups are gated in the model itself.* `defaultBodyHairCoverage`
   returns 0 for pubic hair unless the age is an adult's (`age >=
-  ADULT_AGE`, so an age that is not a number fails closed), and a multiplier
-  scales the default, so no recipe value can add them under 18.
+  ADULT_AGE`, so an age that is not a number fails closed), a multiplier
+  scales the default, and an explicit coverage is 0 for them under 18, so no
+  recipe value can add them under 18.
 - *Legacy multipliers and explicit controls have separate meanings.*
   `recipe.bodyHair` is optional (the recipe schema grows only by optional
   fields). `density` remains a multiplier per group on the physiological
-  default for age and androgen axis (0 shaves a region, 2 doubles it, clamped
-  to full coverage), so saved recipes retain their results as a figure ages.
-  `coverage` is a new explicit mature coverage at every gender value, still
-  subject to the same age ramp and senescence; it cannot coexist with legacy
-  `density` for a group. `follicleDensity` independently changes physical
+  default for age (0 shaves a region, 2 doubles it, clamped to full coverage),
+  so saved recipes still read; it plateaus on a dense default, which is why the
+  creator writes `coverage` instead. `coverage` is the explicit choice: an
+  adult gets exactly that value, with no age ramp or senescence (those shape
+  the unset default only); before 18 it comes in over the group's puberty
+  onset, complete at 18. It cannot coexist with legacy `density` for a group. `follicleDensity` independently changes physical
   follicles per cm² and therefore strand spacing, never the covered fraction.
   `beard` is a style. Absent fields are not filled in by `createRecipe`, so a
   recipe that never set body hair serialises exactly as before.

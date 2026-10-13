@@ -1149,7 +1149,6 @@ export function Humanoid({
   const beardLook = useMemo(() => {
     const input = {
       age: recipe.macros.age,
-      gender: recipe.macros.gender,
       colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
       ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     };
@@ -1581,8 +1580,7 @@ export function Humanoid({
         withAnatomyDefaults(recipe, ready?.anatomy?.defaults),
         ready?.anatomy?.features ?? [],
       ),
-      // Body hair: its amount from the androgen axis and age, its colour from the hair's.
-      gender: recipe.macros.gender,
+      // Body hair: its amount from the recipe's regional controls and age, its colour from the hair's.
       ...(recipe.hair && { hairColour: recipe.hair.colour }),
       ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     });
