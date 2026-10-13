@@ -6,6 +6,7 @@ import {
   createPresenceRegistry,
   type FigureMeasures,
   type FigurePresence,
+  type ObjectPresence,
 } from "../src/presence/presence.ts";
 
 const v = (x = 0, y = 0, z = 0): [number, number, number] => [x, y, z];
@@ -67,6 +68,30 @@ const HANDOFF: InteractionDefinition = {
     },
   ],
   contacts: [{ name: "hands", a: "giver:hand.R", b: "receiver:hand.R", during: ["act"] }],
+};
+
+const counter = (): ObjectPresence => ({
+  id: "counter",
+  kind: "object",
+  position: v(),
+  rotation: [0, 0, 0, 1],
+  bounds: { min: v(), max: v() },
+  frames: {},
+  tags: ["session.counter"],
+  state: { cycles: 0 },
+});
+
+const LOOPING_HANDOFF: InteractionDefinition = {
+  ...HANDOFF,
+  id: "looping-handoff",
+  roles: [
+    ...HANDOFF.roles.map((role) => ({
+      ...role,
+      track: { act: { clip: "handoff", rate: 2, loop: true } },
+    })),
+    { name: "counter", takes: "object", requires: ["session.counter"] },
+  ],
+  repeatWhile: { object: "counter", state: "cycles", below: 1 },
 };
 
 describe("neutral interaction session", () => {
@@ -136,5 +161,34 @@ describe("neutral interaction session", () => {
     const next = replacement.propose("handoff", { giver: "tall", receiver: "short" });
     presence.tick(1);
     expect(next.phase).toBe("act");
+  });
+
+  it("reports scaled clip seconds across a looping pass", () => {
+    const presence = createPresenceRegistry();
+    const runtime = createInteractions(presence, { seed: 4, clipLength: () => 2 });
+    runtime.define([LOOPING_HANDOFF]);
+    presence.set(figure("tall", -1, tall));
+    presence.set(figure("short", 1, short));
+    presence.setObject(counter());
+    const session = runtime.propose("looping-handoff", {
+      giver: "tall",
+      receiver: "short",
+      counter: "counter",
+    });
+
+    presence.tick(0);
+    presence.tick(1.25);
+    expect(session.phase).toBe("act");
+    expect(session.trackTime("giver")).toBeCloseTo(0.5);
+  });
+
+  it("cancels when a participant id is removed and replaced", () => {
+    const { presence, runtime, session } = activeSession();
+    presence.remove("tall");
+    presence.set(figure("tall", -1, tall));
+
+    presence.tick(1);
+    expect(session.phase).toBe("ended");
+    expect(runtime.running()).toEqual([]);
   });
 });

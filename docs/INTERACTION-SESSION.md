@@ -31,10 +31,12 @@ a hand-to-hand target. `gripMeeting(a, b, out)` places that target using each
 figure's measured reach, hip height and shoulder height; `armStretch` lets a
 consumer assess the resulting reach fraction.
 
-`session.trackTime(role)` returns the normalized current time for that role's
-active clip. A renderer or animation system can use the target and track time
-to drive its own neutral motion layer. The runtime deliberately has no
-dependency on React, DOM, WebGL, a physics engine or a specific rig.
+`session.trackTime(role)` returns elapsed seconds for that role's active
+clip, not a normalized fraction. It scales registry time by the track rate,
+wraps looping tracks at their clip length and holds a non-looping track at its
+end. A renderer or animation system can use the target and track time to drive
+its own neutral motion layer. The runtime deliberately has no dependency on
+React, DOM, WebGL, a physics engine or a specific rig.
 
 ## Presence measurements
 

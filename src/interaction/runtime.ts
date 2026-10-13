@@ -10,6 +10,7 @@
 import type { AffordanceChange } from "../affordance/state.ts";
 import type {
   FigureMeasures,
+  FigurePresence,
   ObjectPresence,
   PresenceRegistry,
   Vec3,
@@ -209,6 +210,8 @@ interface Running extends Interaction {
   /** The `between` reference as it was when approach began. */
   pin: Pin | null;
   contactInfo: readonly ContactInfo[];
+  /** The exact published figures and objects bound when the session was proposed. */
+  participants: Readonly<Record<RoleName, FigurePresence | ObjectPresence>>;
   /** A role's measures, for resolving the definition's lengths; made once per interaction. */
   measuresOf: (role: RoleName) => FigureMeasures | undefined;
 }
@@ -247,9 +250,7 @@ export function createInteractions(
   let started = 0;
   let clock = 0;
 
-  const isFigure = (id: string) => presence.get(id) !== undefined;
   const object = (id: string): ObjectPresence | undefined => presence.getObject(id);
-  const exists = (id: string) => isFigure(id) || object(id) !== undefined;
 
   const emit = (i: Running, e: Omit<InteractionEvent, "interaction" | "participant" | "role">) => {
     for (const [role, participant] of Object.entries(i.roles))
@@ -431,6 +432,14 @@ export function createInteractions(
 
   const roleSpec = (i: Running, role: RoleName) => i.definition.roles.find((r) => r.name === role);
 
+  const sameParticipants = (i: Running) =>
+    i.definition.roles.every((r) => {
+      const id = i.roles[r.name] as string;
+      return r.takes === "figure"
+        ? presence.get(id) === i.participants[r.name]
+        : object(id) === i.participants[r.name];
+    });
+
   const contactTarget = (i: Running, contact: string | number, role: RoleName, out: Vec3) => {
     let c: ContactInfo | undefined;
     if (typeof contact === "number") c = i.contactInfo[contact];
@@ -473,7 +482,7 @@ export function createInteractions(
 
   const step = (i: Running, dt: number) => {
     if (i.phase === "ended") return;
-    for (const id of Object.values(i.roles)) if (!exists(id)) return end(i, "left");
+    if (!sameParticipants(i)) return end(i, "left");
     const refusal = ageRefusal(i.definition, i.audience, i.roles as Record<string, string>);
     if (refusal) return end(i, "age-policy");
     if (i.phase === "proposed") {
@@ -570,19 +579,25 @@ export function createInteractions(
       const d = definitions.get(definition);
       if (!d) throw new InteractionDefinitionError(`no definition ${definition}`);
       const { def, audience } = d;
+      const participants: Record<RoleName, FigurePresence | ObjectPresence> = {};
       for (const r of def.roles) {
         const id = roles[r.name];
         if (!id) throw new InteractionDefinitionError(`${def.id}: role ${r.name} is unbound`);
-        if (r.takes === "figure" && !isFigure(id))
-          throw new InteractionDefinitionError(
-            `${def.id}: role ${r.name} takes a figure; ${id} is not one`,
-          );
+        if (r.takes === "figure") {
+          const figure = presence.get(id);
+          if (!figure)
+            throw new InteractionDefinitionError(
+              `${def.id}: role ${r.name} takes a figure; ${id} is not one`,
+            );
+          participants[r.name] = figure;
+        }
         if (r.takes === "object") {
           const o = object(id);
           if (!o)
             throw new InteractionDefinitionError(
               `${def.id}: role ${r.name} takes an object; ${id} is not one`,
             );
+          participants[r.name] = o;
           for (const t of r.requires ?? [])
             if (!o.tags.some((ot) => tagMatches(t, ot)))
               throw new InteractionDefinitionError(
@@ -621,6 +636,7 @@ export function createInteractions(
             handToHand: a !== b && isHand(a, an) && isHand(b, bn),
           };
         }),
+        participants,
         measuresOf: (role) => presence.get(i.roles[role] as string)?.measures,
         slot: (role, out = { position: [0, 0, 0], facing: [0, 0, 1] }) => {
           const r = roleSpec(i, role);
