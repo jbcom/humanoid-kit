@@ -1,8 +1,8 @@
 # humanoid-kit-animations
 
 Animation clips for [humanoid-kit](https://github.com/jbcom/humanoid-kit):
-90 clips (walks, a jog and a sprint, idles, swims, crouches, combat, sitting, farm
-work) on MakeHuman's default skeleton, played on any figure the kit makes, whatever
+98 clips (walks, a jog and a sprint, idles, swims, crouches, combat, sitting, farm
+work, 1860s infantry drill and prayer) on MakeHuman's default skeleton, played on any figure the kit makes, whatever
 its size, shape or age.
 
 It is a separate install so that an application whose figures never move does
@@ -26,6 +26,9 @@ foot that is planted stays planted on a child as on an adult.
 
 CC0 1.0 ([LICENSE](LICENSE)). Six clips are punkduck's, from the MakeHuman
 community's `makehuman2_additional_assets_cc0.zip`, and 84 are Quaternius's
-Universal Animation Libraries 1 and 2, retargeted onto MakeHuman's skeleton; see
+Universal Animation Libraries 1 and 2, retargeted onto MakeHuman's skeleton. Eight
+(the march, the charge, the colour-bearer, loading, firing, the officer's sword,
+and kneeling and standing prayer) are this package's own, authored as key poses
+in the repository's `scripts/clips/`; see
 [data/PROVENANCE.md](data/PROVENANCE.md) for the archive's hash and the licence
 evidence per clip. This package is not affiliated with the MakeHuman project.

@@ -21,7 +21,7 @@ female appearance fault or the combined-form overlap.
 The red test was created and run from this worktree with:
 
 ```sh
-heavy-slot --remote-test --render-host 192.168.1.201 \
+heavy-slot --remote-test --render-host <render-host> \
   pnpm exec vitest run tests/labioscrotalRootContinuity.test.ts
 ```
 

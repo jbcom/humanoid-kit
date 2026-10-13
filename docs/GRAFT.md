@@ -71,12 +71,21 @@ The removed faces' boundary must then be one simple closed edge loop: every vert
 has exactly two boundary edges. Anything else is a `GraftError`, so the topology is
 deterministic and cannot change with a recipe.
 
-On hm08 at rest, the loops have these control edge counts:
+A plane picks whole faces, so its boundary steps wherever the plane crosses the mesh's
+rows, and a band built from a stepped loop pinches at every step. The cut therefore
+snaps to an edge loop of the quad mesh where one runs round the same place
+(`snapToEdgeLoop`). It walks the closed edge loops through the stepped boundary's edges,
+going straight through every valence-4 vertex. It takes the loop that keeps nearest the
+plane, judged by its farthest vertex, provided that loop bounds the seed's side alone and
+removes much the same faces. Otherwise the stepped cut stands.
+
+On hm08 at rest, the snapped loops have these control edge counts (the stepped ones had 46,
+24 and 30):
 
 | Site    | Edges |
 | ------- | ----- |
-| neck    | 46    |
-| wrist   | 24    |
+| neck    | 42    |
+| wrist   | 20    |
 | ankle   | 30    |
 
 `tests/graft.test.ts` pins these counts.
@@ -90,9 +99,18 @@ The cut also reports what it removes:
 - **The attachments inside the removed region** (`GraftTopology.droppedAttachments`): an
   attachment is dropped when every reference vertex it is bound to is a vertex of a
   removed face. For a head, that is the eyes, teeth, tongue, brows and lashes.
-- **The bones whose heads lie inside the region** (`GraftTopology.removedBones`). The
-  part's vertices are bound to the root bone alone, so a face unit or a jaw pose never
+- **The bones whose heads lie inside the region** (`GraftTopology.removedBones`). Their
+  weight goes to the root bone (see "Rig binding"), so a face unit or a jaw pose never
   moves the part.
+
+## Donor parts
+
+`HumanoidModel.cutAway(at, evaluation)` returns what a cut takes off an evaluated figure,
+as a `GraftPart` that another figure can graft. That is one figure's head on another's
+body. The part holds the removed faces' render triangles, compacted. Hidden triangles are
+included too, so the part has no holes where the figure's attachments covered it. It is
+in the evaluation's model space, with its normals, its UVs and the site's forward
+direction.
 
 ## The part's seam
 
@@ -123,24 +141,37 @@ evaluation of the body (`Graft.evaluate`).
 3. **Fit a similarity.** The part's samples are fitted to the body's by a similarity
    Procrustes transform (Umeyama 1991): a uniform scale, a rotation and a translation. The
    samples correspond in order, so the rotation about the loop's axis is fixed by the two
-   forward directions, even for a round loop. An optional extra scale (`scale`: a number,
-   or one per part axis) multiplies the part about its rim's centre before the fit. The
-   fitted scale is then the ratio of the two loops' sizes, which is what ties a head's size
-   to the neck it sits on.
-4. **Leave a gap.** The part is placed `gap` (0.3 by default, in units of the body loop's
-   RMS radius) beyond the body's loop, along the loop's axis. The band fills that gap.
-5. **Blend the rim.** The part stays rigid except for a falloff band (`band`: 0.5 of the
+   forward directions, even for a round loop. Each ring's continuation is fitted too
+   (`continuationFit`). The points 0.3 RMS radii on from the rim into the part go to the
+   points as far on from the loop out of the body, along each surface. A ring alone fixes
+   the part's tilt only to the ring's own plane. An optional extra scale (`scale`: a
+   number, or one per part axis) multiplies the part about its rim's centre before the fit.
+   The fitted scale is then the ratio of the two loops' sizes, which is what ties a head's
+   size to the neck it sits on.
+4. **Leave a gap.** Each body loop sample is carried `gap` (0.3 by default, in units of the
+   body loop's RMS radius) on along the body surface's continuation, so the target ring
+   continues the body. The part is lifted by the mean of those offsets. The band fills the
+   gap.
+5. **Blend the rim.** The part stays rigid except for a falloff band (`band`: 1.5 of the
    rim's RMS radius by default, measured along the part's edges from the rim, at rest).
-   Inside that band each vertex moves by the residual between its rim point and the target
-   (the faired body loop, shifted by the gap), weighted by a smoothstep from 1 at the rim to
-   0 at the band's edge. The rim therefore lies exactly on the target loop.
-6. **Build the bridge.** The band has `rings` rings (4 by default):
+   Each vertex `d` from the rim inside that band moves by two terms:
+   - **The residual** between its rim point and the target ring, weighted by a smoothstep
+     from 1 at the rim to 0 at the band's edge. The rim therefore lies exactly on the
+     target.
+   - **The lean**: the difference between the body's onward direction and the placed
+     part's at that point of the rim, times `scale · d · (1 − d/band)²`. This turns the
+     part's surface at its rim to leave along the body's continuation. It fades out within
+     the band. A donor neck that leans otherwise than the body's (a heavy man's head on a
+     slim woman) therefore bends into it instead of meeting it at a knee. Without the lean
+     the test's donor shows a 20° crease at the rim; with it the crease stays under 8°.
+6. **Build the bridge.** The band has `rings` rings (8 by default):
    - **Ring 0** is the body's own loop vertices.
    - **The last ring** is the part's rim vertices.
-   - **The interior rings** are cubic Hermite curves from the faired body loop to the rim.
-     At the body end, each curve leaves along the body surface's continuation (the body
-     normal crossed with the loop's tangent). At the part end, it arrives along the part
-     surface's continuation. Both tangents are scaled to the gap.
+   - **The interior rings** are cubic Hermite curves from the body loop to the rim. Each
+     curve leaves along the body surface's continuation (the body normal crossed with the
+     loop's tangent). It arrives along the same direction, which the lean has made the
+     part's too. Both tangents are scaled to the distance from the loop point to its
+     rim point.
    - **The two zippers** (body loop to ring 1, last interior ring to the rim) are
      triangulated by merging the loops' rest arc-length parameters, so the band's triangles
      are fixed at build time.
@@ -154,14 +185,21 @@ evaluation of the body (`Graft.evaluate`).
 ## Rig binding
 
 - **The body's vertices** keep their own skin weights.
-- **The part's vertices** are bound to the site's root bone alone.
+- **The part's vertices** inherit the skin of the body they replace. The part is placed on
+  the body at rest by the rest loop's fit. Each part vertex then takes the weights of the
+  four removed render vertices nearest it, by inverse squared distance, among those facing
+  its way. A jaw facing down does not take the throat beneath it. The removed bones'
+  weight goes to the root bone. Three rounds of neighbour averaging then even the result
+  over the part's surface, with the rim held. A head's crown is therefore the head bone's
+  alone, and its lower neck turns with the neck bones as the body's did.
 - **The band's vertices**, at a fraction `t` of the way from the body to the part, take the
-  body loop's weights at that point of the loop. Those are blended into the root bone by a
-  smoothstep of `t`, keeping the four largest weights, renormalised. This is the
-  reservoirs' surface-distance blend, carried across the band.
+  body loop's weights at that point of the loop. Those are blended into the inherited skin
+  at the rim by a smoothstep of `t`, keeping the four largest weights, renormalised. This
+  is the reservoirs' surface-distance blend, carried across the band.
 
 The merged surface therefore skins with the rig's own skinning (`skinPositions`) like any
-body vertex, and the part follows the head in every pose.
+body vertex. A turned head twists the grafted neck the way it twists the figure's own,
+instead of shearing at the band.
 
 ## API
 
@@ -176,6 +214,9 @@ const graft = model.graft({
 });
 const ev = model.evaluate(recipe);
 const surface = graft.evaluate(ev);
+// Another figure's head as the part:
+const donor = model.cutAway("neck", model.evaluate(donorRecipe));
+const swapped = model.graft({ at: "neck", part: donor });
 // graft.topology: index, groups ("body", "bridge", then the part's own), vertexCount,
 // skinIndex, skinWeight, loop, rim, removedFaces, droppedAttachments, removedBones,
 // rootBone.
@@ -216,7 +257,42 @@ Across the height, weight and age extremes, the test proves numerically:
 - **The turn gate.** No band ring turns by more than 40°.
 - **Scale.** The fitted scale follows the neck loop's radius.
 
-A posed variant shows that the part moves rigidly with the head bone.
+Further tests cover the rest of the design:
 
-`scripts/research/graft/` renders before and after captures (lit, zebra, normals, wire)
-with a CPU rasteriser for review.
+- **The pinned cut loops.** The edge counts in the table above.
+- **The lean.** A heavy 60-year-old man's head, cut from his figure, is grafted onto a
+  slim 25-year-old woman. The crease across the rim stays under 8°.
+- **The inherited skin.** The crown is weighted to the head bone, and the rim carries the
+  neck's weight.
+
+Each of these tests was seen to fail with its behaviour removed: 20° at the rim, a rigid
+head binding, and the stepped counts 46, 24 and 30.
+
+### Seeing a graft
+
+The playground's graft scene (`playground/src/GraftQa.tsx`) draws the figure the query's
+recipe names, with the head of a donor figure grafted at the neck:
+
+- `?scene=graft`: the grafted figure, with the donor recipe set by `&donor=<recipe JSON>`.
+- `&graft=none`: the ungrafted figure, for comparison.
+- `&frame=seam&view=x,y,z&span=m`: frames the seam from a direction, `span` metres across.
+- `&mat=normal`: draws normals as colour.
+- `&wire`: draws the triangles over the surface.
+
+The `sheets` Playwright project renders it for each recipe in a job. The issue 11 review
+used seven recipes:
+
+- tall and slim, light skin;
+- short and heavy;
+- a child;
+- muscular;
+- old, with dark skin;
+- arms overhead with the head turned 45° and tilted;
+- relaxed, with the head turned the other way and tilted down.
+
+They were drawn whole and at the seam (front, back and side, lit and in wire). The join
+reads as one surface in all of them. In the front view of the overhead pose, the shoulders
+tear and the upper arms smear. That is the base figure's overhead pose, the same without
+the graft (#67), not the seam. Across the same grid at rest, the largest dihedral
+angle on any one figure's band edges is 2–7°, and on its rim edges 4–9°. The ungrafted
+figure's own loop edges reach 4–9°.

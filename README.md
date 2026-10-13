@@ -65,7 +65,7 @@ This repository is a pnpm workspace that publishes four packages.
 | `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 | Adult-only targets and 5 modifiers with their sliders. A separate install; refused unless built against the exact body pack |
 | `humanoid-kit-hair` | `packs/hair` | CC0 1.0 | Ten scalp hair styles (short, bob, long, afro, ponytail, braid) as alpha cards bound to the base body, any colour from black to platinum. A separate install; a style's files load when a figure first wears it |
 | `humanoid-kit-eyes` | `packs/eyes` | CC0 1.0 | 32 eye materials (human irises, cats' slit pupils, toon and creature eyes) that add iris pattern and sclera detail to the eye shader's own colours. A separate install; a material's texture loads when a figure first wears it |
-| `humanoid-kit-animations` | `packs/animations` | CC0 1.0 | 90 clips (walks, a jog, idles, swims, crouches, combat, sitting) on MakeHuman's default skeleton, played on any figure whatever its size, shape or age, its planted feet held in place. A separate install; a clip's file loads when a figure first plays it |
+| `humanoid-kit-animations` | `packs/animations` | CC0 1.0 | 98 clips (walks, a jog, idles, swims, crouches, combat, sitting, 1860s drill and prayer) on MakeHuman's default skeleton, played on any figure whatever its size, shape or age, its planted feet held in place. A separate install; a clip's file loads when a figure first plays it |
 | `humanoid-kit-clothing` | `packs/clothing` | CC0 1.0 | 19 MakeHuman garments (suits, shoes, a hat) bound to the base mesh, with the skin each hides. A separate install; refused unless built against the exact body pack |
 
 The body pack and the adult anatomy pack together account for 280 shape
@@ -138,7 +138,9 @@ const { positions, normals, groundOffset } = await client.evaluate(recipe);
 ```
 
 To run the same evaluation on the calling thread, or in Node, use
-`loadHumanoidAssets` and `HumanoidModel`:
+`loadHumanoidAssets` and `HumanoidModel`. In Node the packs' `file:` URLs are read
+from disk; pass `fetch` to `loadHumanoidAssets` (or `loadAnimationLibrary`) to supply
+your own:
 
 ```ts
 import { createRecipe, HumanoidModel, loadHumanoidAssets } from "humanoid-kit";

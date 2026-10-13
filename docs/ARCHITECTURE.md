@@ -3289,9 +3289,10 @@ and `onGroundOffset` is not called. `time` puts the figure at a time in the clip
 at a time, a walking figure is carried forward on its feet, and the planted ball's
 world position holds.
 
-**Clearance.** (The 90 clips: 72 of them, every locomotion and standing idle among them,
-stay within the tolerance; the 18 where a limb rests on or crosses the body, sitting,
-kneeling, a roll, a landing, a sword's swing, overlap it by up to 12.7 cm of capsule on
+**Clearance.** (The 98 clips: 74 of them, every locomotion and standing idle among them,
+stay within the tolerance; the 24 where a limb rests on or crosses the body, sitting,
+kneeling, a roll, a landing, a sword's swing, a musket or flagstaff held across the
+chest, joined palms, overlap it by up to 12.7 cm of capsule on
 some body, which is held as a bound per clip in the test, not a fix.) `src/animation/clearance.ts` checks a pose for one part of the body
 through another: the body as 14 capsules (head, torso, and each side's upper arm,
 forearm, hand, thigh, shin and foot), each between two joints with a radius measured

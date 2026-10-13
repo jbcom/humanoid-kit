@@ -65,6 +65,54 @@ function openEdges(index: ArrayLike<number>, weld: ArrayLike<number>): number {
   return open;
 }
 
+/** The largest angle, in degrees, between the two faces on any edge of the closed ring `ring` (welded ids). */
+function ringCrease(
+  index: ArrayLike<number>,
+  weld: ArrayLike<number>,
+  positions: ArrayLike<number>,
+  ring: ArrayLike<number>,
+): number {
+  const on = new Set<string>();
+  for (let i = 0; i < ring.length; i++) {
+    const a = weld[ring[i] as number] as number;
+    const b = weld[ring[(i + 1) % ring.length] as number] as number;
+    on.add(a < b ? `${a}:${b}` : `${b}:${a}`);
+  }
+  const p = (v: number) => [0, 1, 2].map((k) => positions[v * 3 + k] as number);
+  const faces = new Map<string, number[][]>();
+  for (let t = 0; t < index.length; t += 3) {
+    const [a, b, c] = [0, 1, 2].map((k) => p(index[t + k] as number)) as [
+      number[],
+      number[],
+      number[],
+    ];
+    const u = [0, 1, 2].map((k) => (b[k] as number) - (a[k] as number));
+    const w = [0, 1, 2].map((k) => (c[k] as number) - (a[k] as number));
+    const n = [
+      (u[1] as number) * (w[2] as number) - (u[2] as number) * (w[1] as number),
+      (u[2] as number) * (w[0] as number) - (u[0] as number) * (w[2] as number),
+      (u[0] as number) * (w[1] as number) - (u[1] as number) * (w[0] as number),
+    ];
+    const l = Math.hypot(...n) || 1;
+    for (let k = 0; k < 3; k++) {
+      const x = weld[index[t + k] as number] as number;
+      const y = weld[index[t + ((k + 1) % 3)] as number] as number;
+      const key = x < y ? `${x}:${y}` : `${y}:${x}`;
+      if (on.has(key)) (faces.get(key) ?? faces.set(key, []).get(key))?.push(n.map((q) => q / l));
+    }
+  }
+  let worst = 0;
+  for (const [f, g] of faces.values()) {
+    if (!f || !g) continue;
+    const d =
+      (f[0] as number) * (g[0] as number) +
+      (f[1] as number) * (g[1] as number) +
+      (f[2] as number) * (g[2] as number);
+    worst = Math.max(worst, (Math.acos(Math.min(1, Math.max(-1, d))) * 180) / Math.PI);
+  }
+  return worst;
+}
+
 describe("the graft's loop utilities", () => {
   it("welds coincident vertices and finds a part's one open loop, in order", () => {
     const part = openSphere(1);
@@ -125,6 +173,26 @@ describe("a graft on a figure", { timeout: 120_000 }, () => {
     expect(Object.keys(CUT_SITES).sort()).toEqual(
       ["ankle.L", "ankle.R", "neck", "wrist.L", "wrist.R"].sort(),
     );
+  });
+
+  it("cuts each site along one edge loop of the base mesh, with the pinned edge counts", () => {
+    const fv = model.assets.faceVerts;
+    const key = (a: number, b: number) => (a < b ? `${a}:${b}` : `${b}:${a}`);
+    const edges: Record<string, number> = {};
+    for (const at of Object.keys(CUT_SITES) as (keyof typeof CUT_SITES)[]) {
+      const removed = new Set(Array.from(model.graft({ at, part: head }).topology().removedFaces));
+      const kept = new Set<string>();
+      for (let f = 0; f < fv.length / 4; f++)
+        if (!removed.has(f))
+          for (let k = 0; k < 4; k++)
+            kept.add(key(fv[f * 4 + k] as number, fv[f * 4 + ((k + 1) % 4)] as number));
+      let n = 0;
+      for (const f of removed)
+        for (let k = 0; k < 4; k++)
+          if (kept.has(key(fv[f * 4 + k] as number, fv[f * 4 + ((k + 1) % 4)] as number))) n++;
+      edges[at] = n;
+    }
+    expect(edges).toEqual({ neck: 42, "wrist.L": 20, "wrist.R": 20, "ankle.L": 30, "ankle.R": 30 });
   });
 
   it("removes the head above the neck loop, binds the part to the head bone", () => {
@@ -197,12 +265,37 @@ describe("a graft on a figure", { timeout: 120_000 }, () => {
     );
   });
 
-  it("weights the part fully to its root bone", () => {
-    const head = model.assets.manifest.skeleton.bones.findIndex((b) => b.name === "head");
-    for (let v = topology.partStart; v < topology.vertexCount; v++) {
-      expect(topology.skinIndex[v * 4]).toBe(head);
-      expect(topology.skinWeight[v * 4]).toBeCloseTo(1, 6);
-    }
+  it("bends a donor's neck into the body's: no knee at the rim", () => {
+    // A heavy older man's head on a slim young woman: his neck leans otherwise than hers.
+    const donor = model.cutAway(
+      "neck",
+      model.evaluate(createRecipe({ macros: { age: 60, gender: 1, weight: 0.4, muscle: 0.6 } })),
+    );
+    const onto = model.graft({ at: "neck", part: donor });
+    const slim = model.evaluate(
+      createRecipe({ macros: { age: 25, gender: 0, height: 1, weight: 0 } }),
+    );
+    const s = onto.evaluate(slim);
+    const t = onto.topology(s.surface);
+    expect(ringCrease(t.index, t.weld, s.positions, t.rim)).toBeLessThan(8);
+  });
+
+  it("skins the part as the head it replaces: its top to the head, its rim to the neck's", () => {
+    const bones = model.assets.manifest.skeleton.bones.map((b) => b.name);
+    const head = bones.indexOf("head");
+    const weightOn = (v: number, bone: number) => {
+      let w = 0;
+      for (let k = 0; k < 4; k++)
+        if (topology.skinIndex[v * 4 + k] === bone) w += topology.skinWeight[v * 4 + k] as number;
+      return w;
+    };
+    // The sphere's pole, its first vertex, is the crown: the head's alone.
+    expect(weightOn(topology.partStart, head)).toBeGreaterThan(0.95);
+    // At the rim the part takes the skin of the body it replaced there, so it
+    // carries some neck weight and is not bound rigidly to the head.
+    let rimHead = 0;
+    for (const v of topology.rim) rimHead += weightOn(v, head);
+    expect(rimHead / topology.rim.length).toBeLessThan(0.95);
     for (let v = 0; v < topology.vertexCount; v++) {
       let w = 0;
       for (let k = 0; k < 4; k++) w += topology.skinWeight[v * 4 + k] as number;
