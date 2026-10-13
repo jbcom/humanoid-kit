@@ -7,6 +7,7 @@
  */
 import {
   AssetFormatError,
+  type FetchLike,
   fetchOk,
   type PackLocation,
   packResolver,
@@ -100,9 +101,12 @@ export function createEyeLibrary(manifest: EyeManifest, url: (file: string) => s
  *     import { eyesPack } from "humanoid-kit-eyes";
  *     const eyes = await loadEyeLibrary(eyesPack);
  */
-export async function loadEyeLibrary(pack: PackLocation): Promise<EyeLibrary> {
+export async function loadEyeLibrary(
+  pack: PackLocation,
+  options: { fetch?: FetchLike } = {},
+): Promise<EyeLibrary> {
   const where = packResolver(pack);
-  const manifest = (await (await fetchOk(where.manifest)).json()) as EyeManifest;
+  const manifest = (await (await fetchOk(where.manifest, options.fetch)).json()) as EyeManifest;
   if (manifest.version !== 1)
     throw new AssetFormatError(`eye pack version ${String(manifest.version)} is not 1`);
   return createEyeLibrary(manifest, (file) => where.file(file));
