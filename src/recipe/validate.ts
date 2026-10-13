@@ -104,6 +104,7 @@ export function recipeProblems(recipe: unknown): string[] {
       p.push("eyes.material must be a non-empty string");
   }
   if ("hair" in r && r.hair !== undefined) hairProblems(r.hair, p);
+  if ("facialHair" in r && r.facialHair !== undefined) facialHairProblems(r.facialHair, p);
   if ("bodyHair" in r && r.bodyHair !== undefined) bodyHairProblems(r.bodyHair, p);
   if (r.bodyArt !== undefined) bodyArtProblems(r.bodyArt, p);
   if (r.outfit !== undefined) {
@@ -119,6 +120,20 @@ export function recipeProblems(recipe: unknown): string[] {
   }
   if (r.outfitLook !== undefined) outfitLookProblems(r.outfitLook, p);
   return p;
+}
+
+function facialHairProblems(facialHair: unknown, p: string[]): void {
+  if (!Array.isArray(facialHair) || facialHair.length === 0) {
+    p.push("facialHair must be a non-empty array of style ids");
+    return;
+  }
+  const seen = new Set<string>();
+  facialHair.forEach((id, index) => {
+    if (typeof id !== "string" || id === "")
+      p.push(`facialHair[${index}] must be a non-empty style id`);
+    else if (seen.has(id)) p.push(`facialHair names ${id} twice`);
+    else seen.add(id);
+  });
 }
 
 const LOOK_FIELDS = new Set(["tint", "roughness", "wear"]);

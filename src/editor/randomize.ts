@@ -44,6 +44,11 @@ export interface RandomizeOptions {
   browStyles?: readonly string[];
   lashStyles?: readonly string[];
   /**
+   * Authored beard and moustache assets the loaded hair pack makes available.
+   * One is drawn last, or none; omitted, the base recipe's selection is kept.
+   */
+  facialHairStyles?: readonly string[];
+  /**
    * Draw a beard style (`randomBeard`), last of all so a seed's figure is the
    * same with or without it; omitted, the base recipe's body hair is kept. The
    * body hair model grows it only where the face carries terminal hair, so a
@@ -191,12 +196,23 @@ export function randomRecipe(
   const bodyHair = options.beards
     ? { ...recipe.bodyHair, beard: randomBeard(rand()) }
     : recipe.bodyHair;
+  const facialHair = options.facialHairStyles?.length
+    ? randomFacialHair(rand, options.facialHairStyles)
+    : recipe.facialHair;
+  const { facialHair: _previousFacialHair, ...withoutFacialHair } = recipe;
   return {
-    ...recipe,
+    ...withoutFacialHair,
     modifiers: values,
     ...(worn && { hair: worn }),
     ...(bodyHair && { bodyHair }),
+    ...(facialHair?.length && { facialHair }),
   };
+}
+
+/** An authored facial asset on offer, or none one time in two, from the next draw. */
+function randomFacialHair(rand: () => number, styles: readonly string[]): readonly string[] {
+  if (rand() < 0.5) return [];
+  return [styles[Math.floor(rand() * styles.length)] as string];
 }
 
 /** A hair style on offer (or none, one time in ten) in a natural colour, from `rand`'s next draws. */

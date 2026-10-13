@@ -27,9 +27,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
 import { Humanoid, HumanoidProvider } from "../../src/react/index.ts";
 import { createRecipe, type Recipe } from "../../src/recipe/recipe.ts";
-import { COAT_MASK_ATTRIBUTES, CoatMaterial } from "../../src/render/coat.ts";
-import { HAIR_RANK_ATTRIBUTE } from "../../src/render/hairMaterial.ts";
-import { FULL_BEARD_CARD_LENGTH, ROOT_SOLID } from "../../src/surface/bodyHairCards.ts";
+import { CoatMaterial } from "../../src/render/coat.ts";
+import { HairMaterial } from "../../src/render/hairMaterial.ts";
 import { BEARD_LENGTHS } from "../../src/surface/regions/bodyHairCoat.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
@@ -221,20 +220,13 @@ function fullBody(): PerspectiveCamera {
   return camera;
 }
 
-/** A camera framing the head down to the chest from the front, past the beards sheet's view. */
-function face(): PerspectiveCamera {
-  const camera = new PerspectiveCamera(30, 1, 0.05, 5);
-  camera.position.set(0, 0.58, 1.0);
-  camera.lookAt(0, 0.58, 0);
-  camera.updateMatrixWorld();
-  return camera;
-}
-
-/** A grown beard's cards: the hair mesh whose cards carry ranks. */
-const cardsMesh = () =>
+/** An authored facial-hair mesh is rendered with the same material as scalp hair. */
+const facialMesh = () =>
   find(
     (o): o is SkinnedMesh =>
-      o instanceof SkinnedMesh && o.geometry.getAttribute(HAIR_RANK_ATTRIBUTE) !== undefined,
+      o instanceof SkinnedMesh &&
+      o.material instanceof HairMaterial &&
+      o.geometry.getAttribute("position")?.count === 6557,
   );
 
 /** The body surface the coat shares its vertices with. */
@@ -277,49 +269,18 @@ describe("the coat on a figure", () => {
   }
 
   it(
-    "draws a full beard's cards on the beard, not on the neck or chest",
+    "draws an authored beard through HairMaterial and removes it when the selected asset is removed",
     async () => {
-      // As the beards sheet does: one page through every style, the cards' last.
-      const sheet = (beard: "none" | "stubble" | "moustache" | "goatee" | "full") =>
-        createRecipe({
-          macros: { age: 35, gender: 1 },
-          skin: { melanin: 0.35 },
-          hair: { style: null, colour: { eumelanin: 0.5, pheomelanin: 0.15, grey: 0 } },
-          bodyHair: { beard },
-        });
-      const screen = await render(<Figure recipe={sheet("none")} />);
-      for (const beard of ["stubble", "moustache", "goatee"] as const) {
-        await screen.rerender(<Figure recipe={sheet(beard)} />);
-        await expect.poll(() => coatMesh()?.visible === true, LOAD).toBe(true);
-      }
-      await screen.rerender(<Figure recipe={sheet("full")} />);
-      await expect
-        .poll(() => coatMesh()?.visible === true && cardsMesh() !== null, LOAD)
-        .toBe(true);
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-      const coat = coatMesh() as SkinnedMesh;
-      const cards = cardsMesh() as SkinnedMesh;
-      const body = bodyUnder(coat) as SkinnedMesh;
-      scene?.updateMatrixWorld(true);
-      const fragments = fragmentsOf(cards, face());
-      expect(fragments.length).toBeGreaterThan(200);
-      // The solid beard: triangles whose beard parts (the coat's first three
-      // regions) mask at least where cards may root, on average.
-      const masks = coat.geometry.getAttribute(COAT_MASK_ATTRIBUTES[0]);
-      const beardAt = (v: number) =>
-        (masks.getX(v) + masks.getY(v) + masks.getZ(v)) / (masks.normalized ? 1 : 255);
-      const solid = (a: number, b: number, c: number) =>
-        (beardAt(a) + beardAt(b) + beardAt(c)) / 3 >= ROOT_SOLID.lo;
-      const off = standOff(coat, body, fragments, solid);
-      // A card lies along the skin from its root, so no part of it is further
-      // from the solid beard than its length.
-      const reach = FULL_BEARD_CARD_LENGTH + SLACK;
-      const far = off.filter((f) => f.distance >= reach);
-      const where = far.slice(0, 3).map((f) => f.at.toArray().map((x) => x.toFixed(3)));
-      expect(
-        off[0]?.distance,
-        `${far.length} of ${fragments.length} card fragments off the beard, the worst at ${JSON.stringify(where)}`,
-      ).toBeLessThan(reach);
+      const bearded = createRecipe({
+        hair: { style: null },
+        facialHair: ["beard-viking"],
+      });
+      const screen = await render(<Figure recipe={bearded} />);
+      await expect.poll(() => facialMesh()?.visible === true, LOAD).toBe(true);
+      const beard = facialMesh() as SkinnedMesh;
+      expect(beard.geometry.getAttribute("position").count).toBe(6557);
+      await screen.rerender(<Figure recipe={createRecipe({ hair: { style: null } })} />);
+      await expect.poll(() => facialMesh()).toBeNull();
     },
     LOAD.timeout,
   );
