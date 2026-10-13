@@ -3,6 +3,7 @@ import {
   type ClothingManifest,
   groupFaces,
   parseHumanoidAssets,
+  SKIN_INFLUENCES,
 } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { OutfitError } from "../src/model/outfit.ts";
@@ -128,7 +129,7 @@ describe("a figure wearing garments", { timeout: 120_000 }, () => {
       expect(t.id).toBe(SUIT);
       expect(t.kind).toBe("clothes");
       expect(t.vertexCount).toBeGreaterThanOrEqual(g?.vertexCount ?? Infinity);
-      expect(t.skinIndex.length).toBe(t.vertexCount * 4);
+      expect(t.skinIndex.length).toBe(t.vertexCount * SKIN_INFLUENCES);
       expect(t.uvs.length).toBe(t.vertexCount * 2);
       expect(model.garmentTopology(SUIT)).toBe(t);
     });

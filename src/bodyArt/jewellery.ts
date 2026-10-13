@@ -34,9 +34,9 @@ export interface PlacedPiercing {
   middle: Vec3;
   /** A barbell's ends, its balls seated on the skin (`barbellEnds`). */
   ends: [Vec3, Vec3];
-  /** The site vertex's four bones and weights. */
-  skinIndex: [number, number, number, number];
-  skinWeight: [number, number, number, number];
+  /** The site vertex's bones and weights, `SKIN_INFLUENCES` of each. */
+  skinIndex: number[];
+  skinWeight: number[];
 }
 
 /**

@@ -3,6 +3,7 @@ import {
   AssetFormatError,
   type ClothingManifest,
   parseHumanoidAssets,
+  SKIN_INFLUENCES,
 } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { placeRigid, rigidFit, rigidSkin } from "../src/model/rigidFit.ts";
@@ -77,13 +78,17 @@ describe("fitting a rigid piece to where its binding put it", () => {
 describe("a rigid piece's skin", () => {
   it("follows the one bone that carries most of the whole piece", () => {
     // Two vertices: the first mostly bone 3, the second split 2 and 3; bone 3 wins overall.
+    const pad = (...values: number[]) => [
+      ...values,
+      ...new Array<number>(SKIN_INFLUENCES - values.length).fill(0),
+    ];
     const skin = {
-      index: Uint8Array.from([3, 2, 0, 0, 2, 3, 0, 0]),
-      weight: Float32Array.from([0.8, 0.2, 0, 0, 0.6, 0.4, 0, 0]),
+      index: Uint8Array.from([...pad(3, 2), ...pad(2, 3)]),
+      weight: Float32Array.from([...pad(0.8, 0.2), ...pad(0.6, 0.4)]),
     };
     expect(rigidSkin(skin)).toEqual({
-      index: Uint8Array.from([3, 0, 0, 0, 3, 0, 0, 0]),
-      weight: Float32Array.from([1, 0, 0, 0, 1, 0, 0, 0]),
+      index: Uint8Array.from([...pad(3), ...pad(3)]),
+      weight: Float32Array.from([...pad(1), ...pad(1)]),
     });
   });
 });

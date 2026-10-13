@@ -67,12 +67,13 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] C6 #59 Proxy meshes, teeth shapes, face and ear targets, community hair, brow and lash evaluation (asset-first program).
 - [ ] C7 #60 Policy-drift cleanups (editor age checks, adult-only id source of truth).
 - [ ] C8 #41 Age-gate edges fail closed and tested (NaN ages, affordance default, pack paths).
-- [ ] C9 #68 hairFields: card BVH faceIndex read as quad order after MeshBVH reorders the index.
+- [x] C9 #68 hairFields: card BVH faceIndex read as quad order after MeshBVH reorders the index.
 - [ ] C10 #88 Garments: hem and knee soiling that varies over the garment, wrinkle detail.
 - [ ] C11 #64 `feat/upscale` KTX2 clothing experiment as its own lane.
 
 - [ ] C12 #95 Land the default skin ageing (age spots, crepe, dryness) parked in the `humanoid-kit-ageing` worktree (owner: the #86 lane; design in docs first, `docs/research/SKIN-AGEING.md` is missing from integration).
 - [ ] C13 #96 Head-hair hairline renders stair-stepped above the forehead (owner: the #68 lane; check the scalp-coverage cause first).
+- [ ] C14 #107 Contact compression bulge: finish `wip/contact-compression-bulge` (volume gate back with no wider slack, hip contact gate green, cost, rim sheets read by root).
 
 ### D. Interaction and animation
 
@@ -95,7 +96,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] E10 #65 heavy-slot remote-run on the third pool host exits 125.
 - [ ] E11 #87 Measure `scheduler.yield` in `yieldWorkerTask` before adopting it.
 - [ ] E12 #93 Lane liveness counts pool leases and issue comments, not only worktree changes; the watchdog prints state changes.
-- [x] E13 #94 contactCompression: narrowed the test; landed on integration at cc89b942 with a full unit run green (2275 passed). `humanoid-kit-fold` can retire under H1.
+- [x] E13 #94 contactCompression: the hip-crease unit was unfinished (misses its volume gate on two knees, breaks the hip contact gate), so its volume gate is held off integration (kept as `wip/contact-compression-bulge`, continuing as C14 and #107) and the test is narrowed; landed on integration at cc89b942 with a full unit run green (2275 passed). `humanoid-kit-fold` can retire under H1.
 - [ ] E14 #106 Full e2e suite: body-hair-lab chest cover expectation, and effective-adult-defaults running in the default project against the preview build.
 
 ### F. Documentation and decisions
@@ -128,6 +129,9 @@ The end state is `main` carrying everything on `integration`, with every visual 
 
 - Only work that moves a visual defect to accepted, fixes a failing gate, or clears the publication path runs in a lane. Polish, reports and tooling without a visual defect behind them wait until the register is clear (stopped 2026-10-13: #88 soiling, #91 report, #92 cadence command, #39 CI timeouts, #74 corner combinations; their issues stay open, unstaffed).
 - At most twelve lanes at once, each with a named issue, branch, acceptance image set and issue comments instead of idle-polling. No watchdog process; root checks issue comments and commit age when a landing or a notification arrives.
+- **Procedural geometry (owner ruling 8, 2026-10-13): internal canals only. Everything else is a CC0 graft bound the MakeHuman way; any other procedural element needs the owner's explicit vetting first.** Police it on every lane and every render: a failing look is a reason to switch to an asset, not to tune a generator. Audit: #109.
+- **Priority order amended (owner, 2026-10-13): anatomy and poses first** (#108 wiring and two-layer hair, #22, #71, #73, #75 to #83), then the rest of Tier 1.
+- **Priority tiers (owner, 2026-10-13: work Codex can take back when root runs out of tokens is by nature lower priority than work where extreme visual accuracy matters).** Tier 1, root only, in this order: #14 beards, #21 body hair, #67 shoulders (8 skin weights, in unit run), #86 age surface (rebuild from the CC0 skin photos, see the #86 handoff), #96 hairline, #27 chest, #71 and #73 poses, #75 to #78 anatomy detail. Tier 2, Codex-takeable, each with a handoff comment on its issue and never worked by root while Tier 1 is open: #15 clip re-authoring (verdicts on the issue), #25 paired hand contact (handoff on the issue), #32 observer lifecycle, #41 age-gate edges, #94/#107 contact compression, #106 adult-lab e2e, #74 corner parity, #88 garment wear, docs and CI (#38, #39, #49 to #54), roadmap features (#97 to #105), assessment and cadence tooling (#91, #92), hygiene (#90).
 - **Visual defect register** (each is closed only when root has read the renders and accepted them): #14 beards, #21 body hair, #27 chest, #67 overhead shoulders, #86 age surface, #96 hairline, #95 skin ageing, #15 period clips, #71 forward fold, #73 lithotomy and canals, #75 to #78 vulva and root detail, #77 canal openings at rest, #80 aperture state, #82 moisture response, #85 ethnic simplex in defaults, #74 corner combinations (parity first), #88 garment wear detail.
 - Publication sequence once the register and the gates are clear: `integration` pushed to `origin/integration`, PR to `main`, required CI green, merge commit, release path from #38 (two-tier, decided 2026-10-13). Never a direct push to `main`.
 

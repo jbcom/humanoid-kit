@@ -21,6 +21,7 @@
 import type { HumanoidAssets } from "../../src/format/assetFormat.ts";
 import { HumanoidModel } from "../../src/model/humanoidModel.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
+import { heaviestBone } from "../../src/rig/influences.ts";
 import { IDENTITY_POSE, posedBoneHeads, type RestBones, restBones } from "../../src/rig/pose.ts";
 import { bodyTriangles, girthRatios, meshVolume } from "./skinMeasure.ts";
 
@@ -286,12 +287,7 @@ export class SkinBench {
     };
     const { skinIndex, skinWeight, manifest } = this.assets;
     const owner = new Uint8Array(manifest.vertexCount);
-    for (let v = 0; v < owner.length; v++) {
-      let best = 0;
-      for (let k = 1; k < 4; k++)
-        if ((skinWeight[v * 4 + k] as number) > (skinWeight[v * 4 + best] as number)) best = k;
-      owner[v] = skinIndex[v * 4 + best] as number;
-    }
+    for (let v = 0; v < owner.length; v++) owner[v] = heaviestBone(skinIndex, skinWeight, v);
     return {
       name,
       control,

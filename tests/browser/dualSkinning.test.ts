@@ -27,6 +27,7 @@ import {
   WebGLRenderTarget,
 } from "three";
 import { describe, expect, it } from "vitest";
+import { SKIN_INFLUENCES } from "../../src/format/assetFormat.ts";
 import * as pkg from "../../src/react/index.ts";
 import {
   applyDualSkinning,
@@ -38,6 +39,7 @@ import {
   FOLD_TEXELS_UNIFORM,
   foldUniform,
   followDualSkinning,
+  setSkinAttributes,
 } from "../../src/render/dualSkinning.ts";
 import {
   DUAL_TEXELS,
@@ -131,23 +133,26 @@ describe("the vertex shader's dual quaternion blend", () => {
         v * 3,
       );
     }
-    // One to four bones per vertex, in any order (the first with weight is the pivot).
-    const skinIndex = new Float32Array(count * 4);
-    const skinWeight = new Float32Array(count * 4);
+    // One to all eight places per vertex, in any order (the first with weight is the pivot).
+    const I = SKIN_INFLUENCES;
+    const skinIndex = new Float32Array(count * I);
+    const skinWeight = new Float32Array(count * I);
     for (let v = 0; v < count; v++) {
-      const used = 1 + Math.floor(rand() * 4);
+      const used = 1 + Math.floor(rand() * I);
       let total = 0;
-      for (let k = 0; k < 4; k++) {
-        skinIndex[v * 4 + k] = Math.floor(rand() * NAMES.length);
-        skinWeight[v * 4 + k] = k < used ? 0.1 + rand() : 0;
-        total += skinWeight[v * 4 + k] as number;
+      for (let k = 0; k < I; k++) {
+        skinIndex[v * I + k] = Math.floor(rand() * NAMES.length);
+        skinWeight[v * I + k] = k < used ? 0.1 + rand() : 0;
+        total += skinWeight[v * I + k] as number;
       }
-      for (let k = 0; k < 4; k++) skinWeight[v * 4 + k] = (skinWeight[v * 4 + k] as number) / total;
+      for (let k = 0; k < I; k++) skinWeight[v * I + k] = (skinWeight[v * I + k] as number) / total;
     }
-    const texture = (data: Float32Array, per: 3 | 4) => {
+    /** Four values a vertex from `data` (`per` a vertex), from place `from`. */
+    const texture = (data: Float32Array, per: 3 | 8, from = 0) => {
       const padded = new Float32Array(count * 4);
       for (let v = 0; v < count; v++)
-        for (let k = 0; k < per; k++) padded[v * 4 + k] = data[v * per + k] as number;
+        for (let k = 0; k < Math.min(per, 4); k++)
+          padded[v * 4 + k] = data[v * per + from + k] as number;
       const t = new DataTexture(padded, count, 1, RGBAFormat, FloatType);
       t.minFilter = NearestFilter;
       t.magFilter = NearestFilter;
@@ -166,8 +171,10 @@ describe("the vertex shader's dual quaternion blend", () => {
             [DUAL_BONES_UNIFORM]: { value: dual.texture },
             tPosition: { value: texture(positions, 3) },
             tNormal: { value: texture(normals, 3) },
-            tIndex: { value: texture(skinIndex, 4) },
-            tWeight: { value: texture(skinWeight, 4) },
+            tIndex0: { value: texture(skinIndex, 8) },
+            tWeight0: { value: texture(skinWeight, 8) },
+            tIndex1: { value: texture(skinIndex, 8, 4) },
+            tWeight1: { value: texture(skinWeight, 8, 4) },
             uMode: { value: mode },
           },
           vertexShader: "void main() { gl_Position = vec4( position.xy, 0.0, 1.0 ); }",
@@ -175,15 +182,17 @@ describe("the vertex shader's dual quaternion blend", () => {
             #define USE_SKINNING
             uniform highp sampler2D tPosition;
             uniform highp sampler2D tNormal;
-            uniform highp sampler2D tIndex;
-            uniform highp sampler2D tWeight;
+            uniform highp sampler2D tIndex0;
+            uniform highp sampler2D tWeight0;
+            uniform highp sampler2D tIndex1;
+            uniform highp sampler2D tWeight1;
             uniform int uMode;
             layout( location = 0 ) out highp vec4 outColor;
             ${DUAL_SKINNING_FUNCTIONS}
             void main() {
               ivec2 p = ivec2( gl_FragCoord.xy );
               vec4 q; vec3 t; float share;
-              hkDualMotion( texelFetch( tIndex, p, 0 ), texelFetch( tWeight, p, 0 ), q, t, share );
+              hkDualMotion( texelFetch( tIndex0, p, 0 ), texelFetch( tWeight0, p, 0 ), texelFetch( tIndex1, p, 0 ), texelFetch( tWeight1, p, 0 ), q, t, share );
               vec3 rest = uMode == 1 ? texelFetch( tNormal, p, 0 ).xyz : texelFetch( tPosition, p, 0 ).xyz;
               outColor = uMode == 2 ? vec4( share, 0.0, 0.0, 1.0 ) : vec4( uMode == 1 ? hkQRotate( q, rest ) : hkQRotate( q, rest ) + t, 1.0 );
             }`,
@@ -224,9 +233,9 @@ describe("the vertex shader's dual quaternion blend", () => {
             Math.abs((gpuPosition[v * 4 + k] as number) - (out[k] as number)),
           );
         let share = 0;
-        for (let k = 0; k < 4; k++)
+        for (let k = 0; k < I; k++)
           share +=
-            (skinWeight[v * 4 + k] as number) * (SHARE[skinIndex[v * 4 + k] as number] as number);
+            (skinWeight[v * I + k] as number) * (SHARE[skinIndex[v * I + k] as number] as number);
         expect(gpuShare[v * 4], `${name}: share of vertex ${v}`).toBeCloseTo(share, 5);
       }
       expect(worst, `${name}: position`).toBeLessThan(2e-5);
@@ -513,8 +522,9 @@ function tube() {
       const t = (a / around) * Math.PI * 2;
       positions.push(0.35 * Math.cos(t), y, 0.35 * Math.sin(t));
       normals.push(Math.cos(t), 0, Math.sin(t));
-      skinIndex.push(j, j + 1, 0, 0);
-      skinWeight.push(1 - smooth, smooth, 0, 0);
+      // Two places used of SKIN_INFLUENCES.
+      skinIndex.push(j, j + 1, 0, 0, 0, 0, 0, 0);
+      skinWeight.push(1 - smooth, smooth, 0, 0, 0, 0, 0, 0);
     }
   }
   const index: number[] = [];
@@ -542,8 +552,7 @@ function skinned(material: MeshNormalMaterial, rotations: BoneRotations): Skinne
   geometry.setIndex(TUBE.index);
   geometry.setAttribute("position", new BufferAttribute(TUBE.positions, 3));
   geometry.setAttribute("normal", new BufferAttribute(TUBE.normals, 3));
-  geometry.setAttribute("skinIndex", new BufferAttribute(TUBE.skinIndex, 4));
-  geometry.setAttribute("skinWeight", new BufferAttribute(TUBE.skinWeight, 4));
+  setSkinAttributes(geometry, TUBE.skinIndex, TUBE.skinWeight);
   const bones = NAMES.map(() => new Bone());
   const scene = new Scene();
   NAMES.forEach((_, b) => {

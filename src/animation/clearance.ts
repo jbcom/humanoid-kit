@@ -10,6 +10,7 @@
  */
 import { type HumanoidAssets, jointPosition } from "../format/assetFormat.ts";
 import { type BoneRotations, posedBones, type RestBones } from "../rig/bones.ts";
+import { heaviestBone } from "../rig/influences.ts";
 import { rotate } from "../rig/quat.ts";
 
 /** A part of the body: a bone's head (or one end), and the bone whose tail is the other end, with the bones whose skin it measures. */
@@ -155,16 +156,7 @@ export function bodySegments(
     let sum = 0;
     let n = 0;
     for (const v of bodyVertices) {
-      let best = 0;
-      let bestW = -1;
-      for (let k = 0; k < 4; k++) {
-        const w = skinWeight[v * 4 + k] as number;
-        if (w > bestW) {
-          bestW = w;
-          best = skinIndex[v * 4 + k] as number;
-        }
-      }
-      if (!mine.has(best)) continue;
+      if (!mine.has(heaviestBone(skinIndex, skinWeight, v))) continue;
       sum += distanceToSegment(
         control[v * 3] as number,
         control[v * 3 + 1] as number,
