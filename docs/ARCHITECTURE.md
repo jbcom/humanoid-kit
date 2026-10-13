@@ -2565,9 +2565,26 @@ the authored folds added there. The closure reaches its full share at a canal
 target weight of 0.1 and fades smoothly to zero as that weight reaches zero
 (`CLOSED_FROM`, a chosen transition). A zero-weight reservoir stays on the skin.
 
+**In a pose (2026-10-13, #77).** The closure meets the lips at rest; a pose moves
+each by its skin weights and its hip fold. Each lip kept MakeHuman's weights for
+its own side, a share of its own thigh, so spreading the hips parted them, and the
+hip fold, played back by each vertex's side, parted them again in a flexed hip. In
+the lithotomy sheet the vaginal opening showed its canal's walls through a slot and
+the anal opening its ring, on every body (from the sheet's cameras, 70 to 135 wall
+vertices of 1222 seen; abduction alone opened it, flexion alone did not). So the
+skin a closure draws together moves with its canal's root, as an organ moves with
+its own (`ReservoirSkinning.closure`, `src/model/reservoirSkin.ts`): each vertex
+outside the reservoirs takes the root's weights and fold row as far as it follows
+the closed opening (1 on the loop, the zone's harmonic weights on the loop summed
+across the zone, carried to the surface by the detail's stencil), times how far the
+evaluation closes it (`closureShare`, `HumanoidModel.closedShares`). An opening
+that is not closed keeps the topology's weights exactly. The canal's own walls
+already take the root's weights over the length the opening closes in.
+
 `tests/canalClosure.test.ts` checks the loop and displacement contract.
 `tests/canalSight.test.ts` checks the generated pack's canal walls from below
-and front-low across six adult body variants. These checks complement the
+and front-low across six adult body variants, and `tests/canalPosed.test.ts`
+from the lithotomy sheet's cameras in the lithotomy position on four. These checks complement the
 foundation and close-view rendering gates; they do not establish visual
 acceptance on their own.
 

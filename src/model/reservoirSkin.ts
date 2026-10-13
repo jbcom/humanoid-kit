@@ -569,14 +569,20 @@ export function evaluatedSkin(
  * the fold leaves counting as none) with no change to the normal. A reservoir's rings and cap carry the fold of
  * the disc of skin they were copied from; drawn out into an organ, each side of
  * it took its own share of the belly's press and the thigh's push, and the organ
- * was pulled out of shape. The fold itself when no vertex takes any.
+ * was pulled out of shape. The skin a canal's closure draws together takes its
+ * canal's root row as its weights take the root's (`closed`, `evaluatedSkin`): the
+ * hip fold plays back on each vertex's side, and a closed opening's lips, each
+ * taking its own side's fold in a flexed hip, parted after the weights no longer
+ * parted them. The fold itself when no vertex takes any.
  */
 export function evaluatedFold(
   fold: SurfaceFold,
   skinning: ReservoirSkinning,
   shares: Float32Array | null,
+  closed?: ArrayLike<number> | null,
 ): SurfaceFold {
-  if (!shares) return fold;
+  const closure = closed && skinning.closure;
+  if (!shares && !closure) return fold;
   const row = rowTexels(fold.joint) * 4;
   const { owner, loops } = skinning;
   /** The fold's value at `i` (it is held as half floats). */
@@ -607,27 +613,35 @@ export function evaluatedFold(
     roots[s] = root;
     return root;
   };
-  const blended: { v: number; e: number; s: number }[] = [];
+  const blended: { v: number; e: number; s: number; lip: boolean }[] = [];
   for (let v = 0; v < owner.length; v++) {
-    const s = owner[v] as number;
-    if (s < 0) continue;
-    const e = shares[v] as number;
+    let s = owner[v] as number;
+    let e: number;
+    const lip = s < 0;
+    if (!lip) e = shares ? (shares[v] as number) : 0;
+    else if (closure && closed) {
+      s = closure.canal[v] as number;
+      e = s < 0 ? 0 : (closure.follows[v] as number) * ((closed[s] as number | undefined) ?? 0);
+    } else continue;
     // A vertex neither the fold nor its root's fold moves (a fold whose reach is elsewhere, the knee's) needs no row.
-    if (e > 0 && ((fold.slot[v] as number) >= 0 || rootOf(s).reached)) blended.push({ v, e, s });
+    if (e > 0 && ((fold.slot[v] as number) >= 0 || rootOf(s).reached))
+      blended.push({ v, e, s, lip });
   }
   if (!blended.length) return fold;
   // Each blended vertex its own row after the surface's: the blend is the vertex's, not its row's.
   const data = new Uint16Array((fold.rows + blended.length) * row);
   data.set(fold.data.subarray(0, fold.rows * row));
   const slot = Float32Array.from(fold.slot);
-  blended.forEach(({ v, e, s }, i) => {
+  blended.forEach(({ v, e, s, lip }, i) => {
     const at = (fold.rows + i) * row;
     const own = fold.slot[v] as number;
     const root = rootOf(s).sum;
-    for (let k = 0; k < row; k++)
-      data[at + k] = toHalf(
-        (1 - e) * (own < 0 ? 0 : value(own * row + k)) + e * (root[k] as number),
-      );
+    for (let k = 0; k < row; k++) {
+      const mine = own < 0 ? 0 : value(own * row + k);
+      // A lip keeps its own normal change (each opening and key's second texel): the root's
+      // has none, and its crease's turn is what shades it; only where it moves must agree.
+      data[at + k] = toHalf(lip && k % 8 >= 4 ? mine : (1 - e) * mine + e * (root[k] as number));
+    }
     // A vertex the fold left reads the root's side; one it moved, the two sides mixed as the rows are.
     data[at + 3] = toHalf(
       own < 0 ? (root[3] as number) : (1 - e) * value(own * row + 3) + e * (root[3] as number),
