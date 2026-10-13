@@ -10,6 +10,7 @@ import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
 import { SIMPLEX_ANCHOR_NAMES, SIMPLEX_ANCHORS } from "../src/sampling.ts";
+import { framePixels } from "./lib/framePixels.ts";
 
 interface Permutation {
   label: string;
@@ -86,38 +87,29 @@ async function show(page: Page, init: Record<string, unknown>): Promise<void> {
   );
 }
 
-/** Fraction of the frame the figure covers, and its top and bottom rows (0..1). */
+/**
+ * Fraction of the frame the figure covers, and its top and bottom rows (0..1),
+ * read from the composited frame (the QA shot does not retain its drawing buffer).
+ */
 async function coverage(page: Page) {
-  return page.locator("canvas").evaluate((el, bg) => {
-    const c = el as HTMLCanvasElement;
-    const copy = document.createElement("canvas");
-    copy.width = c.width;
-    copy.height = c.height;
-    const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
-    ctx.drawImage(c, 0, 0);
-    const { data } = ctx.getImageData(0, 0, c.width, c.height);
-    let covered = 0;
-    let top = c.height;
-    let bottom = 0;
-    for (let y = 0; y < c.height; y++)
-      for (let x = 0; x < c.width; x++) {
-        const i = (y * c.width + x) * 4;
-        const d =
-          Math.abs((data[i] as number) - (bg[0] as number)) +
-          Math.abs((data[i + 1] as number) - (bg[1] as number)) +
-          Math.abs((data[i + 2] as number) - (bg[2] as number));
-        if (d > 30) {
-          covered++;
-          top = Math.min(top, y);
-          bottom = Math.max(bottom, y);
-        }
+  const { width, height, data, png } = await framePixels(page.locator("canvas"));
+  let covered = 0;
+  let top = height;
+  let bottom = 0;
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const d =
+        Math.abs((data[i] as number) - (BACKGROUND[0] as number)) +
+        Math.abs((data[i + 1] as number) - (BACKGROUND[1] as number)) +
+        Math.abs((data[i + 2] as number) - (BACKGROUND[2] as number));
+      if (d > 30) {
+        covered++;
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
       }
-    return {
-      fraction: covered / (c.width * c.height),
-      top: top / c.height,
-      bottom: bottom / c.height,
-    };
-  }, BACKGROUND);
+    }
+  return { fraction: covered / (width * height), top: top / height, bottom: bottom / height, png };
 }
 
 test.describe("figure permutations", () => {
@@ -137,6 +129,7 @@ test.describe("figure permutations", () => {
     for (const p of PERMUTATIONS) {
       await show(page, p.init);
       const c = await coverage(page);
+      await test.info().attach(`${p.label}.png`, { body: c.png, contentType: "image/png" });
       // Feet stand on the floor near the bottom of the frame; the head is lower for children.
       // A three-year-old at this distance covers about 2.7% of the frame.
       expect(c.fraction, `${p.label}: figure visible`).toBeGreaterThan(0.015);
