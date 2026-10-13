@@ -39,7 +39,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [x] A7 #72 Four unit failures on integration: kneeFold, nailPlates and browserArrayComparison fixed at the root (73bb2039, 5c696f48, 4128a86d); the fourth is E13 (#94).
 - [ ] A8 #86 Adult age surface (agent aa1eb596, `feat/age-surface`): forehead banding, faint hands at 70; wrinkles that read as skin.
 - [ ] A9 #15 Period animation clips: musket drill and fire, kneel-and-pray, march cadence, colour-bearer (lane `feat/period-clips-qa`). Packed and on integration; the lane renders each clip on three bodies, reads every sheet, fixes defects and asserts contact geometry.
-- [ ] A10 #84 Two e2e specs red on integration (lane `fix/e2e-presence-permutations`); same item as E1.
+- [x] A10 #84 Two e2e specs red on integration (lane `fix/e2e-presence-permutations`); same item as E1.
 - [ ] A11 #68 and #79 hairFields BVH index and braids01 reproducibility (lane `fix/hairfields-bvh-index`); same items as C9 and B11.
 - [ ] A12 #32 Observer lifecycle (lane `feat/observer-lifecycle`), #41 age gate (lane `fix/age-gate-fail-closed`), docs reconcile (lane `docs/scope-reconcile`); same items as D1, C8, F2–F8.
 
@@ -80,7 +80,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 
 ### E. Gates, tests, CI and tooling
 
-- [ ] E1 #84 Two e2e specs fail on integration (presence canvas, permutations).
+- [x] E1 #84 Two e2e specs fail on integration (presence canvas, permutations): the handshake lab's load-time throw blanked every route (2711f20b, e7d4bf5f), and specs read the cleared WebGL buffer after c57d29cb (364a08fb, e2e/lib/framePixels.ts). Two unrelated adult-lab failures the full suite now shows are E14.
 - [ ] E2 #40 Foundation smoke gate ratchets against known-failing posed rows.
 - [ ] E3 #44 Negative controls and a mutation check for tuned-geometry gates.
 - [ ] E4 #42 Absolute-metre tolerances tuned on one figure scale.
@@ -93,6 +93,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] E11 #87 Measure `scheduler.yield` in `yieldWorkerTask` before adopting it.
 - [ ] E12 #93 Lane liveness counts pool leases and issue comments, not only worktree changes; the watchdog prints state changes.
 - [ ] E13 #94 contactCompression: land the hip-crease unit with its gate or narrow the test (lane `fix/contact-compression`, reads the dirty `humanoid-kit-fold` worktree read-only).
+- [ ] E14 #106 Full e2e suite: body-hair-lab chest cover expectation, and effective-adult-defaults running in the default project against the preview build.
 
 ### F. Documentation and decisions
 
