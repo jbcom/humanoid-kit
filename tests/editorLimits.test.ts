@@ -225,6 +225,41 @@ describe("visibleTasks and visiblePanels", () => {
     expect(hidden.find((t) => t.id === other?.id)).toBe(other);
   });
 
+  it("drops a group by task and group, each by id or label, and a task it leaves empty", () => {
+    const task = tasks.find((t) => t.groups.length > 1);
+    if (!task) throw new Error("no task has two groups");
+    const [first, second] = task.groups;
+    if (!first || !second) throw new Error("unreachable");
+    for (const key of [`${task.id}/${first.id}`, `${task.label}/${first.label}`]) {
+      const out = visibleTasks(tasks, { hideGroups: [key] });
+      const kept = out.find((t) => t.id === task.id);
+      expect(kept?.groups.map((g) => g.id)).toEqual(task.groups.slice(1).map((g) => g.id));
+      // The same group name in another task is not touched, and neither is any other task.
+      for (const t of tasks.filter((x) => x.id !== task.id))
+        expect(out.find((o) => o.id === t.id)).toBe(t);
+    }
+    // A group named without its task, or in the wrong task, matches nothing.
+    const untouched = visibleTasks(tasks, { hideGroups: [first.id, `Nope/${first.id}`] });
+    expect(untouched.length).toBe(tasks.length);
+    untouched.forEach((t, i) => {
+      expect(t).toBe(tasks[i]);
+    });
+    // Every group of a task leaves the task out, tab and all.
+    const emptied = visibleTasks(tasks, {
+      hideGroups: task.groups.map((g) => `${task.id}/${g.id}`),
+    });
+    expect(emptied.some((t) => t.id === task.id)).toBe(false);
+    expect(emptied.length).toBe(tasks.length - 1);
+  });
+
+  it("splits a group key at the first slash, so a group with a slash in its name is named whole", () => {
+    const task = tasks.find((t) => t.groups.some((g) => g.id.includes("/")));
+    const group = task?.groups.find((g) => g.id.includes("/"));
+    if (!task || !group) throw new Error("no group has a slash in its id");
+    const out = visibleTasks(tasks, { hideGroups: [`${task.id}/${group.id}`] });
+    expect(out.find((t) => t.id === task.id)?.groups.some((g) => g.id === group.id)).toBe(false);
+  });
+
   it("lists the panels left in", () => {
     expect([...visiblePanels(undefined)].sort()).toEqual(["appearance", "regions", "wardrobe"]);
     expect([...visiblePanels({ hidePanels: ["regions"] })].sort()).toEqual([

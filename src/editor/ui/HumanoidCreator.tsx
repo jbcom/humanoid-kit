@@ -66,7 +66,7 @@ export interface HumanoidCreatorProps {
    * proposed, or `false`. A refused figure is never drawn, held or reported.
    */
   onBeforeChange?: BeforeChange;
-  /** Ranges for sliders, and sliders, tasks and panels left out. */
+  /** Ranges for sliders, and sliders, groups, tasks and panels left out. */
   controls?: ControlLimits;
   /**
    * What counts as covered, and who may allow an uncovered figure, perhaps after asking a
