@@ -2841,8 +2841,9 @@ Old recipes evaluate and serialise as before.
   the unset default only); before 18 it comes in over the group's puberty
   onset, complete at 18. It cannot coexist with legacy `density` for a group. `follicleDensity` independently changes physical
   follicles per cm² and therefore strand spacing, never the covered fraction.
-  `beard` is a style. Absent fields are not filled in by `createRecipe`, so a
-  recipe that never set body hair serialises exactly as before.
+  `beard` is a style, or a style with its controls (see "Beards" below).
+  Absent fields are not filled in by `createRecipe`, so a recipe that never
+  set body hair serialises exactly as before.
 - *Hair lying on the skin is a strand layer, not geometry.* A new layer kind,
   `strands` (`src/surface/regions/bodyHair.ts`), draws hair in the skin
   shader at true scale: roots on a grid in the skin's plane (metres, `uv ×
@@ -3043,7 +3044,7 @@ grows none.
 
 **A grown beard's length is cards, on the hair pack's machinery (2026-10-09).**
 Past the coat's few centimetres, hair is cards. The hair pack gains a kind,
-`beard`, whose entries the packer generates (`scripts/lib/bodyHairCards.ts`)
+`beard`, whose entries the packer generates (`src/surface/bodyHairCards.ts`)
 rather than packs from a MakeHuman file: narrow strips rooted where the
 beard's area is solid (`ROOT_SOLID`: none under a mask of 0.4, its full
 density from 0.7; a card is drawn whole, so one rooted in the mask's faint
@@ -3058,14 +3059,71 @@ goatee are the coat's alone). Each card carries a rank, a byte per vertex
 its density (`setDensity`, the face's coverage), whole, beside the hairline
 test and outside the alpha-to-coverage term, so the beard thins with age
 and the recipe with the same geometry, and scalp hair, with no ranks (0) and
-the default density (1), is untouched. The model wears a style's cards
-(`wornBeardCards`) only where the face grows terminal hair, so a child's figure
-loads none; they ride the scalp hair's chain (`Evaluation.beard`, sent once like
+the default density (1), is untouched. The model wears generated cards (see
+"Beards" below) only where the face grows a beard (`beardCoverage`), so a
+child's figure has none; they ride the scalp hair's chain (`Evaluation.beard`, sent once like
 the brows' and lashes' topology) and are coloured by the face's body hair
 colour. Their scalp fields are neutral (no hairline fade, no scalp tint: the
 coat shades the skin under them). Rebuilding the hair pack with them leaves
 every scalp, brow and lash file byte-identical; only the manifest gains the
 entry.
+
+**Beards (design, 2026-10-13, issue #14).** A beard is a style plus
+continuous controls, not one asset per look. `bodyHair.beard` takes a style
+name, or `{ style, length?, volume?, grey?, fork?, part? }`, and every absent
+control is the style's default (`BEARD_SHAPES`, `src/surface/beard.ts`). The
+ten styles (none, stubble, moustache, goatee, imperial, mutton chops, chin
+curtain, full, forked, Longstreet) differ in which parts grow (moustache,
+chin, cheeks, the coat's parts) and their default length, from 1.5 mm of
+stubble to 35 cm of a chest-length Longstreet. `length` is the longest part's,
+in metres; each part keeps its share of it, so one number grows a beard over
+a game's months without swapping assets, and `resolveBeard` clamps it to the
+chin's height above the floor. The coat is the beard's dense base:
+each part's coat length is the shorter of the style's base (`BEARD_LENGTHS`)
+and the resolved part length, so a shorter `length` trims it and a longer one
+is left to the cards. `generateBeardCards(assets, beard)`
+(`src/surface/beardCards.ts`) makes the cards from the resolved beard: they
+root on the parts at least `BEARD_CARD_MIN_LENGTH` (5 mm) long, each card at
+its part's length, and volume scales their number and their lift. Long cards
+drape (`CardDrape`, numbers in `DRAPE`). Their quads are about 2.5 cm long, so
+they bend. Between 1 and 5 cm from the root they turn from the comb to fall,
+a little forward, gathering toward the middle (`CardDrape.gather`, 0.55 for
+beards: a card falls toward 45% of its root's distance from the midline, over
+about 8 cm of drop), so cheek hair joins the chin's in one mass rather than
+fanning over the chest; a card widens with its length (`CardSpec.widen`, 4 cm
+a metre up to 30 cm), a long one a lock. The chin's hair forks into two
+points `DRAPE.forkApart` (4.5 cm) either side by `fork`, and the
+moustache parts out from the middle by `part`. Past the first centimetre each
+point is pushed off the body's nearest surface and slides along it, so a
+chest-length beard lies on the chest instead of passing through it. A card's
+first 5 cm are bound to its root's triangle, so the moustache and chin follow
+the jaw. Past that, each point within 3 cm of the body is bound to the
+triangle under it, and the points after it to the last that touched, so the
+length lying on the chest, belly or lap follows them through morphs and poses
+(`DRAPE.bindFrom`, `DRAPE.touch`). Up to 64 quads let a floor-length beard
+bend all the way down. The beard
+is quantised before generating (lengths floored to the millimetre, the other
+controls to a twentieth), so `beardCardKey` names equal cards, and growing a
+beard by a hair does not regenerate them. Grey is the material's, not the
+geometry's: `HairMaterial.setWhite` draws that share of whole cards white,
+chosen by an integer hash of their rank, so a greying beard is salt and
+pepper rather than a uniform tint. The model wears the generated cards
+(`Evaluation.beard`, id `beard:` and the key), made at evaluation on the
+worker in about 0.1 to 0.3 s a new key: drawn unsubdivided and shaded by
+`beardCardOcclusion` rather than the packer's ray bake, which took seconds a
+beard. The pack's `beard-full` entry now serves only its strand map. A beard
+grown or trimmed keeps few sets alive: the model the last 3, worker and
+client the last 4 topologies, `<Humanoid>` disposing the old geometry. The use cases decided it: a close-up portrait
+needs the style legible at a glance (cards), a beard growing during play
+needs one continuous length (no per-length pack), painted miniatures need a
+closed solid mass (no fur shader), and a character colour needs the grey
+fraction and the fork controls. Rejected: packed card sets per style and
+length (quantised length, pack growth, no growing beard), and a solid
+sculpted mesh for every figure (no strand read at portrait distance; it
+stays the miniatures' path, issue #12). The card generator is pure (base
+mesh, mask and seed; no MakeHuman bytes), so it lives in
+`src/surface/bodyHairCards.ts`, where the packer and the runtime both reach
+it.
 
 **Costs.** The coat costs nothing where nothing is painted (no triangles, no
 draw). A full beard (its coat and its cards) with doubled chest, abdomen and

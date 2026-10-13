@@ -8,6 +8,7 @@ import { CREATOR_CSS } from "../../src/editor/ui/styles.ts";
 import type { HumanoidEditor } from "../../src/editor/ui/useHumanoidEditor.ts";
 import { WardrobePanel } from "../../src/editor/ui/WardrobePanel.tsx";
 import { createRecipe } from "../../src/recipe/recipe.ts";
+import type { BodyHairRecipe } from "../../src/surface/bodyHair.ts";
 import { DEFAULT_HAIR_COLOUR } from "../../src/surface/hairTone.ts";
 import type { ReadyInfo } from "../../src/worker/protocol.ts";
 import { EditorHarness, readyInfo } from "./harness.tsx";
@@ -274,13 +275,13 @@ describe("AppearancePanel", () => {
   });
 
   describe("body hair", () => {
-    const panel = async (age: number, gender = 1) => {
+    const panel = async (age: number, gender = 1, bodyHair?: BodyHairRecipe) => {
       const seen: { editor?: HumanoidEditor } = {};
       const screen = await render(
         <Styled>
           <EditorHarness
             ready={readyInfo()}
-            initial={createRecipe({ macros: { age, gender } })}
+            initial={createRecipe({ macros: { age, gender }, ...(bodyHair && { bodyHair }) })}
             onEditor={(e) => (seen.editor = e)}
           >
             {(editor) => <AppearancePanel editor={editor} onFocus={noFocus} />}
@@ -301,6 +302,19 @@ describe("AppearancePanel", () => {
       expect(seen.editor?.recipe.bodyHair).toEqual({ beard: "goatee" });
       await screen.getByRole("button", { name: "Natural" }).click();
       expect(seen.editor?.recipe.bodyHair).toBeUndefined();
+    });
+
+    it("shows a beard with controls as its style, and keeps the controls when the style changes", async () => {
+      const { screen, seen } = await panel(30, 1, {
+        beard: { style: "full", length: 0.1, grey: 0.4 },
+      });
+      await expect
+        .element(screen.getByRole("button", { name: "Full beard" }))
+        .toHaveAttribute("aria-pressed", "true");
+      await screen.getByRole("button", { name: "Forked" }).click();
+      expect(seen.editor?.recipe.bodyHair).toEqual({
+        beard: { style: "forked", length: 0.1, grey: 0.4 },
+      });
     });
 
     it("offers underarm and pubic coverage to an adult", async () => {

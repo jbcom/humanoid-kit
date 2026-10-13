@@ -13,7 +13,7 @@ value. Its three finite adult anchors are feminine (`gender: 0`), mixed
 
 | Control | Feminine | Mixed | Masculine |
 | --- | ---: | ---: | ---: |
-| Phallus size | 0.080 | 0.365 | 0.650 |
+| Phallus size | 0.000 | 0.325 | 0.650 |
 | Testes size | 0.000 | 0.300 | 0.600 |
 | Vulva | 1.000 | 0.500 | 0.000 |
 | Anal canal | 1.000 | 1.000 | 1.000 |
@@ -30,7 +30,8 @@ viewport:
 
 1. Each named control recorded raw `0.000` after its explicit-zero action.
 2. Each named reset returned its raw cell to absent and the mixed anchor to
-   `[0.365, 0.300, 0.500, 1.000]`.
+   `[0.365, 0.300, 0.500, 1.000]` (the pack's curve then; the phallus default
+   now runs from 0 at the female end, so the mixed anchor reads 0.325).
 3. Eight actions created eight history steps; undo restored only the anal-canal
    zero and left seven history steps.
 4. After scrolling the controls panel to its bottom, the rendered canvas still
