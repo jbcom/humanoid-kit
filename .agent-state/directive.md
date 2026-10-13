@@ -67,7 +67,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] C6 #59 Proxy meshes, teeth shapes, face and ear targets, community hair, brow and lash evaluation (asset-first program).
 - [ ] C7 #60 Policy-drift cleanups (editor age checks, adult-only id source of truth).
 - [ ] C8 #41 Age-gate edges fail closed and tested (NaN ages, affordance default, pack paths).
-- [ ] C9 #68 hairFields: card BVH faceIndex read as quad order after MeshBVH reorders the index.
+- [x] C9 #68 hairFields: card BVH faceIndex read as quad order after MeshBVH reorders the index.
 - [ ] C10 #88 Garments: hem and knee soiling that varies over the garment, wrinkle detail.
 - [ ] C11 #64 `feat/upscale` KTX2 clothing experiment as its own lane.
 
