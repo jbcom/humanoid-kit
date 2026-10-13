@@ -5,17 +5,20 @@
  */
 import { describe, expect, it } from "vitest";
 import { adultCoatRegions } from "../scripts/lib/adultCoat.ts";
+import { buildRefinedSurfaceMesh } from "../src/build/surfaceMesh.ts";
 import {
   type AdultCoatRegionSpec,
+  groupFaces,
   type HumanoidAssets,
   parseHumanoidAssets,
 } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { applyStencil } from "../src/subdiv/catmullClark.ts";
 import { COAT_REGION_LIMIT, coatMasks, paintCoat } from "../src/surface/coat.ts";
 import type { SkinPaintInput } from "../src/surface/layers.ts";
 import { BODY_HAIR_COAT, PUBIC_REGION } from "../src/surface/regions/bodyHairCoat.ts";
-import { adultPackData, bodyPackData, loadFixtureAssets } from "./fixtures.ts";
+import { adultManifest, adultPackData, bodyPackData, loadFixtureAssets } from "./fixtures.ts";
 
 const SPEC: AdultCoatRegionSpec = {
   id: PUBIC_REGION.id,
@@ -120,5 +123,58 @@ describe("pubic hair's coat region", () => {
     for (const [label, regions] of bad)
       expect(() => withRegions(regions), label).toThrow(/coat region/);
     expect(() => withRegions([SPEC])).not.toThrow();
+  });
+});
+
+describe("pubic coat placement on the refined adult surface", () => {
+  const adultAssets = loadFixtureAssets(true);
+  const model = new HumanoidModel(adultAssets, { subdivision: 1 });
+  const topology = model.adultSurface();
+  const refinement = adultManifest.anatomy?.surface;
+  if (!topology || !refinement)
+    throw new Error("the shipped adult fixture needs its refined surface");
+  const mesh = buildRefinedSurfaceMesh(
+    { ...adultAssets, vertexCount: adultAssets.manifest.vertexCount },
+    groupFaces(adultAssets, "body"),
+    refinement,
+    1,
+    adultManifest.anatomy?.reservoirs ?? [],
+  );
+  const pubicIndex = BODY_HAIR_COAT.indexOf(PUBIC_REGION);
+  const maskAt = (render: number) =>
+    topology.coat.masks[render * COAT_REGION_LIMIT + pubicIndex] as number;
+  const reservoirSurface = new Set(
+    mesh.lattice?.reservoirs.flatMap((reservoir) => [
+      ...reservoir.copies,
+      ...reservoir.capVertices,
+    ]) ?? [],
+  );
+  const inheritedPubic = () => {
+    const base = coatMasks(adultAssets, BODY_HAIR_COAT);
+    const field = new Float32Array(adultAssets.manifest.vertexCount * 3);
+    for (let vertex = 0; vertex < adultAssets.manifest.vertexCount; vertex++)
+      field[vertex * 3] = (base[vertex * COAT_REGION_LIMIT + pubicIndex] as number) / 255;
+    const surface = new Float32Array(mesh.topology.vertexCount * 3);
+    applyStencil(mesh.stencil, field, surface);
+    return Float32Array.from(mesh.renderToSurface, (vertex) => surface[vertex * 3] as number);
+  };
+
+  it("keeps mons coverage on the original surface while leaving reservoir walls and caps uncoated", () => {
+    expect(topology.vertexCount).toBe(mesh.renderToSurface.length);
+    const inherited = inheritedPubic();
+    let mons = 0;
+    let reservoir = 0;
+    mesh.renderToSurface.forEach((surface, render) => {
+      const mask = maskAt(render);
+      if (reservoirSurface.has(surface)) {
+        reservoir++;
+        expect(mask, `reservoir surface ${surface}`).toBe(0);
+      } else {
+        expect(mask / 255, `mons surface ${surface}`).toBeCloseTo(inherited[render] as number, 2);
+        if (mask > 0) mons++;
+      }
+    });
+    expect(reservoir).toBeGreaterThan(0);
+    expect(mons).toBeGreaterThan(0);
   });
 });

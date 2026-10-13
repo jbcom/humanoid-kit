@@ -59,6 +59,24 @@ playground. To look at the creator itself after a change to its panels or stage,
 goes first, because `--project` takes every name after it): each scene in that file
 writes a full screenshot of the creator, with a clothed figure, for you to read.
 
+A sheet's `query` can take the shot's QA switches, for telling what a defect is
+before changing code (`playground/src/qaDraw.ts`):
+
+- `nofold=knee` (or `hip`, or both, comma-separated) draws those joints' folds
+  off, the rest of the draw unchanged: does the fold reach what is drawn?
+- `shade=normal` draws the body's smooth normals as colour, `shade=flat` its face
+  normals, `shade=wire` its triangles over the lit body, `shade=matte` the body in
+  a plain grey standard material, and `shade=nopores` the skin without its pores'
+  normal map. Each skins by the figure's own bones and folds: is a line geometry,
+  normals, or the skin's shading?
+- `noshadow` turns the stage's shadows off, and `bg=rrggbb` keys the background
+  (magenta, `ff00ff`, shows a hole for what it is).
+
+Each figure's notes on its folds as drawn (`window.hkShotNotes`: per body mesh,
+the vertices each joint's fold gives a row, its texture's size, and how much of
+the folds shows) are written beside the sheet as `<name>.json`, in the recipes'
+order.
+
 ## Making a change
 
 1. Branch off `main`.

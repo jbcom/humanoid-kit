@@ -19,6 +19,15 @@
  * vulva's, its first millimetres of push spread over five of skin) sorted neighbours
  * into very different shares, and the crease sheared them over.
  *
+ * A canal (`AdultReservoirSpec.canal`) is drawn into the body, its opening closing
+ * over its first centimetre into a lumen a few millimetres across. Over an organ's
+ * band (a fifth of its base radius, two millimetres) each wall of the opening went
+ * from its own side's share of the thigh to the root's across one ring, and a flexed
+ * hip folded the opening over (f-slim squat: 113 more folded edges, all within 7 mm
+ * of the loop). A canal takes the root's weights over the length its opening closes
+ * in. Over its whole length instead, the lumen's middle kept half its side's thigh
+ * and swung out through the skin (f-slim squat: 30 cm² more penetrating).
+ *
  * The weights depend on the evaluation, so they are found with it (`evaluatedSkin`),
  * once, and every consumer skins by those: the renderer's attributes, the posed
  * body the invariants measure, the affordances' landmarks and the mesh's own CPU
@@ -27,7 +36,7 @@
  */
 import type { SurfaceMesh } from "../build/surfaceMesh.ts";
 import { fromHalf, toHalf } from "../rig/half.ts";
-import { FOLD_ROW_TEXELS, type SurfaceFold } from "../rig/hipFold.ts";
+import { rowTexels, type SurfaceFold } from "../rig/jointFold.ts";
 
 /** A surface's skin weights: four bones and four weights per render vertex. */
 export interface SkinWeights {
@@ -59,6 +68,8 @@ export interface ReservoirSkinning {
   roots: readonly { index: Uint16Array; weight: Float32Array }[];
   /** Per reservoir, its loop's render vertices: where the organ meets the body. */
   loops: readonly Uint32Array[];
+  /** Per reservoir, a canal's opening length (`AdultReservoirSpec.canal`), metres, or null for an organ. */
+  openings: readonly (number | null)[];
   /**
    * The reservoirs' and their loops' surface vertices, numbered from 0 (`node`),
    * welded across UV seams: per node, a render vertex of it (`render`), its
@@ -72,6 +83,17 @@ export interface ReservoirSkinning {
     start: Uint32Array;
     next: Uint32Array;
   };
+}
+
+/** A built surface's canals (`AdultSurfaceTopology.canals`): each render vertex's canal reservoir or -1, and the gaps. */
+export function canalsOf(
+  mesh: SurfaceMesh,
+  skinning: ReservoirSkinning,
+): { of: Int16Array; gap: readonly number[] } {
+  const reservoirs = mesh.lattice?.reservoirs ?? [];
+  const gap = reservoirs.map((r) => r.canal?.gap ?? 0);
+  const of = Int16Array.from(skinning.owner, (s) => (s >= 0 && reservoirs[s]?.canal ? s : -1));
+  return { of, gap };
 }
 
 /** A built surface's reservoirs as `evaluatedSkin` reads them; none without a lattice. */
@@ -97,6 +119,7 @@ export function reservoirSkinningOf(mesh: SurfaceMesh): ReservoirSkinning {
     owner,
     roots,
     loops,
+    openings: reservoirs.map((r) => r.canal?.opening ?? null),
     graph: reservoirGraph(mesh.index, mesh.renderToSurface, bySurface, loopOf),
   };
 }
@@ -248,8 +271,9 @@ const smooth = (t: number) => {
  * Each render vertex's share of its root's weights and fold in an evaluation that
  * drew the surface at `positions` and pushed its vertices `pushed` metres out of the
  * skin: by its distance from its reservoir's loop along the drawn surface, over the
- * band its organ's rise gives (`bandOf`) of the organ's base radius, times how far it
- * was pushed of `PUSH_STARTS`. Zero off the reservoirs; null when no vertex takes any.
+ * band its organ's rise gives (`bandOf`) of the organ's base radius (a canal's: its
+ * opening's length), times how far it was pushed of `PUSH_STARTS`. Zero off the
+ * reservoirs; null when no vertex takes any.
  */
 export function rootShares(
   skinning: ReservoirSkinning,
@@ -340,7 +364,8 @@ export function rootShares(
         }
       }
     }
-    const width = bandOf(rise(skinning, s, positions, dist, centre)) * radius;
+    const width =
+      skinning.openings[s] ?? bandOf(rise(skinning, s, positions, dist, centre)) * radius;
     for (let v = 0; v < owner.length; v++) {
       if (owner[v] !== s) continue;
       const d = dist[graph.node[v] as number] as number;
@@ -459,7 +484,7 @@ export function evaluatedSkin(
 }
 
 /**
- * The hip fold of a surface (`surfaceFold`) for an evaluation whose reservoir
+ * A joint's fold of a surface (`surfaceFold`) for an evaluation whose reservoir
  * vertices take `shares` of their roots' (`rootShares`), by the rule its weights
  * follow (`evaluatedSkin`): each reservoir vertex's row blended toward its root's by
  * its share, the root's being the mean of its loop's displacements (a loop vertex
@@ -474,13 +499,13 @@ export function evaluatedFold(
   shares: Float32Array | null,
 ): SurfaceFold {
   if (!shares) return fold;
-  const row = FOLD_ROW_TEXELS * 4;
+  const row = rowTexels(fold.joint) * 4;
   const { owner, loops } = skinning;
   /** The fold's value at `i` (it is held as half floats). */
   const value = (i: number) => fromHalf(fold.data[i] as number);
-  /** Per reservoir, its root's row (lazily), or null while not needed. */
-  const roots: (Float32Array | null)[] = loops.map(() => null);
-  const rootOf = (s: number): Float32Array => {
+  /** Per reservoir, its root's row (lazily), and whether the fold reaches its root at all; null while not needed. */
+  const roots: ({ sum: Float32Array; reached: boolean } | null)[] = loops.map(() => null);
+  const rootOf = (s: number) => {
     const known = roots[s];
     if (known) return known;
     const loop = loops[s] as Uint32Array;
@@ -500,15 +525,17 @@ export function evaluatedFold(
     // its own normal, which the crease turns most of the way over, and their mean added to an
     // organ's normals turned its faces against them; its normals turn with its root's weights.
     for (let i = 0; i < row; i += 8) sum.fill(0, i + 4, i + 8);
-    roots[s] = sum;
-    return sum;
+    const root = { sum, reached: held > 0 };
+    roots[s] = root;
+    return root;
   };
   const blended: { v: number; e: number; s: number }[] = [];
   for (let v = 0; v < owner.length; v++) {
     const s = owner[v] as number;
     if (s < 0) continue;
     const e = shares[v] as number;
-    if (e > 0) blended.push({ v, e, s });
+    // A vertex neither the fold nor its root's fold moves (a fold whose reach is elsewhere, the knee's) needs no row.
+    if (e > 0 && ((fold.slot[v] as number) >= 0 || rootOf(s).reached)) blended.push({ v, e, s });
   }
   if (!blended.length) return fold;
   // Each blended vertex its own row after the surface's: the blend is the vertex's, not its row's.
@@ -518,7 +545,7 @@ export function evaluatedFold(
   blended.forEach(({ v, e, s }, i) => {
     const at = (fold.rows + i) * row;
     const own = fold.slot[v] as number;
-    const root = rootOf(s);
+    const root = rootOf(s).sum;
     for (let k = 0; k < row; k++)
       data[at + k] = toHalf(
         (1 - e) * (own < 0 ? 0 : value(own * row + k)) + e * (root[k] as number),
@@ -529,5 +556,5 @@ export function evaluatedFold(
     );
     slot[v] = fold.rows + i;
   });
-  return { slot, rows: fold.rows + blended.length, data };
+  return { joint: fold.joint, slot, rows: fold.rows + blended.length, data };
 }

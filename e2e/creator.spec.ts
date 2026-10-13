@@ -23,19 +23,24 @@ async function tap(page: Page, fx: number, fy: number) {
 }
 
 /**
- * The canvas, scaled down to 64 × 64 RGBA in the page (the creator preserves
- * its drawing buffer): enough to tell one framing from another, small to ship.
+ * A compositor screenshot, scaled down to 64 × 64 RGBA in the page: enough to
+ * tell one framing from another without relying on a retained WebGL buffer.
  */
-const canvasPixels = (page: Page) =>
-  page.evaluate(() => {
-    const canvas = document.querySelector(".hk-stage canvas") as HTMLCanvasElement;
+const screenshotPixels = (page: Page, png: Buffer) =>
+  page.evaluate(async (base64) => {
+    const image = await createImageBitmap(
+      await (await fetch(`data:image/png;base64,${base64}`)).blob(),
+    );
     const copy = document.createElement("canvas");
     copy.width = 64;
     copy.height = 64;
-    const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
-    ctx.drawImage(canvas, 0, 0, 64, 64);
-    return Array.from(ctx.getImageData(0, 0, 64, 64).data);
-  });
+    const context = copy.getContext("2d");
+    if (!context) throw new Error("the screenshot decoder did not create a 2D context");
+    context.drawImage(image, 0, 0, 64, 64);
+    const pixels = Array.from(context.getImageData(0, 0, 64, 64).data);
+    image.close();
+    return pixels;
+  }, png.toString("base64"));
 
 /** Mean absolute difference per channel, 0–255. */
 const meanDifference = (a: number[], b: number[]) => {
@@ -47,7 +52,9 @@ const meanDifference = (a: number[], b: number[]) => {
 const selectedTab = (page: Page) => page.locator('[role="tab"][aria-selected="true"]');
 const revealedGroup = (page: Page) => page.locator("details[data-revealed] > summary span").first();
 
-test("tapping a part of the figure opens the controls that shape it", async ({ page }) => {
+test("tapping a part of the figure opens the controls that shape it", async ({
+  page,
+}, testInfo) => {
   // Each step waits for the camera to glide; the figure load is the rest.
   test.setTimeout(budget(180_000));
   const errors: string[] = [];
@@ -58,6 +65,19 @@ test("tapping a part of the figure opens the controls that shape it", async ({ p
   await openSilentGame(page, "./");
   await page.locator('.hk-stage[data-pick="ready"]').waitFor({ timeout: 120_000 });
   await expect(page.locator(".hk-status")).toHaveCount(0);
+  // R3F created this WebGL2 context before `data-pick` can be ready; querying it
+  // here cannot choose creation attributes. Browser screenshots use the compositor,
+  // so the product canvas must not retain its drawing buffer for them.
+  await expect
+    .poll(() =>
+      page.locator(".hk-stage canvas").evaluate((element) => {
+        const context = (element as HTMLCanvasElement).getContext("webgl2");
+        const attributes = context?.getContextAttributes();
+        if (!attributes) throw new Error("the creator did not create a WebGL2 context");
+        return attributes.preserveDrawingBuffer;
+      }),
+    )
+    .toBe(false);
 
   for (const { at, task, group } of [
     { at: [0.499, 0.204], task: "Face", group: /^Nose/ },
@@ -79,7 +99,9 @@ test("tapping a part of the figure opens the controls that shape it", async ({ p
   await wholeFigure(page);
   await tap(page, 0.499, 0.204);
   await page.waitForTimeout(2000);
-  const framed = await canvasPixels(page);
+  const framedImage = await page.locator(".hk-stage canvas").screenshot();
+  await testInfo.attach("creator-framed.png", { body: framedImage, contentType: "image/png" });
+  const framed = await screenshotPixels(page, framedImage);
   const stage = await page.locator(".hk-stage canvas").boundingBox();
   if (!stage) throw new Error("no canvas");
   await page.mouse.move(stage.x + stage.width * 0.35, stage.y + stage.height * 0.6);
@@ -87,12 +109,22 @@ test("tapping a part of the figure opens the controls that shape it", async ({ p
   await page.mouse.move(stage.x + stage.width * 0.65, stage.y + stage.height * 0.6, { steps: 10 });
   await page.mouse.up();
   await page.waitForTimeout(1500);
-  expect(meanDifference(await canvasPixels(page), framed)).toBeGreaterThan(5);
+  expect(
+    meanDifference(
+      await screenshotPixels(page, await page.locator(".hk-stage canvas").screenshot()),
+      framed,
+    ),
+  ).toBeGreaterThan(5);
   // The orbit keeps the head at the centre of the view.
   await tap(page, 0.5, 0.5);
   await page.waitForTimeout(2500);
   await expect(selectedTab(page)).toHaveText("Face");
-  expect(meanDifference(await canvasPixels(page), framed)).toBeLessThan(1);
+  expect(
+    meanDifference(
+      await screenshotPixels(page, await page.locator(".hk-stage canvas").screenshot()),
+      framed,
+    ),
+  ).toBeLessThan(1);
 
   // Dragging to orbit is not a tap: nothing opens. The drag starts and ends on
   // the figure (three only clicks when press and release hit the same object),
@@ -169,7 +201,7 @@ test("an eye material picked in Appearance is worn by the figure", async ({ page
     if (texture(r.url())) requested.add(r.url());
   });
   const group = page.getByRole("group", { name: "Slit pupil", exact: true });
-  const chip = group.getByRole("button", { name: "Green cat eyes", exact: true });
+  const chip = group.getByRole("button", { name: "Green", exact: true });
   await expect(chip).toHaveAttribute("aria-pressed", "false");
   expect(requested.size).toBe(0);
   await chip.click();
@@ -178,5 +210,234 @@ test("an eye material picked in Appearance is worn by the figure", async ({ page
   // Back to the built-in eye.
   await page.getByRole("button", { name: "Built-in", exact: true }).click();
   await expect(chip).toHaveAttribute("aria-pressed", "false");
+  expect(errors).toEqual([]);
+});
+
+test("a delayed eye map repaints a settled creator head frame", async ({ page }, testInfo) => {
+  test.setTimeout(budget(180_000));
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  await openSilentGame(page, "./", { e2eEyeRegion: "1" });
+  await page.locator('.hk-stage[data-pick="ready"]').waitFor({ timeout: 120_000 });
+  await expect(page.locator(".hk-status")).toHaveCount(0);
+
+  let requests = 0;
+  let secondRequest = false;
+  const held = { release: null as (() => void) | null };
+  await page.route(/nyloseth_green_cat_eyes[^/]*\.webp$/, async (route) => {
+    requests++;
+    if (requests !== 1) {
+      secondRequest = true;
+      await route.abort();
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      held.release = resolve;
+    });
+    await route.continue();
+  });
+  const stage = page.locator(".hk-stage");
+  const canvas = stage.locator("canvas");
+  await page.getByRole("tab", { name: /^Skin, eyes/ }).click();
+  await expect(stage).toHaveAttribute("data-framing", "settled");
+  await page
+    .getByRole("group", { name: "Slit pupil", exact: true })
+    .getByRole("button", {
+      name: "Green",
+      exact: true,
+    })
+    .click();
+  await expect.poll(() => requests).toBe(1);
+  await expect(stage).toHaveAttribute("data-framing", "settled");
+
+  await expect(stage).toHaveAttribute("data-eye-region", /.+/);
+  const canvasBox = await canvas.boundingBox();
+  const encodedRegion = await stage.getAttribute("data-eye-region");
+  if (!canvasBox || !encodedRegion)
+    throw new Error("the settled creator did not expose eye bounds");
+  const region = JSON.parse(encodedRegion) as {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  expect(region.width).toBeGreaterThan(1);
+  expect(region.height).toBeGreaterThan(1);
+  expect(region.x).toBeGreaterThanOrEqual(0);
+  expect(region.y).toBeGreaterThanOrEqual(0);
+  expect(region.x + region.width).toBeLessThanOrEqual(canvasBox.width);
+  expect(region.y + region.height).toBeLessThanOrEqual(canvasBox.height);
+  const eyes = {
+    x: canvasBox.x + region.x,
+    y: canvasBox.y + region.y,
+    width: region.width,
+    height: region.height,
+  };
+  const blockedFull = await canvas.screenshot();
+  const blockedImage = await page.screenshot({ clip: eyes });
+  await testInfo.attach("creator-delayed-eye-before.png", {
+    body: blockedFull,
+    contentType: "image/png",
+  });
+  await testInfo.attach("creator-delayed-eye-before-roi.png", {
+    body: blockedImage,
+    contentType: "image/png",
+  });
+  const blocked = await screenshotPixels(page, blockedImage);
+
+  const releaseRequest = held.release;
+  if (!releaseRequest) throw new Error("the eye request was not held");
+  releaseRequest();
+  await expect(stage).toHaveAttribute("data-framing", "settled");
+  await expect
+    .poll(async () =>
+      meanDifference(await screenshotPixels(page, await page.screenshot({ clip: eyes })), blocked),
+    )
+    .toBeGreaterThan(0.5);
+  const paintedFull = await canvas.screenshot();
+  const painted = await page.screenshot({ clip: eyes });
+  await testInfo.attach("creator-delayed-eye-after.png", {
+    body: paintedFull,
+    contentType: "image/png",
+  });
+  await testInfo.attach("creator-delayed-eye-after-roi.png", {
+    body: painted,
+    contentType: "image/png",
+  });
+  expect(requests).toBe(1);
+  expect(secondRequest).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("a saved eye recipe repaints when its library arrives after the creator is idle", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(budget(180_000));
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+
+  let eyeManifestRequests = 0;
+  let mapRequests = 0;
+  let secondMapRequest = false;
+  const heldManifest = { release: null as (() => void) | null };
+  const heldMap = { release: null as (() => void) | null };
+  // The production bundle hashes every pack's manifest name. Inspecting the real
+  // response keeps this test bound to the eye pack rather than a build-specific URL.
+  await page.route("**/*.json", async (route) => {
+    const response = await route.fetch();
+    const body = await response.body();
+    if (!body.toString("utf8").includes('"nyloseth_green_cat_eyes"')) {
+      await route.fulfill({ response, body });
+      return;
+    }
+    eyeManifestRequests++;
+    if (eyeManifestRequests !== 1) {
+      await route.abort();
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      heldManifest.release = resolve;
+    });
+    await route.fulfill({ response, body });
+  });
+  await page.route(/nyloseth_green_cat_eyes[^/]*\.webp$/, async (route) => {
+    mapRequests++;
+    if (mapRequests !== 1) {
+      secondMapRequest = true;
+      await route.abort();
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      heldMap.release = resolve;
+    });
+    await route.continue();
+  });
+
+  // This is a valid saved recipe: the public Creator accepts it before its
+  // asynchronously fetched eye library reaches the already-drawn figure.
+  await openSilentGame(page, "./", {
+    e2eEyeRegion: "1",
+    recipe: JSON.stringify({ eyes: { material: "nyloseth_green_cat_eyes" } }),
+  });
+  const stage = page.locator(".hk-stage");
+  const canvas = stage.locator("canvas");
+  await expect(stage).toHaveAttribute("data-pick", "ready", { timeout: 120_000 });
+  await expect(page.locator(".hk-status")).toHaveCount(0);
+  await expect(stage).toHaveAttribute("data-framing", "settled");
+  await expect(stage).toHaveAttribute("data-eye-region", /.+/);
+  await expect.poll(() => eyeManifestRequests).toBe(1);
+
+  const canvasBox = await canvas.boundingBox();
+  const encodedRegion = await stage.getAttribute("data-eye-region");
+  if (!canvasBox || !encodedRegion)
+    throw new Error("the idle creator did not expose eye bounds before its library arrived");
+  const region = JSON.parse(encodedRegion) as {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  expect(region.width).toBeGreaterThan(1);
+  expect(region.height).toBeGreaterThan(1);
+  expect(region.x).toBeGreaterThanOrEqual(0);
+  expect(region.y).toBeGreaterThanOrEqual(0);
+  expect(region.x + region.width).toBeLessThanOrEqual(canvasBox.width);
+  expect(region.y + region.height).toBeLessThanOrEqual(canvasBox.height);
+  const eyes = {
+    x: canvasBox.x + region.x,
+    y: canvasBox.y + region.y,
+    width: region.width,
+    height: region.height,
+  };
+
+  const releaseManifest = heldManifest.release;
+  if (!releaseManifest) throw new Error("the eye-library manifest was not held");
+  releaseManifest();
+  await expect.poll(() => mapRequests).toBe(1);
+  // No editor choice or camera move occurs after this point: only the late
+  // library prop begins the already-saved recipe's actual texture request.
+  await expect(stage).toHaveAttribute("data-framing", "settled");
+
+  const beforeFull = await canvas.screenshot();
+  const beforeRoi = await page.screenshot({ clip: eyes });
+  await testInfo.attach("creator-late-library-before.png", {
+    body: beforeFull,
+    contentType: "image/png",
+  });
+  await testInfo.attach("creator-late-library-before-roi.png", {
+    body: beforeRoi,
+    contentType: "image/png",
+  });
+  const before = await screenshotPixels(page, beforeRoi);
+
+  const releaseMap = heldMap.release;
+  if (!releaseMap) throw new Error("the late library did not request its eye map");
+  releaseMap();
+  await expect
+    .poll(
+      async () =>
+        meanDifference(await screenshotPixels(page, await page.screenshot({ clip: eyes })), before),
+      { timeout: 15_000 },
+    )
+    .toBeGreaterThan(0.5);
+  const afterFull = await canvas.screenshot();
+  const afterRoi = await page.screenshot({ clip: eyes });
+  await testInfo.attach("creator-late-library-after.png", {
+    body: afterFull,
+    contentType: "image/png",
+  });
+  await testInfo.attach("creator-late-library-after-roi.png", {
+    body: afterRoi,
+    contentType: "image/png",
+  });
+  expect(eyeManifestRequests).toBe(1);
+  expect(mapRequests).toBe(1);
+  expect(secondMapRequest).toBe(false);
   expect(errors).toEqual([]);
 });

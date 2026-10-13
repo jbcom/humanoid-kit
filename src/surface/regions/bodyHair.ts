@@ -15,10 +15,12 @@ import type { HumanoidAssets } from "../../format/assetFormat.ts";
 import { groupFaces } from "../../format/assetFormat.ts";
 import {
   BODY_HAIR_FIBRE,
+  BODY_HAIR_FOLLICLE_DENSITY,
   type BodyHairGroup,
   type BodyHairInput,
   bodyHairColour,
   bodyHairCoverage,
+  bodyHairFollicleDensity,
 } from "../bodyHair.ts";
 import { DEFAULT_HAIR_COLOUR, hairAlbedo } from "../hairTone.ts";
 import type { SkinLayer, SkinPaintInput, StrandLayer, StrandPaint } from "../layers.ts";
@@ -50,17 +52,8 @@ export function bodyHairInput(input: SkinPaintInput): BodyHairInput {
  * 32 (upper arm); the values between, and the beard's, armpit's and pubis's,
  * are choices (BODY-HAIR.md).
  */
-export const BODY_HAIR_DENSITY: Readonly<Record<BodyHairGroup, number>> = {
-  face: 60,
-  chest: 22,
-  abdomen: 22,
-  back: 26,
-  buttocks: 20,
-  arms: 25,
-  legs: 16,
-  axillary: 60,
-  pubic: 40,
-};
+/** @deprecated Use `BODY_HAIR_FOLLICLE_DENSITY` from `surface/bodyHair`. */
+export const BODY_HAIR_DENSITY = BODY_HAIR_FOLLICLE_DENSITY;
 
 /**
  * Vellus: fine, short, nearly unpigmented hair from most follicles at every
@@ -240,7 +233,7 @@ function terminalPaint(group: BodyHairGroup, input: SkinPaintInput, length: numb
   return {
     strength: coverage,
     colour: hairAlbedo(bodyHairColour(group, hair)),
-    density: BODY_HAIR_DENSITY[group],
+    density: bodyHairFollicleDensity(group, hair),
     length: length > 0 ? length : fibre.length,
     width: fibre.diameter,
     height: fibre.diameter,

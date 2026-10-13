@@ -8,7 +8,7 @@ affiliated with it, and CC0 does not license trademarks (CC0 1.0 §4a).
 
 Every packed source file was checked for CC0 from its own content before packing:
 
-- 854 file(s) — file header: "This asset was explicitly released as CC0"
+- 1078 file(s) — file header: "This asset was explicitly released as CC0"
 - 3 file(s) — file metadata: "license": "CC0": rigs/default.mhskel, rigs/default_weights.mhw, poseunits/face-poseunits.json
 - 9 file(s) — upstream LICENSE.md: "Targets and modifiers" listed under "These assets have been released under CC0 1.0 Universal."
 - 1 file(s) — upstream LICENSE.md: "Poses and expressions" listed under "These assets have been released under CC0 1.0 Universal.": poseunits/face-poseunits.bvh
@@ -46,10 +46,10 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | --- | --- |
 | body.bin.gz | `33e8502236f56d532abbaa2d0adbffb28af56a3f5313763feb9881c9ede668df` |
 | targets-core.bin.gz | `8b356cd998e6102ed07335107f805660781c29f46cbbf53f164aa704234cf362` |
-| targets-baby.bin.gz | `ba62d1afdf5eb220fdd0c549640a1d5e15610032810c704a9ec4af429bd1136b` |
-| targets-child.bin.gz | `202e932ed86edce12b3f2301ed7cc19f3b9eb7221b101d4bf1de3cb6eb6e1857` |
-| targets-young.bin.gz | `b2a442d5ecbb2a846a5160adfae027ab14b8d34d573bb169d0920a3c35b3474b` |
-| targets-old.bin.gz | `b17a88e4d428d56344245237bccaf5a64d51d7dba5615f62024033a1710ce501` |
+| targets-baby.bin.gz | `144d9c7eef03232136367a2e87bf99568cd539c7d7581baab8382aba8d809fbc` |
+| targets-child.bin.gz | `f6f9a24e5e0722ba89b989794abb4b97853a728be3bf0ec15fde8decfffdaafc` |
+| targets-young.bin.gz | `85a75f8583f4a17c77069ae1120f5e03bdc4a30268be90cc896dedecc38bec8b` |
+| targets-old.bin.gz | `f30339db2635f35617c5c46a266df0a21d8ee392040f83be00133083f351549b` |
 | targets-modifiers.bin.gz | `6c2c5713c5c1d3b52dfbe30e15de8e0bc6d3920cd906ea32072a9160152ea581` |
 | attachments.bin.gz | `8d3752662467717b3fa913b86c612d365e1839bc1d41c7fc9d68e4ad6adadff6` |
 | body-occlusion.bin.gz | `c9a5b960fc63fe1808f845d41c19ee983c0d70a99b4c7abc5c94ff86866b274f` |

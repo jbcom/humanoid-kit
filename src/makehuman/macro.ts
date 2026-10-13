@@ -137,7 +137,7 @@ export function combine(prefix: string, axes: readonly AxisWeights[]): Map<strin
     for (const [name, w] of acc) {
       for (const [anchor, aw] of axis) {
         const ww = w * aw;
-        if (ww > 1e-6) next.push([name ? `${name}-${anchor}` : anchor, ww]);
+        if (ww > 0) next.push([name ? `${name}-${anchor}` : anchor, ww]);
       }
     }
     acc = next;
@@ -194,19 +194,14 @@ export function macroTargetWeights(m: MacroValues): Map<string, number> {
   };
   add("macrodetails/", combine("", [ethnicAxis(m.african, m.asian, m.caucasian), g, a]));
   add("macrodetails/", combine("universal", [g, a, mu, we]));
-  const avg: AxisWeights[] = [g, a, [["averagemuscle", 1]], [["averageweight", 1]]];
-  add("macrodetails/height/", combine("", [...avg, heightAxis(m.height)]));
+  // As in MakeHuman, height and proportions are combined over muscle and weight
+  // too: a muscular or heavy figure takes the height variant authored for that build.
+  add("macrodetails/height/", combine("", [g, a, mu, we, heightAxis(m.height)]));
   // Upstream ships no baby proportion targets, so proportions do not apply at the baby anchor.
   const ageNoBaby = a.filter(([anchor]) => anchor !== "baby");
   add(
     "macrodetails/proportions/",
-    combine("", [
-      g,
-      ageNoBaby,
-      [["averagemuscle", 1]],
-      [["averageweight", 1]],
-      proportionAxis(m.proportions),
-    ]),
+    combine("", [g, ageNoBaby, mu, we, proportionAxis(m.proportions)]),
   );
   // As in MakeHuman: breast targets exist for the female anchor only and scale
   // with it, and for the child, young and old anchors (none for baby), so breast

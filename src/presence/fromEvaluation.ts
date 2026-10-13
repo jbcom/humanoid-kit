@@ -10,7 +10,7 @@ import type { Evaluation } from "../model/humanoidModel.ts";
 import { isAdult } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { luminance, SKIN_F0, skinAlbedo } from "../surface/skinTone.ts";
-import type { AnchorName, FigurePresence, Vec3 } from "./presence.ts";
+import type { AnchorName, FigureMeasures, FigurePresence, Vec3 } from "./presence.ts";
 
 /** Where a figure stands and which way it faces; the id names it in the registry. */
 export interface Placement {
@@ -29,6 +29,12 @@ export interface PresenceJoints {
   rightEye: readonly number[];
   mouth: readonly number[];
   chest: readonly number[];
+  leftShoulder: readonly number[];
+  rightShoulder: readonly number[];
+  leftElbow: readonly number[];
+  rightElbow: readonly number[];
+  leftHip: readonly number[];
+  rightHip: readonly number[];
   leftWrist: readonly number[];
   rightWrist: readonly number[];
   leftKnuckle: readonly number[];
@@ -47,6 +53,12 @@ const JOINT_NAMES: Record<keyof PresenceJoints, string> = {
   rightEye: "eye.R____tail",
   mouth: "oris01____head",
   chest: "spine01____head",
+  leftShoulder: "upperarm01.L____head",
+  rightShoulder: "upperarm01.R____head",
+  leftElbow: "lowerarm01.L____head",
+  rightElbow: "lowerarm01.R____head",
+  leftHip: "upperleg01.L____head",
+  rightHip: "upperleg01.R____head",
   leftWrist: "wrist.L____tail",
   rightWrist: "wrist.R____tail",
   leftKnuckle: "finger3-1.L____head",
@@ -100,6 +112,8 @@ const centroid = (control: Float32Array, verts: readonly number[]): Vec3 => {
 };
 
 const mid = (a: Vec3, b: Vec3): Vec3 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+
+const dist = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 /** How much of the head's length (base to crown) the metering region of the face spans. */
 const FACE_RADIUS_PER_HEAD_LENGTH = 0.75;
@@ -170,7 +184,12 @@ export function presenceFromEvaluation(input: {
 }): FigurePresence {
   const { evaluation: ev, recipe, joints, placement } = input;
   const lift = ev.groundOffset;
-  const { anchors, faceRadius, appearance, adult } = figureTraits(ev.control, lift, joints, recipe);
+  const { anchors, measures, faceRadius, appearance, adult } = figureTraits(
+    ev.control,
+    lift,
+    joints,
+    recipe,
+  );
 
   const min: Vec3 = [Infinity, Infinity, Infinity];
   const max: Vec3 = [-Infinity, -Infinity, -Infinity];
@@ -192,6 +211,7 @@ export function presenceFromEvaluation(input: {
     ...REST,
     bounds: { min, max },
     anchors,
+    measures,
     footprint: soles ?? { points: feet, radius: FALLBACK_FOOT_RADIUS },
     appearance,
     faceRadius,
@@ -214,7 +234,7 @@ export function figureTraits(
   lift: number,
   joints: PresenceJoints,
   recipe: Recipe,
-): Pick<FigurePresence, "anchors" | "faceRadius" | "appearance" | "adult"> {
+): Pick<FigurePresence, "anchors" | "measures" | "faceRadius" | "appearance" | "adult"> {
   const at = (verts: readonly number[]): Vec3 => {
     const [x, y, z] = centroid(control, verts);
     return [x, y + lift, z];
@@ -231,6 +251,22 @@ export function figureTraits(
     leftFoot: mid(at(joints.leftAnkle), at(joints.leftToe)),
     rightFoot: mid(at(joints.rightAnkle), at(joints.rightToe)),
   };
+  // The arm's length along its bones (shoulder, elbow, wrist, grip), so a bent
+  // arm in a pose measures the same as a straight one.
+  const arm = (shoulder: readonly number[], elbow: readonly number[], wrist: Vec3, grip: Vec3) => {
+    const s = at(shoulder);
+    const e = at(elbow);
+    return dist(s, e) + dist(e, wrist) + dist(wrist, grip);
+  };
+  const measures: FigureMeasures = {
+    reach:
+      (arm(joints.leftShoulder, joints.leftElbow, at(joints.leftWrist), anchors.leftHand) +
+        arm(joints.rightShoulder, joints.rightElbow, at(joints.rightWrist), anchors.rightHand)) /
+      2,
+    shoulderHeight: (at(joints.leftShoulder)[1] + at(joints.rightShoulder)[1]) / 2,
+    hipHeight: (at(joints.leftHip)[1] + at(joints.rightHip)[1]) / 2,
+    eyeHeight: eyes[1],
+  };
   const s = recipe.skin;
   const albedo = skinAlbedo({
     melanin: s.melanin,
@@ -240,6 +276,7 @@ export function figureTraits(
   });
   return {
     anchors,
+    measures,
     faceRadius:
       FACE_RADIUS_PER_HEAD_LENGTH *
       Math.hypot(headTop[0] - headBase[0], headTop[1] - headBase[1], headTop[2] - headBase[2]),
@@ -348,6 +385,10 @@ export function placePresence(
   target.facing[1] = 0;
   target.facing[2] = nfz;
   target.footprint.radius = presence.footprint.radius;
+  target.measures.reach = presence.measures.reach;
+  target.measures.shoulderHeight = presence.measures.shoulderHeight;
+  target.measures.hipHeight = presence.measures.hipHeight;
+  target.measures.eyeHeight = presence.measures.eyeHeight;
   target.appearance = presence.appearance;
   target.faceRadius = presence.faceRadius;
   target.adult = presence.adult;
@@ -386,6 +427,7 @@ export function clonePresence(p: FigurePresence): FigurePresence {
     facing: [...p.facing],
     bounds: { min: [...p.bounds.min], max: [...p.bounds.max] },
     anchors,
+    measures: { ...p.measures },
     footprint: {
       points: p.footprint.points.map(([x, z]) => [x, z] as [number, number]),
       radius: p.footprint.radius,

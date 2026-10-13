@@ -6,11 +6,33 @@
  */
 import { CORE_AFFORDANCES } from "../affordance/registry.ts";
 import type { AffordanceChange } from "../affordance/state.ts";
-import type { AnchorName } from "../presence/presence.ts";
+import { type AnchorName, type FigureMeasures, MEASURE_NAMES } from "../presence/presence.ts";
 
 /** A dotted, lower-case tag: "food.fruit.apple". */
 export type Tag = string;
 export type RoleName = string;
+
+/**
+ * A length in metres, or in a participant's own measurements: `{ of: "initiator",
+ * measure: "reach", times: 0.7 }` is 0.7 of the initiator's reach, so one
+ * definition fits a 1.5 m and a 1.9 m figure.
+ */
+export type Length =
+  | number
+  | { readonly of: RoleName; readonly measure: keyof FigureMeasures; readonly times: number };
+
+/**
+ * A length in metres, or undefined when it names a participant that has no
+ * measures. `measuresOf` answers for a role (a figure role's published presence).
+ */
+export function resolveLength(
+  length: Length,
+  measuresOf: (role: RoleName) => FigureMeasures | undefined,
+): number | undefined {
+  if (typeof length === "number") return length;
+  const m = measuresOf(length.of);
+  return m ? m[length.measure] * length.times : undefined;
+}
 export type BodyPart =
   | "locomotion"
   | "pelvis"
@@ -37,9 +59,16 @@ export interface RoleSpec {
   readonly affordances?: readonly string[];
   /** Body parts the role claims (figures). */
   readonly uses?: readonly BodyPart[];
-  /** Where this figure stands against the reference: metres and radians. */
+  /**
+   * Where this figure stands against the reference. `offset` is in the
+   * reference's frame (x to its left, y up, z along its facing; the facing of a
+   * fixture's frame, of an anchor's figure, or, for `between`, from each figure
+   * toward the other), each part a `Length`. `yaw` (radians, positive toward
+   * the left) turns the figure from that facing. `tolerance` is the ground
+   * distance (metres) within which the figure counts as placed.
+   */
   readonly slot?: {
-    readonly offset: readonly [number, number, number];
+    readonly offset: readonly [Length, Length, Length];
     readonly yaw: number;
     readonly tolerance: number;
   };
@@ -56,6 +85,8 @@ export type Reference =
   | { readonly between: readonly [RoleName, RoleName] };
 
 export interface Contact {
+  /** A name to ask for the contact by (`contactTarget`); otherwise its index. */
+  readonly name?: string;
   readonly a: RolePoint;
   readonly b: RolePoint;
   readonly during: readonly Phase[];
@@ -166,6 +197,38 @@ export function definitionProblems(def: InteractionDefinition): string[] {
     names.add(r.name);
     if (r.takes === "object" && (r.uses?.length || r.affordances?.length || r.slot))
       out.push(`object role ${r.name} cannot claim body parts, affordances or a slot`);
+  }
+  for (const r of def.roles)
+    for (const l of r.slot?.offset ?? []) {
+      if (typeof l === "number") {
+        if (!Number.isFinite(l)) out.push(`role ${r.name} has a slot offset that is not finite`);
+        continue;
+      }
+      const of = def.roles.find((o) => o.name === l.of);
+      if (of?.takes !== "figure")
+        out.push(`role ${r.name} measures ${l.of}, which is not a figure role`);
+      if (!MEASURE_NAMES.includes(l.measure))
+        out.push(`role ${r.name} measures ${l.measure}, which is not a measure`);
+      if (!Number.isFinite(l.times)) out.push(`role ${r.name} has a measure that is not finite`);
+    }
+  for (const r of def.roles) {
+    if (r.slot && !Number.isFinite(r.slot.yaw))
+      out.push(`role ${r.name} has a slot yaw that is not finite`);
+    if (r.slot && !(r.slot.tolerance >= 0 && Number.isFinite(r.slot.tolerance)))
+      out.push(`role ${r.name} has a slot tolerance that is not a non-negative finite number`);
+    for (const [phase, track] of Object.entries(r.track ?? {})) {
+      if (!track?.clip) out.push(`role ${r.name} has a track for ${phase} with no clip`);
+      if (track?.rate !== undefined && !(track.rate > 0 && Number.isFinite(track.rate)))
+        out.push(
+          `role ${r.name} has a track for ${phase} with a rate that is not a positive finite number`,
+        );
+    }
+  }
+  const contactNames = new Set<string>();
+  for (const c of def.contacts ?? []) {
+    if (c.name === undefined) continue;
+    if (contactNames.has(c.name)) out.push(`contact ${c.name} is declared twice`);
+    contactNames.add(c.name);
   }
   const role = (n: RoleName) => def.roles.find((r) => r.name === n);
   const point = (p: RolePoint, what: string) => {

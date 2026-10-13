@@ -24,7 +24,7 @@ const { ci } = lighthouseAssertions("game-default", {
   // The base preset (lighthouse:no-pwa) errors on audits this demo fails by
   // design or upstream; they stay visible as warnings.
   assertions: {
-    // The packs stream every age's targets after the first figure (6.7 MB).
+    // The packs stream every age's targets after the first figure (15.2 MB).
     "total-byte-weight": "warn",
     "network-dependency-tree-insight": "warn",
     // three and R3F ship code a single page does not run, and R3F's own
@@ -47,7 +47,17 @@ const chromeFlags = [
 const config = {
   ci: {
     ...ci,
-    collect: { ...ci.collect, settings: { ...ci.collect.settings, chromeFlags } },
+    collect: {
+      ...ci.collect,
+      settings: {
+        ...ci.collect.settings,
+        chromeFlags,
+        // The rendered WebGL canvas can make Lighthouse's optional full-page
+        // screenshot hang after audit collection on Linux SwiftShader CI. Keep
+        // the audits and their assertions; only omit that non-gating artifact.
+        disableFullPageScreenshot: true,
+      },
+    },
     upload: { target: "filesystem", outputDir: `./${root}/reports` },
   },
 };

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { compileAsset } from "../scripts/lib/compileAsset.ts";
@@ -12,6 +14,23 @@ import {
 import { loadFixtureAssets } from "./fixtures.ts";
 
 describe("the nail plates' source", () => {
+  it("preserves the four audited bodyparts04 source files byte-for-byte", () => {
+    const sourceHashes = {
+      "mindfront_nails_01_short/mind_nails_01_short.obj":
+        "229d6d57acc212f08e489488c501455a94bfeba574d2e539f43b9c883b8ba003",
+      "mindfront_nails_01_short/mindfront_nails_01_short.mhclo":
+        "625901cd63cfd3668635a83eb5a742c0cc1ad949cb2e000d6be4d131f3bf7cc0",
+      "mindfront_nails_toes_01/mind_nails_toes_01.obj":
+        "55f331d188ee74519a92dc6cb064d78ae96d3103445958b401a44d901f9de950",
+      "mindfront_nails_toes_01/mindfront_nails_toes_01.mhclo":
+        "d902d75a9e30750c32cfad83eac4ef0eaae62e1836867f2d86176b68aa303604",
+    } as const;
+    for (const [file, expected] of Object.entries(sourceHashes)) {
+      const source = readFileSync(path.join(VENDOR_BODYPARTS04, file));
+      expect(createHash("sha256").update(source).digest("hex"), file).toBe(expected);
+    }
+  });
+
   it("proves CC0 by their captured asset pages", () => {
     for (const [id, kind, file, page] of NAIL_PLATES) {
       const c = compileAsset(path.join(VENDOR_BODYPARTS04, file), id, kind, {

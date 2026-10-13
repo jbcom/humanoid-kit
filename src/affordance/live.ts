@@ -6,7 +6,7 @@
  * Nothing is stored but state. A frame is worked out when it is read, on the
  * figure exactly as the GPU draws it: its landmarks' render vertices skinned on
  * the main thread from the evaluation the figure was drawn from, the topology's
- * skin weights, the pose its bones were last given, the hip fold at the share
+ * skin weights, the pose its bones were last given, the joint folds at the share
  * faded in, then carried to world space by the lifted group's `matrixWorld`.
  * The figure says how it is drawn through a `LiveFigure`; this file knows
  * nothing of React.
@@ -27,7 +27,13 @@ import {
 import { isAdult } from "../recipe/agePolicy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { ChannelClip, CLIP_CHANNELS } from "../render/channelClip.ts";
-import { type SkinFold, type SkinPose, skinNormalAt, skinPositionAt } from "../rig/dual.ts";
+import {
+  NO_FOLDS,
+  type SkinFold,
+  type SkinPose,
+  skinNormalAt,
+  skinPositionAt,
+} from "../rig/dual.ts";
 import type { SurfaceAnchors } from "../worker/protocol.ts";
 import { type Channel, type ChannelPlace, emptyChannel, openingFor, placeIn } from "./channel.ts";
 import {
@@ -60,8 +66,8 @@ export interface LiveFigure {
   readonly skinWeight: Float32Array;
   /** The pose as the GPU skins by it (`DualBones.pose`, or `linearPose` for a custom material); null before the first. */
   pose(): SkinPose | null;
-  /** The hip fold on this surface at the share showing (`DualBones.skinFold`), or null. */
-  fold(): SkinFold | null;
+  /** The joint folds on this surface at the share showing (`DualBones.skinFolds`): none when there are none. */
+  folds(): readonly SkinFold[];
   /** The posed skeleton, for the joints' landmarks; null before the first pose. */
   skeleton(): PosedSkeleton | null;
   /** The group the figure's meshes are drawn in, whose `matrixWorld` is its space's; null for world space itself. */
@@ -125,14 +131,14 @@ export class HumanoidAffordances {
     anchors: LandmarkAnchors | null;
     ups: Int32Array;
     pose: SkinPose | null;
-    fold: SkinFold | null;
+    folds: readonly SkinFold[];
     skeleton: PosedSkeleton | null;
   } = {
     figure: null,
     anchors: null,
     ups: new Int32Array(0),
     pose: null,
-    fold: null,
+    folds: NO_FOLDS,
     skeleton: null,
   };
   private readonly point = new Vector3();
@@ -489,14 +495,14 @@ export class HumanoidAffordances {
     now.anchors = anchors;
     now.ups = this.ups.ups;
     now.pose = pose;
-    now.fold = figure.fold();
+    now.folds = figure.folds();
     now.skeleton = skeleton;
     return true;
   }
 
   /** A render vertex skinned as the GPU skins it. */
   private readonly skin: SkinRenderVertex = (v, position, normal) => {
-    const { figure: f, pose, fold } = this.now;
+    const { figure: f, pose, folds } = this.now;
     if (!f || !pose) throw new Error("affordances: a vertex skinned outside a read");
     const r = f.rest;
     skinPositionAt(
@@ -509,7 +515,7 @@ export class HumanoidAffordances {
       r[v * 3 + 2] as number,
       position,
       0,
-      fold,
+      folds,
     );
     if (!normal) return;
     const n = f.restNormals;
@@ -523,7 +529,7 @@ export class HumanoidAffordances {
       n[v * 3 + 2] as number,
       normal,
       0,
-      fold,
+      folds,
     );
   };
 

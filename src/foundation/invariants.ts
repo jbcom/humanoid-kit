@@ -4,10 +4,12 @@
  *
  * 1. no interpenetration: skin passes through skin by no more than
  *    `PENETRATION_LIMIT`, except between the named contact pairs
- *    (`CONTACT_PAIRS`), whose depth is reported apart;
+ *    (`CONTACT_PAIRS`), whose depth is reported apart, and a canal's lumen
+ *    self-contact (`isLumenContact`), reported apart too;
  * 2. no collapse: no triangle inverts against the skinned normals or keeps
- *    under `SQUASH_LIMIT` of its rest area, and the skin round each joint keeps
- *    its volume within `VOLUME_BAND` of rest;
+ *    under `SQUASH_LIMIT` of its rest area, and the flesh round each joint keeps
+ *    its volume within `VOLUME_BAND` of rest (`jointVolume`: what the skin
+ *    encloses, overlaps once);
  * 3. a smooth surface: no edge folds sharper than `DIHEDRAL_LIMIT` in the pose
  *    where it was smooth at rest, outside the named creases;
  * 4. continuity: a UV seam's duplicates stay together.
@@ -17,6 +19,7 @@
  */
 import { DoubleSide, Ray, Vector3 } from "three";
 import { INTERSECTED, NOT_INTERSECTED } from "three-mesh-bvh";
+import { SolidWinding } from "../rig/contact.ts";
 import type { PosedBody } from "./posed.ts";
 import { BodySurface } from "./surface.ts";
 
@@ -86,6 +89,31 @@ const CONTACTS = new Set(CONTACT_PAIRS.map(([a, b]) => contactKey(a, b)));
 export const isContact = (a: BodyPart, b: BodyPart): boolean =>
   a !== b && CONTACTS.has(contactKey(a, b));
 
+/**
+ * Lumen self-contact (coordinator ruling, 2026-10-10): a canal
+ * (`AdultReservoirSpec.canal`) is collapsed, a potential space whose walls touch
+ * at rest, so a wall inside the opposite wall of its own canal is contact, not
+ * penetration, while it stays inside the canal: vertex `v` is in it when it and
+ * every corner of the triangle its ray leaves through first (`exit`) are of the same
+ * canal, and that triangle lies within the canal's closed gap of it along the ray
+ * (`exitDistance`). A wall that has crossed the opposite one leaves through other
+ * skin, and skin passing through skin beside a canal is not of it: both are
+ * penetration still.
+ */
+export function isLumenContact(
+  canals: PosedBody["canals"],
+  index: Uint32Array,
+  v: number,
+  exit: number,
+  exitDistance: number,
+): boolean {
+  if (!canals) return false;
+  const c = canals.of[v] as number;
+  if (c < 0) return false;
+  for (let k = 0; k < 3; k++) if (canals.of[index[exit * 3 + k] as number] !== c) return false;
+  return exitDistance <= (canals.gap[c] as number);
+}
+
 /** What one posed body measures against each invariant. */
 export interface InvariantMeasure {
   /** Vertices deeper than `PENETRATION_LIMIT` inside other skin, outside a named contact, and the deepest (metres). */
@@ -103,6 +131,9 @@ export interface InvariantMeasure {
   /** The same for named contacts. */
   contacts: number;
   deepestContact: number;
+  /** Vertices in a canal's lumen self-contact (`isLumenContact`), and the rest skin they stand for (cm²). */
+  lumen: number;
+  lumenArea: number;
   /** Triangles that inverted against the skinned normals, or kept under `SQUASH_LIMIT` of their area. */
   inverted: number;
   squashed: number;
@@ -197,6 +228,8 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
   let deepestParts = "";
   let contacts = 0;
   let deepestContact = 0;
+  let lumen = 0;
+  let lumenArea = 0;
   for (let v = 0; v < body.vertexCount; v += stride) {
     if (body.weld[v] !== v) continue;
     v3(body.positions, v, p);
@@ -234,7 +267,11 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
     // not a penetration: skin a vertex has passed through lies near it.
     if (depth <= PENETRATION_LIMIT || depth >= REACH) continue;
     const mine = parts[v] as BodyPart;
-    if (isContact(mine, other)) {
+    // A canal's walls closing on each other: contact, inside the canal only (`isLumenContact`).
+    if (isLumenContact(body.canals, tri, v, exit, (hits[0]?.distance ?? 0) + 1e-4)) {
+      lumen++;
+      lumenArea += (areas[v] as number) * stride * CM2;
+    } else if (isContact(mine, other)) {
       contacts++;
       deepestContact = Math.max(deepestContact, depth);
     } else {
@@ -247,7 +284,16 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
     }
   }
   surface.dispose();
-  return { penetrating, penetratingArea, deepest, deepestParts, contacts, deepestContact };
+  return {
+    penetrating,
+    penetratingArea,
+    deepest,
+    deepestParts,
+    contacts,
+    deepestContact,
+    lumen,
+    lumenArea,
+  };
 }
 
 /** Inverted and squashed triangles. */
@@ -338,59 +384,75 @@ function folds(body: PosedBody, crease: Float32Array) {
   return { folds: count, sharpest };
 }
 
-/** The joints whose skin's volume is held: the bone whose head is the joint, and its parent. */
-const VOLUME_JOINTS = [
+/**
+ * The joints whose flesh's volume is held: the bone whose head is the joint,
+ * and the two whose heads' distance (the limb segment beside it: the thigh at
+ * the hip and the knee, the upper arm at the shoulder and the elbow) sizes the
+ * ball it is measured in (`jointVolume`).
+ */
+export const VOLUME_JOINTS = [
   ...(["L", "R"] as const).flatMap((s) => [
-    { name: `shoulder.${s}`, bones: [`upperarm01.${s}`, `clavicle.${s}`] },
-    { name: `elbow.${s}`, bones: [`lowerarm01.${s}`, `upperarm02.${s}`] },
-    { name: `hip.${s}`, bones: [`upperleg01.${s}`, `pelvis.${s}`] },
-    { name: `knee.${s}`, bones: [`lowerleg01.${s}`, `upperleg02.${s}`] },
+    {
+      name: `shoulder.${s}`,
+      head: `upperarm01.${s}`,
+      span: [`upperarm01.${s}`, `lowerarm01.${s}`],
+    },
+    { name: `elbow.${s}`, head: `lowerarm01.${s}`, span: [`upperarm01.${s}`, `lowerarm01.${s}`] },
+    { name: `hip.${s}`, head: `upperleg01.${s}`, span: [`upperleg01.${s}`, `lowerleg01.${s}`] },
+    { name: `knee.${s}`, head: `lowerleg01.${s}`, span: [`upperleg01.${s}`, `lowerleg01.${s}`] },
   ]),
 ];
 
 /**
- * The volume the skin round each joint closes with the joint's head: the
- * signed volume of the cones from the head to the triangles whose vertices
- * follow the joint's two bones most, posed against rest.
+ * The radius of a joint's ball, as a share of its limb segment's length, and
+ * the grid's cells across the ball. CHOICE: 0.3 (13 cm at an adult's knee,
+ * 9 cm at the shoulder) holds the flesh a joint's bend moves and little of
+ * what it does not; 24 cells, cells of 1 cm at the knee: the average man
+ * turned and carried rigidly three ways reads his eight joints within 0.8% of
+ * 1, 22 of the 24 readings within 0.4% (2026-10-10).
  */
+export const VOLUME_RADIUS = 0.3;
+export const VOLUME_CELLS = 24;
+
+/**
+ * The volume of flesh round `joint` (of `VOLUME_JOINTS`), posed against rest:
+ * what the skin encloses (`SolidWinding`, winding at least once) within a
+ * ball centred on the joint's head, of `VOLUME_RADIUS` of its limb segment's
+ * length at rest. A limb turned rigidly about the joint keeps as much of
+ * itself within the ball, so the ratio is what the skinning (and a fold) do to
+ * the flesh. Skin that passes through skin encloses the overlap once, not
+ * twice, as a sum of cones from the joint counted it: a calf through the
+ * thigh is flesh lost, not flesh kept. Null where the skeleton has not the
+ * joint's bones. `rest` and `posed` are the body at rest and posed
+ * (`SolidWinding` of each), with the bones' heads there.
+ */
+export function jointVolume(
+  names: readonly string[],
+  joint: (typeof VOLUME_JOINTS)[number],
+  rest: { solid: SolidWinding; heads: Float32Array },
+  posed: { solid: SolidWinding; heads: Float32Array },
+): number | null {
+  const head = names.indexOf(joint.head);
+  const [s0, s1] = joint.span.map((name) => names.indexOf(name)) as [number, number];
+  if (head < 0 || s0 < 0 || s1 < 0) return null;
+  const at = (heads: Float32Array, b: number) =>
+    [0, 1, 2].map((k) => heads[b * 3 + k] as number) as [number, number, number];
+  const [p, q] = [at(rest.heads, s0), at(rest.heads, s1)];
+  const r = VOLUME_RADIUS * Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]);
+  const atRest = rest.solid.ballVolume(at(rest.heads, head), r, VOLUME_CELLS);
+  if (atRest <= 0) return null;
+  return posed.solid.ballVolume(at(posed.heads, head), r, VOLUME_CELLS) / atRest;
+}
+
+/** Every joint of `VOLUME_JOINTS` whose flesh's volume leaves `VOLUME_BAND` (`jointVolume`), and the furthest ratio from 1. */
 function jointVolumes(body: PosedBody) {
   const out: string[] = [];
   let worst = 1;
-  const owner = Array.from({ length: body.vertexCount }, (_, v) => {
-    let best = 0;
-    for (let k = 1; k < 4; k++)
-      if ((body.skinWeight[v * 4 + k] as number) > (body.skinWeight[v * 4 + best] as number))
-        best = k;
-    return body.skinIndex[v * 4 + best] as number;
-  });
+  const rest = { solid: new SolidWinding(body.rest, body.index), heads: body.bones.heads };
+  const posed = { solid: new SolidWinding(body.positions, body.index), heads: body.heads };
   for (const joint of VOLUME_JOINTS) {
-    const ids = joint.bones.map((name) => body.bones.names.indexOf(name));
-    if (ids.some((i) => i < 0)) continue;
-    const head = ids[0] as number;
-    const volume = (pos: Float32Array, heads: Float32Array) => {
-      const o = new Vector3(
-        heads[head * 3] as number,
-        heads[head * 3 + 1] as number,
-        heads[head * 3 + 2] as number,
-      );
-      let sum = 0;
-      for (let t = 0; t < body.index.length; t += 3) {
-        const [i, j, k] = [body.index[t], body.index[t + 1], body.index[t + 2]] as [
-          number,
-          number,
-          number,
-        ];
-        if (![i, j, k].every((v) => ids.includes(owner[v] as number))) continue;
-        v3(pos, i, a).sub(o);
-        v3(pos, j, b).sub(o);
-        v3(pos, k, c).sub(o);
-        sum += a.dot(e1.crossVectors(b, c)) / 6;
-      }
-      return Math.abs(sum);
-    };
-    const atRest = volume(body.rest, body.bones.heads);
-    if (atRest < 1e-9) continue;
-    const ratio = volume(body.positions, body.heads) / atRest;
+    const ratio = jointVolume(body.bones.names, joint, rest, posed);
+    if (ratio === null) continue;
     if (Math.abs(ratio - 1) > Math.abs(worst - 1)) worst = ratio;
     if (ratio < VOLUME_BAND[0] || ratio > VOLUME_BAND[1])
       out.push(`${joint.name} ${ratio.toFixed(2)}`);

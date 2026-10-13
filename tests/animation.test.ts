@@ -341,6 +341,27 @@ describe("the animator", () => {
     expect(an.playing?.time).toBeCloseTo(0.5, 9);
   });
 
+  it("forgets grounded contact ownership once a transition is wholly airborne", () => {
+    const body = figure("average", 25);
+    const an = new Animator(BONES.length, body.rest, body.ground);
+    an.play(clip("walk_normal"));
+    an.update(1 / 60);
+    expect(an.contactOwnership.some((contact) => contact.index >= 0 && contact.hold > 0)).toBe(
+      true,
+    );
+
+    const swim = clip("swim_fwd_loop");
+    expect(swim.grounded).toBe(false);
+    an.play(swim, { fade: 0.01 });
+    // The outgoing grounded clip may own a sole while it still participates in the blend.
+    expect(an.contactOwnership.some((contact) => contact.index >= 0)).toBe(true);
+    an.update(0.02);
+    expect(an.contactOwnership).toEqual([
+      { index: -1, hold: 0 },
+      { index: -1, hold: 0 },
+    ]);
+  });
+
   it("fades one clip into the next over the time asked, ending on the next exactly", () => {
     const an = new Animator(BONES.length);
     an.play(clip("idle1"));
@@ -682,6 +703,33 @@ describe("the foot lock", () => {
       );
       expect(dot, side).toBeGreaterThan(0.99999);
     }
+  });
+
+  it("reports the real owner separately from a full hold, including a fade through foot rollover", () => {
+    const lock = new FootLock(fig.rest, fig.ground);
+    lock.apply(pose(), [0, 0]);
+    const planted = lock.contactOwnership();
+    expect(planted.map((contact) => contact.index)).toEqual([2, 5]);
+    expect(planted.map((contact) => contact.hold)).toEqual([1, 1]);
+    // Every read is a snapshot: a consumer cannot change the lock's next frame.
+    (planted[0] as { index: number; hold: number }).hold = 0;
+    expect(lock.contactOwnership()[0]?.hold).toBe(1);
+
+    let fading = false;
+    const walk = clip("walk_normal");
+    for (let frame = 0; frame < walk.frames * 2; frame++) {
+      const rotations = sampleClip(walk, frame / walk.fps, new Float32Array(BONES.length * 4));
+      lock.apply(rotations, [0, 0]);
+      fading ||= lock
+        .contactOwnership()
+        .some((contact) => contact.index >= 0 && contact.hold > 0 && contact.hold < 1);
+    }
+    expect(fading, "a rolling/releasing sole keeps ownership while its hold fades").toBe(true);
+    lock.reset();
+    expect(lock.contactOwnership()).toEqual([
+      { index: -1, hold: 0 },
+      { index: -1, hold: 0 },
+    ]);
   });
 
   it("asks nothing of the figure while the leg reaches, and when it cannot, asks the figure to give way by what it could not reach", () => {

@@ -9,10 +9,29 @@ does not license trademarks (CC0 1.0 §4a).
 
 Built against the body pack with `body.sha256` `33e8502236f56d532abbaa2d0adbffb28af56a3f5313763feb9881c9ede668df`; the loader refuses any other.
 
-Every packed source file was checked for CC0 from its own content before packing:
+Community garments come from the MakeHuman community's asset packs, each archive pinned by its SHA-256:
+
+| Pack | Archive | SHA-256 |
+| --- | --- | --- |
+| dress01 | <https://files.makehumancommunity.org/asset_packs/dress01/dress01_cc0.zip> | `f49ba54a3c93acd3c3307cc5a96cfc65daf8abfed9212a7e580791d821c9e93a` |
+| equipment01 | <https://files.makehumancommunity.org/asset_packs/equipment01/equipment01_cc0.zip> | `d8afa9d98c52f0a5e92a0d3e9f691f5699dd878499d9f6681740d38ca2640236` |
+| glasses01 | <https://files.makehumancommunity.org/asset_packs/glasses01/glasses01_cc0.zip> | `f215c58e09e31b7ee568c814067cb47704cee6da1f6fc01cffb8e9fca37bafdd` |
+| gloves01 | <https://files.makehumancommunity.org/asset_packs/gloves01/gloves01_cc0.zip> | `ecdaee1d02749d17352791d415cb622a883350cc8a4b90eda3725aef35d9afb2` |
+| hats01 | <https://files.makehumancommunity.org/asset_packs/hats01/hats01_cc0.zip> | `97b70d7bd90e74ee87a49faeb7c4a1b2762b311902974db575851daaae05b50e` |
+| masks01 | <https://files.makehumancommunity.org/asset_packs/masks01/masks01_cc0.zip> | `868e0e92cd84d34abf225f68a99e00c1ca5d9c14a4f558ed62cdaeb77b806206` |
+| pants01 | <https://files.makehumancommunity.org/asset_packs/pants01/pants01_cc0.zip> | `e4e0ec60db34f279be291a83cfd7b342a7c5cf09bb7676682a5f39f4f6ac4ad9` |
+| shirts01 | <https://files.makehumancommunity.org/asset_packs/shirts01/shirts01_cc0.zip> | `a5a723b0e84a109bb190fcfeac7f1de4138d875da3e30fe5b3340eac9f38bcd3` |
+| shoes01 | <https://files.makehumancommunity.org/asset_packs/shoes01/shoes01_cc0.zip> | `ded3f70428505eabbf1f6d7b5f61196a7366ef20757103d276ad0ed336c35ada` |
+| skirts01 | <https://files.makehumancommunity.org/asset_packs/skirts01/skirts01_cc0.zip> | `293fa0c15e28e8dcea8dfff20cae31aa4b0d1268a6e6ba0a53a92ebb0f36c882` |
+| suits02 | <https://files.makehumancommunity.org/asset_packs/suits02/suits02_cc0.zip> | `437f4d7ab92b698c1fb1047e7d62b22c11f195b2473e936118661dc8e6b7eb7a` |
+| underwear01 | <https://files.makehumancommunity.org/asset_packs/underwear01/underwear01_cc0.zip> | `8c3b51cf18d26ea096cb92b79a7a379d1a00273ef029b5779715486180fd47d5` |
+
+Every packed source file was checked for CC0 before packing: a system asset by its own header (A), a
+community garment by its asset page, which governs (B; docs/licence-history.md):
 
 - 57 file(s) — A: file header "This asset was explicitly released as CC0"
 - 33 file(s) — A: binary file of a team asset
+- 276 file(s) — B: page licence "CC0 - Creative Commons Zero" (its asset page, in the table below)
 
 | Garment | Category | Source mhclo | SHA-256 of the mhclo |
 | --- | --- | --- | --- |
@@ -35,6 +54,145 @@ Every packed source file was checked for CC0 from its own content before packing
 | shoes/shoes05 | shoes | clothes/shoes05/shoes05.mhclo | `75fc467264b085d7a05ce0c9b5628bb364b246392c59524c556fa09f92b6cb16` |
 | shoes/shoes06 | shoes | clothes/shoes06/shoes06.mhclo | `c39144d8d9073474fb00a098954e6c4d8cc68c95ff6404eb3a984dd7870be3fd` |
 | hats/fedora01 | hat | clothes/fedora01/fedora01.mhclo | `c3af725d316d7003d2d00fc3d79750edc431f71af9ef539051217a3d308d3b15` |
+| suits/wdg_mycenaean_tunic | clothes | dress01_cc0.zip: clothes/wdg_mycenaean_tunic/wdg_mycenaean_tunic.mhclo | `08cbe26da9933317eea77d34ae1cf781be94896025091d8f14db36a4a4f00c29` |
+| held/culturalibre_hero_kalistick | held | equipment01_cc0.zip: clothes/culturalibre_hero_kalistick/culturalibre_hero_kalistick.mhclo | `48a052dbf291012f563d36a22665c187f85a31b0610b90a9ff00f873fc95dc94` |
+| held/culturalibre_hero_kalistick_lefthanded | held | equipment01_cc0.zip: clothes/culturalibre_hero_kalistick_lefthanded/culturalibre_hero_kalistick_lefthanded.mhclo | `6e97905f4bdda85624838f2dd3f38ec94387189a30ce75913cf3c2c9c55f6ffb` |
+| held/culturalibre_magic_sceptre | held | equipment01_cc0.zip: clothes/culturalibre_magic_sceptre/culturalibre_magic_sceptre.mhclo | `70e50055b211aba0f0e22fa5385e82a5c944d38cca2bf1f46fec5f87d7fbfbcb` |
+| held/culturalibre_war_hammer | held | equipment01_cc0.zip: clothes/culturalibre_war_hammer/culturalibre_war_hammer.mhclo | `d0c279bf0aa2ccf2cada49be2f0045b2049c04d0e7de68eee86d6a9fc5bcf254` |
+| held/culturalibre_wooden_bow | held | equipment01_cc0.zip: clothes/culturalibre_wooden_bow/culturalibre_wooden_bow.mhclo | `1c21567cd2cca6f36545f12df72947439327552a523a976b6710ef6aac5e43c5` |
+| held/o4saken_dagger | held | equipment01_cc0.zip: clothes/o4saken_dagger/o4saken_dagger.mhclo | `b7099974892b44e5dcf4192ff79564f10e136743515f96d81d0018f0a105e34c` |
+| glasses/culturalibre_doc_ock_glasses | glasses | glasses01_cc0.zip: clothes/culturalibre_doc_ock_glasses/culturalibre_doc_ock_glasses.mhclo | `6cfb5cc552089c8c211eaf92ec60f74327c717d18adc82671d13d5473876cf84` |
+| glasses/ews_3d_glasses | glasses | glasses01_cc0.zip: clothes/ews_3d_glasses/ews_3d_glasses.mhclo | `7e38dd2480711299f6820fdc541f1b252d4db187e302d08e0a3670472e176d02` |
+| glasses/frankyaye_glasses_library_male | glasses | glasses01_cc0.zip: clothes/frankyaye_glasses_library_male/frankyaye_glasses_library_male.mhclo | `95ae49131d4fb41c5295708b6f7de35a2cf86210a332b11a0d1616d83b5de364` |
+| glasses/kwnet_at_optical_glasses | glasses | glasses01_cc0.zip: clothes/kwnet_at_optical_glasses/kwnet_at_optical_glasses.mhclo | `81110c16d6c74d8b3be3d770bafa4d5621f910b87de12b342e81b435ce0578ca` |
+| gloves/culturalibre_hero-heroine_gloves_1 | gloves | gloves01_cc0.zip: clothes/culturalibre_hero-heroine_gloves_1/culturalibre_hero-heroine_gloves_1.mhclo | `76c82c726c23cd7eb53d2ccf731b92cf18a57e680370caeb000a99936b33645c` |
+| gloves/culturalibre_hero-heroine_gloves_2 | gloves | gloves01_cc0.zip: clothes/culturalibre_hero-heroine_gloves_2/culturalibre_hero-heroine_gloves_2.mhclo | `97b77197867731697a740805c9d8adda656207286abf4033657c44b0761d6a42` |
+| gloves/culturalibre_hero-heroine_gloves_4 | gloves | gloves01_cc0.zip: clothes/culturalibre_hero-heroine_gloves_4/culturalibre_hero-heroine_gloves_4.mhclo | `262f613ada06cde63a8af4804f425068cae0285e8eb252540da009239b3c0429` |
+| gloves/culturalibre_hero-heroine_gloves_5 | gloves | gloves01_cc0.zip: clothes/culturalibre_hero-heroine_gloves_5/culturalibre_hero-heroine_gloves_5.mhclo | `3a9bb69f7dc4be39c3ef73a6c4e21dc9b9454b846a3317ea5cabbb33362840cd` |
+| gloves/learning_mma_fighting_gloves | gloves | gloves01_cc0.zip: clothes/learning_mma_fighting_gloves/learning_mma_fighting_gloves.mhclo | `d9941430c0a6ce1029df1526606d66a5ff1e801975939e19808c2fd1c7eca38a` |
+| hats/grinsegold_uncle_joshis_hat | hat | hats01_cc0.zip: clothes/grinsegold_uncle_joshis_hat/grinsegold_uncle_joshis_hat.mhclo | `415828d9da188a254505b5bef79c10484ec1d50869d9a318bb824aaf98569c5b` |
+| hats/jujube_bag_on_head | hat | hats01_cc0.zip: clothes/jujube_bag_on_head/jujube_bag_on_head.mhclo | `e3e81534696c773c691ed254d6a371ba2429eb5f63d0cd9dde53d52bf3c5abd0` |
+| hats/jujube_newsboy_cap | hat | hats01_cc0.zip: clothes/jujube_newsboy_cap/jujube_newsboy_cap.mhclo | `5e62bf1986288ddf433a7c07fc5d318a7aba7cf1d65a97cd600d7d692e54684f` |
+| masks/culturalibre_hero_mask_1 | mask | masks01_cc0.zip: clothes/culturalibre_hero_mask_1/culturalibre_hero_mask_1.mhclo | `4e9b45f8586cbaf5d353f5015e83783fa6c4aecff77f3d411f2cc932719ccb36` |
+| masks/culturalibre_hero_mask_2 | mask | masks01_cc0.zip: clothes/culturalibre_hero_mask_2/culturalibre_hero_mask_2.mhclo | `fa60534d84387b574a5ef341f422974d7e1b5f9a2d4ffb7d265e043de3d6099e` |
+| masks/culturalibre_hero_mask_3 | mask | masks01_cc0.zip: clothes/culturalibre_hero_mask_3/culturalibre_hero_mask_3.mhclo | `f410776648ddd8459d3fc14360164ba6d680acc42125fb96dc288773e65ed1a8` |
+| masks/culturalibre_hero_mask_4 | mask | masks01_cc0.zip: clothes/culturalibre_hero_mask_4/culturalibre_hero_mask_4.mhclo | `be050ba17f37b2f3c2dc1f20ea7025ac67d70d65d7d0f03753c13b6664347fe1` |
+| masks/culturalibre_heroine_mask_1 | mask | masks01_cc0.zip: clothes/culturalibre_heroine_mask_1/culturalibre_heroine_mask_1.mhclo | `2fc3c52c4c47ac5601063bac68a546b209ae28f6a18c58faa417e875108bc3f1` |
+| hats/culturalibre_hero-heroine_hood_1 | hat | masks01_cc0.zip: clothes/culturalibre_hero-heroine_hood_1/culturalibre_hero-heroine_hood_1.mhclo | `e0e2614f836bba0248ec3dfa984b919a3dc630eac986f171b5040301c098cc67` |
+| hats/culturalibre_hero-heroine_hood_2 | hat | masks01_cc0.zip: clothes/culturalibre_hero-heroine_hood_2/culturalibre_hero-heroine_hood_2.mhclo | `cf9634009125531fe2902eaa6881f00ba15b5c8d4c860171df3bec7b7dd45df2` |
+| bottoms/cortu_cargo_pants | bottoms | pants01_cc0.zip: clothes/cortu_cargo_pants/cortu_cargo_pants.mhclo | `5bc0c7282a5a2694d55b6df2ed5642a382d89d0b77bd98703dac7e110e51fada` |
+| bottoms/cortu_jeans_shorts | bottoms | pants01_cc0.zip: clothes/cortu_jeans_shorts/cortu_jeans_shorts.mhclo | `f26d763703d6730789df5b9818e4871665928d502b4f68762c8aa96fd3779fab` |
+| tops/skalldyrssuppe_tube_top_funky_colors | top | shirts01_cc0.zip: clothes/skalldyrssuppe_tube_top_funky_colors/skalldyrssuppe_tube_top_funky_colors.mhclo | `99f193451b32a6640b8114439fa6051a7e36832068d933f87156b215ea030a93` |
+| shoes/cortu_t-bar | shoes | shoes01_cc0.zip: clothes/cortu_t-bar/cortu_t-bar.mhclo | `6379ee1c2f6f203de916ad26cd3006b6e51ae6e53bf715d54e4dfb12e1a1e04e` |
+| shoes/cortu_floppy_overknee_shoes | shoes | shoes01_cc0.zip: clothes/cortu_floppy_overknee_shoes/cortu_floppy_overknee_shoes.mhclo | `847421d4ba77173ccdda43474797d1c09a7123ae2b0cb482919e4b1c50287134` |
+| shoes/culturalibre_hero_boots_1 | shoes | shoes01_cc0.zip: clothes/culturalibre_hero_boots_1/culturalibre_hero_boots_1.mhclo | `c752e83c54ccf48bf10fc07080a3fcde30917dfc7910f770db2dac73df48a1ed` |
+| shoes/culturalibre_hero_boots_2 | shoes | shoes01_cc0.zip: clothes/culturalibre_hero_boots_2/culturalibre_hero_boots_2.mhclo | `b8046c7e7b9cf39ea93d1155fbb76f9bdfc612c7a0ea140a11aba38a68f3542f` |
+| shoes/culturalibre_hero_boots_3 | shoes | shoes01_cc0.zip: clothes/culturalibre_hero_boots_3/culturalibre_hero_boots_3.mhclo | `a874339dc5a73e3a9b8f49ac019d9d7c5e556bf659b117bbd605f5635927c73f` |
+| shoes/culturalibre_hero_boots_5 | shoes | shoes01_cc0.zip: clothes/culturalibre_hero_boots_5/culturalibre_hero_boots_5.mhclo | `21dfb2877b4be4c53d2e70bc8ea44506bc8712f10936721f9cb57eaa741736d0` |
+| shoes/culturalibre_heroine_boots_1 | shoes | shoes01_cc0.zip: clothes/culturalibre_heroine_boots_1/culturalibre_heroine_boots_1.mhclo | `8a3cacdfe6263754b2560a6c4de66cf46bd313db62b59b9e44def2c1f080bf0e` |
+| shoes/culturalibre_heroine_boots_2 | shoes | shoes01_cc0.zip: clothes/culturalibre_heroine_boots_2/culturalibre_heroine_boots_2.mhclo | `ea31ccff10b8f1909e0698e56d5a23fee5a19454f4037de39299f58dd78a0cf3` |
+| shoes/culturalibre_heroine_boots_3 | shoes | shoes01_cc0.zip: clothes/culturalibre_heroine_boots_3/culturalibre_heroine_boots_3.mhclo | `0f9b6943641462b299ab85b7817022554b15ef6d8fc1977aa006f65637ffdaa2` |
+| shoes/culturalibre_male_boots | shoes | shoes01_cc0.zip: clothes/culturalibre_male_boots/culturalibre_male_boots.mhclo | `a22e7c3725a69ef5fc1267cad8622082e445b7d194d4cd0b253be6bc809d925f` |
+| shoes/grinsegold_female_pirate_boots | shoes | shoes01_cc0.zip: clothes/grinsegold_female_pirate_boots/grinsegold_female_pirate_boots.mhclo | `afc5bfc250967f3d77878298a7253f629d349715d5ee72e088d710f65b8e7ecc` |
+| shoes/scailman_gogo_platform_boots | shoes | shoes01_cc0.zip: clothes/scailman_gogo_platform_boots/scailman_gogo_platform_boots.mhclo | `e457e3b6096aa0e3a072f08c164137e16d0829f6f3f4e75820d89a443a280017` |
+| shoes/scailman_semitransparent_water_boots | shoes | shoes01_cc0.zip: clothes/scailman_semitransparent_water_boots/scailman_semitransparent_water_boots.mhclo | `cb35a4bd901a64dcc2eb4538260e97cceceeaa616458eff03be00b2eb7858e0f` |
+| bottoms/frankyaye_mini_skirt_01 | bottoms | skirts01_cc0.zip: clothes/frankyaye_mini_skirt_01/frankyaye_mini_skirt_01.mhclo | `1371920e0f8850b4bea413bddd4ba1621409c230f1365743e1928246db5f1be0` |
+| bottoms/frankyaye_mini_skirt_02 | bottoms | skirts01_cc0.zip: clothes/frankyaye_mini_skirt_02/frankyaye_mini_skirt_02.mhclo | `25c83a5c68d79b2a7e8b42b62e4855eeb702ddff04c9e0e8526752c8fa088d52` |
+| bottoms/rehmanpolanski_viking_pants | bottoms | suits02_cc0.zip: clothes/rehmanpolanski_viking_pants/rehmanpolanski_viking_pants.mhclo | `2afe050edefda93d4e47a58b31e6e65a14ac09e0d466d9debcacbe376f956c0f` |
+| tops/rehmanpolanski_viking_tunic | top | suits02_cc0.zip: clothes/rehmanpolanski_viking_tunic/rehmanpolanski_viking_tunic.mhclo | `349b5b7b2abc44a7bd0b52ca99bd352e7d3b316cd4be5d539bbd9587462e801c` |
+| suits/culturalibre_hero_suit_1 | clothes | suits02_cc0.zip: clothes/culturalibre_hero_suit_1/culturalibre_hero_suit_1.mhclo | `93dd69623fcc4e31d94ee5b35c8a9f88a48528e7b77074a36056f9aef98e96cd` |
+| suits/culturalibre_hero_suit_2 | clothes | suits02_cc0.zip: clothes/culturalibre_hero_suit_2/culturalibre_hero_suit_2.mhclo | `a2c549a20bda18d6f9c8c38efa6e9f553eda57ac89afdffd3f6fc1de77b397f0` |
+| suits/culturalibre_hero_suit_3 | clothes | suits02_cc0.zip: clothes/culturalibre_hero_suit_3/culturalibre_hero_suit_3.mhclo | `c3a9cffcb5983ff03183b447708df513312ca76e09fd0808ca96985430cd3480` |
+| suits/culturalibre_heroine_suit_2 | clothes | suits02_cc0.zip: clothes/culturalibre_heroine_suit_2/culturalibre_heroine_suit_2.mhclo | `0d04646b49b8022c6f2a013698e27f127337fcb479c52af917e4c57bb4169e30` |
+| shoes/rehmanpolanski_viking_boots | shoes | suits02_cc0.zip: clothes/rehmanpolanski_viking_boots/rehmanpolanski_viking_boots.mhclo | `d864ac895a662031026615b5e042fb2160e63f432029576fa6faaf2ad692eb92` |
+| underwear/punkduck_strappy_lace_thong | underwear | underwear01_cc0.zip: clothes/punkduck_strappy_lace_thong/punkduck_strappy_lace_thong.mhclo | `c353670f909dcd6cd3ac7bb3c16a1394416385cebbbbdcc73124cfa3a06075e8` |
+| hosiery/kwnet_at_pantyhose01 | hosiery | underwear01_cc0.zip: clothes/kwnet_at_pantyhose01/kwnet_at_pantyhose01.mhclo | `820551dbb5c2c3369c78b596f19aee3ab081b1ccff703885570842cb5004e9d6` |
+| hosiery/marco_105_stocking01 | hosiery | underwear01_cc0.zip: clothes/marco_105_stocking01/marco_105_stocking01.mhclo | `cbad18a1607335ffc838644341cc98e5bddeaa75315bcc086169ba818c254a03` |
+| hosiery/marco_105_stocking02 | hosiery | underwear01_cc0.zip: clothes/marco_105_stocking02/marco_105_stocking02.mhclo | `5aa92a7b7b4c6b2fb4ddf7d6eef7d21f2b5394b297e776db1812c35335acc354` |
+| hosiery/v0rt3x_stockings_black_fishnet_small | hosiery | underwear01_cc0.zip: clothes/v0rt3x_stockings_black_fishnet_small/v0rt3x_stockings_black_fishnet_small.mhclo | `998f5039916c8b0c6d15604e9606fea9c34a4d8356d7d420f2479f6d041eb9f7` |
+| hosiery/v0rt3x_stockings_black_fishnet_medium | hosiery | underwear01_cc0.zip: clothes/v0rt3x_stockings_black_fishnet_medium/v0rt3x_stockings_black_fishnet_medium.mhclo | `e6d848d3600f5b262a5e59842a2bb845322617f1af21939d69701e43eb354b0f` |
+| hosiery/v0rt3x_stockings_black_fishnet_large | hosiery | underwear01_cc0.zip: clothes/v0rt3x_stockings_black_fishnet_large/v0rt3x_stockings_black_fishnet_large.mhclo | `f8e1e95ae18fb0087d2e54e72aaa521051c325a33cab0f2df1892457b059d4d9` |
+| hosiery/v0rt3x_stockings_white_fishnet_small | hosiery | underwear01_cc0.zip: clothes/v0rt3x_stockings_white_fishnet_small/v0rt3x_stockings_white_fishnet_small.mhclo | `eb3b8cc70944735952cadfc632686b19b6c8e0a0ad9ef82b3293a8dfc3bf051c` |
+| hosiery/v0rt3x_stockings_white_fishnet_medium | hosiery | underwear01_cc0.zip: clothes/v0rt3x_stockings_white_fishnet_medium/v0rt3x_stockings_white_fishnet_medium.mhclo | `bbe3cdd53b9a665ebd8784ad0ca2b166b11001eb1f2f6af4d5aac02a0342b15d` |
+| hosiery/v0rt3x_stockings_white_fishnet_large | hosiery | underwear01_cc0.zip: clothes/v0rt3x_stockings_white_fishnet_large/v0rt3x_stockings_white_fishnet_large.mhclo | `efb37e96b1f85a8f86cba97d48afcb55b6d0cb1c58bbde3fd68632a00480a296` |
+| armwear/marco_105_armsleeve02 | armwear | underwear01_cc0.zip: clothes/marco_105_armsleeve02/marco_105_armsleeve02.mhclo | `59c554996cf9a30e1554a77240d963a44bc4d9db30f5931dd9e72c58dcb4ffcc` |
+| armwear/v0rt3x_armsleeves_black_fishnet_small | armwear | underwear01_cc0.zip: clothes/v0rt3x_armsleeves_black_fishnet_small/v0rt3x_armsleeves_black_fishnet_small.mhclo | `bc654ec3053dd9d59322cab5efcba13a4d09cb737ad5968e06b2fc5eefe199b1` |
+| armwear/v0rt3x_armsleeves_black_fishnet_medium | armwear | underwear01_cc0.zip: clothes/v0rt3x_armsleeves_black_fishnet_medium/v0rt3x_armsleeves_black_fishnet_medium.mhclo | `9543dadce16a334c1909be580431556c6dfa37b4f0120b7e403929b0a2c663b7` |
+| armwear/v0rt3x_armsleeves_black_fishnet_large | armwear | underwear01_cc0.zip: clothes/v0rt3x_armsleeves_black_fishnet_large/v0rt3x_armsleeves_black_fishnet_large.mhclo | `21919debe371ef902e34d42f5c0c537bdf29eef5a75583260ab881679f45c0be` |
+| armwear/v0rt3x_armsleeves_white_fishnet_small | armwear | underwear01_cc0.zip: clothes/v0rt3x_armsleeves_white_fishnet_small/v0rt3x_armsleeves_white_fishnet_small.mhclo | `482e44ed8c5fb785c2aa20b22b0d8b90b6640f858978763eaba672165dbeab25` |
+| armwear/v0rt3x_armsleeves_white_fishnet_medium | armwear | underwear01_cc0.zip: clothes/v0rt3x_armsleeves_white_fishnet_medium/v0rt3x_armsleeves_white_fishnet_medium.mhclo | `9865566fb6f59d0ebd6e545b259e817fb3e44d3801cc741e7873ee5d932957dc` |
+| armwear/v0rt3x_armsleeves_white_fishnet_large | armwear | underwear01_cc0.zip: clothes/v0rt3x_armsleeves_white_fishnet_large/v0rt3x_armsleeves_white_fishnet_large.mhclo | `3687c5f3c07f543f3b9b41c31e28adcd3367b022626c15a7fc6b4fac243f69bf` |
+
+| Community garment | Asset page | Submitted by | On | Page licence | Read on |
+| --- | --- | --- | --- | --- | --- |
+| bottoms/cortu_cargo_pants | <http://www.makehumancommunity.org/node/2798> | Cortu | 2021-01-07 | CC0 - Creative Commons Zero | 2026-10-09 |
+| bottoms/cortu_jeans_shorts | <http://www.makehumancommunity.org/node/2800> | Cortu | 2021-01-07 | CC0 - Creative Commons Zero | 2026-10-09 |
+| bottoms/frankyaye_mini_skirt_01 | <http://www.makehumancommunity.org/node/129> | frankyaye | 2015-10-14 | CC0 - Creative Commons Zero | 2026-10-09 |
+| bottoms/frankyaye_mini_skirt_02 | <http://www.makehumancommunity.org/node/131> | frankyaye | 2015-10-16 | CC0 - Creative Commons Zero | 2026-10-09 |
+| bottoms/rehmanpolanski_viking_pants | <http://www.makehumancommunity.org/node/2618> | RehmanPolanski | 2020-07-12 | CC0 - Creative Commons Zero | 2026-10-09 |
+| tops/rehmanpolanski_viking_tunic | <http://www.makehumancommunity.org/node/2617> | RehmanPolanski | 2020-07-12 | CC0 - Creative Commons Zero | 2026-10-09 |
+| tops/skalldyrssuppe_tube_top_funky_colors | <http://www.makehumancommunity.org/node/975> | skalldyrssuppe | 2017-10-09 | CC0 - Creative Commons Zero | 2026-10-09 |
+| suits/culturalibre_hero_suit_1 | <http://www.makehumancommunity.org/node/2061> | culturalibre | 2020-01-14 | CC0 - Creative Commons Zero | 2026-10-09 |
+| suits/culturalibre_hero_suit_2 | <http://www.makehumancommunity.org/node/2292> | culturalibre | 2020-02-28 | CC0 - Creative Commons Zero | 2026-10-09 |
+| suits/culturalibre_hero_suit_3 | <http://www.makehumancommunity.org/node/2308> | culturalibre | 2020-03-01 | CC0 - Creative Commons Zero | 2026-10-09 |
+| suits/culturalibre_heroine_suit_2 | <http://www.makehumancommunity.org/node/2317> | culturalibre | 2020-03-04 | CC0 - Creative Commons Zero | 2026-10-09 |
+| suits/wdg_mycenaean_tunic | <http://www.makehumancommunity.org/node/1763> | WDG | 2019-01-20 | CC0 - Creative Commons Zero | 2026-10-09 |
+| underwear/punkduck_strappy_lace_thong | <http://www.makehumancommunity.org/node/1166> | punkduck | 2017-12-02 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hosiery/kwnet_at_pantyhose01 | <http://www.makehumancommunity.org/node/927> | kwnet_at | 2017-09-03 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hosiery/marco_105_stocking01 | <http://www.makehumancommunity.org/node/348> | Marco_105 | 2016-08-18 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hosiery/marco_105_stocking02 | <http://www.makehumancommunity.org/node/349> | Marco_105 | 2016-08-18 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hosiery/v0rt3x_stockings_black_fishnet_small | <http://www.makehumancommunity.org/node/294> | V0rT3X | 2016-05-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hosiery/v0rt3x_stockings_black_fishnet_medium | <http://www.makehumancommunity.org/node/295> | V0rT3X | 2016-05-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hosiery/v0rt3x_stockings_black_fishnet_large | <http://www.makehumancommunity.org/node/296> | V0rT3X | 2016-05-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hosiery/v0rt3x_stockings_white_fishnet_small | <http://www.makehumancommunity.org/node/297> | V0rT3X | 2016-05-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hosiery/v0rt3x_stockings_white_fishnet_medium | <http://www.makehumancommunity.org/node/298> | V0rT3X | 2016-05-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hosiery/v0rt3x_stockings_white_fishnet_large | <http://www.makehumancommunity.org/node/299> | V0rT3X | 2016-05-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| armwear/marco_105_armsleeve02 | <http://www.makehumancommunity.org/node/352> | Marco_105 | 2016-08-18 | CC0 - Creative Commons Zero | 2026-10-09 |
+| armwear/v0rt3x_armsleeves_black_fishnet_small | <http://www.makehumancommunity.org/node/303> | V0rT3X | 2016-05-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| armwear/v0rt3x_armsleeves_black_fishnet_medium | <http://www.makehumancommunity.org/node/304> | V0rT3X | 2016-05-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| armwear/v0rt3x_armsleeves_black_fishnet_large | <http://www.makehumancommunity.org/node/305> | V0rT3X | 2016-05-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| armwear/v0rt3x_armsleeves_white_fishnet_small | <http://www.makehumancommunity.org/node/300> | V0rT3X | 2016-05-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| armwear/v0rt3x_armsleeves_white_fishnet_medium | <http://www.makehumancommunity.org/node/301> | V0rT3X | 2016-05-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| armwear/v0rt3x_armsleeves_white_fishnet_large | <http://www.makehumancommunity.org/node/302> | V0rT3X | 2016-05-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| gloves/culturalibre_hero-heroine_gloves_1 | <http://www.makehumancommunity.org/node/2074> | culturalibre | 2020-01-15 | CC0 - Creative Commons Zero | 2026-10-09 |
+| gloves/culturalibre_hero-heroine_gloves_2 | <http://www.makehumancommunity.org/node/2093> | culturalibre | 2020-01-16 | CC0 - Creative Commons Zero | 2026-10-09 |
+| gloves/culturalibre_hero-heroine_gloves_4 | <http://www.makehumancommunity.org/node/2333> | culturalibre | 2020-03-07 | CC0 - Creative Commons Zero | 2026-10-09 |
+| gloves/culturalibre_hero-heroine_gloves_5 | <http://www.makehumancommunity.org/node/2401> | culturalibre | 2020-04-01 | CC0 - Creative Commons Zero | 2026-10-09 |
+| gloves/learning_mma_fighting_gloves | <http://www.makehumancommunity.org/node/95> | learning | 2015-09-22 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/cortu_t-bar | <http://www.makehumancommunity.org/node/2801> | Cortu | 2021-01-07 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/cortu_floppy_overknee_shoes | <http://www.makehumancommunity.org/node/2803> | Cortu | 2021-01-07 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/culturalibre_hero_boots_1 | <http://www.makehumancommunity.org/node/2081> | culturalibre | 2020-01-15 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/culturalibre_hero_boots_2 | <http://www.makehumancommunity.org/node/2132> | culturalibre | 2020-01-21 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/culturalibre_hero_boots_3 | <http://www.makehumancommunity.org/node/2138> | culturalibre | 2020-01-21 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/culturalibre_hero_boots_5 | <http://www.makehumancommunity.org/node/2424> | culturalibre | 2020-04-03 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/culturalibre_heroine_boots_1 | <http://www.makehumancommunity.org/node/2155> | culturalibre | 2020-01-26 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/culturalibre_heroine_boots_2 | <http://www.makehumancommunity.org/node/2181> | culturalibre | 2020-02-07 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/culturalibre_heroine_boots_3 | <http://www.makehumancommunity.org/node/2187> | culturalibre | 2020-02-07 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/culturalibre_male_boots | <http://www.makehumancommunity.org/node/2548> | culturalibre | 2020-05-24 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/grinsegold_female_pirate_boots | <http://www.makehumancommunity.org/node/211> | grinsegold | 2016-01-02 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/scailman_gogo_platform_boots | <http://www.makehumancommunity.org/node/1467> | scailman | 2018-05-02 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/scailman_semitransparent_water_boots | <http://www.makehumancommunity.org/node/1778> | scailman | 2019-03-11 | CC0 - Creative Commons Zero | 2026-10-09 |
+| shoes/rehmanpolanski_viking_boots | <http://www.makehumancommunity.org/node/2619> | RehmanPolanski | 2020-07-12 | CC0 - Creative Commons Zero | 2026-10-09 |
+| masks/culturalibre_hero_mask_1 | <http://www.makehumancommunity.org/node/2055> | culturalibre | 2019-12-29 | CC0 - Creative Commons Zero | 2026-10-09 |
+| masks/culturalibre_hero_mask_2 | <http://www.makehumancommunity.org/node/2049> | culturalibre | 2019-12-22 | CC0 - Creative Commons Zero | 2026-10-09 |
+| masks/culturalibre_hero_mask_3 | <http://www.makehumancommunity.org/node/2202> | culturalibre | 2020-02-09 | CC0 - Creative Commons Zero | 2026-10-09 |
+| masks/culturalibre_hero_mask_4 | <http://www.makehumancommunity.org/node/2220> | culturalibre | 2020-02-09 | CC0 - Creative Commons Zero | 2026-10-09 |
+| masks/culturalibre_heroine_mask_1 | <http://www.makehumancommunity.org/node/2474> | culturalibre | 2020-04-10 | CC0 - Creative Commons Zero | 2026-10-09 |
+| glasses/culturalibre_doc_ock_glasses | <http://www.makehumancommunity.org/node/2378> | culturalibre | 2020-03-29 | CC0 - Creative Commons Zero | 2026-10-09 |
+| glasses/ews_3d_glasses | <http://www.makehumancommunity.org/node/1233> | EWS | 2017-12-14 | CC0 - Creative Commons Zero | 2026-10-09 |
+| glasses/frankyaye_glasses_library_male | <http://www.makehumancommunity.org/node/153> | frankyaye | 2015-11-22 | CC0 - Creative Commons Zero | 2026-10-09 |
+| glasses/kwnet_at_optical_glasses | <http://www.makehumancommunity.org/node/928> | kwnet_at | 2017-09-04 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hats/culturalibre_hero-heroine_hood_1 | <http://www.makehumancommunity.org/node/2100> | culturalibre | 2020-01-18 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hats/culturalibre_hero-heroine_hood_2 | <http://www.makehumancommunity.org/node/2309> | culturalibre | 2020-03-01 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hats/grinsegold_uncle_joshis_hat | <http://www.makehumancommunity.org/node/193> | grinsegold | 2015-12-29 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hats/jujube_bag_on_head | <http://www.makehumancommunity.org/node/578> | jujube | 2017-01-16 | CC0 - Creative Commons Zero | 2026-10-09 |
+| hats/jujube_newsboy_cap | <http://www.makehumancommunity.org/node/78> | jujube | 2015-08-27 | CC0 - Creative Commons Zero | 2026-10-09 |
+| held/culturalibre_hero_kalistick | <http://www.makehumancommunity.org/node/2119> | culturalibre | 2020-01-19 | CC0 - Creative Commons Zero | 2026-10-09 |
+| held/culturalibre_hero_kalistick_lefthanded | <http://www.makehumancommunity.org/node/2120> | culturalibre | 2020-01-19 | CC0 - Creative Commons Zero | 2026-10-09 |
+| held/culturalibre_magic_sceptre | <http://www.makehumancommunity.org/node/2358> | culturalibre | 2020-03-20 | CC0 - Creative Commons Zero | 2026-10-09 |
+| held/culturalibre_war_hammer | <http://www.makehumancommunity.org/node/2051> | culturalibre | 2019-12-25 | CC0 - Creative Commons Zero | 2026-10-09 |
+| held/culturalibre_wooden_bow | <http://www.makehumancommunity.org/node/2362> | culturalibre | 2020-03-20 | CC0 - Creative Commons Zero | 2026-10-09 |
+| held/o4saken_dagger | <http://www.makehumancommunity.org/node/809> | o4saken | 2017-05-19 | CC0 - Creative Commons Zero | 2026-10-09 |
 
 ## Texture sizes
 
@@ -77,14 +235,153 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | shoes_shoes06_shoes06_diffuse.webp | clothes/shoes06/shoes06_diffuse.png | 1024 | clothed | 1024 | 1024 | the source |
 | hats_fedora01_fedora_diffuse.webp | clothes/fedora01/fedora_diffuse.png | 2048 | face | 1408 | 1408 | the source, downsampled |
 | hats_fedora01_fedora_normal.webp | clothes/fedora01/fedora_normal.png | 512 | face | 1408 | 512 | the source, 896 texels short; not upscaled |
+| suits_wdg_mycenaean_tunic_Mycenaean_Tunic_texture.webp | dress01_cc0.zip: clothes/wdg_mycenaean_tunic/Mycenaean_Tunic_texture.png | 1024 | clothed | 1408 | 1024 | the source, 384 texels short; not upscaled |
+| held_culturalibre_hero_kalistick_metal.webp | equipment01_cc0.zip: clothes/culturalibre_hero_kalistick/metal.png | 1024 | clothed | 128 | 1024 | the source |
+| held_culturalibre_hero_kalistick_lefthanded_metal.webp | equipment01_cc0.zip: clothes/culturalibre_hero_kalistick_lefthanded/metal.png | 1024 | clothed | 256 | 1024 | the source |
+| held_culturalibre_magic_sceptre_sceptre_texture.webp | equipment01_cc0.zip: clothes/culturalibre_magic_sceptre/sceptre_texture.png | 2048 | clothed | 1536 | 1536 | the source, downsampled |
+| held_culturalibre_war_hammer_hammer.webp | equipment01_cc0.zip: clothes/culturalibre_war_hammer/hammer.png | 1024 | clothed | 1280 | 1024 | the source, 256 texels short; not upscaled |
+| held_culturalibre_wooden_bow_bow.webp | equipment01_cc0.zip: clothes/culturalibre_wooden_bow/bow.png | 2048 | clothed | 896 | 1024 | the source, downsampled |
+| held_o4saken_dagger_DIFFUSELAYOUT.webp | equipment01_cc0.zip: clothes/o4saken_dagger/DIFFUSELAYOUT.png | 3000 | clothed | 1280 | 1280 | the source, downsampled |
+| glasses_culturalibre_doc_ock_glasses_glasses.webp | glasses01_cc0.zip: clothes/culturalibre_doc_ock_glasses/glasses.png | 2048 | clothed | 640 | 1024 | the source, downsampled |
+| glasses_ews_3d_glasses_3dglasses.webp | glasses01_cc0.zip: clothes/ews_3d_glasses/3dglasses.png | 1024 | clothed | 384 | 1024 | the source |
+| glasses_frankyaye_glasses_library_male_Glasses2.webp | glasses01_cc0.zip: clothes/frankyaye_glasses_library_male/Glasses2.png | 1024 | clothed | 256 | 1024 | the source |
+| glasses_kwnet_at_optical_glasses_m_opticals01.webp | glasses01_cc0.zip: clothes/kwnet_at_optical_glasses/m_opticals01.png | 4096 | clothed | 256 | 1024 | the source, downsampled |
+| gloves_culturalibre_hero-heroine_gloves_1_black.webp | gloves01_cc0.zip: clothes/culturalibre_hero-heroine_gloves_1/black.png | 2048 | clothed | 640 | 1024 | the source, downsampled |
+| gloves_culturalibre_hero-heroine_gloves_2_red.webp | gloves01_cc0.zip: clothes/culturalibre_hero-heroine_gloves_2/red.png | 1024 | clothed | 896 | 1024 | the source |
+| gloves_culturalibre_hero-heroine_gloves_4_red.webp | gloves01_cc0.zip: clothes/culturalibre_hero-heroine_gloves_4/red.png | 1024 | clothed | 1024 | 1024 | the source |
+| gloves_culturalibre_hero-heroine_gloves_5_hero-heroine_gloves_5.webp | gloves01_cc0.zip: clothes/culturalibre_hero-heroine_gloves_5/hero-heroine_gloves_5.png | 1024 | clothed | 640 | 1024 | the source |
+| gloves_learning_mma_fighting_gloves_tex2.webp | gloves01_cc0.zip: clothes/learning_mma_fighting_gloves/tex2.png | 1024 | clothed | 768 | 1024 | the source |
+| hats_grinsegold_uncle_joshis_hat_Uncle_Joshi's_hat_diff.webp | hats01_cc0.zip: clothes/grinsegold_uncle_joshis_hat/Uncle_Joshi's_hat_diff.png | 1024 | face | 3200 | 1024 | the source, 1024 texels short; not upscaled |
+| masks_culturalibre_hero_mask_1_hero_mask_1.webp | masks01_cc0.zip: clothes/culturalibre_hero_mask_1/hero_mask_1.png | 1024 | clothed | 640 | 1024 | the source |
+| masks_culturalibre_hero_mask_2_hero_mask_2.webp | masks01_cc0.zip: clothes/culturalibre_hero_mask_2/hero_mask_2.png | 1024 | clothed | 256 | 1024 | the source |
+| masks_culturalibre_hero_mask_3_purple.webp | masks01_cc0.zip: clothes/culturalibre_hero_mask_3/purple.png | 1024 | clothed | 256 | 1024 | the source |
+| masks_culturalibre_hero_mask_4_black.webp | masks01_cc0.zip: clothes/culturalibre_hero_mask_4/black.png | 1024 | clothed | 1152 | 1024 | the source, 128 texels short; not upscaled |
+| masks_culturalibre_heroine_mask_1_red.webp | masks01_cc0.zip: clothes/culturalibre_heroine_mask_1/red.png | 1024 | clothed | 768 | 1024 | the source |
+| hats_culturalibre_hero-heroine_hood_1_hero-heroine_hood_1.webp | masks01_cc0.zip: clothes/culturalibre_hero-heroine_hood_1/hero-heroine_hood_1.png | 1024 | face | 2304 | 1024 | the source, 1024 texels short; not upscaled |
+| hats_culturalibre_hero-heroine_hood_2_hero-heroine_hood_2.webp | masks01_cc0.zip: clothes/culturalibre_hero-heroine_hood_2/hero-heroine_hood_2.png | 2048 | face | 9344 | 2048 | the source |
+| bottoms_cortu_cargo_pants_cargo_pants_diff.webp | pants01_cc0.zip: clothes/cortu_cargo_pants/cargo_pants_diff.png | 2048 | clothed | 1024 | 1024 | the source, downsampled |
+| bottoms_cortu_cargo_pants_cargo_pants_norm.webp | pants01_cc0.zip: clothes/cortu_cargo_pants/cargo_pants_norm.png | 2048 | clothed | 1024 | 1024 | the source, downsampled |
+| bottoms_cortu_jeans_shorts_jean_shorts_diff.webp | pants01_cc0.zip: clothes/cortu_jeans_shorts/jean_shorts_diff.png | 2048 | clothed | 384 | 1024 | the source, downsampled |
+| bottoms_cortu_jeans_shorts_jean_shorts_norm.webp | pants01_cc0.zip: clothes/cortu_jeans_shorts/jean_shorts_norm.png | 2048 | clothed | 384 | 1024 | the source, downsampled |
+| tops_skalldyrssuppe_tube_top_funky_colors_tube_top_diff.webp | shirts01_cc0.zip: clothes/skalldyrssuppe_tube_top_funky_colors/tube_top_diff.png | 1024 | clothed | 768 | 1024 | the source |
+| shoes_cortu_t-bar_tbar_diff.webp | shoes01_cc0.zip: clothes/cortu_t-bar/tbar_diff.png | 2048 | clothed | 512 | 1024 | the source, downsampled |
+| shoes_cortu_t-bar_tbar_norm.webp | shoes01_cc0.zip: clothes/cortu_t-bar/tbar_norm.png | 2048 | clothed | 512 | 1024 | the source, downsampled |
+| shoes_cortu_floppy_overknee_shoes_floppy_overknee_shoe_diff.webp | shoes01_cc0.zip: clothes/cortu_floppy_overknee_shoes/floppy_overknee_shoe_diff.png | 2048 | clothed | 1024 | 1024 | the source, downsampled |
+| shoes_cortu_floppy_overknee_shoes_floppy_overknee_shoe_norm.webp | shoes01_cc0.zip: clothes/cortu_floppy_overknee_shoes/floppy_overknee_shoe_norm.png | 4096 | clothed | 1024 | 1024 | the source, downsampled |
+| shoes_culturalibre_hero_boots_1_hero_boots_1.webp | shoes01_cc0.zip: clothes/culturalibre_hero_boots_1/hero_boots_1.png | 1024 | clothed | 1920 | 1024 | the source, 896 texels short; not upscaled |
+| shoes_culturalibre_hero_boots_2_blue.webp | shoes01_cc0.zip: clothes/culturalibre_hero_boots_2/blue.png | 1024 | clothed | 1792 | 1024 | the source, 768 texels short; not upscaled |
+| shoes_culturalibre_hero_boots_3_green.webp | shoes01_cc0.zip: clothes/culturalibre_hero_boots_3/green.png | 1024 | clothed | 1792 | 1024 | the source, 768 texels short; not upscaled |
+| shoes_culturalibre_hero_boots_5_red.webp | shoes01_cc0.zip: clothes/culturalibre_hero_boots_5/red.png | 4096 | clothed | 8704 | 2048 | the source, downsampled |
+| shoes_culturalibre_heroine_boots_1_black.webp | shoes01_cc0.zip: clothes/culturalibre_heroine_boots_1/black.png | 1024 | clothed | 1408 | 1024 | the source, 384 texels short; not upscaled |
+| shoes_culturalibre_heroine_boots_2_green.webp | shoes01_cc0.zip: clothes/culturalibre_heroine_boots_2/green.png | 1024 | clothed | 3456 | 1024 | the source, 1024 texels short; not upscaled |
+| shoes_culturalibre_heroine_boots_3_purple.webp | shoes01_cc0.zip: clothes/culturalibre_heroine_boots_3/purple.png | 1024 | clothed | 1792 | 1024 | the source, 768 texels short; not upscaled |
+| shoes_culturalibre_male_boots_boot.webp | shoes01_cc0.zip: clothes/culturalibre_male_boots/boot.png | 1024 | clothed | 31360 | 1024 | the source, 1024 texels short; not upscaled |
+| shoes_grinsegold_female_pirate_boots_BootsDiff.webp | shoes01_cc0.zip: clothes/grinsegold_female_pirate_boots/BootsDiff.jpg | 2048 | clothed | 1664 | 1664 | the source, downsampled |
+| shoes_scailman_gogo_platform_boots_gogo_boots.webp | shoes01_cc0.zip: clothes/scailman_gogo_platform_boots/gogo_boots.png | 2048 | clothed | 1152 | 1152 | the source, downsampled |
+| shoes_scailman_semitransparent_water_boots_Botas_102.webp | shoes01_cc0.zip: clothes/scailman_semitransparent_water_boots/Botas_102.png | 2048 | clothed | 1280 | 1280 | the source, downsampled |
+| bottoms_frankyaye_mini_skirt_01_mini_skirt_01_diffuse.webp | skirts01_cc0.zip: clothes/frankyaye_mini_skirt_01/mini_skirt_01_diffuse.png | 2048 | clothed | 512 | 1024 | the source, downsampled |
+| bottoms_frankyaye_mini_skirt_02_mini_skirt_01_diffuse.webp | skirts01_cc0.zip: clothes/frankyaye_mini_skirt_02/mini_skirt_01_diffuse.png | 2048 | clothed | 640 | 1024 | the source, downsampled |
+| bottoms_rehmanpolanski_viking_pants_PantsViking.webp | suits02_cc0.zip: clothes/rehmanpolanski_viking_pants/PantsViking.png | 1024 | clothed | 1024 | 1024 | the source |
+| tops_rehmanpolanski_viking_tunic_TUNIC_Viking.webp | suits02_cc0.zip: clothes/rehmanpolanski_viking_tunic/TUNIC_Viking.png | 2048 | clothed | 1792 | 1792 | the source, downsampled |
+| suits_culturalibre_hero_suit_1_hero_suit_1.webp | suits02_cc0.zip: clothes/culturalibre_hero_suit_1/hero_suit_1.png | 4096 | clothed | 1792 | 1792 | the source, downsampled |
+| suits_culturalibre_hero_suit_2_red.webp | suits02_cc0.zip: clothes/culturalibre_hero_suit_2/red.png | 1024 | clothed | 1792 | 1024 | the source, 768 texels short; not upscaled |
+| suits_culturalibre_hero_suit_3_hero_suit_3.webp | suits02_cc0.zip: clothes/culturalibre_hero_suit_3/hero_suit_3.png | 4096 | clothed | 2688 | 2048 | the source, downsampled |
+| suits_culturalibre_heroine_suit_2_black.webp | suits02_cc0.zip: clothes/culturalibre_heroine_suit_2/black.png | 2048 | clothed | 1792 | 1792 | the source, downsampled |
+| shoes_rehmanpolanski_viking_boots_BootsViking.webp | suits02_cc0.zip: clothes/rehmanpolanski_viking_boots/BootsViking.png | 1024 | clothed | 6272 | 1024 | the source, 1024 texels short; not upscaled |
+| underwear_punkduck_strappy_lace_thong_strappylacethong.webp | underwear01_cc0.zip: clothes/punkduck_strappy_lace_thong/strappylacethong.png | 1024 | clothed | 640 | 1024 | the source |
+| underwear_punkduck_strappy_lace_thong_strappylacethong_norm.webp | underwear01_cc0.zip: clothes/punkduck_strappy_lace_thong/strappylacethong_norm.png | 1024 | clothed | 640 | 1024 | the source |
+| hosiery_kwnet_at_pantyhose01_pantyhose01.webp | underwear01_cc0.zip: clothes/kwnet_at_pantyhose01/pantyhose01.png | 4096 | clothed | 1152 | 1152 | the source, downsampled |
+| hosiery_marco_105_stocking01_Stocking01_DIFF+cap.webp | underwear01_cc0.zip: clothes/marco_105_stocking01/Stocking01_DIFF+cap.png | 2048 | clothed | 1024 | 1024 | the source, downsampled |
+| hosiery_marco_105_stocking01_Stocking01_DIFF+cap_nb_NRM.webp | underwear01_cc0.zip: clothes/marco_105_stocking01/Stocking01_DIFF+cap_nb_NRM.png | 2048 | clothed | 1024 | 1024 | the source, downsampled |
+| hosiery_marco_105_stocking02_pattern_resille-01_red.webp | underwear01_cc0.zip: clothes/marco_105_stocking02/pattern_resille-01_red.png | 1024 | clothed | 640 | 1024 | the source |
+| hosiery_marco_105_stocking02_pattern_resille-01_nb_NRM.webp | underwear01_cc0.zip: clothes/marco_105_stocking02/pattern_resille-01_nb_NRM.png | 1024 | clothed | 640 | 1024 | the source |
+| hosiery_v0rt3x_stockings_black_fishnet_small_stockings_fishnet_small.webp | underwear01_cc0.zip: clothes/v0rt3x_stockings_black_fishnet_small/stockings_fishnet_small.png | 1024 | clothed | 768 | 1024 | the source |
+| hosiery_v0rt3x_stockings_black_fishnet_medium_stockings_fishnet_medium.webp | underwear01_cc0.zip: clothes/v0rt3x_stockings_black_fishnet_medium/stockings_fishnet_medium.png | 1024 | clothed | 768 | 1024 | the source |
+| hosiery_v0rt3x_stockings_black_fishnet_large_stockings_fishnet_large.webp | underwear01_cc0.zip: clothes/v0rt3x_stockings_black_fishnet_large/stockings_fishnet_large.png | 1024 | clothed | 768 | 1024 | the source |
+| hosiery_v0rt3x_stockings_white_fishnet_small_stockings_white_s.webp | underwear01_cc0.zip: clothes/v0rt3x_stockings_white_fishnet_small/stockings_white_s.png | 1024 | clothed | 768 | 1024 | the source |
+| hosiery_v0rt3x_stockings_white_fishnet_medium_stockings_white_m.webp | underwear01_cc0.zip: clothes/v0rt3x_stockings_white_fishnet_medium/stockings_white_m.png | 1024 | clothed | 768 | 1024 | the source |
+| hosiery_v0rt3x_stockings_white_fishnet_large_stockings_white_l.webp | underwear01_cc0.zip: clothes/v0rt3x_stockings_white_fishnet_large/stockings_white_l.png | 1024 | clothed | 768 | 1024 | the source |
+| armwear_marco_105_armsleeve02_pattern_resille-01_red.webp | underwear01_cc0.zip: clothes/marco_105_armsleeve02/pattern_resille-01_red.png | 1024 | clothed | 384 | 1024 | the source |
+| armwear_marco_105_armsleeve02_pattern_resille-01_nb_NRM.webp | underwear01_cc0.zip: clothes/marco_105_armsleeve02/pattern_resille-01_nb_NRM.png | 1024 | clothed | 384 | 1024 | the source |
+| armwear_v0rt3x_armsleeves_black_fishnet_small_armsleeve_fishnet_small.webp | underwear01_cc0.zip: clothes/v0rt3x_armsleeves_black_fishnet_small/armsleeve_fishnet_small.png | 1024 | clothed | 384 | 1024 | the source |
+| armwear_v0rt3x_armsleeves_black_fishnet_medium_armsleeve_fishnet_medium.webp | underwear01_cc0.zip: clothes/v0rt3x_armsleeves_black_fishnet_medium/armsleeve_fishnet_medium.png | 1024 | clothed | 384 | 1024 | the source |
+| armwear_v0rt3x_armsleeves_black_fishnet_large_armsleeve_fishnet_large.webp | underwear01_cc0.zip: clothes/v0rt3x_armsleeves_black_fishnet_large/armsleeve_fishnet_large.png | 1024 | clothed | 384 | 1024 | the source |
+| armwear_v0rt3x_armsleeves_white_fishnet_small_armsleeve_white_s.webp | underwear01_cc0.zip: clothes/v0rt3x_armsleeves_white_fishnet_small/armsleeve_white_s.png | 1024 | clothed | 384 | 1024 | the source |
+| armwear_v0rt3x_armsleeves_white_fishnet_medium_armsleeve_white_m.webp | underwear01_cc0.zip: clothes/v0rt3x_armsleeves_white_fishnet_medium/armsleeve_white_m.png | 1024 | clothed | 384 | 1024 | the source |
+| armwear_v0rt3x_armsleeves_white_fishnet_large_armsleeve_white_l.webp | underwear01_cc0.zip: clothes/v0rt3x_armsleeves_white_fishnet_large/armsleeve_white_l.png | 1024 | clothed | 384 | 1024 | the source |
 
 ## Outputs
 
 | Output | SHA-256 |
 | --- | --- |
-| garments.bin.gz | `bfacc4264d5c542a801f473316bef3b0fc28fa2872a0a126b67773a9ed7e6561` |
+| armwear_marco_105_armsleeve02_pattern_resille-01_nb_NRM.webp | `d97a55ea6d304919ce2502ab6c5b8c298255aa8a8602a8982af8a864f0bc2de5` |
+| armwear_marco_105_armsleeve02_pattern_resille-01_red.webp | `e75e4400e87d56c484740d46eee6ff544f1299804450e53892b5ce942b93098b` |
+| armwear_v0rt3x_armsleeves_black_fishnet_large_armsleeve_fishnet_large.webp | `928b025a284bd92b026d6f1aaa31d6c15ca49a0f8798ba5343109e405553e136` |
+| armwear_v0rt3x_armsleeves_black_fishnet_medium_armsleeve_fishnet_medium.webp | `1e64b99bcd845af04b873e0fb778b010c1bde07c583768d07783cccbeea657a5` |
+| armwear_v0rt3x_armsleeves_black_fishnet_small_armsleeve_fishnet_small.webp | `b9b7185f13de2900d5d64a3832fa014d0a4e864f8911266f1b360803add3269e` |
+| armwear_v0rt3x_armsleeves_white_fishnet_large_armsleeve_white_l.webp | `ba39419ea28bb08c31d310a26fc0870ff4d2e9eb947f4091e95d2cbcf2ac069d` |
+| armwear_v0rt3x_armsleeves_white_fishnet_medium_armsleeve_white_m.webp | `b7ff893de1e27b823ed616a3426a1c4308555efae1b4fe316b5d98c071d82af4` |
+| armwear_v0rt3x_armsleeves_white_fishnet_small_armsleeve_white_s.webp | `e61da6b33e26cc217a806b60e8136e1d79f0df37c1dc930f5bc2a1781d957b89` |
+| bottoms_cortu_cargo_pants_cargo_pants_diff.webp | `7ab00d8b656b189f32e5296ed0d4f6e3ee5f8fd0d6e1f76c9508a3a573e9d4ff` |
+| bottoms_cortu_cargo_pants_cargo_pants_norm.webp | `6b7c9a8bf07ba87903fb98555709e43666531dc345ca882014d2ea71d28e866e` |
+| bottoms_cortu_jeans_shorts_jean_shorts_diff.webp | `1ac2e6d9bfd64bdad4a21a36f74415c06c4c331139adde49071049ba42c28a89` |
+| bottoms_cortu_jeans_shorts_jean_shorts_norm.webp | `c846c1b1f87f46c0736442f73b2c8a960b814912482ba5920897b18bd5a01fa3` |
+| bottoms_frankyaye_mini_skirt_01_mini_skirt_01_diffuse.webp | `7edfce86fc748aef4851e8711425d3b4d2ad9726d60502963e4ac105163908c0` |
+| bottoms_frankyaye_mini_skirt_02_mini_skirt_01_diffuse.webp | `7edfce86fc748aef4851e8711425d3b4d2ad9726d60502963e4ac105163908c0` |
+| bottoms_rehmanpolanski_viking_pants_PantsViking.webp | `6ac5a917b115742a6dbdb8fa8bf66699abad1585689222cd132c5bfea3f08cc8` |
+| garments.bin.gz | `d5a350a52eb72570bebe8e68266c5f9e01c6b72e064509bbb27a60b899f24a01` |
+| glasses_culturalibre_doc_ock_glasses_glasses.webp | `b4e5ccde1fcf15be8705602fb84c3f9825219806a6b5e3baa6952a794f1f65a5` |
+| glasses_ews_3d_glasses_3dglasses.webp | `a2aea9f16fb8172eefa38275ffb0445eb5aa85c9448c24624eecbf9b0e3f4194` |
+| glasses_frankyaye_glasses_library_male_Glasses2.webp | `4855a8232aaa353760a1b3b231662ed07ad5c32b3b3090b3e68a386ffa43247d` |
+| glasses_kwnet_at_optical_glasses_m_opticals01.webp | `cc764668f526a5c0721a9c7a149c6aaa986d9512f45469413f2a6edd98209158` |
+| gloves_culturalibre_hero-heroine_gloves_1_black.webp | `6cd7c5f9d503b4fd8e611f719ffb8be434e033bcddf7206a8b8645c4e39860d5` |
+| gloves_culturalibre_hero-heroine_gloves_2_red.webp | `ed1bd487bacfdd2ec6980b92fbcb1ecaadf2ed6f8f2bc36ed6728969d5a23247` |
+| gloves_culturalibre_hero-heroine_gloves_4_red.webp | `04eacbf8ca3bd66094c4b25f89c484822f6f6ce6ebbc0998fa513ba34f532b75` |
+| gloves_culturalibre_hero-heroine_gloves_5_hero-heroine_gloves_5.webp | `5df3736a5ec12ba17f25450b83a6dd47c76e850e82b2be55df43addfc262d72a` |
+| gloves_learning_mma_fighting_gloves_tex2.webp | `0eba1a72dd9a719fa126aaac3608234e81f51bbdf004246fd42f61296d84bd7b` |
+| hats_culturalibre_hero-heroine_hood_1_hero-heroine_hood_1.webp | `121775aadb568f46e75c719eee8acac4cee6a6a98ab766709319382853f6aca8` |
+| hats_culturalibre_hero-heroine_hood_2_hero-heroine_hood_2.webp | `a56b6971d59c4717fdf2c68cae596caf74d2550ce48fe96f32c4ade355b36b10` |
 | hats_fedora01_fedora_diffuse.webp | `5f4f9c6be13d1ee1f6caf29994e122a7489b58093bbc69d1135352e0599e663e` |
 | hats_fedora01_fedora_normal.webp | `0fe3bbe3881b4513a037fa9432a73a2ca0d6972b22e38022de6ebe6b51c6322f` |
+| hats_grinsegold_uncle_joshis_hat_Uncle_Joshi's_hat_diff.webp | `1add035f0f8ac3c7667159c99d9781a8e9565de2908ae369f30d28e7325f26ea` |
+| held_culturalibre_hero_kalistick_lefthanded_metal.webp | `8064d46a4a722381b66de2831f260202a98dc764f001cf16c89e0688dd3cd914` |
+| held_culturalibre_hero_kalistick_metal.webp | `8064d46a4a722381b66de2831f260202a98dc764f001cf16c89e0688dd3cd914` |
+| held_culturalibre_magic_sceptre_sceptre_texture.webp | `233b146535d4066cf66adda865dec854f94ff0760a645defc5405a81610fee32` |
+| held_culturalibre_war_hammer_hammer.webp | `6b658f0b471106fefe4cedfccec37ba6465c24858f18a2b2e4b2138104944148` |
+| held_culturalibre_wooden_bow_bow.webp | `3264385f24f0908c0fb955cf4642af934a81540f90b48b8a55edf0fec7fa6f67` |
+| held_o4saken_dagger_DIFFUSELAYOUT.webp | `849d390f013e4ac4eba2650c2c5fb0dd91044a881a7c2b829eb21f92e9bd8ed3` |
+| hosiery_kwnet_at_pantyhose01_pantyhose01.webp | `7107df9b8e1e9d27c0d76a8d13b747f42a66c898b0ad0376fdea549d3eeb229a` |
+| hosiery_marco_105_stocking01_Stocking01_DIFF+cap.webp | `23409d8597d61fb001f688242f80a25bb2fcce7f4d3aad66c9c6eb8dd1b99b86` |
+| hosiery_marco_105_stocking01_Stocking01_DIFF+cap_nb_NRM.webp | `2af96ab832e4b5f32615d99e036cc2f0c1645aeab58a020ed564585f8b0505b1` |
+| hosiery_marco_105_stocking02_pattern_resille-01_nb_NRM.webp | `d97a55ea6d304919ce2502ab6c5b8c298255aa8a8602a8982af8a864f0bc2de5` |
+| hosiery_marco_105_stocking02_pattern_resille-01_red.webp | `e75e4400e87d56c484740d46eee6ff544f1299804450e53892b5ce942b93098b` |
+| hosiery_v0rt3x_stockings_black_fishnet_large_stockings_fishnet_large.webp | `2b7d31ebbfdde340d1be078a4d33a043179024d2cabfc823900a1f8cc469b7bc` |
+| hosiery_v0rt3x_stockings_black_fishnet_medium_stockings_fishnet_medium.webp | `6a8300668949ec343714dde05d2067ebd45914eb030e4a5204d8dd2f96ab12c9` |
+| hosiery_v0rt3x_stockings_black_fishnet_small_stockings_fishnet_small.webp | `d3892902126cea4361f3948d2af34466d306452ecc5a8b496efe514782126c5e` |
+| hosiery_v0rt3x_stockings_white_fishnet_large_stockings_white_l.webp | `5b7fd9397774b961b280cc456edad78b747dac862958ddfbe40f09803be52726` |
+| hosiery_v0rt3x_stockings_white_fishnet_medium_stockings_white_m.webp | `59ac2fa131dcdcf830de358d694dad82a789a1dfc8037a116205ca5f9c95d343` |
+| hosiery_v0rt3x_stockings_white_fishnet_small_stockings_white_s.webp | `a4c49af4ac6b305835eb4ef0412c0efdc7473530b180d2f9b0c16523042e1bf9` |
+| masks_culturalibre_hero_mask_1_hero_mask_1.webp | `52cd20c02065eaefc7b0ff54c479e0d0b2d9a8f458cce9dc6127b6341cbf41e6` |
+| masks_culturalibre_hero_mask_2_hero_mask_2.webp | `5f5889c675eacb356ffd8a06c2a5d1090dadaa827b9ec38b0a1ed1b7ee25ab51` |
+| masks_culturalibre_hero_mask_3_purple.webp | `82bcc4781b392edef794ead41947d882ec6075eb329489f0d703a76f2c15b7e1` |
+| masks_culturalibre_hero_mask_4_black.webp | `94e6146cb0c7537f6deacea35488000294818dc13626bf43949b4e032890f900` |
+| masks_culturalibre_heroine_mask_1_red.webp | `ac73b81beff525794ef5e01d8d327276aaf4bb7968e83f25164c5ae2c8bc1cab` |
+| shoes_cortu_floppy_overknee_shoes_floppy_overknee_shoe_diff.webp | `24f0c672610f459264172e2d3b64f67e6982b08bf6e9bb6ec084a92e6665ba23` |
+| shoes_cortu_floppy_overknee_shoes_floppy_overknee_shoe_norm.webp | `7ec12c0a979152797e74addbd676931dabed8ab94e884725c3a071ddb4de93ac` |
+| shoes_cortu_t-bar_tbar_diff.webp | `ee5f7e3e4d7fc5689c1f5fbce06afc6ab2db0eb1efa0338abe3e2739f5341949` |
+| shoes_cortu_t-bar_tbar_norm.webp | `5dcfd603f9e147fbaae6079e1ff395eba33125ebe958ac1ede71b95afbf523ac` |
+| shoes_culturalibre_hero_boots_1_hero_boots_1.webp | `163f7d1b450c11ea621615898fb9a8903bd53147613407d54d15ab9db63d4623` |
+| shoes_culturalibre_hero_boots_2_blue.webp | `4f51dfa0c664747f846bb241b9c8912f556203a93b97034eeefc8cea97606974` |
+| shoes_culturalibre_hero_boots_3_green.webp | `3050c7f6f955295462429f1489ca71b69ada5f0c1a797edefab73c64dd4f7eb2` |
+| shoes_culturalibre_hero_boots_5_red.webp | `85b6547a3d249008c6a063c00f751e676a8ee78db5ad968ab2410129b4af6687` |
+| shoes_culturalibre_heroine_boots_1_black.webp | `9b78b5b6af516426a48ecd68ebd9d5fff84aac1b4f6f228991b27f034f3fb01d` |
+| shoes_culturalibre_heroine_boots_2_green.webp | `fb42dc5ee046700ddadaede455a745cc53a2dc0404ee197b7832a0e3eb633ddb` |
+| shoes_culturalibre_heroine_boots_3_purple.webp | `2938132c08f0ee15b4812986c5e5e338d1cadbbdaa7671c7cfae087067dacfe8` |
+| shoes_culturalibre_male_boots_boot.webp | `facc1635cc07be1b7f0c7ed5751dd2c1daf39860eaa629d015c4074ebda866cc` |
+| shoes_grinsegold_female_pirate_boots_BootsDiff.webp | `e1821ac51ff6d11d396fcffa4242048e7d885156b042c675c5466b17998ca58f` |
+| shoes_rehmanpolanski_viking_boots_BootsViking.webp | `e16cb8ef0e040199f3a33e211e8772f29a593366c107a07734b58a1174dcf7f2` |
+| shoes_scailman_gogo_platform_boots_gogo_boots.webp | `9e3366fe65b646e0101f12c7974d2ca9ea1886b623ccfeb6aa8db2a793557070` |
+| shoes_scailman_semitransparent_water_boots_Botas_102.webp | `8da1dbec3d637b0cdda87ce06e22f1348cd531fcc044120e6a940a78f3cdc266` |
 | shoes_shoes01_shoes01_diffuse.webp | `8d7baff433905ca93fdb9b45147f8c51b6b698e8ee0c826417bd78f09ddf514b` |
 | shoes_shoes01_shoes01_normal.webp | `efa0845aea37af0c617d226bbfd813467a896b36fb7085fc5a9f3a6a03ef3d4e` |
 | shoes_shoes02_shoes02_diffuse.webp | `c88b5a63c800e69139192da645bb10fdd43f4939f2f5d8bcbcd7c0b683647ba7` |
@@ -93,6 +390,10 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | shoes_shoes04_shoes04_normal.webp | `efa0845aea37af0c617d226bbfd813467a896b36fb7085fc5a9f3a6a03ef3d4e` |
 | shoes_shoes05_shoes05_diffuse.webp | `6e4d46747f79b55b8f7f202c115226a01e5bd6d3edf36edb3da875c6ddd47398` |
 | shoes_shoes06_shoes06_diffuse.webp | `a52fcc8c774f659bd6e18b53f1c08e4096c2639b27bcdf53a1725451f60b9a1e` |
+| suits_culturalibre_hero_suit_1_hero_suit_1.webp | `97457eb4878bc190c24ceb3eea221360c713f3229017c849455e96a286077cd2` |
+| suits_culturalibre_hero_suit_2_red.webp | `d847b2f04a49c63c1113cc2809c72550ffb6790e1d098dc25c1831f068ed3a4b` |
+| suits_culturalibre_hero_suit_3_hero_suit_3.webp | `fba417fbaea292b71d2af5525d40c12ab4965348b72baedc0e0a41671e327fd1` |
+| suits_culturalibre_heroine_suit_2_black.webp | `38b9dbc7b5b37cb185e39790a683a0d242709d1d4507922b11581d0949aa1f28` |
 | suits_female_casualsuit01_female_casualsuit01_diffuse.webp | `13bf65e6369f088265b7d7fb225a6dc816d6d93958e99bc304666da8e786c051` |
 | suits_female_casualsuit01_female_casualsuit01_normal.webp | `cab2deb7d9a19bd63071de27b6a2b003fc2be8db8d9108fd6499e2bbb19dc5fe` |
 | suits_female_casualsuit02_female_casualsuit02_diffuse.webp | `3730963de5a178b054ab302a2f7e0387ec041d43e03238fec17857d101ef5a88` |
@@ -116,3 +417,8 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | suits_male_elegantsuit01_male_elegantsuit01_diffuse.webp | `3ba8d83cfc345d90da60277e4099e03714a0847e5a3fc23454ab90b73318ddb0` |
 | suits_male_worksuit01_male_worksuit01_diffuse.webp | `b716056d4b32fafa379fdc6a980ca1c8bd1b8981df4d5376552b46bd85f64b9b` |
 | suits_male_worksuit01_male_worksuit01_normal.webp | `122092f82c1b71665d2455db8e6c6d91c3b66b7a6f95cb239e8fe2e8902f36d8` |
+| suits_wdg_mycenaean_tunic_Mycenaean_Tunic_texture.webp | `1ccf19d4595725693f1b88fe76e5bc3fe6aea980a33174f75448a23ce44ac604` |
+| tops_rehmanpolanski_viking_tunic_TUNIC_Viking.webp | `1c83d1e589aa9174ac3fded7c180ddee436e636d958cb7b843427468b1d21c78` |
+| tops_skalldyrssuppe_tube_top_funky_colors_tube_top_diff.webp | `35200b57543196edfe611e1cc7882f3ee3b6606e643e9d81168fab6fdbd5043e` |
+| underwear_punkduck_strappy_lace_thong_strappylacethong.webp | `55334c02b15c788ede817c44daf86b39017ae4fe05cf7b45a2119317cd8c16ee` |
+| underwear_punkduck_strappy_lace_thong_strappylacethong_norm.webp | `b486f2aa29bb9efb5261514a2f35f9a55a2ab9d3f903048858835d08adff0286` |
