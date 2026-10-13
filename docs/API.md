@@ -1590,8 +1590,9 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   skin material skins by linear blending mixed with dual quaternions, by each
   bone's share (`SKIN_DUAL_SHARE`; ARCHITECTURE.md, "Skinning artefacts"), so a
   twisted forearm or a raised shoulder keeps its volume, and its shadows, bounds
-  and picking follow. A `material` of your own skins by three's linear skinning
-  alone, and the attachments (eyes, teeth, tongue) follow single bones. With a
+  and picking follow. A `material` of your own skins linearly by all eight
+  stored influences (with no dual-quaternion blend or joint folds), and the
+  attachments (eyes, teeth, tongue) follow single bones. With a
   hip or a knee flexed past 30° it asks the worker for the figure's joint folds
   (`client.folds`) and the skin adds them, so the groin folds against the belly
   and the calf against the thigh without passing through, and the back of a

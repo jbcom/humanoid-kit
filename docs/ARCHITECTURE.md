@@ -4003,8 +4003,8 @@ allow it: their anchors (`landmarkAnchors`, fixed by the topology, which the
 worker serves, `HumanoidWorkerClient.landmarkAnchors`), each figure's up
 neighbours (`landmarkUps`, from its rest shape), and the frame
 (`landmarkFrameInto`, from a skin-a-vertex callback and the posed skeleton).
-With a custom `material` the figure skins linearly with no fold, and so does
-the handle. The figure runs its per-frame work at `useFrame` priority -1
+With a custom `material` the figure skins linearly with no fold, through all
+eight stored influences, and so does the handle. The figure runs its per-frame work at `useFrame` priority -1
 (auto-render stays on), so a caller's own `useFrame` reads the pose of the
 frame about to be drawn. A browser test holds `frame(id, "world")` within
 2e-5 m of the landmark vertices the GPU draws, seated (the fold), with the jaw

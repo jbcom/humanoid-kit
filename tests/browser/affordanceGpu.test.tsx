@@ -22,7 +22,9 @@ import {
   Object3D,
   OrthographicCamera,
   Points,
+  Raycaster,
   Scene,
+  ShaderLib,
   ShaderMaterial,
   type SkinnedMesh,
   Vector3,
@@ -41,12 +43,15 @@ import {
   type HumanoidPose,
   HumanoidProvider,
   PresenceProvider,
+  StudioStage,
   useHumanoidAffordances,
 } from "../../src/react/index.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import {
+  applyLinearSkinning,
   FOLD_SLOTS_ATTRIBUTE,
   foldSlotAt,
+  LINEAR_SKINNING_KEY,
   readSkinAttributes,
   SKIN_INDEX_ATTRIBUTE_1,
   SKIN_WEIGHT_ATTRIBUTE_1,
@@ -64,6 +69,7 @@ import { inlineWorkerClient } from "./inlineClient.ts";
 const LOAD = { timeout: 300_000 };
 /** How far a frame may be from the vertex the GPU draws, metres: float32 skinning on both sides. */
 const EXACT = 2e-5;
+const CAPTURE_CUSTOM_MATERIAL = import.meta.env.HK_CAPTURE_CUSTOM_MATERIAL === "true";
 
 const client = inlineWorkerClient({ subdivision: 1 });
 /** A client with the adult pack, for the organ's test. */
@@ -156,8 +162,9 @@ function bodyOf(scene: Object3D): SkinnedMesh {
 /**
  * Where the GPU draws render vertices `vertices` of the body, in world space:
  * drawn as points by a shader skinned exactly as the body's material is (three's
- * skinning with the body's bones, then, unless `linear`, `applyDualSkinning`
- * with its fold), into a float target, and read back.
+ * skinning with the body's bones, then `applyLinearSkinning` (for a host body
+ * material) or `applyDualSkinning` with its fold, into a float target, and
+ * read back.
  */
 function gpuPositions(state: RootState, vertices: readonly number[], linear = false): Float32Array {
   const scene = state.scene;
@@ -219,6 +226,7 @@ function gpuPositions(state: RootState, vertices: readonly number[], linear = fa
       layout( location = 0 ) out highp vec4 outColor;
       void main() { outColor = vec4( vWorld, 1.0 ); }`,
   });
+  const release = linear ? applyLinearSkinning(material) : undefined;
   if (!linear) applyDualSkinning(material, dual, true);
   const drawn = new Points(points, material);
   drawn.frustumCulled = false;
@@ -231,6 +239,7 @@ function gpuPositions(state: RootState, vertices: readonly number[], linear = fa
   state.gl.readRenderTargetPixels(target, 0, 0, n, 1, px);
   state.gl.setRenderTarget(null);
   target.dispose();
+  release?.();
   material.dispose();
   points.dispose();
   const out = new Float32Array(n * 3);
@@ -435,6 +444,155 @@ describe("the affordance handle against the GPU", () => {
         />
       ));
       expect(worstAgainstGpu(shown, true, 100).worst).toBeLessThan(EXACT);
+      material.dispose();
+    },
+    LOAD.timeout,
+  );
+
+  it(
+    "keeps custom-material bounds, picking and depth shadows on the same eight-place linear pose",
+    async () => {
+      const material = new MeshStandardMaterial();
+      const shown = await show((h, onSettled) => (
+        <Humanoid
+          recipe={createRecipe()}
+          pose={seated}
+          material={material}
+          affordances={h}
+          onSettled={onSettled}
+        />
+      ));
+      const mesh = bodyOf(shown.get().scene);
+      const geometry = mesh.geometry;
+      const second = geometry.getAttribute(SKIN_WEIGHT_ATTRIBUTE_1);
+      const index = geometry.index;
+      if (!second || !index)
+        throw new Error("custom material: no second weights or triangle index");
+      let vertex = 0;
+      let weight = -1;
+      for (let v = 0; v < second.count; v++) {
+        const sum = second.getX(v) + second.getY(v) + second.getZ(v) + second.getW(v);
+        if (sum > weight) {
+          vertex = v;
+          weight = sum;
+        }
+      }
+      let triangle = -1;
+      for (let t = 0; t < index.count; t += 3)
+        if (
+          index.getX(t) === vertex ||
+          index.getX(t + 1) === vertex ||
+          index.getX(t + 2) === vertex
+        ) {
+          triangle = t / 3;
+          break;
+        }
+      if (triangle < 0) throw new Error(`custom material: no triangle for vertex ${vertex}`);
+      const ids = [
+        index.getX(triangle * 3),
+        index.getX(triangle * 3 + 1),
+        index.getX(triangle * 3 + 2),
+      ];
+      const at = (v: number) => {
+        const frame = shown.h.vertex(ids[v] as number, "world");
+        if (!frame) throw new Error(`custom material: no affordance frame for vertex ${ids[v]}`);
+        return new Vector3(...frame);
+      };
+      const a = at(0);
+      const b = at(1);
+      const c = at(2);
+      const centre = a
+        .clone()
+        .add(b)
+        .add(c)
+        .multiplyScalar(1 / 3);
+      const normal = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+      const expected = at(ids.indexOf(vertex));
+      const cpu = mesh.getVertexPosition(vertex, new Vector3()).applyMatrix4(mesh.matrixWorld);
+      expect(weight, "a body vertex must use the fifth through eighth places").toBeGreaterThan(
+        0.001,
+      );
+      expect(cpu.distanceTo(expected), "bounds use the drawn eight-place pose").toBeLessThan(EXACT);
+      mesh.computeBoundingBox();
+      expect(mesh.boundingBox?.containsPoint(mesh.getVertexPosition(vertex, new Vector3()))).toBe(
+        true,
+      );
+
+      const raycast = new Raycaster(
+        centre.clone().addScaledVector(normal, 0.01),
+        normal.clone().negate(),
+      );
+      const hits: import("three").Intersection[] = [];
+      mesh.raycast(raycast, hits);
+      const hit = hits.find((candidate) => candidate.faceIndex === triangle);
+      expect(hit, "ray picking reaches the selected eight-place triangle").toBeDefined();
+      expect(
+        hit?.point.distanceTo(centre),
+        "ray picking uses the drawn eight-place triangle",
+      ).toBeLessThan(EXACT);
+
+      const depth = mesh.customDepthMaterial as Material;
+      const shader = {
+        name: "custom-body-depth",
+        uniforms: {},
+        vertexShader: ShaderLib.depth.vertexShader,
+        fragmentShader: ShaderLib.depth.fragmentShader,
+      };
+      depth.onBeforeCompile(shader as never, {} as never);
+      expect(shader.vertexShader).toContain("for ( int k = 0; k < 8; k ++ )");
+      expect(shader.vertexShader).not.toContain("hkDualBones");
+      expect(depth.customProgramCacheKey()).toContain(LINEAR_SKINNING_KEY);
+      material.dispose();
+    },
+    LOAD.timeout,
+  );
+
+  it.skipIf(!CAPTURE_CUSTOM_MATERIAL)(
+    "captures default and custom body materials in the seated jaw-open pose",
+    async () => {
+      let get: (() => RootState) | null = null;
+      let settled = 0;
+      const material = new MeshStandardMaterial({ color: "#c48b69", roughness: 0.6 });
+      await render(
+        <HumanoidProvider client={client}>
+          <div style={{ width: 640, height: 480 }}>
+            <Canvas camera={{ position: [0, 1.1, 4.8], fov: 30 }} shadows>
+              <Probe onReady={(state) => (get = state)} />
+              <StudioStage contactShadowOpacity={0.24} />
+              {/* Left is the host material; right is the kit skin. */}
+              <Humanoid
+                recipe={createRecipe()}
+                pose={seated}
+                material={material}
+                position={[-0.62, 0, 0]}
+                onSettled={() => settled++}
+              />
+              <Humanoid
+                recipe={createRecipe()}
+                pose={seated}
+                position={[0.62, 0, 0]}
+                onSettled={() => settled++}
+              />
+            </Canvas>
+          </div>
+        </HumanoidProvider>,
+      );
+      await expect.poll(() => settled, LOAD).toBeGreaterThanOrEqual(2);
+      const state = get as unknown as () => RootState;
+      const canvas = document.querySelector("canvas");
+      if (!canvas) throw new Error("custom material capture: no canvas");
+      const capture = async (name: string, position: [number, number, number]) => {
+        const camera = state().camera;
+        camera.position.set(...position);
+        camera.lookAt(0, 0.85, 0);
+        camera.updateProjectionMatrix();
+        await new Promise<void>((done) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => done())),
+        );
+        console.info(`HK_CUSTOM_MATERIAL_CAPTURE_${name}=${canvas.toDataURL("image/png")}`);
+      };
+      await capture("FRONT", [0, 1.1, 4.8]);
+      await capture("THREE_QUARTER", [3.4, 1.3, 3.4]);
       material.dispose();
     },
     LOAD.timeout,
