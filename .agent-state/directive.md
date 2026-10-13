@@ -36,9 +36,12 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] A4 #25 Paired hand contact (agent abd5b3e7, `feat/paired-hand-contact`): rig constraints, inspected alignment proof, ARCHITECTURE.md contract.
 - [ ] A5 #27 Chest tissue productisation (agent a614e6dc, `claude/independent-chest-foundation-20261012`): finish age-table regeneration (18≠25), docs → tests → code, remove the `(1-gender)` breast coupling, legacy-identity gate, body-lab sheets.
 - [ ] A6 #67 Overhead pose shoulder chain (agent a9333e85, `fix/overhead-shoulder-skin`): fix the tear and smeared upper arms; include forward fold at rest.
-- [ ] A7 #72 Four unit failures on integration (agent a9df0558, `fix/post-reconcile-unit-failures`): kneeFold, contactCompression, nailPlates, browserArrayComparison. Root cause, not a skip.
+- [x] A7 #72 Four unit failures on integration: kneeFold, nailPlates and browserArrayComparison fixed at the root (73bb2039, 5c696f48, 4128a86d); the fourth is E13 (#94).
 - [ ] A8 #86 Adult age surface (agent aa1eb596, `feat/age-surface`): forehead banding, faint hands at 70; wrinkles that read as skin.
-- [ ] A9 #15 Period animation clips: musket drill and fire, kneel-and-pray, march cadence, colour-bearer. Packed and on integration; remaining lane render read and sign-off.
+- [ ] A9 #15 Period animation clips: musket drill and fire, kneel-and-pray, march cadence, colour-bearer (lane `feat/period-clips-qa`). Packed and on integration; the lane renders each clip on three bodies, reads every sheet, fixes defects and asserts contact geometry.
+- [ ] A10 #84 Two e2e specs red on integration (lane `fix/e2e-presence-permutations`); same item as E1.
+- [ ] A11 #68 and #79 hairFields BVH index and braids01 reproducibility (lane `fix/hairfields-bvh-index`); same items as C9 and B11.
+- [ ] A12 #32 Observer lifecycle (lane `feat/observer-lifecycle`), #41 age gate (lane `fix/age-gate-fail-closed`), docs reconcile (lane `docs/scope-reconcile`); same items as D1, C8, F2–F8.
 
 ### B. QA pose and anatomy validation (owner request 2026-10-13)
 
@@ -88,6 +91,8 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] E9 #39 Required CI gate is red from timeouts and no check is required.
 - [ ] E10 #65 heavy-slot remote-run on the third pool host exits 125.
 - [ ] E11 #87 Measure `scheduler.yield` in `yieldWorkerTask` before adopting it.
+- [ ] E12 #93 Lane liveness counts pool leases and issue comments, not only worktree changes; the watchdog prints state changes.
+- [ ] E13 #94 contactCompression: land the hip-crease unit with its gate or narrow the test (lane `fix/contact-compression`, reads the dirty `humanoid-kit-fold` worktree read-only).
 
 ### F. Documentation and decisions
 
