@@ -5,7 +5,9 @@ Status: being implemented in stages (issue #12). Done: MakeHuman proxy bodies,
 the CPU lab `scripts/research/miniature-lab.ts`); the instanced runtime
 (`MiniatureCrowd` in `src/render/miniature.ts`, `<Miniatures>` in `src/react`)
 with a browser test of its shader; and the numeric budget test
-(`tests/miniatureBudget.test.ts`). The 500-figure stress lab follows.
+(`tests/miniatureBudget.test.ts`); and the 500-figure stress lab in the
+playground (`?miniatures=500`) with its Playwright check
+(`e2e/miniatures.spec.ts`).
 
 ## Measured (2026-10-13)
 
@@ -20,6 +22,13 @@ idle, crouch: 102 frames at 15 fps):
 | A 600-figure table (554 in view) | 8 draw calls, 235 k triangles | at most 20 and 250 k |
 | CPU per frame (cull, LOD, instances) | about 0.2 ms in Node | |
 | Bake time per archetype | about 1 to 1.6 s with clips, 0.15 s static | |
+| The stress lab, 500 figures, headless Chrome on an M1 Pro (Metal) | 8 draws, 204 k triangles; frame 16.7 ms median, 20.5 ms p95 | the display's rate, as one figure draws it (16.5 median, 20.2 p95) |
+
+The lab's frame times are the host's: one figure and 500 differ by under a
+millisecond, so the crowd fits inside a 60 fps frame and the p95 is headless
+Chrome's frame pacing. The check therefore holds the crowd to the one-figure
+frame on the same machine, and judges frame time only when the page's WebGL
+renderer is a GPU (never SwiftShader).
 
 ## Why
 
@@ -201,4 +210,4 @@ draw a different body from the full renderer.
 3. A numeric budget test: triangles per LOD, draw calls for a table of
    archetypes, VAT bytes and encoded size per archetype.
 4. A stress lab: 500 figures in the playground (`?miniatures=500`), its
-   capture and a frame-time measurement.
+   capture and a frame-time measurement against one figure (done).

@@ -39,6 +39,8 @@ export interface MiniatureMeasure {
   p95Ms: number;
   drawCalls: number;
   triangles: number;
+  /** The WebGL renderer string, which says whether the frame times measure a GPU. */
+  renderer: string;
   crowd: MiniatureFrameStats;
   bakeMs: number;
 }
@@ -150,6 +152,16 @@ function table(count: number): MiniatureFigure[] {
   });
 }
 
+/** The GPU the page draws with (e.g. "ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro …)" or SwiftShader). */
+function rendererName(context: WebGLRenderingContext | WebGL2RenderingContext): string {
+  const info = context.getExtension("WEBGL_debug_renderer_info");
+  return String(
+    info
+      ? context.getParameter(info.UNMASKED_RENDERER_WEBGL)
+      : context.getParameter(context.RENDERER),
+  );
+}
+
 function Measure({ onDone }: { onDone: (m: Omit<MiniatureMeasure, "bakeMs" | "crowd">) => void }) {
   const gl = useThree((s) => s.gl);
   const frames = useRef<number[]>([]);
@@ -169,6 +181,7 @@ function Measure({ onDone }: { onDone: (m: Omit<MiniatureMeasure, "bakeMs" | "cr
       p95Ms: sample[Math.floor(sample.length * 0.95)] as number,
       drawCalls: gl.info.render.calls,
       triangles: gl.info.render.triangles,
+      renderer: rendererName(gl.getContext()),
     });
   });
   return null;
