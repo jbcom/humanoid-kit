@@ -1577,7 +1577,7 @@ export class HumanoidModel {
       // Cloth that would poke out of a garment over it goes under it.
       const tuck = outfit.garmentTuck[i];
       if (tuck) this.sunk(placed, g.asset.faceVerts, tuck);
-      for (let i = 1; i < placed.length; i += 3) minY = Math.min(minY, placed[i] as number);
+      for (let k = 1; k < placed.length; k += 3) minY = Math.min(minY, placed[k] as number);
       return this.evaluatePart(g.part, placed);
     });
     const hair =

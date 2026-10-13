@@ -192,11 +192,23 @@ const direction = (n: Float32Array, v: number, sign: 1 | -1): Vec3 => [
   sign * (n[v * 3 + 2] as number),
 ];
 
+/**
+ * A garment's triangles by the 3 cm cells their bounds touch, and a stamp per
+ * triangle so a ray tests each once without allocating.
+ */
 interface Grid {
-  cells: Map<string, number[]>;
+  cells: Map<number, number[]>;
+  stamp: Uint32Array;
+  epoch: number;
 }
 
-const key = (x: number, y: number, z: number) => `${x},${y},${z}`;
+/** Cells span ±1024 × 3 cm (±30 m) on each axis, keyed as one integer. */
+const SPAN = 2048;
+const key = (x: number, y: number, z: number) =>
+  ((x + SPAN / 2) * SPAN + (y + SPAN / 2)) * SPAN + (z + SPAN / 2);
+
+/** Each garment's grid, built on first use: an outfit casts many rays at one garment. */
+const grids = new WeakMap<TuckCloth, Grid>();
 
 /** Triangle `t` of a garment's quads: (0,1,2) for even, (0,2,3) for odd. */
 function corners(g: TuckCloth, t: number): [number, number, number] {
@@ -207,7 +219,9 @@ function corners(g: TuckCloth, t: number): [number, number, number] {
 }
 
 function triangleGrid(g: TuckCloth): Grid {
-  const cells = new Map<string, number[]>();
+  const known = grids.get(g);
+  if (known) return known;
+  const cells = new Map<number, number[]>();
   const count = (g.faces.length / 4) * 2;
   for (let t = 0; t < count; t++) {
     const c = corners(g, t);
@@ -240,7 +254,9 @@ function triangleGrid(g: TuckCloth): Grid {
           else cells.set(k, [t]);
         }
   }
-  return { cells };
+  const grid = { cells, stamp: new Uint32Array(count), epoch: 0 };
+  grids.set(g, grid);
+  return grid;
 }
 
 /**
@@ -257,24 +273,41 @@ function firstHit(
   facing?: Vec3,
 ): number | null {
   let best: number | null = null;
-  const seen = new Set<number>();
-  // Walk the ray a cell at a time: a cap of 3 cm is a cell or two.
-  const steps = Math.ceil(cap / CELL) + 1;
-  for (let s = 0; s <= steps; s++) {
-    const t = Math.min(cap, s * CELL);
-    const k = key(
-      Math.floor((o[0] + d[0] * t) / CELL),
-      Math.floor((o[1] + d[1] * t) / CELL),
-      Math.floor((o[2] + d[2] * t) / CELL),
-    );
-    for (const tri of grid.cells.get(k) ?? []) {
-      if (seen.has(tri)) continue;
-      seen.add(tri);
+  // A new stamp for this ray; on wrap-around, clear the old ones.
+  grid.epoch = (grid.epoch + 1) >>> 0;
+  if (grid.epoch === 0) {
+    grid.stamp.fill(0);
+    grid.epoch = 1;
+  }
+  // Every cell the segment [0, cap] passes through, in order (Amanatides–Woo):
+  // stepping by a fixed length would skip a cell a slanted ray only cuts across.
+  const cell = [0, 1, 2].map((a) => Math.floor((o[a] as number) / CELL)) as Vec3;
+  const step = [0, 1, 2].map((a) => Math.sign(d[a] as number)) as Vec3;
+  const next = [0, 1, 2].map((a) => {
+    const da = d[a] as number;
+    if (da === 0) return Number.POSITIVE_INFINITY;
+    const edge = ((cell[a] as number) + (da > 0 ? 1 : 0)) * CELL;
+    return (edge - (o[a] as number)) / da;
+  }) as Vec3;
+  const delta = [0, 1, 2].map((a) =>
+    (d[a] as number) === 0 ? Number.POSITIVE_INFINITY : CELL / Math.abs(d[a] as number),
+  ) as Vec3;
+  let t = 0;
+  while (t <= cap) {
+    for (const tri of grid.cells.get(key(cell[0], cell[1], cell[2])) ?? []) {
+      if (grid.stamp[tri] === grid.epoch) continue;
+      grid.stamp[tri] = grid.epoch;
       const [a, b, c] = corners(g, tri);
       if (facing && !faces(g.positions, a, b, c, facing)) continue;
       const hit = rayTriangle(o, d, g.positions, a, b, c);
       if (hit !== null && hit > 0 && hit <= cap && (best === null || hit < best)) best = hit;
     }
+    // A hit nearer than where the ray leaves this cell is the first.
+    const axis = next[0] <= next[1] ? (next[0] <= next[2] ? 0 : 2) : next[1] <= next[2] ? 1 : 2;
+    t = next[axis];
+    if (best !== null && best <= t) break;
+    cell[axis] += step[axis];
+    next[axis] += delta[axis];
   }
   return best;
 }

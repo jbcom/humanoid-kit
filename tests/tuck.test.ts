@@ -95,6 +95,33 @@ describe("sinking skin under the cloth over it", () => {
     expect(tuck.reduce((s, t) => s + (t > 0 ? 1 : 0), 0)).toBe(1);
   });
 
+  it("finds cloth in a grid cell a slanted ray only cuts across", () => {
+    // From (25, 20) mm along (0.6, 0.8) the ray is in the 30 mm cell x 1, y 0
+    // only between 8 and 12.5 mm: no 30 mm step lands there. A 1.6 mm triangle
+    // wholly inside that cell sits across the ray 10 mm out.
+    const o = Float32Array.of(0.025, 0.02, 0.015);
+    const d = Float32Array.of(0.6, 0.8, 0);
+    const tri = Float32Array.of(
+      0.03036,
+      0.02848,
+      0.013,
+      0.03164,
+      0.02752,
+      0.013,
+      0.031,
+      0.028,
+      0.018,
+    );
+    const tuck = tuckDepths({
+      positions: o,
+      normals: d,
+      candidates: Uint32Array.of(0),
+      cloth: [{ positions: tri, faces: Uint32Array.of(0, 1, 2, 2) }],
+      cap: 0.05,
+    });
+    expect(tuck[0]).toBeCloseTo(0.01, 5);
+  });
+
   it("ignores cloth behind the skin", () => {
     const cloth = plate(4, 0.02, -0.01);
     const tuck = tuckDepths({
