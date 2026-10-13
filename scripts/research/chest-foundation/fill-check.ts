@@ -1,4 +1,4 @@
-/** Shows the chest support and the biharmonic flat fill on the canonical female figure. */
+/** Shows the chest support and the biharmonic flat fill on the canonical cell (frame macro 0). */
 import fs from "node:fs";
 import path from "node:path";
 import { HumanoidModel } from "../../../src/model/humanoidModel.ts";
@@ -70,4 +70,4 @@ for (const [ctrl, col] of [
     );
 const m = montage(tiles, W, H, 3);
 writePng(path.join(out, "fill.png"), m.data, m.width, m.height);
-console.log(path.join(out, "fill.png"), "rows: support zones, female avg, biharmonic flat");
+console.log(path.join(out, "fill.png"), "rows: support zones, canonical cell avg, biharmonic flat");

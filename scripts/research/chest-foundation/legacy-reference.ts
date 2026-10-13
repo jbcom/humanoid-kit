@@ -1,7 +1,8 @@
 /**
- * Renders the legacy chest as the named visual reference: the female frame at the
- * average cup (0.5/0.5), minimum and maximum size, and the male and mixed frames
- * at 0.5/0.5. Output goes to the lab cache; nothing is committed.
+ * Renders the legacy chest as the named visual reference: frame macro 0 (the frame
+ * carrying MakeHuman's average tissue) at the average cup (0.5/0.5), minimum and
+ * maximum size, and frame macros .5 and 1 at 0.5/0.5. Output goes to the lab
+ * cache; nothing is committed.
  *
  *   node scripts/research/chest-foundation/legacy-reference.ts [outDir]
  */
@@ -24,11 +25,11 @@ const lab: Lab = {
 };
 
 const cases = [
-  { id: "female-avg", gender: 0, size: 0.5, firm: 0.5 },
-  { id: "female-min", gender: 0, size: 0, firm: 0.5 },
-  { id: "female-max", gender: 0, size: 1, firm: 0.5 },
-  { id: "mixed-avg", gender: 0.5, size: 0.5, firm: 0.5 },
-  { id: "male-avg", gender: 1, size: 0.5, firm: 0.5 },
+  { id: "frame0-avg", gender: 0, size: 0.5, firm: 0.5 },
+  { id: "frame0-min", gender: 0, size: 0, firm: 0.5 },
+  { id: "frame0-max", gender: 0, size: 1, firm: 0.5 },
+  { id: "frame0.5-avg", gender: 0.5, size: 0.5, firm: 0.5 },
+  { id: "frame1-avg", gender: 1, size: 0.5, firm: 0.5 },
 ];
 
 const W = 420;

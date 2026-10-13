@@ -115,12 +115,15 @@ export function hopDistance(m: BodyMesh, seeds: Iterable<number>, limit: number)
  * other vertex fixed (two fixed rings give a position-and-slope clamp), where `L`
  * is the graph Laplacian with inverse-edge-length weights. Returns the filled positions for `values`'
  * three channels (a copy; fixed vertices unchanged). Dense Cholesky: `free` is a
- * few thousand at most.
+ * few thousand at most. `weightsFrom` is the geometry the edge lengths are read
+ * from (default: `values` itself); passing a fixed rest mesh makes the fill one
+ * fixed linear map of the ring, the same for every figure.
  */
 export function biharmonicFill(
   m: BodyMesh,
   values: Float32Array,
   free: readonly number[],
+  weightsFrom: Float32Array = values,
 ): Float32Array {
   const idx = new Map<number, number>();
   free.forEach((v, i) => {
@@ -136,9 +139,9 @@ export function biharmonicFill(
     Math.max(
       1e-4,
       Math.hypot(
-        (values[a * 3] as number) - (values[b * 3] as number),
-        (values[a * 3 + 1] as number) - (values[b * 3 + 1] as number),
-        (values[a * 3 + 2] as number) - (values[b * 3 + 2] as number),
+        (weightsFrom[a * 3] as number) - (weightsFrom[b * 3] as number),
+        (weightsFrom[a * 3 + 1] as number) - (weightsFrom[b * 3 + 1] as number),
+        (weightsFrom[a * 3 + 2] as number) - (weightsFrom[b * 3 + 2] as number),
       ),
     );
   const lrow = (v: number): [number, number][] => {

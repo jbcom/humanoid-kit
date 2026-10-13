@@ -2,39 +2,34 @@
  * The independent chest foundation generator (research). It is a function of an
  * EVALUATED FIGURE, not a table of world-space targets:
  *
- * 1. `flat`: the figure's own chest with the legacy tissue relaxed away by a
- *    biharmonic membrane fill over the support, blended by `legacyShare` (the
- *    fraction of the legacy female tissue the frame carries; 1 - gender). A male
- *    frame keeps its own pectoral shape: muscle is a separate trait.
+ * 1. `flat`: the figure's own chest with the tissue it MEASURABLY carries relaxed
+ *    away (`flatBaseline` in tissue.ts: the mound-shaped component of the frame's
+ *    relief from its biharmonic fill). No gender or recipe value is read; relief
+ *    orthogonal to the mound (pectoral, ribs) stays.
  * 2. `delta`: size and firmness shape the tissue on top of that flat chest, per
  *    side, in units of the figure's own lateral chest scale (`halfSpan`), so the
  *    same parameters describe a tall, short, broad or narrow body.
  *
  * Size and firmness are separate deformations: size sets the footprint and the
  * projection; firmness redistributes (upper pole, lower-pole mass, descent of the
- * tissue under its weight) and never rescales the volume. Nothing reads `gender`
- * except through `legacyShare`, which only decides how much legacy tissue to relax.
+ * tissue under its weight) and never rescales the volume.
+ *
+ * Status: the REJECTED procedural attempt, kept as a diagnostic (tissue.ts is the
+ * data-first generator that replaced it; see NOTES.md).
  */
 
-import type { BodyManifest } from "../../../src/format/assetFormat.ts";
-import { type Anchors, anchors } from "./figure.ts";
-import { type BodyMesh, biharmonicFill, diffuse, vertexNormals } from "./mesh.ts";
-import type { Support } from "./support.ts";
+import type { Anchors } from "./figure.ts";
+import { diffuse, vertexNormals } from "./mesh.ts";
+import { flatBaseline, type TissueCtx, type TissueLibrary } from "./tissue.ts";
 
 export interface ChestParams {
   /** 0 = flat/base, 0.5 = average, 1 = high. */
   size: number;
   /** 0 = low (descended), 0.5 = average, 1 = firm. */
   firmness: number;
-  /** Fraction of the legacy female tissue this frame carries (1 - gender). */
-  legacyShare: number;
 }
 
-export interface ChestCtx {
-  mesh: BodyMesh;
-  support: Support;
-  manifest: BodyManifest;
-}
+export type ChestCtx = TissueCtx & { library: TissueLibrary };
 
 export interface ChestResult {
   /** The figure's chest with legacy tissue relaxed (control positions). */
@@ -94,16 +89,9 @@ export function tissueShape(size: number, firmness: number) {
 }
 
 export function chestFoundation(ctx: ChestCtx, control: Float32Array, p: ChestParams): ChestResult {
-  const a = anchors(ctx.manifest, control);
+  // 1. Relax exactly the tissue this frame measurably carries.
+  const { flat, anchors: a } = flatBaseline(ctx, ctx.library, control);
   const free = Array.from(ctx.support.free);
-  // 1. Relax the legacy tissue (only the share this frame carries).
-  const filled = biharmonicFill(ctx.mesh, control, free);
-  const flat = new Float32Array(control);
-  for (const v of free)
-    for (let k = 0; k < 3; k++)
-      flat[v * 3 + k] =
-        (control[v * 3 + k] as number) +
-        p.legacyShare * ((filled[v * 3 + k] as number) - (control[v * 3 + k] as number));
   const nf = vertexNormals(ctx.mesh, flat);
   const L = a.halfSpan;
   const shape = tissueShape(p.size, p.firmness);
