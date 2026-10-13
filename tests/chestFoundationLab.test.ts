@@ -119,6 +119,17 @@ describe("chest foundation lab: no gender input", () => {
     expect(Buffer.from(b.buffer).equals(Buffer.from(a.buffer))).toBe(true);
   });
 
+  it("keeps the bare frame's own chest at size 0: no crater where the average nipple was", () => {
+    // The known pinch: the mound-only fit read this frame's pectoral relief as 78 %
+    // tissue and dug a 14 mm crater at its nipple. The two-shape fit measures ~0.
+    for (const age of [13, 25, 70]) {
+      const own = lab.model.evaluate(frameRecipe({ gender: 1, age })).control;
+      const r = chestTissue(ctx, libraryAt(ages, age), own, both(0, 0.5));
+      expect(r.sides.L.share, `${age} y`).toBeLessThan(0.02);
+      expect(maxDiff(r.positions, own), `${age} y`).toBeLessThan(5e-4);
+    }
+  });
+
   it("measures the carried tissue from the mesh: a masculine frame carries less", () => {
     const male = lab.model.evaluate(frameRecipe({ gender: 1 })).control;
     const avg = chestTissue(ctx, lib, canonical, both(0.5, 0.5));
