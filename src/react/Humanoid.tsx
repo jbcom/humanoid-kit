@@ -111,7 +111,12 @@ import {
 import { skinDualShare } from "../rig/skinShare.ts";
 import { bodyHairColour, bodyHairCoverage } from "../surface/bodyHair.ts";
 import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
-import { DEFAULT_HAIR_COLOUR, type HairColour, hairAlbedo } from "../surface/hairTone.ts";
+import {
+  agedHairColour,
+  DEFAULT_HAIR_COLOUR,
+  type HairColour,
+  hairAlbedo,
+} from "../surface/hairTone.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 import { CoatMesh } from "./CoatMesh.tsx";
 import { FIGURE_FRAME_PRIORITY } from "./framePriority.ts";
@@ -836,7 +841,8 @@ function DecalMesh({
   const material = useMemo(() => new DecalMaterial(), []);
   useDiffuseTexture(material, topology.textureUrl, report);
   const kind = topology.kind as DecalKind;
-  const { eumelanin, pheomelanin, grey, override } = colour;
+  // Brows and lashes grey with age on their own clocks; the recipe's grey is a floor.
+  const { eumelanin, pheomelanin, grey, override } = agedHairColour(colour, age, kind);
   const overrideKey = override?.join(",") ?? "";
   // biome-ignore lint/correctness/useExhaustiveDependencies: overrideKey stands for override's values
   useEffect(() => {
@@ -1125,9 +1131,13 @@ export function Humanoid({
   const invalidate = useThree((s) => s.invalidate);
   /** Which style's scalp each body geometry holds (null: none), so it is written when it changes. */
   const scalpOf = useRef(new WeakMap<BufferGeometry, string | null>());
-  // The scalp shows the hair's own colour under it, so it follows the recipe's hair colour.
+  // The scalp shows the hair's own colour under it, so it follows the worn hair's
+  // colour: the recipe's pigments, greyed by age (the recipe's grey a floor).
   const wornHair = hair !== null;
-  const wornColour = recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR;
+  const wornColour = useMemo(
+    () => agedHairColour(recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR, recipe.macros.age, "scalp"),
+    [recipe.hair?.colour, recipe.macros.age],
+  );
   const overrideKey = wornColour.override?.join(",") ?? "";
   // biome-ignore lint/correctness/useExhaustiveDependencies: overrideKey stands for the override's values
   useEffect(() => {
@@ -1853,7 +1863,7 @@ export function Humanoid({
                 topology={hair.topology}
                 geometry={hair.geometry}
                 skeleton={rig.skeleton}
-                colour={recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR}
+                colour={wornColour}
                 multisampled={multisampled}
                 visible={shown}
                 report={report}

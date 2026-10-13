@@ -83,9 +83,16 @@ mean intensity of 27 %, and that only 6 to 23 % have half their hair grey at 50
 (the "50/50/50" rule overstates it); men grey more than women, and people of
 Asian and African ancestry less than those of European ancestry. The kit's age
 grey is a smoothstep from 35 to 95, which gives 26 % at 55, the middle of
-Panhard's cohort, and 98 % at 90, as the **fit**. It applies to the scalp's colour model only as
-a floor: a recipe's own `hair.colour.grey` stands for the scalp and is not
-replaced.
+Panhard's cohort, 74 % at 75 and 98 % at 90, as the **fit** (`ageGrey`, in
+`hairTone.ts`). It greys the head by default: the scalp hair, the scalp under
+it, the brows and the lashes all take `agedHairColour(colour, age, part)`, at
+least as grey as `ageGrey(age − GREY_LAG[part])`. A recipe's own
+`hair.colour.grey` is a floor (it can grey a figure early, never keep an old
+one dark), and an `override` colour (dyed hair) is kept as it is.
+
+The brows grey after the scalp (lag 10 years) and the lashes last (lag 25, so
+half grey at 90): a **choice** from common observation that brows and lashes
+keep their pigment longer than the scalp, not a measurement.
 
 Body hair greys later than the beard and scalp; the lag (beard none, trunk and
 limbs 8 years, axillary and pubic 12 years) is a **choice** from common
