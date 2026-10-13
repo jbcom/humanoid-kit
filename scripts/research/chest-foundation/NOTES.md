@@ -81,14 +81,16 @@ reads with no arm over a breast.
 Decision: two extremes sheets. `chest-extremes` corners the chest's own axes (size,
 firmness, melanin, undertone, ethnic vertex) and holds muscle, weight, height and the
 face mid-range; `body-extremes` corners everything. Cornering every axis at once
-buried the chest under body-wide failures (tube arms, belly rolls at weight 1).
+buried the chest under body-wide failures (tube arms, belly rolls at weight 1),
+filed as issue #74.
 
 ## Findings
 
 - 18 y and 25 y give different tissue: the age axis is MakeHuman's 10-to-25 blend,
   so an 18-year-old is about 47% child (owner ruling, 2026-10-13, reversing an
   earlier hold of the adult body from 18).
-- Identity off the knots is 1e-7 m or better at every age checked.
+- Identity off the knots is 1e-7 m or better at every age checked, including every
+  corner of the size and firmness grid at 19, 21, 22 and 24 years, inside the blend.
 - MakeHuman's own data gives a child figure tissue at size 1 (age 5: 44 mm peak), from
   its child breast targets weighted by the age interpolation. That is parity, not drift.
 - The hard line under the breast at firmness 0 is MakeHuman's own: on the
@@ -118,13 +120,25 @@ the average-tissue frame; neighbours' difference is the pairwise RMS at size 1.
 | age | what the sheet shows | relief .5 / 1 | vs next age |
 | --- | --- | --- | --- |
 | 5 | child torso; flat to a soft bud at high size, areola faint | 4.6/15 · 16.5/44 | 14.8 mm: clear |
-| 9 | budding at low size; at size near 1 a full, low breast | 5.8/18 · 31.2/82 | 5.2 mm: clear |
-| 13 | small to full adolescent breast, rounder, higher | 7.9/24 · 35.8/96 | 4.8 mm: clear |
-| 18 | adult breast across the whole size range | 11.2/33 · 37.8/105 | 0.0 mm: identical |
-| 25 | the same body as 18 (the kit's adult hold) | 11.2/33 · 37.8/105 | 3.5 mm: subtle |
+| 9 | budding at low size; at size near 1 a full, low breast | 5.8/18 · 31.2/82 | 4.3 mm: clear |
+| 13 | small to full adolescent breast, rounder, higher | 7.0/21 · 35.3/94 | 2.6 mm: subtle |
+| 18 | about half child: narrower shoulders, small sizes still near-flat in profile | 8.7/26 · 36.2/98 | 1.5 mm: subtle |
+| 21 | between: the mid sizes (.4 to .8) gain projection, size 1 nearly as at 25 | 9.7/29 · 36.9/101 | 2.1 mm: subtle |
+| 25 | adult body: broadest shoulders, a small mound already at size .4 | 11.2/33 · 37.8/105 | 3.5 mm: subtle |
 | 40 | adult; low firmness starts to drop the lower pole | 11.1/33 · 37.3/104 | 3.5 mm: subtle |
 | 55 | lower, longer lower pole at low firmness | 11.0/32 · 37.1/103 | 3.5 mm: subtle |
 | 70 | most ptosis; long, low breast at low firmness | 11.0/32 · 37.2/102 | n/a |
+
+The age strips (`chest-age-strips`: the g0 and g50 frames at 13, 18, 21 and 25,
+each swept over size and firmness) show MakeHuman's 10-to-25 blend row by row.
+Front, the frame carries most of the change: the shoulders and the rib cage widen
+steadily from 13 to 25, and the breast keeps its place on the chest. At size 1 the
+mound is nearly the same at every age (36 to 38 mm RMS), so it reads relatively
+larger on the narrower 13 y and 18 y chests. Side, the change is at the small and mid
+sizes: at 13 y sizes 0 to .4 are flat with a point at the nipple, at 25 y size .4
+is already a small mound. Firmness 0 gives the same low, long lower pole at every
+age, and firmness 1 the same high round form. No seam, fold or tear on any of the
+176 tiles; skin and areola tone hold across ages for each figure.
 
 From 18 on, neighbouring ages read apart only side by side on matched size and
 firmness (the strips), not across the scatter, where size and firmness swamp a
