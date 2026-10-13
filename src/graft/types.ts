@@ -63,11 +63,11 @@ export type GraftCut =
 export interface GraftOptions {
   /** Samples per loop for the fit and the band's rings (default 64). */
   samples?: number;
-  /** The band's rings, from the body's loop to the part's rim (default 4, at least 2). */
+  /** The band's rings, from the body's loop to the part's rim (default 8, at least 2). */
   rings?: number;
   /** How far beyond the body's loop the rim sits, in units of the loop's RMS radius (default 0.3). */
   gap?: number;
-  /** The rim's falloff band, in units of the rim's RMS radius at rest (default 0.5). */
+  /** The rim's falloff band, in units of the rim's RMS radius at rest (default 1.5). */
   band?: number;
   /** An extra scale of the part about its rim's centre, before the fit: uniform, or per part axis. */
   scale?: number | Vec3;

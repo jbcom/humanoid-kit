@@ -144,7 +144,124 @@ export function resolvePlaneCut(mesh: ControlMesh, plane: GraftPlane, seed: Vec3
       }
   }
   fillIslands(adj, removed);
-  return { removed, loop: boundary(edges, removed) };
+  const stair = boundary(edges, removed);
+  return snapToEdgeLoop(mesh, edges, adj, n, plane.point, start, removed, stair);
+}
+
+/**
+ * The edge loop of the quad mesh through `a`→`b`: at each vertex of valence 4,
+ * the edge that shares no face with the one arriving. Null when it meets a
+ * vertex of another valence or does not close.
+ */
+function edgeLoop(
+  edges: Map<number, number[]>,
+  around: Map<number, number[]>,
+  a: number,
+  b: number,
+): number[] | null {
+  const loop = [a];
+  let prev = a;
+  let at = b;
+  for (let step = 0; step < 2000; step++) {
+    if (at === a) return loop;
+    loop.push(at);
+    const ring = around.get(at) ?? [];
+    if (ring.length !== 4) return null;
+    const arriving = new Set(edges.get(key(prev, at)) ?? []);
+    const next = ring.filter(
+      (c) => c !== prev && !(edges.get(key(at, c)) ?? []).some((f) => arriving.has(f)),
+    );
+    if (next.length !== 1) return null;
+    prev = at;
+    at = next[0] as number;
+  }
+  return null;
+}
+
+/**
+ * A plane picks whole faces, so its boundary steps where the plane crosses the
+ * mesh's rows, and a band from a stepped loop pinches at every step. Where an
+ * edge loop of the mesh runs round the same place, the cut takes that instead:
+ * of the closed edge loops through the stepped boundary's edges, the one that
+ * keeps nearest the plane (by its farthest vertex), provided it bounds the
+ * seed's side alone and removes much the same faces. Else the stepped cut stands.
+ */
+function snapToEdgeLoop(
+  mesh: ControlMesh,
+  edges: Map<number, number[]>,
+  adj: number[][],
+  n: Vec3,
+  point: Vec3,
+  start: number,
+  stepped: Uint8Array,
+  stair: number[],
+): ResolvedCut {
+  const around = new Map<number, number[]>();
+  for (const e of edges.keys()) {
+    const a = Math.floor(e / 0x100000000);
+    const b = e % 0x100000000;
+    (around.get(a) ?? around.set(a, []).get(a))?.push(b);
+    (around.get(b) ?? around.set(b, []).get(b))?.push(a);
+  }
+  const distance = (v: number) =>
+    Math.abs(
+      ((mesh.positions[v * 3] as number) - point[0]) * n[0] +
+        ((mesh.positions[v * 3 + 1] as number) - point[1]) * n[1] +
+        ((mesh.positions[v * 3 + 2] as number) - point[2]) * n[2],
+    );
+  let steppedCount = 0;
+  for (const r of stepped) steppedCount += r;
+  const tried = new Set<number>();
+  let best: ResolvedCut | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < stair.length; i++) {
+    const a = stair[i] as number;
+    const b = stair[(i + 1) % stair.length] as number;
+    if (tried.has(key(a, b))) continue;
+    const loop = edgeLoop(edges, around, a, b);
+    if (!loop) continue;
+    for (let j = 0; j < loop.length; j++)
+      tried.add(key(loop[j] as number, loop[(j + 1) % loop.length] as number));
+    const score = Math.max(...loop.map(distance));
+    if (score >= bestScore) continue;
+    // The seed's side of the loop: faces reached without crossing it.
+    const wall = new Set<number>();
+    for (let j = 0; j < loop.length; j++)
+      wall.add(key(loop[j] as number, loop[(j + 1) % loop.length] as number));
+    const removed = new Uint8Array(mesh.faces.length);
+    removed[start] = 1;
+    const stack = [start];
+    let count = 1;
+    while (stack.length) {
+      const f = stack.pop() as number;
+      const fv = mesh.faces[f] as number;
+      for (let k = 0; k < 4; k++) {
+        const e = key(
+          mesh.faceVerts[fv * 4 + k] as number,
+          mesh.faceVerts[fv * 4 + ((k + 1) % 4)] as number,
+        );
+        if (wall.has(e)) continue;
+        for (const g of edges.get(e) ?? [])
+          if (!removed[g]) {
+            removed[g] = 1;
+            count++;
+            stack.push(g);
+          }
+      }
+    }
+    if (Math.abs(count - steppedCount) > 0.25 * steppedCount) continue;
+    fillIslands(adj, removed);
+    let bounded: number[];
+    try {
+      bounded = boundary(edges, removed);
+    } catch {
+      continue;
+    }
+    if (bounded.length !== loop.length) continue;
+    best = { removed, loop: bounded };
+    bestScore = score;
+  }
+  return best ?? { removed: stepped, loop: stair };
 }
 
 /** A supplied cut: these control faces are removed (each must be one of `mesh.faces`). */
