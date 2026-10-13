@@ -122,10 +122,19 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] I8 #104 glTF `HK_interaction` and the KHR_interactivity bridge.
 - [ ] I9 #105 Decision: is `humanoid-kit-adult-animations` in scope for this public repository? Owner decision (options a/b/c on the issue); everything the decision does not gate proceeds.
 
-### G. Publication (owner-gated)
+### S. Ship gate: what done means (owner, 2026-10-13: "I don't care how things land provided they actually do land and ship to main at some point with all visual issues actually solved")
 
-- [ ] G1 #69 Publish `integration` to `origin/integration`, never `main`. Neutrality scan is clean; waits on the owner's yes and on G2.
-- [ ] G2 #22 licence and provenance audit of the adult pack (CC-BY NIH-derived data) before any public push.
+The end state is `main` carrying everything on `integration`, with every visual issue solved. How a change lands is a lane's choice; that it lands and that its renders are accepted is not. Rules to keep spend proportional to that goal:
+
+- Only work that moves a visual defect to accepted, fixes a failing gate, or clears the publication path runs in a lane. Polish, reports and tooling without a visual defect behind them wait until the register is clear (stopped 2026-10-13: #88 soiling, #91 report, #92 cadence command, #39 CI timeouts, #74 corner combinations; their issues stay open, unstaffed).
+- At most twelve lanes at once, each with a named issue, branch, acceptance image set and issue comments instead of idle-polling. No watchdog process; root checks issue comments and commit age when a landing or a notification arrives.
+- **Visual defect register** (each is closed only when root has read the renders and accepted them): #14 beards, #21 body hair, #27 chest, #67 overhead shoulders, #86 age surface, #96 hairline, #95 skin ageing, #15 period clips, #71 forward fold, #73 lithotomy and canals, #75 to #78 vulva and root detail, #77 canal openings at rest, #80 aperture state, #82 moisture response, #85 ethnic simplex in defaults, #74 corner combinations (parity first), #88 garment wear detail.
+- Publication sequence once the register and the gates are clear: `integration` pushed to `origin/integration`, PR to `main`, required CI green, merge commit, release path from #38 (two-tier, decided 2026-10-13). Never a direct push to `main`.
+
+### G. Publication
+
+- [ ] G1 #69 Publish `integration` to `origin/integration`, never `main`. Neutrality scan is clean; sequence and gates are in section S. The owner has asked for it to ship to `main`; the push happens when the register is clear, G2 is done and CI is green.
+- [ ] G2 #22 licence and provenance audit of the adult pack before any public push. Pack relicensed CC0 (5d21909b) after root verified no code reads the NIH model; remaining: record the AGPL-parent history of the community sources in NOTICE and settle whether the NIH transfer lands.
 
 ### H. Hygiene
 
