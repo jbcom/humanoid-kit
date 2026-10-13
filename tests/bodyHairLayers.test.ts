@@ -88,6 +88,22 @@ describe("the body hair layers", () => {
       expect(BODY_HAIR_LAYERS.some((l) => l.id === trunk)).toBe(false);
   });
 
+  it("makes the direct leg endpoints visibly distinct in the strand response", () => {
+    const legs = TERMINAL_HAIR_LAYERS.find((layer) => layer.id === "hair-legs");
+    if (!legs) throw new Error("missing terminal leg-hair layer");
+    const none = legs.paint(input(30, 1, { bodyHair: { coverage: { legs: 0 } } }));
+    const sparse = legs.paint(
+      input(30, 1, { bodyHair: { coverage: { legs: 1 }, follicleDensity: { legs: 0.25 } } }),
+    );
+    const dense = legs.paint(
+      input(30, 1, { bodyHair: { coverage: { legs: 1 }, follicleDensity: { legs: 2 } } }),
+    );
+    expect(strandCover(none)).toBe(0);
+    expect(strandCover(sparse)).toBeGreaterThan(0.04);
+    expect(strandCover(dense)).toBeGreaterThan(strandCover(sparse) * 4);
+    expect(strandCover(dense)).toBeLessThanOrEqual(MAX_STRAND_COVER);
+  });
+
   it("colour terminal hair from the figure's pigments", () => {
     const black = paintStopTable(
       TERMINAL_HAIR_LAYERS,

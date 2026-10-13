@@ -2,6 +2,7 @@ import { OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   type AnimationLibrary,
+  type BodyHairGroup,
   type CustomTarget,
   createRecipe,
   type EyeLibrary,
@@ -28,7 +29,7 @@ import { animationsPack } from "humanoid-kit-animations";
 import { bodyPack } from "humanoid-kit-body";
 import { eyesPack } from "humanoid-kit-eyes";
 import { hairPack } from "humanoid-kit-hair";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
@@ -495,6 +496,8 @@ export function App() {
     <HumanoidProvider client={client}>
       {params.get("lab") === "effective-adult-values" ? (
         <EffectiveAdultDefaultsLab />
+      ) : params.has("bodyHairLab") ? (
+        <BodyHairLab />
       ) : params.get("scene") === "walk" ? (
         <Walk />
       ) : params.has("view") || params.has("cam") ? (
@@ -505,6 +508,282 @@ export function App() {
     </HumanoidProvider>
   );
 }
+
+/** The four regional probes frame the current posed skeleton rather than world coordinates. */
+interface BodyHairLabRegion {
+  id: BodyHairGroup;
+  label: string;
+  bone: string;
+  view: [number, number, number];
+  span: number;
+  offset?: [number, number, number];
+  pose?: string;
+}
+
+const BODY_HAIR_LAB_REGIONS: readonly BodyHairLabRegion[] = [
+  { id: "face", label: "Face", bone: "head", view: [0, 0.05, 1], span: 0.32 },
+  { id: "chest", label: "Chest", bone: "spine02", view: [0, 0.1, 1], span: 0.6 },
+  {
+    id: "axillary",
+    label: "Axillary",
+    bone: "upperarm01.L",
+    view: [0.7, -0.3, 1],
+    span: 0.5,
+    pose: "overhead",
+  },
+  { id: "legs", label: "Legs", bone: "lowerleg01.L", view: [0, 0, 1], span: 0.62 },
+] as const;
+
+const BODY_HAIR_LAB_FORMS = [
+  { label: "Feminine", gender: 0 },
+  { label: "Mixed", gender: 0.5 },
+  { label: "Masculine", gender: 1 },
+] as const;
+
+const BODY_HAIR_LAB_COVERAGE = [
+  { label: "None", value: 0 },
+  { label: "Sparse", value: 0.25 },
+  { label: "Medium", value: 0.5 },
+  { label: "Full", value: 1 },
+] as const;
+
+const BODY_HAIR_LAB_FOLLICLES = [
+  { label: "Sparse follicles", value: 0.25 },
+  { label: "Standard follicles", value: 1 },
+  { label: "Dense follicles", value: 2 },
+] as const;
+
+const BODY_HAIR_LAB_HAIR = { eumelanin: 0.85, pheomelanin: 0.02, grey: 0, override: null };
+
+function bodyHairLabRegion(id: BodyHairGroup): BodyHairLabRegion {
+  const region = BODY_HAIR_LAB_REGIONS.find((candidate) => candidate.id === id);
+  if (!region) throw new Error(`No direct body-hair lab region for ${id}`);
+  return region;
+}
+
+function bodyHairLabForm(gender: number) {
+  const form = BODY_HAIR_LAB_FORMS.find((candidate) => candidate.gender === gender);
+  if (!form) throw new Error(`No direct body-hair lab form for ${gender}`);
+  return form;
+}
+
+/**
+ * A compact acceptance workbench for the existing independent regional API.
+ * It intentionally does not reuse the creator's slider bank: each button has
+ * a finite, named recipe outcome and the selected recipe remains inspectable.
+ */
+function BodyHairLab() {
+  const [regionId, setRegionId] = useState<BodyHairGroup>("chest");
+  const [gender, setGender] = useState(0.5);
+  const [coverage, setCoverage] = useState(0.5);
+  const [follicleDensity, setFollicleDensity] = useState(1);
+  const [generation, setGeneration] = useState(0);
+  const [settled, setSettled] = useState(false);
+  const region = bodyHairLabRegion(regionId);
+  const form = bodyHairLabForm(gender);
+  const recipe = useMemo(
+    () =>
+      createRecipe({
+        macros: { age: 30, gender },
+        skin: { melanin: 0.5 },
+        hair: { style: null, colour: BODY_HAIR_LAB_HAIR },
+        bodyHair: {
+          coverage: { [region.id]: coverage },
+          follicleDensity: { [region.id]: follicleDensity },
+          // The face coat selects existing beard geometry; other regions do not.
+          beard: region.id === "face" ? "full" : "none",
+        },
+      }),
+    [coverage, follicleDensity, gender, region.id],
+  );
+  const recipeSummary = JSON.stringify({
+    age: recipe.macros.age,
+    gender: recipe.macros.gender,
+    bodyHair: recipe.bodyHair,
+  });
+  const select = (change: () => void) => {
+    setSettled(false);
+    setGeneration((value) => value + 1);
+    change();
+  };
+  const choice = <T extends { label: string; value: number }>(
+    heading: string,
+    choices: readonly T[],
+    selected: number,
+    choose: (value: number) => void,
+  ) => (
+    <section aria-label={heading} style={{ display: "grid", gap: 8 }}>
+      <h2 style={bodyHairLabHeadingStyle}>{heading}</h2>
+      <div style={bodyHairLabChoicesStyle}>
+        {choices.map((choice) => (
+          <button
+            key={choice.label}
+            type="button"
+            aria-pressed={selected === choice.value}
+            onClick={() => select(() => choose(choice.value))}
+            style={bodyHairLabButtonStyle(selected === choice.value)}
+          >
+            {choice.label}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+  return (
+    <main style={bodyHairLabLayoutStyle}>
+      <section data-body-hair-stage style={bodyHairLabStageStyle} aria-label="Body hair model">
+        <div
+          data-body-hair-figure={settled ? "ready" : "loading"}
+          data-body-hair-generation={generation}
+          style={{ position: "absolute", inset: 0 }}
+        >
+          <Canvas
+            shadows={STUDIO_SHADOWS}
+            camera={{ position: [0, 0.95, 3.2], fov: 35 }}
+            gl={{
+              preserveDrawingBuffer: true,
+              toneMapping: STUDIO_TONE_MAPPING,
+              toneMappingExposure: STUDIO_EXPOSURE,
+            }}
+          >
+            <StudioStage />
+            <SceneProbe />
+            <AutoFrame
+              bone={region.bone}
+              view={region.view}
+              span={region.span}
+              offset={region.offset ?? [0, 0, 0]}
+            />
+            <Humanoid
+              recipe={recipe}
+              {...(region.pose && { pose: { body: region.pose } })}
+              onSettled={() => setSettled(true)}
+              bodyArtImages={tattooImages()}
+            />
+          </Canvas>
+        </div>
+      </section>
+      <aside
+        data-body-hair-controls
+        style={bodyHairLabControlsStyle}
+        aria-label="Body hair controls"
+      >
+        <header style={{ display: "grid", gap: 6 }}>
+          <p
+            style={{
+              color: "#a9bfd6",
+              fontSize: 12,
+              letterSpacing: "0.12em",
+              margin: 0,
+              textTransform: "uppercase",
+            }}
+          >
+            Adult 30 direct controls
+          </p>
+          <h1 style={{ fontSize: 26, margin: 0 }}>Body hair controls</h1>
+          <p style={{ color: "#c8d2dd", lineHeight: 1.5, margin: 0 }}>
+            Inspect one regional coverage choice and one follicle-spacing choice at a time.
+          </p>
+        </header>
+        <section style={{ display: "grid", gap: 6 }}>
+          <h2 style={bodyHairLabHeadingStyle}>What changes</h2>
+          <p style={{ color: "#c8d2dd", lineHeight: 1.5, margin: 0 }}>
+            Coverage changes occupied skin area. Follicle density changes strand spacing while
+            keeping that selected coverage. Region selection also uses its own inspection camera.
+          </p>
+        </section>
+        <section aria-label="Region" style={{ display: "grid", gap: 8 }}>
+          <h2 style={bodyHairLabHeadingStyle}>Region</h2>
+          <div style={bodyHairLabChoicesStyle}>
+            {BODY_HAIR_LAB_REGIONS.map((candidate) => (
+              <button
+                key={candidate.id}
+                type="button"
+                aria-pressed={region.id === candidate.id}
+                onClick={() => select(() => setRegionId(candidate.id))}
+                style={bodyHairLabButtonStyle(region.id === candidate.id)}
+              >
+                {candidate.label}
+              </button>
+            ))}
+          </div>
+        </section>
+        <section aria-label="Form" style={{ display: "grid", gap: 8 }}>
+          <h2 style={bodyHairLabHeadingStyle}>Form</h2>
+          <div style={bodyHairLabChoicesStyle}>
+            {BODY_HAIR_LAB_FORMS.map((candidate) => (
+              <button
+                key={candidate.label}
+                type="button"
+                aria-pressed={form.gender === candidate.gender}
+                onClick={() => select(() => setGender(candidate.gender))}
+                style={bodyHairLabButtonStyle(form.gender === candidate.gender)}
+              >
+                {candidate.label}
+              </button>
+            ))}
+          </div>
+          <output>Form: {form.label}</output>
+        </section>
+        {choice("Coverage", BODY_HAIR_LAB_COVERAGE, coverage, setCoverage)}
+        {choice("Follicle density", BODY_HAIR_LAB_FOLLICLES, follicleDensity, setFollicleDensity)}
+        <section style={{ display: "grid", gap: 8 }}>
+          <h2 style={bodyHairLabHeadingStyle}>Rendered recipe</h2>
+          <code
+            data-body-hair-recipe={recipeSummary}
+            style={{
+              background: "#07111f",
+              border: "1px solid #29415c",
+              borderRadius: 8,
+              color: "#d9e9fb",
+              fontSize: 12,
+              overflowWrap: "anywhere",
+              padding: 12,
+            }}
+          >
+            {recipeSummary}
+          </code>
+        </section>
+        <section style={{ display: "grid", gap: 6 }}>
+          <h2 style={bodyHairLabHeadingStyle}>Evidence boundary</h2>
+          <p style={{ color: "#c8d2dd", lineHeight: 1.5, margin: 0 }}>
+            A settled recipe and visible figure prove handoff. They do not accept strand
+            readability, regional placement, or a density response: capture each region and review
+            it at its intended camera before treating the renderer as finished.
+          </p>
+        </section>
+      </aside>
+    </main>
+  );
+}
+
+const bodyHairLabLayoutStyle = {
+  background: "#07101c",
+  color: "#f2f6fb",
+  display: "grid",
+  gridTemplateColumns: "minmax(0, 1fr) minmax(19rem, 26rem)",
+  height: "100vh",
+  overflow: "hidden",
+} as const;
+const bodyHairLabStageStyle = { minHeight: 0, position: "relative" } as const;
+const bodyHairLabControlsStyle = {
+  borderLeft: "1px solid #29415c",
+  display: "grid",
+  gap: 24,
+  overflowY: "auto",
+  padding: 24,
+} as const;
+const bodyHairLabHeadingStyle = { fontSize: 14, letterSpacing: "0.04em", margin: 0 } as const;
+const bodyHairLabChoicesStyle = { display: "flex", flexWrap: "wrap", gap: 8 } as const;
+const bodyHairLabButtonStyle = (selected: boolean) => ({
+  background: selected ? "#4d8dcc" : "#14253a",
+  border: `1px solid ${selected ? "#a9d4ff" : "#42617f"}`,
+  borderRadius: 7,
+  color: "#f2f6fb",
+  cursor: "pointer",
+  font: "inherit",
+  padding: "8px 10px",
+});
 
 /**
  * The creator with the eye pack. The library is only the pack's manifest, fetched once;
