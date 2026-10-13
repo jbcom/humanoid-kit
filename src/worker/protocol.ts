@@ -64,6 +64,39 @@ export interface HairInfo {
   styles: { id: string; label: string; tags: string[]; kind: HairKind }[];
 }
 
+/**
+ * How many generated beards' topologies (ids `beard:…`) the worker counts as
+ * sent and the client keeps. A growing beard has new cards every millimetre,
+ * so both forget the oldest past this, in the order sent; the worker sends a
+ * forgotten one again if it is worn again.
+ */
+export const BEARD_TOPOLOGIES_KEPT = 4;
+
+/**
+ * The hair topologies sent (worker) or received (client), in the same order
+ * on both sides so they agree on what the client holds. Pack styles are kept
+ * for good; generated beards only the last `BEARD_TOPOLOGIES_KEPT`.
+ */
+export class SentHairTopologies {
+  private readonly styles = new Set<string>();
+  private readonly beards: string[] = [];
+
+  has(id: string): boolean {
+    return this.styles.has(id) || this.beards.includes(id);
+  }
+
+  /** Records `id` as sent; returns the generated beard it pushes out, if any. */
+  add(id: string): string | null {
+    if (this.has(id)) return null;
+    if (!id.startsWith("beard:")) {
+      this.styles.add(id);
+      return null;
+    }
+    this.beards.push(id);
+    return this.beards.length > BEARD_TOPOLOGIES_KEPT ? (this.beards.shift() as string) : null;
+  }
+}
+
 /** Where the landmarks are held on each body surface (`landmarkAnchors`). */
 export interface SurfaceAnchors {
   base: LandmarkAnchors;

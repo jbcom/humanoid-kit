@@ -45,7 +45,7 @@ const saved = JSON.stringify(recipe);
 `createRecipe` merges your input over the defaults (gender 0.5, age 25, muscle,
 weight, height and proportions 0.5, equal ethnic anchors, breast size and
 firmness 0.5) and does not validate. Validation happens when the recipe is
-evaluated; see the [age policy](./ARCHITECTURE/#age-policy).
+evaluated; see the [age policy](ARCHITECTURE.md#age-policy).
 
 ## 2. Render it in React Three Fiber
 
@@ -73,7 +73,7 @@ export function Scene({ recipe }) {
 slider does not remount anything. Pass `material` to replace the default clay
 material, `onEvaluated` to receive each `Evaluation`, and `onError` to receive
 failures; an age policy violation arrives as an error whose `name` is
-`AgePolicyError` (see [Errors](./API/#errors)). Any other props go to the wrapping
+`AgePolicyError` (see [Errors](API.md#errors)). Any other props go to the wrapping
 `<group>`.
 
 Create the client in an effect, or once at module scope, and call

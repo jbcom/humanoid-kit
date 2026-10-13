@@ -6,6 +6,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
 import { budget } from "./budget.ts";
+import { framePixels } from "./lib/framePixels.ts";
 
 /** Close on the face, which spans the frame from brow to chin. */
 const CAMERA = "0,1.55,0.6,0,1.55,0";
@@ -32,32 +33,27 @@ async function show(page: Page, faceUnits: Record<string, number>): Promise<void
   );
 }
 
-/** Mean RGB of each horizontal band of the frame's middle third (0 = top). */
-async function bands(page: Page, count: number): Promise<number[][]> {
-  return page.locator("canvas").evaluate((el, n) => {
-    const c = el as HTMLCanvasElement;
-    const copy = document.createElement("canvas");
-    copy.width = c.width;
-    copy.height = c.height;
-    const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
-    ctx.drawImage(c, 0, 0);
-    const { data } = ctx.getImageData(0, 0, c.width, c.height);
-    const out: number[][] = [];
-    for (let b = 0; b < n; b++) {
-      const y0 = Math.floor((b * c.height) / n);
-      const y1 = Math.floor(((b + 1) * c.height) / n);
-      const sum = [0, 0, 0];
-      let count = 0;
-      for (let y = y0; y < y1; y++)
-        for (let x = Math.floor(c.width / 3); x < Math.floor((2 * c.width) / 3); x++) {
-          const i = (y * c.width + x) * 4;
-          for (let k = 0; k < 3; k++) sum[k] = (sum[k] as number) + (data[i + k] as number);
-          count++;
-        }
-      out.push(sum.map((s) => s / count));
-    }
-    return out;
-  }, count);
+/**
+ * Mean RGB of each horizontal band of the frame's middle third (0 = top), read
+ * from the composited frame: the QA shot does not retain its drawing buffer.
+ */
+async function bands(page: Page, n: number): Promise<number[][]> {
+  const { width, height, data } = await framePixels(page.locator("canvas"));
+  const out: number[][] = [];
+  for (let b = 0; b < n; b++) {
+    const y0 = Math.floor((b * height) / n);
+    const y1 = Math.floor(((b + 1) * height) / n);
+    const sum = [0, 0, 0];
+    let count = 0;
+    for (let y = y0; y < y1; y++)
+      for (let x = Math.floor(width / 3); x < Math.floor((2 * width) / 3); x++) {
+        const i = (y * width + x) * 4;
+        for (let k = 0; k < 3; k++) sum[k] = (sum[k] as number) + (data[i + k] as number);
+        count++;
+      }
+    out.push(sum.map((s) => s / count));
+  }
+  return out;
 }
 
 const change = (a: number[], b: number[]) =>
@@ -65,27 +61,19 @@ const change = (a: number[], b: number[]) =>
   Math.abs((a[1] as number) - (b[1] as number)) +
   Math.abs((a[2] as number) - (b[2] as number));
 
-/** The lowest row of the frame (0 top, 1 bottom) that is not the key background. */
+/** The lowest row of the composited frame (0 top, 1 bottom) that is not the key background. */
 async function lowestFigureRow(page: Page): Promise<number> {
-  return page.locator("canvas").evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const copy = document.createElement("canvas");
-    copy.width = c.width;
-    copy.height = c.height;
-    const ctx = copy.getContext("2d") as CanvasRenderingContext2D;
-    ctx.drawImage(c, 0, 0);
-    const { data } = ctx.getImageData(0, 0, c.width, c.height);
-    for (let y = c.height - 1; y >= 0; y--)
-      for (let x = 0; x < c.width; x++) {
-        const i = (y * c.width + x) * 4;
-        const d =
-          Math.abs((data[i] as number) - 255) +
-          Math.abs(data[i + 1] as number) +
-          Math.abs((data[i + 2] as number) - 255);
-        if (d > 60) return y / c.height;
-      }
-    return 0;
-  });
+  const { width, height, data } = await framePixels(page.locator("canvas"));
+  for (let y = height - 1; y >= 0; y--)
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const d =
+        Math.abs((data[i] as number) - 255) +
+        Math.abs(data[i + 1] as number) +
+        Math.abs((data[i + 2] as number) - 255);
+      if (d > 60) return y / height;
+    }
+  return 0;
 }
 
 test.describe("grounding", () => {
