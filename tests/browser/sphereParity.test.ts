@@ -414,6 +414,49 @@ function renderLambertTile(cases: readonly LambertCase[], profile?: PhaseProfile
   });
 }
 
+/**
+ * Separates GPU command-queue drain from Float transfer for the current
+ * 4×2 diagnostic target. It is test-local timing only: the parity assertions
+ * above remain the acceptance oracle.
+ */
+function probeTileFence(cases: readonly LambertCase[]) {
+  if (cases.length > TILE_CAPACITY) throw new Error("invalid tile probe size");
+  const packed = new Float32Array(tileTarget.width * tileTarget.height * 4);
+  const gl = renderer.getContext();
+  renderer.toneMapping = NoToneMapping;
+  renderer.initRenderTarget(tileTarget);
+  try {
+    renderer.setRenderTarget(tileTarget);
+    renderer.clear();
+    for (const [index, entry] of cases.entries()) {
+      configure(entry.swatch, "lambert");
+      const column = index % TILE_COLUMNS;
+      const row = Math.floor(index / TILE_COLUMNS);
+      const x = column * SIZE;
+      const y = row * SIZE;
+      light.position.set(
+        Math.sin((entry.angle * Math.PI) / 180) * 10,
+        0,
+        Math.cos((entry.angle * Math.PI) / 180) * 10,
+      );
+      renderer.setRenderTarget(target);
+      renderer.clear();
+      renderer.render(scene, camera);
+      renderer.copyTextureToTexture(target.texture, tileTarget.texture, null, new Vector2(x, y));
+    }
+    const finishStarted = performance.now();
+    gl.finish();
+    const finishMs = performance.now() - finishStarted;
+    const readbackStarted = performance.now();
+    renderer.readRenderTargetPixels(tileTarget, 0, 0, tileTarget.width, tileTarget.height, packed);
+    return { cells: cases.length, finishMs, readbackMs: performance.now() - readbackStarted };
+  } finally {
+    renderer.setViewport(0, 0, SIZE, SIZE);
+    renderer.setScissor(0, 0, SIZE, SIZE);
+    renderer.setRenderTarget(null);
+  }
+}
+
 /** Measures the same analytic expectation calls without changing the assertion's result. */
 function replayReference(angle: number, expect: Expectation, path: Path): number {
   const started = performance.now();
@@ -583,6 +626,12 @@ describe("skin material on an analytic sphere", () => {
       });
     });
     reportPhaseProfile(profile, "after-partial-tile-parity");
+    console.info(
+      "sphere-parity-fence-profile",
+      JSON.stringify(
+        [0, 1, 4, TILE_CAPACITY].map((count) => probeTileFence(parityCases.slice(0, count))),
+      ),
+    );
 
     const failures: string[] = [];
     const cases = PALETTE.flatMap((swatch) => {
