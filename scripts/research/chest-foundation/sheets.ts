@@ -41,11 +41,11 @@ import { chestTissue, libraryAt } from "./tissue.ts";
 /** The cover of every figure under 18, as on the age montage: a fitted top and short legs. */
 export const COVER = ["suits/female_casualsuit02"] as const;
 const root = path.resolve(import.meta.dirname, "../../..");
-const wardrobe = wardrobeOf(
+const wardrobe = wardrobeOf([
   JSON.parse(
     fs.readFileSync(path.join(root, "packs/clothing/data/manifest.json"), "utf8"),
   ) as ClothingManifest,
-);
+]);
 
 /** The playground cameras, each framed on the figure's own chest bone. */
 export const VIEWS = {

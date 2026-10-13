@@ -20,14 +20,14 @@ import type { ClothingManifest } from "../src/format/assetFormat.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 
 const SEEDS = [1, 7, 20261013];
-const wardrobe = wardrobeOf(
+const wardrobe = wardrobeOf([
   JSON.parse(
     fs.readFileSync(
       path.resolve(import.meta.dirname, "../packs/clothing/data/manifest.json"),
       "utf8",
     ),
   ) as ClothingManifest,
-);
+]);
 
 describe("chest lab sampler: scatter", () => {
   it("is deterministic for a seed and differs between seeds", () => {
