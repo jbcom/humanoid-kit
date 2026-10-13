@@ -1781,6 +1781,20 @@ leaves out; the Appearance panel uses it, offering the brows and lashes in
 groups of their own, and `load` refuses a saved figure whose brows or lashes the
 loaded pack lacks. Every change is undoable.
 
+A random figure's ethnic mix is drawn over the whole of MakeHuman's simplex by
+`randomEthnicMix(pick, u, v)` (`src/sampling.ts`): half the draws land near one
+of seven anchors in equal parts (the three pure vertices, the three edge
+midpoints and the centre; `SIMPLEX_ANCHORS`, spread by `ANCHOR_SPREAD`), half
+fill the simplex area-uniformly (`toSimplex`). An area-uniform draw alone gives
+a pure frame in about 1% of draws per vertex, however evenly it is spread, so
+the anchors are what put pure, mixed and middle looks in reach of a seed.
+Melanin is drawn over 0..1 independently of the mix, and no axis is clamped or
+reweighted. The same module measures a set of figures: `appearanceCoverage`
+counts the simplex regions (`simplexRegion`), the pure frames (`pureAnchor`),
+the melanin bands and the dark half. The three ethnic draws are first in the
+seed's stream, so a seed's other values are unchanged; a seed's mix is not what
+it was before the anchors.
+
 ### Wardrobe helpers
 
 Pure functions behind the Wardrobe tab, also exported from `humanoid-kit`:
