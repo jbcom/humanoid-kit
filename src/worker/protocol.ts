@@ -21,7 +21,7 @@ import type {
 } from "../model/humanoidModel.ts";
 import type { PresenceJoints } from "../presence/fromEvaluation.ts";
 import type { Recipe } from "../recipe/recipe.ts";
-import type { SurfaceFold } from "../rig/hipFold.ts";
+import type { SurfaceFold } from "../rig/jointFold.ts";
 import type { RigData, RigSkin } from "../rig/pose.ts";
 import type { LayerFieldsUpdate } from "../surface/layers.ts";
 
@@ -121,12 +121,12 @@ export type WorkerRequest =
   /** Answered with a garment's static render data, once the garments have loaded. */
   | { type: "garment"; id: number; garment: string }
   /**
-   * Answered with the recipe's hip fold on its body surface (`HumanoidModel.hipFold`),
+   * Answered with the recipe's joint folds on its body surface (`HumanoidModel.folds`),
    * solved between other requests; a later request of this kind supersedes
    * one still being solved, which is answered with an `AbortError`.
    */
   | {
-      type: "hipFold";
+      type: "folds";
       id: number;
       recipe: Recipe;
       signals?: Readonly<Record<string, number>>;
@@ -153,5 +153,5 @@ export type WorkerResponse =
       decalTopologies?: HairTopology[];
     }
   | { type: "garment"; id: number; topology: GarmentTopology }
-  | { type: "hipFold"; id: number; surface: "base" | "adult"; fold: SurfaceFold }
+  | { type: "folds"; id: number; surface: "base" | "adult"; folds: SurfaceFold[] }
   | { type: "error"; id: number; message: string; name: string };

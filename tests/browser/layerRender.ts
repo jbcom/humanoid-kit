@@ -5,6 +5,7 @@
  */
 import {
   BufferAttribute,
+  type BufferGeometry,
   DirectionalLight,
   FloatType,
   Mesh,
@@ -44,8 +45,14 @@ export interface LayerRenderOptions {
   /** Pixels per side; default `SIZE`. */
   size?: number;
   appearance?: SkinAppearance;
-  /** The coordinate of layer `l` at horizontal UV position `u`; default `u`, so it runs along the plane. */
-  coordinate?: (l: number, u: number) => number;
+  /** The coordinate of layer `l` at UV position (`u`, `v`); default `u`, so it runs along the plane. */
+  coordinate?: (l: number, u: number, v: number) => number;
+  /**
+   * The surface drawn in place of the plane: its own positions, normals and UVs,
+   * metres per UV unit still `plane`. For shading a shape the plane is not, such
+   * as a crushed strip whose vertex normals turn far from its faces.
+   */
+  geometry?: BufferGeometry;
   /** Turns the plane about its vertical axis, radians: its u axis is foreshortened by the cosine. */
   tilt?: number;
   /**
@@ -98,7 +105,7 @@ export function renderLayersRgba(layers: readonly SkinLayer[], options: LayerRen
   const [cx, cy] = options.view?.centre ?? [0, 0];
   const camera = new OrthographicCamera(-half, half, half, -half, 0.1, 10);
   camera.position.set(cx, cy, 5);
-  const plane = new PlaneGeometry(side, side);
+  const plane = options.geometry ?? new PlaneGeometry(side, side);
   if (options.tilt) plane.rotateY(options.tilt);
   if (options.turn) plane.rotateZ(options.turn);
   const uv = plane.getAttribute("uv");
@@ -108,7 +115,7 @@ export function renderLayersRgba(layers: readonly SkinLayer[], options: LayerRen
   );
   const source: LayerAtlasSource = {
     uvs: uv.array as Float32Array,
-    index: plane.getIndex()?.array as Uint16Array,
+    index: plane.getIndex()?.array as Uint16Array | Uint32Array,
     vertexCount: uv.count,
     layerFields: new Float32Array(layers.length * uv.count * 2),
     layers: layers.map((l) => l.id),
@@ -118,7 +125,7 @@ export function renderLayersRgba(layers: readonly SkinLayer[], options: LayerRen
     layers.forEach((_, l) => {
       source.layerFields[(l * uv.count + v) * 2] = 1;
       source.layerFields[(l * uv.count + v) * 2 + 1] = options.coordinate
-        ? options.coordinate(l, uv.getX(v))
+        ? options.coordinate(l, uv.getX(v), uv.getY(v))
         : uv.getX(v);
     });
   const atlas = layers.length ? buildLayerAtlas(renderer, source, 256) : null;

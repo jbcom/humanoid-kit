@@ -36,7 +36,7 @@
  */
 import type { SurfaceMesh } from "../build/surfaceMesh.ts";
 import { fromHalf, toHalf } from "../rig/half.ts";
-import { FOLD_ROW_TEXELS, type SurfaceFold } from "../rig/hipFold.ts";
+import { rowTexels, type SurfaceFold } from "../rig/jointFold.ts";
 
 /** A surface's skin weights: four bones and four weights per render vertex. */
 export interface SkinWeights {
@@ -484,7 +484,7 @@ export function evaluatedSkin(
 }
 
 /**
- * The hip fold of a surface (`surfaceFold`) for an evaluation whose reservoir
+ * A joint's fold of a surface (`surfaceFold`) for an evaluation whose reservoir
  * vertices take `shares` of their roots' (`rootShares`), by the rule its weights
  * follow (`evaluatedSkin`): each reservoir vertex's row blended toward its root's by
  * its share, the root's being the mean of its loop's displacements (a loop vertex
@@ -499,13 +499,13 @@ export function evaluatedFold(
   shares: Float32Array | null,
 ): SurfaceFold {
   if (!shares) return fold;
-  const row = FOLD_ROW_TEXELS * 4;
+  const row = rowTexels(fold.joint) * 4;
   const { owner, loops } = skinning;
   /** The fold's value at `i` (it is held as half floats). */
   const value = (i: number) => fromHalf(fold.data[i] as number);
-  /** Per reservoir, its root's row (lazily), or null while not needed. */
-  const roots: (Float32Array | null)[] = loops.map(() => null);
-  const rootOf = (s: number): Float32Array => {
+  /** Per reservoir, its root's row (lazily), and whether the fold reaches its root at all; null while not needed. */
+  const roots: ({ sum: Float32Array; reached: boolean } | null)[] = loops.map(() => null);
+  const rootOf = (s: number) => {
     const known = roots[s];
     if (known) return known;
     const loop = loops[s] as Uint32Array;
@@ -525,15 +525,17 @@ export function evaluatedFold(
     // its own normal, which the crease turns most of the way over, and their mean added to an
     // organ's normals turned its faces against them; its normals turn with its root's weights.
     for (let i = 0; i < row; i += 8) sum.fill(0, i + 4, i + 8);
-    roots[s] = sum;
-    return sum;
+    const root = { sum, reached: held > 0 };
+    roots[s] = root;
+    return root;
   };
   const blended: { v: number; e: number; s: number }[] = [];
   for (let v = 0; v < owner.length; v++) {
     const s = owner[v] as number;
     if (s < 0) continue;
     const e = shares[v] as number;
-    if (e > 0) blended.push({ v, e, s });
+    // A vertex neither the fold nor its root's fold moves (a fold whose reach is elsewhere, the knee's) needs no row.
+    if (e > 0 && ((fold.slot[v] as number) >= 0 || rootOf(s).reached)) blended.push({ v, e, s });
   }
   if (!blended.length) return fold;
   // Each blended vertex its own row after the surface's: the blend is the vertex's, not its row's.
@@ -543,7 +545,7 @@ export function evaluatedFold(
   blended.forEach(({ v, e, s }, i) => {
     const at = (fold.rows + i) * row;
     const own = fold.slot[v] as number;
-    const root = rootOf(s);
+    const root = rootOf(s).sum;
     for (let k = 0; k < row; k++)
       data[at + k] = toHalf(
         (1 - e) * (own < 0 ? 0 : value(own * row + k)) + e * (root[k] as number),
@@ -554,5 +556,5 @@ export function evaluatedFold(
     );
     slot[v] = fold.rows + i;
   });
-  return { slot, rows: fold.rows + blended.length, data };
+  return { joint: fold.joint, slot, rows: fold.rows + blended.length, data };
 }

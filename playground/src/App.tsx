@@ -46,6 +46,7 @@ import {
 } from "three";
 import { ChannelQa } from "./ChannelQa";
 import { EffectiveAdultDefaultsLab } from "./EffectiveAdultDefaultsLab";
+import { QaShade } from "./qaShade";
 import { tattooImages } from "./tattooImages";
 import { Walk } from "./Walk";
 
@@ -788,6 +789,7 @@ function Shot() {
         <StudioStage {...(background ? { background } : {})} />
         {params.has("groundQa") && <GroundQa />}
         <SceneProbe />
+        <QaShade />
         {frame && frameView.length === 3 && frameView.every(Number.isFinite) && (
           <AutoFrame
             bone={frame}

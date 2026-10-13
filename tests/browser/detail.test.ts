@@ -4,8 +4,9 @@
  * pixel, and surface layers changing roughness and specular exactly as the
  * material's own parameters would.
  */
-import { DataUtils } from "three";
+import { BufferGeometry, DataUtils, Float32BufferAttribute, PlaneGeometry } from "three";
 import { describe, expect, it } from "vitest";
+import { CREASE_CRUSH, STRAIN_ATTRIBUTE } from "../../src/render/skinMaterial.ts";
 import {
   creaseHeight,
   lineRelief,
@@ -13,6 +14,7 @@ import {
   STOP_COUNT,
   swellHeight,
 } from "../../src/surface/layers.ts";
+import { CREASE_COUNT, creaseDepth } from "../../src/surface/regions/creases.ts";
 import {
   orientationAtCoordinate,
   orientationCoordinate,
@@ -30,7 +32,23 @@ import {
   striaMark,
 } from "../../src/surface/striae.ts";
 import { expectSameArray } from "./arrays.ts";
-import { mean, noFields, renderLayers as render, SIZE, variance } from "./layerRender.ts";
+import {
+  mean,
+  noFields,
+  renderLayers as render,
+  renderLayersRgba,
+  SIZE,
+  variance,
+} from "./layerRender.ts";
+
+/**
+ * How far a render with a layer that draws nothing may differ from one with no
+ * layer, at every pixel: a millionth of the light. They are different programs,
+ * and the GPU's compiler may round a shared step of the shading one ulp apart
+ * between them (ANGLE on Metal did, uniformly over the plane, once the relief
+ * tilt took the uv's derivatives).
+ */
+const RENDER_ROUNDING = 1e-6;
 
 describe("detail layers", () => {
   const creases = (height: number, size: number): SkinLayer => ({
@@ -118,7 +136,10 @@ describe("detail layers", () => {
       }),
     });
     const flat = render([]);
-    expectSameArray(render([line()]), flat, { what: "a line layer with no relief" });
+    expectSameArray(render([line()]), flat, {
+      what: "a line layer with no relief",
+      tolerance: RENDER_ROUNDING,
+    });
     const cut = render([line(depths)]);
     const change = Array.from(
       { length: SIZE },
@@ -179,6 +200,43 @@ describe("detail layers", () => {
     expect(strip(grazing) - strip(none)).toBeLessThan(variance(faceOn) / 100);
   });
 
+  it("hides a crease where the pose crushes the skin into its fold, and draws it whole where it does not", () => {
+    // The plane's skin at a strain of its own (STRAIN_ATTRIBUTE): crushed as a bent knee's
+    // crease band is (0.4 of its rest area), and only pressed (0.9).
+    const strained = (strain: number) => {
+      const plane = new PlaneGeometry(2, 2);
+      plane.setAttribute(
+        STRAIN_ATTRIBUTE,
+        new Float32BufferAttribute(
+          new Array(plane.getAttribute("position").count).fill(strain - 1),
+          1,
+        ),
+      );
+      return plane;
+    };
+    const none = render([]);
+    const whole = render([creases(0.01, 8)]);
+    expect(variance(whole)).toBeGreaterThan(100 * Math.max(variance(none), 1e-8));
+    // Crushed below CREASE_CRUSH.from: no crease, the skin as it is with none.
+    expectSameArray(
+      render([creases(0.01, 8)], { geometry: strained(CREASE_CRUSH.from - 0.15) }),
+      none,
+      {
+        what: "a crease on crushed skin",
+        tolerance: RENDER_ROUNDING,
+      },
+    );
+    // Pressed no further than CREASE_CRUSH.to: the crease unchanged.
+    expectSameArray(
+      render([creases(0.01, 8)], { geometry: strained(CREASE_CRUSH.to + 0.1) }),
+      whole,
+      {
+        what: "a crease on pressed skin",
+        tolerance: RENDER_ROUNDING,
+      },
+    );
+  });
+
   it("draws nothing for a layer with no strength, as for none at all", () => {
     const off = (pattern: "bumps" | "creases"): SkinLayer => ({
       id: "off",
@@ -190,7 +248,10 @@ describe("detail layers", () => {
     });
     const none = render([]);
     for (const pattern of ["bumps", "creases"] as const)
-      expectSameArray(render([off(pattern)]), none, { what: `${pattern} at no strength` });
+      expectSameArray(render([off(pattern)]), none, {
+        what: `${pattern} at no strength`,
+        tolerance: RENDER_ROUNDING,
+      });
   });
 
   it("raises bumps at their true size, and fades them where they are finer than a pixel", () => {
@@ -201,6 +262,232 @@ describe("detail layers", () => {
     const none = render([]);
     expect(variance(coarse)).toBeGreaterThan(100 * Math.max(variance(none), 1e-8));
     expect(variance(fine)).toBeLessThan(variance(coarse) / 50);
+  });
+});
+
+describe("relief on crushed skin", () => {
+  /**
+   * The skin in a tight crease as a bent knee draws it: a strip 3 cm across of
+   * thin triangles (aspect 24), its rows crumpled in and out of the screen by
+   * amounts that vary along it, its vertex normals turning from 75° one way at
+   * one edge to 75° the other at the other, as both sides of a fold face into it.
+   * The faces turn every way about the normals there (a bent knee's crushed
+   * skin: 26° to 31° typically, past 50° for one in ten), which is where a
+   * relief tilt measured on the faces broke. `squeeze` is the strip's drawn area
+   * over its skin's area at rest: 1 for skin the pose only turns, a quarter for
+   * skin crushed as the most crushed of a bent knee's crease is.
+   */
+  const H = 0.03;
+  const ROWS = 96;
+  const COLUMNS = 16;
+  const WIDE = 0.12;
+  /** How far each row stands out of the strip's plane, a share of a row's height: crumpled, every other row in and out. */
+  const CRUMPLE = 0.8;
+  const crushed = (squeeze: number, crumple = CRUMPLE, perUv = H) => {
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    for (let j = 0; j <= ROWS; j++)
+      for (let i = 0; i <= COLUMNS; i++) {
+        const y = (j / ROWS - 0.5) * H;
+        const a = ((75 * Math.PI) / 180) * ((2 * y) / H);
+        // The crumple varies along the crease, as the crushed skin's rows do, not one same accordion.
+        const z = (j % 2 ? 1 : -1) * crumple * (H / ROWS) * (1 + 0.5 * Math.sin(i * 1.7));
+        positions.push((i / COLUMNS - 0.5) * WIDE, y, z);
+        normals.push(0, -Math.sin(a), Math.cos(a));
+        // perUv metres of skin per UV unit at rest (the render's `plane`): squeezed across the strip alone.
+        uvs.push((i / COLUMNS) * (WIDE / perUv), ((j / ROWS) * (H / perUv)) / squeeze);
+      }
+    const index: number[] = [];
+    for (let j = 0; j < ROWS; j++)
+      for (let i = 0; i < COLUMNS; i++) {
+        const a = j * (COLUMNS + 1) + i;
+        const b = a + COLUMNS + 1;
+        index.push(a, a + 1, b, a + 1, b + 1, b);
+      }
+    const g = new BufferGeometry();
+    g.setAttribute("position", new Float32BufferAttribute(positions, 3));
+    g.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+    g.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+    // Its strain as a fold would give it: the skin's area over its area at rest, less 1.
+    g.setAttribute(
+      STRAIN_ATTRIBUTE,
+      new Float32BufferAttribute(new Array(uvs.length / 2).fill(squeeze - 1), 1),
+    );
+    g.setIndex(index);
+    return g;
+  };
+  /**
+   * The knee's creases (`CREASE_LAYERS`): three to a window, 6.2 mm deep, their
+   * coordinate across the strip a window to its rest skin's 3 cm: the strip
+   * squeezed to a quarter holds four windows' creases.
+   */
+  const kneeCreases: SkinLayer = {
+    id: "creases",
+    kind: "detail",
+    pattern: "creases",
+    targets: [],
+    fields: noFields,
+    paint: () => ({ strength: 1, height: creaseDepth("knee"), size: CREASE_COUNT.knee }),
+  };
+  const view = { span: 0.1, centre: [0, 0] as [number, number] };
+  const draw = (layers: SkinLayer[], squeeze = 1, crumple = CRUMPLE, perUv = H) =>
+    render(layers, {
+      geometry: crushed(squeeze, crumple, perUv),
+      plane: perUv,
+      view,
+      light: [0, 1, 0.6],
+      coordinate: (_, __, v) => v,
+    });
+  /**
+   * The largest step in shading between neighbouring pixels within the strip
+   * (rows clear of its edges): along the crease (x), where the strip is the same
+   * everywhere and any step is the shading's own, and across it (y).
+   */
+  const steepest = (image: Float32Array) => {
+    const rows = Math.floor(((H / view.span) * SIZE) / 2) - 2;
+    let along = 0;
+    let across = 0;
+    for (let y = SIZE / 2 - rows; y < SIZE / 2 + rows; y++)
+      for (let x = 1; x < SIZE - 1; x++) {
+        const at = image[y * SIZE + x] as number;
+        along = Math.max(along, Math.abs(at - (image[y * SIZE + x + 1] as number)));
+        across = Math.max(across, Math.abs(at - (image[(y + 1) * SIZE + x] as number)));
+      }
+    return { along, across };
+  };
+  const say = (s: { along: number; across: number }) =>
+    `along ${s.along.toFixed(4)}, across ${s.across.toFixed(4)}`;
+
+  it("shades a crumpled crease's relief with no step along it sharper than the skin draws without relief", () => {
+    // Along the crease the strip is the same everywhere, so a step there is drawn by the
+    // shading alone: the relief may add none sharper than the steepest the skin's own
+    // shading draws across the valley. The tilt measured on the crumpled faces drew dashes
+    // along the crease 0.35 high against that 0.025 (2026-10-10).
+    const bare = steepest(draw([]));
+    const relief = steepest(draw([kneeCreases]));
+    expect(bare.across).toBeGreaterThan(0);
+    expect(relief.along, `relief ${say(relief)}; bare ${say(bare)}`).toBeLessThan(bare.across);
+    // The relief is still drawn: its grooves step across the crease.
+    expect(relief.across, `relief ${say(relief)}; bare ${say(bare)}`).toBeGreaterThan(
+      4 * bare.across,
+    );
+  });
+
+  it("draws a crease the bent knee compresses as a tighter groove, not a steeper one", () => {
+    // The knee's creases at their designed spacing (a 14 cm window per UV unit, three to it,
+    // 4.7 cm apart at rest), the strip squeezed until a period is drawn 10 px across. A groove
+    // that kept its 6.2 mm depth there would stand near vertical; one that keeps its depth to
+    // its width draws as the same creases designed at that spacing do: the reference is them,
+    // a sixth as deep, on skin drawn at its rest size.
+    const WINDOW = 0.14;
+    const period = (10 * view.span) / SIZE;
+    // The drawn period over the rest one: the skin's squeeze across the strip, and the share of
+    // the designed depth a groove keeping its depth to its width keeps.
+    const ratio = period / (WINDOW / CREASE_COUNT.knee);
+    const squeeze = ratio;
+    const designed: SkinLayer = {
+      ...kneeCreases,
+      paint: () => ({ strength: 1, height: creaseDepth("knee") * ratio, size: CREASE_COUNT.knee }),
+    };
+    const contrast = (image: Float32Array, bare: Float32Array) => {
+      const rows = Math.floor(((H / view.span) * SIZE) / 2) - 2;
+      let lo = Number.POSITIVE_INFINITY;
+      let hi = Number.NEGATIVE_INFINITY;
+      for (let y = SIZE / 2 - rows; y < SIZE / 2 + rows; y++)
+        for (let x = 1; x < SIZE - 1; x++) {
+          const d = (image[y * SIZE + x] as number) - (bare[y * SIZE + x] as number);
+          lo = Math.min(lo, d);
+          hi = Math.max(hi, d);
+        }
+      return hi - lo;
+    };
+    const squeezedBare = draw([], squeeze, 0, WINDOW);
+    const squeezed = contrast(draw([kneeCreases], squeeze, 0, WINDOW), squeezedBare);
+    const restBare = draw([], 1, 0, WINDOW * ratio);
+    const reference = contrast(draw([designed], 1, 0, WINDOW * ratio), restBare);
+    expect(reference).toBeGreaterThan(0);
+    expect(
+      squeezed,
+      `compressed ${squeezed.toFixed(4)} against designed ${reference.toFixed(4)}`,
+    ).toBeLessThan(1.25 * reference);
+  });
+
+  it("tilts the skin by a crease's slope alone, not by the change of its kept depth from pixel to pixel", () => {
+    // A flat plane square to the view, compressed to 1/1.2 of its rest skin, the knee's
+    // creases running along x, their coordinate the plane's y alone: the relief is the same
+    // all along x. Its vertex normals lean up and down the plane, by none in every other
+    // column of vertices (4 px apart) and by 40° in the rest, so the footprint on the smooth
+    // surface the normals describe, and with it the share of its depth a crease keeps
+    // (hkCreaseKeep, from screen derivatives), changes along x pixel by pixel. That share
+    // scales the relief's slope; it is not relief, so the slope along x is none. Taken
+    // through the derivative with the relief, its change from pixel to pixel drew a speckle
+    // 2 to 4 px across over a bent knee's calf (2026-10-10). The shader's slope is read out
+    // directly (hkDetailSlope), metres per pixel.
+    const SIDE = 0.04;
+    const PLANE = 0.08;
+    const COLUMNS = 32;
+    const ROWS = 4;
+    const SQUEEZE = 1.2;
+    const LEAN = (40 * Math.PI) / 180;
+    const leaning = () => {
+      const positions: number[] = [];
+      const normals: number[] = [];
+      const uvs: number[] = [];
+      for (let j = 0; j <= ROWS; j++)
+        for (let i = 0; i <= COLUMNS; i++) {
+          const x = (i / COLUMNS) * SIDE;
+          const y = (j / ROWS) * SIDE;
+          const lean = i % 2 ? LEAN : 0;
+          positions.push(x - SIDE / 2, y - SIDE / 2, 0);
+          normals.push(0, Math.sin(lean), Math.cos(lean));
+          uvs.push((SQUEEZE * x) / PLANE, (SQUEEZE * y) / PLANE);
+        }
+      const index: number[] = [];
+      for (let j = 0; j < ROWS; j++)
+        for (let i = 0; i < COLUMNS; i++) {
+          const a = j * (COLUMNS + 1) + i;
+          const b = a + COLUMNS + 1;
+          index.push(a, a + 1, b, a + 1, b + 1, b);
+        }
+      const g = new BufferGeometry();
+      g.setAttribute("position", new Float32BufferAttribute(positions, 3));
+      g.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+      g.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+      g.setIndex(index);
+      return g;
+    };
+    const slope = renderLayersRgba([kneeCreases], {
+      geometry: leaning(),
+      plane: PLANE,
+      view: { span: SIDE, centre: [0, 0] },
+      coordinate: (_, __, v) => v,
+      tune: (m) => {
+        const compile = m.onBeforeCompile;
+        m.onBeforeCompile = (shader, r) => {
+          compile.call(m, shader, r);
+          shader.fragmentShader = shader.fragmentShader.replace(
+            "#include <dithering_fragment>",
+            "#include <dithering_fragment>\n\tgl_FragColor = vec4( hkDetailSlope( vHkUv ), 0.0, 1.0 );",
+          );
+        };
+        m.customProgramCacheKey = () => "humanoid-kit-skin-test-detail-slope";
+      },
+    });
+    // A pixel clear of the plane's edges.
+    let along = 0;
+    let across = 0;
+    for (let y = 1; y < SIZE - 1; y++)
+      for (let x = 1; x < SIZE - 1; x++) {
+        const i = (y * SIZE + x) * 4;
+        along = Math.max(along, Math.abs(slope[i] as number));
+        across = Math.max(across, Math.abs(slope[i + 1] as number));
+      }
+    const said = `slope along ${along.toExponential(3)}, across ${across.toExponential(3)}`;
+    // The grooves are drawn: they slope down the plane.
+    expect(across, said).toBeGreaterThan(1e-5);
+    // Along them there is no slope, but for rounding.
+    expect(along, said).toBeLessThan(across * 1e-4);
   });
 });
 
@@ -336,7 +623,10 @@ describe("swell layers", () => {
   });
 
   it("draws nothing at no strength", () => {
-    expectSameArray(render([swell(0.05, 0)]), render([]), { what: "a swell at no strength" });
+    expectSameArray(render([swell(0.05, 0)]), render([]), {
+      what: "a swell at no strength",
+      tolerance: RENDER_ROUNDING,
+    });
   });
 });
 
@@ -596,7 +886,7 @@ describe("friction ridges", () => {
     expectSameArray(
       render(off, { size: PX, coordinate: coordinate(0) }),
       render([], { size: PX }),
-      { what: "ridges at no strength" },
+      { what: "ridges at no strength", tolerance: RENDER_ROUNDING },
     );
   });
 });

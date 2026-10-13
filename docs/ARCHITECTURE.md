@@ -1215,7 +1215,7 @@ tone's multiply is the deeper). And the lines shade: a colour layer's paint may 
 `relief` (a groove depth at each stop, the deepest in the stop table's header and
 each stop's depth in its alpha), and the shader tilts the normal per pixel by the
 gradient of that smoothed profile along the layer's own coordinate
-(`hkDetailHeight`, `lineRelief` its reference), so a line catches light on one
+(`hkDetailSlope`, `lineRelief` its reference), so a line catches light on one
 side and shadows on the other whatever the colour. It is per pixel only, from the
 exact coordinate: no vertex relief, so a line cannot bend as the first relief did.
 The grooves are 0.6 mm (forehead) and 0.7 mm (furrows) at 40, times the age factor
@@ -1425,7 +1425,7 @@ the hip into the belly and through it, and the groin collapses into a slit. It
 is not skinning's blend: linear, dual quaternion and the shipped mix put every
 vertex in the same place to within a few millimetres, because it is where the
 weights and the pose put the thigh's front skin. Measured as skin through skin
-(`scripts/lib/hipContact.ts`): an edge of the mesh whose end the thigh holds
+(`scripts/lib/foldContact.ts`): an edge of the mesh whose end the thigh holds
 most of (a vertex over half on `upperleg01`/`upperleg02`, no more than 3 cm
 behind the hip joint and within 0.7 of a thigh of it) that crosses a triangle whose corners the
 trunk holds as much of as the thigh and some of (`root`, `spine`, `pelvis`),
@@ -1455,7 +1455,8 @@ leave the thin ones alone. Options, by total fit:
    figure that is drawn, and what the shader and the CPU reference do is read a
    table. Both do exactly the same thing, so tests hold them together.
 
-**How it is solved** (`src/rig/hipFoldSolve.ts`, `src/rig/contact.ts`). The hips
+**How it is solved** (`src/rig/foldSolve.ts`, the joint folds' solve, from the
+hip's setup in `src/rig/hipFoldSolve.ts`; `src/rig/contact.ts`). The hips
 are flexed together from `HIP_FOLD.from` (30°) in steps of `HIP_FOLD.step`
 (2.5°) to `HIP_FOLD.to` (140°, a margin past the 135° a hip reaches; past it a
 heavy body's thigh is wedged against a belly with nowhere to go and the solve
@@ -1499,7 +1500,7 @@ back, settles.
 pasted its skin against a belly that did not move: in a deep squat the inguinal
 crease showed jagged flaps with lit edges on both sides, the thigh's skin folded
 over the belly like paper. Measured in the crease (the skin within 0.7 of a
-thigh of a hip and in front of it, `CreaseFlaps`, control mesh, nine bodies at
+thigh of a hip and in front of it, `Flaps` over `creaseZone`, control mesh, nine bodies at
 90°, 120°, 135°, one hip at 120°, `seated`, `squat` and `tucked`): the bones
 alone leave 5020 triangles turned against their skinned normals, 1803 edges
 folded past the folds invariant and 4550 thigh edges through the trunk; the
@@ -1645,6 +1646,23 @@ the unit normal on the mesh the bones pose (area-weighted, over the control mesh
 and the shader adds that to the skinned normal and normalises it. (The bones' normal
 is not the control mesh's exactly, so it is a change that is stored, not a normal.)
 
+**Where the bones crumple the skin, the normal is taken from the skinned one
+(2026-10-10, with the knee fold).** The change was the displaced mesh's normal less
+the posed mesh's, added to the skinned normal: right where the bones leave the mesh
+smooth, for there the posed mesh's normal is near the skinned. Where they crumple
+it, it is not: at the corners of triangles the bones turn over the two are 75°
+apart at the median at a knee bent 90° and 97° at hips flexed 120° (over the rest
+of the skin the folds move, 0° at the median and under 15° for nine vertices in
+ten). There the change took the skinned normal somewhere else than the displaced
+mesh's, and a triangle the fold had put right still shaded as a flap. So the change
+is now taken from a mix of the two (`CRUMPLED`): the posed mesh's normal where it is
+within 26° of the skinned, the skinned where it is 45° and more away, smoothly
+between, and at a crumple the shaded normal is the displaced mesh's own. At the
+hip, over the flap gate's nine bodies and seven poses, the crease's inverted
+triangles went from 1500 of the bones' 5020 (0.30, with the crease smoothed) to
+409 (0.08); the hip fold
+keeps 0.6 % more rows (18115 for the average figure's adult surface, 18005 before).
+
 **How it plays.** `hipFlexion` reads each hip's flexion and opening from the
 direction the bone's rotation turns the thigh's length to: the flexion is the
 angle it is swung forward in the sagittal plane, the opening the angle it leans
@@ -1675,20 +1693,23 @@ the thighs together (or drawn in across the body) to `HIP_FOLD.opened`, the
 opened fold past it; and the skin adds it *after* skinning, turned with the root (the fold is made in
 the figure's own axes). Applied after skinning, not to the rest figure, because
 the push is a way out of the belly, which is the same way whichever way the thigh
-is turned. `skinPositions(…, fold)` is the CPU reference; `DualBones` carries
-the root's rotation and the two hips' flexions and openings in the two texels after
-the bones', the fold is a texture of a row of 176 texels (`FOLD_ROW_TEXELS`: a
-displacement and a normal change per opening and key, the row's side in the first
-texel's fourth place) per vertex of the surface it moves, laid out as below
-(`surfaceFold`: the control vertices' values mixed by the subdivision's
-stencil, so a rendered vertex is displaced as the surface it lies on is, and the
-side by the same weights over the moved vertices alone), and the patched
-`skinning_vertex` chunk adds `hkFoldDisplacement` of its row (`FOLD_SLOT_ATTRIBUTE`)
-at its flexion and opening (`hkFoldAngles`), the `skinnormal_vertex` chunk
-`hkFoldNormal`. The browser project holds the shader's angles to the CPU's
-(`foldAngles`) and its read to `addFold` and `addFoldNormal` to 2·10⁻⁶ and 10⁻⁵,
-with the hips flexed and opened apart, and to the values the fold held before
-they were rounded within the rounding's bound.
+is turned. `skinPositions(…, folds)` is the CPU reference. Every joint fold plays
+the same way (`src/rig/jointFold.ts`, `src/render/dualSkinning.ts`): `DualBones`
+carries, after the bones' texels, three a joint (`FOLD_JOINT_TEXELS`: the left
+side's turn, the right's, and both sides' flexions and openings; the hip's turns
+are the root's), each joint's fold is a texture of a row of `rowTexels(joint)`
+texels (176 at the hip: a displacement and a normal change per opening and key,
+the row's side in the first texel's fourth place) per vertex of the surface it
+moves, laid out as below (`surfaceFold`: the control vertices' values mixed by
+the subdivision's stencil, so a rendered vertex is displaced as the surface it
+lies on is, and the side by the same weights over the moved vertices alone), and
+the patched `skinning_vertex` chunk adds `hkFoldValue_<joint>` of its row (the
+geometry's `foldSlotAttribute(joint)`) at its flexion and opening
+(`hkFoldAngles_<joint>`), turned by its side's turn, the `skinnormal_vertex`
+chunk the normal's change. The browser project holds each joint's shader angles
+to the CPU's (`foldAngles`) and its read to `addFold` and `addFoldNormal` to
+2·10⁻⁶ and 10⁻⁵, with the joints flexed and opened apart, and to the values the
+fold held before they were rounded within the rounding's bound.
 
 **The fold as half floats (decision, 2026-10-10).** The texture is four half
 floats a texel (`HalfFloatType`), and so is the fold itself (`SurfaceFold.data`,
@@ -1719,12 +1740,13 @@ average near 25), some six times the thigh pushed alone. Solving the openings
 together, with the poses between them looked at, took on a quieter machine (a
 load average near 8) 9.7 s of wall time for the average figure and 10.3 s for the
 heavy man, against 7.2 and 4.2 s for the openings solved apart. It is not part of
-`evaluate`: `HumanoidWorkerClient.hipFold(recipe)` asks the worker, which solves a
+`evaluate`: `HumanoidWorkerClient.folds(recipe)` asks the worker for the figure's
+joint folds (the hip's, then the knee's), which it solves a
 flexion at a time with a macrotask between (an evaluation is never held up behind
 it) and answers a newer request by stopping the older (`AbortError`). A solved fold
 is kept by a hash of the figure's control vertices (the last six), so a shape seen
 again (an edit undone, a pose changed) is answered at once (50 ms). `<Humanoid>`
-asks once a hip in the pose is flexed past the fold's start, whenever the figure's
+asks once a hip or a knee in the pose is flexed past its fold's start, whenever the figure's
 shape changes. Until it arrives the figure draws without it, and the fold then
 fades in over 150 ms (`FOLD_FADE`, the `hkFoldBlend` uniform, `DualBones.advanceFold`)
 so that it does not pop; a fold that replaces another, for a figure whose shape
@@ -1746,10 +1768,11 @@ unchanged at rest and below the fold's start, folds one hip alone, and turns wit
 the root. It moves only the thigh's skin and the trunk's in front of the hips;
 at 120° it presses over 40 of the trunk's vertices by more than 2 mm, over 90% of
 them inward, by over 5 mm at the deepest; and it adds no flaps to the crease
-(`CreaseFlaps`): in every body at 90°, 120°, 135°, one hip at 120°, `seated`,
+(`Flaps` over `creaseZone`): in every body at 90°, 120°, 135°, one hip at 120°, `seated`,
 `squat` and `tucked` it leaves no more inverted triangles than the bones alone,
 and over all of them under 0.6 of theirs (the shared solve 0.50, the thigh
-pushed alone 0.68, which the gate fails). It presses the belly only where a thigh
+pushed alone 0.68, which the gate fails; with the crease smoothed 0.30, and with
+the normal taken from the skinned one at a crumple 0.08). It presses the belly only where a thigh
 is (`PressReach`): in the `squat`, `tucked` and `seated` the deepest press on
 trunk skin more than 3 cm from the posed thigh's skin is under 0.05 of the
 deepest press (`PRESS_APART`, CHOICE over the measured 0.00 in the squat and at
@@ -1806,19 +1829,300 @@ thigh 12 to 56 mm behind the belly (median 27) where each figure's own solve lea
 none, and 18 adult corners alone are 1.1 MB, so the solve stays per figure, in the
 worker.
 
-The fold's texture holds `FOLD_ROWS_PER_LINE` rows side by side on each line,
-`FOLD_LINE_TEXELS` texels wide (whole rows, at most 2048, the size every WebGL 2
-device takes: with a row of both openings, 176 texels, 11 rows and 1936 texels a
-line, and an adult surface's 15000 rows near 1350 lines). `foldTexel(row, opening,
-key, part)` in `src/render/dualSkinning.ts` is the
+A fold's texture holds `foldRowsPerLine(joint)` rows side by side on each line,
+`foldLineTexels(joint)` texels wide (whole rows, at most 2048, the size every
+WebGL 2 device takes: at the hip, a row of both openings, 176 texels, 11 rows and
+1936 texels a line, and an adult surface's 18000 rows near 1650 lines; at the
+knee, 100 texels, 20 rows a line). `foldTexel(joint, row, opening, key, part)` in
+`src/render/dualSkinning.ts` is the
 layout's one definition: `foldTexture` writes each row where it says, and the
-shader's `hkFoldTexel` is the same arithmetic. A change to the layout changes those
+shader's `hkFoldTexel_<joint>` is the same arithmetic. A change to the layout changes those
 two together. A row a line made the texture as tall as the fold has rows, and the
 adult surface's has near ten thousand: past the GPU's largest texture (8192 on the
 render host) it never uploaded, and every adult figure drew its fold from nothing,
 up to 30 mm from the CPU's, unseen while the parity test sampled only the first
 rows. The parity test now holds 16000 rows, both openings each, and reads the last
 row and rows from every line.
+
+### Angular hip weights: measured and shelved (2026-10-11)
+
+**The idea.** MakeHuman's hip weights fall from trunk to thigh in bands of height,
+but the groin's skin lies 10 to 15 cm in front of the hip's centre, so a deep hip
+carries skin the trunk still holds through the trunk's and the crease collapses
+(the bones alone leave 869 crease triangles turned over at 120°, nine bodies). Skin
+round a hinge folds smoothly when its weight changes over the arc the joint turns
+through. The fan set a vertex's thigh share by its angle about the hip's centre,
+from the trunk's axis (none) to the thigh's (all), blended by dual quaternions, keyed
+in by the hip's flexion. It was built as core skinning with a CPU reference, a shader
+twin at GPU/CPU parity (3.0e-7 position, 4.8e-7 normal on Metal), weights blended
+rather than positions so the dual quaternion half was exact, and every vertex outside
+its mask skinned bit for bit as before.
+
+**What it took to keep it from doing harm**, each term held by a measurement:
+
+- *One hip per vertex*, the one the hip fold reads it by, with the vertex's side from
+  its rest position alone (the crotch's weights alternate between the thighs): a fan
+  blending both hips' zones skinned the midline differently with one hip flexed than
+  with both, and the fold, solved with both, turned it over (one hip at 120°: 52
+  crease triangles left, against 43 before the fan).
+- *The other thigh's weight left alone*: moved, the flexed thigh carried crotch skin
+  the straight one holds.
+- *In front of the hip only* (a 3 cm band at its coronal plane): behind it, the
+  trunk's skin given thigh weight ran the buttocks into the lower back in a squat
+  (f-heavy, trunk through trunk 3.7 to 54 cm²) and dual quaternions rounded them out
+  (girth p95 1.44 at 120°, against 1.11).
+- *The band from 30° and a cap 6 to 12 cm above the hip's centre*: from 0° the lower
+  belly took a share of the thigh, rolled, and ran through itself in a squat; uncapped
+  it moved the navel (the surface probe 0.67 mm off, seated).
+- *Weight on other bones fading it out*: a child's knee lies within the fan's 28 cm
+  reach, and its shin's skin turned over in a squat (30 to 181 triangles).
+- *Keyed out as the hip opens* (5° to 20°): opened, the thighs do not meet the belly
+  and the fold reads the opening itself; keyed in, the squat turned the groin over
+  (f-heavy 139 to 352 triangles, f-elder 83 to 222).
+- *Organs read at their roots*: an organ's vertex took the fan where its root is,
+  lerped by its root share; read at its own place, the sac hanging below the hip
+  wanted two thirds of the thigh (the heavy man's squat, 208 inverted triangles on the
+  bones alone, 1277 with the fan, 326 with this).
+
+**Why it was shelved.** The crease count fell from 55 / 67 / 69 / 43 / 53 (seated,
+120°, 135°, one hip at 120°, squat) to 4 / 21 / 58 / 14 / 74 keyed in from 60°, and
+seated penetration fell in most smoke rows (f-slim 7.95 to 0.31 cm²). But the sheets
+showed a dark pit at the front crease where the bones alone close a clean fold line:
+seated on the heavy man (`docs/evidence/hip-fan-seated.webp`; base left, fan right),
+and, keyed in only from 90° so seated was the base skin's, tucked on both heavy
+bodies (`docs/evidence/hip-fan-deep.webp`: tucked, squat, seated; base left, fan
+right). The squat and seated rows there match the base skin. The front drag that wins
+the count is the drag that opens the pit: every attempt to thin it lost the crease
+(fading it near the midline, over the pubis, or with the hip opened), and limiting
+it by the vertex's rest distance from the thigh's skin made the heavy man's seated
+belly run deeper into his pubis (31.7 cm² on the bones, 49.8 with the fan, 139 with
+that limit): the gradient of the drag shears the region. It also gave back girth at a
+one-hip 120° (the short full woman's mean 0.78 and fifth percentile 0.30, against
+0.86 and 0.46, and linear skinning's 0.80 and 0.37). With the 90° key the smoke rows
+were the base skin's within a few percent (f-slim squat 18.9 to 19.6 cm², m-heavy
+squat 330 to 337 inverted), and the pit stayed.
+
+**The lesson.** Crease triangles counted turned over on the control mesh did not
+predict what is seen: the bones' counted inversions render as clean fold lines, and
+the fan's lower count rendered a pit. A skinning change is gated on side-view sheets
+of the heavy bodies seated, tucked and squatting against the shipped skin, not on
+counts alone. The skinning stays as "Skinning artefacts" and "The hip fold" describe.
+
+### The knee fold (2026-10-10)
+
+**The fault.** A knee bent to a right angle collapses the skin at its back through
+itself: the bones carry the calf's skin and the thigh's toward each other faster
+than skinning's blend moves the skin between them, and the triangles there turn
+over (the dark "pocket" behind a seated figure's knee). Bent further, the calf
+presses into the back of the thigh and through it. Measured on the control mesh,
+both knees bent and nothing else, in the nine bodies of the hip fold's tests
+(`Flaps` over `kneeZone`, the skin within 0.3 of a thigh's length of a knee;
+`KneeContact`, the calf's skin and the thigh's within 0.6 of a thigh, each through
+the other): 4 to 40 triangles turned over at 90°, 204 in all, 48 to 72 at 135°,
+540 in all; the calf and the thigh 9 to 24 mm through each other at 90° (the back
+of the knee through itself) and 18 to 51 mm from 120° to 150°. `KneeContact`
+judges a calf triangle by where the shin turned its rest face (`carriedFaces`),
+not by its rest face: the shin turns the calf's skin with it, and judged by its
+rest face a calf triangle at 150° faces backwards, which read skin in front of
+it as through it.
+
+**The fix: the hip fold's machinery, a second joint.** The fold is a joint fold
+(`src/rig/jointFold.ts`), keyed by the knee's flexion (`KNEE_FOLD`: from 30°
+every 2.5° to 155°, a margin past the 150° of the deep squat; no openings), solved
+by the joint folds' solve (`solveFold`) from the knee's setup (`kneeFoldSetup`,
+`src/rig/kneeFoldSolve.ts`): the calf's skin (over a quarter on the shin and more
+than on the thigh) is pushed out of the thigh's (at least a fifth on the thigh and
+as much as on the shin), the thigh's gives half of each contact (`KNEE_GIVE`,
+CHOICE: the hamstrings and the calf are muscle alike), and the press is let go
+where no calf is near. What differs from the hip, each a `FoldSetup` term and each
+measured on the gates below:
+
+- *The reach.* The fold keeps all its displacement within 0.6 of a thigh's length
+  of a knee and none past 0.85 (`KNEE_FULL_REACH`, `KNEE_REACH`): at 150° the calf
+  lies along the back of the thigh past half its length, and a taper from 0.4 to
+  0.6 cut the pushes there, leaving the calf 9 to 27 mm through the thigh at 150°
+  (the average figure, the short full woman, the heavy man).
+- *The thigh's skin is smoothed wherever it is folded* (`patchSmooths: "folded"`),
+  not only where the calf is within a centimetre as the belly is at the hip: at a
+  right angle the back of the knee is folded by the bones with no calf near it,
+  and held to touched skin the solve left 70 triangles turned over at 90°.
+- *Both skins are kept out of each other* (`mutual`): where calf and thigh are
+  both crumpled, past 140°, pushing the calf out of the thigh left the thigh 12 to
+  16 mm through the calf in the heavy and the short full woman. The last round presses the thigh's skin back out of the
+  calf's (along the calf's normal as the shin carries it, spread over its
+  neighbours) before the calf's pushes, and repeats twice more (`MUTUAL_ROUNDS`),
+  for each undoes a little of the other.
+- *Folded is judged as it is shaded* (`smoothsShaded`): a triangle at the back of
+  the knee could face out again as the bones carry it while the skin round it
+  stayed folded, its corners' normals against it, and shaded as a flap (4 left at
+  90° without it, one a leg in two bodies).
+
+And for both joints, the normal's change is taken from the skinned normal where the
+bones crumple the skin ("The hip fold", above): taken from the crumpled mesh's
+normal, 12 triangles stayed turned at 90°.
+
+In a pose the knee's displacements, solved with the thigh at rest, turn with each
+side's thigh (`upperleg02`, `jointTurns`), where the hip's turn with the root: a
+seated figure's knee is under a thigh turned 90°. Each vertex reads the knee on
+its leg (`kneeSides`: the left leg's share of what it holds on the two legs).
+
+**Gates** (`tests/kneeFold.test.ts`, control mesh, the nine bodies; watched failing
+first, with the bones alone): no triangle of the knee turned over at 90° in any
+body (bare 204, now 0); at 135° under a quarter of the bones' 540 and fewer in
+every body (now 28); the calf and the thigh under 2 mm through each other at 90°,
+105°, 120°, 135° and 150° in every body (now 0.0 mm wherever measured from 60° to
+150°). The hip fold's gates hold with the shared solve (`tests/hipFold.test.ts`),
+and the hip's solved fold is the same to the bit as before the solve was shared,
+but for the normal's change at a crumple.
+
+**On the drawn surface** (the smoke tier, the six bodies seated and in the deep
+squat, against the worklist with the hip crease, dbf5374): inverted triangles
+13301 → 4119, the rest skin penetrating 568 → 355 cm², named contacts 1590 → 404
+(the deep squat's deepest 30 mm → 0 to 9 mm), folded edges 4648 → 4544. Squashed
+skin rises 2088 → 2962 cm², all of it at the back of the knee (the heavy man's
+squat 65 → 280 cm² there, the slim woman's 44 → 143; the hips and the knees' fronts
+unchanged), and in every squat the knee's volume leaves its band (0.56 to 0.68 of
+rest; before, 0.8 and over with the calf through the thigh): the press flattens
+calf and thigh against each other and displaces nothing, where flesh would bulge to
+the sides.
+
+**Limit, stated (ruling, 2026-10-10).** The squashed skin and the knee's volume are
+accepted for this fold and are not waived: the smoke tier's squashed rest skin
+2088 → 2962 cm², all of the rise at the back of the knee, and the knee's volume
+0.56 to 0.68 of rest in every squat (the band is 0.8 to 1.2; on the volume measured
+as what the skin encloses, since 2026-10-10, 0.50 to 0.56). Keeping the volume, so
+that a press bulges the flesh out to the sides rather than flattening it, is the
+contact-compression unit, the next one this lane owns, for both joints: the hips'
+volumes are out of band the same way, 0.50 to 0.75 in the squat.
+
+**Costs.** The knee's solve took 1.5 to 2.1 s of one core against the hip's 7.3 to
+7.8 s (the average figure and the heavy man, on a machine at a load average near
+15), so a figure's folds take about a quarter longer; its texture on an adult's
+drawn surface is 2.4 MB (2924 rows) beside the hip's 25.5 MB (18115 rows).
+
+### Skin strain (2026-10-10)
+
+**What it is.** How compressed the skin is at each vertex in a pose: its area
+round the vertex (a third of each triangle it is a corner of) as the bones and the
+fold place it, over the same at rest. It is 1 at rest and below 1 where the pose
+crushes the skin. It is a general channel, not any one layer's. Anything that asks
+"how compressed is this skin" reads it. Today that is the creases' kept depth and
+their band-limit; later, wrinkle intensity and pallor or sweat in folds.
+
+**Where it comes from.** The fold solve already has each key's displaced mesh. At
+the end of every key it writes each moved vertex's strain, less 1
+(`JointFold.strains`), beside the vertex's displacement and normal change. The
+surface rows mix it by the subdivision stencil as they mix the displacements
+(`surfaceFold`). It goes in the fourth place of the normal's texel, which was
+free, so the fold textures do not grow and an adult's hip and knee cost no more
+memory. The vertex shader reads it at the flexion and opening of the joint on the
+vertex's side (`hkFoldStrain_<joint>`), as much as the fold has faded in, and adds
+it to 1 in a varying (`vHkStrain`). Per vertex, it is smooth across the triangles a
+pose crushes.
+
+- Before it, the creases measured compression per pixel from the phase's screen
+  derivatives. That stepped from triangle to triangle in a crushed band and dashed
+  the grooves.
+- The CPU reads it the same way (`skinStrainAt`), and the dual-skinning parity
+  test holds the two to float error.
+
+**Limit.** Only skin a joint fold moves has a strain. Everywhere else reads 1,
+including a joint without a fold corrective: the elbow and the armpit compress
+their skin, but read 1 until they get folds. A geometry may carry a strain of its
+own (`STRAIN_ATTRIBUTE`, added to the folds'), which the tests' strips use; the
+body carries none.
+
+**Its first reader: the creases hide in a crushed fold.** Where the pose crushes
+skin into the joint's own fold, the fold is the crease, and fine grooves drawn into
+a band a few pixels wide only stepped along the raster, dashing the crease. Skin
+folded into a deep flexion crease hides its fine lines in the fold. So a crease's
+relief goes with the strain: none below 0.55, all of it from 0.8 (`CREASE_CRUSH`).
+
+- Below 0.55 is the strain across a bent knee's crushed band: 0.39 to 0.47 at the
+  median, 0.53 to 0.57 for its least crushed tenth.
+- Above 0.8 is the skin round it: 0.83 to 0.91 for its most compressed tenth.
+- Both ranges are the muscular and heavy man and the slim woman, seated and tucked.
+- It replaces nothing else: the crease's kept depth and its band-limit stay the
+  per-pixel shares they were.
+- A coarse signal is right for "is this skin crushed". The strain comes from the
+  control mesh's one-ring, several times the band's width.
+- It was first wired as the kept depth itself, and as the band-limit's metres per
+  pixel. That reported moderate compression where the drawn crease is crushed hard,
+  and brought the 90° dashes back.
+
+### Contact compression (design, 2026-10-10)
+
+**The fault.** A joint fold presses one part's skin into another's and puts the
+flesh it displaces nowhere: the press flattens it. Measured as the flesh the skin
+encloses round the joint (`jointVolume`, a ball on the joint's head of 0.3 of its
+limb segment's length; see the foundation's invariants), on the control mesh, in the
+nine bodies, the folds take this much of what the bones leave: the knee squatting
+0.08 to 0.19, tucked 0.04 to 0.07; the hips 0.01 to 0.03; seated, at most about
+0.02. (Measured first as a sum of cones from the joint's head, the knee seemed to
+lose a third: that sum counted the calf inside the thigh twice, 697 cm³ of it at the
+average figure's squatting knee, which a fold that separates them could not put
+back without inventing flesh. The foundation's invariant was switched for it.)
+
+**Use cases.** A knee bent past a right angle: the calf pressed on the back of the
+thigh spreads to the sides of the contact, and the crease is a tight line, not a
+flattened shelf. A hip flexed in a tuck or a squat: the belly pressed by the thigh
+rolls up above the crease and out to the flanks, the thigh's front spreads. Seated,
+little is pressed and nothing should change that is seen. One side flexed alone:
+its own side bulges. A figure in an app: all of it solved per figure in the worker
+with the folds, nothing more per frame than reading their tables.
+
+**Requirements.**
+
+- *Volume.* The folds take no more than 0.01 of the flesh the bones leave round a
+  hip or a knee, seated, tucked and squatting, in every body (`VOLUME_SLACK`, CHOICE:
+  above the measure's own noise, a body moved rigidly reading within 0.008 of
+  itself, and under every loss a press that bulges nothing leaves where it presses).
+  Seated, where the bones leave the knee within the foundation's band, the folds keep
+  it there; tucked and squatting the bones alone leave it out (0.68 to 0.75 and 0.57
+  to 0.64 of rest: thigh and shin, 50° and 30° apart, overlap within the ball), so
+  there the gate is the bones'.
+- *No new contact.* The hip and knee folds' contact gates hold: what bulges out does
+  not bulge into the other part.
+- *No flaps.* The folds' flap gates hold.
+- *Where it is pressed.* Skin far from any contact is not moved by it (as the belly's
+  press is held to the thigh, `PressReach`).
+- *Bounded.* No vertex is moved by the bulge further than a stated cap.
+- *Cost.* Within half again the folds' solve, and their rows.
+
+**Options.**
+
+1. *A bulge restoring the flesh the fold takes, in the solve.* At each key, on each
+   side, the flesh round the joint is measured as the gate measures it, by the bones
+   alone and with the fold so far; what the fold has taken is put back as an outward
+   displacement of the skin round the contact (the skin of either part within a
+   centimetre of the other's), falling smoothly to nothing a few centimetres along
+   the skin from it, and the last round's pushes keep both skins out of each other.
+   It is part of the joint folds' solve, so the hip and the knee have it, plays from
+   the same tables, and its target is a measured loss, not a guess: a first try
+   that took as lost every millimetre the contact's skin was pushed in counted the
+   calf pushed out of the thigh's inside as flesh lost, and ballooned the rim 27 mm.
+2. *A volume-preserving relaxation.* The skin near the joint solved for its edges'
+   lengths and its enclosed volume alongside the contacts (position-based
+   constraints, iterated per key). The most physical, and it would answer the
+   squashed skin too; but a second solver, iterations over the joint's skin at every
+   key, and the flap and contact gates to win again from scratch.
+3. *Pose-space bulges by bone.* A radial swelling of the limb near the joint by its
+   flexion, fitted to put the volume back. The cheapest; but it bulges where nothing
+   presses, and wherever the contact is not.
+
+**Decision: option 1** (ruling, 2026-10-10). It puts back what the fold takes where
+the fold takes it, in the solve that already shares the contact; option 2 is held for
+when the squashed skin needs answering by itself. The gates are written first
+(`tests/contactCompression.test.ts`) and fail: the average figure tucked keeps 0.741
+of its hip's rest flesh against the bones' 0.755. A fold that pulls the flesh round
+the average figure's squatting knee a fifth of the way toward its head fails the
+same gate, as it must.
+
+**Named pairs after the bulge.** Trunk self-contact: a heavy belly's overhang
+pressed into the pubis, seated (the heavy man's smoke row, 31.7 cm² of trunk through
+trunk on the bones alone, at the hip's height in front). Neither hip fold nor knee
+fold owns skin pressing skin within the trunk, so it is its own contact pair for
+this unit, after the bulge.
 
 ### Reservoir skinning (2026-10-10)
 
@@ -1851,7 +2155,7 @@ elder woman's squashed triangles 299 → 567. So the fold follows the weights' r
 (`evaluatedFold`, 2026-10-10): each reservoir vertex's row is blended toward its
 root's (the mean of its loop's rows) by the same `rootShare`, the blended vertices
 taking rows of their own after the surface's. It is per evaluation, as the weights
-are: `HumanoidModel.hipFold` finds the push with the fold, and `<Humanoid>` asks
+are: `HumanoidModel.folds` finds the push with the folds, and `<Humanoid>` asks
 again when the evaluated weights change. The heavy woman's row is then 991 and 427,
 the elder woman's 280 squashed.
 
@@ -3079,8 +3383,14 @@ measurements cheap enough for the smoke tier to run in every local test pass.
   reported apart.
 - *Collapse*: a triangle that turns against its skinned normals where at rest
   it agreed with them (a lip's or a lid's edge disagrees at rest, by its
-  shape), or keeps under 30% of its rest area; and the volume each shoulder,
-  elbow, hip and knee closes with its joint's head, held to 0.8–1.2 of rest.
+  shape), or keeps under 30% of its rest area; and the flesh round each
+  shoulder, elbow, hip and knee, held to 0.8–1.2 of rest (`jointVolume`: what
+  the skin encloses, at least once, within a ball on the joint's head of 0.3 of
+  its limb segment's length; a limb turned rigidly keeps as much of itself in
+  it). Until 2026-10-10 it was the sum of the cones from the joint's head to
+  the skin its two bones hold most, which counts skin that passes through skin
+  twice: the average figure's squatting knee read 0.89 of rest by the bones with
+  697 cm³ of calf inside the thigh, flesh that is not there.
 - *Folds*: an edge sharper than 60° in the pose where it was under 30° at
   rest, outside the named creases (the crease layers' masks).
 - *Seams*: a UV seam's duplicates stay together.
@@ -3303,7 +3613,7 @@ hip fold, so it cannot be it. A frame is skinned on the main thread from the
 GPU's own inputs: the evaluated rest positions and normals `<Humanoid>` draws
 from, the topology's skin weights, the pose `DualBones` was last given
 (`pose()`, the blend of linear and dual quaternion skinning by the same
-shares), the hip fold it was given (`setFold`, kept on the CPU too) at the
+shares), the joint folds it was given (`setFolds`, kept on the CPU too) at the
 share faded in (`foldBlend`), and the lifted group's `matrixWorld`. A
 landmark's frame needs only its render vertex, its one "up" neighbour and its
 normal, so a read skins three vertices (`skinPositionAt`, `skinNormalAt`,
@@ -4300,6 +4610,17 @@ the joint's skin takes, which is measured.
   ends, so a window starts and ends flat (`CREASE_SHARPNESS`, `creaseHeight`;
   the shader and its reference changed together, and the browser project holds
   the shader's shading to the reference's slope).
+- *A share of the relief is not relief.* Every detail layer's relief is
+  scaled by shares measured from the pixel's footprint: the fade where it is
+  finer than a pixel, and a crease's kept depth where a pose compresses it
+  (`hkCreaseKeep`). The normal is tilted by the share times the relief's screen
+  gradient (`hkDetailSlope`), never by the gradient of the product. A share
+  comes from screen derivatives, so it steps from quad to quad (and row to row
+  within one) with the triangles and field texels under it; differentiated
+  with the relief, those steps drew a speckle 2 to 4 px across over a bent
+  knee's calf, where the creases keep part of their depth. The browser project
+  reads the slope out of the shader on a plane whose kept depth changes pixel
+  by pixel along the creases and holds the slope along them to none.
 - *Wrists have none.* They were drawn at the same rules (2 creases across 6 cm,
   the forearm's strain, 2.5 mm deep) and, once deep enough to see, read as a
   pale bracelet round the palm side; a real wrist has a few fine lines a

@@ -1010,12 +1010,13 @@ and expressions"). Framework-free.
   (`pose={{ faceUnits: expressionUnits("surprise", 0.7) }}`). `intensity` scales
   the weights (0 to 1; above 1 is held at 1); an unknown id throws. The weights
   are authored choices (ARCHITECTURE.md, "Named expressions").
-- `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out, fold?)`:
+- `skinPositions(rest, rotations, positions, skinIndex, skinWeight, out, folds?)`:
   the rig's skinning on the CPU, exactly as the renderer skins, for grounding,
   tests, anchors and pose-dependent bakes: linear blend skinning mixed with
   dual quaternion skinning vertex by vertex, by the share each bone asks for
-  (ARCHITECTURE.md, "Skinning artefacts"), and, with a `fold`
-  (`solveHipFold`, below), the hip fold added to the skinned vertex.
+  (ARCHITECTURE.md, "Skinning artefacts"), and, with `folds` (joint folds:
+  `solveHipFold`, `solveKneeFold`, below), each joint's fold added to the
+  skinned vertex.
   `posedBoneHeads(rest, rotations)`
   gives every joint's posed position. `skinPositionsLinear` is linear blending
   alone, `skinPositionsDual` dual quaternion skinning alone, and
@@ -1031,22 +1032,35 @@ and expressions"). Framework-free.
   `poseShare(rest, rotations, base)` gives every bone's share for a pose: the
   table's, moved by each such bone's swing (its rotation less its twist about
   its own axis). `skinPositions` and `DualBones` use it.
-- `solveHipFold(rest, control, skinIndex, skinWeight, triangles)` solves a
-  figure's hip fold (ARCHITECTURE.md, "The hip fold"): where a thigh flexed past
-  a right angle would pass through the belly, the displacement (per flexion
-  from 32.5° to 140° in 2.5° steps, per vertex of the thigh's skin within 0.7
-  of its length of the hip) that holds it against the belly's skin instead. `solveHipFoldSteps` is the
-  same a flexion at a time (a generator). The result (`HipFold`) is passed to
-  `skinPositions` as `fold`; `hipPose(rest, rotations)` reads each hip's flexion
-  from a pose, `addFold(fold, vertex, flexion, out, at)` reads a vertex's
-  displacement at a flexion, `addFoldNormal` the change of its normal there, and
-  `HIP_FOLD` holds the fold's terms. It takes about a second of one core (under two
-  with the CPU throttled 4×): in an app it is asked of the worker
-  (`client.hipFold`, which keeps the last six folds by figure shape), never solved
-  per frame; `<Humanoid>` fades it in over `FOLD_FADE` (150 ms) when it arrives. The
-  thigh stays under 2 mm behind the belly at every flexion solved and halfway
-  between, in the nine bodies of the tests. `scripts/lib/hipContact.ts` (`HipContact.penetration(positions)`)
-  measures how far a posed body's thigh passes through its trunk.
+- Joint folds (ARCHITECTURE.md, "The hip fold", "The knee fold"): where a
+  joint bent far would pass one part's skin through another's, or fold the
+  skin at the joint over itself, a displacement solved once per figure at a
+  run of flexions (a `FoldJoint`'s keys) and read at the flexion a pose has.
+  `solveHipFold(rest, control, skinIndex, skinWeight, triangles)` solves the
+  hips' (the thigh held against the belly: per flexion from 32.5° to 140° in
+  2.5° steps, closed and opened 20°, per vertex of the thigh's skin within 0.7
+  of its length of the hip, and the belly's it meets), `solveKneeFold` the
+  knees' (the calf held against the back of the thigh, and the back of the
+  knee folded smooth: per flexion from 32.5° to 155° in 2.5° steps, within 0.85
+  of a thigh's length of the knee). `solveHipFoldSteps` and `solveKneeFoldSteps`
+  are the same a flexion at a time (generators); `solveFold(…, setup)` is the
+  solve both are made of, from a `FoldSetup` (`hipFoldSetup`, `kneeFoldSetup`).
+  The results (`JointFold`, each with its `joint`: `HIP_FOLD`, `KNEE_FOLD`) are
+  passed to `skinPositions` as `folds`. `foldFlexion(joint, rest, rotations)`
+  reads how far a joint's two sides are flexed and opened in a pose
+  (`hipFlexion`, `kneeFlexion`), `jointTurns` the turn each side's
+  displacements follow (the root's at the hips, each thigh's at the knees),
+  `addFold(fold, vertex, flexion, opening, out, at)` a vertex's displacement at
+  a flexion, and `addFoldNormal` the change of its normal there; `FOLD_JOINTS`
+  lists the joints in the order their folds are kept. A figure's folds take a
+  few seconds of one core: in an app they are asked of the worker
+  (`client.folds`, which keeps the last six figures' by shape), never solved
+  per frame; `<Humanoid>` fades them in over `FOLD_FADE` (150 ms) when they
+  arrive. In the nine bodies of the tests the thigh stays under 2 mm behind the
+  belly at every flexion solved and halfway between, and the calf and the thigh
+  under 2 mm through each other at 90° to 150°. `scripts/lib/foldContact.ts`
+  (`HipContact`, `KneeContact`) measures how far a posed body's skin passes
+  through itself at either joint, and `Flaps` the triangles it turns over.
 - `bodyPoseRotations(rig, name)`: a whole-body pose from the pack
   (`RigData.poses`: MakeHuman's CC0 `tpose` and `benchmark`, the rigging
   stress pose; and the poses authored here, `relaxed`, standing at ease with the
@@ -1280,16 +1294,17 @@ The main-thread handle to an evaluation worker.
   it once the figure is an adult and draws it, in place of the base body, from
   then on (`Evaluation.surface === "adult"`); the worker builds it once and
   later calls share it.
-- `client.hipFold(recipe, signals?): Promise<{ surface, fold }>` resolves with the
-  hip fold (ARCHITECTURE.md, "The hip fold") of the figure the recipe makes, on
-  the body surface its evaluation draws (`"base"` or `"adult"`): the
-  `SurfaceFold` (`slot` per render vertex, `rows`, `data`) for
-  `DualBones.setFold` and the geometry's `FOLD_SLOT_ATTRIBUTE`. The worker solves
-  it between other requests, so an evaluation is never held up behind it, and
+- `client.folds(recipe, signals?): Promise<{ surface, folds }>` resolves with the
+  joint folds (ARCHITECTURE.md, "The hip fold", "The knee fold") of the figure the
+  recipe makes, on the body surface its evaluation draws (`"base"` or `"adult"`):
+  a `SurfaceFold` per joint of `FOLD_JOINTS` (its `joint`, `slot` per render
+  vertex, `rows`, `data`) for `DualBones.setFolds` and the geometry's slot
+  attribute of each joint (`foldSlotAttribute(joint)`). The worker solves them
+  between other requests, so an evaluation is never held up behind them, and
   asking again supersedes a solve still under way, which rejects with an
-  `AbortError`. `<Humanoid>` asks once a hip in its pose is flexed past 30°,
-  whenever the figure's shape changes, and counts the wait in its settle; a figure
-  drawn by other means calls it itself.
+  `AbortError`. `<Humanoid>` asks once a hip or a knee in its pose is flexed past
+  30°, whenever the figure's shape changes, and counts the wait in its settle; a
+  figure drawn by other means calls it itself.
 - `client.dispose()` terminates the worker and rejects pending requests.
 - Errors from the worker arrive as `HumanoidWorkerError` with `name` set to the
   original error's name (for example `AgePolicyError`).
@@ -1388,10 +1403,11 @@ Renders a recipe as a mesh inside a React Three Fiber canvas.
   twisted forearm or a raised shoulder keeps its volume, and its shadows, bounds
   and picking follow. A `material` of your own skins by three's linear skinning
   alone, and the attachments (eyes, teeth, tongue) follow single bones. With a
-  hip flexed past 30° it asks the worker for the figure's hip fold
-  (`client.hipFold`) and the skin adds it, so the groin folds against the belly
-  and does not pass through it (ARCHITECTURE.md, "The hip fold"); the figure
-  settles once it is drawn.
+  hip or a knee flexed past 30° it asks the worker for the figure's joint folds
+  (`client.folds`) and the skin adds them, so the groin folds against the belly
+  and the calf against the thigh without passing through, and the back of a
+  bent knee folds smooth (ARCHITECTURE.md, "The hip fold", "The knee fold"); the
+  figure settles once they are drawn.
 - Stores the figure's bones as dual quaternions on the group's
   `userData.dualBones` (a `DualBones`, null before the first evaluation), so
   clothing and materials of your own can follow its joints as its skin does:
@@ -1901,7 +1917,7 @@ fields once the adult pack's stage has loaded, or null without that pack),
 `evaluate`, which
 waits for exactly the load stages its recipe needs without holding up other
 requests, `garment` (replied to with a garment's static render data once
-the garments have loaded) and `hipFold` (replied to with a figure's hip fold,
+the garments have loaded) and `folds` (replied to with a figure's joint folds,
 solved a flexion at a time between other requests). Result buffers are transferred. Applications use it
 through the client, not directly.
 
