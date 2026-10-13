@@ -21,14 +21,41 @@ import {
   useHumanoidAffordances,
 } from "humanoid-kit/react";
 import { animationsPack } from "humanoid-kit-animations";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Component,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { type Group, MathUtils, type Object3D, Vector3 } from "three";
 import { sampleRequiredHandFrame } from "./handFrame";
 
 type Stage = "approach" | "grip" | "release" | "cancel";
 type View = "front" | "three-quarter" | "side";
+type ReviewMode = "inspect" | "play";
 
 const params = new URLSearchParams(window.location.search);
+const stageOptions: readonly Stage[] = ["approach", "grip", "release", "cancel"];
+const viewOptions: readonly View[] = ["front", "three-quarter", "side"];
+
+function stageFromQuery(): Stage {
+  const stage = params.get("stage");
+  return stageOptions.includes(stage as Stage) ? (stage as Stage) : "approach";
+}
+
+function viewFromQuery(): View {
+  const view = params.get("view");
+  return viewOptions.includes(view as View) ? (view as View) : "front";
+}
+
+function persistReviewParam(name: "stage" | "view", value: Stage | View): void {
+  const url = new URL(window.location.href);
+  url.searchParams.set(name, value);
+  window.history.replaceState(null, "", url);
+}
 const IDLE_CLIP = "idle1";
 const IDLE_SECONDS = 2.5;
 const TALL_OUTFIT = "suits/male_casualsuit06";
@@ -112,6 +139,11 @@ interface Control {
   view: View;
   interaction: Interaction | null;
   restart: boolean;
+  runEpoch: number;
+  restartRun: (() => void) | null;
+  mode: ReviewMode;
+  held: boolean;
+  animationTime: number;
   cancelled: boolean;
   settled: { tall: boolean; short: boolean };
   animationStarted: { tall: boolean; short: boolean };
@@ -121,23 +153,68 @@ interface Control {
   bindingFailure: string | null;
   phase: string;
   ready: boolean;
+  gateSnapshot: GateSnapshot;
+  gateListeners: Set<() => void>;
 }
+
+interface GateSnapshot {
+  readonly stage: Stage;
+  readonly view: View;
+  readonly phase: string;
+  readonly ready: boolean;
+  readonly held: boolean;
+  readonly mode: ReviewMode;
+  readonly animationTime: number;
+  readonly settled: { readonly tall: boolean; readonly short: boolean };
+  readonly animationStarted: { readonly tall: boolean; readonly short: boolean };
+  readonly clothed: boolean;
+  readonly target: Vec3 | null;
+  readonly hands: { readonly tall: Vec3; readonly short: Vec3 } | null;
+  readonly targetGap: { readonly tall: number; readonly short: number } | null;
+  readonly bindingFailure: string | null;
+}
+
+const INITIAL_GATE_SNAPSHOT: GateSnapshot = {
+  stage: "approach",
+  view: "front",
+  phase: "loading",
+  ready: false,
+  held: false,
+  mode: "inspect",
+  animationTime: 0,
+  settled: { tall: false, short: false },
+  animationStarted: { tall: false, short: false },
+  clothed: false,
+  target: null,
+  hands: null,
+  targetGap: null,
+  bindingFailure: null,
+};
 
 export interface HandshakeLabApi {
   setStage(stage: Stage): void;
   setView(view: View): void;
+  inspect(): void;
+  play(): void;
   state(): {
     stage: Stage;
     view: View;
     phase: string;
     ready: boolean;
+    held: boolean;
+    mode: ReviewMode;
+    animationTime: number;
+    settled: { tall: boolean; short: boolean };
+    animationStarted: { tall: boolean; short: boolean };
     muted: boolean;
     adults: boolean;
     clothed: boolean;
+    consent: { tall: true; short: true };
     source: "presence-registry+interaction-runtime+animation-library";
     animation: string;
     target: number[] | null;
     hands: { tall: number[]; short: number[] } | null;
+    targetGap: { tall: number; short: number } | null;
     bindingFailure: string | null;
   };
 }
@@ -166,22 +243,112 @@ function moveToSlot(group: Group | null, slot: SlotPlacement | null, delta: numb
   group.rotation.y = MathUtils.damp(group.rotation.y, yaw, 12, delta);
 }
 
+/** A lab-only stage request. The interaction runtime remains the source of phase state. */
+function resetReviewRun(control: Control): void {
+  // A held review freezes the values sampled from the runtime, while that
+  // runtime remains attached to the presence clock. Resetting cancels the old
+  // interaction and asks the same live runtime for a fresh run.
+  control.restart = true;
+  control.cancelled = false;
+  control.held = false;
+  control.ready = false;
+  control.phase = "preparing";
+  control.target = null;
+  control.hands = null;
+  control.animationTime = 0;
+  // These describe mounted figure sources, not an interaction run. Their
+  // callbacks fire once, so retain the already-proven source readiness.
+  control.bindingFailure = null;
+}
+
+function selectStage(control: Control, stage: Stage): void {
+  control.stage = stage;
+  persistReviewParam("stage", stage);
+  resetReviewRun(control);
+  publishGate(control);
+}
+
+function selectView(control: Control, view: View): void {
+  control.view = view;
+  persistReviewParam("view", view);
+  publishGate(control);
+}
+
+function selectMode(control: Control, mode: ReviewMode): void {
+  control.mode = mode;
+  resetReviewRun(control);
+  publishGate(control);
+}
+
+function snapshotOf(control: Control): GateSnapshot {
+  const target = control.target && ([...control.target] as Vec3);
+  const hands = control.hands && {
+    tall: [...control.hands.tall] as Vec3,
+    short: [...control.hands.short] as Vec3,
+  };
+  const gap = (hand: Vec3) =>
+    target === null
+      ? null
+      : Math.hypot(hand[0] - target[0], hand[1] - target[1], hand[2] - target[2]);
+  const tallGap = hands ? gap(hands.tall) : null;
+  const shortGap = hands ? gap(hands.short) : null;
+  return {
+    stage: control.stage,
+    view: control.view,
+    phase: control.phase,
+    ready: control.ready,
+    held: control.held,
+    mode: control.mode,
+    animationTime: control.animationTime,
+    settled: { ...control.settled },
+    animationStarted: { ...control.animationStarted },
+    clothed: control.clothed,
+    target,
+    hands,
+    targetGap: tallGap === null || shortGap === null ? null : { tall: tallGap, short: shortGap },
+    bindingFailure: control.bindingFailure,
+  };
+}
+
+function publishGate(control: Control): void {
+  control.gateSnapshot = snapshotOf(control);
+  for (const listener of control.gateListeners) listener();
+}
+
+/** Samples rendered state inside Canvas and publishes a stable external snapshot for DOM diagnostics. */
+function GateProbe({ control }: { control: Control }) {
+  const last = useRef(-Infinity);
+  useFrame((state) => {
+    // The outside diagnostic must never use R3F hooks. Publishing at a readable
+    // cadence preserves a cached snapshot between subscriptions and frames.
+    if (state.clock.elapsedTime - last.current >= 0.15) {
+      last.current = state.clock.elapsedTime;
+      publishGate(control);
+    }
+  });
+  return null;
+}
+
 function Camera({ control }: { control: Control }) {
   const camera = useThree((s) => s.camera);
+  const aspect = useThree((s) => s.size.width / s.size.height);
   const target = useMemo(() => new Vector3(0, 1.05, 0), []);
   useFrame(() => {
+    // The figures start six metres apart. Calculate the distance from the
+    // actual stage aspect instead of letting a diagnostic layout crop either
+    // clothed body in a review view.
+    const distance = 11.9 / Math.max(aspect, 1);
     const position: [number, number, number] =
       control.view === "front"
-        ? [0, 1.1, 4.9]
+        ? [0, 1.1, distance]
         : control.view === "three-quarter"
-          ? [3.6, 1.2, 3.6]
-          : [4.9, 1.1, 0];
+          ? [distance * Math.SQRT1_2, 1.2, distance * Math.SQRT1_2]
+          : [distance, 1.1, 0];
     camera.position.set(...position);
     camera.lookAt(target);
   });
   return null;
 }
-
 function Markers({
   control,
   tallAffordances,
@@ -293,11 +460,13 @@ function Controller({
   registry,
   tallGroup,
   shortGroup,
+  runEpoch,
 }: {
   control: Control;
   registry: ReturnType<typeof createPresenceRegistry>;
   tallGroup: React.RefObject<Group | null>;
   shortGroup: React.RefObject<Group | null>;
+  runEpoch: number;
 }) {
   const runtime = useMemo(
     () =>
@@ -309,26 +478,44 @@ function Controller({
   );
   useEffect(() => {
     runtime.define([HANDSHAKE_REVIEW]);
-    return () => runtime.detach();
+    // The fixture makes both participants explicitly consent. It must not rely
+    // on the runtime's permissive default for an "all" interaction.
+    const unconsentTall = runtime.policy("tall", () => true);
+    const unconsentShort = runtime.policy("short", () => true);
+    return () => {
+      unconsentTall();
+      unconsentShort();
+      runtime.detach();
+    };
   }, [runtime]);
   useFrame((_, delta) => {
+    if (control.runEpoch !== runEpoch) return;
     if (control.restart) {
       control.interaction?.cancel("cancelled");
       control.interaction = null;
       control.cancelled = false;
       control.target = null;
+      control.animationTime = 0;
       resetGroup(tallGroup.current, -3, Math.PI / 2);
       resetGroup(shortGroup.current, 3, -Math.PI / 2);
       control.restart = false;
     }
-    if (!control.interaction && registry.get("tall") && registry.get("short") && !control.cancelled)
+    if (
+      !control.held &&
+      !control.interaction &&
+      registry.get("tall") &&
+      registry.get("short") &&
+      !control.cancelled
+    )
       control.interaction = runtime.propose(HANDSHAKE_REVIEW.id, {
         initiator: "tall",
         responder: "short",
       });
     const interaction = control.interaction;
-    if (interaction) {
+    if (interaction && !control.held) {
       control.phase = interaction.phase;
+      const clock = interaction.trackTime("initiator");
+      if (clock !== null) control.animationTime = clock;
       if (control.stage !== "approach" && interaction.phase === "approach") {
         moveToSlot(tallGroup.current, interaction.slot("initiator"), delta);
         moveToSlot(shortGroup.current, interaction.slot("responder"), delta);
@@ -339,25 +526,41 @@ function Controller({
         interaction.cancel("cancelled");
         control.interaction = null;
         control.cancelled = true;
+        control.target = null;
         control.phase = "cancelled";
+        if (control.mode === "inspect") control.held = true;
+      } else {
+        const selectedPhase =
+          control.stage === "approach"
+            ? interaction.phase === "approach"
+            : control.stage === "grip"
+              ? interaction.phase === "act" && interaction.time >= 0.3
+              : control.stage === "release"
+                ? interaction.phase === "release"
+                : false;
+        // Stop copying values at the selected real runtime phase. The runtime
+        // stays attached so a later selection can begin a fresh run.
+        if (control.mode === "inspect" && selectedPhase) {
+          control.held = true;
+        }
       }
     }
     const phaseReady =
       control.stage === "approach"
         ? control.phase === "approach"
         : control.stage === "grip"
-          ? interaction?.phase === "act" && interaction.time >= 0.3
+          ? control.phase === "act" && control.held
           : control.stage === "release"
-            ? interaction?.phase === "release"
-            : control.cancelled;
+            ? control.phase === "release" && control.held
+            : control.cancelled && control.held;
     control.ready =
-      phaseReady === true &&
+      phaseReady &&
       control.settled.tall &&
       control.settled.short &&
       control.animationStarted.tall &&
       control.animationStarted.short &&
       control.clothed &&
-      control.target !== null &&
+      (control.stage === "cancel" || control.target !== null) &&
       control.bindingFailure === null;
   });
   return null;
@@ -380,7 +583,9 @@ function StageFigures({ control }: { control: Control }) {
       live = false;
     };
   }, []);
-  useFrame((state) => setTime(Math.floor(state.clock.elapsedTime * 30) / 30));
+  useFrame(() =>
+    setTime((previous) => (previous === control.animationTime ? previous : control.animationTime)),
+  );
   const animation = library
     ? {
         library,
@@ -419,6 +624,7 @@ function StageFigures({ control }: { control: Control }) {
         registry={registry}
         tallGroup={tallGroup}
         shortGroup={shortGroup}
+        runEpoch={control.runEpoch}
       />
       <Markers
         control={control}
@@ -427,6 +633,7 @@ function StageFigures({ control }: { control: Control }) {
       />
       <ClothingProbe control={control} />
       <Camera control={control} />
+      <GateProbe control={control} />
     </PresenceProvider>
   );
 }
@@ -440,26 +647,20 @@ function Api({ control }: { control: Control }) {
   useEffect(() => {
     window.hkHandshake = {
       setStage: (stage) => {
-        control.stage = stage;
-        control.restart = true;
-        control.ready = false;
+        selectStage(control, stage);
       },
       setView: (view) => {
-        control.view = view;
+        selectView(control, view);
       },
+      inspect: () => selectMode(control, "inspect"),
+      play: () => selectMode(control, "play"),
       state: () => ({
-        stage: control.stage,
-        view: control.view,
-        phase: control.phase,
-        ready: control.ready,
+        ...snapshotOf(control),
         muted: params.has("muted"),
         adults: tall.macros.age >= 18 && short.macros.age >= 18,
-        clothed: control.clothed,
+        consent: { tall: true, short: true },
         source: "presence-registry+interaction-runtime+animation-library",
         animation: IDLE_CLIP,
-        target: control.target && [...control.target],
-        hands: control.hands && { tall: [...control.hands.tall], short: [...control.hands.short] },
-        bindingFailure: control.bindingFailure,
       }),
     };
     return () => {
@@ -469,13 +670,223 @@ function Api({ control }: { control: Control }) {
   return null;
 }
 
+/**
+ * A visible diagnostic readout for root review. It does not move a hand or
+ * decide whether the figures have made contact: the yellow point and two hand
+ * frames are live values from the interaction runtime and rendered figures.
+ */
+function GatePanel({ control }: { control: Control }) {
+  const snapshot = useSyncExternalStore(
+    (notify) => {
+      control.gateListeners.add(notify);
+      return () => control.gateListeners.delete(notify);
+    },
+    () => control.gateSnapshot,
+    () => control.gateSnapshot,
+  );
+  const gap = snapshot.targetGap;
+  const fmt = (value: number | null | undefined) =>
+    value === null || value === undefined ? "—" : `${(value * 100).toFixed(1)} cm`;
+  return (
+    <section
+      aria-label="Tall and short handshake diagnostic"
+      style={{
+        padding: 14,
+        color: "#f4ecda",
+        background: "rgba(20, 23, 29, 0.9)",
+        border: "1px solid rgba(255, 210, 63, 0.65)",
+        borderRadius: 8,
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        fontSize: 12,
+        lineHeight: 1.45,
+      }}
+    >
+      <strong style={{ display: "block", color: "#ffd23f", fontSize: 14 }}>
+        Tall / short handshake gate
+      </strong>
+      <p style={{ margin: "6px 0 10px" }}>
+        Neutral, clothed adult pair. Both fixture policies explicitly consent. Yellow = runtime grip
+        target; RGB = live hand frames.
+      </p>
+      <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 10px", margin: 0 }}>
+        <dt>stage</dt>
+        <dd>
+          {snapshot.stage} / {snapshot.phase}
+        </dd>
+        <dt>view</dt>
+        <dd>{snapshot.view}</dd>
+        <dt>inspection</dt>
+        <dd>
+          {snapshot.held
+            ? "held on actual runtime state"
+            : snapshot.mode === "play"
+              ? "playing"
+              : "seeking"}
+        </dd>
+        <dt>clock</dt>
+        <dd>{snapshot.animationTime.toFixed(3)} s</dd>
+        <dt>fixture</dt>
+        <dd>
+          {snapshot.clothed ? "clothed" : "checking clothing"}; settled{" "}
+          {String(snapshot.settled.tall)}/{String(snapshot.settled.short)}; clip{" "}
+          {String(snapshot.animationStarted.tall)}/{String(snapshot.animationStarted.short)}
+        </dd>
+        <dt>hand→target</dt>
+        <dd>
+          tall {fmt(gap?.tall)}, short {fmt(gap?.short)}
+        </dd>
+        <dt>capture</dt>
+        <dd>
+          {snapshot.bindingFailure ??
+            (snapshot.ready
+              ? "ready"
+              : snapshot.held
+                ? "held; waiting for source readiness"
+                : "seeking runtime state")}
+        </dd>
+      </dl>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+        <button
+          type="button"
+          onClick={() => selectMode(control, "inspect")}
+          style={{
+            border: `1px solid ${snapshot.mode === "inspect" ? "#9bc7ff" : "#79808b"}`,
+            borderRadius: 4,
+            background: snapshot.mode === "inspect" ? "#19334b" : "#252a33",
+            color: "#f4ecda",
+            cursor: "pointer",
+            padding: "4px 7px",
+          }}
+        >
+          Inspect hold
+        </button>
+        <button
+          type="button"
+          onClick={() => selectMode(control, "play")}
+          style={{
+            border: `1px solid ${snapshot.mode === "play" ? "#9bc7ff" : "#79808b"}`,
+            borderRadius: 4,
+            background: snapshot.mode === "play" ? "#19334b" : "#252a33",
+            color: "#f4ecda",
+            cursor: "pointer",
+            padding: "4px 7px",
+          }}
+        >
+          Play once
+        </button>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+        {(["approach", "grip", "release", "cancel"] as const).map((stage) => (
+          <button
+            key={stage}
+            type="button"
+            onClick={() => selectStage(control, stage)}
+            style={{
+              border: `1px solid ${snapshot.stage === stage ? "#ffd23f" : "#79808b"}`,
+              borderRadius: 4,
+              background: snapshot.stage === stage ? "#473c11" : "#252a33",
+              color: "#f4ecda",
+              cursor: "pointer",
+              padding: "4px 7px",
+            }}
+          >
+            {stage}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+        {(["front", "three-quarter", "side"] as const).map((view) => (
+          <button
+            key={view}
+            type="button"
+            onClick={() => {
+              selectView(control, view);
+            }}
+            style={{
+              border: `1px solid ${snapshot.view === view ? "#9bc7ff" : "#79808b"}`,
+              borderRadius: 4,
+              background: snapshot.view === view ? "#19334b" : "#252a33",
+              color: "#f4ecda",
+              cursor: "pointer",
+              padding: "4px 7px",
+            }}
+          >
+            {view}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function useCompactLayout(): boolean {
+  return useSyncExternalStore(
+    (notify) => {
+      window.addEventListener("resize", notify);
+      return () => window.removeEventListener("resize", notify);
+    },
+    () => window.innerWidth < 980,
+    () => false,
+  );
+}
+
+interface HandshakeErrorBoundaryState {
+  error: Error | null;
+}
+
+/** A lab boot failure must name itself in the review surface instead of leaving a blank screen. */
+class HandshakeErrorBoundary extends Component<
+  { children: ReactNode },
+  HandshakeErrorBoundaryState
+> {
+  state: HandshakeErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): HandshakeErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error): void {
+    console.error("handshake visual gate failed to mount", error);
+  }
+
+  render() {
+    if (this.state.error)
+      return (
+        <section
+          role="alert"
+          aria-label="Handshake diagnostic failed to mount"
+          data-handshake-error
+          style={{
+            minHeight: "100vh",
+            boxSizing: "border-box",
+            padding: 32,
+            color: "#f4ecda",
+            background: "#171b22",
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          }}
+        >
+          <h1>Handshake diagnostic failed to mount</h1>
+          <p>Reload after correcting the lab error; this review route must never fail silently.</p>
+          <pre style={{ whiteSpace: "pre-wrap", color: "#ffb4a7" }}>{this.state.error.message}</pre>
+        </section>
+      );
+    return this.props.children;
+  }
+}
+
 export function HandshakeLab() {
+  const compact = useCompactLayout();
   const control = useMemo<Control>(
     () => ({
-      stage: "approach",
-      view: "front",
+      stage: stageFromQuery(),
+      view: viewFromQuery(),
       interaction: null,
       restart: false,
+      runEpoch: 0,
+      restartRun: null,
+      mode: "inspect",
+      held: false,
+      animationTime: 0,
       cancelled: false,
       settled: { tall: false, short: false },
       animationStarted: { tall: false, short: false },
@@ -485,26 +896,51 @@ export function HandshakeLab() {
       bindingFailure: null,
       phase: "loading",
       ready: false,
+      gateSnapshot: INITIAL_GATE_SNAPSHOT,
+      gateListeners: new Set(),
     }),
     [],
   );
   return (
-    <div
-      style={{ position: "absolute", inset: 0 }}
-      data-handshake-lab
-      data-figure={control.ready ? "ready" : "loading"}
-    >
-      <Canvas
-        camera={{ position: [0, 1.1, 4.9], fov: 35 }}
-        gl={{
-          preserveDrawingBuffer: true,
-          toneMapping: STUDIO_TONE_MAPPING,
-          toneMappingExposure: STUDIO_EXPOSURE,
+    <HandshakeErrorBoundary>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "grid",
+          gridTemplateColumns: compact ? "minmax(0, 1fr)" : "minmax(0, 1fr) 332px",
+          gridTemplateRows: compact ? "minmax(0, 1fr) auto" : "minmax(0, 1fr)",
+          background: "#171b22",
         }}
+        data-handshake-lab
+        data-figure={control.ready ? "ready" : "loading"}
       >
-        <StageFigures control={control} />
-        <Api control={control} />
-      </Canvas>
-    </div>
+        <div style={{ minWidth: 0, minHeight: 0, position: "relative" }}>
+          <Canvas
+            camera={{ position: [0, 1.1, 8.5], fov: 35 }}
+            gl={{
+              preserveDrawingBuffer: true,
+              toneMapping: STUDIO_TONE_MAPPING,
+              toneMappingExposure: STUDIO_EXPOSURE,
+            }}
+          >
+            <StageFigures control={control} />
+            <Api control={control} />
+          </Canvas>
+        </div>
+        <aside
+          aria-label="Handshake review controls"
+          style={{
+            minWidth: 0,
+            overflowY: "auto",
+            borderLeft: compact ? undefined : "1px solid rgba(255, 210, 63, 0.35)",
+            borderTop: compact ? "1px solid rgba(255, 210, 63, 0.35)" : undefined,
+            background: "rgba(20, 23, 29, 0.98)",
+          }}
+        >
+          <GatePanel control={control} />
+        </aside>
+      </div>
+    </HandshakeErrorBoundary>
   );
 }
