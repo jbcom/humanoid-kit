@@ -156,8 +156,25 @@ describe("the cards' strand map", () => {
       weight += a;
     }
     expect(sum / weight).toBeCloseTo(HAIR_STRAND_MEAN, 1);
-    // Mostly air: strands are thin.
-    expect(weight / (w * h)).toBeLessThan(0.5);
-    expect(weight / (w * h)).toBeGreaterThan(0.03);
+  });
+
+  it("is a lock: mostly hair at the root, thinning to separate strands at the tip", () => {
+    const w = 256;
+    const h = 512;
+    const rgba = generateStrandMap(w, h, 0x5eed);
+    /** Mean alpha over a band of rows, from `a` to `b` of the length. */
+    const band = (a: number, b: number) => {
+      let s = 0;
+      let n = 0;
+      for (let y = Math.floor(a * h); y < Math.floor(b * h); y++)
+        for (let x = 0; x < w; x++) {
+          s += (rgba[(y * w + x) * 4 + 3] as number) / 255;
+          n++;
+        }
+      return s / n;
+    };
+    expect(band(0, 0.25)).toBeGreaterThan(0.6);
+    expect(band(0.75, 1)).toBeLessThan(0.6 * band(0, 0.25));
+    expect(band(0.75, 1)).toBeGreaterThan(0.12);
   });
 });
