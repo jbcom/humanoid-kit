@@ -129,6 +129,13 @@ their apertures), where no asset exists.
   is not extended, polished or defended.
 - A surface that looks wrong is first checked for being procedural: a failing
   look is a reason to switch to an asset, not to tune the generator.
+- **Fluids are exempt (owner, 2026-10-13).** Tears, sweat, saliva, mucus, blood,
+  pus, vomit, urine, breast milk, genital moisture, lubrication, semen and every
+  other body fluid cannot come from an asset: they move, so they
+  are simulated, as the canals are drawn. A thin film is a material state, a skin
+  layer that changes roughness and specular over a mask (sweat sheen,
+  `VULVA_MOISTURE_LAYER`); beads, runs, drips, pooling and flow are a separate
+  simulated system over the posed surface, specified and tested on its own issue.
 
 Decisions are appended with the next number and never renumbered, since code and
 docs cite the numbers. A decision that comes from a design section (dated, in the
