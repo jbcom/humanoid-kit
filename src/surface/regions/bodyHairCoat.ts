@@ -18,12 +18,12 @@
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
 import { ADULT_COAT_REGION_IDS, groupFaces, jointPosition } from "../../format/assetFormat.ts";
+import { resolveBeard } from "../beard.ts";
 import {
   type BeardStyle,
   BODY_HAIR_FIBRE,
   type BodyHairGroup,
   beardSpec,
-  beardStyle,
   bodyHairColour,
   bodyHairCoverage,
 } from "../bodyHair.ts";
@@ -262,7 +262,10 @@ function beardRegion(part: BeardPart): CoatRegion {
     targets: LIPS_TARGETS,
     mask: (assets) => beardMasks(assets)[part],
     paint: (input) => {
-      const length = BEARD_LENGTHS[beardStyle(bodyHairInput(input))][part];
+      // The coat is the beard's dense base: a shorter beard length trims it,
+      // a longer one is the cards' and never grows the coat past its base.
+      const beard = resolveBeard(bodyHairInput(input), Number.POSITIVE_INFINITY);
+      const length = Math.min(BEARD_LENGTHS[beard.style][part], beard.parts[part]);
       return paintOf("face", input, length, length <= 0.002 ? LIE.stubble : LIE.grown);
     },
   };

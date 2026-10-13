@@ -238,6 +238,25 @@ describe("coat masks and paint", () => {
     expect(row(goatee, "beard-cheeks")[0]).toBe(0);
   });
 
+  it("trim the beard's coat to a shorter beard length, and never grow it past its base", () => {
+    const paint = (beard: object) =>
+      row(paintCoat(BODY_HAIR_COAT, input(35, 1, { bodyHair: { beard } })), "beard-chin")[1];
+    const base = paint({ style: "full" });
+    expect(paint({ style: "full", length: 0.005 })).toBeCloseTo(0.005, 4);
+    expect(paint({ style: "full", length: 0.3 })).toBeCloseTo(base, 6);
+    expect(paint({ style: "longstreet" })).toBeCloseTo(base, 6);
+    // The moustache style's coat is its whole length, so its length control reaches it.
+    const moustache = (length: number) =>
+      row(
+        paintCoat(
+          BODY_HAIR_COAT,
+          input(35, 1, { bodyHair: { beard: { style: "moustache", length } } }),
+        ),
+        "beard-moustache",
+      )[1];
+    expect(moustache(0.006)).toBeLessThan(moustache(0.012));
+  });
+
   it("refuse a hair longer than shells can draw", () => {
     const long: CoatRegion = {
       ...(COAT_REGIONS[0] as CoatRegion),

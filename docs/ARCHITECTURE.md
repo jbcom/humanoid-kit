@@ -2429,10 +2429,12 @@ chin, cheeks, the coat's parts) and their default length, from 1.5 mm of
 stubble to 35 cm of a chest-length Longstreet. `length` is the longest part's,
 in metres; each part keeps its share of it, so one number grows a beard over
 a game's months without swapping assets, and `resolveBeard` clamps it to the
-chin's height above the floor. Status: the controls are validated and
-resolved, but the coat and cards still draw each style's fixed lengths
-(`BEARD_LENGTHS`, `FULL_BEARD_CARD_LENGTH`); drawing the resolved beard is the
-next step of issue #14. The use cases decided it: a close-up portrait
+chin's height above the floor. The coat is the beard's dense base:
+each part's coat length is the shorter of the style's base (`BEARD_LENGTHS`)
+and the resolved part length, so a shorter `length` trims it and a longer one
+is left to the cards. Status: the cards still draw one fixed length
+(`FULL_BEARD_CARD_LENGTH`); drawing the resolved length, volume, grey, fork and
+part with cards is the next step of issue #14. The use cases decided it: a close-up portrait
 needs the style legible at a glance (cards), a beard growing during play
 needs one continuous length (no per-length pack), painted miniatures need a
 closed solid mass (no fur shader), and a character colour needs the grey
