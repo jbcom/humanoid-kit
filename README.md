@@ -197,8 +197,12 @@ enforced in code:
   assets from its core.
 - A recipe under 18 that sets any adult anatomy modifier throws
   `AgePolicyError` when it is evaluated. It is never silently clamped.
+- Under 18 the policy also refuses pubic body hair, any piercing at a site that
+  is not one of the body's own, and the `arousal` skin-state signal. Axillary,
+  facial and limb hair follow puberty and are not restricted.
 - `withAge(recipe, age)` returns a copy at a new age. Moving below 18 removes the
-  adult anatomy values explicitly; the original is untouched.
+  adult anatomy values, pubic hair and adult piercing sites explicitly; the
+  original is untouched.
 - The loader refuses an adult anatomy pack unless it records the SHA-256 of the
   exact body pack it is loaded with (`bodySha256`).
 

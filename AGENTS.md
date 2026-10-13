@@ -52,14 +52,19 @@ covers what isn't obvious from reading the code alone.
 Full detail in `docs/ARCHITECTURE.md`.
 
 1. Every figure is the single hm08 base mesh. Do not add a second mesh, a second
-   rig or per-species geometry.
+   rig or per-species geometry. The adult pack's refined pelvic surface refines
+   the base's own faces, keeps the base's vertices and is evaluated only for an
+   adult; whether that needs a recorded exception is an open owner question
+   (issue 52).
 2. The age policy lives in `src/recipe/agePolicy.ts` and is enforced inside
    `recipeContributions`, so no caller can evaluate an invalid recipe. The body
    follows MakeHuman at every age it models, breast development and nipples
    included. The one gate is the adult pack: under 18, adult-only modifiers throw
    `AgePolicyError`; they are never clamped. `withAge` strips adult-only values
    explicitly. Keep `ADULT_ONLY_MODIFIER` in step with the packer's
-   `isAdultOnlyTarget`; `tests/agePolicy.test.ts` checks they agree. See
+   `isAdultPackTarget`; `tests/agePolicy.test.ts` checks they agree. The same
+   policy also refuses, under 18, pubic body hair, any piercing site that is not
+   one of the body's own, and the `arousal` skin-state signal. See
    `docs/DECISIONS.md` rulings 3 and 4.
 3. Adult-only targets and modifiers ship only in `humanoid-kit-adult-anatomy`,
    never in the body pack. The loader refuses an adult pack whose `topology` or
@@ -67,7 +72,10 @@ Full detail in `docs/ARCHITECTURE.md`.
    must never include the adult pack; `pnpm check:pages` scans built output for
    its files, package name, target names and modifier names.
 4. Regional traits stay independent. A regional macro override changes only its
-   region's weights; no trait may lock, clamp or rescale another.
+   region's weights; no trait may lock, clamp or rescale another. This is
+   currently violated by the breast weighting (`1 - gender` in
+   `macroTargetWeights`) and by gender-scaled areola and nipple sizes; issue 27
+   tracks it, and `docs/DECISIONS.md` ruling 1 says to remove them.
 5. The core (`src/format`, `src/morph`, `src/subdiv`, `src/recipe`,
    `src/makehuman`, `src/model`, `src/build`) imports no React, no DOM and no
    WebGL, so it stays unit-testable in Node.

@@ -95,7 +95,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 - [ ] F2 #49 Length-constant classes; rename the head-width normaliser.
 - [x] F3 #50 README, llms.txt and introduction describe shipped features as unimplemented.
 - [x] F4 #51 Reconcile package and modifier counts; NOTICE for eyes and animations packs.
-- [ ] F5 #52 Invariants and age-policy wording match the code.
+- [ ] F5 #52 Invariants and age-policy wording match the code. Items 1, 3, 4 done; item 2 (invariant 1 versus the adult refined surface) waits on the owner (`needs-decision`).
 - [ ] F6 #53 Record maintainer rulings and land research docs.
 - [ ] F7 #54 Track or drop untracked roadmap items; settle adult animation package scope.
 - [ ] F8 #56 Minor docs cleanups.
