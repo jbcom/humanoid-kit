@@ -749,9 +749,9 @@ attachment render vertex the feature of the first base vertex it is bound to
 
 The creator was written as the library's demo and was uncontrolled: it owned the
 figure, told the host after the fact, and had no way to say no. Its first
-in-house consumer, Anyself, embeds it under rules of its own (an age floor of 25,
-ranges for the macros, controls it does not offer, no uncovered figure without an
-explicit 18+ confirmation, its own eye pack, a themed stage) and met the limit
+in-house consumer embeds it under rules of its own (an age floor, ranges for the
+macros, controls it does not offer, no uncovered figure without an explicit
+confirmation, its own eye pack, a themed stage) and met the limit
 at once: to refuse a change it remounted the creator with the previous recipe, so
 the figure it had refused existed, briefly, inside the creator, and was drawn.
 Four issues came out of that (jbcom/humanoid-kit #16 to #19). This section is the
@@ -824,11 +824,12 @@ person, and it is asked before the figure is drawn, not instead of the figure).
 
 ### The cover policy (design, 2026-10-11)
 
-Anyself shows no figure uncovered without an explicit 18+ confirmation, and none
-under 25. The library's own age policy is a different, narrower rule (no adult
-anatomy under 18, enforced inside evaluation, `docs/AGE-POLICY.md`) and stays as
-it is. What the host asks for here is a gate it controls, in front of the
-worker: **no uncovered figure is evaluated until the host allows it.** Before this
+A host may show no figure uncovered without an explicit confirmation from the
+person. The kit adds no restriction beyond MakeHuman's (`docs/DECISIONS.md`,
+rulings 3 and 6), so the policy is the host's and there is none by default. The
+library's own age policy is a different, narrower rule (no adult anatomy under
+18, enforced inside evaluation, `docs/AGE-POLICY.md`) and stays as it is. What
+the host asks for here is a gate it controls, in front of the worker: **no uncovered figure is evaluated until the host allows it.** Before this
 the creator drew whatever the recipe said, and the host could only re-dress the
 figure after it had been evaluated and shown.
 
