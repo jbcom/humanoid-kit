@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AUTHORED_STYLES } from "../scripts/lib/hairCards/index.ts";
-import { parseHumanoidAssets } from "../src/format/assetFormat.ts";
+import { parseHumanoidAssets, SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { RecipeError } from "../src/makehuman/recipeMorph.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { MorphError } from "../src/morph/evaluate.ts";
@@ -131,8 +131,8 @@ describe("hair topology", () => {
     expect(t.tags).toEqual(entry?.tags);
     expect(t.strand).toEqual(entry?.strand);
     expect(t.material.backfaceCull).toBe(false);
-    expect(t.skinIndex.length).toBe(t.vertexCount * 4);
-    expect(t.skinWeight.length).toBe(t.vertexCount * 4);
+    expect(t.skinIndex.length).toBe(t.vertexCount * SKIN_INFLUENCES);
+    expect(t.skinWeight.length).toBe(t.vertexCount * SKIN_INFLUENCES);
     expect(t.uvs.length).toBe(t.vertexCount * 2);
   });
 

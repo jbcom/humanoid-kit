@@ -23,17 +23,9 @@
  *
  * All three depend only on the packs, so they are measured once, here.
  */
-import {
-  BufferAttribute,
-  BufferGeometry,
-  DoubleSide,
-  Line3,
-  Ray,
-  Sphere,
-  Triangle,
-  Vector3,
-} from "three";
-import { MeshBVH } from "three-mesh-bvh";
+import { DoubleSide, Line3, Ray, Sphere, Triangle, Vector3 } from "three";
+import type { MeshBVH } from "three-mesh-bvh";
+import { meshBvh } from "./meshBvh.ts";
 
 /** Growth is stored as unsigned 16-bit steps of 1 / `GROWTH_SCALE` metre (6.5 m of hair at most). */
 export const GROWTH_SCALE = 10_000;
@@ -97,7 +89,7 @@ export function scalpShade(
   positions: Float32Array,
   body: { positions: Float32Array; triangles: Uint32Array },
 ): Float32Array {
-  const bvh = new MeshBVH(geometry(body.positions, body.triangles), { verbose: false });
+  const bvh = meshBvh(body.positions, body.triangles);
   const target = { point: new Vector3(), distance: 0, faceIndex: 0 };
   const p = new Vector3();
   const out = new Float32Array(positions.length / 3);
@@ -263,13 +255,6 @@ const smoothstep = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-function geometry(positions: Float32Array, index: Uint32Array): BufferGeometry {
-  const g = new BufferGeometry();
-  g.setAttribute("position", new BufferAttribute(positions, 3));
-  g.setIndex(new BufferAttribute(index, 1));
-  return g;
-}
-
 /** A binary min-heap of [priority, vertex] pairs. */
 class Heap {
   private readonly keys: number[] = [];
@@ -433,7 +418,7 @@ export function hairFields(input: HairFieldsInput): HairFields {
     }
 
   // How close each card vertex is to the body.
-  const bodyBvh = new MeshBVH(geometry(body.positions, body.triangles), { verbose: false });
+  const bodyBvh = meshBvh(body.positions, body.triangles);
   const nearBody = new Float64Array(n);
   const target = { point: new Vector3(), distance: 0, faceIndex: 0 };
   for (let v = 0; v < n; v++)
@@ -505,7 +490,8 @@ export function hairFields(input: HairFieldsInput): HairFields {
     const q = [0, 1, 2, 3].map((k) => faceVerts[f * 4 + k] as number);
     cards.set([q[0], q[1], q[2], q[0], q[2], q[3]] as number[], f * 6);
   }
-  const cardBvh = new MeshBVH(geometry(positions, cards), { verbose: false });
+  // Its hits name a triangle in `cards`' own order, so triangle 2f + h is half h of quad f.
+  const cardBvh = meshBvh(positions, cards);
   const bodyCount = body.positions.length / 3;
   const bodyDensity = new Float64Array(bodyCount);
   // Each body vertex's outward normal: its triangles' area-weighted normals.
@@ -643,10 +629,7 @@ export function hairFields(input: HairFieldsInput): HairFields {
   }
   const pieceBvh = new Map<number, MeshBVH>();
   for (const [piece, tris] of pieces)
-    pieceBvh.set(
-      piece,
-      new MeshBVH(geometry(positions, Uint32Array.from(tris)), { verbose: false }),
-    );
+    pieceBvh.set(piece, meshBvh(positions, Uint32Array.from(tris)));
   // Each card's boundary edges, to tell a spot well inside it from one at its rim.
   const rim = new Map<number, [Vector3, Vector3][]>();
   for (const [key, count] of uses)
@@ -685,10 +668,7 @@ export function hairFields(input: HairFieldsInput): HairFields {
         body.triangles[t + 1] as number,
         body.triangles[t + 2] as number,
       );
-  const bareBvh =
-    bare.length > 0
-      ? new MeshBVH(geometry(body.positions, Uint32Array.from(bare)), { verbose: false })
-      : null;
+  const bareBvh = bare.length > 0 ? meshBvh(body.positions, Uint32Array.from(bare)) : null;
   const bordersBare = (v: number) =>
     (bareBvh?.closestPointToPoint(at(v), target)?.distance ?? Number.POSITIVE_INFINITY) < BARE_NEAR;
   const hairline: number[] = [];

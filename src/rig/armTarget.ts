@@ -538,12 +538,15 @@ function setLimitedLocal(
   candidate: Quat,
   limit: ArmJointLimit,
 ): void {
-  const base = quatAt(source, bone);
-  const delta = mul(candidate, conjugate(base));
+  // `posedBones` and `rotate` assume unit rotations, and the slerp clamp below
+  // amplifies any norm error, so a drifted candidate would scale every child
+  // offset and the solver would steer a stretched rigid arm, not the skinned one.
+  const base = normalizeQuat(quatAt(source, bone));
+  const unit = normalizeQuat(candidate);
+  const delta = mul(unit, conjugate(base));
   const angle = quaternionAngle(delta, IDENTITY);
-  const allowed =
-    angle <= limit.maxRadians ? candidate : slerp(base, candidate, limit.maxRadians / angle);
-  out.set(allowed, bone * 4);
+  const allowed = angle <= limit.maxRadians ? unit : slerp(base, unit, limit.maxRadians / angle);
+  out.set(normalizeQuat(allowed), bone * 4);
 }
 
 function quaternionAngle(a: Quat, b: Quat): number {

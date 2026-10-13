@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupFaces, jointPosition } from "../src/format/assetFormat.ts";
+import { groupFaces, jointPosition, SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { labFromLinear } from "../src/surface/cielab.ts";
 import {
   applyLayers,
@@ -189,9 +189,9 @@ describe("where flush and pallor show", () => {
   })();
   const weight = (v: number, re: RegExp) => {
     let s = 0;
-    for (let k = 0; k < 4; k++)
-      if (re.test(bones[assets.skinIndex[v * 4 + k] as number]?.name ?? ""))
-        s += assets.skinWeight[v * 4 + k] as number;
+    for (let k = 0; k < SKIN_INFLUENCES; k++)
+      if (re.test(bones[assets.skinIndex[v * SKIN_INFLUENCES + k] as number]?.name ?? ""))
+        s += assets.skinWeight[v * SKIN_INFLUENCES + k] as number;
     return s;
   };
   const where = (re: RegExp, min = 0.95) => skin.filter((v) => weight(v, re) >= min);

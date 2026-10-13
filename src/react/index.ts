@@ -2,7 +2,14 @@ export type { AffordanceSpace, Capsule, LiveFigure } from "../affordance/live.ts
 export { applyGarmentWear } from "../render/attachmentLook.ts";
 export type { BodyArtImages } from "../render/bodyArtTexture.ts";
 export { ChannelClip, CLIP_CHANNELS, clipMaterial } from "../render/channelClip.ts";
-export { applyDualSkinning, DualBones, foldSlotAttribute } from "../render/dualSkinning.ts";
+export {
+  applyDualSkinning,
+  DualBones,
+  ensureSkinPlaces,
+  foldSlotAttribute,
+  readSkinAttributes,
+  setSkinAttributes,
+} from "../render/dualSkinning.ts";
 export {
   MiniatureCrowd,
   type MiniatureCrowdOptions,

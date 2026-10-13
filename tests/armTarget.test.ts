@@ -173,14 +173,22 @@ function elbowSide(
     target[1] - root[1],
     target[2] - root[2],
   ];
-  const b: [number, number, number] = [elbow[0] - root[0], elbow[1] - root[1], elbow[2] - root[2]];
-  const c: [number, number, number] = [pole[0] - root[0], pole[1] - root[1], pole[2] - root[2]];
-  const cross: [number, number, number] = [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ];
-  return cross[0] * c[0] + cross[1] * c[1] + cross[2] * c[2];
+  // Positive when the elbow's offset from the shoulder-to-target line points
+  // toward the pole's. A triple product (a × elbow) · pole would instead measure
+  // the elbow's distance out of the pole's plane, which a solved pole drives to
+  // zero, so its sign would be float noise exactly when the solve is right.
+  const perp = (point: readonly number[]): [number, number, number] => {
+    const v = [
+      (point[0] as number) - root[0],
+      (point[1] as number) - root[1],
+      (point[2] as number) - root[2],
+    ] as const;
+    const along = (v[0] * a[0] + v[1] * a[1] + v[2] * a[2]) / (a[0] ** 2 + a[1] ** 2 + a[2] ** 2);
+    return [v[0] - a[0] * along, v[1] - a[1] * along, v[2] - a[2] * along];
+  };
+  const b = perp(elbow);
+  const c = perp(pole);
+  return b[0] * c[0] + b[1] * c[1] + b[2] * c[2];
 }
 
 describe("arm target constraints", { timeout: 300_000 }, () => {
@@ -533,9 +541,11 @@ describe("arm target constraints", { timeout: 300_000 }, () => {
     const b = solveActualHand({ ...fixture, target: targetB, pole });
     expect(a.status, JSON.stringify({ distance: a.distance })).toBe("reached");
     expect(b.status, JSON.stringify({ distance: b.distance })).toBe("reached");
-    expect(Math.sign(elbowSide(fixture.rest, a.rotations, chain, targetA, pole))).toBe(
-      Math.sign(elbowSide(fixture.rest, b.rotations, chain, targetB, pole)),
-    );
+    const sideA = elbowSide(fixture.rest, a.rotations, chain, targetA, pole);
+    const sideB = elbowSide(fixture.rest, b.rotations, chain, targetB, pole);
+    expect(sideA).toBeGreaterThan(0);
+    expect(sideB).toBeGreaterThan(0);
+    expect(Math.sign(sideA)).toBe(Math.sign(sideB));
   });
 
   it("keeps contact when an antipodal pole reverses the elbow side", () => {

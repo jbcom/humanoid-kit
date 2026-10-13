@@ -6,6 +6,8 @@
  *
  * Core code: arrays in, arrays out, no rendering.
  */
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
+import { addInfluences, writeStrongest } from "../rig/influences.ts";
 import { rotate, type Similarity, similarityFit } from "./fit.ts";
 import {
   arcParams,
@@ -218,7 +220,7 @@ function addTriangleNormals(
   }
 }
 
-/** Merges two four-bone skins, `a` weighted 1 - t and `b` weighted t, keeping the four largest, renormalised. */
+/** Merges two vertices' skins (one vertex's places each), `a` weighted 1 - t and `b` weighted t, into vertex `o` of the out arrays. */
 function blendSkin(
   ai: ArrayLike<number>,
   aw: ArrayLike<number>,
@@ -230,19 +232,9 @@ function blendSkin(
   o: number,
 ): void {
   const m = new Map<number, number>();
-  for (let k = 0; k < 4; k++) {
-    const wa = (aw[k] as number) * (1 - t);
-    if (wa > 0) m.set(ai[k] as number, (m.get(ai[k] as number) ?? 0) + wa);
-    const wb = (bw[k] as number) * t;
-    if (wb > 0) m.set(bi[k] as number, (m.get(bi[k] as number) ?? 0) + wb);
-  }
-  const top = [...m].sort((x, y) => y[1] - x[1] || x[0] - y[0]).slice(0, 4);
-  const sum = top.reduce((s, [, w]) => s + w, 0) || 1;
-  for (let k = 0; k < 4; k++) {
-    const e = top[k];
-    outI[o * 4 + k] = e ? e[0] : 0;
-    outW[o * 4 + k] = e ? e[1] / sum : 0;
-  }
+  addInfluences(m, ai, aw, 0, 1 - t);
+  addInfluences(m, bi, bw, 0, t);
+  writeStrongest(m, outI, outW, o * SKIN_INFLUENCES);
 }
 
 /** Rounds of `smoothPartSkin`: enough to settle a jump between two neighbours, too few to blur the skin. */
@@ -271,12 +263,10 @@ function smoothPartSkin(
       (adj.get(a) ?? adj.set(a, new Set()).get(a))?.add(b);
       (adj.get(b) ?? adj.set(b, new Set()).get(b))?.add(a);
     }
+  const I = SKIN_INFLUENCES;
   const skinOf = (v: number) => {
     const m = new Map<number, number>();
-    for (let q = 0; q < 4; q++) {
-      const w = skinWeight[(partStart + v) * 4 + q] as number;
-      if (w > 0) m.set(skinIndex[(partStart + v) * 4 + q] as number, w);
-    }
+    addInfluences(m, skinIndex, skinWeight, partStart + v);
     return m;
   };
   const welded = [...adj.keys()];
@@ -289,27 +279,19 @@ function smoothPartSkin(
       for (const u of ns) for (const [b, w] of skinOf(u)) m.set(b, (m.get(b) ?? 0) + w);
       next.set(v, m);
     }
-    for (const [v, m] of next) {
-      const top = [...m].sort((x, y) => y[1] - x[1] || x[0] - y[0]).slice(0, 4);
-      const sum = top.reduce((s, [, w]) => s + w, 0) || 1;
-      for (let k = 0; k < 4; k++) {
-        const e = top[k];
-        skinIndex[(partStart + v) * 4 + k] = e ? e[0] : 0;
-        skinWeight[(partStart + v) * 4 + k] = e ? e[1] / sum : 0;
-      }
-    }
+    for (const [v, m] of next) writeStrongest(m, skinIndex, skinWeight, (partStart + v) * I);
   }
   // A vertex a UV seam split takes its welded twin's skin.
   for (let v = 0; v < weld.length; v++) {
     const w = weld[v] as number;
     if (w === v) continue;
     skinIndex.set(
-      skinIndex.subarray((partStart + w) * 4, (partStart + w) * 4 + 4),
-      (partStart + v) * 4,
+      skinIndex.subarray((partStart + w) * I, (partStart + w) * I + I),
+      (partStart + v) * I,
     );
     skinWeight.set(
-      skinWeight.subarray((partStart + w) * 4, (partStart + w) * 4 + 4),
-      (partStart + v) * 4,
+      skinWeight.subarray((partStart + w) * I, (partStart + w) * I + I),
+      (partStart + v) * I,
     );
   }
 }
@@ -383,22 +365,15 @@ function removedSkin(
     const m = new Map<number, number>();
     for (const [d2, v] of near) {
       const w = 1 / (d2 + 1e-12);
-      for (let q = 0; q < 4; q++) {
-        let b = body.skinIndex[v * 4 + q] as number;
-        const bw = (body.skinWeight[v * 4 + q] as number) * w;
+      for (let q = 0; q < SKIN_INFLUENCES; q++) {
+        let b = body.skinIndex[v * SKIN_INFLUENCES + q] as number;
+        const bw = (body.skinWeight[v * SKIN_INFLUENCES + q] as number) * w;
         if (bw <= 0) continue;
         if (inside.has(b)) b = cut.rootBone;
         m.set(b, (m.get(b) ?? 0) + bw);
       }
     }
-    const top = [...m].sort((x, y) => y[1] - x[1] || x[0] - y[0]).slice(0, 4);
-    const sum = top.reduce((s, [, w]) => s + w, 0) || 1;
-    for (let k = 0; k < 4; k++) {
-      const e = top[k];
-      outI[k] = e ? e[0] : cut.rootBone;
-      outW[k] = e ? e[1] / sum : 0;
-    }
-    if (top.length === 0) outW[0] = 1;
+    if (writeStrongest(m, outI, outW, 0, cut.rootBone) === 0) outW[0] = 1;
   };
 }
 
@@ -790,10 +765,11 @@ export function buildGraft(
   // Skin (docs/GRAFT.md, "Rig binding"): the body's own; the part inherits the
   // skin of the body it replaces, nearest it at rest; the band blends the loop's
   // into the part's.
-  const skinIndex = new Uint16Array(vertexCount * 4);
-  const skinWeight = new Float32Array(vertexCount * 4);
-  skinIndex.set(body.skinIndex.subarray(0, bodyCount * 4));
-  skinWeight.set(body.skinWeight.subarray(0, bodyCount * 4));
+  const I = SKIN_INFLUENCES;
+  const skinIndex = new Uint16Array(vertexCount * I);
+  const skinWeight = new Float32Array(vertexCount * I);
+  skinIndex.set(body.skinIndex.subarray(0, bodyCount * I));
+  skinWeight.set(body.skinWeight.subarray(0, bodyCount * I));
   const restLoop = loopPoints(B.loop, body.restPositions);
   /** The loop's skin at arc parameter `t`, between the two loop vertices round it. */
   const loopSkin = (t: number, mi: Uint16Array, mw: Float32Array) => {
@@ -805,10 +781,10 @@ export function buildGraft(
     const va = B.loop[j] as number;
     const vb = B.loop[j1] as number;
     blendSkin(
-      body.skinIndex.subarray(va * 4, va * 4 + 4),
-      body.skinWeight.subarray(va * 4, va * 4 + 4),
-      body.skinIndex.subarray(vb * 4, vb * 4 + 4),
-      body.skinWeight.subarray(vb * 4, vb * 4 + 4),
+      body.skinIndex.subarray(va * I, va * I + I),
+      body.skinWeight.subarray(va * I, va * I + I),
+      body.skinIndex.subarray(vb * I, vb * I + I),
+      body.skinWeight.subarray(vb * I, vb * I + I),
       tk > tj ? (t - tj) / (tk - tj) : 0,
       mi,
       mw,
@@ -840,10 +816,10 @@ export function buildGraft(
     ];
   };
   const inherit = removedSkin(body, cut, start);
-  const mi = new Uint16Array(4);
-  const mw = new Float32Array(4);
-  const ri = new Uint16Array(4);
-  const rw = new Float32Array(4);
+  const mi = new Uint16Array(I);
+  const mw = new Float32Array(I);
+  const ri = new Uint16Array(I);
+  const rw = new Float32Array(I);
   for (let k = 1; k < R; k++)
     for (let i = 0; i < N; i++) {
       loopSkin(ringParams[i] as number, mi, mw);
@@ -867,8 +843,8 @@ export function buildGraft(
   for (let v = 0; v < P.n; v++) {
     const w = P.weld[v] as number;
     inherit(atRest(at3(restPart, w)), rotate(restFit.rotation, at3(partNormalsRest, w)), ri, rw);
-    skinIndex.set(ri, (partStart + v) * 4);
-    skinWeight.set(rw, (partStart + v) * 4);
+    skinIndex.set(ri, (partStart + v) * I);
+    skinWeight.set(rw, (partStart + v) * I);
   }
   smoothPartSkin(P.triangles, P.weld, new Set(P.rim), partStart, skinIndex, skinWeight);
   const topology: GraftTopology = {

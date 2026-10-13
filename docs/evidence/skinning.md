@@ -105,22 +105,36 @@ Worst body of five (the four above and a child) at the angle shown; girth is the
 5th percentile over the joint's vertices of their distance to the limb's
 centreline, posed over rest (1 is clean, 0 the collapsed neck of a candy
 wrapper); ΔV is the change in the whole body's volume in thousandths of it
-(1‰ is about 55 mL of an adult):
+(1‰ is about 55 mL of an adult). Re-measured on 2026-10-13 with the pack's
+eight influences a vertex (issue #67; the first run kept four, and the sheets
+above are from that run):
 
 | Case | Linear: girth / ΔV | Shipped: girth / ΔV |
 | --- | --- | --- |
 | forearm twisted 135° | 0.87 / −1.2‰ | 0.94 / −0.6‰ |
-| upper arm twisted 135° | 0.52 / −13.8‰ | 0.88 / −6.8‰ |
-| thigh twisted 90° | 0.72 / −34.1‰ | 0.83 / −13.9‰ |
-| arm raised forward 130° | 0.41 / −19.4‰ | 0.53 / −10.5‰ |
-| arm raised sideways 130° | 0.48 / −9.6‰ | 0.67 / −4.6‰ |
-| arm raised forward 170° | 0.17 / −24.1‰ | 0.41 / −14.6‰ |
-| arm raised sideways 170° | 0.28 / −8.0‰ | 0.63 / −1.2‰ |
-| hip flexed 120° | 0.30 / −35.2‰ | 0.36 / −24.0‰ |
-| spine folded forward 90° | 0.88 / −72.6‰ | 0.88 / −71.3‰ |
-| hip abducted 45° | 0.70 / −17.1‰ | 0.73 / −15.6‰ |
-| knee flexed 120° | 0.22 / −6.4‰ | 0.22 / −6.4‰ |
+| upper arm twisted 135° | 0.51 / −14.0‰ | 0.87 / −7.3‰ |
+| thigh twisted 90° | 0.71 / −36.2‰ | 0.83 / −15.5‰ |
+| arm raised forward 130° | 0.40 / −21.0‰ | 0.50 / −11.5‰ |
+| arm raised sideways 130° | 0.50 / −9.2‰ | 0.66 / −4.6‰ |
+| arm raised forward 170° | 0.18 / −25.9‰ | 0.41 / −15.3‰ |
+| arm raised sideways 170° | 0.28 / −8.1‰ | 0.61 / +5.0‰ |
+| hip flexed 120° | 0.28 / −37.7‰ | 0.34 / −25.5‰ |
+| spine folded forward 90° | 0.88 / −73.3‰ | 0.88 / −71.7‰ |
+| hip abducted 45° | 0.70 / −17.0‰ | 0.72 / −15.7‰ |
+| knee flexed 120° | 0.23 / −6.4‰ | 0.23 / −6.4‰ |
 | elbow flexed 120° | 0.33 / −3.8‰ | 0.31 / −3.9‰ |
+
+## The shoulder cap under a raised arm (issue #67)
+
+The four strongest influences a vertex, which the pack kept until 2026-10-13,
+dropped the rest of MakeHuman's weights; 3,665 vertices have five or more. On
+the shoulder cap, between the clavicle and the deltoid, the dropped weights
+left neighbouring vertices following different bones, and an arm raised
+overhead tore a flat step there with a notch at its top. The pack now keeps
+eight (`SKIN_INFLUENCES`), and the `overhead` pose shares its raise along the
+clavicle, shoulder and upper arm as MakeHuman's benchmark does. The measure is
+the crease, the gain over rest of the angle between adjacent faces on the cap
+(`tests/shoulderSkin.test.ts`); the before and after sheets are on the issue.
 
 ## What is not fixed, and what needs no fix
 

@@ -4,6 +4,7 @@
  * to where its binding put it, so the body's shape places it and never bends
  * it. Pure.
  */
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
 
 /** A rotation (unit quaternion w, x, y, z) and translation that carry one point set onto another. */
 export interface RigidFit {
@@ -173,12 +174,12 @@ export function rigidSkin(skin: { index: Uint8Array; weight: Float32Array }): {
   let bone = 0;
   let most = -1;
   for (const [b, w] of total) if (w > most || (w === most && b < bone)) [bone, most] = [b, w];
-  const n = skin.weight.length / 4;
-  const index = new Uint8Array(n * 4);
-  const weight = new Float32Array(n * 4);
+  const n = skin.weight.length / SKIN_INFLUENCES;
+  const index = new Uint8Array(n * SKIN_INFLUENCES);
+  const weight = new Float32Array(n * SKIN_INFLUENCES);
   for (let v = 0; v < n; v++) {
-    index[v * 4] = bone;
-    weight[v * 4] = 1;
+    index[v * SKIN_INFLUENCES] = bone;
+    weight[v * SKIN_INFLUENCES] = 1;
   }
   return { index, weight };
 }

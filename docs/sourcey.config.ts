@@ -71,12 +71,27 @@ export default defineConfig({
             },
             {
               group: "Reference",
-              pages: ["API", "ARCHITECTURE"],
+              pages: ["API", "ARCHITECTURE", "AGE-POLICY", "DECISIONS"],
+            },
+            {
+              group: "Design",
+              pages: [
+                "FOUNDATION",
+                "GRAFT",
+                "MINIATURES",
+                "PRESENCE",
+                "INTERACTIONS",
+                "INTERACTION-SESSION",
+                "REGIONAL-CONTACTS",
+              ],
             },
             {
               group: "Project",
-              pages: ["contributing", "licence-history", "release-history"],
+              pages: ["contributing", "CI", "licence-history", "release-history"],
             },
+            // `docs/evidence/` and `docs/research/` are working records (renders,
+            // measurements, diagnoses) read in the repository, and are
+            // deliberately not routed on the site.
           ],
         }),
       },
