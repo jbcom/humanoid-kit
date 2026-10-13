@@ -43,7 +43,7 @@ describe("the clothing pack", () => {
       ].sort(),
     );
     expect(COMMUNITY_GARMENTS).toHaveLength(68);
-    expect(assets.garmentsPending).toBe(false);
+    expect(assets.pendingGarmentPacks.size).toBe(0);
   });
 
   it("ships a community garment only on a page that states CC0, read and recorded", () => {
@@ -156,14 +156,14 @@ describe("parsing a clothing pack", () => {
       undefined,
       clothingPackData(false) as { manifest: ClothingManifest },
     );
-    expect(assets.garmentsPending).toBe(true);
+    expect([...assets.pendingGarmentPacks]).toEqual([0]);
     expect(assets.garments.size).toBe(0);
-    expect(assets.clothingManifest).toBe(clothingManifest);
+    expect(assets.clothingManifests).toEqual([clothingManifest]);
     const { garments } = clothingPackData();
-    addGarments(assets, garments as ArrayBuffer);
-    expect(assets.garmentsPending).toBe(false);
+    addGarments(assets, 0, garments as ArrayBuffer);
+    expect(assets.pendingGarmentPacks.size).toBe(0);
     expect(assets.garments.size).toBe(clothingManifest.garments.entries.length);
-    expect(() => addGarments(assets, garments as ArrayBuffer)).toThrow(/already loaded/);
+    expect(() => addGarments(assets, 0, garments as ArrayBuffer)).toThrow(/already loaded/);
   });
 
   it("changes nothing when a garment does not check", () => {
@@ -173,18 +173,18 @@ describe("parsing a clothing pack", () => {
       clothingPackData(false) as { manifest: ClothingManifest },
     );
     const { garments } = clothingPackData();
-    expect(() => addGarments(assets, (garments as ArrayBuffer).slice(0, 1000))).toThrow(
+    expect(() => addGarments(assets, 0, (garments as ArrayBuffer).slice(0, 1000))).toThrow(
       AssetFormatError,
     );
-    expect(assets.garmentsPending).toBe(true);
+    expect([...assets.pendingGarmentPacks]).toEqual([0]);
     expect(assets.garments.size).toBe(0);
   });
 
   it("refuses garments added to assets with no clothing pack", () => {
     const assets = parseHumanoidAssets(bodyPackData());
-    expect(assets.clothingManifest).toBeNull();
-    expect(assets.garmentsPending).toBe(false);
-    expect(() => addGarments(assets, new ArrayBuffer(0))).toThrow(/no clothing pack/);
+    expect(assets.clothingManifests).toEqual([]);
+    expect(assets.pendingGarmentPacks.size).toBe(0);
+    expect(() => addGarments(assets, 0, new ArrayBuffer(0))).toThrow(/no clothing pack/);
   });
 });
 
@@ -198,11 +198,11 @@ describe("loading the clothing pack", { timeout: 60_000 }, () => {
       body: "http://packs/body",
       clothing: "http://packs/clothing",
     });
-    expect(staged.assets.garmentsPending).toBe(true);
+    expect([...staged.assets.pendingGarmentPacks]).toEqual([0]);
     expect(staged.stages.map((s) => s.files).slice(0, 2)).toEqual([["modifiers"], ["garments"]]);
     expect(requested.some((u) => u.endsWith("garments.bin.gz"))).toBe(false);
     await staged.complete;
-    expect(staged.assets.garmentsPending).toBe(false);
+    expect(staged.assets.pendingGarmentPacks.size).toBe(0);
     expect(staged.assets.garments.size).toBe(19 + COMMUNITY_GARMENTS.length);
     // Texture URLs resolve against the clothing pack, for the renderer to load.
     const url = staged.assets.fileUrls.get("hats_fedora01_fedora_diffuse.webp");
@@ -213,7 +213,7 @@ describe("loading the clothing pack", { timeout: 60_000 }, () => {
     stubFetch();
     const staged = await loadHumanoidAssetsStaged({ body: "http://packs/body" });
     expect(staged.stages.flatMap((s) => s.files)).not.toContain("garments");
-    expect(staged.assets.garmentsPending).toBe(false);
+    expect(staged.assets.pendingGarmentPacks.size).toBe(0);
   });
 
   it("reports a failed garments fetch on that stage only", async () => {
@@ -226,7 +226,7 @@ describe("loading the clothing pack", { timeout: 60_000 }, () => {
     await expect(stage("garments")?.loaded).rejects.toThrow(/garments\.bin\.gz failed/);
     await expect(stage("modifiers")?.loaded).resolves.toBe(staged.assets);
     await expect(stage("baby")?.loaded).resolves.toBe(staged.assets);
-    expect(staged.assets.garmentsPending).toBe(true);
+    expect([...staged.assets.pendingGarmentPacks]).toEqual([0]);
   });
 });
 

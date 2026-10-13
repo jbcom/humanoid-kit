@@ -2123,13 +2123,16 @@ export class HumanoidModel {
   private garmentAsset(id: string): BoundGarment {
     const garment = this.assets.garments.get(id);
     if (garment) return garment;
-    if (!this.assets.clothingManifest)
+    const { clothingManifests, pendingGarmentPacks } = this.assets;
+    if (clothingManifests.length === 0)
       throw new OutfitError(`cannot wear ${id}: no clothing pack is loaded`);
-    if (this.assets.garmentsPending)
+    // The manifests list every garment before its pack's binary arrives.
+    const pack = clothingManifests.findIndex((m) => m.garments.entries.some((g) => g.id === id));
+    if (pack >= 0 && pendingGarmentPacks.has(pack))
       throw new OutfitError(
         `cannot wear ${id}: the garments have not loaded yet (await their stage of loadHumanoidAssetsStaged)`,
       );
-    throw new OutfitError(`the clothing pack has no garment ${id}`);
+    throw new OutfitError(`no clothing pack has a garment ${id}`);
   }
 
   /** A garment's surface and scratch space, built on first use. */

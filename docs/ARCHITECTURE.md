@@ -107,8 +107,9 @@ one specific base mesh.
 The clothing pack's garments binary is large next to the first figure (2.3 MB
 of bindings and meshes), and a figure that wears nothing never needs it, so it
 loads as a stage of its own, after the body's modifier targets
-(`GARMENTS_FILE`); its manifest, which lists the garments and names their
-textures, arrives with the first stage. A garment is an attachment without
+(`garmentsFile(i)`, every loaded clothing pack's binary in the one stage); its
+manifest, which lists the garments and names their textures, arrives with the
+first stage. A garment is an attachment without
 baked occlusion: the same bindings (three base vertices, weights and an offset
 per vertex, per-axis scale references) and mesh, plus `delete_verts`, a
 category (`kind`, below) and the asset's tags. The packer

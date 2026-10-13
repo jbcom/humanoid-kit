@@ -68,8 +68,13 @@ export const BODY_TARGET_FILES = ["core", "baby", "child", "young", "old", "modi
 export type BodyTargetFileId = (typeof BODY_TARGET_FILES)[number];
 /** The adult anatomy pack's one target file. */
 export const ADULT_TARGET_FILE = "adult";
-/** The id of the clothing pack's garments binary among a staged load's files. */
-export const GARMENTS_FILE = "garments";
+/**
+ * The id of clothing pack `pack`'s garments binary among a staged load's files
+ * (`garments` for the first, `garments.1` for the second, ...).
+ */
+export function garmentsFile(pack: number): string {
+  return pack === 0 ? "garments" : `garments.${pack}`;
+}
 
 export interface TargetFile {
   /** A `BodyTargetFileId` in a body pack, `ADULT_TARGET_FILE` in the adult pack. */
@@ -684,14 +689,15 @@ export interface HumanoidAssets {
   /** The hair pack, when one was loaded. */
   hair: HairAssets | null;
   /**
-   * The clothing pack's garments by id; empty without that pack and until its
-   * binary has arrived (`garmentsPending`). The manifest lists them earlier.
+   * Every loaded clothing pack's garments by id, ids unique across the packs.
+   * A pack's garments arrive with its binary (`pendingGarmentPacks`); its
+   * manifest lists them earlier.
    */
   garments: Map<string, BoundGarment>;
-  /** The clothing pack's manifest, when that pack was loaded. */
-  clothingManifest: ClothingManifest | null;
-  /** True while the clothing pack is loaded but its garments binary has not arrived. */
-  garmentsPending: boolean;
+  /** The loaded clothing packs' manifests, in load order; empty without one. */
+  clothingManifests: readonly ClothingManifest[];
+  /** The indices into `clothingManifests` of the packs whose garments binary has not arrived. */
+  pendingGarmentPacks: Set<number>;
   /** The body's own cavity occlusion; null for a pack that predates it. */
   bodyOcclusion: BodyOcclusion | null;
   /** URL of each pack file by name (textures included); empty when parsed without URLs. */
@@ -1156,27 +1162,24 @@ export function mergeSliderTasks(...sources: SliderTask[][]): SliderTask[] {
  * Builds typed views over already-fetched packs. Pure; usable in workers and
  * tests. Target files left out of `pack.targets` (and the adult pack's, if
  * its `targets` is left out) are pending, and `addTargetFiles` adds them later.
+ * `clothing` is one clothing pack or a list of them; a pack whose `garments`
+ * is left out stays pending until `addGarments` adds them.
  */
 export function parseHumanoidAssets(
   pack: BodyPackData,
   adultAnatomy?: AdultAnatomyData,
-  clothing?: ClothingPackData,
+  clothing?: ClothingPackData | readonly ClothingPackData[],
   hair?: HairPackData,
 ): HumanoidAssets {
   const { manifest, body, targets } = pack;
   if (manifest.format !== 1 || manifest.kind !== "body")
     throw new AssetFormatError("not a format-1 body pack manifest");
-  if (clothing) {
-    const c = clothing.manifest;
-    if (c.format !== 1 || c.kind !== "clothing")
-      throw new AssetFormatError("not a format-1 clothing manifest");
-    if (c.topology !== manifest.topology || c.bodySha256 !== manifest.body.sha256) {
-      throw new AssetFormatError("the clothing pack was built for a different body pack");
-    }
-    const taken = new Set(manifest.attachments.entries.map((a) => a.id));
-    for (const g of c.garments.entries)
-      if (taken.has(g.id)) throw new AssetFormatError(`garment ${g.id} is also an attachment`);
-  }
+  const clothingPacks: readonly ClothingPackData[] =
+    clothing === undefined ? [] : "manifest" in clothing ? [clothing] : clothing;
+  checkClothingPacks(
+    manifest,
+    clothingPacks.map((c) => c.manifest),
+  );
   const { layout } = manifest.body;
   const positions = view(Float32Array, body, layout.positions, "body positions");
   if (positions.length !== manifest.vertexCount * 3) {
@@ -1234,8 +1237,8 @@ export function parseHumanoidAssets(
     attachments: parseAttachments(manifest, pack.attachments),
     hair: hair ? parseHairPack(manifest, hair) : null,
     garments: new Map(),
-    clothingManifest: clothing?.manifest ?? null,
-    garmentsPending: clothing !== undefined,
+    clothingManifests: clothingPacks.map((c) => c.manifest),
+    pendingGarmentPacks: new Set(clothingPacks.keys()),
     bodyOcclusion: manifest.bodyOcclusion
       ? parseBodyOcclusion(
           manifest.bodyOcclusion,
@@ -1261,22 +1264,55 @@ export function parseHumanoidAssets(
     ...targets,
     ...(adultAnatomy?.targets && { [ADULT_TARGET_FILE]: adultAnatomy.targets }),
   });
-  if (clothing?.garments) addGarments(assets, clothing.garments);
+  clothingPacks.forEach((c, i) => {
+    if (c.garments) addGarments(assets, i, c.garments);
+  });
   return assets;
 }
 
 /**
- * Adds the clothing pack's garments (its decompressed binary) to assets parsed
- * with a clothing manifest. The assets change only if every garment checks, so
+ * Checks clothing manifests against their body pack and each other: each is a
+ * format-1 clothing pack built for this body, and no garment id is taken by an
+ * attachment or by a garment of another pack.
+ */
+function checkClothingPacks(body: BodyManifest, packs: readonly ClothingManifest[]): void {
+  const attachments = new Set(body.attachments.entries.map((a) => a.id));
+  const packOf = new Map<string, number>();
+  packs.forEach((c, i) => {
+    const which = packs.length === 1 ? "the clothing pack" : `clothing pack ${i}`;
+    if (c.format !== 1 || c.kind !== "clothing")
+      throw new AssetFormatError(`${which} is not a format-1 clothing manifest`);
+    if (c.topology !== body.topology || c.bodySha256 !== body.body.sha256)
+      throw new AssetFormatError(`${which} was built for a different body pack`);
+    for (const g of c.garments.entries) {
+      if (attachments.has(g.id))
+        throw new AssetFormatError(`garment ${g.id} is also an attachment`);
+      const other = packOf.get(g.id);
+      if (other !== undefined && other !== i)
+        throw new AssetFormatError(`garment ${g.id} is in clothing packs ${other} and ${i}`);
+      packOf.set(g.id, i);
+    }
+  });
+}
+
+/**
+ * Adds clothing pack `pack`'s garments (its decompressed binary) to assets
+ * parsed with its manifest. The assets change only if every garment checks, so
  * a failed add can be retried.
  */
-export function addGarments(assets: HumanoidAssets, bin: ArrayBuffer): void {
-  const manifest = assets.clothingManifest;
-  if (!manifest) throw new AssetFormatError("no clothing pack is loaded");
-  if (!assets.garmentsPending) throw new AssetFormatError("the garments are already loaded");
+export function addGarments(assets: HumanoidAssets, pack: number, bin: ArrayBuffer): void {
+  const manifest = assets.clothingManifests[pack];
+  if (!manifest)
+    throw new AssetFormatError(
+      assets.clothingManifests.length === 0
+        ? "no clothing pack is loaded"
+        : `there is no clothing pack ${pack}`,
+    );
+  if (!assets.pendingGarmentPacks.has(pack))
+    throw new AssetFormatError(`clothing pack ${pack}'s garments are already loaded`);
   for (const [id, g] of parseGarments(manifest, assets.manifest.vertexCount, bin))
     assets.garments.set(id, g);
-  assets.garmentsPending = false;
+  assets.pendingGarmentPacks.delete(pack);
 }
 
 /** Every target file of a body pack and, if given, an adult anatomy pack. */
@@ -1364,11 +1400,14 @@ export interface LoadOptions {
   /** The adult anatomy pack. Its targets only evaluate for figures aged 18+. */
   adultAnatomy?: PackLocation;
   /**
-   * The clothing pack (`humanoid-kit-clothing`). Its manifest loads with the
-   * first stage, its garments binary in a later one (`GARMENTS_FILE`), so a
-   * figure that wears nothing is never held up by it.
+   * The clothing pack (`humanoid-kit-clothing`), or a list of clothing packs
+   * (the kit's and a consumer's own). Their manifests load with the first
+   * stage and their garments binaries together in a later one
+   * (`garmentsFile(i)` for pack `i`), so a figure that wears nothing is never
+   * held up by them. Garment ids must be unique across the packs, and two
+   * packs must not name one texture file at different URLs.
    */
-  clothing?: PackLocation;
+  clothing?: PackLocation | readonly PackLocation[];
   /**
    * The hair pack. Only its manifest loads up front; each style's geometry and
    * texture are fetched when a figure first wears it (`HairAssets.load`).
@@ -1452,17 +1491,29 @@ export async function loadHumanoidAssetsStaged(
 ): Promise<StagedHumanoidAssets> {
   const body = packResolver(options.body);
   const adult = options.adultAnatomy === undefined ? undefined : packResolver(options.adultAnatomy);
-  const clothing = options.clothing === undefined ? undefined : packResolver(options.clothing);
+  const clothing = (
+    options.clothing === undefined
+      ? []
+      : typeof options.clothing === "string" || "manifest" in options.clothing
+        ? [options.clothing]
+        : options.clothing
+  ).map(packResolver);
   const hairPack = options.hair === undefined ? undefined : packResolver(options.hair);
-  const [manifest, adultManifest, clothingManifest, hairManifest] = await Promise.all([
+  const [manifest, adultManifest, clothingManifests, hairManifest] = await Promise.all([
     fetchOk(body.manifest).then((r) => r.json() as Promise<BodyManifest>),
     adult && fetchOk(adult.manifest).then((r) => r.json() as Promise<AdultAnatomyManifest>),
-    clothing && fetchOk(clothing.manifest).then((r) => r.json() as Promise<ClothingManifest>),
+    Promise.all(
+      clothing.map((c) => fetchOk(c.manifest).then((r) => r.json() as Promise<ClothingManifest>)),
+    ),
     hairPack && fetchOk(hairPack.manifest).then((r) => r.json() as Promise<HairManifest>),
   ]);
+  const garmentFiles = clothing.map((_, i) => garmentsFile(i));
   const urlOf = (id: string): string | null => {
-    if (id === GARMENTS_FILE)
-      return clothing && clothingManifest ? clothing.file(clothingManifest.garments.file) : null;
+    const garmentPack = garmentFiles.indexOf(id);
+    if (garmentPack >= 0) {
+      const m = clothingManifests[garmentPack] as ClothingManifest;
+      return (clothing[garmentPack] as ReturnType<typeof packResolver>).file(m.garments.file);
+    }
     if (id === ADULT_TARGET_FILE)
       return adult && adultManifest ? adult.file(adultManifest.targets.file) : null;
     const f = manifest.targets.find((t) => t.id === id);
@@ -1481,9 +1532,8 @@ export async function loadHumanoidAssetsStaged(
   const [first, ...order] = targetLoadOrder(options.firstFigureAge ?? DEFAULT_MACROS.age);
   // The garments follow the body's modifier targets: every figure that is shaped
   // needs those, and a figure that wears nothing never waits for the garments.
-  const later = clothingManifest
-    ? [order[0] as string[], [GARMENTS_FILE], ...order.slice(1)]
-    : order;
+  const later =
+    garmentFiles.length > 0 ? [order[0] as string[], garmentFiles, ...order.slice(1)] : order;
   const [bodyBin, attachments, bodyOcclusion, firstTargets] = await Promise.all([
     fetchGzip(body.file(manifest.body.file)),
     fetchGzip(body.file(manifest.attachments.file)),
@@ -1494,10 +1544,20 @@ export async function loadHumanoidAssetsStaged(
   for (const a of manifest.attachments.entries) {
     if (a.material.texture) fileUrls.set(a.material.texture, body.file(a.material.texture));
   }
-  for (const g of clothingManifest?.garments.entries ?? []) {
-    for (const t of [g.material.texture, g.material.normalTexture])
-      if (t) fileUrls.set(t, (clothing as ReturnType<typeof packResolver>).file(t));
-  }
+  clothingManifests.forEach((m, i) => {
+    const pack = clothing[i] as ReturnType<typeof packResolver>;
+    for (const g of m.garments.entries) {
+      for (const t of [g.material.texture, g.material.normalTexture]) {
+        if (!t) continue;
+        const url = pack.file(t);
+        const had = fileUrls.get(t);
+        // Textures are found by file name, so two packs must not name one file two ways.
+        if (had !== undefined && had !== url)
+          throw new AssetFormatError(`texture ${t} is at both ${had} and ${url}`);
+        fileUrls.set(t, url);
+      }
+    }
+  });
   if (hairPack && hairManifest) {
     for (const s of hairManifest.styles)
       if (s.material.texture) fileUrls.set(s.material.texture, hairPack.file(s.material.texture));
@@ -1512,7 +1572,7 @@ export async function loadHumanoidAssetsStaged(
       fileUrls,
     },
     adultManifest && { manifest: adultManifest },
-    clothingManifest && { manifest: clothingManifest },
+    clothingManifests.map((m) => ({ manifest: m })),
     hairManifest && { manifest: hairManifest },
   );
   if (assets.hair && hairPack) {
@@ -1540,9 +1600,14 @@ export async function loadHumanoidAssetsStaged(
   const stages = later.map((files) => {
     const bytes = bytesBefore.then(() => fetchFiles(files));
     bytesBefore = bytes.catch(() => {});
-    const loaded = bytes.then(({ [GARMENTS_FILE]: garments, ...targets }) => {
+    const loaded = bytes.then((fetched) => {
+      const targets: TargetFileData = {};
+      for (const [id, bin] of Object.entries(fetched)) {
+        const garmentPack = garmentFiles.indexOf(id);
+        if (garmentPack < 0) targets[id] = bin;
+        else if (bin) addGarments(assets, garmentPack, bin);
+      }
       addTargetFiles(assets, targets);
-      if (garments) addGarments(assets, garments);
       return assets;
     });
     // Observed here; callers that need a stage await it and see the failure.

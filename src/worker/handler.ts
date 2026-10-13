@@ -15,7 +15,7 @@
 import { wardrobeOf } from "../editor/wardrobe.ts";
 import {
   ADULT_TARGET_FILE,
-  GARMENTS_FILE,
+  garmentsFile,
   type LoadStage,
   loadHumanoidAssetsStaged,
 } from "../format/assetFormat.ts";
@@ -56,13 +56,13 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
   };
 
   /**
-   * Waits for the clothing pack's garments when `needed`. Without a clothing
-   * pack there is no stage to wait for, and the model names the missing pack
-   * itself.
+   * Waits for the clothing packs' garments when `needed`. Every pack's
+   * garments arrive in one stage. Without a clothing pack there is no stage
+   * to wait for, and the model names the missing pack itself.
    */
   const garmentsFor = async (m: HumanoidModel, needed: boolean): Promise<void> => {
-    if (!needed || !m.assets.garmentsPending) return;
-    await stages.find((s) => s.files.includes(GARMENTS_FILE))?.loaded;
+    if (!needed || m.assets.pendingGarmentPacks.size === 0) return;
+    await stages.find((s) => s.files.includes(garmentsFile(0)))?.loaded;
   };
 
   return async (req) => {
@@ -96,7 +96,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
           ...(assets.adultAnatomyManifest?.anatomy && {
             anatomy: assets.adultAnatomyManifest.anatomy,
           }),
-          wardrobe: wardrobeOf(assets.clothingManifest),
+          wardrobe: wardrobeOf(assets.clothingManifests),
         });
         return;
       }

@@ -121,7 +121,6 @@ function outfitLookProblems(looks: unknown, p: string[]): void {
     p.push("outfitLook must be an object of garment ids to looks");
     return;
   }
-  const unit = (v: unknown) => typeof v === "number" && v >= 0 && v <= 1;
   for (const [id, look] of Object.entries(looks)) {
     const at = `outfitLook.${id}`;
     if (typeof look !== "object" || look === null || Array.isArray(look)) {

@@ -84,6 +84,32 @@ export const clothingPackData = (withGarments = true) => ({
   }),
 });
 
+/**
+ * A second clothing pack as a consumer would ship one: the shipped pack's
+ * garments and binary under ids and texture names that start with `prefix`.
+ * Its textures are never fetched by a load, only resolved to URLs.
+ */
+export function consumerClothingManifest(prefix: string): ClothingManifest {
+  const renamed = <T extends string | null | undefined>(t: T): T => (t ? `${prefix}_${t}` : t) as T;
+  return {
+    ...clothingManifest,
+    garments: {
+      ...clothingManifest.garments,
+      entries: clothingManifest.garments.entries.map((g) => ({
+        ...g,
+        id: `${prefix}/${g.id}`,
+        material: {
+          ...g.material,
+          texture: renamed(g.material.texture),
+          ...(g.material.normalTexture !== undefined && {
+            normalTexture: renamed(g.material.normalTexture),
+          }),
+        },
+      })),
+    },
+  };
+}
+
 let clothed: HumanoidAssets | undefined;
 
 /** The packed assets with the clothing pack's garments loaded, parsed once per test file. */

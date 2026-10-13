@@ -1897,7 +1897,11 @@ export function Humanoid({
                   report={report}
                   shape={shape}
                   dual={dual}
-                  look={recipe.outfitLook?.[t.id]}
+                  look={
+                    recipe.outfitLook && Object.hasOwn(recipe.outfitLook, t.id)
+                      ? recipe.outfitLook[t.id]
+                      : undefined
+                  }
                 />
               ) : null;
             })}
