@@ -215,8 +215,9 @@ export function useEditorState(
 
   // What the callbacks below read: the latest props, and a history that a change updates
   // at once, so two changes in one event each start from the figure the last one left.
-  const live = useRef({ options, controls, modifiers, wardrobe });
-  live.current = { options, controls, modifiers, wardrobe };
+  const anatomyDefaults = ready?.anatomy?.defaults;
+  const live = useRef({ options, controls, modifiers, wardrobe, anatomyDefaults });
+  live.current = { options, controls, modifiers, wardrobe, anatomyDefaults };
   const now = useRef<RecipeHistory>(history);
   now.current = history;
   const approvedNow = useRef(approved);
@@ -314,8 +315,8 @@ export function useEditorState(
 
   /** The gate: the figure to take for a proposed one (limits, then the hook), or null when refused. */
   const judge = useCallback((proposed: Recipe, why: ChangeCause): Recipe | null => {
-    const { options: o, controls: c, modifiers: m } = live.current;
-    const limited = limitRecipe(proposed, c, m);
+    const { options: o, controls: c, modifiers: m, anatomyDefaults: defaults } = live.current;
+    const limited = limitRecipe(proposed, c, m, defaults);
     const verdict = beforeChange(
       limited,
       { cause: why, current: now.current.present },
@@ -328,7 +329,12 @@ export function useEditorState(
 
   /** Takes an accepted figure: into the history, or, with `value`, to the host. */
   const commit = useCallback(
-    (next: Recipe, why: ChangeCause, gesture: string | undefined) => {
+    (
+      next: Recipe,
+      why: ChangeCause,
+      gesture: string | undefined,
+      reconciliation?: Extract<HistoryAction, { type: "reconcile" }>,
+    ) => {
       const { options: o } = live.current;
       if (o.value !== undefined) {
         intent.current = { recipe: next, cause: why, gesture };
@@ -336,6 +342,11 @@ export function useEditorState(
         return;
       }
       cause.current = why;
+      if (reconciliation) {
+        approve();
+        apply(reconciliation);
+        return;
+      }
       const { past, future } = now.current;
       const neighbour = why === "undo" ? past.at(-1) : why === "redo" ? future[0] : undefined;
       apply(
@@ -344,22 +355,27 @@ export function useEditorState(
           : { type: "set", recipe: next, ...(gesture && { gesture }) },
       );
     },
-    [apply],
+    [apply, approve],
   );
 
   /** The last step before a figure is taken: the cover policy, then the commit. */
   const submit = useCallback(
-    (next: Recipe, why: ChangeCause, gesture: string | undefined): Outcome => {
+    (
+      next: Recipe,
+      why: ChangeCause,
+      gesture: string | undefined,
+      reconciliation?: Extract<HistoryAction, { type: "reconcile" }>,
+    ): Outcome => {
       const { options: o, wardrobe: w } = live.current;
       const current = shown();
       if (o.coverPolicy === undefined || !mustConfirm(o.coverPolicy, w, next, current)) {
-        commit(next, why, gesture);
+        commit(next, why, gesture, reconciliation);
         return "applied";
       }
       let outcome: Outcome = "pending";
       const state = ask({ cause: why, current, proposed: next }, (allowed, error) => {
         outcome = allowed ? "applied" : "rejected";
-        if (allowed) commit(next, why, gesture);
+        if (allowed) commit(next, why, gesture, reconciliation);
         else refuse(why, next, error);
       });
       return state === "done" ? outcome : "pending";
@@ -382,6 +398,32 @@ export function useEditorState(
     },
     [judge, submit],
   );
+
+  // Defaults arrive with the ready payload, after an uncontrolled creator may
+  // already hold its initial recipe. Bring that recipe through the same limit
+  // gate before the browser paints the newly resolved default.
+  useLayoutEffect(() => {
+    if (controlled || ready === null) return;
+    const normalize = (recipe: Recipe) => limitRecipe(recipe, controls, modifiers, anatomyDefaults);
+    const current = now.current.present;
+    const limited = normalize(current);
+    const timeline = now.current;
+    if (
+      sameRecipe(limited, current) &&
+      timeline.past.every((recipe) => sameRecipe(normalize(recipe), recipe)) &&
+      timeline.future.every((recipe) => sameRecipe(normalize(recipe), recipe))
+    )
+      return;
+    const next = judge(limited, "edit");
+    if (!next) return;
+    const reconciliation: Extract<HistoryAction, { type: "reconcile" }> = {
+      type: "reconcile",
+      normalize,
+      present: next,
+    };
+    if (sameRecipe(next, current)) apply(reconciliation);
+    else void submit(next, "edit", undefined, reconciliation);
+  }, [apply, anatomyDefaults, controlled, controls, judge, modifiers, ready, submit]);
 
   const step = useCallback(
     (why: "undo" | "redo") => {
@@ -466,8 +508,8 @@ export function useEditorState(
   );
   const setSlider = useCallback(
     (entry: SliderEntry, value: number, gesture?: string) =>
-      update((r) => withSliderValue(r, entry, value, modifiers), gesture),
-    [update, modifiers],
+      update((r) => withSliderValue(r, entry, value, modifiers, ready?.anatomy?.defaults), gesture),
+    [update, modifiers, ready?.anatomy?.defaults],
   );
   const range = useCallback(
     (entry: SliderEntry) => limitedRange(entry, sliderRange(entry, modifiers), controls),

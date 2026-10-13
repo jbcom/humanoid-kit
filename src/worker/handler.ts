@@ -26,6 +26,7 @@ import { tryPresenceJoints } from "../presence/fromEvaluation.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { rigData } from "../rig/pose.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
+import { yieldWorkerTask } from "./task.ts";
 
 export type Post = (msg: WorkerResponse, transfer?: Transferable[]) => void;
 
@@ -38,7 +39,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
   let posedOcclusion: Promise<Float32Array[] | null> | null = null;
   /** Hair styles whose static data has gone to the client. */
   const sentHair = new Set<string>();
-  /** The hip fold request being solved, so that a newer one can supersede it. */
+  /** The joint folds request being solved, so that a newer one can supersede it. */
   let foldRun = 0;
 
   /** Waits for the stages that bring the target files a recipe (in a skin state) needs. */
@@ -106,6 +107,11 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         post({ type: "completed", id: req.id });
         return;
       }
+      if (req.type === "customTargets") {
+        model.addCustomTargets(req.targets);
+        post({ type: "customTargetsAdded", id: req.id });
+        return;
+      }
       if (req.type === "posedOcclusion") {
         const m = model;
         posedOcclusion ??= (async () => {
@@ -114,7 +120,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
             const step = steps.next();
             if (step.done) return step.value;
             // A macrotask between corners lets queued evaluations run.
-            await new Promise((resolve) => setTimeout(resolve, 0));
+            await yieldWorkerTask();
           }
         })();
         // Each request gets its own copies: the reply transfers them.
@@ -199,30 +205,30 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
         });
         return;
       }
-      if (req.type === "hipFold") {
-        // A newer request for a fold supersedes this one, wherever it is: it stops at its next step.
+      if (req.type === "folds") {
+        // A newer request for folds supersedes this one, wherever it is: it stops at its next step.
         const run = ++foldRun;
         const superseded = () => {
           if (run === foldRun) return;
-          const stopped = new Error("a newer hip fold was asked for");
+          const stopped = new Error("newer joint folds were asked for");
           stopped.name = "AbortError";
           throw stopped;
         };
         await targetsFor(model, req.recipe, req.signals);
         superseded();
-        const steps = model.hipFold(req.recipe, req.signals);
+        const steps = model.folds(req.recipe, req.signals);
         for (;;) {
           const step = steps.next();
           if (step.done) {
-            const { surface, fold } = step.value;
-            post({ type: "hipFold", id: req.id, surface, fold }, [
-              fold.slot.buffer,
-              fold.data.buffer,
-            ]);
+            const { surface, folds } = step.value;
+            post(
+              { type: "folds", id: req.id, surface, folds },
+              folds.flatMap((fold) => [fold.slot.buffer, fold.data.buffer]),
+            );
             return;
           }
           // A macrotask between flexions lets queued evaluations run.
-          await new Promise((resolve) => setTimeout(resolve, 0));
+          await yieldWorkerTask();
           superseded();
         }
       }

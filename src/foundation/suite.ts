@@ -90,8 +90,8 @@ export function suiteTable(rows: readonly SuiteRow[]): string {
   const mm = (x: number) => (x * 1000).toFixed(1);
   const cm2 = (x: number) => x.toFixed(2);
   const lines = [
-    "| body | pose | anatomy | penetrating cm² (vertices, deepest mm, parts) | contacts (deepest mm) | inverted | squashed cm² (triangles) | joint volume out of band | folds (sharpest °) | seam gap (mm) |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| body | pose | anatomy | penetrating cm² (vertices, deepest mm, parts) | contacts (deepest mm) | lumen self-contact cm² (vertices) | inverted | squashed cm² (triangles) | joint volume out of band | folds (sharpest °) | seam gap (mm) |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
   ];
   const sorted = [...rows].sort(
     (x, y) => Number(rowPasses(x.measure)) - Number(rowPasses(y.measure)),
@@ -99,7 +99,7 @@ export function suiteTable(rows: readonly SuiteRow[]): string {
   for (const r of sorted) {
     const m = r.measure;
     lines.push(
-      `| ${r.body} | ${r.pose} | ${r.anatomy} | ${m.penetrating ? `${cm2(m.penetratingArea)} (${m.penetrating}, ${mm(m.deepest)}, ${m.deepestParts})` : "0"} | ${m.contacts ? `${m.contacts} (${mm(m.deepestContact)})` : "0"} | ${m.inverted} | ${m.squashed ? `${cm2(m.squashedArea)} (${m.squashed})` : "0"} | ${m.volumeOut.join(", ") || "-"} | ${m.folds ? `${m.folds} (${m.sharpest.toFixed(0)})` : "0"} | ${mm(m.seamGap)} |`,
+      `| ${r.body} | ${r.pose} | ${r.anatomy} | ${m.penetrating ? `${cm2(m.penetratingArea)} (${m.penetrating}, ${mm(m.deepest)}, ${m.deepestParts})` : "0"} | ${m.contacts ? `${m.contacts} (${mm(m.deepestContact)})` : "0"} | ${m.lumen ? `${cm2(m.lumenArea)} (${m.lumen})` : "0"} | ${m.inverted} | ${m.squashed ? `${cm2(m.squashedArea)} (${m.squashed})` : "0"} | ${m.volumeOut.join(", ") || "-"} | ${m.folds ? `${m.folds} (${m.sharpest.toFixed(0)})` : "0"} | ${mm(m.seamGap)} |`,
     );
   }
   return lines.join("\n");

@@ -150,6 +150,9 @@ try {
         "index.js",
         "index.d.ts",
         "LICENSE",
+        // Part of the pack is CC BY 4.0: its licence text and attribution travel with it.
+        "LICENSE-CC-BY-4.0",
+        "NOTICE.md",
         "README.md",
         "data/manifest.json",
         "data/PROVENANCE.md",

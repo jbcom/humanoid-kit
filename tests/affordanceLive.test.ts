@@ -22,8 +22,8 @@ import { REST_POSE, SMOKE_POSES } from "../src/foundation/permutations.ts";
 import { posedSurface } from "../src/foundation/posed.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe, type Recipe } from "../src/recipe/recipe.ts";
-import { skinFold, skinPose } from "../src/rig/dual.ts";
-import { renderFold } from "../src/rig/hipFold.ts";
+import { skinFolds, skinPose } from "../src/rig/dual.ts";
+import { renderFold } from "../src/rig/jointFold.ts";
 import {
   bodyPoseRotations,
   IDENTITY_POSE,
@@ -37,15 +37,15 @@ import { loadFixtureAssets } from "./fixtures.ts";
 const model = new HumanoidModel(loadFixtureAssets(), { subdivision: 1 });
 const anchors = { base: landmarkAnchors(model, "base"), adult: null };
 
-/** The recipe's hip fold on its body surface, solved to the end. */
-function solvedFold(recipe: Recipe) {
-  const steps = model.hipFold(recipe);
+/** The recipe's joint folds on its body surface, solved to the end. */
+function solvedFolds(recipe: Recipe) {
+  const steps = model.folds(recipe);
   let step = steps.next();
   while (!step.done) step = steps.next();
-  return step.value.fold;
+  return step.value.folds;
 }
 
-/** A figure as `<Humanoid>` feeds the handle one: an evaluation, posed, with its fold whole. */
+/** A figure as `<Humanoid>` feeds the handle one: an evaluation, posed, with its folds whole. */
 function liveFigure(recipe: Recipe, pose: string, world: Group | null = null): LiveFigure {
   const ev = model.evaluate(recipe);
   const rest = Float32Array.from(ev.positions);
@@ -55,7 +55,7 @@ function liveFigure(recipe: Recipe, pose: string, world: Group | null = null): L
   const rotations =
     pose === REST_POSE ? IDENTITY_POSE(rig.bones.length) : bodyPoseRotations(rig, pose);
   const skin = skinPose(bones, rotations, poseShare(bones, rotations, skinDualShare(bones.names)));
-  const fold = skinFold(bones, rotations, renderFold(solvedFold(recipe)), 1);
+  const folds = skinFolds(bones, rotations, solvedFolds(recipe).map(renderFold), 1);
   const skeleton = posedBones(bones, rotations);
   const { skinIndex, skinWeight } = model.topology().body;
   return {
@@ -65,7 +65,7 @@ function liveFigure(recipe: Recipe, pose: string, world: Group | null = null): L
     skinIndex,
     skinWeight,
     pose: () => skin,
-    fold: () => fold,
+    folds: () => folds,
     skeleton: () => skeleton,
     world,
   };
@@ -87,7 +87,11 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
         h.setRecipe(recipe);
         h.setAnchors(anchors);
         const figure = liveFigure(recipe, pose);
-        if (pose === "seated") expect(figure.fold(), "the seated pose folds").not.toBeNull();
+        if (pose === "seated")
+          expect(
+            figure.folds().map((f) => f.fold.joint.name),
+            "the seated pose folds at the hips and the knees",
+          ).toEqual(["hip", "knee"]);
         h.attach(figure);
         const body = posedSurface(model, recipe, pose);
         const want = affordanceFrames(model, body, h.own);
@@ -113,18 +117,19 @@ describe("the affordance handle on a live figure", { timeout: 300_000 }, () => {
         }
         expect(worstMark, `${name} ${pose} landmarks`).toBeLessThan(1e-6);
         if (pose === "seated") {
-          // No landmark is on the skin the fold moves, but a vertex there is where the
-          // posed body has it, and framed without the fold it would be elsewhere.
-          const fold = figure.fold();
-          if (!fold) throw new Error("no fold");
+          // No landmark is on the skin the folds move, but a vertex there is where the
+          // posed body has it, and framed without the folds it would be elsewhere.
+          const folds = figure.folds();
           const unfolded = new HumanoidAffordances();
           unfolded.setRecipe(recipe);
           unfolded.setAnchors(anchors);
-          unfolded.attach({ ...figure, fold: () => null });
+          unfolded.attach({ ...figure, folds: () => [] });
           let worstVertex = 0;
           let furthest = 0;
-          for (const [v, row] of fold.fold.slot.entries()) {
-            if (row < 0) continue;
+          const moved = new Set<number>();
+          for (const f of folds)
+            for (const [v, row] of f.fold.slot.entries()) if (row >= 0) moved.add(v);
+          for (const v of moved) {
             const got = h.vertex(v);
             const bare = unfolded.vertex(v);
             if (!got || !bare) throw new Error(`vertex ${v}: none`);

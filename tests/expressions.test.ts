@@ -60,6 +60,76 @@ describe("the named expressions", () => {
   });
 });
 
+/**
+ * The face units MakeHuman 1's 32 expressions (`.mhpose`, `unit_poses`) use, by name:
+ * 43 of them, read from the CC0 copies of the library (docs/evidence/expressions.md).
+ * Names only; a MakeHuman expression is these units at weights, so applying one
+ * needs nothing the pack lacks.
+ */
+const MAKEHUMAN_EXPRESSION_UNITS = [
+  "CheeksPump",
+  "CheeksSuck",
+  "ChinRight",
+  "JawDrop",
+  "JawDropStretched",
+  "LeftBrowDown",
+  "LeftCheekUp",
+  "LeftEyeUp",
+  "LeftEyeturnRight",
+  "LeftInnerBrowUp",
+  "LeftLowerLidUp",
+  "LeftOuterBrowUp",
+  "LeftUpperLidClosed",
+  "LeftUpperLidOpen",
+  "LipsKiss",
+  "MouthLeftPlatysma",
+  "MouthLeftPullDown",
+  "MouthLeftPullSide",
+  "MouthLeftPullUp",
+  "MouthMoveLeft",
+  "MouthRightPlatysma",
+  "MouthRightPullDown",
+  "MouthRightPullSide",
+  "MouthRightPullUp",
+  "NasolabialDeepener",
+  "NoseWrinkler",
+  "RightBrowDown",
+  "RightCheekUp",
+  "RightEyeUp",
+  "RightEyeturnRight",
+  "RightInnerBrowUp",
+  "RightLowerLidUp",
+  "RightOuterBrowUp",
+  "RightUpperLidClosed",
+  "RightUpperLidOpen",
+  "UpperLipBackward",
+  "UpperLipForward",
+  "UpperLipStretched",
+  "UpperLipUp",
+  "lowerLipBackward",
+  "lowerLipDown",
+  "lowerLipForward",
+  "lowerLipUp",
+];
+
+describe("MakeHuman 1's expression library", () => {
+  const rig = rigData(loadFixtureAssets());
+
+  it("uses only face units the body pack has", () => {
+    expect(MAKEHUMAN_EXPRESSION_UNITS).toHaveLength(43);
+    for (const unit of MAKEHUMAN_EXPRESSION_UNITS) expect(unitNames, unit).toContain(unit);
+  });
+
+  it("applies unit by unit: each one moves some bone off rest", () => {
+    for (const unit of MAKEHUMAN_EXPRESSION_UNITS) {
+      const q = faceUnitRotations(rig, { [unit]: 1 });
+      let moved = 0;
+      for (let b = 0; b < q.length / 4; b++) if ((q[b * 4 + 3] as number) < 1 - 1e-9) moved++;
+      expect(moved, unit).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe("the named expressions on the body", () => {
   const assets = loadFixtureAssets();
   const model = new HumanoidModel(assets, { subdivision: 0 });

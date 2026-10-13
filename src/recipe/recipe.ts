@@ -99,11 +99,11 @@ export interface Recipe {
    */
   hair?: HairRecipe;
   /**
-   * Body hair: per region group a multiplier on the default for the figure's age
-   * and sex, and a beard style. Optional: absent is the default for age and sex
-   * (`bodyHairCoverage`, `beardStyle`), so recipes saved before body hair
-   * existed are unchanged. The pubic density is adult-only (the age policy
-   * refuses it under 18).
+   * Body hair: legacy per-region multipliers on the physiological default, or
+   * explicit coverage and physical follicle-density controls, plus a beard
+   * style. Optional: absent is the default for age and sex (`bodyHairCoverage`,
+   * `beardStyle`), so recipes saved before body hair existed are unchanged. The
+   * pubic controls are adult-only (the age policy refuses them under 18).
    */
   bodyHair?: BodyHairRecipe;
   /**
@@ -199,6 +199,10 @@ export function createRecipe(
     ...(init.bodyHair && {
       bodyHair: {
         ...(init.bodyHair.density && { density: { ...init.bodyHair.density } }),
+        ...(init.bodyHair.coverage && { coverage: { ...init.bodyHair.coverage } }),
+        ...(init.bodyHair.follicleDensity && {
+          follicleDensity: { ...init.bodyHair.follicleDensity },
+        }),
         ...(init.bodyHair.beard && { beard: init.bodyHair.beard }),
       },
     }),

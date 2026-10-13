@@ -32,6 +32,9 @@ import {
   type HumanoidAssets,
   pendingTargetFiles,
 } from "../format/assetFormat.ts";
+import { graftOnModel, type ModelGraft } from "../graft/onModel.ts";
+import type { GraftSpec } from "../graft/types.ts";
+import { addCustomTargets, type CustomTarget } from "../makehuman/customTargets.ts";
 import { NO_FEATURE } from "../makehuman/features.ts";
 import { RecipeError, recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
@@ -47,13 +50,14 @@ import type { Vec3 } from "../presence/presence.ts";
 import { AgePolicyError, assertSignalPolicy, isAdult } from "../recipe/agePolicy.ts";
 import { withAnatomyDefaults } from "../recipe/anatomy.ts";
 import { createRecipe, type Recipe } from "../recipe/recipe.ts";
-import { type HipFold, type SurfaceFold, surfaceFold } from "../rig/hipFold.ts";
 import { solveHipFoldSteps } from "../rig/hipFoldSolve.ts";
+import { type JointFold, type SurfaceFold, surfaceFold } from "../rig/jointFold.ts";
+import { solveKneeFoldSteps } from "../rig/kneeFoldSolve.ts";
 import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/occlusionKeys.ts";
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { solvedSurfaceFold } from "../rig/solvedSurface.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
-import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
+import { type AtlasPlan, planAtlas, withExtra } from "../surface/atlasPlan.ts";
 import { beardStyle, bodyHairCoverage } from "../surface/bodyHair.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
 import { COAT_REGION_LIMIT, type CoatFields, coatMasks, combField } from "../surface/coat.ts";
@@ -70,12 +74,21 @@ import {
   isAdultLayer,
   type LayerFieldsExtra,
   type LayerFieldsUpdate,
+  type SkinLayer,
   uvScale,
 } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/regions/hands/index.ts";
 import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
 import { areolaStretch } from "../surface/regions/torso.ts";
+import { closureDisplacement, closureShare } from "./canalClosure.ts";
+import {
+  carriedDetail,
+  latticePositions,
+  type ReservoirCarriage,
+  reservoirCarriages,
+  skinUnderOrgans,
+} from "./detailCarry.ts";
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import {
   faceVisibility,
@@ -86,6 +99,7 @@ import {
   transferVisibility,
 } from "./outfit.ts";
 import {
+  canalsOf,
   evaluatedFold,
   evaluatedSkin,
   type ReservoirSkinning,
@@ -293,6 +307,12 @@ export interface AdultSurfaceTopology extends SurfaceTopology {
   occlusion: Uint8Array;
   /** The coat's fields at these render vertices, as for the base body. */
   coat: CoatFields;
+  /**
+   * The canals (`AdultReservoirSpec.canal`): per render vertex, the reservoir (by its
+   * place) of the canal it is drawn from, or -1; per reservoir, its closed lumen's gap,
+   * metres (0 for an organ). The invariants count walls that close as lumen self-contact.
+   */
+  canals: { of: Int16Array; gap: readonly number[] };
 }
 
 /**
@@ -496,8 +516,8 @@ const RAY_SHARE = 0.25;
 /** Share of a body vertex's skin weight the head bone must hold for it to take a scalp tint. */
 const HEAD_WEIGHT = 0.5;
 
-/** How many hip folds a model keeps for figures it has solved (a fold is some 100 kB). */
-const HIP_FOLDS_KEPT = 6;
+/** How many figures' joint folds a model keeps (a figure's are some 200 kB). */
+const FOLDS_KEPT = 6;
 
 /** A hash of a figure's control vertices (FNV-1a over their bits), to know the same shape again. */
 function controlHash(control: Float32Array): string {
@@ -549,8 +569,8 @@ export class HumanoidModel {
    */
   private readonly level: number;
   private readonly bodyFaces: Uint32Array;
-  /** The hip folds solved lately, by the shape they are for (`controlHash`), the most recently used last. */
-  private readonly hipFolds = new Map<string, HipFold>();
+  /** The joint folds solved lately (`FOLD_JOINTS`' order), by the shape they are for (`controlHash`), the most recently used last. */
+  private readonly solvedFolds = new Map<string, JointFold[]>();
   /** Each body surface's `baseRenderVertices`, found on first use. */
   private readonly baseRender = new Map<"base" | "adult", Int32Array>();
   /** Each body surface's `renderWeld`, found on first use. */
@@ -564,6 +584,16 @@ export class HumanoidModel {
         topology: AdultSurfaceTopology;
         /** Its reservoirs' vertices and roots, for the weights an evaluation skins it by (`evaluatedSkin`). */
         skinning: ReservoirSkinning;
+      }
+    | null
+    | undefined;
+  /** What carries a reservoir's organ from the figure it was authored on (`detailCarriage`): undefined until first used, null without one. */
+  private carriage:
+    | {
+        carriages: ReservoirCarriage[];
+        stencil: Stencil;
+        control: Float32Array;
+        authored: Map<number, readonly [number, number, number]>;
       }
     | null
     | undefined;
@@ -716,11 +746,23 @@ export class HumanoidModel {
   adultLayerFields(): LayerFieldsUpdate | null {
     const adult = SKIN_LAYERS.filter(isAdultLayer);
     if (!adult.every((l) => l.available?.(this.assets))) return null;
+    return this.adultFieldsOf(adult, () => true);
+  }
+
+  /**
+   * The adult layers' fields per render vertex and on the islands, those `include`
+   * accepts measured and the rest zero (`buildLayerFields`).
+   */
+  private adultFieldsOf(
+    adult: readonly SkinLayer[],
+    include: (layer: SkinLayer) => boolean,
+  ): LayerFieldsUpdate {
     const layers = adult.map((l) => l.id);
-    const extra = this.islandFields(layers);
+    const base = buildLayerFields(this.assets, adult, include);
+    const extra = this.islandFields(layers, base);
     return {
       layers,
-      layerFields: this.renderLayerFields(buildLayerFields(this.assets, adult), adult.length),
+      layerFields: this.renderLayerFields(base, adult.length),
       ...(extra && { extra }),
     };
   }
@@ -739,8 +781,14 @@ export class HumanoidModel {
    * a sculpt is attached at, a smooth curve on the skin (scripts/lib/detail/transfer.ts,
    * `skinLine`), and the band between it and the loop is skin; the layer starts there
    * and blends in, as genital skin's colour does, along curves with no steps.
+   *
+   * Every other layer's fields on an island are the body's where the island's skin
+   * lies (`base`, the layers' fields per base vertex, carried through the surface's
+   * own stencil): an island is the skin's too. With none there, a woman's collapsed
+   * sac's cap, which lies in her vulva, drew without the vulva's colour, a patch
+   * edged by the sac's loop.
    */
-  private islandFields(layers: readonly string[]): LayerFieldsExtra | null {
+  private islandFields(layers: readonly string[], base: Float32Array): LayerFieldsExtra | null {
     const adult = this.adultBodySurface();
     const specs = this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? [];
     if (!adult) return null;
@@ -779,14 +827,31 @@ export class HumanoidModel {
     if (!count) return null;
     const uvs = new Float32Array(count * 2);
     const fields = new Float32Array(layers.length * count * 2);
+    // The body's fields on the adult surface, per surface vertex, layer by layer.
+    const n = this.assets.manifest.vertexCount;
+    const onSurface = layers.map((_, l) =>
+      applyStencil(
+        mesh.stencil,
+        base.subarray(l * n * 3, (l + 1) * n * 3),
+        new Float32Array(mesh.topology.vertexCount * 3),
+      ),
+    );
     owner.forEach((s, v) => {
       const at = local[v] as number;
       if (at < 0) return;
       uvs[at * 2] = mesh.uvs[v * 2] as number;
       uvs[at * 2 + 1] = mesh.uvs[v * 2 + 1] as number;
-      const l = layers.indexOf(specs[s]?.layer as string);
-      fields[(l * count + at) * 2] = mask[v] as number;
-      fields[(l * count + at) * 2 + 1] = along[v] as number;
+      const own = layers.indexOf(specs[s]?.layer as string);
+      const sv = mesh.renderToSurface[v] as number;
+      // The surface's stencil can overshoot a 0..1 field a little; a field stays in it.
+      const unit = (x: number) => Math.min(1, Math.max(0, x));
+      layers.forEach((_, l) => {
+        const body = onSurface[l] as Float32Array;
+        fields[(l * count + at) * 2] =
+          l === own ? (mask[v] as number) : unit(body[sv * 3] as number);
+        fields[(l * count + at) * 2 + 1] =
+          l === own ? (along[v] as number) : unit(body[sv * 3 + 1] as number);
+      });
     });
     const triangles: number[] = [];
     for (let t = 0; t < mesh.index.length; t += 3) {
@@ -1377,17 +1442,38 @@ export class HumanoidModel {
 
   /**
    * Where the skin layers' fields lie in the atlas (`planAtlas`): layers whose
-   * support on the body's UV layout lies apart share channels. Laid out once, from
-   * the whole body's triangles and the layers' fields as built (the adult layers'
-   * arrive later and are never shared).
+   * support on the UV layout lies apart share channels. Laid out once, from every
+   * footprint known now: the body's layers as built, and the adult layers whose
+   * fields need nothing still to load (an island's, a mask the pack authors), on the
+   * body's triangles and the adult surface's islands. An adult layer measured from
+   * targets still loading is pending, a group of its own; without an adult pack every
+   * adult layer is known to reach nothing, and takes no channel of its own.
    */
   private atlasPlan(): AtlasPlan {
-    this.planned ??= planAtlas(SKIN_LAYERS, {
+    if (this.planned) return this.planned;
+    const body = {
       uvs: this.body.mesh.uvs,
       index: this.body.mesh.index,
       vertexCount: this.body.mesh.uvs.length / 2,
       layerFields: this.layerFields,
-    });
+    };
+    const pack = this.assets.adultAnatomyManifest != null;
+    const known = (l: SkinLayer) =>
+      !isAdultLayer(l) || !pack || (l.available?.(this.assets) ?? false);
+    let surface: typeof body = body;
+    if (pack) {
+      const adult = SKIN_LAYERS.filter(isAdultLayer);
+      const at = adult.map((l) => SKIN_LAYERS.indexOf(l));
+      const fields = this.adultFieldsOf(adult, known);
+      const n = body.vertexCount;
+      const layerFields = Float32Array.from(this.layerFields);
+      at.forEach((l, k) => {
+        layerFields.set(fields.layerFields.subarray(k * n * 2, (k + 1) * n * 2), l * n * 2);
+      });
+      surface = { ...body, layerFields };
+      if (fields.extra) surface = withExtra(surface, at, fields.extra);
+    }
+    this.planned = planAtlas(SKIN_LAYERS, surface, (l) => !known(SKIN_LAYERS[l] as SkinLayer));
     return this.planned;
   }
 
@@ -1483,14 +1569,22 @@ export class HumanoidModel {
   }
 
   /**
-   * The target files a recipe (in a skin state) needs that have not arrived
-   * (empty when it can be evaluated now). Validates the recipe first.
+   * Registers MakeHuman custom targets (`addCustomTargets`): each is then the
+   * one-sided modifier `custom/<name>` of every later evaluation.
    */
+  addCustomTargets(targets: readonly CustomTarget[]): void {
+    addCustomTargets(this.assets, targets);
+  }
+
   /** The recipe with the adult pack's anatomy defaults filled in (`withAnatomyDefaults`). */
   withDefaults(recipe: Recipe): Recipe {
     return withAnatomyDefaults(recipe, this.assets.adultAnatomyManifest?.anatomy?.defaults);
   }
 
+  /**
+   * The target files a recipe (in a skin state) needs that have not arrived
+   * (empty when it can be evaluated now). Validates the recipe first.
+   */
   pendingTargetFiles(recipe: Recipe, signals: Readonly<Record<string, number>> = {}): Set<string> {
     return this.pendingFor(this.contributions(recipe, signals));
   }
@@ -1698,11 +1792,11 @@ export class HumanoidModel {
       all[rest * 3 + 1] as number,
       all[rest * 3 + 2] as number,
     ];
-    if (displacement)
-      for (let i = 0; i < displacement.indices.length; i++)
-        if (displacement.indices[i] === site.vertex)
-          for (let k = 0; k < 3; k++)
-            at[k] = (at[k] as number) + (displacement.xyz[i * 3 + k] as number);
+    for (const part of displacement ? [displacement, displacement.skin] : [])
+      if (part)
+        for (let i = 0; i < part.indices.length; i++)
+          if (part.indices[i] === site.vertex)
+            for (let k = 0; k < 3; k++) at[k] = (at[k] as number) + (part.xyz[i * 3 + k] as number);
     const P = body.positions;
     let r = 0;
     let best = Number.POSITIVE_INFINITY;
@@ -1788,24 +1882,126 @@ export class HumanoidModel {
         (control[scale.a * 3 + k] as number) - (control[scale.b * 3 + k] as number);
       figure = Math.hypot(d(0), d(1), d(2)) / scale.rest;
     }
-    const indices: number[] = [];
-    const xyz: number[] = [];
+    // The skin's own targets (`AdultDetailSpec.skin`) apart from the organs': they shape
+    // the skin the organs are measured from, and are neither carried nor a push.
+    const skinTargets = new Set(this.assets.adultAnatomyManifest?.anatomy?.detail?.skin ?? []);
+    const organ = { indices: [] as number[], xyz: [] as number[] };
+    const skin = { indices: [] as number[], xyz: [] as number[] };
+    const weightOf = new Map<string, number>();
     for (const c of detail) {
       if (typeof c.weight !== "number")
         throw new MorphError(`detail target ${c.target} cannot be weighted by region`);
       const t = this.assets.targets.get(c.target);
       if (!t) throw new MorphError(`unknown detail target ${c.target}`);
+      weightOf.set(c.target, (weightOf.get(c.target) ?? 0) + c.weight);
+      const into = skinTargets.has(c.target) ? skin : organ;
       const w = c.weight * t.scale * figure;
       for (let i = 0; i < t.indices.length; i++) {
-        indices.push(t.indices[i] as number);
-        xyz.push(
+        into.indices.push(t.indices[i] as number);
+        into.xyz.push(
           (t.deltas[i * 3] as number) * w,
           (t.deltas[i * 3 + 1] as number) * w,
           (t.deltas[i * 3 + 2] as number) * w,
         );
       }
     }
-    return indices.length ? { indices, xyz: Float32Array.from(xyz) } : undefined;
+    // Each canal's opening closed at the skin on this figure, after the skin's own targets.
+    this.closeCanals(weightOf, skin, control);
+    if (!organ.indices.length && !skin.indices.length) return undefined;
+    const ofSkin = skin.indices.length
+      ? { skin: { indices: skin.indices, xyz: Float32Array.from(skin.xyz) } }
+      : {};
+    const displaced = { indices: organ.indices, xyz: Float32Array.from(organ.xyz) };
+    const carried = this.detailCarriage();
+    if (!carried || !organ.indices.length) return { ...displaced, ...ofSkin };
+    // An organ moves with where it is rooted: carried from the authoring figure (`carriedDetail`).
+    const here = new Map<number, readonly [number, number, number]>();
+    const at =
+      (cache: Map<number, readonly [number, number, number]>, from: Float32Array) =>
+      (v: number) => {
+        let p = cache.get(v);
+        if (!p) {
+          const q = latticePositions(carried.stencil, from, [v]);
+          p = [q[0] as number, q[1] as number, q[2] as number];
+          cache.set(v, p);
+        }
+        return p;
+      };
+    return {
+      ...carriedDetail(
+        displaced,
+        carried.carriages,
+        at(carried.authored, carried.control),
+        at(here, control),
+      ),
+      ...(ofSkin.skin && { skin: skinUnderOrgans(ofSkin.skin, displaced, carried.carriages) }),
+    };
+  }
+
+  /**
+   * Adds to `skin` (region indices, xyz) each canal's closure (`closureDisplacement`):
+   * its loop on this figure, from `control` through the lattice's stencil plus what
+   * `skin` already moves it by, closed in place, as far as its target's weight in
+   * `weightOf` gives (`closureShare`).
+   */
+  private closeCanals(
+    weightOf: ReadonlyMap<string, number>,
+    skin: { indices: number[]; xyz: number[] },
+    control: Float32Array,
+  ): void {
+    const lattice = this.adultBodySurface()?.part.mesh.lattice;
+    if (!lattice) return;
+    for (const r of this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? []) {
+      const closure = r.canal?.closure;
+      if (!closure) continue;
+      const share = closureShare(weightOf.get(closure.target) ?? 0);
+      if (share <= 0) continue;
+      const moved = new Map<number, [number, number, number]>();
+      for (const v of closure.loopRegion) moved.set(v, [0, 0, 0]);
+      skin.indices.forEach((v, i) => {
+        const d = moved.get(v);
+        if (!d) return;
+        for (let k = 0; k < 3; k++) d[k] = (d[k] as number) + (skin.xyz[i * 3 + k] as number);
+      });
+      const at = latticePositions(lattice.stencil, control, r.loop);
+      const loopNow = closure.loopRegion.map((v, i) => {
+        const d = moved.get(v) as [number, number, number];
+        return [
+          (at[i * 3] as number) + d[0],
+          (at[i * 3 + 1] as number) + d[1],
+          (at[i * 3 + 2] as number) + d[2],
+        ] as const;
+      });
+      const add = closureDisplacement(closure, loopNow, share);
+      skin.indices.push(...add.indices);
+      skin.xyz.push(...add.xyz);
+    }
+  }
+
+  /**
+   * What `carriedDetail` reads, once per model: each reservoir's carriage, the
+   * lattice's stencil, and the control positions of the figure the pack's detail
+   * was authored on (`AdultDetailSpec.authoredOn`), with a cache of that figure's
+   * lattice positions. Null when the pack names no such figure, or has no reservoirs.
+   */
+  private detailCarriage() {
+    if (this.carriage !== undefined) return this.carriage;
+    const anatomy = this.assets.adultAnatomyManifest?.anatomy;
+    const lattice = this.adultBodySurface()?.part.mesh.lattice;
+    const authoredOn = anatomy?.detail?.authoredOn;
+    if (!lattice || !authoredOn || !lattice.reservoirs.length) {
+      this.carriage = null;
+      return null;
+    }
+    this.carriage = {
+      carriages: reservoirCarriages(lattice, anatomy?.reservoirs ?? []),
+      stencil: lattice.stencil,
+      control: Float32Array.from(
+        this.evaluateControl(createRecipe({ macros: authoredOn.macros }), {}),
+      ),
+      authored: new Map(),
+    };
+    return this.carriage;
   }
 
   /**
@@ -1869,6 +2065,31 @@ export class HumanoidModel {
       normals: unitNormals(quadVertexNormals(control, this.assets.faceVerts)),
       body: this.bodyVertices,
     };
+  }
+
+  /**
+   * Grafts a foreign part onto the figure at a cut (docs/GRAFT.md): the cut is
+   * resolved on the base mesh at rest and the merged surface's topology built
+   * once; `evaluate` refits the part to each evaluation's loop.
+   */
+  graft(spec: GraftSpec): ModelGraft {
+    const visible = faceVisibility(this.assets.faceVerts, this.bodyFaces, this.mountedVisible);
+    return graftOnModel(
+      {
+        assets: this.assets,
+        bodyFaces: this.bodyFaces,
+        base: { mesh: this.body.mesh, trianglesPerFace: this.bodyTrianglesPerFace, visible },
+        adult: () => {
+          const a = this.adultBodySurface();
+          return a ? { mesh: a.part.mesh, trianglesPerFace: a.faceTriangles, visible } : null;
+        },
+        attachments: this.attached.map(({ asset }) => ({
+          id: asset.entry.id,
+          refVerts: asset.refVerts,
+        })),
+      },
+      spec,
+    );
   }
 
   /**
@@ -1967,40 +2188,39 @@ export class HumanoidModel {
   }
 
   /**
-   * The hip fold of the figure a recipe makes in a skin state (docs/ARCHITECTURE.md,
-   * "The hip fold"), on the body surface its evaluation is for
-   * (`Evaluation.surface`): for the renderer, `DualBones.setFold` and the
-   * geometry's `FOLD_SLOT_ATTRIBUTE`. Solved a flexion at a time, which takes
-   * a moment, so it yields after each: a worker lets its other requests in
-   * between. The recipe's target files must have loaded.
+   * The joint folds of the figure a recipe makes in a skin state
+   * (docs/ARCHITECTURE.md, "The hip fold", "The knee fold"), one per joint of
+   * `FOLD_JOINTS` in its order, on the body surface its evaluation is for
+   * (`Evaluation.surface`): for the renderer, `DualBones.setFolds` and the
+   * geometry's slot attributes (`foldSlotAttribute`). Solved a flexion at a
+   * time, which takes a moment, so it yields after each: a worker lets its
+   * other requests in between. The recipe's target files must have loaded.
    */
-  *hipFold(
+  *folds(
     recipe: Recipe,
     signals: Readonly<Record<string, number>> = {},
-  ): Generator<void, { surface: "base" | "adult"; fold: SurfaceFold }> {
+  ): Generator<void, { surface: "base" | "adult"; folds: SurfaceFold[] }> {
     const { control, detail } = this.evaluateShape(recipe, signals);
-    // A figure's fold depends on its shape alone: the same shape (an edit undone, a pose changed) is not solved twice.
+    // A figure's folds depend on its shape alone: the same shape (an edit undone, a pose changed) is not solved twice.
     const key = controlHash(control);
-    let fold = this.hipFolds.get(key);
-    if (fold) {
-      this.hipFolds.delete(key);
+    let solved = this.solvedFolds.get(key);
+    const rest = restBones(this.assets, control);
+    if (solved) {
+      this.solvedFolds.delete(key);
     } else {
-      fold = yield* solveHipFoldSteps(
-        restBones(this.assets, control),
-        control,
-        this.assets.skinIndex,
-        this.assets.skinWeight,
-        this.bodyControlTriangles,
-      );
+      const { skinIndex, skinWeight } = this.assets;
+      const tris = this.bodyControlTriangles;
+      solved = [
+        yield* solveHipFoldSteps(rest, control, skinIndex, skinWeight, tris),
+        yield* solveKneeFoldSteps(rest, control, skinIndex, skinWeight, tris),
+      ];
     }
-    this.hipFolds.set(key, fold);
+    this.solvedFolds.set(key, solved);
     // The eldest of the kept ones goes (a Map iterates in the order its keys were set).
-    if (this.hipFolds.size > HIP_FOLDS_KEPT)
-      this.hipFolds.delete(this.hipFolds.keys().next().value as string);
+    if (this.solvedFolds.size > FOLDS_KEPT)
+      this.solvedFolds.delete(this.solvedFolds.keys().next().value as string);
     const adult = isAdult(recipe) ? this.adultBodySurface() : null;
     const mesh = adult ? adult.part.mesh : this.body.mesh;
-    // The drawn surface draws the solved shape: the stencil's mix of the fold, and what skinning the surface's
-    // own vertices lacks of the solved control surface subdivided (`solvedSurfaceFold`).
     const displacement =
       adult && detail.length ? this.detailDisplacement(detail, control) : undefined;
     // Each reservoir vertex's share of its root, by where it sits on the organ the detail draws (`rootShares`).
@@ -2011,17 +2231,21 @@ export class HumanoidModel {
       shares = rootShares(adult.skinning, pushed, drawn.positions);
     }
     const skin = adult ? evaluatedSkin(adult.topology, adult.skinning, shares) : null;
-    const onSurface = solvedSurfaceFold(
-      surfaceFold(fold, mesh.stencil, mesh.renderToSurface),
-      fold,
-      skin ? { ...mesh, ...skin } : mesh,
-      restBones(this.assets, control),
-      control,
-      this.assets,
-    );
-    // An organ the detail draws out of a reservoir moves with where it is rooted, its fold as its weights (`evaluatedFold`).
-    if (!adult) return { surface: "base", fold: onSurface };
-    return { surface: "adult", fold: evaluatedFold(onSurface, adult.skinning, shares) };
+    const folds = solved.map((fold) => {
+      // The drawn surface draws the solved shape: the stencil's mix of the fold, and what skinning the surface's
+      // own vertices lacks of the solved control surface subdivided (`solvedSurfaceFold`).
+      const onSurface = solvedSurfaceFold(
+        surfaceFold(fold, mesh.stencil, mesh.renderToSurface),
+        fold,
+        skin ? { ...mesh, ...skin } : mesh,
+        rest,
+        control,
+        this.assets,
+      );
+      // An organ the detail draws out of a reservoir moves with where it is rooted, its fold as its weights (`evaluatedFold`).
+      return adult ? evaluatedFold(onSurface, adult.skinning, shares) : onSurface;
+    });
+    return { surface: adult ? "adult" : "base", folds };
   }
 
   private adultBodySurface() {
@@ -2056,6 +2280,7 @@ export class HumanoidModel {
       faceVisibility(this.assets.faceVerts, this.bodyFaces, this.mountedVisible),
       faceTriangles,
     );
+    const skinning = reservoirSkinningOf(mesh);
     this.adultBody = {
       part: part(mesh),
       edges: triangleEdges(mesh.index),
@@ -2066,8 +2291,9 @@ export class HumanoidModel {
         uvScale: Float32Array.from(mesh.renderToSurface, (s) => surface[s * 3] as number),
         occlusion: this.bodyOcclusionField(mesh),
         coat: this.coatOn(mesh),
+        canals: canalsOf(mesh, skinning),
       },
-      skinning: reservoirSkinningOf(mesh),
+      skinning,
     };
     return this.adultBody;
   }
@@ -2109,6 +2335,22 @@ export class HumanoidModel {
           masks[r * COAT_REGION_LIMIT + k + j] = Math.round(
             Math.min(1, Math.max(0, surface[s * 3 + j] as number)) * 255,
           );
+      });
+    }
+    const pubic = COAT_REGIONS.findIndex((region) => region.id === "hair-pubic");
+    const reservoirs = mesh.lattice?.reservoirs ?? [];
+    if (pubic >= 0 && reservoirs.length > 0) {
+      // `coatRegions` paints the body's mons/perineal surface. Reservoir walls
+      // and caps inherit its base stencil only to establish their geometry; they
+      // are not an automatic continuation of that painted region. A later
+      // anatomy-specific region may opt into one explicitly.
+      const excluded = new Set<number>();
+      for (const reservoir of reservoirs) {
+        for (const surface of reservoir.copies) excluded.add(surface);
+        for (const surface of reservoir.capVertices) excluded.add(surface);
+      }
+      r2s.forEach((surface, render) => {
+        if (excluded.has(surface)) masks[render * COAT_REGION_LIMIT + pubic] = 0;
       });
     }
     const out: CoatFields = { regions: COAT_REGIONS.map((r) => r.id), comb, masks };

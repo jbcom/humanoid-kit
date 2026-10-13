@@ -22,6 +22,7 @@ import {
   type AgeAnchor,
   ageAnchorsOf,
   DEFAULT_MACROS,
+  type MacroValues,
   upstreamAgeAnchor,
 } from "../makehuman/macro.ts";
 import type { StateMorph } from "../makehuman/stateMorphs.ts";
@@ -546,6 +547,31 @@ export interface AdultCoatRegionSpec {
 }
 
 /** A reservoir (`Reservoir` in src/build/reservoir.ts) with the id detail refers to it by. */
+/**
+ * A canal's opening closed at the skin, evaluated on each figure
+ * (`src/model/canalClosure.ts`): its loop moved onto the closed shape, the skin
+ * round it by fixed weights on the loop's displacements, and any radial folds.
+ */
+export interface CanalClosureSpec {
+  /** The detail target of the canal: its weight is how far the opening is closed (`closureShare`). */
+  target: string;
+  /** What is left open across the slit it closes to, metres. */
+  gap: number;
+  /** The slit's length front to back, metres; absent, the loop's own (`closedLoop`). */
+  length?: number;
+  /** The skin's outward normal over the opening on the authoring figure: the closure's frame. */
+  normal: [number, number, number];
+  /** The loop's region (detail) indices, in the spec's loop order. */
+  loopRegion: number[];
+  /** The zone round the loop, region indices; each one's weights on the loop's places, CSR (`zoneStart`, `zoneLoop`, `zoneWeight`). */
+  zone: number[];
+  zoneStart: number[];
+  zoneLoop: number[];
+  zoneWeight: number[];
+  /** Radial folds round the opening (the anus's): a displacement of region vertices, metres, at full closure. */
+  folds?: { indices: number[]; xyz: number[] };
+}
+
 export interface AdultReservoirSpec {
   id: string;
   /** Vertices of the refinement mesh round the cap, in order. */
@@ -571,6 +597,16 @@ export interface AdultReservoirSpec {
    * over all of it, and the layer's coordinate running from the loop (0) to the tip (1).
    */
   layer?: string;
+  /**
+   * A canal, drawn into the body, not an organ drawn out of it: `opening`, metres
+   * along it, is how far in its opening closes into its lumen. Its vertices take
+   * their root's weights over that length (`rootShares`), not over an organ's band.
+   * `gap`, metres, is its closed lumen's: its walls that close lie in contact, not
+   * in each other (the invariants' lumen self-contact). `closure` closes its opening
+   * at the skin on each figure; the pack's generator adds it once the detail lattice
+   * is known, and an opening without one is left open.
+   */
+  canal?: { opening: number; gap: number; closure?: CanalClosureSpec };
 }
 
 /**
@@ -593,6 +629,21 @@ export interface AdultDetailSpec {
    * scaled by the ratio of the figure's own distance to `rest`. Absent: none.
    */
   scale?: { a: number; b: number; rest: number };
+  /**
+   * The figure the targets were authored on, by its macros (`createRecipe` input).
+   * With it, a reservoir's organ is placed as that figure's skin under it plus the
+   * displacement, carried rigidly from that figure's loop to the evaluated one's,
+   * as far as it is pushed out of the skin (`src/model/detailCarry.ts`). Absent: the
+   * displacement is added to the evaluated figure's own skin.
+   */
+  authoredOn?: { macros: Partial<MacroValues> };
+  /**
+   * Targets that shape the skin itself (the vulva's folds), not an organ drawn out of
+   * it: added first, to the figure's own skin, never carried (`authoredOn`), and no
+   * push of a reservoir out of the skin, so they leave its skinning as it was. A ring
+   * of a reservoir lying in that skin takes its loop vertex's displacement. Absent: none.
+   */
+  skin?: string[];
   /**
    * Targets whose weight is multiplied by other values: `gates[target]` lists
    * factors (`src/model/detailFactors.ts`): `mod:<id>` (that modifier's positive
@@ -646,6 +697,12 @@ export interface AdultSkinLayerSpec {
   hi: number;
   /** The target the layer's 0..1 coordinate is measured from (`targetCoordinate`), if it has one. */
   coordinate?: string;
+  /**
+   * A mask the pack authors per base vertex (0..1 each), joined with the targets'
+   * (the larger wins): for a feature whose form is a detail target, which moves the
+   * adult surface's lattice and so has no footprint on the base to measure.
+   */
+  vertexMask?: { indices: number[]; weights: number[] };
 }
 
 export interface AdultAnatomyManifest {

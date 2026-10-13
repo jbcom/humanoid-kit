@@ -76,7 +76,7 @@ import {
   applyDualSkinning,
   DualBones,
   dualShadowMaterials,
-  FOLD_SLOT_ATTRIBUTE,
+  foldSlotAttribute,
   followDualSkinning,
 } from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
@@ -98,7 +98,8 @@ import {
 } from "../render/skinMaterial.ts";
 import { faceSignalBasis, faceSignals } from "../rig/faceSignals.ts";
 import { flexionRig, jointFlexion } from "../rig/flexion.ts";
-import { folds, hipFlexion } from "../rig/hipFold.ts";
+import { FOLD_JOINTS, foldFlexion } from "../rig/folds.ts";
+import { flexedPast } from "../rig/jointFold.ts";
 import { occlusionKeyBasis, occlusionKeyWeights } from "../rig/occlusionKeys.ts";
 import {
   type BoneRotations,
@@ -112,7 +113,12 @@ import {
 import { skinDualShare } from "../rig/skinShare.ts";
 import { bodyHairColour, bodyHairCoverage } from "../surface/bodyHair.ts";
 import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
-import { DEFAULT_HAIR_COLOUR, type HairColour, hairAlbedo } from "../surface/hairTone.ts";
+import {
+  agedHairColour,
+  DEFAULT_HAIR_COLOUR,
+  type HairColour,
+  hairAlbedo,
+} from "../surface/hairTone.ts";
 import type { HumanoidWorkerClient, ReadyInfo } from "../worker/client.ts";
 import { CoatMesh } from "./CoatMesh.tsx";
 import { FIGURE_FRAME_PRIORITY } from "./framePriority.ts";
@@ -318,11 +324,12 @@ function makeBodyGeometry(
   setBodyOcclusionAttributes(g, t.occlusion);
   // Where the worn hair style grows from the skin; none until a style is worn.
   g.setAttribute(SCALP_ATTRIBUTE, new BufferAttribute(new Float32Array(t.vertexCount), 1));
-  // Each vertex's row in the hip fold, which is solved after the figure is drawn; -1 is none.
-  g.setAttribute(
-    FOLD_SLOT_ATTRIBUTE,
-    new BufferAttribute(new Float32Array(t.vertexCount).fill(-1), 1),
-  );
+  // Each vertex's row in each joint's fold, which are solved after the figure is drawn; -1 is none.
+  for (const joint of FOLD_JOINTS)
+    g.setAttribute(
+      foldSlotAttribute(joint),
+      new BufferAttribute(new Float32Array(t.vertexCount).fill(-1), 1),
+    );
   return g;
 }
 
@@ -416,6 +423,7 @@ function useAttachmentMaterial(
   }, [t, occlusionKeys]);
   const reportRef = useLatest(report);
   const settle = useSettle();
+  const invalidate = useThree((s) => s.invalidate);
   // An eye wears a material of the eye pack when the recipe names one the library has.
   const library = eyeMaterial?.library ?? null;
   const wanted = eyeMaterial ? library?.entry(eyeMaterial.id) : undefined;
@@ -443,6 +451,8 @@ function useAttachmentMaterial(
         tex.colorSpace = SRGBColorSpace;
         material.map = tex;
         material.needsUpdate = true;
+        // A late material map changes outside React; an idle demand canvas needs one draw.
+        invalidate();
       },
       (e: unknown) => {
         end();
@@ -455,7 +465,7 @@ function useAttachmentMaterial(
       material.map?.dispose();
       material.map = null;
     };
-  }, [t, material, reportRef, settle, wanted, library]);
+  }, [t, material, reportRef, settle, wanted, library, invalidate]);
   useEffect(() => () => material.dispose(), [material]);
   return material;
 }
@@ -576,7 +586,7 @@ function SkinnedPart({
   // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
   useEffect(() => {
     if (!dual) return;
-    // The body's carries the hip fold, which its shadow, bounds and picking follow too.
+    // The body's carries the joint folds, which its shadow, bounds and picking follow too.
     const body = part === "body" || part === "adultBody";
     const shadows = dualShadowMaterials(dual, body);
     mesh.customDepthMaterial = shadows.depth;
@@ -836,7 +846,8 @@ function DecalMesh({
   const material = useMemo(() => new DecalMaterial(), []);
   useDiffuseTexture(material, topology.textureUrl, report);
   const kind = topology.kind as DecalKind;
-  const { eumelanin, pheomelanin, grey, override } = colour;
+  // Brows and lashes grey with age on their own clocks; the recipe's grey is a floor.
+  const { eumelanin, pheomelanin, grey, override } = agedHairColour(colour, age, kind);
   const overrideKey = override?.join(",") ?? "";
   // biome-ignore lint/correctness/useExhaustiveDependencies: overrideKey stands for override's values
   useEffect(() => {
@@ -1126,9 +1137,13 @@ export function Humanoid({
   const invalidate = useThree((s) => s.invalidate);
   /** Which style's scalp each body geometry holds (null: none), so it is written when it changes. */
   const scalpOf = useRef(new WeakMap<BufferGeometry, string | null>());
-  // The scalp shows the hair's own colour under it, so it follows the recipe's hair colour.
+  // The scalp shows the hair's own colour under it, so it follows the worn hair's
+  // colour: the recipe's pigments, greyed by age (the recipe's grey a floor).
   const wornHair = hair !== null;
-  const wornColour = recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR;
+  const wornColour = useMemo(
+    () => agedHairColour(recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR, recipe.macros.age, "scalp"),
+    [recipe.hair?.colour, recipe.macros.age],
+  );
   const overrideKey = wornColour.override?.join(",") ?? "";
   // biome-ignore lint/correctness/useExhaustiveDependencies: overrideKey stands for the override's values
   useEffect(() => {
@@ -1241,8 +1256,8 @@ export function Humanoid({
         skinIndex: skin.skinIndex,
         skinWeight: skin.skinWeight,
         pose: () => (materialRef.current ? dual.linearPose() : dual.pose()),
-        fold: () =>
-          materialRef.current || dual.foldSurface !== ev.surface ? null : dual.skinFold(),
+        folds: () =>
+          materialRef.current || dual.foldSurface !== ev.surface ? [] : dual.skinFolds(),
         skeleton: () => dual.skeleton(),
         world: liftedRef.current,
       });
@@ -1269,7 +1284,10 @@ export function Humanoid({
     client.landmarkAnchors().then(
       (anchors) => {
         end();
-        if (live) affordances.setAnchors(anchors);
+        if (!live) return;
+        affordances.setAnchors(anchors);
+        // Landmark data arrives outside React; wake a demand canvas so its anchors can place themselves.
+        invalidate();
       },
       (e: Error) => {
         end();
@@ -1283,18 +1301,18 @@ export function Humanoid({
       // arrive the frames are null rather than these anchors read on its figure.
       affordances.setAnchors(null);
     };
-  }, [client, affordances, ready, report, settle]);
-  // The hip fold (docs/ARCHITECTURE.md, "The hip fold") is solved for the figure when a
-  // hip is flexed far enough to need it, in the worker between other requests; until it
-  // arrives, or when the figure changes shape, the last one stays.
+  }, [client, affordances, ready, report, settle, invalidate]);
+  // The joint folds (docs/ARCHITECTURE.md, "The hip fold", "The knee fold") are solved for
+  // the figure when a hip or a knee is flexed far enough to need them, in the worker between
+  // other requests; until they arrive, or when the figure changes shape, the last ones stay.
   const foldedFor = useRef<{
     recipe: Recipe;
     signals: Readonly<Record<string, number>>;
   } | null>(null);
-  const hipsFlexed = useMemo(() => {
+  const jointsFlexed = useMemo(() => {
     if (!figure || !ready || !rotations) return false;
     const rest = restBonesFrom(ready.rig.bones, ready.rig.parents, figure.boneHeads);
-    return folds(hipFlexion(rest, rotations));
+    return FOLD_JOINTS.some((joint) => flexedPast(joint, foldFlexion(joint, rest, rotations)));
   }, [figure, ready, rotations]);
   // The fold follows the shape, and an organ's push too (`evaluatedFold`), which the evaluated weights follow.
   const figureKey = useMemo(
@@ -1333,27 +1351,31 @@ export function Humanoid({
   // biome-ignore lint/correctness/useExhaustiveDependencies: figureKey stands for the figure; foldedFor holds what it was evaluated from
   useEffect(() => {
     const wanted = foldedFor.current;
-    if (!hipsFlexed || !wanted || !dual || !geometries) return;
+    if (!jointsFlexed || !wanted || !dual || !geometries) return;
     let live = true;
-    // The figure is not settled until the fold that shapes it has been drawn.
+    // The figure is not settled until the folds that shape it have been drawn.
     const end = settle.begin();
-    client.hipFold(wanted.recipe, wanted.signals).then(
-      ({ surface, fold }) => {
+    client.folds(wanted.recipe, wanted.signals).then(
+      ({ surface, folds }) => {
         end();
         if (!live) return;
         const [target, other] =
           surface === "adult" ? [adultGeometry, geometries.body] : [geometries.body, adultGeometry];
         if (!target) return;
-        (target.getAttribute(FOLD_SLOT_ATTRIBUTE) as BufferAttribute).copyArray(
-          fold.slot,
-        ).needsUpdate = true;
-        // The rows are of the surface drawn; the other has none.
-        const left = other?.getAttribute(FOLD_SLOT_ATTRIBUTE) as BufferAttribute | undefined;
-        if (left) {
-          left.array.fill(-1);
-          left.needsUpdate = true;
+        for (const joint of FOLD_JOINTS) {
+          const slots = target.getAttribute(foldSlotAttribute(joint)) as BufferAttribute;
+          const fold = folds.find((f) => f.joint.name === joint.name);
+          if (fold) slots.copyArray(fold.slot);
+          else slots.array.fill(-1);
+          slots.needsUpdate = true;
+          // The rows are of the surface drawn; the other has none.
+          const left = other?.getAttribute(foldSlotAttribute(joint)) as BufferAttribute | undefined;
+          if (left) {
+            left.array.fill(-1);
+            left.needsUpdate = true;
+          }
         }
-        dual.setFold(fold, surface);
+        dual.setFolds(folds, surface);
         // It fades in over the next frames (`DualBones.advanceFold`), and the figure is not settled before it has.
         fading.current?.();
         fading.current = settle.begin();
@@ -1368,7 +1390,7 @@ export function Humanoid({
       live = false;
       end();
     };
-  }, [client, hipsFlexed, figureKey, dual, geometries, adultGeometry, report, settle]);
+  }, [client, jointsFlexed, figureKey, dual, geometries, adultGeometry, report, settle]);
   // A new identity whenever the figure or its pose changes, or a fold has faded in: the
   // meshes' bounds follow it.
   // biome-ignore lint/correctness/useExhaustiveDependencies: figure, rotations and foldsShown are the triggers
@@ -1466,7 +1488,12 @@ export function Humanoid({
     let live = true;
     if (ready.adultAnatomyLoaded)
       client.adultLayers().then(
-        (update) => live && update && atlas.refresh(update),
+        (update) => {
+          if (!live || !update) return;
+          atlas.refresh(update);
+          // Atlas pages change outside React; a demand canvas needs one frame to sample them.
+          invalidate();
+        },
         (e: Error) => live && report(e),
       );
     return () => {
@@ -1474,7 +1501,7 @@ export function Humanoid({
       skin.setLayerAtlas(null);
       atlas.release();
     };
-  }, [client, gl, ready, skin, report]);
+  }, [client, gl, ready, skin, report, invalidate]);
   // The figure's body art, baked into a texture of its own from each evaluation
   // that brings some (the placement follows the shape). A new bake replaces the
   // last without rebuilding the shader; only a figure gaining or losing body art,
@@ -1851,7 +1878,7 @@ export function Humanoid({
                 topology={hair.topology}
                 geometry={hair.geometry}
                 skeleton={rig.skeleton}
-                colour={recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR}
+                colour={wornColour}
                 multisampled={multisampled}
                 visible={shown}
                 report={report}

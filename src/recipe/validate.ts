@@ -5,7 +5,13 @@
  */
 import { DEFAULT_MACROS } from "../makehuman/macro.ts";
 import { BODY_REGIONS } from "../makehuman/regions.ts";
-import { BEARD_STYLES, BODY_HAIR_GROUPS, MAX_BODY_HAIR_DENSITY } from "../surface/bodyHair.ts";
+import {
+  BEARD_STYLES,
+  BODY_HAIR_GROUPS,
+  MAX_BODY_HAIR_DENSITY,
+  MAX_BODY_HAIR_FOLLICLE_DENSITY,
+  MIN_BODY_HAIR_FOLLICLE_DENSITY,
+} from "../surface/bodyHair.ts";
 import { bodyArtProblems } from "./bodyArt.ts";
 import { DEFAULT_SKIN, RECIPE_VERSION, type Recipe } from "./recipe.ts";
 
@@ -173,11 +179,11 @@ function hairProblems(hair: unknown, p: string[]): void {
     p.push("hair.colour.override must be null or three numbers in [0, 1]");
 }
 
-const BODY_HAIR_KEYS = new Set(["density", "beard"]);
+const BODY_HAIR_KEYS = new Set(["density", "coverage", "follicleDensity", "beard"]);
 const GROUPS = new Set<string>(BODY_HAIR_GROUPS);
 const BEARDS = new Set<string>(BEARD_STYLES);
 
-/** The optional `bodyHair` field: known groups with multipliers in range, and a known beard style. */
+/** The optional `bodyHair` field: compatible legacy multipliers, explicit controls and a beard style. */
 function bodyHairProblems(bodyHair: unknown, p: string[]): void {
   if (typeof bodyHair !== "object" || bodyHair === null) {
     p.push("bodyHair must be an object");
@@ -186,16 +192,35 @@ function bodyHairProblems(bodyHair: unknown, p: string[]): void {
   const b = bodyHair as Record<string, unknown>;
   for (const k of Object.keys(b))
     if (!BODY_HAIR_KEYS.has(k)) p.push(`bodyHair.${k} is not a body hair field`);
-  if (b.density !== undefined) {
-    if (typeof b.density !== "object" || b.density === null)
-      p.push("bodyHair.density must be an object");
-    else
-      for (const [g, v] of Object.entries(b.density)) {
-        if (!GROUPS.has(g)) p.push(`bodyHair.density.${g} is not a body hair group`);
-        else if (!(finite(v) && v >= 0 && v <= MAX_BODY_HAIR_DENSITY))
-          p.push(`bodyHair.density.${g} must be a number in [0, ${MAX_BODY_HAIR_DENSITY}]`);
-      }
-  }
+  const numericMap = (
+    field: "density" | "coverage" | "follicleDensity",
+    min: number,
+    max: number,
+  ) => {
+    const map = b[field];
+    if (map === undefined) return;
+    if (typeof map !== "object" || map === null) {
+      p.push(`bodyHair.${field} must be an object`);
+      return;
+    }
+    for (const [g, v] of Object.entries(map)) {
+      if (!GROUPS.has(g)) p.push(`bodyHair.${field}.${g} is not a body hair group`);
+      else if (!(finite(v) && v >= min && v <= max))
+        p.push(`bodyHair.${field}.${g} must be a number in [${min}, ${max}]`);
+    }
+  };
+  numericMap("density", 0, MAX_BODY_HAIR_DENSITY);
+  numericMap("coverage", 0, 1);
+  numericMap("follicleDensity", MIN_BODY_HAIR_FOLLICLE_DENSITY, MAX_BODY_HAIR_FOLLICLE_DENSITY);
+  if (
+    typeof b.density === "object" &&
+    b.density !== null &&
+    typeof b.coverage === "object" &&
+    b.coverage !== null
+  )
+    for (const group of BODY_HAIR_GROUPS)
+      if (group in b.density && group in b.coverage)
+        p.push(`bodyHair.${group} cannot set both density and coverage`);
   if (b.beard !== undefined && !(typeof b.beard === "string" && BEARDS.has(b.beard)))
     p.push(`bodyHair.beard must be one of ${BEARD_STYLES.join(", ")}`);
 }

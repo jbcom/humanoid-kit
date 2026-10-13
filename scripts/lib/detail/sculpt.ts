@@ -1,5 +1,5 @@
 /**
- * A part cut from a CC0 sculpt (`scripts/blender/cut_male.py`), placed on our
+ * A part cut from a CC0 sculpt (`scripts/blender/cut_sculpt.py`), placed on our
  * base and on the figure detail is authored against (docs/research/
  * ADULT-SCULPT-PLAN.md, section 6d, steps 1 and 2).
  *
@@ -45,7 +45,7 @@ export interface SculptPart {
   boundary: number[];
 }
 
-interface Obj {
+export interface Obj {
   positions: number[];
   faces: number[][];
 }
@@ -55,7 +55,7 @@ interface Obj {
  * source authored in metres comes out ten times small here, which its fit undoes:
  * the fit's per-axis scale is taken against where its binding puts it on our body.
  */
-function readObj(file: string): Obj {
+export function readObj(file: string): Obj {
   const positions: number[] = [];
   const faces: number[][] = [];
   for (const raw of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
@@ -187,10 +187,10 @@ export const cutOutline = (part: SculptPart): Vec3[] =>
   ]);
 
 /**
- * The per-axis scale and translation that takes the source's coordinates to where
- * its own binding places it on our rest body: `[a, b]` per axis, x' = a x + b.
+ * A source's whole mesh (`readObj`) and where its own binding (offsets and all) puts
+ * each of its vertices on our body at `rest`.
  */
-export function sourceFit(asset: string, rest: Float32Array): [number, number][] {
+export function boundSource(asset: string, rest: Float32Array): { obj: Obj; placed: Float32Array } {
   const dir = path.join(SCULPT_SOURCES, asset);
   // A clothes piece's binding is a .mhclo, a whole-body proxy's a .proxy: one format.
   const file = [".mhclo", ".proxy"]
@@ -216,7 +216,32 @@ export function sourceFit(asset: string, rest: Float32Array): [number, number][]
         : null,
     },
   };
-  const placed = evaluateBinding(bound, rest, new Float32Array(n * 3));
+  return { obj, placed: evaluateBinding(bound, rest, new Float32Array(n * 3)) };
+}
+
+/**
+ * The cuts made from a source (`scripts/blender/cut_sculpt.py`), after checking the
+ * source is the file they were cut from.
+ */
+export function sourceCuts(asset: string): { parts: Record<string, { disc: boolean }> } {
+  const dir = path.join(SCULPT_SOURCES, asset);
+  const cuts = JSON.parse(fs.readFileSync(path.join(dir, "cuts.json"), "utf8")) as {
+    source: string;
+    sha256: string;
+    parts: Record<string, { disc: boolean }>;
+  };
+  if (sha256(path.join(dir, cuts.source)) !== cuts.sha256)
+    throw new Error(`sculpt ${asset}: ${cuts.source} is not the file its parts were cut from`);
+  return cuts;
+}
+
+/**
+ * The per-axis scale and translation that takes the source's coordinates to where
+ * its own binding places it on our rest body: `[a, b]` per axis, x' = a x + b.
+ */
+export function sourceFit(asset: string, rest: Float32Array): [number, number][] {
+  const { obj, placed } = boundSource(asset, rest);
+  const n = obj.positions.length / 3;
   return [0, 1, 2].map((k) => {
     let mx = 0;
     let my = 0;
@@ -249,14 +274,7 @@ export function placeSculpt(
   figure: Float32Array,
 ): SculptPart[] {
   const dir = path.join(SCULPT_SOURCES, asset);
-  const cuts = JSON.parse(fs.readFileSync(path.join(dir, "cuts.json"), "utf8")) as {
-    source: string;
-    sha256: string;
-    parts: Record<string, { disc: boolean }>;
-  };
-  const source = path.join(dir, cuts.source);
-  if (sha256(source) !== cuts.sha256)
-    throw new Error(`sculpt ${asset}: ${cuts.source} is not the file its parts were cut from`);
+  const cuts = sourceCuts(asset);
   const fit = sourceFit(asset, body.positions);
   const point = (p: ArrayLike<number>, v: number): Vec3 => [
     p[v * 3] as number,

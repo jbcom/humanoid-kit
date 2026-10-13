@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRecipe } from "../src/recipe/recipe.ts";
+import { HIP_FOLD } from "../src/rig/hipFold.ts";
+import { rowTexels } from "../src/rig/jointFold.ts";
 import { HumanoidWorkerClient, HumanoidWorkerError } from "../src/worker/client.ts";
 import type { WorkerRequest, WorkerResponse } from "../src/worker/protocol.ts";
 import { EMPTY_RIG } from "./emptyRig.ts";
@@ -22,6 +24,8 @@ class FakeWorker {
   adultLayerRequests = 0;
   adultSurfaceRequests = 0;
   anchorRequests = 0;
+  /** The names of the custom targets registered, in order. */
+  customTargets: string[] = [];
   /** The ages of the recipes whose hip fold was asked for. */
   folded: number[] = [];
   terminated = false;
@@ -69,6 +73,11 @@ class FakeWorker {
       );
       return;
     }
+    if (msg.type === "customTargets") {
+      this.customTargets.push(...msg.targets.map((t) => t.name));
+      setTimeout(() => reply({ type: "customTargetsAdded", id: msg.id }), 1);
+      return;
+    }
     if (msg.type === "posedOcclusion") {
       this.posedOcclusions++;
       setTimeout(
@@ -106,6 +115,7 @@ class FakeWorker {
               uvScale: Float32Array.of(1, 2),
               occlusion: new Uint8Array(16).fill(255),
               coat: { regions: [], comb: new Float32Array(6), masks: new Uint8Array(16) },
+              canals: { of: Int16Array.of(-1, -1), gap: [] },
             },
           }),
         1,
@@ -150,15 +160,22 @@ class FakeWorker {
       );
       return;
     }
-    if (msg.type === "hipFold") {
+    if (msg.type === "folds") {
       this.folded.push(msg.recipe.macros.age);
       setTimeout(
         () =>
           reply({
-            type: "hipFold",
+            type: "folds",
             id: msg.id,
             surface: "adult",
-            fold: { slot: Float32Array.of(-1, 0), rows: 1, data: new Uint16Array(4 * 48) },
+            folds: [
+              {
+                joint: HIP_FOLD,
+                slot: Float32Array.of(-1, 0),
+                rows: 1,
+                data: new Uint16Array(rowTexels(HIP_FOLD) * 4),
+              },
+            ],
           }),
         1,
       );
@@ -296,6 +313,14 @@ describe("HumanoidWorkerClient", () => {
     expect(worker.anchorRequests).toBe(1);
   });
 
+  it("registers custom targets in the worker and resolves once they are added", async () => {
+    const { client, worker } = make(false);
+    await client.addCustomTargets([
+      { name: "probe", indices: [1], deltas: [0, 0, 1], scale: 1e-4 },
+    ]);
+    expect(worker.customTargets).toEqual(["probe"]);
+  });
+
   it("asks the worker for the posed occlusion once", async () => {
     const { client, worker } = make(false);
     const first = client.posedOcclusion();
@@ -357,13 +382,14 @@ describe("HumanoidWorkerClient", () => {
     expect(worker.adultSurfaceRequests).toBe(1);
   });
 
-  it("asks the worker for a recipe's hip fold, and says which surface it is for", async () => {
+  it("asks the worker for a recipe's joint folds, and says which surface they are for", async () => {
     const { client, worker } = make(false);
-    const { surface, fold } = await client.hipFold(createRecipe({ macros: { age: 33 } }));
+    const { surface, folds } = await client.folds(createRecipe({ macros: { age: 33 } }));
     expect(worker.folded).toEqual([33]);
     expect(surface).toBe("adult");
-    expect(fold.rows).toBe(1);
-    expect([...fold.slot]).toEqual([-1, 0]);
+    expect(folds.map((f) => f.joint.name)).toEqual(["hip"]);
+    expect(folds[0]?.rows).toBe(1);
+    expect([...(folds[0]?.slot ?? [])]).toEqual([-1, 0]);
   });
 
   it("fails queued evaluations when the worker cannot initialise", async () => {

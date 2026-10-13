@@ -2,7 +2,7 @@ export type { AffordanceSpace, Capsule, LiveFigure } from "../affordance/live.ts
 export { applyGarmentWear } from "../render/attachmentLook.ts";
 export type { BodyArtImages } from "../render/bodyArtTexture.ts";
 export { ChannelClip, CLIP_CHANNELS, clipMaterial } from "../render/channelClip.ts";
-export { applyDualSkinning, DualBones } from "../render/dualSkinning.ts";
+export { applyDualSkinning, DualBones, foldSlotAttribute } from "../render/dualSkinning.ts";
 export {
   applyShadowFilter,
   patchShadowFilter,
@@ -45,5 +45,10 @@ export {
   StudioStage,
   type StudioStageProps,
 } from "./StudioStage.tsx";
-export type { HumanoidAnimation } from "./useFigureAnimation.ts";
+export type {
+  AnimationContactPoint,
+  HumanoidAnimation,
+  HumanoidAnimationContact,
+  HumanoidAnimationFrame,
+} from "./useFigureAnimation.ts";
 export { type SkinStateFilterOptions, useSkinStateFilter } from "./useSkinStateFilter.ts";

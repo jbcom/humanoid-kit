@@ -23,7 +23,12 @@ const assets = await loadHumanoidAssets({ body: bodyPack, adultAnatomy: adultAna
 
 ## Licence
 
-CC0 1.0 ([LICENSE](LICENSE)). The current contents are MakeHuman's own
-adult-only targets (released CC0 in September 2020); see
-[data/PROVENANCE.md](data/PROVENANCE.md) for the evidence per file. This package
-is not affiliated with the MakeHuman project.
+`CC0-1.0 AND CC-BY-4.0`. Most of the pack is CC0 1.0 ([LICENSE](LICENSE)):
+MakeHuman's own adult-only targets (released CC0 in September 2020) and the CC0
+community sculpts the genital forms are transferred from; see
+[data/PROVENANCE.md](data/PROVENANCE.md) for the evidence per file. The female
+genital detail taken from NIH 3D entry 3DPX-017321 (Emullen45; National Institute
+of Allergy and Infectious Disease) is CC BY 4.0
+([LICENSE-CC-BY-4.0](LICENSE-CC-BY-4.0)); [NOTICE.md](NOTICE.md) carries its
+attribution, which redistribution must keep. This package is not affiliated with
+the MakeHuman project or the NIH.

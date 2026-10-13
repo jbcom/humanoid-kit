@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { type LayerAtlasSource, withExtra } from "../src/render/layerAtlas.ts";
-import { densePlan } from "../src/surface/atlasPlan.ts";
+import type { LayerAtlasSource } from "../src/render/layerAtlas.ts";
+import { densePlan, withExtra } from "../src/surface/atlasPlan.ts";
 
 /**
  * The atlas draws an update's extra triangles (the adult surface's islands) with

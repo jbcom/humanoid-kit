@@ -6,7 +6,7 @@
 
 import type { CoatRegion } from "../coat.ts";
 import { isAdultLayer, type SkinLayer } from "../layers.ts";
-import { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER } from "./adult.ts";
+import { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER, VULVA_LAYER } from "./adult.ts";
 import { AREA_SKIN_LAYERS } from "./areas.ts";
 import { BODY_HAIR_LAYERS } from "./bodyHair.ts";
 import { BODY_HAIR_COAT } from "./bodyHairCoat.ts";
@@ -59,7 +59,12 @@ const BODY_SKIN_LAYERS: readonly SkinLayer[] = [
  * The adult anatomy's layers (colour code in the core, data in the adult pack;
  * gated by age and anatomy in `paintStopTable`).
  */
-export const ADULT_SKIN_LAYERS: readonly SkinLayer[] = [PENIS_LAYER, TESTES_LAYER, MOUND_LAYER];
+export const ADULT_SKIN_LAYERS: readonly SkinLayer[] = [
+  PENIS_LAYER,
+  TESTES_LAYER,
+  MOUND_LAYER,
+  VULVA_LAYER,
+];
 
 /**
  * The coat's regions (docs/ARCHITECTURE.md, "The coat"), at most
@@ -94,4 +99,4 @@ export * from "./rest.ts";
 export * from "./skinZones.ts";
 export * from "./states.ts";
 export * from "./torso.ts";
-export { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER };
+export { MOUND_LAYER, PENIS_LAYER, TESTES_LAYER, VULVA_LAYER };

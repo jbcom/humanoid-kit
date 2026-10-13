@@ -31,7 +31,7 @@ const support = chooseSupport(
 );
 const ctx: TissueCtx = { mesh, support, manifest: bodyManifest };
 const t0 = performance.now();
-const lib = tissueLibrary(ctx, lab, cellRecipe);
+const lib = tissueLibrary(ctx, lab, cellRecipe, frameRecipe({ gender: 1 }));
 console.log(
   "library build",
   (performance.now() - t0).toFixed(0),
