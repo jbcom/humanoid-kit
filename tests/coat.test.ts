@@ -239,6 +239,13 @@ describe("coat masks and paint", () => {
     expect(row(goatee, "beard-cheeks")[0]).toBe(0);
   });
 
+  it("cover a chosen beard as fully on a woman as on a man (beardCoverage)", () => {
+    for (const gender of [0, 0.5, 1]) {
+      const full = paintCoat(BODY_HAIR_COAT, input(35, gender, { bodyHair: { beard: "full" } }));
+      expect(row(full, "beard-chin")[0], `${gender}`).toBeGreaterThan(0.9);
+    }
+  });
+
   it("trim the beard's coat to a shorter beard length, and never grow it past its base", () => {
     const paint = (beard: BeardSpec): number =>
       row(paintCoat(BODY_HAIR_COAT, input(35, 1, { bodyHair: { beard } })), "beard-chin")[1] ?? 0;

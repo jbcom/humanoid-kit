@@ -729,6 +729,10 @@ compute what the renderer will do.
   style's `BEARD_SHAPES` entry (which parts it grows, as fractions of the
   longest, its default length, fork and part) and clamps each to its range:
   the length to 0..`chinHeight`, so no beard grows past the floor.
+  `beardCoverage(input)` is how much of the chosen beard grows, 0..1: all of
+  it on any adult face whatever the gender, coming in with the face's hair
+  from puberty, or exactly the recipe's own face `coverage` or `density` when
+  it sets one. The beard's coat cover and the share of its cards drawn are it.
   `generateBeardCards(assets, beard: ResolvedBeard)`
   (`src/surface/beardCards.ts`) is the beard's alpha cards, bound to the base
   mesh at rest and draped (long hair falls, forks and parts, and lies on the

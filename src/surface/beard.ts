@@ -5,7 +5,13 @@
  * number the recipe may set, so a beard can grow, grey and fork over time
  * without swapping styles.
  */
-import { type BeardStyle, type BodyHairInput, beardSpec, MAX_BEARD_VOLUME } from "./bodyHair.ts";
+import {
+  type BeardStyle,
+  type BodyHairInput,
+  beardSpec,
+  bodyHairCoverage,
+  MAX_BEARD_VOLUME,
+} from "./bodyHair.ts";
 import type { BeardPart } from "./regions/bodyHairCoat.ts";
 
 export interface BeardShape {
@@ -91,4 +97,22 @@ export function resolveBeard(
     fork: clamp(spec.fork ?? s.fork, 0, 1),
     part: clamp(spec.part ?? s.part, 0, 1),
   };
+}
+
+/**
+ * How much of the recipe's beard grows, 0..1: the beard's coat cover and the
+ * share of its cards drawn. A chosen style is all there on any adult face,
+ * whatever the gender (the style is the choice, not the androgen level), and
+ * comes in with the face's terminal hair from puberty. A recipe that sets the
+ * face's own `coverage` or `density` gets exactly that (`bodyHairCoverage`).
+ */
+export function beardCoverage(input: BodyHairInput): number {
+  if (beardSpec(input).style === "none") return 0;
+  const own = input.bodyHair;
+  if (own?.coverage?.face !== undefined || own?.density?.face !== undefined)
+    return bodyHairCoverage("face", input);
+  return bodyHairCoverage("face", {
+    ...input,
+    bodyHair: { ...own, coverage: { ...own?.coverage, face: 1 } },
+  });
 }

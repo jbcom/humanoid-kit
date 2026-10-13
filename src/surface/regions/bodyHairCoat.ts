@@ -18,7 +18,7 @@
  */
 import type { HumanoidAssets } from "../../format/assetFormat.ts";
 import { ADULT_COAT_REGION_IDS, groupFaces, jointPosition } from "../../format/assetFormat.ts";
-import { resolveBeard } from "../beard.ts";
+import { beardCoverage, resolveBeard } from "../beard.ts";
 import {
   type BeardStyle,
   BODY_HAIR_FIBRE,
@@ -271,7 +271,12 @@ function beardRegion(part: BeardPart): CoatRegion {
       // a longer one is the cards' and never grows the coat past its base.
       const beard = resolveBeard(bodyHairInput(input), Number.POSITIVE_INFINITY);
       const length = Math.min(BEARD_LENGTHS[beard.style][part], beard.parts[part]);
-      return paintOf("face", input, length, length <= 0.002 ? LIE.stubble : LIE.grown);
+      const paint = paintOf("face", input, length, length <= 0.002 ? LIE.stubble : LIE.grown);
+      // A chosen beard covers by the style, not the androgen level (`beardCoverage`).
+      return {
+        ...paint,
+        cover: length > 0 && coatEnabled("face", input) ? beardCoverage(bodyHairInput(input)) : 0,
+      };
     },
   };
 }

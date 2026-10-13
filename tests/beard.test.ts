@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { BEARD_SHAPES, resolveBeard } from "../src/surface/beard.ts";
-import { BEARD_STYLES, MAX_BEARD_VOLUME } from "../src/surface/bodyHair.ts";
+import { BEARD_SHAPES, beardCoverage, resolveBeard } from "../src/surface/beard.ts";
+import {
+  BEARD_STYLES,
+  type BodyHairRecipe,
+  bodyHairCoverage,
+  MAX_BEARD_VOLUME,
+} from "../src/surface/bodyHair.ts";
+import { DEFAULT_HAIR_COLOUR } from "../src/surface/hairTone.ts";
 import { BEARD_LENGTHS } from "../src/surface/regions/bodyHairCoat.ts";
 
 /** A standing adult's chin, metres above the floor. */
@@ -72,5 +78,31 @@ describe("resolving a recipe's beard", () => {
     expect(b.grey).toBe(1);
     expect(b.fork).toBe(0);
     expect(b.part).toBe(0.5);
+  });
+});
+
+describe("how much of a chosen beard grows", () => {
+  const colour = DEFAULT_HAIR_COLOUR;
+  const at = (age: number, gender: number, bodyHair: BodyHairRecipe) =>
+    beardCoverage({ age, gender, colour, bodyHair });
+
+  it("is all of it on any adult, whatever the gender", () => {
+    for (const gender of [0, 0.5, 1])
+      expect(at(30, gender, { beard: "full" }), `${gender}`).toBe(1);
+  });
+
+  it("is none for a clean-shaven face, and none before the face's hair comes in", () => {
+    expect(at(30, 1, { beard: "none" })).toBe(0);
+    expect(at(30, 1, {})).toBe(0);
+    expect(at(10, 1, { beard: "full" })).toBe(0);
+    expect(at(18, 0, { beard: "full" })).toBeGreaterThan(0);
+  });
+
+  it("follows the recipe's own face coverage or density when it sets one", () => {
+    const input = (bodyHair: BodyHairRecipe) => ({ age: 30, gender: 0, colour, bodyHair });
+    const set = { beard: "full", coverage: { face: 0.4 } } as const;
+    expect(at(30, 0, set)).toBeCloseTo(bodyHairCoverage("face", input(set)), 9);
+    const legacy = { beard: "full", density: { face: 2 } } as const;
+    expect(at(30, 0, legacy)).toBeCloseTo(bodyHairCoverage("face", input(legacy)), 9);
   });
 });
