@@ -11,7 +11,7 @@ describe("the browser configs' launch decision", () => {
     const env = {
       CI: "1",
       HEAVY_RENDER_HEADLESS: "1",
-      HEAVY_RENDER_HOST: "_gitea_render@192.168.1.202",
+      HEAVY_RENDER_HOST: "render-user@render-host.example",
     };
     expect(browserRun(env, "darwin")).toEqual({ gpuMode: "macos-hardware-metal", headless: true });
   });

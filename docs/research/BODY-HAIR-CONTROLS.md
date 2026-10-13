@@ -4,7 +4,7 @@ Status: the independent-control contract is accepted as a bounded API fix, but
 the renderer is not visually accepted for issue #21. This document records the
 compatibility contract before it changes the public recipe.
 
-Candidate worktree: `/Users/jbogaty/src/jbcom/humanoid-kit-body-hair`, branch
+Candidate worktree: `<worktree>/humanoid-kit-body-hair`, branch
 `fix/body-hair-independent-controls`, based on integration
 `ed8cd260ad168da5e464704575c048aaf04ff555`. The bounded API milestone is
 `a84cb31`; no integration merge has occurred.
@@ -164,7 +164,7 @@ root-inspected sheet and this JSON evidence; neither changes lighting or a
 visual threshold.
 
 Root inspected the post-placement capture
-`/Users/jbogaty/.cache/hk-coverage/root-pubic-placement-fix-20261011/02-gender-endpoints.png`
+`$HOME/.cache/hk-coverage/root-pubic-placement-fix-20261011/02-gender-endpoints.png`
 and its adjacent runtime record. All 20 response cells used the QA alpha
 program, seven shell instances, transparent normal blending, disabled depth
 writes, and the expected coverage/density rows. At explicit coverage `.75`, the
