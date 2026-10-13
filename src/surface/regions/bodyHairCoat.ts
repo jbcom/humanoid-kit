@@ -53,7 +53,12 @@ export const BEARD_LENGTHS: Readonly<Record<BeardStyle, Readonly<Record<BeardPar
   stubble: { moustache: 0.0015, chin: 0.0015, cheeks: 0.0015 },
   moustache: { moustache: 0.012, chin: 0, cheeks: 0 },
   goatee: { moustache: 0.012, chin: 0.015, cheeks: 0 },
+  imperial: { moustache: 0.012, chin: 0.015, cheeks: 0 },
+  "mutton-chops": { moustache: 0.012, chin: 0, cheeks: 0.012 },
+  "chin-curtain": { moustache: 0, chin: 0.015, cheeks: 0.012 },
   full: { moustache: 0.012, chin: 0.015, cheeks: 0.012 },
+  forked: { moustache: 0.012, chin: 0.015, cheeks: 0.012 },
+  longstreet: { moustache: 0.012, chin: 0.015, cheeks: 0.012 },
 };
 
 /** Per vertex, `f(|x|, y, z, v)` (the face is symmetric about x = 0). */

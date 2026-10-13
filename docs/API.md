@@ -167,8 +167,22 @@ interface BodyHairRecipe {
   // per BODY_HAIR_GROUPS entry, a multiplier on the default, 0..2 (1 = default);
   // pubic is adult-only: any value but 0 under 18 is refused
   density?: Partial<Record<BodyHairGroup, number>>;
-  beard?: BeardStyle;   // none | stubble | moustache | goatee | full; absent = none (clean-shaven)
+  // a style by name, or a style with its continuous controls; absent = none (clean-shaven)
+  beard?: BeardStyle | BeardSpec;
 }
+
+// none | stubble | moustache | goatee | imperial | mutton-chops | chin-curtain
+// | full | forked | longstreet
+type BeardStyle = (typeof BEARD_STYLES)[number];
+
+interface BeardSpec {
+  style: BeardStyle;
+  length?: number;  // the longest part, metres; clamped to the chin's height above the floor
+  volume?: number;  // 0..MAX_BEARD_VOLUME (2), 1 = the style's fullness
+  grey?: number;    // 0..1, white hairs on top of the colour's own grey
+  fork?: number;    // 0..1, the chin's hair parting into two points
+  part?: number;    // 0..1, the moustache parting at the middle and sweeping out
+}                   // every absent control is the style's default (BEARD_SHAPES)
 
 type RegionalMacroValues = Omit<MacroValues, "age">;
 
@@ -636,7 +650,12 @@ compute what the renderer will do.
   `bodyHairCoverage(group, input: BodyHairInput)` applies the recipe's density
   multiplier (0..`MAX_BODY_HAIR_DENSITY`, clamped to full coverage; it never
   adds hair where the default has none). `beardStyle(input)` is the recipe's
-  style, or `DEFAULT_BEARD` (`none`, clean-shaven). `bodyHairColour(group, input)` is the figure's hair pigments
+  style, or `DEFAULT_BEARD` (`none`, clean-shaven); `beardSpec(input)` is the
+  style with whatever controls the recipe gives. `resolveBeard(input,
+  chinHeight)` (`src/surface/beard.ts`) fills every absent control from the
+  style's `BEARD_SHAPES` entry (which parts it grows, as fractions of the
+  longest, its default length, fork and part) and clamps each to its range:
+  the length to 0..`chinHeight`, so no beard grows past the floor. `bodyHairColour(group, input)` is the figure's hair pigments
   darker or lighter per group (`BODY_HAIR_FIBRE`, which also holds each group's
   fibre diameter and drawn length) and at least as grey as ageing makes them
   (`ageGrey(age)`, lagged per group); the recipe's grey is kept as a floor and an

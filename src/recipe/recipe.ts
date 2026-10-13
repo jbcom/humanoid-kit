@@ -191,7 +191,12 @@ export function createRecipe(
     ...(init.bodyHair && {
       bodyHair: {
         ...(init.bodyHair.density && { density: { ...init.bodyHair.density } }),
-        ...(init.bodyHair.beard && { beard: init.bodyHair.beard }),
+        ...(init.bodyHair.beard && {
+          beard:
+            typeof init.bodyHair.beard === "string"
+              ? init.bodyHair.beard
+              : { ...init.bodyHair.beard },
+        }),
       },
     }),
     ...(init.outfit && { outfit: [...init.outfit] }),

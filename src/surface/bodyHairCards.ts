@@ -19,13 +19,39 @@
  * figure's coverage, so density follows age, sex and the recipe without new
  * geometry.
  */
-import type { HumanoidAssets } from "../../src/format/assetFormat.ts";
-import { groupFaces } from "../../src/format/assetFormat.ts";
-import { combField } from "../../src/surface/coat.ts";
-import { GROWTH_SCALE } from "../../src/surface/hairFields.ts";
-import { HAIR_STRAND_MEAN } from "../../src/surface/hairTone.ts";
-import { beardMasks } from "../../src/surface/regions/bodyHairCoat.ts";
-import type { CompiledAsset } from "./compileAsset.ts";
+import type { AttachmentMaterial, HumanoidAssets } from "../format/assetFormat.ts";
+import { groupFaces } from "../format/assetFormat.ts";
+import { combField } from "./coat.ts";
+import { GROWTH_SCALE } from "./hairFields.ts";
+import { HAIR_STRAND_MEAN } from "./hairTone.ts";
+import { beardMasks } from "./regions/bodyHairCoat.ts";
+
+/**
+ * A generated card set in the shape the hair packer writes for any compiled
+ * attachment (`scripts/lib/compileAsset.ts`, `CompiledAsset`): bound to the
+ * base mesh, with no source files and no textures of its own.
+ */
+export interface GeneratedCardAsset {
+  id: string;
+  kind: string;
+  name: string;
+  zDepth: number;
+  vertexCount: number;
+  faceCount: number;
+  scale: null;
+  material: AttachmentMaterial;
+  arrays: {
+    refVerts: Uint32Array;
+    weights: Float32Array;
+    offsets: Float32Array;
+    faceVerts: Uint32Array;
+    faceUvs: Uint32Array;
+    uvs: Float32Array;
+    deleteVerts: Uint32Array;
+  };
+  evidence: Record<string, string>;
+  textures: Map<string, string>;
+}
 
 /** Quads along a card, root to tip. */
 export const SEGMENTS = 3;
@@ -61,7 +87,7 @@ export interface CardSpec {
 }
 
 export interface Cards {
-  compiled: CompiledAsset;
+  compiled: GeneratedCardAsset;
   /** Per card vertex, its card's rank in [0, 1): a card is drawn while its rank is under the coverage. */
   rank: Float32Array;
   /** Per card vertex, metres along its card from the root. */

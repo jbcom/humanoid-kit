@@ -2394,7 +2394,7 @@ grows none.
 
 **A grown beard's length is cards, on the hair pack's machinery (2026-10-09).**
 Past the coat's few centimetres, hair is cards. The hair pack gains a kind,
-`beard`, whose entries the packer generates (`scripts/lib/bodyHairCards.ts`)
+`beard`, whose entries the packer generates (`src/surface/bodyHairCards.ts`)
 rather than packs from a MakeHuman file: narrow strips rooted where the
 beard's area is solid (`ROOT_SOLID`: none under a mask of 0.4, its full
 density from 0.7; a card is drawn whole, so one rooted in the mask's faint
@@ -2417,6 +2417,28 @@ colour. Their scalp fields are neutral (no hairline fade, no scalp tint: the
 coat shades the skin under them). Rebuilding the hair pack with them leaves
 every scalp, brow and lash file byte-identical; only the manifest gains the
 entry.
+
+**Beards (design, 2026-10-13, issue #14).** A beard is a style plus
+continuous controls, not one asset per look. `bodyHair.beard` takes a style
+name, or `{ style, length?, volume?, grey?, fork?, part? }`, and every absent
+control is the style's default (`BEARD_SHAPES`, `src/surface/beard.ts`). The
+ten styles (none, stubble, moustache, goatee, imperial, mutton chops, chin
+curtain, full, forked, Longstreet) differ in which parts grow (moustache,
+chin, cheeks, the coat's parts) and their default length, from 1.5 mm of
+stubble to 35 cm of a chest-length Longstreet. `length` is the longest part's,
+in metres; each part keeps its share of it, so one number grows a beard over
+a game's months without swapping assets, and the model clamps it to the
+chin's height above the floor. The use cases decided it: a close-up portrait
+needs the style legible at a glance (cards), a beard growing during play
+needs one continuous length (no per-length pack), painted miniatures need a
+closed solid mass (no fur shader), and a character colour needs the grey
+fraction and the fork controls. Rejected: packed card sets per style and
+length (quantised length, pack growth, no growing beard), and a solid
+sculpted mesh for every figure (no strand read at portrait distance; it
+stays the miniatures' path, issue #12). The card generator is pure (base
+mesh, mask and seed; no MakeHuman bytes), so it lives in
+`src/surface/bodyHairCards.ts`, where the packer and the runtime both reach
+it.
 
 **Costs.** The coat costs nothing where nothing is painted (no triangles, no
 draw). A full beard (its coat and its cards) with doubled chest, abdomen and

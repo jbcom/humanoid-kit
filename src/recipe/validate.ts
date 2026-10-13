@@ -5,7 +5,12 @@
  */
 import { DEFAULT_MACROS } from "../makehuman/macro.ts";
 import { BODY_REGIONS } from "../makehuman/regions.ts";
-import { BEARD_STYLES, BODY_HAIR_GROUPS, MAX_BODY_HAIR_DENSITY } from "../surface/bodyHair.ts";
+import {
+  BEARD_STYLES,
+  BODY_HAIR_GROUPS,
+  MAX_BEARD_VOLUME,
+  MAX_BODY_HAIR_DENSITY,
+} from "../surface/bodyHair.ts";
 import { bodyArtProblems } from "./bodyArt.ts";
 import { DEFAULT_SKIN, RECIPE_VERSION, type Recipe } from "./recipe.ts";
 
@@ -165,8 +170,40 @@ function bodyHairProblems(bodyHair: unknown, p: string[]): void {
           p.push(`bodyHair.density.${g} must be a number in [0, ${MAX_BODY_HAIR_DENSITY}]`);
       }
   }
-  if (b.beard !== undefined && !(typeof b.beard === "string" && BEARDS.has(b.beard)))
-    p.push(`bodyHair.beard must be one of ${BEARD_STYLES.join(", ")}`);
+  if (b.beard !== undefined) beardProblems(b.beard, p);
+}
+
+const BEARD_KEYS = new Set(["style", "length", "volume", "grey", "fork", "part"]);
+
+/**
+ * `bodyHair.beard`: a known style, or an object with one and in-range
+ * controls. Length is only checked non-negative here: the model clamps it to
+ * the figure's chin height, which the recipe alone does not know.
+ */
+function beardProblems(beard: unknown, p: string[]): void {
+  const styles = `one of ${BEARD_STYLES.join(", ")}`;
+  if (typeof beard === "string") {
+    if (!BEARDS.has(beard)) p.push(`bodyHair.beard must be ${styles}`);
+    return;
+  }
+  if (typeof beard !== "object" || beard === null || Array.isArray(beard)) {
+    p.push(`bodyHair.beard must be ${styles}, or an object with a style`);
+    return;
+  }
+  const s = beard as Record<string, unknown>;
+  for (const k of Object.keys(s))
+    if (!BEARD_KEYS.has(k)) p.push(`bodyHair.beard.${k} is not a beard field`);
+  if (!(typeof s.style === "string" && BEARDS.has(s.style)))
+    p.push(`bodyHair.beard.style must be ${styles}`);
+  if (s.length !== undefined && !(finite(s.length) && s.length >= 0))
+    p.push("bodyHair.beard.length must be a number of metres, at least 0");
+  if (
+    s.volume !== undefined &&
+    !(finite(s.volume) && s.volume >= 0 && s.volume <= MAX_BEARD_VOLUME)
+  )
+    p.push(`bodyHair.beard.volume must be a number in [0, ${MAX_BEARD_VOLUME}]`);
+  for (const k of ["grey", "fork", "part"] as const)
+    if (s[k] !== undefined && !unit(s[k])) p.push(`bodyHair.beard.${k} must be a number in [0, 1]`);
 }
 
 export function assertValidRecipe(recipe: unknown): asserts recipe is Recipe {
