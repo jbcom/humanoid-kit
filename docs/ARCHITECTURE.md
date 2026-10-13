@@ -127,6 +127,42 @@ records the upstream commit, the CC0 evidence per source file and the SHA-256 of
 every output. The packer's licence gate refuses any source file that does not
 prove CC0 from its own content; see `NOTICE.md`.
 
+## Units, frame and length constants
+
+All runtime lengths are metres (the manifests record `unit: "metre"`; the
+packer converts MakeHuman's decimetres), in a Y-up frame with the figure facing
++Z (`src/rig/pose.ts`; MakeHuman's BVH data is Z-up facing -Y and is converted
+on the way in). Landmarks are resolved by base-mesh vertex id, not by
+coordinate, so they follow every figure's size and shape.
+
+Every numeric constant in `src` is one of three classes, and its doc comment
+should name which:
+
+1. **Physical.** The same at every size, because the thing it describes does not
+   scale with the figure: a storage unit such as `GROWTH_SCALE` (hair growth in
+   steps of 1/10 000 m), or a width chosen to be the same on every figure.
+2. **Skin-space.** Authored on the base body and carried by UV or vertex
+   identity, so it follows the body without a number to rescale: a skin layer's
+   field, a region mask, a morph target, a detail target's lattice index.
+3. **Figure-relative.** A multiple of a named measure of the figure. The measures
+   are the presence `measures` (reach, shoulder, hip and eye height; see
+   [Presence](PRESENCE.md)) and `headScale`, the figure's head width over the
+   default adult's (`ADULT_EAR_SPAN`, 0.1314 m, the span of the ear canals;
+   `src/affordance/channel.ts`, `src/affordance/frames.ts`).
+
+`headScale` is a head measure, not a body-size one. A child's head is
+proportionally large, so it overstates a child's body, and it must not scale a
+body-length quantity (a stride, a reach, a clearance); use a presence measure
+or a body-size measure derived from the legs (for example hip to ankle, to be
+added with its first user and documented beside `headScale`) for those. There
+is no stature or body-scale value in the recipe: `height` is a blend weight.
+
+The classes are applied by convention in newer code and are not yet tagged
+across the roughly 345 numeric constants in `src`; the thresholds that are
+absolute metres tuned on an adult (contact, plant, clearance and invariant
+tolerances) are tracked by issue 42, and issue 49 holds the sweep that tags
+every constant with its class.
+
 ## Recipe
 
 ```ts
