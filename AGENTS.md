@@ -11,11 +11,12 @@ covers what isn't obvious from reading the code alone.
   (`allowImportingTsExtensions`); `rewriteRelativeImportExtensions` makes
   `tsc -p tsconfig.build.json` emit `.js` specifiers into `dist/`. The published
   `files` of the root package are `dist`, `README.md`, `LICENSE` and `NOTICE.md`.
-- This is a pnpm workspace with five members: `.` (the `humanoid-kit` library,
-  plus the playground and its tests), `packs/body` (`humanoid-kit-body`),
-  `packs/adult-anatomy` (`humanoid-kit-adult-anatomy`), `packs/hair`
-  (`humanoid-kit-hair`), `packs/clothing` (`humanoid-kit-clothing`) and `docs/`
-  (the private Sourcey site). Root scripts operate on the library; `pnpm docs:*` delegate to
+- This is a pnpm workspace with eight members, seven of them published: `.`
+  (the `humanoid-kit` library, plus the playground and its tests), `packs/body`
+  (`humanoid-kit-body`), `packs/adult-anatomy` (`humanoid-kit-adult-anatomy`),
+  `packs/hair` (`humanoid-kit-hair`), `packs/eyes` (`humanoid-kit-eyes`),
+  `packs/animations` (`humanoid-kit-animations`), `packs/clothing`
+  (`humanoid-kit-clothing`) and `docs/` (the private Sourcey site). Root scripts operate on the library; `pnpm docs:*` delegate to
   `docs/`.
 - `pnpm verify` is the gate CI runs: Biome lint, markdownlint (`pnpm lint:docs`),
   strict TypeScript over `src`, `tests`, `scripts`, `e2e` and `playground`, the

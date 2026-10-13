@@ -72,19 +72,20 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
 
 ## Packages
 
-This repository is a pnpm workspace that publishes four packages.
+This repository is a pnpm workspace that publishes seven packages: the
+library and six data packs.
 
 | Package | Directory | Licence | Contents |
 | --- | --- | --- | --- |
-| `humanoid-kit` | `.` | MIT | The code: asset loading, recipes, evaluation, subdivision, the worker client and the React bindings |
+| `humanoid-kit` | `.` | MIT | The code: asset loading, recipes, evaluation, subdivision, rig and poses, animation playback, presence, interactions, the worker client, the React bindings and the creator |
 | `humanoid-kit-body` | `packs/body` | CC0 1.0 | The base mesh, shape targets for ages 1 to 90, the 163-bone skeleton and skin weights, facial pose units, eyes, teeth and tongue, and 275 shape modifiers (modelling, measurement and body shapes) with their sliders |
-| `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 | Adult-only targets and 5 modifiers with their sliders. A separate install; refused unless built against the exact body pack |
-| `humanoid-kit-hair` | `packs/hair` | CC0 1.0 | Ten scalp hair styles (short, bob, long, afro, ponytail, braid) as alpha cards bound to the base body, any colour from black to platinum. A separate install; a style's files load when a figure first wears it |
+| `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 AND CC BY 4.0 | 98 adult-only targets and 12 modifiers (9 with sliders; 3 retained legacy ids, hidden from the sliders and still accepted in saved recipes). A separate install; refused unless built against the exact body pack |
+| `humanoid-kit-hair` | `packs/hair` | CC0 1.0 | 33 hair entries bound to the base body, any colour from black to platinum: 16 scalp styles (short, bob, long, afro, ponytail, a side braid, box braids, cornrows, twists, locs, bantu knots, a close crop), 12 eyebrows, 4 eyelashes and a beard. A separate install; an entry's files load when a figure first wears it |
 | `humanoid-kit-eyes` | `packs/eyes` | CC0 1.0 | 32 eye materials (human irises, cats' slit pupils, toon and creature eyes) that add iris pattern and sclera detail to the eye shader's own colours. A separate install; a material's texture loads when a figure first wears it |
 | `humanoid-kit-animations` | `packs/animations` | CC0 1.0 | 98 clips (walks, a jog, idles, swims, crouches, combat, sitting, 1860s drill and prayer) on MakeHuman's default skeleton, played on any figure whatever its size, shape or age, its planted feet held in place. A separate install; a clip's file loads when a figure first plays it |
-| `humanoid-kit-clothing` | `packs/clothing` | CC0 1.0 | 19 MakeHuman garments (suits, shoes, a hat) bound to the base mesh, with the skin each hides. A separate install; refused unless built against the exact body pack |
+| `humanoid-kit-clothing` | `packs/clothing` | CC0 1.0 | 87 garments (suits, shoes, hats, gloves, glasses, masks, held items and more) bound to the base mesh, with the skin each hides: 19 from MakeHuman's system assets and 68 from the community's clothing packs. A separate install; refused unless built against the exact body pack |
 
-The body pack and the adult anatomy pack together account for 280 shape
+The body pack and the adult anatomy pack together account for 287 shape
 modifiers. The data packs are generated from MakeHuman's CC0 assets by
 `pnpm pack:data`; see [Data and licensing](#data-and-licensing).
 
@@ -257,7 +258,10 @@ emitted JavaScript imports `.js`.
 ## Data and licensing
 
 The code is MIT licensed. The data packs are CC0 1.0 and derived from the
-MakeHuman project's assets, which were released under CC0 1.0 in September 2020.
+MakeHuman project's assets, which were released under CC0 1.0 in September 2020,
+and from community assets whose pages state CC0. The adult anatomy pack also
+carries CC BY 4.0 detail with its attribution, and the skin colour anchors in
+the code derive from a CC BY 4.0 dataset (see `NOTICE.md`).
 Only asset data is used, never MakeHuman program code. The packer refuses any
 source file that does not prove CC0 from its own content, and each pack's
 `data/PROVENANCE.md` records the upstream commit, the licence evidence and the
