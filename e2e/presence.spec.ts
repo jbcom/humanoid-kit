@@ -130,6 +130,10 @@ async function darkness(page: Page, x: number, z: number): Promise<number> {
   const luma = (cx: number, cy: number) => {
     const x0 = Math.round(cx * scale) - 2;
     const y0 = Math.round(cy * scale) - 2;
+    if (x0 < 0 || y0 < 0 || x0 + 5 > frame.width || y0 + 5 > frame.height)
+      throw new Error(
+        `the sample at (${cx}, ${cy}) is outside the ${frame.width}×${frame.height} frame`,
+      );
     let sum = 0;
     for (let y = y0; y < y0 + 5; y++)
       for (let x = x0; x < x0 + 5; x++) {
