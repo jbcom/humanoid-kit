@@ -403,7 +403,10 @@ describe("the organ on the adult surface", { timeout: 300_000 }, () => {
           const want = (rest[i] as number) + share * ((key[i] as number) - (rest[i] as number));
           off = Math.max(off, Math.abs((p[i] as number) - want));
         }
-        expect(off, `share ${share}, arousal ${arousal}`).toBeLessThan(1e-5);
+        // Within a quarter of a millimetre: the surface's path between rest and the key bends
+        // by up to 0.07 mm midway flaccid and 0.16 mm erect (under 1% of how far the key
+        // moves its tip), where the drawn key it replaced stood 4.7 mm off it.
+        expect(off, `share ${share}, arousal ${arousal}`).toBeLessThan(2.5e-4);
       }
     }
   });
