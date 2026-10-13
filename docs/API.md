@@ -1389,7 +1389,8 @@ The nearest provider's registry, for `groundOcclusion`, `faceMetering` and
 
 A neutral studio for showing figures: a procedural room environment
 (three.js `RoomEnvironment`, prefiltered once, no network request), a key light
-casting shadows, fill and rim lights, and a soft hemisphere light. Pair it with
+casting shadows, a fill light, a rim light that casts its own shadow (at a lower
+filter radius), and a soft hemisphere light. Pair it with
 the canvas settings it was measured with: `STUDIO_TONE_MAPPING`
 (`NeutralToneMapping`) and `STUDIO_EXPOSURE` (1.15). `background` is a CSS
 colour (`null` leaves the canvas background alone); `intensity` scales every

@@ -23,7 +23,7 @@
  * reused and hide a filter that arrived later. The references are drawn first, in
  * `beforeAll`, before the kit has run anything in this file.
  */
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   AmbientLight,
   BoxGeometry,
@@ -38,6 +38,7 @@ import {
   PlaneGeometry,
   Scene,
   ShaderChunk,
+  Vector3,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -49,6 +50,9 @@ import {
   configureKeyShadow,
   KEY_POSITION,
   keyShadowFitter,
+  RIM_INTENSITY,
+  RIM_POSITION,
+  RIM_SHADOW_RADIUS,
   STUDIO_SHADOW_MAP_TYPE,
 } from "../../src/render/studioShadow.ts";
 import { createTestRenderer } from "./gl.ts";
@@ -317,5 +321,36 @@ describe("<StudioStage>", () => {
     for (const [name, source] of Object.entries(STOCK_CHUNKS))
       expect(ShaderChunk[name as keyof typeof ShaderChunk], name).toBe(source);
     expect(ShaderChunk.shadowmap_pars_fragment).not.toContain(SHADOW_FILTER_MARK);
+  });
+
+  it("casts the rim light's shadow too, so it cannot paint the hollows the form covers", async () => {
+    let scene: Scene | null = null;
+    function Probe() {
+      scene = useThree((s) => s.scene);
+      return null;
+    }
+    await render(
+      <div style={{ width: 160, height: 160 }}>
+        <Canvas shadows={STUDIO_SHADOWS} camera={{ position: [0, 1.5, 4] }}>
+          <StudioStage />
+          <Probe />
+        </Canvas>
+      </div>,
+    );
+    await expect.poll(() => scene).not.toBeNull();
+    const rims: DirectionalLight[] = [];
+    (scene as unknown as Scene).traverse((o) => {
+      const light = o as DirectionalLight;
+      if (
+        light.isDirectionalLight &&
+        light.position.distanceTo(new Vector3(...RIM_POSITION)) < 1e-6
+      )
+        rims.push(light);
+    });
+    expect(rims).toHaveLength(1);
+    const rim = rims[0] as DirectionalLight;
+    expect(rim.castShadow).toBe(true);
+    expect(rim.intensity).toBeCloseTo(RIM_INTENSITY, 9);
+    expect(rim.shadow.radius).toBeLessThanOrEqual(RIM_SHADOW_RADIUS);
   });
 });

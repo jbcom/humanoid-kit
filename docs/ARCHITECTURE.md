@@ -2483,8 +2483,8 @@ and overlapping), measuring the canvas against the model.
 
 ## The key light's shadow (2026-10-10)
 
-The stage's key light is the only light that casts, and its shadow map falls on the
-body itself: a thigh beside the groin, the back of a knee, an arm across a chest.
+The stage's key light (and, since 2026-10-13, its rim light, at radius 4: see "The rim
+light" below) casts, and the key's shadow map falls on the body itself: a thigh beside the groin, the back of a knee, an arm across a chest.
 It was a variance map (`VSMShadowMap`, a 2048² map over a fixed 2.8 m box,
 blurred 28 texels), and where one part shadowed another at a grazing angle it drew
 hard, stair-stepped light and dark wedges that `?noshadow` removed. Two things
@@ -2626,6 +2626,30 @@ map, then the tent at radius 4, 8, 12 and 16: body framing 5.3, 8.0, 6.3, 7.4,
 8.7 and 10.4 ms; a close-up 9.7, 11.0, 10.0, 10.8, 12.5 and 15.1 ms. The stage's
 radius 12 costs 0.7 to 1.5 ms more than the variance map did; radius 4 costs a
 fifth to a third of what the variance map cost over no shadow.
+
+### The rim light (2026-10-13)
+
+The stage's rim light was unshadowed, high and behind at (-1.2, 2.4, -3), intensity 1.6
+(jbcom/humanoid-kit#63). A light behind a figure and above it is nearly the mirror
+direction for any surface that faces up and a little forward: the clavicle, the slope of
+the shoulder, the underside of a raised arm and the hollow of the armpit. Skin's
+specular lobe is narrow and bright there, so the rim painted a white blotch on skin
+that no limb or torso had shaded from it (it was the only light that did this; every
+other skin and material toggle left it in place, and with all lights off it was gone).
+
+**Decision.** The rim casts a shadow, through the same fitted map and tent as the key
+(`ShadowedLight`), at radius 4 (`RIM_SHADOW_RADIUS`: 16 reads a pixel and a map a ninth
+of the key's, since a rim shades a silhouette and the hollows behind it, where a
+penumbra of about 1.5 cm is as good as the key's); it stands lower and farther out to
+the side, (-2.6, 0.6, -2.4), where it grazes the form's edge and the shoulder slope is
+no longer its mirror; and it is 0.7 instead of 1.6, so what the specular lobe cannot
+avoid is a sheen, not a blotch. Measured on contact sheets (front, and both
+three-quarters; light and dark skin, male and female, at rest and arms overhead),
+bright pixels on dark skin at the armpit and clavicle went from 90 to 160 per tile
+(275 at worst) to under 40 in the front views, and the large white patches are gone.
+What is left is a thin, intensity-independent sliver in one view (a raised arm seen from
+the right three-quarter, at the far shoulder through the neck gap), a skin material
+matter and not the stage's.
 
 ## Animation (milestone 8, 2026-10-09)
 
