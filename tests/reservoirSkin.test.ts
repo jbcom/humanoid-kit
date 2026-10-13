@@ -5,6 +5,7 @@
  * pushes keeps its topology's weights, the very arrays.
  */
 import { describe, expect, it } from "vitest";
+import { SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { posedSurface } from "../src/foundation/posed.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import {
@@ -43,12 +44,12 @@ const bare = createRecipe({
   },
 });
 
-/** One vertex's four bones and weights, as a map. */
+/** One vertex's bones and weights, as a map. */
 const row = (s: SkinWeights, v: number) => {
   const m = new Map<number, number>();
-  for (let k = 0; k < 4; k++) {
-    const w = s.skinWeight[v * 4 + k] as number;
-    if (w > 0) m.set(s.skinIndex[v * 4 + k] as number, w);
+  for (let k = 0; k < SKIN_INFLUENCES; k++) {
+    const w = s.skinWeight[v * SKIN_INFLUENCES + k] as number;
+    if (w > 0) m.set(s.skinIndex[v * SKIN_INFLUENCES + k] as number, w);
   }
   return m;
 };
@@ -102,9 +103,10 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
       const now = row(skin, v);
       if (pushed === 0) {
         resting++;
-        for (let k = 0; k < 4; k++) {
-          expect(skin.skinIndex[v * 4 + k]).toBe(topology.skinIndex[v * 4 + k]);
-          expect(skin.skinWeight[v * 4 + k]).toBe(topology.skinWeight[v * 4 + k]);
+        for (let k = 0; k < SKIN_INFLUENCES; k++) {
+          const at = v * SKIN_INFLUENCES + k;
+          expect(skin.skinIndex[at]).toBe(topology.skinIndex[at]);
+          expect(skin.skinWeight[at]).toBe(topology.skinWeight[at]);
         }
         continue;
       }

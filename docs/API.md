@@ -566,8 +566,8 @@ interface Evaluation {
 interface SurfaceTopology {
   index: Uint32Array;       // triangles
   uvs: Float32Array;
-  skinIndex: Uint16Array;   // four bone indices per render vertex
-  skinWeight: Float32Array; // four normalised weights per render vertex
+  skinIndex: Uint16Array;   // SKIN_INFLUENCES (8) bone indices per render vertex
+  skinWeight: Float32Array; // SKIN_INFLUENCES normalised weights per render vertex
   vertexCount: number;
 }
 ```

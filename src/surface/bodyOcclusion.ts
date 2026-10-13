@@ -10,7 +10,7 @@
  * step shows at the set's edge.
  */
 import type { BodyOcclusion, HumanoidAssets } from "../format/assetFormat.ts";
-import { groupFaces } from "../format/assetFormat.ts";
+import { groupFaces, SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import { regionOfBone } from "../makehuman/regions.ts";
 
 /**
@@ -37,10 +37,10 @@ export function cavityCandidates(assets: HumanoidAssets): Uint32Array {
     for (let k = 0; k < 4; k++) visible.add(assets.faceVerts[f * 4 + k] as number);
   const out: number[] = [];
   for (const v of visible) {
-    for (let k = 0; k < 4; k++) {
+    for (let k = 0; k < SKIN_INFLUENCES; k++) {
       if (
-        (assets.skinWeight[v * 4 + k] as number) > 0 &&
-        head[assets.skinIndex[v * 4 + k] as number]
+        (assets.skinWeight[v * SKIN_INFLUENCES + k] as number) > 0 &&
+        head[assets.skinIndex[v * SKIN_INFLUENCES + k] as number]
       ) {
         out.push(v);
         break;

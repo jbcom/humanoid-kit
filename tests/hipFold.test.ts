@@ -16,6 +16,7 @@ import {
 } from "../scripts/lib/foldContact.ts";
 import { BODY_TYPES } from "../scripts/lib/skinBench.ts";
 import { bodyTriangles } from "../scripts/lib/skinMeasure.ts";
+import { SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { FOLD_JOINTS } from "../src/rig/folds.ts";
@@ -210,13 +211,13 @@ describe("which hip drives a vertex's fold (foldSides)", () => {
   const sides = foldSides(average.rest, average.control, assets.skinIndex, assets.skinWeight);
   const mass = (v: number, side: "L" | "R") => {
     let m = 0;
-    for (let k = 0; k < 4; k++)
+    for (let k = 0; k < SKIN_INFLUENCES; k++)
       if (
         new RegExp(`^upperleg0[12]\\.${side}$`).test(
-          names[assets.skinIndex[v * 4 + k] as number] as string,
+          names[assets.skinIndex[v * SKIN_INFLUENCES + k] as number] as string,
         )
       )
-        m += assets.skinWeight[v * 4 + k] as number;
+        m += assets.skinWeight[v * SKIN_INFLUENCES + k] as number;
     return m;
   };
 

@@ -15,6 +15,7 @@
  * each scheme it takes (`SKIN_DUAL_SHARE`) and a vertex mixes the two results
  * by the mean of its bones' shares.
  */
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import { type BoneRotations, posedBones, type RestBones } from "./bones.ts";
 import { foldFlexion, jointTurns } from "./folds.ts";
 import {
@@ -168,10 +169,10 @@ function blend(dual: Float32Array, skinIndex: SkinIndex, skinWeight: Float32Arra
   let dz = 0;
   let dw = 0;
   let pivot = -1;
-  for (let k = 0; k < 4; k++) {
-    const w = skinWeight[v * 4 + k] as number;
+  for (let k = 0; k < SKIN_INFLUENCES; k++) {
+    const w = skinWeight[v * SKIN_INFLUENCES + k] as number;
     if (w === 0) continue;
-    const o = (skinIndex[v * 4 + k] as number) * DUAL_STRIDE;
+    const o = (skinIndex[v * SKIN_INFLUENCES + k] as number) * DUAL_STRIDE;
     if (pivot < 0) pivot = o;
     const along =
       (dual[pivot] as number) * (dual[o] as number) +
@@ -213,8 +214,10 @@ function blend(dual: Float32Array, skinIndex: SkinIndex, skinWeight: Float32Arra
 function shareOf(pose: SkinPose, skinIndex: SkinIndex, skinWeight: Float32Array, v: number) {
   if (typeof pose.share === "number") return pose.share;
   let a = 0;
-  for (let k = 0; k < 4; k++)
-    a += (skinWeight[v * 4 + k] as number) * (pose.share[skinIndex[v * 4 + k] as number] as number);
+  for (let k = 0; k < SKIN_INFLUENCES; k++)
+    a +=
+      (skinWeight[v * SKIN_INFLUENCES + k] as number) *
+      (pose.share[skinIndex[v * SKIN_INFLUENCES + k] as number] as number);
   return Math.min(1, Math.max(0, a));
 }
 
@@ -239,10 +242,10 @@ export function skinVertex(
   let lz = 0;
   if (a < 1) {
     const { matrix, trans } = pose;
-    for (let k = 0; k < 4; k++) {
-      const w = skinWeight[v * 4 + k] as number;
+    for (let k = 0; k < SKIN_INFLUENCES; k++) {
+      const w = skinWeight[v * SKIN_INFLUENCES + k] as number;
       if (w === 0) continue;
-      const b = skinIndex[v * 4 + k] as number;
+      const b = skinIndex[v * SKIN_INFLUENCES + k] as number;
       const m = b * 9;
       lx +=
         w *
@@ -508,10 +511,10 @@ export function skinNormal(
   let nz = 0;
   if (a < 1) {
     const { matrix } = pose;
-    for (let k = 0; k < 4; k++) {
-      const w = skinWeight[v * 4 + k] as number;
+    for (let k = 0; k < SKIN_INFLUENCES; k++) {
+      const w = skinWeight[v * SKIN_INFLUENCES + k] as number;
       if (w === 0) continue;
-      const m = (skinIndex[v * 4 + k] as number) * 9;
+      const m = (skinIndex[v * SKIN_INFLUENCES + k] as number) * 9;
       const s = (1 - a) * w;
       nx +=
         s *

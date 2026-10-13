@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import {
   DUAL_TEXELS,
   dualBones,
@@ -29,9 +30,15 @@ const posing = (bone: number, q: number[]) => {
   return r;
 };
 
+/** One vertex's bones and weights, the places not given empty (`SKIN_INFLUENCES` of each). */
+const bonesOf = (...bones: number[]) =>
+  Uint8Array.from({ length: SKIN_INFLUENCES }, (_, k) => bones[k] ?? 0);
+const weightsOf = (...weights: number[]) =>
+  Float32Array.from({ length: SKIN_INFLUENCES }, (_, k) => weights[k] ?? 0);
+
 const both = (weightA: number): { index: Uint8Array; weight: Float32Array } => ({
-  index: Uint8Array.from([0, 1, 0, 0]),
-  weight: Float32Array.from([weightA, 1 - weightA, 0, 0]),
+  index: bonesOf(0, 1),
+  weight: weightsOf(weightA, 1 - weightA),
 });
 
 const skin = (
@@ -61,7 +68,7 @@ describe("dual quaternion skinning", () => {
 
   it("moves a vertex of one bone rigidly with it, as linear blending does", () => {
     const rotations = posing(1, turn(0, 0, 1, 70));
-    const only = { index: Uint8Array.from([1, 0, 0, 0]), weight: Float32Array.from([1, 0, 0, 0]) };
+    const only = { index: bonesOf(1), weight: weightsOf(1) };
     const dual = skin(skinPositionsDual, rotations, [0.5, 1.5, 0.25], only);
     const linear = skin(skinPositions, rotations, [0.5, 1.5, 0.25], only);
     for (let k = 0; k < 3; k++) expect(dual[k]).toBeCloseTo(linear[k] as number, 6);
@@ -216,14 +223,14 @@ describe("blended skinning", () => {
       limb(),
       rotations,
       Float32Array.from(at),
-      Uint8Array.from([1, 0, 0, 0]),
-      Float32Array.from([1, 0, 0, 0]),
+      bonesOf(1),
+      weightsOf(1),
       new Float32Array(3),
       Float32Array.from([1, 0]),
     );
     const rigid = skin(skinPositions, rotations, at, {
-      index: Uint8Array.from([1, 0, 0, 0]),
-      weight: Float32Array.from([1, 0, 0, 0]),
+      index: bonesOf(1),
+      weight: weightsOf(1),
     });
     for (let k = 0; k < 3; k++) expect(only[k]).toBeCloseTo(rigid[k] as number, 6);
   });
@@ -328,8 +335,8 @@ describe("dualBones", () => {
     // Turn a 90° about z: b's head (0, 1, 0) goes to (-1, 0, 0).
     const d = dualBones(limb(), posing(0, turn(0, 0, 1, 90)));
     const out = skin(skinPositionsDual, posing(0, turn(0, 0, 1, 90)), [0, 1, 0], {
-      index: Uint8Array.from([1, 0, 0, 0]),
-      weight: Float32Array.from([1, 0, 0, 0]),
+      index: bonesOf(1),
+      weight: weightsOf(1),
     });
     expect(out[0]).toBeCloseTo(-1, 6);
     expect(out[1]).toBeCloseTo(0, 6);

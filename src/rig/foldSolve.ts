@@ -1,3 +1,4 @@
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import { posedBones, rotateByBone } from "./bones.ts";
 import { SkinPatch, SurfaceDistance, TriangleCrossings } from "./contact.ts";
 import { type FoldJoint, type JointFold, noFold, smoothstep } from "./jointFold.ts";
@@ -359,14 +360,13 @@ export function* solveFold(
   };
   // The affected vertices' rest normals (the control mesh's, as the renderer's are the surface's) and weights, to skin at each key.
   const affectedRest = new Float32Array(affected.length * 3);
-  const affectedIndex = new Uint16Array(affected.length * 4);
-  const affectedWeight = new Float32Array(affected.length * 4);
+  const inf = SKIN_INFLUENCES;
+  const affectedIndex = new Uint16Array(affected.length * inf);
+  const affectedWeight = new Float32Array(affected.length * inf);
   affected.forEach((v, a) => {
     affectedRest.set(vertexNormal(control, v), a * 3);
-    for (let k = 0; k < 4; k++) {
-      affectedIndex[a * 4 + k] = skinIndex[v * 4 + k] as number;
-      affectedWeight[a * 4 + k] = skinWeight[v * 4 + k] as number;
-    }
+    affectedIndex.set(skinIndex.subarray(v * inf, v * inf + inf), a * inf);
+    affectedWeight.set(skinWeight.subarray(v * inf, v * inf + inf), a * inf);
   });
   /** Per affected vertex, per key, x, y, z: the displacement (movers only), and the change of the normal. */
   const keyed = new Float32Array(affected.length * OPENINGS * KEYS * 3);
@@ -382,14 +382,12 @@ export function* solveFold(
     for (const t of rows) for (let k = 0; k < 3; k++) wanted[tris[t + k] as number] = 1;
   const needed = Uint32Array.from({ length: n }, (_, v) => v).filter((v) => wanted[v]);
   const neededControl = new Float32Array(needed.length * 3);
-  const neededIndex = new Uint16Array(needed.length * 4);
-  const neededWeight = new Float32Array(needed.length * 4);
+  const neededIndex = new Uint16Array(needed.length * inf);
+  const neededWeight = new Float32Array(needed.length * inf);
   needed.forEach((v, i) => {
     neededControl.set(control.subarray(v * 3, v * 3 + 3), i * 3);
-    for (let k = 0; k < 4; k++) {
-      neededIndex[i * 4 + k] = skinIndex[v * 4 + k] as number;
-      neededWeight[i * 4 + k] = skinWeight[v * 4 + k] as number;
-    }
+    neededIndex.set(skinIndex.subarray(v * inf, v * inf + inf), i * inf);
+    neededWeight.set(skinWeight.subarray(v * inf, v * inf + inf), i * inf);
   });
   // The triangles the fold may move a corner of, all of whose corners the solve skins, and each one's face at rest.
   const crumpling: number[] = [];
@@ -1145,10 +1143,10 @@ function carryFaces(
     let z = 0;
     for (let c = 0; c < 3; c++) {
       const v = corners[i * 3 + c] as number;
-      for (let k = 0; k < 4; k++) {
-        const w = skinWeight[v * 4 + k] as number;
+      for (let k = 0; k < SKIN_INFLUENCES; k++) {
+        const w = skinWeight[v * SKIN_INFLUENCES + k] as number;
         if (w === 0) continue;
-        const [rx, ry, rz] = rotateByBone(world, skinIndex[v * 4 + k] as number, n0);
+        const [rx, ry, rz] = rotateByBone(world, skinIndex[v * SKIN_INFLUENCES + k] as number, n0);
         x += w * rx;
         y += w * ry;
         z += w * rz;

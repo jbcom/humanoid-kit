@@ -36,6 +36,7 @@ import {
   groupFaces,
   parseHumanoidAssets,
   type ShapeModifierEntry,
+  SKIN_INFLUENCES,
   TARGET_ENCODING,
 } from "../src/format/assetFormat.ts";
 import {
@@ -338,14 +339,15 @@ function packWeights(
     if (bi < 0) throw new Error(`weight for unknown bone ${bone}`);
     for (const [v, w] of list) per[v]?.push([bi, w]);
   }
-  const index = new Uint8Array(vertexCount * 4);
-  const weight = new Float32Array(vertexCount * 4);
+  const n = SKIN_INFLUENCES;
+  const index = new Uint8Array(vertexCount * n);
+  const weight = new Float32Array(vertexCount * n);
   for (let v = 0; v < vertexCount; v++) {
-    const top = (per[v] ?? []).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    const top = (per[v] ?? []).sort((a, b) => b[1] - a[1]).slice(0, n);
     const sum = top.reduce((s, e) => s + e[1], 0);
     top.forEach(([b, w], k) => {
-      index[v * 4 + k] = b;
-      weight[v * 4 + k] = sum > 0 ? w / sum : 0;
+      index[v * n + k] = b;
+      weight[v * n + k] = sum > 0 ? w / sum : 0;
     });
   }
   return { index, weight };

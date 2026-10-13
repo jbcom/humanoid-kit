@@ -45,6 +45,7 @@ import {
   type PlacedPiercing,
 } from "../bodyArt/jewellery.ts";
 import type { EyeLibrary } from "../eyes/library.ts";
+import { SKIN_INFLUENCES } from "../format/assetFormat.ts";
 import { quantisedShapeSignals, STATE_MORPHS } from "../makehuman/stateMorphs.ts";
 import { shapeSignalNames } from "../model/detailFactors.ts";
 import { type GarmentLook, garmentFinish } from "../model/garmentLook.ts";
@@ -77,6 +78,7 @@ import {
   dualShadowMaterials,
   foldSlotAttribute,
   followDualSkinning,
+  setSkinAttributes,
 } from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import {
@@ -347,8 +349,7 @@ function makeGeometry(t: SurfaceTopology): BufferGeometry {
   g.setAttribute("position", new BufferAttribute(new Float32Array(t.vertexCount * 3), 3));
   g.setAttribute("normal", new BufferAttribute(new Float32Array(t.vertexCount * 3), 3));
   g.setAttribute("uv", new BufferAttribute(t.uvs, 2));
-  g.setAttribute("skinIndex", new BufferAttribute(t.skinIndex, 4));
-  g.setAttribute("skinWeight", new BufferAttribute(t.skinWeight, 4));
+  setSkinAttributes(g, t.skinIndex, t.skinWeight);
   return g;
 }
 
@@ -401,8 +402,7 @@ const writtenSkin = new WeakMap<BufferGeometry, SkinWeights>();
 function writeSkin(g: BufferGeometry, skin: SkinWeights): void {
   if (writtenSkin.get(g) === skin) return;
   writtenSkin.set(g, skin);
-  (g.getAttribute("skinIndex") as BufferAttribute).copyArray(skin.skinIndex).needsUpdate = true;
-  (g.getAttribute("skinWeight") as BufferAttribute).copyArray(skin.skinWeight).needsUpdate = true;
+  setSkinAttributes(g, skin.skinIndex, skin.skinWeight);
 }
 
 function writeGeometry(g: BufferGeometry, s: SurfaceEvaluation): void {
@@ -798,14 +798,13 @@ function PiercingMesh({
     g.setIndex(new BufferAttribute(m.index, 1));
     g.setAttribute("position", new BufferAttribute(m.positions, 3));
     g.setAttribute("normal", new BufferAttribute(m.normals, 3));
-    const index = new Uint8Array(n * 4);
-    const weight = new Float32Array(n * 4);
+    const index = new Uint8Array(n * SKIN_INFLUENCES);
+    const weight = new Float32Array(n * SKIN_INFLUENCES);
     for (let v = 0; v < n; v++) {
-      index.set(piercing.skinIndex, v * 4);
-      weight.set(piercing.skinWeight, v * 4);
+      index.set(piercing.skinIndex, v * SKIN_INFLUENCES);
+      weight.set(piercing.skinWeight, v * SKIN_INFLUENCES);
     }
-    g.setAttribute("skinIndex", new BufferAttribute(index, 4));
-    g.setAttribute("skinWeight", new BufferAttribute(weight, 4));
+    setSkinAttributes(g, index, weight);
     return g;
   }, [piercing]);
   const material = useMemo(
