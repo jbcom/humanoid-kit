@@ -469,10 +469,10 @@ const UNDER_TUCK_CAP = 0.05;
 const UNDER_TUCK_GAP = 0.003;
 /**
  * How far off the skin (metres) a garment over another still hides it
- * (`coveredBy`): the calf of the widest boot shaft in the pack, and well short
- * of the other leg at rest.
+ * (`coveredBy`): the flared outer calf of the pirate boots' shaft needs 12 cm
+ * along the skin's normal. A vertex meets its own boot before the other leg's.
  */
-const UNDER_COVER_CAP = 0.08;
+const UNDER_COVER_CAP = 0.12;
 
 /** The figure attachment occlusion is baked against (and the pack's bake was): the default one. */
 const occlusionFigure = (): Recipe => createRecipe();

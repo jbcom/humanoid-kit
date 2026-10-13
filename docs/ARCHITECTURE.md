@@ -483,15 +483,18 @@ from each file.
     garment deleted it: a face goes when all its corners do. It is decided from
     the skin, which is inside everything. At least half of an inner vertex's
     binding weight must be on body vertices that meet outer cloth along their
-    normal within 8 cm, or just inside the skin when there is none outside (a
-    snug shaft sits a centimetre inside the shin it deletes). The vertex must
-    also be no further off the skin than that cloth plus 8 cm. From the cloth
+    normal within 12 cm (the flared outer calf of the pirate boots' shaft), or
+    just inside the skin when there is none outside (a snug shaft sits a
+    centimetre inside the shin it deletes). The vertex must also be no further
+    off the skin than that cloth plus 12 cm. Nothing of the jeans above the
+    knee is hidden even at 20 cm. From the cloth
     vertex alone, a boot's lining facing the jeans inside it and the other
     boot facing the jeans beside it look the same; each boot here is a shell
     and a lining, half its vertices facing in. A hem's folds have normals
     every way, so moving cloth alone left jeans showing at the ankle.
   Rendered against tall culturalibre and pirate boots over the jeans suit,
-  front and back: the shafts are whole, and the jeans above them unchanged.
+  front and back, on male, neutral and female figures: the shafts are whole,
+  and the jeans above them unchanged.
   Rejected: hiding by the inner vertex's nearest outer triangle (the lining
   problem above), and a shader depth bias (it would draw boots over the jeans
   above the shaft too).
