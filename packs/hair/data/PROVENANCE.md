@@ -36,9 +36,6 @@ hair colour is the only colour it takes; they carry no growth, hairline, fin or 
 Each style's binary also carries what the packer measured of its cards against the body at rest: growth,
 hairline fade, fin and scalp (`src/surface/hairFields.ts`).
 
-The body hair cards (kind `beard`) come from no source file: `src/surface/bodyHairCards.ts` generates them over the body pack's
-base mesh from a seed, with their strand map, so they are this project's own work under its licence.
-
 The facial hair (kind `facial`) is the community pack `bodyparts05` (<https://files.makehumancommunity.org/asset_packs/bodyparts05/bodyparts05_cc0.zip>, sha256
 `262bba42246f85b2a91f493dd920296b258a3b4544eb495c91c4d08e57c528fd`), whose record and asset pages state CC0 (the asset page is the licence, clause B of
 the licence rule). Each is bound to the base mesh by its own `.mhclo` and packed like scalp hair: its texture is a
@@ -195,5 +192,3 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | moustache-viking.webp | `861dfc6fb1889ab41b7aeab965a77b06aa221ebea14515c0e6ca30ae478af968` |
 | beard-scruffy.bin.gz | `714960c3ba3645c54b5e1f1c5b612f51b26986a3b75b4c6b1ba48b395945d772` |
 | beard-scruffy.webp | `d7809b38dca100fdec0d788a880062ea9990f8559742c30bd563cd8f0f485e44` |
-| beard-full.bin.gz | `d7e1ff014d25c382479da340fcc407118729eb909d796282c0a114ca38ccd828` |
-| beard-full.webp | `ff192dfe1743ba0c9a49726b4f5de0cbb367c809be42877314e434e9a729f281` |

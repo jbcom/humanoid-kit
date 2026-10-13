@@ -42,6 +42,14 @@ const STYLES = [
   ...AUTHORED_STYLES.map((a) => a.id),
 ];
 
+const FACIAL_STYLES = [
+  "beard-faun",
+  "beard-sigmund",
+  "beard-viking",
+  "moustache-viking",
+  "beard-scruffy",
+];
+
 /** The styles compiled from MakeHuman's assets: the authored ones carry no source files. */
 const AUTHORED = new Set(AUTHORED_STYLES.map((a) => a.id));
 /** Styles that reuse a MakeHuman style's cards (and so its source files) under their own strand map. */
@@ -68,6 +76,14 @@ describe("the hair pack's manifest", () => {
       expect(s.label.length, s.id).toBeGreaterThan(0);
       expect(s.tags.length, s.id).toBeGreaterThan(0);
     }
+  });
+
+  it("ships the five licensed community facial-hair assets, with no generated beard entry", () => {
+    const facial = hairManifest.styles.filter((s) => s.kind === "facial");
+    expect(facial.map((s) => s.id)).toEqual(FACIAL_STYLES);
+    expect(hairManifest.styles.some((s) => s.kind === "beard")).toBe(false);
+    expect(fs.existsSync(path.join(hairDir, "beard-full.bin.gz"))).toBe(false);
+    expect(fs.existsSync(path.join(hairDir, "beard-full.webp"))).toBe(false);
   });
 
   it("records each style's file hash, which is the hash of the file as shipped", () => {
@@ -278,14 +294,16 @@ describe("provenance", () => {
   it("names the source pack and its CC0 evidence for every source file", () => {
     expect(text).toMatch(/makehuman_system_assets_cc0\.zip/);
     expect(text).toMatch(/explicitly released as CC0/);
-    // Per style packed from a file: the .mhclo, the .obj and the .mhmat each proved
-    // their own header. Body hair cards and the authored styles are generated, and come from no file;
-    // a derived style reads the files of the style it keeps the cards of.
+    // Per system style packed from a file: the .mhclo, the .obj and the .mhmat each proved
+    // their own header. The authored styles are generated and come from no file; a derived style
+    // reads the files of the style it keeps the cards of. Facial assets have their separate
+    // community-pack evidence below.
     const fromFiles = hairManifest.styles.filter(
-      (s) => s.kind !== "beard" && s.kind !== "facial" && !AUTHORED.has(s.id) && !DERIVED.has(s.id),
+      (s) => s.kind !== "facial" && !AUTHORED.has(s.id) && !DERIVED.has(s.id),
     ).length;
     expect(text).toMatch(new RegExp(`${fromFiles * 3} file\\(s\\) — (A: )?file header`));
-    expect(text).toMatch(/body hair cards \(kind `beard`\) come from no source file/);
+    expect(text).toMatch(/The facial hair \(kind `facial`\) is the community pack/);
+    expect(text).not.toMatch(/body hair cards \(kind `beard`\) come from no source file/);
   });
 
   it("says which styles the packer authored itself, and that no one's mesh or texture was read for them", () => {
