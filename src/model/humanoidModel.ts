@@ -2292,7 +2292,7 @@ export class HumanoidModel {
    * (docs/ARCHITECTURE.md, "The hip fold", "The knee fold"), one per joint of
    * `FOLD_JOINTS` in its order, on the body surface its evaluation is for
    * (`Evaluation.surface`): for the renderer, `DualBones.setFolds` and the
-   * geometry's slot attributes (`foldSlotAttribute`). Solved a flexion at a
+   * geometry's slots (`FOLD_SLOTS_ATTRIBUTE`). Solved a flexion at a
    * time, which takes a moment, so it yields after each: a worker lets its
    * other requests in between. The recipe's target files must have loaded.
    */

@@ -6,9 +6,13 @@ export {
   applyDualSkinning,
   DualBones,
   ensureSkinPlaces,
-  foldSlotAttribute,
+  FOLD_SLOTS_ATTRIBUTE,
+  foldSlotAt,
+  foldSlotComponent,
+  makeFoldSlots,
   readSkinAttributes,
   setSkinAttributes,
+  writeFoldSlots,
 } from "../render/dualSkinning.ts";
 export {
   MiniatureCrowd,

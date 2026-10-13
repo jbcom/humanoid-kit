@@ -8,7 +8,7 @@
 import { Canvas, type RootState, useThree } from "@react-three/fiber";
 import { useEffect } from "react";
 import {
-  type BufferAttribute,
+  type BufferGeometry,
   type Object3D,
   type Scene,
   UnsignedByteType,
@@ -20,8 +20,9 @@ import { Humanoid, HumanoidProvider } from "../../src/react/index.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import {
   type DualBones,
+  FOLD_SLOTS_ATTRIBUTE,
   foldRowsPerLine,
-  foldSlotAttribute,
+  foldSlotAt,
   noFoldTexture,
 } from "../../src/render/dualSkinning.ts";
 import { FOLD_JOINTS, type FoldJointName } from "../../src/rig/folds.ts";
@@ -70,10 +71,9 @@ function foldsOf(scene: Scene): Record<FoldJointName, { slots: number; rows: num
   const of = (joint: (typeof FOLD_JOINTS)[number]) => {
     let slots = 0;
     scene.traverse((o: Object3D) => {
-      const g = (o as { geometry?: { getAttribute(n: string): BufferAttribute | undefined } })
-        .geometry;
-      const a = g?.getAttribute(foldSlotAttribute(joint));
-      if (a) for (const s of a.array) if ((s as number) >= 0) slots++;
+      const g = (o as { geometry?: BufferGeometry }).geometry;
+      const a = g?.getAttribute(FOLD_SLOTS_ATTRIBUTE);
+      if (g && a) for (let v = 0; v < a.count; v++) if (foldSlotAt(g, joint, v) >= 0) slots++;
     });
     const image = dual?.folds[joint.name].value.image as { height: number } | undefined;
     return { slots, rows: image ? image.height * foldRowsPerLine(joint) : 0 };

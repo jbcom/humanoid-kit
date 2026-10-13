@@ -4,8 +4,8 @@
  * sheets"), and the notes a shot reports of the folds it draws. `QaShade`
  * applies them each frame from the shot's query:
  *
- * - `?nofold=knee[,hip]` draws the named joints' folds off: the body's slot
- *   attribute of each (`foldSlotAttribute`) points no vertex at a row, as for a
+ * - `?nofold=knee[,hip]` draws the named joints' folds off: the body's slots
+ *   of each (`FOLD_SLOTS_ATTRIBUTE`) point no vertex at a row, as for a
  *   figure the fold was never solved for. The rest of the draw is unchanged.
  * - `?shade=normal` draws the body's smooth normals as colour, `?shade=flat` its
  *   face normals (flat shading), `?shade=wire` the lit body with its triangles
@@ -22,7 +22,13 @@
  * texture: the draw's own fold, not a test pack's.
  */
 import { FOLD_JOINTS } from "humanoid-kit";
-import { applyDualSkinning, type DualBones, foldSlotAttribute } from "humanoid-kit/react";
+import {
+  applyDualSkinning,
+  type DualBones,
+  FOLD_SLOTS_ATTRIBUTE,
+  foldSlotAt,
+  writeFoldSlots,
+} from "humanoid-kit/react";
 import {
   type BufferAttribute,
   type Material,
@@ -101,11 +107,11 @@ export function foldNotes(root: Object3D): BodyFoldNote[] {
     const dual = dualOf(mesh);
     const joints: BodyFoldNote["joints"] = {};
     for (const joint of FOLD_JOINTS) {
-      const slots = mesh.geometry.getAttribute(foldSlotAttribute(joint)) as
-        | BufferAttribute
-        | undefined;
+      const slots = mesh.geometry.getAttribute(FOLD_SLOTS_ATTRIBUTE) as BufferAttribute | undefined;
       let slotted = 0;
-      if (slots) for (let v = 0; v < slots.count; v++) if (slots.getX(v) >= 0) slotted++;
+      if (slots)
+        for (let v = 0; v < slots.count; v++)
+          if (foldSlotAt(mesh.geometry, joint, v) >= 0) slotted++;
       const image = dual?.folds[joint.name].value.image as
         | { width: number; height: number }
         | undefined;
@@ -130,14 +136,11 @@ const forced = new WeakMap<BufferAttribute, number>();
  */
 export function applyQaDraw(root: Object3D, draw: QaDraw): void {
   for (const mesh of bodies(root)) {
-    for (const joint of FOLD_JOINTS) {
-      if (!draw.off.has(joint.name)) continue;
-      const slots = mesh.geometry.getAttribute(foldSlotAttribute(joint)) as
-        | BufferAttribute
-        | undefined;
-      if (!slots || forced.get(slots) === slots.version) continue;
-      (slots.array as Float32Array).fill(-1);
-      slots.needsUpdate = true;
+    // One attribute holds every joint's slots, so they are forced together, once a version.
+    const slots = mesh.geometry.getAttribute(FOLD_SLOTS_ATTRIBUTE) as BufferAttribute | undefined;
+    if (slots && forced.get(slots) !== slots.version) {
+      for (const joint of FOLD_JOINTS)
+        if (draw.off.has(joint.name)) writeFoldSlots(slots, joint, undefined);
       forced.set(slots, slots.version);
     }
     if (draw.shade === "lit") continue;

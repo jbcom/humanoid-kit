@@ -1937,7 +1937,7 @@ moves, laid out as below (`surfaceFold`: the control vertices' values mixed by
 the subdivision's stencil, so a rendered vertex is displaced as the surface it
 lies on is, and the side by the same weights over the moved vertices alone), and
 the patched `skinning_vertex` chunk adds `hkFoldValue_<joint>` of its row (the
-geometry's `foldSlotAttribute(joint)`) at its flexion and opening
+geometry's `FOLD_SLOTS_ATTRIBUTE`, its joint's component) at its flexion and opening
 (`hkFoldAngles_<joint>`), turned by its side's turn, the `skinnormal_vertex`
 chunk the normal's change. The browser project holds each joint's shader angles
 to the CPU's (`foldAngles`) and its read to `addFold` and `addFoldNormal` to

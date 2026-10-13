@@ -77,9 +77,11 @@ import {
   applyDualSkinning,
   DualBones,
   dualShadowMaterials,
-  foldSlotAttribute,
+  FOLD_SLOTS_ATTRIBUTE,
   followDualSkinning,
+  makeFoldSlots,
   setSkinAttributes,
+  writeFoldSlots,
 } from "../render/dualSkinning.ts";
 import { EyeMaterial } from "../render/eyeMaterial.ts";
 import {
@@ -337,11 +339,7 @@ function makeBodyGeometry(
   // Where the worn hair style grows from the skin; none until a style is worn.
   g.setAttribute(SCALP_ATTRIBUTE, new BufferAttribute(new Float32Array(t.vertexCount), 1));
   // Each vertex's row in each joint's fold, which are solved after the figure is drawn; -1 is none.
-  for (const joint of FOLD_JOINTS)
-    g.setAttribute(
-      foldSlotAttribute(joint),
-      new BufferAttribute(new Float32Array(t.vertexCount).fill(-1), 1),
-    );
+  g.setAttribute(FOLD_SLOTS_ATTRIBUTE, makeFoldSlots(t.vertexCount));
   return g;
 }
 
@@ -1395,17 +1393,12 @@ export function Humanoid({
           surface === "adult" ? [adultGeometry, geometries.body] : [geometries.body, adultGeometry];
         if (!target) return;
         for (const joint of FOLD_JOINTS) {
-          const slots = target.getAttribute(foldSlotAttribute(joint)) as BufferAttribute;
+          const slots = target.getAttribute(FOLD_SLOTS_ATTRIBUTE) as BufferAttribute;
           const fold = folds.find((f) => f.joint.name === joint.name);
-          if (fold) slots.copyArray(fold.slot);
-          else slots.array.fill(-1);
-          slots.needsUpdate = true;
+          writeFoldSlots(slots, joint, fold?.slot);
           // The rows are of the surface drawn; the other has none.
-          const left = other?.getAttribute(foldSlotAttribute(joint)) as BufferAttribute | undefined;
-          if (left) {
-            left.array.fill(-1);
-            left.needsUpdate = true;
-          }
+          const left = other?.getAttribute(FOLD_SLOTS_ATTRIBUTE) as BufferAttribute | undefined;
+          if (left) writeFoldSlots(left, joint, undefined);
         }
         dual.setFolds(folds, surface);
         // It fades in over the next frames (`DualBones.advanceFold`), and the figure is not settled before it has.

@@ -12,9 +12,11 @@ import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import {
   DualBones,
-  foldSlotAttribute,
+  FOLD_SLOTS_ATTRIBUTE,
   followDualSkinning,
+  makeFoldSlots,
   setSkinAttributes,
+  writeFoldSlots,
 } from "../src/render/dualSkinning.ts";
 import type { SurfaceFold } from "../src/rig/jointFold.ts";
 import { skinDualShare } from "../src/rig/skinShare.ts";
@@ -36,11 +38,9 @@ function geometryOf(body: ReturnType<typeof posedSurface>, folds: readonly Surfa
   const g = new BufferGeometry();
   g.setAttribute("position", new BufferAttribute(body.rest, 3));
   setSkinAttributes(g, body.skinIndex, body.skinWeight);
-  for (const fold of folds)
-    g.setAttribute(
-      foldSlotAttribute(fold.joint),
-      new BufferAttribute(Float32Array.from(fold.slot), 1),
-    );
+  const slots = makeFoldSlots(body.rest.length / 3);
+  for (const fold of folds) writeFoldSlots(slots, fold.joint, fold.slot);
+  g.setAttribute(FOLD_SLOTS_ATTRIBUTE, slots);
   return g;
 }
 

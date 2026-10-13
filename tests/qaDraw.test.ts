@@ -18,7 +18,13 @@ import {
 } from "three";
 import { describe, expect, it } from "vitest";
 import { applyQaDraw, foldNotes, qaDraw } from "../playground/src/qaDraw.ts";
-import { DualBones, foldSlotAttribute } from "../src/react/index.ts";
+import {
+  DualBones,
+  FOLD_SLOTS_ATTRIBUTE,
+  foldSlotAt,
+  makeFoldSlots,
+  writeFoldSlots,
+} from "../src/react/index.ts";
 import { FOLD_JOINTS } from "../src/rig/folds.ts";
 
 const [HIP, KNEE] = FOLD_JOINTS;
@@ -27,11 +33,9 @@ const [HIP, KNEE] = FOLD_JOINTS;
 function figure(slots: Record<string, number[]>) {
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(4 * 3), 3));
-  for (const joint of FOLD_JOINTS)
-    geometry.setAttribute(
-      foldSlotAttribute(joint),
-      new BufferAttribute(Float32Array.from(slots[joint.name] ?? [-1, -1, -1, -1]), 1),
-    );
+  const attribute = makeFoldSlots(4);
+  for (const joint of FOLD_JOINTS) writeFoldSlots(attribute, joint, slots[joint.name]);
+  geometry.setAttribute(FOLD_SLOTS_ATTRIBUTE, attribute);
   const material = new MeshStandardMaterial();
   const body = new SkinnedMesh<BufferGeometry, Material>(geometry, material);
   const bone = new Bone();
@@ -73,14 +77,19 @@ describe("the shot's QA draw", () => {
     const { group, geometry } = figure({ knee: [0, 1, -1, 2], hip: [3, -1, -1, 0] });
     const draw = qaDraw(params("nofold=knee"));
     applyQaDraw(group, draw);
-    const knee = geometry.getAttribute(foldSlotAttribute(KNEE)) as BufferAttribute;
-    expect(Array.from(knee.array)).toEqual([-1, -1, -1, -1]);
-    expect(Array.from(geometry.getAttribute(foldSlotAttribute(HIP)).array)).toEqual([3, -1, -1, 0]);
-    // The folds arrive again (`Humanoid` copies their slots in): forced off again.
-    knee.copyArray([4, 5, 6, 7]);
-    knee.needsUpdate = true;
+    const slotsOf = (joint: (typeof FOLD_JOINTS)[number]) =>
+      [0, 1, 2, 3].map((v) => foldSlotAt(geometry, joint, v));
+    expect(slotsOf(KNEE)).toEqual([-1, -1, -1, -1]);
+    expect(slotsOf(HIP)).toEqual([3, -1, -1, 0]);
+    // The folds arrive again (`Humanoid` writes their slots in): forced off again.
+    writeFoldSlots(
+      geometry.getAttribute(FOLD_SLOTS_ATTRIBUTE) as BufferAttribute,
+      KNEE,
+      [4, 5, 6, 7],
+    );
     applyQaDraw(group, draw);
-    expect(Array.from(knee.array)).toEqual([-1, -1, -1, -1]);
+    expect(slotsOf(KNEE)).toEqual([-1, -1, -1, -1]);
+    expect(slotsOf(HIP)).toEqual([3, -1, -1, 0]);
   });
 
   it("draws normals as colour, smooth or flat, skinned as the figure is, and again if the figure resets it", () => {
@@ -161,6 +170,6 @@ describe("the shot's QA draw", () => {
     applyQaDraw(group, qaDraw(params("")));
     expect(body.material).toBe(material);
     expect(body.children.filter((c) => (c as SkinnedMesh).isSkinnedMesh)).toHaveLength(0);
-    expect(Array.from(geometry.getAttribute(foldSlotAttribute(KNEE)).array)).toEqual([0, 1, 2, 3]);
+    expect([0, 1, 2, 3].map((v) => foldSlotAt(geometry, KNEE, v))).toEqual([0, 1, 2, 3]);
   });
 });

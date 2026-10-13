@@ -45,7 +45,8 @@ import {
 } from "../../src/react/index.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import {
-  foldSlotAttribute,
+  FOLD_SLOTS_ATTRIBUTE,
+  foldSlotAt,
   readSkinAttributes,
   SKIN_INDEX_ATTRIBUTE_1,
   SKIN_WEIGHT_ATTRIBUTE_1,
@@ -55,7 +56,7 @@ import { HIP_FOLD } from "../../src/rig/hipFold.ts";
 
 /** Whether render vertex `v` of `geometry` has a row in any joint's fold. */
 const inAFold = (geometry: BufferGeometry, v: number) =>
-  FOLD_JOINTS.some((joint) => geometry.getAttribute(foldSlotAttribute(joint)).getX(v) >= 0);
+  FOLD_JOINTS.some((joint) => foldSlotAt(geometry, joint, v) >= 0);
 
 import type { SurfaceAnchors } from "../../src/worker/protocol.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
@@ -178,8 +179,7 @@ function gpuPositions(state: RootState, vertices: readonly number[], linear = fa
   points.setAttribute("position", pick("position", 3));
   for (const name of ["skinIndex", "skinWeight", SKIN_INDEX_ATTRIBUTE_1, SKIN_WEIGHT_ATTRIBUTE_1])
     points.setAttribute(name, pick(name, 4));
-  for (const joint of FOLD_JOINTS)
-    points.setAttribute(foldSlotAttribute(joint), pick(foldSlotAttribute(joint), 1));
+  points.setAttribute(FOLD_SLOTS_ATTRIBUTE, pick(FOLD_SLOTS_ATTRIBUTE, FOLD_JOINTS.length));
   points.setAttribute(
     "aPixel",
     new BufferAttribute(
@@ -360,8 +360,9 @@ describe("the affordance handle against the GPU", () => {
       });
       // The organ lies where the seated thighs flex: the hip fold moves it, on rows past what a
       // texture a row a line could hold, so this compares the fold too.
-      const slots = body.geometry.getAttribute(foldSlotAttribute(HIP_FOLD));
-      expect(sample.filter((v) => slots.getX(v) >= 0).length).toBeGreaterThan(sample.length / 2);
+      expect(
+        sample.filter((v) => foldSlotAt(body.geometry, HIP_FOLD, v) >= 0).length,
+      ).toBeGreaterThan(sample.length / 2);
       expect(worst).toBeLessThan(EXACT);
     },
     LOAD.timeout,

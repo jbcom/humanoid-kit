@@ -1481,8 +1481,9 @@ The main-thread handle to an evaluation worker.
   joint folds (ARCHITECTURE.md, "The hip fold", "The knee fold") of the figure the
   recipe makes, on the body surface its evaluation draws (`"base"` or `"adult"`):
   a `SurfaceFold` per joint of `FOLD_JOINTS` (its `joint`, `slot` per render
-  vertex, `rows`, `data`) for `DualBones.setFolds` and the geometry's slot
-  attribute of each joint (`foldSlotAttribute(joint)`). The worker solves them
+  vertex, `rows`, `data`) for `DualBones.setFolds` and the geometry's slots
+  (`FOLD_SLOTS_ATTRIBUTE`, one component a joint: `makeFoldSlots`,
+  `writeFoldSlots`, `foldSlotAt`). The worker solves them
   between other requests, so an evaluation is never held up behind them, and
   asking again supersedes a solve still under way, which rejects with an
   `AbortError`. `<Humanoid>` asks once a hip or a knee in its pose is flexed past

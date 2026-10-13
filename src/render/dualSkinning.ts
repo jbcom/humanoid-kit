@@ -74,8 +74,53 @@ export const FOLD_TEXELS_UNIFORM = "hkFoldTexels";
 export const FOLD_BLEND_UNIFORM = "hkFoldBlend";
 /** Seconds the folds take to fade in, so that a figure whose folds arrive late does not jump. */
 export const FOLD_FADE = 0.15;
-/** The vertex attribute holding a vertex's row in a joint fold's texture, or -1. */
-export const foldSlotAttribute = (joint: FoldJoint): string => `hkFoldSlot_${joint.name}`;
+/**
+ * The vertex attribute holding a vertex's row in each joint fold's texture, or
+ * -1: one component a joint, in `FOLD_JOINTS`' order. One attribute for all of
+ * them, because a WebGL vertex shader has 16 attributes in all (a limit of the
+ * GPU, not of MakeHuman's model), and the body's skin, eight influences a vertex
+ * and its occlusion, uses most of them.
+ */
+export const FOLD_SLOTS_ATTRIBUTE = "hkFoldSlots";
+if (FOLD_JOINTS.length > 4) throw new Error("fold slots: a vertex attribute has four components");
+
+/** A joint's component of `FOLD_SLOTS_ATTRIBUTE`. */
+export const foldSlotComponent = (joint: FoldJoint): number =>
+  FOLD_JOINTS.findIndex((j) => j.name === joint.name);
+
+/** The joint's slot in the shader, as the swizzle of the attribute. */
+const foldSlotGlsl = (joint: FoldJoint): string =>
+  `${FOLD_SLOTS_ATTRIBUTE}.${"xyzw"[foldSlotComponent(joint)]}`;
+
+/** A fresh `FOLD_SLOTS_ATTRIBUTE` for `count` vertices, none of them in any fold. */
+export function makeFoldSlots(count: number): BufferAttribute {
+  return new BufferAttribute(
+    new Float32Array(count * FOLD_JOINTS.length).fill(-1),
+    FOLD_JOINTS.length,
+  );
+}
+
+/** The vertex's row in the joint's fold, or -1 where it has none (or the geometry has no slots). */
+export function foldSlotAt(geometry: BufferGeometry, joint: FoldJoint, vertex: number): number {
+  const slots = geometry.getAttribute(FOLD_SLOTS_ATTRIBUTE);
+  return slots ? (slots.array[vertex * slots.itemSize + foldSlotComponent(joint)] as number) : -1;
+}
+
+/**
+ * Sets the joint's slot of every vertex from `slot` (a row a vertex, -1 for none),
+ * or to none when it is absent, and marks the attribute for upload.
+ */
+export function writeFoldSlots(
+  slots: BufferAttribute,
+  joint: FoldJoint,
+  slot: ArrayLike<number> | undefined,
+): void {
+  const c = foldSlotComponent(joint);
+  const array = slots.array as Float32Array;
+  for (let v = 0; v < slots.count; v++)
+    array[v * slots.itemSize + c] = slot ? (slot[v] as number) : -1;
+  slots.needsUpdate = true;
+}
 
 /**
  * A vertex's influences past the first four (`SKIN_INFLUENCES`, eight): three's
@@ -321,7 +366,7 @@ export class DualBones {
   /**
    * Sets the joint folds of the surface being drawn (`HumanoidModel.folds`, one
    * per joint of `FOLD_JOINTS`), or none: each one's rows are what the
-   * geometry's attribute of its joint (`foldSlotAttribute`) points into.
+   * geometry's slots of its joint (`FOLD_SLOTS_ATTRIBUTE`) points into.
    * `surface` says which body surface they are for; the CPU reference keeps
    * them too (`skinFolds`), so what is skinned on the CPU is what the shader draws.
    */
@@ -584,7 +629,7 @@ const position = (fold: boolean): string => /* glsl */ `
     fold
       ? FOLD_JOINTS.map(
           (joint) =>
-            `if ( ${foldSlotAttribute(joint)} >= 0.0 ) transformed += hkFoldValue_${joint.name}( ${foldSlotAttribute(joint)}, 0 );`,
+            `if ( ${foldSlotGlsl(joint)} >= 0.0 ) transformed += hkFoldValue_${joint.name}( ${foldSlotGlsl(joint)}, 0 );`,
         ).join("\n\t")
       : ""
   }
@@ -594,7 +639,7 @@ const position = (fold: boolean): string => /* glsl */ `
       ? `#ifdef HK_STRAIN
 	${FOLD_JOINTS.map(
     (joint) =>
-      `if ( ${foldSlotAttribute(joint)} >= 0.0 ) vHkStrain += hkFoldStrain_${joint.name}( ${foldSlotAttribute(joint)} );`,
+      `if ( ${foldSlotGlsl(joint)} >= 0.0 ) vHkStrain += hkFoldStrain_${joint.name}( ${foldSlotGlsl(joint)} );`,
   ).join("\n\t")}
 	#endif`
       : ""
@@ -629,7 +674,7 @@ const normal = (fold: boolean): string => /* glsl */ `
       ? `bool hkTurned = false;
 	${FOLD_JOINTS.map(
     (joint) =>
-      `if ( ${foldSlotAttribute(joint)} >= 0.0 ) { objectNormal += hkFoldValue_${joint.name}( ${foldSlotAttribute(joint)}, 1 ); hkTurned = true; }`,
+      `if ( ${foldSlotGlsl(joint)} >= 0.0 ) { objectNormal += hkFoldValue_${joint.name}( ${foldSlotGlsl(joint)}, 1 ); hkTurned = true; }`,
   ).join("\n\t")}
 	if ( hkTurned ) objectNormal = normalize( objectNormal );`
       : ""
@@ -640,7 +685,7 @@ const normal = (fold: boolean): string => /* glsl */ `
 /**
  * Makes a three vertex shader skin by `bones`: call it from an
  * `onBeforeCompile`. With `fold`, the shader adds the joint folds too, for a
- * geometry that carries each joint's slot attribute (`foldSlotAttribute`: the body's).
+ * geometry that carries the joints' slots (`FOLD_SLOTS_ATTRIBUTE`: the body's).
  */
 export function patchDualSkinning(shader: PatchableShader, bones: DualBones, fold = false): void {
   const needs = ["#include <skinning_pars_vertex>", "#include <skinning_vertex>"];
@@ -653,9 +698,7 @@ export function patchDualSkinning(shader: PatchableShader, bones: DualBones, fol
     shader.uniforms[FOLD_TEXELS_UNIFORM] = { value: bones.bones * DUAL_TEXELS };
     shader.uniforms[FOLD_BLEND_UNIFORM] = bones.foldBlend;
   }
-  const attributes = FOLD_JOINTS.map(
-    (joint) => `attribute float ${foldSlotAttribute(joint)};\n`,
-  ).join("");
+  const attributes = `attribute vec${FOLD_JOINTS.length} ${FOLD_SLOTS_ATTRIBUTE};\n`;
   shader.vertexShader = shader.vertexShader
     .replace(
       "#include <skinning_pars_vertex>",
@@ -673,7 +716,7 @@ export const DUAL_SKINNING_KEY = "dual-skinning-7";
  * (clothing, hair): it follows the body's dual quaternion skinning instead of
  * three's linear skinning alone, so it does not part from the skin at a joint.
  * With `fold`, for a geometry with each joint's slot attribute
- * (`foldSlotAttribute`: the body's), the joint folds too.
+ * (`FOLD_SLOTS_ATTRIBUTE`: the body's), the joint folds too.
  */
 export function applyDualSkinning(material: Material, bones: DualBones, fold = false): void {
   const before = material.onBeforeCompile;
@@ -716,7 +759,7 @@ export function dualShadowMaterials(
  * Makes the mesh's own CPU skinning (its bounds and ray picking, which three
  * does with linear skinning alone) follow the dual quaternion pose, as the
  * shader does; with `fold`, for a geometry with each joint's slot attribute
- * (`foldSlotAttribute`: the body's), the joint folds too, as much of them as shows.
+ * (`FOLD_SLOTS_ATTRIBUTE`: the body's), the joint folds too, as much of them as shows.
  */
 export function followDualSkinning(mesh: SkinnedMesh, bones: DualBones, fold = false): void {
   const index = new Uint16Array(SKIN_INFLUENCES);
@@ -728,10 +771,7 @@ export function followDualSkinning(mesh: SkinnedMesh, bones: DualBones, fold = f
     readSkinAttributes(mesh.geometry, vertex, index, weight);
     // As the shader: a vertex the geometry gives a row in a joint's fold (its attribute of the joint) takes it.
     const folding =
-      fold &&
-      FOLD_JOINTS.some(
-        (joint) => (mesh.geometry.getAttribute(foldSlotAttribute(joint))?.getX(vertex) ?? -1) >= 0,
-      )
+      fold && FOLD_JOINTS.some((joint) => foldSlotAt(mesh.geometry, joint, vertex) >= 0)
         ? bones.skinFolds()
         : undefined;
     skinPositionAt(pose, index, weight, 0, target.x, target.y, target.z, out, 0, folding, vertex);
