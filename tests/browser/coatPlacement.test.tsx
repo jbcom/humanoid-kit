@@ -25,11 +25,11 @@ import {
 } from "three";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
-import { FULL_BEARD_CARD_LENGTH, ROOT_SOLID } from "../../scripts/lib/bodyHairCards.ts";
 import { Humanoid, HumanoidProvider } from "../../src/react/index.ts";
 import { createRecipe, type Recipe } from "../../src/recipe/recipe.ts";
 import { COAT_MASK_ATTRIBUTES, CoatMaterial } from "../../src/render/coat.ts";
 import { HAIR_RANK_ATTRIBUTE } from "../../src/render/hairMaterial.ts";
+import { FULL_BEARD_CARD_LENGTH, ROOT_SOLID } from "../../src/surface/bodyHairCards.ts";
 import { BEARD_LENGTHS } from "../../src/surface/regions/bodyHairCoat.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 

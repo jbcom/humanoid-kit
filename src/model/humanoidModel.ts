@@ -64,7 +64,9 @@ import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } fr
 import { solvedSurfaceFold } from "../rig/solvedSurface.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
 import { type AtlasPlan, planAtlas, withExtra } from "../surface/atlasPlan.ts";
-import { beardStyle, bodyHairCoverage } from "../surface/bodyHair.ts";
+import { beardCoverage, resolveBeard } from "../surface/beard.ts";
+import { beardCardKey, beardCardOcclusion, beardCardSpec } from "../surface/beardCards.ts";
+import { cardFields, generateCards } from "../surface/bodyHairCards.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
 import { COAT_REGION_LIMIT, type CoatFields, coatMasks, combField } from "../surface/coat.ts";
 import {
@@ -523,6 +525,12 @@ const UNDER_COVER_CAP = 0.12;
 /** The figure attachment occlusion is baked against (and the pack's bake was): the default one. */
 const occlusionFigure = (): Recipe => createRecipe();
 
+/** How many generated beards a model keeps (`HumanoidModel.wornBeard`); a slider keeps making new ones. */
+const GENERATED_BEARDS_KEPT = 3;
+
+/** The joint at the chin's point, whose height above the floor caps a beard's length. */
+const CHIN_JOINT = "special04____tail";
+
 /** How much of a hair vertex's occlusion the ray bake (cards under cards) may take away from its height term. */
 const RAY_SHARE = 0.25;
 
@@ -556,6 +564,15 @@ export class HumanoidModel {
   private readonly hairParts = new Map<
     string,
     { asset: BoundAsset; part: Part; control: Float32Array }
+  >();
+  /**
+   * Beards generated for recipes (`wornBeard`), by id, the most recently worn
+   * last. A growing beard makes new cards every millimetre, so only the last
+   * `GENERATED_BEARDS_KEPT` are kept.
+   */
+  private readonly generatedBeards = new Map<
+    string,
+    { entry: HairStyleEntry; h: { asset: BoundAsset; part: Part; control: Float32Array } }
   >();
   /** Subdivision level of the attachments and garments: the body's, at most 1. */
   private readonly attachmentLevel: number;
@@ -1266,7 +1283,8 @@ export class HumanoidModel {
   /**
    * Every style a recipe wears (its scalp hair, brows and lashes) whose geometry
    * has not arrived, in that order, for the caller to `HairAssets.load`. An unknown
-   * id, or one of the wrong kind, is an error.
+   * id, or one of the wrong kind, is an error. A beard's cards are generated
+   * (`wornBeard`), so they wait for nothing.
    */
   pendingHairStyles(recipe: Recipe): string[] {
     const hair = recipe.hair;
@@ -1274,7 +1292,6 @@ export class HumanoidModel {
       [hair?.style, "scalp"],
       [hair?.brows, "brows"],
       [hair?.lashes, "lashes"],
-      [this.wornBeardCards(recipe), "beard"],
     ];
     const out: string[] = [];
     for (const [id, kind] of worn) {
@@ -1327,8 +1344,9 @@ export class HumanoidModel {
 
   /** A hair style's static render data, carried to the render vertices. Needs its geometry loaded. */
   hairTopology(id: string): HairTopology {
-    const entry = this.assets.hair?.styles.get(id);
-    const { asset, part: p } = this.hairPart(id, entry?.kind ?? "scalp");
+    const generated = this.generatedBeards.get(id);
+    const entry = generated?.entry ?? this.assets.hair?.styles.get(id);
+    const { asset, part: p } = generated?.h ?? this.hairPart(id, entry?.kind ?? "scalp");
     if (!entry) throw new RecipeError(`unknown hair style ${id}`);
     // The per-control-vertex bake, one value at a time through the stencil like any field.
     const carry = (value: (v: number) => number): Float32Array =>
@@ -1379,24 +1397,83 @@ export class HumanoidModel {
   }
 
   /**
-   * The id of the hair pack's cards for the recipe's beard style (an entry of
-   * kind `beard` tagged with the style), or null: when the pack has none for
-   * the style, or the face grows no terminal hair (a child's, or at a density
-   * of 0), which loads nothing.
+   * The recipe's beard as cards generated for it (`generateCards` over
+   * `beardCardSpec`), with its id (`beard:` and `beardCardKey`), or null: a
+   * face that grows no beard (`beardCoverage`), a beard too short for cards,
+   * or a hair pack with no beard strand map to draw them with. The length is
+   * capped at the chin's height above `floor` (the figure's lowest point, y),
+   * on this figure's `control` positions. Equal beards share their cards.
    */
-  wornBeardCards(recipe: Recipe): string | null {
-    const styles = this.assets.hair?.styles;
-    if (!styles) return null;
+  private wornBeard(
+    recipe: Recipe,
+    control: Float32Array,
+    floor: number,
+  ): { id: string; h: { asset: BoundAsset; part: Part; control: Float32Array } } | null {
+    const pack = [...(this.assets.hair?.styles.values() ?? [])].find((s) => s.kind === "beard");
+    if (!pack) return null;
     const input = {
       age: recipe.macros.age,
       colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
       ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     };
-    if (bodyHairCoverage("face", input) <= 0) return null;
-    const style = beardStyle(input);
-    for (const entry of styles.values())
-      if (entry.kind === "beard" && entry.tags.includes(style)) return entry.id;
-    return null;
+    if (beardCoverage(input) <= 0) return null;
+    const chin = new Float32Array(3);
+    jointPosition(this.assets, control, CHIN_JOINT, chin, 0);
+    const beard = resolveBeard(input, (chin[1] as number) - floor);
+    const id = `beard:${beardCardKey(beard)}`;
+    const known = this.generatedBeards.get(id);
+    if (known) {
+      // Most recently worn last.
+      this.generatedBeards.delete(id);
+      this.generatedBeards.set(id, known);
+      return { id, h: known.h };
+    }
+    const spec = beardCardSpec(this.assets, beard);
+    if (!spec) return null;
+    const cards = generateCards(this.assets, spec);
+    if (cards.cardCount === 0) return null;
+    const c = cards.compiled;
+    const zero = { offset: 0, byteLength: 0 };
+    const entry: HairStyleEntry = {
+      ...pack,
+      id,
+      label: `${pack.label} (${beard.style})`,
+      tags: [beard.style],
+      vertexCount: c.vertexCount,
+      faceCount: c.faceCount,
+      zDepth: c.zDepth,
+      scale: c.scale,
+      material: { ...c.material, texture: pack.material.texture },
+      layout: {
+        refVerts: zero,
+        weights: zero,
+        offsets: zero,
+        faceVerts: zero,
+        faceUvs: zero,
+        uvs: zero,
+        deleteVerts: zero,
+        occlusion: zero,
+      },
+    };
+    const asset: BoundAsset = {
+      entry,
+      ...c.arrays,
+      occlusion: Uint8Array.from(beardCardOcclusion(cards), (v) => Math.round(v * 255)),
+      hair: cardFields(cards, spec.lift),
+    };
+    // Drawn unsubdivided: the cards' quads are already about 2.5 cm long, and
+    // subdividing a long beard's 20k vertices took over a second a millimetre grown.
+    const h = {
+      asset,
+      part: part(this.attachmentSurface(asset, 0)),
+      control: new Float32Array(c.vertexCount * 3),
+    };
+    this.generatedBeards.set(id, { entry, h });
+    for (const old of this.generatedBeards.keys()) {
+      if (this.generatedBeards.size <= GENERATED_BEARDS_KEPT) break;
+      this.generatedBeards.delete(old);
+    }
+    return { id, h };
   }
 
   /**
@@ -1657,8 +1734,6 @@ export class HumanoidModel {
     const wornBrows = browsId === null ? null : { id: browsId, h: this.hairPart(browsId, "brows") };
     const wornLashes =
       lashesId === null ? null : { id: lashesId, h: this.hairPart(lashesId, "lashes") };
-    const beardId = this.wornBeardCards(recipe);
-    const wornBeard = beardId === null ? null : { id: beardId, h: this.hairPart(beardId, "beard") };
     let minY = Number.POSITIVE_INFINITY;
     for (const v of this.bodyVertices) minY = Math.min(minY, control[v * 3 + 1] as number);
     // The adult surface only for a figure aged 18 or over, decided here and nowhere
@@ -1718,8 +1793,9 @@ export class HumanoidModel {
     };
     const brows = decal(wornBrows, true);
     const lashes = decal(wornLashes, false);
-    // A beard's cards are bound and evaluated as scalp hair is.
-    const beard = decal(wornBeard, false);
+    // A beard's cards are generated for it, then bound and evaluated as scalp
+    // hair is; it grows no further than the floor the figure stands on.
+    const beard = decal(this.wornBeard(recipe, control, minY), false);
     const curvature = meanCurvature(
       body.positions,
       body.normals,

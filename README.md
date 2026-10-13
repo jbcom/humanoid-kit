@@ -54,26 +54,38 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
   trigger animation, physiology, injury or visual response. The planned,
   neutral injury-state boundary and its renderer proof gates are in
   [Regional contact and injury contract](./docs/REGIONAL-CONTACTS.md).
-- **Skeleton and facial pose data ship, ready for later work.** The packs carry
-  the 163-bone default skeleton, skin weights and 60 facial pose units. Skin
-  weights are interpolated onto the render surface. Posing, rigging and
-  expressions are not implemented yet; see the [roadmap](#roadmap).
+- **Rig, poses and expressions.** The body pack carries the 163-bone default
+  skeleton, skin weights and 60 facial pose units. The kit fits the skeleton to
+  every morphed body, poses it, and plays named expressions over it (see
+  [Rig and poses](./docs/API.md#rig-and-poses)).
+- **Animation, as an optional pack.** `humanoid-kit-animations` plays clips on
+  any figure whatever its size, shape or age, with its planted feet held in
+  place.
+- **Body and facial hair.** Body hair follows the figure's age and recipe, and
+  the hair pack carries eyebrows, eyelashes and a beard beside the scalp styles.
+- **A tap-to-edit creator.** `humanoid-kit/editor` is a React creator over the
+  recipe, with undo, randomisation, regional overrides and a wardrobe.
+- **Presence and interactions.** A figure publishes what the scene around it
+  needs (anchors, footprint, reach, whether it is an adult), and the framework-free
+  interaction core lets figures and objects agree and play shared interactions
+  under the age policy (see [Interactions](./docs/INTERACTIONS.md)).
 
 ## Packages
 
-This repository is a pnpm workspace that publishes four packages.
+This repository is a pnpm workspace that publishes seven packages: the
+library and six data packs.
 
 | Package | Directory | Licence | Contents |
 | --- | --- | --- | --- |
-| `humanoid-kit` | `.` | MIT | The code: asset loading, recipes, evaluation, subdivision, the worker client and the React bindings |
+| `humanoid-kit` | `.` | MIT | The code: asset loading, recipes, evaluation, subdivision, rig and poses, animation playback, presence, interactions, the worker client, the React bindings and the creator |
 | `humanoid-kit-body` | `packs/body` | CC0 1.0 | The base mesh, shape targets for ages 1 to 90, the 163-bone skeleton and skin weights, facial pose units, eyes, teeth and tongue, and 275 shape modifiers (modelling, measurement and body shapes) with their sliders |
-| `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 | Adult-only targets and 5 modifiers with their sliders. A separate install; refused unless built against the exact body pack |
-| `humanoid-kit-hair` | `packs/hair` | CC0 1.0 | Ten scalp hair styles (short, bob, long, afro, ponytail, braid) as alpha cards bound to the base body, any colour from black to platinum. A separate install; a style's files load when a figure first wears it |
+| `humanoid-kit-adult-anatomy` | `packs/adult-anatomy` | CC0 1.0 AND CC BY 4.0 | 98 adult-only targets and 12 modifiers (9 with sliders; 3 retained legacy ids, hidden from the sliders and still accepted in saved recipes). A separate install; refused unless built against the exact body pack |
+| `humanoid-kit-hair` | `packs/hair` | CC0 1.0 | 33 hair entries bound to the base body, any colour from black to platinum: 16 scalp styles (short, bob, long, afro, ponytail, a side braid, box braids, cornrows, twists, locs, bantu knots, a close crop), 12 eyebrows, 4 eyelashes and a beard. A separate install; an entry's files load when a figure first wears it |
 | `humanoid-kit-eyes` | `packs/eyes` | CC0 1.0 | 32 eye materials (human irises, cats' slit pupils, toon and creature eyes) that add iris pattern and sclera detail to the eye shader's own colours. A separate install; a material's texture loads when a figure first wears it |
 | `humanoid-kit-animations` | `packs/animations` | CC0 1.0 | 98 clips (walks, a jog, idles, swims, crouches, combat, sitting, 1860s drill and prayer) on MakeHuman's default skeleton, played on any figure whatever its size, shape or age, its planted feet held in place. A separate install; a clip's file loads when a figure first plays it |
-| `humanoid-kit-clothing` | `packs/clothing` | CC0 1.0 | 19 MakeHuman garments (suits, shoes, a hat) bound to the base mesh, with the skin each hides. A separate install; refused unless built against the exact body pack |
+| `humanoid-kit-clothing` | `packs/clothing` | CC0 1.0 | 87 garments (suits, shoes, hats, gloves, glasses, masks, held items and more) bound to the base mesh, with the skin each hides: 19 from MakeHuman's system assets and 68 from the community's clothing packs. A separate install; refused unless built against the exact body pack |
 
-The body pack and the adult anatomy pack together account for 280 shape
+The body pack and the adult anatomy pack together account for 287 shape
 modifiers. The data packs are generated from MakeHuman's CC0 assets by
 `pnpm pack:data`; see [Data and licensing](#data-and-licensing).
 
@@ -185,8 +197,12 @@ enforced in code:
   assets from its core.
 - A recipe under 18 that sets any adult anatomy modifier throws
   `AgePolicyError` when it is evaluated. It is never silently clamped.
+- Under 18 the policy also refuses pubic body hair, any piercing at a site that
+  is not one of the body's own, and the `arousal` skin-state signal. Axillary,
+  facial and limb hair follow puberty and are not restricted.
 - `withAge(recipe, age)` returns a copy at a new age. Moving below 18 removes the
-  adult anatomy values explicitly; the original is untouched.
+  adult anatomy values, pubic hair and adult piercing sites explicitly; the
+  original is untouched.
 - The loader refuses an adult anatomy pack unless it records the SHA-256 of the
   exact body pack it is loaded with (`bodySha256`).
 
@@ -205,7 +221,8 @@ const assets = await loadHumanoidAssets({ body: bodyPack, adultAnatomy: adultAna
 | Entry point | Contents | Needs React |
 | --- | --- | --- |
 | `humanoid-kit` | Asset loading and parsing, recipes, the age policy, macro and region model, `HumanoidModel`, subdivision, the surface builder and `HumanoidWorkerClient` | no |
-| `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady`, `PresenceProvider`, `usePresence`, `usePresenceRegistry`, `useProximity` | yes |
+| `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady`, `PresenceProvider`, `usePresence`, `usePresenceRegistry`, `useProximity`, `Miniatures`, `StudioStage`, `HumanoidAffordances` | yes |
+| `humanoid-kit/editor` | `HumanoidCreator`, `useHumanoidEditor`, `SliderRow` | yes |
 | `humanoid-kit/worker` | The worker module that `HumanoidWorkerClient` starts by default | no |
 
 See the [API reference](https://jbcom.github.io/humanoid-kit/API/) and the
@@ -213,19 +230,20 @@ See the [API reference](https://jbcom.github.io/humanoid-kit/API/) and the
 
 ## Roadmap
 
-Planned, in order. None of this exists in the code yet.
+Status per milestone. The architecture notes carry the detail
+([Roadmap](./docs/ARCHITECTURE.md#roadmap)).
 
-1. Doll form and an editor shell (`humanoid-kit/editor`)
-2. Rig, poses and expressions from the shipped skeleton and facial pose units
-3. Adult anatomy sculpting
-4. Scalp hair (implemented as the `humanoid-kit-hair` pack)
-5. Body and facial hair
-6. Anthro traits
-7. Clothing and surface layers: bound `.mhclo` layers including `delete_verts`;
-   fur, scales and feathers as layers
-8. Animation packs: `humanoid-kit-animations`, and a separate
-   `humanoid-kit-adult-animations` that refuses any participant under 18; spatial
-   awareness for multi-person interactions
+| Milestone | Status |
+| --- | --- |
+| Editor shell (`humanoid-kit/editor`) | Done. A doll form is planned |
+| Rig, poses and expressions | Done: fitted skeleton, posing, named expressions |
+| Adult anatomy sculpting | In progress: the layers, state plumbing and a refined adult surface ship; the own-sculpt phase is planned |
+| Scalp hair | Done: `humanoid-kit-hair` |
+| Body and facial hair | Body hair, eyebrows, eyelashes and one beard ship; moustaches and larger beards are planned |
+| Clothing | Done: `humanoid-kit-clothing`, bound `.mhclo` layers including `delete_verts` |
+| Anthro traits; fur, scales and feathers as layers | Planned. The shared coat module for body hair and fur is built |
+| Animation | `humanoid-kit-animations` is done; `humanoid-kit-adult-animations` waits on an owner ruling on its scope |
+| Interactions and spatial awareness | In progress: presence ships; the interaction core ships its first two slices |
 
 ## Compatibility
 
@@ -244,7 +262,10 @@ emitted JavaScript imports `.js`.
 ## Data and licensing
 
 The code is MIT licensed. The data packs are CC0 1.0 and derived from the
-MakeHuman project's assets, which were released under CC0 1.0 in September 2020.
+MakeHuman project's assets, which were released under CC0 1.0 in September 2020,
+and from community assets whose pages state CC0. The adult anatomy pack also
+carries CC BY 4.0 detail with its attribution, and the skin colour anchors in
+the code derive from a CC BY 4.0 dataset (see `NOTICE.md`).
 Only asset data is used, never MakeHuman program code. The packer refuses any
 source file that does not prove CC0 from its own content, and each pack's
 `data/PROVENANCE.md` records the upstream commit, the licence evidence and the
