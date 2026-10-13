@@ -6,6 +6,10 @@ texts that bear on figures of minors, and how the library is built against
 them. It is written for maintainers and integrators. It is not legal advice;
 see [What this policy is not](#what-this-policy-is-not).
 
+The maintainers' rulings behind this policy (the age line, judging by intent and
+by what MakeHuman already decided, adult interaction and consent) are recorded
+in [DECISIONS.md](DECISIONS.md), rulings 1, 4, 5 and 6.
+
 ## The rule
 
 Nothing in humanoid-kit produces sexually explicit conduct, or adult genital
@@ -262,7 +266,9 @@ general animations package's interaction contracts tagged `intimate` will also
 refuse any participant under 18. Both will throw, as `AgePolicyError` does,
 rather than skip. The interaction contract ([Interactions](INTERACTIONS.md),
 "Age policy enforcement points") carries this as a required `audience`, fail
-closed and derived from the affordances an interaction names.
+closed and derived from the affordances an interaction names. Whether
+`humanoid-kit-adult-animations` belongs in this repository at all is an open
+owner question (issue 105); nothing of it exists.
 
 **The public demo ships without the adult pack.**
 `scripts/check-pages-build.mjs` (`pnpm check:pages`) fails if any built site

@@ -127,6 +127,42 @@ records the upstream commit, the CC0 evidence per source file and the SHA-256 of
 every output. The packer's licence gate refuses any source file that does not
 prove CC0 from its own content; see `NOTICE.md`.
 
+## Units, frame and length constants
+
+All runtime lengths are metres (the manifests record `unit: "metre"`; the
+packer converts MakeHuman's decimetres), in a Y-up frame with the figure facing
++Z (`src/rig/pose.ts`; MakeHuman's BVH data is Z-up facing -Y and is converted
+on the way in). Landmarks are resolved by base-mesh vertex id, not by
+coordinate, so they follow every figure's size and shape.
+
+Every numeric constant in `src` is one of three classes, and its doc comment
+should name which:
+
+1. **Physical.** The same at every size, because the thing it describes does not
+   scale with the figure: a storage unit such as `GROWTH_SCALE` (hair growth in
+   steps of 1/10 000 m), or a width chosen to be the same on every figure.
+2. **Skin-space.** Authored on the base body and carried by UV or vertex
+   identity, so it follows the body without a number to rescale: a skin layer's
+   field, a region mask, a morph target, a detail target's lattice index.
+3. **Figure-relative.** A multiple of a named measure of the figure. The measures
+   are the presence `measures` (reach, shoulder, hip and eye height; see
+   [Presence](PRESENCE.md)) and `headScale`, the figure's head width over the
+   default adult's (`ADULT_EAR_SPAN`, 0.1314 m, the span of the ear canals;
+   `src/affordance/channel.ts`, `src/affordance/frames.ts`).
+
+`headScale` is a head measure, not a body-size one. A child's head is
+proportionally large, so it overstates a child's body, and it must not scale a
+body-length quantity (a stride, a reach, a clearance); use a presence measure
+or a body-size measure derived from the legs (for example hip to ankle, to be
+added with its first user and documented beside `headScale`) for those. There
+is no stature or body-scale value in the recipe: `height` is a blend weight.
+
+The classes are applied by convention in newer code and are not yet tagged
+across the roughly 345 numeric constants in `src`; the thresholds that are
+absolute metres tuned on an adult (contact, plant, clearance and invariant
+tolerances) are tracked by issue 42, and issue 49 holds the sweep that tags
+every constant with its class.
+
 ## Recipe
 
 ```ts
@@ -2904,8 +2940,8 @@ Old recipes evaluate and serialise as before.
 ### The coat (design, 2026-10-09)
 
 Short, dense hair standing off the skin (stubble, a dense chest, an animal's
-pelt) is one module shared by body hair and the anthro fur
-(`ANTHRO-DESIGN.md` §2.7): shells, the body surface drawn N times, each
+pelt) is one module shared by body hair and the anthro fur (the anthro design
+itself is not written yet; issue 97 tracks it): shells, the body surface drawn N times, each
 offset outward a little further and cut to strands by a density texture
 (Lengyel et al. 2001).
 
@@ -4018,7 +4054,8 @@ Milestones, in the order each is proven (built in parallel lanes; see
 "Parallel work: the base contract").
 
 1. **Doll form and editor shell.** Implemented: `humanoid-kit/editor`, a
-   tap-to-edit creator over the recipe (see Editor). Planned: the doll form.
+   tap-to-edit creator over the recipe (see Editor). Planned: the doll form
+   (issue 98).
 2. **Rig, poses and expressions.** Implemented: a skeleton fitted to the morphed
    body, posing, and the facial pose units with named expressions (see
    "Skeleton, poses and expressions"). MakeHuman's body pose units are not
@@ -4037,16 +4074,17 @@ Milestones, in the order each is proven (built in parallel lanes; see
    drawn as skin layers and a shared coat (see "Body hair"), and the hair pack's
    eyebrows, eyelashes and one beard (`beard-full`). Planned: moustaches and
    larger beards (issue 14).
-6. **Anthro traits.** Planned. The coat module is shared with body hair so that
-   fur can add its own regions and patterns (see "The coat").
+6. **Anthro traits.** Planned (issue 97). The coat module is shared with body
+   hair so that fur can add its own regions and patterns (see "The coat").
 7. **Clothing and surface layers.** Implemented: layers bound to the base mesh,
    including `.mhclo` assets with `delete_verts` (see "Clothing"). Planned: fur,
-   scales and feathers as layers.
+   scales and feathers as layers (issue 99).
 8. **Animation packs.** Implemented: `humanoid-kit-animations`. Pending an owner
-   ruling on whether it belongs in this repository (issue 54): a separate
+   ruling on whether it belongs in this repository (issue 105): a separate
    `humanoid-kit-adult-animations` that refuses any participant under 18.
    Presence is implemented ("Presence"); the interaction core is in progress,
-   with slices 1 and 2 built. How figures, objects and fixtures offer, claim and
+   with slices 1 and 2 built and the later slices tracked (issues 100 to 104).
+   How figures, objects and fixtures offer, claim and
    play interactions together, and where the age policy is enforced in them, is
    designed in [Interactions](INTERACTIONS.md).
 

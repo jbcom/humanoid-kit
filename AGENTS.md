@@ -23,11 +23,13 @@ covers what isn't obvious from reading the code alone.
   unit suite with coverage thresholds, the build, and `pnpm package:check`
   (`publint`, Are The Types Wrong with the ESM-only profile, and
   `scripts/verify-package.mjs`). A change is not done while any part of it is red.
-- Coverage thresholds apply to `src/format`, `src/morph`, `src/subdiv` and
-  `src/recipe` (`src/rig` is listed in `vitest.config.ts` but does not exist yet).
-  `src/makehuman`, `src/model` and `src/build` are exercised by `tests/` but are
-  not in the threshold set. `src/react` and `src/worker` need a browser and are
-  proven by `pnpm test:e2e` (Playwright against the playground).
+- Coverage (thresholds: lines, functions and statements 90, branches 85) is
+  measured over the framework-free core listed in `vitest.config.ts`: `src/bake`,
+  `src/build`, `src/editor` (not `src/editor/ui`), `src/format`, `src/makehuman`,
+  `src/mhclo`, `src/model`, `src/morph`, `src/presence`, `src/recipe`, `src/rig`,
+  `src/subdiv` and `src/surface`. `src/react`, `src/render`, `src/editor/ui` and
+  `src/worker` need a browser and are proven by the browser project and
+  `pnpm test:e2e` (Playwright against the playground).
 - `playground/` is the library's own demo, not a consumer. It aliases
   `humanoid-kit` and its subpaths to `../src`, so it needs no build step, and it
   loads the body pack and the hair pack (never the adult pack outside `?adult`
@@ -101,20 +103,17 @@ A change to a public export needs matching updates in `tests/` (or `e2e/` for
 `src/react` and `src/worker`), `docs/API.md`, `docs/ARCHITECTURE.md` when a
 boundary or invariant moves, and the README and `llms.txt` when the quick start
 or the roadmap changes. Document only what the code does: planned work belongs in
-the roadmap, labelled as planned. `humanoid-kit/editor` is declared in
-`package.json` but `src/editor` does not exist yet.
+the roadmap, labelled as planned. A status note ("canonical", "current", "done")
+names the ref and the date it was checked against.
 
 ## Known gaps
 
-- `scripts/verify-package.mjs` still describes the earlier single-package layout
-  (`data/hm08`, a `HumanoidEvaluator` export, a `humanoid-kit/editor` build and a
-  baby/child target scan), so `pnpm package:check` cannot pass until it is
-  updated to the current packages.
-- `pnpm check:pages` is not wired into any workflow; run it after
-  `pnpm build:playground` and `pnpm docs:build`.
-- The comment at the top of `scripts/pack-makehuman.ts` mentions an
-  `adult-targets.bin`; the packer actually writes
-  `packs/adult-anatomy/data/targets.bin`.
+None recorded. The earlier list (a stale `scripts/verify-package.mjs`, an
+unwired `pnpm check:pages`, an out-of-date packer comment) was checked on
+2026-10-13 against `integration` at c6167468: `pnpm build` and
+`pnpm package:check` pass on the current seven packages, `pnpm check:pages` runs
+in `.github/workflows/cd.yml`, and the packer comment names the real files. Add
+a gap here with the ref and date you found it at.
 
 ## Commits and releases
 
