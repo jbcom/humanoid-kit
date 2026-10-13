@@ -64,7 +64,7 @@ test.describe("the direct body-hair lab", () => {
     page.on("console", (message) => {
       if (message.type() === "error") errors.push(message.text());
     });
-    await openSilentGame(page, "./", { bodyHairLab: "", muted: "" });
+    await openSilentGame(page, "./", { bodyHairLab: "", muted: "", coatprobe: "" });
     await page.locator('[data-body-hair-figure="ready"]').waitFor({ timeout: 120_000 });
     await expect(page.getByRole("heading", { name: "Body hair controls" })).toBeVisible();
     await expect(page.locator("[data-body-hair-stage]")).toBeVisible();
@@ -91,6 +91,13 @@ test.describe("the direct body-hair lab", () => {
       expect((await selectedRecipe(page)).bodyHair.follicleDensity).toEqual({
         [region.toLowerCase()]: 2,
       });
+      if (region === "Chest") {
+        const coats = await page.evaluate(() => window.hkCoatProbe?.() ?? []);
+        const chest = coats
+          .flatMap((coat) => coat.uniforms.rows)
+          .find((row) => row.region === "hair-chest");
+        expect(chest).toMatchObject({ cover: expect.closeTo(0.84375, 5), density: 44 });
+      }
       await page.screenshot({
         path: info.outputPath(`body-hair-${region.toLowerCase()}.png`),
         fullPage: true,

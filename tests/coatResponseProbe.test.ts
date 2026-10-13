@@ -160,7 +160,7 @@ describe("Issue #21 coat response probe", () => {
     console.log(`Issue #21 coat masks/indices: ${JSON.stringify({ report })}`);
   });
 
-  it("shows why chest density one and two cannot visibly differ before the radius clamp changes", () => {
+  it("keeps chest follicle density visibly responsive instead of pinning it to a radius floor", () => {
     const chest = BODY_HAIR_COAT[regionIndex("hair-chest")];
     if (!chest) throw new Error("no chest coat region");
     const paint = chest.paint({
@@ -183,12 +183,10 @@ describe("Issue #21 coat response probe", () => {
       paint.cover,
       1,
     );
-    expect(one.rawRadius).toBeLessThan(COAT_NORMALIZED_RADIUS.min);
-    expect(two.rawRadius).toBeLessThan(COAT_NORMALIZED_RADIUS.min);
-    expect(one.radius).toBe(COAT_NORMALIZED_RADIUS.min);
-    expect(two.radius).toBe(COAT_NORMALIZED_RADIUS.min);
-    expect(one.resolvedWeight).toBe(0);
-    expect(two.resolvedWeight).toBe(0);
+    expect(one.radius).toBeCloseTo(one.rawRadius, 6);
+    expect(two.radius).toBeCloseTo(two.rawRadius, 6);
+    expect(two.radius).toBeGreaterThan(one.radius);
+    expect(two.combinedAlpha).toBeGreaterThan(one.combinedAlpha * 1.8);
   });
 
   it("keeps normal-view shell accumulation low even for the broad pubic mask", () => {

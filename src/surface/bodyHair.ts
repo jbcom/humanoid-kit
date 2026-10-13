@@ -138,14 +138,16 @@ export const BODY_HAIR_SENESCENCE: Readonly<
 export const BODY_HAIR_FIBRE: Readonly<
   Record<BodyHairGroup, { eumelanin: number; greyLag: number; diameter: number; length: number }>
 > = {
-  face: { eumelanin: 0.08, greyLag: 0, diameter: 100e-6, length: 0.012 },
-  chest: { eumelanin: 0, greyLag: 8, diameter: 70e-6, length: 0.02 },
+  face: { eumelanin: 0.08, greyLag: 0, diameter: 120e-6, length: 0.012 },
+  // These terminal fibres must exceed the coat shader's subpixel floor at the
+  // direct-control endpoints; otherwise physical follicle density is visibly flat.
+  chest: { eumelanin: 0, greyLag: 8, diameter: 120e-6, length: 0.02 },
   abdomen: { eumelanin: 0, greyLag: 8, diameter: 70e-6, length: 0.018 },
   back: { eumelanin: 0, greyLag: 8, diameter: 60e-6, length: 0.015 },
   buttocks: { eumelanin: 0, greyLag: 8, diameter: 60e-6, length: 0.012 },
   arms: { eumelanin: -0.08, greyLag: 8, diameter: 50e-6, length: 0.01 },
-  legs: { eumelanin: -0.08, greyLag: 8, diameter: 55e-6, length: 0.015 },
-  axillary: { eumelanin: 0.05, greyLag: 12, diameter: 90e-6, length: 0.02 },
+  legs: { eumelanin: -0.08, greyLag: 8, diameter: 100e-6, length: 0.015 },
+  axillary: { eumelanin: 0.05, greyLag: 12, diameter: 120e-6, length: 0.02 },
   pubic: { eumelanin: 0.12, greyLag: 12, diameter: 100e-6, length: 0.025 },
 };
 
