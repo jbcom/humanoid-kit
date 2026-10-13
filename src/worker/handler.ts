@@ -26,6 +26,7 @@ import { tryPresenceJoints } from "../presence/fromEvaluation.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { rigData } from "../rig/pose.ts";
 import type { WorkerRequest, WorkerResponse } from "./protocol.ts";
+import { yieldWorkerTask } from "./task.ts";
 
 export type Post = (msg: WorkerResponse, transfer?: Transferable[]) => void;
 
@@ -119,7 +120,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
             const step = steps.next();
             if (step.done) return step.value;
             // A macrotask between corners lets queued evaluations run.
-            await new Promise((resolve) => setTimeout(resolve, 0));
+            await yieldWorkerTask();
           }
         })();
         // Each request gets its own copies: the reply transfers them.
@@ -227,7 +228,7 @@ export function createWorkerHandler(post: Post): (req: WorkerRequest) => Promise
             return;
           }
           // A macrotask between flexions lets queued evaluations run.
-          await new Promise((resolve) => setTimeout(resolve, 0));
+          await yieldWorkerTask();
           superseded();
         }
       }

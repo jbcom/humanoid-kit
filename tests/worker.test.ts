@@ -122,6 +122,28 @@ describe("the evaluation worker", { timeout: 60_000 }, () => {
     expect(replies.get(1)).toMatchObject({ type: "ready" });
   });
 
+  it("keeps serving evaluations while posed occlusion yields between corners", async () => {
+    stubFetch();
+    const { handle, replies } = start();
+    await handle({
+      type: "init",
+      id: 1,
+      load: { body: "http://packs/body" },
+      model: { subdivision: 0, attachments: ["eyes/high-poly"] },
+    });
+    const occlusion = handle({ type: "posedOcclusion", id: 2 });
+    const evaluation = handle({ type: "evaluate", id: 3, recipe: createRecipe() });
+    await evaluation;
+    expect(replies.get(3)?.type).toBe("evaluated");
+    // The task boundary lets the request queued after the first occlusion corner run first.
+    expect(replies.has(2)).toBe(false);
+    await occlusion;
+    expect(replies.get(2)).toMatchObject({
+      type: "posedOcclusion",
+      attachments: expect.any(Array),
+    });
+  });
+
   describe("with the clothing pack", () => {
     const load = { body: "http://packs/body", clothing: "http://packs/clothing" };
     const outfit = ["suits/male_casualsuit01", "shoes/shoes01"];
