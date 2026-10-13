@@ -23,6 +23,7 @@ import {
   OrthographicCamera,
   Scene,
   SphereGeometry,
+  Vector2,
   WebGLRenderTarget,
 } from "three";
 import { afterAll, describe, expect, it } from "vitest";
@@ -119,6 +120,13 @@ const renderer = createTestRenderer({ antialias: false });
 renderer.setPixelRatio(1);
 renderer.setSize(SIZE, SIZE, false);
 const target = new WebGLRenderTarget(SIZE, SIZE, { type: FloatType });
+const TILE_COLUMNS = 4;
+const TILE_ROWS = 2;
+const TILE_CAPACITY = TILE_COLUMNS * TILE_ROWS;
+// Float target + readback + extracted cells: 8 * 256² * RGBA * 4 bytes each.
+const tileTarget = new WebGLRenderTarget(SIZE * TILE_COLUMNS, SIZE * TILE_ROWS, {
+  type: FloatType,
+});
 const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
 camera.position.set(0, 0, 5);
 camera.lookAt(0, 0, 0);
@@ -146,6 +154,7 @@ afterAll(() => {
   geometry.dispose();
   material.dispose();
   target.dispose();
+  tileTarget.dispose();
 });
 
 type Mode = "lambert" | "scatter" | "specular" | "production";
@@ -228,6 +237,13 @@ interface PhaseMetrics {
 
 interface PhaseProfile extends PhaseMetrics {
   first: PhaseMetrics | null;
+  tile: {
+    cells: number;
+    fences: number;
+    renderMs: number;
+    readbackMs: number;
+    bufferBytes: number;
+  };
 }
 
 function phaseProfile(): PhaseProfile {
@@ -239,6 +255,7 @@ function phaseProfile(): PhaseProfile {
     referenceReplayMs: 0,
     deltaEMs: 0,
     first: null,
+    tile: { cells: 0, fences: 0, renderMs: 0, readbackMs: 0, bufferBytes: 0 },
   };
 }
 
@@ -271,6 +288,7 @@ function reportPhaseProfile(profile: PhaseProfile, phase: "representative" | "pr
       phase,
       ...phaseSnapshot(profile),
       first: profile.first,
+      tile: profile.tile,
     }),
   );
 }
@@ -331,6 +349,68 @@ async function renderLinearAsync(profile?: PhaseProfile): Promise<Float32Array> 
   if (profile) profile.readbackMs += performance.now() - readbackStarted;
   renderer.setRenderTarget(null);
   return pixels;
+}
+
+interface LambertCase {
+  swatch: (typeof PALETTE)[number];
+  angle: number;
+  albedo: Rgb;
+}
+
+/**
+ * Renders up to eight immutable Lambert cases into fixed-size cells, then makes
+ * one Float readback. The canvas/display path intentionally remains separate.
+ */
+function renderLambertTile(cases: readonly LambertCase[], profile?: PhaseProfile): Float32Array[] {
+  if (cases.length === 0 || cases.length > TILE_CAPACITY) throw new Error("invalid tile size");
+  const packed = new Float32Array(tileTarget.width * tileTarget.height * 4);
+  renderer.toneMapping = NoToneMapping;
+  renderer.initRenderTarget(tileTarget);
+  const renderStarted = performance.now();
+  try {
+    for (const [index, entry] of cases.entries()) {
+      configure(entry.swatch, "lambert");
+      const column = index % TILE_COLUMNS;
+      const row = Math.floor(index / TILE_COLUMNS);
+      const x = column * SIZE;
+      const y = row * SIZE;
+      light.position.set(
+        Math.sin((entry.angle * Math.PI) / 180) * 10,
+        0,
+        Math.cos((entry.angle * Math.PI) / 180) * 10,
+      );
+      renderer.setRenderTarget(target);
+      renderer.clear();
+      renderer.render(scene, camera);
+      renderer.copyTextureToTexture(target.texture, tileTarget.texture, null, new Vector2(x, y));
+    }
+    const renderMs = performance.now() - renderStarted;
+    const readbackStarted = performance.now();
+    renderer.readRenderTargetPixels(tileTarget, 0, 0, tileTarget.width, tileTarget.height, packed);
+    if (profile) {
+      profile.renderMs += renderMs;
+      profile.readbackMs += performance.now() - readbackStarted;
+      profile.tile.cells += cases.length;
+      profile.tile.fences++;
+      profile.tile.renderMs += renderMs;
+      profile.tile.readbackMs += performance.now() - readbackStarted;
+      profile.tile.bufferBytes += packed.byteLength;
+    }
+  } finally {
+    renderer.setViewport(0, 0, SIZE, SIZE);
+    renderer.setScissor(0, 0, SIZE, SIZE);
+    renderer.setRenderTarget(null);
+  }
+  return cases.map((_, index) => {
+    const cell = new Float32Array(SIZE * SIZE * 4);
+    const column = index % TILE_COLUMNS;
+    const row = Math.floor(index / TILE_COLUMNS);
+    for (let py = 0; py < SIZE; py++) {
+      const from = ((row * SIZE + py) * tileTarget.width + column * SIZE) * 4;
+      cell.set(packed.subarray(from, from + SIZE * 4), py * SIZE * 4);
+    }
+    return cell;
+  });
 }
 
 /** Measures the same analytic expectation calls without changing the assertion's result. */
@@ -433,18 +513,6 @@ function measure(
   return measurePixels(angle, expect, path, renderAt(angle, path, profile), profile, before);
 }
 
-async function measureAsync(
-  angle: number,
-  expect: Expectation,
-  profile?: PhaseProfile,
-): Promise<Measured> {
-  const a = (angle * Math.PI) / 180;
-  light.position.set(Math.sin(a) * 10, 0, Math.cos(a) * 10);
-  const before = profile ? phaseSnapshot(profile) : null;
-  const pixels = await renderLinearAsync(profile);
-  return measurePixels(angle, expect, "linear", pixels, profile, before);
-}
-
 /** Lights the sphere from `angle` degrees off the view axis and renders it. */
 function renderAt(angle: number, path: Path, profile?: PhaseProfile): ArrayLike<number> {
   const a = (angle * Math.PI) / 180;
@@ -477,11 +545,15 @@ function modelRadiance(radius = FEATURE_RADIUS): (nDotL: number) => Rgb {
 }
 
 describe("skin material on an analytic sphere", () => {
-  it("matches synchronous Float readback for one Lambert case, then renders Lambert's A·N·L for every colour asynchronously", async () => {
+  it("matches synchronous, asynchronous, and every 4×2 tile Float cell before checking Lambert's A·N·L", async () => {
     const firstSwatch = PALETTE[0];
     const parityAngle = ANGLES[1];
     if (!firstSwatch || parityAngle === undefined)
       throw new Error("sphere parity constants are empty");
+    const parityCases = PALETTE.slice(0, TILE_CAPACITY).map((swatch, index) => {
+      configure(swatch, "lambert");
+      return { swatch, angle: ANGLES[index % ANGLES.length] as number, albedo: albedoOf() };
+    });
     configure(firstSwatch, "lambert");
     const sync = Float32Array.from(renderAt(parityAngle, "linear"));
     const a = (parityAngle * Math.PI) / 180;
@@ -489,21 +561,37 @@ describe("skin material on an analytic sphere", () => {
     const asynchronous = Float32Array.from(await renderLinearAsync());
     expect(asyncReadbackFallbackUsed).toBe(false);
     expect(asynchronous).toEqual(sync);
+    const individual = parityCases.map((entry) => {
+      configure(entry.swatch, "lambert");
+      return Float32Array.from(renderAt(entry.angle, "linear"));
+    });
+    expect(renderLambertTile(parityCases)).toEqual(individual);
+    expect(renderLambertTile(parityCases.slice(0, 3))).toEqual(individual.slice(0, 3));
 
     const failures: string[] = [];
     const profile = phaseProfile();
-    for (const s of PALETTE) {
-      configure(s, "lambert");
-      const A = albedoOf();
-      for (const angle of ANGLES) {
-        const m = await measureAsync(
-          angle,
-          (n) => A.map((c) => c * Math.max(n, 0)) as Rgb,
+    const cases = PALETTE.flatMap((swatch) => {
+      configure(swatch, "lambert");
+      const albedo = albedoOf();
+      return ANGLES.map((angle) => ({ swatch, angle, albedo }));
+    });
+    for (let first = 0; first < cases.length; first += TILE_CAPACITY) {
+      const tile = cases.slice(first, first + TILE_CAPACITY);
+      const before = phaseSnapshot(profile);
+      const readings = renderLambertTile(tile, profile);
+      for (const [index, entry] of tile.entries()) {
+        const m = measurePixels(
+          entry.angle,
+          (n) => entry.albedo.map((c) => c * Math.max(n, 0)) as Rgb,
+          "linear",
+          readings[index] as Float32Array,
           profile,
+          before,
         );
         for (const bin of ["lit", "shoulder"] as const) {
           const de = measuredDeltaE(lab(m.rendered[bin]), lab(m.expected[bin]), profile);
-          if (!(de <= 0.5)) failures.push(`${s.name} ${angle}° ${bin}: ΔE00 ${de.toFixed(2)}`);
+          if (!(de <= 0.5))
+            failures.push(`${entry.swatch.name} ${entry.angle}° ${bin}: ΔE00 ${de.toFixed(2)}`);
         }
       }
     }
