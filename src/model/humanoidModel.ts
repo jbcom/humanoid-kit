@@ -32,6 +32,7 @@ import {
   type HumanoidAssets,
   pendingTargetFiles,
 } from "../format/assetFormat.ts";
+import { addCustomTargets, type CustomTarget } from "../makehuman/customTargets.ts";
 import { NO_FEATURE } from "../makehuman/features.ts";
 import { RecipeError, recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
@@ -1444,14 +1445,22 @@ export class HumanoidModel {
   }
 
   /**
-   * The target files a recipe (in a skin state) needs that have not arrived
-   * (empty when it can be evaluated now). Validates the recipe first.
+   * Registers MakeHuman custom targets (`addCustomTargets`): each is then the
+   * one-sided modifier `custom/<name>` of every later evaluation.
    */
+  addCustomTargets(targets: readonly CustomTarget[]): void {
+    addCustomTargets(this.assets, targets);
+  }
+
   /** The recipe with the adult pack's anatomy defaults filled in (`withAnatomyDefaults`). */
   withDefaults(recipe: Recipe): Recipe {
     return withAnatomyDefaults(recipe, this.assets.adultAnatomyManifest?.anatomy?.defaults);
   }
 
+  /**
+   * The target files a recipe (in a skin state) needs that have not arrived
+   * (empty when it can be evaluated now). Validates the recipe first.
+   */
   pendingTargetFiles(recipe: Recipe, signals: Readonly<Record<string, number>> = {}): Set<string> {
     return this.pendingFor(this.contributions(recipe, signals));
   }

@@ -421,6 +421,17 @@ new HumanoidModel(assets: HumanoidAssets, options?: { subdivision?: 0 | 1 | 2 })
 The framework-free pipeline for one loaded body pack. `subdivision` defaults to 1
 and throws `RangeError` for anything else.
 
+- `model.addCustomTargets(targets: CustomTarget[])`: MakeHuman's custom targets,
+  the files its Modelling > Custom tab lists from `data/custom`. Each
+  `{ name, indices, deltas, scale }` (ascending base-vertex indices, 16-bit
+  quantised xyz deltas, metres per unit, as in the packs) becomes the target and
+  the one-sided modifier `custom/<name>` (`customTargetId`), applied at its value
+  in [0, 1] exactly as MakeHuman applies one. Registering a name again replaces
+  it. A recipe that does not name a custom target is unchanged. Malformed input
+  throws `CustomTargetError` before anything is added, and so does a name whose
+  id is already a pack modifier. `customTargetOf(name, offsets)` quantises
+  per-vertex metre offsets into one.
+
 - `model.evaluate(recipe, signals?, haveOutfit?): Evaluation`: `signals` (0..1 each) set the
   skin's state; those with a state morph add their targets: `cold` (the nipple
   rises and the areola contracts; `STATE_MORPHS`) and `arousal` (engorgement:
@@ -1169,6 +1180,10 @@ The main-thread handle to an evaluation worker.
   `label`, `kind`, `tags`; empty without that pack). `label` is what to call a
   garment in a list ("Brown oxfords"); `name` is the asset's file name, which
   says whom it was drawn for. `hair` is the hair pack's entries (`HairInfo`: `{ styles: { id, label, tags, kind }[] }`, null without a hair pack), known before any style loads.
+- `client.addCustomTargets(targets): Promise<void>` registers MakeHuman custom
+  targets in the worker (`model.addCustomTargets`, under Evaluation) and resolves
+  once a later evaluation can name `custom/<name>`. Await it before evaluating
+  a recipe that does.
 - `client.hairTopology(id): HairTopology | undefined` is a worn style's static
   render data. The worker sends it with the first evaluation that wears the
   style and the client keeps it, so an `Evaluation` whose `hair.id` you
@@ -1805,9 +1820,10 @@ range input sized for touch. `onChange(value, gesture)` fires while dragging and
 ## `humanoid-kit/worker`
 
 The worker module that `HumanoidWorkerClient` starts by default. It owns one
-`HumanoidModel` and answers eight messages: `init` (replied to with `ready`
+`HumanoidModel` and answers its messages: `init` (replied to with `ready`
 once the first figure can be evaluated), `complete` (replied to once every
-target file has loaded, or with the error that stopped one), `pickMap`
+target file has loaded, or with the error that stopped one), `customTargets`
+(replied to once MakeHuman custom targets are registered), `pickMap`
 (replied to with the pick map once everything has loaded), `posedOcclusion`
 (replied to once the corner bake, made a corner at a time between other
 requests, is done), `adultLayers` (replied to with the adult anatomy layers'

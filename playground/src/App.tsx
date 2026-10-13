@@ -2,6 +2,7 @@ import { OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   type AnimationLibrary,
+  type CustomTarget,
   createRecipe,
   type EyeLibrary,
   HumanoidWorkerClient,
@@ -19,6 +20,7 @@ import {
   STUDIO_TONE_MAPPING,
   StudioStage,
   useHumanoidAffordances,
+  useHumanoidClient,
 } from "humanoid-kit/react";
 import { animationsPack } from "humanoid-kit-animations";
 import { bodyPack } from "humanoid-kit-body";
@@ -390,19 +392,31 @@ function Shot() {
     (animation === undefined || playing === animation.clip) &&
     (!wantsEyes || eyeLibrary !== null);
   const [generation, setGeneration] = useState(0);
+  const client = useHumanoidClient();
   useEffect(() => {
-    window.hkSetRecipe = (init, next, nextSignals) => {
-      setSignals(nextSignals ?? initialSignals());
-      setSettled(false);
-      setPlaying(null);
-      setRecipe(createRecipe(init));
-      setPose(next ?? initialPose());
-      setGeneration((g) => g + 1);
+    window.hkSetRecipe = (given, next, nextSignals) => {
+      // `$customTargets` registers MakeHuman custom targets first, so a recipe can
+      // name `custom/<name>` (a lab's specimen rendered by the real evaluator).
+      const { $customTargets, ...init } = given as typeof given & {
+        $customTargets?: CustomTarget[];
+      };
+      const show = () => {
+        setSignals(nextSignals ?? initialSignals());
+        setSettled(false);
+        setPlaying(null);
+        setRecipe(createRecipe(init));
+        setPose(next ?? initialPose());
+        setGeneration((g) => g + 1);
+      };
+      if (!$customTargets?.length) return show();
+      client.addCustomTargets($customTargets).then(show, (e: unknown) => {
+        console.error(`custom targets refused: ${e instanceof Error ? e.message : String(e)}`);
+      });
     };
     return () => {
       delete window.hkSetRecipe;
     };
-  }, []);
+  }, [client]);
   const view = params.get("view") ?? "front";
   const cam = params.get("cam")?.split(",").map(Number);
   const exact = cam?.length === 6 && cam.every(Number.isFinite);

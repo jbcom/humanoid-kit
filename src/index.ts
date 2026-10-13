@@ -37,6 +37,7 @@ export {
 export { type PosedBody, posedSurface } from "./foundation/posed.ts";
 export * from "./interaction/definition.ts";
 export * from "./interaction/runtime.ts";
+export * from "./makehuman/customTargets.ts";
 export * from "./makehuman/features.ts";
 export * from "./makehuman/macro.ts";
 export * from "./makehuman/recipeMorph.ts";

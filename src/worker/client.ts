@@ -8,6 +8,7 @@
  * whose recipe needs target files that are still loading holds up no other.
  */
 import type { LoadOptions } from "../format/assetFormat.ts";
+import type { CustomTarget } from "../makehuman/customTargets.ts";
 import type {
   AdultSurfaceTopology,
   Evaluation,
@@ -183,6 +184,18 @@ export class HumanoidWorkerClient {
       return r.update;
     });
     return this.adultLayersRequest;
+  }
+
+  /**
+   * Registers MakeHuman custom targets in the worker (`addCustomTargets`):
+   * resolves once every later evaluation can name `custom/<name>`. Evaluations
+   * already queued are not held back, so await this before evaluating a recipe
+   * that names one.
+   */
+  async addCustomTargets(targets: readonly CustomTarget[]): Promise<void> {
+    await this.ready;
+    const r = await this.request({ type: "customTargets", id: 0, targets });
+    if (r.type !== "customTargetsAdded") throw new HumanoidWorkerError(`unexpected ${r.type}`);
   }
 
   private adultSurfaceRequest: Promise<AdultSurfaceTopology | null> | null = null;

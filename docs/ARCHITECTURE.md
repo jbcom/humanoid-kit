@@ -139,7 +139,10 @@ interface Recipe {
 and `breastFirmness`. `modifiers` maps a shape modifier id to a value in
 `[-1, 1]` (one-sided modifiers take `[0, 1]`); a missing id is 0. A recipe holds
 no functions, no three.js objects and no references into the assets, so
-`JSON.stringify` round-trips it. The skin, eyes and the optional `hair` (a style
+`JSON.stringify` round-trips it. As in MakeHuman, user-supplied custom targets
+(its `data/custom` folder) are registered on the model, not carried in the recipe
+(`addCustomTargets`), and a recipe names one as the one-sided modifier
+`custom/<name>`. The skin, eyes and the optional `hair` (a style
 id of the hair pack and a pigment colour) are appearance: they never change the
 shape. `hair` is an optional field on purpose, since the recipe schema is
 frozen except for added optional fields: a recipe without it has no hair and
