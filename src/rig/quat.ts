@@ -63,39 +63,3 @@ export function between(
   const n = Math.hypot(x, y, z, w);
   return [x / n, y / n, z / n, w / n];
 }
-
-/** `q` scaled to unit length. */
-export function normalizeQuat(q: Quat): Quat {
-  const n = Math.hypot(q[0], q[1], q[2], q[3]);
-  return [q[0] / n, q[1] / n, q[2] / n, q[3] / n];
-}
-
-/** The angle in radians between two unit rotations, the short way round. */
-export function quaternionAngle(a: Quat, b: Quat): number {
-  const dot = Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]);
-  return 2 * Math.acos(Math.min(1, Math.max(-1, dot)));
-}
-
-/** The spherical blend from `a` (t = 0) to `b` (t = 1), the short way round. */
-export function slerp(a: Quat, b: Quat, t: number): Quat {
-  let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
-  const end: Quat = dot < 0 ? [-b[0], -b[1], -b[2], -b[3]] : b;
-  dot = Math.abs(dot);
-  if (dot > 0.9995)
-    return normalizeQuat([
-      a[0] + (end[0] - a[0]) * t,
-      a[1] + (end[1] - a[1]) * t,
-      a[2] + (end[2] - a[2]) * t,
-      a[3] + (end[3] - a[3]) * t,
-    ]);
-  const theta = Math.acos(Math.min(1, Math.max(-1, dot)));
-  const sin = Math.sin(theta);
-  const s0 = Math.sin((1 - t) * theta) / sin;
-  const s1 = Math.sin(t * theta) / sin;
-  return [
-    s0 * a[0] + s1 * end[0],
-    s0 * a[1] + s1 * end[1],
-    s0 * a[2] + s1 * end[2],
-    s0 * a[3] + s1 * end[3],
-  ];
-}
