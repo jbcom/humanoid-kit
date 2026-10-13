@@ -29,8 +29,12 @@ export default defineConfig({
     entries: ["index.html", "../src/**/*.{ts,tsx}"],
   },
   server: {
-    // The owner's VPN hostname is deliberate: this local QA route is reviewed remotely.
-    allowedHosts: ["jon-laptop.ts.jonbogaty.com"],
+    // Hostnames this dev server answers to besides localhost, for reviewing the
+    // playground over a VPN or tunnel: HK_ALLOWED_HOSTS=host-a,host-b. None by default.
+    allowedHosts: (process.env.HK_ALLOWED_HOSTS ?? "")
+      .split(",")
+      .map((host) => host.trim())
+      .filter((host) => host.length > 0),
     fs: { allow: [here("..")] },
   },
   build: {
