@@ -21,6 +21,10 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ["humanoid-kit"],
+    // The aliased library loads these outside the initial playground scan.
+    // Discovering them after R3F has loaded invalidates its shared optimized
+    // chunks and causes cold-start 504s (Outdated Optimize Dep).
+    include: ["three-mesh-bvh", "three/examples/jsm/environments/RoomEnvironment.js"],
   },
   server: {
     fs: { allow: [here("..")] },

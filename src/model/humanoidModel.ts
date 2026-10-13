@@ -54,7 +54,7 @@ import { OCCLUSION_KEYS, occlusionCorners, occlusionCornerUnits } from "../rig/o
 import { faceUnitRotations, type RigSkin, restBones, rigData, skinPositions } from "../rig/pose.ts";
 import { solvedSurfaceFold } from "../rig/solvedSurface.ts";
 import { applyStencil, type Stencil } from "../subdiv/catmullClark.ts";
-import { type AtlasPlan, planAtlas } from "../surface/atlasPlan.ts";
+import { type AtlasPlan, planAtlas, withExtra } from "../surface/atlasPlan.ts";
 import { beardStyle, bodyHairCoverage } from "../surface/bodyHair.ts";
 import { cavityCandidates, expandBodyOcclusion, selectCavity } from "../surface/bodyOcclusion.ts";
 import { COAT_REGION_LIMIT, type CoatFields, coatMasks, combField } from "../surface/coat.ts";
@@ -71,15 +71,25 @@ import {
   isAdultLayer,
   type LayerFieldsExtra,
   type LayerFieldsUpdate,
+  type SkinLayer,
   uvScale,
 } from "../surface/layers.ts";
 import { bakeOcclusion, type OcclusionBaseline } from "../surface/occlusion.ts";
 import { DIGIT_LAYER, NAIL_PLATE_KINDS, nailPlateEdges } from "../surface/regions/hands/index.ts";
 import { COAT_REGIONS, SKIN_LAYERS } from "../surface/regions/index.ts";
 import { areolaStretch } from "../surface/regions/torso.ts";
+import { closureDisplacement, closureShare } from "./canalClosure.ts";
+import {
+  carriedDetail,
+  latticePositions,
+  type ReservoirCarriage,
+  reservoirCarriages,
+  skinUnderOrgans,
+} from "./detailCarry.ts";
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
 import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
 import {
+  canalsOf,
   evaluatedFold,
   evaluatedSkin,
   type ReservoirSkinning,
@@ -274,6 +284,12 @@ export interface AdultSurfaceTopology extends SurfaceTopology {
   occlusion: Uint8Array;
   /** The coat's fields at these render vertices, as for the base body. */
   coat: CoatFields;
+  /**
+   * The canals (`AdultReservoirSpec.canal`): per render vertex, the reservoir (by its
+   * place) of the canal it is drawn from, or -1; per reservoir, its closed lumen's gap,
+   * metres (0 for an organ). The invariants count walls that close as lumen self-contact.
+   */
+  canals: { of: Int16Array; gap: readonly number[] };
 }
 
 /**
@@ -529,6 +545,16 @@ export class HumanoidModel {
       }
     | null
     | undefined;
+  /** What carries a reservoir's organ from the figure it was authored on (`detailCarriage`): undefined until first used, null without one. */
+  private carriage:
+    | {
+        carriages: ReservoirCarriage[];
+        stencil: Stencil;
+        control: Float32Array;
+        authored: Map<number, readonly [number, number, number]>;
+      }
+    | null
+    | undefined;
   /** The body's state morphs and, with the adult pack, its own (`AdultAnatomySpec.stateMorphs`). */
   private readonly stateMorphs: readonly StateMorph[];
   /** The adult pack's detail targets (`AdultDetailSpec`): displacements of the adult surface, not morphs. */
@@ -678,11 +704,23 @@ export class HumanoidModel {
   adultLayerFields(): LayerFieldsUpdate | null {
     const adult = SKIN_LAYERS.filter(isAdultLayer);
     if (!adult.every((l) => l.available?.(this.assets))) return null;
+    return this.adultFieldsOf(adult, () => true);
+  }
+
+  /**
+   * The adult layers' fields per render vertex and on the islands, those `include`
+   * accepts measured and the rest zero (`buildLayerFields`).
+   */
+  private adultFieldsOf(
+    adult: readonly SkinLayer[],
+    include: (layer: SkinLayer) => boolean,
+  ): LayerFieldsUpdate {
     const layers = adult.map((l) => l.id);
-    const extra = this.islandFields(layers);
+    const base = buildLayerFields(this.assets, adult, include);
+    const extra = this.islandFields(layers, base);
     return {
       layers,
-      layerFields: this.renderLayerFields(buildLayerFields(this.assets, adult), adult.length),
+      layerFields: this.renderLayerFields(base, adult.length),
       ...(extra && { extra }),
     };
   }
@@ -701,8 +739,14 @@ export class HumanoidModel {
    * a sculpt is attached at, a smooth curve on the skin (scripts/lib/detail/transfer.ts,
    * `skinLine`), and the band between it and the loop is skin; the layer starts there
    * and blends in, as genital skin's colour does, along curves with no steps.
+   *
+   * Every other layer's fields on an island are the body's where the island's skin
+   * lies (`base`, the layers' fields per base vertex, carried through the surface's
+   * own stencil): an island is the skin's too. With none there, a woman's collapsed
+   * sac's cap, which lies in her vulva, drew without the vulva's colour, a patch
+   * edged by the sac's loop.
    */
-  private islandFields(layers: readonly string[]): LayerFieldsExtra | null {
+  private islandFields(layers: readonly string[], base: Float32Array): LayerFieldsExtra | null {
     const adult = this.adultBodySurface();
     const specs = this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? [];
     if (!adult) return null;
@@ -741,14 +785,31 @@ export class HumanoidModel {
     if (!count) return null;
     const uvs = new Float32Array(count * 2);
     const fields = new Float32Array(layers.length * count * 2);
+    // The body's fields on the adult surface, per surface vertex, layer by layer.
+    const n = this.assets.manifest.vertexCount;
+    const onSurface = layers.map((_, l) =>
+      applyStencil(
+        mesh.stencil,
+        base.subarray(l * n * 3, (l + 1) * n * 3),
+        new Float32Array(mesh.topology.vertexCount * 3),
+      ),
+    );
     owner.forEach((s, v) => {
       const at = local[v] as number;
       if (at < 0) return;
       uvs[at * 2] = mesh.uvs[v * 2] as number;
       uvs[at * 2 + 1] = mesh.uvs[v * 2 + 1] as number;
-      const l = layers.indexOf(specs[s]?.layer as string);
-      fields[(l * count + at) * 2] = mask[v] as number;
-      fields[(l * count + at) * 2 + 1] = along[v] as number;
+      const own = layers.indexOf(specs[s]?.layer as string);
+      const sv = mesh.renderToSurface[v] as number;
+      // The surface's stencil can overshoot a 0..1 field a little; a field stays in it.
+      const unit = (x: number) => Math.min(1, Math.max(0, x));
+      layers.forEach((_, l) => {
+        const body = onSurface[l] as Float32Array;
+        fields[(l * count + at) * 2] =
+          l === own ? (mask[v] as number) : unit(body[sv * 3] as number);
+        fields[(l * count + at) * 2 + 1] =
+          l === own ? (along[v] as number) : unit(body[sv * 3 + 1] as number);
+      });
     });
     const triangles: number[] = [];
     for (let t = 0; t < mesh.index.length; t += 3) {
@@ -1339,17 +1400,38 @@ export class HumanoidModel {
 
   /**
    * Where the skin layers' fields lie in the atlas (`planAtlas`): layers whose
-   * support on the body's UV layout lies apart share channels. Laid out once, from
-   * the whole body's triangles and the layers' fields as built (the adult layers'
-   * arrive later and are never shared).
+   * support on the UV layout lies apart share channels. Laid out once, from every
+   * footprint known now: the body's layers as built, and the adult layers whose
+   * fields need nothing still to load (an island's, a mask the pack authors), on the
+   * body's triangles and the adult surface's islands. An adult layer measured from
+   * targets still loading is pending, a group of its own; without an adult pack every
+   * adult layer is known to reach nothing, and takes no channel of its own.
    */
   private atlasPlan(): AtlasPlan {
-    this.planned ??= planAtlas(SKIN_LAYERS, {
+    if (this.planned) return this.planned;
+    const body = {
       uvs: this.body.mesh.uvs,
       index: this.body.mesh.index,
       vertexCount: this.body.mesh.uvs.length / 2,
       layerFields: this.layerFields,
-    });
+    };
+    const pack = this.assets.adultAnatomyManifest != null;
+    const known = (l: SkinLayer) =>
+      !isAdultLayer(l) || !pack || (l.available?.(this.assets) ?? false);
+    let surface: typeof body = body;
+    if (pack) {
+      const adult = SKIN_LAYERS.filter(isAdultLayer);
+      const at = adult.map((l) => SKIN_LAYERS.indexOf(l));
+      const fields = this.adultFieldsOf(adult, known);
+      const n = body.vertexCount;
+      const layerFields = Float32Array.from(this.layerFields);
+      at.forEach((l, k) => {
+        layerFields.set(fields.layerFields.subarray(k * n * 2, (k + 1) * n * 2), l * n * 2);
+      });
+      surface = { ...body, layerFields };
+      if (fields.extra) surface = withExtra(surface, at, fields.extra);
+    }
+    this.planned = planAtlas(SKIN_LAYERS, surface, (l) => !known(SKIN_LAYERS[l] as SkinLayer));
     return this.planned;
   }
 
@@ -1662,11 +1744,11 @@ export class HumanoidModel {
       all[rest * 3 + 1] as number,
       all[rest * 3 + 2] as number,
     ];
-    if (displacement)
-      for (let i = 0; i < displacement.indices.length; i++)
-        if (displacement.indices[i] === site.vertex)
-          for (let k = 0; k < 3; k++)
-            at[k] = (at[k] as number) + (displacement.xyz[i * 3 + k] as number);
+    for (const part of displacement ? [displacement, displacement.skin] : [])
+      if (part)
+        for (let i = 0; i < part.indices.length; i++)
+          if (part.indices[i] === site.vertex)
+            for (let k = 0; k < 3; k++) at[k] = (at[k] as number) + (part.xyz[i * 3 + k] as number);
     const P = body.positions;
     let r = 0;
     let best = Number.POSITIVE_INFINITY;
@@ -1752,24 +1834,126 @@ export class HumanoidModel {
         (control[scale.a * 3 + k] as number) - (control[scale.b * 3 + k] as number);
       figure = Math.hypot(d(0), d(1), d(2)) / scale.rest;
     }
-    const indices: number[] = [];
-    const xyz: number[] = [];
+    // The skin's own targets (`AdultDetailSpec.skin`) apart from the organs': they shape
+    // the skin the organs are measured from, and are neither carried nor a push.
+    const skinTargets = new Set(this.assets.adultAnatomyManifest?.anatomy?.detail?.skin ?? []);
+    const organ = { indices: [] as number[], xyz: [] as number[] };
+    const skin = { indices: [] as number[], xyz: [] as number[] };
+    const weightOf = new Map<string, number>();
     for (const c of detail) {
       if (typeof c.weight !== "number")
         throw new MorphError(`detail target ${c.target} cannot be weighted by region`);
       const t = this.assets.targets.get(c.target);
       if (!t) throw new MorphError(`unknown detail target ${c.target}`);
+      weightOf.set(c.target, (weightOf.get(c.target) ?? 0) + c.weight);
+      const into = skinTargets.has(c.target) ? skin : organ;
       const w = c.weight * t.scale * figure;
       for (let i = 0; i < t.indices.length; i++) {
-        indices.push(t.indices[i] as number);
-        xyz.push(
+        into.indices.push(t.indices[i] as number);
+        into.xyz.push(
           (t.deltas[i * 3] as number) * w,
           (t.deltas[i * 3 + 1] as number) * w,
           (t.deltas[i * 3 + 2] as number) * w,
         );
       }
     }
-    return indices.length ? { indices, xyz: Float32Array.from(xyz) } : undefined;
+    // Each canal's opening closed at the skin on this figure, after the skin's own targets.
+    this.closeCanals(weightOf, skin, control);
+    if (!organ.indices.length && !skin.indices.length) return undefined;
+    const ofSkin = skin.indices.length
+      ? { skin: { indices: skin.indices, xyz: Float32Array.from(skin.xyz) } }
+      : {};
+    const displaced = { indices: organ.indices, xyz: Float32Array.from(organ.xyz) };
+    const carried = this.detailCarriage();
+    if (!carried || !organ.indices.length) return { ...displaced, ...ofSkin };
+    // An organ moves with where it is rooted: carried from the authoring figure (`carriedDetail`).
+    const here = new Map<number, readonly [number, number, number]>();
+    const at =
+      (cache: Map<number, readonly [number, number, number]>, from: Float32Array) =>
+      (v: number) => {
+        let p = cache.get(v);
+        if (!p) {
+          const q = latticePositions(carried.stencil, from, [v]);
+          p = [q[0] as number, q[1] as number, q[2] as number];
+          cache.set(v, p);
+        }
+        return p;
+      };
+    return {
+      ...carriedDetail(
+        displaced,
+        carried.carriages,
+        at(carried.authored, carried.control),
+        at(here, control),
+      ),
+      ...(ofSkin.skin && { skin: skinUnderOrgans(ofSkin.skin, displaced, carried.carriages) }),
+    };
+  }
+
+  /**
+   * Adds to `skin` (region indices, xyz) each canal's closure (`closureDisplacement`):
+   * its loop on this figure, from `control` through the lattice's stencil plus what
+   * `skin` already moves it by, closed in place, as far as its target's weight in
+   * `weightOf` gives (`closureShare`).
+   */
+  private closeCanals(
+    weightOf: ReadonlyMap<string, number>,
+    skin: { indices: number[]; xyz: number[] },
+    control: Float32Array,
+  ): void {
+    const lattice = this.adultBodySurface()?.part.mesh.lattice;
+    if (!lattice) return;
+    for (const r of this.assets.adultAnatomyManifest?.anatomy?.reservoirs ?? []) {
+      const closure = r.canal?.closure;
+      if (!closure) continue;
+      const share = closureShare(weightOf.get(closure.target) ?? 0);
+      if (share <= 0) continue;
+      const moved = new Map<number, [number, number, number]>();
+      for (const v of closure.loopRegion) moved.set(v, [0, 0, 0]);
+      skin.indices.forEach((v, i) => {
+        const d = moved.get(v);
+        if (!d) return;
+        for (let k = 0; k < 3; k++) d[k] = (d[k] as number) + (skin.xyz[i * 3 + k] as number);
+      });
+      const at = latticePositions(lattice.stencil, control, r.loop);
+      const loopNow = closure.loopRegion.map((v, i) => {
+        const d = moved.get(v) as [number, number, number];
+        return [
+          (at[i * 3] as number) + d[0],
+          (at[i * 3 + 1] as number) + d[1],
+          (at[i * 3 + 2] as number) + d[2],
+        ] as const;
+      });
+      const add = closureDisplacement(closure, loopNow, share);
+      skin.indices.push(...add.indices);
+      skin.xyz.push(...add.xyz);
+    }
+  }
+
+  /**
+   * What `carriedDetail` reads, once per model: each reservoir's carriage, the
+   * lattice's stencil, and the control positions of the figure the pack's detail
+   * was authored on (`AdultDetailSpec.authoredOn`), with a cache of that figure's
+   * lattice positions. Null when the pack names no such figure, or has no reservoirs.
+   */
+  private detailCarriage() {
+    if (this.carriage !== undefined) return this.carriage;
+    const anatomy = this.assets.adultAnatomyManifest?.anatomy;
+    const lattice = this.adultBodySurface()?.part.mesh.lattice;
+    const authoredOn = anatomy?.detail?.authoredOn;
+    if (!lattice || !authoredOn || !lattice.reservoirs.length) {
+      this.carriage = null;
+      return null;
+    }
+    this.carriage = {
+      carriages: reservoirCarriages(lattice, anatomy?.reservoirs ?? []),
+      stencil: lattice.stencil,
+      control: Float32Array.from(
+        this.evaluateControl(createRecipe({ macros: authoredOn.macros }), {}),
+      ),
+      authored: new Map(),
+    };
+    return this.carriage;
   }
 
   /**
@@ -2020,6 +2204,7 @@ export class HumanoidModel {
       faceVisibility(this.assets.faceVerts, this.bodyFaces, this.mountedVisible),
       faceTriangles,
     );
+    const skinning = reservoirSkinningOf(mesh);
     this.adultBody = {
       part: part(mesh),
       edges: triangleEdges(mesh.index),
@@ -2030,8 +2215,9 @@ export class HumanoidModel {
         uvScale: Float32Array.from(mesh.renderToSurface, (s) => surface[s * 3] as number),
         occlusion: this.bodyOcclusionField(mesh),
         coat: this.coatOn(mesh),
+        canals: canalsOf(mesh, skinning),
       },
-      skinning: reservoirSkinningOf(mesh),
+      skinning,
     };
     return this.adultBody;
   }

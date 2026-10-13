@@ -19,6 +19,15 @@
  * vulva's, its first millimetres of push spread over five of skin) sorted neighbours
  * into very different shares, and the crease sheared them over.
  *
+ * A canal (`AdultReservoirSpec.canal`) is drawn into the body, its opening closing
+ * over its first centimetre into a lumen a few millimetres across. Over an organ's
+ * band (a fifth of its base radius, two millimetres) each wall of the opening went
+ * from its own side's share of the thigh to the root's across one ring, and a flexed
+ * hip folded the opening over (f-slim squat: 113 more folded edges, all within 7 mm
+ * of the loop). A canal takes the root's weights over the length its opening closes
+ * in. Over its whole length instead, the lumen's middle kept half its side's thigh
+ * and swung out through the skin (f-slim squat: 30 cm² more penetrating).
+ *
  * The weights depend on the evaluation, so they are found with it (`evaluatedSkin`),
  * once, and every consumer skins by those: the renderer's attributes, the posed
  * body the invariants measure, the affordances' landmarks and the mesh's own CPU
@@ -59,6 +68,8 @@ export interface ReservoirSkinning {
   roots: readonly { index: Uint16Array; weight: Float32Array }[];
   /** Per reservoir, its loop's render vertices: where the organ meets the body. */
   loops: readonly Uint32Array[];
+  /** Per reservoir, a canal's opening length (`AdultReservoirSpec.canal`), metres, or null for an organ. */
+  openings: readonly (number | null)[];
   /**
    * The reservoirs' and their loops' surface vertices, numbered from 0 (`node`),
    * welded across UV seams: per node, a render vertex of it (`render`), its
@@ -72,6 +83,17 @@ export interface ReservoirSkinning {
     start: Uint32Array;
     next: Uint32Array;
   };
+}
+
+/** A built surface's canals (`AdultSurfaceTopology.canals`): each render vertex's canal reservoir or -1, and the gaps. */
+export function canalsOf(
+  mesh: SurfaceMesh,
+  skinning: ReservoirSkinning,
+): { of: Int16Array; gap: readonly number[] } {
+  const reservoirs = mesh.lattice?.reservoirs ?? [];
+  const gap = reservoirs.map((r) => r.canal?.gap ?? 0);
+  const of = Int16Array.from(skinning.owner, (s) => (s >= 0 && reservoirs[s]?.canal ? s : -1));
+  return { of, gap };
 }
 
 /** A built surface's reservoirs as `evaluatedSkin` reads them; none without a lattice. */
@@ -97,6 +119,7 @@ export function reservoirSkinningOf(mesh: SurfaceMesh): ReservoirSkinning {
     owner,
     roots,
     loops,
+    openings: reservoirs.map((r) => r.canal?.opening ?? null),
     graph: reservoirGraph(mesh.index, mesh.renderToSurface, bySurface, loopOf),
   };
 }
@@ -248,8 +271,9 @@ const smooth = (t: number) => {
  * Each render vertex's share of its root's weights and fold in an evaluation that
  * drew the surface at `positions` and pushed its vertices `pushed` metres out of the
  * skin: by its distance from its reservoir's loop along the drawn surface, over the
- * band its organ's rise gives (`bandOf`) of the organ's base radius, times how far it
- * was pushed of `PUSH_STARTS`. Zero off the reservoirs; null when no vertex takes any.
+ * band its organ's rise gives (`bandOf`) of the organ's base radius (a canal's: its
+ * opening's length), times how far it was pushed of `PUSH_STARTS`. Zero off the
+ * reservoirs; null when no vertex takes any.
  */
 export function rootShares(
   skinning: ReservoirSkinning,
@@ -340,7 +364,8 @@ export function rootShares(
         }
       }
     }
-    const width = bandOf(rise(skinning, s, positions, dist, centre)) * radius;
+    const width =
+      skinning.openings[s] ?? bandOf(rise(skinning, s, positions, dist, centre)) * radius;
     for (let v = 0; v < owner.length; v++) {
       if (owner[v] !== s) continue;
       const d = dist[graph.node[v] as number] as number;

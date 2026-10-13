@@ -1807,6 +1807,105 @@ triangles. Penetration counted on every vertex moves within a square centimetre 
 every row (m-heavy seated 51.43 → 52.38 cm², m-muscular seated 43.64 → 44.44); on
 the worklist's stride of four, m-heavy seated reads 48.21 → 49.58.
 
+**A canal (2026-10-10).** The vaginal and anal canals are reservoirs drawn into the
+body. Each one's opening closes over its first 12 mm into a lumen a few millimetres
+across (`scripts/lib/detail/canal.ts`, `OPENING`). They rise steeply, so they took the
+narrow band, about 2 mm. Each wall of the opening then went from its own side's
+share of the thigh (0.16 of one) to the root's (0.10 of each) across the first ring,
+and a flexed hip folded it over. In f-slim squat that was 113 more folded edges than
+without the canals' drives, every one within 7 mm of the loop. A spec names a canal and
+its opening length (`AdultReservoirSpec.canal`), and a canal takes its root over that
+length. The bands tried (folded edges, all within a band of noise of about 20):
+
+| Band | f-slim squat | f-heavy seated | m-heavy squat |
+| --- | --- | --- | --- |
+| organ (≈ 2 mm) | 381 | 201 | 486 |
+| 8 mm | 276 | 192 | 479 |
+| 12 mm (the opening) | 292 | 196 | 498 |
+| 18 mm | 284 | 203 | 451 |
+| the whole canal | 281 | 202 | 452 |
+| without the drives | 268 | 137 | 407 |
+
+Over the whole canal, the lumen's middle kept half its side's thigh and swung out
+through the skin: 53.9 cm² penetrating in f-slim squat against 27.2, and 22.4 of it
+through other skin. The rigid pelvis as the root was worse at every band (f-slim
+squat 485 at 24 mm), because its share of the thigh drops from 0.2 to none. The
+folds left are on the openings' lips, in clefts the pose presses shut, plus about 20
+a row from the patches round the openings.
+
+**An organ carried by its loop (2026-10-10).** A detail target is a displacement of
+the lattice vertices under a reservoir, authored on one figure (the default adult)
+and added to each figure's own skin. A body morph moves the skin inside a loop by 2
+to 5 mm more than it moves the loop (the sac's disc, from the default adult to a man,
+a woman or a heavy man), and the organ took that shape on: the sac's notch between
+its lobes, 10.9% of its width in the sculpt and 11.8% as transferred, was 16.6% on a
+man. An organ's shape is its own, so a pushed vertex is now placed where the
+authoring figure's skin plus its displacement put it, moved rigidly from that
+figure's loop to this one's (`src/model/detailCarry.ts`; the pack names the figure,
+`AdultDetailSpec.authoredOn`), blended in from 5 to 20 mm of push
+(`CARRIED_FROM`, `CARRIED_FULLY`): a vertex pushed less stays on this figure's skin,
+so a reservoir with no organ is the skin exactly. The fit has no scale: the organ
+keeps its measured size on every body. The notch is then 11.5 to 12.1% of the width
+on every body tested. Carried from the skin up (0 to 5 mm), the root's first
+millimetres jumped between the skin and the carried organ and the men's rows
+inverted 66 to 116 more triangles; fitted on the cap's skin as well as the loop, no
+row was better. The cost is the muscular man's sac meeting his thighs: counted on
+every vertex, m-muscular seated penetrates 44.44 → 52.33 cm² (2.7 into the thighs,
+5.2 through the sac's own fold) and m-muscular squat 71.27 → 75.17, while the heavy
+man's rows fall. The sac against the thigh is a contact pair of the contact
+compression work (ruled 2026-10-10).
+
+**The skin's own detail (2026-10-10).** The vulva is a fold of the skin, not an
+organ drawn out of it (`scripts/lib/detail/vulva.ts`), so the pack names its target
+as the skin's (`AdultDetailSpec.skin`). The model adds it first, to the figure's own
+skin (`SurfaceDetail.skin`): it is never carried, and it is no push of a reservoir
+out of the skin, so a woman's sac reservoir keeps the skin's weights. An organ is
+measured from the skin it shapes. A collapsed reservoir's rings follow their loop
+vertices, as every copy does, so a collapsed sac stays in the vulva's skin; the skin's
+target names no ring (named as well, a collapsed sac's wall sank twice as far, a step
+across the vulva at the sac's loop). An organ's vertices give the skin's detail up as
+far as they are carried (`skinUnderOrgans`): added in full to the cap of a sac hanging
+from the cleft, it pressed the cleft into the sac's bottom, and the sac's notch on a
+figure between the sexes went from 11% of its width to 14.5%.
+
+**The vulva's colour (2026-10-10).** Vulvar skin is the body's skin, mildly more
+pigmented and pinker, not a colour of its own: the `vulva-skin` layer paints each
+figure's tone with 1.25 times its melanin optical density and a little more blood
+(`vulvaAlbedo`, the areola's reasoning), 2 to 4.5 CIEDE2000 from the skin round it
+at every tone (gated 1 to 6). Its mask is the pack's own per base vertex
+(`AdultSkinLayerSpec.vertexMask`, `vulvaSkinMask`): the vulva's form is a detail
+target, which leaves no footprint on the base to measure. It falls off over 4.5 cm,
+changing by at most 40 per metre along any base edge, and an island carries it
+where its skin lies, so a woman's collapsed sac does not interrupt it.
+
+### A canal's closure (2026-10-11)
+
+The vaginal and anal openings close at the skin at rest. A closure is evaluated
+on each figure's own opening loop after its skin targets, rather than applying
+the authoring figure's displacement to a differently shaped body
+(`src/model/canalClosure.ts`). `CanalClosureSpec` records the loop's detail
+indices, its outward normal, the gap across it and an optional slit length.
+Without a specified length, the slit keeps the loop's front-to-back extent;
+with one, it shortens that extent and the depth of the skin curve in proportion.
+Both sides meet on one centreline: at each front-to-back coordinate, its depth
+is the mean of the two sides' interpolated depths. Keeping each side's original
+depth closes only the across coordinate and can leave a gap through the skin's
+normal. The centreline retains the skin's longitudinal curve.
+It never lengthens the opening. A short slit keeps a usable surface around the
+anal opening where collapsing the whole loop to a point inverted triangles.
+
+The pack computes fixed harmonic weights for the surrounding skin zone. At
+evaluation, those weights spread the loop's displacement into the zone, with
+the authored folds added there. The closure reaches its full share at a canal
+target weight of 0.1 and fades smoothly to zero as that weight reaches zero
+(`CLOSED_FROM`, a chosen transition). A zero-weight reservoir stays on the skin.
+
+`tests/canalClosure.test.ts` checks the loop and displacement contract.
+`tests/canalSight.test.ts` checks the generated pack's canal walls from below
+and front-low across six adult body variants. These checks complement the
+foundation and close-view rendering gates; they do not establish visual
+acceptance on their own.
+
 ## Scalp hair (milestone 4)
 
 **Use cases.** A creator offers a hair style and a colour beside skin and eyes,
@@ -2894,6 +2993,20 @@ they cover, in cm² (a sampled vertex standing for its share of its triangles'
 area times the stride, a squashed triangle for its own), and their counts are
 recorded as information only: a finer surface has more vertices and triangles
 over the same skin, so a count rises where nothing got worse (2026-10-10).
+A lane judges its change by penetrating area counted on every vertex, not the
+worklist's stride of four, and a row may grow by a square centimetre or 1 % of its
+area, whichever is larger (ruled 2026-10-10); a growth past that is recorded here
+when it is accepted.
+
+*Accepted, with the organ carried by its loop (2026-10-10, "Reservoir
+skinning").* m-muscular seated penetrates 44.44 → 52.33 cm² counted on every vertex
+(50.34 on the worklist's stride), and m-muscular squat 71.27 → 75.17 (74.62): 2.7
+cm² of the seated row and 3.9 of the squat's is the sac in the thigh, a contact pair
+(sac–thigh) of the contact compression work, to be solved there with volume kept;
+the seated row's other 5.2 cm² is the sac's skin passing through its own fold where
+it meets the thighs, accepted with it because the seated renders from front-low and
+from below show no fold (`carry-sac-seated-*` against `nocarry-sac-seated-*`, the
+heavy man's sac smoother than before).
 
 **The landmarks (built 2026-10-09).** `landmarks(model, posedBody)`
 (`src/foundation/landmarks.ts`) gives every named place on a posed body as a
@@ -4483,8 +4596,22 @@ fields as built:
   `hkChannel` uniform. The atlas is rasterised from each vertex's owner
   (`vertexOwners`), so a shared channel holds, at a vertex, its member's
   mask and coordinate.
-- The adult layers are never shared: their fields arrive after the atlas
-  exists, so their support is unknown. Three layers of two channels each.
+- The adult layers are laid out by their footprints too (ruled 2026-10-10: the
+  adult stack keeps growing, and a page more each time is drift that phones
+  pay for). The plan is made from every footprint known before layout: the
+  body's layers, and each adult layer whose fields need nothing still to load
+  (an island, which the manifest places; a mask the pack authors per base
+  vertex), on the body's triangles and the adult surface's islands together
+  (`withExtra`, which the atlas draws them with too). An adult layer measured
+  from targets still loading (the mound's) is pending, a group of its own;
+  without an adult pack every adult layer is known to reach nothing and joins a
+  group at no cost. The stack is 30 channels, 8 pages, loaded or staged (32
+  before): the penis's island shares a body layer's channels. With the vulva's
+  layer (a mask the pack authors, known before layout) it was 32, until the
+  islands were placed in owner-map cells no body triangle reaches
+  (`scripts/lib/uvIslands.ts`): placed by texels, the testes island shared cells
+  with the palms, the mouth and every broad flush layer, and so no channel. Both
+  islands share now, and the stack is 30 channels, 8 pages.
 - Alternatives set aside: sharing by banding the value (layer *k* of *K* in
   `[k/K, (k+1)/K)`, which bilinear filtering between regions turns into other
   layers' bands, and loses bits); sharing by UV island (nine islands: only the

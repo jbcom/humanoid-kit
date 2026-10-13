@@ -7,7 +7,7 @@
  * corrective added to the renderer is added here, or the foundation measures
  * a body nobody draws.
  */
-import type { HumanoidModel } from "../model/humanoidModel.ts";
+import type { AdultSurfaceTopology, HumanoidModel } from "../model/humanoidModel.ts";
 import { skinOfEvaluation } from "../model/reservoirSkin.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import { renderFold, type SurfaceFold } from "../rig/hipFold.ts";
@@ -39,9 +39,12 @@ export interface PosedBody {
   /** Render vertex normals in the pose, skinned as the renderer skins them. */
   readonly normals: Float32Array;
   /**
-   * Each render vertex's representative among those at its rest position: the
-   * lowest index of them. Vertices a UV seam splits share one, so `weld` gives
-   * the surface's connectivity, and its seams are where two differ.
+   * Each render vertex's representative among those a UV seam splits from one
+   * surface vertex (`HumanoidModel.renderWeld`): the surface's connectivity, its
+   * seams where two differ. Found by rest position instead, distinct vertices that
+   * meet at rest were welded too: a closed canal's two lips, a collapsed
+   * reservoir's rings on their loop, and their separating in a pose read as a
+   * torn seam.
    */
   readonly weld: Uint32Array;
   /** Render vertex count. */
@@ -56,20 +59,8 @@ export interface PosedBody {
   readonly heads: Float32Array;
   /** Morphed control positions (base topology), as the evaluation gives them. */
   readonly control: Float32Array;
-}
-
-/** The lowest render index at each rest position: the seams' duplicates share one. */
-function weldOf(rest: Float32Array): Uint32Array {
-  const n = rest.length / 3;
-  const first = new Map<string, number>();
-  const out = new Uint32Array(n);
-  for (let v = 0; v < n; v++) {
-    const key = `${rest[v * 3]},${rest[v * 3 + 1]},${rest[v * 3 + 2]}`;
-    const known = first.get(key);
-    if (known === undefined) first.set(key, v);
-    out[v] = known ?? v;
-  }
-  return out;
+  /** The adult surface's canals (`AdultSurfaceTopology.canals`); null on the base surface. */
+  readonly canals: AdultSurfaceTopology["canals"] | null;
 }
 
 /** The body of `recipe` in `pose`: `REST_POSE`, or a whole-body pose of the body pack by name. */
@@ -112,7 +103,7 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
       new Float32Array(n),
       fold,
     ),
-    weld: weldOf(rest),
+    weld: model.renderWeld(ev.surface),
     vertexCount: topology.vertexCount,
     skinIndex,
     skinWeight,
@@ -120,6 +111,7 @@ export function posedSurface(model: HumanoidModel, recipe: Recipe, pose: string)
     rotations,
     heads: posedBoneHeads(bones, rotations),
     control,
+    canals: "canals" in topology ? topology.canals : null,
   };
 }
 

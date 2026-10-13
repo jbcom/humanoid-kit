@@ -4,7 +4,8 @@
  *
  * 1. no interpenetration: skin passes through skin by no more than
  *    `PENETRATION_LIMIT`, except between the named contact pairs
- *    (`CONTACT_PAIRS`), whose depth is reported apart;
+ *    (`CONTACT_PAIRS`), whose depth is reported apart, and a canal's lumen
+ *    self-contact (`isLumenContact`), reported apart too;
  * 2. no collapse: no triangle inverts against the skinned normals or keeps
  *    under `SQUASH_LIMIT` of its rest area, and the skin round each joint keeps
  *    its volume within `VOLUME_BAND` of rest;
@@ -86,6 +87,31 @@ const CONTACTS = new Set(CONTACT_PAIRS.map(([a, b]) => contactKey(a, b)));
 export const isContact = (a: BodyPart, b: BodyPart): boolean =>
   a !== b && CONTACTS.has(contactKey(a, b));
 
+/**
+ * Lumen self-contact (coordinator ruling, 2026-10-10): a canal
+ * (`AdultReservoirSpec.canal`) is collapsed, a potential space whose walls touch
+ * at rest, so a wall inside the opposite wall of its own canal is contact, not
+ * penetration, while it stays inside the canal: vertex `v` is in it when it and
+ * every corner of the triangle its ray leaves through first (`exit`) are of the same
+ * canal, and that triangle lies within the canal's closed gap of it along the ray
+ * (`exitDistance`). A wall that has crossed the opposite one leaves through other
+ * skin, and skin passing through skin beside a canal is not of it: both are
+ * penetration still.
+ */
+export function isLumenContact(
+  canals: PosedBody["canals"],
+  index: Uint32Array,
+  v: number,
+  exit: number,
+  exitDistance: number,
+): boolean {
+  if (!canals) return false;
+  const c = canals.of[v] as number;
+  if (c < 0) return false;
+  for (let k = 0; k < 3; k++) if (canals.of[index[exit * 3 + k] as number] !== c) return false;
+  return exitDistance <= (canals.gap[c] as number);
+}
+
 /** What one posed body measures against each invariant. */
 export interface InvariantMeasure {
   /** Vertices deeper than `PENETRATION_LIMIT` inside other skin, outside a named contact, and the deepest (metres). */
@@ -103,6 +129,9 @@ export interface InvariantMeasure {
   /** The same for named contacts. */
   contacts: number;
   deepestContact: number;
+  /** Vertices in a canal's lumen self-contact (`isLumenContact`), and the rest skin they stand for (cm²). */
+  lumen: number;
+  lumenArea: number;
   /** Triangles that inverted against the skinned normals, or kept under `SQUASH_LIMIT` of their area. */
   inverted: number;
   squashed: number;
@@ -197,6 +226,8 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
   let deepestParts = "";
   let contacts = 0;
   let deepestContact = 0;
+  let lumen = 0;
+  let lumenArea = 0;
   for (let v = 0; v < body.vertexCount; v += stride) {
     if (body.weld[v] !== v) continue;
     v3(body.positions, v, p);
@@ -234,7 +265,11 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
     // not a penetration: skin a vertex has passed through lies near it.
     if (depth <= PENETRATION_LIMIT || depth >= REACH) continue;
     const mine = parts[v] as BodyPart;
-    if (isContact(mine, other)) {
+    // A canal's walls closing on each other: contact, inside the canal only (`isLumenContact`).
+    if (isLumenContact(body.canals, tri, v, exit, (hits[0]?.distance ?? 0) + 1e-4)) {
+      lumen++;
+      lumenArea += (areas[v] as number) * stride * CM2;
+    } else if (isContact(mine, other)) {
       contacts++;
       deepestContact = Math.max(deepestContact, depth);
     } else {
@@ -247,7 +282,16 @@ function penetration(body: PosedBody, parts: BodyPart[], stride: number) {
     }
   }
   surface.dispose();
-  return { penetrating, penetratingArea, deepest, deepestParts, contacts, deepestContact };
+  return {
+    penetrating,
+    penetratingArea,
+    deepest,
+    deepestParts,
+    contacts,
+    deepestContact,
+    lumen,
+    lumenArea,
+  };
 }
 
 /** Inverted and squashed triangles. */

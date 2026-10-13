@@ -27,10 +27,18 @@ import { skinNormals } from "../src/rig/pose.ts";
 import { loadFixtureAssets } from "./fixtures.ts";
 
 const model = new HumanoidModel(loadFixtureAssets(true), { subdivision: 1 });
-const man = createRecipe({ macros: { age: 30, gender: 1 } });
+// The organ and the sac alone: the anal canal pushes its own reservoir (canal.test.ts).
+const man = createRecipe({
+  macros: { age: 30, gender: 1 },
+  modifiers: { "genitals/anal-canal": 0 },
+});
 const bare = createRecipe({
   macros: { age: 30, gender: 1 },
-  modifiers: { "genitals/phallus-size": 0, "genitals/testes-size": 0 },
+  modifiers: {
+    "genitals/phallus-size": 0,
+    "genitals/testes-size": 0,
+    "genitals/anal-canal": 0,
+  },
 });
 
 /** One vertex's four bones and weights, as a map. */
@@ -121,7 +129,7 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     const sides = 24;
     const rings = 40;
     const radius = 0.015;
-    const cone = (slope: number) => {
+    const cone = (slope: number, opening: number | null = null) => {
       const positions: number[] = [];
       for (let r = 0; r <= rings; r++) {
         const along = r * 0.001;
@@ -147,6 +155,7 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
         owner: bySurface,
         roots: [{ index: new Uint16Array(4), weight: Float32Array.from([1, 0, 0, 0]) }],
         loops: [Uint32Array.from({ length: sides }, (_, k) => k)],
+        openings: [opening],
         graph: reservoirGraph(index, renderToSurface, bySurface, loopOf),
       };
       const pushed = Float32Array.from({ length: count }, (_, v) =>
@@ -172,6 +181,16 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     expect(Math.abs(shallow.whole * 0.001 - ROOT_BAND.wide * radius)).toBeLessThanOrEqual(0.0015);
     // A reservoir nothing pushes takes nothing: its topology's weights, exactly.
     expect(cone(0).whole).toBe(-1);
+    // A canal, as steep as the steep organ, takes its root over the length its opening
+    // closes in, not over the organ's band: half at half of it, all of it from there on.
+    // Over the band, its opening's walls went from each side's thigh to the root across one ring.
+    const opening = 0.01;
+    const canal = cone(0.9, opening).byRing;
+    for (let r = 1; r <= rings; r++)
+      expect(canal[r] as number).toBeGreaterThanOrEqual(canal[r - 1] as number);
+    expect(canal[opening / 0.002] as number).toBeCloseTo(0.5, 1);
+    expect(canal.findIndex((s) => s >= 1)).toBe(opening / 0.001);
+    expect(canal[steep.whole] as number).toBeLessThan(0.5);
   });
 
   it("widens the band continuously as an organ rises less steeply, between the narrow and the wide", () => {
@@ -214,6 +233,7 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
       owner: Int16Array.from([0]),
       roots,
       loops: [Uint32Array.of(0)],
+      openings: [null],
       graph: reservoirGraph([], [0], Int16Array.of(0), Int16Array.of(-1)),
     };
     const at = (e: number) => {
@@ -253,6 +273,7 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
       owner: Int16Array.from([-1, -1, 0, 0, -1]),
       roots: [{ index: new Uint16Array(4), weight: Float32Array.from([1, 0, 0, 0]) }],
       loops: [Uint32Array.of(0, 1)],
+      openings: [null],
       graph: reservoirGraph(
         [],
         [0, 1, 2, 3, 4],
