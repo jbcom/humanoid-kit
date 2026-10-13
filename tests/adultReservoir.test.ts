@@ -12,8 +12,9 @@ import { adultPackData, bodyPackData, clothingPackData, loadFixtureAssets } from
  * vertices they copy, extruded by detail into a watertight tube, and masked with
  * the faces that own them. The strip builder's own tests are in reservoir.test.ts.
  */
-const TUBE = "detail/test-tube";
-const SHIFT = "detail/test-shift";
+// Adult pack modifiers carry ids the age policy gates (`ADULT_ONLY_MODIFIER`), or the loader refuses the pack.
+const TUBE = "genitals/test-tube";
+const SHIFT = "genitals/test-shift";
 const adult = createRecipe({ macros: { age: 30, gender: 0.5 } });
 const tube = createRecipe({ macros: adult.macros, modifiers: { [TUBE]: 1 } });
 const shifted = createRecipe({ macros: adult.macros, modifiers: { [SHIFT]: 1 } });
