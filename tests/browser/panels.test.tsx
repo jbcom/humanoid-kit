@@ -275,13 +275,13 @@ describe("AppearancePanel", () => {
   });
 
   describe("body hair", () => {
-    const panel = async (age: number, bodyHair?: BodyHairRecipe) => {
+    const panel = async (age: number, gender = 1, bodyHair?: BodyHairRecipe) => {
       const seen: { editor?: HumanoidEditor } = {};
       const screen = await render(
         <Styled>
           <EditorHarness
             ready={readyInfo()}
-            initial={createRecipe({ macros: { age, gender: 1 }, ...(bodyHair && { bodyHair }) })}
+            initial={createRecipe({ macros: { age, gender }, ...(bodyHair && { bodyHair }) })}
             onEditor={(e) => (seen.editor = e)}
           >
             {(editor) => <AppearancePanel editor={editor} onFocus={noFocus} />}
@@ -305,7 +305,7 @@ describe("AppearancePanel", () => {
     });
 
     it("shows a beard with controls as its style, and keeps the controls when the style changes", async () => {
-      const { screen, seen } = await panel(30, {
+      const { screen, seen } = await panel(30, 1, {
         beard: { style: "full", length: 0.1, grey: 0.4 },
       });
       await expect
@@ -317,18 +317,73 @@ describe("AppearancePanel", () => {
       });
     });
 
-    it("offers underarm and pubic density to an adult", async () => {
+    it("offers underarm and pubic coverage to an adult", async () => {
       const { screen } = await panel(30);
       await expect.element(screen.getByText("Underarms")).toBeInTheDocument();
       await expect.element(screen.getByText("Pubic")).toBeInTheDocument();
     });
 
-    // Underarm hair comes with puberty (13), not the age policy; pubic hair is adult-only.
-    it("offers underarm density but not pubic to a figure under 18", async () => {
+    it("offers underarms but not the adult-only pubic control to a figure under 18", async () => {
       const { screen } = await panel(15);
       await expect.element(screen.getByText("Chest")).toBeInTheDocument();
       await expect.element(screen.getByText("Underarms")).toBeInTheDocument();
       expect(screen.getByText("Pubic").elements()).toHaveLength(0);
+    });
+
+    it("labels an unset region as unset, with what is drawn for it", async () => {
+      const { screen } = await panel(30, 0);
+      // The chest is a coat region: unset, the coat draws none.
+      await expect
+        .element(screen.getByRole("slider", { name: "Chest" }))
+        .toHaveAttribute("aria-valuetext", "Not set (none)");
+      // The legs are strand layers: unset, they draw the physiological default.
+      const legs = screen.getByRole("slider", { name: "Legs" });
+      await expect.element(legs).toBeInTheDocument();
+      expect(legs.element().getAttribute("aria-valuetext")).toMatch(/^Not set \(\d+%\)$/);
+    });
+
+    for (const gender of [0, 0.5, 1])
+      it(`sets an explicit chest coverage at gender ${gender}, the same control at every frame`, async () => {
+        const { screen, seen } = await panel(30, gender);
+        const chest = screen.getByRole("slider", { name: "Chest" });
+        (chest.element() as HTMLElement).focus();
+        await userKeys(chest, ["End"]);
+        expect(seen.editor?.recipe.bodyHair).toEqual({ coverage: { chest: 1 } });
+        await expect.element(chest).toHaveAttribute("aria-valuetext", "100%");
+        await userKeys(chest, ["Home"]);
+        expect(seen.editor?.recipe.bodyHair).toEqual({ coverage: { chest: 0 } });
+        // An explicit zero is a choice, not the unset state.
+        await expect.element(chest).toHaveAttribute("aria-valuetext", "0%");
+        await screen.getByRole("button", { name: "Reset Chest" }).click();
+        expect(seen.editor?.recipe.bodyHair).toBeUndefined();
+      });
+
+    it("replaces a saved recipe's legacy multiplier with an explicit coverage", async () => {
+      const seen: { editor?: HumanoidEditor } = {};
+      const screen = await render(
+        <Styled>
+          <EditorHarness
+            ready={readyInfo()}
+            initial={createRecipe({
+              macros: { age: 30, gender: 0 },
+              bodyHair: { density: { chest: 2, legs: 1.5 } },
+            })}
+            onEditor={(e) => (seen.editor = e)}
+          >
+            {(editor) => <AppearancePanel editor={editor} onFocus={noFocus} />}
+          </EditorHarness>
+        </Styled>,
+      );
+      await screen.getByText("Body hair").click();
+      const chest = screen.getByRole("slider", { name: "Chest" });
+      await expect.element(chest).toBeInTheDocument();
+      expect(chest.element().getAttribute("aria-valuetext")).toMatch(/^\d+% \(legacy\)$/);
+      (chest.element() as HTMLElement).focus();
+      await userKeys(chest, ["End"]);
+      expect(seen.editor?.recipe.bodyHair).toEqual({
+        density: { legs: 1.5 },
+        coverage: { chest: 1 },
+      });
     });
   });
 

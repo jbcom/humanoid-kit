@@ -18,6 +18,9 @@ docs/dist/
 .agent-state/cursor.md
 .agent-state/.indexed-sha
 .agent-state/.last-stop-sha
+.agent-state/.last-board-change
+.agent-state/.last-stop-fingerprint
+.agent-state/gh-queue.json
 .agent-state/.last-compaction
 .agent-state/batch.json
 .agent-state/session-logs/

@@ -41,7 +41,7 @@ const input = (
   areola: 0.5,
   signals: {},
   age,
-  gender,
+  build: { gender },
   adult: age >= 18,
   ...extra,
 });

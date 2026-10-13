@@ -101,18 +101,10 @@ export function resolveBeard(
 
 /**
  * How much of the recipe's beard grows, 0..1: the beard's coat cover and the
- * share of its cards drawn. A chosen style is all there on any adult face,
- * whatever the gender (the style is the choice, not the androgen level), and
- * comes in with the face's terminal hair from puberty. A recipe that sets the
- * face's own `coverage` or `density` gets exactly that (`bodyHairCoverage`).
+ * share of its cards drawn: none clean-shaven, else the face's coverage
+ * (`bodyHairCoverage`), which reads no gender (DECISIONS ruling 1), comes in
+ * from puberty, and follows the recipe's own face `coverage` or `density`.
  */
 export function beardCoverage(input: BodyHairInput): number {
-  if (beardSpec(input).style === "none") return 0;
-  const own = input.bodyHair;
-  if (own?.coverage?.face !== undefined || own?.density?.face !== undefined)
-    return bodyHairCoverage("face", input);
-  return bodyHairCoverage("face", {
-    ...input,
-    bodyHair: { ...own, coverage: { ...own?.coverage, face: 1 } },
-  });
+  return beardSpec(input).style === "none" ? 0 : bodyHairCoverage("face", input);
 }

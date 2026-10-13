@@ -83,26 +83,27 @@ describe("resolving a recipe's beard", () => {
 
 describe("how much of a chosen beard grows", () => {
   const colour = DEFAULT_HAIR_COLOUR;
-  const at = (age: number, gender: number, bodyHair: BodyHairRecipe) =>
-    beardCoverage({ age, gender, colour, bodyHair });
+  const at = (age: number, bodyHair: BodyHairRecipe) => beardCoverage({ age, colour, bodyHair });
 
-  it("is all of it on any adult, whatever the gender", () => {
-    for (const gender of [0, 0.5, 1])
-      expect(at(30, gender, { beard: "full" }), `${gender}`).toBe(1);
+  it("is all of it on an adult face", () => {
+    expect(at(30, { beard: "full" })).toBe(1);
   });
 
   it("is none for a clean-shaven face, and none before the face's hair comes in", () => {
-    expect(at(30, 1, { beard: "none" })).toBe(0);
-    expect(at(30, 1, {})).toBe(0);
-    expect(at(10, 1, { beard: "full" })).toBe(0);
-    expect(at(18, 0, { beard: "full" })).toBeGreaterThan(0);
+    expect(at(30, { beard: "none" })).toBe(0);
+    expect(at(30, {})).toBe(0);
+    expect(at(10, { beard: "full" })).toBe(0);
+    expect(at(18, { beard: "full" })).toBeGreaterThan(0);
   });
 
   it("follows the recipe's own face coverage or density when it sets one", () => {
-    const input = (bodyHair: BodyHairRecipe) => ({ age: 30, gender: 0, colour, bodyHair });
-    const set = { beard: "full", coverage: { face: 0.4 } } as const;
-    expect(at(30, 0, set)).toBeCloseTo(bodyHairCoverage("face", input(set)), 9);
-    const legacy = { beard: "full", density: { face: 2 } } as const;
-    expect(at(30, 0, legacy)).toBeCloseTo(bodyHairCoverage("face", input(legacy)), 9);
+    for (const bodyHair of [
+      { beard: "full", coverage: { face: 0.4 } },
+      { beard: "full", density: { face: 0.5 } },
+    ] as const)
+      expect(at(30, bodyHair)).toBeCloseTo(
+        bodyHairCoverage("face", { age: 30, colour, bodyHair }),
+        9,
+      );
   });
 });

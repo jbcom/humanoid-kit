@@ -98,7 +98,14 @@ import {
   skinUnderOrgans,
 } from "./detailCarry.ts";
 import { compileFactor, type Factor, product } from "./detailFactors.ts";
-import { faceVisibility, layerOrder, maskIndex, OutfitError, stackVisibility } from "./outfit.ts";
+import {
+  faceVisibility,
+  layerOrder,
+  maskIndex,
+  OutfitError,
+  stackVisibility,
+  transferVisibility,
+} from "./outfit.ts";
 import {
   canalsOf,
   evaluatedFold,
@@ -110,7 +117,7 @@ import {
   skinOfEvaluation,
 } from "./reservoirSkin.ts";
 import { placeRigid, rigidSkin } from "./rigidFit.ts";
-import { tuckDepths } from "./tuck.ts";
+import { clothTuck, coveredBy, type TuckCloth, tuckDepths, underHat } from "./tuck.ts";
 
 export interface ModelOptions {
   /** Catmull–Clark levels for the body surface (0–2). Default 1. Attachments use at most 1. */
@@ -227,6 +234,12 @@ export interface OutfitMasks {
   bodyIndex: Uint32Array;
   /** Replaces each garment's `GarmentTopology.index`, in `Outfit.order`. */
   garmentIndex: Uint32Array[];
+  /**
+   * Per attachment in `ModelTopology.attachments`, the index to draw in place
+   * of its own, leaving out what lies on body the garments delete (a toenail
+   * in a boot), or null to draw it whole.
+   */
+  attachmentIndex: (Uint32Array | null)[];
 }
 
 /**
@@ -247,6 +260,12 @@ export interface Outfit {
    * them (metres), or null when none needs it (`HumanoidModel.edgeTuck`).
    */
   bodyTuck: Float32Array | null;
+  /**
+   * Per garment in `order`, per garment vertex, how far to sink it under the
+   * garments over it (metres), or null for one nothing pokes out of: always for
+   * the outermost and for a rigid piece (`HumanoidModel.underTuck`).
+   */
+  garmentTuck: (Float32Array | null)[];
   /** The same hiding over the adult surface (`HumanoidModel.adultSurface`), worked out on first use. */
   adultBodyIndex?: Uint32Array;
 }
@@ -482,6 +501,26 @@ export const islandMask = (row: number): number =>
 const TUCK_RING = 3;
 /** Cloth further than this (metres) over the skin does not sink it. */
 const TUCK_CAP = 0.03;
+/**
+ * How far (metres) a garment may poke out of one over it and still be pulled
+ * back under: the widest jeans leg out of the slimmest boot shaft in the pack.
+ */
+const UNDER_TUCK_CAP = 0.05;
+/** How far under the garment over it (metres) a sunk garment is left. */
+const UNDER_TUCK_GAP = 0.003;
+/**
+ * How far under a hat (metres) the drawn hair it covers is left (`underHat`).
+ * More than a garment's gap, which is kept at rest: the hat and the hair are
+ * skinned through different bindings, so a turned head parts them by a few
+ * millimetres more.
+ */
+const HAT_HAIR_GAP = 0.005;
+/**
+ * How far off the skin (metres) a garment over another still hides it
+ * (`coveredBy`): the flared outer calf of the pirate boots' shaft needs 12 cm
+ * along the skin's normal. A vertex meets its own boot before the other leg's.
+ */
+const UNDER_COVER_CAP = 0.12;
 
 /** The figure attachment occlusion is baked against (and the pack's bake was): the default one. */
 const occlusionFigure = (): Recipe => createRecipe();
@@ -1374,7 +1413,6 @@ export class HumanoidModel {
     if (!pack) return null;
     const input = {
       age: recipe.macros.age,
-      gender: recipe.macros.gender,
       colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
       ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     };
@@ -1725,12 +1763,15 @@ export class HumanoidModel {
       this.evaluatePart(a.part, evaluateBinding(a.asset, control, a.control)),
     );
     // The figure stands on what it wears: a sole reaches below the foot inside it.
-    const garments = outfit.order.map((id) => {
+    const garments = outfit.order.map((id, i) => {
       const g = this.garmentPart(id);
       const placed = evaluateBinding(g.asset, control, g.control);
       // A rigid piece goes where its binding put it, in its own shape.
       if (g.rigidShape) placeRigid(g.rigidShape, placed, placed);
-      for (let i = 1; i < placed.length; i += 3) minY = Math.min(minY, placed[i] as number);
+      // Cloth that would poke out of a garment over it goes under it.
+      const tuck = outfit.garmentTuck[i];
+      if (tuck) this.sunk(placed, g.asset.faceVerts, tuck);
+      for (let k = 1; k < placed.length; k += 3) minY = Math.min(minY, placed[k] as number);
       return this.evaluatePart(g.part, placed);
     });
     const hair =
@@ -1743,6 +1784,7 @@ export class HumanoidModel {
               evaluateBinding(worn.h.asset, control, worn.h.control),
             ),
           };
+    if (hair) this.pressUnderHats(hair.positions, outfit, garments, control);
     const decal = (w: typeof wornBrows, lift: boolean): HairEvaluation | null => {
       if (w === null) return null;
       const placed = evaluateBinding(w.h.asset, control, w.h.control);
@@ -1782,6 +1824,7 @@ export class HumanoidModel {
             : {
                 bodyIndex: adult ? this.adultBodyIndex(outfit, adult) : outfit.masks.bodyIndex,
                 garmentIndex: outfit.masks.garmentIndex,
+                attachmentIndex: outfit.masks.attachmentIndex,
               },
       },
       groundOffset: -minY,
@@ -2558,11 +2601,16 @@ export class HumanoidModel {
           this.bodyTrianglesPerFace,
         )
       : this.mountedBodyIndex;
-    const garmentIndex = order.map((id) => {
+    const under = this.underTuck(order);
+    const garmentIndex = order.map((id, i) => {
       const { asset, part: p } = this.garmentPart(id);
+      const stacked = stack.garments.get(id) as Uint8Array;
+      // What lies behind a garment over it never shows, as if that one deleted it.
+      const covered = under[i]?.covered;
+      const visible = covered ? stacked.map((s, v) => (covered[v] ? 0 : s)) : stacked;
       return maskIndex(
         p.mesh.index,
-        faceVisibility(asset.faceVerts, null, stack.garments.get(id) as Uint8Array),
+        faceVisibility(asset.faceVerts, null, visible),
         2 * 4 ** this.attachmentLevel,
       );
     });
@@ -2570,8 +2618,9 @@ export class HumanoidModel {
       key,
       order,
       bodyVisible: stack.base,
-      masks: { bodyIndex, garmentIndex },
+      masks: { bodyIndex, garmentIndex, attachmentIndex: this.attachmentMasks(stack.base) },
       bodyTuck: order.length ? this.edgeTuck(order, stack.base) : null,
+      garmentTuck: under.map((u) => u.tuck),
     };
     this.outfits.set(key, outfit);
     if (this.outfits.size > 8) this.outfits.delete(this.outfits.keys().next().value as string);
@@ -2621,6 +2670,143 @@ export class HumanoidModel {
     });
     const tuck = tuckDepths({ positions: rest, normals, candidates, cloth, cap: TUCK_CAP });
     return tuck.some((t) => t > 0) ? tuck : null;
+  }
+
+  /**
+   * Per attachment, the index to draw once the garments hide the body under it
+   * (`OutfitMasks.attachmentIndex`), or null where they hide none of it. Only
+   * what the garments delete counts: a nail deletes its own bed, and the nail
+   * is drawn over it.
+   */
+  private attachmentMasks(base: Uint8Array): (Uint32Array | null)[] {
+    // 1 where the body shows or only an attachment hides it; 0 where a garment does.
+    const bare = Uint8Array.from(base, (s, v) => (s || !this.mountedVisible[v] ? 1 : 0));
+    if (bare.every((s) => s === 1)) return this.attached.map(() => null);
+    return this.attached.map(({ asset, part: p }) => {
+      const visible = transferVisibility(bare, asset);
+      if (visible.every((s) => s === 1)) return null;
+      return maskIndex(
+        p.mesh.index,
+        faceVisibility(asset.faceVerts, null, visible),
+        2 * 4 ** this.attachmentLevel,
+      );
+    });
+  }
+
+  /**
+   * Per garment in `order`, at rest: how far to sink its vertices under the
+   * garments over it (`clothTuck`), and which of them, once sunk, lie behind
+   * one (`coveredBy`). Both null for the outermost and for a rigid piece (it
+   * keeps its shape); the tuck null for a garment already clear everywhere. A
+   * function of the garments alone, like the masks.
+   */
+  private underTuck(
+    order: readonly string[],
+  ): { tuck: Float32Array | null; covered: Uint8Array | null }[] {
+    const rest = order.map((id) => {
+      const { asset } = this.garmentPart(id);
+      return {
+        positions: evaluateBinding(
+          asset,
+          this.assets.positions,
+          new Float32Array(asset.entry.vertexCount * 3),
+        ),
+        faces: asset.faceVerts,
+      };
+    });
+    let skinNormals: Float32Array | undefined;
+    return order.map((id, i) => {
+      const outer = rest.slice(i + 1);
+      const own = rest[i];
+      if (!outer.length || !own || this.garmentPart(id).asset.entry.rigid)
+        return { tuck: null, covered: null };
+      const tuck = clothTuck({
+        positions: own.positions,
+        normals: unitNormals(quadVertexNormals(own.positions, own.faces)),
+        outer,
+        cap: UNDER_TUCK_CAP,
+        gap: UNDER_TUCK_GAP,
+      });
+      const any = tuck.some((t) => t > 0);
+      const sunk = Float32Array.from(own.positions);
+      if (any) this.sunk(sunk, own.faces, tuck);
+      skinNormals ??= unitNormals(quadVertexNormals(this.assets.positions, this.assets.faceVerts));
+      return {
+        tuck: any ? tuck : null,
+        covered: coveredBy({
+          skin: { positions: this.assets.positions, normals: skinNormals },
+          binding: this.garmentPart(id).asset,
+          positions: sunk,
+          outer,
+          cap: UNDER_COVER_CAP,
+          beyond: UNDER_COVER_CAP,
+        }),
+      };
+    });
+  }
+
+  /**
+   * Draws the hair the worn hats cover under them (`underHat`), in place: a
+   * style's drawn positions on this figure, toward the middle of its head.
+   * Worked out on this figure, between the hair and the hats as drawn
+   * (`garments`, the outfit's evaluated surfaces in its order). Subdivision
+   * moves a crown's pinch and a curl's card by millimetres to centimetres off
+   * their control meshes. A hat and a style also part by centimetres on a
+   * figure other than the default, so depths from the default figure left hair
+   * through a man's crown. Garments of kind `hat` (hats and hoods) press hair,
+   * and no other garment does.
+   */
+  private pressUnderHats(
+    positions: Float32Array,
+    outfit: Outfit,
+    garments: readonly SurfaceEvaluation[],
+    control: Float32Array,
+  ): void {
+    const hats: TuckCloth[] = [];
+    outfit.order.forEach((id, i) => {
+      const { asset, part: p } = this.garmentPart(id);
+      const drawn = garments[i];
+      // The drawn surface: subdivision draws a crown's pinch centimetres off its control quads.
+      if (asset.entry.kind === "hat" && drawn)
+        hats.push({ positions: drawn.positions, faces: p.mesh.index, triangles: true });
+    });
+    if (!hats.length) return;
+    const c = this.headCentre(control);
+    const tuck = underHat({ centre: c, positions, hats, gap: HAT_HAIR_GAP });
+    for (let v = 0; v < tuck.length; v++) {
+      const t = tuck[v] as number;
+      if (t === 0) continue;
+      const d = [0, 1, 2].map((a) => (positions[v * 3 + a] as number) - (c[a] as number));
+      const length = Math.hypot(d[0] as number, d[1] as number, d[2] as number);
+      const k = Math.min(t, length) / length;
+      for (let a = 0; a < 3; a++)
+        positions[v * 3 + a] = (positions[v * 3 + a] as number) - (d[a] as number) * k;
+    }
+  }
+
+  /** The middle of the head bone on a figure: inside the skull, under any hat. */
+  private headCentre(control: Float32Array): [number, number, number] {
+    const bone = this.assets.manifest.skeleton.bones.find((b) => b.name === "head");
+    if (!bone) throw new AssetFormatError("the skeleton has no head bone");
+    const ends = new Float32Array(6);
+    jointPosition(this.assets, control, bone.head, ends, 0);
+    jointPosition(this.assets, control, bone.tail, ends, 3);
+    return [0, 1, 2].map((a) => ((ends[a] as number) + (ends[a + 3] as number)) / 2) as [
+      number,
+      number,
+      number,
+    ];
+  }
+
+  /** A garment's placed control positions sunk along their posed normals by `tuck`. */
+  private sunk(placed: Float32Array, faces: Uint32Array, tuck: Float32Array): void {
+    const normals = unitNormals(quadVertexNormals(placed, faces));
+    for (let v = 0; v < tuck.length; v++) {
+      const t = tuck[v] as number;
+      if (t === 0) continue;
+      for (let a = 0; a < 3; a++)
+        placed[v * 3 + a] = (placed[v * 3 + a] as number) - (normals[v * 3 + a] as number) * t;
+    }
   }
 
   /** The body's vertex adjacency over its faces, built on first use. */

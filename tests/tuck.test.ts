@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { tuckDepths } from "../src/model/tuck.ts";
+import { clothTuck, coveredBy, tuckDepths, underHat } from "../src/model/tuck.ts";
 
-/** A flat grid of quads in the plane y = `y`, `n` by `n` cells of `size`, facing up. */
-function plate(n: number, size: number, y: number) {
+/**
+ * A flat grid of quads in the plane y = `y`, `n` by `n` cells of `size`, facing
+ * up, or down when `down`.
+ */
+function plate(n: number, size: number, y: number, down = false) {
   const positions: number[] = [];
   for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) positions.push(i * size, y, -j * size);
   const faces: number[] = [];
@@ -10,7 +13,8 @@ function plate(n: number, size: number, y: number) {
     for (let i = 0; i < n; i++) {
       const a = j * (n + 1) + i;
       // Counter-clockwise seen from above (+y): the normal points up.
-      faces.push(a, a + 1, a + 1 + (n + 1), a + (n + 1));
+      if (down) faces.push(a, a + (n + 1), a + 1 + (n + 1), a + 1);
+      else faces.push(a, a + 1, a + 1 + (n + 1), a + (n + 1));
     }
   return { positions: Float32Array.from(positions), faces: Uint32Array.from(faces) };
 }
@@ -91,6 +95,33 @@ describe("sinking skin under the cloth over it", () => {
     expect(tuck.reduce((s, t) => s + (t > 0 ? 1 : 0), 0)).toBe(1);
   });
 
+  it("finds cloth in a grid cell a slanted ray only cuts across", () => {
+    // From (25, 20) mm along (0.6, 0.8) the ray is in the 30 mm cell x 1, y 0
+    // only between 8 and 12.5 mm: no 30 mm step lands there. A 1.6 mm triangle
+    // wholly inside that cell sits across the ray 10 mm out.
+    const o = Float32Array.of(0.025, 0.02, 0.015);
+    const d = Float32Array.of(0.6, 0.8, 0);
+    const tri = Float32Array.of(
+      0.03036,
+      0.02848,
+      0.013,
+      0.03164,
+      0.02752,
+      0.013,
+      0.031,
+      0.028,
+      0.018,
+    );
+    const tuck = tuckDepths({
+      positions: o,
+      normals: d,
+      candidates: Uint32Array.of(0),
+      cloth: [{ positions: tri, faces: Uint32Array.of(0, 1, 2, 2) }],
+      cap: 0.05,
+    });
+    expect(tuck[0]).toBeCloseTo(0.01, 5);
+  });
+
   it("ignores cloth behind the skin", () => {
     const cloth = plate(4, 0.02, -0.01);
     const tuck = tuckDepths({
@@ -101,5 +132,151 @@ describe("sinking skin under the cloth over it", () => {
       cap: 0.03,
     });
     expect(Math.max(...tuck)).toBe(0);
+  });
+});
+
+describe("sinking a garment under the garments over it", () => {
+  const middle = 2 * 5 + 2;
+  const sink = (innerY: number, outer: ReturnType<typeof plate>[]) => {
+    const inner = plate(4, 0.02, innerY);
+    return clothTuck({
+      positions: inner.positions,
+      normals: up(inner.positions.length / 3),
+      outer,
+      cap: 0.05,
+      gap: 0.004,
+    });
+  };
+
+  it("pulls cloth that pokes out of the garment over it back under, by the gap", () => {
+    // 12 mm out of the outer cloth: sunk 12 mm, and 4 more to clear it.
+    expect(sink(0.022, [plate(4, 0.02, 0.01)])[middle]).toBeCloseTo(0.016, 5);
+  });
+
+  it("pushes cloth closer under the garment over it than the gap down to the gap", () => {
+    expect(sink(0.008, [plate(4, 0.02, 0.01)])[middle]).toBeCloseTo(0.002, 5);
+  });
+
+  it("leaves cloth that is clear under the garment over it where it is", () => {
+    expect(Math.max(...sink(0, [plate(4, 0.02, 0.01)]))).toBe(0);
+  });
+
+  it("ignores the far wall of a garment it is inside", () => {
+    // Cloth below that faces away is the other side of a boot shaft, not cloth
+    // this vertex is outside of.
+    expect(Math.max(...sink(0.02, [plate(4, 0.02, 0, true)]))).toBe(0);
+  });
+
+  it("does not reach for cloth further off than the cap", () => {
+    expect(Math.max(...sink(0.2, [plate(4, 0.02, 0.01)]))).toBe(0);
+  });
+
+  describe("cloth behind the garment over it", () => {
+    const skin = plate(4, 0.02, 0);
+    const count = skin.positions.length / 3;
+    // Each cloth vertex bound wholly to the body vertex under it.
+    const binding = {
+      refVerts: Uint32Array.from({ length: count * 3 }, (_, i) => Math.floor(i / 3)),
+      weights: Float32Array.from({ length: count * 3 }, (_, i) => (i % 3 === 0 ? 1 : 0)),
+    };
+    const covered = (clothY: number, outer: ReturnType<typeof plate>[]) =>
+      coveredBy({
+        skin: { positions: skin.positions, normals: up(count) },
+        binding,
+        positions: plate(4, 0.02, clothY).positions,
+        outer,
+        cap: 0.05,
+        beyond: 0.005,
+      });
+
+    it("is covered between the skin and the garment over it", () => {
+      expect(covered(0.01, [plate(4, 0.02, 0.02)])[middle]).toBe(1);
+    });
+
+    it("is covered under a lining that faces it, as inside a boot", () => {
+      // The lining faces the leg; the shell outside it faces out.
+      const lining = plate(4, 0.02, 0.02, true);
+      const shell = plate(4, 0.02, 0.025);
+      expect(covered(0.01, [lining, shell])[middle]).toBe(1);
+    });
+
+    it("is covered by a garment that sits just inside the skin it hides", () => {
+      // A snug boot shaft a centimetre inside the shin it deletes: jeans within
+      // `beyond` (5 mm) of it are the boot's to hide, jeans 13 mm out are not.
+      expect(covered(-0.008, [plate(4, 0.02, -0.01)])[middle]).toBe(1);
+      expect(covered(0.003, [plate(4, 0.02, -0.01)])[middle]).toBe(0);
+    });
+
+    it("is not covered outside the garment over it", () => {
+      expect(covered(0.03, [plate(4, 0.02, 0.02)])[middle]).toBe(0);
+    });
+
+    it("is not covered where the garment over it does not reach", () => {
+      expect(covered(0.01, [plate(1, 0.02, 0.02)])[middle]).toBe(0);
+    });
+
+    it("is covered when most of its binding's weight is under the garment over it", () => {
+      // A plate over the first two cells each way: body vertex 6 is inside it,
+      // 24 (the far corner) is not.
+      const small = plate(2, 0.02, 0.02);
+      const mixed = (w: number) =>
+        coveredBy({
+          skin: { positions: skin.positions, normals: up(count) },
+          binding: { refVerts: Uint32Array.of(6, 24, 24), weights: Float32Array.of(w, 1 - w, 0) },
+          positions: Float32Array.of(0.04, 0.01, -0.04),
+          outer: [small],
+          cap: 0.05,
+          beyond: 0.005,
+        })[0];
+      expect(mixed(0.7)).toBe(1);
+      expect(mixed(0.3)).toBe(0);
+    });
+
+    it("is not covered by cloth further off the skin than the cap", () => {
+      expect(covered(0.01, [plate(4, 0.02, 0.2)])[middle]).toBe(0);
+    });
+  });
+
+  it("clears the deepest of several garments over it", () => {
+    const tuck = sink(0.022, [plate(4, 0.02, 0.015), plate(4, 0.02, 0.01)]);
+    expect(tuck[middle]).toBeCloseTo(0.016, 5);
+  });
+});
+
+describe("drawing hair under a hat", () => {
+  // A hat's crown as a plate 5 cm over the middle of the head.
+  const centre = [0.04, 0, -0.04] as const;
+  const hat = plate(4, 0.02, 0.05);
+  const draw = (...points: [number, number, number][]) =>
+    underHat({ centre, positions: Float32Array.from(points.flat()), hats: [hat], gap: 0.008 });
+
+  it("draws hair past the hat back along the line from the head's middle, under the gap by half as far again", () => {
+    // Straight up: 8 cm out, the hat at 5, so 3 cm past it, 8 mm more and 1.5 cm deeper.
+    expect(draw([0.04, 0.08, -0.04])[0]).toBeCloseTo(0.053, 5);
+    // On a slant the line meets the hat further out, by the same rule.
+    const slant = draw([0.06, 0.1, -0.04])[0] as number;
+    const out = Math.hypot(0.02, 0.1);
+    expect(slant).toBeCloseTo(out - (out / 2 - 0.008) + (out / 2) * 0.5, 5);
+  });
+
+  it("draws hair closer under the hat than the gap down to the gap", () => {
+    expect(draw([0.04, 0.046, -0.04])[0]).toBeCloseTo(0.004, 5);
+  });
+
+  it("leaves hair under the hat, beside it and below the head's middle where it is", () => {
+    expect(Array.from(draw([0.04, 0.03, -0.04], [0.3, 0.08, -0.04], [0.04, -0.06, -0.04]))).toEqual(
+      [0, 0, 0],
+    );
+  });
+
+  it("takes the deepest of several hats", () => {
+    const tuck = underHat({
+      centre,
+      positions: Float32Array.from([0.04, 0.08, -0.04]),
+      hats: [hat, plate(4, 0.02, 0.04)],
+      gap: 0.008,
+    });
+    // The lower hat: 4 cm past it, 8 mm more and 2 cm deeper.
+    expect(tuck[0]).toBeCloseTo(0.068, 5);
   });
 });
