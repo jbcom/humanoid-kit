@@ -63,6 +63,37 @@ describe("authored clips", () => {
     expect(loop.frames).toBe(30);
   });
 
+  it("preserves an authored support track only when it names actual keys, supports and primary legs", () => {
+    const supportTracks = [
+      {
+        times: [0, 1],
+        supports: [
+          { kind: "sole", bone: "foot.L" },
+          { kind: "surface", landmark: "knee.R", radius: 0.1 },
+        ],
+        chains: ["upperleg01.L", "lowerleg01.L", "foot.L"],
+        quality: { contactTolerance: 0.015, maxRotationRadians: 0.7, iterations: 24 },
+      },
+    ];
+    expect(make({ supportTracks }).supportTracks).toEqual(supportTracks);
+    expect(() => make({ supportTracks: [{ ...supportTracks[0], times: [0.5] }] })).toThrow(
+      /authored keys/,
+    );
+    expect(() =>
+      make({
+        supportTracks: [
+          {
+            ...supportTracks[0],
+            supports: [{ kind: "sole", bone: "toe2-1.L" }],
+          },
+        ],
+      }),
+    ).toThrow(/sole contact/);
+    expect(() =>
+      make({ supportTracks: [{ ...supportTracks[0], chains: ["upperleg02.L"] }] }),
+    ).toThrow(/primary leg bones/);
+  });
+
   it("curves through every key without overshooting a run that only rises", () => {
     const curve = channelCurve([0, 1, 2], [0, 10, 40], null);
     expect(curve(0)).toBeCloseTo(0, 9);
@@ -100,6 +131,7 @@ describe("authored clips", () => {
     expect(() => make({ fps: 24 })).toThrow(/fps/);
     expect(() => make({ duration: 0 })).toThrow(/duration/);
     expect(() => make({ loop: "yes" })).toThrow(/loop/);
+    expect(() => make({ supportTracks: [] })).toThrow(/supportTracks/);
     expect(() => make({ keys: [good.keys[0]] })).toThrow(/two keys/);
     expect(() => make({ keys: [{ ...good.keys[0], t: 0.5 }, good.keys[1]] })).toThrow(/time 0/);
     expect(() => make({ keys: [good.keys[0], { ...good.keys[1], t: 2 }] })).toThrow(/past/);

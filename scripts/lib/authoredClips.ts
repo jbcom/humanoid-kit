@@ -17,7 +17,9 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { CONTACT_BONES } from "../../src/animation/locomotion.ts";
 import type { BodyPoseEntry } from "../../src/format/assetFormat.ts";
+import { LANDMARK_IDS } from "../../src/foundation/landmarks.ts";
 import { frameRotations } from "../../src/rig/pose.ts";
 import type { Quat } from "../../src/rig/quat.ts";
 import { poseChannels, poseFrame } from "./authoredPoses.ts";
@@ -38,6 +40,16 @@ export interface AuthoredClip {
   loop: boolean;
   rootMotion: boolean;
   grounded: boolean;
+  /** Optional support metadata preserved in the animation pack manifest. */
+  supportTracks?: {
+    times: number[];
+    supports: (
+      | { kind: "sole"; bone: string }
+      | { kind: "surface"; landmark: string; radius: number }
+    )[];
+    chains: string[];
+    quality: { contactTolerance: number; maxRotationRadians: number; iterations: number };
+  }[];
   /** The file's path from the repository root, and the SHA-256 of its bytes. */
   file: string;
   sha256: string;
@@ -159,6 +171,7 @@ const KEYS = new Set([
   "loop",
   "rootMotion",
   "grounded",
+  "supportTracks",
   "keys",
 ]);
 
@@ -225,6 +238,8 @@ export function authoredClip(
     poses.push(values);
   }
 
+  const supportTracks = readSupportTracks(s.supportTracks, times, bones, fail);
+
   const channels = [...new Set(poses.flatMap((p) => [...p.keys()]))].sort();
   if (!channels.some((c) => poses.some((p) => (p.get(c) ?? 0) !== 0))) fail("rotates nothing");
   const curves = channels.map(
@@ -252,6 +267,7 @@ export function authoredClip(
     loop,
     rootMotion,
     grounded,
+    ...(supportTracks && { supportTracks }),
     file: `scripts/clips/${file}`,
     sha256: createHash("sha256").update(text).digest("hex"),
     frame(f) {
@@ -260,6 +276,98 @@ export function authoredClip(
       return frameRotations(rig, base.joints, poseFrame(base, values));
     },
   };
+}
+
+const finitePositive = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0;
+
+/** Validates the semantic support declaration before it becomes packed runtime data. */
+function readSupportTracks(
+  value: unknown,
+  keyTimes: readonly number[],
+  bones: readonly string[],
+  fail: (why: string) => never,
+): AuthoredClip["supportTracks"] {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length === 0) fail("supportTracks must be a non-empty array");
+  return value.map((track, trackIndex) => {
+    if (typeof track !== "object" || track === null)
+      fail(`supportTracks ${trackIndex}: not an object`);
+    const t = track as Record<string, unknown>;
+    const extra = Object.keys(t).find(
+      (key) => !["times", "supports", "chains", "quality"].includes(key),
+    );
+    if (extra) fail(`supportTracks ${trackIndex}: unknown field ${extra}`);
+    if (!Array.isArray(t.times) || t.times.length === 0)
+      fail(`supportTracks ${trackIndex}: needs times`);
+    const times = t.times as unknown[];
+    if (
+      !times.every(
+        (time) => typeof time === "number" && Number.isFinite(time) && keyTimes.includes(time),
+      ) ||
+      new Set(times).size !== times.length
+    )
+      fail(`supportTracks ${trackIndex}: times must be distinct authored keys`);
+    if (!Array.isArray(t.supports) || t.supports.length === 0)
+      fail(`supportTracks ${trackIndex}: needs supports`);
+    const supports = t.supports.map((support, supportIndex) => {
+      if (typeof support !== "object" || support === null)
+        fail(`supportTracks ${trackIndex}: support ${supportIndex} is not an object`);
+      const point = support as Record<string, unknown>;
+      if (point.kind === "sole") {
+        if (
+          Object.keys(point).some((key) => key !== "kind" && key !== "bone") ||
+          typeof point.bone !== "string" ||
+          !CONTACT_BONES.includes(point.bone as (typeof CONTACT_BONES)[number])
+        )
+          fail(`supportTracks ${trackIndex}: support ${supportIndex} is not a sole contact`);
+        return { kind: "sole" as const, bone: point.bone };
+      }
+      if (point.kind === "surface") {
+        if (
+          Object.keys(point).some((key) => !["kind", "landmark", "radius"].includes(key)) ||
+          typeof point.landmark !== "string" ||
+          !LANDMARK_IDS.includes(point.landmark as (typeof LANDMARK_IDS)[number]) ||
+          !finitePositive(point.radius)
+        )
+          fail(`supportTracks ${trackIndex}: support ${supportIndex} is not a surface region`);
+        return { kind: "surface" as const, landmark: point.landmark, radius: point.radius };
+      }
+      return fail(`supportTracks ${trackIndex}: support ${supportIndex} has no known kind`);
+    });
+    if (
+      !Array.isArray(t.chains) ||
+      t.chains.length === 0 ||
+      !t.chains.every((bone) => typeof bone === "string" && bones.includes(bone)) ||
+      !t.chains.every((bone) => /^(upperleg01|lowerleg01|foot)\.[LR]$/.test(bone as string))
+    )
+      fail(`supportTracks ${trackIndex}: chains must be primary leg bones`);
+    if (new Set(t.chains).size !== t.chains.length)
+      fail(`supportTracks ${trackIndex}: chains must be distinct`);
+    if (typeof t.quality !== "object" || t.quality === null)
+      fail(`supportTracks ${trackIndex}: needs quality`);
+    const quality = t.quality as Record<string, unknown>;
+    if (
+      Object.keys(quality).some(
+        (key) => !["contactTolerance", "maxRotationRadians", "iterations"].includes(key),
+      ) ||
+      !finitePositive(quality.contactTolerance) ||
+      !finitePositive(quality.maxRotationRadians) ||
+      !Number.isInteger(quality.iterations) ||
+      (quality.iterations as number) < 1
+    )
+      fail(`supportTracks ${trackIndex}: quality is invalid`);
+    return {
+      times: [...(times as number[])],
+      supports,
+      chains: [...(t.chains as string[])],
+      quality: {
+        contactTolerance: quality.contactTolerance as number,
+        maxRotationRadians: quality.maxRotationRadians as number,
+        iterations: quality.iterations as number,
+      },
+    };
+  });
 }
 
 /** Every authored clip, in file-name order. */

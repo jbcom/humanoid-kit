@@ -10,6 +10,24 @@
 import { AssetFormatError } from "../format/assetFormat.ts";
 import type { BoneRotations } from "../rig/bones.ts";
 
+/**
+ * An authored, figure-adaptive support phase. Kept private while the solver is
+ * internal: pack data may describe it, but it is not an application API yet.
+ */
+interface SupportTrack {
+  /** Authored key times the track is allowed to judge. */
+  times: number[];
+  /** Semantic sole or skinned-surface supports. */
+  supports: (
+    | { kind: "sole"; bone: string }
+    | { kind: "surface"; landmark: string; radius: number }
+  )[];
+  /** Only these primary leg bones may receive a correction. */
+  chains: string[];
+  /** Engineering limits, carried with the authored intent rather than hidden in a solver. */
+  quality: { contactTolerance: number; maxRotationRadians: number; iterations: number };
+}
+
 /** Where a clip came from and what proves it may be shipped. */
 export interface ClipSource {
   /** The archive the clip was packed from. */
@@ -47,6 +65,8 @@ export interface ClipEntry {
    * planted feet are held in place (`FootLock`); a swim or a fall is not.
    */
   grounded: boolean;
+  /** Optional authored support tracks. Absent means the legacy animation path. */
+  supportTracks?: SupportTrack[];
   /** The bones the clip moves, by name; each frame stores one rotation per bone, in this order. */
   bones: string[];
   /** The binary: `frames × bones` rotations, quaternions (x, y, z, w) as little-endian float32, gzipped. */
@@ -69,10 +89,82 @@ export interface AnimationClip {
   loop: boolean;
   rootMotion: boolean;
   grounded: boolean;
+  /** Optional support tracks preserved from this clip's manifest entry. */
+  supportTracks?: SupportTrack[];
   /** Rig bone index of each clip bone, or -1 for a bone the rig does not have. */
   boneIndex: Int16Array;
   /** `frames × bones × 4` local rotations (x, y, z, w), sign-continuous from frame to frame. */
   rotations: Float32Array;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+/** Reject malformed support metadata before a future solver can act on it. */
+function parseSupportTracks(value: unknown): SupportTrack[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new AssetFormatError("clip supportTracks is not an array");
+  return value.map((track, index) => {
+    if (!isRecord(track))
+      throw new AssetFormatError(`clip supportTracks[${index}] is not an object`);
+    const { times, supports, chains, quality } = track;
+    if (
+      !Array.isArray(times) ||
+      times.length === 0 ||
+      !times.every((time) => typeof time === "number" && Number.isFinite(time))
+    )
+      throw new AssetFormatError(`clip supportTracks[${index}].times is invalid`);
+    if (!Array.isArray(supports) || supports.length === 0)
+      throw new AssetFormatError(`clip supportTracks[${index}].supports is invalid`);
+    const parsedSupports = supports.map((support, supportIndex) => {
+      if (!isRecord(support) || typeof support.kind !== "string")
+        throw new AssetFormatError(
+          `clip supportTracks[${index}].supports[${supportIndex}] is invalid`,
+        );
+      if (support.kind === "sole" && typeof support.bone === "string")
+        return { kind: "sole" as const, bone: support.bone };
+      if (
+        support.kind === "surface" &&
+        typeof support.landmark === "string" &&
+        typeof support.radius === "number" &&
+        Number.isFinite(support.radius) &&
+        support.radius > 0
+      )
+        return { kind: "surface" as const, landmark: support.landmark, radius: support.radius };
+      throw new AssetFormatError(
+        `clip supportTracks[${index}].supports[${supportIndex}] is invalid`,
+      );
+    });
+    if (
+      !Array.isArray(chains) ||
+      chains.length === 0 ||
+      !chains.every((bone) => typeof bone === "string")
+    )
+      throw new AssetFormatError(`clip supportTracks[${index}].chains is invalid`);
+    if (
+      !isRecord(quality) ||
+      typeof quality.contactTolerance !== "number" ||
+      !(quality.contactTolerance > 0) ||
+      !Number.isFinite(quality.contactTolerance) ||
+      typeof quality.maxRotationRadians !== "number" ||
+      !(quality.maxRotationRadians > 0) ||
+      !Number.isFinite(quality.maxRotationRadians) ||
+      typeof quality.iterations !== "number" ||
+      !Number.isInteger(quality.iterations) ||
+      quality.iterations < 1
+    )
+      throw new AssetFormatError(`clip supportTracks[${index}].quality is invalid`);
+    return {
+      times: [...times],
+      supports: parsedSupports,
+      chains: [...chains],
+      quality: {
+        contactTolerance: quality.contactTolerance,
+        maxRotationRadians: quality.maxRotationRadians,
+        iterations: quality.iterations,
+      },
+    };
+  });
 }
 
 /** Decodes a clip's binary and binds it to the bones of a rig (`bones`, in the rig's order). */
@@ -90,6 +182,7 @@ export function parseClip(
   const rotations = new Float32Array(count);
   const view = new DataView(bin);
   for (let i = 0; i < count; i++) rotations[i] = view.getFloat32(i * 4, true);
+  const supportTracks = parseSupportTracks(entry.supportTracks);
   return {
     id: entry.id,
     fps: entry.fps,
@@ -98,6 +191,7 @@ export function parseClip(
     loop: entry.loop,
     rootMotion: entry.rootMotion,
     grounded: entry.grounded,
+    ...(supportTracks && { supportTracks }),
     boneIndex: Int16Array.from(entry.bones, (name) => index.get(name) ?? -1),
     rotations,
   };
