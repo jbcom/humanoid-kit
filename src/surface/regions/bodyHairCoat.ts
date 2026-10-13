@@ -26,11 +26,12 @@ import {
   beardSpec,
   bodyHairColour,
   bodyHairCoverage,
+  bodyHairFollicleDensity,
 } from "../bodyHair.ts";
 import type { CoatPaint, CoatRegion } from "../coat.ts";
 import { hairAlbedo } from "../hairTone.ts";
 import type { SkinPaintInput } from "../layers.ts";
-import { BODY_HAIR_DENSITY, bodyHairInput, bodyHairMasks } from "./bodyHair.ts";
+import { bodyHairInput, bodyHairMasks } from "./bodyHair.ts";
 import { MOUTH_INTERIOR_LAYER } from "./mouth.ts";
 import { LIPS_LAYER } from "./rest.ts";
 import { skinZones } from "./skinZones.ts";
@@ -228,12 +229,16 @@ const LIE = { stubble: 0.15, grown: 0.6, trunk: 0.75 } as const;
 /**
  * Whether the recipe asks for a coat region at all. For now (2026-10-09, while
  * the coat's shading is reworked) the coat is off unless the recipe enables it:
- * the beard by a style other than none, any other group by setting its density.
+ * the beard by a style other than none, any other group by setting its legacy
+ * density or explicit coverage.
  * A recipe that says nothing of body hair draws no coat.
  */
 export function coatEnabled(group: BodyHairGroup, input: SkinPaintInput): boolean {
   if (group === "face") return beardSpec(input).style !== "none";
-  return input.bodyHair?.density?.[group] !== undefined;
+  return (
+    input.bodyHair?.density?.[group] !== undefined ||
+    input.bodyHair?.coverage?.[group] !== undefined
+  );
 }
 
 function paintOf(
@@ -247,7 +252,7 @@ function paintOf(
   return {
     cover: length > 0 && coatEnabled(group, input) ? bodyHairCoverage(group, hair) : 0,
     length: length > 0 ? length : fibre.length,
-    density: BODY_HAIR_DENSITY[group],
+    density: bodyHairFollicleDensity(group, hair),
     lie,
     width: fibre.diameter,
     colour: hairAlbedo(bodyHairColour(group, hair)),

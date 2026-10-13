@@ -119,6 +119,19 @@ export class Animator {
     this.lock?.reset();
   }
 
+  /** The real foot-contact owner and its hold (left then right); an owner can be fading out. */
+  get contactOwnership(): readonly [
+    { index: number; hold: number },
+    { index: number; hold: number },
+  ] {
+    return (
+      this.lock?.contactOwnership() ?? [
+        { index: -1, hold: 0 },
+        { index: -1, hold: 0 },
+      ]
+    );
+  }
+
   /**
    * Advances every clip by `dt` seconds (times its speed), carries the figure by
    * what the clips that carry it do over that time (weighted as they are in the
@@ -166,6 +179,8 @@ export class Animator {
     if (!this.previous) {
       sampleClip(cur.clip, cur.time, this.rotations);
       if (cur.clip.grounded) this.plant();
+      // An airborne clip must not publish the last grounded clip's ownership.
+      else this.lock?.reset();
       return;
     }
     const w = smooth(Math.min(1, this.fade.elapsed / this.fade.duration));
@@ -173,6 +188,8 @@ export class Animator {
     sampleClip(cur.clip, cur.time, this.b);
     blendRotations(this.a, this.b, w, this.rotations);
     if (cur.clip.grounded || this.previous.clip.grounded) this.plant();
+    // Once the fade has reached two airborne clips, no old sole may remain owned.
+    else this.lock?.reset();
   }
 
   /** Holds the planted feet, and has the figure give way to one its leg could not reach (`FootLock.correction`). */

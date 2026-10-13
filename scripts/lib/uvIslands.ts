@@ -1,7 +1,9 @@
 /**
  * Places the reservoirs' UV islands (`AdultReservoirSpec.island`) in free space of
- * the body's UV layout, for the packer: the coverage of the body's triangles in the
- * layer atlas' grid, dilated by a gutter, and first-fit rectangles in what is left.
+ * the body's UV layout, for the packer: the owner-map cells the body's triangles
+ * reach, with a cell round them, and first-fit rectangles in the cells left, each
+ * island then claiming its own cells and a cell round them. An island alone in its
+ * cells can share an atlas channel with any layer it lies apart from (`planAtlas`).
  * Deterministic, so a repack gives the pack the same islands.
  *
  * An island is a tube's wall, a strip whose long side runs along the rings (one
@@ -11,13 +13,43 @@
  * rings; the skin layers' fields are smooth, so that costs nothing.
  */
 import type { AdultReservoirSpec } from "../../src/format/assetFormat.ts";
+import { OWNER_GRID } from "../../src/surface/atlasPlan.ts";
 
 /** The atlas' grid (`buildLayerAtlas`' default size). */
 export const ATLAS_SIZE = 1024;
-/** Texels kept clear round a body island and round each island placed: the filter's reach and a gutter. */
+/** Texels kept clear inside the free cells round an island: the filter's reach and a gutter. */
 const GUTTER = 6;
 
-/** What the body's UV layout covers, dilated by `GUTTER` texels: 1 where an island may not go. */
+/**
+ * Marks every texel of the owner-map cells (`OWNER_GRID` to a side, whatever the
+ * grid's `size`) that a box of texels reaches, and one cell round them: as the atlas
+ * planner counts a footprint (`planAtlas`, `supportCells`).
+ */
+function markCells(
+  covered: Uint8Array,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  size: number,
+) {
+  const g = OWNER_GRID;
+  const cell = (t: number) => Math.min(g - 1, Math.max(0, Math.floor((t / size) * g)));
+  const texel = (c: number) => Math.round((c / g) * size);
+  for (let cy = Math.max(0, cell(y0) - 1); cy <= Math.min(g - 1, cell(y1) + 1); cy++)
+    for (let cx = Math.max(0, cell(x0) - 1); cx <= Math.min(g - 1, cell(x1) + 1); cx++)
+      for (let y = texel(cy); y < texel(cy + 1); y++)
+        covered.fill(1, y * size + texel(cx), y * size + texel(cx + 1));
+}
+
+/**
+ * What the body's UV layout covers: 1 where an island may not go. That is every
+ * owner-map cell a body triangle reaches, and one cell round it, as the atlas planner
+ * counts a footprint. An island in a cell a body triangle shares, however many texels
+ * apart, cannot share a channel with that body layer: the owner map tells channel
+ * members apart by cell. Placed by texels alone, the testes island lay in the cells of
+ * the palms', the mouth's and the flush layers' triangles, and shared with none.
+ */
 export function bodyCoverage(
   uvs: Float32Array,
   index: ArrayLike<number>,
@@ -25,39 +57,9 @@ export function bodyCoverage(
 ): Uint8Array {
   const covered = new Uint8Array(size * size);
   for (let t = 0; t + 2 < index.length; t += 3) {
-    const p = [0, 1, 2].map((k) => [
-      (uvs[(index[t + k] as number) * 2] as number) * size,
-      (uvs[(index[t + k] as number) * 2 + 1] as number) * size,
-    ]) as [number, number][];
-    const x0 = Math.max(0, Math.floor(Math.min(...p.map((q) => q[0])) - GUTTER));
-    const x1 = Math.min(size - 1, Math.ceil(Math.max(...p.map((q) => q[0])) + GUTTER));
-    const y0 = Math.max(0, Math.floor(Math.min(...p.map((q) => q[1])) - GUTTER));
-    const y1 = Math.min(size - 1, Math.ceil(Math.max(...p.map((q) => q[1])) + GUTTER));
-    for (let y = y0; y <= y1; y++)
-      for (let x = x0; x <= x1; x++) {
-        if (covered[y * size + x]) continue;
-        const px = x + 0.5;
-        const py = y + 0.5;
-        // Within GUTTER of the triangle: inside it, or within that of one of its edges.
-        let sign = 0;
-        let inside = true;
-        let near = false;
-        for (let e = 0; e < 3; e++) {
-          const a = p[e] as [number, number];
-          const b = p[(e + 1) % 3] as [number, number];
-          const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-          const side = ((b[0] - a[0]) * (py - a[1]) - (b[1] - a[1]) * (px - a[0])) / len;
-          if (sign === 0 && Math.abs(side) > 1e-9) sign = Math.sign(side);
-          if (side * sign < 0) inside = false;
-          const along = ((px - a[0]) * (b[0] - a[0]) + (py - a[1]) * (b[1] - a[1])) / (len * len);
-          const t = Math.min(1, Math.max(0, along));
-          if (
-            Math.hypot(px - (a[0] + t * (b[0] - a[0])), py - (a[1] + t * (b[1] - a[1]))) <= GUTTER
-          )
-            near = true;
-        }
-        if (inside || near) covered[y * size + x] = 1;
-      }
+    const us = [0, 1, 2].map((k) => (uvs[(index[t + k] as number) * 2] as number) * size);
+    const vs = [0, 1, 2].map((k) => (uvs[(index[t + k] as number) * 2 + 1] as number) * size);
+    markCells(covered, Math.min(...us), Math.min(...vs), Math.max(...us), Math.max(...vs), size);
   }
   return covered;
 }
@@ -71,8 +73,9 @@ export interface Rect {
 }
 
 /**
- * The first free rectangle of `width` x `height` texels (scanning rows, then
- * columns), marked as taken with `GUTTER` of clearance, or null when there is none.
+ * The first rectangle of `width` x `height` texels (scanning rows, then columns)
+ * free with `GUTTER` of clearance, its owner-map cells and a cell round them then
+ * marked as taken, or null when there is none.
  */
 export function takeRect(
   covered: Uint8Array,
@@ -98,10 +101,8 @@ export function takeRect(
     (sat[y0 * (size + 1) + x0] as number);
   for (let y = GUTTER; y + h + GUTTER <= size; y++)
     for (let x = GUTTER; x + w + GUTTER <= size; x++) {
-      if (sum(x, y, x + w, y + h) !== 0) continue;
-      for (let j = Math.max(0, y - GUTTER); j < Math.min(size, y + h + GUTTER); j++)
-        for (let i = Math.max(0, x - GUTTER); i < Math.min(size, x + w + GUTTER); i++)
-          covered[j * size + i] = 1;
+      if (sum(x - GUTTER, y - GUTTER, x + w + GUTTER, y + h + GUTTER) !== 0) continue;
+      markCells(covered, x, y, x + w - 1, y + h - 1, size);
       return { x, y, width: w, height: h };
     }
   return null;
@@ -130,6 +131,8 @@ export function placeIslands(
   return specs.map((spec) => {
     const want = sizes[spec.id];
     const layer = layers[spec.id];
+    // A reservoir with no island size draws inward (a canal) and keeps its skin's UVs.
+    if (!want && !layer) return spec;
     const scale = metresPerUv[spec.id];
     if (!want || !layer || !scale)
       throw new Error(`reservoir ${spec.id}: no island size, layer or scale`);

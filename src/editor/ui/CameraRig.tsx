@@ -19,12 +19,22 @@ export interface CameraRigProps {
   focus: FrameRequest;
   /** Bumped to frame `focus` again although it has not changed (a repeated tap after orbiting away). */
   refocus?: number;
+  /** Reports whether the requested framing has stopped moving. */
+  onFramingSettled?: (settled: boolean) => void;
 }
 
-export function CameraRig({ ready, positions, offsetY, focus, refocus = 0 }: CameraRigProps) {
+export function CameraRig({
+  ready,
+  positions,
+  offsetY,
+  focus,
+  refocus = 0,
+  onFramingSettled,
+}: CameraRigProps) {
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
   const camera = useThree((s) => s.camera) as PerspectiveCamera;
   const size = useThree((s) => s.size);
+  const invalidate = useThree((s) => s.invalidate);
   const parts = useMemo(
     () =>
       vertexFrameParts(
@@ -48,6 +58,7 @@ export function CameraRig({ ready, positions, offsetY, focus, refocus = 0 }: Cam
     b.max[1] += offsetY;
     const f = frameCamera(b, focus.direction, camera.fov, size.width / Math.max(1, size.height));
     goal.current = { position: new Vector3(...f.position), target: new Vector3(...f.target) };
+    onFramingSettled?.(false);
   }, [
     focus.part,
     focus.direction,
@@ -57,6 +68,7 @@ export function CameraRig({ ready, positions, offsetY, focus, refocus = 0 }: Cam
     size.width,
     size.height,
     positions !== null,
+    onFramingSettled,
   ]);
 
   useEffect(() => {
@@ -64,10 +76,11 @@ export function CameraRig({ ready, positions, offsetY, focus, refocus = 0 }: Cam
     if (!c) return;
     const cancel = () => {
       goal.current = null;
+      onFramingSettled?.(true);
     };
     c.addEventListener("start", cancel);
     return () => c.removeEventListener("start", cancel);
-  }, []);
+  }, [onFramingSettled]);
 
   useFrame((_, dt) => {
     const g = goal.current;
@@ -82,8 +95,13 @@ export function CameraRig({ ready, positions, offsetY, focus, refocus = 0 }: Cam
     if (
       camera.position.distanceToSquared(g.position) < 1e-6 &&
       c.target.distanceToSquared(g.target) < 1e-6
-    )
+    ) {
       goal.current = null;
+      onFramingSettled?.(true);
+    } else {
+      // A demand canvas needs an explicit next frame while a focus glide is active.
+      invalidate();
+    }
   });
 
   return (

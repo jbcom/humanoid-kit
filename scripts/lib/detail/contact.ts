@@ -7,7 +7,7 @@
  * skin rather than passing through it.
  */
 import { BufferAttribute, BufferGeometry, Vector3 } from "three";
-import { MeshBVH } from "three-mesh-bvh";
+import { type HitPointInfo, MeshBVH } from "three-mesh-bvh";
 import type { AdultDetailLattice } from "../../../src/model/humanoidModel.ts";
 import type { Vec3 } from "./disc.ts";
 import type { ReservoirRoot, RootShape } from "./root.ts";
@@ -41,6 +41,9 @@ class Surface {
   private readonly bvh: MeshBVH;
   private readonly positions: Float32Array;
   private readonly index: Uint32Array;
+  /** Scratch input and result for the synchronous BVH query in `depth`. */
+  private readonly depthPoint = new Vector3();
+  private readonly depthHit: HitPointInfo = { point: new Vector3(), distance: 0, faceIndex: 0 };
   /** Per triangle (of `index`, as the BVH left it), its unit normal. */
   private readonly faceNormals: Float32Array;
   /** Per vertex, the angle-weighted sum of its triangles' normals. */
@@ -117,10 +120,14 @@ class Surface {
    * and the outward normal there (the pseudo-normal of the feature it is on).
    */
   depth(p: Vec3): { depth: number; point: Vec3; normal: Vec3 } {
-    const hit = { point: new Vector3(), distance: 0, faceIndex: 0 };
-    this.bvh.closestPointToPoint(new Vector3(p[0], p[1], p[2]), hit);
-    const t = hit.faceIndex;
-    const q: Vec3 = [hit.point.x, hit.point.y, hit.point.z];
+    this.depthPoint.set(p[0], p[1], p[2]);
+    // Keep the same defaults a newly allocated hit record had if the BVH finds no result.
+    this.depthHit.point.set(0, 0, 0);
+    this.depthHit.distance = 0;
+    this.depthHit.faceIndex = 0;
+    this.bvh.closestPointToPoint(this.depthPoint, this.depthHit);
+    const t = this.depthHit.faceIndex;
+    const q: Vec3 = [this.depthHit.point.x, this.depthHit.point.y, this.depthHit.point.z];
     const [a, b, c] = [0, 1, 2].map((k) => this.corner(t, k)) as [Vec3, Vec3, Vec3];
     // The nearest point's weights on the triangle's corners: a weight near 0 puts it on
     // the opposite edge, two near 0 at a corner.

@@ -11,6 +11,7 @@
  */
 import { DEFAULT_MACROS, type MacroValues } from "../makehuman/macro.ts";
 import type { BodyRegion } from "../makehuman/regions.ts";
+import type { GarmentLook } from "../model/garmentLook.ts";
 import type { BodyHairRecipe } from "../surface/bodyHair.ts";
 import { DEFAULT_HAIR_COLOUR, type HairColour } from "../surface/hairTone.ts";
 import type { Rgb } from "../surface/skinTone.ts";
@@ -98,11 +99,11 @@ export interface Recipe {
    */
   hair?: HairRecipe;
   /**
-   * Body hair: per region group a multiplier on the default for the figure's age
-   * and sex, and a beard style. Optional: absent is the default for age and sex
-   * (`bodyHairCoverage`, `beardStyle`), so recipes saved before body hair
-   * existed are unchanged. The pubic density is adult-only (the age policy
-   * refuses it under 18).
+   * Body hair: legacy per-region multipliers on the physiological default, or
+   * explicit coverage and physical follicle-density controls, plus a beard
+   * style. Optional: absent is the default for age and sex (`bodyHairCoverage`,
+   * `beardStyle`), so recipes saved before body hair existed are unchanged. The
+   * pubic controls are adult-only (the age policy refuses them under 18).
    */
   bodyHair?: BodyHairRecipe;
   /**
@@ -111,6 +112,12 @@ export interface Recipe {
    * nothing worn.
    */
   outfit?: readonly string[];
+  /**
+   * Per worn garment id, the figure's own colour and finish for it
+   * (`GarmentLook`). Absent means every garment as its pack made it. A look for
+   * a garment the figure does not wear is ignored.
+   */
+  outfitLook?: Readonly<Record<string, GarmentLook>>;
   /**
    * Tattoos, piercings, scars, birthmarks and vitiligo (`./bodyArt.ts`).
    * Absent means none, and recipes saved before body art existed are unchanged.
@@ -162,6 +169,7 @@ export function createRecipe(
     };
     bodyHair?: BodyHairRecipe;
     outfit?: readonly string[];
+    outfitLook?: Readonly<Record<string, GarmentLook>>;
     bodyArt?: BodyArtInit;
   } = {},
 ): Recipe {
@@ -191,6 +199,10 @@ export function createRecipe(
     ...(init.bodyHair && {
       bodyHair: {
         ...(init.bodyHair.density && { density: { ...init.bodyHair.density } }),
+        ...(init.bodyHair.coverage && { coverage: { ...init.bodyHair.coverage } }),
+        ...(init.bodyHair.follicleDensity && {
+          follicleDensity: { ...init.bodyHair.follicleDensity },
+        }),
         ...(init.bodyHair.beard && {
           beard:
             typeof init.bodyHair.beard === "string"
@@ -200,6 +212,18 @@ export function createRecipe(
       },
     }),
     ...(init.outfit && { outfit: [...init.outfit] }),
+    ...(init.outfitLook && {
+      outfitLook: Object.fromEntries(
+        Object.entries(init.outfitLook).map(([id, look]) => [
+          id,
+          {
+            ...(look.tint && { tint: [...look.tint] as Rgb }),
+            ...(look.roughness !== undefined && { roughness: look.roughness }),
+            ...(look.wear !== undefined && { wear: look.wear }),
+          },
+        ]),
+      ),
+    }),
     ...(init.bodyArt && { bodyArt: createBodyArt(init.bodyArt) }),
   };
 }

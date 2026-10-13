@@ -10,6 +10,8 @@ import {
   BODY_HAIR_GROUPS,
   MAX_BEARD_VOLUME,
   MAX_BODY_HAIR_DENSITY,
+  MAX_BODY_HAIR_FOLLICLE_DENSITY,
+  MIN_BODY_HAIR_FOLLICLE_DENSITY,
 } from "../surface/bodyHair.ts";
 import { bodyArtProblems } from "./bodyArt.ts";
 import { DEFAULT_SKIN, RECIPE_VERSION, type Recipe } from "./recipe.ts";
@@ -115,7 +117,38 @@ export function recipeProblems(recipe: unknown): string[] {
       });
     }
   }
+  if (r.outfitLook !== undefined) outfitLookProblems(r.outfitLook, p);
   return p;
+}
+
+const LOOK_FIELDS = new Set(["tint", "roughness", "wear"]);
+
+function outfitLookProblems(looks: unknown, p: string[]): void {
+  if (typeof looks !== "object" || looks === null || Array.isArray(looks)) {
+    p.push("outfitLook must be an object of garment ids to looks");
+    return;
+  }
+  for (const [id, look] of Object.entries(looks)) {
+    const at = `outfitLook.${id}`;
+    if (typeof look !== "object" || look === null || Array.isArray(look)) {
+      p.push(`${at} must be an object`);
+      continue;
+    }
+    const l = look as Record<string, unknown>;
+    for (const k of Object.keys(l)) if (!LOOK_FIELDS.has(k)) p.push(`${at} has unknown field ${k}`);
+    if (
+      l.tint !== undefined &&
+      !(
+        Array.isArray(l.tint) &&
+        l.tint.length === 3 &&
+        l.tint.every((c) => typeof c === "number" && Number.isFinite(c) && c >= 0)
+      )
+    )
+      p.push(`${at}.tint must be three finite numbers ≥ 0`);
+    if (l.roughness !== undefined && !unit(l.roughness))
+      p.push(`${at}.roughness must be in [0, 1]`);
+    if (l.wear !== undefined && !unit(l.wear)) p.push(`${at}.wear must be in [0, 1]`);
+  }
 }
 
 const HAIR_KEYS = new Set(["style", "colour", "brows", "lashes"]);
@@ -147,11 +180,11 @@ function hairProblems(hair: unknown, p: string[]): void {
     p.push("hair.colour.override must be null or three numbers in [0, 1]");
 }
 
-const BODY_HAIR_KEYS = new Set(["density", "beard"]);
+const BODY_HAIR_KEYS = new Set(["density", "coverage", "follicleDensity", "beard"]);
 const GROUPS = new Set<string>(BODY_HAIR_GROUPS);
 const BEARDS = new Set<string>(BEARD_STYLES);
 
-/** The optional `bodyHair` field: known groups with multipliers in range, and a known beard style. */
+/** The optional `bodyHair` field: compatible legacy multipliers, explicit controls and a beard style. */
 function bodyHairProblems(bodyHair: unknown, p: string[]): void {
   if (typeof bodyHair !== "object" || bodyHair === null) {
     p.push("bodyHair must be an object");
@@ -160,16 +193,35 @@ function bodyHairProblems(bodyHair: unknown, p: string[]): void {
   const b = bodyHair as Record<string, unknown>;
   for (const k of Object.keys(b))
     if (!BODY_HAIR_KEYS.has(k)) p.push(`bodyHair.${k} is not a body hair field`);
-  if (b.density !== undefined) {
-    if (typeof b.density !== "object" || b.density === null)
-      p.push("bodyHair.density must be an object");
-    else
-      for (const [g, v] of Object.entries(b.density)) {
-        if (!GROUPS.has(g)) p.push(`bodyHair.density.${g} is not a body hair group`);
-        else if (!(finite(v) && v >= 0 && v <= MAX_BODY_HAIR_DENSITY))
-          p.push(`bodyHair.density.${g} must be a number in [0, ${MAX_BODY_HAIR_DENSITY}]`);
-      }
-  }
+  const numericMap = (
+    field: "density" | "coverage" | "follicleDensity",
+    min: number,
+    max: number,
+  ) => {
+    const map = b[field];
+    if (map === undefined) return;
+    if (typeof map !== "object" || map === null) {
+      p.push(`bodyHair.${field} must be an object`);
+      return;
+    }
+    for (const [g, v] of Object.entries(map)) {
+      if (!GROUPS.has(g)) p.push(`bodyHair.${field}.${g} is not a body hair group`);
+      else if (!(finite(v) && v >= min && v <= max))
+        p.push(`bodyHair.${field}.${g} must be a number in [${min}, ${max}]`);
+    }
+  };
+  numericMap("density", 0, MAX_BODY_HAIR_DENSITY);
+  numericMap("coverage", 0, 1);
+  numericMap("follicleDensity", MIN_BODY_HAIR_FOLLICLE_DENSITY, MAX_BODY_HAIR_FOLLICLE_DENSITY);
+  if (
+    typeof b.density === "object" &&
+    b.density !== null &&
+    typeof b.coverage === "object" &&
+    b.coverage !== null
+  )
+    for (const group of BODY_HAIR_GROUPS)
+      if (group in b.density && group in b.coverage)
+        p.push(`bodyHair.${group} cannot set both density and coverage`);
   if (b.beard !== undefined) beardProblems(b.beard, p);
 }
 

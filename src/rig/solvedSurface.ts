@@ -1,29 +1,21 @@
+import { jointRotations } from "./folds.ts";
 import { fromHalf, toHalf } from "./half.ts";
-import {
-  FOLD_KEYS,
-  FOLD_OPENINGS,
-  FOLD_ROW_TEXELS,
-  HIP_FOLD,
-  type HipFold,
-  hipRotation,
-  type StencilRows,
-  type SurfaceFold,
-} from "./hipFold.ts";
-import { IDENTITY_POSE, type RestBones, skinPositions } from "./pose.ts";
+import { type JointFold, rowTexels, type StencilRows, type SurfaceFold } from "./jointFold.ts";
+import { type RestBones, skinPositions } from "./pose.ts";
 
 /**
- * The hip fold on a drawn surface made to draw the solved shape (docs/ARCHITECTURE.md,
- * "The hip fold"). The fold is solved on the control mesh, and a surface built
- * from it by a subdivision stencil takes the stencil's mix of its displacements
- * (`surfaceFold`); but the renderer skins each of the surface's vertices by its
- * own weights, and in a crease a flexed hip turns ninety degrees, skinning a
- * vertex between two of the control mesh's is not the mix of skinning them:
- * the drawn crease folds over itself where the solved one does not (seated,
- * the average figure's hip crease 51 triangles turned over against 8 on its
- * solved control surface subdivided). So each row also takes, at every key, what
- * the surface as skinned there lacks of the solved surface subdivided, by how
- * much of its stencil the fold reaches (so that it falls to nothing where the
- * fold ends).
+ * A joint fold on a drawn surface made to draw the solved shape
+ * (docs/ARCHITECTURE.md, "The hip fold"). The fold is solved on the control
+ * mesh, and a surface built from it by a subdivision stencil takes the
+ * stencil's mix of its displacements (`surfaceFold`); but the renderer skins
+ * each of the surface's vertices by its own weights, and in a crease a joint
+ * turns ninety degrees, skinning a vertex between two of the control mesh's is
+ * not the mix of skinning them: the drawn crease folds over itself where the
+ * solved one does not (seated, the average figure's hip crease 51 triangles
+ * turned over against 8 on its solved control surface subdivided). So each row
+ * also takes, at every key, what the surface as skinned there lacks of the
+ * solved surface subdivided, by how much of its stencil the fold reaches (so
+ * that it falls to nothing where the fold ends).
  */
 
 /** What of a drawn surface `solvedSurfaceFold` reads: its stencil, its render vertices' surface vertices and their weights. */
@@ -43,7 +35,7 @@ export interface DrawnSurface {
  */
 export function solvedSurfaceFold(
   surface: SurfaceFold,
-  fold: HipFold,
+  fold: JointFold,
   drawn: DrawnSurface,
   rest: RestBones,
   control: Float32Array,
@@ -104,18 +96,15 @@ export function solvedSurfaceFold(
       rowSkinWeight[row * 4 + k] = drawn.skinWeight[r * 4 + k] as number;
     }
   }
-  const hips = [".L", ".R"].map((s) => rest.names.indexOf(HIP_FOLD.bone + s));
+  const { joint } = surface;
   const data = Uint16Array.from(surface.data);
   const posedSources = new Float32Array(sources.length * 3);
   const posedRows = new Float32Array(surface.rows * 3);
-  const row4 = FOLD_ROW_TEXELS * 4;
-  for (let o = 0; o < FOLD_OPENINGS; o++)
-    for (let key = 0; key < FOLD_KEYS; key++) {
-      const degrees = HIP_FOLD.from + (key + 1) * HIP_FOLD.step;
-      const rotations = IDENTITY_POSE(rest.names.length);
-      hips.forEach((b, side) => {
-        if (b >= 0) rotations.set(hipRotation(degrees, o * HIP_FOLD.opened, side ? -1 : 1), b * 4);
-      });
+  const row4 = rowTexels(joint) * 4;
+  for (let o = 0; o < joint.openings; o++)
+    for (let key = 0; key < joint.keys; key++) {
+      const degrees = joint.from + (key + 1) * joint.step;
+      const rotations = jointRotations(joint, rest, degrees, o * joint.opened);
       skinPositions(rest, rotations, sourceRest, sourceSkinIndex, sourceSkinWeight, posedSources);
       skinPositions(rest, rotations, rowRest, rowSkinIndex, rowSkinWeight, posedRows);
       for (let row = 0; row < surface.rows; row++) {
@@ -129,7 +118,7 @@ export function solvedSurfaceFold(
           for (let k = 0; k < 3; k++)
             lacks[k] = (lacks[k] as number) + w * (posedSources[i * 3 + k] as number);
         }
-        const at = row * row4 + (o * FOLD_KEYS + key) * 8;
+        const at = row * row4 + (o * joint.keys + key) * 8;
         for (let k = 0; k < 3; k++)
           data[at + k] = toHalf(
             fromHalf(data[at + k] as number) +
@@ -137,5 +126,5 @@ export function solvedSurfaceFold(
           );
       }
     }
-  return { slot: surface.slot, rows: surface.rows, data };
+  return { joint, slot: surface.slot, rows: surface.rows, data };
 }

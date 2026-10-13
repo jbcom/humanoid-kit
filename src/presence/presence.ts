@@ -22,6 +22,23 @@ export type AnchorName =
   | "leftFoot"
   | "rightFoot";
 
+/**
+ * A figure's own measurements, metres, so a definition can say "0.7 of reach"
+ * and fit a 1.5 m and a 1.9 m body alike (docs/INTERACTIONS.md, "Alignment on
+ * bodies of any size"). Heights are above the figure's floor and follow the
+ * pose (a crouch lowers them); `reach` is the arm's length and does not.
+ */
+export interface FigureMeasures {
+  /** Shoulder to grip along the arm's bones: the mean of both arms. */
+  reach: number;
+  shoulderHeight: number;
+  hipHeight: number;
+  eyeHeight: number;
+}
+
+/** The names a `Length` may measure, in the order `FigureMeasures` declares them. */
+export const MEASURE_NAMES = ["reach", "shoulderHeight", "hipHeight", "eyeHeight"] as const;
+
 export interface FigurePresence {
   id: string;
   /** Where the figure stands, on the ground, in world space (metres). */
@@ -31,6 +48,8 @@ export interface FigurePresence {
   bounds: { min: Vec3; max: Vec3 };
   /** Named anchors in world space. */
   anchors: Record<AnchorName, Vec3>;
+  /** The body's own measurements, derived with the anchors. */
+  measures: FigureMeasures;
   /** Ground contact: foot positions (x, z) and an approximate footprint radius. */
   footprint: { points: [number, number][]; radius: number };
   /** Measured skin appearance: linear albedo, its luminance, specular F0. Never a category. */

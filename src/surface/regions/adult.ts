@@ -27,7 +27,7 @@ import {
   AssetFormatError,
   type HumanoidAssets,
 } from "../../format/assetFormat.ts";
-import { type GenitalSite, genitalAlbedo } from "../genitalTone.ts";
+import { type GenitalSite, genitalAlbedo, vulvaAlbedo } from "../genitalTone.ts";
 import {
   type SkinLayer,
   type SkinLayerFields,
@@ -52,8 +52,17 @@ const specTargets = (spec: AdultSkinLayerSpec): string[] => [
 function adultFields(assets: HumanoidAssets, id: string): SkinLayerFields {
   const spec = specOf(assets, id);
   if (!spec) throw new AssetFormatError(`the adult anatomy pack has no skin layer ${id}`);
+  const mask = targetMask(assets, spec.masks, spec.lo, spec.hi);
+  // A mask the pack authored per base vertex joins the targets' (the larger wins).
+  const authored = spec.vertexMask;
+  if (authored)
+    authored.indices.forEach((v, i) => {
+      if (!Number.isInteger(v) || v < 0 || v >= mask.length)
+        throw new AssetFormatError(`skin layer ${id}: vertex ${v} is not a base vertex`);
+      mask[v] = Math.max(mask[v] as number, Math.min(1, Math.max(0, authored.weights[i] ?? 0)));
+    });
   return {
-    mask: targetMask(assets, spec.masks, spec.lo, spec.hi),
+    mask,
     coord: spec.coordinate ? targetCoordinate(assets, spec.coordinate) : null,
   };
 }
@@ -108,3 +117,13 @@ export const TESTES_LAYER: SkinLayer = adultLayer(
 
 /** The genital mound (the "genital volume" modifier's skin): a small shift, over body skin. */
 export const MOUND_LAYER: SkinLayer = adultLayer("mound-skin", "mound", sitePaint("mound", 0.6));
+
+/**
+ * The vulva's skin: the body's own tone, mildly deepened (`vulvaAlbedo`), over a mask
+ * the pack authors from the vulva's form with a soft falloff round it
+ * (`AdultSkinLayerSpec.vertexMask`), so it has no edge of its own.
+ */
+export const VULVA_LAYER: SkinLayer = adultLayer("vulva-skin", "vulva", ({ tone, signals }) => ({
+  strength: 0.85,
+  stops: [vulvaAlbedo(tone, signals.arousal ?? 0)],
+}));
