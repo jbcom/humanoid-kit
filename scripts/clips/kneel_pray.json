@@ -1,0 +1,81 @@
+{
+  "id": "kneel_pray",
+  "title": "Kneel and pray",
+  "description": "From standing the figure drops to the right knee, the left foot planted ahead, then bows the head and brings the hands together before the chest, and holds there.",
+  "tags": ["idle", "kneeling", "prayer", "1860s"],
+  "base": "tpose",
+  "fps": 30,
+  "duration": 4,
+  "loop": false,
+  "rootMotion": false,
+  "grounded": true,
+  "keys": [
+    {
+      "t": 0,
+      "rotations": {
+        "upperarm01.L": { "Yrotation": 33 },
+        "upperarm01.R": { "Yrotation": -30 }
+      }
+    },
+    {
+      "t": 0.6,
+      "rotations": {
+        "spine03": { "Xrotation": 10 },
+        "upperarm01.L": { "Yrotation": 33 },
+        "upperarm01.R": { "Yrotation": -30 },
+        "upperleg01.L": { "Xrotation": -70 },
+        "lowerleg01.L": { "Xrotation": 70 },
+        "upperleg01.R": { "Xrotation": -20 },
+        "lowerleg01.R": { "Xrotation": 60 }
+      }
+    },
+    {
+      "t": 1.2,
+      "rotations": {
+        "spine03": { "Xrotation": 4 },
+        "upperarm01.L": { "Yrotation": 33 },
+        "upperarm01.R": { "Yrotation": -30 },
+        "upperleg01.L": { "Xrotation": -90 },
+        "lowerleg01.L": { "Xrotation": 90 },
+        "upperleg01.R": { "Xrotation": 0 },
+        "lowerleg01.R": { "Xrotation": 90 }
+      }
+    },
+    {
+      "t": 2,
+      "rotations": {
+        "spine03": { "Xrotation": 6 },
+        "neck01": { "Xrotation": 15 },
+        "head": { "Xrotation": 20 },
+        "upperarm01.L": { "Xrotation": -4, "Yrotation": 32.5, "Zrotation": -35.9 },
+        "lowerarm01.L": { "Xrotation": -49.6, "Yrotation": 61.1 },
+        "wrist.L": { "Xrotation": -15, "Zrotation": -41.2 },
+        "upperarm01.R": { "Xrotation": -4, "Yrotation": -32.5, "Zrotation": 35.8 },
+        "lowerarm01.R": { "Xrotation": -49.5, "Yrotation": -61.1 },
+        "wrist.R": { "Xrotation": -15, "Zrotation": 41.2 },
+        "upperleg01.L": { "Xrotation": -90 },
+        "lowerleg01.L": { "Xrotation": 90 },
+        "upperleg01.R": { "Xrotation": 0 },
+        "lowerleg01.R": { "Xrotation": 90 }
+      }
+    },
+    {
+      "t": 4,
+      "rotations": {
+        "spine03": { "Xrotation": 6 },
+        "neck01": { "Xrotation": 15 },
+        "head": { "Xrotation": 20 },
+        "upperarm01.L": { "Xrotation": -4, "Yrotation": 32.5, "Zrotation": -35.9 },
+        "lowerarm01.L": { "Xrotation": -49.6, "Yrotation": 61.1 },
+        "wrist.L": { "Xrotation": -15, "Zrotation": -41.2 },
+        "upperarm01.R": { "Xrotation": -4, "Yrotation": -32.5, "Zrotation": 35.8 },
+        "lowerarm01.R": { "Xrotation": -49.5, "Yrotation": -61.1 },
+        "wrist.R": { "Xrotation": -15, "Zrotation": 41.2 },
+        "upperleg01.L": { "Xrotation": -90 },
+        "lowerleg01.L": { "Xrotation": 90 },
+        "upperleg01.R": { "Xrotation": 0 },
+        "lowerleg01.R": { "Xrotation": 90 }
+      }
+    }
+  ]
+}
