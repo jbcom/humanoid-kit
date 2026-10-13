@@ -230,6 +230,52 @@ describe("a graft on a figure", { timeout: 120_000 }, () => {
     expect(hand.evaluate(rest).fit.turn).toBeLessThanOrEqual(40);
   });
 
+  it("carries the part's groups through a plane trim", () => {
+    const total = head.triangles.length / 3;
+    const half = Math.floor(total / 2);
+    const groups = [
+      { name: "a", start: 0, count: half },
+      { name: "b", start: half, count: total - half },
+    ];
+    const plane = { point: [0, 0, 0] as const, normal: [0, -1, 0] as const };
+    const g = model.graft({
+      at: "neck",
+      part: {
+        ...head,
+        groups,
+        seam: { plane: { point: [...plane.point], normal: [...plane.normal] } },
+      },
+    });
+    const t = g.topology();
+    const partGroups = t.groups.slice(2);
+    expect(partGroups.length).toBeGreaterThan(0);
+    for (const pg of partGroups) expect(["a", "b"]).toContain(pg.name);
+    // The part's groups tile the rest of the index, in order, with no gaps.
+    let at = (t.groups[1]?.start ?? 0) + (t.groups[1]?.count ?? 0);
+    for (const pg of partGroups) {
+      expect(pg.start).toBe(at);
+      at += pg.count;
+    }
+    expect(at).toBe(t.index.length / 3);
+    // Untrimmed, both groups come through at their own sizes.
+    const whole = model.graft({ at: "neck", part: { ...head, groups } }).topology();
+    expect(whole.groups.slice(2).map((x) => [x.name, x.count])).toEqual([
+      ["a", half],
+      ["b", total - half],
+    ]);
+  });
+
+  it("refuses fit options that would collapse or flip the band", () => {
+    for (const options of [
+      { gap: 0 },
+      { band: -1 },
+      { maxTurn: 0 },
+      { scale: -1 },
+      { scale: [1, 0, 1] as [number, number, number] },
+    ])
+      expect(() => model.graft({ at: "neck", part: head, ...options })).toThrow(GraftError);
+  });
+
   it("refuses an unknown site and a part with no seam", () => {
     expect(() => model.graft({ at: "tail", part: head })).toThrow(GraftError);
     // A closed octahedron has no boundary to graft at.

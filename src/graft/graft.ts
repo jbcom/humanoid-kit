@@ -265,6 +265,8 @@ function partRim(part: GraftPart) {
   let triangles = Uint32Array.from(part.triangles);
   const weld = weldByPosition(positions);
   const seam = part.seam;
+  // The index, in the part as supplied, of each triangle kept.
+  let source = Array.from({ length: triangles.length / 3 }, (_, t) => t);
   if (seam && "plane" in seam) {
     const nrm = unit(seam.plane.normal);
     const keep: number[] = [];
@@ -276,6 +278,7 @@ function partRim(part: GraftPart) {
     const trimmed = new Uint32Array(keep.length * 3);
     for (const [i, t] of keep.entries()) trimmed.set(triangles.subarray(t, t + 3), i * 3);
     triangles = trimmed;
+    source = keep.map((t) => t / 3);
   }
   const directed = boundaryEdges(triangles, weld);
   if (directed.length === 0) throw new GraftError("the part has no open boundary to graft at");
@@ -307,6 +310,7 @@ function partRim(part: GraftPart) {
   return {
     positions,
     triangles,
+    source,
     weld,
     rim,
     params: arcParams(loopPoints(rim, positions)),
@@ -455,6 +459,11 @@ export function buildGraft(
   if (!Number.isInteger(N) || N < 8)
     throw new GraftError("samples must be an integer of at least 8");
   if (!Number.isInteger(R) || R < 2) throw new GraftError("rings must be an integer of at least 2");
+  if (!(gap > 0) || !Number.isFinite(gap)) throw new GraftError("gap must be a positive number");
+  if (!(bandFraction >= 0) || !Number.isFinite(bandFraction))
+    throw new GraftError("band must be a non-negative number");
+  if (!(turnLimit > 0) || !Number.isFinite(turnLimit))
+    throw new GraftError("maxTurn must be a positive number");
   const B = bodyLoop(body, cut);
   const P = partRim(part);
   const bodyCount = body.renderToSurface.length;
@@ -469,6 +478,8 @@ export function buildGraft(
       : typeof options.scale === "number"
         ? [options.scale, options.scale, options.scale]
         : options.scale;
+  if (!extra.every((s) => s > 0 && Number.isFinite(s)))
+    throw new GraftError("scale must be positive and finite on every axis");
   const restPart = new Float64Array(P.positions.length);
   for (let v = 0; v < P.n; v++) {
     const d = sub(at3(P.positions, v), P.rimCentre);
@@ -482,8 +493,10 @@ export function buildGraft(
     );
   }
   const rimPts = loopPoints(P.rim, restPart);
+  // Arc parameters of the scaled rim: a non-uniform scale moves them.
+  const rimParams = arcParams(rimPts);
   const rimRadius = rmsRadius(rimPts);
-  const field = rimField(restPart, P.triangles, P.weld, P.rim, P.params, centroid(rimPts), P.axis);
+  const field = rimField(restPart, P.triangles, P.weld, P.rim, rimParams, centroid(rimPts), P.axis);
   const bandReach = bandFraction * rimRadius;
   // The part's rest normals, welded, for its surface's continuation at the rim.
   const partNormalsRest = new Float64Array(P.n * 3);
@@ -508,22 +521,24 @@ export function buildGraft(
   zip(B.loop, B.params, ring(1), uniform, index);
   for (let k = 1; k + 1 < R; k++) zip(ring(k), uniform, ring(k + 1), uniform, index);
   const rimMerged = P.rim.map((v) => partStart + v);
-  zip(ring(R - 1), uniform, rimMerged, P.params, index);
+  zip(ring(R - 1), uniform, rimMerged, rimParams, index);
   const bridgeTriangles = index.length / 3 - bodyTriangles;
   const groups = [
     { name: "body", start: 0, count: bodyTriangles },
     { name: "bridge", start: bodyTriangles, count: bridgeTriangles },
   ];
   const partGroups = part.groups ?? [{ name: "part", start: 0, count: part.triangles.length / 3 }];
-  // A plane seam trims the part: its groups are of the triangles left, in order.
-  const kept = P.triangles.length / 3;
   const partTriangleStart = index.length / 3;
   for (let t = 0; t < P.triangles.length; t++) index.push(partStart + (P.triangles[t] as number));
-  if (part.seam && "plane" in part.seam)
-    groups.push({ name: "part", start: partTriangleStart, count: kept });
-  else
-    for (const g of partGroups)
-      groups.push({ name: g.name, start: partTriangleStart + g.start, count: g.count });
+  // A plane seam trims the part. Kept triangles stay in order, so each group
+  // becomes the run of kept triangles that came from its range; empty groups drop.
+  let at = 0;
+  for (const g of partGroups) {
+    while (at < P.source.length && (P.source[at] as number) < g.start) at++;
+    const from = at;
+    while (at < P.source.length && (P.source[at] as number) < g.start + g.count) at++;
+    if (at > from) groups.push({ name: g.name, start: partTriangleStart + from, count: at - from });
+  }
 
   const weld = new Uint32Array(vertexCount);
   const firstRender = new Map<number, number>();
@@ -607,8 +622,8 @@ export function buildGraft(
 
   const graftIndex = topology.index.subarray(bodyTriangles * 3);
   const suppliedNormals = part.normals && part.normals.length === P.n * 3 ? part.normals : null;
-  const rimSamplesRest = sampleLoop(rimPts, P.params, N);
-  const rimNormalSamples = sampleLoop(rimNormals, P.params, N);
+  const rimSamplesRest = sampleLoop(rimPts, rimParams, N);
+  const rimNormalSamples = sampleLoop(rimNormals, rimParams, N);
 
   function evaluate(positions: ArrayLike<number>, normals: ArrayLike<number>): GraftSurface {
     const out = new Float32Array(vertexCount * 3);
@@ -646,7 +661,7 @@ export function buildGraft(
     const residual = new Float64Array(P.rim.length * 3);
     const tmp = new Float64Array(3);
     P.rim.forEach((v, j) => {
-      atParam(target, uniform, P.params[j] as number, tmp);
+      atParam(target, uniform, rimParams[j] as number, tmp);
       for (let k = 0; k < 3; k++)
         residual[j * 3 + k] = (tmp[k] as number) - (placed[v * 3 + k] as number);
     });
@@ -656,13 +671,13 @@ export function buildGraft(
       const d = field.distance[w] as number;
       if (!(d < bandReach)) continue;
       const weight = d === 0 ? 1 : smoothstep(1 - d / bandReach);
-      atParam(residual, P.params, field.param[w] as number, blend);
+      atParam(residual, rimParams, field.param[w] as number, blend);
       for (let k = 0; k < 3; k++)
         placed[v * 3 + k] = (placed[v * 3 + k] as number) + weight * (blend[k] as number);
     }
     // The rim exactly on the target, whatever the blend's interpolation.
     P.rim.forEach((v, j) => {
-      atParam(target, uniform, P.params[j] as number, tmp);
+      atParam(target, uniform, rimParams[j] as number, tmp);
       placed.set(tmp, v * 3);
     });
     for (let v = 0; v < P.n; v++) {

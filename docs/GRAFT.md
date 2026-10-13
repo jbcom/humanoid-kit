@@ -180,8 +180,13 @@ const surface = graft.evaluate(ev);
 // skinIndex, skinWeight, loop, rim, removedFaces, droppedAttachments, removedBones,
 // rootBone.
 // surface: positions, normals (for every merged vertex, the body's first),
-// and fit (scale, rotation, translation, loopRadius).
+// and fit (scale, rotation, translation, loopRadius, turn: the largest ring turn in degrees).
 ```
+
+A plane seam trims the part. Each of the part's groups then covers the kept triangles that
+came from its range, and a group with nothing kept is dropped. Fit options are checked:
+`gap` and `maxTurn` must be positive, `band` must not be negative, and every `scale` axis
+must be positive and finite. Anything else throws a `GraftError`.
 
 The merged vertices are laid out in this order: the body's render vertices (unchanged
 ids), then the band's interior rings, then the part's vertices. The body's triangles inside
