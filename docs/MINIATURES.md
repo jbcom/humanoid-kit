@@ -1,10 +1,25 @@
 # Miniatures: hundreds of small figures in a few draw calls
 
-Status: being implemented in stages (issue #12). Stage 1 is done: MakeHuman
-proxy bodies, `posedFigure`, the multi-pose decimator, `bakeMiniature` and its
-binary, with the CPU lab `scripts/research/miniature-lab.ts`. Stage 2 (the
-instanced runtime in `src/render` and `src/react`), the budget test and the
-stress lab follow.
+Status: being implemented in stages (issue #12). Done: MakeHuman proxy bodies,
+`posedFigure`, the multi-pose decimator, `bakeMiniature` and its binary (with
+the CPU lab `scripts/research/miniature-lab.ts`); the instanced runtime
+(`MiniatureCrowd` in `src/render/miniature.ts`, `<Miniatures>` in `src/react`)
+with a browser test of its shader; and the numeric budget test
+(`tests/miniatureBudget.test.ts`). The 500-figure stress lab follows.
+
+## Measured (2026-10-13)
+
+Four dressed archetypes, each baked from `proxy741` with three clips (walk,
+idle, crouch: 102 frames at 15 fps):
+
+| | Measured | Budget |
+| --- | --- | --- |
+| Triangles per figure | 1,499 near, 399 far | about 1,500 and 400 |
+| Vertex-animation textures per archetype | about 1.0 MB | at most 4 MB |
+| An archetype's binary, gzipped | about 0.57 MB | at most 1.5 MB |
+| A 600-figure table (554 in view) | 8 draw calls, 235 k triangles | at most 20 and 250 k |
+| CPU per frame (cull, LOD, instances) | about 0.2 ms in Node | |
+| Bake time per archetype | about 1 to 1.6 s with clips, 0.15 s static | |
 
 ## Why
 
@@ -49,7 +64,7 @@ with the hip fold) for every frame of every clip, decimated once to a vertex
 subset of the full mesh, and the subset's positions and normals per frame are
 written to a texture. One `InstancedMesh` per archetype and LOD; the vertex
 shader reads its frame from the texture by instance clip and phase. A static
-casting is the one-frame case and needs no texture at all.
+casting is the one-frame case: a texture of one row per thousand vertices.
 
 - Fits U1 to U5. Draw calls: archetypes times LODs. Vertex cost per figure is
   two texture reads, no bones.
@@ -116,7 +131,7 @@ draw a different body from the full renderer.
      frame are a gather, the topology is the same in every frame and every
      pose, and nested LODs share one vertex set and one VAT.
    - **Multi-pose error.** Each vertex's quadric is summed over sample frames
-     (the rest pose plus frames spread over every clip), so a collapse that is
+     (frames spread evenly over every clip, or a casting's one pose), so a collapse that is
      harmless at rest but tears a knee in the walk is expensive. A collapse that
      flips or degenerates a triangle in any sample frame is refused.
    - **Silhouette weight.** Open boundaries (a coat's hem, a hat's brim, a
@@ -142,8 +157,10 @@ draw a different body from the full renderer.
    their UVs, scalp hair painted from its colour over the scalp the style grows
    from. Each vertex also carries a tint channel (0 skin, never tinted; 1 upper
    garment; 2 lower garment; 3 hat, shoes and the rest) so a regiment's coat
-   and trousers take per-instance colours (U5). No texture is sampled at run
-   time except the VAT.
+   and trousers take per-instance colours (U5). The channel follows the body
+   region a garment vertex covers, so a long coat's skirt over the thighs takes
+   the lower channel; a channel per garment is the follow-up if a consumer
+   needs it. No texture is sampled at run time except the VAT.
 6. **`bakeMiniature(model, recipe, options)`** returns a `MiniatureBake`: one
    vertex set (the near LOD's), colours and tint channels per vertex, positions
    for every frame of every clip (or the one pose of a static casting), and per

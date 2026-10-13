@@ -1442,6 +1442,25 @@ change every render without resubscribing.
 The nearest provider's registry, for `groundOcclusion`, `faceMetering` and
 `presenceGroups`. All the presence hooks throw outside a `PresenceProvider`.
 
+### `<Miniatures archetypes figures />`
+
+Hundreds of baked miniatures (`bakeMiniature`, `decodeMiniature`) in one
+instanced draw per archetype and level of detail (docs/MINIATURES.md). Props:
+`archetypes` (the bakes, all with the same number of levels), `figures`
+(`MiniatureFigure`: `archetype` index, `x`, `y?`, `z`, `heading?`, `scale?`,
+`clip?` by baked name, `phase?` seconds, `speed?`, and `tints?` for the
+`upper`, `lower` and `accessory` channels in linear RGB), the crowd options
+`maxFigures` (1024), `triangleBudget` (250,000), `levelPixels` (finest level
+from 64 px tall) and `material`, and `onFrame(stats)` with each frame's
+`{ visible, perLevel, triangles, drawCalls }`.
+
+`MiniatureCrowd` is the same without React: `new MiniatureCrowd(bakes,
+options)`, add `crowd.object` to the scene, `setFigures(figures)`, then
+`update(camera, time, viewportHeight)` each frame; `textureBytes` is the GPU
+memory of its animation textures, and `dispose()` frees them. Each update culls
+figures outside the frustum and gives the nearest the finest level their size
+on screen (`projectedPixels`) warrants while the triangle budget lasts.
+
 ### `<StudioStage background? intensity? contactShadowOpacity? />`
 
 A neutral studio for showing figures: a procedural room environment

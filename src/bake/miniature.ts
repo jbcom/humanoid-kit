@@ -156,8 +156,10 @@ function weldPart(part: FigurePartRest): { keep: number[]; local: Int32Array } {
 
 /** Bilinear sample of a texture at (u, v), v up (OpenGL's convention), as linear RGB. */
 function sampleLinear(t: DecodedTexture, u: number, v: number): [number, number, number] {
-  const x = (u - Math.floor(u)) * t.width - 0.5;
-  const y = (1 - (v - Math.floor(v))) * t.height - 0.5;
+  // Repeat outside [0, 1] only: an edge's 1 is the far edge, not the near one.
+  const wrap = (c: number) => (c >= 0 && c <= 1 ? c : c - Math.floor(c));
+  const x = wrap(u) * t.width - 0.5;
+  const y = (1 - wrap(v)) * t.height - 0.5;
   const x0 = Math.floor(x);
   const y0 = Math.floor(y);
   const fx = x - x0;
@@ -215,6 +217,10 @@ export function bakeMiniature(
     );
   const lods = options.lods ?? MINIATURE_LODS;
   if (!lods.length) throw new MiniatureError("a bake needs at least one level of detail");
+  if (lods.some((n, k) => !(n > 0) || (k > 0 && n > (lods[k - 1] as number))))
+    throw new MiniatureError(
+      "levels of detail are positive triangle counts, nearest (largest) first",
+    );
   const body = options.body ?? "proxy741";
   const rig = rigData(model.assets);
   const { rotations, clips } = bakeFrames(options, rig.bones.length);

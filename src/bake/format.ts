@@ -190,9 +190,18 @@ export function decodeMiniature(data: ArrayBuffer | Uint8Array): MiniatureBake {
   const start = Math.ceil((12 + jsonLength) / 4) * 4;
   const N = header.vertexCount;
   const F = header.frameCount;
+  const whole = (n: unknown) => Number.isInteger(n) && (n as number) >= 0;
+  if (!whole(N) || !whole(F) || F < 1) throw new MiniatureFormatError("bad vertex or frame count");
+  for (const c of header.clips)
+    if (!whole(c.start) || !whole(c.frames) || c.frames < 1 || c.start + c.frames > F)
+      throw new MiniatureFormatError(`clip ${c.name} runs past the frames`);
   // Copied out, so the bake owns 4-aligned buffers it can transfer.
   const section = (s: Section, expect: number): Uint8Array => {
-    if (s.byteLength !== expect || start + s.offset + s.byteLength > bytes.byteLength)
+    if (
+      !whole(s.offset) ||
+      s.byteLength !== expect ||
+      start + s.offset + s.byteLength > bytes.byteLength
+    )
       throw new MiniatureFormatError("a section is out of bounds or the wrong size");
     return bytes.slice(start + s.offset, start + s.offset + s.byteLength);
   };

@@ -122,6 +122,8 @@ describe("baking a miniature", { timeout: 300_000 }, () => {
     const adult = new HumanoidModel(loadFixtureAssets(true), { subdivision: 0 });
     expect(() => bakeMiniature(adult, createRecipe({}))).toThrow(MiniatureError);
     expect(() => bakeMiniature(model, recipe, { lods: [] })).toThrow(/level of detail/);
+    expect(() => bakeMiniature(model, recipe, { lods: [400, 1500] })).toThrow(MiniatureError);
+    expect(() => bakeMiniature(model, recipe, { lods: [0] })).toThrow(MiniatureError);
     const walk = { name: "walk", clip: clip("walk_loop") };
     expect(() => bakeMiniature(model, recipe, { pose, clips: [walk] })).toThrow(/not both/);
     expect(() => bakeMiniature(model, recipe, { clips: [walk, walk] })).toThrow(/twice/);
@@ -156,6 +158,19 @@ describe("baking a miniature", { timeout: 300_000 }, () => {
     future[4] = 9;
     expect(() => decodeMiniature(future)).toThrow(/format 9/);
     expect(() => decodeMiniature(bytes.subarray(0, 64))).toThrow(MiniatureFormatError);
+    // A header whose clip runs past its frames.
+    const view = new DataView(bytes.buffer, bytes.byteOffset);
+    const length = view.getUint32(8, true);
+    const header = JSON.parse(new TextDecoder().decode(bytes.subarray(12, 12 + length)));
+    header.clips = [{ name: "walk", start: 0, frames: 2, fps: 15, loop: true }];
+    const json = new TextEncoder().encode(JSON.stringify(header));
+    const start = Math.ceil((12 + length) / 4) * 4;
+    const forged = new Uint8Array(Math.ceil((12 + json.length) / 4) * 4 + bytes.length - start);
+    forged.set(bytes.subarray(0, 12));
+    new DataView(forged.buffer).setUint32(8, json.length, true);
+    forged.set(json, 12);
+    forged.set(bytes.subarray(start), Math.ceil((12 + json.length) / 4) * 4);
+    expect(() => decodeMiniature(forged)).toThrow(/runs past/);
   });
 });
 

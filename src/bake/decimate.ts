@@ -271,6 +271,8 @@ export function decimate(input: DecimateInput): DecimateLevel[] {
   const valid = (u: number, v: number): boolean => {
     const both = shared(u, v);
     if (both.length === 0 || both.length > 2) return false;
+    // A closed tetrahedron (the last of a small closed part) would fold into two triangles.
+    if (both.length === 2 && neighbours(u).length === 3 && neighbours(v).length === 3) return false;
     // A border vertex moves only along its border.
     if (isBoundaryVertex(u) && both.length !== 1) return false;
     // Link condition: the vertices next to both are exactly those across the shared triangles.
@@ -373,7 +375,12 @@ export function decimate(input: DecimateInput): DecimateLevel[] {
       for (let k = 0; k < Q; k++) q[a + k] = (q[a + k] as number) + (q[b + k] as number);
     }
     stamp[v] = (stamp[v] as number) + 1;
-    for (const w of neighbours(v)) pushEdge(v, w);
+    // The kept vertex's edges are costed afresh; its neighbours' other edges keep
+    // their cost but may have become legal (a refused collapse is dropped when
+    // popped), so they are offered again.
+    const ring = neighbours(v);
+    for (const w of ring) pushEdge(v, w);
+    for (const w of ring) for (const x of neighbours(w)) if (x !== v) pushEdge(w, x);
     recordReached();
   }
   // Targets the surface could not reach keep the coarsest level it allowed.

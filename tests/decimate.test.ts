@@ -134,6 +134,13 @@ describe("multi-pose half-edge decimation", () => {
     expect(g.index.length).toBe(800 * 3);
   });
 
+  it("never folds a closed tetrahedron (the last of a small closed part) flat", () => {
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+    const index = new Uint32Array([0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3]);
+    const [level] = decimate({ frames: [positions], index, targets: [1] });
+    expect(level?.index.length).toBe(12);
+  });
+
   it("is deterministic", () => {
     const s = sphere(12, 16);
     const a = decimate({ frames: [s.positions], index: s.index, targets: [100, 40] });
