@@ -571,6 +571,63 @@ body and of each garment are drawn.
 - The figure stands on what it wears: `groundOffset` counts the garments'
   lowest point, so a sole that reaches below the foot rests on the ground.
 
+### Proxy bodies
+
+MakeHuman's low-poly proxy bodies (`PROXY_IDS`: `proxy741`, `male1591`,
+`female1605`) ship in the body pack's `proxies.bin.gz` and load on first use
+(docs/MINIATURES.md). A proxy is bound to the base mesh as a garment is, so it
+follows every morph of the figure.
+
+- `assets.loadProxies(): Promise<Map<string, BoundProxy>>` fetches and adds them
+  once (null when the assets were parsed without pack URLs);
+  `addProxies(assets, bin)` adds a decompressed proxy file yourself.
+- `proxyTopology(assets, id): ProxyTopology`: its triangles (`index`, two per
+  quad, wound as the body's), `faceVerts`, `triangleFace` and its skin
+  (`bindingSkin` of the base vertices it is bound to).
+- `fitProxy(assets, id, control, out?)`: its positions on a figure's morphed
+  control positions (`Evaluation.control`).
+- `proxyIndex(assets, id, bodyVisible)`: the triangles that show under an
+  outfit (`Outfit.bodyVisible`): a vertex shows where two of its three base
+  vertices do, a face unless every corner is hidden.
+- `boundProxy(assets, id)`; `ProxyError` for a proxy the pack lacks or that has
+  not loaded.
+
+### Posed figures and miniatures
+
+Pure, with no rendering dependency; they run in Node, a worker or a page
+(docs/MINIATURES.md).
+
+- `posedFigure(model, recipe, rotations, options?): PosedFigure`: the whole
+  dressed figure in a pose, as `parts`: the body, then every garment in
+  `outfit.order`, then any attachments asked for (`options.attachments`, by
+  kind). Each part has `positions`, `normals` (skinned exactly as the renderer
+  skins, hip fold on the body surface), the triangles that show (`index`),
+  `uvs`, `skinIndex`/`skinWeight`, `material`, `textureUrl` and `bodyRegion`
+  (per vertex, an index into `BODY_REGIONS` by its dominant bone, so a one-piece
+  suit can be told coat from trousers). Every part is lifted so the lowest point
+  stands on y = 0 (`groundOffset`). `options.body` is `"surface"` (default) or
+  a proxy id. `figureAtRest` evaluates once and `poseFigure(rest, rotations)`
+  poses that again without evaluating, for many frames.
+- `bakeMiniature(model, recipe, options?): MiniatureBake`: the dressed figure
+  decimated to `options.lods` triangle counts (default `MINIATURE_LODS`, 1,500
+  and 400) over one shared vertex set, with its frames: one static casting
+  (`options.pose`) or every frame of `options.clips` (`{ name, clip, fps? }`,
+  sampled at `MINIATURE_FPS` by default). The body is `proxy741` unless
+  `options.body` says otherwise; the eyes are included. Colours are baked per
+  vertex (skin tone, scalp hair, and each garment's texture through
+  `options.texture`, which returns the decoded image) and each vertex has a
+  `TINT_CHANNELS` channel (`skin`, `upper`, `lower`, `accessory`) for
+  per-instance tints. It throws `MiniatureError` for a model built with the
+  adult anatomy pack: miniatures never carry it.
+- `encodeMiniature(bake): Uint8Array` and `decodeMiniature(bytes)`: the bake as
+  one deterministic binary (half-float positions, octahedral normals),
+  `MiniatureFormatError` for bytes that are not one; `miniatureTransferables`
+  lists its buffers for `postMessage`.
+- `decimate({ frames, index, targets, importance?, boundaryWeight? })`: the
+  multi-pose half-edge quadric decimation the bake uses, on any mesh: every
+  level is a subset of the input's vertices, and each level's `owner` maps
+  every input vertex to the vertex it merged into.
+
 Lower-level pieces, also exported:
 
 - `recipeContributions(recipe, modifiers): Contribution[]`: the age check, the

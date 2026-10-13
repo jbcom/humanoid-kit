@@ -39,6 +39,7 @@ export default defineConfig({
       // The framework-free core. src/react, src/render, src/editor/ui and
       // src/worker are proven in the browser project and the Playwright suite.
       include: [
+        "src/bake/**/*.ts",
         "src/build/**/*.ts",
         "src/editor/*.ts",
         "src/format/**/*.ts",
