@@ -19,7 +19,7 @@ This is not a deviation from MakeHuman: a MakeHuman recipe never uses these unit
 | --- | --- | --- |
 | Frames | `face-poseunits.bvh`, one BVH frame per unit | none: no BVH exists for the body units |
 | Unit names | `face-poseunits.json` `framemapping`, 60 names | `body-poseunits.json` `poses`, 61 keys |
-| Rotation | Euler channels per joint, about axis-aligned rest frames | a quaternion (w, x, y, z) per joint, bone-local |
+| Rotation | Euler channels per joint, about axis-aligned rest frames | a quaternion (w, x, y, z) per joint, reading as bone-local |
 | Joints per unit | all 163, most at rest | 1 to 7 named bones |
 | Sides | `Left` and `Right` units, both in the data | `Left` units only, yet 13 joint entries name `.R` bones |
 | Licence field | `"license": "CC0"` | none; only the upstream LICENSE.md's "Poses and expressions" category covers it |
@@ -34,8 +34,10 @@ search for the body file's name finds no reader.
 1. **No BVH, so the face units' path does not apply.** `parseBvh` and
    `frameRotations` read Euler channels. The body file holds quaternions, 5 of
    whose 215 entries are not unit length.
-2. **The rotations are bone-local.** Every finger unit is a pure rotation about the
-   bone's local X axis. The kit poses about axis-aligned rest frames
+2. **The rotations read as bone-local.** The units that curl or open a finger chain
+   (`Finger3CloseLeft` to `Figer1RollOutLeft`) are pure rotations about the bone's
+   local X axis, which is a flexion hinge in a bone frame and a twist about the
+   finger in an axis-aligned one. The kit poses about axis-aligned rest frames
    (ARCHITECTURE.md, "Skeleton, poses and expressions"), so these would need each
    bone's rest frame from its roll plane applied as a conjugation, a mapping
    MakeHuman does not define for this file.

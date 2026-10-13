@@ -986,7 +986,7 @@ mean what they meant there; everything must be testable in Node.
   in it, over a runtime fix that every consumer would have to repeat. Averaging
   over choosing a side, because nothing says which side was the intended one.
 - *MakeHuman's body pose units are not packed* (2026-10-13). Upstream's
-  `body-poseunits.json` is bone-local quaternions for a retired skeleton (24 of its
+  `body-poseunits.json` is quaternions that read as bone-local, for a retired skeleton (24 of its
   joint names are not among the 163 bones), several units' names contradict the
   joints they move, there is no BVH for it, and MakeHuman's application never reads
   it, so packing it would not be parity and would need a bone map and relabelling
