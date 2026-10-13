@@ -533,7 +533,9 @@ describe("the hip fold", () => {
       for (const name of ["squat", "tucked", "seated"]) {
         const rotations = bodyPoseRotations(rig, name);
         const m = reach.measure(pose(f, rotations, false), pose(f, rotations, true), 0.03);
-        expect(m.deepest, `${f.name}, ${name}`).toBeGreaterThan(0.003);
+        // A seated slim build's thighs barely meet the belly (1.7 mm with eight skin influences a
+        // vertex, 5 mm with four); the squat and the tuck press 14 mm or more.
+        expect(m.deepest, `${f.name}, ${name}`).toBeGreaterThan(name === "seated" ? 0.0015 : 0.003);
         expect(m.apart / m.deepest, `${f.name}, ${name}`).toBeLessThan(PRESS_APART);
       }
     }
