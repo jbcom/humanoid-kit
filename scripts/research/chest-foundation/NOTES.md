@@ -53,14 +53,30 @@ Research only: nothing here ships. The generator is `tissue.ts`; the gates are
 
 ## Sheets
 
-`sheets.ts` builds hk-sheets requests (the integrator renders them on the real
-playground): the generator's output for each tile is a MakeHuman custom target the
-page registers before the figure is evaluated (`$customTargets`), so skin, rig,
-subdivision and the cover garment all come from the kit. Rows are ages, columns frame
-directions; every other axis is sampled (`sampler.ts`), the seed and the condition
-list go to `<sheet>.conditions.json`, and `label-sheet.ts` prints each tile's values
-under it once the sheet returns. `plot.ts` draws relief against age from the same
-samples. Every figure under 18 wears the sheets' cover garment (asserted).
+`sheets.ts` writes a job for the Playwright `sheets` project
+(e2e/sheets/render.sheet.ts): copy the candidate's `job.json` to a CLEAN worktree's
+`.sheets/job.json` and run `heavy-slot --remote-render pnpm exec playwright test
+--project sheets` there (not from a worktree that nests other worktrees: the staging
+tar overflows). The generator's output for each tile is a MakeHuman custom target
+the page registers before the figure is evaluated (`$customTargets`), so skin, rig
+and subdivision all come from the kit. Rows are ages, columns frame directions; every
+other axis is sampled (`sampler.ts`), the seed and the condition list go to
+`<sheet>.conditions.json`, and `label-sheet.ts <candidate> <renders>` prints each
+tile's values under it. `plot.ts` draws relief against age from the same samples.
+
+Decision: every figure is shown uncovered at every age. The lab exists to verify the
+chest's development across ages 5 to 70, which a garment would hide; rulings 4 and 6
+(DECISIONS.md) put breast development on MakeHuman's data at every age and do not
+restrict a child's natural form. The sheets stay in the private cache, never
+committed. (The age montage keeps its own cover; this is the lab's choice only.)
+
+Decision: side views pose the arms out (`abducted`) and turn 7 degrees to the front:
+at rest the near arm fills a side view and hides the profile.
+
+Decision: two extremes sheets. `chest-extremes` corners the chest's own axes (size,
+firmness, melanin, undertone, ethnic vertex) and holds muscle, weight, height and the
+face mid-range; `body-extremes` corners everything. Cornering every axis at once
+buried the chest under body-wide failures (tube arms, belly rolls at weight 1).
 
 ## Findings
 

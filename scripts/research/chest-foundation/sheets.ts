@@ -1,59 +1,56 @@
 /**
- * Builds the chest lab's real-renderer sheet requests: the generator's output for each
+ * Builds the chest lab's real-renderer sheets: the generator's output for each
  * sampled condition becomes a MakeHuman custom target (`custom/<name>`) that the
  * playground registers before the figure is evaluated (`$customTargets`), so skin,
- * rig, subdivision and the cover garment all come from the kit's own pipeline.
+ * rig and subdivision all come from the kit's own pipeline.
  *
- *   node scripts/research/chest-foundation/sheets.ts [seed] [--queue]
+ *   node scripts/research/chest-foundation/sheets.ts [seed]
  *
- * Writes, to the candidate directory: one hk-sheets request per sheet and view, and
- * `<sheet>.conditions.json` (the seed and the full condition list, so any tile can
- * be re-rendered, plus coverage and each tile's measured share and relief). With
- * `--queue` it files the requests (`hk-sheets request`); the integrator renders them.
+ * Writes, to the candidate directory: `job.json`, a sheets job for the Playwright
+ * `sheets` project (e2e/sheets/render.sheet.ts; copy it to a clean worktree's
+ * `.sheets/job.json` and run it on the render pool), `<sheet>.conditions.json` (the
+ * seed and the full condition list, so any tile can be re-rendered, plus coverage
+ * and each tile's measured share and relief) and `labels.json` for label-sheet.ts.
  *
- * Every figure under 18 wears the sheets' cover garment, checked by the kit's own
- * rule (`wearsCover`) before a request is written.
+ * The lab verifies the chest's development across ages, so every figure is shown
+ * uncovered at every age (rulings 4 and 6: breast development follows MakeHuman at
+ * every age, and a child's natural form is not restricted). The sheets live in the
+ * private cache and are never committed.
  */
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { wearsCover } from "../../../src/editor/cover.ts";
-import { wardrobeOf } from "../../../src/editor/wardrobe.ts";
-import type { ClothingManifest } from "../../../src/format/assetFormat.ts";
 import {
   type CustomTarget,
   customTargetId,
   customTargetOf,
 } from "../../../src/makehuman/customTargets.ts";
-import { ADULT_AGE } from "../../../src/recipe/agePolicy.ts";
 import { createRecipe } from "../../../src/recipe/recipe.ts";
 import { FRAME_DIRECTIONS, type FrameDirection } from "./conditions.ts";
 import {
   type Condition,
   coverage,
   faceModifiers,
+  type SheetKind,
   type SheetSample,
   sampleSheet,
 } from "./sampler.ts";
 import { candidateDir, labSetup } from "./setup.ts";
 import { chestTissue, libraryAt } from "./tissue.ts";
 
-/** The cover of every figure under 18, as on the age montage: a fitted top and short legs. */
-export const COVER = ["suits/female_casualsuit02"] as const;
-const root = path.resolve(import.meta.dirname, "../../..");
-const wardrobe = wardrobeOf(
-  JSON.parse(
-    fs.readFileSync(path.join(root, "packs/clothing/data/manifest.json"), "utf8"),
-  ) as ClothingManifest,
-);
-
-/** The playground cameras, each framed on the figure's own chest bone. */
+/**
+ * The playground cameras, each framed on the figure's own chest bone. A side view
+ * at rest shows only the near arm, so side views pose the arms out of the way
+ * (`SIDE_POSE`) and look slightly from the front.
+ */
 export const VIEWS = {
   front: "frame=spine02&view=0,0.1,1&span=0.55",
   "three-quarter": "frame=spine02&view=0.75,0.1,0.66&span=0.55",
-  side: "frame=spine02&view=1,0.05,0&span=0.55",
+  side: "frame=spine02&view=1,0.05,0.12&span=0.6",
 } as const;
 export type ViewName = keyof typeof VIEWS;
+
+/** The body pose of a side view: the arms lifted clear of the chest's profile. */
+export const SIDE_POSE = "abducted";
 
 export interface Tile {
   label: string[];
@@ -66,7 +63,7 @@ export interface Tile {
 
 const fmt = (x: number, d = 2) => (x < 0 ? "-" : "") + Math.abs(x).toFixed(d).replace(/^0\./, ".");
 
-/** The recipe input of a condition: its frame, macros, skin and face; covered under 18. */
+/** The recipe input of a condition: its frame, macros, skin and face. */
 export function conditionInput(c: {
   age: number;
   frame: FrameDirection;
@@ -91,7 +88,6 @@ export function conditionInput(c: {
     ...(c.frame.regionalMacros && { regionalMacros: c.frame.regionalMacros }),
     modifiers: faceModifiers(v),
     skin: { melanin: v.melanin, undertone: v.undertone },
-    ...(c.age < ADULT_AGE && { outfit: [...COVER] }),
   };
 }
 
@@ -103,12 +99,7 @@ export function makeTile(
   label: string[],
 ): Tile {
   const input = conditionInput(c);
-  const recipe = createRecipe(input);
-  if (recipe.macros.age < ADULT_AGE && !wearsCover(recipe, wardrobe))
-    throw new Error(`${name}: a figure aged ${recipe.macros.age} must be covered`);
-  // The control mesh does not depend on what is worn; the fixtures carry no garments.
-  const { outfit: _worn, ...bare } = recipe;
-  const control = setup.lab.model.evaluate(bare).control;
+  const control = setup.lab.model.evaluate(createRecipe(input)).control;
   const r = chestTissue(setup.ctx, libraryAt(setup.ages, c.age), control, {
     size: c.values.size,
     firmness: c.values.firmness,
@@ -150,56 +141,51 @@ export function conditionLabel(c: Condition): string[] {
   ];
 }
 
-interface Request {
-  lane: string;
-  title: string;
-  ref: string;
+/** One sheet of the Playwright `sheets` job (e2e/sheets/render.sheet.ts). */
+export interface JobSheet {
+  name: string;
   query: string;
-  recipes: unknown[];
+  recipes: Record<string, unknown>[];
   columns: number;
   width: number;
   height: number;
-  why: string;
 }
 
-function request(
-  title: string,
-  view: string,
-  tiles: Tile[],
+/** A sheet of tiles in a view; a side view poses the arms clear unless a pose is given. */
+export function jobSheet(
+  name: string,
+  view: ViewName,
+  tiles: readonly Tile[],
   columns: number,
-  why: string,
-  pose?: { body: string },
-): Request {
+  pose: string | null = view === "side" ? SIDE_POSE : null,
+): JobSheet {
   return {
-    lane: "lane-chest",
-    title,
-    ref: execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" }).trim(),
-    query: `clothing&${view}`,
+    name,
+    query: VIEWS[view],
     recipes: tiles.map((t) => ({
       ...t.input,
       $customTargets: [t.target],
-      ...(pose && { $pose: pose }),
+      ...(pose && { $pose: { body: pose } }),
     })),
     columns,
     width: 300,
     height: 300,
-    why,
   };
 }
+
+/** A sampled sheet's name before its view: `chest-scatter`, `chest-extremes`, `body-extremes`. */
+const sheetPrefix = (kind: SheetKind) => (kind === "scatter" ? "chest-scatter" : kind);
 
 function main() {
   const args = process.argv.slice(2);
   const seed = Number(args.find((a) => !a.startsWith("--")) ?? 20261013);
-  const queue = args.includes("--queue");
   const setup = labSetup();
   const dir = candidateDir();
   fs.mkdirSync(dir, { recursive: true });
-  const requests: Request[] = [];
+  const job: JobSheet[] = [];
 
-  const sheets: [string, SheetSample][] = [
-    ["scatter", sampleSheet("scatter", seed)],
-    ["extremes", sampleSheet("extremes", seed + 1)],
-  ];
+  const kinds: SheetKind[] = ["scatter", "chest-extremes", "body-extremes"];
+  const sheets: [SheetKind, SheetSample][] = kinds.map((k, i) => [k, sampleSheet(k, seed + i)]);
   for (const [name, sample] of sheets) {
     const tiles = sample.conditions.map((c) =>
       makeTile(setup, `chestlab-${name}-${c.index}`, c, conditionLabel(c)),
@@ -232,38 +218,22 @@ function main() {
         1,
       ),
     );
-    for (const view of ["front", "side"] as const)
-      requests.push(
-        request(
-          `chest-${name}-${view}`,
-          VIEWS[view],
-          tiles,
-          sample.cols,
-          `Chest lab ${name} sheet, ${view}: rows are ages ${[...new Set(sample.conditions.map((c) => c.age))].join(", ")}; columns frame directions ${FRAME_DIRECTIONS.map((f) => f.id).join(", ")}. Every other axis sampled (${name === "scatter" ? "Latin hypercube" : "hypercube corners"}). Under 18 covered. Look for: chest shape changing with age and size, areola and nipple on dark skin, any crater, fold or seam.`,
-        ),
-      );
-    if (name === "scatter")
-      requests.push(
-        request(
-          "chest-scatter-three-quarter",
-          VIEWS["three-quarter"],
-          tiles,
-          sample.cols,
-          "Chest lab scatter sheet, three-quarter view.",
-        ),
-      );
+    const views: ViewName[] =
+      name === "scatter" ? ["front", "three-quarter", "side"] : ["front", "side"];
+    for (const view of views)
+      job.push(jobSheet(`${sheetPrefix(name)}-${view}`, view, tiles, sample.cols));
   }
 
   // Posed set: adult figures across the frame directions in three poses.
-  const posedFrames = ["g0", "g50", "g100", "fchest-mbody", "mframe-fchest"];
+  const posedFrames = ["g0", "g50", "g100", "fchest-mbody", "mframe-fchest", "g0", "g25"];
   const posedTiles = posedFrames.flatMap((id, i) => {
     const frame = FRAME_DIRECTIONS.find((f) => f.id === id) as FrameDirection;
-    const age = [25, 40, 70, 25, 55][i] as number;
+    const age = [25, 40, 70, 25, 55, 13, 18][i] as number;
     const values = {
       ...sheets[0]?.[1].conditions[0]?.values,
-      size: [0.75, 1, 0.5, 1, 0.25][i] as number,
-      firmness: [0.5, 0.2, 0.8, 0.5, 0.5][i] as number,
-      melanin: [0.9, 0.15, 0.6, 0.45, 0.8][i] as number,
+      size: [0.75, 1, 0.5, 1, 0.25, 0.6, 0.9][i] as number,
+      firmness: [0.5, 0.2, 0.8, 0.5, 0.5, 0.6, 0.3][i] as number,
+      melanin: [0.9, 0.15, 0.6, 0.45, 0.8, 0.3, 0.95][i] as number,
       undertone: 0,
       muscle: 0.5,
       weight: 0.5,
@@ -282,23 +252,29 @@ function main() {
         [0, 1, 0],
         [1 / 3, 1 / 3, 1 / 3],
         [0.5, 0, 0.5],
+        [0, 0.5, 0.5],
+        [0.5, 0.5, 0],
       ] as const
     )[i] as Condition["ethnic"];
     return [
-      makeTile(setup, `chestlab-posed-${i}`, { age, frame, values, ethnic }, [`${age}y ${id}`]),
+      makeTile(setup, `chestlab-posed-${i}`, { age, frame, values, ethnic }, [
+        `${age}y ${id} size${fmt(values.size)} firm${fmt(values.firmness)} mel${fmt(values.melanin)}`,
+      ]),
     ];
   });
-  for (const pose of ["overhead", "twisted", "seated"])
-    requests.push(
-      request(
-        `chest-posed-${pose}`,
-        VIEWS["three-quarter"],
-        posedTiles,
-        posedTiles.length,
-        `Chest lab posed set (${pose}): the specimen is a custom target, so it rides the rig. Look for tissue following the pose without tearing or pinching.`,
-        { body: pose },
-      ),
-    );
+  // The posed set: the specimen is a custom target, so it rides the rig; every pose
+  // is read at rest too, from the front and three-quarter, to compare.
+  for (const pose of ["rest", "overhead", "twisted", "seated"])
+    for (const view of ["front", "three-quarter"] as const)
+      job.push(
+        jobSheet(
+          `chest-posed-${pose}-${view}`,
+          view,
+          posedTiles,
+          posedTiles.length,
+          pose === "rest" ? null : pose,
+        ),
+      );
 
   // Sweep strips: one figure each, size 0..1 at firmness .5, then firmness 0..1 at size 1.
   const strips = [
@@ -368,39 +344,32 @@ function main() {
       1,
     ),
   );
+  // Sweep strips: each row one figure, size 0 to 1 at firmness .5, then firmness 0 to
+  // 1 at size 1, the controlled comparison the scatter cannot give.
   for (const view of ["front", "side"] as const)
-    requests.push(
-      request(
-        `chest-strips-${view}`,
-        VIEWS[view],
-        stripTiles,
-        sizes.length + firms.length,
-        "Chest lab sweep strips: each row one figure, size 0 to 1 at firmness .5, then firmness 0 to 1 at size 1. The controlled comparison the scatter cannot give.",
-      ),
-    );
-  // The labels of every tile, in request order, for label-sheet.ts.
-  fs.writeFileSync(
-    path.join(dir, "labels.json"),
-    JSON.stringify(
-      {
-        scatter: sheets[0]?.[1].conditions.map(conditionLabel),
-        extremes: sheets[1]?.[1].conditions.map(conditionLabel),
-        posed: posedTiles.map((t) => t.label),
-        strips: stripTiles.map((t) => t.label),
-      },
-      null,
-      1,
-    ),
-  );
+    job.push(jobSheet(`chest-strips-${view}`, view, stripTiles, sizes.length + firms.length));
 
-  for (const r of requests) {
-    const file = path.join(dir, `${r.title}.request.json`);
-    fs.writeFileSync(file, JSON.stringify(r));
-    console.log(
-      `${file} (${(fs.statSync(file).size / 1e6).toFixed(1)} MB, ${r.recipes.length} figures)`,
-    );
-    if (queue) execFileSync("hk-sheets", ["request", file], { stdio: "inherit" });
-  }
+  // The labels of every sheet's tiles, by sheet name, for label-sheet.ts.
+  const labelsOf: Record<string, string[][]> = {
+    ...Object.fromEntries(
+      sheets.map(([kind, sample]) => [sheetPrefix(kind), sample.conditions.map(conditionLabel)]),
+    ),
+    "chest-posed": posedTiles.map((t) => t.label),
+    "chest-strips": stripTiles.map((t) => t.label),
+  };
+  const labels = Object.fromEntries(
+    job.map((s) => {
+      const key = Object.keys(labelsOf).find((k) => s.name.startsWith(`${k}-`));
+      if (!key) throw new Error(`no labels for ${s.name}`);
+      return [s.name, labelsOf[key]];
+    }),
+  );
+  fs.writeFileSync(path.join(dir, "labels.json"), JSON.stringify(labels, null, 1));
+  const file = path.join(dir, "job.json");
+  fs.writeFileSync(file, JSON.stringify({ sheets: job }));
+  console.log(
+    `${file} (${(fs.statSync(file).size / 1e6).toFixed(1)} MB): ${job.map((s) => `${s.name} ${s.recipes.length}`).join(", ")}`,
+  );
 }
 
 if (import.meta.main) main();

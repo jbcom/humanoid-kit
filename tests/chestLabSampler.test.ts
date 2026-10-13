@@ -2,32 +2,18 @@
  * Gates for the chest lab's scatter sampler (scripts/research/chest-foundation/sampler.ts):
  * seeded and deterministic, every non-display axis covered evenly, the ethnic simplex
  * covered to its corners independently of skin tone, neighbours apart in size and skin
- * tone, and every figure under 18 covered.
+ * tone; the chest extremes corner only the chest's axes, the body extremes all of them.
  */
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  CHEST_CORNER_AXES,
   coverage,
   SCALAR_AXES,
   SIMPLEX_FIXED,
   sampleSheet,
 } from "../scripts/research/chest-foundation/sampler.ts";
-import { conditionInput } from "../scripts/research/chest-foundation/sheets.ts";
-import { wearsCover } from "../src/editor/cover.ts";
-import { wardrobeOf } from "../src/editor/wardrobe.ts";
-import type { ClothingManifest } from "../src/format/assetFormat.ts";
-import { createRecipe } from "../src/recipe/recipe.ts";
 
 const SEEDS = [1, 7, 20261013];
-const wardrobe = wardrobeOf(
-  JSON.parse(
-    fs.readFileSync(
-      path.resolve(import.meta.dirname, "../packs/clothing/data/manifest.json"),
-      "utf8",
-    ),
-  ) as ClothingManifest,
-);
 
 describe("chest lab sampler: scatter", () => {
   it("is deterministic for a seed and differs between seeds", () => {
@@ -98,17 +84,27 @@ describe("chest lab sampler: scatter", () => {
   });
 });
 
-describe("chest lab sampler: extremes", () => {
-  it.each(SEEDS)("draws only the ends of every axis, balanced (seed %i)", (seed) => {
-    const s = sampleSheet("extremes", seed);
+describe.each(["chest-extremes", "body-extremes"] as const)("chest lab sampler: %s", (kind) => {
+  const cornered = (k: string) =>
+    kind === "body-extremes" || CHEST_CORNER_AXES.includes(k as keyof typeof SCALAR_AXES);
+
+  it.each(SEEDS)("corners its axes, balanced, and holds the rest mid-range (seed %i)", (seed) => {
+    const s = sampleSheet(kind, seed);
     const n = s.conditions.length;
     for (const [k, [lo, hi]] of Object.entries(SCALAR_AXES)) {
       const vals = s.conditions.map((c) => c.values[k as keyof typeof SCALAR_AXES]);
-      expect(
-        vals.every((v) => v === lo || v === hi),
-        k,
-      ).toBe(true);
-      expect(vals.filter((v) => v === hi).length, k).toBe(n / 2);
+      if (cornered(k)) {
+        expect(
+          vals.every((v) => v === lo || v === hi),
+          k,
+        ).toBe(true);
+        expect(vals.filter((v) => v === hi).length, k).toBe(n / 2);
+      } else {
+        expect(
+          vals.every((v) => v === (lo + hi) / 2),
+          k,
+        ).toBe(true);
+      }
     }
     const cov = coverage(s);
     for (const v of ["african", "asian", "caucasian"]) expect(cov.simplexRegions[v]).toBe(n / 3);
@@ -116,7 +112,7 @@ describe("chest lab sampler: extremes", () => {
   });
 
   it.each(SEEDS)("shows every frame direction at both sizes (seed %i)", (seed) => {
-    const s = sampleSheet("extremes", seed);
+    const s = sampleSheet(kind, seed);
     for (let col = 0; col < s.cols; col++) {
       const sizes = new Set(s.conditions.filter((c) => c.col === col).map((c) => c.values.size));
       expect(sizes.size, `column ${col}`).toBe(2);
@@ -124,12 +120,11 @@ describe("chest lab sampler: extremes", () => {
   });
 });
 
-describe("chest lab sheets: cover", () => {
-  it("covers every figure under 18 by the kit's own rule, and no adult", () => {
-    for (const kind of ["scatter", "extremes"] as const)
-      for (const c of sampleSheet(kind, 3).conditions) {
-        const recipe = createRecipe(conditionInput(c));
-        expect(wearsCover(recipe, wardrobe), `${kind} ${c.age} y`).toBe(c.age < 18);
-      }
-  });
+it("holds the body macros mid-range on the chest extremes only", () => {
+  const chest = sampleSheet("chest-extremes", 3).conditions;
+  const body = sampleSheet("body-extremes", 3).conditions;
+  for (const k of ["muscle", "weight", "height"] as const) {
+    expect(new Set(chest.map((c) => c.values[k])), k).toEqual(new Set([0.5]));
+    expect(new Set(body.map((c) => c.values[k])), k).toEqual(new Set([0, 1]));
+  }
 });

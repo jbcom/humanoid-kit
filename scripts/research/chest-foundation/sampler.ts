@@ -17,9 +17,13 @@
  *   by seeded swaps so no two neighbouring tiles share a size or a skin tone; a swap
  *   keeps every stratum covered.
  *
- * The EXTREMES sheet uses the same grid, but every scalar axis takes only its two
- * ends (balanced: half the tiles each) and the ethnic mix only the three pure vertices,
- * so the corners of the hypercube are where failures show.
+ * The two EXTREMES sheets use the same grid, with the ethnic mix only at the three
+ * pure vertices and the cornered axes only at their two ends (balanced: half the
+ * tiles each), so the corners of the hypercube are where failures show:
+ * - `chest-extremes` corners only the chest's own axes (`CHEST_CORNER_AXES`: size,
+ *   firmness, melanin, undertone) and holds every body and face axis at the middle of
+ *   its range, so a body-wide failure at weight 1 cannot bury the chest signal;
+ * - `body-extremes` corners every axis, for the body-wide failures.
  */
 import { FRAME_DIRECTIONS, type FrameDirection, REVIEW_AGES } from "./conditions.ts";
 
@@ -54,6 +58,17 @@ export const SCALAR_AXES = {
 export type ScalarAxis = keyof typeof SCALAR_AXES;
 const SCALAR_KEYS = Object.keys(SCALAR_AXES) as ScalarAxis[];
 
+/** The axes the chest-extremes sheet corners; every other axis sits mid-range there. */
+export const CHEST_CORNER_AXES: readonly ScalarAxis[] = [
+  "size",
+  "firmness",
+  "melanin",
+  "undertone",
+];
+
+export type SheetKind = "scatter" | "chest-extremes" | "body-extremes";
+export const SHEET_KINDS: readonly SheetKind[] = ["scatter", "chest-extremes", "body-extremes"];
+
 export interface Condition {
   /** Tile index, row-major. */
   index: number;
@@ -69,7 +84,7 @@ export interface Condition {
 }
 
 export interface SheetSample {
-  kind: "scatter" | "extremes";
+  kind: SheetKind;
   seed: number;
   rows: number;
   cols: number;
@@ -195,7 +210,7 @@ export function minNeighbourGap(vals: readonly number[], rows: number, cols: num
 }
 
 export function sampleSheet(
-  kind: "scatter" | "extremes",
+  kind: SheetKind,
   seed: number,
   ages: readonly number[] = REVIEW_AGES,
   frames: readonly FrameDirection[] = FRAME_DIRECTIONS,
@@ -205,7 +220,13 @@ export function sampleSheet(
     cols = frames.length,
     n = rows * cols;
   const unit: Record<ScalarAxis, number[]> = {} as Record<ScalarAxis, number[]>;
-  for (const k of SCALAR_KEYS) unit[k] = kind === "scatter" ? lhs(n, r) : ends(n, r);
+  for (const k of SCALAR_KEYS)
+    unit[k] =
+      kind === "scatter"
+        ? lhs(n, r)
+        : kind === "body-extremes" || CHEST_CORNER_AXES.includes(k)
+          ? ends(n, r)
+          : Array.from({ length: n }, () => 0.5);
   if (kind === "scatter") {
     // Neighbours never share a size or a skin tone: at least a fifth of the range apart.
     for (const k of ["size", "melanin"] as const) unit[k] = separate(unit[k], rows, cols, 0.2, r);
@@ -297,7 +318,7 @@ export function sampleSheet(
       ethnic: ethnic[i] as [number, number, number],
       ethnicFixed:
         fixedAt.get(i) ??
-        (kind === "extremes" ? simplexRegion(ethnic[i] as [number, number, number]) : null),
+        (kind !== "scatter" ? simplexRegion(ethnic[i] as [number, number, number]) : null),
     });
   }
   return { kind, seed, rows, cols, conditions };
