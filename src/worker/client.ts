@@ -7,7 +7,7 @@
  * slider never builds a backlog, and keys never wait on each other: a figure
  * whose recipe needs target files that are still loading holds up no other.
  */
-import type { LoadOptions } from "../format/assetFormat.ts";
+import type { LoadPacks } from "../format/assetFormat.ts";
 import type { CustomTarget } from "../makehuman/customTargets.ts";
 import type {
   AdultSurfaceTopology,
@@ -60,7 +60,7 @@ export class HumanoidWorkerClient {
   private readonly queue = new Map<string, Job>();
   /** Keys with an evaluation in the worker. */
   private readonly inFlight = new Set<string>();
-  /** Resolves when the worker can evaluate the first figure (`LoadOptions.firstFigureAge`). */
+  /** Resolves when the worker can evaluate the first figure (`LoadPacks.firstFigureAge`). */
   readonly ready: Promise<ReadyInfo>;
   /**
    * Resolves when every target file has loaded, or rejects with the error that
@@ -68,7 +68,7 @@ export class HumanoidWorkerClient {
    */
   readonly complete: Promise<void>;
 
-  constructor(load: LoadOptions, model: ModelOptions = {}, worker?: Worker) {
+  constructor(load: LoadPacks, model: ModelOptions = {}, worker?: Worker) {
     // A runtime URL, not an import: it names the built worker module next to this file in dist/.
     // Consumers bundling from source, like the playground, pass their own `worker`.
     this.worker = worker ?? new Worker(new URL("./index.js", import.meta.url), { type: "module" });

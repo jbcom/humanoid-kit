@@ -3,7 +3,7 @@ import type { WardrobeEntry } from "../editor/wardrobe.ts";
 import type {
   AdultAnatomySpec,
   HairKind,
-  LoadOptions,
+  LoadPacks,
   ShapeModifierEntry,
   SliderTask,
 } from "../format/assetFormat.ts";
@@ -79,7 +79,7 @@ export interface PickMap {
 }
 
 export type WorkerRequest =
-  | { type: "init"; id: number; load: LoadOptions; model: ModelOptions }
+  | { type: "init"; id: number; load: LoadPacks; model: ModelOptions }
   /** Answered once every target file has loaded, or with the error that stopped one. */
   | { type: "complete"; id: number }
   /** Answered with the pick map once every target file (it needs the modifiers') has loaded. */

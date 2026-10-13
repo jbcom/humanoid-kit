@@ -1425,8 +1425,47 @@ export function pendingTargetFiles(assets: HumanoidAssets, names: Iterable<strin
   return out;
 }
 
-export async function fetchOk(url: string): Promise<Response> {
-  const res = await fetch(url);
+/** How a loader requests a file: the platform's `fetch` fits, and so does a host's own. */
+export type FetchLike = (url: string) => Promise<Response>;
+
+/** The part of `node:fs/promises` the `file:` reading uses. */
+interface NodeFileSystem {
+  readFile(url: URL): Promise<BodyInit>;
+}
+
+const isNode = (): boolean =>
+  (globalThis as { process?: { versions?: { node?: string } } }).process?.versions?.node !==
+  undefined;
+
+/**
+ * Reads a `file:` URL from disk as a `Response` (a missing file answers 404).
+ * Node's `fetch` does not implement the scheme, and a pack package imported in
+ * Node exports exactly such URLs. The module is imported by a name no bundler
+ * can see, so a browser build never resolves it and nothing here is reachable
+ * there: `fetchOk` only comes here when running in Node.
+ */
+async function readFileUrl(url: string): Promise<Response> {
+  const specifier = "node:fs/promises";
+  const { readFile } = (await import(
+    /* @vite-ignore */ /* webpackIgnore: true */ specifier
+  )) as NodeFileSystem;
+  try {
+    return new Response(await readFile(new URL(url)));
+  } catch (e) {
+    if ((e as { code?: string }).code === "ENOENT")
+      return new Response(null, { status: 404, statusText: "Not Found" });
+    throw e;
+  }
+}
+
+/**
+ * Requests `url` with `fetcher` when the host gave one. Otherwise the platform's
+ * `fetch`, except a `file:` URL in Node, which is read from disk.
+ */
+export async function fetchOk(url: string, fetcher?: FetchLike): Promise<Response> {
+  const res = await (
+    fetcher ?? (url.startsWith("file:") && isNode() ? readFileUrl : (u: string) => fetch(u))
+  )(url);
   if (!res.ok)
     throw new AssetFormatError(`fetching ${url} failed: ${res.status} ${res.statusText}`);
   return res;
@@ -1459,7 +1498,11 @@ export function packResolver(pack: PackLocation): {
   };
 }
 
-export interface LoadOptions {
+/**
+ * Which packs to load, as plain data (it crosses to the worker, which cannot
+ * be sent a function); `LoadOptions` adds how to fetch them.
+ */
+export interface LoadPacks {
   /** The body pack, e.g. `bodyPack` from `humanoid-kit-body`. */
   body: PackLocation;
   /** The adult anatomy pack. Its targets only evaluate for figures aged 18+. */
@@ -1485,6 +1528,15 @@ export interface LoadOptions {
   firstFigureAge?: number;
 }
 
+export interface LoadOptions extends LoadPacks {
+  /**
+   * How every file is requested. Default: the platform's `fetch`, and in Node a
+   * `file:` URL (what a pack package exports there) read from disk, which
+   * Node's `fetch` cannot do. Supplied, it is used for every request.
+   */
+  fetch?: FetchLike;
+}
+
 /** A later stage of a staged load: target files that arrive after the first figure. */
 export interface LoadStage {
   /** Target file ids this stage adds. */
@@ -1504,8 +1556,8 @@ export interface StagedHumanoidAssets {
 
 /** Some hosts serve `.gz` files with `Content-Encoding: gzip`, so the browser has
  * already decompressed them; only data that still starts with gzip's magic is decoded. */
-export const fetchGzip = (url: string) =>
-  fetchOk(url)
+export const fetchGzip = (url: string, fetcher?: FetchLike) =>
+  fetchOk(url, fetcher)
     .then((r) => r.arrayBuffer())
     .then((b) => {
       const head = new Uint8Array(b, 0, Math.min(2, b.byteLength));
@@ -1552,6 +1604,7 @@ export function targetLoadOrder(age: number): string[][] {
 export async function loadHumanoidAssetsStaged(
   options: LoadOptions,
 ): Promise<StagedHumanoidAssets> {
+  const hostFetch = options.fetch;
   const body = packResolver(options.body);
   const adult = options.adultAnatomy === undefined ? undefined : packResolver(options.adultAnatomy);
   const clothing = (
@@ -1563,12 +1616,16 @@ export async function loadHumanoidAssetsStaged(
   ).map(packResolver);
   const hairPack = options.hair === undefined ? undefined : packResolver(options.hair);
   const [manifest, adultManifest, clothingManifests, hairManifest] = await Promise.all([
-    fetchOk(body.manifest).then((r) => r.json() as Promise<BodyManifest>),
-    adult && fetchOk(adult.manifest).then((r) => r.json() as Promise<AdultAnatomyManifest>),
+    fetchOk(body.manifest, hostFetch).then((r) => r.json() as Promise<BodyManifest>),
+    adult &&
+      fetchOk(adult.manifest, hostFetch).then((r) => r.json() as Promise<AdultAnatomyManifest>),
     Promise.all(
-      clothing.map((c) => fetchOk(c.manifest).then((r) => r.json() as Promise<ClothingManifest>)),
+      clothing.map((c) =>
+        fetchOk(c.manifest, hostFetch).then((r) => r.json() as Promise<ClothingManifest>),
+      ),
     ),
-    hairPack && fetchOk(hairPack.manifest).then((r) => r.json() as Promise<HairManifest>),
+    hairPack &&
+      fetchOk(hairPack.manifest, hostFetch).then((r) => r.json() as Promise<HairManifest>),
   ]);
   const garmentFiles = clothing.map((_, i) => garmentsFile(i));
   const urlOf = (id: string): string | null => {
@@ -1589,7 +1646,7 @@ export async function loadHumanoidAssetsStaged(
       const url = urlOf(id);
       return url ? [[id, url] as const] : [];
     });
-    const bins = await Promise.all(present.map(([, url]) => fetchGzip(url)));
+    const bins = await Promise.all(present.map(([, url]) => fetchGzip(url, hostFetch)));
     return Object.fromEntries(present.map(([id], i) => [id, bins[i]]));
   };
   const [first, ...order] = targetLoadOrder(options.firstFigureAge ?? DEFAULT_MACROS.age);
@@ -1598,9 +1655,11 @@ export async function loadHumanoidAssetsStaged(
   const later =
     garmentFiles.length > 0 ? [order[0] as string[], garmentFiles, ...order.slice(1)] : order;
   const [bodyBin, attachments, bodyOcclusion, firstTargets] = await Promise.all([
-    fetchGzip(body.file(manifest.body.file)),
-    fetchGzip(body.file(manifest.attachments.file)),
-    manifest.bodyOcclusion ? fetchGzip(body.file(manifest.bodyOcclusion.file)) : undefined,
+    fetchGzip(body.file(manifest.body.file), hostFetch),
+    fetchGzip(body.file(manifest.attachments.file), hostFetch),
+    manifest.bodyOcclusion
+      ? fetchGzip(body.file(manifest.bodyOcclusion.file), hostFetch)
+      : undefined,
     fetchFiles(first as string[]),
   ]);
   const fileUrls = new Map<string, string>();
@@ -1649,7 +1708,9 @@ export async function loadHumanoidAssetsStaged(
       if (!entry) return Promise.reject(new AssetFormatError(`no hair style ${id}`));
       let p = fetching.get(id);
       if (!p) {
-        p = fetchGzip(hairPack.file(entry.file)).then((bin) => addHairStyle(assets, id, bin));
+        p = fetchGzip(hairPack.file(entry.file), hostFetch).then((bin) =>
+          addHairStyle(assets, id, bin),
+        );
         fetching.set(id, p);
         p.catch(() => fetching.delete(id));
       }
