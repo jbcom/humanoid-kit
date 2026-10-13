@@ -257,6 +257,9 @@ function coatAngles(mesh: SkinnedMesh, camera: Object3D): CoatRuntimeProbe["angl
   });
 }
 
+/** The frame a scene that plays no animation reports: none, so its `hkContacts` answers null. */
+const NO_ANIMATION_FRAME: React.RefObject<HumanoidAnimationFrame | null> = { current: null };
+
 /** Exposes `window.hkDrawn` while mounted: the triangles each part of the figure draws. */
 function SceneProbe({
   animationFrame,
@@ -647,7 +650,7 @@ function BodyHairLab() {
             }}
           >
             <StudioStage />
-            <SceneProbe />
+            <SceneProbe animationFrame={NO_ANIMATION_FRAME} />
             <AutoFrame
               bone={region.bone}
               view={region.view}
