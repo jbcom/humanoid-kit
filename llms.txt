@@ -4,13 +4,16 @@
 > for every age from 1 to 90, a serializable recipe with independent regional
 > traits, Catmull-Clark subdivision in a Web Worker, and an enforced age policy
 > that keeps adult anatomy in a separate package. Pre-release; the API is in
-> development. Clothing and animation are roadmap items, not implemented.
+> development. Clothing, hair, eyes, animation, rig and poses, expressions, body
+> hair, presence, interactions and a tap-to-edit creator ship; anthro traits and
+> fur, scales and feathers are planned.
 
 ## Packages
 
-- `humanoid-kit` (MIT): loading, recipes, age policy, evaluation, worker client,
-  React bindings (`humanoid-kit/react`). `humanoid-kit/editor` is declared but
-  not implemented.
+- `humanoid-kit` (MIT): loading, recipes, age policy, evaluation, rig, poses and
+  expressions, animation playback, presence, interactions, worker client, React
+  bindings (`humanoid-kit/react`) and the tap-to-edit creator
+  (`humanoid-kit/editor`).
 - `humanoid-kit-body` (CC0 1.0): base mesh, shape targets, skeleton, skin
   weights, facial pose units, shape modifiers.
 - `humanoid-kit-adult-anatomy` (CC0 1.0): adult-only targets; separate install,
@@ -40,6 +43,13 @@
 - [Architecture](https://github.com/jbcom/humanoid-kit/blob/main/docs/ARCHITECTURE.md):
   the base mesh, packs, recipe and regions, age policy, evaluation pipeline,
   subdivision, worker and layers.
+- [Age policy](https://github.com/jbcom/humanoid-kit/blob/main/docs/AGE-POLICY.md):
+  what the library enforces and what stays each application's responsibility.
+- [Presence](https://github.com/jbcom/humanoid-kit/blob/main/docs/PRESENCE.md):
+  what a figure publishes about itself for the scene around it.
+- [Interactions](https://github.com/jbcom/humanoid-kit/blob/main/docs/INTERACTIONS.md):
+  how figures, objects and places agree and play shared interactions, with the
+  build plan and its status.
 - [Regional contact and injury contract](https://github.com/jbcom/humanoid-kit/blob/main/docs/REGIONAL-CONTACTS.md):
   implemented validation for neutral contact evidence, plus planned regional
   response and injury-state proof boundaries.

@@ -54,10 +54,21 @@ Documentation: **[jbcom.github.io/humanoid-kit](https://jbcom.github.io/humanoid
   trigger animation, physiology, injury or visual response. The planned,
   neutral injury-state boundary and its renderer proof gates are in
   [Regional contact and injury contract](./docs/REGIONAL-CONTACTS.md).
-- **Skeleton and facial pose data ship, ready for later work.** The packs carry
-  the 163-bone default skeleton, skin weights and 60 facial pose units. Skin
-  weights are interpolated onto the render surface. Posing, rigging and
-  expressions are not implemented yet; see the [roadmap](#roadmap).
+- **Rig, poses and expressions.** The body pack carries the 163-bone default
+  skeleton, skin weights and 60 facial pose units. The kit fits the skeleton to
+  every morphed body, poses it, and plays named expressions over it (see
+  [Rig and poses](./docs/API.md#rig-and-poses)).
+- **Animation, as an optional pack.** `humanoid-kit-animations` plays clips on
+  any figure whatever its size, shape or age, with its planted feet held in
+  place.
+- **Body and facial hair.** Body hair follows the figure's age and recipe, and
+  the hair pack carries eyebrows, eyelashes and a beard beside the scalp styles.
+- **A tap-to-edit creator.** `humanoid-kit/editor` is a React creator over the
+  recipe, with undo, randomisation, regional overrides and a wardrobe.
+- **Presence and interactions.** A figure publishes what the scene around it
+  needs (anchors, footprint, reach, whether it is an adult), and the framework-free
+  interaction core lets figures and objects agree and play shared interactions
+  under the age policy (see [Interactions](./docs/INTERACTIONS.md)).
 
 ## Packages
 
@@ -205,7 +216,8 @@ const assets = await loadHumanoidAssets({ body: bodyPack, adultAnatomy: adultAna
 | Entry point | Contents | Needs React |
 | --- | --- | --- |
 | `humanoid-kit` | Asset loading and parsing, recipes, the age policy, macro and region model, `HumanoidModel`, subdivision, the surface builder and `HumanoidWorkerClient` | no |
-| `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady`, `PresenceProvider`, `usePresence`, `usePresenceRegistry`, `useProximity` | yes |
+| `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady`, `PresenceProvider`, `usePresence`, `usePresenceRegistry`, `useProximity`, `Miniatures`, `StudioStage`, `HumanoidAffordances` | yes |
+| `humanoid-kit/editor` | `HumanoidCreator`, `useHumanoidEditor`, `SliderRow` | yes |
 | `humanoid-kit/worker` | The worker module that `HumanoidWorkerClient` starts by default | no |
 
 See the [API reference](https://jbcom.github.io/humanoid-kit/API/) and the
@@ -213,19 +225,20 @@ See the [API reference](https://jbcom.github.io/humanoid-kit/API/) and the
 
 ## Roadmap
 
-Planned, in order. None of this exists in the code yet.
+Status per milestone. The architecture notes carry the detail
+([Roadmap](./docs/ARCHITECTURE.md#roadmap)).
 
-1. Doll form and an editor shell (`humanoid-kit/editor`)
-2. Rig, poses and expressions from the shipped skeleton and facial pose units
-3. Adult anatomy sculpting
-4. Scalp hair (implemented as the `humanoid-kit-hair` pack)
-5. Body and facial hair
-6. Anthro traits
-7. Clothing and surface layers: bound `.mhclo` layers including `delete_verts`;
-   fur, scales and feathers as layers
-8. Animation packs: `humanoid-kit-animations`, and a separate
-   `humanoid-kit-adult-animations` that refuses any participant under 18; spatial
-   awareness for multi-person interactions
+| Milestone | Status |
+| --- | --- |
+| Editor shell (`humanoid-kit/editor`) | Done. A doll form is planned |
+| Rig, poses and expressions | Done: fitted skeleton, posing, named expressions |
+| Adult anatomy sculpting | In progress: the layers, state plumbing and a refined adult surface ship; the own-sculpt phase is planned |
+| Scalp hair | Done: `humanoid-kit-hair` |
+| Body and facial hair | Body hair, eyebrows, eyelashes and one beard ship; moustaches and larger beards are planned |
+| Clothing | Done: `humanoid-kit-clothing`, bound `.mhclo` layers including `delete_verts` |
+| Anthro traits; fur, scales and feathers as layers | Planned. The shared coat module for body hair and fur is built |
+| Animation | `humanoid-kit-animations` is done; `humanoid-kit-adult-animations` waits on an owner ruling on its scope |
+| Interactions and spatial awareness | In progress: presence ships; the interaction core ships its first two slices |
 
 ## Compatibility
 

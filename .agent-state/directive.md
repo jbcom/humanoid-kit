@@ -93,7 +93,7 @@ Work continuously. A finished item is the cue to start the next one in the same 
 
 - [ ] F1 #38 Canonical branch and release path decision.
 - [ ] F2 #49 Length-constant classes; rename the head-width normaliser.
-- [ ] F3 #50 README, llms.txt and introduction describe shipped features as unimplemented.
+- [x] F3 #50 README, llms.txt and introduction describe shipped features as unimplemented.
 - [ ] F4 #51 Reconcile package and modifier counts; NOTICE for eyes and animations packs.
 - [ ] F5 #52 Invariants and age-policy wording match the code.
 - [ ] F6 #53 Record maintainer rulings and land research docs.

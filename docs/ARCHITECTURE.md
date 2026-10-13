@@ -2663,17 +2663,18 @@ inside the volume beyond the baked occlusion. Red hair's chroma is limited by th
 pheomelanin spectrum, and blond, red and white are modelled, not measured
 (`docs/research/HAIR-COLOUR.md`).
 
-**Named gap: coily and kinky textures.** The ten styles are the whole of what
-the system pack's CC0 header proves, and nearly all of them are straight or wavy
-hair: `short02`, `short03`, `short04`, `bob01`, `bob02`, `long01`, `ponytail01`
-and `braid01` (a straight-textured side braid). Two are curly: `afro01`, one
-short afro, and `short01`, a textured crop of loose curls. Missing outright:
-locs, twists and many-braid styles, cornrows, bantu knots, tight curls at any
-length other than the one afro, and a close crop, taper or fade (a style that
-leaves the scalp showing under very short hair; the scalp tint is built for
-it, but no style uses it). A figure of any skin tone can wear any style, so the
-pack does not exclude anyone by tone, but it does by hair texture, and it must
-not be presented as if its coverage were complete.
+**Named gap: tight curls in the longer styles.** The ten MakeHuman styles are
+the whole of what the system pack's CC0 header proves, and nearly all of them
+are straight or wavy hair: `short02`, `short03`, `short04`, `bob01`, `bob02`,
+`long01`, `ponytail01` and `braid01` (a straight-textured side braid). Two are
+curly: `afro01`, one short afro, and `short01`, a textured crop of loose curls.
+The coily and braided textures are covered by the authored styles (box braids
+`braids01`, `cornrows01`, two-strand twists `twists01`, locs `locs01` and bantu
+knots `bantu01`) and by `crop01`, a close crop with a fade, so the pack now
+holds 16 scalp styles. Still missing: tight curls at any length other than the
+one afro. A figure of any skin tone can wear any style, so the pack does not
+exclude anyone by tone, but it does by hair texture, and it must not be
+presented as if its coverage were complete.
 
 The tier-2 candidates in the sourcing catalogue (`mhclo` and `obj` both carry
 `license CC0`, no sibling contradicts) do not close it: the six Toigo bobs
@@ -2685,9 +2686,9 @@ braids, `culturalibre_hair_05/06`) fail the *current* gate because their files s
 CC-BY or AGPL, or contradict a `license CC0` line. Whether a file's licence line
 can be stale after MakeHuman's move to CC0 is being re-verified with dated
 evidence (licence history), so those are **pending licence-history verification,
-not rejected**. Until one is proved, closing the gap needs an **authored or
-procedural coily style** (instanced curl cards or strand clumps over the same
-scalp and growth fields), which is a milestone of its own. Evidence and the
+not rejected**. Until one is proved, closing what remains needs further
+**authored or procedural coily styles** (curl cards or strand clumps over the same
+scalp and growth fields, as the authored styles above already are). Evidence and the
 audit are in `docs/evidence/hair.md`.
 
 ### Eyebrows and eyelashes (the hair pack)
@@ -3932,8 +3933,10 @@ Milestones, in the order each is proven (built in parallel lanes; see
 
 1. **Doll form and editor shell.** Implemented: `humanoid-kit/editor`, a
    tap-to-edit creator over the recipe (see Editor).
-2. **Rig, poses and expressions.** A skeleton fitted to the morphed body, posing,
-   and the facial pose units.
+2. **Rig, poses and expressions.** Implemented: a skeleton fitted to the morphed
+   body, posing, and the facial pose units with named expressions (see
+   "Skeleton, poses and expressions"). MakeHuman's body pose units are not
+   packed (`docs/evidence/body-poseunits.md`).
 3. **Adult anatomy sculpt.** Sculpting on top of the adult anatomy pack, for
    figures aged 18 or over. Phase 1 (the layer, state and age-gating plumbing on
    today's CC0 targets) is in place ("Adult-pack layers"); the own-sculpt phase
@@ -3942,19 +3945,24 @@ Milestones, in the order each is proven (built in parallel lanes; see
    `helper-genital`, which is never drawn, so the penis and testes skin layers
    and engorgement are invisible until the sculpt puts adult geometry on the
    surface.
-4. **Scalp hair.** Implemented: `humanoid-kit-hair` (see "Scalp hair"); its
-   texture coverage is incomplete (a named gap there), and body and facial hair
-   is the next milestone.
-5. **Body and facial hair.**
-6. **Anthro traits.**
-7. **Clothing and surface layers.** Layers bound to the base mesh, including
-   `.mhclo` assets with `delete_verts`; fur, scales and feathers as layers.
-8. **Animation packs.** `humanoid-kit-animations`, and a separate
-   `humanoid-kit-adult-animations` that refuses any participant under 18, plus
-   spatial awareness for multi-person interactions. How figures, objects and
-   fixtures offer, claim and play interactions together, and where the age
-   policy is enforced in them, is designed in
-   [Interactions](INTERACTIONS.md).
+4. **Scalp hair.** Implemented: `humanoid-kit-hair` (see "Scalp hair"); one
+   texture gap remains (tight curls in the longer styles, named there).
+5. **Body and facial hair.** Implemented: body hair by region, age and recipe,
+   drawn as skin layers and a shared coat (see "Body hair"), and the hair pack's
+   eyebrows, eyelashes and one beard (`beard-full`). Planned: moustaches and
+   larger beards (issue 14).
+6. **Anthro traits.** Planned. The coat module is shared with body hair so that
+   fur can add its own regions and patterns (see "The coat").
+7. **Clothing and surface layers.** Implemented: layers bound to the base mesh,
+   including `.mhclo` assets with `delete_verts` (see "Clothing"). Planned: fur,
+   scales and feathers as layers.
+8. **Animation packs.** Implemented: `humanoid-kit-animations`. Pending an owner
+   ruling on whether it belongs in this repository (issue 54): a separate
+   `humanoid-kit-adult-animations` that refuses any participant under 18.
+   Presence is implemented ("Presence"); the interaction core is in progress,
+   with slices 1 and 2 built. How figures, objects and fixtures offer, claim and
+   play interactions together, and where the age policy is enforced in them, is
+   designed in [Interactions](INTERACTIONS.md).
 
 **Skin states**, across milestones 2 to 8. Skin is not a set of uniformly
 coloured regions at rest. A nipple differs from its areola, the vermilion from

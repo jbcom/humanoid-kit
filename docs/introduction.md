@@ -33,9 +33,9 @@ never installs the hair pack never downloads hair.
 | Entry point | Contents | Dependencies |
 | --- | --- | --- |
 | `humanoid-kit` | Loading, recipes, age policy, `HumanoidModel`, subdivision, surface builder, `HumanoidWorkerClient` | none beyond the packs |
-| `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady` | `react`, `@react-three/fiber`, `three` |
+| `humanoid-kit/react` | `HumanoidProvider`, `Humanoid`, `useHumanoidClient`, `useHumanoidReady`, the presence bindings (`PresenceProvider`, `usePresence`, `useProximity`), `Miniatures`, `StudioStage`, `HumanoidAffordances` | `react`, `@react-three/fiber`, `three` |
+| `humanoid-kit/editor` | `HumanoidCreator`, a tap-to-edit creator over the recipe, `useHumanoidEditor`, `SliderRow` | `react`, `@react-three/fiber`, `three` |
 | `humanoid-kit/worker` | The worker module the client starts by default | none |
-| `humanoid-kit/editor` | Declared in `package.json`; **not implemented yet** | |
 
 React, React Three Fiber and drei are optional peer dependencies. The core entry
 point imports no React or three.js; it returns typed arrays that you can turn
@@ -54,8 +54,12 @@ into geometry yourself, and it runs in Node, which is how its tests run.
 
 ## What is planned
 
-Clothing, body and facial hair, anthro traits and animation packs are not
-implemented. The [architecture notes](./ARCHITECTURE/) list the roadmap.
+Anthro traits, fur, scales and feathers as layers, a doll form, moustaches and
+larger beards, and an adult animation package (pending an owner ruling on its
+scope) are planned. Clothing, scalp and body hair, animation, rig and poses,
+expressions, presence, the creator and the first interaction slices ship. The
+[architecture notes](./ARCHITECTURE/) list the roadmap with each milestone's
+status.
 
 Start with [Getting started](./getting-started/), then read the
 [API reference](./API/) and the [architecture notes](./ARCHITECTURE/).
