@@ -1767,9 +1767,22 @@ request. `assertRegionalContact(contact, own)` is the implemented pure
 validator: it checks a finite location, unit normal, non-negative force and
 duration, phase, and whether `surface` versus `aperture-entry` agrees with the
 registered affordance. It does not create a response, animation, deformation or
-injury. There is no exported `InjuryState` today. See [Regional contact and
-injury contract](REGIONAL-CONTACTS.md) for the planned region-specific opening,
-recovery, injury, persistence and renderer-proof gates.
+injury.
+
+`RegionalInjuryState` is a separate framework-free state boundary. Its
+`RegionalInjury` union distinguishes `surface-marking`,
+`transient-deformation` and `persistent-body-change` records.
+`RegionalInjuryAnchor` pins a base-mesh vertex to the loaded body
+`topology` and body SHA-256; incompatible anchors fail instead of
+retargeting. Every record carries consumer-authored creation and update time,
+an opaque `sourceCategory` and an opaque non-empty `severityBand`; the kit
+assigns neither clock semantics nor severity thresholds. State methods return
+events for the applied action, while records retain the current lifecycle and
+metadata. `snapshot()` serializes only records explicitly marked `saved`;
+`restore()` validates that boundary and always reports a replacement event.
+`routeRegionalInjuryLayers()` passes active records to a caller-owned body or
+under-cover layer without rendering, collision or affordance effects. See the [regional contact and injury
+contract](REGIONAL-CONTACTS.md) for lifecycle and renderer-proof limits.
 
 ## `humanoid-kit/editor`
 

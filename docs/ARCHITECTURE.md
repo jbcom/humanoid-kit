@@ -4167,22 +4167,30 @@ state. A surface remains intact skin; only a registered aperture can report an
 entry. This prevents a contact sample, including a future injury location, from
 becoming a universal opening.
 
-Dynamic injury state is planned and is deliberately outside the current public
-API. Its record must distinguish an intact-surface marking, a recoverable
-body-space deformation, and a persistent body-space change or scar. Each record
-needs a version, a stable anatomical anchor, an explicit lifecycle, and an
-explicit persistence policy. It must resolve through the morphed and posed
-skinned body, while garments and wrappings use their existing body binding to
-show coherent coverage. Creation changes neither collision nor affordance
-clearance unless a later, separately specified feature opts in and proves it.
+`RegionalInjuryState` is the separate public, framework-free state boundary.
+Its records distinguish an intact-surface marking, a recoverable body-space
+deformation, and a persistent body-space change or scar. Every
+`RegionalInjuryAnchor` names a base-mesh vertex and the exact body topology
+and body SHA-256 that supplied it. Validation rejects a topology or hash mismatch
+rather than retargeting. Lifecycle calls are explicit and observable:
+`create`, `update`, `resolve`, `restore` and `reset`; resolving a record
+twice is idempotent. A transient deformation is session-only and carries its
+declared duration. Every class has consumer-authored creation and update time,
+an opaque source category and an opaque non-empty severity band. The kit does
+not impose a global clock, source taxonomy, severity ordering or threshold.
+Records are current state; method return values are the observable event that
+was applied. Snapshots contain only explicitly saved records. Restoring always
+reports a successful replacement, even when the snapshot matches exactly.
 
-Consumers own event interpretation. Curse and Prayers may map their own
-projectile or blade events to neutral records and select art, pacing, damage and
-save policy locally. The kit does not classify a gameplay event, synthesize a
-visual injury, or claim a physical or medical response. The detailed planned
-record, lifecycle and test gates are in
-[Regional contact and injury contract](REGIONAL-CONTACTS.md); no renderer proof
-exists yet.
+The state boundary does not render, evaluate a pose, bind a garment, classify an
+event, synthesize a visual effect, or claim a physical or medical response.
+`routeRegionalInjuryLayers()` supplies active records to a caller-owned body
+or under-cover layer so coverage never silently drops a record. A renderer must
+still resolve the compatible base vertex through its current morph, pose and
+skin binding, and garments or wrappings must supply their own coherent coverage.
+Creation changes neither collision nor affordance clearance. The remaining
+renderer and visual proof gates are in the [regional contact and injury
+contract](REGIONAL-CONTACTS.md).
 
 ## Invariants
 
