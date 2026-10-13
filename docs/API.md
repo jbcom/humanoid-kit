@@ -969,6 +969,9 @@ and expressions"). Framework-free.
   symmetric: each is the reflection of its partner (`mirrorUnit(unit)`: `Left`
   and `Right` swapped, `MouthLeftPullUp` ↔ `MouthRightPullUp`; a central unit
   such as `JawDrop` is its own), so a symmetric expression moves both sides alike.
+  MakeHuman 1's expression files are only unit weights, so any of them applies as
+  `faceUnitRotations(rig, weights)` (docs/evidence/expressions.md); its body pose
+  units are not packed (docs/evidence/body-poseunits.md).
 - `EXPRESSIONS`, `expressionUnits(id, intensity = 1)`: ten named expressions
   (`smile`, `grin`, `frown`, `surprise`, `anger`, `disgust`, `fear`, `sad`,
   `blink`, `squint`) as face unit weights, symmetric, for a pose's `faceUnits`
