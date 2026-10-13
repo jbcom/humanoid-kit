@@ -106,6 +106,8 @@ import {
   composeRotations,
   faceUnitRotations,
   IDENTITY_POSE,
+  type JointChannels,
+  jointChannelRotations,
   restBonesFrom,
   wornGroundOffset,
 } from "../rig/pose.ts";
@@ -284,6 +286,13 @@ export interface HumanoidPresenceProps {
  */
 export interface HumanoidPose {
   body?: string;
+  /**
+   * Joints posed by hand, laid over `body` (or the rest pose): BVH channel
+   * degrees per joint, as in the authored pose files,
+   * `{ "upperarm01.L": { Xrotation: -22, Yrotation: -138 } }`. A joint named
+   * here takes these channels instead of the body pose's.
+   */
+  joints?: JointChannels;
   faceUnits?: Readonly<Record<string, number>>;
 }
 
@@ -1160,15 +1169,19 @@ export function Humanoid({
   // the attachments' occlusion following it.
   const faceUnits = useSameEntries(pose?.faceUnits);
   const body = pose?.body;
+  // Keyed by content, so joints passed inline do not re-pose on every render.
+  const jointsKey = pose?.joints ? JSON.stringify(pose.joints) : null;
+  // The body's pose: the pack's named pose with the hand-posed joints laid over, or null at rest.
+  const bodyRotations = useMemo(() => {
+    if (!ready || (!body && !jointsKey)) return null;
+    const named = body ? bodyPoseRotations(ready.rig, body) : IDENTITY_POSE(ready.rig.bones.length);
+    return jointsKey ? jointChannelRotations(ready.rig, JSON.parse(jointsKey), named) : named;
+  }, [ready, body, jointsKey]);
   const rotations = useMemo(() => {
-    if (!ready || (!body && !faceUnits)) return null; // rest
+    if (!ready || (!bodyRotations && !faceUnits)) return null; // rest
     const face = faceUnitRotations(ready.rig, faceUnits ?? {});
-    return body ? composeRotations(bodyPoseRotations(ready.rig, body), face) : face;
-  }, [ready, body, faceUnits]);
-  const bodyRotations = useMemo(
-    () => (ready && body ? bodyPoseRotations(ready.rig, body) : null),
-    [ready, body],
-  );
+    return bodyRotations ? composeRotations(bodyRotations, face) : face;
+  }, [ready, bodyRotations, faceUnits]);
 
   // The garments worn: their geometry is built when an evaluation brings the
   // outfit's masks, and replaced when a different outfit does. The body's own
@@ -1215,7 +1228,7 @@ export function Humanoid({
         opening > (faceUnits?.JawDrop ?? 0) ? { ...faceUnits, JawDrop: opening } : faceUnits;
       faceRef.current = units ? faceUnitRotations(ready.rig, units) : null;
       let q: BoneRotations;
-      if (!body && !units) q = IDENTITY_POSE(ready.rig.bones.length);
+      if (!bodyRotations && !units) q = IDENTITY_POSE(ready.rig.bones.length);
       else {
         const face = faceRef.current ?? faceUnitRotations(ready.rig, {});
         q = bodyRotations ? composeRotations(bodyRotations, face) : face;
@@ -1227,7 +1240,7 @@ export function Humanoid({
       if (dual && ev)
         dual.update(restBonesFrom(ready.rig.bones, ready.rig.parents, ev.boneHeads), q);
     },
-    [rig, ready, keyBasis, occlusionKeys, dual, body, bodyRotations, faceUnits],
+    [rig, ready, keyBasis, occlusionKeys, dual, bodyRotations, faceUnits],
   );
   const writePoseRef = useLatest(writePose);
   useEffect(() => writePose(figure), [writePose, figure]);
