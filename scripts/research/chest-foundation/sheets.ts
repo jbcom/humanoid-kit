@@ -49,8 +49,14 @@ export const VIEWS = {
 } as const;
 export type ViewName = keyof typeof VIEWS;
 
-/** The body pose of a side view: the arms lifted clear of the chest's profile. */
-export const SIDE_POSE = "abducted";
+/**
+ * The body pose of a side view: `relaxed`, the arms hanging straight down the
+ * mid-axillary line, behind the breast's profile. Chosen on the real renderer
+ * (NOTES.md): rest and abducted still cross the profile with the near arm, overhead
+ * clears it but lifts the breast (the ptosis the sheet reads), and MakeHuman's
+ * T-pose points the near arm at a camera under a metre away, which cuts it open.
+ */
+export const SIDE_POSE = "relaxed";
 
 export interface Tile {
   label: string[];

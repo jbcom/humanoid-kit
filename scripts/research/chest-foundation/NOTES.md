@@ -70,8 +70,13 @@ chest's development across ages 5 to 70, which a garment would hide; rulings 4 a
 restrict a child's natural form. The sheets stay in the private cache, never
 committed. (The age montage keeps its own cover; this is the lab's choice only.)
 
-Decision: side views pose the arms out (`abducted`) and turn 7 degrees to the front:
-at rest the near arm fills a side view and hides the profile.
+Decision: side views use the `relaxed` pose and turn 7 degrees to the front. Probed
+on the real renderer: at rest and abducted the near arm still crosses the breast's
+profile; overhead clears it but lifts the breast (the ptosis the sheet is there to
+read); MakeHuman's T-pose clears it, but the near arm then points at a camera under a
+metre away and the near plane cuts it open on 8 of 72 scatter tiles; relaxed hangs
+the arms down the mid-axillary line behind the profile, and the whole side scatter
+reads with no arm over a breast.
 
 Decision: two extremes sheets. `chest-extremes` corners the chest's own axes (size,
 firmness, melanin, undertone, ethnic vertex) and holds muscle, weight, height and the
@@ -89,3 +94,38 @@ buried the chest under body-wide failures (tube arms, belly rolls at weight 1).
   average-tissue frame at size 1, firmness 0 the generator matches MakeHuman's figure
   to 1.9e-9 m, and both turn the same 146 faces past 90 degrees from the average cup
   (the underside folding against the chest wall). Left as upstream data.
+- The white blotch at the raised arm's armpit and the streak along the clavicle and
+  trapezius are the studio stage's rim light, not the skin's specular and not the lab.
+  Toggled one at a time on the overhead tile and a rest front tile: the mark survives
+  skin specular 0, sheen 0, no normal map, roughness 1, no environment, no colour map,
+  no layer channels, no body art, no scalp tint, no subsurface scatter, skin only, no
+  body hair and no custom target (the plain figure has it too), and goes with all
+  lights off. Lit by one light at a time, only the third directional light makes it:
+  `StudioStage`'s unshadowed rim at (-1.2, 2.4, -3), intensity 1.6, which reaches
+  the up- and back-facing planes of the shoulder and the raised arm's inner side from
+  behind, through the body, and its hard terminator draws the streak's edge. A kit
+  render defect (src/react/StudioStage.tsx), reported, not patched in the lab.
+- Posed: the twisted and seated reads carry the tissue with the rig; the breast turns
+  with the rib cage under the twist and stays at rest when seated, with no tear or
+  seam at the support's edge on any of the 14 posed tiles.
+
+## Per age on the scatter sheets
+
+Relief is RMS/peak in mm of the added tissue at size .5 and size 1 (firmness .5) on
+the average-tissue frame; neighbours' difference is the pairwise RMS at size 1.
+
+| age | what the sheet shows | relief .5 / 1 | vs next age |
+| --- | --- | --- | --- |
+| 5 | child torso; flat to a soft bud at high size, areola faint | 4.6/15 · 16.5/44 | 14.8 mm: clear |
+| 9 | budding at low size; at size near 1 a full, low breast | 5.8/18 · 31.2/82 | 5.2 mm: clear |
+| 13 | small to full adolescent breast, rounder, higher | 7.9/24 · 35.8/96 | 4.8 mm: clear |
+| 18 | adult breast across the whole size range | 11.2/33 · 37.8/105 | 0.0 mm: identical |
+| 25 | the same body as 18 (the kit's adult hold) | 11.2/33 · 37.8/105 | 3.5 mm: subtle |
+| 40 | adult; low firmness starts to drop the lower pole | 11.1/33 · 37.3/104 | 3.5 mm: subtle |
+| 55 | lower, longer lower pole at low firmness | 11.0/32 · 37.1/103 | 3.5 mm: subtle |
+| 70 | most ptosis; long, low breast at low firmness | 11.0/32 · 37.2/102 | n/a |
+
+From 18 on, neighbouring ages read apart only side by side on matched size and
+firmness (the strips), not across the scatter, where size and firmness swamp a
+3.5 mm age step. The 9 y figure at size 1 carries 31 mm RMS of MakeHuman's own child
+targets; that is parity (above), and it is the tile a reviewer will question first.
