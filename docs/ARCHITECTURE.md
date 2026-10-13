@@ -2951,7 +2951,12 @@ root on the parts at least `BEARD_CARD_MIN_LENGTH` (5 mm) long, each card at
 its part's length, and volume scales their number and their lift. Long cards
 drape (`CardDrape`, numbers in `DRAPE`). Their quads are about 2.5 cm long, so
 they bend. Between 1 and 5 cm from the root they turn from the comb to fall,
-a little forward. The chin's hair forks toward its side by `fork`, and the
+a little forward, gathering toward the middle (`CardDrape.gather`, 0.55 for
+beards: a card falls toward 45% of its root's distance from the midline, over
+about 8 cm of drop), so cheek hair joins the chin's in one mass rather than
+fanning over the chest; a card widens with its length (`CardSpec.widen`, 4 cm
+a metre up to 30 cm), a long one a lock. The chin's hair forks into two
+points `DRAPE.forkApart` (4.5 cm) either side by `fork`, and the
 moustache parts out from the middle by `part`. Past the first centimetre each
 point is pushed off the body's nearest surface and slides along it, so a
 chest-length beard lies on the chest instead of passing through it. A card's

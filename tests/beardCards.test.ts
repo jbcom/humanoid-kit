@@ -188,6 +188,36 @@ describe("beard cards", () => {
     for (const o of occ) expect(o >= 0 && o <= 1).toBe(true);
   });
 
+  it("gather a long beard toward the middle as it falls, rather than fanning over the chest", () => {
+    const cards = generateBeardCards(assets, beard({ style: "longstreet", length: 0.4 })) as Cards;
+    const p = rest(cards);
+    const roots: number[] = [];
+    const tips: number[] = [];
+    for (let c = 0; c < cards.cardCount; c++) {
+      const e = ends(cards, p, c);
+      if (chinY - e.tip[1] < 0.2) continue;
+      roots.push(Math.abs(e.root[0]));
+      tips.push(Math.abs(e.tip[0]));
+    }
+    const mean = (a: number[]) => a.reduce((s, x) => s + x, 0) / a.length;
+    expect(tips.length).toBeGreaterThan(50);
+    expect(mean(tips)).toBeLessThan(0.7 * mean(roots));
+  });
+
+  it("widen with length, so a long beard is locks and a short one fine hair", () => {
+    const widthOf = (b: ResolvedBeard) => {
+      const cards = generateBeardCards(assets, b) as Cards;
+      const p = rest(cards);
+      const v = cards.cardStart[0] as number;
+      return Math.hypot(
+        ...[0, 1, 2].map((k) => (p[v * 3 + k] as number) - (p[(v + 1) * 3 + k] as number)),
+      );
+    };
+    expect(widthOf(beard({ style: "full", length: 0.3 }))).toBeGreaterThan(
+      2 * widthOf(beard({ style: "full", length: 0.02 })),
+    );
+  });
+
   it("fork the chin's hair into two points", () => {
     const spreadOf = (fork: number) => {
       const cards = generateBeardCards(assets, beard({ style: "forked", fork })) as Cards;

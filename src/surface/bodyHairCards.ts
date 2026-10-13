@@ -72,6 +72,9 @@ export function rootShare(m: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/** A card stops widening with length past this (`CardSpec.widen`), metres: a lock is only so wide. */
+export const WIDEN_UP_TO = 0.3;
+
 export interface CardSpec {
   id: string;
   /** Per base vertex, 0..1: where cards grow, and how densely. */
@@ -81,6 +84,11 @@ export interface CardSpec {
   /** A card's length and width, metres. */
   length: number;
   width: number;
+  /**
+   * Width added per metre of a card's own length up to `WIDEN_UP_TO` (default
+   * 0): a long card is a lock of many hairs, a short one a few.
+   */
+  widen?: number;
   /** How far a card's tip stands off the skin, as a fraction of its length. */
   lift: number;
   /** How far each card's direction may turn from the flow, radians. */
@@ -110,6 +118,12 @@ export interface CardDrape {
   /** Per base vertex, 0..1, where the part acts (the moustache), and its strength, 0..1. */
   partMask: Float32Array;
   part: number;
+  /**
+   * How far falling hair gathers toward the middle, 0..1: a card falls toward
+   * this fraction of the way from its root's side to the midline (or to its
+   * fork's point), so cheek hair joins the chin's in one mass.
+   */
+  gather: number;
 }
 
 export interface Cards {
@@ -141,8 +155,10 @@ export const DRAPE = {
   fallTo: 0.05,
   /** How far forward of straight down hair falls (it clears the chest), per unit drop. */
   fallForward: 0.12,
-  /** How far a full fork turns the chin's hair sideways, per unit drop. */
-  forkTurn: 0.7,
+  /** How far apart a full fork's two points hang from the middle, each side. */
+  forkApart: 0.045,
+  /** Falling hair closes on where it gathers (`CardDrape.gather`) over about this drop. */
+  gatherOver: 0.08,
   /** How far a full part turns the moustache's hair out from the middle, against its comb. */
   partTurn: 1.5,
   /** Past this far from the root a card keeps this clear of the body. */
@@ -322,7 +338,10 @@ function drapePath(
       start = norm(add(dir, scale(norm(outward), partW * DRAPE.partTurn)));
   }
   start = norm(add(start, scale(normal, spec.lift)));
-  const fall = norm([forkW * DRAPE.forkTurn * sign, -1, DRAPE.fallForward]);
+  // Where it falls to across the body: gathered toward the middle, or to its fork's point.
+  const gatherX = root[0] * (1 - drape.gather) + sign * forkW * DRAPE.forkApart;
+  const fallAt = (p: Vec3): Vec3 =>
+    norm([Math.max(-1, Math.min(1, (gatherX - p[0]) / DRAPE.gatherOver)), -1, DRAPE.fallForward]);
   const step = len / segments;
   const target = { point: new Vector3(), distance: 0, faceIndex: 0 };
   const q = new Vector3();
@@ -370,7 +389,7 @@ function drapePath(
   for (let s = 1; s <= segments; s++) {
     const travelled = (s - 1) * step;
     const g = smoothstep(DRAPE.fallFrom, DRAPE.fallTo, travelled);
-    let d = norm(add(scale(start, 1 - g), scale(fall, g)));
+    let d = norm(add(scale(start, 1 - g), scale(fallAt(p), g)));
     if (resting) {
       const into = dot(d, resting);
       if (into < 0) d = norm(sub(d, scale(resting, into)));
@@ -495,7 +514,8 @@ export function generateCards(assets: HumanoidAssets, spec: CardSpec): Cards {
         for (let s = 0; s <= segments; s++) {
           const t = s / segments;
           const centre = path.centres[s] as Vec3;
-          const half = (spec.width / 2) * (1 - 0.5 * t);
+          const lock = spec.width + (spec.widen ?? 0) * Math.min(len, WIDEN_UP_TO);
+          const half = (lock / 2) * (1 - 0.5 * t);
           // Bound to the root's triangle, or to the body under it where it lies on one.
           const anchor = path.anchors?.[s] ?? null;
           const tri = anchor ? anchor.tri : tri3;

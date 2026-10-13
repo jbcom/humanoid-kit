@@ -16,11 +16,22 @@ import { type BeardPart, beardMasks } from "./regions/bodyHairCoat.ts";
 export const BEARD_CARD_MIN_LENGTH = 0.005;
 
 /**
- * The cards' numbers at a volume of 1, as the packed full beard had them: cards
- * per cm², width (metres), lift (the slope a card leaves the skin at), and how
- * far a card may turn from the comb (radians). Choices.
+ * The cards' numbers at a volume of 1: cards per cm², width (metres) and the
+ * width a metre of length adds (a long card is a lock), lift (the slope a
+ * card leaves the skin at), how far a card may turn from the comb (radians),
+ * and how far falling hair gathers to the middle. Choices, read off the
+ * sheets against a trimmed full beard and Longstreet's portrait: enough
+ * cards that the beard is a mass, not strands on bare skin.
  */
-const BEARD_CARD = { density: 0.9, width: 0.005, lift: 0.3, spread: 0.45, seed: 0x5eed } as const;
+const BEARD_CARD = {
+  density: 2,
+  width: 0.005,
+  widen: 0.04,
+  lift: 0.3,
+  spread: 0.45,
+  gather: 0.55,
+  seed: 0x5eed,
+} as const;
 
 const PARTS: readonly BeardPart[] = ["moustache", "chin", "cheeks"];
 
@@ -115,6 +126,7 @@ export function beardCardSpec(assets: HumanoidAssets, resolved: ResolvedBeard): 
     density: BEARD_CARD.density * beard.volume,
     length: Math.max(...grown.map((p) => beard.parts[p])),
     width: BEARD_CARD.width,
+    widen: BEARD_CARD.widen,
     lift: BEARD_CARD.lift * Math.sqrt(beard.volume),
     spread: BEARD_CARD.spread,
     seed: BEARD_CARD.seed,
@@ -124,6 +136,7 @@ export function beardCardSpec(assets: HumanoidAssets, resolved: ResolvedBeard): 
       fork: beard.fork,
       partMask: masks.moustache,
       part: beard.part,
+      gather: BEARD_CARD.gather,
     },
   };
 }
