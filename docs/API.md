@@ -640,7 +640,8 @@ compute what the renderer will do.
 - Body hair (research/BODY-HAIR.md): `BODY_HAIR_GROUPS` (`face`, `chest`,
   `abdomen`, `back`, `buttocks`, `arms`, `legs`, `axillary` (from puberty, 13),
   and the adult-only `pubic`, `ADULT_ONLY_BODY_HAIR`, `isAdultOnlyBodyHair(group)`),
-  `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `full`).
+  `BEARD_STYLES` (`none`, `stubble`, `moustache`, `goatee`, `imperial`,
+  `mutton-chops`, `chin-curtain`, `full`, `forked`, `longstreet`).
   `defaultBodyHairCoverage(group, age, gender)` is a group's terminal-hair
   coverage 0..1 (the Ferriman-Gallwey grade over 4) for an age in years and
   the gender macro read as the androgen level: 0 before puberty, rising through

@@ -22,6 +22,7 @@ import {
   type BeardStyle,
   type BodyHairGroup,
   type BodyHairRecipe,
+  beardSpec,
   isAdultOnlyBodyHair,
   MAX_BODY_HAIR_DENSITY,
 } from "../../surface/bodyHair.ts";
@@ -341,7 +342,11 @@ export function AppearancePanel({
                 key={id ?? "default"}
                 type="button"
                 className="hk-chip"
-                aria-pressed={(recipe.bodyHair?.beard ?? null) === id}
+                aria-pressed={
+                  recipe.bodyHair?.beard === undefined
+                    ? id === null
+                    : beardSpec({ bodyHair: recipe.bodyHair }).style === id
+                }
                 onClick={() => {
                   onFocus(face);
                   setBodyHair((b) => withBeard(b, id));
@@ -424,10 +429,17 @@ function EyeTexturePicker({
   );
 }
 
-/** A body hair recipe with this beard (null: the default for age and sex). */
-function withBeard(b: BodyHairRecipe, beard: BeardStyle | null): BodyHairRecipe {
-  const { beard: _, ...rest } = b;
-  return beard === null ? rest : { ...rest, beard };
+/**
+ * A body hair recipe with this beard style (null: the default for age and
+ * sex). A beard with controls keeps them: only its style changes.
+ */
+function withBeard(b: BodyHairRecipe, style: BeardStyle | null): BodyHairRecipe {
+  const { beard: old, ...rest } = b;
+  if (style === null) return rest;
+  return {
+    ...rest,
+    beard: old !== undefined && typeof old !== "string" ? { ...old, style } : style,
+  };
 }
 
 /** A body hair recipe with one group's density multiplier set. */
@@ -443,7 +455,12 @@ const BEARD_CHOICES: readonly (readonly [BeardStyle | null, string])[] = [
   ["stubble", "Stubble"],
   ["moustache", "Moustache"],
   ["goatee", "Goatee"],
+  ["imperial", "Imperial"],
+  ["mutton-chops", "Mutton chops"],
+  ["chin-curtain", "Chin curtain"],
   ["full", "Full beard"],
+  ["forked", "Forked"],
+  ["longstreet", "Longstreet"],
 ];
 
 const BODY_HAIR_SLIDERS: { group: BodyHairGroup; label: string; description: string }[] = [

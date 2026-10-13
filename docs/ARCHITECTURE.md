@@ -2187,7 +2187,8 @@ Old recipes evaluate and serialise as before.
 - *The recipe holds multipliers, not densities.* `recipe.bodyHair` is optional
   (the recipe schema grows only by optional fields): `density` is a multiplier
   per group on the default for age and sex (0 shaves a region, 2 doubles it,
-  clamped to full coverage), and `beard` a style. A multiplier, not an absolute
+  clamped to full coverage), and `beard` a style, or a style with its
+  controls (see "Beards" below). A multiplier, not an absolute
   value, keeps a saved recipe right as the figure ages: the same recipe at 12,
   30 and 80 shows each age's hair. Absent fields are not filled in by
   `createRecipe`, so a recipe that never set body hair serialises exactly as
@@ -2427,8 +2428,11 @@ curtain, full, forked, Longstreet) differ in which parts grow (moustache,
 chin, cheeks, the coat's parts) and their default length, from 1.5 mm of
 stubble to 35 cm of a chest-length Longstreet. `length` is the longest part's,
 in metres; each part keeps its share of it, so one number grows a beard over
-a game's months without swapping assets, and the model clamps it to the
-chin's height above the floor. The use cases decided it: a close-up portrait
+a game's months without swapping assets, and `resolveBeard` clamps it to the
+chin's height above the floor. Status: the controls are validated and
+resolved, but the coat and cards still draw each style's fixed lengths
+(`BEARD_LENGTHS`, `FULL_BEARD_CARD_LENGTH`); drawing the resolved beard is the
+next step of issue #14. The use cases decided it: a close-up portrait
 needs the style legible at a glance (cards), a beard growing during play
 needs one continuous length (no per-length pack), painted miniatures need a
 closed solid mass (no fur shader), and a character colour needs the grey

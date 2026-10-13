@@ -22,6 +22,7 @@ import {
   type BeardStyle,
   BODY_HAIR_FIBRE,
   type BodyHairGroup,
+  beardSpec,
   beardStyle,
   bodyHairColour,
   bodyHairCoverage,
@@ -231,7 +232,7 @@ const LIE = { stubble: 0.15, grown: 0.6, trunk: 0.75 } as const;
  * A recipe that says nothing of body hair draws no coat.
  */
 export function coatEnabled(group: BodyHairGroup, input: SkinPaintInput): boolean {
-  if (group === "face") return (input.bodyHair?.beard ?? "none") !== "none";
+  if (group === "face") return beardSpec(input).style !== "none";
   return input.bodyHair?.density?.[group] !== undefined;
 }
 

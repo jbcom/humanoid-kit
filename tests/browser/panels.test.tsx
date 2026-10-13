@@ -8,6 +8,7 @@ import { CREATOR_CSS } from "../../src/editor/ui/styles.ts";
 import type { HumanoidEditor } from "../../src/editor/ui/useHumanoidEditor.ts";
 import { WardrobePanel } from "../../src/editor/ui/WardrobePanel.tsx";
 import { createRecipe } from "../../src/recipe/recipe.ts";
+import type { BodyHairRecipe } from "../../src/surface/bodyHair.ts";
 import { DEFAULT_HAIR_COLOUR } from "../../src/surface/hairTone.ts";
 import type { ReadyInfo } from "../../src/worker/protocol.ts";
 import { EditorHarness, readyInfo } from "./harness.tsx";
@@ -274,13 +275,13 @@ describe("AppearancePanel", () => {
   });
 
   describe("body hair", () => {
-    const panel = async (age: number) => {
+    const panel = async (age: number, bodyHair?: BodyHairRecipe) => {
       const seen: { editor?: HumanoidEditor } = {};
       const screen = await render(
         <Styled>
           <EditorHarness
             ready={readyInfo()}
-            initial={createRecipe({ macros: { age, gender: 1 } })}
+            initial={createRecipe({ macros: { age, gender: 1 }, ...(bodyHair && { bodyHair }) })}
             onEditor={(e) => (seen.editor = e)}
           >
             {(editor) => <AppearancePanel editor={editor} onFocus={noFocus} />}
@@ -303,16 +304,30 @@ describe("AppearancePanel", () => {
       expect(seen.editor?.recipe.bodyHair).toBeUndefined();
     });
 
+    it("shows a beard with controls as its style, and keeps the controls when the style changes", async () => {
+      const { screen, seen } = await panel(30, {
+        beard: { style: "full", length: 0.1, grey: 0.4 },
+      });
+      await expect
+        .element(screen.getByRole("button", { name: "Full beard" }))
+        .toHaveAttribute("aria-pressed", "true");
+      await screen.getByRole("button", { name: "Forked" }).click();
+      expect(seen.editor?.recipe.bodyHair).toEqual({
+        beard: { style: "forked", length: 0.1, grey: 0.4 },
+      });
+    });
+
     it("offers underarm and pubic density to an adult", async () => {
       const { screen } = await panel(30);
       await expect.element(screen.getByText("Underarms")).toBeInTheDocument();
       await expect.element(screen.getByText("Pubic")).toBeInTheDocument();
     });
 
-    it("offers neither to a figure under 18", async () => {
+    // Underarm hair comes with puberty (13), not the age policy; pubic hair is adult-only.
+    it("offers underarm density but not pubic to a figure under 18", async () => {
       const { screen } = await panel(15);
       await expect.element(screen.getByText("Chest")).toBeInTheDocument();
-      expect(screen.getByText("Underarms").elements()).toHaveLength(0);
+      await expect.element(screen.getByText("Underarms")).toBeInTheDocument();
       expect(screen.getByText("Pubic").elements()).toHaveLength(0);
     });
   });
