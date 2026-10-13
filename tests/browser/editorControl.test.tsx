@@ -1,11 +1,13 @@
 import { act as reactAct, useState } from "react";
 import { describe, expect, it } from "vitest";
 import { render } from "vitest-browser-react";
+import adultManifest from "../../packs/adult-anatomy/data/manifest.json";
 import type { ChangeCause } from "../../src/editor/gate.ts";
 import type { HumanoidEditor } from "../../src/editor/ui/useHumanoidEditor.ts";
 import { type EditorOptions, useEditorState } from "../../src/editor/ui/useHumanoidEditor.ts";
 import type { SliderEntry } from "../../src/format/assetFormat.ts";
 import { createRecipe, type Recipe } from "../../src/recipe/recipe.ts";
+import type { ReadyInfo } from "../../src/worker/protocol.ts";
 import { EditorHarness, readyInfo } from "./harness.tsx";
 
 /**
@@ -22,7 +24,23 @@ function act(call: () => void): void {
   }
 }
 
+async function actAsync(call: () => void | Promise<void>): Promise<void> {
+  const env = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+  env.IS_REACT_ACT_ENVIRONMENT = true;
+  try {
+    await reactAct(async () => {
+      await call();
+    });
+  } finally {
+    env.IS_REACT_ACT_ENVIRONMENT = false;
+  }
+}
+
 const ready = readyInfo(true);
+const adultReady: ReadyInfo = {
+  ...ready,
+  anatomy: adultManifest.anatomy as unknown as NonNullable<ReadyInfo["anatomy"]>,
+};
 const all = ready.sliders.flatMap((t) => t.groups.flatMap((g) => g.sliders));
 const slider = (id: string): SliderEntry => {
   const s = all.find((x) => x.id === id);
@@ -32,6 +50,7 @@ const slider = (id: string): SliderEntry => {
 const AGE = slider("age");
 const WEIGHT = slider("weight");
 const NOSE = slider("nose/nose-scale-horiz-decr|incr");
+const PHALLUS_SIZE = slider("genitals/phallus-size");
 
 interface Probe {
   editor: HumanoidEditor;
@@ -58,9 +77,56 @@ async function mount(options: EditorOptions, initial?: Recipe): Promise<Probe> {
   return probe;
 }
 
+interface LateProbe extends Probe {
+  setReady: (next: ReadyInfo | null) => void;
+}
+
+function LateReady({
+  initial,
+  options,
+  probe,
+}: {
+  initial: Recipe;
+  options: EditorOptions;
+  probe: LateProbe;
+}) {
+  const [lateReady, setReady] = useState<ReadyInfo | null>(null);
+  probe.setReady = setReady;
+  const editor = useEditorState(lateReady, initial, options);
+  probe.editor = editor;
+  if (probe.held.at(-1) !== editor.recipe) probe.held.push(editor.recipe);
+  return null;
+}
+
+async function mountLate(options: EditorOptions, initial: Recipe): Promise<LateProbe> {
+  const probe = { held: [] as Recipe[] } as LateProbe;
+  await render(<LateReady initial={initial} options={options} probe={probe} />);
+  return probe;
+}
+
 const thirty = () => createRecipe({ macros: { age: 30 } });
 
 describe("the change gate, uncontrolled", () => {
+  it("reconciles a late constrained anatomy default without trapping undo or dropping an earlier edit", async () => {
+    const probe = await mountLate(
+      { controls: { ranges: { [PHALLUS_SIZE.id]: { max: 0.2 } } } },
+      createRecipe({ macros: { age: 30, gender: 1 } }),
+    );
+    act(() => probe.editor.setSlider(WEIGHT, 0.7));
+    expect(probe.editor.recipe.modifiers[PHALLUS_SIZE.id]).toBeUndefined();
+    expect(probe.editor.canUndo).toBe(true);
+
+    await actAsync(() => probe.setReady(adultReady));
+    expect(probe.editor.recipe.macros.weight).toBe(0.7);
+    expect(probe.editor.recipe.modifiers[PHALLUS_SIZE.id]).toBe(0.2);
+    expect(probe.editor.canUndo).toBe(true);
+
+    act(() => probe.editor.undo());
+    expect(probe.editor.recipe.macros.weight).toBe(0.5);
+    expect(probe.editor.recipe.modifiers[PHALLUS_SIZE.id]).toBe(0.2);
+    expect(probe.editor.canUndo).toBe(false);
+  });
+
   it("never holds a refused figure: a veto leaves the figure, the history and the host untouched", async () => {
     const changes: Recipe[] = [];
     const rejected: { reason: string; cause: ChangeCause; age: number }[] = [];

@@ -329,7 +329,12 @@ export function useEditorState(
 
   /** Takes an accepted figure: into the history, or, with `value`, to the host. */
   const commit = useCallback(
-    (next: Recipe, why: ChangeCause, gesture: string | undefined) => {
+    (
+      next: Recipe,
+      why: ChangeCause,
+      gesture: string | undefined,
+      reconciliation?: Extract<HistoryAction, { type: "reconcile" }>,
+    ) => {
       const { options: o } = live.current;
       if (o.value !== undefined) {
         intent.current = { recipe: next, cause: why, gesture };
@@ -337,6 +342,11 @@ export function useEditorState(
         return;
       }
       cause.current = why;
+      if (reconciliation) {
+        approve();
+        apply(reconciliation);
+        return;
+      }
       const { past, future } = now.current;
       const neighbour = why === "undo" ? past.at(-1) : why === "redo" ? future[0] : undefined;
       apply(
@@ -345,22 +355,27 @@ export function useEditorState(
           : { type: "set", recipe: next, ...(gesture && { gesture }) },
       );
     },
-    [apply],
+    [apply, approve],
   );
 
   /** The last step before a figure is taken: the cover policy, then the commit. */
   const submit = useCallback(
-    (next: Recipe, why: ChangeCause, gesture: string | undefined): Outcome => {
+    (
+      next: Recipe,
+      why: ChangeCause,
+      gesture: string | undefined,
+      reconciliation?: Extract<HistoryAction, { type: "reconcile" }>,
+    ): Outcome => {
       const { options: o, wardrobe: w } = live.current;
       const current = shown();
       if (o.coverPolicy === undefined || !mustConfirm(o.coverPolicy, w, next, current)) {
-        commit(next, why, gesture);
+        commit(next, why, gesture, reconciliation);
         return "applied";
       }
       let outcome: Outcome = "pending";
       const state = ask({ cause: why, current, proposed: next }, (allowed, error) => {
         outcome = allowed ? "applied" : "rejected";
-        if (allowed) commit(next, why, gesture);
+        if (allowed) commit(next, why, gesture, reconciliation);
         else refuse(why, next, error);
       });
       return state === "done" ? outcome : "pending";
@@ -389,9 +404,26 @@ export function useEditorState(
   // gate before the browser paints the newly resolved default.
   useLayoutEffect(() => {
     if (controlled || ready === null) return;
-    const limited = limitRecipe(now.current.present, controls, modifiers, anatomyDefaults);
-    if (!sameRecipe(limited, now.current.present)) void propose(() => limited, "edit");
-  }, [controlled, ready, controls, modifiers, anatomyDefaults, propose]);
+    const normalize = (recipe: Recipe) => limitRecipe(recipe, controls, modifiers, anatomyDefaults);
+    const current = now.current.present;
+    const limited = normalize(current);
+    const timeline = now.current;
+    if (
+      sameRecipe(limited, current) &&
+      timeline.past.every((recipe) => sameRecipe(normalize(recipe), recipe)) &&
+      timeline.future.every((recipe) => sameRecipe(normalize(recipe), recipe))
+    )
+      return;
+    const next = judge(limited, "edit");
+    if (!next) return;
+    const reconciliation: Extract<HistoryAction, { type: "reconcile" }> = {
+      type: "reconcile",
+      normalize,
+      present: next,
+    };
+    if (sameRecipe(next, current)) apply(reconciliation);
+    else void submit(next, "edit", undefined, reconciliation);
+  }, [apply, anatomyDefaults, controlled, controls, judge, modifiers, ready, submit]);
 
   const step = useCallback(
     (why: "undo" | "redo") => {

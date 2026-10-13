@@ -803,6 +803,11 @@ and no route reaches the history or `onChange` without it.
 - *Hiding is not locking.* `visibleTasks` filters the taxonomy once, in the editor
   state, so the tabs, the search and the pick map's `onPick` all see the same
   smaller creator. A hidden slider keeps its value.
+- *Late defaults do not become an edit.* When a loaded pack resolves a default
+  that a host range narrows, the uncontrolled creator reconciles its existing
+  history through that same range before it paints. Adjacent recipes that now
+  describe the same constrained figure are one history position, so undo never
+  remains available for a step that cannot change the figure.
 - *Controlled.* The creator's state keeps the history (undo needs it) and the host
   keeps the figure. A change that passes the gate is reported through `onChange`
   and, with `value`, adopted when `value` comes back equal to it; `value` is

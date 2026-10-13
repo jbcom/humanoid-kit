@@ -213,6 +213,29 @@ describe("recipe history", () => {
     expect(h.future).toEqual([]);
   });
 
+  it("reconciles late constraints without keeping an equivalent undo step or losing a distinct edit", () => {
+    const initial = r(30);
+    const defaulted = (recipe: typeof initial) =>
+      recipe.modifiers.defaulted === undefined
+        ? { ...recipe, modifiers: { ...recipe.modifiers, defaulted: 0.2 } }
+        : recipe;
+    const constrained = defaulted(initial);
+
+    let equivalent = historyReducer(createHistory(initial), { type: "set", recipe: constrained });
+    equivalent = historyReducer(equivalent, { type: "reconcile", normalize: defaulted });
+    expect(equivalent.past).toEqual([]);
+    expect(equivalent.present).toEqual(constrained);
+
+    const edited = { ...initial, macros: { ...initial.macros, weight: 0.7 } };
+    let distinct = historyReducer(createHistory(initial), { type: "set", recipe: edited });
+    distinct = historyReducer(distinct, { type: "reconcile", normalize: defaulted });
+    expect(distinct.past).toEqual([constrained]);
+    expect(distinct.present).toEqual(defaulted(edited));
+    distinct = historyReducer(distinct, { type: "undo" });
+    expect(distinct.present).toEqual(constrained);
+    expect(distinct.past).toEqual([]);
+  });
+
   it("ignores undo and redo at the ends", () => {
     const h = createHistory(r(20));
     expect(historyReducer(h, { type: "undo" })).toBe(h);
