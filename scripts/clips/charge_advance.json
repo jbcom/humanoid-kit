@@ -1,0 +1,117 @@
+{
+  "id": "charge_advance",
+  "title": "Advance at the charge",
+  "description": "Double quick with bayonets charged: about 165 steps to the minute, the chest turned a little to the right, the left hand forward under the barrel at chest height and the right hand at the small of the stock by the right hip, the point held level ahead.",
+  "tags": ["locomotion", "combat", "musket", "1860s", "drill"],
+  "base": "tpose",
+  "fps": 30,
+  "duration": 0.7333333333333333,
+  "loop": true,
+  "rootMotion": true,
+  "grounded": true,
+  "keys": [
+    {
+      "t": 0,
+      "rotations": {
+        "spine03": { "Xrotation": 8, "Zrotation": -10 },
+        "spine01": { "Xrotation": 6, "Zrotation": -8 },
+        "neck01": { "Zrotation": 14 },
+        "upperarm01.L": { "Xrotation": -21.9, "Yrotation": 26.7, "Zrotation": -41 },
+        "lowerarm01.L": { "Xrotation": -24.2 },
+        "upperarm01.R": { "Xrotation": 12, "Yrotation": -73.9, "Zrotation": 4.2 },
+        "lowerarm01.R": { "Xrotation": -56 },
+        "upperleg01.L": { "Xrotation": -30 },
+        "lowerleg01.L": { "Xrotation": 10 },
+        "foot.L": { "Xrotation": -14 },
+        "upperleg01.R": { "Xrotation": 16 },
+        "lowerleg01.R": { "Xrotation": 44 },
+        "foot.R": { "Xrotation": 28 }
+      }
+    },
+    {
+      "t": 0.1,
+      "rotations": {
+        "upperleg01.L": { "Xrotation": -22 },
+        "lowerleg01.L": { "Xrotation": 22 },
+        "foot.L": { "Xrotation": -2 },
+        "upperleg01.R": { "Xrotation": 10 },
+        "lowerleg01.R": { "Xrotation": 72 },
+        "foot.R": { "Xrotation": 26 }
+      }
+    },
+    {
+      "t": 0.1833333333333333,
+      "rotations": {
+        "upperleg01.L": { "Xrotation": -4 },
+        "lowerleg01.L": { "Xrotation": 12 },
+        "foot.L": { "Xrotation": 0 },
+        "upperleg01.R": { "Xrotation": -30 },
+        "lowerleg01.R": { "Xrotation": 80 },
+        "foot.R": { "Xrotation": -6 }
+      }
+    },
+    {
+      "t": 0.28,
+      "rotations": {
+        "upperleg01.L": { "Xrotation": 12 },
+        "lowerleg01.L": { "Xrotation": 26 },
+        "foot.L": { "Xrotation": 8 },
+        "upperleg01.R": { "Xrotation": -40 },
+        "lowerleg01.R": { "Xrotation": 26 },
+        "foot.R": { "Xrotation": -14 }
+      }
+    },
+    {
+      "t": 0.3666666666666667,
+      "mirror": 0,
+      "rotations": {
+        "spine03": { "Xrotation": 8, "Zrotation": -10 },
+        "spine01": { "Xrotation": 6, "Zrotation": -8 },
+        "neck01": { "Zrotation": 14 },
+        "upperarm01.L": { "Xrotation": -21.9, "Yrotation": 26.7, "Zrotation": -41 },
+        "lowerarm01.L": { "Xrotation": -24.2 },
+        "upperarm01.R": { "Xrotation": 12, "Yrotation": -73.9, "Zrotation": 4.2 },
+        "lowerarm01.R": { "Xrotation": -56 }
+      }
+    },
+    {
+      "t": 0.4666666666666667,
+      "mirror": 1,
+      "rotations": {
+        "spine03": { "Xrotation": 8, "Zrotation": -10 },
+        "spine01": { "Xrotation": 6, "Zrotation": -8 },
+        "neck01": { "Zrotation": 14 },
+        "upperarm01.L": { "Xrotation": -21.9, "Yrotation": 26.7, "Zrotation": -41 },
+        "lowerarm01.L": { "Xrotation": -24.2 },
+        "upperarm01.R": { "Xrotation": 12, "Yrotation": -73.9, "Zrotation": 4.2 },
+        "lowerarm01.R": { "Xrotation": -56 }
+      }
+    },
+    {
+      "t": 0.55,
+      "mirror": 2,
+      "rotations": {
+        "spine03": { "Xrotation": 8, "Zrotation": -10 },
+        "spine01": { "Xrotation": 6, "Zrotation": -8 },
+        "neck01": { "Zrotation": 14 },
+        "upperarm01.L": { "Xrotation": -21.9, "Yrotation": 26.7, "Zrotation": -41 },
+        "lowerarm01.L": { "Xrotation": -24.2 },
+        "upperarm01.R": { "Xrotation": 12, "Yrotation": -73.9, "Zrotation": 4.2 },
+        "lowerarm01.R": { "Xrotation": -56 }
+      }
+    },
+    {
+      "t": 0.6466666666666666,
+      "mirror": 3,
+      "rotations": {
+        "spine03": { "Xrotation": 8, "Zrotation": -10 },
+        "spine01": { "Xrotation": 6, "Zrotation": -8 },
+        "neck01": { "Zrotation": 14 },
+        "upperarm01.L": { "Xrotation": -21.9, "Yrotation": 26.7, "Zrotation": -41 },
+        "lowerarm01.L": { "Xrotation": -24.2 },
+        "upperarm01.R": { "Xrotation": 12, "Yrotation": -73.9, "Zrotation": 4.2 },
+        "lowerarm01.R": { "Xrotation": -56 }
+      }
+    }
+  ]
+}
