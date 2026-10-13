@@ -329,6 +329,17 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       # Headed under a virtual display; see playwright.config.ts for the renderer choice.
       - run: xvfb-run --auto-servernum pnpm test:e2e
+      # Hosted rendering is software, so the cases that need a GPU lane skip here by design.
+      # Every skip must carry a known reason; the ledger counts them for the coverage gate.
+      - name: Account for skipped e2e tests
+        run: node scripts/ci/skipLedger.ts test-results/e2e-report.json test-results/skip-ledger.json --lane software
+      - name: Upload the e2e skip ledger
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-skip-ledger
+          path: test-results/skip-ledger.json
+          if-no-files-found: ignore
 
   lighthouse:
     name: Lighthouse
