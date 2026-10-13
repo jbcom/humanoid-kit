@@ -2671,7 +2671,7 @@ it by a polygon offset.
 
 ## Body hair
 
-**Use cases.** Every figure carries the body hair of its age and sex, at every
+**Use cases.** Every figure carries the body hair of its age and its recipe, at every
 skin tone, without a choice being made: vellus everywhere from infancy, and
 terminal hair coming in through adolescence and thinning and greying in old
 age. A creator can thin, thicken or shave a region and pick a beard. Axillary
@@ -2781,8 +2781,9 @@ Old recipes evaluate and serialise as before.
   their region), the vertex normals, and the armpits' hollows. The limbs stop
   short of the hands and feet, which carry little terminal hair and whose
   layers crowd the atlas.
-- *The beard defaults to none.* Clean-shaven is the neutral recipe; terminal
-  body hair and vellus are on by default for age and sex.
+- *The beard defaults to none.* Clean-shaven is the neutral recipe; vellus and
+  the limbs' and buttocks' terminal strands are on by default for age, while
+  the coat's groups draw only when the recipe enables them.
 - *Axillary hair is a coat region that comes with puberty (from 13); pubic hair
   is the adult pack's.*
   The armpit's hair is dense and a couple of centimetres long, so it is the
@@ -2856,7 +2857,8 @@ module.
   before: a woman's eyes hanging at a man's throat.
 - *A recipe asks for it, region by region.* A region grows only where the
   recipe enables it (`coatEnabled`): the beard by a style other than none, any
-  other group by setting its density. A recipe silent on body hair, or one
+  other group by setting its explicit coverage or its legacy density
+  (`drawnBodyHairCoverage` is what is drawn). A recipe silent on body hair, or one
   that names no region, grows no coat (`coatPaintFor` is null), so default
   figures stay bare.
 - *Strands from a tileable density texture* at true scale (`uv × uvScale`
@@ -2923,7 +2925,7 @@ beard style it serves; today `beard-full` (a full beard; a moustache and a
 goatee are the coat's alone). Each card carries a rank, a byte per vertex
 (`CARD_FIELD_KEYS`); `HairMaterial` discards a card whose rank is at or over
 its density (`setDensity`, the face's coverage), whole, beside the hairline
-test and outside the alpha-to-coverage term, so the beard thins with age, sex
+test and outside the alpha-to-coverage term, so the beard thins with age
 and the recipe with the same geometry, and scalp hair, with no ranks (0) and
 the default density (1), is untouched. The model wears a style's cards
 (`wornBeardCards`) only where the face grows terminal hair, so a child's figure

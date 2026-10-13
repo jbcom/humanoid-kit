@@ -173,7 +173,8 @@ export const BODY_HAIR_FOLLICLE_DENSITY: Readonly<Record<BodyHairGroup, number>>
   pubic: 40,
 };
 
-const unit = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+/** `x` clamped to 0..1; not a number is 0, so an unvalidated control fails closed. */
+const unit = (x: number) => (x > 0 ? (x < 1 ? x : 1) : 0);
 const smoothstep = (lo: number, hi: number, x: number) => {
   const t = unit((x - lo) / (hi - lo));
   return t * t * (3 - 2 * t);

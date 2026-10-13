@@ -144,6 +144,8 @@ describe("body hair coverage", () => {
     // The two the issue measured at 30: back reached only .42 and chest .84.
     expect(explicit(30, "back", 1)).toBe(1);
     expect(explicit(30, "chest", 1)).toBe(1);
+    // An unvalidated control that is not a number fails closed.
+    expect(explicit(30, "chest", Number.NaN)).toBe(0);
   });
 
   it("responds to explicit coverage without a plateau: every step is distinct up to full", () => {
