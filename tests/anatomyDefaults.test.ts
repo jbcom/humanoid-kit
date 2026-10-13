@@ -27,6 +27,22 @@ describe("an adult figure drawn with the adult pack", { timeout: 600_000 }, () =
     expect(moved(30, 0)).toBeGreaterThan(0.001);
   });
 
+  it("draws no phallic organ on the default woman, only the vulva", () => {
+    // The smallest phallic key is still a drawn tube (`phallusGeometry`): any share of it
+    // raised a plate with a nub on the mons. Until a sculpt fills that key, the female end
+    // of the default draws the reservoir at rest, as `phallus-size` 0 does.
+    const phallus = "genitals/phallus-size";
+    const at = (modifiers: Record<string, number>) =>
+      model.evaluate(createRecipe({ macros: { age: 30, gender: 0 }, modifiers })).positions;
+    const plain = at({});
+    const flat = at({ [phallus]: 0 });
+    let most = 0;
+    for (let i = 0; i < plain.length; i++)
+      most = Math.max(most, Math.abs((plain[i] as number) - (flat[i] as number)));
+    // The vulva's own gate: nothing next to it moves by more than half a millimetre.
+    expect(most).toBeLessThan(0.0005);
+  });
+
   it("is drawn with none under 18", () => {
     expect(moved(14, 1)).toBe(0);
   });
