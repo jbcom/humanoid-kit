@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clothTuck, coveredBy, tuckDepths } from "../src/model/tuck.ts";
+import { clothTuck, coveredBy, tuckDepths, underHat } from "../src/model/tuck.ts";
 
 /**
  * A flat grid of quads in the plane y = `y`, `n` by `n` cells of `size`, facing
@@ -240,5 +240,43 @@ describe("sinking a garment under the garments over it", () => {
   it("clears the deepest of several garments over it", () => {
     const tuck = sink(0.022, [plate(4, 0.02, 0.015), plate(4, 0.02, 0.01)]);
     expect(tuck[middle]).toBeCloseTo(0.016, 5);
+  });
+});
+
+describe("drawing hair under a hat", () => {
+  // A hat's crown as a plate 5 cm over the middle of the head.
+  const centre = [0.04, 0, -0.04] as const;
+  const hat = plate(4, 0.02, 0.05);
+  const draw = (...points: [number, number, number][]) =>
+    underHat({ centre, positions: Float32Array.from(points.flat()), hats: [hat], gap: 0.008 });
+
+  it("draws hair past the hat back along the line from the head's middle, under the gap by half as far again", () => {
+    // Straight up: 8 cm out, the hat at 5, so 3 cm past it, 8 mm more and 1.5 cm deeper.
+    expect(draw([0.04, 0.08, -0.04])[0]).toBeCloseTo(0.053, 5);
+    // On a slant the line meets the hat further out, by the same rule.
+    const slant = draw([0.06, 0.1, -0.04])[0] as number;
+    const out = Math.hypot(0.02, 0.1);
+    expect(slant).toBeCloseTo(out - (out / 2 - 0.008) + (out / 2) * 0.5, 5);
+  });
+
+  it("draws hair closer under the hat than the gap down to the gap", () => {
+    expect(draw([0.04, 0.046, -0.04])[0]).toBeCloseTo(0.004, 5);
+  });
+
+  it("leaves hair under the hat, beside it and below the head's middle where it is", () => {
+    expect(Array.from(draw([0.04, 0.03, -0.04], [0.3, 0.08, -0.04], [0.04, -0.06, -0.04]))).toEqual(
+      [0, 0, 0],
+    );
+  });
+
+  it("takes the deepest of several hats", () => {
+    const tuck = underHat({
+      centre,
+      positions: Float32Array.from([0.04, 0.08, -0.04]),
+      hats: [hat, plate(4, 0.02, 0.04)],
+      gap: 0.008,
+    });
+    // The lower hat: 4 cm past it, 8 mm more and 2 cm deeper.
+    expect(tuck[0]).toBeCloseTo(0.068, 5);
   });
 });

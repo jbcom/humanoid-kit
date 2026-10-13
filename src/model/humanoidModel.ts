@@ -30,6 +30,7 @@ import {
   type HairKind,
   type HairStyleEntry,
   type HumanoidAssets,
+  jointPosition,
   pendingTargetFiles,
 } from "../format/assetFormat.ts";
 import {
@@ -114,7 +115,7 @@ import {
   skinOfEvaluation,
 } from "./reservoirSkin.ts";
 import { placeRigid, rigidSkin } from "./rigidFit.ts";
-import { clothTuck, coveredBy, tuckDepths } from "./tuck.ts";
+import { clothTuck, coveredBy, type TuckCloth, tuckDepths, underHat } from "./tuck.ts";
 
 export interface ModelOptions {
   /** Catmull–Clark levels for the body surface (0–2). Default 1. Attachments use at most 1. */
@@ -505,6 +506,13 @@ const TUCK_CAP = 0.03;
 const UNDER_TUCK_CAP = 0.05;
 /** How far under the garment over it (metres) a sunk garment is left. */
 const UNDER_TUCK_GAP = 0.003;
+/**
+ * How far under a hat (metres) the drawn hair it covers is left (`underHat`).
+ * More than a garment's gap, which is kept at rest: the hat and the hair are
+ * skinned through different bindings, so a turned head parts them by a few
+ * millimetres more.
+ */
+const HAT_HAIR_GAP = 0.005;
 /**
  * How far off the skin (metres) a garment over another still hides it
  * (`coveredBy`): the flared outer calf of the pirate boots' shaft needs 12 cm
@@ -1702,6 +1710,7 @@ export class HumanoidModel {
               evaluateBinding(worn.h.asset, control, worn.h.control),
             ),
           };
+    if (hair) this.pressUnderHats(hair.positions, outfit, garments, control);
     const decal = (w: typeof wornBrows, lift: boolean): HairEvaluation | null => {
       if (w === null) return null;
       const placed = evaluateBinding(w.h.asset, control, w.h.control);
@@ -2659,6 +2668,59 @@ export class HumanoidModel {
         }),
       };
     });
+  }
+
+  /**
+   * Draws the hair the worn hats cover under them (`underHat`), in place: a
+   * style's drawn positions on this figure, toward the middle of its head.
+   * Worked out on this figure, between the hair and the hats as drawn
+   * (`garments`, the outfit's evaluated surfaces in its order). Subdivision
+   * moves a crown's pinch and a curl's card by millimetres to centimetres off
+   * their control meshes. A hat and a style also part by centimetres on a
+   * figure other than the default, so depths from the default figure left hair
+   * through a man's crown. Garments of kind `hat` (hats and hoods) press hair,
+   * and no other garment does.
+   */
+  private pressUnderHats(
+    positions: Float32Array,
+    outfit: Outfit,
+    garments: readonly SurfaceEvaluation[],
+    control: Float32Array,
+  ): void {
+    const hats: TuckCloth[] = [];
+    outfit.order.forEach((id, i) => {
+      const { asset, part: p } = this.garmentPart(id);
+      const drawn = garments[i];
+      // The drawn surface: subdivision draws a crown's pinch centimetres off its control quads.
+      if (asset.entry.kind === "hat" && drawn)
+        hats.push({ positions: drawn.positions, faces: p.mesh.index, triangles: true });
+    });
+    if (!hats.length) return;
+    const c = this.headCentre(control);
+    const tuck = underHat({ centre: c, positions, hats, gap: HAT_HAIR_GAP });
+    for (let v = 0; v < tuck.length; v++) {
+      const t = tuck[v] as number;
+      if (t === 0) continue;
+      const d = [0, 1, 2].map((a) => (positions[v * 3 + a] as number) - (c[a] as number));
+      const length = Math.hypot(d[0] as number, d[1] as number, d[2] as number);
+      const k = Math.min(t, length) / length;
+      for (let a = 0; a < 3; a++)
+        positions[v * 3 + a] = (positions[v * 3 + a] as number) - (d[a] as number) * k;
+    }
+  }
+
+  /** The middle of the head bone on a figure: inside the skull, under any hat. */
+  private headCentre(control: Float32Array): [number, number, number] {
+    const bone = this.assets.manifest.skeleton.bones.find((b) => b.name === "head");
+    if (!bone) throw new AssetFormatError("the skeleton has no head bone");
+    const ends = new Float32Array(6);
+    jointPosition(this.assets, control, bone.head, ends, 0);
+    jointPosition(this.assets, control, bone.tail, ends, 3);
+    return [0, 1, 2].map((a) => ((ends[a] as number) + (ends[a + 3] as number)) / 2) as [
+      number,
+      number,
+      number,
+    ];
   }
 
   /** A garment's placed control positions sunk along their posed normals by `tuck`. */

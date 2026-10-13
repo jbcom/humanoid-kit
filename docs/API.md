@@ -605,7 +605,9 @@ body and of each garment are drawn.
   vertices behind one over it are hidden too, and `garmentTuck` (per garment in
   `order`, per vertex, metres, or null) sinks what would poke out of one, so
   jeans go into a boot shaft instead of through it (docs/ARCHITECTURE.md,
-  "A garment under another is sunk under it"). Results are cached by key.
+  "A garment under another is sunk under it"). A worn garment of kind `hat`
+  draws the hair its crown covers under it in `Evaluation.hair`, and hair
+  below it keeps its place ("Hair under a hat"). Results are cached by key.
   Throws `OutfitError` for an id the clothing pack lacks, one named twice,
   garments that have not loaded, or no clothing pack.
 - `model.garmentTopology(id): GarmentTopology`: a garment's static render data

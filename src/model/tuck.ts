@@ -11,11 +11,13 @@
  * pose, and moves nothing the cloth does not already cover.
  */
 
-/** A garment's rest geometry: positions, and triangles (`faces` as quads, 4 vertices each). */
+/** A garment's rest geometry: positions, and its faces as quads or as triangles. */
 export interface TuckCloth {
   positions: Float32Array;
-  /** Quads, four vertex indices each. */
+  /** Quads, four vertex indices each; three each with `triangles`. */
   faces: Uint32Array;
+  /** The faces are triangles: a drawn surface's index, not the control mesh's quads. */
+  triangles?: boolean;
 }
 
 export interface TuckInput {
@@ -178,6 +180,75 @@ export function coveredBy(input: CoveredInput): Uint8Array {
   return out;
 }
 
+/** How much deeper than the gap hair goes under a hat, per metre it was past it (`underHat`). */
+const SQUASH = 0.5;
+
+export interface UnderHatInput {
+  /** A point inside the skull, xyz: the middle of the head bone. */
+  centre: readonly [number, number, number];
+  /** Rest positions of the hair's vertices, xyz. */
+  positions: Float32Array;
+  /** The hats worn, at rest. */
+  hats: readonly TuckCloth[];
+  /** How far under the hat (metres) the hair is left. */
+  gap: number;
+}
+
+/**
+ * Per hair vertex, how far to draw it toward the middle of the head (metres)
+ * to lie at least `gap` under the hats over it (docs/ARCHITECTURE.md, "Hair
+ * under a hat"): by how far it is past the first hat met on the way out to it
+ * from there, plus the gap, plus half as far again (`SQUASH`). A crown and its band enclose the skull, so that line
+ * meets the hat exactly where the hair would come through it. Hair the line
+ * reaches before any hat (below the band, out of a hood's face) keeps its
+ * place, whatever binds it: scalp hair on the skin and long hair on the hair
+ * helper alike. Zero for a vertex already under the hat.
+ */
+export function underHat(input: UnderHatInput): Float32Array {
+  const { centre, positions, hats, gap } = input;
+  const count = positions.length / 3;
+  const out = new Float32Array(count);
+  for (const hat of hats) {
+    const grid = triangleGrid(hat);
+    // Hair nearer the middle than any of the hat (less a cell, for a triangle's
+    // inside nearer than its corners) cannot be past it: most of a style.
+    let near = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < hat.positions.length; i += 3)
+      near = Math.min(
+        near,
+        Math.hypot(
+          (hat.positions[i] as number) - centre[0],
+          (hat.positions[i + 1] as number) - centre[1],
+          (hat.positions[i + 2] as number) - centre[2],
+        ),
+      );
+    const reach = near - CELL - gap;
+    for (let v = 0; v < count; v++) {
+      const d: Vec3 = [
+        (positions[v * 3] as number) - centre[0],
+        (positions[v * 3 + 1] as number) - centre[1],
+        (positions[v * 3 + 2] as number) - centre[2],
+      ];
+      const length = Math.hypot(d[0], d[1], d[2]);
+      if (length === 0 || length < reach) continue;
+      const t = firstHit(
+        grid,
+        hat,
+        [centre[0], centre[1], centre[2]],
+        [d[0] / length, d[1] / length, d[2] / length],
+        length + gap,
+      );
+      if (t === null) continue;
+      // Hair from further out goes deeper, by half as far again: a card's
+      // straight edge between two pressed ends would otherwise cut through
+      // the felt across a crown's pinch, where the hat folds in between them.
+      const depth = length - Math.max(0, t - gap) + Math.max(0, length - t) * SQUASH;
+      if (depth > (out[v] as number)) out[v] = depth;
+    }
+  }
+  return out;
+}
+
 type Vec3 = [number, number, number];
 
 const origin = (p: Float32Array, v: number): Vec3 => [
@@ -210,8 +281,10 @@ const key = (x: number, y: number, z: number) =>
 /** Each garment's grid, built on first use: an outfit casts many rays at one garment. */
 const grids = new WeakMap<TuckCloth, Grid>();
 
-/** Triangle `t` of a garment's quads: (0,1,2) for even, (0,2,3) for odd. */
+/** Triangle `t` of a garment: of its quads, (0,1,2) for even and (0,2,3) for odd. */
 function corners(g: TuckCloth, t: number): [number, number, number] {
+  if (g.triangles)
+    return [g.faces[t * 3] as number, g.faces[t * 3 + 1] as number, g.faces[t * 3 + 2] as number];
   const q = (t >> 1) * 4;
   return t & 1
     ? [g.faces[q] as number, g.faces[q + 2] as number, g.faces[q + 3] as number]
@@ -222,7 +295,7 @@ function triangleGrid(g: TuckCloth): Grid {
   const known = grids.get(g);
   if (known) return known;
   const cells = new Map<number, number[]>();
-  const count = (g.faces.length / 4) * 2;
+  const count = g.triangles ? g.faces.length / 3 : (g.faces.length / 4) * 2;
   for (let t = 0; t < count; t++) {
     const c = corners(g, t);
     const lo = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];

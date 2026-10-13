@@ -437,7 +437,8 @@ from each file.
   rule, and it keeps the cloth that lies over a hidden region from being cut by
   one reference vertex alone.
 - *Hair, brows, lashes, eyes and teeth are not in the stack.* They are
-  attachments with no layer: they hide no skin and no garment masks them.
+  attachments with no layer: they hide no skin and no garment masks them. A
+  hat is the one garment that moves hair ("Hair under a hat", below).
 - *The attachments' occlusion does not depend on the outfit.* The body that
   occludes them is the full body (`bodyControlTriangles`), as in the pack's
   bake, and garments are not occluders or occludees: a worn outfit never forces
@@ -516,6 +517,34 @@ from each file.
   Rejected: hiding by the inner vertex's nearest outer triangle (the lining
   problem above), and a shader depth bias (it would draw boots over the jeans
   above the shaft too).
+- *Hair under a hat.* A style is bound to the scalp and knows nothing of the
+  outfit, so a fedora or a cap over an afro, a crop, long hair or a ponytail
+  showed 3 to 70% of the hair inside its crown through the felt. Every worn garment of kind
+  `hat` (hats and hoods) presses hair, and no other garment does
+  (`HumanoidModel.pressUnderHats`, `underHat`). A line from the middle of the
+  head bone out to each drawn hair vertex meets the hat where that hair would
+  come through it. A crown and band enclose the skull, so this holds for hair
+  on the scalp and for long hair bound to the hair helper alike. A vertex past
+  that point is drawn back along the line to 5 mm inside the hat, and half as
+  far again as it was past it. Without that extra depth, a card's straight
+  edge between two pressed ends cut through the felt where the fedora's crown
+  pinches in between them, a thin streak in the render. Hair the line
+  reaches before any hat (below the band, out of a hood's face) keeps its
+  place, so a ponytail still falls from under the brim. Unlike the garment
+  tuck, it is worked out per evaluation, between the drawn (subdivided) hair
+  and the drawn hat on the evaluated figure. Two shortcuts each left hair
+  through the felt in the renders. Control meshes failed because subdivision
+  moves a fedora's pinched crown and a curl's card by millimetres to
+  centimetres. Depths cached from the default figure failed because hat and
+  hair part by centimetres on a man's head, leaving a patch of a bob through
+  the crown. It costs about 30 ms an evaluation with an afro under a fedora,
+  and nothing without a hat. Rejected: sinking hair along the scalp normal it
+  is bound through. Long styles bind to the hair helper, a shell outside the
+  hat, so their crown hair was never pressed. Also rejected: hiding the hair
+  under the hat by a mask, which leaves a bald band where the brim is open.
+  `tests/hatOverHair.test.ts` checks it from outside: from inside the crown,
+  less than 1% of the hair inside it may lie past the drawn hat, none by 4 mm,
+  on the figure it is evaluated on.
 - *Garments skin as the body does.* Their material takes the figure's dual
   quaternion bones (`applyDualSkinning`, as for any material the library does
   not make), and so do their shadow materials and the mesh's bounds and
@@ -584,6 +613,22 @@ follows the body.
   with the hip and keeps its shape. Rejected: landmark mounts, which need a
   new authored frame per accessory where the binding already says where the
   piece sits.
+- *The layering contract is the kit's, and a consumer's garment states its
+  place in it.* A garment from any pack declares three things, and the kit
+  works out everything else per outfit:
+  - its `kind`, one of `GARMENT_LAYERS` (an unknown kind is an `OutfitError`);
+  - its `z_depth`, which leads the order (lower is nearer the skin);
+  - its `delete_verts`, the body vertices it hides.
+  From those, a garment hides the body and every garment under it, never one
+  over it. Cloth under another is sunk under it, and hidden where it lies
+  behind it ("A garment under another is sunk under it"). Skin at an edge is
+  sunk under the cloth, and a hat presses hair. A rigid piece is never sunk:
+  it keeps its shape, and what lies under it is sunk instead. A period cut
+  layers by the same rule as the kit's: a shell jacket is `jacket` over a
+  `top` shirt, a frock coat is `coat`, and a kepi is `hat`. Those cuts stay
+  the consumer's data. Rejected: per-garment layer overrides in the recipe.
+  Two figures in one outfit would then stack it differently, and the masks
+  and tucks are cached per outfit.
 - *The packer is a library function before it is a CLI.* `packGarments`
   (from `scripts/pack-clothing.ts`) takes `.mhclo` files and a provenance
   record and writes a format-1 pack whose manifest has the consumer's
@@ -2392,8 +2437,8 @@ a coloured texture; everything in the pure core is testable in Node.
   hair file that has one) and is not part of its clothing layer stack, so hair
   hides no skin and takes no clothing-style masking: the scalp skin stays under
   the cards. The `z_depth` (50 in every system hair) is kept as the render
-  order and decides nothing else. A later hat that must sit over hair will set
-  its own rule.
+  order and decides nothing else. A hat presses the hair under it, by its own
+  rule ("Clothing", "Hair under a hat").
 - *The colour is two pigments, and the texture is structure only.* Hair albedo
   comes from eumelanin, pheomelanin and a grey fraction (`src/surface/hairTone.ts`,
   `docs/research/HAIR-COLOUR.md`). The atlases are painted in colour, so the
