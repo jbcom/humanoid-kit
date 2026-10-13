@@ -1460,6 +1460,10 @@ options)`, add `crowd.object` to the scene, `setFigures(figures)`, then
 memory of its animation textures, and `dispose()` frees them. Each update culls
 figures outside the frustum and gives the nearest the finest level their size
 on screen (`projectedPixels`) warrants while the triangle budget lasts.
+`<Miniatures>` rebuilds its crowd when `miniatureMaterialKey(material)`
+changes: parameters by value, a three.js object (a texture) by its `uuid`, a
+colour by its hex, so an inline `material` object does not rebuild it every
+render.
 
 ### `<StudioStage background? intensity? contactShadowOpacity? />`
 

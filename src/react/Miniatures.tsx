@@ -11,6 +11,7 @@ import {
   type MiniatureCrowdOptions,
   type MiniatureFigure,
   type MiniatureFrameStats,
+  miniatureMaterialKey,
 } from "../render/miniature.ts";
 
 export interface MiniaturesProps extends MiniatureCrowdOptions {
@@ -30,7 +31,7 @@ export interface MiniaturesProps extends MiniatureCrowdOptions {
 export function Miniatures({ archetypes, figures, onFrame, ...options }: MiniaturesProps) {
   const { maxFigures, triangleBudget } = options;
   const levelKey = options.levelPixels?.join(",") ?? "";
-  const materialKey = options.material ? JSON.stringify(options.material) : "";
+  const materialKey = options.material ? miniatureMaterialKey(options.material) : "";
   // biome-ignore lint/correctness/useExhaustiveDependencies: rebuilt by value, through the keys.
   const crowd = useMemo(
     () =>

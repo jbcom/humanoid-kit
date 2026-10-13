@@ -456,6 +456,28 @@ export class MiniatureCrowd {
   }
 }
 
+/**
+ * A key for a crowd's material parameters, by value: a three.js object (a
+ * texture, say) by its `uuid`, a colour by its hex, anything else as its JSON,
+ * in name order. It never calls an object's `toJSON`, which for a texture
+ * would serialise the image. `<Miniatures>` rebuilds its crowd when it changes.
+ */
+export function miniatureMaterialKey(material: Readonly<Record<string, unknown>>): string {
+  return Object.keys(material)
+    .sort()
+    .map((name) => {
+      const value = material[name];
+      if (value !== null && typeof value === "object") {
+        if ("isColor" in value && "getHexString" in value) {
+          return `${name}=#${(value as { getHexString(): string }).getHexString()}`;
+        }
+        if ("uuid" in value) return `${name}=uuid:${String((value as { uuid: unknown }).uuid)}`;
+      }
+      return `${name}=${JSON.stringify(value)}`;
+    })
+    .join(";");
+}
+
 /** How tall, in pixels, an object `height` metres tall `distance` metres away appears. */
 export function projectedPixels(
   camera: Camera,
