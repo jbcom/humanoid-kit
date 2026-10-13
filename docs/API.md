@@ -1212,7 +1212,7 @@ What each figure tells the scene around it (PRESENCE.md). Framework-free.
 ### Interactions
 
 Figures, objects and places acting together (INTERACTIONS.md). Framework-free;
-slice 1 of its build plan.
+slices 1 and 2 of its build plan.
 
 - `InteractionDefinition`: `id`, `tags`, `audience` (`"all"` or `"adult"`;
   anything else is adult), `roles` (`{ name, takes: "figure" | "object",
@@ -1251,10 +1251,32 @@ slice 1 of its build plan.
   with `left` when a participant leaves presence or its id is removed and
   replaced by a different published presence, and aborted with
   `age-policy` on any tick an adult definition has a participant under 18.
+- `Length` is either metres or `{ of, measure, times }`, where `of` names a
+  figure role and `measure` is `reach`, `shoulderHeight`, `hipHeight` or
+  `eyeHeight`; `resolveLength` reads it from the roles' published measures.
+  A role's optional slot uses three lengths, a finite yaw and a non-negative,
+  finite ground tolerance.
+- `Interaction.slot(role, out?)` supplies that role's world-space placement
+  from the definition's frame, anchor or between-role midpoint. `between`
+  references pin when approach starts, so the target does not drift as figures
+  walk. `contactTarget(contact, role, out?)` supplies the single solved target
+  for the named or indexed hand-to-hand contact only while it is active;
+  `trackTime(role)` supplies the phase track's shared-clock time, including
+  rate, loop wrapping and non-loop clamping. Each returns `null` when it has
+  no meaningful value. Supplying `out` keeps per-frame reads allocation-free.
+- `InteractionEvent` is delivered through `on(participant, listener)` to both
+  participants. It reports acceptance, decline, phase, beat, normal end and
+  cancellation; cancellation includes its `declined`, `cancelled`, `left`,
+  `preempted`, `precondition` or `age-policy` reason.
 - `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
-  chest, hands, feet), `footprint`, `appearance` (measured albedo, luminance,
-  specular), `measures` (reach, shoulder height, hip height, eye height),
-  `faceRadius`, `adult`.
+  chest, hands, feet), `measures`, `footprint`, `appearance` (measured albedo,
+  luminance, specular), `faceRadius`, `adult`.
+- `FigureMeasures` (`measures`, metres): `reach` (shoulder to grip along the
+  arm's bones, the mean of both arms; the same in any pose), `shoulderHeight`,
+  `hipHeight` and `eyeHeight` (above the floor, as posed). `MEASURE_NAMES` lists
+  the keys. Derived with the anchors from the joint centroids, by
+  `presenceFromEvaluation` and `presenceFromPose`; `placePresence` and
+  `clonePresence` carry them.
 - `presenceFromEvaluation({ evaluation, recipe, joints, placement })`: a
   figure's presence from its evaluation. Anchors are joint centroids of the
   morphed control mesh lifted onto the ground, the footprint is the extent of
@@ -1654,6 +1676,18 @@ const hands = useHumanoidAffordances();
 From `humanoid-kit`: `CORE_AFFORDANCES`, `affordances(recipe, registry?)`,
 `AffordanceStates`, `affordanceFrames`, `affordanceChannels`, `CHANNELS`,
 `channelOf`, `channelThrough`, `headFrameOf`, `placeIn`, `openingFor`.
+
+### Regional contact
+
+`RegionalContact`, `RegionalPhysiologyInput` and `RegionalAnimationIntent`
+separate a neutral contact sample, a physiology input and a presentation
+request. `assertRegionalContact(contact, own)` is the implemented pure
+validator: it checks a finite location, unit normal, non-negative force and
+duration, phase, and whether `surface` versus `aperture-entry` agrees with the
+registered affordance. It does not create a response, animation, deformation or
+injury. There is no exported `InjuryState` today. See [Regional contact and
+injury contract](REGIONAL-CONTACTS.md) for the planned region-specific opening,
+recovery, injury, persistence and renderer-proof gates.
 
 ## `humanoid-kit/editor`
 
