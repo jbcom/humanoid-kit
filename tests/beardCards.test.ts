@@ -141,6 +141,40 @@ describe("beard cards", () => {
     expect(cards.inside).toBeLessThan(0.002);
   });
 
+  it("bind the length lying on the body to the body under it, and the rest to the face", () => {
+    const cards = generateBeardCards(assets, beard({ style: "longstreet", length: 0.8 })) as Cards;
+    const at = rest(cards);
+    // The torso pushed 5 cm forward, as a belly or a bow moves it; the head stays put.
+    const below = chinY - 0.25;
+    const moved = assets.positions.slice();
+    for (let v = 0; v < moved.length / 3; v++)
+      if ((moved[v * 3 + 1] as number) < below)
+        moved[v * 3 + 2] = (moved[v * 3 + 2] as number) + 0.05;
+    const after = evaluateBinding(
+      { entry: { scale: null, vertexCount: cards.compiled.vertexCount }, ...cards.compiled.arrays },
+      moved,
+      new Float32Array(cards.compiled.vertexCount * 3),
+    );
+    let roots = 0;
+    let lowFollow = 0;
+    let low = 0;
+    for (let c = 0; c < cards.cardCount; c++) {
+      const first = cards.cardStart[c] as number;
+      const last = (cards.cardStart[c + 1] as number) - 1;
+      roots = Math.max(
+        roots,
+        Math.abs((after[first * 3 + 2] as number) - (at[first * 3 + 2] as number)),
+      );
+      if ((at[last * 3 + 1] as number) < below - 0.1) {
+        low++;
+        if ((after[last * 3 + 2] as number) - (at[last * 3 + 2] as number) > 0.04) lowFollow++;
+      }
+    }
+    expect(roots).toBeLessThan(1e-6);
+    expect(low).toBeGreaterThan(50);
+    expect(lowFollow / low).toBeGreaterThan(0.9);
+  });
+
   it("fork the chin's hair into two points", () => {
     const spreadOf = (fork: number) => {
       const cards = generateBeardCards(assets, beard({ style: "forked", fork })) as Cards;

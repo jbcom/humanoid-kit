@@ -2954,7 +2954,13 @@ they bend. Between 1 and 5 cm from the root they turn from the comb to fall,
 a little forward. The chin's hair forks toward its side by `fork`, and the
 moustache parts out from the middle by `part`. Past the first centimetre each
 point is pushed off the body's nearest surface and slides along it, so a
-chest-length beard lies on the chest instead of passing through it. The beard
+chest-length beard lies on the chest instead of passing through it. A card's
+first 5 cm are bound to its root's triangle, so the moustache and chin follow
+the jaw. Past that, each point within 3 cm of the body is bound to the
+triangle under it, and the points after it to the last that touched, so the
+length lying on the chest, belly or lap follows them through morphs and poses
+(`DRAPE.bindFrom`, `DRAPE.touch`). Up to 64 quads let a floor-length beard
+bend all the way down. The beard
 is quantised before generating (lengths floored to the millimetre, the other
 controls to a twentieth), so `beardCardKey` names equal cards, and growing a
 beard by a hair does not regenerate them. Grey is the material's, not the

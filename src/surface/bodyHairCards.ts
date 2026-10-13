@@ -150,6 +150,14 @@ export const DRAPE = {
   clearance: 0.003,
   /** At most this many pushes clear a point. */
   pushes: 4,
+  /**
+   * Past this far along a card, a point within `touch` of the body binds to
+   * the triangle under it, and the points after it to the last one that
+   * touched: long hair lies on the chest and follows it, while the face's
+   * first few centimetres follow the jaw.
+   */
+  bindFrom: 0.05,
+  touch: 0.03,
 } as const;
 
 const smoothstep = (a: number, b: number, x: number) => {
@@ -231,10 +239,21 @@ const norm = (a: Vec3): Vec3 => {
   return scale(a, 1 / l);
 };
 
-/** A card's spine, root to tip, and the direction across it at each point. */
+/** A body triangle (base vertex indices) and a point's barycentric weights on it. */
+interface Anchor {
+  tri: Vec3;
+  weights: Vec3;
+}
+
+/**
+ * A card's spine, root to tip, and the direction across it at each point.
+ * `anchors`, when present, is per point the body triangle it is bound to, or
+ * null where it is bound to the root's.
+ */
 interface CardPath {
   centres: Vec3[];
   sides: Vec3[];
+  anchors?: (Anchor | null)[];
 }
 
 /**
@@ -319,9 +338,33 @@ function drapePath(
     ];
     return [dot(sub(p, [hit.point.x, hit.point.y, hit.point.z]), n), n];
   };
+  /** The triangle of the last `clear` and its closest point's barycentric weights. */
+  const anchorOfLast = (): Anchor => {
+    const t = target.faceIndex;
+    const tri = [0, 1, 2].map((k) => triangles[t * 3 + k] as number) as Vec3;
+    const P = drape.body.positions;
+    const [a, b, c] = tri.map(
+      (v) => [P[v * 3] as number, P[v * 3 + 1] as number, P[v * 3 + 2] as number] as Vec3,
+    ) as [Vec3, Vec3, Vec3];
+    const x: Vec3 = [target.point.x, target.point.y, target.point.z];
+    const e0 = sub(b, a);
+    const e1 = sub(c, a);
+    const e2 = sub(x, a);
+    const d00 = dot(e0, e0);
+    const d01 = dot(e0, e1);
+    const d11 = dot(e1, e1);
+    const d20 = dot(e2, e0);
+    const d21 = dot(e2, e1);
+    const den = d00 * d11 - d01 * d01 || 1;
+    const v = (d11 * d20 - d01 * d21) / den;
+    const w = (d00 * d21 - d01 * d20) / den;
+    return { tri, weights: [1 - v - w, v, w] };
+  };
   let p = add(root, scale(normal, 2e-4));
   const centres: Vec3[] = [p];
   const dirs: Vec3[] = [start];
+  const anchors: (Anchor | null)[] = [null];
+  let anchor: Anchor | null = null;
   // The surface the card last lay on: it slides along it rather than falling into it.
   let resting: Vec3 | null = null;
   for (let s = 1; s <= segments; s++) {
@@ -343,16 +386,18 @@ function drapePath(
         [depth, n] = clear(p);
       }
       report(Math.max(0, -depth));
+      if (s * step > DRAPE.bindFrom && depth < DRAPE.touch) anchor = anchorOfLast();
     }
     centres.push(p);
     dirs.push(d);
+    anchors.push(anchor);
   }
   // Across the card: the root's side, square to the spine at each point.
   const sides = dirs.map((d) => {
     const s = sub(side0, scale(d, dot(side0, d)));
     return Math.hypot(...s) > 1e-6 ? norm(s) : side0;
   });
-  return { centres, sides };
+  return { centres, sides, anchors };
 }
 
 /** Columns of the strand map: each card draws one, chosen at random. */
@@ -398,6 +443,7 @@ export function generateCards(assets: HumanoidAssets, spec: CardSpec): Cards {
       [q[0], q[2], q[3]],
     ] as [number, number, number][]) {
       const [a, b, c] = tri;
+      const tri3: Vec3 = [a, b, c];
       const m =
         ((spec.mask[a] as number) + (spec.mask[b] as number) + (spec.mask[c] as number)) / 3;
       const share = rootShare(m);
@@ -450,11 +496,18 @@ export function generateCards(assets: HumanoidAssets, spec: CardSpec): Cards {
           const t = s / segments;
           const centre = path.centres[s] as Vec3;
           const half = (spec.width / 2) * (1 - 0.5 * t);
+          // Bound to the root's triangle, or to the body under it where it lies on one.
+          const anchor = path.anchors?.[s] ?? null;
+          const tri = anchor ? anchor.tri : tri3;
+          const w = anchor ? anchor.weights : ([w0, u, v] as Vec3);
+          const origin = anchor
+            ? add(add(scale(at(tri[0]), w[0]), scale(at(tri[1]), w[1])), scale(at(tri[2]), w[2]))
+            : root;
           for (const k of [-1, 1]) {
             const p = add(centre, scale(path.sides[s] as Vec3, k * half));
-            refVerts.push(a, b, c);
-            weights.push(w0, u, v);
-            offsets.push(...sub(p, root));
+            refVerts.push(...tri);
+            weights.push(...w);
+            offsets.push(...sub(p, origin));
             uvs.push((column + (k < 0 ? 0 : 1)) / STRAND_COLUMNS, t);
             rank.push(r);
             growth.push(len * t);
