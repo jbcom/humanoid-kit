@@ -8,7 +8,6 @@ import {
   DORSAL,
   dorsalLength,
   GIRTH_RANGE,
-  keyShape,
   LENGTH_RANGE,
   PHALLUS_GIRTH,
   PHALLUS_KEYS,
@@ -62,7 +61,7 @@ function span(points: Iterable<readonly number[]>): number[] {
   return lo.map((l, k) => (hi[k] as number) - l);
 }
 
-const DEFAULT = PHALLUS_KEYS[2];
+const DEFAULT = PHALLUS_KEYS.find((k) => k.length === 0.0916);
 if (!DEFAULT) throw new Error("no default key");
 const parts = maleParts(assets, model.controlShape(AUTHORING_FIGURE).control);
 const skin = skinOf(
@@ -146,8 +145,8 @@ describe("the sculpts on the reservoir", () => {
 
 // Each key, state and variation is sized on its drawn shape (`SculptedPhallus.scalesFor`).
 describe("the organ's shape against the literature", { timeout: 300_000 }, () => {
-  const flaccid = keyShape(organ, DEFAULT);
-  const erect = keyShape(organ, DEFAULT, { state: 1 });
+  const flaccid = organ.shape(DEFAULT);
+  const erect = organ.shape(DEFAULT, { state: 1 });
 
   it("is as long as the default key says: Veale's pooled flaccid length, 9.16 cm, along the top", () => {
     expect(dorsalLength(root, flaccid)).toBeCloseTo(0.0916, 4);
@@ -163,8 +162,8 @@ describe("the organ's shape against the literature", { timeout: 300_000 }, () =>
   });
 
   it("varies by two standard deviations of length and girth at a full step", () => {
-    const long = keyShape(organ, DEFAULT, { length: 1 + LENGTH_RANGE });
-    const thick = keyShape(organ, DEFAULT, { girth: 1 + GIRTH_RANGE });
+    const long = organ.shape(DEFAULT, { length: 1 + LENGTH_RANGE });
+    const thick = organ.shape(DEFAULT, { girth: 1 + GIRTH_RANGE });
     expect(dorsalLength(root, long)).toBeCloseTo(0.0916 + 2 * 0.0157, 4);
     expect(organ.girthOf(thick)).toBeCloseTo(0.0931 + 2 * 0.009, 4);
   });
@@ -192,41 +191,29 @@ describe("the organ's shape against the literature", { timeout: 300_000 }, () =>
   });
 
   it("grows with size through the sculpted keys to the measured length and girth of each", () => {
-    for (const key of PHALLUS_KEYS.filter((k) => k.form === "sculpt")) {
-      const shape = keyShape(organ, key);
+    for (const key of PHALLUS_KEYS) {
+      const shape = organ.shape(key);
       expect(dorsalLength(root, shape), `${key.size}`).toBeCloseTo(key.length, 4);
       // Within 2%: where mid-shaft falls moves with the length, so the girth is fitted to a step.
       expect(Math.abs(organ.girthOf(shape) / key.circumference - 1), `${key.size}`).toBeLessThan(
         0.02,
       );
     }
-    // The drawn clitoral key is smaller than the smallest sculpted one.
-    const glans = PHALLUS_KEYS[0] as (typeof PHALLUS_KEYS)[number];
-    const small = PHALLUS_KEYS[1] as (typeof PHALLUS_KEYS)[number];
-    expect(span(keyShape(organ, glans))[1] as number).toBeLessThan(
-      span(keyShape(organ, small))[1] as number,
-    );
   });
 
-  it("has only finite positions, for every key and variation it offers", () => {
+  it("has only finite positions, for every key and variation it offers, erect ones too", () => {
     for (const key of PHALLUS_KEYS) {
       const variations: Variation[] = [
         {},
         { length: 1 + LENGTH_RANGE },
         { girth: 1 - GIRTH_RANGE },
+        { state: 0.5 },
+        { state: 1 },
+        { girth: 1 - GIRTH_RANGE, state: 1 },
       ];
-      // A sculpted key erects; a drawn key (the clitoral glans) has no erect state.
-      if (key.form === "sculpt")
-        variations.push({ state: 0.5 }, { state: 1 }, { girth: 1 - GIRTH_RANGE, state: 1 });
       for (const v of variations)
-        for (const p of keyShape(organ, key, v)) expect(p.every(Number.isFinite)).toBe(true);
+        for (const p of organ.shape(key, v)) expect(p.every(Number.isFinite)).toBe(true);
     }
-  });
-
-  it("refuses an erect state for a drawn key", () => {
-    const glans = PHALLUS_KEYS.find((k) => k.form !== "sculpt");
-    if (!glans) throw new Error("no drawn key");
-    expect(() => keyShape(organ, glans, { state: 1 })).toThrow(/no erect state/);
   });
 
   it("keeps the loop where the skin is: a ring's first vertices stay near the root", () => {
@@ -265,9 +252,8 @@ describe("the pack's organ", { timeout: 300_000 }, () => {
     expect(erectDrives.length).toBeGreaterThan(0);
     const suffix = new RegExp(`-(${STATES.map((s) => s.name).join("|")})$`);
     for (const [name] of erectDrives) expect(name).toMatch(suffix);
-    // Every key that erects is drawn at every state, with its variations.
-    const erecting = PHALLUS_KEYS.filter((k) => k.erects).length;
-    expect(erectDrives.length).toBe(erecting * STATES.length * 5);
+    // Every key erects, drawn at every state with its variations.
+    expect(erectDrives.length).toBe(PHALLUS_KEYS.length * STATES.length * 5);
   });
 
   it("offers a size, a length and a girth, all adult-only and none with a target of its own", () => {
@@ -304,7 +290,7 @@ describe("the organ on the adult surface", { timeout: 300_000 }, () => {
   const surfaceSpan = (modifiers: Record<string, number>, signals: Record<string, number> = {}) =>
     span(moved(model.evaluate(figure(modifiers), signals).positions));
   const generated = (key: number, v: Variation) =>
-    span(keyShape(organ, PHALLUS_KEYS[key] as (typeof PHALLUS_KEYS)[number], v));
+    span(organ.shape(PHALLUS_KEYS[key] as (typeof PHALLUS_KEYS)[number], v));
   const near = (a: number[], b: number[]) => {
     for (let k = 0; k < 3; k++) expect(a[k], `axis ${k}`).toBeCloseTo(b[k] as number, 3);
   };
@@ -326,8 +312,8 @@ describe("the organ on the adult surface", { timeout: 300_000 }, () => {
   });
 
   it("is the generator's shape for every variation a key offers, erect ones too", () => {
-    const k = 2;
-    const size = { [PHALLUS_SIZE]: (PHALLUS_KEYS[k] as { size: number }).size };
+    const k = PHALLUS_KEYS.indexOf(DEFAULT);
+    const size = { [PHALLUS_SIZE]: DEFAULT.size };
     near(surfaceSpan({ ...size, [PHALLUS_LENGTH]: 1 }), generated(k, { length: 1 + LENGTH_RANGE }));
     near(
       surfaceSpan({ ...size, [PHALLUS_LENGTH]: -1 }),
@@ -380,8 +366,7 @@ describe("the organ on the adult surface", { timeout: 300_000 }, () => {
     // more than half a millimetre, where a straight line cuts a swing's corner. (The tip's
     // straight distance from the root need not grow: the erect shaft rises in a curve
     // from a root that faces down.)
-    const key = PHALLUS_KEYS[2] as (typeof PHALLUS_KEYS)[number];
-    const shapes = drawn.map((state) => keyShape(organ, key, { state }));
+    const shapes = drawn.map((state) => organ.shape(DEFAULT, { state }));
     const blended = (a: number) => {
       const i = Math.min(
         drawn.length - 2,
@@ -403,12 +388,24 @@ describe("the organ on the adult surface", { timeout: 300_000 }, () => {
     expect(lengths[16] as number).toBeGreaterThan((lengths[0] as number) * 1.4);
   });
 
-  it("holds still for a phallus below the first erecting key", () => {
-    // A phallus smaller than the first erecting key has no erect state: it holds still.
-    const small = { [PHALLUS_SIZE]: (PHALLUS_KEYS[0] as { size: number }).size };
-    const a = moved(model.evaluate(figure(small)).positions);
-    const b = moved(model.evaluate(figure(small), { arousal: 1 }).positions);
-    expect(b).toEqual(a);
+  it("is the smallest key's own shape a share of the way out of rest below it, flaccid and erect (#75)", () => {
+    // No drawn key under the smallest sculpted one: the organ grows out of the reservoir at
+    // rest toward that key, so every vertex is the size's share of the way to it.
+    const smallest = PHALLUS_KEYS[0] as (typeof PHALLUS_KEYS)[number];
+    for (const arousal of [0, 1]) {
+      const key = model.evaluate(figure({ [PHALLUS_SIZE]: smallest.size }), { arousal }).positions;
+      for (const share of [0.16, 0.48]) {
+        const p = model.evaluate(figure({ [PHALLUS_SIZE]: share * smallest.size }), {
+          arousal,
+        }).positions;
+        let off = 0;
+        for (let i = 0; i < p.length; i++) {
+          const want = (rest[i] as number) + share * ((key[i] as number) - (rest[i] as number));
+          off = Math.max(off, Math.abs((p[i] as number) - want));
+        }
+        expect(off, `share ${share}, arousal ${arousal}`).toBeLessThan(1e-5);
+      }
+    }
   });
 
   it("grows smoothly between keys: more size is further out, with no jump at a key", () => {

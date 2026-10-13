@@ -5,7 +5,6 @@ import { skinOf } from "../scripts/lib/detail/contact.ts";
 import {
   ERECT_GIRTH,
   ERECT_LENGTH,
-  keyShape,
   PHALLUS_GIRTH,
   PHALLUS_KEYS,
   PHALLUS_LENGTH,
@@ -42,10 +41,13 @@ const bare = createRecipe({
   macros: AUTHORING_FIGURE.macros,
   modifiers: { [PHALLUS_SIZE]: 0, [TESTES_SIZE]: 0, [VULVA_SIZE]: 0, [ANAL_CANAL]: 0 },
 });
-/** An adult with the organ at its default size (Veale's pooled means, flaccid), and no testes. */
+/** The organ's default key: Veale's pooled means, flaccid. */
+const DEFAULT_KEY = PHALLUS_KEYS.find((k) => k.length === 0.0916);
+if (!DEFAULT_KEY) throw new Error("no default phallus key");
+/** An adult with the organ at its default size, and no testes. */
 const organ = createRecipe({
   macros: AUTHORING_FIGURE.macros,
-  modifiers: { [PHALLUS_SIZE]: (PHALLUS_KEYS[2] as { size: number }).size, [TESTES_SIZE]: 0 },
+  modifiers: { [PHALLUS_SIZE]: DEFAULT_KEY.size, [TESTES_SIZE]: 0 },
 });
 
 /**
@@ -90,11 +92,10 @@ describe("engorgement as a drive of the organ's targets", { timeout: 300_000 }, 
       (adultManifest.anatomy?.reservoirs ?? []).map((r) => r.cap),
     );
     const sculpted = new SculptedPhallus(root, parts.phallus, skin);
-    const key = PHALLUS_KEYS[2] as (typeof PHALLUS_KEYS)[number];
     const rest = restShape(root);
     const expected =
-      authoredReach(keyShape(sculpted, key, { state: 1 }), rest) /
-      authoredReach(keyShape(sculpted, key), rest);
+      authoredReach(sculpted.shape(DEFAULT_KEY, { state: 1 }), rest) /
+      authoredReach(sculpted.shape(DEFAULT_KEY), rest);
     expect(reach({ arousal: 1 }) / reach({})).toBeCloseTo(expected, 3);
     // The numbers the shapes were built from.
     expect(ERECT_LENGTH).toBeCloseTo(1.43, 2);

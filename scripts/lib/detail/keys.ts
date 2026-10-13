@@ -54,5 +54,3 @@ export function shapeSum(root: ReservoirRoot, a: RootShape, b: RootShape, c: Roo
     return [p[0] + r[0] - q[0], p[1] + r[1] - q[1], p[2] + r[2] - q[2]] as Vec3;
   });
 }
-
-export const deg = (d: number): number => (d * Math.PI) / 180;
