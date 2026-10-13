@@ -1,14 +1,12 @@
 /**
- * Labels a rendered contact sheet: the integrator's sheet is a bare grid of tiles, so
- * this cuts it into its tiles and writes each one's label lines (the sampled values)
- * in a strip under it, with a title over the sheet.
+ * Labels rendered contact sheets: a rendered sheet is a bare grid of tiles, so this
+ * cuts it into its tiles and writes each one's label lines (the sampled values) in a
+ * strip under it, with the sheet's name over it.
  *
- *   node scripts/research/chest-foundation/label-sheet.ts <sheet.png> <labels.json> <key> <title>
+ *   node scripts/research/chest-foundation/label-sheet.ts <candidate-dir> <renders-dir>
  *
- * `<key>` names a list in the candidate's labels.json (scatter, extremes, posed,
- * strips). The request's columns and tile size are read from the request JSON
- * hk-sheets writes beside the sheet (`<sheet>.json`). The labelled sheet goes beside
- * labels.json.
+ * The candidate's job.json gives each sheet's columns and tile count, its labels.json
+ * the label lines by sheet name; `<name>-labelled.png` goes to the candidate directory.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -58,24 +56,37 @@ ${text.join("\n")}
     .toFile(out);
 }
 
+/** Labels every rendered sheet of a candidate's job that is in `renders`. */
 async function main() {
-  const [sheet, labelsFile, key, title] = process.argv.slice(2);
-  if (!sheet || !labelsFile || !key || !title)
-    throw new Error("usage: label-sheet.ts <sheet.png> <labels.json> <key> <title>");
-  const req = JSON.parse(fs.readFileSync(sheet.replace(/\.png$/, ".json"), "utf8")) as {
-    columns: number;
-    width: number;
-    height: number;
+  const [candidate, renders] = process.argv.slice(2);
+  if (!candidate || !renders)
+    throw new Error("usage: label-sheet.ts <candidate-dir> <renders-dir>");
+  const job = JSON.parse(fs.readFileSync(path.join(candidate, "job.json"), "utf8")) as {
+    sheets: { name: string; columns: number; recipes: unknown[] }[];
   };
-  const all = JSON.parse(fs.readFileSync(labelsFile, "utf8")) as Record<string, string[][]>;
-  const labels = all[key];
-  if (!labels) throw new Error(`${labelsFile} has no ${key}`);
-  const out = path.join(
-    path.dirname(labelsFile),
-    path.basename(sheet).replace(/\.png$/, "-labelled.png"),
-  );
-  await labelSheet(sheet, labels, title, out, req.columns, req.width, req.height);
-  console.log(out);
+  const all = JSON.parse(fs.readFileSync(path.join(candidate, "labels.json"), "utf8")) as Record<
+    string,
+    string[][]
+  >;
+  const pngs = fs.readdirSync(renders).filter((f) => f.endsWith(".png"));
+  for (const s of job.sheets) {
+    // The pool names a sheet `<name>.png`, a collected copy `v<n>-<name>.png`.
+    const png = pngs.find(
+      (f) => f === `${s.name}.png` || new RegExp(`^v\\d+-${s.name}\\.png$`).test(f),
+    );
+    if (!png) {
+      console.log(`${s.name}: not rendered`);
+      continue;
+    }
+    const labels = all[s.name];
+    if (!labels) throw new Error(`labels.json has no ${s.name}`);
+    const file = path.join(renders, png);
+    const { width = 0, height = 0 } = await sharp(file).metadata();
+    const rows = Math.ceil(s.recipes.length / s.columns);
+    const out = path.join(candidate, `${s.name}-labelled.png`);
+    await labelSheet(file, labels, s.name, out, s.columns, width / s.columns, height / rows);
+    console.log(out);
+  }
 }
 
 if (import.meta.main) await main();

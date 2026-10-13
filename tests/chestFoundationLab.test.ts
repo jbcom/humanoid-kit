@@ -57,23 +57,31 @@ describe("chest foundation lab: legacy identity", () => {
 describe("chest foundation lab: age", () => {
   // The knots and ages between them: linear interpolation over the knots is exact
   // because every library quantity is linear in years between MakeHuman's anchors.
-  const checked = [...new Set([...AGE_KNOTS, 7, 15, 33, 60])];
-  it.each(checked)("reproduces MakeHuman at age %i, at the average and maximum size", (age) => {
-    const recipe = cellRecipeAt(age);
-    const control = lab.model.evaluate(recipe).control;
-    const at = libraryAt(ages, age);
-    for (const [s, f] of [
-      [0.5, 0.5],
-      [1, 0.5],
-      [1, 0],
-    ] as const)
-      expect(
-        maxDiff(
-          chestTissue(ctx, at, control, both(s, f)).positions,
-          legacyControl(lab, recipe, s, f),
-        ),
-      ).toBeLessThan(1e-5);
-  });
+  // 19 to 24 cover the span MakeHuman blends child into adult (10 to 25).
+  const checked = [...new Set([...AGE_KNOTS, 7, 15, 19, 21, 22, 24, 33, 60])];
+  it.each(checked)(
+    "reproduces MakeHuman at age %i, at the average and every grid corner",
+    (age) => {
+      const recipe = cellRecipeAt(age);
+      const control = lab.model.evaluate(recipe).control;
+      const at = libraryAt(ages, age);
+      // The average and every corner of the library's size x firmness grid.
+      for (const [s, f] of [
+        [0.5, 0.5],
+        [0.5, 0],
+        [0.5, 1],
+        [1, 0],
+        [1, 0.5],
+        [1, 1],
+      ] as const)
+        expect(
+          maxDiff(
+            chestTissue(ctx, at, control, both(s, f)).positions,
+            legacyControl(lab, recipe, s, f),
+          ),
+        ).toBeLessThan(1e-5);
+    },
+  );
 
   it("fails the age identity gate with the wrong age's library (the gate can see a miss)", () => {
     const recipe = cellRecipeAt(13);
