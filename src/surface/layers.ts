@@ -195,8 +195,11 @@ interface LayerBase {
    * from) in the adult pack. Its fields are zero until those targets load, and
    * `paintStopTable` paints it only for an adult figure whose recipe applies
    * `feature` (`SkinPaintInput.anatomy`), so no layer can forget the gate.
+   * `spec` names the pack's layer spec (`AdultSkinLayerSpec.id`) its fields are
+   * measured from, when that is another layer's (the vulva's moisture lies over
+   * the vulva's colour mask); absent, its own id.
    */
-  adult?: { feature: string };
+  adult?: { feature: string; spec?: string };
   /**
    * The layer lies on all the skin (vellus): its mask is 1 everywhere and it
    * takes no channel of the field atlas (`planAtlas` gives it none). Its

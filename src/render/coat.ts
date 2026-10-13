@@ -131,7 +131,11 @@ const VERTEX_OFFSET = /* glsl */ `
 const VERTEX_COMB = /* glsl */ `
 	vec3 hkComb = ${COAT_COMB_ATTRIBUTE};
 	#ifdef USE_SKINNING
-		hkComb = ( skinMatrix * vec4( hkComb, 0.0 ) ).xyz;
+		#ifdef HK_LINEAR_MATRIX
+			hkComb = ( hkNormalMatrix * vec4( hkComb, 0.0 ) ).xyz;
+		#else
+			hkComb = ( skinMatrix * vec4( hkComb, 0.0 ) ).xyz;
+		#endif
 		#ifdef HK_DUAL_MOTION
 			if ( hkShare > 0.0 ) hkComb = mix( hkComb, hkQRotate( hkQ, ${COAT_COMB_ATTRIBUTE} ), hkShare );
 		#endif
@@ -335,7 +339,7 @@ export class CoatMaterial extends MeshStandardMaterial {
   };
 
   override customProgramCacheKey(): string {
-    return `humanoid-kit-coat-2|${SHADOW_FILTER_KEY}${this.hkCaptureCompileProbe ? "|qa-alpha" : ""}`;
+    return `humanoid-kit-coat-3|${SHADOW_FILTER_KEY}${this.hkCaptureCompileProbe ? "|qa-alpha" : ""}`;
   }
 }
 

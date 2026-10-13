@@ -24,8 +24,10 @@
 - `humanoid-kit-animations` (CC0 1.0): 98 clips (walks, jog, sprint, idles, swims, combat, sitting and more) on the default
   skeleton, played on any figure with root motion and planted feet derived from the
   figure's own legs; separate install, a clip's file loads when first played.
-- `humanoid-kit-hair` (CC0 1.0): 33 hair entries as alpha cards bound to the
-  base body (16 scalp styles, 12 eyebrows, 4 eyelashes and a beard); separate
+- `humanoid-kit-hair` (CC0 1.0): 38 hair entries bound to the
+  base body (16 scalp styles, 12 eyebrows, 4 eyelashes, 5 CC0 facial-hair entries
+  and 1 generated beard entry awaiting replacement); the facial assets are packed,
+  with runtime integration in progress. Separate
   install, an entry's files load when worn, refused unless built against the
   exact body pack. `recipe.hair` picks style and colour.
 - `humanoid-kit-clothing` (CC0 1.0): 87 garments bound to the base

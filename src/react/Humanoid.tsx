@@ -423,14 +423,17 @@ function useAttachmentMaterial(
   occlusionKeys: Vector3,
   report: (e: Error) => void,
   eyeMaterial: { library: EyeLibrary; id: string } | null = null,
+  dual: DualBones | null,
 ): MeshStandardMaterial {
   const material = useMemo(() => {
     const material =
       t.kind === "eyes" ? new EyeMaterial() : createAttachmentMaterial(t.kind, t.material);
     // The figure's key weights, shared, so a pose change reaches every attachment.
     material.occlusionKeys = occlusionKeys;
+    // Attachments carry the same eight influences as the body, including in their visible shader.
+    if (dual) applyDualSkinning(material, dual);
     return material;
-  }, [t, occlusionKeys]);
+  }, [t, occlusionKeys, dual]);
   const reportRef = useLatest(report);
   const settle = useSettle();
   const invalidate = useThree((s) => s.invalidate);
@@ -648,6 +651,7 @@ function AttachmentMesh({
   eyeLibrary,
   melanin,
   shape,
+  dual,
 }: {
   index: number;
   topology: AttachmentTopology;
@@ -660,6 +664,8 @@ function AttachmentMesh({
   eyeLibrary: EyeLibrary | undefined;
   melanin: number;
   shape: object;
+  /** The figure's complete eight-influence dual-bone palette. */
+  dual: DualBones | null;
 }) {
   const eyeMaterial = useMemo(
     () =>
@@ -668,7 +674,7 @@ function AttachmentMesh({
         : null,
     [topology.kind, eyeLibrary, eyes.material],
   );
-  const material = useAttachmentMaterial(topology, occlusionKeys, report, eyeMaterial);
+  const material = useAttachmentMaterial(topology, occlusionKeys, report, eyeMaterial, dual);
   useEffect(() => {
     if (material instanceof EyeMaterial) material.setAppearance(eyes);
   }, [material, eyes]);
@@ -685,6 +691,7 @@ function AttachmentMesh({
       part={index}
       renderOrder={topology.zDepth}
       shape={shape}
+      dual={dual}
     />
   );
 }
@@ -736,6 +743,7 @@ function HairMesh({
   visible,
   report,
   shape,
+  dual,
   density = 1,
   white = 0,
 }: {
@@ -747,12 +755,18 @@ function HairMesh({
   visible: boolean;
   report: (e: Error) => void;
   shape: object;
+  /** The figure's complete eight-influence dual-bone palette. */
+  dual: DualBones | null;
   /** For body hair cards, how many are drawn (the figure's coverage); scalp hair is whole. */
   density?: number;
   /** For body hair cards, the share of them drawn white (a beard's grey); scalp hair has none. */
   white?: number;
 }) {
-  const material = useMemo(() => new HairMaterial(), []);
+  const material = useMemo(() => {
+    const made = new HairMaterial();
+    if (dual) applyDualSkinning(made, dual);
+    return made;
+  }, [dual]);
   useEffect(() => material.setDensity(density), [material, density]);
   useDiffuseTexture(material, topology.textureUrl, report);
   // The colour is a few numbers; effects depend on their values, not the recipe's object identity.
@@ -775,6 +789,7 @@ function HairMesh({
       part="hair"
       renderOrder={topology.zDepth}
       shape={shape}
+      dual={dual}
     />
   );
 }
@@ -846,6 +861,7 @@ function DecalMesh({
   visible,
   report,
   shape,
+  dual,
 }: {
   topology: HairTopology;
   geometry: BufferGeometry;
@@ -855,8 +871,14 @@ function DecalMesh({
   visible: boolean;
   report: (e: Error) => void;
   shape: object;
+  /** The figure's complete eight-influence dual-bone palette. */
+  dual: DualBones | null;
 }) {
-  const material = useMemo(() => new DecalMaterial(), []);
+  const material = useMemo(() => {
+    const made = new DecalMaterial();
+    if (dual) applyDualSkinning(made, dual);
+    return made;
+  }, [dual]);
   useDiffuseTexture(material, topology.textureUrl, report);
   const kind = topology.kind as DecalKind;
   // Brows and lashes grey with age on their own clocks; the recipe's grey is a floor.
@@ -879,6 +901,7 @@ function DecalMesh({
       renderOrder={topology.zDepth}
       shape={shape}
       shadows={false}
+      dual={dual}
     />
   );
 }
@@ -1934,6 +1957,7 @@ export function Humanoid({
                   eyeLibrary={eyeMaterials}
                   melanin={recipe.skin.melanin}
                   shape={shape}
+                  dual={dual}
                 />
               ) : null;
             })}
@@ -1948,6 +1972,7 @@ export function Humanoid({
                 visible={shown}
                 report={report}
                 shape={shape}
+                dual={dual}
               />
             )}
             {decals.map((d) => (
@@ -1961,6 +1986,7 @@ export function Humanoid({
                 visible={shown}
                 report={report}
                 shape={shape}
+                dual={dual}
               />
             ))}
             {beard && (
@@ -1976,6 +2002,7 @@ export function Humanoid({
                 visible={shown}
                 report={report}
                 shape={shape}
+                dual={dual}
               />
             )}
             {figure?.bodyArt?.piercings.map((p) => (
