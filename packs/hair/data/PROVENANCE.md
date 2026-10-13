@@ -58,7 +58,7 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | bob01.webp | hair/bob01/bob01_diffuse.png | 2048 | face | 2048 | 2048 | the source |
 | braid01.webp | hair/braid01/braid01_diffuse.png | 2048 | face | 2816 | 2048 | the source |
 | crop01.webp | drawn in the cut-out of hair/short04/short04_diffuse.png | 2048 | face | 1664 | 1664 | the source, downsampled |
-| braids01.webp | authored by the packer | 1024 | face | 640 | 1024 | the source |
+| braids01.webp | authored by the packer | 1024 | face | 1280 | 1024 | the source, 256 texels short; not upscaled |
 | cornrows01.webp | authored by the packer | 1024 | face | 1024 | 1024 | the source |
 | twists01.webp | authored by the packer | 1024 | face | 1024 | 1024 | the source |
 | locs01.webp | authored by the packer | 1024 | face | 1408 | 1024 | the source, 384 texels short; not upscaled |
@@ -84,37 +84,37 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 
 | Output | SHA-256 |
 | --- | --- |
-| short02.bin.gz | `aa2d0b520ea593529e29e42d03cdab2f35edbfbecd74c270584aa753da70e1f3` |
+| short02.bin.gz | `d2670495f8a78f1b3171d3be57653cbacabe858f134061ddff61e58aab8c469a` |
 | short02.webp | `3fe64b9a68b43ad675b745da7f63c74b724efcee6e19ee9375c6d11da1fc523d` |
-| bob02.bin.gz | `e0f3fa67e85ac54cc298dbfda4c7879215a3afd791fcfd167baa2ec230c1e80a` |
+| bob02.bin.gz | `e43f75a40c5a329a26c447b196bfd73417aa882f31ac997958cae001fd1a0fd5` |
 | bob02.webp | `fca88b391ae573291bce61fb66323531d77fb37738ac316cee0ec8ffb7e206f8` |
-| long01.bin.gz | `d74fe23127a17aebade68949cb7b3e7704a7eac5f56c1a51c401deb888a272f0` |
+| long01.bin.gz | `735a3ad73aafe1731fcccbccf64b6b5ec09d21c658e6a05b2792a6d1f824a8a3` |
 | long01.webp | `16ddcd9875b4ad841fb9e5001897964d7a38755f04efeaa49b592ae36783c6d8` |
-| afro01.bin.gz | `0f39a05f6067c08e182dbe9a3b2a1b7d63bd38580f3abdd218f54a036e64290a` |
+| afro01.bin.gz | `1347638bac9a0b6c25361031fbe7635a59325d3dbdc5c54bf1f3e74deaed5a10` |
 | afro01.webp | `5538a0c35c42ae81d636ca98dac617a2b2a33308f1deba5f13bd4446f876336f` |
-| short04.bin.gz | `bf093d5d71a843d1c9270edfbd4953db91e47d1a3f59bc21360ab54bf476fc22` |
+| short04.bin.gz | `fc84fe68ca8acfafbb3467f119c24d2ea382b8cf76e17e5391a40962171302fc` |
 | short04.webp | `675135b72c7f8261cc8908e71eb7aecc563adf16a71def6a0ab233b5600e5445` |
-| short03.bin.gz | `e8325c509fbaac06100ce1fbe1215fd832f02e2d22d491cc39bdda1466ae6c43` |
+| short03.bin.gz | `60139d787680904c9e935f8de098afcaab69602d3407739d2c6f8ea7a225775b` |
 | short03.webp | `f614f39955b5e955e2e5f05c6995641ee696a6453e41383e39cb6895dc4f88d2` |
-| ponytail01.bin.gz | `a4febd28719d3859c4daac4640661166356145816f897148e47715254f1fe1d3` |
+| ponytail01.bin.gz | `10f9816d101d0b5e68a21bb5972b01bbaee40b7c0ed95b3f50cc8089463ff3af` |
 | ponytail01.webp | `b60dbec1b1dc48750af41c825c73e68f37d9edfc3633c2602ddd8b3c466f9aba` |
-| short01.bin.gz | `ceefb51165bbb609f3cb87deba9e85cb9d09a8e9d438e59d835521043f277c45` |
+| short01.bin.gz | `92955db94f115f1f5e6031e01d497ca5a5f8d5cdce2285142d2aa09d8e7589a9` |
 | short01.webp | `534604cd44ad63db2b25f2176ab366bfc020ae4284cd09b0202814dfb72045c9` |
-| bob01.bin.gz | `63b3c820f07b62524800e40763ab8bce775c03b2a90927247fe17d78d474dcd5` |
+| bob01.bin.gz | `8e636e6e074188791ade550139fb591d26fc67fbeb5e8ea2bea80afe134f0417` |
 | bob01.webp | `d9d0383baa65675e958e247b157d87c79d1e871f81804e86ada9f9ac7926d7c3` |
-| braid01.bin.gz | `4c359f3d87daa233772fcb184d09a3305e8b3b4c84f51a1e266b03532973d673` |
+| braid01.bin.gz | `6b843fee78e6a27e14137b6e10eaebdfca08110c2d158af3137104e460ad6b16` |
 | braid01.webp | `ebda0c0fc0572ab7cdc7d101b5ceb1095ae8a5ff60c8e908e93b4804cacb10e2` |
-| crop01.bin.gz | `09b0cf3d310add9c9a9df9ab20eb2bce5215b6ed9beb39e4770bbc7246452ea4` |
+| crop01.bin.gz | `23eb292fbb6e1665538e8abf5c9113bc6a857cc808a19778f9a1782c8216c96f` |
 | crop01.webp | `5a2b22578ba66a6f216a707c07494bac9c6fbfcfbf63fc2d49869b01f60a2770` |
-| braids01.bin.gz | `cfeb8202cb0f7760b588c735f0d8ac4201326a2e9e1bda526d9778d9fec2a556` |
+| braids01.bin.gz | `d76cdc6173951d87370a2863a24ece6e87039bac9113854c2e6e4be61524fd9c` |
 | braids01.webp | `35de9774062d8fe7b48bb82a33eea917acc198307f16acf85fb61f1192509c65` |
-| cornrows01.bin.gz | `60bfd219a133f88bf99f1230a5142fe044f1877caa71a324657d540ec8849b77` |
+| cornrows01.bin.gz | `66c787e9e097a2be6e77df75ee912811c9fbb7cc8ae738dd6d14baa142cd0122` |
 | cornrows01.webp | `c7eeb5c51225b493a7d0707ef3a38038ff00171767e930079560f97d269db867` |
-| twists01.bin.gz | `63e833f72b8ec941e4be18fb82800327c01eeb467689fd064069d2567b842ee7` |
+| twists01.bin.gz | `48371e24799baa5fb6f8b375ec18a773526581352966a15fc8e38fc892664591` |
 | twists01.webp | `c7f300fb5c66fc549323076dd5a1f36702045a4573e269845c8585fca650f472` |
-| locs01.bin.gz | `abb1c0ea8049cc0310c6ecc808cd2506a3689cc9e2074ccec4b14dfb1fb6b243` |
+| locs01.bin.gz | `f58300f17f0b11991c1c59973247a42ddf508d1179fb60673743186271b31783` |
 | locs01.webp | `606f9cfbd2119a7eda05340ed8dfa1f19c3acba6f6f7774054e3ed09c530e586` |
-| bantu01.bin.gz | `e597ed20b505bbf7927bbb2c9f197a503710409ab359bfd63592aaa7b94fe326` |
+| bantu01.bin.gz | `4ed2060f0917dd95465fabdcb03b1b85f4dc6d77c7b71bea9ac770be3f4f551d` |
 | bantu01.webp | `3409ce0dcba009bac44141c70e2686ae06289a0dbec8fb9e120021b14a0b9a8e` |
 | eyebrow001.bin.gz | `eca8142f0c21815a2b1bd204b4c32888b71325cc3e0ab3d0013cf42f9b803b96` |
 | eyebrow001.webp | `63e0b84acd5b168e9bd5af4d9f949a21b53250142366ee1879c61748993c5758` |
@@ -148,5 +148,5 @@ original than the GPU's own magnification (`scripts/lib/textureSizing.ts`, docs/
 | eyelashes03.webp | `3264a9da33053d5fd3b80747548e1c962f4abeaa20e311367bbcb2bb04ad3d4d` |
 | eyelashes04.bin.gz | `a405197a9dc7f361e9b5946b0d134aaf64e31b0072cc75151dd8bdd5b41f412c` |
 | eyelashes04.webp | `d545d987b615d55a23b4e637b193ba81ce41cf5edf0c87883cc00a6de5094059` |
-| beard-full.bin.gz | `d7e1ff014d25c382479da340fcc407118729eb909d796282c0a114ca38ccd828` |
+| beard-full.bin.gz | `1660723c1963bcf3a32d6f1bb17fa295f4e8484e7b3f1142e2da919e02333c99` |
 | beard-full.webp | `b54fbb4eb11a3a1170e6f406276cb363d8b4d4fdf4b530ca9e8f462f07551d2f` |

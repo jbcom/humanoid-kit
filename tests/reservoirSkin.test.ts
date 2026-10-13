@@ -218,17 +218,18 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
   });
 
   it("stays continuous where a root's bone overtakes one of the vertex's own: no weight jumps", () => {
-    // A vertex on four bones and a root on four others: as the share grows the root's
-    // overtake the vertex's one by one, and the four kept change.
+    // A vertex on eight bones and a root on eight others: as the share grows the root's
+    // overtake the vertex's one by one, and the eight kept change.
+    const weights = [0.25, 0.2, 0.15, 0.12, 0.1, 0.08, 0.06, 0.04];
     const skin: SkinWeights = {
-      skinIndex: Uint16Array.from([0, 1, 2, 3]),
-      skinWeight: Float32Array.from([0.4, 0.3, 0.2, 0.1]),
+      skinIndex: Uint16Array.from(weights.map((_, i) => i)),
+      skinWeight: Float32Array.from(weights),
     };
     const roots = [
       rootSkin(
         {
-          skinIndex: Uint16Array.from([4, 5, 6, 7]),
-          skinWeight: Float32Array.from([0.4, 0.3, 0.2, 0.1]),
+          skinIndex: Uint16Array.from(weights.map((_, i) => 8 + i)),
+          skinWeight: Float32Array.from(weights),
         },
         [0],
       ),
@@ -248,12 +249,9 @@ describe("reservoir skinning", { timeout: 300_000 }, () => {
     const step = 1 / 4000;
     for (let e = 0; e < 1; e += step) worst = Math.max(worst, apart(at(e), at(e + step)));
     expect(worst).toBeLessThan(0.01);
-    expect([...at(1)].sort((a, b) => a[0] - b[0])).toEqual([
-      [4, expect.closeTo(0.4, 6)],
-      [5, expect.closeTo(0.3, 6)],
-      [6, expect.closeTo(0.2, 6)],
-      [7, expect.closeTo(0.1, 6)],
-    ]);
+    expect([...at(1)].sort((a, b) => a[0] - b[0])).toEqual(
+      weights.map((w, i) => [8 + i, expect.closeTo(w, 6)]),
+    );
     // No share at all: the topology's arrays themselves.
     expect(evaluatedSkin(skin, skinning, Float32Array.from([0]))).toBeNull();
     expect(evaluatedSkin(skin, skinning, null)).toBeNull();

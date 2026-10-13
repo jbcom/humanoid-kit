@@ -46,7 +46,7 @@ describe("buildBoneField", () => {
     // The pack's own vertices all carry weight, so strip it from a block of them.
     const weights = Float32Array.from(assets.skinWeight);
     const bare = Array.from({ length: 50 }, (_, i) => 100 + i);
-    for (const v of bare) weights.fill(0, v * 4, v * 4 + 4);
+    for (const v of bare) weights.fill(0, v * SKIN_INFLUENCES, (v + 1) * SKIN_INFLUENCES);
     const field = buildBoneField({ ...assets, skinWeight: weights }, names, () => 0, 1, 0);
     for (const v of bare) {
       expect((field.masks[1] as Float32Array)[v]).toBe(1);
