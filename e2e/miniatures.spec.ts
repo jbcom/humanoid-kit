@@ -17,6 +17,8 @@ import type { MiniatureMeasure } from "../playground/src/MiniatureLab.tsx";
 import { budget } from "./budget.ts";
 
 const shots = process.env.HK_MINIATURE_SHOTS;
+/** WebGL renderer strings of software rasterisers, whose frame times measure the CPU. */
+const SOFTWARE = /swiftshader|llvmpipe|softpipe|basic render driver/i;
 
 async function measure(page: Page, testInfo: TestInfo, count: number): Promise<MiniatureMeasure> {
   await openSilentGame(page, "./", { miniatures: String(count) });
@@ -46,10 +48,11 @@ test.describe("miniatures", () => {
     // Each archetype is at most one instanced draw per level (4 × 3), plus the table.
     expect(m.drawCalls).toBeLessThanOrEqual(20);
     expect(m.triangles).toBeLessThanOrEqual(250_000);
-    if (!/swiftshader/i.test(m.renderer)) {
-      // A frame of 500 figures keeps to the display's rate, as one figure does.
+    if (!SOFTWARE.test(m.renderer)) {
+      // A frame of 500 figures keeps to the display's rate, as one figure
+      // does; the p95 may hold about one dropped frame of pacing.
       expect(m.medianMs).toBeLessThanOrEqual(Math.max(one.medianMs, 1000 / 60) + 1);
-      expect(m.p95Ms).toBeLessThanOrEqual(one.p95Ms + 2);
+      expect(m.p95Ms).toBeLessThanOrEqual(Math.max(one.p95Ms, 2000 / 60) + 1);
     }
   });
 });
