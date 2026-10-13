@@ -64,6 +64,7 @@ import { isAdult } from "../recipe/agePolicy.ts";
 import { appliedAnatomy, withAnatomyDefaults } from "../recipe/anatomy.ts";
 import type { Recipe } from "../recipe/recipe.ts";
 import {
+  applyGarmentWear,
   createAttachmentMaterial,
   garmentAlpha,
   NAIL_EDGE_ATTRIBUTE,
@@ -110,7 +111,8 @@ import {
   wornGroundOffset,
 } from "../rig/pose.ts";
 import { skinDualShare } from "../rig/skinShare.ts";
-import { bodyHairColour, bodyHairCoverage } from "../surface/bodyHair.ts";
+import { beardCoverage, resolveBeard } from "../surface/beard.ts";
+import { bodyHairColour } from "../surface/bodyHair.ts";
 import { browColour, type DecalKind, decalOpacity, lashColour } from "../surface/decalTone.ts";
 import {
   agedHairColour,
@@ -478,8 +480,8 @@ function useGarmentMaterial(
   t: GarmentTopology,
   dual: DualBones | null,
   report: (e: Error) => void,
-): MeshStandardMaterial {
-  const material = useMemo(() => {
+): { material: MeshStandardMaterial; wear: ReturnType<typeof applyGarmentWear> } {
+  const { material, wear } = useMemo(() => {
     const m = t.material;
     const made = new MeshStandardMaterial({
       color: new Color(m.color[0], m.color[1], m.color[2]),
@@ -490,8 +492,10 @@ function useGarmentMaterial(
     });
     // Skinned as the body is, so a sleeve does not part from the arm at a joint.
     if (dual) applyDualSkinning(made, dual);
+    // A figure's wear fades the cloth's albedo (`recipe.outfitLook`).
+    const worn = applyGarmentWear(made);
     // Drawn with the skin's shadow filter, so a sleeve and the arm in it agree.
-    return applyShadowFilter(made);
+    return { material: applyShadowFilter(made), wear: worn };
   }, [t, dual]);
   const reportRef = useLatest(report);
   const settle = useSettle();
@@ -537,7 +541,7 @@ function useGarmentMaterial(
     };
   }, [t, material, reportRef, settle]);
   useEffect(() => () => material.dispose(), [material]);
-  return material;
+  return { material, wear };
 }
 
 /** A mesh skinned to the figure's skeleton, bound once in mesh space. */
@@ -724,6 +728,7 @@ function HairMesh({
   report,
   shape,
   density = 1,
+  white = 0,
 }: {
   topology: HairTopology;
   geometry: BufferGeometry;
@@ -735,6 +740,8 @@ function HairMesh({
   shape: object;
   /** For body hair cards, how many are drawn (the figure's coverage); scalp hair is whole. */
   density?: number;
+  /** For body hair cards, the share of them drawn white (a beard's grey); scalp hair has none. */
+  white?: number;
 }) {
   const material = useMemo(() => new HairMaterial(), []);
   useEffect(() => material.setDensity(density), [material, density]);
@@ -745,7 +752,8 @@ function HairMesh({
   // biome-ignore lint/correctness/useExhaustiveDependencies: overrideKey stands for override's values
   useEffect(() => {
     material.setColour({ eumelanin, pheomelanin, grey, override });
-  }, [material, eumelanin, pheomelanin, grey, overrideKey]);
+    material.setWhite(white, { eumelanin, pheomelanin, grey, override });
+  }, [material, eumelanin, pheomelanin, grey, overrideKey, white]);
   useEffect(() => material.setStrand(topology.strand), [material, topology]);
   useEffect(() => material.setMultisampled(multisampled), [material, multisampled]);
   useEffect(() => () => material.dispose(), [material]);
@@ -888,7 +896,7 @@ function GarmentMesh({
   /** The figure's own colour and finish for this garment (`recipe.outfitLook`). */
   look: GarmentLook | undefined;
 }) {
-  const material = useGarmentMaterial(topology, dual, report);
+  const { material, wear: worn } = useGarmentMaterial(topology, dual, report);
   // A look is a few numbers: the effect depends on their values, not the recipe's identity.
   const [tr, tg, tb] = look?.tint ?? [1, 1, 1];
   const lookRoughness = look?.roughness;
@@ -901,7 +909,8 @@ function GarmentMesh({
     });
     material.color.setRGB(finish.color[0], finish.color[1], finish.color[2]);
     material.roughness = finish.roughness;
-  }, [material, topology, tr, tg, tb, lookRoughness, wear]);
+    worn.set(finish);
+  }, [material, worn, topology, tr, tg, tb, lookRoughness, wear]);
   return (
     <SkinnedPart
       geometry={geometry}
@@ -1145,16 +1154,31 @@ export function Humanoid({
   useEffect(() => {
     skin.setScalp(wornHair ? hairAlbedo(wornColour) : null);
   }, [skin, wornHair, wornColour.eumelanin, wornColour.pheomelanin, wornColour.grey, overrideKey]);
-  // A grown beard's cards: their colour and how many show are the body hair model's.
+  // A grown beard's cards: their colour is the face's body hair, how many show
+  // the beard's coverage, and the share of them white its grey.
   const beardLook = useMemo(() => {
     const input = {
       age: recipe.macros.age,
-      gender: recipe.macros.gender,
       colour: recipe.hair?.colour ?? DEFAULT_HAIR_COLOUR,
       ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     };
-    return { colour: bodyHairColour("face", input), density: bodyHairCoverage("face", input) };
+    return {
+      colour: bodyHairColour("face", input),
+      density: beardCoverage(input),
+      white: resolveBeard(input, Number.POSITIVE_INFINITY).grey,
+    };
   }, [recipe]);
+  // A generated beard's geometry goes when the beard changes: a growing one
+  // makes new cards every millimetre, and nothing else holds them.
+  useEffect(() => {
+    if (!beard) return;
+    const { topology, geometry } = beard;
+    return () => {
+      if (!topology.id.startsWith("beard:")) return;
+      geometries?.hair.delete(topology.id);
+      geometry.dispose();
+    };
+  }, [beard, geometries]);
 
   // The pose: face units blended into bone rotations (rest when absent), and
   // the attachments' occlusion following it.
@@ -1581,8 +1605,7 @@ export function Humanoid({
         withAnatomyDefaults(recipe, ready?.anatomy?.defaults),
         ready?.anatomy?.features ?? [],
       ),
-      // Body hair: its amount from the androgen axis and age, its colour from the hair's.
-      gender: recipe.macros.gender,
+      // Body hair: its amount from the recipe's regional controls and age, its colour from the hair's.
       ...(recipe.hair && { hairColour: recipe.hair.colour }),
       ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),
     });
@@ -1632,6 +1655,11 @@ export function Humanoid({
         if (!target) return;
         if (masks) {
           target.setIndex(new BufferAttribute(masks.bodyIndex, 1));
+          // What the garments hide of an attachment (a toenail in a boot) is not drawn.
+          geometries.attachments.forEach((g, i) => {
+            const index = masks.attachmentIndex[i] ?? ready?.topology.attachments[i]?.index;
+            if (index) g.setIndex(new BufferAttribute(index, 1));
+          });
           wear({
             key: ev.outfit.key,
             topologies,
@@ -1897,6 +1925,7 @@ export function Humanoid({
                 skeleton={rig.skeleton}
                 colour={beardLook.colour}
                 density={beardLook.density}
+                white={beardLook.white}
                 multisampled={multisampled}
                 visible={shown}
                 report={report}

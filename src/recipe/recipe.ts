@@ -101,7 +101,7 @@ export interface Recipe {
   /**
    * Body hair: legacy per-region multipliers on the physiological default, or
    * explicit coverage and physical follicle-density controls, plus a beard
-   * style. Optional: absent is the default for age and sex (`bodyHairCoverage`,
+   * style. Optional: absent is the default for age (`bodyHairCoverage`,
    * `beardStyle`), so recipes saved before body hair existed are unchanged. The
    * pubic controls are adult-only (the age policy refuses them under 18).
    */
@@ -203,7 +203,12 @@ export function createRecipe(
         ...(init.bodyHair.follicleDensity && {
           follicleDensity: { ...init.bodyHair.follicleDensity },
         }),
-        ...(init.bodyHair.beard && { beard: init.bodyHair.beard }),
+        ...(init.bodyHair.beard && {
+          beard:
+            typeof init.bodyHair.beard === "string"
+              ? init.bodyHair.beard
+              : { ...init.bodyHair.beard },
+        }),
       },
     }),
     ...(init.outfit && { outfit: [...init.outfit] }),

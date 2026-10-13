@@ -43,6 +43,7 @@ import {
   MeshPhysicalMaterial,
   ShaderChunk,
   Vector2,
+  Vector3,
   Vector4,
   type WebGLProgramParametersWithUniforms,
 } from "three";
@@ -298,6 +299,8 @@ export class HairMaterial extends MeshPhysicalMaterial {
     hkLobes: { value: Vector4 };
     hkAcross: { value: Vector2 };
     hkDensity: { value: number };
+    hkWhite: { value: number };
+    hkWhiteTint: { value: Vector3 };
   };
 
   constructor() {
@@ -325,7 +328,21 @@ export class HairMaterial extends MeshPhysicalMaterial {
       // Across the strands in texture space (strands along V give U).
       hkAcross: { value: new Vector2(1, 0) },
       hkDensity: { value: 1 },
+      hkWhite: { value: 0 },
+      hkWhiteTint: { value: new Vector3(1, 1, 1) },
     };
+  }
+
+  /**
+   * For body hair cards, the share of the cards drawn white, 0..1 (a beard's
+   * `grey`): each card whole, chosen by a hash of its rank so the white ones
+   * are scattered and not the same cards that `setDensity` thins first. White
+   * is `colour` fully greyed (`hairTint` at grey 1).
+   */
+  setWhite(white: number, colour: HairColour): void {
+    this.hkUniforms.hkWhite.value = Math.min(1, Math.max(0, white));
+    const [r, g, b] = hairTint({ ...colour, grey: 1, override: null });
+    this.hkUniforms.hkWhiteTint.value.set(r, g, b);
   }
 
   /**
@@ -419,6 +436,8 @@ varying float vHkGrowth;
 varying float vHkUvScale;
 varying float vHkRank;
 uniform float hkDensity;
+uniform float hkWhite;
+uniform vec3 hkWhiteTint;
 uniform vec4 hkLobes;
 vec3 hkT = vec3( 0.0 );
 float hkTStrength = 0.0;
@@ -434,6 +453,13 @@ ${CELL_KEEP}`,
       .replace(
         "#include <map_fragment>",
         `#include <map_fragment>
+	// A white card: the strand map times the hair's colour fully greyed, in place of the colour.
+	// The rank is hashed as an integer (lowbias32), which spreads neighbouring ranks evenly on every GPU.
+	{
+		uint hkR = uint( vHkRank * 65535.0 + 0.5 );
+		hkR ^= hkR >> 16u; hkR *= 0x7feb352du; hkR ^= hkR >> 15u; hkR *= 0x846ca68bu; hkR ^= hkR >> 16u;
+		if ( float( hkR ) / 4294967295.0 < hkWhite ) diffuseColor.rgb *= hkWhiteTint / max( diffuse, vec3( 1e-4 ) );
+	}
 	#ifdef USE_MAP
 		float hkTexel = texture2D( map, vMapUv ).g;
 		hkShift = ( hkTexel - 0.4 ) * ${HAIR_LOBES.shiftJitter.toFixed(3)};

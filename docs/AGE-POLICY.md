@@ -174,17 +174,16 @@ treats it as the operative line for anything it publishes.
 | Sexually explicit conduct by a figure under 18 | Not produced anywhere in the library; the planned animation packages refuse it. |
 | Posing, framing, scene, intent (Dost; § 1466A "appears to be") | Downstream application's responsibility. |
 
-**The core body uses MakeHuman's four age bodies, with an adult from 18.**
-MakeHuman has one adult body, which its files call `young`. It places it at
-25 years and the child body at 10, and blends the two in between
-(`human.py`, `_setAgeVals`), so its "18" is 53% adult and 47% child. That leaves
-no adult distinct from a fading child, which is wrong at the very age adult-only
-content starts. `src/makehuman/macro.ts` (`AGE_ANCHORS`) therefore holds the
-adult body at full weight from `ADULT_AGE` (18) to 25 and blends child to adult
-over 10 to 18. From 25 to 90 the axis is MakeHuman's own, so every figure 25 or
-over is drawn exactly as upstream draws it. A test asserts that no figure 18 or
-over carries any child or baby weight. The kit calls the body `adult`; MakeHuman's
-`young` survives only in target and pack file names.
+**The core body follows MakeHuman's age timeline exactly.** MakeHuman has four
+age bodies: baby at 1 year, child at 10, one adult body (its files call it
+`young`) at 25, and old at 90, blended linearly between neighbours (`human.py`,
+`_setAgeVals`), so its "18" is 53% adult and 47% child. `src/makehuman/macro.ts`
+(`AGE_ANCHORS`) uses those four ages unchanged, and a parity test checks the
+kit's age weights against MakeHuman's at every age from 1 to 90 (owner ruling,
+2026-10-13, reversing an earlier hold of the adult body from 18 to 25).
+`ADULT_AGE` (18) gates the adult-only content below; it never changes the
+body's shape. The kit calls the body `adult`; MakeHuman's `young` survives only
+in target and pack file names.
 
 Breast targets exist, as in MakeHuman, for the female body at the child, adult
 and old anchors (none for baby), so breast development through adolescence comes
@@ -193,7 +192,7 @@ and skin layers (`src/surface/regions/rest.ts`). Under 18 nothing is added and
 the adult-only parts are refused (below); the body is otherwise MakeHuman's.
 
 **Genital anatomy is a separate install.** `scripts/pack-makehuman.ts` routes
-every target under `genitals/`, `pelvis/bulge-` and `stomach/stomach-pregnant-`
+every target under `genitals/`, `pelvis/bulge-`, `pelvis/mound-` and `stomach/stomach-pregnant-`
 into `humanoid-kit-adult-anatomy`; none of them is in `humanoid-kit-body`. This
 mirrors MakeHuman's own separation of genital assets from its core. An
 application that never installs the adult pack cannot render them.
@@ -213,6 +212,14 @@ minor's evaluation has exactly the base surface's vertices, vertex for vertex
 surface on its own request, never with the topology every session receives. This
 is not done by hiding adult geometry in a shared surface
 (docs/research/ADULT-SCULPT-PLAN.md).
+
+**Pubic hair follows the same rule.** It is the one adult-only body hair group
+(`ADULT_ONLY_BODY_HAIR` in `src/surface/bodyHair.ts`). A recipe under 18 that
+sets its legacy `bodyHair.density`, its explicit `bodyHair.coverage` or its
+`bodyHair.follicleDensity` to anything but 0 (or, for follicle density, at all)
+throws `AgePolicyError`, `withAge` removes the values, and the body-hair model
+draws none for a figure that is not an adult. Axillary, facial and limb hair are
+puberty's, not the policy's: they come in from 13 (owner ruling, 2026-10-11).
 
 **Genital piercings follow the same rule.** The body's own piercing sites
 (ears, nose, brows, lip, navel) apply at every age. Every other site is the

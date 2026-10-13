@@ -24,7 +24,6 @@ export function coatPaintFor(recipe: Recipe): Float32Array | null {
     areola: s.areola,
     signals: {},
     age: recipe.macros.age,
-    gender: recipe.macros.gender,
     adult: isAdult(recipe),
     ...(recipe.hair && { hairColour: recipe.hair.colour }),
     ...(recipe.bodyHair && { bodyHair: recipe.bodyHair }),

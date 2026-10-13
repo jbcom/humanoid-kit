@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { openSilentGame } from "game-harness/playwright";
+import { SIMPLEX_ANCHOR_NAMES, SIMPLEX_ANCHORS } from "../src/sampling.ts";
 
 interface Permutation {
   label: string;
@@ -25,6 +26,11 @@ const BUILDS: Permutation[] = [
   { label: "short", init: { macros: { height: 0 } } },
 ];
 const TONES = [0, 0.33, 0.66, 1];
+/** The ethnic mixes rotated through the permutations: the simplex's seven anchors, skin tone apart. */
+const MIXES = SIMPLEX_ANCHOR_NAMES.map((name) => {
+  const [african, asian, caucasian] = SIMPLEX_ANCHORS[name];
+  return { african, asian, caucasian };
+});
 
 const merge = (a: Record<string, unknown>, b: Record<string, unknown>) => ({
   ...a,
@@ -34,16 +40,20 @@ const merge = (a: Record<string, unknown>, b: Record<string, unknown>) => ({
 
 const PERMUTATIONS: Permutation[] = [
   ...AGES.flatMap((age, i) =>
-    GENDERS.map((gender) => ({
+    GENDERS.map((gender, g) => ({
       label: `age ${age}, gender ${gender}`,
-      init: { macros: { age, gender }, skin: { melanin: TONES[i % TONES.length] } },
+      init: {
+        macros: { age, gender, ...MIXES[(i * GENDERS.length + g) % MIXES.length] },
+        skin: { melanin: TONES[i % TONES.length] },
+      },
     })),
   ),
+  // Seven mixes against four tones never repeat a pair soon: mix and tone vary independently.
   ...BUILDS.flatMap((b, i) =>
     [0, 1].map((gender) => ({
       label: `${b.label}, gender ${gender}`,
       init: merge(b.init, {
-        macros: { gender, age: 32 },
+        macros: { gender, age: 32, ...MIXES[(i * 2 + gender + 4) % MIXES.length] },
         skin: { melanin: TONES[(i + gender) % TONES.length] },
       }),
     })),

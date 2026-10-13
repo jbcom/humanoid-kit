@@ -7,8 +7,9 @@ import { type MacroValues, macroTargetWeights } from "../src/makehuman/macro.ts"
  * target weights MakeHuman 1.x computes (its own `human.py` setters and `MacroModifier`,
  * run headless) for a fixed sweep of slider settings, as `[name index, weight]` pairs.
  * The kit must produce the same weights for every target MakeHuman ships with data.
- * Ages strictly between 10 and 25 are left out of the sweep: there the kit holds the
- * adult body from 18 (its one documented deviation, pinned in `macroParity.test.ts`).
+ * The fixture's sweep leaves out ages strictly between 10 and 25 (it was cut while the
+ * kit held its adult body from 18, a hold since reversed); `macroParity.test.ts`
+ * checks the age axis against MakeHuman's curve over that band, every half year.
  */
 
 interface Fixture {

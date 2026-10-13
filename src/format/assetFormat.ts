@@ -200,6 +200,16 @@ export interface BodyManifest {
    * Absent from packs that predate it, whose body is then never darkened.
    */
   bodyOcclusion?: BodyOcclusionEntry;
+  /**
+   * MakeHuman's low-poly proxy bodies (`proxy741`, `male1591`, `female1605`):
+   * other topologies for the body, bound to the base mesh like garments
+   * (docs/MINIATURES.md). Absent from packs that predate them.
+   */
+  proxies?: {
+    file: string;
+    sha256: string;
+    entries: ProxyEntry[];
+  };
   skeleton: { bones: BoneEntry[]; joints: Record<string, number[]> };
   faceUnits: { names: string[]; joints: BvhJoint[]; frames: number[][] };
   /** Whole-body poses (one BVH frame each, MakeHuman's Z-up axes; see src/rig/pose.ts). */
@@ -441,6 +451,20 @@ export interface GarmentEntry extends Omit<AttachmentEntry, "layout"> {
 
 export interface BoundGarment extends Omit<BoundAsset, "entry" | "occlusion"> {
   entry: GarmentEntry;
+}
+
+/**
+ * A MakeHuman proxy body: another topology for the whole body, bound to the
+ * base mesh vertex by vertex like a garment (each vertex three base vertices,
+ * weights and a scaled offset), so it follows every morph. It carries no
+ * occlusion and no material: it is drawn as the body.
+ */
+export interface ProxyEntry extends Omit<AttachmentEntry, "layout"> {
+  layout: Omit<AttachmentEntry["layout"], "occlusion">;
+}
+
+export interface BoundProxy extends Omit<BoundAsset, "entry" | "occlusion"> {
+  entry: ProxyEntry;
 }
 
 /** The clothing pack (`humanoid-kit-clothing`): garments bound to the body pack's base mesh. */
@@ -761,6 +785,17 @@ export interface HumanoidAssets {
   clothingManifests: readonly ClothingManifest[];
   /** The indices into `clothingManifests` of the packs whose garments binary has not arrived. */
   pendingGarmentPacks: Set<number>;
+  /**
+   * The body pack's proxy bodies by id (`BodyManifest.proxies`); empty until
+   * their binary is added (`addProxies`, or `loadProxies` after a load).
+   */
+  proxies: Map<string, BoundProxy>;
+  /**
+   * Fetches and adds the proxy binary once (a failed fetch is forgotten, so a
+   * later call retries); null when the assets were parsed without pack URLs or
+   * the pack has no proxies.
+   */
+  loadProxies: (() => Promise<Map<string, BoundProxy>>) | null;
   /** The body's own cavity occlusion; null for a pack that predates it. */
   bodyOcclusion: BodyOcclusion | null;
   /** URL of each pack file by name (textures included); empty when parsed without URLs. */
@@ -1001,6 +1036,8 @@ export interface BodyPackData {
   attachments: ArrayBuffer;
   /** The decompressed body occlusion file; needed when the manifest has an entry for it. */
   bodyOcclusion?: ArrayBuffer;
+  /** The decompressed proxy file (`BodyManifest.proxies`); leave it out to add it later with `addProxies`. */
+  proxies?: ArrayBuffer;
   /** URL of each pack file by name, when known (needed to load textures). */
   fileUrls?: Map<string, string>;
 }
@@ -1010,7 +1047,7 @@ export interface BodyPackData {
  * mesh it binds to (`baseVertices` vertices).
  */
 function readBinding(
-  entry: GarmentEntry | AttachmentEntry,
+  entry: GarmentEntry | AttachmentEntry | ProxyEntry,
   bin: ArrayBuffer,
   baseVertices: number,
   what: (field: string) => string,
@@ -1302,6 +1339,8 @@ export function parseHumanoidAssets(
     garments: new Map(),
     clothingManifests: clothingPacks.map((c) => c.manifest),
     pendingGarmentPacks: new Set(clothingPacks.keys()),
+    proxies: new Map(),
+    loadProxies: null,
     bodyOcclusion: manifest.bodyOcclusion
       ? parseBodyOcclusion(
           manifest.bodyOcclusion,
@@ -1330,7 +1369,29 @@ export function parseHumanoidAssets(
   clothingPacks.forEach((c, i) => {
     if (c.garments) addGarments(assets, i, c.garments);
   });
+  if (pack.proxies) addProxies(assets, pack.proxies);
   return assets;
+}
+
+/**
+ * Adds the body pack's proxy bodies (its decompressed proxy file) to the
+ * assets. The assets change only if every proxy checks, so a failed add can be
+ * retried; adding them again is an error.
+ */
+export function addProxies(assets: HumanoidAssets, bin: ArrayBuffer): Map<string, BoundProxy> {
+  const listed = assets.manifest.proxies;
+  if (!listed) throw new AssetFormatError("the body pack has no proxies");
+  if (assets.proxies.size) throw new AssetFormatError("the proxies are already loaded");
+  const out = new Map<string, BoundProxy>();
+  for (const entry of listed.entries) {
+    if (out.has(entry.id)) throw new AssetFormatError(`duplicate proxy ${entry.id}`);
+    out.set(entry.id, {
+      entry,
+      ...readBinding(entry, bin, assets.manifest.vertexCount, (f) => `proxy ${entry.id} ${f}`),
+    });
+  }
+  for (const [id, p] of out) assets.proxies.set(id, p);
+  return assets.proxies;
 }
 
 /**
@@ -1580,10 +1641,8 @@ export function targetLoadOrder(age: number): string[][] {
   // Equal steps away, the anchor nearer in years goes first.
   const steps = (a: AgeAnchor) =>
     Math.min(...ownIndex.map((i) => Math.abs(anchors.indexOf(a) - i)));
-  const years = (a: AgeAnchor) => {
-    const { from, to } = AGE_ANCHORS[anchors.indexOf(a)] as (typeof AGE_ANCHORS)[number];
-    return age < from ? from - age : age > to ? age - to : 0;
-  };
+  const years = (a: AgeAnchor) =>
+    Math.abs(age - (AGE_ANCHORS[anchors.indexOf(a)] as (typeof AGE_ANCHORS)[number]).years);
   const rest = anchors
     .filter((a) => !own.includes(a))
     .sort((p, q) => steps(p) - steps(q) || years(p) - years(q));
@@ -1717,6 +1776,21 @@ export async function loadHumanoidAssetsStaged(
         p.catch(() => fetching.delete(id));
       }
       return p;
+    };
+  }
+  const proxyFile = manifest.proxies?.file;
+  if (proxyFile) {
+    let fetching: Promise<Map<string, BoundProxy>> | null = null;
+    // Fetched on first use only: no figure on the live path needs a proxy.
+    assets.loadProxies = () => {
+      if (assets.proxies.size) return Promise.resolve(assets.proxies);
+      if (!fetching) {
+        fetching = fetchGzip(body.file(proxyFile)).then((bin) => addProxies(assets, bin));
+        fetching.catch(() => {
+          fetching = null;
+        });
+      }
+      return fetching;
     };
   }
   // Each stage's bytes are fetched after the previous stage's settled; each is
