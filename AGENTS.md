@@ -53,12 +53,13 @@ Full detail in `docs/ARCHITECTURE.md`.
 1. Every figure is the single hm08 base mesh. Do not add a second mesh, a second
    rig or per-species geometry.
 2. The age policy lives in `src/recipe/agePolicy.ts` and is enforced inside
-   `recipeContributions`, so no caller can evaluate an invalid recipe. Under 18,
-   breast size and firmness, regional breast values and adult-only modifiers
-   throw `AgePolicyError`; they are never clamped. `macroTargetWeights` never
-   weights a breast macro target under 18. `withAge` strips adult-only values
+   `recipeContributions`, so no caller can evaluate an invalid recipe. The body
+   follows MakeHuman at every age it models, breast development and nipples
+   included. The one gate is the adult pack: under 18, adult-only modifiers throw
+   `AgePolicyError`; they are never clamped. `withAge` strips adult-only values
    explicitly. Keep `ADULT_ONLY_MODIFIER` in step with the packer's
-   `isAdultOnlyTarget`; `tests/agePolicy.test.ts` checks they agree.
+   `isAdultOnlyTarget`; `tests/agePolicy.test.ts` checks they agree. See
+   `docs/DECISIONS.md` rulings 3 and 4.
 3. Adult-only targets and modifiers ship only in `humanoid-kit-adult-anatomy`,
    never in the body pack. The loader refuses an adult pack whose `topology` or
    `bodySha256` does not match the body pack it is loaded with. The public demo
