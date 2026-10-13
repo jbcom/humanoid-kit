@@ -1966,10 +1966,22 @@ side's thigh (`upperleg02`, `jointTurns`), where the hip's turn with the root: a
 seated figure's knee is under a thigh turned 90°. Each vertex reads the knee on
 its leg (`kneeSides`: the left leg's share of what it holds on the two legs).
 
+**A round that does not settle (2026-10-13).** A step whose second round left a push
+over `TOLERANCE` once ended there (`break`), its smoothing, its press back and its last
+pushes unmade. The knee's second round can fail to settle where the thigh's skin is
+folded flat on itself at the back of the knee (two facets back to back, a calf vertex
+between them pushed out of one into the other and back, 11 to 12 mm a pass, in 15
+passes or in 60), and the smoothing that unfolds it is the last rounds' first act. The
+short full woman's knee at 135° was the case, after the muscle and weight variants of
+height and proportions were added to the body (`macroTargetWeights`): the calf 6.1 mm
+through the thigh at that key alone, 0.0 at 132.5° and 137.5°. A round that does not
+settle shares nothing and the step goes on to its last rounds as it is (`ROUNDS`); the
+hips never fail to settle in the nine bodies, so theirs are unchanged.
+
 **Gates** (`tests/kneeFold.test.ts`, control mesh, the nine bodies; watched failing
 first, with the bones alone): no triangle of the knee turned over at 90° in any
 body (bare 204, now 0); at 135° under a quarter of the bones' 540 and fewer in
-every body (now 28); the calf and the thigh under 2 mm through each other at 90°,
+every body (now 27, 28 before the muscle and weight variants); the calf and the thigh under 2 mm through each other at 90°,
 105°, 120°, 135° and 150° in every body (now 0.0 mm wherever measured from 60° to
 150°). The hip fold's gates hold with the shared solve (`tests/hipFold.test.ts`),
 and the hip's solved fold is the same to the bit as before the solve was shared,
