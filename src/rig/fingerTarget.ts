@@ -62,7 +62,40 @@ export interface FingerChannelOffsetLimit {
 }
 
 export type FingerTargetStatus = "reached" | "unreached";
-export type FingerTargetReason = "reached" | "limits" | "iteration-budget";
+export type FingerTargetReason =
+  | "reached"
+  | "limits"
+  | "iteration-budget"
+  | "constraints-not-reached";
+
+export interface FingerSurfaceInequalityDefinition {
+  readonly id: string;
+  /** Numerical equality allowance in metres; never inferred from contact tolerance. */
+  readonly allowanceMeters: number;
+}
+
+/** Caller-owned signed distances to immutable geometry; non-negative is feasible. */
+export interface FingerSurfaceInequalities {
+  /** Nonempty, uniquely named definitions, copied once before sampling. */
+  definitions: readonly FingerSurfaceInequalityDefinition[];
+  /**
+   * Pure synchronous reader of the actual candidate pose. Write every signed
+   * margin in definition order; storage starts as NaN and must not be retained.
+   * Feasibility means margin >= -allowanceMeters. Never mutate the pose or frames.
+   */
+  sample: (
+    rotations: BoneRotations,
+    pad: Readonly<FingerSurfaceFrame>,
+    contact: Readonly<FingerSurfaceContact>,
+    outMargins: Float64Array,
+  ) => void;
+}
+
+export interface FingerSurfaceInequalityResult extends FingerSurfaceInequalityDefinition {
+  readonly marginMeters: number;
+  /** Excess beyond the explicit allowance, zero when feasible. */
+  readonly violationMeters: number;
+}
 
 export interface FingerSurfaceTargetInput {
   rest: RestBones;
@@ -78,6 +111,10 @@ export interface FingerSurfaceTargetInput {
   sample: (rotations: BoneRotations, out: FingerSurfaceFrame) => FingerSurfaceFrame;
   /** Resolves the caller-owned capsule or partner surface for a sampled pad. */
   target: (pad: Readonly<FingerSurfaceFrame>) => FingerSurfaceContact;
+  /** Optional hard geometry inequalities, independent of the contact objective. */
+  inequalities?: FingerSurfaceInequalities;
+  /** Repair-only requires inequalities and no minimumNormalAlignment request. */
+  mode?: "contact" | "repair-only";
   /** Metres allowed between the measured pad and target surface. */
   tolerance?: number;
   /** Optional minimum dot product between pad and target normals. */
@@ -91,7 +128,10 @@ export interface FingerSurfaceTargetInput {
   /** Finite-difference probe and maximum accepted channel step, in degrees. */
   probeDegrees?: number;
   maxStepDegrees?: number;
-  /** Reused full-pose output. It must not overlap `rotations` or the rest rig. */
+  /**
+   * Reused output, disjoint from source/rest. With inequalities, only a feasible
+   * result is copied here; callback errors or failed restoration leave it untouched.
+   */
   out?: BoneRotations;
 }
 
@@ -114,6 +154,10 @@ export interface FingerSurfaceTargetResult {
   /** Synchronous CPU wall time for this solve, measured without GPU work. */
   readonly wallMilliseconds: number;
   readonly iterations: number;
+  /** Present only when inequalities were requested; describes the returned pose. */
+  readonly constraintStatus?: "feasible" | "violated";
+  readonly constraints?: readonly FingerSurfaceInequalityResult[];
+  readonly constraintSamples?: number;
 }
 
 const LAYOUT = "tpose";
@@ -294,6 +338,13 @@ export function solveFingerSurfaceTarget(
   if (out.length !== rotations.length)
     throw new RangeError("finger target: out must exactly match the rotation buffer");
   assertDisjointViews("finger target", out, [rotations, rest.heads, rest.parents, rest.order]);
+  if (input.mode !== undefined && input.mode !== "contact" && input.mode !== "repair-only")
+    throw new RangeError("finger target: invalid solve mode");
+  if (input.mode === "repair-only" && (!input.inequalities || minimumNormalAlignment !== undefined))
+    throw new RangeError(
+      "finger target: repair-only requires inequalities and no contact-normal threshold",
+    );
+  if (input.inequalities) return solveConstrainedFingerSurfaceTarget(input, out);
   const startedAt = performance.now();
 
   const degrees = channels.map((limit) => limit.sourceDegrees);
@@ -803,3 +854,417 @@ const copyContact = (value: FingerSurfaceContact): FingerSurfaceContact => ({
     desiredPadNormal: [...value.desiredPadNormal] as [number, number, number],
   }),
 });
+
+interface ConstrainedFingerState {
+  evaluation: EvaluationState;
+  pose: BoneRotations;
+  values: number[];
+  margins: Float64Array;
+  maxViolation: number;
+  squaredViolation: number;
+}
+
+interface LinearFingerInequality {
+  /** Unit row: dot(row, channel step) >= bound. */
+  row: Float64Array;
+  bound: number;
+}
+
+const CONSTRAINT_BACKTRACKS = 10;
+const QP_DIRECTION_EPSILON = 1e-10;
+
+function solveConstrainedFingerSurfaceTarget(
+  input: FingerSurfaceTargetInput,
+  out: BoneRotations,
+): FingerSurfaceTargetResult {
+  const {
+    rig,
+    rotations,
+    channels,
+    sample,
+    target,
+    tolerance = 0.002,
+    minimumNormalAlignment,
+    normalWeight = 0.02,
+    iterations = 20,
+    damping = 1e-6,
+    probeDegrees = 0.25,
+    maxStepDegrees = 8,
+  } = input;
+  const inequalities = input.inequalities as FingerSurfaceInequalities;
+  const definitions = inequalities.definitions.map(({ id, allowanceMeters }) => ({
+    id,
+    allowanceMeters,
+  }));
+  if (
+    definitions.length === 0 ||
+    definitions.some(
+      ({ id, allowanceMeters }) =>
+        typeof id !== "string" ||
+        id.trim().length === 0 ||
+        !Number.isFinite(allowanceMeters) ||
+        allowanceMeters < 0,
+    ) ||
+    new Set(definitions.map(({ id }) => id)).size !== definitions.length
+  )
+    throw new RangeError(
+      "finger target: inequalities need unique nonempty IDs and finite non-negative allowances",
+    );
+  const sampleInequalities = inequalities.sample;
+  const repairOnly = input.mode === "repair-only";
+  const startedAt = performance.now();
+  const scratch = new Float32Array(rotations.length);
+  const scratchFrame = frame();
+  const scratchMargins = new Float64Array(definitions.length);
+  let surfaceSamples = 0;
+  let constraintSamples = 0;
+  const measured = (pose: BoneRotations, destination: FingerSurfaceFrame) => {
+    surfaceSamples++;
+    return sample(pose, destination);
+  };
+  const measure = (values: readonly number[], original = false): ConstrainedFingerState => {
+    const evaluation = evaluate(
+      scratch,
+      rotations,
+      rig,
+      original ? [] : channels,
+      original ? [] : values,
+      measured,
+      target,
+      scratchFrame,
+    );
+    // Reused callback storage must never inherit a previously written margin.
+    scratchMargins.fill(Number.NaN);
+    constraintSamples++;
+    sampleInequalities(scratch, evaluation.pad, evaluation.contact, scratchMargins);
+    if (!scratchMargins.every(Number.isFinite))
+      throw new RangeError("finger target: inequality callback must write every finite margin");
+    let maxViolation = 0;
+    let squaredViolation = 0;
+    for (let i = 0; i < definitions.length; i++) {
+      const violation = Math.max(
+        0,
+        -(scratchMargins[i] as number) -
+          (definitions[i] as FingerSurfaceInequalityDefinition).allowanceMeters,
+      );
+      maxViolation = Math.max(maxViolation, violation);
+      squaredViolation += violation * violation;
+    }
+    return {
+      evaluation,
+      pose: scratch.slice(),
+      values: [...values],
+      margins: scratchMargins.slice(),
+      maxViolation,
+      squaredViolation,
+    };
+  };
+  const source = measure(
+    channels.map((channel) => channel.sourceDegrees),
+    true,
+  );
+  let state = source;
+  let feasible: ConstrainedFingerState | null = source.maxViolation === 0 ? source : null;
+  const reached = (candidate: ConstrainedFingerState) =>
+    candidate.maxViolation === 0 &&
+    (repairOnly || satisfies(candidate.evaluation, tolerance, minimumNormalAlignment));
+  const canAccept = (
+    candidate: ConstrainedFingerState,
+    from: ConstrainedFingerState,
+    restoring: boolean,
+  ) => {
+    if (!restoring)
+      return (
+        !repairOnly &&
+        candidate.maxViolation === 0 &&
+        objective(candidate.evaluation, normalWeight) + 1e-12 <
+          objective(from.evaluation, normalWeight)
+      );
+    // Restoration cannot break an already satisfied inequality. Its ranking
+    // contains no contact or facing term that could purchase a violation.
+    for (let i = 0; i < definitions.length; i++) {
+      const allowance = (definitions[i] as FingerSurfaceInequalityDefinition).allowanceMeters;
+      if (
+        (from.margins[i] as number) >= -allowance &&
+        (candidate.margins[i] as number) < -allowance
+      )
+        return false;
+    }
+    return (
+      candidate.maxViolation < from.maxViolation ||
+      (candidate.maxViolation === from.maxViolation &&
+        candidate.squaredViolation < from.squaredViolation)
+    );
+  };
+  let used = 0;
+  for (; used < iterations && !reached(state); ) {
+    used++;
+    const restoring = state.maxViolation > 0;
+    const violated = definitions.flatMap((definition, i) =>
+      (state.margins[i] as number) < -definition.allowanceMeters ? [i] : [],
+    );
+    const dimensions = restoring ? violated.length : state.evaluation.desiredPadNormal ? 6 : 3;
+    const residual = new Float64Array(dimensions);
+    if (restoring)
+      violated.forEach((index, row) => {
+        residual[row] = state.margins[index] as number;
+      });
+    else writeResidual(state.evaluation, normalWeight, residual);
+    const jacobian = new Float64Array(channels.length * dimensions);
+    const marginJacobian = definitions.map(() => new Float64Array(channels.length));
+    const probedResidual = new Float64Array(dimensions);
+    let movable = false;
+    for (let column = 0; column < channels.length; column++) {
+      const limit = channels[column] as FingerChannelLimit;
+      const here = state.values[column] as number;
+      const plus = Math.min(limit.maxDegrees, here + probeDegrees);
+      const next = plus !== here ? plus : Math.max(limit.minDegrees, here - probeDegrees);
+      if (next === here) continue;
+      movable = true;
+      const values = state.values.slice();
+      values[column] = next;
+      const after = measure(values);
+      if (restoring)
+        violated.forEach((index, row) => {
+          probedResidual[row] = after.margins[index] as number;
+        });
+      else writeResidual(after.evaluation, normalWeight, probedResidual);
+      for (let row = 0; row < dimensions; row++)
+        jacobian[column * dimensions + row] =
+          ((probedResidual[row] as number) - (residual[row] as number)) / (next - here);
+      for (let row = 0; row < definitions.length; row++)
+        (marginJacobian[row] as Float64Array)[column] =
+          ((after.margins[row] as number) - (state.margins[row] as number)) / (next - here);
+    }
+    if (!movable) break;
+    const linear: LinearFingerInequality[] = [];
+    for (let i = 0; i < definitions.length; i++) {
+      const margin =
+        (state.margins[i] as number) +
+        (definitions[i] as FingerSurfaceInequalityDefinition).allowanceMeters;
+      if (margin >= 0)
+        addLinearFingerInequality(linear, marginJacobian[i] as Float64Array, -margin);
+    }
+    for (let i = 0; i < channels.length; i++) {
+      const limit = channels[i] as FingerChannelLimit;
+      const lower = new Float64Array(channels.length);
+      lower[i] = 1;
+      addLinearFingerInequality(
+        linear,
+        lower,
+        Math.max(-maxStepDegrees, limit.minDegrees - (state.values[i] as number)),
+      );
+      const upper = new Float64Array(channels.length);
+      upper[i] = -1;
+      addLinearFingerInequality(
+        linear,
+        upper,
+        -Math.min(maxStepDegrees, limit.maxDegrees - (state.values[i] as number)),
+      );
+    }
+    const step = constrainedFingerStep(jacobian, residual, channels.length, damping, linear);
+    const trial = (
+      direction: Float64Array,
+      from: ConstrainedFingerState,
+    ): ConstrainedFingerState | null => {
+      for (let backtrack = 0; backtrack < CONSTRAINT_BACKTRACKS; backtrack++) {
+        const scale = 2 ** -backtrack;
+        const values = from.values.map((value, i) => {
+          const limit = channels[i] as FingerChannelLimit;
+          return Math.max(
+            limit.minDegrees,
+            Math.min(limit.maxDegrees, value + scale * (direction[i] as number)),
+          );
+        });
+        if (values.every((value, i) => value === from.values[i])) continue;
+        const candidate = measure(values);
+        // Linear feasibility is only a proposal: the actual skinned geometry
+        // decides whether this nonlinear candidate may become accepted output.
+        if (canAccept(candidate, from, restoring)) return candidate;
+      }
+      return null;
+    };
+    let next = step ? trial(step, state) : null;
+    if (!next) {
+      for (let i = 0; i < channels.length; i++) {
+        const limit = channels[i] as FingerChannelLimit;
+        for (const sign of [-1, 1]) {
+          const direction = new Float64Array(channels.length);
+          direction[i] =
+            Math.max(
+              limit.minDegrees,
+              Math.min(limit.maxDegrees, (state.values[i] as number) + sign * maxStepDegrees),
+            ) - (state.values[i] as number);
+          if (direction[i] === 0) continue;
+          const candidate = trial(direction, state);
+          // Keep the iteration in restoration even after its first feasible trial.
+          if (candidate && (!next || canAccept(candidate, next, restoring))) next = candidate;
+        }
+      }
+    }
+    if (!next) break;
+    state = next;
+    if (state.maxViolation === 0) feasible = state;
+  }
+  // Internal restoration iterates are never published. If no feasible pose
+  // exists in this bounded search, both caller buffers remain untouched.
+  const final = feasible ?? source;
+  if (feasible) out.set(final.pose);
+  const status: FingerTargetStatus = reached(final) ? "reached" : "unreached";
+  return {
+    rotations: feasible ? out : final.pose,
+    status,
+    reason:
+      status === "reached"
+        ? "reached"
+        : !feasible
+          ? "constraints-not-reached"
+          : allPinned(final.values, channels)
+            ? "limits"
+            : "iteration-budget",
+    pad: copyFrame(final.evaluation.pad),
+    contact: copyContact(final.evaluation.contact),
+    distance: final.evaluation.distance,
+    normalAlignment: final.evaluation.normalAlignment,
+    degrees: final.values,
+    surfaceSamples,
+    wallMilliseconds: performance.now() - startedAt,
+    iterations: used,
+    constraintSamples,
+    constraintStatus: final.maxViolation === 0 ? "feasible" : "violated",
+    constraints: definitions.map((definition, i) => ({
+      ...definition,
+      marginMeters: final.margins[i] as number,
+      violationMeters: Math.max(0, -(final.margins[i] as number) - definition.allowanceMeters),
+    })),
+  };
+}
+
+function addLinearFingerInequality(
+  rows: LinearFingerInequality[],
+  values: Float64Array,
+  bound: number,
+): void {
+  const length = Math.hypot(...values);
+  if (length === 0) return;
+  rows.push({ row: values.map((value) => value / length), bound: bound / length });
+}
+
+/** Feasible-start active-set solve of the existing damped least-squares objective. */
+function constrainedFingerStep(
+  jacobian: Float64Array,
+  residual: Float64Array,
+  size: number,
+  damping: number,
+  inequalities: readonly LinearFingerInequality[],
+): Float64Array | null {
+  const dimensions = residual.length;
+  const hessian = new Float64Array(size * size);
+  const gradient = new Float64Array(size);
+  for (let i = 0; i < size; i++) {
+    for (let row = 0; row < dimensions; row++)
+      gradient[i] =
+        (gradient[i] as number) +
+        (jacobian[i * dimensions + row] as number) * (residual[row] as number);
+    for (let j = 0; j < size; j++) {
+      let value = 0;
+      for (let row = 0; row < dimensions; row++)
+        value +=
+          (jacobian[i * dimensions + row] as number) * (jacobian[j * dimensions + row] as number);
+      hessian[i * size + j] = value + (i === j ? damping : 0);
+    }
+  }
+  const point = new Float64Array(size);
+  const active: number[] = [];
+  // Bounds are <= 0 because the current pose already satisfies these rows.
+  // Rank checks keep duplicate/opposing station rows out of a singular KKT system.
+  for (let i = 0; i < inequalities.length; i++)
+    if (
+      (inequalities[i] as LinearFingerInequality).bound === 0 &&
+      independentFingerRow(inequalities, active, i)
+    )
+      active.push(i);
+  const passLimit = 16 + 8 * size + 4 * inequalities.length;
+  for (let pass = 0; pass < passLimit; pass++) {
+    const kktSize = size + active.length;
+    const matrix = new Float64Array(kktSize * kktSize);
+    const right = new Float64Array(kktSize);
+    for (let i = 0; i < size; i++) {
+      let slope = gradient[i] as number;
+      for (let j = 0; j < size; j++) {
+        const value = hessian[i * size + j] as number;
+        matrix[i * kktSize + j] = value;
+        slope += value * (point[j] as number);
+      }
+      right[i] = -slope;
+      for (let row = 0; row < active.length; row++) {
+        const value = (inequalities[active[row] as number] as LinearFingerInequality).row[
+          i
+        ] as number;
+        matrix[i * kktSize + size + row] = -value;
+        matrix[(size + row) * kktSize + i] = value;
+      }
+    }
+    const solution = solveLinearSystem(matrix, right, kktSize);
+    if (!solution?.every(Number.isFinite)) return null;
+    const direction = solution.subarray(0, size);
+    if (Math.hypot(...direction) <= QP_DIRECTION_EPSILON) {
+      let remove = -1;
+      let minimum = -1e-12;
+      for (let row = 0; row < active.length; row++)
+        if ((solution[size + row] as number) < minimum) {
+          minimum = solution[size + row] as number;
+          remove = row;
+        }
+      if (remove < 0) return point;
+      active.splice(remove, 1);
+      continue;
+    }
+    let scale = 1;
+    let blocker = -1;
+    for (let row = 0; row < inequalities.length; row++) {
+      if (active.includes(row)) continue;
+      const inequality = inequalities[row] as LinearFingerInequality;
+      const speed = dotFingerRow(inequality.row, direction);
+      if (speed >= -QP_DIRECTION_EPSILON) continue;
+      const allowed = Math.max(
+        0,
+        (dotFingerRow(inequality.row, point) - inequality.bound) / -speed,
+      );
+      if (allowed < scale) {
+        scale = allowed;
+        blocker = row;
+      }
+    }
+    for (let i = 0; i < size; i++)
+      point[i] = (point[i] as number) + scale * (direction[i] as number);
+    if (blocker >= 0) {
+      if (!independentFingerRow(inequalities, active, blocker)) return null;
+      active.push(blocker);
+    }
+  }
+  return null;
+}
+
+const dotFingerRow = (a: Float64Array, b: Float64Array) =>
+  a.reduce((sum, value, i) => sum + value * (b[i] as number), 0);
+
+function independentFingerRow(
+  inequalities: readonly LinearFingerInequality[],
+  active: readonly number[],
+  next: number,
+): boolean {
+  const basis: Float64Array[] = [];
+  for (const index of [...active, next]) {
+    const row = (inequalities[index] as LinearFingerInequality).row.slice();
+    for (const previous of basis) {
+      const projection = dotFingerRow(row, previous);
+      for (let i = 0; i < row.length; i++)
+        row[i] = (row[i] as number) - projection * (previous[i] as number);
+    }
+    const length = Math.hypot(...row);
+    if (length <= QP_DIRECTION_EPSILON) return false;
+    basis.push(row.map((value) => value / length));
+  }
+  return true;
+}
