@@ -61,6 +61,15 @@ const CONTACTS = [
   ["finger-pad-2.R", "navel"],
 ] as const;
 
+/**
+ * The knees, proven seated only (use case 1, "hug the knees"): standing, the
+ * index pad hangs 10-15 cm above the patella and R7 forbids bending the spine.
+ */
+const SEATED_CONTACTS = [
+  ["finger-pad-2.R", "kneecap.R"],
+  ["finger-pad-2.L", "kneecap.L"],
+] as const;
+
 /** How close the pad's skin must come to the site's (docs/SELF-CONTACT.md, R3). */
 const GAP = 0.005;
 
@@ -192,8 +201,11 @@ describe("self-contact: a finger pad held on a site of the figure's own body", {
   timeout: 900_000,
 }, () => {
   for (const [body, recipe] of Object.entries(BODIES))
-    for (const [posture, source] of Object.entries(POSTURES))
-      for (const [effector, site] of CONTACTS)
+    for (const [posture, source, contacts] of [
+      ["standing", POSTURES.standing, CONTACTS],
+      ["seated", POSTURES.seated, [...CONTACTS, ...SEATED_CONTACTS]],
+    ] as const)
+      for (const [effector, site] of contacts)
         it(`${body}, ${posture}: ${effector} on ${site}`, () => {
           const { report, gap, inside } = touch(recipe, source(), effector, site);
           expect(report.status, report.reason).toBe("reached");
@@ -353,8 +365,8 @@ describe("self-contact and the age policy", () => {
     expect(audienceOf(fidget("introitus"))).toBe("adult");
   });
 
-  it("names the nipples among the all-ages sites", () => {
-    for (const site of ["nipple.L", "nipple.R"])
+  it("names the nipples and the kneecaps among the all-ages sites", () => {
+    for (const site of ["nipple.L", "nipple.R", "kneecap.L", "kneecap.R"])
       expect(SELF_CONTACT_SITES as readonly string[], site).toContain(site);
   });
 
