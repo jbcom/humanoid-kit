@@ -84,4 +84,12 @@ describe("evaluateBindingWithOffsetScale", () => {
         evaluateBindingWithOffsetScale(asset, control, scale, new Float32Array(3)),
       ).toThrow(RangeError);
   });
+
+  it("rejects finite multipliers that would overflow Float32 output before writing", () => {
+    const out = Float32Array.of(7, 8, 9);
+    expect(() => evaluateBindingWithOffsetScale(asset, control, Number.MAX_VALUE, out)).toThrow(
+      /finite Float32 output/,
+    );
+    expect(Array.from(out)).toEqual([7, 8, 9]);
+  });
 });
