@@ -61,6 +61,13 @@ export default defineConfig({
               branches: 82,
               functions: 89,
               lines: 93,
+              "src/{build,format,makehuman,mhclo,model,morph,presence,recipe,rig,subdiv,surface}/**/*.ts":
+                {
+                  statements: 90,
+                  branches: 85,
+                  functions: 90,
+                  lines: 90,
+                },
               "src/{bake,build,format,makehuman,mhclo,morph,presence,recipe,subdiv,surface}/**": {
                 statements: 90,
                 branches: 85,
@@ -80,10 +87,10 @@ export default defineConfig({
                 lines: 99,
               },
               "src/model/**": {
-                statements: 86,
-                branches: 69,
-                functions: 91,
-                lines: 87,
+                statements: 88,
+                branches: 76,
+                functions: 92,
+                lines: 88,
               },
             },
           }),

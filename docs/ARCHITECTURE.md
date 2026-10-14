@@ -3654,6 +3654,11 @@ the same skip, because it is the canonical GPU proof. The Quaternius retarget
 identity check uses a source-backed, CC0 skeleton-and-T-pose fixture in
 `tests/fixtures/`, so it runs in every unit job without a developer-home path.
 
+Coverage includes every TypeScript source file. The earlier core cohort retains
+its 90% statement, function and line floors and 85% branch floor alongside the
+expanded global denominator. `pnpm verify` sets `HK_FAIL_ON_SKIP=1`, so local
+verification also rejects unaccounted skips.
+
 ## Public demo
 
 The GitHub Pages demo ships the body pack and the hair pack (both CC0, neither
