@@ -14,6 +14,7 @@ import {
   testisDimensions,
 } from "../scripts/lib/detail/scrotum.ts";
 import { maleParts } from "../scripts/lib/detail/sculpt.ts";
+import { fairCap } from "../scripts/lib/detail/transfer.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { AgePolicyError } from "../src/recipe/agePolicy.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
@@ -39,6 +40,113 @@ const skin = skinOf(
   (adultManifest.anatomy?.reservoirs ?? []).map((r) => r.cap),
 );
 const sac = new SculptedScrotum(root, parts.scrotum, skin);
+
+type Point = readonly [number, number, number];
+type Triangle = readonly [number, number, number];
+
+const pointAt = (positions: ArrayLike<number>, vertex: number): Point => [
+  positions[vertex * 3] as number,
+  positions[vertex * 3 + 1] as number,
+  positions[vertex * 3 + 2] as number,
+];
+const subtract = (a: Point, b: Point): Point => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a: Point, b: Point) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: Point, b: Point): Point => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+];
+
+/** Whether any edge of `edges` passes through the strict interior of `triangle`. */
+function edgesCross(edges: readonly Point[], triangle: readonly Point[]): boolean {
+  const [t0, t1, t2] = triangle as [Point, Point, Point];
+  const e1 = subtract(t1, t0);
+  const e2 = subtract(t2, t0);
+  for (let k = 0; k < 3; k++) {
+    const origin = edges[k] as Point;
+    const direction = subtract(edges[(k + 1) % 3] as Point, origin);
+    const h = cross(direction, e2);
+    const determinant = dot(e1, h);
+    if (Math.abs(determinant) < 1e-14) continue;
+    const toOrigin = subtract(origin, t0);
+    const u = dot(toOrigin, h) / determinant;
+    if (u <= 1e-6 || u >= 1 - 1e-6) continue;
+    const q = cross(toOrigin, e1);
+    const v = dot(direction, q) / determinant;
+    if (v <= 1e-6 || u + v >= 1 - 1e-6) continue;
+    const distance = dot(e2, q) / determinant;
+    if (distance > 1e-6 && distance < 1 - 1e-6) return true;
+  }
+  return false;
+}
+
+/** Pairs of triangles with no shared vertex that cross through one another. */
+function crossingPairs(positions: ArrayLike<number>, triangles: readonly Triangle[]): number {
+  const cell = 0.004;
+  const grid = new Map<string, number[]>();
+  const cells = (triangle: Triangle) => {
+    const points = triangle.map((vertex) => pointAt(positions, vertex));
+    const lo = [0, 1, 2].map((axis) =>
+      Math.floor(Math.min(...points.map((point) => point[axis] as number)) / cell),
+    );
+    const hi = [0, 1, 2].map((axis) =>
+      Math.floor(Math.max(...points.map((point) => point[axis] as number)) / cell),
+    );
+    const out: string[] = [];
+    for (let x = lo[0] as number; x <= (hi[0] as number); x++)
+      for (let y = lo[1] as number; y <= (hi[1] as number); y++)
+        for (let z = lo[2] as number; z <= (hi[2] as number); z++) out.push(`${x},${y},${z}`);
+    return out;
+  };
+  triangles.forEach((triangle, index) => {
+    for (const cell of cells(triangle)) {
+      const here = grid.get(cell) ?? [];
+      here.push(index);
+      grid.set(cell, here);
+    }
+  });
+  const tested = new Set<string>();
+  let crossings = 0;
+  triangles.forEach((a) => {
+    const candidates = new Set<number>();
+    for (const cell of cells(a))
+      for (const candidate of grid.get(cell) ?? []) candidates.add(candidate);
+    for (const candidate of candidates) {
+      const b = triangles[candidate] as Triangle;
+      if (a.some((vertex) => b.includes(vertex))) continue;
+      const key = [...a, ...b].sort((left, right) => left - right).join(",");
+      if (tested.has(key)) continue;
+      tested.add(key);
+      const from = a.map((vertex) => pointAt(positions, vertex));
+      const through = b.map((vertex) => pointAt(positions, vertex));
+      if (edgesCross(from, through) || edgesCross(through, from)) crossings++;
+    }
+  });
+  return crossings;
+}
+
+function capTriangles(root: ReservoirRoot): Triangle[] {
+  const cap = root.cap.length;
+  const ring = (corner: { loop: number } | { cap: number }) =>
+    "loop" in corner ? cap + (root.rings - 1) * root.loop.length + corner.loop : corner.cap;
+  const triangles: Triangle[] = [];
+  for (const polygon of root.capPolygons)
+    for (let corner = 1; corner + 1 < polygon.length; corner++)
+      triangles.push([
+        ring(polygon[0] as { loop: number } | { cap: number }),
+        ring(polygon[corner] as { loop: number } | { cap: number }),
+        ring(polygon[corner + 1] as { loop: number } | { cap: number }),
+      ]);
+  return triangles;
+}
+
+const maxDisplacement = (from: readonly Point[], to: readonly Point[]) =>
+  Math.max(
+    ...from.map((point, index) => {
+      const moved = to[index] as Point;
+      return Math.hypot(moved[0] - point[0], moved[1] - point[1], moved[2] - point[2]);
+    }),
+  );
 
 /** Extent (hi - lo) per axis of a set of points. */
 function span(points: Iterable<readonly number[]>): number[] {
@@ -76,6 +184,42 @@ describe("a testis against the literature", () => {
 });
 
 describe("the sac's shape", () => {
+  it("fairs only connected cap interior samples, retaining the source and ring bytes", () => {
+    const source = Float64Array.from(parts.scrotum.positions);
+    new SculptedScrotum(root, parts.scrotum, skin);
+    expect(parts.scrotum.positions).toEqual(source);
+
+    const transferred = sac.projected;
+    const fair = fairCap(root, transferred);
+    expect(fair.slice(root.cap.length)).toEqual(transferred.slice(root.cap.length));
+    // The calibrated cap correction moves its source-derived samples by under half a millimetre.
+    expect(
+      maxDisplacement(transferred.slice(0, root.cap.length), fair.slice(0, root.cap.length)),
+    ).toBeLessThan(0.0005);
+
+    const isolated: ReservoirRoot = {
+      ...root,
+      cap: [root.cap[0] as (typeof root.cap)[number]],
+      capPolygons: [],
+    };
+    const one = [[0.1, 0.2, 0.3] as const, ...transferred.slice(1)];
+    expect(fairCap(isolated, one)).toEqual(one);
+  });
+
+  it("keeps the clean CC0 source cap from crossing after transfer and placement", () => {
+    const sourceTriangles: Triangle[] = [];
+    for (let i = 0; i < parts.scrotum.triangles.length; i += 3)
+      sourceTriangles.push([
+        parts.scrotum.triangles[i] as number,
+        parts.scrotum.triangles[i + 1] as number,
+        parts.scrotum.triangles[i + 2] as number,
+      ]);
+    expect(crossingPairs(parts.scrotum.positions, sourceTriangles), "CC0 source").toBe(0);
+    const triangles = capTriangles(root);
+    for (const key of TESTES_KEYS)
+      expect(crossingPairs(sac.shape(key).flat(), triangles), `${key.volume} mL cap`).toBe(0);
+  });
+
   it("is as wide as two testes of each key's volume side by side, with their skin", () => {
     for (const key of TESTES_KEYS) {
       const got = measureSac(root, sac.shape(key));
