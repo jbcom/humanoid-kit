@@ -1260,7 +1260,9 @@ and expressions"). Framework-free.
   pose, and no partner or capsule policy. A contact's `surfaceNormal` is the
   partner's outward normal, so the solver asks the pad to face its opposite;
   `desiredPadNormal` is available only for an explicit non-surface facing.
-  Requested facing and position both participate in its bounded solve.
+  Facing directions are normalized, and a requested facing rejects a sampled
+  zero-length pad normal. Requested facing and position both participate in
+  its bounded solve.
   `surfaceSamples` is the deterministic CPU-sample count, and
   `wallMilliseconds` measures the synchronous CPU wall time; neither reports
   GPU work.

@@ -195,8 +195,56 @@ describe("finger surface target", () => {
     expect(result.distance).toBeLessThanOrEqual(0.003);
     expect(result.normalAlignment).not.toBeNull();
     expect(result.normalAlignment as number).toBeGreaterThanOrEqual(0.99);
-    expect(result.surfaceSamples).toBeGreaterThan(1);
-    expect(result.wallMilliseconds).toBeGreaterThanOrEqual(0);
+    expect(result.surfaceSamples).toBe(32);
+    expect(result.wallMilliseconds).toBeGreaterThan(0);
+    expect(Array.from(source)).toEqual(Array.from(sourceBefore));
+
+    const scaled = solveFingerSurfaceTarget({
+      rest,
+      rig,
+      rotations: source,
+      side: "R",
+      digit: 2,
+      channels: limits,
+      sample: pad,
+      target: () => ({
+        position: target.position,
+        surfaceNormal: [-target.normal[0] * 10, -target.normal[1] * 10, -target.normal[2] * 10],
+      }),
+      tolerance: 0.003,
+      minimumNormalAlignment: 0.99,
+    });
+    expect(scaled.status).toBe(result.status);
+    expect(scaled.normalAlignment).toBeCloseTo(result.normalAlignment as number, 8);
+    expect(scaled.distance).toBeCloseTo(result.distance, 8);
+    for (let index = 0; index < scaled.rotations.length; index++)
+      expect(scaled.rotations[index]).toBeCloseTo(result.rotations[index] as number, 5);
+    expect(Array.from(source)).toEqual(Array.from(sourceBefore));
+  });
+
+  it("rejects a requested facing when the skinned pad sampler returns a zero normal", () => {
+    const source = Float32Array.from(base);
+    const sourceBefore = Float32Array.from(source);
+    const before: FingerSurfaceFrame = { position: [0, 0, 0], normal: [0, 0, 0] };
+    pad(source, before);
+    expect(() =>
+      solveFingerSurfaceTarget({
+        rest,
+        rig,
+        rotations: source,
+        side: "R",
+        digit: 2,
+        channels: limits,
+        sample: (rotations, out) => {
+          pad(rotations, out);
+          out.normal[0] = 0;
+          out.normal[1] = 0;
+          out.normal[2] = 0;
+          return out;
+        },
+        target: () => ({ position: before.position, desiredPadNormal: before.normal }),
+      }),
+    ).toThrow(/zero-length facing normal/);
     expect(Array.from(source)).toEqual(Array.from(sourceBefore));
   });
 

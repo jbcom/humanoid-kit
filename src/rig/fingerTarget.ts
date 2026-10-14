@@ -22,12 +22,14 @@ export interface FingerSurfaceContact {
   /** Nearest permitted point on the caller's fixed surface, in figure coordinates. */
   position: readonly [number, number, number];
   /**
-   * Outward normal of the contacted partner surface. The solver reverses it:
+   * Outward direction of the contacted partner surface. The solver normalizes
+   * and reverses it:
    * a pad contacting that surface must face into it.
    */
   surfaceNormal?: readonly [number, number, number];
   /**
-   * Explicit desired facing for the pad. Use this only when the target is not
+   * Explicit desired facing direction for the pad. The solver normalizes it.
+   * Use this only when the target is not
    * an outward surface; it cannot be combined with `surfaceNormal`.
    */
   desiredPadNormal?: readonly [number, number, number];
@@ -339,6 +341,7 @@ interface EvaluationState {
   readonly distance: number;
   readonly normalAlignment: number | null;
   readonly desiredPadNormal: readonly [number, number, number] | null;
+  readonly padFacingNormal: readonly [number, number, number] | null;
 }
 
 function evaluate(
@@ -368,6 +371,9 @@ function evaluate(
   const contact = target(measured);
   assertContact(contact);
   const desiredPadNormal = desiredNormal(contact);
+  const padFacingNormal = desiredPadNormal
+    ? unitNormal(measured.normal, "finger target: sample returned a zero-length facing normal")
+    : null;
   const distance = Math.hypot(
     contact.position[0] - measured.position[0],
     contact.position[1] - measured.position[1],
@@ -377,8 +383,10 @@ function evaluate(
     pad: copyFrame(measured),
     contact: copyContact(contact),
     distance,
-    normalAlignment: desiredPadNormal ? dotUnit(measured.normal, desiredPadNormal) : null,
+    normalAlignment:
+      desiredPadNormal && padFacingNormal ? dotUnit(padFacingNormal, desiredPadNormal) : null,
     desiredPadNormal,
+    padFacingNormal,
   };
 }
 
@@ -543,19 +551,19 @@ function writeResidual(state: EvaluationState, normalWeight: number, out: Float6
       throw new RangeError("finger target: target facing changed during solve");
     return;
   }
-  if (!state.desiredPadNormal)
+  if (!state.desiredPadNormal || !state.padFacingNormal)
     throw new RangeError("finger target: target facing changed during solve");
-  out[3] = normalWeight * (state.desiredPadNormal[0] - state.pad.normal[0]);
-  out[4] = normalWeight * (state.desiredPadNormal[1] - state.pad.normal[1]);
-  out[5] = normalWeight * (state.desiredPadNormal[2] - state.pad.normal[2]);
+  out[3] = normalWeight * (state.desiredPadNormal[0] - state.padFacingNormal[0]);
+  out[4] = normalWeight * (state.desiredPadNormal[1] - state.padFacingNormal[1]);
+  out[5] = normalWeight * (state.desiredPadNormal[2] - state.padFacingNormal[2]);
 }
 
 function objective(state: EvaluationState, normalWeight: number): number {
   const error = state.distance ** 2;
-  if (!state.desiredPadNormal) return error;
-  const x = normalWeight * (state.desiredPadNormal[0] - state.pad.normal[0]);
-  const y = normalWeight * (state.desiredPadNormal[1] - state.pad.normal[1]);
-  const z = normalWeight * (state.desiredPadNormal[2] - state.pad.normal[2]);
+  if (!state.desiredPadNormal || !state.padFacingNormal) return error;
+  const x = normalWeight * (state.desiredPadNormal[0] - state.padFacingNormal[0]);
+  const y = normalWeight * (state.desiredPadNormal[1] - state.padFacingNormal[1]);
+  const z = normalWeight * (state.desiredPadNormal[2] - state.padFacingNormal[2]);
   return error + x * x + y * y + z * z;
 }
 
@@ -583,10 +591,26 @@ function assertContact(value: FingerSurfaceContact): void {
 }
 
 function desiredNormal(contact: FingerSurfaceContact): readonly [number, number, number] | null {
-  if (contact.desiredPadNormal) return [...contact.desiredPadNormal] as [number, number, number];
+  if (contact.desiredPadNormal)
+    return unitNormal(
+      contact.desiredPadNormal,
+      "finger target: target returned a zero-length facing normal",
+    );
   if (contact.surfaceNormal)
-    return [-contact.surfaceNormal[0], -contact.surfaceNormal[1], -contact.surfaceNormal[2]];
+    return unitNormal(
+      [-contact.surfaceNormal[0], -contact.surfaceNormal[1], -contact.surfaceNormal[2]],
+      "finger target: target returned a zero-length facing normal",
+    );
   return null;
+}
+
+function unitNormal(
+  value: readonly [number, number, number],
+  zeroMessage: string,
+): [number, number, number] {
+  const length = Math.hypot(value[0], value[1], value[2]);
+  if (length === 0) throw new RangeError(zeroMessage);
+  return [value[0] / length, value[1] / length, value[2] / length];
 }
 
 const dotUnit = (a: readonly number[], b: readonly number[]) => {
