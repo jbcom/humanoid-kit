@@ -1,5 +1,10 @@
 /** Internal, posed-surface attached-fluid transport. No renderer or mesh authoring. */
-import { type FluidState, FluidStateError, type FluidSurfaceAnchor } from "./state.ts";
+import {
+  FLUID_MASS_EPSILON_KG,
+  type FluidState,
+  FluidStateError,
+  type FluidSurfaceAnchor,
+} from "./state.ts";
 
 export interface PosedSurfaceFrame {
   topology: string;
@@ -15,6 +20,58 @@ export interface AttachedFluidCell {
   barycentric: readonly [number, number, number];
   materialId: string;
   massKg: number;
+}
+
+/**
+ * One material's occupied posed triangle. `coverage` is triangle support
+ * occupancy, not an optical alpha or a guessed film thickness.
+ */
+export interface FluidCoverageCell {
+  readonly triangle: number;
+  /** Stable source-frame vertex IDs for `triangle`, in winding order. */
+  readonly sourceVertices: readonly [number, number, number];
+  readonly materialId: string;
+  /** Conserved attached mass, in kilograms. */
+  readonly massKg: number;
+  /** Posed triangle area occupied by this sparse cell, in square metres. */
+  readonly supportAreaM2: number;
+  /** `massKg / supportAreaM2`, in kilograms per square metre. */
+  readonly arealMassDensityKgPerM2: number;
+  /** Unitless triangle support occupancy. A present sparse cell occupies its whole triangle. */
+  readonly coverage: 1;
+  /** Barycentric cell location in posed model-local metres. */
+  readonly positionM: readonly [number, number, number];
+  /** Interpolated posed surface normal; dimensionless and zero only for a zero input normal. */
+  readonly normal: readonly [number, number, number];
+}
+
+/** Material-separated vertex coverage for a renderer's future per-figure field input. */
+export interface FluidMaterialCoverage {
+  readonly materialId: string;
+  /** Conserved attached mass represented by this material, in kilograms. */
+  readonly attachedKg: number;
+  /** Sum of sparse triangle support areas for this material, in square metres. */
+  readonly coveredAreaM2: number;
+  /** One unitless support coverage value per posed render vertex. */
+  readonly vertexCoverage: readonly number[];
+}
+
+/** Immutable renderer-neutral output from an attached field and one posed frame. */
+export interface FluidCoverageSnapshot {
+  readonly version: 1;
+  readonly topology: string;
+  readonly bodySha256: string;
+  readonly surface: PosedSurfaceFrame["surface"];
+  readonly units: Readonly<{
+    mass: "kg";
+    area: "m2";
+    arealMassDensity: "kg/m2";
+    position: "m";
+  }>;
+  /** Conserved total attached mass represented by `cells`, in kilograms. */
+  readonly attachedKg: number;
+  readonly cells: readonly FluidCoverageCell[];
+  readonly materials: readonly FluidMaterialCoverage[];
 }
 
 export interface AttachedFieldOptions {
@@ -64,6 +121,60 @@ function triangleCentre(frame: PosedSurfaceFrame, triangle: number): [number, nu
       3,
   ) as [number, number, number];
 }
+
+function triangleCoverageGeometry(
+  frame: PosedSurfaceFrame,
+  cell: AttachedFluidCell,
+): Pick<FluidCoverageCell, "positionM" | "normal" | "supportAreaM2"> {
+  const at = cell.triangle * 3;
+  const vertices = [frame.index[at], frame.index[at + 1], frame.index[at + 2]] as const;
+  const point = [0, 1, 2].map((axis) =>
+    vertices.reduce<number>(
+      (sum, vertex, corner) =>
+        sum +
+        (frame.positions[(vertex as number) * 3 + axis] as number) *
+          (cell.barycentric[corner] as number),
+      0,
+    ),
+  ) as [number, number, number];
+  const normal = [0, 1, 2].map((axis) =>
+    vertices.reduce<number>(
+      (sum, vertex, corner) =>
+        sum +
+        (frame.normals[(vertex as number) * 3 + axis] as number) *
+          (cell.barycentric[corner] as number),
+      0,
+    ),
+  ) as [number, number, number];
+  const normalLength = Math.hypot(...normal);
+  const unitNormal =
+    normalLength === 0
+      ? ([0, 0, 0] as [number, number, number])
+      : (normal.map((component) => component / normalLength) as [number, number, number]);
+  const verticesPosition = vertices.map((vertex) =>
+    Array.from(frame.positions.subarray((vertex as number) * 3, (vertex as number) * 3 + 3)),
+  ) as [[number, number, number], [number, number, number], [number, number, number]];
+  const ab = verticesPosition[1].map(
+    (component, axis) => component - (verticesPosition[0][axis] as number),
+  );
+  const ac = verticesPosition[2].map(
+    (component, axis) => component - (verticesPosition[0][axis] as number),
+  );
+  const supportAreaM2 =
+    0.5 *
+    Math.hypot(
+      (ab[1] as number) * (ac[2] as number) - (ab[2] as number) * (ac[1] as number),
+      (ab[2] as number) * (ac[0] as number) - (ab[0] as number) * (ac[2] as number),
+      (ab[0] as number) * (ac[1] as number) - (ab[1] as number) * (ac[0] as number),
+    );
+  if (!(supportAreaM2 > 0) || !Number.isFinite(supportAreaM2))
+    throw new FluidStateError("posed fluid coverage triangle must have positive finite area");
+  return { positionM: point, normal: unitNormal, supportAreaM2 };
+}
+
+const frozenVector = (vector: readonly number[]): readonly [number, number, number] =>
+  Object.freeze([...vector]) as readonly [number, number, number];
+const frozenNumbers = (values: readonly number[]): readonly number[] => Object.freeze([...values]);
 
 function neighbours(index: Uint32Array): readonly number[][] {
   const out = Array.from({ length: index.length / 3 }, () => new Set<number>());
@@ -213,7 +324,7 @@ export class AttachedFluidField {
     }
     for (const [key, cell] of arrivals) next.set(key, { ...cell, massKg: deltas.get(key) ?? 0 });
     const total = [...next.values()].reduce((sum, cell) => sum + cell.massKg, 0);
-    if (Math.abs(total - this.state.snapshot().ledger.attachedKg) > 1e-12)
+    if (Math.abs(total - this.state.snapshot().ledger.attachedKg) > FLUID_MASS_EPSILON_KG)
       throw new FluidStateError("attached field transport does not conserve mass");
     this.cells.clear();
     for (const [key, cell] of next) this.cells.set(key, cell);
@@ -224,6 +335,81 @@ export class AttachedFluidField {
     return [...this.cells.values()]
       .sort((a, b) => a.triangle - b.triangle || a.materialId.localeCompare(b.materialId))
       .map((cell) => structuredClone(cell));
+  }
+
+  /**
+   * A stable, immutable read model for a renderer. It derives every position,
+   * normal and support area from this supplied posed frame; it does not choose
+   * optics, thickness, or a material response.
+   */
+  coverageSnapshot(frame: PosedSurfaceFrame): FluidCoverageSnapshot {
+    this.assertSynchronized();
+    this.assertCompatibleFrame(frame);
+    const byMaterial = new Map<
+      string,
+      { attachedKg: number; coveredAreaM2: number; vertexCoverage: number[] }
+    >();
+    const cells = this.frame().map((cell) => {
+      const { positionM, normal, supportAreaM2 } = triangleCoverageGeometry(frame, cell);
+      let material = byMaterial.get(cell.materialId);
+      if (!material) {
+        material = {
+          attachedKg: 0,
+          coveredAreaM2: 0,
+          vertexCoverage: new Array<number>(this.vertexCount).fill(0),
+        };
+        byMaterial.set(cell.materialId, material);
+      }
+      material.attachedKg += cell.massKg;
+      material.coveredAreaM2 += supportAreaM2;
+      const at = cell.triangle * 3;
+      for (let corner = 0; corner < 3; corner++)
+        material.vertexCoverage[frame.index[at + corner] as number] = 1;
+      const sourceVertices = [
+        frame.index[at] as number,
+        frame.index[at + 1] as number,
+        frame.index[at + 2] as number,
+      ] as const;
+      return Object.freeze({
+        triangle: cell.triangle,
+        sourceVertices: Object.freeze([...sourceVertices]) as readonly [number, number, number],
+        materialId: cell.materialId,
+        massKg: cell.massKg,
+        supportAreaM2,
+        arealMassDensityKgPerM2: cell.massKg / supportAreaM2,
+        coverage: 1 as const,
+        positionM: frozenVector(positionM),
+        normal: frozenVector(normal),
+      });
+    });
+    const attachedKg = cells.reduce((total, cell) => total + cell.massKg, 0);
+    if (Math.abs(attachedKg - this.state.snapshot().ledger.attachedKg) > FLUID_MASS_EPSILON_KG)
+      throw new FluidStateError("fluid coverage snapshot does not conserve attached mass");
+    const materials = [...byMaterial]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([materialId, material]) =>
+        Object.freeze({
+          materialId,
+          attachedKg: material.attachedKg,
+          coveredAreaM2: material.coveredAreaM2,
+          vertexCoverage: frozenNumbers(material.vertexCoverage),
+        }),
+      );
+    return Object.freeze({
+      version: 1 as const,
+      topology: this.state.topology.topology,
+      bodySha256: this.state.topology.bodySha256,
+      surface: this.surface,
+      units: Object.freeze({
+        mass: "kg" as const,
+        area: "m2" as const,
+        arealMassDensity: "kg/m2" as const,
+        position: "m" as const,
+      }),
+      attachedKg,
+      cells: Object.freeze(cells),
+      materials: Object.freeze(materials),
+    });
   }
 
   private assertAnchor(anchor: FluidSurfaceAnchor): void {
@@ -271,7 +457,7 @@ export class AttachedFluidField {
 
   private assertSynchronized(): void {
     const mass = [...this.cells.values()].reduce((total, cell) => total + cell.massKg, 0);
-    if (Math.abs(mass - this.state.snapshot().ledger.attachedKg) > 1e-12)
+    if (Math.abs(mass - this.state.snapshot().ledger.attachedKg) > FLUID_MASS_EPSILON_KG)
       throw new FluidStateError("attached field mass is not synchronized with fluid ledger");
   }
 }
