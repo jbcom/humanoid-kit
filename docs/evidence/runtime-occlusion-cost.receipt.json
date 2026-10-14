@@ -1,0 +1,745 @@
+{
+  "started": "2026-10-14T20:26:22.871Z",
+  "finished": "2026-10-14T20:26:40.844Z",
+  "sourceHead": "f8c43f33bed8ee535a87e0fe1d31eb9b24359443",
+  "scriptSha256": "2b2b20833ea1675252ca68d7ddeccd6c64fc1bb41d51de838184b1c90ad300b9",
+  "host": {
+    "hostname": "MBJobsSlice1.local",
+    "platform": "darwin",
+    "arch": "arm64",
+    "release": "27.0.0",
+    "node": "v26.11.1",
+    "cpu": "Apple M2 Max"
+  },
+  "contextBefore": {
+    "loadAverage": [
+      9.6640625,
+      8.30517578125,
+      7.08544921875
+    ],
+    "freeMemoryBytes": 14808711168,
+    "totalMemoryBytes": 34359738368,
+    "cpuCount": 12
+  },
+  "contextAfter": {
+    "loadAverage": [
+      11.02734375,
+      8.67919921875,
+      7.24560546875
+    ],
+    "freeMemoryBytes": 9783312384,
+    "totalMemoryBytes": 34359738368,
+    "cpuCount": 12
+  },
+  "uncontended": false,
+  "scope": {
+    "attachment": "eyes/high-poly",
+    "subdivision": 0,
+    "skinInfluences": 8,
+    "foldSolvePasses": 60,
+    "requestedPairs": 9,
+    "pairWallBudgetMs": 180000,
+    "completedPairs": 9,
+    "assetLoadingExcluded": true,
+    "sourceHashingExcluded": true,
+    "warmupsDiscarded": [
+      "omitted",
+      32,
+      16
+    ],
+    "stages": {
+      "constructor": "fresh model construction",
+      "coldRest": "first topology; fresh model rest cache",
+      "cachedRest": "second topology; cached rest rays, field allocations remain",
+      "posed": "all seven non-rest corners recomputed with rest baseline; includes render projection"
+    }
+  },
+  "checks": {
+    "omittedEquals32RestBytes": true,
+    "omittedEquals32PosedBytes": true,
+    "sourceBuffersUnchanged": true,
+    "repeatedOutputBytesStable": true
+  },
+  "sourceBefore": {
+    "manifest": "08d1f8822a709037acd507c522995a16bdfa7603e3178c075bda09879010d08c",
+    "body": "9b95df193fa74cc5610fef9b8c9d25637914160eda320274a0c3961dc55532a5",
+    "attachments": "d4939c50d0f80c777942c5260fea88bd856215e7801b4966982957cfc62462bc",
+    "bodyOcclusion": "feefc15084641144bf2f1eebfbc018448b5b91996ebc443c3cbcc44ae0dd0b62",
+    "targets": {
+      "core": "28bc9e2bab0dcbc6f2855a7bed214d8ba5f12a890ff622d2b37b3b26937e49ba",
+      "baby": "393bbc0b84ce54b05dea2af9ff4dfe236ffb83e0c84aab2a979b275226a827e8",
+      "child": "8ca81d3a375a85e7d8f21e330877ab2dabc249ee497a09ea2c7f152af4864d92",
+      "young": "5906299daac58cf134ff8f82eaba236c032896ebdf39dba24a309213fb7134e8",
+      "old": "6b7ec4429b2c872a530826d350a6e0c1ba869618fa098d809f56b916f080920e",
+      "modifiers": "6986467dd1561dc28e7ed810bf681cf0044003efea9bbe1c18987ac439e48816"
+    }
+  },
+  "outputHashes": {
+    "16": {
+      "rest": "d673b621b93c7ffcd1ab12a7b4282c390abdbe4c9fc6fd3a7d00aa161fbcab55",
+      "posed": "852632259c8bf4bfc977b3506e7dd577cb00db050bbe5acc1e637c3e5c00e331"
+    },
+    "32": {
+      "rest": "c6898c668a3452daf41f98f5abd28a7024f429627f1c481c3b2e4bcb21a13a63",
+      "posed": "59194b2819734a650eceaa70e89e87d539e8f2b4ffefc0946436a5910d70d9eb"
+    }
+  },
+  "errors": {
+    "rest": {
+      "components": 8608,
+      "mae": 0.034212360594795536,
+      "max": 0.1875,
+      "changed": 5616
+    },
+    "posed": {
+      "components": 8608,
+      "mae": 0.03415790543680297,
+      "max": 0.1875,
+      "changed": 5656
+    }
+  },
+  "summaries": [
+    {
+      "rays": 32,
+      "count": 9,
+      "stages": {
+        "constructor": {
+          "wallMs": {
+            "p50": 74.9965830000001,
+            "p95": 113.78716600000007
+          },
+          "cpuMs": {
+            "p50": 102.712,
+            "p95": 144.969
+          }
+        },
+        "coldRest": {
+          "wallMs": {
+            "p50": 170.50512499999968,
+            "p95": 180.49204199999986
+          },
+          "cpuMs": {
+            "p50": 186.385,
+            "p95": 221.344
+          }
+        },
+        "cachedRest": {
+          "wallMs": {
+            "p50": 1.475958000000901,
+            "p95": 1.7182499999998981
+          },
+          "cpuMs": {
+            "p50": 1.497,
+            "p95": 3.57
+          }
+        },
+        "posed": {
+          "wallMs": {
+            "p50": 776.4729999999981,
+            "p95": 819.4917499999997
+          },
+          "cpuMs": {
+            "p50": 784.427,
+            "p95": 830.717
+          }
+        }
+      }
+    },
+    {
+      "rays": 16,
+      "count": 9,
+      "stages": {
+        "constructor": {
+          "wallMs": {
+            "p50": 73.59445799999958,
+            "p95": 93.30466700000034
+          },
+          "cpuMs": {
+            "p50": 91.614,
+            "p95": 132.727
+          }
+        },
+        "coldRest": {
+          "wallMs": {
+            "p50": 118.38900000000012,
+            "p95": 126.46808299999975
+          },
+          "cpuMs": {
+            "p50": 123.42,
+            "p95": 147.942
+          }
+        },
+        "cachedRest": {
+          "wallMs": {
+            "p50": 1.3604999999997744,
+            "p95": 1.4717089999994641
+          },
+          "cpuMs": {
+            "p50": 1.439,
+            "p95": 1.792
+          }
+        },
+        "posed": {
+          "wallMs": {
+            "p50": 421.59470800000054,
+            "p95": 454.8225000000002
+          },
+          "cpuMs": {
+            "p50": 423.01,
+            "p95": 484.566
+          }
+        }
+      }
+    }
+  ],
+  "samples": [
+    {
+      "pair": 0,
+      "rays": 32,
+      "costs": {
+        "constructor": {
+          "wallMs": 113.78716600000007,
+          "userMs": 142.992,
+          "systemMs": 1.977,
+          "cpuMs": 144.969
+        },
+        "coldRest": {
+          "wallMs": 179.82562499999995,
+          "userMs": 188.536,
+          "systemMs": 1.779,
+          "cpuMs": 190.315
+        },
+        "cachedRest": {
+          "wallMs": 1.7182499999998981,
+          "userMs": 3.53,
+          "systemMs": 0.04,
+          "cpuMs": 3.57
+        },
+        "posed": {
+          "wallMs": 819.4917499999997,
+          "userMs": 779.124,
+          "systemMs": 5.303,
+          "cpuMs": 784.427
+        }
+      }
+    },
+    {
+      "pair": 0,
+      "rays": 16,
+      "costs": {
+        "constructor": {
+          "wallMs": 93.30466700000034,
+          "userMs": 131.649,
+          "systemMs": 1.078,
+          "cpuMs": 132.727
+        },
+        "coldRest": {
+          "wallMs": 126.46808299999975,
+          "userMs": 147.249,
+          "systemMs": 0.693,
+          "cpuMs": 147.942
+        },
+        "cachedRest": {
+          "wallMs": 1.4715409999998883,
+          "userMs": 1.734,
+          "systemMs": 0.031,
+          "cpuMs": 1.765
+        },
+        "posed": {
+          "wallMs": 434.00274999999965,
+          "userMs": 469.205,
+          "systemMs": 1.598,
+          "cpuMs": 470.803
+        }
+      }
+    },
+    {
+      "pair": 1,
+      "rays": 16,
+      "costs": {
+        "constructor": {
+          "wallMs": 75.12545800000044,
+          "userMs": 90.991,
+          "systemMs": 0.623,
+          "cpuMs": 91.614
+        },
+        "coldRest": {
+          "wallMs": 116.75554199999988,
+          "userMs": 124.623,
+          "systemMs": 0.52,
+          "cpuMs": 125.143
+        },
+        "cachedRest": {
+          "wallMs": 1.1984160000001793,
+          "userMs": 1.184,
+          "systemMs": 0.015,
+          "cpuMs": 1.199
+        },
+        "posed": {
+          "wallMs": 412.90954200000033,
+          "userMs": 416.102,
+          "systemMs": 1.152,
+          "cpuMs": 417.254
+        }
+      }
+    },
+    {
+      "pair": 1,
+      "rays": 32,
+      "costs": {
+        "constructor": {
+          "wallMs": 80.80158300000039,
+          "userMs": 113.85,
+          "systemMs": 0.878,
+          "cpuMs": 114.728
+        },
+        "coldRest": {
+          "wallMs": 170.50512499999968,
+          "userMs": 189.511,
+          "systemMs": 0.708,
+          "cpuMs": 190.219
+        },
+        "cachedRest": {
+          "wallMs": 1.3823750000001382,
+          "userMs": 1.365,
+          "systemMs": 0.018,
+          "cpuMs": 1.383
+        },
+        "posed": {
+          "wallMs": 775.2884170000007,
+          "userMs": 803.949,
+          "systemMs": 2.112,
+          "cpuMs": 806.061
+        }
+      }
+    },
+    {
+      "pair": 2,
+      "rays": 32,
+      "costs": {
+        "constructor": {
+          "wallMs": 79.43754199999967,
+          "userMs": 107.712,
+          "systemMs": 1.474,
+          "cpuMs": 109.186
+        },
+        "coldRest": {
+          "wallMs": 176.23066599999947,
+          "userMs": 202.299,
+          "systemMs": 0.697,
+          "cpuMs": 202.996
+        },
+        "cachedRest": {
+          "wallMs": 1.4818750000004002,
+          "userMs": 1.465,
+          "systemMs": 0.018,
+          "cpuMs": 1.483
+        },
+        "posed": {
+          "wallMs": 800.4596249999995,
+          "userMs": 828.834,
+          "systemMs": 1.883,
+          "cpuMs": 830.717
+        }
+      }
+    },
+    {
+      "pair": 2,
+      "rays": 16,
+      "costs": {
+        "constructor": {
+          "wallMs": 80.4027500000002,
+          "userMs": 118.022,
+          "systemMs": 1.042,
+          "cpuMs": 119.064
+        },
+        "coldRest": {
+          "wallMs": 118.38900000000012,
+          "userMs": 118.754,
+          "systemMs": 0.465,
+          "cpuMs": 119.219
+        },
+        "cachedRest": {
+          "wallMs": 1.3604999999997744,
+          "userMs": 1.761,
+          "systemMs": 0.031,
+          "cpuMs": 1.792
+        },
+        "posed": {
+          "wallMs": 426.2867500000002,
+          "userMs": 430.593,
+          "systemMs": 1.043,
+          "cpuMs": 431.636
+        }
+      }
+    },
+    {
+      "pair": 3,
+      "rays": 16,
+      "costs": {
+        "constructor": {
+          "wallMs": 70.47587500000009,
+          "userMs": 73.604,
+          "systemMs": 0.678,
+          "cpuMs": 74.282
+        },
+        "coldRest": {
+          "wallMs": 118.46941700000025,
+          "userMs": 123.006,
+          "systemMs": 0.414,
+          "cpuMs": 123.42
+        },
+        "cachedRest": {
+          "wallMs": 1.2720420000005106,
+          "userMs": 1.257,
+          "systemMs": 0.017,
+          "cpuMs": 1.274
+        },
+        "posed": {
+          "wallMs": 421.59470800000054,
+          "userMs": 422.155,
+          "systemMs": 0.855,
+          "cpuMs": 423.01
+        }
+      }
+    },
+    {
+      "pair": 3,
+      "rays": 32,
+      "costs": {
+        "constructor": {
+          "wallMs": 71.9625419999993,
+          "userMs": 73.839,
+          "systemMs": 0.606,
+          "cpuMs": 74.445
+        },
+        "coldRest": {
+          "wallMs": 164.16687499999898,
+          "userMs": 168.009,
+          "systemMs": 0.463,
+          "cpuMs": 168.472
+        },
+        "cachedRest": {
+          "wallMs": 1.2609169999996084,
+          "userMs": 1.246,
+          "systemMs": 0.017,
+          "cpuMs": 1.263
+        },
+        "posed": {
+          "wallMs": 760.4796659999993,
+          "userMs": 757.797,
+          "systemMs": 1.519,
+          "cpuMs": 759.316
+        }
+      }
+    },
+    {
+      "pair": 4,
+      "rays": 32,
+      "costs": {
+        "constructor": {
+          "wallMs": 79.03854200000023,
+          "userMs": 101.749,
+          "systemMs": 0.963,
+          "cpuMs": 102.712
+        },
+        "coldRest": {
+          "wallMs": 180.49204199999986,
+          "userMs": 220.163,
+          "systemMs": 1.181,
+          "cpuMs": 221.344
+        },
+        "cachedRest": {
+          "wallMs": 1.503167000000758,
+          "userMs": 1.485,
+          "systemMs": 0.02,
+          "cpuMs": 1.505
+        },
+        "posed": {
+          "wallMs": 780.7422920000008,
+          "userMs": 811.941,
+          "systemMs": 1.49,
+          "cpuMs": 813.431
+        }
+      }
+    },
+    {
+      "pair": 4,
+      "rays": 16,
+      "costs": {
+        "constructor": {
+          "wallMs": 70.68233399999917,
+          "userMs": 73.43,
+          "systemMs": 0.488,
+          "cpuMs": 73.918
+        },
+        "coldRest": {
+          "wallMs": 117.17475000000013,
+          "userMs": 117.983,
+          "systemMs": 0.446,
+          "cpuMs": 118.429
+        },
+        "cachedRest": {
+          "wallMs": 1.3696249999993597,
+          "userMs": 1.747,
+          "systemMs": 0.037,
+          "cpuMs": 1.784
+        },
+        "posed": {
+          "wallMs": 414.89808300000004,
+          "userMs": 418.632,
+          "systemMs": 0.59,
+          "cpuMs": 419.222
+        }
+      }
+    },
+    {
+      "pair": 5,
+      "rays": 16,
+      "costs": {
+        "constructor": {
+          "wallMs": 75.58737499999916,
+          "userMs": 93.654,
+          "systemMs": 0.878,
+          "cpuMs": 94.532
+        },
+        "coldRest": {
+          "wallMs": 123.67466599999898,
+          "userMs": 144.76,
+          "systemMs": 0.549,
+          "cpuMs": 145.309
+        },
+        "cachedRest": {
+          "wallMs": 1.4375830000008136,
+          "userMs": 1.419,
+          "systemMs": 0.02,
+          "cpuMs": 1.439
+        },
+        "posed": {
+          "wallMs": 454.8225000000002,
+          "userMs": 482.534,
+          "systemMs": 2.032,
+          "cpuMs": 484.566
+        }
+      }
+    },
+    {
+      "pair": 5,
+      "rays": 32,
+      "costs": {
+        "constructor": {
+          "wallMs": 74.9965830000001,
+          "userMs": 80.631,
+          "systemMs": 0.922,
+          "cpuMs": 81.553
+        },
+        "coldRest": {
+          "wallMs": 173.18216700000085,
+          "userMs": 169.742,
+          "systemMs": 0.707,
+          "cpuMs": 170.449
+        },
+        "cachedRest": {
+          "wallMs": 1.49566699999923,
+          "userMs": 1.473,
+          "systemMs": 0.024,
+          "cpuMs": 1.497
+        },
+        "posed": {
+          "wallMs": 780.480125,
+          "userMs": 780.341,
+          "systemMs": 2.383,
+          "cpuMs": 782.724
+        }
+      }
+    },
+    {
+      "pair": 6,
+      "rays": 32,
+      "costs": {
+        "constructor": {
+          "wallMs": 70.81616700000086,
+          "userMs": 73.549,
+          "systemMs": 0.779,
+          "cpuMs": 74.328
+        },
+        "coldRest": {
+          "wallMs": 166.98916699999972,
+          "userMs": 168.762,
+          "systemMs": 1.034,
+          "cpuMs": 169.796
+        },
+        "cachedRest": {
+          "wallMs": 1.475958000000901,
+          "userMs": 1.726,
+          "systemMs": 0.027,
+          "cpuMs": 1.753
+        },
+        "posed": {
+          "wallMs": 750.9248339999995,
+          "userMs": 749.798,
+          "systemMs": 1.325,
+          "cpuMs": 751.123
+        }
+      }
+    },
+    {
+      "pair": 6,
+      "rays": 16,
+      "costs": {
+        "constructor": {
+          "wallMs": 69.3349589999998,
+          "userMs": 70.695,
+          "systemMs": 0.704,
+          "cpuMs": 71.399
+        },
+        "coldRest": {
+          "wallMs": 116.07799999999952,
+          "userMs": 118.061,
+          "systemMs": 1.056,
+          "cpuMs": 119.117
+        },
+        "cachedRest": {
+          "wallMs": 1.288749999999709,
+          "userMs": 1.254,
+          "systemMs": 0.035,
+          "cpuMs": 1.289
+        },
+        "posed": {
+          "wallMs": 419.4951659999988,
+          "userMs": 419.443,
+          "systemMs": 0.926,
+          "cpuMs": 420.369
+        }
+      }
+    },
+    {
+      "pair": 7,
+      "rays": 16,
+      "costs": {
+        "constructor": {
+          "wallMs": 73.59445799999958,
+          "userMs": 90.995,
+          "systemMs": 0.681,
+          "cpuMs": 91.676
+        },
+        "coldRest": {
+          "wallMs": 121.77058399999987,
+          "userMs": 137.813,
+          "systemMs": 0.634,
+          "cpuMs": 138.447
+        },
+        "cachedRest": {
+          "wallMs": 1.4717089999994641,
+          "userMs": 1.447,
+          "systemMs": 0.027,
+          "cpuMs": 1.474
+        },
+        "posed": {
+          "wallMs": 437.791792,
+          "userMs": 468.888,
+          "systemMs": 1.333,
+          "cpuMs": 470.221
+        }
+      }
+    },
+    {
+      "pair": 7,
+      "rays": 32,
+      "costs": {
+        "constructor": {
+          "wallMs": 71.86629100000027,
+          "userMs": 80.494,
+          "systemMs": 0.676,
+          "cpuMs": 81.17
+        },
+        "coldRest": {
+          "wallMs": 163.76504100000056,
+          "userMs": 164.015,
+          "systemMs": 0.508,
+          "cpuMs": 164.523
+        },
+        "cachedRest": {
+          "wallMs": 1.4679160000014235,
+          "userMs": 1.446,
+          "systemMs": 0.024,
+          "cpuMs": 1.47
+        },
+        "posed": {
+          "wallMs": 754.5205420000002,
+          "userMs": 756.178,
+          "systemMs": 1.542,
+          "cpuMs": 757.72
+        }
+      }
+    },
+    {
+      "pair": 8,
+      "rays": 32,
+      "costs": {
+        "constructor": {
+          "wallMs": 71.679709,
+          "userMs": 104.524,
+          "systemMs": 0.879,
+          "cpuMs": 105.403
+        },
+        "coldRest": {
+          "wallMs": 169.90137500000128,
+          "userMs": 185.793,
+          "systemMs": 0.592,
+          "cpuMs": 186.385
+        },
+        "cachedRest": {
+          "wallMs": 1.3485419999997248,
+          "userMs": 1.704,
+          "systemMs": 0.034,
+          "cpuMs": 1.738
+        },
+        "posed": {
+          "wallMs": 776.4729999999981,
+          "userMs": 807.033,
+          "systemMs": 1.576,
+          "cpuMs": 808.609
+        }
+      }
+    },
+    {
+      "pair": 8,
+      "rays": 16,
+      "costs": {
+        "constructor": {
+          "wallMs": 72.64108299999862,
+          "userMs": 78.356,
+          "systemMs": 0.629,
+          "cpuMs": 78.985
+        },
+        "coldRest": {
+          "wallMs": 114.32158300000083,
+          "userMs": 114.349,
+          "systemMs": 0.349,
+          "cpuMs": 114.698
+        },
+        "cachedRest": {
+          "wallMs": 1.2033749999973224,
+          "userMs": 1.187,
+          "systemMs": 0.017,
+          "cpuMs": 1.204
+        },
+        "posed": {
+          "wallMs": 410.4639580000003,
+          "userMs": 414.239,
+          "systemMs": 0.653,
+          "cpuMs": 414.892
+        }
+      }
+    }
+  ],
+  "rendererEvidence": "runtime-occlusion-quality.md",
+  "execution": {
+    "command": "heavy-slot --remote-run --render-host 192.168.1.201 --out docs/evidence node scripts/research/runtime-occlusion-cost.ts f8c43f33bed8ee535a87e0fe1d31eb9b24359443",
+    "job": "render-3a373130a6df4565b5b433078b7a63c8",
+    "host": "_gitea_render@192.168.1.201",
+    "exitCode": 0,
+    "provenance": "Source commit argument checked against local worktree HEAD before snapshot; remote snapshots omit Git metadata."
+  }
+}
