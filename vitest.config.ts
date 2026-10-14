@@ -2,8 +2,7 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineBrowserTestConfig } from "game-harness/vitest";
 import { defineConfig } from "vitest/config";
-import type { Reporter, TestCase, TestModule } from "vitest/node";
-import { vitestSkipLedger } from "./scripts/ci/vitestSkipLedger.ts";
+import VitestSkipReporter from "./scripts/ci/vitestSkipReporter.ts";
 import { browserRun } from "./scripts/lib/browserRun.ts";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
@@ -15,18 +14,16 @@ const constrainedCi = Boolean(process.env.CI);
 // A shard covers only a subset of test files. Coverage thresholds are meaningful
 // only after the required CI merge job combines every labelled shard.
 const partialCoverageShard = process.env.VITEST_COVERAGE_SHARD === "true";
-// Sharding and name filters mark every non-selected test as skipped. Their run
-// reports cannot distinguish selection from an environmental skip.
-const skipLedgerEnabled =
-  !partialCoverageShard &&
-  !process.argv.some(
-    (arg) =>
-      arg === "-t" ||
-      arg === "--testNamePattern" ||
-      arg.startsWith("--testNamePattern=") ||
-      arg === "--test-name-pattern" ||
-      arg.startsWith("--test-name-pattern="),
-  );
+// A name filter marks every non-selected test as skipped. Shards select files,
+// so their selected files still report real environmental skips to the ledger.
+const skipLedgerEnabled = !process.argv.some(
+  (arg) =>
+    arg === "-t" ||
+    arg === "--testNamePattern" ||
+    arg.startsWith("--testNamePattern=") ||
+    arg === "--test-name-pattern" ||
+    arg.startsWith("--test-name-pattern="),
+);
 
 // Three projects:
 // - unit: the pure core in Node (tests/**/*.test.ts, outside tests/browser
@@ -40,37 +37,6 @@ const skipLedgerEnabled =
 //   (tests/bake/). Coverage instrumentation slows their ray loops about tenfold
 //   and the unit tests already cover that code, so `pnpm coverage` runs them
 //   separately, uninstrumented.
-export class SkipLedgerReporter implements Reporter {
-  private readonly skipped: Array<{ moduleId: string; fullName: string }> = [];
-  private previousExitCode: typeof process.exitCode;
-  private setExitCode = false;
-
-  onTestRunStart() {
-    this.skipped.length = 0;
-    if (this.setExitCode && process.exitCode === 1) process.exitCode = this.previousExitCode;
-    this.setExitCode = false;
-  }
-
-  onTestCaseResult(test: TestCase) {
-    if (test.options.mode === "skip" || test.result()?.state === "skipped")
-      this.skipped.push({ moduleId: test.module.moduleId, fullName: test.fullName });
-  }
-
-  onTestRunEnd(_testModules: ReadonlyArray<TestModule> = []) {
-    const ledger = vitestSkipLedger(this.skipped);
-    const counts = Object.entries(ledger.byReason).map(([reason, count]) => `${count} x ${reason}`);
-    console.log(`\nVitest skips: ${counts.length ? counts.join("; ") : "none"}`);
-    if (ledger.failures.length) {
-      console.error(ledger.failures.map((failure) => `::error::${failure}`).join("\n"));
-      if (process.env.CI || process.env.HK_FAIL_ON_SKIP === "1") {
-        this.previousExitCode = process.exitCode;
-        process.exitCode = 1;
-        this.setExitCode = true;
-      }
-    }
-  }
-}
-
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -81,7 +47,7 @@ export default defineConfig({
     ],
   },
   test: {
-    reporters: ["default", ...(skipLedgerEnabled ? [new SkipLedgerReporter()] : [])],
+    reporters: ["default", ...(skipLedgerEnabled ? [new VitestSkipReporter()] : [])],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html", "lcov"],

@@ -3716,8 +3716,11 @@ assertion for a different renderer.
 The Vitest and Playwright skip ledgers record every observed skip with its
 declared reason. CI fails for a skip that is not in the finite expected-skip
 ledger; an expected skip is still visible in the emitted count. Dedicated
-inspection fixtures remain opt-in, and GPU-only assertions are accounted for
-on the software lane then required on the GPU lane.
+inspection fixtures remain opt-in. Alpha-to-coverage assertions may skip only
+on the SwiftShader software-reference path; the admitted Metal lane rejects
+the same skip, because it is the canonical GPU proof. The Quaternius retarget
+identity check uses a source-backed, CC0 skeleton-and-T-pose fixture in
+`tests/fixtures/`, so it runs in every unit job without a developer-home path.
 
 ## Public demo
 
