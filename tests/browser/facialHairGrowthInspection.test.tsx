@@ -29,6 +29,8 @@ import { createRecipe, type Recipe } from "../../src/recipe/recipe.ts";
 import { inlineWorkerClient } from "./inlineClient.ts";
 
 const inspect = import.meta.env.HK_FACIAL_HAIR_GROWTH_INSPECTION === "1" ? it : it.skip;
+const inspectIntermediate =
+  import.meta.env.HK_FACIAL_HAIR_GROWTH_INSPECTION === "intermediate" ? it : it.skip;
 const LOAD = { timeout: 60_000 };
 const BEARD = "beard-viking";
 const JAW_DROP: HumanoidPose = { faceUnits: { JawDrop: 1 } };
@@ -39,8 +41,8 @@ beforeAll(async () => {
 }, LOAD.timeout);
 afterAll(() => client.dispose());
 
-type View = "full" | "front" | "three-quarter";
-type ActorId = `${View}-${"zero" | "source" | "floor"}`;
+type View = "full" | "front" | "three-quarter" | "intermediate";
+type ActorId = `${View}-${"zero" | "quarter" | "source" | "floor"}`;
 interface Actor {
   id: ActorId;
   view: View;
@@ -85,6 +87,24 @@ const ACTORS: readonly Actor[] = [
     label: "growth 1 · rest-floor source-depth proxy",
     recipe: floorRecipe,
     position: [0.72, 0, 0],
+  },
+  {
+    id: "intermediate-quarter",
+    view: "intermediate",
+    label: "growth 0.25 · root-frame contraction",
+    recipe: createRecipe({
+      hair: { style: null },
+      facialHair: [BEARD],
+      facialHairGrowth: { [BEARD]: 0.25 },
+    }),
+    position: [-0.42, 0, 0],
+  },
+  {
+    id: "intermediate-source",
+    view: "intermediate",
+    label: "growth 0.5 · exact native source",
+    recipe: sourceRecipe,
+    position: [0.42, 0, 0],
   },
   {
     id: "front-source",
@@ -289,7 +309,9 @@ function ViewPanel({ view }: { view: View }) {
       <p>
         {view === "full"
           ? "full figure · sole plane and rest-floor endpoint"
-          : `${view === "front" ? "front" : "three-quarter"} · JawDrop root comparison`}
+          : view === "intermediate"
+            ? "intermediate source-card comparison · attached root-frame contraction"
+            : `${view === "front" ? "front" : "three-quarter"} · JawDrop root comparison`}
       </p>
     </section>
   );
@@ -329,6 +351,29 @@ function Inspection() {
                     ? "1"
                     : "0.5 (native)"}
               </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function IntermediateInspection() {
+  return (
+    <div data-inspection="facial-hair-growth-intermediate">
+      <ViewPanel view="intermediate" />
+      <p>
+        controls: 0.25 contracts each source card toward its own attached frame · 0.5 is the exact
+        native source
+      </p>
+      <table>
+        <caption>Intermediate source-card growth diagnostic, not a new authored style</caption>
+        <tbody>
+          {ACTORS.filter((actor) => actor.view === "intermediate").map((actor) => (
+            <tr key={actor.id} data-actor={actor.id}>
+              <td>{actor.label}</td>
+              <td>{BEARD}</td>
             </tr>
           ))}
         </tbody>
@@ -470,6 +515,65 @@ describe("facial hair growth inspection fixture", () => {
       await page.screenshot({
         element: close,
         path: "../../test-results/facial-hair-growth-inspection/jaw-root-growth-close.png",
+      });
+      await screen.unmount();
+    },
+    LOAD.timeout + 10_000,
+  );
+
+  inspectIntermediate(
+    "shows intermediate card contraction from the attached source root frame",
+    async () => {
+      const screen = await render(
+        <HumanoidProvider client={client}>
+          <IntermediateInspection />
+        </HumanoidProvider>,
+      );
+      const fixture = screen.container.querySelector("[data-inspection]");
+      if (!fixture) throw new Error("intermediate growth inspection root is not mounted");
+      const panel = fixture.querySelector('[data-view="intermediate"]');
+      if (!panel) throw new Error("intermediate growth panel is not mounted");
+      await expect.poll(() => panel.getAttribute("data-inspection-ready"), LOAD).toBe("true");
+      const canvas = panel.querySelector("canvas");
+      if (!canvas) throw new Error("intermediate growth panel has no canvas");
+      const bounds = canvas.getBoundingClientRect();
+      expect(bounds.width).toBe(960);
+      expect(bounds.right).toBeLessThanOrEqual(window.innerWidth);
+      const actors = ACTORS.filter((actor) => actor.view === "intermediate").map(
+        (actor) => actor.id,
+      );
+      const projection = projectedBounds("intermediate", actors, (part) => part === "hair");
+      for (const [name, value] of Object.entries({
+        left: projection.minX,
+        right: projection.maxX,
+        bottom: projection.minY,
+        top: projection.maxY,
+      })) {
+        expect(
+          value,
+          `intermediate view ${name} extrema are inside the canvas`,
+        ).toBeGreaterThanOrEqual(-1);
+        expect(
+          value,
+          `intermediate view ${name} extrema are inside the canvas`,
+        ).toBeLessThanOrEqual(1);
+      }
+      const topologyVertices = client.hairTopology(BEARD)?.vertexCount;
+      if (topologyVertices === undefined) throw new Error(`${BEARD} topology is not loaded`);
+      const quarter = beardMesh("intermediate-quarter");
+      const source = beardMesh("intermediate-source");
+      for (const mesh of [quarter, source]) {
+        expect(mesh.geometry.getAttribute("position").count).toBe(topologyVertices);
+        const normals = normalReceipt(mesh);
+        expect(normals.finite).toBe(true);
+        expect(normals.unit).toBe(true);
+      }
+      expect(minimumY(quarter)).toBeGreaterThan(minimumY(source));
+      expect(screen.getByText("growth 0.25 · root-frame contraction")).toBeVisible();
+      expect(screen.getByText(/0.25 contracts each source card/)).toBeVisible();
+      await page.screenshot({
+        element: fixture,
+        path: "../../test-results/facial-hair-growth-inspection/intermediate-root-frame-growth.png",
       });
       await screen.unmount();
     },

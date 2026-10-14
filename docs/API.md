@@ -581,9 +581,10 @@ does not repack or mutate source assets.
   mesh; `0.5` is exactly the packed source placement; and one maps each source
   vertex's native depth below one shared source-height frame to the morphed
   base-control mesh's unposed rest floor. Values below `0.5` contract the
-  existing free offsets continuously. At growth above the native placement,
-  each disconnected source card's boundary edge nearest its MHCLO base-surface
-  placement is restored exactly to its face/jaw binding. A closed source component
+  existing free offsets continuously from source-derived attachment-edge frames.
+  At growth above the native placement, each source boundary loop's edge nearest
+  its MHCLO base-surface placement is restored exactly to its face/jaw binding.
+  A closed source component
   has no exposed growth root and remains source-fixed. A runtime-only
   body-front clearance proxy moves only the remaining lower vertices
   horizontally along the root edges' existing normal frame; it preserves MHCLO

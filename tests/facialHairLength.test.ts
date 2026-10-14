@@ -5,7 +5,7 @@ import {
   evaluateBinding,
   evaluateBindingWithGrowth,
   resolveOffsetScaleGrowth,
-  sourceCardRoots,
+  sourceCardRootFrames,
 } from "../src/mhclo/bound.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe, type Recipe } from "../src/recipe/recipe.ts";
@@ -165,7 +165,7 @@ describe("authored facial-beard length", () => {
     );
   });
 
-  it("keeps every shipped source beard's authored card roots attached through full growth", () => {
+  it("keeps every shipped source beard's card roots attached and each card monotonic before native growth", () => {
     expect(beardIds).toHaveLength(6);
     const recipe = createRecipe({ hair: { style: null } });
     const control = growthProbe.evaluateShape(recipe, {}).control;
@@ -175,7 +175,8 @@ describe("authored facial-beard length", () => {
     for (const id of beardIds) {
       const asset = growthProbe.hairPart(id, "facial").asset;
       const native = evaluateBinding(asset, control, new Float32Array(asset.entry.vertexCount * 3));
-      const roots = sourceCardRoots(asset, control, native);
+      const rootState = sourceCardRootFrames(asset, control, native);
+      const { roots } = rootState;
       expect(
         roots.reduce((count, root) => count + root, 0),
         id,
@@ -194,6 +195,49 @@ describe("authored facial-beard length", () => {
         Array.from(halfEvaluation?.positions ?? []),
         `${id} native source restoration`,
       ).toEqual(Array.from(nativeEvaluation?.positions ?? []));
+      const at = (fraction: number) => {
+        const placed = evaluateBindingWithGrowth(
+          asset,
+          control,
+          resolveOffsetScaleGrowth(asset, control, restFloorY, fraction),
+          new Float32Array(asset.entry.vertexCount * 3),
+          rootState.frames,
+        );
+        for (let vertex = 0; vertex < asset.entry.vertexCount; vertex++) {
+          if (!roots[vertex]) continue;
+          placed.set(native.subarray(vertex * 3, vertex * 3 + 3), vertex * 3);
+        }
+        return placed;
+      };
+      const early = at(0.1);
+      const middle = at(0.25);
+      const nearNative = at(0.49);
+      const rootDistance = (positions: Float32Array, vertex: number) => {
+        const k = vertex * 3;
+        let squared = 0;
+        for (let axis = 0; axis < 3; axis++)
+          squared +=
+            ((positions[k + axis] as number) - (rootState.frames[k + axis] as number)) ** 2;
+        return Math.sqrt(squared);
+      };
+      for (let vertex = 0; vertex < asset.entry.vertexCount; vertex++) {
+        if (roots[vertex]) {
+          const k = vertex * 3;
+          expect(
+            Array.from(nearNative.slice(k, k + 3)),
+            `${id} root ${vertex} before native`,
+          ).toEqual(Array.from(native.slice(k, k + 3)));
+          continue;
+        }
+        expect(
+          rootDistance(early, vertex),
+          `${id} early root-to-tip ${vertex}`,
+        ).toBeLessThanOrEqual(rootDistance(middle, vertex));
+        expect(
+          rootDistance(middle, vertex),
+          `${id} middle root-to-tip ${vertex}`,
+        ).toBeLessThanOrEqual(rootDistance(nearNative, vertex));
+      }
       const growth = resolveOffsetScaleGrowth(asset, control, restFloorY, 1);
       const placed = evaluateBindingWithGrowth(
         asset,

@@ -226,15 +226,20 @@ export function evaluateBindingWithGrowth(
   control: Float32Array,
   growth: OffsetScaleGrowth,
   out: Float32Array,
+  sourceRootFrames?: Float32Array,
 ): Float32Array {
   if (!growth.visible) throw new RangeError("MHCLO growth at zero has no renderable mesh");
   if (growth.sourceScale === 1 && growth.depthScale === 1)
     return evaluateBinding(asset, control, out);
   const native = evaluateBinding(asset, control, new Float32Array(asset.entry.vertexCount * 3));
-  const { refVerts: r, weights: w } = asset;
   const n = asset.entry.vertexCount;
   const coordinate = (v: number, axis: number): number => {
     const k = v * 3;
+    if (growth.sourceScale < 1 && sourceRootFrames)
+      return (
+        (sourceRootFrames[k + axis] as number) +
+        ((native[k + axis] as number) - (sourceRootFrames[k + axis] as number)) * growth.sourceScale
+      );
     if (axis === 1) {
       const sourceY = native[k + 1] as number;
       return sourceY >= growth.sourceRootBandY
@@ -242,14 +247,7 @@ export function evaluateBindingWithGrowth(
         : growth.sourceRootBandY - (growth.sourceRootBandY - sourceY) * growth.depthScale;
     }
     if (growth.sourceScale === 1) return native[k + axis] as number;
-    const a = (r[k] as number) * 3;
-    const b = (r[k + 1] as number) * 3;
-    const c = (r[k + 2] as number) * 3;
-    const anchored =
-      (w[k] as number) * (control[a + axis] as number) +
-      (w[k + 1] as number) * (control[b + axis] as number) +
-      (w[k + 2] as number) * (control[c + axis] as number);
-    return anchored + ((native[k + axis] as number) - anchored) * growth.sourceScale;
+    return native[k + axis] as number;
   };
   // Geometry may be cached and published by the renderer. Check every result
   // before writing so an invalid state cannot leave a partial Float32 mesh.
@@ -266,18 +264,25 @@ export function evaluateBindingWithGrowth(
   return out;
 }
 
+export interface SourceCardRootFrames {
+  /** Every source vertex belonging to an attachment edge. */
+  roots: Uint8Array;
+  /** The nearest source-derived attachment-edge midpoint for every vertex. */
+  frames: Float32Array;
+}
+
 /**
- * Finds the attached root boundary of every disconnected authored card. A card
- * root is its boundary edge nearest its MHCLO weighted base-surface placement,
- * never a global mesh-height guess. A closed source component has no exposed
- * root edge, so its whole component remains source-fixed. The returned mask has
- * one byte per source vertex and preserves both vertices of every selected edge.
+ * Finds the attached root boundary of every authored source card. Each open
+ * boundary loop retains its edge nearest its MHCLO weighted base-surface
+ * placement, so a connected source component with several card boundaries
+ * keeps every attachment edge rather than one global winner. A closed source
+ * component has no exposed root edge, so its whole component remains source-fixed.
  */
-export function sourceCardRoots(
+export function sourceCardRootFrames(
   asset: Bound & Pick<BoundAsset, "faceVerts">,
   control: Float32Array,
   native: Float32Array,
-): Uint8Array {
+): SourceCardRootFrames {
   const count = asset.entry.vertexCount;
   const parent = Uint32Array.from({ length: count }, (_, vertex) => vertex);
   const find = (start: number): number => {
@@ -312,7 +317,8 @@ export function sourceCardRoots(
     vertices.push(vertex);
     components.set(component, vertices);
   }
-  const boundaries = new Map<number, { left: number; right: number }[]>();
+  type Edge = { left: number; right: number };
+  const boundaries = new Map<number, Edge[]>();
   for (const edge of edges.values()) {
     if (edge.count !== 1) continue;
     const component = find(edge.left);
@@ -334,21 +340,85 @@ export function sourceCardRoots(
     return squared;
   };
   const roots = new Uint8Array(count);
+  const frames = new Float32Array(native.length);
+  const squaredDistance = (left: number, right: number): number => {
+    const leftOffset = left * 3;
+    const rightOffset = right * 3;
+    let squared = 0;
+    for (let axis = 0; axis < 3; axis++)
+      squared +=
+        ((native[leftOffset + axis] as number) - (native[rightOffset + axis] as number)) ** 2;
+    return squared;
+  };
   for (const [component, vertices] of components) {
     const boundary = boundaries.get(component);
     if (!boundary?.length) {
-      for (const vertex of vertices) roots[vertex] = 1;
+      for (const vertex of vertices) {
+        roots[vertex] = 1;
+        frames.set(native.subarray(vertex * 3, vertex * 3 + 3), vertex * 3);
+      }
       continue;
     }
-    const root = boundary.reduce((best, edge) =>
-      distance(edge.left) + distance(edge.right) < distance(best.left) + distance(best.right)
-        ? edge
-        : best,
-    );
-    roots[root.left] = 1;
-    roots[root.right] = 1;
+    const byVertex = new Map<number, Edge[]>();
+    for (const edge of boundary)
+      for (const vertex of [edge.left, edge.right]) {
+        const incident = byVertex.get(vertex) ?? [];
+        incident.push(edge);
+        byVertex.set(vertex, incident);
+      }
+    const rootEdges: Edge[] = [];
+    const seen = new Set<Edge>();
+    for (const boundaryEdge of boundary) {
+      if (seen.has(boundaryEdge)) continue;
+      const loop: Edge[] = [];
+      const pending = [boundaryEdge];
+      seen.add(boundaryEdge);
+      while (pending.length) {
+        const edge = pending.pop() as Edge;
+        loop.push(edge);
+        for (const vertex of [edge.left, edge.right])
+          for (const nearby of byVertex.get(vertex) ?? [])
+            if (!seen.has(nearby)) {
+              seen.add(nearby);
+              pending.push(nearby);
+            }
+      }
+      rootEdges.push(
+        loop.reduce((best, edge) =>
+          distance(edge.left) + distance(edge.right) < distance(best.left) + distance(best.right)
+            ? edge
+            : best,
+        ),
+      );
+    }
+    for (const root of rootEdges) {
+      roots[root.left] = 1;
+      roots[root.right] = 1;
+    }
+    for (const vertex of vertices) {
+      const nearest = rootEdges.reduce((best, edge) => {
+        return squaredDistance(vertex, edge.left) + squaredDistance(vertex, edge.right) <
+          squaredDistance(vertex, best.left) + squaredDistance(vertex, best.right)
+          ? edge
+          : best;
+      });
+      for (let axis = 0; axis < 3; axis++)
+        frames[vertex * 3 + axis] =
+          ((native[nearest.left * 3 + axis] as number) +
+            (native[nearest.right * 3 + axis] as number)) /
+          2;
+    }
   }
-  return roots;
+  return { roots, frames };
+}
+
+/** Returns the source-derived attached vertices for callers needing only a mask. */
+export function sourceCardRoots(
+  asset: Bound & Pick<BoundAsset, "faceVerts">,
+  control: Float32Array,
+  native: Float32Array,
+): Uint8Array {
+  return sourceCardRootFrames(asset, control, native).roots;
 }
 
 /** Skin weights for an attachment: each vertex blends the weights of its three base vertices, the heaviest `SKIN_INFLUENCES` kept. */

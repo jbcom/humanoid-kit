@@ -64,7 +64,7 @@ import {
   evaluateBindingWithOffsetScale,
   type OffsetScaleGrowth,
   resolveOffsetScaleGrowth,
-  sourceCardRoots,
+  sourceCardRootFrames,
 } from "../mhclo/bound.ts";
 import {
   type Contribution,
@@ -2081,6 +2081,15 @@ export class HumanoidModel {
         growth === undefined
           ? null
           : resolveOffsetScaleGrowth(wornFacial.h.asset, control, restFloorY, growth);
+      const native =
+        growthState === null
+          ? null
+          : evaluateBinding(
+              wornFacial.h.asset,
+              control,
+              new Float32Array(wornFacial.h.control.length),
+            );
+      const rootState = native ? sourceCardRootFrames(wornFacial.h.asset, control, native) : null;
       const placed =
         growthState === null
           ? evaluateBindingWithOffsetScale(
@@ -2094,14 +2103,10 @@ export class HumanoidModel {
               control,
               growthState,
               wornFacial.h.control,
+              rootState?.frames,
             );
-      if (growthState && growthState.depthScale > 1) {
-        const native = evaluateBinding(
-          wornFacial.h.asset,
-          control,
-          new Float32Array(wornFacial.h.control.length),
-        );
-        const roots = sourceCardRoots(wornFacial.h.asset, control, native);
+      if (growthState && native && rootState) {
+        const { roots } = rootState;
         for (let vertex = 0; vertex < wornFacial.h.asset.entry.vertexCount; vertex++) {
           if (!roots[vertex]) continue;
           const k = vertex * 3;
@@ -2109,7 +2114,8 @@ export class HumanoidModel {
           placed[k + 1] = native[k + 1] as number;
           placed[k + 2] = native[k + 2] as number;
         }
-        this.drapeFacialGrowth(wornFacial.h.asset, control, native, growthState, roots, placed);
+        if (growthState.depthScale > 1)
+          this.drapeFacialGrowth(wornFacial.h.asset, control, native, growthState, roots, placed);
       }
       return [{ id: wornFacial.id, ...this.evaluatePart(wornFacial.h.part, placed) }];
     });
