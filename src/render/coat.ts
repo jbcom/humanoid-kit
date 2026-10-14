@@ -385,7 +385,7 @@ export class CoatMaterial extends MeshStandardMaterial {
       );
     patchShadowFilter(shader);
     if (this.hkCaptureCompileProbe) {
-      const from = shader.fragmentShader.indexOf("float hkBases");
+      const from = shader.fragmentShader.indexOf("float hkWidthScale");
       const to = shader.fragmentShader.indexOf("diffuseColor.a = hkCover;", from);
       if (from < 0 || to < 0)
         throw new Error("CoatMaterial: compiled fragment lost the coat alpha section");

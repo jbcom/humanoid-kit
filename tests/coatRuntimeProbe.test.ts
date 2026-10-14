@@ -50,6 +50,8 @@ describe("the coat runtime probe", () => {
     const captured = material.compiledAlphaProbe();
     expect(captured?.programKey).toBe(material.customProgramCacheKey());
     expect(captured?.alphaPath).toContain("float hkBases");
+    expect(captured?.alphaPath).toContain("float hkWidthScale");
+    expect(captured?.alphaPath).toContain("float hkCapsuleEnd");
     expect(captured?.alphaPath).toContain("float hkSides");
     expect(captured?.alphaPath).toContain("float hkFar");
     expect(captured?.alphaPath).toContain("diffuseColor.a = hkCover;");
