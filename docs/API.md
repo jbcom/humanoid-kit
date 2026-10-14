@@ -484,6 +484,7 @@ interface BodyArtRecipe {
 new HumanoidModel(assets: HumanoidAssets, options?: {
   subdivision?: 0 | 1 | 2
   skinInfluences?: 4 | 5 | 6 | 7 | 8
+  runtimeOcclusionRays?: number
 })
 ```
 
@@ -494,6 +495,16 @@ weights, renormalise them and zero the remaining places in the same eight-wide
 layout. The setting therefore reaches topology, attachment and garment binding,
 worker rig data, folds, grounding, occlusion and the GPU attributes together; it
 does not repack or mutate source assets.
+
+`runtimeOcclusionRays` is a positive integer for a runtime bake of an attachment
+set the loaded pack did not bake. It defaults to 32, the previous fixed runtime
+count. This differs from the standalone `bakeOcclusion` utility's 48-ray default.
+Fewer rays reduce CPU ray-casts linearly and change only that generated
+attachment-lighting field; they do not change the packed attachment corner bakes
+or the packed body-cavity occlusion, and do not change geometry. The worker and
+`<Humanoid>` receive this setting through the `ModelOptions` supplied to their
+`HumanoidWorkerClient`. Hip and knee folds have no reduced-detail setting: they
+continue to use their full solved source fields whenever a pose needs them.
 
 - `model.addCustomTargets(targets: CustomTarget[])`: MakeHuman's custom targets,
   the files its Modelling > Custom tab lists from `data/custom`. Each

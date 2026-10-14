@@ -152,6 +152,12 @@ export interface ModelOptions {
    * preserving the source pack's full weights byte-for-byte.
    */
   skinInfluences?: SkinInfluences;
+  /**
+   * Rays per target vertex for a runtime attachment-occlusion bake. Default 32,
+   * preserving the existing runtime bake. This affects only a worn attachment
+   * set the pack did not bake; packed attachment and body occlusion stay exact.
+   */
+  runtimeOcclusionRays?: number;
 }
 
 /** Static render data: sent once, reused for every evaluation. */
@@ -558,6 +564,9 @@ const occlusionFigure = (): Recipe => createRecipe();
 /** How much of a hair vertex's occlusion the ray bake (cards under cards) may take away from its height term. */
 const RAY_SHARE = 0.25;
 
+/** Runtime attachment bakes' historical ray count. Packed occlusion has its own immutable source data. */
+const DEFAULT_RUNTIME_OCCLUSION_RAYS = 32;
+
 /** Share of a body vertex's skin weight the head bone must hold for it to take a scalp tint. */
 const HEAD_WEIGHT = 0.5;
 
@@ -654,6 +663,8 @@ export class HumanoidModel {
   private readonly skin: RuntimeSkinWeights<Uint8Array>;
   /** Runtime influence cap, reapplied after any operation that combines skin rows. */
   private readonly skinInfluences: SkinInfluences;
+  /** Rays used only while baking a worn attachment set whose pack has no corner bake. */
+  private readonly runtimeOcclusionRays: number;
   /** The body's vertex adjacency, on first use (`bodyAdjacency`). */
   private adjacency: { start: Uint32Array; items: Uint32Array } | undefined;
   /** Shared, immutable source topology for every age's chest calculation. */
@@ -681,6 +692,11 @@ export class HumanoidModel {
   constructor(assets: HumanoidAssets, options: ModelOptions = {}) {
     this.assets = assets;
     this.skinInfluences = options.skinInfluences ?? DEFAULT_SKIN_INFLUENCES;
+    this.runtimeOcclusionRays = options.runtimeOcclusionRays ?? DEFAULT_RUNTIME_OCCLUSION_RAYS;
+    if (!Number.isInteger(this.runtimeOcclusionRays) || this.runtimeOcclusionRays < 1)
+      throw new RangeError(
+        `runtimeOcclusionRays must be a positive integer; got ${options.runtimeOcclusionRays}`,
+      );
     this.skin = projectSkinInfluences(
       { skinIndex: assets.skinIndex, skinWeight: assets.skinWeight },
       this.skinInfluences,
@@ -1192,7 +1208,7 @@ export class HumanoidModel {
       normals: quadVertexNormals(controls[i] as Float32Array, a.asset.faceVerts),
     }));
     const values = bakeOcclusion(occluders, targets, {
-      rays: 32,
+      rays: this.runtimeOcclusionRays,
       ...(baseline && { baseline }),
     });
     return { occluders, targets, values };

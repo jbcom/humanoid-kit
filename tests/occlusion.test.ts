@@ -126,6 +126,40 @@ describe("attachment occlusion on the figure", () => {
   });
 });
 
+describe("runtime attachment-occlusion quality", () => {
+  const assets = loadFixtureAssets();
+  const eyes = "eyes/high-poly";
+  const source = Uint8Array.from(assets.attachments.get(eyes)?.occlusion ?? []);
+  const custom = (runtimeOcclusionRays?: number) =>
+    new HumanoidModel(assets, {
+      subdivision: 0,
+      attachments: [eyes],
+      ...(runtimeOcclusionRays !== undefined && { runtimeOcclusionRays }),
+    }).topology().attachments[0]?.occlusion ?? new Float32Array(0);
+
+  it("keeps the default runtime bake byte-identical at its existing 32 rays", () => {
+    expect(custom()).toEqual(custom(32));
+    expect(assets.attachments.get(eyes)?.occlusion).toEqual(source);
+  });
+
+  it("accepts a positive integer ray count for custom runtime bakes", () => {
+    const full = custom(32);
+    const reduced = custom(16);
+    expect(reduced).toHaveLength(full.length);
+    expect(reduced.every((value) => value >= 0 && value <= 1)).toBe(true);
+    expect(
+      Math.max(...reduced.map((value, index) => Math.abs(value - (full[index] as number)))),
+    ).toBeGreaterThan(0);
+  });
+
+  it("refuses a non-positive or fractional runtime ray count", () => {
+    for (const runtimeOcclusionRays of [0, -1, 1.5])
+      expect(() => new HumanoidModel(assets, { runtimeOcclusionRays })).toThrow(
+        /runtimeOcclusionRays/,
+      );
+  });
+});
+
 describe("a figure's closed canal creases in the body's occlusion (#77)", () => {
   it("takes the light a vertex loses from every corner, in proportion, and leaves the rest", () => {
     // Two vertices, three corners each: the first loses 0.6 of its light, the second none.
