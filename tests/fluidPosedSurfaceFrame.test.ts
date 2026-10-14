@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AttachedFluidField } from "../src/fluid/attachedField.ts";
 import {
   fluidAnchorPoint,
   fluidFrameFromPose,
@@ -10,6 +11,7 @@ import { posedSurface } from "../src/foundation/posed.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { bodyManifest, loadFixtureAssets } from "./fixtures.ts";
+import { centreHeight, edgeNeighbours, lowestNeighbour } from "./posedFluidTransportProof.ts";
 
 const pointDistance = (a: readonly number[], b: readonly number[]) =>
   Math.hypot(
@@ -66,6 +68,43 @@ function mostMovedAnchor(
 }
 
 describe("fluid posed surface adapter", () => {
+  it("transfers exact mass to the actual flexed downhill neighbour rather than the rest neighbour", () => {
+    const model = new HumanoidModel(loadFixtureAssets(), { subdivision: 1 });
+    const recipe = createRecipe({ macros: { age: 25 } });
+    const state = fluidState(model, recipe);
+    const rest = fluidFrameFromPose(state, model, recipe, REST_POSE);
+    const flexed = fluidFrameFromPose(state, model, recipe, "flexed");
+    const neighbours = edgeNeighbours(rest.index);
+    const triangle = neighbours.findIndex((_, candidate) => {
+      const downhill = lowestNeighbour(flexed, neighbours, candidate);
+      return downhill !== undefined && downhill !== lowestNeighbour(rest, neighbours, candidate);
+    });
+    expect(triangle, "the real pose changes a local downhill route").toBeGreaterThanOrEqual(0);
+    const destination = lowestNeighbour(flexed, neighbours, triangle) as number;
+    expect(centreHeight(flexed, destination)).toBeLessThan(centreHeight(flexed, triangle));
+    const anchor: FluidSurfaceAnchor = {
+      kind: "surface",
+      topology: bodyManifest.topology,
+      bodySha256: bodyManifest.body.sha256,
+      triangle,
+      barycentric: [1 / 3, 1 / 3, 1 / 3],
+    };
+    state.registerSource({ id: "posed-flow", materialId: "water", anchor, rateKgPerSecond: 0 });
+    const field = new AttachedFluidField(state, rest, {
+      maxCells: 2,
+      mobilityPerSecond: 1,
+      gravity: [0, -1, 0],
+    });
+    field.inject("posed-flow", anchor, "water", 0.0005);
+    const before = state.snapshot();
+    field.step(flexed, 0.5);
+    expect(field.frame().find((cell) => cell.triangle === triangle)?.massKg).toBe(0.00025);
+    expect(field.frame().find((cell) => cell.triangle === destination)?.massKg).toBe(0.00025);
+    expect(field.coverageSnapshot(flexed).attachedKg).toBe(0.0005);
+    expect(state.snapshot()).toEqual(before);
+    field.step(flexed, 0);
+    expect(state.snapshot()).toEqual(before);
+  });
   it("uses renderer-matching posed local coordinates and the model index", () => {
     const model = new HumanoidModel(loadFixtureAssets(), { subdivision: 1 });
     const recipe = createRecipe({ macros: { age: 25 } });
