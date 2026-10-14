@@ -403,6 +403,8 @@ export function solveFingerSurfaceTarget(
       if (best === state) break;
       state = best;
       accepted.splice(0, accepted.length, ...bestValues);
+      // The next Jacobian must start at the same pose as its accepted residual.
+      values.splice(0, values.length, ...accepted);
     }
   }
 
