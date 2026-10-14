@@ -14,6 +14,17 @@ export function useSiteContactConstraint(): SiteContactConstraint {
   const constraint = useRef<SiteContactConstraint | null>(null);
   if (!constraint.current) constraint.current = createSiteContactConstraint();
   const current = constraint.current;
-  useEffect(() => () => current.dispose(), [current]);
+  const lifecycle = useRef(0);
+  useEffect(() => {
+    lifecycle.current++;
+    return () => {
+      const stopped = ++lifecycle.current;
+      // StrictMode replays cleanup/setup for a still-mounted tree. Deferring disposal
+      // one microtask lets the replay retain its controller, while a real unmount frees it.
+      queueMicrotask(() => {
+        if (lifecycle.current === stopped) current.dispose();
+      });
+    };
+  }, [current]);
   return current;
 }

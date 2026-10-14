@@ -115,6 +115,15 @@ function sameSolve(
   );
 }
 
+function assertOutput(source: SiteContactSource, out: BoneRotations): void {
+  if (out.length !== source.rotations.length)
+    throw new RangeError("site contact constraint: out must match source rotations");
+  // The source is the cache key and is promised immutable for its generation.
+  // Writing a solved pose into it would corrupt that identity during this update.
+  if (out === source.rotations)
+    throw new Error("site contact constraint: out must not alias source rotations");
+}
+
 function copyWeighted(
   source: BoneRotations,
   solved: BoneRotations,
@@ -180,8 +189,7 @@ export function createSiteContactConstraint(
     out: BoneRotations,
   ) => {
     ensureLive();
-    if (out.length !== source.rotations.length)
-      throw new RangeError("site contact constraint: out must match source rotations");
+    assertOutput(source, out);
     out.set(source.rotations);
     cached = null;
     report = { state, weight: 0, solution: null };
@@ -194,8 +202,7 @@ export function createSiteContactConstraint(
       ensureLive();
       if (input.figure.generation !== input.geometryGeneration)
         throw new Error("site contact constraint: geometry generation is stale");
-      if (input.out.length !== input.source.rotations.length)
-        throw new RangeError("site contact constraint: out must match source rotations");
+      assertOutput(input.source, input.out);
       if (!input.active) return release(input.source, input.out);
       const weight = input.weight ?? 1;
       if (!(weight >= 0 && weight <= 1))

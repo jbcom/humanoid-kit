@@ -97,6 +97,17 @@ describe("cached site-contact constraint", () => {
     expect(calls()).toBe(4);
   });
 
+  it("rejects an output buffer that aliases the immutable source", () => {
+    const { constraint, calls, input } = setup();
+    expect(() => constraint.update({ ...input, out: input.source.rotations })).toThrow(
+      /out must not alias source rotations/,
+    );
+    expect(calls()).toBe(0);
+    expect(() => constraint.release(input.source, input.source.rotations)).toThrow(
+      /out must not alias source rotations/,
+    );
+  });
+
   it("rejects a mutable source pose under a retained identity", () => {
     const { constraint, calls, input } = setup();
     constraint.update(input);
