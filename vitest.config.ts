@@ -2,6 +2,8 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineBrowserTestConfig } from "game-harness/vitest";
 import { defineConfig } from "vitest/config";
+import type { Reporter, TestCase, TestModule } from "vitest/node";
+import { vitestSkipLedger } from "./scripts/ci/vitestSkipLedger.ts";
 import { browserRun } from "./scripts/lib/browserRun.ts";
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url));
@@ -26,6 +28,25 @@ const partialCoverageShard = process.env.VITEST_COVERAGE_SHARD === "true";
 //   (tests/bake/). Coverage instrumentation slows their ray loops about tenfold
 //   and the unit tests already cover that code, so `pnpm coverage` runs them
 //   separately, uninstrumented.
+export class SkipLedgerReporter implements Reporter {
+  onTestRunEnd(testModules: ReadonlyArray<TestModule> = []) {
+    const skipped = [...testModules].flatMap((module) =>
+      [...module.children.allTests()]
+        .filter(
+          (test: TestCase) => test.options.mode === "skip" || test.result()?.state === "skipped",
+        )
+        .map((test: TestCase) => ({ moduleId: test.module.moduleId, fullName: test.fullName })),
+    );
+    const ledger = vitestSkipLedger(skipped);
+    const counts = Object.entries(ledger.byReason).map(([reason, count]) => `${count} x ${reason}`);
+    console.log(`\nVitest skips: ${counts.length ? counts.join("; ") : "none"}`);
+    if (ledger.failures.length) {
+      console.error(ledger.failures.map((failure) => `::error::${failure}`).join("\n"));
+      if (process.env.CI || process.env.HK_FAIL_ON_SKIP === "1") process.exitCode = 1;
+    }
+  }
+}
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -36,36 +57,32 @@ export default defineConfig({
     ],
   },
   test: {
-    reporters: ["default"],
+    reporters: ["default", new SkipLedgerReporter()],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html", "lcov"],
-      // The framework-free core. src/react, src/render, src/editor/ui and
-      // src/worker are proven in the browser project and the Playwright suite.
-      include: [
-        "src/bake/**/*.ts",
-        "src/build/**/*.ts",
-        "src/editor/*.ts",
-        "src/format/**/*.ts",
-        "src/makehuman/**/*.ts",
-        "src/mhclo/**/*.ts",
-        "src/model/**/*.ts",
-        "src/morph/**/*.ts",
-        "src/presence/**/*.ts",
-        "src/recipe/**/*.ts",
-        "src/rig/**/*.ts",
-        "src/subdiv/**/*.ts",
-        "src/surface/**/*.ts",
-      ],
+      include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/**/*.d.ts"],
       ...(partialCoverageShard
         ? {}
         : {
             thresholds: {
-              lines: 90,
-              functions: 90,
-              statements: 90,
-              branches: 85,
+              statements: 92,
+              branches: 82,
+              functions: 89,
+              lines: 93,
+              "src/rig/**": {
+                statements: 97,
+                branches: 84,
+                functions: 100,
+                lines: 99,
+              },
+              "src/model/**": {
+                statements: 88,
+                branches: 76,
+                functions: 92,
+                lines: 88,
+              },
             },
           }),
     },
