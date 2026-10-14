@@ -1,29 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { ShapeModifierEntry } from "../src/format/assetFormat.ts";
 import { RecipeError, recipeContributions } from "../src/makehuman/recipeMorph.ts";
-import { BODY_REGIONS } from "../src/makehuman/regions.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
 import { RecipeValidationError } from "../src/recipe/validate.ts";
-import { bodyManifest, loadFixtureAssets } from "./fixtures.ts";
+import { loadFixtureAssets } from "./fixtures.ts";
 
 const assets = loadFixtureAssets();
 const nose = "nose/nose-scale-horiz-decr|incr";
 const oval = "head/head-oval";
-const left = BODY_REGIONS.indexOf("breastL");
-const right = BODY_REGIONS.indexOf("breastR");
-const packed = new Set(
-  bodyManifest.targets.flatMap((file) => file.entries.map((entry) => entry.name)),
-);
-
-function regionalWeight(recipe: ReturnType<typeof createRecipe>, target: string): Float32Array {
-  const contribution = recipeContributions(recipe, assets.modifiers).find(
-    (c) => c.target === target,
-  );
-  expect(contribution, target).toBeDefined();
-  expect(contribution?.weight).toBeInstanceOf(Float32Array);
-  return contribution?.weight as Float32Array;
-}
-
 describe("recipeContributions", () => {
   it("drives a two-sided modifier's low target for negative values and its high target for positive", () => {
     const m = assets.modifiers.get(nose) as ShapeModifierEntry;
@@ -105,45 +89,16 @@ describe("recipeContributions", () => {
     );
   });
 
-  it("uses the existing source frame and breast family only under the selected breast mask", () => {
-    const recipe = createRecipe({
+  it("leaves breastPresence out of macro contributions for the source-derived foundation", () => {
+    const legacy = createRecipe({
       macros: { gender: 1, age: 30, breastSize: 0.8, breastFirmness: 0.7 },
-      regionalMacros: { breastL: { breastPresence: 1 } },
     });
-
-    const femaleFrame = regionalWeight(recipe, "macrodetails/african-female-young");
-    const maleFrame = regionalWeight(recipe, "macrodetails/african-male-young");
-    expect(femaleFrame[left]).toBeGreaterThan(0);
-    expect(maleFrame[left]).toBe(0);
-    for (const index of BODY_REGIONS.keys()) {
-      if (index === left) continue;
-      expect(femaleFrame[index]).toBe(0);
-      expect(maleFrame[index]).toBeGreaterThan(0);
-    }
-
-    const breast = recipeContributions(recipe, assets.modifiers).filter((c) =>
-      c.target.startsWith("breast/"),
+    const explicit = createRecipe({
+      macros: { gender: 1, age: 30, breastSize: 0.8, breastFirmness: 0.7 },
+      regionalMacros: { breastL: { breastPresence: 1 }, breastR: { breastPresence: 0 } },
+    });
+    expect(recipeContributions(explicit, assets.modifiers)).toEqual(
+      recipeContributions(legacy, assets.modifiers),
     );
-    expect(breast.length).toBeGreaterThan(0);
-    for (const contribution of breast) {
-      expect(packed.has(contribution.target), contribution.target).toBe(true);
-      expect(contribution.weight).toBeInstanceOf(Float32Array);
-      const weights = contribution.weight as Float32Array;
-      expect(weights[left]).toBeGreaterThan(0);
-      for (const index of BODY_REGIONS.keys()) if (index !== left) expect(weights[index]).toBe(0);
-    }
-  });
-
-  it("lets each breast side choose its own source frame without changing the other", () => {
-    const recipe = createRecipe({
-      macros: { gender: 0, age: 30, breastSize: 0.8 },
-      regionalMacros: { breastR: { breastPresence: 0 } },
-    });
-    const femaleFrame = regionalWeight(recipe, "macrodetails/african-female-young");
-    const maleFrame = regionalWeight(recipe, "macrodetails/african-male-young");
-    expect(femaleFrame[right]).toBe(0);
-    expect(maleFrame[right]).toBeGreaterThan(0);
-    expect(femaleFrame[left]).toBeGreaterThan(0);
-    expect(maleFrame[left]).toBe(0);
   });
 });

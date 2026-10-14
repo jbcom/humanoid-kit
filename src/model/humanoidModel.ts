@@ -41,8 +41,18 @@ import {
   type ModelGraftInput,
 } from "../graft/onModel.ts";
 import type { GraftPart, GraftSpec } from "../graft/types.ts";
+import { chestAnchors } from "../makehuman/chestFoundation/anchors.ts";
+import {
+  applyChestFoundation,
+  buildChestFoundation,
+  type ChestFoundation,
+  type ChestFoundationContext,
+} from "../makehuman/chestFoundation/foundation.ts";
+import { bodyMesh } from "../makehuman/chestFoundation/mesh.ts";
+import { chooseSupport, trunkMask } from "../makehuman/chestFoundation/support.ts";
 import { addCustomTargets, type CustomTarget } from "../makehuman/customTargets.ts";
 import { NO_FEATURE } from "../makehuman/features.ts";
+import { DEFAULT_MACROS, macroTargetWeights } from "../makehuman/macro.ts";
 import { RecipeError, recipeContributions } from "../makehuman/recipeMorph.ts";
 import { buildRegionField } from "../makehuman/regions.ts";
 import { STATE_MORPHS, type StateMorph, stateContributions } from "../makehuman/stateMorphs.ts";
@@ -626,6 +636,9 @@ export class HumanoidModel {
   private readonly detailDrives: readonly (readonly [string, readonly Factor[]])[];
   /** The body's vertex adjacency, on first use (`bodyAdjacency`). */
   private adjacency: { start: Uint32Array; items: Uint32Array } | undefined;
+  /** Source-derived chest libraries, keyed by the exact MakeHuman age. */
+  private readonly chestFoundations = new Map<number, ChestFoundation>();
+  private readonly chestFoundationContexts = new Map<number, ChestFoundationContext>();
   /** The rest bake of the worn set, kept for the corner bakes to reuse. */
   private restOcclusion: {
     rest: Float32Array;
@@ -1584,7 +1597,11 @@ export class HumanoidModel {
    * (empty when it can be evaluated now). Validates the recipe first.
    */
   pendingTargetFiles(recipe: Recipe, signals: Readonly<Record<string, number>> = {}): Set<string> {
-    return this.pendingFor(this.contributions(recipe, signals));
+    const normalized = this.withDefaults(recipe);
+    return this.pendingFor([
+      ...this.contributions(normalized, signals),
+      ...this.chestSourceContributions(normalized),
+    ]);
   }
 
   /**
@@ -1610,6 +1627,116 @@ export class HumanoidModel {
       ),
       ...driven,
     ];
+  }
+
+  /** Existing `breastPresence` is the single public independent-tissue API. */
+  private chestPresenceParams(
+    recipe: Recipe,
+  ): Partial<Record<"L" | "R", { presence: number; size: number; firmness: number }>> | null {
+    const params: Partial<Record<"L" | "R", { presence: number; size: number; firmness: number }>> =
+      {};
+    for (const [side, region] of [
+      ["L", "breastL"],
+      ["R", "breastR"],
+    ] as const) {
+      const values = recipe.regionalMacros[region];
+      const presence = values?.breastPresence;
+      if (presence === undefined) continue;
+      params[side] = {
+        presence,
+        size: values?.breastSize ?? recipe.macros.breastSize,
+        firmness: values?.breastFirmness ?? recipe.macros.breastFirmness,
+      };
+    }
+    return Object.keys(params).length ? params : null;
+  }
+
+  /** Every loaded upstream target the source-derived chest library reads at one age. */
+  private chestSourceContributions(recipe: Recipe): Contribution[] {
+    if (!this.chestPresenceParams(recipe)) return [];
+    const names = new Set<string>();
+    const source = (gender: number, size: number, firmness: number) =>
+      macroTargetWeights({
+        ...DEFAULT_MACROS,
+        age: recipe.macros.age,
+        gender,
+        breastSize: size,
+        breastFirmness: firmness,
+      });
+    for (const [gender, size, firmness] of [
+      [0, 0, 0],
+      [0, 0, 0.5],
+      [0, 0, 1],
+      [0, 0.5, 0.5],
+      [1, 0.5, 0.5],
+      [0, 0.5, 0],
+      [0, 0.5, 1],
+      [0, 0.75, 0],
+      [0, 0.75, 0.5],
+      [0, 0.75, 1],
+      [0, 1, 0],
+      [0, 1, 0.5],
+      [0, 1, 1],
+    ] as const)
+      for (const name of source(gender, size, firmness).keys()) names.add(name);
+    return [...names].map((target) => ({ target, weight: 1 }));
+  }
+
+  /** The source support and references for one active MakeHuman age. */
+  private chestFoundationContext(recipe: Recipe): ChestFoundationContext {
+    const age = recipe.macros.age;
+    const hit = this.chestFoundationContexts.get(age);
+    if (hit) return hit;
+    const mesh = bodyMesh(this.assets, this.assets.manifest);
+    const cell = this.chestSourceControl(age, 0, 0.5, 0.5);
+    const made: ChestFoundationContext = {
+      mesh,
+      manifest: this.assets.manifest,
+      support: chooseSupport(
+        mesh,
+        cell,
+        chestAnchors(this.assets.manifest, cell),
+        trunkMask(this.assets, this.assets.manifest),
+      ),
+    };
+    this.chestFoundationContexts.set(age, made);
+    return made;
+  }
+
+  /** The one source-derived library for the active MakeHuman age. */
+  private chestFoundation(recipe: Recipe): ChestFoundation {
+    const age = recipe.macros.age;
+    const hit = this.chestFoundations.get(age);
+    if (hit) return hit;
+    const context = this.chestFoundationContext(recipe);
+    const made = buildChestFoundation(context, {
+      female: (size, firmness) => this.chestSourceControl(age, 0, size, firmness),
+      bare: () => this.chestSourceControl(age, 1, 0.5, 0.5),
+    });
+    this.chestFoundations.set(age, made);
+    return made;
+  }
+
+  private chestSourceControl(
+    age: number,
+    gender: number,
+    breastSize: number,
+    breastFirmness: number,
+  ): Float32Array {
+    const weights = macroTargetWeights({
+      ...DEFAULT_MACROS,
+      age,
+      gender,
+      breastSize,
+      breastFirmness,
+    });
+    const contributions = [...weights].map(([target, weight]) => ({ target, weight }));
+    return evaluateMorph(
+      this.assets.positions,
+      this.assets.targets,
+      contributions,
+      new Float32Array(this.assets.positions.length),
+    );
   }
 
   private pendingFor(contributions: readonly { target: string }[]): Set<string> {
@@ -1874,6 +2001,21 @@ export class HumanoidModel {
       : all;
     const control = new Float32Array(this.assets.positions.length);
     evaluateMorph(this.assets.positions, this.assets.targets, contributions, control, this.regions);
+    const chest = this.chestPresenceParams(recipe);
+    if (chest) {
+      const pendingChest = this.pendingFor(this.chestSourceContributions(recipe));
+      if (pendingChest.size)
+        throw new MorphError(
+          `breastPresence needs target files that have not loaded yet: ${[...pendingChest].join(", ")}`,
+        );
+      const applied = applyChestFoundation(
+        this.chestFoundationContext(recipe),
+        this.chestFoundation(recipe),
+        control,
+        chest,
+      );
+      control.set(applied.positions);
+    }
     return { control, detail };
   }
 
