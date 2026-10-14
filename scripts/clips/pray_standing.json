@@ -24,11 +24,11 @@
         "neck01": { "Xrotation": 15 },
         "head": { "Xrotation": 20 },
         "upperarm01.L": { "Xrotation": -4, "Yrotation": 32.5, "Zrotation": -35.9 },
-        "lowerarm01.L": { "Xrotation": -49.6, "Yrotation": 61.1 },
-        "wrist.L": { "Xrotation": -15, "Zrotation": -41.2 },
+        "lowerarm01.L": { "Xrotation": -49.6, "Yrotation": 79.1 },
+        "wrist.L": { "Xrotation": -15, "Yrotation": -90, "Zrotation": -41.2 },
         "upperarm01.R": { "Xrotation": -4, "Yrotation": -32.5, "Zrotation": 35.8 },
-        "lowerarm01.R": { "Xrotation": -49.5, "Yrotation": -61.1 },
-        "wrist.R": { "Xrotation": -15, "Zrotation": 41.2 }
+        "lowerarm01.R": { "Xrotation": -49.5, "Yrotation": -79.1 },
+        "wrist.R": { "Xrotation": -15, "Yrotation": 90, "Zrotation": 41.2 }
       }
     },
     {
@@ -38,11 +38,11 @@
         "neck01": { "Xrotation": 15 },
         "head": { "Xrotation": 20 },
         "upperarm01.L": { "Xrotation": -4, "Yrotation": 32.5, "Zrotation": -35.9 },
-        "lowerarm01.L": { "Xrotation": -49.6, "Yrotation": 61.1 },
-        "wrist.L": { "Xrotation": -15, "Zrotation": -41.2 },
+        "lowerarm01.L": { "Xrotation": -49.6, "Yrotation": 79.1 },
+        "wrist.L": { "Xrotation": -15, "Yrotation": -90, "Zrotation": -41.2 },
         "upperarm01.R": { "Xrotation": -4, "Yrotation": -32.5, "Zrotation": 35.8 },
-        "lowerarm01.R": { "Xrotation": -49.5, "Yrotation": -61.1 },
-        "wrist.R": { "Xrotation": -15, "Zrotation": 41.2 }
+        "lowerarm01.R": { "Xrotation": -49.5, "Yrotation": -79.1 },
+        "wrist.R": { "Xrotation": -15, "Yrotation": 90, "Zrotation": 41.2 }
       }
     }
   ]

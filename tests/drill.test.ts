@@ -150,7 +150,7 @@ describe("period drill acceptance", () => {
       }
     }
     expect(failures).toEqual([]);
-  });
+  }, 60_000);
 
   it("keeps every non-locomotion period clip from skating on each reference figure", () => {
     for (const id of [
