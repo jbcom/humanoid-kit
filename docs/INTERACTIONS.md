@@ -672,7 +672,7 @@ posing, framing and purpose remain the application's responsibility.
 | Package | Holds |
 | --- | --- |
 | `humanoid-kit` (core, framework-free `src/interaction/`) | Types, tag matching, definition validation, offers, claims, the runtime on the presence registry, alignment and contact solving, signals, stimuli, the generic age checks above. No clips, no definitions of its own except test fixtures |
-| `humanoid-kit/react` | `<Interactable>`, `<Interaction>`, event props on `<Humanoid>`, hooks |
+| `humanoid-kit/react` | Existing-runtime context, `<Interactable>` object/offer registration, and observation hooks; declarative proposals and `<Humanoid>` event props remain future slices |
 | `humanoid-kit-animations` | Everyday definitions as data with their clips: pick up, hand over, eat, drink, sit, lie down, lean, open a door, wave, handshake, hug, walk together, dance; reaction rules (flinch, turn to look) |
 | `humanoid-kit-adult-animations` | Adult definitions, clips and signal routes; depends on `humanoid-kit-adult-anatomy` for the adult affordances; refuses any participant under 18 at load of each definition and at every point above |
 
@@ -852,37 +852,34 @@ interface InteractionRuntime {
 
 ### React
 
+The first React slice wraps an **existing** framework-free runtime. The caller
+creates `createInteractions(registry, options)` from the same registry it gives
+to `PresenceProvider`; `InteractionsProvider` does not make a second scheduler
+or clock.
+
 ```tsx
-<PresenceProvider interactions={{ definitions: [...everyday], seed: 42 }}>
-  <Humanoid
-    recipe={ada}
-    presence
-    affordances={adaHands}
-    onInteractionStart={(e) => {}}
-    onInteractionBeat={(e) => {}}
-    onInteractionEnd={(e) => {}}
-    onStimulus={(s) => {}}
-    acceptInteraction={(i) => i.definition.audience === "all"}
-  />
-  <Interactable id="apple-1" tags={["food.fruit.apple"]} offers={["eat"]}
-    frames={{ bite: biteRef }} state={{ stage: 0 }}>
-    <Apple />
-  </Interactable>
-  {/* Declarative: proposed on mount, cancelled on unmount. */}
-  {eating && <Interaction definition="eat" roles={{ eater: "ada", food: "apple-1" }}
-    onEnd={() => setEating(false)} />}
+function Events() {
+  useInteractionEvents("ada", (event) => report(event));
+  return null;
+}
+
+<PresenceProvider registry={registry}>
+  <InteractionsProvider runtime={interactions}>
+    <Interactable object={apple} offers={[eatOffer]}>
+      <Apple />
+    </Interactable>
+    <Events />
+  </InteractionsProvider>
 </PresenceProvider>
 ```
 
-- `useInteractions()` returns the runtime (`propose`, `offersFor`, `stimulate`).
-- `useInteraction(id)` is a live accessor to read in `useFrame`
-  (`signal("contact:0.depth")`), as `usePresence` is; it does not re-render.
-- `useInteractionEvents(participant, listener)` and `useStimulus(participant,
-  listener)` subscribe to discrete events.
-- Event props are named and shaped like R3F's pointer props; the event names
-  the participant receiving it and its role, as R3F's `eventObject` names who
-  handles a pointer event. Events reach participants only; they do not bubble
-  to scene ancestors.
+`<Interactable>` registers its `ObjectPresence` plus offers whose `by` is that
+object's id. It removes both when it changes or unmounts. `useInteractions()`
+returns the runtime; `useInteraction(id)` is a live `{ current }` accessor for
+frame callbacks and event handlers, not React state; and
+`useInteractionEvents(participant, listener)` receives discrete lifecycle
+events and cleans up on unmount. These bindings do not move figures, animate
+clips or provide physical contact.
 
 ### glTF
 
@@ -1070,9 +1067,11 @@ document's status and [API](API.md) as it lands.
    Before integration, the target-to-hand closure and framing milestone above
    must pass a new root-reviewed tall/short capture. Authored handshake
    animation and hand pose/IK remain unfinished.
-3. **React bindings** (issue 100). `<Interactable>`, `<Interaction>`, the event props,
-   `useInteractions`, `useInteraction`, `useInteractionEvents`; tests that
-   reading signals does not re-render.
+3. **React bindings** (issue 100). The existing-runtime provider,
+   `<Interactable>` object/offer registration, `useInteractions`,
+   `useInteraction` and `useInteractionEvents` now ship with lifecycle and
+   no-re-render browser coverage. Declarative proposals and event props on
+   `<Humanoid>` remain later work.
 4. **Reactions** (issue 101). Stimuli (touch from contact distances, approach from
    proximity), reaction rules, gaze with VRM-style range maps; flinch and turn
    to look in `humanoid-kit-animations`.

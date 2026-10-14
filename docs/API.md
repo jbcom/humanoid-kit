@@ -1352,6 +1352,27 @@ slices 1 and 2 of its build plan.
   participants. It reports acceptance, decline, phase, beat, normal end and
   cancellation; cancellation includes its `declined`, `cancelled`, `left`,
   `preempted`, `precondition` or `age-policy` reason.
+
+### React interaction bindings
+
+`humanoid-kit/react` supplies a thin declarative layer over an existing
+`InteractionRuntime`. Nest `<InteractionsProvider runtime={runtime}>` inside
+the `PresenceProvider` that owns the same registry; the provider does not
+create another runtime or clock. `<Interactable object={object} offers={offers}>`
+publishes its `ObjectPresence` and its own offers while mounted, then removes
+both on replacement or unmount. Every supplied offer's `by` must equal the
+object id.
+
+- `useInteractions()` returns that existing runtime.
+- `useInteraction(id)` returns a live `{ current }` accessor for a running
+  interaction. Reading it does not subscribe React to registry ticks.
+- `useInteractionEvents(participant, listener)` subscribes to discrete runtime
+  events and removes its subscription on unmount. The latest listener is used
+  without duplicate subscriptions.
+
+These bindings register and observe sessions. They do not animate figures,
+move them to slots, or supply physical contact constraints.
+
 - `FigurePresence`: `position`, `facing`, `bounds`, `anchors` (head, face,
   chest, hands, feet), `measures`, `footprint`, `appearance` (measured albedo,
   luminance, specular), `faceRadius`, `adult`.
