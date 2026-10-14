@@ -3614,6 +3614,15 @@ picking and culling follow the reaching arm. Without a clip, a static figure is
 re-posed every frame only while the constraint has weight, and once more when it
 returns to idle.
 
+**Cached site contacts.** `createSiteContactConstraint` is deliberately outside the
+current `<Humanoid>` frame pass. It retains only a full solve for one immutable
+source-pose generation, evaluated geometry generation, target object and shape;
+its `update` may run in a renderer's frame writer to blend that result, but it
+never runs a multi-second solve during React render. An inactive phase releases
+byte-for-byte to its source and drops the cache. A later `<Humanoid siteContact>`
+integration must compose this output before skeleton, skin and presence readers,
+like held hand contacts; this cache does not claim that seam has landed.
+
 **Frames for consumers.** The lift, the carry and the sole contacts of each frame are
 written by `AnimationFrameWriter` (`src/animation/frameWriter.ts`), which is
 framework-free, so `<Humanoid>` and a headless producer (a worker, a server, a test)

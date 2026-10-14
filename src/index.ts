@@ -48,6 +48,7 @@ export * from "./interaction/definition.ts";
 export * from "./interaction/handContact.ts";
 export * from "./interaction/runtime.ts";
 export * from "./interaction/siteContact.ts";
+export * from "./interaction/siteContactConstraint.ts";
 export * from "./makehuman/customTargets.ts";
 export * from "./makehuman/features.ts";
 export * from "./makehuman/macro.ts";
