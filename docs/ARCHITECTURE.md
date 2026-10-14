@@ -5451,3 +5451,34 @@ channel pair of their group or less.
 **Per lane, before merging:** its own unit tests, and a contact sheet of its
 area at both ends of the tone range and at the extremes of each control.
 After merging, the colour-parity and e2e gates must stay green.
+
+## Explicit CPU snapshot completion
+
+`src/bake/figureSnapshot.ts` consumes an already completed `PosedFigure` against
+one bound `FigureRest`; it never repeats evaluation or posing. The producer owns
+separate topology, geometry, pose and transform epochs and advances a
+completed-frame identity only after canonical correspondence, placement,
+finite coordinates and selected-array bounds validate and copy successfully.
+Full topology is resolved from the bound model's matching vertex/UV topology;
+render masks stay separate from full source triangle selection. Neither selection
+implies watertightness, solid occupancy, thickness or GPU parity.
+
+The retained payload is a caller-owned copy, read-only by contract, rather than a
+runtime-immutable typed array. Separate private stamps and private payload copies
+prevent public edits from changing producer epochs or counterfeit current
+geometry authority. `current` compares exact contents and is linear in payload
+size. Rest replacement, later accepted completion and release invalidate current
+authority while preserving caller-owned historical copies. The named coordinate
+frame uses metres and an orientation-preserving rigid affine column-major matrix;
+non-rigid transforms are outside this bridge's contract. Animation observer
+lifetimes and render synchronization stay separate; applications must invoke the
+bridge at their actual CPU geometry and placement completion boundary.
+
+Snapshot retention deliberately duplicates each retained typed-array payload in
+private storage, in addition to the canonical arrays copied once per bound rest.
+Checked counter transitions compute a whole safe-integer candidate before any
+publication state changes; overflow fails atomically. Counter scope is one
+producer lifetime, not a globally shared revision clock. Adapters must retain
+producer lifecycle identity when comparing metadata, and should account for
+exhaustive `current` cost rather than hiding it in a per-query hot path. Copy or
+validation timings on a fixture do not certify crowd or GPU performance.

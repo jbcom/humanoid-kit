@@ -7,6 +7,17 @@ export * from "./affordance/state.ts";
 export * from "./animation/index.ts";
 export * from "./bake/decimate.ts";
 export * from "./bake/figure.ts";
+export {
+  createFigureSnapshotProducer,
+  type FigureSnapshot,
+  type FigureSnapshotBounds,
+  type FigureSnapshotEpochs,
+  FigureSnapshotError,
+  type FigureSnapshotIndexSelection,
+  type FigureSnapshotOptions,
+  type FigureSnapshotPart,
+  type FigureSnapshotProducer,
+} from "./bake/figureSnapshot.ts";
 export * from "./bake/format.ts";
 export * from "./bake/miniature.ts";
 export * from "./bodyArt/decals.ts";

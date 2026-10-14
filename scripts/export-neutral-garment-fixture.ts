@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
-import { figureAtRest, poseFigure } from "../src/bake/figure.ts";
+import { type FigurePartRest, figureAtRest, poseFigure } from "../src/bake/figure.ts";
 import { parseHumanoidAssets, SKIN_INFLUENCES } from "../src/format/assetFormat.ts";
 import { HumanoidModel } from "../src/model/humanoidModel.ts";
 import { createRecipe } from "../src/recipe/recipe.ts";
@@ -38,7 +38,8 @@ const assets = parseHumanoidAssets(
   { manifest: clothing, garments: bytes("clothing", clothing.garments.file) },
 );
 const model = new HumanoidModel(assets, { subdivision: 1 });
-const recipe = createRecipe({ outfit: ["suits/male_casualsuit01"] });
+const garmentId = "suits/male_casualsuit01";
+const recipe = createRecipe({ outfit: [garmentId] });
 const rest = figureAtRest(model, recipe, { body: "surface" });
 assert.deepEqual(
   rest.parts.map((p) => p.id),
@@ -60,6 +61,10 @@ const save = (name: string, source: ArrayData) => {
     sha256: sha(raw(copy)),
   };
 };
+const requiredUV = (p: FigurePartRest): Float32Array => {
+  assert.ok(p.uvs, `missing UV chart for ${p.id}`);
+  return p.uvs;
+};
 const parts = rest.parts.map((p, i) => {
   const vertices = p.rest.length / 3;
   assert.equal(p.restNormals.length, vertices * 3);
@@ -69,7 +74,7 @@ const parts = rest.parts.map((p, i) => {
   assert.equal(p.bodyRegion.length, vertices);
   assert.equal(p.index.length % 3, 0);
   for (const index of p.index) assert.ok(index < vertices);
-  for (const values of [p.rest, p.restNormals, p.uvs!, p.skinWeight])
+  for (const values of [p.rest, p.restNormals, requiredUV(p), p.skinWeight])
     for (const n of values) assert.ok(Number.isFinite(n));
   if (p.role === "garment") {
     const topology = model.garmentTopology(p.id);
@@ -98,7 +103,7 @@ const parts = rest.parts.map((p, i) => {
   const geometryHash = createHash("sha256")
     .update(raw(p.rest))
     .update(raw(p.index))
-    .update(raw(p.uvs!))
+    .update(raw(requiredUV(p)))
     .digest("hex");
   const texture = p.material?.texture;
   if (texture)
@@ -123,20 +128,20 @@ const parts = rest.parts.map((p, i) => {
   };
 });
 const stable = rest.parts.map((p) =>
-  [p.rest, p.restNormals, p.index, p.uvs!].map((a) => sha(raw(a))),
+  [p.rest, p.restNormals, p.index, requiredUV(p)].map((a) => sha(raw(a))),
 );
 const poses = ["relaxed", "overhead"].map((name) => {
   const fig = poseFigure(rest, bodyPoseRotations(rigData(assets), name));
   assert.deepEqual(
-    rest.parts.map((p) => [p.rest, p.restNormals, p.index, p.uvs!].map((a) => sha(raw(a)))),
+    rest.parts.map((p) => [p.rest, p.restNormals, p.index, requiredUV(p)].map((a) => sha(raw(a)))),
     stable,
   );
   let minY = Infinity;
   const posed = fig.parts.map((p, i) => {
-    assert.equal(p.positions.length, rest.parts[i]!.rest.length);
-    assert.equal(p.normals.length, p.positions.length);
     const sourcePart = rest.parts[i];
     assert.ok(sourcePart);
+    assert.equal(p.positions.length, sourcePart.rest.length);
+    assert.equal(p.normals.length, p.positions.length);
     const unlifted = skinPositions(
       rest.bones,
       fig.rotations,
@@ -167,7 +172,13 @@ const poses = ["relaxed", "overhead"].map((name) => {
     parts: posed,
   };
 });
-assert.notEqual(poses[0]!.parts[1]!.positions.sha256, poses[1]!.parts[1]!.positions.sha256);
+const firstPose = poses[0],
+  secondPose = poses[1];
+assert.ok(firstPose && secondPose);
+const firstGarment = firstPose.parts[1],
+  secondGarment = secondPose.parts[1];
+assert.ok(firstGarment && secondGarment);
+assert.notEqual(firstGarment.positions.sha256, secondGarment.positions.sha256);
 const receipt = {
   format: 1,
   unit: "metre",
@@ -177,7 +188,7 @@ const receipt = {
   source: {
     body: body.source,
     clothing: clothing.source,
-    garment: clothing.garments.entries.find((g: { id: string }) => g.id === recipe.outfit![0]),
+    garment: clothing.garments.entries.find((g: { id: string }) => g.id === garmentId),
   },
   contract:
     "Copied indexed arrays; canonical rest in model space before ground lift; UV per vertex in the part's own authored chart; visible triangle indices",
