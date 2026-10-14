@@ -79,6 +79,12 @@ interface FigurePresence {
   appearance: { albedo: Vec3; luminance: number; specular: number };
   faceRadius: number;
   adult: boolean;
+  /** Advisory requests, not a match or reservation. */
+  partnerNeeds?: readonly {
+    tags: readonly string[];
+    minPartners: number;
+    maxPartners: number;
+  }[];
 }
 
 const registry = createPresenceRegistry();
@@ -89,6 +95,7 @@ const groups = presenceGroups(registry.all(), 1.2);
 const contacts = groundOcclusion(registry.all()); // pooled contact shadows
 sampleGroundOcclusion(contacts, x, z);   // 0 open … 1 shadowed, max-combined
 const meter = faceMetering(registry.all(), { position: cameraPosition });
+const activeFrame = registry.frames.latest("figure-a"); // undefined until a live producer publishes
 ```
 
 In React, `<Humanoid presence>` registers the figure; `usePresence()` and
