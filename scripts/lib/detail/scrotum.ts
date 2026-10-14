@@ -21,10 +21,10 @@
 import type { Skin } from "./contact.ts";
 import type { Vec3 } from "./disc.ts";
 import { type Form, formOf, solveFactor, sweep } from "./form.ts";
-import { sizeHat, targetCollector } from "./keys.ts";
+import { FLAT_SIZE, sizeHat, targetCollector } from "./keys.ts";
 import { type ReservoirRoot, type RootShape, restShape } from "./root.ts";
 import type { SculptPart } from "./sculpt.ts";
-import { projectPart } from "./transfer.ts";
+import { flatShape, projectPart } from "./transfer.ts";
 
 /** The size modifier: a virtual, one-sided one, 0 (none) to 1. */
 export const TESTES_SIZE = "genitals/testes-size";
@@ -185,17 +185,23 @@ export class SculptedScrotum {
   }
 }
 
-/** The targets' names: key number (1-based). */
+/** The targets' names: key number (1-based; 0 is the reservoir laid flat, `FLAT_SIZE`). */
 export const testesTarget = (n: number) => `genitals/testes-k${n}`;
 
-/** The targets of the sac and the factors that drive each: its shape at a key, worth that key's hat of the size. */
+/**
+ * The targets of the sac and the factors that drive each: its shape at a key, worth that
+ * key's hat of the size. The reservoir laid flat on the skin (`flatShape`, at
+ * `FLAT_SIZE`) is the first size, so a sac under the smallest key rises from the middle
+ * of the disc; grown out of rest, it was a stack of ridges as wide as the loop.
+ */
 export function scrotumTargets(root: ReservoirRoot, part: SculptPart, skin: Skin) {
   const sac = new SculptedScrotum(root, part, skin);
   const { targets, drives, add } = targetCollector(root);
   const rest = restShape(root);
-  const sizes = TESTES_KEYS.map((k) => k.size);
+  const sizes = [FLAT_SIZE, ...TESTES_KEYS.map((k) => k.size)];
+  add(testesTarget(0), rest, flatShape(root, FORWARD), [sizeHat(TESTES_SIZE, sizes, 0)]);
   TESTES_KEYS.forEach((key, k) => {
-    add(testesTarget(k + 1), rest, sac.shape(key), [sizeHat(TESTES_SIZE, sizes, k)]);
+    add(testesTarget(k + 1), rest, sac.shape(key), [sizeHat(TESTES_SIZE, sizes, k + 1)]);
   });
   return { targets, drives };
 }

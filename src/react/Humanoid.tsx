@@ -76,10 +76,13 @@ import { type BodyArtImages, type BodyArtTexture, bakeBodyArt } from "../render/
 import { DecalMaterial } from "../render/decalMaterial.ts";
 import {
   applyDualSkinning,
+  applyLinearSkinning,
   DualBones,
   dualShadowMaterials,
   FOLD_SLOTS_ATTRIBUTE,
   followDualSkinning,
+  followLinearSkinning,
+  linearShadowMaterials,
   makeFoldSlots,
   setSkinAttributes,
   writeFoldSlots,
@@ -564,6 +567,7 @@ function SkinnedPart({
   renderOrder,
   shape,
   dual,
+  linear,
   shadows = true,
 }: {
   geometry: BufferGeometry;
@@ -578,6 +582,8 @@ function SkinnedPart({
   shape: object;
   /** Set when the material skins by dual quaternions: shadows and bounds then follow it. */
   dual?: DualBones | null;
+  /** Set when a host body material skins linearly through all eight influences. */
+  linear?: DualBones | null;
   /**
    * Whether it casts and receives shadows (default true). A decal lying on the skin
    * does neither: its quad's outline would shade the skin round it, and the skin
@@ -592,17 +598,18 @@ function SkinnedPart({
     m.receiveShadow = shadows;
     return m;
   }, [geometry, material, skeleton, shadows]);
-  // Shadows are cast by a depth material, which would skin linearly alone; and
-  // the mesh's own CPU skinning (its bounds, and ray picking) likewise.
+  // Shadows are cast by a depth material, and CPU bounds and ray picking have
+  // their own skinning hook: both must follow the material the body draws with.
   useEffect(() => {
-    if (!dual) return;
-    // The body's carries the joint folds, which its shadow, bounds and picking follow too.
+    if (!dual && !linear) return;
+    // The built-in body carries folds; a host material is eight-place linear with no folds.
     const body = part === "body" || part === "adultBody";
-    const shadows = dualShadowMaterials(dual, body);
+    const shadows = dual ? dualShadowMaterials(dual, body) : linearShadowMaterials();
     mesh.customDepthMaterial = shadows.depth;
     mesh.customDistanceMaterial = shadows.distance;
     const applyBoneTransform = mesh.applyBoneTransform;
-    followDualSkinning(mesh, dual, body);
+    if (dual) followDualSkinning(mesh, dual, body);
+    else followLinearSkinning(mesh, linear as DualBones);
     return () => {
       mesh.customDepthMaterial = undefined as never;
       mesh.customDistanceMaterial = undefined as never;
@@ -610,7 +617,7 @@ function SkinnedPart({
       shadows.depth.dispose();
       shadows.distance.dispose();
     };
-  }, [mesh, dual, part]);
+  }, [mesh, dual, linear, part]);
   // A skinned mesh caches its own (posed) bounds: three computes them once and
   // never again, so a new pose or a re-evaluated (say, taller) figure would
   // keep the old ones, and picking and culling would miss whatever lies
@@ -1148,14 +1155,15 @@ export function Humanoid({
     [ready],
   );
   useEffect(() => () => dual?.dispose(), [dual]);
-  // A custom material skins as it chooses; ours follows the dual quaternions.
+  // The built-in skin mixes dual quaternions and folds. A host material stays
+  // deliberately linear and fold-free, but must still read all eight body weights.
   useLayoutEffect(() => {
-    if (material) return;
+    if (material) return applyLinearSkinning(material);
     skin.setDualBones(dual);
     return () => skin.setDualBones(null);
   }, [skin, dual, material]);
-  // Whatever else skins to this figure (clothing, a custom material) follows its
-  // joints by `applyDualSkinning(material, group.userData.dualBones)`.
+  // Whatever else skins to this figure follows its joints by
+  // `applyDualSkinning(material, group.userData.dualBones)`.
   useLayoutEffect(() => {
     const group = groupRef.current;
     if (!group) return;
@@ -1887,6 +1895,7 @@ export function Humanoid({
               part="body"
               shape={shape}
               dual={material ? null : dual}
+              linear={material ? dual : null}
             />
             {adultGeometry && (
               <SkinnedPart
@@ -1897,6 +1906,7 @@ export function Humanoid({
                 part="adultBody"
                 shape={shape}
                 dual={material ? null : dual}
+                linear={material ? dual : null}
               />
             )}
             {/* The coat (stubble, a dense chest): shells on whichever body surface is drawn. */}
