@@ -159,6 +159,22 @@ with their required notices. This profile governs asset data, not the code's
 MIT licence. Pack metadata, shipped files, attribution and feature availability
 must agree with the selected profile; no hidden procedural substitute is added.
 
+## 10. The kit exposes MakeHuman; it does not design replacement models
+
+Owner clarification, 2026-10-13: this kit is an API in front of MakeHuman.
+Preserve the source meshes and expose their capabilities through the kit's
+loaders, controls, bindings and independently written proxies. Do not author
+new meshes or turn integration into a separate modelling or art-design effort.
+Approved procedural work must meet the source material's quality; decision 8's
+exception boundaries remain in force.
+
+Every MakeHuman community or GitHub asset package with CC0, CC-BY or another
+commercially redistributable licence merits consideration. Inventory its actual
+capabilities, provenance, compatibility and integration needs rather than
+selecting by a human-versus-AI preference or an invented art direction. Decision
+9 governs asset licences, attribution and the CC0-only build profile. Source
+fidelity and current rendered proof remain necessary before acceptance.
+
 Decisions are appended with the next number and never renumbered, since code and
 docs cite the numbers. A decision that comes from a design section (dated, in the
 architecture notes or a research document) is summarised here with a pointer, so
