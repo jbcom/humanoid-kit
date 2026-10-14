@@ -61,12 +61,14 @@ const FINGER_PADS: readonly Affordance[] = (["L", "R"] as const).flatMap((side) 
 
 /**
  * The body's own sites a figure of any age may touch with its own hand
- * (docs/SELF-CONTACT.md, R10): idle fidgets such as picking the nose or tugging
- * an ear lobe. Each is a core affordance that says it is not the adult
- * anatomy's, which is what keeps a child's fidget naming it for all audiences
- * (`audienceOf` treats an id the core does not know as adult). No nipple is
- * among them: nipple self-contact is adult content and lives in the adult
- * package, though the core's `nipple.X` mounts stay non-adult for body art.
+ * (docs/SELF-CONTACT.md, R10): idle fidgets such as picking the nose or
+ * tugging an ear lobe. Each is a core affordance that says it is
+ * not the adult anatomy's, which is what keeps a child's fidget naming it for
+ * all audiences (`audienceOf` treats an id the core does not know as adult).
+ * The nipples are among them: a child touches its own chest, and nursing puts
+ * an infant's mouth and hand at its mother's nipple. The age line is drawn by
+ * content, not by site: adult-only signals (`ADULT_ONLY_SIGNALS`) and the adult
+ * package's own sites, which the core does not name.
  */
 export const SELF_CONTACT_SITES = [
   "nose-tip",
@@ -75,6 +77,8 @@ export const SELF_CONTACT_SITES = [
   "ear-lobe.L",
   "ear-lobe.R",
   "sternum-notch",
+  "nipple.L",
+  "nipple.R",
   "navel",
 ] as const satisfies readonly LandmarkId[];
 
@@ -97,7 +101,7 @@ export const CORE_AFFORDANCES: readonly Affordance[] = [
   core("wrist.R", "mount", { landmark: "wrist.R" }),
   core("sole.L", "contact", { landmark: "sole.L" }),
   core("sole.R", "contact", { landmark: "sole.R" }),
-  // Self-contact sites that are not already mounts above (the ear lobes and navel are).
+  // Self-contact sites that are not already mounts above (the ear lobes, nipples and navel are).
   core("nose-tip", "contact", { landmark: "nose-tip" }),
   core("chin", "contact", { landmark: "chin" }),
   core("crown", "contact", { landmark: "crown" }),

@@ -29,6 +29,7 @@ import {
   type LandmarkAnchors,
   type LandmarkId,
 } from "../foundation/landmarks.ts";
+import { AgePolicyError } from "../recipe/agePolicy.ts";
 import {
   type ArmPole,
   type ArmTargetReason,
@@ -48,12 +49,19 @@ import {
 import type { SkinFold } from "../rig/dual.ts";
 import { type RigData, skinNormals, skinPositions } from "../rig/pose.ts";
 import { conjugate, mul, type Quat, quaternionAngle, rotate, slerp } from "../rig/quat.ts";
+import { defaultAffordanceAdult } from "./definition.ts";
 import { armLength, frameQuat, type HandSide } from "./handContact.ts";
 
 export { SELF_CONTACT_SITES };
 
 /** The figure as the constraint reads it, in its own space: evaluated surface, weights, skeleton, landmarks. */
 export interface SiteContactFigure {
+  /**
+   * Whether the figure is 18 or over: `isAdult(recipe)`. Anything but `true` is
+   * read as a minor, who is refused any site the registry does not say is
+   * all-ages (`defaultAffordanceAdult`, docs/SELF-CONTACT.md R10).
+   */
+  adult: boolean;
   /** Identity of the evaluated geometry below; a new evaluation is a new identity. */
   generation: object;
   restBones: RestBones;
@@ -157,9 +165,15 @@ export interface SiteContactInput {
   figure: SiteContactFigure;
   /** The frame's underlying pose: the clip's (with face units) or the static pose. */
   source: BoneRotations;
-  /** The touching point, a landmark of one hand: `finger-pad-2.R` (the right index pad), `palm.L`. */
+  /**
+   * The touching point of one hand: a finger pad (`finger-pad-2.R`, the right
+   * index pad), the palm (`palm.L`) or the hand's grip (`hand.R`).
+   */
   effector: string;
-  /** The touched surface landmark of the same figure: `nose-tip`, `ear-lobe.L`, `navel`. */
+  /**
+   * The touched surface landmark of the same figure: `nose-tip`, `ear-lobe.L`,
+   * `navel`. A minor may touch only the sites the registry says are all-ages.
+   */
   site: string;
   /** The hand's shape, composed before the arm is solved; default `point`. */
   shape?: HandShape;
@@ -276,7 +290,8 @@ function approachQuat(n: V3, along: V3, pitch: number): Quat {
 }
 
 const FINGER_PAD = /^finger-pad-([1-5])\.(L|R)$/;
-const HAND_SIDE = /\.(L|R)$/;
+/** The points of one hand an effector may be (R2): a finger pad, the palm, the grip. */
+const HAND_POINT = /^(?:finger-pad-[1-5]|palm|hand)\.(L|R)$/;
 
 /**
  * Solves `effector` onto `site` and writes the pose into `out` (docs/SELF-CONTACT.md,
@@ -302,8 +317,15 @@ export function solveSiteContact(input: SiteContactInput): SiteContactReport {
     throw new RangeError("site contact: iterations must be a positive integer");
   if (!(LANDMARK_IDS as readonly string[]).includes(site))
     throw new RangeError(`site contact: no landmark ${site}`);
-  const sideMatch = HAND_SIDE.exec(effector);
-  if (!sideMatch) throw new RangeError(`site contact: ${effector} is not a landmark of one hand`);
+  if (figure.adult !== true && defaultAffordanceAdult(site))
+    throw new AgePolicyError(
+      `site contact: ${site} is not an all-ages site, and the figure is not an adult`,
+    );
+  const sideMatch = HAND_POINT.exec(effector);
+  if (!sideMatch)
+    throw new RangeError(
+      `site contact: ${effector} is not a point of one hand (a finger pad, the palm or the hand)`,
+    );
   const side = sideMatch[1] as HandSide;
   const siteId = site as LandmarkId;
 

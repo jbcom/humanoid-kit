@@ -31,6 +31,7 @@ import {
   type RoleName,
   type RoleSpec,
   resolveLength,
+  type SignalChange,
   splitPoint,
   type Tag,
   tagMatches,
@@ -156,6 +157,13 @@ export interface InteractionOptions {
   affordanceAdult?: (id: string) => boolean;
   /** Applies a beat's affordance change to a participant (its `AffordanceStates`). */
   applyChange?: (participant: string, affordance: string, change: AffordanceChange) => void;
+  /**
+   * Applies a beat's signal change to a participant: the host adds or sets each
+   * signal and passes them to the figure's evaluation, which refuses an
+   * adult-only signal under 18 (`assertSignalPolicy`). A definition that drives
+   * one is adult, so no minor is ever bound to it.
+   */
+  applySignals?: (participant: string, change: SignalChange) => void;
 }
 
 export interface InteractionRuntime {
@@ -355,6 +363,8 @@ export function createInteractions(
       if ("set" in e) {
         const [role, affordance] = splitPoint(e.set);
         options.applyChange?.(i.roles[role] as string, affordance, e.change);
+      } else if ("signal" in e) {
+        options.applySignals?.(i.roles[e.signal] as string, e.change);
       } else {
         const o = object(i.roles[e.object] as string);
         if (!o) continue;
