@@ -18,6 +18,7 @@ import { loadHumanoidAssets } from "../../src/format/assetFormat.ts";
 import { HumanoidModel } from "../../src/model/humanoidModel.ts";
 import { createRecipe } from "../../src/recipe/recipe.ts";
 import { AttachmentStandardMaterial, setOcclusionAttributes } from "../../src/render/occlusion.ts";
+import { expectSameArray } from "./arrays.ts";
 import { createTestRenderer } from "./gl.ts";
 
 const SIZE = 384;
@@ -77,16 +78,19 @@ it("renders omitted/32 identically and consumes the actual 16-ray custom attachm
   const fields = topologies.map((part) => {
     if (!part) throw new Error("custom attachment topology missing");
     expect(part.id).toBe(id);
-    expect(part.index).toEqual(topology.index);
+    expectSameArray(part.index, topology.index, { what: "attachment source topology" });
     expect(part.occlusion.length).toBe((source.positions.length / 3) * 8);
     return part.occlusion;
   });
   for (const surface of surfaces) {
-    expect(surface?.positions).toEqual(source.positions);
-    expect(surface?.normals).toEqual(source.normals);
+    if (!surface) throw new Error("custom attachment surface missing");
+    expectSameArray(surface.positions, source.positions, { what: "attachment source positions" });
+    expectSameArray(surface.normals, source.normals, { what: "attachment source normals" });
   }
-  expect(new Uint8Array((fields[0] as Float32Array).buffer)).toEqual(
+  expectSameArray(
+    new Uint8Array((fields[0] as Float32Array).buffer),
     new Uint8Array((fields[1] as Float32Array).buffer),
+    { what: "omitted and explicit32 field bytes" },
   );
   const fieldDifference = difference(fields[1] as Float32Array, fields[2] as Float32Array);
   expect(fieldDifference.changed, "ray option must affect a real custom bake").toBeGreaterThan(0);
@@ -151,7 +155,9 @@ it("renders omitted/32 identically and consumes the actual 16-ray custom attachm
       camera.lookAt(center);
       camera.updateMatrixWorld();
       const pixels = fields.map(draw);
-      expect(pixels[0], `${view}: omitted and explicit32 pixels`).toEqual(pixels[1]);
+      expectSameArray(pixels[0] as Uint8Array, pixels[1] as Uint8Array, {
+        what: `${view}: omitted and explicit32 pixels`,
+      });
       expect(
         (pixels[1] as Uint8Array).filter((v, p) => p % 4 === 0 && v > 32).length,
       ).toBeGreaterThan(1000);
@@ -184,10 +190,16 @@ it("renders omitted/32 identically and consumes the actual 16-ray custom attachm
       for (const pixelsForSetting of pixels) row.append(image(pixelsForSetting));
       panel.append(label, row);
     }
-    expect(packed.occlusion).toEqual(packedBytes);
-    expect(geometry.getAttribute("position").array).toEqual(originalPositions);
-    expect(geometry.getAttribute("normal").array).toEqual(originalNormals);
-    expect(geometry.getIndex()?.array).toEqual(originalIndex);
+    expectSameArray(packed.occlusion, packedBytes, { what: "unchanged packed occlusion" });
+    expectSameArray(geometry.getAttribute("position").array, originalPositions, {
+      what: "unchanged source positions",
+    });
+    expectSameArray(geometry.getAttribute("normal").array, originalNormals, {
+      what: "unchanged source normals",
+    });
+    const index = geometry.getIndex();
+    if (!index) throw new Error("source geometry index missing");
+    expectSameArray(index.array, originalIndex, { what: "unchanged source topology" });
     console.info(
       "runtime-occlusion-quality-renderer",
       JSON.stringify({
