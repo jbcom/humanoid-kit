@@ -155,6 +155,15 @@ export const CREASE_CRUSH = { from: 0.55, to: 0.8 } as const;
 /** Name of the per-vertex attribute holding metres of skin per UV unit. */
 export const UV_SCALE_ATTRIBUTE = "hkUvScale";
 
+/** Per-figure wet-film support coverage, supplied by `render/fluidCoverage.ts`. */
+export const FLUID_COVERAGE_ATTRIBUTE = "hkFluidCoverage";
+
+/** Existing wet-film choices that a renderer can apply to dynamic coverage. */
+export interface FluidWetFilmProfile {
+  readonly roughness: number;
+  readonly specular: number;
+}
+
 /**
  * How squarely the view must meet the skin's shading normal for the detail
  * relief to tilt it (`hkPerturbNormal`), as the cosine between them: all of the
@@ -1108,9 +1117,12 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     hkAgeMap: { value: Texture | null };
     /** The age surface's strength, the map's mix by gender and one of its texels in UV. */
     hkAgeSurface: { value: Vector3 };
+    /** Existing wet-film roughness and specular changes, selected per figure. */
+    hkFluidWetFilm: { value: Vector2 };
   };
   private readonly stopTable: Float32Array;
   private dualBones: DualBones | null = null;
+  private fluidWetFilm: FluidWetFilmProfile | null = null;
 
   /**
    * Skins by `bones` (dual quaternions mixed with three's linear skinning,
@@ -1156,6 +1168,20 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     this.hkUniforms.hkLayerAtlas.value = atlas?.texture ?? noLayersFor(plan.pages);
     this.hkUniforms.hkLayerOwners.value = atlas?.owners ?? noOwners();
     setChannels(this.hkUniforms.hkChannel.value, plan);
+  }
+
+  /**
+   * Enables a per-vertex wet film for this figure only. Passing `null` restores
+   * the exact dry shader path; coverage data remains on the figure's geometry.
+   */
+  setFluidWetFilm(profile: FluidWetFilmProfile | null): void {
+    if (profile && (!Number.isFinite(profile.roughness) || !Number.isFinite(profile.specular)))
+      throw new RangeError("SkinMaterial: fluid wet-film values must be finite");
+    const wasEnabled = this.fluidWetFilm !== null;
+    const enabled = profile !== null;
+    this.fluidWetFilm = profile ? { ...profile } : null;
+    if (profile) this.hkUniforms.hkFluidWetFilm.value.set(profile.roughness, profile.specular);
+    if (wasEnabled !== enabled) this.needsUpdate = true;
   }
 
   /** The decal layers of the figure's tattoos and naevi the shader is built for (0 without). */
@@ -1255,6 +1281,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       hkMarkLipLight: { value: new Vector3(1, 1, 1) },
       hkAgeMap: { value: null },
       hkAgeSurface: { value: new Vector3() },
+      hkFluidWetFilm: { value: new Vector2() },
     };
     setChannels(this.hkUniforms.hkChannel.value, plan);
     this.normalMap = poreNormalMap();
@@ -1312,18 +1339,32 @@ export class SkinMaterial extends MeshPhysicalMaterial {
 
   override onBeforeCompile: MeshPhysicalMaterial["onBeforeCompile"] = (shader) => {
     Object.assign(shader.uniforms, this.hkUniforms);
+    const fluidVertex = this.fluidWetFilm
+      ? `\nattribute float ${FLUID_COVERAGE_ATTRIBUTE};\nvarying float vHkFluidCoverage;`
+      : "";
+    const fluidVertexValue = this.fluidWetFilm
+      ? `\n\tvHkFluidCoverage = ${FLUID_COVERAGE_ATTRIBUTE};`
+      : "";
+    const fluidFragment = this.fluidWetFilm
+      ? "\nvarying float vHkFluidCoverage;\nuniform vec2 hkFluidWetFilm;"
+      : "";
+    const fluidSurface = this.fluidWetFilm
+      ? "\n\tvec2 hkFluid = clamp( vHkFluidCoverage, 0.0, 1.0 ) * hkFluidWetFilm;"
+      : "";
+    const fluidRoughness = this.fluidWetFilm ? " + hkFluid.x" : "";
+    const fluidSpecular = this.fluidWetFilm ? " + hkFluid.y" : "";
     // The skin is the body's, whose geometry carries the hip fold's slots.
     if (this.dualBones) patchDualSkinning(shader, this.dualBones, true);
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
-        `#include <common>\nvarying vec2 vHkUv;\nattribute float ${UV_SCALE_ATTRIBUTE};\nvarying float vHkUvScale;\nattribute float ${SCALP_ATTRIBUTE};\nvarying float vHkScalp;\n#define HK_STRAIN\nattribute float ${STRAIN_ATTRIBUTE};\nvarying float vHkStrain;`,
+        `#include <common>\nvarying vec2 vHkUv;\nattribute float ${UV_SCALE_ATTRIBUTE};\nvarying float vHkUvScale;\nattribute float ${SCALP_ATTRIBUTE};\nvarying float vHkScalp;\n#define HK_STRAIN\nattribute float ${STRAIN_ATTRIBUTE};\nvarying float vHkStrain;${fluidVertex}`,
       )
       // The skin's strain (docs/ARCHITECTURE.md, "Skin strain"): 1 (as at rest) and what the geometry's own strain
       // attribute adds (none where it has none: an absent attribute reads 0), then what the folds add where they reach (patchDualSkinning).
       .replace(
         "#include <color_vertex>",
-        `#include <color_vertex>\n\tvHkStrain = 1.0 + ${STRAIN_ATTRIBUTE};\n\tvHkUv = uv;\n\tvHkUvScale = ${UV_SCALE_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};\n\tvHkScalp = ${SCALP_ATTRIBUTE};`,
+        `#include <color_vertex>\n\tvHkStrain = 1.0 + ${STRAIN_ATTRIBUTE};\n\tvHkUv = uv;\n\tvHkUvScale = ${UV_SCALE_ATTRIBUTE};\n\tvHkCurvature = ${CURVATURE_ATTRIBUTE};\n\tvHkScalp = ${SCALP_ATTRIBUTE};${fluidVertexValue}`,
       )
       .replace(
         "#include <common>",
@@ -1345,7 +1386,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${bodyArtLayerDefines(this.layers)}${BODY_ART_FUNCTIONS}\n${AGE_SURFACE_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;`,
+        `#include <common>\n${layerFunctions(this.layers.length)}\n${SCATTER_FUNCTIONS}\n${bodyArtLayerDefines(this.layers)}${BODY_ART_FUNCTIONS}\n${AGE_SURFACE_FUNCTIONS}\nvarying float vHkScalp;\nuniform vec3 hkScalpColour;\nuniform float hkScalpStrength;${fluidFragment}`,
       )
       .replace(
         "#include <color_fragment>",
@@ -1356,7 +1397,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       // Surface layers: roughness here, specular once the material is set up.
       .replace(
         "#include <roughnessmap_fragment>",
-        `#include <roughnessmap_fragment>\n\tvec2 hkSurface = hkSurfaceChange( vHkUv );\n\troughnessFactor = clamp( roughnessFactor + hkSurface.x - ${glslFloat(SCAR_SMOOTHNESS)} * hkMarkSurface.x, 0.03, 1.0 );`,
+        `#include <roughnessmap_fragment>\n\tvec2 hkSurface = hkSurfaceChange( vHkUv );${fluidSurface}\n\troughnessFactor = clamp( roughnessFactor + hkSurface.x${fluidRoughness} - ${glslFloat(SCAR_SMOOTHNESS)} * hkMarkSurface.x, 0.03, 1.0 );`,
       )
       // Detail layers: relief on top of the pore map.
       .replace(
@@ -1365,7 +1406,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
       )
       .replace(
         "#include <lights_physical_fragment>",
-        "#include <lights_physical_fragment>\n\tmaterial.specularColor *= max( 0.0, 1.0 + hkSurface.y );\n\tmaterial.specularColorBlended = mix( material.specularColor, diffuseColor.rgb, metalnessFactor );",
+        `#include <lights_physical_fragment>\n\tmaterial.specularColor *= max( 0.0, 1.0 + hkSurface.y${fluidSpecular} );\n\tmaterial.specularColorBlended = mix( material.specularColor, diffuseColor.rgb, metalnessFactor );`,
       );
     // Includes are resolved after this hook, so inline the physical lighting chunk with
     // its direct diffuse term replaced. Fail loudly if three changes that line.
@@ -1389,6 +1430,7 @@ export class SkinMaterial extends MeshPhysicalMaterial {
     // The shader depends on the layer count only; the layers' colour is in the stop table.
     const art = this.hkUniforms.hkBodyArt.value ? `-art${this.decalLayers}` : "";
     const age = this.showsAgeSurface ? "-age" : "";
-    return `humanoid-kit-skin-11-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}-fold` : ""}${art}${age}|${SHADOW_FILTER_KEY}`;
+    const fluid = this.fluidWetFilm ? "-fluid" : "";
+    return `humanoid-kit-skin-11-${this.layers.length}${this.dualBones ? `-${DUAL_SKINNING_KEY}-fold` : ""}${art}${age}${fluid}|${SHADOW_FILTER_KEY}`;
   }
 }
